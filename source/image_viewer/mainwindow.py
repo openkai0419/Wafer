@@ -68,13 +68,13 @@ class MainWindow(QtWidgets.QMainWindow):
         QtCore.QTimer.singleShot(0, self.search)
 
     @QtCore.Slot(int)
-    def update_current(self, inc):
-        self.progress_bar.addProgress(int(inc))
+    def update_current(self, value):
+        self.progress_bar.setProgress(int(value))
         self._reset_if_done()
 
     @QtCore.Slot(int)
-    def update_maximum(self, inc):
-        self.progress_bar.addMaximum(int(inc))
+    def update_maximum(self, value):
+        self.progress_bar.setMaximum(int(value))
         self._reset_if_done()
 
     def _reset_if_done(self):

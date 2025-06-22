@@ -3,7 +3,7 @@ from PySide6 import QtWidgets, QtGui, QtCore
 
 from ..viewer_settings import main_setting
 from ...profiling import init_env
-logger, profiler = init_env("viewer")
+logger, profiler = init_env()
 
 
 class FolderTreeModel(QtGui.QStandardItemModel):

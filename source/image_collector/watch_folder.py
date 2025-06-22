@@ -10,7 +10,7 @@ from ..core.zmq import ZMQPublisher
 from ..profiling import init_env
 from ..constants import data_db
 
-logger, profiler = init_env("collector")
+logger, profiler = init_env()
 extensions = (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp")
 
 _publisher = None

@@ -2,7 +2,7 @@ from PySide6 import QtWidgets, QtGui, QtCore
 
 from ..profiling import init_env
 from .watch_folder import WatchFolder
-logger, profiler = init_env("collector")
+logger, profiler = init_env()
 
 class TrayApp(QtWidgets.QSystemTrayIcon):
     def __init__(self, icon, folders_to_watch, parent=None):

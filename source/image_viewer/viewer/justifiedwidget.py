@@ -18,7 +18,7 @@ from ..mouseeventmanager import (
 )
 from .cachemanager import MemoryLimitedPixmapCache, QLabelPool
 from ...profiling import init_env
-logger, profiler = init_env("viewer")
+logger, profiler = init_env()
 
 def _size_mismatch(a: QtCore.QSize, b: QtCore.QSize, tolerance: int = 1):
     return abs(a.width() - b.width()) > tolerance or abs(a.height() - b.height()) > tolerance

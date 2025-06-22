@@ -72,12 +72,19 @@ class MainWindow(QtWidgets.QMainWindow):
         self.start_ipc_listener()
 
     @QtCore.Slot(int)
-    def update_current(self, current):
-        self.progress_bar.setProgress(int(current))
+    def update_current(self, inc):
+        self.progress_bar.addProgress(int(inc))
+        self._reset_if_done()
 
     @QtCore.Slot(int)
-    def update_maximum(self, max):
-        self.progress_bar.setMaximum(int(max))
+    def update_maximum(self, inc):
+        self.progress_bar.addMaximum(int(inc))
+        self._reset_if_done()
+
+    def _reset_if_done(self):
+        if self.progress_bar.maximum() > 0 and self.progress_bar.value() >= self.progress_bar.maximum():
+            self.progress_bar.setProgress(0)
+            self.progress_bar.setMaximum(0)
 
     def start_ipc_listener(self):
         def on_message(msg: str):

@@ -23,6 +23,13 @@ def _get_publisher() -> ZMQPublisher:
             _publisher = ZMQPublisher()
         return _publisher
 
+def _notify_maximum_inc(count=1):
+    try:
+        publisher = _get_publisher()
+        publisher.send("maximum", str(count))
+    except Exception as e:
+        logger.warning(f"通知失敗: {e}")
+
 class EventBatcher(QtCore.QObject):
     batched_deleted = QtCore.Signal(list)
     batched_changed = QtCore.Signal(list)
@@ -40,10 +47,14 @@ class EventBatcher(QtCore.QObject):
         self._timer.start()
 
     def add_deleted(self, path):
-        self._deleted.add(path)
+        if path not in self._deleted:
+            self._deleted.add(path)
+            _notify_maximum_inc(1)
 
     def add_changed(self, path):
-        self._changed.add(path)
+        if path not in self._changed:
+            self._changed.add(path)
+            _notify_maximum_inc(1)
 
     def path_changed(self, path):
         self._pathchanged = True
@@ -190,13 +201,14 @@ class DBWorker(QtCore.QObject):
         with self.database as indexer:
             indexer.update_index(root_paths)
 
-def progress_callback(current, total):
-    logger.info(f"Progress: {current}/{total} ({100 * current // total}%)")
+def progress_callback(current_inc, total_inc):
+    logger.info(f"Progress diff: {current_inc}/{total_inc}")
     try:
         publisher = _get_publisher()
-        if current == 0:
-            publisher.send("maximum", str(total))
-        publisher.send("progress", str(current))
+        if total_inc:
+            publisher.send("maximum", str(total_inc))
+        if current_inc:
+            publisher.send("progress", str(current_inc))
     except Exception as e:
         logger.warning(f"通知失敗: {e}")
 

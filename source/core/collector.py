@@ -1,7 +1,7 @@
 import os
 import shutil
 import sqlite3
-import threading
+import time
 from pathlib import Path
 from PIL import Image
 import concurrent.futures
@@ -13,6 +13,11 @@ logger, profiler = init_env()
 
 extensions = (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp")
 CHUNK = 900
+COMMIT_INTERVAL = 4.0
+RECOMMENDED_BATCH_SIZE = 50
+
+# 再利用可能なThreadPoolExecutor
+executor = concurrent.futures.ThreadPoolExecutor()
 
 def read_info(path):
     try:
@@ -39,36 +44,11 @@ class ImageIndexer:
     def set_update_callback(self, callback):
         self._update_callback = callback
 
-    def _emit_progress(self, current, total, send_total=True):
-        last_c = getattr(self, '_last_progress_current', 0)
-        last_t = getattr(self, '_last_progress_total', 0)
+    def emit_update(self):
+        self._update_callback()
 
-        diff_c = current - last_c
-        diff_t = total - last_t if send_total else 0
-
-        if (diff_c or diff_t) and hasattr(self, '_progress_callback') and callable(self._progress_callback):
-            try:
-                self._progress_callback(diff_c, diff_t)
-            except Exception as e:
-                logger.warning(f"Progress callback failed: {e}")
-
-        if diff_c > 0 and hasattr(self, '_update_callback') and callable(self._update_callback):
-            try:
-                self._update_callback()
-            except Exception as e:
-                logger.warning(f"notify callback failed: {e}")
-
-        if current == total:
-            self._last_progress_current = 0
-            self._last_progress_total = 0
-        else:
-            self._last_progress_current = current
-            self._last_progress_total = total
-
-    def _emit_progress_inc(self, current_inc=0, total_inc=0):
-        current = getattr(self, '_last_progress_current', 0) + current_inc
-        total = getattr(self, '_last_progress_total', 0) + total_inc
-        self._emit_progress(current, total, send_total=bool(total_inc))
+    def _emit_progress(self, current, total):
+        self._progress_callback(current, total)
 
     def __enter__(self):
         self.start()
@@ -172,6 +152,11 @@ class ImageIndexer:
         cur.execute("CREATE INDEX IF NOT EXISTS idx_images_path ON images(path)")
         cur.close()
 
+    def _detect_diff(self, current, previous):
+        added_or_modified = [p for p in current if p not in previous or current[p] != previous[p]]
+        removed = [p for p in previous if p not in current]
+        return added_or_modified, removed
+
     @profiler.profile
     def scan_directory_fast(self, root_path):
         stack = [str(root_path)]
@@ -226,51 +211,38 @@ class ImageIndexer:
             for path, mtime, size in rows:
                 previous[normalize_path(path)] = (mtime, size)
 
-        added_or_modified = [p for p in current if p not in previous or current[p] != previous[p]]
-        removed = [p for p in previous if p not in current]
+        added_or_modified, removed = self._detect_diff(current, previous)
+        self._emit_progress(0, len(added_or_modified))
+        self._emit_progress(0, len(removed))
 
         logger.info("added/modified: {}, removed: {}".format(len(added_or_modified), len(removed)))
 
         cur = self.get_writer_cursor()
 
         if added_or_modified:
-            self.update_meta_and_image(added_or_modified, current, send_total=True)
+            self.update_meta_and_image(added_or_modified, current)
 
         if removed:
-            self._emit_progress_inc(0, len(removed))
             for i in range(0, len(removed), CHUNK):
                 chunk = removed[i:i+CHUNK]
                 cur.executemany("DELETE FROM images WHERE path = ?", [(str(p),) for p in chunk])
                 cur.executemany("DELETE FROM meta WHERE path = ?", [(str(p),) for p in chunk])
                 cur.executemany("DELETE FROM meta_info WHERE path = ?", [(str(p),) for p in chunk])
-                self._emit_progress_inc(len(chunk), 0)
+                self._emit_progress(len(chunk), 0)
             logger.info(f"deleted {len(removed)} files")
 
         self.conn.commit()
+        self.emit_update()
         cur.close()
 
 
     @profiler.profile
     def update_by_file_list(self, file_paths):
         total_paths = len(file_paths)
-        completed = 0
 
-        exists = [p for p in file_paths if os.path.exists(p)]
-        removed = total_paths - len(exists)
-        if removed:
-            completed += removed
-            self._emit_progress_inc(removed, 0)
-
-        normalized = []
-        seen = set()
-        for p in exists:
-            np = normalize_path(p)
-            if np not in seen:
-                seen.add(np)
-                normalized.append(np)
-            else:
-                completed += 1
-                self._emit_progress_inc(1, 0)
+        file_paths = [p for p in file_paths if os.path.exists(p)]
+        normalized = [normalize_path(p) for p in file_paths]
+        self._emit_progress(total_paths - len(normalized), 0)
 
         stat_info = {}
         for path in normalized:
@@ -278,8 +250,7 @@ class ImageIndexer:
                 st = os.stat(path)
                 stat_info[path] = (st.st_mtime, st.st_size)
             except FileNotFoundError:
-                completed += 1
-                self._emit_progress_inc(1, 0)
+                self._emit_progress(1, 0)
 
         if not stat_info:
             logger.info("No valid files to update.")
@@ -300,12 +271,12 @@ class ImageIndexer:
         to_update = [p for p in stat_info if p not in previous or stat_info[p] != previous[p]]
         skip_count = len(stat_info) - len(to_update)
         if skip_count:
-            completed += skip_count
-            self._emit_progress_inc(skip_count, 0)
+            self._emit_progress(skip_count, 0)
 
         if to_update:
-            self.update_meta_and_image(to_update, stat_info, send_total=False)
+            self.update_meta_and_image(to_update, stat_info)
             self.conn.commit()
+            self.emit_update()
         else:
             logger.info("[update_by_file_list] No updates needed.")
 
@@ -313,23 +284,10 @@ class ImageIndexer:
     def remove_by_file_list(self, file_paths):
         total_paths = len(file_paths)
         completed = 0
+        file_paths = [p for p in file_paths if not os.path.exists(p)]
+        normalized = [normalize_path(p) for p in file_paths]
 
-        missing = [p for p in file_paths if not os.path.exists(p)]
-        removed = len(missing)
-        if removed:
-            completed += removed
-            self._emit_progress_inc(removed, 0)
-
-        normalized = []
-        seen = set()
-        for p in missing:
-            np = normalize_path(p)
-            if np not in seen:
-                seen.add(np)
-                normalized.append(np)
-            else:
-                completed += 1
-                self._emit_progress_inc(1, 0)
+        self._emit_progress(total_paths - len(normalized), 0)
 
         if not normalized:
             return
@@ -340,22 +298,18 @@ class ImageIndexer:
             cur.executemany("DELETE FROM images WHERE path = ?", [(p,) for p in chunk])
             cur.executemany("DELETE FROM meta WHERE path = ?", [(p,) for p in chunk])
             cur.executemany("DELETE FROM meta_info WHERE path = ?", [(p,) for p in chunk])
-            self._emit_progress_inc(len(chunk), 0)
+            self._emit_progress(len(chunk), 0)
 
         self.conn.commit()
+        self.emit_update()
         logger.info(f"[remove_by_file_list] Removed {len(normalized)} entries from DB")
 
     @profiler.profile
-    def update_meta_and_image(self, paths, file_info, send_total=True):
+    def update_meta_and_image(self, paths, file_info):
         cur = self.get_writer_cursor()
         total = len(paths)
-
-        if total > 50000:
-            batch_size = 1000
-        elif total < 1000:
-            batch_size = 100
-        else:
-            batch_size = 500
+        start_time = time.monotonic()
+        updated_count = 0
 
         def process_image(p):
             try:
@@ -367,22 +321,19 @@ class ImageIndexer:
                 info = read_info(p)
                 meta_info = [(str(p), str(k), str(v)) for k, v in info.items()]
                 meta_info.append((str(p), "__filepath__", str(p)))
-                meta_info.append((str(p), "__filename__", str(os.path.basename(p))))
                 return (p, aspect, mtime, fsize, meta_info, None)
             except Exception as e:
                 logger.warning(f"Failed to process {p}: {e}")
                 return (p, None, file_info.get(p, (None, None))[0], file_info.get(p, (None, None))[1], [], 'fail')
 
-        if send_total:
-            self._emit_progress_inc(0, total)
+        batch_size = RECOMMENDED_BATCH_SIZE
         for i in range(0, total, batch_size):
             batch = paths[i:i+batch_size]
             meta_entries = []
             image_entries = []
             meta_info_entries = []
 
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                results = list(executor.map(process_image, batch))
+            results = list(executor.map(process_image, batch))
 
             for p, aspect, mtime, fsize, meta_info, status in results:
                 if status == 'fail':
@@ -416,13 +367,23 @@ class ImageIndexer:
                         VALUES (?, ?, ?)
                         ON CONFLICT(path, key) DO UPDATE SET value = excluded.value
                     """, meta_info_entries)
-                cur.execute("COMMIT")
+                updated_count += len(batch)
+                self.conn.commit()
             except Exception as e:
-                logger.error(f"Transaction failed at batch {i+batch_size}/{total}: {e}")
+                logger.error(f"Transaction failed at batch {i+len(batch)}/{total}: {e}")
                 cur.execute("ROLLBACK")
 
-            logger.info(f"[Batch] Meta+Images Updated {len(meta_entries)} entries ({i+batch_size}/{total})")
-            self._emit_progress_inc(len(batch), 0)
+            if (time.monotonic() - start_time) > COMMIT_INTERVAL:
+                self._emit_progress(updated_count, 0)
+                self.emit_update()
+                logger.info(f"[Time Commit] Committed after {i+len(batch)} / {total} items")
+                start_time = time.monotonic()
+                updated_count = 0
+
+        self.conn.commit()
+        self._emit_progress(updated_count, 0)
+        self.emit_update()
+        logger.info(f"[Final Commit] update_meta_and_image completed with final {i+len(batch)} / {total} items")
 
     @profiler.profile
     def clean_unused(self):

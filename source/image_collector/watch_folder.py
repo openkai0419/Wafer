@@ -202,7 +202,6 @@ class DBWorker(QtCore.QObject):
             indexer.update_index(root_paths)
 
 def progress_callback(current_inc, total_inc):
-    logger.info(f"Progress diff: {current_inc}/{total_inc}")
     try:
         publisher = _get_publisher()
         if total_inc:

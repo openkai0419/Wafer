@@ -64,7 +64,7 @@ class ThinProgressBar(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._value = 0
-        self._maximum = 100
+        self._maximum = 0
 
         self.setFixedHeight(3)
         self.setMinimumWidth(100)
@@ -219,6 +219,8 @@ class ThinProgressBar(QtWidgets.QWidget):
         painter.drawRect(0, 0, int(bar_width), rect.height())
 
     def mouseMoveEvent(self, event):
+        if self._maximum == 0:
+            return
         percent = int(self._animated_value / self._maximum * 100)            
         text = f"{int(self._animated_value)} / {self._maximum} ({percent}%)"
 
@@ -238,6 +240,8 @@ class ThinProgressBar(QtWidgets.QWidget):
         super().leaveEvent(event)
 
     def _updateTooltipText(self):
+        if self._maximum == 0:
+            return
         if self._tooltip is not None:
             percent = int(self._animated_value / self._maximum * 100)
             text = f"{int(self._animated_value)} / {self._maximum} ({percent}%)"

@@ -25,10 +25,41 @@ def _get_publisher() -> ZMQPublisher:
 
 def _notify_maximum_inc(count=1):
     try:
-        publisher = _get_publisher()
-        publisher.send("maximum", str(count))
+        _progress_aggregator.add(0, count)
     except Exception as e:
         logger.warning(f"通知失敗: {e}")
+
+class ProgressAggregator:
+    def __init__(self):
+        self.current = 0
+        self.maximum = 0
+        self._lock = threading.Lock()
+
+    def reset(self):
+        with self._lock:
+            self.current = 0
+            self.maximum = 0
+            self._notify()
+
+    def add(self, current_inc=0, total_inc=0):
+        with self._lock:
+            if total_inc:
+                self.maximum += total_inc
+            if current_inc:
+                self.current += current_inc
+            self._notify()
+            if self.maximum and self.current >= self.maximum:
+                self.reset()
+
+    def _notify(self):
+        try:
+            publisher = _get_publisher()
+            publisher.send("maximum", str(self.maximum))
+            publisher.send("progress", str(self.current))
+        except Exception as e:
+            logger.warning(f"通知失敗: {e}")
+
+_progress_aggregator = ProgressAggregator()
 
 class EventBatcher(QtCore.QObject):
     batched_deleted = QtCore.Signal(list)
@@ -203,11 +234,7 @@ class DBWorker(QtCore.QObject):
 
 def progress_callback(current_inc, total_inc):
     try:
-        publisher = _get_publisher()
-        if total_inc:
-            publisher.send("maximum", str(total_inc))
-        if current_inc:
-            publisher.send("progress", str(current_inc))
+        _progress_aggregator.add(current_inc, total_inc)
     except Exception as e:
         logger.warning(f"通知失敗: {e}")
 

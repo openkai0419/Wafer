@@ -282,8 +282,6 @@ class ImageIndexer:
         else:
             logger.info("[update_by_file_list] No updates needed.")
 
-
-
     @profiler.profile
     def remove_by_file_list(self, file_paths):
         file_paths = [p for p in file_paths if not os.path.exists(p)]
@@ -327,7 +325,8 @@ class ImageIndexer:
                 mtime, fsize = file_info[p] if file_info and p in file_info else (None, None)
                 info = read_info(p)
                 meta_info = [(str(p), str(k), str(v)) for k, v in info.items()]
-                meta_info.append((str(p), "__path__", str(p)))
+                meta_info.append((str(p), "__filepath__", str(p)))
+                meta_info.append((str(p), "__filename__", str(os.path.basename(p))))
                 return (p, aspect, mtime, fsize, meta_info, None)
             except Exception as e:
                 logger.warning(f"Failed to process {p}: {e}")

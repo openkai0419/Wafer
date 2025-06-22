@@ -40,18 +40,30 @@ class ImageIndexer:
         self._update_callback = callback
 
     def _emit_progress(self, current, total):
-        if hasattr(self, '_progress_callback') and callable(self._progress_callback):
+        last_c = getattr(self, '_last_progress_current', 0)
+        last_t = getattr(self, '_last_progress_total', 0)
+
+        diff_c = current - last_c
+        diff_t = total - last_t
+
+        if (diff_c or diff_t) and hasattr(self, '_progress_callback') and callable(self._progress_callback):
             try:
-                self._progress_callback(current, total)
+                self._progress_callback(diff_c, diff_t)
             except Exception as e:
                 logger.warning(f"Progress callback failed: {e}")
-        if current == 0:
-            return
-        if hasattr(self, '_update_callback') and callable(self._update_callback):
+
+        if diff_c > 0 and hasattr(self, '_update_callback') and callable(self._update_callback):
             try:
                 self._update_callback()
             except Exception as e:
                 logger.warning(f"notify callback failed: {e}")
+
+        if current == total:
+            self._last_progress_current = 0
+            self._last_progress_total = 0
+        else:
+            self._last_progress_current = current
+            self._last_progress_total = total
 
     def __enter__(self):
         self.start()

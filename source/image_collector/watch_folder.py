@@ -6,11 +6,22 @@ import threading
 from pathlib import Path
 
 from ..core.collector import ImageIndexer
+from ..core.zmq import ZMQPublisher
 from ..profiling import init_env
 from ..constants import data_db
 
 logger, profiler = init_env("collector")
 extensions = (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp")
+
+_publisher = None
+_publisher_lock = threading.Lock()
+
+def _get_publisher() -> ZMQPublisher:
+    global _publisher
+    with _publisher_lock:
+        if _publisher is None:
+            _publisher = ZMQPublisher()
+        return _publisher
 
 class EventBatcher(QtCore.QObject):
     batched_deleted = QtCore.Signal(list)
@@ -182,17 +193,13 @@ class DBWorker(QtCore.QObject):
 def progress_callback(current, total):
     logger.info(f"Progress: {current}/{total} ({100 * current // total}%)")
 
-def notify_gui_process(message="update_done"):
+def notify_gui_process(message: str = "update_done"):
     logger.info(f"Update: {message}")
-    def notify():
-        try:
-            from multiprocessing.connection import Client
-            conn = Client(('localhost', 6000), authkey=b'secret')
-            conn.send({'event': message})
-            conn.close()
-        except Exception as e:
-            logger.warning(f"通知失敗 (async): {e}")
-    threading.Thread(target=notify, daemon=True).start()
+    try:
+        publisher = _get_publisher()
+        publisher.send("update", message)
+    except Exception as e:
+        logger.warning(f"通知失敗: {e}")
 
 class WatchFolder:
     def __init__(self):

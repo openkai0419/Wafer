@@ -6,6 +6,7 @@ from multiprocessing.connection import Listener
 
 from .viewer.justifiedwidget import JustifiedVirtualScrollWidget
 from ..core.query import MetaInfoSearchEngine, MetaQuery
+from ..core.zmq import ZMQSubscriber
 from .widgets.multiroottree import FolderTreeView
 from .widgets.settingwidget import SingleRowOption
 from .widgets.scrollarea import InertialScrollArea, AutoScrollArea
@@ -70,22 +71,25 @@ class MainWindow(QtWidgets.QMainWindow):
         QtCore.QTimer.singleShot(0, self.search)
         self.start_ipc_listener()
 
-    def start_ipc_listener(self):
-        def listener_thread():
-            try:
-                listener = Listener(("localhost", 6000), authkey=b"secret")
-                while True:
-                    conn = listener.accept()
-                    msg = conn.recv()
-                    if isinstance(msg, dict) and "update" in msg.get("event") :
-                        logger.info(msg.get("event"))
-                        QtCore.QMetaObject.invokeMethod(self, "search", QtCore.Qt.QueuedConnection)
-                    conn.close()
-            except Exception as e:
-                logger.warning(f"IPC listener error: {e}")
+    def update_current(self, current):
+        pass
 
-        thread = threading.Thread(target=listener_thread, daemon=True)
-        thread.start()
+    def update_maximum(self, max):
+        pass
+
+    def start_ipc_listener(self):
+        def on_message(msg: str):
+            try:
+                _, event = msg.split(":", 1)
+            except ValueError:
+                event = msg
+            if "update" in event:
+                logger.info(event)
+                QtCore.QMetaObject.invokeMethod(self, "search", QtCore.Qt.QueuedConnection)
+
+        self._subscriber = ZMQSubscriber(topic_filter="update")
+        self._subscriber.connect_on_message(on_message)
+        self._subscriber.start()
 
     @profiler.profile
     def main_ui(self):

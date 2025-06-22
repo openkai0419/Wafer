@@ -111,9 +111,15 @@ class ThinProgressBar(QtWidgets.QWidget):
         self._updateTooltipText()
 
     def setMaximum(self, maximum):
-        self._maximum = max(1, maximum)
+        self._maximum = max(0, maximum)
         self.setProgress(self._value)
         self._updateTooltipText()
+
+    def addProgress(self, inc):
+        self.setProgress(self._value + inc)
+
+    def addMaximum(self, inc):
+        self.setMaximum(self._maximum + inc)
 
     def maximum(self):
         return self._maximum

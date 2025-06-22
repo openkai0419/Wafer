@@ -349,7 +349,7 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
                     return i
         return None
 
-    def reeinstall_scroll_index(self, ind):
+    def reinstall_scroll_index(self, ind):
         scroll_area = self.parent_scroll
         target_rect = self.rects[ind]
         if isinstance(scroll_area, QtWidgets.QAbstractScrollArea):
@@ -366,7 +366,7 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
             if main_setting.is_first_time("viewer/scroll"):
                 self._restore_scroll_index = main_setting.get("viewer/scroll", 30)
             if self._restore_scroll_index < len(self.rects):
-                self.reeinstall_scroll_index(self._restore_scroll_index)
+                self.reinstall_scroll_index(self._restore_scroll_index)
                 self._restore_scroll_requested = False
 
         # 高速化：画面内またはプリフェッチ対象のみジオメトリを更新

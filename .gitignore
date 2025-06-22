@@ -1,0 +1,16 @@
+venv/
+.env/
+log/
+
+# Build artifacts
+build/
+dist/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+*.db
+*.db-shm
+*.db-wal
+*.ini

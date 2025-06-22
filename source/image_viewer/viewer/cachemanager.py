@@ -2,7 +2,7 @@ from collections import OrderedDict
 from PySide6 import QtWidgets, QtGui, QtCore
 
 from ...profiling import init_env
-logger, profiler = init_env("viewer")
+logger, profiler = init_env()
 
 
 class FadeLabel(QtWidgets.QLabel):

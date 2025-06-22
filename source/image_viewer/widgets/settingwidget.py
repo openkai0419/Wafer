@@ -6,7 +6,7 @@ from ..thread import main_thread
 from ..viewer_settings import main_setting
 from ...core.query import MetaQuery
 from ...profiling import init_env
-logger, profiler = init_env("viewer")
+logger, profiler = init_env()
 
 class FolderComboSignals(QtCore.QObject):
     finished = QtCore.Signal(list)

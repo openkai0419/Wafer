@@ -2,7 +2,7 @@ import zmq
 import threading
 
 class ZMQPublisher:
-    def __init__(self, bind_addr="tcp://*:7556"):
+    def __init__(self, bind_addr="tcp://localhost:7556"):
         self.context = zmq.Context()
         self.socket = self.context.socket(zmq.PUB)
         self.socket.bind(bind_addr)

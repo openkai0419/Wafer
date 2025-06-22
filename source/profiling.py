@@ -1,49 +1,100 @@
 import logging.handlers
 import time
+import glob
+import psutil
 import threading
 import logging
 import os
+import re
 from collections import defaultdict
 from functools import wraps
 
 import sys
 from PySide6 import QtWidgets
 
-def setup_logger(identifier: str = None) -> logging.Logger:
-    import os
 
-    process_id = os.getpid()
-    log_id = identifier or str(process_id)
+def is_pid_active(pid):
+    return psutil.pid_exists(pid)
 
-    log_dir = "log"
-    os.makedirs(log_dir, exist_ok=True)  # フォルダがなければ作成
-    log_filename = os.path.join(log_dir, f'debuglog_{log_id}.log')
+def cleanup_old_logs_safe(log_dir="log", keep_latest=10):
+    log_files = sorted(
+        glob.glob(os.path.join(log_dir, "debuglog_*.log")),
+        key=os.path.getmtime,
+        reverse=True
+    )
 
-    logger = logging.getLogger(f"Profiler-{log_id}")
-    logger.setLevel(logging.DEBUG)
+    deleted = 0
+    for f in log_files[keep_latest:]:
+        match = re.search(r"debuglog_(\\d+).log", f)
+        if match:
+            pid = int(match.group(1))
+            if is_pid_active(pid):
+                continue  # プロセスが生きている場合スキップ
 
-    if not logger.hasHandlers():
-        # 1MBでローテーション、最大5ファイル保持
-        file_handler = logging.handlers.RotatingFileHandler(log_filename,
-                                                            maxBytes=100_000,
-                                                            backupCount=2, 
-                                                            encoding="utf-8",
-                                                            delay=True,
-                                                            )
-        file_handler.setLevel(logging.DEBUG)
-        file_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
+        try:
+            os.remove(f)
+            deleted += 1
+        except PermissionError:
+            continue
+        except Exception as e:
+            print(f"Warning: Failed to delete {f}: {e}")
+    return deleted
 
-        stream_handler = logging.StreamHandler()
-        stream_handler.setLevel(logging.DEBUG)
-        stream_handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
+class LoggerManager:
+    _instance = None
+    _lock = threading.Lock()
 
-        logger.addHandler(file_handler)
-        logger.addHandler(stream_handler)
+    @classmethod
+    def get_logger(cls) -> logging.Logger:
+        with cls._lock:
+            if cls._instance is not None:
+                return cls._instance
 
-    return logger
+            process_id = os.getpid()
+            log_id = str(process_id)
+
+            log_dir = "log"
+            os.makedirs(log_dir, exist_ok=True)
+            log_filename = os.path.join(log_dir, f'debuglog_{log_id}.log')
+
+            logger = logging.getLogger(f"Profiler-{log_id}")
+            logger.setLevel(logging.DEBUG)
+
+            if not logger.hasHandlers():
+                file_handler = logging.handlers.RotatingFileHandler(
+                    log_filename,
+                    maxBytes=100_000,
+                    backupCount=2,
+                    encoding="utf-8",
+                    delay=True,
+                )
+                file_handler.setLevel(logging.DEBUG)
+                file_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
+
+                stream_handler = logging.StreamHandler()
+                stream_handler.setLevel(logging.DEBUG)
+                stream_handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
+
+                logger.addHandler(file_handler)
+                logger.addHandler(stream_handler)
+
+            cls._instance = logger
+            return logger
 
 class FunctionProfiler:
-    def __init__(self, interval=10, logger_instance=None):
+    _instance = None
+    _lock = threading.Lock()
+
+    def __new__(cls, interval=10):
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __init__(self, interval=10):
+        if hasattr(self, '_initialized') and self._initialized:
+            return
+
         self.interval = interval
         self.lock = threading.Lock()
         self.data = defaultdict(lambda: {"total_time": 0.0, "self_time": 0.0, "count": 0})
@@ -51,8 +102,9 @@ class FunctionProfiler:
         self.thread = threading.Thread(target=self._report_loop, daemon=True)
         self.thread.start()
         self.local = threading.local()
-        self.enabled = True  # プロファイリングの有効/無効フラグ
-        self.logger = logger_instance or setup_logger()
+        self.enabled = True
+        self.logger = LoggerManager.get_logger()
+        self._initialized = True
 
     def profile(self, func):
         @wraps(func)
@@ -93,15 +145,16 @@ class FunctionProfiler:
         with self.lock:
             total_self_time = sum(info["self_time"] for info in self.data.values())
             if total_self_time == 0:
+                #self.logger.debug("[Profiler] No activity recorded.")
                 return
-                self.logger.debug("[Profiler] No activity recorded.")
+
             summary = []
             for name, info in self.data.items():
                 self_time = info["self_time"]
                 count = info["count"]
                 summary.append((name, self_time, count, self_time / total_self_time))
             summary.sort(key=lambda x: -x[3])
-            summary = summary[:5]  # 上位5件のみ表示
+            summary = summary[:5]
 
             self.logger.info("[Profiler] Function self-time breakdown:")
             for name, self_time, count, ratio in summary:
@@ -115,7 +168,6 @@ class FunctionProfiler:
 
     def set_enabled(self, value: bool):
         self.enabled = value
-
 
 def create_exception_hook(logger):
     def exception_hook(exc_type, exc_value, exc_traceback):
@@ -138,21 +190,16 @@ def create_exception_hook(logger):
         sys.exit(1)
     return exception_hook
 
-
-def init_env(env_name: str = None, interval: int = 5):
-    """
-    環境識別子を指定して、ロガーとプロファイラーを初期化する
-    """
-    logger = setup_logger(env_name)
+def init_env(interval: int = 5):
+    logger = LoggerManager.get_logger()
     sys.excepthook = create_exception_hook(logger)
 
-    profiler = FunctionProfiler(interval=interval, logger_instance=logger)
+    profiler = FunctionProfiler(interval=interval)
     if logger.level != logging.DEBUG:
         profiler.set_enabled(False)
 
+    cleanup_old_logs_safe(keep_latest=0)
     return logger, profiler
 
-# 利用例（__main__チェック）
 if __name__ == "__main__":
-    logger, profiler = init_env("main")
-    # 以降ここで profile 使用可
+    logger, profiler = init_env()

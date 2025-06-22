@@ -16,7 +16,7 @@ from .thread import main_thread
 from .viewer_settings import main_setting
 from ..constants import data_db
 from ..profiling import init_env
-logger, profiler = init_env("viewer")
+logger, profiler = init_env()
 
 class FullscreenWindow(QtWidgets.QWidget):
     def __init__(self, content_widget: QtWidgets.QWidget, exit_callback):

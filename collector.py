@@ -6,7 +6,7 @@ from source.mutex import SafeProcessLock
 from source.image_collector.main_tray import TrayApp
 from source.profiling import init_env
 
-logger, profiler = init_env("collector")
+logger, profiler = init_env()
 
 def main():
     try:

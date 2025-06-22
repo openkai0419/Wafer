@@ -2,7 +2,7 @@ import os
 import sqlite3
 from pathlib import Path
 from ..profiling import init_env
-logger, profiler = init_env("viewer")
+logger, profiler = init_env()
 
 class MetaQuery:
     def __init__(self, keys=None, keywords=None, query_mode="LIKE", directories=None,

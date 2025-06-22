@@ -16,7 +16,13 @@ class ZMQSubscriber:
         self.context = zmq.Context()
         self.socket = self.context.socket(zmq.SUB)
         self.socket.connect(connect_addr)
-        self.socket.setsockopt_string(zmq.SUBSCRIBE, topic_filter)
+
+        if isinstance(topic_filter, (list, tuple, set)):
+            for flt in topic_filter:
+                self.socket.setsockopt_string(zmq.SUBSCRIBE, flt)
+        else:
+            self.socket.setsockopt_string(zmq.SUBSCRIBE, topic_filter)
+
         self._callback = None
 
     def connect_on_message(self, callback):

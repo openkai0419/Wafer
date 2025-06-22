@@ -1,8 +1,4 @@
-import sys
-import os
 from PySide6 import QtWidgets, QtGui, QtCore
-import threading
-from multiprocessing.connection import Listener
 
 from .viewer.justifiedwidget import JustifiedVirtualScrollWidget
 from ..core.query import MetaInfoSearchEngine, MetaQuery
@@ -68,8 +64,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.engine = MetaInfoSearchEngine(data_db)
         self.main_ui()
-        QtCore.QTimer.singleShot(0, self.search)
         self.start_ipc_listener()
+        QtCore.QTimer.singleShot(0, self.search)
 
     @QtCore.Slot(int)
     def update_current(self, inc):

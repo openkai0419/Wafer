@@ -25,8 +25,9 @@ def main():
             tray_icon.show()
             sys.exit(app.exec())
     except FileExistsError:
-        raise
         logger.info("Collector はすでに起動中です。")
+    except:
+        raise
 
 if __name__ == "__main__":
     main()

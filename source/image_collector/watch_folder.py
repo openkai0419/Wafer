@@ -192,6 +192,13 @@ class DBWorker(QtCore.QObject):
 
 def progress_callback(current, total):
     logger.info(f"Progress: {current}/{total} ({100 * current // total}%)")
+    try:
+        publisher = _get_publisher()
+        if current == 0:
+            publisher.send("maximum", str(total))
+        publisher.send("progress", str(current))
+    except Exception as e:
+        logger.warning(f"通知失敗: {e}")
 
 def notify_gui_process(message: str = "update_done"):
     logger.info(f"Update: {message}")

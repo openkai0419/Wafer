@@ -71,23 +71,40 @@ class MainWindow(QtWidgets.QMainWindow):
         QtCore.QTimer.singleShot(0, self.search)
         self.start_ipc_listener()
 
+    @QtCore.Slot(int)
     def update_current(self, current):
-        pass
+        self.progress_bar.setProgress(int(current))
 
+    @QtCore.Slot(int)
     def update_maximum(self, max):
-        pass
+        self.progress_bar.setMaximum(int(max))
 
     def start_ipc_listener(self):
         def on_message(msg: str):
             try:
-                _, event = msg.split(":", 1)
+                topic, event = msg.split(":", 1)
             except ValueError:
-                event = msg
-            if "update" in event:
+                topic, event = msg, ""
+
+            if topic == "update":
                 logger.info(event)
                 QtCore.QMetaObject.invokeMethod(self, "search", QtCore.Qt.QueuedConnection)
+            elif topic == "progress":
+                QtCore.QMetaObject.invokeMethod(
+                    self,
+                    "update_current",
+                    QtCore.Qt.QueuedConnection,
+                    QtCore.Q_ARG(int, int(event))
+                )
+            elif topic == "maximum":
+                QtCore.QMetaObject.invokeMethod(
+                    self,
+                    "update_maximum",
+                    QtCore.Qt.QueuedConnection,
+                    QtCore.Q_ARG(int, int(event))
+                )
 
-        self._subscriber = ZMQSubscriber(topic_filter="update")
+        self._subscriber = ZMQSubscriber(topic_filter=["update", "progress", "maximum"])
         self._subscriber.connect_on_message(on_message)
         self._subscriber.start()
 

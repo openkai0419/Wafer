@@ -5,6 +5,7 @@ from .watch_folder import WatchFolder
 logger, profiler = init_env()
 
 class TrayApp(QtWidgets.QSystemTrayIcon):
+    @profiler.profile
     def __init__(self, icon, folders_to_watch, parent=None):
         super().__init__(icon, parent)
         logger.info("FOLDER WATCHER EXECUTED")

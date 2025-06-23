@@ -12,6 +12,7 @@ from .thread import main_thread
 from .viewer_settings import main_setting
 from ..constants import data_db
 from ..profiling import init_env
+
 logger, profiler = init_env()
 
 class FullscreenWindow(QtWidgets.QWidget):
@@ -42,6 +43,7 @@ class SearchWorkerRunnable(QtCore.QRunnable):
     def cancel(self):
         self._cancelled = True
 
+    @profiler.profile  # プロファイル対象に追加
     def run(self):
         if self._cancelled:
             return
@@ -50,7 +52,6 @@ class SearchWorkerRunnable(QtCore.QRunnable):
             return
         self.signals.finished.emit(paths, aspects)
 
-    
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
@@ -58,8 +59,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.resize(1000, 700)
 
         self.current_runnable = None
+        self._is_fullscreen = False
         self.run_folder = True
-        
+
         main_thread.watch_start()
 
         self.engine = MetaInfoSearchEngine(data_db)
@@ -84,30 +86,19 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def start_ipc_listener(self):
         def on_message(msg: str):
+            topic, _, event = msg.partition(":")
+            handlers = {
+                "update": lambda: QtCore.QMetaObject.invokeMethod(self, "search", QtCore.Qt.QueuedConnection),
+                "progress": lambda: QtCore.QMetaObject.invokeMethod(self, "update_current", QtCore.Qt.QueuedConnection, QtCore.Q_ARG(int, int(event))),
+                "maximum": lambda: QtCore.QMetaObject.invokeMethod(self, "update_maximum", QtCore.Qt.QueuedConnection, QtCore.Q_ARG(int, int(event))),
+                "folderchanged": lambda: QtCore.QMetaObject.invokeMethod(self, "reload_folderlist", QtCore.Qt.QueuedConnection),
+            }
             try:
-                topic, event = msg.split(":", 1)
-            except ValueError:
-                topic, event = msg, ""
+                handlers.get(topic, lambda: None)()
+            except Exception:
+                logger.exception("Error processing IPC message: %s", msg)
 
-            if topic == "update":
-                logger.info(event)
-                QtCore.QMetaObject.invokeMethod(self, "search", QtCore.Qt.QueuedConnection)
-            elif topic == "progress":
-                QtCore.QMetaObject.invokeMethod(
-                    self,
-                    "update_current",
-                    QtCore.Qt.QueuedConnection,
-                    QtCore.Q_ARG(int, int(event))
-                )
-            elif topic == "maximum":
-                QtCore.QMetaObject.invokeMethod(
-                    self,
-                    "update_maximum",
-                    QtCore.Qt.QueuedConnection,
-                    QtCore.Q_ARG(int, int(event))
-                )
-
-        self._subscriber = ZMQSubscriber(topic_filter=["update", "progress", "maximum"])
+        self._subscriber = ZMQSubscriber(topic_filter=["update", "progress", "maximum", "folderchanged"])
         self._subscriber.connect_on_message(on_message)
         self._subscriber.start()
 
@@ -117,12 +108,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setCentralWidget(self.splitter)
 
         self.base_paths = [
-        r"M:\\collect\\picture\\ーNovelAI\\1_7_NAI4",
-        r"M:\\collect\\picture\\ーNovelAI\\1_8_NAI4.5",
-        r"C:\\Users\\openk\\Downloads",
-        r"M:\\collect\\picture\\ーNovelAI\\1_6_XL",
+            r"M:\\collect\\picture\\ーNovelAI\\1_7_NAI4",
+            r"M:\\collect\\picture\\ーNovelAI\\1_8_NAI4.5",
+            r"C:\\Users\\openk\\Downloads",
+            r"M:\\collect\\picture\\ーNovelAI\\1_6_XL",
         ]
-
 
         self.folder_view = FolderTreeView(self.base_paths)
         self.folder_view.folder_selected.connect(self.on_folder_selected)
@@ -133,20 +123,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.left_layout.setSpacing(0)
         self.splitter.addWidget(left_panel)
 
-        # 使用例
-        def on_open(): print("Open clicked")
-        def on_save(): print("Save clicked")
-        def on_settings(): print("Settings clicked")
-
-        left = [
-            IconButtonConfig("icons/open.png", "Open File", on_open),
-            IconButtonConfig("icons/save.png", "Save File", on_save),
-        ]
-        right = [
-            IconButtonConfig("icons/settings.png", "Settings", on_settings, checkable=True),
-        ]
-
-        self.iconbar = IconButtonBar(left_buttons=left, right_buttons=right)
+        self.iconbar = IconButtonBar(left_buttons=[
+            IconButtonConfig("icons/open.png", "Open File", lambda: print("Open clicked")),
+            IconButtonConfig("icons/save.png", "Save File", lambda: print("Save clicked")),
+        ], right_buttons=[
+            IconButtonConfig("icons/settings.png", "Settings", lambda: print("Settings clicked"), checkable=True),
+        ])
         self.left_layout.addWidget(self.iconbar)
 
         self.progress_bar = ThinProgressBar()
@@ -162,7 +144,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.row_widget.settingchanged.connect(self.search)
         self.right_layout.addWidget(self.row_widget)
 
-        #self.viewer = InertialScrollArea()
         self.viewer = AutoScrollArea()
         self.viewer.setWidgetResizable(True)
         self.viewer.verticalScrollBar().setSingleStep(25)
@@ -183,22 +164,34 @@ class MainWindow(QtWidgets.QMainWindow):
         btn_fs.clicked.connect(self.toggle_fullscreen)
         self.right_layout.addWidget(btn_fs)
 
+    def build_search_query(self):
+        kwargs = self.row_widget.get_values()
+        kwargs.update({
+            "directories": self.folder_view.get_selected(),
+            "only_direct_children": False
+        })
+        return kwargs
+
+    @QtCore.Slot()
+    def reload_folderlist(self):
+        self.folder_view.reload_async()
+
     def toggle_fullscreen(self):
-        if self.fullscreen_window is None:
-            # self.content を一時的に切り離して新ウィンドウへ
+        if not self._is_fullscreen:
             self.viewer.setParent(None)
             self.fullscreen_window = FullscreenWindow(self.viewer, self.exit_fullscreen)
             self.fullscreen_window.showFullScreen()
+            self._is_fullscreen = True
         else:
             self.exit_fullscreen()
 
     def exit_fullscreen(self):
         if self.fullscreen_window:
-            # 元の中央レイアウトに content を戻す
             self.viewer.setParent(None)
             self.right_layout.insertWidget(1, self.viewer)
             self.fullscreen_window.close()
             self.fullscreen_window = None
+            self._is_fullscreen = False
 
     def moveEvent(self, event):
         super().moveEvent(event)
@@ -221,16 +214,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.auto_scroll()
 
     @profiler.profile
-    def search(self, *args, **kwargs):
-        kwargs = self.row_widget.get_values()
-        kwargs["directories"] = self.folder_view.get_selected()
-        kwargs["only_direct_children"] = False
+    def search(self):
+        search_kwargs = self.build_search_query()
 
         if self.current_runnable:
             self.current_runnable.cancel()
 
-        print(kwargs)
-        runnable = SearchWorkerRunnable(self.engine, kwargs)
+        runnable = SearchWorkerRunnable(self.engine, search_kwargs)
         runnable.signals.finished.connect(self.on_search_finished)
         self.current_runnable = runnable
         main_thread.start(runnable, 7)
@@ -240,7 +230,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.content.set_precalculated_meta(paths, aspects)
         self.content.reload_visible_images()
         self.row_widget.run_folder_worker()
-    
+
     def closeEvent(self, event):
         self.folder_view.save_state()
         main_setting.set("window/geometry", self.saveGeometry())

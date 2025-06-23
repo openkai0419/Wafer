@@ -41,7 +41,7 @@ class CheckableCombo(QtWidgets.QToolButton):
 
         self.menu = QtWidgets.QMenu(self)
         self.actions = []
-        self.previous_key = main_setting.get("query/keys", ["__path__"])
+        self.previous_key = main_setting.get("query/keys", ["__filepath__"])
 
         if items:
             for name, data in items:
@@ -66,13 +66,15 @@ class CheckableCombo(QtWidgets.QToolButton):
         self.menu.clear()
         self.actions.clear()
 
+        defi = None
         for i,( key, count) in enumerate(datas):
             self.add_item(f"{key} ({count})", key)
-            if key == "__path__":
+            if key == "__filepath__":
                 defi = i
         if len(self.checked_items()) == 0:
             if len(self.actions) != 0:
-                self.actions[defi].setChecked(True)
+                if defi is not None:
+                    self.actions[defi].setChecked(True)
 
         self.setUpdatesEnabled(True)
 

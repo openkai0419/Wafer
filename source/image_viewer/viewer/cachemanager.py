@@ -13,7 +13,7 @@ class FadeLabel(QtWidgets.QLabel):
         super().__init__(parent)
         self.curpath = None
 
-        self._opacity = 1.0
+        self._opacity = 0.0
 
         eff = QtWidgets.QGraphicsOpacityEffect(self, opacity=self._opacity)
         self.setGraphicsEffect(eff)

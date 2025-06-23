@@ -316,10 +316,11 @@ class ImageIndexer:
 
     @profiler.profile
     def update_meta_and_image(self, paths, file_info):
-        cur = self.get_writer_cursor()
         total = len(paths)
         start_time = time.monotonic()
         updated_count = 0
+        update_emit_interval = COMMIT_INTERVAL  # emit_update() 呼び出し間隔（秒）
+        emit_last_time = time.monotonic()
 
         def process_image(p):
             try:
@@ -327,7 +328,7 @@ class ImageIndexer:
                 reader.setAutoTransform(True)
                 size = reader.size()
                 aspect = size.width() / size.height() if size.isValid() and size.height() > 0 else 1.0
-                mtime, fsize = file_info[p] if file_info and p in file_info else (None, None)
+                mtime, fsize = file_info[p] if p in file_info else (None, None)
                 info = read_info(p)
                 meta_info = [(str(p), str(k), str(v)) for k, v in info.items()]
                 meta_info.append((str(p), "__filepath__", str(p)))
@@ -336,64 +337,68 @@ class ImageIndexer:
                 logger.warning(f"Failed to process {p}: {e}")
                 return (p, None, file_info.get(p, (None, None))[0], file_info.get(p, (None, None))[1], [], 'fail')
 
-        batch_size = RECOMMENDED_BATCH_SIZE
-        for i in range(0, total, batch_size):
-            batch = paths[i:i+batch_size]
+        for i in range(0, total, RECOMMENDED_BATCH_SIZE):
+            batch = paths[i:i+RECOMMENDED_BATCH_SIZE]
+            results = list(executor.map(process_image, batch))
+
             meta_entries = []
             image_entries = []
             meta_info_entries = []
 
-            results = list(executor.map(process_image, batch))
-
             for p, aspect, mtime, fsize, meta_info, status in results:
                 if status == 'fail':
-                    cur.execute("""
-                        INSERT INTO images (path, mtime, size, status)
-                        VALUES (?, ?, ?, 'fail')
-                        ON CONFLICT(path) DO UPDATE SET mtime = excluded.mtime, size = excluded.size, status = 'fail'
-                    """, (str(p), mtime, fsize))
+                    with self.conn:
+                        cur = self.conn.cursor()
+                        cur.execute("""
+                            INSERT INTO images (path, mtime, size, status)
+                            VALUES (?, ?, ?, 'fail')
+                            ON CONFLICT(path) DO UPDATE SET mtime = excluded.mtime, size = excluded.size, status = 'fail'
+                        """, (str(p), mtime, fsize))
+                        cur.close()
                     continue
                 meta_entries.append((str(p), aspect, mtime))
                 image_entries.append((str(p), mtime, fsize))
                 meta_info_entries.extend(meta_info)
 
             try:
-                cur.execute("BEGIN TRANSACTION")
-                if image_entries:
-                    cur.executemany("""
-                        INSERT INTO images (path, mtime, size, status)
-                        VALUES (?, ?, ?, 'ok')
-                        ON CONFLICT(path) DO UPDATE SET mtime = excluded.mtime, size = excluded.size, status = 'ok'
-                    """, image_entries)
-                if meta_entries:
-                    cur.executemany("""
-                        INSERT INTO meta (path, aspect_ratio, created)
-                        VALUES (?, ?, ?)
-                        ON CONFLICT(path) DO UPDATE SET aspect_ratio = excluded.aspect_ratio, created = excluded.created
-                    """, meta_entries)
-                if meta_info_entries:
-                    cur.executemany("""
-                        INSERT INTO meta_info (path, key, value)
-                        VALUES (?, ?, ?)
-                        ON CONFLICT(path, key) DO UPDATE SET value = excluded.value
-                    """, meta_info_entries)
-                updated_count += len(batch)
-                self.conn.commit()
+                with self.conn:
+                    cur = self.conn.cursor()
+                    if image_entries:
+                        cur.executemany("""
+                            INSERT INTO images (path, mtime, size, status)
+                            VALUES (?, ?, ?, 'ok')
+                            ON CONFLICT(path) DO UPDATE SET mtime = excluded.mtime, size = excluded.size, status = 'ok'
+                        """, image_entries)
+                    if meta_entries:
+                        cur.executemany("""
+                            INSERT INTO meta (path, aspect_ratio, created)
+                            VALUES (?, ?, ?)
+                            ON CONFLICT(path) DO UPDATE SET aspect_ratio = excluded.aspect_ratio, created = excluded.created
+                        """, meta_entries)
+                    if meta_info_entries:
+                        cur.executemany("""
+                            INSERT INTO meta_info (path, key, value)
+                            VALUES (?, ?, ?)
+                            ON CONFLICT(path, key) DO UPDATE SET value = excluded.value
+                        """, meta_info_entries)
+                    cur.close()
             except Exception as e:
                 logger.error(f"Transaction failed at batch {i+len(batch)}/{total}: {e}")
-                cur.execute("ROLLBACK")
 
-            if (time.monotonic() - start_time) > COMMIT_INTERVAL:
+            updated_count += len(batch)
+            now = time.monotonic()
+            if (now - emit_last_time) > update_emit_interval:
                 self._emit_progress(updated_count, 0)
                 self.emit_update()
                 logger.info(f"[Time Commit] Committed after {i+len(batch)} / {total} items")
-                start_time = time.monotonic()
+                emit_last_time = now
                 updated_count = 0
 
-        self.conn.commit()
-        self._emit_progress(updated_count, 0)
-        self.emit_update()
-        logger.info(f"[Final Commit] update_meta_and_image completed {i+len(batch)} / {total} items")
+        # 最後に一度だけ通知
+        if updated_count > 0:
+            self._emit_progress(updated_count, 0)
+            self.emit_update()
+            logger.info(f"[Final Commit] update_meta_and_image completed {total} items")
 
     @profiler.profile
     def clean_unused(self):

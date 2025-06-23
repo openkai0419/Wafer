@@ -21,12 +21,8 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
 
         self.folder_watcher = WatchFolder()
         self.folder_watcher.start(self.folders_to_watch)
-        self.folder_watcher.event_batcher.folder_changed.connect(self.on_path_changed)
 
         QtCore.QTimer.singleShot(0, lambda: self.folder_watcher.rescan_all(self.folders_to_watch))
-
-    def on_path_changed(self):
-        pass
 
     def on_activated(self, reason):
         if reason == QtWidgets.QSystemTrayIcon.Trigger:

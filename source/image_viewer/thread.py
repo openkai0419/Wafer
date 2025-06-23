@@ -1,4 +1,5 @@
 import psutil
+import threading
 import multiprocessing
 from enum import Enum
 from PySide6 import QtWidgets, QtGui, QtCore
@@ -7,6 +8,15 @@ from ..profiling import init_env
 logger, profiler = init_env()
 
 class AdaptiveThreadPool:
+    _instance = None
+    _lock = threading.Lock()
+
+    def __new__(cls, *args, **kwargs):
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = super().__new__(cls, *args, **kwargs)
+        return cls._instance
+
     def __init__(self, base_limit= -2, max_limit= -2, cpu_threshold=65):
         super().__init__()
         self.pool = QtCore.QThreadPool.globalInstance()

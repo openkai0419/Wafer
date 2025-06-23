@@ -66,7 +66,7 @@ _progress_aggregator = ProgressAggregator()
 class EventBatcher(QtCore.QObject):
     batched_deleted = QtCore.Signal(list)
     batched_changed = QtCore.Signal(list)
-    folder_changed = QtCore.Signal()
+    folder_changed = QtCore.Signal(str)
 
     def __init__(self, interval_ms=1000):
         super().__init__()
@@ -90,11 +90,15 @@ class EventBatcher(QtCore.QObject):
             _notify_maximum_inc(1)
 
     def path_changed(self, path):
-        self._pathchanged = True
+        self._pathchanged = path
 
     @profiler.profile
     def flush(self):
         if self._processing:
+            return
+        if self._pathchanged:
+            self.folder_changed.emit(self._pathchanged)
+            self._pathchanged = None
             return
         if self._deleted:
             self._processing = True
@@ -106,9 +110,6 @@ class EventBatcher(QtCore.QObject):
             self.batched_changed.emit(list(self._changed))
             self._changed.clear()
             return
-        if self._pathchanged:
-            self.folder_changed.emit()
-            self._pathchanged = False
     
     @QtCore.Slot()
     def on_db_finished(self):
@@ -245,6 +246,15 @@ class DBWorker(QtCore.QObject):
             indexer.update_index(root_paths)
 
 @profiler.profile
+def filechange_callback(folder):
+    logger.info(f"folder changed: {folder}")
+    try:
+        publisher = _get_publisher()
+        publisher.send("folderchanged", str(folder))
+    except Exception as e:
+        logger.warning(f"通知失敗: {e}")
+    
+@profiler.profile
 def progress_callback(current_inc, total_inc):
     try:
         _progress_aggregator.add(current_inc, total_inc)
@@ -279,6 +289,7 @@ class WatchFolder:
 
         self.event_batcher.batched_deleted.connect(self.db_worker.remove_files)
         self.event_batcher.batched_changed.connect(self.db_worker.update_files)
+        self.event_batcher.folder_changed.connect(filechange_callback)
         self.db_worker.finished.connect(self.event_batcher.on_db_finished)
 
     @profiler.profile

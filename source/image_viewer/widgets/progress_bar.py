@@ -204,7 +204,7 @@ class ThinProgressBar(QtWidgets.QWidget):
         if bar_width <= 0:
             return
 
-        glow_width = int(bar_width * 0.4)
+        glow_width = max(uipx(10), int(bar_width * 0.4))
         glow_x = int((bar_width + glow_width) * self._glow_offset - glow_width)
 
         gradient = QtGui.QLinearGradient(glow_x, 0, glow_x + glow_width, 0)

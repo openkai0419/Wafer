@@ -40,6 +40,7 @@ def cleanup_old_logs_safe(log_dir="log", keep_latest=10):
             except Exception as e:
                 print(f"Warning: Failed to delete {f}: {e}")
     return deleted
+    
 class LoggerManager:
     _instance = None
     _lock = threading.Lock()

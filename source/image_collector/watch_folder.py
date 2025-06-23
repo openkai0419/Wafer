@@ -128,7 +128,7 @@ class FileChangeHandler(FileSystemEventHandler):
 
     @profiler.profile
     def on_moved(self, event):
-        if event.is_directory:
+        if event.is_directory and self.on_folder_changed:
             self.on_folder_changed(event.src_path)
             return
         if self.on_deleted_func:
@@ -138,7 +138,7 @@ class FileChangeHandler(FileSystemEventHandler):
 
     @profiler.profile
     def on_modified(self, event):
-        if event.is_directory:
+        if event.is_directory and self.on_folder_changed:
             self.on_folder_changed(event.src_path)
             return
         if self.on_changed_func:
@@ -146,7 +146,7 @@ class FileChangeHandler(FileSystemEventHandler):
 
     @profiler.profile
     def on_created(self, event):
-        if event.is_directory:
+        if event.is_directory and self.on_folder_changed:
             self.on_folder_changed(event.src_path)
             return
         if self.on_changed_func:
@@ -154,7 +154,7 @@ class FileChangeHandler(FileSystemEventHandler):
 
     @profiler.profile
     def on_deleted(self, event):
-        if event.is_directory:
+        if event.is_directory and self.on_folder_changed:
             self.on_folder_changed(event.src_path)
             return
         if self.on_deleted_func:

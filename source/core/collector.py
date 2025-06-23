@@ -36,7 +36,6 @@ class ImageIndexer:
         self.start()
         self._initialize_database()
         self._ensure_schema()
-
     
     def set_progress_callback(self, callback):
         self._progress_callback = callback
@@ -44,9 +43,11 @@ class ImageIndexer:
     def set_update_callback(self, callback):
         self._update_callback = callback
 
+    @profiler.profile
     def emit_update(self):
         self._update_callback()
 
+    @profiler.profile
     def _emit_progress(self, current, total):
         self._progress_callback(current, total)
 
@@ -57,6 +58,7 @@ class ImageIndexer:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.exit()
     
+    @profiler.profile
     def start(self):
         self.conn = sqlite3.connect(self.db_path, timeout=10.0, check_same_thread=False)
         self._apply_pragmas(self.conn)
@@ -64,12 +66,14 @@ class ImageIndexer:
         self.read_conn = sqlite3.connect(f"file:{self.db_path}?mode=ro&immutable=1", uri=True)
         self._apply_pragmas(self.read_conn, read_only=True)
 
+    @profiler.profile
     def exit(self):
         if self.conn:
             self.conn.close()
         if self.read_conn:
             self.read_conn.close()
 
+    @profiler.profile
     def _apply_pragmas(self, conn, read_only=False):
         if read_only:
             conn.execute("PRAGMA temp_store = MEMORY")
@@ -86,6 +90,7 @@ class ImageIndexer:
     def get_reader_cursor(self):
         return self.read_conn.cursor()
 
+    @profiler.profile
     def _initialize_database(self):
         try:
             if not self._integrity_check():
@@ -94,6 +99,7 @@ class ImageIndexer:
             logger.warning(f"[ERROR] DB corrupted: {e}")
             self._backup_and_recreate()
 
+    @profiler.profile
     def _integrity_check(self) -> bool:
         try:
             result = self.conn.execute("PRAGMA integrity_check").fetchone()
@@ -102,6 +108,7 @@ class ImageIndexer:
             logger.warning(f"[WARN] integrity_check failed: {e}")
             return False
 
+    @profiler.profile
     def _backup_and_recreate(self):
         if self.conn:
             self.conn.close()
@@ -152,6 +159,7 @@ class ImageIndexer:
         cur.execute("CREATE INDEX IF NOT EXISTS idx_images_path ON images(path)")
         cur.close()
 
+    @profiler.profile
     def _detect_diff(self, current, previous):
         added_or_modified = [p for p in current if p not in previous or current[p] != previous[p]]
         removed = [p for p in previous if p not in current]
@@ -219,20 +227,22 @@ class ImageIndexer:
 
         cur = self.get_writer_cursor()
 
-        if added_or_modified:
-            self.update_meta_and_image(added_or_modified, current)
-
         if removed:
             for i in range(0, len(removed), CHUNK):
+                logger.info(i)
                 chunk = removed[i:i+CHUNK]
                 cur.executemany("DELETE FROM images WHERE path = ?", [(str(p),) for p in chunk])
                 cur.executemany("DELETE FROM meta WHERE path = ?", [(str(p),) for p in chunk])
                 cur.executemany("DELETE FROM meta_info WHERE path = ?", [(str(p),) for p in chunk])
                 self._emit_progress(len(chunk), 0)
             logger.info(f"deleted {len(removed)} files")
+            self.conn.commit()
+            self.emit_update()
 
-        self.conn.commit()
-        self.emit_update()
+        if added_or_modified:
+            logger.info("added_or_modified")
+            self.update_meta_and_image(added_or_modified, current)
+    
         cur.close()
 
 
@@ -383,7 +393,7 @@ class ImageIndexer:
         self.conn.commit()
         self._emit_progress(updated_count, 0)
         self.emit_update()
-        logger.info(f"[Final Commit] update_meta_and_image completed with final {i+len(batch)} / {total} items")
+        logger.info(f"[Final Commit] update_meta_and_image completed {i+len(batch)} / {total} items")
 
     @profiler.profile
     def clean_unused(self):

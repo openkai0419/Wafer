@@ -96,7 +96,6 @@ class FunctionProfiler:
             return
 
         self.interval = interval
-        self.lock = threading.Lock()
         self.data = defaultdict(lambda: {"total_time": 0.0, "self_time": 0.0, "count": 0})
         self._stop_event = threading.Event()
         self.thread = threading.Thread(target=self._report_loop, daemon=True)
@@ -126,11 +125,10 @@ class FunctionProfiler:
                 duration = end_time - record["start"]
                 self_time = duration - record["children"]
 
-                with self.lock:
-                    info = self.data[func.__qualname__]
-                    info["total_time"] += duration
-                    info["self_time"] += self_time
-                    info["count"] += 1
+                info = self.data[func.__qualname__]
+                info["total_time"] += duration
+                info["self_time"] += self_time
+                info["count"] += 1
 
                 if self.local.stack:
                     self.local.stack[-1]["children"] += duration
@@ -142,25 +140,24 @@ class FunctionProfiler:
                 self.report()
 
     def report(self):
-        with self.lock:
-            total_self_time = sum(info["self_time"] for info in self.data.values())
-            if total_self_time == 0:
-                #self.logger.debug("[Profiler] No activity recorded.")
-                return
+        total_self_time = sum(info["self_time"] for info in self.data.values())
+        if total_self_time == 0:
+            #self.logger.debug("[Profiler] No activity recorded.")
+            return
 
-            summary = []
-            for name, info in self.data.items():
-                self_time = info["self_time"]
-                count = info["count"]
-                summary.append((name, self_time, count, self_time / total_self_time))
-            summary.sort(key=lambda x: -x[3])
-            summary = summary[:5]
+        summary = []
+        for name, info in self.data.items():
+            self_time = info["self_time"]
+            count = info["count"]
+            summary.append((name, self_time, count, self_time / total_self_time))
+        summary.sort(key=lambda x: -x[3])
+        summary = summary[:5]
 
-            self.logger.info("[Profiler] Function self-time breakdown:")
-            for name, self_time, count, ratio in summary:
-                self.logger.info(f"  {name:<30} : {self_time:.3f}s ({ratio:.1%}) - {count} calls")
+        self.logger.info("[Profiler] Function self-time breakdown:")
+        for name, self_time, count, ratio in summary:
+            self.logger.info(f"  {name:<30} : {self_time:.3f}s ({ratio:.1%}) - {count} calls")
 
-            self.data.clear()
+        self.data.clear()
 
     def stop(self):
         self._stop_event.set()

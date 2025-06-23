@@ -16,6 +16,7 @@ extensions = (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp")
 _publisher = None
 _publisher_lock = threading.Lock()
 
+@profiler.profile
 def _get_publisher() -> ZMQPublisher:
     global _publisher
     with _publisher_lock:
@@ -23,6 +24,7 @@ def _get_publisher() -> ZMQPublisher:
             _publisher = ZMQPublisher()
         return _publisher
 
+@profiler.profile
 def _notify_maximum_inc(count=1):
     try:
         _progress_aggregator.add(0, count)
@@ -33,24 +35,24 @@ class ProgressAggregator:
     def __init__(self):
         self.current = 0
         self.maximum = 0
-        self._lock = threading.Lock()
 
     def reset(self):
-        with self._lock:
-            self.current = 0
-            self.maximum = 0
-            self._notify()
+        self.current = 0
+        self.maximum = 0
+        self._notify()
 
+    @profiler.profile
     def add(self, current_inc=0, total_inc=0):
-        with self._lock:
-            if total_inc:
-                self.maximum += total_inc
-            if current_inc:
-                self.current += current_inc
-            self._notify()
-            if self.maximum and self.current >= self.maximum:
-                self.reset()
+        if total_inc:
+            self.maximum += total_inc
+        if current_inc:
+            self.current += current_inc
+        self._notify()
+        if self.maximum and self.current >= self.maximum:
+            pass
+            #self.reset()
 
+    @profiler.profile
     def _notify(self):
         try:
             publisher = _get_publisher()
@@ -90,6 +92,7 @@ class EventBatcher(QtCore.QObject):
     def path_changed(self, path):
         self._pathchanged = True
 
+    @profiler.profile
     def flush(self):
         if self._processing:
             return
@@ -106,7 +109,7 @@ class EventBatcher(QtCore.QObject):
         if self._pathchanged:
             self.folder_changed.emit()
             self._pathchanged = False
-
+    
     @QtCore.Slot()
     def on_db_finished(self):
         self._processing = False
@@ -122,6 +125,7 @@ class FileChangeHandler(FileSystemEventHandler):
         self.on_folder_changed = on_folder_changed
         self.extensions = set(e.lower() for e in (extensions or []))
 
+    @profiler.profile
     def on_moved(self, event):
         if event.is_directory:
             self.on_folder_changed(event.src_path)
@@ -131,6 +135,7 @@ class FileChangeHandler(FileSystemEventHandler):
         if self.on_changed_func:
             self.on_changed_func(event.dest_path)
 
+    @profiler.profile
     def on_modified(self, event):
         if event.is_directory:
             self.on_folder_changed(event.src_path)
@@ -138,6 +143,7 @@ class FileChangeHandler(FileSystemEventHandler):
         if self.on_changed_func:
             self.on_changed_func(event.src_path)
 
+    @profiler.profile
     def on_created(self, event):
         if event.is_directory:
             self.on_folder_changed(event.src_path)
@@ -145,6 +151,7 @@ class FileChangeHandler(FileSystemEventHandler):
         if self.on_changed_func:
             self.on_changed_func(event.src_path)
 
+    @profiler.profile
     def on_deleted(self, event):
         if event.is_directory:
             self.on_folder_changed(event.src_path)
@@ -164,6 +171,7 @@ class FolderWatcherThread(QtCore.QThread):
         self.observer = None
         self.running = True
 
+    @profiler.profile
     def run(self):
         print("[DEBUG] FolderWatcherThread.run() started")
         try:
@@ -193,15 +201,19 @@ class FolderWatcherThread(QtCore.QThread):
                 self.observer.stop()
                 self.observer.join()
 
+    @profiler.profile
     def _on_file_deleted(self, path):
         self.file_deleted.emit(path)
 
+    @profiler.profile
     def _on_changed_func(self, path):
         self.file_changed.emit(path)
 
+    @profiler.profile
     def _on_folder_changed(self, path):
         self.folder_changed.emit(path)
 
+    @profiler.profile
     def stop(self):
         self.running = False
         if self.observer and self.observer.is_alive():
@@ -232,12 +244,14 @@ class DBWorker(QtCore.QObject):
         with self.database as indexer:
             indexer.update_index(root_paths)
 
+@profiler.profile
 def progress_callback(current_inc, total_inc):
     try:
         _progress_aggregator.add(current_inc, total_inc)
     except Exception as e:
         logger.warning(f"通知失敗: {e}")
 
+@profiler.profile
 def notify_gui_process(message: str = "update_done"):
     logger.info(f"Update: {message}")
     try:
@@ -247,6 +261,7 @@ def notify_gui_process(message: str = "update_done"):
         logger.warning(f"通知失敗: {e}")
 
 class WatchFolder:
+    @profiler.profile
     def __init__(self):
         super().__init__()
 
@@ -266,9 +281,11 @@ class WatchFolder:
         self.event_batcher.batched_changed.connect(self.db_worker.update_files)
         self.db_worker.finished.connect(self.event_batcher.on_db_finished)
 
+    @profiler.profile
     def rescan_all(self, paths):
         self.db_worker.rescan_all(paths)
 
+    @profiler.profile
     def start(self, folders):
         if self.watcher_thread:
             self.watcher_thread.stop()
@@ -280,6 +297,7 @@ class WatchFolder:
         self.watcher_thread.folder_changed.connect(self.event_batcher.path_changed)
         self.watcher_thread.start()
 
+    @profiler.profile
     def quit(self):
         logger.info("Quitting TrayApp")
         if self.watcher_thread:

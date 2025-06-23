@@ -72,7 +72,7 @@ class ThinProgressBar(QtWidgets.QWidget):
 
         self._color_opacity = 0.0
         self._opacity_animation = QtCore.QVariantAnimation()
-        self._opacity_animation.setDuration(300)
+        self._opacity_animation.setDuration(200)
         self._opacity_animation.valueChanged.connect(self.setColorOpacity)
 
         self._value_animation = QtCore.QVariantAnimation()
@@ -83,7 +83,7 @@ class ThinProgressBar(QtWidgets.QWidget):
         self._glow_offset = 0.0
         self._glow_timer = QtCore.QTimer(self)
         self._glow_timer.timeout.connect(self._updateGlow)
-        self._glow_timer.start(30)
+        self._glow_timer.start(15)
 
         self._base_color = QtGui.QColor(0, 255, 0)
         self._tooltip = None
@@ -97,15 +97,16 @@ class ThinProgressBar(QtWidgets.QWidget):
     def setProgress(self, value):
         value = max(0, min(self._maximum, value))
 
-        if value == 0 or value == self._maximum:
-            self.fadeOut()
-        else:
-            self.fadeIn()
-
         self._value_animation.stop()
         self._value_animation.setStartValue(self._animated_value)
         self._value_animation.setEndValue(value)
         self._value_animation.start()
+
+        if value == 0 or value == self._maximum:
+            self.fadeOut()
+            value = 0
+        else:
+            self.fadeIn()
 
         self._value = value
         self._updateTooltipText()

@@ -21,6 +21,7 @@ class MetaQuery:
         self.splittext = splittext
         self.only_direct_children = only_direct_children
 
+    @profiler.profile
     def normalize_inputs(self):
         keys = [self.keys] if isinstance(self.keys, str) else (self.keys or [])
         keywords = self.keywords
@@ -30,6 +31,7 @@ class MetaQuery:
         exclude = [kw[1:] for kw in (keywords or []) if kw.startswith("-")]
         return keys, include, exclude
 
+    @profiler.profile
     def build_conditions(self, normalize_path_func, require_keys=True):
         keys, include_keywords, exclude_keywords = self.normalize_inputs()
         if require_keys and not keys:
@@ -79,12 +81,14 @@ class MetaQuery:
 
         return conditions, params, keys
 
+    @profiler.profile
     def to_sql(self, normalize_path_func):
         conditions, params, keys = self.build_conditions(normalize_path_func)
         if not keys:
             return None, None
         return f"SELECT path, key, value FROM meta_info WHERE {' AND '.join(conditions)}", params
 
+    @profiler.profile
     def to_path_query(self, normalize_path_func):
         conditions, params, keys = self.build_conditions(normalize_path_func)
         if not keys:
@@ -244,3 +248,26 @@ class MetaInfoSearchEngine:
         query_sql = f"SELECT key, COUNT(*) as freq FROM meta_info {where_clause} {group_order_clause}"
         rows = cur.execute(query_sql, params).fetchall()
         return [(row["key"], row["freq"]) if include_freq else row["key"] for row in rows]
+
+    @profiler.profile
+    def explain_query_plan(self, query: MetaQuery):
+        if not self._connect_if_needed():
+            logger.warning("DB接続失敗：explain_query_plan スキップ")
+            return None
+
+        sql, params = query.to_sql(self._normalize_path)
+        if not sql:
+            logger.info("無効なクエリのため EXPLAIN QUERY PLAN をスキップ")
+            return None
+
+        explain_sql = f"EXPLAIN QUERY PLAN {sql}"
+        try:
+            cur = self.conn.cursor()
+            rows = cur.execute(explain_sql, params).fetchall()
+            plan_lines = [f"[{row['id']}] {row['detail']}" for row in rows]
+            logger.info("=== SQLite 実行計画 ===")
+            for line in plan_lines:
+                logger.info(line)
+        except Exception as e:
+            logger.warning(f"EXPLAIN QUERY PLAN failed: {e}")
+            return None

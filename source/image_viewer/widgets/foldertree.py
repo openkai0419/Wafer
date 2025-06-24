@@ -17,7 +17,7 @@ def list_subfolders(path):
         return []
 
 class FolderTreeBuilderSignal(QtCore.QObject):
-    finished = QtCore.Signal(object)  # List[Dict[str, Dict]] を送る
+    finished = QtCore.Signal(object)  # List[Dict[str, Dict]]
 
 class FolderTreeBuildTask(QtCore.QRunnable):
     def __init__(self, root_paths):
@@ -47,7 +47,6 @@ class FolderTreeBuildTask(QtCore.QRunnable):
         self.signal_obj.finished.emit(result)
 
 class FolderTreeModel(QtGui.QStandardItemModel):
-
     def __init__(self, root_paths):
         super().__init__()
         self.root_paths = root_paths
@@ -79,6 +78,7 @@ class FolderTreeModel(QtGui.QStandardItemModel):
                 item = QtGui.QStandardItem(QtGui.QIcon.fromTheme("folder"), entry.name)
                 item.setData(entry.path, QtCore.Qt.UserRole)
                 parent_item.appendRow(item)
+                item.sortChildren(0)
                 stack.append((item, entry.path))
 
     @profiler.profile
@@ -86,7 +86,7 @@ class FolderTreeModel(QtGui.QStandardItemModel):
         if new_path and new_path not in self.root_paths:
             self.root_paths.append(new_path)
             self.add_new_root_if_missing(new_path)
-
+        
 class FolderTreeView(QtWidgets.QTreeView):
     folder_selected = QtCore.Signal(list)
 
@@ -99,7 +99,11 @@ class FolderTreeView(QtWidgets.QTreeView):
         self.clicked.connect(self._on_item_clicked)
         self.viewport().installEventFilter(self)
         self._reload_task_running = False
+        self._reload_task = None
+        self._path_to_item = {}
         self.restore_state()
+
+        self.context_menu_builder=None
 
     def set_root_paths(self, new_paths: list[str], reset_state=True):
         self.model_.root_paths = new_paths[:]
@@ -109,32 +113,42 @@ class FolderTreeView(QtWidgets.QTreeView):
             self.set_state([], []) 
         else:
             self.set_state(a, b)
+        self.model_.sort(0)
+
+    def cancel_reload(self):
+        if self._reload_task:
+            self._reload_task.abort()
 
     def reload_async(self):
-        if self._reload_task_running:
-            return
+        self.cancel_reload()
         self._reload_task_running = True
-        task = FolderTreeBuildTask(self.model_.root_paths)
-        task.signal_obj.finished.connect(self._on_reload_complete)
-        main_thread.start(task)
+        self._reload_task = FolderTreeBuildTask(self.model_.root_paths)
+        self._reload_task.signal_obj.finished.connect(self._on_reload_complete)
+        main_thread.start(self._reload_task)
 
     def _on_reload_complete(self, tree_data_list):
         a, b = self.get_state()
         self.model_.clear()
         self.model_.setHorizontalHeaderLabels(["Folders"])
+        self._path_to_item = {}
+
         for tree_data in tree_data_list:
             for root_path, children in tree_data.items():
-                item = self.build_items_recursive(root_path, children)
+                item = self.build_items_recursive(root_path, children, self._path_to_item)
                 self.model_.appendRow(item)
+
         self.set_state(a, b)
         self._reload_task_running = False
 
-    def build_items_recursive(self, path, children_dict):
+    def build_items_recursive(self, path, children_dict, lookup: dict):
         name = os.path.basename(path) or path
         item = QtGui.QStandardItem(QtGui.QIcon.fromTheme("folder"), name)
         item.setData(path, QtCore.Qt.UserRole)
-        for child_path, subchildren in children_dict.items():
-            item.appendRow(self.build_items_recursive(child_path, subchildren))
+        lookup[path] = item
+        for child_path, subchildren in sorted(children_dict.items()):
+            child_item = self.build_items_recursive(child_path, subchildren, lookup)
+            item.appendRow(child_item)
+        item.sortChildren(0)
         return item
 
     @profiler.profile
@@ -152,6 +166,7 @@ class FolderTreeView(QtWidgets.QTreeView):
     def add_path(self, new_path):
         self.model_.add_root_path(new_path)
         self.set_state(*self.get_state())
+        self.model_.sort(0)
 
     @profiler.profile
     def eventFilter(self, source, event):
@@ -161,6 +176,19 @@ class FolderTreeView(QtWidgets.QTreeView):
                 self.clearSelection()
                 self.folder_selected.emit(None)
         return super().eventFilter(source, event)
+
+    def set_context_menu_builder(self, builder):
+        self.context_menu_builder = builder
+
+    def contextMenuEvent(self, event: QtGui.QContextMenuEvent):
+        index = self.indexAt(event.pos())
+        if not index.isValid():
+            return
+
+        path = index.data(QtCore.Qt.UserRole)
+        if self.context_menu_builder:
+            menu = self.context_menu_builder.build_menu(path)
+            menu.exec(event.globalPos())
 
     @profiler.profile
     def get_state(self):
@@ -207,17 +235,10 @@ class FolderTreeView(QtWidgets.QTreeView):
             expand_matching(index)
 
         if selected_paths:
-            def find_indexes_by_paths(paths, index=QtCore.QModelIndex()):
-                found = []
-                for row in range(self.model().rowCount(index)):
-                    child_index = self.model().index(row, 0, index)
-                    child_path = child_index.data(QtCore.Qt.UserRole)
-                    if child_path in paths:
-                        found.append(child_index)
-                    found.extend(find_indexes_by_paths(paths, child_index))
-                return found
-
-            indexes_to_select = find_indexes_by_paths(selected_paths)
+            indexes_to_select = [
+                self.model_.indexFromItem(self._path_to_item[p])
+                for p in selected_paths if p in self._path_to_item
+            ]
             selection_model = self.selectionModel()
             selection_model.clearSelection()
             for idx in indexes_to_select:
@@ -225,6 +246,7 @@ class FolderTreeView(QtWidgets.QTreeView):
             if indexes_to_select:
                 self.setCurrentIndex(indexes_to_select[0])
                 self.scrollTo(indexes_to_select[0], QtWidgets.QAbstractItemView.PositionAtCenter)
+        self.model_.sort(0)
 
     @profiler.profile
     def restore_state(self):

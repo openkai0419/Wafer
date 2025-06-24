@@ -15,13 +15,7 @@ def main():
             icon = QtGui.QIcon.fromTheme("folder")
             if icon.isNull():
                 icon = QtGui.QIcon()
-            folders_to_watch = [
-                r"M:\\collect\\picture\\ーNovelAI\\1_7_NAI4",
-                r"M:\\collect\\picture\\ーNovelAI\\1_8_NAI4.5",
-                r"C:\\Users\\openk\\Downloads",
-                r"M:\\collect\\picture\\ーNovelAI\\1_6_XL",
-            ]
-            tray_icon = TrayApp(icon, folders_to_watch)
+            tray_icon = TrayApp(icon)
             tray_icon.show()
             sys.exit(app.exec())
     except FileExistsError:

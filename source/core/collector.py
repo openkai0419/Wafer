@@ -140,6 +140,8 @@ class ImageIndexer:
             CREATE TABLE IF NOT EXISTS meta (
                 path TEXT PRIMARY KEY,
                 aspect_ratio REAL,
+                mtime REAL,
+                size INTEGER,
                 created REAL,
                 FOREIGN KEY(path) REFERENCES images(path) ON DELETE CASCADE
             )
@@ -356,7 +358,7 @@ class ImageIndexer:
                         """, (str(p), mtime, fsize))
                         cur.close()
                     continue
-                meta_entries.append((str(p), aspect, mtime))
+                meta_entries.append((str(p), aspect, mtime, fsize, mtime))
                 image_entries.append((str(p), mtime, fsize))
                 meta_info_entries.extend(meta_info)
 
@@ -371,9 +373,9 @@ class ImageIndexer:
                         """, image_entries)
                     if meta_entries:
                         cur.executemany("""
-                            INSERT INTO meta (path, aspect_ratio, created)
-                            VALUES (?, ?, ?)
-                            ON CONFLICT(path) DO UPDATE SET aspect_ratio = excluded.aspect_ratio, created = excluded.created
+                            INSERT INTO meta (path, aspect_ratio, mtime, size, created)
+                            VALUES (?, ?, ?, ?, ?)
+                            ON CONFLICT(path) DO UPDATE SET aspect_ratio = excluded.aspect_ratio, mtime = excluded.mtime, size = excluded.size, created = excluded.created
                         """, meta_entries)
                     if meta_info_entries:
                         cur.executemany("""

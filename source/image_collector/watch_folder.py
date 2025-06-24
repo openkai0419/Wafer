@@ -309,8 +309,8 @@ class WatchFolder:
         self.watcher_thread.folder_changed.connect(self.event_batcher.path_changed)
         self.watcher_thread.start()
         atexit.register(self.quit)
-        
-        QtCore.QTimer.singleShot(0, lambda: self.rescan_all(folders))
+
+        self.rescan_all(folders)
 
     @profiler.profile
     def quit(self):

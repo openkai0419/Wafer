@@ -1,5 +1,7 @@
 import os
 import sqlite3
+from operator import attrgetter
+from random import shuffle
 from pathlib import Path
 from ..profiling import init_env
 logger, profiler = init_env()
@@ -126,6 +128,7 @@ class MetaInfoSearchEngine:
     def _normalize_path(self, path):
         return path.replace('\\', '/').rstrip('/')
 
+    @profiler.profile
     def _build_sort_clause(self, sort_by, ascending):
         sort_column_map = {
             "name": "meta.path",
@@ -140,24 +143,32 @@ class MetaInfoSearchEngine:
         order = "ASC" if ascending else "DESC"
         return sort_column, order
 
-    def _fetch_paths_with_aspect_ratio(self, cur, paths, sort_by, ascending):
+    @profiler.profile
+    def _fetch_paths_with_aspect_ratio(self, cur, paths, sort_by, ascending, batch_size=700):
         if not paths:
             return [], []
 
         sort_column, order = self._build_sort_clause(sort_by, ascending)
-        values_clause = ", ".join(["(?)"] * len(paths))
-        query = f"""
-            WITH path_list(path) AS (
-                VALUES {values_clause}
-            )
-            SELECT meta.path, aspect_ratio
-            FROM meta
-            JOIN images ON meta.path = images.path
-            JOIN path_list ON meta.path = path_list.path
-            ORDER BY {sort_column} {order}
-        """
-        rows = cur.execute(query, paths).fetchall()
-        return [row["path"] for row in rows], [row["aspect_ratio"] for row in rows]
+
+        all_rows = []
+        for i in range(0, len(paths), batch_size):
+            batch = paths[i:i + batch_size]
+            placeholders = ",".join("?" for _ in batch)
+            query = f"""
+                SELECT meta.path, aspect_ratio, {sort_column} AS sort_value
+                FROM meta
+                WHERE meta.path IN ({placeholders})
+            """
+            rows = cur.execute(query, batch).fetchall()
+            all_rows.extend(rows)
+
+        if sort_by == "random":
+            shuffle(all_rows)
+        else:
+            # sort_value に基づいてソート
+            all_rows.sort(key=lambda row: row["sort_value"], reverse=not ascending)
+
+        return [row["path"] for row in all_rows], [row["aspect_ratio"] for row in all_rows]
 
     @profiler.profile
     def search(self, query):

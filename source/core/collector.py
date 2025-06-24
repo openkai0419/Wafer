@@ -158,7 +158,18 @@ class ImageIndexer:
         cur.execute("CREATE INDEX IF NOT EXISTS idx_meta_info_path ON meta_info(path)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_meta_info_key ON meta_info(key)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_meta_info_value ON meta_info(value)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_meta_info_path_key ON meta_info(path, key)")
+
         cur.execute("CREATE INDEX IF NOT EXISTS idx_images_path ON images(path)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_images_size ON images(size)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_images_mtime ON images(mtime)")
+        
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_meta_path ON meta(path)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_meta_aspect_ratio ON meta(aspect_ratio)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_meta_mtime ON meta(mtime)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_meta_size ON meta(size)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_meta_created ON meta(created)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_meta_path_aspect ON meta(path, aspect_ratio)")
         cur.close()
 
     @profiler.profile

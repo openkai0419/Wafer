@@ -251,11 +251,14 @@ class SingleRowOption(QtWidgets.QWidget, ):
             self.option_popup.move_to()
 
     def run_folder_worker(self):
+        selected = self.root.folder_view.get_selected()
         if self.root.run_folder:
             if self._folder_worker:
+                if self._folder_worker.selected_path == selected:
+                    return
                 self._folder_worker.cancel()
                 
-            self._folder_worker = FolderComboUpdateWorker(self.root.engine, self.root.folder_view.get_selected())
+            self._folder_worker = FolderComboUpdateWorker(self.root.engine, selected)
             self._folder_worker.signals.finished.connect(self.keys_combo.remake)
             main_thread.start(self._folder_worker,6)
             self.root.run_folder = False

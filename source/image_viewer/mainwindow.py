@@ -4,7 +4,8 @@ from .viewer.justifiedwidget import JustifiedVirtualScrollWidget
 from ..core.setting_db import SettingDB
 from ..core.query import MetaInfoSearchEngine, MetaQuery
 from ..core.zmq import ZMQSubscriber
-from .widgets.multiroottree import FolderTreeView
+from .widgets.foldertree import FolderTreeView
+from .widgets.foldertree_menu import FolderContextMenuBuilder
 from .widgets.settingwidget import SingleRowOption
 from .widgets.scrollarea import InertialScrollArea, AutoScrollArea
 from .widgets.progress_bar import ThinProgressBar
@@ -48,6 +49,7 @@ class SearchWorkerRunnable(QtCore.QRunnable):
     def run(self):
         if self._cancelled:
             return
+        #self.engine.explain_query_plan(MetaQuery(**self.search_kwargs))
         paths, aspects = self.engine.get(MetaQuery(**self.search_kwargs))
         if self._cancelled:
             return
@@ -90,7 +92,7 @@ class MainWindow(QtWidgets.QMainWindow):
         def on_message(msg: str):
             topic, _, event = msg.partition(":")
             handlers = {
-                "update": lambda: QtCore.QMetaObject.invokeMethod(self, "search", QtCore.Qt.QueuedConnection),
+                "update": lambda: QtCore.QMetaObject.invokeMethod(self, "search", QtCore.Qt.QueuedConnection,  QtCore.Q_ARG(bool, True)),
                 "progress": lambda: QtCore.QMetaObject.invokeMethod(self, "update_current", QtCore.Qt.QueuedConnection, QtCore.Q_ARG(int, int(event))),
                 "maximum": lambda: QtCore.QMetaObject.invokeMethod(self, "update_maximum", QtCore.Qt.QueuedConnection, QtCore.Q_ARG(int, int(event))),
                 "folderchanged": lambda: QtCore.QMetaObject.invokeMethod(self, "reload_folderlist", QtCore.Qt.QueuedConnection),
@@ -110,6 +112,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setCentralWidget(self.splitter)
 
         self.folder_view = FolderTreeView(self.setting_db.get_all_parent_folders())
+        menu_builder = FolderContextMenuBuilder(parent=self.folder_view)
+        self.folder_view.set_context_menu_builder(menu_builder)
         self.folder_view.folder_selected.connect(self.on_folder_selected)
 
         left_panel = QtWidgets.QWidget()
@@ -215,10 +219,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.auto_scroll()
 
     @profiler.profile
-    def search(self):
+    @QtCore.Slot(bool)
+    def search(self, force=False):
         search_kwargs = self.build_search_query()
 
         if self.current_runnable:
+            if search_kwargs == self.current_runnable.search_kwargs and not force:
+                return
             self.current_runnable.cancel()
 
         runnable = SearchWorkerRunnable(self.engine, search_kwargs)

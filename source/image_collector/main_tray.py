@@ -1,16 +1,22 @@
 from PySide6 import QtWidgets, QtGui, QtCore
 
 from ..profiling import init_env
+from ..constants import setting_db_name
 from .watch_folder import WatchFolder
+from .watch_setting import SettingWatcher
+from ..core.setting_db import SettingDB
+
 logger, profiler = init_env()
 
 class TrayApp(QtWidgets.QSystemTrayIcon):
     @profiler.profile
-    def __init__(self, icon, folders_to_watch, parent=None):
+    def __init__(self, icon, parent=None):
         super().__init__(icon, parent)
         logger.info("FOLDER WATCHER EXECUTED")
         self.setToolTip("Folder Watcher")
-        self.folders_to_watch = folders_to_watch
+
+        self.db = SettingDB()
+        self.folders_to_watch = self.db.get_all_parent_folders()
 
         self.menu = QtWidgets.QMenu()
         self.quit_action = self.menu.addAction("終了")
@@ -22,7 +28,18 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         self.folder_watcher = WatchFolder()
         self.folder_watcher.start(self.folders_to_watch)
 
-        QtCore.QTimer.singleShot(0, lambda: self.folder_watcher.rescan_all(self.folders_to_watch))
+        self.setting_watcher = SettingWatcher(self.db.db_name)
+        self.setting_watcher.parentFoldersChanged.connect(self.reload_parent_folder)
+        self.setting_watcher.ignoreFoldersChanged.connect(self.reload_ignore_folder)
+        self.setting_watcher.start()
+    
+    def reload_parent_folder(self, folderlist):
+        logger.info(f"parent folder {folderlist}")
+        self.folder_watcher.start(folderlist)
+
+    def reload_ignore_folder(self, folderlist):
+        logger.info(f"ignore folder {folderlist}")
+        pass
 
     def on_activated(self, reason):
         if reason == QtWidgets.QSystemTrayIcon.Trigger:
@@ -30,4 +47,3 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
 
     def quit(self):
         QtWidgets.QApplication.quit()
-        self.folder_watcher.quit()

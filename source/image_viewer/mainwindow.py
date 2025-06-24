@@ -1,6 +1,7 @@
 from PySide6 import QtWidgets, QtGui, QtCore
 
 from .viewer.justifiedwidget import JustifiedVirtualScrollWidget
+from ..core.setting_db import SettingDB
 from ..core.query import MetaInfoSearchEngine, MetaQuery
 from ..core.zmq import ZMQSubscriber
 from .widgets.multiroottree import FolderTreeView
@@ -62,6 +63,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._is_fullscreen = False
         self.run_folder = True
 
+        self.setting_db = SettingDB()
         main_thread.watch_start()
 
         self.engine = MetaInfoSearchEngine(data_db)
@@ -107,14 +109,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
         self.setCentralWidget(self.splitter)
 
-        self.base_paths = [
-            r"M:\\collect\\picture\\ーNovelAI\\1_7_NAI4",
-            r"M:\\collect\\picture\\ーNovelAI\\1_8_NAI4.5",
-            r"C:\\Users\\openk\\Downloads",
-            r"M:\\collect\\picture\\ーNovelAI\\1_6_XL",
-        ]
-
-        self.folder_view = FolderTreeView(self.base_paths)
+        self.folder_view = FolderTreeView(self.setting_db.get_all_parent_folders())
         self.folder_view.folder_selected.connect(self.on_folder_selected)
 
         left_panel = QtWidgets.QWidget()
@@ -124,7 +119,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.splitter.addWidget(left_panel)
 
         self.iconbar = IconButtonBar(left_buttons=[
-            IconButtonConfig("icons/open.png", "Open File", lambda: print("Open clicked")),
+            IconButtonConfig("icons/open.png", "Open File", lambda: self.add_new_folder()),
             IconButtonConfig("icons/save.png", "Save File", lambda: print("Save clicked")),
         ], right_buttons=[
             IconButtonConfig("icons/settings.png", "Settings", lambda: print("Settings clicked"), checkable=True),
@@ -163,6 +158,12 @@ class MainWindow(QtWidgets.QMainWindow):
         btn_fs = QtWidgets.QPushButton("全画面")
         btn_fs.clicked.connect(self.toggle_fullscreen)
         self.right_layout.addWidget(btn_fs)
+
+    def add_new_folder(self):
+        folder_path = QtWidgets.QFileDialog.getExistingDirectory(self, "フォルダを選択")
+        if folder_path:
+            self.setting_db.add_parent_folder(folder_path)
+            self.folder_view.set_root_paths(self.setting_db.get_all_parent_folders())
 
     def build_search_query(self):
         kwargs = self.row_widget.get_values()

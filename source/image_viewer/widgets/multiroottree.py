@@ -101,6 +101,15 @@ class FolderTreeView(QtWidgets.QTreeView):
         self._reload_task_running = False
         self.restore_state()
 
+    def set_root_paths(self, new_paths: list[str], reset_state=True):
+        self.model_.root_paths = new_paths[:]
+        a, b = self.get_state()
+        self.reload_async()
+        if reset_state:
+            self.set_state([], []) 
+        else:
+            self.set_state(a, b)
+
     def reload_async(self):
         if self._reload_task_running:
             return

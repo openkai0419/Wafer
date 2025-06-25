@@ -9,7 +9,7 @@ logger, profiler = init_env()
 def list_subfolders(path):
     try:
         return sorted(
-            [e for e in os.scandir(path) if e.is_dir(follow_symlinks=False)],
+            (e for e in os.scandir(path) if e.is_dir(follow_symlinks=False)),
             key=lambda e: e.name
         )
     except (PermissionError, OSError):

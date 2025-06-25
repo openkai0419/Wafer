@@ -3,6 +3,8 @@ import subprocess
 import os
 from PySide6 import QtWidgets, QtGui, QtCore
 from source.image_viewer.mainwindow import MainWindow 
+from source.profiling import init_env
+logger, profiler = init_env()
 
 def run_collector_subprocess():
     # 実行形態に応じて collector を切り替える
@@ -33,7 +35,7 @@ def run_collector_subprocess():
         )
 
     except Exception as e:
-        print(f"[Error] Failed to start collector: {e}")
+        logger.error(f"[Error] Failed to start collector: {e}")
         return None
 
 def main():

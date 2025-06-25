@@ -4,12 +4,14 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from ..core.setting_db import SettingDB
 import atexit
-
+from ..profiling import init_env
+logger, profiler = init_env()
 
 class SettingWatcher(QtCore.QObject):
     parentFoldersChanged = QtCore.Signal(list)
     ignoreFoldersChanged = QtCore.Signal(list)  # ← typo修正
 
+    @profiler.profile
     def __init__(self, db_path, parent=None):
         super().__init__(parent)
         self.db = SettingDB(db_path)
@@ -24,6 +26,7 @@ class SettingWatcher(QtCore.QObject):
         self._observer = Observer()
         self._handler = self._make_handler()
 
+    @profiler.profile
     def _make_handler(self):
         watcher = self
 
@@ -40,34 +43,37 @@ class SettingWatcher(QtCore.QObject):
                     watcher.last_mtime = stat.st_mtime
                     watcher._on_db_changed()
                 except Exception as e:
-                    print(f"[SettingWatcher] ファイル変更検出中にエラー: {e}")
+                    logger.warning(f"[SettingWatcher] ファイル変更検出中にエラー: {e}")
 
         return Handler()
 
+    @profiler.profile
     def _parent_folders_changed(self):
         current = set(self.db.get_all_parent_folders())
         if current != self.cached_parent_folders:
-            print("[SettingWatcher] 差分検出：emit parentFoldersChanged")
+            logger.info("[SettingWatcher] 差分検出：emit parentFoldersChanged")
             self.cached_parent_folders = current
             self.parentFoldersChanged.emit(list(current))
 
+    @profiler.profile
     def _ignore_folders_changed(self):
         current = set(self.db.get_all_ignore_folders())
         if current != self.cached_ignore_folders:
-            print("[SettingWatcher] 差分検出：emit ignoreFoldersChanged")
+            logger.info("[SettingWatcher] 差分検出：emit ignoreFoldersChanged")
             self.cached_ignore_folders = current
             self.ignoreFoldersChanged.emit(list(current))
 
+    @profiler.profile
     def _on_db_changed(self):
         self._parent_folders_changed()
         self._ignore_folders_changed()
 
+    @profiler.profile
     def start(self):
         dir_path = os.path.dirname(self.db_path) or "."
         self._observer.schedule(self._handler, path=dir_path, recursive=False)
         self._observer.start()
-        atexit.register(self.stop)
-        print("[SettingWatcher] 監視開始")
+        logger.info("[SettingWatcher] 設定ファイル監視開始")
 
     def stop(self):
         self._observer.stop()

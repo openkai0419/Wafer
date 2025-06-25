@@ -176,12 +176,14 @@ class SearchOptionPopup(QtWidgets.QDialog):
         hlayout2.addWidget(self.asc_radio)
         hlayout2.addWidget(self.desc_radio)
 
+    @profiler.profile
     def move_to(self):
         button_pos = self.pos_parent.mapToGlobal(QtCore.QPoint(0, self.pos_parent.height()))
         x = button_pos.x() + self.pos_parent.rect().width() - self.rect().width()
         y = button_pos.y()
         self.move(x, y)
 
+    @profiler.profile
     def get_settings(self):
         sort_by = self.sort_by_combo.currentData()
         kwargs = {
@@ -250,10 +252,12 @@ class SingleRowOption(QtWidgets.QWidget, ):
             self.option_popup.move_to()
             self.option_popup.show()
 
+    @profiler.profile
     def on_move_event(self):
         if self.option_popup and self.option_popup.isVisible():
             self.option_popup.move_to()
 
+    @profiler.profile
     def run_folder_worker(self):
         selected = self.root.folder_view.get_selected()
         if self.root.run_folder:
@@ -267,6 +271,7 @@ class SingleRowOption(QtWidgets.QWidget, ):
             main_thread.start(self._folder_worker,6)
             self.root.run_folder = False
     
+    @profiler.profile
     def get_values(self):
         kwargs = self.option_popup.get_settings()
         keys = self.keys_combo.previous_key

@@ -9,7 +9,6 @@ from pathlib import Path
 from ..core.collector import ImageIndexer
 from ..core.zmq import ZMQPublisher
 from ..profiling import init_env
-from ..constants import data_db
 
 logger, profiler = init_env()
 extensions = (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp")
@@ -95,6 +94,7 @@ class EventBatcher(QtCore.QObject):
 
     @profiler.profile
     def flush(self):
+        logger.info(f"{self._pathchanged}, {len(self._deleted)}, {len(self._changed)}")
         if self._processing:
             return
         if self._pathchanged:
@@ -173,9 +173,8 @@ class FolderWatcherThread(QtCore.QThread):
         self.observer = None
         self.running = True
 
-    @profiler.profile
     def run(self):
-        print("[DEBUG] FolderWatcherThread.run() started")
+        logger.debug("[DEBUG] FolderWatcherThread.run() started")
         try:
             self.observer = Observer()
             for path in self.paths_to_watch:
@@ -189,7 +188,7 @@ class FolderWatcherThread(QtCore.QThread):
                     )
                     self.observer.schedule(handler, path, recursive=True)
                 else:
-                    print(f"[WARNING] Path does not exist: {path}")
+                    logger.warning(f"[WARNING] Path does not exist: {path}")
                     QtWidgets.QMessageBox.warning(None, "監視対象エラー", f"存在しないパス: {path}")
 
             self.observer.start()
@@ -197,7 +196,7 @@ class FolderWatcherThread(QtCore.QThread):
                 self.msleep(1000)
 
         except Exception as e:
-            print(f"[ERROR] Exception in FolderWatcherThread.run: {e}")
+            logger.error(f"[ERROR] Exception in FolderWatcherThread.run: {e}")
         finally:
             if self.observer:
                 self.observer.stop()
@@ -219,7 +218,7 @@ class FolderWatcherThread(QtCore.QThread):
     def stop(self):
         self.running = False
         if self.observer and self.observer.is_alive():
-            print("[DEBUG] Stopping observer")
+            logger.debug("[DEBUG] Stopping observer")
             self.observer.stop()
             self.observer.join()
 
@@ -243,6 +242,7 @@ class DBWorker(QtCore.QObject):
 
     @QtCore.Slot(list)
     def rescan_all(self, root_paths):
+        logger.info(f"スキャン開始: {root_paths}")
         with self.database as indexer:
             indexer.update_index(root_paths)
 
@@ -273,29 +273,38 @@ def notify_gui_process(message: str = "update_done"):
 
 class WatchFolder:
     @profiler.profile
-    def __init__(self):
+    def __init__(self, dbname):
         super().__init__()
 
         self.watcher_thread = None
 
-        self.database = ImageIndexer(data_db)
+        self.database = ImageIndexer(dbname)
         self.database.set_progress_callback(progress_callback)
         self.database.set_update_callback(notify_gui_process)
 
-        self.event_batcher = EventBatcher(100)
         self.db_thread = QtCore.QThread()
         self.db_worker = DBWorker(self.database)
         self.db_worker.moveToThread(self.db_thread)
         self.db_thread.start()
+        self.event_batcher = EventBatcher(100)
 
         self.event_batcher.batched_deleted.connect(self.db_worker.remove_files)
         self.event_batcher.batched_changed.connect(self.db_worker.update_files)
         self.event_batcher.folder_changed.connect(filechange_callback)
         self.db_worker.finished.connect(self.event_batcher.on_db_finished)
 
+        self.rescantimer = QtCore.QTimer()
+        self.rescantimer.setInterval(100)
+        self.rescantimer.setSingleShot(True)
+        self.rescantimer.timeout.connect(self.rescan_all)
+
+        self.folders = None
+
     @profiler.profile
-    def rescan_all(self, paths):
-        self.db_worker.rescan_all(paths)
+    def rescan_all(self):
+        if not self.folders:
+            return
+        self.db_worker.rescan_all(self.folders)
 
     @profiler.profile
     def start(self, folders):
@@ -308,19 +317,19 @@ class WatchFolder:
         self.watcher_thread.file_changed.connect(self.event_batcher.add_changed)
         self.watcher_thread.folder_changed.connect(self.event_batcher.path_changed)
         self.watcher_thread.start()
-        atexit.register(self.quit)
 
-        self.rescan_all(folders)
+        self.folders = folders
+        self.rescantimer.start()
+        logger.info("[FatchFOlder] ディレクトリ監視開始")
 
-    @profiler.profile
     def quit(self):
         logger.info("Quitting TrayApp")
         if self.watcher_thread:
             self.watcher_thread.stop()
-            self.watcher_thread.wait()
+            #self.watcher_thread.wait()
         if self.db_thread:
             self.db_thread.quit()
-            self.db_thread.wait()
+            #self.db_thread.wait()
         with self.database as indexer:
             indexer.clean_unused()
 

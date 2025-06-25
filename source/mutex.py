@@ -2,6 +2,7 @@ import os
 import sys
 import tempfile
 import psutil
+import time
 
 class SafeProcessLock:
     def __init__(self, name: str):
@@ -48,6 +49,7 @@ class SafeProcessLock:
                     except Exception:
                         return False  # 削除できない = 他プロセスが保持している可能性
                 # ループして再試行
+                time.sleep(0.1)
 
     def release(self):
         if self.acquired and os.path.exists(self.lock_file):

@@ -12,7 +12,7 @@ from .widgets.progress_bar import ThinProgressBar
 from .widgets.button_bar import IconButtonBar, IconButtonConfig
 from .thread import main_thread
 from .viewer_settings import main_setting
-from ..constants import data_db
+from ..constants import data_db_name, setting_db_name
 from ..profiling import init_env
 
 logger, profiler = init_env()
@@ -65,10 +65,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self._is_fullscreen = False
         self.run_folder = True
 
-        self.setting_db = SettingDB()
+        self.setting_db = SettingDB(setting_db_name)
         main_thread.watch_start()
 
-        self.engine = MetaInfoSearchEngine(data_db)
+        self.engine = MetaInfoSearchEngine(data_db_name)
         self.main_ui()
         self.start_ipc_listener()
         QtCore.QTimer.singleShot(0, self.search)
@@ -112,7 +112,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setCentralWidget(self.splitter)
 
         self.folder_view = FolderTreeView(self.setting_db.get_all_parent_folders())
-        menu_builder = FolderContextMenuBuilder(parent=self.folder_view)
+        menu_builder = FolderContextMenuBuilder(self.folder_view, self.setting_db.db_name)
         self.folder_view.set_context_menu_builder(menu_builder)
         self.folder_view.folder_selected.connect(self.on_folder_selected)
 
@@ -244,4 +244,6 @@ class MainWindow(QtWidgets.QMainWindow):
         main_setting.set("window/geometry", self.saveGeometry())
         main_setting.set("viewer/scroll", self.content.get_center_image_index())
         main_setting.commit()
+        if hasattr(self, "_subscriber"):
+            self._subscriber.stop()
         return super().closeEvent(event)

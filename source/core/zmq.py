@@ -24,14 +24,28 @@ class ZMQSubscriber:
             self.socket.setsockopt_string(zmq.SUBSCRIBE, topic_filter)
 
         self._callback = None
+        self._stop_event = threading.Event()
+        self._thread = None
 
     def connect_on_message(self, callback):
         self._callback = callback
 
     def start(self):
         def loop():
-            while True:
-                msg = self.socket.recv_string()
-                if self._callback:
-                    self._callback(msg)
-        threading.Thread(target=loop, daemon=True).start()
+            poller = zmq.Poller()
+            poller.register(self.socket, zmq.POLLIN)
+            while not self._stop_event.is_set():
+                events = dict(poller.poll(100))
+                if self.socket in events and events[self.socket] == zmq.POLLIN:
+                    msg = self.socket.recv_string()
+                    if self._callback:
+                        self._callback(msg)
+        self._thread = threading.Thread(target=loop, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        self._stop_event.set()
+        if self._thread is not None:
+            self._thread.join(timeout=1)
+        self.socket.close()
+        self.context.term()

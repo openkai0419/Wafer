@@ -43,53 +43,49 @@ def cleanup_old_logs_safe(log_dir="log", keep_latest=10):
     
 class LoggerManager:
     _instance = None
-    _lock = threading.Lock()
 
     @classmethod
     def get_logger(cls) -> logging.Logger:
-        with cls._lock:
-            if cls._instance is not None:
-                return cls._instance
+        if cls._instance is not None:
+            return cls._instance
 
-            process_id = os.getpid()
-            log_id = str(process_id)
+        process_id = os.getpid()
+        log_id = str(process_id)
 
-            log_dir = "log"
-            os.makedirs(log_dir, exist_ok=True)
-            log_filename = os.path.join(log_dir, f'debuglog_{log_id}.log')
+        log_dir = "log"
+        os.makedirs(log_dir, exist_ok=True)
+        log_filename = os.path.join(log_dir, f'debuglog_{log_id}.log')
 
-            logger = logging.getLogger(f"Profiler-{log_id}")
-            logger.setLevel(logging.DEBUG)
+        logger = logging.getLogger(f"Profiler-{log_id}")
+        logger.setLevel(logging.DEBUG)
 
-            if not logger.hasHandlers():
-                file_handler = logging.handlers.RotatingFileHandler(
-                    log_filename,
-                    maxBytes=100_000,
-                    backupCount=2,
-                    encoding="utf-8",
-                    delay=True,
-                )
-                file_handler.setLevel(logging.DEBUG)
-                file_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
+        if not logger.hasHandlers():
+            file_handler = logging.handlers.RotatingFileHandler(
+                log_filename,
+                maxBytes=100_000,
+                backupCount=2,
+                encoding="utf-8",
+                delay=True,
+            )
+            file_handler.setLevel(logging.DEBUG)
+            file_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
 
-                stream_handler = logging.StreamHandler()
-                stream_handler.setLevel(logging.DEBUG)
-                stream_handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
+            stream_handler = logging.StreamHandler()
+            stream_handler.setLevel(logging.DEBUG)
+            stream_handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
 
-                logger.addHandler(file_handler)
-                logger.addHandler(stream_handler)
+            logger.addHandler(file_handler)
+            logger.addHandler(stream_handler)
 
-            cls._instance = logger
-            return logger
+        cls._instance = logger
+        return logger
 
 class FunctionProfiler:
     _instance = None
-    _lock = threading.Lock()
 
     def __new__(cls, interval=10):
-        with cls._lock:
-            if cls._instance is None:
-                cls._instance = super().__new__(cls)
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
         return cls._instance
 
     def __init__(self, interval=10):

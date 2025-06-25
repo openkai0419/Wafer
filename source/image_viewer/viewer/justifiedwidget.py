@@ -20,6 +20,8 @@ from .cachemanager import MemoryLimitedPixmapCache, QLabelPool
 from ...profiling import init_env
 logger, profiler = init_env()
 
+QWIDGETSIZE_MAX = 16777215
+
 def _size_mismatch(a: QtCore.QSize, b: QtCore.QSize, tolerance: int = 1):
     return abs(a.width() - b.width()) > tolerance or abs(a.height() - b.height()) > tolerance
 
@@ -405,7 +407,8 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
         self.visible_indices = new_visible
 
         if self.rects:
-            self.setMinimumHeight(self.rects[-1].bottom() + self.spacing)
+            total_height = self.rects[-1].bottom() + self.spacing
+            self.setMinimumHeight(total_height)
 
     @profiler.profile
     def _calculate_visible_indices(self, view_rect):

@@ -4,7 +4,6 @@ import contextlib
 import time
 from typing import List, Dict
 
-from ..constants import setting_db_name
 from ..profiling import init_env
 from ..common import normalize_path
 logger, profiler = init_env()
@@ -27,7 +26,7 @@ def retry_sqlite_connection(db_name: str, timeout: float = 3.0, interval: float 
     raise TimeoutError(f"Could not acquire DB write connection within {timeout:.1f}s") from last_exception
 
 class SettingDB:
-    def __init__(self, db_name: str = setting_db_name):
+    def __init__(self, db_name: str):
         self.db_name = db_name
         self._ensure_schema()
 
@@ -74,7 +73,6 @@ class SettingDB:
 
     # ───── 共通処理 ─────
     def _sync_folders(self, folder_type: str, new_paths: List[str]) -> Dict[str, List[str]]:
-        """ parent_folders と ignore_folders の追加、削除処理を共通化 """
         norm_paths = set(normalize_path(p) for p in new_paths)
         with self._conn() as con:
             current = {row[0] for row in con.execute(f"SELECT path FROM {folder_type}")}
@@ -96,7 +94,6 @@ class SettingDB:
         }
 
     def _add_folder(self, folder_type: str, path: str) -> bool:
-        """ parent_folders と ignore_folders に追加する処理を共通化 """
         norm_path = normalize_path(path)
         with self._conn() as con:
             con.execute("BEGIN TRANSACTION")  # トランザクション開始
@@ -109,7 +106,6 @@ class SettingDB:
         return True
 
     def _remove_folder(self, folder_type: str, path: str) -> bool:
-        """ parent_folders と ignore_folders から削除する処理を共通化 """
         norm_path = normalize_path(path)
         with self._conn() as con:
             con.execute("BEGIN TRANSACTION")  # トランザクション開始
@@ -122,7 +118,6 @@ class SettingDB:
         return True
 
     def _get_all_folders(self, folder_type: str) -> List[str]:
-        """ parent_folders と ignore_folders から全てのパスを取得する処理を共通化 """
         with self._conn(read_only=True) as con:
             cur = con.execute(f"SELECT path FROM {folder_type} ORDER BY id ASC")
             return [row[0] for row in cur.fetchall()]

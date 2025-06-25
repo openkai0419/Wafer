@@ -19,6 +19,23 @@ RECOMMENDED_BATCH_SIZE = 50
 # 再利用可能なThreadPoolExecutor
 executor = concurrent.futures.ThreadPoolExecutor()
 
+
+def connect_with_retry(path, timeout=3.0, retries=3, delay=1.0, **kwargs):
+    last_exception = None
+    for attempt in range(retries):
+        try:
+            conn = sqlite3.connect(path, timeout=timeout, **kwargs)
+            return conn
+        except sqlite3.OperationalError as e:
+            last_exception = e
+            logger.warning(f"[connect_with_retry] Attempt {attempt+1} failed: {e}")
+            time.sleep(delay)
+        except Exception as e:
+            logger.error(f"[connect_with_retry] Unexpected error: {e}")
+            raise
+    logger.error(f"[connect_with_retry] All attempts failed. Raising last exception.")
+    raise last_exception
+
 def read_info(path):
     try:
         with Image.open(path) as img:
@@ -28,7 +45,8 @@ def read_info(path):
     return {}
 
 class ImageIndexer:
-    def __init__(self, db_path, zmqpublisher=None):
+    def __init__(self, db_path):
+        logger.info("image indexer init")
         self.db_path = Path(db_path)
         self.backup_path = self.db_path.with_suffix(".bak")
         self.conn = None
@@ -36,6 +54,7 @@ class ImageIndexer:
         self.start()
         self._initialize_database()
         self._ensure_schema()
+        logger.info("image indexer init end")
     
     def set_progress_callback(self, callback):
         self._progress_callback = callback
@@ -52,6 +71,7 @@ class ImageIndexer:
         self._progress_callback(current, total)
 
     def __enter__(self):
+        logger.info("image indexer enter")
         self.start()
         return self
 
@@ -60,11 +80,16 @@ class ImageIndexer:
     
     @profiler.profile
     def start(self):
-        self.conn = sqlite3.connect(self.db_path, timeout=10.0, check_same_thread=False)
+        logger.info("self.conn getting")
+        self.conn = connect_with_retry(self.db_path, timeout=3.0, check_same_thread=True)
         self._apply_pragmas(self.conn)
 
-        self.read_conn = sqlite3.connect(f"file:{self.db_path}?mode=ro&immutable=1", uri=True)
+        logger.info("self.read_conn getting")
+        self.read_conn = connect_with_retry(
+            f"file:{self.db_path}?mode=ro&immutable=1", timeout=1.0, uri=True
+        )
         self._apply_pragmas(self.read_conn, read_only=True)
+        logger.info("start end")
 
     @profiler.profile
     def exit(self):
@@ -75,6 +100,7 @@ class ImageIndexer:
 
     @profiler.profile
     def _apply_pragmas(self, conn, read_only=False):
+        logger.info("apply_pragmas")
         if read_only:
             conn.execute("PRAGMA temp_store = MEMORY")
             conn.execute("PRAGMA cache_size = -50000")
@@ -304,7 +330,6 @@ class ImageIndexer:
     @profiler.profile
     def remove_by_file_list(self, file_paths):
         total_paths = len(file_paths)
-        completed = 0
         file_paths = [p for p in file_paths if not os.path.exists(p)]
         normalized = [normalize_path(p) for p in file_paths]
 
@@ -328,7 +353,6 @@ class ImageIndexer:
     @profiler.profile
     def update_meta_and_image(self, paths, file_info):
         total = len(paths)
-        start_time = time.monotonic()
         updated_count = 0
         update_emit_interval = COMMIT_INTERVAL  # emit_update() 呼び出し間隔（秒）
         emit_last_time = time.monotonic()

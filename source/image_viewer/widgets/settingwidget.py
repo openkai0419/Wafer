@@ -71,10 +71,8 @@ class CheckableCombo(QtWidgets.QToolButton):
             self.add_item(f"{key} ({count})", key)
             if key == "__filepath__":
                 defi = i
-        if len(self.checked_items()) == 0:
-            if len(self.actions) != 0:
-                if defi is not None:
-                    self.actions[defi].setChecked(True)
+        if not self.checked_items() and defi is not None:
+            self.actions[defi].setChecked(True)
 
         self.setUpdatesEnabled(True)
 
@@ -219,7 +217,13 @@ class SingleRowOption(QtWidgets.QWidget, ):
         self.search_bar = QtWidgets.QLineEdit()
         self.search_bar.setPlaceholderText("検索ワードを入力...")
         self.search_bar.setText(main_setting.get("query/keywords", None))
-        self.search_bar.textChanged.connect(lambda: self.settingchanged.emit())
+
+        self._debounce_timer = QtCore.QTimer(self)
+        self._debounce_timer.setSingleShot(True)
+        self._debounce_timer.setInterval(200)  # ミリ秒（例：300ms）
+
+        self.search_bar.textChanged.connect(lambda: self._debounce_timer.start())
+        self._debounce_timer.timeout.connect(lambda: self.settingchanged.emit())
 
         self.option_button = QtWidgets.QPushButton(" 検索設定 ▼ ")
         self.option_button.clicked.connect(self.toggle_option_popup)

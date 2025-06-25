@@ -71,12 +71,12 @@ class MetaQuery:
                 norm_dir = normalize_path_func(str(d))
                 prefix = norm_dir + '/' if norm_dir else ''
                 if self.only_direct_children:
-                    conditions.append("REPLACE(path, '\\', '/') LIKE ?")
+                    conditions.append("path LIKE ?")
                     params.append(f"{prefix}%")
-                    conditions.append("REPLACE(path, '\\', '/') NOT LIKE ?")
+                    conditions.append("path NOT LIKE ?")
                     params.append(f"{prefix}%/%")
                 else:
-                    conditions.append("REPLACE(path, '\\', '/') LIKE ?")
+                    conditions.append("path LIKE ?")
                     params.append(f"{prefix}%")
 
         return conditions, params, keys

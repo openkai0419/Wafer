@@ -6,10 +6,8 @@ from typing import List, Dict
 
 from ..constants import setting_db_name
 from ..profiling import init_env
+from ..common import normalize_path
 logger, profiler = init_env()
-
-def normalize_path(path: str) -> str:
-    return os.path.abspath(os.path.normpath(path))
 
 @profiler.profile
 def retry_sqlite_connection(db_name: str, timeout: float = 3.0, interval: float = 0.1):

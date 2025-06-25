@@ -6,9 +6,10 @@ from PySide6 import QtGui
 
 def normalize_path(p):
     try:
-        return str(Path(p).resolve(strict=False))
+        path = str(Path(p).resolve(strict=False))
     except Exception:
-        return str(Path(p).absolute())
+        path = str(Path(p).absolute())
+    return path.replace("\\", "/")
 
 def uipx(px: int, base_dpi: int = 96) -> int:
     """

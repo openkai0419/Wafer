@@ -185,14 +185,12 @@ class ImageIndexer:
             current = stack.pop()
             try:
                 with os.scandir(current) as it:
-                    entries = list(it)
-                    for entry in entries:
+                    for entry in it:
                         if entry.is_file(follow_symlinks=False) and entry.name.lower().endswith(extensions):
                             stat = entry.stat()
                             yield normalize_path(entry.path), (stat.st_mtime, stat.st_size)
-                    stack.extend(
-                        entry.path for entry in entries if entry.is_dir(follow_symlinks=False)
-                    )
+                        elif entry.is_dir(follow_symlinks=False):
+                            stack.append(entry.path)
             except Exception:
                 continue
 

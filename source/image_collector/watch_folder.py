@@ -94,7 +94,6 @@ class EventBatcher(QtCore.QObject):
 
     @profiler.profile
     def flush(self):
-        logger.info(f"{self._pathchanged}, {len(self._deleted)}, {len(self._changed)}")
         if self._processing:
             return
         if self._pathchanged:
@@ -245,6 +244,12 @@ class DBWorker(QtCore.QObject):
         logger.info(f"スキャン開始: {root_paths}")
         with self.database as indexer:
             indexer.update_index(root_paths)
+    
+    @QtCore.Slot(list)
+    def set_ignore(self, paths):
+        logger.info(f"無視対象を追加: {paths}")
+        with self.database as indexer:
+            indexer.set_exclude_paths(paths)
 
 @profiler.profile
 def filechange_callback(folder):
@@ -277,6 +282,9 @@ class WatchFolder:
         super().__init__()
 
         self.watcher_thread = None
+        self.old_threads = []
+        self.folders = None
+        self.ignore_folders = None
 
         self.database = ImageIndexer(dbname)
         self.database.set_progress_callback(progress_callback)
@@ -298,7 +306,11 @@ class WatchFolder:
         self.rescantimer.setSingleShot(True)
         self.rescantimer.timeout.connect(self.rescan_all)
 
-        self.folders = None
+        self.ignoretimer = QtCore.QTimer()
+        self.ignoretimer.setInterval(100)
+        self.ignoretimer.setSingleShot(True)
+        self.ignoretimer.timeout.connect(self.run_ignore_folders)
+        logger.info("WatchFolder init end")
 
     @profiler.profile
     def rescan_all(self):
@@ -306,11 +318,22 @@ class WatchFolder:
             return
         self.db_worker.rescan_all(self.folders)
 
+    def set_ignore_folders(self, folders):
+        self.ignore_folders = folders
+        self.ignoretimer.start()
+
+    def run_ignore_folders(self):
+        if not self.ignore_folders:
+            return
+        self.db_worker.set_ignore(self.ignore_folders)
+
     @profiler.profile
     def start(self, folders):
+        if not folders:
+            return
         if self.watcher_thread:
             self.watcher_thread.stop()
-            self.watcher_thread.wait()
+            self.old_threads.append(self.watcher_thread)
 
         self.watcher_thread = FolderWatcherThread(folders)
         self.watcher_thread.file_deleted.connect(self.event_batcher.add_deleted)
@@ -321,6 +344,15 @@ class WatchFolder:
         self.folders = folders
         self.rescantimer.start()
         logger.info("[FatchFOlder] ディレクトリ監視開始")
+        self.delete_if_ended()
+
+    def delete_if_ended(self):
+        deleatings = []
+        for thread in self.old_threads:
+            if thread.isFinished():
+                deleatings.append(thread)
+        self.old_threads = [d for d in self.old_threads if not d in deleatings]
+
 
     def quit(self):
         logger.info("Quitting TrayApp")

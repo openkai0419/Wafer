@@ -46,11 +46,12 @@ def read_info(path):
 
 class ImageIndexer:
     def __init__(self, db_path):
-        logger.info("image indexer init")
+        logger.info(f"image indexer init {db_path}")
         self.db_path = Path(db_path)
         self.backup_path = self.db_path.with_suffix(".bak")
         self.conn = None
         self.read_conn = None
+        self.exclude_paths = set()
         self.start()
         self._initialize_database()
         self._ensure_schema()
@@ -77,7 +78,51 @@ class ImageIndexer:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.exit()
-    
+
+    def set_exclude_paths(self, paths):
+        self.exclude_paths = {normalize_path(p) for p in paths}
+        logger.info(f"[ExcludePaths] {len(self.exclude_paths)} paths set.")
+        self._remove_excluded_from_db()
+
+    def is_path_excluded(self, path: str) -> bool:
+        for ex in self.exclude_paths:
+            if path == ex or path.startswith(ex + "/"):
+                return True
+        return False
+
+    @profiler.profile
+    def _remove_excluded_from_db(self):
+        if not self.exclude_paths:
+            return
+        logger.info("[ExcludePaths] Removing existing entries under exclude paths...")
+
+        # 全ての登録済み path を取得
+        cur = self.get_reader_cursor()
+        cur.execute("SELECT path FROM images")
+        all_paths = [normalize_path(row[0]) for row in cur.fetchall()]
+        cur.close()
+
+        # 除外対象にマッチするものをフィルタ
+        to_remove = [p for p in all_paths if self.is_path_excluded(p)]
+        if not to_remove:
+            logger.info("[ExcludePaths] No matching entries to remove.")
+            return
+        
+        self._emit_progress(0, len(to_remove))
+
+        cur = self.get_writer_cursor()
+        for i in range(0, len(to_remove), CHUNK):
+            chunk = to_remove[i:i+CHUNK]
+            cur.executemany("DELETE FROM images WHERE path = ?", [(p,) for p in chunk])
+            cur.executemany("DELETE FROM meta WHERE path = ?", [(p,) for p in chunk])
+            cur.executemany("DELETE FROM meta_info WHERE path = ?", [(p,) for p in chunk])
+            self._emit_progress(len(chunk), 0)
+        self.conn.commit()
+        cur.close()
+
+        logger.info(f"[ExcludePaths] Removed {len(to_remove)} entries from DB.")
+        self.emit_update()
+
     @profiler.profile
     def start(self):
         logger.info("self.conn getting")
@@ -209,6 +254,12 @@ class ImageIndexer:
         stack = [str(root_path)]
         while stack:
             current = stack.pop()
+
+            full_path = normalize_path(current)
+            if self.is_path_excluded(full_path):
+                logger.debug(f"[Excluded] Skipping file: {full_path}")
+                continue
+
             try:
                 with os.scandir(current) as it:
                     for entry in it:
@@ -289,6 +340,8 @@ class ImageIndexer:
 
         file_paths = [p for p in file_paths if os.path.exists(p)]
         normalized = [normalize_path(p) for p in file_paths]
+        normalized = [p for p in normalized if not self.is_path_excluded(p)]
+
         self._emit_progress(total_paths - len(normalized), 0)
 
         stat_info = {}

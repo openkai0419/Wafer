@@ -19,9 +19,9 @@ class FolderContextMenuBuilder:
         menu.addSeparator()
         if self.view.is_root_path(path):
             pass
-            menu.addAction("フォルダを除去", lambda: self.remove(path))
+            menu.addAction("データベースから除去する", lambda: self.remove(path))
         else:
-            menu.addAction("無視対象に追加", lambda: self.ignore(path))
+            menu.addAction("データベースから除去する", lambda: self.ignore(path))
         return menu
 
     def open_in_explorer(self, path):
@@ -34,7 +34,6 @@ class FolderContextMenuBuilder:
         if path in self.view.root_paths:
             self.settingdb.remove_parent_folder(path)
             self.view.remove_path(path)
-            print(f"Excluding path: {path}") 
 
     def ignore(self, path):
         self.settingdb.add_ignore_folder(path)

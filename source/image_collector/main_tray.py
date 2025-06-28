@@ -2,6 +2,7 @@ from PySide6 import QtWidgets, QtGui, QtCore
 
 from ..profiling import init_env
 from ..constants import setting_db_name, data_db_name
+from ..core.collector import ImageIndexer
 from .watch_folder import WatchFolder
 from .watch_setting import SettingWatcher
 from ..core.setting_db import SettingDB
@@ -15,10 +16,6 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         logger.info("FOLDER WATCHER EXECUTED")
         self.setToolTip("Folder Watcher")
 
-        self.db = SettingDB(setting_db_name)
-        self.folders_to_watch = self.db.get_all_parent_folders()
-        self.folders_to_ignore = self.db.get_all_ignore_folders()
-
         self.menu = QtWidgets.QMenu()
         self.quit_action = self.menu.addAction("終了")
         self.quit_action.triggered.connect(self.quit)
@@ -26,15 +23,24 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         self.setContextMenu(self.menu)
         self.activated.connect(self.on_activated)
 
-        self.folder_watcher = WatchFolder(data_db_name)
-        self.folder_watcher.set_ignore_folders(self.folders_to_ignore)
-        self.folder_watcher.start(self.folders_to_watch)
+        self.start_watch()
+    
+    def start_watch(self, setting_name=setting_db_name, data_name=data_db_name):
+        self.setting_db = SettingDB(setting_name)
+        self.data_db = ImageIndexer(data_name)
+        self.data_db.set_exclude_paths(self.setting_db.get_all_ignore_folders())
+        with self.data_db as indexer:
+            indexer.check_init()
 
-        self.setting_watcher = SettingWatcher(self.db.db_name)
+        self.folder_watcher = WatchFolder(self.data_db)
+        self.folder_watcher.start(self.setting_db.get_all_parent_folders())
+
+        self.setting_watcher = SettingWatcher(self.setting_db)
         self.setting_watcher.parentFoldersChanged.connect(self.reload_parent_folder)
         self.setting_watcher.ignoreFoldersChanged.connect(self.reload_ignore_folder)
         self.setting_watcher.start()
-        logger.info("TrayApp init end")
+        logger.info("tray app start watching")
+
     
     @profiler.profile
     def reload_parent_folder(self, folderlist):

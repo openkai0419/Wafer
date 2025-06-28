@@ -1,4 +1,5 @@
 from PySide6 import QtWidgets, QtGui, QtCore
+from datetime import datetime, timedelta
 
 from .viewer.justifiedwidget import JustifiedVirtualScrollWidget
 from ..core.setting_db import SettingDB
@@ -22,9 +23,9 @@ class WorkerSignals(QtCore.QObject):
     finished = QtCore.Signal(object, object)
 
 class SearchWorkerRunnable(QtCore.QRunnable):
-    def __init__(self, engine, query):
+    def __init__(self, db_name, query):
         super().__init__()
-        self.engine = engine
+        self.engine = MetaInfoSearchEngine(db_name)
         self.query = query
         self.signals = WorkerSignals()
         self._cancelled = False
@@ -60,7 +61,13 @@ class MainWindow(QtWidgets.QMainWindow):
         main_thread.watch_start()
 
         self.dbname = data_db_name
-        self.engine = MetaInfoSearchEngine(self.dbname)
+
+        self.query_timeout_threshold = timedelta(seconds=5)
+        self.current_query_start_time = None
+        self.query_lock = QtCore.QMutex()
+        self.pending_query = None
+        self.last_executed_query = None
+
         self.main_ui()
         self.start_ipc_listener()
         QtCore.QTimer.singleShot(100, self.search)
@@ -214,15 +221,35 @@ class MainWindow(QtWidgets.QMainWindow):
     @profiler.profile
     def search(self, force=False):
         query = self.build_search_query()
+        now = datetime.now()
 
-        if self.current_runnable:
-            if query == self.current_runnable.query and not force:
+        if not force:
+            if (self.current_runnable and query == self.current_runnable.query) or \
+            (self.last_executed_query and query == self.last_executed_query):
                 return
-            self.current_runnable.cancel()
-        self.force = False
 
+        with QtCore.QMutexLocker(self.query_lock):
+            # 実行中の検索がある場合
+            if self.current_runnable:
+                elapsed = now - self.current_query_start_time if self.current_query_start_time else timedelta.max
+
+                if elapsed < self.query_timeout_threshold:
+                    # 5秒以内ならキャンセルして実行
+                    self.current_runnable.cancel()
+                else:
+                    logger.info("[SEARCH] query is taking more than expected, continueing without cancel.")
+                    # 5秒以上かかってるならキャンセルせず、最新だけ保留
+                    self.pending_query = query
+                    return
+
+            # 実行中でなければそのまま開始
+            self.pending_query = None
+            self._start_search_runnable(query)
+
+    @profiler.profile
+    def _start_search_runnable(self, query):
         self.loading_indicator.start()
-        runnable = SearchWorkerRunnable(self.engine, query)
+        runnable = SearchWorkerRunnable(self.dbname, query)
         runnable.signals.finished.connect(self.on_search_finished)
         self.current_runnable = runnable
         main_thread.start(runnable, 7)
@@ -230,9 +257,18 @@ class MainWindow(QtWidgets.QMainWindow):
     @QtCore.Slot(object, object)
     @profiler.profile
     def on_search_finished(self, paths, aspects):
+        self.last_executed_query = self.current_runnable.query
+        self.current_runnable = None
+        self.current_query_start_time = None
         self.content.set_precalculated_meta(paths, aspects)
         self.content.reload_visible_images()
         self.search_row_widget.run_folder_worker()
+                
+        with QtCore.QMutexLocker(self.query_lock):
+            if self.pending_query:
+                query = self.pending_query
+                self.pending_query = None
+                self._start_search_runnable(query)
 
     def closeEvent(self, event):
         self.folder_view.save_state()

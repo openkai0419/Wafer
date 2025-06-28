@@ -2,9 +2,12 @@ import os
 import shutil
 import sqlite3
 import time
+import queue
+import threading
+import concurrent.futures
+
 from pathlib import Path
 from PIL import Image
-import concurrent.futures
 from PySide6 import QtGui
 
 from ..profiling import init_env
@@ -13,10 +16,10 @@ logger, profiler = init_env()
 
 extensions = (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp")
 CHUNK = 900
-BASE_DURATION = 3.0
+BASE_DURATION = 10.0
 MIN_BATCH_SIZE = 100
-MAX_BATCH_SIZE = 10000
-INITIAL_BATCH_SIZE = 500
+MAX_BATCH_SIZE = 100000
+INITIAL_BATCH_SIZE = 10000
 
 # 再利用可能なThreadPoolExecutor
 executor = concurrent.futures.ThreadPoolExecutor()
@@ -45,6 +48,22 @@ def read_info(path):
     except Exception as e:
         logger.warning(f"Failed to read image info for {path}: {e}")
     return {}
+
+def process_image(p, file_info):
+    try:
+        mtime, fsize = file_info.get(p, (None, None))
+        reader = QtGui.QImageReader(p)
+        reader.setAutoTransform(True)
+        size = reader.size()
+        aspect = size.width() / size.height() if size.isValid() and size.height() > 0 else 1.0
+        info = read_info(p)
+        meta_info = [(str(p), str(k), str(v)) for k, v in info.items()]
+        meta_info.append((str(p), "__filepath__", str(p)))
+        return (p, aspect, mtime, fsize, meta_info, None)
+    except Exception as e:
+        logger.warning(f"Failed to process {p}: {e}")
+        mtime, fsize = file_info.get(p, (None, None))
+        return (p, None, mtime, fsize, [], 'fail')
 
 class ImageIndexer:
     def __init__(self, db_path):
@@ -76,7 +95,6 @@ class ImageIndexer:
         self._progress_callback(current, total)
 
     def __enter__(self):
-        logger.info("image indexer enter")
         self.start()
         return self
 
@@ -84,10 +102,11 @@ class ImageIndexer:
         self.exit()
 
     @profiler.profile
-    def set_exclude_paths(self, paths):
+    def set_exclude_paths(self, paths, run=False):
         self.exclude_paths = {normalize_path(p) for p in paths}
         logger.info(f"[ExcludePaths] {len(self.exclude_paths)} paths set.")
-        self._remove_excluded_from_db()
+        if run:
+            self.remove_excluded_from_db()
 
     @profiler.profile
     def is_path_excluded(self, path: str) -> bool:
@@ -97,7 +116,7 @@ class ImageIndexer:
         return False
 
     @profiler.profile
-    def _remove_excluded_from_db(self):
+    def remove_excluded_from_db(self):
         if not self.exclude_paths:
             return
         logger.info("[ExcludePaths] Removing existing entries under exclude paths...")
@@ -131,19 +150,21 @@ class ImageIndexer:
 
     @profiler.profile
     def start(self):
-        logger.info("self.conn getting")
-        self.conn = connect_with_retry(self.db_path, timeout=3.0, check_same_thread=True)
+        self.conn = connect_with_retry(self.db_path, timeout=3.0, check_same_thread=False)
         self._apply_pragmas(self.conn)
 
-        logger.info("self.read_conn getting")
         self.read_conn = connect_with_retry(
             f"file:{self.db_path}?mode=ro&immutable=1", timeout=1.0, uri=True
         )
         self._apply_pragmas(self.read_conn, read_only=True)
-        logger.info("start end")
+        logger.info("indexer start end")
 
     @profiler.profile
     def exit(self):
+        try:
+            self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        except Exception as e:
+            logger.info(e)
         if self.conn:
             self.conn.close()
         if self.read_conn:
@@ -151,7 +172,6 @@ class ImageIndexer:
 
     @profiler.profile
     def _apply_pragmas(self, conn, read_only=False):
-        logger.info("apply_pragmas")
         if read_only:
             conn.execute("PRAGMA temp_store = MEMORY")
             conn.execute("PRAGMA cache_size = -50000")
@@ -160,6 +180,7 @@ class ImageIndexer:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
             conn.execute("PRAGMA locking_mode=NORMAL")
+            conn.execute("PRAGMA temp_store = MEMORY")
 
     def get_writer_cursor(self):
         return self.conn.cursor()
@@ -252,6 +273,7 @@ class ImageIndexer:
         cur.execute("CREATE INDEX IF NOT EXISTS idx_meta_created ON meta(created)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_meta_path_aspect ON meta(path, aspect_ratio)")
         cur.close()
+        logger.info("ensureschema end")
 
     @profiler.profile
     def _detect_diff(self, current, previous):
@@ -413,25 +435,9 @@ class ImageIndexer:
         self.emit_update()
         logger.info(f"[remove_by_file_list] Removed {len(normalized)} entries from DB")
 
-    def process_image(self, p, file_info):
-        try:
-            reader = QtGui.QImageReader(p)
-            reader.setAutoTransform(True)
-            size = reader.size()
-            aspect = size.width() / size.height() if size.isValid() and size.height() > 0 else 1.0
-            mtime, fsize = file_info.get(p, (None, None))
-            info = read_info(p)
-            meta_info = [(str(p), str(k), str(v)) for k, v in info.items()]
-            meta_info.append((str(p), "__filepath__", str(p)))
-            return (p, aspect, mtime, fsize, meta_info, None)
-        except Exception as e:
-            logger.warning(f"Failed to process {p}: {e}")
-            mtime, fsize = file_info.get(p, (None, None))
-            return (p, None, mtime, fsize, [], 'fail')
-
     @profiler.profile
     def batch_process_images(self, batch, file_info):
-        results = list(executor.map(lambda p: self.process_image(p, file_info), batch))
+        results = list(executor.map(lambda p: process_image(p, file_info), batch))
 
         image_entries = []
         meta_entries = []
@@ -484,29 +490,63 @@ class ImageIndexer:
     @profiler.profile
     def update_meta_and_image(self, paths, file_info):
         total = len(paths)
-
         batch_size = INITIAL_BATCH_SIZE
+        temp_duration = BASE_DURATION
+
         i = 0
+
+        # 書き込みキューとスレッド初期化
+        write_queue = queue.Queue(maxsize=4)
+
+        def writer_thread_func():
+            while True:
+                item = write_queue.get()
+                if item is None:
+                    break
+                try:
+                    image_entries, meta_entries, meta_info_entries, failed_entries = item
+                    self.write_batch_to_db(image_entries, meta_entries, meta_info_entries, failed_entries)
+                except Exception as e:
+                    logger.error(f"[WriterThread] Error in write_batch_to_db: {e}")
+                finally:
+                    write_queue.task_done()
+
+        writer_thread = threading.Thread(target=writer_thread_func, daemon=True)
+        writer_thread.start()
 
         while i < total:
             batch = paths[i:i + batch_size]
+
             t0 = time.monotonic()
             image_entries, meta_entries, meta_info_entries, failed_entries = self.batch_process_images(batch, file_info)
             t1 = time.monotonic()
 
-            self.write_batch_to_db(image_entries, meta_entries, meta_info_entries, failed_entries)
+            while True:
+                try:
+                    write_queue.put_nowait((image_entries, meta_entries, meta_info_entries, failed_entries))
+                    break
+                except queue.Full:
+                    temp_duration = temp_duration * 2
+                    logger.debug(f"[WriterQueue] Full, waiting for consumer to catch up... {temp_duration}")
+                    time.sleep(temp_duration)
 
-            # アダプティブバッチサイズ調整
+            # アダプティブバッチサイズ制御
             duration = t1 - t0
-            if duration < BASE_DURATION:
-                batch_size = min(MAX_BATCH_SIZE, int(batch_size * 1.2))
-            elif duration > (BASE_DURATION + 1.0):
-                batch_size = max(MIN_BATCH_SIZE, int(batch_size / 2))
-            i += len(batch)
+            if duration < temp_duration:
+                batch_size = min(MAX_BATCH_SIZE, int(batch_size * 1.5))
+            elif duration > (temp_duration + (temp_duration / 2.0) ):
+                batch_size = max(MIN_BATCH_SIZE, int(batch_size / 2.0))
 
+            logger.info(f"temp_duration{temp_duration}, {temp_duration + (temp_duration / 2)}")
+            i += len(batch)
             self._emit_progress(len(batch), 0)
             self.emit_update()
             logger.info(f"[Adaptive Commit] {i}/{total} processed (batch={batch_size}, {duration:.2f}s)")
+
+        # すべての書き込みが完了するのを待つ
+        write_queue.join()
+        write_queue.put(None)
+        writer_thread.join()
 
     @profiler.profile
     def clean_unused(self):

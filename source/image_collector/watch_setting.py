@@ -2,8 +2,6 @@ from PySide6 import QtCore
 import os
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
-from ..core.setting_db import SettingDB
-import atexit
 from ..profiling import init_env
 logger, profiler = init_env()
 
@@ -12,9 +10,9 @@ class SettingWatcher(QtCore.QObject):
     ignoreFoldersChanged = QtCore.Signal(list)  # ← typo修正
 
     @profiler.profile
-    def __init__(self, db_path, parent=None):
+    def __init__(self, setting_db, parent=None):
         super().__init__(parent)
-        self.db = SettingDB(db_path)
+        self.db = setting_db
         self.db_path = self.db.db_name
         if os.path.exists(self.db_path):
             self.last_mtime = os.path.getmtime(self.db_path)

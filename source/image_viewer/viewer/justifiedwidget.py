@@ -18,6 +18,7 @@ from ..mouseeventmanager import (
 )
 from .cachemanager import MemoryLimitedPixmapCache, QLabelPool
 from ...profiling import init_env
+from ...common import get_main_based_directory
 logger, profiler = init_env()
 
 QWIDGETSIZE_MAX = 16777215
@@ -224,7 +225,7 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
             else:
                 base_dir = os.path.dirname(os.path.abspath(sys.argv[0]))  # main.py 実行位置
 
-            imgpath = os.path.join(base_dir, "fail_fetch_01.png")
+            imgpath = get_main_based_directory() / "resources/fail_fetch_02.png"
             pixmap = QtGui.QPixmap(imgpath)
             if not pixmap.isNull():
                 return pixmap

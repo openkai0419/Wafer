@@ -3,7 +3,7 @@
 main_a = Analysis(['main.py'],
                   pathex=['.'],          # 必要に応じてパス追加
                   binaries=None,
-                  datas=None,
+                  datas=[],
                   hiddenimports=[],
                   hookspath=None,
                   runtime_hooks=None,
@@ -29,7 +29,7 @@ collector_a = Analysis(['collector.py'],
 collector_pyz = PYZ(collector_a.pure, collector_a.zipped_data, cipher=None)
 collector_exe = EXE(collector_pyz, collector_a.scripts,
                     exclude_binaries=True,
-                    name='collector',
+                    name='collector',     # 実行ファイル名
                     debug=False,
                     bootloader_ignore_signals=False,
                     strip=False,
@@ -47,4 +47,4 @@ coll = COLLECT(main_exe,
                collector_a.datas,
                strip=False,
                upx=True,
-               name='MyApp')
+               name='MyApp')  # フォルダ名

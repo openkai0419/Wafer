@@ -5,6 +5,7 @@ from ..viewer_settings import main_setting
 from ...profiling import init_env
 from ..thread import main_thread
 from ...core.setting_db import SettingDB
+from ...common import normalize_path
 logger, profiler = init_env()
 
 class FolderContextMenuBuilder:
@@ -32,10 +33,11 @@ class FolderContextMenuBuilder:
 
     def remove(self, path):
         if path in self.view.root_paths:
-            self.settingdb.remove_parent_folder(path)
             self.view.remove_path(path)
+            self.settingdb.remove_parent_folder(path)
 
     def ignore(self, path):
-        self.settingdb.add_ignore_folder(path)
+        path = normalize_path(path)
         self.view.excluded_paths.add(path)
         self.view.reload_async()
+        self.settingdb.add_ignore_folder(path)

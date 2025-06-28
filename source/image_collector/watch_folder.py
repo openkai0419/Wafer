@@ -243,19 +243,19 @@ class DBWorker(QtCore.QObject):
 
     @QtCore.Slot(list)
     def rescan_all(self, root_paths):
-        logger.info(f"スキャン開始: {root_paths}")
+        logger.debug(f"スキャン開始: {root_paths}")
         with self.database as indexer:
             indexer.update_index(root_paths)
     
     @QtCore.Slot(list)
     def set_ignore(self, paths):
-        logger.info(f"無視対象を追加: {paths}")
+        logger.debug(f"無視対象を追加: {paths}")
         with self.database as indexer:
             indexer.set_exclude_paths(paths, run=True)
 
 @profiler.profile
 def filechange_callback(folder):
-    logger.info(f"folder changed: {folder}")
+    logger.debug(f"folder changed: {folder}")
     try:
         publisher = _get_publisher()
         publisher.send("folderchanged", str(folder))
@@ -271,7 +271,7 @@ def progress_callback(current_inc, total_inc):
 
 @profiler.profile
 def notify_gui_process(message: str = "update_done"):
-    logger.info(f"Update: {message}")
+    logger.debug(f"Update: {message}")
     try:
         publisher = _get_publisher()
         publisher.send("update", message)
@@ -303,7 +303,7 @@ class WatchFolder:
         self.event_batcher.folder_changed.connect(filechange_callback)
         self.db_worker.finished.connect(self.event_batcher.on_db_finished)
 
-        logger.info("WatchFolder init end")
+        logger.debug("WatchFolder init end")
 
     @profiler.profile
     @qt_debounce(200)
@@ -338,7 +338,7 @@ class WatchFolder:
 
         self.folders = folders
         self.rescan_all()
-        logger.info("[FatchFOlder] ディレクトリ監視開始")
+        logger.debug("[FatchFOlder] ディレクトリ監視開始")
         self.delete_if_ended()
 
     def delete_if_ended(self):
@@ -350,7 +350,7 @@ class WatchFolder:
 
 
     def quit(self):
-        logger.info("Quitting TrayApp")
+        logger.debug("Quitting TrayApp")
         if self.watcher_thread:
             self.watcher_thread.stop()
             #self.watcher_thread.wait()

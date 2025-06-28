@@ -171,6 +171,7 @@ class MetaInfoSearchEngine:
             "created": "created",
             "modified": "mtime",
             "size": "size",
+            "collected": "collected_at",
             "random": None,
         }
         sort_column = sort_column_map.get(sort_by)

@@ -144,6 +144,7 @@ class FolderTreeView(QtWidgets.QTreeView):
         self._tree_cache = {}
         self._path_to_item = {}
         self.context_menu_builder = None
+        self.reload_async()
         self.restore_state()
     
     @property
@@ -320,9 +321,8 @@ class FolderTreeView(QtWidgets.QTreeView):
             if path:
                 if path in expanded_set:
                     self.expand(index)
-                if path in selection_set and path in self._path_to_item:
-                    item = self._path_to_item[path]
-                    to_select.append(self.model_.indexFromItem(item))
+                if path in selection_set:
+                    to_select.append(index)
             stack.extend(model.index(i, 0, index) for i in range(model.rowCount(index)))
 
         for idx in to_select:

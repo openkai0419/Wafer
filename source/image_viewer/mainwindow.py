@@ -110,10 +110,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
         self.setCentralWidget(self.splitter)
 
-        self.folder_view = FolderTreeView(self.setting_db.get_all_parent_folders())
+        self.folder_view = FolderTreeView(self.setting_db.get_all_parent_folders(), self.setting_db.get_all_ignore_folders())
         menu_builder = FolderContextMenuBuilder(self.folder_view, self.setting_db.db_name)
         self.folder_view.set_context_menu_builder(menu_builder)
-        self.folder_view.set_excluded_paths(self.setting_db.get_all_ignore_folders())
         self.folder_view.folder_selected.connect(self.on_folder_selected)
 
         left_panel = QtWidgets.QWidget()

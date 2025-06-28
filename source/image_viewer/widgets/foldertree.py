@@ -1,4 +1,5 @@
 import os
+import json
 import hashlib
 from PySide6 import QtWidgets, QtGui, QtCore
 from typing import List, Tuple
@@ -11,6 +12,7 @@ logger, profiler = init_env()
 
 FOLDER_ICON = QtGui.QIcon.fromTheme("folder")
 
+@profiler.profile
 def is_path_excluded(path: str, excluded_set: set) -> bool:
     path = normalize_path(path)
     for excl in excluded_set:
@@ -18,6 +20,7 @@ def is_path_excluded(path: str, excluded_set: set) -> bool:
             return True
     return False
 
+@profiler.profile
 def list_subfolders(path):
     try:
         return sorted(
@@ -28,6 +31,7 @@ def list_subfolders(path):
         logger.warning(f"AccessError: {path}")
         return []
 
+@profiler.profile
 def hash_tree(tree: dict) -> str:
     return hashlib.sha256(json.dumps(tree, sort_keys=True).encode()).hexdigest()
 
@@ -64,10 +68,10 @@ class FolderTreeBuildTask(QtCore.QRunnable):
         self.signal_obj.finished.emit(result)
 
 class FolderTreeModel(QtGui.QStandardItemModel):
-    def __init__(self, root_paths):
+    def __init__(self, root_paths, excluded_paths=[]):
         super().__init__()
         self.root_paths = root_paths
-        self.excluded_paths = set()
+        self.excluded_paths = set(excluded_paths)
         self.setHorizontalHeaderLabels(["Folders"])
         self.populate()
 
@@ -140,11 +144,11 @@ class FolderTreeModel(QtGui.QStandardItemModel):
 class FolderTreeView(QtWidgets.QTreeView):
     folder_selected = QtCore.Signal()
 
-    def __init__(self, root_paths):
+    def __init__(self, root_paths, excluded_paths=[]):
         super().__init__()
         self.setHeaderHidden(True)
         self.setMinimumWidth(200)
-        self.model_ = FolderTreeModel(root_paths)
+        self.model_ = FolderTreeModel(root_paths, excluded_paths)
         self.setModel(self.model_)
         self.clicked.connect(self._on_item_clicked)
         self.viewport().installEventFilter(self)
@@ -152,10 +156,9 @@ class FolderTreeView(QtWidgets.QTreeView):
         self._reload_task = None
         self._tree_cache = {}
         self._path_to_item = {}
-        self.restore_state()
         self.context_menu_builder = None
-        self.model_.excluded_paths = set()
-
+        self.restore_state()
+    
     @property
     def excluded_paths(self):
         return self.model_.excluded_paths
@@ -208,7 +211,8 @@ class FolderTreeView(QtWidgets.QTreeView):
             for root_path, children in tree_data.items():
                 h_new = hash_tree(children)
                 h_old = hash_tree(self._tree_cache.get(root_path, {}))
-                if h_new != h_old:
+                existing_item = self._path_to_item.get(root_path)
+                if h_new != h_old or existing_item is None:
                     item = self.model_.build_items_from_tree_data(root_path, children, self._path_to_item)
                     self.model_.appendRow(item)
                     self._tree_cache[root_path] = children

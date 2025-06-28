@@ -4,6 +4,8 @@ from .viewer.justifiedwidget import JustifiedVirtualScrollWidget
 from ..core.setting_db import SettingDB
 from ..core.query import MetaInfoSearchEngine, MetaQuery
 from ..core.zmq import ZMQSubscriber
+from ..debounce import qt_debounce
+from .widgets.loading_overlay import OverlayLoadingIndicator
 from .widgets.foldertree import FolderTreeView
 from .widgets.foldertree_menu import FolderContextMenuBuilder
 from .widgets.settingwidget import SingleRowOption
@@ -49,8 +51,12 @@ class SearchWorkerRunnable(QtCore.QRunnable):
     def run(self):
         if self._cancelled:
             return
-        #self.engine.explain_query_plan(MetaQuery(**self.search_kwargs))
-        paths, aspects = self.engine.get(MetaQuery(**self.search_kwargs))
+        try:
+            # self.engine.explain_query_plan(MetaQuery(**self.search_kwargs))
+            paths, aspects = self.engine.get(MetaQuery(**self.search_kwargs))
+        except Exception as e:
+            logger.exception(f"[SearchWorker] Search failed: {e}")
+            return
         if self._cancelled:
             return
         self.signals.finished.emit(paths, aspects)
@@ -71,7 +77,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.engine = MetaInfoSearchEngine(data_db_name)
         self.main_ui()
         self.start_ipc_listener()
-        QtCore.QTimer.singleShot(0, self.search)
+        QtCore.QTimer.singleShot(100, self.search)
 
     @QtCore.Slot(int)
     def update_current(self, value):
@@ -139,9 +145,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.right_layout.setContentsMargins(4, 4, 4, 4)
         self.right_layout.setSpacing(6)
 
-        self.row_widget = SingleRowOption(self)
-        self.row_widget.settingchanged.connect(self.search)
-        self.right_layout.addWidget(self.row_widget)
+        self.search_row_widget = SingleRowOption(self)
+        self.search_row_widget.settingchanged.connect(self.search)
+        self.right_layout.addWidget(self.search_row_widget)
 
         self.viewer = AutoScrollArea()
         self.viewer.setWidgetResizable(True)
@@ -163,14 +169,19 @@ class MainWindow(QtWidgets.QMainWindow):
         btn_fs.clicked.connect(self.toggle_fullscreen)
         self.right_layout.addWidget(btn_fs)
 
+        self.loading_indicator = OverlayLoadingIndicator(self.viewer)
+        self.content.layout_ready.connect(self.loading_indicator.stop)
+
+    @profiler.profile
     def add_new_folder(self):
         folder_path = QtWidgets.QFileDialog.getExistingDirectory(self, "フォルダを選択")
         if folder_path:
             self.setting_db.add_parent_folder(folder_path)
             self.folder_view.set_root_paths(self.setting_db.get_all_parent_folders())
 
+    @profiler.profile
     def build_search_query(self):
-        kwargs = self.row_widget.get_values()
+        kwargs = self.search_row_widget.get_values()
         kwargs.update({
             "directories": self.folder_view.get_selected(),
             "only_direct_children": False
@@ -178,6 +189,7 @@ class MainWindow(QtWidgets.QMainWindow):
         return kwargs
 
     @QtCore.Slot()
+    @qt_debounce(300)
     def reload_folderlist(self):
         self.folder_view.reload_async()
 
@@ -200,11 +212,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def moveEvent(self, event):
         super().moveEvent(event)
-        self.row_widget.on_move_event()
+        self.search_row_widget.on_move_event()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self.row_widget.on_move_event()
+        self.search_row_widget.on_move_event()
 
     def auto_scroll(self):
         if self.viewer.isscrolling():
@@ -213,13 +225,14 @@ class MainWindow(QtWidgets.QMainWindow):
             self.viewer.start_auto_scroll(1, 1)
 
     @profiler.profile
-    def on_folder_selected(self, selected_path):
+    def on_folder_selected(self):
         self.run_folder = True
         self.search()
         self.auto_scroll()
 
-    @profiler.profile
+    @qt_debounce(100)
     @QtCore.Slot(bool)
+    @profiler.profile
     def search(self, force=False):
         search_kwargs = self.build_search_query()
 
@@ -227,17 +240,20 @@ class MainWindow(QtWidgets.QMainWindow):
             if search_kwargs == self.current_runnable.search_kwargs and not force:
                 return
             self.current_runnable.cancel()
+        self.force = False
 
+        self.loading_indicator.start()
         runnable = SearchWorkerRunnable(self.engine, search_kwargs)
         runnable.signals.finished.connect(self.on_search_finished)
         self.current_runnable = runnable
         main_thread.start(runnable, 7)
 
     @QtCore.Slot(object, object)
+    @profiler.profile
     def on_search_finished(self, paths, aspects):
         self.content.set_precalculated_meta(paths, aspects)
         self.content.reload_visible_images()
-        self.row_widget.run_folder_worker()
+        self.search_row_widget.run_folder_worker()
 
     def closeEvent(self, event):
         self.folder_view.save_state()

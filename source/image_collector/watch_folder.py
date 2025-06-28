@@ -250,6 +250,12 @@ class DBWorker(QtCore.QObject):
         logger.info(f"無視対象を追加: {paths}")
         with self.database as indexer:
             indexer.set_exclude_paths(paths)
+    
+    @QtCore.Slot()
+    def check_init(self):
+        logger.info(f"初期化実行")
+        with self.database as indexer:
+            indexer.check_init()
 
 @profiler.profile
 def filechange_callback(folder):
@@ -300,6 +306,7 @@ class WatchFolder:
         self.event_batcher.batched_changed.connect(self.db_worker.update_files)
         self.event_batcher.folder_changed.connect(filechange_callback)
         self.db_worker.finished.connect(self.event_batcher.on_db_finished)
+        self.db_worker.check_init()
 
         self.rescantimer = QtCore.QTimer()
         self.rescantimer.setInterval(100)

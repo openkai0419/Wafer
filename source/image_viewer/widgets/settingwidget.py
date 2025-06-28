@@ -4,7 +4,7 @@ from PySide6 import QtWidgets, QtGui, QtCore
 
 from ..thread import main_thread
 from ..viewer_settings import main_setting
-from ...core.query import MetaQuery
+from ...core.query import MetaQuery, MetaInfoSearchEngine
 from ...profiling import init_env
 from ...debounce import qt_debounce
 logger, profiler = init_env()
@@ -213,6 +213,7 @@ class SingleRowOption(QtWidgets.QWidget):
         super().__init__(parent)
         self.root = root
         self._folder_worker = None
+        self.engine = MetaInfoSearchEngine(self.root.dbname)
         self.setup()
 
     def setup(self):
@@ -253,7 +254,6 @@ class SingleRowOption(QtWidgets.QWidget):
             self.option_popup.move_to()
 
     @profiler.profile
-    @qt_debounce(300)
     def run_folder_worker(self, force_update=False):
         selected = self.root.folder_view.get_selected()
         if not force_update and hasattr(self.root, 'run_folder') and not self.root.run_folder:
@@ -262,7 +262,7 @@ class SingleRowOption(QtWidgets.QWidget):
             return
         if self._folder_worker:
             self._folder_worker.cancel()
-        self._folder_worker = FolderComboUpdateWorker(self.root.engine, selected)
+        self._folder_worker = FolderComboUpdateWorker(self.engine, selected)
         self._folder_worker.signals.finished.connect(self.keys_combo.remake)
         main_thread.start(self._folder_worker, 6)
         if hasattr(self.root, 'run_folder'):

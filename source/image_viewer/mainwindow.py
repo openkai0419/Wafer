@@ -18,21 +18,6 @@ from ..constants import data_db_name, setting_db_name
 from ..profiling import init_env
 
 logger, profiler = init_env()
-
-class FullscreenWindow(QtWidgets.QWidget):
-    def __init__(self, content_widget: QtWidgets.QWidget, exit_callback):
-        super().__init__()
-        self.setWindowFlags(QtCore.Qt.Window)
-        self.setLayout(QtWidgets.QVBoxLayout())
-        self.layout().setContentsMargins(0, 0, 0, 0)
-        self.layout().addWidget(content_widget)
-        self._original_widget = content_widget
-        self._exit_callback = exit_callback
-
-    def keyPressEvent(self, event):
-        if event.key() == QtCore.Qt.Key_Escape:
-            self._exit_callback()
-
 class WorkerSignals(QtCore.QObject):
     finished = QtCore.Signal(object, object)
 
@@ -74,7 +59,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setting_db = SettingDB(setting_db_name)
         main_thread.watch_start()
 
-        self.engine = MetaInfoSearchEngine(data_db_name)
+        self.dbname = data_db_name
+        self.engine = MetaInfoSearchEngine(self.dbname)
         self.main_ui()
         self.start_ipc_listener()
         QtCore.QTimer.singleShot(100, self.search)
@@ -195,20 +181,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def toggle_fullscreen(self):
         if not self._is_fullscreen:
-            self.viewer.setParent(None)
-            self.fullscreen_window = FullscreenWindow(self.viewer, self.exit_fullscreen)
-            self.fullscreen_window.showFullScreen()
-            self._is_fullscreen = True
+            self.showFullScreen()
         else:
-            self.exit_fullscreen()
-
-    def exit_fullscreen(self):
-        if self.fullscreen_window:
-            self.viewer.setParent(None)
-            self.right_layout.insertWidget(1, self.viewer)
-            self.fullscreen_window.close()
-            self.fullscreen_window = None
-            self._is_fullscreen = False
+            self.showNormal()
+        self._is_fullscreen = not self._is_fullscreen
 
     def moveEvent(self, event):
         super().moveEvent(event)

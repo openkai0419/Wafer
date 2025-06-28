@@ -37,3 +37,4 @@ class FolderContextMenuBuilder:
 
     def ignore(self, path):
         self.settingdb.add_ignore_folder(path)
+        self.view.set_excluded_paths(self.view.excluded_paths.add(path))

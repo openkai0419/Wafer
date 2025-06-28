@@ -137,8 +137,9 @@ class SearchOptionPopup(QtWidgets.QDialog):
         self.sort_by_combo = QtWidgets.QComboBox()
         self.sort_display_map = {
             "name": "ファイルパス",
-            "created": "作成日",
-            "modified": "更新日",
+            "created": "作成日時",
+            "modified": "更新日時",
+            "collected": "登録順",
             "size": "ファイルサイズ",
             "random": "ランダム",
         }

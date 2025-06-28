@@ -150,9 +150,9 @@ class FunctionProfiler:
         summary.sort(key=lambda x: -x[3])
         summary = summary[:5]
 
-        self.logger.info("[Profiler] Function self-time breakdown:")
+        self.logger.debug("[Profiler] Function self-time breakdown:")
         for name, self_time, count, ratio in summary:
-            self.logger.info(f"  {name:<30} : {self_time:.3f}s ({ratio:.1%}) - {count} calls")
+            self.logger.debug(f"  {name:<30} : {self_time:.3f}s ({ratio:.1%}) - {count} calls")
 
         self.data.clear()
 

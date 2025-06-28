@@ -39,17 +39,17 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         self.setting_watcher.parentFoldersChanged.connect(self.reload_parent_folder)
         self.setting_watcher.ignoreFoldersChanged.connect(self.reload_ignore_folder)
         self.setting_watcher.start()
-        logger.info("tray app start watching")
+        logger.debug("tray app start watching end")
 
     
     @profiler.profile
     def reload_parent_folder(self, folderlist):
-        logger.info(f"parent folder {folderlist}")
+        logger.debug(f"parent folder {folderlist}")
         self.folder_watcher.start(folderlist)
 
     @profiler.profile
     def reload_ignore_folder(self, folderlist):
-        logger.info(f"ignore folder {folderlist}")
+        logger.debug(f"ignore folder {folderlist}")
         self.folder_watcher.set_ignore_folders(folderlist)
 
     def on_activated(self, reason):

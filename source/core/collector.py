@@ -19,11 +19,21 @@ CHUNK = 900
 BASE_DURATION = 10.0
 MIN_BATCH_SIZE = 100
 MAX_BATCH_SIZE = 100000
-INITIAL_BATCH_SIZE = 10000
+INITIAL_BATCH_SIZE = 5000
 
 # 再利用可能なThreadPoolExecutor
 executor = concurrent.futures.ThreadPoolExecutor()
 
+def get_file_ctime(path):
+    try:
+        stat = os.stat(path)
+        if hasattr(stat, 'st_birthtime'):  # macOS
+            return stat.st_birthtime
+        else:  # Unix/Linuxでは作成日時は st_ctime だが実質は変更時刻
+            return stat.st_ctime
+    except Exception as e:
+        logger.warning(f"Failed to get ctime for {path}: {e}")
+        return None
 
 def connect_with_retry(path, timeout=3.0, retries=3, delay=1.0, **kwargs):
     last_exception = None
@@ -49,21 +59,27 @@ def read_info(path):
         logger.warning(f"Failed to read image info for {path}: {e}")
     return {}
 
+def get_aspect(p):
+    reader = QtGui.QImageReader(p)
+    reader.setAutoTransform(True)
+    size = reader.size()
+    aspect = size.width() / size.height() if size.isValid() and size.height() > 0 else 1.0
+    return aspect
+
 def process_image(p, file_info):
     try:
         mtime, fsize = file_info.get(p, (None, None))
-        reader = QtGui.QImageReader(p)
-        reader.setAutoTransform(True)
-        size = reader.size()
-        aspect = size.width() / size.height() if size.isValid() and size.height() > 0 else 1.0
+        ctime = get_file_ctime(p)
+        collected_at = time.time()
+        aspect = get_aspect(p)
         info = read_info(p)
         meta_info = [(str(p), str(k), str(v)) for k, v in info.items()]
         meta_info.append((str(p), "__filepath__", str(p)))
-        return (p, aspect, mtime, fsize, meta_info, None)
+        return (p, aspect, mtime, fsize, ctime, collected_at, meta_info, None)
     except Exception as e:
         logger.warning(f"Failed to process {p}: {e}")
         mtime, fsize = file_info.get(p, (None, None))
-        return (p, None, mtime, fsize, [], 'fail')
+        return (p, None, mtime, fsize, None, time.time(), [], 'fail')
 
 class ImageIndexer:
     def __init__(self, db_path):
@@ -116,39 +132,6 @@ class ImageIndexer:
         return False
 
     @profiler.profile
-    def remove_excluded_from_db(self):
-        if not self.exclude_paths:
-            return
-        logger.info("[ExcludePaths] Removing existing entries under exclude paths...")
-
-        # 全ての登録済み path を取得
-        cur = self.get_reader_cursor()
-        cur.execute("SELECT path FROM images")
-        all_paths = [normalize_path(row[0]) for row in cur.fetchall()]
-        cur.close()
-
-        # 除外対象にマッチするものをフィルタ
-        to_remove = [p for p in all_paths if self.is_path_excluded(p)]
-        if not to_remove:
-            logger.info("[ExcludePaths] No matching entries to remove.")
-            return
-        
-        self._emit_progress(0, len(to_remove))
-
-        cur = self.get_writer_cursor()
-        for i in range(0, len(to_remove), CHUNK):
-            chunk = to_remove[i:i+CHUNK]
-            cur.executemany("DELETE FROM images WHERE path = ?", [(p,) for p in chunk])
-            cur.executemany("DELETE FROM meta WHERE path = ?", [(p,) for p in chunk])
-            cur.executemany("DELETE FROM meta_info WHERE path = ?", [(p,) for p in chunk])
-            self._emit_progress(len(chunk), 0)
-        self.conn.commit()
-        cur.close()
-
-        logger.info(f"[ExcludePaths] Removed {len(to_remove)} entries from DB.")
-        self.emit_update()
-
-    @profiler.profile
     def start(self):
         self.conn = connect_with_retry(self.db_path, timeout=3.0, check_same_thread=False)
         self._apply_pragmas(self.conn)
@@ -180,7 +163,6 @@ class ImageIndexer:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
             conn.execute("PRAGMA locking_mode=NORMAL")
-            conn.execute("PRAGMA temp_store = MEMORY")
 
     def get_writer_cursor(self):
         return self.conn.cursor()
@@ -202,9 +184,9 @@ class ImageIndexer:
     @profiler.profile
     def _integrity_check(self) -> bool:
         try:
-            logger.info("quick_check")
+            logger.info("quick check start")
             result = self.conn.execute("PRAGMA quick_check").fetchone()
-            logger.info("quick_check_end")
+            logger.info("quick check end")
             return result[0] == "ok"
         except Exception as e:
             logger.warning(f"[WARN] integrity_check failed: {e}")
@@ -245,6 +227,7 @@ class ImageIndexer:
                 mtime REAL,
                 size INTEGER,
                 created REAL,
+                collected_at REAL,
                 FOREIGN KEY(path) REFERENCES images(path) ON DELETE CASCADE
             )
         """)
@@ -271,6 +254,7 @@ class ImageIndexer:
         cur.execute("CREATE INDEX IF NOT EXISTS idx_meta_mtime ON meta(mtime)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_meta_size ON meta(size)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_meta_created ON meta(created)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_meta_collected ON meta(collected_at)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_meta_path_aspect ON meta(path, aspect_ratio)")
         cur.close()
         logger.info("ensureschema end")
@@ -319,6 +303,39 @@ class ImageIndexer:
         return result
 
     @profiler.profile
+    def remove_excluded_from_db(self):
+        if not self.exclude_paths:
+            return
+        logger.info("[ExcludePaths] Removing existing entries under exclude paths...")
+
+        # 全ての登録済み path を取得
+        cur = self.get_reader_cursor()
+        cur.execute("SELECT path FROM images")
+        all_paths = [normalize_path(row[0]) for row in cur.fetchall()]
+        cur.close()
+
+        # 除外対象にマッチするものをフィルタ
+        to_remove = [p for p in all_paths if self.is_path_excluded(p)]
+        if not to_remove:
+            logger.info("[ExcludePaths] No matching entries to remove.")
+            return
+        
+        self._emit_progress(0, len(to_remove))
+
+        cur = self.get_writer_cursor()
+        for i in range(0, len(to_remove), CHUNK):
+            chunk = to_remove[i:i+CHUNK]
+            cur.executemany("DELETE FROM images WHERE path = ?", [(p,) for p in chunk])
+            cur.executemany("DELETE FROM meta WHERE path = ?", [(p,) for p in chunk])
+            cur.executemany("DELETE FROM meta_info WHERE path = ?", [(p,) for p in chunk])
+            self._emit_progress(len(chunk), 0)
+        self.conn.commit()
+        cur.close()
+
+        logger.info(f"[ExcludePaths] Removed {len(to_remove)} entries from DB.")
+        self.emit_update()
+
+    @profiler.profile
     def update_index(self, root_paths):
         if isinstance(root_paths, str):
             root_paths = [root_paths]
@@ -349,7 +366,7 @@ class ImageIndexer:
 
         if removed:
             for i in range(0, len(removed), CHUNK):
-                logger.info(i)
+                logger.debug(i)
                 chunk = removed[i:i+CHUNK]
                 cur.executemany("DELETE FROM images WHERE path = ?", [(str(p),) for p in chunk])
                 cur.executemany("DELETE FROM meta WHERE path = ?", [(str(p),) for p in chunk])
@@ -360,7 +377,6 @@ class ImageIndexer:
             self.emit_update()
 
         if added_or_modified:
-            logger.info("added_or_modified")
             self.update_meta_and_image(added_or_modified, current)
     
         cur.close()
@@ -444,12 +460,12 @@ class ImageIndexer:
         meta_info_entries = []
         failed_entries = []
 
-        for p, aspect, mtime, fsize, meta_info, status in results:
+        for p, aspect, mtime, fsize, ctime, collected_at, meta_info, status in results:
             if status == 'fail':
                 failed_entries.append((str(p), mtime, fsize))
                 continue
             image_entries.append((str(p), mtime, fsize))
-            meta_entries.append((str(p), aspect, mtime, fsize, mtime))
+            meta_entries.append((str(p), aspect, mtime, fsize, ctime, collected_at))
             meta_info_entries.extend(meta_info)
 
         return image_entries, meta_entries, meta_info_entries, failed_entries
@@ -474,9 +490,14 @@ class ImageIndexer:
 
             if meta_entries:
                 cur.executemany("""
-                    INSERT INTO meta (path, aspect_ratio, mtime, size, created)
-                    VALUES (?, ?, ?, ?, ?)
-                    ON CONFLICT(path) DO UPDATE SET aspect_ratio = excluded.aspect_ratio, mtime = excluded.mtime, size = excluded.size, created = excluded.created
+                    INSERT INTO meta (path, aspect_ratio, mtime, size, created, collected_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(path) DO UPDATE SET 
+                        aspect_ratio = excluded.aspect_ratio,
+                        mtime = excluded.mtime,
+                        size = excluded.size,
+                        created = excluded.created,
+                        collected_at = excluded.collected_at
                 """, meta_entries)
 
             if meta_info_entries:
@@ -526,8 +547,8 @@ class ImageIndexer:
                     write_queue.put_nowait((image_entries, meta_entries, meta_info_entries, failed_entries))
                     break
                 except queue.Full:
-                    temp_duration = temp_duration * 2
-                    logger.debug(f"[WriterQueue] Full, waiting for consumer to catch up... {temp_duration}")
+                    temp_duration = temp_duration * 1.5
+                    logger.info(f"[WriterQueue] Full, waiting for consumer to catch up... {temp_duration}")
                     time.sleep(temp_duration)
 
             # アダプティブバッチサイズ制御
@@ -537,7 +558,7 @@ class ImageIndexer:
             elif duration > (temp_duration + (temp_duration / 2.0) ):
                 batch_size = max(MIN_BATCH_SIZE, int(batch_size / 2.0))
 
-            logger.info(f"temp_duration{temp_duration}, {temp_duration + (temp_duration / 2)}")
+            logger.debug(f"temp_duration{temp_duration}, {temp_duration + (temp_duration / 2)}")
             i += len(batch)
             self._emit_progress(len(batch), 0)
             self.emit_update()

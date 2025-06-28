@@ -1,13 +1,23 @@
 import os
+import hashlib
 from PySide6 import QtWidgets, QtGui, QtCore
-from typing import List
+from typing import List, Tuple
 
 from ..viewer_settings import main_setting
 from ...profiling import init_env
 from ..thread import main_thread
+from ...common import normalize_path
 logger, profiler = init_env()
 
-@profiler.profile
+FOLDER_ICON = QtGui.QIcon.fromTheme("folder")
+
+def is_path_excluded(path: str, excluded_set: set) -> bool:
+    path = normalize_path(path)
+    for excl in excluded_set:
+        if path == excl or path.startswith(os.path.join(excl, '')):
+            return True
+    return False
+
 def list_subfolders(path):
     try:
         return sorted(
@@ -17,6 +27,9 @@ def list_subfolders(path):
     except (PermissionError, OSError):
         logger.warning(f"AccessError: {path}")
         return []
+
+def hash_tree(tree: dict) -> str:
+    return hashlib.sha256(json.dumps(tree, sort_keys=True).encode()).hexdigest()
 
 class FolderTreeBuilderSignal(QtCore.QObject):
     finished = QtCore.Signal(object)  # List[Dict[str, Dict]]
@@ -54,6 +67,7 @@ class FolderTreeModel(QtGui.QStandardItemModel):
     def __init__(self, root_paths):
         super().__init__()
         self.root_paths = root_paths
+        self.excluded_paths = set()
         self.setHorizontalHeaderLabels(["Folders"])
         self.populate()
 
@@ -67,7 +81,7 @@ class FolderTreeModel(QtGui.QStandardItemModel):
 
     @profiler.profile
     def add_new_root_if_missing(self, root, insert_at_top=False, lookup=None):
-        root_item = QtGui.QStandardItem(QtGui.QIcon.fromTheme("folder"), os.path.basename(root) or root)
+        root_item = QtGui.QStandardItem(FOLDER_ICON, os.path.basename(root) or root)
         root_item.setData(root, QtCore.Qt.UserRole)
         if lookup is not None:
             lookup[root] = root_item
@@ -84,7 +98,9 @@ class FolderTreeModel(QtGui.QStandardItemModel):
             parent_item, path = stack.pop()
             children = list_subfolders(path)
             for entry in sorted(children, key=lambda e: e.name):
-                item = QtGui.QStandardItem(QtGui.QIcon.fromTheme("folder"), entry.name)
+                if is_path_excluded(entry.path, self.excluded_paths):
+                    continue  # ← 除外処理
+                item = QtGui.QStandardItem(FOLDER_ICON, entry.name)
                 item.setData(entry.path, QtCore.Qt.UserRole)
                 parent_item.appendRow(item)
                 if lookup is not None:
@@ -109,12 +125,14 @@ class FolderTreeModel(QtGui.QStandardItemModel):
                 break
 
     @profiler.profile
-    def build_items_from_tree_data(self, root_path, children_dict, lookup: dict) -> QtGui.QStandardItem:
+    def build_items_from_tree_data(self, root_path: str, children_dict: dict, lookup: dict) -> QtGui.QStandardItem:
         name = os.path.basename(root_path) or root_path
-        item = QtGui.QStandardItem(QtGui.QIcon.fromTheme("folder"), name)
+        item = QtGui.QStandardItem(FOLDER_ICON, name)
         item.setData(root_path, QtCore.Qt.UserRole)
         lookup[root_path] = item
         for child_path, subchildren in sorted(children_dict.items()):
+            if is_path_excluded(child_path, self.excluded_paths):
+                continue
             child_item = self.build_items_from_tree_data(child_path, subchildren, lookup)
             item.appendRow(child_item)
         return item
@@ -132,9 +150,20 @@ class FolderTreeView(QtWidgets.QTreeView):
         self.viewport().installEventFilter(self)
         self._reload_task_running = False
         self._reload_task = None
+        self._tree_cache = {}
         self._path_to_item = {}
         self.restore_state()
         self.context_menu_builder = None
+        self.model_.excluded_paths = set()
+
+    @property
+    def excluded_paths(self):
+        return self.model_.excluded_paths
+
+    def set_excluded_paths(self, paths: List[str]):
+        logger.debug(paths)
+        self.model_.excluded_paths = set(paths)
+        self.reload_async()
 
     def is_root_path(self, path):
         return path in self.root_paths
@@ -160,6 +189,8 @@ class FolderTreeView(QtWidgets.QTreeView):
 
     @profiler.profile
     def reload_async(self):
+        if self._reload_task_running:
+            return
         self.cancel_reload()
         self._reload_task_running = True
         self._reload_task = FolderTreeBuildTask(self.model_.root_paths)
@@ -175,15 +206,19 @@ class FolderTreeView(QtWidgets.QTreeView):
 
         for tree_data in tree_data_list:
             for root_path, children in tree_data.items():
-                item = self.model_.build_items_from_tree_data(root_path, children, self._path_to_item)
-                self.model_.appendRow(item)
+                h_new = hash_tree(children)
+                h_old = hash_tree(self._tree_cache.get(root_path, {}))
+                if h_new != h_old:
+                    item = self.model_.build_items_from_tree_data(root_path, children, self._path_to_item)
+                    self.model_.appendRow(item)
+                    self._tree_cache[root_path] = children
 
-        # set_state を遅延呼び出し
         QtCore.QTimer.singleShot(0, lambda: self.set_state(a, b))
         self._reload_task_running = False
+        self.model_.sort(0)
 
     @profiler.profile
-    def get_selected(self):
+    def get_selected(self) -> List[str]:
         selected = []
         for index in self.selectedIndexes():
             if index.column() != 0:
@@ -197,7 +232,7 @@ class FolderTreeView(QtWidgets.QTreeView):
         self.folder_selected.emit()
 
     @profiler.profile
-    def add_path(self, new_path):
+    def add_path(self, new_path: str):
         self.model_.add_root_path(new_path, lookup=self._path_to_item)
         self.set_state(*self.get_state())
         self.model_.sort(0)
@@ -230,64 +265,65 @@ class FolderTreeView(QtWidgets.QTreeView):
             menu.exec(event.globalPos())
 
     @profiler.profile
-    def get_state(self):
+    def get_state(self) -> Tuple[List[str], List[str]]:
         expanded_paths = []
-        model = self.model()
-
-        def collect_expanded(index):
-            if not index.isValid() or not self.isExpanded(index):
-                return
-            path = index.data(QtCore.Qt.UserRole)
-            if path:
-                expanded_paths.append(path)
-            for i in range(model.rowCount(index)):
-                child_index = model.index(i, 0, index)
-                collect_expanded(child_index)
-
-        for i in range(model.rowCount()):
-            index = model.index(i, 0)
-            collect_expanded(index)
-
         selected_paths = self.get_selected()
+        model = self.model()
+        stack = [model.index(i, 0) for i in range(model.rowCount())]
+
+        while stack:
+            index = stack.pop()
+            if not index.isValid():
+                continue
+            if self.isExpanded(index):
+                path = index.data(QtCore.Qt.UserRole)
+                if path:
+                    expanded_paths.append(path)
+            # 末尾に子供をまとめて push（再帰削減）
+            stack.extend(
+                model.index(i, 0, index) for i in range(model.rowCount(index))
+            )
+
         return selected_paths, expanded_paths
 
-    @profiler.profile
     def save_state(self):
         selected_paths, expanded_paths = self.get_state()
         main_setting.save_important("tree/expanded_paths", expanded_paths)
         main_setting.save_important("tree/selected_path", selected_paths)
 
     @profiler.profile
-    def set_state(self, selected_paths, expanded_paths):
-        def expand_matching(index):
+    def set_state(self, selected_paths: List[str], expanded_paths: List[str]):
+        expanded_set = set(expanded_paths)
+        selection_set = set(selected_paths)
+        selection_model = self.selectionModel()
+        selection_model.clearSelection()
+        to_select = []
+
+        model = self.model()
+        stack = [model.index(i, 0) for i in range(model.rowCount())]
+
+        while stack:
+            index = stack.pop()
             if not index.isValid():
-                return
+                continue
             path = index.data(QtCore.Qt.UserRole)
-            if path in expanded_paths:
-                self.expand(index)
-            for i in range(self.model().rowCount(index)):
-                child_index = self.model().index(i, 0, index)
-                expand_matching(child_index)
+            if path:
+                if path in expanded_set:
+                    self.expand(index)
+                if path in selection_set and path in self._path_to_item:
+                    item = self._path_to_item[path]
+                    to_select.append(self.model_.indexFromItem(item))
+            stack.extend(model.index(i, 0, index) for i in range(model.rowCount(index)))
 
-        for i in range(self.model().rowCount()):
-            index = self.model().index(i, 0)
-            expand_matching(index)
+        for idx in to_select:
+            selection_model.select(idx, QtCore.QItemSelectionModel.Select | QtCore.QItemSelectionModel.Rows)
 
-        if selected_paths:
-            indexes_to_select = [
-                self.model_.indexFromItem(self._path_to_item[p])
-                for p in selected_paths if p in self._path_to_item
-            ]
-            selection_model = self.selectionModel()
-            selection_model.clearSelection()
-            for idx in indexes_to_select:
-                selection_model.select(idx, QtCore.QItemSelectionModel.Select | QtCore.QItemSelectionModel.Rows)
-            if indexes_to_select:
-                self.setCurrentIndex(indexes_to_select[0])
-                self.scrollTo(indexes_to_select[0], QtWidgets.QAbstractItemView.PositionAtCenter)
+        if to_select:
+            self.setCurrentIndex(to_select[0])
+            self.scrollTo(to_select[0], QtWidgets.QAbstractItemView.PositionAtCenter)
+
         self.model_.sort(0)
 
-    @profiler.profile
     def restore_state(self):
         expanded_paths = main_setting.get("tree/expanded_paths", [])
         selected_paths = main_setting.get("tree/selected_path", [])

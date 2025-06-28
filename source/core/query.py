@@ -22,6 +22,37 @@ class MetaQuery:
         self.splittext = splittext
         self.only_direct_children = only_direct_children
 
+    def __eq__(self, other):
+        if not isinstance(other, MetaQuery):
+            return NotImplemented
+        return (
+            self.keys == other.keys and
+            self.keywords == other.keywords and
+            self.query_mode == other.query_mode and
+            self.directories == other.directories and
+            self.keyword_mode == other.keyword_mode and
+            self.sort_by == other.sort_by and
+            self.ascending == other.ascending and
+            self.append_mode == other.append_mode and
+            self.splittext == other.splittext and
+            self.only_direct_children == other.only_direct_children
+        )
+
+    def __hash__(self):
+        # 必要であれば hashable にする（例：setやdictのキーにする場合）
+        return hash((
+            tuple(self.keys or []),
+            tuple(self.keywords or []),
+            self.query_mode,
+            tuple(self.directories or []),
+            self.keyword_mode,
+            self.sort_by,
+            self.ascending,
+            self.append_mode,
+            self.splittext,
+            self.only_direct_children,
+        ))
+
     @profiler.profile
     def normalize_inputs(self):
         keys = [self.keys] if isinstance(self.keys, str) else (self.keys or [])
@@ -114,6 +145,7 @@ class MetaInfoSearchEngine:
                 uri=True,
                 check_same_thread=False
             )
+            conn.row_factory = sqlite3.Row
             cur = conn.cursor()
             cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='meta_info'")
             if not cur.fetchone():
@@ -123,7 +155,6 @@ class MetaInfoSearchEngine:
             if not cur.fetchone():
                 logger.warning("Table 'images' not found in DB.")
                 return False
-            conn.row_factory = sqlite3.Row
             self.conn = conn
             return True
         except sqlite3.OperationalError as e:
@@ -140,11 +171,9 @@ class MetaInfoSearchEngine:
             "created": "created",
             "modified": "mtime",
             "size": "size",
-            "random": "RANDOM()",
+            "random": None,
         }
         sort_column = sort_column_map.get(sort_by)
-        if not sort_column:
-            raise ValueError(f"Unsupported sort_by: {sort_by}")
         order = "ASC" if ascending else "DESC"
         return sort_column, order
 
@@ -156,14 +185,22 @@ class MetaInfoSearchEngine:
         sort_column, order = self._build_sort_clause(sort_by, ascending)
 
         all_rows = []
+            
         for i in range(0, len(paths), batch_size):
             batch = paths[i:i + batch_size]
             placeholders = ",".join("?" for _ in batch)
-            query = f"""
-                SELECT meta.path, aspect_ratio, {sort_column} AS sort_value
-                FROM meta
-                WHERE meta.path IN ({placeholders})
-            """
+            if sort_column:
+                query = f"""
+                    SELECT meta.path, aspect_ratio, {sort_column} AS sort_value
+                    FROM meta
+                    WHERE meta.path IN ({placeholders})
+                """
+            else:
+                query = f"""
+                    SELECT meta.path, aspect_ratio
+                    FROM meta
+                    WHERE meta.path IN ({placeholders})
+                """
             rows = cur.execute(query, batch).fetchall()
             all_rows.extend(rows)
 
@@ -227,13 +264,22 @@ class MetaInfoSearchEngine:
             combined_params.extend(params)
 
         sort_col, order = self._build_sort_clause(queries[-1].sort_by, queries[-1].ascending)
-        final_query = f"""
-            SELECT meta.path, aspect_ratio
-            FROM meta
-            JOIN images ON meta.path = images.path
-            WHERE meta.path IN ({combined_sql})
-            ORDER BY {sort_col} {order}
-        """
+        if sort_col:
+            final_query = f"""
+                SELECT meta.path, aspect_ratio
+                FROM meta
+                JOIN images ON meta.path = images.path
+                WHERE meta.path IN ({combined_sql})
+                ORDER BY {sort_col} {order}
+            """
+        else:
+            final_query = f"""
+                SELECT meta.path, aspect_ratio
+                FROM meta
+                JOIN images ON meta.path = images.path
+                WHERE meta.path IN ({combined_sql})
+            """
+            
         rows = cur.execute(final_query, combined_params).fetchall()
         return [row["path"] for row in rows], [row["aspect_ratio"] for row in rows]
 

@@ -121,11 +121,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.left_layout.setSpacing(0)
         self.splitter.addWidget(left_panel)
 
+        self.only_direct_children = main_setting.get("query/only_direct_children", False)
+        
         self.iconbar = IconButtonBar(left_buttons=[
-            IconButtonConfig("icons/open.png", "Open File", lambda: self.add_new_folder()),
-            IconButtonConfig("icons/save.png", "Save File", lambda: print("Save clicked")),
+            IconButtonConfig("icons/settings.png", "Settings", lambda: print("Settings clicked")),
+            IconButtonConfig("icons/open.png", "Add File", lambda: self.add_new_folder()),
         ], right_buttons=[
-            IconButtonConfig("icons/settings.png", "Settings", lambda: print("Settings clicked"), checkable=True),
+            IconButtonConfig("icons/save.png", "Bot Only", self.toggle_only_direct_children, checkable=True, checked=self.only_direct_children),
+            IconButtonConfig("icons/save.png", "Full Screen", lambda: self.toggle_fullscreen()),
+            IconButtonConfig("icons/save.png", "AutoScroll", lambda: self.auto_scroll()),
         ])
         self.left_layout.addWidget(self.iconbar)
 
@@ -160,11 +164,6 @@ class MainWindow(QtWidgets.QMainWindow):
         if sizes:
             self.splitter.setSizes(sizes)
 
-        self.fullscreen_window = None
-        btn_fs = QtWidgets.QPushButton("全画面")
-        btn_fs.clicked.connect(self.toggle_fullscreen)
-        self.right_layout.addWidget(btn_fs)
-
         self.loading_indicator = OverlayLoadingIndicator(self.viewer)
         self.content.layout_ready.connect(self.loading_indicator.stop)
 
@@ -180,7 +179,7 @@ class MainWindow(QtWidgets.QMainWindow):
         kwargs = self.search_row_widget.get_values()
         kwargs.update({
             "directories": self.folder_view.get_selected(),
-            "only_direct_children": False
+            "only_direct_children": self.only_direct_children
         })
         return MetaQuery(**kwargs)
 
@@ -188,6 +187,12 @@ class MainWindow(QtWidgets.QMainWindow):
     @qt_debounce(300)
     def reload_folderlist(self):
         self.folder_view.reload_async()
+
+    def toggle_only_direct_children(self, checked):
+        logger.info(checked)
+        self.only_direct_children = checked
+        main_setting.set("query/only_direct_children", checked)
+        self.search(force=True)
 
     def toggle_fullscreen(self):
         if not self._is_fullscreen:

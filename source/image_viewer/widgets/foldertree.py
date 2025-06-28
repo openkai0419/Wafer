@@ -128,19 +128,6 @@ class FolderTreeModel(QtGui.QStandardItemModel):
                 self.removeRow(i)
                 break
 
-    @profiler.profile
-    def build_items_from_tree_data(self, root_path: str, children_dict: dict, lookup: dict) -> QtGui.QStandardItem:
-        name = os.path.basename(root_path) or root_path
-        item = QtGui.QStandardItem(FOLDER_ICON, name)
-        item.setData(root_path, QtCore.Qt.UserRole)
-        lookup[root_path] = item
-        for child_path, subchildren in sorted(children_dict.items()):
-            if is_path_excluded(child_path, self.excluded_paths):
-                continue
-            child_item = self.build_items_from_tree_data(child_path, subchildren, lookup)
-            item.appendRow(child_item)
-        return item
-
 class FolderTreeView(QtWidgets.QTreeView):
     folder_selected = QtCore.Signal()
 
@@ -201,23 +188,42 @@ class FolderTreeView(QtWidgets.QTreeView):
         main_thread.start(self._reload_task)
 
     @profiler.profile
+    def _build_item_from_tree_data(self, path: str, children_dict: dict) -> QtGui.QStandardItem:
+        name = os.path.basename(path) or path
+        item = QtGui.QStandardItem(FOLDER_ICON, name)
+        item.setData(path, QtCore.Qt.UserRole)
+        self._path_to_item[path] = item
+
+        for child_path, sub in sorted(children_dict.items()):
+            if is_path_excluded(child_path, self.model_.excluded_paths):
+                continue
+            child_item = self._build_item_from_tree_data(child_path, sub)
+            item.appendRow(child_item)
+        return item
+
+    @profiler.profile
     def _on_reload_complete(self, tree_data_list):
-        a, b = self.get_state()
+        selected_paths, expanded_paths = self.get_state()
+
+        self.model_.blockSignals(True)
+        self.model_.layoutAboutToBeChanged.emit()
         self.model_.clear()
         self.model_.setHorizontalHeaderLabels(["Folders"])
-        self._path_to_item = {}
+        self._path_to_item.clear()
 
         for tree_data in tree_data_list:
             for root_path, children in tree_data.items():
                 h_new = hash_tree(children)
                 h_old = hash_tree(self._tree_cache.get(root_path, {}))
-                existing_item = self._path_to_item.get(root_path)
-                if h_new != h_old or existing_item is None:
-                    item = self.model_.build_items_from_tree_data(root_path, children, self._path_to_item)
+                if h_new != h_old or root_path not in self._path_to_item:
+                    item = self._build_item_from_tree_data(root_path, children)
                     self.model_.appendRow(item)
                     self._tree_cache[root_path] = children
 
-        QtCore.QTimer.singleShot(0, lambda: self.set_state(a, b))
+        self.model_.layoutChanged.emit()
+        self.model_.blockSignals(False)
+
+        QtCore.QTimer.singleShot(0, lambda: self.set_state(selected_paths, expanded_paths))
         self._reload_task_running = False
         self.model_.sort(0)
 

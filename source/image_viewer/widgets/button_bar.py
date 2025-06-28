@@ -9,11 +9,12 @@ from PySide6.QtCore import QSize
 import sys
 
 class IconButtonConfig:
-    def __init__(self, icon_path, tooltip="", callback=None, checkable=False):
+    def __init__(self, icon_path, tooltip="", callback=None, checkable=False, checked=False):
         self.icon_path = icon_path
         self.tooltip = tooltip
         self.callback = callback
         self.checkable = checkable
+        self.checked = checked
 
 class IconButtonBar(QWidget):
     def __init__(self, left_buttons=None, right_buttons=None, icon_size=QSize(15, 15)):
@@ -37,8 +38,13 @@ class IconButtonBar(QWidget):
             btn.setIconSize(self.icon_size)
             btn.setToolTip(cfg.tooltip)
             btn.setCheckable(cfg.checkable)
-            if cfg.callback:
-                btn.clicked.connect(cfg.callback)
+            if btn.isCheckable():
+                btn.setChecked(cfg.checked)
+                if cfg.callback:
+                    btn.toggled.connect(cfg.callback)
+            else:
+                if cfg.callback:
+                    btn.clicked.connect(cfg.callback)
 
             self.layout.addWidget(btn)
             if side == "left":

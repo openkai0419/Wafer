@@ -13,10 +13,10 @@ class FolderComboSignals(QtCore.QObject):
     finished = QtCore.Signal(list)
 
 class FolderComboUpdateWorker(QtCore.QRunnable):
-    def __init__(self, engine, selected_path):
+    def __init__(self, db_name, selected_path):
         super().__init__()
         self.signals = FolderComboSignals()
-        self.engine = engine
+        self.engine = MetaInfoSearchEngine(db_name)
         self.selected_path = selected_path
         self._cancelled = False
 
@@ -213,7 +213,6 @@ class SingleRowOption(QtWidgets.QWidget):
         super().__init__(parent)
         self.root = root
         self._folder_worker = None
-        self.engine = MetaInfoSearchEngine(self.root.dbname)
         self.setup()
 
     def setup(self):
@@ -262,7 +261,7 @@ class SingleRowOption(QtWidgets.QWidget):
             return
         if self._folder_worker:
             self._folder_worker.cancel()
-        self._folder_worker = FolderComboUpdateWorker(self.engine, selected)
+        self._folder_worker = FolderComboUpdateWorker(self.root.dbname, selected)
         self._folder_worker.signals.finished.connect(self.keys_combo.remake)
         main_thread.start(self._folder_worker, 6)
         if hasattr(self.root, 'run_folder'):

@@ -3,12 +3,10 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import os
 import threading
-import atexit
-from pathlib import Path
 
-from ..core.collector import ImageIndexer
 from ..core.zmq import ZMQPublisher
 from ..profiling import init_env
+from ..debounce import qt_debounce
 
 logger, profiler = init_env()
 extensions = (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp")
@@ -49,8 +47,7 @@ class ProgressAggregator:
             self.current += current_inc
         self._notify()
         if self.maximum and self.current >= self.maximum:
-            pass
-            #self.reset()
+            self.reset()
 
     @profiler.profile
     def _notify(self):
@@ -223,8 +220,13 @@ class FolderWatcherThread(QtCore.QThread):
 
 class DBWorker(QtCore.QObject):
     finished = QtCore.Signal()
+    trigger_ignore = QtCore.Signal(object)
+    trigger_rescan = QtCore.Signal(object)
+
     def __init__(self, database,*args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.trigger_ignore.connect(self.set_ignore)
+        self.trigger_rescan.connect(self.rescan_all)
         self.database = database
 
     @QtCore.Slot(list)
@@ -249,13 +251,7 @@ class DBWorker(QtCore.QObject):
     def set_ignore(self, paths):
         logger.info(f"無視対象を追加: {paths}")
         with self.database as indexer:
-            indexer.set_exclude_paths(paths)
-    
-    @QtCore.Slot()
-    def check_init(self):
-        logger.info(f"初期化実行")
-        with self.database as indexer:
-            indexer.check_init()
+            indexer.set_exclude_paths(paths, run=True)
 
 @profiler.profile
 def filechange_callback(folder):
@@ -284,7 +280,7 @@ def notify_gui_process(message: str = "update_done"):
 
 class WatchFolder:
     @profiler.profile
-    def __init__(self, dbname):
+    def __init__(self, database):
         super().__init__()
 
         self.watcher_thread = None
@@ -292,7 +288,7 @@ class WatchFolder:
         self.folders = None
         self.ignore_folders = None
 
-        self.database = ImageIndexer(dbname)
+        self.database = database
         self.database.set_progress_callback(progress_callback)
         self.database.set_update_callback(notify_gui_process)
 
@@ -306,33 +302,25 @@ class WatchFolder:
         self.event_batcher.batched_changed.connect(self.db_worker.update_files)
         self.event_batcher.folder_changed.connect(filechange_callback)
         self.db_worker.finished.connect(self.event_batcher.on_db_finished)
-        self.db_worker.check_init()
 
-        self.rescantimer = QtCore.QTimer()
-        self.rescantimer.setInterval(100)
-        self.rescantimer.setSingleShot(True)
-        self.rescantimer.timeout.connect(self.rescan_all)
-
-        self.ignoretimer = QtCore.QTimer()
-        self.ignoretimer.setInterval(100)
-        self.ignoretimer.setSingleShot(True)
-        self.ignoretimer.timeout.connect(self.run_ignore_folders)
         logger.info("WatchFolder init end")
 
     @profiler.profile
+    @qt_debounce(200)
     def rescan_all(self):
         if not self.folders:
             return
-        self.db_worker.rescan_all(self.folders)
+        self.db_worker.trigger_rescan.emit(self.folders)
 
     def set_ignore_folders(self, folders):
         self.ignore_folders = folders
-        self.ignoretimer.start()
+        self.run_ignore_folders()
 
+    @qt_debounce(200)
     def run_ignore_folders(self):
         if not self.ignore_folders:
             return
-        self.db_worker.set_ignore(self.ignore_folders)
+        self.db_worker.trigger_ignore.emit(self.ignore_folders)
 
     @profiler.profile
     def start(self, folders):
@@ -349,7 +337,7 @@ class WatchFolder:
         self.watcher_thread.start()
 
         self.folders = folders
-        self.rescantimer.start()
+        self.rescan_all()
         logger.info("[FatchFOlder] ディレクトリ監視開始")
         self.delete_if_ended()
 

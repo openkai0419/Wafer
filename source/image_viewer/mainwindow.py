@@ -22,10 +22,10 @@ class WorkerSignals(QtCore.QObject):
     finished = QtCore.Signal(object, object)
 
 class SearchWorkerRunnable(QtCore.QRunnable):
-    def __init__(self, engine, search_kwargs):
+    def __init__(self, engine, query):
         super().__init__()
         self.engine = engine
-        self.search_kwargs = search_kwargs
+        self.query = query
         self.signals = WorkerSignals()
         self._cancelled = False
 
@@ -38,7 +38,7 @@ class SearchWorkerRunnable(QtCore.QRunnable):
             return
         try:
             # self.engine.explain_query_plan(MetaQuery(**self.search_kwargs))
-            paths, aspects = self.engine.get(MetaQuery(**self.search_kwargs))
+            paths, aspects = self.engine.get(self.query)
         except Exception as e:
             logger.exception(f"[SearchWorker] Search failed: {e}")
             return
@@ -149,6 +149,9 @@ class MainWindow(QtWidgets.QMainWindow):
         geo = main_setting.get("window/geometry", None)
         if geo:
             self.restoreGeometry(geo)
+        sizes = main_setting.get("window/splitter", None)
+        if sizes:
+            self.splitter.setSizes(sizes)
 
         self.fullscreen_window = None
         btn_fs = QtWidgets.QPushButton("全画面")
@@ -172,7 +175,7 @@ class MainWindow(QtWidgets.QMainWindow):
             "directories": self.folder_view.get_selected(),
             "only_direct_children": False
         })
-        return kwargs
+        return MetaQuery(**kwargs)
 
     @QtCore.Slot()
     @qt_debounce(300)
@@ -206,20 +209,20 @@ class MainWindow(QtWidgets.QMainWindow):
         self.search()
         self.auto_scroll()
 
-    @qt_debounce(100)
+    @qt_debounce(150)
     @QtCore.Slot(bool)
     @profiler.profile
     def search(self, force=False):
-        search_kwargs = self.build_search_query()
+        query = self.build_search_query()
 
         if self.current_runnable:
-            if search_kwargs == self.current_runnable.search_kwargs and not force:
+            if query == self.current_runnable.query and not force:
                 return
             self.current_runnable.cancel()
         self.force = False
 
         self.loading_indicator.start()
-        runnable = SearchWorkerRunnable(self.engine, search_kwargs)
+        runnable = SearchWorkerRunnable(self.engine, query)
         runnable.signals.finished.connect(self.on_search_finished)
         self.current_runnable = runnable
         main_thread.start(runnable, 7)
@@ -235,6 +238,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.folder_view.save_state()
         main_setting.set("window/geometry", self.saveGeometry())
         main_setting.set("viewer/scroll", self.content.get_center_image_index())
+        main_setting.set("window/splitter", self.splitter.sizes())
         main_setting.commit()
         if hasattr(self, "_subscriber"):
             self._subscriber.stop()

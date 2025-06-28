@@ -6,6 +6,7 @@ from ..thread import main_thread
 from ..viewer_settings import main_setting
 from ...core.query import MetaQuery
 from ...profiling import init_env
+from ...debounce import qt_debounce
 logger, profiler = init_env()
 
 class FolderComboSignals(QtCore.QObject):
@@ -26,10 +27,10 @@ class FolderComboUpdateWorker(QtCore.QRunnable):
     def run(self):
         if self._cancelled:
             return
-        results = self.engine.list_all_keys(MetaQuery(directories=self.selected_path), sort_by_freq=True, include_freq=True)
+        query = MetaQuery(directories=self.selected_path)
+        results = self.engine.list_all_keys(query, sort_by_freq=True, include_freq=True)
         if not self._cancelled:
             self.signals.finished.emit(results)
-
 
 class CheckableCombo(QtWidgets.QToolButton):
     action_changed = QtCore.Signal()
@@ -41,7 +42,8 @@ class CheckableCombo(QtWidgets.QToolButton):
 
         self.menu = QtWidgets.QMenu(self)
         self.actions = []
-        self.previous_key = main_setting.get("query/keys", ["__filepath__"])
+        self.default_key = "__filepath__"
+        self.previous_key = main_setting.get("query/keys", [self.default_key])
 
         if items:
             for name, data in items:
@@ -56,7 +58,6 @@ class CheckableCombo(QtWidgets.QToolButton):
         if data in self.previous_key:
             action.setChecked(True)
         action.toggled.connect(self.on_key_changed)
-
         self.menu.addAction(action)
         self.actions.append(action)
 
@@ -66,13 +67,14 @@ class CheckableCombo(QtWidgets.QToolButton):
         self.menu.clear()
         self.actions.clear()
 
-        defi = None
-        for i,( key, count) in enumerate(datas):
+        for key, count in datas:
             self.add_item(f"{key} ({count})", key)
-            if key == "__filepath__":
-                defi = i
-        if not self.checked_items() and defi is not None:
-            self.actions[defi].setChecked(True)
+
+        if not self.checked_items():
+            for a in self.actions:
+                if a.data() == self.default_key:
+                    a.setChecked(True)
+                    break
 
         self.setUpdatesEnabled(True)
 
@@ -83,7 +85,8 @@ class CheckableCombo(QtWidgets.QToolButton):
 
     def checked_items(self):
         return [a.data() for a in self.actions if a.isChecked()]
-    
+
+
 class SearchOptionPopup(QtWidgets.QDialog):
     settingchanged = QtCore.Signal()
 
@@ -94,87 +97,86 @@ class SearchOptionPopup(QtWidgets.QDialog):
         self.setWindowFlags(self.windowFlags() | QtCore.Qt.Tool)
         self.setLayout(QtWidgets.QVBoxLayout())
 
-        self.setup()
-    
-    def setup(self):
+        self.build_ui()
+        self.restore_settings()
+
+    def build_ui(self):
         layout = self.layout()
 
+        # --- クエリタイプ（GLOB/LIKE）
         self.query_type_combo = QtWidgets.QComboBox()
-        self.sort_display_map = {
-            "GLOB": "GLOB",
-            "LIKE": "LIKE",
-        }
-        default = main_setting.get("query/query_mode", "GLOB")
-        for i, (key, label) in enumerate(self.sort_display_map.items()):
-            self.query_type_combo.addItem(label, userData=key)
-            if default == key:
-                self.query_type_combo.setCurrentIndex(i)
+        self.query_type_combo.addItem("GLOB", "GLOB")
+        self.query_type_combo.addItem("LIKE", "LIKE")
         self.query_type_combo.currentIndexChanged.connect(lambda: self.settingchanged.emit())
+        layout.addWidget(self.query_type_combo)
 
-        self.keyword_group = QtWidgets.QButtonGroup()
+        # --- AND / OR ラジオボタン（独立グループ化）
+        self.keyword_group = QtWidgets.QButtonGroup(self)
         self.and_radio = QtWidgets.QRadioButton("AND")
         self.or_radio = QtWidgets.QRadioButton("OR")
-        default = main_setting.get("query/keyword_mode", "AND")
-        if default == "AND":
-            self.and_radio.setChecked(True)
-        else:
-            self.or_radio.setChecked(True)
         self.keyword_group.addButton(self.and_radio)
         self.keyword_group.addButton(self.or_radio)
         self.and_radio.toggled.connect(lambda: self.settingchanged.emit())
         self.or_radio.toggled.connect(lambda: self.settingchanged.emit())
 
+        hlayout1 = QtWidgets.QHBoxLayout()
+        hlayout1.addWidget(self.and_radio)
+        hlayout1.addWidget(self.or_radio)
+        layout.addLayout(hlayout1)
+
+        # --- 分割文字列
+        hlayout3 = QtWidgets.QHBoxLayout()
+        self.splittext = QtWidgets.QLineEdit()
+        self.splittext.textChanged.connect(lambda: self.settingchanged.emit())
+        hlayout3.addWidget(QtWidgets.QLabel("検索用の分割文字:"))
+        hlayout3.addWidget(self.splittext)
+        layout.addLayout(hlayout3)
+
+        # --- ソートキー（ドロップダウン）
+        layout.addWidget(QtWidgets.QLabel("ソート:"))
         self.sort_by_combo = QtWidgets.QComboBox()
         self.sort_display_map = {
             "name": "ファイルパス",
             "created": "作成日",
             "modified": "更新日",
-            "size": "サイズ",
-            "random": "ランダム", 
+            "size": "ファイルサイズ",
+            "random": "ランダム",
         }
-        default = main_setting.get("query/sort_by", "name")
-        for i, (key, label) in enumerate(self.sort_display_map.items()):
+        for key, label in self.sort_display_map.items():
             self.sort_by_combo.addItem(label, userData=key)
-            if default == key:
-                self.sort_by_combo.setCurrentIndex(i)
         self.sort_by_combo.currentIndexChanged.connect(lambda: self.settingchanged.emit())
+        layout.addWidget(self.sort_by_combo)
 
-        self.order_group = QtWidgets.QButtonGroup()
+        # --- 昇順 / 降順 ラジオボタン（独立グループ化）
+        self.order_group = QtWidgets.QButtonGroup(self)
         self.asc_radio = QtWidgets.QRadioButton("昇順")
         self.desc_radio = QtWidgets.QRadioButton("降順")
-        default = main_setting.get("query/ascending", True)
-        if default:
-            self.asc_radio.setChecked(True)
-        else:
-            self.desc_radio.setChecked(True)
-        self.asc_radio.setChecked(True)
         self.order_group.addButton(self.asc_radio)
         self.order_group.addButton(self.desc_radio)
         self.asc_radio.toggled.connect(lambda: self.settingchanged.emit())
         self.desc_radio.toggled.connect(lambda: self.settingchanged.emit())
 
-        self.splittext = QtWidgets.QLineEdit()
-        self.splittext.setText(main_setting.get("query/splittext",","))
-        self.splittext.textChanged.connect(lambda: self.settingchanged.emit())
-
-        layout.addWidget(self.query_type_combo)
-        
-        hlayout1 = QtWidgets.QHBoxLayout()
-        layout.addLayout(hlayout1)
-        hlayout1.addWidget(self.and_radio)
-        hlayout1.addWidget(self.or_radio)
-        
-        hlayout3 = QtWidgets.QHBoxLayout()
-        layout.addLayout(hlayout3)
-        hlayout3.addWidget(QtWidgets.QLabel("検索用の分割文字:"))
-        hlayout3.addWidget(self.splittext)
-        
-        layout.addWidget(QtWidgets.QLabel("ソート:"))
-        layout.addWidget(self.sort_by_combo)
         hlayout2 = QtWidgets.QHBoxLayout()
-        layout.addLayout(hlayout2)
         hlayout2.addWidget(self.asc_radio)
         hlayout2.addWidget(self.desc_radio)
+        layout.addLayout(hlayout2)
+
+    def restore_settings(self):
+        default_query = main_setting.get("query/query_mode", "GLOB")
+        index = self.query_type_combo.findData(default_query)
+        self.query_type_combo.setCurrentIndex(index if index >= 0 else 0)
+
+        keyword_mode = main_setting.get("query/keyword_mode", "AND")
+        (self.and_radio if keyword_mode == "AND" else self.or_radio).setChecked(True)
+
+        sort_by = main_setting.get("query/sort_by", "name")
+        index = self.sort_by_combo.findData(sort_by)
+        self.sort_by_combo.setCurrentIndex(index if index >= 0 else 0)
+
+        ascending = main_setting.get("query/ascending", True)
+        (self.asc_radio if ascending else self.desc_radio).setChecked(True)
+
+        self.splittext.setText(main_setting.get("query/splittext", ","))
 
     @profiler.profile
     def move_to(self):
@@ -186,61 +188,54 @@ class SearchOptionPopup(QtWidgets.QDialog):
     @profiler.profile
     def get_settings(self):
         sort_by = self.sort_by_combo.currentData()
+        ascending = self.asc_radio.isChecked() if sort_by != "name" else not self.asc_radio.isChecked()
+
         kwargs = {
             "query_mode": self.query_type_combo.currentData(),
-            "keyword_mode":"AND" if self.and_radio.isChecked() else "OR",
+            "keyword_mode": "AND" if self.and_radio.isChecked() else "OR",
             "sort_by": sort_by,
-            "ascending":self.asc_radio.isChecked() if sort_by != "name" else not self.asc_radio.isChecked(),
+            "ascending": ascending,
         }
         main_setting.set("query/query_mode", kwargs["query_mode"])
         main_setting.set("query/keyword_mode", kwargs["keyword_mode"])
         main_setting.set("query/sort_by", kwargs["sort_by"])
-        main_setting.set("query/ascending", self.asc_radio.isChecked())
+        main_setting.set("query/ascending", ascending)
         return kwargs
-    
-    def get_splittext(self): 
+
+    def get_splittext(self):
         return self.splittext.text() or ","
 
-class SingleRowOption(QtWidgets.QWidget, ):
+
+class SingleRowOption(QtWidgets.QWidget):
     settingchanged = QtCore.Signal()
 
     def __init__(self, root, parent=None):
         super().__init__(parent)
         self.root = root
-        self._folder_worker = None 
+        self._folder_worker = None
         self.setup()
 
     def setup(self):
-        # --- 検索バーとオプション ---
         self.layout = QtWidgets.QHBoxLayout()
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.layout.setSpacing(0)
         self.setLayout(self.layout)
+
         self.search_bar = QtWidgets.QLineEdit()
         self.search_bar.setPlaceholderText("検索ワードを入力...")
         self.search_bar.setText(main_setting.get("query/keywords", None))
-
-        self._debounce_timer = QtCore.QTimer(self)
-        self._debounce_timer.setSingleShot(True)
-        self._debounce_timer.setInterval(200)  # ミリ秒（例：300ms）
-
-        self.search_bar.textChanged.connect(lambda: self._debounce_timer.start())
-        self._debounce_timer.timeout.connect(lambda: self.settingchanged.emit())
+        self.search_bar.textChanged.connect(lambda: self.settingchanged.emit())
 
         self.option_button = QtWidgets.QPushButton(" 検索設定 ▼ ")
         self.option_button.clicked.connect(self.toggle_option_popup)
 
-        self.keys_combo = QtWidgets.QComboBox()
         self.keys_combo = CheckableCombo()
         self.keys_combo.action_changed.connect(lambda: self.settingchanged.emit())
-
-        self.run_folder_worker()
 
         self.layout.addWidget(self.keys_combo)
         self.layout.addWidget(self.search_bar)
         self.layout.addWidget(self.option_button)
 
-        # --- ポップアップオプションUI ---
         self.option_popup = SearchOptionPopup(self.option_button, self)
         self.option_popup.settingchanged.connect(lambda: self.settingchanged.emit())
 
@@ -258,19 +253,21 @@ class SingleRowOption(QtWidgets.QWidget, ):
             self.option_popup.move_to()
 
     @profiler.profile
-    def run_folder_worker(self):
+    @qt_debounce(300)
+    def run_folder_worker(self, force_update=False):
         selected = self.root.folder_view.get_selected()
-        if self.root.run_folder:
-            if self._folder_worker:
-                if self._folder_worker.selected_path == selected:
-                    return
-                self._folder_worker.cancel()
-                
-            self._folder_worker = FolderComboUpdateWorker(self.root.engine, selected)
-            self._folder_worker.signals.finished.connect(self.keys_combo.remake)
-            main_thread.start(self._folder_worker,6)
+        if not force_update and hasattr(self.root, 'run_folder') and not self.root.run_folder:
+            return
+        if self._folder_worker and self._folder_worker.selected_path == selected:
+            return
+        if self._folder_worker:
+            self._folder_worker.cancel()
+        self._folder_worker = FolderComboUpdateWorker(self.root.engine, selected)
+        self._folder_worker.signals.finished.connect(self.keys_combo.remake)
+        main_thread.start(self._folder_worker, 6)
+        if hasattr(self.root, 'run_folder'):
             self.root.run_folder = False
-    
+
     @profiler.profile
     def get_values(self):
         kwargs = self.option_popup.get_settings()

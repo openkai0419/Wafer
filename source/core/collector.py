@@ -52,11 +52,13 @@ class ImageIndexer:
         self.conn = None
         self.read_conn = None
         self.exclude_paths = set()
-        self.start()
+        logger.info("image indexer init end")
+
+    @profiler.profile
+    def check_init(self):
         self._initialize_database()
         self._ensure_schema()
-        logger.info("image indexer init end")
-    
+
     def set_progress_callback(self, callback):
         self._progress_callback = callback
 
@@ -79,11 +81,13 @@ class ImageIndexer:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.exit()
 
+    @profiler.profile
     def set_exclude_paths(self, paths):
         self.exclude_paths = {normalize_path(p) for p in paths}
         logger.info(f"[ExcludePaths] {len(self.exclude_paths)} paths set.")
         self._remove_excluded_from_db()
 
+    @profiler.profile
     def is_path_excluded(self, path: str) -> bool:
         for ex in self.exclude_paths:
             if path == ex or path.startswith(ex + "/"):
@@ -169,11 +173,15 @@ class ImageIndexer:
         except sqlite3.DatabaseError as e:
             logger.warning(f"[ERROR] DB corrupted: {e}")
             self._backup_and_recreate()
+        except:
+            raise
 
     @profiler.profile
     def _integrity_check(self) -> bool:
         try:
-            result = self.conn.execute("PRAGMA integrity_check").fetchone()
+            logger.info("quick_check")
+            result = self.conn.execute("PRAGMA quick_check").fetchone()
+            logger.info("quick_check_end")
             return result[0] == "ok"
         except Exception as e:
             logger.warning(f"[WARN] integrity_check failed: {e}")

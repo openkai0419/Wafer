@@ -138,6 +138,7 @@ class SizeMismatchChecker(QtCore.QTimer):
         
 
 class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
+    layout_ready = QtCore.Signal()
 
     def __init__(self, scroll, parent=None):
         super().__init__(parent)
@@ -370,6 +371,7 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
             if self._restore_scroll_index < len(self.rects):
                 self.reinstall_scroll_index(self._restore_scroll_index)
                 self._restore_scroll_requested = False
+        self.layout_ready.emit()
 
         # 高速化：画面内またはプリフェッチ対象のみジオメトリを更新
         for i in self.visible_indices:

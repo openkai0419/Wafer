@@ -3,6 +3,7 @@ import sqlite3
 from operator import attrgetter
 from random import shuffle
 from pathlib import Path
+from ..common import normalize_path
 from ..profiling import init_env
 logger, profiler = init_env()
 
@@ -179,7 +180,7 @@ class MetaInfoSearchEngine:
         if not self._connect_if_needed():
             return []
         cur = self.conn.cursor()
-        sql, params = query.to_sql(self._normalize_path)
+        sql, params = query.to_sql(normalize_path)
         if not sql:
             return []
         rows = cur.execute(sql, params).fetchall()
@@ -193,7 +194,11 @@ class MetaInfoSearchEngine:
         sql, params = query.to_path_query(self._normalize_path)
         if not sql:
             return [], []
-        rows = cur.execute(sql, params).fetchall()
+        try:
+            rows = cur.execute(sql, params).fetchall()
+        except sqlite3.DatabaseError as e:
+            logger.error(f"DB query failed: {e}")
+            return [], []
         paths = [row["path"] for row in rows]
         return self._fetch_paths_with_aspect_ratio(cur, paths, query.sort_by, query.ascending)
 
@@ -205,7 +210,7 @@ class MetaInfoSearchEngine:
         subqueries = []
 
         for q in queries:
-            sql, params = q.to_path_query(self._normalize_path)
+            sql, params = q.to_path_query(normalize_path)
             if not sql:
                 if q.append_mode == "AND":
                     return [], []
@@ -237,7 +242,7 @@ class MetaInfoSearchEngine:
         if not self._connect_if_needed():
             return []
         cur = self.conn.cursor()
-        filters, params, _ = query.build_conditions(self._normalize_path, require_keys=False)
+        filters, params, _ = query.build_conditions(normalize_path, require_keys=False)
 
         if filters is None:
             return []
@@ -255,7 +260,7 @@ class MetaInfoSearchEngine:
             logger.warning("DB接続失敗：explain_query_plan スキップ")
             return None
 
-        sql, params = query.to_sql(self._normalize_path)
+        sql, params = query.to_sql(normalize_path)
         if not sql:
             logger.info("無効なクエリのため EXPLAIN QUERY PLAN をスキップ")
             return None

@@ -120,7 +120,7 @@ class FolderTreeModel(QtGui.QStandardItemModel):
         return item
 
 class FolderTreeView(QtWidgets.QTreeView):
-    folder_selected = QtCore.Signal(list)
+    folder_selected = QtCore.Signal()
 
     def __init__(self, root_paths):
         super().__init__()
@@ -194,7 +194,7 @@ class FolderTreeView(QtWidgets.QTreeView):
         return selected
 
     def _on_item_clicked(self, index):
-        self.folder_selected.emit(self.get_selected())
+        self.folder_selected.emit()
 
     @profiler.profile
     def add_path(self, new_path):
@@ -213,7 +213,7 @@ class FolderTreeView(QtWidgets.QTreeView):
             index = self.indexAt(event.pos())
             if not index.isValid():
                 self.clearSelection()
-                self.folder_selected.emit(None)
+                self.folder_selected.emit()
         return super().eventFilter(source, event)
 
     def set_context_menu_builder(self, builder):

@@ -13,8 +13,10 @@ logger, profiler = init_env()
 
 extensions = (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp")
 CHUNK = 900
-COMMIT_INTERVAL = 4.0
-RECOMMENDED_BATCH_SIZE = 50
+BASE_DURATION = 3.0
+MIN_BATCH_SIZE = 100
+MAX_BATCH_SIZE = 10000
+INITIAL_BATCH_SIZE = 500
 
 # 再利用可能なThreadPoolExecutor
 executor = concurrent.futures.ThreadPoolExecutor()
@@ -411,90 +413,100 @@ class ImageIndexer:
         self.emit_update()
         logger.info(f"[remove_by_file_list] Removed {len(normalized)} entries from DB")
 
+    def process_image(self, p, file_info):
+        try:
+            reader = QtGui.QImageReader(p)
+            reader.setAutoTransform(True)
+            size = reader.size()
+            aspect = size.width() / size.height() if size.isValid() and size.height() > 0 else 1.0
+            mtime, fsize = file_info.get(p, (None, None))
+            info = read_info(p)
+            meta_info = [(str(p), str(k), str(v)) for k, v in info.items()]
+            meta_info.append((str(p), "__filepath__", str(p)))
+            return (p, aspect, mtime, fsize, meta_info, None)
+        except Exception as e:
+            logger.warning(f"Failed to process {p}: {e}")
+            mtime, fsize = file_info.get(p, (None, None))
+            return (p, None, mtime, fsize, [], 'fail')
+
+    @profiler.profile
+    def batch_process_images(self, batch, file_info):
+        results = list(executor.map(lambda p: self.process_image(p, file_info), batch))
+
+        image_entries = []
+        meta_entries = []
+        meta_info_entries = []
+        failed_entries = []
+
+        for p, aspect, mtime, fsize, meta_info, status in results:
+            if status == 'fail':
+                failed_entries.append((str(p), mtime, fsize))
+                continue
+            image_entries.append((str(p), mtime, fsize))
+            meta_entries.append((str(p), aspect, mtime, fsize, mtime))
+            meta_info_entries.extend(meta_info)
+
+        return image_entries, meta_entries, meta_info_entries, failed_entries
+
+    @profiler.profile
+    def write_batch_to_db(self, image_entries, meta_entries, meta_info_entries, failed_entries):
+        with self.conn:
+            cur = self.conn.cursor()
+            if failed_entries:
+                cur.executemany("""
+                    INSERT INTO images (path, mtime, size, status)
+                    VALUES (?, ?, ?, 'fail')
+                    ON CONFLICT(path) DO UPDATE SET mtime = excluded.mtime, size = excluded.size, status = 'fail'
+                """, failed_entries)
+
+            if image_entries:
+                cur.executemany("""
+                    INSERT INTO images (path, mtime, size, status)
+                    VALUES (?, ?, ?, 'ok')
+                    ON CONFLICT(path) DO UPDATE SET mtime = excluded.mtime, size = excluded.size, status = 'ok'
+                """, image_entries)
+
+            if meta_entries:
+                cur.executemany("""
+                    INSERT INTO meta (path, aspect_ratio, mtime, size, created)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(path) DO UPDATE SET aspect_ratio = excluded.aspect_ratio, mtime = excluded.mtime, size = excluded.size, created = excluded.created
+                """, meta_entries)
+
+            if meta_info_entries:
+                cur.executemany("""
+                    INSERT INTO meta_info (path, key, value)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(path, key) DO UPDATE SET value = excluded.value
+                """, meta_info_entries)
+            cur.close()
+
     @profiler.profile
     def update_meta_and_image(self, paths, file_info):
         total = len(paths)
-        updated_count = 0
-        update_emit_interval = COMMIT_INTERVAL  # emit_update() 呼び出し間隔（秒）
-        emit_last_time = time.monotonic()
 
-        def process_image(p):
-            try:
-                reader = QtGui.QImageReader(p)
-                reader.setAutoTransform(True)
-                size = reader.size()
-                aspect = size.width() / size.height() if size.isValid() and size.height() > 0 else 1.0
-                mtime, fsize = file_info[p] if p in file_info else (None, None)
-                info = read_info(p)
-                meta_info = [(str(p), str(k), str(v)) for k, v in info.items()]
-                meta_info.append((str(p), "__filepath__", str(p)))
-                return (p, aspect, mtime, fsize, meta_info, None)
-            except Exception as e:
-                logger.warning(f"Failed to process {p}: {e}")
-                return (p, None, file_info.get(p, (None, None))[0], file_info.get(p, (None, None))[1], [], 'fail')
+        batch_size = INITIAL_BATCH_SIZE
+        i = 0
 
-        for i in range(0, total, RECOMMENDED_BATCH_SIZE):
-            batch = paths[i:i+RECOMMENDED_BATCH_SIZE]
-            results = list(executor.map(process_image, batch))
+        while i < total:
+            batch = paths[i:i + batch_size]
+            t0 = time.monotonic()
+            image_entries, meta_entries, meta_info_entries, failed_entries = self.batch_process_images(batch, file_info)
+            t1 = time.monotonic()
 
-            meta_entries = []
-            image_entries = []
-            meta_info_entries = []
+            self.write_batch_to_db(image_entries, meta_entries, meta_info_entries, failed_entries)
 
-            for p, aspect, mtime, fsize, meta_info, status in results:
-                if status == 'fail':
-                    with self.conn:
-                        cur = self.conn.cursor()
-                        cur.execute("""
-                            INSERT INTO images (path, mtime, size, status)
-                            VALUES (?, ?, ?, 'fail')
-                            ON CONFLICT(path) DO UPDATE SET mtime = excluded.mtime, size = excluded.size, status = 'fail'
-                        """, (str(p), mtime, fsize))
-                        cur.close()
-                    continue
-                meta_entries.append((str(p), aspect, mtime, fsize, mtime))
-                image_entries.append((str(p), mtime, fsize))
-                meta_info_entries.extend(meta_info)
+            # アダプティブバッチサイズ調整
+            duration = t1 - t0
+            if duration < BASE_DURATION:
+                batch_size = min(MAX_BATCH_SIZE, int(batch_size * 1.2))
+            elif duration > (BASE_DURATION + 1.0):
+                batch_size = max(MIN_BATCH_SIZE, int(batch_size / 2))
+            i += len(batch)
 
-            try:
-                with self.conn:
-                    cur = self.conn.cursor()
-                    if image_entries:
-                        cur.executemany("""
-                            INSERT INTO images (path, mtime, size, status)
-                            VALUES (?, ?, ?, 'ok')
-                            ON CONFLICT(path) DO UPDATE SET mtime = excluded.mtime, size = excluded.size, status = 'ok'
-                        """, image_entries)
-                    if meta_entries:
-                        cur.executemany("""
-                            INSERT INTO meta (path, aspect_ratio, mtime, size, created)
-                            VALUES (?, ?, ?, ?, ?)
-                            ON CONFLICT(path) DO UPDATE SET aspect_ratio = excluded.aspect_ratio, mtime = excluded.mtime, size = excluded.size, created = excluded.created
-                        """, meta_entries)
-                    if meta_info_entries:
-                        cur.executemany("""
-                            INSERT INTO meta_info (path, key, value)
-                            VALUES (?, ?, ?)
-                            ON CONFLICT(path, key) DO UPDATE SET value = excluded.value
-                        """, meta_info_entries)
-                    cur.close()
-            except Exception as e:
-                logger.error(f"Transaction failed at batch {i+len(batch)}/{total}: {e}")
-
-            updated_count += len(batch)
-            now = time.monotonic()
-            if (now - emit_last_time) > update_emit_interval:
-                self._emit_progress(updated_count, 0)
-                self.emit_update()
-                logger.info(f"[Time Commit] Committed after {i+len(batch)} / {total} items")
-                emit_last_time = now
-                updated_count = 0
-
-        # 最後に一度だけ通知
-        if updated_count > 0:
-            self._emit_progress(updated_count, 0)
+            self._emit_progress(len(batch), 0)
             self.emit_update()
-            logger.info(f"[Final Commit] update_meta_and_image completed {total} items")
+            logger.info(f"[Adaptive Commit] {i}/{total} processed (batch={batch_size}, {duration:.2f}s)")
 
     @profiler.profile
     def clean_unused(self):

@@ -15,6 +15,18 @@ def _get_publisher() -> ZMQPublisher:
             _publisher = ZMQPublisher()
         return _publisher
     
+def close_publisher():
+    """Close publisher instance safely"""
+    global _publisher
+    with _publisher_lock:
+        if _publisher is not None:
+            try:
+                _publisher.close()
+            except Exception as e:
+                logger.warning(f"[publisher close failed] {e}")
+            finally:
+                _publisher = None
+
 class ProgressAggregator:
     def __init__(self):
         self.current = 0

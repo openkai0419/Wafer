@@ -2,10 +2,9 @@ import sqlite3
 import contextlib
 from typing import List, Dict
 
-from ..profiling import init_env
+from ..profiling import logger, profiler
 from ..common import normalize_path
 from .db_utils import retry_sqlite_connection
-logger, profiler = init_env()
 
 
 class SettingDB:

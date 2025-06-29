@@ -12,6 +12,11 @@ from functools import wraps
 import sys
 from PySide6 import QtWidgets
 
+# Global logger and profiler accessed by other modules
+logger = None
+profiler = None
+_initialized = False
+
 
 def is_pid_active(pid):
     return psutil.pid_exists(pid)
@@ -184,7 +189,13 @@ def create_exception_hook(logger):
         sys.exit(1)
     return exception_hook
 
-def init_env(interval: int = 5):
+def initialize_profiling(interval: int = 5):
+    """Initialize global logger and profiler."""
+    global logger, profiler, _initialized
+
+    if _initialized:
+        return logger, profiler
+
     logger = LoggerManager.get_logger()
     sys.excepthook = create_exception_hook(logger)
 
@@ -193,7 +204,12 @@ def init_env(interval: int = 5):
         profiler.set_enabled(False)
 
     cleanup_old_logs_safe(keep_latest=0)
+    _initialized = True
     return logger, profiler
 
+# Backward compatible name
+def init_env(interval: int = 5):
+    return initialize_profiling(interval)
+
 if __name__ == "__main__":
-    logger, profiler = init_env()
+    logger, profiler = initialize_profiling()

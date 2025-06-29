@@ -1,8 +1,7 @@
 import threading
 
 from ..core.zmq import ZMQPublisher
-from ..profiling import init_env
-logger, profiler = init_env()
+from ..profiling import logger, profiler
 
 _publisher = None
 _publisher_lock = threading.Lock()

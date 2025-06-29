@@ -6,9 +6,8 @@ import os
 from .progress_notifier import _progress_aggregator
 from ..debounce import qt_debounce
 
-from ..profiling import init_env
+from ..profiling import logger, profiler
 from ..common import IMAGE_EXTENSIONS
-logger, profiler = init_env()
 extensions = IMAGE_EXTENSIONS
 
 @profiler.profile

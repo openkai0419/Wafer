@@ -2,8 +2,7 @@ from PySide6 import QtCore
 import os
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
-from ..profiling import init_env
-logger, profiler = init_env()
+from ..profiling import logger, profiler
 
 class SettingWatcher(QtCore.QObject):
     parentFoldersChanged = QtCore.Signal(list)

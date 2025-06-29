@@ -16,9 +16,7 @@ from .widgets.button_bar import IconButtonBar, IconButtonConfig
 from .thread import main_thread
 from .viewer_settings import main_setting
 from ..constants import data_db_name, setting_db_name
-from ..profiling import init_env
-
-logger, profiler = init_env()
+from ..profiling import logger, profiler
 class WorkerSignals(QtCore.QObject):
     finished = QtCore.Signal(object, object)
 

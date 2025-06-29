@@ -1,6 +1,6 @@
 from PySide6 import QtWidgets, QtGui, QtCore
 
-from ..profiling import init_env
+from ..profiling import logger, profiler
 from ..constants import setting_db_name, data_db_name
 from ..core.collector import ImageIndexer
 from .watch_folder import WatchFolder
@@ -8,7 +8,6 @@ from .watch_setting import SettingWatcher
 from .progress_notifier import close_publisher
 from ..core.setting_db import SettingDB
 
-logger, profiler = init_env()
 
 class TrayApp(QtWidgets.QSystemTrayIcon):
     @profiler.profile

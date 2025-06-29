@@ -4,8 +4,7 @@ import multiprocessing
 from enum import Enum
 from PySide6 import QtWidgets, QtGui, QtCore
 
-from ..profiling import init_env
-logger, profiler = init_env()
+from ..profiling import logger, profiler
 
 class AdaptiveThreadPool:
     _instance = None

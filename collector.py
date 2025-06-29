@@ -4,9 +4,9 @@ from PySide6 import QtWidgets, QtGui, QtCore
 from source.mutex import SafeProcessLock
 
 from source.image_collector.main_tray import TrayApp
-from source.profiling import init_env
+from source.profiling import initialize_profiling, logger, profiler
 
-logger, profiler = init_env()
+initialize_profiling()
 
 def main():
     try:

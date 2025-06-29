@@ -17,9 +17,8 @@ from ..mouseeventmanager import (
     ClickType
 )
 from .cachemanager import MemoryLimitedPixmapCache, QLabelPool
-from ...profiling import init_env
+from ...profiling import logger, profiler
 from ...common import get_main_based_directory
-logger, profiler = init_env()
 
 QWIDGETSIZE_MAX = 16777215
 

@@ -10,10 +10,9 @@ from pathlib import Path
 from PIL import Image
 from PySide6 import QtGui
 
-from ..profiling import init_env
+from ..profiling import logger, profiler
 from ..common import normalize_path, IMAGE_EXTENSIONS
 from .db_utils import connect_with_retry
-logger, profiler = init_env()
 
 extensions = IMAGE_EXTENSIONS
 CHUNK = 900

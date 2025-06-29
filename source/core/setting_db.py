@@ -1,28 +1,11 @@
 import sqlite3
-import os
 import contextlib
-import time
 from typing import List, Dict
 
 from ..profiling import logger, profiler
 from ..common import normalize_path
+from .db_utils import retry_sqlite_connection
 
-@profiler.profile
-def retry_sqlite_connection(db_name: str, timeout: float = 3.0, interval: float = 0.1):
-    start_time = time.time()
-    last_exception = None
-    while time.time() - start_time < timeout:
-        try:
-            con = sqlite3.connect(db_name, isolation_level=None)
-            con.execute("PRAGMA foreign_keys = ON")
-            con.execute("PRAGMA journal_mode=WAL")
-            return con
-        except sqlite3.OperationalError as e:
-            last_exception = e
-            logger.warning(f"SQLite connection failed, retrying... ({e})")
-            time.sleep(interval)
-    logger.error(f"Could not acquire DB write connection within {timeout:.1f}s")
-    raise TimeoutError(f"Could not acquire DB write connection within {timeout:.1f}s") from last_exception
 
 class SettingDB:
     def __init__(self, db_name: str):

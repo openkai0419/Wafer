@@ -7,7 +7,8 @@ from .progress_notifier import _progress_aggregator
 from ..debounce import qt_debounce
 
 from ..profiling import logger, profiler
-extensions = (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp")
+from ..common import IMAGE_EXTENSIONS
+extensions = IMAGE_EXTENSIONS
 
 @profiler.profile
 def progress_callback(current_inc, total_inc):
@@ -149,7 +150,6 @@ class FolderWatcherThread(QtCore.QThread):
                     self.observer.schedule(handler, path, recursive=True)
                 else:
                     logger.warning(f"[WARNING] Path does not exist: {path}")
-                    QtWidgets.QMessageBox.warning(None, "監視対象エラー", f"存在しないパス: {path}")
 
             self.observer.start()
             while self.running:
@@ -287,7 +287,6 @@ class WatchFolder:
             if thread.isFinished():
                 deleatings.append(thread)
         self.old_threads = [d for d in self.old_threads if not d in deleatings]
-
 
     def quit(self):
         logger.debug("Quitting TrayApp")

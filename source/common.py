@@ -5,6 +5,9 @@ from pathlib import Path
 
 from PySide6 import QtGui
 
+# Supported image extensions
+IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp")
+
 def normalize_path(p):
     try:
         path = str(Path(p).resolve(strict=False))

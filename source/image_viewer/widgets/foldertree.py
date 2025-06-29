@@ -14,7 +14,6 @@ FOLDER_ICON = QtGui.QIcon.fromTheme("folder")
 
 @profiler.profile
 def is_path_excluded(path: str, excluded_set: set) -> bool:
-    path = normalize_path(path)
     for excl in excluded_set:
         if path == excl or path.startswith(os.path.join(excl, '')):
             return True
@@ -23,10 +22,18 @@ def is_path_excluded(path: str, excluded_set: set) -> bool:
 @profiler.profile
 def list_subfolders(path):
     try:
-        return sorted(
-            (e for e in os.scandir(path) if e.is_dir(follow_symlinks=False)),
-            key=lambda e: e.name
-        )
+        entries = []
+        for e in os.scandir(path):
+            if e.is_dir(follow_symlinks=False):
+                # `DirEntry` をそのまま使えないので、必要な情報を保持した簡易ラッパーを作成
+                entries.append(
+                    type("Entry", (), {
+                        "name": e.name,
+                        "path": normalize_path(e.path),
+                        "__repr__": lambda self: f"<Entry name={self.name!r} path={self.path!r}>"
+                    })()
+                )
+        return sorted(entries, key=lambda e: e.name)
     except (PermissionError, OSError):
         logger.warning(f"AccessError: {path}")
         return []
@@ -152,8 +159,8 @@ class FolderTreeView(QtWidgets.QTreeView):
         return self.model_.excluded_paths
 
     def set_excluded_paths(self, paths: List[str]):
-        logger.debug(paths)
-        self.model_.excluded_paths = set(paths)
+        self.model_.excluded_paths = set(normalize_path(p) for p in paths)
+        logger.debug(self.model_.excluded_paths)
         self.reload_async()
 
     def is_root_path(self, path):
@@ -256,6 +263,7 @@ class FolderTreeView(QtWidgets.QTreeView):
 
     def eventFilter(self, source, event):
         if source == self.viewport() and event.type() in {QtCore.QEvent.MouseButtonPress, QtCore.QEvent.MouseButtonDblClick}:
+            #if event.button() == QtCore.Qt.LeftButton:
             index = self.indexAt(event.pos())
             if not index.isValid():
                 self.clearSelection()
@@ -268,6 +276,7 @@ class FolderTreeView(QtWidgets.QTreeView):
     @profiler.profile
     def contextMenuEvent(self, event: QtGui.QContextMenuEvent):
         index = self.indexAt(event.pos())
+        self.folder_selected.emit() 
         if not index.isValid():
             return
         path = index.data(QtCore.Qt.UserRole)

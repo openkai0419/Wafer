@@ -105,7 +105,7 @@ class SizeMismatchChecker(QtCore.QTimer):
         self._active = False
         self._idle_timer = QtCore.QTimer()
         self._idle_timer.setSingleShot(True)
-        self._idle_timer.setInterval(1600)
+        self._idle_timer.setInterval(1200)
         self._idle_timer.timeout.connect(self._on_idle)
 
     def trigger(self):
@@ -458,7 +458,6 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
         if i not in self.widgets:
             label = self.label_pool.acquire()
             label.setGeometry(rect)
-            label.setToolTip(self.image_paths[i])
             self.widgets[i] = label
             if i in self.pixmap_cache:
                 label.set_pixmap(self.pixmap_cache[i], self.image_paths[i])

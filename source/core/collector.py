@@ -558,7 +558,7 @@ class ImageIndexer:
             elif duration > (temp_duration + (temp_duration / 2.0) ):
                 batch_size = max(MIN_BATCH_SIZE, int(batch_size / 2.0))
 
-            logger.debug(f"temp_duration{temp_duration}, {temp_duration + (temp_duration / 2)}")
+            logger.debug(f"temp_duration {temp_duration}, {temp_duration + (temp_duration / 2)}")
             i += len(batch)
             self._emit_progress(len(batch), 0)
             self.emit_update()

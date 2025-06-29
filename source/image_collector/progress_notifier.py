@@ -1,0 +1,59 @@
+import threading
+
+from ..core.zmq import ZMQPublisher
+from ..profiling import init_env
+logger, profiler = init_env()
+
+_publisher = None
+_publisher_lock = threading.Lock()
+
+@profiler.profile
+def _get_publisher() -> ZMQPublisher:
+    global _publisher
+    with _publisher_lock:
+        if _publisher is None:
+            _publisher = ZMQPublisher()
+        return _publisher
+    
+class ProgressAggregator:
+    def __init__(self):
+        self.current = 0
+        self.maximum = 0
+
+    def reset(self):
+        self.current = 0
+        self.maximum = 0
+        self._notify_progress()
+
+    @profiler.profile
+    def add(self, current_inc=0, total_inc=0):
+        if total_inc:
+            self.maximum += total_inc
+        if current_inc:
+            self.current += current_inc 
+        if self.current >= self.maximum:
+            if self.current != 0 and self.maximum != 0:
+                self.reset()
+            return
+        self._notify_progress()
+
+    @profiler.profile
+    def _notify_progress(self):
+        try:
+            publisher = _get_publisher()
+            publisher.send("maximum", str(self.maximum))
+            publisher.send("progress", str(self.current))
+            #logger.debug(f"[NOTIFY] progress {self.current} {self.maximum}")
+        except Exception as e:
+            logger.warning(f"[進捗通知失敗] {e}")
+
+    @profiler.profile
+    def notify_extra(self, key: str, value: object):
+        try:
+            publisher = _get_publisher()
+            publisher.send(key, str(value))
+            logger.debug(f"[NOTIFY] EXTRA {key} {value}")
+        except Exception as e:
+            logger.warning(f"[通知失敗: {key}={value}] {e}")
+
+_progress_aggregator = ProgressAggregator()

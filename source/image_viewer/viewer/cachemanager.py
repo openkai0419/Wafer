@@ -23,7 +23,6 @@ class FadeLabel(QtWidgets.QLabel):
         self._fade_anim.setDuration(self._FADE_DURATION)
         self._fade_anim.setEasingCurve(QtCore.QEasingCurve.OutCubic)
 
-    # ------------------------------------------------------------- #
     # プロパティラッパ
     def get_opacity(self):
         return self._opacity
@@ -34,7 +33,6 @@ class FadeLabel(QtWidgets.QLabel):
         self.update()
 
     opacity = QtCore.Property(float, get_opacity, set_opacity)
-    # ------------------------------------------------------------- #
 
     @profiler.profile
     def set_pixmap(self, pixmap: QtGui.QPixmap, curpath=None):
@@ -46,6 +44,7 @@ class FadeLabel(QtWidgets.QLabel):
             self._fade_anim.setStartValue(0.0)
             self._fade_anim.setEndValue(1.0)
             self._fade_anim.start()
+            QtCore.QTimer.singleShot(0, lambda: self.setToolTip(curpath))
         else:
             self.setPixmap(pixmap)
             self.curpath = curpath

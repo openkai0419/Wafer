@@ -2,9 +2,9 @@ import sys
 import subprocess
 import os
 from PySide6 import QtWidgets, QtGui, QtCore
-from source.image_viewer.mainwindow import MainWindow 
-from source.profiling import init_env
-logger, profiler = init_env()
+from source.image_viewer.mainwindow import MainWindow
+from source.profiling import initialize_profiling, logger, profiler
+initialize_profiling()
 
 def run_collector_subprocess():
     # 実行形態に応じて collector を切り替える

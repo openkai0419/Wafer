@@ -4,8 +4,7 @@ from operator import attrgetter
 from random import shuffle
 from pathlib import Path
 from ..common import normalize_path
-from ..profiling import init_env
-logger, profiler = init_env()
+from ..profiling import logger, profiler
 
 class MetaQuery:
     def __init__(self, keys=None, keywords=None, query_mode="LIKE", directories=None,

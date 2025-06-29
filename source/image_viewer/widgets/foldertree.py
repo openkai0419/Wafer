@@ -5,10 +5,9 @@ from PySide6 import QtWidgets, QtGui, QtCore
 from typing import List, Tuple
 
 from ..viewer_settings import main_setting
-from ...profiling import init_env
+from ...profiling import logger, profiler
 from ..thread import main_thread
 from ...common import normalize_path
-logger, profiler = init_env()
 
 FOLDER_ICON = QtGui.QIcon.fromTheme("folder")
 

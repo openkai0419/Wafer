@@ -10,9 +10,8 @@ from pathlib import Path
 from PIL import Image
 from PySide6 import QtGui
 
-from ..profiling import init_env
+from ..profiling import logger, profiler
 from ..common import normalize_path
-logger, profiler = init_env()
 
 extensions = (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp")
 CHUNK = 900

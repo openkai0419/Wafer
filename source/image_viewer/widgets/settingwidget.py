@@ -5,9 +5,8 @@ from PySide6 import QtWidgets, QtGui, QtCore
 from ..thread import main_thread
 from ..viewer_settings import main_setting
 from ...core.query import MetaQuery, MetaInfoSearchEngine
-from ...profiling import init_env
+from ...profiling import logger, profiler
 from ...debounce import qt_debounce
-logger, profiler = init_env()
 
 class FolderComboSignals(QtCore.QObject):
     finished = QtCore.Signal(list)

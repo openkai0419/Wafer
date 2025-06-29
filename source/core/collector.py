@@ -11,10 +11,11 @@ from PIL import Image
 from PySide6 import QtGui
 
 from ..profiling import init_env
-from ..common import normalize_path
+from ..common import normalize_path, IMAGE_EXTENSIONS
+from .db_utils import connect_with_retry
 logger, profiler = init_env()
 
-extensions = (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp")
+extensions = IMAGE_EXTENSIONS
 CHUNK = 900
 BASE_DURATION = 10.0
 MIN_BATCH_SIZE = 100
@@ -35,21 +36,6 @@ def get_file_ctime(path):
         logger.warning(f"Failed to get ctime for {path}: {e}")
         return None
 
-def connect_with_retry(path, timeout=3.0, retries=3, delay=1.0, **kwargs):
-    last_exception = None
-    for attempt in range(retries):
-        try:
-            conn = sqlite3.connect(path, timeout=timeout, **kwargs)
-            return conn
-        except sqlite3.OperationalError as e:
-            last_exception = e
-            logger.warning(f"[connect_with_retry] Attempt {attempt+1} failed: {e}")
-            time.sleep(delay)
-        except Exception as e:
-            logger.error(f"[connect_with_retry] Unexpected error: {e}")
-            raise
-    logger.error(f"[connect_with_retry] All attempts failed. Raising last exception.")
-    raise last_exception
 
 def read_info(path):
     try:

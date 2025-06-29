@@ -7,8 +7,9 @@ from .progress_notifier import _progress_aggregator
 from ..debounce import qt_debounce
 
 from ..profiling import init_env
+from ..common import IMAGE_EXTENSIONS
 logger, profiler = init_env()
-extensions = (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp")
+extensions = IMAGE_EXTENSIONS
 
 @profiler.profile
 def progress_callback(current_inc, total_inc):

@@ -128,8 +128,8 @@ class MainWindow(QtWidgets.QMainWindow):
             IconButtonConfig("icons/open.png", "Add File", lambda: self.add_new_folder()),
         ], right_buttons=[
             IconButtonConfig("icons/save.png", "Bot Only", self.toggle_only_direct_children, checkable=True, checked=self.only_direct_children),
-            IconButtonConfig("icons/save.png", "Full Screen", lambda: self.toggle_fullscreen()),
             IconButtonConfig("icons/save.png", "AutoScroll", lambda: self.auto_scroll()),
+            IconButtonConfig("icons/save.png", "Full Screen", lambda: self.toggle_fullscreen()),
         ])
         self.left_layout.addWidget(self.iconbar)
 
@@ -184,7 +184,7 @@ class MainWindow(QtWidgets.QMainWindow):
         return MetaQuery(**kwargs)
 
     @QtCore.Slot()
-    @qt_debounce(300)
+    @qt_debounce(500)
     def reload_folderlist(self):
         self.folder_view.reload_async()
 
@@ -219,7 +219,6 @@ class MainWindow(QtWidgets.QMainWindow):
     def on_folder_selected(self):
         self.run_folder = True
         self.search()
-        self.auto_scroll()
 
     @qt_debounce(150)
     @QtCore.Slot(bool)

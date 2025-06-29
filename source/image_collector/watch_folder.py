@@ -2,63 +2,28 @@ from PySide6 import QtWidgets, QtGui, QtCore
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import os
-import threading
 
-from ..core.zmq import ZMQPublisher
-from ..profiling import init_env
+from .progress_notifier import _progress_aggregator
 from ..debounce import qt_debounce
 
+from ..profiling import init_env
 logger, profiler = init_env()
 extensions = (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp")
 
-_publisher = None
-_publisher_lock = threading.Lock()
+@profiler.profile
+def progress_callback(current_inc, total_inc):
+    _progress_aggregator.add(current_inc, total_inc)
 
 @profiler.profile
-def _get_publisher() -> ZMQPublisher:
-    global _publisher
-    with _publisher_lock:
-        if _publisher is None:
-            _publisher = ZMQPublisher()
-        return _publisher
+def update_callback(message="update_done"):
+    logger.debug(f"Update: {message}")
+    _progress_aggregator.notify_extra("update", message)
 
 @profiler.profile
-def _notify_maximum_inc(count=1):
-    try:
-        _progress_aggregator.add(0, count)
-    except Exception as e:
-        logger.warning(f"通知失敗: {e}")
+def filechange_callback(folder):
+    logger.debug(f"folder changed: {folder}")
+    _progress_aggregator.notify_extra("folderchanged", folder)
 
-class ProgressAggregator:
-    def __init__(self):
-        self.current = 0
-        self.maximum = 0
-
-    def reset(self):
-        self.current = 0
-        self.maximum = 0
-        self._notify()
-
-    @profiler.profile
-    def add(self, current_inc=0, total_inc=0):
-        if total_inc:
-            self.maximum += total_inc
-        if current_inc:
-            self.current += current_inc
-        self._notify()
-        if self.maximum and self.current >= self.maximum:
-            self.reset()
-
-    @profiler.profile
-    def _notify(self):
-        try:
-            publisher = _get_publisher()
-            publisher.send("maximum", str(self.maximum))
-            publisher.send("progress", str(self.current))
-        except Exception as e:
-            logger.warning(f"通知失敗: {e}")
-
-_progress_aggregator = ProgressAggregator()
 
 class EventBatcher(QtCore.QObject):
     batched_deleted = QtCore.Signal(list)
@@ -79,12 +44,12 @@ class EventBatcher(QtCore.QObject):
     def add_deleted(self, path):
         if path not in self._deleted:
             self._deleted.add(path)
-            _notify_maximum_inc(1)
+            progress_callback(0,1)
 
     def add_changed(self, path):
         if path not in self._changed:
             self._changed.add(path)
-            _notify_maximum_inc(1)
+            progress_callback(0,1)
 
     def path_changed(self, path):
         self._pathchanged = path
@@ -253,30 +218,6 @@ class DBWorker(QtCore.QObject):
         with self.database as indexer:
             indexer.set_exclude_paths(paths, run=True)
 
-@profiler.profile
-def filechange_callback(folder):
-    logger.debug(f"folder changed: {folder}")
-    try:
-        publisher = _get_publisher()
-        publisher.send("folderchanged", str(folder))
-    except Exception as e:
-        logger.warning(f"通知失敗: {e}")
-    
-@profiler.profile
-def progress_callback(current_inc, total_inc):
-    try:
-        _progress_aggregator.add(current_inc, total_inc)
-    except Exception as e:
-        logger.warning(f"通知失敗: {e}")
-
-@profiler.profile
-def notify_gui_process(message: str = "update_done"):
-    logger.debug(f"Update: {message}")
-    try:
-        publisher = _get_publisher()
-        publisher.send("update", message)
-    except Exception as e:
-        logger.warning(f"通知失敗: {e}")
 
 class WatchFolder:
     @profiler.profile
@@ -290,7 +231,7 @@ class WatchFolder:
 
         self.database = database
         self.database.set_progress_callback(progress_callback)
-        self.database.set_update_callback(notify_gui_process)
+        self.database.set_update_callback(update_callback)
 
         self.db_thread = QtCore.QThread()
         self.db_worker = DBWorker(self.database)

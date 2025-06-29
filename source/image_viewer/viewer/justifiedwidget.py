@@ -1,14 +1,10 @@
 import os
-import psutil
-import cv2
-import numpy as np
-import multiprocessing
-from collections import OrderedDict
 from PySide6 import QtWidgets, QtGui, QtCore
-
 from .loader import ImageLoaderRunnable
 from ..viewer_settings import main_setting
 from ..thread import main_thread
+from .layout import JustifiedLayoutCalculator
+from .scroll_manager import ScrollManager, SizeMismatchChecker
 from ..mouseeventmanager import (
     MouseEventManager,
     MouseEventDispatcher,
@@ -20,123 +16,7 @@ from .cachemanager import MemoryLimitedPixmapCache, QLabelPool
 from ...profiling import init_env
 from ...common import get_main_based_directory
 logger, profiler = init_env()
-
 QWIDGETSIZE_MAX = 16777215
-
-def _size_mismatch(a: QtCore.QSize, b: QtCore.QSize, tolerance: int = 1):
-    return abs(a.width() - b.width()) > tolerance or abs(a.height() - b.height()) > tolerance
-
-class CalculatorSignals(QtCore.QObject):
-    layout_ready = QtCore.Signal(list)
-
-class JustifiedLayoutCalculator(QtCore.QRunnable):
-    def __init__(self, aspect_ratios, base_height, spacing, container_width):
-        super().__init__()
-        self.signals = CalculatorSignals()
-        self.aspect_ratios = aspect_ratios
-        self.base_height = base_height
-        self.spacing = spacing
-        self.container_width = container_width
-        self._cancelled = False
-
-    def cancel(self):
-        self._cancelled = True
-
-    @profiler.profile
-    def run(self):
-        rects = []
-        x, y = 0, 0
-        line = []
-        line_width = 0
-        spacing = self.spacing
-        base_height = self.base_height
-        container_width = self.container_width
-
-        append_rects = rects.append
-        aspect_ratios = self.aspect_ratios
-
-        i = 0
-        while i < len(aspect_ratios):
-            if self._cancelled:
-                return
-            aspect = aspect_ratios[i]
-            w = aspect * base_height
-
-            if line and (line_width + w + spacing * len(line)) > container_width:
-                total_spacing = spacing * (len(line) - 1)
-                scale = (container_width - total_spacing) / line_width
-                cur_x = 0
-                for a in line:
-                    if self._cancelled:
-                        return
-                    iw = int(a * base_height * scale)
-                    ih = int(base_height * scale)
-                    append_rects(QtCore.QRect(cur_x, y, iw, ih))
-                    cur_x += iw + spacing
-                y += ih + spacing
-                line.clear()
-                line_width = 0
-            else:
-                line.append(aspect)
-                line_width += w
-                i += 1
-
-        if line and not self._cancelled:
-            total_spacing = spacing * (len(line) - 1)
-            scale = (container_width - total_spacing) / line_width
-            cur_x = 0
-            for a in line:
-                iw = int(a * base_height * scale)
-                ih = int(base_height * scale)
-                append_rects(QtCore.QRect(cur_x, y, iw, ih))
-                cur_x += iw + spacing
-
-        if not self._cancelled:
-            self.signals.layout_ready.emit(rects)
-
-class SizeMismatchChecker(QtCore.QTimer):
-    def __init__(self, target_widget, debug=False):
-        super().__init__()
-        self.target_widget = target_widget
-        self.debug = debug
-        self.setInterval(400)
-        self.timeout.connect(self.check)
-
-        self._active = False
-        self._idle_timer = QtCore.QTimer()
-        self._idle_timer.setSingleShot(True)
-        self._idle_timer.setInterval(1200)
-        self._idle_timer.timeout.connect(self._on_idle)
-
-    def trigger(self):
-        self._active = True
-        self._idle_timer.start()
-        if not self.isActive():
-            self.start()
-
-    def _on_idle(self):
-        self._active = False
-
-    @profiler.profile
-    def check(self):
-        if not self._active:
-            return
-
-        max_index = len(self.target_widget.image_paths)
-        for i, label in self.target_widget.widgets.items():
-            if i >= max_index:
-                continue 
-            pixmap = label.pixmap()
-            if pixmap is None:
-                continue
-            if _size_mismatch(pixmap.size(), label.size()):
-                if i not in self.target_widget.active_threads:
-                    runnable = ImageLoaderRunnable(i, self.target_widget.image_paths[i], label.size(), self.target_widget)
-                    self.target_widget.active_threads[i] = runnable
-                    main_thread.start(runnable, 5)
-
-        logger.debug("SizeMismatchChecker: check")
-        
 
 class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
     layout_ready = QtCore.Signal()
@@ -174,21 +54,7 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
         self.widgets = {}
         self.visible_indices = set()
         
-        self._scroll_last_time = 0
-        self._scroll_throttle_ms = 100
-
-        self.parent_scroll.verticalScrollBar().valueChanged.connect(self._on_scroll_bar_changed)
-
-        self.scroll_timer = QtCore.QTimer(self)
-        self.scroll_timer.setInterval(100)
-        self.scroll_timer.timeout.connect(self._on_scroll_timer)
-        self.scroll_timer.start()
-
-        self._scrolling = False
-        self._scroll_idle_timer = QtCore.QTimer(self)
-        self._scroll_idle_timer.setSingleShot(True)
-        self._scroll_idle_timer.setInterval(100)
-        self._scroll_idle_timer.timeout.connect(self._on_scroll_idle)
+        self.scroll_manager = ScrollManager(self)
 
         self._zoom_timer = QtCore.QTimer(self)
         self._zoom_timer.setSingleShot(True)
@@ -263,9 +129,6 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
         else:
             super().wheelEvent(event)
 
-    def _on_scroll_bar_changed(self):
-        self._scrolling = True
-        self._scroll_idle_timer.start()
 
     @profiler.profile
     def set_precalculated_meta(self, path_list, aspect_ratios):
@@ -300,22 +163,6 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
                 main_thread.start(runnable, 5)
         logger.debug("reload_visible_images")
 
-    @profiler.profile
-    def _on_scroll_idle(self):
-        self._scrolling = False
-        self._update_visible_items()
-
-    @profiler.profile
-    def _on_scroll_timer(self):
-        if self._scrolling:
-            self._throttled_update_visible_items()
-
-    @profiler.profile
-    def _throttled_update_visible_items(self):
-        now = QtCore.QTime.currentTime().msecsSinceStartOfDay()
-        if now - self._scroll_last_time >= self._scroll_throttle_ms:
-            self._scroll_last_time = now
-            self._update_visible_items()
 
     @profiler.profile
     def resizeEvent(self, event):
@@ -389,8 +236,8 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
         scroll_y = scroll_area.verticalScrollBar().value()
         view_rect = viewport.rect().translated(0, scroll_y)
 
-        visible_range = self._calculate_visible_indices(view_rect)
-        expanded_range = self._expand_prefetch_range(visible_range)
+        visible_range = ScrollManager.calculate_visible_indices(self.rects, view_rect)
+        expanded_range = ScrollManager.expand_prefetch_range(self.rects, visible_range)
 
         new_visible = set(expanded_range)
         newly_added = new_visible - self.visible_indices
@@ -413,48 +260,6 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
             total_height = self.rects[-1].bottom() + self.spacing
             self.setMinimumHeight(total_height)
 
-    @profiler.profile
-    def _calculate_visible_indices(self, view_rect):
-        def find_start():
-            low, high = 0, len(self.rects) - 1
-            while low <= high:
-                mid = (low + high) // 2
-                if self.rects[mid].bottom() < view_rect.top():
-                    low = mid + 1
-                else:
-                    high = mid - 1
-            return low
-
-        def find_end():
-            low, high = 0, len(self.rects) - 1
-            while low <= high:
-                mid = (low + high) // 2
-                if self.rects[mid].top() > view_rect.bottom():
-                    high = mid - 1
-                else:
-                    low = mid + 1
-            return high
-
-        start = find_start()
-        end = find_end()
-        return range(start, end + 1)
-
-    @profiler.profile
-    def _expand_prefetch_range(self, visible_range):
-        if not visible_range:
-            return range(0, 0)
-
-        prefetch = len(visible_range) + 3
-        start = max(0, visible_range.start - prefetch)
-        end = min(len(self.rects), visible_range.stop + prefetch)
-        return range(start, end)
-
-
-    @profiler.profile
-    def _ensure_widget_visible(self, i, rect):
-        if i >= len(self.image_paths):
-            logger.warning(f"Index {i} out of range for image_paths (len={len(self.image_paths)})")
-            return
         if i not in self.widgets:
             label = self.label_pool.acquire()
             label.setGeometry(rect)

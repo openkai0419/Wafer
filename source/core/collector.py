@@ -2,38 +2,27 @@ import os
 import shutil
 import sqlite3
 import time
-import queue
-import threading
-import concurrent.futures
 
 from pathlib import Path
-from PIL import Image
 from PySide6 import QtGui
 
 from ..profiling import init_env
 from ..common import normalize_path
+from .db_manager import DBManager
+from .file_scanner import FileScanner
+from .batch_writer import BatchWriter
+from .batch_utils import (
+    process_image,
+    CHUNK,
+    BASE_DURATION,
+    MIN_BATCH_SIZE,
+    MAX_BATCH_SIZE,
+    INITIAL_BATCH_SIZE,
+    executor,
+    extensions,
+)
+
 logger, profiler = init_env()
-
-extensions = (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp")
-CHUNK = 900
-BASE_DURATION = 10.0
-MIN_BATCH_SIZE = 100
-MAX_BATCH_SIZE = 100000
-INITIAL_BATCH_SIZE = 5000
-
-# 再利用可能なThreadPoolExecutor
-executor = concurrent.futures.ThreadPoolExecutor()
-
-def get_file_ctime(path):
-    try:
-        stat = os.stat(path)
-        if hasattr(stat, 'st_birthtime'):  # macOS
-            return stat.st_birthtime
-        else:  # Unix/Linuxでは作成日時は st_ctime だが実質は変更時刻
-            return stat.st_ctime
-    except Exception as e:
-        logger.warning(f"Failed to get ctime for {path}: {e}")
-        return None
 
 def connect_with_retry(path, timeout=3.0, retries=3, delay=1.0, **kwargs):
     last_exception = None
@@ -51,43 +40,16 @@ def connect_with_retry(path, timeout=3.0, retries=3, delay=1.0, **kwargs):
     logger.error(f"[connect_with_retry] All attempts failed. Raising last exception.")
     raise last_exception
 
-def read_info(path):
-    try:
-        with Image.open(path) as img:
-            return dict(img.info)
-    except Exception as e:
-        logger.warning(f"Failed to read image info for {path}: {e}")
-    return {}
-
-def get_aspect(p):
-    reader = QtGui.QImageReader(p)
-    reader.setAutoTransform(True)
-    size = reader.size()
-    aspect = size.width() / size.height() if size.isValid() and size.height() > 0 else 1.0
-    return aspect
-
-def process_image(p, file_info):
-    try:
-        mtime, fsize = file_info.get(p, (None, None))
-        ctime = get_file_ctime(p)
-        collected_at = time.time()
-        aspect = get_aspect(p)
-        info = read_info(p)
-        meta_info = [(str(p), str(k), str(v)) for k, v in info.items()]
-        meta_info.append((str(p), "__filepath__", str(p)))
-        return (p, aspect, mtime, fsize, ctime, collected_at, meta_info, None)
-    except Exception as e:
-        logger.warning(f"Failed to process {p}: {e}")
-        mtime, fsize = file_info.get(p, (None, None))
-        return (p, None, mtime, fsize, None, time.time(), [], 'fail')
 
 class ImageIndexer:
     def __init__(self, db_path):
         logger.info(f"image indexer init {db_path}")
         self.db_path = Path(db_path)
         self.backup_path = self.db_path.with_suffix(".bak")
-        self.conn = None
-        self.read_conn = None
+        self.db = DBManager(self.db_path, connect_with_retry, self._apply_pragmas)
+        self.file_scanner = FileScanner(self.is_path_excluded, extensions)
+        self.batch_writer = BatchWriter(self.db)
+        self.batch_writer.indexer = self
         self.exclude_paths = set()
         logger.info("image indexer init end")
 
@@ -133,25 +95,18 @@ class ImageIndexer:
 
     @profiler.profile
     def start(self):
-        self.conn = connect_with_retry(self.db_path, timeout=3.0, check_same_thread=False)
-        self._apply_pragmas(self.conn)
-
-        self.read_conn = connect_with_retry(
-            f"file:{self.db_path}?mode=ro&immutable=1", timeout=1.0, uri=True
-        )
-        self._apply_pragmas(self.read_conn, read_only=True)
+        self.db.start()
+        self.conn = self.db.conn
+        self.read_conn = self.db.read_conn
         logger.info("indexer start end")
 
     @profiler.profile
     def exit(self):
         try:
-            self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            self.db.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         except Exception as e:
             logger.info(e)
-        if self.conn:
-            self.conn.close()
-        if self.read_conn:
-            self.read_conn.close()
+        self.db.close()
 
     @profiler.profile
     def _apply_pragmas(self, conn, read_only=False):
@@ -173,91 +128,18 @@ class ImageIndexer:
     @profiler.profile
     def _initialize_database(self):
         try:
-            if not self._integrity_check():
+            if not self.db.integrity_check():
                 raise sqlite3.DatabaseError("Integrity check failed.")
         except sqlite3.DatabaseError as e:
             logger.warning(f"[ERROR] DB corrupted: {e}")
-            self._backup_and_recreate()
-        except:
+            self.db.backup_and_recreate(self.backup_path)
+        except Exception:
             raise
 
-    @profiler.profile
-    def _integrity_check(self) -> bool:
-        try:
-            logger.info("quick check start")
-            result = self.conn.execute("PRAGMA quick_check").fetchone()
-            logger.info("quick check end")
-            return result[0] == "ok"
-        except Exception as e:
-            logger.warning(f"[WARN] integrity_check failed: {e}")
-            return False
-
-    @profiler.profile
-    def _backup_and_recreate(self):
-        if self.conn:
-            self.conn.close()
-        if self.db_path.exists():
-            shutil.copy(self.db_path, self.backup_path)
-            os.remove(self.db_path)
-            logger.warning(f"[INFO] Corrupted DB backed up to: {self.backup_path}")
-        self.conn = sqlite3.connect(self.db_path)
-        self._apply_pragmas(self.conn)
-        logger.warning(f"[INFO] New DB created at: {self.db_path}")
 
     @profiler.profile
     def _ensure_schema(self):
-        cur = self.get_writer_cursor()
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS images (
-                path TEXT PRIMARY KEY,
-                mtime REAL,
-                size INTEGER,
-                status TEXT DEFAULT NULL
-            )
-        """)
-        cur.execute("PRAGMA table_info(images)")
-        columns = [row[1] for row in cur.fetchall()]
-        if "status" not in columns:
-            cur.execute("ALTER TABLE images ADD COLUMN status TEXT DEFAULT NULL")
-
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS meta (
-                path TEXT PRIMARY KEY,
-                aspect_ratio REAL,
-                mtime REAL,
-                size INTEGER,
-                created REAL,
-                collected_at REAL,
-                FOREIGN KEY(path) REFERENCES images(path) ON DELETE CASCADE
-            )
-        """)
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS meta_info (
-                path TEXT,
-                key TEXT,
-                value TEXT,
-                PRIMARY KEY(path, key),
-                FOREIGN KEY(path) REFERENCES images(path) ON DELETE CASCADE
-            )
-        """)
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_meta_info_path ON meta_info(path)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_meta_info_key ON meta_info(key)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_meta_info_value ON meta_info(value)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_meta_info_path_key ON meta_info(path, key)")
-
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_images_path ON images(path)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_images_size ON images(size)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_images_mtime ON images(mtime)")
-        
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_meta_path ON meta(path)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_meta_aspect_ratio ON meta(aspect_ratio)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_meta_mtime ON meta(mtime)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_meta_size ON meta(size)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_meta_created ON meta(created)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_meta_collected ON meta(collected_at)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_meta_path_aspect ON meta(path, aspect_ratio)")
-        cur.close()
-        logger.info("ensureschema end")
+        self.db.ensure_schema()
 
     @profiler.profile
     def _detect_diff(self, current, previous):
@@ -267,40 +149,18 @@ class ImageIndexer:
 
     @profiler.profile
     def scan_directory_fast(self, root_path):
-        stack = [str(root_path)]
-        while stack:
-            current = stack.pop()
-
-            full_path = normalize_path(current)
-            if self.is_path_excluded(full_path):
-                logger.debug(f"[Excluded] Skipping file: {full_path}")
-                continue
-
-            try:
-                with os.scandir(current) as it:
-                    for entry in it:
-                        if entry.is_file(follow_symlinks=False) and entry.name.lower().endswith(extensions):
-                            stat = entry.stat()
-                            yield normalize_path(entry.path), (stat.st_mtime, stat.st_size)
-                        elif entry.is_dir(follow_symlinks=False):
-                            stack.append(entry.path)
-            except Exception:
-                continue
+        scanner = self.file_scanner
+        for item in scanner.scan(root_path):
+            yield item
 
     @profiler.profile
     def load_previous(self):
-        result = {}
         try:
             cur = self.get_reader_cursor()
-            cur.execute("SELECT path, mtime, size FROM images")
-            while True:
-                rows = cur.fetchmany(10000)
-                if not rows:
-                    break
-                result.update({normalize_path(path): (mtime, size) for path, mtime, size in rows})
+            return self.file_scanner.load_previous(cur)
         except Exception as e:
             logger.warning(f"Failed to load previous data from DB: {e}")
-        return result
+            return {}
 
     @profiler.profile
     def remove_excluded_from_db(self):
@@ -377,7 +237,7 @@ class ImageIndexer:
             self.emit_update()
 
         if added_or_modified:
-            self.update_meta_and_image(added_or_modified, current)
+            self.batch_writer.update_meta_and_image(added_or_modified, current)
     
         cur.close()
 
@@ -422,7 +282,7 @@ class ImageIndexer:
             self._emit_progress(skip_count, 0)
 
         if to_update:
-            self.update_meta_and_image(to_update, stat_info)
+            self.batch_writer.update_meta_and_image(to_update, stat_info)
             self.conn.commit()
             self.emit_update()
         else:
@@ -451,123 +311,6 @@ class ImageIndexer:
         self.emit_update()
         logger.info(f"[remove_by_file_list] Removed {len(normalized)} entries from DB")
 
-    @profiler.profile
-    def batch_process_images(self, batch, file_info):
-        results = list(executor.map(lambda p: process_image(p, file_info), batch))
-
-        image_entries = []
-        meta_entries = []
-        meta_info_entries = []
-        failed_entries = []
-
-        for p, aspect, mtime, fsize, ctime, collected_at, meta_info, status in results:
-            if status == 'fail':
-                failed_entries.append((str(p), mtime, fsize))
-                continue
-            image_entries.append((str(p), mtime, fsize))
-            meta_entries.append((str(p), aspect, mtime, fsize, ctime, collected_at))
-            meta_info_entries.extend(meta_info)
-
-        return image_entries, meta_entries, meta_info_entries, failed_entries
-
-    @profiler.profile
-    def write_batch_to_db(self, image_entries, meta_entries, meta_info_entries, failed_entries):
-        with self.conn:
-            cur = self.conn.cursor()
-            if failed_entries:
-                cur.executemany("""
-                    INSERT INTO images (path, mtime, size, status)
-                    VALUES (?, ?, ?, 'fail')
-                    ON CONFLICT(path) DO UPDATE SET mtime = excluded.mtime, size = excluded.size, status = 'fail'
-                """, failed_entries)
-
-            if image_entries:
-                cur.executemany("""
-                    INSERT INTO images (path, mtime, size, status)
-                    VALUES (?, ?, ?, 'ok')
-                    ON CONFLICT(path) DO UPDATE SET mtime = excluded.mtime, size = excluded.size, status = 'ok'
-                """, image_entries)
-
-            if meta_entries:
-                cur.executemany("""
-                    INSERT INTO meta (path, aspect_ratio, mtime, size, created, collected_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(path) DO UPDATE SET 
-                        aspect_ratio = excluded.aspect_ratio,
-                        mtime = excluded.mtime,
-                        size = excluded.size,
-                        created = excluded.created,
-                        collected_at = excluded.collected_at
-                """, meta_entries)
-
-            if meta_info_entries:
-                cur.executemany("""
-                    INSERT INTO meta_info (path, key, value)
-                    VALUES (?, ?, ?)
-                    ON CONFLICT(path, key) DO UPDATE SET value = excluded.value
-                """, meta_info_entries)
-            cur.close()
-
-    @profiler.profile
-    def update_meta_and_image(self, paths, file_info):
-        total = len(paths)
-        batch_size = INITIAL_BATCH_SIZE
-        temp_duration = BASE_DURATION
-
-        i = 0
-
-        # 書き込みキューとスレッド初期化
-        write_queue = queue.Queue(maxsize=4)
-
-        def writer_thread_func():
-            while True:
-                item = write_queue.get()
-                if item is None:
-                    break
-                try:
-                    image_entries, meta_entries, meta_info_entries, failed_entries = item
-                    self.write_batch_to_db(image_entries, meta_entries, meta_info_entries, failed_entries)
-                except Exception as e:
-                    logger.error(f"[WriterThread] Error in write_batch_to_db: {e}")
-                finally:
-                    write_queue.task_done()
-
-        writer_thread = threading.Thread(target=writer_thread_func, daemon=True)
-        writer_thread.start()
-
-        while i < total:
-            batch = paths[i:i + batch_size]
-
-            t0 = time.monotonic()
-            image_entries, meta_entries, meta_info_entries, failed_entries = self.batch_process_images(batch, file_info)
-            t1 = time.monotonic()
-
-            while True:
-                try:
-                    write_queue.put_nowait((image_entries, meta_entries, meta_info_entries, failed_entries))
-                    break
-                except queue.Full:
-                    temp_duration = temp_duration * 1.5
-                    logger.info(f"[WriterQueue] Full, waiting for consumer to catch up... {temp_duration}")
-                    time.sleep(temp_duration)
-
-            # アダプティブバッチサイズ制御
-            duration = t1 - t0
-            if duration < temp_duration:
-                batch_size = min(MAX_BATCH_SIZE, int(batch_size * 1.5))
-            elif duration > (temp_duration + (temp_duration / 2.0) ):
-                batch_size = max(MIN_BATCH_SIZE, int(batch_size / 2.0))
-
-            logger.debug(f"temp_duration {temp_duration}, {temp_duration + (temp_duration / 2)}")
-            i += len(batch)
-            self._emit_progress(len(batch), 0)
-            self.emit_update()
-            logger.info(f"[Adaptive Commit] {i}/{total} processed (batch={batch_size}, {duration:.2f}s)")
-
-        # すべての書き込みが完了するのを待つ
-        write_queue.join()
-        write_queue.put(None)
-        writer_thread.join()
 
     @profiler.profile
     def clean_unused(self):

@@ -4,9 +4,8 @@ import contextlib
 import time
 from typing import List, Dict
 
-from ..profiling import init_env
+from ..profiling import logger, profiler
 from ..common import normalize_path
-logger, profiler = init_env()
 
 @profiler.profile
 def retry_sqlite_connection(db_name: str, timeout: float = 3.0, interval: float = 0.1):

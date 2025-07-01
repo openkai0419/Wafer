@@ -9,8 +9,8 @@ class SettingWatcher(QtCore.QObject):
     ignoreFoldersChanged = QtCore.Signal(list)  # ← typo修正
 
     @profiler.profile
-    def __init__(self, setting_db, parent=None):
-        super().__init__(parent)
+    def __init__(self, setting_db):
+        super().__init__()
         self.db = setting_db
         self.db_path = self.db.db_name
         if os.path.exists(self.db_path):

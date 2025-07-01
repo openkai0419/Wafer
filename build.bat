@@ -45,7 +45,7 @@ if errorlevel 1 (
 echo.
 echo ビルド成功！dist\%APPNAME%\main.exe をご確認ください。
 
-robocopy resources dist\%APPNAME%\resources /E
+robocopy _resources dist\%APPNAME%\_resources /E
 
 :END
 if %ERRFLAG%==1 (

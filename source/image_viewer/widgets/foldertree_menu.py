@@ -6,6 +6,7 @@ from ...profiling import logger, profiler
 from ..thread import main_thread
 from ...core.setting_db import SettingDB
 from ...common import normalize_path
+from ...dialog import ConfirmDialog
 
 class FolderContextMenuBuilder:
     def __init__(self, parent, db_name):
@@ -31,12 +32,17 @@ class FolderContextMenuBuilder:
         QtGui.QGuiApplication.clipboard().setText(path)
 
     def remove(self, path):
-        if path in self.view.root_paths:
-            self.view.remove_path(path)
-            self.settingdb.remove_parent_folder(path)
+        result = ConfirmDialog.ask(f"表示リストから除去しますか？: \n{path}", title="確認", buttons=("除去する", "キャンセル"), parent=self.view)
+        if result == "除去する":
+            if path in self.view.root_paths:
+                self.view.remove_path(path)
+                self.settingdb.remove_parent_folder(path)
 
     def ignore(self, path):
-        path = normalize_path(path)
-        self.view.excluded_paths.add(path)
-        self.view.reload_async()
-        self.settingdb.add_ignore_folder(path)
+        result = ConfirmDialog.ask(f"表示リストから除外しますか？: \n{path}", title="確認", buttons=("除外する", "キャンセル"), parent=self.view)
+        if result == "除外する":
+            path = normalize_path(path)
+            self.view.excluded_paths.add(path)
+            self.view.reload_async()
+            self.settingdb.add_ignore_folder(path)
+        

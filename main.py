@@ -40,6 +40,7 @@ def run_collector_subprocess():
 
 def main():
     app = QtWidgets.QApplication(sys.argv)
+    app.setApplicationName("AfterImage")
     window = MainWindow()
     window.show()
     run_collector_subprocess()

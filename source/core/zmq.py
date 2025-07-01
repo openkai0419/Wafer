@@ -2,18 +2,8 @@ import zmq
 import threading
 import queue
 
-class ZMQPublisher_Old:
-    def __init__(self, bind_addr="tcp://localhost:7556"):
-        self.context = zmq.Context()
-        self.socket = self.context.socket(zmq.PUB)
-        self.socket.bind(bind_addr)
-
-    def send(self, topic: str, message: str):
-        full_msg = f"{topic}:{message}"
-        self.socket.send_string(full_msg)
-
 class ZMQPublisher:
-    def __init__(self, bind_addr="tcp://localhost:7556"):
+    def __init__(self, bind_addr="tcp://localhost:57556"):
         self.context = zmq.Context()
         self.socket = self.context.socket(zmq.PUB)
         self.socket.bind(bind_addr)
@@ -44,7 +34,7 @@ class ZMQPublisher:
         self.context.term()
 
 class ZMQSubscriber:
-    def __init__(self, connect_addr="tcp://localhost:7556", topic_filter=""):
+    def __init__(self, connect_addr="tcp://localhost:57556", topic_filter=""):
         self.context = zmq.Context()
         self.socket = self.context.socket(zmq.SUB)
         self.socket.connect(connect_addr)

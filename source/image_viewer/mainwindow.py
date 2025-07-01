@@ -9,7 +9,7 @@ from ..debounce import qt_debounce
 from .widgets.loading_overlay import OverlayLoadingIndicator
 from .widgets.foldertree import FolderTreeView
 from .widgets.foldertree_menu import FolderContextMenuBuilder
-from .widgets.settingwidget import SingleRowOption
+from .widgets.query_options import SingleRowOption
 from .widgets.scrollarea import InertialScrollArea, AutoScrollArea
 from .widgets.progress_bar import ThinProgressBar
 from .widgets.button_bar import IconButtonBar, IconButtonConfig
@@ -17,6 +17,8 @@ from .thread import main_thread
 from .viewer_settings import main_setting
 from ..constants import data_db_name, setting_db_name
 from ..profiling import logger, profiler
+from ..settings.setting_window import SettingsWindow
+from ..settings.db_settings import DataBaseSettings
 class WorkerSignals(QtCore.QObject):
     finished = QtCore.Signal(object, object)
 
@@ -122,7 +124,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.only_direct_children = main_setting.get("query/only_direct_children", False)
         
         self.iconbar = IconButtonBar(left_buttons=[
-            IconButtonConfig("icons/settings.png", "Settings", lambda: print("Settings clicked")),
+            IconButtonConfig("icons/settings.png", "Settings", lambda: self.show_settings()),
             IconButtonConfig("icons/open.png", "Add File", lambda: self.add_new_folder()),
         ], right_buttons=[
             IconButtonConfig("icons/save.png", "Bot Only", self.toggle_only_direct_children, checkable=True, checked=self.only_direct_children),
@@ -181,8 +183,13 @@ class MainWindow(QtWidgets.QMainWindow):
         })
         return MetaQuery(**kwargs)
 
+    def show_settings(self):
+        window = SettingsWindow(self)
+        window.add_tab(DataBaseSettings())
+        window.show()
+
     @QtCore.Slot()
-    @qt_debounce(500)
+    @qt_debounce(1000)
     def reload_folderlist(self):
         self.folder_view.reload_async()
 

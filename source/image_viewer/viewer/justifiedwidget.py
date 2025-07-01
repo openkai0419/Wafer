@@ -224,7 +224,7 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
             else:
                 base_dir = os.path.dirname(os.path.abspath(sys.argv[0]))  # main.py 実行位置
 
-            imgpath = get_main_based_directory() / "resources/fail_fetch_02.png"
+            imgpath = get_main_based_directory() / "_resources/fail_fetch_02.png"
             pixmap = QtGui.QPixmap(imgpath)
             if not pixmap.isNull():
                 return pixmap

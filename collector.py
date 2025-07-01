@@ -12,6 +12,7 @@ def main():
     try:
         with SafeProcessLock("my_collector"):
             app = QtWidgets.QApplication(sys.argv)
+            app.setApplicationName("AfterImages")
             icon = QtGui.QIcon.fromTheme("folder")
             if icon.isNull():
                 icon = QtGui.QIcon()

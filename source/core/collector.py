@@ -19,7 +19,8 @@ CHUNK = 900
 BASE_DURATION = 10.0
 MIN_BATCH_SIZE = 100
 MAX_BATCH_SIZE = 100000
-INITIAL_BATCH_SIZE = 5000
+BASE_BATCH_SIZE = 5000
+INITIAL_BATCH_SIZE = 100
 
 # 再利用可能なThreadPoolExecutor
 executor = concurrent.futures.ThreadPoolExecutor()
@@ -496,13 +497,14 @@ class ImageIndexer:
     @profiler.profile
     def update_meta_and_image(self, paths, file_info):
         total = len(paths)
-        batch_size = INITIAL_BATCH_SIZE
+        batch_size = INITIAL_BATCH_SIZE  # ← 最初は100枚固定
         temp_duration = BASE_DURATION
-
         i = 0
+        fixed_count = 0  # ← 追加：100枚で処理した回数を数える
+        initial_count = 3
 
         # 書き込みキューとスレッド初期化
-        write_queue = queue.Queue(maxsize=4)
+        write_queue = queue.Queue(maxsize=int(initial_count+2))
 
         def writer_thread_func():
             while True:
@@ -532,27 +534,35 @@ class ImageIndexer:
                     write_queue.put_nowait((image_entries, meta_entries, meta_info_entries, failed_entries))
                     break
                 except queue.Full:
-                    temp_duration = temp_duration * 1.5
+                    temp_duration *= 1.5
                     logger.info(f"[WriterQueue] Full, waiting for consumer to catch up... {temp_duration}")
                     time.sleep(temp_duration)
 
-            # アダプティブバッチサイズ制御
             duration = t1 - t0
-            if duration < temp_duration:
-                batch_size = min(MAX_BATCH_SIZE, int(batch_size * 1.5))
-            elif duration > (temp_duration + (temp_duration / 2.0) ):
-                batch_size = max(MIN_BATCH_SIZE, int(batch_size / 2.0))
 
-            logger.debug(f"temp_duration {temp_duration}, {temp_duration + (temp_duration / 2)}")
+            # 🔧 最初の2回だけ100枚、以降はアダプティブ（BASE_BATCH_SIZE→適応）
+            if fixed_count < initial_count:
+                fixed_count += 1
+                batch_size = INITIAL_BATCH_SIZE
+            else:
+                if fixed_count == initial_count:
+                    batch_size = BASE_BATCH_SIZE  # 初期値にリセット
+                    fixed_count += 1  # もう変更しないように
+                else:
+                    if duration < temp_duration:
+                        batch_size = min(MAX_BATCH_SIZE, int(batch_size * 1.5))
+                    elif duration > (temp_duration + (temp_duration / 2.0)):
+                        batch_size = max(MIN_BATCH_SIZE, int(batch_size / 2.0))
+
             i += len(batch)
             self._emit_progress(len(batch), 0)
             self.emit_update()
-            logger.info(f"[Adaptive Commit] {i}/{total} processed (batch={batch_size}, {duration:.2f}s)")
+            logger.info(f"[Adaptive Commit] {i}/{total} processed (batch={len(batch)}, {duration:.2f}s)")
 
-        # すべての書き込みが完了するのを待つ
         write_queue.join()
         write_queue.put(None)
         writer_thread.join()
+
 
     @profiler.profile
     def clean_unused(self):

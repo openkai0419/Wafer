@@ -1,8 +1,7 @@
 import sqlite3
 import time
 
-from ..profiling import init_env
-logger, profiler = init_env()
+from ..profiling import logger, profiler
 
 @profiler.profile
 def connect_with_retry(path, timeout: float = 3.0, retries: int = 3, delay: float = 1.0, **kwargs):

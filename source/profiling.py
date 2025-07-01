@@ -211,5 +211,7 @@ def initialize_profiling(interval: int = 5):
 def init_env(interval: int = 5):
     return initialize_profiling(interval)
 
+logger, profiler = initialize_profiling()
+
 if __name__ == "__main__":
     logger, profiler = initialize_profiling()

@@ -38,7 +38,40 @@ def run_collector_subprocess():
         logger.error(f"[Error] Failed to start collector: {e}")
         return None
 
+def run_communicator_subprocess():
+    # 実行形態に応じて collector を切り替える
+    if getattr(sys, 'frozen', False):
+        # PyInstaller で exe 化された場合
+        base_path = os.path.dirname(sys.executable)
+        stdout = subprocess.DEVNULL
+        stderr = subprocess.DEVNULL
+        collector_path = os.path.join(base_path, "comminucator.exe")
+        command = [collector_path]
+        creation_flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0
+    else:
+        # Pythonスクリプトとして実行
+        base_path = os.path.dirname(os.path.abspath(__file__))
+        stdout = subprocess.DEVNULL
+        stderr = subprocess.DEVNULL
+        collector_path = os.path.join(base_path, "comminucator.py")
+        command = [sys.executable, collector_path]
+        creation_flags = 0
+
+    try:
+        subprocess.Popen(
+            command,
+            stdout=stdout,
+            stderr=stderr,
+            stdin=subprocess.DEVNULL,
+            creationflags=creation_flags
+        )
+
+    except Exception as e:
+        logger.error(f"[Error] Failed to start comminucator: {e}")
+        return None
+
 def main():
+    run_communicator_subprocess()
     app = QtWidgets.QApplication(sys.argv)
     app.setApplicationName("AfterImage")
     window = MainWindow()

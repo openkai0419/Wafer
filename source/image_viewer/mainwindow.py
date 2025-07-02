@@ -1,5 +1,6 @@
 from PySide6 import QtWidgets, QtGui, QtCore
 from datetime import datetime, timedelta
+import atexit
 
 from .viewer.justifiedwidget import JustifiedVirtualScrollWidget
 from ..core.setting_db import SettingDB
@@ -57,20 +58,21 @@ class MainWindow(QtWidgets.QMainWindow):
         self._is_fullscreen = False
         self.run_folder = True
 
-        self.setting_db = SettingDB(setting_db_name)
-        main_thread.watch_start()
-
-        self.dbname = data_db_name
-
         self.query_timeout_threshold = timedelta(seconds=5)
         self.current_query_start_time = None
         self.query_lock = QtCore.QMutex()
         self.pending_query = None
         self.last_executed_query = None
 
+        self.setting_db = SettingDB(setting_db_name)
+        main_thread.watch_start()
+
+        self.dbname = data_db_name
+
         self.main_ui()
         self.start_ipc_listener()
         QtCore.QTimer.singleShot(100, self.search)
+        atexit.register(self.on_close)
 
     @QtCore.Slot(int)
     def update_current(self, value):
@@ -279,12 +281,15 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.pending_query = None
                 self._start_search_runnable(query)
 
+    def on_close(self):
+        if hasattr(self, "_subscriber"):
+            self._subscriber.stop()
+
     def closeEvent(self, event):
         self.folder_view.save_state()
         main_setting.set("window/geometry", self.saveGeometry())
         main_setting.set("viewer/scroll", self.content.get_center_image_index())
         main_setting.set("window/splitter", self.splitter.sizes())
         main_setting.commit()
-        if hasattr(self, "_subscriber"):
-            self._subscriber.stop()
+        self.on_close()
         return super().closeEvent(event)

@@ -1,4 +1,4 @@
-from . common import get_or_create_path
+from . common import get_or_create_path, data_path, config_path
 
-setting_db_name = get_or_create_path("paths.db")
-data_db_name = get_or_create_path("data/index.db")
+setting_db_name = data_path("dirs/paths.db")
+data_db_name = data_path("data/index.db")

@@ -248,8 +248,6 @@ class WatchFolder:
     @profiler.profile
     @qt_debounce(200)
     def rescan_all(self):
-        if not self.folders:
-            return
         self.db_worker.trigger_rescan.emit(self.folders)
 
     def set_ignore_folders(self, folders):
@@ -264,8 +262,6 @@ class WatchFolder:
 
     @profiler.profile
     def start(self, folders):
-        if not folders:
-            return
         if self.watcher_thread:
             self.watcher_thread.stop()
             self.old_threads.append(self.watcher_thread)

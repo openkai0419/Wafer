@@ -8,7 +8,7 @@ import os
 import re
 from collections import defaultdict
 from functools import wraps
-
+from .common import data_path
 import sys
 from PySide6 import QtWidgets
 
@@ -17,11 +17,12 @@ logger = None
 profiler = None
 _initialized = False
 
+LOG_PATH = data_path("log")
 
 def is_pid_active(pid):
     return psutil.pid_exists(pid)
 
-def cleanup_old_logs_safe(log_dir="log", keep_latest=10):
+def cleanup_old_logs_safe(log_dir=LOG_PATH, keep_latest=10):
     log_files = sorted(
         glob.glob(os.path.join(log_dir, "debuglog_*.log*")),
         key=os.path.getmtime,
@@ -57,7 +58,7 @@ class LoggerManager:
         process_id = os.getpid()
         log_id = str(process_id)
 
-        log_dir = "log"
+        log_dir = LOG_PATH
         os.makedirs(log_dir, exist_ok=True)
         log_filename = os.path.join(log_dir, f'debuglog_{log_id}.log')
 

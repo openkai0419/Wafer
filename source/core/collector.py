@@ -128,12 +128,15 @@ class ImageIndexer:
         self._apply_pragmas(self.read_conn, read_only=True)
         logger.info("indexer start end")
 
-    @profiler.profile
-    def exit(self):
+    def try_checkpoint(self):
         try:
             self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         except Exception as e:
-            logger.info(e)
+            logger.warning(e)
+
+    @profiler.profile
+    def exit(self):
+        self.try_checkpoint()
         if self.conn:
             self.conn.close()
         if self.read_conn:
@@ -547,7 +550,8 @@ class ImageIndexer:
             else:
                 if fixed_count == initial_count:
                     batch_size = BASE_BATCH_SIZE  # 初期値にリセット
-                    fixed_count += 1  # もう変更しないように
+                    fixed_count += 1 # もう変更しないように
+                    self.try_checkpoint()
                 else:
                     if duration < temp_duration:
                         batch_size = min(MAX_BATCH_SIZE, int(batch_size * 1.5))

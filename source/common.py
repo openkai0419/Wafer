@@ -1,12 +1,13 @@
 import sys
-import os
-import glob
 from pathlib import Path
+from platformdirs import PlatformDirs
+from typing import List
 
 from PySide6 import QtGui
 
 # Supported image extensions
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp")
+APP_NAME = "AfterImages"
 
 def normalize_path(p):
     try:
@@ -42,3 +43,28 @@ def get_or_create_path(relative_path):
     # ディレクトリが存在しなければ作成
     full_path.parent.mkdir(parents=True, exist_ok=True)
     return full_path
+
+def _resolve_app_path( relative_path: str, base_dir: Path ) -> Path:
+    path = base_dir / relative_path
+    if path.suffix == "" or str(relative_path).endswith(("/", "\\")):
+        path.mkdir(parents=True, exist_ok=True)
+    else:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+def data_path(relative_path: str) -> Path:
+    dirs = PlatformDirs(appname=None)
+    base_dir = Path(dirs.user_data_dir) / APP_NAME
+    return normalize_path(_resolve_app_path(relative_path, base_dir))
+
+def config_path(relative_path: str) -> Path:
+    dirs = PlatformDirs(appname=None)
+    base_dir = Path(dirs.user_config_dir) / APP_NAME
+    return normalize_path(_resolve_app_path(relative_path, base_dir))
+
+def list_files(directory: str, extension: str) -> List[Path]:
+    ext = extension.lower() if extension.startswith('.') else f".{extension.lower()}"
+    return [
+        normalize_path(f) for f in Path(directory).iterdir()
+        if f.is_file() and f.suffix.lower() == ext
+    ]

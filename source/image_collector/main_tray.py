@@ -1,4 +1,5 @@
 from PySide6 import QtWidgets, QtGui, QtCore
+import atexit
 
 from ..profiling import logger, profiler
 from ..constants import setting_db_name, data_db_name
@@ -24,9 +25,10 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         self.folders_to_watch = []
         self.activated.connect(self.on_activated)
 
-        self.start_watch()
+        self.start_watch(setting_db_name, data_db_name)
+        atexit.register(self.quit)
     
-    def start_watch(self, setting_name=setting_db_name, data_name=data_db_name):
+    def start_watch(self, setting_name, data_name):
         self.setting_db = SettingDB(setting_name)
         self.data_db = ImageIndexer(data_name)
         self.data_db.set_exclude_paths(self.setting_db.get_all_ignore_folders())

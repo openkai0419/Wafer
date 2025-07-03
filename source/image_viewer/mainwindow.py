@@ -1,6 +1,5 @@
 from PySide6 import QtWidgets, QtGui, QtCore
 from datetime import datetime, timedelta
-import atexit
 
 from .viewer.justifiedwidget import JustifiedVirtualScrollWidget
 from ..core.setting_db import SettingDB

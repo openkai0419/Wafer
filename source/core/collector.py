@@ -131,6 +131,7 @@ class ImageIndexer:
     def try_checkpoint(self):
         try:
             self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            self.conn.commit()
         except Exception as e:
             logger.warning(e)
 

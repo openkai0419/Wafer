@@ -1,5 +1,4 @@
 from PySide6 import QtWidgets, QtGui, QtCore
-import atexit
 
 from ..profiling import logger, profiler
 from ..debounce import qt_debounce
@@ -10,6 +9,7 @@ from .watch_setting import SettingWatcher
 from .progress_notifier import close_publisher, get_viewer_count, send_show_toggle
 from ..core.setting_db import SettingDB
 from ..dialog import ConfirmDialog 
+from ..constants import APP_NAME
 
 
 class TrayApp(QtWidgets.QSystemTrayIcon):
@@ -17,7 +17,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
     def __init__(self, icon, name, parent=None):
         super().__init__(icon, parent)
         logger.info("FOLDER WATCHER EXECUTED")
-        self.setToolTip("Folder Watcher")
+        self.setToolTip(f"{APP_NAME} : {name}")
 
         self.menu = QtWidgets.QMenu()
         self.show_state = False

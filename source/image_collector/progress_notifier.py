@@ -26,6 +26,14 @@ def close_publisher():
             finally:
                 _publisher = None
 
+def get_viewer_count():
+    try:
+        publisher = _get_publisher()
+        return publisher.get_sub_count()
+    except Exception as e:
+        logger.warning(f"[起動数値取得失敗] {e}")
+        return 0
+
 class ProgressAggregator:
     def __init__(self):
         self.current = 0

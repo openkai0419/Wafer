@@ -173,7 +173,7 @@ class SearchOptionPopup(QtWidgets.QDialog):
         index = self.sort_by_combo.findData(sort_by)
         self.sort_by_combo.setCurrentIndex(index if index >= 0 else 0)
 
-        ascending = main_setting.get("query/ascending", True)
+        ascending = main_setting.get("query/ascending", False)
         (self.asc_radio if ascending else self.desc_radio).setChecked(True)
 
         self.splittext.setText(main_setting.get("query/splittext", ","))

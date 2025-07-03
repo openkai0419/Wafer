@@ -18,7 +18,7 @@ class FolderContextMenuBuilder:
         menu.addAction("パスをコピー", lambda: self.copy_path(path))
         menu.addAction("エクスプローラーで開く", lambda: self.open_in_explorer(path))
         menu.addSeparator()
-        if self.view.is_root_path(path):
+        if path in self.view.roots:
             pass
             menu.addAction("除去", lambda: self.remove(path))
         else:
@@ -34,15 +34,14 @@ class FolderContextMenuBuilder:
     def remove(self, path):
         result = ConfirmDialog.ask(f"表示リストから除去しますか？: \n{path}", title="確認", buttons=("除去する", "キャンセル"), parent=self.view)
         if result == "除去する":
-            if path in self.view.root_paths:
-                self.view.remove_path(path)
+            if path in self.view.roots:
+                self.view.remove_root(path)
                 self.settingdb.remove_parent_folder(path)
 
     def ignore(self, path):
         result = ConfirmDialog.ask(f"表示リストから除外しますか？: \n{path}", title="確認", buttons=("除外する", "キャンセル"), parent=self.view)
         if result == "除外する":
             path = normalize_path(path)
-            self.view.excluded_paths.add(path)
-            self.view.reload_async()
+            self.view.add_excluded(path)
             self.settingdb.add_ignore_folder(path)
         

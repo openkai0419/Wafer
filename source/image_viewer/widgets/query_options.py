@@ -254,7 +254,7 @@ class SingleRowOption(QtWidgets.QWidget):
 
     @profiler.profile
     def run_folder_worker(self, force_update=False):
-        selected = self.root.folder_view.get_selected()
+        selected = self.root.folder_view.get_selected_paths()
         if not force_update and hasattr(self.root, 'run_folder') and not self.root.run_folder:
             return
         if self._folder_worker and self._folder_worker.selected_path == selected:

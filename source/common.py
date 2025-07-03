@@ -2,6 +2,7 @@ import sys
 from pathlib import Path
 from platformdirs import PlatformDirs
 from typing import List
+from natsort import natsorted, ns
 
 from PySide6 import QtGui
 
@@ -21,6 +22,9 @@ def uipx(px: int, base_dpi: int = 96) -> int:
     current_dpi = screen.logicalDotsPerInch()
     scale = current_dpi / base_dpi
     return int(px * scale)
+
+def native_sort(files):
+    return natsorted(files, alg=ns.LOCALE | ns.IGNORECASE)
 
 def get_main_based_directory() -> Path:
     """

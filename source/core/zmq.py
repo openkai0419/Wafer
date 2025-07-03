@@ -31,7 +31,7 @@ class ZMQBroker:
                     # 中継処理: 全subscriberに送信
                     for sub_id, role in self._clients.items():
                         if role == "sub":
-                            logger.info(data)
+                            logger.info(f"[BROKER] sending: {data}")
                             self.socket.send_multipart([sub_id, b'', data])
 
             except zmq.ZMQError:
@@ -50,30 +50,31 @@ class ZMQPublisher:
         self.context = zmq.Context()
         self.socket = self.context.socket(zmq.DEALER)
         self.socket.connect(connect_addr)
-        self.socket.send(b"REGISTER:pub")
+        self.socket.send_multipart([b"", b"REGISTER:pub"])
+
         poller = zmq.Poller()
         poller.register(self.socket, zmq.POLLIN)
         socks = dict(poller.poll(timeout=500))  # 0.5秒待機
 
         if self.socket in socks:
-            ack = self.socket.recv()
-            if ack != b'ACK':
+            frames = self.socket.recv_multipart()
+            if len(frames) != 2 or frames[1] != b'ACK':
                 raise RuntimeError("ZMQBroker did not acknowledge registration")
-
+            
         self._queue = queue.Queue()
         self._stop_event = threading.Event()
         self._thread = threading.Thread(target=self._send_loop, daemon=True)
         self._thread.start()
 
     def send(self, topic: str, message: str):
-        logger.info(f"[SEND]{topic}, {message}")
         self._queue.put(f"{topic}:{message}")
 
     def _send_loop(self):
         while not self._stop_event.is_set():
             try:
                 msg = self._queue.get(timeout=0.1)
-                self.socket.send_string(msg)
+                # include empty delimiter for ROUTER compatibility
+                self.socket.send_multipart([b"", msg.encode()])
             except queue.Empty:
                 continue
 
@@ -88,7 +89,14 @@ class ZMQSubscriber:
         self.context = zmq.Context()
         self.socket = self.context.socket(zmq.DEALER)
         self.socket.connect(connect_addr)
-        self.socket.send(b"REGISTER:sub")
+        # send register message with delimiter
+        self.socket.send_multipart([b"", b"REGISTER:sub"])
+        poller = zmq.Poller()
+        poller.register(self.socket, zmq.POLLIN)
+        socks = dict(poller.poll(timeout=500))
+        if self.socket in socks:
+            # drain acknowledgment frame if present
+            self.socket.recv_multipart()
 
         if isinstance(topic_filter, (list, tuple, set)):
             self._filter = set(topic_filter)
@@ -109,9 +117,12 @@ class ZMQSubscriber:
                 events = dict(poller.poll(100))
                 if self.socket in events and events[self.socket] == zmq.POLLIN:
                     try:
-                        msg = self.socket.recv_string()
+                        frames = self.socket.recv_multipart()
                     except zmq.ZMQError:
-                        break 
+                        break
+                    if len(frames) < 2:
+                        continue
+                    msg = frames[1].decode()
                     if ":" in msg:
                         topic, content = msg.split(":", 1)
                         if "" in self._filter or topic in self._filter:

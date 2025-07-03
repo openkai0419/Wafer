@@ -32,9 +32,9 @@ class ProgressAggregator:
         self.maximum = 0
 
     def reset(self):
+        self._notify_progress()
         self.current = 0
         self.maximum = 0
-        self._notify_progress()
 
     @profiler.profile
     def add(self, current_inc=0, total_inc=0):

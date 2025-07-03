@@ -7,6 +7,13 @@ from ..ipc_utils import write_port, read_port
 
 HEARTBEAT_INTERVAL = 5    # Subscriber が送る間隔 [秒]
 HEARTBEAT_TIMEOUT = 15     # Broker が切断と判断するまでの猶予 [秒]
+DEFAULT_PORT = 57556
+
+def get_broker_address():
+    port = read_port()
+    if port is None:
+        port = DEFAULT_PORT
+    return f"tcp://localhost:{port}"
 
 class ZMQBroker:
     def __init__(self, bind_addr: str | None = None):
@@ -14,10 +21,22 @@ class ZMQBroker:
         self.socket = self.context.socket(zmq.ROUTER)
 
         if bind_addr is None:
-            port = self.socket.bind_to_random_port("tcp://127.0.0.1")
+            port = read_port()
+            if port is None:
+                port = DEFAULT_PORT
+            try:
+                self.socket.bind(f"tcp://localhost:{port}")
+                self.bind_addr = f"tcp://localhost:{port}"
+                logger.info(f"Broker bound to port: {port}")
+            except zmq.ZMQError:
+                # バインドできなければランダムポート
+                port = self.socket.bind_to_random_port("tcp://localhost")
+                self.bind_addr = f"tcp://localhost:{port}"
+                logger.info(f"Broker bound to random port: {port}")
             write_port(port)
-            self.bind_addr = f"tcp://127.0.0.1:{port}"
+
         else:
+            # 明示的に指定されている場合
             self.socket.bind(bind_addr)
             self.bind_addr = bind_addr
             try:
@@ -100,16 +119,14 @@ class ZMQBroker:
 class ZMQPublisher:
     def __init__(self, connect_addr: str | None = None):
         if connect_addr is None:
-            port = read_port()
-            if port is None:
-                raise RuntimeError("IPC port not found")
-            connect_addr = f"tcp://127.0.0.1:{port}"
+            connect_addr = get_broker_address()
 
         self.context = zmq.Context()
         self.socket = self.context.socket(zmq.DEALER)
         self.socket.connect(connect_addr)
-        self.socket.send_multipart([b"", b"REGISTER:pub"])
 
+        self.socket.send_multipart([b"", b"REGISTER:pub"])
+        # ACK待ち
         poller = zmq.Poller()
         poller.register(self.socket, zmq.POLLIN)
         socks = dict(poller.poll(timeout=500))  # 0.5秒待機
@@ -156,11 +173,8 @@ class ZMQPublisher:
 class ZMQSubscriber:
     def __init__(self, connect_addr: str | None = None, topic_filter=""):
         if connect_addr is None:
-            port = read_port()
-            if port is None:
-                raise RuntimeError("IPC port not found")
-            connect_addr = f"tcp://127.0.0.1:{port}"
-
+            connect_addr = get_broker_address()
+            
         self.context = zmq.Context()
         self.socket = self.context.socket(zmq.DEALER)
         self.socket.connect(connect_addr)

@@ -253,7 +253,7 @@ class SingleRowOption(QtWidgets.QWidget):
             self.option_popup.move_to()
 
     @profiler.profile
-    def run_folder_worker(self, force_update=False):
+    def run_folder_worker(self, dbname, force_update=False):
         selected = self.root.folder_view.get_selected_paths()
         if not force_update and hasattr(self.root, 'run_folder') and not self.root.run_folder:
             return
@@ -261,7 +261,7 @@ class SingleRowOption(QtWidgets.QWidget):
             return
         if self._folder_worker:
             self._folder_worker.cancel()
-        self._folder_worker = FolderComboUpdateWorker(self.root.dbname, selected)
+        self._folder_worker = FolderComboUpdateWorker(dbname, selected)
         self._folder_worker.signals.finished.connect(self.keys_combo.remake)
         main_thread.start(self._folder_worker, 6)
         if hasattr(self.root, 'run_folder'):

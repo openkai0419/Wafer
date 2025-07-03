@@ -51,6 +51,8 @@ class SearchWorkerRunnable(QtCore.QRunnable):
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
+        logger.info(f"New Window Running : {APP_NAME}")
+
         self.setWindowTitle(APP_NAME)
         self.resize(1000, 700)
 
@@ -253,16 +255,13 @@ class MainWindow(QtWidgets.QMainWindow):
                 return
 
         with QtCore.QMutexLocker(self.query_lock):
-            # 実行中の検索がある場合
             if self.current_runnable:
                 elapsed = now - self.current_query_start_time if self.current_query_start_time else timedelta.max
 
                 if elapsed < self.query_timeout_threshold:
-                    # 5秒以内ならキャンセルして実行
                     self.current_runnable.cancel()
                 else:
                     logger.info("[SEARCH] query is taking more than expected, continueing without cancel.")
-                    # 5秒以上かかってるならキャンセルせず、最新だけ保留
                     self.pending_query = query
                     return
 
@@ -286,8 +285,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.current_query_start_time = None
         self.content.set_precalculated_meta(paths, aspects)
         self.content.reload_visible_images()
-        self.search_row_widget.run_folder_worker()
-                
+        self.search_row_widget.run_folder_worker(get_data_db(self.dbname))
+        
         with QtCore.QMutexLocker(self.query_lock):
             if self.pending_query:
                 query = self.pending_query

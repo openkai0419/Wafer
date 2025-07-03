@@ -2,7 +2,7 @@ from PySide6 import QtWidgets, QtGui, QtCore
 
 from ..profiling import logger, profiler
 from ..debounce import qt_debounce
-from ..common import get_data_db, get_setting_db, run_side_subprocess, get_setting_files
+from ..common import get_data_db, get_setting_db, run_side_subprocess, get_setting_file_name
 from ..core.collector import ImageIndexer
 from .watch_folder import WatchFolder
 from .watch_setting import SettingWatcher
@@ -18,6 +18,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         super().__init__(icon, parent)
         logger.info("FOLDER WATCHER EXECUTED")
         self.setToolTip(f"{APP_NAME} : {name}")
+        self.dname = name
 
         self.menu = QtWidgets.QMenu()
         self.show_state = False
@@ -39,11 +40,12 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         self.activated.connect(self.on_activated)
 
         QtWidgets.QApplication.instance().aboutToQuit.connect(self.cleanup)
-        QtCore.QTimer.singleShot(0, lambda: self.start_watch(get_setting_db(name), get_data_db(name)))
+        QtCore.QTimer.singleShot(0, self.start_watch)
     
-    def start_watch(self, setting_name, data_name):
-        self.setting_db = SettingDB(setting_name)
-        self.data_db = ImageIndexer(data_name)
+    @profiler.profile
+    def start_watch(self):
+        self.setting_db = SettingDB(get_setting_db(self.dname))
+        self.data_db = ImageIndexer(get_data_db(self.dname))
         self.data_db.set_exclude_paths(self.setting_db.get_all_ignore_folders())
         with self.data_db as indexer:
             indexer.check_init()
@@ -70,6 +72,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         logger.debug(f"ignore folder {folderlist}")
         self.folder_watcher.set_ignore_folders(folderlist)
 
+    @profiler.profile
     def on_activated(self, reason):
         if reason == QtWidgets.QSystemTrayIcon.Trigger:
             self.show_if_not()
@@ -89,7 +92,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         run_side_subprocess("main")
 
     def test(self):
-        f = get_setting_files()
+        f = get_setting_file_name()
         c = ConfirmDialog.ask(f"{f}", buttons=("ok", "none", "cancel"))
 
     def cleanup(self):

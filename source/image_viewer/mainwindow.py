@@ -16,7 +16,8 @@ from .widgets.progress_bar import ThinProgressBar
 from .widgets.button_bar import IconButtonBar, IconButtonConfig
 from .thread import main_thread
 from .viewer_settings import main_setting
-from ..constants import get_data_db, get_setting_db
+from ..common import get_data_db, get_setting_db
+from ..constants import defualt_db_name, APP_NAME
 from ..profiling import logger, profiler
 from ..settings.setting_window import SettingsWindow
 from ..settings.db_settings import DataBaseSettings
@@ -51,7 +52,7 @@ class SearchWorkerRunnable(QtCore.QRunnable):
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Justified Layout Viewer")
+        self.setWindowTitle(APP_NAME)
         self.resize(1000, 700)
 
         self.current_runnable = None
@@ -64,15 +65,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.pending_query = None
         self.last_executed_query = None
 
-        self.dbname = "default"
+        self.dbname = defualt_db_name
         self.setting_db = SettingDB(get_setting_db(self.dbname))
 
         main_thread.watch_start()
+        self.start_ipc_listener()
 
         self.main_ui()
-        self.start_ipc_listener()
         QtCore.QTimer.singleShot(100, self.search)
-        atexit.register(self.on_close)
+        QtWidgets.QApplication.instance().aboutToQuit.connect(self.on_close)
 
     @QtCore.Slot(int)
     def update_current(self, value):
@@ -97,13 +98,14 @@ class MainWindow(QtWidgets.QMainWindow):
                 "progress": lambda: QtCore.QMetaObject.invokeMethod(self, "update_current", QtCore.Qt.QueuedConnection, QtCore.Q_ARG(int, int(event))),
                 "maximum": lambda: QtCore.QMetaObject.invokeMethod(self, "update_maximum", QtCore.Qt.QueuedConnection, QtCore.Q_ARG(int, int(event))),
                 "folderchanged": lambda: QtCore.QMetaObject.invokeMethod(self, "reload_folderlist", QtCore.Qt.QueuedConnection),
+                "show_toggle": lambda: QtCore.QMetaObject.invokeMethod(self, "toggle_show", QtCore.Qt.QueuedConnection, QtCore.Q_ARG(bool, (event=="True"))),
             }
             try:
                 handlers.get(topic, lambda: None)()
             except Exception:
                 logger.exception("Error processing IPC message: %s", msg)
 
-        self._subscriber = ZMQSubscriber(topic_filter=["update", "progress", "maximum", "folderchanged"])
+        self._subscriber = ZMQSubscriber(topic_filter=["update", "progress", "maximum", "folderchanged", "show_toggle"])
         self._subscriber.connect_on_message(on_message)
         self._subscriber.start()
 
@@ -228,6 +230,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self.run_folder = True
         self.search()
 
+    @QtCore.Slot(bool)
+    def toggle_show(self, state):
+        if state and self.isMinimized():
+            # 最小化されているなら復元して前面へ
+            self.showNormal()
+            self.raise_()
+            self.activateWindow()
+        else:
+            self.showMinimized()
+
     @qt_debounce(150)
     @QtCore.Slot(bool)
     @profiler.profile
@@ -285,6 +297,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def on_close(self):
         if hasattr(self, "_subscriber"):
+            logger.info("on_close [STOPPING]")
             self._subscriber.stop()
 
     def closeEvent(self, event):
@@ -293,5 +306,4 @@ class MainWindow(QtWidgets.QMainWindow):
         main_setting.set("viewer/scroll", self.content.get_center_image_index())
         main_setting.set("window/splitter", self.splitter.sizes())
         main_setting.commit()
-        self.on_close()
         return super().closeEvent(event)

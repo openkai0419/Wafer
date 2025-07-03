@@ -34,6 +34,16 @@ def get_viewer_count():
         logger.warning(f"[起動数値取得失敗] {e}")
         return 0
 
+def send_show_toggle(flag):
+    try:
+        publisher = _get_publisher()
+        if flag:
+            publisher.send("show_toggle", "True")
+        else:
+            publisher.send("show_toggle", "False")
+    except Exception as e:
+        logger.warning(f"[トグル通知失敗] {e}")
+
 class ProgressAggregator:
     def __init__(self):
         self.current = 0

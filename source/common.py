@@ -36,8 +36,11 @@ def get_data_db(name):
 def get_setting_db(name):
     return data_path(f"dirs/{name}.db")
 
-def get_setting_files():
-    return list_files(data_path(f"dirs/"), ".db")
+def get_name_without_ext(path):
+    return os.path.splitext(os.path.basename(path))[0]
+
+def get_setting_file_name():
+    return [get_name_without_ext(a) for a in list_files(data_path(f"dirs/"), ".db")]
 
 def get_main_based_directory() -> Path:
     if getattr(sys, 'frozen', False):
@@ -71,8 +74,7 @@ def run_side_subprocess(name, *args, **kwargs):
             stdin=subprocess.DEVNULL,
             creationflags=creation_flags
         )
-    except Exception as e:
-        #logger.error(f"[Error] Failed to start {name}: {e}")
+    except:
         raise
 
 def get_or_create_path(relative_path):

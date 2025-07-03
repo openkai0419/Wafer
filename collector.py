@@ -7,6 +7,7 @@ from PySide6 import QtWidgets, QtGui, QtCore
 from source.image_collector.main_tray import TrayApp
 from source.profiling import initialize_profiling, logger, profiler
 from source.constants import APP_NAME, defualt_db_name
+from source.common import get_setting_file_name, run_side_subprocess
 from source.mutex import SafeProcessLock
 from source.core.zmq import ZMQBroker
 
@@ -31,7 +32,7 @@ def run_communicator():
             logger.info ("[Broker] Running. Press Ctrl+C to exit.")
             shutdown_event.wait() 
     except FileExistsError:
-        logger.info("Collector はすでに起動中です。")
+        return
     except:
         raise
 
@@ -49,14 +50,23 @@ def start(name):
             tray_icon.show()
             sys.exit(app.exec())
     except FileExistsError:
-        logger.info("Collector はすでに起動中です。")
+        logger.info(f"Collector : {name} はすでに起動中です。")
     except:
         raise
 
 def main():
     p = Process(target=run_communicator)
     p.start()
-    start(defualt_db_name)
+    if len(sys.argv) < 2:
+        names = get_setting_file_name()
+        if not names:
+            names = [defualt_db_name]
+        for name in names:
+            run_side_subprocess("collector", f"{name}")
+    else:
+        name = sys.argv[1]
+        logger.info(f"starting : {name}")
+        start(name)
 
 if __name__ == "__main__":
     freeze_support()

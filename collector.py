@@ -6,7 +6,7 @@ from PySide6 import QtWidgets, QtGui, QtCore
 
 from source.image_collector.main_tray import TrayApp
 from source.profiling import initialize_profiling, logger, profiler
-from source.common import APP_NAME
+from source.constants import APP_NAME, defualt_db_name
 from source.mutex import SafeProcessLock
 from source.core.zmq import ZMQBroker
 
@@ -40,7 +40,8 @@ def start(name):
         initialize_profiling()
         with SafeProcessLock(f"{APP_NAME}_{name}"):
             app = QtWidgets.QApplication(sys.argv)
-            app.setApplicationName("AfterImages")
+            app.setQuitOnLastWindowClosed(False) 
+            app.setApplicationName(APP_NAME)
             icon = QtGui.QIcon.fromTheme("folder")
             if icon.isNull():
                 icon = QtGui.QIcon()
@@ -55,7 +56,7 @@ def start(name):
 def main():
     p = Process(target=run_communicator)
     p.start()
-    start("default")
+    start(defualt_db_name)
 
 if __name__ == "__main__":
     freeze_support()

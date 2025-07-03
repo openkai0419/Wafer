@@ -8,10 +8,10 @@ from natsort import natsorted, ns
 
 from PySide6 import QtGui
 #from .profiling import logger
+from .constants import APP_NAME
 
 # Supported image extensions
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp")
-APP_NAME = "AfterImages"
 
 def normalize_path(p):
     try:
@@ -28,6 +28,16 @@ def uipx(px: int, base_dpi: int = 96) -> int:
 
 def native_sort(files):
     return natsorted(files, alg=ns.LOCALE | ns.IGNORECASE)
+
+# paths
+def get_data_db(name):
+    return data_path(f"data/{name}.db")
+
+def get_setting_db(name):
+    return data_path(f"dirs/{name}.db")
+
+def get_setting_files():
+    return list_files(data_path(f"dirs/"), ".db")
 
 def get_main_based_directory() -> Path:
     if getattr(sys, 'frozen', False):
@@ -61,10 +71,9 @@ def run_side_subprocess(name, *args, **kwargs):
             stdin=subprocess.DEVNULL,
             creationflags=creation_flags
         )
-
     except Exception as e:
         #logger.error(f"[Error] Failed to start {name}: {e}")
-        return None
+        raise
 
 def get_or_create_path(relative_path):
     base_path = get_main_based_directory()

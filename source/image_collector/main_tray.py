@@ -2,14 +2,15 @@ from PySide6 import QtWidgets, QtGui, QtCore
 import atexit
 
 from ..profiling import logger, profiler
-from ..constants import get_data_db, get_setting_db
+from ..debounce import qt_debounce
+from ..common import get_data_db, get_setting_db, run_side_subprocess, get_setting_files
 from ..core.collector import ImageIndexer
 from .watch_folder import WatchFolder
 from .watch_setting import SettingWatcher
-from .progress_notifier import close_publisher, get_viewer_count
+from .progress_notifier import close_publisher, get_viewer_count, send_show_toggle
 from ..core.setting_db import SettingDB
+from ..dialog import ConfirmDialog 
 
-import threading
 
 class TrayApp(QtWidgets.QSystemTrayIcon):
     @profiler.profile
@@ -19,12 +20,17 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         self.setToolTip("Folder Watcher")
 
         self.menu = QtWidgets.QMenu()
-
+        self.show_state = False
         self.dummy_parent = QtWidgets.QApplication.activeWindow()
 
-        self.show_action = self.menu.addAction("表示")
+        self.show_action = self.menu.addAction("ウィンドウを表示")
         self.show_action.triggered.connect(self.show_if_not)
-
+        self.show_action = self.menu.addAction("新規ウィンドウを開く")
+        self.show_action.triggered.connect(self.show_anyways)
+        self.menu.addSeparator()
+        self.test_action = self.menu.addAction("テスト")
+        self.test_action.triggered.connect(self.test)
+        self.menu.addSeparator()
         self.quit_action = self.menu.addAction("終了")
         self.quit_action.triggered.connect(self.quit)
 
@@ -32,15 +38,8 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         self.folders_to_watch = []
         self.activated.connect(self.on_activated)
 
+        QtWidgets.QApplication.instance().aboutToQuit.connect(self.cleanup)
         QtCore.QTimer.singleShot(0, lambda: self.start_watch(get_setting_db(name), get_data_db(name)))
-        #atexit.register(self.quit)
-
-        def print_alive():
-            logger.info("Main thread alive: {}".format(threading.main_thread().is_alive()))
-
-        self.timer = QtCore.QTimer()
-        self.timer.timeout.connect(print_alive)
-        self.timer.start(1000)   
     
     def start_watch(self, setting_name, data_name):
         self.setting_db = SettingDB(setting_name)
@@ -73,23 +72,32 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
 
     def on_activated(self, reason):
         if reason == QtWidgets.QSystemTrayIcon.Trigger:
-            QtWidgets.QMessageBox.information(None, "監視中", f"監視対象:\n" + "\n".join(self.folders_to_watch))
+            self.show_if_not()
 
+    @qt_debounce(10)
     def show_if_not(self):
-        logger.debug("show_if_not: start")
-        #c = get_viewer_count()
-        QtWidgets.QMessageBox.information(
-        None, "監視中", f"監視対象:\n" + "\n".join(self.folders_to_watch)
-        )
-        logger.debug("show_if_not: after message box")
-        #v = ConfirmDialog.ask(f"{c}", buttons=("ok", "no"), parent=self.dummy_parent)
-        #print(v)
+        c = get_viewer_count()
+        logger.info(c)
+        if c < 1:
+            self.show_anyways()
+        else:
+            self.show_state = not self.show_state
+            send_show_toggle(self.show_state)
+    
+    @qt_debounce(1000)
+    def show_anyways(self):
+        run_side_subprocess("main")
 
-    def quit(self):
-        logger.info("Quitting Tray App")
+    def test(self):
+        f = get_setting_files()
+        c = ConfirmDialog.ask(f"{f}", buttons=("ok", "none", "cancel"))
+
+    def cleanup(self):
         if hasattr(self, "folder_watcher"):
             self.folder_watcher.quit()
         if hasattr(self, "setting_watcher"):
             self.setting_watcher.stop()
             close_publisher()
+
+    def quit(self):
         QtWidgets.QApplication.quit()

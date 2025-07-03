@@ -571,27 +571,25 @@ class ImageIndexer:
 
     @profiler.profile
     def clean_unused(self):
-        logger.info("CLEANUNG UP DATABASE")
-        cur = self.get_writer_cursor()
+        logger.info("CLEANING UP DATABASE")
+        try:
+            cur = self.get_writer_cursor()
+            cur.execute("""
+                DELETE FROM meta_info
+                WHERE path NOT IN (SELECT path FROM images)
+            """)
+            self.conn.commit()
 
-        cur.execute("""
-            SELECT DISTINCT m.key
-            FROM meta_info m
-            LEFT JOIN images i ON m.path = i.path
-            WHERE i.path IS NULL
-        """)
-        unused_keys = [row[0] for row in cur.fetchall()]
+            logger.info("RUNNING VACUUM")
+            cur.execute("VACUUM")
 
-        if unused_keys:
-            logger.info(f"Cleaning up {len(unused_keys)} unused keys: {unused_keys}")
+            logger.info("RUNNING ANALYZE")
+            cur.execute("ANALYZE")
+            self.conn.commit()
 
-        cur.execute("""
-            DELETE FROM meta_info
-            WHERE path NOT IN (SELECT path FROM images)
-        """)
-        self.conn.commit()
-        cur = self.get_writer_cursor()
-        cur.execute("VACUUM")
-        logger.info("DATABASE CLEANUP END")
+        except Exception as e:
+            logger.exception("DATABASE CLEANUP FAILED: %s", e)
+        else:
+            logger.info("DATABASE CLEANUP END")
 
 

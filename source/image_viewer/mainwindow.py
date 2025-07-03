@@ -16,7 +16,7 @@ from .widgets.progress_bar import ThinProgressBar
 from .widgets.button_bar import IconButtonBar, IconButtonConfig
 from .thread import main_thread
 from .viewer_settings import main_setting
-from ..constants import data_db_name, setting_db_name
+from ..constants import get_data_db, get_setting_db
 from ..profiling import logger, profiler
 from ..settings.setting_window import SettingsWindow
 from ..settings.db_settings import DataBaseSettings
@@ -64,10 +64,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.pending_query = None
         self.last_executed_query = None
 
-        self.setting_db = SettingDB(setting_db_name)
-        main_thread.watch_start()
+        self.dbname = "default"
+        self.setting_db = SettingDB(get_setting_db(self.dbname))
 
-        self.dbname = data_db_name
+        main_thread.watch_start()
 
         self.main_ui()
         self.start_ipc_listener()
@@ -262,7 +262,7 @@ class MainWindow(QtWidgets.QMainWindow):
     @profiler.profile
     def _start_search_runnable(self, query):
         self.loading_indicator.start()
-        runnable = SearchWorkerRunnable(self.dbname, query)
+        runnable = SearchWorkerRunnable(get_data_db(self.dbname), query)
         runnable.signals.finished.connect(self.on_search_finished)
         self.current_runnable = runnable
         main_thread.start(runnable, 7)

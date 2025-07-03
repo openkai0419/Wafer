@@ -64,11 +64,13 @@ class EventBatcher(QtCore.QObject):
             return
         if self._deleted:
             self._processing = True
+            progress_callback(1,2)
             self.batched_deleted.emit(list(self._deleted))
             self._deleted.clear()
             return
         if self._changed:
             self._processing = True
+            progress_callback(1,2)
             self.batched_changed.emit(list(self._changed))
             self._changed.clear()
             return
@@ -76,6 +78,7 @@ class EventBatcher(QtCore.QObject):
     @QtCore.Slot()
     def on_db_finished(self):
         self._processing = False
+        progress_callback(1,0)
         self.flush()
 
 

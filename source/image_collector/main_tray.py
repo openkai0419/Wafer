@@ -2,22 +2,26 @@ from PySide6 import QtWidgets, QtGui, QtCore
 import atexit
 
 from ..profiling import logger, profiler
-from ..constants import setting_db_name, data_db_name
+from ..constants import get_data_db, get_setting_db
 from ..core.collector import ImageIndexer
 from .watch_folder import WatchFolder
 from .watch_setting import SettingWatcher
-from .progress_notifier import close_publisher
+from .progress_notifier import close_publisher, get_viewer_count
 from ..core.setting_db import SettingDB
 
 
 class TrayApp(QtWidgets.QSystemTrayIcon):
     @profiler.profile
-    def __init__(self, icon, parent=None):
+    def __init__(self, icon, name, parent=None):
         super().__init__(icon, parent)
         logger.info("FOLDER WATCHER EXECUTED")
         self.setToolTip("Folder Watcher")
 
         self.menu = QtWidgets.QMenu()
+
+        self.show_action = self.menu.addAction("表示")
+        self.show_action.triggered.connect(self.show_if_not)
+
         self.quit_action = self.menu.addAction("終了")
         self.quit_action.triggered.connect(self.quit)
 
@@ -25,7 +29,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         self.folders_to_watch = []
         self.activated.connect(self.on_activated)
 
-        self.start_watch(setting_db_name, data_db_name)
+        self.start_watch(get_setting_db(name), get_data_db(name))
         atexit.register(self.quit)
     
     def start_watch(self, setting_name, data_name):
@@ -45,7 +49,6 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         self.setting_watcher.ignoreFoldersChanged.connect(self.reload_ignore_folder)
         self.setting_watcher.start()
         logger.debug("tray app start watching end")
-
     
     @profiler.profile
     def reload_parent_folder(self, folderlist):
@@ -61,6 +64,15 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
     def on_activated(self, reason):
         if reason == QtWidgets.QSystemTrayIcon.Trigger:
             QtWidgets.QMessageBox.information(None, "監視中", f"監視対象:\n" + "\n".join(self.folders_to_watch))
+
+    def show_if_not(self):
+        c = get_viewer_count()
+        from ..dialog import ConfirmDialog
+        logger.info(c)
+        v = ConfirmDialog.ask(f"{c}", buttons=("ok", "no"))
+        print(v)
+        if c < 1:
+            pass
 
     def quit(self):
         if hasattr(self, "folder_watcher"):

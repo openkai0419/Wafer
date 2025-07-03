@@ -1,7 +1,11 @@
 import zmq
 import threading
 import queue
-from ..profiling import logger, profiler
+import time
+from ..profiling import logger, profiler  # ←不要なら print に置き換えてOK
+
+HEARTBEAT_INTERVAL = 5    # Subscriber が送る間隔 [秒]
+HEARTBEAT_TIMEOUT = 15     # Broker が切断と判断するまでの猶予 [秒]
 
 class ZMQBroker:
     def __init__(self, bind_addr="tcp://localhost:57556"):
@@ -9,10 +13,12 @@ class ZMQBroker:
         self.socket = self.context.socket(zmq.ROUTER)
         self.socket.bind(bind_addr)
 
-        self._clients = {}  # ident: type ('pub' or 'sub')
+        self._clients = {}  # ident: (role, last_seen)
         self._stop_event = threading.Event()
         self._thread = threading.Thread(target=self._broker_loop, daemon=True)
+        self._cleanup_thread = threading.Thread(target=self._cleanup_loop, daemon=True)
         self._thread.start()
+        self._cleanup_thread.start()
         logger.info("Broker start")
 
     def _broker_loop(self):
@@ -23,27 +29,60 @@ class ZMQBroker:
 
                 if msg.startswith("REGISTER:"):
                     role = msg.split(":", 1)[1]
-                    self._clients[ident] = role
+                    self._clients[ident] = (role, time.time())
                     self.socket.send_multipart([ident, b'', b'ACK'])
                     continue
 
-                if ident in self._clients and self._clients[ident] == "pub":
+                if msg == "SUBSCRIBER_COUNT":
+                    count = sum(
+                        1 for role, _ in self._clients.values() if role == "sub"
+                    )
+                    self.socket.send_multipart([ident, b'', str(count).encode()])
+                    continue
+
+                if msg == "PING":
+                    if ident in self._clients:
+                        role, _ = self._clients[ident]
+                        self._clients[ident] = (role, time.time())
+                    continue
+                
+                if msg == "BYE":
+                    if ident in self._clients:
+                        logger.info(f"[BROKER] Subscriber {ident.hex()} requested disconnect")
+                        self._clients.pop(ident, None)
+                    continue
+
+                if ident in self._clients and self._clients[ident][0] == "pub":
                     # 中継処理: 全subscriberに送信
-                    for sub_id, role in self._clients.items():
+                    for sub_id, (role, _) in self._clients.items():
                         if role == "sub":
                             logger.info(f"[BROKER] sending: {data}")
                             self.socket.send_multipart([sub_id, b'', data])
 
             except zmq.ZMQError:
-                break  # 終了要求
+                break
             except Exception as e:
                 print(f"Broker Error: {e}")
+
+    def _cleanup_loop(self):
+        while not self._stop_event.is_set():
+            time.sleep(HEARTBEAT_INTERVAL)
+            now = time.time()
+            to_remove = []
+            for ident, (role, last_seen) in list(self._clients.items()):
+                if role == "sub" and (now - last_seen) > HEARTBEAT_TIMEOUT:
+                    logger.info(f"[BROKER] removing dead subscriber: {ident.hex()}")
+                    to_remove.append(ident)
+            for ident in to_remove:
+                self._clients.pop(ident, None)
 
     def close(self):
         self._stop_event.set()
         self._thread.join()
+        self._cleanup_thread.join()
         self.socket.close()
         self.context.term()
+
 
 class ZMQPublisher:
     def __init__(self, connect_addr="tcp://localhost:57556"):
@@ -60,7 +99,7 @@ class ZMQPublisher:
             frames = self.socket.recv_multipart()
             if len(frames) != 2 or frames[1] != b'ACK':
                 raise RuntimeError("ZMQBroker did not acknowledge registration")
-            
+
         self._queue = queue.Queue()
         self._stop_event = threading.Event()
         self._thread = threading.Thread(target=self._send_loop, daemon=True)
@@ -73,10 +112,20 @@ class ZMQPublisher:
         while not self._stop_event.is_set():
             try:
                 msg = self._queue.get(timeout=0.1)
-                # include empty delimiter for ROUTER compatibility
                 self.socket.send_multipart([b"", msg.encode()])
             except queue.Empty:
                 continue
+
+    def get_sub_count(self):
+        self.socket.send_multipart([b"", b"SUBSCRIBER_COUNT"])
+        poller = zmq.Poller()
+        poller.register(self.socket, zmq.POLLIN)
+        socks = dict(poller.poll(timeout=500))
+        if self.socket in socks:
+            frames = self.socket.recv_multipart()
+            return int(frames[1].decode())
+        else:
+            return 0
 
     def close(self):
         self._stop_event.set()
@@ -84,18 +133,17 @@ class ZMQPublisher:
         self.socket.close()
         self.context.term()
 
+
 class ZMQSubscriber:
     def __init__(self, connect_addr="tcp://localhost:57556", topic_filter=""):
         self.context = zmq.Context()
         self.socket = self.context.socket(zmq.DEALER)
         self.socket.connect(connect_addr)
-        # send register message with delimiter
         self.socket.send_multipart([b"", b"REGISTER:sub"])
         poller = zmq.Poller()
         poller.register(self.socket, zmq.POLLIN)
         socks = dict(poller.poll(timeout=500))
         if self.socket in socks:
-            # drain acknowledgment frame if present
             self.socket.recv_multipart()
 
         if isinstance(topic_filter, (list, tuple, set)):
@@ -104,13 +152,14 @@ class ZMQSubscriber:
             self._filter = {topic_filter}
         self._callback = None
         self._stop_event = threading.Event()
-        self._thread = None
+        self._recv_thread = None
+        self._hb_thread = None
 
     def connect_on_message(self, callback):
         self._callback = callback
 
     def start(self):
-        def loop():
+        def recv_loop():
             poller = zmq.Poller()
             poller.register(self.socket, zmq.POLLIN)
             while not self._stop_event.is_set():
@@ -128,15 +177,31 @@ class ZMQSubscriber:
                         if "" in self._filter or topic in self._filter:
                             if self._callback:
                                 self._callback(msg)
-        self._thread = threading.Thread(target=loop, daemon=True)
-        self._thread.start()
+
+        def heartbeat_loop():
+            while not self._stop_event.is_set():
+                self.socket.send_multipart([b"", b"PING"])
+                time.sleep(HEARTBEAT_INTERVAL)
+
+        self._recv_thread = threading.Thread(target=recv_loop, daemon=True)
+        self._hb_thread = threading.Thread(target=heartbeat_loop, daemon=True)
+        self._recv_thread.start()
+        self._hb_thread.start()
 
     def stop(self):
         self._stop_event.set()
-        if self._thread is not None:
-            self._thread.join(timeout=1)
         try:
-            self.socket.close(linger=0)  # lingerを明示的に設定して即切断
+            # 終了通知を送る
+            self.socket.send_multipart([b"", b"BYE"])
+        except zmq.ZMQError:
+            pass  # 通信できなければ無視してPINGで消えるのを待つ
+
+        if self._recv_thread is not None:
+            self._recv_thread.join(timeout=1)
+        if self._hb_thread is not None:
+            self._hb_thread.join(timeout=1)
+        try:
+            self.socket.close(linger=0)
         except zmq.ZMQError:
             pass
         self.context.term()

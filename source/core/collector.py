@@ -20,7 +20,7 @@ BASE_DURATION = 10.0
 MIN_BATCH_SIZE = 100
 MAX_BATCH_SIZE = 100000
 BASE_BATCH_SIZE = 5000
-INITIAL_BATCH_SIZE = 100
+INITIAL_BATCH_SIZE = 500
 
 # 再利用可能なThreadPoolExecutor
 executor = concurrent.futures.ThreadPoolExecutor()
@@ -504,7 +504,7 @@ class ImageIndexer:
         temp_duration = BASE_DURATION
         i = 0
         fixed_count = 0  # ← 追加：100枚で処理した回数を数える
-        initial_count = 3
+        initial_count = 1
 
         # 書き込みキューとスレッド初期化
         write_queue = queue.Queue(maxsize=int(initial_count+2))
@@ -547,6 +547,7 @@ class ImageIndexer:
             if fixed_count < initial_count:
                 fixed_count += 1
                 batch_size = INITIAL_BATCH_SIZE
+                self.try_checkpoint()
             else:
                 if fixed_count == initial_count:
                     batch_size = BASE_BATCH_SIZE  # 初期値にリセット

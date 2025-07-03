@@ -120,7 +120,7 @@ class SizeMismatchChecker(QtCore.QTimer):
     def check(self):
         if not self._active:
             return
-
+    
         max_index = len(self.target_widget.image_paths)
         for i, label in self.target_widget.widgets.items():
             if i >= max_index:
@@ -129,6 +129,7 @@ class SizeMismatchChecker(QtCore.QTimer):
             if pixmap is None:
                 continue
             if _size_mismatch(pixmap.size(), label.size()):
+                #logger.debug("SizeMismatchChecker: missmatch found")
                 if i not in self.target_widget.active_threads:
                     runnable = ImageLoaderRunnable(i, self.target_widget.image_paths[i], label.size(), self.target_widget)
                     self.target_widget.active_threads[i] = runnable
@@ -218,12 +219,6 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
 
     def _generate_error_pixmap(self):
         try:
-            import sys
-            if getattr(sys, 'frozen', False):
-                base_dir = os.path.dirname(sys.executable)
-            else:
-                base_dir = os.path.dirname(os.path.abspath(sys.argv[0]))  # main.py 実行位置
-
             imgpath = get_main_based_directory() / "_resources/fail_fetch_02.png"
             pixmap = QtGui.QPixmap(imgpath)
             if not pixmap.isNull():

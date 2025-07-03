@@ -9,6 +9,7 @@ from .watch_setting import SettingWatcher
 from .progress_notifier import close_publisher, get_viewer_count
 from ..core.setting_db import SettingDB
 
+import threading
 
 class TrayApp(QtWidgets.QSystemTrayIcon):
     @profiler.profile
@@ -18,6 +19,8 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         self.setToolTip("Folder Watcher")
 
         self.menu = QtWidgets.QMenu()
+
+        self.dummy_parent = QtWidgets.QApplication.activeWindow()
 
         self.show_action = self.menu.addAction("表示")
         self.show_action.triggered.connect(self.show_if_not)
@@ -29,8 +32,15 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         self.folders_to_watch = []
         self.activated.connect(self.on_activated)
 
-        self.start_watch(get_setting_db(name), get_data_db(name))
-        atexit.register(self.quit)
+        QtCore.QTimer.singleShot(0, lambda: self.start_watch(get_setting_db(name), get_data_db(name)))
+        #atexit.register(self.quit)
+
+        def print_alive():
+            logger.info("Main thread alive: {}".format(threading.main_thread().is_alive()))
+
+        self.timer = QtCore.QTimer()
+        self.timer.timeout.connect(print_alive)
+        self.timer.start(1000)   
     
     def start_watch(self, setting_name, data_name):
         self.setting_db = SettingDB(setting_name)
@@ -66,15 +76,17 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
             QtWidgets.QMessageBox.information(None, "監視中", f"監視対象:\n" + "\n".join(self.folders_to_watch))
 
     def show_if_not(self):
-        c = get_viewer_count()
-        from ..dialog import ConfirmDialog
-        logger.info(c)
-        v = ConfirmDialog.ask(f"{c}", buttons=("ok", "no"))
-        print(v)
-        if c < 1:
-            pass
+        logger.debug("show_if_not: start")
+        #c = get_viewer_count()
+        QtWidgets.QMessageBox.information(
+        None, "監視中", f"監視対象:\n" + "\n".join(self.folders_to_watch)
+        )
+        logger.debug("show_if_not: after message box")
+        #v = ConfirmDialog.ask(f"{c}", buttons=("ok", "no"), parent=self.dummy_parent)
+        #print(v)
 
     def quit(self):
+        logger.info("Quitting Tray App")
         if hasattr(self, "folder_watcher"):
             self.folder_watcher.quit()
         if hasattr(self, "setting_watcher"):

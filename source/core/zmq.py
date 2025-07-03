@@ -2,16 +2,29 @@ import zmq
 import threading
 import queue
 import time
-from ..profiling import logger, profiler  # ←不要なら print に置き換えてOK
+from ..profiling import logger, profiler  # ←余計なら print に置き換えてもOK
+from ..ipc_utils import write_port, read_port
 
 HEARTBEAT_INTERVAL = 5    # Subscriber が送る間隔 [秒]
 HEARTBEAT_TIMEOUT = 15     # Broker が切断と判断するまでの猶予 [秒]
 
 class ZMQBroker:
-    def __init__(self, bind_addr="tcp://localhost:57556"):
+    def __init__(self, bind_addr: str | None = None):
         self.context = zmq.Context()
         self.socket = self.context.socket(zmq.ROUTER)
-        self.socket.bind(bind_addr)
+
+        if bind_addr is None:
+            port = self.socket.bind_to_random_port("tcp://127.0.0.1")
+            write_port(port)
+            self.bind_addr = f"tcp://127.0.0.1:{port}"
+        else:
+            self.socket.bind(bind_addr)
+            self.bind_addr = bind_addr
+            try:
+                port = int(bind_addr.rsplit(":", 1)[1])
+                write_port(port)
+            except Exception:
+                pass
 
         self._clients = {}  # ident: (role, last_seen)
         self._stop_event = threading.Event()
@@ -85,7 +98,13 @@ class ZMQBroker:
 
 
 class ZMQPublisher:
-    def __init__(self, connect_addr="tcp://localhost:57556"):
+    def __init__(self, connect_addr: str | None = None):
+        if connect_addr is None:
+            port = read_port()
+            if port is None:
+                raise RuntimeError("IPC port not found")
+            connect_addr = f"tcp://127.0.0.1:{port}"
+
         self.context = zmq.Context()
         self.socket = self.context.socket(zmq.DEALER)
         self.socket.connect(connect_addr)
@@ -135,7 +154,13 @@ class ZMQPublisher:
 
 
 class ZMQSubscriber:
-    def __init__(self, connect_addr="tcp://localhost:57556", topic_filter=""):
+    def __init__(self, connect_addr: str | None = None, topic_filter=""):
+        if connect_addr is None:
+            port = read_port()
+            if port is None:
+                raise RuntimeError("IPC port not found")
+            connect_addr = f"tcp://127.0.0.1:{port}"
+
         self.context = zmq.Context()
         self.socket = self.context.socket(zmq.DEALER)
         self.socket.connect(connect_addr)

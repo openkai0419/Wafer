@@ -37,7 +37,7 @@ class HoverProxy(QtWidgets.QWidget):
 
 
 class PopupWindow(QtWidgets.QWidget):
-    def __init__(self, parent: QtWidgets.QPushButton, *args, **kwargs):
+    def __init__(self, parent: QtWidgets, *args, **kwargs):
         super().__init__(parent=parent, *args, **kwargs)
         self.setWindowFlags(QtCore.Qt.FramelessWindowHint | QtCore.Qt.ToolTip)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)

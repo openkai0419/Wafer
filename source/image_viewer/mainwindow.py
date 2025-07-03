@@ -193,6 +193,7 @@ class MainWindow(QtWidgets.QMainWindow):
     @QtCore.Slot()
     @qt_debounce(1000)
     def reload_folderlist(self):
+        logger.debug("[RUNNING] reload_folderlist")
         self.folder_view.reload_async()
 
     def toggle_only_direct_children(self, checked):
@@ -231,6 +232,7 @@ class MainWindow(QtWidgets.QMainWindow):
     @QtCore.Slot(bool)
     @profiler.profile
     def search(self, force=False):
+        logger.debug("[RUNNING] search")
         query = self.build_search_query()
         now = datetime.now()
 

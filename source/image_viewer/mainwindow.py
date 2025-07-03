@@ -8,7 +8,7 @@ from ..core.query import MetaInfoSearchEngine, MetaQuery
 from ..core.zmq import ZMQSubscriber
 from ..debounce import qt_debounce
 from .widgets.loading_overlay import OverlayLoadingIndicator
-from .widgets.foldertree import FolderTreeView
+from .widgets.foldertree import LazyFolderTreeView
 from .widgets.foldertree_menu import FolderContextMenuBuilder
 from .widgets.query_options import SingleRowOption
 from .widgets.scrollarea import InertialScrollArea, AutoScrollArea
@@ -112,7 +112,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
         self.setCentralWidget(self.splitter)
 
-        self.folder_view = FolderTreeView(self.setting_db.get_all_parent_folders(), self.setting_db.get_all_ignore_folders())
+        self.folder_view = LazyFolderTreeView(self.setting_db.get_all_parent_folders(), self.setting_db.get_all_ignore_folders())
         menu_builder = FolderContextMenuBuilder(self.folder_view, self.setting_db.db_name)
         self.folder_view.set_context_menu_builder(menu_builder)
         self.folder_view.folder_selected.connect(self.on_folder_selected)
@@ -174,13 +174,13 @@ class MainWindow(QtWidgets.QMainWindow):
         folder_path = QtWidgets.QFileDialog.getExistingDirectory(self, "フォルダを選択")
         if folder_path:
             self.setting_db.add_parent_folder(folder_path)
-            self.folder_view.set_root_paths(self.setting_db.get_all_parent_folders())
+            self.folder_view.add_root(folder_path)
 
     @profiler.profile
     def build_search_query(self):
         kwargs = self.search_row_widget.get_values()
         kwargs.update({
-            "directories": self.folder_view.get_selected(),
+            "directories": self.folder_view.get_selected_paths(),
             "only_direct_children": self.only_direct_children
         })
         return MetaQuery(**kwargs)
@@ -194,7 +194,7 @@ class MainWindow(QtWidgets.QMainWindow):
     @qt_debounce(1000)
     def reload_folderlist(self):
         logger.debug("[RUNNING] reload_folderlist")
-        self.folder_view.reload_async()
+        self.folder_view.reload_tree()
 
     def toggle_only_direct_children(self, checked):
         logger.info(checked)

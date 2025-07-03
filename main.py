@@ -10,7 +10,7 @@ from source.common import run_side_subprocess
 def main():
     initialize_profiling()
     app = QtWidgets.QApplication(sys.argv)
-    app.setApplicationName("AfterImage")
+    app.setApplicationName("AfterImages")
     window = MainWindow()
     window.show()
     run_side_subprocess("collector")

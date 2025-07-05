@@ -62,12 +62,12 @@ def run_side_subprocess(name, *args, **kwargs):
     stdout = subprocess.DEVNULL
     stderr = subprocess.DEVNULL
     if getattr(sys, 'frozen', False):
-        executalble =  base_dir / f"{Path(name).stem}.exe"
-        command = [executalble, *args]
+        executable =  base_dir / f"{Path(name).stem}.exe"
+        command = [executable, *args]
         creation_flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0
     else:
-        executalble =  base_dir / f"{Path(name).stem}.py"
-        command = [sys.executable, executalble, *args]
+        executable =  base_dir / f"{Path(name).stem}.py"
+        command = [sys.executable, executable, *args]
         creation_flags = 0
     try:
         subprocess.Popen(

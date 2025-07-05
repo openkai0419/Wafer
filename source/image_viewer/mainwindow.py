@@ -17,7 +17,7 @@ from .widgets.table_combo import ComboBoxWithButtons
 from .thread import main_thread
 from .viewer_settings import main_setting
 from ..common import get_data_db, get_setting_db, uipx, get_setting_file_names, run_side_subprocess
-from ..constants import defualt_db_name, APP_NAME
+from ..constants import default_db_name, APP_NAME
 from ..profiling import logger, profiler
 from ..settings.setting_window import SettingsWindow
 from ..settings.db_settings import DataBaseSettings
@@ -81,8 +81,8 @@ class MainWindow(QtWidgets.QMainWindow):
     def get_previous(self):
         names = get_setting_file_names()
         if not names:
-            return defualt_db_name
-        prevname = main_setting.get("window/tablename", defualt_db_name)
+            return default_db_name
+        prevname = main_setting.get("window/tablename", default_db_name)
         if prevname in names:
             return prevname
         else:

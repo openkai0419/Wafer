@@ -6,7 +6,7 @@ from PySide6 import QtWidgets, QtGui, QtCore
 
 from source.image_collector.main_tray import TrayApp
 from source.profiling import initialize_profiling, logger, profiler
-from source.constants import APP_NAME, defualt_db_name
+from source.constants import APP_NAME, default_db_name
 from source.common import get_setting_file_names, run_side_subprocess
 from source.mutex import SafeProcessLock
 from source.core.zmq import ZMQBroker
@@ -60,7 +60,7 @@ def main():
     if len(sys.argv) < 2:
         names = get_setting_file_names()
         if not names:
-            names = [defualt_db_name]
+            names = [default_db_name]
         for name in names:
             run_side_subprocess("collector", f"{name}")
     else:

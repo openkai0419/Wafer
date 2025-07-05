@@ -103,7 +103,6 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         self.model_.load_children(item)
 
     def on_collapsed(self, index):
-        # 省メモリ化のため閉じたら子供を削除しても良い
         pass
 
     def _on_item_clicked(self, index):
@@ -174,7 +173,9 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         item = QtGui.QStandardItem(FOLDER_ICON, os.path.basename(path) or path)
         item.setData(path, QtCore.Qt.UserRole)
         item.setChild(0, QtGui.QStandardItem())  # dummy
+        self.model_.roots.append(path)
         self.model_.appendRow(item)
+        self.model_.sort(0, QtCore.Qt.AscendingOrder)
 
     def remove_root(self, path: str):
         path = normalize_path(path)

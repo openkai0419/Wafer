@@ -4,6 +4,7 @@ import queue
 import time
 from ..profiling import logger, profiler  # ←余計なら print に置き換えてもOK
 from ..ipc_utils import write_port, read_port
+from ..constants import APP_NAME
 
 HEARTBEAT_INTERVAL = 5    # Subscriber が送る間隔 [秒]
 HEARTBEAT_TIMEOUT = 15     # Broker が切断と判断するまでの猶予 [秒]
@@ -141,8 +142,8 @@ class ZMQPublisher:
         self._thread = threading.Thread(target=self._send_loop, daemon=True)
         self._thread.start()
 
-    def send(self, topic: str, message: str):
-        self._queue.put(f"{topic}:{message}")
+    def send(self, topic: str, message: str, table: str):
+        self._queue.put(f"{APP_NAME}:{table}:{topic}:{message}")
 
     def _send_loop(self):
         while not self._stop_event.is_set():
@@ -171,7 +172,7 @@ class ZMQPublisher:
 
 
 class ZMQSubscriber:
-    def __init__(self, connect_addr: str | None = None, topic_filter=""):
+    def __init__(self, connect_addr: str | None = None, head_filter=""):
         if connect_addr is None:
             connect_addr = get_broker_address()
             
@@ -185,10 +186,10 @@ class ZMQSubscriber:
         if self.socket in socks:
             self.socket.recv_multipart()
 
-        if isinstance(topic_filter, (list, tuple, set)):
-            self._filter = set(topic_filter)
+        if isinstance(head_filter, (list, tuple, set)):
+            self._filter = set(head_filter)
         else:
-            self._filter = {topic_filter}
+            self._filter = {head_filter}
         self._callback = None
         self._stop_event = threading.Event()
         self._recv_thread = None

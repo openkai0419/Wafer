@@ -1,6 +1,7 @@
 from PySide6 import QtWidgets, QtGui, QtCore
 
 from ...common import normalize_path
+from ...profiling import logger, profiler
 from ...dialog import ConfirmDialog
 from ...settings.translation import TranslatorMixin
 
@@ -14,8 +15,9 @@ class FolderContextMenuBuilder(TranslatorMixin):
         menu.addAction(self.t.tr("パスをコピー"), lambda: self.copy_path(path))
         menu.addAction(self.t.tr("エクスプローラーで開く"), lambda: self.open_in_explorer(path))
         menu.addSeparator()
+        logger.info(self.view.roots)
+        logger.info(path in self.view.roots)
         if path in self.view.roots:
-            pass
             menu.addAction(self.t.tr("除去"), lambda: self.remove(path))
         else:
             menu.addAction(self.t.tr("除外"), lambda: self.ignore(path))

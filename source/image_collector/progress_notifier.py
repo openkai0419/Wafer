@@ -38,14 +38,15 @@ def send_show_toggle(flag):
     try:
         publisher = _get_publisher()
         if flag:
-            publisher.send("show_toggle", "True")
+            publisher.send("show_toggle", "True", "*")
         else:
-            publisher.send("show_toggle", "False")
+            publisher.send("show_toggle", "False", "*")
     except Exception as e:
         logger.warning(f"[トグル通知失敗] {e}")
 
 class ProgressAggregator:
-    def __init__(self):
+    def __init__(self, tablename):
+        self.tablename = tablename
         self.current = 0
         self.maximum = 0
 
@@ -70,8 +71,8 @@ class ProgressAggregator:
     def _notify_progress(self):
         try:
             publisher = _get_publisher()
-            publisher.send("maximum", str(self.maximum))
-            publisher.send("progress", str(self.current))
+            publisher.send("maximum", str(self.maximum), self.tablename)
+            publisher.send("progress", str(self.current), self.tablename)
             #logger.debug(f"[NOTIFY] progress {self.current} {self.maximum}")
         except Exception as e:
             logger.warning(f"[進捗通知失敗] {e}")
@@ -80,9 +81,7 @@ class ProgressAggregator:
     def notify_extra(self, key: str, value: object):
         try:
             publisher = _get_publisher()
-            publisher.send(key, str(value))
+            publisher.send(key, str(value), self.tablename)
             logger.debug(f"[NOTIFY] EXTRA {key} {value}")
         except Exception as e:
             logger.warning(f"[通知失敗: {key}={value}] {e}")
-
-_progress_aggregator = ProgressAggregator()

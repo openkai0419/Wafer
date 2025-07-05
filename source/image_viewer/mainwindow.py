@@ -60,6 +60,10 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.setWindowTitle(APP_NAME)
         self.resize(1000, 700)
 
+        self.dbname = None
+        self.dbpath = None
+        self.setting_db = None
+
         self.current_runnable = None
         self._is_fullscreen = False
         self.run_folder = True
@@ -73,6 +77,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         main_thread.watch_start()
         self.start_ipc_listener()
 
+        self.t.set_locale(main_setting.get("window/language", "en"))
         self.main_ui()
         
         self.reload_db(self.get_previous())
@@ -156,26 +161,29 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
 
     def start_ipc_listener(self):
         def on_message(msg: str):
-            topic, _, event = msg.partition(":")
+            head, table, topic, message = msg.split(":", 3)
+            if table != "*" and table != self.dbname: 
+                return
             handlers = {
                 "update": lambda: QtCore.QMetaObject.invokeMethod(self, "search", QtCore.Qt.QueuedConnection,  QtCore.Q_ARG(bool, True)),
-                "progress": lambda: QtCore.QMetaObject.invokeMethod(self, "update_current", QtCore.Qt.QueuedConnection, QtCore.Q_ARG(int, int(event))),
-                "maximum": lambda: QtCore.QMetaObject.invokeMethod(self, "update_maximum", QtCore.Qt.QueuedConnection, QtCore.Q_ARG(int, int(event))),
+                "progress": lambda: QtCore.QMetaObject.invokeMethod(self, "update_current", QtCore.Qt.QueuedConnection, QtCore.Q_ARG(int, int(message))),
+                "maximum": lambda: QtCore.QMetaObject.invokeMethod(self, "update_maximum", QtCore.Qt.QueuedConnection, QtCore.Q_ARG(int, int(message))),
                 "folderchanged": lambda: QtCore.QMetaObject.invokeMethod(self, "reload_folderlist", QtCore.Qt.QueuedConnection),
-                "show_toggle": lambda: QtCore.QMetaObject.invokeMethod(self, "toggle_show", QtCore.Qt.QueuedConnection, QtCore.Q_ARG(bool, (event=="True"))),
+                "show_toggle": lambda: QtCore.QMetaObject.invokeMethod(self, "toggle_show", QtCore.Qt.QueuedConnection, QtCore.Q_ARG(bool, (message=="True"))),
             }
             try:
                 handlers.get(topic, lambda: None)()
             except Exception:
                 logger.exception("Error processing IPC message: %s", msg)
 
-        self._subscriber = ZMQSubscriber(topic_filter=["update", "progress", "maximum", "folderchanged", "show_toggle"])
+        self._subscriber = ZMQSubscriber(head_filter=[APP_NAME])
         self._subscriber.connect_on_message(on_message)
         self._subscriber.start()
 
     def toggle_language(self):
         new_locale = "ja" if self.t.current_locale == "en" else "en"
         self.t.set_locale(new_locale)
+        main_setting.save_important("window/language", new_locale)
 
     @profiler.profile
     def main_ui(self):
@@ -183,8 +191,8 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.setCentralWidget(self.splitter)
 
         self.folder_view = LazyFolderTreeView()
-        menu_builder = FolderContextMenuBuilder(self.folder_view, self)
-        self.folder_view.set_context_menu_builder(menu_builder)
+        self.menu_builder = FolderContextMenuBuilder(self.folder_view, self)
+        self.folder_view.set_context_menu_builder(self.menu_builder)
         self.folder_view.folder_selected.connect(self.on_folder_selected)
 
         left_panel = QtWidgets.QWidget()
@@ -203,7 +211,6 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             IconButtonConfig("icons/save.png", "AutoScroll", lambda: self.auto_scroll()),
             IconButtonConfig("icons/save.png", "Full Screen", lambda: self.toggle_fullscreen()),
             IconButtonConfig("icons/save.png", "Toggle Language", lambda: self.toggle_language()),
-            IconButtonConfig("icons/save.png", "Dump Language", lambda: self.t.dump_missing_keys()),
         ])
 
         self.dbcombo = ComboBoxWithButtons()
@@ -249,7 +256,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
 
     @profiler.profile
     def add_new_folder(self):
-        folder_path = QtWidgets.QFileDialog.getExistingDirectory(self, "フォルダを選択")
+        folder_path = QtWidgets.QFileDialog.getExistingDirectory(self, self.t.tr("フォルダを選択"))
         if folder_path:
             self.setting_db.add_parent_folder(folder_path)
             self.folder_view.add_root(folder_path)
@@ -372,13 +379,17 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         if hasattr(self, "_subscriber"):
             logger.info("on_close [STOPPING]")
             self._subscriber.stop()
+        try:
+            self.t.dump_missing_keys()
+            self.folder_view.save_state(self.dbname)
+            main_setting.set("window/tablename", self.dbname)
+            main_setting.set("window/geometry", self.saveGeometry())
+            main_setting.set("viewer/scroll", self.content.get_center_image_index())
+            main_setting.set("window/splitter", self.splitter.sizes())
+            main_setting.commit()
+            main_setting.close()
+        except:
+            pass
 
     def closeEvent(self, event):
-        self.folder_view.save_state(self.dbname)
-        main_setting.set("window/tablename", self.dbname)
-        main_setting.set("window/geometry", self.saveGeometry())
-        main_setting.set("viewer/scroll", self.content.get_center_image_index())
-        main_setting.set("window/splitter", self.splitter.sizes())
-        main_setting.commit()
-        main_setting.close()
         return super().closeEvent(event)

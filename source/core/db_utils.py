@@ -1,8 +1,9 @@
 import sqlite3
-import time
 import os
+import time
 import glob
 import errno
+import stat
 
 from ..common import get_data_file_names, get_setting_file_names, get_data_db
 from ..profiling import logger, profiler
@@ -39,53 +40,58 @@ def retry_sqlite_connection(db_name: str, timeout: float = 3.0, interval: float 
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
-@profiler.profile
-def delete_database_files(dbname, retries: int = 1000, delay: float = 1) -> bool:
-    """
-    このインスタンスのDBファイルおよび関連ファイルを削除する。
-    他プロセスが開いている場合はリトライする。
 
+
+
+@profiler.profile
+def delete_database_files(dbname: str, retries: int = 1000, delay: float = 1.0, force: bool = False) -> bool:
+    """
+    指定された DB 名のファイルおよび関連ファイルを削除する。
+    他プロセスが開いている場合はリトライする。
+    `force=True` なら属性を変更して強制削除を試みる。
     成功すれば True、失敗すれば False。
     """
     base = os.path.abspath(dbname)
-    logger.info(base)
-    patterns = [
-        base,
-        base + "-journal",
-        base + "-wal",
-        base + "-shm",
-    ]
-    # 念のため類似ファイルも削除候補に
-    patterns.extend(glob.glob(base + "*"))
-    targets = {path for path in patterns if os.path.isfile(path)}
+    logger.info(f"Deleting database files: {base}")
+
+    patterns = [base, f"{base}-journal", f"{base}-wal", f"{base}-shm"] + glob.glob(f"{base}*")
+    targets = {p for p in patterns if os.path.isfile(p)}
+
+    if not targets:
+        logger.info("No database files found to delete.")
+        return True
+
+    def remove(path: str) -> bool:
+        try:
+            os.remove(path)
+            logger.info(f"Deleted: {path}")
+            return True
+        except FileNotFoundError:
+            return True
+        except (PermissionError, OSError) as e:
+            if getattr(e, "errno", None) not in (None, errno.EACCES, errno.EBUSY):
+                logger.exception(f"Unexpected error on {path}")
+                raise
+            logger.warning(f"Failed to delete {path}: {e}")
+            if force:
+                try:
+                    os.chmod(path, os.stat(path).st_mode | stat.S_IWUSR)
+                    os.remove(path)
+                    logger.info(f"Force-deleted: {path}")
+                    return True
+                except Exception as fe:
+                    logger.error(f"Force delete failed on {path}: {fe}")
+            return False
 
     for attempt in range(1, retries + 1):
-        still_exists = set()
-        for path in targets:
-            try:
-                os.remove(path)
-                logger.info(f"Deleted: {path}")
-            except FileNotFoundError:
-                continue  # もう無いならOK
-            except PermissionError as e:
-                logger.warning(f"PermissionError on {path} (attempt {attempt})")
-                still_exists.add(path)
-            except OSError as e:
-                if e.errno in (errno.EACCES, errno.EBUSY):
-                    logger.warning(f"OSError on {path} (attempt {attempt}): {e}")
-                    still_exists.add(path)
-                else:
-                    logger.exception(f"Unexpected OSError on {path}")
-                    return False
-
-        if not still_exists:
+        remaining = {p for p in targets if not remove(p)}
+        if not remaining:
             logger.info("All database files deleted successfully.")
             return True
-
-        logger.info(f"Retrying in {delay:.1f}s… (remaining: {still_exists})")
+        logger.info(f"Retry {attempt}/{retries} in {delay:.1f}s… (remaining: {remaining})")
         time.sleep(delay)
 
-    logger.error(f"Failed to delete DB files after {retries} attempts: {still_exists}")
+    logger.error(f"Failed to delete DB files after {retries} attempts: {remaining}")
     return False
 
 def clean_database():

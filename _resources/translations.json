@@ -1,20 +1,104 @@
 {
-  "キャンセル": {
+  "エクスプローラーで開く": {
     "ja": ""
+  },
+  "パスをコピー": {
+    "ja": ""
+  },
+  "フォルダを選択": {
+    "ja": ""
+  },
+  "検索オプション": {
+    "ja": ""
+  },
+  "確認": {
+    "ja": ""
+  },
+  "表示リストから除去しますか？: \n{path}": {
+    "ja": ""
+  },
+  "除去": {
+    "ja": ""
+  },
+  "除去する": {
+    "ja": ""
+  },
+  " 検索設定 ▼ ": {
+    "ja": "Options ▼ "
+  },
+  "ソート:": {
+    "ja": "Sort by:"
+  },
+  "ファイルサイズ": {
+    "ja": "Filesize"
+  },
+  "ファイルパス": {
+    "ja": "Filepath"
+  },
+  "フォルダ設定": {
+    "ja": "Folder Options"
+  },
+  "ランダム": {
+    "ja": "Random"
+  },
+  "作成日時": {
+    "ja": "Crated"
+  },
+  "入力してください…": {
+    "ja": "type in..."
+  },
+  "昇順": {
+    "ja": "ASC"
+  },
+  "更新日時": {
+    "ja": "Update"
+  },
+  "検索設定": {
+    "ja": "Search Options"
+  },
+  "検索ワードを入力...": {
+    "ja": "Enter your term..."
+  },
+  "検索用の分割文字:": {
+    "ja": "Split by"
+  },
+  "現在の項目を削除": {
+    "ja": "Delete current item"
+  },
+  "登録順": {
+    "ja": "Registration"
+  },
+  "絞り込み": {
+    "ja": "Select"
+  },
+  "設定": {
+    "ja": "Options"
+  },
+  "適用": {
+    "ja": "Apply"
+  },
+  "降順": {
+    "ja": "DESC"
+  },
+  "項目を追加": {
+    "ja": "add new table"
+  },
+  "キャンセル": {
+    "ja": "Cancel"
   },
   "テーブルを削除しますか？: {dbname}": {
-    "ja": ""
+    "ja": "Are you sure to delete table : {dbname}"
   },
   "作成": {
-    "ja": ""
+    "ja": "Create"
   },
   "作成するテーブルの名前を入力してください": {
-    "ja": ""
+    "ja": "Enter new table name"
   },
   "削除": {
-    "ja": ""
+    "ja": "Delete"
   },
   "新規作成": {
-    "ja": ""
+    "ja": "Create New"
   }
 }

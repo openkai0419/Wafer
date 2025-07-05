@@ -3,12 +3,14 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import os
 
-from .progress_notifier import _progress_aggregator
+from .progress_notifier import ProgressAggregator
 from ..debounce import qt_debounce
 
 from ..profiling import logger, profiler
 from ..common import IMAGE_EXTENSIONS
 extensions = IMAGE_EXTENSIONS
+
+_progress_aggregator = ProgressAggregator("*")
 
 @profiler.profile
 def progress_callback(current_inc, total_inc):
@@ -20,9 +22,9 @@ def update_callback(message="update_done"):
     _progress_aggregator.notify_extra("update", message)
 
 @profiler.profile
-def filechange_callback(folder):
+def folderchange_callback(folder):
     logger.debug(f"folder changed: {folder}")
-    _progress_aggregator.notify_extra("folderchanged", folder)
+    _progress_aggregator.notify_extra("folderchanged", "")
 
 
 class EventBatcher(QtCore.QObject):
@@ -223,13 +225,18 @@ class DBWorker(QtCore.QObject):
 
 class WatchFolder:
     @profiler.profile
-    def __init__(self, database):
+    def __init__(self, name, database):
         super().__init__()
+
+        self.dname = name
 
         self.watcher_thread = None
         self.old_threads = []
         self.folders = None
         self.ignore_folders = None
+        
+        global _progress_aggregator
+        _progress_aggregator = ProgressAggregator(self.dname)
 
         self.database = database
         self.database.set_progress_callback(progress_callback)
@@ -243,7 +250,7 @@ class WatchFolder:
 
         self.event_batcher.batched_deleted.connect(self.db_worker.remove_files)
         self.event_batcher.batched_changed.connect(self.db_worker.update_files)
-        self.event_batcher.folder_changed.connect(filechange_callback)
+        self.event_batcher.folder_changed.connect(folderchange_callback)
         self.db_worker.finished.connect(self.event_batcher.on_db_finished)
 
         logger.debug("WatchFolder init end")

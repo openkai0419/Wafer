@@ -57,8 +57,9 @@ class TrayApp(QtWidgets.QSystemTrayIcon, TranslatorMixin):
         with self.data_db as indexer:
             indexer.check_init()
 
-        self.folder_watcher = WatchFolder(self.data_db)
+        self.folder_watcher = WatchFolder(self.dname, self.data_db)
         folders = self.setting_db.get_all_parent_folders()
+        logger.info(folders)
         self.folder_watcher.start(folders)
         self.folders_to_watch = folders
 
@@ -109,13 +110,17 @@ class TrayApp(QtWidgets.QSystemTrayIcon, TranslatorMixin):
         if hasattr(self, "setting_watcher")and self.setting_watcher:
             self.setting_watcher.stop()
             close_publisher()
-    
+        try:
+            self.t.dump_missing_keys()
+        except:
+            pass
+
     def delete(self):
         self.cleanup(False)
         self.folder_watcher = None
         self.setting_watcher = None
-        delete_database_files(self.data_db.db_path)
-        delete_database_files(self.setting_db.db_name)
+        delete_database_files(self.setting_db.db_name, force=True)
+        delete_database_files(self.data_db.db_path, force=True)
         clean_database()
         QtWidgets.QApplication.quit()
 

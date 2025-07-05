@@ -33,7 +33,11 @@ def qt_debounce(delay_ms: int):
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
-            key = id(func)  # 関数ごとに独立して管理
+            key = id(func)
+            if args:
+                obj = args[0]
+                if hasattr(obj, "__dict__"):
+                    key = (id(func), id(obj))
             _qt_debounce_manager.debounce(key, delay_ms, func, *args, **kwargs)
         return wrapper
     return decorator

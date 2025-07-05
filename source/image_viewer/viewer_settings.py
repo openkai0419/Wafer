@@ -21,6 +21,7 @@ class AsyncSaver(QtCore.QObject):
         self.queue.update(buffer)
         self.mutex.unlock()
 
+    @QtCore.Slot()
     def flush(self):
         self.mutex.lock()
         updates = self.queue.copy()
@@ -43,6 +44,9 @@ class AsyncSaver(QtCore.QObject):
 
 
 class SettingManager(QtCore.QObject):
+    send_buffer = QtCore.Signal(dict)
+    request_flush = QtCore.Signal()
+
     def __init__(self, ini_filename="app_settings.ini"):
         super().__init__()
         exe_path = Path(sys.argv[0]).resolve()
@@ -54,6 +58,8 @@ class SettingManager(QtCore.QObject):
 
         self._thread = QtCore.QThread()
         self._saver = AsyncSaver(self.ini_path)
+        self.send_buffer.connect(self._saver.set_buffer)
+        self.request_flush.connect(self._saver.flush)
         self._saver.moveToThread(self._thread)
         self._thread.start()
 
@@ -94,9 +100,16 @@ class SettingManager(QtCore.QObject):
         self._buffer[key] = value
 
     def commit(self):
-        self._saver.set_buffer(self._buffer.copy())
-        self._saver.flush()
+        self.send_buffer.emit(self._buffer.copy())
+        self.request_flush.emit()
         self._buffer.clear()
+
+    def close(self):
+        if self._buffer:
+            self.commit()
+        self.request_flush.emit()
+        self._thread.quit()
+        self._thread.wait()
 
     def discard(self):
         self._buffer.clear()
@@ -104,5 +117,10 @@ class SettingManager(QtCore.QObject):
     def clear(self):
         self.settings.clear()
 
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass
 
 main_setting = SettingManager()

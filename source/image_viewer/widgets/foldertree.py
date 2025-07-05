@@ -15,7 +15,7 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
         self.roots = roots
         self.excluded = set(normalize_path(p) for p in (excluded or []))
         self.setHorizontalHeaderLabels(["Folders"])
-        self._build_roots(roots)
+        #self._build_roots(roots)
 
     def _build_roots(self, roots):
         self.roots = roots
@@ -36,7 +36,7 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
                 if os.path.isdir(full_path) and full_path not in self.excluded:
                     return True
         except Exception as e:
-            print(f"Failed to check subfolders in {path}: {e}")
+            logger.debug(f"Failed to check subfolders in {path}: {e}")
         return False
 
     def load_children(self, parent_item):
@@ -57,13 +57,13 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
                     child.setChild(0, QtGui.QStandardItem())  # dummy は本当に子がいる時だけ
                 parent_item.appendRow(child)
         except Exception as e:
-            print(f"Failed to read {path}: {e}")
+            logger.debug(f"Failed to read {path}: {e}")
 
 
 class LazyFolderTreeView(QtWidgets.QTreeView):
     folder_selected = QtCore.Signal()
 
-    def __init__(self, roots, excluded=None):
+    def __init__(self, roots=None, excluded=None):
         super().__init__()
         self.setHeaderHidden(True)
         self.model_ = LazyFolderTreeModel(roots, excluded)
@@ -74,9 +74,6 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         self.viewport().installEventFilter(self)
         self.collapsed.connect(self.on_collapsed)
 
-        # 状態の保存・復元
-        QtCore.QTimer.singleShot(0, self.restore_state)
-
     def get_selected_paths(self) -> list[str]:
         paths = []
         for index in self.selectionModel().selectedRows():
@@ -84,6 +81,18 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
             if path:
                 paths.append(path)
         return paths
+
+    def set(self, roots: list[str], excluded: list[str] = None):
+        # normalize
+        roots = [normalize_path(r) for r in roots]
+        excluded = set(normalize_path(e) for e in (excluded or []))
+        
+        # モデルをクリアして再構築
+        self.model_.clear()
+        self.model_.roots = roots
+        self.model_.excluded = excluded
+        self.model_.setHorizontalHeaderLabels(["Folders"])
+        self.model_._build_roots(roots)
 
     @property
     def roots(self):
@@ -116,15 +125,14 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
             for i in range(self.model().rowCount(idx)):
                 stack.append(self.model().index(i, 0, idx))
 
-        # ファイルや設定に保存してもOK
         return (expanded, selected)
 
-    def save_state(self):
+    def save_state(self, name):
         state = self.get_state()
-        main_setting.save_important("tree/state", state)
+        main_setting.save_important(f"tree/state/{name}", state)
 
-    def restore_state(self):
-        self.set_state(main_setting.get("tree/state", ([], [])))
+    def restore_state(self, name):
+        self.set_state(main_setting.get(f"tree/state/{name}", ([], [])))
 
     def set_state(self, states):
         try:
@@ -143,7 +151,6 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
             path = idx.data(QtCore.Qt.UserRole)
             if path in expanded:
                 self.expand(idx)
-                # 子をロードする必要があるのでロード
                 self.model_.load_children(self.model_.itemFromIndex(idx))
             if path in selected:
                 to_select.append(idx)
@@ -160,11 +167,9 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
     def add_root(self, path: str):
         path = normalize_path(path)
         if path in self.model_.excluded:
-            print(f"{path} は除外されているので追加できません")
             return
         for i in range(self.model_.rowCount()):
             if self.model_.item(i).data(QtCore.Qt.UserRole) == path:
-                print(f"{path} は既に存在します")
                 return
         item = QtGui.QStandardItem(FOLDER_ICON, os.path.basename(path) or path)
         item.setData(path, QtCore.Qt.UserRole)
@@ -176,9 +181,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         for i in range(self.model_.rowCount()):
             if self.model_.item(i).data(QtCore.Qt.UserRole) == path:
                 self.model_.removeRow(i)
-                print(f"{path} をルートから削除しました")
                 return
-        print(f"{path} はルートに存在しません")
 
     def add_excluded(self, path: str):
         path = normalize_path(path)
@@ -224,38 +227,3 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         if self.context_menu_builder:
             menu = self.context_menu_builder.build_menu(path)
             menu.exec(event.globalPos())
-
-
-if __name__ == "__main__":
-    app = QtWidgets.QApplication(sys.argv)
-
-    roots = [
-        os.path.expanduser("~"),
-        os.path.abspath(os.sep),  # /
-    ]
-
-    excluded = [
-        os.path.expanduser("~/Documents"),
-    ]
-
-    w = QtWidgets.QMainWindow()
-    tree = LazyFolderTreeView(roots, excluded)
-    w.setCentralWidget(tree)
-
-    btns = QtWidgets.QWidget()
-    layout = QtWidgets.QHBoxLayout(btns)
-    save_btn = QtWidgets.QPushButton("Save State")
-    restore_btn = QtWidgets.QPushButton("Restore State")
-    layout.addWidget(save_btn)
-    layout.addWidget(restore_btn)
-
-    dock = QtWidgets.QDockWidget("Controls")
-    dock.setWidget(btns)
-    w.addDockWidget(QtCore.Qt.BottomDockWidgetArea, dock)
-
-    save_btn.clicked.connect(tree.save_state)
-    restore_btn.clicked.connect(tree.restore_state)
-
-    w.resize(400, 600)
-    w.show()
-    sys.exit(app.exec())

@@ -13,13 +13,16 @@ from .widgets.query_options import SingleRowOption
 from .widgets.scrollarea import InertialScrollArea, AutoScrollArea
 from .widgets.progress_bar import ThinProgressBar
 from .widgets.button_bar import IconButtonBar, IconButtonConfig
+from .widgets.table_combo import ComboBoxWithButtons
 from .thread import main_thread
 from .viewer_settings import main_setting
-from ..common import get_data_db, get_setting_db
+from ..common import get_data_db, get_setting_db, uipx, get_setting_file_names, run_side_subprocess
 from ..constants import defualt_db_name, APP_NAME
 from ..profiling import logger, profiler
 from ..settings.setting_window import SettingsWindow
 from ..settings.db_settings import DataBaseSettings
+from ..dialog import InputDialog
+
 class WorkerSignals(QtCore.QObject):
     finished = QtCore.Signal(object, object)
 
@@ -66,30 +69,59 @@ class MainWindow(QtWidgets.QMainWindow):
         self.pending_query = None
         self.last_executed_query = None
 
-        self.dbname = defualt_db_name
-        self.setting_db = SettingDB(get_setting_db(self.dbname))
-
         main_thread.watch_start()
         self.start_ipc_listener()
 
         self.main_ui()
-        QtCore.QTimer.singleShot(100, self.search)
+        self.reload_db(main_setting.get("window/tablename", defualt_db_name))
+        self.reload_combo()
         QtWidgets.QApplication.instance().aboutToQuit.connect(self.on_close)
+
+    @QtCore.Slot(str)
+    def reload_db(self, name):
+        if not main_setting.is_first_time("tree/state/reload"):
+            self.folder_view.save_state(self.dbname)
+        
+        self.dbname = name
+        self.dbpath = get_data_db(name)
+        self.setting_db = SettingDB(get_setting_db(name))
+
+        self.folder_view.set(self.setting_db.get_all_parent_folders(), self.setting_db.get_all_ignore_folders())
+        QtCore.QTimer.singleShot(0, lambda: self.folder_view.restore_state(self.dbname))
+        QtCore.QTimer.singleShot(100, self.search)
+        logger.info("[DEBUG] reload_db")
+
+    def reload_combo(self):
+        names = get_setting_file_names()
+        if not names:
+            names = ["default"]
+        self.dbcombo.setItems(names)
+        self.dbcombo.setCurrentText(self.dbname)
+        logger.info("[DEBUG] reload_combo")
+    
+    def on_add_database(self):
+        text = InputDialog.get_text("作成するテーブルの名前を入力してください", title="新規作成", buttons=("作成", "キャンセル"), parent=self)
+        if text is not None:
+            text = text.strip()
+            logger.info(text)
+            if not text:
+                return
+            elif text in get_setting_file_names():
+                return
+            else:
+                run_side_subprocess("collector", text)
+                QtCore.QTimer.singleShot(0, self.reload_combo)
+    
+    def on_remove_database(self):
+        logger.info("on_remove_database")
 
     @QtCore.Slot(int)
     def update_current(self, value):
         self.progress_bar.setProgress(int(value))
-        self._reset_if_done()
 
     @QtCore.Slot(int)
     def update_maximum(self, value):
         self.progress_bar.setMaximum(int(value))
-        self._reset_if_done()
-
-    def _reset_if_done(self):
-        if self.progress_bar.maximum() > 0 and self.progress_bar.value() >= self.progress_bar.maximum():
-            self.progress_bar.setProgress(0)
-            self.progress_bar.setMaximum(0)
 
     def start_ipc_listener(self):
         def on_message(msg: str):
@@ -115,14 +147,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self.splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
         self.setCentralWidget(self.splitter)
 
-        self.folder_view = LazyFolderTreeView(self.setting_db.get_all_parent_folders(), self.setting_db.get_all_ignore_folders())
-        menu_builder = FolderContextMenuBuilder(self.folder_view, self.setting_db.db_name)
+        self.folder_view = LazyFolderTreeView()
+        menu_builder = FolderContextMenuBuilder(self.folder_view, self)
         self.folder_view.set_context_menu_builder(menu_builder)
         self.folder_view.folder_selected.connect(self.on_folder_selected)
 
         left_panel = QtWidgets.QWidget()
         self.left_layout = QtWidgets.QVBoxLayout(left_panel)
-        self.left_layout.setContentsMargins(4, 4, 4, 4)
+        self.left_layout.setContentsMargins(uipx(4), uipx(4), uipx(0), uipx(6))
         self.left_layout.setSpacing(0)
         self.splitter.addWidget(left_panel)
 
@@ -136,16 +168,22 @@ class MainWindow(QtWidgets.QMainWindow):
             IconButtonConfig("icons/save.png", "AutoScroll", lambda: self.auto_scroll()),
             IconButtonConfig("icons/save.png", "Full Screen", lambda: self.toggle_fullscreen()),
         ])
-        self.left_layout.addWidget(self.iconbar)
 
+        self.dbcombo = ComboBoxWithButtons()
+        self.dbcombo.textChanged.connect(self.reload_db)
+        self.dbcombo.addClicked.connect(self.on_add_database)
+        self.dbcombo.removeClicked.connect(self.on_remove_database)
         self.progress_bar = ThinProgressBar()
+        self.left_layout.addWidget(self.iconbar)
         self.left_layout.addWidget(self.progress_bar)
         self.left_layout.addWidget(self.folder_view)
+        self.left_layout.addSpacing(uipx(3))
+        self.left_layout.addWidget(self.dbcombo)
 
         right_panel = QtWidgets.QWidget()
         self.right_layout = QtWidgets.QVBoxLayout(right_panel)
-        self.right_layout.setContentsMargins(4, 4, 4, 4)
-        self.right_layout.setSpacing(6)
+        self.right_layout.setContentsMargins(uipx(4), uipx(4), uipx(4), uipx(4))
+        self.right_layout.setSpacing(uipx(6))
 
         self.search_row_widget = SingleRowOption(self)
         self.search_row_widget.settingchanged.connect(self.search)
@@ -241,7 +279,7 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self.showMinimized()
 
-    @qt_debounce(150)
+    @qt_debounce(200)
     @QtCore.Slot(bool)
     @profiler.profile
     def search(self, force=False):
@@ -272,7 +310,7 @@ class MainWindow(QtWidgets.QMainWindow):
     @profiler.profile
     def _start_search_runnable(self, query):
         self.loading_indicator.start()
-        runnable = SearchWorkerRunnable(get_data_db(self.dbname), query)
+        runnable = SearchWorkerRunnable(self.dbpath, query)
         runnable.signals.finished.connect(self.on_search_finished)
         self.current_runnable = runnable
         main_thread.start(runnable, 7)
@@ -285,7 +323,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.current_query_start_time = None
         self.content.set_precalculated_meta(paths, aspects)
         self.content.reload_visible_images()
-        self.search_row_widget.run_folder_worker(get_data_db(self.dbname))
+        self.search_row_widget.run_folder_worker(self.dbpath)
         
         with QtCore.QMutexLocker(self.query_lock):
             if self.pending_query:
@@ -299,7 +337,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self._subscriber.stop()
 
     def closeEvent(self, event):
-        self.folder_view.save_state()
+        self.folder_view.save_state(self.dbname)
+        main_setting.set("window/tablename", self.dbname)
         main_setting.set("window/geometry", self.saveGeometry())
         main_setting.set("viewer/scroll", self.content.get_center_image_index())
         main_setting.set("window/splitter", self.splitter.sizes())

@@ -39,7 +39,7 @@ def get_setting_db(name):
 def get_name_without_ext(path):
     return os.path.splitext(os.path.basename(path))[0]
 
-def get_setting_file_name():
+def get_setting_file_names():
     return [get_name_without_ext(a) for a in list_files(data_path(f"dirs/"), ".db")]
 
 def get_main_based_directory() -> Path:

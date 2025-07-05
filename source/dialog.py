@@ -1,13 +1,13 @@
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QLabel, QPushButton,
-    QHBoxLayout, QApplication, QStyle, QSizePolicy
+    QHBoxLayout, QLineEdit, QSizePolicy, QApplication, QStyle
 )
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QPixmap
 
 
-class ConfirmDialog(QDialog):
-    def __init__(self, message, title="Confirm", buttons=("OK", "Cancel"), parent=None):
+class BaseDialog(QDialog):
+    def __init__(self, message, title="Dialog", buttons=("OK", "Cancel"),
+                 icon_type=QStyle.SP_MessageBoxInformation, parent=None):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setWindowModality(Qt.ApplicationModal)
@@ -15,41 +15,64 @@ class ConfirmDialog(QDialog):
 
         self.result_text = None
 
-        # アイコン取得
-        icon = self.style().standardIcon(QStyle.SP_MessageBoxInformation)
+        # アイコン
+        icon = self.style().standardIcon(icon_type)
         icon_label = QLabel()
         icon_label.setPixmap(icon.pixmap(32, 32))
 
-        # メッセージラベル
-        message_label = QLabel(message)
-        message_label.setWordWrap(True)
-        message_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        # メッセージ
+        self.message_label = QLabel(message)
+        self.message_label.setWordWrap(True)
+        self.message_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
-        # 横並びにするレイアウト（アイコン + メッセージ）
+        # メッセージとアイコンの横並び
         message_layout = QHBoxLayout()
         message_layout.addWidget(icon_label)
-        message_layout.addWidget(message_label)
+        message_layout.addWidget(self.message_label)
 
-        # ボタンレイアウト
-        btn_layout = QHBoxLayout()
-        btn_layout.addStretch()
+        # ボタン
+        self.btn_layout = QHBoxLayout()
+        self.btn_layout.addStretch()
         for btn_text in buttons:
             btn = QPushButton(btn_text)
             btn.clicked.connect(lambda _, text=btn_text: self._on_button(text))
-            btn_layout.addWidget(btn)
+            self.btn_layout.addWidget(btn)
 
         # メインレイアウト
-        layout = QVBoxLayout()
-        layout.addLayout(message_layout)
-        layout.addLayout(btn_layout)
-        self.setLayout(layout)
+        self.main_layout = QVBoxLayout()
+        self.main_layout.addLayout(message_layout)
+        # ★サブクラスがここにウィジェットを追加できる
+        self.content_layout = QVBoxLayout()
+        self.main_layout.addLayout(self.content_layout)
+        self.main_layout.addLayout(self.btn_layout)
+
+        self.setLayout(self.main_layout)
 
     def _on_button(self, text):
         self.result_text = text
         self.accept()
 
+
+class ConfirmDialog(BaseDialog):
     @staticmethod
     def ask(message, title="Confirm", buttons=("OK", "Cancel"), parent=None):
-        dialog = ConfirmDialog(message, title, buttons, parent)
+        dialog = ConfirmDialog(message, title, buttons, parent=parent)
         dialog.exec()
         return dialog.result_text
+
+
+class InputDialog(BaseDialog):
+    def __init__(self, message, title="Input", buttons=("OK", "Cancel"), parent=None):
+        super().__init__(message, title, buttons, parent=parent)
+        self.input_edit = QLineEdit()
+        self.input_edit.setPlaceholderText("入力してください…")
+        self.content_layout.addWidget(self.input_edit)
+
+    @staticmethod
+    def get_text(message, title="Input", buttons=("OK", "Cancel"), parent=None):
+        dialog = InputDialog(message, title, buttons, parent=parent)
+        dialog.exec()
+        if dialog.result_text and dialog.result_text == buttons[0]:  # OKが押された場合
+            return dialog.input_edit.text()
+        else:
+            return None

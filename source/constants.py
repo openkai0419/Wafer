@@ -1,3 +1,3 @@
 
-defualt_db_name = "default"
+default_db_name = "default"
 APP_NAME = "AfterImages"

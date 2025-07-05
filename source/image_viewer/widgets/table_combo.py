@@ -58,12 +58,12 @@ class ComboBoxWithButtons(QWidget):
             self._current_text = self.currentText()
 
     def setCurrentIndex(self, idx):
-        if idx >= self.combo.count():
+        if 0 <= idx < self.combo.count():
             self.combo.setCurrentIndex(idx)
 
     def getCurrentIndex(self):
-        return self.getCurrentIndex()
-
+        return self.combo.currentIndex()
+    
     def on_changed(self):
         text = self.currentText()
         if self._current_text != text:

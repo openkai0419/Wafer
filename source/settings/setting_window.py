@@ -3,16 +3,17 @@ from PySide6.QtWidgets import (
     QPushButton, QApplication, QLabel, QFormLayout, QLineEdit
 )
 from PySide6.QtCore import Signal
+from .translation import TranslatorMixin
 
 from .base_setting import SettingsTabBase
 from ..common import uipx
 
-class SettingsWindow(QDialog):
+class SettingsWindow(QDialog, TranslatorMixin):
     settings_applied = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("設定")
+        self.setWindowTitle(self.t.tr("設定"))
         self.setModal(False)
         self.resize(500, 400)
 
@@ -20,8 +21,8 @@ class SettingsWindow(QDialog):
         self.tab_widgets: list[SettingsTabBase] = []
 
         self.ok_button = QPushButton("OK")
-        self.cancel_button = QPushButton("キャンセル")
-        self.apply_button = QPushButton("適用")
+        self.cancel_button = QPushButton(self.t.tr("キャンセル"))
+        self.apply_button = QPushButton(self.t.tr("適用"))
 
         self.ok_button.clicked.connect(self.on_ok_clicked)
         self.cancel_button.clicked.connect(self.on_cancel_clicked)

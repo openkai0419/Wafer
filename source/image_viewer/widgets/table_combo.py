@@ -2,10 +2,11 @@ from PySide6.QtWidgets import (
     QWidget, QComboBox, QPushButton, QHBoxLayout, QApplication
 )
 from PySide6.QtCore import Signal, Qt, QSignalBlocker
+from ...settings.translation import TranslatorMixin
 import sys
 
 
-class ComboBoxWithButtons(QWidget):
+class ComboBoxWithButtons(QWidget, TranslatorMixin):
     addClicked = Signal()
     removeClicked = Signal()
     textChanged = Signal(str)
@@ -17,8 +18,8 @@ class ComboBoxWithButtons(QWidget):
         self.button_add = QPushButton("+")
         self.button_remove = QPushButton("-")
         self.combo.currentIndexChanged.connect(self.on_changed)
-        self.button_add.setToolTip("項目を追加")
-        self.button_remove.setToolTip("現在の項目を削除")
+        self.button_add.setToolTip(self.t.tr("項目を追加"))
+        self.button_remove.setToolTip(self.t.tr("現在の項目を削除"))
         self._current_text = None
 
         layout = QHBoxLayout()

@@ -1,5 +1,5 @@
 from PySide6 import QtWidgets, QtCore, QtGui, QtWebEngineWidgets
-from ...common import get_main_based_directory, uipx
+from ...common import get_resource_path, uipx
 from ...profiling import logger, profiler
 
 class OverlayLoadingIndicator(QtWidgets.QWidget):
@@ -20,7 +20,7 @@ class OverlayLoadingIndicator(QtWidgets.QWidget):
         self.spinner = QtWebEngineWidgets.QWebEngineView()
         self.spinner.page().setBackgroundColor(QtCore.Qt.transparent)
 
-        html_path = get_main_based_directory() / "_resources/Dual Ring@1x-1.0s-300px-300px.html"
+        html_path = get_resource_path() / "Dual Ring@1x-1.0s-300px-300px.html"
         self.spinner.load(html_path.resolve().as_uri())
         self.spinner.setFixedSize(uipx(120), uipx(120))
 

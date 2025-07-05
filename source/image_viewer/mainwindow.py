@@ -78,6 +78,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.reload_combo()
         QtWidgets.QApplication.instance().aboutToQuit.connect(self.on_close)
 
+    @profiler.profile
     def get_previous(self):
         names = get_setting_file_names()
         if not names:
@@ -138,7 +139,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def on_remove_database(self):
         if self.dbcombo.count() <= 1:
             return
-        ret = ConfirmDialog.ask(f"テーブルを削除しますか？: \n{self.dbname}", title="削除",  buttons=("削除", "キャンセル"), parent=self)
+        ret = ConfirmDialog.ask(f"テーブルを削除しますか？: {self.dbname}", title="削除",  buttons=("削除", "キャンセル"), parent=self)
         if ret == "削除":
             self.setting_db.set_kv("deleteflag", True)
             self.dbcombo.removeItem(self.dbname)
@@ -372,4 +373,5 @@ class MainWindow(QtWidgets.QMainWindow):
         main_setting.set("viewer/scroll", self.content.get_center_image_index())
         main_setting.set("window/splitter", self.splitter.sizes())
         main_setting.commit()
+        main_setting.close()
         return super().closeEvent(event)

@@ -3,14 +3,15 @@ from PySide6.QtWidgets import (
     QListWidget, QPushButton, QFileDialog, QMessageBox, QMenu, QStackedLayout
 )
 from PySide6.QtCore import Qt, QPoint
+from ..translation import TranslatorMixin
 import sys
 import os
 
 
-class FolderListWidget(QWidget):
+class FolderListWidget(QWidget, TranslatorMixin):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("フォルダリストマネージャー")
+        self.setWindowTitle(self.t.tr("フォルダリストマネージャー"))
         self.resize(400, 300)
 
         self.folder_list = QListWidget()
@@ -21,7 +22,7 @@ class FolderListWidget(QWidget):
 
         self.add_button = QPushButton("+")
         self.add_button.setFixedSize(25, 25)
-        self.add_button.setToolTip("フォルダを追加")
+        self.add_button.setToolTip(self.t.tr("フォルダを追加"))
 
         # ボタンを重ねるレイアウト
         self.overlay_layout = QVBoxLayout()
@@ -50,7 +51,7 @@ class FolderListWidget(QWidget):
         item = self.folder_list.itemAt(position)
         if item:
             menu = QMenu(self)
-            delete_action = menu.addAction("削除")
+            delete_action = menu.addAction(self.t.tr("削除"))
             action = menu.exec(self.folder_list.mapToGlobal(position))
             if action == delete_action:
                 self.confirm_and_remove_item(item)
@@ -58,15 +59,15 @@ class FolderListWidget(QWidget):
     def confirm_and_remove_item(self, item):
         reply = QMessageBox.question(
             self,
-            "確認",
-            f"選択したフォルダを削除します。よろしいですか？\n\n{item.text()}",
+            self.t.tr("確認"),
+            self.t.trf("選択したフォルダを削除します。よろしいですか？\n\n{path}", path=item.text()),
             QMessageBox.Yes | QMessageBox.No
         )
         if reply == QMessageBox.Yes:
             self.folder_list.takeItem(self.folder_list.row(item))
 
     def add_folder(self):
-        folder_path = QFileDialog.getExistingDirectory(self, "フォルダを選択")
+        folder_path = QFileDialog.getExistingDirectory(self, self.t.tr("フォルダを選択"))
         if folder_path:
             self._add_folder_path(folder_path)
 
@@ -80,7 +81,7 @@ class FolderListWidget(QWidget):
 
     def replace_folder(self, item):
         old_path = item.text()
-        new_path = QFileDialog.getExistingDirectory(self, "フォルダを再選択", old_path)
+        new_path = QFileDialog.getExistingDirectory(self, self.t.tr("フォルダを再選択"), old_path)
         if new_path:
             normalized_new_path = os.path.normpath(new_path)
             existing_paths = set(self.get_folder_list()) - {old_path}

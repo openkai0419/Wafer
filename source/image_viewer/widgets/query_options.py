@@ -7,6 +7,7 @@ from ..viewer_settings import main_setting
 from ...core.query import MetaQuery, MetaInfoSearchEngine
 from ...profiling import logger, profiler
 from ...debounce import qt_debounce
+from ...settings.translation import TranslatorMixin
 
 class FolderComboSignals(QtCore.QObject):
     finished = QtCore.Signal(list)
@@ -31,12 +32,12 @@ class FolderComboUpdateWorker(QtCore.QRunnable):
         if not self._cancelled:
             self.signals.finished.emit(results)
 
-class CheckableCombo(QtWidgets.QToolButton):
+class CheckableCombo(QtWidgets.QToolButton, TranslatorMixin):
     action_changed = QtCore.Signal()
 
     def __init__(self, items=None, parent=None):
         super().__init__(parent)
-        self.setText("絞り込み")
+        self.setText(self.t.tr("絞り込み"))
         self.setPopupMode(QtWidgets.QToolButton.InstantPopup)
 
         self.menu = QtWidgets.QMenu(self)
@@ -86,13 +87,13 @@ class CheckableCombo(QtWidgets.QToolButton):
         return [a.data() for a in self.actions if a.isChecked()]
 
 
-class SearchOptionPopup(QtWidgets.QDialog):
+class SearchOptionPopup(QtWidgets.QDialog, TranslatorMixin):
     settingchanged = QtCore.Signal()
 
     def __init__(self, pos_parent, parent=None):
         super().__init__(parent)
         self.pos_parent = pos_parent
-        self.setWindowTitle("検索オプション")
+        self.setWindowTitle(self.t.tr("検索オプション"))
         self.setWindowFlags(self.windowFlags() | QtCore.Qt.Tool)
         self.setLayout(QtWidgets.QVBoxLayout())
 
@@ -127,20 +128,20 @@ class SearchOptionPopup(QtWidgets.QDialog):
         hlayout3 = QtWidgets.QHBoxLayout()
         self.splittext = QtWidgets.QLineEdit()
         self.splittext.textChanged.connect(lambda: self.settingchanged.emit())
-        hlayout3.addWidget(QtWidgets.QLabel("検索用の分割文字:"))
+        hlayout3.addWidget(QtWidgets.QLabel(self.t.tr("検索用の分割文字:")))
         hlayout3.addWidget(self.splittext)
         layout.addLayout(hlayout3)
 
         # --- ソートキー（ドロップダウン）
-        layout.addWidget(QtWidgets.QLabel("ソート:"))
+        layout.addWidget(QtWidgets.QLabel(self.t.tr("ソート:")))
         self.sort_by_combo = QtWidgets.QComboBox()
         self.sort_display_map = {
-            "name": "ファイルパス",
-            "created": "作成日時",
-            "modified": "更新日時",
-            "collected": "登録順",
-            "size": "ファイルサイズ",
-            "random": "ランダム",
+            "name": self.t.tr("ファイルパス"),
+            "created": self.t.tr("作成日時"),
+            "modified": self.t.tr("更新日時"),
+            "collected": self.t.tr("登録順"),
+            "size": self.t.tr("ファイルサイズ"),
+            "random": self.t.tr("ランダム"),
         }
         for key, label in self.sort_display_map.items():
             self.sort_by_combo.addItem(label, userData=key)
@@ -149,8 +150,8 @@ class SearchOptionPopup(QtWidgets.QDialog):
 
         # --- 昇順 / 降順 ラジオボタン（独立グループ化）
         self.order_group = QtWidgets.QButtonGroup(self)
-        self.asc_radio = QtWidgets.QRadioButton("昇順")
-        self.desc_radio = QtWidgets.QRadioButton("降順")
+        self.asc_radio = QtWidgets.QRadioButton(self.t.tr("昇順"))
+        self.desc_radio = QtWidgets.QRadioButton(self.t.tr("降順"))
         self.order_group.addButton(self.asc_radio)
         self.order_group.addButton(self.desc_radio)
         self.asc_radio.toggled.connect(lambda: self.settingchanged.emit())
@@ -206,7 +207,7 @@ class SearchOptionPopup(QtWidgets.QDialog):
         return self.splittext.text() or ","
 
 
-class SingleRowOption(QtWidgets.QWidget):
+class SingleRowOption(QtWidgets.QWidget, TranslatorMixin):
     settingchanged = QtCore.Signal()
 
     def __init__(self, root, parent=None):
@@ -222,11 +223,11 @@ class SingleRowOption(QtWidgets.QWidget):
         self.setLayout(self.layout)
 
         self.search_bar = QtWidgets.QLineEdit()
-        self.search_bar.setPlaceholderText("検索ワードを入力...")
+        self.search_bar.setPlaceholderText(self.t.tr("検索ワードを入力..."))
         self.search_bar.setText(main_setting.get("query/keywords", None))
         self.search_bar.textChanged.connect(lambda: self.settingchanged.emit())
 
-        self.option_button = QtWidgets.QPushButton(" 検索設定 ▼ ")
+        self.option_button = QtWidgets.QPushButton(self.t.tr(" 検索設定 ▼ "))
         self.option_button.clicked.connect(self.toggle_option_popup)
 
         self.keys_combo = CheckableCombo()

@@ -11,9 +11,10 @@ from ..core.setting_db import SettingDB
 from ..dialog import ConfirmDialog 
 from ..constants import APP_NAME
 from ..core.db_utils import delete_database_files, clean_database
+from ..settings.translation import TranslatorMixin
 
 
-class TrayApp(QtWidgets.QSystemTrayIcon):
+class TrayApp(QtWidgets.QSystemTrayIcon, TranslatorMixin):
     @profiler.profile
     def __init__(self, icon, name, parent=None):
         super().__init__(icon, parent)
@@ -27,15 +28,15 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         self.setting_db = None
         self.data_db = None
 
-        self.show_action = self.menu.addAction("ウィンドウを表示")
+        self.show_action = self.menu.addAction(self.t.tr("ウィンドウを表示"))
         self.show_action.triggered.connect(self.show_if_not)
-        self.show_action = self.menu.addAction("新規ウィンドウを開く")
+        self.show_action = self.menu.addAction(self.t.tr("新規ウィンドウを開く"))
         self.show_action.triggered.connect(self.show_anyways)
         self.menu.addSeparator()
-        self.test_action = self.menu.addAction("テスト")
+        self.test_action = self.menu.addAction(self.t.tr("テスト"))
         self.test_action.triggered.connect(self.test)
         self.menu.addSeparator()
-        self.quit_action = self.menu.addAction("終了")
+        self.quit_action = self.menu.addAction(self.t.tr("終了"))
         self.quit_action.triggered.connect(self.quit)
 
         self.setContextMenu(self.menu)

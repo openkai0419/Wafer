@@ -43,8 +43,8 @@ class ComboBoxWithButtons(QWidget):
             self.combo.addItem(text)
         self._current_text = self.currentText()
 
-    def removeCurrentItem(self):
-        idx = self.combo.currentIndex()
+    def removeItem(self, text):
+        idx = self.combo.findText(text, Qt.MatchExactly)
         if idx >= 0:
             with QSignalBlocker(self.combo):
                 self.combo.removeItem(idx)
@@ -57,11 +57,21 @@ class ComboBoxWithButtons(QWidget):
                 self.combo.setCurrentIndex(idx)
             self._current_text = self.currentText()
 
+    def setCurrentIndex(self, idx):
+        if idx >= self.combo.count():
+            self.combo.setCurrentIndex(idx)
+
+    def getCurrentIndex(self):
+        return self.getCurrentIndex()
+
     def on_changed(self):
         text = self.currentText()
         if self._current_text != text:
             self.textChanged.emit(text)
         self._current_text = text
+
+    def count(self):
+        return self.combo.count()
 
     def currentText(self):
         return self.combo.currentText()

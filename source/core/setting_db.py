@@ -1,5 +1,6 @@
 import sqlite3
 import contextlib
+import json
 from typing import List, Dict
 
 from ..profiling import logger, profiler
@@ -140,7 +141,9 @@ class SettingDB:
 
     # ───── Key-Value Store ─────
     @profiler.profile
-    def set_kv(self, key: str, value: str):
+    def set_kv(self, key: str, value):
+        """key に value (任意のオブジェクト) を JSON 文字列にして保存"""
+        json_value = json.dumps(value, ensure_ascii=False)
         with self._conn() as con:
             con.execute("""
                 INSERT INTO kv_store (key, value)
@@ -148,11 +151,20 @@ class SettingDB:
                 ON CONFLICT(key) DO UPDATE
                 SET value = excluded.value,
                     updated_at = CURRENT_TIMESTAMP
-            """, (key, str(value)))
+            """, (key, json_value))
 
     @profiler.profile
-    def get_kv(self, key: str, default: str = None) -> str:
+    def get_kv(self, key: str, default=None):
+        """key に対応する値を JSON からデコードして返す"""
         with self._conn(read_only=True) as con:
             cur = con.execute("SELECT value FROM kv_store WHERE key = ?", (key,))
             row = cur.fetchone()
-            return row[0] if row else default
+            if row:
+                try:
+                    return json.loads(row[0])
+                except json.JSONDecodeError:
+                    logger.exception(f"Failed to decode JSON for key: {key}")
+                    return default
+            else:
+                return default
+    

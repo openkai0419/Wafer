@@ -6,7 +6,8 @@ from ..profiling import logger, profiler
 
 class SettingWatcher(QtCore.QObject):
     parentFoldersChanged = QtCore.Signal(list)
-    ignoreFoldersChanged = QtCore.Signal(list)  # ← typo修正
+    ignoreFoldersChanged = QtCore.Signal(list)
+    deleteFlagEmit = QtCore.Signal()
 
     @profiler.profile
     def __init__(self, setting_db):
@@ -19,6 +20,7 @@ class SettingWatcher(QtCore.QObject):
             self.last_mtime = None
         self.cached_parent_folders = set(self.db.get_all_parent_folders())
         self.cached_ignore_folders = set(self.db.get_all_ignore_folders())
+
 
         self._observer = Observer()
         self._handler = self._make_handler()
@@ -61,9 +63,17 @@ class SettingWatcher(QtCore.QObject):
             self.ignoreFoldersChanged.emit(list(current))
 
     @profiler.profile
+    def _delete_flag_changed(self):
+        current = self.db.get_kv("deleteflag", False)
+        if current == True:
+            logger.info("[SettingWatcher] delefe flag enabled")
+            self.deleteFlagEmit.emit()
+
+    @profiler.profile
     def _on_db_changed(self):
         self._parent_folders_changed()
         self._ignore_folders_changed()
+        self._delete_flag_changed()
 
     @profiler.profile
     def start(self):

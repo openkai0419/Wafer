@@ -10,6 +10,7 @@ from .progress_notifier import close_publisher, get_viewer_count, send_show_togg
 from ..core.setting_db import SettingDB
 from ..dialog import ConfirmDialog 
 from ..constants import APP_NAME
+from ..core.db_utils import delete_database_files, clean_database
 
 
 class TrayApp(QtWidgets.QSystemTrayIcon):
@@ -22,7 +23,9 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
 
         self.menu = QtWidgets.QMenu()
         self.show_state = False
-        self.dummy_parent = QtWidgets.QApplication.activeWindow()
+
+        self.setting_db = None
+        self.data_db = None
 
         self.show_action = self.menu.addAction("ウィンドウを表示")
         self.show_action.triggered.connect(self.show_if_not)
@@ -47,6 +50,9 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         self.setting_db = SettingDB(get_setting_db(self.dname))
         self.data_db = ImageIndexer(get_data_db(self.dname))
         self.data_db.set_exclude_paths(self.setting_db.get_all_ignore_folders())
+        if self.setting_db.get_kv("deleteflag", False) == True:
+            self.delete()
+            return
         with self.data_db as indexer:
             indexer.check_init()
 
@@ -58,6 +64,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         self.setting_watcher = SettingWatcher(self.setting_db)
         self.setting_watcher.parentFoldersChanged.connect(self.reload_parent_folder)
         self.setting_watcher.ignoreFoldersChanged.connect(self.reload_ignore_folder)
+        self.setting_watcher.deleteFlagEmit.connect(self.delete)
         self.setting_watcher.start()
         logger.debug("tray app start watching end")
     
@@ -95,12 +102,21 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         f = get_setting_file_names()
         c = ConfirmDialog.ask(f"{f}", buttons=("ok", "none", "cancel"))
 
-    def cleanup(self):
-        if hasattr(self, "folder_watcher"):
-            self.folder_watcher.quit()
-        if hasattr(self, "setting_watcher"):
+    def cleanup(self, clean=True):
+        if hasattr(self, "folder_watcher") and self.folder_watcher:
+            self.folder_watcher.quit(clean)
+        if hasattr(self, "setting_watcher")and self.setting_watcher:
             self.setting_watcher.stop()
             close_publisher()
+    
+    def delete(self):
+        self.cleanup(False)
+        self.folder_watcher = None
+        self.setting_watcher = None
+        delete_database_files(self.data_db.db_path)
+        delete_database_files(self.setting_db.db_name)
+        clean_database()
+        QtWidgets.QApplication.quit()
 
     def quit(self):
         QtWidgets.QApplication.quit()

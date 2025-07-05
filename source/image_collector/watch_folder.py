@@ -286,8 +286,8 @@ class WatchFolder:
             if thread.isFinished():
                 deleatings.append(thread)
         self.old_threads = [d for d in self.old_threads if not d in deleatings]
-
-    def quit(self):
+    
+    def quit(self, clearflag=True):
         logger.debug("Quitting TrayApp")
         if self.watcher_thread:
             self.watcher_thread.stop()
@@ -295,6 +295,11 @@ class WatchFolder:
         if self.db_thread:
             self.db_thread.quit()
             #self.db_thread.wait()
-        with self.database as indexer:
-            indexer.clean_unused()
+        try:
+            if clearflag:
+                with self.database as indexer:
+                    indexer.clean_unused()
+        except Exception as e:
+            logger.info(f"[quit] failed to cleanup {e}")
+            pass
 

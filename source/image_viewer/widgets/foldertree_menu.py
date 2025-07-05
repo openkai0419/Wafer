@@ -1,17 +1,12 @@
-import os
 from PySide6 import QtWidgets, QtGui, QtCore
 
-from ..viewer_settings import main_setting
-from ...profiling import logger, profiler
-from ..thread import main_thread
-from ...core.setting_db import SettingDB
 from ...common import normalize_path
 from ...dialog import ConfirmDialog
 
 class FolderContextMenuBuilder:
-    def __init__(self, parent, db_name):
+    def __init__(self, parent, root):
         self.view = parent
-        self.settingdb = SettingDB(db_name)
+        self.root = root
 
     def build_menu(self, path: str) -> QtWidgets.QMenu:
         menu = QtWidgets.QMenu(self.view)
@@ -36,12 +31,12 @@ class FolderContextMenuBuilder:
         if result == "除去する":
             if path in self.view.roots:
                 self.view.remove_root(path)
-                self.settingdb.remove_parent_folder(path)
+                self.root.setting_db.remove_parent_folder(path)
 
     def ignore(self, path):
         result = ConfirmDialog.ask(f"表示リストから除外しますか？: \n{path}", title="確認", buttons=("除外する", "キャンセル"), parent=self.view)
         if result == "除外する":
             path = normalize_path(path)
             self.view.add_excluded(path)
-            self.settingdb.add_ignore_folder(path)
+            self.root.setting_db.add_ignore_folder(path)
         

@@ -2,7 +2,7 @@ from PySide6 import QtWidgets, QtGui, QtCore
 
 from ..profiling import logger, profiler
 from ..debounce import qt_debounce
-from ..common import get_data_db, get_setting_db, run_side_subprocess, get_setting_file_name
+from ..common import get_data_db, get_setting_db, run_side_subprocess, get_setting_file_names
 from ..core.collector import ImageIndexer
 from .watch_folder import WatchFolder
 from .watch_setting import SettingWatcher
@@ -92,7 +92,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         run_side_subprocess("main")
 
     def test(self):
-        f = get_setting_file_name()
+        f = get_setting_file_names()
         c = ConfirmDialog.ask(f"{f}", buttons=("ok", "none", "cancel"))
 
     def cleanup(self):

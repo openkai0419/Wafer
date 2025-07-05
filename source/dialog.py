@@ -3,6 +3,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QLineEdit, QSizePolicy, QApplication, QStyle
 )
 from PySide6.QtCore import Qt
+from .settings.translation import TranslatorMixin
 
 
 class BaseDialog(QDialog):
@@ -61,11 +62,11 @@ class ConfirmDialog(BaseDialog):
         return dialog.result_text
 
 
-class InputDialog(BaseDialog):
+class InputDialog(BaseDialog, TranslatorMixin):
     def __init__(self, message, title="Input", buttons=("OK", "Cancel"), parent=None):
         super().__init__(message, title, buttons, parent=parent)
         self.input_edit = QLineEdit()
-        self.input_edit.setPlaceholderText("入力してください…")
+        self.input_edit.setPlaceholderText(self.t.tr("入力してください…"))
         self.content_layout.addWidget(self.input_edit)
 
     @staticmethod

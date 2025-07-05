@@ -21,7 +21,7 @@ from ..constants import defualt_db_name, APP_NAME
 from ..profiling import logger, profiler
 from ..settings.setting_window import SettingsWindow
 from ..settings.db_settings import DataBaseSettings
-from ..dialog import InputDialog
+from ..dialog import InputDialog, ConfirmDialog
 
 class WorkerSignals(QtCore.QObject):
     finished = QtCore.Signal(object, object)
@@ -73,9 +73,21 @@ class MainWindow(QtWidgets.QMainWindow):
         self.start_ipc_listener()
 
         self.main_ui()
-        self.reload_db(main_setting.get("window/tablename", defualt_db_name))
+        
+        self.reload_db(self.get_previous())
         self.reload_combo()
         QtWidgets.QApplication.instance().aboutToQuit.connect(self.on_close)
+
+    def get_previous(self):
+        names = get_setting_file_names()
+        if not names:
+            return defualt_db_name
+        prevname = main_setting.get("window/tablename", defualt_db_name)
+        if prevname in names:
+            return prevname
+        else:
+            if len(names) >= 1:
+                return names[0]
 
     @QtCore.Slot(str)
     def reload_db(self, name):
@@ -88,16 +100,25 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.folder_view.set(self.setting_db.get_all_parent_folders(), self.setting_db.get_all_ignore_folders())
         QtCore.QTimer.singleShot(0, lambda: self.folder_view.restore_state(self.dbname))
-        QtCore.QTimer.singleShot(100, self.search)
-        logger.info("[DEBUG] reload_db")
+        QtCore.QTimer.singleShot(0, lambda: self.search(force=True))
+        logger.info("[INFO] reload_db")
 
+    def changeEvent(self, event):
+        if event.type() == QtCore.QEvent.ActivationChange:
+            if self.isActiveWindow():
+                self.reload_combo()
+            else:
+                print("ウィンドウが非アクティブ")
+        super().changeEvent(event)
+
+    @qt_debounce(200)
     def reload_combo(self):
         names = get_setting_file_names()
         if not names:
             names = ["default"]
         self.dbcombo.setItems(names)
         self.dbcombo.setCurrentText(self.dbname)
-        logger.info("[DEBUG] reload_combo")
+        logger.debug("[DEBUG] reload_combo")
     
     def on_add_database(self):
         text = InputDialog.get_text("作成するテーブルの名前を入力してください", title="新規作成", buttons=("作成", "キャンセル"), parent=self)
@@ -110,10 +131,18 @@ class MainWindow(QtWidgets.QMainWindow):
                 return
             else:
                 run_side_subprocess("collector", text)
-                QtCore.QTimer.singleShot(0, self.reload_combo)
+                self.dbcombo.addItem(text)
+                self.dbcombo.setCurrentText(text)
+                self.reload_db(text)
     
     def on_remove_database(self):
-        logger.info("on_remove_database")
+        if self.dbcombo.count() <= 1:
+            return
+        ret = ConfirmDialog.ask(f"テーブルを削除しますか？: \n{self.dbname}", title="削除",  buttons=("削除", "キャンセル"), parent=self)
+        if ret == "削除":
+            self.setting_db.set_kv("deleteflag", True)
+            self.dbcombo.removeItem(self.dbname)
+            self.reload_db(self.dbcombo.currentText())
 
     @QtCore.Slot(int)
     def update_current(self, value):

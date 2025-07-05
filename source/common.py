@@ -45,6 +45,9 @@ def get_data_file_names():
 def get_setting_file_names():
     return [get_name_without_ext(a) for a in list_files(data_path(f"dirs/"), ".db")]
 
+def get_resource_path() -> Path:
+    return get_main_based_directory() / "_resources"
+
 def get_main_based_directory() -> Path:
     if getattr(sys, 'frozen', False):
         # PyInstallerでバンドルされた実行ファイルから実行された場合

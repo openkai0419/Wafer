@@ -22,6 +22,7 @@ from ..profiling import logger, profiler
 from ..settings.setting_window import SettingsWindow
 from ..settings.db_settings import DataBaseSettings
 from ..dialog import InputDialog, ConfirmDialog
+from ..settings.translation import TranslatorMixin
 
 class WorkerSignals(QtCore.QObject):
     finished = QtCore.Signal(object, object)
@@ -51,7 +52,7 @@ class SearchWorkerRunnable(QtCore.QRunnable):
             return
         self.signals.finished.emit(paths, aspects)
 
-class MainWindow(QtWidgets.QMainWindow):
+class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
     def __init__(self):
         super().__init__()
         logger.info(f"New Window Running : {APP_NAME}")
@@ -109,7 +110,7 @@ class MainWindow(QtWidgets.QMainWindow):
             if self.isActiveWindow():
                 self.reload_combo()
             else:
-                print("ウィンドウが非アクティブ")
+                print("inactiveated window")
         super().changeEvent(event)
 
     @qt_debounce(200)
@@ -122,7 +123,7 @@ class MainWindow(QtWidgets.QMainWindow):
         logger.debug("[DEBUG] reload_combo")
     
     def on_add_database(self):
-        text = InputDialog.get_text("作成するテーブルの名前を入力してください", title="新規作成", buttons=("作成", "キャンセル"), parent=self)
+        text = InputDialog.get_text(self.t.tr("作成するテーブルの名前を入力してください"), title=self.t.tr("新規作成"), buttons=(self.t.tr("作成"), self.t.tr("キャンセル")), parent=self)
         if text is not None:
             text = text.strip()
             logger.info(text)
@@ -139,8 +140,8 @@ class MainWindow(QtWidgets.QMainWindow):
     def on_remove_database(self):
         if self.dbcombo.count() <= 1:
             return
-        ret = ConfirmDialog.ask(f"テーブルを削除しますか？: {self.dbname}", title="削除",  buttons=("削除", "キャンセル"), parent=self)
-        if ret == "削除":
+        ret = ConfirmDialog.ask(self.t.trf("テーブルを削除しますか？: {dbname}", dbname=self.dbname), title=self.t.tr("削除"),  buttons=(self.t.tr("削除"), self.t.tr("キャンセル")), parent=self)
+        if ret == self.t.tr("削除"):
             self.setting_db.set_kv("deleteflag", True)
             self.dbcombo.removeItem(self.dbname)
             self.reload_db(self.dbcombo.currentText())
@@ -172,6 +173,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self._subscriber.connect_on_message(on_message)
         self._subscriber.start()
 
+    def toggle_language(self):
+        new_locale = "ja" if self.t.current_locale == "en" else "en"
+        self.t.set_locale(new_locale)
+
     @profiler.profile
     def main_ui(self):
         self.splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
@@ -197,6 +202,8 @@ class MainWindow(QtWidgets.QMainWindow):
             IconButtonConfig("icons/save.png", "Bot Only", self.toggle_only_direct_children, checkable=True, checked=self.only_direct_children),
             IconButtonConfig("icons/save.png", "AutoScroll", lambda: self.auto_scroll()),
             IconButtonConfig("icons/save.png", "Full Screen", lambda: self.toggle_fullscreen()),
+            IconButtonConfig("icons/save.png", "Toggle Language", lambda: self.toggle_language()),
+            IconButtonConfig("icons/save.png", "Dump Language", lambda: self.t.dump_missing_keys()),
         ])
 
         self.dbcombo = ComboBoxWithButtons()

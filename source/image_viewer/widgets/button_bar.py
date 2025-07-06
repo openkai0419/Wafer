@@ -56,7 +56,7 @@ class IconButtonBar(QWidget):
         spacer = QSpacerItem(40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum)
         self.layout.addItem(spacer)
 
-    # 拡張用メソッド例
+    # example extension method
     def set_button_enabled(self, index, enabled=True, side="left"):
         target = self.left_buttons if side == "left" else self.right_buttons
         if 0 <= index < len(target):

@@ -38,7 +38,7 @@ class SearchWorkerRunnable(QtCore.QRunnable):
     def cancel(self):
         self._cancelled = True
 
-    @profiler.profile  # プロファイル対象に追加
+    @profiler.profile  # added for profiling
     def run(self):
         if self._cancelled:
             return
@@ -133,7 +133,12 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         logger.debug("[DEBUG] reload_combo")
     
     def on_add_database(self):
-        text = InputDialog.get_text(self.t.tr("作成するテーブルの名前を入力してください"), title=self.t.tr("新規作成"), buttons=(self.t.tr("作成"), self.t.tr("キャンセル")), parent=self)
+        text = InputDialog.get_text(
+            self.t.tr("Enter a name for the new table"),
+            title=self.t.tr("Create New"),
+            buttons=(self.t.tr("Create"), self.t.tr("Cancel")),
+            parent=self
+        )
         if text is not None:
             text = text.strip()
             logger.info(text)
@@ -150,8 +155,13 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
     def on_remove_database(self):
         if self.dbcombo.count() <= 1:
             return
-        ret = ConfirmDialog.ask(self.t.trf("テーブルを削除しますか？: {dbname}", dbname=self.dbname), title=self.t.tr("削除"),  buttons=(self.t.tr("削除"), self.t.tr("キャンセル")), parent=self)
-        if ret == self.t.tr("削除"):
+        ret = ConfirmDialog.ask(
+            self.t.trf("Delete table? : {dbname}", dbname=self.dbname),
+            title=self.t.tr("Delete"),
+            buttons=(self.t.tr("Delete"), self.t.tr("Cancel")),
+            parent=self,
+        )
+        if ret == self.t.tr("Delete"):
             self.setting_db.set_kv("deleteflag", True)
             self.dbcombo.removeItem(self.dbname)
             self.reload_db(self.dbcombo.currentText())
@@ -261,7 +271,10 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
 
     @profiler.profile
     def add_new_folder(self):
-        folder_path = QtWidgets.QFileDialog.getExistingDirectory(self, self.t.tr("フォルダを選択"))
+        folder_path = QtWidgets.QFileDialog.getExistingDirectory(
+            self,
+            self.t.tr("Select folder")
+        )
         if folder_path:
             self.setting_db.add_parent_folder(folder_path)
             self.folder_view.add_root(folder_path)
@@ -321,7 +334,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
     @QtCore.Slot(bool)
     def toggle_show(self, state):
         if state and self.isMinimized():
-            # 最小化されているなら復元して前面へ
+            # restore and raise if minimized
             self.showNormal()
             self.raise_()
             self.activateWindow()
@@ -352,7 +365,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
                     self.pending_query = query
                     return
 
-            # 実行中でなければそのまま開始
+            # if not running, start immediately
             self.pending_query = None
             self._start_search_runnable(query)
 

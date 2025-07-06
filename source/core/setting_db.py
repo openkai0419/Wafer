@@ -32,7 +32,7 @@ class SettingDB:
 
     @profiler.profile
     def _ensure_schema(self):
-        # スキーマがまだ存在しない場合にのみ作成
+        # create schema only if it does not exist
         with self._conn() as con:
             con.execute("""
                 CREATE TABLE IF NOT EXISTS parent_folders (
@@ -54,7 +54,7 @@ class SettingDB:
                 );
             """)
 
-    # ───── 共通処理 ─────
+    # ----- common helpers -----
     def _sync_folders(self, folder_type: str, new_paths: List[str]) -> Dict[str, List[str]]:
         norm_paths = set(normalize_path(p) for p in new_paths)
         with self._conn() as con:
@@ -63,7 +63,7 @@ class SettingDB:
             to_add = norm_paths - current
             to_remove = current - norm_paths
 
-            with con:  # トランザクションを明示
+            with con:  # explicit transaction
                 if to_add:
                     con.executemany(f"INSERT OR IGNORE INTO {folder_type}(path) VALUES (?)",
                                     ((p,) for p in to_add))
@@ -79,25 +79,25 @@ class SettingDB:
     def _add_folder(self, folder_type: str, path: str) -> bool:
         norm_path = normalize_path(path)
         with self._conn() as con:
-            con.execute("BEGIN TRANSACTION")  # トランザクション開始
+            con.execute("BEGIN TRANSACTION")  # start transaction
             cur = con.execute(f"SELECT 1 FROM {folder_type} WHERE path = ?", (norm_path,))
             if cur.fetchone():
-                con.execute("ROLLBACK")  # すでに存在する場合はロールバック
+                con.execute("ROLLBACK")  # rollback if already exists
                 return False
             con.execute(f"INSERT INTO {folder_type}(path) VALUES (?)", (norm_path,))
-            con.execute("COMMIT")  # 挿入後コミット
+            con.execute("COMMIT")  # commit after insert
         return True
 
     def _remove_folder(self, folder_type: str, path: str) -> bool:
         norm_path = normalize_path(path)
         with self._conn() as con:
-            con.execute("BEGIN TRANSACTION")  # トランザクション開始
+            con.execute("BEGIN TRANSACTION")  # start transaction
             cur = con.execute(f"SELECT 1 FROM {folder_type} WHERE path = ?", (norm_path,))
             if not cur.fetchone():
-                con.execute("ROLLBACK")  # 存在しない場合はロールバック
+                con.execute("ROLLBACK")  # rollback if missing
                 return False
             con.execute(f"DELETE FROM {folder_type} WHERE path = ?", (norm_path,))
-            con.execute("COMMIT")  # 削除後コミット
+            con.execute("COMMIT")  # commit after delete
         return True
 
     def _get_all_folders(self, folder_type: str) -> List[str]:
@@ -142,7 +142,7 @@ class SettingDB:
     # ───── Key-Value Store ─────
     @profiler.profile
     def set_kv(self, key: str, value):
-        """key に value (任意のオブジェクト) を JSON 文字列にして保存"""
+        """Serialize value to JSON and save it under key."""
         json_value = json.dumps(value, ensure_ascii=False)
         with self._conn() as con:
             con.execute("""
@@ -155,7 +155,7 @@ class SettingDB:
 
     @profiler.profile
     def get_kv(self, key: str, default=None):
-        """key に対応する値を JSON からデコードして返す"""
+        """Retrieve value for key and decode JSON."""
         with self._conn(read_only=True) as con:
             cur = con.execute("SELECT value FROM kv_store WHERE key = ?", (key,))
             row = cur.fetchone()

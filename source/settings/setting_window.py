@@ -13,7 +13,7 @@ class SettingsWindow(QDialog, TranslatorMixin):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(self.t.tr("設定"))
+        self.setWindowTitle(self.t.tr("Settings"))
         self.setModal(False)
         self.resize(500, 400)
 
@@ -21,8 +21,8 @@ class SettingsWindow(QDialog, TranslatorMixin):
         self.tab_widgets: list[SettingsTabBase] = []
 
         self.ok_button = QPushButton("OK")
-        self.cancel_button = QPushButton(self.t.tr("キャンセル"))
-        self.apply_button = QPushButton(self.t.tr("適用"))
+        self.cancel_button = QPushButton(self.t.tr("Cancel"))
+        self.apply_button = QPushButton(self.t.tr("Apply"))
 
         self.ok_button.clicked.connect(self.on_ok_clicked)
         self.cancel_button.clicked.connect(self.on_cancel_clicked)

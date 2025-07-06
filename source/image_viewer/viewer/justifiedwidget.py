@@ -206,15 +206,15 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
     def setup_mouse_bindings(self):
         self.mouse_event_manager.bind(
             MouseActionKey(MouseButton.LEFT, ClickType.SINGLE, ()),
-            lambda: print("左クリック：次の画像")
+            lambda: print("Left click: next image")
         )
         self.mouse_event_manager.bind(
             MouseActionKey(MouseButton.X1, ClickType.DOUBLE, (MouseButton.RIGHT,)),
-            lambda: print("右ボタンを押しながらX1ダブルクリック")
+            lambda: print("Double click X1 while holding right button")
         )
         self.mouse_event_manager.bind(
             MouseActionKey(MouseButton.NONE, ClickType.WHEEL_UP, (MouseButton.MIDDLE,)),
-            lambda: print("中押し＋ホイールアップでズームイン")
+            lambda: print("Middle press + wheel up to zoom in")
         )
 
     def _generate_error_pixmap(self):
@@ -226,7 +226,7 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
         except Exception as e:
             logger.warning(f"Failed to load error image: {e}")
 
-        # フォールバック描画
+        # Fallback drawing
         size = QtCore.QSize(64, 64)
         pixmap = QtGui.QPixmap(size)
         pixmap.fill(QtGui.QColor("#ccc"))
@@ -368,7 +368,7 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
                 self._restore_scroll_requested = False
         self.layout_ready.emit()
 
-        # 高速化：画面内またはプリフェッチ対象のみジオメトリを更新
+        # Speed up: update geometry only for visible or prefetched items
         for i in self.visible_indices:
             if i < len(self.rects):
                 self._ensure_widget_visible(i, self.rects[i])
@@ -390,7 +390,7 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
         newly_added = new_visible - self.visible_indices
         no_longer_visible = self.visible_indices - new_visible
 
-        # 中央優先読み込み用の順序付け
+        # Order for center-priority loading
         if newly_added:
             center = (visible_range.start + visible_range.stop) // 2
             sorted_added = sorted(newly_added, key=lambda i: abs(i - center))

@@ -42,11 +42,10 @@ def retry_sqlite_connection(db_name: str, timeout: float = 3.0, interval: float 
 
 @profiler.profile
 def delete_database_files(dbname: str, retries: int = 1000, delay: float = 1.0, force: bool = False) -> bool:
-    """
-    指定された DB 名のファイルおよび関連ファイルを削除する。
-    他プロセスが開いている場合はリトライする。
-    `force=True` なら属性を変更して強制削除を試みる。
-    成功すれば True、失敗すれば False。
+    """Delete DB files and related artifacts.
+    Retry if another process holds them.
+    When `force` is True, attempt removal after changing permissions.
+    Return True on success, False otherwise.
     """
     base = os.path.abspath(dbname)
     logger.info(f"Deleting database files: {base}")

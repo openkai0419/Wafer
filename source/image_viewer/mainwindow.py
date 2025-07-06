@@ -16,8 +16,8 @@ from .widgets.button_bar import IconButtonBar, IconButtonConfig
 from .widgets.table_combo import ComboBoxWithButtons
 from .thread import main_thread
 from .viewer_settings import main_setting
-from ..common import get_data_db, get_setting_db, uipx, get_setting_file_names, run_side_subprocess
-from ..constants import default_db_name, APP_NAME
+from ..common import get_data_db, get_setting_db, uipx, get_setting_file_names, new_main
+from ..constants import default_db_name, APP_FILE_NAME, APP_NAME
 from ..profiling import logger, profiler
 from ..settings.setting_window import SettingsWindow
 from ..settings.db_settings import DataBaseSettings
@@ -53,10 +53,12 @@ class SearchWorkerRunnable(QtCore.QRunnable):
         self.signals.finished.emit(paths, aspects)
 
 class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, icon=None, parent=None):
+        super().__init__(parent=parent)
         logger.info(f"New Window Running : {APP_NAME}")
 
+        if icon:
+            self.setWindowIcon(icon)
         self.setWindowTitle(APP_NAME)
         self.resize(1000, 700)
 
@@ -81,7 +83,6 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.main_ui()
         
         self.reload_db(self.get_previous())
-        self.reload_combo()
         QtWidgets.QApplication.instance().aboutToQuit.connect(self.on_close)
 
     @profiler.profile
@@ -107,7 +108,11 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
 
         self.folder_view.set(self.setting_db.get_all_parent_folders(), self.setting_db.get_all_ignore_folders())
         QtCore.QTimer.singleShot(0, lambda: self.folder_view.restore_state(self.dbname))
+        self.run_folder = True
         QtCore.QTimer.singleShot(0, lambda: self.search(force=True))
+        self.progress_bar.setProgress(int(0))
+        self.progress_bar.setMaximum(int(0))
+        self.reload_combo()
         logger.info("[INFO] reload_db")
 
     def changeEvent(self, event):
@@ -137,7 +142,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             elif text in get_setting_file_names():
                 return
             else:
-                run_side_subprocess("collector", text)
+                new_main( "--collector", text)
                 self.dbcombo.addItem(text)
                 self.dbcombo.setCurrentText(text)
                 self.reload_db(text)
@@ -176,7 +181,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             except Exception:
                 logger.exception("Error processing IPC message: %s", msg)
 
-        self._subscriber = ZMQSubscriber(head_filter=[APP_NAME])
+        self._subscriber = ZMQSubscriber(head_filter=[APP_FILE_NAME])
         self._subscriber.connect_on_message(on_message)
         self._subscriber.start()
 
@@ -376,20 +381,19 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
                 self._start_search_runnable(query)
 
     def on_close(self):
-        if hasattr(self, "_subscriber"):
-            logger.info("on_close [STOPPING]")
-            self._subscriber.stop()
         try:
-            self.t.dump_missing_keys()
             self.folder_view.save_state(self.dbname)
-            main_setting.set("window/tablename", self.dbname)
+            main_setting.save_important("window/tablename", self.dbname)
             main_setting.set("window/geometry", self.saveGeometry())
             main_setting.set("viewer/scroll", self.content.get_center_image_index())
             main_setting.set("window/splitter", self.splitter.sizes())
             main_setting.commit()
-            main_setting.close()
-        except:
-            pass
+            self.t.dump_missing_keys()
+        except Exception as e:
+            logger.warning(e)
+        if hasattr(self, "_subscriber"):
+            logger.info("on_close [STOPPING]")
+            self._subscriber.stop()
 
     def closeEvent(self, event):
         return super().closeEvent(event)

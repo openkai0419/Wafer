@@ -9,14 +9,8 @@
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/main.py",
-            "console": "integratedTerminal"
-        },
-        {
-            "name": "run collector",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${workspaceFolder}/collector.py",
-            "console": "integratedTerminal"
+            "console": "integratedTerminal",
+            "subProcess": true
         }
     ]
 }

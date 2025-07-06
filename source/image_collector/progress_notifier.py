@@ -32,7 +32,7 @@ def get_viewer_count():
         return publisher.get_sub_count()
     except Exception as e:
         logger.warning(f"[起動数値取得失敗] {e}")
-        return 0
+        return 1
 
 def send_show_toggle(flag):
     try:

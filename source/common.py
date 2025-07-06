@@ -3,12 +3,12 @@ import sys
 import subprocess
 from pathlib import Path
 from platformdirs import PlatformDirs
-from typing import List
 from natsort import natsorted, ns
+from typing import List, Tuple, Optional, TypeVar
 
 from PySide6 import QtGui
 #from .profiling import logger
-from .constants import APP_NAME
+from .constants import APP_FILE_NAME, APP_NAME
 
 # Supported image extensions
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp")
@@ -29,15 +29,15 @@ def uipx(px: int, base_dpi: int = 96) -> int:
 def native_sort(files):
     return natsorted(files, alg=ns.LOCALE | ns.IGNORECASE)
 
+def split_last(lst: List):
+    return (lst[:-1], lst[-1]) if lst else ([], None)
+
 # paths
 def get_data_db(name):
     return data_path(f"data/{name}.db")
 
 def get_setting_db(name):
     return data_path(f"dirs/{name}.db")
-
-def get_name_without_ext(path):
-    return os.path.splitext(os.path.basename(path))[0]
 
 def get_data_file_names():
     return [get_name_without_ext(a) for a in list_files(data_path(f"data/"), ".db")]
@@ -47,6 +47,22 @@ def get_setting_file_names():
 
 def get_resource_path() -> Path:
     return get_main_based_directory() / "_resources"
+
+def get_name_without_ext(path):
+    return os.path.splitext(os.path.basename(path))[0]
+
+def new_main(*args):
+    if getattr(sys, 'frozen', False):
+        # exe
+        main_path = sys.executable
+        cmd = [main_path] + list(args)
+    else:
+        # python
+        main_path = os.path.abspath(sys.argv[0])
+        cmd = [sys.executable, main_path] + list(args)
+    print(main_path, cmd)
+    env = os.environ.copy()
+    subprocess.Popen(cmd, env=env)
 
 def get_main_based_directory() -> Path:
     if getattr(sys, 'frozen', False):
@@ -60,36 +76,7 @@ def get_main_based_directory() -> Path:
         else:
             return Path.cwd()  # 対話モードなど
 
-def run_side_subprocess(name, *args, **kwargs):
-    base_dir = get_main_based_directory()
-    stdout = subprocess.DEVNULL
-    stderr = subprocess.DEVNULL
-    if getattr(sys, 'frozen', False):
-        executable =  base_dir / f"{Path(name).stem}.exe"
-        command = [executable, *args]
-        creation_flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0
-    else:
-        executable =  base_dir / f"{Path(name).stem}.py"
-        command = [sys.executable, executable, *args]
-        creation_flags = 0
-    try:
-        subprocess.Popen(
-            command,
-            stdout=stdout,
-            stderr=stderr,
-            stdin=subprocess.DEVNULL,
-            creationflags=creation_flags
-        )
-    except:
-        raise
-
-def get_or_create_path(relative_path):
-    base_path = get_main_based_directory()
-    full_path = base_path / relative_path 
-    # ディレクトリが存在しなければ作成
-    full_path.parent.mkdir(parents=True, exist_ok=True)
-    return full_path
-
+# settingdirs
 def _resolve_app_path( relative_path: str, base_dir: Path ) -> Path:
     path = base_dir / relative_path
     if path.suffix == "" or str(relative_path).endswith(("/", "\\")):
@@ -100,12 +87,12 @@ def _resolve_app_path( relative_path: str, base_dir: Path ) -> Path:
 
 def data_path(relative_path: str) -> Path:
     dirs = PlatformDirs(appname=None)
-    base_dir = Path(dirs.user_data_dir) / APP_NAME
+    base_dir = Path(dirs.user_data_dir) / APP_FILE_NAME
     return normalize_path(_resolve_app_path(relative_path, base_dir))
 
 def config_path(relative_path: str) -> Path:
     dirs = PlatformDirs(appname=None)
-    base_dir = Path(dirs.user_config_dir) / APP_NAME
+    base_dir = Path(dirs.user_config_dir) / APP_FILE_NAME
     return normalize_path(_resolve_app_path(relative_path, base_dir))
 
 def list_files(directory: str, extension: str) -> List[Path]:

@@ -7,7 +7,7 @@ class QtDebounceManager(QObject):
         self._timers = {}  # key: function identity -> QTimer
 
     def debounce(self, key, delay_ms, callback, *args, **kwargs):
-        """個別キーでデバウンス実行"""
+        """Debounce execution using individual keys"""
         if key in self._timers:
             self._timers[key].stop()
             self._timers[key].deleteLater()
@@ -25,11 +25,11 @@ class QtDebounceManager(QObject):
         timer.start(delay_ms)
         self._timers[key] = timer
 
-# グローバルに1つだけインスタンス生成（使い回し可）
+# Single global instance
 _qt_debounce_manager = QtDebounceManager()
 
 def qt_debounce(delay_ms: int):
-    """任意の関数をデバウンス実行するデコレータ"""
+    """Decorator to debounce any function"""
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):

@@ -37,7 +37,7 @@ class CheckableCombo(QtWidgets.QToolButton, TranslatorMixin):
 
     def __init__(self, items=None, parent=None):
         super().__init__(parent)
-        self.setText(self.t.tr("絞り込み"))
+        self.setText(self.t.tr("Filter"))
         self.setPopupMode(QtWidgets.QToolButton.InstantPopup)
 
         self.menu = QtWidgets.QMenu(self)
@@ -93,7 +93,7 @@ class SearchOptionPopup(QtWidgets.QDialog, TranslatorMixin):
     def __init__(self, pos_parent, parent=None):
         super().__init__(parent)
         self.pos_parent = pos_parent
-        self.setWindowTitle(self.t.tr("検索オプション"))
+        self.setWindowTitle(self.t.tr("Search Options"))
         self.setWindowFlags(self.windowFlags() | QtCore.Qt.Tool)
         self.setLayout(QtWidgets.QVBoxLayout())
 
@@ -103,14 +103,14 @@ class SearchOptionPopup(QtWidgets.QDialog, TranslatorMixin):
     def build_ui(self):
         layout = self.layout()
 
-        # --- クエリタイプ（GLOB/LIKE）
+        # --- Query type (GLOB/LIKE)
         self.query_type_combo = QtWidgets.QComboBox()
         self.query_type_combo.addItem("GLOB", "GLOB")
         self.query_type_combo.addItem("LIKE", "LIKE")
         self.query_type_combo.currentIndexChanged.connect(lambda: self.settingchanged.emit())
         layout.addWidget(self.query_type_combo)
 
-        # --- AND / OR ラジオボタン（独立グループ化）
+        # --- AND / OR radio buttons (independent group)
         self.keyword_group = QtWidgets.QButtonGroup(self)
         self.and_radio = QtWidgets.QRadioButton("AND")
         self.or_radio = QtWidgets.QRadioButton("OR")
@@ -124,34 +124,34 @@ class SearchOptionPopup(QtWidgets.QDialog, TranslatorMixin):
         hlayout1.addWidget(self.or_radio)
         layout.addLayout(hlayout1)
 
-        # --- 分割文字列
+        # --- Split string
         hlayout3 = QtWidgets.QHBoxLayout()
         self.splittext = QtWidgets.QLineEdit()
         self.splittext.textChanged.connect(lambda: self.settingchanged.emit())
-        hlayout3.addWidget(QtWidgets.QLabel(self.t.tr("検索用の分割文字:")))
+        hlayout3.addWidget(QtWidgets.QLabel(self.t.tr("Split characters:")))
         hlayout3.addWidget(self.splittext)
         layout.addLayout(hlayout3)
 
-        # --- ソートキー（ドロップダウン）
-        layout.addWidget(QtWidgets.QLabel(self.t.tr("ソート:")))
+        # --- Sort key (dropdown)
+        layout.addWidget(QtWidgets.QLabel(self.t.tr("Sort:")))
         self.sort_by_combo = QtWidgets.QComboBox()
         self.sort_display_map = {
-            "name": self.t.tr("ファイルパス"),
-            "created": self.t.tr("作成日時"),
-            "modified": self.t.tr("更新日時"),
-            "collected": self.t.tr("登録順"),
-            "size": self.t.tr("ファイルサイズ"),
-            "random": self.t.tr("ランダム"),
+            "name": self.t.tr("File Path"),
+            "created": self.t.tr("Created"),
+            "modified": self.t.tr("Modified"),
+            "collected": self.t.tr("Collected"),
+            "size": self.t.tr("File Size"),
+            "random": self.t.tr("Random"),
         }
         for key, label in self.sort_display_map.items():
             self.sort_by_combo.addItem(label, userData=key)
         self.sort_by_combo.currentIndexChanged.connect(lambda: self.settingchanged.emit())
         layout.addWidget(self.sort_by_combo)
 
-        # --- 昇順 / 降順 ラジオボタン（独立グループ化）
+        # --- Ascending / Descending radio buttons
         self.order_group = QtWidgets.QButtonGroup(self)
-        self.asc_radio = QtWidgets.QRadioButton(self.t.tr("昇順"))
-        self.desc_radio = QtWidgets.QRadioButton(self.t.tr("降順"))
+        self.asc_radio = QtWidgets.QRadioButton(self.t.tr("Ascending"))
+        self.desc_radio = QtWidgets.QRadioButton(self.t.tr("Descending"))
         self.order_group.addButton(self.asc_radio)
         self.order_group.addButton(self.desc_radio)
         self.asc_radio.toggled.connect(lambda: self.settingchanged.emit())
@@ -223,11 +223,11 @@ class SingleRowOption(QtWidgets.QWidget, TranslatorMixin):
         self.setLayout(self.layout)
 
         self.search_bar = QtWidgets.QLineEdit()
-        self.search_bar.setPlaceholderText(self.t.tr("検索ワードを入力..."))
+        self.search_bar.setPlaceholderText(self.t.tr("Enter search terms..."))
         self.search_bar.setText(main_setting.get("query/keywords", None))
         self.search_bar.textChanged.connect(lambda: self.settingchanged.emit())
 
-        self.option_button = QtWidgets.QPushButton(self.t.tr(" 検索設定 ▼ "))
+        self.option_button = QtWidgets.QPushButton(self.t.tr(" Search Options ▼ "))
         self.option_button.clicked.connect(self.toggle_option_popup)
 
         self.keys_combo = CheckableCombo()

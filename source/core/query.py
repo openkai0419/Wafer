@@ -38,7 +38,7 @@ class MetaQuery:
         )
 
     def __hash__(self):
-        # 必要であれば hashable にする（例：setやdictのキーにする場合）
+        # Make hashable when used as set/dict keys
         return hash((
             tuple(self.keys or []),
             tuple(self.keywords or []),
@@ -207,7 +207,7 @@ class MetaInfoSearchEngine:
         if sort_by == "random":
             shuffle(all_rows)
         else:
-            # sort_value に基づいてソート
+            # sort based on sort_value
             all_rows.sort(key=lambda row: row["sort_value"], reverse=not ascending)
 
         return [row["path"] for row in all_rows], [row["aspect_ratio"] for row in all_rows]
@@ -303,12 +303,12 @@ class MetaInfoSearchEngine:
     @profiler.profile
     def explain_query_plan(self, query: MetaQuery):
         if not self._connect_if_needed():
-            logger.warning("DB接続失敗：explain_query_plan スキップ")
+            logger.warning("DB connection failed: skipping explain_query_plan")
             return None
 
         sql, params = query.to_sql(normalize_path)
         if not sql:
-            logger.info("無効なクエリのため EXPLAIN QUERY PLAN をスキップ")
+            logger.info("Query invalid, skipping EXPLAIN QUERY PLAN")
             return None
 
         explain_sql = f"EXPLAIN QUERY PLAN {sql}"
@@ -316,7 +316,7 @@ class MetaInfoSearchEngine:
             cur = self.conn.cursor()
             rows = cur.execute(explain_sql, params).fetchall()
             plan_lines = [f"[{row['id']}] {row['detail']}" for row in rows]
-            logger.info("=== SQLite 実行計画 ===")
+            logger.info("=== SQLite Execution Plan ===")
             for line in plan_lines:
                 logger.info(line)
         except Exception as e:

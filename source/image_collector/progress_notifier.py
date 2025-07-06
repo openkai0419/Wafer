@@ -31,7 +31,7 @@ def get_viewer_count():
         publisher = _get_publisher()
         return publisher.get_sub_count()
     except Exception as e:
-        logger.warning(f"[起動数値取得失敗] {e}")
+        logger.warning(f"[viewer count failed] {e}")
         return 1
 
 def send_show_toggle(flag):
@@ -42,7 +42,7 @@ def send_show_toggle(flag):
         else:
             publisher.send("show_toggle", "False", "*")
     except Exception as e:
-        logger.warning(f"[トグル通知失敗] {e}")
+        logger.warning(f"[toggle notify failed] {e}")
 
 class ProgressAggregator:
     def __init__(self, tablename):
@@ -75,7 +75,7 @@ class ProgressAggregator:
             publisher.send("progress", str(self.current), self.tablename)
             #logger.debug(f"[NOTIFY] progress {self.current} {self.maximum}")
         except Exception as e:
-            logger.warning(f"[進捗通知失敗] {e}")
+            logger.warning(f"[progress notify failed] {e}")
 
     @profiler.profile
     def notify_extra(self, key: str, value: object):
@@ -84,4 +84,4 @@ class ProgressAggregator:
             publisher.send(key, str(value), self.tablename)
             logger.debug(f"[NOTIFY] EXTRA {key} {value}")
         except Exception as e:
-            logger.warning(f"[通知失敗: {key}={value}] {e}")
+            logger.warning(f"[notify failed: {key}={value}] {e}")

@@ -28,15 +28,15 @@ class TrayApp(QtWidgets.QSystemTrayIcon, TranslatorMixin):
         self.setting_db = None
         self.data_db = None
 
-        self.show_action = self.menu.addAction(self.t.tr("ウィンドウを表示"))
+        self.show_action = self.menu.addAction(self.t.tr("Show Window"))
         self.show_action.triggered.connect(self.show_if_not)
-        self.show_action = self.menu.addAction(self.t.tr("新規ウィンドウを開く"))
+        self.show_action = self.menu.addAction(self.t.tr("Open New Window"))
         self.show_action.triggered.connect(self.show_anyways)
         self.menu.addSeparator()
-        self.test_action = self.menu.addAction(self.t.tr("テスト"))
+        self.test_action = self.menu.addAction(self.t.tr("Test"))
         self.test_action.triggered.connect(self.test)
         self.menu.addSeparator()
-        self.quit_action = self.menu.addAction(self.t.tr("終了"))
+        self.quit_action = self.menu.addAction(self.t.tr("Quit"))
         self.quit_action.triggered.connect(self.quit)
 
         self.setContextMenu(self.menu)

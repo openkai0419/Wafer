@@ -38,7 +38,7 @@ class TranslationManager(QtCore.QObject):
         try:
             return template.format(**kwargs)
         except KeyError as e:
-            # キー不足時はそのままテンプレートを返す
+            # Keep template when format key is missing
             print(f"[WARN] Missing format key: {e}")
             return template
 
@@ -51,7 +51,7 @@ class TranslationManager(QtCore.QObject):
         if languages is None:
             languages = [self.current_locale] if self.current_locale != "en" else ["ja"]
 
-        # 未翻訳キーに対して雛形を作る
+        # Create template for untranslated keys
         out = {
             k: {lang: "" for lang in languages}
             for k in sorted(self.missing_keys)
@@ -59,25 +59,25 @@ class TranslationManager(QtCore.QObject):
 
         output_path = output_path or self.json_path
 
-        # 既存の翻訳があるならマージ
+        # Merge with existing translations if present
         if output_path.exists():
             with open(output_path, encoding="utf-8") as f:
                 existing = json.load(f)
             for k, v in existing.items():
                 if k in out:
-                    # 既存の言語設定を優先
+                    # Prefer existing language entries
                     v.update(out[k])
                     out[k] = v
                 else:
                     out[k] = v
 
-        # 保存
+        # Save result
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump(out, f, indent=2, ensure_ascii=False)
         print(f"Missing keys written to: {output_path}")
 
 
-# === グローバル管理 ===
+# === Global management ===
 _t_instance: TranslationManager = None
 
 def init_translator(json_path: Path, default_locale="en"):
@@ -96,14 +96,14 @@ class TranslatorMixin:
     @property
     def t(self):
         translator = get_translator()
-        # 初回呼び出し時に接続
+        # Connect on first access
         if not hasattr(self, "_translator_connected"):
             self._translator_connected = True
             method_name = getattr(self, "_translation_method_name", self._default_update_method_name)
             if hasattr(self, method_name):
                 getattr(translator.languageChanged, "connect")(getattr(self, method_name))
             else:
-                print(f"[WARN] {self} にメソッド {method_name} が定義されていません")
+                print(f"[WARN] method {method_name} not defined in {self}")
         return translator
 
     def set_translation_method(self, method_name: str):

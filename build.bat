@@ -7,50 +7,50 @@ set VENV=venv\Scripts\activate.bat
 
 set APPNAME=AfterImages
 
-REM 仮想環境をアクティブ化
+REM Activate virtual environment
 if exist "%VENV%" (
     call "%VENV%"
 ) else (
-    echo 仮想環境が見つかりません: %VENV%
+    echo Virtual environment not found: %VENV%
     set ERRFLAG=1
     goto END
 )
 
-REM PyInstallerがインストールされているか確認
+REM Ensure PyInstaller is available
 pip show pyinstaller >nul 2>&1 || (
     echo Installing PyInstaller...
     pip install pyinstaller || (
-        echo PyInstallerのインストールに失敗しました。
+        echo Failed to install PyInstaller.
         set ERRFLAG=1
         goto END
     )
 )
 
-REM 古いビルドを削除
+REM Remove previous build
 echo Cleaning previous build...
 rmdir /s /q build 2>nul
 rmdir /s /q dist 2>nul
 
-REM 実行
+REM Build
 pyinstaller --noconfirm --clean main.spec
 
 
-REM ビルド結果の確認
+REM Verify build result
 if errorlevel 1 (
-    echo ビルド中にエラーが発生しました。
+    echo Build failed.
     set ERRFLAG=1
     goto END
 )
 
 echo.
-echo ビルド成功。dist\%APPNAME%\main.exe をご確認ください。
+echo Build succeeded. See dist\%APPNAME%\main.exe
 
 robocopy _resources dist\%APPNAME%\_resources /E
 
 :END
 if %ERRFLAG%==1 (
     echo.
-    echo エラーが発生したため停止しています。Enterキーで閉じます。
+    echo Stopped due to errors. Press Enter to close.
     pause >nul
 )
 endlocal

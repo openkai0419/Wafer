@@ -11,7 +11,7 @@ import os
 class FolderListWidget(QWidget, TranslatorMixin):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle(self.t.tr("フォルダリストマネージャー"))
+        self.setWindowTitle(self.t.tr("Folder List Manager"))
         self.resize(400, 300)
 
         self.folder_list = QListWidget()
@@ -22,9 +22,9 @@ class FolderListWidget(QWidget, TranslatorMixin):
 
         self.add_button = QPushButton("+")
         self.add_button.setFixedSize(25, 25)
-        self.add_button.setToolTip(self.t.tr("フォルダを追加"))
+        self.add_button.setToolTip(self.t.tr("Add folder"))
 
-        # ボタンを重ねるレイアウト
+        # Overlay layout for button
         self.overlay_layout = QVBoxLayout()
         self.overlay_layout.addWidget(self.folder_list)
         self.overlay_layout.setContentsMargins(0, 0, 0, 0)
@@ -40,7 +40,7 @@ class FolderListWidget(QWidget, TranslatorMixin):
 
         self.folder_list.resizeEvent = self.on_resize
 
-        # シグナル接続
+        # Signal connections
         self.add_button.clicked.connect(self.add_folder)
 
     def on_resize(self, event):
@@ -51,7 +51,7 @@ class FolderListWidget(QWidget, TranslatorMixin):
         item = self.folder_list.itemAt(position)
         if item:
             menu = QMenu(self)
-            delete_action = menu.addAction(self.t.tr("削除"))
+            delete_action = menu.addAction(self.t.tr("Delete"))
             action = menu.exec(self.folder_list.mapToGlobal(position))
             if action == delete_action:
                 self.confirm_and_remove_item(item)
@@ -59,20 +59,20 @@ class FolderListWidget(QWidget, TranslatorMixin):
     def confirm_and_remove_item(self, item):
         reply = QMessageBox.question(
             self,
-            self.t.tr("確認"),
-            self.t.trf("選択したフォルダを削除します。よろしいですか？\n\n{path}", path=item.text()),
+            self.t.tr("Confirm"),
+            self.t.trf("Remove selected folder?\n\n{path}", path=item.text()),
             QMessageBox.Yes | QMessageBox.No
         )
         if reply == QMessageBox.Yes:
             self.folder_list.takeItem(self.folder_list.row(item))
 
     def add_folder(self):
-        folder_path = QFileDialog.getExistingDirectory(self, self.t.tr("フォルダを選択"))
+        folder_path = QFileDialog.getExistingDirectory(self, self.t.tr("Select folder"))
         if folder_path:
             self._add_folder_path(folder_path)
 
     def _add_folder_path(self, path: str):
-        """正規化・存在チェック・重複回避付きでパスを追加"""
+        """Add path with normalization and duplicate checks"""
         normalized_path = os.path.normpath(path)
         existing_paths = set(self.get_folder_list())
         if os.path.exists(normalized_path) and normalized_path not in existing_paths:
@@ -81,7 +81,7 @@ class FolderListWidget(QWidget, TranslatorMixin):
 
     def replace_folder(self, item):
         old_path = item.text()
-        new_path = QFileDialog.getExistingDirectory(self, self.t.tr("フォルダを再選択"), old_path)
+        new_path = QFileDialog.getExistingDirectory(self, self.t.tr("Select folder again"), old_path)
         if new_path:
             normalized_new_path = os.path.normpath(new_path)
             existing_paths = set(self.get_folder_list()) - {old_path}
@@ -93,12 +93,12 @@ class FolderListWidget(QWidget, TranslatorMixin):
         self.folder_list.sortItems(Qt.AscendingOrder)
 
     def set_folder_list(self, paths: list[str]):
-        """コード側から一括設定（正規化・重複除去・存在チェックつき）"""
+        """Set all paths at once with checks"""
         for path in paths:
             self._add_folder_path(path)
 
     def get_folder_list(self) -> list[str]:
-        """現在のリストを返す"""
+        """Return current list"""
         return [self.folder_list.item(i).text() for i in range(self.folder_list.count())]
 
 
@@ -106,11 +106,11 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = FolderListWidget()
 
-    # 初期フォルダリストを設定
+    # Set initial folder list
     initial_folders = [
         "C:/Users/okab/Pictures",
         "D:/images",
-        "C:/nonexistent/path"  # 存在しないパスは無視される
+        "C:/nonexistent/path"  # nonexistent path ignored
     ]
     window.set_folder_list(initial_folders)
 

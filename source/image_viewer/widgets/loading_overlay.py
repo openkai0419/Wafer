@@ -25,7 +25,7 @@ class OverlayLoadingIndicator(QtWidgets.QWidget):
         self.spinner.setFixedSize(uipx(120), uipx(120))
 
         self.spinner.setParent(self)
-        self.spinner.move(uipx(8), uipx(8))  # 左上に余白つきで表示
+        self.spinner.move(uipx(8), uipx(8))  # top-left with padding
 
     def start(self):
         self.resize(self._parent.size())

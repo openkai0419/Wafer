@@ -15,7 +15,7 @@ class MouseButton(Enum):
     MIDDLE = QtCore.Qt.MiddleButton
     X1 = QtCore.Qt.XButton1
     X2 = QtCore.Qt.XButton2
-    NONE = 0  # ホイールイベント用など
+    NONE = 0  # e.g. for wheel events
 
 
 class MouseActionKey:

@@ -5,17 +5,17 @@ from .base_setting import SettingsTabBase
 from .translation import TranslatorMixin
 
 class DataBaseSettings(SettingsTabBase, TranslatorMixin):
-    name = "フォルダ設定"
+    name = "Folder Settings"
     def __init__(self,):
         super().__init__()
-        self.name = self.t.tr("フォルダ設定")
+        self.name = self.t.tr("Folder Settings")
 
 
-    """設定タブの基底クラス"""
+    """Base class for settings tabs"""
     def apply_settings(self):
-        """変更を適用"""
+        """Apply changes"""
         pass
 
     def has_unsaved_changes(self) -> bool:
-        """未保存の変更があるか"""
+        """Check for unsaved changes"""
         return False

@@ -43,7 +43,7 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
         if parent_item.hasChildren() and parent_item.child(0).data(QtCore.Qt.UserRole):
             return
 
-        parent_item.removeRows(0, parent_item.rowCount())  # dummy削除
+        parent_item.removeRows(0, parent_item.rowCount())  # remove dummy
         path = parent_item.data(QtCore.Qt.UserRole)
 
         try:
@@ -54,7 +54,7 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
                 child = QtGui.QStandardItem(FOLDER_ICON, name)
                 child.setData(full_path, QtCore.Qt.UserRole)
                 if self.has_subfolders(full_path):
-                    child.setChild(0, QtGui.QStandardItem())  # dummy は本当に子がいる時だけ
+                    child.setChild(0, QtGui.QStandardItem())  # add dummy only when child exists
                 parent_item.appendRow(child)
         except Exception as e:
             logger.debug(f"Failed to read {path}: {e}")
@@ -87,7 +87,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         roots = [normalize_path(r) for r in roots]
         excluded = set(normalize_path(e) for e in (excluded or []))
         
-        # モデルをクリアして再構築
+        # Clear model and rebuild
         self.model_.clear()
         self.model_.roots = roots
         self.model_.excluded = excluded
@@ -197,7 +197,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
 
     def reload_tree(self):
         s = self.get_state()
-        # ルートの内容を全てリロードする
+        # Reload all root contents
         roots = []
         for i in range(self.model_.rowCount()):
             path = self.model_.item(i).data(QtCore.Qt.UserRole)

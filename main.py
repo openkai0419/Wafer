@@ -21,7 +21,7 @@ def get_icon():
     return icon
 
 def set_app_user_model_id(app_id: str):
-    """WindowsでAppUserModelIDを設定して、タスクバーでまとめる"""
+    """Set AppUserModelID on Windows so the taskbar groups icons."""
     if sys.platform == "win32":
         import ctypes
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
@@ -72,7 +72,7 @@ def run_collector(name):
             tray_icon.show()
             sys.exit(app.exec())
     except FileExistsError:
-        logger.info(f"Collector : {name} はすでに起動中です。")
+        logger.info(f"Collector '{name}' is already running.")
     except:
         raise
 
@@ -88,7 +88,7 @@ def run_all_collectors():
     run_collector(main)
 
 def main():
-    parser = argparse.ArgumentParser(description="3つのモードで動作するスクリプト")
+    parser = argparse.ArgumentParser(description="Script with three run modes")
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--communicator', action='store_true', help='run communicator. it will be solo')
     group.add_argument('--viewer', action='store_true', help='run new viewer')

@@ -212,13 +212,13 @@ class DBWorker(QtCore.QObject):
 
     @QtCore.Slot(list)
     def rescan_all(self, root_paths):
-        logger.debug(f"スキャン開始: {root_paths}")
+        logger.debug(f"scan start: {root_paths}")
         with self.database as indexer:
             indexer.update_index(root_paths)
     
     @QtCore.Slot(list)
     def set_ignore(self, paths):
-        logger.debug(f"無視対象を追加: {paths}")
+        logger.debug(f"adding ignore targets: {paths}")
         with self.database as indexer:
             indexer.set_exclude_paths(paths, run=True)
 
@@ -284,7 +284,7 @@ class WatchFolder:
 
         self.folders = folders
         self.rescan_all()
-        logger.debug("[FatchFOlder] ディレクトリ監視開始")
+        logger.debug("[WatchFolder] start directory watch")
         self.delete_if_ended()
 
     def delete_if_ended(self):

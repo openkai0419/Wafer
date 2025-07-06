@@ -16,22 +16,22 @@ class BaseDialog(QDialog):
 
         self.result_text = None
 
-        # アイコン
+        # Icon
         icon = self.style().standardIcon(icon_type)
         icon_label = QLabel()
         icon_label.setPixmap(icon.pixmap(32, 32))
 
-        # メッセージ
+        # Message
         self.message_label = QLabel(message)
         self.message_label.setWordWrap(True)
         self.message_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
-        # メッセージとアイコンの横並び
+        # Layout: icon next to message
         message_layout = QHBoxLayout()
         message_layout.addWidget(icon_label)
         message_layout.addWidget(self.message_label)
 
-        # ボタン
+        # Buttons
         self.btn_layout = QHBoxLayout()
         self.btn_layout.addStretch()
         for btn_text in buttons:
@@ -39,10 +39,10 @@ class BaseDialog(QDialog):
             btn.clicked.connect(lambda _, text=btn_text: self._on_button(text))
             self.btn_layout.addWidget(btn)
 
-        # メインレイアウト
+        # Main layout
         self.main_layout = QVBoxLayout()
         self.main_layout.addLayout(message_layout)
-        # ★サブクラスがここにウィジェットを追加できる
+        # Subclasses can add widgets here
         self.content_layout = QVBoxLayout()
         self.main_layout.addLayout(self.content_layout)
         self.main_layout.addLayout(self.btn_layout)
@@ -66,14 +66,14 @@ class InputDialog(BaseDialog, TranslatorMixin):
     def __init__(self, message, title="Input", buttons=("OK", "Cancel"), parent=None):
         super().__init__(message, title, buttons, parent=parent)
         self.input_edit = QLineEdit()
-        self.input_edit.setPlaceholderText(self.t.tr("入力してください…"))
+        self.input_edit.setPlaceholderText(self.t.tr("Please enter text..."))
         self.content_layout.addWidget(self.input_edit)
 
     @staticmethod
     def get_text(message, title="Input", buttons=("OK", "Cancel"), parent=None):
         dialog = InputDialog(message, title, buttons, parent=parent)
         dialog.exec()
-        if dialog.result_text and dialog.result_text == buttons[0]:  # OKが押された場合
+        if dialog.result_text and dialog.result_text == buttons[0]:  # OK clicked
             return dialog.input_edit.text()
         else:
             return None

@@ -13,7 +13,7 @@ class SafeProcessLock:
     def acquire(self):
         while True:
             try:
-                # O_EXCL + O_CREAT を指定して排他的にファイルを作成する
+                # Create exclusively with O_EXCL + O_CREAT
                 fd = os.open(self.lock_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
                 with os.fdopen(fd, "w") as f:
                     f.write(str(self.pid))
@@ -33,21 +33,21 @@ class SafeProcessLock:
                             current_proc = psutil.Process(self.pid)
 
                             if existing_proc.exe() != current_proc.exe():
-                                return False  # 他のプログラムが保持中のロック
+                                return False  # lock held by another program
                             else:
-                                # 同一 exe でも既にロックが存在 = 自分以外が同じプログラムを起動中
+                                # same executable already running elsewhere
                                 return False
                         except psutil.Error:
                             pass
-                    # プロセスが存在しない or アクセスできない → stale lock
+                    # process gone or inaccessible -> stale lock
                     os.remove(self.lock_file)
                 except Exception:
-                    # ロックファイル破損など
+                    # lock file corrupted
                     try:
                         os.remove(self.lock_file)
                     except Exception:
-                        return False  # 削除できない = 他プロセスが保持している可能性
-                # ループして再試行
+                        return False  # cannot delete, maybe held by other process
+                # retry loop
                 time.sleep(0.1)
 
     def release(self):

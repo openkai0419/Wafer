@@ -18,8 +18,8 @@ class ComboBoxWithButtons(QWidget, TranslatorMixin):
         self.button_add = QPushButton("+")
         self.button_remove = QPushButton("-")
         self.combo.currentIndexChanged.connect(self.on_changed)
-        self.button_add.setToolTip(self.t.tr("項目を追加"))
-        self.button_remove.setToolTip(self.t.tr("現在の項目を削除"))
+        self.button_add.setToolTip(self.t.tr("Add item"))
+        self.button_remove.setToolTip(self.t.tr("Remove current item"))
         self._current_text = None
 
         layout = QHBoxLayout()

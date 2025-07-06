@@ -42,7 +42,7 @@ class SettingWatcher(QtCore.QObject):
                     watcher.last_mtime = stat.st_mtime
                     watcher._on_db_changed()
                 except Exception as e:
-                    logger.warning(f"[SettingWatcher] ファイル変更検出中にエラー: {e}")
+                    logger.warning(f"[SettingWatcher] error while watching file: {e}")
 
         return Handler()
 
@@ -50,7 +50,7 @@ class SettingWatcher(QtCore.QObject):
     def _parent_folders_changed(self):
         current = set(self.db.get_all_parent_folders())
         if current != self.cached_parent_folders:
-            logger.info("[SettingWatcher] 差分検出：emit parentFoldersChanged")
+            logger.info("[SettingWatcher] parent folder diff detected, emit signal")
             self.cached_parent_folders = current
             self.parentFoldersChanged.emit(list(current))
 
@@ -58,7 +58,7 @@ class SettingWatcher(QtCore.QObject):
     def _ignore_folders_changed(self):
         current = set(self.db.get_all_ignore_folders())
         if current != self.cached_ignore_folders:
-            logger.info("[SettingWatcher] 差分検出：emit ignoreFoldersChanged")
+            logger.info("[SettingWatcher] ignore folder diff detected, emit signal")
             self.cached_ignore_folders = current
             self.ignoreFoldersChanged.emit(list(current))
 
@@ -80,7 +80,7 @@ class SettingWatcher(QtCore.QObject):
         dir_path = os.path.dirname(self.db_path) or "."
         self._observer.schedule(self._handler, path=dir_path, recursive=False)
         self._observer.start()
-        logger.info("[SettingWatcher] 設定ファイル監視開始")
+        logger.info("[SettingWatcher] start watching setting file")
 
     def stop(self):
         self._observer.stop()

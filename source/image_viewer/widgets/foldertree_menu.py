@@ -12,15 +12,15 @@ class FolderContextMenuBuilder(TranslatorMixin):
 
     def build_menu(self, path: str) -> QtWidgets.QMenu:
         menu = QtWidgets.QMenu(self.view)
-        menu.addAction(self.t.tr("パスをコピー"), lambda: self.copy_path(path))
-        menu.addAction(self.t.tr("エクスプローラーで開く"), lambda: self.open_in_explorer(path))
+        menu.addAction(self.t.tr("Copy Path"), lambda: self.copy_path(path))
+        menu.addAction(self.t.tr("Open in Explorer"), lambda: self.open_in_explorer(path))
         menu.addSeparator()
         logger.info(self.view.roots)
         logger.info(path in self.view.roots)
         if path in self.view.roots:
-            menu.addAction(self.t.tr("除去"), lambda: self.remove(path))
+            menu.addAction(self.t.tr("Remove"), lambda: self.remove(path))
         else:
-            menu.addAction(self.t.tr("除外"), lambda: self.ignore(path))
+            menu.addAction(self.t.tr("Ignore"), lambda: self.ignore(path))
         return menu
 
     def open_in_explorer(self, path):
@@ -30,19 +30,19 @@ class FolderContextMenuBuilder(TranslatorMixin):
         QtGui.QGuiApplication.clipboard().setText(path)
 
     def remove(self, path):
-        result = ConfirmDialog.ask(self.t.trf("表示リストから除去しますか？: \n{path}", path=path),
-                                   title=self.t.tr("確認"),
-                                   buttons=(self.t.tr("除去する"), self.t.tr("キャンセル")), parent=self.view)
-        if result == self.t.tr("除去する"):
+        result = ConfirmDialog.ask(self.t.trf("Remove from view list?\n{path}", path=path),
+                                   title=self.t.tr("Confirm"),
+                                   buttons=(self.t.tr("Remove"), self.t.tr("Cancel")), parent=self.view)
+        if result == self.t.tr("Remove"):
             if path in self.view.roots:
                 self.view.remove_root(path)
                 self.root.setting_db.remove_parent_folder(path)
 
     def ignore(self, path):
-        result = ConfirmDialog.ask(self.t.trf("表示リストから除外しますか？: \n{path}", path=path),
-                                   title=self.t.tr("確認"),
-                                   buttons=(self.t.tr("除外する"), self.t.tr("キャンセル")), parent=self.view)
-        if result == self.t.tr("除外する"):
+        result = ConfirmDialog.ask(self.t.trf("Exclude from view list?\n{path}", path=path),
+                                   title=self.t.tr("Confirm"),
+                                   buttons=(self.t.tr("Exclude"), self.t.tr("Cancel")), parent=self.view)
+        if result == self.t.tr("Exclude"):
             path = normalize_path(path)
             self.view.add_excluded(path)
             self.root.setting_db.add_ignore_folder(path)

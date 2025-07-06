@@ -2,11 +2,11 @@ from PySide6 import QtWidgets
 
 class SettingsTabBase(QtWidgets.QWidget):
     name = "Base"
-    """設定タブの基底クラス"""
+    """Base class for setting tabs"""
     def apply_settings(self):
-        """変更を適用"""
+        """Apply modifications"""
         pass
 
     def has_unsaved_changes(self) -> bool:
-        """未保存の変更があるか"""
+        """Return True if there are unsaved edits"""
         return False

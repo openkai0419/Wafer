@@ -66,15 +66,15 @@ def new_main(*args):
 
 def get_main_based_directory() -> Path:
     if getattr(sys, 'frozen', False):
-        # PyInstallerでバンドルされた実行ファイルから実行された場合
+        # Running from PyInstaller bundle
         return Path(sys.executable).resolve().parent
     else:
-        # 通常のスクリプト実行（main.py）
+        # Normal script execution (main.py)
         main_module = sys.modules.get('__main__')
         if hasattr(main_module, '__file__'):
             return Path(main_module.__file__).resolve().parent
         else:
-            return Path.cwd()  # 対話モードなど
+            return Path.cwd()  # interactive mode etc
 
 # settingdirs
 def _resolve_app_path( relative_path: str, base_dir: Path ) -> Path:

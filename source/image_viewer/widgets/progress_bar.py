@@ -261,7 +261,7 @@ if __name__ == "__main__":
     progressBar = ThinProgressBar()
     layout.addWidget(progressBar)
 
-    btn = QtWidgets.QPushButton("ランダム進捗")
+    btn = QtWidgets.QPushButton("Random progress")
     layout.addWidget(btn)
 
     def update():

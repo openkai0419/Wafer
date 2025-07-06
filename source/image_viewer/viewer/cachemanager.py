@@ -22,7 +22,7 @@ class FadeLabel(QtWidgets.QLabel):
         self._fade_anim.setDuration(self._FADE_DURATION)
         self._fade_anim.setEasingCurve(QtCore.QEasingCurve.OutCubic)
 
-    # プロパティラッパ
+    # property wrapper
     def get_opacity(self):
         return self._opacity
 

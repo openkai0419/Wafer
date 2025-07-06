@@ -2,12 +2,12 @@ import zmq
 import threading
 import queue
 import time
-from ..profiling import logger, profiler  # ←余計なら print に置き換えてもOK
+from ..profiling import logger, profiler  # replace with print if logger is unnecessary
 from ..ipc_utils import write_port, read_port
 from ..constants import APP_FILE_NAME
 
-HEARTBEAT_INTERVAL = 5    # Subscriber が送る間隔 [秒]
-HEARTBEAT_TIMEOUT = 15     # Broker が切断と判断するまでの猶予 [秒]
+HEARTBEAT_INTERVAL = 5    # subscriber heartbeat interval [s]
+HEARTBEAT_TIMEOUT = 15     # grace period before broker considers dead [s]
 DEFAULT_PORT = 57556
 
 def get_broker_address():
@@ -30,14 +30,14 @@ class ZMQBroker:
                 self.bind_addr = f"tcp://localhost:{port}"
                 logger.info(f"Broker bound to port: {port}")
             except zmq.ZMQError:
-                # バインドできなければランダムポート
+                # fallback to random port on bind error
                 port = self.socket.bind_to_random_port("tcp://localhost")
                 self.bind_addr = f"tcp://localhost:{port}"
                 logger.info(f"Broker bound to random port: {port}")
             write_port(port)
 
         else:
-            # 明示的に指定されている場合
+            # explicitly specified address
             self.socket.bind(bind_addr)
             self.bind_addr = bind_addr
             try:
@@ -86,7 +86,7 @@ class ZMQBroker:
                     continue
 
                 if ident in self._clients and self._clients[ident][0] == "pub":
-                    # 中継処理: 全subscriberに送信
+                    # relay: send to all subscribers
                     for sub_id, (role, _) in self._clients.items():
                         if role == "sub":
                             logger.info(f"[BROKER] sending: {data}")
@@ -127,10 +127,10 @@ class ZMQPublisher:
         self.socket.connect(connect_addr)
 
         self.socket.send_multipart([b"", b"REGISTER:pub"])
-        # ACK待ち
+        # wait for ACK
         poller = zmq.Poller()
         poller.register(self.socket, zmq.POLLIN)
-        socks = dict(poller.poll(timeout=500))  # 0.5秒待機
+        socks = dict(poller.poll(timeout=500))  # wait up to 0.5s
 
         if self.socket in socks:
             frames = self.socket.recv_multipart()
@@ -231,10 +231,10 @@ class ZMQSubscriber:
     def stop(self):
         self._stop_event.set()
         try:
-            # 終了通知を送る
+            # notify broker to close
             self.socket.send_multipart([b"", b"BYE"])
         except zmq.ZMQError:
-            pass  # 通信できなければ無視してPINGで消えるのを待つ
+            pass  # ignore if network unavailable; heartbeat will time out
 
         if self._recv_thread is not None:
             self._recv_thread.join(timeout=1)

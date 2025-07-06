@@ -7,14 +7,14 @@ class InertialScrollArea(QScrollArea):
         self._velocity = 0.0
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._update_scroll)
-        self._friction = 0.88  # 摩擦係数
-        self._min_velocity = 0.2  # 停止閾値
+        self._friction = 0.88  # friction coefficient
+        self._min_velocity = 0.2  # stop threshold
 
     def wheelEvent(self, event):
         delta = event.pixelDelta().y() or event.angleDelta().y()
-        self._velocity += -delta * 0.2  # 入力をスケーリング
+        self._velocity += -delta * 0.2  # scale input
         if not self._timer.isActive():
-            self._timer.start(16)  # 約60FPS
+            self._timer.start(16)  # roughly 60 FPS
         event.accept()
 
     def _update_scroll(self):
@@ -33,8 +33,8 @@ class AutoScrollArea(QScrollArea):
         super().__init__(parent)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._scroll_step)
-        self.scroll_speed = 1  # ピクセル単位のスクロール量
-        self.scroll_interval = 30  # ms 単位
+        self.scroll_speed = 1  # scroll step in pixels
+        self.scroll_interval = 30  # interval in ms
 
     def start_auto_scroll(self, speed: int = 1, interval: int = 30):
         self.scroll_speed = speed

@@ -22,7 +22,7 @@ MAX_BATCH_SIZE = 100000
 BASE_BATCH_SIZE = 5000
 INITIAL_BATCH_SIZE = 500
 
-# 再利用可能なThreadPoolExecutor
+# reusable ThreadPoolExecutor
 executor = concurrent.futures.ThreadPoolExecutor()
 
 def get_file_ctime(path):
@@ -30,7 +30,7 @@ def get_file_ctime(path):
         stat = os.stat(path)
         if hasattr(stat, 'st_birthtime'):  # macOS
             return stat.st_birthtime
-        else:  # Unix/Linuxでは作成日時は st_ctime だが実質は変更時刻
+        else:  # on Unix/Linux st_ctime represents change time
             return stat.st_ctime
     except Exception as e:
         logger.warning(f"Failed to get ctime for {path}: {e}")
@@ -298,13 +298,13 @@ class ImageIndexer:
             return
         logger.info("[ExcludePaths] Removing existing entries under exclude paths...")
 
-        # 全ての登録済み path を取得
+        # get all registered paths
         cur = self.get_reader_cursor()
         cur.execute("SELECT path FROM images")
         all_paths = [normalize_path(row[0]) for row in cur.fetchall()]
         cur.close()
 
-        # 除外対象にマッチするものをフィルタ
+        # filter entries under excluded paths
         to_remove = [p for p in all_paths if self.is_path_excluded(p)]
         if not to_remove:
             logger.info("[ExcludePaths] No matching entries to remove.")
@@ -501,13 +501,13 @@ class ImageIndexer:
     @profiler.profile
     def update_meta_and_image(self, paths, file_info):
         total = len(paths)
-        batch_size = INITIAL_BATCH_SIZE  # ← 最初は100枚固定
+        batch_size = INITIAL_BATCH_SIZE  # start with fixed batch size
         temp_duration = BASE_DURATION
         i = 0
-        fixed_count = 0  # ← 追加：100枚で処理した回数を数える
+        fixed_count = 0  # counts how many times fixed size was used
         initial_count = 1
 
-        # 書き込みキューとスレッド初期化
+        # initialize writer queue and thread
         write_queue = queue.Queue(maxsize=int(initial_count+2))
 
         def writer_thread_func():
@@ -544,15 +544,15 @@ class ImageIndexer:
 
             duration = t1 - t0
 
-            # 🔧 最初の2回だけ100枚、以降はアダプティブ（BASE_BATCH_SIZE→適応）
+            # use fixed size for first two batches, then adapt
             if fixed_count < initial_count:
                 fixed_count += 1
                 batch_size = INITIAL_BATCH_SIZE
                 self.try_checkpoint()
             else:
                 if fixed_count == initial_count:
-                    batch_size = BASE_BATCH_SIZE  # 初期値にリセット
-                    fixed_count += 1 # もう変更しないように
+                    batch_size = BASE_BATCH_SIZE  # reset to base size
+                    fixed_count += 1  # stop changing thereafter
                     self.try_checkpoint()
                 else:
                     if duration < temp_duration:

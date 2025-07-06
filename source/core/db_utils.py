@@ -40,9 +40,6 @@ def retry_sqlite_connection(db_name: str, timeout: float = 3.0, interval: float 
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
-
-
-
 @profiler.profile
 def delete_database_files(dbname: str, retries: int = 1000, delay: float = 1.0, force: bool = False) -> bool:
     """

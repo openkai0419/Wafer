@@ -5,7 +5,7 @@ set ERRFLAG=0
 
 set VENV=venv\Scripts\activate.bat
 
-set APPNAME=MyApp
+set APPNAME=AfterImages
 
 REM 仮想環境をアクティブ化
 if exist "%VENV%" (
@@ -32,7 +32,7 @@ rmdir /s /q build 2>nul
 rmdir /s /q dist 2>nul
 
 REM 実行
-pyinstaller --noconfirm --clean combined.spec
+pyinstaller --noconfirm --clean main.spec
 
 
 REM ビルド結果の確認
@@ -43,7 +43,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo ビルド成功！dist\%APPNAME%\main.exe をご確認ください。
+echo ビルド成功。dist\%APPNAME%\main.exe をご確認ください。
 
 robocopy _resources dist\%APPNAME%\_resources /E
 

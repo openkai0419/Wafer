@@ -4,7 +4,7 @@ import queue
 import time
 from ..profiling import logger, profiler  # ←余計なら print に置き換えてもOK
 from ..ipc_utils import write_port, read_port
-from ..constants import APP_NAME
+from ..constants import APP_FILE_NAME
 
 HEARTBEAT_INTERVAL = 5    # Subscriber が送る間隔 [秒]
 HEARTBEAT_TIMEOUT = 15     # Broker が切断と判断するまでの猶予 [秒]
@@ -143,7 +143,7 @@ class ZMQPublisher:
         self._thread.start()
 
     def send(self, topic: str, message: str, table: str):
-        self._queue.put(f"{APP_NAME}:{table}:{topic}:{message}")
+        self._queue.put(f"{APP_FILE_NAME}:{table}:{topic}:{message}")
 
     def _send_loop(self):
         while not self._stop_event.is_set():

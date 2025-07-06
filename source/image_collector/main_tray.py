@@ -2,14 +2,14 @@ from PySide6 import QtWidgets, QtGui, QtCore
 
 from ..profiling import logger, profiler
 from ..debounce import qt_debounce
-from ..common import get_data_db, get_setting_db, run_side_subprocess, get_setting_file_names
+from ..common import get_data_db, get_setting_db, new_main, get_setting_file_names
 from ..core.collector import ImageIndexer
 from .watch_folder import WatchFolder
 from .watch_setting import SettingWatcher
 from .progress_notifier import close_publisher, get_viewer_count, send_show_toggle
 from ..core.setting_db import SettingDB
 from ..dialog import ConfirmDialog 
-from ..constants import APP_NAME
+from ..constants import APP_FILE_NAME, APP_NAME
 from ..core.db_utils import delete_database_files, clean_database
 from ..settings.translation import TranslatorMixin
 
@@ -96,9 +96,9 @@ class TrayApp(QtWidgets.QSystemTrayIcon, TranslatorMixin):
             self.show_state = not self.show_state
             send_show_toggle(self.show_state)
     
-    @qt_debounce(1000)
+    @qt_debounce(500)
     def show_anyways(self):
-        run_side_subprocess("main")
+        new_main("--viewer")
 
     def test(self):
         f = get_setting_file_names()

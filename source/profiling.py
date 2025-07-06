@@ -40,7 +40,7 @@ def cleanup_old_logs_safe(log_dir=LOG_PATH, keep_latest=10):
             if match:
                 pid = int(match.group(1))
                 if is_pid_active(pid):
-                    continue  # 生きているプロセスは削除回避
+                    continue  # skip active process logs
             try:
                 os.remove(f)
                 deleted += 1

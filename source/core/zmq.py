@@ -2,12 +2,12 @@ import zmq
 import threading
 import queue
 import time
-from ..profiling import logger, profiler  # replace with print if logger is unnecessary
+from ..profiling import logger, profiler 
 from ..ipc_utils import write_port, read_port
 from ..constants import APP_FILE_NAME
 
-HEARTBEAT_INTERVAL = 5    # subscriber heartbeat interval [s]
-HEARTBEAT_TIMEOUT = 15     # grace period before broker considers dead [s]
+HEARTBEAT_INTERVAL = 5
+HEARTBEAT_TIMEOUT = 15 
 DEFAULT_PORT = 57556
 
 def get_broker_address():
@@ -89,7 +89,7 @@ class ZMQBroker:
                     # relay: send to all subscribers
                     for sub_id, (role, _) in self._clients.items():
                         if role == "sub":
-                            logger.info(f"[BROKER] sending: {data}")
+                            logger.debug(f"[BROKER] sending: {data}")
                             self.socket.send_multipart([sub_id, b'', data])
 
             except zmq.ZMQError:

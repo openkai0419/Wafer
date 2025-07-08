@@ -57,14 +57,14 @@ class MouseEventManager:
         held = self._get_held_buttons(event.buttons(), exclude=button)
         click_type = ClickType.DOUBLE if double_click else ClickType.SINGLE
         key = MouseActionKey(button, click_type, held)
-        self._trigger(key)
+        self._trigger(key, event)
 
     def handle_wheel_event(self, event: QtGui.QWheelEvent):
         delta = event.angleDelta().y()
         click_type = ClickType.WHEEL_UP if delta > 0 else ClickType.WHEEL_DOWN
         held = self._get_held_buttons(event.buttons())
         key = MouseActionKey(MouseButton.NONE, click_type, held)
-        self._trigger(key)
+        self._trigger(key, event)
 
     def _get_held_buttons(self, buttons: QtCore.Qt.MouseButtons, exclude: Optional[MouseButton] = None):
         btns = []
@@ -81,14 +81,12 @@ class MouseEventManager:
                 return b
         return MouseButton.NONE
 
-    def _trigger(self, key: MouseActionKey):
+    def _trigger(self, key: MouseActionKey, *args, **kwargs):
         action = self._bindings.get(key)
         if action:
-            #print(f"[Trigger] {key}")
-            action()
+            action(*args, **kwargs)
         else:
             pass
-            #print(f"[Unbound] {key}")
 
 class MouseEventDispatcher(QtCore.QObject):
     def __init__(self, target_widget, mouse_event_manager: MouseEventManager):

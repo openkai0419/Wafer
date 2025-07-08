@@ -37,7 +37,7 @@ class CheckableCombo(QtWidgets.QToolButton, TranslatorMixin):
 
     def __init__(self, items=None, parent=None):
         super().__init__(parent)
-        self.setText(self.t.tr("Filter"))
+        self.setText(self.t.tr(" Filter "))
         self.setPopupMode(QtWidgets.QToolButton.InstantPopup)
 
         self.menu = QtWidgets.QMenu(self)
@@ -128,7 +128,7 @@ class SearchOptionPopup(QtWidgets.QDialog, TranslatorMixin):
         hlayout3 = QtWidgets.QHBoxLayout()
         self.splittext = QtWidgets.QLineEdit()
         self.splittext.textChanged.connect(lambda: self.settingchanged.emit())
-        hlayout3.addWidget(QtWidgets.QLabel(self.t.tr("Split characters:")))
+        hlayout3.addWidget(QtWidgets.QLabel(self.t.tr("Split by:")))
         hlayout3.addWidget(self.splittext)
         layout.addLayout(hlayout3)
 
@@ -210,9 +210,8 @@ class SearchOptionPopup(QtWidgets.QDialog, TranslatorMixin):
 class SingleRowOption(QtWidgets.QWidget, TranslatorMixin):
     settingchanged = QtCore.Signal()
 
-    def __init__(self, root, parent=None):
-        super().__init__(parent)
-        self.root = root
+    def __init__(self, parent=None):
+        super().__init__(parent=parent)
         self._folder_worker = None
         self.setup()
 
@@ -227,7 +226,7 @@ class SingleRowOption(QtWidgets.QWidget, TranslatorMixin):
         self.search_bar.setText(main_setting.get("query/keywords", None))
         self.search_bar.textChanged.connect(lambda: self.settingchanged.emit())
 
-        self.option_button = QtWidgets.QPushButton(self.t.tr(" Search Options ▼ "))
+        self.option_button = QtWidgets.QPushButton(self.t.tr(" Options ▼ "))
         self.option_button.clicked.connect(self.toggle_option_popup)
 
         self.keys_combo = CheckableCombo()
@@ -254,19 +253,14 @@ class SingleRowOption(QtWidgets.QWidget, TranslatorMixin):
             self.option_popup.move_to()
 
     @profiler.profile
-    def run_folder_worker(self, dbname, force_update=False):
-        selected = self.root.folder_view.get_selected_paths()
-        if not force_update and hasattr(self.root, 'run_folder') and not self.root.run_folder:
-            return
-        if self._folder_worker and self._folder_worker.selected_path == selected:
+    def run_folder_worker(self, dbname, paths):
+        if self._folder_worker and self._folder_worker.selected_path == paths:
             return
         if self._folder_worker:
             self._folder_worker.cancel()
-        self._folder_worker = FolderComboUpdateWorker(dbname, selected)
+        self._folder_worker = FolderComboUpdateWorker(dbname, paths)
         self._folder_worker.signals.finished.connect(self.keys_combo.remake)
         main_thread.start(self._folder_worker, 6)
-        if hasattr(self.root, 'run_folder'):
-            self.root.run_folder = False
 
     @profiler.profile
     def get_values(self):

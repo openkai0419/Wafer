@@ -1,15 +1,13 @@
-import os
-import psutil
-import cv2
-import numpy as np
-import multiprocessing
-from collections import OrderedDict
+import copy
+import bisect
 from PySide6 import QtWidgets, QtGui, QtCore
 
 from .loader import ImageLoaderRunnable
+from ...common import uipx
+from .calc_layout import JustifiedLayoutCalculator
 from ..viewer_settings import main_setting
 from ..thread import main_thread
-from ..mouseeventmanager import (
+from .mouseeventmanager import (
     MouseEventManager,
     MouseEventDispatcher,
     MouseActionKey,
@@ -17,126 +15,16 @@ from ..mouseeventmanager import (
     ClickType
 )
 from .cachemanager import MemoryLimitedPixmapCache, QLabelPool
+from .sizechecker import SizeMismatchChecker
+from .selectionmanager import SelectionManager
 from ...profiling import logger, profiler
 from ...common import get_resource_path
 
+from ...debounce import qt_debounce
+
 QWIDGETSIZE_MAX = 16777215
 
-def _size_mismatch(a: QtCore.QSize, b: QtCore.QSize, tolerance: int = 1):
-    return abs(a.width() - b.width()) > tolerance or abs(a.height() - b.height()) > tolerance
 
-class CalculatorSignals(QtCore.QObject):
-    layout_ready = QtCore.Signal(list)
-
-class JustifiedLayoutCalculator(QtCore.QRunnable):
-    def __init__(self, aspect_ratios, base_height, spacing, container_width):
-        super().__init__()
-        self.signals = CalculatorSignals()
-        self.aspect_ratios = aspect_ratios
-        self.base_height = base_height
-        self.spacing = spacing
-        self.container_width = container_width
-        self._cancelled = False
-
-    def cancel(self):
-        self._cancelled = True
-
-    @profiler.profile
-    def run(self):
-        rects = []
-        x, y = 0, 0
-        line = []
-        line_width = 0
-        spacing = self.spacing
-        base_height = self.base_height
-        container_width = self.container_width
-
-        append_rects = rects.append
-        aspect_ratios = self.aspect_ratios
-
-        i = 0
-        while i < len(aspect_ratios):
-            if self._cancelled:
-                return
-            aspect = aspect_ratios[i]
-            w = aspect * base_height
-
-            if line and (line_width + w + spacing * len(line)) > container_width:
-                total_spacing = spacing * (len(line) - 1)
-                scale = (container_width - total_spacing) / line_width
-                cur_x = 0
-                for a in line:
-                    if self._cancelled:
-                        return
-                    iw = int(a * base_height * scale)
-                    ih = int(base_height * scale)
-                    append_rects(QtCore.QRect(cur_x, y, iw, ih))
-                    cur_x += iw + spacing
-                y += ih + spacing
-                line.clear()
-                line_width = 0
-            else:
-                line.append(aspect)
-                line_width += w
-                i += 1
-
-        if line and not self._cancelled:
-            total_spacing = spacing * (len(line) - 1)
-            scale = (container_width - total_spacing) / line_width
-            cur_x = 0
-            for a in line:
-                iw = int(a * base_height * scale)
-                ih = int(base_height * scale)
-                append_rects(QtCore.QRect(cur_x, y, iw, ih))
-                cur_x += iw + spacing
-
-        if not self._cancelled:
-            self.signals.layout_ready.emit(rects)
-
-class SizeMismatchChecker(QtCore.QTimer):
-    def __init__(self, target_widget, debug=False):
-        super().__init__()
-        self.target_widget = target_widget
-        self.debug = debug
-        self.setInterval(400)
-        self.timeout.connect(self.check)
-
-        self._active = False
-        self._idle_timer = QtCore.QTimer()
-        self._idle_timer.setSingleShot(True)
-        self._idle_timer.setInterval(1200)
-        self._idle_timer.timeout.connect(self._on_idle)
-
-    def trigger(self):
-        self._active = True
-        self._idle_timer.start()
-        if not self.isActive():
-            self.start()
-
-    def _on_idle(self):
-        self._active = False
-
-    @profiler.profile
-    def check(self):
-        if not self._active:
-            return
-    
-        max_index = len(self.target_widget.image_paths)
-        for i, label in self.target_widget.widgets.items():
-            if i >= max_index:
-                continue 
-            pixmap = label.pixmap()
-            if pixmap is None:
-                continue
-            if _size_mismatch(pixmap.size(), label.size()):
-                #logger.debug("SizeMismatchChecker: missmatch found")
-                if i not in self.target_widget.active_threads:
-                    runnable = ImageLoaderRunnable(i, self.target_widget.image_paths[i], label.size(), self.target_widget)
-                    self.target_widget.active_threads[i] = runnable
-                    main_thread.start(runnable, 5)
-
-        logger.debug("SizeMismatchChecker: check")
-        
 
 class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
     layout_ready = QtCore.Signal()
@@ -162,13 +50,15 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
         self.max_height = int(self.screen_width)
         self.setMinimumWidth(self.min_height)
         self.spacing = 4
-
         self.calculator = None
 
         self.pixmap_cache = MemoryLimitedPixmapCache(500 * 1024 * 1024)
         self.active_threads = {}
 
         self.error_placeholder = self._generate_error_pixmap()
+
+        self.selection_manager = SelectionManager()
+        self.selection_manager.selectionChanged.connect(self._on_selection_changed)
 
         self.label_pool = QLabelPool(self)
         self.widgets = {}
@@ -178,6 +68,7 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
         self._scroll_throttle_ms = 100
 
         self.parent_scroll.verticalScrollBar().valueChanged.connect(self._on_scroll_bar_changed)
+        self.parent_scroll.horizontalScrollBar().valueChanged.connect(self._on_scroll_bar_changed)
 
         self.scroll_timer = QtCore.QTimer(self)
         self.scroll_timer.setInterval(100)
@@ -203,18 +94,91 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
         self.size_checker = SizeMismatchChecker(self)
         self.size_checker.start()
 
+    def _on_selection_changed(self, _):
+        self.update()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+
+        painter = QtGui.QPainter(self)
+        pen = QtGui.QPen(QtGui.QColor("#FF0000"), self.spacing / 2)
+        painter.setPen(pen)
+
+        # 可視領域の矩形を取得
+        scroll_y = self.parent_scroll.verticalScrollBar().value()
+        scroll_x = self.parent_scroll.horizontalScrollBar().value()
+        viewport_rect = self.parent_scroll.viewport().rect().translated(scroll_x, scroll_y)
+
+        space = self.spacing / 4
+
+        # 選択インデックスの中で可視のものだけ描く
+        for index in (set(self.selection_manager.selected_indices()) & self.visible_indices):
+            if index >= len(self.rects):
+                continue
+            rect = self.rects[index]
+            if rect.intersects(viewport_rect):
+                painter.drawRect(rect.adjusted(-space, -space, space, space))
+
+        painter.end()
+
+    @profiler.profile
+    def set_context_menu_builder(self, builder):
+        self.context_menu_builder = builder
+    
+    @profiler.profile
+    def get_selected_paths(self):
+        return [self.image_paths[i] for i in self.selection_manager.selected_indices()]
+
+    @profiler.profile
+    def _on_left_click(self, event):
+        index = self.index_at_pos(event.pos())
+        if index is not None:
+            self.selection_manager.set_selected([index]) 
+        else:
+            self.selection_manager.clear()
+
+    @profiler.profile
+    def _on_right_click(self, event):
+        index = self.index_at_pos(event.pos())
+        if index is not None:
+            path = self.image_paths[index]
+            logger.info(path)
+            logger.info(event.globalPos())
+            if self.context_menu_builder:
+                menu = self.context_menu_builder.build_menu(path)
+                menu.popup(event.globalPos())
+            self._on_left_click(event)
+        else:
+            pass
+
+    @profiler.profile
+    def index_at_pos(self, pos: QtCore.QPoint) -> int | None:
+        for i, rect in enumerate(self.rects):
+            if rect.contains(pos):
+                return i
+        return None
+
+    @profiler.profile
     def setup_mouse_bindings(self):
         self.mouse_event_manager.bind(
             MouseActionKey(MouseButton.LEFT, ClickType.SINGLE, ()),
-            lambda: print("Left click: next image")
+            self._on_left_click
+        )
+        self.mouse_event_manager.bind(
+            MouseActionKey(MouseButton.LEFT, ClickType.DOUBLE, ()),
+            self._on_left_click
+        )
+        self.mouse_event_manager.bind(
+            MouseActionKey(MouseButton.RIGHT, ClickType.SINGLE, ()),
+            self._on_right_click
         )
         self.mouse_event_manager.bind(
             MouseActionKey(MouseButton.X1, ClickType.DOUBLE, (MouseButton.RIGHT,)),
-            lambda: print("Double click X1 while holding right button")
+            lambda x: print("Double click X1 while holding right button")
         )
         self.mouse_event_manager.bind(
             MouseActionKey(MouseButton.NONE, ClickType.WHEEL_UP, (MouseButton.MIDDLE,)),
-            lambda: print("Middle press + wheel up to zoom in")
+            lambda x: print("Middle press + wheel up to zoom in")
         )
 
     def _generate_error_pixmap(self):
@@ -256,6 +220,12 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
                 main_setting.set("viewer/zoom", self.base_height)
         else:
             super().wheelEvent(event)
+
+    def _get_scroll_bars(self):
+        if self.orientation == LayoutOrientation.VERTICAL_LTR or self.orientation == LayoutOrientation.VERTICAL_RTL:
+            return self.parent_scroll.verticalScrollBar(), self.parent_scroll.horizontalScrollBar()
+        else:
+            return self.parent_scroll.horizontalScrollBar(), self.parent_scroll.verticalScrollBar()
 
     def _on_scroll_bar_changed(self):
         self._scrolling = True
@@ -328,7 +298,7 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
             self.calculator.cancel()
 
         self.calculator = JustifiedLayoutCalculator(
-            self.aspect_ratios, self.base_height, self.spacing, self.width()
+            self.aspect_ratios, self.base_height, self.spacing, self.width(), 0
         )
         self.calculator.signals.layout_ready.connect(self._on_layout_ready)
         main_thread.start(self.calculator, 7)
@@ -358,11 +328,13 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
     @profiler.profile
     def _on_layout_ready(self, rects):
         self.rects = rects
+        self.rects_tops = [r.top() for r in rects]
+        self.rects_bottoms = [r.bottom() for r in rects]
         self._update_visible_items()
 
         if self._restore_scroll_requested and self._restore_scroll_index is not None:
             if main_setting.is_first_time("viewer/scroll"):
-                self._restore_scroll_index = main_setting.get("viewer/scroll", 30)
+                self._restore_scroll_index = main_setting.get("viewer/scroll", 0)
             if self._restore_scroll_index < len(self.rects):
                 self.reinstall_scroll_index(self._restore_scroll_index)
                 self._restore_scroll_requested = False
@@ -381,7 +353,9 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
         scroll_area = self.parent_scroll
         viewport = scroll_area.viewport()
         scroll_y = scroll_area.verticalScrollBar().value()
-        view_rect = viewport.rect().translated(0, scroll_y)
+        scroll_x = scroll_area.horizontalScrollBar().value()
+
+        view_rect = viewport.rect().translated(scroll_x, scroll_y)
 
         visible_range = self._calculate_visible_indices(view_rect)
         expanded_range = self._expand_prefetch_range(visible_range)
@@ -409,29 +383,24 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
 
     @profiler.profile
     def _calculate_visible_indices(self, view_rect):
-        def find_start():
-            low, high = 0, len(self.rects) - 1
-            while low <= high:
-                mid = (low + high) // 2
-                if self.rects[mid].bottom() < view_rect.top():
-                    low = mid + 1
-                else:
-                    high = mid - 1
-            return low
+        if not self.rects:
+            return range(0, 0)
 
-        def find_end():
-            low, high = 0, len(self.rects) - 1
-            while low <= high:
-                mid = (low + high) // 2
-                if self.rects[mid].top() > view_rect.bottom():
-                    high = mid - 1
-                else:
-                    low = mid + 1
-            return high
+        # 範囲のY座標
+        top = view_rect.top()
+        bottom = view_rect.bottom()
 
-        start = find_start()
-        end = find_end()
-        return range(start, end + 1)
+        # 開始インデックス: bottom < view_rect.top() の最後の次
+        start = bisect.bisect_left(self.rects_bottoms, top)
+
+        # 終了インデックス: top > view_rect.bottom() の最初の手前
+        end = bisect.bisect_right(self.rects_tops, bottom) - 1
+
+        # 範囲外チェック
+        start = max(0, min(start, len(self.rects)-1))
+        end = max(start, min(end, len(self.rects)-1))
+
+        return range(start, end+1)
 
     @profiler.profile
     def _expand_prefetch_range(self, visible_range):

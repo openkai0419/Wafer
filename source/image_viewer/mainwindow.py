@@ -2,6 +2,7 @@ from PySide6 import QtWidgets, QtGui, QtCore
 from datetime import datetime, timedelta
 
 from .viewer.justifiedwidget import JustifiedVirtualScrollWidget
+from .viewer.justifiedwidget_menu import ViewerContextMenuBuilder
 from ..core.setting_db import SettingDB
 from ..core.query import MetaInfoSearchEngine, MetaQuery
 from ..core.zmq import ZMQSubscriber
@@ -244,15 +245,18 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.right_layout.setContentsMargins(uipx(4), uipx(4), uipx(4), uipx(4))
         self.right_layout.setSpacing(uipx(6))
 
-        self.search_row_widget = SingleRowOption(self)
+        self.search_row_widget = SingleRowOption()
         self.search_row_widget.settingchanged.connect(self.search)
         self.right_layout.addWidget(self.search_row_widget)
 
         self.viewer = AutoScrollArea()
         self.viewer.setWidgetResizable(True)
         self.viewer.verticalScrollBar().setSingleStep(25)
+        self.viewer.horizontalScrollBar().setSingleStep(25)
 
         self.content = JustifiedVirtualScrollWidget(self.viewer)
+        self.viewermenu = ViewerContextMenuBuilder(self.content, self)
+        self.content.set_context_menu_builder(self.viewermenu)
         self.viewer.setWidget(self.content)
         self.right_layout.addWidget(self.viewer)
 
@@ -385,7 +389,9 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.current_query_start_time = None
         self.content.set_precalculated_meta(paths, aspects)
         self.content.reload_visible_images()
-        self.search_row_widget.run_folder_worker(self.dbpath)
+        if self.run_folder:
+            self.search_row_widget.run_folder_worker(self.dbpath, self.folder_view.get_selected_paths())
+            self.run_folder = False
         
         with QtCore.QMutexLocker(self.query_lock):
             if self.pending_query:

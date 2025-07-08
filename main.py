@@ -30,6 +30,7 @@ set_app_user_model_id(APP_ID)
 
 def run_communicator():
     try:
+        logger.setLevel(30)
         with SafeProcessLock(f"{APP_FILE_NAME}_communicator"):
             initialize_profiling()
             shutdown_event = threading.Event()
@@ -64,6 +65,7 @@ def run_viewer():
 def run_collector(name):
     try:
         initialize_profiling()
+        logger.setLevel(30)
         with SafeProcessLock(f"{APP_FILE_NAME}_{name}"):
             app = QtWidgets.QApplication(sys.argv)
             app.setQuitOnLastWindowClosed(False) 

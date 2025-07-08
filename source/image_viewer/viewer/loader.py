@@ -7,13 +7,15 @@ from collections import OrderedDict
 from PySide6 import QtWidgets, QtGui, QtCore
 
 from ...profiling import logger, profiler
+from ...common import uipx
 
 class ImageLoaderRunnable(QtCore.QRunnable):
     def __init__(self, index, path, size, receiver):
         super().__init__()
         self.index = index
         self.path = path
-        self.size = size
+        self.margin = uipx(3)
+        self.size = size - QtCore.QSize(self.margin * 2, self.margin * 2)
         self.receiver = receiver
         self._cancelled = False
         self.isended = False

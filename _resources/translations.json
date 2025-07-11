@@ -1,4 +1,31 @@
 {
+  "Are you sure to Ingore this folder?  (This does not delete folders)\n  {path}": {
+    "ja": ""
+  },
+  "Ingore this file from view list? \n※This does not delete the file\n  -{path}": {
+    "ja": ""
+  },
+  "Confirm": {
+    "ja": ""
+  },
+  "Ignore": {
+    "ja": ""
+  },
+  "Ignore this folder": {
+    "ja": ""
+  },
+  "Ingore this file from view list? (This does not delete files)\n{path}": {
+    "ja": ""
+  },
+  "Path:": {
+    "ja": ""
+  },
+  "Remove:": {
+    "ja": ""
+  },
+  "Remove": {
+    "ja": ""
+  },
   "Copy Path": {
     "ja": ""
   },

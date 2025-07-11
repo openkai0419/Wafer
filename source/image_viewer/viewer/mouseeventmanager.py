@@ -95,16 +95,24 @@ class MouseEventDispatcher(QtCore.QObject):
         self._target = target_widget
         self._target.installEventFilter(self)
 
+        self._last_double_click_button: Optional[QtCore.Qt.MouseButton] = None
+
     def eventFilter(self, watched, event):
         if watched != self._target:
             return super().eventFilter(watched, event)
 
         if isinstance(event, QtGui.QMouseEvent):
             if event.type() == QtCore.QEvent.MouseButtonDblClick:
-                self._manager.handle_mouse_event(event, double_click=True)
+                self._last_double_click_button = event.button()
                 return False
-            elif event.type() == QtCore.QEvent.MouseButtonPress:
-                self._manager.handle_mouse_event(event, double_click=False)
+
+            elif event.type() == QtCore.QEvent.MouseButtonRelease:
+                if self._last_double_click_button == event.button():
+                    # ダブルクリック後のリリース
+                    self._manager.handle_mouse_event(event, double_click=True)
+                    self._last_double_click_button = None
+                else:
+                    self._manager.handle_mouse_event(event, double_click=False)
                 return False
 
         elif isinstance(event, QtGui.QWheelEvent):

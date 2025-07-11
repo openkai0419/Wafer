@@ -32,6 +32,12 @@ def native_sort(files):
 def split_last(lst: List):
     return (lst[:-1], lst[-1]) if lst else ([], None)
 
+def is_dark_theme():
+    palette = QtGui.QGuiApplication.palette()
+    bg_color = palette.color(QtGui.QPalette.Window)
+    # 明度を計算
+    return bg_color.value() < 128
+
 # paths
 def get_data_db(name):
     return data_path(f"data/{name}.db")

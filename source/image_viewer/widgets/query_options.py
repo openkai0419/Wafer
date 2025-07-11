@@ -189,7 +189,7 @@ class SearchOptionPopup(QtWidgets.QDialog, TranslatorMixin):
     @profiler.profile
     def get_settings(self):
         sort_by = self.sort_by_combo.currentData()
-        ascending = self.asc_radio.isChecked() if sort_by != "name" else not self.asc_radio.isChecked()
+        ascending = self.asc_radio.isChecked()
 
         kwargs = {
             "query_mode": self.query_type_combo.currentData(),

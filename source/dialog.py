@@ -2,7 +2,7 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QLabel, QPushButton,
     QHBoxLayout, QLineEdit, QSizePolicy, QApplication, QStyle
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from .settings.translation import TranslatorMixin
 
 
@@ -10,9 +10,9 @@ class BaseDialog(QDialog):
     def __init__(self, message, title="Dialog", buttons=("OK", "Cancel"),
                  icon_type=QStyle.SP_MessageBoxInformation, parent=None):
         super().__init__(parent)
+        self.message = message
         self.setWindowTitle(title)
         self.setWindowModality(Qt.ApplicationModal)
-        self.setMinimumWidth(300)
 
         self.result_text = None
 
@@ -49,6 +49,27 @@ class BaseDialog(QDialog):
 
         self.setLayout(self.main_layout)
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.adjust_to_message()
+
+    def adjust_to_message(self):
+        min_width = 300
+        max_width = 800
+        message = self.message
+
+        metrics = self.message_label.fontMetrics()
+        # 行ごとに計算
+        lines = message.splitlines()
+        line_widths = [metrics.boundingRect(line).width() for line in lines]
+        max_line_width = max(line_widths, default=min_width) + 50  # 余白
+
+        final_width = max(min_width, min(max_line_width, max_width))
+
+        self.message_label.setMinimumWidth(final_width)
+        self.adjustSize()
+
+        
     def _on_button(self, text):
         self.result_text = text
         self.accept()

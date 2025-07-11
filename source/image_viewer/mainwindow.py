@@ -2,14 +2,12 @@ from PySide6 import QtWidgets, QtGui, QtCore
 from datetime import datetime, timedelta
 
 from .viewer.justifiedwidget import JustifiedVirtualScrollWidget
-from .viewer.justifiedwidget_menu import ViewerContextMenuBuilder
 from ..core.setting_db import SettingDB
 from ..core.query import MetaInfoSearchEngine, MetaQuery
 from ..core.zmq import ZMQSubscriber
 from ..debounce import qt_debounce
 from .widgets.loading_overlay import OverlayLoadingIndicator
 from .widgets.foldertree import LazyFolderTreeView
-from .widgets.foldertree_menu import FolderContextMenuBuilder
 from .widgets.query_options import SingleRowOption
 from .widgets.scrollarea import InertialScrollArea, AutoScrollArea
 from .widgets.progress_bar import ThinProgressBar
@@ -24,6 +22,7 @@ from ..settings.setting_window import SettingsWindow
 from ..settings.db_settings import DataBaseSettings
 from ..dialog import InputDialog, ConfirmDialog
 from ..settings.translation import TranslatorMixin
+from .actions import ContextMenuBuilder, FolderContextMenuBuilder, add_menu_actions_recursively
 
 class WorkerSignals(QtCore.QObject):
     finished = QtCore.Signal(object, object)
@@ -255,8 +254,9 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.viewer.horizontalScrollBar().setSingleStep(25)
 
         self.content = JustifiedVirtualScrollWidget(self.viewer)
-        self.viewermenu = ViewerContextMenuBuilder(self.content, self)
-        self.content.set_context_menu_builder(self.viewermenu)
+        viewer_menu = ContextMenuBuilder(self)
+        #add_menu_actions_recursively(self, viewer_menu.build_menu(None))
+        self.content.set_context_menu_builder(viewer_menu)
         self.viewer.setWidget(self.content)
         self.right_layout.addWidget(self.viewer)
 

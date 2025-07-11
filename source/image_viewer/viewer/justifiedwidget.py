@@ -1,9 +1,10 @@
 import copy
 import bisect
+import math
 from PySide6 import QtWidgets, QtGui, QtCore
 
 from .loader import ImageLoaderRunnable
-from ...common import uipx
+from ...common import uipx, is_dark_theme
 from .calc_layout import JustifiedLayoutCalculator
 from ..viewer_settings import main_setting
 from ..thread import main_thread
@@ -19,11 +20,7 @@ from .sizechecker import SizeMismatchChecker
 from .selectionmanager import SelectionManager
 from ...profiling import logger, profiler
 from ...common import get_resource_path
-
 from ...debounce import qt_debounce
-
-QWIDGETSIZE_MAX = 16777215
-
 
 
 class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
@@ -49,7 +46,7 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
         self.min_height = int(self.screen_width / 30)
         self.max_height = int(self.screen_width)
         self.setMinimumWidth(self.min_height)
-        self.spacing = 4
+        self.spacing = uipx(4)
         self.calculator = None
 
         self.pixmap_cache = MemoryLimitedPixmapCache(500 * 1024 * 1024)
@@ -97,26 +94,29 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
     def _on_selection_changed(self, _):
         self.update()
 
+    @profiler.profile
     def paintEvent(self, event):
         super().paintEvent(event)
 
         painter = QtGui.QPainter(self)
-        pen = QtGui.QPen(QtGui.QColor("#FF0000"), self.spacing / 2)
-        painter.setPen(pen)
 
-        # 可視領域の矩形を取得
         scroll_y = self.parent_scroll.verticalScrollBar().value()
         scroll_x = self.parent_scroll.horizontalScrollBar().value()
         viewport_rect = self.parent_scroll.viewport().rect().translated(scroll_x, scroll_y)
-
         space = self.spacing / 4
 
-        # 選択インデックスの中で可視のものだけ描く
+        if is_dark_theme():
+            pen = QtGui.QPen(QtGui.QColor("#FFFFFF"), max(1, self.spacing / 2))
+        else:
+            pen = QtGui.QPen(QtGui.QColor("#000000"), max(1, self.spacing / 2))
+        painter.setPen(pen)
+
         for index in (set(self.selection_manager.selected_indices()) & self.visible_indices):
             if index >= len(self.rects):
                 continue
             rect = self.rects[index]
             if rect.intersects(viewport_rect):
+                painter.setBrush(QtCore.Qt.NoBrush)
                 painter.drawRect(rect.adjusted(-space, -space, space, space))
 
         painter.end()
@@ -133,9 +133,27 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
     def _on_left_click(self, event):
         index = self.index_at_pos(event.pos())
         if index is not None:
-            self.selection_manager.set_selected([index]) 
+            modifiers = event.modifiers()
+            last = self.selection_manager.last_added()
+            if modifiers & (QtCore.Qt.ControlModifier | QtCore.Qt.MetaModifier):
+                self.selection_manager.toggle(index)
+            elif event.modifiers() & QtCore.Qt.ShiftModifier and last is not None:
+                if last < index:
+                    adding  =list(range(last, index + 1))
+                    self.selection_manager.add_selection(adding, -1)
+                else:
+                    adding  =list(range(index, last + 1))
+                    self.selection_manager.add_selection(adding, 0)
+            else: 
+                if not self.selection_manager.is_selected(index):
+                    self.selection_manager.set_selected([index], 0) 
+                else:
+                    if len(self.selection_manager.selected_indices()) > 1:
+                        self.selection_manager.set_selected([index], 0)
+                    else:
+                        self.selection_manager.deselect(index)
         else:
-            self.selection_manager.clear()
+            pass
 
     @profiler.profile
     def _on_right_click(self, event):
@@ -147,9 +165,18 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
             if self.context_menu_builder:
                 menu = self.context_menu_builder.build_menu(path)
                 menu.popup(event.globalPos())
-            self._on_left_click(event)
+            if not self.selection_manager.is_selected(index):
+                self._on_left_click(event) 
         else:
             pass
+
+    @profiler.profile    
+    def _on_double_click(self, event):
+        index = self.index_at_pos(event.pos())
+        if index is not None:
+            if not self.selection_manager.is_selected(index):
+                self._on_left_click(event)
+                pass
 
     @profiler.profile
     def index_at_pos(self, pos: QtCore.QPoint) -> int | None:
@@ -166,7 +193,7 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
         )
         self.mouse_event_manager.bind(
             MouseActionKey(MouseButton.LEFT, ClickType.DOUBLE, ()),
-            self._on_left_click
+            self._on_double_click
         )
         self.mouse_event_manager.bind(
             MouseActionKey(MouseButton.RIGHT, ClickType.SINGLE, ()),
@@ -220,12 +247,6 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
                 main_setting.set("viewer/zoom", self.base_height)
         else:
             super().wheelEvent(event)
-
-    def _get_scroll_bars(self):
-        if self.orientation == LayoutOrientation.VERTICAL_LTR or self.orientation == LayoutOrientation.VERTICAL_RTL:
-            return self.parent_scroll.verticalScrollBar(), self.parent_scroll.horizontalScrollBar()
-        else:
-            return self.parent_scroll.horizontalScrollBar(), self.parent_scroll.verticalScrollBar()
 
     def _on_scroll_bar_changed(self):
         self._scrolling = True
@@ -298,7 +319,7 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
             self.calculator.cancel()
 
         self.calculator = JustifiedLayoutCalculator(
-            self.aspect_ratios, self.base_height, self.spacing, self.width(), 0
+            self.aspect_ratios, self.base_height, self.spacing, self.width(), self.height(), 1
         )
         self.calculator.signals.layout_ready.connect(self._on_layout_ready)
         main_thread.start(self.calculator, 7)
@@ -333,10 +354,13 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
         self._update_visible_items()
 
         if self._restore_scroll_requested and self._restore_scroll_index is not None:
+            index = self._restore_scroll_index
             if main_setting.is_first_time("viewer/scroll"):
-                self._restore_scroll_index = main_setting.get("viewer/scroll", 0)
-            if self._restore_scroll_index < len(self.rects):
-                self.reinstall_scroll_index(self._restore_scroll_index)
+                index = main_setting.get("viewer/scroll", 0)
+            elif self.selection_manager.last_added():
+                index = self.selection_manager.last_added()
+            if index < len(self.rects):
+                self.reinstall_scroll_index(index)
                 self._restore_scroll_requested = False
         self.layout_ready.emit()
 
@@ -380,6 +404,7 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
         if self.rects:
             total_height = self.rects[-1].bottom() + self.spacing
             self.setMinimumHeight(total_height)
+        self.update()
 
     @profiler.profile
     def _calculate_visible_indices(self, view_rect):

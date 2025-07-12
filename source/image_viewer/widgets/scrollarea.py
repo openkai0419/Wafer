@@ -1,11 +1,16 @@
-from PySide6.QtWidgets import QScrollArea
-from PySide6.QtCore import QTimer
+from PySide6 import QtWidgets, QtCore, QtGui
 
-class InertialScrollArea(QScrollArea):
+class ScrollAreaBase(QtWidgets.QScrollArea):
+    resized = QtCore.Signal()
+    def resizeEvent(self, arg__1):
+        self.resized.emit()
+        return super().resizeEvent(arg__1)
+
+class InertialScrollArea(ScrollAreaBase):
     def __init__(self):
         super().__init__()
         self._velocity = 0.0
-        self._timer = QTimer(self)
+        self._timer = QtCore.QTimer(self)
         self._timer.timeout.connect(self._update_scroll)
         self._friction = 0.88  # friction coefficient
         self._min_velocity = 0.2  # stop threshold
@@ -28,10 +33,10 @@ class InertialScrollArea(QScrollArea):
         bar.setValue(round(new_val))
         self._velocity *= self._friction
 
-class AutoScrollArea(QScrollArea):
+class AutoScrollArea(ScrollAreaBase):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.timer = QTimer(self)
+        self.timer = QtCore.QTimer(self)
         self.timer.timeout.connect(self._scroll_step)
         self.scroll_speed = 1  # scroll step in pixels
         self.scroll_interval = 30  # interval in ms

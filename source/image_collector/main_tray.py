@@ -33,6 +33,9 @@ class TrayApp(QtWidgets.QSystemTrayIcon, TranslatorMixin):
         self.show_action = self.menu.addAction(self.t.tr("Open New Window"))
         self.show_action.triggered.connect(self.show_anyways)
         self.menu.addSeparator()
+        self.reload_action = self.menu.addAction(self.t.tr("ReScan All"))
+        self.reload_action.triggered.connect(self.rescan)
+        self.menu.addSeparator()
         self.test_action = self.menu.addAction(self.t.tr("Test"))
         self.test_action.triggered.connect(self.test)
         self.menu.addSeparator()
@@ -70,6 +73,10 @@ class TrayApp(QtWidgets.QSystemTrayIcon, TranslatorMixin):
         self.setting_watcher.start()
         logger.debug("tray app start watching end")
     
+    def rescan(self):
+        if self.folder_watcher:
+            self.folder_watcher.rescan_all()
+
     @profiler.profile
     def reload_parent_folder(self, folderlist):
         logger.debug(f"parent folder {folderlist}")

@@ -1,12 +1,16 @@
 from enum import Enum, auto
 from typing import Callable, Dict, Optional, Tuple
-from PySide6 import QtCore, QtGui
+from PySide6 import QtCore, QtGui, QtWidgets
+
+from ...profiling import logger, profiler
 
 class ClickType(Enum):
     SINGLE = auto()
     DOUBLE = auto()
     WHEEL_UP = auto()
     WHEEL_DOWN = auto()
+    DRAG_START = auto()
+    DROP = auto()
 
 
 class MouseButton(Enum):
@@ -35,9 +39,16 @@ class MouseActionKey:
         )
 
     def __repr__(self):
-        held = '+'.join(btn.name for btn in sorted(self.held_buttons, key=lambda b: b.value))
-        return f"{'+'.join([held, self.button.name])} {self.click_type.name}" if held else f"{self.button.name} {self.click_type.name}"
-
+        try:
+            held_list = list(self.held_buttons)
+            held_list.sort(key=lambda b: b.value if isinstance(b.value, int) else int(b.value))
+            held = '+'.join(btn.name for btn in held_list)
+        except Exception as e:
+            held = f"[ERROR sorting held_buttons: {e}]"
+        return (
+            f"{'+'.join([held, self.button.name])} {self.click_type.name}"
+            if held else f"{self.button.name} {self.click_type.name}"
+        )
 
 class MouseEventManager:
     def __init__(self):
@@ -66,6 +77,18 @@ class MouseEventManager:
         key = MouseActionKey(MouseButton.NONE, click_type, held)
         self._trigger(key, event)
 
+    def handle_drag_start(self, event: QtGui.QMouseEvent):
+        button = self._map_qt_button(event.button())
+        held = self._get_held_buttons(event.buttons(), exclude=button)
+        key = MouseActionKey(button, ClickType.DRAG_START, held)
+        self._trigger(key, event)
+
+    def handle_drop(self, event: QtGui.QDropEvent):
+        # ドロップはボタンが無いので NONE
+        held = ()
+        key = MouseActionKey(MouseButton.NONE, ClickType.DROP, held)
+        self._trigger(key, event)
+
     def _get_held_buttons(self, buttons: QtCore.Qt.MouseButtons, exclude: Optional[MouseButton] = None):
         btns = []
         for qt_btn in [QtCore.Qt.LeftButton, QtCore.Qt.RightButton, QtCore.Qt.MiddleButton, QtCore.Qt.XButton1, QtCore.Qt.XButton2]:
@@ -85,38 +108,56 @@ class MouseEventManager:
         action = self._bindings.get(key)
         if action:
             action(*args, **kwargs)
-        else:
-            pass
 
 class MouseEventDispatcher(QtCore.QObject):
     def __init__(self, target_widget, mouse_event_manager: MouseEventManager):
         super().__init__(target_widget)
         self._manager = mouse_event_manager
         self._target = target_widget
+        self._target.setAcceptDrops(True)
         self._target.installEventFilter(self)
 
         self._last_double_click_button: Optional[QtCore.Qt.MouseButton] = None
+
+        self._press_pos: Optional[QtCore.QPoint] = None
+        self._drag_threshold = QtWidgets.QApplication.startDragDistance()
 
     def eventFilter(self, watched, event):
         if watched != self._target:
             return super().eventFilter(watched, event)
 
         if isinstance(event, QtGui.QMouseEvent):
-            if event.type() == QtCore.QEvent.MouseButtonDblClick:
+            if event.type() == QtCore.QEvent.MouseButtonPress:
+                self._press_pos = event.pos()
+
+            elif event.type() == QtCore.QEvent.MouseMove:
+                if self._press_pos is not None:
+                    if (event.pos() - self._press_pos).manhattanLength() >= self._drag_threshold:
+                        self._manager.handle_drag_start(event)
+                        self._press_pos = None
+
+            elif event.type() == QtCore.QEvent.MouseButtonDblClick:
                 self._last_double_click_button = event.button()
-                return False
 
             elif event.type() == QtCore.QEvent.MouseButtonRelease:
                 if self._last_double_click_button == event.button():
-                    # ダブルクリック後のリリース
                     self._manager.handle_mouse_event(event, double_click=True)
                     self._last_double_click_button = None
                 else:
                     self._manager.handle_mouse_event(event, double_click=False)
-                return False
+                self._press_pos = None
 
         elif isinstance(event, QtGui.QWheelEvent):
             self._manager.handle_wheel_event(event)
+
+        elif isinstance(event, QtGui.QDragEnterEvent):
+            event.acceptProposedAction()
             return False
+
+        elif isinstance(event, QtGui.QDropEvent):
+            if event.type() == QtCore.QEvent.Drop:
+                self._manager.handle_drop(event)
+                return True
+            return True
 
         return super().eventFilter(watched, event)

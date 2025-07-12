@@ -5,7 +5,7 @@ set ERRFLAG=0
 
 set VENV=venv\Scripts\activate.bat
 
-set APPNAME=AfterImages
+set APPNAME=FlashBackImageViewer
 
 REM Activate virtual environment
 if exist "%VENV%" (

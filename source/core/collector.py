@@ -260,12 +260,13 @@ class ImageIndexer:
         stack = [str(root_path)]
         while stack:
             current = stack.pop()
-
+            self._emit_progress(0, 1)
             full_path = normalize_path(current)
+            
             if self.is_path_excluded(full_path):
                 logger.debug(f"[Excluded] Skipping file: {full_path}")
+                self._emit_progress(1, 0)
                 continue
-
             try:
                 with os.scandir(current) as it:
                     for entry in it:
@@ -274,7 +275,9 @@ class ImageIndexer:
                             yield normalize_path(entry.path), (stat.st_mtime, stat.st_size)
                         elif entry.is_dir(follow_symlinks=False):
                             stack.append(entry.path)
+                self._emit_progress(1, 0)
             except Exception:
+                self._emit_progress(1, 0)
                 continue
 
     @profiler.profile
@@ -333,8 +336,11 @@ class ImageIndexer:
         logger.info("UPDATE_INDEX")
         current = {}
         for path in root_paths:
+            self._emit_progress(0, 1)
             for norm_p, info in self.scan_directory_fast(path):
                 current[norm_p] = info
+            self._emit_progress(1, 0)
+            
 
         previous = {}
         cur = self.get_reader_cursor()

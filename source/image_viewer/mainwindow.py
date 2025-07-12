@@ -258,6 +258,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         #add_menu_actions_recursively(self, viewer_menu.build_menu(None))
         self.content.set_context_menu_builder(viewer_menu)
         self.viewer.setWidget(self.content)
+        self.viewer.resized.connect(self.content.on_resize_event)
         self.right_layout.addWidget(self.viewer)
 
         self.splitter.addWidget(right_panel)
@@ -387,8 +388,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.last_executed_query = self.current_runnable.query
         self.current_runnable = None
         self.current_query_start_time = None
-        self.content.set_precalculated_meta(paths, aspects)
-        self.content.reload_visible_images()
+        self.content.set_paths(paths, aspects)
         if self.run_folder:
             self.search_row_widget.run_folder_worker(self.dbpath, self.folder_view.get_selected_paths())
             self.run_folder = False

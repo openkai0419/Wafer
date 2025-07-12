@@ -126,8 +126,8 @@ class ContextMenuBuilder(ActionManager):
         justified_menus = [
             {"path": self.t.tr("Path"), "separator": True},
             {"path": self.t.tr("Copy Path"), "shortcut": "Ctrl+C", "callback": lambda: self.copy_path(path)},
-            {"path": self.t.tr("Open File"), "shortcut": "Ctrl+F", "callback": lambda: self.run_in_explorer(path)},
             {"path": self.t.tr("Reveal in Explorer"), "shortcut": "Ctrl+O", "callback": lambda: self.show_in_explorer(path)},
+            {"path": self.t.tr("Open File"), "shortcut": "Ctrl+F", "callback": lambda: self.run_in_explorer(path)},
         ]
         self.builder.build(menu, justified_menus, parent=self.parent)
         return menu

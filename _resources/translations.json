@@ -1,4 +1,19 @@
 {
+  "Are you sure to Remove this folder?  (This does not delete folders)\\  {path}": {
+    "ja": ""
+  },
+  "Remove from view": {
+    "ja": ""
+  },
+  "Open File": {
+    "ja": ""
+  },
+  "Path": {
+    "ja": ""
+  },
+  "Reveal in Explorer": {
+    "ja": ""
+  },
   "Are you sure to Ingore this folder?  (This does not delete folders)\n  {path}": {
     "ja": ""
   },

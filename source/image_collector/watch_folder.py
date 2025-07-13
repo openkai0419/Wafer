@@ -7,7 +7,7 @@ from .progress_notifier import ProgressAggregator
 from ..debounce import qt_debounce
 
 from ..profiling import logger, profiler
-from ..common import IMAGE_EXTENSIONS
+from ..funcs import IMAGE_EXTENSIONS
 extensions = IMAGE_EXTENSIONS
 
 _progress_aggregator = ProgressAggregator("*")

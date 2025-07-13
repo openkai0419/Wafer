@@ -1,5 +1,5 @@
 from PySide6 import QtWidgets, QtCore, QtGui, QtWebEngineWidgets
-from ...common import get_resource_path, uipx
+from ...funcs import get_resource_path, uipx
 from ...profiling import logger, profiler
 
 class OverlayLoadingIndicator(QtWidgets.QWidget):

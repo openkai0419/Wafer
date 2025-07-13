@@ -11,7 +11,7 @@ from PIL import Image
 from PySide6 import QtGui
 
 from ..profiling import logger, profiler
-from ..common import normalize_path, IMAGE_EXTENSIONS
+from ..funcs import normalize_path, IMAGE_EXTENSIONS
 from .db_utils import connect_with_retry
 
 extensions = IMAGE_EXTENSIONS
@@ -35,7 +35,6 @@ def get_file_ctime(path):
     except Exception as e:
         logger.warning(f"Failed to get ctime for {path}: {e}")
         return None
-
 
 def read_info(path):
     try:
@@ -61,11 +60,12 @@ def process_image(p, file_info):
         info = read_info(p)
         meta_info = [(str(p), str(k), str(v)) for k, v in info.items()]
         meta_info.append((str(p), "__filepath__", str(p)))
-        return (p, aspect, mtime, fsize, ctime, collected_at, meta_info, None)
+        name = os.path.basename(p)
+        return (p, name, aspect, mtime, fsize, ctime, collected_at, meta_info, None)
     except Exception as e:
         logger.warning(f"Failed to process {p}: {e}")
         mtime, fsize = file_info.get(p, (None, None))
-        return (p, None, mtime, fsize, None, time.time(), [], 'fail')
+        return (p, name, None, mtime, fsize, None, time.time(), [], 'fail')
 
 class ImageIndexer:
     def __init__(self, db_path):
@@ -213,6 +213,7 @@ class ImageIndexer:
         cur.execute("""
             CREATE TABLE IF NOT EXISTS meta (
                 path TEXT PRIMARY KEY,
+                name TEXT,
                 aspect_ratio REAL,
                 mtime REAL,
                 size INTEGER,
@@ -240,6 +241,7 @@ class ImageIndexer:
         cur.execute("CREATE INDEX IF NOT EXISTS idx_images_mtime ON images(mtime)")
         
         cur.execute("CREATE INDEX IF NOT EXISTS idx_meta_path ON meta(path)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_meta_name ON meta(name)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_meta_aspect_ratio ON meta(aspect_ratio)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_meta_mtime ON meta(mtime)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_meta_size ON meta(size)")
@@ -262,7 +264,7 @@ class ImageIndexer:
             current = stack.pop()
             self._emit_progress(0, 1)
             full_path = normalize_path(current)
-            
+
             if self.is_path_excluded(full_path):
                 logger.debug(f"[Excluded] Skipping file: {full_path}")
                 self._emit_progress(1, 0)
@@ -456,12 +458,12 @@ class ImageIndexer:
         meta_info_entries = []
         failed_entries = []
 
-        for p, aspect, mtime, fsize, ctime, collected_at, meta_info, status in results:
+        for p, name, aspect, mtime, fsize, ctime, collected_at, meta_info, status in results:
             if status == 'fail':
                 failed_entries.append((str(p), mtime, fsize))
                 continue
             image_entries.append((str(p), mtime, fsize))
-            meta_entries.append((str(p), aspect, mtime, fsize, ctime, collected_at))
+            meta_entries.append((str(p), name, aspect, mtime, fsize, ctime, collected_at))
             meta_info_entries.extend(meta_info)
 
         return image_entries, meta_entries, meta_info_entries, failed_entries
@@ -486,9 +488,10 @@ class ImageIndexer:
 
             if meta_entries:
                 cur.executemany("""
-                    INSERT INTO meta (path, aspect_ratio, mtime, size, created, collected_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO meta (path, name, aspect_ratio, mtime, size, created, collected_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(path) DO UPDATE SET 
+                        name = excluded.name,
                         aspect_ratio = excluded.aspect_ratio,
                         mtime = excluded.mtime,
                         size = excluded.size,

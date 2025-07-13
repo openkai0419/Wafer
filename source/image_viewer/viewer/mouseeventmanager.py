@@ -149,6 +149,7 @@ class MouseEventDispatcher(QtCore.QObject):
 
         elif isinstance(event, QtGui.QWheelEvent):
             self._manager.handle_wheel_event(event)
+            return True
 
         elif isinstance(event, QtGui.QDragEnterEvent):
             event.acceptProposedAction()

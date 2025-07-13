@@ -136,7 +136,8 @@ class SearchOptionPopup(QtWidgets.QDialog, TranslatorMixin):
         layout.addWidget(QtWidgets.QLabel(self.t.tr("Sort:")))
         self.sort_by_combo = QtWidgets.QComboBox()
         self.sort_display_map = {
-            "name": self.t.tr("File Path"),
+            "path": self.t.tr("Path"),
+            "name": self.t.tr("Name"),
             "created": self.t.tr("Created"),
             "modified": self.t.tr("Modified"),
             "collected": self.t.tr("Collected"),

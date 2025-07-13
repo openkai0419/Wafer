@@ -1,6 +1,6 @@
 from pathlib import Path
 import time
-from .common import data_path
+from .funcs import data_path
 
 _PORT_FILE = Path(data_path("ipc_port.txt"))
 

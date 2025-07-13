@@ -4,7 +4,7 @@ import json
 from typing import List, Dict
 
 from ..profiling import logger, profiler
-from ..common import normalize_path
+from ..funcs import normalize_path
 from .db_utils import retry_sqlite_connection
 
 

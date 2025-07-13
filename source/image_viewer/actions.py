@@ -1,6 +1,6 @@
 from PySide6 import QtWidgets, QtGui, QtCore
 
-from ..common import normalize_path, uipx
+from ..funcs import normalize_path, uipx
 from ..profiling import logger, profiler
 from ..dialog import ConfirmDialog
 from ..settings.translation import TranslatorMixin

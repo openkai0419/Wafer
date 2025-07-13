@@ -71,7 +71,7 @@ class SelectionManager(QtCore.QObject):
             self._emit(changed)
 
     def selected_indices(self):
-        return sorted(self._selected)
+        return self._selected
 
     def count(self) -> int:
         return len(self._selected)

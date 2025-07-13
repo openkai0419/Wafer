@@ -111,7 +111,16 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
         self.label_pool = QLabelPool(self)
         self.widgets = {}
         self.visible_indices = set()
-        
+
+        self._drag_rect_start = None
+        self._drag_rect_current = None
+        self._is_shift_dragging = False
+        self._drag_state = False
+        self._disable_next_click = False
+
+        self.size_checker = SizeMismatchChecker(self)
+        self.size_checker.start()
+
         self._scroll_last_time = 0
         self._scroll_throttle_ms = 100
 
@@ -129,8 +138,7 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
         self._scroll_idle_timer.setInterval(100)
         self._scroll_idle_timer.timeout.connect(self._on_scroll_idle)
 
-        self.size_checker = SizeMismatchChecker(self)
-        self.size_checker.start()
+        self.installEventFilter(self)
 
     def _on_selection_changed(self, _):
         self.last_selections = self.get_selected_paths()
@@ -147,13 +155,11 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
         viewport_rect = self.parent_scroll.viewport().rect().translated(scroll_x, scroll_y)
         space = self.spacing / 4
 
-        if is_dark_theme():
-            pen = QtGui.QPen(QtGui.QColor("#3B80FF"), max(1, self.spacing / 2))
-        else:
-            pen = QtGui.QPen(QtGui.QColor("#3B80FF"), max(1, self.spacing / 2))
-        painter.setPen(pen)
+        if not hasattr(self, '_selection_pen'):
+            self._selection_pen = QtGui.QPen(QtGui.QColor("#3B80FF"), max(1, self.spacing / 2))
+        painter.setPen(self._selection_pen)
 
-        for index in (set(self.selection_manager.selected_indices()) & self.visible_indices):
+        for index in (self.selection_manager.selected_indices() & self.visible_indices):
             if index >= len(self.rects):
                 continue
             rect = self.rects[index]
@@ -161,6 +167,13 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
                 painter.setBrush(QtCore.Qt.NoBrush)
                 painter.drawRect(rect.adjusted(-space, -space, space, space))
 
+        if self._is_shift_dragging and self._drag_rect_start and self._drag_rect_current:
+            selection_rect = QtCore.QRect(self._drag_rect_start, self._drag_rect_current).normalized()
+            color = QtGui.QColor(59, 128, 255, 50)  # 半透明の青
+            border_color = QtGui.QColor(59, 128, 255)
+            painter.setBrush(color)
+            painter.setPen(QtGui.QPen(border_color, 1, QtCore.Qt.DashLine))
+            painter.drawRect(selection_rect)
         painter.end()
 
     @profiler.profile
@@ -173,17 +186,26 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
 
     @profiler.profile
     def index_at_pos(self, pos: QtCore.QPoint) -> int | None:
-        for i, rect in enumerate(self.rects):
-            if rect.contains(pos):
+        y = pos.y()
+        start = bisect.bisect_left(self.rects_bottoms, y)
+        end = bisect.bisect_right(self.rects_tops, y)
+        for i in range(start, end):
+            if self.rects[i].contains(pos):
                 return i
         return None
 
     def _on_left_ctrl_click(self, event):
+        if self._disable_next_click:
+            self._disable_next_click = False
+            return
         index = self.index_at_pos(event.pos())
         if index is not None:
             self.selection_manager.toggle(index)
 
     def _on_left_shift_click(self, event):
+        if self._disable_next_click:
+            self._disable_next_click = False
+            return
         index = self.index_at_pos(event.pos())
         if index is not None:
             last = self.selection_manager.last_added()
@@ -198,6 +220,9 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
                 self.selection_manager.add_selection([index], 0)
 
     def _on_left_single_click(self, event):
+        if self._disable_next_click:
+            self._disable_next_click = False
+            return
         index = self.index_at_pos(event.pos())
         if index is not None:    
             if not self.selection_manager.is_selected(index):
@@ -210,10 +235,13 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
 
     @profiler.profile
     def _on_left_click(self, event):
+        if self._disable_next_click:
+            self._disable_next_click = False
+            return
         modifiers = event.modifiers()
         if modifiers & (QtCore.Qt.ControlModifier | QtCore.Qt.MetaModifier):
             self._on_left_ctrl_click(event)
-        elif event.modifiers() & QtCore.Qt.ShiftModifier:
+        elif modifiers & QtCore.Qt.ShiftModifier:
             self._on_left_shift_click(event)
         else: 
             self._on_left_single_click(event)
@@ -221,6 +249,9 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
 
     @profiler.profile
     def _on_right_click(self, event):
+        if self._disable_next_click:
+            self._disable_next_click = False
+            return
         index = self.index_at_pos(event.pos())
         if index is not None:
             path = self.image_paths[index]
@@ -234,11 +265,72 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
 
     @profiler.profile    
     def _on_double_click(self, event):
+        if self._disable_next_click:
+            self._disable_next_click = False
+            return
         index = self.index_at_pos(event.pos())
         if index is not None:
             if not self.selection_manager.is_selected(index):
                 self._on_left_click(event)
                 pass
+
+    def _on_drag(self, event):
+        modifiers = event.modifiers()
+        if modifiers & QtCore.Qt.ShiftModifier and modifiers & (QtCore.Qt.ControlModifier | QtCore.Qt.MetaModifier):
+            self._on_shift_ctrl_drag(event)
+        elif modifiers & QtCore.Qt.ShiftModifier:
+            self._on_shift_drag(event)
+        else: 
+            self._on_drag_start(event)
+
+    def eventFilter(self, watched, event):
+        if event.type() == QtCore.QEvent.MouseMove and self._is_shift_dragging:
+            self._drag_rect_current = event.pos()
+            self.update()
+        elif event.type() == QtCore.QEvent.MouseButtonRelease and self._is_shift_dragging:
+            self._drag_rect_current = event.pos()
+            self._is_shift_dragging = False
+            if self._drag_state == True:
+                self._finalize_rectangle_selection(add=True)
+            else:
+                self._finalize_rectangle_selection()
+            self._drag_rect_start = None
+            self._drag_rect_current = None
+            self.update()
+        return super().eventFilter(watched, event)
+
+    def _on_shift_ctrl_drag(self, event):
+        self._drag_state = True
+        self._start_shift_drag(event)
+
+    def _on_shift_drag(self, event):
+        self._drag_state = False
+        self._start_shift_drag(event)
+
+    def _start_shift_drag(self, event):
+        if not self._is_shift_dragging:
+            self._is_shift_dragging = True
+            self._drag_rect_start = event.pos()
+            self._drag_rect_current = event.pos()
+            self._disable_next_click = True
+            self.update()
+
+    def _finalize_rectangle_selection(self, add=False):
+        if not self._drag_rect_start or not self._drag_rect_current:
+            return
+        rect = QtCore.QRect(self._drag_rect_start, self._drag_rect_current).normalized()
+        selected_indices = []
+        for i, r in enumerate(self.rects):
+            if rect.intersects(r):
+                selected_indices.append(i)
+
+        if selected_indices:
+            if add:
+                self.selection_manager.add_selection(selected_indices, last=-1)
+            else:
+                self.selection_manager.set_selected(selected_indices, last=-1)
+        else:
+            logger.info("No items in selection rectangle.")
 
     @profiler.profile
     def _on_drag_start(self, event):
@@ -312,14 +404,23 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
         )
         self.mouse_event_manager.bind(
             MouseActionKey(MouseButton.NONE, ClickType.DRAG_START, (MouseButton.LEFT,)),
-            self._on_drag_start
+            self._on_drag
         )
         self.mouse_event_manager.bind(
             MouseActionKey(MouseButton.NONE, ClickType.DROP, ()),
             self._on_drop
         )
         self.mouse_event_manager.bind(
-            MouseActionKey(MouseButton.NONE, ClickType.WHEEL_UP, (MouseButton.MIDDLE,)),
+            MouseActionKey(MouseButton.NONE, ClickType.WHEEL_UP, ()),
+            self._on_wheel
+        )
+        self.mouse_event_manager.bind(
+            MouseActionKey(MouseButton.NONE, ClickType.WHEEL_DOWN, ()),
+            self._on_wheel
+        )
+
+        self.mouse_event_manager.bind(
+            MouseActionKey(MouseButton.NONE, ClickType.WHEEL_UP, (MouseButton.LEFT,)),
             lambda x: print("Middle press + wheel up to zoom in")
         )
 
@@ -345,22 +446,26 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
         painter.end()
         return pixmap
 
-
-    @profiler.profile
     def wheelEvent(self, event):
-        if QtWidgets.QApplication.keyboardModifiers() == QtCore.Qt.ControlModifier:
-            self._restore_scroll_index = self.get_center_image_index()
-            delta = event.angleDelta().y()
-            zoom_step = 50
-            new_height = self.base_height + (zoom_step if delta > 0 else -zoom_step)
-            new_height = min(self.max_height, new_height)
-            old_height = self.base_height
-            self.base_height = max(self.min_height, min(new_height, self.screen_width ))
-            if self.base_height != old_height:
-                self._debounce_recalc_layout()
-                main_setting.set("viewer/zoom", self.base_height)
+        return
+
+    def _on_wheel(self, event):
+        if QtWidgets.QApplication.keyboardModifiers() & (QtCore.Qt.ControlModifier | QtCore.Qt.MetaModifier):
+            self._on_zoom_wheel(event)
         else:
             super().wheelEvent(event)
+
+    def _on_zoom_wheel(self, event):
+        self._restore_scroll_index = self.get_center_image_index()
+        delta = event.angleDelta().y()
+        zoom_step = 50
+        new_height = self.base_height + (zoom_step if delta > 0 else -zoom_step)
+        new_height = min(self.max_height, new_height)
+        old_height = self.base_height
+        self.base_height = max(self.min_height, min(new_height, self.screen_width ))
+        if self.base_height != old_height:
+            self._debounce_recalc_layout()
+            main_setting.set("viewer/zoom", self.base_height)
 
     def _on_scroll_bar_changed(self):
         self._scrolling = True
@@ -399,7 +504,7 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
         if now - self._scroll_last_time >= self._scroll_throttle_ms:
             self._scroll_last_time = now
             self._update_visible_items()
-
+    
     @profiler.profile
     @qt_debounce(100)
     def on_resize_event(self):
@@ -446,6 +551,10 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
 
     @profiler.profile
     def _on_layout_ready(self, rects):
+        if self.rects == rects:
+            self.layout_ready.emit()
+            return
+
         self.rects = rects
         self.rects_tops = [r.top() for r in rects]
         self.rects_bottoms = [r.bottom() for r in rects]

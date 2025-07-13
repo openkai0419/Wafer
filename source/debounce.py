@@ -7,10 +7,10 @@ class QtDebounceManager(QObject):
         self._timers = {}  # key: function identity -> QTimer
 
     def debounce(self, key, delay_ms, callback, *args, **kwargs):
-        """Debounce execution using individual keys"""
         if key in self._timers:
             self._timers[key].stop()
             self._timers[key].deleteLater()
+            self._timers.pop(key, None)
 
         timer = QTimer(self)
         timer.setSingleShot(True)

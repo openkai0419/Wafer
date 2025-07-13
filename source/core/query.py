@@ -3,7 +3,7 @@ import sqlite3
 from operator import attrgetter
 from random import shuffle
 from pathlib import Path
-from ..common import normalize_path
+from ..funcs import normalize_path
 from ..profiling import logger, profiler
 
 class MetaQuery:
@@ -166,7 +166,8 @@ class MetaInfoSearchEngine:
     @profiler.profile
     def _build_sort_clause(self, sort_by, ascending):
         sort_column_map = {
-            "name": "meta.path",
+            "path": "meta.path",
+            "name": "name",
             "created": "created",
             "modified": "mtime",
             "size": "size",

@@ -9,7 +9,7 @@ import re
 
 from collections import defaultdict
 from functools import wraps
-from .common import data_path
+from .funcs import data_path
 import sys
 from PySide6 import QtWidgets
 

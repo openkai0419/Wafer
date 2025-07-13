@@ -6,7 +6,7 @@ from PySide6.QtCore import Signal
 from .translation import TranslatorMixin
 
 from .base_setting import SettingsTabBase
-from ..common import uipx
+from ..funcs import uipx
 
 class SettingsWindow(QDialog, TranslatorMixin):
     settings_applied = Signal()

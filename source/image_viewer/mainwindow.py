@@ -15,7 +15,7 @@ from .widgets.button_bar import IconButtonBar, IconButtonConfig
 from .widgets.table_combo import ComboBoxWithButtons
 from .thread import main_thread
 from .viewer_settings import main_setting
-from ..common import get_data_db, get_setting_db, uipx, get_setting_file_names, new_main
+from ..funcs import get_data_db, get_setting_db, uipx, get_setting_file_names, new_main
 from ..constants import default_db_name, APP_FILE_NAME, APP_NAME
 from ..profiling import logger, profiler
 from ..settings.setting_window import SettingsWindow

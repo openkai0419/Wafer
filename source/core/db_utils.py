@@ -5,7 +5,7 @@ import glob
 import errno
 import stat
 
-from ..common import get_data_file_names, get_setting_file_names, get_data_db
+from ..funcs import get_data_file_names, get_setting_file_names, get_data_db
 from ..profiling import logger, profiler
 
 @profiler.profile

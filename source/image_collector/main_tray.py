@@ -2,7 +2,7 @@ from PySide6 import QtWidgets, QtGui, QtCore
 
 from ..profiling import logger, profiler
 from ..debounce import qt_debounce
-from ..common import get_data_db, get_setting_db, new_main, get_setting_file_names
+from ..funcs import get_data_db, get_setting_db, new_main, get_setting_file_names
 from ..core.collector import ImageIndexer
 from .watch_folder import WatchFolder
 from .watch_setting import SettingWatcher

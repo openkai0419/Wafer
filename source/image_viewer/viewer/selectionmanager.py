@@ -34,6 +34,14 @@ class SelectionManager(QtCore.QObject):
         self._emit(self._selected)
         self._last_added = indexes[last]
 
+    def remove_selection(self, indexes):
+        to_remove = set(indexes) & self._selected
+        if not to_remove:
+            return
+        self._selected -= to_remove
+        if self._last_added in to_remove:
+            self._last_added = None
+        self._emit(to_remove)
 
     def deselect(self, index: int):
         if index in self._selected:

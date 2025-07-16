@@ -84,41 +84,48 @@ def save_dropped_data(mime: QMimeData, dest_dir: str):
                     except Exception as e:
                         print(f"Failed to download {url_str}: {e}")
 
-    FILEDESCRIPTORW_SIZE = 592
     system = platform.system()
     if system == "Windows":
-        # Windows: check for FileGroupDescriptor (for e.g. Outlook attachments or Chrome blob)
         for fmt in mime.formats():
             if fmt.startswith("application/x-qt-windows-mime") and "FileGroupDescriptor" in fmt:
-                # Found file descriptor data
-                raw_data = mime.data(fmt)  # QByteArray
-                data = bytes(raw_data)     # convert to bytes
-                if len(data) >= 4:
-                    count = int.from_bytes(data[0:4], byteorder='little')
-                else:
-                    count = 0
+                raw_data = mime.data(fmt)
+                data = bytes(raw_data)
+
+                if len(data) < 4:
+                    print("Invalid descriptor data")
+                    return
+
+                count = int.from_bytes(data[0:4], byteorder='little')
                 offset = 4
                 filenames = []
-                urls = mime.urls() if mime.hasUrls() else []
-                print(urls)
 
                 for i in range(count):
-                    # デフォルト値
-                    base_name = None
-                    ext = None
-                    # FileGroupDescriptorW から拡張子を取得
-                    start = 72
-                    end = 520
-                    if len(data) >= offset +start+end:
-                        name_bytes = data[offset+start : offset+start+end]
-                        filename = name_bytes.decode('utf-16le', errors='ignore').split('\x00', 1)[0].strip()
-                    if not filename:
-                        raise
-                        filename = f"file{i}"
+                    # デコードパターンの候補を順に試す
+                    patterns = [
+                        # (size, start, end, codec)
+                        (592, 72, 72+260, 'utf-16le'),
+                        (592, 72, 72+260, 'mbcs'),
+                        (852, 332, 332+520, 'utf-16le'),
+                    ]
 
-                    # 結合
+                    filename = None
+
+                    for size, start, end, codec in patterns:
+                        name_bytes = data[offset+start : offset+end]
+                        try:
+                            decoded = name_bytes.decode(codec).split('\x00', 1)[0].strip()
+                            name, ext = os.path.splitext(decoded)
+                            if ext:  # 拡張子が見つかればOK
+                                filename = decoded
+                                break
+                        except Exception:
+                            continue  # 次のパターンへ
+
+                    if not filename:
+                        raise Exception(f"Failed to extract filename at index {i}")
+
                     filenames.append(filename)
-                    offset += FILEDESCRIPTORW_SIZE
+                    offset += size
 
                 for idx, name in enumerate(filenames):
                     content_fmt = f'application/x-qt-windows-mime;value="FileContents";index={idx}'

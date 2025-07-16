@@ -171,7 +171,7 @@ class SearchOptionPopup(QtWidgets.QDialog, TranslatorMixin):
         keyword_mode = main_setting.get("query/keyword_mode", "AND")
         (self.and_radio if keyword_mode == "AND" else self.or_radio).setChecked(True)
 
-        sort_by = main_setting.get("query/sort_by", "name")
+        sort_by = main_setting.get("query/sort_by", "path")
         index = self.sort_by_combo.findData(sort_by)
         self.sort_by_combo.setCurrentIndex(index if index >= 0 else 0)
 

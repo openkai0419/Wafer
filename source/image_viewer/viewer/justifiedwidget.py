@@ -22,7 +22,47 @@ from .selectionmanager import SelectionManager
 from ...profiling import logger, profiler
 from ...funcs import get_resource_path
 from ...debounce import qt_debounce, qt_throttle
+from ...core.save_drop import save_dropped_data
 from .pixmap import PixmapFactory
+
+def inspect_mimedata(mimedata: QtCore.QMimeData):
+    """
+    QMimeData の中身を標準出力に表示する。
+    """
+    formats = mimedata.formats()
+    if not formats:
+        print("MIME data is empty.")
+        return
+
+    print("MIME formats:")
+    for fmt in formats:
+        print(f"  - {fmt}")
+    
+    print("\nKnown contents:")
+    if mimedata.hasUrls():
+        print("  URLs:")
+        for url in mimedata.urls():
+            print(f"    {url.toLocalFile()} ({url.toString()})")
+    if mimedata.hasText():
+        print(f"  Text:\n    {mimedata.text()}")
+    if mimedata.hasHtml():
+        print(f"  HTML:\n    {mimedata.html()}")
+    if mimedata.hasImage():
+        print("  Image: <QImage>")
+    if mimedata.hasColor():
+        print(f"  Color: {mimedata.colorData()}")
+    if mimedata.hasFormat("application/x-qt-windows-mime;value=\"FileNameW\""):
+        print("  Windows FileNameW: ")
+        data = mimedata.data("application/x-qt-windows-mime;value=\"FileNameW\"")
+        print(f"    {data}")
+
+    print("\nRaw data per format:")
+    for fmt in formats:
+        data = mimedata.data(fmt)
+        if len(data) > 200:
+            print(f"  {fmt}: <{len(data)} bytes>")
+        else:
+            print(f"  {fmt}: {bytes(data).decode(errors='replace')}")
 
 class OverLayPainter(QtWidgets.QWidget):
     def __init__(self, parent, spacing, *args, **kwargs):
@@ -252,6 +292,9 @@ class MouseHandlerBinder(QtCore.QObject):
 
     @profiler.profile
     def on_drop(self, event):
+        
+        save_dropped_data(event.mimeData(), r"M:\collect\picture\ーNovelAI\1_9_sfw\新しいフォルダー\新しいフォルダー (2)")
+        return
         if not event.mimeData().hasUrls():
             return
         urls = event.mimeData().urls()
@@ -329,7 +372,11 @@ class MouseHandlerBinder(QtCore.QObject):
             self.finalize_rectangle_selection(state=self._drag_state)
             self._drag_rect_start = None
             self._drag_rect_current = None
-            self.widget.update()
+            self.widget.update()     
+        elif isinstance(event, QtGui.QDragEnterEvent):
+            event.acceptProposedAction()
+            return False
+        
         return super().eventFilter(watched, event)
 
 

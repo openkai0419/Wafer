@@ -25,44 +25,6 @@ from ...debounce import qt_debounce, qt_throttle
 from ...core.save_drop import save_dropped_data
 from .pixmap import PixmapFactory
 
-def inspect_mimedata(mimedata: QtCore.QMimeData):
-    """
-    QMimeData の中身を標準出力に表示する。
-    """
-    formats = mimedata.formats()
-    if not formats:
-        print("MIME data is empty.")
-        return
-
-    print("MIME formats:")
-    for fmt in formats:
-        print(f"  - {fmt}")
-    
-    print("\nKnown contents:")
-    if mimedata.hasUrls():
-        print("  URLs:")
-        for url in mimedata.urls():
-            print(f"    {url.toLocalFile()} ({url.toString()})")
-    if mimedata.hasText():
-        print(f"  Text:\n    {mimedata.text()}")
-    if mimedata.hasHtml():
-        print(f"  HTML:\n    {mimedata.html()}")
-    if mimedata.hasImage():
-        print("  Image: <QImage>")
-    if mimedata.hasColor():
-        print(f"  Color: {mimedata.colorData()}")
-    if mimedata.hasFormat("application/x-qt-windows-mime;value=\"FileNameW\""):
-        print("  Windows FileNameW: ")
-        data = mimedata.data("application/x-qt-windows-mime;value=\"FileNameW\"")
-        print(f"    {data}")
-
-    print("\nRaw data per format:")
-    for fmt in formats:
-        data = mimedata.data(fmt)
-        if len(data) > 200:
-            print(f"  {fmt}: <{len(data)} bytes>")
-        else:
-            print(f"  {fmt}: {bytes(data).decode(errors='replace')}")
 
 class OverLayPainter(QtWidgets.QWidget):
     def __init__(self, parent, spacing, *args, **kwargs):
@@ -323,9 +285,10 @@ class MouseHandlerBinder(QtCore.QObject):
     @profiler.profile
     def on_drag_start(self, event):
         index = self.widget.index_at_pos(event.pos())
-        if index is not None:
-            if not self.widget.selection_manager.is_selected(index):
-                self.on_left_click(event)
+        if not index:
+            return
+        if not self.widget.selection_manager.is_selected(index):
+            self.on_left_click(event)
 
         selected = self.widget.get_selected_paths()
         urls = [QtCore.QUrl.fromLocalFile(path) for path in selected]
@@ -336,8 +299,10 @@ class MouseHandlerBinder(QtCore.QObject):
         mime = QtCore.QMimeData()
         mime.setUrls(urls)
         drag.setMimeData(mime)
-
-        widget = QtWidgets.QApplication.widgetAt(event.globalPos())
+        widget = self.widget.widgets.get(index)
+        if widget is None:
+            logger.warning(f"No widget for index {index}")
+            return
         logger.info(widget)
         if widget:
             pixmap = QtGui.QPixmap(widget.grab())
@@ -391,6 +356,7 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
         self.mouse_handler.bind_all()
         self.installEventFilter(self.mouse_handler)
 
+        self.setObjectName("JustifiedVirtualScrollWidget")
         self.image_paths = []
         self.aspect_ratios = []
         self.rects = []

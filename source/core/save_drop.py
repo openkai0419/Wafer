@@ -59,7 +59,7 @@ def save_dropped_data(mime: QMimeData, dest_dir: str):
                     dest_path = os.path.join(dest_dir, dest_name)
                     try:
                         shutil.copy2(src_path, dest_path)
-                        print(f"Copied file {src_path} to {dest_path}")
+                        print(f"Copied local file {src_path} to {dest_path}")
                     except Exception as e:
                         print(f"Failed to copy {src_path}: {e}")
                 else:
@@ -70,19 +70,27 @@ def save_dropped_data(mime: QMimeData, dest_dir: str):
                     print(f"Encountered blob URL: {url_str}")
                     continue
                 base_name = url.fileName() or url.host() or "link"
-                if url_str.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp')):
-                    try:
-                        resp = requests.get(url_str, timeout=10)
+                try:
+                    resp = requests.get(url_str, timeout=10)
+                    if resp.status_code == 200:
+                        name_root, url_ext = os.path.splitext(base_name)
                         ct = resp.headers.get("Content-Type", "")
-                        if resp.status_code == 200 and ct.lower().startswith("image/"):
-                            ext = "." + ct.split("/")[-1] if "/" in ct else ""
-                            image_name = get_unique_filename(dest_dir, base_name + ext)
+                        ext = None
+                        # URLの拡張子を優先
+                        if url_ext.lower() in (".png", ".jpg", ".jpeg", ".gif", ".bmp"):
+                            ext = url_ext
+                        elif ct.lower().startswith("image/"):
+                            ext = "." + ct.split("/")[-1]
+                        if ext:
+                            image_name = get_unique_filename(dest_dir, name_root + ext)
                             image_path = os.path.join(dest_dir, image_name)
                             with open(image_path, 'wb') as f:
                                 f.write(resp.content)
+
                             print(f"Downloaded image to {image_path}")
-                    except Exception as e:
-                        print(f"Failed to download {url_str}: {e}")
+                            return
+                except Exception as e:
+                    print(f"Failed to download {url_str}: {e}")
 
     system = platform.system()
     if system == "Windows":

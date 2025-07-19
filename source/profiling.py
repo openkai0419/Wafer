@@ -70,7 +70,7 @@ class LoggerManager:
             file_handler = logging.handlers.RotatingFileHandler(
                 log_filename,
                 maxBytes=100_000,
-                backupCount=2,
+                backupCount=5,
                 encoding="utf-8",
                 delay=True,
             )

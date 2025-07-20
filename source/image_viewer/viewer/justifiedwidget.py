@@ -368,6 +368,7 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
 
         self.screen_width = QtGui.QGuiApplication.primaryScreen().availableGeometry().width()
         self.base_height = main_setting.get("viewer/zoom", int(self.screen_width / 10))
+        self._width_ref = self.width()
         self.min_height = int(self.screen_width / 30)
         self.max_height = int(self.screen_width)
         self.setMinimumWidth(self.min_height)
@@ -389,6 +390,7 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
 
         self.size_checker = SizeMismatchChecker(self)
         self.size_checker.start()
+
 
         self.parent_scroll.verticalScrollBar().valueChanged.connect(self._on_scroll_bar_changed)
         self.parent_scroll.horizontalScrollBar().valueChanged.connect(self._on_scroll_bar_changed)
@@ -458,6 +460,15 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
     @profiler.profile
     @qt_debounce(100)
     def on_resize_event(self):
+        width = self.width()
+        if width != self._width_ref:
+            scale = width / self._width_ref
+            new_height = int(self.base_height * scale)
+            new_height = min(self.max_height, max(self.min_height, new_height))
+            if new_height != self.base_height:
+                self.base_height = new_height
+                self._width_ref = width
+
         self._restore_scroll_index = self.get_center_image_index()
         logger.info("on_resize_event")
         self._recalc_layout()

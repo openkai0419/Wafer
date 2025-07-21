@@ -20,9 +20,8 @@ from .cachemanager import MemoryLimitedPixmapCache, QLabelPool
 from .sizechecker import SizeMismatchChecker
 from .selectionmanager import SelectionManager
 from ...profiling import logger, profiler
-from ...funcs import get_resource_path
 from ...debounce import qt_debounce, qt_throttle
-from ...core.save_drop import save_dropped_data
+from ...core.drop import MimeDataParser, FileSaver
 from .pixmap import PixmapFactory
 
 
@@ -254,14 +253,20 @@ class MouseHandlerBinder(QtCore.QObject):
 
     @profiler.profile
     def on_drop(self, event):
-        
-        save_dropped_data(event.mimeData(), r"M:\collect\picture\ーNovelAI\1_9_sfw\新しいフォルダー\新しいフォルダー (2)")
-        return
-        if not event.mimeData().hasUrls():
+        parser = MimeDataParser()
+        items = parser.parse(event.mimeData())
+        logger.info(items)
+        if not items:
             return
-        urls = event.mimeData().urls()
-        files = [u.toLocalFile() for u in urls if u.isLocalFile()]
-        logger.info(f"Dropped files: {files}")
+        logger.info(items[0].mime_type)
+        saver = FileSaver()
+        for item in items:
+            path = r"C:\Users\openk\Downloads\drop\{}".format(item.name)
+            if os.path.exists(path):
+                pass
+            saver.save(item, path)
+            logger.info(f"Dropped files: {path}")
+            
 
     def finalize_rectangle_selection(self, state=0):
         if not self._drag_rect_start or not self._drag_rect_current:
@@ -390,7 +395,6 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
 
         self.size_checker = SizeMismatchChecker(self)
         self.size_checker.start()
-
 
         self.parent_scroll.verticalScrollBar().valueChanged.connect(self._on_scroll_bar_changed)
         self.parent_scroll.horizontalScrollBar().valueChanged.connect(self._on_scroll_bar_changed)

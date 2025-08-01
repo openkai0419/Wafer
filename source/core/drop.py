@@ -22,9 +22,13 @@ def get_unique_filename(directory: str, name: str) -> str:
 class ParsedItem:
     """解析されたドロップデータ"""
     source: str | bytes        # ファイルパス or バイナリデータ
-    name : str                 # 推奨ファイル名
+    name: str                  # 推奨ファイル名
     is_binary: bool = False    # Trueならbytes
     mime_type: str = ""
+    size: int | None = None    # ファイルサイズ（バイト）, 不明なら None
+
+    def is_local_file(self) -> bool:
+        return (not self.is_binary) and isinstance(self.source, str) and os.path.exists(self.source)
 
 from PySide6.QtGui import QImage
 
@@ -56,6 +60,7 @@ class MimeDataParser:
         if mime.hasImage():
             qimage = QImage(mime.imageData())
             buffer = qimage.bits().asstring(qimage.sizeInBytes())
+            size = len(buffer)
 
             formats = [f.lower() for f in mime.formats()]
             fmt = next(
@@ -64,8 +69,10 @@ class MimeDataParser:
             )
 
             filename = f"image.{fmt}"
-            items.append(ParsedItem(source=buffer, name=filename,
-                                    is_binary=True, mime_type=f"image/{fmt}"))
+            items.append(ParsedItem(
+                source=buffer, name=filename,
+                is_binary=True, mime_type=f"image/{fmt}", size=size
+            ))
             if items:
                 return items
 
@@ -76,8 +83,11 @@ class MimeDataParser:
                     src_path = url.toLocalFile()
                     if os.path.exists(src_path):
                         fname = os.path.basename(src_path)
-                        items.append(ParsedItem(source=src_path, name=fname,
-                                                is_binary=False))
+                        fsize = os.path.getsize(src_path)
+                        items.append(ParsedItem(
+                            source=src_path, name=fname,
+                            is_binary=False, size=fsize
+                        ))
                 else:
                     url_str = url.toString()
                     if url_str.startswith("blob:"):
@@ -100,9 +110,12 @@ class MimeDataParser:
                                     ext = ".bin"
 
                                 suggested = name + ext
+                                size = len(content)
 
-                                items.append(ParsedItem(source=content, name=suggested,
-                                                        is_binary=True, mime_type=ct))
+                                items.append(ParsedItem(
+                                    source=content, name=suggested,
+                                    is_binary=True, mime_type=ct, size=size
+                                ))
                     except Exception as e:
                         logger.warning(f"Failed to download {url_str}: {e}")
                 if items:
@@ -145,19 +158,26 @@ class MimeDataParser:
                 content_data = mime.data(content_fmt)
             else:
                 content_data = mime.data('application/x-qt-windows-mime;value="FileContents"')
-            results.append(ParsedItem(source=bytes(content_data), name=filename,
-                                       is_binary=True))
+
+            content_bytes = bytes(content_data)
+
+            results.append(ParsedItem(
+                source=content_bytes, name=filename,
+                is_binary=True, size=len(content_bytes)
+            ))
         return results
 
 class FileSaver:
-    """ParsedItem を指定されたパスに保存する"""
-    def save(self, item: ParsedItem, target_path: str):
+    def save(self, item: ParsedItem, target_path: str, move: bool = False):
         os.makedirs(os.path.dirname(target_path), exist_ok=True)
 
-        if not item.is_binary and isinstance(item.source, str):
-            # ローカルファイルコピー
-            shutil.copy2(item.source, target_path)
-            logger.info(f"Copied: {item.source} → {target_path}")
+        if item.is_local_file():
+            if move:
+                shutil.move(item.source, target_path)
+                logger.info(f"Moved: {item.source} → {target_path}")
+            else:
+                shutil.copy2(item.source, target_path)
+                logger.info(f"Copied: {item.source} → {target_path}")
         elif item.is_binary and isinstance(item.source, (bytes, bytearray)):
             # バイト列を書き込む
             with open(target_path, 'wb') as f:

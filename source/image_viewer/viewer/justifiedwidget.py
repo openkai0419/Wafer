@@ -263,8 +263,10 @@ class MouseHandlerBinder(QtCore.QObject):
         for item in items:
             path = r"C:\Users\openk\Downloads\drop\{}".format(item.name)
             if os.path.exists(path):
-                pass
-            saver.save(item, path)
+                pass # cancel or overwrite or new_name
+            if item.is_local_file():
+                pass # move or copy
+            saver.save(item, path, move=False)
             logger.info(f"Dropped files: {path}")
             
 
@@ -290,7 +292,7 @@ class MouseHandlerBinder(QtCore.QObject):
     @profiler.profile
     def on_drag_start(self, event):
         index = self.widget.index_at_pos(event.pos())
-        if not index:
+        if index == None:
             return
         if not self.widget.selection_manager.is_selected(index):
             self.on_left_click(event)
@@ -330,8 +332,13 @@ class MouseHandlerBinder(QtCore.QObject):
 
             drag.setPixmap(pixmap)
             drag.setHotSpot(pixmap.rect().topLeft())
+        QtCore.QTimer.singleShot(0, lambda: self._start_drag(drag))
+
+    def _start_drag(self, drag):
+        # イベントループを回してから実行（より自然なレスポンスになる）
+        QtWidgets.QApplication.processEvents()
         drag.exec(QtCore.Qt.CopyAction | QtCore.Qt.MoveAction)
-    
+            
     def eventFilter(self, watched, event):
         if event.type() == QtCore.QEvent.MouseMove and self._is_shift_dragging:
             self._drag_rect_current = event.pos()
@@ -448,6 +455,9 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
     def set_paths(self, path_list, aspect_ratios):
         if not path_list:
             self._clear_all_widgets()
+        if self.image_paths == path_list:
+            self.layout_ready.emit()
+            return 
         self.image_paths = path_list
         self.aspect_ratios = aspect_ratios
         self._recalc_layout()
@@ -516,10 +526,6 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
 
     @profiler.profile
     def _on_layout_ready(self, rects):
-        if self.rects == rects:
-            self.layout_ready.emit()
-            return
-
         self.rects = rects
         self.rects_tops = [r.top() for r in rects]
         self.rects_bottoms = [r.bottom() for r in rects]

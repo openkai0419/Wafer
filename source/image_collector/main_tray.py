@@ -113,7 +113,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon, TranslatorMixin):
 
     def cleanup(self, clean=True):
         if hasattr(self, "folder_watcher") and self.folder_watcher:
-            self.folder_watcher.quit(clean)
+            self.folder_watcher.stop(clean)
         if hasattr(self, "setting_watcher")and self.setting_watcher:
             self.setting_watcher.stop()
             close_publisher()

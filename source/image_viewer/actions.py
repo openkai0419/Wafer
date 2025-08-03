@@ -4,7 +4,10 @@ from ..funcs import normalize_path, uipx
 from ..profiling import logger, profiler
 from ..dialog import ConfirmDialog
 from ..settings.translation import TranslatorMixin
+from ..core.copy import ClipboardFileTransfer
 import sys
+import os
+import json
 
 def create_labeled_separator(label: str, parent) -> QtWidgets.QWidgetAction:
     action = QtWidgets.QWidgetAction(parent)
@@ -49,7 +52,7 @@ class MenuBuilder:
             action = QtGui.QAction(name, parent)
             
             if item.get("separator"):
-                if path == "":
+                if name == "":
                     menu.addSeparator()
                 else:
                     sep_action = create_labeled_separator(name, parent)
@@ -116,6 +119,37 @@ class ActionManager(TranslatorMixin):
     @staticmethod
     def copy_path(path): QtGui.QGuiApplication.clipboard().setText(path)
 
+    @staticmethod
+    def copy_path_list(path): QtGui.QGuiApplication.clipboard().setText(json.dumps(path))
+
+    @staticmethod
+    def set_copy_file(paths):
+        ClipboardFileTransfer().set_files(paths, cut=False)
+
+    @staticmethod
+    def set_cut_file(paths):
+        ClipboardFileTransfer().set_files(paths, cut=True)
+    
+    @staticmethod
+    def delete_file(file_paths):
+        for path in file_paths:
+            try:
+                if not os.path.exists(path):
+                    continue
+                if not os.path.isfile(path) and not os.path.islink(path):
+                    continue
+                os.remove(path)
+            except Exception as e:
+                raise
+
+    @staticmethod
+    def get_directory_from_path(path: str) -> str:
+        abs_path = os.path.abspath(path)
+        if os.path.isdir(abs_path):
+            return abs_path  # 既にディレクトリならそのまま返す
+        else:
+            return os.path.dirname(abs_path)
+
 class ContextMenuBuilder(ActionManager):
     def __init__(self, parent=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -124,13 +158,35 @@ class ContextMenuBuilder(ActionManager):
     def build_menu(self, path):
         menu = QtWidgets.QMenu(self.parent)
         justified_menus = [
-            {"path": self.t.tr("Path"), "separator": True},
-            {"path": self.t.tr("Copy Path"), "shortcut": "Ctrl+C", "callback": lambda: self.copy_path(path)},
-            {"path": self.t.tr("Reveal in Explorer"), "shortcut": "Ctrl+O", "callback": lambda: self.show_in_explorer(path)},
+            {"path": self.t.tr("File"), "separator": True},
             {"path": self.t.tr("Open File"), "shortcut": "Ctrl+F", "callback": lambda: self.run_in_explorer(path)},
+            {"path": self.t.tr("Reveal in Explorer"), "shortcut": "Ctrl+O", "callback": lambda: self.show_in_explorer(path)},
+            {"path": self.t.tr(""), "separator": True},
+            {"path": self.t.tr("Copy Path"), "shortcut": "", "callback": lambda: self.copy_path(path)},
+            {"path": self.t.tr("Copy Path List"), "shortcut": "", "callback": lambda: self.copy_path_list(self.get_selected_paths())},
+            {"path": self.t.tr("Copy FileName"), "shortcut": "", "callback": lambda: self.copy_path(path)},
+            {"path": self.t.tr(""), "separator": True},
+            {"path": self.t.tr("Select Folder"), "shortcut": "", "callback": lambda: self.select_folder(path)},
+            {"path": self.t.tr(""), "separator": True},
+            {"path": self.t.tr("Cut"), "shortcut": "Ctrl+X", "callback": lambda: self.set_cut_file(self.get_selected_paths())},
+            {"path": self.t.tr("Copy"), "shortcut": "Ctrl+C", "callback": lambda: self.set_copy_file(self.get_selected_paths())},
+            {"path": self.t.tr("Delete"), "shortcut": "Delete", "callback": lambda: self.delete_file(self.get_selected_paths())},
         ]
         self.builder.build(menu, justified_menus, parent=self.parent)
         return menu
+    
+    def select_folder(self, path):
+        path = self.get_directory_from_path(path)
+        self.parent.folder_view.expand_and_select_path(path)
+
+    def get_selected_paths(self):
+        return self.parent.content.get_selected_paths()
+    
+    def get_last_selected_path(self):
+        return self.parent.content.get_last_selected_path()
+
+    def get_mous_pos_path(self):
+        return self.parent.content.get_mouse_pos_path()
 
 class FolderContextMenuBuilder(ActionManager):
 

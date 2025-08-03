@@ -60,7 +60,6 @@ class OverLayPainter(QtWidgets.QWidget):
         self.raise_()
         self.update()
 
-    @profiler.profile
     def paintEvent(self, event):        
         painter = QtGui.QPainter(self)
         space = self.half_pos - (self._selection_pen.width() / 2)
@@ -408,9 +407,9 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
 
     def _on_selection_changed(self, _):
         self.last_selections = self.get_selected_paths()
+        logger.info(self.last_selections)
         self.update()
 
-    @profiler.profile
     def paintEvent(self, event):
         super().paintEvent(event)
 
@@ -436,6 +435,16 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
     @profiler.profile
     def get_selected_paths(self):
         return [self.image_paths[i] for i in self.selection_manager.selected_indices() if i < len(self.image_paths)]
+    
+    @profiler.profile
+    def get_last_selected_path(self):
+        i = self.selection_manager.last_added()
+        return self.image_paths[i] if i < len(self.image_paths) else None
+    
+    @profiler.profile
+    def get_mouse_pos_path(self):
+        i = self.index_at_pos(self.mapFromGlobal(QtCore.QCursor.pos()))
+        return self.image_paths[i] if i < len(self.image_paths) else None
 
     @profiler.profile
     def index_at_pos(self, pos: QtCore.QPoint) -> int | None:
@@ -546,6 +555,7 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
                     self.selection_manager.clear()
 
         index = self.get_last_index()
+        logger.info(index)
         if index is not None:
             if index < len(self.rects):
                 self.reinstall_scroll_index(index)

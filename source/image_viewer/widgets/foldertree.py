@@ -15,7 +15,14 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
         self.roots = roots
         self.excluded = set(normalize_path(p) for p in (excluded or []))
         self.setHorizontalHeaderLabels(["Folders"])
-        #self._build_roots(roots)
+        self.path_item_map = {}  # ★ 追加
+
+    def clear_cache(self):
+        self.path_item_map.clear()
+
+    def _add_item(self, path, item):
+        path = normalize_path(path)
+        self.path_item_map[path] = item
 
     def _build_roots(self, roots):
         self.roots = roots
@@ -27,6 +34,8 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
             item.setData(root, QtCore.Qt.UserRole)
             item.setChild(0, QtGui.QStandardItem())  # dummy
             self.appendRow(item)
+            self._add_item(root, item)  # ★
+
         self.sort(0, QtCore.Qt.AscendingOrder)
 
     def has_subfolders(self, path: str) -> bool:
@@ -42,7 +51,6 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
     def load_children(self, parent_item):
         if parent_item.hasChildren() and parent_item.child(0).data(QtCore.Qt.UserRole):
             return
-
         parent_item.removeRows(0, parent_item.rowCount())  # remove dummy
         path = parent_item.data(QtCore.Qt.UserRole)
 
@@ -54,11 +62,54 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
                 child = QtGui.QStandardItem(FOLDER_ICON, name)
                 child.setData(full_path, QtCore.Qt.UserRole)
                 if self.has_subfolders(full_path):
-                    child.setChild(0, QtGui.QStandardItem())  # add dummy only when child exists
+                    child.setChild(0, QtGui.QStandardItem())  # dummy
                 parent_item.appendRow(child)
+                self._add_item(full_path, child)  # ★
         except Exception as e:
             logger.debug(f"Failed to read {path}: {e}")
 
+    def find_item_by_path(self, path: str) -> QtGui.QStandardItem | None:
+        path = normalize_path(path)
+        item = self.path_item_map.get(path)
+        if item:
+            return item
+
+        # キャッシュにない場合は探索（従来通り）
+        for i in range(self.rowCount()):
+            root_item = self.item(i)
+            root_path = normalize_path(root_item.data(QtCore.Qt.UserRole))
+            if not path.startswith(root_path):
+                continue
+
+            item = root_item
+            current_path = root_path
+            self.load_children(item)
+
+            try:
+                rel_parts = os.path.relpath(path, root_path).split(os.sep)
+            except ValueError:
+                continue
+
+            for part in rel_parts:
+                current_path = normalize_path(os.path.join(current_path, part))
+                match = None
+                for j in range(item.rowCount()):
+                    child = item.child(j)
+                    if normalize_path(child.data(QtCore.Qt.UserRole)) == current_path:
+                        match = child
+                        break
+                if match is None:
+                    return None
+                item = match
+                self.load_children(item)
+
+            self.path_item_map[path] = item  # ★ 新たに発見したらキャッシュに追加
+            return item
+        return None
+
+    def find_index_by_path(self, path: str) -> QtCore.QModelIndex | None:
+        item = self.find_item_by_path(path)
+        return self.indexFromItem(item) if item else None
 
 class LazyFolderTreeView(QtWidgets.QTreeView):
     folder_selected = QtCore.Signal()
@@ -142,6 +193,8 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         selmodel = self.selectionModel()
         selmodel.clearSelection()
         to_select = []
+        logger.info(expanded)
+        logger.info(selected)
 
         while stack:
             idx = stack.pop()
@@ -162,6 +215,21 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         if to_select:
             self.setCurrentIndex(to_select[0])
             self.scrollTo(to_select[0], QtWidgets.QAbstractItemView.PositionAtCenter)
+
+    def expand_and_select_path(self, path: str):
+        path = normalize_path(path)
+        index = self.model_.find_index_by_path(path)
+
+        if not index.isValid():
+            return
+
+        self.expand(index)
+        sel_model = self.selectionModel()
+        sel_model.clearSelection()
+        sel_model.select(index, QtCore.QItemSelectionModel.Select | QtCore.QItemSelectionModel.Rows)
+        self.setCurrentIndex(index)
+        self.scrollTo(index, QtWidgets.QAbstractItemView.PositionAtCenter)
+        self.folder_selected.emit()
 
     def add_root(self, path: str):
         path = normalize_path(path)
@@ -197,12 +265,9 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
 
     def reload_tree(self):
         s = self.get_state()
-        # Reload all root contents
-        roots = []
-        for i in range(self.model_.rowCount()):
-            path = self.model_.item(i).data(QtCore.Qt.UserRole)
-            roots.append(path)
+        roots = [self.model_.item(i).data(QtCore.Qt.UserRole) for i in range(self.model_.rowCount())]
         self.model_.clear()
+        self.model_.path_item_map.clear()  # ★ キャッシュもクリア
         self.model_.setHorizontalHeaderLabels(["Folders"])
         self.model_._build_roots(roots)
         self.set_state(s)

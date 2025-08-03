@@ -95,6 +95,7 @@ class FunctionProfiler:
             cls._instance = super().__new__(cls)
         return cls._instance
 
+
     def __init__(self, interval=10):
         if hasattr(self, '_initialized') and self._initialized:
             return
@@ -102,9 +103,11 @@ class FunctionProfiler:
         self.interval = interval
         self.data = defaultdict(lambda: {"total_time": 0.0, "self_time": 0.0, "count": 0})
         self._stop_event = threading.Event()
+        self.local = threading.local()
+        # protects access to self.data
+        self.lock = threading.Lock()
         self.thread = threading.Thread(target=self._report_loop, daemon=True)
         self.thread.start()
-        self.local = threading.local()
         self.enabled = True
         self.logger = LoggerManager.get_logger()
         self._initialized = True
@@ -129,28 +132,34 @@ class FunctionProfiler:
                 duration = end_time - record["start"]
                 self_time = duration - record["children"]
 
-                info = self.data[func.__qualname__]
-                info["total_time"] += duration
-                info["self_time"] += self_time
-                info["count"] += 1
+                with self.lock:
+                    info = self.data[func.__qualname__]
+                    info["total_time"] += duration
+                    info["self_time"] += self_time
+                    info["count"] += 1
 
                 if self.local.stack:
                     self.local.stack[-1]["children"] += duration
         return wrapper
-
+    
+    
     def _report_loop(self):
         while not self._stop_event.wait(self.interval):
             if self.enabled:
                 self.report()
 
+
     def report(self):
-        total_self_time = sum(info["self_time"] for info in self.data.values())
-        if total_self_time == 0:
-            #self.logger.debug("[Profiler] No activity recorded.")
-            return
+        with self.lock:
+            total_self_time = sum(info["self_time"] for info in self.data.values())
+            if total_self_time == 0:
+                return
+
+            summary_data = list(self.data.items())
+            self.data.clear()
 
         summary = []
-        for name, info in self.data.items():
+        for name, info in summary_data:
             self_time = info["self_time"]
             count = info["count"]
             summary.append((name, self_time, count, self_time / total_self_time))
@@ -160,8 +169,6 @@ class FunctionProfiler:
         self.logger.debug("[Profiler] Function self-time breakdown:")
         for name, self_time, count, ratio in summary:
             self.logger.debug(f"  {name:<30} : {self_time:.3f}s ({ratio:.1%}) - {count} calls")
-
-        self.data.clear()
 
     def stop(self):
         self._stop_event.set()

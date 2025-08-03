@@ -30,7 +30,6 @@ class SizeMismatchChecker(QtCore.QTimer):
     def _on_idle(self):
         self._active = False
 
-    @profiler.profile
     def check(self):
         if not self._active:
             return

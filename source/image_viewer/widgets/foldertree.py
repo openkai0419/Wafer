@@ -1,4 +1,3 @@
-
 import sys
 import os
 from PySide6 import QtWidgets, QtGui, QtCore
@@ -8,6 +7,19 @@ from ...profiling import logger, profiler
 from ..viewer_settings import main_setting
 
 FOLDER_ICON = QtGui.QIcon.fromTheme("folder")
+USER_ROLE_PATH = QtCore.Qt.UserRole
+
+@profiler.profile
+def create_folder_item(path: str) -> QtGui.QStandardItem:
+    item = QtGui.QStandardItem(FOLDER_ICON, os.path.basename(path) or path)
+    item.setData(path, USER_ROLE_PATH)
+    item.setChild(0, QtGui.QStandardItem())  # dummy
+    return item
+
+@profiler.profile
+def iter_root_items(model: QtGui.QStandardItemModel):
+    for i in range(model.rowCount()):
+        yield model.item(i)
 
 class LazyFolderTreeModel(QtGui.QStandardItemModel):
     def __init__(self, roots, excluded=None):
@@ -15,14 +27,15 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
         self.roots = roots
         self.excluded = set(normalize_path(p) for p in (excluded or []))
         self.setHorizontalHeaderLabels(["Folders"])
-        self.path_item_map = {}      # 完全一致キャッシュ
-        self.path_item_trie = {}     # 前方一致ツリー
+        self.path_item_map = {}
+        self.path_item_trie = {}
 
     @profiler.profile
     def clear_cache(self):
         self.path_item_map.clear()
         self.path_item_trie.clear()
 
+    @profiler.profile
     def _remove_from_trie(self, path: str):
         parts = path.split(os.sep)
         node = self.path_item_trie
@@ -32,12 +45,10 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
                 return
             stack.append((node, part))
             node = node[part]
-        # 削除対象
         if '__item__' in node:
             del node['__item__']
-        # 上位の不要な空ノードも削除（オプション）
         for parent, key in reversed(stack):
-            if not parent[key]:  # 空になった
+            if not parent[key]:
                 del parent[key]
             else:
                 break
@@ -73,12 +84,9 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
             root = normalize_path(root)
             if root in self.excluded:
                 continue
-            item = QtGui.QStandardItem(FOLDER_ICON, os.path.basename(root) or root)
-            item.setData(root, QtCore.Qt.UserRole)
-            item.setChild(0, QtGui.QStandardItem())  # dummy
+            item = create_folder_item(root)
             self.appendRow(item)
             self._add_item(root, item)
-
         self.sort(0, QtCore.Qt.AscendingOrder)
 
     @profiler.profile
@@ -96,10 +104,10 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
 
     @profiler.profile
     def load_children(self, parent_item):
-        if parent_item.hasChildren() and parent_item.child(0).data(QtCore.Qt.UserRole):
+        if parent_item.hasChildren() and parent_item.child(0).data(USER_ROLE_PATH):
             return
-        parent_item.removeRows(0, parent_item.rowCount())  # remove dummy
-        path = parent_item.data(QtCore.Qt.UserRole)
+        parent_item.removeRows(0, parent_item.rowCount())
+        path = parent_item.data(USER_ROLE_PATH)
 
         try:
             for entry in sorted(os.scandir(path), key=lambda e: e.name.lower()):
@@ -108,8 +116,7 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
                 full_path = normalize_path(entry.path)
                 if full_path in self.excluded:
                     continue
-                child = QtGui.QStandardItem(FOLDER_ICON, entry.name)
-                child.setData(full_path, QtCore.Qt.UserRole)
+                child = create_folder_item(full_path)
                 if self.has_subfolders(full_path):
                     child.setChild(0, QtGui.QStandardItem())  # dummy
                 parent_item.appendRow(child)
@@ -117,6 +124,7 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
         except Exception as e:
             logger.debug(f"Failed to read {path}: {e}")
 
+    @profiler.profile
     def _is_valid_item(self, item):
         try:
             return item is not None and item.model() is not None
@@ -139,9 +147,8 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
 
         self._remove_from_trie(path)
 
-        for i in range(self.rowCount()):
-            root_item = self.item(i)
-            root_path = normalize_path(root_item.data(QtCore.Qt.UserRole))
+        for root_item in iter_root_items(self):
+            root_path = normalize_path(root_item.data(USER_ROLE_PATH))
             if not path.startswith(root_path):
                 continue
 
@@ -159,7 +166,7 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
                 match = None
                 for j in range(item.rowCount()):
                     child = item.child(j)
-                    if normalize_path(child.data(QtCore.Qt.UserRole)) == current_path:
+                    if normalize_path(child.data(USER_ROLE_PATH)) == current_path:
                         match = child
                         break
                 if match is None:
@@ -171,9 +178,11 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
             return item
         return None
 
+    @profiler.profile
     def find_index_by_path(self, path: str) -> QtCore.QModelIndex | None:
         item = self.find_item_by_path(path)
         return self.indexFromItem(item) if item else None
+
 
 class LazyFolderTreeView(QtWidgets.QTreeView):
     folder_selected = QtCore.Signal()
@@ -188,21 +197,16 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         self.clicked.connect(self._on_item_clicked)
         self.viewport().installEventFilter(self)
         self.collapsed.connect(self.on_collapsed)
+        self.context_menu_builder = None
 
+    @profiler.profile
     def get_selected_paths(self) -> list[str]:
-        paths = []
-        for index in self.selectionModel().selectedRows():
-            path = index.data(QtCore.Qt.UserRole)
-            if path:
-                paths.append(path)
-        return paths
+        return [i.data(USER_ROLE_PATH) for i in self.selectionModel().selectedRows() if i.data(USER_ROLE_PATH)]
 
     def set(self, roots: list[str], excluded: list[str] = None):
-        # normalize
         roots = [normalize_path(r) for r in roots]
         excluded = set(normalize_path(e) for e in (excluded or []))
-        
-        # Clear model and rebuild
+
         self.model_.clear()
         self.model_.roots = roots
         self.model_.excluded = excluded
@@ -234,6 +238,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
 
         return self.model_.indexFromItem(current_item) if current_item else None
 
+    @profiler.profile
     def on_expanded(self, index):
         item = self.model_.itemFromIndex(index)
         self.model_.load_children(item)
@@ -244,6 +249,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
     def _on_item_clicked(self, index):
         self.folder_selected.emit()
 
+    @profiler.profile
     def get_state(self):
         expanded, selected = [], []
         stack = [self.model().index(i, 0) for i in range(self.model().rowCount())]
@@ -252,7 +258,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
             idx = stack.pop()
             if not idx.isValid():
                 continue
-            path = idx.data(QtCore.Qt.UserRole)
+            path = idx.data(USER_ROLE_PATH)
             if self.isExpanded(idx):
                 expanded.append(path)
             if self.selectionModel().isSelected(idx):
@@ -263,12 +269,11 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         return (expanded, selected)
 
     def save_state(self, name):
-        state = self.get_state()
-        main_setting.save_important(f"tree/state/{name}", state)
+        main_setting.save_important(f"tree/state/{name}", self.get_state())
 
     def restore_state(self, name):
         self.set_state(main_setting.get(f"tree/state/{name}", ([], [])))
-    
+
     @profiler.profile
     def set_state(self, states):
         try:
@@ -296,8 +301,8 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         if to_select:
             self.setCurrentIndex(to_select[0])
             self.scrollTo(to_select[0], QtWidgets.QAbstractItemView.PositionAtCenter)
-            
 
+    @profiler.profile
     def expand_and_select_path(self, path: str):
         index = self.expand_path(path)
         if index and index.isValid():
@@ -305,68 +310,71 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
             sel_model.clearSelection()
             sel_model.select(index, QtCore.QItemSelectionModel.Select | QtCore.QItemSelectionModel.Rows)
             self.setCurrentIndex(index)
-            self.scrollTo(index, QtWidgets.QAbstractItemView.PositionAtCenter)
+            QtCore.QTimer.singleShot(0, lambda: self.scrollTo(index, QtWidgets.QAbstractItemView.PositionAtCenter))
             self.folder_selected.emit()
-            
+
+    @profiler.profile
     def add_root(self, path: str):
         path = normalize_path(path)
         if path in self.model_.excluded:
             return
-        for i in range(self.model_.rowCount()):
-            if self.model_.item(i).data(QtCore.Qt.UserRole) == path:
+        for item in iter_root_items(self.model_):
+            if item.data(USER_ROLE_PATH) == path:
                 return
-        item = QtGui.QStandardItem(FOLDER_ICON, os.path.basename(path) or path)
-        item.setData(path, QtCore.Qt.UserRole)
-        item.setChild(0, QtGui.QStandardItem())  # dummy
+        item = create_folder_item(path)
         self.model_.roots.append(path)
         self.model_.appendRow(item)
         self.model_.sort(0, QtCore.Qt.AscendingOrder)
 
+    @profiler.profile
     def remove_root(self, path: str):
         path = normalize_path(path)
         for i in range(self.model_.rowCount()):
-            if self.model_.item(i).data(QtCore.Qt.UserRole) == path:
+            if self.model_.item(i).data(USER_ROLE_PATH) == path:
                 self.model_.removeRow(i)
                 return
 
+    @profiler.profile
     def add_excluded(self, path: str):
-        path = normalize_path(path)
-        self.model_.excluded.add(path)
+        self.model_.excluded.add(normalize_path(path))
         self.reload_tree()
 
+    @profiler.profile
     def remove_excluded(self, path: str):
         path = normalize_path(path)
         if path in self.model_.excluded:
             self.model_.excluded.remove(path)
             self.reload_tree()
 
+    @profiler.profile
     def reload_tree(self):
-        s = self.get_state()
-        roots = [self.model_.item(i).data(QtCore.Qt.UserRole) for i in range(self.model_.rowCount())]
+        state = self.get_state()
+        roots = [item.data(USER_ROLE_PATH) for item in iter_root_items(self.model_)]
         self.model_.clear()
-        self.model_.clear_cache()  # ★ キャッシュもクリア
+        self.model_.clear_cache()
         self.model_.setHorizontalHeaderLabels(["Folders"])
         self.model_._build_roots(roots)
-        self.set_state(s)
+        self.set_state(state)
 
     def eventFilter(self, source, event):
         if source == self.viewport() and event.type() in {QtCore.QEvent.MouseButtonPress, QtCore.QEvent.MouseButtonDblClick}:
             if event.button() == QtCore.Qt.LeftButton:
-                    index = self.indexAt(event.pos())
-                    if not index.isValid():
-                        self.clearSelection()
-                        self.folder_selected.emit()
+                index = self.indexAt(event.pos())
+                if not index.isValid():
+                    self.clearSelection()
+                    self.folder_selected.emit()
         return super().eventFilter(source, event)
 
+    @profiler.profile
     def set_context_menu_builder(self, builder):
         self.context_menu_builder = builder
 
     def contextMenuEvent(self, event: QtGui.QContextMenuEvent):
         index = self.indexAt(event.pos())
-        self.folder_selected.emit() 
+        self.folder_selected.emit()
         if not index.isValid():
             return
-        path = index.data(QtCore.Qt.UserRole)
+        path = index.data(USER_ROLE_PATH)
         if self.context_menu_builder:
             menu = self.context_menu_builder.build_menu(path)
             menu.exec(event.globalPos())

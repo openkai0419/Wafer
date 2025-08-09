@@ -48,7 +48,6 @@ class OverLayPainter(QtWidgets.QWidget):
             self.resize(self._parent.size())
         return super().eventFilter(watched, event)
 
-    @profiler.profile
     def paint(self, viewport_rect, selection_indices, visible_indices, rects, drag_rect_start, drag_rect_current, is_shift_dragging):
         self.viewport_rect = viewport_rect
         self.selection_indices = selection_indices

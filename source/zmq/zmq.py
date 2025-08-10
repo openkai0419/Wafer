@@ -2,8 +2,8 @@ import zmq
 import threading
 import queue
 import time
-from ..profiling import logger, profiler 
-from ..ipc_utils import write_port, read_port
+from ..common.profiling import logger, profiler
+from .ipc_utils import write_port, read_port
 from ..constants import APP_FILE_NAME
 
 HEARTBEAT_INTERVAL = 5

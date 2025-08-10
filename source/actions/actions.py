@@ -1,10 +1,10 @@
 from PySide6 import QtWidgets, QtGui, QtCore
 
-from ..funcs import normalize_path, uipx
-from ..profiling import logger, profiler
-from ..dialog import ConfirmDialog
-from ..settings.translation import TranslatorMixin
-from ..core.copy import ClipboardFileTransfer
+from ..common.funcs import normalize_path, uipx
+from ..common.profiling import logger, profiler
+from ..qt.dialog import ConfirmDialog
+from ..image_setting.translation import TranslatorMixin
+from ..os.copy import ClipboardFileTransfer
 import sys
 import os
 import json

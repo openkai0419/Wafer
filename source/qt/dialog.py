@@ -3,7 +3,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QLineEdit, QSizePolicy, QApplication, QStyle
 )
 from PySide6.QtCore import Qt, QTimer
-from .settings.translation import TranslatorMixin
+from ..image_setting.translation import TranslatorMixin
 
 
 class BaseDialog(QDialog):

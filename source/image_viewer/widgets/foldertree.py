@@ -2,8 +2,8 @@ import sys
 import os
 from PySide6 import QtWidgets, QtGui, QtCore
 
-from ...funcs import normalize_path, native_sort
-from ...profiling import logger, profiler
+from ...common.funcs import normalize_path, native_sort
+from ...common.profiling import logger, profiler
 from ..viewer_settings import main_setting
 
 FOLDER_ICON = QtGui.QIcon.fromTheme("folder")

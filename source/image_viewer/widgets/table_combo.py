@@ -2,7 +2,7 @@ from PySide6.QtWidgets import (
     QWidget, QComboBox, QPushButton, QHBoxLayout, QApplication
 )
 from PySide6.QtCore import Signal, Qt, QSignalBlocker
-from ...settings.translation import TranslatorMixin
+from ...image_setting.translation import TranslatorMixin
 import sys
 
 

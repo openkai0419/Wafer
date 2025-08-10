@@ -10,8 +10,8 @@ from pathlib import Path
 from PIL import Image
 from PySide6 import QtGui
 
-from ..profiling import logger, profiler
-from ..funcs import normalize_path, IMAGE_EXTENSIONS
+from ..common.profiling import logger, profiler
+from ..common.funcs import normalize_path, IMAGE_EXTENSIONS
 from .db_utils import connect_with_retry
 
 extensions = IMAGE_EXTENSIONS

@@ -3,8 +3,8 @@ import sqlite3
 from operator import attrgetter
 from random import shuffle
 from pathlib import Path
-from ..funcs import normalize_path
-from ..profiling import logger, profiler
+from ..common.funcs import normalize_path
+from ..common.profiling import logger, profiler
 
 class MetaQuery:
     def __init__(self, keys=None, keywords=None, query_mode="LIKE", directories=None,

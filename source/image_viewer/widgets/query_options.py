@@ -2,12 +2,12 @@ import sys
 import os
 from PySide6 import QtWidgets, QtGui, QtCore
 
-from ..thread import main_thread
+from ...qt.thread import main_thread
 from ..viewer_settings import main_setting
-from ...core.query import MetaQuery, MetaInfoSearchEngine
-from ...profiling import logger, profiler
-from ...debounce import qt_debounce
-from ...settings.translation import TranslatorMixin
+from ...database.query import MetaQuery, MetaInfoSearchEngine
+from ...common.profiling import logger, profiler
+from ...qt.debounce import qt_debounce
+from ...image_setting.translation import TranslatorMixin
 
 class FolderComboSignals(QtCore.QObject):
     finished = QtCore.Signal(list)

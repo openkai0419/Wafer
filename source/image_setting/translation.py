@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from PySide6 import QtCore
 
-from ..funcs import get_resource_path
+from ..common.funcs import get_resource_path
 
 
 class TranslationManager(QtCore.QObject):

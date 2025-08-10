@@ -152,7 +152,7 @@ class FileThumbnailer:
 
 if __name__ == "__main__":
     thumb = FileThumbnailer()
-    img = thumb.get_thumbnail(r"C:\Users\openk\Downloads\巨乳の友達と付き合うまでの話.zip", size=256*256)
+    img = thumb.get_thumbnail(r"C:\Users\openk\Downloads\13.mp4", size=256*256)
     if img:
         img.show()  # PILで表示
     else:

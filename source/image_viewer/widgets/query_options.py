@@ -4,7 +4,7 @@ from PySide6 import QtWidgets, QtGui, QtCore
 
 from ...qt.thread import main_thread
 from ..viewer_settings import main_setting
-from ...database.query import MetaQuery, MetaInfoSearchEngine
+from ...db.query import MetaQuery, MetaInfoSearchEngine
 from ...common.profiling import logger, profiler
 from ...qt.debounce import qt_debounce
 from ...image_setting.translation import TranslatorMixin

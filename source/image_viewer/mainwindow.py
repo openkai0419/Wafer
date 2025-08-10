@@ -2,8 +2,8 @@ from PySide6 import QtWidgets, QtGui, QtCore
 from datetime import datetime, timedelta
 
 from .viewer.justifiedwidget import JustifiedVirtualScrollWidget
-from ..database.setting_db import SettingDB
-from ..database.query import MetaInfoSearchEngine, MetaQuery
+from ..db.setting_db import SettingDB
+from ..db.query import MetaInfoSearchEngine, MetaQuery
 from ..zmq.zmq import ZMQSubscriber
 from ..qt.debounce import qt_debounce
 from .widgets.loading_overlay import OverlayLoadingIndicator

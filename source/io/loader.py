@@ -23,6 +23,7 @@ class ImageLoaderRunnable(QtCore.QRunnable):
     def cancel(self):
         self._cancelled = True
 
+    @profiler.profile
     def run(self):
         if self._cancelled:
             return

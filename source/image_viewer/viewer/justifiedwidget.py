@@ -68,67 +68,68 @@ class OverLayPainter(QtWidgets.QWidget):
     
     def set_paintvalue(self, viewport_rect, selection_indices, visible_indices, rects,
                     drag_rect_start, drag_rect_current, is_shift_dragging):
-        # 状態更新
-        self.viewport_rect = viewport_rect
-        self.selection_indices = selection_indices
-        self.visible_indices = visible_indices
-        self.rects = rects
-        self.drag_rect_start = drag_rect_start
-        self.drag_rect_current = drag_rect_current
-        self.is_shift_dragging = is_shift_dragging
-
-    def paintEvent(self, event):
-        painter = QtGui.QPainter(self)
         state = (
-            self.viewport_rect,
-            frozenset(self.selection_indices),
-            frozenset(self.visible_indices),
-            self.drag_rect_start,
-            self.drag_rect_current,
-            self.is_shift_dragging
+            viewport_rect,
+            frozenset(selection_indices),
+            frozenset(visible_indices),
+            drag_rect_start,
+            drag_rect_current,
+            is_shift_dragging
         )
-
         if state != self._last_state:
             self._last_state = state
 
-            # 軸揃え矩形だけなので AA は切る
-            painter.setRenderHint(QtGui.QPainter.Antialiasing, False)
-            # 再描画領域とビューポートでクリップ
-            painter.setClipRegion(event.region())
-            if not self.viewport_rect.isNull():
-                painter.setClipRect(self.viewport_rect, QtCore.Qt.IntersectClip)
+            # 状態更新
+            self.viewport_rect = viewport_rect
+            self.selection_indices = selection_indices
+            self.visible_indices = visible_indices
+            self.rects = rects
+            self.drag_rect_start = drag_rect_start
+            self.drag_rect_current = drag_rect_current
+            self.is_shift_dragging = is_shift_dragging
 
-            space = self.half_pos - (self._selection_pen.width() / 2)
-
-            # --- まとめ描画: 選択枠 ---
-            if self.selection_indices and self.visible_indices and self.rects:
-                indices = self.selection_indices & self.visible_indices
-
-                # 表示中かつビューポートと交差するものだけ集める
-                rect_list = []
-                for i in indices:
-                    if 0 <= i < len(self.rects):
-                        r = self.rects[i]
-                        if r.intersects(self.viewport_rect):
-                            rect_list.append(r.adjusted(-space, -space, space, space))
-
-                if rect_list:
-                    painter.setPen(self._selection_pen)
-                    painter.setBrush(self._qcolor_fill_sel)
-                    # ここがポイント: ループせず一括描画
-                    painter.drawRects(rect_list)
-
-            # --- ドラッグ矩形（単発描画のまま、素材は再利用）---
-            if self.is_shift_dragging and self.drag_rect_start and self.drag_rect_current:
-                selection_rect = QtCore.QRect(self.drag_rect_start, self.drag_rect_current).normalized()
-                dash_pen = QtGui.QPen(self._qcolor_main, 1, QtCore.Qt.DashLine)
-                dash_pen.setCosmetic(True)
-                painter.setPen(dash_pen)
-                painter.setBrush(self._qcolor_fill_drag)
-                painter.drawRect(selection_rect)
-
-            painter.end()
+    def paintEvent(self, event):
         super().paintEvent(event)
+        logger.debug("CHILD PAINT")
+        painter = QtGui.QPainter(self)
+
+        # 軸揃え矩形だけなので AA は切る
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, False)
+        # 再描画領域とビューポートでクリップ
+        painter.setClipRegion(event.region())
+        if not self.viewport_rect.isNull():
+            painter.setClipRect(self.viewport_rect, QtCore.Qt.IntersectClip)
+
+        space = self.half_pos - (self._selection_pen.width() / 2)
+
+        # --- まとめ描画: 選択枠 ---
+        if self.selection_indices and self.visible_indices and self.rects:
+            indices = self.selection_indices & self.visible_indices
+
+            # 表示中かつビューポートと交差するものだけ集める
+            rect_list = []
+            for i in indices:
+                if 0 <= i < len(self.rects):
+                    r = self.rects[i]
+                    if r.intersects(self.viewport_rect):
+                        rect_list.append(r.adjusted(-space, -space, space, space))
+
+            if rect_list:
+                painter.setPen(self._selection_pen)
+                painter.setBrush(self._qcolor_fill_sel)
+                # ここがポイント: ループせず一括描画
+                painter.drawRects(rect_list)
+
+        # --- ドラッグ矩形（単発描画のまま、素材は再利用）---
+        if self.is_shift_dragging and self.drag_rect_start and self.drag_rect_current:
+            selection_rect = QtCore.QRect(self.drag_rect_start, self.drag_rect_current).normalized()
+            dash_pen = QtGui.QPen(self._qcolor_main, 1, QtCore.Qt.DashLine)
+            dash_pen.setCosmetic(True)
+            painter.setPen(dash_pen)
+            painter.setBrush(self._qcolor_fill_drag)
+            painter.drawRect(selection_rect)
+
+        painter.end()
 
 
 class MouseHandlerBinder(QtCore.QObject):
@@ -234,11 +235,11 @@ class MouseHandlerBinder(QtCore.QObject):
         index = self.widget.index_at_pos(event.pos())
         if index is not None:
             path = self.widget.image_paths[index]
+            if not self.widget.selection_manager.is_selected(index):
+                self.on_left_click(event)
             if self.widget.context_menu_builder:
                 menu = self.widget.context_menu_builder.build_menu(path)
-                menu.popup(event.globalPos())
-            if not self.widget.selection_manager.is_selected(index):
-                self.on_left_click(event) 
+                menu.popup(event.globalPos()) 
         else:
             pass
 
@@ -457,7 +458,7 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
 
     def paintEvent(self, event):
         super().paintEvent(event)
-
+        logger.debug("PARENT PAINT")
         scroll_y = self.parent_scroll.verticalScrollBar().value()
         scroll_x = self.parent_scroll.horizontalScrollBar().value()
         viewport_rect = self.parent_scroll.viewport().rect().translated(scroll_x, scroll_y)

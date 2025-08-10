@@ -6,7 +6,7 @@ import shutil
 import platform
 import requests
 
-from ..profiling import logger, profiler
+from ..common.profiling import logger, profiler
 
 def get_unique_filename(directory: str, name: str) -> str:
     """If 'name' exists in 'directory', generate a new name to avoid overwriting."""

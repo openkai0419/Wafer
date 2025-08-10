@@ -8,11 +8,11 @@ from PySide6 import QtWidgets, QtGui, QtCore
 
 from source.image_viewer.mainwindow import MainWindow
 from source.image_collector.main_tray import TrayApp
-from source.profiling import initialize_profiling, logger, profiler
+from source.common.profiling import initialize_profiling, logger, profiler
 from source.constants import APP_FILE_NAME, APP_NAME, default_db_name, APP_ID
-from source.funcs import get_setting_file_names, new_main, split_last
-from source.mutex import SafeProcessLock
-from source.core.zmq import ZMQBroker
+from source.common.funcs import get_setting_file_names, new_main, split_last
+from source.common.mutex import SafeProcessLock
+from source.zmq.zmq import ZMQBroker
 
 def get_icon():
     icon = QtGui.QIcon("_resources/icon.ico")

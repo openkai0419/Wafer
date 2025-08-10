@@ -3,8 +3,8 @@ import contextlib
 import json
 from typing import List, Dict
 
-from ..profiling import logger, profiler
-from ..funcs import normalize_path
+from ..common.profiling import logger, profiler
+from ..common.funcs import normalize_path
 from .db_utils import retry_sqlite_connection
 
 

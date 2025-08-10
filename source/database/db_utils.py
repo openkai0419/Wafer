@@ -5,8 +5,8 @@ import glob
 import errno
 import stat
 
-from ..funcs import get_data_file_names, get_setting_file_names, get_data_db
-from ..profiling import logger, profiler
+from ..common.funcs import get_data_file_names, get_setting_file_names, get_data_db
+from ..common.profiling import logger, profiler
 
 @profiler.profile
 def connect_with_retry(path, timeout: float = 3.0, retries: int = 3, delay: float = 1.0, **kwargs):

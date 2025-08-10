@@ -1,8 +1,8 @@
 from PySide6 import QtWidgets, QtGui, QtCore
 
-from ...funcs import uipx, is_dark_theme
-from ...profiling import logger, profiler
-from ...funcs import get_resource_path
+from ..common.funcs import uipx, is_dark_theme
+from ..common.profiling import logger, profiler
+from ..common.funcs import get_resource_path
 
 class PixmapFactory:
     @staticmethod

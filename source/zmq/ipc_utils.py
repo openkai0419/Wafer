@@ -16,7 +16,7 @@ def read_port(timeout: float = 5.0) -> int | None:
     end = time.time() + timeout
     while True:
         try:
-            return int(_PORT_FILE.read_text().strip())
+            return _PORT_FILE.read_text().strip()
         except Exception:
             if time.time() > end:
                 return None

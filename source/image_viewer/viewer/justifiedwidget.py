@@ -32,58 +32,104 @@ class OverLayPainter(QtWidgets.QWidget):
         self.setAttribute(QtCore.Qt.WA_NoSystemBackground)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
         self.setWindowFlags(QtCore.Qt.FramelessWindowHint)
+        self.setFocusPolicy(QtCore.Qt.NoFocus) 
 
         self.color = (59, 128, 255)
         self.half_pos = spacing / 2
-        self._selection_pen = QtGui.QPen(QtGui.QColor(*self.color), max(1, spacing * 0.5))
 
-        self._parent = parent 
+        self._qcolor_main = QtGui.QColor(*self.color)
+        self._qcolor_fill_sel = QtGui.QColor(*self.color, 25)
+        self._qcolor_fill_drag = QtGui.QColor(*self.color, 50)
+
+        self._selection_pen = QtGui.QPen(self._qcolor_main, max(1, spacing * 0.5))
+        self._selection_pen.setCosmetic(True)
+
+        self._parent = parent
         parent.installEventFilter(self)
         self.resize(self._parent.size())
         self.show()
         logger.info(f"STACK UNDER : {self.stackUnder(self._parent)}")
 
+        self._last_state = None
+        # paint() がセットする値の初期化
+        self.viewport_rect = QtCore.QRect()
+        self.selection_indices = set()
+        self.visible_indices = set()
+        self.rects = []
+        self.drag_rect_start = None
+        self.drag_rect_current = None
+        self.is_shift_dragging = False
+        self.raise_()
+        
     def eventFilter(self, watched, event):
         if watched == self._parent and event.type() == QtCore.QEvent.Resize:
             self.resize(self._parent.size())
         return super().eventFilter(watched, event)
-
-    def paint(self, viewport_rect, selection_indices, visible_indices, rects, drag_rect_start, drag_rect_current, is_shift_dragging):
+    
+    def set_paintvalue(self, viewport_rect, selection_indices, visible_indices, rects,
+                    drag_rect_start, drag_rect_current, is_shift_dragging):
+        # 状態更新
         self.viewport_rect = viewport_rect
         self.selection_indices = selection_indices
         self.visible_indices = visible_indices
         self.rects = rects
         self.drag_rect_start = drag_rect_start
-        self.drag_rect_current = drag_rect_current 
+        self.drag_rect_current = drag_rect_current
         self.is_shift_dragging = is_shift_dragging
-        self.raise_()
-        self.update()
 
-    def paintEvent(self, event):        
+    def paintEvent(self, event):
         painter = QtGui.QPainter(self)
-        space = self.half_pos - (self._selection_pen.width() / 2)
-        painter.setPen(self._selection_pen)
+        state = (
+            self.viewport_rect,
+            frozenset(self.selection_indices),
+            frozenset(self.visible_indices),
+            self.drag_rect_start,
+            self.drag_rect_current,
+            self.is_shift_dragging
+        )
 
-        for index in (self.selection_indices & self.visible_indices):
-            if index >= len(self.rects):
-                continue
-            rect = self.rects[index]
-            if rect.intersects(self.viewport_rect):
-                color = QtGui.QColor(*self.color, 25)  # 半透明の青
-                painter.setBrush(color)
-                #painter.setBrush(QtCore.Qt.NoBrush)
-                painter.drawRect(rect.adjusted(-space, -space, space, space))
+        if state != self._last_state:
+            self._last_state = state
 
-        if self.is_shift_dragging and self.drag_rect_start and self.drag_rect_current:
-            selection_rect = QtCore.QRect(self.drag_rect_start, self.drag_rect_current).normalized()
-            color = QtGui.QColor(*self.color, 50)  # 半透明の青
-            border_color = QtGui.QColor(*self.color)
-            painter.setBrush(color)
-            painter.setPen(QtGui.QPen(border_color, 1, QtCore.Qt.DashLine))
-            painter.drawRect(selection_rect)
-        painter.end()
+            # 軸揃え矩形だけなので AA は切る
+            painter.setRenderHint(QtGui.QPainter.Antialiasing, False)
+            # 再描画領域とビューポートでクリップ
+            painter.setClipRegion(event.region())
+            if not self.viewport_rect.isNull():
+                painter.setClipRect(self.viewport_rect, QtCore.Qt.IntersectClip)
 
+            space = self.half_pos - (self._selection_pen.width() / 2)
+
+            # --- まとめ描画: 選択枠 ---
+            if self.selection_indices and self.visible_indices and self.rects:
+                indices = self.selection_indices & self.visible_indices
+
+                # 表示中かつビューポートと交差するものだけ集める
+                rect_list = []
+                for i in indices:
+                    if 0 <= i < len(self.rects):
+                        r = self.rects[i]
+                        if r.intersects(self.viewport_rect):
+                            rect_list.append(r.adjusted(-space, -space, space, space))
+
+                if rect_list:
+                    painter.setPen(self._selection_pen)
+                    painter.setBrush(self._qcolor_fill_sel)
+                    # ここがポイント: ループせず一括描画
+                    painter.drawRects(rect_list)
+
+            # --- ドラッグ矩形（単発描画のまま、素材は再利用）---
+            if self.is_shift_dragging and self.drag_rect_start and self.drag_rect_current:
+                selection_rect = QtCore.QRect(self.drag_rect_start, self.drag_rect_current).normalized()
+                dash_pen = QtGui.QPen(self._qcolor_main, 1, QtCore.Qt.DashLine)
+                dash_pen.setCosmetic(True)
+                painter.setPen(dash_pen)
+                painter.setBrush(self._qcolor_fill_drag)
+                painter.drawRect(selection_rect)
+
+            painter.end()
         super().paintEvent(event)
+
 
 class MouseHandlerBinder(QtCore.QObject):
     def __init__(self, widget):
@@ -416,7 +462,7 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
         scroll_x = self.parent_scroll.horizontalScrollBar().value()
         viewport_rect = self.parent_scroll.viewport().rect().translated(scroll_x, scroll_y)
 
-        self.overlay_painter.paint(
+        self.overlay_painter.set_paintvalue(
             viewport_rect,
             self.selection_manager.selected_indices(),
             self.visible_indices,
@@ -655,6 +701,7 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
         if i not in self.widgets:
             label = self.label_pool.acquire()
             label.setGeometry(rect)
+            label.stackUnder(self.overlay_painter)
             self.widgets[i] = label
             if i in self.pixmap_cache:
                 label.set_pixmap(self.pixmap_cache[i], self.image_paths[i])

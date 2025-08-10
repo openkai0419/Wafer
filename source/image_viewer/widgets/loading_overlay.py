@@ -20,7 +20,7 @@ class OverlayLoadingIndicator(QtWidgets.QWidget):
         self.spinner = QtWebEngineWidgets.QWebEngineView()
         self.spinner.page().setBackgroundColor(QtCore.Qt.transparent)
 
-        html_path = get_resource_path() / "Dual Ring@1x-1.0s-300px-300px.html"
+        html_path = get_resource_path() / "Ring_Load_spinner.html"
         self.spinner.load(html_path.resolve().as_uri())
         self.spinner.setFixedSize(uipx(120), uipx(120))
 

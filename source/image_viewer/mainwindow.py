@@ -2,10 +2,10 @@ from PySide6 import QtWidgets, QtGui, QtCore
 from datetime import datetime, timedelta
 
 from .viewer.justifiedwidget import JustifiedVirtualScrollWidget
-from ..core.setting_db import SettingDB
-from ..core.query import MetaInfoSearchEngine, MetaQuery
-from ..core.zmq import ZMQSubscriber
-from ..debounce import qt_debounce
+from ..database.setting_db import SettingDB
+from ..database.query import MetaInfoSearchEngine, MetaQuery
+from ..zmq.zmq import ZMQSubscriber
+from ..qt.debounce import qt_debounce
 from .widgets.loading_overlay import OverlayLoadingIndicator
 from .widgets.foldertree import LazyFolderTreeView
 from .widgets.query_options import SingleRowOption
@@ -13,16 +13,16 @@ from .widgets.scrollarea import InertialScrollArea, AutoScrollArea
 from .widgets.progress_bar import ThinProgressBar
 from .widgets.button_bar import IconButtonBar, IconButtonConfig
 from .widgets.table_combo import ComboBoxWithButtons
-from .thread import main_thread
+from ..qt.thread import main_thread
 from .viewer_settings import main_setting
-from ..funcs import get_data_db, get_setting_db, uipx, get_setting_file_names, new_main
+from ..common.funcs import get_data_db, get_setting_db, uipx, get_setting_file_names, new_main
 from ..constants import default_db_name, APP_FILE_NAME, APP_NAME
-from ..profiling import logger, profiler
-from ..settings.setting_window import SettingsWindow
-from ..settings.db_settings import DataBaseSettings
-from ..dialog import InputDialog, ConfirmDialog
-from ..settings.translation import TranslatorMixin
-from .actions import ContextMenuBuilder, FolderContextMenuBuilder, add_menu_actions_recursively
+from ..common.profiling import logger, profiler
+from ..image_setting.setting_window import SettingsWindow
+from ..image_setting.db_settings import DataBaseSettings
+from ..qt.dialog import InputDialog, ConfirmDialog
+from ..image_setting.translation import TranslatorMixin
+from ..actions.actions import ContextMenuBuilder, FolderContextMenuBuilder, add_menu_actions_recursively
 
 class WorkerSignals(QtCore.QObject):
     finished = QtCore.Signal(object, object)

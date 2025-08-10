@@ -1,17 +1,17 @@
 from PySide6 import QtWidgets, QtGui, QtCore
 
-from ..profiling import logger, profiler
-from ..debounce import qt_debounce
-from ..funcs import get_data_db, get_setting_db, new_main, get_setting_file_names
-from ..core.collector import ImageIndexer
+from ..common.profiling import logger, profiler
+from ..qt.debounce import qt_debounce
+from ..common.funcs import get_data_db, get_setting_db, new_main, get_setting_file_names
+from ..database.collector import ImageIndexer
 from .watch_folder import WatchFolder
 from .watch_setting import SettingWatcher
-from .progress_notifier import close_publisher, get_viewer_count, send_show_toggle
-from ..core.setting_db import SettingDB
-from ..dialog import ConfirmDialog 
+from ..qt.progress_notifier import close_publisher, get_viewer_count, send_show_toggle
+from ..database.setting_db import SettingDB
+from ..qt.dialog import ConfirmDialog
 from ..constants import APP_FILE_NAME, APP_NAME
-from ..core.db_utils import delete_database_files, clean_database
-from ..settings.translation import TranslatorMixin
+from ..database.db_utils import delete_database_files, clean_database
+from ..image_setting.translation import TranslatorMixin
 
 
 class TrayApp(QtWidgets.QSystemTrayIcon, TranslatorMixin):

@@ -3,10 +3,10 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import os
 
-from ..profiling import logger, profiler
-from ..funcs import IMAGE_EXTENSIONS
-from ..debounce import qt_debounce
-from .progress_notifier import ProgressAggregator
+from ..common.profiling import logger, profiler
+from ..common.funcs import IMAGE_EXTENSIONS
+from ..qt.debounce import qt_debounce
+from ..qt.progress_notifier import ProgressAggregator
 
 extensions = set(IMAGE_EXTENSIONS)
 

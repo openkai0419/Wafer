@@ -6,8 +6,8 @@ import multiprocessing
 from collections import OrderedDict
 from PySide6 import QtWidgets, QtGui, QtCore
 
-from ...profiling import logger, profiler
-from ...funcs import uipx
+from ..common.profiling import logger, profiler
+from ..common.funcs import uipx
 
 class ImageLoaderRunnable(QtCore.QRunnable):
     def __init__(self, index, path, size, receiver):

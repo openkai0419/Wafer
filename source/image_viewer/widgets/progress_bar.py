@@ -1,6 +1,6 @@
 from PySide6 import QtCore, QtWidgets, QtGui
 
-from ...funcs import uipx
+from ...common.funcs import uipx
 
 class HoverProxy(QtWidgets.QWidget):
     def __init__(self, target_widget, margin=None):

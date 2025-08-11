@@ -5,7 +5,6 @@ import os
 
 from ..common.profiling import logger, profiler
 from ..common.funcs import IMAGE_EXTENSIONS
-from ..qt.debounce import qt_debounce
 from .progress_notifier import ProgressAggregator
 
 extensions = set(IMAGE_EXTENSIONS)
@@ -228,7 +227,6 @@ class WatchFolder(QtCore.QObject):
             self.changed_set.clear()
             return
 
-    @qt_debounce(200)
     def rescan_all(self):
         if hasattr(self, "folders"):
             self.db_worker.trigger_rescan.emit(self.folders)

@@ -1,4 +1,5 @@
 from PySide6 import QtWidgets, QtGui, QtCore
+import contextlib
 
 from ..common.profiling import logger, profiler
 from ..qt.debounce import qt_debounce
@@ -20,8 +21,8 @@ class TrayApp(QtWidgets.QSystemTrayIcon, TranslatorMixin):
 
         self.show_action = self.menu.addAction(self.t.tr("Show Window"))
         self.show_action.triggered.connect(self.show_if_not)
-        self.show_action = self.menu.addAction(self.t.tr("Open New Window"))
-        self.show_action.triggered.connect(self.show_anyways)
+        self.open_action = self.menu.addAction(self.t.tr("Open New Window"))
+        self.open_action.triggered.connect(self.show_anyways)
         self.menu.addSeparator()
         self.reload_action = self.menu.addAction(self.t.tr("ReScan All"))
         self.reload_action.triggered.connect(self.rescan)
@@ -59,7 +60,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon, TranslatorMixin):
             return self.zmq.get_sub_count()
         except Exception as e:
             logger.warning(f"[viewer count failed] {e}")
-            return 1
+            return 0
 
     @profiler.profile
     def on_activated(self, reason):
@@ -85,7 +86,11 @@ class TrayApp(QtWidgets.QSystemTrayIcon, TranslatorMixin):
         c = ConfirmDialog.ask(f"{f}", buttons=("ok", "none", "cancel"))
 
     def delete(self):
-        pass
+        # ensure background threads are stopped
+        with contextlib.suppress(Exception):
+            self.zmq.stop()
+        with contextlib.suppress(Exception):
+            self.broker.stop()
 
     def quit(self):
         QtWidgets.QApplication.quit()

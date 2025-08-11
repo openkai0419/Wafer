@@ -1,3 +1,5 @@
+import contextlib
+
 from ..common.profiling import logger, profiler
 from ..common.funcs import get_data_db, get_setting_db
 from ..db.collector import ImageIndexer
@@ -75,8 +77,11 @@ class CollectorProcess():
     def stop(self):
         if hasattr(self, "folder_watcher") and self.folder_watcher:
             self.folder_watcher.stop()
-        if hasattr(self, "setting_watcher")and self.setting_watcher:
+        if hasattr(self, "setting_watcher") and self.setting_watcher:
             self.setting_watcher.stop()
+        with contextlib.suppress(Exception):
+            self.zmq.stop()
 
     def quit(self):
-        pass
+        # graceful shutdown
+        self.stop()

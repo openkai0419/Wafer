@@ -82,8 +82,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon, TranslatorMixin):
         new_main("--viewer")
 
     def test(self):
-        f = get_setting_file_names()
-        c = ConfirmDialog.ask(f"{f}", buttons=("ok", "none", "cancel"))
+        self.zmq.send(targetprocess="ALL", table="*", topic="*", message="TEST FUNCTION!")
 
     def delete(self):
         # ensure background threads are stopped

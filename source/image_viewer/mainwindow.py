@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from .viewer.justifiedwidget import JustifiedVirtualScrollWidget
 from ..db.setting_db import SettingDB
 from ..db.query import MetaInfoSearchEngine, MetaQuery
-from ..zmq.zmq import ZMQSubscriber
+from ..zmq.broker import ZMQNode, Role, MessageEnvelope
 from ..qt.debounce import qt_debounce
 from .widgets.loading_overlay import OverlayLoadingIndicator
 from .widgets.foldertree import LazyFolderTreeView
@@ -16,7 +16,7 @@ from .widgets.table_combo import ComboBoxWithButtons
 from ..qt.thread import main_thread
 from .viewer_settings import main_setting
 from ..common.funcs import get_data_db, get_setting_db, uipx, get_setting_file_names, new_main
-from ..constants import default_db_name, APP_FILE_NAME, APP_NAME
+from ..constants import default_db_name, APP_NAME
 from ..common.profiling import logger, profiler
 from ..image_setting.setting_window import SettingsWindow
 from ..image_setting.db_settings import DataBaseSettings
@@ -175,24 +175,25 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.progress_bar.setMaximum(int(value))
 
     def start_ipc_listener(self):
-        def on_message(msg: str):
-            head, table, topic, message = msg.split(":", 3)
-            if table != "*" and table != self.dbname: 
+        def on_message(env: MessageEnvelope):
+            table = env.table
+            topic = env.topic
+            message = env.message
+            if table not in ("*", self.dbname):
                 return
             handlers = {
-                "update": lambda: QtCore.QMetaObject.invokeMethod(self, "search", QtCore.Qt.QueuedConnection,  QtCore.Q_ARG(bool, True)),
+                "update": lambda: QtCore.QMetaObject.invokeMethod(self, "search", QtCore.Qt.QueuedConnection, QtCore.Q_ARG(bool, True)),
                 "progress": lambda: QtCore.QMetaObject.invokeMethod(self, "update_current", QtCore.Qt.QueuedConnection, QtCore.Q_ARG(int, int(message))),
                 "maximum": lambda: QtCore.QMetaObject.invokeMethod(self, "update_maximum", QtCore.Qt.QueuedConnection, QtCore.Q_ARG(int, int(message))),
                 "folderchanged": lambda: QtCore.QMetaObject.invokeMethod(self, "reload_folderlist", QtCore.Qt.QueuedConnection),
-                "show_toggle": lambda: QtCore.QMetaObject.invokeMethod(self, "toggle_show", QtCore.Qt.QueuedConnection, QtCore.Q_ARG(bool, (message=="True"))),
+                "show_toggle": lambda: QtCore.QMetaObject.invokeMethod(self, "toggle_show", QtCore.Qt.QueuedConnection, QtCore.Q_ARG(bool, message == "True")),
             }
             try:
                 handlers.get(topic, lambda: None)()
             except Exception:
-                logger.exception("Error processing IPC message: %s", msg)
+                logger.exception("Error processing IPC message: %s", env)
 
-        self._subscriber = ZMQSubscriber(head_filter=[APP_FILE_NAME])
-        self._subscriber.connect_on_message(on_message)
+        self._subscriber = ZMQNode(Role.VIEWER, on_message=on_message, count="enable")
         self._subscriber.start()
 
     def toggle_language(self):

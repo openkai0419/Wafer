@@ -12,7 +12,7 @@ from source.common.profiling import initialize_profiling, logger, profiler
 from source.constants import APP_FILE_NAME, APP_NAME, default_db_name, APP_ID
 from source.common.funcs import get_setting_file_names, new_main, split_last
 from source.common.mutex import SafeProcessLock
-from source.zmq.zmq import ZMQBroker
+from source.zmq.broker import Broker
 
 def get_icon():
     icon = QtGui.QIcon("_resources/icon.ico")
@@ -35,11 +35,12 @@ def run_communicator():
             initialize_profiling()
             shutdown_event = threading.Event()
             logger.info("communicator start")
-            broker = ZMQBroker()
+            broker = Broker()
+            broker.start()
 
             def shutdown_handler(sig, frame):
                 logger.info("\n[Broker] Shutting down...")
-                broker.close()
+                broker.stop()
                 shutdown_event.set()
                 sys.exit(0)
 

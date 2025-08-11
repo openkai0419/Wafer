@@ -145,9 +145,6 @@ class WatchFolder(QtCore.QObject):
 
     @profiler.profile
     def progress_callback(self, current, total):
-        logger.debug(
-            "[WatchFolder] progress: current=%s, total=%s", current, total
-        )
         self._progress_aggregator.add(current, total)
 
     @profiler.profile

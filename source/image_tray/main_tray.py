@@ -1,6 +1,7 @@
 from PySide6 import QtWidgets, QtGui, QtCore
 import contextlib
 
+from ..image_collector.progress_notifier import close_publisher
 from ..common.profiling import logger, profiler
 from ..qt.debounce import qt_debounce
 from ..common.funcs import new_main, get_setting_file_names
@@ -90,6 +91,8 @@ class TrayApp(QtWidgets.QSystemTrayIcon, TranslatorMixin):
             self.zmq.stop()
         with contextlib.suppress(Exception):
             self.broker.stop()
+        with contextlib.suppress(Exception):
+            close_publisher()
 
     def quit(self):
         QtWidgets.QApplication.quit()

@@ -1,5 +1,6 @@
 import contextlib
 
+from .progress_notifier import close_publisher
 from ..common.profiling import logger, profiler
 from ..common.funcs import get_data_db, get_setting_db
 from ..db.collector import ImageIndexer
@@ -81,6 +82,8 @@ class CollectorProcess():
             self.setting_watcher.stop()
         with contextlib.suppress(Exception):
             self.zmq.stop()
+        with contextlib.suppress(Exception):
+            close_publisher()
 
     def quit(self):
         # graceful shutdown

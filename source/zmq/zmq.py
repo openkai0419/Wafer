@@ -3,7 +3,7 @@ import threading
 import queue
 import time
 from ..common.profiling import logger, profiler
-from .ipc_utils import write_port, read_port
+from .ipc_utils import write_port, read_port, parse_port
 from ..constants import APP_FILE_NAME
 
 HEARTBEAT_INTERVAL = 5
@@ -11,10 +11,10 @@ HEARTBEAT_TIMEOUT = 15
 DEFAULT_PORT = 57556
 
 def get_broker_address():
-    addr = read_port()
-    if addr is None:
-        addr = f"tcp://localhost:{DEFAULT_PORT}"
-    return addr
+    port = read_port()
+    if port is None:
+        port = DEFAULT_PORT
+    return f"tcp://localhost:{port}"
 
 class ZMQBroker:
     def __init__(self, bind_addr: str | None = None):
@@ -22,26 +22,29 @@ class ZMQBroker:
         self.socket = self.context.socket(zmq.ROUTER)
 
         if bind_addr is None:
-            addr = read_port()
-            if addr is None:
-                addr = f"tcp://localhost:{DEFAULT_PORT}"
+            port = read_port()
+            if port is None:
+                port = DEFAULT_PORT
+            addr = f"tcp://localhost:{port}"
             try:
                 self.socket.bind(addr)
                 self.bind_addr = addr
-                logger.info(f"Broker bound to port: {addr}")
+                logger.info(f"Broker bound to port: {port}")
             except zmq.ZMQError:
                 # fallback to random port on bind error
                 port = self.socket.bind_to_random_port("tcp://localhost")
                 addr = f"tcp://localhost:{port}"
                 self.bind_addr = addr
                 logger.info(f"Broker bound to random port: {port}")
-            write_port(addr)
+            write_port(port)
 
         else:
-            # explicitly specified address
-            self.socket.bind(bind_addr)
-            self.bind_addr = bind_addr
-            write_port(bind_addr)
+            # enforce localhost regardless of input
+            port = parse_port(bind_addr)
+            addr = f"tcp://localhost:{port}"
+            self.socket.bind(addr)
+            self.bind_addr = addr
+            write_port(port)
 
         self._clients = {}  # ident: (role, last_seen)
         self._stop_event = threading.Event()

@@ -249,6 +249,7 @@ class Broker:
             if batch:
                 for ident, frames in batch:
                     with contextlib.suppress(zmq.ZMQError):
+                        logger.info([ident, *frames])
                         self.router.send_multipart([ident, *frames], flags=zmq.DONTWAIT)
             else:
                 self._out_q_empty.set()

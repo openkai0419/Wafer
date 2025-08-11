@@ -90,7 +90,6 @@ class OverLayPainter(QtWidgets.QWidget):
 
     def paintEvent(self, event):
         super().paintEvent(event)
-        logger.debug("CHILD PAINT")
         painter = QtGui.QPainter(self)
 
         # 軸揃え矩形だけなので AA は切る
@@ -458,7 +457,6 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
 
     def paintEvent(self, event):
         super().paintEvent(event)
-        logger.debug("PARENT PAINT")
         scroll_y = self.parent_scroll.verticalScrollBar().value()
         scroll_x = self.parent_scroll.horizontalScrollBar().value()
         viewport_rect = self.parent_scroll.viewport().rect().translated(scroll_x, scroll_y)

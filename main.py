@@ -13,7 +13,6 @@ from source.common.profiling import initialize_profiling, logger, profiler
 from source.constants import APP_FILE_NAME, APP_NAME, default_db_name, APP_ID
 from source.common.funcs import get_setting_file_names, new_main, split_last
 from source.common.mutex import SafeProcessLock
-from source.zmq.broker import Broker
 
 def get_icon():
     icon = QtGui.QIcon("_resources/icon.ico")
@@ -33,6 +32,7 @@ def run_communicator():
     try:
         #logger.setLevel(30)
         with SafeProcessLock(f"{APP_FILE_NAME}_communicator"):
+            logger.info("COMMUNICATOR RUNNING")
             app = QtWidgets.QApplication(sys.argv)
             app.setQuitOnLastWindowClosed(False) 
             app.setApplicationName(APP_NAME)
@@ -50,7 +50,7 @@ def run_collector(name):
         with SafeProcessLock(f"{APP_FILE_NAME}_{name}"):
             initialize_profiling()
             shutdown_event = threading.Event()
-            logger.info("communicator start")
+            logger.info(f"collector start :{name}")
             collector = CollectorProcess(name)
 
             def shutdown_handler(sig, frame):
@@ -63,7 +63,7 @@ def run_collector(name):
             signal.signal(signal.SIGTERM, shutdown_handler)
 
             # Block main thread
-            logger.info ("[Broker] Running. Press Ctrl+C to exit.")
+            logger.info ("[Collector] Running. Press Ctrl+C to exit.")
             shutdown_event.wait()
 
     except FileExistsError:

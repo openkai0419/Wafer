@@ -11,10 +11,10 @@ HEARTBEAT_TIMEOUT = 15
 DEFAULT_PORT = 57556
 
 def get_broker_address():
-    port = read_port()
-    if port is None:
-        port = DEFAULT_PORT
-    return f"tcp://localhost:{port}"
+    addr = read_port()
+    if addr is None:
+        addr = f"tcp://localhost:{DEFAULT_PORT}"
+    return addr
 
 class ZMQBroker:
     def __init__(self, bind_addr: str | None = None):
@@ -22,29 +22,26 @@ class ZMQBroker:
         self.socket = self.context.socket(zmq.ROUTER)
 
         if bind_addr is None:
-            port = read_port()
-            if port is None:
-                port = DEFAULT_PORT
+            addr = read_port()
+            if addr is None:
+                addr = f"tcp://localhost:{DEFAULT_PORT}"
             try:
-                self.socket.bind(f"tcp://localhost:{port}")
-                self.bind_addr = f"tcp://localhost:{port}"
-                logger.info(f"Broker bound to port: {port}")
+                self.socket.bind(addr)
+                self.bind_addr = addr
+                logger.info(f"Broker bound to port: {addr}")
             except zmq.ZMQError:
                 # fallback to random port on bind error
                 port = self.socket.bind_to_random_port("tcp://localhost")
-                self.bind_addr = f"tcp://localhost:{port}"
+                addr = f"tcp://localhost:{port}"
+                self.bind_addr = addr
                 logger.info(f"Broker bound to random port: {port}")
-            write_port(port)
+            write_port(addr)
 
         else:
             # explicitly specified address
             self.socket.bind(bind_addr)
             self.bind_addr = bind_addr
-            try:
-                port = int(bind_addr.rsplit(":", 1)[1])
-                write_port(port)
-            except Exception:
-                pass
+            write_port(bind_addr)
 
         self._clients = {}  # ident: (role, last_seen)
         self._stop_event = threading.Event()

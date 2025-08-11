@@ -7,7 +7,7 @@ from ..common.funcs import new_main, get_setting_file_names
 from ..qt.dialog import ConfirmDialog
 from ..constants import APP_NAME
 from ..image_setting.translation import TranslatorMixin
-from ..zmq.broker import ZMQNode, Broker, Role
+from ..zmq.broker import ZMQNode, ZMQBroker, Role
 
 class TrayApp(QtWidgets.QSystemTrayIcon, TranslatorMixin):
     @profiler.profile
@@ -36,7 +36,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon, TranslatorMixin):
         self.setContextMenu(self.menu)
         self.activated.connect(self.on_activated)
 
-        self.broker = Broker()
+        self.broker = ZMQBroker()
         self.broker.start()
         self.zmq = ZMQNode(Role.COMMUNICATOR, on_message=self.on_notify)
         self.zmq.start()

@@ -46,7 +46,7 @@ def cleanup_old_logs_safe(log_dir=LOG_PATH, keep_latest=10):
                     os.remove(f)
                     deleted += 1
                 except Exception as e:
-                    print(f"Warning: Failed to delete {f}: {e}")
+                    print(f"Failed to delete {f}: {e}")
         return deleted
     except:
         pass

@@ -16,6 +16,7 @@ import zmq
 from ..common.profiling import logger
 from .ipc_utils import write_port, read_port, parse_port
 from ..constants import APP_FILE_NAME
+#from ..common.memprofiling import mem_usage
 
 # ==================== Tunables ====================
 HEARTBEAT_INTERVAL = 5

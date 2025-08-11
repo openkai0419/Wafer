@@ -3,12 +3,13 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import os
 
+from ..qt.debounce import qt_debounce, qt_throttle
+
 from ..common.profiling import logger, profiler
 from ..common.funcs import IMAGE_EXTENSIONS
 from .progress_notifier import ProgressAggregator
 
 extensions = set(IMAGE_EXTENSIONS)
-
 
 class DBWorker(QtCore.QObject):
     finished = QtCore.Signal()
@@ -152,6 +153,7 @@ class WatchFolder(QtCore.QObject):
         self._progress_aggregator.notify_extra("update", message)
 
     @profiler.profile
+    @qt_throttle(1000, 2000)
     def folderchange_callback(self, folder):
         logger.debug(f"folder changed: {folder}")
         self._progress_aggregator.notify_extra("folderchanged", "")

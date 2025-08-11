@@ -249,7 +249,6 @@ class Broker:
             if batch:
                 for ident, frames in batch:
                     with contextlib.suppress(zmq.ZMQError):
-                        logger.info([ident, *frames])
                         self.router.send_multipart([ident, *frames], flags=zmq.DONTWAIT)
             else:
                 self._out_q_empty.set()
@@ -265,7 +264,7 @@ class Broker:
     def _handle_router_recv_control(self, ident: bytes, payload: bytes):
         now = MonoTime()
         text = payload.decode("utf-8", errors="ignore")
-
+        
         if text.startswith("register:"):
             parts = text.split(":", 5)
             if len(parts) < 5:
@@ -327,6 +326,7 @@ class Broker:
 
     def _handle_router_recv_app(self, ident: bytes, frames: List[bytes]):
         # アプリ向けメッセージはフレームで受け取り、そのままルート
+        logger.info(f"[Broker] APP from {ident!r}: {frames}")
         env = MessageEnvelope.from_frames(frames)
         if env is None:
             logger.debug("Invalid multipart frames")

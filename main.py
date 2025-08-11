@@ -53,6 +53,7 @@ def run_collector(name):
             app = QtCore.QCoreApplication(sys.argv)
             app.setApplicationName(APP_NAME)
             collector = CollectorProcess(name)
+            app.aboutToQuit.connect(collector.stop)
 
             def shutdown_handler(sig, frame):
                 logger.info("\n[Broker] Shutting down...")
@@ -63,7 +64,7 @@ def run_collector(name):
             signal.signal(signal.SIGTERM, shutdown_handler)
 
             logger.info("[Collector] Running. Press Ctrl+C to exit.")
-            app.exec()
+            sys.exit(app.exec())
 
     except FileExistsError:
         logger.info(f"Collector '{name}' is already running.")

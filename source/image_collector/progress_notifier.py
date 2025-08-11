@@ -6,6 +6,14 @@ from ..common.profiling import logger, profiler
 _node = None
 _node_lock = threading.Lock()
 
+
+def set_node(node: ZMQNode) -> None:
+    """Share external node instance"""
+    global _node
+    with _node_lock:
+        _node = node
+
+
 @profiler.profile
 def _get_node() -> ZMQNode:
     global _node

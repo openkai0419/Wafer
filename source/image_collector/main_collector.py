@@ -1,6 +1,6 @@
 import contextlib
 
-from .progress_notifier import close_publisher
+from .progress_notifier import close_publisher, set_node
 from ..common.profiling import logger, profiler
 from ..common.funcs import get_data_db, get_setting_db
 from ..db.collector import ImageIndexer
@@ -22,6 +22,7 @@ class CollectorProcess():
         self.folders_to_watch = []
         self.zmq = ZMQNode(Role.COLLECTOR, on_message=self.on_message)
         self.zmq.start()
+        set_node(self.zmq)
 
         self.start_watch()
     
@@ -80,8 +81,6 @@ class CollectorProcess():
             self.folder_watcher.stop()
         if hasattr(self, "setting_watcher") and self.setting_watcher:
             self.setting_watcher.stop()
-        with contextlib.suppress(Exception):
-            self.zmq.stop()
         with contextlib.suppress(Exception):
             close_publisher()
 

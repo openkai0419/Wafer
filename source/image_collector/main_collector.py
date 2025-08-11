@@ -43,12 +43,10 @@ class CollectorProcess():
         self.folder_watcher.start(folders)
         self.folders_to_watch = folders
 
-        self.setting_watcher = SettingWatcher(
-            self.setting_db,
-            on_parent_folders_changed=self.reload_parent_folder,
-            on_ignore_folders_changed=self.reload_ignore_folder,
-            on_delete_flag=self.delete,
-        )
+        self.setting_watcher = SettingWatcher(self.setting_db)
+        self.setting_watcher.parentFoldersChanged.connect(self.reload_parent_folder)
+        self.setting_watcher.ignoreFoldersChanged.connect(self.reload_ignore_folder)
+        self.setting_watcher.deleteFlagEmit.connect(self.delete)
         self.setting_watcher.start()
         logger.debug("tray app start watching end")
     

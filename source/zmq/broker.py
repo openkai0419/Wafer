@@ -27,7 +27,7 @@ MonoTime = time.monotonic
 # -------------------- Enum --------------------
 
 class Role(str, Enum):
-    TRAY = "tray"
+    COMMUNICATOR = "communicator"
     COLLECTOR = "collector"
     VIEWER = "viewer"
 

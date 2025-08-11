@@ -4,13 +4,12 @@ from ..db.collector import ImageIndexer
 from .watch_folder import WatchFolder
 from ..db.setting_db import SettingDB
 from .watch_setting import SettingWatcher
-from ..zmq.progress_notifier import close_publisher, get_viewer_count, send_show_toggle
 from ..db.db_utils import delete_database_files, clean_database
 from ..zmq.broker import ZMQNode, Role
 
 class CollectorProcess():
-    def __init__(self, icon, name, parent=None):
-        super().__init__(icon, parent)
+    def __init__(self, name):
+        super().__init__()
         logger.info("FOLDER WATCHER EXECUTED")
         self.dname = name
 
@@ -18,7 +17,6 @@ class CollectorProcess():
         self.data_db = None
 
         self.folders_to_watch = []
-        self.activated.connect(self.on_activated)
         self.zmq = ZMQNode(Role.COLLECTOR, on_message=self.on_message)
         self.zmq.start()
 

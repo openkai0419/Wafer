@@ -7,7 +7,8 @@ import argparse
 from PySide6 import QtWidgets, QtGui, QtCore
 
 from source.image_viewer.mainwindow import MainWindow
-from source.image_collector.main_tray import TrayApp
+from source.image_collector.main_collector import CollectorProcess
+from source.image_tray.main_tray import TrayApp
 from source.common.profiling import initialize_profiling, logger, profiler
 from source.constants import APP_FILE_NAME, APP_NAME, default_db_name, APP_ID
 from source.common.funcs import get_setting_file_names, new_main, split_last
@@ -30,17 +31,31 @@ set_app_user_model_id(APP_ID)
 
 def run_communicator():
     try:
-        logger.setLevel(30)
+        #logger.setLevel(30)
         with SafeProcessLock(f"{APP_FILE_NAME}_communicator"):
+            app = QtWidgets.QApplication(sys.argv)
+            app.setQuitOnLastWindowClosed(False) 
+            app.setApplicationName(APP_NAME)
+            tray_icon = TrayApp(get_icon())
+            tray_icon.show()
+            sys.exit(app.exec()) 
+    except FileExistsError:
+        return
+    except:
+        raise
+
+def run_collector(name):
+    try:
+        #logger.setLevel(30)
+        with SafeProcessLock(f"{APP_FILE_NAME}_{name}"):
             initialize_profiling()
             shutdown_event = threading.Event()
             logger.info("communicator start")
-            broker = Broker()
-            broker.start()
+            collector = CollectorProcess(name)
 
             def shutdown_handler(sig, frame):
                 logger.info("\n[Broker] Shutting down...")
-                broker.stop()
+                collector.stop()
                 shutdown_event.set()
                 sys.exit(0)
 
@@ -49,31 +64,8 @@ def run_communicator():
 
             # Block main thread
             logger.info ("[Broker] Running. Press Ctrl+C to exit.")
-            shutdown_event.wait() 
-    except FileExistsError:
-        return
-    except:
-        raise
+            shutdown_event.wait()
 
-def run_viewer():
-    initialize_profiling()
-    app = QtWidgets.QApplication(sys.argv)
-    app.setApplicationName(APP_NAME)
-    window = MainWindow(get_icon())
-    window.show()
-    sys.exit(app.exec())
-
-def run_collector(name):
-    try:
-        initialize_profiling()
-        logger.setLevel(30)
-        with SafeProcessLock(f"{APP_FILE_NAME}_{name}"):
-            app = QtWidgets.QApplication(sys.argv)
-            app.setQuitOnLastWindowClosed(False) 
-            app.setApplicationName(APP_NAME)
-            tray_icon = TrayApp(get_icon(), name)
-            tray_icon.show()
-            sys.exit(app.exec())
     except FileExistsError:
         logger.info(f"Collector '{name}' is already running.")
     except:
@@ -89,6 +81,14 @@ def run_all_collectors():
     for name in sub:
         new_main("--collector", f"{name}")
     run_collector(main)
+
+def run_viewer():
+    initialize_profiling()
+    app = QtWidgets.QApplication(sys.argv)
+    app.setApplicationName(APP_NAME)
+    window = MainWindow(get_icon())
+    window.show()
+    sys.exit(app.exec())
 
 def main():
     parser = argparse.ArgumentParser(description="Script with three run modes")

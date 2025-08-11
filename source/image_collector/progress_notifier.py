@@ -1,6 +1,6 @@
 import threading
 
-from .broker import ZMQNode, Role
+from ..zmq.broker import ZMQNode, Role
 from ..common.profiling import logger, profiler
 
 _node = None
@@ -27,20 +27,6 @@ def close_publisher():
             finally:
                 _node = None
 
-def get_viewer_count():
-    try:
-        node = _get_node()
-        return node.get_sub_count()
-    except Exception as e:
-        logger.warning(f"[viewer count failed] {e}")
-        return 1
-
-def send_show_toggle(flag):
-    try:
-        node = _get_node()
-        node.send(targetprocess="viewer", table="*", topic="show_toggle", message="True" if flag else "False")
-    except Exception as e:
-        logger.warning(f"[toggle notify failed] {e}")
 
 class ProgressAggregator:
     def __init__(self, tablename):

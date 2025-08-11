@@ -6,7 +6,7 @@ import os
 from ..common.profiling import logger, profiler
 from ..common.funcs import IMAGE_EXTENSIONS
 from ..qt.debounce import qt_debounce
-from ..zmq.progress_notifier import ProgressAggregator
+from .progress_notifier import ProgressAggregator
 
 extensions = set(IMAGE_EXTENSIONS)
 

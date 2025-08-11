@@ -24,29 +24,32 @@ def is_pid_active(pid):
     return psutil.pid_exists(pid)
 
 def cleanup_old_logs_safe(log_dir=LOG_PATH, keep_latest=10):
-    log_files = sorted(
-        glob.glob(os.path.join(log_dir, "debuglog_*.log*")),
-        key=os.path.getmtime,
-        reverse=True
-    )
+    try:
+        log_files = sorted(
+            glob.glob(os.path.join(log_dir, "debuglog_*.log*")),
+            key=os.path.getmtime,
+            reverse=True
+        )
 
-    deleted = 0
-    primary_files = [f for f in log_files if re.match(r".*\\.log$", f)]
+        deleted = 0
+        primary_files = [f for f in log_files if re.match(r".*\\.log$", f)]
 
-    for f in log_files:
-        base = re.sub(r"\\.log(?:\\.\\d+)?$", ".log", f)
-        if base not in primary_files[:keep_latest]:
-            match = re.search(r"debuglog_(\\d+).log", base)
-            if match:
-                pid = int(match.group(1))
-                if is_pid_active(pid):
-                    continue  # skip active process logs
-            try:
-                os.remove(f)
-                deleted += 1
-            except Exception as e:
-                print(f"Warning: Failed to delete {f}: {e}")
-    return deleted
+        for f in log_files:
+            base = re.sub(r"\\.log(?:\\.\\d+)?$", ".log", f)
+            if base not in primary_files[:keep_latest]:
+                match = re.search(r"debuglog_(\\d+).log", base)
+                if match:
+                    pid = int(match.group(1))
+                    if is_pid_active(pid):
+                        continue  # skip active process logs
+                try:
+                    os.remove(f)
+                    deleted += 1
+                except Exception as e:
+                    print(f"Warning: Failed to delete {f}: {e}")
+        return deleted
+    except:
+        pass
     
 class LoggerManager:
     _instance = None

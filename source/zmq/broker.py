@@ -3,7 +3,7 @@
 from __future__ import annotations
 import uuid
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Callable, List, Tuple, Union, Literal
+from typing import Optional, Callable, List, Tuple, Union, Dict, Literal, Any
 from enum import Enum
 import contextlib
 
@@ -12,15 +12,21 @@ from queue import Queue, Empty
 import time
 import zmq
 
-from ..common.profiling import logger, profiler
+from ..common.profiling import logger
 from .ipc_utils import write_port, read_port
 from ..constants import APP_FILE_NAME
 
 HEARTBEAT_INTERVAL = 5
 HEARTBEAT_TIMEOUT = 15
 DEFAULT_PORT = 57556
-BROKER_SEND_QUEUE_MAXSIZE = 1000
-NODE_SEND_QUEUE_MAXSIZE = 100
+BROKER_SEND_QUEUE_MAXSIZE = 100_000
+NODE_SEND_QUEUE_MAXSIZE = 10_000
+
+# ---- ZeroMQ tuning defaults (effective; set before bind/connect) ----
+ZMQ_SNDHWM = 100_000
+ZMQ_RCVHWM = 100_000
+ZMQ_SNDTIMEO_MS = 2000  # send blocks up to this; raises Again on timeout
+ZMQ_RCVTIMEO_MS = 2000
 
 MonoTime = time.monotonic
 
@@ -39,7 +45,7 @@ class MessageEnvelope:
     targetprocess: str = "ALL"
     table: str = ""
     topic: str = ""
-    message: str = ""
+    message: Optional[str] = ""
     request_id: Optional[str] = None  # マルチパートの6フレーム目に相当
 
     def to_frames(self) -> List[bytes]:
@@ -68,7 +74,6 @@ class MessageEnvelope:
         rid = frames[5].decode("utf-8", "ignore") if len(frames) > 5 else None
         return MessageEnvelope(APP_NAME=app, targetprocess=target, table=table, topic=topic, message=msg, request_id=rid)
 
-
 # -------------------- Small helpers --------------------
 
 @dataclass(slots=True)
@@ -79,14 +84,19 @@ class PeerMeta:
     last_seen: float = 0.0
 
 def _tune(sock):
-    # 軽量なデフォルト調整（必要に応じて調整）
     with contextlib.suppress(Exception):
-        sock.setsockopt(zmq.SNDHWM, 1000)
+        sock.setsockopt(zmq.SNDHWM, ZMQ_SNDHWM)
     with contextlib.suppress(Exception):
-        sock.setsockopt(zmq.RCVHWM, 1000)
+        sock.setsockopt(zmq.RCVHWM, ZMQ_RCVHWM)
+    with contextlib.suppress(Exception):
+        sock.setsockopt(zmq.SNDTIMEO, ZMQ_SNDTIMEO_MS)
+    with contextlib.suppress(Exception):
+        sock.setsockopt(zmq.RCVTIMEO, ZMQ_RCVTIMEO_MS)
+    # 以下はプラットフォーム依存で失敗することがある
     with contextlib.suppress(Exception):
         sock.setsockopt(zmq.TCP_KEEPALIVE, 1)
         sock.setsockopt(zmq.TCP_KEEPALIVE_CNT, 5)
+    with contextlib.suppress(Exception):
         sock.setsockopt(zmq.TCP_KEEPALIVE_IDLE, 10)
         sock.setsockopt(zmq.TCP_KEEPALIVE_INTVL, 2)
 
@@ -109,6 +119,7 @@ def _try_put(q: Queue, item) -> bool:
             q.put_nowait(item)
             return True
         except Exception:
+            logger.warning("node out_q full: drop message")
             return False
 
 def _force_put(q: Queue, item) -> None:
@@ -122,11 +133,12 @@ def _force_put(q: Queue, item) -> None:
 
 def _parse_kv_pairs(s: str) -> Dict[str, str]:
     """message='key:value,key:value' を dict に変換"""
-    result = {}
+    result: Dict[str, str] = {}
     for pair in s.split(","):
+        pair = pair.strip()
         if ":" in pair:
             k, v = pair.split(":", 1)
-            result[k] = v
+            result[k.strip()] = v.strip()
     return result
 
 # -------------------- Broker --------------------
@@ -137,12 +149,10 @@ class Broker:
 
         self.router = self.ctx.socket(zmq.ROUTER)
         _tune(self.router)
-        # 4) ROUTER_MANDATORY: 未接続 ident 宛の送信で即時エラー（EHOSTUNREACH）
         with contextlib.suppress(Exception):
             self.router.setsockopt(zmq.ROUTER_MANDATORY, 1)
 
         self._stop = threading.Event()
-        self._threads: List[threading.Thread] = []
 
         self.nodes: Dict[bytes, PeerMeta] = {}
         self.active_nodes: Dict[bytes, PeerMeta] = {}
@@ -152,29 +162,8 @@ class Broker:
         self._sentinel = object()
         self._lock = threading.RLock()
 
-        # 起こしすぎ対策
-        self._out_q_empty = threading.Event()
-        self._out_q_empty.set()
-
         self._io_thread: Optional[threading.Thread] = None
-
-        self._ctrl_endpoint = "inproc://broker-out"
-        self.ctrl_pull = self.ctx.socket(zmq.PULL)
-        _tune(self.ctrl_pull)
-        self.ctrl_pull.bind(self._ctrl_endpoint)
-
-    def _wakeup(self):
-        # 2) 短命PUSHで inproc を起こす（TLSキャッシュなし）
-        push = None
-        try:
-            push = self.ctx.socket(zmq.PUSH)
-            push.connect(self._ctrl_endpoint)
-            push.send(b"\x00", flags=zmq.DONTWAIT)
-        except Exception:
-            pass
-        finally:
-            if push is not None:
-                _close_linger0(push)
+        # ★ wakeup用 inproc は廃止済み（ポーリング駆動）
 
     def _bind(self) -> str:
         saved = read_port()
@@ -200,14 +189,16 @@ class Broker:
     def _io_loop(self):
         poller = zmq.Poller()
         poller.register(self.router, zmq.POLLIN)
-        poller.register(self.ctrl_pull, zmq.POLLIN)
+
+        POLL_TIMEOUT_MS = 10  # ★ 短い周期で回す（wakeup不要）
 
         while not self._stop.is_set():
             try:
-                events = dict(poller.poll(-1))
+                events = dict(poller.poll(POLL_TIMEOUT_MS))
             except zmq.ZMQError:
                 break
 
+            # 受信処理（あるぶんだけNOBLOCKでドレイン）
             if events.get(self.router) == zmq.POLLIN:
                 while True:
                     try:
@@ -218,22 +209,12 @@ class Broker:
                         break
                     if len(frames) >= 2:
                         ident, payloads = frames[0], frames[1:]
-                        # 制御系は 1 フレームのテキスト、アプリ系は複数フレーム
                         if len(payloads) == 1:
                             self._handle_router_recv_control(ident, payloads[0])
                         else:
                             self._handle_router_recv_app(ident, payloads)
 
-            if events.get(self.ctrl_pull) == zmq.POLLIN:
-                while True:
-                    try:
-                        _ = self.ctrl_pull.recv(flags=zmq.NOBLOCK)
-                    except zmq.Again:
-                        break
-                    except zmq.ZMQError:
-                        break
-
-            # 送信（バッチで吐く）
+            # 送信（毎ループで必ずキューを消費）
             batch: List[Tuple[bytes, List[bytes]]] = []
             sentinel_seen = False
             while True:
@@ -248,23 +229,24 @@ class Broker:
 
             if batch:
                 for ident, frames in batch:
-                    with contextlib.suppress(zmq.ZMQError):
-                        self.router.send_multipart([ident, *frames], flags=zmq.DONTWAIT)
-            else:
-                self._out_q_empty.set()
+                    try:
+                        self.router.send_multipart([ident, *frames])
+                    except zmq.Again:
+                        logger.warning("Broker ROUTER send timeout; dropping message to %r", ident)
+                    except zmq.ZMQError as e:
+                        logger.warning("Broker ROUTER send error to %r: %s", ident, e)
 
             if sentinel_seen:
                 self._stop.set()
                 break
 
         _close_linger0(self.router)
-        _close_linger0(self.ctrl_pull)
 
     # ---- handlers ----
     def _handle_router_recv_control(self, ident: bytes, payload: bytes):
         now = MonoTime()
         text = payload.decode("utf-8", errors="ignore")
-        
+
         if text.startswith("register:"):
             parts = text.split(":", 5)
             if len(parts) < 5:
@@ -314,11 +296,7 @@ class Broker:
                 request_id=req_id,
             )
             frames = reply_env.to_frames()
-            if _try_put(self._send_q, (ident, frames)):
-                if self._out_q_empty.is_set():
-                    self._out_q_empty.clear()
-                    self._wakeup()
-            else:
+            if not _try_put(self._send_q, (ident, frames)):
                 logger.warning("send queue full: drop control.count.reply")
             return
 
@@ -326,7 +304,7 @@ class Broker:
 
     def _handle_router_recv_app(self, ident: bytes, frames: List[bytes]):
         # アプリ向けメッセージはフレームで受け取り、そのままルート
-        logger.info(f"[Broker] APP from {ident!r}: {frames}")
+        #logger.debug(f"[Broker] APP from {ident!r}: {frames}")
         env = MessageEnvelope.from_frames(frames)
         if env is None:
             logger.debug("Invalid multipart frames")
@@ -346,38 +324,29 @@ class Broker:
         return counts
 
     def _route_message(self, env: MessageEnvelope):
-        target = (env.targetprocess or "ALL").lower()  # ★小文字化
+        target = (env.targetprocess or "ALL").lower()
         with self._lock:
             nodes_snapshot = list(self.nodes.items())
 
         frames = env.to_frames()
-        enqueued = False
         for ident, meta in nodes_snapshot:
-            # APP_NAME のチェック
             if meta.app_name is not None and meta.app_name != env.APP_NAME:
                 continue
-            # target が all でない場合は role も小文字比較
             if target != "all" and (meta.role or "").lower() != target:
                 continue
-            if _try_put(self._send_q, (ident, frames)):
-                enqueued = True
-            else:
+            if not _try_put(self._send_q, (ident, frames)):
                 logger.debug("send queue full: drop message")
-        if enqueued and self._out_q_empty.is_set():
-            self._out_q_empty.clear()
-            self._wakeup()
+        # ★ wakeup不要（ポーリング周期で送信）
 
     def start(self):
         addr = self._bind()
         logger.info(f"Broker bound: ROUTER={addr}")
         self._io_thread = threading.Thread(target=self._io_loop, daemon=True)
         self._io_thread.start()
-        self._threads.extend([self._io_thread])
 
     def stop(self):
         self._stop.set()
         _force_put(self._send_q, self._sentinel)
-        self._wakeup()
         if self._io_thread:
             self._io_thread.join(timeout=2.0)
 
@@ -389,7 +358,7 @@ class ZMQNode:
         app_name: str = APP_FILE_NAME,
         on_message: Optional[Callable[[MessageEnvelope], None]] = None,
         count: Literal["enable", "disable"] = "disable",
-        ):
+    ):
         if not isinstance(role, Role):
             raise TypeError("role must be a Role")
         self.role = role
@@ -404,12 +373,11 @@ class ZMQNode:
 
         self._current_addr: Optional[str] = read_port() or f"tcp://localhost:{DEFAULT_PORT}"
 
-        # DEALER（未接続OK）
+        # DEALER
         self.dealer = self.ctx.socket(zmq.DEALER)
         _tune(self.dealer)
         self.dealer.setsockopt(zmq.IDENTITY, self.node_id.encode("utf-8"))
 
-        # 既知のアドレスに接続
         if self._current_addr:
             with contextlib.suppress(Exception):
                 self.dealer.connect(self._current_addr)
@@ -418,31 +386,11 @@ class ZMQNode:
         self._out_q: "Queue[Union[bytes, List[bytes], object]]" = Queue(maxsize=NODE_SEND_QUEUE_MAXSIZE)
         self._sentinel = object()
 
-        self._out_q_empty = threading.Event()
-        self._out_q_empty.set()
-
         self._pending: Dict[str, Tuple[str, Queue]] = {}
         self._pending_lock = threading.Lock()
 
         self._io_thread: Optional[threading.Thread] = None
-
-        self._ctrl_endpoint = f"inproc://node-out-{self.node_id}"
-        self.ctrl_pull = self.ctx.socket(zmq.PULL)
-        _tune(self.ctrl_pull)
-        self.ctrl_pull.bind(self._ctrl_endpoint)
-
-    def _wakeup(self):
-        # 2) 短命PUSHで inproc を起こす（TLSキャッシュなし）
-        push = None
-        try:
-            push = self.ctx.socket(zmq.PUSH)
-            push.connect(self._ctrl_endpoint)
-            push.send(b"\x00", flags=zmq.DONTWAIT)
-        except Exception:
-            pass
-        finally:
-            if push is not None:
-                _close_linger0(push)
+        # ★ wakeup用 inproc は廃止済み（ポーリング駆動）
 
     def start(self):
         self._io_thread = threading.Thread(target=self._io_loop, daemon=True)
@@ -457,14 +405,16 @@ class ZMQNode:
     def _io_loop(self):
         poller = zmq.Poller()
         poller.register(self.dealer, zmq.POLLIN)
-        poller.register(self.ctrl_pull, zmq.POLLIN)
+
+        POLL_TIMEOUT_MS = 10  # ★ 短い周期で回す（wakeup不要）
 
         while not self._stop.is_set():
             try:
-                events = dict(poller.poll(-1))
+                events = dict(poller.poll(POLL_TIMEOUT_MS))
             except zmq.ZMQError:
                 break
 
+            # 受信処理
             if events.get(self.dealer) == zmq.POLLIN:
                 while True:
                     try:
@@ -473,22 +423,11 @@ class ZMQNode:
                         break
                     except zmq.ZMQError:
                         break
-                    # 制御（1フレーム）かアプリ（>=5フレーム）かで分岐
                     if len(frames) == 1:
-                        # 現状、ブローカーから制御を送ることはない想定なので無視
                         continue
                     self._handle_dealer_recv_frames(frames)
 
-            if events.get(self.ctrl_pull) == zmq.POLLIN:
-                while True:
-                    try:
-                        _ = self.ctrl_pull.recv(flags=zmq.NOBLOCK)
-                    except zmq.Again:
-                        break
-                    except zmq.ZMQError:
-                        break
-
-            # 送信（バッチ）
+            # 送信（毎ループで必ずキューを消費）
             batch: List[Union[bytes, List[bytes]]] = []
             sentinel_seen = False
             while True:
@@ -503,20 +442,26 @@ class ZMQNode:
 
             if batch:
                 for data in batch:
-                    with contextlib.suppress(zmq.ZMQError):
+                    try:
                         if isinstance(data, list):
-                            self.dealer.send_multipart(data, flags=zmq.DONTWAIT)
+                            self.dealer.send_multipart(data)
                         else:
-                            self.dealer.send(data, flags=zmq.DONTWAIT)
-            else:
-                self._out_q_empty.set()
+                            self.dealer.send(data)
+                    except zmq.Again:
+                        logger.warning("Node %s DEALER send timeout; dropping message", self.node_id)
+                    except Exception as e:
+                        logger.warning("Node %s DEALER send error: %s", self.node_id, e)
 
             if sentinel_seen:
                 self._stop.set()
                 break
 
         _close_linger0(self.dealer)
-        _close_linger0(self.ctrl_pull)
+
+    def _enqueue_control(self, payload: str) -> None:
+        data = payload.encode("utf-8")
+        if not _try_put(self._out_q, data):
+            logger.debug("node out_q full: drop control")
 
     def _handle_dealer_recv_frames(self, frames: List[bytes]):
         env = MessageEnvelope.from_frames(frames)
@@ -546,15 +491,6 @@ class ZMQNode:
             with contextlib.suppress(Exception):
                 self.on_message(env)
 
-    def _enqueue_control(self, payload: str) -> None:
-        data = payload.encode("utf-8")
-        if _try_put(self._out_q, data):
-            if self._out_q_empty.is_set():
-                self._out_q_empty.clear()
-                self._wakeup()
-        else:
-            logger.debug("node out_q full: drop control")
-
     def _heartbeat_loop(self):
         wire = f"heartbeat:{self.role.value}:{self.node_id}:{self.app_name}"
         while not self._stop.is_set():
@@ -565,11 +501,7 @@ class ZMQNode:
     def send(self, *, targetprocess: str = "ALL", table: str = "", topic: str = "", message: Any = None):
         env = MessageEnvelope(APP_NAME=self.app_name, targetprocess=targetprocess, table=table, topic=topic, message=str(message))
         frames = env.to_frames()
-        if _try_put(self._out_q, frames):
-            if self._out_q_empty.is_set():
-                self._out_q_empty.clear()
-                self._wakeup()
-        else:
+        if not _try_put(self._out_q, frames):
             logger.debug("node out_q full: drop message")
 
     def request_count(self, role: Union[Role, str], timeout: float = 5.0) -> int:
@@ -606,7 +538,6 @@ class ZMQNode:
     def stop(self):
         self._stop.set()
         _force_put(self._out_q, self._sentinel)
-        self._wakeup()
         for t in self._threads:
             t.join(timeout=2.0)
         if self._io_thread:

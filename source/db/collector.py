@@ -95,7 +95,6 @@ class ImageIndexer:
 
     @profiler.profile
     def _emit_progress(self, current, total):
-        logger.debug("Emitting progress: current=%s, total=%s", current, total)
         if hasattr(self, "_progress_callback") and self._progress_callback:
             self._progress_callback(current, total)
         else:

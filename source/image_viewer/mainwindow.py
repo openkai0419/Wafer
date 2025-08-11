@@ -176,6 +176,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
 
     def start_ipc_listener(self):
         def on_message(env: MessageEnvelope):
+            logger.info(env)
             table = env.table
             topic = env.topic
             message = env.message

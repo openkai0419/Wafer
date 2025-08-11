@@ -1,19 +1,20 @@
-from PySide6 import QtCore
 import os
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
 from ..common.profiling import logger, profiler
-from ..db.db_utils import delete_database_files
+from ..common.signal import Signal
 
-class SettingWatcher(QtCore.QObject):
-    parentFoldersChanged = QtCore.Signal(list)
-    ignoreFoldersChanged = QtCore.Signal(list)
-    deleteFlagEmit = QtCore.Signal()
+
+class SettingWatcher:
+    """Watch the setting database file for modifications"""
 
     @profiler.profile
     def __init__(self, setting_db):
-        super().__init__()
+        self.parentFoldersChanged = Signal()
+        self.ignoreFoldersChanged = Signal()
+        self.deleteFlagEmit = Signal()
+
         self.db = setting_db
         self.db_path = self.db.db_name
         if os.path.exists(self.db_path):

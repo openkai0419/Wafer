@@ -3,6 +3,7 @@ import os
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from ..common.profiling import logger, profiler
+from ..db.db_utils import delete_database_files
 
 class SettingWatcher(QtCore.QObject):
     parentFoldersChanged = QtCore.Signal(list)

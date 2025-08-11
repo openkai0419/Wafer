@@ -9,23 +9,6 @@ from .progress_notifier import ProgressAggregator
 
 extensions = set(IMAGE_EXTENSIONS)
 
-# プログレス管理
-_progress_aggregator = ProgressAggregator("*")
-
-@profiler.profile
-def progress_callback(current, total):
-    _progress_aggregator.add(current, total)
-
-@profiler.profile
-def update_callback(message="update_done"):
-    logger.debug(f"Update: {message}")
-    _progress_aggregator.notify_extra("update", message)
-
-@profiler.profile
-def folderchange_callback(folder):
-    logger.debug(f"folder changed: {folder}")
-    _progress_aggregator.notify_extra("folderchanged", "")
-
 
 class DBWorker(QtCore.QObject):
     finished = QtCore.Signal()
@@ -35,9 +18,10 @@ class DBWorker(QtCore.QObject):
     trigger_ignore = QtCore.Signal(list)
     trigger_cleanup = QtCore.Signal()
 
-    def __init__(self, database):
+    def __init__(self, database, progress_callback):
         super().__init__()
         self.db = database
+        self.progress_callback = progress_callback
 
         self.trigger_update.connect(self.update)
         self.trigger_remove.connect(self.remove)
@@ -48,19 +32,19 @@ class DBWorker(QtCore.QObject):
     @QtCore.Slot(list)
     @profiler.profile
     def update(self, paths):
-        progress_callback(0, len(paths))
+        self.progress_callback(0, len(paths))
         with self.db as indexer:
             indexer.update_by_file_list(paths)
-        progress_callback(len(paths), 0)
+        self.progress_callback(len(paths), 0)
         self.finished.emit()
 
     @QtCore.Slot(list)
     @profiler.profile
     def remove(self, paths):
-        progress_callback(0, len(paths))
+        self.progress_callback(0, len(paths))
         with self.db as indexer:
             indexer.remove_by_file_list(paths)
-        progress_callback(len(paths), 0)
+        self.progress_callback(len(paths), 0)
         self.finished.emit()
 
     @QtCore.Slot(list)
@@ -129,18 +113,17 @@ class WatchFolder(QtCore.QObject):
     def __init__(self, name, database):
         super().__init__()
 
-        global _progress_aggregator
-        _progress_aggregator = ProgressAggregator(name)
+        self._progress_aggregator = ProgressAggregator(name)
 
         self.name = name
         self.db = database
-        self.db.set_progress_callback(progress_callback)
-        self.db.set_update_callback(update_callback)
+        self.db.set_progress_callback(self.progress_callback)
+        self.db.set_update_callback(self.update_callback)
 
         self.observer = None
         self.old_observers = []
         self.db_thread = QtCore.QThread()
-        self.db_worker = DBWorker(database)
+        self.db_worker = DBWorker(database, self.progress_callback)
         self.db_worker.moveToThread(self.db_thread)
         self.db_thread.start()
 
@@ -158,6 +141,20 @@ class WatchFolder(QtCore.QObject):
         self.emitter.file_deleted.connect(self._on_deleted)
         self.emitter.file_changed.connect(self._on_changed)
         self.emitter.folder_changed.connect(self._on_folder_change)
+
+    @profiler.profile
+    def progress_callback(self, current, total):
+        self._progress_aggregator.add(current, total)
+
+    @profiler.profile
+    def update_callback(self, message="update_done"):
+        logger.debug(f"Update: {message}")
+        self._progress_aggregator.notify_extra("update", message)
+
+    @profiler.profile
+    def folderchange_callback(self, folder):
+        logger.debug(f"folder changed: {folder}")
+        self._progress_aggregator.notify_extra("folderchanged", "")
 
     @profiler.profile
     def start(self, folders):
@@ -190,23 +187,23 @@ class WatchFolder(QtCore.QObject):
     @QtCore.Slot(str)
     def _on_deleted(self, path):
         self.deleted_set.add(path)
-        progress_callback(0, 1)
+        self.progress_callback(0, 1)
 
     @QtCore.Slot(str)
     def _on_changed(self, path):
         self.changed_set.add(path)
-        progress_callback(0, 1)
+        self.progress_callback(0, 1)
 
     @QtCore.Slot(str)
     def _on_folder_change(self, path):
-        folderchange_callback(path)
+        self.folderchange_callback(path)
         self.folder_changed.emit(path)
-    
+
     @QtCore.Slot()
     def _on_db_finished(self):
         self._processing = False
-        progress_callback(1, 0)  # ← ステップ2完了
-        self._flush() 
+        self.progress_callback(1, 0)  # ← ステップ2完了
+        self._flush()
         
     @profiler.profile
     def _flush(self):
@@ -215,14 +212,14 @@ class WatchFolder(QtCore.QObject):
 
         if self.deleted_set:
             self._processing = True
-            progress_callback(1, 2)  # ← ステップ1開始
+            self.progress_callback(1, 2)  # ← ステップ1開始
             self.db_worker.trigger_remove.emit(list(self.deleted_set))
             self.deleted_set.clear()
             return
 
         if self.changed_set:
             self._processing = True
-            progress_callback(1, 2)  # ← ステップ1開始
+            self.progress_callback(1, 2)  # ← ステップ1開始
             self.db_worker.trigger_update.emit(list(self.changed_set))
             self.changed_set.clear()
             return

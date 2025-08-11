@@ -13,7 +13,7 @@ import time
 import zmq
 
 from ..common.profiling import logger
-from .ipc_utils import write_port, read_port
+from .ipc_utils import write_port, read_port, parse_port
 from ..constants import APP_FILE_NAME
 
 HEARTBEAT_INTERVAL = 5
@@ -188,21 +188,28 @@ class Broker:
         if self.bind_addr is None:
             if saved:
                 try:
-                    self.router.bind(saved); write_port(saved); return saved
+                    addr = f"tcp://localhost:{saved}"
+                    self.router.bind(addr)
+                    write_port(saved)
+                    return addr
                 except zmq.ZMQError:
                     pass
             try:
                 addr = f"tcp://localhost:{DEFAULT_PORT}"
-                self.router.bind(addr); write_port(addr); return addr
+                self.router.bind(addr)
+                write_port(DEFAULT_PORT)
+                return addr
             except zmq.ZMQError:
                 port = self.router.bind_to_random_port("tcp://localhost")
                 addr = f"tcp://localhost:{port}"
-                write_port(addr)
+                write_port(port)
                 return addr
         else:
-            self.router.bind(self.bind_addr)
-            write_port(self.bind_addr)
-            return self.bind_addr
+            port = parse_port(self.bind_addr)
+            addr = f"tcp://localhost:{port}"
+            self.router.bind(addr)
+            write_port(port)
+            return addr
 
     def _io_loop(self):
         poller = zmq.Poller()
@@ -407,7 +414,8 @@ class ZMQNode:
         self._stop = threading.Event()
         self._threads: List[threading.Thread] = []
 
-        self._current_addr: Optional[str] = read_port() or f"tcp://localhost:{DEFAULT_PORT}"
+        port = read_port() or DEFAULT_PORT
+        self._current_addr: Optional[str] = f"tcp://localhost:{port}"
 
         # DEALER
         self.dealer = self.ctx.socket(zmq.DEALER)

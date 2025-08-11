@@ -84,6 +84,7 @@ class ImageIndexer:
 
     def set_progress_callback(self, callback):
         self._progress_callback = callback
+        logger.debug("Progress callback set: %s", callback)
 
     def set_update_callback(self, callback):
         self._update_callback = callback
@@ -94,7 +95,11 @@ class ImageIndexer:
 
     @profiler.profile
     def _emit_progress(self, current, total):
-        self._progress_callback(current, total)
+        logger.debug("Emitting progress: current=%s, total=%s", current, total)
+        if hasattr(self, "_progress_callback") and self._progress_callback:
+            self._progress_callback(current, total)
+        else:
+            logger.warning("Progress callback is not set")
 
     def __enter__(self):
         self.start()

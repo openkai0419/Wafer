@@ -1,46 +1,44 @@
 import threading
 
-from .zmq import ZMQPublisher
+from .broker import ZMQNode, Role
 from ..common.profiling import logger, profiler
 
-_publisher = None
-_publisher_lock = threading.Lock()
+_node = None
+_node_lock = threading.Lock()
 
 @profiler.profile
-def _get_publisher() -> ZMQPublisher:
-    global _publisher
-    with _publisher_lock:
-        if _publisher is None:
-            _publisher = ZMQPublisher()
-        return _publisher
-    
+def _get_node() -> ZMQNode:
+    global _node
+    with _node_lock:
+        if _node is None:
+            _node = ZMQNode(Role.COLLECTOR)
+            _node.start()
+        return _node
+
 def close_publisher():
-    """Close publisher instance safely"""
-    global _publisher
-    with _publisher_lock:
-        if _publisher is not None:
+    """Close node instance safely"""
+    global _node
+    with _node_lock:
+        if _node is not None:
             try:
-                _publisher.close()
+                _node.stop()
             except Exception as e:
-                logger.warning(f"[publisher close failed] {e}")
+                logger.warning(f"[node close failed] {e}")
             finally:
-                _publisher = None
+                _node = None
 
 def get_viewer_count():
     try:
-        publisher = _get_publisher()
-        return publisher.get_sub_count()
+        node = _get_node()
+        return node.get_sub_count()
     except Exception as e:
         logger.warning(f"[viewer count failed] {e}")
         return 1
 
 def send_show_toggle(flag):
     try:
-        publisher = _get_publisher()
-        if flag:
-            publisher.send("show_toggle", "True", "*")
-        else:
-            publisher.send("show_toggle", "False", "*")
+        node = _get_node()
+        node.send(targetprocess="viewer", table="*", topic="show_toggle", message="True" if flag else "False")
     except Exception as e:
         logger.warning(f"[toggle notify failed] {e}")
 
@@ -70,18 +68,18 @@ class ProgressAggregator:
     @profiler.profile
     def _notify_progress(self):
         try:
-            publisher = _get_publisher()
-            publisher.send("maximum", str(self.maximum), self.tablename)
-            publisher.send("progress", str(self.current), self.tablename)
-            #logger.debug(f"[NOTIFY] progress {self.current} {self.maximum}")
+            node = _get_node()
+            node.send(targetprocess="viewer", table=self.tablename, topic="maximum", message=str(self.maximum))
+            node.send(targetprocess="viewer", table=self.tablename, topic="progress", message=str(self.current))
+            # logger.debug(f"[NOTIFY] progress {self.current} {self.maximum}")
         except Exception as e:
             logger.warning(f"[progress notify failed] {e}")
 
     @profiler.profile
     def notify_extra(self, key: str, value: object):
         try:
-            publisher = _get_publisher()
-            publisher.send(key, str(value), self.tablename)
+            node = _get_node()
+            node.send(targetprocess="viewer", table=self.tablename, topic=key, message=str(value))
             logger.debug(f"[NOTIFY] EXTRA {key} {value}")
         except Exception as e:
             logger.warning(f"[notify failed: {key}={value}] {e}")

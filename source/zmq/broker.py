@@ -391,6 +391,8 @@ class ZMQBroker:
                 stale = [k for k, v in self.active_nodes.items() if now - (v.last_seen or 0) > HEARTBEAT_TIMEOUT]
                 for ident in stale:
                     meta = self.active_nodes.pop(ident, None)
+                    # remove from global node map as well
+                    self.nodes.pop(ident, None)
                     self._index_remove(ident, meta)
             time.sleep(PRUNE_INTERVAL)
 
@@ -478,14 +480,17 @@ class ZMQBroker:
             if len(parts) < 5:
                 logger.debug("Malformed register: %s", text)
                 return
-            meta = PeerMeta(parts[1].encode("utf-8"), parts[2].encode("utf-8"), parts[3].encode("utf-8"))
+            role_b = parts[1].encode("utf-8")
+            node_id_b = parts[2].encode("utf-8")
+            app_name_b = parts[3].encode("utf-8")
             with self._lock:
-                self.nodes[ident] = meta
                 if parts[4] == "enable":
-                    meta.last_seen = now
+                    meta = PeerMeta(role_b, node_id_b, app_name_b, now)
+                    self.nodes[ident] = meta
                     self.active_nodes[ident] = meta
                     self._index_add(ident, meta)
                 else:
+                    self.nodes.pop(ident, None)
                     old = self.active_nodes.pop(ident, None)
                     self._index_remove(ident, old)
             return

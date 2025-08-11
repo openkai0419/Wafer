@@ -1,19 +1,17 @@
 import sys
-
 import signal
 import argparse
+import threading
 
-from PySide6 import QtWidgets, QtGui, QtCore
-
-from source.image_viewer.mainwindow import MainWindow
 from source.image_collector.main_collector import CollectorProcess
-from source.image_tray.main_tray import TrayApp
 from source.common.profiling import initialize_profiling, logger, profiler
 from source.constants import APP_FILE_NAME, APP_NAME, default_db_name, APP_ID
 from source.common.funcs import get_setting_file_names, new_main, split_last
 from source.common.mutex import SafeProcessLock
 
 def get_icon():
+    from PySide6 import QtGui
+
     icon = QtGui.QIcon("_resources/icon.ico")
     if icon.isNull():
         icon = QtGui.QIcon()
@@ -30,14 +28,17 @@ set_app_user_model_id(APP_ID)
 def run_communicator():
     try:
         #logger.setLevel(30)
+        from PySide6 import QtWidgets
+        from source.image_tray.main_tray import TrayApp
+
         with SafeProcessLock(f"{APP_FILE_NAME}_communicator"):
             logger.info("COMMUNICATOR RUNNING")
             app = QtWidgets.QApplication(sys.argv)
-            app.setQuitOnLastWindowClosed(False) 
+            app.setQuitOnLastWindowClosed(False)
             app.setApplicationName(APP_NAME)
             tray_icon = TrayApp(get_icon())
             tray_icon.show()
-            sys.exit(app.exec()) 
+            sys.exit(app.exec())
     except FileExistsError:
         return
     except:
@@ -50,21 +51,22 @@ def run_collector(name):
             initialize_profiling()
             logger.info(f"collector start :{name}")
 
-            app = QtCore.QCoreApplication(sys.argv)
-            app.setApplicationName(APP_NAME)
             collector = CollectorProcess(name)
-            app.aboutToQuit.connect(collector.stop)
+
+            stop_event = threading.Event()
 
             def shutdown_handler(sig, frame):
-                logger.info("\n[Broker] Shutting down...")
+                logger.info("\n[Collector] Shutting down...")
                 collector.stop()
-                app.quit()
+                stop_event.set()
 
             signal.signal(signal.SIGINT, shutdown_handler)
             signal.signal(signal.SIGTERM, shutdown_handler)
 
             logger.info("[Collector] Running. Press Ctrl+C to exit.")
-            sys.exit(app.exec())
+            stop_event.wait()
+
+            collector.stop()
 
     except FileExistsError:
         logger.info(f"Collector '{name}' is already running.")
@@ -83,6 +85,9 @@ def run_all_collectors():
     run_collector(main)
 
 def run_viewer():
+    from PySide6 import QtWidgets
+    from source.image_viewer.mainwindow import MainWindow
+
     initialize_profiling()
     app = QtWidgets.QApplication(sys.argv)
     app.setApplicationName(APP_NAME)

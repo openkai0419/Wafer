@@ -1,80 +1,124 @@
-from PySide6 import QtCore
+import os
+import time
+import threading
+import queue
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
-import os
-
-from ..qt.debounce import qt_debounce, qt_throttle
 
 from ..common.profiling import logger, profiler
 from ..common.funcs import IMAGE_EXTENSIONS
 from .progress_notifier import ProgressAggregator
+from ..common.signal import Signal
 
 extensions = set(IMAGE_EXTENSIONS)
 
-class DBWorker(QtCore.QObject):
-    finished = QtCore.Signal()
-    trigger_update = QtCore.Signal(list)
-    trigger_remove = QtCore.Signal(list)
-    trigger_rescan = QtCore.Signal(list)
-    trigger_ignore = QtCore.Signal(list)
-    trigger_cleanup = QtCore.Signal()
 
+def throttle(throttle_ms: int = 100, idle_ms: int = 200):
+    """Simple thread-based throttle decorator"""
+    def decorator(func):
+        last_call = [0.0]
+        timer = [None]
+        lock = threading.Lock()
+
+        def wrapper(*args, **kwargs):
+            now = time.time() * 1000
+            with lock:
+                if now - last_call[0] >= throttle_ms:
+                    last_call[0] = now
+                    func(*args, **kwargs)
+                if timer[0]:
+                    timer[0].cancel()
+                def call_later():
+                    func(*args, **kwargs)
+                timer[0] = threading.Timer(idle_ms / 1000.0, call_later)
+                timer[0].daemon = True
+                timer[0].start()
+        return wrapper
+    return decorator
+
+
+class DBWorker:
     def __init__(self, database, progress_callback):
-        super().__init__()
         self.db = database
         self.progress_callback = progress_callback
+        self.finished = Signal()
+        self._queue = queue.Queue()
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
 
-        self.trigger_update.connect(self.update)
-        self.trigger_remove.connect(self.remove)
-        self.trigger_rescan.connect(self.rescan)
-        self.trigger_ignore.connect(self.ignore)
-        self.trigger_cleanup.connect(self.cleanup)
+    def _run(self):
+        while not self._stop.is_set():
+            try:
+                task, data = self._queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            try:
+                if task == "update":
+                    self._update(data)
+                elif task == "remove":
+                    self._remove(data)
+                elif task == "rescan":
+                    self._rescan(data)
+                elif task == "ignore":
+                    self._ignore(data)
+                elif task == "cleanup":
+                    self._cleanup()
+            finally:
+                self.finished.emit()
+                self._queue.task_done()
 
-    @QtCore.Slot(list)
-    @profiler.profile
-    def update(self, paths):
+    def trigger_update(self, paths):
+        self._queue.put(("update", paths))
+
+    def trigger_remove(self, paths):
+        self._queue.put(("remove", paths))
+
+    def trigger_rescan(self, roots):
+        self._queue.put(("rescan", roots))
+
+    def trigger_ignore(self, paths):
+        self._queue.put(("ignore", paths))
+
+    def trigger_cleanup(self):
+        self._queue.put(("cleanup", None))
+
+    def _update(self, paths):
         self.progress_callback(0, len(paths))
         with self.db as indexer:
             indexer.update_by_file_list(paths)
         self.progress_callback(len(paths), 0)
-        self.finished.emit()
 
-    @QtCore.Slot(list)
-    @profiler.profile
-    def remove(self, paths):
+    def _remove(self, paths):
         self.progress_callback(0, len(paths))
         with self.db as indexer:
             indexer.remove_by_file_list(paths)
         self.progress_callback(len(paths), 0)
-        self.finished.emit()
 
-    @QtCore.Slot(list)
-    @profiler.profile
-    def rescan(self, roots):
+    def _rescan(self, roots):
         with self.db as indexer:
             indexer.update_index(roots)
 
-    @QtCore.Slot()
-    @profiler.profile
-    def cleanup(self):
+    def _cleanup(self):
         with self.db as indexer:
             indexer.clean_unused()
 
-    @QtCore.Slot(list)
-    @profiler.profile
-    def ignore(self, paths):
+    def _ignore(self, paths):
         with self.db as indexer:
             indexer.set_exclude_paths(paths, run=True)
 
+    def stop(self):
+        self._stop.set()
+        self._queue.put((None, None))
+        self._thread.join()
 
-class FileChangeEmitter(QtCore.QObject, FileSystemEventHandler):
-    file_deleted = QtCore.Signal(str)
-    file_changed = QtCore.Signal(str)
-    folder_changed = QtCore.Signal(str)
 
+class FileChangeEmitter(FileSystemEventHandler):
     def __init__(self, extensions):
-        super().__init__()
         self.extensions = extensions
+        self.file_deleted = Signal()
+        self.file_changed = Signal()
+        self.folder_changed = Signal()
 
     def _should_handle(self, path):
         return os.path.splitext(path)[1].lower() in self.extensions
@@ -107,12 +151,9 @@ class FileChangeEmitter(QtCore.QObject, FileSystemEventHandler):
                 self.file_changed.emit(event.dest_path)
 
 
-class WatchFolder(QtCore.QObject):
-    folder_changed = QtCore.Signal(str)
-
-    @profiler.profile
+class WatchFolder:
     def __init__(self, name, database):
-        super().__init__()
+        self.folder_changed = Signal()
 
         self._progress_aggregator = ProgressAggregator(name)
 
@@ -123,20 +164,17 @@ class WatchFolder(QtCore.QObject):
 
         self.observer = None
         self.old_observers = []
-        self.db_thread = QtCore.QThread()
+
         self.db_worker = DBWorker(database, self.progress_callback)
-        self.db_worker.moveToThread(self.db_thread)
-        self.db_thread.start()
+        self.db_worker.finished.connect(self._on_db_finished)
 
         self._processing = False
         self.deleted_set = set()
         self.changed_set = set()
-        self.db_worker.finished.connect(self._on_db_finished)
 
-        self.timer = QtCore.QTimer(self)
-        self.timer.setInterval(1000)
-        self.timer.timeout.connect(self._flush)
-        self.timer.start()
+        self._timer_stop = threading.Event()
+        self._timer_thread = threading.Thread(target=self._timer_loop, daemon=True)
+        self._timer_thread.start()
 
         self.emitter = FileChangeEmitter(extensions)
         self.emitter.file_deleted.connect(self._on_deleted)
@@ -153,14 +191,13 @@ class WatchFolder(QtCore.QObject):
         self._progress_aggregator.notify_extra("update", message)
 
     @profiler.profile
-    @qt_throttle(1000, 2000)
+    @throttle(1000, 2000)
     def folderchange_callback(self, folder):
         logger.debug(f"folder changed: {folder}")
         self._progress_aggregator.notify_extra("folderchanged", "")
 
     @profiler.profile
     def start(self, folders):
-        # 古い observer がまだ止まってなければ保持
         if self.observer:
             try:
                 if self.observer.is_alive():
@@ -179,59 +216,56 @@ class WatchFolder(QtCore.QObject):
         self._cleanup_old_observers()
 
     def _cleanup_old_observers(self):
-        # 終了した observer を削除
-        alive = []
-        for ob in self.old_observers:
-            if ob.is_alive():
-                alive.append(ob)
+        alive = [ob for ob in self.old_observers if ob.is_alive()]
         self.old_observers = alive
 
-    @QtCore.Slot(str)
     def _on_deleted(self, path):
         self.deleted_set.add(path)
         self.progress_callback(0, 1)
 
-    @QtCore.Slot(str)
     def _on_changed(self, path):
         self.changed_set.add(path)
         self.progress_callback(0, 1)
 
-    @QtCore.Slot(str)
     def _on_folder_change(self, path):
         self.folderchange_callback(path)
         self.folder_changed.emit(path)
 
-    @QtCore.Slot()
     def _on_db_finished(self):
         self._processing = False
-        self.progress_callback(1, 0)  # ← ステップ2完了
+        self.progress_callback(1, 0)
         self._flush()
-        
+
     @profiler.profile
     def _flush(self):
-        if hasattr(self, "_processing") and self._processing:
+        if self._processing:
             return
 
         if self.deleted_set:
             self._processing = True
-            self.progress_callback(1, 2)  # ← ステップ1開始
-            self.db_worker.trigger_remove.emit(list(self.deleted_set))
+            self.progress_callback(1, 2)
+            self.db_worker.trigger_remove(list(self.deleted_set))
             self.deleted_set.clear()
             return
 
         if self.changed_set:
             self._processing = True
-            self.progress_callback(1, 2)  # ← ステップ1開始
-            self.db_worker.trigger_update.emit(list(self.changed_set))
+            self.progress_callback(1, 2)
+            self.db_worker.trigger_update(list(self.changed_set))
             self.changed_set.clear()
             return
 
+    def _timer_loop(self):
+        while not self._timer_stop.is_set():
+            time.sleep(1)
+            self._flush()
+
     def rescan_all(self):
         if hasattr(self, "folders"):
-            self.db_worker.trigger_rescan.emit(self.folders)
+            self.db_worker.trigger_rescan(self.folders)
 
     def set_ignore(self, paths):
-        self.db_worker.trigger_ignore.emit(paths)
+        self.db_worker.trigger_ignore(paths)
 
     def clean(self):
         pass
@@ -241,8 +275,9 @@ class WatchFolder(QtCore.QObject):
 
     def stop(self):
         logger.debug("Stopping WatchFolder")
-        self.observer.stop()
-        self.observer.join()
-        self.timer.stop()
-        self.db_thread.quit()
-        self.db_thread.wait()
+        if self.observer:
+            self.observer.stop()
+            self.observer.join()
+        self._timer_stop.set()
+        self._timer_thread.join()
+        self.db_worker.stop()

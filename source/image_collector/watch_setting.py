@@ -1,34 +1,28 @@
-"""Watch setting file changes without Qt."""
-
+from PySide6 import QtCore
 import os
-from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
 
 from ..common.profiling import logger, profiler
+from ..db.db_utils import delete_database_files
 
+class SettingWatcher(QtCore.QObject):
+    parentFoldersChanged = QtCore.Signal(list)
+    ignoreFoldersChanged = QtCore.Signal(list)
+    deleteFlagEmit = QtCore.Signal()
 
-class SettingWatcher:
     @profiler.profile
-    def __init__(
-        self,
-        setting_db,
-        on_parent_folders_changed=None,
-        on_ignore_folders_changed=None,
-        on_delete_flag=None,
-    ):
+    def __init__(self, setting_db):
+        super().__init__()
         self.db = setting_db
         self.db_path = self.db.db_name
         if os.path.exists(self.db_path):
             self.last_mtime = os.path.getmtime(self.db_path)
         else:
             self.last_mtime = None
-
         self.cached_parent_folders = set(self.db.get_all_parent_folders())
         self.cached_ignore_folders = set(self.db.get_all_ignore_folders())
 
-        self.on_parent_folders_changed = on_parent_folders_changed
-        self.on_ignore_folders_changed = on_ignore_folders_changed
-        self.on_delete_flag = on_delete_flag
 
         self._observer = Observer()
         self._handler = self._make_handler()
@@ -58,27 +52,24 @@ class SettingWatcher:
     def _parent_folders_changed(self):
         current = set(self.db.get_all_parent_folders())
         if current != self.cached_parent_folders:
-            logger.info("[SettingWatcher] parent folder diff detected")
+            logger.info("[SettingWatcher] parent folder diff detected, emit signal")
             self.cached_parent_folders = current
-            if self.on_parent_folders_changed:
-                self.on_parent_folders_changed(list(current))
+            self.parentFoldersChanged.emit(list(current))
 
     @profiler.profile
     def _ignore_folders_changed(self):
         current = set(self.db.get_all_ignore_folders())
         if current != self.cached_ignore_folders:
-            logger.info("[SettingWatcher] ignore folder diff detected")
+            logger.info("[SettingWatcher] ignore folder diff detected, emit signal")
             self.cached_ignore_folders = current
-            if self.on_ignore_folders_changed:
-                self.on_ignore_folders_changed(list(current))
+            self.ignoreFoldersChanged.emit(list(current))
 
     @profiler.profile
     def _delete_flag_changed(self):
         current = self.db.get_kv("deleteflag", False)
-        if current is True:
-            logger.info("[SettingWatcher] delete flag enabled")
-            if self.on_delete_flag:
-                self.on_delete_flag()
+        if current == True:
+            logger.info("[SettingWatcher] delefe flag enabled")
+            self.deleteFlagEmit.emit()
 
     @profiler.profile
     def _on_db_changed(self):
@@ -96,4 +87,3 @@ class SettingWatcher:
     def stop(self):
         self._observer.stop()
         self._observer.join()
-

@@ -1,6 +1,6 @@
 import threading
 
-from ..zmq.zmq import ZMQPublisher
+from .zmq import ZMQPublisher
 from ..common.profiling import logger, profiler
 
 _publisher = None

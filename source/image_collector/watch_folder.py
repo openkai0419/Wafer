@@ -6,7 +6,7 @@ import os
 from ..common.profiling import logger, profiler
 from ..common.funcs import IMAGE_EXTENSIONS
 from ..qt.debounce import qt_debounce
-from ..qt.progress_notifier import ProgressAggregator
+from ..zmq.progress_notifier import ProgressAggregator
 
 extensions = set(IMAGE_EXTENSIONS)
 
@@ -34,6 +34,7 @@ class DBWorker(QtCore.QObject):
     trigger_remove = QtCore.Signal(list)
     trigger_rescan = QtCore.Signal(list)
     trigger_ignore = QtCore.Signal(list)
+    trigger_cleanup = QtCore.Signal()
 
     def __init__(self, database):
         super().__init__()
@@ -43,6 +44,7 @@ class DBWorker(QtCore.QObject):
         self.trigger_remove.connect(self.remove)
         self.trigger_rescan.connect(self.rescan)
         self.trigger_ignore.connect(self.ignore)
+        self.trigger_cleanup.connect(self.cleanup)
 
     @QtCore.Slot(list)
     @profiler.profile
@@ -65,9 +67,14 @@ class DBWorker(QtCore.QObject):
     @QtCore.Slot(list)
     @profiler.profile
     def rescan(self, roots):
-        update_callback("full_rescan")
         with self.db as indexer:
             indexer.update_index(roots)
+
+    @QtCore.Slot()
+    @profiler.profile
+    def cleanup(self):
+        with self.db as indexer:
+            indexer.clean_unused()
 
     @QtCore.Slot(list)
     @profiler.profile
@@ -229,16 +236,16 @@ class WatchFolder(QtCore.QObject):
     def set_ignore(self, paths):
         self.db_worker.trigger_ignore.emit(paths)
 
-    def stop(self, clean=True):
+    def clean(self):
+        pass
+
+    def cancel(self):
+        pass
+
+    def stop(self):
         logger.debug("Stopping WatchFolder")
         self.observer.stop()
         self.observer.join()
         self.timer.stop()
         self.db_thread.quit()
         self.db_thread.wait()
-        if clean:
-            try:
-                with self.db as indexer:
-                    indexer.clean_unused()
-            except Exception as e:
-                logger.warning(f"[quit] cleanup failed: {e}")

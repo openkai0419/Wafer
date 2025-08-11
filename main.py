@@ -1,7 +1,6 @@
 import sys
 
 import signal
-import threading
 import argparse
 
 from PySide6 import QtWidgets, QtGui, QtCore
@@ -49,22 +48,22 @@ def run_collector(name):
         #logger.setLevel(30)
         with SafeProcessLock(f"{APP_FILE_NAME}_{name}"):
             initialize_profiling()
-            shutdown_event = threading.Event()
             logger.info(f"collector start :{name}")
+
+            app = QtCore.QCoreApplication(sys.argv)
+            app.setApplicationName(APP_NAME)
             collector = CollectorProcess(name)
 
             def shutdown_handler(sig, frame):
                 logger.info("\n[Broker] Shutting down...")
                 collector.stop()
-                shutdown_event.set()
-                sys.exit(0)
+                app.quit()
 
             signal.signal(signal.SIGINT, shutdown_handler)
             signal.signal(signal.SIGTERM, shutdown_handler)
 
-            # Block main thread
-            logger.info ("[Collector] Running. Press Ctrl+C to exit.")
-            shutdown_event.wait()
+            logger.info("[Collector] Running. Press Ctrl+C to exit.")
+            app.exec()
 
     except FileExistsError:
         logger.info(f"Collector '{name}' is already running.")

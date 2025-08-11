@@ -98,7 +98,9 @@ def _tune(sock):
         sock.setsockopt(zmq.TCP_KEEPALIVE_CNT, 5)
     with contextlib.suppress(Exception):
         sock.setsockopt(zmq.TCP_KEEPALIVE_IDLE, 10)
+    with contextlib.suppress(Exception):
         sock.setsockopt(zmq.TCP_KEEPALIVE_INTVL, 2)
+    # NOTE: IMMEDIATE/TCP_NODELAY は DEALER 側で個別設定する（ROUTER には IMMEDIATE を立てない）
 
 def _close_linger0(sock):
     with contextlib.suppress(Exception):
@@ -130,6 +132,8 @@ def _force_put(q: Queue, item) -> None:
             q.get_nowait()
         except Empty:
             pass
+        # スピン緩和
+        time.sleep(0)
 
 def _parse_kv_pairs(s: str) -> Dict[str, str]:
     """message='key:value,key:value' を dict に変換"""
@@ -140,6 +144,16 @@ def _parse_kv_pairs(s: str) -> Dict[str, str]:
             k, v = pair.split(":", 1)
             result[k.strip()] = v.strip()
     return result
+
+def _ensure_bytes_list(frames: List[Union[bytes, bytearray, zmq.Frame]]) -> List[bytes]:
+    out: List[bytes] = []
+    for f in frames:
+        if isinstance(f, (bytes, bytearray)):
+            out.append(bytes(f))
+        else:
+            # zmq.Frame 等
+            out.append(bytes(f))
+    return out
 
 # -------------------- Broker --------------------
 class Broker:
@@ -164,6 +178,10 @@ class Broker:
 
         self._io_thread: Optional[threading.Thread] = None
         # ★ wakeup用 inproc は廃止済み（ポーリング駆動）
+
+        # (4) アダプティブポーリング用パラメータ
+        self._base_poll_timeout_ms = 10
+        self._max_poll_timeout_ms = 50
 
     def _bind(self) -> str:
         saved = read_port()
@@ -190,29 +208,37 @@ class Broker:
         poller = zmq.Poller()
         poller.register(self.router, zmq.POLLIN)
 
-        POLL_TIMEOUT_MS = 10  # ★ 短い周期で回す（wakeup不要）
+        # (4) アダプティブポーリング
+        poll_timeout_ms = self._base_poll_timeout_ms
+        idle_streak = 0
 
         while not self._stop.is_set():
             try:
-                events = dict(poller.poll(POLL_TIMEOUT_MS))
+                events = dict(poller.poll(poll_timeout_ms))
             except zmq.ZMQError:
                 break
+
+            did_work = False
 
             # 受信処理（あるぶんだけNOBLOCKでドレイン）
             if events.get(self.router) == zmq.POLLIN:
                 while True:
                     try:
-                        frames = self.router.recv_multipart(flags=zmq.NOBLOCK)
+                        frames = self.router.recv_multipart(flags=zmq.NOBLOCK, copy=False)  # (1) copy=False
                     except zmq.Again:
                         break
                     except zmq.ZMQError:
                         break
                     if len(frames) >= 2:
-                        ident, payloads = frames[0], frames[1:]
+                        ident_f, payloads = frames[0], frames[1:]
+                        ident = bytes(ident_f)  # Frame -> bytes
                         if len(payloads) == 1:
-                            self._handle_router_recv_control(ident, payloads[0])
+                            payload_b = bytes(payloads[0])  # Frame -> bytes
+                            self._handle_router_recv_control(ident, payload_b)
                         else:
-                            self._handle_router_recv_app(ident, payloads)
+                            payload_bytes = _ensure_bytes_list(payloads)
+                            self._handle_router_recv_app(ident, payload_bytes)
+                        did_work = True
 
             # 送信（毎ループで必ずキューを消費）
             batch: List[Tuple[bytes, List[bytes]]] = []
@@ -230,7 +256,9 @@ class Broker:
             if batch:
                 for ident, frames in batch:
                     try:
-                        self.router.send_multipart([ident, *frames])
+                        # (1) copy=False
+                        self.router.send_multipart([ident, *frames], copy=False)
+                        did_work = True
                     except zmq.Again:
                         logger.warning("Broker ROUTER send timeout; dropping message to %r", ident)
                     except zmq.ZMQError as e:
@@ -239,6 +267,14 @@ class Broker:
             if sentinel_seen:
                 self._stop.set()
                 break
+
+            # (4) アダプティブポーリング調整
+            if did_work:
+                idle_streak = 0
+                poll_timeout_ms = self._base_poll_timeout_ms
+            else:
+                idle_streak = min(idle_streak + 1, self._max_poll_timeout_ms)
+                poll_timeout_ms = min(self._base_poll_timeout_ms + idle_streak, self._max_poll_timeout_ms)
 
         _close_linger0(self.router)
 
@@ -304,7 +340,6 @@ class Broker:
 
     def _handle_router_recv_app(self, ident: bytes, frames: List[bytes]):
         # アプリ向けメッセージはフレームで受け取り、そのままルート
-        #logger.debug(f"[Broker] APP from {ident!r}: {frames}")
         env = MessageEnvelope.from_frames(frames)
         if env is None:
             logger.debug("Invalid multipart frames")
@@ -325,8 +360,9 @@ class Broker:
 
     def _route_message(self, env: MessageEnvelope):
         target = (env.targetprocess or "ALL").lower()
+        # ★ 送信先は active_nodes のスナップショット（接続・心拍確認済み）に限定
         with self._lock:
-            nodes_snapshot = list(self.nodes.items())
+            nodes_snapshot = list(self.active_nodes.items())
 
         frames = env.to_frames()
         for ident, meta in nodes_snapshot:
@@ -376,6 +412,11 @@ class ZMQNode:
         # DEALER
         self.dealer = self.ctx.socket(zmq.DEALER)
         _tune(self.dealer)
+        # (5) IMMEDIATE と TCP_NODELAY は DEALER のみに適用（ROUTERには適用しない）
+        with contextlib.suppress(Exception):
+            self.dealer.setsockopt(zmq.IMMEDIATE, 1)
+        with contextlib.suppress(Exception):
+            self.dealer.setsockopt(zmq.TCP_NODELAY, 1)
         self.dealer.setsockopt(zmq.IDENTITY, self.node_id.encode("utf-8"))
 
         if self._current_addr:
@@ -392,6 +433,10 @@ class ZMQNode:
         self._io_thread: Optional[threading.Thread] = None
         # ★ wakeup用 inproc は廃止済み（ポーリング駆動）
 
+        # (4) アダプティブポーリング用パラメータ
+        self._base_poll_timeout_ms = 10
+        self._max_poll_timeout_ms = 50
+
     def start(self):
         self._io_thread = threading.Thread(target=self._io_loop, daemon=True)
         self._io_thread.start()
@@ -406,26 +451,32 @@ class ZMQNode:
         poller = zmq.Poller()
         poller.register(self.dealer, zmq.POLLIN)
 
-        POLL_TIMEOUT_MS = 10  # ★ 短い周期で回す（wakeup不要）
+        # (4) アダプティブポーリング
+        poll_timeout_ms = self._base_poll_timeout_ms
+        idle_streak = 0
 
         while not self._stop.is_set():
             try:
-                events = dict(poller.poll(POLL_TIMEOUT_MS))
+                events = dict(poller.poll(poll_timeout_ms))
             except zmq.ZMQError:
                 break
+
+            did_work = False
 
             # 受信処理
             if events.get(self.dealer) == zmq.POLLIN:
                 while True:
                     try:
-                        frames = self.dealer.recv_multipart(flags=zmq.NOBLOCK)
+                        frames = self.dealer.recv_multipart(flags=zmq.NOBLOCK, copy=False)  # (1) copy=False
                     except zmq.Again:
                         break
                     except zmq.ZMQError:
                         break
-                    if len(frames) == 1:
-                        continue
-                    self._handle_dealer_recv_frames(frames)
+                    if len(frames) > 1:
+                        # frames は [APP_NAME, TARGET, ...] のみ（DEALERなので ident 無し）
+                        frames_b = _ensure_bytes_list(frames)
+                        self._handle_dealer_recv_frames(frames_b)
+                        did_work = True
 
             # 送信（毎ループで必ずキューを消費）
             batch: List[Union[bytes, List[bytes]]] = []
@@ -444,9 +495,10 @@ class ZMQNode:
                 for data in batch:
                     try:
                         if isinstance(data, list):
-                            self.dealer.send_multipart(data)
+                            self.dealer.send_multipart(data, copy=False)  # (1) copy=False
                         else:
-                            self.dealer.send(data)
+                            self.dealer.send(data, copy=False)  # (1) copy=False
+                        did_work = True
                     except zmq.Again:
                         logger.warning("Node %s DEALER send timeout; dropping message", self.node_id)
                     except Exception as e:
@@ -455,6 +507,14 @@ class ZMQNode:
             if sentinel_seen:
                 self._stop.set()
                 break
+
+            # (4) アダプティブポーリング調整
+            if did_work:
+                idle_streak = 0
+                poll_timeout_ms = self._base_poll_timeout_ms
+            else:
+                idle_streak = min(idle_streak + 1, self._max_poll_timeout_ms)
+                poll_timeout_ms = min(self._base_poll_timeout_ms + idle_streak, self._max_poll_timeout_ms)
 
         _close_linger0(self.dealer)
 

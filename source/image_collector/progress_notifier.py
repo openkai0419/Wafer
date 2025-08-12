@@ -63,9 +63,14 @@ class ProgressAggregator:
     def _notify_progress(self):
         try:
             node = _get_node()
-            node.send(targetprocess="viewer", table=self.tablename, topic="maximum", message=str(self.maximum))
-            node.send(targetprocess="viewer", table=self.tablename, topic="progress", message=str(self.current))
-            # logger.debug(f"[NOTIFY] progress {self.current} {self.maximum}")
+            payload = f"{self.current},{self.maximum}"
+            node.send(
+                targetprocess="viewer",
+                table=self.tablename,
+                topic="progress",
+                message=payload,
+            )
+            # logger.debug(f"[NOTIFY] progress {payload}")
         except Exception as e:
             logger.warning(f"[progress notify failed] {e}")
 

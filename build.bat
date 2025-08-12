@@ -3,7 +3,7 @@ chcp 65001 >nul
 setlocal
 set ERRFLAG=0
 
-set VENV=venv\Scripts\activate.bat
+set VENV=.venv\Scripts\activate.bat
 
 set APPNAME=ImageWafer
 

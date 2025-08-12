@@ -8,7 +8,7 @@ from .watch_folder import WatchFolder
 from ..db.setting_db import SettingDB
 from .watch_setting import SettingWatcher
 from ..db.db_utils import delete_database_files, clean_database
-from ..zmq.broker import ZMQNode, Role
+from ..zmq.zmq import ZMQNode, Role
 
 class CollectorProcess():
     def __init__(self, name):
@@ -42,8 +42,8 @@ class CollectorProcess():
 
         self.folder_watcher = WatchFolder(self.dname, self.data_db)
         folders = self.setting_db.get_all_parent_folders()
-        self.folder_watcher.start(folders)
         self.folders_to_watch = folders
+        self.folder_watcher.start(folders)
 
         self.setting_watcher = SettingWatcher(self.setting_db)
         self.setting_watcher.parentFoldersChanged.connect(self.reload_parent_folder)
@@ -59,8 +59,8 @@ class CollectorProcess():
     @profiler.profile
     def reload_parent_folder(self, folderlist):
         logger.debug(f"parent folder {folderlist}")
-        self.folder_watcher.start(folderlist)
         self.folders_to_watch = folderlist
+        self.folder_watcher.start(folderlist)
 
     @profiler.profile
     def reload_ignore_folder(self, folderlist):

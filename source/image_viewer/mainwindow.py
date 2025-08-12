@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from .viewer.justifiedwidget import JustifiedVirtualScrollWidget
 from ..db.setting_db import SettingDB
 from ..db.query import MetaInfoSearchEngine, MetaQuery
-from ..zmq.broker import ZMQNode, Role, MessageEnvelope
+from ..zmq.zmq import ZMQNode, Role, MessageEnvelope
 from ..qt.debounce import qt_debounce
 from .widgets.loading_overlay import OverlayLoadingIndicator
 from .widgets.foldertree import LazyFolderTreeView

@@ -16,11 +16,6 @@ from .db_utils import connect_with_retry
 
 extensions = IMAGE_EXTENSIONS
 CHUNK = 900
-BASE_DURATION = 10.0
-MIN_BATCH_SIZE = 100
-MAX_BATCH_SIZE = 20000
-BASE_BATCH_SIZE = 5000
-INITIAL_BATCH_SIZE = 500
 
 # reusable ThreadPoolExecutor
 executor = concurrent.futures.ThreadPoolExecutor()
@@ -44,27 +39,27 @@ def read_info(path):
         logger.warning(f"Failed to read image info for {path}: {e}")
     return {}
 
-def get_aspect(p):
-    reader = QtGui.QImageReader(p)
-    reader.setAutoTransform(True)
-    size = reader.size()
-    aspect = size.width() / size.height() if size.isValid() and size.height() > 0 else 1.0
-    return aspect
-
 def process_image(p, file_info):
     try:
+        name = os.path.basename(p)
         mtime, fsize = file_info.get(p, (None, None))
         ctime = get_file_ctime(p)
         collected_at = time.time()
-        aspect = get_aspect(p)
-        info = read_info(p)
+        with Image.open(p) as img:
+            width, height = img.size
+            exif = img.getexif()
+            orientation = exif.get(274, 1) if exif else 1
+            if orientation in (5, 6, 7, 8):
+                width, height = height, width
+            aspect = (width / height) if height else 1.0
+            info = dict(img.info)
         meta_info = [(str(p), str(k), str(v)) for k, v in info.items()]
         meta_info.append((str(p), "__filepath__", str(p)))
-        name = os.path.basename(p)
         return (p, name, aspect, mtime, fsize, ctime, collected_at, meta_info, None)
     except Exception as e:
         logger.warning(f"Failed to process {p}: {e}")
         mtime, fsize = file_info.get(p, (None, None))
+        name = os.path.basename(p)
         return (p, name, None, mtime, fsize, None, time.time(), [], 'fail')
 
 class ImageIndexer:
@@ -514,14 +509,18 @@ class ImageIndexer:
     @profiler.profile
     def update_meta_and_image(self, paths, file_info):
         total = len(paths)
-        batch_size = INITIAL_BATCH_SIZE  # start with fixed batch size
-        temp_duration = BASE_DURATION
+        MIN_BATCH_SIZE = 100
+        MAX_BATCH_SIZE = 50000
+        batch_size = MIN_BATCH_SIZE
+        TARGET_MIN_S = 3.0
+        TARGET_MAX_S = 300.0
+        QUEUE_MAX = 8
         i = 0
-        fixed_count = 0  # counts how many times fixed size was used
-        initial_count = 1
 
-        # initialize writer queue and thread
-        write_queue = queue.Queue(maxsize=int(initial_count+2))
+        start_time = time.monotonic()
+        target_s = TARGET_MIN_S
+
+        write_queue = queue.Queue(maxsize=QUEUE_MAX)
 
         def writer_thread_func():
             while True:
@@ -539,48 +538,63 @@ class ImageIndexer:
         writer_thread = threading.Thread(target=writer_thread_func, daemon=True)
         writer_thread.start()
 
+        acc_image_entries = []
+        acc_meta_entries = []
+        acc_meta_info_entries = []
+        acc_failed_entries = []
+        acc_proc_duration = 0.0
+
         while i < total:
+            elapsed = time.monotonic() - start_time
+            ramp_target = TARGET_MIN_S + (elapsed / TARGET_MAX_S) * (TARGET_MAX_S - TARGET_MIN_S)
+            target_s = min(TARGET_MAX_S, ramp_target)
+
             batch = paths[i:i + batch_size]
 
             t0 = time.monotonic()
             image_entries, meta_entries, meta_info_entries, failed_entries = self.batch_process_images(batch, file_info)
-            t1 = time.monotonic()
+            duration = time.monotonic() - t0
 
-            while True:
-                try:
-                    write_queue.put_nowait((image_entries, meta_entries, meta_info_entries, failed_entries))
-                    break
-                except queue.Full:
-                    temp_duration *= 1.5
-                    logger.info(f"[WriterQueue] Full, waiting for consumer to catch up... {temp_duration}")
-                    time.sleep(temp_duration)
+            acc_image_entries.extend(image_entries)
+            acc_meta_entries.extend(meta_entries)
+            acc_meta_info_entries.extend(meta_info_entries)
+            acc_failed_entries.extend(failed_entries)
+            acc_proc_duration += duration
 
-            duration = t1 - t0
+            if acc_proc_duration >= target_s or write_queue.qsize() >= int(QUEUE_MAX * 0.8):
+                write_queue.put((acc_image_entries, acc_meta_entries, acc_meta_info_entries, acc_failed_entries))
+                acc_image_entries = []
+                acc_meta_entries = []
+                acc_meta_info_entries = []
+                acc_failed_entries = []
+                acc_proc_duration = 0.0
 
-            # use fixed size for first two batches, then adapt
-            if fixed_count < initial_count:
-                fixed_count += 1
-                batch_size = INITIAL_BATCH_SIZE
-                self.try_checkpoint()
-            else:
-                if fixed_count == initial_count:
-                    batch_size = BASE_BATCH_SIZE  # reset to base size
-                    fixed_count += 1  # stop changing thereafter
-                    self.try_checkpoint()
+            if duration > 0:
+                if duration < target_s:
+                    ratio = target_s / duration
+                    batch_size = int(batch_size * (ratio ** 0.5))
                 else:
-                    if duration < temp_duration:
-                        batch_size = min(MAX_BATCH_SIZE, int(batch_size * 1.5))
-                    elif duration > (temp_duration + (temp_duration / 2.0)):
-                        batch_size = max(MIN_BATCH_SIZE, int(batch_size / 2.0))
+                    ratio = duration / target_s
+                    batch_size = int(batch_size / (ratio ** 0.5))
+
+            if write_queue.qsize() >= int(QUEUE_MAX * 0.6):
+                batch_size = max(MIN_BATCH_SIZE, int(batch_size * 0.7))
+
+            batch_size = max(MIN_BATCH_SIZE, min(MAX_BATCH_SIZE, batch_size))
 
             i += len(batch)
             self._emit_progress(len(batch), 0)
             self.emit_update()
-            logger.info(f"[Adaptive Commit] {i}/{total} processed (batch={len(batch)}, {duration:.2f}s)")
+            self.try_checkpoint()
+            logger.info(f"[Adaptive Commit] {i}/{total} processed (batch={len(batch)}, {duration:.2f}s, target={target_s:.2f}s)")
+
+        if acc_image_entries or acc_meta_entries or acc_meta_info_entries or acc_failed_entries:
+            write_queue.put((acc_image_entries, acc_meta_entries, acc_meta_info_entries, acc_failed_entries))
 
         write_queue.join()
         write_queue.put(None)
         writer_thread.join()
+        self.try_checkpoint()
 
 
     @profiler.profile

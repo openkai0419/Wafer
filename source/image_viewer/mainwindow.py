@@ -166,10 +166,13 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             self.dbcombo.removeItem(self.dbname)
             self.reload_db(self.dbcombo.currentText())
 
-    @QtCore.Slot(int, int)
-    def update_progress(self, current, maximum):
-        self.progress_bar.setProgress(int(current))
-        self.progress_bar.setMaximum(int(maximum))
+    @QtCore.Slot(int)
+    def update_current(self, value):
+        self.progress_bar.setProgress(int(value))
+
+    @QtCore.Slot(int)
+    def update_maximum(self, value):
+        self.progress_bar.setMaximum(int(value))
 
     def start_ipc_listener(self):
         def on_message(env: MessageEnvelope):
@@ -178,22 +181,10 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             message = env.message
             if table not in ("*", self.dbname):
                 return
-            def handle_progress():
-                try:
-                    current_str, maximum_str = message.split(",", 1)
-                except ValueError:
-                    return
-                QtCore.QMetaObject.invokeMethod(
-                    self,
-                    "update_progress",
-                    QtCore.Qt.QueuedConnection,
-                    QtCore.Q_ARG(int, int(current_str)),
-                    QtCore.Q_ARG(int, int(maximum_str)),
-                )
-
             handlers = {
                 "update": lambda: QtCore.QMetaObject.invokeMethod(self, "search", QtCore.Qt.QueuedConnection, QtCore.Q_ARG(bool, True)),
-                "progress": handle_progress,
+                "progress": lambda: QtCore.QMetaObject.invokeMethod(self, "update_current", QtCore.Qt.QueuedConnection, QtCore.Q_ARG(int, int(message))),
+                "maximum": lambda: QtCore.QMetaObject.invokeMethod(self, "update_maximum", QtCore.Qt.QueuedConnection, QtCore.Q_ARG(int, int(message))),
                 "folderchanged": lambda: QtCore.QMetaObject.invokeMethod(self, "reload_folderlist", QtCore.Qt.QueuedConnection),
                 "show_toggle": lambda: QtCore.QMetaObject.invokeMethod(self, "toggle_show", QtCore.Qt.QueuedConnection, QtCore.Q_ARG(bool, message == "True")),
             }

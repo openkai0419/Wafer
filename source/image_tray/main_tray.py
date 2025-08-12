@@ -8,7 +8,7 @@ from ..common.funcs import new_main, get_setting_file_names
 from ..qt.dialog import ConfirmDialog
 from ..constants import APP_NAME
 from ..image_setting.translation import TranslatorMixin
-from ..zmq.broker import ZMQNode, ZMQBroker, Role
+from ..zmq.zmq import ZMQNode, ZMQBroker, Role
 
 class TrayApp(QtWidgets.QSystemTrayIcon, TranslatorMixin):
     @profiler.profile

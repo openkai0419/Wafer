@@ -1,6 +1,6 @@
 import threading
 
-from ..zmq.broker import ZMQNode, Role
+from ..zmq.zmq import ZMQNode, Role
 from ..common.profiling import logger, profiler
 
 _node = None

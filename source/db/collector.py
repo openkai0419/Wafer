@@ -18,7 +18,7 @@ extensions = IMAGE_EXTENSIONS
 CHUNK = 900
 BASE_DURATION = 10.0
 MIN_BATCH_SIZE = 100
-MAX_BATCH_SIZE = 100000
+MAX_BATCH_SIZE = 20000
 BASE_BATCH_SIZE = 5000
 INITIAL_BATCH_SIZE = 500
 
@@ -151,8 +151,8 @@ class ImageIndexer:
     def _apply_pragmas(self, conn, read_only=False):
         if read_only:
             conn.execute("PRAGMA temp_store = MEMORY")
-            conn.execute("PRAGMA cache_size = -50000")
-            conn.execute("PRAGMA mmap_size = 268435456")
+            conn.execute("PRAGMA cache_size = -10000")
+            conn.execute("PRAGMA mmap_size = 134217728")
         else:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")

@@ -28,6 +28,7 @@ set_app_user_model_id(APP_ID)
 def run_communicator():
     try:
         #logger.setLevel(30)
+        profiler.set_enabled(False)
         from PySide6 import QtWidgets
         from source.image_tray.main_tray import TrayApp
 
@@ -46,7 +47,8 @@ def run_communicator():
 
 def run_collector(name):
     try:
-        #logger.setLevel(30)
+        logger.setLevel(30)
+        profiler.set_enabled(False)
         with SafeProcessLock(f"{APP_FILE_NAME}_{name}"):
             initialize_profiling()
             logger.info(f"collector start :{name}")
@@ -77,12 +79,9 @@ def run_all_collectors():
     names = get_setting_file_names()
     if not names:
         names = [default_db_name]
-    sub, main  =  split_last(names)
-    if not main:
-        return
-    for name in sub:
+    for name in names:
         new_main("--collector", f"{name}")
-    run_collector(main)
+    run_communicator()
 
 def run_viewer():
     from PySide6 import QtWidgets
@@ -106,7 +105,6 @@ def main():
 
     # run all three if no args
     if not any(vars(args).values()):
-        new_main("--communicator")
         new_main("--collector")
         run_viewer()
         return
@@ -115,8 +113,8 @@ def main():
         run_communicator()
 
     elif args.collector:
-        new_main("--communicator")
         if isinstance(args.collector, str):
+            new_main("--communicator")
             run_collector(args.collector)
         else:
             run_all_collectors()

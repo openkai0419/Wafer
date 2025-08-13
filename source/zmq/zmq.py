@@ -6,6 +6,7 @@ import time
 import uuid
 from enum import Enum
 from queue import Empty, Queue
+from typing import Callable, Literal, Sequence
 import zmq
 from ..common.profiling import logger
 from ..constants import APP_FILE_NAME
@@ -76,7 +77,20 @@ def _adaptive_poll(did_work, idle_streak, base_ms, max_ms):
     return (idle_streak, min(base_ms + idle_streak, max_ms))
 
 class MessageEnvelope:
-    def __init__(self, _app_b, _target_b, _table_b, _topic_b, _msg_b, request_id=None, _app_s=None, _target_s=None, _table_s=None, _topic_s=None, _msg_s=None):
+    def __init__(
+        self,
+        _app_b: bytes,
+        _target_b: bytes,
+        _table_b: bytes,
+        _topic_b: bytes,
+        _msg_b: bytes,
+        request_id: str | None = None,
+        _app_s: str | None = None,
+        _target_s: str | None = None,
+        _table_s: str | None = None,
+        _topic_s: str | None = None,
+        _msg_s: str | None = None,
+    ) -> None:
         self._app_b = _app_b
         self._target_b = _target_b
         self._table_b = _table_b
@@ -90,19 +104,42 @@ class MessageEnvelope:
         self._msg_s = _msg_s
 
     @classmethod
-    def build(cls, *, APP_NAME=APP_FILE_NAME, targetprocess='ALL', table='', topic='', message=b'', request_id=None):
+    def build(
+        cls,
+        *,
+        APP_NAME: str = APP_FILE_NAME,
+        targetprocess: str = 'ALL',
+        table: str = '',
+        topic: str = '',
+        message: bytes | str | None = b'',
+        request_id: str | None = None,
+    ) -> 'MessageEnvelope':
         msg_b = b'' if message is None else _to_b(message)
-        return cls(_app_b=_to_b(APP_NAME), _target_b=_to_b(targetprocess), _table_b=_to_b(table), _topic_b=_to_b(topic), _msg_b=bytes(msg_b), request_id=request_id)
+        return cls(
+            _app_b=_to_b(APP_NAME),
+            _target_b=_to_b(targetprocess),
+            _table_b=_to_b(table),
+            _topic_b=_to_b(topic),
+            _msg_b=bytes(msg_b),
+            request_id=request_id,
+        )
 
     def to_frames(self):
         return (self._app_b, self._target_b, self._table_b, self._topic_b, self._msg_b, *((self.request_id.encode('utf-8'),) if self.request_id else ()))
 
     @staticmethod
-    def from_frames(frames):
+    def from_frames(frames: Sequence[bytes]) -> 'MessageEnvelope | None':
         if len(frames) < 5:
             return None
         rid = frames[5].decode('utf-8', 'ignore') if len(frames) > 5 else None
-        return MessageEnvelope(_app_b=bytes(frames[0]), _target_b=bytes(frames[1]), _table_b=bytes(frames[2]), _topic_b=bytes(frames[3]), _msg_b=bytes(frames[4]), request_id=rid)
+        return MessageEnvelope(
+            _app_b=bytes(frames[0]),
+            _target_b=bytes(frames[1]),
+            _table_b=bytes(frames[2]),
+            _topic_b=bytes(frames[3]),
+            _msg_b=bytes(frames[4]),
+            request_id=rid,
+        )
 
     @property
     def app_name(self):
@@ -349,7 +386,13 @@ class ZMQBroker:
 
 class ZMQNode:
 
-    def __init__(self, role, app_name=APP_FILE_NAME, on_message=None, count='enable'):
+    def __init__(
+        self,
+        role: Role,
+        app_name: str = APP_FILE_NAME,
+        on_message: Callable[[MessageEnvelope], None] | None = None,
+        count: Literal['enable', 'disable'] = 'enable',
+    ) -> None:
         if not isinstance(role, Role):
             raise TypeError('role must be a Role')
         self.role = role

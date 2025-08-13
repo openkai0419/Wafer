@@ -2,12 +2,25 @@ import os
 import sqlite3
 from pathlib import Path
 from random import shuffle
+from typing import Sequence
 from ..common.funcs import normalize_path
 from ..common.profiling import logger, profiler
 
 class MetaQuery:
 
-    def __init__(self, keys=None, keywords=None, query_mode='LIKE', directories=None, keyword_mode='OR', sort_by='name', ascending=True, append_mode='OR', splittext=None, only_direct_children=False):
+    def __init__(
+        self,
+        keys: Sequence[str] | str | None = None,
+        keywords: Sequence[str] | str | None = None,
+        query_mode: str = 'LIKE',
+        directories: Sequence[str] | None = None,
+        keyword_mode: str = 'OR',
+        sort_by: str = 'name',
+        ascending: bool = True,
+        append_mode: str = 'OR',
+        splittext: str | None = None,
+        only_direct_children: bool = False,
+    ) -> None:
         self.keys = keys
         self.keywords = keywords
         self.query_mode = query_mode
@@ -22,7 +35,29 @@ class MetaQuery:
     def __eq__(self, other):
         if not isinstance(other, MetaQuery):
             return NotImplemented
-        return self.keys == other.keys and self.keywords == other.keywords and (self.query_mode == other.query_mode) and (self.directories == other.directories) and (self.keyword_mode == other.keyword_mode) and (self.sort_by == other.sort_by) and (self.ascending == other.ascending) and (self.append_mode == other.append_mode) and (self.splittext == other.splittext) and (self.only_direct_children == other.only_direct_children)
+        return (
+            self.keys,
+            self.keywords,
+            self.query_mode,
+            self.directories,
+            self.keyword_mode,
+            self.sort_by,
+            self.ascending,
+            self.append_mode,
+            self.splittext,
+            self.only_direct_children,
+        ) == (
+            other.keys,
+            other.keywords,
+            other.query_mode,
+            other.directories,
+            other.keyword_mode,
+            other.sort_by,
+            other.ascending,
+            other.append_mode,
+            other.splittext,
+            other.only_direct_children,
+        )
 
     def __hash__(self):
         return hash((tuple(self.keys or []), tuple(self.keywords or []), self.query_mode, tuple(self.directories or []), self.keyword_mode, self.sort_by, self.ascending, self.append_mode, self.splittext, self.only_direct_children))

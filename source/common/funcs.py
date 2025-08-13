@@ -7,10 +7,8 @@ from natsort import natsorted, ns
 from platformdirs import PlatformDirs
 from PySide6 import QtGui
 
-#from .profiling import logger
 from ..constants import APP_FILE_NAME
 
-# Supported image extensions
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp")
 
 def normalize_path(p):
@@ -22,6 +20,8 @@ def normalize_path(p):
 
 def uipx(px: int, base_dpi: int = 96) -> int:
     screen = QtGui.QGuiApplication.primaryScreen()
+    if screen is None:
+        return px
     current_dpi = screen.logicalDotsPerInch()
     scale = current_dpi / base_dpi
     return int(px * scale)
@@ -88,7 +88,7 @@ def config_path(relative_path: str) -> Path:
     base_dir = Path(dirs.user_config_dir) / APP_FILE_NAME
     return normalize_path(_resolve_app_path(relative_path, base_dir))
 
-def list_files(directory: str, extension: str) -> List[Path]:
+def list_files(directory: str, extension: str):
     ext = extension.lower() if extension.startswith('.') else f".{extension.lower()}"
     return [
         normalize_path(f) for f in Path(directory).iterdir()

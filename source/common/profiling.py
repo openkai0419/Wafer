@@ -220,10 +220,6 @@ def initialize_profiling(interval: int = 5):
     _initialized = True
     return logger, profiler
 
-# Backward compatible name
-def init_env(interval: int = 5):
-    return initialize_profiling(interval)
-
 logger, profiler = initialize_profiling()
 
 if __name__ == "__main__":

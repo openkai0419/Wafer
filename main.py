@@ -6,8 +6,9 @@ import threading
 from source.image_collector.main_collector import CollectorProcess
 from source.common.profiling import initialize_profiling, logger, profiler
 from source.constants import APP_FILE_NAME, APP_NAME, default_db_name, APP_ID
-from source.common.funcs import get_setting_file_names, new_main, split_last
+from source.common.funcs import get_setting_file_names
 from source.common.mutex import SafeProcessLock
+from source.os.process import Proc
 
 def get_icon():
     from PySide6 import QtGui
@@ -37,6 +38,7 @@ def run_communicator():
             app = QtWidgets.QApplication(sys.argv)
             app.setQuitOnLastWindowClosed(False)
             app.setApplicationName(APP_NAME)
+            app.aboutToQuit.connect(lambda: Proc.terminate_cmd("--collector"))
             tray_icon = TrayApp(get_icon())
             tray_icon.show()
             sys.exit(app.exec())
@@ -47,14 +49,14 @@ def run_communicator():
 
 def run_collector(name):
     try:
-        logger.setLevel(30)
+        #logger.setLevel(30)
         profiler.set_enabled(False)
         with SafeProcessLock(f"{APP_FILE_NAME}_{name}"):
             initialize_profiling()
             logger.info(f"collector start :{name}")
 
             collector = CollectorProcess(name)
-
+            collector.start_watch()
             stop_event = threading.Event()
 
             def shutdown_handler(sig, frame):
@@ -68,8 +70,6 @@ def run_collector(name):
             logger.info("[Collector] Running. Press Ctrl+C to exit.")
             stop_event.wait()
 
-            collector.stop()
-
     except FileExistsError:
         logger.info(f"Collector '{name}' is already running.")
     except:
@@ -80,7 +80,7 @@ def run_all_collectors():
     if not names:
         names = [default_db_name]
     for name in names:
-        new_main("--collector", f"{name}")
+        Proc.new_main("--collector", f"{name}")
     run_communicator()
 
 def run_viewer():
@@ -103,21 +103,19 @@ def main():
 
     args = parser.parse_args()
 
-    # run all three if no args
     if not any(vars(args).values()):
-        new_main("--collector")
+        Proc.new_main("--communicator")
         run_viewer()
         return
 
     if args.communicator:
-        run_communicator()
+        run_all_collectors()
 
     elif args.collector:
         if isinstance(args.collector, str):
-            new_main("--communicator")
             run_collector(args.collector)
         else:
-            run_all_collectors()
+            Proc.new_main("--communicator")
 
     elif args.viewer:
         run_viewer()

@@ -1,14 +1,17 @@
 from PySide6 import QtWidgets, QtGui, QtCore
 import contextlib
 
+from ..os.process import Proc
+
 from ..image_collector.progress_notifier import close_publisher
 from ..common.profiling import logger, profiler
 from ..qt.debounce import qt_debounce
-from ..common.funcs import new_main, get_setting_file_names
+from ..common.funcs import get_setting_file_names
 from ..qt.dialog import ConfirmDialog
 from ..constants import APP_NAME
 from ..image_setting.translation import TranslatorMixin
 from ..zmq.zmq import ZMQNode, ZMQBroker, Role
+from ..os.process import Proc
 
 class TrayApp(QtWidgets.QSystemTrayIcon, TranslatorMixin):
     @profiler.profile
@@ -30,6 +33,8 @@ class TrayApp(QtWidgets.QSystemTrayIcon, TranslatorMixin):
         self.menu.addSeparator()
         self.test_action = self.menu.addAction(self.t.tr("Test"))
         self.test_action.triggered.connect(self.test)
+        self.test_action2 = self.menu.addAction(self.t.tr("Test2"))
+        self.test_action2.triggered.connect(self.test2)
         self.menu.addSeparator()
         self.quit_action = self.menu.addAction(self.t.tr("Quit"))
         self.quit_action.triggered.connect(self.quit)
@@ -45,14 +50,14 @@ class TrayApp(QtWidgets.QSystemTrayIcon, TranslatorMixin):
         QtWidgets.QApplication.instance().aboutToQuit.connect(self.delete)
     
     def on_notify(self, v):
-        logger.info(v)
+        logger.info(f"NOTIFY : {v}")
 
     def rescan(self):
         pass
 
     def send_show_toggle(self, flag):
         try:
-            self.zmq.send(targetprocess="viewer", table="*", topic="show_toggle", message="True" if flag else "False")
+            self.zmq.send(targetprocess="ALL", table="*", topic="show_toggle", message="True" if flag else "False")
         except Exception as e:
             logger.warning(f"[toggle notify failed] {e}")
 
@@ -80,10 +85,14 @@ class TrayApp(QtWidgets.QSystemTrayIcon, TranslatorMixin):
     
     @qt_debounce(500)
     def show_anyways(self):
-        new_main("--viewer")
+        Proc.new_main("--viewer")
 
     def test(self):
-        self.zmq.send(targetprocess="ALL", table="*", topic="*", message="TEST FUNCTION!")
+        logger.info("SENDING TEST")
+        self.zmq.send(targetprocess="ALL", table="*", topic="none", message="TEST FUNCTION!")
+
+    def test2(self):
+        logger.info(Proc.get_subset("--collector"))
 
     def delete(self):
         # ensure background threads are stopped

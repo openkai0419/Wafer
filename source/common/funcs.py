@@ -1,6 +1,5 @@
 import os
 import sys
-import subprocess
 from pathlib import Path
 from platformdirs import PlatformDirs
 from natsort import natsorted, ns
@@ -56,19 +55,6 @@ def get_resource_path() -> Path:
 
 def get_name_without_ext(path):
     return os.path.splitext(os.path.basename(path))[0]
-
-def new_main(*args):
-    if getattr(sys, 'frozen', False):
-        # exe
-        main_path = sys.executable
-        cmd = [main_path] + list(args)
-    else:
-        # python
-        main_path = os.path.abspath(sys.argv[0])
-        cmd = [sys.executable, main_path] + list(args)
-    print(main_path, cmd)
-    env = os.environ.copy()
-    subprocess.Popen(cmd, env=env)
 
 def get_main_based_directory() -> Path:
     if getattr(sys, 'frozen', False):

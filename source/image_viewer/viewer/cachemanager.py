@@ -1,29 +1,22 @@
 from collections import OrderedDict
-
 from PySide6 import QtCore, QtGui, QtWidgets
-
 from ...common.profiling import profiler
 
-
 class FadeLabel(QtWidgets.QLabel):
-    _FADE_DURATION = 120          # ms
+    _FADE_DURATION = 120
 
     @profiler.profile
     def __init__(self, parent=None):
         super().__init__(parent)
         self.curpath = None
-
         self._opacity = 0.0
-
         eff = QtWidgets.QGraphicsOpacityEffect(self, opacity=self._opacity)
         self.setGraphicsEffect(eff)
-
         self.setScaledContents(True)
-        self._fade_anim = QtCore.QPropertyAnimation(self, b"opacity", self)
+        self._fade_anim = QtCore.QPropertyAnimation(self, b'opacity', self)
         self._fade_anim.setDuration(self._FADE_DURATION)
         self._fade_anim.setEasingCurve(QtCore.QEasingCurve.OutCubic)
 
-    # property wrapper
     def get_opacity(self):
         return self._opacity
 
@@ -31,11 +24,10 @@ class FadeLabel(QtWidgets.QLabel):
         self._opacity = v
         self.graphicsEffect().setOpacity(v)
         self.update()
-
     opacity = QtCore.Property(float, get_opacity, set_opacity)
 
     @profiler.profile
-    def set_pixmap(self, pixmap: QtGui.QPixmap, curpath=None):
+    def set_pixmap(self, pixmap, curpath=None):
         if self.curpath != curpath:
             self.setPixmap(pixmap)
             self.curpath = curpath
@@ -49,8 +41,8 @@ class FadeLabel(QtWidgets.QLabel):
             self.setPixmap(pixmap)
             self.curpath = curpath
 
-
 class QLabelPool:
+
     def __init__(self, parent=None):
         self._available = []
         self._in_use = set()
@@ -78,29 +70,27 @@ class QLabelPool:
             label = self._in_use.pop()
             self.release(label)
 
-
 class MemoryLimitedPixmapCache:
+
     def __init__(self, max_bytes=100 * 1024 * 1024):
         self.max_bytes = max_bytes
         self.current_bytes = 0
         self.cache = OrderedDict()
 
     @profiler.profile
-    def _estimate_pixmap_size(self, pixmap: QtGui.QPixmap) -> int:
+    def _estimate_pixmap_size(self, pixmap):
         size = pixmap.size()
         return size.width() * size.height() * 4
 
     @profiler.profile
-    def __setitem__(self, key, pixmap: QtGui.QPixmap):
+    def __setitem__(self, key, pixmap):
         if key in self.cache:
             self.current_bytes -= self._estimate_pixmap_size(self.cache[key])
             del self.cache[key]
-
         pixmap_size = self._estimate_pixmap_size(pixmap)
         self.cache[key] = pixmap
         self.cache.move_to_end(key)
         self.current_bytes += pixmap_size
-
         while self.current_bytes > self.max_bytes and self.cache:
             old_key, old_pixmap = self.cache.popitem(last=False)
             self.current_bytes -= self._estimate_pixmap_size(old_pixmap)

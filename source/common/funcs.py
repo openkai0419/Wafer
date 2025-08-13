@@ -1,24 +1,20 @@
 import os
 import sys
 from pathlib import Path
-from typing import List
-
 from natsort import natsorted, ns
 from platformdirs import PlatformDirs
 from PySide6 import QtGui
-
 from ..constants import APP_FILE_NAME
-
-IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp")
+IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.bmp', '.gif', '.webp')
 
 def normalize_path(p):
     try:
         path = str(Path(p).resolve(strict=False))
     except Exception:
         path = str(Path(p).absolute())
-    return path.replace("\\", "/")
+    return path.replace('\\', '/')
 
-def uipx(px: int, base_dpi: int = 96) -> int:
+def uipx(px, base_dpi=96):
     screen = QtGui.QGuiApplication.primaryScreen()
     if screen is None:
         return px
@@ -29,68 +25,60 @@ def uipx(px: int, base_dpi: int = 96) -> int:
 def native_sort(files):
     return natsorted(files, alg=ns.LOCALE | ns.IGNORECASE)
 
-def split_last(lst: List):
+def split_last(lst):
     return (lst[:-1], lst[-1]) if lst else ([], None)
 
 def is_dark_theme():
     palette = QtGui.QGuiApplication.palette()
     bg_color = palette.color(QtGui.QPalette.Window)
-    # 明度を計算
     return bg_color.value() < 128
 
-# paths
 def get_data_db(name):
-    return data_path(f"data/{name}.db")
+    return data_path(f'data/{name}.db')
 
 def get_setting_db(name):
-    return data_path(f"dirs/{name}.db")
+    return data_path(f'dirs/{name}.db')
 
 def get_data_file_names():
-    return [get_name_without_ext(a) for a in list_files(data_path(f"data/"), ".db")]
+    return [get_name_without_ext(a) for a in list_files(data_path(f'data/'), '.db')]
 
 def get_setting_file_names():
-    return [get_name_without_ext(a) for a in list_files(data_path(f"dirs/"), ".db")]
+    return [get_name_without_ext(a) for a in list_files(data_path(f'dirs/'), '.db')]
 
-def get_resource_path() -> Path:
-    return get_main_based_directory() / "_resources"
+def get_resource_path():
+    return get_main_based_directory() / '_resources'
 
 def get_name_without_ext(path):
     return os.path.splitext(os.path.basename(path))[0]
 
-def get_main_based_directory() -> Path:
+def get_main_based_directory():
     if getattr(sys, 'frozen', False):
-        # Running from PyInstaller bundle
         return Path(sys.executable).resolve().parent
     else:
-        # Normal script execution (main.py)
         main_module = sys.modules.get('__main__')
         if hasattr(main_module, '__file__'):
             return Path(main_module.__file__).resolve().parent
         else:
-            return Path.cwd()  # interactive mode etc
+            return Path.cwd()
 
-# settingdirs
-def _resolve_app_path( relative_path: str, base_dir: Path ) -> Path:
+def _resolve_app_path(relative_path, base_dir):
     path = base_dir / relative_path
-    if path.suffix == "" or str(relative_path).endswith(("/", "\\")):
+    if path.suffix == '' or str(relative_path).endswith(('/', '\\')):
         path.mkdir(parents=True, exist_ok=True)
     else:
         path.parent.mkdir(parents=True, exist_ok=True)
     return path
 
-def data_path(relative_path: str) -> Path:
+def data_path(relative_path):
     dirs = PlatformDirs(appname=None)
     base_dir = Path(dirs.user_data_dir) / APP_FILE_NAME
     return normalize_path(_resolve_app_path(relative_path, base_dir))
 
-def config_path(relative_path: str) -> Path:
+def config_path(relative_path):
     dirs = PlatformDirs(appname=None)
     base_dir = Path(dirs.user_config_dir) / APP_FILE_NAME
     return normalize_path(_resolve_app_path(relative_path, base_dir))
 
-def list_files(directory: str, extension: str):
-    ext = extension.lower() if extension.startswith('.') else f".{extension.lower()}"
-    return [
-        normalize_path(f) for f in Path(directory).iterdir()
-        if f.is_file() and f.suffix.lower() == ext
-    ]
+def list_files(directory, extension):
+    ext = extension.lower() if extension.startswith('.') else f'.{extension.lower()}'
+    return [normalize_path(f) for f in Path(directory).iterdir() if f.is_file() and f.suffix.lower() == ext]

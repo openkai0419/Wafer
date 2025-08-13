@@ -1,61 +1,53 @@
 import os
 import tempfile
 import time
-
 import psutil
 
-
 class SafeProcessLock:
-    def __init__(self, name: str):
+
+    def __init__(self, name):
         self.name = name
-        self.lock_file = os.path.join(tempfile.gettempdir(), f"{name}.lock")
+        self.lock_file = os.path.join(tempfile.gettempdir(), f'{name}.lock')
         self.pid = os.getpid()
         self.acquired = False
 
     def acquire(self):
         while True:
             try:
-                # Create exclusively with O_EXCL + O_CREAT
                 fd = os.open(self.lock_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-                with os.fdopen(fd, "w") as f:
+                with os.fdopen(fd, 'w') as f:
                     f.write(str(self.pid))
                 self.acquired = True
                 return True
             except FileExistsError:
                 try:
-                    with open(self.lock_file, "r") as f:
+                    with open(self.lock_file, 'r') as f:
                         content = f.read().strip()
                         if not content.isdigit():
-                            raise ValueError("Invalid PID content")
+                            raise ValueError('Invalid PID content')
                         existing_pid = int(content)
-
                     if psutil.pid_exists(existing_pid):
                         try:
                             existing_proc = psutil.Process(existing_pid)
                             current_proc = psutil.Process(self.pid)
-
                             if existing_proc.exe() != current_proc.exe():
-                                return False  # lock held by another program
+                                return False
                             else:
-                                # same executable already running elsewhere
                                 return False
                         except psutil.Error:
                             pass
-                    # process gone or inaccessible -> stale lock
                     os.remove(self.lock_file)
                 except Exception:
-                    # lock file corrupted
                     try:
                         os.remove(self.lock_file)
                     except Exception:
-                        return False  # cannot delete, maybe held by other process
-                # retry loop
+                        return False
                 time.sleep(0.1)
 
     def release(self):
         if self.acquired and os.path.exists(self.lock_file):
             try:
-                with open(self.lock_file, "r") as f:
+                with open(self.lock_file, 'r') as f:
                     if int(f.read().strip()) == self.pid:
                         os.remove(self.lock_file)
             except Exception:

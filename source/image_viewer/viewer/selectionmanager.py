@@ -1,7 +1,5 @@
 from contextlib import contextmanager
-
 from PySide6 import QtCore
-
 
 class SelectionManager(QtCore.QObject):
     selectionChanged = QtCore.Signal(set)
@@ -12,10 +10,10 @@ class SelectionManager(QtCore.QObject):
         self._last_added = None
         self._signals_blocked = False
 
-    def _emit(self, indices: set):
+    def _emit(self, indices):
         if not self._signals_blocked:
             self.selectionChanged.emit(indices)
-    
+
     @contextmanager
     def noemit(self):
         self._signals_blocked = True
@@ -24,12 +22,12 @@ class SelectionManager(QtCore.QObject):
         finally:
             self._signals_blocked = False
 
-    def select(self, index: int):
+    def select(self, index):
         if index not in self._selected:
             self._selected.add(index)
             self._last_added = index
             self._emit({index})
-    
+
     def add_selection(self, indexes, last=0):
         self._selected = set(indexes) | self._selected
         self._emit(self._selected)
@@ -44,14 +42,14 @@ class SelectionManager(QtCore.QObject):
             self._last_added = None
         self._emit(to_remove)
 
-    def deselect(self, index: int):
+    def deselect(self, index):
         if index in self._selected:
             self._selected.discard(index)
             if index == self._last_added:
-                self._last_added = None  # 一旦クリア
+                self._last_added = None
             self._emit({index})
 
-    def toggle(self, index: int):
+    def toggle(self, index):
         if index in self._selected:
             self._selected.remove(index)
             if index == self._last_added:
@@ -65,10 +63,10 @@ class SelectionManager(QtCore.QObject):
         if self._selected:
             temp = self._selected.copy()
             self._selected.clear()
-            self._last_added = None  # クリア
+            self._last_added = None
             self._emit(temp)
 
-    def is_selected(self, index: int) -> bool:
+    def is_selected(self, index):
         return index in self._selected
 
     def set_selected(self, indexes, last=0):
@@ -82,7 +80,7 @@ class SelectionManager(QtCore.QObject):
     def selected_indices(self):
         return self._selected
 
-    def count(self) -> int:
+    def count(self):
         return len(self._selected)
 
     def set_last(self, index):

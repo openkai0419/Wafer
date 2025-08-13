@@ -1,8 +1,6 @@
 import bisect
 import os
-
 from PySide6 import QtCore, QtGui, QtWidgets
-
 from ...common.funcs import uipx
 from ...common.profiling import logger, profiler
 from ...io.loader import ImageLoaderRunnable
@@ -13,44 +11,32 @@ from ...qt.thread import main_thread
 from ..viewer_settings import main_setting
 from .cachemanager import MemoryLimitedPixmapCache, QLabelPool
 from .calc_layout import JustifiedLayoutCalculator
-from .mouseeventmanager import (
-    ClickType,
-    MouseActionKey,
-    MouseButton,
-    MouseEventDispatcher,
-    MouseEventManager,
-)
+from .mouseeventmanager import ClickType, MouseActionKey, MouseButton, MouseEventDispatcher, MouseEventManager
 from .selectionmanager import SelectionManager
 from .sizechecker import SizeMismatchChecker
 
-
 class OverLayPainter(QtWidgets.QWidget):
+
     def __init__(self, parent, spacing, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         self.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
         self.setAttribute(QtCore.Qt.WA_NoSystemBackground)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
         self.setWindowFlags(QtCore.Qt.FramelessWindowHint)
-        self.setFocusPolicy(QtCore.Qt.NoFocus) 
-
+        self.setFocusPolicy(QtCore.Qt.NoFocus)
         self.color = (59, 128, 255)
         self.half_pos = spacing / 2
-
         self._qcolor_main = QtGui.QColor(*self.color)
         self._qcolor_fill_sel = QtGui.QColor(*self.color, 25)
         self._qcolor_fill_drag = QtGui.QColor(*self.color, 50)
-
         self._selection_pen = QtGui.QPen(self._qcolor_main, max(1, spacing * 0.5))
         self._selection_pen.setCosmetic(True)
-
         self._parent = parent
         parent.installEventFilter(self)
         self.resize(self._parent.size())
         self.show()
-        logger.info(f"STACK UNDER : {self.stackUnder(self._parent)}")
-
+        logger.info(f'STACK UNDER : {self.stackUnder(self._parent)}')
         self._last_state = None
-        # paint() がセットする値の初期化
         self.viewport_rect = QtCore.QRect()
         self.selection_indices = set()
         self.visible_indices = set()
@@ -59,26 +45,16 @@ class OverLayPainter(QtWidgets.QWidget):
         self.drag_rect_current = None
         self.is_shift_dragging = False
         self.raise_()
-        
+
     def eventFilter(self, watched, event):
         if watched == self._parent and event.type() == QtCore.QEvent.Resize:
             self.resize(self._parent.size())
         return super().eventFilter(watched, event)
-    
-    def set_paintvalue(self, viewport_rect, selection_indices, visible_indices, rects,
-                    drag_rect_start, drag_rect_current, is_shift_dragging):
-        state = (
-            viewport_rect,
-            frozenset(selection_indices),
-            frozenset(visible_indices),
-            drag_rect_start,
-            drag_rect_current,
-            is_shift_dragging
-        )
+
+    def set_paintvalue(self, viewport_rect, selection_indices, visible_indices, rects, drag_rect_start, drag_rect_current, is_shift_dragging):
+        state = (viewport_rect, frozenset(selection_indices), frozenset(visible_indices), drag_rect_start, drag_rect_current, is_shift_dragging)
         if state != self._last_state:
             self._last_state = state
-
-            # 状態更新
             self.viewport_rect = viewport_rect
             self.selection_indices = selection_indices
             self.visible_indices = visible_indices
@@ -90,35 +66,23 @@ class OverLayPainter(QtWidgets.QWidget):
     def paintEvent(self, event):
         super().paintEvent(event)
         painter = QtGui.QPainter(self)
-
-        # 軸揃え矩形だけなので AA は切る
         painter.setRenderHint(QtGui.QPainter.Antialiasing, False)
-        # 再描画領域とビューポートでクリップ
         painter.setClipRegion(event.region())
         if not self.viewport_rect.isNull():
             painter.setClipRect(self.viewport_rect, QtCore.Qt.IntersectClip)
-
-        space = self.half_pos - (self._selection_pen.width() / 2)
-
-        # --- まとめ描画: 選択枠 ---
+        space = self.half_pos - self._selection_pen.width() / 2
         if self.selection_indices and self.visible_indices and self.rects:
             indices = self.selection_indices & self.visible_indices
-
-            # 表示中かつビューポートと交差するものだけ集める
             rect_list = []
             for i in indices:
                 if 0 <= i < len(self.rects):
                     r = self.rects[i]
                     if r.intersects(self.viewport_rect):
                         rect_list.append(r.adjusted(-space, -space, space, space))
-
             if rect_list:
                 painter.setPen(self._selection_pen)
                 painter.setBrush(self._qcolor_fill_sel)
-                # ここがポイント: ループせず一括描画
                 painter.drawRects(rect_list)
-
-        # --- ドラッグ矩形（単発描画のまま、素材は再利用）---
         if self.is_shift_dragging and self.drag_rect_start and self.drag_rect_current:
             selection_rect = QtCore.QRect(self.drag_rect_start, self.drag_rect_current).normalized()
             dash_pen = QtGui.QPen(self._qcolor_main, 1, QtCore.Qt.DashLine)
@@ -126,21 +90,18 @@ class OverLayPainter(QtWidgets.QWidget):
             painter.setPen(dash_pen)
             painter.setBrush(self._qcolor_fill_drag)
             painter.drawRect(selection_rect)
-
         painter.end()
 
-
 class MouseHandlerBinder(QtCore.QObject):
+
     def __init__(self, widget):
         super().__init__()
         self.widget = widget
-
         self._drag_rect_start = None
         self._drag_rect_current = None
         self._is_shift_dragging = False
         self._drag_state = 0
         self._disable_next_click = False
-
         self.mouse_event_manager = MouseEventManager()
         self._mouse_dispatcher = MouseEventDispatcher(self.widget, self.mouse_event_manager)
 
@@ -154,12 +115,9 @@ class MouseHandlerBinder(QtCore.QObject):
         m.bind(MouseActionKey(MouseButton.NONE, ClickType.DROP, ()), self.on_drop)
         m.bind(MouseActionKey(MouseButton.NONE, ClickType.WHEEL_UP, ()), self.on_wheel)
         m.bind(MouseActionKey(MouseButton.NONE, ClickType.WHEEL_DOWN, ()), self.on_wheel)
-        m.bind(
-            MouseActionKey(MouseButton.NONE, ClickType.WHEEL_UP, (MouseButton.LEFT,)),
-            lambda x: print("Middle press + wheel up to zoom in")
-        )
+        m.bind(MouseActionKey(MouseButton.NONE, ClickType.WHEEL_UP, (MouseButton.LEFT,)), lambda x: print('Middle press + wheel up to zoom in'))
 
-    def _consume_disable_next_click(self) -> bool:
+    def _consume_disable_next_click(self):
         if self._disable_next_click:
             self._disable_next_click = False
             return True
@@ -174,7 +132,7 @@ class MouseHandlerBinder(QtCore.QObject):
             self.on_left_ctrl_click(event)
         elif modifiers & QtCore.Qt.ShiftModifier:
             self.on_left_shift_click(event)
-        else: 
+        else:
             self.on_left_single_click(event)
 
     @profiler.profile
@@ -194,10 +152,10 @@ class MouseHandlerBinder(QtCore.QObject):
             last = self.widget.selection_manager.last_added()
             if last is not None:
                 if last < index:
-                    adding  =list(range(last, index + 1))
+                    adding = list(range(last, index + 1))
                     self.widget.selection_manager.add_selection(adding, -1)
                 else:
-                    adding  =list(range(index, last + 1))
+                    adding = list(range(index, last + 1))
                     self.widget.selection_manager.add_selection(adding, 0)
             else:
                 self.widget.selection_manager.add_selection([index], 0)
@@ -207,16 +165,15 @@ class MouseHandlerBinder(QtCore.QObject):
         if self._consume_disable_next_click():
             return
         index = self.widget.index_at_pos(event.pos())
-        if index is not None:    
+        if index is not None:
             if not self.widget.selection_manager.is_selected(index):
-                self.widget.selection_manager.set_selected([index], 0) 
+                self.widget.selection_manager.set_selected([index], 0)
+            elif len(self.widget.selection_manager.selected_indices()) > 1:
+                self.widget.selection_manager.set_selected([index], 0)
             else:
-                if len(self.widget.selection_manager.selected_indices()) > 1:
-                    self.widget.selection_manager.set_selected([index], 0)
-                else:
-                    self.widget.selection_manager.deselect(index)
+                self.widget.selection_manager.deselect(index)
 
-    @profiler.profile    
+    @profiler.profile
     def on_double_click(self, event):
         if self._consume_disable_next_click():
             return
@@ -224,7 +181,6 @@ class MouseHandlerBinder(QtCore.QObject):
         if index is not None:
             if not self.widget.selection_manager.is_selected(index):
                 self.on_left_click(event)
-            
 
     @profiler.profile
     def on_right_click(self, event):
@@ -237,7 +193,7 @@ class MouseHandlerBinder(QtCore.QObject):
                 self.on_left_click(event)
             if self.widget.context_menu_builder:
                 menu = self.widget.context_menu_builder.build_menu(path)
-                menu.popup(event.globalPos()) 
+                menu.popup(event.globalPos())
         else:
             pass
 
@@ -256,10 +212,10 @@ class MouseHandlerBinder(QtCore.QObject):
         new_height = self.widget.base_height + (zoom_step if delta > 0 else -zoom_step)
         new_height = min(self.widget.max_height, new_height)
         old_height = self.widget.base_height
-        self.widget.base_height = max(self.widget.min_height, min(new_height, self.widget.screen_width ))
+        self.widget.base_height = max(self.widget.min_height, min(new_height, self.widget.screen_width))
         if self.widget.base_height != old_height:
             self.widget._debounce_recalc_layout()
-            main_setting.set("viewer/zoom", self.widget.base_height)
+            main_setting.set('viewer/zoom', self.widget.base_height)
 
     @profiler.profile
     def on_drag(self, event):
@@ -270,7 +226,7 @@ class MouseHandlerBinder(QtCore.QObject):
             self.on_shift_drag(event)
         elif modifiers & (QtCore.Qt.ControlModifier | QtCore.Qt.MetaModifier):
             self.on_ctrl_drag(event)
-        else: 
+        else:
             self.on_drag_start(event)
 
     def on_shift_drag(self, event):
@@ -304,14 +260,13 @@ class MouseHandlerBinder(QtCore.QObject):
         logger.info(items[0].mime_type)
         saver = FileSaver()
         for item in items:
-            path = r"C:\Users\openk\Downloads\drop\{}".format(item.name)
+            path = 'C:\\Users\\openk\\Downloads\\drop\\{}'.format(item.name)
             if os.path.exists(path):
-                pass # cancel or overwrite or new_name
+                pass
             if item.is_local_file():
-                pass # move or copy
+                pass
             saver.save(item, path, move=False)
-            logger.info(f"Dropped files: {path}")
-            
+            logger.info(f'Dropped files: {path}')
 
     def finalize_rectangle_selection(self, state=0):
         if not self._drag_rect_start or not self._drag_rect_current:
@@ -321,7 +276,6 @@ class MouseHandlerBinder(QtCore.QObject):
         for i, r in enumerate(self.widget.rects):
             if rect.intersects(r):
                 selected_indices.append(i)
-
         if selected_indices:
             if state == 2:
                 self.widget.selection_manager.remove_selection(selected_indices)
@@ -330,8 +284,8 @@ class MouseHandlerBinder(QtCore.QObject):
             else:
                 self.widget.selection_manager.set_selected(selected_indices, last=-1)
         else:
-            logger.info("No items in selection rectangle.")
-        
+            logger.info('No items in selection rectangle.')
+
     @profiler.profile
     def on_drag_start(self, event):
         index = self.widget.index_at_pos(event.pos())
@@ -339,49 +293,39 @@ class MouseHandlerBinder(QtCore.QObject):
             return
         if not self.widget.selection_manager.is_selected(index):
             self.on_left_click(event)
-
         selected = self.widget.get_selected_paths()
         urls = [QtCore.QUrl.fromLocalFile(path) for path in selected]
         if not urls:
             return
-
         drag = QtGui.QDrag(self)
         mime = QtCore.QMimeData()
         mime.setUrls(urls)
         drag.setMimeData(mime)
         widget = self.widget.widgets.get(index)
         if widget is None:
-            logger.warning(f"No widget for index {index}")
+            logger.warning(f'No widget for index {index}')
             return
         logger.info(widget)
         if widget:
             pixmap = QtGui.QPixmap(widget.grab())
-            pixmap = pixmap.scaled(QtCore.QSize(uipx(150), uipx(150)),
-                                    QtCore.Qt.KeepAspectRatio,
-                                    QtCore.Qt.FastTransformation)
-            
+            pixmap = pixmap.scaled(QtCore.QSize(uipx(150), uipx(150)), QtCore.Qt.KeepAspectRatio, QtCore.Qt.FastTransformation)
             transparent_pixmap = QtGui.QPixmap(pixmap.size())
             transparent_pixmap.fill(QtCore.Qt.transparent)
-
             painter = QtGui.QPainter(transparent_pixmap)
-            painter.setOpacity(0.5)  # 0.0〜1.0 で半透明度を指定
+            painter.setOpacity(0.5)
             painter.drawPixmap(0, 0, pixmap)
             painter.end()
-
             pixmap = transparent_pixmap
-
             if len(urls) > 1:
-                pixmap = PixmapFactory.draw_centered_text_with_background(pixmap, f" {len(urls)}  ")
-
+                pixmap = PixmapFactory.draw_centered_text_with_background(pixmap, f' {len(urls)}  ')
             drag.setPixmap(pixmap)
             drag.setHotSpot(pixmap.rect().topLeft())
         QtCore.QTimer.singleShot(0, lambda: self._start_drag(drag))
 
     def _start_drag(self, drag):
-        # イベントループを回してから実行（より自然なレスポンスになる）
         QtWidgets.QApplication.processEvents()
         drag.exec(QtCore.Qt.CopyAction | QtCore.Qt.MoveAction)
-            
+
     def eventFilter(self, watched, event):
         if event.type() == QtCore.QEvent.MouseMove and self._is_shift_dragging:
             self._drag_rect_current = event.pos()
@@ -392,13 +336,11 @@ class MouseHandlerBinder(QtCore.QObject):
             self.finalize_rectangle_selection(state=self._drag_state)
             self._drag_rect_start = None
             self._drag_rect_current = None
-            self.widget.update()     
+            self.widget.update()
         elif isinstance(event, QtGui.QDragEnterEvent):
             event.acceptProposedAction()
             return False
-        
         return super().eventFilter(watched, event)
-
 
 class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
     layout_ready = QtCore.Signal()
@@ -406,46 +348,36 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
     def __init__(self, scroll, parent=None):
         super().__init__(parent)
         self.parent_scroll = scroll
-
         self.mouse_handler = MouseHandlerBinder(self)
         self.mouse_handler.bind_all()
         self.installEventFilter(self.mouse_handler)
-
-        self.setObjectName("JustifiedVirtualScrollWidget")
+        self.setObjectName('JustifiedVirtualScrollWidget')
         self.image_paths = []
         self.aspect_ratios = []
         self.rects = []
         self.rects_tops = []
         self.rects_bottoms = []
-        
         self.last_selections = []
         self._restore_scroll_index = None
-
         self.screen_width = QtGui.QGuiApplication.primaryScreen().availableGeometry().width()
-        self.base_height = main_setting.get("viewer/zoom", int(self.screen_width / 10))
+        self.base_height = main_setting.get('viewer/zoom', int(self.screen_width / 10))
         self._width_ref = self.width()
         self.min_height = int(self.screen_width / 30)
         self.max_height = int(self.screen_width)
         self.setMinimumWidth(self.min_height)
         self.spacing = uipx(4)
         self.calculator = None
-
         self.pixmap_cache = MemoryLimitedPixmapCache(500 * 1024 * 1024)
         self.active_threads = {}
-
         self.error_placeholder = PixmapFactory.generate()
         self.overlay_painter = OverLayPainter(self, self.spacing)
-
         self.selection_manager = SelectionManager()
         self.selection_manager.selectionChanged.connect(self._on_selection_changed)
-
         self.label_pool = QLabelPool(self)
         self.widgets = {}
         self.visible_indices = set()
-
         self.size_checker = SizeMismatchChecker(self)
         self.size_checker.start()
-
         self.parent_scroll.verticalScrollBar().valueChanged.connect(self._on_scroll_bar_changed)
         self.parent_scroll.horizontalScrollBar().valueChanged.connect(self._on_scroll_bar_changed)
 
@@ -459,38 +391,28 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
         scroll_y = self.parent_scroll.verticalScrollBar().value()
         scroll_x = self.parent_scroll.horizontalScrollBar().value()
         viewport_rect = self.parent_scroll.viewport().rect().translated(scroll_x, scroll_y)
-
-        self.overlay_painter.set_paintvalue(
-            viewport_rect,
-            self.selection_manager.selected_indices(),
-            self.visible_indices,
-            self.rects,
-            self.mouse_handler._drag_rect_start,
-            self.mouse_handler._drag_rect_current,
-            self.mouse_handler._is_shift_dragging
-        )
-
+        self.overlay_painter.set_paintvalue(viewport_rect, self.selection_manager.selected_indices(), self.visible_indices, self.rects, self.mouse_handler._drag_rect_start, self.mouse_handler._drag_rect_current, self.mouse_handler._is_shift_dragging)
 
     @profiler.profile
     def set_context_menu_builder(self, builder):
         self.context_menu_builder = builder
-    
+
     @profiler.profile
     def get_selected_paths(self):
         return [self.image_paths[i] for i in self.selection_manager.selected_indices() if i < len(self.image_paths)]
-    
+
     @profiler.profile
     def get_last_selected_path(self):
         i = self.selection_manager.last_added()
         return self.image_paths[i] if i < len(self.image_paths) else None
-    
+
     @profiler.profile
     def get_mouse_pos_path(self):
         i = self.index_at_pos(self.mapFromGlobal(QtCore.QCursor.pos()))
         return self.image_paths[i] if i < len(self.image_paths) else None
 
     @profiler.profile
-    def index_at_pos(self, pos: QtCore.QPoint) -> int | None:
+    def index_at_pos(self, pos):
         y = pos.y()
         start = bisect.bisect_left(self.rects_bottoms, y)
         end = bisect.bisect_right(self.rects_tops, y)
@@ -509,7 +431,7 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
             self._clear_all_widgets()
         if self.image_paths == path_list:
             self.layout_ready.emit()
-            return 
+            return
         self.image_paths = path_list
         self.aspect_ratios = aspect_ratios
         self._recalc_layout()
@@ -522,7 +444,7 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
         self.visible_indices.clear()
         self.rects = []
         self.setMinimumHeight(0)
-    
+
     @profiler.profile
     @qt_debounce(100)
     def on_resize_event(self):
@@ -534,9 +456,8 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
             if new_height != self.base_height:
                 self.base_height = new_height
                 self._width_ref = width
-
         self._restore_scroll_index = self.get_center_image_index()
-        logger.info("on_resize_event")
+        logger.info('on_resize_event')
         self._recalc_layout()
 
     @qt_debounce(100)
@@ -547,13 +468,10 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
     def _recalc_layout(self):
         if self.calculator:
             self.calculator.cancel()
-
-        self.calculator = JustifiedLayoutCalculator(
-            self.aspect_ratios, self.base_height, self.spacing, self.width(), self.height(), 1
-        )
+        self.calculator = JustifiedLayoutCalculator(self.aspect_ratios, self.base_height, self.spacing, self.width(), self.height(), 1)
         self.calculator.signals.layout_ready.connect(self._on_layout_ready)
         main_thread.start(self.calculator, 7)
-        logger.debug("_recalc_layout")
+        logger.debug('_recalc_layout')
 
     @profiler.profile
     def get_center_image_index(self):
@@ -582,27 +500,23 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
         self.rects_tops = [r.top() for r in rects]
         self.rects_bottoms = [r.bottom() for r in rects]
         self._update_visible_items()
-        
-        logger.info("_on_layout_ready")
+        logger.info('_on_layout_ready')
         self.size_checker.trigger()
         self.layout_ready.emit()
-
         if self.last_selections:
             indexes = [self.image_paths.index(p) for p in self.last_selections if p in self.image_paths]
             if indexes:
                 with self.selection_manager.noemit():
                     self.selection_manager.set_selected(indexes, last=-1)
-                logger.info(f"set: {indexes}")
+                logger.info(f'set: {indexes}')
             else:
                 with self.selection_manager.noemit():
                     self.selection_manager.clear()
-
         index = self.get_last_index()
         logger.info(index)
         if index is not None:
             if index < len(self.rects):
                 self.reinstall_scroll_index(index)
-
         for i in self.visible_indices:
             if i < len(self.rects):
                 self._ensure_widget_visible(i, self.rects[i])
@@ -610,8 +524,8 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
     @profiler.profile
     def get_last_index(self):
         index = None
-        if main_setting.is_first_time("viewer/scroll"):
-            return main_setting.get("viewer/scroll", 0)
+        if main_setting.is_first_time('viewer/scroll'):
+            return main_setting.get('viewer/scroll', 0)
         if self.selection_manager.last_added():
             return self.selection_manager.last_added()
         if self._restore_scroll_index is not None:
@@ -624,34 +538,25 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
     def _update_visible_items(self):
         if not self.rects:
             return
-
         scroll_area = self.parent_scroll
         viewport = scroll_area.viewport()
         scroll_y = scroll_area.verticalScrollBar().value()
         scroll_x = scroll_area.horizontalScrollBar().value()
-
         view_rect = viewport.rect().translated(scroll_x, scroll_y)
-
         visible_range = self._calculate_visible_indices(view_rect)
         expanded_range = self._expand_prefetch_range(visible_range)
-
         new_visible = set(expanded_range)
         newly_added = new_visible - self.visible_indices
         no_longer_visible = self.visible_indices - new_visible
-
-        # Order for center-priority loading
         if newly_added:
             center = (visible_range.start + visible_range.stop) // 2
             sorted_added = sorted(newly_added, key=lambda i: abs(i - center))
             for i in sorted_added:
                 if i < len(self.rects):
                     self._ensure_widget_visible(i, self.rects[i])
-
         for i in no_longer_visible:
             self._recycle_widget(i)
-
         self.visible_indices = new_visible
-
         if self.rects:
             total_height = self.rects[-1].bottom() + self.spacing
             self.setMinimumHeight(total_height)
@@ -661,40 +566,29 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
     def _calculate_visible_indices(self, view_rect):
         if not self.rects:
             return range(0, 0)
-
         if not self.rects_bottoms or not self.rects_tops:
             return
-        # 範囲のY座標
         top = view_rect.top()
         bottom = view_rect.bottom()
-
-        # 開始インデックス: bottom < view_rect.top() の最後の次
         start = bisect.bisect_left(self.rects_bottoms, top)
-
-        # 終了インデックス: top > view_rect.bottom() の最初の手前
         end = bisect.bisect_right(self.rects_tops, bottom) - 1
-
-        # 範囲外チェック
-        start = max(0, min(start, len(self.rects)-1))
-        end = max(start, min(end, len(self.rects)-1))
-
-        return range(start, end+1)
+        start = max(0, min(start, len(self.rects) - 1))
+        end = max(start, min(end, len(self.rects) - 1))
+        return range(start, end + 1)
 
     @profiler.profile
     def _expand_prefetch_range(self, visible_range):
         if not visible_range:
             return range(0, 0)
-
         prefetch = len(visible_range) + 3
         start = max(0, visible_range.start - prefetch)
         end = min(len(self.rects), visible_range.stop + prefetch)
         return range(start, end)
 
-
     @profiler.profile
     def _ensure_widget_visible(self, i, rect):
         if i >= len(self.image_paths):
-            logger.warning(f"Index {i} out of range for image_paths (len={len(self.image_paths)})")
+            logger.warning(f'Index {i} out of range for image_paths (len={len(self.image_paths)})')
             return
         if i not in self.widgets:
             label = self.label_pool.acquire()
@@ -707,9 +601,8 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
                 runnable = ImageLoaderRunnable(i, self.image_paths[i], rect.size(), self)
                 self.active_threads[i] = runnable
                 main_thread.start(runnable, 5)
-        else:
-            if self.widgets[i].geometry() != rect:
-                self.widgets[i].setGeometry(rect)
+        elif self.widgets[i].geometry() != rect:
+            self.widgets[i].setGeometry(rect)
 
     @profiler.profile
     def _recycle_widget(self, i):
@@ -720,14 +613,14 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
             del self.pixmap_cache[i]
         if i in self.active_threads:
             runnable = self.active_threads.pop(i)
-            if hasattr(runnable, "cancel"):
+            if hasattr(runnable, 'cancel'):
                 runnable.cancel()
 
     @profiler.profile
     @QtCore.Slot(int, QtGui.QPixmap)
-    def _on_pixmap_ready(self, index: int, pixmap: QtGui.QPixmap):
+    def _on_pixmap_ready(self, index, pixmap):
         if index >= len(self.image_paths):
-            logger.warning(f"_on_pixmap_ready: index {index} out of range (len={len(self.image_paths)})")
+            logger.warning(f'_on_pixmap_ready: index {index} out of range (len={len(self.image_paths)})')
             return
         if index in self.widgets:
             label = self.widgets[index]

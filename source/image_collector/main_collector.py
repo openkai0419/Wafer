@@ -23,7 +23,16 @@ class CollectorProcess:
         set_node(self.zmq)
 
     def on_message(self, v):
-        logger.info(f'NOTIFY : {v}')
+        table = v.table
+        topic = v.topic
+        message = v.message
+        logger.info(f'NOTIFY : {table} {topic} {message}')
+        handlers = {"cleanup": lambda: self.cleanup(),
+                    "rescan": lambda: self.rescan()}
+        try:
+            handlers.get(topic, lambda: None)()
+        except Exception:
+            logger.exception('Error processing IPC message: %s', v)
 
     @profiler.profile
     def start_watch(self):

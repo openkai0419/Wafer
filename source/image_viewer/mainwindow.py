@@ -156,7 +156,6 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.progress_bar.setMaximum(int(value))
 
     def start_ipc_listener(self):
-
         def on_message(env):
             table = env.table
             topic = env.topic

@@ -6,7 +6,8 @@ import sqlite3
 import threading
 import time
 from pathlib import Path
-from PIL import Image
+
+from source.io.loader import process_image
 from ..common.funcs import IMAGE_EXTENSIONS, normalize_path
 from ..common.profiling import logger, profiler
 from .db_utils import connect_with_retry
@@ -14,47 +15,8 @@ extensions = IMAGE_EXTENSIONS
 CHUNK = 900
 executor = concurrent.futures.ThreadPoolExecutor()
 
-def get_file_ctime(path):
-    try:
-        stat = os.stat(path)
-        if hasattr(stat, 'st_birthtime'):
-            return stat.st_birthtime
-        else:
-            return stat.st_ctime
-    except Exception as e:
-        logger.warning(f'Failed to get ctime for {path}: {e}')
-        return None
-
-def read_info(path):
-    try:
-        with Image.open(path) as img:
-            return dict(img.info)
-    except Exception as e:
-        logger.warning(f'Failed to read image info for {path}: {e}')
-    return {}
-
-def process_image(p, file_info):
-    try:
-        name = os.path.basename(p)
-        mtime, fsize = file_info.get(p, (None, None))
-        ctime = get_file_ctime(p)
-        collected_at = time.time()
-        with Image.open(p) as img:
-            width, height = img.size
-            exif = img.getexif()
-            orientation = exif.get(274, 1) if exif else 1
-            if orientation in (5, 6, 7, 8):
-                width, height = (height, width)
-            aspect = width / height if height else 1.0
-            info = dict(img.info)
-        meta_info = [(str(p), str(k), str(v)) for k, v in info.items()]
-        meta_info.append((str(p), '__filepath__', str(p)))
-        return (p, name, aspect, mtime, fsize, ctime, collected_at, meta_info, None)
-    except Exception as e:
-        logger.warning(f'Failed to process {p}: {e}')
-        mtime, fsize = file_info.get(p, (None, None))
-        name = os.path.basename(p)
-        return (p, name, None, mtime, fsize, None, time.time(), [], 'fail')
+def path_to_meta(name):
+    return name
 
 class ImageIndexer:
 
@@ -69,6 +31,8 @@ class ImageIndexer:
 
     @profiler.profile
     def check_init(self):
+        if not self.conn:
+            raise Exception("please use with __enter__")
         self._initialize_database()
         self._ensure_schema()
 
@@ -84,7 +48,7 @@ class ImageIndexer:
         self._update_callback()
 
     @profiler.profile
-    def _emit_progress(self, current, total):
+    def _add_progress(self, current, total):
         if hasattr(self, '_progress_callback') and self._progress_callback:
             self._progress_callback(current, total)
         else:
@@ -115,7 +79,7 @@ class ImageIndexer:
     def start(self):
         self.conn = connect_with_retry(self.db_path, timeout=3.0, check_same_thread=False)
         self._apply_pragmas(self.conn)
-        self.read_conn = connect_with_retry(f'file:{self.db_path}?mode=ro&immutable=1', timeout=1.0, uri=True)
+        self.read_conn = connect_with_retry(f'file:{self.db_path}?mode=ro', timeout=1.0, uri=True)
         self._apply_pragmas(self.read_conn, read_only=True)
         logger.info('indexer start end')
 
@@ -140,10 +104,12 @@ class ImageIndexer:
             conn.execute('PRAGMA temp_store = MEMORY')
             conn.execute('PRAGMA cache_size = -10000')
             conn.execute('PRAGMA mmap_size = 134217728')
+            conn.execute('PRAGMA foreign_keys=ON')
         else:
             conn.execute('PRAGMA journal_mode=WAL')
             conn.execute('PRAGMA synchronous=NORMAL')
             conn.execute('PRAGMA locking_mode=NORMAL')
+            conn.execute('PRAGMA foreign_keys=ON')
 
     def get_writer_cursor(self):
         return self.conn.cursor()
@@ -177,11 +143,20 @@ class ImageIndexer:
     def _backup_and_recreate(self):
         if self.conn:
             self.conn.close()
-        if self.db_path.exists():
-            shutil.copy(self.db_path, self.backup_path)
+        # 安全なバックアップ
+        try:
+            # 一時接続で VACUUM INTO を使う
+            tmp = sqlite3.connect(self.db_path, check_same_thread=False)
+            tmp.execute("VACUUM INTO ?", (str(self.backup_path),))
+            tmp.close()
             os.remove(self.db_path)
-            logger.warning(f'[INFO] Corrupted DB backed up to: {self.backup_path}')
-        self.conn = sqlite3.connect(self.db_path)
+        except Exception:
+            # フォールバック: 旧ファイルの生コピー（WAL注意）
+            if self.db_path.exists():
+                shutil.copy(self.db_path, self.backup_path)
+                os.remove(self.db_path)
+        # 再作成
+        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self._apply_pragmas(self.conn)
         logger.warning(f'[INFO] New DB created at: {self.db_path}')
 
@@ -193,8 +168,8 @@ class ImageIndexer:
         columns = [row[1] for row in cur.fetchall()]
         if 'status' not in columns:
             cur.execute('ALTER TABLE images ADD COLUMN status TEXT DEFAULT NULL')
-        cur.execute('\n            CREATE TABLE IF NOT EXISTS meta (\n                path TEXT PRIMARY KEY,\n                name TEXT,\n                aspect_ratio REAL,\n                mtime REAL,\n                size INTEGER,\n                created REAL,\n                collected_at REAL,\n                FOREIGN KEY(path) REFERENCES images(path) ON DELETE CASCADE\n            )\n        ')
-        cur.execute('\n            CREATE TABLE IF NOT EXISTS meta_info (\n                path TEXT,\n                key TEXT,\n                value TEXT,\n                PRIMARY KEY(path, key),\n                FOREIGN KEY(path) REFERENCES images(path) ON DELETE CASCADE\n            )\n        ')
+        cur.execute('\n            CREATE TABLE IF NOT EXISTS meta (\n                path TEXT PRIMARY KEY,\n  parent TEXT,\n                name TEXT,\n                aspect_ratio REAL,\n                mtime REAL,\n                size INTEGER,\n                created REAL,\n                collected_at REAL,\nFOREIGN KEY(parent) REFERENCES images(path) ON DELETE CASCADE)\n        ')
+        cur.execute('\n            CREATE TABLE IF NOT EXISTS meta_info (\n                path TEXT,\n                key TEXT,\n                value TEXT,\n                PRIMARY KEY(path, key),\n                FOREIGN KEY(path) REFERENCES meta(path) ON DELETE CASCADE\n            )\n        ')
         cur.execute('CREATE INDEX IF NOT EXISTS idx_meta_info_path ON meta_info(path)')
         cur.execute('CREATE INDEX IF NOT EXISTS idx_meta_info_key ON meta_info(key)')
         cur.execute('CREATE INDEX IF NOT EXISTS idx_meta_info_value ON meta_info(value)')
@@ -224,11 +199,11 @@ class ImageIndexer:
         stack = [str(root_path)]
         while stack:
             current = stack.pop()
-            self._emit_progress(0, 1)
+            self._add_progress(0, 1)
             full_path = normalize_path(current)
             if self.is_path_excluded(full_path):
                 logger.debug(f'[Excluded] Skipping file: {full_path}')
-                self._emit_progress(1, 0)
+                self._add_progress(1, 0)
                 continue
             try:
                 with os.scandir(current) as it:
@@ -238,9 +213,9 @@ class ImageIndexer:
                             yield (normalize_path(entry.path), (stat.st_mtime, stat.st_size))
                         elif entry.is_dir(follow_symlinks=False):
                             stack.append(entry.path)
-                self._emit_progress(1, 0)
+                self._add_progress(1, 0)
             except Exception:
-                self._emit_progress(1, 0)
+                self._add_progress(1, 0)
                 continue
 
     @profiler.profile
@@ -271,14 +246,12 @@ class ImageIndexer:
         if not to_remove:
             logger.info('[ExcludePaths] No matching entries to remove.')
             return
-        self._emit_progress(0, len(to_remove))
+        self._add_progress(0, len(to_remove))
         cur = self.get_writer_cursor()
         for i in range(0, len(to_remove), CHUNK):
             chunk = to_remove[i:i + CHUNK]
             cur.executemany('DELETE FROM images WHERE path = ?', [(p,) for p in chunk])
-            cur.executemany('DELETE FROM meta WHERE path = ?', [(p,) for p in chunk])
-            cur.executemany('DELETE FROM meta_info WHERE path = ?', [(p,) for p in chunk])
-            self._emit_progress(len(chunk), 0)
+            self._add_progress(len(chunk), 0)
         self.conn.commit()
         cur.close()
         logger.info(f'[ExcludePaths] Removed {len(to_remove)} entries from DB.')
@@ -291,10 +264,10 @@ class ImageIndexer:
         logger.info('UPDATE_INDEX')
         current = {}
         for path in root_paths:
-            self._emit_progress(0, 1)
+            self._add_progress(0, 1)
             for norm_p, info in self.scan_directory_fast(path):
                 current[norm_p] = info
-            self._emit_progress(1, 0)
+            self._add_progress(1, 0)
         previous = {}
         cur = self.get_reader_cursor()
         cur.execute('SELECT path, mtime, size FROM images')
@@ -305,8 +278,8 @@ class ImageIndexer:
             for path, mtime, size in rows:
                 previous[normalize_path(path)] = (mtime, size)
         added_or_modified, removed = self._detect_diff(current, previous)
-        self._emit_progress(0, len(added_or_modified))
-        self._emit_progress(0, len(removed))
+        self._add_progress(0, len(added_or_modified))
+        self._add_progress(0, len(removed))
         logger.info('added/modified: {}, removed: {}'.format(len(added_or_modified), len(removed)))
         cur = self.get_writer_cursor()
         if removed:
@@ -314,9 +287,7 @@ class ImageIndexer:
                 logger.debug(i)
                 chunk = removed[i:i + CHUNK]
                 cur.executemany('DELETE FROM images WHERE path = ?', [(str(p),) for p in chunk])
-                cur.executemany('DELETE FROM meta WHERE path = ?', [(str(p),) for p in chunk])
-                cur.executemany('DELETE FROM meta_info WHERE path = ?', [(str(p),) for p in chunk])
-                self._emit_progress(len(chunk), 0)
+                self._add_progress(len(chunk), 0)
             logger.info(f'deleted {len(removed)} files')
             self.conn.commit()
             self.emit_update()
@@ -330,28 +301,28 @@ class ImageIndexer:
         file_paths = [p for p in file_paths if os.path.exists(p)]
         normalized = [normalize_path(p) for p in file_paths]
         normalized = [p for p in normalized if not self.is_path_excluded(p)]
-        self._emit_progress(total_paths - len(normalized), 0)
+        self._add_progress(total_paths - len(normalized), 0)
         stat_info = {}
         for path in normalized:
             try:
                 st = os.stat(path)
                 stat_info[path] = (st.st_mtime, st.st_size)
             except FileNotFoundError:
-                self._emit_progress(1, 0)
+                self._add_progress(1, 0)
         if not stat_info:
             logger.info('No valid files to update.')
             return
         previous = {}
         keys = list(stat_info.keys())
+        cur = self.get_reader_cursor()
         for i in range(0, len(keys), CHUNK):
             chunk = keys[i:i + CHUNK]
-            cur = self.get_reader_cursor()
             cur.execute(f"SELECT path, mtime, size FROM images WHERE path IN ({','.join(['?'] * len(chunk))})", chunk)
             previous.update({normalize_path(row[0]): (row[1], row[2]) for row in cur.fetchall()})
         to_update = [p for p in stat_info if p not in previous or stat_info[p] != previous[p]]
         skip_count = len(stat_info) - len(to_update)
         if skip_count:
-            self._emit_progress(skip_count, 0)
+            self._add_progress(skip_count, 0)
         if to_update:
             self.update_meta_and_image(to_update, stat_info)
             self.conn.commit()
@@ -364,16 +335,14 @@ class ImageIndexer:
         total_paths = len(file_paths)
         file_paths = [p for p in file_paths if not os.path.exists(p)]
         normalized = [normalize_path(p) for p in file_paths]
-        self._emit_progress(total_paths - len(normalized), 0)
+        self._add_progress(total_paths - len(normalized), 0)
         if not normalized:
             return
         cur = self.get_writer_cursor()
         for i in range(0, len(normalized), CHUNK):
             chunk = normalized[i:i + CHUNK]
             cur.executemany('DELETE FROM images WHERE path = ?', [(p,) for p in chunk])
-            cur.executemany('DELETE FROM meta WHERE path = ?', [(p,) for p in chunk])
-            cur.executemany('DELETE FROM meta_info WHERE path = ?', [(p,) for p in chunk])
-            self._emit_progress(len(chunk), 0)
+            self._add_progress(len(chunk), 0)
         self.conn.commit()
         self.emit_update()
         logger.info(f'[remove_by_file_list] Removed {len(normalized)} entries from DB')
@@ -385,12 +354,12 @@ class ImageIndexer:
         meta_entries = []
         meta_info_entries = []
         failed_entries = []
-        for p, name, aspect, mtime, fsize, ctime, collected_at, meta_info, status in results:
+        for p, parent, name, aspect, mtime, fsize, ctime, collected_at, meta_info, status in results:
             if status == 'fail':
-                failed_entries.append((str(p), mtime, fsize))
+                failed_entries.append((str(parent), mtime, fsize))
                 continue
-            image_entries.append((str(p), mtime, fsize))
-            meta_entries.append((str(p), name, aspect, mtime, fsize, ctime, collected_at))
+            image_entries.append((str(parent), mtime, fsize))
+            meta_entries.append((str(p), str(parent), name, aspect, mtime, fsize, ctime, collected_at))
             meta_info_entries.extend(meta_info)
         return (image_entries, meta_entries, meta_info_entries, failed_entries)
 
@@ -403,7 +372,7 @@ class ImageIndexer:
             if image_entries:
                 cur.executemany("\n                    INSERT INTO images (path, mtime, size, status)\n                    VALUES (?, ?, ?, 'ok')\n                    ON CONFLICT(path) DO UPDATE SET mtime = excluded.mtime, size = excluded.size, status = 'ok'\n                ", image_entries)
             if meta_entries:
-                cur.executemany('\n                    INSERT INTO meta (path, name, aspect_ratio, mtime, size, created, collected_at)\n                    VALUES (?, ?, ?, ?, ?, ?, ?)\n                    ON CONFLICT(path) DO UPDATE SET \n                        name = excluded.name,\n                        aspect_ratio = excluded.aspect_ratio,\n                        mtime = excluded.mtime,\n                        size = excluded.size,\n                        created = excluded.created,\n                        collected_at = excluded.collected_at\n                ', meta_entries)
+                cur.executemany('\n                    INSERT INTO meta (path, parent, name, aspect_ratio, mtime, size, created, collected_at)\n                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)\n                    ON CONFLICT(path) DO UPDATE SET \n                        name = excluded.name,\n                        aspect_ratio = excluded.aspect_ratio,\n                        mtime = excluded.mtime,\n                        size = excluded.size,\n                        created = excluded.created,\n                        collected_at = excluded.collected_at\n                ', meta_entries)
             if meta_info_entries:
                 cur.executemany('\n                    INSERT INTO meta_info (path, key, value)\n                    VALUES (?, ?, ?)\n                    ON CONFLICT(path, key) DO UPDATE SET value = excluded.value\n                ', meta_info_entries)
             cur.close()
@@ -414,7 +383,7 @@ class ImageIndexer:
         MIN_BATCH_SIZE = 100
         MAX_BATCH_SIZE = 50000
         batch_size = MIN_BATCH_SIZE
-        TARGET_MIN_S = 3.0
+        TARGET_MIN_S = 4.0
         TARGET_MAX_S = 300.0
         QUEUE_MAX = 8
         i = 0
@@ -472,7 +441,7 @@ class ImageIndexer:
                 batch_size = max(MIN_BATCH_SIZE, int(batch_size * 0.7))
             batch_size = max(MIN_BATCH_SIZE, min(MAX_BATCH_SIZE, batch_size))
             i += len(batch)
-            self._emit_progress(len(batch), 0)
+            self._add_progress(len(batch), 0)
             self.emit_update()
             self.try_checkpoint()
             logger.info(f'[Adaptive Commit] {i}/{total} processed (batch={len(batch)}, {duration:.2f}s, target={target_s:.2f}s)')
@@ -488,13 +457,16 @@ class ImageIndexer:
         logger.info('CLEANING UP DATABASE')
         try:
             cur = self.get_writer_cursor()
-            cur.execute('\n                DELETE FROM meta_info\n                WHERE path NOT IN (SELECT path FROM images)\n            ')
+            cur.execute('\n                DELETE FROM meta\n                WHERE parent NOT IN (SELECT path FROM images)\n            ')
+            cur.execute('\n                DELETE FROM meta_info\n                WHERE path NOT IN (SELECT path FROM meta)\n            ')
             self.conn.commit()
             logger.info('RUNNING VACUUM')
             cur.execute('VACUUM')
             logger.info('RUNNING ANALYZE')
             cur.execute('ANALYZE')
             self.conn.commit()
+            self.try_checkpoint()
+            self.emit_update()
         except Exception as e:
             logger.exception('DATABASE CLEANUP FAILED: %s', e)
         else:

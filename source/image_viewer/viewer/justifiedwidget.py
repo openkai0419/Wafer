@@ -15,6 +15,8 @@ from .mouseeventmanager import ClickType, MouseActionKey, MouseButton, MouseEven
 from .selectionmanager import SelectionManager
 from .sizechecker import SizeMismatchChecker
 
+INTERNAL_MIME_FLAG = b"application/x-jvscroll-internal"
+
 class OverLayPainter(QtWidgets.QWidget):
 
     def __init__(self, parent, spacing, *args, **kwargs):
@@ -300,6 +302,7 @@ class MouseHandlerBinder(QtCore.QObject):
         drag = QtGui.QDrag(self)
         mime = QtCore.QMimeData()
         mime.setUrls(urls)
+        mime.setData(INTERNAL_MIME_FLAG.decode(), QtCore.QByteArray(b"1"))
         drag.setMimeData(mime)
         widget = self.widget.widgets.get(index)
         if widget is None:
@@ -326,6 +329,9 @@ class MouseHandlerBinder(QtCore.QObject):
         QtWidgets.QApplication.processEvents()
         drag.exec(QtCore.Qt.CopyAction | QtCore.Qt.MoveAction)
 
+    def _is_internal_drag(self, mime: QtCore.QMimeData):
+        return mime is not None and mime.hasFormat(INTERNAL_MIME_FLAG.decode())
+
     def eventFilter(self, watched, event):
         if event.type() == QtCore.QEvent.MouseMove and self._is_shift_dragging:
             self._drag_rect_current = event.pos()
@@ -338,8 +344,12 @@ class MouseHandlerBinder(QtCore.QObject):
             self._drag_rect_current = None
             self.widget.update()
         elif isinstance(event, QtGui.QDragEnterEvent):
-            event.acceptProposedAction()
-            return False
+            mime = event.mimeData()
+            if self._is_internal_drag(mime):
+                event.ignore()
+            else:
+                event.acceptProposedAction()
+                return False
         return super().eventFilter(watched, event)
 
 class JustifiedVirtualScrollWidget(QtWidgets.QWidget):

@@ -1,6 +1,11 @@
+from PIL import Image
 import cv2
+import os
+import time
 import numpy as np
 from PySide6 import QtCore, QtGui
+
+from ..common.profiling import logger
 from ..common.funcs import uipx
 from ..common.profiling import logger, profiler
 
@@ -68,3 +73,41 @@ class ImageLoaderRunnable(QtCore.QRunnable):
         if self._cancelled:
             return
         QtCore.QMetaObject.invokeMethod(self.receiver, '_on_pixmap_ready', QtCore.Qt.QueuedConnection, QtCore.Q_ARG(int, self.index), QtCore.Q_ARG(QtGui.QPixmap, pixmap))
+
+
+def get_file_ctime(path):
+    try:
+        stat = os.stat(path)
+        if hasattr(stat, 'st_birthtime'):
+            return stat.st_birthtime
+        else:
+            return stat.st_ctime
+    except Exception as e:
+        logger.warning(f'Failed to get ctime for {path}: {e}')
+        return None
+
+
+def process_image(p, file_info):
+    try:
+        name = os.path.basename(p)
+        mtime, fsize = file_info.get(p, (None, None))
+        ctime = get_file_ctime(p)
+        collected_at = time.time()
+        with Image.open(p) as img:
+            width, height = img.size
+            exif = img.getexif()
+            orientation = exif.get(274, 1) if exif else 1
+            if orientation in (5, 6, 7, 8):
+                width, height = (height, width)
+            aspect = width / height if height else 1.0
+            info = dict(img.info)
+        meta_info = [(str(p), str(k), str(v)) for k, v in info.items()]
+        meta_info.append((str(p), '__filepath__', str(p)))
+        parent = p
+        return (p, parent, name, aspect, mtime, fsize, ctime, collected_at, meta_info, None)
+    except Exception as e:
+        logger.warning(f'Failed to process {p}: {e}')
+        mtime, fsize = file_info.get(p, (None, None))
+        name = os.path.basename(p)
+        parent = p
+        return (p, parent, name,  None, mtime, fsize, None, time.time(), [], 'fail')

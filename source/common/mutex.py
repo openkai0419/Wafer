@@ -1,7 +1,9 @@
 import os
 import tempfile
-import psutil
 import time
+
+import psutil
+
 
 class SafeProcessLock:
     def __init__(self, name: str):

@@ -1,7 +1,7 @@
 import threading
 
-from ..zmq.zmq import ZMQNode, Role
 from ..common.profiling import logger, profiler
+from ..zmq.zmq import Role, ZMQNode
 
 _node = None
 _node_lock = threading.Lock()

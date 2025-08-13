@@ -1,12 +1,13 @@
-import sqlite3
-import os
-import time
-import glob
 import errno
+import glob
+import os
+import sqlite3
 import stat
+import time
 
-from ..common.funcs import get_data_file_names, get_setting_file_names, get_data_db
+from ..common.funcs import get_data_db, get_data_file_names, get_setting_file_names
 from ..common.profiling import logger, profiler
+
 
 @profiler.profile
 def connect_with_retry(path, timeout: float = 3.0, retries: int = 3, delay: float = 1.0, **kwargs):

@@ -1,7 +1,8 @@
 from collections import OrderedDict
-from PySide6 import QtWidgets, QtGui, QtCore
 
-from ...common.profiling import logger, profiler
+from PySide6 import QtCore, QtGui, QtWidgets
+
+from ...common.profiling import profiler
 
 
 class FadeLabel(QtWidgets.QLabel):

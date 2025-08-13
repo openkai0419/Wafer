@@ -1,12 +1,8 @@
-from PySide6 import QtWidgets, QtCore, QtGui
-
-from PySide6.QtWidgets import (
-    QWidget, QToolButton, QHBoxLayout, QSpacerItem,
-    QSizePolicy, QApplication
-)
-from PySide6.QtGui import QIcon
+from PySide6 import QtWidgets
 from PySide6.QtCore import QSize
-import sys
+from PySide6.QtGui import QIcon
+from PySide6.QtWidgets import QHBoxLayout, QSizePolicy, QSpacerItem, QWidget
+
 
 class IconButtonConfig:
     def __init__(self, icon_path, tooltip="", callback=None, checkable=False, checked=False):

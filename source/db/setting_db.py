@@ -1,10 +1,10 @@
-import sqlite3
 import contextlib
 import json
-from typing import List, Dict
+import sqlite3
+from typing import Dict, List
 
-from ..common.profiling import logger, profiler
 from ..common.funcs import normalize_path
+from ..common.profiling import logger, profiler
 from .db_utils import retry_sqlite_connection
 
 

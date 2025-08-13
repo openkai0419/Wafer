@@ -1,8 +1,9 @@
-from PySide6 import QtWidgets, QtGui, QtCore
+from PySide6 import QtCore
 
+from ...common.profiling import logger
 from ...io.loader import ImageLoaderRunnable
 from ...qt.thread import main_thread
-from ...common.profiling import logger, profiler
+
 
 def _size_mismatch(a: QtCore.QSize, b: QtCore.QSize, tolerance: int = 1):
     return abs(a.width() - b.width()) > tolerance or abs(a.height() - b.height()) > tolerance

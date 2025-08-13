@@ -1,6 +1,7 @@
-from PySide6 import QtCore, QtWidgets, QtGui
+from PySide6 import QtCore, QtGui, QtWidgets
 
 from ...common.funcs import uipx
+
 
 class HoverProxy(QtWidgets.QWidget):
     def __init__(self, target_widget, margin=None):
@@ -250,8 +251,8 @@ class ThinProgressBar(QtWidgets.QWidget):
 
 
 if __name__ == "__main__":
-    import sys
     import random
+    import sys
 
     app = QtWidgets.QApplication(sys.argv)
     window = QtWidgets.QWidget()

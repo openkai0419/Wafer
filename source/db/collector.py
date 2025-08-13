@@ -1,17 +1,16 @@
+import concurrent.futures
 import os
+import queue
 import shutil
 import sqlite3
-import time
-import queue
 import threading
-import concurrent.futures
-
+import time
 from pathlib import Path
-from PIL import Image
-from PySide6 import QtGui
 
+from PIL import Image
+
+from ..common.funcs import IMAGE_EXTENSIONS, normalize_path
 from ..common.profiling import logger, profiler
-from ..common.funcs import normalize_path, IMAGE_EXTENSIONS
 from .db_utils import connect_with_retry
 
 extensions = IMAGE_EXTENSIONS

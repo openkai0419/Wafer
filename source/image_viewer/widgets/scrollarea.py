@@ -1,4 +1,5 @@
-from PySide6 import QtWidgets, QtCore, QtGui
+from PySide6 import QtCore, QtWidgets
+
 
 class ScrollAreaBase(QtWidgets.QScrollArea):
     resized = QtCore.Signal()

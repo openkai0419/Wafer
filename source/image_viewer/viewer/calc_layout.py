@@ -1,7 +1,6 @@
-from PySide6 import QtWidgets, QtGui, QtCore
-from ...common.profiling import logger, profiler
-
 from PySide6 import QtCore
+
+from ...common.profiling import profiler
 
 QWIDGETSIZE_MAX = 16777215
 

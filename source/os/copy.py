@@ -1,6 +1,7 @@
-import sys
 import os
 import struct
+import sys
+
 from PySide6.QtCore import QMimeData, QUrl
 from PySide6.QtGui import QGuiApplication
 

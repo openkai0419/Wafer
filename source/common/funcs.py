@@ -1,13 +1,14 @@
 import os
 import sys
 from pathlib import Path
-from platformdirs import PlatformDirs
-from natsort import natsorted, ns
-from typing import List, Tuple, Optional, TypeVar
+from typing import List
 
+from natsort import natsorted, ns
+from platformdirs import PlatformDirs
 from PySide6 import QtGui
+
 #from .profiling import logger
-from ..constants import APP_FILE_NAME, APP_NAME
+from ..constants import APP_FILE_NAME
 
 # Supported image extensions
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp")

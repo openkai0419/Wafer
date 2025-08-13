@@ -1,14 +1,15 @@
 import contextlib
 
-from .progress_notifier import close_publisher, set_node
-from ..common.profiling import logger, profiler
 from ..common.funcs import get_data_db, get_setting_db
+from ..common.profiling import logger, profiler
 from ..db.collector import ImageIndexer
-from .watch_folder import WatchFolder
+from ..db.db_utils import clean_database, delete_database_files
 from ..db.setting_db import SettingDB
+from ..zmq.zmq import Role, ZMQNode
+from .progress_notifier import close_publisher, set_node
+from .watch_folder import WatchFolder
 from .watch_setting import SettingWatcher
-from ..db.db_utils import delete_database_files, clean_database
-from ..zmq.zmq import ZMQNode, Role
+
 
 class CollectorProcess():
     def __init__(self, name):

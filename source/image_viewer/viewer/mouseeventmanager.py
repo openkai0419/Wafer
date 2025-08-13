@@ -1,8 +1,8 @@
 from enum import Enum, auto
 from typing import Callable, Dict, Optional, Tuple
+
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from ...common.profiling import logger, profiler
 
 class ClickType(Enum):
     SINGLE = auto()

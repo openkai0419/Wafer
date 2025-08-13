@@ -1,14 +1,15 @@
 import os
-import time
-import threading
 import queue
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
+import threading
+import time
 
-from ..common.profiling import logger, profiler
+from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
+
 from ..common.funcs import IMAGE_EXTENSIONS
-from .progress_notifier import ProgressAggregator
+from ..common.profiling import logger, profiler
 from ..common.signal import Signal
+from .progress_notifier import ProgressAggregator
 
 extensions = set(IMAGE_EXTENSIONS)
 

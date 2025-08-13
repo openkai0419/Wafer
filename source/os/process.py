@@ -1,8 +1,11 @@
 import os
-import sys
-import psutil
 import subprocess
-from ..common.profiling import logger, profiler
+import sys
+
+import psutil
+
+from ..common.profiling import logger
+
 
 class ProcessMatcher:
     def __init__(self, cmd_list):

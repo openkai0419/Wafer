@@ -1,10 +1,11 @@
-import psutil
-import threading
 import multiprocessing
-from enum import Enum
-from PySide6 import QtWidgets, QtGui, QtCore
+import threading
 
-from ..common.profiling import logger, profiler
+import psutil
+from PySide6 import QtCore
+
+from ..common.profiling import logger
+
 
 class AdaptiveThreadPool:
     _instance = None

@@ -1,17 +1,18 @@
-import logging.handlers
-import time
 import glob
-import psutil
-import threading
 import logging
+import logging.handlers
 import os
 import re
-
+import sys
+import threading
+import time
 from collections import defaultdict
 from functools import wraps
-from .funcs import data_path
-import sys
+
+import psutil
 from PySide6 import QtWidgets
+
+from .funcs import data_path
 
 # Global logger and profiler accessed by other modules
 logger = None

@@ -1,32 +1,27 @@
 from PySide6 import QtCore, QtWebEngineWidgets, QtWidgets
-
 from ...common.funcs import get_resource_path, uipx
 
-
 class OverlayLoadingIndicator(QtWidgets.QWidget):
+
     def __init__(self, parent):
         super().__init__(parent)
         self.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
         self.setAttribute(QtCore.Qt.WA_NoSystemBackground)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
         self.setWindowFlags(QtCore.Qt.FramelessWindowHint)
-
         self.make_spinner()
-
         self.hide()
         self._parent = parent
         parent.installEventFilter(self)
-    
+
     def make_spinner(self):
         self.spinner = QtWebEngineWidgets.QWebEngineView()
         self.spinner.page().setBackgroundColor(QtCore.Qt.transparent)
-
-        html_path = get_resource_path() / "Ring_Load_spinner.html"
+        html_path = get_resource_path() / 'Ring_Load_spinner.html'
         self.spinner.load(html_path.resolve().as_uri())
         self.spinner.setFixedSize(uipx(120), uipx(120))
-
         self.spinner.setParent(self)
-        self.spinner.move(uipx(8), uipx(8))  # top-left with padding
+        self.spinner.move(uipx(8), uipx(8))
 
     def start(self):
         self.resize(self._parent.size())

@@ -1,5 +1,5 @@
 class Signal:
-    """Minimal replacement for Qt Signal"""
+
     def __init__(self):
         self._callbacks = []
 

@@ -1,21 +1,19 @@
 from PySide6 import QtCore
-
 from ...common.profiling import logger
 from ...io.loader import ImageLoaderRunnable
 from ...qt.thread import main_thread
 
-
-def _size_mismatch(a: QtCore.QSize, b: QtCore.QSize, tolerance: int = 1):
+def _size_mismatch(a, b, tolerance=1):
     return abs(a.width() - b.width()) > tolerance or abs(a.height() - b.height()) > tolerance
 
 class SizeMismatchChecker(QtCore.QTimer):
+
     def __init__(self, target_widget, debug=False):
         super().__init__()
         self.target_widget = target_widget
         self.debug = debug
         self.setInterval(500)
         self.timeout.connect(self.check)
-
         self._active = False
         self._idle_timer = QtCore.QTimer()
         self._idle_timer.setSingleShot(True)
@@ -34,11 +32,10 @@ class SizeMismatchChecker(QtCore.QTimer):
     def check(self):
         if not self._active:
             return
-    
         max_index = len(self.target_widget.image_paths)
         for i, label in self.target_widget.widgets.items():
             if i >= max_index:
-                continue 
+                continue
             pixmap = label.pixmap()
             if pixmap is None:
                 continue
@@ -47,5 +44,4 @@ class SizeMismatchChecker(QtCore.QTimer):
                     runnable = ImageLoaderRunnable(i, self.target_widget.image_paths[i], label.size(), self.target_widget)
                     self.target_widget.active_threads[i] = runnable
                     main_thread.start(runnable, 5)
-
-        logger.debug("SizeMismatchChecker: check")
+        logger.debug('SizeMismatchChecker: check')

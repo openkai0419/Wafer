@@ -1,12 +1,11 @@
 import cv2
 import numpy as np
 from PySide6 import QtCore, QtGui
-
 from ..common.funcs import uipx
 from ..common.profiling import logger, profiler
 
-
 class ImageLoaderRunnable(QtCore.QRunnable):
+
     def __init__(self, index, path, size, receiver):
         super().__init__()
         self.index = index
@@ -24,9 +23,7 @@ class ImageLoaderRunnable(QtCore.QRunnable):
     def run(self):
         if self._cancelled:
             return
-
         cache_key = (self.path, self.size.width(), self.size.height())
-
         if cache_key in self.receiver.pixmap_cache:
             pixmap = self.receiver.pixmap_cache[cache_key]
         else:
@@ -34,7 +31,7 @@ class ImageLoaderRunnable(QtCore.QRunnable):
             if self._cancelled:
                 return
             try:
-                if self.path.lower().endswith(".gif"):
+                if self.path.lower().endswith('.gif'):
                     reader = QtGui.QImageReader(self.path)
                     reader.setAutoTransform(True)
                     image = reader.read()
@@ -44,11 +41,10 @@ class ImageLoaderRunnable(QtCore.QRunnable):
                 else:
                     img = cv2.imdecode(np.fromfile(self.path, dtype=np.uint8), cv2.IMREAD_UNCHANGED)
                     if img is None:
-                        raise ValueError("OpenCV decode failed")
+                        raise ValueError('OpenCV decode failed')
                     h, w = img.shape[:2]
                     if abs(w - self.size.width()) > 1 or abs(h - self.size.height()) > 1:
                         img = cv2.resize(img, (self.size.width(), self.size.height()), interpolation=cv2.INTER_AREA)
-
                     if img.ndim == 2:
                         qimg = QtGui.QImage(img.data, img.shape[1], img.shape[0], img.strides[0], QtGui.QImage.Format_Grayscale8)
                     elif img.ndim == 3:
@@ -59,29 +55,16 @@ class ImageLoaderRunnable(QtCore.QRunnable):
                             img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGBA)
                             qimg = QtGui.QImage(img.data, img.shape[1], img.shape[0], img.strides[0], QtGui.QImage.Format_RGBA8888)
                         else:
-                            raise ValueError("Unsupported channel format")
+                            raise ValueError('Unsupported channel format')
                     else:
-                        raise ValueError("Unsupported image dimensions")
+                        raise ValueError('Unsupported image dimensions')
                     pixmap = QtGui.QPixmap.fromImage(qimg.copy())
-
                 if pixmap is None or pixmap.isNull():
-                    raise ValueError("Empty pixmap")
-
+                    raise ValueError('Empty pixmap')
                 self.receiver.pixmap_cache[cache_key] = pixmap
-
             except Exception as e:
-                logger.warning(f"[ImageLoaderRunnable] Failed to load image: {self.path} ({e})")
-                pixmap = self.receiver.error_placeholder.scaled(
-                    self.size, QtCore.Qt.IgnoreAspectRatio, QtCore.Qt.SmoothTransformation
-                )
-
+                logger.warning(f'[ImageLoaderRunnable] Failed to load image: {self.path} ({e})')
+                pixmap = self.receiver.error_placeholder.scaled(self.size, QtCore.Qt.IgnoreAspectRatio, QtCore.Qt.SmoothTransformation)
         if self._cancelled:
             return
-
-        QtCore.QMetaObject.invokeMethod(
-            self.receiver,
-            "_on_pixmap_ready",
-            QtCore.Qt.QueuedConnection,
-            QtCore.Q_ARG(int, self.index),
-            QtCore.Q_ARG(QtGui.QPixmap, pixmap),
-        )
+        QtCore.QMetaObject.invokeMethod(self.receiver, '_on_pixmap_ready', QtCore.Qt.QueuedConnection, QtCore.Q_ARG(int, self.index), QtCore.Q_ARG(QtGui.QPixmap, pixmap))

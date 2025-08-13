@@ -2,20 +2,16 @@ import os
 import queue
 import threading
 import time
-
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
-
 from ..common.funcs import IMAGE_EXTENSIONS
 from ..common.profiling import logger, profiler
 from ..common.signal import Signal
 from .progress_notifier import ProgressAggregator
-
 extensions = set(IMAGE_EXTENSIONS)
 
+def throttle(throttle_ms=100, idle_ms=200):
 
-def throttle(throttle_ms: int = 100, idle_ms: int = 200):
-    """Simple thread-based throttle decorator"""
     def decorator(func):
         last_call = [0.0]
         timer = [None]
@@ -29,6 +25,7 @@ def throttle(throttle_ms: int = 100, idle_ms: int = 200):
                     func(*args, **kwargs)
                 if timer[0]:
                     timer[0].cancel()
+
                 def call_later():
                     func(*args, **kwargs)
                 timer[0] = threading.Timer(idle_ms / 1000.0, call_later)
@@ -37,8 +34,8 @@ def throttle(throttle_ms: int = 100, idle_ms: int = 200):
         return wrapper
     return decorator
 
-
 class DBWorker:
+
     def __init__(self, database, progress_callback):
         self.db = database
         self.progress_callback = progress_callback
@@ -55,34 +52,34 @@ class DBWorker:
             except queue.Empty:
                 continue
             try:
-                if task == "update":
+                if task == 'update':
                     self._update(data)
-                elif task == "remove":
+                elif task == 'remove':
                     self._remove(data)
-                elif task == "rescan":
+                elif task == 'rescan':
                     self._rescan(data)
-                elif task == "ignore":
+                elif task == 'ignore':
                     self._ignore(data)
-                elif task == "cleanup":
+                elif task == 'cleanup':
                     self._cleanup()
             finally:
                 self.finished.emit()
                 self._queue.task_done()
 
     def trigger_update(self, paths):
-        self._queue.put(("update", paths))
+        self._queue.put(('update', paths))
 
     def trigger_remove(self, paths):
-        self._queue.put(("remove", paths))
+        self._queue.put(('remove', paths))
 
     def trigger_rescan(self, roots):
-        self._queue.put(("rescan", roots))
+        self._queue.put(('rescan', roots))
 
     def trigger_ignore(self, paths):
-        self._queue.put(("ignore", paths))
+        self._queue.put(('ignore', paths))
 
     def trigger_cleanup(self):
-        self._queue.put(("cleanup", None))
+        self._queue.put(('cleanup', None))
 
     def _update(self, paths):
         self.progress_callback(0, len(paths))
@@ -113,8 +110,8 @@ class DBWorker:
         self._queue.put((None, None))
         self._thread.join()
 
-
 class FileChangeEmitter(FileSystemEventHandler):
+
     def __init__(self, extensions):
         self.extensions = extensions
         self.file_deleted = Signal()
@@ -151,32 +148,25 @@ class FileChangeEmitter(FileSystemEventHandler):
             if self._should_handle(event.dest_path):
                 self.file_changed.emit(event.dest_path)
 
-
 class WatchFolder:
+
     def __init__(self, name, database):
         self.folder_changed = Signal()
-
         self._progress_aggregator = ProgressAggregator(name)
-
         self.name = name
         self.db = database
         self.db.set_progress_callback(self.progress_callback)
         self.db.set_update_callback(self.update_callback)
-
         self.observer = None
         self.old_observers = []
-
         self.db_worker = DBWorker(database, self.progress_callback)
         self.db_worker.finished.connect(self._on_db_finished)
-
         self._processing = False
         self.deleted_set = set()
         self.changed_set = set()
-
         self._timer_stop = threading.Event()
         self._timer_thread = threading.Thread(target=self._timer_loop, daemon=True)
         self._timer_thread.start()
-
         self.emitter = FileChangeEmitter(extensions)
         self.emitter.file_deleted.connect(self._on_deleted)
         self.emitter.file_changed.connect(self._on_changed)
@@ -187,15 +177,15 @@ class WatchFolder:
         self._progress_aggregator.add(current, total)
 
     @profiler.profile
-    def update_callback(self, message="update_done"):
-        logger.debug(f"Update: {message}")
-        self._progress_aggregator.notify_extra("update", message)
+    def update_callback(self, message='update_done'):
+        logger.debug(f'Update: {message}')
+        self._progress_aggregator.notify_extra('update', message)
 
     @profiler.profile
     @throttle(1000, 2000)
     def folderchange_callback(self, folder):
-        logger.debug(f"folder changed: {folder}")
-        self._progress_aggregator.notify_extra("folderchanged", "")
+        logger.debug(f'folder changed: {folder}')
+        self._progress_aggregator.notify_extra('folderchanged', '')
 
     @profiler.profile
     def start(self, folders):
@@ -206,7 +196,7 @@ class WatchFolder:
                     self.observer.join()
                 self.old_observers.append(self.observer)
             except Exception as e:
-                logger.warning(f"Failed to stop old observer: {e}")
+                logger.warning(f'Failed to stop old observer: {e}')
         self.observer = Observer()
         for path in folders:
             if os.path.exists(path):
@@ -241,14 +231,12 @@ class WatchFolder:
     def _flush(self):
         if self._processing:
             return
-
         if self.deleted_set:
             self._processing = True
             self.progress_callback(1, 2)
             self.db_worker.trigger_remove(list(self.deleted_set))
             self.deleted_set.clear()
             return
-
         if self.changed_set:
             self._processing = True
             self.progress_callback(1, 2)
@@ -262,7 +250,7 @@ class WatchFolder:
             self._flush()
 
     def rescan_all(self):
-        if hasattr(self, "folders"):
+        if hasattr(self, 'folders'):
             self.db_worker.trigger_rescan(self.folders)
 
     def set_ignore(self, paths):
@@ -275,7 +263,7 @@ class WatchFolder:
         pass
 
     def stop(self):
-        logger.debug("Stopping WatchFolder")
+        logger.debug('Stopping WatchFolder')
         if self.observer:
             self.observer.stop()
             self.observer.join()

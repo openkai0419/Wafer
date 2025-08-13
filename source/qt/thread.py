@@ -29,7 +29,7 @@ class AdaptiveThreadPool:
         self.pool.setMaxThreadCount(base_limit)
 
     def watch_start(self):
-        self.monitor = QtCore.QTimer()
+        self.monitor = QtCore.QTimer(self)
         self.monitor.timeout.connect(self.adjust_thread_count)
         self.monitor.setInterval(1000)
         self.monitor.start()

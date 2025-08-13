@@ -1,11 +1,20 @@
-from PySide6.QtWidgets import (
-    QApplication, QWidget, QVBoxLayout, QHBoxLayout,
-    QListWidget, QPushButton, QFileDialog, QMessageBox, QMenu, QStackedLayout
-)
-from PySide6.QtCore import Qt, QPoint
-from ..translation import TranslatorMixin
-import sys
 import os
+import sys
+
+from PySide6.QtCore import QPoint, Qt
+from PySide6.QtWidgets import (
+    QApplication,
+    QFileDialog,
+    QListWidget,
+    QMenu,
+    QMessageBox,
+    QPushButton,
+    QStackedLayout,
+    QVBoxLayout,
+    QWidget,
+)
+
+from ..translation import TranslatorMixin
 
 
 class FolderListWidget(QWidget, TranslatorMixin):

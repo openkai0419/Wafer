@@ -1,6 +1,8 @@
-from PySide6.QtCore import QObject, QTimer, Slot
-from functools import wraps
 import time
+from functools import wraps
+
+from PySide6.QtCore import QObject, QTimer, Slot
+
 
 class QtDebounceManager(QObject):
     def __init__(self, parent=None):

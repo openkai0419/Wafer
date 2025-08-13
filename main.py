@@ -1,14 +1,15 @@
-import sys
-import signal
 import argparse
+import signal
+import sys
 import threading
 
-from source.image_collector.main_collector import CollectorProcess
-from source.common.profiling import initialize_profiling, logger, profiler
-from source.constants import APP_FILE_NAME, APP_NAME, default_db_name, APP_ID
 from source.common.funcs import get_setting_file_names
 from source.common.mutex import SafeProcessLock
+from source.common.profiling import initialize_profiling, logger, profiler
+from source.constants import APP_FILE_NAME, APP_ID, APP_NAME, default_db_name
+from source.image_collector.main_collector import CollectorProcess
 from source.os.process import Proc
+
 
 def get_icon():
     from PySide6 import QtGui
@@ -31,6 +32,7 @@ def run_communicator():
         #logger.setLevel(30)
         profiler.set_enabled(False)
         from PySide6 import QtWidgets
+
         from source.image_tray.main_tray import TrayApp
 
         with SafeProcessLock(f"{APP_FILE_NAME}_communicator"):
@@ -85,6 +87,7 @@ def run_all_collectors():
 
 def run_viewer():
     from PySide6 import QtWidgets
+
     from source.image_viewer.mainwindow import MainWindow
 
     initialize_profiling()

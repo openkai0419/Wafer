@@ -1,13 +1,10 @@
-import os
-import psutil
 import cv2
 import numpy as np
-import multiprocessing
-from collections import OrderedDict
-from PySide6 import QtWidgets, QtGui, QtCore
+from PySide6 import QtCore, QtGui
 
-from ..common.profiling import logger, profiler
 from ..common.funcs import uipx
+from ..common.profiling import logger, profiler
+
 
 class ImageLoaderRunnable(QtCore.QRunnable):
     def __init__(self, index, path, size, receiver):

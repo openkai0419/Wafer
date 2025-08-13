@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+
 from PySide6 import QtCore
 
 from ..common.funcs import get_resource_path

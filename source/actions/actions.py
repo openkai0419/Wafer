@@ -1,13 +1,14 @@
-from PySide6 import QtWidgets, QtGui, QtCore
+import json
+import os
+import sys
+
+from PySide6 import QtCore, QtGui, QtWidgets
 
 from ..common.funcs import normalize_path, uipx
-from ..common.profiling import logger, profiler
-from ..qt.dialog import ConfirmDialog
 from ..image_setting.translation import TranslatorMixin
 from ..os.copy import ClipboardFileTransfer
-import sys
-import os
-import json
+from ..qt.dialog import ConfirmDialog
+
 
 def create_labeled_separator(label: str, parent) -> QtWidgets.QWidgetAction:
     action = QtWidgets.QWidgetAction(parent)

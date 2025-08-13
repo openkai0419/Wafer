@@ -1,28 +1,27 @@
-import copy
 import bisect
-import math
 import os
-from PySide6 import QtWidgets, QtGui, QtCore
 
+from PySide6 import QtCore, QtGui, QtWidgets
+
+from ...common.funcs import uipx
+from ...common.profiling import logger, profiler
 from ...io.loader import ImageLoaderRunnable
-from ...common.funcs import uipx, is_dark_theme
-from .calc_layout import JustifiedLayoutCalculator
-from ..viewer_settings import main_setting
+from ...os.drop import FileSaver, MimeDataParser
+from ...qt.debounce import qt_debounce, qt_throttle
+from ...qt.pixmap import PixmapFactory
 from ...qt.thread import main_thread
+from ..viewer_settings import main_setting
+from .cachemanager import MemoryLimitedPixmapCache, QLabelPool
+from .calc_layout import JustifiedLayoutCalculator
 from .mouseeventmanager import (
-    MouseEventManager,
-    MouseEventDispatcher,
+    ClickType,
     MouseActionKey,
     MouseButton,
-    ClickType
+    MouseEventDispatcher,
+    MouseEventManager,
 )
-from .cachemanager import MemoryLimitedPixmapCache, QLabelPool
-from .sizechecker import SizeMismatchChecker
 from .selectionmanager import SelectionManager
-from ...common.profiling import logger, profiler
-from ...qt.debounce import qt_debounce, qt_throttle
-from ...os.drop import MimeDataParser, FileSaver
-from ...qt.pixmap import PixmapFactory
+from .sizechecker import SizeMismatchChecker
 
 
 class OverLayPainter(QtWidgets.QWidget):

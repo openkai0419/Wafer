@@ -1,7 +1,9 @@
+import io
 import os
 import sys
-import io
+
 from PIL import Image
+
 
 class FileThumbnailer:
     def __init__(self):
@@ -9,11 +11,12 @@ class FileThumbnailer:
         if self.platform.startswith("win"):
             import pythoncom
             pythoncom.CoInitialize()
-            import win32ui
-            from ctypes import windll, POINTER, byref, cast, c_void_p, c_wchar_p, c_long
+            from ctypes import POINTER, c_long, c_void_p, c_wchar_p, windll
             from ctypes.wintypes import HANDLE, SIZE, UINT
+
+            import win32ui
             HRESULT = c_long
-            from comtypes import GUID, IUnknown, COMMETHOD
+            from comtypes import COMMETHOD, GUID, IUnknown
 
             class IShellItemImageFactory(IUnknown):
                 _iid_ = GUID('{bcc18b79-ba16-442f-80c4-8a59c30c463b}')
@@ -32,8 +35,8 @@ class FileThumbnailer:
             self._shell32.SHCreateItemFromParsingName.restype = HRESULT
 
         elif self.platform == "darwin":
-            from Cocoa import NSWorkspace, NSURL
-            from Quartz import QLThumbnailImageCreate, kCFAllocatorDefault, CGSizeMake
+            from Cocoa import NSURL, NSWorkspace
+            from Quartz import CGSizeMake, QLThumbnailImageCreate, kCFAllocatorDefault
             self._NSWorkspace = NSWorkspace
             self._NSURL = NSURL
             self._QLThumbnailImageCreate = QLThumbnailImageCreate
@@ -62,7 +65,7 @@ class FileThumbnailer:
 
     # --- Windows ---
     def _get_thumbnail_windows(self, file_path, size):
-        from ctypes import c_void_p, byref, POINTER, cast
+        from ctypes import POINTER, byref, c_void_p, cast
         from ctypes.wintypes import SIZE
 
         handle = c_void_p()

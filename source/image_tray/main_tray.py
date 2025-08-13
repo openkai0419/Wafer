@@ -1,8 +1,6 @@
 from PySide6 import QtWidgets, QtGui, QtCore
 import contextlib
 
-from ..os.process import Proc
-
 from ..image_collector.progress_notifier import close_publisher
 from ..common.profiling import logger, profiler
 from ..qt.debounce import qt_debounce

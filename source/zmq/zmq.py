@@ -424,7 +424,7 @@ class ZMQBroker:
 
 # ---- Node (lite)
 class ZMQNode:
-    def __init__(self, role: Role, app_name: str = APP_FILE_NAME, on_message=None, count: str = "disable"):
+    def __init__(self, role: Role, app_name: str = APP_FILE_NAME, on_message=None, count: str = "enable"):
         if not isinstance(role, Role):
             raise TypeError("role must be a Role")
         self.role = role

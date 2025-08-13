@@ -1,6 +1,7 @@
 import sys
 import json
 from pathlib import Path
+from ..common.funcs import data_path
 from typing import Any, Optional, Type
 
 from PySide6 import QtCore
@@ -47,11 +48,9 @@ class SettingManager(QtCore.QObject):
     send_buffer = QtCore.Signal(dict)
     request_flush = QtCore.Signal()
 
-    def __init__(self, ini_filename="app_settings.ini"):
+    def __init__(self, ini_filename="viewer_settings.ini"):
         super().__init__()
-        exe_path = Path(sys.argv[0]).resolve()
-        ini_dir = exe_path.parent
-        self.ini_path = ini_dir / ini_filename
+        self.ini_path = data_path(ini_filename)
         self.settings = QtCore.QSettings(str(self.ini_path), QtCore.QSettings.IniFormat)
         self._buffer: dict[str, Any] = {}
         self._seen_keys: set[str] = set()

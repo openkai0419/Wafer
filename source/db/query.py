@@ -164,7 +164,7 @@ class MetaInfoSearchEngine:
 
     @profiler.profile
     def _build_sort_clause(self, sort_by, ascending):
-        sort_column_map = {'path': 'meta.path', 'name': 'name', 'created': 'created', 'modified': 'mtime', 'size': 'size', 'collected': 'collected_at', 'random': None}
+        sort_column_map = {'path': 'path', 'name': 'name', 'created': 'created', 'modified': 'mtime', 'size': 'size', 'collected': 'collected_at', 'random': None}
         sort_column = sort_column_map.get(sort_by)
         order = 'ASC' if ascending else 'DESC'
         return (sort_column, order)
@@ -179,9 +179,9 @@ class MetaInfoSearchEngine:
             batch = paths[i:i + batch_size]
             placeholders = ','.join(('?' for _ in batch))
             if sort_column:
-                query = f'\n                    SELECT meta.path, aspect_ratio, {sort_column} AS sort_value\n                    FROM meta\n                    WHERE meta.path IN ({placeholders})\n                '
+                query = f'\n                    SELECT path, aspect_ratio, {sort_column} AS sort_value\n                    FROM meta\n                    WHERE path IN ({placeholders})\n                '
             else:
-                query = f'\n                    SELECT meta.path, aspect_ratio\n                    FROM meta\n                    WHERE meta.path IN ({placeholders})\n                '
+                query = f'\n                    SELECT path, aspect_ratio\n                    FROM meta\n                    WHERE path IN ({placeholders})\n                '
             rows = cur.execute(query, batch).fetchall()
             all_rows.extend(rows)
         if sort_by == 'random':
@@ -239,9 +239,9 @@ class MetaInfoSearchEngine:
             combined_params.extend(params)
         sort_col, order = self._build_sort_clause(queries[-1].sort_by, queries[-1].ascending)
         if sort_col:
-            final_query = f'\n                SELECT meta.path, aspect_ratio\n                FROM meta\n                JOIN images ON meta.path = images.path\n                WHERE meta.path IN ({combined_sql})\n                ORDER BY {sort_col} {order}\n            '
+            final_query = f'\n                SELECT meta.path, aspect_ratio\n                FROM meta\n                WHERE meta.path IN ({combined_sql})\n                ORDER BY {sort_col} {order}\n            '
         else:
-            final_query = f'\n                SELECT meta.path, aspect_ratio\n                FROM meta\n                JOIN images ON meta.path = images.path\n                WHERE meta.path IN ({combined_sql})\n            '
+            final_query = f'\n                SELECT meta.path, aspect_ratio\n                FROM meta\n                WHERE meta.path IN ({combined_sql})\n            '
         rows = cur.execute(final_query, combined_params).fetchall()
         return ([row['path'] for row in rows], [row['aspect_ratio'] for row in rows])
 

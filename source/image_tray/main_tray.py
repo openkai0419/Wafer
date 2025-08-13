@@ -24,6 +24,8 @@ class TrayApp(QtWidgets.QSystemTrayIcon, TranslatorMixin):
         self.menu.addSeparator()
         self.reload_action = self.menu.addAction(self.t.tr('ReScan All'))
         self.reload_action.triggered.connect(self.rescan)
+        self.cleanup_action = self.menu.addAction(self.t.tr('Cleanup Database'))
+        self.cleanup_action.triggered.connect(self.cleanup)
         self.menu.addSeparator()
         self.test_action = self.menu.addAction(self.t.tr('Test'))
         self.test_action.triggered.connect(self.test)
@@ -43,8 +45,17 @@ class TrayApp(QtWidgets.QSystemTrayIcon, TranslatorMixin):
     def on_notify(self, v):
         logger.info(f'NOTIFY : {v}')
 
+    def cleanup(self):
+        try:
+            self.zmq.send(targetprocess='ALL', table='*', topic='cleanup', message='True')
+        except Exception as e:
+            logger.warning(f'[toggle notify failed] {e}')
+
     def rescan(self):
-        pass
+        try:
+            self.zmq.send(targetprocess='ALL', table='*', topic='rescan', message='True')
+        except Exception as e:
+            logger.warning(f'[toggle notify failed] {e}')
 
     def send_show_toggle(self, flag):
         try:

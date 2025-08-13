@@ -257,7 +257,7 @@ class WatchFolder:
         self.db_worker.trigger_ignore(paths)
 
     def clean(self):
-        pass
+        self.db_worker.trigger_cleanup()
 
     def cancel(self):
         pass

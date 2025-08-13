@@ -5,6 +5,7 @@ import contextlib
 import threading
 import time
 import uuid
+import errno
 import collections
 from dataclasses import dataclass
 from enum import Enum
@@ -400,7 +401,10 @@ class ZMQBroker:
                     except zmq.Again:
                         logger.info("broker: drop broadcast (timeout)")
                     except zmq.ZMQError as e:
-                        logger.info("broker: bcast error %s", e)
+                        if e.errno == errno.EHOSTUNREACH:
+                            pass
+                        else:
+                            logger.info("broker: bcast error %s", e)
 
             idle_streak, poll_ms = _adaptive_poll(did_work, idle_streak, POLL_BASE_MS, POLL_MAX_MS)
         _close_linger0(self.router)
@@ -492,7 +496,8 @@ class ZMQNode:
                         self.dealer.send(data, copy=False)
                     did_work = True
                 except zmq.Again:
-                    logger.info("node: drop send (timeout)")
+                    pass
+                    #logger.info("node: drop send (timeout)")
                 except Exception as e:
                     logger.info("node: send error %s", e)
             if sentinel:

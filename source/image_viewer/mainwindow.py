@@ -1,6 +1,8 @@
 from PySide6 import QtWidgets, QtGui, QtCore
 from datetime import datetime, timedelta
 
+from ..os.process import Proc
+
 from .viewer.justifiedwidget import JustifiedVirtualScrollWidget
 from ..db.setting_db import SettingDB
 from ..db.query import MetaInfoSearchEngine, MetaQuery
@@ -15,7 +17,7 @@ from .widgets.button_bar import IconButtonBar, IconButtonConfig
 from .widgets.table_combo import ComboBoxWithButtons
 from ..qt.thread import main_thread
 from .viewer_settings import main_setting
-from ..common.funcs import get_data_db, get_setting_db, uipx, get_setting_file_names, new_main
+from ..common.funcs import get_data_db, get_setting_db, uipx, get_setting_file_names
 from ..constants import default_db_name, APP_NAME
 from ..common.profiling import logger, profiler
 from ..image_setting.setting_window import SettingsWindow
@@ -147,7 +149,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             elif text in get_setting_file_names():
                 return
             else:
-                new_main( "--collector", text)
+                Proc.new_main( "--collector", text)
                 self.dbcombo.addItem(text)
                 self.dbcombo.setCurrentText(text)
                 self.reload_db(text)

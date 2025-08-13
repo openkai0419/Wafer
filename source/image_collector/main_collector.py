@@ -23,11 +23,10 @@ class CollectorProcess():
         self.zmq = ZMQNode(Role.COLLECTOR, on_message=self.on_message)
         self.zmq.start()
         set_node(self.zmq)
-
-        self.start_watch()
     
-    def on_message(self, var):
-        logger.info(var)
+    def on_message(self, v):
+        logger.info(f"NOTIFY : {v}")
+
 
     @profiler.profile
     def start_watch(self):

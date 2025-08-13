@@ -1,9 +1,8 @@
 from PySide6 import QtCore, QtGui, QtWidgets
-
 from ...common.funcs import uipx
 
-
 class HoverProxy(QtWidgets.QWidget):
+
     def __init__(self, target_widget, margin=None):
         if margin is None:
             margin = uipx(10)
@@ -14,7 +13,6 @@ class HoverProxy(QtWidgets.QWidget):
         self.setMouseTracking(True)
         self.setVisible(True)
         self.raise_()
-
         self._target.installEventFilter(self)
         self.updateGeometry()
 
@@ -36,60 +34,54 @@ class HoverProxy(QtWidgets.QWidget):
         leave_evt = QtCore.QEvent(QtCore.QEvent.Leave)
         QtWidgets.QApplication.sendEvent(self._target, leave_evt)
 
-
 class PopupWindow(QtWidgets.QWidget):
-    def __init__(self, parent: QtWidgets, *args, **kwargs):
-        super().__init__(parent=parent, *args, **kwargs)
+
+    def __init__(self, parent, *args, **kwargs):
+        super().__init__(*args, parent=parent, **kwargs)
         self.setWindowFlags(QtCore.Qt.FramelessWindowHint | QtCore.Qt.ToolTip)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-        self.setStyleSheet("background-color: white; border: 1px solid gray;")
+        self.setStyleSheet('background-color: white; border: 1px solid gray;')
 
     def setText(self, text):
         pass
 
-
 class TooltipPopup(PopupWindow):
+
     def __init__(self, text, parent=None):
         super().__init__(parent=parent)
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(8, uipx(4), uipx(8), uipx(4))
         self.label = QtWidgets.QLabel(text)
-        self.label.setStyleSheet("color: white; background: black; padding: 2px; border-radius: 3px;")
+        self.label.setStyleSheet('color: white; background: black; padding: 2px; border-radius: 3px;')
         layout.addWidget(self.label)
 
     def setText(self, text):
         self.label.setText(text)
 
-
 class ThinProgressBar(QtWidgets.QWidget):
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._value = 0
         self._maximum = 0
-
         self.setFixedHeight(3)
         self.setMinimumWidth(100)
         self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
-
         self._color_opacity = 0.0
         self._opacity_animation = QtCore.QVariantAnimation()
         self._opacity_animation.setDuration(200)
         self._opacity_animation.valueChanged.connect(self.setColorOpacity)
-
         self._value_animation = QtCore.QVariantAnimation()
         self._value_animation.setDuration(300)
         self._value_animation.valueChanged.connect(self._setAnimatedValue)
         self._animated_value = 0
-
         self._glow_offset = 0.0
         self._glow_timer = QtCore.QTimer(self)
         self._glow_timer.timeout.connect(self._updateGlow)
         self._glow_timer.start(15)
-
         self._base_color = QtGui.QColor(0, 255, 0)
         self._tooltip = None
         self.setMouseTracking(True)
-
         QtCore.QTimer.singleShot(0, self._installHoverProxy)
 
     def _installHoverProxy(self):
@@ -97,18 +89,15 @@ class ThinProgressBar(QtWidgets.QWidget):
 
     def setProgress(self, value):
         value = max(0, min(self._maximum, value))
-
         self._value_animation.stop()
         self._value_animation.setStartValue(self._animated_value)
         self._value_animation.setEndValue(value)
         self._value_animation.start()
-
         if value == 0 or value >= self._maximum:
             self.fadeOut()
             value = 0
         else:
             self.fadeIn()
-
         self._value = value
         self._updateTooltipText()
 
@@ -170,17 +159,14 @@ class ThinProgressBar(QtWidgets.QWidget):
     def setBaseColor(self, color):
         self._base_color = color
         self.update()
-
     colorOpacity = QtCore.Property(float, getColorOpacity, setColorOpacity)
     baseColor = QtCore.Property(QtGui.QColor, getBaseColor, setBaseColor)
 
     def paintEvent(self, event):
         if self._animated_value <= 0:
             return
-
         painter = QtGui.QPainter(self)
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
-
         self._drawBar(painter)
         if self._color_opacity > 0:
             self._drawGlow(painter)
@@ -189,10 +175,8 @@ class ThinProgressBar(QtWidgets.QWidget):
         rect = self.rect()
         ratio = self._animated_value / self._maximum if self._maximum else 0
         bar_width = rect.width() * ratio
-
         base_color = QtGui.QColor(self._base_color)
         base_color.setAlphaF(self._color_opacity)
-
         painter.setBrush(QtGui.QBrush(base_color))
         painter.setPen(QtCore.Qt.NoPen)
         painter.drawRect(0, 0, int(bar_width), rect.height())
@@ -201,13 +185,10 @@ class ThinProgressBar(QtWidgets.QWidget):
         rect = self.rect()
         ratio = self._animated_value / self._maximum if self._maximum else 0
         bar_width = rect.width() * ratio
-
         if bar_width <= 0:
             return
-
         glow_width = max(uipx(10), int(bar_width * 0.4))
         glow_x = int((bar_width + glow_width) * self._glow_offset - glow_width)
-
         gradient = QtGui.QLinearGradient(glow_x, 0, glow_x + glow_width, 0)
         glow_color = QtGui.QColor(255, 255, 255, int(180 * self._color_opacity))
         transparent = QtGui.QColor(255, 255, 255, 0)
@@ -215,7 +196,6 @@ class ThinProgressBar(QtWidgets.QWidget):
         gradient.setColorAt(0.3, glow_color)
         gradient.setColorAt(0.7, glow_color)
         gradient.setColorAt(1.0, transparent)
-
         painter.setBrush(QtGui.QBrush(gradient))
         painter.setPen(QtCore.Qt.NoPen)
         painter.drawRect(0, 0, int(bar_width), rect.height())
@@ -223,9 +203,8 @@ class ThinProgressBar(QtWidgets.QWidget):
     def mouseMoveEvent(self, event):
         if self._maximum == 0:
             return
-        percent = int(self._animated_value / self._maximum * 100)            
-        text = f"{int(self._animated_value)} / {self._maximum} ({percent}%)"
-
+        percent = int(self._animated_value / self._maximum * 100)
+        text = f'{int(self._animated_value)} / {self._maximum} ({percent}%)'
         offset = QtCore.QPoint(uipx(8), uipx(16))
         if self._tooltip is None:
             self._tooltip = TooltipPopup(text, parent=self)
@@ -246,23 +225,18 @@ class ThinProgressBar(QtWidgets.QWidget):
             return
         if self._tooltip is not None:
             percent = int(self._animated_value / self._maximum * 100)
-            text = f"{int(self._animated_value)} / {self._maximum} ({percent}%)"
+            text = f'{int(self._animated_value)} / {self._maximum} ({percent}%)'
             self._tooltip.setText(text)
-
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     import random
     import sys
-
     app = QtWidgets.QApplication(sys.argv)
     window = QtWidgets.QWidget()
     layout = QtWidgets.QVBoxLayout(window)
     layout.setSpacing(0)
-
     progressBar = ThinProgressBar()
     layout.addWidget(progressBar)
-
-    btn = QtWidgets.QPushButton("Random progress")
+    btn = QtWidgets.QPushButton('Random progress')
     layout.addWidget(btn)
 
     def update():
@@ -270,7 +244,6 @@ if __name__ == "__main__":
         progressBar.setMaximum(maximum)
         val = random.randint(0, maximum)
         progressBar.setProgress(val)
-
     progressBar.setProgress(5000)
     timer = QtCore.QTimer()
     timer.setInterval(500)

@@ -1,22 +1,22 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import collections
 import contextlib
+import errno
 import threading
 import time
 import uuid
-import errno
-import collections
 from dataclasses import dataclass
 from enum import Enum
-from queue import Queue, Empty
+from queue import Empty, Queue
 
 import zmq
 
 # ---- minimal deps expected in your project; replace with your logger if needed
 from ..common.profiling import logger
-from .ipc_utils import write_port, read_port, parse_port
 from ..constants import APP_FILE_NAME
+from .ipc_utils import parse_port, read_port, write_port
 
 # ---- constants (trimmed)
 HEARTBEAT_INTERVAL = 5

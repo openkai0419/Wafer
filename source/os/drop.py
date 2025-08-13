@@ -1,12 +1,14 @@
-from dataclasses import dataclass
-from PySide6.QtCore import QMimeData
-import re
 import os
-import shutil
 import platform
-import requests
+import re
+import shutil
+from dataclasses import dataclass
 
-from ..common.profiling import logger, profiler
+import requests
+from PySide6.QtCore import QMimeData
+
+from ..common.profiling import logger
+
 
 def get_unique_filename(directory: str, name: str) -> str:
     """If 'name' exists in 'directory', generate a new name to avoid overwriting."""
@@ -31,6 +33,7 @@ class ParsedItem:
         return (not self.is_binary) and isinstance(self.source, str) and os.path.exists(self.source)
 
 from PySide6.QtGui import QImage
+
 
 class MimeDataParser:
     def parse_content_disposition(self, header: str) -> str | None:

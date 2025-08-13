@@ -1,6 +1,7 @@
-import copy
 from contextlib import contextmanager
+
 from PySide6 import QtCore
+
 
 class SelectionManager(QtCore.QObject):
     selectionChanged = QtCore.Signal(set)

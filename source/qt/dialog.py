@@ -1,8 +1,15 @@
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QLabel, QPushButton,
-    QHBoxLayout, QLineEdit, QSizePolicy, QApplication, QStyle
+    QDialog,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QSizePolicy,
+    QStyle,
+    QVBoxLayout,
 )
-from PySide6.QtCore import Qt, QTimer
+
 from ..image_setting.translation import TranslatorMixin
 
 

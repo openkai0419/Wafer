@@ -1,15 +1,15 @@
-from PySide6 import QtWidgets, QtGui, QtCore
 import contextlib
 
-from ..image_collector.progress_notifier import close_publisher
+from PySide6 import QtWidgets
+
 from ..common.profiling import logger, profiler
-from ..qt.debounce import qt_debounce
-from ..common.funcs import get_setting_file_names
-from ..qt.dialog import ConfirmDialog
 from ..constants import APP_NAME
+from ..image_collector.progress_notifier import close_publisher
 from ..image_setting.translation import TranslatorMixin
-from ..zmq.zmq import ZMQNode, ZMQBroker, Role
 from ..os.process import Proc
+from ..qt.debounce import qt_debounce
+from ..zmq.zmq import Role, ZMQBroker, ZMQNode
+
 
 class TrayApp(QtWidgets.QSystemTrayIcon, TranslatorMixin):
     @profiler.profile

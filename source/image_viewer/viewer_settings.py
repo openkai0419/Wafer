@@ -1,10 +1,10 @@
-import sys
 import json
 from pathlib import Path
-from ..common.funcs import data_path
 from typing import Any, Optional, Type
 
 from PySide6 import QtCore
+
+from ..common.funcs import data_path
 
 
 class AsyncSaver(QtCore.QObject):

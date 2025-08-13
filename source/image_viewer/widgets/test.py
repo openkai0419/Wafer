@@ -1,11 +1,19 @@
-import sys
 import os
+import sys
 import tempfile
-import requests
 
-from PySide6.QtWidgets import QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QFileDialog
+import requests
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QClipboard, QImage, QPixmap
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import (
+    QApplication,
+    QFileDialog,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
+
 
 def save_text(path, text):
     with open(path, 'w', encoding='utf-8') as f:

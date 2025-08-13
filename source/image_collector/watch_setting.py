@@ -1,6 +1,7 @@
 import os
-from watchdog.observers import Observer
+
 from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
 
 from ..common.profiling import logger, profiler
 from ..common.signal import Signal

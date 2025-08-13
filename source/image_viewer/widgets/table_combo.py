@@ -1,9 +1,9 @@
-from PySide6.QtWidgets import (
-    QWidget, QComboBox, QPushButton, QHBoxLayout, QApplication
-)
-from PySide6.QtCore import Signal, Qt, QSignalBlocker
-from ...image_setting.translation import TranslatorMixin
 import sys
+
+from PySide6.QtCore import QSignalBlocker, Qt, Signal
+from PySide6.QtWidgets import QApplication, QComboBox, QHBoxLayout, QPushButton, QWidget
+
+from ...image_setting.translation import TranslatorMixin
 
 
 class ComboBoxWithButtons(QWidget, TranslatorMixin):

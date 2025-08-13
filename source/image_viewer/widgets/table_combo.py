@@ -1,10 +1,7 @@
 import sys
-
 from PySide6.QtCore import QSignalBlocker, Qt, Signal
 from PySide6.QtWidgets import QApplication, QComboBox, QHBoxLayout, QPushButton, QWidget
-
 from ...image_setting.translation import TranslatorMixin
-
 
 class ComboBoxWithButtons(QWidget, TranslatorMixin):
     addClicked = Signal()
@@ -13,15 +10,13 @@ class ComboBoxWithButtons(QWidget, TranslatorMixin):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-
         self.combo = QComboBox()
-        self.button_add = QPushButton("+")
-        self.button_remove = QPushButton("-")
+        self.button_add = QPushButton('+')
+        self.button_remove = QPushButton('-')
         self.combo.currentIndexChanged.connect(self.on_changed)
-        self.button_add.setToolTip(self.t.tr("Add item"))
-        self.button_remove.setToolTip(self.t.tr("Remove current item"))
+        self.button_add.setToolTip(self.t.tr('Add item'))
+        self.button_remove.setToolTip(self.t.tr('Remove current item'))
         self._current_text = None
-
         layout = QHBoxLayout()
         layout.addWidget(self.button_add)
         layout.addWidget(self.button_remove)
@@ -29,7 +24,6 @@ class ComboBoxWithButtons(QWidget, TranslatorMixin):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         self.setLayout(layout)
-
         self.button_add.clicked.connect(self.addClicked.emit)
         self.button_remove.clicked.connect(self.removeClicked.emit)
 
@@ -64,7 +58,7 @@ class ComboBoxWithButtons(QWidget, TranslatorMixin):
 
     def getCurrentIndex(self):
         return self.combo.currentIndex()
-    
+
     def on_changed(self):
         text = self.currentText()
         if self._current_text != text:
@@ -82,14 +76,12 @@ class ComboBoxWithButtons(QWidget, TranslatorMixin):
             self.combo.clear()
             self.combo.addItems(items)
         self._current_text = self.currentText()
-
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     app = QApplication(sys.argv)
     w = ComboBoxWithButtons()
-    w.setItems(["Apple", "Banana", "Cherry"])
-    w.addClicked.connect(lambda: print("Add button clicked"))
-    w.removeClicked.connect(lambda: print("Remove button clicked"))
-    w.textChanged.connect(lambda text: print(f"textChanged: {text}"))
+    w.setItems(['Apple', 'Banana', 'Cherry'])
+    w.addClicked.connect(lambda: print('Add button clicked'))
+    w.removeClicked.connect(lambda: print('Remove button clicked'))
+    w.textChanged.connect(lambda text: print(f'textChanged: {text}'))
     w.show()
     sys.exit(app.exec())

@@ -1,34 +1,22 @@
 import time
 from pathlib import Path
-from typing import Optional, Union
-
 from ..common.funcs import data_path
+_PORT_FILE = Path(data_path('ipc_port.txt'))
 
-_PORT_FILE = Path(data_path("ipc_port.txt"))
-
-
-def parse_port(port: Union[int, str]) -> int:
-    """Return an integer port from a port number or address."""
+def parse_port(port):
     if isinstance(port, int):
         return port
     if isinstance(port, str):
-        if port.startswith("tcp://"):
-            return int(port.rsplit(":", 1)[-1])
+        if port.startswith('tcp://'):
+            return int(port.rsplit(':', 1)[-1])
         return int(port)
-    raise ValueError(f"Invalid port: {port}")
+    raise ValueError(f'Invalid port: {port}')
 
-
-def write_port(port: Union[int, str]) -> None:
-    """Save broker port for other processes.
-
-    Only the port number is stored; any address part is ignored.
-    """
+def write_port(port):
     _PORT_FILE.parent.mkdir(parents=True, exist_ok=True)
     _PORT_FILE.write_text(str(parse_port(port)))
 
-
-def read_port(timeout: float = 5.0) -> Optional[int]:
-    """Read the saved broker port, waiting up to timeout seconds."""
+def read_port(timeout=5.0):
     end = time.time() + timeout
     while True:
         try:

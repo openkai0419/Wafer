@@ -1,21 +1,16 @@
 import threading
-
 from ..common.profiling import logger, profiler
 from ..zmq.zmq import Role, ZMQNode
-
 _node = None
 _node_lock = threading.Lock()
 
-
-def set_node(node: ZMQNode) -> None:
-    """Share external node instance"""
+def set_node(node):
     global _node
     with _node_lock:
         _node = node
 
-
 @profiler.profile
-def _get_node() -> ZMQNode:
+def _get_node():
     global _node
     with _node_lock:
         if _node is None:
@@ -24,19 +19,18 @@ def _get_node() -> ZMQNode:
         return _node
 
 def close_publisher():
-    """Close node instance safely"""
     global _node
     with _node_lock:
         if _node is not None:
             try:
                 _node.stop()
             except Exception as e:
-                logger.warning(f"[node close failed] {e}")
+                logger.warning(f'[node close failed] {e}')
             finally:
                 _node = None
 
-
 class ProgressAggregator:
+
     def __init__(self, tablename):
         self.tablename = tablename
         self.current = 0
@@ -52,7 +46,7 @@ class ProgressAggregator:
         if total_inc:
             self.maximum += total_inc
         if current_inc:
-            self.current += current_inc 
+            self.current += current_inc
         if self.current >= self.maximum:
             if self.current != 0 and self.maximum != 0:
                 self.reset()
@@ -63,17 +57,16 @@ class ProgressAggregator:
     def _notify_progress(self):
         try:
             node = _get_node()
-            node.send(targetprocess="viewer", table=self.tablename, topic="maximum", message=str(self.maximum))
-            node.send(targetprocess="viewer", table=self.tablename, topic="progress", message=str(self.current))
-            # logger.debug(f"[NOTIFY] progress {self.current} {self.maximum}")
+            node.send(targetprocess='viewer', table=self.tablename, topic='maximum', message=str(self.maximum))
+            node.send(targetprocess='viewer', table=self.tablename, topic='progress', message=str(self.current))
         except Exception as e:
-            logger.warning(f"[progress notify failed] {e}")
+            logger.warning(f'[progress notify failed] {e}')
 
     @profiler.profile
-    def notify_extra(self, key: str, value: object):
+    def notify_extra(self, key, value):
         try:
             node = _get_node()
-            node.send(targetprocess="viewer", table=self.tablename, topic=key, message=str(value))
-            logger.debug(f"[NOTIFY] EXTRA {key} {value}")
+            node.send(targetprocess='viewer', table=self.tablename, topic=key, message=str(value))
+            logger.debug(f'[NOTIFY] EXTRA {key} {value}')
         except Exception as e:
-            logger.warning(f"[notify failed: {key}={value}] {e}")
+            logger.warning(f'[notify failed: {key}={value}] {e}')

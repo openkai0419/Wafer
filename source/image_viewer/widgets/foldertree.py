@@ -3,6 +3,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from ...common.funcs import normalize_path
 from ...common.profiling import logger, profiler
 from ..viewer_settings import main_setting
+
 FOLDER_ICON = QtGui.QIcon.fromTheme('folder')
 USER_ROLE_PATH = QtCore.Qt.UserRole
 
@@ -10,7 +11,6 @@ USER_ROLE_PATH = QtCore.Qt.UserRole
 def create_folder_item(path):
     item = QtGui.QStandardItem(FOLDER_ICON, os.path.basename(path) or path)
     item.setData(path, USER_ROLE_PATH)
-    item.setChild(0, QtGui.QStandardItem())
     return item
 
 @profiler.profile
@@ -83,6 +83,8 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
             if root in self.excluded:
                 continue
             item = create_folder_item(root)
+            if self.has_subfolders(root):
+                item.setChild(0, QtGui.QStandardItem())
             self.appendRow(item)
             self._add_item(root, item)
         self.sort(0, QtCore.Qt.AscendingOrder)
@@ -96,9 +98,10 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
                         full_path = normalize_path(entry.path)
                         if full_path not in self.excluded:
                             return True
+            return False
         except Exception as e:
-            logger.debug(f'Failed to check subfolders in {path}: {e}')
-        return False
+            logger.debug(f'Failed to quick-check entries in {path}: {e}')
+            return False
 
     @profiler.profile
     def load_children(self, parent_item):
@@ -301,6 +304,8 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
             if item.data(USER_ROLE_PATH) == path:
                 return
         item = create_folder_item(path)
+        if self.model_.has_subfolders(path):
+            item.setChild(0, QtGui.QStandardItem())
         self.model_.roots.append(path)
         self.model_.appendRow(item)
         self.model_.sort(0, QtCore.Qt.AscendingOrder)

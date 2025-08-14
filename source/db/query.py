@@ -7,7 +7,6 @@ from ..common.funcs import normalize_path
 from ..common.profiling import logger, profiler
 
 class MetaQuery:
-
     def __init__(
         self,
         keys: Sequence[str] | str | None = None,
@@ -20,6 +19,7 @@ class MetaQuery:
         append_mode: str = 'OR',
         splittext: str | None = None,
         only_direct_children: bool = False,
+        require_keys: bool = True,
     ) -> None:
         self.keys = keys
         self.keywords = keywords
@@ -31,6 +31,7 @@ class MetaQuery:
         self.append_mode = append_mode
         self.splittext = splittext
         self.only_direct_children = only_direct_children
+        self.require_keys = require_keys
 
     def __eq__(self, other):
         if not isinstance(other, MetaQuery):
@@ -46,6 +47,7 @@ class MetaQuery:
             self.append_mode,
             self.splittext,
             self.only_direct_children,
+            self.require_keys,
         ) == (
             other.keys,
             other.keywords,
@@ -57,10 +59,11 @@ class MetaQuery:
             other.append_mode,
             other.splittext,
             other.only_direct_children,
+            other.require_keys,
         )
 
     def __hash__(self):
-        return hash((tuple(self.keys or []), tuple(self.keywords or []), self.query_mode, tuple(self.directories or []), self.keyword_mode, self.sort_by, self.ascending, self.append_mode, self.splittext, self.only_direct_children))
+        return hash((tuple(self.keys or []), tuple(self.keywords or []), self.query_mode, tuple(self.directories or []), self.keyword_mode, self.sort_by, self.ascending, self.append_mode, self.splittext, self.only_direct_children, self.require_keys))
 
     @profiler.profile
     def normalize_inputs(self):
@@ -92,45 +95,53 @@ class MetaQuery:
             values = [f'*{kw}*' if mode == 'GLOB' else f'%{kw}%' for kw in keywords]
             clauses = [clause_format for _ in keywords]
             return (f' {operator} '.join(clauses), values)
+
         if include_keywords:
             clause, values = match_clause('value', include_keywords, self.keyword_mode)
             conditions.append(f'({clause})')
             params.extend(values)
         if exclude_keywords:
             clause, values = match_clause('value', exclude_keywords, 'OR')
-            conditions.append(f'path NOT IN (SELECT path FROM meta_info WHERE {clause})')
+            if keys:
+                key_placeholders = ','.join(('?' for _ in keys))
+                conditions.append(f'path NOT IN (SELECT path FROM meta_info WHERE key IN ({key_placeholders}) AND {clause})')
+                params.extend(keys)
+            else:
+                conditions.append(f'path NOT IN (SELECT path FROM meta_info WHERE {clause})')
             params.extend(values)
         if self.directories:
             dirs = [str(Path(d).resolve()) for d in self.directories if isinstance(d, str) and d]
+            dir_clauses = []
+            dir_params = []
             for d in dirs:
                 norm_dir = normalize_path_func(str(d))
                 prefix = norm_dir + '/' if norm_dir else ''
                 if self.only_direct_children:
-                    conditions.append('path LIKE ?')
-                    params.append(f'{prefix}%')
-                    conditions.append('path NOT LIKE ?')
-                    params.append(f'{prefix}%/%')
+                    dir_clauses.append("(path LIKE ? AND path NOT LIKE ?)")
+                    dir_params.extend([f'{prefix}%', f'{prefix}%/%'])
                 else:
-                    conditions.append('path LIKE ?')
-                    params.append(f'{prefix}%')
+                    dir_clauses.append("path LIKE ?")
+                    dir_params.append(f'{prefix}%')
+            if dir_clauses:
+                conditions.append("(" + " OR ".join(dir_clauses) + ")")
+                params.extend(dir_params)
         return (conditions, params, keys)
 
     @profiler.profile
     def to_sql(self, normalize_path_func):
-        conditions, params, keys = self.build_conditions(normalize_path_func)
-        if not keys:
+        conditions, params, keys = self.build_conditions(normalize_path_func, require_keys=self.require_keys)
+        if conditions is None:
             return (None, None)
         return (f"SELECT path, key, value FROM meta_info WHERE {' AND '.join(conditions)}", params)
 
     @profiler.profile
     def to_path_query(self, normalize_path_func):
-        conditions, params, keys = self.build_conditions(normalize_path_func)
-        if not keys:
+        conditions, params, keys = self.build_conditions(normalize_path_func, require_keys=self.require_keys)
+        if conditions is None:
             return (None, None)
         return (f"SELECT DISTINCT path FROM meta_info WHERE {' AND '.join(conditions)}", params)
 
 class MetaInfoSearchEngine:
-
     def __init__(self, db_path):
         self.db_path = str(db_path)
         self.conn = None
@@ -145,17 +156,13 @@ class MetaInfoSearchEngine:
             conn = sqlite3.connect(f'file:{self.db_path}?mode=ro', uri=True, check_same_thread=False)
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
-            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='images'")
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='meta_info'")
             if not cur.fetchone():
-                logger.warning("Table 'images' not found in DB.")
+                logger.warning("Table 'meta_info' not found in DB.")
                 return False
             cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='meta'")
             if not cur.fetchone():
                 logger.warning("Table 'meta' not found in DB.")
-                return False
-            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='meta_info'")
-            if not cur.fetchone():
-                logger.warning("Table 'meta_info' not found in DB.")
                 return False
             self.conn = conn
             return True
@@ -169,6 +176,8 @@ class MetaInfoSearchEngine:
     @profiler.profile
     def _build_sort_clause(self, sort_by, ascending):
         sort_column_map = {'path': 'path', 'name': 'name', 'created': 'created', 'modified': 'mtime', 'size': 'size', 'collected': 'collected_at', 'random': None}
+        if sort_by not in sort_column_map and sort_by != 'random':
+            sort_by = 'path'
         sort_column = sort_column_map.get(sort_by)
         order = 'ASC' if ascending else 'DESC'
         return (sort_column, order)
@@ -183,15 +192,23 @@ class MetaInfoSearchEngine:
             batch = paths[i:i + batch_size]
             placeholders = ','.join(('?' for _ in batch))
             if sort_column:
-                query = f'\n                    SELECT path, aspect_ratio, {sort_column} AS sort_value\n                    FROM meta\n                    WHERE path IN ({placeholders})\n                '
+                query = f"""
+                    SELECT path, aspect_ratio, {sort_column} AS sort_value
+                    FROM meta
+                    WHERE path IN ({placeholders})
+                """
             else:
-                query = f'\n                    SELECT path, aspect_ratio\n                    FROM meta\n                    WHERE path IN ({placeholders})\n                '
+                query = f"""
+                    SELECT path, aspect_ratio
+                    FROM meta
+                    WHERE path IN ({placeholders})
+                """
             rows = cur.execute(query, batch).fetchall()
             all_rows.extend(rows)
         if sort_by == 'random':
             shuffle(all_rows)
-        else:
-            all_rows.sort(key=lambda row: row['sort_value'], reverse=not ascending)
+        elif sort_column:
+            all_rows.sort(key=lambda r: ((r['sort_value'] is None), r['sort_value']), reverse=not ascending)
         return ([row['path'] for row in all_rows], [row['aspect_ratio'] for row in all_rows])
 
     @profiler.profile
@@ -199,7 +216,7 @@ class MetaInfoSearchEngine:
         if not self._connect_if_needed():
             return []
         cur = self.conn.cursor()
-        sql, params = query.to_sql(normalize_path)
+        sql, params = query.to_sql(self._normalize_path)
         if not sql:
             return []
         rows = cur.execute(sql, params).fetchall()
@@ -228,7 +245,7 @@ class MetaInfoSearchEngine:
         cur = self.conn.cursor()
         subqueries = []
         for q in queries:
-            sql, params = q.to_path_query(normalize_path)
+            sql, params = q.to_path_query(self._normalize_path)
             if not sql:
                 if q.append_mode == 'AND':
                     return ([], [])
@@ -243,10 +260,22 @@ class MetaInfoSearchEngine:
             combined_params.extend(params)
         sort_col, order = self._build_sort_clause(queries[-1].sort_by, queries[-1].ascending)
         if sort_col:
-            final_query = f'\n                SELECT meta.path, aspect_ratio\n                FROM meta\n                WHERE meta.path IN ({combined_sql})\n                ORDER BY {sort_col} {order}\n            '
+            final_query = f"""
+                SELECT meta.path, aspect_ratio
+                FROM meta
+                WHERE meta.path IN ({combined_sql})
+                ORDER BY {sort_col} {order}
+            """
         else:
-            final_query = f'\n                SELECT meta.path, aspect_ratio\n                FROM meta\n                WHERE meta.path IN ({combined_sql})\n            '
+            final_query = f"""
+                SELECT meta.path, aspect_ratio
+                FROM meta
+                WHERE meta.path IN ({combined_sql})
+            """
         rows = cur.execute(final_query, combined_params).fetchall()
+        if queries[-1].sort_by == 'random':
+            rows = list(rows)
+            shuffle(rows)
         return ([row['path'] for row in rows], [row['aspect_ratio'] for row in rows])
 
     @profiler.profile
@@ -254,7 +283,7 @@ class MetaInfoSearchEngine:
         if not self._connect_if_needed():
             return []
         cur = self.conn.cursor()
-        filters, params, _ = query.build_conditions(normalize_path, require_keys=False)
+        filters, params, _ = query.build_conditions(self._normalize_path, require_keys=False)
         if filters is None:
             return []
         where_clause = f"WHERE {' AND '.join(filters)}" if filters else ''
@@ -268,7 +297,7 @@ class MetaInfoSearchEngine:
         if not self._connect_if_needed():
             logger.warning('DB connection failed: skipping explain_query_plan')
             return None
-        sql, params = query.to_sql(normalize_path)
+        sql, params = query.to_sql(self._normalize_path)
         if not sql:
             logger.info('Query invalid, skipping EXPLAIN QUERY PLAN')
             return None

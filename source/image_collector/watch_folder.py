@@ -149,7 +149,6 @@ class FileChangeEmitter(FileSystemEventHandler):
                 self.file_changed.emit(event.dest_path)
 
 class WatchFolder:
-
     def __init__(self, name, database):
         self.folder_changed = Signal()
         self._progress_aggregator = ProgressAggregator(name)
@@ -157,20 +156,15 @@ class WatchFolder:
         self.db = database
         self.db.set_progress_callback(self.progress_callback)
         self.db.set_update_callback(self.update_callback)
+
         self.observer = None
         self.old_observers = []
         self.db_worker = DBWorker(database, self.progress_callback)
-        self.db_worker.finished.connect(self._on_db_finished)
-        self._processing = False
-        self.deleted_set = set()
-        self.changed_set = set()
-        self._timer_stop = threading.Event()
-        self._timer_thread = threading.Thread(target=self._timer_loop, daemon=True)
-        self._timer_thread.start()
+
         self.emitter = FileChangeEmitter(extensions)
-        self.emitter.file_deleted.connect(self._on_deleted)
-        self.emitter.file_changed.connect(self._on_changed)
+
         self.emitter.folder_changed.connect(self._on_folder_change)
+        self._init_actor()
 
     @profiler.profile
     def progress_callback(self, current, total):
@@ -181,6 +175,7 @@ class WatchFolder:
         logger.debug(f'Update: {message}')
         self._progress_aggregator.notify_extra('update', message)
 
+    # フォルダ変更の通知は throttle 済みで元コード同様に即時発火
     @profiler.profile
     @throttle(1000, 2000)
     def folderchange_callback(self, folder):
@@ -197,57 +192,16 @@ class WatchFolder:
                 self.old_observers.append(self.observer)
             except Exception as e:
                 logger.warning(f'Failed to stop old observer: {e}')
+
         self.observer = Observer()
         for path in folders:
             if os.path.exists(path):
                 self.observer.schedule(self.emitter, path, recursive=True)
         self.observer.start()
+
         self.folders = folders
         self.rescan_all()
         self._cleanup_old_observers()
-
-    def _cleanup_old_observers(self):
-        alive = [ob for ob in self.old_observers if ob.is_alive()]
-        self.old_observers = alive
-
-    def _on_deleted(self, path):
-        self.deleted_set.add(path)
-        self.progress_callback(0, 1)
-
-    def _on_changed(self, path):
-        self.changed_set.add(path)
-        self.progress_callback(0, 1)
-
-    def _on_folder_change(self, path):
-        self.folderchange_callback(path)
-        self.folder_changed.emit(path)
-
-    def _on_db_finished(self):
-        self._processing = False
-        self.progress_callback(1, 0)
-        self._flush()
-
-    @profiler.profile
-    def _flush(self):
-        if self._processing:
-            return
-        if self.deleted_set:
-            self._processing = True
-            self.progress_callback(1, 2)
-            self.db_worker.trigger_remove(list(self.deleted_set))
-            self.deleted_set.clear()
-            return
-        if self.changed_set:
-            self._processing = True
-            self.progress_callback(1, 2)
-            self.db_worker.trigger_update(list(self.changed_set))
-            self.changed_set.clear()
-            return
-
-    def _timer_loop(self):
-        while not self._timer_stop.is_set():
-            time.sleep(1)
-            self._flush()
 
     def rescan_all(self):
         if hasattr(self, 'folders'):
@@ -260,13 +214,125 @@ class WatchFolder:
         self.db_worker.trigger_cleanup()
 
     def cancel(self):
-        pass
+        pass  # 仕様未定（必要なら Actor へキャンセルメッセージを追加）
 
     def stop(self):
         logger.debug('Stopping WatchFolder')
         if self.observer:
             self.observer.stop()
             self.observer.join()
-        self._timer_stop.set()
-        self._timer_thread.join()
+
+        self._shutdown_actor()
+
         self.db_worker.stop()
+
+    def _cleanup_old_observers(self):
+        alive = [ob for ob in self.old_observers if ob.is_alive()]
+        self.old_observers = alive
+
+    def _on_folder_change(self, path):
+        try:
+            self.folderchange_callback(path)
+            self.folder_changed.emit(path)
+        except Exception as e:
+            logger.warning(f'_on_folder_change failed: {e}')
+
+    def _init_actor(self):
+        self._inbox = queue.Queue()
+        self._actor_stop = threading.Event()
+        self._actor_thread = threading.Thread(target=self._actor_loop, daemon=True)
+
+        self.emitter.file_deleted.connect(self._enqueue_deleted)
+        self.emitter.file_changed.connect(self._enqueue_changed)
+
+        self.db_worker.finished.connect(self._enqueue_finished)
+
+        self.deleted_set = set()
+        self.changed_set = set()
+        self._processing = False
+
+        self._actor_thread.start()
+
+    def _enqueue_deleted(self, path: str):
+        self.progress_callback(0, 1)
+        try:
+            self._inbox.put(("deleted", path))
+        except Exception as e:
+            logger.warning(f'_enqueue_deleted failed: {e}')
+
+    def _enqueue_changed(self, path: str):
+        self.progress_callback(0, 1)
+        try:
+            self._inbox.put(("changed", path))
+        except Exception as e:
+            logger.warning(f'_enqueue_changed failed: {e}')
+
+    def _enqueue_finished(self):
+        try:
+            self._inbox.put(("finished", None))
+        except Exception as e:
+            logger.warning(f'_enqueue_finished failed: {e}')
+
+    def _actor_loop(self):
+        while not self._actor_stop.is_set():
+            try:
+                msg = self._inbox.get(timeout=1.0)
+            except queue.Empty:
+                self._flush_actor()
+                continue
+
+            batch = [msg]
+            while True:
+                try:
+                    batch.append(self._inbox.get_nowait())
+                except queue.Empty:
+                    break
+
+            need_flush = False
+
+            for kind, payload in batch:
+                if kind == "deleted":
+                    self.deleted_set.add(payload)
+                    self.changed_set.discard(payload)
+                elif kind == "changed":
+                    self.changed_set.add(payload)
+                elif kind == "finished":
+                    self._processing = False
+                    self.progress_callback(1, 0)
+                    need_flush = True
+
+            if need_flush:
+                self._flush_actor()
+
+    @profiler.profile
+    def _flush_actor(self):
+        if self._processing:
+            return
+
+        if self.deleted_set:
+            paths = list(self.deleted_set)
+            self.deleted_set.clear()
+            self._processing = True
+            self.progress_callback(1, 2)
+            self.db_worker.trigger_remove(paths)
+            return
+
+        if self.changed_set:
+            paths = list(self.changed_set)
+            self.changed_set.clear()
+            self._processing = True
+            self.progress_callback(1, 2)
+            self.db_worker.trigger_update(paths)
+            return
+
+    def _shutdown_actor(self):
+        if getattr(self, "_actor_stop", None) is None:
+            return
+        self._actor_stop.set()
+        try:
+            # 起床用のダミーメッセージ
+            self._inbox.put_nowait(("__stop__", None))
+        except Exception:
+            pass
+        if getattr(self, "_actor_thread", None):
+            self._actor_thread.join()

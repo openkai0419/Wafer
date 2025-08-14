@@ -68,7 +68,7 @@ class CollectorProcess:
     @profiler.profile
     def reload_ignore_folder(self, folderlist):
         logger.debug(f'ignore folder {folderlist}')
-        self.folder_watcher.set_ignore_folders(folderlist)
+        self.folder_watcher.set_ignore(folderlist)
 
     def cleanup(self):
         self.folder_watcher.clean()

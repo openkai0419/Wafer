@@ -206,30 +206,30 @@ class _CoalescingKeyQueue:
 
 class ZMQBroker:
 
-    def __init__(self, bind_addr=None):
+    def __init__(self, bind_port=None):
         self.ctx = zmq.Context.instance()
         self.router = self.ctx.socket(zmq.ROUTER)
         _tune(self.router)
         with contextlib.suppress(Exception):
             self.router.setsockopt(zmq.ROUTER_MANDATORY, 1)
         saved = read_port()
-        if bind_addr is None:
+        if bind_port is None:
             port = parse_port(saved) if saved else DEFAULT_PORT
             addr = f'tcp://localhost:{port}'
             try:
                 self.router.bind(addr)
                 write_port(port)
-                self.bind_addr = addr
+                self.bind_port = addr
             except zmq.ZMQError:
                 port = self.router.bind_to_random_port('tcp://localhost')
-                self.bind_addr = f'tcp://localhost:{port}'
+                self.bind_port = f'tcp://localhost:{port}'
                 write_port(port)
         else:
-            port = parse_port(bind_addr)
+            port = parse_port(bind_port)
             addr = f'tcp://localhost:{port}'
             self.router.bind(addr)
             write_port(port)
-            self.bind_addr = addr
+            self.bind_port = addr
         self._stop = threading.Event()
         self._direct_q = Queue(maxsize=BROKER_SEND_QUEUE_MAXSIZE)
         self._broadcast_q = _CoalescingKeyQueue(maxsize=BROKER_SEND_QUEUE_MAXSIZE)
@@ -341,7 +341,7 @@ class ZMQBroker:
                         else:
                             f = tuple((bytes(f) for f in payloads))
                             app_b, target_b = (f[0], (f[1] or b'ALL').lower())
-                            key = _SEP.join((target_b, f[2], f[3]))
+                            key = _SEP.join((app_b, target_b, f[2], f[3]))
                             self._broadcast_q.put(key, f)
                         did_work = True
             batch, sentinel = _drain(self._direct_q, self._sentinel)
@@ -373,7 +373,7 @@ class ZMQBroker:
         _close_linger0(self.router)
 
     def start(self):
-        logger.info(f'BrokerLite bound: {self.bind_addr}')
+        logger.info(f'BrokerLite bound: {self.bind_port}')
         self._direct_q = Queue(maxsize=BROKER_SEND_QUEUE_MAXSIZE)
         self._io_thread.start()
         self._prune_thread.start()

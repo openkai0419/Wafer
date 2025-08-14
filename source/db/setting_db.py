@@ -13,16 +13,26 @@ class SettingDB:
 
     @profiler.profile
     @contextlib.contextmanager
-    def _conn(self, read_only=False):
+    def _conn(self, read_only: bool = False):
         if read_only:
-            uri = f'file:{self.db_name}?mode=ro'
-            con = sqlite3.connect(uri, uri=True)
-        else:
-            con = retry_sqlite_connection(self.db_name)
+            uri = f"file:{self.db_name}?mode=ro"
+            con = sqlite3.connect(uri, uri=True, isolation_level=None)
+            try:
+                yield con
+            finally:
+                con.close()
+            return
+        con = retry_sqlite_connection(self.db_name)
         try:
             yield con
-        except sqlite3.DatabaseError as e:
-            logger.exception('SQLite error during DB operation')
+            if con.in_transaction:
+                con.commit()
+        except Exception:
+            try:
+                if con.in_transaction:
+                    con.rollback()
+            finally:
+                logger.exception("SQLite error during DB operation")
             raise
         finally:
             con.close()
@@ -30,9 +40,25 @@ class SettingDB:
     @profiler.profile
     def _ensure_schema(self):
         with self._conn() as con:
-            con.execute('\n                CREATE TABLE IF NOT EXISTS parent_folders (\n                    id INTEGER PRIMARY KEY AUTOINCREMENT,\n                    path TEXT NOT NULL UNIQUE\n                );\n            ')
-            con.execute('\n                CREATE TABLE IF NOT EXISTS ignore_folders (\n                    id INTEGER PRIMARY KEY AUTOINCREMENT,\n                    path TEXT NOT NULL UNIQUE\n                );\n            ')
-            con.execute('\n                CREATE TABLE IF NOT EXISTS kv_store (\n                    key TEXT PRIMARY KEY,\n                    value TEXT NOT NULL,\n                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n                );\n            ')
+            con.execute('''
+                CREATE TABLE IF NOT EXISTS parent_folders (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    path TEXT NOT NULL UNIQUE
+                );
+            ''')
+            con.execute('''
+                CREATE TABLE IF NOT EXISTS ignore_folders (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    path TEXT NOT NULL UNIQUE
+                );
+            ''')
+            con.execute('''
+                CREATE TABLE IF NOT EXISTS kv_store (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            ''')
 
     def _sync_folders(self, folder_type, new_paths):
         norm_paths = set((normalize_path(p) for p in new_paths))
@@ -40,35 +66,28 @@ class SettingDB:
             current = {row[0] for row in con.execute(f'SELECT path FROM {folder_type}')}
             to_add = norm_paths - current
             to_remove = current - norm_paths
-            with con:
-                if to_add:
-                    con.executemany(f'INSERT OR IGNORE INTO {folder_type}(path) VALUES (?)', ((p,) for p in to_add))
-                if to_remove:
-                    con.executemany(f'DELETE FROM {folder_type} WHERE path = ?', ((p,) for p in to_remove))
+            if to_add:
+                con.executemany(f'INSERT OR IGNORE INTO {folder_type}(path) VALUES (?)', ((p,) for p in to_add))
+            if to_remove:
+                con.executemany(f'DELETE FROM {folder_type} WHERE path = ?', ((p,) for p in to_remove))
         return {'added': list(to_add), 'removed': list(to_remove)}
 
     def _add_folder(self, folder_type, path):
         norm_path = normalize_path(path)
         with self._conn() as con:
-            con.execute('BEGIN TRANSACTION')
             cur = con.execute(f'SELECT 1 FROM {folder_type} WHERE path = ?', (norm_path,))
             if cur.fetchone():
-                con.execute('ROLLBACK')
                 return False
             con.execute(f'INSERT INTO {folder_type}(path) VALUES (?)', (norm_path,))
-            con.execute('COMMIT')
         return True
 
     def _remove_folder(self, folder_type, path):
         norm_path = normalize_path(path)
         with self._conn() as con:
-            con.execute('BEGIN TRANSACTION')
             cur = con.execute(f'SELECT 1 FROM {folder_type} WHERE path = ?', (norm_path,))
             if not cur.fetchone():
-                con.execute('ROLLBACK')
                 return False
             con.execute(f'DELETE FROM {folder_type} WHERE path = ?', (norm_path,))
-            con.execute('COMMIT')
         return True
 
     def _get_all_folders(self, folder_type):
@@ -112,7 +131,13 @@ class SettingDB:
     def set_kv(self, key, value):
         json_value = json.dumps(value, ensure_ascii=False)
         with self._conn() as con:
-            con.execute('\n                INSERT INTO kv_store (key, value)\n                VALUES (?, ?)\n                ON CONFLICT(key) DO UPDATE\n                SET value = excluded.value,\n                    updated_at = CURRENT_TIMESTAMP\n            ', (key, json_value))
+            con.execute('''
+                INSERT INTO kv_store (key, value)
+                VALUES (?, ?)
+                ON CONFLICT(key) DO UPDATE
+                SET value = excluded.value,
+                    updated_at = CURRENT_TIMESTAMP
+            ''', (key, json_value))
 
     @profiler.profile
     def get_kv(self, key, default=None):

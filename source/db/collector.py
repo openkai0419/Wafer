@@ -5,6 +5,7 @@ import shutil
 import sqlite3
 import threading
 import time
+from urllib.parse import quote
 from pathlib import Path
 
 from source.io.loader import process_image
@@ -45,14 +46,17 @@ class ImageIndexer:
 
     @profiler.profile
     def emit_update(self):
-        self._update_callback()
+        if hasattr(self, '_update_callback') and self._update_callback:
+            self._update_callback()
+        else:
+            logger.debug('Update callback is not set')
 
     @profiler.profile
     def _add_progress(self, current, total):
         if hasattr(self, '_progress_callback') and self._progress_callback:
             self._progress_callback(current, total)
         else:
-            logger.warning('Progress callback is not set')
+            logger.debug('Progress callback is not set')
 
     def __enter__(self):
         self.start()
@@ -79,16 +83,18 @@ class ImageIndexer:
     def start(self):
         self.conn = connect_with_retry(self.db_path, timeout=3.0, check_same_thread=False)
         self._apply_pragmas(self.conn)
-        self.read_conn = connect_with_retry(f'file:{self.db_path}?mode=ro', timeout=1.0, uri=True)
+        uri = Path(self.db_path).resolve().as_uri()
+        self.read_conn = connect_with_retry(f'{uri}?mode=ro', timeout=1.0, uri=True)
         self._apply_pragmas(self.read_conn, read_only=True)
         logger.info('indexer start end')
 
-    def try_checkpoint(self):
+    def try_checkpoint(self, mode='TRUNCATE'):
         try:
-            self.conn.execute('PRAGMA wal_checkpoint(TRUNCATE)')
-            self.conn.commit()
+            conn = self.read_conn or self.conn
+            cur = conn.execute(f'PRAGMA wal_checkpoint({mode})')
+            cur.close()
         except Exception as e:
-            logger.warning(e)
+            logger.debug(f'wal_checkpoint({mode}) failed: {e}')
 
     @profiler.profile
     def exit(self):
@@ -141,23 +147,34 @@ class ImageIndexer:
 
     @profiler.profile
     def _backup_and_recreate(self):
+        if self.read_conn:
+            try: self.read_conn.close()
+            except: pass
+            self.read_conn = None
         if self.conn:
-            self.conn.close()
+            try: self.conn.close()
+            except: pass
+            self.conn = None
         # 安全なバックアップ
         try:
-            # 一時接続で VACUUM INTO を使う
-            tmp = sqlite3.connect(self.db_path, check_same_thread=False)
+            tmp = sqlite3.connect(str(self.db_path), check_same_thread=False)
+            tmp.execute("PRAGMA journal_mode=WAL")
             tmp.execute("VACUUM INTO ?", (str(self.backup_path),))
             tmp.close()
-            os.remove(self.db_path)
+            # 旧ファイルと -wal/-shm を削除
+            for suf in ("", "-wal", "-shm"):
+                try: os.remove(str(self.db_path) + suf)
+                except FileNotFoundError: pass
         except Exception:
-            # フォールバック: 旧ファイルの生コピー（WAL注意）
+            # フォールバックコピー
             if self.db_path.exists():
                 shutil.copy(self.db_path, self.backup_path)
-                os.remove(self.db_path)
+                for suf in ("", "-wal", "-shm"):
+                    try: os.remove(str(self.db_path) + suf)
+                    except FileNotFoundError: pass
         # 再作成
-        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
-        self._apply_pragmas(self.conn)
+        self.start()
+
         logger.warning(f'[INFO] New DB created at: {self.db_path}')
 
     @profiler.profile
@@ -257,7 +274,6 @@ class ImageIndexer:
         logger.info(f'[ExcludePaths] Removed {len(to_remove)} entries from DB.')
         self.emit_update()
 
-    @profiler.profile
     def update_index(self, root_paths):
         if isinstance(root_paths, str):
             root_paths = [root_paths]
@@ -268,15 +284,8 @@ class ImageIndexer:
             for norm_p, info in self.scan_directory_fast(path):
                 current[norm_p] = info
             self._add_progress(1, 0)
-        previous = {}
-        cur = self.get_reader_cursor()
-        cur.execute('SELECT path, mtime, size FROM images')
-        while True:
-            rows = cur.fetchmany(10000)
-            if not rows:
-                break
-            for path, mtime, size in rows:
-                previous[normalize_path(path)] = (mtime, size)
+
+        previous = self.load_previous()
         added_or_modified, removed = self._detect_diff(current, previous)
         self._add_progress(0, len(added_or_modified))
         self._add_progress(0, len(removed))
@@ -284,7 +293,6 @@ class ImageIndexer:
         cur = self.get_writer_cursor()
         if removed:
             for i in range(0, len(removed), CHUNK):
-                logger.debug(i)
                 chunk = removed[i:i + CHUNK]
                 cur.executemany('DELETE FROM images WHERE path = ?', [(str(p),) for p in chunk])
                 self._add_progress(len(chunk), 0)
@@ -441,9 +449,9 @@ class ImageIndexer:
                 batch_size = max(MIN_BATCH_SIZE, int(batch_size * 0.7))
             batch_size = max(MIN_BATCH_SIZE, min(MAX_BATCH_SIZE, batch_size))
             i += len(batch)
+            self.try_checkpoint("PASSIVE")
             self._add_progress(len(batch), 0)
             self.emit_update()
-            self.try_checkpoint()
             logger.info(f'[Adaptive Commit] {i}/{total} processed (batch={len(batch)}, {duration:.2f}s, target={target_s:.2f}s)')
         if acc_image_entries or acc_meta_entries or acc_meta_info_entries or acc_failed_entries:
             write_queue.put((acc_image_entries, acc_meta_entries, acc_meta_info_entries, acc_failed_entries))

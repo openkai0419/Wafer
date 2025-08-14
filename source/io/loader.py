@@ -5,7 +5,6 @@ import time
 import numpy as np
 from PySide6 import QtCore, QtGui
 
-from ..common.profiling import logger
 from ..common.funcs import uipx
 from ..common.profiling import logger, profiler
 

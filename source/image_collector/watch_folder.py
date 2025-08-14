@@ -293,7 +293,6 @@ class WatchFolder:
             for kind, payload in batch:
                 if kind == "deleted":
                     self.deleted_set.add(payload)
-                    self.changed_set.discard(payload)
                 elif kind == "changed":
                     self.changed_set.add(payload)
                 elif kind == "finished":

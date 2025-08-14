@@ -253,14 +253,12 @@ class WatchFolder:
         self._actor_thread.start()
 
     def _enqueue_deleted(self, path: str):
-        self.progress_callback(0, 1)
         try:
             self._inbox.put(("deleted", path))
         except Exception as e:
             logger.warning(f'_enqueue_deleted failed: {e}')
 
     def _enqueue_changed(self, path: str):
-        self.progress_callback(0, 1)
         try:
             self._inbox.put(("changed", path))
         except Exception as e:
@@ -291,9 +289,13 @@ class WatchFolder:
 
             for kind, payload in batch:
                 if kind == "deleted":
-                    self.deleted_set.add(payload)
+                    if payload not in self.deleted_set:
+                        self.deleted_set.add(payload)
+                        self.progress_callback(0, 1)
                 elif kind == "changed":
-                    self.changed_set.add(payload)
+                    if payload not in self.changed_set:
+                        self.changed_set.add(payload)
+                        self.progress_callback(0, 1)
                 elif kind == "finished":
                     self._processing = False
                     self.progress_callback(1, 0)

@@ -242,6 +242,7 @@ class MetaInfoSearchEngine:
 
     @profiler.profile
     def get(self, query):
+        self.explain_query_plan(query)
         if not self._connect_if_needed():
             return ([], [])
         cur = self.conn.cursor()
@@ -330,9 +331,12 @@ class MetaInfoSearchEngine:
             cur = self.conn.cursor()
             rows = cur.execute(explain_sql, params).fetchall()
             plan_lines = [f"[{row['id']}] {row['detail']}" for row in rows]
-            logger.info('=== SQLite Execution Plan ===')
+            logger.info('========= SQLite Execution Plan =========')
             for line in plan_lines:
-                logger.info(line)
+                if not "USING INDEX" in line:
+                    logger.warining(f"[NOT USING INDEX CHEK IT OUT]: {line}")
+                else:
+                    logger.info(line)
         except Exception as e:
             logger.warning(f'EXPLAIN QUERY PLAN failed: {e}')
             return None

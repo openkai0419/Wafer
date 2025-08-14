@@ -1,6 +1,7 @@
 import argparse
 import signal
 import sys
+import logging
 import threading
 from source.common.funcs import get_setting_file_names
 from source.common.mutex import SafeProcessLock
@@ -21,6 +22,8 @@ def set_app_user_model_id(app_id):
         import ctypes
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
 set_app_user_model_id(APP_ID)
+
+#logger.setLevel(logging.WARNING)
 
 def run_communicator():
     try:

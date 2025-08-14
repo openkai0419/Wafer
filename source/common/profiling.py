@@ -173,5 +173,6 @@ def initialize_profiling(interval=5):
     _initialized = True
     return (logger, profiler)
 logger, profiler = initialize_profiling()
+
 if __name__ == '__main__':
     logger, profiler = initialize_profiling()

@@ -86,7 +86,6 @@ class ImageIndexer:
         uri = Path(self.db_path).resolve().as_uri()
         self.read_conn = connect_with_retry(f'{uri}?mode=ro', timeout=1.0, uri=True)
         self._apply_pragmas(self.read_conn, read_only=True)
-        logger.info('indexer start end')
 
     def try_checkpoint(self, mode='TRUNCATE'):
         try:
@@ -187,22 +186,18 @@ class ImageIndexer:
             cur.execute('ALTER TABLE images ADD COLUMN status TEXT DEFAULT NULL')
         cur.execute('\n            CREATE TABLE IF NOT EXISTS meta (\n                path TEXT PRIMARY KEY,\n  parent TEXT,\n                name TEXT,\n                aspect_ratio REAL,\n                mtime REAL,\n                size INTEGER,\n                created REAL,\n                collected_at REAL,\nFOREIGN KEY(parent) REFERENCES images(path) ON DELETE CASCADE)\n        ')
         cur.execute('\n            CREATE TABLE IF NOT EXISTS meta_info (\n                path TEXT,\n                key TEXT,\n                value TEXT,\n                PRIMARY KEY(path, key),\n                FOREIGN KEY(path) REFERENCES meta(path) ON DELETE CASCADE\n            )\n        ')
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_meta_info_path ON meta_info(path)')
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_meta_info_key ON meta_info(key)')
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_meta_info_value ON meta_info(value)')
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_meta_info_path_key ON meta_info(path, key)')
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_images_path ON images(path)')
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_images_size ON images(size)')
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_images_mtime ON images(mtime)')
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_meta_path ON meta(path)')
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_meta_name ON meta(name)')
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_meta_aspect_ratio ON meta(aspect_ratio)')
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_meta_mtime ON meta(mtime)')
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_meta_size ON meta(size)')
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_meta_created ON meta(created)')
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_meta_collected ON meta(collected_at)')
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_meta_path_aspect ON meta(path, aspect_ratio)')
         cur.close()
+
+        self.conn.executescript("""
+        CREATE INDEX IF NOT EXISTS idx_meta_parent ON meta(parent);
+        CREATE INDEX IF NOT EXISTS idx_meta_info_key ON meta_info(key);
+        
+        CREATE INDEX IF NOT EXISTS idx_meta_mtime_path ON meta(mtime, path);
+        CREATE INDEX IF NOT EXISTS idx_meta_name_path ON meta(name, path);
+        CREATE INDEX IF NOT EXISTS idx_meta_size_path ON meta(size, path);
+        CREATE INDEX IF NOT EXISTS idx_meta_created_path ON meta(created, path);
+        CREATE INDEX IF NOT EXISTS idx_meta_collected_path ON meta(collected_at, path);
+        """)
         logger.info('ensureschema end')
 
     @profiler.profile

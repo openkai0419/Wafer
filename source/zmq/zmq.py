@@ -363,12 +363,12 @@ class ZMQBroker:
                         self.router.send_multipart((ident, *frames), copy=False)
                         did_work = True
                     except zmq.Again:
-                        logger.info('broker: drop broadcast (timeout)')
+                        logger.info('[BROKER]: drop broadcast (timeout)')
                     except zmq.ZMQError as e:
-                        if e.errno == errno.EHOSTUNREACH:
+                        if e.errno == zmq.EHOSTUNREACH:
                             pass
                         else:
-                            logger.info('broker: bcast error %s', e)
+                            logger.info('[BROKER]: bcast error %i : %s', e.errno, e)
             idle_streak, poll_ms = _adaptive_poll(did_work, idle_streak, POLL_BASE_MS, POLL_MAX_MS)
         _close_linger0(self.router)
 

@@ -151,9 +151,13 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
             current_path = root_path
             self.load_children(item)
             try:
-                rel_parts = os.path.relpath(path, root_path).split(os.sep)
+                rel = os.path.relpath(path, root_path)
             except ValueError:
                 continue
+            if rel == '.' or rel == '':
+                self._add_item(path, item)
+                return item
+            rel_parts = rel.split(os.sep)
             for part in rel_parts:
                 current_path = normalize_path(os.path.join(current_path, part))
                 match = None
@@ -169,6 +173,7 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
             self._add_item(path, item)
             return item
         return None
+
 
     @profiler.profile
     def find_index_by_path(self, path):
@@ -308,15 +313,24 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
             item.setChild(0, QtGui.QStandardItem())
         self.model_.roots.append(path)
         self.model_.appendRow(item)
+        self.model_._add_item(path, item)
         self.model_.sort(0, QtCore.Qt.AscendingOrder)
 
     @profiler.profile
     def remove_root(self, path):
         path = normalize_path(path)
+        removed = False
         for i in range(self.model_.rowCount()):
             if self.model_.item(i).data(USER_ROLE_PATH) == path:
                 self.model_.removeRow(i)
-                return
+                removed = True
+                break
+        if removed:
+            try:
+                self.model_.roots.remove(path)
+            except ValueError:
+                pass
+            self.reload_tree()
 
     @profiler.profile
     def add_excluded(self, path):

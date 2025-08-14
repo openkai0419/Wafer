@@ -481,7 +481,6 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
         self.calculator = JustifiedLayoutCalculator(self.aspect_ratios, self.base_height, self.spacing, self.width(), self.height(), 1)
         self.calculator.signals.layout_ready.connect(self._on_layout_ready)
         main_thread.start(self.calculator, 7)
-        logger.debug('_recalc_layout')
 
     @profiler.profile
     def get_center_image_index(self):
@@ -510,7 +509,6 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
         self.rects_tops = [r.top() for r in rects]
         self.rects_bottoms = [r.bottom() for r in rects]
         self._update_visible_items()
-        logger.info('_on_layout_ready')
         self.size_checker.trigger()
         self.layout_ready.emit()
         if self.last_selections:

@@ -80,35 +80,40 @@ class MetaQuery:
         keys, include_keywords, exclude_keywords = self.normalize_inputs()
         if require_keys and (not keys):
             return (None, None, None)
+        def escape_like(s: str) -> str:
+            return s.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
         conditions = []
         params = []
         if keys:
             key_placeholders = ','.join(('?' for _ in keys))
             conditions.append(f'key IN ({key_placeholders})')
             params.extend(keys)
-
         def match_clause(field, keywords, operator):
             if not keywords:
                 return ('', [])
             mode = self.query_mode.upper()
-            clause_format = f"{field} {('GLOB' if mode == 'GLOB' else 'LIKE')} ?"
-            values = [f'*{kw}*' if mode == 'GLOB' else f'%{kw}%' for kw in keywords]
+            if mode == 'GLOB':
+                clause_format = f"{field} GLOB ?"
+                values = [f"*{kw}*" for kw in keywords]
+                clauses = [clause_format for _ in keywords]
+                return (' ' + operator + ' ').join(clauses), values
+            clause_format = f"{field} LIKE ? ESCAPE '\\'"
+            values = [f"%{escape_like(kw)}%" for kw in keywords]
             clauses = [clause_format for _ in keywords]
-            return (f' {operator} '.join(clauses), values)
-
+            return (' ' + operator + ' ').join(clauses), values
         if include_keywords:
             clause, values = match_clause('value', include_keywords, self.keyword_mode)
             conditions.append(f'({clause})')
             params.extend(values)
         if exclude_keywords:
-            clause, values = match_clause('value', exclude_keywords, 'OR')
+            clause_ex_like, values_ex = match_clause('mi2.value', exclude_keywords, 'OR')
             if keys:
                 key_placeholders = ','.join(('?' for _ in keys))
-                conditions.append(f'path NOT IN (SELECT path FROM meta_info WHERE key IN ({key_placeholders}) AND {clause})')
+                conditions.append(f"NOT EXISTS (SELECT 1 FROM meta_info mi2 WHERE mi2.path = meta_info.path AND mi2.key IN ({key_placeholders}) AND ({clause_ex_like}))")
                 params.extend(keys)
             else:
-                conditions.append(f'path NOT IN (SELECT path FROM meta_info WHERE {clause})')
-            params.extend(values)
+                conditions.append(f"NOT EXISTS (SELECT 1 FROM meta_info mi2 WHERE mi2.path = meta_info.path AND ({clause_ex_like}))")
+            params.extend(values_ex)
         if self.directories:
             dirs = [str(Path(d).resolve()) for d in self.directories if isinstance(d, str) and d]
             dir_clauses = []
@@ -116,12 +121,13 @@ class MetaQuery:
             for d in dirs:
                 norm_dir = normalize_path_func(str(d))
                 prefix = norm_dir + '/' if norm_dir else ''
+                esc_prefix = prefix.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
                 if self.only_direct_children:
-                    dir_clauses.append("(path LIKE ? AND path NOT LIKE ?)")
-                    dir_params.extend([f'{prefix}%', f'{prefix}%/%'])
+                    dir_clauses.append("(path LIKE ? ESCAPE '\\' AND path NOT LIKE ? ESCAPE '\\')")
+                    dir_params.extend([f'{esc_prefix}%', f'{esc_prefix}%/%'])
                 else:
-                    dir_clauses.append("path LIKE ?")
-                    dir_params.append(f'{prefix}%')
+                    dir_clauses.append("path LIKE ? ESCAPE '\\'")
+                    dir_params.append(f'{esc_prefix}%')
             if dir_clauses:
                 conditions.append("(" + " OR ".join(dir_clauses) + ")")
                 params.extend(dir_params)
@@ -153,7 +159,7 @@ class MetaInfoSearchEngine:
         try:
             if not os.path.exists(self.db_path):
                 return False
-            conn = sqlite3.connect(f'file:{self.db_path}?mode=ro', uri=True, check_same_thread=False)
+            conn = sqlite3.connect(f'file:{self.db_path}?mode=ro', uri=True, check_same_thread=True)
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
             cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='meta_info'")
@@ -171,6 +177,7 @@ class MetaInfoSearchEngine:
             return False
 
     def _normalize_path(self, path):
+        #return normalize_path(path)
         return path.replace('\\', '/').rstrip('/')
 
     @profiler.profile
@@ -187,29 +194,40 @@ class MetaInfoSearchEngine:
         if not paths:
             return ([], [])
         sort_column, order = self._build_sort_clause(sort_by, ascending)
-        all_rows = []
-        for i in range(0, len(paths), batch_size):
-            batch = paths[i:i + batch_size]
-            placeholders = ','.join(('?' for _ in batch))
-            if sort_column:
-                query = f"""
-                    SELECT path, aspect_ratio, {sort_column} AS sort_value
-                    FROM meta
-                    WHERE path IN ({placeholders})
-                """
-            else:
-                query = f"""
-                    SELECT path, aspect_ratio
-                    FROM meta
-                    WHERE path IN ({placeholders})
-                """
-            rows = cur.execute(query, batch).fetchall()
-            all_rows.extend(rows)
+        cur.execute("CREATE TEMP TABLE IF NOT EXISTS _tmp_paths(path TEXT PRIMARY KEY) WITHOUT ROWID")
+        cur.execute("DELETE FROM _tmp_paths")
+        cur.executemany("INSERT INTO _tmp_paths(path) VALUES (?)", [(p,) for p in paths])
         if sort_by == 'random':
-            shuffle(all_rows)
-        elif sort_column:
-            all_rows.sort(key=lambda r: ((r['sort_value'] is None), r['sort_value']), reverse=not ascending)
-        return ([row['path'] for row in all_rows], [row['aspect_ratio'] for row in all_rows])
+            rows = cur.execute(
+                """
+                SELECT m.path, m.aspect_ratio
+                FROM meta AS m
+                JOIN _tmp_paths t ON t.path = m.path
+                """
+            ).fetchall()
+            rows = list(rows)
+            shuffle(rows)
+            return ([row['path'] for row in rows], [row['aspect_ratio'] for row in rows])
+        if sort_column:
+            rows = cur.execute(
+                f"""
+                SELECT m.path, m.aspect_ratio, m.{sort_column} AS sort_value
+                FROM meta AS m
+                JOIN _tmp_paths t ON t.path = m.path
+                ORDER BY sort_value {order}
+                """
+            ).fetchall()
+            return ([row['path'] for row in rows], [row['aspect_ratio'] for row in rows])
+        rows = cur.execute(
+            """
+            SELECT m.path, m.aspect_ratio
+            FROM meta AS m
+            JOIN _tmp_paths t ON t.path = m.path
+            """
+        ).fetchall()
+        return ([row['path'] for row in rows], [row['aspect_ratio'] for row in rows])
+
+
 
     @profiler.profile
     def search(self, query):
@@ -243,36 +261,42 @@ class MetaInfoSearchEngine:
         if not self._connect_if_needed():
             return ([], [])
         cur = self.conn.cursor()
-        subqueries = []
-        for q in queries:
-            sql, params = q.to_path_query(self._normalize_path)
+        parts = []
+        params = []
+        for idx, q in enumerate(queries):
+            sql, p = q.to_path_query(self._normalize_path)
             if not sql:
                 if q.append_mode == 'AND':
                     return ([], [])
                 continue
-            subqueries.append((sql, params, q.append_mode))
-        if not subqueries:
+            parts.append((f"q{len(parts)}", sql, q.append_mode))
+            params.extend(p)
+        if not parts:
             return ([], [])
-        combined_sql, combined_params = (subqueries[0][0], subqueries[0][1])
-        for sq, params, mode in subqueries[1:]:
-            op = 'INTERSECT' if mode == 'AND' else 'UNION'
-            combined_sql = f'({combined_sql}) {op} ({sq})'
-            combined_params.extend(params)
+        ctes = []
+        for name, sql, _ in parts:
+            ctes.append(f"{name} AS ({sql})")
+        combined = f"SELECT path FROM {parts[0][0]}"
+        for i in range(1, len(parts)):
+            op = "INTERSECT" if parts[i][2] == 'AND' else "UNION"
+            combined = f"({combined}) {op} (SELECT path FROM {parts[i][0]})"
         sort_col, order = self._build_sort_clause(queries[-1].sort_by, queries[-1].ascending)
         if sort_col:
             final_query = f"""
-                SELECT meta.path, aspect_ratio
-                FROM meta
-                WHERE meta.path IN ({combined_sql})
-                ORDER BY {sort_col} {order}
+                WITH {', '.join(ctes)}
+                SELECT m.path, m.aspect_ratio
+                FROM meta m
+                JOIN ({combined}) c ON c.path = m.path
+                ORDER BY m.{sort_col} {order}
             """
         else:
             final_query = f"""
-                SELECT meta.path, aspect_ratio
-                FROM meta
-                WHERE meta.path IN ({combined_sql})
+                WITH {', '.join(ctes)}
+                SELECT m.path, m.aspect_ratio
+                FROM meta m
+                JOIN ({combined}) c ON c.path = m.path
             """
-        rows = cur.execute(final_query, combined_params).fetchall()
+        rows = cur.execute(final_query, params).fetchall()
         if queries[-1].sort_by == 'random':
             rows = list(rows)
             shuffle(rows)

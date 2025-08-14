@@ -175,7 +175,6 @@ class WatchFolder:
         logger.debug(f'Update: {message}')
         self._progress_aggregator.notify_extra('update', message)
 
-    # フォルダ変更の通知は throttle 済みで元コード同様に即時発火
     @profiler.profile
     @throttle(1000, 2000)
     def folderchange_callback(self, folder):

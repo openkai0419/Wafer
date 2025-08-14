@@ -8,7 +8,9 @@ from ..common.funcs import IMAGE_EXTENSIONS
 from ..common.profiling import logger, profiler
 from ..common.signal import Signal
 from .progress_notifier import ProgressAggregator
+
 extensions = set(IMAGE_EXTENSIONS)
+DISABLE_MODIFY_EVENT = False
 
 def throttle(throttle_ms=100, idle_ms=200):
 
@@ -34,8 +36,47 @@ def throttle(throttle_ms=100, idle_ms=200):
         return wrapper
     return decorator
 
-class DBWorker:
+class FileChangeEmitter(FileSystemEventHandler):
+    def __init__(self, extensions):
+        self.extensions = extensions
+        self.file_deleted = Signal()
+        self.file_changed = Signal()
+        self.folder_changed = Signal()
 
+    def _should_handle(self, path):
+        return os.path.splitext(path)[1].lower() in self.extensions
+
+    def on_created(self, event):
+        if event.is_directory:
+            self.folder_changed.emit(event.src_path)
+        elif self._should_handle(event.src_path):
+            self.file_changed.emit(event.src_path)
+
+    def on_modified(self, event):
+        if DISABLE_MODIFY_EVENT:
+            return
+        if event.is_directory:
+            pass # self.folder_changed.emit(event.src_path)
+        elif self._should_handle(event.src_path):
+            self.file_changed.emit(event.src_path)
+            pass
+
+    def on_deleted(self, event):
+        if event.is_directory:
+            self.folder_changed.emit(event.src_path)
+        elif self._should_handle(event.src_path):
+            self.file_deleted.emit(event.src_path)
+
+    def on_moved(self, event):
+        if event.is_directory:
+            self.folder_changed.emit(event.dest_path)
+        else:
+            if self._should_handle(event.src_path):
+                self.file_deleted.emit(event.src_path)
+            if self._should_handle(event.dest_path):
+                self.file_changed.emit(event.dest_path)
+
+class DBWorker:
     def __init__(self, database, progress_callback):
         self.db = database
         self.progress_callback = progress_callback
@@ -94,59 +135,27 @@ class DBWorker:
         self.progress_callback(len(paths), 0)
 
     def _rescan(self, roots):
+        self.progress_callback(1, 2)
         with self.db as indexer:
             indexer.update_index(roots)
+        self.progress_callback(1, 0)
 
     def _cleanup(self):
+        self.progress_callback(1, 2)
         with self.db as indexer:
             indexer.clean_unused()
+        self.progress_callback(1, 0)
 
     def _ignore(self, paths):
+        self.progress_callback(1, 2)
         with self.db as indexer:
             indexer.set_exclude_paths(paths, run=True)
+        self.progress_callback(1, 0)
 
     def stop(self):
         self._stop.set()
         self._queue.put((None, None))
         self._thread.join()
-
-class FileChangeEmitter(FileSystemEventHandler):
-
-    def __init__(self, extensions):
-        self.extensions = extensions
-        self.file_deleted = Signal()
-        self.file_changed = Signal()
-        self.folder_changed = Signal()
-
-    def _should_handle(self, path):
-        return os.path.splitext(path)[1].lower() in self.extensions
-
-    def on_created(self, event):
-        if event.is_directory:
-            self.folder_changed.emit(event.src_path)
-        elif self._should_handle(event.src_path):
-            self.file_changed.emit(event.src_path)
-
-    def on_modified(self, event):
-        if event.is_directory:
-            self.folder_changed.emit(event.src_path)
-        elif self._should_handle(event.src_path):
-            self.file_changed.emit(event.src_path)
-
-    def on_deleted(self, event):
-        if event.is_directory:
-            self.folder_changed.emit(event.src_path)
-        elif self._should_handle(event.src_path):
-            self.file_deleted.emit(event.src_path)
-
-    def on_moved(self, event):
-        if event.is_directory:
-            self.folder_changed.emit(event.dest_path)
-        else:
-            if self._should_handle(event.src_path):
-                self.file_deleted.emit(event.src_path)
-            if self._should_handle(event.dest_path):
-                self.file_changed.emit(event.dest_path)
 
 class WatchFolder:
     def __init__(self, name, database):

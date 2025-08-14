@@ -145,13 +145,17 @@ class MetaInfoSearchEngine:
             conn = sqlite3.connect(f'file:{self.db_path}?mode=ro', uri=True, check_same_thread=False)
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
-            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='meta_info'")
-            if not cur.fetchone():
-                logger.warning("Table 'meta_info' not found in DB.")
-                return False
             cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='images'")
             if not cur.fetchone():
                 logger.warning("Table 'images' not found in DB.")
+                return False
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='meta'")
+            if not cur.fetchone():
+                logger.warning("Table 'meta' not found in DB.")
+                return False
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='meta_info'")
+            if not cur.fetchone():
+                logger.warning("Table 'meta_info' not found in DB.")
                 return False
             self.conn = conn
             return True

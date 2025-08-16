@@ -162,7 +162,37 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             message = env.message
             if table not in ('*', self.dbname):
                 return
-            handlers = {'update': lambda: QtCore.QMetaObject.invokeMethod(self, 'search', QtCore.Qt.QueuedConnection, QtCore.Q_ARG(bool, True)), 'progress': lambda: QtCore.QMetaObject.invokeMethod(self, 'update_current', QtCore.Qt.QueuedConnection, QtCore.Q_ARG(int, int(message))), 'maximum': lambda: QtCore.QMetaObject.invokeMethod(self, 'update_maximum', QtCore.Qt.QueuedConnection, QtCore.Q_ARG(int, int(message))), 'folderchanged': lambda: QtCore.QMetaObject.invokeMethod(self, 'reload_folderlist', QtCore.Qt.QueuedConnection), 'show_toggle': lambda: QtCore.QMetaObject.invokeMethod(self, 'toggle_show', QtCore.Qt.QueuedConnection, QtCore.Q_ARG(bool, message == 'True'))}
+            handlers = {
+                'update': lambda: QtCore.QMetaObject.invokeMethod(
+                    self,
+                    'search',
+                    QtCore.Qt.QueuedConnection,
+                    QtCore.Q_ARG(bool, True),
+                ),
+                'progress': lambda: QtCore.QMetaObject.invokeMethod(
+                    self,
+                    'update_current',
+                    QtCore.Qt.QueuedConnection,
+                    QtCore.Q_ARG(int, int(message)),
+                ),
+                'maximum': lambda: QtCore.QMetaObject.invokeMethod(
+                    self,
+                    'update_maximum',
+                    QtCore.Qt.QueuedConnection,
+                    QtCore.Q_ARG(int, int(message)),
+                ),
+                'folderchanged': lambda: QtCore.QMetaObject.invokeMethod(
+                    self,
+                    'reload_folderlist',
+                    QtCore.Qt.QueuedConnection,
+                ),
+                'show_toggle': lambda: QtCore.QMetaObject.invokeMethod(
+                    self,
+                    'toggle_show',
+                    QtCore.Qt.QueuedConnection,
+                    QtCore.Q_ARG(bool, message == 'True'),
+                ),
+            }
             try:
                 handlers.get(topic, lambda: None)()
             except Exception:
@@ -189,7 +219,24 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.left_layout.setSpacing(0)
         self.splitter.addWidget(left_panel)
         self.only_direct_children = main_setting.get('query/only_direct_children', False)
-        self.iconbar = IconButtonBar(left_buttons=[IconButtonConfig('icons/settings.png', 'Settings', lambda: self.show_settings()), IconButtonConfig('icons/open.png', 'Add File', lambda: self.add_new_folder())], right_buttons=[IconButtonConfig('icons/save.png', 'Bot Only', self.toggle_only_direct_children, checkable=True, checked=self.only_direct_children), IconButtonConfig('icons/save.png', 'AutoScroll', lambda: self.auto_scroll()), IconButtonConfig('icons/save.png', 'Full Screen', lambda: self.toggle_fullscreen()), IconButtonConfig('icons/save.png', 'Toggle Language', lambda: self.toggle_language())])
+        self.iconbar = IconButtonBar(
+            left_buttons=[
+                IconButtonConfig('icons/settings.png', 'Settings', lambda: self.show_settings()),
+                IconButtonConfig('icons/open.png', 'Add File', lambda: self.add_new_folder()),
+            ],
+            right_buttons=[
+                IconButtonConfig(
+                    'icons/save.png',
+                    'Bot Only',
+                    self.toggle_only_direct_children,
+                    checkable=True,
+                    checked=self.only_direct_children,
+                ),
+                IconButtonConfig('icons/save.png', 'AutoScroll', lambda: self.auto_scroll()),
+                IconButtonConfig('icons/save.png', 'Full Screen', lambda: self.toggle_fullscreen()),
+                IconButtonConfig('icons/save.png', 'Toggle Language', lambda: self.toggle_language()),
+            ],
+        )
         self.dbcombo = ComboBoxWithButtons()
         self.dbcombo.textChanged.connect(self.reload_db)
         self.dbcombo.addClicked.connect(self.on_add_database)

@@ -3,7 +3,7 @@ import os
 from PySide6 import QtCore, QtGui, QtWidgets
 from ...common.funcs import uipx
 from ...common.profiling import logger, profiler
-from ...io.loader import ImageLoaderRunnable
+from .loader import ImageLoaderRunnable
 from ...os.drop import FileSaver, MimeDataParser
 from ...qt.debounce import qt_debounce, qt_throttle
 from ...qt.pixmap import PixmapFactory

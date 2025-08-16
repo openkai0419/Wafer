@@ -340,3 +340,30 @@ class MetaInfoSearchEngine:
         except Exception as e:
             logger.warning(f'EXPLAIN QUERY PLAN failed: {e}')
             return None
+        
+    @profiler.profile
+    def get_meta_info_by_path(self, path):
+        if not self._connect_if_needed():
+            return {}
+        cur = self.conn.cursor()
+        norm_path = self._normalize_path(path)
+        rows = cur.execute(
+            "SELECT key, value FROM meta_info WHERE path = ?",
+            (norm_path,)
+        ).fetchall()
+        return {row["key"]: row["value"] for row in rows}
+
+    @profiler.profile
+    def get_meta_by_path(self, path):
+        if not self._connect_if_needed():
+            return {}
+        cur = self.conn.cursor()
+        norm_path = self._normalize_path(path)
+        row = cur.execute(
+            "SELECT * FROM meta WHERE path = ?",
+            (norm_path,)
+        ).fetchone()
+        return dict(row) if row else {}
+    
+    def get_metas(self, path):
+        return [self.get_meta_by_path(path), self.get_meta_info_by_path(path)]

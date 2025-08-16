@@ -1,5 +1,6 @@
 import concurrent.futures
 import os
+from pprint import isreadable
 import queue
 import shutil
 import sqlite3
@@ -8,7 +9,7 @@ import time
 from urllib.parse import quote
 from pathlib import Path
 
-from source.io.loader import process_image
+from source.io.image_reader import ImageReader
 from ..common.funcs import IMAGE_EXTENSIONS, normalize_path
 from ..common.profiling import logger, profiler
 from .db_utils import connect_with_retry
@@ -184,12 +185,12 @@ class ImageIndexer:
         columns = [row[1] for row in cur.fetchall()]
         if 'status' not in columns:
             cur.execute('ALTER TABLE images ADD COLUMN status TEXT DEFAULT NULL')
-        cur.execute('\n            CREATE TABLE IF NOT EXISTS meta (\n                path TEXT PRIMARY KEY,\n  parent TEXT,\n                name TEXT,\n                aspect_ratio REAL,\n                mtime REAL,\n                size INTEGER,\n                created REAL,\n                collected_at REAL,\nFOREIGN KEY(parent) REFERENCES images(path) ON DELETE CASCADE)\n        ')
+        cur.execute('\n            CREATE TABLE IF NOT EXISTS meta (\n                path TEXT PRIMARY KEY,\n  source TEXT,\n                name TEXT,\n                aspect_ratio REAL,\n                mtime REAL,\n                size INTEGER,\n                created REAL,\n                collected_at REAL,\nFOREIGN KEY(source) REFERENCES images(path) ON DELETE CASCADE)\n        ')
         cur.execute('\n            CREATE TABLE IF NOT EXISTS meta_info (\n                path TEXT,\n                key TEXT,\n                value TEXT,\n                PRIMARY KEY(path, key),\n                FOREIGN KEY(path) REFERENCES meta(path) ON DELETE CASCADE\n            )\n        ')
         cur.close()
 
         self.conn.executescript("""
-        CREATE INDEX IF NOT EXISTS idx_meta_parent ON meta(parent);
+        CREATE INDEX IF NOT EXISTS idx_meta_source ON meta(source);
         CREATE INDEX IF NOT EXISTS idx_meta_info_key ON meta_info(key);
         
         CREATE INDEX IF NOT EXISTS idx_meta_mtime_path ON meta(mtime, path);
@@ -205,6 +206,13 @@ class ImageIndexer:
         added_or_modified = [p for p in current if p not in previous or current[p] != previous[p]]
         removed = [p for p in previous if p not in current]
         return (added_or_modified, removed)
+
+    def get_stat(self, stat):
+        if hasattr(stat, 'st_birthtime'):
+            ctime = stat.st_birthtime
+        else:
+            ctime = stat.st_ctime
+        return (stat.st_mtime, stat.st_size, ctime)
 
     @profiler.profile
     def scan_directory_fast(self, root_path):
@@ -222,13 +230,14 @@ class ImageIndexer:
                     for entry in it:
                         if entry.is_file(follow_symlinks=False) and entry.name.lower().endswith(extensions):
                             stat = entry.stat()
-                            yield (normalize_path(entry.path), (stat.st_mtime, stat.st_size))
+                            yield (normalize_path(entry.path), self.get_stat(stat))
                         elif entry.is_dir(follow_symlinks=False):
                             stack.append(entry.path)
                 self._add_progress(1, 0)
             except Exception:
                 self._add_progress(1, 0)
                 continue
+
 
     @profiler.profile
     def load_previous(self):
@@ -269,19 +278,23 @@ class ImageIndexer:
         logger.info(f'[ExcludePaths] Removed {len(to_remove)} entries from DB.')
         self.emit_update()
 
+    @profiler.profile
     def update_index(self, root_paths):
         if isinstance(root_paths, str):
             root_paths = [root_paths]
         logger.info('UPDATE_INDEX')
-        current = {}
+        current_compare = {}
+        file_info = {}
         for path in root_paths:
             self._add_progress(0, 1)
             for norm_p, info in self.scan_directory_fast(path):
-                current[norm_p] = info
+                mtime, fsize, ctime = info
+                current_compare[norm_p] = (mtime, fsize)
+                file_info[norm_p] = (mtime, fsize, ctime)
             self._add_progress(1, 0)
 
         previous = self.load_previous()
-        added_or_modified, removed = self._detect_diff(current, previous)
+        added_or_modified, removed = self._detect_diff(current_compare, previous)
         self._add_progress(0, len(added_or_modified))
         self._add_progress(0, len(removed))
         logger.info('added/modified: {}, removed: {}'.format(len(added_or_modified), len(removed)))
@@ -295,7 +308,7 @@ class ImageIndexer:
             self.conn.commit()
             self.emit_update()
         if added_or_modified:
-            self.update_meta_and_image(added_or_modified, current)
+            self.update_meta_and_image(added_or_modified, file_info)
         cur.close()
 
     @profiler.profile
@@ -309,7 +322,7 @@ class ImageIndexer:
         for path in normalized:
             try:
                 st = os.stat(path)
-                stat_info[path] = (st.st_mtime, st.st_size)
+                stat_info[path] = self.get_stat(st)
             except FileNotFoundError:
                 self._add_progress(1, 0)
         if not stat_info:
@@ -322,7 +335,7 @@ class ImageIndexer:
             chunk = keys[i:i + CHUNK]
             cur.execute(f"SELECT path, mtime, size FROM images WHERE path IN ({','.join(['?'] * len(chunk))})", chunk)
             previous.update({normalize_path(row[0]): (row[1], row[2]) for row in cur.fetchall()})
-        to_update = [p for p in stat_info if p not in previous or stat_info[p] != previous[p]]
+        to_update = [p for p, (mt, sz, ct) in stat_info.items() if p not in previous or (mt, sz) != previous[p]]
         skip_count = len(stat_info) - len(to_update)
         if skip_count:
             self._add_progress(skip_count, 0)
@@ -350,19 +363,23 @@ class ImageIndexer:
         self.emit_update()
         logger.info(f'[remove_by_file_list] Removed {len(normalized)} entries from DB')
 
+    def _batch_images(self, p):
+        return ImageReader(p).get_meta()
+
     @profiler.profile
     def batch_process_images(self, batch, file_info):
-        results = list(executor.map(lambda p: process_image(p, file_info), batch))
+        results = list(executor.map(self._batch_images, batch))
         image_entries = []
         meta_entries = []
         meta_info_entries = []
         failed_entries = []
-        for p, parent, name, aspect, mtime, fsize, ctime, collected_at, meta_info, status in results:
+        for source, path, name, aspect, meta_info, status in results:
+            mtime, fsize, ctime = file_info.get(source, (None, None, None))
             if status == 'fail':
-                failed_entries.append((str(parent), mtime, fsize))
+                failed_entries.append((str(source), mtime, fsize))
                 continue
-            image_entries.append((str(parent), mtime, fsize))
-            meta_entries.append((str(p), str(parent), name, aspect, mtime, fsize, ctime, collected_at))
+            image_entries.append((str(source), mtime, fsize))
+            meta_entries.append((str(path), str(source), name, aspect, mtime, fsize, ctime, time.time()))
             meta_info_entries.extend(meta_info)
         return (image_entries, meta_entries, meta_info_entries, failed_entries)
 
@@ -375,7 +392,7 @@ class ImageIndexer:
             if image_entries:
                 cur.executemany("\n                    INSERT INTO images (path, mtime, size, status)\n                    VALUES (?, ?, ?, 'ok')\n                    ON CONFLICT(path) DO UPDATE SET mtime = excluded.mtime, size = excluded.size, status = 'ok'\n                ", image_entries)
             if meta_entries:
-                cur.executemany('\n                    INSERT INTO meta (path, parent, name, aspect_ratio, mtime, size, created, collected_at)\n                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)\n                    ON CONFLICT(path) DO UPDATE SET \n                        name = excluded.name,\n                        aspect_ratio = excluded.aspect_ratio,\n                        mtime = excluded.mtime,\n                        size = excluded.size,\n                        created = excluded.created,\n                        collected_at = excluded.collected_at\n                ', meta_entries)
+                cur.executemany('\n                    INSERT INTO meta (path, source, name, aspect_ratio, mtime, size, created, collected_at)\n                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)\n                    ON CONFLICT(path) DO UPDATE SET \n                        name = excluded.name,\n                        aspect_ratio = excluded.aspect_ratio,\n                        mtime = excluded.mtime,\n                        size = excluded.size,\n                        created = excluded.created,\n                        collected_at = excluded.collected_at\n                ', meta_entries)
             if meta_info_entries:
                 cur.executemany('\n                    INSERT INTO meta_info (path, key, value)\n                    VALUES (?, ?, ?)\n                    ON CONFLICT(path, key) DO UPDATE SET value = excluded.value\n                ', meta_info_entries)
             cur.close()
@@ -455,12 +472,13 @@ class ImageIndexer:
         writer_thread.join()
         self.try_checkpoint()
 
+
     @profiler.profile
     def clean_unused(self):
         logger.info('CLEANING UP DATABASE')
         try:
             cur = self.get_writer_cursor()
-            cur.execute('\n                DELETE FROM meta\n                WHERE parent NOT IN (SELECT path FROM images)\n            ')
+            cur.execute('\n                DELETE FROM meta\n                WHERE source NOT IN (SELECT path FROM images)\n            ')
             cur.execute('\n                DELETE FROM meta_info\n                WHERE path NOT IN (SELECT path FROM meta)\n            ')
             self.conn.commit()
             logger.info('RUNNING VACUUM')

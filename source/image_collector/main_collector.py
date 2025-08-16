@@ -13,7 +13,6 @@ class CollectorProcess:
 
     def __init__(self, name):
         super().__init__()
-        logger.info('FOLDER WATCHER EXECUTED')
         self.dname = name
         self.setting_db = None
         self.data_db = None

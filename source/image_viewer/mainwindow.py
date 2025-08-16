@@ -25,7 +25,7 @@ from .widgets.scrollarea import AutoScrollArea
 from .widgets.table_combo import ComboBoxWithButtons
 
 class WorkerSignals(QtCore.QObject):
-    finished = QtCore.Signal(object, object)
+    finished = QtCore.Signal(object, object, object)
 
 class SearchWorkerRunnable(QtCore.QRunnable):
 
@@ -44,13 +44,13 @@ class SearchWorkerRunnable(QtCore.QRunnable):
         if self._cancelled:
             return
         try:
-            paths, aspects = self.engine.get(self.query)
+            paths, soruces, aspects = self.engine.get(self.query)
         except Exception as e:
             logger.exception(f'[SearchWorker] Search failed: {e}')
             return
         if self._cancelled:
             return
-        self.signals.finished.emit(paths, aspects)
+        self.signals.finished.emit(paths, soruces, aspects)
 
 class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
 
@@ -209,15 +209,18 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
     def main_ui(self):
         self.splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
         self.setCentralWidget(self.splitter)
+
         self.folder_view = LazyFolderTreeView()
         self.menu_builder = FolderContextMenuBuilder(self.folder_view, self)
         self.folder_view.set_context_menu_builder(self.menu_builder)
         self.folder_view.folder_selected.connect(self.on_folder_selected)
+
         left_panel = QtWidgets.QWidget()
         self.left_layout = QtWidgets.QVBoxLayout(left_panel)
         self.left_layout.setContentsMargins(uipx(4), uipx(4), uipx(0), uipx(6))
         self.left_layout.setSpacing(0)
         self.splitter.addWidget(left_panel)
+
         self.only_direct_children = main_setting.get('query/only_direct_children', False)
         self.iconbar = IconButtonBar(
             left_buttons=[
@@ -241,19 +244,22 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.dbcombo.textChanged.connect(self.reload_db)
         self.dbcombo.addClicked.connect(self.on_add_database)
         self.dbcombo.removeClicked.connect(self.on_remove_database)
+
         self.progress_bar = ThinProgressBar()
         self.left_layout.addWidget(self.iconbar)
         self.left_layout.addWidget(self.progress_bar)
         self.left_layout.addWidget(self.folder_view)
         self.left_layout.addSpacing(uipx(3))
         self.left_layout.addWidget(self.dbcombo)
-        right_panel = QtWidgets.QWidget()
-        self.right_layout = QtWidgets.QVBoxLayout(right_panel)
-        self.right_layout.setContentsMargins(uipx(4), uipx(4), uipx(4), uipx(4))
-        self.right_layout.setSpacing(uipx(6))
+
+        mid_panel = QtWidgets.QWidget()
+        self.mid_layout = QtWidgets.QVBoxLayout(mid_panel)
+        self.mid_layout.setContentsMargins(uipx(4), uipx(4), uipx(4), uipx(4))
+        self.mid_layout.setSpacing(uipx(6))
         self.search_row_widget = SingleRowOption()
         self.search_row_widget.settingchanged.connect(self.search)
-        self.right_layout.addWidget(self.search_row_widget)
+        self.mid_layout.addWidget(self.search_row_widget)
+
         self.viewer = AutoScrollArea()
         self.viewer.setWidgetResizable(True)
         self.viewer.verticalScrollBar().setSingleStep(25)
@@ -263,10 +269,17 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.content.set_context_menu_builder(viewer_menu)
         self.viewer.setWidget(self.content)
         self.viewer.resized.connect(self.content.on_resize_event)
-        self.right_layout.addWidget(self.viewer)
+
+        self.mid_layout.addWidget(self.viewer)
+        self.splitter.addWidget(mid_panel)
+
+        right_panel = QtWidgets.QWidget()
+
         self.splitter.addWidget(right_panel)
+
         self.splitter.setStretchFactor(0, 0)
         self.splitter.setStretchFactor(1, 1)
+        self.splitter.setStretchFactor(2, 0)
         geo = main_setting.get('window/geometry', None)
         if geo:
             self.restoreGeometry(geo)
@@ -341,7 +354,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         else:
             self.showMinimized()
 
-    @qt_debounce(200)
+    @qt_debounce(150)
     @QtCore.Slot(bool)
     @profiler.profile
     def search(self, force=False):
@@ -373,11 +386,11 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
 
     @QtCore.Slot(object, object)
     @profiler.profile
-    def on_search_finished(self, paths, aspects):
+    def on_search_finished(self, paths, soruces, aspects):
         self.last_executed_query = self.current_runnable.query
         self.current_runnable = None
         self.current_query_start_time = None
-        self.content.set_paths(paths, aspects)
+        self.content.set_paths(paths, soruces, aspects)
         if self.run_folder:
             self.search_row_widget.run_folder_worker(self.dbpath, self.folder_view.get_selected_paths())
             self.run_folder = False

@@ -295,7 +295,7 @@ class MouseHandlerBinder(QtCore.QObject):
             return
         if not self.widget.selection_manager.is_selected(index):
             self.on_left_click(event)
-        selected = self.widget.get_selected_paths()
+        selected = self.widget.get_selected_sources()
         urls = [QtCore.QUrl.fromLocalFile(path) for path in selected]
         if not urls:
             return
@@ -363,6 +363,7 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
         self.installEventFilter(self.mouse_handler)
         self.setObjectName('JustifiedVirtualScrollWidget')
         self.image_paths = []
+        self.source_paths = []
         self.aspect_ratios = []
         self.rects = []
         self.rects_tops = []
@@ -422,6 +423,20 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
         return self.image_paths[i] if i < len(self.image_paths) else None
 
     @profiler.profile
+    def get_selected_sources(self):
+        return [self.source_paths[i] for i in self.selection_manager.selected_indices() if i < len(self.source_paths)]
+
+    @profiler.profile
+    def get_last_selected_source(self):
+        i = self.selection_manager.last_added()
+        return self.source_paths[i] if i < len(self.source_paths) else None
+
+    @profiler.profile
+    def get_mouse_pos_source(self):
+        i = self.index_at_pos(self.mapFromGlobal(QtCore.QCursor.pos()))
+        return self.source_paths[i] if i < len(self.source_paths) else None
+
+    @profiler.profile
     def index_at_pos(self, pos):
         y = pos.y()
         start = bisect.bisect_left(self.rects_bottoms, y)
@@ -436,13 +451,14 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
         self._update_visible_items()
 
     @profiler.profile
-    def set_paths(self, path_list, aspect_ratios):
+    def set_paths(self, path_list, sources, aspect_ratios):
         if not path_list:
             self._clear_all_widgets()
         if self.image_paths == path_list:
             self.layout_ready.emit()
             return
         self.image_paths = path_list
+        self.source_paths = sources
         self.aspect_ratios = aspect_ratios
         self._recalc_layout()
 

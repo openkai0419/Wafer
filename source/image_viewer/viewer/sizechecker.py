@@ -1,6 +1,6 @@
 from PySide6 import QtCore
 from ...common.profiling import logger
-from ...io.loader import ImageLoaderRunnable
+from .loader import ImageLoaderRunnable
 from ...qt.thread import main_thread
 
 def _size_mismatch(a, b, tolerance=1):

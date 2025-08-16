@@ -23,13 +23,11 @@ def path_to_meta(name):
 class ImageIndexer:
 
     def __init__(self, db_path):
-        logger.info(f'image indexer init {db_path}')
         self.db_path = Path(db_path)
         self.backup_path = self.db_path.with_suffix('.bak')
         self.conn = None
         self.read_conn = None
         self.exclude_paths = set()
-        logger.info('image indexer init end')
 
     @profiler.profile
     def check_init(self):
@@ -37,6 +35,7 @@ class ImageIndexer:
             raise Exception("please use with __enter__")
         self._initialize_database()
         self._ensure_schema()
+        logger.info(f'image indexer init end {self.db_path}')
 
     def set_progress_callback(self, callback):
         self._progress_callback = callback
@@ -137,9 +136,7 @@ class ImageIndexer:
     @profiler.profile
     def _integrity_check(self):
         try:
-            logger.info('quick check start')
             result = self.conn.execute('PRAGMA quick_check').fetchone()
-            logger.info('quick check end')
             return result[0] == 'ok'
         except Exception as e:
             logger.warning(f'[WARN] integrity_check failed: {e}')
@@ -199,7 +196,6 @@ class ImageIndexer:
         CREATE INDEX IF NOT EXISTS idx_meta_created_path ON meta(created, path);
         CREATE INDEX IF NOT EXISTS idx_meta_collected_path ON meta(collected_at, path);
         """)
-        logger.info('ensureschema end')
 
     @profiler.profile
     def _detect_diff(self, current, previous):

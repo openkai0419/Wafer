@@ -138,54 +138,18 @@ class ContextMenuBuilder(ActionManager):
         menu = QtWidgets.QMenu(self.parent)
         justified_menus = [
             {'path': self.t.tr('File'), 'separator': True},
-            {
-                'path': self.t.tr('Open File'),
-                'shortcut': 'Ctrl+F',
-                'callback': lambda: self.run_in_explorer(path),
-            },
-            {
-                'path': self.t.tr('Reveal in Explorer'),
-                'shortcut': 'Ctrl+O',
-                'callback': lambda: self.show_in_explorer(path),
-            },
+            {'path': self.t.tr('Open File'), 'shortcut': 'Ctrl+F','callback': lambda: self.run_in_explorer(path),},
+            {'path': self.t.tr('Reveal in Explorer'),'shortcut': 'Ctrl+O','callback': lambda: self.show_in_explorer(path),},
             {'path': self.t.tr(''), 'separator': True},
-            {
-                'path': self.t.tr('Copy Path'),
-                'shortcut': '',
-                'callback': lambda: self.copy_path(path),
-            },
-            {
-                'path': self.t.tr('Copy Path List'),
-                'shortcut': '',
-                'callback': lambda: self.copy_path_list(self.get_selected_paths()),
-            },
-            {
-                'path': self.t.tr('Copy FileName'),
-                'shortcut': '',
-                'callback': lambda: self.copy_path(path),
-            },
+            {'path': self.t.tr('Copy Path'),'shortcut': '','callback': lambda: self.copy_path(path),},
+            {'path': self.t.tr('Copy Path List'),'shortcut': '','callback': lambda: self.copy_path_list(self.get_selected_sources()),},
+            {'path': self.t.tr('Copy FileName'),'shortcut': '','callback': lambda: self.copy_path(path),},
             {'path': self.t.tr(''), 'separator': True},
-            {
-                'path': self.t.tr('Select Folder'),
-                'shortcut': '',
-                'callback': lambda: self.select_folder(path),
-            },
+            {'path': self.t.tr('Select Folder'),'shortcut': '','callback': lambda: self.select_folder(path),},
             {'path': self.t.tr(''), 'separator': True},
-            {
-                'path': self.t.tr('Cut'),
-                'shortcut': 'Ctrl+X',
-                'callback': lambda: self.set_cut_file(self.get_selected_paths()),
-            },
-            {
-                'path': self.t.tr('Copy'),
-                'shortcut': 'Ctrl+C',
-                'callback': lambda: self.set_copy_file(self.get_selected_paths()),
-            },
-            {
-                'path': self.t.tr('Delete'),
-                'shortcut': 'Delete',
-                'callback': lambda: self.delete_file(self.get_selected_paths()),
-            },
+            {'path': self.t.tr('Cut'),'shortcut': 'Ctrl+X','callback': lambda: self.set_cut_file(self.get_selected_sources()),},
+            {'path': self.t.tr('Copy'),'shortcut': 'Ctrl+C','callback': lambda: self.set_copy_file(self.get_selected_sources()),},
+            {'path': self.t.tr('Delete'),'shortcut': 'Delete','callback': lambda: self.delete_file(self.get_selected_sources()),},
         ]
         self.builder.build(menu, justified_menus, parent=self.parent)
         return menu
@@ -193,15 +157,9 @@ class ContextMenuBuilder(ActionManager):
     def select_folder(self, path):
         path = self.get_directory_from_path(path)
         self.parent.folder_view.expand_and_select_path(path)
-
-    def get_selected_paths(self):
-        return self.parent.content.get_selected_paths()
-
-    def get_last_selected_path(self):
-        return self.parent.content.get_last_selected_path()
-
-    def get_mous_pos_path(self):
-        return self.parent.content.get_mouse_pos_path()
+    
+    def get_selected_sources(self):
+        return self.parent.content.get_selected_sources()
 
 class FolderContextMenuBuilder(ActionManager):
 
@@ -214,16 +172,8 @@ class FolderContextMenuBuilder(ActionManager):
         menu = QtWidgets.QMenu(self.root)
         menus = [
             {'path': self.t.tr('Path'), 'separator': True},
-            {
-                'path': self.t.tr('Copy Path'),
-                'shortcut': 'Ctrl+C',
-                'callback': lambda: self.copy_path(path),
-            },
-            {
-                'path': self.t.tr('Reveal in Explorer'),
-                'shortcut': 'Ctrl+O',
-                'callback': lambda: self.show_in_explorer(path),
-            },
+            {'path': self.t.tr('Copy Path'),'shortcut': 'Ctrl+C','callback': lambda: self.copy_path(path),},
+            {'path': self.t.tr('Reveal in Explorer'),'shortcut': 'Ctrl+O','callback': lambda: self.show_in_explorer(path),},
             {'path': self.t.tr('Remove'), 'separator': True},
         ]
         self.builder.build(menu, menus, parent=self.root)

@@ -170,15 +170,26 @@ class MetaInfoSearchEngine:
             if not cur.fetchone():
                 logger.warning("Table 'meta' not found in DB.")
                 return False
+            self._apply_connection_pragmas(conn)
             self.conn = conn
             return True
         except sqlite3.OperationalError as e:
             logger.warning(f'DB connection failed: {e}')
             return False
 
+    def _apply_connection_pragmas(self, conn: sqlite3.Connection) -> None:
+        try:
+            cur = conn.cursor()
+            cur.executescript("""
+                PRAGMA temp_store=MEMORY;
+                PRAGMA cache_size=-100000;
+            """)
+        except Exception as e:
+            logger.warning(f'PRAGMA apply failed (non-fatal): {e}')
+
     def _normalize_path(self, path):
-        #return normalize_path(path)
-        return path.replace('\\', '/').rstrip('/')
+        return normalize_path(path)
+        #return path.replace('\\', '/').rstrip('/')
 
     @profiler.profile
     def _build_sort_clause(self, sort_by, ascending):
@@ -192,41 +203,48 @@ class MetaInfoSearchEngine:
     @profiler.profile
     def _fetch_paths_with_aspect_ratio(self, cur, paths, sort_by, ascending, batch_size=700):
         if not paths:
-            return ([], [])
+            return ([], [], [])
         sort_column, order = self._build_sort_clause(sort_by, ascending)
+
         cur.execute("CREATE TEMP TABLE IF NOT EXISTS _tmp_paths(path TEXT PRIMARY KEY) WITHOUT ROWID")
         cur.execute("DELETE FROM _tmp_paths")
-        cur.executemany("INSERT INTO _tmp_paths(path) VALUES (?)", [(p,) for p in paths])
+        for i in range(0, len(paths), batch_size):
+            cur.executemany("INSERT INTO _tmp_paths(path) VALUES (?)", [(p,) for p in paths[i:i+batch_size]])
+
+        # ランダム
         if sort_by == 'random':
             rows = cur.execute(
                 """
-                SELECT m.path, m.aspect_ratio
+                SELECT m.path, m.source, m.aspect_ratio
                 FROM meta AS m
                 JOIN _tmp_paths t ON t.path = m.path
                 """
             ).fetchall()
             rows = list(rows)
             shuffle(rows)
-            return ([row['path'] for row in rows], [row['aspect_ratio'] for row in rows])
+            return ([row['path'] for row in rows], [row['source'] for row in rows], [row['aspect_ratio'] for row in rows])
+
+        # 並び替えカラムがある場合：エイリアスを使わずに直接 ORDER BY
         if sort_column:
             rows = cur.execute(
                 f"""
-                SELECT m.path, m.aspect_ratio, m.{sort_column} AS sort_value
+                SELECT m.path, m.source, m.aspect_ratio
                 FROM meta AS m
                 JOIN _tmp_paths t ON t.path = m.path
-                ORDER BY sort_value {order}
+                ORDER BY m."{sort_column}" {order}
                 """
             ).fetchall()
-            return ([row['path'] for row in rows], [row['aspect_ratio'] for row in rows])
+            return ([row['path'] for row in rows], [row['source'] for row in rows], [row['aspect_ratio'] for row in rows])
+
+        # 並び替え無し
         rows = cur.execute(
             """
-            SELECT m.path, m.aspect_ratio
+            SELECT m.path, m.source, m.aspect_ratio
             FROM meta AS m
             JOIN _tmp_paths t ON t.path = m.path
             """
         ).fetchall()
-        return ([row['path'] for row in rows], [row['aspect_ratio'] for row in rows])
-
+        return ([row['path'] for row in rows], [row['source'] for row in rows], [row['aspect_ratio'] for row in rows])
 
 
     @profiler.profile
@@ -239,24 +257,24 @@ class MetaInfoSearchEngine:
             return []
         rows = cur.execute(sql, params).fetchall()
         return [(row['path'], row['key'], row['value']) for row in rows]
-
+    
     @profiler.profile
     def get(self, query):
         self.explain_query_plan(query)
         if not self._connect_if_needed():
-            return ([], [])
+            return ([], [], [])
         cur = self.conn.cursor()
         sql, params = query.to_path_query(self._normalize_path)
         if not sql:
-            return ([], [])
+            return ([], [], [])
         try:
             rows = cur.execute(sql, params).fetchall()
         except sqlite3.DatabaseError as e:
             logger.error(f'DB query failed: {e}')
-            return ([], [])
+            return ([], [], [])
         paths = [row['path'] for row in rows]
         return self._fetch_paths_with_aspect_ratio(cur, paths, query.sort_by, query.ascending)
-
+    
     @profiler.profile
     def get_combined(self, queries):
         if not self._connect_if_needed():
@@ -334,7 +352,7 @@ class MetaInfoSearchEngine:
             logger.info('========= SQLite Execution Plan =========')
             for line in plan_lines:
                 if not "USING INDEX" in line:
-                    logger.warining(f"[NOT USING INDEX CHEK IT OUT]: {line}")
+                    logger.warning(f"[NOT USING INDEX CHEK IT OUT]: {line}")
                 else:
                     logger.info(line)
         except Exception as e:

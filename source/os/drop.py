@@ -26,6 +26,7 @@ class ParsedItem:
 
     def is_local_file(self):
         return not self.is_binary and isinstance(self.source, str) and os.path.exists(self.source)
+
 class MimeDataParser:
 
     def parse_content_disposition(self, header):

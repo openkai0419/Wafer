@@ -183,6 +183,7 @@ class MouseHandlerBinder(QtCore.QObject):
         if index is not None:
             if not self.widget.selection_manager.is_selected(index):
                 self.on_left_click(event)
+            self.widget.root.data_shower.set_path(self.widget.image_paths[index])
 
     @profiler.profile
     def on_right_click(self, event):
@@ -355,8 +356,9 @@ class MouseHandlerBinder(QtCore.QObject):
 class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
     layout_ready = QtCore.Signal()
 
-    def __init__(self, scroll, parent=None):
+    def __init__(self, scroll, root, parent=None):
         super().__init__(parent)
+        self.root = root
         self.parent_scroll = scroll
         self.mouse_handler = MouseHandlerBinder(self)
         self.mouse_handler.bind_all()
@@ -378,7 +380,7 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
         self.setMinimumWidth(self.min_height)
         self.spacing = uipx(4)
         self.calculator = None
-        self.pixmap_cache = MemoryLimitedPixmapCache(500 * 1024 * 1024)
+        self.pixmap_cache = MemoryLimitedPixmapCache(main_setting.get('window/chache_size', 500))
         self.active_threads = {}
         self.error_placeholder = PixmapFactory.generate()
         self.overlay_painter = OverLayPainter(self, self.spacing)

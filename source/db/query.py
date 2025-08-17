@@ -182,14 +182,12 @@ class MetaInfoSearchEngine:
             cur = conn.cursor()
             cur.executescript("""
                 PRAGMA temp_store=MEMORY;
-                PRAGMA cache_size=-100000;
             """)
         except Exception as e:
             logger.warning(f'PRAGMA apply failed (non-fatal): {e}')
 
     def _normalize_path(self, path):
         return normalize_path(path)
-        #return path.replace('\\', '/').rstrip('/')
 
     @profiler.profile
     def _build_sort_clause(self, sort_by, ascending):

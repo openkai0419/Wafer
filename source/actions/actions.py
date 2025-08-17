@@ -5,6 +5,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from ..common.funcs import normalize_path, uipx
 from ..image_setting.translation import TranslatorMixin
 from ..os.copy import ClipboardFileTransfer
+from ..os.paste import ClipboardFilePaster, PasteDecision
 from ..qt.dialog import ConfirmDialog
 
 def create_labeled_separator(label, parent):
@@ -127,6 +128,18 @@ class ActionManager(TranslatorMixin):
             return abs_path
         else:
             return os.path.dirname(abs_path)
+    
+    @staticmethod
+    def paste_here(path):
+        paster = ClipboardFilePaster()
+        plans = paster.build_paste_plan(ActionManager.get_directory_from_path(path))
+        descs = {}
+        for plan in plans:
+            if plan.conflict:
+                descs[plan.index] = PasteDecision(mode="skip")
+            else:
+                descs[plan.index] = PasteDecision(mode="overwrite")
+        paster.execute_paste(plans, descs)
 
 class ContextMenuBuilder(ActionManager):
 
@@ -150,6 +163,8 @@ class ContextMenuBuilder(ActionManager):
             {'path': self.t.tr('Cut'),'shortcut': 'Ctrl+X','callback': lambda: self.set_cut_file(self.get_selected_sources()),},
             {'path': self.t.tr('Copy'),'shortcut': 'Ctrl+C','callback': lambda: self.set_copy_file(self.get_selected_sources()),},
             {'path': self.t.tr('Delete'),'shortcut': 'Delete','callback': lambda: self.delete_file(self.get_selected_sources()),},
+            {'path': self.t.tr(''), 'separator': True},
+            {'path': self.t.tr('Paste here'),'shortcut': 'Ctrl+V','callback': lambda: self.paste_here(path),},
         ]
         self.builder.build(menu, justified_menus, parent=self.parent)
         return menu
@@ -174,13 +189,16 @@ class FolderContextMenuBuilder(ActionManager):
             {'path': self.t.tr('Path'), 'separator': True},
             {'path': self.t.tr('Copy Path'),'shortcut': 'Ctrl+C','callback': lambda: self.copy_path(path),},
             {'path': self.t.tr('Reveal in Explorer'),'shortcut': 'Ctrl+O','callback': lambda: self.show_in_explorer(path),},
-            {'path': self.t.tr('Remove'), 'separator': True},
+            {'path': self.t.tr(''), 'separator': True},
+            {'path': self.t.tr('Paste here'),'shortcut': 'Ctrl+V','callback': lambda: self.paste_here(path),},
+            {'path': self.t.tr(''), 'separator': True},
         ]
-        self.builder.build(menu, menus, parent=self.root)
         if path in self.view.roots:
-            menu.addAction(self.t.tr('Remove from view'), lambda: self.remove(path))
+            menus.append({"path": self.t.tr('Remove from view'),"callback": lambda: self.remove(path)})
         else:
-            menu.addAction(self.t.tr('Ignore this folder'), lambda: self.ignore(path))
+            menus.append({"path": self.t.tr('Ignore this folder'), "callback": lambda: self.ignore(path)})
+        self.builder.build(menu, menus, parent=self.root)
+
         return menu
 
     def remove(self, path):

@@ -1,6 +1,7 @@
 from collections import OrderedDict
 from PySide6 import QtCore, QtGui, QtWidgets
 from ...common.profiling import profiler
+from ...common.classes import singleton
 
 class FadeLabel(QtWidgets.QLabel):
     _FADE_DURATION = 120
@@ -42,7 +43,6 @@ class FadeLabel(QtWidgets.QLabel):
             self.curpath = curpath
 
 class QLabelPool:
-
     def __init__(self, parent=None):
         self._available = []
         self._in_use = set()
@@ -70,10 +70,10 @@ class QLabelPool:
             label = self._in_use.pop()
             self.release(label)
 
+@singleton
 class MemoryLimitedPixmapCache:
-
-    def __init__(self, max_bytes=100 * 1024 * 1024):
-        self.max_bytes = max_bytes
+    def __init__(self, max_mbytes=100):
+        self.max_bytes = max_mbytes * 1024 * 1024
         self.current_bytes = 0
         self.cache = OrderedDict()
 

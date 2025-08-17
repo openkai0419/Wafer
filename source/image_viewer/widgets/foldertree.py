@@ -185,7 +185,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
 
     def __init__(self, roots=None, excluded=None):
         super().__init__()
-        self.setStyleSheet('\n        QTreeView::item:selected {\n            background-color: rgb(59, 128, 255);\n        }\n        ')
+        self.setStyleSheet('QTreeView::item:selected { background-color: rgb(59, 128, 255);}')
         self.setHeaderHidden(True)
         self.model_ = LazyFolderTreeModel(roots, excluded)
         self.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)

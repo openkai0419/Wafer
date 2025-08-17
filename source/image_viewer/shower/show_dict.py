@@ -1,10 +1,44 @@
 from __future__ import annotations
 
 import json
-from collections import OrderedDict
-from typing import Any, Callable, Iterable, Mapping, Sequence
+from typing import Any, Callable, Iterable, Mapping
 
 from PySide6 import QtCore, QtGui, QtWidgets
+
+from ...common.funcs import uipx
+from ...common.profiling import logger, profiler
+
+
+# ---- 追加：巨大値対策のしきい値 ----
+MAX_INLINE_CHARS = 4000          # ラベルにそのまま載せる最大文字数
+MAX_INLINE_SEQ_ITEMS = 50         # 配列/集合のプレビュー最大要素数
+MAX_INLINE_MAP_PAIRS = 50         # マップのプレビュー最大ペア数
+
+
+def _truncate_text(s: str, limit: int = MAX_INLINE_CHARS) -> str:
+    if len(s) <= limit:
+        return s
+    return s[:limit] + f"\n… ({len(s):,} chars total)"
+
+
+def _preview_sequence(seq) -> str:
+    shown = []
+    for i, v in enumerate(seq):
+        if i >= MAX_INLINE_SEQ_ITEMS:
+            shown.append(f"… (+{len(seq)-MAX_INLINE_SEQ_ITEMS} more)")
+            break
+        shown.append(str(v))
+    return ", ".join(shown)
+
+
+def _preview_mapping(mp: Mapping[str, Any]) -> str:
+    parts = []
+    for i, (k, v) in enumerate(mp.items()):
+        if i >= MAX_INLINE_MAP_PAIRS:
+            parts.append(f"… (+{len(mp)-MAX_INLINE_MAP_PAIRS} more)")
+            break
+        parts.append(f"{k}: {v!r}")
+    return "{ " + ", ".join(parts) + " }"
 
 
 class DictRowWidget(QtWidgets.QFrame):
@@ -14,7 +48,6 @@ class DictRowWidget(QtWidgets.QFrame):
         self,
         index: int,
         data: Mapping[str, Any],
-        keys: Sequence[str],
         key_names: Mapping[str, str] | None = None,
         value_formatters: Mapping[str, Callable[[Any], str]] | None = None,
         compact: bool = False,
@@ -23,7 +56,7 @@ class DictRowWidget(QtWidgets.QFrame):
         super().__init__(parent)
         self._index = index
         self._data = dict(data)
-        self._keys = list(keys)
+        self._keys = list(self._data.keys())  # 行ごとに自身のキー順
         self._key_names = dict(key_names or {})
         self._value_formatters = dict(value_formatters or {})
         self._compact = compact
@@ -44,58 +77,123 @@ class DictRowWidget(QtWidgets.QFrame):
         )
 
         self._grid = QtWidgets.QGridLayout(self)
-        self._grid.setContentsMargins(12, 10, 12, 10)
-        self._grid.setHorizontalSpacing(12)
-        self._grid.setVerticalSpacing(6 if compact else 8)
+        self._grid.setContentsMargins(uipx(12), uipx(12), uipx(12), uipx(12))
+        self._grid.setHorizontalSpacing(uipx(12))
+        self._grid.setVerticalSpacing(uipx(6) if compact else uipx(8))
         self._build()
 
         self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_menu)
         self.mouseDoubleClickEvent = self._emit_activated  # type: ignore[assignment]
 
+    # ---- UI events ----
     def _emit_activated(self, event: QtGui.QMouseEvent) -> None:
         self.rowActivated.emit(self._index, self._data)
 
     def _show_menu(self, pos: QtCore.QPoint) -> None:
         menu = QtWidgets.QMenu(self)
-        act_copy_json = menu.addAction("Copy row as JSON")
-        act_copy_text = menu.addAction("Copy as plain text")
+        act_copy_json = menu.addAction("Copy row as JSON (full)")
+        act_copy_text_preview = menu.addAction("Copy preview text")
+        act_copy_value = menu.addAction("Copy single value…")
+        act_view_value = menu.addAction("Open value viewer…")
         chosen = menu.exec(self.mapToGlobal(pos))
         if chosen is act_copy_json:
-            QtWidgets.QApplication.clipboard().setText(json.dumps(self._data, ensure_ascii=False, indent=2))
-        elif chosen is act_copy_text:
-            QtWidgets.QApplication.clipboard().setText(self._to_plain_text())
+            # 大きくてもユーザー操作時のみ。ここはブロックが起きても許容しやすい
+            QtWidgets.QApplication.clipboard().setText(
+                json.dumps(self._data, ensure_ascii=False, indent=2)
+            )
+        elif chosen is act_copy_text_preview:
+            QtWidgets.QApplication.clipboard().setText(self._to_plain_text(preview=True))
+        elif chosen is act_copy_value:
+            self._copy_single_value_dialog()
+        elif chosen is act_view_value:
+            self._open_value_viewer_dialog()
 
-    def _to_plain_text(self) -> str:
+    # ---- helpers for menu ----
+    def _copy_single_value_dialog(self) -> None:
+        # キー選択 → 値全文コピー（巨大でもOK：ユーザー明示操作）
+        key, ok = QtWidgets.QInputDialog.getItem(
+            self, "Copy single value", "Key:", self._keys, 0, False
+        )
+        if not ok or not key:
+            return
+        QtWidgets.QApplication.clipboard().setText(self._stringify_full(self._data.get(key)))
+
+    def _open_value_viewer_dialog(self) -> None:
+        # キー選択 → QPlainTextEdit で全文表示
+        key, ok = QtWidgets.QInputDialog.getItem(
+            self, "Open value viewer", "Key:", self._keys, 0, False
+        )
+        if not ok or not key:
+            return
+        text = self._stringify_full(self._data.get(key))
+
+        dlg = QtWidgets.QDialog(self)
+        dlg.setWindowTitle(f"Value viewer - {key}")
+        dlg.resize(900, 600)
+        lay = QtWidgets.QVBoxLayout(dlg)
+        edit = QtWidgets.QPlainTextEdit(dlg)
+        edit.setReadOnly(True)
+        edit.setPlainText(text)  # ✔ プレーンテキスト。大でも比較的軽い
+        lay.addWidget(edit)
+        btns = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Close, parent=dlg)
+        btns.rejected.connect(dlg.reject)
+        lay.addWidget(btns)
+        dlg.exec()
+
+    # ---- render helpers ----
+    def _to_plain_text(self, preview: bool) -> str:
         parts = []
         for k in self._keys:
-            parts.append(f"{self._display_key(k)}: {self._stringify(k, self._data.get(k))}")
+            val = self._data.get(k)
+            if preview:
+                parts.append(f"{self._display_key(k)}: {self._stringify_preview(k, val)}")
+            else:
+                parts.append(f"{self._display_key(k)}: {self._stringify_full(val)}")
         return "\n".join(parts)
 
     def _display_key(self, key: str) -> str:
         return self._key_names.get(key, key)
 
-    def _stringify(self, key: str, value: Any) -> str:
+    def _stringify_preview(self, key: str, value: Any) -> str:
+        # フォーマッタはプレビューにも適用。ただし戻り値が巨大なら切る
         if key in self._value_formatters:
             try:
-                return str(self._value_formatters[key](value))
+                s = str(self._value_formatters[key](value))
+                return _truncate_text(s)
             except Exception:
                 pass
+
         if value is None:
             return "—"
+        if isinstance(value, str):
+            return _truncate_text(value)
         if isinstance(value, (list, tuple, set)):
-            return ", ".join(map(self._stringify_default, value))
+            return _preview_sequence(value)
+        if isinstance(value, Mapping):
+            # フルJSONは重いので、軽い概要だけ
+            return _preview_mapping(value)
+        if isinstance(value, (QtCore.QDate, QtCore.QDateTime, QtCore.QTime)):
+            return str(value.toString(QtCore.Qt.ISODate))
+        return _truncate_text(str(value))
+
+    def _stringify_full(self, value: Any) -> str:
+        # フル版（ユーザーが明示操作した時のみ使う）
+        if value is None:
+            return "—"
         if isinstance(value, Mapping):
             try:
-                return json.dumps(value, ensure_ascii=False)
+                return json.dumps(value, ensure_ascii=False, indent=2)
             except Exception:
                 return str(value)
-        return self._stringify_default(value)
-
-    def _stringify_default(self, v: Any) -> str:
-        if isinstance(v, (QtCore.QDate, QtCore.QDateTime, QtCore.QTime)):
-            return str(v.toString(QtCore.Qt.ISODate))
-        return str(v)
+        if isinstance(value, (list, tuple, set)):
+            try:
+                return json.dumps(list(value), ensure_ascii=False, indent=2)
+            except Exception:
+                return str(value)
+        if isinstance(value, (QtCore.QDate, QtCore.QDateTime, QtCore.QTime)):
+            return str(value.toString(QtCore.Qt.ISODate))
+        return str(value)
 
     def _build(self) -> None:
         while self._grid.count():
@@ -103,25 +201,33 @@ class DictRowWidget(QtWidgets.QFrame):
             w = item.widget()
             if w:
                 w.deleteLater()
+
         row = 0
         for key in self._keys:
             key_label = QtWidgets.QLabel(self._display_key(key), self)
             key_label.setProperty("keyRole", True)
             key_label.setAlignment(QtCore.Qt.AlignTop | QtCore.Qt.AlignLeft)
             key_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+            key_label.setTextFormat(QtCore.Qt.PlainText)
 
-            val_label = QtWidgets.QLabel(self._stringify(key, self._data.get(key)), self)
+            val = self._stringify_preview(key, self._data.get(key))
+            val_label = QtWidgets.QLabel(val, self)
             val_label.setWordWrap(True)
-            val_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse | QtCore.Qt.LinksAccessibleByMouse)
+            # 重要：リンク検出/HTML解析を無効化
+            val_label.setTextFormat(QtCore.Qt.PlainText)
+            val_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
             val_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
 
             self._grid.addWidget(key_label, row, 0)
             self._grid.addWidget(val_label, row, 1)
             row += 1
+
         self._grid.setColumnStretch(1, 1)
 
+    # ---- public ----
     def update_data(self, data: Mapping[str, Any]) -> None:
         self._data = dict(data)
+        self._keys = list(self._data.keys())
         self._build()
 
 
@@ -131,15 +237,13 @@ class DictListWidget(QtWidgets.QWidget):
     def __init__(
         self,
         items: Iterable[Mapping[str, Any]] | None = None,
-        keys: Sequence[str] | None = None,
         key_names: Mapping[str, str] | None = None,
         value_formatters: Mapping[str, Callable[[Any], str]] | None = None,
-        compact: bool = False,
+        compact: bool = True,
         parent: QtWidgets.QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._items: list[dict] = []
-        self._keys: list[str] = list(keys) if keys else []
         self._key_names = dict(key_names or {})
         self._value_formatters = dict(value_formatters or {})
         self._compact = compact
@@ -154,8 +258,8 @@ class DictListWidget(QtWidgets.QWidget):
         )
 
         self._layout = QtWidgets.QVBoxLayout(self)
-        self._layout.setContentsMargins(12, 12, 12, 12)
-        self._layout.setSpacing(10 if compact else 14)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setSpacing(uipx(10) if compact else uipx(14))
         self._layout.addStretch(1)
 
         if items is not None:
@@ -165,38 +269,31 @@ class DictListWidget(QtWidgets.QWidget):
         return QtCore.QSize(760, super().sizeHint().height())
 
     def set_data(self, items: Iterable[Mapping[str, Any]]) -> None:
+        """各行は自身の辞書のキー順で描画（表示はプレビュー）。"""
         self.clear()
-        resolved = [dict(i) for i in items]
-        if not self._keys:
-            seen = OrderedDict()
-            for it in resolved:
-                for k in it.keys():
-                    if k not in seen:
-                        seen[k] = None
-            self._keys = list(seen.keys())
-        self._items = resolved
+        self._items = [dict(i) for i in items]
+
         for idx, it in enumerate(self._items):
             row = DictRowWidget(
                 idx,
                 it,
-                self._keys,
                 key_names=self._key_names,
                 value_formatters=self._value_formatters,
                 compact=self._compact,
                 parent=self,
             )
-            row.rowActivated.connect(self.rowActivated)
+            row.rowActivated.connect(self.rowActivated.emit)
             self._layout.insertWidget(self._layout.count() - 1, row)
 
     def clear(self) -> None:
-        while self._layout.count():
-            item = self._layout.takeAt(0)
+        for i in reversed(range(self._layout.count())):
+            item = self._layout.itemAt(i)
             w = item.widget()
-            if w is None:
-                continue
-            w.setParent(None)
-            w.deleteLater()
-        self._layout.addStretch(1)
+            if w is not None:
+                w.setParent(None)
+                w.deleteLater()
+        if self._layout.count() == 0:
+            self._layout.addStretch(1)
         self._items.clear()
 
     def add_item(self, item: Mapping[str, Any]) -> None:
@@ -205,81 +302,18 @@ class DictListWidget(QtWidgets.QWidget):
         row = DictRowWidget(
             idx,
             self._items[-1],
-            self._keys or list(self._items[-1].keys()),
             key_names=self._key_names,
             value_formatters=self._value_formatters,
             compact=self._compact,
             parent=self,
         )
-        row.rowActivated.connect(self.rowActivated)
+        row.rowActivated.connect(self.rowActivated.emit)
         self._layout.insertWidget(self._layout.count() - 1, row)
 
     def update_item(self, index: int, item: Mapping[str, Any]) -> None:
         if index < 0 or index >= len(self._items):
             return
         self._items[index] = dict(item)
-        row = self._layout.itemAt(index).widget()  # type: ignore[assignment]
-        if isinstance(row, DictRowWidget):
-            row.update_data(self._items[index])
-
-    def set_keys(self, keys: Sequence[str]) -> None:
-        self._keys = list(keys)
-        for i in range(len(self._items)):
-            row = self._layout.itemAt(i).widget()  # type: ignore[assignment]
-            if isinstance(row, DictRowWidget):
-                row._keys = self._keys
-                row._build()
-
-
-def create_scrolled(widget: QtWidgets.QWidget, parent: QtWidgets.QWidget | None = None) -> QtWidgets.QScrollArea:
-    area = QtWidgets.QScrollArea(parent)
-    area.setWidgetResizable(True)
-    area.setFrameShape(QtWidgets.QFrame.NoFrame)
-    area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
-    area.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
-    area.setWidget(widget)
-    return area
-
-
-if __name__ == "__main__":
-    import sys
-
-    app = QtWidgets.QApplication(sys.argv)
-
-    sample = [
-        {
-            "id": 1,
-            "title": "Sunset at the beach",
-            "tags": ["sunset", "sea", "travel"],
-            "rating": 4.7,
-            "path": "C:/images/2025-08-12/sunset.jpg",
-        },
-        {
-            "id": 2,
-            "title": "Mountain trail",
-            "tags": ["hike", "nature"],
-            "rating": 4.2,
-            "path": "C:/images/2025-07-05/mountain.png",
-            "note": "Shot on Pixel in RAW",
-        },
-        {
-            "id": 3,
-            "title": "City skyline",
-            "tags": ["city", "night"],
-            "rating": 4.9,
-            "path": "C:/images/2025-08-01/city.webp",
-        },
-    ]
-
-    key_names = {"id": "ID", "title": "Title", "tags": "Tags", "rating": "Rating", "path": "Path", "note": "Note"}
-
-    view = DictListWidget(sample, compact=False)
-    area = create_scrolled(view)
-
-    w = QtWidgets.QMainWindow()
-    w.setWindowTitle("DictListWidget Demo")
-    w.setCentralWidget(area)
-    w.resize(880, 680)
-    w.show()
-
-    sys.exit(app.exec())
+        w = self._layout.itemAt(index).widget()  # type: ignore[assignment]
+        if isinstance(w, DictRowWidget):
+            w.update_data(self._items[index])

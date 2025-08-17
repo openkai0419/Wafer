@@ -122,7 +122,6 @@ class ClipboardFilePaster:
         return list(dict.fromkeys(paths))
 
     def collect_clipboard_files(self) -> Optional[CutCopy]:
-        """副作用なし：クリップボードから (action, paths) を返す"""
         md = self.clipboard.mimeData()
         if md is None:
             return None

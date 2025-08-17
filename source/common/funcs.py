@@ -1,5 +1,7 @@
 import os
 import sys
+import datetime
+import math
 from pathlib import Path
 from natsort import natsorted, ns
 from platformdirs import PlatformDirs
@@ -82,3 +84,28 @@ def config_path(relative_path):
 def list_files(directory, extension):
     ext = extension.lower() if extension.startswith('.') else f'.{extension.lower()}'
     return [normalize_path(f) for f in Path(directory).iterdir() if f.is_file() and f.suffix.lower() == ext]
+
+def human_time(ts: float) -> str:
+    dt = datetime.datetime.fromtimestamp(ts)
+    return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+def human_aspect(ratio: float, max_denominator: int = 100) -> str:
+    if ratio <= 0:
+        return "N/A"
+    frac = math.floor(ratio * max_denominator + 0.5)
+    # 分母を決定
+    for den in range(1, max_denominator + 1):
+        num = round(ratio * den)
+        if abs(num / den - ratio) < 1e-6:
+            g = math.gcd(num, den)
+            return f"{num // g}:{den // g}"
+    return f"{ratio:.2f}:1"
+
+def human_size(size: int) -> str:
+    units = ["B", "KB", "MB", "GB", "TB", "PB"]
+    s = float(size)
+    for unit in units:
+        if s < 1024:
+            return f"{s:.1f}{unit}"
+        s /= 1024
+    return f"{s:.1f}EB"

@@ -1,40 +1,240 @@
 import os
 import cv2
 import re
-import string
 import unicodedata
 import numpy as np
 from PySide6 import QtCore, QtGui
 from ..common.profiling import logger
 from typing import Any
+
 from PIL import Image, ExifTags
 from PIL.TiffImagePlugin import IFDRational
 
+# 逆引きテーブル
+TAGS = ExifTags.TAGS
+GPSTAGS = ExifTags.GPSTAGS
+
+# Windows XP系タグ（UTF-16LE 固定）
+XP_TAGS = {
+    0x9C9B: "XPTitle",
+    0x9C9C: "XPComment",
+    0x9C9D: "XPAuthor",
+    0x9C9E: "XPKeywords",
+    0x9C9F: "XPSubject",
+}
+
+# 制御文字（\t, \n, \r を除く）除去用
+_CONTROL_CHARS_RE = re.compile(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]')
+
+def _clean_text(s: Any) -> str:
+    """ヌル・不要制御文字を除去し、Unicode正規化する最終サニタイズ"""
+    if not isinstance(s, str):
+        s = str(s)
+    s = s.replace('\x00', '')                    # ヌルを全除去
+    s = _CONTROL_CHARS_RE.sub('', s)             # 制御文字除去（\t,\n,\rは残す）
+    s = unicodedata.normalize('NFC', s)          # 正規化
+    return s
+
+def _looks_utf16(bytez: bytes) -> bool:
+    if not bytez:
+        return False
+    if bytez.startswith(b'\xff\xfe') or bytez.startswith(b'\xfe\xff'):
+        return True
+    window = bytez[:64]
+    zero_ratio = window.count(b'\x00') / max(1, len(window))
+    return zero_ratio > 0.25
+
+def _decode_bytes_safely(b: bytes) -> str:
+    """汎用bytesのデコード。UTF-16候補/BOM/ヒューリスティックにも対応。"""
+    try:
+        return _clean_text(b.decode('utf-8'))
+    except Exception:
+        pass
+    if _looks_utf16(b):
+        for enc in ('utf-16', 'utf-16-le', 'utf-16-be'):
+            try:
+                return _clean_text(b.decode(enc, errors='strict'))
+            except Exception:
+                continue
+    try:
+        return _clean_text(b.decode('utf-8', errors='ignore'))
+    except Exception:
+        return _clean_text(b.decode('latin-1', errors='ignore'))
+
+def _decode_xp_value(v: Any) -> str:
+    """
+    Windows XP系 Exif（UTF-16LE, null終端）。Pillowがlist[int]を返す場合にも対応。
+    """
+    if isinstance(v, list):
+        try:
+            v = bytes(v)
+        except Exception:
+            return _clean_text(v)
+    if isinstance(v, (bytes, bytearray)):
+        v = bytes(v)
+        try:
+            s = v.decode('utf-16-le', errors='strict')
+        except Exception:
+            s = v.decode('utf-16-le', errors='ignore')
+        return _clean_text(s)
+    return _clean_text(v)
+
+def _decode_user_comment(b: bytes) -> str:
+    if not isinstance(b, (bytes, bytearray)) or len(b) < 8:
+        return _decode_bytes_safely(bytes(b) if isinstance(b, bytearray) else b)
+    b = bytes(b)
+    prefix, payload = b[:8], b[8:]
+
+    try:
+        if prefix == b'ASCII\x00\x00\x00':
+            return _clean_text(payload.decode('ascii', errors='ignore'))
+        elif prefix == b'UNICODE\x00':
+            # BOMがあればutf-16、無ければLEを優先
+            try:
+                s = payload.decode('utf-16', errors='strict')
+            except Exception:
+                s = payload.decode('utf-16-le', errors='ignore')
+            return _clean_text(s)
+        elif prefix == b'JIS\x00\x00\x00\x00':
+            for enc in ('shift_jis', 'cp932', 'euc_jp'):
+                try:
+                    return _clean_text(payload.decode(enc))
+                except Exception:
+                    continue
+            return _clean_text(payload.decode('latin-1', errors='ignore'))
+        else:
+            return _decode_bytes_safely(payload)
+    except Exception:
+        return _decode_bytes_safely(payload)
+
+def _rational_to_float(x: Any) -> float | None:
+    try:
+        if isinstance(x, IFDRational):
+            return float(x)
+        if isinstance(x, tuple) and len(x) == 2:
+            num, den = x
+            return float(num) / float(den) if den else None
+        return float(x)
+    except Exception:
+        return None
+
+def _dms_to_deg(dms: Any, ref: str | None) -> float | None:
+    if not dms or not isinstance(dms, (tuple, list)) or len(dms) != 3:
+        return None
+    d = _rational_to_float(dms[0])
+    m = _rational_to_float(dms[1])
+    s = _rational_to_float(dms[2])
+    if d is None or m is None or s is None:
+        return None
+    deg = d + m / 60.0 + s / 3600.0
+    if ref and ref.upper() in ('S', 'W'):
+        deg = -deg
+    return deg
 
 class ImageReader:
-    # --- const / tables ---
     ext = ('.jpg', '.jpeg', '.png', '.bmp', '.gif', '.webp')
-
-    TAGS = ExifTags.TAGS
-    GPSTAGS = ExifTags.GPSTAGS
-    XP_TAGS = {  # Windows XP UTF-16LE 系
-        0x9C9B: "XPTitle",
-        0x9C9C: "XPComment",
-        0x9C9D: "XPAuthor",
-        0x9C9E: "XPKeywords",
-        0x9C9F: "XPSubject",
-    }
-
-    _CONTROL_CHARS_RE = re.compile(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]')
-    _PRINTABLE_SET = set(string.printable)
 
     def __init__(self, path: str):
         self.path = path
 
-    # ---------- public ----------
     @classmethod
     def is_readable(cls, path: str) -> bool:
         return os.path.splitext(path)[-1].lower() in cls.ext
+
+    @staticmethod
+    def _to_str(v: Any, *, tag_id: int | None = None, tag_name: str | None = None) -> str:
+        """Exif値を安全にstr化（XP系/UserComment/bytes/Rational/配列対応）"""
+        # XP系タグはUTF-16LE固定
+        if tag_id in XP_TAGS or (tag_name and tag_name in XP_TAGS.values()):
+            return _decode_xp_value(v)
+
+        # UserComment（0x9286）
+        if (tag_id == 0x9286) or (tag_name == 'UserComment'):
+            if isinstance(v, (bytes, bytearray)):
+                return _decode_user_comment(bytes(v))
+            return _clean_text(v)
+
+        # 一般bytes
+        if isinstance(v, (bytes, bytearray)):
+            return _decode_bytes_safely(bytes(v))
+
+        # Rational
+        if isinstance(v, IFDRational):
+            try:
+                return _clean_text(str(float(v)))
+            except Exception:
+                return _clean_text(f"{v.numerator}/{v.denominator}")
+
+        # タプル（例：DMSや分数列）
+        if isinstance(v, tuple):
+            try:
+                return _clean_text(", ".join(ImageReader._to_str(x) for x in v))
+            except Exception:
+                return _clean_text(repr(v))
+
+        # list（byte配列や数値配列）
+        if isinstance(v, list):
+            try:
+                if v and isinstance(v[0], int) and 0 <= v[0] <= 255:
+                    return _decode_bytes_safely(bytes(v))
+            except Exception:
+                pass
+            return _clean_text(v)
+
+        # それ以外
+        return _clean_text(v)
+
+    @classmethod
+    def _parse_gps(cls, gps_ifd: dict) -> dict[str, Any]:
+        out: dict[str, Any] = {}
+        try:
+            if not isinstance(gps_ifd, dict):
+                return out
+            g = {GPSTAGS.get(k, k): v for k, v in gps_ifd.items()}
+
+            # 元の値（人が読む用）
+            for k2, v2 in g.items():
+                out[f"GPS/{k2}"] = cls._to_str(v2)
+
+            # 十進度
+            lat = lon = None
+            if 'GPSLatitude' in g and 'GPSLatitudeRef' in g:
+                lat = _dms_to_deg(g['GPSLatitude'], cls._to_str(g['GPSLatitudeRef']).upper())
+            if 'GPSLongitude' in g and 'GPSLongitudeRef' in g:
+                lon = _dms_to_deg(g['GPSLongitude'], cls._to_str(g['GPSLongitudeRef']).upper())
+
+            if lat is not None:
+                out["GPS/GPSLatitudeDecimal"] = lat
+            if lon is not None:
+                out["GPS/GPSLongitudeDecimal"] = lon
+        except Exception:
+            pass
+        return out
+
+    @classmethod
+    def _extract_exif(cls, img: Image.Image) -> dict[str, Any]:
+        """人間可読なExif辞書を返す（未知タグは EXIF/Tag_XXXX）。"""
+        out: dict[str, Any] = {}
+        try:
+            exif = img.getexif()
+            if not exif:
+                return out
+
+            for tag_id, val in exif.items():
+                tag_name = TAGS.get(tag_id)  # 未知タグは None
+                if tag_name == 'GPSInfo' and isinstance(val, dict):
+                    out.update(cls._parse_gps(val))
+                    continue
+
+                if tag_name:
+                    out[f"{tag_name}"] = cls._to_str(val, tag_id=tag_id, tag_name=tag_name)
+                else:
+                    key = f"Tag_{tag_id}"  # 未知タグは番号を保持
+                    out[key] = cls._to_str(val, tag_id=tag_id, tag_name=key)
+        except Exception:
+            # 壊れたExifでも全体は落とさない
+            pass
+        return out
 
     def get_meta(self):
         p = self.path
@@ -43,10 +243,10 @@ class ImageReader:
             with Image.open(p) as img:
                 width, height = img.size
 
-                # ★ クラスメソッドとして呼び出す
+                # Exif抽出
                 exif_dict = self._extract_exif(img)
 
-                # Orientation 補正
+                # Orientation補正（274）
                 exif = img.getexif()
                 orientation = 1
                 if exif:
@@ -58,19 +258,27 @@ class ImageReader:
                     width, height = height, width
 
                 aspect = width / height if height else 1.0
+
+                # 画像フォーマット由来のinfo（PNGのテキストなど）
                 info = dict(img.info) if img.info else {}
 
+            # meta_info 構築： (filepath, key, value) のリスト
             meta_info: list[tuple[str, str, str]] = []
+
+            # フォーマット固有情報
             for k, v in info.items():
-                meta_info.append((str(p), str(k), self._clean_text(self._to_str(v))))
+                val_str = _clean_text(self._to_str(v))
+                meta_info.append((str(p), str(k), val_str))
 
+            # Exif（既知＋未知）
             for k, v in exif_dict.items():
-                meta_info.append((str(p), f"EXIF/{k}", self._clean_text(self._to_str(v))))
+                meta_info.append((str(p), f"EXIF/{k}", _clean_text(self._to_str(v))))
 
-            meta_info.append((str(p), "__width__", self._clean_text(width)))
-            meta_info.append((str(p), "__height__", self._clean_text(height)))
-            meta_info.append((str(p), "__aspect__", self._clean_text(aspect)))
-            meta_info.append((str(p), "__filepath__", self._clean_text(p)))
+            # 基本寸法
+            meta_info.append((str(p), "__width__", _clean_text(width)))
+            meta_info.append((str(p), "__height__", _clean_text(height)))
+            meta_info.append((str(p), "__aspect__", _clean_text(aspect)))
+            meta_info.append((str(p), "__filepath__", _clean_text(p)))
 
             return (p, p, name, aspect, meta_info, None)
 
@@ -78,245 +286,7 @@ class ImageReader:
             logger.warning(f'Failed to process {p}: {e}')
             name = os.path.basename(p)
             return (p, p, name, None, [], 'fail')
-
-    # ---------- helpers (text) ----------
-    @classmethod
-    def _clean_text(cls, s: Any) -> str:
-        if not isinstance(s, str):
-            s = str(s)
-        s = s.replace('\x00', '')
-        s = cls._CONTROL_CHARS_RE.sub('', s)
-        return unicodedata.normalize('NFC', s)
-
-    @staticmethod
-    def _looks_utf16(bytez: bytes) -> bool:
-        if not bytez:
-            return False
-        if bytez.startswith(b'\xff\xfe') or bytez.startswith(b'\xfe\xff'):
-            return True
-        window = bytez[:64]
-        zero_ratio = window.count(b'\x00') / max(1, len(window))
-        return zero_ratio > 0.25
-
-    @classmethod
-    def _decode_bytes_safely(cls, b: bytes) -> str:
-        try:
-            return cls._clean_text(b.decode('utf-8'))
-        except Exception:
-            pass
-        if cls._looks_utf16(b):
-            for enc in ('utf-16', 'utf-16-le', 'utf-16-be'):
-                try:
-                    return cls._clean_text(b.decode(enc, errors='strict'))
-                except Exception:
-                    continue
-        try:
-            return cls._clean_text(b.decode('utf-8', errors='ignore'))
-        except Exception:
-            return cls._clean_text(b.decode('latin-1', errors='ignore'))
-
-    @classmethod
-    def _score_text(cls, s: str) -> float:
-        if not s:
-            return -1e9
-        bad = s.count('�')
-        ctrl = sum(1 for ch in s if ord(ch) < 0x20 and ch not in '\t\n\r')
-        vis_ascii = sum(1 for ch in s if ch in cls._PRINTABLE_SET and ch not in '\t\r')
-        cjk_basic = sum(1 for ch in s if 0x3000 <= ord(ch) <= 0x30FF or 0x4E00 <= ord(ch) <= 0x9FFF)
-        weird = sum(
-            1 for ch in s
-            if (0xE000 <= ord(ch) <= 0xF8FF)
-            or (0xD800 <= ord(ch) <= 0xDFFF)
-            or ord(ch) > 0x110000
-        )
-        length = len(s)
-        score = (vis_ascii + 1.5 * cjk_basic) / length - 2.5 * (bad + ctrl + weird) / length
-        blanks = sum(1 for ch in s if ch.isspace())
-        if blanks / length > 0.8:
-            score -= 1.0
-        return score
-
-    @classmethod
-    def _try_codecs(cls, b: bytes) -> list[str]:
-        candidates: list[bytes] = [b]
-        if len(b) >= 2:
-            candidates += [b[::2], b[1::2]]  # low/high 抜き出し
-        outs: list[str] = []
-        codecs = (
-            'utf-8', 'utf-16', 'utf-16-le', 'utf-16-be',
-            'utf-32', 'utf-32-le', 'utf-32-be'
-        )
-        for raw in candidates:
-            for enc in codecs:
-                try:
-                    outs.append(raw.decode(enc))
-                except Exception:
-                    continue
-            try:
-                outs.append(raw.decode('utf-8', errors='ignore'))
-            except Exception:
-                pass
-            outs.append(raw.decode('latin-1', errors='ignore'))
-        # ユニーク
-        seen, unique = set(), []
-        for s in outs:
-            if s not in seen:
-                seen.add(s)
-                unique.append(s)
-        return unique
-
-    @classmethod
-    def _smart_decode_exif_bytes(cls, b: bytes) -> str:
-        if not isinstance(b, (bytes, bytearray)):
-            return cls._clean_text(str(b))
-        b = bytes(b)
-        pool = [cls._decode_bytes_safely(b)] + cls._try_codecs(b)
-        best = max(pool, key=cls._score_text)
-        return cls._clean_text(best)
-
-    @classmethod
-    def _decode_xp_value(cls, v: Any) -> str:
-        if isinstance(v, list):
-            try:
-                v = bytes(v)
-            except Exception:
-                return cls._clean_text(v)
-        if isinstance(v, (bytes, bytearray)):
-            return cls._smart_decode_exif_bytes(bytes(v))
-        return cls._clean_text(v)
-
-    @classmethod
-    def _decode_user_comment(cls, b: bytes) -> str:
-        if not isinstance(b, (bytes, bytearray)) or len(b) < 8:
-            return cls._smart_decode_exif_bytes(bytes(b) if isinstance(b, bytearray) else b)
-        b = bytes(b)
-        prefix, payload = b[:8], b[8:]
-        try:
-            if prefix == b'ASCII\x00\x00\x00':
-                return cls._clean_text(payload.decode('ascii', errors='ignore'))
-            elif prefix == b'UNICODE\x00':
-                try:
-                    return cls._clean_text(payload.decode('utf-16', errors='strict'))
-                except Exception:
-                    return cls._clean_text(payload.decode('utf-16-le', errors='ignore'))
-            elif prefix == b'JIS\x00\x00\x00\x00':
-                for enc in ('shift_jis', 'cp932', 'euc_jp'):
-                    try:
-                        return cls._clean_text(payload.decode(enc))
-                    except Exception:
-                        continue
-                return cls._clean_text(payload.decode('latin-1', errors='ignore'))
-            else:
-                return cls._smart_decode_exif_bytes(payload)
-        except Exception:
-            return cls._smart_decode_exif_bytes(payload)
-
-    # ---------- helpers (values/GPS) ----------
-    @staticmethod
-    def _rational_to_float(x: Any) -> float | None:
-        try:
-            if isinstance(x, IFDRational):
-                return float(x)
-            if isinstance(x, tuple) and len(x) == 2:
-                num, den = x
-                return float(num) / float(den) if den else None
-            return float(x)
-        except Exception:
-            return None
-
-    @classmethod
-    def _dms_to_deg(cls, dms: Any, ref: str | None) -> float | None:
-        if not dms or not isinstance(dms, (tuple, list)) or len(dms) != 3:
-            return None
-        d = cls._rational_to_float(dms[0])
-        m = cls._rational_to_float(dms[1])
-        s = cls._rational_to_float(dms[2])
-        if d is None or m is None or s is None:
-            return None
-        deg = d + m / 60.0 + s / 3600.0
-        if ref and ref.upper() in ('S', 'W'):
-            deg = -deg
-        return deg
-
-    @classmethod
-    def _to_str(cls, v: Any, *, tag_id: int | None = None, tag_name: str | None = None) -> str:
-        if tag_id in cls.XP_TAGS or (tag_name and tag_name in cls.XP_TAGS.values()):
-            return cls._decode_xp_value(v)
-        if (tag_id == 0x9286) or (tag_name == 'UserComment'):
-            if isinstance(v, (bytes, bytearray)):
-                return cls._decode_user_comment(bytes(v))
-            return cls._clean_text(v)
-        if isinstance(v, (bytes, bytearray)):
-            return cls._smart_decode_exif_bytes(bytes(v))
-        if isinstance(v, IFDRational):
-            try:
-                return cls._clean_text(str(float(v)))
-            except Exception:
-                return cls._clean_text(f"{v.numerator}/{v.denominator}")
-        if isinstance(v, tuple):
-            try:
-                return cls._clean_text(", ".join(cls._to_str(x) for x in v))
-            except Exception:
-                return cls._clean_text(repr(v))
-        if isinstance(v, list):
-            try:
-                if v and isinstance(v[0], int) and 0 <= v[0] <= 255:
-                    return cls._smart_decode_exif_bytes(bytes(v))
-            except Exception:
-                pass
-            return cls._clean_text(v)
-        return cls._clean_text(v)
-
-    @classmethod
-    def _parse_gps(cls, gps_ifd: dict) -> dict[str, Any]:
-        out: dict[str, Any] = {}
-        try:
-            if not isinstance(gps_ifd, dict):
-                return out
-            g = {cls.GPSTAGS.get(k, k): v for k, v in gps_ifd.items()}
-            for k2, v2 in g.items():
-                out[f"GPS/{k2}"] = cls._to_str(v2)
-            lat = lon = None
-            if 'GPSLatitude' in g and 'GPSLatitudeRef' in g:
-                lat = cls._dms_to_deg(
-                    g['GPSLatitude'],
-                    cls._to_str(g['GPSLatitudeRef']).upper()
-                )
-            if 'GPSLongitude' in g and 'GPSLongitudeRef' in g:
-                lon = cls._dms_to_deg(
-                    g['GPSLongitude'],
-                    cls._to_str(g['GPSLongitudeRef']).upper()
-                )
-            if lat is not None:
-                out["GPS/GPSLatitudeDecimal"] = lat
-            if lon is not None:
-                out["GPS/GPSLongitudeDecimal"] = lon
-        except Exception:
-            pass
-        return out
-
-    @classmethod
-    def _extract_exif(cls, img: Image.Image) -> dict[str, Any]:
-        out: dict[str, Any] = {}
-        try:
-            exif = img.getexif()
-            if not exif:
-                return out
-            for tag_id, val in exif.items():
-                tag_name = cls.TAGS.get(tag_id)
-                if tag_name == 'GPSInfo' and isinstance(val, dict):
-                    out.update(cls._parse_gps(val))
-                    continue
-                if tag_name:
-                    out[f"{tag_name}"] = cls._to_str(val, tag_id=tag_id, tag_name=tag_name)
-                else:
-                    key = f"Tag_{tag_id}"
-                    out[key] = cls._to_str(val, tag_id=tag_id, tag_name=key)
-        except Exception:
-            pass
-        return out
-
-
+        
         
 class ImageLoader:
     ext = ('.jpg', '.jpeg', '.png', '.bmp', '.gif', '.webp')

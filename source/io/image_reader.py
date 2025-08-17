@@ -26,6 +26,43 @@ XP_TAGS = {
 # 制御文字（\t, \n, \r を除く）除去用
 _CONTROL_CHARS_RE = re.compile(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]')
 
+import hashlib
+import binascii
+
+# --- 追加: バイナリ判定と要約整形 ---
+
+_BINARY_INFO_KEYS = {
+    # Pillow が bytes を入れがちな key たち（画像形式や生成ツールにより増減）
+    "icc_profile",        # ICC プロファイル
+    "photoshop",          # Photoshop リソースブロック
+    "iptc",               # IPTC データ
+    "adobe",              # Adobe 用拡張
+    "raw_profile_type",   # ImageMagick 系で見かける raw profile
+    "XML:com.adobe.xmp",  # XMP メタ
+    "mp",                 # JPEG MPF (multi-picture) など
+    "icc",                # まれに短縮キーで入ることがある
+}
+
+def _looks_binary_payload(b: bytes) -> bool:
+    """可読テキストとしては不自然なバイト列かをざっくり判定"""
+    if not b:
+        return False
+    # テキストに出にくい制御文字の割合を見る（\t \n \r は許容）
+    ctrl = sum(1 for x in b if (x < 0x20 and x not in (0x09, 0x0A, 0x0D)) or x == 0x7F)
+    # 非ASCII（>0x7E）も多すぎればバイナリっぽいとみなす
+    high = sum(1 for x in b if x > 0x7E)
+    n = len(b)
+    return (ctrl / n > 0.60) or (high / n > 0.70)
+
+def _summarize_binary_value(key: str, b: bytes, *, preview_bytes: int = 256) -> str:
+    """バイナリ値を人間向けに要約（サイズ・MD5・先頭HEXプレビュー）"""
+    try:
+        md5 = hashlib.md5(b).hexdigest()
+    except Exception:
+        md5 = "n/a"
+    head = binascii.hexlify(b[:preview_bytes]).decode("ascii")
+    return f"<binary:{key}; size={len(b)} bytes; md5={md5}; head=0x{head}>"
+
 def _clean_text(s: Any) -> str:
     """ヌル・不要制御文字を除去し、Unicode正規化する最終サニタイズ"""
     if not isinstance(s, str):
@@ -267,12 +304,27 @@ class ImageReader:
 
             # フォーマット固有情報
             for k, v in info.items():
+                key = str(k)
+                # 1) 値が bytes/bytearray なら「要約表示」に切り替える
+                if isinstance(v, (bytes, bytearray)):
+                    bb = bytes(v)
+                    # 既知のバイナリキー、またはヒューリスティック的にバイナリっぽい場合は省略表示
+                    if (key in _BINARY_INFO_KEYS) or _looks_binary_payload(bb):
+                        val_str = _summarize_binary_value(key, bb)
+                    else:
+                        val_str = _decode_bytes_safely(bb)
+                    meta_info.append((str(p), key, val_str))
+                    continue
+
+                # 2) それ以外は既存の安全デコードで可読化
                 val_str = _clean_text(self._to_str(v))
-                meta_info.append((str(p), str(k), val_str))
+                meta_info.append((str(p), key, val_str))
 
             # Exif（既知＋未知）
             for k, v in exif_dict.items():
-                meta_info.append((str(p), f"EXIF/{k}", _clean_text(self._to_str(v))))
+                meta_info.append((str(p), k, _clean_text(self._to_str(v))))
+
+            
 
             # 基本寸法
             meta_info.append((str(p), "__width__", _clean_text(width)))

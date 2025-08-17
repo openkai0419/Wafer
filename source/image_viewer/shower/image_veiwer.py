@@ -61,21 +61,21 @@ class ZoomPanGraphicsView(QtWidgets.QGraphicsView):
         rw = max(1.0, r.width())
         rh = max(1.0, r.height())
 
-        # contain=min(sx, sy), cover=max(sx, sy)
         sx = vw / rw
         sy = vh / rh
         s = min(sx, sy) if mode == "contain" else max(sx, sy)
 
-        # いったんリセットしてから目的のスケールを適用・中央寄せ
         self.setTransform(QtGui.QTransform())
         t = QtGui.QTransform()
         t.scale(s, s)
         self.setTransform(t)
-        self.centerOn(r.center())
+
+        cx = r.center().x()
+        cy = r.top() + (vh / (2.0 * s))
+        self.centerOn(QtCore.QPointF(cx, cy))
 
         self._clamp_scale()
         self.zoomChanged.emit(self._current_scale())
-
     # --- helpers ---
     def _current_scale(self) -> float:
         m = self.transform()
@@ -149,23 +149,19 @@ class ZoomPanGraphicsView(QtWidgets.QGraphicsView):
         self.fit_in_view()
         event.accept()
 
-    def resizeEvent(self, event: QtGui.QResizeEvent):
-        super().resizeEvent(event)
-        if self._pix_item:
-            old = self._current_scale()
-            # 既定モードでのフィット後に元のズームを維持
-            self.fit_in_view()
-            self._set_scale(old / self._current_scale())
-            self._clamp_scale()
-
 
 class ImageViewerWidget(QtWidgets.QWidget):
+    resized = QtCore.Signal()
     def __init__(self, parent=None):
         super().__init__(parent)
         self.view = ZoomPanGraphicsView(self)
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.view)
+
+    def resizeEvent(self, event):
+        self.resized.emit()
+        return super().resizeEvent(event)
 
     def set_pixmap(self, pixmap, path=None):
         self.view.set_image(pixmap)
@@ -176,6 +172,9 @@ class ImageViewerWidget(QtWidgets.QWidget):
 
     def set_contain(self, state):
         self.view.set_fit_mode("contain" if state else "cover")
+
+    def is_contain(self):
+        return True if self.view._fit_mode == "contain" else False
 
 # --- demo ---
 if __name__ == "__main__":

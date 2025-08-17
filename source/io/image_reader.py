@@ -1,7 +1,6 @@
 from PIL import Image
-import cv2
 import os
-import time
+import cv2
 import numpy as np
 from PySide6 import QtCore, QtGui
 
@@ -53,16 +52,15 @@ class ImageReader:
 
 class ImageLoader:
     ext = ('.jpg', '.jpeg', '.png', '.bmp', '.gif', '.webp')
+
     def __init__(self, path):
         self.path = path
     
     @classmethod
     def is_loadable(cls, path):
-        if os.path.splitext(path)[-1] in cls.ext:
-            return True
-        return False  
+        return os.path.splitext(path)[-1].lower() in cls.ext
     
-    def load(self, size):
+    def load(self, size: QtCore.QSize | None = None) -> QtGui.QPixmap | None:
         path = self.path
         try:
             # GIFはQtで読み込み
@@ -72,7 +70,8 @@ class ImageLoader:
                 image = reader.read()
                 if image.isNull():
                     return None
-                image = image.scaled(size, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+                if size is not None:
+                    image = image.scaled(size, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
                 return QtGui.QPixmap.fromImage(image)
 
             # それ以外はOpenCVで読み込み
@@ -80,10 +79,13 @@ class ImageLoader:
             if img is None:
                 raise ValueError('OpenCV decode failed')
 
-            h, w = img.shape[:2]
-            if abs(w - size.width()) > 1 or abs(h - size.height()) > 1:
-                img = cv2.resize(img, (size.width(), size.height()), interpolation=cv2.INTER_AREA)
+            # サイズ指定があればリサイズ
+            if size is not None:
+                h, w = img.shape[:2]
+                if abs(w - size.width()) > 1 or abs(h - size.height()) > 1:
+                    img = cv2.resize(img, (size.width(), size.height()), interpolation=cv2.INTER_AREA)
 
+            # NumPy → QImage 変換
             if img.ndim == 2:
                 qimg = QtGui.QImage(img.data, img.shape[1], img.shape[0], img.strides[0], QtGui.QImage.Format_Grayscale8)
             elif img.ndim == 3:
@@ -101,5 +103,5 @@ class ImageLoader:
             return QtGui.QPixmap.fromImage(qimg.copy())
 
         except Exception as e:
-            logger.warning(f'[load_pixmap_from_path] Failed to load image: {path} ({e})')
+            logger.warning(f'[ImageLoader] Failed to load image: {path} ({e})')
             return None

@@ -10,6 +10,7 @@ from collections import defaultdict
 from functools import wraps
 import psutil
 from PySide6 import QtWidgets
+
 from .funcs import data_path
 logger = None
 profiler = None

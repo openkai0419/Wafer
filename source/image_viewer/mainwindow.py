@@ -15,6 +15,7 @@ from ..qt.dialog import ConfirmDialog, InputDialog
 from ..qt.thread import main_thread
 from ..zmq.zmq import MessageEnvelope, Role, ZMQNode
 from .viewer.justifiedwidget import JustifiedVirtualScrollWidget
+from .shower.data_viewer import ViewerWidget
 from .viewer_settings import main_setting
 from .widgets.button_bar import IconButtonBar, IconButtonConfig
 from .widgets.foldertree import LazyFolderTreeView
@@ -264,7 +265,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.viewer.setWidgetResizable(True)
         self.viewer.verticalScrollBar().setSingleStep(25)
         self.viewer.horizontalScrollBar().setSingleStep(25)
-        self.content = JustifiedVirtualScrollWidget(self.viewer)
+        self.content = JustifiedVirtualScrollWidget(self.viewer, self)
         viewer_menu = ContextMenuBuilder(self)
         self.content.set_context_menu_builder(viewer_menu)
         self.viewer.setWidget(self.content)
@@ -274,12 +275,19 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.splitter.addWidget(mid_panel)
 
         right_panel = QtWidgets.QWidget()
+        self.right_layout = QtWidgets.QVBoxLayout(right_panel)
+        self.right_layout.setContentsMargins(uipx(0), uipx(12), uipx(8), uipx(8))
+        self.right_layout.setSpacing(0)
+
+        self.data_shower = ViewerWidget(self)
+        
+        self.right_layout.addWidget(self.data_shower)
 
         self.splitter.addWidget(right_panel)
 
-        self.splitter.setStretchFactor(0, 0)
+        self.splitter.setStretchFactor(0, 1)
         self.splitter.setStretchFactor(1, 1)
-        self.splitter.setStretchFactor(2, 0)
+        self.splitter.setStretchFactor(2, 1)
         geo = main_setting.get('window/geometry', None)
         if geo:
             self.restoreGeometry(geo)

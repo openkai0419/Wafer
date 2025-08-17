@@ -101,11 +101,17 @@ def human_aspect(ratio: float, max_denominator: int = 100) -> str:
             return f"{num // g}:{den // g}"
     return f"{ratio:.2f}:1"
 
+def human_aspect_string(ratio: float):
+    return human_aspect(ratio)
+
 def human_size(size: int) -> str:
     units = ["B", "KB", "MB", "GB", "TB", "PB"]
     s = float(size)
     for unit in units:
         if s < 1024:
-            return f"{s:.1f}{unit}"
+            return f"{s:.1f} {unit}"
         s /= 1024
-    return f"{s:.1f}EB"
+    return f"{s:.1f} EB"
+
+def human_size_string(size: int) -> str:
+    return f"{human_size(size)} ({size:,} bytes)"

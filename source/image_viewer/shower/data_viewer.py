@@ -1,7 +1,7 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 from numpy import uint
 
-from ...common.funcs import uipx, human_aspect, human_size, human_time
+from ...common.funcs import uipx, human_aspect_string, human_size_string, human_time
 from ...qt.debounce import qt_debounce, qt_throttle
 from ...common.profiling import logger, profiler
 from ...db.query import MetaInfoSearchEngine
@@ -21,15 +21,13 @@ class ViewerWidget(QtWidgets.QSplitter):
         self.path: str | None = None
 
     def main_ui(self):
-        
-        self.image_label = ImageViewerWidget(self)
-        self.image_label.setMinimumSize(uipx(100), uipx(100))
-        self.image_label.installEventFilter(self)
-        self.image_label.set_contain(False)
-        self.addWidget(self.image_label)
+        self.image_viewer = ImageViewerWidget(self)
+        self.image_viewer.setMinimumSize(uipx(200), uipx(200))
+        self.image_viewer.set_contain(main_setting.get("window/sub_fitmode", True))
+        self.image_viewer.resized.connect(self.throttle_get_image)
+        self.addWidget(self.image_viewer)
 
         self.dict_viewer = DictListWidget()
-        self.dict_viewer.set_data([{},{}])
 
         self.area = QtWidgets.QScrollArea(self)
         self.area.setWidgetResizable(True)
@@ -37,15 +35,18 @@ class ViewerWidget(QtWidgets.QSplitter):
         self.area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         self.area.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         self.area.setWidget(self.dict_viewer)
-
         self.addWidget(self.area)
+        self.setSizes(main_setting.get("window/sub_splitter", [10, 800]))
 
-    def eventFilter(self, watched, event):
-        if event.type() == QtCore.QEvent.Resize:
-            self.throttle_get_image()
-        return super().eventFilter(watched, event)
+        QtWidgets.QApplication.instance().aboutToQuit.connect(self.on_exit)
 
-    @qt_throttle(200, 800)
+    def on_exit(self):
+        logger.info(self.image_viewer.is_contain())
+        main_setting.set("window/sub_fitmode", self.image_viewer.is_contain())
+        main_setting.set("window/sub_splitter", self.sizes())
+        main_setting.commit()
+
+    @qt_throttle(100, 200)
     def throttle_get_image(self):
         self.get_image()
 
@@ -58,7 +59,7 @@ class ViewerWidget(QtWidgets.QSplitter):
             pixmap = ImageLoader(self.path).load()
         if pixmap is None or pixmap.isNull():
             return
-        self.image_label.set_pixmap(pixmap, self.path)
+        self.image_viewer.set_pixmap(pixmap, self.path)
         self.pixmap_cache[key] = pixmap
 
     def set_path(self, path: str | None):
@@ -71,8 +72,8 @@ class ViewerWidget(QtWidgets.QSplitter):
     def set_meta(self):
         db = MetaInfoSearchEngine(self.root.dbpath)
         meta, meta_infos = db.get_metas(self.path)
-        meta["aspect_ratio"] = human_aspect(meta.get("aspect_ratio"))
-        meta["size"] = human_size(meta.get("size"))
+        meta["aspect_ratio"] = human_aspect_string(meta.get("aspect_ratio"))
+        meta["size"] = human_size_string(meta.get("size"))
         meta["mtime"] = human_time(meta.get("mtime"))
         meta["created"] = human_time(meta.get("created"))
         meta["collected_at"] = human_time(meta.get("collected_at"))

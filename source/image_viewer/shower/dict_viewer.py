@@ -258,7 +258,7 @@ class DictListWidget(QtWidgets.QWidget):
         )
 
         self._layout = QtWidgets.QVBoxLayout(self)
-        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setContentsMargins(0, uipx(5), uipx(4), uipx(5))
         self._layout.setSpacing(uipx(10) if compact else uipx(14))
         self._layout.addStretch(1)
 

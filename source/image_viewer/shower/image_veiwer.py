@@ -1,5 +1,8 @@
 from __future__ import annotations
 from PySide6 import QtCore, QtGui, QtWidgets
+from typing import Literal
+
+FitMode = Literal["contain", "cover"]
 
 class ZoomPanGraphicsView(QtWidgets.QGraphicsView):
     zoomChanged = QtCore.Signal(float)
@@ -12,6 +15,7 @@ class ZoomPanGraphicsView(QtWidgets.QGraphicsView):
         self._max_scale = 50.0
         self._is_panning = False
         self._last_pos = QtCore.QPoint()
+        self._fit_mode: FitMode = "contain"  # ★ 追加：既定のフィットモード
         self.setRenderHints(QtGui.QPainter.Antialiasing | QtGui.QPainter.SmoothPixmapTransform)
         self.setTransformationAnchor(QtWidgets.QGraphicsView.AnchorUnderMouse)
         self.setResizeAnchor(QtWidgets.QGraphicsView.AnchorUnderMouse)
@@ -29,18 +33,46 @@ class ZoomPanGraphicsView(QtWidgets.QGraphicsView):
         self.scene().setSceneRect(self._pix_item.boundingRect())
         self.reset_view()
 
+    def set_fit_mode(self, mode: FitMode):
+        self._fit_mode = mode
+
+    def toggle_fit_mode(self):
+        self._fit_mode = "cover" if self._fit_mode == "contain" else "contain"
+
     def reset_view(self):
-        self.setTransform(QtGui.QTransform())  # identity
+        self.setTransform(QtGui.QTransform())
         self.centerOn(self.sceneRect().center())
         self.fit_in_view(padding=0.0)
 
-    def fit_in_view(self, padding: float = 0.0):
+    def fit_in_view(self, padding: float = 0.0, mode: FitMode | None = None):
         if not self._pix_item:
             return
         r = self._pix_item.boundingRect().adjusted(padding, padding, -padding, -padding)
         if r.isEmpty():
             return
-        self.fitInView(r, QtCore.Qt.AspectRatioMode.KeepAspectRatio)
+
+        mode = mode or self._fit_mode
+        view_rect = self.viewport().rect()
+        if view_rect.isEmpty():
+            return
+
+        vw = max(1, view_rect.width())
+        vh = max(1, view_rect.height())
+        rw = max(1.0, r.width())
+        rh = max(1.0, r.height())
+
+        # contain=min(sx, sy), cover=max(sx, sy)
+        sx = vw / rw
+        sy = vh / rh
+        s = min(sx, sy) if mode == "contain" else max(sx, sy)
+
+        # いったんリセットしてから目的のスケールを適用・中央寄せ
+        self.setTransform(QtGui.QTransform())
+        t = QtGui.QTransform()
+        t.scale(s, s)
+        self.setTransform(t)
+        self.centerOn(r.center())
+
         self._clamp_scale()
         self.zoomChanged.emit(self._current_scale())
 
@@ -66,15 +98,12 @@ class ZoomPanGraphicsView(QtWidgets.QGraphicsView):
         angle = event.angleDelta().y()
         if angle == 0:
             return
-        # タッチパッドでも快適な係数
         step = 1.0015
-        steps = angle
-        factor = step ** steps
-        # Ctrlで微調整、Shiftで大きめ
+        factor = step ** angle
         if event.modifiers() & QtCore.Qt.KeyboardModifier.ControlModifier:
-            factor = step ** (steps * 0.5)
+            factor = step ** (angle * 0.5)
         elif event.modifiers() & QtCore.Qt.KeyboardModifier.ShiftModifier:
-            factor = step ** (steps * 2.0)
+            factor = step ** (angle * 2.0)
 
         before = self._current_scale()
         self._set_scale(factor)
@@ -88,7 +117,7 @@ class ZoomPanGraphicsView(QtWidgets.QGraphicsView):
             self._is_panning = True
             self._last_pos = event.pos()
             self.setCursor(QtCore.Qt.CursorShape.ClosedHandCursor)
-            self.setDragMode(QtWidgets.QGraphicsView.NoDrag)  # 自前パン
+            self.setDragMode(QtWidgets.QGraphicsView.NoDrag)
             event.accept()
             return
         if event.button() == QtCore.Qt.MouseButton.RightButton:
@@ -99,9 +128,10 @@ class ZoomPanGraphicsView(QtWidgets.QGraphicsView):
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent):
         if self._is_panning:
-            delta = self.mapToScene(self._last_pos) - self.mapToScene(event.pos())
+            dv = event.pos() - self._last_pos
             self._last_pos = event.pos()
-            self.translate(delta.x(), delta.y())
+            self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - dv.x())
+            self.verticalScrollBar().setValue(self.verticalScrollBar().value() - dv.y())
             event.accept()
             return
         super().mouseMoveEvent(event)
@@ -115,18 +145,19 @@ class ZoomPanGraphicsView(QtWidgets.QGraphicsView):
         super().mouseReleaseEvent(event)
 
     def mouseDoubleClickEvent(self, event: QtGui.QMouseEvent):
-        # ダブルクリックでfit
+        self.toggle_fit_mode()
         self.fit_in_view()
         event.accept()
 
     def resizeEvent(self, event: QtGui.QResizeEvent):
         super().resizeEvent(event)
-        # 画像が入っていて、縮小しすぎでなければ軽くfit
         if self._pix_item:
             old = self._current_scale()
+            # 既定モードでのフィット後に元のズームを維持
             self.fit_in_view()
-            self._set_scale(old / self._current_scale())  # 既存ズームを維持
+            self._set_scale(old / self._current_scale())
             self._clamp_scale()
+
 
 class ImageViewerWidget(QtWidgets.QWidget):
     def __init__(self, parent=None):
@@ -137,12 +168,14 @@ class ImageViewerWidget(QtWidgets.QWidget):
         layout.addWidget(self.view)
 
     def set_pixmap(self, pixmap, path=None):
-        
         self.view.set_image(pixmap)
 
     def load_image(self, path: str):
         pm = QtGui.QPixmap(path)
         self.view.set_image(pm)
+
+    def set_contain(self, state):
+        self.view.set_fit_mode("contain" if state else "cover")
 
 # --- demo ---
 if __name__ == "__main__":

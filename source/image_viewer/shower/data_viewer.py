@@ -6,7 +6,7 @@ from ...qt.debounce import qt_debounce, qt_throttle
 from ...common.profiling import logger, profiler
 from ...db.query import MetaInfoSearchEngine
 from ...io.image_reader import ImageLoader
-from .show_dict import DictListWidget
+from .dict_viewer import DictListWidget
 from .image_veiwer import ImageViewerWidget
 from ..viewer.cachemanager import FadeLabel, MemoryLimitedPixmapCache
 from ..viewer_settings import main_setting
@@ -25,6 +25,7 @@ class ViewerWidget(QtWidgets.QSplitter):
         self.image_label = ImageViewerWidget(self)
         self.image_label.setMinimumSize(uipx(100), uipx(100))
         self.image_label.installEventFilter(self)
+        self.image_label.set_contain(False)
         self.addWidget(self.image_label)
 
         self.dict_viewer = DictListWidget()

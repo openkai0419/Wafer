@@ -11,6 +11,7 @@ from pathlib import Path
 from source.io.manager import ReaderClass
 from ..common.funcs import IMAGE_EXTENSIONS, normalize_path
 from ..common.profiling import logger, profiler
+from ..common.hashes import file_hash
 from .db_utils import connect_with_retry
 extensions = IMAGE_EXTENSIONS
 CHUNK = 900
@@ -91,7 +92,6 @@ class ImageIndexer:
             conn = self.read_conn or self.conn
             cur = conn.execute(f'PRAGMA wal_checkpoint({mode})')
             cur.close()
-            self.emit_update()
         except Exception as e:
             logger.debug(f'wal_checkpoint({mode}) failed: {e}')
 
@@ -193,6 +193,7 @@ class ImageIndexer:
             path          TEXT PRIMARY KEY,
             source        TEXT,
             name          TEXT,
+            file_hash          TEXT,
             aspect_ratio  REAL,
             mtime         REAL,
             size          INTEGER,
@@ -213,6 +214,7 @@ class ImageIndexer:
             path  TEXT,
             key   TEXT,
             value TEXT,
+            file_hash  TEXT,
             PRIMARY KEY(path, key),
             FOREIGN KEY(path) REFERENCES meta(path) ON DELETE CASCADE
         );
@@ -417,15 +419,16 @@ class ImageIndexer:
             path = info.get("path")
             name = info.get("name")
             aspect = info.get("aspect")
+            b3hash = info.get("file_hash")
 
             mtime, fsize, ctime = file_info.get(source, (0.0, 0, 0.0))
             if status == 'fail':
                 failed_entries.append((source, mtime, fsize))
                 continue
             image_entries.append((source, mtime, fsize))
-            meta_entries.append((path, source, name, aspect, mtime, fsize, ctime, time.time()))
+            meta_entries.append((path, source, name, b3hash, aspect, mtime, fsize, ctime, time.time()))
             meta_info_entries.extend([(path, key, value) for key, value in meta_info.items()])
-            tag_entries.extend([(path, key, value) for key, value in tags.items()])
+            tag_entries.extend([(path, key, value, b3hash) for key, value in tags.items()])
         return (image_entries, meta_entries, meta_info_entries, tag_entries, failed_entries)
 
     @profiler.profile
@@ -446,11 +449,12 @@ class ImageIndexer:
                                 """, image_entries)
             if meta_entries:
                 cur.executemany("""
-                                INSERT INTO meta (path, source, name, aspect_ratio, mtime, size, created, collected_at)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                INSERT INTO meta (path, source, name, file_hash, aspect_ratio, mtime, size, created, collected_at)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                                 ON CONFLICT(path) DO UPDATE SET 
                                     source       = excluded.source,
                                     name         = excluded.name,
+                                    file_hash         = excluded.file_hash,
                                     aspect_ratio = excluded.aspect_ratio,
                                     mtime        = excluded.mtime,
                                     size         = excluded.size,
@@ -459,17 +463,18 @@ class ImageIndexer:
                                 """, meta_entries)
             if meta_info_entries:
                 cur.executemany("""
-                    INSERT INTO meta_info (path, key, value)
-                    VALUES (?, ?, ?)
-                    ON CONFLICT(path, key) DO UPDATE SET
-                        value = excluded.value
-                    """, meta_info_entries)
+                                INSERT INTO meta_info (path, key, value)
+                                VALUES (?, ?, ?)
+                                ON CONFLICT(path, key) DO UPDATE SET
+                                    value = excluded.value
+                                """, meta_info_entries)
             if tag_entries:
                 cur.executemany("""
-                                INSERT INTO tags (path, key, value)
-                                VALUES (?, ?, ?)
+                                INSERT INTO tags (path, key, value, file_hash)
+                                VALUES (?, ?, ?, ?)
                                 ON CONFLICT(path, key) DO UPDATE SET 
-                                    value = excluded.value
+                                    value = excluded.value,
+                                    file_hash = excluded.file_hash
                                 """, tag_entries)
             cur.close()
 
@@ -541,6 +546,7 @@ class ImageIndexer:
             batch_size = max(MIN_BATCH_SIZE, min(MAX_BATCH_SIZE, batch_size))
             i += len(batch)
             self.try_checkpoint("PASSIVE")
+            self.emit_update()
             self._add_progress(len(batch), 0)
             logger.info(f'[Adaptive Commit] {i}/{total} processed (batch={len(batch)}, {duration:.2f}s, target={target_s:.2f}s)')
         if acc_image_entries or acc_meta_entries or acc_meta_info_entries or acc_tag_entries or acc_failed_entries:
@@ -549,6 +555,7 @@ class ImageIndexer:
         write_queue.put(None)
         writer_thread.join()
         self.try_checkpoint()
+        self.emit_update()
 
     @profiler.profile
     def clean_unused(self):
@@ -574,6 +581,7 @@ class ImageIndexer:
             cur.execute('ANALYZE')
             self.conn.commit()
             self.try_checkpoint()
+            self.emit_update()
         except Exception as e:
             logger.exception('DATABASE CLEANUP FAILED: %s', e)
         else:

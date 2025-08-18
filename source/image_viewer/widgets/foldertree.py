@@ -1,4 +1,5 @@
 import os
+import time
 from PySide6 import QtCore, QtGui, QtWidgets
 from ...common.funcs import normalize_path
 from ...common.profiling import logger, profiler
@@ -173,7 +174,6 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
             self._add_item(path, item)
             return item
         return None
-
 
     @profiler.profile
     def find_index_by_path(self, path):

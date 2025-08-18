@@ -170,6 +170,7 @@ class MetaInfoSearchEngine:
             if not cur.fetchone():
                 logger.warning("Table 'meta' not found in DB.")
                 return False
+                
             self._apply_connection_pragmas(conn)
             self.conn = conn
             return True
@@ -320,7 +321,7 @@ class MetaInfoSearchEngine:
         return ([row['path'] for row in rows], [row['aspect_ratio'] for row in rows])
 
     @profiler.profile
-    def list_all_keys(self, query, sort_by_freq=False, include_freq=False):
+    def list_all_keys(self, query, sort_by_freq=False):
         if not self._connect_if_needed():
             return []
         cur = self.conn.cursor()
@@ -331,7 +332,7 @@ class MetaInfoSearchEngine:
         group_order_clause = 'GROUP BY key ORDER BY ' + ('freq DESC' if sort_by_freq else 'key')
         query_sql = f'SELECT key, COUNT(*) as freq FROM meta_info {where_clause} {group_order_clause}'
         rows = cur.execute(query_sql, params).fetchall()
-        return [(row['key'], row['freq']) if include_freq else row['key'] for row in rows]
+        return [(row['key'], row['freq']) for row in rows]
 
     @profiler.profile
     def explain_query_plan(self, query):
@@ -382,4 +383,4 @@ class MetaInfoSearchEngine:
         return dict(row) if row else {}
     
     def get_metas(self, path):
-        return [self.get_meta_by_path(path), self.get_meta_info_by_path(path)]
+        return [self.get_meta_by_path(path), self.get_meta_info_by_path(path), []]

@@ -1,5 +1,5 @@
 from PySide6 import QtCore, QtGui, QtWidgets
-from ...common.profiling import profiler
+from ...common.profiling import profiler, logger
 from ...db.query import MetaInfoSearchEngine, MetaQuery
 from ...image_setting.translation import TranslatorMixin
 from ...qt.thread import main_thread
@@ -25,7 +25,7 @@ class FolderComboUpdateWorker(QtCore.QRunnable):
         if self._cancelled:
             return
         query = MetaQuery(directories=self.selected_path)
-        results = self.engine.list_all_keys(query, sort_by_freq=True, include_freq=True)
+        results = self.engine.list_all_keys(query, sort_by_freq=True)
         if not self._cancelled:
             self.signals.finished.emit(results)
 

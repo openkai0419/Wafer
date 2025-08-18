@@ -49,7 +49,9 @@ class OverLayPainter(QtWidgets.QWidget):
         self.raise_()
 
     def eventFilter(self, watched, event):
-        if isinstance(event, QtCore.QEvent) and watched == self._parent and event.type() == QtCore.QEvent.Resize:
+        if not isinstance(event, QtCore.QEvent):
+            return False
+        if watched == self._parent and event.type() == QtCore.QEvent.Resize:
             self.resize(self._parent.size())
         return super().eventFilter(watched, event)
 
@@ -534,7 +536,6 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
             if indexes:
                 with self.selection_manager.noemit():
                     self.selection_manager.set_selected(indexes, last=-1)
-                logger.info(f'set: {indexes}')
             else:
                 with self.selection_manager.noemit():
                     self.selection_manager.clear()

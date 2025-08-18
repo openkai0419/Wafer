@@ -71,11 +71,11 @@ class ViewerWidget(QtWidgets.QSplitter):
 
     def set_meta(self):
         db = MetaInfoSearchEngine(self.root.dbpath)
-        meta, meta_infos = db.get_metas(self.path)
+        meta, meta_infos, tags = db.get_metas(self.path)
         meta["aspect_ratio"] = human_aspect_string(meta.get("aspect_ratio"))
         meta["size"] = human_size_string(meta.get("size"))
         meta["mtime"] = human_time(meta.get("mtime"))
         meta["created"] = human_time(meta.get("created"))
         meta["collected_at"] = human_time(meta.get("collected_at"))
-        self.dict_viewer.set_data([meta, meta_infos])
+        self.dict_viewer.set_data([meta, meta_infos, tags])
         self._last_cache_key = None

@@ -49,7 +49,7 @@ class OverLayPainter(QtWidgets.QWidget):
         self.raise_()
 
     def eventFilter(self, watched, event):
-        if watched == self._parent and event.type() == QtCore.QEvent.Resize:
+        if isinstance(event, QtCore.QEvent) and watched == self._parent and event.type() == QtCore.QEvent.Resize:
             self.resize(self._parent.size())
         return super().eventFilter(watched, event)
 

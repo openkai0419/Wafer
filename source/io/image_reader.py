@@ -31,18 +31,6 @@ import binascii
 
 # --- 追加: バイナリ判定と要約整形 ---
 
-_BINARY_INFO_KEYS = {
-    # Pillow が bytes を入れがちな key たち（画像形式や生成ツールにより増減）
-    "icc_profile",        # ICC プロファイル
-    "photoshop",          # Photoshop リソースブロック
-    "iptc",               # IPTC データ
-    "adobe",              # Adobe 用拡張
-    "raw_profile_type",   # ImageMagick 系で見かける raw profile
-    "XML:com.adobe.xmp",  # XMP メタ
-    "mp",                 # JPEG MPF (multi-picture) など
-    "icc",                # まれに短縮キーで入ることがある
-}
-
 def _looks_binary_payload(b: bytes) -> bool:
     """可読テキストとしては不自然なバイト列かをざっくり判定"""
     if not b:
@@ -52,16 +40,14 @@ def _looks_binary_payload(b: bytes) -> bool:
     # 非ASCII（>0x7E）も多すぎればバイナリっぽいとみなす
     high = sum(1 for x in b if x > 0x7E)
     n = len(b)
-    return (ctrl / n > 0.60) or (high / n > 0.70)
+    both = high + ctrl
+    return (both / n > 0.50), (both / n)
 
-def _summarize_binary_value(key: str, b: bytes, *, preview_bytes: int = 256) -> str:
-    """バイナリ値を人間向けに要約（サイズ・MD5・先頭HEXプレビュー）"""
-    try:
-        md5 = hashlib.md5(b).hexdigest()
-    except Exception:
-        md5 = "n/a"
-    head = binascii.hexlify(b[:preview_bytes]).decode("ascii")
-    return f"<binary:{key}; size={len(b)} bytes; md5={md5}; head=0x{head}>"
+def _summarize_binary_value(key: str, b: bytes, ratio) -> str:
+    size = len(b)
+    # 先頭数バイトHEX
+    head = b[:6].hex()
+    return f"<bin; ratio={ratio * 100:.{1}f}%; size={size}; head={head}…>"
 
 def _clean_text(s: Any) -> str:
     """ヌル・不要制御文字を除去し、Unicode正規化する最終サニタイズ"""
@@ -309,8 +295,9 @@ class ImageReader:
                 if isinstance(v, (bytes, bytearray)):
                     bb = bytes(v)
                     # 既知のバイナリキー、またはヒューリスティック的にバイナリっぽい場合は省略表示
-                    if (key in _BINARY_INFO_KEYS) or _looks_binary_payload(bb):
-                        val_str = _summarize_binary_value(key, bb)
+                    condition, ratio = _looks_binary_payload(bb)
+                    if condition:
+                        val_str = _summarize_binary_value(key, bb, ratio)
                     else:
                         val_str = _decode_bytes_safely(bb)
                     meta_info.append((str(p), key, val_str))

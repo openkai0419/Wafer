@@ -9,6 +9,7 @@ from typing import Any
 
 from PIL import Image
 
+from ..common.hashes import file_hash
 from .exif_parser import ExifParser 
 from .manager import BaseLoader, BaseReader
 
@@ -51,6 +52,7 @@ class ImageReader(BaseReader):
                     "path" : str(p),
                     "name" : str(os.path.basename(p)),
                     "aspect": aspect,
+                    "file_hash": file_hash(p),
                     }
             
             # 追加情報

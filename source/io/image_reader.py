@@ -41,29 +41,42 @@ class ImageReader(BaseReader):
                 exif_dict = res["exif"]
                 info_items = res["info_items"]
 
-            name = os.path.basename(p)
+            meta_info = {}
+            meta_info.update(exif_dict)
+            meta_info.update(info_items)
 
-            # meta_info: list[(filepath, key, value)]
-            meta_info: list[tuple[str, str, str]] = []
-            for k, v in info_items:
-                meta_info.append((p, k, v))
-            for k, v in exif_dict.items():
-                meta_info.append((p, k, str(v)))  # 念押しクリーン
+            # 基本情報
+            info = {
+                        "source" : str(p),
+                        "path" : str(p),
+                        "name" : str(os.path.basename(p)),
+                        "aspect": aspect,
+                        "hash": str(os.path.basename(p)),
+                        }
+            
+            # 追加情報
+            tags = {
+                "__filepath__": p,
+                "__width__": str(width),
+                "__height__": str(height),
+                "__aspect__": str(aspect),
+            }
 
-            # 基本寸法系
-            meta_info.append((p, "__width__", str(width)))
-            meta_info.append((p, "__height__", str(height)))
-            meta_info.append((p, "__aspect__", str(aspect)))
-            meta_info.append((p, "__filepath__", p))
-
-            return (p, p, name, aspect, meta_info, None)
+            return (info, meta_info, tags, None)
 
         except Exception as e:
             from ..common.profiling import logger
             logger.warning(f'Failed to process {p}: {e}')
-            name = os.path.basename(p)
-            return (p, p, name, None, [], 'fail')
+            info = {
+            "source" : p,
+            "path" : p,
+            "name" : os.path.basename(p),
+            "aspect": None,
+            "fhash": None,
+            }
+            return (info, {}, {}, 'fail')
         
+
 class ImageLoader(BaseLoader):
     ext = ('.jpg', '.jpeg', '.png', '.bmp', '.gif', '.webp')
     

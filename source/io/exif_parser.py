@@ -235,8 +235,9 @@ class ExifParser:
         return out
 
     @staticmethod
-    def parse_info_dict(info: dict) -> List[Tuple[str, str]]:
-        out: List[Tuple[str, str]] = []
+    def parse_info_dict(info: dict) -> Dict[str, str]:
+        """Image.info を {key: value_str} に整形"""
+        out: Dict[str, str] = {}
         for k, v in (info or {}).items():
             key = str(k)
             if isinstance(v, (bytes, bytearray)):
@@ -248,7 +249,7 @@ class ExifParser:
                     val_str = _decode_bytes_safely(bb)
             else:
                 val_str = _clean_text(ExifParser._to_str(v))
-            out.append((key, val_str))
+            out[key] = val_str
         return out
 
     def parse_file(self, path: str) -> dict:
@@ -260,7 +261,7 @@ class ExifParser:
             "aspect": None,
             "orientation": None,
             "exif": {},          # dict[str, Any]
-            "info_items": [],    # list[(key, str_value)]
+            "info_items": {},    # dict[str, str]
             "error": None,
         }
         try:
@@ -279,7 +280,7 @@ class ExifParser:
     def parse_img(self, img) -> dict:
         result = {
             "exif": {},
-            "info_items": [],
+            "info_items": {},
             "error": None,
         }
         try:
@@ -288,4 +289,3 @@ class ExifParser:
         except Exception as e:
             result["error"] = f"{e}"
         return result
-

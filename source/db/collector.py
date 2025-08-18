@@ -1,6 +1,5 @@
 import concurrent.futures
 import os
-from pprint import isreadable
 import queue
 import shutil
 import sqlite3
@@ -177,25 +176,65 @@ class ImageIndexer:
     @profiler.profile
     def _ensure_schema(self):
         cur = self.get_writer_cursor()
-        cur.execute('\n            CREATE TABLE IF NOT EXISTS images (\n                path TEXT PRIMARY KEY,\n                mtime REAL,\n                size INTEGER,\n                status TEXT DEFAULT NULL\n            )\n        ')
-        cur.execute('PRAGMA table_info(images)')
-        columns = [row[1] for row in cur.fetchall()]
-        if 'status' not in columns:
-            cur.execute('ALTER TABLE images ADD COLUMN status TEXT DEFAULT NULL')
-        cur.execute('\n            CREATE TABLE IF NOT EXISTS meta (\n                path TEXT PRIMARY KEY,\n  source TEXT,\n                name TEXT,\n                aspect_ratio REAL,\n                mtime REAL,\n                size INTEGER,\n                created REAL,\n                collected_at REAL,\nFOREIGN KEY(source) REFERENCES images(path) ON DELETE CASCADE)\n        ')
-        cur.execute('\n            CREATE TABLE IF NOT EXISTS meta_info (\n                path TEXT,\n                key TEXT,\n                value TEXT,\n                PRIMARY KEY(path, key),\n                FOREIGN KEY(path) REFERENCES meta(path) ON DELETE CASCADE\n            )\n        ')
-        cur.close()
+
+        # 互換性不要: 既存を破棄して再作成
+        cur.executescript("""
+        PRAGMA foreign_keys=OFF;
+
+        CREATE TABLE IF NOT EXISTS images (
+            path   TEXT PRIMARY KEY,
+            mtime  REAL,
+            size   INTEGER,
+            status TEXT DEFAULT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS meta (
+            path          TEXT PRIMARY KEY,
+            source        TEXT,
+            hash          TEXT,
+            name          TEXT,
+            aspect_ratio  REAL,
+            mtime         REAL,
+            size          INTEGER,
+            created       REAL,
+            collected_at  REAL,
+            FOREIGN KEY(source) REFERENCES images(path) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS meta_info (
+            path  TEXT,
+            key   TEXT,
+            value TEXT,
+            hash TEXT,
+            PRIMARY KEY(path, key),
+            FOREIGN KEY(path) REFERENCES meta(path) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS tags (
+            path  TEXT,
+            key   TEXT,
+            value TEXT,
+            PRIMARY KEY(path, key),
+            FOREIGN KEY(path) REFERENCES meta(path) ON DELETE CASCADE
+        );
+
+        PRAGMA foreign_keys=ON;
+        """)
 
         self.conn.executescript("""
-        CREATE INDEX IF NOT EXISTS idx_meta_source ON meta(source);
-        CREATE INDEX IF NOT EXISTS idx_meta_info_key ON meta_info(key);
+        CREATE INDEX IF NOT EXISTS idx_meta_info_key_path ON meta_info(key, path);
+        CREATE INDEX IF NOT EXISTS idx_meta_info_value ON meta_info(value);
+        CREATE INDEX IF NOT EXISTS idx_tags_value ON tags(value);
         
         CREATE INDEX IF NOT EXISTS idx_meta_mtime_path ON meta(mtime, path);
         CREATE INDEX IF NOT EXISTS idx_meta_name_path ON meta(name, path);
         CREATE INDEX IF NOT EXISTS idx_meta_size_path ON meta(size, path);
         CREATE INDEX IF NOT EXISTS idx_meta_created_path ON meta(created, path);
         CREATE INDEX IF NOT EXISTS idx_meta_collected_path ON meta(collected_at, path);
+
         """)
+
+        cur.close()
 
     @profiler.profile
     def _detect_diff(self, current, previous):
@@ -368,19 +407,28 @@ class ImageIndexer:
         image_entries = []
         meta_entries = []
         meta_info_entries = []
+        tag_entries = []
         failed_entries = []
-        for source, path, name, aspect, meta_info, status in results:
-            mtime, fsize, ctime = file_info.get(source, (None, None, None))
+
+        for info, meta_info, tags, status in results:
+            source = info.get("source")
+            path = info.get("path")
+            name = info.get("name")
+            aspect = info.get("aspect")
+            fhash = info.get("hash")
+
+            mtime, fsize, ctime = file_info.get(source, (0.0, 0, 0.0))
             if status == 'fail':
-                failed_entries.append((str(source), mtime, fsize))
+                failed_entries.append((source, mtime, fsize))
                 continue
-            image_entries.append((str(source), mtime, fsize))
-            meta_entries.append((str(path), str(source), name, aspect, mtime, fsize, ctime, time.time()))
-            meta_info_entries.extend(meta_info)
-        return (image_entries, meta_entries, meta_info_entries, failed_entries)
+            image_entries.append((source, mtime, fsize))
+            meta_entries.append((path, source, fhash, name, aspect, mtime, fsize, ctime, time.time()))
+            meta_info_entries.extend([(path, key, value, fhash) for key, value in meta_info.items()])
+            tag_entries.extend([(path, key, value) for key, value in tags.items()])
+        return (image_entries, meta_entries, meta_info_entries, tag_entries, failed_entries)
 
     @profiler.profile
-    def write_batch_to_db(self, image_entries, meta_entries, meta_info_entries, failed_entries):
+    def write_batch_to_db(self, image_entries, meta_entries, meta_info_entries, tag_entries, failed_entries):
         with self.conn:
             cur = self.conn.cursor()
             if failed_entries:
@@ -388,9 +436,30 @@ class ImageIndexer:
             if image_entries:
                 cur.executemany("\n                    INSERT INTO images (path, mtime, size, status)\n                    VALUES (?, ?, ?, 'ok')\n                    ON CONFLICT(path) DO UPDATE SET mtime = excluded.mtime, size = excluded.size, status = 'ok'\n                ", image_entries)
             if meta_entries:
-                cur.executemany('\n                    INSERT INTO meta (path, source, name, aspect_ratio, mtime, size, created, collected_at)\n                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)\n                    ON CONFLICT(path) DO UPDATE SET \n                        name = excluded.name,\n                        aspect_ratio = excluded.aspect_ratio,\n                        mtime = excluded.mtime,\n                        size = excluded.size,\n                        created = excluded.created,\n                        collected_at = excluded.collected_at\n                ', meta_entries)
+                cur.executemany("""
+                                INSERT INTO meta (path, source, hash, name, aspect_ratio, mtime, size, created, collected_at)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                ON CONFLICT(path) DO UPDATE SET 
+                                    source       = excluded.source,
+                                    hash         = excluded.hash,
+                                    name         = excluded.name,
+                                    aspect_ratio = excluded.aspect_ratio,
+                                    mtime        = excluded.mtime,
+                                    size         = excluded.size,
+                                    created      = excluded.created,
+                                    collected_at = excluded.collected_at
+
+                                """, meta_entries)
             if meta_info_entries:
-                cur.executemany('\n                    INSERT INTO meta_info (path, key, value)\n                    VALUES (?, ?, ?)\n                    ON CONFLICT(path, key) DO UPDATE SET value = excluded.value\n                ', meta_info_entries)
+                cur.executemany("""
+                    INSERT INTO meta_info (path, key, value, hash)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(path, key) DO UPDATE SET
+                        value = excluded.value,
+                        hash  = excluded.hash
+                """, meta_info_entries)
+            if tag_entries:
+                cur.executemany('\n                    INSERT INTO tags (path, key, value)\n                    VALUES (?, ?, ?)\n                    ON CONFLICT(path, key) DO UPDATE SET value = excluded.value\n                ', tag_entries)
             cur.close()
 
     @profiler.profile
@@ -413,8 +482,8 @@ class ImageIndexer:
                 if item is None:
                     break
                 try:
-                    image_entries, meta_entries, meta_info_entries, failed_entries = item
-                    self.write_batch_to_db(image_entries, meta_entries, meta_info_entries, failed_entries)
+                    image_entries, meta_entries, meta_info_entries, tag_entries, failed_entries = item
+                    self.write_batch_to_db(image_entries, meta_entries, meta_info_entries, tag_entries, failed_entries)
                 except Exception as e:
                     logger.error(f'[WriterThread] Error in write_batch_to_db: {e}')
                 finally:
@@ -424,6 +493,7 @@ class ImageIndexer:
         acc_image_entries = []
         acc_meta_entries = []
         acc_meta_info_entries = []
+        acc_tag_entries = []
         acc_failed_entries = []
         acc_proc_duration = 0.0
         while i < total:
@@ -432,18 +502,20 @@ class ImageIndexer:
             target_s = min(TARGET_MAX_S, ramp_target)
             batch = paths[i:i + batch_size]
             t0 = time.monotonic()
-            image_entries, meta_entries, meta_info_entries, failed_entries = self.batch_process_images(batch, file_info)
+            image_entries, meta_entries, meta_info_entries, tag_entries, failed_entries = self.batch_process_images(batch, file_info)
             duration = time.monotonic() - t0
             acc_image_entries.extend(image_entries)
             acc_meta_entries.extend(meta_entries)
             acc_meta_info_entries.extend(meta_info_entries)
+            acc_tag_entries.extend(tag_entries)
             acc_failed_entries.extend(failed_entries)
             acc_proc_duration += duration
             if acc_proc_duration >= target_s or write_queue.qsize() >= int(QUEUE_MAX * 0.8):
-                write_queue.put((acc_image_entries, acc_meta_entries, acc_meta_info_entries, acc_failed_entries))
+                write_queue.put((acc_image_entries, acc_meta_entries, acc_meta_info_entries, acc_tag_entries, acc_failed_entries))
                 acc_image_entries = []
                 acc_meta_entries = []
                 acc_meta_info_entries = []
+                acc_tag_entries = []
                 acc_failed_entries = []
                 acc_proc_duration = 0.0
             if duration > 0:
@@ -461,8 +533,8 @@ class ImageIndexer:
             self._add_progress(len(batch), 0)
             self.emit_update()
             logger.info(f'[Adaptive Commit] {i}/{total} processed (batch={len(batch)}, {duration:.2f}s, target={target_s:.2f}s)')
-        if acc_image_entries or acc_meta_entries or acc_meta_info_entries or acc_failed_entries:
-            write_queue.put((acc_image_entries, acc_meta_entries, acc_meta_info_entries, acc_failed_entries))
+        if acc_image_entries or acc_meta_entries or acc_meta_info_entries or acc_tag_entries or acc_failed_entries:
+            write_queue.put((acc_image_entries, acc_meta_entries, acc_meta_info_entries, acc_tag_entries, acc_failed_entries))
         write_queue.join()
         write_queue.put(None)
         writer_thread.join()
@@ -474,8 +546,18 @@ class ImageIndexer:
         logger.info('CLEANING UP DATABASE')
         try:
             cur = self.get_writer_cursor()
-            cur.execute('\n                DELETE FROM meta\n                WHERE source NOT IN (SELECT path FROM images)\n            ')
-            cur.execute('\n                DELETE FROM meta_info\n                WHERE path NOT IN (SELECT path FROM meta)\n            ')
+            cur.execute("""
+                DELETE FROM meta
+                WHERE source NOT IN (SELECT path FROM images)
+            """)
+            cur.execute("""
+                DELETE FROM meta_info
+                WHERE path NOT IN (SELECT path FROM meta)
+            """)
+            cur.execute("""
+                DELETE FROM tags
+                WHERE path NOT IN (SELECT path FROM meta)
+            """)
             self.conn.commit()
             logger.info('RUNNING VACUUM')
             cur.execute('VACUUM')
@@ -488,3 +570,13 @@ class ImageIndexer:
             logger.exception('DATABASE CLEANUP FAILED: %s', e)
         else:
             logger.info('DATABASE CLEANUP END')
+
+
+    def dump_json(
+        self,
+        out_path: str | None = "temp_dump_json.json",
+        mode: str = "by_table",
+        pretty: bool = True,
+        chunk_size: int = 10_000,
+    ) -> str | None:
+        return None

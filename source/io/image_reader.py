@@ -47,12 +47,11 @@ class ImageReader(BaseReader):
 
             # 基本情報
             info = {
-                        "source" : str(p),
-                        "path" : str(p),
-                        "name" : str(os.path.basename(p)),
-                        "aspect": aspect,
-                        "hash": str(os.path.basename(p)),
-                        }
+                    "source" : str(p),
+                    "path" : str(p),
+                    "name" : str(os.path.basename(p)),
+                    "aspect": aspect,
+                    }
             
             # 追加情報
             tags = {
@@ -72,7 +71,6 @@ class ImageReader(BaseReader):
             "path" : p,
             "name" : os.path.basename(p),
             "aspect": None,
-            "fhash": None,
             }
             return (info, {}, {}, 'fail')
         

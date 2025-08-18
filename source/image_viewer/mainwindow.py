@@ -293,7 +293,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         geo = main_setting.get('window/geometry', None)
         if geo:
             self.restoreGeometry(geo)
-        sizes = main_setting.get('window/splitter', None)
+        sizes = main_setting.get('window/splitter', [10, 800, 10])
         if sizes:
             self.splitter.setSizes(sizes)
         self.loading_indicator = OverlayLoadingIndicator(self.viewer)

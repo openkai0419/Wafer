@@ -5,7 +5,7 @@ from ...common.funcs import uipx, human_aspect_string, human_size_string, human_
 from ...qt.debounce import qt_debounce, qt_throttle
 from ...common.profiling import logger, profiler
 from ...db.query import MetaInfoSearchEngine
-from ...io.image_reader import ImageLoader
+from ...io.manager import LoaderClass
 from .dict_viewer import DictListWidget
 from .image_veiwer import ImageViewerWidget
 from ..viewer.cachemanager import FadeLabel, MemoryLimitedPixmapCache
@@ -56,7 +56,7 @@ class ViewerWidget(QtWidgets.QSplitter):
         key = (self.path, None, None)
         pixmap = self.pixmap_cache.get(key)
         if pixmap is None or pixmap.isNull():
-            pixmap = ImageLoader(self.path).load()
+            pixmap = LoaderClass.load(self.path)
         if pixmap is None or pixmap.isNull():
             return
         self.image_viewer.set_pixmap(pixmap, self.path)

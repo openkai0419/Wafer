@@ -9,6 +9,9 @@ from source.common.profiling import initialize_profiling, logger, profiler
 from source.constants import APP_FILE_NAME, APP_ID, APP_NAME, default_db_name
 from source.image_collector.main_collector import CollectorProcess
 from source.os.process import Proc
+from source.io.bootstrap import import_all 
+
+import_all()
 
 def get_icon():
     from PySide6 import QtGui

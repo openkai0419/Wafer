@@ -91,6 +91,7 @@ class ImageIndexer:
             conn = self.read_conn or self.conn
             cur = conn.execute(f'PRAGMA wal_checkpoint({mode})')
             cur.close()
+            self.emit_update()
         except Exception as e:
             logger.debug(f'wal_checkpoint({mode}) failed: {e}')
 
@@ -191,7 +192,6 @@ class ImageIndexer:
         CREATE TABLE IF NOT EXISTS meta (
             path          TEXT PRIMARY KEY,
             source        TEXT,
-            hash          TEXT,
             name          TEXT,
             aspect_ratio  REAL,
             mtime         REAL,
@@ -205,7 +205,6 @@ class ImageIndexer:
             path  TEXT,
             key   TEXT,
             value TEXT,
-            hash TEXT,
             PRIMARY KEY(path, key),
             FOREIGN KEY(path) REFERENCES meta(path) ON DELETE CASCADE
         );
@@ -223,8 +222,7 @@ class ImageIndexer:
 
         self.conn.executescript("""
         CREATE INDEX IF NOT EXISTS idx_meta_info_key_path ON meta_info(key, path);
-        CREATE INDEX IF NOT EXISTS idx_meta_info_value ON meta_info(value);
-        CREATE INDEX IF NOT EXISTS idx_tags_value ON tags(value);
+        CREATE INDEX IF NOT EXISTS idx_tags_key_path ON tags(key, path);
         
         CREATE INDEX IF NOT EXISTS idx_meta_mtime_path ON meta(mtime, path);
         CREATE INDEX IF NOT EXISTS idx_meta_name_path ON meta(name, path);
@@ -272,7 +270,6 @@ class ImageIndexer:
             except Exception:
                 self._add_progress(1, 0)
                 continue
-
 
     @profiler.profile
     def load_previous(self):
@@ -399,7 +396,12 @@ class ImageIndexer:
         logger.info(f'[remove_by_file_list] Removed {len(normalized)} entries from DB')
 
     def _batch_images(self, p):
-        return ReaderClass.read(p)
+        try:
+            return ReaderClass.read(p)
+        except Exception:
+            norm = normalize_path(p)
+            return ({"source": norm, "path": norm, "name": Path(p).name, "aspect": None},
+                    {}, {}, 'fail')
 
     @profiler.profile
     def batch_process_images(self, batch, file_info):
@@ -415,15 +417,14 @@ class ImageIndexer:
             path = info.get("path")
             name = info.get("name")
             aspect = info.get("aspect")
-            fhash = info.get("hash")
 
             mtime, fsize, ctime = file_info.get(source, (0.0, 0, 0.0))
             if status == 'fail':
                 failed_entries.append((source, mtime, fsize))
                 continue
             image_entries.append((source, mtime, fsize))
-            meta_entries.append((path, source, fhash, name, aspect, mtime, fsize, ctime, time.time()))
-            meta_info_entries.extend([(path, key, value, fhash) for key, value in meta_info.items()])
+            meta_entries.append((path, source, name, aspect, mtime, fsize, ctime, time.time()))
+            meta_info_entries.extend([(path, key, value) for key, value in meta_info.items()])
             tag_entries.extend([(path, key, value) for key, value in tags.items()])
         return (image_entries, meta_entries, meta_info_entries, tag_entries, failed_entries)
 
@@ -432,34 +433,44 @@ class ImageIndexer:
         with self.conn:
             cur = self.conn.cursor()
             if failed_entries:
-                cur.executemany("\n                    INSERT INTO images (path, mtime, size, status)\n                    VALUES (?, ?, ?, 'fail')\n                    ON CONFLICT(path) DO UPDATE SET mtime = excluded.mtime, size = excluded.size, status = 'fail'\n                ", failed_entries)
+                cur.executemany("""
+                                INSERT INTO images (path, mtime, size, status)
+                                VALUES (?, ?, ?, 'fail')
+                                ON CONFLICT(path) DO UPDATE SET mtime = excluded.mtime, size = excluded.size, status = 'fail'
+                                """, failed_entries)
             if image_entries:
-                cur.executemany("\n                    INSERT INTO images (path, mtime, size, status)\n                    VALUES (?, ?, ?, 'ok')\n                    ON CONFLICT(path) DO UPDATE SET mtime = excluded.mtime, size = excluded.size, status = 'ok'\n                ", image_entries)
+                cur.executemany("""
+                                INSERT INTO images (path, mtime, size, status)
+                                VALUES (?, ?, ?, 'ok')
+                                ON CONFLICT(path) DO UPDATE SET mtime = excluded.mtime, size = excluded.size, status = 'ok'
+                                """, image_entries)
             if meta_entries:
                 cur.executemany("""
-                                INSERT INTO meta (path, source, hash, name, aspect_ratio, mtime, size, created, collected_at)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                INSERT INTO meta (path, source, name, aspect_ratio, mtime, size, created, collected_at)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                                 ON CONFLICT(path) DO UPDATE SET 
                                     source       = excluded.source,
-                                    hash         = excluded.hash,
                                     name         = excluded.name,
                                     aspect_ratio = excluded.aspect_ratio,
                                     mtime        = excluded.mtime,
                                     size         = excluded.size,
                                     created      = excluded.created,
                                     collected_at = excluded.collected_at
-
                                 """, meta_entries)
             if meta_info_entries:
                 cur.executemany("""
-                    INSERT INTO meta_info (path, key, value, hash)
-                    VALUES (?, ?, ?, ?)
+                    INSERT INTO meta_info (path, key, value)
+                    VALUES (?, ?, ?)
                     ON CONFLICT(path, key) DO UPDATE SET
-                        value = excluded.value,
-                        hash  = excluded.hash
-                """, meta_info_entries)
+                        value = excluded.value
+                    """, meta_info_entries)
             if tag_entries:
-                cur.executemany('\n                    INSERT INTO tags (path, key, value)\n                    VALUES (?, ?, ?)\n                    ON CONFLICT(path, key) DO UPDATE SET value = excluded.value\n                ', tag_entries)
+                cur.executemany("""
+                                INSERT INTO tags (path, key, value)
+                                VALUES (?, ?, ?)
+                                ON CONFLICT(path, key) DO UPDATE SET 
+                                    value = excluded.value
+                                """, tag_entries)
             cur.close()
 
     @profiler.profile
@@ -531,7 +542,6 @@ class ImageIndexer:
             i += len(batch)
             self.try_checkpoint("PASSIVE")
             self._add_progress(len(batch), 0)
-            self.emit_update()
             logger.info(f'[Adaptive Commit] {i}/{total} processed (batch={len(batch)}, {duration:.2f}s, target={target_s:.2f}s)')
         if acc_image_entries or acc_meta_entries or acc_meta_info_entries or acc_tag_entries or acc_failed_entries:
             write_queue.put((acc_image_entries, acc_meta_entries, acc_meta_info_entries, acc_tag_entries, acc_failed_entries))
@@ -539,7 +549,6 @@ class ImageIndexer:
         write_queue.put(None)
         writer_thread.join()
         self.try_checkpoint()
-
 
     @profiler.profile
     def clean_unused(self):
@@ -565,7 +574,6 @@ class ImageIndexer:
             cur.execute('ANALYZE')
             self.conn.commit()
             self.try_checkpoint()
-            self.emit_update()
         except Exception as e:
             logger.exception('DATABASE CLEANUP FAILED: %s', e)
         else:

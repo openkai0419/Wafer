@@ -138,14 +138,32 @@ class MetaQuery:
         conditions, params, keys = self.build_conditions(normalize_path_func, require_keys=self.require_keys)
         if conditions is None:
             return (None, None)
-        return (f"SELECT path, key, value FROM meta_info WHERE {' AND '.join(conditions)}", params)
-
+        return (
+            f"""
+            SELECT path, key, value FROM (
+                SELECT path, key, value FROM meta_info
+                UNION ALL
+                SELECT path, key, value FROM tags
+            ) WHERE {' AND '.join(conditions)}
+            """,
+            params
+        )
+    
     @profiler.profile
     def to_path_query(self, normalize_path_func):
         conditions, params, keys = self.build_conditions(normalize_path_func, require_keys=self.require_keys)
         if conditions is None:
             return (None, None)
-        return (f"SELECT DISTINCT path FROM meta_info WHERE {' AND '.join(conditions)}", params)
+        return (
+            f"""
+            SELECT DISTINCT path FROM (
+                SELECT path, key, value FROM meta_info
+                UNION ALL
+                SELECT path, key, value FROM tags
+            ) WHERE {' AND '.join(conditions)}
+            """,
+            params
+        )
 
 class MetaInfoSearchEngine:
     def __init__(self, db_path):
@@ -330,7 +348,13 @@ class MetaInfoSearchEngine:
             return []
         where_clause = f"WHERE {' AND '.join(filters)}" if filters else ''
         group_order_clause = 'GROUP BY key ORDER BY ' + ('freq DESC' if sort_by_freq else 'key')
-        query_sql = f'SELECT key, COUNT(*) as freq FROM meta_info {where_clause} {group_order_clause}'
+        query_sql = f"""
+            SELECT key, COUNT(*) as freq FROM (
+                SELECT key, value, path FROM meta_info
+                UNION ALL
+                SELECT key, value, path FROM tags
+            ) {where_clause} {group_order_clause}
+        """
         rows = cur.execute(query_sql, params).fetchall()
         return [(row['key'], row['freq']) for row in rows]
 
@@ -369,6 +393,18 @@ class MetaInfoSearchEngine:
             (norm_path,)
         ).fetchall()
         return {row["key"]: row["value"] for row in rows}
+    
+    @profiler.profile
+    def get_tags_by_path(self, path):
+        if not self._connect_if_needed():
+            return {}
+        cur = self.conn.cursor()
+        norm_path = self._normalize_path(path)
+        rows = cur.execute(
+            "SELECT key, value FROM tags WHERE path = ?",
+            (norm_path,)
+        ).fetchall()
+        return {row["key"]: row["value"] for row in rows}
 
     @profiler.profile
     def get_meta_by_path(self, path):
@@ -383,4 +419,4 @@ class MetaInfoSearchEngine:
         return dict(row) if row else {}
     
     def get_metas(self, path):
-        return [self.get_meta_by_path(path), self.get_meta_info_by_path(path), []]
+        return [self.get_meta_by_path(path), self.get_tags_by_path(path), self.get_meta_info_by_path(path)]

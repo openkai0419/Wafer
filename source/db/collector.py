@@ -9,7 +9,7 @@ import time
 from urllib.parse import quote
 from pathlib import Path
 
-from source.io.image_reader import ImageReader
+from source.io.manager import ReaderClass
 from ..common.funcs import IMAGE_EXTENSIONS, normalize_path
 from ..common.profiling import logger, profiler
 from .db_utils import connect_with_retry
@@ -360,7 +360,7 @@ class ImageIndexer:
         logger.info(f'[remove_by_file_list] Removed {len(normalized)} entries from DB')
 
     def _batch_images(self, p):
-        return ImageReader(p).get_meta()
+        return ReaderClass.read(p)
 
     @profiler.profile
     def batch_process_images(self, batch, file_info):

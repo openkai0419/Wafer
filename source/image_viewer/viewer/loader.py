@@ -1,6 +1,6 @@
 from ...common.funcs import uipx
 from ...common.profiling import profiler
-from ...io.image_reader import ImageLoader
+from ...io.manager import LoaderClass
 
 from PySide6 import QtCore, QtGui
 
@@ -29,8 +29,7 @@ class ImageLoaderRunnable(QtCore.QRunnable):
         if pixmap is None:
             if self._cancelled:
                 return
-            if ImageLoader.is_loadable(self.path):
-                pixmap = ImageLoader(self.path).load(self.size)
+            pixmap = LoaderClass.load(self.path, self.size)
 
             if pixmap is None or pixmap.isNull():
                 pixmap = self.receiver.error_placeholder.scaled(

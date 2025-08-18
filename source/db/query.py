@@ -80,14 +80,18 @@ class MetaQuery:
         keys, include_keywords, exclude_keywords = self.normalize_inputs()
         if require_keys and (not keys):
             return (None, None, None)
+
         def escape_like(s: str) -> str:
             return s.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+
         conditions = []
         params = []
+
         if keys:
             key_placeholders = ','.join(('?' for _ in keys))
-            conditions.append(f'key IN ({key_placeholders})')
+            conditions.append(f'key IN ({key_placeholders})')   # ← items.key を前提
             params.extend(keys)
+
         def match_clause(field, keywords, operator):
             if not keywords:
                 return ('', [])
@@ -101,19 +105,42 @@ class MetaQuery:
             values = [f"%{escape_like(kw)}%" for kw in keywords]
             clauses = [clause_format for _ in keywords]
             return (' ' + operator + ' ').join(clauses), values
+
+        # value は items.value を想定
         if include_keywords:
             clause, values = match_clause('value', include_keywords, self.keyword_mode)
             conditions.append(f'({clause})')
             params.extend(values)
+
+        # 除外は「同じ file_hash にその語が無い」を NOT EXISTS で
         if exclude_keywords:
             clause_ex_like, values_ex = match_clause('mi2.value', exclude_keywords, 'OR')
             if keys:
                 key_placeholders = ','.join(('?' for _ in keys))
-                conditions.append(f"NOT EXISTS (SELECT 1 FROM meta_info mi2 WHERE mi2.path = meta_info.path AND mi2.key IN ({key_placeholders}) AND ({clause_ex_like}))")
+                conditions.append(
+                    "NOT EXISTS ("
+                    "  SELECT 1"
+                    "  FROM meta_info mi2"
+                    "  JOIN meta m2 ON m2.file_hash = mi2.file_hash"
+                    "  WHERE m2.path = items.path"
+                    f"    AND mi2.key IN ({key_placeholders})"
+                    f"    AND ({clause_ex_like})"
+                    ")"
+                )
                 params.extend(keys)
             else:
-                conditions.append(f"NOT EXISTS (SELECT 1 FROM meta_info mi2 WHERE mi2.path = meta_info.path AND ({clause_ex_like}))")
+                conditions.append(
+                "NOT EXISTS ("
+                "  SELECT 1"
+                "  FROM meta_info mi2"
+                "  JOIN meta m2 ON m2.file_hash = mi2.file_hash"
+                "  WHERE m2.path = items.path"
+                f"    AND ({clause_ex_like})"
+                ")"
+            )
             params.extend(values_ex)
+
+        # ディレクトリ絞り込みは items.path で
         if self.directories:
             dirs = [str(Path(d).resolve()) for d in self.directories if isinstance(d, str) and d]
             dir_clauses = []
@@ -131,39 +158,50 @@ class MetaQuery:
             if dir_clauses:
                 conditions.append("(" + " OR ".join(dir_clauses) + ")")
                 params.extend(dir_params)
+
         return (conditions, params, keys)
 
     @profiler.profile
     def to_sql(self, normalize_path_func):
-        conditions, params, keys = self.build_conditions(normalize_path_func, require_keys=self.require_keys)
+        conditions, params, _ = self.build_conditions(normalize_path_func, require_keys=self.require_keys)
         if conditions is None:
             return (None, None)
-        return (
-            f"""
-            SELECT path, key, value FROM (
-                SELECT path, key, value FROM meta_info
+        where = ('WHERE ' + ' AND '.join(conditions)) if conditions else ''
+        sql = f"""
+            SELECT path, key, value
+            FROM (
+                SELECT m.path AS path, m.file_hash AS file_hash, mi.key AS key, mi.value AS value
+                FROM meta AS m
+                JOIN meta_info AS mi ON mi.file_hash = m.file_hash
                 UNION ALL
-                SELECT path, key, value FROM tags
-            ) WHERE {' AND '.join(conditions)}
-            """,
-            params
-        )
-    
+                SELECT m.path AS path, m.file_hash AS file_hash, t.key AS key, t.value AS value
+                FROM meta AS m
+                JOIN tags AS t ON t.file_hash = m.file_hash
+            ) AS items
+            {where}
+        """
+        return (sql, params)
+
     @profiler.profile
     def to_path_query(self, normalize_path_func):
-        conditions, params, keys = self.build_conditions(normalize_path_func, require_keys=self.require_keys)
+        conditions, params, _ = self.build_conditions(normalize_path_func, require_keys=self.require_keys)
         if conditions is None:
             return (None, None)
-        return (
-            f"""
-            SELECT DISTINCT path FROM (
-                SELECT path, key, value FROM meta_info
+        where = ('WHERE ' + ' AND '.join(conditions)) if conditions else ''
+        sql = f"""
+            SELECT DISTINCT path
+            FROM (
+                SELECT m.path AS path, m.file_hash AS file_hash, mi.key AS key, mi.value AS value
+                FROM meta AS m
+                JOIN meta_info AS mi ON mi.file_hash = m.file_hash
                 UNION ALL
-                SELECT path, key, value FROM tags
-            ) WHERE {' AND '.join(conditions)}
-            """,
-            params
-        )
+                SELECT m.path AS path, m.file_hash AS file_hash, t.key AS key, t.value AS value
+                FROM meta AS m
+                JOIN tags AS t ON t.file_hash = m.file_hash
+            ) AS items
+            {where}
+        """
+        return (sql, params)
 
 class MetaInfoSearchEngine:
     def __init__(self, db_path):
@@ -297,46 +335,49 @@ class MetaInfoSearchEngine:
         if not self._connect_if_needed():
             return ([], [])
         cur = self.conn.cursor()
-        parts = []
+
+        subqueries = []
         params = []
-        for idx, q in enumerate(queries):
+        for q in queries:
             sql, p = q.to_path_query(self._normalize_path)
             if not sql:
                 if q.append_mode == 'AND':
                     return ([], [])
                 continue
-            parts.append((f"q{len(parts)}", sql, q.append_mode))
+            # to_path_query は "SELECT DISTINCT path FROM (...items...)" なので
+            # そのまま括って使える
+            subqueries.append(f"({sql})")
             params.extend(p)
-        if not parts:
+
+        if not subqueries:
             return ([], [])
-        ctes = []
-        for name, sql, _ in parts:
-            ctes.append(f"{name} AS ({sql})")
-        combined = f"SELECT path FROM {parts[0][0]}"
-        for i in range(1, len(parts)):
-            op = "INTERSECT" if parts[i][2] == 'AND' else "UNION"
-            combined = f"({combined}) {op} (SELECT path FROM {parts[i][0]})"
+
+        # 先頭を土台に、以降を AND=INTERSECT / OR=UNION で合成
+        combined = subqueries[0]
+        for i in range(1, len(subqueries)):
+            op = "INTERSECT" if queries[i].append_mode == 'AND' else "UNION"
+            combined = f"({combined}) {op} {subqueries[i]}"
+
         sort_col, order = self._build_sort_clause(queries[-1].sort_by, queries[-1].ascending)
         if sort_col:
             final_query = f"""
-                WITH {', '.join(ctes)}
                 SELECT m.path, m.aspect_ratio
-                FROM meta m
-                JOIN ({combined}) c ON c.path = m.path
-                ORDER BY m.{sort_col} {order}
+                FROM meta AS m
+                JOIN ({combined}) AS c ON c.path = m.path
+                ORDER BY m."{sort_col}" {order}
             """
         else:
             final_query = f"""
-                WITH {', '.join(ctes)}
                 SELECT m.path, m.aspect_ratio
-                FROM meta m
-                JOIN ({combined}) c ON c.path = m.path
+                FROM meta AS m
+                JOIN ({combined}) AS c ON c.path = m.path
             """
+
         rows = cur.execute(final_query, params).fetchall()
         if queries[-1].sort_by == 'random':
-            rows = list(rows)
-            shuffle(rows)
+            rows = list(rows); shuffle(rows)
         return ([row['path'] for row in rows], [row['aspect_ratio'] for row in rows])
+
 
     @profiler.profile
     def list_all_keys(self, query, sort_by_freq=False):
@@ -344,18 +385,24 @@ class MetaInfoSearchEngine:
             return []
         cur = self.conn.cursor()
         filters, params, _ = query.build_conditions(self._normalize_path, require_keys=False)
-        if filters is None:
-            return []
-        where_clause = f"WHERE {' AND '.join(filters)}" if filters else ''
-        group_order_clause = 'GROUP BY key ORDER BY ' + ('freq DESC' if sort_by_freq else 'key')
-        query_sql = f"""
-            SELECT key, COUNT(*) as freq FROM (
-                SELECT key, value, path FROM meta_info
+        where = f"WHERE {' AND '.join(filters)}" if filters else ''
+        order = 'ORDER BY freq DESC' if sort_by_freq else 'ORDER BY key'
+        sql = f"""
+            SELECT key, COUNT(*) AS freq
+            FROM (
+                SELECT m.path AS path, m.file_hash AS file_hash, mi.key AS key, mi.value AS value
+                FROM meta AS m
+                JOIN meta_info AS mi ON mi.file_hash = m.file_hash
                 UNION ALL
-                SELECT key, value, path FROM tags
-            ) {where_clause} {group_order_clause}
+                SELECT m.path AS path, m.file_hash AS file_hash, t.key AS key, t.value AS value
+                FROM meta AS m
+                JOIN tags AS t ON t.file_hash = m.file_hash
+            ) AS items
+            {where}
+            GROUP BY key
+            {order}
         """
-        rows = cur.execute(query_sql, params).fetchall()
+        rows = cur.execute(sql, params).fetchall()
         return [(row['key'], row['freq']) for row in rows]
 
     @profiler.profile
@@ -388,11 +435,12 @@ class MetaInfoSearchEngine:
             return {}
         cur = self.conn.cursor()
         norm_path = self._normalize_path(path)
-        rows = cur.execute(
-            "SELECT key, value FROM meta_info WHERE path = ?",
-            (norm_path,)
-        ).fetchall()
-        return {row["key"]: row["value"] for row in rows}
+        row = cur.execute("SELECT file_hash FROM meta WHERE path = ?", (norm_path,)).fetchone()
+        if not row:
+            return {}
+        fid = row["file_hash"]
+        rows = cur.execute("SELECT key, value FROM meta_info WHERE file_hash = ?", (fid,)).fetchall()
+        return {r["key"]: r["value"] for r in rows}
     
     @profiler.profile
     def get_tags_by_path(self, path):
@@ -400,11 +448,12 @@ class MetaInfoSearchEngine:
             return {}
         cur = self.conn.cursor()
         norm_path = self._normalize_path(path)
-        rows = cur.execute(
-            "SELECT key, value FROM tags WHERE path = ?",
-            (norm_path,)
-        ).fetchall()
-        return {row["key"]: row["value"] for row in rows}
+        row = cur.execute("SELECT file_hash FROM meta WHERE path = ?", (norm_path,)).fetchone()
+        if not row:
+            return {}
+        fid = row["file_hash"]
+        rows = cur.execute("SELECT key, value FROM tags WHERE file_hash = ?", (fid,)).fetchall()
+        return {r["key"]: r["value"] for r in rows}
 
     @profiler.profile
     def get_meta_by_path(self, path):

@@ -5,13 +5,12 @@ import shutil
 import sqlite3
 import threading
 import time
-from urllib.parse import quote
 from pathlib import Path
 
 from source.io.manager import ReaderClass
 from ..common.funcs import IMAGE_EXTENSIONS, normalize_path
+from ..common.hashes import fast_sig_hash, full_hash
 from ..common.profiling import logger, profiler
-from ..common.hashes import file_hash
 from .db_utils import connect_with_retry
 extensions = IMAGE_EXTENSIONS
 CHUNK = 900
@@ -93,7 +92,7 @@ class ImageIndexer:
             cur = conn.execute(f'PRAGMA wal_checkpoint({mode})')
             cur.close()
         except Exception as e:
-            logger.debug(f'wal_checkpoint({mode}) failed: {e}')
+            logger.debug(f'wal_checkpoint({mode}) failed')
 
     @profiler.profile
     def exit(self):
@@ -189,43 +188,55 @@ class ImageIndexer:
             status TEXT DEFAULT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS fileindex (
+            file_hash TEXT PRIMARY KEY
+        );
+
         CREATE TABLE IF NOT EXISTS meta (
-            path          TEXT PRIMARY KEY,
             source        TEXT,
+            path          TEXT PRIMARY KEY,
             name          TEXT,
-            file_hash          TEXT,
+            file_hash       TEXT NOT NULL,
             aspect_ratio  REAL,
             mtime         REAL,
             size          INTEGER,
             created       REAL,
             collected_at  REAL,
-            FOREIGN KEY(source) REFERENCES images(path) ON DELETE CASCADE
+            FOREIGN KEY(source) REFERENCES images(path) ON DELETE CASCADE,
+            FOREIGN KEY(file_hash) REFERENCES fileindex(file_hash) ON UPDATE CASCADE ON DELETE CASCADE
         );
 
         CREATE TABLE IF NOT EXISTS meta_info (
-            path  TEXT,
-            key   TEXT,
-            value TEXT,
-            PRIMARY KEY(path, key),
-            FOREIGN KEY(path) REFERENCES meta(path) ON DELETE CASCADE
+            file_hash  TEXT NOT NULL,
+            key      TEXT NOT NULL,
+            value    TEXT,
+            PRIMARY KEY(file_hash, key),
+            FOREIGN KEY(file_hash) REFERENCES fileindex(file_hash) ON UPDATE CASCADE ON DELETE CASCADE
         );
 
         CREATE TABLE IF NOT EXISTS tags (
-            path  TEXT,
-            key   TEXT,
-            value TEXT,
-            file_hash  TEXT,
-            PRIMARY KEY(path, key),
-            FOREIGN KEY(path) REFERENCES meta(path) ON DELETE CASCADE
+            file_hash  TEXT NOT NULL,
+            key      TEXT NOT NULL,
+            value    TEXT,
+            PRIMARY KEY(file_hash, key),
+            FOREIGN KEY(file_hash) REFERENCES fileindex(file_hash) ON UPDATE CASCADE ON DELETE CASCADE
         );
 
         PRAGMA foreign_keys=ON;
         """)
 
         self.conn.executescript("""
-        CREATE INDEX IF NOT EXISTS idx_meta_info_key_path ON meta_info(key, path);
-        CREATE INDEX IF NOT EXISTS idx_tags_key_path ON tags(key, path);
-        
+        CREATE INDEX IF NOT EXISTS idx_meta_path ON meta(path);
+        CREATE INDEX IF NOT EXISTS idx_meta_file_id ON meta(file_hash);
+
+        CREATE INDEX IF NOT EXISTS idx_meta_info_key_fid ON meta_info(key, file_hash);
+        CREATE INDEX IF NOT EXISTS idx_tags_key_fid      ON tags(key, file_hash);
+
+        CREATE INDEX IF NOT EXISTS ix_meta_info_fid_key      ON meta_info(file_hash, key);
+        CREATE INDEX IF NOT EXISTS ix_meta_info_fid_val      ON meta_info(file_hash, value);
+        CREATE INDEX IF NOT EXISTS ix_tags_fid_key           ON tags(file_hash, key);
+        CREATE INDEX IF NOT EXISTS ix_tags_fid_val           ON tags(file_hash, value);
+
         CREATE INDEX IF NOT EXISTS idx_meta_mtime_path ON meta(mtime, path);
         CREATE INDEX IF NOT EXISTS idx_meta_name_path ON meta(name, path);
         CREATE INDEX IF NOT EXISTS idx_meta_size_path ON meta(size, path);
@@ -419,22 +430,38 @@ class ImageIndexer:
             path = info.get("path")
             name = info.get("name")
             aspect = info.get("aspect")
-            b3hash = info.get("file_hash")
+            file_hash = info.get("file_hash")
 
             mtime, fsize, ctime = file_info.get(source, (0.0, 0, 0.0))
+            if not file_hash:
+                file_hash = fast_sig_hash(source, fsize, part_kbytes=128)
+
             if status == 'fail':
                 failed_entries.append((source, mtime, fsize))
                 continue
             image_entries.append((source, mtime, fsize))
-            meta_entries.append((path, source, name, b3hash, aspect, mtime, fsize, ctime, time.time()))
-            meta_info_entries.extend([(path, key, value) for key, value in meta_info.items()])
-            tag_entries.extend([(path, key, value, b3hash) for key, value in tags.items()])
+            meta_entries.append((path, source, name, file_hash, aspect, mtime, fsize, ctime, time.time()))
+            meta_info_entries.extend([(file_hash, key, value) for key, value in meta_info.items()])
+            tag_entries.extend([(file_hash, key, value) for key, value in tags.items()])
         return (image_entries, meta_entries, meta_info_entries, tag_entries, failed_entries)
 
     @profiler.profile
     def write_batch_to_db(self, image_entries, meta_entries, meta_info_entries, tag_entries, failed_entries):
         with self.conn:
             cur = self.conn.cursor()
+            file_ids = set()
+            for _, _, _, fid, *_ in meta_entries:
+                if fid: file_ids.add(fid)
+            for fid, *_ in meta_info_entries:
+                if fid: file_ids.add(fid)
+            for fid, *_ in tag_entries:
+                if fid: file_ids.add(fid)
+            if file_ids:
+                cur.executemany(
+                    "INSERT OR IGNORE INTO fileindex(file_hash) VALUES (?)",
+                    [(fid,) for fid in file_ids]
+                )
+
             if failed_entries:
                 cur.executemany("""
                                 INSERT INTO images (path, mtime, size, status)
@@ -463,18 +490,17 @@ class ImageIndexer:
                                 """, meta_entries)
             if meta_info_entries:
                 cur.executemany("""
-                                INSERT INTO meta_info (path, key, value)
+                                INSERT INTO meta_info (file_hash, key, value)
                                 VALUES (?, ?, ?)
-                                ON CONFLICT(path, key) DO UPDATE SET
+                                ON CONFLICT(file_hash, key) DO UPDATE SET
                                     value = excluded.value
                                 """, meta_info_entries)
             if tag_entries:
                 cur.executemany("""
-                                INSERT INTO tags (path, key, value, file_hash)
-                                VALUES (?, ?, ?, ?)
-                                ON CONFLICT(path, key) DO UPDATE SET 
-                                    value = excluded.value,
-                                    file_hash = excluded.file_hash
+                                INSERT INTO tags (file_hash, key, value)
+                                VALUES (?, ?, ?)
+                                ON CONFLICT(file_hash, key) DO UPDATE SET 
+                                    value = excluded.value
                                 """, tag_entries)
             cur.close()
 
@@ -567,12 +593,18 @@ class ImageIndexer:
                 WHERE source NOT IN (SELECT path FROM images)
             """)
             cur.execute("""
+            DELETE FROM fileindex
+            WHERE file_hash NOT IN (SELECT file_hash FROM meta)
+            AND file_hash NOT IN (SELECT file_hash FROM meta_info)
+            AND file_hash NOT IN (SELECT file_hash FROM tags)
+            """)
+            cur.execute("""
                 DELETE FROM meta_info
-                WHERE path NOT IN (SELECT path FROM meta)
+                WHERE file_hash NOT IN (SELECT file_hash FROM fileindex)
             """)
             cur.execute("""
                 DELETE FROM tags
-                WHERE path NOT IN (SELECT path FROM meta)
+                WHERE file_hash NOT IN (SELECT file_hash FROM fileindex)
             """)
             self.conn.commit()
             logger.info('RUNNING VACUUM')

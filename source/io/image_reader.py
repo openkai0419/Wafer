@@ -1,7 +1,5 @@
 import os
 import cv2
-import re
-import unicodedata
 import numpy as np
 from PySide6 import QtCore, QtGui
 from ..common.profiling import logger
@@ -9,7 +7,7 @@ from typing import Any
 
 from PIL import Image
 
-from ..common.hashes import file_hash
+from ..common.hashes import fast_sig_hash
 from .exif_parser import ExifParser 
 from .manager import BaseLoader, BaseReader
 
@@ -20,7 +18,7 @@ class ImageReader(BaseReader):
     def is_readable(cls, path: str) -> bool:
         return os.path.splitext(path)[-1].lower() in cls.ext
     
-    def read(self, p):
+    def read(self, p, size=None):
         try:
             with Image.open(p) as img:
                 width, height = img.size
@@ -52,7 +50,7 @@ class ImageReader(BaseReader):
                     "path" : str(p),
                     "name" : str(os.path.basename(p)),
                     "aspect": aspect,
-                    "file_hash": file_hash(p),
+                    "file_hash": None,
                     }
             
             # 追加情報
@@ -60,7 +58,6 @@ class ImageReader(BaseReader):
                 "__filepath__": p,
                 "__width__": str(width),
                 "__height__": str(height),
-                "__aspect__": str(aspect),
             }
 
             return (info, meta_info, tags, None)

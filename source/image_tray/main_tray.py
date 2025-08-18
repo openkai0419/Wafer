@@ -24,7 +24,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon, TranslatorMixin):
         self.menu.addSeparator()
         self.reload_action = self.menu.addAction(self.t.tr('ReScan All'))
         self.reload_action.triggered.connect(self.rescan)
-        self.cleanup_action = self.menu.addAction(self.t.tr('Cleanup Database'))
+        self.cleanup_action = self.menu.addAction(self.t.tr('Cleanup and Optimize'))
         self.cleanup_action.triggered.connect(self.cleanup)
         self.menu.addSeparator()
         self.test_action = self.menu.addAction(self.t.tr('Test'))

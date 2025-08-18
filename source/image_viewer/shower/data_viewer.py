@@ -72,6 +72,8 @@ class ViewerWidget(QtWidgets.QSplitter):
     def set_meta(self):
         db = MetaInfoSearchEngine(self.root.dbpath)
         meta, tags, meta_infos = db.get_metas(self.path)
+        if meta["source"] == meta["path"]:
+            meta.pop("source", None)
         meta["aspect_ratio"] = human_aspect_string(meta.get("aspect_ratio"))
         meta["size"] = human_size_string(meta.get("size"))
         meta["mtime"] = human_time(meta.get("mtime"))

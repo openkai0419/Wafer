@@ -50,7 +50,7 @@ class ImageReader(BaseReader):
                     "path" : str(p),
                     "name" : str(os.path.basename(p)),
                     "aspect": aspect,
-                    "file_hash": None,
+                    "file_hash": fast_sig_hash(p),
                     }
             
             # 追加情報

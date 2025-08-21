@@ -226,15 +226,17 @@ class ImageIndexer:
         """)
 
         self.conn.executescript("""
-        CREATE INDEX IF NOT EXISTS idx_meta_path ON meta(path);
-        CREATE INDEX IF NOT EXISTS idx_meta_file_id ON meta(file_hash);
+        -- JOIN/検索の土台
+        CREATE INDEX IF NOT EXISTS idx_meta_file_hash        ON meta(file_hash);
+        CREATE INDEX IF NOT EXISTS idx_meta_path             ON meta(path);                 -- path起点のNOT EXISTSやJOINで有効
 
-        CREATE INDEX IF NOT EXISTS idx_meta_info_key_fid ON meta_info(key, file_hash);
-        CREATE INDEX IF NOT EXISTS idx_tags_key_fid      ON tags(key, file_hash);
+        CREATE INDEX IF NOT EXISTS idx_meta_info_file_key    ON meta_info(file_hash, key);
+        CREATE INDEX IF NOT EXISTS idx_tags_file_key         ON tags(file_hash,     key);
 
-        CREATE INDEX IF NOT EXISTS ix_meta_info_fid_key      ON meta_info(file_hash, key);
+        CREATE INDEX IF NOT EXISTS idx_meta_info_key_fid     ON meta_info(key, file_hash);
+        CREATE INDEX IF NOT EXISTS idx_tags_key_fid          ON tags(key, file_hash);
+
         CREATE INDEX IF NOT EXISTS ix_meta_info_fid_val      ON meta_info(file_hash, value);
-        CREATE INDEX IF NOT EXISTS ix_tags_fid_key           ON tags(file_hash, key);
         CREATE INDEX IF NOT EXISTS ix_tags_fid_val           ON tags(file_hash, value);
 
         CREATE INDEX IF NOT EXISTS idx_meta_mtime_path ON meta(mtime, path);
@@ -434,7 +436,7 @@ class ImageIndexer:
 
             mtime, fsize, ctime = file_info.get(source, (0.0, 0, 0.0))
             if not file_hash:
-                file_hash = fast_sig_hash(source, fsize, part_kbytes=128)
+                file_hash = fast_sig_hash(source, fsize, 256)
 
             if status == 'fail':
                 failed_entries.append((source, mtime, fsize))

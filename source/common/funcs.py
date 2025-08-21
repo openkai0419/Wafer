@@ -35,6 +35,8 @@ def is_dark_theme():
     bg_color = palette.color(QtGui.QPalette.Window)
     return bg_color.value() < 128
 
+
+
 def get_data_db(name):
     return data_path(f'data/{name}.db')
 
@@ -84,6 +86,9 @@ def config_path(relative_path):
 def list_files(directory, extension):
     ext = extension.lower() if extension.startswith('.') else f'.{extension.lower()}'
     return [normalize_path(f) for f in Path(directory).iterdir() if f.is_file() and f.suffix.lower() == ext]
+
+
+
 
 def human_time(ts: float) -> str:
     dt = datetime.datetime.fromtimestamp(ts)

@@ -1,5 +1,6 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 from numpy import uint
+from natsort import natsorted
 
 from ...common.funcs import uipx, human_aspect_string, human_size_string, human_time
 from ...qt.debounce import qt_debounce, qt_throttle
@@ -79,5 +80,7 @@ class ViewerWidget(QtWidgets.QSplitter):
         meta["mtime"] = human_time(meta.get("mtime"))
         meta["created"] = human_time(meta.get("created"))
         meta["collected_at"] = human_time(meta.get("collected_at"))
+        meta_infos = {k: meta_infos[k] for k in natsorted(meta_infos)}
+        tags = {k: tags[k] for k in natsorted(tags)}
         self.dict_viewer.set_data([meta, tags, meta_infos])
         self._last_cache_key = None

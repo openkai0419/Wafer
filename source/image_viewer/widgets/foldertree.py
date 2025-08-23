@@ -1,5 +1,5 @@
 import os
-import time
+from natsort import natsorted
 from PySide6 import QtCore, QtGui, QtWidgets
 from ...common.funcs import normalize_path
 from ...common.profiling import logger, profiler
@@ -111,7 +111,7 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
         parent_item.removeRows(0, parent_item.rowCount())
         path = parent_item.data(USER_ROLE_PATH)
         try:
-            for entry in sorted(os.scandir(path), key=lambda e: e.name.lower()):
+            for entry in natsorted(os.scandir(path), key=lambda e: e.name.lower()):
                 if not entry.is_dir(follow_symlinks=False):
                     continue
                 full_path = normalize_path(entry.path)
@@ -355,6 +355,8 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         self.set_state(state)
 
     def eventFilter(self, source, event):
+        if not isinstance(event, QtCore.QEvent):
+            return False
         if source == self.viewport() and event.type() in {QtCore.QEvent.MouseButtonPress, QtCore.QEvent.MouseButtonDblClick}:
             if event.button() == QtCore.Qt.LeftButton:
                 index = self.indexAt(event.pos())

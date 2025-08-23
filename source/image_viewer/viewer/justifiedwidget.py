@@ -336,6 +336,8 @@ class MouseHandlerBinder(QtCore.QObject):
         return mime is not None and mime.hasFormat(INTERNAL_MIME_FLAG.decode())
 
     def eventFilter(self, watched, event):
+        if not isinstance(event, QtCore.QEvent):
+            return False
         if event.type() == QtCore.QEvent.MouseMove and self._is_shift_dragging:
             self._drag_rect_current = event.pos()
             self.widget.update()

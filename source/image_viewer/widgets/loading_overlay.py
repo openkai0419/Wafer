@@ -33,6 +33,8 @@ class OverlayLoadingIndicator(QtWidgets.QWidget):
         self.hide()
 
     def eventFilter(self, watched, event):
+        if not isinstance(event, QtCore.QEvent):
+            return False
         if watched == self._parent and event.type() == QtCore.QEvent.Resize:
             self.resize(self._parent.size())
         return super().eventFilter(watched, event)

@@ -111,6 +111,8 @@ class MouseEventDispatcher(QtCore.QObject):
         self._drag_threshold = QtWidgets.QApplication.startDragDistance()
 
     def eventFilter(self, watched, event):
+        if not isinstance(event, QtCore.QEvent):
+            return False
         if watched != self._target:
             return super().eventFilter(watched, event)
         if isinstance(event, QtGui.QMouseEvent):

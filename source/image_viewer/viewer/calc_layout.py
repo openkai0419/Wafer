@@ -21,6 +21,7 @@ class JustifiedLayoutCalculator(QtCore.QRunnable):
     def cancel(self):
         self._cancelled = True
 
+    @profiler.profile
     def _calculate_horizontal(self, reverse):
         rects = []
         y = 0
@@ -51,6 +52,7 @@ class JustifiedLayoutCalculator(QtCore.QRunnable):
         if not self._cancelled:
             self.signals.layout_ready.emit(rects)
 
+    @profiler.profile
     def _emit_horizontal_line(self, rects, line, line_width, y, reverse):
         spacing = self.spacing
         base_height = self.base_height
@@ -76,11 +78,13 @@ class JustifiedLayoutCalculator(QtCore.QRunnable):
                 rects.append(QtCore.QRect(cur_x, y, iw, ih))
                 cur_x += iw + spacing
 
+    @profiler.profile
     def _line_height(self, line, line_width):
         total_spacing = self.spacing * (len(line) - 1)
         scale = max((self.container_width - total_spacing) / line_width, 0.1)
         return int(self.base_height * scale)
 
+    @profiler.profile
     def _calculate_vertical(self, reverse):
         if self.container_height is None:
             raise ValueError('Vertical layout requires container_height')
@@ -116,6 +120,7 @@ class JustifiedLayoutCalculator(QtCore.QRunnable):
         if not self._cancelled:
             self.signals.layout_ready.emit(rects)
 
+    @profiler.profile
     def _emit_vertical_line(self, rects, line, line_height, cur_x, reverse):
         spacing = self.spacing
         base_width = self.base_height
@@ -140,6 +145,7 @@ class JustifiedLayoutCalculator(QtCore.QRunnable):
             cur_x += iw + spacing
         return cur_x
 
+    @profiler.profile
     def _line_width(self, line, line_height):
         total_spacing = self.spacing * (len(line) - 1)
         scale = max((self.container_height - total_spacing) / line_height, 0.1)

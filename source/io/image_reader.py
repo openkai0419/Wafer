@@ -81,22 +81,19 @@ class ImageLoader(BaseLoader):
         return os.path.splitext(path)[-1].lower() in cls.ext
 
     # --- 変更点1: Qt側での縮小をデコーダにやらせる ---
-    def _qt_read(self, path, size: QtCore.QSize | None, keep_aspect: bool) -> QtGui.QPixmap | None:
+    def _qt_read(self, path, size: QtCore.QSize | None, keep_aspect: bool) -> QtGui.QImage | None:
         reader = QtGui.QImageReader(path)
         reader.setAutoTransform(True)
         if size is not None:
-            # デコード時に縮小してメモリ使用/コピーを抑える
             if keep_aspect:
-                # アスペクト維持は、長辺基準でscaledSizeを近似指定
-                # Qtは微妙にズレることがあるがコスト対効果が高い
                 sz = self._approx_aspect_keep_size(reader, size)
                 reader.setScaledSize(sz)
             else:
                 reader.setScaledSize(size)
-        img = reader.read()
-        if img.isNull():
+        image = reader.read()
+        if image.isNull():
             return None
-        return QtGui.QPixmap.fromImage(img)
+        return image
 
     def _approx_aspect_keep_size(self, reader: QtGui.QImageReader, target: QtCore.QSize) -> QtCore.QSize:
         # 原寸が読めない場合もあるため、ヘッダだけ先に読む
@@ -199,7 +196,7 @@ class ImageLoader(BaseLoader):
         return 'opencv'
 
     # --- 変更点5: 本体 ---
-    def load(self, path, size: QtCore.QSize | None = None) -> QtGui.QPixmap | None:
+    def load(self, path, size: QtCore.QSize | None = None) -> QtGui.QImage | None:
         ext = os.path.splitext(path)[-1].lower()
         try:
             # 1) GIFは既存仕様：Qt + 比率維持
@@ -219,9 +216,9 @@ class ImageLoader(BaseLoader):
             route = self._classify_opencv_array(arr, ext)
             if route != 'opencv':
                 # Qt優先（既存仕様：GIF以外はサイズ指定時は比率無視）
-                pix = self._qt_read(path, size, keep_aspect=False)
-                if pix is not None:
-                    return pix
+                img = self._qt_read(path, size, keep_aspect=False)
+                if img is not None:
+                    return img
                 # Qt失敗 → OpenCV継続
 
             if arr is None:
@@ -232,20 +229,19 @@ class ImageLoader(BaseLoader):
             if size is not None:
                 h, w = arr.shape[:2]
                 if (abs(w - size.width()) + abs(h - size.height())) > 2:
-                    # 縮小ならAREA、拡大ならLANCZOS4
                     interp = cv2.INTER_AREA if (size.width() < w or size.height() < h) else cv2.INTER_LANCZOS4
                     arr = cv2.resize(arr, (size.width(), size.height()), interpolation=interp)
 
-            # 4) NumPy -> QImage（コピー最小化）-> QPixmap
+            # 4) NumPy -> QImage（コピー最小化）
             qimg = self._numpy_to_qimage(arr)
-            return QtGui.QPixmap.fromImage(qimg)
+            return qimg
 
         except Exception as e:
             # 最終フォールバック: Qt
             try:
-                pix = self._qt_read(path, size, keep_aspect=(ext == '.gif'))
-                if pix is not None:
-                    return pix
+                img = self._qt_read(path, size, keep_aspect=(ext == '.gif'))
+                if img is not None:
+                    return img
             except Exception:
                 pass
             logger.warning(f'[ImageLoader] Failed to load image: {path} ({e})')

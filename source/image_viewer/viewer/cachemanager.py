@@ -47,7 +47,8 @@ class QLabelPool:
         self._available = []
         self._in_use = set()
         self._parent = parent
-
+    
+    @profiler.profile
     def acquire(self):
         if self._available:
             label = self._available.pop()
@@ -58,6 +59,7 @@ class QLabelPool:
         self._in_use.add(label)
         return label
 
+    @profiler.profile
     def release(self, label):
         label.hide()
         label.clear()
@@ -65,6 +67,7 @@ class QLabelPool:
         self._in_use.discard(label)
         self._available.append(label)
 
+    @profiler.profile
     def reset(self):
         while self._in_use:
             label = self._in_use.pop()

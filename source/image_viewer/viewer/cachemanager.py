@@ -99,15 +99,18 @@ class MemoryLimitedImageCache:
             old_key, old_image = self.cache.popitem(last=False)
             self.current_bytes -= self._estimate_image_size(old_image)
 
+    @profiler.profile
     def __getitem__(self, key):
         if key in self.cache:
             self.cache.move_to_end(key)
             return self.cache[key]
         raise KeyError(key)
 
+    @profiler.profile
     def __contains__(self, key):
         return key in self.cache
 
+    @profiler.profile
     def __delitem__(self, key):
         if key in self.cache:
             self.current_bytes -= self._estimate_image_size(self.cache[key])

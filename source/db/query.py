@@ -254,7 +254,7 @@ class MetaInfoSearchEngine:
                 if not cur.fetchone():
                     logger.warning(f"Required table/view '{name}' not found in DB.")
                     conn.close()
-                return False
+                    return False
                 
             self._apply_connection_pragmas(conn)
             self.conn = conn

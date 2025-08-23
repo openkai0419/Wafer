@@ -171,6 +171,11 @@ class ImageDB:
                 FOREIGN KEY(file_hash) REFERENCES fileindex(file_hash) ON UPDATE CASCADE ON DELETE CASCADE
             );
 
+            CREATE VIEW IF NOT EXISTS kv_all AS
+            SELECT file_hash, key, value, 'meta_info' AS src FROM meta_info
+            UNION ALL
+            SELECT file_hash, key, value, 'tags'      AS src FROM tags;
+
             PRAGMA foreign_keys=ON;
             """
         )
@@ -180,14 +185,8 @@ class ImageDB:
             CREATE INDEX IF NOT EXISTS idx_meta_file_hash        ON meta(file_hash);
             CREATE INDEX IF NOT EXISTS idx_meta_path             ON meta(path);
 
-            CREATE INDEX IF NOT EXISTS idx_meta_info_file_key    ON meta_info(file_hash, key);
-            CREATE INDEX IF NOT EXISTS idx_tags_file_key         ON tags(file_hash,     key);
-
             CREATE INDEX IF NOT EXISTS idx_meta_info_key_fid     ON meta_info(key, file_hash);
             CREATE INDEX IF NOT EXISTS idx_tags_key_fid          ON tags(key, file_hash);
-
-            CREATE INDEX IF NOT EXISTS ix_meta_info_fid_val      ON meta_info(file_hash, value);
-            CREATE INDEX IF NOT EXISTS ix_tags_fid_val           ON tags(file_hash, value);
 
             CREATE INDEX IF NOT EXISTS idx_meta_mtime_path ON meta(mtime, path);
             CREATE INDEX IF NOT EXISTS idx_meta_name_path ON meta(name, path);

@@ -3,6 +3,8 @@ import sqlite3
 from pathlib import Path
 from random import shuffle
 from typing import Sequence
+from functools import lru_cache
+
 from ..common.funcs import normalize_path
 from ..common.profiling import logger, profiler
 
@@ -172,38 +174,38 @@ class MetaQuery:
         )
 
     @profiler.profile
-    def _make_table_subquery(self, normalize_path_func, table: str, *, require_keys_override: bool | None = None):
+    def _make_kv_subquery(self, normalize_path_func, *, require_keys_override: bool | None = None):
         # require_keys のオーバーライド（Noneなら従来挙動）
         rk = self.require_keys if require_keys_override is None else require_keys_override
         conditions, params, _ = self.build_conditions(normalize_path_func, require_keys=rk)
         if conditions is None:
             return (None, [])
 
-        alias = 'mi' if table == 'meta_info' else 't'
         fixed_conditions = []
-
         for cond in conditions or []:
             c = cond
-            # 相関参照の置換
-            c = c.replace('items.path', 'm.path') \
-                .replace('items.file_hash', 'm.file_hash') \
-                .replace('value', f'{alias}.value') \
-                .replace('key IN', f'{alias}.key IN')
-            # NOT EXISTS 内のテーブル別名の置換（mi2/t2、m2は共通のまま）
-            c = c.replace('FROM meta_info mi2', f'FROM {table} {"mi2" if table=="meta_info" else "t2"}') \
-                .replace('mi2.value', f'{"mi2" if table=="meta_info" else "t2"}.value') \
-                .replace('mi2.key',   f'{"mi2" if table=="meta_info" else "t2"}.key') \
-                .replace('mi2.file_hash', f'{"mi2" if table=="meta_info" else "t2"}.file_hash')
+            # 相関参照の置換（items → m/k）
+            c = (c.replace('items.path', 'm.path')
+                .replace('items.file_hash', 'm.file_hash')
+                .replace('value', 'k.value')
+                .replace('key IN', 'k.key IN'))
+            # NOT EXISTS 内の別名置換（mi2→k2, テーブルは kv_all）
+            c = (c.replace('FROM meta_info mi2', 'FROM kv_all k2')
+                .replace('FROM tags t2', 'FROM kv_all k2')        # 念のため
+                .replace('mi2.value', 'k2.value')
+                .replace('mi2.key',   'k2.key')
+                .replace('mi2.file_hash', 'k2.file_hash'))
             fixed_conditions.append(c)
 
         where = ('WHERE ' + ' AND '.join(fixed_conditions)) if fixed_conditions else ''
         subquery = f"""
-            SELECT m.path AS path, m.file_hash AS file_hash, {alias}.key AS key, {alias}.value AS value
+            SELECT m.path AS path, m.file_hash AS file_hash, k.key AS key, k.value AS value
             FROM meta AS m
-            JOIN {table} AS {alias} ON {alias}.file_hash = m.file_hash
+            JOIN kv_all AS k ON k.file_hash = m.file_hash
             {where}
         """
         return (subquery, list(params))
+
 
 
     @profiler.profile
@@ -213,101 +215,52 @@ class MetaQuery:
             keys = [self.keys] if isinstance(self.keys, str) else list(self.keys)
             key_placeholders = ",".join("?" for _ in keys)
             sql = f"""
-                WITH iv AS (
-                    SELECT file_hash, key, value FROM meta_info WHERE key IN ({key_placeholders})
-                    UNION ALL
-                    SELECT file_hash, key, value FROM tags      WHERE key IN ({key_placeholders})
-                )
-                SELECT m.path AS path, iv.key AS key, iv.value AS value
-                FROM iv
-                JOIN meta AS m ON m.file_hash = iv.file_hash
+                SELECT m.path AS path, k.key AS key, k.value AS value
+                FROM kv_all AS k
+                JOIN meta AS m ON m.file_hash = k.file_hash
+                WHERE k.key IN ({key_placeholders})
             """
-            # keys を2回使う（meta_info/tags 用）
-            return (sql, keys + keys)
+            return (sql, keys)
 
-        # --- 通常パス ---
-        q1, p1 = self._make_table_subquery(normalize_path_func, 'meta_info')
-        q2, p2 = self._make_table_subquery(normalize_path_func, 'tags')
-
-        subqueries = []
-        params = []
-        if q1:
-            subqueries.append(q1); params.extend(p1)
-        if q2:
-            subqueries.append(q2); params.extend(p2)
-
-        if not subqueries:
+        # --- 通常パス: kv_all 1本で生成 ---
+        q, p = self._make_kv_subquery(normalize_path_func)
+        if not q:
             return (None, None)
-
-        if len(subqueries) == 2:
-            sql = f"""
-                SELECT path, key, value
-                FROM (
-                    {subqueries[0]}
-                    UNION ALL
-                    {subqueries[1]}
-                ) AS items
-            """
-        else:
-            sql = f"""
-                SELECT path, key, value
-                FROM (
-                    {subqueries[0]}
-                ) AS items
-            """
-        return (sql, params)
+        sql = f"""
+            SELECT path, key, value
+            FROM (
+                {q}
+            ) AS items
+        """
+        return (sql, p)
 
 
     @profiler.profile
     def to_path_query(self, normalize_path_func):
-        # --- fast path: keys のみ（値検索なし、ディレクトリ絞りなし、除外なし）---
+        # --- fast path: keys のみ ---
         if self._is_fastpath_simple_keys():
             keys = [self.keys] if isinstance(self.keys, str) else list(self.keys)
             key_placeholders = ",".join("?" for _ in keys)
             sql = f"""
-                WITH iv AS (
-                    SELECT file_hash FROM meta_info WHERE key IN ({key_placeholders})
-                    UNION
-                    SELECT file_hash FROM tags      WHERE key IN ({key_placeholders})
-                )
                 SELECT DISTINCT m.path AS path
-                FROM iv
-                JOIN meta AS m ON m.file_hash = iv.file_hash
+                FROM kv_all AS k
+                JOIN meta AS m ON m.file_hash = k.file_hash
+                WHERE k.key IN ({key_placeholders})
             """
-            return (sql, keys + keys)
+            return (sql, keys)
 
         # --- 通常パス ---
-        q1, p1 = self._make_table_subquery(normalize_path_func, 'meta_info')
-        q2, p2 = self._make_table_subquery(normalize_path_func, 'tags')
-
-        subqueries = []
-        params = []
-        if q1:
-            subqueries.append(q1); params.extend(p1)
-        if q2:
-            subqueries.append(q2); params.extend(p2)
-
-        if not subqueries:
+        q, p = self._make_kv_subquery(normalize_path_func)
+        if not q:
             return (None, None)
-
-        if len(subqueries) == 2:
-            sql = f"""
-                SELECT DISTINCT path
-                FROM (
-                    {subqueries[0]}
-                    UNION ALL
-                    {subqueries[1]}
-                ) AS items
-            """
-        else:
-            sql = f"""
-                SELECT DISTINCT path
-                FROM (
-                    {subqueries[0]}
-                ) AS items
-            """
-        return (sql, params)
-
+        sql = f"""
+            SELECT path
+            FROM (
+                {q}
+            ) AS items
+            GROUP BY path
+        """
+        return (sql, p)
 
 
 class MetaInfoSearchEngine:
@@ -346,6 +299,7 @@ class MetaInfoSearchEngine:
         try:
             cur = conn.cursor()
             cur.executescript("""
+                PRAGMA query_only=ON;
                 PRAGMA temp_store=MEMORY;
             """)
         except Exception as e:
@@ -369,48 +323,54 @@ class MetaInfoSearchEngine:
             return ([], [], [])
         sort_column, order = self._build_sort_clause(sort_by, ascending)
 
-        cur.execute("CREATE TEMP TABLE IF NOT EXISTS _tmp_paths(path TEXT PRIMARY KEY) WITHOUT ROWID")
-        cur.execute("DELETE FROM _tmp_paths")
+        all_rows = []
         for i in range(0, len(paths), batch_size):
-            cur.executemany("INSERT INTO _tmp_paths(path) VALUES (?)", [(p,) for p in paths[i:i+batch_size]])
+            chunk = paths[i:i+batch_size]
+            placeholders = ",".join("?" for _ in chunk)
+
+            if sort_by == 'random':
+                rows = cur.execute(
+                    f"""
+                    SELECT m.path, m.source, m.aspect_ratio
+                    FROM meta AS m
+                    WHERE m.path IN ({placeholders})
+                    """,
+                    chunk
+                ).fetchall()
+                all_rows.extend(rows)
+                continue
+
+            if sort_column:
+                rows = cur.execute(
+                    f"""
+                    SELECT m.path, m.source, m.aspect_ratio
+                    FROM meta AS m
+                    WHERE m.path IN ({placeholders})
+                    ORDER BY m."{sort_column}" {order}
+                    """,
+                    chunk
+                ).fetchall()
+            else:
+                rows = cur.execute(
+                    f"""
+                    SELECT m.path, m.source, m.aspect_ratio
+                    FROM meta AS m
+                    WHERE m.path IN ({placeholders})
+                    """,
+                    chunk
+                ).fetchall()
+
+            all_rows.extend(rows)
 
         if sort_by == 'random':
-            rows = cur.execute(
-                """
-                SELECT m.path, m.source, m.aspect_ratio
-                FROM meta AS m
-                JOIN _tmp_paths t ON t.path = m.path
-                """
-            ).fetchall()
-            rows = list(rows)
-            shuffle(rows)
-            return ([row['path'] for row in rows],
-                    [row['source'] for row in rows],
-                    [row['aspect_ratio'] for row in rows])
+            all_rows = list(all_rows)
+            shuffle(all_rows)
 
-        if sort_column:
-            rows = cur.execute(
-                f"""
-                SELECT m.path, m.source, m.aspect_ratio
-                FROM meta AS m
-                JOIN _tmp_paths t ON t.path = m.path
-                ORDER BY m."{sort_column}" {order}
-                """
-            ).fetchall()
-            return ([row['path'] for row in rows],
-                    [row['source'] for row in rows],
-                    [row['aspect_ratio'] for row in rows])
-
-        rows = cur.execute(
-            """
-            SELECT m.path, m.source, m.aspect_ratio
-            FROM meta AS m
-            JOIN _tmp_paths t ON t.path = m.path
-            """
-        ).fetchall()
-        return ([row['path'] for row in rows],
-                [row['source'] for row in rows],
-                [row['aspect_ratio'] for row in rows])
+        return (
+            [r['path'] for r in all_rows],
+            [r['source'] for r in all_rows],
+            [r['aspect_ratio'] for r in all_rows],
+        )
 
 
     @profiler.profile
@@ -494,33 +454,27 @@ class MetaInfoSearchEngine:
             rows = list(rows); shuffle(rows)
         return ([row['path'] for row in rows], [row['aspect_ratio'] for row in rows])
 
-
     @profiler.profile
     def list_all_keys(self, query, sort_by_freq=False):
         if not self._connect_if_needed():
             return []
         cur = self.conn.cursor()
 
-        # ★ keys 未指定でも動くように require_keys=False を明示
-        q1, p1 = query._make_table_subquery(self._normalize_path, 'meta_info', require_keys_override=False)
-        q2, p2 = query._make_table_subquery(self._normalize_path, 'tags',      require_keys_override=False)
-
-        subqueries, params = [], []
-        if q1: subqueries.append(q1); params.extend(p1)
-        if q2: subqueries.append(q2); params.extend(p2)
-        if not subqueries:
+        # ★ keys 未指定でも動くように require_keys=False
+        q, p = query._make_kv_subquery(self._normalize_path, require_keys_override=False)
+        if not q:
             return []
 
-        unioned = " UNION ALL ".join(subqueries)
         order = "ORDER BY freq DESC" if sort_by_freq else "ORDER BY key"
-
         sql = f"""
             SELECT key, COUNT(*) AS freq
-            FROM ({unioned}) AS items
+            FROM (
+                {q}
+            ) AS items
             GROUP BY key
             {order}
         """
-        rows = cur.execute(sql, params).fetchall()
+        rows = cur.execute(sql, p).fetchall()
         return [(row['key'], row['freq']) for row in rows]
 
 

@@ -9,7 +9,7 @@ from ...db.query import MetaInfoSearchEngine
 from ...io.manager import LoaderClass
 from .dict_viewer import DictListWidget
 from .image_veiwer import ImageViewerWidget
-from ..viewer.cachemanager import FadeLabel, MemoryLimitedPixmapCache
+from ..viewer.cachemanager import FadeLabel, MemoryLimitedImageCache
 from ..viewer_settings import main_setting
 
 
@@ -17,7 +17,7 @@ class ViewerWidget(QtWidgets.QSplitter):
     def __init__(self, parent=None):
         super().__init__(QtCore.Qt.Vertical, parent)
         self.root = parent
-        self.pixmap_cache = MemoryLimitedPixmapCache(main_setting.get('window/chache_size', 500))
+        self.image_cache = MemoryLimitedImageCache(main_setting.get('window/chache_size', 500))
         self.main_ui()
         self.path: str | None = None
 
@@ -55,13 +55,13 @@ class ViewerWidget(QtWidgets.QSplitter):
         if not self.path:
             return
         key = (self.path, None, None)
-        pixmap = self.pixmap_cache.get(key)
-        if pixmap is None or pixmap.isNull():
-            pixmap = LoaderClass.load(self.path)
-        if pixmap is None or pixmap.isNull():
+        image = self.image_cache.get(key)
+        if image is None or image.isNull():
+            image = LoaderClass.load(self.path)
+        if image is None or image.isNull():
             return
-        self.image_viewer.set_pixmap(pixmap, self.path)
-        self.pixmap_cache[key] = pixmap
+        self.image_viewer.set_image(image, self.path)
+        self.image_cache[key] = image
 
     def set_path(self, path: str | None):
         if not path:

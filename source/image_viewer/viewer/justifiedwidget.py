@@ -9,7 +9,7 @@ from ...qt.debounce import qt_debounce, qt_throttle
 from ...qt.pixmap import PixmapFactory
 from ...qt.thread import main_thread
 from ..viewer_settings import main_setting
-from .cachemanager import MemoryLimitedPixmapCache, QLabelPool
+from .cachemanager import MemoryLimitedImageCache, QLabelPool
 from .calc_layout import JustifiedLayoutCalculator
 from .mouseeventmanager import ClickType, MouseActionKey, MouseButton, MouseEventDispatcher, MouseEventManager
 from .selectionmanager import SelectionManager
@@ -384,9 +384,9 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
         self.setMinimumWidth(self.min_height)
         self.spacing = uipx(4)
         self.calculator = None
-        self.pixmap_cache = MemoryLimitedPixmapCache(main_setting.get('window/chache_size', 500))
+        self.image_cache = MemoryLimitedImageCache(main_setting.get('window/chache_size', 500))
         self.active_threads = {}
-        self.error_placeholder = PixmapFactory.generate()
+        self.error_placeholder = PixmapFactory.generate().toImage()
         self.overlay_painter = OverLayPainter(self, self.spacing)
         self.selection_manager = SelectionManager()
         self.selection_manager.selectionChanged.connect(self._on_selection_changed)
@@ -624,8 +624,8 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
             label.setGeometry(rect)
             label.stackUnder(self.overlay_painter)
             self.widgets[i] = label
-            if i in self.pixmap_cache:
-                label.set_pixmap(self.pixmap_cache[i], self.image_paths[i])
+            if i in self.image_cache:
+                label.set_image(self.image_cache[i], self.image_paths[i])
             elif i not in self.active_threads:
                 runnable = ImageLoaderRunnable(i, self.image_paths[i], rect.size(), self)
                 self.active_threads[i] = runnable
@@ -638,22 +638,22 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
         if i in self.widgets:
             label = self.widgets.pop(i)
             self.label_pool.release(label)
-        if i in self.pixmap_cache:
-            del self.pixmap_cache[i]
+        if i in self.image_cache:
+            del self.image_cache[i]
         if i in self.active_threads:
             runnable = self.active_threads.pop(i)
             if hasattr(runnable, 'cancel'):
                 runnable.cancel()
 
     @profiler.profile
-    @QtCore.Slot(int, QtGui.QPixmap)
-    def _on_pixmap_ready(self, index, pixmap):
+    @QtCore.Slot(int, QtGui.QImage)
+    def _on_image_ready(self, index, image):
         if index >= len(self.image_paths):
-            logger.warning(f'_on_pixmap_ready: index {index} out of range (len={len(self.image_paths)})')
+            logger.warning(f'_on_image_ready: index {index} out of range (len={len(self.image_paths)})')
             return
         if index in self.widgets:
             label = self.widgets[index]
-            self.pixmap_cache[index] = pixmap
-            label.set_pixmap(pixmap, self.image_paths[index])
+            self.image_cache[index] = image
+            label.set_image(image, self.image_paths[index])
         if index in self.active_threads:
             del self.active_threads[index]

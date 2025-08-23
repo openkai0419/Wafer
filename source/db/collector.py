@@ -128,15 +128,17 @@ class ImageDB:
         cur = self.get_writer_cursor()
         cur.executescript(
             """
-            PRAGMA foreign_keys=OFF;
+            PRAGMA foreign_keys=ON;
 
+            -- TABLE FOR FILE UPDATE CHECK
             CREATE TABLE IF NOT EXISTS images (
-                path   TEXT PRIMARY KEY,
+                source   TEXT PRIMARY KEY,
                 mtime  REAL,
                 size   INTEGER,
                 status TEXT DEFAULT NULL
             );
 
+            -- DATA TABLES
             CREATE TABLE IF NOT EXISTS fileindex (
                 file_hash TEXT PRIMARY KEY
             );
@@ -145,22 +147,22 @@ class ImageDB:
                 source        TEXT,
                 path          TEXT PRIMARY KEY,
                 name          TEXT,
-                file_hash       TEXT NOT NULL,
+                file_hash     TEXT NOT NULL,
                 aspect_ratio  REAL,
                 mtime         REAL,
                 size          INTEGER,
                 created       REAL,
                 collected_at  REAL,
-                FOREIGN KEY(source) REFERENCES images(path) ON DELETE CASCADE,
+                FOREIGN KEY(source) REFERENCES images(source) ON DELETE CASCADE,
                 FOREIGN KEY(file_hash) REFERENCES fileindex(file_hash) ON UPDATE CASCADE ON DELETE CASCADE
             );
 
             CREATE TABLE IF NOT EXISTS meta_info (
-                file_hash  TEXT NOT NULL,
+                path     TEXT NOT NULL,
                 key      TEXT NOT NULL,
                 value    TEXT,
-                PRIMARY KEY(file_hash, key),
-                FOREIGN KEY(file_hash) REFERENCES fileindex(file_hash) ON UPDATE CASCADE ON DELETE CASCADE
+                PRIMARY KEY(path, key),
+                FOREIGN KEY(path) REFERENCES meta(path) ON UPDATE CASCADE ON DELETE CASCADE
             );
 
             CREATE TABLE IF NOT EXISTS tags (
@@ -171,12 +173,39 @@ class ImageDB:
                 FOREIGN KEY(file_hash) REFERENCES fileindex(file_hash) ON UPDATE CASCADE ON DELETE CASCADE
             );
 
+            -- VIEWS
             CREATE VIEW IF NOT EXISTS kv_all AS
-            SELECT file_hash, key, value, 'meta_info' AS src FROM meta_info
+            WITH base AS (
+                SELECT mi.path AS path, mi.key AS key, mi.value AS value, 'meta_info' AS src, 2 AS rank
+                FROM meta_info AS mi
             UNION ALL
-            SELECT file_hash, key, value, 'tags'      AS src FROM tags;
+                SELECT m.path AS path, t.key AS key, t.value AS value, 'tags' AS src, 0 AS rank
+                FROM tags AS t
+                JOIN meta AS m ON m.file_hash = t.file_hash
+            UNION ALL
+                SELECT m.path AS path, '__filepath__' AS key, m.path AS value, 'virtual' AS src, 1 AS rank
+                FROM meta AS m
+            ),
+            picked AS (
+            SELECT
+                path, key, value, src, rank,
+                ROW_NUMBER() OVER (PARTITION BY path, key ORDER BY rank, src) AS rn
+            FROM base
+            )
+            SELECT path, key, value, src
+            FROM picked
+            WHERE rn = 1;
 
-            PRAGMA foreign_keys=ON;
+            CREATE VIEW IF NOT EXISTS kv_meta AS
+            SELECT
+                m.path,
+                m.file_hash,
+                k.key,
+                k.value,
+                k.src
+            FROM kv_all AS k
+            JOIN meta AS m ON m.path = k.path;
+
             """
         )
         self.conn.executescript(
@@ -185,7 +214,7 @@ class ImageDB:
             CREATE INDEX IF NOT EXISTS idx_meta_file_hash        ON meta(file_hash);
             CREATE INDEX IF NOT EXISTS idx_meta_path             ON meta(path);
 
-            CREATE INDEX IF NOT EXISTS idx_meta_info_key_fid     ON meta_info(key, file_hash);
+            CREATE INDEX IF NOT EXISTS idx_meta_info_key_fid     ON meta_info(key, path);
             CREATE INDEX IF NOT EXISTS idx_tags_key_fid          ON tags(key, file_hash);
 
             CREATE INDEX IF NOT EXISTS idx_meta_mtime_path ON meta(mtime, path);
@@ -203,7 +232,7 @@ class ImageDB:
         result: dict[str, tuple[float, int]] = {}
         try:
             cur = self.get_reader_cursor()
-            cur.execute('SELECT path, mtime, size FROM images')
+            cur.execute('SELECT source, mtime, size FROM images')
             while True:
                 rows = cur.fetchmany(10000)
                 if not rows:
@@ -221,7 +250,7 @@ class ImageDB:
             return
         cur = self.get_writer_cursor()
         try:
-            cur.executemany('DELETE FROM images WHERE path = ?', [(p,) for p in paths])
+            cur.executemany('DELETE FROM images WHERE source = ?', [(p,) for p in paths])
             self.conn.commit()
         finally:
             cur.close()
@@ -240,9 +269,6 @@ class ImageDB:
             for _, _, _, fid, *_ in meta_entries:
                 if fid:
                     file_ids.add(fid)
-            for fid, *_ in meta_info_entries:
-                if fid:
-                    file_ids.add(fid)
             for fid, *_ in tag_entries:
                 if fid:
                     file_ids.add(fid)
@@ -255,18 +281,18 @@ class ImageDB:
             if failed_entries:
                 cur.executemany(
                     '''
-                    INSERT INTO images (path, mtime, size, status)
+                    INSERT INTO images (source, mtime, size, status)
                     VALUES (?, ?, ?, 'fail')
-                    ON CONFLICT(path) DO UPDATE SET mtime = excluded.mtime, size = excluded.size, status = 'fail'
+                    ON CONFLICT(source) DO UPDATE SET mtime = excluded.mtime, size = excluded.size, status = 'fail'
                     ''',
                     failed_entries,
                 )
             if image_entries:
                 cur.executemany(
                     '''
-                    INSERT INTO images (path, mtime, size, status)
+                    INSERT INTO images (source, mtime, size, status)
                     VALUES (?, ?, ?, 'ok')
-                    ON CONFLICT(path) DO UPDATE SET mtime = excluded.mtime, size = excluded.size, status = 'ok'
+                    ON CONFLICT(source) DO UPDATE SET mtime = excluded.mtime, size = excluded.size, status = 'ok'
                     ''',
                     image_entries,
                 )
@@ -290,9 +316,9 @@ class ImageDB:
             if meta_info_entries:
                 cur.executemany(
                     '''
-                    INSERT INTO meta_info (file_hash, key, value)
+                    INSERT INTO meta_info (path, key, value)
                     VALUES (?, ?, ?)
-                    ON CONFLICT(file_hash, key) DO UPDATE SET
+                    ON CONFLICT(path, key) DO UPDATE SET
                         value = excluded.value
                     ''',
                     meta_info_entries,
@@ -316,17 +342,16 @@ class ImageDB:
             cur = self.get_writer_cursor()
             cur.execute('''
                 DELETE FROM meta
-                WHERE source NOT IN (SELECT path FROM images)
+                WHERE source NOT IN (SELECT source FROM images)
             ''')
             cur.execute('''
                 DELETE FROM fileindex
                 WHERE file_hash NOT IN (SELECT file_hash FROM meta)
-                AND file_hash NOT IN (SELECT file_hash FROM meta_info)
                 AND file_hash NOT IN (SELECT file_hash FROM tags)
             ''')
             cur.execute('''
                 DELETE FROM meta_info
-                WHERE file_hash NOT IN (SELECT file_hash FROM fileindex)
+                WHERE path NOT IN (SELECT path FROM meta)
             ''')
             cur.execute('''
                 DELETE FROM tags
@@ -444,7 +469,7 @@ class ImageIndexer:
             return
         logger.info('[ExcludePaths] Removing existing entries under exclude paths...')
         cur = self.db.get_reader_cursor()
-        cur.execute('SELECT path FROM images')
+        cur.execute('SELECT source FROM images')
         all_paths = [normalize_path(row[0]) for row in cur.fetchall()]
         cur.close()
         to_remove = [p for p in all_paths if self.is_path_excluded(p)]
@@ -559,7 +584,7 @@ class ImageIndexer:
         for i in range(0, len(keys), CHUNK):
             chunk = keys[i:i + CHUNK]
             cur.execute(
-                f"SELECT path, mtime, size FROM images WHERE path IN ({','.join(['?'] * len(chunk))})",
+                f"SELECT source, mtime, size FROM images WHERE source IN ({','.join(['?'] * len(chunk))})",
                 chunk,
             )
             previous.update({normalize_path(row[0]): (row[1], row[2]) for row in cur.fetchall()})
@@ -624,7 +649,7 @@ class ImageIndexer:
                 continue
             image_entries.append((source, mtime, fsize))
             meta_entries.append((path, source, name, file_hash, aspect, mtime, fsize, ctime, time.time()))
-            meta_info_entries.extend([(file_hash, key, value) for key, value in meta_info.items()])
+            meta_info_entries.extend([(path, key, value) for key, value in meta_info.items()])
             tag_entries.extend([(file_hash, key, value) for key, value in tags.items()])
         return (image_entries, meta_entries, meta_info_entries, tag_entries, failed_entries)
 

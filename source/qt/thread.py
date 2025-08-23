@@ -25,12 +25,14 @@ class AdaptiveThreadPool:
         self.cpu_threshold = cpu_threshold
         self.pool.setMaxThreadCount(base_limit)
 
+    @profiler.profile
     def watch_start(self):
         self.monitor = QtCore.QTimer()
         self.monitor.timeout.connect(self.adjust_thread_count)
         self.monitor.setInterval(1000)
         self.monitor.start()
 
+    @profiler.profile
     def start(self, obj, *args, **kwargs):
         self.pool.start(obj, *args, **kwargs)
 

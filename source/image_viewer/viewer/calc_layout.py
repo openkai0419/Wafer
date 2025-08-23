@@ -43,6 +43,8 @@ class JustifiedLayoutCalculator(QtCore.QRunnable):
                 y += self._line_height(line, line_width) + spacing
                 line.clear()
                 line_width = 0
+                if y > QWIDGETSIZE_MAX:   # ここで打ち切り
+                    break
             else:
                 line.append(aspect)
                 line_width += w
@@ -111,6 +113,8 @@ class JustifiedLayoutCalculator(QtCore.QRunnable):
                 cur_x = self._emit_vertical_line(rects, line, line_height, cur_x, reverse)
                 line.clear()
                 line_height = 0
+                if abs(cur_x) > QWIDGETSIZE_MAX:
+                    break
             else:
                 line.append(aspect)
                 line_height += h

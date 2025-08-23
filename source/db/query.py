@@ -78,54 +78,60 @@ class MetaQuery:
         return (keys, include, exclude)
 
     @profiler.profile
-    def build_conditions(self, normalize_path_func, require_keys=True):
+    def build_conditions(
+        self,
+        normalize_path_func,
+        *,
+        alias_m: str = "m",
+        alias_k: str = "k",
+        require_keys: bool = True,
+    ):
         keys, include_keywords, exclude_keywords = self.normalize_inputs()
         if require_keys and (not keys):
-            return (None, None, None)
+            return None, None  # 呼び出し側でハンドリング（=無効クエリ）
 
-        def escape_like(s: str) -> str:
+        def esc_like(s: str) -> str:
             return s.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
 
-        conditions = []
-        params = []
+        conditions: list[str] = []
+        params: list[str] = []
 
+        # keys
         if keys:
-            key_placeholders = ','.join(('?' for _ in keys))
-            conditions.append(f'key IN ({key_placeholders})')   # 後で alias.key に置換
+            placeholders = ",".join("?" for _ in keys)
+            conditions.append(f'{alias_k}."key" IN ({placeholders})')
             params.extend(keys)
 
-        def match_clause(field, keywords, operator):
+        # include
+        def match_clause(field: str, keywords: list[str], op: str):
             if not keywords:
-                return ('', [])
-            mode = self.query_mode.upper()
-            if mode == 'GLOB':
-                clause_format = f"{field} GLOB ?"
+                return "", []
+            if self.query_mode.upper() == "GLOB":
+                clauses = [f"{field} GLOB ?" for _ in keywords]
                 values = [f"*{kw}*" for kw in keywords]
-                clauses = [clause_format for _ in keywords]
-                return (' ' + operator + ' ').join(clauses), values
-            clause_format = f"{field} LIKE ? ESCAPE '\\'"
-            values = [f"%{escape_like(kw)}%" for kw in keywords]
-            clauses = [clause_format for _ in keywords]
-            return (' ' + operator + ' ').join(clauses), values
+            else:
+                clauses = [f"{field} LIKE ? ESCAPE '\\'" for _ in keywords]
+                values = [f"%{esc_like(kw)}%" for kw in keywords]
+            return (" " + op + " ").join(clauses), values
 
         if include_keywords:
-            clause, values = match_clause('value', include_keywords, self.keyword_mode)
-            conditions.append(f'({clause})')
+            clause, values = match_clause(f'{alias_k}."value"', include_keywords, self.keyword_mode)
+            conditions.append(f"({clause})")
             params.extend(values)
 
-        # ここが挙動保持の肝：同一 file_hash かつ同一 path にその語が無いこと
+        # exclude（同一 path のレコードにその語が存在しないこと）
         if exclude_keywords:
-            clause_ex_like, values_ex = match_clause('mi2.value', exclude_keywords, 'OR')
+            clause_ex, values_ex = match_clause('k2."value"', exclude_keywords, "OR")
             if keys:
-                key_placeholders = ','.join(('?' for _ in keys))
+                placeholders = ",".join("?" for _ in keys)
                 conditions.append(
                     "NOT EXISTS ("
                     "  SELECT 1"
-                    "  FROM meta_info mi2"
-                    "  JOIN meta m2 ON m2.file_hash = mi2.file_hash"
-                    "  WHERE m2.path = items.path"           # ← パス単位の意味を保持
-                    f"    AND mi2.key IN ({key_placeholders})"
-                    f"    AND ({clause_ex_like})"
+                    "  FROM kv_all k2"
+                    "  JOIN meta m2 ON m2.path = k2.path"
+                    f"  WHERE m2.path = {alias_m}.path"
+                    f"    AND k2.\"key\" IN ({placeholders})"
+                    f"    AND ({clause_ex})"
                     ")"
                 )
                 params.extend(keys)
@@ -133,32 +139,34 @@ class MetaQuery:
                 conditions.append(
                     "NOT EXISTS ("
                     "  SELECT 1"
-                    "  FROM meta_info mi2"
-                    "  JOIN meta m2 ON m2.file_hash = mi2.file_hash"
-                    "  WHERE m2.path = items.path"
-                    f"    AND ({clause_ex_like})"
+                    "  FROM kv_meta k2"
+                    "  JOIN meta m2 ON m2.path = k2.path"
+                    f"  WHERE m2.path = {alias_m}.path"
+                    f"    AND ({clause_ex})"
                     ")"
                 )
             params.extend(values_ex)
 
+        # directories
         if self.directories:
             dirs = [str(Path(d).resolve()) for d in self.directories if isinstance(d, str) and d]
             dir_clauses, dir_params = [], []
             for d in dirs:
-                norm_dir = normalize_path_func(str(d))
-                prefix = norm_dir + '/' if norm_dir else ''
+                nd = normalize_path_func(str(d))
+                prefix = (nd + "/") if nd else ""
                 esc_prefix = prefix.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
                 if self.only_direct_children:
-                    dir_clauses.append("(path LIKE ? ESCAPE '\\' AND path NOT LIKE ? ESCAPE '\\')")
-                    dir_params.extend([f'{esc_prefix}%', f'{esc_prefix}%/%'])
+                    dir_clauses.append(f"({alias_m}.path LIKE ? ESCAPE '\\' AND {alias_m}.path NOT LIKE ? ESCAPE '\\')")
+                    dir_params.extend([f"{esc_prefix}%", f"{esc_prefix}%/%"])
                 else:
-                    dir_clauses.append("path LIKE ? ESCAPE '\\'")
-                    dir_params.append(f'{esc_prefix}%')
+                    dir_clauses.append(f"{alias_m}.path LIKE ? ESCAPE '\\'")
+                    dir_params.append(f"{esc_prefix}%")
             if dir_clauses:
                 conditions.append("(" + " OR ".join(dir_clauses) + ")")
                 params.extend(dir_params)
 
-        return (conditions, params, keys)
+        return conditions, params
+
 
     @profiler.profile
     def _is_fastpath_simple_keys(self):
@@ -175,91 +183,58 @@ class MetaQuery:
 
     @profiler.profile
     def _make_kv_subquery(self, normalize_path_func, *, require_keys_override: bool | None = None):
-        # require_keys のオーバーライド（Noneなら従来挙動）
         rk = self.require_keys if require_keys_override is None else require_keys_override
-        conditions, params, _ = self.build_conditions(normalize_path_func, require_keys=rk)
+        conditions, params = self.build_conditions(normalize_path_func, alias_m="m", alias_k="k", require_keys=rk)
         if conditions is None:
             return (None, [])
 
-        fixed_conditions = []
-        for cond in conditions or []:
-            c = cond
-            # 相関参照の置換（items → m/k）
-            c = (c.replace('items.path', 'm.path')
-                .replace('items.file_hash', 'm.file_hash')
-                .replace('value', 'k.value')
-                .replace('key IN', 'k.key IN'))
-            # NOT EXISTS 内の別名置換（mi2→k2, テーブルは kv_all）
-            c = (c.replace('FROM meta_info mi2', 'FROM kv_all k2')
-                .replace('FROM tags t2', 'FROM kv_all k2')        # 念のため
-                .replace('mi2.value', 'k2.value')
-                .replace('mi2.key',   'k2.key')
-                .replace('mi2.file_hash', 'k2.file_hash'))
-            fixed_conditions.append(c)
-
-        where = ('WHERE ' + ' AND '.join(fixed_conditions)) if fixed_conditions else ''
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         subquery = f"""
-            SELECT m.path AS path, m.file_hash AS file_hash, k.key AS key, k.value AS value
+            SELECT m.path AS path, m.file_hash AS file_hash, k."key" AS "key", k."value" AS "value"
             FROM meta AS m
-            JOIN kv_all AS k ON k.file_hash = m.file_hash
+            JOIN kv_all AS k ON k.path = m.path
             {where}
         """
-        return (subquery, list(params))
-
+        return (subquery, params)
 
 
     @profiler.profile
     def to_sql(self, normalize_path_func):
-        # --- fast path: keys のみ（値検索なし、ディレクトリ絞りなし、除外なし）---
         if self._is_fastpath_simple_keys():
             keys = [self.keys] if isinstance(self.keys, str) else list(self.keys)
-            key_placeholders = ",".join("?" for _ in keys)
+            ph = ",".join("?" for _ in keys)
             sql = f"""
-                SELECT m.path AS path, k.key AS key, k.value AS value
+                SELECT m.path AS path, k."key" AS "key", k."value" AS "value"
                 FROM kv_all AS k
-                JOIN meta AS m ON m.file_hash = k.file_hash
-                WHERE k.key IN ({key_placeholders})
+                JOIN meta AS m ON m.path = k.path
+                WHERE k."key" IN ({ph})
             """
             return (sql, keys)
 
-        # --- 通常パス: kv_all 1本で生成 ---
         q, p = self._make_kv_subquery(normalize_path_func)
         if not q:
             return (None, None)
-        sql = f"""
-            SELECT path, key, value
-            FROM (
-                {q}
-            ) AS items
-        """
+        sql = f"""SELECT path, "key", "value" FROM ({q}) AS items"""
         return (sql, p)
 
 
     @profiler.profile
     def to_path_query(self, normalize_path_func):
-        # --- fast path: keys のみ ---
         if self._is_fastpath_simple_keys():
             keys = [self.keys] if isinstance(self.keys, str) else list(self.keys)
-            key_placeholders = ",".join("?" for _ in keys)
+            ph = ",".join("?" for _ in keys)
             sql = f"""
                 SELECT DISTINCT m.path AS path
                 FROM kv_all AS k
-                JOIN meta AS m ON m.file_hash = k.file_hash
-                WHERE k.key IN ({key_placeholders})
+                JOIN meta AS m ON m.path = k.path
+                WHERE k."key" IN ({ph})
             """
             return (sql, keys)
 
-        # --- 通常パス ---
         q, p = self._make_kv_subquery(normalize_path_func)
         if not q:
             return (None, None)
-        sql = f"""
-            SELECT path
-            FROM (
-                {q}
-            ) AS items
-            GROUP BY path
-        """
+        sql = f"""SELECT path FROM ({q}) AS items GROUP BY path"""
         return (sql, p)
 
 
@@ -509,11 +484,11 @@ class MetaInfoSearchEngine:
             return {}
         cur = self.conn.cursor()
         norm_path = self._normalize_path(path)
-        row = cur.execute("SELECT file_hash FROM meta WHERE path = ?", (norm_path,)).fetchone()
+        row = cur.execute("SELECT path FROM meta WHERE path = ?", (norm_path,)).fetchone()
         if not row:
             return {}
-        fid = row["file_hash"]
-        rows = cur.execute("SELECT key, value FROM meta_info WHERE file_hash = ?", (fid,)).fetchall()
+        fid = row["path"]
+        rows = cur.execute("SELECT key, value FROM meta_info WHERE path = ?", (fid,)).fetchall()
         return {r["key"]: r["value"] for r in rows}
     
     @profiler.profile

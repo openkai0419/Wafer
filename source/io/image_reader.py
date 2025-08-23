@@ -55,9 +55,8 @@ class ImageReader(BaseReader):
             
             # 追加情報
             tags = {
-                "__filepath__": p,
-                "__width__": str(width),
-                "__height__": str(height),
+                "Width": str(width),
+                "Height": str(height),
             }
 
             return (info, meta_info, tags, None)

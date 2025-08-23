@@ -24,29 +24,29 @@ class ImageLoaderRunnable(QtCore.QRunnable):
             return
 
         cache_key = (self.path, self.size.width(), self.size.height())
-        pixmap = self.receiver.pixmap_cache.get(cache_key)
+        image = self.receiver.image_cache.get(cache_key)
 
-        if pixmap is None:
+        if image is None:
             if self._cancelled:
                 return
-            pixmap = LoaderClass.load(self.path, self.size)
+            image = LoaderClass.load(self.path, self.size)
 
-            if pixmap is None or pixmap.isNull():
-                pixmap = self.receiver.error_placeholder.scaled(
+            if image is None or image.isNull():
+                image = self.receiver.error_placeholder.scaled(
                     self.size,
                     QtCore.Qt.IgnoreAspectRatio,
                     QtCore.Qt.SmoothTransformation
                 )
 
-            self.receiver.pixmap_cache[cache_key] = pixmap
+            self.receiver.image_cache[cache_key] = image
 
         if self._cancelled:
             return
 
         QtCore.QMetaObject.invokeMethod(
             self.receiver,
-            '_on_pixmap_ready',
+            '_on_image_ready',
             QtCore.Qt.QueuedConnection,
             QtCore.Q_ARG(int, self.index),
-            QtCore.Q_ARG(QtGui.QPixmap, pixmap)
+            QtCore.Q_ARG(QtGui.QImage, image)
         )

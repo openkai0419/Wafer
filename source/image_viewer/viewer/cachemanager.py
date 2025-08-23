@@ -28,7 +28,8 @@ class FadeLabel(QtWidgets.QLabel):
     opacity = QtCore.Property(float, get_opacity, set_opacity)
 
     @profiler.profile
-    def set_pixmap(self, pixmap, curpath=None):
+    def set_image(self, image, curpath=None):
+        pixmap = QtGui.QPixmap.fromImage(image)
         if self.curpath != curpath:
             self.setPixmap(pixmap)
             self.curpath = curpath
@@ -74,29 +75,29 @@ class QLabelPool:
             self.release(label)
 
 @singleton
-class MemoryLimitedPixmapCache:
+class MemoryLimitedImageCache:
     def __init__(self, max_mbytes=100):
         self.max_bytes = max_mbytes * 1024 * 1024
         self.current_bytes = 0
         self.cache = OrderedDict()
 
     @profiler.profile
-    def _estimate_pixmap_size(self, pixmap):
-        size = pixmap.size()
+    def _estimate_image_size(self, image):
+        size = image.size()
         return size.width() * size.height() * 4
 
     @profiler.profile
-    def __setitem__(self, key, pixmap):
+    def __setitem__(self, key, image):
         if key in self.cache:
-            self.current_bytes -= self._estimate_pixmap_size(self.cache[key])
+            self.current_bytes -= self._estimate_image_size(self.cache[key])
             del self.cache[key]
-        pixmap_size = self._estimate_pixmap_size(pixmap)
-        self.cache[key] = pixmap
+        image_size = self._estimate_image_size(image)
+        self.cache[key] = image
         self.cache.move_to_end(key)
-        self.current_bytes += pixmap_size
+        self.current_bytes += image_size
         while self.current_bytes > self.max_bytes and self.cache:
-            old_key, old_pixmap = self.cache.popitem(last=False)
-            self.current_bytes -= self._estimate_pixmap_size(old_pixmap)
+            old_key, old_image = self.cache.popitem(last=False)
+            self.current_bytes -= self._estimate_image_size(old_image)
 
     def __getitem__(self, key):
         if key in self.cache:
@@ -109,7 +110,7 @@ class MemoryLimitedPixmapCache:
 
     def __delitem__(self, key):
         if key in self.cache:
-            self.current_bytes -= self._estimate_pixmap_size(self.cache[key])
+            self.current_bytes -= self._estimate_image_size(self.cache[key])
             del self.cache[key]
 
     def clear(self):

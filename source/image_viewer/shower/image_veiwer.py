@@ -163,8 +163,8 @@ class ImageViewerWidget(QtWidgets.QWidget):
         self.resized.emit()
         return super().resizeEvent(event)
 
-    def set_pixmap(self, pixmap, path=None):
-        self.view.set_image(pixmap)
+    def set_image(self, image, path=None):
+        self.view.set_image(QtGui.QPixmap.fromImage(image))
 
     def load_image(self, path: str):
         pm = QtGui.QPixmap(path)

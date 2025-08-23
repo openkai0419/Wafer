@@ -82,7 +82,7 @@ class MetaQuery:
         self,
         normalize_path_func,
         *,
-        alias_m: str = "m",
+        alias_m: str = "k",
         alias_k: str = "k",
         require_keys: bool = True,
     ):
@@ -127,9 +127,8 @@ class MetaQuery:
                 conditions.append(
                     "NOT EXISTS ("
                     "  SELECT 1"
-                    "  FROM kv_all k2"
-                    "  JOIN meta m2 ON m2.path = k2.path"
-                    f"  WHERE m2.path = {alias_m}.path"
+                    "  FROM kv_meta k2"
+                    f"  WHERE k2.path = {alias_m}.path"
                     f"    AND k2.\"key\" IN ({placeholders})"
                     f"    AND ({clause_ex})"
                     ")"
@@ -140,8 +139,7 @@ class MetaQuery:
                     "NOT EXISTS ("
                     "  SELECT 1"
                     "  FROM kv_meta k2"
-                    "  JOIN meta m2 ON m2.path = k2.path"
-                    f"  WHERE m2.path = {alias_m}.path"
+                    f"  WHERE k2.path = {alias_m}.path"
                     f"    AND ({clause_ex})"
                     ")"
                 )
@@ -184,19 +182,17 @@ class MetaQuery:
     @profiler.profile
     def _make_kv_subquery(self, normalize_path_func, *, require_keys_override: bool | None = None):
         rk = self.require_keys if require_keys_override is None else require_keys_override
-        conditions, params = self.build_conditions(normalize_path_func, alias_m="m", alias_k="k", require_keys=rk)
+        conditions, params = self.build_conditions( normalize_path_func, alias_m="k", alias_k="k", require_keys=rk)
         if conditions is None:
             return (None, [])
 
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         subquery = f"""
-            SELECT m.path AS path, m.file_hash AS file_hash, k."key" AS "key", k."value" AS "value"
-            FROM meta AS m
-            JOIN kv_all AS k ON k.path = m.path
+            SELECT k.path AS path, k.file_hash AS file_hash, k."key" AS "key", k."value" AS "value"
+            FROM kv_meta AS k
             {where}
         """
         return (subquery, params)
-
 
     @profiler.profile
     def to_sql(self, normalize_path_func):
@@ -204,9 +200,8 @@ class MetaQuery:
             keys = [self.keys] if isinstance(self.keys, str) else list(self.keys)
             ph = ",".join("?" for _ in keys)
             sql = f"""
-                SELECT m.path AS path, k."key" AS "key", k."value" AS "value"
-                FROM kv_all AS k
-                JOIN meta AS m ON m.path = k.path
+                SELECT k.path AS path, k."key" AS "key", k."value" AS "value"
+                FROM kv_meta AS k
                 WHERE k."key" IN ({ph})
             """
             return (sql, keys)
@@ -214,9 +209,8 @@ class MetaQuery:
         q, p = self._make_kv_subquery(normalize_path_func)
         if not q:
             return (None, None)
-        sql = f"""SELECT path, "key", "value" FROM ({q}) AS items"""
+        sql = f'''SELECT path, "key", "value" FROM ({q}) AS items'''
         return (sql, p)
-
 
     @profiler.profile
     def to_path_query(self, normalize_path_func):
@@ -224,9 +218,8 @@ class MetaQuery:
             keys = [self.keys] if isinstance(self.keys, str) else list(self.keys)
             ph = ",".join("?" for _ in keys)
             sql = f"""
-                SELECT DISTINCT m.path AS path
-                FROM kv_all AS k
-                JOIN meta AS m ON m.path = k.path
+                SELECT DISTINCT k.path AS path
+                FROM kv_meta AS k
                 WHERE k."key" IN ({ph})
             """
             return (sql, keys)
@@ -236,6 +229,7 @@ class MetaQuery:
             return (None, None)
         sql = f"""SELECT path FROM ({q}) AS items GROUP BY path"""
         return (sql, p)
+
 
 
 class MetaInfoSearchEngine:
@@ -253,13 +247,13 @@ class MetaInfoSearchEngine:
             conn = sqlite3.connect(f'file:{self.db_path}?mode=ro', uri=True, check_same_thread=True)
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
-            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='meta_info'")
-            if not cur.fetchone():
-                logger.warning("Table 'meta_info' not found in DB.")
-                return False
-            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='meta'")
-            if not cur.fetchone():
-                logger.warning("Table 'meta' not found in DB.")
+
+            required = ('meta_info', "tags", 'meta', 'kv_meta')
+            for name in required:
+                cur.execute("SELECT name FROM sqlite_master WHERE name=?", (name,))
+                if not cur.fetchone():
+                    logger.warning(f"Required table/view '{name}' not found in DB.")
+                    conn.close()
                 return False
                 
             self._apply_connection_pragmas(conn)
@@ -452,8 +446,6 @@ class MetaInfoSearchEngine:
         rows = cur.execute(sql, p).fetchall()
         return [(row['key'], row['freq']) for row in rows]
 
-
-
     @profiler.profile
     def explain_query_plan(self, query):
         if not self._connect_if_needed():
@@ -470,10 +462,7 @@ class MetaInfoSearchEngine:
             plan_lines = [f"[{row['id']}] {row['detail']}" for row in rows]
             logger.info('========= SQLite Execution Plan =========')
             for line in plan_lines:
-                if not "USING INDEX" in line:
-                    logger.warning(f"[NOT USING INDEX CHEK IT OUT]: {line}")
-                else:
-                    logger.info(line)
+                logger.info(line)
         except Exception as e:
             logger.warning(f'EXPLAIN QUERY PLAN failed: {e}')
             return None

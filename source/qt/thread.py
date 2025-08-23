@@ -2,7 +2,7 @@ import multiprocessing
 import threading
 import psutil
 from PySide6 import QtCore
-from ..common.profiling import logger
+from ..common.profiling import logger, profiler
 
 class AdaptiveThreadPool:
     _instance = None
@@ -34,6 +34,7 @@ class AdaptiveThreadPool:
     def start(self, obj, *args, **kwargs):
         self.pool.start(obj, *args, **kwargs)
 
+    @profiler.profile
     def adjust_thread_count(self):
         cpu_usage = psutil.cpu_percent()
         current = self.pool.maxThreadCount()

@@ -548,7 +548,7 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
                 self.reinstall_scroll_index(index)
         for i in self.visible_indices:
             if i < len(self.rects):
-                self._ensure_widget_visible(i, self.rects[i])
+                self._ensure_widget_visible(i)
 
     @profiler.profile
     def get_last_index(self):
@@ -582,7 +582,7 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
             sorted_added = sorted(newly_added, key=lambda i: abs(i - center))
             for i in sorted_added:
                 if i < len(self.rects):
-                    self._ensure_widget_visible(i, self.rects[i])
+                    self._ensure_widget_visible(i)
         for i in no_longer_visible:
             self._recycle_widget(i)
         self.visible_indices = new_visible
@@ -615,19 +615,22 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
         return range(start, end)
 
     @profiler.profile
-    def _ensure_widget_visible(self, i, rect):
+    def _ensure_widget_visible(self, i):
+        rect = self.rects[i]
         if i >= len(self.image_paths):
             logger.warning(f'Index {i} out of range for image_paths (len={len(self.image_paths)})')
             return
         if i not in self.widgets:
             label = self.label_pool.acquire()
-            label.setGeometry(rect)
             label.stackUnder(self.overlay_painter)
+            label.setGeometry(rect)
             self.widgets[i] = label
             if i in self.image_cache:
                 label.set_image(self.image_cache[i], self.image_paths[i])
             elif i not in self.active_threads:
                 runnable = ImageLoaderRunnable(i, self.image_paths[i], rect.size(), self)
+                runnable.signal.image_ready.connect(self._on_image_ready)
+                runnable.signal.widget_ready.connect(self._on_widget_ready)
                 self.active_threads[i] = runnable
                 main_thread.start(runnable, 5)
         elif self.widgets[i].geometry() != rect:
@@ -637,6 +640,8 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
     def _recycle_widget(self, i):
         if i in self.widgets:
             label = self.widgets.pop(i)
+            if hasattr(label, "delete"):
+                label.delete()
             self.label_pool.release(label)
         if i in self.image_cache:
             del self.image_cache[i]
@@ -646,7 +651,7 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
                 runnable.cancel()
 
     @profiler.profile
-    @QtCore.Slot(int, QtGui.QImage)
+    @QtCore.Slot(int, object)
     def _on_image_ready(self, index, image):
         if index >= len(self.image_paths):
             logger.warning(f'_on_image_ready: index {index} out of range (len={len(self.image_paths)})')
@@ -655,5 +660,22 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
             label = self.widgets[index]
             self.image_cache[index] = image
             label.set_image(image, self.image_paths[index])
+        if index in self.active_threads:
+            del self.active_threads[index]
+
+    @profiler.profile
+    @QtCore.Slot(int, object, object)
+    def _on_widget_ready(self, index, widget, kwargs):
+        if index >= len(self.image_paths):
+            logger.warning(f'_on_image_ready: widget {widget} out of range (len={len(self.image_paths)})')
+            return
+
+        if issubclass(widget, QtWidgets.QWidget):
+            rect = self.rects[index]
+            instance = widget(parent=self, **kwargs)
+            instance.setGeometry(rect)
+            instance.stackUnder(self.overlay_painter)
+            self.widgets[index] = instance
+        
         if index in self.active_threads:
             del self.active_threads[index]

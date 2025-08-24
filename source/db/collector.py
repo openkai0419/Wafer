@@ -4,7 +4,7 @@ import os
 import shutil
 import sqlite3
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Sequence
 
 from .db_utils import connect_with_retry
 from ..common.profiling import logger, profiler
@@ -211,8 +211,8 @@ class ImageDB:
         self.conn.executescript(
             """
             -- Indexes identical to original
-            CREATE INDEX IF NOT EXISTS idx_meta_file_hash        ON meta(file_hash);
             CREATE INDEX IF NOT EXISTS idx_meta_path             ON meta(path);
+            CREATE INDEX IF NOT EXISTS idx_meta_file_hash        ON meta(file_hash);
 
             CREATE INDEX IF NOT EXISTS idx_meta_info_key_fid     ON meta_info(key, path);
             CREATE INDEX IF NOT EXISTS idx_tags_key_fid          ON tags(key, file_hash);

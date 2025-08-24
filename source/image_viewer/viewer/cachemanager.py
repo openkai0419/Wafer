@@ -62,11 +62,12 @@ class QLabelPool:
 
     @profiler.profile
     def release(self, label):
-        label.hide()
-        label.clear()
-        label.setParent(self._parent)
-        self._in_use.discard(label)
-        self._available.append(label)
+        if isinstance(label, FadeLabel):
+            label.hide()
+            label.clear()
+            label.setParent(self._parent)
+            self._in_use.discard(label)
+            self._available.append(label)
 
     @profiler.profile
     def reset(self):

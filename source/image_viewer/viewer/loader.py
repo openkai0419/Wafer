@@ -1,10 +1,18 @@
+from numpy import isin
 from ...common.funcs import uipx
 from ...common.profiling import profiler
 from ...io.manager import LoaderClass
+from ...qt.thread import AdaptiveThreadPool
+from PySide6 import QtCore, QtGui, QtWidgets
 
-from PySide6 import QtCore, QtGui
+class ImageLoaderSignal(QtCore.QObject):
+    image_ready = QtCore.Signal(int, object)
+    widget_ready = QtCore.Signal(int, object, object)
+
 
 class ImageLoaderRunnable(QtCore.QRunnable):
+
+    @profiler.profile
     def __init__(self, index, path, size, receiver):
         super().__init__()
         self.index = index
@@ -14,10 +22,19 @@ class ImageLoaderRunnable(QtCore.QRunnable):
         self.receiver = receiver
         self._cancelled = False
         self.isended = False
+        self.signal = ImageLoaderSignal()
 
     def cancel(self):
         self._cancelled = True
 
+    def get_error_image(self):
+        return self.receiver.error_placeholder.scaled(
+            self.size,
+            QtCore.Qt.IgnoreAspectRatio,
+            QtCore.Qt.SmoothTransformation 
+            ) 
+
+    @AdaptiveThreadPool.register(30, 1000)
     def run(self):
         if self._cancelled:
             return
@@ -30,22 +47,20 @@ class ImageLoaderRunnable(QtCore.QRunnable):
                 return
             image = LoaderClass.load(self.path, self.size)
 
-            if image is None or image.isNull():
-                image = self.receiver.error_placeholder.scaled(
-                    self.size,
-                    QtCore.Qt.IgnoreAspectRatio,
-                    QtCore.Qt.SmoothTransformation
-                )
-
-            self.receiver.image_cache[cache_key] = image
+        if image is None:
+            image = self.get_error_image()
 
         if self._cancelled:
             return
+        if isinstance(image, QtGui.QImage):
+            if image.isNull():
+                image = self.get_error_image()
+            self.receiver.image_cache[cache_key] = image
+            self.signal.image_ready.emit(self.index, image)
+        
+        if isinstance(image, list):
+            if issubclass(image[0], QtWidgets.QWidget):
+                self.signal.widget_ready.emit(self.index, image[0], image[1])
 
-        QtCore.QMetaObject.invokeMethod(
-            self.receiver,
-            '_on_image_ready',
-            QtCore.Qt.QueuedConnection,
-            QtCore.Q_ARG(int, self.index),
-            QtCore.Q_ARG(QtGui.QImage, image)
-        )
+
+        

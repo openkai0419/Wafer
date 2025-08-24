@@ -69,13 +69,18 @@ class MetaQuery:
 
     @profiler.profile
     def normalize_inputs(self):
-        keys = [self.keys] if isinstance(self.keys, str) else self.keys or []
+        if hasattr(self, "_normalized_cache"):
+            return self._normalized_cache
+
+        keys = [self.keys] if isinstance(self.keys, str) else (self.keys or [])
         keywords = self.keywords
         if isinstance(keywords, str):
             keywords = [w.strip() for w in keywords.split(self.splittext)] if self.splittext else [keywords]
-        include = [kw for kw in keywords or [] if not kw.startswith('-')]
-        exclude = [kw[1:] for kw in keywords or [] if kw.startswith('-')]
-        return (keys, include, exclude)
+        include = [kw for kw in (keywords or []) if not kw.startswith('-')]
+        exclude = [kw[1:] for kw in (keywords or []) if kw.startswith('-')]
+
+        self._normalized_cache = (keys, include, exclude)
+        return self._normalized_cache
 
     @profiler.profile
     def build_conditions(
@@ -194,43 +199,6 @@ class MetaQuery:
         """
         return (subquery, params)
 
-    @profiler.profile
-    def to_sql(self, normalize_path_func):
-        if self._is_fastpath_simple_keys():
-            keys = [self.keys] if isinstance(self.keys, str) else list(self.keys)
-            ph = ",".join("?" for _ in keys)
-            sql = f"""
-                SELECT k.path AS path, k."key" AS "key", k."value" AS "value"
-                FROM kv_meta AS k
-                WHERE k."key" IN ({ph})
-            """
-            return (sql, keys)
-
-        q, p = self._make_kv_subquery(normalize_path_func)
-        if not q:
-            return (None, None)
-        sql = f'''SELECT path, "key", "value" FROM ({q}) AS items'''
-        return (sql, p)
-
-    @profiler.profile
-    def to_path_query(self, normalize_path_func):
-        if self._is_fastpath_simple_keys():
-            keys = [self.keys] if isinstance(self.keys, str) else list(self.keys)
-            ph = ",".join("?" for _ in keys)
-            sql = f"""
-                SELECT DISTINCT k.path AS path
-                FROM kv_meta AS k
-                WHERE k."key" IN ({ph})
-            """
-            return (sql, keys)
-
-        q, p = self._make_kv_subquery(normalize_path_func)
-        if not q:
-            return (None, None)
-        sql = f"""SELECT path FROM ({q}) AS items GROUP BY path"""
-        return (sql, p)
-
-
 
 class MetaInfoSearchEngine:
     def __init__(self, db_path):
@@ -286,72 +254,6 @@ class MetaInfoSearchEngine:
         order = 'ASC' if ascending else 'DESC'
         return (sort_column, order)
 
-    @profiler.profile
-    def _fetch_paths_with_aspect_ratio(self, cur, paths, sort_by, ascending, batch_size=700):
-        if not paths:
-            return ([], [], [])
-        sort_column, order = self._build_sort_clause(sort_by, ascending)
-
-        all_rows = []
-        for i in range(0, len(paths), batch_size):
-            chunk = paths[i:i+batch_size]
-            placeholders = ",".join("?" for _ in chunk)
-
-            if sort_by == 'random':
-                rows = cur.execute(
-                    f"""
-                    SELECT m.path, m.source, m.aspect_ratio
-                    FROM meta AS m
-                    WHERE m.path IN ({placeholders})
-                    """,
-                    chunk
-                ).fetchall()
-                all_rows.extend(rows)
-                continue
-
-            if sort_column:
-                rows = cur.execute(
-                    f"""
-                    SELECT m.path, m.source, m.aspect_ratio
-                    FROM meta AS m
-                    WHERE m.path IN ({placeholders})
-                    ORDER BY m."{sort_column}" {order}
-                    """,
-                    chunk
-                ).fetchall()
-            else:
-                rows = cur.execute(
-                    f"""
-                    SELECT m.path, m.source, m.aspect_ratio
-                    FROM meta AS m
-                    WHERE m.path IN ({placeholders})
-                    """,
-                    chunk
-                ).fetchall()
-
-            all_rows.extend(rows)
-
-        if sort_by == 'random':
-            all_rows = list(all_rows)
-            shuffle(all_rows)
-
-        return (
-            [r['path'] for r in all_rows],
-            [r['source'] for r in all_rows],
-            [r['aspect_ratio'] for r in all_rows],
-        )
-
-
-    @profiler.profile
-    def search(self, query):
-        if not self._connect_if_needed():
-            return []
-        cur = self.conn.cursor()
-        sql, params = query.to_sql(self._normalize_path)
-        if not sql:
-            return []
-        rows = cur.execute(sql, params).fetchall()
-        return [(row['path'], row['key'], row['value']) for row in rows]
     
     @profiler.profile
     def fetch(self, sql, params):
@@ -360,20 +262,52 @@ class MetaInfoSearchEngine:
 
     @profiler.profile
     def get(self, query):
-        self.explain_query_plan(query)
         if not self._connect_if_needed():
             return ([], [], [])
         cur = self.conn.cursor()
-        sql, params = query.to_path_query(self._normalize_path)
-        if not sql:
+
+        subq, params = query._make_kv_subquery(self._normalize_path)
+        if not subq:
             return ([], [], [])
-        try:
-            rows = self.fetch(sql, params)
-        except sqlite3.DatabaseError as e:
-            logger.error(f'DB query failed: {e}')
-            return ([], [], [])
-        paths = [row['path'] for row in rows]
-        return self._fetch_paths_with_aspect_ratio(cur, paths, query.sort_by, query.ascending)
+
+        # 内側は重複排除のみ（ORDERは付けない）
+        distinct_paths = f"SELECT DISTINCT path FROM ({subq}) s0"
+
+        sort_col, order = self._build_sort_clause(query.sort_by, query.ascending)
+
+        if query.sort_by == 'random':
+            sql = f"""
+                SELECT m.path, m.source, m.aspect_ratio
+                FROM meta AS m
+                JOIN ({distinct_paths}) AS s USING(path)
+            """
+            #self._explain_query_plan(sql, params)
+
+            rows = cur.execute(sql, params).fetchall()
+            rows = list(rows); shuffle(rows)
+        else:
+            if sort_col:
+                sql = f"""
+                    SELECT m.path, m.source, m.aspect_ratio
+                    FROM meta AS m
+                    JOIN ({distinct_paths}) AS s USING(path)
+                    ORDER BY m."{sort_col}" {order}
+                """
+            else:
+                sql = f"""
+                    SELECT m.path, m.source, m.aspect_ratio
+                    FROM meta AS m
+                    JOIN ({distinct_paths}) AS s USING(path)
+                """
+            #self._explain_query_plan(sql, params)
+            rows = cur.execute(sql, params).fetchall()
+
+        return (
+            [r['path'] for r in rows],
+            [r['source'] for r in rows],
+            [r['aspect_ratio'] for r in rows],
+        )
+
     
     @profiler.profile
     def get_combined(self, queries):
@@ -381,47 +315,57 @@ class MetaInfoSearchEngine:
             return ([], [])
         cur = self.conn.cursor()
 
-        subqueries = []
-        params = []
+        # 個々のクエリを DISTINCT path に正規化
+        parts = []
+        params: list[str] = []
         for q in queries:
-            sql, p = q.to_path_query(self._normalize_path)
-            if not sql:
+            subq, p = q._make_kv_subquery(self._normalize_path)
+            if not subq:
                 if q.append_mode == 'AND':
                     return ([], [])
                 continue
-            # to_path_query は "SELECT DISTINCT path FROM (...items...)" なので
-            # そのまま括って使える
-            subqueries.append(f"({sql})")
+            parts.append(f"(SELECT DISTINCT path FROM ({subq}) s0)")
             params.extend(p)
 
-        if not subqueries:
+        if not parts:
             return ([], [])
 
-        # 先頭を土台に、以降を AND=INTERSECT / OR=UNION で合成
-        combined = subqueries[0]
-        for i in range(1, len(subqueries)):
+        # append_mode に応じて合成
+        combined = parts[0]
+        for i in range(1, len(parts)):
             op = "INTERSECT" if queries[i].append_mode == 'AND' else "UNION"
-            combined = f"({combined}) {op} {subqueries[i]}"
+            combined = f"({combined}) {op} {parts[i]}"
 
         sort_col, order = self._build_sort_clause(queries[-1].sort_by, queries[-1].ascending)
-        if sort_col:
-            final_query = f"""
-                SELECT m.path, m.aspect_ratio
-                FROM meta AS m
-                JOIN ({combined}) AS c ON c.path = m.path
-                ORDER BY m."{sort_col}" {order}
-            """
-        else:
-            final_query = f"""
-                SELECT m.path, m.aspect_ratio
-                FROM meta AS m
-                JOIN ({combined}) AS c ON c.path = m.path
-            """
 
-        rows = cur.execute(final_query, params).fetchall()
         if queries[-1].sort_by == 'random':
+            sql = f"""
+                SELECT m.path, m.aspect_ratio
+                FROM meta AS m
+                JOIN ({combined}) AS c USING(path)
+            """
+            self._explain_query_plan(sql, params)
+            rows = cur.execute(sql, params).fetchall()
             rows = list(rows); shuffle(rows)
-        return ([row['path'] for row in rows], [row['aspect_ratio'] for row in rows])
+        else:
+            if sort_col:
+                sql = f"""
+                    SELECT m.path, m.aspect_ratio
+                    FROM meta AS m
+                    JOIN ({combined}) AS c USING(path)
+                    ORDER BY m."{sort_col}" {order}
+                """
+            else:
+                sql = f"""
+                    SELECT m.path, m.aspect_ratio
+                    FROM meta AS m
+                    JOIN ({combined}) AS c USING(path)
+                """
+            self._explain_query_plan(sql, params)
+            rows = cur.execute(sql, params).fetchall()
+
+        return ([r['path'] for r in rows], [r['aspect_ratio'] for r in rows])
+
 
     @profiler.profile
     def list_all_keys(self, query, sort_by_freq=False):
@@ -447,18 +391,10 @@ class MetaInfoSearchEngine:
         return [(row['key'], row['freq']) for row in rows]
 
     @profiler.profile
-    def explain_query_plan(self, query):
-        if not self._connect_if_needed():
-            logger.warning('DB connection failed: skipping explain_query_plan')
-            return None
-        sql, params = query.to_sql(self._normalize_path)
-        if not sql:
-            logger.info('Query invalid, skipping EXPLAIN QUERY PLAN')
-            return None
-        explain_sql = f'EXPLAIN QUERY PLAN {sql}'
+    def _explain_query_plan(self, sql, params):
         try:
             cur = self.conn.cursor()
-            rows = cur.execute(explain_sql, params).fetchall()
+            rows = cur.execute(f'EXPLAIN QUERY PLAN {sql}', params).fetchall()
             plan_lines = [f"[{row['id']}] {row['detail']}" for row in rows]
             logger.info('========= SQLite Execution Plan =========')
             for line in plan_lines:

@@ -1,14 +1,13 @@
 import os
 import cv2
 import numpy as np
-from PySide6 import QtCore, QtGui
-from ..common.profiling import logger
-from typing import Any
+from PySide6 import QtCore, QtGui, QtWidgets
 
 from PIL import Image
-
-from ..common.hashes import fast_sig_hash
 from .exif_parser import ExifParser 
+
+from ..common.profiling import logger
+from ..common.hashes import fast_sig_hash
 from .manager import BaseLoader, BaseReader
 
 class ImageReader(BaseReader):
@@ -195,13 +194,24 @@ class ImageLoader(BaseLoader):
             return 'qt'
         return 'opencv'
 
-    # --- 変更点5: 本体 ---
-    def load(self, path, size: QtCore.QSize | None = None) -> QtGui.QImage | None:
+    def load(self, path, *args, **kwargs):
+        return self._load(path, *args, **kwargs)
+
+    def _load(self, path, size: QtCore.QSize | None = None) -> QtGui.QImage | None:
         ext = os.path.splitext(path)[-1].lower()
         try:
             # 1) GIFは既存仕様：Qt + 比率維持
             if ext == '.gif':
-                return self._qt_read(path, size, keep_aspect=True)
+                try:
+                    with Image.open(path) as im:
+                        im.seek(0)
+                        if size is not None:
+                            im.thumbnail((size.width(), size.height()), Image.LANCZOS)
+                        arr = np.array(im.convert('RGBA'))
+                        arr = cv2.cvtColor(arr, cv2.COLOR_RGBA2BGRA)
+                        return self._numpy_to_qimage(arr)
+                except Exception:
+                    return self._qt_read(path, size, keep_aspect=True)
 
             # 2) OpenCVで先に高速経路を試す
             flags = self._imread_flags_for_size(ext, size)

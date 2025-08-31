@@ -42,6 +42,8 @@ class SizeMismatchChecker(QtCore.QTimer):
             if _size_mismatch(pixmap.size(), label.size()):
                 if i not in self.target_widget.active_threads:
                     runnable = ImageLoaderRunnable(i, self.target_widget.image_paths[i], label.size(), self.target_widget)
+                    runnable.signal.image_ready.connect(self.target_widget._on_image_ready)
+                    runnable.signal.widget_ready.connect(self.target_widget._on_widget_ready)
                     self.target_widget.active_threads[i] = runnable
                     main_thread.start(runnable, 5)
         logger.debug('SizeMismatchChecker: check')

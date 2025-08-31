@@ -24,7 +24,7 @@ class ImageDB:
         self.conn = connect_with_retry(self.db_path, timeout=3.0, check_same_thread=False)
         self._apply_pragmas(self.conn, read_only=False)
         uri = Path(self.db_path).resolve().as_uri()
-        self.read_conn = connect_with_retry(f'{uri}?mode=ro', timeout=1.0, uri=True)
+        self.read_conn = connect_with_retry(f'{uri}?mode=ro', timeout=1.0, uri=True, check_same_thread=False)
         self._apply_pragmas(self.read_conn, read_only=True)
 
     @profiler.profile
@@ -57,7 +57,7 @@ class ImageDB:
 
     def try_checkpoint(self, mode: str = 'TRUNCATE'):
         try:
-            conn = self.read_conn or self.conn
+            conn = self.conn or self.read_conn
             cur = conn.execute(f'PRAGMA wal_checkpoint({mode})')
             cur.close()
         except Exception:
@@ -130,67 +130,80 @@ class ImageDB:
             """
             PRAGMA foreign_keys=ON;
 
-            -- TABLE FOR FILE UPDATE CHECK
-            CREATE TABLE IF NOT EXISTS images (
-                source   TEXT PRIMARY KEY,
-                mtime  REAL,
-                size   INTEGER,
-                status TEXT DEFAULT NULL
-            );
-
             -- DATA TABLES
-            CREATE TABLE IF NOT EXISTS fileindex (
+            CREATE TABLE IF NOT EXISTS hash_index (
                 file_hash TEXT PRIMARY KEY
             );
 
-            CREATE TABLE IF NOT EXISTS meta (
-                source        TEXT,
-                path          TEXT PRIMARY KEY,
-                name          TEXT,
+            CREATE TABLE IF NOT EXISTS sources (
+                source        TEXT PRIMARY KEY,
                 file_hash     TEXT NOT NULL,
-                aspect_ratio  REAL,
-                mtime         REAL,
                 size          INTEGER,
+                modified      REAL,
                 created       REAL,
-                collected_at  REAL,
-                FOREIGN KEY(source) REFERENCES images(source) ON DELETE CASCADE,
-                FOREIGN KEY(file_hash) REFERENCES fileindex(file_hash) ON UPDATE CASCADE ON DELETE CASCADE
+                collected     REAL,
+                status        TEXT DEFAULT NULL,
+                FOREIGN KEY(file_hash) REFERENCES hash_index(file_hash) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS images (
+                path          TEXT PRIMARY KEY,
+                source        TEXT NOT NULL,
+                name          TEXT,
+                aspect_ratio  REAL,
+                FOREIGN KEY(source) REFERENCES sources(source) ON DELETE CASCADE
             );
 
             CREATE TABLE IF NOT EXISTS meta_info (
-                path     TEXT NOT NULL,
-                key      TEXT NOT NULL,
-                value    TEXT,
+                path   TEXT NOT NULL,
+                key    TEXT NOT NULL,
+                value  TEXT,
                 PRIMARY KEY(path, key),
-                FOREIGN KEY(path) REFERENCES meta(path) ON UPDATE CASCADE ON DELETE CASCADE
+                FOREIGN KEY(path) REFERENCES images(path) ON UPDATE CASCADE ON DELETE CASCADE
             );
 
             CREATE TABLE IF NOT EXISTS tags (
                 file_hash  TEXT NOT NULL,
-                key      TEXT NOT NULL,
-                value    TEXT,
+                key        TEXT NOT NULL,
+                value      TEXT,
                 PRIMARY KEY(file_hash, key),
-                FOREIGN KEY(file_hash) REFERENCES fileindex(file_hash) ON UPDATE CASCADE ON DELETE CASCADE
+                FOREIGN KEY(file_hash) REFERENCES hash_index(file_hash) ON UPDATE CASCADE ON DELETE CASCADE
             );
 
             -- VIEWS
+            CREATE VIEW IF NOT EXISTS images_full AS
+            SELECT
+                i.path,
+                i.source,
+                i.name,
+                i.aspect_ratio,
+                s.file_hash,
+                s.size,
+                s.modified,
+                s.created,
+                s.collected,
+                s.status
+            FROM images i
+            JOIN sources s ON s.source = i.source;
+
             CREATE VIEW IF NOT EXISTS kv_all AS
             WITH base AS (
                 SELECT mi.path AS path, mi.key AS key, mi.value AS value, 'meta_info' AS src, 2 AS rank
                 FROM meta_info AS mi
             UNION ALL
-                SELECT m.path AS path, t.key AS key, t.value AS value, 'tags' AS src, 0 AS rank
+                -- tags は sources の file_hash 経由で images に関連付ける
+                SELECT i.path AS path, t.key AS key, t.value AS value, 'tags' AS src, 0 AS rank
                 FROM tags AS t
-                JOIN meta AS m ON m.file_hash = t.file_hash
+                JOIN sources AS s ON s.file_hash = t.file_hash
+                JOIN images  AS i ON i.source    = s.source
             UNION ALL
-                SELECT m.path AS path, '__filepath__' AS key, m.path AS value, 'virtual' AS src, 1 AS rank
-                FROM meta AS m
+                SELECT i.path AS path, '__filepath__' AS key, i.path AS value, 'virtual' AS src, 1 AS rank
+                FROM images AS i
             ),
             picked AS (
-            SELECT
-                path, key, value, src, rank,
-                ROW_NUMBER() OVER (PARTITION BY path, key ORDER BY rank, src) AS rn
-            FROM base
+                SELECT path, key, value, src, rank,
+                    ROW_NUMBER() OVER (PARTITION BY path, key ORDER BY rank, src) AS rn
+                FROM base
             )
             SELECT path, key, value, src
             FROM picked
@@ -198,30 +211,29 @@ class ImageDB:
 
             CREATE VIEW IF NOT EXISTS kv_meta AS
             SELECT
-                m.path,
-                m.file_hash,
+                k.path,
+                vf.file_hash,
                 k.key,
                 k.value,
                 k.src
             FROM kv_all AS k
-            JOIN meta AS m ON m.path = k.path;
-
+            JOIN images_full AS vf ON vf.path = k.path;
             """
         )
         self.conn.executescript(
             """
             -- Indexes identical to original
-            CREATE INDEX IF NOT EXISTS idx_meta_path             ON meta(path);
-            CREATE INDEX IF NOT EXISTS idx_meta_file_hash        ON meta(file_hash);
+            CREATE INDEX IF NOT EXISTS idx_sources_file_hash     ON sources(file_hash);
+            CREATE INDEX IF NOT EXISTS idx_images_source         ON images(source);
 
             CREATE INDEX IF NOT EXISTS idx_meta_info_key_fid     ON meta_info(key, path);
             CREATE INDEX IF NOT EXISTS idx_tags_key_fid          ON tags(key, file_hash);
 
-            CREATE INDEX IF NOT EXISTS idx_meta_mtime_path ON meta(mtime, path);
-            CREATE INDEX IF NOT EXISTS idx_meta_name_path ON meta(name, path);
-            CREATE INDEX IF NOT EXISTS idx_meta_size_path ON meta(size, path);
-            CREATE INDEX IF NOT EXISTS idx_meta_created_path ON meta(created, path);
-            CREATE INDEX IF NOT EXISTS idx_meta_collected_path ON meta(collected_at, path);
+            CREATE INDEX IF NOT EXISTS idx_images_name_path         ON images(name, path);
+            CREATE INDEX IF NOT EXISTS idx_sources_modified_source  ON sources(modified, source);
+            CREATE INDEX IF NOT EXISTS idx_sources_size_source      ON sources(size, source);
+            CREATE INDEX IF NOT EXISTS idx_sources_created_source   ON sources(created, source);
+            CREATE INDEX IF NOT EXISTS idx_sources_collected_source ON sources(collected, source);
             """
         )
         cur.close()
@@ -232,87 +244,78 @@ class ImageDB:
         result: dict[str, tuple[float, int]] = {}
         try:
             cur = self.get_reader_cursor()
-            cur.execute('SELECT source, mtime, size FROM images')
-            while True:
-                rows = cur.fetchmany(10000)
-                if not rows:
-                    break
-                for path, mtime, size in rows:
-                    result[path] = (mtime, size)
+            cur.execute('SELECT source, modified, size FROM sources')
+            for source, mtime, size in cur.fetchall():
+                result[source] = (mtime, size)  # ここでは normalize しない
             cur.close()
         except Exception as e:
             logger.warning(f'Failed to load previous data from DB: {e}')
         return result
 
+
     @profiler.profile
-    def delete_images_by_paths(self, paths: Sequence[str]):
+    def delete_sources_by_paths(self, paths: Sequence[str]):
         if not paths:
             return
         cur = self.get_writer_cursor()
         try:
-            cur.executemany('DELETE FROM images WHERE source = ?', [(p,) for p in paths])
+            cur.executemany('DELETE FROM sources WHERE source = ?', [(p,) for p in paths])
             self.conn.commit()
         finally:
             cur.close()
 
     @profiler.profile
     def upsert_batches(self,
-                       image_entries,
-                       meta_entries,
-                       meta_info_entries,
-                       tag_entries,
-                       failed_entries):
-        """Exact SQL used previously in ImageIndexer.write_batch_to_db."""
+                    source_entries,     
+                    image_entries,      
+                    meta_info_entries,  
+                    tag_entries,        
+                    ):
         with self.conn:
             cur = self.conn.cursor()
+
+            # 1) hash_index 先行 (images/tags の file_hash をカバー)
             file_ids = set()
-            for _, _, _, fid, *_ in meta_entries:
-                if fid:
-                    file_ids.add(fid)
+            for _, fid, *_ in source_entries:   # ★sources側からも回収
+                if fid: file_ids.add(fid)
             for fid, *_ in tag_entries:
-                if fid:
-                    file_ids.add(fid)
+                if fid: file_ids.add(fid)
             if file_ids:
                 cur.executemany(
-                    'INSERT OR IGNORE INTO fileindex(file_hash) VALUES (?)',
+                    'INSERT OR IGNORE INTO hash_index (file_hash) VALUES (?)',
                     [(fid,) for fid in file_ids],
                 )
+            # 2) sources を upsert
+            cur.executemany(
+                '''
+                INSERT INTO sources (source, file_hash, size, modified, created, collected, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(source) DO UPDATE SET
+                file_hash = excluded.file_hash,
+                size      = excluded.size,
+                modified  = excluded.modified,
+                created   = excluded.created,
+                collected = excluded.collected,
+                status    = excluded.status
+                ''',
+                source_entries,
+            )
 
-            if failed_entries:
-                cur.executemany(
-                    '''
-                    INSERT INTO images (source, mtime, size, status)
-                    VALUES (?, ?, ?, 'fail')
-                    ON CONFLICT(source) DO UPDATE SET mtime = excluded.mtime, size = excluded.size, status = 'fail'
-                    ''',
-                    failed_entries,
-                )
+            # 3) images を upsert（時刻やサイズは保持しない）
             if image_entries:
                 cur.executemany(
                     '''
-                    INSERT INTO images (source, mtime, size, status)
-                    VALUES (?, ?, ?, 'ok')
-                    ON CONFLICT(source) DO UPDATE SET mtime = excluded.mtime, size = excluded.size, status = 'ok'
+                    INSERT INTO images (path, source, name, aspect_ratio)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(path) DO UPDATE SET
+                        source       = excluded.source,
+                        name         = excluded.name,
+                        aspect_ratio = excluded.aspect_ratio
                     ''',
                     image_entries,
                 )
-            if meta_entries:
-                cur.executemany(
-                    '''
-                    INSERT INTO meta (path, source, name, file_hash, aspect_ratio, mtime, size, created, collected_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(path) DO UPDATE SET 
-                        source       = excluded.source,
-                        name         = excluded.name,
-                        file_hash         = excluded.file_hash,
-                        aspect_ratio = excluded.aspect_ratio,
-                        mtime        = excluded.mtime,
-                        size         = excluded.size,
-                        created      = excluded.created,
-                        collected_at = excluded.collected_at
-                    ''',
-                    meta_entries,
-                )
+
+            # 4) meta_info / tags
             if meta_info_entries:
                 cur.executemany(
                     '''
@@ -323,41 +326,47 @@ class ImageDB:
                     ''',
                     meta_info_entries,
                 )
+
             if tag_entries:
                 cur.executemany(
                     '''
                     INSERT INTO tags (file_hash, key, value)
                     VALUES (?, ?, ?)
-                    ON CONFLICT(file_hash, key) DO UPDATE SET 
+                    ON CONFLICT(file_hash, key) DO UPDATE SET
                         value = excluded.value
                     ''',
                     tag_entries,
                 )
             cur.close()
 
+
     @profiler.profile
     def clean_unused(self):
         logger.info('CLEANING UP DATABASE')
         try:
             cur = self.get_writer_cursor()
-            cur.execute('''
-                DELETE FROM meta
-                WHERE source NOT IN (SELECT source FROM images)
-            ''')
-            cur.execute('''
-                DELETE FROM fileindex
-                WHERE file_hash NOT IN (SELECT file_hash FROM meta)
-                AND file_hash NOT IN (SELECT file_hash FROM tags)
-            ''')
+
+            # 1) images にいない path の meta を掃除
             cur.execute('''
                 DELETE FROM meta_info
-                WHERE path NOT IN (SELECT path FROM meta)
+                WHERE path NOT IN (SELECT path FROM images)
             ''')
+
+            # 2) images に使われない file_hash の tags を掃除
             cur.execute('''
                 DELETE FROM tags
-                WHERE file_hash NOT IN (SELECT file_hash FROM fileindex)
+                WHERE file_hash NOT IN (SELECT file_hash FROM sources);
             ''')
+
+            # 3) images/tags から参照されない hash_index を掃除
+            cur.execute('''
+                DELETE FROM hash_index
+                WHERE file_hash NOT IN (SELECT file_hash FROM sources)
+                AND file_hash NOT IN (SELECT file_hash FROM tags);
+            ''')
+
             self.conn.commit()
+
             logger.info('RUNNING VACUUM')
             cur.execute('VACUUM')
             logger.info('RUNNING ANALYZE')
@@ -368,6 +377,7 @@ class ImageDB:
             logger.exception('DATABASE CLEANUP FAILED: %s', e)
         else:
             logger.info('DATABASE CLEANUP END')
+
 
 
 import concurrent.futures
@@ -469,7 +479,7 @@ class ImageIndexer:
             return
         logger.info('[ExcludePaths] Removing existing entries under exclude paths...')
         cur = self.db.get_reader_cursor()
-        cur.execute('SELECT source FROM images')
+        cur.execute('SELECT source FROM sources')
         all_paths = [normalize_path(row[0]) for row in cur.fetchall()]
         cur.close()
         to_remove = [p for p in all_paths if self.is_path_excluded(p)]
@@ -479,7 +489,7 @@ class ImageIndexer:
         self._add_progress(0, len(to_remove))
         for i in range(0, len(to_remove), CHUNK):
             chunk = to_remove[i:i + CHUNK]
-            self.db.delete_images_by_paths(chunk)
+            self.db.delete_sources_by_paths(chunk)
             self._add_progress(len(chunk), 0)
         logger.info(f'[ExcludePaths] Removed {len(to_remove)} entries from DB.')
         self.emit_update()
@@ -552,7 +562,7 @@ class ImageIndexer:
         if removed:
             for i in range(0, len(removed), CHUNK):
                 chunk = removed[i:i + CHUNK]
-                self.db.delete_images_by_paths(chunk)
+                self.db.delete_sources_by_paths(chunk)
                 self._add_progress(len(chunk), 0)
             logger.info(f'deleted {len(removed)} files')
             self.db.try_checkpoint('PASSIVE')
@@ -584,7 +594,7 @@ class ImageIndexer:
         for i in range(0, len(keys), CHUNK):
             chunk = keys[i:i + CHUNK]
             cur.execute(
-                f"SELECT source, mtime, size FROM images WHERE source IN ({','.join(['?'] * len(chunk))})",
+                f"SELECT source, modified, size FROM sources WHERE source IN ({','.join(['?'] * len(chunk))})",
                 chunk,
             )
             previous.update({normalize_path(row[0]): (row[1], row[2]) for row in cur.fetchall()})
@@ -610,7 +620,7 @@ class ImageIndexer:
             return
         for i in range(0, len(normalized), CHUNK):
             chunk = normalized[i:i + CHUNK]
-            self.db.delete_images_by_paths(chunk)
+            self.db.delete_sources_by_paths(chunk)
             self._add_progress(len(chunk), 0)
         self.db.try_checkpoint()
         self.emit_update()
@@ -627,16 +637,16 @@ class ImageIndexer:
     @profiler.profile
     def batch_process_images(self, batch, file_info):
         results = list(executor.map(self._batch_images, batch))
+
+        source_entries = set()   # dedup by source
         image_entries = []
-        meta_entries = []
         meta_info_entries = []
         tag_entries = []
-        failed_entries = []
 
         for info, meta_info, tags, status in results:
             source = info.get('source')
-            path = info.get('path')
-            name = info.get('name')
+            path   = info.get('path')
+            name   = info.get('name')
             aspect = info.get('aspect')
             file_hash = info.get('file_hash')
 
@@ -644,19 +654,22 @@ class ImageIndexer:
             if not file_hash:
                 file_hash = fast_sig_hash(source, fsize, 256)
 
+            # status を sources.status に残す（fail も upsert しておく）
+            source_entries.add((source, file_hash, fsize, mtime, ctime, time.time(), 'fail' if status == 'fail' else 'ok'))
+
             if status == 'fail':
-                failed_entries.append((source, mtime, fsize))
                 continue
-            image_entries.append((source, mtime, fsize))
-            meta_entries.append((path, source, name, file_hash, aspect, mtime, fsize, ctime, time.time()))
-            meta_info_entries.extend([(path, key, value) for key, value in meta_info.items()])
-            tag_entries.extend([(file_hash, key, value) for key, value in tags.items()])
-        return (image_entries, meta_entries, meta_info_entries, tag_entries, failed_entries)
+
+            image_entries.append((path, source, name, aspect))
+            meta_info_entries.extend((path, k, v) for k, v in meta_info.items())
+            tag_entries.extend((file_hash, k, v) for k, v in tags.items())
+
+        return (list(source_entries), image_entries, meta_info_entries, tag_entries)
+
 
     @profiler.profile
-    def write_batch_to_db(self, image_entries, meta_entries, meta_info_entries, tag_entries, failed_entries):
-        # Delegate to DB layer; SQL is unchanged
-        self.db.upsert_batches(image_entries, meta_entries, meta_info_entries, tag_entries, failed_entries)
+    def write_batch_to_db(self, source_entries, image_entries, meta_info_entries, tag_entries):
+        self.db.upsert_batches(source_entries, image_entries, meta_info_entries, tag_entries)
 
     @profiler.profile
     def update_meta_and_image(self, paths, file_info):
@@ -669,7 +682,7 @@ class ImageIndexer:
         QUEUE_MAX = 8
         i = 0
         start_time = time.monotonic()
-        target_s = TARGET_MIN_S
+
         write_queue = queue.Queue(maxsize=QUEUE_MAX)
 
         def writer_thread_func():
@@ -678,8 +691,8 @@ class ImageIndexer:
                 if item is None:
                     break
                 try:
-                    (image_entries, meta_entries, meta_info_entries, tag_entries, failed_entries) = item
-                    self.write_batch_to_db(image_entries, meta_entries, meta_info_entries, tag_entries, failed_entries)
+                    (source_entries, image_entries, meta_info_entries, tag_entries) = item
+                    self.write_batch_to_db(source_entries, image_entries, meta_info_entries, tag_entries)
                 except Exception as e:
                     logger.error(f'[WriterThread] Error in write_batch_to_db: {e}')
                 finally:
@@ -688,39 +701,37 @@ class ImageIndexer:
         writer_thread = threading.Thread(target=writer_thread_func, daemon=True)
         writer_thread.start()
 
+        acc_source_entries = []
         acc_image_entries = []
-        acc_meta_entries = []
         acc_meta_info_entries = []
         acc_tag_entries = []
-        acc_failed_entries = []
         acc_proc_duration = 0.0
 
         while i < total:
             elapsed = time.monotonic() - start_time
-            ramp_target = TARGET_MIN_S + elapsed / TARGET_MAX_S * (TARGET_MAX_S - TARGET_MIN_S)
-            target_s = min(TARGET_MAX_S, ramp_target)
+            target_s = min(TARGET_MAX_S, TARGET_MIN_S + elapsed / TARGET_MAX_S * (TARGET_MAX_S - TARGET_MIN_S))
 
             batch = paths[i:i + batch_size]
             t0 = time.monotonic()
-            (image_entries, meta_entries, meta_info_entries, tag_entries, failed_entries) = self.batch_process_images(batch, file_info)
+            (source_entries, image_entries, meta_info_entries, tag_entries) = self.batch_process_images(batch, file_info)
             duration = time.monotonic() - t0
 
+            acc_source_entries.extend(source_entries)
             acc_image_entries.extend(image_entries)
-            acc_meta_entries.extend(meta_entries)
             acc_meta_info_entries.extend(meta_info_entries)
             acc_tag_entries.extend(tag_entries)
-            acc_failed_entries.extend(failed_entries)
             acc_proc_duration += duration
 
+            # 目標時間 or キュー圧でフラッシュ
             if acc_proc_duration >= target_s or write_queue.qsize() >= int(QUEUE_MAX * 0.8):
-                write_queue.put((acc_image_entries, acc_meta_entries, acc_meta_info_entries, acc_tag_entries, acc_failed_entries))
+                write_queue.put((acc_source_entries, acc_image_entries, acc_meta_info_entries, acc_tag_entries))
+                acc_source_entries = []
                 acc_image_entries = []
-                acc_meta_entries = []
                 acc_meta_info_entries = []
                 acc_tag_entries = []
-                acc_failed_entries = []
                 acc_proc_duration = 0.0
 
+            # 自動バッチサイズ調整
             if duration > 0:
                 if duration < target_s:
                     ratio = target_s / duration
@@ -728,8 +739,10 @@ class ImageIndexer:
                 else:
                     ratio = duration / target_s
                     batch_size = int(batch_size / ratio ** 0.5)
+
             if write_queue.qsize() >= int(QUEUE_MAX * 0.6):
                 batch_size = max(MIN_BATCH_SIZE, int(batch_size * 0.7))
+
             batch_size = max(MIN_BATCH_SIZE, min(MAX_BATCH_SIZE, batch_size))
 
             i += len(batch)
@@ -738,8 +751,9 @@ class ImageIndexer:
             self._add_progress(len(batch), 0)
             logger.info(f'[Adaptive Commit] {i}/{total} processed (batch={len(batch)}, {duration:.2f}s, target={target_s:.2f}s)')
 
-        if acc_image_entries or acc_meta_entries or acc_meta_info_entries or acc_tag_entries or acc_failed_entries:
-            write_queue.put((acc_image_entries, acc_meta_entries, acc_meta_info_entries, acc_tag_entries, acc_failed_entries))
+        # 残りをフラッシュ
+        if acc_source_entries or acc_image_entries or acc_meta_info_entries or acc_tag_entries:
+            write_queue.put((acc_source_entries, acc_image_entries, acc_meta_info_entries, acc_tag_entries))
 
         write_queue.join()
         write_queue.put(None)
@@ -747,7 +761,6 @@ class ImageIndexer:
         self.db.try_checkpoint()
         self.emit_update()
 
-    # ---- maintenance ---------------------------------------------------
     @profiler.profile
     def clean_unused(self):
         self.db.clean_unused()

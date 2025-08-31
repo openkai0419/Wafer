@@ -88,13 +88,15 @@ def list_files(directory, extension):
     return [normalize_path(f) for f in Path(directory).iterdir() if f.is_file() and f.suffix.lower() == ext]
 
 
-
-
 def human_time(ts: float) -> str:
+    if ts is None:
+        return None
     dt = datetime.datetime.fromtimestamp(ts)
     return dt.strftime("%Y-%m-%d %H:%M:%S")
 
 def human_aspect(ratio: float, max_denominator: int = 100) -> str:
+    if ratio is None:
+        return None
     if ratio <= 0:
         return "N/A"
     frac = math.floor(ratio * max_denominator + 0.5)
@@ -110,6 +112,8 @@ def human_aspect_string(ratio: float):
     return human_aspect(ratio)
 
 def human_size(size: int) -> str:
+    if size is None:
+        return None
     units = ["B", "KB", "MB", "GB", "TB", "PB"]
     s = float(size)
     for unit in units:

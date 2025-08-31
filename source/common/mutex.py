@@ -3,11 +3,13 @@ import tempfile
 import time
 import psutil
 
+from ..common.funcs import data_path
+
 class SafeProcessLock:
 
     def __init__(self, name):
         self.name = name
-        self.lock_file = os.path.join(tempfile.gettempdir(), f'{name}.lock')
+        self.lock_file = data_path(f".temp/{name}.lock")
         self.pid = os.getpid()
         self.acquired = False
 

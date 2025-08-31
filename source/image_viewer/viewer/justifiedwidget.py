@@ -385,12 +385,12 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
         self.spacing = uipx(4)
         self.calculator = None
         self.image_cache = MemoryLimitedImageCache(main_setting.get('window/chache_size', 500))
+        self.label_pool = QLabelPool(self)
         self.active_threads = {}
         self.error_placeholder = PixmapFactory.generate().toImage()
         self.overlay_painter = OverLayPainter(self, self.spacing)
         self.selection_manager = SelectionManager()
         self.selection_manager.selectionChanged.connect(self._on_selection_changed)
-        self.label_pool = QLabelPool(self)
         self.widgets = {}
         self.visible_indices = set()
         self.size_checker = SizeMismatchChecker(self)

@@ -42,9 +42,10 @@ class ImageLoaderRunnable(QtCore.QRunnable):
         cache_key = (self.path, self.size.width(), self.size.height())
         image = self.receiver.image_cache.get(cache_key)
 
-        if image is None:
-            if self._cancelled:
+        if self._cancelled:
                 return
+        
+        if image is None:
             image = LoaderClass.load(self.path, self.size)
 
         if image is None:

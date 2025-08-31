@@ -216,7 +216,7 @@ class MetaInfoSearchEngine:
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
 
-            required = ('meta_info', "tags", 'meta', 'kv_meta')
+            required = ('meta_info', "tags", 'images', 'kv_meta', "images_full")
             for name in required:
                 cur.execute("SELECT name FROM sqlite_master WHERE name=?", (name,))
                 if not cur.fetchone():
@@ -247,7 +247,7 @@ class MetaInfoSearchEngine:
 
     @profiler.profile
     def _build_sort_clause(self, sort_by, ascending):
-        sort_column_map = {'path': 'path', 'name': 'name', 'created': 'created', 'modified': 'mtime', 'size': 'size', 'collected': 'collected_at', 'random': None}
+        sort_column_map = {'path': 'path', 'name': 'name', 'created': 'created', 'modified': 'modified', 'size': 'size', 'collected': 'collected', 'random': None}
         if sort_by not in sort_column_map and sort_by != 'random':
             sort_by = 'path'
         sort_column = sort_column_map.get(sort_by)
@@ -278,7 +278,7 @@ class MetaInfoSearchEngine:
         if query.sort_by == 'random':
             sql = f"""
                 SELECT m.path, m.source, m.aspect_ratio
-                FROM meta AS m
+                FROM images_full  AS m
                 JOIN ({distinct_paths}) AS s USING(path)
             """
             #self._explain_query_plan(sql, params)
@@ -289,14 +289,14 @@ class MetaInfoSearchEngine:
             if sort_col:
                 sql = f"""
                     SELECT m.path, m.source, m.aspect_ratio
-                    FROM meta AS m
+                    FROM images_full  AS m
                     JOIN ({distinct_paths}) AS s USING(path)
                     ORDER BY m."{sort_col}" {order}
                 """
             else:
                 sql = f"""
                     SELECT m.path, m.source, m.aspect_ratio
-                    FROM meta AS m
+                    FROM images_full  AS m
                     JOIN ({distinct_paths}) AS s USING(path)
                 """
             #self._explain_query_plan(sql, params)
@@ -341,7 +341,7 @@ class MetaInfoSearchEngine:
         if queries[-1].sort_by == 'random':
             sql = f"""
                 SELECT m.path, m.aspect_ratio
-                FROM meta AS m
+                FROM images_full AS m
                 JOIN ({combined}) AS c USING(path)
             """
             self._explain_query_plan(sql, params)
@@ -351,14 +351,14 @@ class MetaInfoSearchEngine:
             if sort_col:
                 sql = f"""
                     SELECT m.path, m.aspect_ratio
-                    FROM meta AS m
+                    FROM images_full AS m
                     JOIN ({combined}) AS c USING(path)
                     ORDER BY m."{sort_col}" {order}
                 """
             else:
                 sql = f"""
                     SELECT m.path, m.aspect_ratio
-                    FROM meta AS m
+                    FROM images_full AS m
                     JOIN ({combined}) AS c USING(path)
                 """
             self._explain_query_plan(sql, params)
@@ -409,7 +409,7 @@ class MetaInfoSearchEngine:
             return {}
         cur = self.conn.cursor()
         norm_path = self._normalize_path(path)
-        row = cur.execute("SELECT path FROM meta WHERE path = ?", (norm_path,)).fetchone()
+        row = cur.execute("SELECT path FROM images WHERE path = ?", (norm_path,)).fetchone()
         if not row:
             return {}
         fid = row["path"]
@@ -422,24 +422,54 @@ class MetaInfoSearchEngine:
             return {}
         cur = self.conn.cursor()
         norm_path = self._normalize_path(path)
-        row = cur.execute("SELECT file_hash FROM meta WHERE path = ?", (norm_path,)).fetchone()
+        row = cur.execute(
+            """
+            SELECT s.file_hash
+            FROM images AS i
+            JOIN sources AS s ON s.source = i.source
+            WHERE i.path = ?
+            """,
+            (norm_path,)
+        ).fetchone()
         if not row:
             return {}
         fid = row["file_hash"]
-        rows = cur.execute("SELECT key, value FROM tags WHERE file_hash = ?", (fid,)).fetchall()
+        rows = cur.execute(
+            "SELECT key, value FROM tags WHERE file_hash = ?",
+            (fid,)
+        ).fetchall()
         return {r["key"]: r["value"] for r in rows}
 
     @profiler.profile
-    def get_meta_by_path(self, path):
+    def get_image_by_path(self, path):
         if not self._connect_if_needed():
             return {}
         cur = self.conn.cursor()
         norm_path = self._normalize_path(path)
         row = cur.execute(
-            "SELECT * FROM meta WHERE path = ?",
+            "SELECT * FROM images WHERE path = ?",
             (norm_path,)
         ).fetchone()
         return dict(row) if row else {}
     
+    @profiler.profile
+    def get_source_by_path(self, path: str) -> dict:
+        if not self._connect_if_needed():
+            return {}
+        cur = self.conn.cursor()
+        norm_path = self._normalize_path(path)
+
+        row = cur.execute(
+            """
+            SELECT s.*
+            FROM images AS i
+            JOIN sources AS s ON s.source = i.source
+            WHERE i.path = ?
+            """,
+            (norm_path,)
+        ).fetchone()
+
+        return dict(row) if row else {}
+    
     def get_metas(self, path):
-        return [self.get_meta_by_path(path), self.get_tags_by_path(path), self.get_meta_info_by_path(path)]
+        return [self.get_source_by_path(path), self.get_image_by_path(path), self.get_tags_by_path(path), self.get_meta_info_by_path(path)]

@@ -12,7 +12,7 @@ from .manager import BaseLoader, BaseReader
 
 class ImageReader(BaseReader):
     ext = ('.jpg', '.jpeg', '.png', '.bmp', '.gif', '.webp')
-
+    NAME = "DefaultImageCollector"
     @classmethod
     def is_readable(cls, path: str) -> bool:
         return os.path.splitext(path)[-1].lower() in cls.ext
@@ -54,8 +54,6 @@ class ImageReader(BaseReader):
             
             # 追加情報
             tags = {
-                "Width": str(width),
-                "Height": str(height),
             }
 
             return (info, meta_info, tags, None)
@@ -74,6 +72,7 @@ class ImageReader(BaseReader):
 
 class ImageLoader(BaseLoader):
     ext = ('.jpg', '.jpeg', '.png', '.bmp', '.gif', '.webp')
+    NAME = "DefaultImageCollector"
     
     @classmethod
     def is_loadable(cls, path):

@@ -72,15 +72,19 @@ class ViewerWidget(QtWidgets.QSplitter):
 
     def set_meta(self):
         db = MetaInfoSearchEngine(self.root.dbpath)
-        meta, tags, meta_infos = db.get_metas(self.path)
-        if meta["source"] == meta["path"]:
-            meta.pop("source", None)
-        meta["aspect_ratio"] = human_aspect_string(meta.get("aspect_ratio"))
-        meta["size"] = human_size_string(meta.get("size"))
-        meta["mtime"] = human_time(meta.get("mtime"))
-        meta["created"] = human_time(meta.get("created"))
-        meta["collected_at"] = human_time(meta.get("collected_at"))
+        source, image, tags, meta_infos = db.get_metas(self.path)
+        # cleaunp for viewing
+        if source.get("status"):
+            source.pop("status")
+        if image.get("source"):
+            image.pop("source")
+        if image.get("aspect_ratio"):
+            image["aspect_ratio"] = human_aspect_string(image.get("aspect_ratio"))
+        source["size"] = human_size_string(source.get("size"))
+        source["modified"] = human_time(source.get("modified"))
+        source["created"] = human_time(source.get("created"))
+        source["collected"] = human_time(source.get("collected"))
         meta_infos = {k: meta_infos[k] for k in natsorted(meta_infos)}
         tags = {k: tags[k] for k in natsorted(tags)}
-        self.dict_viewer.set_data([meta, tags, meta_infos])
+        self.dict_viewer.set_data([source, image, tags, meta_infos])
         self._last_cache_key = None

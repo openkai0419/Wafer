@@ -10,7 +10,7 @@ from ..db.query import MetaInfoSearchEngine, MetaQuery
 from ..db.setting_db import SettingDB
 from ..image_setting.db_settings import DataBaseSettings
 from ..image_setting.setting_window import SettingsWindow
-from ..image_setting.translation import TranslatorMixin
+from ..lang.manager import TranslatorMixin
 from ..os.process import Proc
 from ..qt.debounce import qt_debounce
 from ..qt.dialog import ConfirmDialog, InputDialog

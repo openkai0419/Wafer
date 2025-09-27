@@ -1,7 +1,7 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 from ...common.profiling import profiler, logger
 from ...db.query import MetaInfoSearchEngine, MetaQuery
-from ...image_setting.translation import TranslatorMixin
+from ...lang.manager import TranslatorMixin
 from ...qt.thread import main_thread
 from ..viewer_settings import main_setting
 

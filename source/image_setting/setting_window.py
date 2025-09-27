@@ -2,7 +2,7 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QDialog, QHBoxLayout, QPushButton, QTabWidget, QVBoxLayout
 from ..common.funcs import uipx
 from .base_setting import SettingsTabBase
-from .translation import TranslatorMixin
+from ..lang.manager import TranslatorMixin
 
 class SettingsWindow(QDialog, TranslatorMixin):
     settings_applied = Signal()

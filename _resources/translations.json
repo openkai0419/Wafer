@@ -1,299 +1,98 @@
 {
-  "Paste here": {
-    "ja": ""
-  },
   "": {
-    "ja": ""
-  },
-  "Copy FileName": {
-    "ja": ""
-  },
-  "Copy Path List": {
-    "ja": ""
-  },
-  "File": {
-    "ja": ""
-  },
-  "Select Folder": {
-    "ja": ""
+    "en": ""
   },
   "Copy": {
-    "ja": ""
+    "en": "Copy"
   },
-  "Cut": {
-    "ja": ""
-  },
-  "Open New Window": {
-    "ja": ""
-  },
-  "Quit": {
-    "ja": ""
-  },
-  "ReScan All": {
-    "ja": ""
-  },
-  "Show Window": {
-    "ja": ""
-  },
-  "Test": {
-    "ja": ""
-  },
-  "Name": {
-    "ja": ""
-  },
-  "File Name": {
-    "ja": ""
-  },
-  "Are you sure to Remove this folder?  (This does not delete folders)\\  {path}": {
-    "ja": ""
-  },
-  "Remove from view": {
-    "ja": ""
-  },
-  "Open File": {
-    "ja": ""
-  },
-  "Path": {
-    "ja": ""
-  },
-  "Reveal in Explorer": {
-    "ja": ""
-  },
-  "Are you sure to Ingore this folder?  (This does not delete folders)\n  {path}": {
-    "ja": ""
-  },
-  "Ingore this file from view list? \n※This does not delete the file\n  -{path}": {
-    "ja": ""
-  },
-  "Confirm": {
-    "ja": ""
-  },
-  "Ignore": {
-    "ja": ""
-  },
-  "Ignore this folder": {
-    "ja": ""
-  },
-  "Ingore this file from view list? (This does not delete files)\n{path}": {
-    "ja": ""
-  },
-  "Path:": {
-    "ja": ""
-  },
-  "Remove:": {
-    "ja": ""
-  },
-  "Remove": {
-    "ja": ""
+  "Copy FileName": {
+    "en": "Copy FileName"
   },
   "Copy Path": {
-    "ja": ""
+    "en": "Copy Path"
   },
-  "Open in Explorer": {
-    "ja": ""
+  "Copy Path List": {
+    "en": "Copy Path List"
+  },
+  "Cut": {
+    "en": "Cut"
+  },
+  "File": {
+    "en": "File"
+  },
+  "Open File": {
+    "en": "Open File"
+  },
+  "Paste here": {
+    "en": "Paste here"
+  },
+  "Reveal in Explorer": {
+    "en": "Reveal in Explorer"
+  },
+  "Select Folder": {
+    "en": "Select Folder"
   },
   " Filter ": {
-    "ja": ""
-  },
-  "Split by:": {
-    "ja": ""
-  },
-  " Search Options ▼ ": {
-    "ja": ""
+    "en": " Filter "
   },
   " Options ▼ ": {
-    "ja": "検索設定 ▼ "
+    "en": " Options ▼ "
   },
   "Add item": {
-    "ja": ""
-  },
-  "Apply": {
-    "ja": ""
+    "en": "Add item"
   },
   "Ascending": {
-    "ja": ""
+    "en": "Ascending"
   },
   "Cancel": {
-    "ja": ""
+    "en": "Cancel"
   },
   "Collected": {
-    "ja": ""
-  },
-  "Create": {
-    "ja": ""
-  },
-  "Create New": {
-    "ja": ""
+    "en": "Collected"
   },
   "Created": {
-    "ja": ""
+    "en": "Created"
   },
   "Delete": {
-    "ja": ""
+    "en": "Delete"
   },
   "Delete table? : {dbname}": {
-    "ja": ""
+    "en": "Delete table? : {dbname}"
   },
   "Descending": {
-    "ja": ""
-  },
-  "Enter a name for the new table": {
-    "ja": ""
+    "en": "Descending"
   },
   "Enter search terms...": {
-    "ja": ""
-  },
-  "File Path": {
-    "ja": ""
+    "en": "Enter search terms..."
   },
   "File Size": {
-    "ja": ""
-  },
-  "Filter": {
-    "ja": ""
-  },
-  "Folder Settings": {
-    "ja": ""
+    "en": "File Size"
   },
   "Modified": {
-    "ja": ""
+    "en": "Modified"
   },
-  "Please enter text...": {
-    "ja": ""
+  "Name": {
+    "en": "Name"
+  },
+  "Path": {
+    "en": "Path"
   },
   "Random": {
-    "ja": ""
+    "en": "Random"
   },
   "Remove current item": {
-    "ja": ""
+    "en": "Remove current item"
   },
   "Search Options": {
-    "ja": ""
+    "en": "Search Options"
   },
   "Select folder": {
-    "ja": ""
-  },
-  "Settings": {
-    "ja": ""
+    "en": "Select folder"
   },
   "Sort:": {
-    "ja": ""
+    "en": "Sort:"
   },
-  "Split characters:": {
-    "ja": ""
-  },
-  "ウィンドウを表示": {
-    "ja": ""
-  },
-  "テスト": {
-    "ja": ""
-  },
-  "新規ウィンドウを開く": {
-    "ja": ""
-  },
-  "終了": {
-    "ja": ""
-  },
-  "エクスプローラーで開く": {
-    "ja": ""
-  },
-  "パスをコピー": {
-    "ja": ""
-  },
-  "フォルダを選択": {
-    "ja": ""
-  },
-  "検索オプション": {
-    "ja": ""
-  },
-  "確認": {
-    "ja": ""
-  },
-  "表示リストから除去しますか？: \n{path}": {
-    "ja": ""
-  },
-  "除去": {
-    "ja": ""
-  },
-  "除去する": {
-    "ja": ""
-  },
-  " 検索設定 ▼ ": {
-    "ja": "Options ▼ "
-  },
-  "ソート:": {
-    "ja": "Sort by:"
-  },
-  "ファイルサイズ": {
-    "ja": "Filesize"
-  },
-  "ファイルパス": {
-    "ja": "Filepath"
-  },
-  "フォルダ設定": {
-    "ja": "Folder Options"
-  },
-  "ランダム": {
-    "ja": "Random"
-  },
-  "作成日時": {
-    "ja": "Crated"
-  },
-  "入力してください…": {
-    "ja": "type in..."
-  },
-  "昇順": {
-    "ja": "ASC"
-  },
-  "更新日時": {
-    "ja": "Update"
-  },
-  "検索設定": {
-    "ja": "Search Options"
-  },
-  "検索ワードを入力...": {
-    "ja": "Enter your term..."
-  },
-  "検索用の分割文字:": {
-    "ja": "Split by"
-  },
-  "現在の項目を削除": {
-    "ja": "Delete current item"
-  },
-  "登録順": {
-    "ja": "Registration"
-  },
-  "絞り込み": {
-    "ja": "Select"
-  },
-  "設定": {
-    "ja": "Options"
-  },
-  "適用": {
-    "ja": "Apply"
-  },
-  "降順": {
-    "ja": "DESC"
-  },
-  "項目を追加": {
-    "ja": "add new table"
-  },
-  "キャンセル": {
-    "ja": "Cancel"
-  },
-  "テーブルを削除しますか？: {dbname}": {
-    "ja": "Are you sure to delete table : {dbname}"
-  },
-  "作成": {
-    "ja": "Create"
-  },
-  "作成するテーブルの名前を入力してください": {
-    "ja": "Enter new table name"
-  },
-  "削除": {
-    "ja": "Delete"
-  },
-  "新規作成": {
-    "ja": "Create New"
+  "Split by:": {
+    "en": "Split by:"
   }
 }

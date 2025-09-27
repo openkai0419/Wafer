@@ -3,6 +3,17 @@ from pathlib import Path
 from PySide6 import QtCore
 from ..common.funcs import get_resource_path
 
+_t_instance = None
+
+def init_translator(json_path, default_locale='en'):
+    global _t_instance
+    _t_instance = TranslationManager(json_path, default_locale)
+
+def get_translator():
+    if _t_instance is None:
+        raise RuntimeError('TranslationManager is not initialized. Call init_translator() first.')
+    return _t_instance
+
 class TranslationManager(QtCore.QObject):
     languageChanged = QtCore.Signal()
 
@@ -14,6 +25,11 @@ class TranslationManager(QtCore.QObject):
         self.missing_keys = set()
         self.load_translations()
 
+    def __call__(self, english_text: str, **kwargs):
+        if kwargs:
+            return self.trf(english_text, **kwargs)
+        return self.tr(english_text)
+    
     def load_translations(self):
         if self.json_path.exists():
             with open(self.json_path, encoding='utf-8') as f:
@@ -46,31 +62,31 @@ class TranslationManager(QtCore.QObject):
 
     def dump_missing_keys(self, output_path=None, languages=None):
         if languages is None:
-            languages = [self.current_locale] if self.current_locale != 'en' else ['ja']
-        out = {k: {lang: '' for lang in languages} for k in sorted(self.missing_keys)}
+            languages = sorted({self.current_locale, 'en'})
+
         output_path = output_path or self.json_path
+        existing = {}
         if output_path.exists():
             with open(output_path, encoding='utf-8') as f:
                 existing = json.load(f)
-            for k, v in existing.items():
-                if k in out:
-                    v.update(out[k])
-                    out[k] = v
-                else:
-                    out[k] = v
+            for v in existing.values():
+                if isinstance(v, dict):
+                    languages = sorted(set(languages) | set(v.keys()))
+
+        out = {}
+        for k in sorted(self.missing_keys):
+            out[k] = {lang: (k if lang == 'en' else '') for lang in languages}
+
+        for k, v in existing.items():
+            if k in out and isinstance(v, dict):
+                out[k].update(v)
+            else:
+                out[k] = v
+
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(out, f, indent=2, ensure_ascii=False)
         print(f'Missing keys written to: {output_path}')
-_t_instance = None
 
-def init_translator(json_path, default_locale='en'):
-    global _t_instance
-    _t_instance = TranslationManager(json_path, default_locale)
-
-def get_translator():
-    if _t_instance is None:
-        raise RuntimeError('TranslationManager is not initialized. Call init_translator() first.')
-    return _t_instance
 
 class TranslatorMixin:
     _default_update_method_name = 'update_translation'
@@ -89,4 +105,6 @@ class TranslatorMixin:
 
     def set_translation_method(self, method_name):
         self._translation_method_name = method_name
+
 init_translator(get_resource_path() / 'translations.json')
+t = get_translator()

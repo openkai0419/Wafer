@@ -217,6 +217,7 @@ class DictRowWidget(QtWidgets.QFrame):
             val_label.setTextFormat(QtCore.Qt.PlainText)
             val_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
             val_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
+            #val_label.setStyleSheet("QLabel { line-break: anywhere; }")
 
             self._grid.addWidget(key_label, row, 0)
             self._grid.addWidget(val_label, row, 1)

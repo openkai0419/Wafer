@@ -125,7 +125,6 @@ class AdaptiveThreadPool:
     def start(self, obj, *args, **kwargs):
         self.pool.start(obj, *args, **kwargs)
 
-    @profiler.profile
     def adjust_thread_count(self):
         cpu_usage = psutil.cpu_percent()
         # 回復条件：CPU余裕 & 全関数で「low未満がしばらく継続」

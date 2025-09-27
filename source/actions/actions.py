@@ -3,7 +3,7 @@ import os
 import sys
 from PySide6 import QtCore, QtGui, QtWidgets
 from ..common.funcs import normalize_path, uipx
-from ..image_setting.translation import TranslatorMixin
+from ..lang.manager import TranslatorMixin
 from ..os.copy import ClipboardFileTransfer
 from ..os.paste import ClipboardFilePaster, PasteDecision
 from ..qt.dialog import ConfirmDialog

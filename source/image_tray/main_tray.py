@@ -3,7 +3,7 @@ from PySide6 import QtWidgets
 from ..common.profiling import logger, profiler
 from ..constants import APP_NAME
 from ..image_collector.progress_notifier import close_publisher
-from ..image_setting.translation import TranslatorMixin
+from ..lang.manager import TranslatorMixin
 from ..os.process import Proc
 from ..qt.debounce import qt_debounce
 from ..zmq.zmq import Role, ZMQBroker, ZMQNode

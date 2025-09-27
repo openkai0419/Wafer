@@ -2,7 +2,7 @@ import os
 import sys
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtWidgets import QApplication, QFileDialog, QListWidget, QMenu, QMessageBox, QPushButton, QStackedLayout, QVBoxLayout, QWidget
-from ..translation import TranslatorMixin
+from ...lang.manager import TranslatorMixin
 
 class FolderListWidget(QWidget, TranslatorMixin):
 

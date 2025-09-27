@@ -1,6 +1,6 @@
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy, QStyle, QVBoxLayout
-from ..image_setting.translation import TranslatorMixin
+from ..lang.manager import TranslatorMixin
 
 class BaseDialog(QDialog):
 

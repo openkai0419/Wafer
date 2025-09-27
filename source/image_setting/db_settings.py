@@ -1,5 +1,5 @@
 from .base_setting import SettingsTabBase
-from .translation import TranslatorMixin
+from ..lang.manager import TranslatorMixin
 
 class DataBaseSettings(SettingsTabBase, TranslatorMixin):
     name = 'Folder Settings'

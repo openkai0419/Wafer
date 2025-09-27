@@ -1,7 +1,7 @@
 import sys
 from PySide6.QtCore import QSignalBlocker, Qt, Signal
 from PySide6.QtWidgets import QApplication, QComboBox, QHBoxLayout, QPushButton, QWidget
-from ...image_setting.translation import TranslatorMixin
+from ...lang.manager import TranslatorMixin
 
 class ComboBoxWithButtons(QWidget, TranslatorMixin):
     addClicked = Signal()
@@ -76,6 +76,7 @@ class ComboBoxWithButtons(QWidget, TranslatorMixin):
             self.combo.clear()
             self.combo.addItems(items)
         self._current_text = self.currentText()
+        
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     w = ComboBoxWithButtons()

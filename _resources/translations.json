@@ -1,4 +1,19 @@
 {
+  "Ignore this folder": {
+    "en": "Ignore this folder"
+  },
+  "Are you sure to Remove this folder?  (This does not delete folders)\\  {path}": {
+    "en": "Are you sure to Remove this folder?  (This does not delete folders)\\  {path}"
+  },
+  "Confirm": {
+    "en": "Confirm"
+  },
+  "Remove": {
+    "en": "Remove"
+  },
+  "Remove from view": {
+    "en": "Remove from view"
+  },
   "": {
     "en": ""
   },

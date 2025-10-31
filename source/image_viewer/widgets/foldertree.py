@@ -12,6 +12,7 @@ USER_ROLE_PATH = QtCore.Qt.UserRole
 def create_folder_item(path):
     item = QtGui.QStandardItem(FOLDER_ICON, os.path.basename(path) or path)
     item.setData(path, USER_ROLE_PATH)
+    item.setEditable(True)
     return item
 
 @profiler.profile
@@ -28,6 +29,7 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
         self.setHorizontalHeaderLabels(['Folders'])
         self.path_item_map = {}
         self.path_item_trie = {}
+        self._mime_type = 'application/x-foldertree-paths'
 
     @profiler.profile
     def clear_cache(self):
@@ -67,6 +69,96 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
         node['__item__'] = item
 
     @profiler.profile
+    def _remove_from_maps_recursive(self, base_path):
+        base_path = normalize_path(base_path)
+        # Remove exact path
+        self.path_item_map.pop(base_path, None)
+        self._remove_from_trie(base_path)
+        # Remove all descendants in maps/trie by scanning keys (bounded by current tree size)
+        to_remove = [p for p in list(self.path_item_map.keys()) if p.startswith(base_path + os.sep)]
+        for p in to_remove:
+            self.path_item_map.pop(p, None)
+            self._remove_from_trie(p)
+
+    @profiler.profile
+    def _update_item_path_recursive(self, item, old_base, new_base):
+        # Update this item and all descendants; fix maps/trie accordingly
+        old_item_path = normalize_path(item.data(USER_ROLE_PATH))
+        if not old_item_path.startswith(old_base):
+            return
+        relative = os.path.relpath(old_item_path, old_base)
+        new_item_path = normalize_path(os.path.join(new_base, '.' if relative == '.' else relative))
+        self.path_item_map.pop(old_item_path, None)
+        self._remove_from_trie(old_item_path)
+        item.setData(new_item_path, USER_ROLE_PATH)
+        self._add_item(new_item_path, item)
+        for i in range(item.rowCount()):
+            child = item.child(i)
+            if child and child.data(USER_ROLE_PATH):
+                self._update_item_path_recursive(child, old_base, new_base)
+
+    @profiler.profile
+    def _rename_item(self, item, new_name):
+        old_path = normalize_path(item.data(USER_ROLE_PATH))
+        parent_item = item.parent() or self.invisibleRootItem()
+        parent_path = None
+        if parent_item is self.invisibleRootItem():
+            # Root item rename is treated as full path rename
+            parent_path = normalize_path(os.path.dirname(old_path))
+        else:
+            parent_path = normalize_path(parent_item.data(USER_ROLE_PATH))
+        dest_path = normalize_path(os.path.join(parent_path, new_name))
+        if dest_path == old_path:
+            return True
+        try:
+            import shutil
+            shutil.move(old_path, dest_path)
+        except Exception as e:
+            logger.debug(f'Failed to rename {old_path} -> {dest_path}: {e}')
+            return False
+        item.setText(os.path.basename(dest_path) or dest_path)
+        self._update_item_path_recursive(item, old_path, dest_path)
+        # If it was a root, update roots list
+        if parent_item is self.invisibleRootItem():
+            try:
+                idx = self.roots.index(old_path)
+                self.roots[idx] = dest_path
+            except ValueError:
+                pass
+        return True
+
+    @profiler.profile
+    def _move_item(self, item, new_parent_item):
+        old_path = normalize_path(item.data(USER_ROLE_PATH))
+        new_parent_path = normalize_path(new_parent_item.data(USER_ROLE_PATH)) if new_parent_item is not self.invisibleRootItem() else None
+        if new_parent_item is self.invisibleRootItem():
+            # Moving to root level is not supported via DnD
+            return False
+        dest_path = normalize_path(os.path.join(new_parent_path, os.path.basename(old_path)))
+        if dest_path == old_path:
+            return True
+        try:
+            import shutil
+            shutil.move(old_path, dest_path)
+        except Exception as e:
+            logger.debug(f'Failed to move {old_path} -> {dest_path}: {e}')
+            return False
+        # Detach and reattach in model
+        src_parent = item.parent() or self.invisibleRootItem()
+        row = item.row()
+        taken = src_parent.takeRow(row)
+        if not taken:
+            return False
+        # Ensure destination has children loaded
+        if not new_parent_item.hasChildren() or (new_parent_item.rowCount() == 1 and not new_parent_item.child(0).data(USER_ROLE_PATH)):
+            # placeholder only, clear it
+            new_parent_item.removeRows(0, new_parent_item.rowCount())
+        new_parent_item.appendRow(taken)
+        moved_item = new_parent_item.child(new_parent_item.rowCount() - 1)
+        self._update_item_path_recursive(moved_item, old_path, dest_path)
+        return True
+
+    @profiler.profile
     def _get_from_trie(self, path):
         parts = path.split(os.sep)
         node = self.path_item_trie
@@ -89,6 +181,113 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
             self.appendRow(item)
             self._add_item(root, item)
         self.sort(0, QtCore.Qt.AscendingOrder)
+
+    def flags(self, index):
+        default = super().flags(index)
+        if not index.isValid():
+            return default
+        return default | QtCore.Qt.ItemIsEditable | QtCore.Qt.ItemIsDragEnabled | QtCore.Qt.ItemIsDropEnabled
+
+    def supportedDropActions(self):
+        return QtCore.Qt.MoveAction
+
+    def mimeTypes(self):
+        return [self._mime_type]
+
+    def mimeData(self, indexes):
+        mime = QtCore.QMimeData()
+        paths = []
+        seen_rows = set()
+        for idx in indexes:
+            if idx.column() != 0:
+                continue
+            if idx.row() in seen_rows:
+                continue
+            seen_rows.add(idx.row())
+            p = idx.data(USER_ROLE_PATH)
+            if p:
+                paths.append(p)
+        mime.setData(self._mime_type, '\n'.join(paths).encode('utf-8'))
+        return mime
+
+    def canDropMimeData(self, data, action, row, column, parent):
+        if action != QtCore.Qt.MoveAction:
+            return False
+        if not data or not data.hasFormat(self._mime_type):
+            return False
+        # Only allow drop directly ON an item (not between). That is, row must be -1 and parent valid.
+        if row != -1 or not parent.isValid():
+            return False
+        parent_item = self.itemFromIndex(parent)
+        if parent_item is None:
+            return False
+        target_path = parent_item.data(USER_ROLE_PATH)
+        if not target_path or target_path in self.excluded:
+            return False
+        try:
+            src_paths = bytes(data.data(self._mime_type)).decode('utf-8').split('\n')
+        except Exception:
+            return False
+        target_norm = normalize_path(target_path)
+        for src in src_paths:
+            src_norm = normalize_path(src)
+            if src_norm == target_norm:
+                return False
+            if target_norm.startswith(src_norm + os.sep):
+                return False
+            # Allow dropping onto current parent; will be treated as no-op in dropMimeData
+        return True
+
+    @profiler.profile
+    def dropMimeData(self, data, action, row, column, parent):
+        if action != QtCore.Qt.MoveAction:
+            return False
+        if not data.hasFormat(self._mime_type):
+            return False
+        # Disallow between-item drop: must be a drop ON an item, i.e., row == -1 and valid parent
+        if row != -1 or not parent.isValid():
+            return False
+        parent_item = self.itemFromIndex(parent) if parent.isValid() else None
+        if parent_item is None:
+            return False
+        target_path = parent_item.data(USER_ROLE_PATH)
+        if not target_path or target_path in self.excluded:
+            return False
+        moved_any = False
+        handled_noop = False
+        try:
+            src_paths = data.data(self._mime_type).data().decode('utf-8').split('\n')
+        except Exception:
+            return False
+        for src in src_paths:
+            src_item = self.find_item_by_path(src)
+            if not self._is_valid_item(src_item):
+                continue
+            if normalize_path(src) == normalize_path(target_path):
+                continue
+            if normalize_path(target_path).startswith(normalize_path(src) + os.sep):
+                continue
+            # Skip if target is current parent (no-op)
+            src_parent = normalize_path(os.path.dirname(normalize_path(src)))
+            if src_parent == normalize_path(target_path):
+                handled_noop = True
+                continue
+            moved_any = self._move_item(src_item, parent_item) or moved_any
+        if moved_any:
+            self.sort(0, QtCore.Qt.AscendingOrder)
+        return moved_any or handled_noop
+
+    @profiler.profile
+    def setData(self, index, value, role=QtCore.Qt.EditRole):
+        if role == QtCore.Qt.EditRole and index.isValid() and index.column() == 0:
+            item = self.itemFromIndex(index)
+            if not self._is_valid_item(item):
+                return False
+            new_name = str(value)
+            if not new_name:
+                return False
+            return self._rename_item(item, new_name)
+        return super().setData(index, value, role)
 
     @profiler.profile
     def has_subfolders(self, path):
@@ -190,6 +389,16 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         self.model_ = LazyFolderTreeModel(roots, excluded)
         self.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         self.setModel(self.model_)
+        self.setEditTriggers(
+            QtWidgets.QAbstractItemView.EditKeyPressed
+            | QtWidgets.QAbstractItemView.SelectedClicked
+            | QtWidgets.QAbstractItemView.EditKeyPressed
+            | QtWidgets.QAbstractItemView.DoubleClicked
+        )
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        self.setDropIndicatorShown(True)
+        self.setDefaultDropAction(QtCore.Qt.MoveAction)
         self.expanded.connect(self.on_expanded)
         self.clicked.connect(self._on_item_clicked)
         self.viewport().installEventFilter(self)
@@ -317,6 +526,13 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         self.model_.sort(0, QtCore.Qt.AscendingOrder)
 
     @profiler.profile
+    def rename_path(self, path, new_name):
+        item = self.model_.find_item_by_path(path)
+        if not self.model_._is_valid_item(item):
+            return False
+        return self.model_._rename_item(item, new_name)
+
+    @profiler.profile
     def remove_root(self, path):
         path = normalize_path(path)
         removed = False
@@ -353,6 +569,27 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         self.model_.setHorizontalHeaderLabels(['Folders'])
         self.model_._build_roots(roots)
         self.set_state(state)
+
+    @profiler.profile
+    def move_paths(self, src_paths, dest_dir):
+        dest_dir = normalize_path(dest_dir)
+        parent_item = self.model_.find_item_by_path(dest_dir)
+        if not self.model_._is_valid_item(parent_item):
+            return False
+        moved_all = True
+        for p in src_paths:
+            item = self.model_.find_item_by_path(p)
+            if not self.model_._is_valid_item(item):
+                moved_all = False
+                continue
+            if normalize_path(dest_dir).startswith(normalize_path(p) + os.sep):
+                moved_all = False
+                continue
+            ok = self.model_._move_item(item, parent_item)
+            moved_all = moved_all and ok
+        if moved_all:
+            self.model_.sort(0, QtCore.Qt.AscendingOrder)
+        return moved_all
 
     def eventFilter(self, source, event):
         if not isinstance(event, QtCore.QEvent):

@@ -2,9 +2,9 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
 from dataclasses import dataclass, field
 from PySide6 import QtCore, QtGui, QtWidgets
-from ..lang.manager import TranslatorMixin
-from ..common.funcs import uipx
-from ..common.profiling import logger, profiler
+from source.lang.manager import TranslatorMixin
+from source.common.funcs import uipx
+from source.common.profiling import logger, profiler
 
 @dataclass
 class CommandParam:
@@ -26,6 +26,8 @@ class CommandMeta:
     icon: str = ""
     undoable: bool = False
     has_options: bool = False
+    checkable: bool = False
+    default_checked: bool = False
 
 class CommandBase:
     meta: CommandMeta = None
@@ -209,6 +211,16 @@ class CommandOptionsDialog(QtWidgets.QDialog, TranslatorMixin):
 class CommandMenuBuilder(TranslatorMixin):
     def __init__(self):
         self.registry = CommandRegistry()
+    _check_states: Dict[str, bool] = {}
+
+    def _wrap_provider_with_checked(self, provider: Optional[Callable[[], Dict[str, Any]]], checked: Optional[bool], meta: CommandMeta) -> Callable[[], Dict[str, Any]]:
+        def _p():
+            base = provider() if provider else {}
+            if meta.checkable and checked is not None:
+                base = dict(base)
+                base["checked"] = bool(checked)
+            return base
+        return _p
 
     def build(
         self, 
@@ -267,26 +279,7 @@ class CommandMenuBuilder(TranslatorMixin):
                 self._add_action(target_menu, parent, command_id, meta, context_provider, text_override=text_override)
         return menu
     
-    def create_custom_action(
-        self,
-        menu: QtWidgets.QMenu,
-        parent: QtWidgets.QWidget,
-        text: str,
-        on_trigger: Callable[[], None],
-        hotkey: str = "",
-        icon: Optional[str] = None,
-        has_options: bool = False,
-        on_options: Optional[Callable[[], None]] = None,
-        before_action: Optional[QtWidgets.QAction] = None,
-    ) -> QtWidgets.QAction:
-        widget_action = QtWidgets.QWidgetAction(parent)
-        container = self._create_row_widget(parent, text, hotkey, icon, has_options, lambda: self._on_row_trigger(menu, on_trigger), on_options, menu)
-        widget_action.setDefaultWidget(container)
-        if before_action is not None:
-            menu.insertAction(before_action, widget_action)
-        else:
-            menu.addAction(widget_action)
-        return widget_action
+    
 
     def _add_action(
         self,
@@ -303,7 +296,13 @@ class CommandMenuBuilder(TranslatorMixin):
         widget_action.setData(name)
         container = self._create_row_widget(parent, text, meta.hotkey, meta.icon or None, False, None, None, menu)
         widget_action.setDefaultWidget(container)
-        widget_action.triggered.connect(lambda checked=False, n=name: self._execute(n, context_provider))
+        if meta.checkable:
+            widget_action.setCheckable(True)
+            checked = self._get_checked(name, meta)
+            widget_action.setChecked(checked)
+            self._update_checkmark(container, checked)
+            widget_action.toggled.connect(lambda state, n=name, c=container: self._on_toggled(n, c, state))
+        widget_action.triggered.connect(lambda checked=False, n=name, m=meta, p=context_provider: self._execute(n, self._wrap_provider_with_checked(p, checked, m)))
         main_area = container.findChild(QtWidgets.QWidget, "rowMain")
         if main_area is not None:
             def _row_click(event):
@@ -336,7 +335,13 @@ class CommandMenuBuilder(TranslatorMixin):
             menu,
         )
         widget_action.setDefaultWidget(container)
-        widget_action.triggered.connect(lambda checked=False, n=name: self._execute_and_close_menu(n, context_provider, menu))
+        if meta.checkable:
+            widget_action.setCheckable(True)
+            checked = self._get_checked(name, meta)
+            widget_action.setChecked(checked)
+            self._update_checkmark(container, checked)
+            widget_action.toggled.connect(lambda state, n=name, c=container: self._on_toggled(n, c, state))
+        widget_action.triggered.connect(lambda checked=False, n=name, m=meta, p=context_provider: self._execute_and_close_menu(n, self._wrap_provider_with_checked(p, checked, m), menu))
         main_area = container.findChild(QtWidgets.QWidget, "rowMain")
         if main_area is not None:
             def _row_click_opt(event):
@@ -344,6 +349,17 @@ class CommandMenuBuilder(TranslatorMixin):
                     widget_action.trigger()
             main_area.mouseReleaseEvent = _row_click_opt
         menu.addAction(widget_action)
+    def _get_checked(self, name: str, meta: CommandMeta) -> bool:
+        if name in self._check_states:
+            return bool(self._check_states[name])
+        return bool(meta.default_checked)
+    def _on_toggled(self, name: str, container: QtWidgets.QWidget, state: bool):
+        self._check_states[name] = bool(state)
+        self._update_checkmark(container, state)
+    def _update_checkmark(self, container: QtWidgets.QWidget, state: bool):
+        lbl = container.findChild(QtWidgets.QLabel, "checkMark")
+        if lbl is not None:
+            lbl.setText("✓" if state else "")
     
     def _create_row_widget(
         self,
@@ -360,7 +376,7 @@ class CommandMenuBuilder(TranslatorMixin):
         container.setObjectName("commandMenuRow")
         layout = QtWidgets.QHBoxLayout(container)
         layout.setContentsMargins(8, 2, 6, 2)
-        layout.setSpacing(8)
+        layout.setSpacing(0)
         container.setStyleSheet(
             "#commandMenuRow #rowMain{border:1px solid transparent;border-radius:4px;background:transparent;}"
             "#commandMenuRow #rowMain:hover{border:1px solid palette(Highlight);background:palette(AlternateBase);}"
@@ -368,13 +384,27 @@ class CommandMenuBuilder(TranslatorMixin):
             "#commandMenuRow QToolButton:hover{border:1px solid palette(Highlight);background:palette(AlternateBase);}"
             "#commandMenuRow QLabel{background:transparent;}"
         )
+        gutter_w = 0
+        try:
+            style = menu.style() if menu is not None else container.style()
+            icon_sz = style.pixelMetric(QtWidgets.QStyle.PM_SmallIconSize, None, menu)
+            frame_w = style.pixelMetric(QtWidgets.QStyle.PM_DefaultFrameWidth, None, menu)
+            gutter_w = max(0, int(icon_sz + frame_w))
+        except Exception:
+            gutter_w = 22
         main_area = QtWidgets.QWidget(container)
         main_area.setObjectName("rowMain")
         main_area.setCursor(QtCore.Qt.PointingHandCursor)
         main_area.setAttribute(QtCore.Qt.WA_Hover, True)
         main_area_layout = QtWidgets.QHBoxLayout(main_area)
-        main_area_layout.setContentsMargins(4, 2, 4, 2)
+        main_area_layout.setContentsMargins(4, 2, 8, 2)
         main_area_layout.setSpacing(6)
+        check_lbl = QtWidgets.QLabel("", main_area)
+        check_lbl.setObjectName("checkMark")
+        check_lbl.setFixedWidth(gutter_w)
+        check_lbl.setAlignment(QtCore.Qt.AlignCenter)
+        check_lbl.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
+        main_area_layout.addWidget(check_lbl, 0)
         if icon:
             icon_label = QtWidgets.QLabel(main_area)
             qicon = QtGui.QIcon(icon) if isinstance(icon, str) else icon
@@ -412,10 +442,6 @@ class CommandMenuBuilder(TranslatorMixin):
             layout.addWidget(spacer, 0)
         return container
     
-    def _on_row_trigger(self, menu: QtWidgets.QMenu, on_trigger: Callable[[], None]):
-        menu.close()
-        on_trigger()
-    
     def _on_row_options(self, menu: QtWidgets.QMenu, on_options: Callable[[], None]):
         menu.close()
         on_options()
@@ -449,6 +475,8 @@ class CommandMenuBuilder(TranslatorMixin):
             options = dialog.get_values()
             context = context_provider() if context_provider else {}
             options.update(context)
+            if getattr(command_class.meta, 'checkable', False):
+                options['checked'] = bool(self._get_checked(command_name, command_class.meta))
             self._execute(command_name, lambda: options)
     
     def _execute(self, name: str, provider: Optional[Callable[[], Dict[str, Any]]]):
@@ -497,63 +525,68 @@ class MenuProviderBase:
     def build_menu(self, parent: QtWidgets.QWidget) -> QtWidgets.QMenu:
         raise NotImplementedError
 
+class RegistryBackedMenu(MenuProviderBase):
+    _flags: Dict[type, bool] = {}
+    _items: Dict[type, List[str]] = {}
+    DISPLAY: str = ""
+
+    def __init__(self, command_names: Optional[List[str]] = None, **kwargs):
+        self._builder = CommandMenuBuilder()
+        self._context_provider = kwargs.get("context_provider")
+        dm = kwargs.get("display_map")
+        self._display_map = dict(dm) if isinstance(dm, dict) else None
+        self._command_names: Optional[List[str]] = list(command_names) if command_names is not None else None
+        self.ensure_registered()
+        if self._command_names is None:
+            self._command_names = list(self._items.get(type(self), []))
+
+    def ensure_registered(self):
+        t = type(self)
+        if self._flags.get(t, False):
+            return
+        res = self.create_definitions()
+        defs: List[Dict[str, Any]] = []
+        items: List[str] = []
+        if isinstance(res, tuple) and len(res) == 2:
+            defs, items = res  # type: ignore
+        elif isinstance(res, list):
+            for e in res:  # type: ignore
+                if isinstance(e, str):
+                    items.append(e)
+                elif isinstance(e, dict) and ("meta" in e):
+                    defs.append(e)
+                    meta = e["meta"]
+                    cid = getattr(meta, "id", None) or (meta.get("id") if isinstance(meta, dict) else None)
+                    mp = e.get("menu_path")
+                    items.append(f"{mp}/{cid}".lstrip("/") if mp else cid)
+        elif res:
+            defs = res  # type: ignore
+            items = [getattr(d["meta"], "id") for d in defs if isinstance(d, dict) and "meta" in d]
+        if defs:
+            register_command_defs(defs)
+        if items:
+            self._items[t] = items
+        self._flags[t] = True
+
+    def create_definitions(self) -> Any:
+        return []
+
+    def build_menu(self, parent: QtWidgets.QWidget) -> QtWidgets.QMenu:
+        return self._builder.build(parent, self._command_names or [], context_provider=self._context_provider, display_map=self._display_map)
+
+    def build_into(self, menu: QtWidgets.QMenu, parent: QtWidgets.QWidget):
+        self._builder.build_into(menu, parent, self._command_names or [], context_provider=self._context_provider, display_map=self._display_map)
+
+    def build_submenu(self, parent: QtWidgets.QWidget, title: Optional[str] = None) -> QtWidgets.QMenu:
+        t = title if title is not None else getattr(type(self), "DISPLAY", "")
+        sm = QtWidgets.QMenu(t, parent)
+        self.build_into(sm, parent)
+        return sm
+
 
 class CommandMenuSection(MenuProviderBase):
-    def __init__(self, title: str, command_names: List[str], context_provider: Optional[Callable[[], Dict[str, Any]]] = None):
-        self.title = title
-        self.command_names = command_names
-        self.context_provider = context_provider
-        self._builder = CommandMenuBuilder()
-    
-    def build_menu(self, parent: QtWidgets.QWidget) -> QtWidgets.QMenu:
-        menu = QtWidgets.QMenu(self.title, parent)
-        self._builder.build_into(menu, parent, self.command_names, self.context_provider)
-        return menu
+    pass
 
 
 class CompositeMenuBuilder:
-    def __init__(self):
-        self._components: List[tuple[int, str, Callable[[QtWidgets.QWidget], QtWidgets.QMenu]]] = []
-    
-    def add_provider(self, key: str, provider: Callable[[QtWidgets.QWidget], QtWidgets.QMenu], order: int = 0):
-        self._components.append((order, key, provider))
-    
-    def add_section(self, key: str, section: MenuProviderBase, order: int = 0):
-        self.add_provider(key, lambda parent: section.build_menu(parent), order)
-    
-    def build_composed(self, parent: QtWidgets.QWidget, title: Optional[str] = None) -> QtWidgets.QMenu:
-        menu = QtWidgets.QMenu(parent) if title is None else QtWidgets.QMenu(title, parent)
-        for _, _, provider in sorted(self._components, key=lambda x: x[0]):
-            submenu = provider(menu)
-            if submenu is not None and isinstance(submenu, QtWidgets.QMenu):
-                menu.addMenu(submenu)
-        return menu
-    
-    def build_merged(self, parent: QtWidgets.QWidget, order_keys: Optional[List[str]] = None, key_selector: Optional[Callable[[QtWidgets.QAction], str]] = None) -> QtWidgets.QMenu:
-        menu = QtWidgets.QMenu(parent)
-        actions = []
-        for _, _, provider in sorted(self._components, key=lambda x: x[0]):
-            temp = provider(menu)
-            if temp is None:
-                continue
-            stack = [temp]
-            while stack:
-                m = stack.pop()
-                for a in m.actions():
-                    if a.menu():
-                        stack.append(a.menu())
-                    else:
-                        actions.append(a)
-        if key_selector is None:
-            def key_selector(a: QtWidgets.QAction) -> str:
-                d = a.data()
-                return d if isinstance(d, str) and d else a.text() or ""
-        if order_keys:
-            order_map = {k: i for i, k in enumerate(order_keys)}
-            actions.sort(key=lambda a: order_map.get(key_selector(a), len(order_map)))
-        for a in actions:
-            if a.isSeparator():
-                menu.addSeparator()
-            else:
-                menu.addAction(a)
-        return menu
+    pass

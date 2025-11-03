@@ -10,13 +10,21 @@
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal"
-        }
+        },
         {
             "name": "Python Debugger: main",
             "type": "debugpy",
             "request": "launch",
             "program": "main.py",
             "console": "integratedTerminal"
+        },
+        {
+            "name": "Python Debugger: proto_demo_app",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "prototypes/demo_app.py",
+            "console": "integratedTerminal"
         }
+
     ]
 }

@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from PySide6 import QtCore, QtWidgets
 
 from ..db.collector import ImageIndexer
-from ..actions.actions import ContextMenuBuilder, FolderContextMenuBuilder
+from ..actions.context_menu import ContextMenuBuilder, FolderContextMenuBuilder
 from ..common.funcs import get_data_db, get_setting_db, get_setting_file_names, uipx
 from ..common.profiling import logger, profiler
 from ..constants import APP_NAME, default_db_name

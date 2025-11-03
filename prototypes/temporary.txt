@@ -1,0 +1,30 @@
+Prototype summary
+
+- Purpose: Test command invocation via context menu, mouse events, and keyboard shortcuts using PySide6.
+- Files (in use by demo_app):
+  - prototypes/menu_demo.py: CmdMenu, FileMenu, PathMenu, AllMenu
+  - prototypes/shortcutmanager.py: QShortcut によるショートカット管理
+  - prototypes/mouseeventmanager.py: マウス入力のバインド/ディスパッチ
+  - prototypes/commandbase.py: コマンド/メニュー基盤（チェック可能項目対応）
+  - prototypes/demo_app.py: 実行用ウィンドウ・右クリックメニュー・バインディング編集
+- Behavior:
+  - Right-click opens CmdMenu as base and appends FileMenu and PathMenu.
+  - Mouse bindings call commands via MouseEventManager; per-widget configurable.
+  - Shortcut bindings call commands via QShortcut; per-widget configurable.
+  - Edit menus: one for mouse, one for shortcut; each lets you select target widget and adjust mappings.
+- Notes:
+  - Command contents are print-only per requirement.
+  - Bindings are in-memory and not persisted.
+  - prototypes/commandbase.py imports are adjusted to absolute `source.*` for standalone run.
+  - To run: from repo root, use `python -m prototypes.demo_app` (Windows cmd). Ensure `PySide6` is installed.
+  
+Pruned/unused in this prototype
+- Unused files
+  - prototypes/commands_demo.py: 旧デモ用メニュー定義（未参照）
+  - prototypes/menu_style.py: 空ファイル（未参照）
+  - prototypes/resources/arrow_right.svg: 未参照アセット
+- Unused compiled cache
+  - prototypes/__pycache__ 以下の .pyc は不要
+- Simplified code (not used by demo_app)
+  - commandbase.py の create_custom_action と _on_row_trigger を削除
+  - CommandMenuSection/CompositeMenuBuilder をスタブ化

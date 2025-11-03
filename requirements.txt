@@ -14,3 +14,4 @@ requests==2.32.4
 shiboken6==6.9.1
 watchdog==6.0.0
 blake3==1.0.5
+Send2Trash>=1.8.0

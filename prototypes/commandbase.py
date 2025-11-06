@@ -274,9 +274,10 @@ class CommandMenuBuilder(TranslatorMixin):
         command_names: List[str],
         context_provider: Optional[Callable[[], Dict[str, Any]]] = None,
         display_map: Optional[Dict[str, str]] = None,
+        selection_mode: bool = False,
     ) -> QtWidgets.QMenu:
         menu = QtWidgets.QMenu(parent)
-        return self.build_into(menu, parent, command_names, context_provider, display_map)
+        return self.build_into(menu, parent, command_names, context_provider, display_map, selection_mode)
 
     def build_into(
         self,
@@ -285,6 +286,7 @@ class CommandMenuBuilder(TranslatorMixin):
         command_names: List[str],
         context_provider: Optional[Callable[[], Dict[str, Any]]] = None,
         display_map: Optional[Dict[str, str]] = None,
+        selection_mode: bool = False,
     ) -> QtWidgets.QMenu:
         menus_cache: Dict[str, QtWidgets.QMenu] = {}
         for name in command_names:
@@ -323,22 +325,23 @@ class CommandMenuBuilder(TranslatorMixin):
                 text_override = dparts[-1] if dparts else self.t.tr(meta.display)
             else:
                 text_override = None
-            self._add_entry(target_menu, parent, command_id, meta, context_provider, bool(meta.has_options), text_override)
+            self._add_entry(target_menu, parent, command_id, meta, context_provider, bool(meta.has_options) and not selection_mode, text_override, selection_mode)
         return menu
     
-    def _add_entry(self, menu: QtWidgets.QMenu, parent: QtWidgets.QWidget, name: str, meta: CommandMeta, context_provider: Optional[Callable[[], Dict[str, Any]]], with_options: bool, text_override: Optional[str]):
+    def _add_entry(self, menu: QtWidgets.QMenu, parent: QtWidgets.QWidget, name: str, meta: CommandMeta, context_provider: Optional[Callable[[], Dict[str, Any]]], with_options: bool, text_override: Optional[str], selection_mode: bool = False):
         text = text_override or self.t.tr(meta.display)
         widget_action = QtWidgets.QWidgetAction(parent)
         widget_action.setData(name)
         container = self._create_row_widget(parent, text, meta.hotkey, meta.icon or None, with_options, None, (lambda: self._show_options_and_close_menu(name, parent, context_provider, menu)) if with_options else None, menu)
         widget_action.setDefaultWidget(container)
-        if meta.checkable:
+        if meta.checkable and not selection_mode:
             widget_action.setCheckable(True)
             checked = self._get_checked(name, meta)
             widget_action.setChecked(checked)
             self._update_checkmark(container, checked)
             widget_action.toggled.connect(lambda state, n=name, c=container: self._on_toggled(n, c, state))
-        widget_action.triggered.connect(lambda checked=False, n=name, m=meta, p=context_provider: self._execute_and_close_menu(n, self._wrap_provider_with_checked(p, checked, m), menu))
+        if not selection_mode:
+            widget_action.triggered.connect(lambda checked=False, n=name, m=meta, p=context_provider: self._execute_and_close_menu(n, self._wrap_provider_with_checked(p, checked, m), menu))
         main_area = container.findChild(QtWidgets.QWidget, "rowMain")
         if main_area is not None:
             def _row_click_any(event):
@@ -884,6 +887,70 @@ class MenuBuilder:
         if all_names:
             self._builder.build_into(self._menu, self._menu, all_names, context_provider=self._ctx, display_map=None)
         return self._menu
+    def build_selectable(self, items: List[str]) -> QtWidgets.QMenu:
+        self._menu.clear()
+        all_names: List[str] = []
+        seen: set[str] = set()
+        for it in items:
+            if not it:
+                continue
+            if _is_sep_token(it) or _is_section_token(it):
+                all_names.append(it)
+                continue
+            if "/" in it:
+                parts = _split_parts(it)
+                if len(parts) >= 2:
+                    orig_folder = parts[-1]
+                    if self._hub.has_folder(orig_folder):
+                        prefixes = self._hub.find_folder_prefixes(orig_folder)
+                        if len(prefixes) == 1:
+                            names = self._hub.collect_items_by_folder(prefixes[0], rebase_to=it)
+                            for n in names:
+                                if not (_is_sep_token(n) or _is_section_token(n)):
+                                    if n in seen:
+                                        continue
+                                    seen.add(n)
+                            all_names.extend(names)
+                            continue
+                if self._hub.has_folder(it):
+                    names = self._hub.collect_items_by_folder(it, rebase_to=it)
+                    for n in names:
+                        if not (_is_sep_token(n) or _is_section_token(n)):
+                            if n in seen:
+                                continue
+                            seen.add(n)
+                    all_names.extend(names)
+                    continue
+                path_cid = _split_parts(it)[-1]
+                if not self._hub.get_path_by_command_id(path_cid):
+                    continue
+                if it in seen:
+                    continue
+                seen.add(it)
+                all_names.append(it)
+                continue
+            p = self._hub.get_path_by_command_id(it)
+            if p:
+                cid = it
+                if cid in seen:
+                    continue
+                seen.add(cid)
+                all_names.append(cid)
+            else:
+                prefixes = self._hub.find_folder_prefixes(it) if self._hub.has_folder(it) else []
+                if len(prefixes) == 1:
+                    names = self._hub.collect_items_by_folder(prefixes[0], rebase_to=it)
+                else:
+                    names = self._hub.collect_items_by_folder(it, rebase_to=it)
+                for n in names:
+                    if not (_is_sep_token(n) or _is_section_token(n)):
+                        if n in seen:
+                            continue
+                        seen.add(n)
+                all_names.extend(names)
+        if all_names:
+            self._builder.build_into(self._menu, self._menu, all_names, context_provider=self._ctx, display_map=None, selection_mode=True)
+        return self._menu
     def build_all_roots(self) -> QtWidgets.QMenu:
         roots: List[str] = []
         seen = set()
@@ -902,3 +969,28 @@ class MenuBuilder:
         if not roots:
             raise ValueError("No top-level menus registered")
         return self.build(roots)
+    def build_all_roots_selectable(self) -> QtWidgets.QMenu:
+        roots: List[str] = []
+        seen = set()
+        for items in self._hub._menu_items.values():
+            for s in items:
+                if not isinstance(s, str) or not s or s == "---" or s.startswith(":"):
+                    continue
+                parts = [p for p in s.split("/") if p]
+                if len(parts) < 2:
+                    continue
+                r = parts[0]
+                if r in seen:
+                    continue
+                seen.add(r)
+                roots.append(r)
+        if not roots:
+            raise ValueError("No top-level menus registered")
+        return self.build_selectable(roots)
+    def pick_from_menu(self, global_pos: Optional[QtCore.QPoint] = None) -> str:
+        pos = global_pos or QtGui.QCursor.pos()
+        a = self._menu.exec(pos)
+        if isinstance(a, QtGui.QAction):
+            d = a.data()
+            return str(d) if d is not None else ""
+        return ""

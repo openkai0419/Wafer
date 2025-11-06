@@ -47,6 +47,9 @@ commandbase.py の要点
   - build_all_roots() -> QMenu: すべての最親フォルダを自動列挙してメニュー化
     - items から先頭セグメントを抽出して順序保持
     - ルートに直下コマンドしかないものは対象外
+    - build_selectable(items) / build_all_roots_selectable(): 実行せず選択用のメニューを生成
+      - 既存の UI を流用し、選択時は QAction.data() に入っている command id を返す
+      - MenuBuilder.pick_from_menu(global_pos?) で選択結果の command id を取得
 
 エラーハンドリング（人為的ミスの早期検出）
 - CommandRegistry.register: id 未設定や重複 id を検出すると例外
@@ -84,7 +87,10 @@ mouseeventmanager.py の要点
 binding_editors.py の要点
 - WidgetRef: エディタ UI で対象ウィジェットを参照する小さなラッパ。
 - MouseBindingEditor: マウスボタン/クリック種別とコマンド ID のバインド編集ダイアログ。
+  - コマンド選択はフラットな一覧ではなく、build_all_roots_selectable() のツリーを使用
+  - Select ボタンでメニューを開き、選択された command id をフィールドに反映
 - ShortcutBindingEditor: キーシーケンスとコマンド ID のバインド編集ダイアログ。
+  - コマンド選択方式は MouseBindingEditor と同様にツリーメニューから選択
 
 注意
 - この仕様は prototypes のみ。source/ の正式実装には影響しない。

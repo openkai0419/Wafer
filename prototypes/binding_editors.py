@@ -1,6 +1,7 @@
 from typing import Dict, List
 from PySide6 import QtCore, QtGui, QtWidgets
 from .mouseeventmanager import MouseActionKey, ClickType, MouseButton
+from .commandbase import MenuBuilder
 
 class WidgetRef:
     def __init__(self, name: str, widget):
@@ -40,9 +41,10 @@ class MouseBindingEditor(QtWidgets.QDialog):
         self.box_click = QtWidgets.QComboBox(self)
         for c in [ClickType.SINGLE, ClickType.DOUBLE, ClickType.WHEEL_UP, ClickType.WHEEL_DOWN]:
             self.box_click.addItem(c.name, c)
-        self.box_cmd = QtWidgets.QComboBox(self)
-        for c in self.commands:
-            self.box_cmd.addItem(c, c)
+        self.edit_cmd = QtWidgets.QLineEdit(self)
+        self.edit_cmd.setReadOnly(True)
+        self.btn_pick_cmd = QtWidgets.QPushButton("Select...", self)
+        self.btn_pick_cmd.clicked.connect(self._pick_command)
         btn_add = QtWidgets.QPushButton("Add", self)
         btn_del = QtWidgets.QPushButton("Delete", self)
         btn_add.clicked.connect(self._add)
@@ -52,7 +54,8 @@ class MouseBindingEditor(QtWidgets.QDialog):
         form.addWidget(QtWidgets.QLabel("Type"))
         form.addWidget(self.box_click)
         form.addWidget(QtWidgets.QLabel("Command"))
-        form.addWidget(self.box_cmd, 1)
+        form.addWidget(self.edit_cmd, 1)
+        form.addWidget(self.btn_pick_cmd)
         form.addWidget(btn_add)
         form.addWidget(btn_del)
         l.addLayout(form)
@@ -80,13 +83,25 @@ class MouseBindingEditor(QtWidgets.QDialog):
     def _add(self):
         b = self.box_button.currentData()
         c = self.box_click.currentData()
-        cmd = self.box_cmd.currentData()
+        cmd = self.edit_cmd.text().strip()
+        if not cmd:
+            cmd = self._pick_command()
+        if not cmd:
+            return
         mk = MouseActionKey(b, c, ())
         r = self.table.rowCount()
         self.table.insertRow(r)
         self.table.setItem(r, 0, QtWidgets.QTableWidgetItem(b.name))
         self.table.setItem(r, 1, QtWidgets.QTableWidgetItem(c.name))
         self.table.setItem(r, 2, QtWidgets.QTableWidgetItem(cmd))
+
+    def _pick_command(self):
+        mb = MenuBuilder(self)
+        mb.build_all_roots_selectable()
+        cmd = mb.pick_from_menu()
+        if cmd:
+            self.edit_cmd.setText(cmd)
+        return cmd
 
     def _del(self):
         for idx in sorted({i.row() for i in self.table.selectedIndexes()}, reverse=True):
@@ -134,9 +149,10 @@ class ShortcutBindingEditor(QtWidgets.QDialog):
         l.addWidget(self.table, 1)
         form = QtWidgets.QHBoxLayout()
         self.edit_seq = QtWidgets.QKeySequenceEdit(self)
-        self.box_cmd = QtWidgets.QComboBox(self)
-        for c in self.commands:
-            self.box_cmd.addItem(c, c)
+        self.edit_cmd = QtWidgets.QLineEdit(self)
+        self.edit_cmd.setReadOnly(True)
+        self.btn_pick_cmd = QtWidgets.QPushButton("Select...", self)
+        self.btn_pick_cmd.clicked.connect(self._pick_command)
         btn_add = QtWidgets.QPushButton("Add", self)
         btn_del = QtWidgets.QPushButton("Delete", self)
         btn_add.clicked.connect(self._add)
@@ -144,7 +160,8 @@ class ShortcutBindingEditor(QtWidgets.QDialog):
         form.addWidget(QtWidgets.QLabel("Shortcut"))
         form.addWidget(self.edit_seq)
         form.addWidget(QtWidgets.QLabel("Command"))
-        form.addWidget(self.box_cmd, 1)
+        form.addWidget(self.edit_cmd, 1)
+        form.addWidget(self.btn_pick_cmd)
         form.addWidget(btn_add)
         form.addWidget(btn_del)
         l.addLayout(form)
@@ -170,7 +187,9 @@ class ShortcutBindingEditor(QtWidgets.QDialog):
 
     def _add(self):
         seq = self.edit_seq.keySequence().toString()
-        cmd = self.box_cmd.currentData()
+        cmd = self.edit_cmd.text().strip()
+        if not cmd:
+            cmd = self._pick_command()
         if not seq or not cmd:
             return
         r = self.table.rowCount()
@@ -178,6 +197,14 @@ class ShortcutBindingEditor(QtWidgets.QDialog):
         self.table.setItem(r, 0, QtWidgets.QTableWidgetItem(seq))
         self.table.setItem(r, 1, QtWidgets.QTableWidgetItem(cmd))
         self.edit_seq.clear()
+
+    def _pick_command(self):
+        mb = MenuBuilder(self)
+        mb.build_all_roots_selectable()
+        cmd = mb.pick_from_menu()
+        if cmd:
+            self.edit_cmd.setText(cmd)
+        return cmd
 
     def _del(self):
         for idx in sorted({i.row() for i in self.table.selectedIndexes()}, reverse=True):

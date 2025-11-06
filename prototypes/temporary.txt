@@ -1,30 +1,91 @@
-Prototype summary
+prototypes 仕様メモ (source ではなく試作コードの設計と意図)
 
-- Purpose: Test command invocation via context menu, mouse events, and keyboard shortcuts using PySide6.
-- Files (in use by demo_app):
-  - prototypes/menu_demo.py: CmdMenu, FileMenu, PathMenu, AllMenu
-  - prototypes/shortcutmanager.py: QShortcut によるショートカット管理
-  - prototypes/mouseeventmanager.py: マウス入力のバインド/ディスパッチ
-  - prototypes/commandbase.py: コマンド/メニュー基盤（チェック可能項目対応）
-  - prototypes/demo_app.py: 実行用ウィンドウ・右クリックメニュー・バインディング編集
-- Behavior:
-  - Right-click opens CmdMenu as base and appends FileMenu and PathMenu.
-  - Mouse bindings call commands via MouseEventManager; per-widget configurable.
-  - Shortcut bindings call commands via QShortcut; per-widget configurable.
-  - Edit menus: one for mouse, one for shortcut; each lets you select target widget and adjust mappings.
-- Notes:
-  - Command contents are print-only per requirement.
-  - Bindings are in-memory and not persisted.
-  - prototypes/commandbase.py imports are adjusted to absolute `source.*` for standalone run.
-  - To run: from repo root, use `python -m prototypes.demo_app` (Windows cmd). Ensure `PySide6` is installed.
-  
-Pruned/unused in this prototype
-- Unused files
-  - prototypes/commands_demo.py: 旧デモ用メニュー定義（未参照）
-  - prototypes/menu_style.py: 空ファイル（未参照）
-  - prototypes/resources/arrow_right.svg: 未参照アセット
-- Unused compiled cache
-  - prototypes/__pycache__ 以下の .pyc は不要
-- Simplified code (not used by demo_app)
-  - commandbase.py の create_custom_action と _on_row_trigger を削除
-  - CommandMenuSection/CompositeMenuBuilder をスタブ化
+対象ファイル
+- prototypes/commandbase.py
+- prototypes/mouseeventmanager.py
+- prototypes/binding_editors.py
+
+commandbase.py の要点
+- CommandParam / CommandMeta / CommandBase: 軽量コマンド定義用のメタ/基底。
+- CommandRegistry: メタから動的生成された Command を登録/実行/Undo 履歴管理。
+- CommandOptionsDialog: CommandMeta.params を元に動的フォーム生成してオプション指定。
+- CommandMenuBuilder: QMenu をカスタム行ウィジェットで構築するビルダ。
+  - セクションと区切りに対応。
+  - セクションは path/:Label 形式(例 "folder/:Options")。
+  - 区切りは path/- 形式(例 "folder/-")。ルート区切りは "-"。
+  - 各行はチェックマーク/アイコン/テキスト/ショートカット/オプションボタンを横並びで表示。
+  - checkable 対応: CommandMeta.checkable/default_checked を解釈し、トグル状態を保持。
+- RegistryBackedMenu: create_definitions による単一ソース定義を強制するメニューベース。
+  - create_definitions の戻り
+    - [str|def,...] もしくは (defs, items) を許容。
+    - defs: {path, meta, func, undo?} の配列。id は不要で、path の末尾セグメントから自動導出。
+  - items: "path/to/cmd" 形式やトークン(":Label", "-")の並び。相対指定は path_prefix が自動付与。
+  - ensure_registered()
+    - path_prefix を各クラスの共通先頭として適用し、defs/items をフルパス化。
+    - id はフルパス末尾から設定し、CommandRegistry へ登録。
+    - items を _items[type] に保存。cmd_id → full_path を _cmd_paths[type] に保存。
+    - MenuHub に (menu_class, cmd_paths, items) を登録。
+- MenuHub: 全メニューのコマンドパスを集約するグローバル集約器。
+  - register_paths(menu_cls, cmd_paths, items)
+  - collect_items_by_folder(folder, rebase_to?)
+  - get_path_by_command_id(cmdId)
+  - has_folder(name): 任意深さのフォルダ名に一致したら True
+  - find_folder_prefixes(name): 同名フォルダのフルパス候補を列挙
+
+追加: MenuBuilder
+- 空のQMenuを保持し、一括生成のみを提供（demo_appで使用している最小API）
+- API
+  - MenuBuilder(parent=None, context_provider=None)
+  - menu: 生成先QMenuの参照
+  - build([token|folder|path,...]) -> QMenu
+    - token: "-" または "path/-"、"path/:Label"
+    - command: "cmdId" または "folder/.../cmdId"
+    - folder: "folder" または "a/b" を指定すると配下を展開
+    - rebase: "temp/path" のように、末尾セグメントがフォルダならそのサブツリーを temp/path にリベース配置
+    - 実コマンドの重複のみ例外。セクション/セパレータ重複は許容
+    - 単一フォルダ名の呼び出しが複数ツリーに一致する場合は曖昧さエラー
+  - build_all_roots() -> QMenu: すべての最親フォルダを自動列挙してメニュー化
+    - items から先頭セグメントを抽出して順序保持
+    - ルートに直下コマンドしかないものは対象外
+
+エラーハンドリング（人為的ミスの早期検出）
+- CommandRegistry.register: id 未設定や重複 id を検出すると例外
+- RegistryBackedMenu.ensure_registered: 同一クラス内で重複する id を検出すると例外
+- MenuHub.register_paths: 既に他クラスで登録済みの id を検出すると例外
+- CommandMenuBuilder.build_into: 未登録のコマンド id が含まれると例外
+- MenuBuilder.build: 不明なコマンド/フォルダ、リベース後の実コマンド重複は例外。単一名で複数一致は曖昧さエラー
+- MenuBuilder.build_all_roots: 最親フォルダが一つも無い場合は例外
+
+RegistryBackedMenu 定義の要点
+- create_definitions は以下のいずれかを返す:
+  - [str|def,...]
+  - (defs, items)
+- 必須: 各 def に path を明示。id は path 末尾から自動導出
+  - 例: {path: "folder/sub/echo", meta, func} → id="echo" に正規化
+- menu_path は廃止。path_prefix をクラスに付与可能（items/defs の相対指定を許容）
+- フォルダ展開時はセクション(path/:Label)と区切り(path/-)を含めて忠実に再現
+
+例
+- class.path_prefix = "commands"
+- defs: {path: "Options/echo", meta: CommandMeta(display="Echo"), func: ...}
+- items: [":Options", "-", "Options/echo", "-"]
+
+mouseeventmanager.py の要点
+- ClickType: SINGLE/DOUBLE/WHEEL_UP/WHEEL_DOWN/DRAG_START/DROP
+- MouseButton: LEFT/RIGHT/MIDDLE/X1/X2/NONE
+- MouseActionKey: (button, click_type, held_buttons) で一意なキー。repr は "X1+RIGHT SINGLE" 形式。
+- MouseEventManager: bind/unbind/clear と各種イベントの受け取り→キー生成→アクション実行。
+- MouseEventDispatcher: 任意の QWidget を監視し、ドラッグ開始しきい値検出、ダブルクリック判定、ホイール/ドロップ転送を行う。
+
+意図
+- メニュー/コマンドは定義の単一化(create_definitions)と呼出時再構成の両立で拡張容易に。
+- マウス入力はキー合成によりウィジェットごとのバインド差し替えを単純化。
+
+binding_editors.py の要点
+- WidgetRef: エディタ UI で対象ウィジェットを参照する小さなラッパ。
+- MouseBindingEditor: マウスボタン/クリック種別とコマンド ID のバインド編集ダイアログ。
+- ShortcutBindingEditor: キーシーケンスとコマンド ID のバインド編集ダイアログ。
+
+注意
+- この仕様は prototypes のみ。source/ の正式実装には影響しない。
+- 試作のため API は変更される可能性がある。

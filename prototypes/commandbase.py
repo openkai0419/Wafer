@@ -1,10 +1,9 @@
 from __future__ import annotations
-from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Callable, Dict, List, Optional
 from dataclasses import dataclass, field
 from PySide6 import QtCore, QtGui, QtWidgets
 from source.lang.manager import TranslatorMixin
 from source.common.funcs import uipx
-from source.common.profiling import logger, profiler
 
 @dataclass
 class CommandParam:
@@ -19,8 +18,8 @@ class CommandParam:
 
 @dataclass
 class CommandMeta:
-    id: str
-    display: str
+    id: str = ""
+    display: str = ""
     params: List[CommandParam] = field(default_factory=list)
     hotkey: str = ""
     icon: str = ""
@@ -34,6 +33,7 @@ class CommandBase:
     
     def __init__(self):
         self._undo_data: Optional[Dict[str, Any]] = None
+        self._last_kwargs: Optional[Dict[str, Any]] = None
     
     def execute(self, **kwargs) -> Any:
         raise NotImplementedError
@@ -44,6 +44,14 @@ class CommandBase:
     
     def get_default_options(self) -> Dict[str, Any]:
         return {p.name: p.default for p in self.meta.params}
+
+    def call_execute(self, **kwargs) -> Any:
+        if self.meta and self.meta.params:
+            args = _build_args(self.meta, kwargs)
+        else:
+            args = dict(kwargs)
+        self._last_kwargs = dict(args)
+        return self.execute(**args)
 
 class CommandRegistry:
     _instance: Optional[CommandRegistry] = None
@@ -57,7 +65,12 @@ class CommandRegistry:
         return cls._instance
     
     def register(self, command_class: type[CommandBase]) -> None:
-        self._commands[command_class.meta.id] = command_class
+        cid = getattr(command_class.meta, "id", None)
+        if not cid:
+            raise ValueError("Command id is required")
+        if cid in self._commands:
+            raise ValueError(f"Duplicate command id: {cid}")
+        self._commands[cid] = command_class
     
     def execute(self, command_name: str, **kwargs) -> Any:
         if command_name not in self._commands:
@@ -65,7 +78,10 @@ class CommandRegistry:
         
         command_class = self._commands[command_name]
         command = command_class()
-        result = command.execute(**kwargs)
+        if hasattr(command, "call_execute"):
+            result = command.call_execute(**kwargs)
+        else:
+            result = command.execute(**kwargs)
         
         if command.meta.undoable:
             if self._history_index < len(self._history) - 1:
@@ -85,7 +101,12 @@ class CommandRegistry:
         if self._history_index >= len(self._history) - 1:
             return
         self._history_index += 1
-        self._history[self._history_index].execute()
+        cmd = self._history[self._history_index]
+        kwargs = getattr(cmd, "_last_kwargs", None) or {}
+        if hasattr(cmd, "call_execute"):
+            cmd.call_execute(**kwargs)
+        else:
+            cmd.execute(**kwargs)
     
     def get_command(self, name: str) -> Optional[type[CommandBase]]:
         return self._commands.get(name)
@@ -104,9 +125,7 @@ def create_command_from_callable(meta: CommandMeta, func: Callable[..., Any], un
     class _Cmd(CommandBase):
         pass
     _Cmd.meta = meta
-    def _exec(self, **kwargs):
-        return func(**_build_args(self.meta, kwargs))
-    setattr(_Cmd, "execute", _exec)
+    setattr(_Cmd, "execute", func)
     if undo is not None:
         def _undo(self):
             return undo()
@@ -120,6 +139,33 @@ def register_command_defs(defs: List[Dict[str, Any]]):
         fn = d["func"]
         undo = d.get("undo")
         r.register(create_command_from_callable(meta, fn, undo))
+
+def _split_parts(raw: str) -> List[str]:
+    return [p for p in raw.split("/") if p]
+
+def _is_sep_token(s: Any) -> bool:
+    if not isinstance(s, str):
+        return False
+    parts = _split_parts(s.strip())
+    return bool(parts) and parts[-1] == "-"
+
+def _sep_path(s: str) -> List[str]:
+    parts = _split_parts(s.strip())
+    return parts[:-1] if parts and parts[-1] == "-" else []
+
+def _is_section_token(s: Any) -> bool:
+    if not isinstance(s, str):
+        return False
+    parts = _split_parts(s)
+    return bool(parts) and str(parts[-1]).startswith(":")
+
+def _section_parts(s: str) -> List[str]:
+    parts = _split_parts(s)
+    if not parts:
+        return []
+    head = parts[:-1]
+    label = parts[-1][1:] if parts[-1].startswith(":") else parts[-1]
+    return head + [label]
 
 class CommandOptionsDialog(QtWidgets.QDialog, TranslatorMixin):
     def __init__(self, command_class: type[CommandBase], parent=None):
@@ -242,13 +288,17 @@ class CommandMenuBuilder(TranslatorMixin):
     ) -> QtWidgets.QMenu:
         menus_cache: Dict[str, QtWidgets.QMenu] = {}
         for name in command_names:
-            if name == "---":
-                menu.addSeparator()
+            if _is_sep_token(name):
+                parts = _sep_path(str(name))
+                if not parts:
+                    menu.addSeparator()
+                    continue
+                target_menu = self._get_or_create_submenu_chain(menu, menus_cache, parts, parent)
+                target_menu.addSeparator()
                 continue
             
-            if name.startswith(":"):
-                raw = name[1:].strip()
-                parts = [p for p in raw.split("/") if p]
+            if _is_section_token(name):
+                parts = _section_parts(str(name))
                 if not parts:
                     continue
                 text = parts[-1]
@@ -262,7 +312,7 @@ class CommandMenuBuilder(TranslatorMixin):
 
             command_class = self.registry.get_command(command_id)
             if not command_class:
-                continue
+                raise ValueError(f"Unknown command id: {command_id}")
             
             meta = command_class.meta
             if display_map and command_id in display_map:
@@ -273,67 +323,14 @@ class CommandMenuBuilder(TranslatorMixin):
                 text_override = dparts[-1] if dparts else self.t.tr(meta.display)
             else:
                 text_override = None
-            if meta.has_options:
-                self._add_action_with_options(target_menu, parent, command_id, meta, context_provider, text_override=text_override)
-            else:
-                self._add_action(target_menu, parent, command_id, meta, context_provider, text_override=text_override)
+            self._add_entry(target_menu, parent, command_id, meta, context_provider, bool(meta.has_options), text_override)
         return menu
     
-    
-
-    def _add_action(
-        self,
-        menu: QtWidgets.QMenu,
-        parent: QtWidgets.QWidget,
-        name: str,
-        meta: CommandMeta,
-        context_provider: Optional[Callable[[], Dict[str, Any]]],
-        text_override: Optional[str] = None,
-    ):
-        text = text_override or self.t.tr(meta.display)
-        on_trigger = lambda n=name: self._execute(n, context_provider)
-        widget_action = QtWidgets.QWidgetAction(parent)
-        widget_action.setData(name)
-        container = self._create_row_widget(parent, text, meta.hotkey, meta.icon or None, False, None, None, menu)
-        widget_action.setDefaultWidget(container)
-        if meta.checkable:
-            widget_action.setCheckable(True)
-            checked = self._get_checked(name, meta)
-            widget_action.setChecked(checked)
-            self._update_checkmark(container, checked)
-            widget_action.toggled.connect(lambda state, n=name, c=container: self._on_toggled(n, c, state))
-        widget_action.triggered.connect(lambda checked=False, n=name, m=meta, p=context_provider: self._execute(n, self._wrap_provider_with_checked(p, checked, m)))
-        main_area = container.findChild(QtWidgets.QWidget, "rowMain")
-        if main_area is not None:
-            def _row_click(event):
-                if event.button() == QtCore.Qt.LeftButton:
-                    menu.close()
-                    widget_action.trigger()
-            main_area.mouseReleaseEvent = _row_click
-        menu.addAction(widget_action)
-    
-    def _add_action_with_options(
-        self,
-        menu: QtWidgets.QMenu,
-        parent: QtWidgets.QWidget,
-        name: str,
-        meta: CommandMeta,
-        context_provider: Optional[Callable[[], Dict[str, Any]]],
-        text_override: Optional[str] = None,
-    ):
+    def _add_entry(self, menu: QtWidgets.QMenu, parent: QtWidgets.QWidget, name: str, meta: CommandMeta, context_provider: Optional[Callable[[], Dict[str, Any]]], with_options: bool, text_override: Optional[str]):
         text = text_override or self.t.tr(meta.display)
         widget_action = QtWidgets.QWidgetAction(parent)
         widget_action.setData(name)
-        container = self._create_row_widget(
-            parent,
-            text,
-            meta.hotkey,
-            meta.icon or None,
-            True,
-            None,
-            lambda: self._show_options_and_close_menu(name, parent, context_provider, menu),
-            menu,
-        )
+        container = self._create_row_widget(parent, text, meta.hotkey, meta.icon or None, with_options, None, (lambda: self._show_options_and_close_menu(name, parent, context_provider, menu)) if with_options else None, menu)
         widget_action.setDefaultWidget(container)
         if meta.checkable:
             widget_action.setCheckable(True)
@@ -344,10 +341,10 @@ class CommandMenuBuilder(TranslatorMixin):
         widget_action.triggered.connect(lambda checked=False, n=name, m=meta, p=context_provider: self._execute_and_close_menu(n, self._wrap_provider_with_checked(p, checked, m), menu))
         main_area = container.findChild(QtWidgets.QWidget, "rowMain")
         if main_area is not None:
-            def _row_click_opt(event):
+            def _row_click_any(event):
                 if event.button() == QtCore.Qt.LeftButton:
                     widget_action.trigger()
-            main_area.mouseReleaseEvent = _row_click_opt
+            main_area.mouseReleaseEvent = _row_click_any
         menu.addAction(widget_action)
     def _get_checked(self, name: str, meta: CommandMeta) -> bool:
         if name in self._check_states:
@@ -520,73 +517,388 @@ class CommandMenuBuilder(TranslatorMixin):
         a.setDefaultWidget(w)
         return a
 
-
-class MenuProviderBase:
-    def build_menu(self, parent: QtWidgets.QWidget) -> QtWidgets.QMenu:
-        raise NotImplementedError
-
-class RegistryBackedMenu(MenuProviderBase):
+class RegistryBackedMenu:
     _flags: Dict[type, bool] = {}
     _items: Dict[type, List[str]] = {}
-    DISPLAY: str = ""
+    _cmd_paths: Dict[type, Dict[str, str]] = {}
 
-    def __init__(self, command_names: Optional[List[str]] = None, **kwargs):
-        self._builder = CommandMenuBuilder()
-        self._context_provider = kwargs.get("context_provider")
-        dm = kwargs.get("display_map")
-        self._display_map = dict(dm) if isinstance(dm, dict) else None
-        self._command_names: Optional[List[str]] = list(command_names) if command_names is not None else None
+    def __init__(self):
         self.ensure_registered()
-        if self._command_names is None:
-            self._command_names = list(self._items.get(type(self), []))
 
     def ensure_registered(self):
         t = type(self)
         if self._flags.get(t, False):
             return
         res = self.create_definitions()
+        base = getattr(self, "path_prefix", None)
+        bparts = _split_parts(base) if isinstance(base, str) and base else []
         defs: List[Dict[str, Any]] = []
         items: List[str] = []
+        cmd_paths: Dict[str, str] = {}
+        def _prefixed_path(p: str) -> str:
+            pparts = _split_parts(p)
+            if not bparts:
+                return "/".join(pparts)
+            if pparts[:len(bparts)] == bparts:
+                return "/".join(pparts)
+            return "/".join(bparts + pparts)
+        def _prefixed_item_token(s: str) -> str:
+            if not bparts:
+                return s
+            if _is_sep_token(s):
+                sparts = _sep_path(s)
+                return "/".join(bparts + sparts + ["-"])
+            if _is_section_token(s):
+                sparts = _section_parts(s)
+                if not sparts:
+                    return s
+                head, label = sparts[:-1], sparts[-1]
+                if head[:len(bparts)] == bparts:
+                    return "/".join(head + [":" + label])
+                return "/".join(bparts + head + [":" + label])
+            # command path in items
+            return _prefixed_path(s)
         if isinstance(res, tuple) and len(res) == 2:
-            defs, items = res  # type: ignore
+            raw_defs, raw_items = res  # type: ignore
+            # normalize defs: require path and derive id from path, apply base prefix
+            new_defs: List[Dict[str, Any]] = []
+            for e in raw_defs:
+                if not isinstance(e, dict) or ("meta" not in e):
+                    raise ValueError("Definition must be a dict with 'meta' and 'path'")
+                meta = e["meta"]
+                full_path = e.get("path")
+                if not full_path:
+                    raise ValueError("Command 'path' is required and id is derived from its last segment")
+                full_path = _prefixed_path(str(full_path))
+                parts = _split_parts(full_path)
+                if not parts or parts[-1] == "-" or str(parts[-1]).startswith(":"):
+                    raise ValueError(f"Invalid command path: {full_path}")
+                cid = parts[-1]
+                if hasattr(meta, "id"):
+                    setattr(meta, "id", cid)
+                e["path"] = "/".join(parts)
+                new_defs.append(e)
+            defs = new_defs
+            # normalize items: apply base prefix to tokens and paths
+            adj_items: List[str] = []
+            for s in raw_items:
+                if isinstance(s, str):
+                    adj_items.append(_prefixed_item_token(s))
+            items = adj_items
+            # derive ids from paths declared in defs
+            for s in items:
+                if isinstance(s, str) and s and not _is_section_token(s) and not _is_sep_token(s):
+                    parts = [p for p in s.split("/") if p]
+                    if parts:
+                        cid = parts[-1]
+                        if cid in cmd_paths:
+                            raise ValueError(f"Duplicate command id in {t.__name__}: {cid}")
+                        cmd_paths[cid] = s
         elif isinstance(res, list):
             for e in res:  # type: ignore
                 if isinstance(e, str):
-                    items.append(e)
+                    items.append(_prefixed_item_token(e))
                 elif isinstance(e, dict) and ("meta" in e):
-                    defs.append(e)
                     meta = e["meta"]
-                    cid = getattr(meta, "id", None) or (meta.get("id") if isinstance(meta, dict) else None)
-                    mp = e.get("menu_path")
-                    items.append(f"{mp}/{cid}".lstrip("/") if mp else cid)
+                    full_path = e.get("path")
+                    if not full_path:
+                        raise ValueError("Command 'path' is required and id is derived from its last segment")
+                    full_path = _prefixed_path(str(full_path))
+                    parts = _split_parts(full_path)
+                    if not parts or parts[-1] == "-" or str(parts[-1]).startswith(":"):
+                        raise ValueError(f"Invalid command path: {full_path}")
+                    cid = parts[-1]
+                    if hasattr(meta, "id"):
+                        setattr(meta, "id", cid)
+                    e["path"] = "/".join(parts)
+                    defs.append(e)
+                    items.append(e["path"])
+                    if cid:
+                        scid = str(cid)
+                        if scid in cmd_paths:
+                            raise ValueError(f"Duplicate command id in {t.__name__}: {scid}")
+                        cmd_paths[scid] = e["path"]
         elif res:
-            defs = res  # type: ignore
-            items = [getattr(d["meta"], "id") for d in defs if isinstance(d, dict) and "meta" in d]
+            raw_defs = res  # type: ignore
+            new_defs: List[Dict[str, Any]] = []
+            for d in raw_defs:
+                if not isinstance(d, dict) or "meta" not in d:
+                    raise ValueError("Definition must be a dict with 'meta' and 'path'")
+                meta = d["meta"]
+                full_path = d.get("path")
+                if not full_path:
+                    raise ValueError("Command 'path' is required and id is derived from its last segment")
+                full_path = _prefixed_path(str(full_path))
+                parts = _split_parts(full_path)
+                if not parts or parts[-1] == "-" or str(parts[-1]).startswith(":"):
+                    raise ValueError(f"Invalid command path: {full_path}")
+                cid = parts[-1]
+                if hasattr(meta, "id"):
+                    setattr(meta, "id", cid)
+                full_path = "/".join(parts)
+                items.append(full_path)
+                scid = str(cid)
+                if scid in cmd_paths:
+                    raise ValueError(f"Duplicate command id in {t.__name__}: {scid}")
+                cmd_paths[scid] = full_path
+                d["path"] = full_path
+                new_defs.append(d)
+            defs = new_defs
         if defs:
             register_command_defs(defs)
         if items:
             self._items[t] = items
+        if cmd_paths:
+            self._cmd_paths[t] = cmd_paths
+        try:
+            MenuHub().register_paths(t, cmd_paths, items)
+        except Exception:
+            pass
         self._flags[t] = True
 
     def create_definitions(self) -> Any:
         return []
 
-    def build_menu(self, parent: QtWidgets.QWidget) -> QtWidgets.QMenu:
-        return self._builder.build(parent, self._command_names or [], context_provider=self._context_provider, display_map=self._display_map)
+    
 
-    def build_into(self, menu: QtWidgets.QMenu, parent: QtWidgets.QWidget):
-        self._builder.build_into(menu, parent, self._command_names or [], context_provider=self._context_provider, display_map=self._display_map)
+class MenuHub:
+    _instance: Optional["MenuHub"] = None
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._all_paths = {}
+            cls._instance._by_menu = {}
+            cls._instance._menu_items = {}
+        return cls._instance
+    def register_paths(self, menu_cls: type, cmd_paths: Dict[str, str], items: Optional[List[str]] = None):
+        if cmd_paths:
+            self._by_menu[menu_cls] = dict(cmd_paths)
+            for k, v in cmd_paths.items():
+                if k in self._all_paths and self._all_paths[k] != v:
+                    raise ValueError(f"Command id already registered: {k}")
+                self._all_paths[k] = v
+        if items is not None:
+            self._menu_items[menu_cls] = list(items)
+    
+    def get_path_by_command_id(self, command_id: str) -> str:
+        return self._all_paths.get(command_id, "")
 
-    def build_submenu(self, parent: QtWidgets.QWidget, title: Optional[str] = None) -> QtWidgets.QMenu:
-        t = title if title is not None else getattr(type(self), "DISPLAY", "")
-        sm = QtWidgets.QMenu(t, parent)
-        self.build_into(sm, parent)
-        return sm
+    
+
+    def has_folder(self, folder: str) -> bool:
+        f = folder.strip("/")
+        if not f:
+            return False
+        for p in self._all_paths.values():
+            parts = _split_parts(p)
+            if len(parts) <= 1:
+                continue
+            if f in parts[:-1]:
+                return True
+        return False
+
+    def find_folder_prefixes(self, name: str) -> List[str]:
+        n = name.strip("/")
+        if not n:
+            return []
+        seen: Dict[str, None] = {}
+        out: List[str] = []
+        for p in self._all_paths.values():
+            parts = _split_parts(p)
+            if len(parts) <= 1:
+                continue
+            for i in range(len(parts) - 1):
+                if parts[i] == n:
+                    pref = "/".join(parts[: i + 1])
+                    if pref not in seen:
+                        seen[pref] = None
+                        out.append(pref)
+        return out
+
+    def collect_items_by_folder(self, folder: str, rebase_to: Optional[str] = None) -> List[str]:
+        f = folder.strip("/")
+        blocks: List[List[str]] = []
+        for cls, items in self._menu_items.items():
+            paths_map = self._by_menu.get(cls, {})
+            cur: List[str] = []
+            def _flush():
+                nonlocal cur
+                if cur:
+                    blocks.append(cur)
+                    cur = []
+            for s in items:
+                if _is_sep_token(s) and not _sep_path(str(s)):
+                    _flush()
+                    continue
+                cur.append(s)
+            _flush()
+        # filter blocks that contain at least one command under folder f
+        fparts = _split_parts(f)
+        filtered: List[List[str]] = []
+        for b in blocks:
+            has = False
+            for s in b:
+                if not isinstance(s, str) or not s or _is_sep_token(s) or _is_section_token(s):
+                    continue
+                if "/" in s:
+                    pfull = s
+                else:
+                    pfull = ""
+                    for maps in self._by_menu.values():
+                        if s in maps:
+                            pfull = maps[s]
+                            break
+                if pfull and _split_parts(pfull)[:len(fparts)] == fparts:
+                    has = True
+                    break
+            if has:
+                filtered.append(b)
+        out: List[str] = []
+        pre = rebase_to.strip("/") if rebase_to else f
+        first = True
+        for b in filtered:
+            if not first:
+                out.append(f"{pre}/-")
+            first = False
+            for s in b:
+                if not isinstance(s, str) or not s:
+                    continue
+                if _is_sep_token(s):
+                    src = _sep_path(str(s))
+                    if not src:
+                        out.append(f"{pre}/-")
+                        continue
+                    if src[:len(fparts)] != fparts:
+                        continue
+                    rel = src[len(fparts):]
+                    out.append("/".join([pre] + rel + ["-"]))
+                    continue
+                if _is_section_token(s):
+                    parts = _section_parts(s)
+                    if not parts:
+                        continue
+                    head = parts[:-1]
+                    label = parts[-1]
+                    if head[:len(fparts)] != fparts:
+                        continue
+                    rel = head[len(fparts):]
+                    out.append("/".join([pre] + rel + [":" + label]))
+                    continue
+                if "/" in s:
+                    pfull = s
+                else:
+                    pfull = ""
+                    for maps in self._by_menu.values():
+                        if s in maps:
+                            pfull = maps[s]
+                            break
+                if pfull and pfull.startswith(f + "/"):
+                    rel = pfull[len(f) + 1:]
+                    out.append(f"{pre}/{rel}".lstrip("/"))
+        return out
 
 
-class CommandMenuSection(MenuProviderBase):
-    pass
-
-
-class CompositeMenuBuilder:
-    pass
+class MenuBuilder:
+    def __init__(self, parent: Optional[QtWidgets.QWidget] = None, context_provider: Optional[Callable[[], Dict[str, Any]]] = None):
+        self._menu = QtWidgets.QMenu(parent)
+        self._builder = CommandMenuBuilder()
+        self._hub = MenuHub()
+        self._ctx = context_provider
+    @property
+    def menu(self) -> QtWidgets.QMenu:
+        return self._menu
+    def build(self, items: List[str]) -> QtWidgets.QMenu:
+        self._menu.clear()
+        all_names: List[str] = []
+        seen: set[str] = set()
+        for it in items:
+            if not it:
+                continue
+            if _is_sep_token(it) or _is_section_token(it):
+                all_names.append(it)
+                continue
+            
+            if "/" in it and (_is_sep_token(it) or _is_section_token(it)):
+                all_names.append(it)
+                continue
+            if "/" in it:
+                parts = _split_parts(it)
+                if len(parts) >= 2:
+                    orig_folder = parts[-1]
+                    if self._hub.has_folder(orig_folder):
+                        prefixes = self._hub.find_folder_prefixes(orig_folder)
+                        if not prefixes:
+                            raise ValueError(f"Unknown folder: {orig_folder}")
+                        if len(prefixes) > 1:
+                            raise ValueError(f"Ambiguous folder: {orig_folder}")
+                        names = self._hub.collect_items_by_folder(prefixes[0], rebase_to=it)
+                        for n in names:
+                            if not (_is_sep_token(n) or _is_section_token(n)):
+                                if n in seen:
+                                    raise ValueError(f"Duplicate item after rebase: {n}")
+                                seen.add(n)
+                        all_names.extend(names)
+                        continue
+                if self._hub.has_folder(it):
+                    names = self._hub.collect_items_by_folder(it, rebase_to=it)
+                    if not names:
+                        raise ValueError(f"Unknown folder: {it}")
+                    for n in names:
+                        if not (_is_sep_token(n) or _is_section_token(n)):
+                            if n in seen:
+                                raise ValueError(f"Duplicate item after rebase: {n}")
+                            seen.add(n)
+                    all_names.extend(names)
+                    continue
+                path_cid = _split_parts(it)[-1]
+                if not self._hub.get_path_by_command_id(path_cid):
+                    raise ValueError(f"Unknown command path or folder: {it}")
+                if it in seen:
+                    raise ValueError(f"Duplicate item: {it}")
+                seen.add(it)
+                all_names.append(it)
+                continue
+            p = self._hub.get_path_by_command_id(it)
+            if p:
+                cid = it
+                if cid in seen:
+                    raise ValueError(f"Duplicate item: {cid}")
+                seen.add(cid)
+                all_names.append(cid)
+            else:
+                prefixes = self._hub.find_folder_prefixes(it) if self._hub.has_folder(it) else []
+                if len(prefixes) > 1:
+                    raise ValueError(f"Ambiguous folder: {it}")
+                if len(prefixes) == 1:
+                    names = self._hub.collect_items_by_folder(prefixes[0], rebase_to=it)
+                else:
+                    names = self._hub.collect_items_by_folder(it, rebase_to=it)
+                if not names:
+                    raise ValueError(f"Unknown command or folder id: {it}")
+                for n in names:
+                    if not (_is_sep_token(n) or _is_section_token(n)):
+                        if n in seen:
+                            raise ValueError(f"Duplicate item after rebase: {n}")
+                        seen.add(n)
+                all_names.extend(names)
+        if all_names:
+            self._builder.build_into(self._menu, self._menu, all_names, context_provider=self._ctx, display_map=None)
+        return self._menu
+    def build_all_roots(self) -> QtWidgets.QMenu:
+        roots: List[str] = []
+        seen = set()
+        for items in self._hub._menu_items.values():
+            for s in items:
+                if not isinstance(s, str) or not s or s == "---" or s.startswith(":"):
+                    continue
+                parts = [p for p in s.split("/") if p]
+                if len(parts) < 2:
+                    continue
+                r = parts[0]
+                if r in seen:
+                    continue
+                seen.add(r)
+                roots.append(r)
+        if not roots:
+            raise ValueError("No top-level menus registered")
+        return self.build(roots)

@@ -1,4 +1,5 @@
-from .commandbase import CommandMeta, CommandParam, RegistryBackedMenu
+from .command.core import CommandMeta, CommandParam
+from .command.menu import RegistryBackedMenu
 from datetime import datetime
 
 

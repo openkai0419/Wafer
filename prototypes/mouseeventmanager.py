@@ -43,6 +43,7 @@ class MouseEventManager:
 
     def __init__(self):
         self._bindings = {}
+        self._resolver = None
 
     def bind(self, key, action):
         self._bindings[key] = action
@@ -52,6 +53,10 @@ class MouseEventManager:
 
     def clear(self):
         self._bindings.clear()
+        self._resolver = None
+
+    def set_resolver(self, resolver):
+        self._resolver = resolver
 
     def handle_mouse_event(self, event, double_click=False):
         button = self._map_qt_button(event.button())
@@ -97,6 +102,12 @@ class MouseEventManager:
         action = self._bindings.get(key)
         if action:
             action(*args, **kwargs)
+            return
+        if self._resolver:
+            try:
+                self._resolver(key, *args, **kwargs)
+            except Exception:
+                pass
 
 class MouseEventDispatcher(QtCore.QObject):
 

@@ -1,38 +1,30 @@
 prototypes 仕様メモ (source ではなく試作コードの設計と意図)
 
 対象ファイル
-- prototypes/commandbase.py
+- prototypes/command/core.py
+- prototypes/command/menu.py
+- prototypes/command/ui.py
 - prototypes/mouseeventmanager.py
 - prototypes/binding_editors.py
 
-commandbase.py の要点
-- CommandParam / CommandMeta / CommandBase: 軽量コマンド定義用のメタ/基底。
-- CommandRegistry: メタから動的生成された Command を登録/実行/Undo 履歴管理。
-- CommandOptionsDialog: CommandMeta.params を元に動的フォーム生成してオプション指定。
-- CommandMenuBuilder: QMenu をカスタム行ウィジェットで構築するビルダ。
-  - セクションと区切りに対応。
-  - セクションは path/:Label 形式(例 "folder/:Options")。
-  - 区切りは path/- 形式(例 "folder/-")。ルート区切りは "-"。
-  - 各行はチェックマーク/アイコン/テキスト/ショートカット/オプションボタンを横並びで表示。
-  - checkable 対応: CommandMeta.checkable/default_checked を解釈し、トグル状態を保持。
-- RegistryBackedMenu: create_definitions による単一ソース定義を強制するメニューベース。
-  - create_definitions の戻り
-    - [str|def,...] もしくは (defs, items) を許容。
-    - defs: {path, meta, func, undo?} の配列。id は不要で、path の末尾セグメントから自動導出。
-  - items: "path/to/cmd" 形式やトークン(":Label", "-")の並び。相対指定は path_prefix が自動付与。
-  - ensure_registered()
-    - path_prefix を各クラスの共通先頭として適用し、defs/items をフルパス化。
-    - id はフルパス末尾から設定し、CommandRegistry へ登録。
-    - items を _items[type] に保存。cmd_id → full_path を _cmd_paths[type] に保存。
-    - MenuHub に (menu_class, cmd_paths, items) を登録。
-- MenuHub: 全メニューのコマンドパスを集約するグローバル集約器。
-  - register_paths(menu_cls, cmd_paths, items)
-  - collect_items_by_folder(folder, rebase_to?)
-  - get_path_by_command_id(cmdId)
-  - has_folder(name): 任意深さのフォルダ名に一致したら True
-  - find_folder_prefixes(name): 同名フォルダのフルパス候補を列挙
+command/core.py の要点
+- CommandParam / CommandMeta / CommandBase
+- CommandRegistry: 登録と実行のみ（Undo 削除）
+- create_command_from_callable / register_command_defs
 
-追加: MenuBuilder
+menu/model.py の要点
+- _split_parts / _is_sep_token / _sep_path / _is_section_token / _section_parts
+- _chain_providers
+- RegistryBackedMenu: 定義正規化と登録、path_prefix 適用
+- MenuHub: パス集約・フォルダ展開
+
+menu/ui.py の要点
+- CommandOptionsDialog: パラメータフォーム生成
+- CommandMenuBuilder: 行ウィジェット/セクション/区切り/チェック/オプション
+- CommandMenuRow: 表示専用
+- MenuBuilder: 高レベル一括生成/ポップアップ
+
+追加: MenuBuilder（menu/ui.py）
 - 空のQMenuを保持し、一括生成のみを提供（demo_appで使用している最小API）
 - API
   - MenuBuilder(parent=None, context_provider=None)
@@ -47,9 +39,22 @@ commandbase.py の要点
   - build_all_roots() -> QMenu: すべての最親フォルダを自動列挙してメニュー化
     - items から先頭セグメントを抽出して順序保持
     - ルートに直下コマンドしかないものは対象外
-    - build_selectable(items) / build_all_roots_selectable(): 実行せず選択用のメニューを生成
-      - 既存の UI を流用し、選択時は QAction.data() に入っている command id を返す
-      - MenuBuilder.pick_from_menu(global_pos?) で選択結果の command id を取得
+
+  選択専用モード
+  - CommandMenuBuilder/MenuBuilder は selection_callback を受け取り、選択時にコマンド実行せず callback(cmd_id) のみ呼ぶ
+  - has_options や checkable は選択モードでは無効化（トグルや実行は行わない）
+  - MouseBindingEditor は build_all_roots(selection_callback=...) を使い、ツリーからコマンドIDを選ぶ
+  引数ラッパ
+  - create_command_from_callable は func をラップし execute(self, **kwargs) で呼び出す（undo 引数は廃止）
+  - meta が存在する場合 call_execute は meta.params に含まれる名前のみ抽出（params 空でもフィルタ実施）
+  - params 未定義のコマンドへ追加コンテキスト(kwargs)を渡しても func が受け取らないなら無視され TypeError 回避
+  ポップアップ共通化
+  - MenuBuilder.popup_all_roots(anchor, selection_callback, context_provider=None) を追加
+  - build_all_roots + メニュー位置計算(mapToGlobal) を統一的/再利用的に提供
+  - 呼出側は anchor(例: ボタン) と callback だけ指定すればよい
+  不具合修正
+  - CommandMenuBuilder.build_into から参照される _get_or_create_submenu_chain が Row 側に存在していたため AttributeError が発生していた問題を解消。
+  - 関連ヘルパーを Builder へ移設し、Row から削除。
 
 エラーハンドリング（人為的ミスの早期検出）
 - CommandRegistry.register: id 未設定や重複 id を検出すると例外
@@ -86,11 +91,25 @@ mouseeventmanager.py の要点
 
 binding_editors.py の要点
 - WidgetRef: エディタ UI で対象ウィジェットを参照する小さなラッパ。
-- MouseBindingEditor: マウスボタン/クリック種別とコマンド ID のバインド編集ダイアログ。
-  - コマンド選択はフラットな一覧ではなく、build_all_roots_selectable() のツリーを使用
-  - Select ボタンでメニューを開き、選択された command id をフィールドに反映
-- ShortcutBindingEditor: キーシーケンスとコマンド ID のバインド編集ダイアログ。
-  - コマンド選択方式は MouseBindingEditor と同様にツリーメニューから選択
+- MouseBindingEditor: 要求仕様に合わせ拡張。以下を提供:
+  - UI 再構成: 左 12 固定アクション (各ボタン SINGLE/DOUBLE + WHEEL_UP/DOWN)。右は 5 セクション固定 (各 held=LEFT/RIGHT/MIDDLE/X1/X2)。
+  - セクションタイトル: held==click対象ボタンのとき「単一機能」表示。それ以外は WHILE_<held> -> <button> <click> 形式。
+  - 各セクション: Scope 固定行 (“*”+全ウィジェット名) に対し Command 選択ボタン。Add/Delete/remove 操作は廃止し常に全行表示。
+  - 保存: 現在選択アクションの古いキーを全削除→5セクション分を再構築→ストアへ反映→各ウィジェットへ抽出辞書適用。
+  - データ構造/優先順位: 変わらず (個別 scope > “*”)。
+  - フォールバック: MouseEventManager.resolver により未直接バインドでもストア解決で実行。
+- ShortcutBindingEditor: キーシーケンスとコマンド ID のバインド編集ダイアログ (変更なし)。
+
+binding_store.py の追加
+- MouseBindingStore: シングルトン。キー→スコープ→コマンドのマップ保持。
+- set_binding / set_all / resolve を提供。resolve(widget, key) は widget 優先、なければ "*" を返す。
+
+mouseeventmanager.py 変更点
+- MouseEventManager に set_resolver(resolver) を追加。直接 bind されていないキーを受け取った際 _resolver(key, event) をフォールバック呼び出し。
+
+demo_app.py 変更点
+- DemoPane に MouseBindingStore 参照と _resolve_fallback を追加し、未バインドキーでも共通または個別スコープ設定済みコマンドを実行可能に。
+- MouseBindingEditor 呼び出しシグネチャ変更 (commands リストは内部選択メニューから取得するため不要)。
 
 注意
 - この仕様は prototypes のみ。source/ の正式実装には影響しない。

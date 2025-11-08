@@ -1,6 +1,6 @@
 from typing import Dict, List
 from PySide6 import QtCore, QtGui, QtWidgets
-from .commandbase import CommandRegistry
+from .command.core import CommandRegistry
 
 
 class ShortcutManager:
@@ -39,3 +39,4 @@ class ShortcutManager:
             self._registry.execute(command_name)
         except Exception as e:
             QtWidgets.QMessageBox.critical(None, "Error", str(e))
+            raise

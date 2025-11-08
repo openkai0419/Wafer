@@ -1,11 +1,12 @@
 from typing import Dict, List, Tuple
 from PySide6 import QtCore, QtGui, QtWidgets
-from .commandbase import CommandRegistry
+from .command.core import CommandRegistry
 from .mouseeventmanager import MouseEventManager, MouseEventDispatcher, MouseActionKey, ClickType, MouseButton
 from .shortcutmanager import ShortcutManager
 from .menu_demo import FileMenu, PathMenu, CmdMenu
-from .commandbase import MenuBuilder
+from .command.ui import MenuBuilder
 from .binding_editors import WidgetRef, MouseBindingEditor, ShortcutBindingEditor
+from .binding_store import MouseBindingStore
 
 
 class DemoPane(QtWidgets.QFrame):
@@ -20,7 +21,9 @@ class DemoPane(QtWidgets.QFrame):
         self._mouse_manager = MouseEventManager()
         self._mouse_dispatcher = MouseEventDispatcher(self, self._mouse_manager)
         self._mouse_bindings: Dict[MouseActionKey, str] = {}
+        self._store = MouseBindingStore()
         self._shortcut_manager = ShortcutManager()
+        self._mouse_manager.set_resolver(self._resolve_fallback)
         self._header = QtWidgets.QLabel(name, self)
         self._header.setAlignment(QtCore.Qt.AlignCenter)
         l = QtWidgets.QVBoxLayout(self)
@@ -31,9 +34,15 @@ class DemoPane(QtWidgets.QFrame):
         self._mouse_manager.clear()
         for k, cmd in self._mouse_bindings.items():
             self._mouse_manager.bind(k, lambda e=None, c=cmd: self._exec(c))
+        self._mouse_manager.set_resolver(self._resolve_fallback)
 
     def get_mouse_bindings(self) -> Dict[MouseActionKey, str]:
         return dict(self._mouse_bindings)
+
+    def _resolve_fallback(self, key: MouseActionKey, event=None):
+        cmd = self._store.resolve(self.name, key)
+        if cmd:
+            self._exec(cmd)
 
     def set_shortcut_bindings(self, bindings: Dict[str, str]):
         self._shortcut_manager.set_bindings(self, bindings)
@@ -43,10 +52,10 @@ class DemoPane(QtWidgets.QFrame):
 
     def contextMenuEvent(self, event: QtGui.QContextMenuEvent):
         if self.name == "Widget B":
-            m = MenuBuilder(self).build_all_roots()
+            m = MenuBuilder(self).build_all_roots(context_provider=lambda: {"widget": self.name})
         else:
             b = MenuBuilder(self, context_provider=lambda: {"widget": self.name})
-            b.build(["commands/:Commands", "commands/-","commands", "-", "file", "path", "Temp", "path.1", "Options" ])
+            b.build([":Menu", "-", "commands/:Test", "commands/-","commands", "-", "file", "path", "Temp", "path.1", "Options" ])
             m = b.menu
         m.exec(event.globalPos())
 
@@ -56,6 +65,7 @@ class DemoPane(QtWidgets.QFrame):
                 self._registry.execute(cmd, widget=self.name)
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, "Error", str(e))
+            raise
 
 
 
@@ -95,8 +105,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _edit_mouse(self):
         widgets = [WidgetRef("Widget A", self.pane1), WidgetRef("Widget B", self.pane2)]
-        cmds = list(CommandRegistry().get_all_commands().keys())
-        dlg = MouseBindingEditor(widgets, cmds, self)
+        dlg = MouseBindingEditor(widgets, self)
         dlg.exec()
 
     def _edit_short(self):

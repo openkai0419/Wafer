@@ -4,17 +4,17 @@ import json
 from PySide6 import QtWidgets
 from ..command.core import CommandRegistry
 from ..utils import to_payload_json, is_json_text, show_error
-from ..mouseeventmanager import MouseEventManager, MouseEventDispatcher, MouseActionKey
-from ..shortcutmanager import ShortcutManager
-from .store import MouseBindingStore
+from .mouse.mouseeventmanager import MouseEventManager, MouseEventDispatcher, MouseActionKey
+from .key.shortcutmanager import ShortcutManager
+from .mouse.store import MouseBindingStore
 from .manager import BindingManager
 
 
 class CommandBindingMixin:
-    def init_command_binding(self, scope_name: str):
-        if not scope_name:
-            raise ValueError("scope_name is required")
-        self._binding_scope = scope_name
+    def init_command_binding(self, name: str):
+        if not name:
+            raise ValueError("name is required")
+        self.name = name
         self._registry = CommandRegistry()
         self._mouse_manager = MouseEventManager()
         self._mouse_dispatcher = MouseEventDispatcher(self, self._mouse_manager)
@@ -30,10 +30,10 @@ class CommandBindingMixin:
     def set_binding_scope(self, name: str):
         if not name:
             raise ValueError("name is required")
-        self._binding_scope = name
+        self.name = name
 
     def binding_scope(self) -> str:
-        return self._binding_scope
+        return self.name
 
     def set_mouse_bindings(self, bindings: Dict[MouseActionKey, object]):
         self._mouse_bindings = {}

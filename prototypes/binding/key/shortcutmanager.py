@@ -1,16 +1,14 @@
 from typing import Any, Dict, List
 import json
 from PySide6 import QtCore, QtGui, QtWidgets
-from .command.core import CommandRegistry
-from .utils import to_payload_json, is_json_text, show_error
-
+from ...command.core import CommandRegistry
+from ...utils import to_payload_json, is_json_text, show_error
 
 class ShortcutManager:
     def __init__(self):
         self._bindings: Dict[int, Dict[str, Any]] = {}
         self._shortcuts: Dict[int, List[QtGui.QShortcut]] = {}
         self._registry = CommandRegistry()
-
     def set_bindings(self, widget: QtWidgets.QWidget, bindings: Dict[str, Any]):
         wid = id(widget)
         for sc in self._shortcuts.get(wid, []):
@@ -37,14 +35,11 @@ class ShortcutManager:
             sc = QtGui.QShortcut(QtGui.QKeySequence(seq), widget)
             sc.activated.connect(lambda c=cmd: self._exec(c))
             self._shortcuts[wid].append(sc)
-
     def get_bindings(self, widget: QtWidgets.QWidget) -> Dict[str, Any]:
         wid = id(widget)
         return dict(self._bindings.get(wid, {}))
-
     def clear_bindings(self, widget: QtWidgets.QWidget):
         self.set_bindings(widget, {})
-
     def _exec(self, command_name: Any):
         try:
             if isinstance(command_name, str) and is_json_text(command_name):

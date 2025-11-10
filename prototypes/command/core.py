@@ -26,6 +26,7 @@ class CommandMeta:
     has_options: bool = False
     checkable: bool = False
     default_checked: bool = False
+    func: Optional[Callable[..., Any]] = None
 
 
 class CommandBase:
@@ -113,16 +114,15 @@ def _build_args(meta: CommandMeta, kwargs: Dict[str, Any]) -> Dict[str, Any]:
     return r
 
 
-def create_command_from_callable(meta: CommandMeta, func: Callable[..., Any]) -> type[CommandBase]:
+def create_command_from_meta(meta: CommandMeta) -> type[CommandBase]:
     class _Cmd(CommandBase):
         pass
-
     _Cmd.meta = meta
-
-    def _wrapped_execute(self, **kwargs):
-        return func(**kwargs)
-
-    setattr(_Cmd, "execute", _wrapped_execute)
+    fn = getattr(meta, "func", None)
+    if callable(fn):
+        def _wrapped_execute(self, **kwargs):
+            return fn(**kwargs)
+        setattr(_Cmd, "execute", _wrapped_execute)
     return _Cmd
 
 
@@ -130,5 +130,4 @@ def register_command_defs(defs: List[Dict[str, Any]]):
     r = CommandRegistry()
     for d in defs:
         meta = d["meta"]
-        fn = d["func"]
-        r.register(create_command_from_callable(meta, fn))
+        r.register(create_command_from_meta(meta))

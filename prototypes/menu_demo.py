@@ -3,7 +3,9 @@ from .command.core import CommandMeta, CommandParam, CommandRegistry
 from .command.menu import RegistryBackedMenu
 from datetime import datetime
 from .command.ui import MenuBuilder
-from .binding.editors import WidgetRef, MouseBindingEditor, ShortcutBindingEditor
+from .binding.common import WidgetRef
+from .binding.mouse.editors import MouseBindingEditor
+from .binding.key.editors import ShortcutBindingEditor
 
 
 class FileMenu(RegistryBackedMenu):
@@ -13,8 +15,7 @@ class FileMenu(RegistryBackedMenu):
         for i in range(4):
             items.append({
                 "path": f"file.{i}",
-                "meta": CommandMeta(display=f"file {i}"),
-                "func": (lambda x=i: (lambda: print(f"file {x}")))(),
+                "meta": CommandMeta(display=f"file {i}", func=(lambda x=i: (lambda: print(f"file {x}")))()),
             })
         return items
 
@@ -26,14 +27,12 @@ class PathMenu(RegistryBackedMenu):
         for i in range(4):
             items.append({
                 "path": f"path.{i}",
-                "meta": CommandMeta(display=f"path {i}"),
-                "func": (lambda x=i: (lambda: print(f"path {x}")))(),
+                "meta": CommandMeta(display=f"path {i}", func=(lambda x=i: (lambda: print(f"path {x}")))()),
             })
         i = 3
         items.append({
             "path": f"Temp/path.Test{i}",
-            "meta": CommandMeta(display=f"Temp {i}"),
-            "func": (lambda x=i: (lambda: print(f"path {x}")))(),
+            "meta": CommandMeta(display=f"Temp {i}", func=(lambda x=i: (lambda: print(f"path {x}")))()),
         })
         return items
 
@@ -43,15 +42,15 @@ class CmdMenu(RegistryBackedMenu):
     def create_definitions(self):
         return [
             ":Commands",
-            {"path": "hello", "meta": CommandMeta(display="Hello", params=[CommandParam(name="scope", type=str, default="", description="scope")]), "func": lambda scope="": print(f"hello from {scope}")},
-            {"path": "time", "meta": CommandMeta(display="Show Time"), "func": lambda: print(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))},
+            {"path": "hello", "meta": CommandMeta(display="Hello", params=[CommandParam(name="scope", type=str, default="", description="scope")], func=lambda scope="": print(f"hello from {scope}"))},
+            {"path": "time", "meta": CommandMeta(display="Show Time", func=lambda: print(datetime.now().strftime("%Y-%m-%d %H:%M:%S")))},
             "-",
             ":Options",
-            {"path": "Options/echo", "meta": CommandMeta(display="Echo", params=[CommandParam(name="text", type=str, default="echo"), CommandParam(name="repeat", type=int, default=1, min_value=1, max_value=8)], has_options=True), "func": lambda text="echo", repeat=1: print(text * repeat)},
-            {"path": "Options/count", "meta": CommandMeta(display="Count", params=[CommandParam(name="value", type=int, default=1, description="Value"), CommandParam(name="step", type=int, default=1, min_value=1, max_value=10)], has_options=True), "func": lambda value=1, step=1: print("count", " ".join(str(i) for i in range(value, value + step)))},
+            {"path": "Options/echo", "meta": CommandMeta(display="Echo", params=[CommandParam(name="text", type=str, default="echo"), CommandParam(name="repeat", type=int, default=1, min_value=1, max_value=8)], has_options=True, func=lambda text="echo", repeat=1: print(text * repeat))},
+            {"path": "Options/count", "meta": CommandMeta(display="Count", params=[CommandParam(name="value", type=int, default=1, description="Value"), CommandParam(name="step", type=int, default=1, min_value=1, max_value=10)], has_options=True, func=lambda value=1, step=1: print("count", " ".join(str(i) for i in range(value, value + step))))},
             "-",
             ":Toggle",
-            {"path": "Toggle/toggleVerbose", "meta": CommandMeta(display="Verbose Mode", checkable=True, default_checked=False, params=[CommandParam(name="checked", type=bool, default=False)]), "func": lambda checked=False: print("verbose on" if checked else "verbose off")},
+            {"path": "Toggle/toggleVerbose", "meta": CommandMeta(display="Verbose Mode", checkable=True, default_checked=False, params=[CommandParam(name="checked", type=bool, default=False)], func=lambda checked=False: print("verbose on" if checked else "verbose off"))},
         ]
 
 class ContextMenu(RegistryBackedMenu):
@@ -78,7 +77,7 @@ class ContextMenu(RegistryBackedMenu):
     def create_definitions(self):
         return [
             ":ContextMenu",
-            {"path": "showContextMenuHere", "meta": CommandMeta(display="Show Context Menu Here"), "func": self._show_context_menu_here},
+            {"path": "showContextMenuHere", "meta": CommandMeta(display="Show Context Menu Here", func=self._show_context_menu_here)},
         ]
 
 class MenuMenu(RegistryBackedMenu):
@@ -89,8 +88,9 @@ class MenuMenu(RegistryBackedMenu):
         for tl in QtWidgets.QApplication.topLevelWidgets():
             for w in tl.findChildren(QtWidgets.QWidget):
                 if hasattr(w, "set_mouse_bindings"):
-                    name = getattr(w, "name", "") or w.objectName() or w.__class__.__name__
-                    out.append(WidgetRef(name, w))
+                    name = getattr(w, "name", "") or None
+                    if name:
+                        out.append(WidgetRef(name, w))
         return out
     
     def _open_mouse_binding_editor(self):
@@ -111,6 +111,6 @@ class MenuMenu(RegistryBackedMenu):
     def create_definitions(self):
         return [
             ":Menu",
-            {"path": "binding/bindings", "meta": CommandMeta(display="Mouse Bindings..."), "func": self._open_mouse_binding_editor},
-            {"path": "binding/shortcutBindings", "meta": CommandMeta(display="Shortcut Bindings..."), "func": self._open_shortcut_binding_editor},
+            {"path": "binding/bindings", "meta": CommandMeta(display="Mouse Bindings...", func=self._open_mouse_binding_editor)},
+            {"path": "binding/shortcutBindings", "meta": CommandMeta(display="Shortcut Bindings...", func=self._open_shortcut_binding_editor)},
         ]

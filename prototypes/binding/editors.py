@@ -1,12 +1,11 @@
 from typing import Dict, List, Tuple, Any
-import os
-from pathlib import Path
 import json
+from pathlib import Path
 from PySide6 import QtCore, QtGui, QtWidgets
 from ..mouseeventmanager import MouseActionKey, ClickType, MouseButton
 from ..command.ui import MenuBuilder, CommandOptionsDialog
 from ..command.core import CommandRegistry
-from .binding_store import MouseBindingStore
+from .store import MouseBindingStore
 from ..utils import to_payload_json, is_json_text, show_error
 
 class WidgetRef:
@@ -188,7 +187,7 @@ class MouseBindingEditor(QtWidgets.QDialog):
                         bindings[key] = cmd_widget
                 wref.widget.set_mouse_bindings(bindings)
         try:
-            path = str(Path(__file__).resolve().parent / "mouse_bindings.json")
+            path = str(Path(__file__).resolve().parent.parent / "mouse_bindings.json")
             self._store.save_to_file(path)
         except Exception:
             pass
@@ -196,7 +195,7 @@ class MouseBindingEditor(QtWidgets.QDialog):
 
     def _reset_to_defaults(self):
         try:
-            from ..binding_defaults import default_mouse_bindings
+            from .defaults import default_mouse_bindings
             defs = default_mouse_bindings()
             nd: Dict[MouseActionKey, Dict[str, object]] = {}
             for k, v in defs.items():
@@ -209,7 +208,7 @@ class MouseBindingEditor(QtWidgets.QDialog):
     def _reset_current_action(self):
         try:
             b, c = self._current_action()
-            from ..binding_defaults import default_mouse_bindings
+            from .defaults import default_mouse_bindings
             defs = default_mouse_bindings()
             cur = self._store.get_all()
             aff_keys = set()
@@ -227,11 +226,9 @@ class MouseBindingEditor(QtWidgets.QDialog):
                     self._draft[k] = {"*": defs[k]}
                 else:
                     self._draft[k] = {}
-            # 再描画時に既存セクションの古い値を上書きしないため save をスキップ
             self._reload_sections(skip_save=True)
         except Exception:
             pass
-
 
 class MouthSection(QtWidgets.QGroupBox):
     def __init__(self, parent: QtWidgets.QWidget, widgets: List[WidgetRef], held_button: MouseButton, store: MouseBindingStore):
@@ -250,7 +247,7 @@ class MouthSection(QtWidgets.QGroupBox):
         self.btn_global.clicked.connect(lambda: self._pick_cmd("*"))
         header.addWidget(self.btn_global, 0)
         self.btn_overrides = QtWidgets.QToolButton(self)
-        self.btn_overrides.setText("項目別")
+        self.btn_overrides.setText("カスタム")
         self.btn_overrides.setPopupMode(QtWidgets.QToolButton.InstantPopup)
         self.btn_overrides.setStyleSheet("padding:4px 4px;")
         self.ov_menu = QtWidgets.QMenu(self.btn_overrides)
@@ -285,38 +282,6 @@ class MouthSection(QtWidgets.QGroupBox):
             return "★ 単独での機能"
         return f"{self.held_button.name} 押しながら"
 
-    def load_from_store(self, store: MouseBindingStore):
-        self.global_edit.clear()
-        for e in self.override_edits.values():
-            e.clear()
-        self._payloads.clear()
-        data = store.get_all()
-        found: Dict[str,str] = {}
-        for key, scopes in data.items():
-            if key.button != self.button or key.click_type != self.click:
-                continue
-            if tuple(key.held_buttons) != (self.held_button,) and not (self.held_button == self.button and not key.held_buttons):
-                continue
-            if "*" in scopes:
-                v = scopes.get("*", "")
-                if isinstance(v, dict) and "id" in v:
-                    found["*"] = str(v.get("id"))
-                    self._payloads["*"] = v
-                else:
-                    found["*"] = str(v or "")
-            for scope, cmd in scopes.items():
-                if scope != "*" and cmd:
-                    if isinstance(cmd, dict) and "id" in cmd:
-                        found[scope] = str(cmd.get("id"))
-                        self._payloads[scope] = cmd
-                    else:
-                        found[scope] = str(cmd)
-        self._rebuild_overrides_entries(found)
-        g = found.get("*")
-        if g:
-            disp = self._display(self._payloads.get("*", g))
-            self.global_edit.setText(disp)
-        self.overrides_container.setVisible(any(s != "*" for s in found))
     def load_from_data(self, data: Dict[MouseActionKey, Dict[str,object]]):
         self.global_edit.clear()
         for e in self.override_edits.values():
@@ -690,3 +655,9 @@ class ShortcutBindingEditor(QtWidgets.QDialog):
                 bindings[seq] = payload if payload else text
         wref.widget.set_shortcut_bindings(bindings)
         self.accept()
+
+    def _display(self, value: Any) -> str:
+        try:
+            return to_payload_json(value)
+        except Exception:
+            return str(value)

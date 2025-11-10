@@ -48,5 +48,21 @@
       "Widget A": "{\"id\":\"echo\",\"args\":{\"text\":\"echo\",\"repeat\":5}}",
       "Widget B": "{\"id\":\"count\",\"args\":{\"value\":10,\"step\":10}}"
     }
+  },
+  {
+    "button": "X1",
+    "click": "SINGLE",
+    "held": [],
+    "scopes": {
+      "*": "{\"id\":\"hello\",\"args\":{}}"
+    }
+  },
+  {
+    "button": "LEFT",
+    "click": "DOUBLE",
+    "held": [],
+    "scopes": {
+      "*": "{\"id\":\"path.2\",\"args\":{}}"
+    }
   }
 ]

@@ -7,7 +7,7 @@ prototypes 仕様メモ (source ではなく試作コードの設計と意図)
 - prototypes/command/state.py
 - prototypes/command/utils.py
 - prototypes/mouseeventmanager.py
-- prototypes/binding_editors.py
+- prototypes/binding/editors.py
 
 command/core.py の要点
 - CommandParam / CommandMeta / CommandBase
@@ -69,6 +69,15 @@ menu/ui.py の要点
   不具合修正
   - CommandMenuBuilder.build_into から参照される _get_or_create_submenu_chain が Row 側に存在していたため AttributeError が発生していた問題を解消。
   - 関連ヘルパーを Builder へ移設し、Row から削除。
+  リファクタ（共通化）
+  - _add_names: 重複検出と seen 追跡を一元化。リベース有無でエラーメッセージを切替。
+  - _collect_folder: フォルダ展開と存在検証を一元化。
+  - _flatten_for_use: use() 用のトークン再マッピングを関数化。
+  - _build_into: chain_providers と build_into 呼び出しの共通化。
+  - build()/use() の分岐を縮約し、挙動は等価のまま簡潔化。
+  - 重複検出の不具合（raise 後に seen.add が到達不能）を修正。
+  - CommandMenuBuilder._display_override: display_map 展開とサブメニュー生成処理を関数化。
+  - 分割ロジックを split_parts に統一し文字列 split("/") の重複を排除。
 
 エラーハンドリング（人為的ミスの早期検出）
 - CommandRegistry.register: id 未設定や重複 id を検出すると例外
@@ -103,12 +112,12 @@ mouseeventmanager.py の要点
 - メニュー/コマンドは定義の単一化(create_definitions)と呼出時再構成の両立で拡張容易に。
 - マウス入力はキー合成によりウィジェットごとのバインド差し替えを単純化。
 
-binding_editors.py の要点 (更新: JSON直接表示/保存)
+editors.py の要点 (更新: JSON直接表示/保存)
 - WidgetRef: ウィジェット参照ラッパ。
 - MouseBindingEditor: コマンド選択後 has_options=True ならオプション編集し保存で payload {id,args} を保持。表示は常に JSON (dict payload は json.dumps、文字列idはそのまま)。内部は _payloads に辞書、表示テキストは JSON 化された文字列。
 - ShortcutBindingEditor: セル UserRole に payload を保持し表示は JSON。Edit Options で再編集後 JSON 再生成。
 
-binding_store.py 拡張
+store.py 拡張
 - 値は文字列 id か payload 辞書。resolve はそのまま返す。
 
 バインド時引数保持仕様 (更新: JSON統一)
@@ -146,6 +155,29 @@ demo_app.py 変更点
 - DemoPane に MouseBindingStore 参照と _resolve_fallback を追加し、未バインドキーでも共通または個別スコープ設定済みコマンドを実行可能に。
 - MouseBindingEditor 呼び出しシグネチャ変更 (commands リストは内部選択メニューから取得するため不要)。
  - 初回起動で保存ファイルが存在しない場合、default_mouse_bindings() を MouseBindingStore の "*" スコープにシードし、以降の適用と編集は常に Store 由来の値を用いる。
+ - MainWindow の menuBar は直接コマンドID "bindings", "shortcutBindings" を指定し一段構成化。menu_demo.MenuMenu のパスは "bindings", "shortcutBindings" に変更し重複フォルダ "binding" を排除。
+
+CommandBindingMixin (binding/mixins.py) 追加
+- 任意 QWidget でコマンド/マウス/ショートカットバインディング機能を共有化
+- init_command_binding(scope_name=None) を呼ぶだけで利用可能。scope_name 未指定時は objectName かクラス名
+- 提供API:
+  - set_binding_scope(name) / binding_scope()
+  - set_mouse_bindings(bindings: Dict[MouseActionKey, Any]) / get_mouse_bindings()
+  - set_shortcut_bindings(dict) / get_shortcut_bindings()
+  - exec_command(cmd) 明示実行（内部で _exec）
+- DemoPane は QFrame, CommandBindingMixin の多重継承に変更し固有ロジック削減
+- 元 DemoPane 内の _exec, フォールバック解決, バインド正規化処理を Mixin へ移動
+- これにより他の QWidget 実装 (例: QSplitter, QScrollArea 内部ペイン) への再利用が容易
+
+BindingManager (binding/manager.py) 追加
+- mouse_bindings.json のロード/初期シード/適用/保存を集約
+- load_or_seed(defaults) : ファイルが無ければ defaults を "*" スコープでシードして Store へ投入
+- apply_mouse_bindings(widgets) : 各ウィジェットの scope 名 (binding_scope() 優先) に応じて最適なコマンドを適用
+- clear_shortcuts(widgets) : 全ショートカット解除
+- save() : 現在の内容をファイルへ書き出し
+- デフォルトパス: prototypes/mouse_bindings.json
+- DemoPane 初期化処理の共通化で MainWindow._setup_defaults は 4 行に縮約
+ - シングルトン化と自動登録: BindingManager.instance() を導入し、WeakSet で登録ウィジェットを保持。CommandBindingMixin.init_command_binding() で自動 register。apply_registered()/clear_shortcuts_registered() で一括適用。
 
 注意
 - この仕様は prototypes のみ。source/ の正式実装には影響しない。

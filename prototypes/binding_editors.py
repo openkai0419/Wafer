@@ -1,8 +1,13 @@
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Any
+import os
+from pathlib import Path
+import json
 from PySide6 import QtCore, QtGui, QtWidgets
 from .mouseeventmanager import MouseActionKey, ClickType, MouseButton
-from .command.ui import MenuBuilder
+from .command.ui import MenuBuilder, CommandOptionsDialog
+from .command.core import CommandRegistry
 from .binding_store import MouseBindingStore
+from .command.utils import to_payload_json, is_json_text, show_error
 
 class WidgetRef:
     def __init__(self, name: str, widget):
@@ -34,6 +39,18 @@ class MouseBindingEditor(QtWidgets.QDialog):
         self.panel = QtWidgets.QWidget(self.scroll)
         self.scroll.setWidget(self.panel)
         self.panel_layout = QtWidgets.QVBoxLayout(self.panel)
+        self.sections_container = QtWidgets.QWidget(self.panel)
+        self.sections_layout = QtWidgets.QVBoxLayout(self.sections_container)
+        self.sections_layout.setContentsMargins(0,0,0,0)
+        self.sections_layout.setSpacing(8)
+        self.panel_layout.addWidget(self.sections_container, 1)
+        footer = QtWidgets.QHBoxLayout()
+        footer.addStretch(1)
+        self.btn_reset_action = QtWidgets.QPushButton("初期化", self.panel)
+        self.btn_reset_action.setCursor(QtCore.Qt.PointingHandCursor)
+        self.btn_reset_action.clicked.connect(self._reset_current_action)
+        footer.addWidget(self.btn_reset_action, 0)
+        self.panel_layout.addLayout(footer)
         self.sections: List['MouthSection'] = []
         body.addWidget(self.scroll, 1)
         l.addLayout(body, 1)
@@ -69,9 +86,10 @@ class MouseBindingEditor(QtWidgets.QDialog):
         _, b, c = items[idx]
         return (b, c)
 
-    def _reload_sections(self):
-        self._save_current_sections_to_draft()
-        self._clear_sections_layout()
+    def _reload_sections(self, skip_save: bool = False):
+        if not skip_save:
+            self._save_current_sections_to_draft()
+        self._clear_sections()
         self.sections.clear()
         b, c = self._current_action()
         data = self._merged_data()
@@ -79,9 +97,9 @@ class MouseBindingEditor(QtWidgets.QDialog):
             s = MouthSection(self.panel, self.widgets, hb, self._store)
             s.set_action(b, c)
             s.load_from_data(data)
-            self.panel_layout.addWidget(s)
+            self.sections_layout.addWidget(s)
             self.sections.append(s)
-        self.panel_layout.addStretch(1)
+        self.sections_layout.addStretch(1)
 
     def _save_current_sections_to_draft(self):
         if not hasattr(self, 'sections') or not self.sections:
@@ -99,7 +117,7 @@ class MouseBindingEditor(QtWidgets.QDialog):
                 if scopes:
                     self._draft[key] = dict(scopes)
 
-    def _merged_data(self) -> Dict[MouseActionKey, Dict[str, str]]:
+    def _merged_data(self) -> Dict[MouseActionKey, Dict[str, object]]:
         base = self._store.get_all()
         for k, v in self._draft.items():
             if v:
@@ -108,9 +126,10 @@ class MouseBindingEditor(QtWidgets.QDialog):
                 base.pop(k, None)
         return base
 
-    def _clear_sections_layout(self):
+    def _clear_sections(self):
+        lay = self.sections_layout
         while True:
-            item = self.panel_layout.takeAt(0)
+            item = lay.takeAt(0)
             if not item:
                 break
             w = item.widget()
@@ -121,9 +140,9 @@ class MouseBindingEditor(QtWidgets.QDialog):
                 except Exception:
                     pass
                 w.deleteLater()
-            lay = item.layout()
-            if lay is not None:
-                self._clear_layout_recursive(lay)
+            sub = item.layout()
+            if sub is not None:
+                self._clear_layout_recursive(sub)
         try:
             self.panel.update()
             self.scroll.viewport().update()
@@ -168,7 +187,50 @@ class MouseBindingEditor(QtWidgets.QDialog):
                     if cmd_widget:
                         bindings[key] = cmd_widget
                 wref.widget.set_mouse_bindings(bindings)
+        try:
+            path = str(Path(__file__).resolve().parent / "mouse_bindings.json")
+            self._store.save_to_file(path)
+        except Exception:
+            pass
         self.accept()
+
+    def _reset_to_defaults(self):
+        try:
+            from .binding_defaults import default_mouse_bindings
+            defs = default_mouse_bindings()
+            nd: Dict[MouseActionKey, Dict[str, object]] = {}
+            for k, v in defs.items():
+                nd[k] = {"*": v}
+            self._draft = nd
+            self._reload_sections()
+        except Exception:
+            pass
+
+    def _reset_current_action(self):
+        try:
+            b, c = self._current_action()
+            from .binding_defaults import default_mouse_bindings
+            defs = default_mouse_bindings()
+            cur = self._store.get_all()
+            aff_keys = set()
+            for k in cur.keys():
+                if k.button == b and k.click_type == c:
+                    aff_keys.add(k)
+            for k in defs.keys():
+                if k.button == b and k.click_type == c:
+                    aff_keys.add(k)
+            for k in list(self._draft.keys()):
+                if k.button == b and k.click_type == c:
+                    aff_keys.add(k)
+            for k in aff_keys:
+                if k in defs:
+                    self._draft[k] = {"*": defs[k]}
+                else:
+                    self._draft[k] = {}
+            # 再描画時に既存セクションの古い値を上書きしないため save をスキップ
+            self._reload_sections(skip_save=True)
+        except Exception:
+            pass
 
 
 class MouthSection(QtWidgets.QGroupBox):
@@ -205,6 +267,7 @@ class MouthSection(QtWidgets.QGroupBox):
         self.overrides_layout.setContentsMargins(4,4,4,4)
         self.overrides_layout.setSpacing(6)
         self.override_edits: Dict[str, QtWidgets.QLineEdit] = {}
+        self._payloads: Dict[str, object] = {}
         self.list_order: List[str] = []
         l.addWidget(self.overrides_container)
         self.overrides_container.setVisible(False)
@@ -226,6 +289,7 @@ class MouthSection(QtWidgets.QGroupBox):
         self.global_edit.clear()
         for e in self.override_edits.values():
             e.clear()
+        self._payloads.clear()
         data = store.get_all()
         found: Dict[str,str] = {}
         for key, scopes in data.items():
@@ -234,19 +298,30 @@ class MouthSection(QtWidgets.QGroupBox):
             if tuple(key.held_buttons) != (self.held_button,) and not (self.held_button == self.button and not key.held_buttons):
                 continue
             if "*" in scopes:
-                found["*"] = scopes.get("*", "")
+                v = scopes.get("*", "")
+                if isinstance(v, dict) and "id" in v:
+                    found["*"] = str(v.get("id"))
+                    self._payloads["*"] = v
+                else:
+                    found["*"] = str(v or "")
             for scope, cmd in scopes.items():
                 if scope != "*" and cmd:
-                    found[scope] = cmd
+                    if isinstance(cmd, dict) and "id" in cmd:
+                        found[scope] = str(cmd.get("id"))
+                        self._payloads[scope] = cmd
+                    else:
+                        found[scope] = str(cmd)
         self._rebuild_overrides_entries(found)
         g = found.get("*")
         if g:
-            self.global_edit.setText(g)
+            disp = self._display(self._payloads.get("*", g))
+            self.global_edit.setText(disp)
         self.overrides_container.setVisible(any(s != "*" for s in found))
-    def load_from_data(self, data: Dict[MouseActionKey, Dict[str,str]]):
+    def load_from_data(self, data: Dict[MouseActionKey, Dict[str,object]]):
         self.global_edit.clear()
         for e in self.override_edits.values():
             e.clear()
+        self._payloads.clear()
         found: Dict[str,str] = {}
         for key, scopes in data.items():
             if key.button != self.button or key.click_type != self.click:
@@ -254,14 +329,24 @@ class MouthSection(QtWidgets.QGroupBox):
             if tuple(key.held_buttons) != (self.held_button,) and not (self.held_button == self.button and not key.held_buttons):
                 continue
             if "*" in scopes:
-                found["*"] = scopes.get("*", "")
+                v = scopes.get("*", "")
+                if isinstance(v, dict) and "id" in v:
+                    found["*"] = str(v.get("id"))
+                    self._payloads["*"] = v
+                else:
+                    found["*"] = str(v or "")
             for scope, cmd in scopes.items():
                 if scope != "*" and cmd:
-                    found[scope] = cmd
+                    if isinstance(cmd, dict) and "id" in cmd:
+                        found[scope] = str(cmd.get("id"))
+                        self._payloads[scope] = cmd
+                    else:
+                        found[scope] = str(cmd)
         self._rebuild_overrides_entries(found)
         g = found.get("*")
         if g:
-            self.global_edit.setText(g)
+            disp = self._display(self._payloads.get("*", g))
+            self.global_edit.setText(disp)
         self.overrides_container.setVisible(any(s != "*" for s in found))
 
     def _pick_cmd(self, scope: str):
@@ -273,19 +358,18 @@ class MouthSection(QtWidgets.QGroupBox):
             return
         try:
             builder = MenuBuilder(self)
-            menu = builder.build_all_roots(selection_callback=lambda cid, sc=scope: self._on_select(sc, cid))
-            act_none = QtGui.QAction("なし(解除)", menu)
-            act_none.triggered.connect(lambda _, sc=scope: self._on_select(sc, None))
-            first = menu.actions()[0] if menu.actions() else None
-            if first:
-                menu.insertAction(first, act_none)
-                menu.insertSeparator(first)
-            else:
-                menu.addAction(act_none)
-            pos = btn.mapToGlobal(QtCore.QPoint(0, btn.height()))
-            menu.exec(pos)
+            def _prep(m: QtWidgets.QMenu, sc=scope):
+                act_none = QtGui.QAction("なし(解除)", m)
+                act_none.triggered.connect(lambda _, s=sc: self._on_select(s, None))
+                first = m.actions()[0] if m.actions() else None
+                if first:
+                    m.insertAction(first, act_none)
+                    m.insertSeparator(first)
+                else:
+                    m.addAction(act_none)
+            builder.popup_all_roots(btn, selection_callback=lambda cid, sc=scope: self._on_select(sc, cid), context_provider=None, prepare=_prep, allow_options_with_selection=True)
         except Exception as e:
-            QtWidgets.QMessageBox.critical(self, "Error", str(e))
+            show_error(self, str(e))
 
     def _on_select(self, scope: str, cid):
         if cid is None:
@@ -298,24 +382,50 @@ class MouthSection(QtWidgets.QGroupBox):
                 self.overrides_container.setVisible(False)
             self._refresh_overrides_menu()
             return
+        dedicated = None
+        try:
+            if isinstance(cid, str) and cid.startswith("{") and cid.endswith("}"):
+                dedicated = cid
+        except Exception:
+            dedicated = None
+        if dedicated is None:
+            try:
+                dedicated = to_payload_json({"id": str(cid), "args": {}})
+            except Exception:
+                dedicated = str(cid)
+        target_display = dedicated
         if scope == "*":
-            self.global_edit.setText(cid)
+            self.global_edit.setText(self._display(target_display))
+            if dedicated is not None:
+                self._payloads["*"] = dedicated
+            else:
+                self._payloads.pop("*", None)
         else:
             if scope in self.override_edits:
-                self.override_edits[scope].setText(cid)
+                self.override_edits[scope].setText(self._display(target_display))
+                if dedicated is not None:
+                    self._payloads[scope] = dedicated
+                else:
+                    self._payloads.pop(scope, None)
         if scope != "*" and cid:
             self.overrides_container.setVisible(True)
 
-    def collect_entries(self) -> Dict[MouseActionKey, Dict[str, str]]:
+    def collect_entries(self) -> Dict[MouseActionKey, Dict[str, object]]:
         key = self._current_key()
-        scopes: Dict[str, str] = {}
-        g = self.global_edit.text().strip()
-        if g:
-            scopes["*"] = g
+        scopes: Dict[str, object] = {}
+        if "*" in self._payloads:
+            scopes["*"] = self._to_saved(self._payloads["*"])
+        else:
+            gtxt = self.global_edit.text().strip()
+            if gtxt:
+                scopes["*"] = self._to_saved(gtxt)
         for scope, edit in self.override_edits.items():
-            cmd = edit.text().strip()
-            if cmd:
-                scopes[scope] = cmd
+            if scope in self._payloads:
+                scopes[scope] = self._to_saved(self._payloads[scope])
+            else:
+                txt = edit.text().strip()
+                if txt:
+                    scopes[scope] = self._to_saved(txt)
         return {key: scopes} if scopes else {}
 
     def _refresh_overrides_menu(self):
@@ -359,7 +469,7 @@ class MouthSection(QtWidgets.QGroupBox):
         edit = QtWidgets.QLineEdit(row)
         edit.setReadOnly(True)
         if value:
-            edit.setText(value)
+            edit.setText(self._display(value))
         rl.addWidget(btn,0)
         rl.addWidget(edit,1)
         self.override_edits[scope] = edit
@@ -396,6 +506,7 @@ class MouthSection(QtWidgets.QGroupBox):
         if not self.override_edits:
             self.overrides_container.setVisible(False)
         self._clear_binding(scope)
+        self._payloads.pop(scope, None)
 
     def _current_key(self) -> MouseActionKey:
         return MouseActionKey(self.button, self.click, () if self.held_button == self.button else (self.held_button,))
@@ -405,6 +516,40 @@ class MouthSection(QtWidgets.QGroupBox):
             self.store.set_binding(self._current_key(), scope, None)
         except Exception:
             pass
+
+    def _build_payload_with_options(self, cid: str):
+        reg = CommandRegistry()
+        cls = reg.get_command(cid)
+        if not cls:
+            try:
+                return to_payload_json({"id": cid, "args": {}})
+            except Exception:
+                return {"id": cid, "args": {}}
+        meta = getattr(cls, "meta", None)
+        if not meta or not getattr(meta, "has_options", False):
+            try:
+                return to_payload_json({"id": cid, "args": {}})
+            except Exception:
+                return {"id": cid, "args": {}}
+        dlg = CommandOptionsDialog(cls, self, binding_mode=True)
+        if dlg.exec() == QtWidgets.QDialog.Accepted and dlg.did_save():
+            try:
+                return to_payload_json({"id": cid, "args": dlg.get_values()})
+            except Exception:
+                return {"id": cid, "args": dlg.get_values()}
+        return to_payload_json({"id": cid, "args": {}})
+
+    def _display(self, value: Any) -> str:
+        try:
+            return to_payload_json(value)
+        except Exception:
+            return str(value)
+
+    def _to_saved(self, value: Any) -> Any:
+        try:
+            return to_payload_json(value)
+        except Exception:
+            return value
 
 class ShortcutBindingEditor(QtWidgets.QDialog):
     def __init__(self, widgets: List[WidgetRef], commands: List[str], parent=None):
@@ -437,14 +582,17 @@ class ShortcutBindingEditor(QtWidgets.QDialog):
             self.box_cmd.addItem(c, c)
         btn_add = QtWidgets.QPushButton("Add", self)
         btn_del = QtWidgets.QPushButton("Delete", self)
+        btn_opts = QtWidgets.QPushButton("Edit Options", self)
         btn_add.clicked.connect(self._add)
         btn_del.clicked.connect(self._del)
+        btn_opts.clicked.connect(self._edit_selected_options)
         form.addWidget(QtWidgets.QLabel("Shortcut"))
         form.addWidget(self.edit_seq)
         form.addWidget(QtWidgets.QLabel("Command"))
         form.addWidget(self.box_cmd, 1)
         form.addWidget(btn_add)
         form.addWidget(btn_del)
+        form.addWidget(btn_opts)
         l.addLayout(form)
         bb = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel, self)
         bb.accepted.connect(self._apply)
@@ -460,11 +608,18 @@ class ShortcutBindingEditor(QtWidgets.QDialog):
         for seq, cmd in b.items():
             self._append_row(seq, cmd)
 
-    def _append_row(self, seq: str, cmd: str):
+    def _append_row(self, seq: str, cmd: object):
         r = self.table.rowCount()
         self.table.insertRow(r)
         self.table.setItem(r, 0, QtWidgets.QTableWidgetItem(seq))
-        self.table.setItem(r, 1, QtWidgets.QTableWidgetItem(cmd))
+        if isinstance(cmd, dict) and "id" in cmd:
+            s = self._display(cmd)
+            self.table.setItem(r, 1, QtWidgets.QTableWidgetItem(s))
+            self.table.item(r, 1).setData(QtCore.Qt.UserRole, s)
+        else:
+            txt = str(cmd)
+            s = self._display(txt)
+            self.table.setItem(r, 1, QtWidgets.QTableWidgetItem(s))
 
     def _add(self):
         seq = self.edit_seq.keySequence().toString()
@@ -474,8 +629,48 @@ class ShortcutBindingEditor(QtWidgets.QDialog):
         r = self.table.rowCount()
         self.table.insertRow(r)
         self.table.setItem(r, 0, QtWidgets.QTableWidgetItem(seq))
-        self.table.setItem(r, 1, QtWidgets.QTableWidgetItem(cmd))
+        if isinstance(cmd, dict) and "id" in cmd:
+            s = self._display(cmd)
+            self.table.setItem(r, 1, QtWidgets.QTableWidgetItem(s))
+            self.table.item(r, 1).setData(QtCore.Qt.UserRole, s)
+        else:
+            try:
+                s = to_payload_json({"id": str(cmd), "args": {}})
+            except Exception:
+                s = str(cmd)
+            self.table.setItem(r, 1, QtWidgets.QTableWidgetItem(s))
         self.edit_seq.clear()
+
+    def _edit_selected_options(self):
+        rows = sorted({i.row() for i in self.table.selectedIndexes()})
+        if not rows:
+            return
+        reg = CommandRegistry()
+        for r in rows:
+            raw = self.table.item(r, 1).text().strip()
+            cmd = raw
+            try:
+                if raw.startswith("{") and raw.endswith("}"):
+                    d = json.loads(raw)
+                    if isinstance(d, dict) and "id" in d:
+                        cmd = str(d.get("id"))
+            except Exception:
+                pass
+            cls = reg.get_command(cmd)
+            if not cls:
+                continue
+            meta = getattr(cls, "meta", None)
+            if not meta or not getattr(meta, "has_options", False):
+                continue
+            dlg = CommandOptionsDialog(cls, self, binding_mode=True)
+            if dlg.exec() == QtWidgets.QDialog.Accepted and dlg.did_save():
+                payload = {"id": cmd, "args": dlg.get_values()}
+                try:
+                    s = to_payload_json(payload)
+                except Exception:
+                    s = str(payload)
+                self.table.setItem(r, 1, QtWidgets.QTableWidgetItem(s))
+                self.table.item(r, 1).setData(QtCore.Qt.UserRole, s)
 
     def _del(self):
         for idx in sorted({i.row() for i in self.table.selectedIndexes()}, reverse=True):
@@ -486,11 +681,12 @@ class ShortcutBindingEditor(QtWidgets.QDialog):
         if not isinstance(wref, WidgetRef):
             self.reject()
             return
-        bindings: Dict[str, str] = {}
+        bindings: Dict[str, object] = {}
         for r in range(self.table.rowCount()):
             seq = self.table.item(r, 0).text().strip()
-            cmd = self.table.item(r, 1).text().strip()
-            if seq and cmd:
-                bindings[seq] = cmd
+            text = self.table.item(r, 1).text().strip()
+            if seq and text:
+                payload = self.table.item(r, 1).data(QtCore.Qt.UserRole)
+                bindings[seq] = payload if payload else text
         wref.widget.set_shortcut_bindings(bindings)
         self.accept()

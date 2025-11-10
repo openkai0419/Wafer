@@ -4,6 +4,8 @@ prototypes 仕様メモ (source ではなく試作コードの設計と意図)
 - prototypes/command/core.py
 - prototypes/command/menu.py
 - prototypes/command/ui.py
+- prototypes/command/state.py
+- prototypes/command/utils.py
 - prototypes/mouseeventmanager.py
 - prototypes/binding_editors.py
 
@@ -20,9 +22,21 @@ menu/model.py の要点
 
 menu/ui.py の要点
 - CommandOptionsDialog: パラメータフォーム生成
+- ボタン: 「実行」「保存」「キャンセル」
+  - 実行: 保存せず実行のみ。ダイアログは閉じない。execute_callback経由で実行
+  - 保存: 実行せず保存のみ。ダイアログを閉じる（Accepted）
+  - キャンセル: 何もしないで閉じる（Rejected）
 - CommandMenuBuilder: 行ウィジェット/セクション/区切り/チェック/オプション
 - CommandMenuRow: 表示専用
 - MenuBuilder: 高レベル一括生成/ポップアップ
+
+オプション編集の永続化
+- CommandOptionStore(prototypes/command/state.py): 統一形式 {id,args} で保存。get() は args のみ返し、get_payload() で {id,args} を取得
+- CommandOptionsDialog: 初期表示に前回保存 payload.args を反映
+- CommandMenuBuilder:
+  - 通常実行時は保存済み args を読み込みコンテキストで上書き実行
+  - ダイアログ「実行」は保存せず実行のみ
+  - ダイアログ「保存」は実行せず保存のみ
 
 追加: MenuBuilder（menu/ui.py）
 - 空のQMenuを保持し、一括生成のみを提供（demo_appで使用している最小API）
@@ -89,20 +103,41 @@ mouseeventmanager.py の要点
 - メニュー/コマンドは定義の単一化(create_definitions)と呼出時再構成の両立で拡張容易に。
 - マウス入力はキー合成によりウィジェットごとのバインド差し替えを単純化。
 
-binding_editors.py の要点
-- WidgetRef: エディタ UI で対象ウィジェットを参照する小さなラッパ。
-- MouseBindingEditor: 要求仕様に合わせ拡張。以下を提供:
-  - UI 再構成: 左 12 固定アクション (各ボタン SINGLE/DOUBLE + WHEEL_UP/DOWN)。右は 5 セクション固定 (各 held=LEFT/RIGHT/MIDDLE/X1/X2)。
-  - セクションタイトル: held==click対象ボタンのとき「単一機能」表示。それ以外は WHILE_<held> -> <button> <click> 形式。
-  - 各セクション: Scope 固定行 (“*”+全ウィジェット名) に対し Command 選択ボタン。Add/Delete/remove 操作は廃止し常に全行表示。
-  - 保存: 現在選択アクションの古いキーを全削除→5セクション分を再構築→ストアへ反映→各ウィジェットへ抽出辞書適用。
-  - データ構造/優先順位: 変わらず (個別 scope > “*”)。
-  - フォールバック: MouseEventManager.resolver により未直接バインドでもストア解決で実行。
-- ShortcutBindingEditor: キーシーケンスとコマンド ID のバインド編集ダイアログ (変更なし)。
+binding_editors.py の要点 (更新: JSON直接表示/保存)
+- WidgetRef: ウィジェット参照ラッパ。
+- MouseBindingEditor: コマンド選択後 has_options=True ならオプション編集し保存で payload {id,args} を保持。表示は常に JSON (dict payload は json.dumps、文字列idはそのまま)。内部は _payloads に辞書、表示テキストは JSON 化された文字列。
+- ShortcutBindingEditor: セル UserRole に payload を保持し表示は JSON。Edit Options で再編集後 JSON 再生成。
 
-binding_store.py の追加
-- MouseBindingStore: シングルトン。キー→スコープ→コマンドのマップ保持。
-- set_binding / set_all / resolve を提供。resolve(widget, key) は widget 優先、なければ "*" を返す。
+binding_store.py 拡張
+- 値は文字列 id か payload 辞書。resolve はそのまま返す。
+
+バインド時引数保持仕様 (更新: JSON統一)
+- 全てのバインド値は JSON 文字列で保持・表示する。
+- 共有モード: {"id":"cmd","args":{}} のように args が空の JSON。実行時は CommandOptionStore.get(id) で最新 args を取得して実行。
+- 専用モード: {"id":"cmd","args":{...}} のように args が非空。実行時はそのままの引数で実行する。
+- MouseBindingEditor は選択時、IDのみの場合でも {id,args:{}} に正規化して保持・表示する。
+- ShortcutBindingEditor は従来通り JSON を保持（基本は専用モードに該当）。
+
+ユーティリティ
+- command/utils.py
+  - is_json_text(s: str) -> bool
+  - normalize_payload_dict(data: Any) -> {id,args}
+  - to_payload_json(data: Any) -> str
+  - read_json_file(path, default=None) -> Any  存在しない/失敗時は default
+  - write_json_file(path, data, indent=2, ensure_ascii=False) -> bool  成功可否
+  - show_error(parent, text, title="Error") -> QMessageBox.critical の薄いラッパ
+
+CommandRegistry 拡張
+- execute_payload(data, extra_context=None):
+  - data が JSON 文字列の場合のみ文字列として受け付ける（非JSON文字列IDはエラー）。
+  - 辞書の場合は {id,args} を直接使用。
+  - id と args を抽出し、extra_context を後勝ちでマージして実行。
+  - 従来 execute(name, **kwargs) は内部委譲用として残置。
+
+CommandOptionStore 仕様
+- get(id) は JSON 文字列 '{"id":"...","args":{...}}' を返す。
+- get_payload(id) は辞書 {id,args} を返す。
+- 永続化ファイル .command_options.json は indent=2 で整形保存。
 
 mouseeventmanager.py 変更点
 - MouseEventManager に set_resolver(resolver) を追加。直接 bind されていないキーを受け取った際 _resolver(key, event) をフォールバック呼び出し。
@@ -110,7 +145,21 @@ mouseeventmanager.py 変更点
 demo_app.py 変更点
 - DemoPane に MouseBindingStore 参照と _resolve_fallback を追加し、未バインドキーでも共通または個別スコープ設定済みコマンドを実行可能に。
 - MouseBindingEditor 呼び出しシグネチャ変更 (commands リストは内部選択メニューから取得するため不要)。
+ - 初回起動で保存ファイルが存在しない場合、default_mouse_bindings() を MouseBindingStore の "*" スコープにシードし、以降の適用と編集は常に Store 由来の値を用いる。
 
 注意
 - この仕様は prototypes のみ。source/ の正式実装には影響しない。
 - 試作のため API は変更される可能性がある。
+ 
+mouse_bindings.json 永続化 (更新)
+- 保存タイミング: MouseBindingEditor で OK 押下時に現在の全バインドをファイルへ書き出す。
+- 保存場所: prototypes ディレクトリ直下 (prototypes/mouse_bindings.json)。source 移行時に変更予定。
+- フォーマット: 配列形式。
+  [
+    {"button":"RIGHT","click":"SINGLE","held":[],"scopes":{"*":"{...payload json...}","Widget A":"{...}","Widget B":"{...}"}},
+    ...
+  ]
+- held は修飾ボタン列 (単独時は空配列)。
+- scopes は scope->payload(JSON文字列) の辞書。"*" がグローバル、ウィジェット名が個別。
+- 読込: 起動 (_setup_defaults) 時に存在すればロードして各 DemoPane に適用。存在しない場合は default_mouse_bindings() を使用。
+- payload が空 args の JSON なら共有モードとして実行時に最新オプションへ差し替え、args 非空は専用モードとして固定。

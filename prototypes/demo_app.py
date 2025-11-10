@@ -1,9 +1,11 @@
 from typing import Dict, List, Tuple
+import json
 from PySide6 import QtCore, QtGui, QtWidgets
 from .command.core import CommandRegistry
+from .command.utils import to_payload_json, is_json_text, show_error
 from .mouseeventmanager import MouseEventManager, MouseEventDispatcher, MouseActionKey, ClickType, MouseButton
 from .shortcutmanager import ShortcutManager
-from .menu_demo import FileMenu, PathMenu, CmdMenu
+from .menu_demo import FileMenu, PathMenu, CmdMenu, MenuMenu
 from .command.ui import MenuBuilder
 from .binding_editors import WidgetRef, MouseBindingEditor, ShortcutBindingEditor
 from .binding_store import MouseBindingStore
@@ -15,7 +17,6 @@ class DemoPane(QtWidgets.QFrame):
         self.name = name
         self.setFrameShape(QtWidgets.QFrame.StyledPanel)
         self.setMinimumSize(240, 160)
-        self.setContextMenuPolicy(QtCore.Qt.DefaultContextMenu)
         
         self._registry = CommandRegistry()
         self._mouse_manager = MouseEventManager()
@@ -29,11 +30,18 @@ class DemoPane(QtWidgets.QFrame):
         l = QtWidgets.QVBoxLayout(self)
         l.addWidget(self._header, 1)
 
-    def set_mouse_bindings(self, bindings: Dict[MouseActionKey, str]):
-        self._mouse_bindings = dict(bindings)
+    def set_mouse_bindings(self, bindings: Dict[MouseActionKey, object]):
+        self._mouse_bindings = {}
         self._mouse_manager.clear()
-        for k, cmd in self._mouse_bindings.items():
-            self._mouse_manager.bind(k, lambda e=None, c=cmd: self._exec(c))
+        for k, cmd in bindings.items():
+            if isinstance(cmd, str) and is_json_text(cmd):
+                s = cmd.strip()
+            elif isinstance(cmd, dict) and "id" in cmd:
+                s = to_payload_json(cmd)
+            else:
+                s = str(cmd)
+            self._mouse_bindings[k] = s
+            self._mouse_manager.bind(k, lambda e=None, c=s: self._exec(c))
         self._mouse_manager.set_resolver(self._resolve_fallback)
 
     def get_mouse_bindings(self) -> Dict[MouseActionKey, str]:
@@ -41,7 +49,18 @@ class DemoPane(QtWidgets.QFrame):
 
     def _resolve_fallback(self, key: MouseActionKey, event=None):
         cmd = self._store.resolve(self.name, key)
-        if cmd:
+        if not cmd:
+            return
+        if isinstance(cmd, str) and is_json_text(cmd):
+            self._exec(cmd)
+            return
+        if isinstance(cmd, dict) and "id" in cmd:
+            try:
+                self._exec(to_payload_json(cmd))
+            except Exception:
+                show_error(self, "Failed to resolve command")
+            return
+        if isinstance(cmd, str):
             self._exec(cmd)
 
     def set_shortcut_bindings(self, bindings: Dict[str, str]):
@@ -50,21 +69,35 @@ class DemoPane(QtWidgets.QFrame):
     def get_shortcut_bindings(self) -> Dict[str, str]:
         return self._shortcut_manager.get_bindings(self)
 
-    def contextMenuEvent(self, event: QtGui.QContextMenuEvent):
-        if self.name == "Widget B":
-            m = MenuBuilder(self).build_all_roots(context_provider=lambda: {"widget": self.name})
-        else:
-            b = MenuBuilder(self, context_provider=lambda: {"widget": self.name})
-            b.build([":Menu", "-", "commands/:Test", "commands/-","commands", "-", "file", "path", "Temp", "path.1", "Options" ])
-            m = b.menu
-        m.exec(event.globalPos())
-
-    def _exec(self, cmd: str):
+    def _exec(self, cmd):
         try:
-            if cmd:
-                self._registry.execute(cmd, widget=self.name)
+            if not cmd:
+                return
+            if isinstance(cmd, str) and is_json_text(cmd):
+                try:
+                    d = json.loads(cmd)
+                except Exception:
+                    d = None
+                if isinstance(d, dict) and "id" in d and isinstance(d.get("args"), dict) and not d.get("args"):
+                    from .command.state import CommandOptionStore
+                    try:
+                        stored = CommandOptionStore().get(d.get("id"))
+                        self._registry.execute_payload(stored, {"widget": self.name})
+                        return
+                    except Exception:
+                        pass
+                self._registry.execute_payload(cmd, {"widget": self.name})
+            elif isinstance(cmd, dict) and "id" in cmd:
+                self._registry.execute_payload(cmd, {"widget": self.name})
+            elif isinstance(cmd, str):
+                from .command.state import CommandOptionStore
+                try:
+                    payload = CommandOptionStore().get(cmd)
+                except Exception:
+                    payload = {"id": cmd, "args": {}}
+                self._registry.execute_payload(payload, {"widget": self.name})
         except Exception as e:
-            QtWidgets.QMessageBox.critical(self, "Error", str(e))
+            show_error(self, str(e))
             raise
 
 
@@ -84,14 +117,40 @@ class MainWindow(QtWidgets.QMainWindow):
         CmdMenu()
         FileMenu()
         PathMenu()
+        MenuMenu()
         self._setup_defaults()
         self._setup_menu()
 
     def _setup_defaults(self):
-        self.pane1.set_mouse_bindings({MouseActionKey(MouseButton.LEFT, ClickType.DOUBLE, ()): "time"})
-        self.pane2.set_mouse_bindings({MouseActionKey(MouseButton.MIDDLE, ClickType.SINGLE, ()): "hello"})
-        self.pane1.set_shortcut_bindings({"Ctrl+H": "hello"})
-        self.pane2.set_shortcut_bindings({"Ctrl+T": "time"})
+        from .binding_defaults import default_mouse_bindings
+        defs = default_mouse_bindings()
+        applied1 = {}
+        applied2 = {}
+        try:
+            from .binding_store import MouseBindingStore
+            from pathlib import Path
+            path = str(Path(__file__).resolve().parent / "mouse_bindings.json")
+            store = MouseBindingStore()
+            loaded = store.load_from_file(path)
+            if not loaded:
+                initial: Dict[MouseActionKey, Dict[str, object]] = {}
+                for k, v in defs.items():
+                    initial[k] = {"*": v}
+                store.set_all(initial)
+            data = store.get_all()
+            for key, scopes in data.items():
+                cmd1 = scopes.get("Widget A") or scopes.get("*")
+                cmd2 = scopes.get("Widget B") or scopes.get("*")
+                if cmd1:
+                    applied1[key] = cmd1
+                if cmd2:
+                    applied2[key] = cmd2
+        except Exception:
+            pass
+        self.pane1.set_mouse_bindings(applied1)
+        self.pane2.set_mouse_bindings(applied2)
+        self.pane1.set_shortcut_bindings({})
+        self.pane2.set_shortcut_bindings({})
 
     def _setup_menu(self):
         mb = self.menuBar()

@@ -1,0 +1,16 @@
+{
+  "echo": {
+    "id": "echo",
+    "args": {
+      "text": "echo",
+      "repeat": 1
+    }
+  },
+  "count": {
+    "id": "count",
+    "args": {
+      "value": 1,
+      "step": 8
+    }
+  }
+}

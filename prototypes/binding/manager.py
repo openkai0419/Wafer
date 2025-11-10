@@ -2,14 +2,13 @@ from __future__ import annotations
 from typing import Dict, List, Optional, Any
 from pathlib import Path
 from PySide6 import QtWidgets
-from ..mouseeventmanager import MouseActionKey
-from .store import MouseBindingStore
+from .mouse.mouseeventmanager import MouseActionKey
+from .mouse.store import MouseBindingStore
 from weakref import WeakSet
-
 
 class BindingManager:
     _instance: Optional["BindingManager"] = None
-
+    
     def __init__(self, file_path: Optional[str] = None):
         if file_path:
             self._file = Path(file_path)
@@ -31,7 +30,7 @@ class BindingManager:
         mgr.apply_registered()
         mgr.clear_shortcuts_registered()
         return mgr
-
+    
     def load_or_seed(self, defaults: Dict[MouseActionKey, Any]) -> Dict[MouseActionKey, Dict[str, Any]]:
         loaded = self._store.load_from_file(str(self._file))
         if not loaded:
@@ -40,7 +39,7 @@ class BindingManager:
                 initial[k] = {"*": v}
             self._store.set_all(initial)
         return self._store.get_all()
-
+    
     def apply_mouse_bindings(self, widgets: List[QtWidgets.QWidget]) -> None:
         data = self._store.get_all()
         for w in widgets:
@@ -75,16 +74,5 @@ class BindingManager:
 
     def _scope_of(self, widget: QtWidgets.QWidget) -> str:
         if hasattr(widget, "binding_scope") and callable(getattr(widget, "binding_scope")):
-            try:
-                s = widget.binding_scope()
-                if s:
-                    return str(s)
-            except Exception:
-                pass
-        try:
-            s = widget.objectName()
-            if isinstance(s, str) and s:
-                return s
-        except Exception:
-            pass
-        return widget.__class__.__name__
+            return widget.binding_scope()
+        raise ValueError(f"Widget {widget} does not implement binding_scope()")

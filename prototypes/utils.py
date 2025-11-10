@@ -1,7 +1,8 @@
-from typing import Any, Dict, Union
+from typing import Any, Dict, Union, List
 from pathlib import Path
 import json
 from PySide6 import QtWidgets
+from .command.core import CommandRegistry
 
 def is_json_text(s: str) -> bool:
     if not isinstance(s, str):
@@ -56,3 +57,46 @@ def show_error(parent: QtWidgets.QWidget, text: str, title: str = 'Error') -> No
         QtWidgets.QMessageBox.critical(parent, title, text)
     except Exception:
         pass
+
+def _ordered_arg_values(cid: str, args: Dict[str, Any]) -> List[str]:
+    cls = CommandRegistry().get_command(cid)
+    if not cls:
+        return [str(v) for k, v in args.items()]
+    meta = getattr(cls, "meta", None)
+    out: List[str] = []
+    seen: Dict[str, None] = {}
+    if meta and getattr(meta, "params", None):
+        for p in meta.params:  # type: ignore
+            if p.name in args:
+                out.append(str(args[p.name]))
+                seen[p.name] = None
+    for k in args.keys():
+        if k not in seen:
+            out.append(str(args[k]))
+    return out
+
+def format_payload_display(data: Any) -> str:
+    try:
+        p = normalize_payload_dict(data)
+    except Exception:
+        try:
+            if isinstance(data, str) and is_json_text(data):
+                return data.strip()
+            return str(data)
+        except Exception:
+            return ""
+    cid = p.get('id')
+    args = dict(p.get('args') or {})
+    cls = CommandRegistry().get_command(cid)
+    name = cid
+    if cls and getattr(cls, 'meta', None):
+        try:
+            name = str(getattr(cls.meta, 'display', cid) or cid)
+        except Exception:
+            name = cid
+    if not args:
+        return name
+    vals = _ordered_arg_values(cid, args)
+    if not vals:
+        return name
+    return f"{name} - {' '.join(vals)}"

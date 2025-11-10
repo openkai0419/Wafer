@@ -12,9 +12,9 @@
     "click": "SINGLE",
     "held": [],
     "scopes": {
-      "*": "{\"id\":\"hello\",\"args\":{}}",
-      "Widget A": "{\"id\":\"file.0\",\"args\":{}}",
-      "Widget B": "{\"id\":\"file.1\",\"args\":{}}"
+      "*": "{\"id\":\"Hello\",\"args\":{}}",
+      "Widget A": "{\"id\":\"file 0\",\"args\":{}}",
+      "Widget B": "{\"id\":\"file 1\",\"args\":{}}"
     }
   },
   {
@@ -34,8 +34,9 @@
       "RIGHT"
     ],
     "scopes": {
-      "Widget A": "{\"id\":\"echo\",\"args\":{}}",
-      "Widget B": "{\"id\":\"count\",\"args\":{}}"
+      "*": "{\"id\":\"file.1\",\"args\":{}}",
+      "Widget A": "{\"id\":\"Echo\",\"args\":{}}",
+      "Widget B": "{\"id\":\"Count\",\"args\":{}}"
     }
   },
   {
@@ -45,8 +46,8 @@
       "MIDDLE"
     ],
     "scopes": {
-      "Widget A": "{\"id\":\"echo\",\"args\":{\"text\":\"echo\",\"repeat\":5}}",
-      "Widget B": "{\"id\":\"count\",\"args\":{\"value\":10,\"step\":10}}"
+      "Widget A": "{\"id\":\"Echo - echo 5\",\"args\":{}}",
+      "Widget B": "{\"id\":\"Count - 10 10\",\"args\":{}}"
     }
   },
   {
@@ -54,7 +55,7 @@
     "click": "SINGLE",
     "held": [],
     "scopes": {
-      "*": "{\"id\":\"hello\",\"args\":{}}"
+      "*": "{\"id\":\"Hello\",\"args\":{}}"
     }
   },
   {

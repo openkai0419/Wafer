@@ -3,7 +3,7 @@ from .command.ui import MenuBuilder
 from .menu_demo import *
 from .binding.mixins import CommandBindingMixin
 from .binding.manager import BindingManager
-from .binding.defaults import default_mouse_bindings
+from .binding.mouse.defaults import default_mouse_bindings
 
 
 class DemoPane(QtWidgets.QFrame, CommandBindingMixin):
@@ -28,8 +28,10 @@ class MainWindow(QtWidgets.QMainWindow):
         l = QtWidgets.QHBoxLayout(cw)
         self.pane1 = DemoPane("Widget A", cw)
         self.pane2 = DemoPane("Widget B", cw)
+        self.pane3 = DemoPane("Widget C", cw)
         l.addWidget(self.pane1, 1)
         l.addWidget(self.pane2, 1)
+        l.addWidget(self.pane3, 1)
         self.setCentralWidget(cw)
         
         BindingManager.activate(defaults=default_mouse_bindings())

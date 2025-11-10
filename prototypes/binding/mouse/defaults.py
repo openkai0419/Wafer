@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Dict
-from ..mouseeventmanager import MouseActionKey, MouseButton, ClickType
-from ..utils import to_payload_json
+from .mouseeventmanager import MouseActionKey, MouseButton, ClickType
+from ...utils import to_payload_json
 
 def default_mouse_bindings() -> Dict[MouseActionKey, str]:
     return {

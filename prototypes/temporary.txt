@@ -6,29 +6,57 @@ prototypes 仕様メモ (source ではなく試作コードの設計と意図)
 - prototypes/command/ui.py
 - prototypes/command/state.py
 - prototypes/utils.py
-- prototypes/mouseeventmanager.py
-- prototypes/binding/editors.py
+- prototypes/binding/common.py
+- prototypes/binding/manager.py
+- prototypes/binding/mixins.py
+- prototypes/binding/mouse/mouseeventmanager.py
+- prototypes/binding/mouse/defaults.py
+- prototypes/binding/mouse/editors.py
+- prototypes/binding/mouse/store.py
+- prototypes/binding/key/editors.py
+- prototypes/binding/key/shortcutmanager.py
+- prototypes/demo_app.py
+- prototypes/menu_demo.py
+- ShortcutManager: QWidget に対するキーボードショートカット管理
+  - set_bindings(widget, bindings) / get_bindings(widget): ショートカット設定/取得
 
 command/core.py の要点
-- CommandParam / CommandMeta / CommandBase
-- CommandRegistry: 登録と実行のみ（Undo 削除）
-- create_command_from_callable / register_command_defs
+- CommandParam: name, type, default, description, choices, min_value, max_value, widget_type
+- CommandMeta: id, display, params, hotkey, icon, has_options, checkable, default_checked, func
+- CommandBase: meta 属性と execute(**kwargs) / undo() / call_execute(**kwargs) を持つ基底クラス
+  - call_execute: meta.params に含まれる名前のみ抽出してフィルタ後 execute に渡す
+- CommandRegistry: シングルトン。register でクラス登録、execute で実行、execute_payload で JSON/辞書形式実行
+- create_command_from_meta / register_command_defs: CommandMeta.func を用いてクラス生成（func 無しなら抽象）
 
 command/menu.py の要点
-- _split_parts / _is_sep_token / _sep_path / _is_section_token / _section_parts
-- _chain_providers
-- RegistryBackedMenu: 定義正規化と登録、path_prefix 適用
-- MenuHub: パス集約・フォルダ展開
+- split_parts(raw): "/" で分割しリストを返す
+- is_sep_token(s) / sep_path(s): 末尾が "-" ならセパレータトークン
+- is_section_token(s) / section_parts(s): 末尾が ":" で始まればセクショントークン
+- chain_providers(*providers): 複数の context provider を連鎖して一つの provider に統合
+- prefixed_path / prefixed_item_token: path_prefix 適用ヘルパー
+- normalize_def(base_parts, def): path から id を自動導出し meta.id に設定
+- RegistryBackedMenu: create_definitions() で定義を返すベースクラス
+  - path_prefix を設定可能で相対パス解決
+  - ensure_registered() で登録済みチェック後 register_command_defs と MenuHub.register_paths を実行
+  - __init_subclass__ で自動登録トリガー
+- MenuHub: 全コマンドのパス情報を集約し、フォルダ展開や検索を提供
 
 command/ui.py の要点
-- CommandOptionsDialog: パラメータフォーム生成
-- ボタン: 「実行」「保存」「キャンセル」
-  - 実行: 保存せず実行のみ。ダイアログは閉じない。execute_callback経由で実行
-  - 保存: 実行せず保存のみ。ダイアログを閉じる（Accepted）
-  - キャンセル: 何もしないで閉じる（Rejected）
-- CommandMenuBuilder: 行ウィジェット/セクション/区切り/チェック/オプション
-- CommandMenuRow: 表示専用
-- MenuBuilder: 高レベル一括生成/ポップアップ
+- CommandOptionsDialog: CommandMeta.params に基づきパラメータフォーム生成
+  - 初期値は CommandOptionStore から取得した前回保存 args を反映
+  - binding_mode=True の場合「設定」「キャンセル」ボタン、False の場合「保存」「保存して実行」「キャンセル」
+  - 保存: 入力値を返して Accepted（execute_callback は呼ばない）
+  - 保存して実行: 入力値で execute_callback 呼び出し後 Accepted
+  - 設定: 入力値を返して Accepted
+- CommandMenuBuilder: QMenu 構築の中核
+  - build(parent, command_names, context_provider, display_map, selection_callback): 新規 QMenu 生成
+  - build_into(menu, parent, ...): 既存 QMenu に追加
+  - セクション/区切り/サブメニュー/チェック/オプションダイアログ呼び出しに対応
+  - selection_callback 指定時は選択モード（実行せず ID のみ返す）
+- MenuBuilder: 高レベル API でフォルダ展開と一括メニュー生成
+  - build(tokens) / use(tokens): token 配列からメニュー構築
+  - build_all_roots(): 全ルートフォルダを自動展開
+  - popup_all_roots(anchor, selection_callback, context_provider): ルート展開メニューをポップアップ
 
 オプション編集の永続化
 - CommandOptionStore(prototypes/command/state.py): 統一形式 {id,args} で保存。get() は args のみ返し、get_payload() で {id,args} を取得
@@ -59,7 +87,7 @@ command/ui.py の要点
   - has_options や checkable は選択モードでは無効化（トグルや実行は行わない）
   - MouseBindingEditor は build_all_roots(selection_callback=...) を使い、ツリーからコマンドIDを選ぶ
   引数ラッパ
-  - create_command_from_callable は func をラップし execute(self, **kwargs) で呼び出す（undo 引数は廃止）
+  - create_command_from_meta は meta.func をラップし execute(self, **kwargs) で呼び出す（undo 引数は廃止）
   - meta が存在する場合 call_execute は meta.params に含まれる名前のみ抽出（params 空でもフィルタ実施）
   - params 未定義のコマンドへ追加コンテキスト(kwargs)を渡しても func が受け取らないなら無視され TypeError 回避
   ポップアップ共通化
@@ -98,27 +126,42 @@ RegistryBackedMenu 定義の要点
 
 例
 - class.path_prefix = "commands"
-- defs: {path: "Options/echo", meta: CommandMeta(display="Echo"), func: ...}
+- defs: {path: "Options/echo", meta: CommandMeta(display="Echo", func=...)}
 - items: [":Options", "-", "Options/echo", "-"]
 
-mouseeventmanager.py の要点
+binding/mouse/mouseeventmanager.py の要点
 - ClickType: SINGLE/DOUBLE/WHEEL_UP/WHEEL_DOWN/DRAG_START/DROP
 - MouseButton: LEFT/RIGHT/MIDDLE/X1/X2/NONE
-- MouseActionKey: (button, click_type, held_buttons) で一意なキー。repr は "X1+RIGHT SINGLE" 形式。
-- MouseEventManager: bind/unbind/clear と各種イベントの受け取り→キー生成→アクション実行。
-- MouseEventDispatcher: 任意の QWidget を監視し、ドラッグ開始しきい値検出、ダブルクリック判定、ホイール/ドロップ転送を行う。
+- MouseActionKey: (button, click_type, held_buttons) で一意なキー。repr は "X1+RIGHT SINGLE" 形式
+- MouseEventManager: bind/unbind/clear と各種イベントの受け取り→キー生成→アクション実行
+  - set_resolver(resolver): フォールバックコールバック登録。直接 bind されていないキーを受け取った際に resolver(key, event) を呼び出し
+- MouseEventDispatcher: 任意の QWidget を監視し、ドラッグ開始しきい値検出、ダブルクリック判定、ホイール/ドロップ転送を行う
 
 意図
 - メニュー/コマンドは定義の単一化(create_definitions)と呼出時再構成の両立で拡張容易に。
 - マウス入力はキー合成によりウィジェットごとのバインド差し替えを単純化。
 
-editors.py の要点 (更新: JSON直接表示/保存)
-- WidgetRef: ウィジェット参照ラッパ。
-- MouseBindingEditor: コマンド選択後 has_options=True ならオプション編集し保存で payload {id,args} を保持。表示は常に JSON (dict payload は json.dumps、文字列idはそのまま)。内部は _payloads に辞書、表示テキストは JSON 化された文字列。
-- ShortcutBindingEditor: セル UserRole に payload を保持し表示は JSON。Edit Options で再編集後 JSON 再生成。
+binding/mouse/editors.py の要点
+- MouseBindingEditor: マウスバインド編集ダイアログ
+  - WidgetRef のリストを受け取り、各スコープごとのバインドを編集
+  - コマンド選択後 has_options=True ならオプション編集し、保存で payload {id,args} を保持
+  - 表示は format_payload_display を使用。id から CommandMeta.display を解決し、args があれば値のみをパラメータ順で並べて "<Display> - v1 v2 ..." と表示
+  - OK 押下時に BindingManager.instance().save() で永続化
+- MouseSection: ボタン/クリック/保持ボタンごとにスコープ別の割当を編集セクション
 
-store.py 拡張
-- 値は文字列 id か payload 辞書。resolve はそのまま返す。
+binding/key/editors.py の要点
+- ShortcutBindingEditor: ショートカットバインド編集ダイアログ
+  - WidgetRef のリストとコマンド ID リストを受け取り、各スコープごとのキーボードショートカットを編集
+  - セル UserRole に payload を保持し、表示は format_payload_display を用いた人間可読形式。Edit Options で再編集後 JSON を再生成して保持
+
+binding/common.py
+- WidgetRef: name と widget を保持し、__str__ で name を返す。エディタ用ウィジェット参照ラッパ
+
+binding/mouse/store.py (MouseBindingStore)
+- 値は文字列 id か payload 辞書（JSON 文字列も可）
+- resolve(scope, key): 指定スコープに該当キーのバインドがあればそれを返し、なければ "*" スコープを返す
+- load_from_file(path) / save_to_file(path): 配列形式の JSON で永続化
+- get_all() / set_all(data): 全バインド取得/設定
 
 バインド時引数保持仕様 (更新: JSON統一)
 - 全てのバインド値は JSON 文字列で保持・表示する。
@@ -127,71 +170,92 @@ store.py 拡張
 - MouseBindingEditor は選択時、IDのみの場合でも {id,args:{}} に正規化して保持・表示する。
 - ShortcutBindingEditor は従来通り JSON を保持（基本は専用モードに該当）。
 
-ユーティリティ
-- utils.py
-  - is_json_text(s: str) -> bool
-  - normalize_payload_dict(data: Any) -> {id,args}
-  - to_payload_json(data: Any) -> str
-  - read_json_file(path, default=None) -> Any  存在しない/失敗時は default
-  - write_json_file(path, data, indent=2, ensure_ascii=False) -> bool  成功可否
-  - show_error(parent, text, title="Error") -> QMessageBox.critical の薄いラッパ
+ユーティリティ (utils.py)
+- is_json_text(s: str) -> bool: 文字列が "{...}" 形式かチェック
+- normalize_payload_dict(data: Any) -> {id,args}: 任意形式を {id,args} に正規化。文字列 id のみの場合 args は空辞書
+- to_payload_json(data: Any) -> str: 正規化した payload を JSON 文字列化（ensure_ascii=False, separators 最小化）
+- format_payload_display(data: Any) -> str: {id,args} を人間可読な表示に整形。id から CommandMeta.display を解決し、args があれば params 順で値を連結して "<Display> - v1 v2 ..." を返す。未知 id/解析不可時はフォールバックしてそのままの文字列/JSON を返す
+- read_json_file(path, default=None) -> Any: 存在しない/失敗時は default
+- write_json_file(path, data, indent=2, ensure_ascii=False) -> bool: 成功可否
+- show_error(parent, text, title="Error"): QMessageBox.critical の薄いラッパ
 
 CommandRegistry 拡張
 - execute_payload(data, extra_context=None):
-  - data が JSON 文字列の場合のみ文字列として受け付ける（非JSON文字列IDはエラー）。
-  - 辞書の場合は {id,args} を直接使用。
-  - id と args を抽出し、extra_context を後勝ちでマージして実行。
-  - 従来 execute(name, **kwargs) は内部委譲用として残置。
+  - data が文字列の場合、JSON 形式 "{...}" のみ受け付け（非 JSON 文字列 id はエラー）
+  - data が辞書の場合は {id,args} を直接使用
+  - id と args を抽出し、extra_context を後勝ちでマージして execute() を呼び出し
+  - 従来の execute(name, **kwargs) は内部委譲用として残置
 
-CommandOptionStore 仕様
-- get(id) は JSON 文字列 '{"id":"...","args":{...}}' を返す。
-- get_payload(id) は辞書 {id,args} を返す。
-- 永続化ファイル .command_options.json は indent=2 で整形保存。
+CommandOptionStore 仕様 (command/state.py)
+- シングルトン: __new__ で _instance を共有
+- get(id) は JSON 文字列 '{"id":"...","args":{...}}' を返す
+- get_payload(id) は辞書 {id,args} を返す
+- set(id, options) / set_payload(id, payload): args または payload を {id,args} 形式で保存
+- clear(id=None): id 指定で単一削除、None で全削除
+- 永続化ファイル: prototypes/.command_options.json (indent=2)
 
-mouseeventmanager.py 変更点
-- MouseEventManager に set_resolver(resolver) を追加。直接 bind されていないキーを受け取った際 _resolver(key, event) をフォールバック呼び出し。
+binding/mouse/defaults.py
+- default_mouse_bindings() -> Dict[MouseActionKey, str]: デフォルトマウスバインド定義を返す
+  - RIGHT SINGLE → showContextMenuHere
+  - LEFT SINGLE → hello
 
-demo_app.py 変更点
-- DemoPane に MouseBindingStore 参照と _resolve_fallback を追加し、未バインドキーでも共通または個別スコープ設定済みコマンドを実行可能に。
-- MouseBindingEditor 呼び出しシグネチャ変更 (commands リストは内部選択メニューから取得するため不要)。
- - 初回起動で保存ファイルが存在しない場合、default_mouse_bindings() を MouseBindingStore の "*" スコープにシードし、以降の適用と編集は常に Store 由来の値を用いる。
- - MainWindow の menuBar は直接コマンドID "bindings", "shortcutBindings" を指定し一段構成化。menu_demo.MenuMenu のパスは "bindings", "shortcutBindings" に変更し重複フォルダ "binding" を排除。
+demo_app.py 構成
+- DemoPane(QtWidgets.QFrame, CommandBindingMixin): init に name を必須引数として受け取り init_command_binding(name) を呼び出し
+- provider() をオーバーライドし {"scope": self.binding_scope()} を返す
+- MainWindow: 3つの DemoPane ("Widget A", "Widget B", "Widget C") を横並びで配置
+- BindingManager.activate(defaults=default_mouse_bindings()) で初期化と適用を一括実行
+- メニューバーに MenuBuilder で "binding" フォルダを展開（menu_demo.MenuMenu の定義に依存）
 
-CommandBindingMixin (binding/mixins.py) 追加
+menu_demo.py 構成
+- FileMenu, PathMenu, CmdMenu, ContextMenu, MenuMenu の5つの RegistryBackedMenu を定義
+- MenuMenu.path_prefix = "menu", 配下に "binding/bindings" と "binding/shortcutBindings" を配置
+- MouseBindingEditor 呼び出し時に commands リストは不要（内部で build_all_roots 使用）
+- ContextMenu: カーソル位置のウィジェットから binding_scope() と provider() を取得しメニュー構築
+  - Widget B では build_all_roots() でルートフォルダを自動展開
+  - それ以外では build() で特定のトークン/フォルダ/コマンドを明示的に配置
+
+CommandBindingMixin (binding/mixins.py)
 - 任意 QWidget でコマンド/マウス/ショートカットバインディング機能を共有化
-- init_command_binding(scope_name=None) を呼ぶだけで利用可能。scope_name 未指定時は objectName かクラス名
+- init_command_binding(name) を呼び出し必須。name はバインディングスコープとして使用され、空文字列は ValueError
 - 提供API:
-  - set_binding_scope(name) / binding_scope()
+  - set_binding_scope(name) / binding_scope() : スコープ名の変更と取得
   - set_mouse_bindings(bindings: Dict[MouseActionKey, Any]) / get_mouse_bindings()
   - set_shortcut_bindings(dict) / get_shortcut_bindings()
-  - exec_command(cmd) 明示実行（内部で _exec）
-- DemoPane は QFrame, CommandBindingMixin の多重継承に変更し固有ロジック削減
-- 元 DemoPane 内の _exec, フォールバック解決, バインド正規化処理を Mixin へ移動
-- これにより他の QWidget 実装 (例: QSplitter, QScrollArea 内部ペイン) への再利用が容易
+  - exec_command(cmd, event, key, source, extra) : 外部からのコマンド実行
+  - provider(cmd, event, key, source) : コマンド実行時の追加コンテキスト提供（サブクラスでオーバーライド）
+- 内部動作:
+  - _exec: コマンド実行本体。provider() で取得したコンテキストに extra をマージ
+  - _resolve_fallback: 直接バインドされていないキーで MouseBindingStore からフォールバック解決
+  - JSON 文字列、辞書形式の payload、文字列 id のすべてに対応
+  - args が空辞書の payload は CommandOptionStore から最新引数を取得して実行（共有モード）
+- DemoPane は QFrame, CommandBindingMixin の多重継承で実装
+- 初期化時に BindingManager.instance().register(self) を自動呼び出し（例外は無視）
 
-BindingManager (binding/manager.py) 追加
+BindingManager (binding/manager.py)
 - mouse_bindings.json のロード/初期シード/適用/保存を集約
-- load_or_seed(defaults) : ファイルが無ければ defaults を "*" スコープでシードして Store へ投入
-- apply_mouse_bindings(widgets) : 各ウィジェットの scope 名 (binding_scope() 優先) に応じて最適なコマンドを適用
-- clear_shortcuts(widgets) : 全ショートカット解除
-- save() : 現在の内容をファイルへ書き出し
+- シングルトン化: instance(file_path=None) でインスタンス取得
+- activate(file_path, defaults): load_or_seed → apply_registered → clear_shortcuts_registered の一括実行
+- load_or_seed(defaults): ファイルが存在しなければ defaults を "*" スコープでシードし Store へ投入
+- apply_mouse_bindings(widgets) / apply_registered(): 各ウィジェットの binding_scope() からスコープ名を取得し最適なコマンドを適用
+- clear_shortcuts(widgets) / clear_shortcuts_registered(): 全ショートカット解除
+- register(widget): WeakSet へウィジェット登録（CommandBindingMixin.init_command_binding から自動呼び出し）
+- save(): 現在の Store 内容をファイルへ書き出し
+- _scope_of(widget): binding_scope() が実装されていなければ ValueError（objectName/クラス名フォールバックは廃止）
 - デフォルトパス: prototypes/mouse_bindings.json
-- DemoPane 初期化処理の共通化で MainWindow._setup_defaults は 4 行に縮約
- - シングルトン化と自動登録: BindingManager.instance() を導入し、WeakSet で登録ウィジェットを保持。CommandBindingMixin.init_command_binding() で自動 register。apply_registered()/clear_shortcuts_registered() で一括適用。
+
+永続化ファイル
+- mouse_bindings.json: prototypes/ 直下。MouseBindingEditor で OK 押下時に保存
+  - フォーマット: 配列形式
+    [
+      {"button":"RIGHT","click":"SINGLE","held":[],"scopes":{"*":"{...payload json...}","Widget A":"{...}","Widget B":"{...}"}},
+      ...
+    ]
+  - held は修飾ボタン列（単独時は空配列）
+  - scopes は scope -> payload(JSON文字列) の辞書。"*" がグローバル、ウィジェット名が個別
+  - payload が空 args の JSON なら共有モード（実行時に最新オプションへ差し替え）、args 非空は専用モード（固定）
+- .command_options.json: prototypes/ 直下。CommandOptionStore が管理
+  - フォーマット: {command_id: {id, args}, ...}
 
 注意
-- この仕様は prototypes のみ。source/ の正式実装には影響しない。
-- 試作のため API は変更される可能性がある。
- 
-mouse_bindings.json 永続化 (更新)
-- 保存タイミング: MouseBindingEditor で OK 押下時に現在の全バインドをファイルへ書き出す。
-- 保存場所: prototypes ディレクトリ直下 (prototypes/mouse_bindings.json)。source 移行時に変更予定。
-- フォーマット: 配列形式。
-  [
-    {"button":"RIGHT","click":"SINGLE","held":[],"scopes":{"*":"{...payload json...}","Widget A":"{...}","Widget B":"{...}"}},
-    ...
-  ]
-- held は修飾ボタン列 (単独時は空配列)。
-- scopes は scope->payload(JSON文字列) の辞書。"*" がグローバル、ウィジェット名が個別。
-- 読込: 起動 (_setup_defaults) 時に存在すればロードして各 DemoPane に適用。存在しない場合は default_mouse_bindings() を使用。
-- payload が空 args の JSON なら共有モードとして実行時に最新オプションへ差し替え、args 非空は専用モードとして固定。
+- この仕様は prototypes のみ。source/ の正式実装には影響しない
+- 試作のため API は変更される可能性がある

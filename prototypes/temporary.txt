@@ -5,7 +5,7 @@ prototypes 仕様メモ (source ではなく試作コードの設計と意図)
 - prototypes/command/menu.py
 - prototypes/command/ui.py
 - prototypes/command/state.py
-- prototypes/command/utils.py
+- prototypes/utils.py
 - prototypes/mouseeventmanager.py
 - prototypes/binding/editors.py
 
@@ -14,13 +14,13 @@ command/core.py の要点
 - CommandRegistry: 登録と実行のみ（Undo 削除）
 - create_command_from_callable / register_command_defs
 
-menu/model.py の要点
+command/menu.py の要点
 - _split_parts / _is_sep_token / _sep_path / _is_section_token / _section_parts
 - _chain_providers
 - RegistryBackedMenu: 定義正規化と登録、path_prefix 適用
 - MenuHub: パス集約・フォルダ展開
 
-menu/ui.py の要点
+command/ui.py の要点
 - CommandOptionsDialog: パラメータフォーム生成
 - ボタン: 「実行」「保存」「キャンセル」
   - 実行: 保存せず実行のみ。ダイアログは閉じない。execute_callback経由で実行
@@ -128,7 +128,7 @@ store.py 拡張
 - ShortcutBindingEditor は従来通り JSON を保持（基本は専用モードに該当）。
 
 ユーティリティ
-- command/utils.py
+- utils.py
   - is_json_text(s: str) -> bool
   - normalize_payload_dict(data: Any) -> {id,args}
   - to_payload_json(data: Any) -> str

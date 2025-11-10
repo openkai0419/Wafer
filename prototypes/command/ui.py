@@ -5,7 +5,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from source.lang.manager import TranslatorMixin
 from source.common.funcs import uipx
 from .core import CommandMeta, CommandRegistry
-from .utils import to_payload_json, show_error
+from ..utils import to_payload_json, show_error
 from .menu import (
     split_parts,
     is_sep_token,

@@ -1,8 +1,8 @@
 from __future__ import annotations
 from typing import Any, Dict, Optional, List
 from pathlib import Path
-from .utils import read_json_file, write_json_file
-from .mouseeventmanager import MouseActionKey
+from ..utils import read_json_file, write_json_file
+from ..mouseeventmanager import MouseActionKey
 
 
 class MouseBindingStore:
@@ -27,7 +27,7 @@ class MouseBindingStore:
                 if cmd is None:
                     continue
                 try:
-                    from .utils import to_payload_json, is_json_text
+                    from ..utils import to_payload_json, is_json_text
                     if isinstance(cmd, str) and is_json_text(cmd):
                         dst[scope] = cmd.strip()
                     else:
@@ -49,7 +49,7 @@ class MouseBindingStore:
                     self._map.pop(key, None)
             return
         try:
-            from .utils import to_payload_json, is_json_text
+            from ..utils import to_payload_json, is_json_text
             if isinstance(command, str) and is_json_text(command):
                 norm = command.strip()
             else:
@@ -83,7 +83,7 @@ class MouseBindingStore:
         return r
 
     def load_serializable(self, data: List[Dict[str, Any]]):
-        from .mouseeventmanager import MouseButton, ClickType
+        from ..mouseeventmanager import MouseButton, ClickType
         nm: Dict[MouseActionKey, Dict[str, Any]] = {}
         for e in data:
             try:
@@ -105,7 +105,7 @@ class MouseBindingStore:
                     if cmd is None:
                         continue
                     try:
-                        from .utils import to_payload_json, is_json_text
+                        from ..utils import to_payload_json, is_json_text
                         if isinstance(cmd, str) and is_json_text(cmd):
                             nm[key][sc] = cmd.strip()
                         else:

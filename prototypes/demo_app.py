@@ -2,13 +2,12 @@ from typing import Dict, List, Tuple
 import json
 from PySide6 import QtCore, QtGui, QtWidgets
 from .command.core import CommandRegistry
-from .command.utils import to_payload_json, is_json_text, show_error
+from .utils import to_payload_json, is_json_text, show_error
 from .mouseeventmanager import MouseEventManager, MouseEventDispatcher, MouseActionKey, ClickType, MouseButton
 from .shortcutmanager import ShortcutManager
 from .menu_demo import FileMenu, PathMenu, CmdMenu, MenuMenu
-from .command.ui import MenuBuilder
-from .binding_editors import WidgetRef, MouseBindingEditor, ShortcutBindingEditor
-from .binding_store import MouseBindingStore
+from .binding.binding_editors import WidgetRef, MouseBindingEditor, ShortcutBindingEditor
+from .binding.binding_store import MouseBindingStore
 
 
 class DemoPane(QtWidgets.QFrame):
@@ -122,12 +121,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self._setup_menu()
 
     def _setup_defaults(self):
-        from .binding_defaults import default_mouse_bindings
+        from .binding.binding_defaults import default_mouse_bindings
         defs = default_mouse_bindings()
         applied1 = {}
         applied2 = {}
         try:
-            from .binding_store import MouseBindingStore
+            from .binding.binding_store import MouseBindingStore
             from pathlib import Path
             path = str(Path(__file__).resolve().parent / "mouse_bindings.json")
             store = MouseBindingStore()

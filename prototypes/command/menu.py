@@ -128,6 +128,14 @@ class RegistryBackedMenu:
     def __init__(self):
         self.ensure_registered()
 
+    def __init_subclass__(cls):
+        super().__init_subclass__()
+        if cls not in RegistryBackedMenu._flags:
+            try:
+                cls()
+            except Exception:
+                pass
+
     def ensure_registered(self):
         t = type(self)
         if self._flags.get(t, False):
@@ -178,7 +186,7 @@ class RegistryBackedMenu:
         except Exception:
             pass
         self._flags[t] = True
-        
+
     def create_definitions(self) -> Any:
         return []
 

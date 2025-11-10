@@ -3,7 +3,7 @@ from .command.core import CommandMeta, CommandParam, CommandRegistry
 from .command.menu import RegistryBackedMenu
 from datetime import datetime
 from .command.ui import MenuBuilder
-from .binding_editors import WidgetRef, MouseBindingEditor, ShortcutBindingEditor
+from .binding.editors import WidgetRef, MouseBindingEditor, ShortcutBindingEditor
 
 
 class FileMenu(RegistryBackedMenu):
@@ -43,7 +43,7 @@ class CmdMenu(RegistryBackedMenu):
     def create_definitions(self):
         return [
             ":Commands",
-            {"path": "hello", "meta": CommandMeta(display="Hello", params=[CommandParam(name="widget", type=str, default="", description="Widget")]), "func": lambda widget="": print(f"hello from {widget}")},
+            {"path": "hello", "meta": CommandMeta(display="Hello", params=[CommandParam(name="scope", type=str, default="", description="scope")]), "func": lambda scope="": print(f"hello from {scope}")},
             {"path": "time", "meta": CommandMeta(display="Show Time"), "func": lambda: print(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))},
             "-",
             ":Options",
@@ -54,6 +54,32 @@ class CmdMenu(RegistryBackedMenu):
             {"path": "Toggle/toggleVerbose", "meta": CommandMeta(display="Verbose Mode", checkable=True, default_checked=False, params=[CommandParam(name="checked", type=bool, default=False)]), "func": lambda checked=False: print("verbose on" if checked else "verbose off")},
         ]
 
+class ContextMenu(RegistryBackedMenu):
+    path_prefix = "context"
+
+    def _show_context_menu_here(self):
+        pos = QtGui.QCursor.pos()
+        w = QtWidgets.QApplication.widgetAt(pos)
+        if w is None:
+            return
+        target = w
+        while target and not hasattr(target,"binding_scope"):
+            target = target.parentWidget()
+        scope = str(target.binding_scope()) if hasattr(target, "binding_scope") and callable(getattr(target, "binding_scope")) else ""
+        provider = target.provider if hasattr(target, "provider") and callable(getattr(target, "provider")) else None
+        if scope == "Widget B":
+            m = MenuBuilder(target, context_provider=provider).build_all_roots()
+        else:
+            b = MenuBuilder(target, context_provider=provider)
+            b.build([":Menu", "-", "commands/:Test", "commands/-", "commands", "-", "file", "path", "Temp", "path.1", "Options"]) 
+            m = b.menu
+        m.exec(pos)
+
+    def create_definitions(self):
+        return [
+            ":ContextMenu",
+            {"path": "showContextMenuHere", "meta": CommandMeta(display="Show Context Menu Here"), "func": self._show_context_menu_here},
+        ]
 
 class MenuMenu(RegistryBackedMenu):
     path_prefix = "menu"
@@ -82,30 +108,9 @@ class MenuMenu(RegistryBackedMenu):
         dlg = ShortcutBindingEditor(ws, cmds)
         dlg.exec()
 
-    def _show_context_menu_here(self):
-        pos = QtGui.QCursor.pos()
-        w = QtWidgets.QApplication.widgetAt(pos)
-        if w is None:
-            return
-        target = w
-        while target is not None and not hasattr(target, "name"):
-            target = target.parentWidget()
-        if target is None:
-            target = w
-        name = getattr(target, "name", "") if target is not None else ""
-        provider = (lambda: {"widget": name}) if name else None
-        if name == "Widget B":
-            m = MenuBuilder(target, context_provider=provider).build_all_roots()
-        else:
-            b = MenuBuilder(target, context_provider=provider)
-            b.build([":Menu", "-", "commands/:Test", "commands/-", "commands", "-", "file", "path", "Temp", "path.1", "Options"]) 
-            m = b.menu
-        m.exec(pos)
-
     def create_definitions(self):
         return [
             ":Menu",
-            {"path": "showContextMenuHere", "meta": CommandMeta(display="Show Context Menu Here"), "func": self._show_context_menu_here},
-            {"path": "bindings", "meta": CommandMeta(display="Mouse Bindings..."), "func": self._open_mouse_binding_editor},
-            {"path": "shortcutBindings", "meta": CommandMeta(display="Shortcut Bindings..."), "func": self._open_shortcut_binding_editor},
+            {"path": "binding/bindings", "meta": CommandMeta(display="Mouse Bindings..."), "func": self._open_mouse_binding_editor},
+            {"path": "binding/shortcutBindings", "meta": CommandMeta(display="Shortcut Bindings..."), "func": self._open_shortcut_binding_editor},
         ]

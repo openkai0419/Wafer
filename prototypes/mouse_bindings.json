@@ -1,0 +1,52 @@
+[
+  {
+    "button": "RIGHT",
+    "click": "SINGLE",
+    "held": [],
+    "scopes": {
+      "*": "{\"id\":\"showContextMenuHere\",\"args\":{}}"
+    }
+  },
+  {
+    "button": "LEFT",
+    "click": "SINGLE",
+    "held": [],
+    "scopes": {
+      "*": "{\"id\":\"hello\",\"args\":{}}",
+      "Widget A": "{\"id\":\"file.0\",\"args\":{}}",
+      "Widget B": "{\"id\":\"file.1\",\"args\":{}}"
+    }
+  },
+  {
+    "button": "RIGHT",
+    "click": "SINGLE",
+    "held": [
+      "X1"
+    ],
+    "scopes": {
+      "*": "{\"id\":\"hello\",\"args\":{}}"
+    }
+  },
+  {
+    "button": "LEFT",
+    "click": "SINGLE",
+    "held": [
+      "RIGHT"
+    ],
+    "scopes": {
+      "Widget A": "{\"id\":\"echo\",\"args\":{}}",
+      "Widget B": "{\"id\":\"count\",\"args\":{}}"
+    }
+  },
+  {
+    "button": "LEFT",
+    "click": "SINGLE",
+    "held": [
+      "MIDDLE"
+    ],
+    "scopes": {
+      "Widget A": "{\"id\":\"echo\",\"args\":{\"text\":\"echo\",\"repeat\":5}}",
+      "Widget B": "{\"id\":\"count\",\"args\":{\"value\":10,\"step\":10}}"
+    }
+  }
+]

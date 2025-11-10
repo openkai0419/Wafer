@@ -188,7 +188,7 @@ class MouseBindingEditor(QtWidgets.QDialog):
                         bindings[key] = cmd_widget
                 wref.widget.set_mouse_bindings(bindings)
         try:
-            path = str(Path(__file__).resolve().parent / "mouse_bindings.json")
+            path = str(Path(__file__).resolve().parent.parent / "mouse_bindings.json")
             self._store.save_to_file(path)
         except Exception:
             pass
@@ -227,7 +227,6 @@ class MouseBindingEditor(QtWidgets.QDialog):
                     self._draft[k] = {"*": defs[k]}
                 else:
                     self._draft[k] = {}
-            # 再描画時に既存セクションの古い値を上書きしないため save をスキップ
             self._reload_sections(skip_save=True)
         except Exception:
             pass

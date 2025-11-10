@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 from pathlib import Path
 import json
-from .utils import to_payload_json, read_json_file, write_json_file
+from ..utils import to_payload_json, read_json_file, write_json_file
 
 
 class CommandOptionStore:

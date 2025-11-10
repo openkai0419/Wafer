@@ -2,7 +2,7 @@ from typing import Any, Dict, List
 import json
 from PySide6 import QtCore, QtGui, QtWidgets
 from .command.core import CommandRegistry
-from .command.utils import to_payload_json, is_json_text, show_error
+from .utils import to_payload_json, is_json_text, show_error
 
 
 class ShortcutManager:

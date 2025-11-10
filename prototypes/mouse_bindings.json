@@ -34,7 +34,7 @@
       "RIGHT"
     ],
     "scopes": {
-      "*": "{\"id\":\"file.1\",\"args\":{}}",
+      "*": "{\"id\":\"file 1\",\"args\":{}}",
       "Widget A": "{\"id\":\"Echo\",\"args\":{}}",
       "Widget B": "{\"id\":\"Count\",\"args\":{}}"
     }

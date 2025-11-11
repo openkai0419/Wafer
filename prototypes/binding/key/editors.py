@@ -3,7 +3,7 @@ import json
 from PySide6 import QtCore, QtWidgets
 from ...command.core import CommandRegistry
 from ...command.ui import CommandOptionsDialog
-from ...utils import to_payload_json, format_payload_display
+from ...utils import format_payload_display, CommandPayload
 from ..common import WidgetRef
 
 class ShortcutBindingEditor(QtWidgets.QDialog):
@@ -64,21 +64,11 @@ class ShortcutBindingEditor(QtWidgets.QDialog):
         r = self.table.rowCount()
         self.table.insertRow(r)
         self.table.setItem(r, 0, QtWidgets.QTableWidgetItem(seq))
-        # payload_json: str, disp: str
-        if isinstance(cmd, dict) and "id" in cmd:
-            try:
-                payload_json = to_payload_json(cmd)
-            except Exception:
-                payload_json = str(cmd)
-        else:
-            txt = str(cmd)
-            try:
-                payload_json = to_payload_json({"id": txt, "args": {}})
-            except Exception:
-                payload_json = txt
-        disp = self._display(payload_json)
+        if not isinstance(cmd, CommandPayload):
+            raise TypeError("ShortcutBindingEditor expects CommandPayload")
+        disp = self._display(cmd)
         self.table.setItem(r, 1, QtWidgets.QTableWidgetItem(disp))
-        self.table.item(r, 1).setData(QtCore.Qt.UserRole, payload_json)
+        self.table.item(r, 1).setData(QtCore.Qt.UserRole, cmd)
     def _add(self):
         seq = self.edit_seq.keySequence().toString()
         cmd = self.box_cmd.currentData()
@@ -87,19 +77,11 @@ class ShortcutBindingEditor(QtWidgets.QDialog):
         r = self.table.rowCount()
         self.table.insertRow(r)
         self.table.setItem(r, 0, QtWidgets.QTableWidgetItem(seq))
-        if isinstance(cmd, dict) and "id" in cmd:
-            try:
-                payload_json = to_payload_json(cmd)
-            except Exception:
-                payload_json = str(cmd)
-        else:
-            try:
-                payload_json = to_payload_json({"id": str(cmd), "args": {}})
-            except Exception:
-                payload_json = str(cmd)
-        disp = self._display(payload_json)
+        if not isinstance(cmd, CommandPayload):
+            raise TypeError("ShortcutBindingEditor expects CommandPayload")
+        disp = self._display(cmd)
         self.table.setItem(r, 1, QtWidgets.QTableWidgetItem(disp))
-        self.table.item(r, 1).setData(QtCore.Qt.UserRole, payload_json)
+        self.table.item(r, 1).setData(QtCore.Qt.UserRole, cmd)
         self.edit_seq.clear()
     def _edit_selected_options(self):
         rows = sorted({i.row() for i in self.table.selectedIndexes()})
@@ -107,15 +89,10 @@ class ShortcutBindingEditor(QtWidgets.QDialog):
             return
         reg = CommandRegistry()
         for r in rows:
-            raw = self.table.item(r, 1).text().strip()
-            cmd = raw
-            try:
-                if raw.startswith("{") and raw.endswith("}"):
-                    d = json.loads(raw)
-                    if isinstance(d, dict) and "id" in d:
-                        cmd = str(d.get("id"))
-            except Exception:
-                pass
+            data = self.table.item(r, 1).data(QtCore.Qt.UserRole)
+            if not isinstance(data, CommandPayload):
+                raise TypeError("Shortcut payload must be CommandPayload")
+            cmd = data.id
             cls = reg.get_command(cmd)
             if not cls:
                 continue
@@ -124,14 +101,10 @@ class ShortcutBindingEditor(QtWidgets.QDialog):
                 continue
             dlg = CommandOptionsDialog(cls, self, binding_mode=True)
             if dlg.exec() == QtWidgets.QDialog.Accepted and dlg.did_save():
-                payload_dict = {"id": cmd, "args": dlg.get_values()}
-                try:
-                    payload_json = to_payload_json(payload_dict)
-                except Exception:
-                    payload_json = str(payload_dict)
-                disp = self._display(payload_json)
+                payload = {"id": cmd, "args": dlg.get_values()}
+                disp = self._display(payload)
                 self.table.setItem(r, 1, QtWidgets.QTableWidgetItem(disp))
-                self.table.item(r, 1).setData(QtCore.Qt.UserRole, payload_json)
+                self.table.item(r, 1).setData(QtCore.Qt.UserRole, payload)
     def _del(self):
         for idx in sorted({i.row() for i in self.table.selectedIndexes()}, reverse=True):
             self.table.removeRow(idx)
@@ -140,13 +113,12 @@ class ShortcutBindingEditor(QtWidgets.QDialog):
         if not isinstance(wref, WidgetRef):
             self.reject()
             return
-        bindings: Dict[str, object] = {}
+        bindings: Dict[str, CommandPayload] = {}
         for r in range(self.table.rowCount()):
             seq = self.table.item(r, 0).text().strip()
-            text = self.table.item(r, 1).text().strip()
-            if seq and text:
-                payload = self.table.item(r, 1).data(QtCore.Qt.UserRole)
-                bindings[seq] = payload if payload else text
+            data = self.table.item(r, 1).data(QtCore.Qt.UserRole)
+            if seq and isinstance(data, CommandPayload):
+                bindings[seq] = data
         wref.widget.set_shortcut_bindings(bindings)
         self.accept()
     def _display(self, value: Any) -> str:

@@ -1,37 +1,43 @@
-from typing import Any, Dict, Union, List
+from typing import Any, Dict, Union, List, Optional
 from pathlib import Path
 import json
 from PySide6 import QtWidgets
-from .command.core import CommandRegistry
 
-def is_json_text(s: str) -> bool:
-    if not isinstance(s, str):
-        return False
-    t = s.strip()
-    return t.startswith('{') and t.endswith('}')
+class CommandPayload:
+    def __init__(self, id: str, args: Optional[Dict[str, Any]] = None):
+        if not isinstance(id, str) or not id:
+            raise ValueError('id must be non-empty string')
+        a = args or {}
+        if not isinstance(a, dict):
+            raise TypeError('args must be dict')
+        self.id = id
+        self.args = dict(a)
+    def to_dict(self) -> Dict[str, Any]:
+        return {'id': self.id, 'args': dict(self.args)}
+    def to_json(self) -> str:
+        return json.dumps(self.to_dict(), ensure_ascii=False, separators=(',', ':'))
+    @staticmethod
+    def from_dict(d: Dict[str, Any]) -> 'CommandPayload':
+        if not isinstance(d, dict) or 'id' not in d:
+            raise TypeError('payload dict must contain id')
+        return CommandPayload(str(d.get('id')), dict(d.get('args') or {}))
+    @staticmethod
+    def from_json(s: str) -> 'CommandPayload':
+        try:
+            return CommandPayload.from_dict(json.loads(s))
+        except Exception as e:
+            raise TypeError('invalid json text') from e
+    @staticmethod
+    def from_any(v: Any) -> 'CommandPayload':
+        if isinstance(v, CommandPayload):
+            return v
+        if isinstance(v, dict):
+            return CommandPayload.from_dict(v)
+        raise TypeError('CommandPayload required')
 
-def normalize_payload_dict(data: Any) -> Dict[str, Any]:
-    if isinstance(data, dict):
-        cid = str(data.get('id')) if 'id' in data else None
-        args = dict(data.get('args') or {}) if 'args' in data else {}
-        if not cid:
-            raise ValueError('Payload missing id')
-        return {'id': cid, 'args': args}
-    if isinstance(data, str):
-        if is_json_text(data):
-            v = json.loads(data)
-            return normalize_payload_dict(v)
-        s = data.strip()
-        if not s:
-            raise ValueError('Empty command id')
-        return {'id': s, 'args': {}}
-    raise ValueError('Unsupported payload type')
+ 
 
-def to_payload_json(data: Any) -> str:
-    if isinstance(data, str) and is_json_text(data):
-        return data.strip()
-    p = normalize_payload_dict(data)
-    return json.dumps(p, ensure_ascii=False, separators=(',', ':'))
+ 
 
 def read_json_file(path: Union[str, Path], default: Any = None) -> Any:
     try:
@@ -59,6 +65,7 @@ def show_error(parent: QtWidgets.QWidget, text: str, title: str = 'Error') -> No
         pass
 
 def _ordered_arg_values(cid: str, args: Dict[str, Any]) -> List[str]:
+    from .command.core import CommandRegistry
     cls = CommandRegistry().get_command(cid)
     if not cls:
         return [str(v) for k, v in args.items()]
@@ -77,16 +84,15 @@ def _ordered_arg_values(cid: str, args: Dict[str, Any]) -> List[str]:
 
 def format_payload_display(data: Any) -> str:
     try:
-        p = normalize_payload_dict(data)
+        p = CommandPayload.from_any(data)
     except Exception:
         try:
-            if isinstance(data, str) and is_json_text(data):
-                return data.strip()
             return str(data)
         except Exception:
             return ""
-    cid = p.get('id')
-    args = dict(p.get('args') or {})
+    cid = p.id
+    args = dict(p.args or {})
+    from .command.core import CommandRegistry
     cls = CommandRegistry().get_command(cid)
     name = cid
     if cls and getattr(cls, 'meta', None):

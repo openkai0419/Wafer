@@ -5,7 +5,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from source.lang.manager import TranslatorMixin
 from source.common.funcs import uipx
 from .core import CommandMeta, CommandRegistry
-from ..utils import to_payload_json, show_error
+from ..utils import show_error, CommandPayload
 from .menu import (
     split_parts,
     is_sep_token,
@@ -24,8 +24,8 @@ class CommandOptionsDialog(QtWidgets.QDialog, TranslatorMixin):
         self.command_class = command_class
         self.widgets: Dict[str, QtWidgets.QWidget] = {}
         store = CommandOptionStore()
-        payload = store.get_payload(getattr(self.command_class.meta, "id", ""))
-        self._initial: Dict[str, Any] = dict(payload.get("args") or {})
+        payload = store.get(getattr(self.command_class.meta, "id", ""))
+        self._initial = dict(payload.args or {})
         self._execute_callback = execute_callback
         self._did_save = False
         self._binding_mode = bool(binding_mode)
@@ -69,37 +69,37 @@ class CommandOptionsDialog(QtWidgets.QDialog, TranslatorMixin):
                 combo.addItem(str(choice), choice)
             base = self._initial.get(param.name, param.default)
             if base is not None:
-                index = combo.findData(base)
-                if index >= 0:
-                    combo.setCurrentIndex(index)
+                idx = combo.findData(base)
+                if idx >= 0:
+                    combo.setCurrentIndex(idx)
             return combo
-        if param.type == bool:
-            checkbox = QtWidgets.QCheckBox()
-            base = self._initial.get(param.name, param.default)
-            checkbox.setChecked(bool(base))
-            return checkbox
-        if param.type == int:
-            spinbox = QtWidgets.QSpinBox()
+        def make_bool():
+            w = QtWidgets.QCheckBox()
+            w.setChecked(bool(self._initial.get(param.name, param.default)))
+            return w
+        def make_int():
+            w = QtWidgets.QSpinBox()
             if param.min_value is not None:
-                spinbox.setMinimum(param.min_value)
+                w.setMinimum(param.min_value)
             if param.max_value is not None:
-                spinbox.setMaximum(param.max_value)
-            base = self._initial.get(param.name, param.default)
-            spinbox.setValue(int(base or 0))
-            return spinbox
-        if param.type == float:
-            spinbox = QtWidgets.QDoubleSpinBox()
+                w.setMaximum(param.max_value)
+            w.setValue(int(self._initial.get(param.name, param.default) or 0))
+            return w
+        def make_float():
+            w = QtWidgets.QDoubleSpinBox()
             if param.min_value is not None:
-                spinbox.setMinimum(param.min_value)
+                w.setMinimum(param.min_value)
             if param.max_value is not None:
-                spinbox.setMaximum(param.max_value)
-            base = self._initial.get(param.name, param.default)
-            spinbox.setValue(float(base or 0.0))
-            return spinbox
-        lineedit = QtWidgets.QLineEdit()
-        base = self._initial.get(param.name, param.default)
-        lineedit.setText(str(base or ""))
-        return lineedit
+                w.setMaximum(param.max_value)
+            w.setValue(float(self._initial.get(param.name, param.default) or 0.0))
+            return w
+        def make_str():
+            w = QtWidgets.QLineEdit()
+            w.setText(str(self._initial.get(param.name, param.default) or ""))
+            return w
+        factories = {bool: make_bool, int: make_int, float: make_float}
+        f = factories.get(param.type, make_str)
+        return f()
 
     def get_values(self) -> Dict[str, Any]:
         values = {}
@@ -164,11 +164,11 @@ class CommandMenuBuilder(TranslatorMixin):
             return target_menu, text_override
         return target_menu, None
 
-    def build(self, parent: QtWidgets.QWidget, command_names: List[str], context_provider: Optional[Callable[[], Dict[str, Any]]] = None, display_map: Optional[Dict[str, str]] = None, selection_callback: Optional[Callable[[str], None]] = None) -> QtWidgets.QMenu:
+    def build(self, parent: QtWidgets.QWidget, command_names: List[str], context_provider: Optional[Callable[[], Dict[str, Any]]] = None, display_map: Optional[Dict[str, str]] = None, selection_callback: Optional[Callable[[Any], None]] = None) -> QtWidgets.QMenu:
         menu = QtWidgets.QMenu(parent)
         return self.build_into(menu, parent, command_names, context_provider, display_map, selection_callback)
 
-    def build_into(self, menu: QtWidgets.QMenu, parent: QtWidgets.QWidget, command_names: List[str], context_provider: Optional[Callable[[], Dict[str, Any]]] = None, display_map: Optional[Dict[str, str]] = None, selection_callback: Optional[Callable[[str], None]] = None, allow_options_with_selection: bool = False) -> QtWidgets.QMenu:
+    def build_into(self, menu: QtWidgets.QMenu, parent: QtWidgets.QWidget, command_names: List[str], context_provider: Optional[Callable[[], Dict[str, Any]]] = None, display_map: Optional[Dict[str, str]] = None, selection_callback: Optional[Callable[[Any], None]] = None, allow_options_with_selection: bool = False) -> QtWidgets.QMenu:
         menus_cache: Dict[str, QtWidgets.QMenu] = {}
         for name in command_names:
             if is_sep_token(name):
@@ -198,7 +198,7 @@ class CommandMenuBuilder(TranslatorMixin):
             self._add_entry(target_menu, parent, command_id, meta, context_provider, bool(meta.has_options) if (allow_options_with_selection or not selection_callback) else False, text_override, selection_callback, allow_options_with_selection)
         return menu
 
-    def _add_entry(self, menu: QtWidgets.QMenu, parent: QtWidgets.QWidget, name: str, meta: CommandMeta, context_provider: Optional[Callable[[], Dict[str, Any]]], with_options: bool, text_override: Optional[str], selection_callback: Optional[Callable[[str], None]] = None, allow_options_with_selection: bool = False):
+    def _add_entry(self, menu: QtWidgets.QMenu, parent: QtWidgets.QWidget, name: str, meta: CommandMeta, context_provider: Optional[Callable[[], Dict[str, Any]]], with_options: bool, text_override: Optional[str], selection_callback: Optional[Callable[[Any], None]] = None, allow_options_with_selection: bool = False):
         text = text_override or self.t.tr(meta.display)
         widget_action = QtWidgets.QWidgetAction(parent)
         widget_action.setData(name)
@@ -222,10 +222,11 @@ class CommandMenuBuilder(TranslatorMixin):
             main_area.mouseReleaseEvent = _row_click_any
         menu.addAction(widget_action)
 
-    def _select_and_close_menu(self, name: str, menu: QtWidgets.QMenu, callback: Callable[[str], None]):
+    def _select_and_close_menu(self, name: str, menu: QtWidgets.QMenu, callback: Callable[[Any], None]):
         menu.close()
         try:
-            callback(name)
+            payload = CommandPayload(name, {})
+            callback(payload)
         except Exception:
             pass
 
@@ -264,11 +265,11 @@ class CommandMenuBuilder(TranslatorMixin):
         menu.close()
         self._execute(name, provider)
 
-    def _show_options_and_close_menu(self, command_name: str, parent: QtWidgets.QWidget, context_provider: Optional[Callable[[], Dict[str, Any]]], menu: QtWidgets.QMenu, selection_callback: Optional[Callable[[str], None]] = None):
+    def _show_options_and_close_menu(self, command_name: str, parent: QtWidgets.QWidget, context_provider: Optional[Callable[[], Dict[str, Any]]], menu: QtWidgets.QMenu, selection_callback: Optional[Callable[[Any], None]] = None):
         menu.close()
         self._show_options(command_name, parent, context_provider, selection_callback)
 
-    def _show_options(self, command_name: str, parent: QtWidgets.QWidget, context_provider: Optional[Callable[[], Dict[str, Any]]], selection_callback: Optional[Callable[[str], None]] = None):
+    def _show_options(self, command_name: str, parent: QtWidgets.QWidget, context_provider: Optional[Callable[[], Dict[str, Any]]], selection_callback: Optional[Callable[[Any], None]] = None):
         command_class = self.registry.get_command(command_name)
         if not command_class:
             return
@@ -289,34 +290,30 @@ class CommandMenuBuilder(TranslatorMixin):
                     pass
             if callable(selection_callback):
                 try:
-                    payload = to_payload_json({"id": command_name, "args": options})
-                    selection_callback(payload)
+                    selection_callback(CommandPayload(command_name, options))
                 except Exception:
-                    selection_callback(command_name)
+                    selection_callback(CommandPayload(command_name, {}))
         else:
             if callable(selection_callback):
-                try:
-                    selection_callback(to_payload_json({"id": command_name, "args": {}}))
-                except Exception:
-                    selection_callback(command_name)
+                selection_callback(CommandPayload(command_name, {}))
 
     def _execute(self, name: str, provider: Optional[Callable[[], Dict[str, Any]]] ):
-        base_json = ""
+        args: Dict[str, Any] = {}
         try:
-            base_json = CommandOptionStore().get(name)
+            stored = CommandOptionStore().get(name)
+            if stored:
+                args.update(dict(stored.args or {}))
         except Exception:
-            base_json = ""
-        ctx = {}
+            pass
         if provider:
             try:
                 cur = provider() or {}
                 if isinstance(cur, dict):
-                    ctx.update(cur)
+                    args.update(cur)
             except Exception:
                 pass
         try:
-            data = base_json if base_json else to_payload_json({"id": name, "args": {}})
-            self.registry.execute_payload(data, ctx)
+            self.registry.execute(name, **args)
         except Exception as e:
             show_error(None, str(e), self.t.tr("Error"))
 
@@ -458,13 +455,13 @@ class MenuBuilder:
             return "/".join(p)
         return n
 
-    def _build_into(self, names: List[str], selection_callback: Optional[Callable[[str], None]], context_provider: Optional[Callable[[], Dict[str, Any]]], allow_options_with_selection: bool) -> QtWidgets.QMenu:
+    def _build_into(self, names: List[str], selection_callback: Optional[Callable[[Any], None]], context_provider: Optional[Callable[[], Dict[str, Any]]], allow_options_with_selection: bool) -> QtWidgets.QMenu:
         if names:
             ctx = chain_providers(self._ctx, context_provider)
             self._builder.build_into(self._menu, self._menu, names, context_provider=ctx, display_map=None, selection_callback=selection_callback, allow_options_with_selection=allow_options_with_selection)
         return self._menu
 
-    def build(self, items: List[str], selection_callback: Optional[Callable[[str], None]] = None, context_provider: Optional[Callable[[], Dict[str, Any]]] = None, allow_options_with_selection: bool = False) -> QtWidgets.QMenu:
+    def build(self, items: List[str], selection_callback: Optional[Callable[[Any], None]] = None, context_provider: Optional[Callable[[], Dict[str, Any]]] = None, allow_options_with_selection: bool = False) -> QtWidgets.QMenu:
         self._menu.clear()
         all_names: List[str] = []
         seen: set[str] = set()
@@ -540,7 +537,7 @@ class MenuBuilder:
         self._menu.setTitle(t[-1] if t else s)
         return self._menu
 
-    def build_all_roots(self, selection_callback: Optional[Callable[[str], None]] = None, context_provider: Optional[Callable[[], Dict[str, Any]]] = None, allow_options_with_selection: bool = False) -> QtWidgets.QMenu:
+    def build_all_roots(self, selection_callback: Optional[Callable[[Any], None]] = None, context_provider: Optional[Callable[[], Dict[str, Any]]] = None, allow_options_with_selection: bool = False) -> QtWidgets.QMenu:
         roots: List[str] = []
         seen = set()
         for items in self._hub._menu_items.values():
@@ -559,7 +556,7 @@ class MenuBuilder:
             raise ValueError("No top-level menus registered")
         return self.build(roots, selection_callback=selection_callback, context_provider=context_provider, allow_options_with_selection=allow_options_with_selection)
 
-    def popup_all_roots(self, anchor: QtWidgets.QWidget, selection_callback: Callable[[str], None], context_provider: Optional[Callable[[], Dict[str, Any]]] = None, prepare: Optional[Callable[[QtWidgets.QMenu], None]] = None, allow_options_with_selection: bool = False) -> None:
+    def popup_all_roots(self, anchor: QtWidgets.QWidget, selection_callback: Callable[[Any], None], context_provider: Optional[Callable[[], Dict[str, Any]]] = None, prepare: Optional[Callable[[QtWidgets.QMenu], None]] = None, allow_options_with_selection: bool = False) -> None:
         menu = self.build_all_roots(selection_callback=selection_callback, context_provider=context_provider, allow_options_with_selection=allow_options_with_selection)
         if callable(prepare):
             try:

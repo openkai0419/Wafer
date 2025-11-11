@@ -5,7 +5,7 @@ from .mouseeventmanager import MouseActionKey, ClickType, MouseButton
 from ...command.ui import MenuBuilder, CommandOptionsDialog
 from ...command.core import CommandRegistry
 from .store import MouseBindingStore
-from ...utils import to_payload_json, is_json_text, show_error, format_payload_display
+from ...utils import show_error, format_payload_display, CommandPayload
 from ..common import WidgetRef
 
 class MouseBindingEditor(QtWidgets.QDialog):
@@ -243,7 +243,7 @@ class MouthSection(QtWidgets.QGroupBox):
         self.overrides_layout.setContentsMargins(4,4,4,4)
         self.overrides_layout.setSpacing(6)
         self.override_edits: Dict[str, QtWidgets.QLineEdit] = {}
-        self._payloads: Dict[str, object] = {}
+        self._payloads: Dict[str, CommandPayload] = {}
         self.list_order: List[str] = []
         l.addWidget(self.overrides_container)
         self.overrides_container.setVisible(False)
@@ -258,7 +258,7 @@ class MouthSection(QtWidgets.QGroupBox):
         if self.held_button == self.button:
             return "★ 単独での機能"
         return f"{self.held_button.name} 押しながら"
-    def load_from_data(self, data: Dict[MouseActionKey, Dict[str,object]]):
+    def load_from_data(self, data: Dict[MouseActionKey, Dict[str,CommandPayload]]):
         self.global_edit.clear()
         for e in self.override_edits.values():
             e.clear()
@@ -270,19 +270,17 @@ class MouthSection(QtWidgets.QGroupBox):
             if tuple(key.held_buttons) != (self.held_button,) and not (self.held_button == self.button and not key.held_buttons):
                 continue
             if "*" in scopes:
-                v = scopes.get("*", "")
-                if isinstance(v, dict) and "id" in v:
-                    found["*"] = str(v.get("id"))
-                    self._payloads["*"] = v
-                else:
-                    found["*"] = str(v or "")
+                v = scopes.get("*", None)
+                if not isinstance(v, CommandPayload):
+                    raise TypeError("Mouse binding payload must be CommandPayload")
+                found["*"] = v.id
+                self._payloads["*"] = v
             for scope, cmd in scopes.items():
                 if scope != "*" and cmd:
-                    if isinstance(cmd, dict) and "id" in cmd:
-                        found[scope] = str(cmd.get("id"))
-                        self._payloads[scope] = cmd
-                    else:
-                        found[scope] = str(cmd)
+                    if not isinstance(cmd, CommandPayload):
+                        raise TypeError("Mouse binding payload must be CommandPayload")
+                    found[scope] = cmd.id
+                    self._payloads[scope] = cmd
         self._rebuild_overrides_entries(found)
         g = found.get("*")
         if g:
@@ -321,17 +319,9 @@ class MouthSection(QtWidgets.QGroupBox):
                 self.overrides_container.setVisible(False)
             self._refresh_overrides_menu()
             return
-        dedicated = None
-        try:
-            if isinstance(cid, str) and cid.startswith("{") and cid.endswith("}"):
-                dedicated = cid
-        except Exception:
-            dedicated = None
-        if dedicated is None:
-            try:
-                dedicated = to_payload_json({"id": str(cid), "args": {}})
-            except Exception:
-                dedicated = str(cid)
+        if not isinstance(cid, CommandPayload):
+            raise TypeError("Selection must provide CommandPayload")
+        dedicated = cid
         target_display = dedicated
         if scope == "*":
             self.global_edit.setText(self._display(target_display))
@@ -348,22 +338,14 @@ class MouthSection(QtWidgets.QGroupBox):
                     self._payloads.pop(scope, None)
         if scope != "*" and cid:
             self.overrides_container.setVisible(True)
-    def collect_entries(self) -> Dict[MouseActionKey, Dict[str, object]]:
+    def collect_entries(self) -> Dict[MouseActionKey, Dict[str, CommandPayload]]:
         key = self._current_key()
-        scopes: Dict[str, object] = {}
+        scopes: Dict[str, CommandPayload] = {}
         if "*" in self._payloads:
             scopes["*"] = self._to_saved(self._payloads["*"])
-        else:
-            gtxt = self.global_edit.text().strip()
-            if gtxt:
-                scopes["*"] = self._to_saved(gtxt)
-        for scope, edit in self.override_edits.items():
+        for scope in list(self.override_edits.keys()):
             if scope in self._payloads:
                 scopes[scope] = self._to_saved(self._payloads[scope])
-            else:
-                txt = edit.text().strip()
-                if txt:
-                    scopes[scope] = self._to_saved(txt)
         return {key: scopes} if scopes else {}
     def _refresh_overrides_menu(self):
         self.ov_menu.clear()
@@ -447,31 +429,19 @@ class MouthSection(QtWidgets.QGroupBox):
             self.store.set_binding(self._current_key(), scope, None)
         except Exception:
             pass
-    def _build_payload_with_options(self, cid: str):
+    def _build_payload_with_options(self, cid: str) -> CommandPayload:
         reg = CommandRegistry()
         cls = reg.get_command(cid)
         if not cls:
-            try:
-                return to_payload_json({"id": cid, "args": {}})
-            except Exception:
-                return {"id": cid, "args": {}}
+            return CommandPayload(cid, {})
         meta = getattr(cls, "meta", None)
         if not meta or not getattr(meta, "has_options", False):
-            try:
-                return to_payload_json({"id": cid, "args": {}})
-            except Exception:
-                return {"id": cid, "args": {}}
+            return CommandPayload(cid, {})
         dlg = CommandOptionsDialog(cls, self, binding_mode=True)
         if dlg.exec() == QtWidgets.QDialog.Accepted and dlg.did_save():
-            try:
-                return to_payload_json({"id": cid, "args": dlg.get_values()})
-            except Exception:
-                return {"id": cid, "args": dlg.get_values()}
-        return to_payload_json({"id": cid, "args": {}})
+            return CommandPayload(cid, dlg.get_values())
+        return CommandPayload(cid, {})
     def _display(self, value: Any) -> str:
         return format_payload_display(value)
-    def _to_saved(self, value: Any) -> Any:
-        try:
-            return to_payload_json(value)
-        except Exception:
-            return value
+    def _to_saved(self, value: CommandPayload) -> CommandPayload:
+        return value

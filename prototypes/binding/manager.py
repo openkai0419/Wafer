@@ -8,7 +8,7 @@ from weakref import WeakSet
 
 class BindingManager:
     _instance: Optional["BindingManager"] = None
-    
+
     def __init__(self, file_path: Optional[str] = None):
         if file_path:
             self._file = Path(file_path)

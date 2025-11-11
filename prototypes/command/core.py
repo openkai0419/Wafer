@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, List, Optional
 import json
 from dataclasses import dataclass, field
+from ..utils import CommandPayload
 
 
 @dataclass
@@ -77,24 +78,12 @@ class CommandRegistry:
         return command.execute(**kwargs)
 
     def execute_payload(self, data: Any, extra_context: Optional[Dict[str, Any]] = None) -> Any:
-        payload: Optional[Dict[str, Any]] = None
-        if isinstance(data, str):
-            s = data.strip()
-            if s.startswith("{") and s.endswith("}"):
-                try:
-                    payload = json.loads(s)
-                except Exception as e:
-                    raise ValueError(f"Invalid JSON payload: {e}")
-            else:
-                raise ValueError("String payload must be JSON text with {id,args}")
-        elif isinstance(data, dict):
-            payload = data
-        else:
-            raise ValueError("Unsupported payload type")
-        cid = payload.get("id") if isinstance(payload, dict) else None
-        if not cid or not isinstance(cid, str):
-            raise ValueError("Payload missing string 'id'")
-        args = dict(payload.get("args") or {})
+        if not isinstance(data, CommandPayload):
+            raise TypeError("Payload must be CommandPayload")
+        cid = data.id
+        if not isinstance(cid, str) or not cid:
+            raise ValueError("Payload.id must be non-empty string")
+        args = dict(data.args or {})
         if extra_context:
             args.update(extra_context)
         return self.execute(cid, **args)

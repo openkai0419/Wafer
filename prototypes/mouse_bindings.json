@@ -12,19 +12,9 @@
     "click": "SINGLE",
     "held": [],
     "scopes": {
-      "*": "{\"id\":\"Hello\",\"args\":{}}",
-      "Widget A": "{\"id\":\"file 0\",\"args\":{}}",
-      "Widget B": "{\"id\":\"file 1\",\"args\":{}}"
-    }
-  },
-  {
-    "button": "RIGHT",
-    "click": "SINGLE",
-    "held": [
-      "X1"
-    ],
-    "scopes": {
-      "*": "{\"id\":\"hello\",\"args\":{}}"
+      "*": "{\"id\":\"hello\",\"args\":{}}",
+      "Widget A": "{\"id\":\"file.0\",\"args\":{}}",
+      "Widget B": "{\"id\":\"file.1\",\"args\":{}}"
     }
   },
   {
@@ -34,9 +24,9 @@
       "RIGHT"
     ],
     "scopes": {
-      "*": "{\"id\":\"file 1\",\"args\":{}}",
-      "Widget A": "{\"id\":\"Echo\",\"args\":{}}",
-      "Widget B": "{\"id\":\"Count\",\"args\":{}}"
+      "*": "{\"id\":\"path.0\",\"args\":{}}",
+      "Widget A": "{\"id\":\"echo\",\"args\":{}}",
+      "Widget B": "{\"id\":\"count\",\"args\":{}}"
     }
   },
   {
@@ -46,8 +36,8 @@
       "MIDDLE"
     ],
     "scopes": {
-      "Widget A": "{\"id\":\"Echo - echo 5\",\"args\":{}}",
-      "Widget B": "{\"id\":\"Count - 10 10\",\"args\":{}}"
+      "Widget A": "{\"id\":\"echo\",\"args\":{\"text\":\"echoe\",\"repeat\":7}}",
+      "Widget B": "{\"id\":\"count\",\"args\":{\"value\":3,\"step\":8}}"
     }
   },
   {
@@ -55,15 +45,7 @@
     "click": "SINGLE",
     "held": [],
     "scopes": {
-      "*": "{\"id\":\"Hello\",\"args\":{}}"
-    }
-  },
-  {
-    "button": "LEFT",
-    "click": "DOUBLE",
-    "held": [],
-    "scopes": {
-      "*": "{\"id\":\"path.2\",\"args\":{}}"
+      "*": "{\"id\":\"toggleVerbose\",\"args\":{}}"
     }
   }
 ]

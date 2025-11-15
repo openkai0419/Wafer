@@ -47,5 +47,21 @@
     "scopes": {
       "*": "{\"id\":\"toggleVerbose\",\"args\":{}}"
     }
+  },
+  {
+    "button": "X2",
+    "click": "SINGLE",
+    "held": [],
+    "scopes": {
+      "*": "{\"id\":\"mode\",\"args\":{\"mode\":\"C\"}}"
+    }
+  },
+  {
+    "button": "LEFT",
+    "click": "DOUBLE",
+    "held": [],
+    "scopes": {
+      "*": "{\"id\":\"time\",\"args\":{}}"
+    }
   }
 ]

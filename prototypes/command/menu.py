@@ -199,6 +199,7 @@ class MenuHub:
             cls._instance._all_paths = {}
             cls._instance._by_menu = {}
             cls._instance._menu_items = {}
+            cls._instance._folder_blocks = {}
         return cls._instance
     
     def register_paths(self, menu_cls: type, cmd_paths: Dict[str, str], items: Optional[List[str]] = None):
@@ -210,6 +211,7 @@ class MenuHub:
                 self._all_paths[k] = v
         if items is not None:
             self._menu_items[menu_cls] = list(items)
+            self._index_folder_blocks(items)
 
     def get_path_by_command_id(self, command_id: str) -> str:
         return self._all_paths.get(command_id, "")
@@ -246,41 +248,8 @@ class MenuHub:
     
     def collect_items_by_folder(self, folder: str, rebase_to: Optional[str] = None) -> List[str]:
         f = folder.strip("/")
-        blocks: List[List[str]] = []
-        for cls, items in self._menu_items.items():
-            paths_map = self._by_menu.get(cls, {})
-            cur: List[str] = []
-            def _flush():
-                nonlocal cur
-                if cur:
-                    blocks.append(cur)
-                    cur = []
-            for s in items:
-                if is_sep_token(s) and not sep_path(str(s)):
-                    _flush()
-                    continue
-                cur.append(s)
-            _flush()
         fparts = split_parts(f)
-        filtered: List[List[str]] = []
-        for b in blocks:
-            has = False
-            for s in b:
-                if not isinstance(s, str) or not s or is_sep_token(s) or is_section_token(s):
-                    continue
-                if "/" in s:
-                    pfull = s
-                else:
-                    pfull = ""
-                    for maps in self._by_menu.values():
-                        if s in maps:
-                            pfull = maps[s]
-                            break
-                if pfull and split_parts(pfull)[:len(fparts)] == fparts:
-                    has = True
-                    break
-            if has:
-                filtered.append(b)
+        filtered: List[List[str]] = self._folder_blocks.get(f, [])
         out: List[str] = []
         pre = rebase_to.strip("/") if rebase_to else f
         first = True
@@ -324,3 +293,38 @@ class MenuHub:
                     rel = pfull[len(f) + 1:]
                     out.append(f"{pre}/{rel}".lstrip("/"))
         return out
+
+    def _index_folder_blocks(self, items: List[str]):
+        cur: List[str] = []
+        def _flush():
+            nonlocal cur
+            if not cur:
+                return
+            folders: Dict[str, None] = {}
+            for s in cur:
+                if not isinstance(s, str) or not s or is_sep_token(s) or is_section_token(s):
+                    continue
+                if "/" in s:
+                    pfull = s
+                else:
+                    pfull = ""
+                    for maps in self._by_menu.values():
+                        if s in maps:
+                            pfull = maps[s]
+                            break
+                if not pfull:
+                    continue
+                parts = split_parts(pfull)
+                for i in range(1, len(parts)):
+                    f = "/".join(parts[:i])
+                    if f not in folders:
+                        folders[f] = None
+            for f in folders.keys():
+                self._folder_blocks.setdefault(f, []).append(list(cur))
+            cur = []
+        for s in items:
+            if is_sep_token(s) and not sep_path(str(s)):
+                _flush()
+                continue
+            cur.append(s)
+        _flush()

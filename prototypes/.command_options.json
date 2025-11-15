@@ -12,5 +12,17 @@
       "value": 1,
       "step": 8
     }
+  },
+  "mode": {
+    "id": "mode",
+    "args": {
+      "mode": "A"
+    }
+  },
+  "toggleVerbose": {
+    "id": "toggleVerbose",
+    "args": {
+      "checked": true
+    }
   }
 }

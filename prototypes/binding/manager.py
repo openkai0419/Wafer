@@ -5,6 +5,7 @@ from PySide6 import QtWidgets
 from .mouse.mouseeventmanager import MouseActionKey
 from .mouse.store import MouseBindingStore
 from weakref import WeakSet
+from PySide6 import QtCore
 
 class BindingManager:
     _instance: Optional["BindingManager"] = None
@@ -76,3 +77,17 @@ class BindingManager:
         if hasattr(widget, "binding_scope") and callable(getattr(widget, "binding_scope")):
             return widget.binding_scope()
         raise ValueError(f"Widget {widget} does not implement binding_scope()")
+
+    def find_binding_widget_at(self, global_pos: QtCore.QPoint) -> Optional[QtWidgets.QWidget]:
+        w = QtWidgets.QApplication.widgetAt(global_pos)
+        if not w:
+            return None
+        cur = w
+        while cur is not None:
+            try:
+                if cur in self._widgets:
+                    return cur
+            except Exception:
+                pass
+            cur = cur.parentWidget()
+        return None

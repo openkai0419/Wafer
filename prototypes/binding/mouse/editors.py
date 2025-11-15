@@ -13,7 +13,7 @@ class MouseBindingEditor(QtWidgets.QDialog):
         super().__init__(parent)
         self.widgets = widgets
         self.setWindowTitle("Mouse Bindings")
-        self.resize(980, 640)
+        self.resize(640, 480)
         self._store = MouseBindingStore()
         self._draft: Dict[MouseActionKey, Dict[str, str]] = {}
         self._setup()
@@ -21,11 +21,17 @@ class MouseBindingEditor(QtWidgets.QDialog):
         self._reload_sections()
     def _setup(self):
         l = QtWidgets.QVBoxLayout(self)
-        body = QtWidgets.QHBoxLayout()
-        self.list_actions = QtWidgets.QListWidget(self)
+        self.splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal, self)
+        left_container = QtWidgets.QWidget(self.splitter)
+        left_layout = QtWidgets.QVBoxLayout(left_container)
+        left_layout.setContentsMargins(0,0,0,0)
+        left_layout.setSpacing(4)
+        label_actions = QtWidgets.QLabel("マウス操作:", left_container)
+        self.list_actions = QtWidgets.QListWidget(left_container)
         self.list_actions.currentRowChanged.connect(lambda _: self._reload_sections())
-        body.addWidget(self.list_actions, 0)
-        self.scroll = QtWidgets.QScrollArea(self)
+        left_layout.addWidget(label_actions, 0)
+        left_layout.addWidget(self.list_actions, 1)
+        self.scroll = QtWidgets.QScrollArea(self.splitter)
         self.scroll.setWidgetResizable(True)
         self.panel = QtWidgets.QWidget(self.scroll)
         self.scroll.setWidget(self.panel)
@@ -37,18 +43,26 @@ class MouseBindingEditor(QtWidgets.QDialog):
         self.panel_layout.addWidget(self.sections_container, 1)
         footer = QtWidgets.QHBoxLayout()
         footer.addStretch(1)
-        self.btn_reset_action = QtWidgets.QPushButton("初期化", self.panel)
+        self.btn_reset_action = QtWidgets.QPushButton("初期設定に戻す", self.panel)
         self.btn_reset_action.setCursor(QtCore.Qt.PointingHandCursor)
         self.btn_reset_action.clicked.connect(self._reset_current_action)
         footer.addWidget(self.btn_reset_action, 0)
         self.panel_layout.addLayout(footer)
         self.sections: List['MouthSection'] = []
-        body.addWidget(self.scroll, 1)
-        l.addLayout(body, 1)
+        self.splitter.addWidget(left_container)
+        self.splitter.addWidget(self.scroll)
+        self.splitter.setCollapsible(0, False)
+        self.splitter.setCollapsible(1, False)
+        self.splitter.setChildrenCollapsible(False)
+        self.splitter.setSizes([120, 420])
+        self.splitter.setStretchFactor(0,0)
+        self.splitter.setStretchFactor(1,1)
+        l.addWidget(self.splitter, 1)
         bb = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel, self)
         bb.accepted.connect(self._apply)
         bb.rejected.connect(self.reject)
         l.addWidget(bb)
+        
     def _actions(self) -> List[Tuple[str, MouseButton, ClickType]]:
         r: List[Tuple[str, MouseButton, ClickType]] = []
         for b in [MouseButton.LEFT, MouseButton.RIGHT, MouseButton.MIDDLE, MouseButton.X1, MouseButton.X2]:
@@ -313,6 +327,7 @@ class MouthSection(QtWidgets.QGroupBox):
             if scope == "*":
                 self.global_edit.setText("")
                 self._clear_binding("*")
+                self._payloads.pop("*", None)
             else:
                 self._remove_override(scope)
             if not self.override_edits:

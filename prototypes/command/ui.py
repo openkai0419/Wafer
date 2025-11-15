@@ -233,11 +233,26 @@ class CommandMenuBuilder(TranslatorMixin):
     def _get_checked(self, name: str, meta: CommandMeta) -> bool:
         if name in self._check_states:
             return bool(self._check_states[name])
+        try:
+            stored = CommandOptionStore().get(name)
+            args = dict(getattr(stored, "args", {}) or {})
+            if "checked" in args:
+                return bool(args.get("checked"))
+        except Exception:
+            pass
         return bool(meta.default_checked)
 
     def _on_toggled(self, name: str, container: QtWidgets.QWidget, state: bool):
         self._check_states[name] = bool(state)
         self._update_checkmark(container, state)
+        try:
+            store = CommandOptionStore()
+            cur = store.get(name)
+            opts = dict(getattr(cur, "args", {}) or {})
+            opts["checked"] = bool(state)
+            store.set(name, opts)
+        except Exception:
+            pass
 
     def _update_checkmark(self, container: QtWidgets.QWidget, state: bool):
         lbl = container.findChild(QtWidgets.QLabel, "checkMark")
@@ -292,10 +307,11 @@ class CommandMenuBuilder(TranslatorMixin):
                 try:
                     selection_callback(CommandPayload(command_name, options))
                 except Exception:
-                    selection_callback(CommandPayload(command_name, {}))
+                    pass
         else:
-            if callable(selection_callback):
-                selection_callback(CommandPayload(command_name, {}))
+            if not callable(selection_callback):
+                return
+            return
 
     def _execute(self, name: str, provider: Optional[Callable[[], Dict[str, Any]]] ):
         args: Dict[str, Any] = {}
@@ -534,7 +550,7 @@ class MenuBuilder:
         names = [self._flatten_for_use(n, s) for n in names]
         self._build_into(names, None, context_provider, False)
         t = split_parts(s)
-        self._menu.setTitle(t[-1] if t else s)
+        self._menu.setTitle(self._builder.t.tr(t[-1]) if t else self._builder.t.tr(s))
         return self._menu
 
     def build_all_roots(self, selection_callback: Optional[Callable[[Any], None]] = None, context_provider: Optional[Callable[[], Dict[str, Any]]] = None, allow_options_with_selection: bool = False) -> QtWidgets.QMenu:

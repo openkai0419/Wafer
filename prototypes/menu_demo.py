@@ -48,6 +48,7 @@ class CmdMenu(RegistryBackedMenu):
             ":Options",
             {"path": "Options/echo", "meta": CommandMeta(display="Echo", params=[CommandParam(name="text", type=str, default="echo"), CommandParam(name="repeat", type=int, default=1, min_value=1, max_value=8)], has_options=True, func=lambda text="echo", repeat=1: print(text * repeat))},
             {"path": "Options/count", "meta": CommandMeta(display="Count", params=[CommandParam(name="value", type=int, default=1, description="Value"), CommandParam(name="step", type=int, default=1, min_value=1, max_value=10)], has_options=True, func=lambda value=1, step=1: print("count", " ".join(str(i) for i in range(value, value + step))))},
+            {"path": "Options/mode", "meta": CommandMeta(display="Mode", params=[CommandParam(name="mode", type=str, default="A", choices=["A","B","C"], description="Mode")], has_options=True, func=lambda mode="A": print(f"mode {mode}"))},
             "-",
             ":Toggle",
             {"path": "Toggle/toggleVerbose", "meta": CommandMeta(display="Verbose Mode", checkable=True, default_checked=False, params=[CommandParam(name="checked", type=bool, default=False)], func=lambda checked=False: print("verbose on" if checked else "verbose off"))},

@@ -1,252 +1,99 @@
-prototypes 仕様メモ (source ではなく試作コードの設計と意図)
+# prototypes ディレクトリ概要メモ (設計思想 / 責務整理)
 
-対象ファイル
-- prototypes/command/core.py
-- prototypes/command/menu.py
-- prototypes/command/ui.py
-- prototypes/command/state.py
-- prototypes/utils.py
-- prototypes/binding/common.py
-- prototypes/binding/manager.py
-- prototypes/binding/mixins.py
-- prototypes/binding/mouse/mouseeventmanager.py
-- prototypes/binding/mouse/defaults.py
-- prototypes/binding/mouse/editors.py
-- prototypes/binding/mouse/store.py
-- prototypes/binding/key/editors.py
-- prototypes/binding/key/shortcutmanager.py
-- prototypes/demo_app.py
-- prototypes/menu_demo.py
-- ShortcutManager: QWidget に対するキーボードショートカット管理
-  - set_bindings(widget, bindings) / get_bindings(widget): ショートカット設定/取得
+## 全体目的
+画像ビューア本体への導入前段階として、コマンド体系・メニュー構築・入力デバイス(マウス/ショートカット)バインディングの拡張フレームワークを試作。単一責務・疎結合・再利用性・階層的IDによる柔軟な拡張を検証。
 
-command/core.py の要点
-- CommandParam: name, type, default, description, choices, min_value, max_value, widget_type
-- CommandMeta: id, display, params, hotkey, icon, has_options, checkable, default_checked, func
-- CommandBase: meta 属性と execute(**kwargs) / undo() / call_execute(**kwargs) を持つ基底クラス
-  - call_execute: meta.params に含まれる名前のみ抽出してフィルタ後 execute に渡す
-- CommandRegistry: register/execute/execute_payload。execute_payload は CommandPayload のみ受理。
-- create_command_from_meta / register_command_defs: CommandMeta.func を用いてクラス生成（func 無しなら抽象）
+## コア概念
+- CommandMeta / CommandParam: コマンドの静的メタ情報(表示名・引数・ホットキー・アイコン・オプション有無・チェック可能性)。
+- CommandBase / create_command_from_meta: メタ情報から即席クラス生成。ロジックは meta.func を包む最小構造。Undo など拡張を将来可能にする余地。
+- CommandRegistry: シングルトン。ID(=パス終端)でコマンドクラスを動的呼び出し。Payload(引数セット)も処理。重複ID防止と最低限の存在検証のみで軽量。
+- CommandPayload: 実行要求のシリアライズ可能オブジェクト。イベント経由/永続化/エディタ間受け渡しを簡易化。
 
-command/menu.py の要点
-- split_parts(raw): "/" で分割しリストを返す
-- is_sep_token(s) / sep_path(s): 末尾が "-" ならセパレータトークン
-- is_section_token(s) / section_parts(s): 末尾が ":" で始まればセクショントークン
-- chain_providers(*providers): 複数の context provider を連鎖して一つの provider に統合
-- prefixed_path / prefixed_item_token: path_prefix 適用ヘルパー
-- normalize_def(base_parts, def): path から id を自動導出し meta.id に設定
-- RegistryBackedMenu: create_definitions() で定義を返すベースクラス
-  - path_prefix を設定可能で相対パス解決
-  - ensure_registered() で登録済みチェック後 register_command_defs と MenuHub.register_paths を実行
-  - __init_subclass__ で自動登録トリガー
-- MenuHub: 全コマンドのパス情報を集約し、フォルダ展開や検索を提供
+## メニュー体系
+- RegistryBackedMenu: create_definitions() が 文字列トークン + 定義(dict) を返し、正規化→レジストリ登録→MenuHub 集約。
+  - トークン種別: セクション(":Label"), セパレータ("-")。階層は path 文字列 "a/b/c"。
+  - path の最終要素が command id となる。重複チェックあり。
+- MenuHub: 全 menu クラスからパス/表示構造を集約。フォルダ(途中階層)単位の検索・再ベース化・再構築を支援し、UI側が柔軟に再編成可能。
+- MenuBuilder / CommandMenuBuilder: MenuHub 情報 + CommandRegistry を利用し Qt メニューへ動的具現化。フォルダセグメント/セクション/コマンド表示は t.tr() により実行時に翻訳。ID/パスは英語のまま固定。
+  - 動的オプションダイアログ表示 (CommandOptionsDialog)。
+  - チェック可能コマンドは内部状態 _check_states でメニュー再構築不要の軽量反映。
+  - selection_callback により "選択" と "実行" モードを分離、オプション付き選択も許可。
+  - context_provider をチェーン合成可能 (chain_providers)。Widget 毎の文脈差分統合。
 
-command/ui.py の要点
-- CommandOptionsDialog: CommandMeta.params に基づきパラメータフォーム生成
-  - 初期値は CommandOptionStore から取得した前回保存 args を反映
-  - binding_mode=True の場合「設定」「キャンセル」ボタン、False の場合「保存」「保存して実行」「キャンセル」
-  - 保存: 入力値を返して Accepted（execute_callback は呼ばない）
-  - 保存して実行: 入力値で execute_callback 呼び出し後 Accepted
-  - 設定: 入力値を返して Accepted
-- CommandMenuBuilder: QMenu 構築の中核
-  - build(parent, command_names, context_provider, display_map, selection_callback): 新規 QMenu 生成
-  - build_into(menu, parent, ...): 既存 QMenu に追加
-  - セクション/区切り/サブメニュー/チェック/オプションダイアログ呼び出しに対応
-  - selection_callback 指定時は選択モード（実行せず CommandPayload を返す）
-- MenuBuilder: 高レベル API でフォルダ展開と一括メニュー生成
-  - build(tokens) / use(tokens): token 配列からメニュー構築
-  - build_all_roots(): 全ルートフォルダを自動展開
-  - popup_all_roots(anchor, selection_callback, context_provider): ルート展開メニューをポップアップ
+## オプション永続化
+- CommandOptionStore: .command_options.json にコマンド毎の引数デフォルトを保存。初回アクセス時遅延ロード。set/get/clear のみの最小 API。
+- 起動後の再編集→保存→次回実行時に補完 (チェック状態は別途メニュー側保持)。
 
-オプション編集の永続化
-- CommandOptionStore(prototypes/command/state.py): 統一形式 {id,args} で保存。get() は CommandPayload を返す
-- CommandOptionsDialog: 初期表示に前回保存 payload.args を反映
-- CommandMenuBuilder:
-  - 通常実行時は保存済み args を読み込みコンテキストで上書き実行
-  - ダイアログ「実行」は保存せず実行のみ
-  - ダイアログ「保存」は実行せず保存のみ
+## 入力バインディング体系
+- BindingManager: mouse_bindings.json をロード or デフォルトシード。登録 Widget 群へ一括適用。スコープ(Widget 名)別にマッピング。
+- CommandBindingMixin: Widget に組み込み、MouseEventManager / ShortcutManager を初期化。CommandPayload 単位で統一処理。provider() で追加コンテキスト挿入。
+  - 直接バインド + ストア解決フォールバックの二層。イベント未割当時はストア検索で柔軟さ確保。
+  - バインディング時のオプションダイアログでキャンセルした場合は登録を中止し、既存設定を変更しない。
+- 編集 UI (MouseBindingEditor / ShortcutBindingEditor) で対象 WidgetRef を列挙し変更→保存→再適用。
 
-追加: MenuBuilder（menu/ui.py）
-- 空のQMenuを保持し、一括生成のみを提供（demo_appで使用している最小API）
-- API
-  - MenuBuilder(parent=None, context_provider=None)
-  - menu: 生成先QMenuの参照
-  - build([token|folder|path,...]) -> QMenu
-    - token: "-" または "path/-"、"path/:Label"
-    - command: "cmdId" または "folder/.../cmdId"
-    - folder: "folder" または "a/b" を指定すると配下を展開
-    - rebase: "temp/path" のように、末尾セグメントがフォルダならそのサブツリーを temp/path にリベース配置
-    - 実コマンドの重複のみ例外。セクション/セパレータ重複は許容
-    - 単一フォルダ名の呼び出しが複数ツリーに一致する場合は曖昧さエラー
-  - build_all_roots() -> QMenu: すべての最親フォルダを自動列挙してメニュー化
-    - items から先頭セグメントを抽出して順序保持
-    - ルートに直下コマンドしかないものは対象外
+## デモ構造
+- menu_demo.py: 複数の RegistryBackedMenu 実装 (FileMenu / PathMenu / CmdMenu / ContextMenu / MenuMenu) で多階層・オプション・チェック・動的構築パターンを提示。
+- demo_app.py: MainWindow 内に複数 DemoPane を配置し scope 別バインディング挙動を確認。MenuBuilder.use("binding") により特定フォルダ絞り込みメニュー。
+- CmdMenu に choices を用いたサンプル `Options/mode` を追加し、選択式引数の UI/実行フローを検証可能。
 
-  選択専用モード
-  - CommandMenuBuilder/MenuBuilder は selection_callback を受け取り、選択時にコマンド実行せず callback(CommandPayload) を返す
-  - has_options や checkable は選択モードでは無効化（トグルや実行は行わない）
-  - MouseBindingEditor は build_all_roots(selection_callback=...) を使い、ツリーから payload({id,args}) を直接受け取る
-  引数ラッパ
-  - create_command_from_meta は meta.func をラップし execute(self, **kwargs) で呼び出す（undo 引数は廃止）
-  - meta が存在する場合 call_execute は meta.params に含まれる名前のみ抽出（params 空でもフィルタ実施）
-  - params 未定義のコマンドへ追加コンテキスト(kwargs)を渡しても func が受け取らないなら無視され TypeError 回避
-  ポップアップ共通化
-  - MenuBuilder.popup_all_roots(anchor, selection_callback, context_provider=None) を追加
-  - build_all_roots + メニュー位置計算(mapToGlobal) を統一的/再利用的に提供
-  - 呼出側は anchor(例: ボタン) と callback だけ指定すればよい
-  不具合修正
-  - CommandMenuBuilder.build_into から参照される _get_or_create_submenu_chain が Row 側に存在していたため AttributeError が発生していた問題を解消。
-  - 関連ヘルパーを Builder へ移設し、Row から削除。
-  リファクタ（共通化）
-  - _add_names: 重複検出と seen 追跡を一元化。リベース有無でエラーメッセージを切替。
-  - _collect_folder: フォルダ展開と存在検証を一元化。
-  - _flatten_for_use: use() 用のトークン再マッピングを関数化。
-  - _build_into: chain_providers と build_into 呼び出しの共通化。
-  - build()/use() の分岐を縮約し、挙動は等価のまま簡潔化。
-  - 重複検出の不具合（raise 後に seen.add が到達不能）を修正。
-  - CommandMenuBuilder._display_override: display_map 展開とサブメニュー生成処理を関数化。
-  - 分割ロジックを split_parts に統一し文字列 split("/") の重複を排除。
+## 設計上の狙い
+1. パスベース ID により: 階層再編/部分的リベース/フォルダ単位抽出を容易化。
+2. Meta <-> 実行ロジック分離: 将来 undo/redo, async, 権限検査挿入が可能。
+3. シリアライズ容易性: Payload / オプションストア / バインディングストアが全て JSON 互換。
+4. UI 動的生成: パラメータ型に応じた簡易ウィジェット工場 (bool/int/float/str/choices)。追加型は widget_type 拡張で差し替え予定。
+5. Scope ベースバインディング: 同一コマンドをコンテキスト差分で再利用 (ex. pane 毎に引数変更)。トグル系コマンドは永続ストアで状態を保持し、メニュー/バインディング双方で正しく反転・復元。
 
-エラーハンドリング（人為的ミスの早期検出）
-- CommandRegistry.register: id 未設定や重複 id を検出すると例外
-- RegistryBackedMenu.ensure_registered: 同一クラス内で重複する id を検出すると例外
-- MenuHub.register_paths: 既に他クラスで登録済みの id を検出すると例外
-- CommandMenuBuilder.build_into: 未登録のコマンド id が含まれると例外
-- MenuBuilder.build: 不明なコマンド/フォルダ、リベース後の実コマンド重複は例外。単一名で複数一致は曖昧さエラー
-- MenuBuilder.build_all_roots: 最親フォルダが一つも無い場合は例外
+## 現状の制限 / 課題
+- 例外時多くが silent pass。ユーザー通知/ログ集約層が未整備。
+- CommandOptionsDialog で型変換失敗時のフィードバック欠如。
+- チェック状態永続化なし (アプリ再起動で失われる)。必要なら OptionStore 拡張。
+- MenuHub.collect_items_by_folder の構築アルゴリズムが複雑かつ O(N*M)。キャッシュ導入余地。
+- BindingManager と OptionStore がファイル IO を直接行うため並列アクセス/競合未考慮。
+- undo/redo インターフェイスはスタブ (CommandBase.undo)。履歴管理未実装。
+- パラメータ validation (min/max) は UI セット段階のみ、直接呼び出し時は非検証。
 
-RegistryBackedMenu 定義の要点
-- create_definitions は以下のいずれかを返す:
-  - [str|def,...]
-  - (defs, items)
-- 必須: 各 def に path を明示。id は path 末尾から自動導出
-  - 例: {path: "folder/sub/echo", meta, func} → id="echo" に正規化
-- menu_path は廃止。path_prefix をクラスに付与可能（items/defs の相対指定を許容）
-- フォルダ展開時はセクション(path/:Label)と区切り(path/-)を含めて忠実に再現
+## 改善提案 (短期)
+- 例外処理共通化: logger + show_error の二層。silent pass を最小化。
+- CommandParam: Generic[T] 化し型安全性向上。choices と type 整合検査。
+- オプションダイアログ: widget_type 明示でカスタムファクトリ登録。FactoryRegistry 導入。
+- 多言語化: display / description を翻訳キー化。TranslatorMixin を prototypes にも適用。
 
-例
-- class.path_prefix = "commands"
-- defs: {path: "Options/echo", meta: CommandMeta(display="Echo", func=...)}
-- items: [":Options", "-", "Options/echo", "-"]
+## 改善提案 (中期)
+- undo/redo 層: CommandBase に result / inverse_args 帯域。CommandRegistry へ stack 実装。
+- 非同期実行: meta に async フラグ、UI から await 実行 + 進捗通知。
+- プラグインロード: menu 定義モジュールを plugins/ 以下から動的 import。署名/バージョン管理予定。
+- コンテキスト権限: provider() 返却値に permission を含め CommandRegistry 実行前検証。
 
-binding/mouse/mouseeventmanager.py の要点
-- ClickType: SINGLE/DOUBLE/WHEEL_UP/WHEEL_DOWN/DRAG_START/DROP
-- MouseButton: LEFT/RIGHT/MIDDLE/X1/X2/NONE
-- MouseActionKey: (button, click_type, held_buttons) で一意なキー。repr は "X1+RIGHT SINGLE" 形式
-- MouseEventManager: bind/unbind/clear と各種イベントの受け取り→キー生成→アクション実行
-  - set_resolver(resolver): フォールバックコールバック登録。直接 bind されていないキーを受け取った際に resolver(key, event) を呼び出し
-- MouseEventDispatcher: 任意の QWidget を監視し、ドラッグ開始しきい値検出、ダブルクリック判定、ホイール/ドロップ転送を行う
+## 拡張ポイント
+- 新規コマンド: RegistryBackedMenu.create_definitions() に dict 追加。path 最後が id。
+  多言語対応: path の各セグメント文字列（例: "Options", "Toggle"）とセクションラベル（":File" 等）、CommandMeta.display に対応する英語キーを translations.json に用意。内部検索・バインディングは id/path を使用し、表示のみ翻訳。
+  top-level フォルダメニュータイトルも MenuBuilder.use() で t.tr() を適用済み。
+- 新規メニュー: path_prefix と定義リストを持つクラス作成するだけで自動登録。
+- 新規入力デバイス: BindingManager 相当の抽象層 + Mixin を追加し既存パターン踏襲。
+- 新規パラメータ型: CommandOptionsDialog._create_widget にファクトリ差し込み。
 
-意図
-- メニュー/コマンドは定義の単一化(create_definitions)と呼出時再構成の両立で拡張容易に。
-- マウス入力はキー合成によりウィジェットごとのバインド差し替えを単純化。
+## 運用ガイド (このメモ更新方針)
+- prototypes 下に新規構造/責務追加時本ファイルの該当セクションを差分反映。
+- コード詳細は記載せず API 変化と設計意図のみ保持。
+- 大きなリファクタ後: 現状の課題/改善提案を再評価し優先度更新。
 
-binding/mouse/editors.py の要点
-- MouseBindingEditor: マウスバインド編集ダイアログ
-  - WidgetRef のリストを受け取り、各スコープごとのバインドを編集
-  - コマンド選択後 has_options=True ならオプション編集し、保存で CommandPayload を保持
-  - 表示は format_payload_display。id から display 解決し args を順序連結 "Display - v1 v2" 形式
-  - 表示と保存の分離: QLineEdit は表示専用。内部 _payloads は CommandPayload のみ保持し逆変換しない
-  - OK 押下でファイルへ JSON(各 CommandPayload.to_json()) 保存
-- MouseSection: ボタン/クリック/保持ボタン単位でスコープ別割当編集
+## 次の小さな改善候補
+- collect_items_by_folder の事前キャッシュ実装。
+- チェック状態保存の軽量ストア追加。
+- CommandParam に validator フィールド追加し UI/直接実行双方で統一検証。
+- show_error を薄い通知ラッパ (非GUI環境では print/log) に抽象化。
 
-binding/key/editors.py の要点
-- ShortcutBindingEditor: ショートカット編集。セル UserRole に CommandPayload を保持し表示のみ再生成。再編集後新しい CommandPayload に差し替え。
+(以上)
+ 
+## 2025-11-15 入力解決の微修正
+- 右ボタン押下中にカーソル移動して左クリックした場合でも、左クリック時点のカーソル直下にあるバインディング対象ウィジェットへイベントを転送するように変更。
+- 実装要点: MouseEventDispatcher が MouseButtonRelease 処理時に `QApplication.widgetAt(global_pos)` で再ヒットテストし、登録済みウィジェットへ座標変換した QMouseEvent を生成してディスパッチ。適切な対象が見つからない場合は従来通り自己ウィジェットで処理。
+- ダブルクリック判定・ドラッグ開始閾値の挙動は従来通り維持。
+ - ダブルクリックにバインドが存在しない場合、2 回目のクリックはシングルクリックとして解決し実行するように変更。実装上は fallback 解決で DOUBLE 未割当時に同一ボタン/同一修飾の SINGLE を再解決して実行。
+ - ボタン同時押し(held あり)のアクションが実行されたシーケンスでは、参加ボタンのその後の単独リリース時(SINGLE)は抑制し、重複実行を防止。
+ - バインドエディタで「なし(解除)」選択しても解除されない不具合を修正。グローバルスコープ("*")の一時ペイロードを確実に破棄し、適用時に再登録されないようにした。
 
-binding/common.py
-- WidgetRef: name と widget を保持し、__str__ で name を返す。エディタ用ウィジェット参照ラッパ
-
-binding/mouse/store.py (MouseBindingStore)
-- 内部表現は CommandPayload のみ
-- resolve(scope, key): スコープ優先後 "*"
-- load_from_file(path): JSON を読み込み CommandPayload.from_json で復元
-- save_to_file(path): CommandPayload.to_json() で書き出し
-- get_all()/set_all(): CommandPayload の辞書
-
-バインド時引数保持仕様（CommandPayload-first）
-- ランタイムは CommandPayload のみ受理。
-- 共有モード: args 空。実行時に CommandOptionStore から補完。
-- 専用モード: args 非空。保存値を使わずそのまま実行。
-- Editor/Store/Manager/Registry すべて CommandPayload を直接扱い、辞書/文字列/JSON入力は TypeError。
-- 永続化のみ JSON 文字列化。
-
-ユーティリティ (utils.py)
-- CommandPayload: id(str), args(dict) の専用コンテナ。from_dict/from_json/to_dict/to_json を提供。
-- format_payload_display: CommandPayload から display と値列を組み立て。
-- read_json_file / write_json_file / show_error: 変わらず。
-
-CommandRegistry 拡張
-- execute_payload(data, extra_context=None): CommandPayload のみ受理し id/args 抽出後 execute 呼び出し。
-
-CommandOptionStore 仕様 (command/state.py)
-- シングルトン: __new__ で _instance を共有
-- get(id) は CommandPayload を返す
-- set(id, options|payload): args または CommandPayload を {id,args} 形式で保存
-- clear(id=None): id 指定で単一削除、None で全削除
-- 永続化ファイル: prototypes/.command_options.json (indent=2)
-
-binding/mouse/defaults.py
-- default_mouse_bindings() -> Dict[MouseActionKey, CommandPayload]: デフォルトマウスバインド定義を返す
-  - RIGHT SINGLE → showContextMenuHere
-  - LEFT SINGLE → hello
-
-demo_app.py 構成
-- DemoPane(QtWidgets.QFrame, CommandBindingMixin): init に name を必須引数として受け取り init_command_binding(name) を呼び出し
-- provider() をオーバーライドし {"scope": self.binding_scope()} を返す
-- MainWindow: 3つの DemoPane ("Widget A", "Widget B", "Widget C") を横並びで配置
-- BindingManager.activate(defaults=default_mouse_bindings()) で初期化と適用を一括実行
-- メニューバーに MenuBuilder で "binding" フォルダを展開（menu_demo.MenuMenu の定義に依存）
-
-menu_demo.py 構成
-- FileMenu, PathMenu, CmdMenu, ContextMenu, MenuMenu の5つの RegistryBackedMenu を定義
-- MenuMenu.path_prefix = "menu", 配下に "binding/bindings" と "binding/shortcutBindings" を配置
-- MouseBindingEditor 呼び出し時に commands リストは不要（内部で build_all_roots 使用）
-- ContextMenu: カーソル位置のウィジェットから binding_scope() と provider() を取得しメニュー構築
-  - Widget B では build_all_roots() でルートフォルダを自動展開
-  - それ以外では build() で特定のトークン/フォルダ/コマンドを明示的に配置
-
-CommandBindingMixin (binding/mixins.py)
-- 任意 QWidget でコマンド/マウス/ショートカットバインディング機能を共有化
-- init_command_binding(name) を呼び出し必須。name はバインディングスコープとして使用され、空文字列は ValueError
-- 提供API:
-  - set_binding_scope(name) / binding_scope() : スコープ名の変更と取得
-  - set_mouse_bindings(bindings: Dict[MouseActionKey, Any]) / get_mouse_bindings()
-  - set_shortcut_bindings(dict) / get_shortcut_bindings()
-  - exec_command(cmd, event, key, source, extra) : 外部からのコマンド実行
-  - provider(cmd, event, key, source) : コマンド実行時の追加コンテキスト提供（サブクラスでオーバーライド）
-- 内部動作:
-  - _exec: コマンド実行本体。provider() で取得したコンテキストに extra をマージ
-  - _resolve_fallback: 直接バインドされていないキーで MouseBindingStore からフォールバック解決
-  - CommandPayload を使用
-  - args が空辞書の CommandPayload は CommandOptionStore から最新引数を取得して実行（共有モード）
-- DemoPane は QFrame, CommandBindingMixin の多重継承で実装
-- 初期化時に BindingManager.instance().register(self) を自動呼び出し（例外は無視）
-
-BindingManager (binding/manager.py)
-- mouse_bindings.json のロード/初期シード/適用/保存を集約
-- シングルトン化: instance(file_path=None) でインスタンス取得
-- activate(file_path, defaults): load_or_seed → apply_registered → clear_shortcuts_registered の一括実行
-- load_or_seed(defaults): ファイルが存在しなければ defaults を "*" スコープでシードし Store へ投入
-- apply_mouse_bindings(widgets) / apply_registered(): 各ウィジェットの binding_scope() からスコープ名を取得し最適なコマンドを適用
-- clear_shortcuts(widgets) / clear_shortcuts_registered(): 全ショートカット解除
-- register(widget): WeakSet へウィジェット登録（CommandBindingMixin.init_command_binding から自動呼び出し）
-- save(): 現在の Store 内容をファイルへ書き出し
-- _scope_of(widget): binding_scope() が実装されていなければ ValueError（objectName/クラス名フォールバックは廃止）
-- デフォルトパス: prototypes/mouse_bindings.json
-
-永続化ファイル
-- mouse_bindings.json: prototypes/ 直下。MouseBindingEditor で OK 押下時に保存
-  - フォーマット: 配列形式
-    [
-      {"button":"RIGHT","click":"SINGLE","held":[],"scopes":{"*":"{...payload json...}","Widget A":"{...}","Widget B":"{...}"}},
-      ...
-    ]
-  - held は修飾ボタン列（単独時は空配列）
-  - scopes は scope -> payload(JSON文字列) の辞書。"*" がグローバル、ウィジェット名が個別
-  - payload が空 args の JSON なら共有モード（実行時に最新オプションへ差し替え）、args 非空は専用モード（固定）
-- .command_options.json: prototypes/ 直下。CommandOptionStore が管理
-  - フォーマット: {command_id: {id, args}, ...}
-
-注意
-- この仕様は prototypes のみ。source/ の正式実装には影響しない
-- 試作のため API は変更される可能性がある
+## 2025-11-15 UI 微追加
+- MouseBindingEditor 左側アクション一覧上部にラベル "マウス操作:" を追加し視認性向上。内部構造: QListWidget を直接配置していた箇所をコンテナ + 縦レイアウトに変更しラベルを先頭へ挿入。機能的変更なし。
+ - 左右領域間を QSplitter 化しアクション一覧と詳細編集領域の幅をドラッグで調整可能にした。従来の固定レイアウト(HBox)から移行。保存/適用ロジックへの影響なし。
+  - Splitter 子コンポーネントの collapse を禁止し誤操作で幅ゼロにならないようにした (setCollapsible False + setChildrenCollapsible False)。初期サイズを setSizes で安定化。

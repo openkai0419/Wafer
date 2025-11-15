@@ -3,7 +3,7 @@ from typing import Any, Dict, Optional
 from PySide6 import QtWidgets
 from ..command.core import CommandRegistry
 from ..utils import show_error, CommandPayload
-from .mouse.mouseeventmanager import MouseEventManager, MouseEventDispatcher, MouseActionKey
+from .mouse.mouseeventmanager import MouseEventManager, MouseEventDispatcher, MouseActionKey, ClickType
 from .key.shortcutmanager import ShortcutManager
 from .mouse.store import MouseBindingStore
 from .manager import BindingManager
@@ -50,10 +50,17 @@ class CommandBindingMixin:
 
     def _resolve_fallback(self, key: MouseActionKey, event=None):
         cmd = self._store.resolve(self.binding_scope(), key)
-        if not cmd:
-            return
+        if not cmd and key.click_type == ClickType.DOUBLE:
+            skey = MouseActionKey(key.button, ClickType.SINGLE, key.held_buttons)
+            cmd = self._store.resolve(self.binding_scope(), skey)
+            if isinstance(cmd, CommandPayload):
+                self._exec(cmd, event=event, key=skey, source="mouseFallback")
+                return True
+            return False
         if isinstance(cmd, CommandPayload):
             self._exec(cmd, event=event, key=key, source="mouseFallback")
+            return True
+        return False
 
     def set_shortcut_bindings(self, bindings: Dict[str, CommandPayload]):
         self._shortcut_manager.set_bindings(self, bindings)
@@ -81,14 +88,31 @@ class CommandBindingMixin:
                     pass
             if not isinstance(cmd, CommandPayload):
                 raise TypeError("Command payload must be CommandPayload")
+            from ..command.state import CommandOptionStore
+            store = CommandOptionStore()
+            stored_payload = store.get(cmd.id)
             args = dict(cmd.args or {})
             if not args:
-                from ..command.state import CommandOptionStore
-                stored = CommandOptionStore().get(cmd.id)
-                args = dict(stored.args or {})
+                args = dict(stored_payload.args or {})
             if ctx:
                 args.update(ctx)
+            cls = self._registry.get_command(str(cmd.id))
+            if cls and getattr(getattr(cls, "meta", None), "checkable", False):
+                meta = getattr(cls, "meta", None)
+                cur_checked = bool(dict(getattr(stored_payload, "args", {}) or {}).get("checked", getattr(meta, "default_checked", False)))
+                if isinstance(source, str) and source.startswith("mouse"):
+                    new_checked = not cur_checked
+                else:
+                    new_checked = bool(args.get("checked")) if "checked" in args else not cur_checked
+                args["checked"] = new_checked
             self._registry.execute(str(cmd.id), **args)
+            try:
+                if cls and getattr(getattr(cls, "meta", None), "checkable", False):
+                    opts = dict(getattr(stored_payload, "args", {}) or {})
+                    opts["checked"] = bool(args.get("checked", opts.get("checked", False)))
+                    store.set(cmd.id, opts)
+            except Exception:
+                pass
         except Exception as e:
             show_error(self, str(e))
             raise

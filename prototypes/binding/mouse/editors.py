@@ -2,10 +2,9 @@ from typing import Dict, List, Tuple, Any
 from pathlib import Path
 from PySide6 import QtCore, QtGui, QtWidgets
 from .mouseeventmanager import MouseActionKey, ClickType, MouseButton
-from ...command.ui import MenuBuilder, CommandOptionsDialog
-from ...command.core import CommandRegistry
+from ...command.ui import MenuBuilder
 from .store import MouseBindingStore
-from ...utils import show_error, format_payload_display, CommandPayload
+from ...utils import format_payload_display, CommandPayload
 from ..common import WidgetRef
 
 class MouseBindingEditor(QtWidgets.QDialog):
@@ -302,26 +301,20 @@ class MouthSection(QtWidgets.QGroupBox):
             self.global_edit.setText(disp)
         self.overrides_container.setVisible(any(s != "*" for s in found))
     def _pick_cmd(self, scope: str):
-        if scope == "*":
-            btn = self.global_edit
-        else:
-            btn = self.override_edits.get(scope)
+        btn = self.global_edit if scope == "*" else self.override_edits.get(scope)
         if btn is None:
             return
-        try:
-            builder = MenuBuilder(self)
-            def _prep(m: QtWidgets.QMenu, sc=scope):
-                act_none = QtGui.QAction("なし(解除)", m)
-                act_none.triggered.connect(lambda _, s=sc: self._on_select(s, None))
-                first = m.actions()[0] if m.actions() else None
-                if first:
-                    m.insertAction(first, act_none)
-                    m.insertSeparator(first)
-                else:
-                    m.addAction(act_none)
-            builder.popup_all_roots(btn, selection_callback=lambda cid, sc=scope: self._on_select(sc, cid), context_provider=None, prepare=_prep, allow_options_with_selection=True)
-        except Exception as e:
-            show_error(self, str(e))
+        builder = MenuBuilder(self)
+        def _prep(m: QtWidgets.QMenu, sc=scope):
+            act_none = QtGui.QAction("なし(解除)", m)
+            act_none.triggered.connect(lambda _, s=sc: self._on_select(s, None))
+            first = m.actions()[0] if m.actions() else None
+            if first:
+                m.insertAction(first, act_none)
+                m.insertSeparator(first)
+            else:
+                m.addAction(act_none)
+        builder.popup_all_roots(btn, selection_callback=lambda cid, sc=scope: self._on_select(sc, cid), context_provider=None, prepare=_prep, allow_options_with_selection=True)
     def _on_select(self, scope: str, cid):
         if cid is None:
             if scope == "*":
@@ -400,7 +393,10 @@ class MouthSection(QtWidgets.QGroupBox):
         btn.clicked.connect(lambda _, sc=scope: self._pick_cmd(sc))
         edit = QtWidgets.QLineEdit(row)
         edit.setReadOnly(True)
-        if value:
+        pv = self._payloads.get(scope)
+        if pv:
+            edit.setText(self._display(pv))
+        elif value:
             edit.setText(self._display(value))
         rl.addWidget(btn,0)
         rl.addWidget(edit,1)
@@ -445,16 +441,6 @@ class MouthSection(QtWidgets.QGroupBox):
         except Exception:
             pass
     def _build_payload_with_options(self, cid: str) -> CommandPayload:
-        reg = CommandRegistry()
-        cls = reg.get_command(cid)
-        if not cls:
-            return CommandPayload(cid, {})
-        meta = getattr(cls, "meta", None)
-        if not meta or not getattr(meta, "has_options", False):
-            return CommandPayload(cid, {})
-        dlg = CommandOptionsDialog(cls, self, binding_mode=True)
-        if dlg.exec() == QtWidgets.QDialog.Accepted and dlg.did_save():
-            return CommandPayload(cid, dlg.get_values())
         return CommandPayload(cid, {})
     def _display(self, value: Any) -> str:
         return format_payload_display(value)

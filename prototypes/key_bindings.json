@@ -1,0 +1,58 @@
+[
+  {
+    "modifier": "Shift",
+    "key": "F10",
+    "scopes": {
+      "*": {
+        "id": "showContextMenuHere",
+        "args": {}
+      },
+      "Widget B": {
+        "id": "hello",
+        "args": {}
+      },
+      "Widget C": {
+        "id": "showContextMenuHere",
+        "args": {}
+      }
+    }
+  },
+  {
+    "key": "H",
+    "scopes": {
+      "*": {
+        "id": "hello",
+        "args": {}
+      }
+    }
+  },
+  {
+    "key": "T",
+    "scopes": {
+      "*": {
+        "id": "time",
+        "args": {}
+      }
+    }
+  },
+  {
+    "modifier": "Shift",
+    "key": "E",
+    "scopes": {
+      "*": {
+        "id": "showContextMenuHere",
+        "args": {}
+      }
+    }
+  },
+  {
+    "modifier": "Ctrl",
+    "key": "W",
+    "scopes": {
+      "*": {
+        "id": "bindings",
+        "args": {}
+      }
+    }
+  }
+]

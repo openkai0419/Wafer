@@ -77,17 +77,6 @@ class CommandRegistry:
             return command.call_execute(**kwargs)
         return command.execute(**kwargs)
 
-    def execute_payload(self, data: Any, extra_context: Optional[Dict[str, Any]] = None) -> Any:
-        if not isinstance(data, CommandPayload):
-            raise TypeError("Payload must be CommandPayload")
-        cid = data.id
-        if not isinstance(cid, str) or not cid:
-            raise ValueError("Payload.id must be non-empty string")
-        args = dict(data.args or {})
-        if extra_context:
-            args.update(extra_context)
-        return self.execute(cid, **args)
-
     def get_command(self, name: str) -> Optional[type[CommandBase]]:
         return self._commands.get(name)
 

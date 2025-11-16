@@ -1,23 +1,5 @@
 [
   {
-    "modifier": "Shift",
-    "key": "F10",
-    "scopes": {
-      "*": {
-        "id": "showContextMenuHere",
-        "args": {}
-      },
-      "Widget B": {
-        "id": "hello",
-        "args": {}
-      },
-      "Widget C": {
-        "id": "showContextMenuHere",
-        "args": {}
-      }
-    }
-  },
-  {
     "key": "H",
     "scopes": {
       "*": {
@@ -36,21 +18,37 @@
     }
   },
   {
-    "modifier": "Shift",
-    "key": "E",
+    "modifier": "Ctrl",
+    "key": "W",
     "scopes": {
       "*": {
+        "id": "bindings",
+        "args": {}
+      }
+    }
+  },
+  {
+    "key": "A",
+    "scopes": {
+      "*": {
+        "id": "showContextMenuHere",
+        "args": {}
+      },
+      "Widget B": {
+        "id": "hello",
+        "args": {}
+      },
+      "Widget C": {
         "id": "showContextMenuHere",
         "args": {}
       }
     }
   },
   {
-    "modifier": "Ctrl",
-    "key": "W",
+    "key": "E",
     "scopes": {
       "*": {
-        "id": "bindings",
+        "id": "showContextMenuHere",
         "args": {}
       }
     }

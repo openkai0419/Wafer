@@ -32,9 +32,14 @@
 - 編集 UI: MouseBindingEditor と新規 KeyBindingEditor。
   - KeyBindingEditor: 旧 ShortcutBindingEditor を置換。マウス編集 UI パターンを転用し、ショートカット列挙 + 1 つ選択→グローバル("*")とウィジェット別オーバーライドを編集。追加/削除/リセット機能。
   - KeyBindingEditor: 旧 ShortcutBindingEditor を置換。マウス編集 UI パターンを転用し、ショートカット列挙 + 1 つ選択→グローバル("*")とウィジェット別オーバーライドを編集。追加/削除/リセット機能。互換性: 旧呼び出し `ShortcutBindingEditor(ws, cmds)` を維持するため __init__ に commands 引数をオプション追加し無視可能 + `ShortcutBindingEditor = KeyBindingEditor` エイリアス。
+  - KeySequenceSection に「割当」ボタンを追加し、_TwoKeyCaptureDialog による新しいキーシーケンスの取得と、既存割当の置き換えを即時反映可能にした。
+  - 左ペインのリストは (すべて) を先頭、(なし) を次に固定し、それ以外はカスタム順で整列。順序は 装飾 → 特殊 → その他 → ナビ → 数字 → アルファベット。
+  - 右ペインのセクションは主キー優先で並び替え（装飾 → 特殊 → その他 → ナビ → 数字 → アルファベットの順、その中で修飾キー優先度順）。
+  - KeySpecCatalog を追加し、バインド可能キーの分類と表示順を一元管理。UI は KeySpecCatalog の API に依存し、ハードコードを回避。
   - 内部ストア KeyBindingStore: key_bindings.json 永続化。形式 {"Ctrl+S": {"*": {id,args}, "paneA": {...}}}。CommandPayload をシリアライズし再構築。
   - 適用時: 各 Widget の set_shortcut_bindings に対しスコープ優先 (widget 名 > "*") で束ねて渡す。
   - UI 遷移: 左ペイン QListWidget + QKeySequenceEdit 追加行、右ペインで選択中シーケンスの編集セクション (グローバル + オーバーライド群)。
+  - 補助操作: 先頭に "*" を表示し、空白クリック時は current を "*" に戻す。選択解除は行わない。
 
 ## デモ構造
 - menu_demo.py: 複数の RegistryBackedMenu 実装 (FileMenu / PathMenu / CmdMenu / ContextMenu / MenuMenu) で多階層・オプション・チェック・動的構築パターンを提示。
@@ -56,12 +61,14 @@
 - BindingManager と OptionStore がファイル IO を直接行うため並列アクセス/競合未考慮。
 - undo/redo インターフェイスはスタブ (CommandBase.undo)。履歴管理未実装。
 - パラメータ validation (min/max) は UI セット段階のみ、直接呼び出し時は非検証。
+ - KeyBindingEditor のキーキャプチャダイアログ(_TwoKeyCaptureDialog)の確定基準を「最後に押された時点のキー状態」に変更。解放直前ではなく、押下時スナップショットを用いて同時押しが単一化されないように修正。OK押下時も未確定ならこのスナップショットで確定。
 
 ## 改善提案 (短期)
 - 例外処理方針更新: show_error は GUI ダイアログ廃止し stderr 出力 + RuntimeError 送出へ変更。silent pass を削減し例外は端末へ直接表示。
 - CommandParam: Generic[T] 化し型安全性向上。choices と type 整合検査。
 - オプションダイアログ: widget_type 明示でカスタムファクトリ登録。FactoryRegistry 導入。
 - 多言語化: display / description を翻訳キー化。TranslatorMixin を prototypes にも適用。
+ - UI 統一: MouseBindingEditor 右ペインを QScrollArea の NoFrame + 透過背景に変更し、KeyBindingEditor と同一の黒背景表示に統一。
 
 ## 改善提案 (中期)
 - undo/redo 層: CommandBase に result / inverse_args 帯域。CommandRegistry へ stack 実装。
@@ -81,136 +88,12 @@
 - prototypes 下に新規構造/責務追加時本ファイルの該当セクションを差分反映。
 - コード詳細は記載せず API 変化と設計意図のみ保持。
 - 大きなリファクタ後: 現状の課題/改善提案を再評価し優先度更新。
+- 更新履歴は記載せず、つどこのメモに対して削除/編集/追加する。
+- あくまでもメモは補助的なもので、実装されているコードを第一に重要視すること
+- このメモは間違っている/更新がされていない可能性が高いことを念頭において確認すること
 
 ## 次の小さな改善候補
 - collect_items_by_folder の事前キャッシュ実装。
 - チェック状態保存の軽量ストア追加。
 - CommandParam に validator フィールド追加し UI/直接実行双方で統一検証。
 - show_error を端末強制出力ラッパとして再定義 (RuntimeError 送出)。GUI ポップアップなし。
-
-(以上)
- 
-## 2025-11-15 入力解決の微修正
-- 右ボタン押下中にカーソル移動して左クリックした場合でも、左クリック時点のカーソル直下にあるバインディング対象ウィジェットへイベントを転送するように変更。
-- 実装要点: MouseEventDispatcher が MouseButtonRelease 処理時に `QApplication.widgetAt(global_pos)` で再ヒットテストし、登録済みウィジェットへ座標変換した QMouseEvent を生成してディスパッチ。適切な対象が見つからない場合は従来通り自己ウィジェットで処理。
-- ダブルクリック判定・ドラッグ開始閾値の挙動は従来通り維持。
- - ダブルクリックにバインドが存在しない場合、2 回目のクリックはシングルクリックとして解決し実行するように変更。実装上は fallback 解決で DOUBLE 未割当時に同一ボタン/同一修飾の SINGLE を再解決して実行。
- - ボタン同時押し(held あり)のアクションが実行されたシーケンスでは、参加ボタンのその後の単独リリース時(SINGLE)は抑制し、重複実行を防止。
- - バインドエディタで「なし(解除)」選択しても解除されない不具合を修正。グローバルスコープ("*")の一時ペイロードを確実に破棄し、適用時に再登録されないようにした。
-
-## 2025-11-15 UI 微追加
-- MouseBindingEditor 左側アクション一覧上部にラベル "マウス操作:" を追加し視認性向上。内部構造: QListWidget を直接配置していた箇所をコンテナ + 縦レイアウトに変更しラベルを先頭へ挿入。機能的変更なし。
- - 左右領域間を QSplitter 化しアクション一覧と詳細編集領域の幅をドラッグで調整可能にした。従来の固定レイアウト(HBox)から移行。保存/適用ロジックへの影響なし。
-  - Splitter 子コンポーネントの collapse を禁止し誤操作で幅ゼロにならないようにした (setCollapsible False + setChildrenCollapsible False)。初期サイズを setSizes で安定化。
-
-## 2025-11-15 キー入力の安定化
-- アプリ/ウィンドウの非アクティブ化時に押下状態を全クリア。`ShortcutManager` が `ApplicationDeactivate`/`WindowDeactivate` を受信すると、全ウィジェットの `_pressed/_pressed_sc/_fired/_consumed` をリセットする。
-- `eventFilter` がアプリケーション対象イベントでも動作するように先頭で種別判定を追加。従来のウィジェット限定ハンドリングに加えてグローバルな状態遷移を確実に捕捉。
-- ウィジェット単位でも `FocusOut/Hide/WindowDeactivate` で同様にクリアする共通処理を導入し、Alt+Tab や別ウィンドウへのフォーカス移動時に押下ゴーストが残らないようにした。
-- 既存の論理キー/物理スキャンコードの二系統判定は維持。2 キー同時の発火は押下時、単独は未消費のリリース時に解決。
-
-エディタのデバッグ表示に関する補足:
-- KeyBindingEditor のデバッグ欄は内部で独自に押下集合を保持していたため、非アクティブ化時に Release が届かないと表示が残留した。Editor 自身がアプリ/ウィンドウの非アクティブ化および FocusOut/Hide をフックして集合と表示を即時クリアするように変更し、見た目の不整合を排除した。
-
-限界/今後の検討:
-- Qt 標準 API では非修飾キーの現在状態を外部から問い合わせる手段が限られるため、OS レベルのキー状態と完全同期は保証できない。Windows 専用で `GetAsyncKeyState` を用いるポーリング補助は可能だがクロスプラットフォーム性を損なうため現状は採用しない。
-- IME 合成中のキーイベントやレイアウト切替直後の一部キーは通知順序が前後する場合がある。今回の非アクティブ時リセットで大半の実害は回避可能。
-
-## 2025-11-15 キーのデフォルト/表記統一の更新
-- `binding/key/defaults.py` の形式を「タプルのリスト」に変更。例: `[( ("Shift","F10"), {showContextMenuHere} ), (("H",), {hello})]`。
-- 互換のための正規化ロジックを削除。Editor/Store は入力文字列をそのまま扱い、Manager はデフォルトのタプル仕様をそのまま `set_key_bindings`/`set_physical_bindings` に適用。
-- `BindingManager` はデフォルト(タプル)→保存済み(文字列)の順に適用して上書き可能を維持。ファイルへのシードは行わない。
-
-## 2025-11-16 Key/Mouse エディタ整合性チェックと微修正
-- KeyBindingEditor:
-  - 未使用関数 `_all_bindings` を削除し、将来の誤用を防止。
-  - ダイアログ `_SingleKeyCaptureDialog` / `_TwoKeyCaptureDialog` にてキーリスナー登録を確実に解除するため `done()` をオーバーライドし、閉じる/Accept/Reject いずれの経路でも `ShortcutManager.remove_key_listeners` を呼ぶようにした。リスナーリーク/重複発火の予防。
-  - 未使用インポートと未使用フィールドを削除し軽量化。
-- MouseBindingEditor:
-  - 未使用のオプション生成ヘルパ `_build_payload_with_options` の依存関係を排して簡素化。実運用上は `MenuBuilder` が `CommandPayload` を返すため冗長な経路を削除。
-  - 未使用インポート削除。
-- 仕様整合性の確認:
-  - 保存形式: キー側は `{"Ctrl+S": {"*": payload, "scope": payload}}`、マウス側は `[ {button, click, held, scopes} ]` として互いに `CommandPayload` を保存し、`BindingManager` が scope 優先で適用する点は一致。
-  - エディタの「なし(解除)」動作は双方ともグローバル/スコープ毎に解除可能で、適用時にストアからエントリを削除する実装で統一済み。
-  - 既知の差異: KeyBindingEditor は表示上「装飾キー/主キー」に2分割してフィルタする簡易UIのため、非装飾キー同士の2キー(例: "A+B")は見た目上「Aが装飾側」に並ぶが、保存/適用は正しく2キー同時のショートカットとして動作する。機能不整合は無し。
-
-未解決だが許容している点:
-- MouseBindingEditor のセクション型名が `MouthSection` なのは表記揺れだが機能に影響なし。広範変更を避け現状維持。
-- KeyBindingEditor でキー追加UIの隠し関数 `_add_key_to_list` は現行UIから未使用。将来の直接追加ボタン導入時に活用予定。
-
-## 2025-11-16 キー入力ダイアログ挙動の整理
-- `_TwoKeyCaptureDialog` のキー入力方式を変更:
-  - 旧: キーを順番に押すボタン方式（1つ目、2つ目を明示的に分けて入力）
-  - 新: 最後に押されたキー組み合わせを記録する方式。同時押しの場合は押された順番を考慮し、すべてのキーがリリースされた時点でその組み合わせを確定。
-- 実装の詳細:
-  - `_pressed_keys` リストで現在押下中のキーを (keycode, name) のタプルで管理。
-  - press イベントで押下順を記録、release イベントで該当キーを削除。
-  - すべてのキーがリリースされた時点（`_pressed_keys` が空になったとき）に `_current_combo` へ確定した組み合わせを追加。
-  - 最大2つのコンボまで記録可能（1つ目のコンボ、2つ目のコンボ）。
-- UI 表示: リアルタイムで押下中のキーを "+" 区切りで表示し、リリース時に確定して次の入力を待つ。
-- 利点: Ctrl+Shift+S のような複数修飾キーの同時押しを自然に入力できる。押下順序が保たれるため、意図した組み合わせが正確に記録される。
-
-## 2025-11-16 KeySequence クラスの導入とキー管理の統一（最終版）
-- 文字列の "+" 結合によるキー管理を完全排除し、専用の `KeySequence` クラスとJSON構造化形式で統一管理:
-  - `KeySequence`: 最大2つのキーをタプルで管理する専用クラス。内部的に tuple で保持。
-  - `from_dict(data)`: {"modifier": "Shift", "key": "F10"} 形式の辞書から生成。modifier省略時は単一キー。
-  - `to_dict()`: {"modifier": "Shift", "key": "F10"} または {"key": "H"} 形式の辞書に変換（JSON保存用）。
-  - `to_tuple()`: 内部タプルを取得。
-  - `modifier` / `key` プロパティ: 装飾キーと主キーに個別アクセス。
-  - `__eq__`, `__hash__`: 辞書キーとして使用可能。
-  - `__lt__`: ソート用の比較演算子を実装し、`str()` なしで直接ソート可能。
-  - `__str__()`: "Shift+F10" 形式の文字列表現（表示用のみ）。
-- JSON保存形式の変更:
-  - 旧: `{"Ctrl+S": {"*": {id, args}, "scope": {...}}}`（互換性完全排除）
-  - 新: `[{"modifier": "Ctrl", "key": "S", "scopes": {"*": {id, args}, "scope": {...}}}, ...]`
-  - mouse_bindings.json と同様の構造化配列形式に統一。
-- 変更箇所:
-  - `KeySequence`: `to_display/from_display` を完全削除。表示は `__str__()` のみ。文字列変換メソッドを一切提供せず。
-  - `KeyBindingStore`: 保存・読込ともに配列形式のみ対応。旧辞書形式の互換性コードを完全削除。内部データは `Dict[KeySequence, Dict[str, CommandPayload]]` で管理。
-  - `KeyBindingEditor`: 全体的に KeySequence ベースに書き換え。`_draft` も `Dict[KeySequence, ...]` に変更。バインディング辞書は KeySequence オブジェクトをキーとして使用（文字列化なし）。表示時は `str(seq)` を使用。ソートは `__lt__` を利用した `sorted(seqs)` で直接実行。
-  - `ShortcutManager`: `set_bindings()` の引数を `Dict[str, Any]` から `Dict[KeySequence, Any]` に変更。`_parse_key_sequence(seq: KeySequence)` メソッドを追加し、KeySequence から FrozenSet[int] への変換を実装。旧 `_parse_string_combo()` は互換性のため保持。
-  - `BindingManager`: `_is_sc_combo` を `_is_physical_seq` に変更し KeySequence を直接受け取る。`store_logical` と `store_physical` は KeySequence オブジェクトをキーとして直接使用（文字列化なし）。
-  - `_SingleKeyCaptureDialog`: 1つのキーのみ入力可能に変更。既にキーが入力されている場合は追加入力を無視。
-  - `_TwoKeyCaptureDialog`: 最大2キーまでに制限。3個目以降のキーは無視。各LineEditに1キーずつ表示。`_current_combos` を `_final_keys` に単純化。
-- 互換性: 旧形式との互換性を完全排除。新規インストールまたは手動での再設定が必要。
-- str(KeySequence) 使用箇所の完全排除: 表示用の `__str__()` 以外は KeySequence オブジェクトを直接使用。ソート、辞書キー、引数渡しはすべて KeySequence オブジェクトのまま処理。
-
-## 2025-11-16 ShortcutManager の責務分離とクラス化 → ファイル統合完了
-- キー押下状態管理とキー名解決ロジックを専用クラスに分離し、ShortcutManager の肥大化を解消:
-  - `KeyPressState` (runtime.py): pressed/fired/consumed の3つの状態を1つのクラスで管理。
-  - `KeyNameResolver` (runtime.py): キー名の正規化・変換・フォーマットを一元管理。キーバインディングに不適切なキーのフィルタリング機能を追加。
-  - `RecentEventDeduper`, `ScanCodeMapper`, `KeyListenerRegistry` (runtime.py): 各種支援機能を統合。
-  - `ComboParser`, `ComboMatcher` (combo.py): 解析・マッチング機能を統合。
-- ファイル整理完了:
-  - 古いヘルパーファイル群（state.py, deduper.py, scmap.py, listeners.py, combo_parser.py, combo_matcher.py, resolver.py）削除済み。
-  - shortcutmanager.py のインポートを runtime.py と combo.py からの統合モジュールに変更。
-  - エラーチェック完了：全ファイルでコンパイルエラーなし。
-
-## 2025-11-16 キー入力フィルタリング機能の追加（ホワイトリスト方式）
-- 問題の解決: CapsLock、変換・無変換、NumLock などのキーがキー入力ダイアログで枠を消費するが表示されない問題を解決。
-- KeyNameResolver に `is_key_bindable()` メソッドを追加し、ホワイトリスト方式でキーバインディングに適切なキーのみを許可。
-- 許可対象キー（111個）:
-  - 文字キー: A-Z (26個)
-  - 数字キー: 0-9 (10個)
-  - ファンクションキー: F1-F24 (24個)
-  - 修飾キー: Shift, Control, Alt, Meta (4個)
-  - ナビゲーションキー: Up/Down/Left/Right, Home/End, PageUp/PageDown, Insert/Delete (10個)
-  - 特殊キー: Space, Tab, Return/Enter, Backspace, Escape (6個)
-  - 記号キー: -, =, [, ], \, ;, ', ,, ., /, +, *, @, `, ~, _, &, #, $, %, ^, (, ), {, }, |, ?, !, :, <, > (31個)
-- ブラックリスト方式からホワイトリスト方式に変更し、未知のキーや特殊なハードウェア固有キーも自動的に拒否される安全性を確保。
-- テンキー完全対応: 数字(0-9)は通常キーと共通、演算子(+, -, *, .)とEnterも個別対応済み。
-- エディタ側での適用: `_SingleKeyCaptureDialog` と `_TwoKeyCaptureDialog` の `_on_press` メソッドで、許可されていないキーは完全に無視される。
-- Spaceキーの表示改善: pretty=True時に "[Space]" として視認性を向上。
-- 記号キー拡張: -@ などの一般的な記号キーを網羅的に追加し、プログラミングやテキスト編集で頻用される記号をすべてサポート。
-\n+## 2025-11-16 入力処理周辺のSRPクラス導入
-- RecentEventDeduper: 直近イベントの重複排除と上限制御を担当。`add_and_check(stamp)` に一本化。
-- ScanCodeMapper: scan code→Qt key の対応付けをウィジェット単位で管理。`map/pop/clear` を提供。
-- KeyListenerRegistry: 押下/離上のリスナー登録・発火・解除を管理。論理系/物理系で2インスタンス利用。
-- ComboParser: 文字列/KeySequence/タプル仕様から FrozenSet[int] への正規化を担当。Resolver を内部利用。
-- ComboMatcher: 押下集合に対する最長一致の選択を担当。将来の戦略差し替えに対応。
-- ShortcutManager の変更点:
-  - `_recent_event_map` を削除し `RecentEventDeduper` に置換
-  - `_sc_to_key` を削除し `ScanCodeMapper` に置換
-  - `_listeners_*` の辞書を削除し `KeyListenerRegistry` に置換
-  - 正規化/解析ロジックを `ComboParser` に委譲、マッチングは `ComboMatcher` を使用
-  - `_resolve_target_widget_id` はレジストリの `ids()` を用いてターゲットを決定

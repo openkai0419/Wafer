@@ -6,21 +6,23 @@ from ...utils import format_payload_display, CommandPayload
 from ..common import WidgetRef
 from .store import KeyBindingStore
 from .shortcutmanager import ShortcutManager
-from .sequence import KeySequence
+from .sequence import KeySequence, KeySpecCatalog
 
 class _SelectableList(QtWidgets.QListWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-
+        self.setAlternatingRowColors(True)
     def mousePressEvent(self, e: QtGui.QMouseEvent):
         idx = self.indexAt(e.pos())
-        super().mousePressEvent(e)
         if not idx.isValid():
-            self.clearSelection()
-            self.setCurrentRow(-1)
-            p = self.parent()
-            if hasattr(p, "_refresh_shortcuts"):
-                p._refresh_shortcuts()
+            super().mousePressEvent(e)
+            try:
+                if self.count() > 0:
+                    self.setCurrentRow(0)
+            except Exception:
+                pass
+            return
+        super().mousePressEvent(e)
 
 class KeyBindingEditor(QtWidgets.QDialog):
     def __init__(self, widgets: List[WidgetRef], commands: List[str] | None = None, parent=None):
@@ -30,6 +32,7 @@ class KeyBindingEditor(QtWidgets.QDialog):
         self.setWindowTitle("Key Bindings")
         self.resize(600, 480)
         self._store = KeyBindingStore()
+        self._cat = KeySpecCatalog()
         self._mod_keys: List[str] = []
         self._main_keys: List[str] = []
         self._draft: Dict[KeySequence, Dict[str, CommandPayload]] = {}
@@ -48,11 +51,11 @@ class KeyBindingEditor(QtWidgets.QDialog):
         col_list = QtWidgets.QVBoxLayout()
         col_mod.addWidget(QtWidgets.QLabel("装飾キー"), 0)
         self.list_mods = _SelectableList(self)
-        self.list_mods.itemClicked.connect(lambda _: self._refresh_shortcuts())
+        self.list_mods.currentItemChanged.connect(lambda: self._refresh_shortcuts())
         col_mod.addWidget(self.list_mods, 1)
         col_main.addWidget(QtWidgets.QLabel("主キー"), 0)
         self.list_main = _SelectableList(self)
-        self.list_main.itemClicked.connect(lambda _: self._refresh_shortcuts())
+        self.list_main.currentItemChanged.connect(lambda: self._refresh_shortcuts())
         col_main.addWidget(self.list_main, 1)
         btns = QtWidgets.QHBoxLayout()
         self.btn_add_binding = QtWidgets.QPushButton("新規追加", self)
@@ -85,7 +88,7 @@ class KeyBindingEditor(QtWidgets.QDialog):
         l.addWidget(bb, 0)
 
     def _load_existing(self):
-        self._mod_keys = ["なし"]
+        self._mod_keys = ["(なし)"]
         self._main_keys = []
         data = self._store.get_all()
         seqs: List[KeySequence] = []
@@ -103,7 +106,7 @@ class KeyBindingEditor(QtWidgets.QDialog):
             except Exception:
                 pass
         for seq in seqs:
-            mod = seq.modifier or "なし"
+            mod = seq.modifier or "(なし)"
             key = seq.key
             if mod and mod not in self._mod_keys:
                 self._mod_keys.append(mod)
@@ -112,49 +115,95 @@ class KeyBindingEditor(QtWidgets.QDialog):
 
     def _refresh_lists(self):
         self.list_mods.clear()
-        for k in self._mod_keys:
+        ordered_mods = ["(すべて)", "(なし)"] + self._sort_modifiers(self._mod_keys)
+        items_mod = []
+        seen = set()
+        for k in ordered_mods:
+            if k in seen:
+                continue
+            seen.add(k)
+            if k in self._mod_keys or k in ("(すべて)", "(なし)"):
+                items_mod.append(k)
+        for k in items_mod:
             self.list_mods.addItem(k)
         self.list_main.clear()
-        for k in self._main_keys:
+        ordered_main = ["(すべて)"] + self._sort_main_keys(self._main_keys)
+        items_main = []
+        seen2 = set()
+        for k in ordered_main:
+            if k in seen2:
+                continue
+            seen2.add(k)
+            if k in self._main_keys or k == "(すべて)":
+                items_main.append(k)
+        for k in items_main:
             self.list_main.addItem(k)
         try:
-            self.list_mods.setCurrentRow(-1)
-            self.list_main.setCurrentRow(-1)
+            self.list_mods.setCurrentRow(0)
+            self.list_main.setCurrentRow(0)
         except Exception:
             pass
 
     def _clear_initial_selection(self):
         try:
-            self.list_mods.setCurrentRow(-1)
-            self.list_main.setCurrentRow(-1)
+            if self.list_mods.count() > 0:
+                self.list_mods.setCurrentRow(0)
+            if self.list_main.count() > 0:
+                self.list_main.setCurrentRow(0)
         except Exception:
             pass
         self._refresh_shortcuts()
 
     def _split_seq(self, seq: KeySequence) -> Tuple[str, str]:
-        mod = seq.modifier or "なし"
+        mod = seq.modifier or "(なし)"
         key = seq.key
         return (mod, key)
-
-    def _add_key_to_list(self, target: QtWidgets.QListWidget, is_modifier: bool):
-        dlg = _SingleKeyCaptureDialog(self)
-        if dlg.exec() != QtWidgets.QDialog.Accepted:
-            return
-        key = dlg.result_key
-        if not key:
-            return
-        if is_modifier and key == "なし":
-            if self._mod_keys and self._mod_keys[0] != "なし":
-                self._mod_keys.insert(0, "なし")
-        else:
-            lst = self._mod_keys if is_modifier else self._main_keys
-            if key not in lst:
-                lst.append(key)
-        self._refresh_lists()
 
     def _refresh_shortcuts(self):
         self._rebuild_sections()
         self._update_add_button_enabled()
+
+    def _rebuild_key_lists(self, preserve: bool = True):
+        old_mod = self.list_mods.currentItem().text() if self.list_mods.currentRow() >= 0 else None
+        old_main = self.list_main.currentItem().text() if self.list_main.currentRow() >= 0 else None
+        self._load_existing()
+        self._refresh_lists()
+        if preserve:
+            if old_mod:
+                for i in range(self.list_mods.count()):
+                    if self.list_mods.item(i).text() == old_mod:
+                        self.list_mods.setCurrentRow(i)
+                        break
+            if old_main:
+                for i in range(self.list_main.count()):
+                    if self.list_main.item(i).text() == old_main:
+                        self.list_main.setCurrentRow(i)
+                        break
+    
+    def _select_lists_for_sequence(self, seq: KeySequence):
+        mod, key = self._split_seq(seq)
+        if mod:
+            for i in range(self.list_mods.count()):
+                if self.list_mods.item(i).text() == mod:
+                    self.list_mods.setCurrentRow(i)
+                    break
+        if key:
+            for i in range(self.list_main.count()):
+                if self.list_main.item(i).text() == key:
+                    self.list_main.setCurrentRow(i)
+                    break
+
+    def _mod_priority(self, name: str) -> int:
+        return self._cat.modifier_priority(name)
+
+    def _sort_modifiers(self, mods: List[str]) -> List[str]:
+        return self._cat.sort_modifiers(mods)
+
+    def _key_sort_tuple(self, k: str) -> tuple:
+        return self._cat.key_sort_tuple(k)
+
+    def _sort_main_keys(self, keys: List[str]) -> List[str]:
+        return self._cat.sort_main_keys(keys)
 
     def _add_binding(self):
         d = _TwoKeyCaptureDialog(self)
@@ -186,12 +235,15 @@ class KeyBindingEditor(QtWidgets.QDialog):
                 self._store.set_all(data)
             self._refresh_shortcuts()
             self._rebuild_sections()
+            self._rebuild_key_lists()
             return
         if not isinstance(cid, CommandPayload):
             raise TypeError("Selection must provide CommandPayload")
         entry = self._draft.setdefault(seq, {})
         entry["*"] = cid
         self._refresh_shortcuts()
+        self._rebuild_key_lists(preserve=False)
+        self._select_lists_for_sequence(seq)
 
     def _apply(self):
         data = self._store.get_all()
@@ -260,6 +312,10 @@ class KeyBindingEditor(QtWidgets.QDialog):
                 w.deleteLater()
         sel_mod = self.list_mods.currentItem().text() if self.list_mods.currentRow() >= 0 else None
         sel_main = self.list_main.currentItem().text() if self.list_main.currentRow() >= 0 else None
+        if sel_mod == "(すべて)":
+            sel_mod = None
+        if sel_main == "(すべて)":
+            sel_main = None
         data = self._store.get_all()
         merged: Dict[KeySequence, Dict[str, CommandPayload]] = {}
         for k, v in data.items():
@@ -286,8 +342,10 @@ class KeyBindingEditor(QtWidgets.QDialog):
                 g = scopes.get("*")
                 if isinstance(g, CommandPayload):
                     seqs.append(seq)
-        for seq in sorted(seqs):
-            section = _KeySequenceSection(self.section_container, self.widgets, seq, merged.get(seq, {}), self._on_section_update, self._on_section_remove)
+        def _section_key(s: KeySequence):
+            return (self._key_sort_tuple(s.key), self._mod_priority(s.modifier or ""), s.modifier or "")
+        for seq in sorted(seqs, key=_section_key):
+            section = _KeySequenceSection(self.section_container, self.widgets, seq, merged.get(seq, {}), self._on_section_update, self._on_section_remove, self._on_section_reassign)
             self.section_layout.addWidget(section)
         self.section_layout.addStretch(1)
         self.section_container.setVisible(bool(seqs))
@@ -306,6 +364,20 @@ class KeyBindingEditor(QtWidgets.QDialog):
             data.pop(seq, None)
             self._store.set_all(data)
         self._refresh_shortcuts()
+        self._rebuild_key_lists()
+
+    def _on_section_reassign(self, old_seq: KeySequence, new_seq: KeySequence, scopes: Dict[str, CommandPayload]):
+        if not isinstance(new_seq, KeySequence) or old_seq == new_seq:
+            return
+        self._draft.pop(old_seq, None)
+        data = self._store.get_all()
+        if old_seq in data:
+            data.pop(old_seq, None)
+            self._store.set_all(data)
+        self._draft[new_seq] = dict(scopes or {})
+        self._refresh_shortcuts()
+        self._rebuild_key_lists(preserve=False)
+        self._select_lists_for_sequence(new_seq)
 
     def _reset_all_defaults(self):
         from .defaults import default_key_bindings
@@ -321,41 +393,6 @@ class KeyBindingEditor(QtWidgets.QDialog):
         self._load_existing()
         self._refresh_lists()
 
-
-class _SingleKeyCaptureDialog(QtWidgets.QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("キー入力")
-        self.result_key: str = ""
-        self._mgr = ShortcutManager()
-        l = QtWidgets.QVBoxLayout(self)
-        self.lbl = QtWidgets.QLabel("1つのキーを押してください", self)
-        l.addWidget(self.lbl)
-        self.edit = QtWidgets.QLineEdit(self)
-        self.edit.setReadOnly(True)
-        l.addWidget(self.edit)
-        bb = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel, self)
-        bb.accepted.connect(self.accept)
-        bb.rejected.connect(self.reject)
-        l.addWidget(bb)
-        self._mgr.add_key_listener(self, on_press=self._on_press, on_release=None)
-
-    def _on_press(self, k: int):
-        if self.result_key:
-            return
-        if not self._mgr._resolver.is_key_bindable(k):
-            return
-        name = ShortcutManager().key_name(k, pretty=True)
-        self.result_key = name
-        self.edit.setText(name)
-
-    def done(self, r: int) -> None:
-        try:
-            self._mgr.remove_key_listeners(self)
-        except Exception:
-            pass
-        super().done(r)
-
 class _TwoKeyCaptureDialog(QtWidgets.QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -363,8 +400,9 @@ class _TwoKeyCaptureDialog(QtWidgets.QDialog):
         self._mgr = ShortcutManager()
         self._pressed_keys: List[Tuple[int, str]] = []
         self._final_keys: List[str] = []
+        self._press_snapshot: List[Tuple[int, str]] = []
         l = QtWidgets.QVBoxLayout(self)
-        self.lbl = QtWidgets.QLabel("最大2つのキーを同時押ししてください", self)
+        self.lbl = QtWidgets.QLabel("最大2つまでキーを押してください", self)
         l.addWidget(self.lbl)
         row = QtWidgets.QHBoxLayout()
         self.e1 = QtWidgets.QLineEdit(self)
@@ -384,7 +422,9 @@ class _TwoKeyCaptureDialog(QtWidgets.QDialog):
 
     def _on_press(self, k: int):
         if self._final_keys:
-            return
+            self._final_keys.clear()
+            self._press_snapshot.clear()
+            self._clear_display()
         if len(self._pressed_keys) >= 2:
             return
         if not self._mgr._resolver.is_key_bindable(k):
@@ -393,37 +433,78 @@ class _TwoKeyCaptureDialog(QtWidgets.QDialog):
         if any(key == k for key, _ in self._pressed_keys):
             return
         self._pressed_keys.append((k, name))
+        self._press_snapshot = list(self._pressed_keys)
         self._update_display()
 
     def _on_release(self, k: int):
         if self._final_keys:
             return
-        self._pressed_keys = [(key, n) for key, n in self._pressed_keys if key != k]
-        if self._pressed_keys:
+        remaining = [(key, n) for key, n in self._pressed_keys if key != k]
+        if remaining:
+            self._pressed_keys = remaining
             return
-        self._finalize_combo()
+        self._pressed_keys.clear()
+        snap = list(self._press_snapshot) if self._press_snapshot else []
+        self._finalize_combo(snap)
+        self._press_snapshot.clear()
 
+    def _clear_display(self):
+        self.e1.clear()
+        self.e2.clear()
+        
     def _update_display(self):
-        if not self._pressed_keys:
-            return
+        self.e1.clear()
+        self.e2.clear()
         if len(self._pressed_keys) >= 1:
             self.e1.setText(self._pressed_keys[0][1])
         if len(self._pressed_keys) >= 2:
             self.e2.setText(self._pressed_keys[1][1])
 
-    def _finalize_combo(self):
-        if not self._pressed_keys or self._final_keys:
+    def _finalize_combo(self, keys: List[Tuple[int, str]] | None = None):
+        if self._final_keys:
             return
-        self._final_keys = [n for _, n in self._pressed_keys]
-        if len(self._final_keys) >= 1:
-            self.e1.setText(self._final_keys[0])
-        if len(self._final_keys) >= 2:
-            self.e2.setText(self._final_keys[1])
+        src = list(keys) if keys is not None else list(self._press_snapshot) or list(self._pressed_keys)
+        if not src:
+            return
+        self._final_keys = [self._mgr.key_name(k, pretty=False) for k, _ in src]
+        if len(src) >= 1:
+            self.e1.setText(src[0][1])
+        if len(src) >= 2:
+            self.e2.setText(src[1][1])
+    
+    def _reset_state(self):
+        self._pressed_keys.clear()
+        self._press_snapshot.clear()
+        if not self._final_keys:  # 確定していない場合のみクリア
+            self._clear_display()
 
     def result_sequence(self) -> KeySequence | None:
         if not self._final_keys:
             return None
+        print(self._final_keys)
         return KeySequence(self._final_keys[:2])
+
+    def accept(self) -> None:
+        if not self._final_keys:
+            if self._press_snapshot:
+                self._finalize_combo(list(self._press_snapshot))
+            elif self._pressed_keys:
+                self._finalize_combo(list(self._pressed_keys))
+        super().accept()
+
+    def focusOutEvent(self, event):
+        if self._pressed_keys:
+            self._reset_state()
+        super().focusOutEvent(event)
+    
+    def changeEvent(self, event):
+        if event.type() == QtCore.QEvent.WindowStateChange:
+            if self._pressed_keys:
+                self._reset_state()
+        elif event.type() == QtCore.QEvent.ActivationChange and not self.isActiveWindow():
+            if self._pressed_keys:
+                self._reset_state()
+        super().changeEvent(event)
 
     def done(self, r: int) -> None:
         try:
@@ -433,17 +514,18 @@ class _TwoKeyCaptureDialog(QtWidgets.QDialog):
         super().done(r)
 
 class _KeySequenceSection(QtWidgets.QGroupBox):
-    def __init__(self, parent: QtWidgets.QWidget, widgets: List[WidgetRef], sequence: KeySequence, scopes: Dict[str, CommandPayload], on_update, on_remove):
+    def __init__(self, parent: QtWidgets.QWidget, widgets: List[WidgetRef], sequence: KeySequence, scopes: Dict[str, CommandPayload], on_update, on_remove, on_reassign):
         super().__init__(parent)
         self.widgets = widgets
         self.sequence = sequence
         self.scopes = dict(scopes)
         self.on_update = on_update
         self.on_remove = on_remove
+        self.on_reassign = on_reassign
         self.setTitle(str(self.sequence))
         l = QtWidgets.QVBoxLayout(self)
         header = QtWidgets.QHBoxLayout()
-        self.btn_global = QtWidgets.QPushButton("割り当て", self)
+        self.btn_global = QtWidgets.QPushButton("コマンド", self)
         self.btn_global.setCursor(QtCore.Qt.PointingHandCursor)
         self.btn_global.clicked.connect(lambda: self._pick_cmd("*"))
         header.addWidget(self.btn_global,0)
@@ -454,6 +536,10 @@ class _KeySequenceSection(QtWidgets.QGroupBox):
         self.ov_menu.aboutToShow.connect(self._refresh_overrides_menu)
         self.btn_overrides.setMenu(self.ov_menu)
         header.addWidget(self.btn_overrides,0)
+        btn_assign = QtWidgets.QPushButton("割当変更", self)
+        btn_assign.setCursor(QtCore.Qt.PointingHandCursor)
+        btn_assign.clicked.connect(self._assign)
+        header.addWidget(btn_assign,0)
         rem = QtWidgets.QToolButton(self)
         rem.setText("削除")
         rem.clicked.connect(lambda: self.on_remove(self.sequence))
@@ -472,6 +558,21 @@ class _KeySequenceSection(QtWidgets.QGroupBox):
         self.overrides_container.setVisible(False)
         self._payloads: Dict[str, CommandPayload] = {}
         self._load()
+
+    def _assign(self):
+        d = _TwoKeyCaptureDialog(self)
+        if d.exec() != QtWidgets.QDialog.Accepted:
+            return
+        new_seq = d.result_sequence()
+        if not new_seq:
+            return
+        scopes: Dict[str, CommandPayload] = {}
+        if "*" in self._payloads:
+            scopes["*"] = self._payloads["*"]
+        for scope in list(self.override_edits.keys()):
+            if scope in self._payloads:
+                scopes[scope] = self._payloads[scope]
+        self.on_reassign(self.sequence, new_seq, scopes)
 
     def _load(self):
         found: Dict[str,str] = {}

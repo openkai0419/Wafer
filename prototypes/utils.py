@@ -12,6 +12,7 @@ class CommandPayload:
             raise TypeError('args must be dict')
         self.id = id
         self.args = dict(a)
+
     def to_dict(self) -> Dict[str, Any]:
         return {'id': self.id, 'args': dict(self.args)}
     def to_json(self) -> str:
@@ -35,10 +36,6 @@ class CommandPayload:
             return CommandPayload.from_dict(v)
         raise TypeError('CommandPayload required')
 
- 
-
- 
-
 def read_json_file(path: Union[str, Path], default: Any = None) -> Any:
     try:
         p = Path(path)
@@ -59,10 +56,9 @@ def write_json_file(path: Union[str, Path], data: Any, indent: int = 2, ensure_a
         return False
 
 def show_error(parent: QtWidgets.QWidget, text: str, title: str = 'Error') -> None:
-    try:
-        QtWidgets.QMessageBox.critical(parent, title, text)
-    except Exception:
-        pass
+    import sys
+    print(f"{title}: {text}", file=sys.stderr)
+    raise RuntimeError(text)
 
 def _ordered_arg_values(cid: str, args: Dict[str, Any]) -> List[str]:
     from .command.core import CommandRegistry

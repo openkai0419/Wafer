@@ -5,14 +5,14 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python Debugger: main",
+            "name": "main :Python",
             "type": "debugpy",
             "request": "launch",
             "program": "main.py",
             "console": "integratedTerminal"
         },
         {
-            "name": "Python Debugger: prototypes.demo_app (module)",
+            "name": "prototypes.demo_app :Python",
             "type": "debugpy",
             "request": "launch",
             "module": "prototypes.demo_app",

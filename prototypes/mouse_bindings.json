@@ -63,5 +63,15 @@
     "scopes": {
       "*": "{\"id\":\"time\",\"args\":{}}"
     }
+  },
+  {
+    "button": "RIGHT",
+    "click": "SINGLE",
+    "held": [
+      "LEFT"
+    ],
+    "scopes": {
+      "*": "{\"id\":\"showContextMenuHere\",\"args\":{}}"
+    }
   }
 ]

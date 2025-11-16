@@ -4,6 +4,7 @@ from .menu_demo import *
 from .binding.mixins import CommandBindingMixin
 from .binding.manager import BindingManager
 from .binding.mouse.defaults import default_mouse_bindings
+from .binding.key.defaults import default_key_bindings
 
 
 class DemoPane(QtWidgets.QFrame, CommandBindingMixin):
@@ -20,12 +21,19 @@ class DemoPane(QtWidgets.QFrame, CommandBindingMixin):
     def provider(self, *args,**kwargs):
         return {"scope": self.binding_scope()}
 
+class TestLineEdit(QtWidgets.QLineEdit):
+    def __init__(self, name: str, parent=None):
+        super().__init__(parent)
+        self.setPlaceholderText(f"Type here in {name}...")
+
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Prototype Command Test")
         cw = QtWidgets.QWidget(self)
+        c = QtWidgets.QVBoxLayout(cw)
         l = QtWidgets.QHBoxLayout(cw)
+        c.addLayout(l)
         self.pane1 = DemoPane("Widget A", cw)
         self.pane2 = DemoPane("Widget B", cw)
         self.pane3 = DemoPane("Widget C", cw)
@@ -33,8 +41,10 @@ class MainWindow(QtWidgets.QMainWindow):
         l.addWidget(self.pane2, 1)
         l.addWidget(self.pane3, 1)
         self.setCentralWidget(cw)
-        
-        BindingManager.activate(defaults=default_mouse_bindings())
+
+        self.line = TestLineEdit("LineEdit 1", self)
+        c.addWidget(self.line, 0)
+        BindingManager.activate(defaults=default_mouse_bindings(), key_defaults=default_key_bindings())
         self._setup_menu_bar()
 
     def _setup_menu_bar(self):

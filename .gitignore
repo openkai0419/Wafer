@@ -3,7 +3,7 @@ venv/
 .env/
 log/
 
-.github/
+.temp/
 
 # Build artifacts
 build/

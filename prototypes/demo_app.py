@@ -25,6 +25,7 @@ class TestLineEdit(QtWidgets.QLineEdit):
     def __init__(self, name: str, parent=None):
         super().__init__(parent)
         self.setPlaceholderText(f"Type here in {name}...")
+        self.setFocusPolicy(QtCore.Qt.NoFocus)
 
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
@@ -44,6 +45,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.line = TestLineEdit("LineEdit 1", self)
         c.addWidget(self.line, 0)
+        self.line2 = TestLineEdit("LineEdit 2", self)
+        c.addWidget(self.line2, 0)
         BindingManager.activate(defaults=default_mouse_bindings(), key_defaults=default_key_bindings())
         self._setup_menu_bar()
 

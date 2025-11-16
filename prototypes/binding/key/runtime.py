@@ -201,8 +201,6 @@ class KeyNameResolver:
         name = QtGui.QKeySequence(key).toString().replace('Ctrl+', 'Control').replace('Meta+', 'Meta')
         if '+' in name:
             name = name.split('+')[-1]
-        if key == QtCore.Qt.Key.Key_Space:
-            return 'Space' if not pretty else '[Space]'
         if pretty and name in self._pretty_names:
             return self._pretty_names[name]
         return name

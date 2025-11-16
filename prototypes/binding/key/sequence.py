@@ -54,3 +54,41 @@ class KeySequence:
     
     def __hash__(self) -> int:
         return hash(self._keys)
+
+class KeySpecCatalog:
+    def __init__(self):
+        self.modifiers = ["Control", "Shift", "Alt", "Meta"]
+        self.special = ["Space", "Tab", "Return", "Enter", "Escape", "Backspace"]
+        self.arrows = {"Left": 0, "Right": 1, "Up": 2, "Down": 3}
+        self.nav = ["Home", "End", "PageUp", "PageDown", "Insert", "Delete"]
+    def modifier_priority(self, name: str) -> int:
+        return self.modifiers.index(name) if name in self.modifiers else 9
+    def sort_modifiers(self, mods: List[str]) -> List[str]:
+        xs = [m for m in mods if m not in ("(すべて)", "(なし)")]
+        xs.sort(key=lambda x: (self.modifier_priority(x), x))
+        return xs
+    def key_sort_tuple(self, k: str) -> Tuple[int, object, str]:
+        if not k:
+            return (9, "", "")
+        if k in self.modifiers:
+            return (0, self.modifier_priority(k), k)
+        if k in self.special:
+            return (1, self.special.index(k), k)
+        if k in self.arrows:
+            return (3, self.arrows[k], k)
+        if k in self.nav:
+            return (3, 10 + self.nav.index(k), k)
+        if k.startswith("F") and k[1:].isdigit():
+            try:
+                return (2, int(k[1:]), k)
+            except Exception:
+                return (2, 9999, k)
+        if len(k) == 1 and ("0" <= k <= "9"):
+            return (4, int(k), k)
+        if len(k) == 1 and ("A" <= k <= "Z"):
+            return (5, k, k)
+        return (2, k, k)
+    def sort_main_keys(self, keys: List[str]) -> List[str]:
+        xs = [k for k in keys if k not in ("(すべて)",)]
+        xs.sort(key=lambda k: self.key_sort_tuple(k))
+        return xs

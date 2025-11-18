@@ -160,6 +160,17 @@ class BindingManager:
             cur = cur.parentWidget()
         return None
 
+    def find_registered_ancestor(self, widget: QtWidgets.QWidget) -> Optional[QtWidgets.QWidget]:
+        cur = widget
+        while cur is not None:
+            try:
+                if cur in self._widgets:
+                    return cur
+            except Exception:
+                pass
+            cur = cur.parentWidget()
+        return None
+
     def _is_physical_seq(self, seq: KeySequence) -> bool:
         parts = seq.to_tuple()
         for p in parts:

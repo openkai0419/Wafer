@@ -29,6 +29,7 @@
 - CommandBindingMixin: Widget に組み込み、MouseEventManager / ShortcutManager を初期化。CommandPayload 単位で統一処理。provider() で追加コンテキスト挿入。
   - 直接バインド + ストア解決フォールバックの二層。イベント未割当時はストア検索で柔軟さ確保。
   - バインディング時のオプションダイアログでキャンセルした場合は登録を中止し、既存設定を変更しない。
+  - 共通スコープ取得関数: binding/common.py に resolve_scope_by_focus(), resolve_scope_by_cursor_pos() を追加。いずれもフォールバックなしでスコープ名と対象ウィジェットを返す。
 - 編集 UI: MouseBindingEditor と新規 KeyBindingEditor。
   - KeyBindingEditor: 旧 ShortcutBindingEditor を置換。マウス編集 UI パターンを転用し、ショートカット列挙 + 1 つ選択→グローバル("*")とウィジェット別オーバーライドを編集。追加/削除/リセット機能。
   - KeyBindingEditor: 旧 ShortcutBindingEditor を置換。マウス編集 UI パターンを転用し、ショートカット列挙 + 1 つ選択→グローバル("*")とウィジェット別オーバーライドを編集。追加/削除/リセット機能。互換性: 旧呼び出し `ShortcutBindingEditor(ws, cmds)` を維持するため __init__ に commands 引数をオプション追加し無視可能 + `ShortcutBindingEditor = KeyBindingEditor` エイリアス。
@@ -40,6 +41,7 @@
   - 適用時: 各 Widget の set_shortcut_bindings に対しスコープ優先 (widget 名 > "*") で束ねて渡す。
   - UI 遷移: 左ペイン QListWidget + QKeySequenceEdit 追加行、右ペインで選択中シーケンスの編集セクション (グローバル + オーバーライド群)。
   - 補助操作: 先頭に "*" を表示し、空白クリック時は current を "*" に戻す。選択解除は行わない。
+  - ShortcutManager に scope モード切替を追加: set_scope_mode("focus"|"cursor")。focus は従来どおりフォーカスチェーンで解決、cursor はカーソル直下の登録ウィジェットで解決。
 
 ## デモ構造
 - menu_demo.py: 複数の RegistryBackedMenu 実装 (FileMenu / PathMenu / CmdMenu / ContextMenu / MenuMenu) で多階層・オプション・チェック・動的構築パターンを提示。

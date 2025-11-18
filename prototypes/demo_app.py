@@ -6,6 +6,10 @@ from .binding.manager import BindingManager
 from .binding.mouse.defaults import default_mouse_bindings
 from .binding.key.defaults import default_key_bindings
 
+class DemoButton(QtWidgets.QPushButton, CommandBindingMixin):
+    def __init__(self, name: str, parent=None):
+        super().__init__(name, parent)
+        self.init_command_binding(name)
 
 class DemoPane(QtWidgets.QFrame, CommandBindingMixin):
     def __init__(self, name: str, parent=None):
@@ -25,19 +29,19 @@ class TestLineEdit(QtWidgets.QLineEdit):
     def __init__(self, name: str, parent=None):
         super().__init__(parent)
         self.setPlaceholderText(f"Type here in {name}...")
-        self.setFocusPolicy(QtCore.Qt.NoFocus)
 
-class MainWindow(QtWidgets.QMainWindow):
+class MainWindow(QtWidgets.QMainWindow, CommandBindingMixin):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Prototype Command Test")
+        # self.init_command_binding("mainWindow")
         cw = QtWidgets.QWidget(self)
         c = QtWidgets.QVBoxLayout(cw)
         l = QtWidgets.QHBoxLayout(cw)
         c.addLayout(l)
         self.pane1 = DemoPane("Widget A", cw)
-        self.pane2 = DemoPane("Widget B", cw)
-        self.pane3 = DemoPane("Widget C", cw)
+        self.pane2 = DemoButton("Widget B", cw)
+        self.pane3 = DemoButton("Widget C", cw)
         l.addWidget(self.pane1, 1)
         l.addWidget(self.pane2, 1)
         l.addWidget(self.pane3, 1)

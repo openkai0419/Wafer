@@ -13,6 +13,7 @@ KeyChordSpec = Union[Tuple[KeySpec, ...], List[KeySpec]]
 class ShortcutManager(QtCore.QObject):
     _global: Optional['ShortcutManager'] = None
     _app_hooked_class: bool = False
+    _scope_mode: str = "focus"
     MAX_COMBO_LEN = 2
     MAX_RECENT_EVENTS = 128
     def __init__(self):
@@ -141,7 +142,10 @@ class ShortcutManager(QtCore.QObject):
             return False
         if not isinstance(obj, QtWidgets.QWidget):
             return False
-        wid = self._resolve_target_widget_id(obj)
+        if ShortcutManager._scope_mode == "cursor":
+            wid = self._resolve_target_widget_id_cursor()
+        else:
+            wid = self._resolve_target_widget_id(obj)
         if wid is None:
             return False
         et = event.type()
@@ -429,6 +433,33 @@ class ShortcutManager(QtCore.QObject):
                 return wid
             cur = cur.parentWidget()
         return None
+
+    def _resolve_target_widget_id_cursor(self) -> int | None:
+        targets = set(self._keymap.keys()) | self._key_listeners.ids() | self._phys_listeners.ids()
+        if not targets:
+            return None
+        try:
+            from ..manager import BindingManager
+            gpt = QtGui.QCursor.pos()
+            w = BindingManager.instance().find_binding_widget_at(gpt)
+            if not w:
+                return None
+            wid = id(w)
+            if wid in targets:
+                return wid
+            return None
+        except Exception:
+            return None
+
+    @classmethod
+    def set_scope_mode(cls, mode: str):
+        m = str(mode).strip().lower()
+        if m in ("focus", "cursor"):
+            cls._scope_mode = m
+
+    @classmethod
+    def scope_mode(cls) -> str:
+        return cls._scope_mode
 
     def _reset_states_for(self, wid: int):
         state = self._states.get(wid)

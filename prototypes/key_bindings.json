@@ -33,14 +33,6 @@
       "*": {
         "id": "showContextMenuHere",
         "args": {}
-      },
-      "Widget B": {
-        "id": "hello",
-        "args": {}
-      },
-      "Widget C": {
-        "id": "showContextMenuHere",
-        "args": {}
       }
     }
   },
@@ -49,6 +41,37 @@
     "scopes": {
       "*": {
         "id": "showContextMenuHere",
+        "args": {}
+      }
+    }
+  },
+  {
+    "modifier": "Control",
+    "key": "Z",
+    "scopes": {
+      "*": {
+        "id": "hello",
+        "args": {}
+      }
+    }
+  },
+  {
+    "key": "W",
+    "scopes": {
+      "*": {
+        "id": "file.0",
+        "args": {}
+      },
+      "Widget A": {
+        "id": "file.1",
+        "args": {}
+      },
+      "Widget B": {
+        "id": "file.2",
+        "args": {}
+      },
+      "Widget C": {
+        "id": "file.3",
         "args": {}
       }
     }

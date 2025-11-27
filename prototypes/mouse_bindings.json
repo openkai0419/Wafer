@@ -4,7 +4,10 @@
     "click": "SINGLE",
     "held": [],
     "scopes": {
-      "*": "{\"id\":\"showContextMenuHere\",\"args\":{}}"
+      "*": {
+        "id": "showContextMenuHere",
+        "args": {}
+      }
     }
   },
   {
@@ -12,9 +15,18 @@
     "click": "SINGLE",
     "held": [],
     "scopes": {
-      "*": "{\"id\":\"hello\",\"args\":{}}",
-      "Widget A": "{\"id\":\"file.0\",\"args\":{}}",
-      "Widget B": "{\"id\":\"file.1\",\"args\":{}}"
+      "*": {
+        "id": "hello",
+        "args": {}
+      },
+      "Widget A": {
+        "id": "file.0",
+        "args": {}
+      },
+      "Widget B": {
+        "id": "file.1",
+        "args": {}
+      }
     }
   },
   {
@@ -24,9 +36,18 @@
       "RIGHT"
     ],
     "scopes": {
-      "*": "{\"id\":\"path.0\",\"args\":{}}",
-      "Widget A": "{\"id\":\"echo\",\"args\":{}}",
-      "Widget B": "{\"id\":\"count\",\"args\":{}}"
+      "*": {
+        "id": "path.0",
+        "args": {}
+      },
+      "Widget A": {
+        "id": "echo",
+        "args": {}
+      },
+      "Widget B": {
+        "id": "count",
+        "args": {}
+      }
     }
   },
   {
@@ -36,8 +57,20 @@
       "MIDDLE"
     ],
     "scopes": {
-      "Widget A": "{\"id\":\"echo\",\"args\":{\"text\":\"echoe\",\"repeat\":7}}",
-      "Widget B": "{\"id\":\"count\",\"args\":{\"value\":3,\"step\":8}}"
+      "Widget A": {
+        "id": "echo",
+        "args": {
+          "text": "echoe",
+          "repeat": 7
+        }
+      },
+      "Widget B": {
+        "id": "count",
+        "args": {
+          "value": 3,
+          "step": 8
+        }
+      }
     }
   },
   {
@@ -45,7 +78,10 @@
     "click": "SINGLE",
     "held": [],
     "scopes": {
-      "*": "{\"id\":\"toggleVerbose\",\"args\":{}}"
+      "*": {
+        "id": "toggleVerbose",
+        "args": {}
+      }
     }
   },
   {
@@ -53,7 +89,12 @@
     "click": "SINGLE",
     "held": [],
     "scopes": {
-      "*": "{\"id\":\"mode\",\"args\":{\"mode\":\"C\"}}"
+      "*": {
+        "id": "mode",
+        "args": {
+          "mode": "C"
+        }
+      }
     }
   },
   {
@@ -61,7 +102,10 @@
     "click": "DOUBLE",
     "held": [],
     "scopes": {
-      "*": "{\"id\":\"time\",\"args\":{}}"
+      "*": {
+        "id": "time",
+        "args": {}
+      }
     }
   },
   {
@@ -71,7 +115,10 @@
       "LEFT"
     ],
     "scopes": {
-      "*": "{\"id\":\"showContextMenuHere\",\"args\":{}}"
+      "*": {
+        "id": "showContextMenuHere",
+        "args": {}
+      }
     }
   }
 ]

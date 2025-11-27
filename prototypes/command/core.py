@@ -85,11 +85,7 @@ class CommandRegistry:
 
 
 def _build_args(meta: CommandMeta, kwargs: Dict[str, Any]) -> Dict[str, Any]:
-    r = {}
-    for p in meta.params:
-        v = kwargs[p.name] if p.name in kwargs else p.default
-        r[p.name] = v
-    return r
+    return {p.name: kwargs.get(p.name, p.default) for p in meta.params}
 
 
 def create_command_from_meta(meta: CommandMeta) -> type[CommandBase]:

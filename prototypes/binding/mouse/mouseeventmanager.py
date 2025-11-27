@@ -65,25 +65,25 @@ class MouseEventManager:
         held = self._get_held_buttons(event.buttons(), exclude=button)
         click_type = ClickType.DOUBLE if double_click else ClickType.SINGLE
         key = MouseActionKey(button, click_type, held)
-        self._trigger(key, event)
+        return self._trigger(key, event)
 
     def handle_wheel_event(self, event):
         delta = event.angleDelta().y()
         click_type = ClickType.WHEEL_UP if delta > 0 else ClickType.WHEEL_DOWN
         held = self._get_held_buttons(event.buttons())
         key = MouseActionKey(MouseButton.NONE, click_type, held)
-        self._trigger(key, event)
+        return self._trigger(key, event)
 
     def handle_drag_start(self, event):
         button = self._map_qt_button(event.button())
         held = self._get_held_buttons(event.buttons(), exclude=button)
         key = MouseActionKey(button, ClickType.DRAG_START, held)
-        self._trigger(key, event)
+        return self._trigger(key, event)
 
     def handle_drop(self, event):
         held = ()
         key = MouseActionKey(MouseButton.NONE, ClickType.DROP, held)
-        self._trigger(key, event)
+        return self._trigger(key, event)
 
     def _get_held_buttons(self, buttons, exclude=None):
         btns = []
@@ -106,7 +106,7 @@ class MouseEventManager:
                 self._suppress_single.remove(key.button)
             except KeyError:
                 pass
-            return
+            return False
         action = self._bindings.get(key)
         handled = False
         if action:
@@ -118,9 +118,14 @@ class MouseEventManager:
                 handled = bool(res)
             except Exception:
                 handled = False
-        if handled and key.click_type == ClickType.SINGLE and key.held_buttons:
-            for b in set([key.button, *key.held_buttons]):
-                self._suppress_single.add(b)
+        if handled:
+            if key.click_type == ClickType.SINGLE and key.held_buttons:
+                self._suppress_single.add(key.button)
+                self._suppress_single.update(key.held_buttons)
+            event = args[0] if args else None
+            if event is not None and hasattr(event, 'accept'):
+                event.accept()
+        return handled
 
 class MouseEventDispatcher(QtCore.QObject):
 
@@ -134,6 +139,12 @@ class MouseEventDispatcher(QtCore.QObject):
         self._press_pos = None
         self._drag_threshold = QtWidgets.QApplication.startDragDistance()
 
+    def _get_global_pos(self, event):
+        gp = getattr(event, "globalPosition", None)
+        if callable(gp):
+            return gp().toPoint()
+        return getattr(event, "globalPos", lambda: QtCore.QPoint())()
+
     def eventFilter(self, watched, event):
         if not isinstance(event, QtCore.QEvent):
             return False
@@ -145,48 +156,61 @@ class MouseEventDispatcher(QtCore.QObject):
             elif event.type() == QtCore.QEvent.MouseMove:
                 if self._press_pos is not None:
                     if (event.pos() - self._press_pos).manhattanLength() >= self._drag_threshold:
-                        self._manager.handle_drag_start(event)
+                        handled = self._manager.handle_drag_start(event)
                         self._press_pos = None
+                        if handled:
+                            return True
             elif event.type() == QtCore.QEvent.MouseButtonDblClick:
-                self._last_double_click_button = event.button()
-            elif event.type() == QtCore.QEvent.MouseButtonRelease:
-                forwarded = False
                 try:
                     from ..manager import BindingManager
-                    gp = getattr(event, "globalPosition", None)
-                    if callable(gp):
-                        gpt = gp().toPoint()
-                    else:
-                        gpt = getattr(event, "globalPos", lambda: QtCore.QPoint())()
+                    gpt = self._get_global_pos(event)
                     candidate = BindingManager.instance().find_binding_widget_at(gpt)
-                    if candidate is not None and candidate is not self._target and hasattr(candidate, "_mouse_manager"):
+                    if candidate == self._target:
+                        self._last_double_click_button = event.button()
+                except Exception:
+                    pass
+            elif event.type() == QtCore.QEvent.MouseButtonRelease:
+                forwarded = False
+                is_double = self._last_double_click_button == event.button()
+                try:
+                    from ..manager import BindingManager
+                    gpt = self._get_global_pos(event)
+                    candidate = BindingManager.instance().find_binding_widget_at(gpt)
+                    if candidate is not None and candidate is not self._target and hasattr(candidate, "_mouse_dispatcher"):
+                        child_dispatcher = candidate._mouse_dispatcher
+                        is_child_double = child_dispatcher._last_double_click_button == event.button()
+                        if is_child_double:
+                            child_dispatcher._last_double_click_button = None
+                        
                         lpt = candidate.mapFromGlobal(gpt)
-                        btn = event.button()
-                        btns = event.buttons()
-                        mods = event.modifiers()
-                        et = event.type()
                         try:
-                            nev = QtGui.QMouseEvent(et, QtCore.QPointF(lpt), btn, btns, mods)
+                            nev = QtGui.QMouseEvent(event.type(), QtCore.QPointF(lpt),event.button(),event.buttons(),event.modifiers())
                         except TypeError:
-                            nev = QtGui.QMouseEvent(et, QtCore.QPointF(lpt), QtCore.QPointF(lpt), QtCore.QPointF(gpt), btn, btns, mods)
-                        candidate._mouse_manager.handle_mouse_event(nev, double_click=(self._last_double_click_button == event.button()))
-                        forwarded = True
+                            nev = QtGui.QMouseEvent(event.type(),QtCore.QPointF(lpt),QtCore.QPointF(lpt),QtCore.QPointF(gpt),event.button(),event.buttons(),event.modifiers())
+                        handled = candidate._mouse_manager.handle_mouse_event(nev, double_click=is_child_double)
+                        if handled:
+                            forwarded = True
                 except Exception:
                     forwarded = False
-                if self._last_double_click_button == event.button():
-                    if not forwarded:
-                        self._manager.handle_mouse_event(event, double_click=True)
+                
+                if is_double:
                     self._last_double_click_button = None
-                else:
-                    if not forwarded:
-                        self._manager.handle_mouse_event(event, double_click=False)
+                
+                if forwarded:
+                    return True
+                
+                handled = self._manager.handle_mouse_event(event, double_click=is_double)
+                if handled:
+                    return True
+                
                 self._press_pos = None
         elif isinstance(event, QtGui.QWheelEvent):
-            self._manager.handle_wheel_event(event)
-            return True
+            handled = self._manager.handle_wheel_event(event)
+            if handled:
+                return True
         elif isinstance(event, QtGui.QDropEvent):
             if event.type() == QtCore.QEvent.Drop:
-                self._manager.handle_drop(event)
-                return True
-            return True
+                handled = self._manager.handle_drop(event)
+                if handled:
+                    return True
         return super().eventFilter(watched, event)

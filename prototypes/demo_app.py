@@ -19,6 +19,7 @@ class DemoPane(QtWidgets.QFrame, CommandBindingMixin):
         self.init_command_binding(name)
         self._header = QtWidgets.QLabel(name, self)
         self._header.setAlignment(QtCore.Qt.AlignCenter)
+        self.setFocusPolicy(QtCore.Qt.StrongFocus)
         l = QtWidgets.QVBoxLayout(self)
         l.addWidget(self._header, 1)
 
@@ -34,7 +35,8 @@ class MainWindow(QtWidgets.QMainWindow, CommandBindingMixin):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Prototype Command Test")
-        # self.init_command_binding("mainWindow")
+        self.setFocusPolicy(QtCore.Qt.ClickFocus)
+        self.init_command_binding("Test Window")
         cw = QtWidgets.QWidget(self)
         c = QtWidgets.QVBoxLayout(cw)
         l = QtWidgets.QHBoxLayout(cw)
@@ -54,6 +56,7 @@ class MainWindow(QtWidgets.QMainWindow, CommandBindingMixin):
         BindingManager.activate(defaults=default_mouse_bindings(), key_defaults=default_key_bindings())
         self._setup_menu_bar()
 
+
     def _setup_menu_bar(self):
         mb = self.menuBar()
         builder = MenuBuilder(self)
@@ -63,6 +66,25 @@ class MainWindow(QtWidgets.QMainWindow, CommandBindingMixin):
 
 def main():
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+
+    def on_focus_changed(old, new):
+        if old is not None:
+            old.setProperty("focusHighlight", False)
+            old.style().unpolish(old)
+            old.style().polish(old)
+        if new is not None:
+            new.setProperty("focusHighlight", True)
+            new.style().unpolish(new)
+            new.style().polish(new)
+
+    app.focusChanged.connect(on_focus_changed)
+    app.setStyleSheet(
+        """
+        *[focusHighlight="true"] {
+            border: 2px solid #ffaa00;
+        }
+        """
+    )
     w = MainWindow()
     w.resize(640, 400)
     w.show()

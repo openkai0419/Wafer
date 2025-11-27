@@ -284,11 +284,7 @@ class MenuHub:
                 if "/" in s:
                     pfull = s
                 else:
-                    pfull = ""
-                    for maps in self._by_menu.values():
-                        if s in maps:
-                            pfull = maps[s]
-                            break
+                    pfull = self._all_paths.get(s, "")
                 if pfull and pfull.startswith(f + "/"):
                     rel = pfull[len(f) + 1:]
                     out.append(f"{pre}/{rel}".lstrip("/"))
@@ -307,11 +303,7 @@ class MenuHub:
                 if "/" in s:
                     pfull = s
                 else:
-                    pfull = ""
-                    for maps in self._by_menu.values():
-                        if s in maps:
-                            pfull = maps[s]
-                            break
+                    pfull = self._all_paths.get(s, "")
                 if not pfull:
                     continue
                 parts = split_parts(pfull)

@@ -7,21 +7,20 @@ class CommandPayload:
     def __init__(self, id: str, args: Optional[Dict[str, Any]] = None):
         if not isinstance(id, str) or not id:
             raise ValueError('id must be non-empty string')
-        a = args or {}
-        if not isinstance(a, dict):
-            raise TypeError('args must be dict')
         self.id = id
-        self.args = dict(a)
+        self.args = dict(args or {})
 
     def to_dict(self) -> Dict[str, Any]:
-        return {'id': self.id, 'args': dict(self.args)}
+        return {'id': self.id, 'args': self.args}
+    
     def to_json(self) -> str:
         return json.dumps(self.to_dict(), ensure_ascii=False, separators=(',', ':'))
+    
     @staticmethod
     def from_dict(d: Dict[str, Any]) -> 'CommandPayload':
         if not isinstance(d, dict) or 'id' not in d:
             raise TypeError('payload dict must contain id')
-        return CommandPayload(str(d.get('id')), dict(d.get('args') or {}))
+        return CommandPayload(str(d.get('id')), d.get('args'))
     @staticmethod
     def from_json(s: str) -> 'CommandPayload':
         try:

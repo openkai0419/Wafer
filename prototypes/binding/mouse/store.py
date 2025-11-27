@@ -56,7 +56,7 @@ class MouseBindingStore:
             try:
                 ser_scopes: Dict[str, Any] = {}
                 for sc, payload in scopes.items():
-                    ser_scopes[sc] = payload.to_json()
+                    ser_scopes[sc] = payload.to_dict()
                 entry = {"button": k.button.name, "click": k.click_type.name, "held": [b.name for b in sorted(list(k.held_buttons), key=lambda x: x.name)], "scopes": ser_scopes}
                 r.append(entry)
             except Exception:

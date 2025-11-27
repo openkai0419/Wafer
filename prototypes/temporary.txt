@@ -1,90 +1,99 @@
+プロトタイプ概要（binding/command 系）
+
+目的
+- マウス操作とキーボード操作をコマンドにマッピングし、ウィジェット単位のスコープで柔軟に上書き可能なバインディング基盤を検証する
+- コマンド定義とメニュー構築の仕組みを統一し、実行・オプション指定・チェック状態管理まで一貫して扱えるUI/Stateを用意する
+
+構成と責務
+- command/core: CommandMeta/Paramに基づくコマンド定義、レジストリ、動的生成と実行
+- command/state: コマンドごとのオプション永続化（.command_options.json）
+- command/menu: メニュー定義ユーティリティとRegistryBackedMenu、MenuHub（パス解決・フォルダ集約・再配置）、メニュー名パスの正規化
+- command/ui: メニュー行UI、オプションダイアログ、メニュー構築器（MenuBuilder）と実行フロー
+- binding/mixins: CommandBindingMixin。ウィジェットにマウス/キーの受け口とコマンド実行ハンドラを付与
+- binding/manager: BindingManager。登録ウィジェット管理、スコープ解決、JSONのロード/保存、既定マッピングの適用
+- binding/common: フォーカス/カーソル位置からのスコープ解決ユーティリティ
+- binding/mouse: MouseEventManager/Dispatcher（Qtイベント→抽象入力）、MouseBindingStore（永続化）、defaults/editors（設定UI）
+- binding/key: ShortcutManager（論理キー/物理スキャンコード両対応、コンボ判定、リスナー）、runtime/sequence/combo（解析・正規化・表示）、KeyBindingStore、defaults/editors（設定UI）
+- utils: CommandPayload、JSON I/O、メッセージ整形
+- demo_app.py/menu_demo.py: 実装デモ（メニュー定義、エディタ起動、デフォルト適用など）
+
+入力→コマンド実行の流れ
+1) BindingManager.activate() が既定バインディングを用意し、登録済みウィジェットへ適用
+2) マウス: MouseEventDispatcherがQtイベントを受けてMouseEventManagerへ転送→MouseActionKeyに解決→直接バインドまたはフォールバック解決→CommandPayloadをCommandRegistryに渡して実行
+3) キー: QApplicationにShortcutManagerをグローバルフック。KeyPress/ReleaseでKeyPressStateを更新し、最適一致のコンボを探索→CommandPayloadを実行
+4) 実行時、command/stateのCommandOptionStoreから既存オプションを取り込み、チェック可能コマンドはトグル状態を更新
+
+スコープと適用順
+- ウィジェットはCommandBindingMixin.init_command_binding(name)でBindingManagerに登録され、binding_scope()がスコープ名となる
+- 適用時はスコープ名一致を最優先、なければ"*"を使用
+- マウスのフォールバック: ダブルクリックに割当がなくシングルにある場合、シングルを代理実行
+- キーのスコープ解決はShortcutManager.scope_modeで切替（focus/cursor）
+
+キーバインドの仕様（要点）
+- 論理キー: QtのKeyコードからComboParserが正規化し、最大2キーのコンボ判定
+- 物理キー: スキャンコードやネイティブ仮想キーに対応、論理キーと別テーブルで扱い、同様にコンボ判定
+- 競合時はComboMatcherの最適一致で決定、RecentEventDeduperで重複イベントを抑制
+- 表示はKeyNameResolverで人間可読に整形、キャプチャダイアログで2キーまで入力収集
+
+マウスバインドの仕様（要点）
+- MouseActionKey = (ボタン, クリック種別, 押下中ボタン集合)。SINGLE/DOUBLE/WHEEL/DRAG/DROPに対応
+- シングルとダブルの衝突や修飾ボタン付きクリックの一時抑制を内部で制御
+- ドラッグ開始は移動閾値で判定。必要に応じて別ウィジェットへイベント転送
+- イベント伝播制御: _triggerでイベント処理完了時にevent.accept()を呼び、eventFilterでTrue返却により親への伝播を停止。これによりQLabelなど任意の子ウィジェットでもバインディングが独立動作し、親のバインディングと干渉しない汎用的な設計を実現
+- ダブルクリック状態管理: 各MouseEventDispatcherが独立して_last_double_click_buttonを保持。MouseButtonDblClick受信時にfind_binding_widget_atで実際のクリック対象を確認し、自身のウィジェット上のイベントのみ状態を設定することで、子のダブルクリックが親に誤伝播する問題を回避。子ウィジェットへのRelease転送前に子の状態を確認・リセットし、完全に独立した動作を実現
+- コード品質改善: グローバル位置取得を_get_global_posメソッドに共通化、イベント処理の戻り値を一貫してチェック、修飾ボタン抑制ロジックをupdate()で簡潔化、MouseButtonRelease処理フローを整理して可読性向上
+
+キーバインディング実装の最適化
+- ShortcutManager: スキャンコード・タイムスタンプ取得を_get_scan_code/_get_timestampメソッドに共通化、重複コードを削減
+- KeyRelease処理: unconsume対象を正しいキー(rk)に修正、マッピング後のキーで状態管理を一貫化
+- ComboParser: バリデーションロジックを_validate_and_freezeメソッドに抽出、4つのメソッドで重複していたコードを共通化
+- KeyPressState: unconsume時にFalse保持ではなくpop削除に変更、cleanup_firedでconsumed辞書もクリーンアップしてメモリリークを防止
+- 未使用メソッド削除: _to_key_codeと_to_sc_codeを削除、ComboParserの同等メソッドを使用
+- フォーカスモード時の伝播制御: _resolve_target_widget_id_focusメソッドを新設し、フォーカスモード時は直接フォーカスされているウィジェットのみをチェック。登録されていない場合はイベントを処理せず親への伝播を防止。カーソルモードは従来通り階層を遡らない動作を維持
+
+コマンドシステムとユーティリティの最適化
+- CommandPayload: __init__でのargs型チェックを削除し辞書変換を一本化、to_dictとset/getメソッドで不要なdict()呼び出しを削減
+- CommandOptionStore: get/setメソッドで冗長な型チェックと辞書変換を簡略化
+- core.py: _build_argsを辞書内包表記で簡潔化
+- menu.py: MenuHubのcollect_items_by_folderと_index_folder_blocksでコマンドID解決を_all_pathsに統一、不要なループを削減
+- BindingManager: find_binding_widget_atとfind_registered_ancestorの重複コードを_find_registered_in_hierarchyメソッドに共通化
+
+永続化
+- key_bindings.json: [{modifier?, key, scopes:{scope: {id, args}}}] の配列。KeyBindingStoreが整形/復元
+- mouse_bindings.json: [{button, click, held[], scopes:{scope: {id,args}}}]。MouseBindingStoreが整形/復元（旧フォーマットの文字列ペイロードも読込互換）
+- .command_options.json: コマンドごとの直近オプションやチェック状態
+
+メニューとコマンド定義
+- RegistryBackedMenu.create_definitions()でメニュー項目とコマンドメタを同時定義
+- MenuHubがコマンドID⇔フルパスを管理し、フォルダ単位の収集/再配置に対応
+- CommandMenuBuilderがメニューUIを生成し、オプションボタンやチェック状態の同期まで担当
+
+デモ構成
+- menu_demo.py: File/Path/Commands/Context/Menu系のサンプル登録、バインディング編集ダイアログ起動
+- demo_app.py: DemoPane/DemoButtonにCommandBindingMixinを付与し、BindingManager.activateでデフォルト適用、MenuBuilderでメニュー設置
+
+拡張ポイント
+- 新規コマンド: CommandMetaを定義しregister_command_defsに渡すか、RegistryBackedMenuに追加
+- 新規ウィジェット: CommandBindingMixinを継承しbinding_scope()とprovider()を実装
+- 既定バインディング: binding/mouse.defaults.py・binding/key.defaults.pyに追記
+- スコープ解決戦略: ShortcutManager.set_scope_mode("focus"|"cursor")
+
+設計上の留意点
+- CommandPayloadをバインディング層とメニュー層の共通ペイロードとして使用し、型と整形を統一
+- スコープ適用は"スコープ一致≫グローバル(*)"、マスキング・上書きの規則を一貫
+- UIエディタはファイル永続化→BindingManager.apply_registered()で反映される前提
+- 例外はUI層ではエラー表示、基盤層では握りつぶして堅牢性を優先
+
+今後の発展案
+- 複数キー列（シーケンス）対応や長押し/連打検出の拡張
+- コマンドのアンドゥ/リドゥ標準化、履歴マネージャの導入
+- コンテキスト（provider）での選択情報や座標などの標準キーを整理
+- プロファイリング/ログ出力の選択的有効化
+- 設定のインポート/エクスポート、競合検出と解決支援
 # prototypes ディレクトリ概要メモ (設計思想 / 責務整理)
 
 ## 全体目的
 画像ビューア本体への導入前段階として、コマンド体系・メニュー構築・入力デバイス(マウス/ショートカット)バインディングの拡張フレームワークを試作。単一責務・疎結合・再利用性・階層的IDによる柔軟な拡張を検証。
-
-## コア概念
-- CommandMeta / CommandParam: コマンドの静的メタ情報(表示名・引数・ホットキー・アイコン・オプション有無・チェック可能性)。
-- CommandBase / create_command_from_meta: メタ情報から即席クラス生成。ロジックは meta.func を包む最小構造。Undo など拡張を将来可能にする余地。
-- CommandRegistry: シングルトン。ID(=パス終端)でコマンドクラスを動的呼び出し。Payload(引数セット)も処理。重複ID防止と最低限の存在検証のみで軽量。
-- CommandPayload: 実行要求のシリアライズ可能オブジェクト。イベント経由/永続化/エディタ間受け渡しを簡易化。
-
-## メニュー体系
-- RegistryBackedMenu: create_definitions() が 文字列トークン + 定義(dict) を返し、正規化→レジストリ登録→MenuHub 集約。
-  - トークン種別: セクション(":Label"), セパレータ("-")。階層は path 文字列 "a/b/c"。
-  - path の最終要素が command id となる。重複チェックあり。
-- MenuHub: 全 menu クラスからパス/表示構造を集約。フォルダ(途中階層)単位の検索・再ベース化・再構築を支援し、UI側が柔軟に再編成可能。
-- MenuBuilder / CommandMenuBuilder: MenuHub 情報 + CommandRegistry を利用し Qt メニューへ動的具現化。フォルダセグメント/セクション/コマンド表示は t.tr() により実行時に翻訳。ID/パスは英語のまま固定。
-  - 動的オプションダイアログ表示 (CommandOptionsDialog)。
-  - チェック可能コマンドは内部状態 _check_states でメニュー再構築不要の軽量反映。
-  - selection_callback により "選択" と "実行" モードを分離、オプション付き選択も許可。
-  - context_provider をチェーン合成可能 (chain_providers)。Widget 毎の文脈差分統合。
-
-## オプション永続化
-- CommandOptionStore: .command_options.json にコマンド毎の引数デフォルトを保存。初回アクセス時遅延ロード。set/get/clear のみの最小 API。
-- 起動後の再編集→保存→次回実行時に補完 (チェック状態は別途メニュー側保持)。
-
-## 入力バインディング体系
-- BindingManager: mouse_bindings.json をロード or デフォルトシード。登録 Widget 群へ一括適用。スコープ(Widget 名)別にマッピング。
-- CommandBindingMixin: Widget に組み込み、MouseEventManager / ShortcutManager を初期化。CommandPayload 単位で統一処理。provider() で追加コンテキスト挿入。
-  - 直接バインド + ストア解決フォールバックの二層。イベント未割当時はストア検索で柔軟さ確保。
-  - バインディング時のオプションダイアログでキャンセルした場合は登録を中止し、既存設定を変更しない。
-  - 共通スコープ取得関数: binding/common.py に resolve_scope_by_focus(), resolve_scope_by_cursor_pos() を追加。いずれもフォールバックなしでスコープ名と対象ウィジェットを返す。
-- 編集 UI: MouseBindingEditor と新規 KeyBindingEditor。
-  - KeyBindingEditor: 旧 ShortcutBindingEditor を置換。マウス編集 UI パターンを転用し、ショートカット列挙 + 1 つ選択→グローバル("*")とウィジェット別オーバーライドを編集。追加/削除/リセット機能。
-  - KeyBindingEditor: 旧 ShortcutBindingEditor を置換。マウス編集 UI パターンを転用し、ショートカット列挙 + 1 つ選択→グローバル("*")とウィジェット別オーバーライドを編集。追加/削除/リセット機能。互換性: 旧呼び出し `ShortcutBindingEditor(ws, cmds)` を維持するため __init__ に commands 引数をオプション追加し無視可能 + `ShortcutBindingEditor = KeyBindingEditor` エイリアス。
-  - KeySequenceSection に「割当」ボタンを追加し、_TwoKeyCaptureDialog による新しいキーシーケンスの取得と、既存割当の置き換えを即時反映可能にした。
-  - 左ペインのリストは (すべて) を先頭、(なし) を次に固定し、それ以外はカスタム順で整列。順序は 装飾 → 特殊 → その他 → ナビ → 数字 → アルファベット。
-  - 右ペインのセクションは主キー優先で並び替え（装飾 → 特殊 → その他 → ナビ → 数字 → アルファベットの順、その中で修飾キー優先度順）。
-  - KeySpecCatalog を追加し、バインド可能キーの分類と表示順を一元管理。UI は KeySpecCatalog の API に依存し、ハードコードを回避。
-  - 内部ストア KeyBindingStore: key_bindings.json 永続化。形式 {"Ctrl+S": {"*": {id,args}, "paneA": {...}}}。CommandPayload をシリアライズし再構築。
-  - 適用時: 各 Widget の set_shortcut_bindings に対しスコープ優先 (widget 名 > "*") で束ねて渡す。
-  - UI 遷移: 左ペイン QListWidget + QKeySequenceEdit 追加行、右ペインで選択中シーケンスの編集セクション (グローバル + オーバーライド群)。
-  - 補助操作: 先頭に "*" を表示し、空白クリック時は current を "*" に戻す。選択解除は行わない。
-  - ShortcutManager に scope モード切替を追加: set_scope_mode("focus"|"cursor")。focus は従来どおりフォーカスチェーンで解決、cursor はカーソル直下の登録ウィジェットで解決。
-
-## デモ構造
-- menu_demo.py: 複数の RegistryBackedMenu 実装 (FileMenu / PathMenu / CmdMenu / ContextMenu / MenuMenu) で多階層・オプション・チェック・動的構築パターンを提示。
-- demo_app.py: MainWindow 内に複数 DemoPane を配置し scope 別バインディング挙動を確認。MenuBuilder.use("binding") により特定フォルダ絞り込みメニュー。
-- CmdMenu に choices を用いたサンプル `Options/mode` を追加し、選択式引数の UI/実行フローを検証可能。
-
-## 設計上の狙い
-1. パスベース ID により: 階層再編/部分的リベース/フォルダ単位抽出を容易化。
-2. Meta <-> 実行ロジック分離: 将来 undo/redo, async, 権限検査挿入が可能。
-3. シリアライズ容易性: Payload / オプションストア / バインディングストアが全て JSON 互換。
-4. UI 動的生成: パラメータ型に応じた簡易ウィジェット工場 (bool/int/float/str/choices)。追加型は widget_type 拡張で差し替え予定。
-5. Scope ベースバインディング: 同一コマンドをコンテキスト差分で再利用 (ex. pane 毎に引数変更)。トグル系コマンドは永続ストアで状態を保持し、メニュー/バインディング双方で正しく反転・復元。
-
-## 現状の制限 / 課題
-- 例外時多くが silent pass。ユーザー通知/ログ集約層が未整備。
-- CommandOptionsDialog で型変換失敗時のフィードバック欠如。
-- チェック状態永続化なし (アプリ再起動で失われる)。必要なら OptionStore 拡張。
-- MenuHub.collect_items_by_folder の構築アルゴリズムが複雑かつ O(N*M)。キャッシュ導入余地。
-- BindingManager と OptionStore がファイル IO を直接行うため並列アクセス/競合未考慮。
-- undo/redo インターフェイスはスタブ (CommandBase.undo)。履歴管理未実装。
-- パラメータ validation (min/max) は UI セット段階のみ、直接呼び出し時は非検証。
- - KeyBindingEditor のキーキャプチャダイアログ(_TwoKeyCaptureDialog)の確定基準を「最後に押された時点のキー状態」に変更。解放直前ではなく、押下時スナップショットを用いて同時押しが単一化されないように修正。OK押下時も未確定ならこのスナップショットで確定。
-
-## 改善提案 (短期)
-- 例外処理方針更新: show_error は GUI ダイアログ廃止し stderr 出力 + RuntimeError 送出へ変更。silent pass を削減し例外は端末へ直接表示。
-- CommandParam: Generic[T] 化し型安全性向上。choices と type 整合検査。
-- オプションダイアログ: widget_type 明示でカスタムファクトリ登録。FactoryRegistry 導入。
-- 多言語化: display / description を翻訳キー化。TranslatorMixin を prototypes にも適用。
- - UI 統一: MouseBindingEditor 右ペインを QScrollArea の NoFrame + 透過背景に変更し、KeyBindingEditor と同一の黒背景表示に統一。
-
-## 改善提案 (中期)
-- undo/redo 層: CommandBase に result / inverse_args 帯域。CommandRegistry へ stack 実装。
-- 非同期実行: meta に async フラグ、UI から await 実行 + 進捗通知。
-- プラグインロード: menu 定義モジュールを plugins/ 以下から動的 import。署名/バージョン管理予定。
-- コンテキスト権限: provider() 返却値に permission を含め CommandRegistry 実行前検証。
-
-## 拡張ポイント
-- 新規コマンド: RegistryBackedMenu.create_definitions() に dict 追加。path 最後が id。
-  多言語対応: path の各セグメント文字列（例: "Options", "Toggle"）とセクションラベル（":File" 等）、CommandMeta.display に対応する英語キーを translations.json に用意。内部検索・バインディングは id/path を使用し、表示のみ翻訳。
-  top-level フォルダメニュータイトルも MenuBuilder.use() で t.tr() を適用済み。
-- 新規メニュー: path_prefix と定義リストを持つクラス作成するだけで自動登録。
-- 新規入力デバイス: BindingManager 相当の抽象層 + Mixin を追加し既存パターン踏襲。
-- 新規パラメータ型: CommandOptionsDialog._create_widget にファクトリ差し込み。
 
 ## 運用ガイド (このメモ更新方針)
 - prototypes 下に新規構造/責務追加時本ファイルの該当セクションを差分反映。
@@ -93,9 +102,3 @@
 - 更新履歴は記載せず、つどこのメモに対して削除/編集/追加する。
 - あくまでもメモは補助的なもので、実装されているコードを第一に重要視すること
 - このメモは間違っている/更新がされていない可能性が高いことを念頭において確認すること
-
-## 次の小さな改善候補
-- collect_items_by_folder の事前キャッシュ実装。
-- チェック状態保存の軽量ストア追加。
-- CommandParam に validator フィールド追加し UI/直接実行双方で統一検証。
-- show_error を端末強制出力ラッパとして再定義 (RuntimeError 送出)。GUI ポップアップなし。

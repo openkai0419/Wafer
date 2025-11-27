@@ -36,18 +36,18 @@ class CommandOptionStore:
         self._ensure_loaded()
         v = self._map.get(command_id, {})
         try:
-            if isinstance(v, dict) and "id" in v and "args" in v:
-                return CommandPayload(str(v.get("id")), dict(v.get("args") or {}))
-            return CommandPayload(command_id, dict(v if isinstance(v, dict) else {}))
+            if isinstance(v, dict) and "id" in v:
+                return CommandPayload(str(v["id"]), v.get("args"))
+            return CommandPayload(command_id, v if isinstance(v, dict) else {})
         except Exception:
             return CommandPayload(command_id, {})
 
     def set(self, command_id: str, options: Dict[str, Any] | CommandPayload) -> bool:
         self._ensure_loaded()
         if isinstance(options, CommandPayload):
-            self._map[str(command_id)] = {"id": options.id, "args": dict(options.args or {})}
+            self._map[str(command_id)] = {"id": options.id, "args": options.args}
         else:
-            self._map[str(command_id)] = {"id": str(command_id), "args": dict(options or {})}
+            self._map[str(command_id)] = {"id": str(command_id), "args": options or {}}
         return self._flush()
 
     def clear(self, command_id: Optional[str] = None) -> bool:

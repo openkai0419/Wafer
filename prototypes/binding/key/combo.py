@@ -9,16 +9,20 @@ class ComboParser:
     def __init__(self, resolver: KeyNameResolver, max_len: int = 2):
         self._resolver = resolver
         self._max_len = max_len
-    def from_sequence(self, seq: KeySequence) -> FrozenSet[int]:
-        tokens: List[int] = []
-        for key_name in seq.to_tuple():
-            tokens.append(self._resolver.to_key_code(self._resolver.normalize_token(key_name)))
-        xs = [t for t in tokens if t]
+    
+    def _validate_and_freeze(self, xs: List[int]) -> FrozenSet[int]:
         if not xs or len(xs) > self._max_len:
             return frozenset()
         if len(xs) == 2 and xs[0] == xs[1]:
             return frozenset()
         return frozenset(xs)
+    
+    def from_sequence(self, seq: KeySequence) -> FrozenSet[int]:
+        tokens: List[int] = []
+        for key_name in seq.to_tuple():
+            tokens.append(self._resolver.to_key_code(self._resolver.normalize_token(key_name)))
+        xs = [t for t in tokens if t]
+        return self._validate_and_freeze(xs)
     def from_string(self, s: str) -> FrozenSet[int]:
         if not s:
             return frozenset()
@@ -30,19 +34,11 @@ class ComboParser:
         for p in parts:
             tokens.append(self._resolver.to_key_code(self._resolver.normalize_token(p)))
         xs = [t for t in tokens if t]
-        if not xs or len(xs) > self._max_len:
-            return frozenset()
-        if len(xs) == 2 and xs[0] == xs[1]:
-            return frozenset()
-        return frozenset(xs)
+        return self._validate_and_freeze(xs)
     def from_spec(self, spec: KeyChordSpec) -> FrozenSet[int]:
         xs = [self._resolver.to_key_code(x) for x in spec]
         xs = [x for x in xs if x]
-        if not xs or len(xs) > self._max_len:
-            return frozenset()
-        if len(xs) == 2 and xs[0] == xs[1]:
-            return frozenset()
-        return frozenset(xs)
+        return self._validate_and_freeze(xs)
     def from_sc_spec(self, spec: KeyChordSpec) -> FrozenSet[int]:
         def to_sc_code(token: KeySpec) -> int:
             if isinstance(token, int):
@@ -61,11 +57,7 @@ class ComboParser:
                 return 0
         xs = [to_sc_code(x) for x in spec]
         xs = [x for x in xs if x]
-        if not xs or len(xs) > self._max_len:
-            return frozenset()
-        if len(xs) == 2 and xs[0] == xs[1]:
-            return frozenset()
-        return frozenset(xs)
+        return self._validate_and_freeze(xs)
 
 class ComboMatcher:
     @staticmethod

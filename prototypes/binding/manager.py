@@ -146,21 +146,7 @@ class BindingManager:
             return widget.binding_scope()
         raise ValueError(f"Widget {widget} does not implement binding_scope()")
 
-    def find_binding_widget_at(self, global_pos: QtCore.QPoint) -> Optional[QtWidgets.QWidget]:
-        w = QtWidgets.QApplication.widgetAt(global_pos)
-        if not w:
-            return None
-        cur = w
-        while cur is not None:
-            try:
-                if cur in self._widgets:
-                    return cur
-            except Exception:
-                pass
-            cur = cur.parentWidget()
-        return None
-
-    def find_registered_ancestor(self, widget: QtWidgets.QWidget) -> Optional[QtWidgets.QWidget]:
+    def _find_registered_in_hierarchy(self, widget: Optional[QtWidgets.QWidget]) -> Optional[QtWidgets.QWidget]:
         cur = widget
         while cur is not None:
             try:
@@ -170,6 +156,13 @@ class BindingManager:
                 pass
             cur = cur.parentWidget()
         return None
+
+    def find_binding_widget_at(self, global_pos: QtCore.QPoint) -> Optional[QtWidgets.QWidget]:
+        w = QtWidgets.QApplication.widgetAt(global_pos)
+        return self._find_registered_in_hierarchy(w)
+
+    def find_registered_ancestor(self, widget: QtWidgets.QWidget) -> Optional[QtWidgets.QWidget]:
+        return self._find_registered_in_hierarchy(widget)
 
     def _is_physical_seq(self, seq: KeySequence) -> bool:
         parts = seq.to_tuple()

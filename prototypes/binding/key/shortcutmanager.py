@@ -13,7 +13,7 @@ KeyChordSpec = Union[Tuple[KeySpec, ...], List[KeySpec]]
 class ShortcutManager(QtCore.QObject):
     _global: Optional['ShortcutManager'] = None
     _app_hooked_class: bool = False
-    _scope_mode: str = "focus"
+    _scope_mode: str = "focus"  # "focus" | "cursor"
     MAX_COMBO_LEN = 2
     MAX_RECENT_EVENTS = 128
     def __init__(self):
@@ -135,6 +135,18 @@ class ShortcutManager(QtCore.QObject):
         self._sc_keymap.pop(wid, None)
         self._states_sc.pop(wid, None)
 
+    def _get_scan_code(self, e: QtGui.QKeyEvent) -> int:
+        try:
+            return int(getattr(e, "nativeScanCode")())
+        except Exception:
+            return 0
+
+    def _get_timestamp(self, e: QtGui.QKeyEvent) -> int:
+        try:
+            return int(getattr(e, "timestamp")())
+        except Exception:
+            return 0
+
     def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:
         et = event.type()
         if et in (QtCore.QEvent.ApplicationDeactivate, QtCore.QEvent.WindowDeactivate):
@@ -145,7 +157,7 @@ class ShortcutManager(QtCore.QObject):
         if ShortcutManager._scope_mode == "cursor":
             wid = self._resolve_target_widget_id_cursor()
         else:
-            wid = self._resolve_target_widget_id(obj)
+            wid = self._resolve_target_widget_id_focus()
         if wid is None:
             return False
         et = event.type()
@@ -157,23 +169,12 @@ class ShortcutManager(QtCore.QObject):
             if k == QtCore.Qt.Key_unknown:
                 return False
             self._emit_phys(True, wid, e)
-            try:
-                ts = int(getattr(e, "timestamp")())
-            except Exception:
-                ts = 0
-            try:
-                sc_tmp = int(getattr(e, "nativeScanCode")())
-            except Exception:
-                sc_tmp = 0
-            stamp = (int(et), int(sc_tmp), int(k), int(ts), int(wid))
+            ts = self._get_timestamp(e)
+            sc = self._get_scan_code(e)
+            stamp = (int(et), sc, k, ts, wid)
             if not self._deduper.add_and_check(stamp):
                 return False
             self._key_listeners.emit_press(wid, k)
-            sc = 0
-            try:
-                sc = int(getattr(e, "nativeScanCode")())
-            except Exception:
-                sc = 0
             if sc:
                 state_sc = self._states_sc.setdefault(wid, KeyPressState())
                 state_sc.add_pressed(sc)
@@ -202,22 +203,11 @@ class ShortcutManager(QtCore.QObject):
                 return False
             k = int(e.key())
             self._emit_phys(False, wid, e)
-            try:
-                ts = int(getattr(e, "timestamp")())
-            except Exception:
-                ts = 0
-            try:
-                sc_tmp = int(getattr(e, "nativeScanCode")())
-            except Exception:
-                sc_tmp = 0
-            stamp = (int(et), int(sc_tmp), int(k), int(ts), int(wid))
+            ts = self._get_timestamp(e)
+            sc = self._get_scan_code(e)
+            stamp = (int(et), sc, k, ts, wid)
             if not self._deduper.add_and_check(stamp):
                 return False
-            sc = 0
-            try:
-                sc = int(getattr(e, "nativeScanCode")())
-            except Exception:
-                sc = 0
             if sc:
                 state_sc = self._states_sc.setdefault(wid, KeyPressState())
                 if wid in self._sc_keymap and not state_sc.is_consumed(sc):
@@ -240,7 +230,7 @@ class ShortcutManager(QtCore.QObject):
                     self._exec(self._keymap[wid][single])
             state.remove_pressed(rk)
             state.cleanup_fired()
-            state.unconsume(k)
+            state.unconsume(rk)
             return False
         if et in (QtCore.QEvent.FocusOut, QtCore.QEvent.Hide, QtCore.QEvent.WindowDeactivate):
             self._reset_states_for(wid)
@@ -255,57 +245,10 @@ class ShortcutManager(QtCore.QObject):
             raise TypeError("key spec must be tuple or list")
         return self._parser.from_spec(spec)
 
-    def _to_sc_code(self, token: KeySpec) -> int:
-        if isinstance(token, int):
-            return int(token)
-        t = str(token).strip().upper()
-        if not t:
-            return 0
-        if t.startswith("SC"):
-            try:
-                return int(t[2:])
-            except Exception:
-                return 0
-        try:
-            return int(t)
-        except Exception:
-            return 0
-
     def _normalize_sc(self, spec: KeyChordSpec) -> FrozenSet[int]:
         if not isinstance(spec, (tuple, list)):
             raise TypeError("scan code spec must be tuple or list")
         return self._parser.from_sc_spec(spec)
-
-    def _to_key_code(self, token: KeySpec) -> int:
-        if isinstance(token, int):
-            return int(token)
-        t = str(token).strip()
-        if not t:
-            return 0
-        if len(t) == 1:
-            ch = t.upper()
-            if "A" <= ch <= "Z":
-                return getattr(QtCore.Qt, f"Key_{ch}", 0)
-            if "0" <= ch <= "9":
-                return getattr(QtCore.Qt, f"Key_{ch}", 0)
-        m = {
-            "Esc": "Escape",
-            "Enter": "Return",
-            "PgUp": "PageUp",
-            "PgDown": "PageDown",
-            "Ctrl": "Control",
-            "Control": "Control",
-            "Shift": "Shift",
-            "Alt": "Alt",
-            "Meta": "Meta",
-            "Cmd": "Meta",
-            "Command": "Meta",
-        }
-        n = m.get(t, t)
-        k = getattr(QtCore.Qt, f"Key_{n}", None)
-        if isinstance(k, int):
-            return k
-        return 0
 
     def _match_combo_generic(self, pressed: Set[int], combos: Dict[FrozenSet[int], CommandPayload], require_len: int = 0) -> FrozenSet[int] | None:
         return ComboMatcher.best_match(pressed, combos, require_len)
@@ -346,10 +289,7 @@ class ShortcutManager(QtCore.QObject):
         wid = id(widget)
         self._phys_listeners.remove_all(wid)
     def _emit_phys(self, is_press: bool, wid: int, e: QtGui.QKeyEvent):
-        try:
-            sc = int(getattr(e, "nativeScanCode")())
-        except Exception:
-            sc = 0
+        sc = self._get_scan_code(e)
         try:
             nv = int(getattr(e, "nativeVirtualKey")())
         except Exception:
@@ -420,18 +360,17 @@ class ShortcutManager(QtCore.QObject):
                 pass
             app.installEventFilter(ShortcutManager._global)
             ShortcutManager._app_hooked_class = True
-    def _resolve_target_widget_id(self, obj: QtWidgets.QWidget) -> int | None:
+    
+    def _resolve_target_widget_id_focus(self) -> int | None:
         targets = set(self._keymap.keys()) | self._key_listeners.ids() | self._phys_listeners.ids()
         if not targets:
             return None
-        cur: QtWidgets.QWidget | None = obj
-        chain: List[int] = []
-        while cur is not None:
-            wid = id(cur)
-            chain.append(wid)
-            if wid in targets:
-                return wid
-            cur = cur.parentWidget()
+        w = QtWidgets.QApplication.focusWidget()
+        if not w:
+            return None
+        wid = id(w)
+        if wid in targets:
+            return wid
         return None
 
     def _resolve_target_widget_id_cursor(self) -> int | None:

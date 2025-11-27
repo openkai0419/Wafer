@@ -23,12 +23,14 @@ class KeyPressState:
     def is_consumed(self, key: int) -> bool:
         return self.consumed.get(key, False)
     def unconsume(self, key: int):
-        if key in self.consumed:
-            self.consumed[key] = False
+        self.consumed.pop(key, None)
     def cleanup_fired(self):
         to_remove = [c for c in self.fired if not c.issubset(self.pressed)]
         for c in to_remove:
             self.fired.remove(c)
+        keys_to_remove = [k for k in self.consumed if k not in self.pressed]
+        for k in keys_to_remove:
+            self.consumed.pop(k, None)
     def reset(self):
         self.pressed.clear()
         self.fired.clear()

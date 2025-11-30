@@ -63,10 +63,7 @@ class MainWindow(QtWidgets.QMainWindow, CommandBindingMixin):
         m = builder.use("binding")
         mb.addMenu(m)
 
-
-def main():
-    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-
+def add_focus_style(app):
     def on_focus_changed(old, new):
         if old is not None:
             old.setProperty("focusHighlight", False)
@@ -85,6 +82,14 @@ def main():
         }
         """
     )
+    return app
+
+
+
+def main():
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    # add_focus_style(app)
+
     w = MainWindow()
     w.resize(640, 400)
     w.show()

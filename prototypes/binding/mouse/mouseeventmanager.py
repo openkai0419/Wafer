@@ -53,6 +53,22 @@ class MouseStateManager:
         self._double_click_buttons = {}
         self._suppress_groups = []
         self._drag_threshold = QtWidgets.QApplication.startDragDistance()
+        self._processed_events = set()
+        self._last_cleanup_time = QtCore.QTime.currentTime()
+
+    def _cleanup_old_events(self):
+        current = QtCore.QTime.currentTime()
+        if self._last_cleanup_time.msecsTo(current) > 10000:
+            self._processed_events.clear()
+            self._last_cleanup_time = current
+
+    def is_event_processed(self, event):
+        self._cleanup_old_events()
+        event_signature = (event.type(), event.timestamp())
+        if event_signature in self._processed_events:
+            return True
+        self._processed_events.add(event_signature)
+        return False
 
     def set_press_position(self, widget, pos):
         self._press_positions[id(widget)] = pos
@@ -167,10 +183,14 @@ class MouseEventDispatcher(QtCore.QObject):
         return getattr(event, "globalPos", lambda: QtCore.QPoint())()
 
     def _handle_mouse_press(self, event):
+        if self._state.is_event_processed(event):
+            return
         self._state.set_press_position(self._target, event.pos())
 
     def _handle_mouse_move(self, event):
         if not self._enable_drag:
+            return
+        if self._state.is_event_processed(event):
             return
         press_pos = self._state.get_press_position(self._target)
         if press_pos is not None:
@@ -182,6 +202,8 @@ class MouseEventDispatcher(QtCore.QObject):
                 self._state.clear_press_position(self._target)
 
     def _handle_double_click(self, event):
+        if self._state.is_event_processed(event):
+            return
         try:
             from ..manager import BindingManager
             gpt = self._get_global_pos(event)
@@ -200,6 +222,8 @@ class MouseEventDispatcher(QtCore.QObject):
             return None
 
     def _handle_mouse_release(self, event):
+        if self._state.is_event_processed(event):
+            return
         target_widget = self._find_target_widget(event)
         if target_widget is None or not hasattr(target_widget, "_mouse_manager"):
             self._state.clear_press_position(self._target)
@@ -229,6 +253,8 @@ class MouseEventDispatcher(QtCore.QObject):
         self._state.clear_press_position(self._target)
 
     def _handle_wheel(self, event):
+        if self._state.is_event_processed(event):
+            return
         delta = event.angleDelta().y()
         click_type = ClickType.WHEEL_UP if delta > 0 else ClickType.WHEEL_DOWN
         held = MouseEventManager.get_held_buttons(event.buttons())
@@ -236,6 +262,8 @@ class MouseEventDispatcher(QtCore.QObject):
         self._manager.execute_action(key, event)
 
     def _handle_drop(self, event):
+        if self._state.is_event_processed(event):
+            return
         key = MouseActionKey(MouseButton.NONE, ClickType.DROP, ())
         self._manager.execute_action(key, event)
 

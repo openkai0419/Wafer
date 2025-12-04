@@ -22,7 +22,7 @@
   "toggleVerbose": {
     "id": "toggleVerbose",
     "args": {
-      "checked": false
+      "checked": true
     }
   }
 }

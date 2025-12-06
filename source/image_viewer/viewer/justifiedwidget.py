@@ -359,6 +359,7 @@ class MouseHandlerBinder(QtCore.QObject):
 
 class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
     layout_ready = QtCore.Signal()
+    base_height_changed = QtCore.Signal()
 
     def __init__(self, scroll, root, parent=None):
         super().__init__(parent)
@@ -488,6 +489,7 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
             if new_height != self.base_height:
                 self.base_height = new_height
                 self._width_ref = width
+                self.base_height_changed.emit()
         self._restore_scroll_index = self.get_center_image_index()
         logger.info('on_resize_event')
         self._recalc_layout()
@@ -503,6 +505,12 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget):
         self.calculator = JustifiedLayoutCalculator(self.aspect_ratios, self.base_height, self.spacing, self.width(), self.height(), 1)
         self.calculator.signals.layout_ready.connect(self._on_layout_ready)
         main_thread.start(self.calculator, 7)
+
+    def get_adjusted_scroll_speed(self, base_speed=50):
+        reference_height = self.screen_width / 10
+        speed_ratio = self.base_height / reference_height
+        adjusted_speed = base_speed * max(0.1, min(speed_ratio, 1.0))
+        return adjusted_speed
 
     @profiler.profile
     def get_center_image_index(self):

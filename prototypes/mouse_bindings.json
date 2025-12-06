@@ -120,5 +120,42 @@
         "args": {}
       }
     }
+  },
+  {
+    "button": "MIDDLE",
+    "click": "SINGLE",
+    "held": [
+      "LEFT"
+    ],
+    "scopes": {
+      "*": {
+        "id": "sortBySize",
+        "args": {}
+      }
+    }
+  },
+  {
+    "button": "MIDDLE",
+    "click": "SINGLE",
+    "held": [
+      "RIGHT"
+    ],
+    "scopes": {
+      "*": {
+        "id": "sortByName",
+        "args": {}
+      }
+    }
+  },
+  {
+    "button": "MIDDLE",
+    "click": "SINGLE",
+    "held": [],
+    "scopes": {
+      "*": {
+        "id": "cycleSortOrder",
+        "args": {}
+      }
+    }
   }
 ]

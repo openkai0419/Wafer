@@ -27,6 +27,7 @@ class CommandMeta:
     has_options: bool = False
     checkable: bool = False
     default_checked: bool = False
+    action_group: str = ""
     func: Optional[Callable[..., Any]] = None
 
 
@@ -101,7 +102,31 @@ def create_command_from_meta(meta: CommandMeta) -> type[CommandBase]:
 
 
 def register_command_defs(defs: List[Dict[str, Any]]):
+    from .state import ActionGroupStateManager
     r = CommandRegistry()
+    state_manager = ActionGroupStateManager()
     for d in defs:
         meta = d["meta"]
         r.register(create_command_from_meta(meta))
+        if not (meta.action_group and meta.checkable):
+            continue
+        path = d.get("path", "")
+        command_id = path.split("/")[-1] if "/" in path else path
+        if command_id:
+            state_manager.register_member(meta.action_group, command_id)
+
+def create_cycle_command(group_name: str, display: str, hotkey: str = "") -> Dict[str, Any]:
+    from .ui import CommandMenuBuilder
+    def _cycle_func():
+        builder = CommandMenuBuilder()
+        result = builder.cycle_action_group(group_name)
+        if result:
+            print(f"Cycled to: {result}")
+    return {
+        "path": f"cycle_{group_name}",
+        "meta": CommandMeta(
+            display=display,
+            hotkey=hotkey,
+            func=_cycle_func
+        )
+    }

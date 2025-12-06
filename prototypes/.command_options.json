@@ -24,5 +24,29 @@
     "args": {
       "checked": true
     }
+  },
+  "sortByDate": {
+    "id": "sortByDate",
+    "args": {
+      "checked": false
+    }
+  },
+  "sortByName": {
+    "id": "sortByName",
+    "args": {
+      "checked": true
+    }
+  },
+  "sortBySize": {
+    "id": "sortBySize",
+    "args": {
+      "checked": false
+    }
+  },
+  "__group__sort_order": {
+    "id": "__group__sort_order",
+    "args": {
+      "selected": "sortByName"
+    }
   }
 }

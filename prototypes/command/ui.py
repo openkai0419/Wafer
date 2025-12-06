@@ -6,6 +6,7 @@ from source.lang.manager import TranslatorMixin
 from source.common.funcs import uipx
 from .core import CommandMeta, CommandRegistry
 from ..utils import show_error, CommandPayload
+from .state import ActionGroupStateManager, log_error, log_warning
 from .menu import (
     split_parts,
     is_sep_token,
@@ -131,8 +132,8 @@ class CommandOptionsDialog(QtWidgets.QDialog, TranslatorMixin):
                 self._execute_callback(values)
                 self._did_save = True
                 self.accept()
-        except Exception:
-            pass
+        except Exception as e:
+            log_error(f"Failed to execute command from dialog: {e}")
 
     def _on_save(self):
         self._did_save = True
@@ -142,8 +143,22 @@ class CommandOptionsDialog(QtWidgets.QDialog, TranslatorMixin):
 class CommandMenuBuilder(TranslatorMixin):
     def __init__(self):
         self.registry = CommandRegistry()
+        self.state_manager = ActionGroupStateManager()
+        self.state_manager.add_observer(self._on_state_changed)
 
     _check_states: Dict[str, bool] = {}
+    _action_groups: Dict[str, QtGui.QActionGroup] = {}
+    
+    def _on_state_changed(self, group_name: str, command_id: str):
+        members = self.state_manager.get_members(group_name)
+        for member in members:
+            self._check_states[member] = self.state_manager.get_check_state(member)
+        group = self._action_groups.get(group_name)
+        if group:
+            for action in group.actions():
+                if str(action.data()) == command_id:
+                    if not action.isChecked():
+                        action.setChecked(True)
 
     def _wrap_provider_with_checked(self, provider: Optional[Callable[[], Dict[str, Any]]], checked: Optional[bool], meta: CommandMeta) -> Callable[[], Dict[str, Any]]:
         def _p():
@@ -170,6 +185,8 @@ class CommandMenuBuilder(TranslatorMixin):
 
     def build_into(self, menu: QtWidgets.QMenu, parent: QtWidgets.QWidget, command_names: List[str], context_provider: Optional[Callable[[], Dict[str, Any]]] = None, display_map: Optional[Dict[str, str]] = None, selection_callback: Optional[Callable[[Any], None]] = None, allow_options_with_selection: bool = False) -> QtWidgets.QMenu:
         menus_cache: Dict[str, QtWidgets.QMenu] = {}
+        action_groups: Dict[str, QtGui.QActionGroup] = {}
+        group_defaults: Dict[str, tuple[str, CommandMeta]] = {}
         for name in command_names:
             if is_sep_token(name):
                 parts = sep_path(str(name))
@@ -195,10 +212,14 @@ class CommandMenuBuilder(TranslatorMixin):
                 raise ValueError(f"Unknown command id: {command_id}")
             meta = command_class.meta
             target_menu, text_override = self._display_override(menu, menus_cache, parent, target_menu, command_id, meta, display_map)
-            self._add_entry(target_menu, parent, command_id, meta, context_provider, bool(meta.has_options) if (allow_options_with_selection or not selection_callback) else False, text_override, selection_callback, allow_options_with_selection)
+            if meta.action_group and meta.checkable:
+                self.state_manager.register_member(meta.action_group, command_id)
+                if meta.default_checked:
+                    group_defaults[meta.action_group] = (command_id, meta)
+            self._add_entry(target_menu, parent, command_id, meta, context_provider, bool(meta.has_options) if (allow_options_with_selection or not selection_callback) else False, text_override, selection_callback, allow_options_with_selection, action_groups, group_defaults)
         return menu
 
-    def _add_entry(self, menu: QtWidgets.QMenu, parent: QtWidgets.QWidget, name: str, meta: CommandMeta, context_provider: Optional[Callable[[], Dict[str, Any]]], with_options: bool, text_override: Optional[str], selection_callback: Optional[Callable[[Any], None]] = None, allow_options_with_selection: bool = False):
+    def _add_entry(self, menu: QtWidgets.QMenu, parent: QtWidgets.QWidget, name: str, meta: CommandMeta, context_provider: Optional[Callable[[], Dict[str, Any]]], with_options: bool, text_override: Optional[str], selection_callback: Optional[Callable[[Any], None]] = None, allow_options_with_selection: bool = False, action_groups: Optional[Dict[str, QtGui.QActionGroup]] = None, group_defaults: Optional[Dict[str, tuple[str, CommandMeta]]] = None):
         text = text_override or self.t.tr(meta.display)
         widget_action = QtWidgets.QWidgetAction(parent)
         widget_action.setData(name)
@@ -206,10 +227,23 @@ class CommandMenuBuilder(TranslatorMixin):
         widget_action.setDefaultWidget(container)
         if meta.checkable and selection_callback is None:
             widget_action.setCheckable(True)
-            checked = self._get_checked(name, meta)
+            if meta.action_group:
+                checked = self._get_checked_for_group(name, meta.action_group, meta, group_defaults)
+            else:
+                checked = self._get_checked(name, meta)
             widget_action.setChecked(checked)
             self._update_checkmark(container, checked)
-            widget_action.toggled.connect(lambda state, n=name, c=container: self._on_toggled(n, c, state))
+            if meta.action_group:
+                if action_groups is not None:
+                    if meta.action_group not in action_groups:
+                        group = QtGui.QActionGroup(parent)
+                        group.setExclusive(True)
+                        action_groups[meta.action_group] = group
+                        self._action_groups[meta.action_group] = group
+                    action_groups[meta.action_group].addAction(widget_action)
+                widget_action.toggled.connect(lambda state, n=name, c=container, g=meta.action_group: self._on_radio_toggled(n, c, state, g))
+            else:
+                widget_action.toggled.connect(lambda state, n=name, c=container: self._on_toggled(n, c, state))
         if selection_callback is None:
             widget_action.triggered.connect(lambda checked=False, n=name, m=meta, p=context_provider: self._execute_and_close_menu(n, self._wrap_provider_with_checked(p, checked, m), menu))
         else:
@@ -227,32 +261,76 @@ class CommandMenuBuilder(TranslatorMixin):
         try:
             payload = CommandPayload(name, {})
             callback(payload)
-        except Exception:
-            pass
+        except Exception as e:
+            log_error(f"Failed to execute selection callback for '{name}': {e}")
 
     def _get_checked(self, name: str, meta: CommandMeta) -> bool:
         if name in self._check_states:
-            return bool(self._check_states[name])
+            return self._check_states[name]
         try:
             stored = CommandOptionStore().get(name)
-            args = dict(getattr(stored, "args", {}) or {})
-            if "checked" in args:
-                return bool(args.get("checked"))
+            args = getattr(stored, "args", None)
+            if args and "checked" in args:
+                return bool(args["checked"])
         except Exception:
             pass
-        return bool(meta.default_checked)
+        return meta.default_checked
+
+    def _get_checked_for_group(self, name: str, group_name: str, meta: CommandMeta, group_defaults: Optional[Dict[str, tuple[str, CommandMeta]]] = None) -> bool:
+        current = self.state_manager.get_current(group_name)
+        if current:
+            return current == name
+        if group_defaults and group_name in group_defaults:
+            return group_defaults[group_name][0] == name
+        return meta.default_checked
 
     def _on_toggled(self, name: str, container: QtWidgets.QWidget, state: bool):
-        self._check_states[name] = bool(state)
+        self._check_states[name] = state
         self._update_checkmark(container, state)
         try:
             store = CommandOptionStore()
             cur = store.get(name)
-            opts = dict(getattr(cur, "args", {}) or {})
-            opts["checked"] = bool(state)
+            opts = getattr(cur, "args", None) or {}
+            if not isinstance(opts, dict):
+                opts = {}
+            opts["checked"] = state
             store.set(name, opts)
-        except Exception:
-            pass
+        except Exception as e:
+            log_error(f"Failed to save toggle state for '{name}': {e}")
+
+    def _on_radio_toggled(self, name: str, container: QtWidgets.QWidget, state: bool, group_name: str):
+        self._on_toggled(name, container, state)
+        if state:
+            self.state_manager.set_current(group_name, name, save=True)
+
+    def cycle_action_group(self, group_name: str) -> Optional[str]:
+        result = self.state_manager.cycle(group_name)
+        if not result:
+            return None
+        group = self._action_groups.get(group_name)
+        if group:
+            result_action = next((a for a in group.actions() if str(a.data()) == result), None)
+            if result_action:
+                result_action.trigger()
+        else:
+            try:
+                self.registry.execute(result, checked=True)
+            except Exception as e:
+                log_error(f"Failed to execute command: {e}")
+        return result
+
+    def get_action_group_current(self, group_name: str) -> Optional[str]:
+        result = self.state_manager.get_current(group_name)
+        if result:
+            return result
+        group = self._action_groups.get(group_name)
+        if group:
+            result_action = next((a for a in group.actions() if a.isChecked()), None)
+            if result_action:
+                result = str(result_action.data() or "")
+                self.state_manager.set_current(group_name, result, save=False)
+                return result
+        return self.state_manager.find_default(group_name, self.registry)
 
     def _update_checkmark(self, container: QtWidgets.QWidget, state: bool):
         lbl = container.findChild(QtWidgets.QLabel, "checkMark")
@@ -301,13 +379,13 @@ class CommandMenuBuilder(TranslatorMixin):
             if not callable(selection_callback):
                 try:
                     CommandOptionStore().set(command_name, options)
-                except Exception:
-                    pass
+                except Exception as e:
+                    log_error(f"Failed to save command options for '{command_name}': {e}")
             if callable(selection_callback):
                 try:
                     selection_callback(CommandPayload(command_name, options))
-                except Exception:
-                    pass
+                except Exception as e:
+                    log_error(f"Failed to call selection callback for '{command_name}': {e}")
         else:
             if not callable(selection_callback):
                 return
@@ -319,18 +397,19 @@ class CommandMenuBuilder(TranslatorMixin):
             stored = CommandOptionStore().get(name)
             if stored:
                 args.update(dict(stored.args or {}))
-        except Exception:
-            pass
+        except Exception as e:
+            log_warning(f"Failed to load stored args for '{name}': {e}")
         if provider:
             try:
                 cur = provider() or {}
                 if isinstance(cur, dict):
                     args.update(cur)
-            except Exception:
-                pass
+            except Exception as e:
+                log_warning(f"Failed to get context args for '{name}': {e}")
         try:
             self.registry.execute(name, **args)
         except Exception as e:
+            log_error(f"Failed to execute command '{name}': {e}")
             show_error(None, str(e), self.t.tr("Error"))
 
     def _get_or_create_submenu_chain(self, root_menu: QtWidgets.QMenu, cache: Dict[str, QtWidgets.QMenu], parts: List[str], parent: QtWidgets.QWidget) -> QtWidgets.QMenu:

@@ -1,5 +1,3 @@
-from PySide6 import QtCore, QtWidgets, QtGui
-
 from PySide6 import QtCore, QtGui, QtWidgets
 
 class ScrollBarColorStyle(QtWidgets.QProxyStyle):
@@ -76,11 +74,13 @@ class AutoScrollArea(ScrollAreaBase):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.timer = QtCore.QTimer(self)
-        self.timer.timeout.connect(self._scroll_step)
-        self.scroll_speed = 1
-        self.scroll_interval = 30
-        #self.change_style()
+        vbar = self.verticalScrollBar()
+        self.animation = QtCore.QPropertyAnimation(vbar, b"value")
+        self.animation.setEasingCurve(QtCore.QEasingCurve.Linear)
+        vbar.sliderPressed.connect(self._on_user_interaction)
+        vbar.actionTriggered.connect(self._on_user_interaction)
+        self._scroll_speed = 100
+        self._speed_callback = None
 
     def change_style(self):
         app = QtWidgets.QApplication.instance()
@@ -90,23 +90,57 @@ class AutoScrollArea(ScrollAreaBase):
             sb.setStyle(proxy)
             sb.setAttribute(QtCore.Qt.WidgetAttribute.WA_Hover, True)
 
-    def start_auto_scroll(self, speed=1, interval=30):
-        self.scroll_speed = speed
-        self.scroll_interval = interval
-        self.timer.setInterval(self.scroll_interval)
-        self.timer.start()
+    def set_speed_callback(self, callback):
+        self._speed_callback = callback
+
+    def start_auto_scroll(self, speed=100):
+        self._scroll_speed = speed
+        self._start_animation_from_current()
 
     def stop_auto_scroll(self):
-        self.timer.stop()
+        self.animation.stop()
 
     def isscrolling(self):
-        return self.timer.isActive()
+        return self.animation.state() == QtCore.QAbstractAnimation.Running
 
-    def _scroll_step(self):
+    def _start_animation_from_current(self):
         bar = self.verticalScrollBar()
-        max_scroll = bar.maximum()
-        next_value = bar.value() + self.scroll_speed
-        if next_value >= max_scroll:
-            self.timer.stop()
-        else:
-            bar.setValue(next_value)
+        start_value = bar.value()
+        end_value = bar.maximum()
+        
+        if start_value >= end_value:
+            self.stop_auto_scroll()
+            return
+        
+        if self._speed_callback:
+            self._scroll_speed = self._speed_callback()
+        
+        distance = end_value - start_value
+        duration = min(int(distance / self._scroll_speed * 1000), 2147483647)
+        
+        self.animation.stop()
+        self.animation.setStartValue(start_value)
+        self.animation.setEndValue(end_value)
+        self.animation.setDuration(duration)
+        self.animation.start()
+
+    def _on_user_interaction(self):
+        if self.isscrolling():
+            self._start_animation_from_current()
+
+    def _handle_user_event(self, event, super_handler):
+        if not self.isscrolling():
+            super_handler(event)
+            return
+        self.animation.stop()
+        super_handler(event)
+        self._start_animation_from_current()
+
+    def wheelEvent(self, event):
+        self._handle_user_event(event, super().wheelEvent)
+
+    def keyPressEvent(self, event):
+        self._handle_user_event(event, super().keyPressEvent)
+
+    def mousePressEvent(self, event):
+        self._handle_user_event(event, super().mousePressEvent)

@@ -39,6 +39,21 @@ class PathMenu(RegistryBackedMenu):
 
 class CmdMenu(RegistryBackedMenu):
     path_prefix = "commands"
+    
+    def _cycle_sort_order(self):
+        from .command.ui import CommandMenuBuilder
+        builder = CommandMenuBuilder()
+        result = builder.cycle_action_group("sort_order")
+    
+    def _print_current_sort_order(self):
+        from .command.ui import CommandMenuBuilder
+        builder = CommandMenuBuilder()
+        current = builder.get_action_group_current("sort_order")
+        if current:
+            print(f"Current sort order: {current}")
+        else:
+            print("No sort order selected")
+    
     def create_definitions(self):
         return [
             ":Commands",
@@ -52,6 +67,14 @@ class CmdMenu(RegistryBackedMenu):
             "-",
             ":Toggle",
             {"path": "Toggle/toggleVerbose", "meta": CommandMeta(display="Verbose Mode", checkable=True, default_checked=False, params=[CommandParam(name="checked", type=bool, default=False)], func=lambda checked=False: print("verbose on" if checked else "verbose off"))},
+            "-",
+            ":Sort Order",
+            {"path": "Sort/sortByName", "meta": CommandMeta(display="Name", checkable=True, default_checked=True, action_group="sort_order", params=[CommandParam(name="checked", type=bool, default=True)], func=lambda checked=False: print("Sort by Name" if checked else ""))},
+            {"path": "Sort/sortByDate", "meta": CommandMeta(display="Date", checkable=True, default_checked=False, action_group="sort_order", params=[CommandParam(name="checked", type=bool, default=False)], func=lambda checked=False: print("Sort by Date" if checked else ""))},
+            {"path": "Sort/sortBySize", "meta": CommandMeta(display="Size", checkable=True, default_checked=False, action_group="sort_order", params=[CommandParam(name="checked", type=bool, default=False)], func=lambda checked=False: print("Sort by Size" if checked else ""))},
+            {"path": "Sort/-"},
+            {"path": "Sort/cycleSortOrder", "meta": CommandMeta(display="Cycle Sort Order", hotkey="Ctrl+Shift+S", func=self._cycle_sort_order)},
+            {"path": "Sort/printCurrentSort", "meta": CommandMeta(display="Show Current Sort Order", func=self._print_current_sort_order)},
         ]
 
 class ContextMenu(RegistryBackedMenu):

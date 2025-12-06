@@ -1,7 +1,6 @@
 from datetime import datetime, timedelta
 from PySide6 import QtCore, QtWidgets
 
-from ..db.collector import ImageIndexer
 from ..actions.context_menu import ContextMenuBuilder, FolderContextMenuBuilder
 from ..common.funcs import get_data_db, get_setting_db, get_setting_file_names, uipx
 from ..common.profiling import logger, profiler
@@ -160,6 +159,11 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
 
     def start_ipc_listener(self):
         def on_message(env):
+            try:
+                if not self or not hasattr(self, 'dbname'):
+                    return
+            except RuntimeError:
+                return
             table = env.table
             topic = env.topic
             message = env.message
@@ -198,6 +202,8 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             }
             try:
                 handlers.get(topic, lambda: None)()
+            except RuntimeError:
+                pass
             except Exception:
                 logger.exception('Error processing IPC message: %s', env)
         self._subscriber = ZMQNode(Role.VIEWER, on_message=on_message, count='enable')
@@ -272,6 +278,8 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.content.set_context_menu_builder(viewer_menu)
         self.viewer.setWidget(self.content)
         self.viewer.resized.connect(self.content.on_resize_event)
+        self.viewer.set_speed_callback(self.content.get_adjusted_scroll_speed)
+        self.content.base_height_changed.connect(self._on_zoom_changed)
 
         self.mid_layout.addWidget(self.viewer)
         self.splitter.addWidget(mid_panel)
@@ -344,11 +352,17 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         super().resizeEvent(event)
         self.search_row_widget.on_move_event()
 
+    def _on_zoom_changed(self):
+        if self.viewer.isscrolling():
+            speed = self.content.get_adjusted_scroll_speed()
+            self.viewer._scroll_speed = speed
+
     def auto_scroll(self):
         if self.viewer.isscrolling():
             self.viewer.stop_auto_scroll()
         else:
-            self.viewer.start_auto_scroll(1, 1)
+            speed = self.content.get_adjusted_scroll_speed()
+            self.viewer.start_auto_scroll(speed)
 
     @profiler.profile
     def on_folder_selected(self):

@@ -2,6 +2,7 @@ from typing import Any, Dict, Union, List, Optional
 from pathlib import Path
 import json
 from PySide6 import QtWidgets
+from source.common.profiling import profiler
 
 class CommandPayload:
     def __init__(self, id: str, args: Optional[Dict[str, Any]] = None):
@@ -35,6 +36,7 @@ class CommandPayload:
             return CommandPayload.from_dict(v)
         raise TypeError('CommandPayload required')
 
+@profiler.profile
 def read_json_file(path: Union[str, Path], default: Any = None) -> Any:
     try:
         p = Path(path)
@@ -45,6 +47,7 @@ def read_json_file(path: Union[str, Path], default: Any = None) -> Any:
     except Exception:
         return default
 
+@profiler.profile
 def write_json_file(path: Union[str, Path], data: Any, indent: int = 2, ensure_ascii: bool = False) -> bool:
     try:
         p = Path(path)

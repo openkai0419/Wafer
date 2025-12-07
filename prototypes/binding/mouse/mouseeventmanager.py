@@ -1,5 +1,6 @@
 from enum import Enum, auto
 from PySide6 import QtCore, QtGui, QtWidgets
+from source.common.profiling import profiler
 
 class ClickType(Enum):
     SINGLE = auto()

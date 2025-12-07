@@ -1,5 +1,7 @@
 from typing import Any, Dict, List, Tuple, Union, Set, FrozenSet, Callable, Iterable, Optional
+from weakref import WeakValueDictionary
 from PySide6 import QtCore, QtGui, QtWidgets
+from source.common.profiling import profiler
 from ...command.core import CommandRegistry
 from ...utils import CommandPayload
 from .sequence import KeySequence
@@ -13,7 +15,7 @@ KeyChordSpec = Union[Tuple[KeySpec, ...], List[KeySpec]]
 class ShortcutManager(QtCore.QObject):
     _global: Optional['ShortcutManager'] = None
     _app_hooked_class: bool = False
-    _scope_mode: str = "focus"  # "focus" | "cursor"
+    _scope_mode: str = "cursor"  # "focus" | "cursor"
     MAX_COMBO_LEN = 2
     MAX_RECENT_EVENTS = 128
     def __init__(self):
@@ -30,16 +32,19 @@ class ShortcutManager(QtCore.QObject):
         self._deduper = RecentEventDeduper(self.MAX_RECENT_EVENTS)
         self._resolver = KeyNameResolver()
         self._parser = ComboParser(self._resolver)
+        self._widget_refs: WeakValueDictionary[int, QtWidgets.QWidget] = WeakValueDictionary()
         if ShortcutManager._global is None:
             ShortcutManager._global = self
             self._is_global = True
         else:
             self._is_global = False
+    @profiler.profile
     def set_bindings(self, widget: QtWidgets.QWidget, bindings: Dict[KeySequence, Any]):
         if not self._is_global and ShortcutManager._global is not None:
             return ShortcutManager._global.set_bindings(widget, bindings)
         self._ensure_app_filter()
         wid = id(widget)
+        self._widget_refs[wid] = widget
         norm: Dict[FrozenSet[int], CommandPayload] = {}
         for seq, cmd in bindings.items():
             if not seq or not cmd:
@@ -72,6 +77,7 @@ class ShortcutManager(QtCore.QObject):
             return ShortcutManager._global.set_key_bindings(widget, bindings)
         self._ensure_app_filter()
         wid = id(widget)
+        self._widget_refs[wid] = widget
         norm: Dict[FrozenSet[int], CommandPayload] = {}
         for spec, cmd in bindings.items():
             if not cmd:
@@ -100,12 +106,14 @@ class ShortcutManager(QtCore.QObject):
         wid = id(widget)
         self._keymap.pop(wid, None)
         self._states.pop(wid, None)
+        self._widget_refs.pop(wid, None)
 
     def set_physical_bindings(self, widget: QtWidgets.QWidget, bindings: Dict[KeyChordSpec, Any]):
         if not self._is_global and ShortcutManager._global is not None:
             return ShortcutManager._global.set_physical_bindings(widget, bindings)
         self._ensure_app_filter()
         wid = id(widget)
+        self._widget_refs[wid] = widget
         norm: Dict[FrozenSet[int], CommandPayload] = {}
         for spec, cmd in bindings.items():
             if not cmd:
@@ -134,6 +142,8 @@ class ShortcutManager(QtCore.QObject):
         wid = id(widget)
         self._sc_keymap.pop(wid, None)
         self._states_sc.pop(wid, None)
+        if wid not in self._keymap and wid not in self._sc_keymap:
+            self._widget_refs.pop(wid, None)
 
     def _get_scan_code(self, e: QtGui.QKeyEvent) -> int:
         try:
@@ -182,7 +192,7 @@ class ShortcutManager(QtCore.QObject):
                     sc_combo = self._match_sc_combo(wid, require_len=2)
                     if sc_combo and not state_sc.is_fired(sc_combo):
                         state_sc.mark_fired(sc_combo)
-                        self._exec(self._sc_keymap[wid][sc_combo])
+                        self._exec(wid, self._sc_keymap[wid][sc_combo])
                         return True
             if sc:
                 key_to_add = self._sc_mapper.map(wid, sc, k)
@@ -194,7 +204,7 @@ class ShortcutManager(QtCore.QObject):
                 combo = self._match_combo(wid, require_len=2)
                 if combo and not state.is_fired(combo):
                     state.mark_fired(combo)
-                    self._exec(self._keymap[wid][combo])
+                    self._exec(wid, self._keymap[wid][combo])
                     return True
             return False
         if et == QtCore.QEvent.KeyRelease:
@@ -214,7 +224,7 @@ class ShortcutManager(QtCore.QObject):
                     single_sc = frozenset((sc,))
                     if single_sc in self._sc_keymap.get(wid, {}) and not state_sc.is_fired(single_sc):
                         state_sc.mark_fired(single_sc)
-                        self._exec(self._sc_keymap[wid][single_sc])
+                        self._exec(wid, self._sc_keymap[wid][single_sc])
                 state_sc.remove_pressed(sc)
                 state_sc.cleanup_fired()
                 state_sc.unconsume(sc)
@@ -227,7 +237,7 @@ class ShortcutManager(QtCore.QObject):
                 single = frozenset((rk,))
                 if single in self._keymap.get(wid, {}) and not state.is_fired(single):
                     state.mark_fired(single)
-                    self._exec(self._keymap[wid][single])
+                    self._exec(wid, self._keymap[wid][single])
             state.remove_pressed(rk)
             state.cleanup_fired()
             state.unconsume(rk)
@@ -237,8 +247,12 @@ class ShortcutManager(QtCore.QObject):
             return False
         return False
 
-    def _exec(self, payload: CommandPayload):
-        self._registry.execute(payload.id, **dict(payload.args or {}))
+    def _exec(self, wid: int, payload: CommandPayload):
+        widget = self._widget_refs.get(wid)
+        if widget and hasattr(widget, "exec_command") and callable(widget.exec_command):
+            widget.exec_command(payload, event=None, key=None, source="key")
+        else:
+            self._registry.execute(payload.id, **dict(payload.args or {}))
 
     def _normalize(self, spec: KeyChordSpec) -> FrozenSet[int]:
         if not isinstance(spec, (tuple, list)):

@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import Any, Callable, Dict, List, Optional
+from source.common.profiling import profiler
 from .core import register_command_defs
 
 
@@ -35,6 +36,7 @@ def section_parts(s: str) -> List[str]:
     return head + [label]
 
 
+@profiler.profile
 def chain_providers(*providers: Optional[Callable[[], Dict[str, Any]]]) -> Optional[Callable[[], Dict[str, Any]]]:
     ps = [p for p in providers if callable(p)]
     if not ps:
@@ -136,6 +138,7 @@ class RegistryBackedMenu:
             except Exception:
                 pass
 
+    @profiler.profile
     def ensure_registered(self):
         t = type(self)
         if self._flags.get(t, False):
@@ -200,8 +203,11 @@ class MenuHub:
             cls._instance._by_menu = {}
             cls._instance._menu_items = {}
             cls._instance._folder_blocks = {}
+            cls._instance._folder_set = set()
+            cls._instance._folder_prefix_map = {}
         return cls._instance
     
+    @profiler.profile
     def register_paths(self, menu_cls: type, cmd_paths: Dict[str, str], items: Optional[List[str]] = None):
         if cmd_paths:
             self._by_menu[menu_cls] = dict(cmd_paths)
@@ -212,40 +218,37 @@ class MenuHub:
         if items is not None:
             self._menu_items[menu_cls] = list(items)
             self._index_folder_blocks(items)
+        self._rebuild_folder_caches()
 
     def get_path_by_command_id(self, command_id: str) -> str:
         return self._all_paths.get(command_id, "")
     
     def has_folder(self, folder: str) -> bool:
         f = folder.strip("/")
-        if not f:
-            return False
-        for p in self._all_paths.values():
-            parts = split_parts(p)
-            if len(parts) <= 1:
-                continue
-            if f in parts[:-1]:
-                return True
-        return False
+        return f in self._folder_set if f else False
     
     def find_folder_prefixes(self, name: str) -> List[str]:
         n = name.strip("/")
-        if not n:
-            return []
-        seen: Dict[str, None] = {}
-        out: List[str] = []
+        return self._folder_prefix_map.get(n, []) if n else []
+    
+    @profiler.profile
+    def _rebuild_folder_caches(self):
+        self._folder_set.clear()
+        self._folder_prefix_map.clear()
         for p in self._all_paths.values():
             parts = split_parts(p)
             if len(parts) <= 1:
                 continue
             for i in range(len(parts) - 1):
-                if parts[i] == n:
-                    pref = "/".join(parts[: i + 1])
-                    if pref not in seen:
-                        seen[pref] = None
-                        out.append(pref)
-        return out
+                folder_name = parts[i]
+                folder_path = "/".join(parts[:i + 1])
+                self._folder_set.add(folder_path)
+                if folder_name not in self._folder_prefix_map:
+                    self._folder_prefix_map[folder_name] = []
+                if folder_path not in self._folder_prefix_map[folder_name]:
+                    self._folder_prefix_map[folder_name].append(folder_path)
     
+    @profiler.profile
     def collect_items_by_folder(self, folder: str, rebase_to: Optional[str] = None) -> List[str]:
         f = folder.strip("/")
         fparts = split_parts(f)
@@ -290,6 +293,7 @@ class MenuHub:
                     out.append(f"{pre}/{rel}".lstrip("/"))
         return out
 
+    @profiler.profile
     def _index_folder_blocks(self, items: List[str]):
         cur: List[str] = []
         def _flush():

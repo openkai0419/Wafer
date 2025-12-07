@@ -2,7 +2,10 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, List, Optional
 import json
 from dataclasses import dataclass, field
+from source.common.profiling import profiler
 from ..utils import CommandPayload
+
+COMMAND_MENU_MARKER = "__CommandMenuBuilder_Menu__"
 
 
 @dataclass
@@ -69,6 +72,7 @@ class CommandRegistry:
             raise ValueError(f"Duplicate command id: {cid}")
         self._commands[cid] = command_class
 
+    @profiler.profile
     def execute(self, command_name: str, **kwargs) -> Any:
         if command_name not in self._commands:
             raise ValueError(f"Command {command_name} not found")

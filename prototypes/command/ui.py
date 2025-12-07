@@ -4,7 +4,8 @@ import json
 from PySide6 import QtCore, QtGui, QtWidgets
 from source.lang.manager import TranslatorMixin
 from source.common.funcs import uipx
-from .core import CommandMeta, CommandRegistry
+from source.common.profiling import profiler
+from .core import CommandMeta, CommandRegistry, COMMAND_MENU_MARKER
 from ..utils import show_error, CommandPayload
 from .state import ActionGroupStateManager, log_error, log_warning
 from .menu import (
@@ -179,10 +180,13 @@ class CommandMenuBuilder(TranslatorMixin):
             return target_menu, text_override
         return target_menu, None
 
+    @profiler.profile
     def build(self, parent: QtWidgets.QWidget, command_names: List[str], context_provider: Optional[Callable[[], Dict[str, Any]]] = None, display_map: Optional[Dict[str, str]] = None, selection_callback: Optional[Callable[[Any], None]] = None) -> QtWidgets.QMenu:
         menu = QtWidgets.QMenu(parent)
+        menu.setProperty(COMMAND_MENU_MARKER, True)
         return self.build_into(menu, parent, command_names, context_provider, display_map, selection_callback)
 
+    @profiler.profile
     def build_into(self, menu: QtWidgets.QMenu, parent: QtWidgets.QWidget, command_names: List[str], context_provider: Optional[Callable[[], Dict[str, Any]]] = None, display_map: Optional[Dict[str, str]] = None, selection_callback: Optional[Callable[[Any], None]] = None, allow_options_with_selection: bool = False) -> QtWidgets.QMenu:
         menus_cache: Dict[str, QtWidgets.QMenu] = {}
         action_groups: Dict[str, QtGui.QActionGroup] = {}
@@ -219,6 +223,7 @@ class CommandMenuBuilder(TranslatorMixin):
             self._add_entry(target_menu, parent, command_id, meta, context_provider, bool(meta.has_options) if (allow_options_with_selection or not selection_callback) else False, text_override, selection_callback, allow_options_with_selection, action_groups, group_defaults)
         return menu
 
+    @profiler.profile
     def _add_entry(self, menu: QtWidgets.QMenu, parent: QtWidgets.QWidget, name: str, meta: CommandMeta, context_provider: Optional[Callable[[], Dict[str, Any]]], with_options: bool, text_override: Optional[str], selection_callback: Optional[Callable[[Any], None]] = None, allow_options_with_selection: bool = False, action_groups: Optional[Dict[str, QtGui.QActionGroup]] = None, group_defaults: Optional[Dict[str, tuple[str, CommandMeta]]] = None):
         text = text_override or self.t.tr(meta.display)
         widget_action = QtWidgets.QWidgetAction(parent)
@@ -264,6 +269,7 @@ class CommandMenuBuilder(TranslatorMixin):
         except Exception as e:
             log_error(f"Failed to execute selection callback for '{name}': {e}")
 
+    @profiler.profile
     def _get_checked(self, name: str, meta: CommandMeta) -> bool:
         if name in self._check_states:
             return self._check_states[name]
@@ -276,6 +282,7 @@ class CommandMenuBuilder(TranslatorMixin):
             pass
         return meta.default_checked
 
+    @profiler.profile
     def _get_checked_for_group(self, name: str, group_name: str, meta: CommandMeta, group_defaults: Optional[Dict[str, tuple[str, CommandMeta]]] = None) -> bool:
         current = self.state_manager.get_current(group_name)
         if current:
@@ -301,7 +308,7 @@ class CommandMenuBuilder(TranslatorMixin):
     def _on_radio_toggled(self, name: str, container: QtWidgets.QWidget, state: bool, group_name: str):
         self._on_toggled(name, container, state)
         if state:
-            self.state_manager.set_current(group_name, name, save=True)
+            self.state_manager.set_current(group_name, name)
 
     def cycle_action_group(self, group_name: str) -> Optional[str]:
         result = self.state_manager.cycle(group_name)
@@ -337,17 +344,25 @@ class CommandMenuBuilder(TranslatorMixin):
         if lbl is not None:
             lbl.setText("✓" if state else "")
 
+    @profiler.profile
     def _create_row_widget(self, parent: QtWidgets.QWidget, text: str, hotkey: str, icon: Optional[str], has_options: bool, on_main_click: Optional[Callable[[], None]], on_options: Optional[Callable[[], None]], menu: QtWidgets.QMenu) -> QtWidgets.QWidget:
         w = CommandMenuRow(parent, text, hotkey, icon, has_options, menu)
+        # store callbacks so CommandMenuRow can attach them when it initializes
+        w._on_main_click = on_main_click
+        w._on_options_callback = (lambda: self._on_row_options(menu, on_options)) if on_options is not None else None
+        # attach immediate main click handler to the skeleton main area
         if on_main_click is not None:
-            def _row_click(event):
-                if event.button() == QtCore.Qt.LeftButton:
-                    on_main_click()
-            w.findChild(QtWidgets.QWidget, "rowMain").mouseReleaseEvent = _row_click
-        if has_options and on_options is not None:
+            main_area = w.findChild(QtWidgets.QWidget, "rowMain")
+            if main_area is not None:
+                def _row_click(event):
+                    if event.button() == QtCore.Qt.LeftButton:
+                        on_main_click()
+                main_area.mouseReleaseEvent = _row_click
+        # if already initialized (unlikely), ensure options callback is connected
+        if w._inited and w._has_options and w._on_options_callback is not None:
             btn = w.findChild(QtWidgets.QToolButton)
             if btn is not None:
-                btn.clicked.connect(lambda: self._on_row_options(menu, on_options))
+                btn.clicked.connect(w._on_options_callback)
         return w
 
     def _on_row_options(self, menu: QtWidgets.QMenu, on_options: Callable[[], None]):
@@ -362,6 +377,7 @@ class CommandMenuBuilder(TranslatorMixin):
         menu.close()
         self._show_options(command_name, parent, context_provider, selection_callback)
 
+    @profiler.profile
     def _show_options(self, command_name: str, parent: QtWidgets.QWidget, context_provider: Optional[Callable[[], Dict[str, Any]]], selection_callback: Optional[Callable[[Any], None]] = None):
         command_class = self.registry.get_command(command_name)
         if not command_class:
@@ -378,7 +394,8 @@ class CommandMenuBuilder(TranslatorMixin):
             options = dialog.get_values()
             if not callable(selection_callback):
                 try:
-                    CommandOptionStore().set(command_name, options)
+                    store = CommandOptionStore()
+                    store.set(command_name, options)
                 except Exception as e:
                     log_error(f"Failed to save command options for '{command_name}': {e}")
             if callable(selection_callback):
@@ -391,6 +408,7 @@ class CommandMenuBuilder(TranslatorMixin):
                 return
             return
 
+    @profiler.profile
     def _execute(self, name: str, provider: Optional[Callable[[], Dict[str, Any]]] ):
         args: Dict[str, Any] = {}
         try:
@@ -412,6 +430,7 @@ class CommandMenuBuilder(TranslatorMixin):
             log_error(f"Failed to execute command '{name}': {e}")
             show_error(None, str(e), self.t.tr("Error"))
 
+    @profiler.profile
     def _get_or_create_submenu_chain(self, root_menu: QtWidgets.QMenu, cache: Dict[str, QtWidgets.QMenu], parts: List[str], parent: QtWidgets.QWidget) -> QtWidgets.QMenu:
         cur_path = ""
         current = root_menu
@@ -442,73 +461,182 @@ class CommandMenuBuilder(TranslatorMixin):
 
 
 class CommandMenuRow(QtWidgets.QWidget):
+    _shared_style: Optional[str] = None
+
+    @profiler.profile
     def __init__(self, parent: QtWidgets.QWidget, text: str, hotkey: str, icon: Optional[str], has_options: bool, menu: QtWidgets.QMenu):
         super().__init__(parent)
         self.setObjectName("commandMenuRow")
+        self._inited = False
+        self._icon = icon
+        self._hotkey = hotkey
+        self._text = text
+        self._has_options = bool(has_options)
+        self._menu_ref = menu
+        self._on_main_click: Optional[Callable[[], None]] = None
+        self._on_options_callback: Optional[Callable[[], None]] = None
+
         l = QtWidgets.QHBoxLayout(self)
-        l.setContentsMargins(8, 2, 6, 2)
+        l.setContentsMargins(uipx(8), uipx(2), uipx(6), uipx(2))
         l.setSpacing(0)
-        self.setStyleSheet(
-            "#commandMenuRow #rowMain{border:1px solid transparent;border-radius:4px;background:transparent;}"
-            "#commandMenuRow #rowMain:hover{border:1px solid palette(Highlight);background:palette(AlternateBase);}" 
-            "#commandMenuRow QToolButton{border:1px solid transparent;border-radius:4px;background:transparent;}"
-            "#commandMenuRow QToolButton:hover{border:1px solid palette(Highlight);background:palette(AlternateBase);}" 
-            "#commandMenuRow QLabel{background:transparent;}"
-        )
-        gutter_w = 22
+
+        # Minimal skeleton: main area with check mark and text only.
+        self._main = QtWidgets.QWidget(self)
+        self._main.setObjectName("rowMain")
+        self._main.setCursor(QtCore.Qt.PointingHandCursor)
+        self._main.setAttribute(QtCore.Qt.WA_Hover, True)
+        self._ml = QtWidgets.QHBoxLayout(self._main)
+        self._ml.setContentsMargins(uipx(4), uipx(2), uipx(8), uipx(2))
+        self._ml.setSpacing(uipx(6))
+
+        self._chk = QtWidgets.QLabel("", self._main)
+        self._chk.setObjectName("checkMark")
+        self._chk.setFixedWidth(uipx(22))
+        self._chk.setAlignment(QtCore.Qt.AlignCenter)
+        self._chk.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
+        self._ml.addWidget(self._chk, 0)
+
+        self._tl = QtWidgets.QLabel(self._text, self._main)
+        self._tl.setAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft)
+        self._ml.addWidget(self._tl, 1)
+
+        # Add spacer inside main area for consistent hover effect
+        self._inner_spacer = QtWidgets.QWidget(self._main)
+        self._inner_spacer.setFixedWidth(uipx(22))
+        self._inner_spacer.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
+        self._ml.addWidget(self._inner_spacer, 0)
+
+        l.addWidget(self._main, 1)
+
+        # placeholder for options button outside main area (replaced later if has_options)
+        self._options_spacer = QtWidgets.QWidget(self)
+        self._options_spacer.setFixedWidth(uipx(22))
+        self._options_spacer.setVisible(False)
+        l.addWidget(self._options_spacer, 0)
+
+        self._icon_label: Optional[QtWidgets.QLabel] = None
+        self._hotkey_label: Optional[QtWidgets.QLabel] = None
+        self._options_btn: Optional[QtWidgets.QToolButton] = None
+
+        self._deferred_timer_started = False
+
+    def showEvent(self, ev):
+        super().showEvent(ev)
+        if not self._inited and not self._deferred_timer_started:
+            self._deferred_timer_started = True
+            QtCore.QTimer.singleShot(0, self.ensure_initialized)
+
+    def ensure_initialized(self):
+        if self._inited:
+            return
+        # apply shared style once
+        if CommandMenuRow._shared_style is None:
+            CommandMenuRow._shared_style = (
+                "#commandMenuRow #rowMain{border:1px solid transparent;border-radius:4px;background:transparent;}"
+                "#commandMenuRow #rowMain:hover{border:1px solid palette(Highlight);background:palette(AlternateBase);}" 
+                "#commandMenuRow QToolButton{border:1px solid transparent;border-radius:4px;background:transparent;}"
+                "#commandMenuRow QToolButton:hover{border:1px solid palette(Highlight);background:palette(AlternateBase);}" 
+                "#commandMenuRow QLabel{background:transparent;}"
+            )
         try:
-            style = menu.style() if menu is not None else self.style()
-            icon_sz = style.pixelMetric(QtWidgets.QStyle.PM_SmallIconSize, None, menu)
-            frame_w = style.pixelMetric(QtWidgets.QStyle.PM_DefaultFrameWidth, None, menu)
-            gutter_w = max(0, int(icon_sz + frame_w))
+            self.setStyleSheet(CommandMenuRow._shared_style)
         except Exception:
-            gutter_w = 22
-        main = QtWidgets.QWidget(self)
-        main.setObjectName("rowMain")
-        main.setCursor(QtCore.Qt.PointingHandCursor)
-        main.setAttribute(QtCore.Qt.WA_Hover, True)
-        ml = QtWidgets.QHBoxLayout(main)
-        ml.setContentsMargins(4, 2, 8, 2)
-        ml.setSpacing(6)
-        chk = QtWidgets.QLabel("", main)
-        chk.setObjectName("checkMark")
-        chk.setFixedWidth(gutter_w)
-        chk.setAlignment(QtCore.Qt.AlignCenter)
-        chk.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
-        ml.addWidget(chk, 0)
-        if icon:
-            il = QtWidgets.QLabel(main)
-            qicon = QtGui.QIcon(icon) if isinstance(icon, str) else icon
-            pm = qicon.pixmap(16, 16)
-            il.setPixmap(pm)
-            ml.addWidget(il, 0)
-        tl = QtWidgets.QLabel(text, main)
-        tl.setAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft)
-        ml.addWidget(tl, 1)
-        ss = QtGui.QKeySequence(hotkey).toString() if hotkey else ""
-        sl = QtWidgets.QLabel(ss, main)
-        sl.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-        sl.setMinimumWidth(60 if hotkey else 0)
-        ml.addWidget(sl, 0)
-        l.addWidget(main, 1)
-        if has_options:
-            btn = QtWidgets.QToolButton(self)
-            btn.setText("□")
-            btn.setAutoRaise(True)
-            btn.setFixedWidth(22)
-            btn.setCursor(QtCore.Qt.PointingHandCursor)
-            btn.setFocusPolicy(QtCore.Qt.NoFocus)
-            l.addWidget(btn, 0)
-        else:
-            sp = QtWidgets.QWidget(self)
-            sp.setFixedWidth(22)
-            sp.setVisible(False)
-            l.addWidget(sp, 0)
+            pass
+
+        gutter_w = self._compute_gutter()
+        try:
+            self._chk.setFixedWidth(gutter_w)
+        except Exception:
+            pass
+
+        # insert icon if present
+        if self._icon and self._icon_label is None:
+            try:
+                il = QtWidgets.QLabel(self._main)
+                qicon = QtGui.QIcon(self._icon) if isinstance(self._icon, str) else self._icon
+                sz = uipx(16)
+                pm = qicon.pixmap(sz, sz)
+                il.setPixmap(pm)
+                self._ml.insertWidget(1, il, 0)
+                self._icon_label = il
+            except Exception:
+                pass
+
+        # insert hotkey if present
+        if self._hotkey and self._hotkey_label is None:
+            try:
+                ss = QtGui.QKeySequence(self._hotkey).toString() if self._hotkey else ""
+                sl = QtWidgets.QLabel(ss, self._main)
+                sl.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                sl.setMinimumWidth(uipx(60) if self._hotkey else 0)
+                self._ml.addWidget(sl, 0)
+                self._hotkey_label = sl
+            except Exception:
+                pass
+
+        # replace spacer with options button if needed
+        if self._has_options and self._options_btn is None:
+            try:
+                # Remove inner spacer from main layout since we'll add button outside
+                self._ml.removeWidget(self._inner_spacer)
+                self._inner_spacer.deleteLater()
+                
+                top_layout = self.layout()
+                idx = None
+                for i in range(top_layout.count()):
+                    w = top_layout.itemAt(i).widget()
+                    if w is self._options_spacer:
+                        idx = i
+                        break
+                if idx is not None:
+                    # Show and replace spacer with actual button
+                    top_layout.removeWidget(self._options_spacer)
+                    self._options_spacer.deleteLater()
+                    btn = QtWidgets.QToolButton(self)
+                    btn.setText("□")
+                    btn.setAutoRaise(True)
+                    btn.setFixedWidth(uipx(22))
+                    btn.setCursor(QtCore.Qt.PointingHandCursor)
+                    btn.setFocusPolicy(QtCore.Qt.NoFocus)
+                    top_layout.insertWidget(idx, btn, 0)
+                    self._options_btn = btn
+                    if self._on_options_callback is not None:
+                        try:
+                            self._options_btn.clicked.connect(self._on_options_callback)
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+        # attach main click if provided
+        if self._on_main_click is not None:
+            try:
+                def _row_click(event):
+                    if event.button() == QtCore.Qt.LeftButton:
+                        try:
+                            self._on_main_click()
+                        except Exception:
+                            pass
+                self._main.mouseReleaseEvent = _row_click
+            except Exception:
+                pass
+
+        self._inited = True
+
+    def _compute_gutter(self) -> int:
+        try:
+            style = self._menu_ref.style() if self._menu_ref is not None else self.style()
+            icon_sz = style.pixelMetric(QtWidgets.QStyle.PM_SmallIconSize, None, self._menu_ref)
+            frame_w = style.pixelMetric(QtWidgets.QStyle.PM_DefaultFrameWidth, None, self._menu_ref)
+            return max(0, int(icon_sz + frame_w))
+        except Exception:
+            return 22
 
 
 class MenuBuilder:
     def __init__(self, parent: Optional[QtWidgets.QWidget] = None, context_provider: Optional[Callable[[], Dict[str, Any]]] = None):
         self._menu = QtWidgets.QMenu(parent)
+        self._menu.setProperty(COMMAND_MENU_MARKER, True)
         self._builder = CommandMenuBuilder()
         self._hub = MenuHub()
         self._ctx = context_provider
@@ -556,6 +684,7 @@ class MenuBuilder:
             self._builder.build_into(self._menu, self._menu, names, context_provider=ctx, display_map=None, selection_callback=selection_callback, allow_options_with_selection=allow_options_with_selection)
         return self._menu
 
+    @profiler.profile
     def build(self, items: List[str], selection_callback: Optional[Callable[[Any], None]] = None, context_provider: Optional[Callable[[], Dict[str, Any]]] = None, allow_options_with_selection: bool = False) -> QtWidgets.QMenu:
         self._menu.clear()
         all_names: List[str] = []
@@ -592,16 +721,19 @@ class MenuBuilder:
             if p:
                 self._add_names(all_names, [it], seen, after_rebase=False)
             else:
-                prefixes = self._hub.find_folder_prefixes(it) if self._hub.has_folder(it) else []
+                prefixes = self._hub.find_folder_prefixes(it)
                 if len(prefixes) > 1:
                     raise ValueError(f"Ambiguous folder: {it}")
                 if len(prefixes) == 1:
                     names = self._collect_folder(prefixes[0], rebase_to=it, on_missing=f"Unknown command or folder id: {it}")
-                else:
+                elif self._hub.has_folder(it):
                     names = self._collect_folder(it, rebase_to=it, on_missing=f"Unknown command or folder id: {it}")
+                else:
+                    raise ValueError(f"Unknown command or folder id: {it}")
                 self._add_names(all_names, names, seen, after_rebase=True)
         return self._build_into(all_names, selection_callback, context_provider, allow_options_with_selection)
 
+    @profiler.profile
     def use(self, folder: str, context_provider: Optional[Callable[[], Dict[str, Any]]] = None) -> QtWidgets.QMenu:
         self._menu.clear()
         s = (folder or "").strip("/")

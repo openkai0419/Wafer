@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Any, Dict, Optional, List
 from pathlib import Path
+from source.common.profiling import profiler
 from ...utils import read_json_file, write_json_file, CommandPayload
 from .mouseeventmanager import MouseActionKey
 
@@ -43,6 +44,7 @@ class MouseBindingStore:
         norm = command
         d = self._map.setdefault(key, {})
         d[scope] = norm
+    @profiler.profile
     def resolve(self, widget: str, key: MouseActionKey) -> Optional[CommandPayload]:
         d = self._map.get(key)
         if not d:

@@ -59,6 +59,7 @@ class CmdMenu(RegistryBackedMenu):
             ":Commands",
             {"path": "hello", "meta": CommandMeta(display="Hello", params=[CommandParam(name="scope", type=str, default="", description="scope")], func=lambda scope="": print(f"hello from {scope}"))},
             {"path": "time", "meta": CommandMeta(display="Show Time", func=lambda: print(datetime.now().strftime("%Y-%m-%d %H:%M:%S")))},
+            {"path": "test", "meta": CommandMeta(display="print test", params=[CommandParam(name="test", type=str, default="", description="test")], func=lambda test: print(f"test: {test}"))},
             "-",
             ":Options",
             {"path": "Options/echo", "meta": CommandMeta(display="Echo", params=[CommandParam(name="text", type=str, default="echo"), CommandParam(name="repeat", type=int, default=1, min_value=1, max_value=8)], has_options=True, func=lambda text="echo", repeat=1: print(text * repeat))},
@@ -80,28 +81,44 @@ class CmdMenu(RegistryBackedMenu):
 class ContextMenu(RegistryBackedMenu):
     path_prefix = "context"
 
-    def _show_context_menu_here(self):
+    def _prepare_context_menu(self):
+        from .command.core import COMMAND_MENU_MARKER
+        active_popup = QtWidgets.QApplication.activePopupWidget()
+        if active_popup and active_popup.property(COMMAND_MENU_MARKER):
+            active_popup.close()
         pos = QtGui.QCursor.pos()
         w = QtWidgets.QApplication.widgetAt(pos)
         if w is None:
-            return
+            return None, None, None
         target = w
-        while target and not hasattr(target,"binding_scope"):
+        while target and not hasattr(target, "binding_scope"):
             target = target.parentWidget()
-        scope = str(target.binding_scope()) if hasattr(target, "binding_scope") and callable(getattr(target, "binding_scope")) else ""
+        if not target:
+            return None, None, None
         provider = target.provider if hasattr(target, "provider") and callable(getattr(target, "provider")) else None
-        if scope == "Widget B":
-            m = MenuBuilder(target, context_provider=provider).build_all_roots()
-        else:
-            b = MenuBuilder(target, context_provider=provider)
-            b.build([":Menu", "-", "commands/:Test", "commands/-", "commands", "-", "file", "path", "Temp", "path.1", "Options"]) 
-            m = b.menu
+        return target, provider, pos
+
+    def _show_context_menu_here(self):
+        target, provider, pos = self._prepare_context_menu()
+        if not target:
+            return
+        b = MenuBuilder(target, context_provider=provider)
+        b.build([":Menu", "-", "commands/:Test", "commands/-", "commands", "-", "file", "path", "Temp", "path.1", "Options"]) 
+        m = b.menu
+        m.exec(pos)
+    
+    def _show_all_menu(self):
+        target, provider, pos = self._prepare_context_menu()
+        if not target:
+            return
+        m = MenuBuilder(target, context_provider=provider).build_all_roots()
         m.exec(pos)
 
     def create_definitions(self):
         return [
             ":ContextMenu",
             {"path": "showContextMenuHere", "meta": CommandMeta(display="Show Context Menu Here", func=self._show_context_menu_here)},
+            {"path": "showAllMenu", "meta": CommandMeta(display="Show All Menu Here", func=self._show_all_menu)},
         ]
 
 class MenuMenu(RegistryBackedMenu):

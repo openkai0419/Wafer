@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Dict, List, Optional, Any, Tuple, Union
 from pathlib import Path
 from PySide6 import QtWidgets
+from source.common.profiling import profiler
 from .mouse.mouseeventmanager import MouseActionKey
 from .mouse.store import MouseBindingStore
 from weakref import WeakSet
@@ -39,6 +40,7 @@ class BindingManager:
         mgr.apply_registered()
         return mgr
     
+    @profiler.profile
     def load_or_seed(self, defaults: Dict[MouseActionKey, Any]) -> Dict[MouseActionKey, Dict[str, Any]]:
         loaded = self._store.load_from_file(str(self._file))
         if not loaded:
@@ -86,15 +88,15 @@ class BindingManager:
 
     def apply_key_bindings(self, widgets: List[QtWidgets.QWidget]) -> None:
         data = self._key_store.get_all()
+        base_logical: Dict[Tuple[Union[str,int], ...], Any] = {}
+        base_physical: Dict[Tuple[Union[str,int], ...], Any] = {}
+        for spec, payload in list(self._key_defaults or []):
+            if self._is_physical_spec(spec):
+                base_physical[spec] = payload
+            else:
+                base_logical[spec] = payload
         for w in widgets:
             name = self._scope_of(w)
-            base_logical: Dict[Tuple[Union[str,int], ...], Any] = {}
-            base_physical: Dict[Tuple[Union[str,int], ...], Any] = {}
-            for spec, payload in list(self._key_defaults or []):
-                if self._is_physical_spec(spec):
-                    base_physical[spec] = payload
-                else:
-                    base_logical[spec] = payload
             store_logical: Dict[str, Any] = {}
             store_physical: Dict[str, Any] = {}
             for seq, scopes in data.items():
@@ -106,7 +108,6 @@ class BindingManager:
                 else:
                     store_logical[seq] = cmd
             if base_logical and hasattr(w, "set_key_bindings"):
-                # ShortcutManager handles normalization internally
                 w.set_key_bindings(base_logical)
             if base_physical and hasattr(w, "set_physical_shortcut_bindings"):
                 w.set_physical_shortcut_bindings(base_physical)

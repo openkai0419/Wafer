@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Any, Dict, Optional
 from PySide6 import QtWidgets
+from source.common.profiling import profiler
 from ..command.core import CommandRegistry
 from ..utils import CommandPayload
 from .mouse.mouseeventmanager import MouseEventManager, MouseEventDispatcher, MouseActionKey, ClickType
@@ -17,7 +18,7 @@ class CommandBindingMixin:
         self._registry = CommandRegistry()
         self._mouse_manager = MouseEventManager()
         self._mouse_dispatcher = MouseEventDispatcher(self, self._mouse_manager)
-        self._mouse_bindings: Dict[MouseActionKey, str] = {}
+        self._mouse_bindings: Dict[MouseActionKey, CommandPayload] = {}
         self._store = MouseBindingStore()
         self._shortcut_manager = ShortcutManager()
         self._mouse_manager.set_resolver(self._resolve_fallback)
@@ -37,9 +38,8 @@ class CommandBindingMixin:
         for k, cmd in bindings.items():
             if not isinstance(cmd, CommandPayload):
                 raise TypeError("Mouse binding payload must be CommandPayload")
-            payload = cmd
-            self._mouse_bindings[k] = payload
-            self._mouse_manager.bind(k, lambda e=None, c=payload, kk=k: self._exec(c, event=e, key=kk, source="mouse"))
+            self._mouse_bindings[k] = cmd
+            self._mouse_manager.bind(k, lambda e=None, c=cmd, kk=k: self._execute_payload(c, event=e, key=kk, source="mouse"))
         self._mouse_manager.set_resolver(self._resolve_fallback)
 
     def get_mouse_bindings(self) -> Dict[MouseActionKey, CommandPayload]:
@@ -51,11 +51,11 @@ class CommandBindingMixin:
             skey = MouseActionKey(key.button, ClickType.SINGLE, key.held_buttons)
             cmd = self._store.resolve(self.binding_scope(), skey)
             if isinstance(cmd, CommandPayload):
-                self._exec(cmd, event=event, key=skey, source="mouseFallback")
+                self._execute_payload(cmd, event=event, key=skey, source="mouseFallback")
                 return True
             return False
         if isinstance(cmd, CommandPayload):
-            self._exec(cmd, event=event, key=key, source="mouseFallback")
+            self._execute_payload(cmd, event=event, key=key, source="mouseFallback")
             return True
         return False
 
@@ -72,24 +72,34 @@ class CommandBindingMixin:
         self._shortcut_manager.set_key_bindings(self, bindings)
 
     def exec_command(self, cmd: Any, event=None, key: Optional[MouseActionKey]=None, source: Optional[str]=None, extra: Optional[Dict[str, Any]]=None):
-        self._exec(cmd, event=event, key=key, source=source, extra=extra)
+        self._execute_payload(cmd, event=event, key=key, source=source, extra=extra)
 
     def provider(self, cmd: Any, event=None, key: Optional[MouseActionKey]=None, source: Optional[str]=None) -> Dict[str, Any]:
         return {}
 
-    def _exec(self, cmd: CommandPayload, event=None, key: Optional[MouseActionKey]=None, source: Optional[str]=None, extra: Optional[Dict[str, Any]]=None):
+    @profiler.profile
+    def _execute_payload(self, cmd: CommandPayload, event=None, key: Optional[MouseActionKey]=None, source: Optional[str]=None, extra: Optional[Dict[str, Any]]=None):
         if not isinstance(cmd, CommandPayload):
             raise TypeError("Command payload must be CommandPayload")
+        ctx = self._build_execution_context(cmd, event, key, source, extra)
+        args = self._merge_arguments(cmd, ctx, source)
+        self._registry.execute(str(cmd.id), **args)
+        self._update_checkable_state(cmd, args)
+
+    def _build_execution_context(self, cmd: CommandPayload, event=None, key: Optional[MouseActionKey]=None, source: Optional[str]=None, extra: Optional[Dict[str, Any]]=None) -> Dict[str, Any]:
         ctx: Dict[str, Any] = {}
         try:
             ctx = self.provider(cmd, event=event, key=key, source=source) or {}
         except Exception:
-            ctx = {}
+            pass
         if isinstance(extra, dict):
             try:
                 ctx.update(extra)
             except Exception:
                 pass
+        return ctx
+
+    def _merge_arguments(self, cmd: CommandPayload, ctx: Dict[str, Any], source: Optional[str]) -> Dict[str, Any]:
         from ..command.state import CommandOptionStore
         store = CommandOptionStore()
         stored_payload = store.get(cmd.id)
@@ -105,9 +115,15 @@ class CommandBindingMixin:
             else:
                 new_checked = bool(args.get("checked")) if "checked" in args else not cur_checked
             args["checked"] = new_checked
-        self._registry.execute(str(cmd.id), **args)
+        return args
+
+    def _update_checkable_state(self, cmd: CommandPayload, args: Dict[str, Any]):
         try:
+            cls = self._registry.get_command(str(cmd.id))
             if cls and getattr(getattr(cls, "meta", None), "checkable", False):
+                from ..command.state import CommandOptionStore
+                store = CommandOptionStore()
+                stored_payload = store.get(cmd.id)
                 opts = dict(getattr(stored_payload, "args", {}) or {})
                 opts["checked"] = bool(args.get("checked", opts.get("checked", False)))
                 store.set(cmd.id, opts)

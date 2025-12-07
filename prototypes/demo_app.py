@@ -1,4 +1,6 @@
 from PySide6 import QtCore, QtWidgets
+from source.common.profiling import profiler
+from source.common.funcs import uipx
 from .command.ui import MenuBuilder
 from .menu_demo import *
 from .binding.mixins import CommandBindingMixin
@@ -11,11 +13,14 @@ class DemoButton(QtWidgets.QPushButton, CommandBindingMixin):
         super().__init__(name, parent)
         self.init_command_binding(name)
 
+    def provider(self, *args,**kwargs):
+        return {"scope": self.binding_scope()}
+
 class DemoPane(QtWidgets.QFrame, CommandBindingMixin):
     def __init__(self, name: str, parent=None):
         super().__init__(parent)
         self.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.setMinimumSize(240, 160)
+        self.setMinimumSize(uipx(240), uipx(160))
         self.init_command_binding(name)
         self._header = QtWidgets.QLabel(name, self)
         self._header.setAlignment(QtCore.Qt.AlignCenter)
@@ -24,7 +29,7 @@ class DemoPane(QtWidgets.QFrame, CommandBindingMixin):
         l.addWidget(self._header, 1)
 
     def provider(self, *args,**kwargs):
-        return {"scope": self.binding_scope()}
+        return {"scope": self.binding_scope(), "test": "True"}
 
 class TestLineEdit(QtWidgets.QLineEdit):
     def __init__(self, name: str, parent=None):
@@ -63,6 +68,15 @@ class MainWindow(QtWidgets.QMainWindow, CommandBindingMixin):
         m = builder.use("binding")
         mb.addMenu(m)
 
+    def closeEvent(self, event):
+        from .command.state import CommandOptionStore, ActionGroupStateManager
+        try:
+            ActionGroupStateManager().commit()
+            CommandOptionStore().commit()
+        except Exception as e:
+            print(f"Failed to save settings: {e}")
+        super().closeEvent(event)
+
 def add_focus_style(app):
     def on_focus_changed(old, new):
         if old is not None:
@@ -91,7 +105,7 @@ def main():
     # add_focus_style(app)
 
     w = MainWindow()
-    w.resize(640, 400)
+    w.resize(uipx(640), uipx(400))
     w.show()
     app.exec()
 

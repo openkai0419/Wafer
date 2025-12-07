@@ -1,6 +1,7 @@
 from typing import Dict, List, Tuple, Any
 from pathlib import Path
 from PySide6 import QtCore, QtGui, QtWidgets
+from source.common.funcs import uipx
 from .mouseeventmanager import MouseActionKey, ClickType, MouseButton
 from ...command.ui import MenuBuilder
 from .store import MouseBindingStore
@@ -12,7 +13,7 @@ class MouseBindingEditor(QtWidgets.QDialog):
         super().__init__(parent)
         self.widgets = widgets
         self.setWindowTitle("Mouse Bindings")
-        self.resize(640, 480)
+        self.resize(uipx(640), uipx(480))
         self._store = MouseBindingStore()
         self._draft: Dict[MouseActionKey, Dict[str, str]] = {}
         self._setup()
@@ -24,7 +25,7 @@ class MouseBindingEditor(QtWidgets.QDialog):
         left_container = QtWidgets.QWidget(self.splitter)
         left_layout = QtWidgets.QVBoxLayout(left_container)
         left_layout.setContentsMargins(0,0,0,0)
-        left_layout.setSpacing(4)
+        left_layout.setSpacing(uipx(4))
         label_actions = QtWidgets.QLabel("マウス操作:", left_container)
         self.list_actions = QtWidgets.QListWidget(left_container)
         self.list_actions.setAlternatingRowColors(True)
@@ -43,7 +44,7 @@ class MouseBindingEditor(QtWidgets.QDialog):
         self.sections_container.setAttribute(QtCore.Qt.WA_StyledBackground, True)
         self.sections_layout = QtWidgets.QVBoxLayout(self.sections_container)
         self.sections_layout.setContentsMargins(0,0,0,0)
-        self.sections_layout.setSpacing(8)
+        self.sections_layout.setSpacing(uipx(8))
         self.panel_layout.addWidget(self.sections_container, 1)
         footer = QtWidgets.QHBoxLayout()
         footer.addStretch(1)
@@ -58,7 +59,7 @@ class MouseBindingEditor(QtWidgets.QDialog):
         self.splitter.setCollapsible(0, False)
         self.splitter.setCollapsible(1, False)
         self.splitter.setChildrenCollapsible(False)
-        self.splitter.setSizes([120, 420])
+        self.splitter.setSizes([uipx(120), uipx(420)])
         self.splitter.setStretchFactor(0,0)
         self.splitter.setStretchFactor(1,1)
         l.addWidget(self.splitter, 1)
@@ -258,8 +259,8 @@ class MouthSection(QtWidgets.QGroupBox):
         l.addWidget(self.global_edit)
         self.overrides_container = QtWidgets.QWidget(self)
         self.overrides_layout = QtWidgets.QVBoxLayout(self.overrides_container)
-        self.overrides_layout.setContentsMargins(4,4,4,4)
-        self.overrides_layout.setSpacing(6)
+        self.overrides_layout.setContentsMargins(uipx(4),uipx(4),uipx(4),uipx(4))
+        self.overrides_layout.setSpacing(uipx(6))
         self.override_edits: Dict[str, QtWidgets.QLineEdit] = {}
         self._payloads: Dict[str, CommandPayload] = {}
         self.list_order: List[str] = []
@@ -391,7 +392,7 @@ class MouthSection(QtWidgets.QGroupBox):
         row = QtWidgets.QWidget(self.overrides_container)
         rl = QtWidgets.QHBoxLayout(row)
         rl.setContentsMargins(0,0,0,0)
-        rl.setSpacing(6)
+        rl.setSpacing(uipx(6))
         btn = QtWidgets.QPushButton(scope, row)
         btn.setCursor(QtCore.Qt.PointingHandCursor)
         btn.setStyleSheet("padding:2px 10px;")

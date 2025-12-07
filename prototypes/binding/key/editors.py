@@ -1,6 +1,7 @@
 from typing import Dict, List, Any, Tuple
 from pathlib import Path
 from PySide6 import QtCore, QtGui, QtWidgets
+from source.common.funcs import uipx
 from ...command.ui import MenuBuilder
 from ...utils import format_payload_display, CommandPayload
 from ..common import WidgetRef
@@ -30,7 +31,7 @@ class KeyBindingEditor(QtWidgets.QDialog):
         self.widgets = widgets
         self._commands = list(commands) if isinstance(commands, list) else []
         self.setWindowTitle("Key Bindings")
-        self.resize(600, 480)
+        self.resize(uipx(600), uipx(480))
         self._store = KeyBindingStore()
         self._cat = KeySpecCatalog()
         self._mod_keys: List[str] = []
@@ -72,7 +73,7 @@ class KeyBindingEditor(QtWidgets.QDialog):
         self.section_container = QtWidgets.QWidget(self)
         self.section_layout = QtWidgets.QVBoxLayout(self.section_container)
         self.section_layout.setContentsMargins(0,0,0,0)
-        self.section_layout.setSpacing(6)
+        self.section_layout.setSpacing(uipx(6))
         scroll = QtWidgets.QScrollArea(self)
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
@@ -551,8 +552,8 @@ class _KeySequenceSection(QtWidgets.QGroupBox):
         l.addWidget(self.global_edit)
         self.overrides_container = QtWidgets.QWidget(self)
         self.overrides_layout = QtWidgets.QVBoxLayout(self.overrides_container)
-        self.overrides_layout.setContentsMargins(4,4,4,4)
-        self.overrides_layout.setSpacing(6)
+        self.overrides_layout.setContentsMargins(uipx(4),uipx(4),uipx(4),uipx(4))
+        self.overrides_layout.setSpacing(uipx(6))
         self.override_edits: Dict[str, QtWidgets.QLineEdit] = {}
         l.addWidget(self.overrides_container)
         self.overrides_container.setVisible(False)
@@ -667,7 +668,7 @@ class _KeySequenceSection(QtWidgets.QGroupBox):
         row = QtWidgets.QWidget(self.overrides_container)
         rl = QtWidgets.QHBoxLayout(row)
         rl.setContentsMargins(0,0,0,0)
-        rl.setSpacing(6)
+        rl.setSpacing(uipx(6))
         btn = QtWidgets.QPushButton(scope, row)
         btn.setCursor(QtCore.Qt.PointingHandCursor)
         btn.setStyleSheet("padding:2px 10px;")

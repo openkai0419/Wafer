@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Any, Callable, Dict, List, Optional
 import json
+import inspect
 from dataclasses import dataclass, field
 from source.common.profiling import profiler
 from ..utils import CommandPayload
@@ -82,6 +83,9 @@ class CommandRegistry:
             return command.call_execute(**kwargs)
         return command.execute(**kwargs)
 
+    def has_command(self, name: str) -> bool:
+        return name in self._commands
+
     def get_command(self, name: str) -> Optional[type[CommandBase]]:
         return self._commands.get(name)
 
@@ -90,7 +94,11 @@ class CommandRegistry:
 
 
 def _build_args(meta: CommandMeta, kwargs: Dict[str, Any]) -> Dict[str, Any]:
-    return {p.name: kwargs.get(p.name, p.default) for p in meta.params}
+    args = {p.name: kwargs.get(p.name, p.default) for p in meta.params}
+    for k, v in kwargs.items():
+        if k not in args:
+            args[k] = v
+    return args
 
 
 def create_command_from_meta(meta: CommandMeta) -> type[CommandBase]:
@@ -99,8 +107,15 @@ def create_command_from_meta(meta: CommandMeta) -> type[CommandBase]:
     _Cmd.meta = meta
     fn = getattr(meta, "func", None)
     if callable(fn):
+        sig = inspect.signature(fn)
+        accepts_kwargs = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+        param_names = set(sig.parameters.keys())
+        
         def _wrapped_execute(self, **kwargs):
-            return fn(**kwargs)
+            if accepts_kwargs:
+                return fn(**kwargs)
+            filtered_kwargs = {k: v for k, v in kwargs.items() if k in param_names}
+            return fn(**filtered_kwargs)
         setattr(_Cmd, "execute", _wrapped_execute)
     return _Cmd
 

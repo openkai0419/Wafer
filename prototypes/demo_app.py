@@ -5,8 +5,7 @@ from .command.ui import MenuBuilder
 from .menu_demo import *
 from .binding.mixins import CommandBindingMixin
 from .binding.manager import BindingManager
-from .binding.mouse.defaults import default_mouse_bindings
-from .binding.key.defaults import default_key_bindings
+from .defaults import default_mouse_bindings, default_key_bindings
 
 class DemoButton(QtWidgets.QPushButton, CommandBindingMixin):
     def __init__(self, name: str, parent=None):
@@ -21,7 +20,7 @@ class DemoPane(QtWidgets.QFrame, CommandBindingMixin):
         super().__init__(parent)
         self.setFrameShape(QtWidgets.QFrame.StyledPanel)
         self.setMinimumSize(uipx(240), uipx(160))
-        self.init_command_binding(name)
+        self.init_command_binding(name, enable_drops=True)
         self._header = QtWidgets.QLabel(name, self)
         self._header.setAlignment(QtCore.Qt.AlignCenter)
         self.setFocusPolicy(QtCore.Qt.StrongFocus)
@@ -42,6 +41,7 @@ class MainWindow(QtWidgets.QMainWindow, CommandBindingMixin):
         self.setWindowTitle("Prototype Command Test")
         self.setFocusPolicy(QtCore.Qt.ClickFocus)
         self.init_command_binding("Test Window")
+        from . import drag_demo
         cw = QtWidgets.QWidget(self)
         c = QtWidgets.QVBoxLayout(cw)
         l = QtWidgets.QHBoxLayout(cw)
@@ -52,6 +52,10 @@ class MainWindow(QtWidgets.QMainWindow, CommandBindingMixin):
         l.addWidget(self.pane1, 1)
         l.addWidget(self.pane2, 1)
         l.addWidget(self.pane3, 1)
+        
+        self.drag_demo = DemoPane("Drag Demo Widget", cw)
+        c.addWidget(self.drag_demo, 1)
+        
         self.setCentralWidget(cw)
 
         self.line = TestLineEdit("LineEdit 1", self)

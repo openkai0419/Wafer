@@ -11,13 +11,14 @@ from .manager import BindingManager
 
 
 class CommandBindingMixin:
-    def init_command_binding(self, name: str):
+    def init_command_binding(self, name: str, enable_drops: bool = False):
         if not name:
             raise ValueError("name is required")
         self.name = name
         self._registry = CommandRegistry()
         self._mouse_manager = MouseEventManager()
-        self._mouse_dispatcher = MouseEventDispatcher(self, self._mouse_manager)
+        self._mouse_manager.set_registry(self._registry)
+        self._mouse_dispatcher = MouseEventDispatcher(self, self._mouse_manager, enable_drag=enable_drops)
         self._mouse_bindings: Dict[MouseActionKey, CommandPayload] = {}
         self._store = MouseBindingStore()
         self._shortcut_manager = ShortcutManager()
@@ -83,6 +84,10 @@ class CommandBindingMixin:
             raise TypeError("Command payload must be CommandPayload")
         ctx = self._build_execution_context(cmd, event, key, source, extra)
         args = self._merge_arguments(cmd, ctx, source)
+        if event is not None:
+            args['event'] = event
+        if key is not None:
+            args['key'] = key
         self._registry.execute(str(cmd.id), **args)
         self._update_checkable_state(cmd, args)
 

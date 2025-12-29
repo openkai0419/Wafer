@@ -36,7 +36,10 @@ class CommandBindingMixin:
     def set_mouse_bindings(self, bindings: Dict[MouseActionKey, CommandPayload]):
         self._mouse_bindings = {}
         self._mouse_manager.clear()
-        for k, cmd in bindings.items():
+
+        expanded_bindings = dict(bindings)
+        
+        for k, cmd in expanded_bindings.items():
             if not isinstance(cmd, CommandPayload):
                 raise TypeError("Mouse binding payload must be CommandPayload")
             self._mouse_bindings[k] = cmd
@@ -46,10 +49,29 @@ class CommandBindingMixin:
     def get_mouse_bindings(self) -> Dict[MouseActionKey, CommandPayload]:
         return dict(self._mouse_bindings)
 
+    def drop_accept(self, event) -> bool:
+        try:
+            from ..command.core import resolve_drop_accept
+            acceptors = resolve_drop_accept(self.binding_scope())
+            if not acceptors:
+                return False
+            for acceptor in acceptors:
+                if not callable(acceptor):
+                    continue
+                try:
+                    ok = bool(acceptor(event=event, widget=self, scope=self.binding_scope()))
+                except TypeError:
+                    ok = bool(acceptor(event))
+                if ok:
+                    return True
+            return False
+        except Exception:
+            return False
+
     def _resolve_fallback(self, key: MouseActionKey, event=None):
         cmd = self._store.resolve(self.binding_scope(), key)
         if not cmd and key.click_type == ClickType.DOUBLE:
-            skey = MouseActionKey(key.button, ClickType.SINGLE, key.held_buttons)
+            skey = MouseActionKey(key.button, ClickType.SINGLE, key.held_buttons, getattr(key, "modifiers", ()))
             cmd = self._store.resolve(self.binding_scope(), skey)
             if isinstance(cmd, CommandPayload):
                 self._execute_payload(cmd, event=event, key=skey, source="mouseFallback")

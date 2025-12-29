@@ -10,7 +10,7 @@ from .defaults import default_mouse_bindings, default_key_bindings
 class DemoButton(QtWidgets.QPushButton, CommandBindingMixin):
     def __init__(self, name: str, parent=None):
         super().__init__(name, parent)
-        self.init_command_binding(name)
+        self.init_command_binding(name, enable_drops=True)
 
     def provider(self, *args,**kwargs):
         return {"scope": self.binding_scope()}
@@ -40,7 +40,7 @@ class MainWindow(QtWidgets.QMainWindow, CommandBindingMixin):
         super().__init__()
         self.setWindowTitle("Prototype Command Test")
         self.setFocusPolicy(QtCore.Qt.ClickFocus)
-        self.init_command_binding("Test Window")
+        self.init_command_binding("Test Window", enable_drops=True)
         from . import drag_demo
         cw = QtWidgets.QWidget(self)
         c = QtWidgets.QVBoxLayout(cw)

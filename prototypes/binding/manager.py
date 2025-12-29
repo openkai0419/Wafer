@@ -77,7 +77,9 @@ class BindingManager:
     def apply_mouse_bindings(self, widgets: List[QtWidgets.QWidget]) -> None:
         data = self._store.get_all()
         for w in widgets:
-            name = self._scope_of(w)
+            if not (hasattr(w, "binding_scope") and callable(getattr(w, "binding_scope"))):
+                continue
+            name = w.binding_scope()
             applied: Dict[MouseActionKey, Any] = {}
             for key, scopes in data.items():
                 cmd = scopes.get(name) or scopes.get("*")
@@ -96,7 +98,9 @@ class BindingManager:
             else:
                 base_logical[spec] = payload
         for w in widgets:
-            name = self._scope_of(w)
+            if not (hasattr(w, "binding_scope") and callable(getattr(w, "binding_scope"))):
+                continue
+            name = w.binding_scope()
             store_logical: Dict[str, Any] = {}
             store_physical: Dict[str, Any] = {}
             for seq, scopes in data.items():
@@ -141,11 +145,6 @@ class BindingManager:
             self._key_store.save_to_file(str(self._key_file))
         except Exception:
             pass
-
-    def _scope_of(self, widget: QtWidgets.QWidget) -> str:
-        if hasattr(widget, "binding_scope") and callable(getattr(widget, "binding_scope")):
-            return widget.binding_scope()
-        raise ValueError(f"Widget {widget} does not implement binding_scope()")
 
     def _find_registered_in_hierarchy(self, widget: Optional[QtWidgets.QWidget]) -> Optional[QtWidgets.QWidget]:
         cur = widget

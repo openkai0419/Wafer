@@ -10,6 +10,14 @@ def default_mouse_bindings() -> Dict[MouseActionKey, CommandPayload]:
     return {
         MouseActionKey(MouseButton.RIGHT, ClickType.SINGLE, ()): CommandPayload("showContextMenuHere", {}),
         MouseActionKey(MouseButton.LEFT, ClickType.SINGLE, ()): CommandPayload("hello", {}),
+        MouseActionKey(MouseButton.LEFT, ClickType.DOUBLE, ()): CommandPayload("time", {}),
+        MouseActionKey(MouseButton.MIDDLE, ClickType.SINGLE, ()): CommandPayload("toggleVerbose", {}),
+        MouseActionKey(MouseButton.NONE, ClickType.WHEEL_UP, ()): CommandPayload("cycleSortOrder", {}),
+        MouseActionKey(MouseButton.NONE, ClickType.WHEEL_DOWN, ()): CommandPayload("printCurrentSort", {}),
+        MouseActionKey(MouseButton.X1, ClickType.SINGLE, ()): CommandPayload("echo", {"text": "X1", "repeat": 1}),
+        MouseActionKey(MouseButton.X2, ClickType.SINGLE, ()): CommandPayload("count", {"value": 1, "step": 3}),
+        MouseActionKey(MouseButton.LEFT, ClickType.DRAG_START, ()): CommandPayload("dragScroll", {}),
+        MouseActionKey(MouseButton.NONE, ClickType.DROP, ()): CommandPayload("simpleFileDrop", {}),
     }
 
 def default_key_bindings() -> List[Tuple[KeyChordSpec, CommandPayload]]:
@@ -17,6 +25,12 @@ def default_key_bindings() -> List[Tuple[KeyChordSpec, CommandPayload]]:
         (("Shift", "F10"), CommandPayload("showContextMenuHere", {})),
         (("H",), CommandPayload("hello", {})),
         (("T",), CommandPayload("time", {})),
+        (("Control", "W"), CommandPayload("bindings", {})),
+        (("Control", "K"), CommandPayload("shortcutBindings", {})),
+        (("Alt", "M"), CommandPayload("mode", {"mode": "B"})),
+        (("Control", "E"), CommandPayload("echo", {"text": "Ctrl+E", "repeat": 2})),
+        (("F2",), CommandPayload("toggleVerbose", {})),
+        (("F3",), CommandPayload("cycleSortOrder", {})),
     ]
 
 def get_all_mouse_bindings() -> Dict[MouseActionKey, Dict[str, CommandPayload]]:
@@ -66,10 +80,8 @@ def get_all_mouse_bindings() -> Dict[MouseActionKey, Dict[str, CommandPayload]]:
         MouseActionKey(MouseButton.RIGHT, ClickType.DRAG_START, ()): {
             "Widget A": CommandPayload("dragScroll", {})
         },
-        MouseActionKey(MouseButton.NONE, ClickType.DRAG_ENTER, ()): {
-            "Widget A": CommandPayload("dropFiles", {})
-        },
         MouseActionKey(MouseButton.NONE, ClickType.DROP, ()): {
+            "Widget A": CommandPayload("dropFiles", {}),
             "Widget B": CommandPayload("simpleFileDrop", {}),
             "Drag Demo Widget": CommandPayload("filePathDrop", {}),
         },

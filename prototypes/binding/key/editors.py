@@ -27,9 +27,12 @@ class _SelectableList(QtWidgets.QListWidget):
 
 class KeyBindingEditor(QtWidgets.QDialog):
     def __init__(self, widgets: List[WidgetRef], commands: List[str] | None = None, parent=None):
+        if parent is None and isinstance(commands, QtWidgets.QWidget):
+            parent = commands
+            commands = None
         super().__init__(parent)
         self.widgets = widgets
-        self._commands = list(commands) if isinstance(commands, list) else []
+        self._commands = list(commands or [])
         self.setWindowTitle("Key Bindings")
         self.resize(uipx(600), uipx(480))
         self._store = KeyBindingStore()
@@ -381,7 +384,7 @@ class KeyBindingEditor(QtWidgets.QDialog):
         self._select_lists_for_sequence(new_seq)
 
     def _reset_all_defaults(self):
-        from .defaults import default_key_bindings
+        from ...defaults import default_key_bindings
         defs = default_key_bindings()
         self._draft = {}
         for spec, payload in defs:

@@ -1,6 +1,7 @@
 from enum import Enum, auto
 from PySide6 import QtCore, QtGui, QtWidgets
 from source.common.profiling import profiler
+from ...command.core import CommandRegistry
 
 class ClickType(Enum):
     SINGLE = auto()
@@ -8,7 +9,6 @@ class ClickType(Enum):
     WHEEL_UP = auto()
     WHEEL_DOWN = auto()
     DRAG_START = auto()
-    DRAG_ENTER = auto()
     DROP = auto()
 
 class MouseButton(Enum):
@@ -19,9 +19,14 @@ class MouseButton(Enum):
     X2 = QtCore.Qt.XButton2
     NONE = 0
 
+class ModifierKey(Enum):
+    CTRL = auto()
+    SHIFT = auto()
+    ALT = auto()
+    META = auto()
+
 class DragContext:
     def __init__(self):
-        self.user_data = {}
         self.cancelled = False
     
     def on_move(self, event):
@@ -38,6 +43,59 @@ class DragContext:
     
     def on_drop(self, event):
         pass
+
+
+class ExternalDropDynamicContext(DragContext):
+    def __init__(self, widget, registry, resolver):
+        super().__init__()
+        self.widget = widget
+        self.registry = registry
+        self.resolver = resolver
+        self._active_payload = None
+        self._active_key = None
+
+    def _exec(self, payload, suffix: str, event, key):
+        if not payload:
+            return False
+        base_id = getattr(payload, "id", None)
+        if not base_id:
+            return False
+        cmd_id = f"{base_id}.{suffix}"
+        if not self.registry.has_command(cmd_id):
+            return False
+        args = getattr(payload, "args", None) or {}
+        self.registry.execute(cmd_id, event=event, widget=self.widget, key=key, context=self, **args)
+        return True
+
+    def _switch_if_needed(self, payload, key):
+        if self._active_payload is payload and self._active_key == key:
+            return False
+        self._active_payload = payload
+        self._active_key = key
+        return True
+
+    def on_enter(self, event):
+        self._active_payload = None
+        self._active_key = None
+        return True
+
+    def on_move(self, event):
+        payload, key = self.resolver(event)
+        self._switch_if_needed(payload, key)
+        return self._exec(self._active_payload, "move", event, self._active_key)
+
+    def on_leave(self, event):
+        self._active_payload = None
+        self._active_key = None
+        return True
+
+    def on_drop(self, event):
+        payload, key = self.resolver(event)
+        self._switch_if_needed(payload, key)
+        ok = self._exec(self._active_payload, "drop", event, self._active_key)
+        self._active_payload = None
+        self._active_key = None
+        return ok
 
 class CommandDragContext(DragContext):
     def __init__(self, base_id, registry, widget, args=None):
@@ -74,25 +132,35 @@ class CommandDragContext(DragContext):
 
 class MouseActionKey:
 
-    def __init__(self, button, click_type, held_buttons):
+    def __init__(self, button, click_type, held_buttons, modifiers=()):
         self.button = button
         self.click_type = click_type
         self.held_buttons = frozenset(held_buttons)
+        self.modifiers = frozenset(modifiers)
 
     def __hash__(self):
-        return hash((self.button, self.click_type, self.held_buttons))
+        return hash((self.button, self.click_type, self.held_buttons, self.modifiers))
 
     def __eq__(self, other):
-        return self.button == other.button and self.click_type == other.click_type and (self.held_buttons == other.held_buttons)
+        if not isinstance(other, MouseActionKey):
+            return False
+        return self.button == other.button and self.click_type == other.click_type and (self.held_buttons == other.held_buttons) and (self.modifiers == other.modifiers)
 
     def __repr__(self):
         try:
             held_list = list(self.held_buttons)
-            held_list.sort(key=lambda b: b.value if isinstance(b.value, int) else int(b.value))
+            held_list.sort(key=lambda b: b.value)
             held = '+'.join((btn.name for btn in held_list))
         except Exception as e:
             held = f'[ERROR sorting held_buttons: {e}]'
-        return f"{'+'.join([held, self.button.name])} {self.click_type.name}" if held else f'{self.button.name} {self.click_type.name}'
+        try:
+            mods_list = list(self.modifiers)
+            mods_list.sort(key=lambda m: m.value)
+            mods = '+'.join((m.name for m in mods_list))
+        except Exception as e:
+            mods = f'[ERROR sorting modifiers: {e}]'
+        prefix = '+'.join([p for p in (mods, held) if p])
+        return f"{'+'.join([prefix, self.button.name])} {self.click_type.name}" if prefix else f'{self.button.name} {self.click_type.name}'
 
 class MouseStateManager:
     _instance = None
@@ -125,7 +193,7 @@ class MouseStateManager:
         if callable(timestamp):
             ts = timestamp()
         else:
-            ts = id(event)
+            return False
         event_signature = (event.type(), ts)
         if event_signature in self._processed_events:
             return True
@@ -199,9 +267,6 @@ class MouseEventManager:
     def bind(self, key, action):
         self._bindings[key] = action
 
-    def unbind(self, key):
-        self._bindings.pop(key, None)
-
     def clear(self):
         self._bindings.clear()
         self._resolver = None
@@ -225,6 +290,8 @@ class MouseEventManager:
                 handled = bool(result)
             except Exception:
                 handled = False
+        else:
+            print(f"[DEBUG] No action or resolver found for key={key}")
         if handled:
             if key.click_type == ClickType.SINGLE and key.held_buttons:
                 self._state.add_suppress_group(list(key.held_buttons))
@@ -251,30 +318,44 @@ class MouseEventManager:
             return result
         return None
 
-    def execute_drag_enter(self, key, event, widget):
-        if self._registry:
-            from ..mixins import CommandBindingMixin
-            if isinstance(widget, CommandBindingMixin):
-                bindings = widget.get_mouse_bindings()
-                payload = bindings.get(key)
-                if payload:
-                    base_id = payload.id
-                    args = payload.args or {}
-                    ctx = CommandDragContext(base_id, self._registry, widget, args)
-                    if self._registry.has_command(f"{base_id}.enter"):
-                        ctx.on_enter(event)
-                    return ctx
-        result = self.execute_action(key, event)
-        if isinstance(result, DragContext):
-            return result
-        return None
-
     @staticmethod
     def map_qt_button(qt_button):
         for b in MouseButton:
             if b.value == qt_button:
                 return b
         return MouseButton.NONE
+
+    @staticmethod
+    def _qt_modifiers_for_event(event):
+        m = getattr(event, "modifiers", None)
+        if callable(m):
+            try:
+                return m()
+            except Exception:
+                return QtCore.Qt.NoModifier
+        km = getattr(event, "keyboardModifiers", None)
+        if callable(km):
+            try:
+                return km()
+            except Exception:
+                return QtCore.Qt.NoModifier
+        return QtCore.Qt.NoModifier
+
+    @staticmethod
+    def get_modifiers(modifiers):
+        r = []
+        try:
+            if modifiers & QtCore.Qt.ControlModifier:
+                r.append(ModifierKey.CTRL)
+            if modifiers & QtCore.Qt.ShiftModifier:
+                r.append(ModifierKey.SHIFT)
+            if modifiers & QtCore.Qt.AltModifier:
+                r.append(ModifierKey.ALT)
+            if modifiers & QtCore.Qt.MetaModifier:
+                r.append(ModifierKey.META)
+        except Exception:
+            return tuple()
+        return tuple(r)
 
     @staticmethod
     def get_held_buttons(buttons, exclude=None):
@@ -325,7 +406,8 @@ class MouseEventDispatcher(QtCore.QObject):
             if press_pos is not None and self._dragging_button is not None:
                 if self._state.check_drag_threshold(press_pos, event.pos()):
                     held = MouseEventManager.get_held_buttons(event.buttons(), exclude=self._dragging_button)
-                    key = MouseActionKey(self._dragging_button, ClickType.DRAG_START, held)
+                    mods = MouseEventManager.get_modifiers(MouseEventManager._qt_modifiers_for_event(event))
+                    key = MouseActionKey(self._dragging_button, ClickType.DRAG_START, held, mods)
                     ctx = self._manager.execute_drag_start(key, event, self._target)
                     if ctx:
                         self._state.start_internal_drag(self._target, ctx)
@@ -385,13 +467,15 @@ class MouseEventDispatcher(QtCore.QObject):
             button = MouseEventManager.map_qt_button(nev.button())
             held = MouseEventManager.get_held_buttons(nev.buttons(), exclude=button)
             click_type = ClickType.DOUBLE if is_double else ClickType.SINGLE
-            key = MouseActionKey(button, click_type, held)
+            mods = MouseEventManager.get_modifiers(MouseEventManager._qt_modifiers_for_event(nev))
+            key = MouseActionKey(button, click_type, held, mods)
             target_widget._mouse_manager.execute_action(key, nev)
         else:
             button = MouseEventManager.map_qt_button(event.button())
             held = MouseEventManager.get_held_buttons(event.buttons(), exclude=button)
             click_type = ClickType.DOUBLE if is_double else ClickType.SINGLE
-            key = MouseActionKey(button, click_type, held)
+            mods = MouseEventManager.get_modifiers(MouseEventManager._qt_modifiers_for_event(event))
+            key = MouseActionKey(button, click_type, held, mods)
             self._manager.execute_action(key, event)
         self._state.clear_press_position(self._target)
         self._dragging_button = None
@@ -402,7 +486,8 @@ class MouseEventDispatcher(QtCore.QObject):
         delta = event.angleDelta().y()
         click_type = ClickType.WHEEL_UP if delta > 0 else ClickType.WHEEL_DOWN
         held = MouseEventManager.get_held_buttons(event.buttons())
-        key = MouseActionKey(MouseButton.NONE, click_type, held)
+        mods = MouseEventManager.get_modifiers(MouseEventManager._qt_modifiers_for_event(event))
+        key = MouseActionKey(MouseButton.NONE, click_type, held, mods)
         self._manager.execute_action(key, event)
 
     def _handle_drop(self, event):
@@ -412,29 +497,92 @@ class MouseEventDispatcher(QtCore.QObject):
         if ctx:
             ctx.on_drop(event)
             self._state.end_external_drag(self._target)
-        key = MouseActionKey(MouseButton.NONE, ClickType.DROP, ())
-        self._manager.execute_action(key, event)
+        else:
+            mods = MouseEventManager.get_modifiers(MouseEventManager._qt_modifiers_for_event(event))
+            key = MouseActionKey(MouseButton.NONE, ClickType.DROP, frozenset(), mods)
+            from ..mixins import CommandBindingMixin
+            widget = self._target
+            if isinstance(widget, CommandBindingMixin):
+                bindings = widget.get_mouse_bindings()
+                payload = bindings.get(key)
+                if payload:
+                    base_id = payload.id
+                    args = payload.args or {}
+                    registry = CommandRegistry()
+                    if registry.has_command(f"{base_id}.drop"):
+                        registry.execute(f"{base_id}.drop", event=event, widget=widget, key=key, **args)
+                        event.accept()
+                        event.acceptProposedAction()
+                        return
+            self._manager.execute_action(key, event)
         event.accept()
         event.acceptProposedAction()
 
-    def _handle_drag_enter(self, event):
+    def _handle_drag_enter(self, event) -> bool:
         if self._state.is_event_processed(event):
-            return
-        key = MouseActionKey(MouseButton.NONE, ClickType.DRAG_ENTER, ())
-        ctx = self._manager.execute_drag_enter(key, event, self._target)
-        if ctx:
+            return True
+        try:
+            from ..mixins import CommandBindingMixin
+            if isinstance(self._target, CommandBindingMixin):
+                ok = bool(self._target.drop_accept(event))
+                if not ok:
+                    try:
+                        self._state.end_external_drag(self._target)
+                    except Exception:
+                        pass
+                    try:
+                        event.ignore()
+                    except Exception:
+                        pass
+                    return False
+        except Exception:
+            pass
+        def _resolve_drop(ev):
+            m = MouseEventManager.get_modifiers(MouseEventManager._qt_modifiers_for_event(ev))
+            k = MouseActionKey(MouseButton.NONE, ClickType.DROP, (), m)
+            payload = None
+            try:
+                if hasattr(self._target, "get_mouse_bindings"):
+                    payload = self._target.get_mouse_bindings().get(k)
+            except Exception:
+                payload = None
+            if payload is None:
+                try:
+                    from .store import MouseBindingStore
+                    store = MouseBindingStore()
+                    scope = self._target.binding_scope() if hasattr(self._target, "binding_scope") else "*"
+                    payload = store.resolve(scope, k)
+                except Exception:
+                    payload = None
+            return payload, k
+
+        try:
+            ctx = ExternalDropDynamicContext(self._target, CommandRegistry(), _resolve_drop)
+            ctx.on_enter(event)
             self._state.start_external_drag(self._target, ctx)
+        except Exception:
+            return False
         event.accept()
         event.acceptProposedAction()
+        return True
 
     def _handle_drag_move(self, event):
         if self._state.is_event_processed(event):
-            return
+            return True
         ctx = self._state.get_external_drag_context(self._target)
-        if ctx:
-            ctx.on_move(event)
-        event.accept()
-        event.acceptProposedAction()
+        if not ctx:
+            try:
+                event.ignore()
+            except Exception:
+                pass
+            return False
+        ctx.on_move(event)
+        try:
+            event.accept()
+            event.acceptProposedAction()
+        except Exception:
+            pass
+        return True
 
     def _handle_drag_leave(self, event):
         if self._state.is_event_processed(event):
@@ -461,11 +609,9 @@ class MouseEventDispatcher(QtCore.QObject):
         elif isinstance(event, QtGui.QWheelEvent):
             self._handle_wheel(event)
         elif event.type() == QtCore.QEvent.DragEnter:
-            self._handle_drag_enter(event)
-            return True
+            return bool(self._handle_drag_enter(event))
         elif event.type() == QtCore.QEvent.DragMove:
-            self._handle_drag_move(event)
-            return True
+            return bool(self._handle_drag_move(event))
         elif event.type() == QtCore.QEvent.DragLeave:
             self._handle_drag_leave(event)
             return True

@@ -3,7 +3,7 @@ from typing import Any, Dict, Optional, List
 from pathlib import Path
 from source.common.profiling import profiler
 from ...utils import read_json_file, write_json_file, CommandPayload
-from .mouseeventmanager import MouseActionKey
+from .mouseeventmanager import MouseActionKey, ModifierKey
 
 class MouseBindingStore:
     _instance: Optional["MouseBindingStore"] = None
@@ -59,11 +59,41 @@ class MouseBindingStore:
                 ser_scopes: Dict[str, Any] = {}
                 for sc, payload in scopes.items():
                     ser_scopes[sc] = payload.to_dict()
-                entry = {"button": k.button.name, "click": k.click_type.name, "held": [b.name for b in sorted(list(k.held_buttons), key=lambda x: x.name)], "scopes": ser_scopes}
+                entry = {
+                    "button": k.button.name,
+                    "click": k.click_type.name,
+                    "held": [b.name for b in sorted(list(k.held_buttons), key=lambda x: x.name)],
+                    "modifiers": [m.name for m in sorted(list(getattr(k, "modifiers", frozenset())), key=lambda x: x.name)],
+                    "scopes": ser_scopes,
+                }
                 r.append(entry)
             except Exception:
                 pass
         return r
+
+    def _parse_modifiers(self, raw) -> List[ModifierKey]:
+        if raw is None:
+            return []
+        parts: List[str] = []
+        if isinstance(raw, str):
+            s = raw.replace("|", "+").replace(" ", "+")
+            parts = [p for p in s.split("+") if p]
+        elif isinstance(raw, (list, tuple)):
+            parts = [str(p) for p in raw if p]
+        else:
+            return []
+        out: List[ModifierKey] = []
+        for p in parts:
+            u = str(p).strip().upper()
+            if u in ("CTRL", "CONTROL"):
+                out.append(ModifierKey.CTRL)
+            elif u in ("SHIFT",):
+                out.append(ModifierKey.SHIFT)
+            elif u in ("ALT", "OPTION"):
+                out.append(ModifierKey.ALT)
+            elif u in ("META", "CMD", "COMMAND", "WIN", "WINDOWS", "SUPER"):
+                out.append(ModifierKey.META)
+        return out
     def load_serializable(self, data: List[Dict[str, Any]], on_error: Optional[callable] = None):
         from .mouseeventmanager import MouseButton, ClickType
         nm: Dict[MouseActionKey, Dict[str, CommandPayload]] = {}
@@ -85,7 +115,8 @@ class MouseBindingStore:
                 scopes = e.get("scopes") or {}
                 if not btn or not clk or not isinstance(scopes, dict):
                     continue
-                key = MouseActionKey(btn, clk, tuple(held))
+                mods = self._parse_modifiers(e.get("modifiers"))
+                key = MouseActionKey(btn, clk, tuple(held), tuple(mods))
                 nm[key] = {}
                 for sc, cmd in scopes.items():
                     if cmd is None:

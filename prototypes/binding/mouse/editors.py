@@ -80,6 +80,7 @@ class MouseBindingEditor(QtWidgets.QDialog):
         for b in [MouseButton.LEFT, MouseButton.RIGHT, MouseButton.MIDDLE, MouseButton.X1, MouseButton.X2]:
             r.append((f"{b.name} SINGLE", b, ClickType.SINGLE))
             r.append((f"{b.name} DOUBLE", b, ClickType.DOUBLE))
+        for b in [MouseButton.LEFT, MouseButton.RIGHT, MouseButton.MIDDLE, MouseButton.X1, MouseButton.X2]:
             r.append((f"{b.name} DRAG", b, ClickType.DRAG_START))
         r.append(("WHEEL UP", MouseButton.NONE, ClickType.WHEEL_UP))
         r.append(("WHEEL DOWN", MouseButton.NONE, ClickType.WHEEL_DOWN))

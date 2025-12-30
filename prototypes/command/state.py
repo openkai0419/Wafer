@@ -154,12 +154,14 @@ class ActionGroupStateManager:
         return result
     
     @profiler.profile
-    def set_current(self, group_name: str, command_id: str):
+    def set_current(self, group_name: str, command_id: str, *, save: bool = True):
         self._group_states[group_name] = command_id
         members = self._group_members.get(group_name, [])
         for member in members:
             self._check_states[member] = (member == command_id)
         self._notify_observers(group_name, command_id)
+        if save:
+            self.commit()
     
     @profiler.profile
     def cycle(self, group_name: str) -> Optional[str]:

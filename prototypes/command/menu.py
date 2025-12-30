@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, List, Optional
 from source.common.profiling import profiler
 from .core import register_command_defs
+from ..utils import show_warning
 
 
 def split_parts(raw: str) -> List[str]:
@@ -48,8 +49,8 @@ def chain_providers(*providers: Optional[Callable[[], Dict[str, Any]]]) -> Optio
                 v = fn() or {}
                 if isinstance(v, dict):
                     r.update(v)
-            except Exception:
-                pass
+            except Exception as e:
+                show_warning(None, f"chain_providers failed: {getattr(fn, '__name__', str(fn))}", exc=e)
         return r
     return _p
 
@@ -135,8 +136,8 @@ class RegistryBackedMenu:
         if cls not in RegistryBackedMenu._flags:
             try:
                 cls()
-            except Exception:
-                pass
+            except Exception as e:
+                show_warning(None, f"RegistryBackedMenu init failed: {cls.__name__}", exc=e)
 
     @profiler.profile
     def ensure_registered(self):
@@ -186,8 +187,8 @@ class RegistryBackedMenu:
             self._cmd_paths[t] = cmd_paths
         try:
             MenuHub().register_paths(t, cmd_paths, items)
-        except Exception:
-            pass
+        except Exception as e:
+            show_warning(None, f"MenuHub.register_paths failed: {t.__name__}", exc=e)
         self._flags[t] = True
 
     def create_definitions(self) -> Any:

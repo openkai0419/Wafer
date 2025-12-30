@@ -5,6 +5,7 @@ from source.common.profiling import profiler
 from ..command.core import CommandRegistry
 from ..command.context import CommandContext
 from ..utils import CommandPayload
+from ..utils import show_warning
 from .mouse.mouseeventmanager import MouseEventManager, MouseEventDispatcher, MouseActionKey, ClickType
 from .key.shortcutmanager import ShortcutManager
 from .mouse.store import MouseBindingStore
@@ -52,16 +53,17 @@ class CommandBindingMixin:
 
     def drop_accept(self, event) -> bool:
         try:
-            from ..command.core import resolve_drop_accept
+            from ..command.core import resolve_drop_accept, invoke_compatible
             acceptors = resolve_drop_accept(self.binding_scope())
             if not acceptors:
                 return False
             scope = self.binding_scope() if hasattr(self, "binding_scope") and callable(self.binding_scope) else ""
-            ctx = CommandContext.build(self, scope, source="drop.accept", event=event, key=None, extras=None)
+            ctx = CommandContext.create(self, scope, source="drop.accept", event=event, key=None)
             for acceptor in acceptors:
                 if not callable(acceptor):
                     continue
-                ok = bool(acceptor(ctx=ctx))
+                values = {"ctx": ctx, "event": event, "widget": self, "scope": scope}
+                ok = bool(invoke_compatible(acceptor, values))
                 if ok:
                     return True
             return False
@@ -82,13 +84,13 @@ class CommandBindingMixin:
             return True
         return False
 
-    def set_shortcut_bindings(self, bindings: Dict[str, CommandPayload]):
+    def set_shortcut_bindings(self, bindings: Dict[Any, CommandPayload]):
         self._shortcut_manager.set_bindings(self, bindings)
 
     def get_shortcut_bindings(self) -> Dict[str, CommandPayload]:
         return self._shortcut_manager.get_bindings(self)
 
-    def set_physical_shortcut_bindings(self, bindings: Dict[str, CommandPayload]):
+    def set_physical_shortcut_bindings(self, bindings: Dict[Any, CommandPayload]):
         self._shortcut_manager.set_physical_bindings(self, bindings)
 
     def set_key_bindings(self, bindings: Dict[tuple, CommandPayload]):
@@ -110,13 +112,13 @@ class CommandBindingMixin:
         self._update_checkable_state(cmd, ctx)
 
     def _build_execution_context(self, cmd: CommandPayload, event=None, key: Optional[MouseActionKey]=None, source: Optional[str]=None, extra: Optional[Dict[str, Any]]=None) -> CommandContext:
-        ctx = CommandContext.build(self, self.binding_scope(), source=str(source or ""), event=event, key=key, extras=None)
+        ctx = CommandContext.create(self, self.binding_scope(), source=str(source or ""), event=event, key=key)
         try:
             more = self.extend_context(ctx, cmd, event=event, key=key, source=source)
             if isinstance(more, dict) and more:
                 ctx.merge(more)
-        except Exception:
-            pass
+        except Exception as e:
+            show_warning(None, f"extend_context failed: {type(self).__name__}", exc=e)
         if isinstance(extra, dict) and extra:
             ctx.merge(extra)
         return ctx
@@ -149,5 +151,5 @@ class CommandBindingMixin:
                 opts = dict(getattr(stored_payload, "args", {}) or {})
                 opts["checked"] = bool(ctx.get("checked", opts.get("checked", False)))
                 store.set(cmd.id, opts)
-        except Exception:
-            pass
+        except Exception as e:
+            show_warning(None, f"_update_checkable_state failed: {cmd.id}", exc=e)

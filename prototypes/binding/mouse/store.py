@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional, List
 from pathlib import Path
 from source.common.profiling import profiler
-from ...utils import read_json_file, write_json_file, CommandPayload
+from ...utils import read_json_file, write_json_file, CommandPayload, show_warning
 from .mouseeventmanager import MouseActionKey, ModifierKey
 
 class MouseBindingStore:
@@ -67,8 +67,8 @@ class MouseBindingStore:
                     "scopes": ser_scopes,
                 }
                 r.append(entry)
-            except Exception:
-                pass
+            except Exception as e:
+                show_warning(None, "MouseBindingStore.to_serializable failed", exc=e)
         return r
 
     def _parse_modifiers(self, raw) -> List[ModifierKey]:
@@ -111,7 +111,9 @@ class MouseBindingStore:
                             try:
                                 on_error("invalid held button", None)
                             except Exception:
-                                pass
+                                show_warning(None, "MouseBindingStore on_error failed: invalid held button")
+                        else:
+                            show_warning(None, "invalid held button")
                 scopes = e.get("scopes") or {}
                 if not btn or not clk or not isinstance(scopes, dict):
                     continue
@@ -129,7 +131,9 @@ class MouseBindingStore:
                                 try:
                                     on_error("invalid payload json", ex)
                                 except Exception:
-                                    pass
+                                    show_warning(None, "MouseBindingStore on_error failed: invalid payload json", exc=ex)
+                            else:
+                                show_warning(None, "invalid payload json", exc=ex)
                     elif isinstance(cmd, dict):
                         try:
                             nm[key][sc] = CommandPayload.from_dict(cmd)
@@ -138,19 +142,25 @@ class MouseBindingStore:
                                 try:
                                     on_error("invalid payload dict", ex)
                                 except Exception:
-                                    pass
+                                    show_warning(None, "MouseBindingStore on_error failed: invalid payload dict", exc=ex)
+                            else:
+                                show_warning(None, "invalid payload dict", exc=ex)
                     else:
                         if callable(on_error):
                             try:
                                 on_error("unsupported payload type", None)
                             except Exception:
-                                pass
+                                show_warning(None, "MouseBindingStore on_error failed: unsupported payload type")
+                        else:
+                            show_warning(None, "unsupported payload type")
             except Exception as ex:
                 if callable(on_error):
                     try:
                         on_error("entry parse error", ex)
                     except Exception:
-                        pass
+                        show_warning(None, "MouseBindingStore on_error failed: entry parse error", exc=ex)
+                else:
+                    show_warning(None, "entry parse error", exc=ex)
         self._map = nm
     def save_to_file(self, path: str):
         try:
@@ -158,8 +168,8 @@ class MouseBindingStore:
             if p.parent:
                 p.parent.mkdir(parents=True, exist_ok=True)
             write_json_file(p, self.to_serializable(), indent=2, ensure_ascii=False)
-        except Exception:
-            pass
+        except Exception as e:
+            show_warning(None, f"MouseBindingStore.save_to_file failed: {path}", exc=e)
     def load_from_file(self, path: str):
         try:
             data = read_json_file(Path(path), None)
@@ -167,5 +177,6 @@ class MouseBindingStore:
                 self.load_serializable(data)
                 return True
             return False
-        except Exception:
+        except Exception as e:
+            show_warning(None, f"MouseBindingStore.load_from_file failed: {path}", exc=e)
             return False

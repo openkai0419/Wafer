@@ -57,10 +57,23 @@ def write_json_file(path: Union[str, Path], data: Any, indent: int = 2, ensure_a
     except Exception:
         return False
 
-def show_error(parent: QtWidgets.QWidget, text: str, title: str = 'Error') -> None:
+def raise_error(parent: QtWidgets.QWidget, text: str, title: str = 'Error') -> None:
     import sys
     print(f"{title}: {text}", file=sys.stderr)
     raise RuntimeError(text)
+
+def show_warning(parent: Optional[QtWidgets.QWidget], text: str, title: str = 'Warning', exc: Optional[BaseException] = None) -> None:
+    import sys
+    print(f"{title}: {text}", file=sys.stderr)
+    if exc is not None:
+        try:
+            import traceback
+            print("".join(traceback.format_exception(type(exc), exc, exc.__traceback__)), file=sys.stderr)
+        except Exception:
+            try:
+                print(repr(exc), file=sys.stderr)
+            except Exception:
+                pass
 
 def _ordered_arg_values(cid: str, args: Dict[str, Any]) -> List[str]:
     from .command.core import CommandRegistry

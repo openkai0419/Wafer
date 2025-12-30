@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence, Mapping
 import json
 import inspect
 from dataclasses import dataclass, field
@@ -86,7 +86,7 @@ class CommandRegistry:
         if ctx is None:
             ctx = kwargs.pop("ctx", None)
         if ctx is None:
-            ctx = CommandContext.build(None, "*", source="")
+            raise ValueError("ctx is required")
         kwargs["ctx"] = ctx
         command_class = self._commands[command_name]
         command = command_class()
@@ -213,6 +213,12 @@ def _invoke_compatible(fn: Callable[..., Any], values: Dict[str, Any]) -> Any:
     return fn(*args, **kwargs)
 
 
+def invoke_compatible(fn: Callable[..., Any], values: Mapping[str, Any] | None = None) -> Any:
+    if values is None:
+        values = {}
+    return _invoke_compatible(fn, dict(values))
+
+
 def create_command_from_meta(meta: CommandMeta) -> type[CommandBase]:
     class _Cmd(CommandBase):
         pass
@@ -225,7 +231,7 @@ def create_command_from_meta(meta: CommandMeta) -> type[CommandBase]:
         
         def _wrapped_execute(self, **kwargs):
             filtered_kwargs = dict(kwargs) if accepts_kwargs else {k: v for k, v in kwargs.items() if k in param_names}
-            return _invoke_compatible(fn, filtered_kwargs)
+            return invoke_compatible(fn, filtered_kwargs)
         setattr(_Cmd, "execute", _wrapped_execute)
     elif meta.drag_callbacks or meta.drop_callbacks:
         def _empty_execute(self, **kwargs):

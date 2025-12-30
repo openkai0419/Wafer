@@ -264,7 +264,7 @@ class ShortcutManager(QtCore.QObject):
                 scope = widget.binding_scope() if widget is not None and hasattr(widget, "binding_scope") and callable(widget.binding_scope) else ""
             except Exception:
                 scope = ""
-            ctx = CommandContext.build(widget, scope, source="key", event=event, key=kdisp, extras=None)
+            ctx = CommandContext.create(widget, scope, source="key", event=event, key=kdisp)
             self._registry.execute(payload.id, ctx=ctx, **args)
 
     def _normalize(self, spec: KeyChordSpec) -> FrozenSet[int]:

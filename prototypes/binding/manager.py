@@ -9,6 +9,7 @@ from weakref import WeakSet
 from PySide6 import QtCore
 from .key.store import KeyBindingStore
 from .key.sequence import KeySequence
+from ..utils import show_warning
 
 class BindingManager:
     _instance: Optional["BindingManager"] = None
@@ -41,12 +42,13 @@ class BindingManager:
         return mgr
     
     @profiler.profile
-    def load_or_seed(self, defaults: Dict[MouseActionKey, Any]) -> Dict[MouseActionKey, Dict[str, Any]]:
+    def load_or_seed(self, defaults: Optional[Dict[MouseActionKey, Any]] = None) -> Dict[MouseActionKey, Dict[str, Any]]:
         loaded = self._store.load_from_file(str(self._file))
         if not loaded:
             initial: Dict[MouseActionKey, Dict[str, Any]] = {}
-            for k, v in defaults.items():
-                initial[k] = {"*": v}
+            if defaults:
+                for k, v in defaults.items():
+                    initial[k] = {"*": v}
             self._store.set_all(initial)
         return self._store.get_all()
 
@@ -101,14 +103,14 @@ class BindingManager:
             if not (hasattr(w, "binding_scope") and callable(getattr(w, "binding_scope"))):
                 continue
             name = w.binding_scope()
-            store_logical: Dict[str, Any] = {}
-            store_physical: Dict[str, Any] = {}
+            store_logical: Dict[KeySequence, Any] = {}
+            store_physical: Dict[Tuple[Union[str, int], ...], Any] = {}
             for seq, scopes in data.items():
                 cmd = scopes.get(name) or scopes.get("*")
                 if not cmd:
                     continue
                 if self._is_physical_seq(seq):
-                    store_physical[seq] = cmd
+                    store_physical[seq.to_tuple()] = cmd
                 else:
                     store_logical[seq] = cmd
             if base_logical and hasattr(w, "set_key_bindings"):
@@ -136,15 +138,15 @@ class BindingManager:
     def register(self, widget: QtWidgets.QWidget) -> None:
         try:
             self._widgets.add(widget)
-        except Exception:
-            pass
+        except Exception as e:
+            show_warning(None, "BindingManager.register failed", exc=e)
 
     def save(self) -> None:
         self._store.save_to_file(str(self._file))
         try:
             self._key_store.save_to_file(str(self._key_file))
-        except Exception:
-            pass
+        except Exception as e:
+            show_warning(None, "BindingManager.save key bindings failed", exc=e)
 
     def _find_registered_in_hierarchy(self, widget: Optional[QtWidgets.QWidget]) -> Optional[QtWidgets.QWidget]:
         cur = widget
@@ -152,8 +154,8 @@ class BindingManager:
             try:
                 if cur in self._widgets:
                     return cur
-            except Exception:
-                pass
+            except Exception as e:
+                show_warning(None, "BindingManager hierarchy lookup failed", exc=e)
             cur = cur.parentWidget()
         return None
 

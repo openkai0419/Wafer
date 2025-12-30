@@ -2,6 +2,8 @@ from enum import Enum, auto
 from PySide6 import QtCore, QtGui, QtWidgets
 from source.common.profiling import profiler
 from ...command.core import CommandRegistry
+from ...command.context import CommandContext
+from ...utils import show_warning
 
 class ClickType(Enum):
     SINGLE = auto()
@@ -64,7 +66,8 @@ class ExternalDropDynamicContext(DragContext):
         if not self.registry.has_command(cmd_id):
             return False
         args = getattr(payload, "args", None) or {}
-        self.registry.execute(cmd_id, event=event, widget=self.widget, key=key, context=self, **args)
+        ctx = CommandContext.create(self.widget, None, source="drop", event=event, key=key, extras={"context": self})
+        self.registry.execute(cmd_id, ctx=ctx, **args)
         return True
 
     def _switch_if_needed(self, payload, key, event, allow_enter: bool):
@@ -119,27 +122,32 @@ class CommandDragContext(DragContext):
     def on_move(self, event):
         cmd_id = f"{self.base_id}.move"
         if self.registry.has_command(cmd_id):
-            self.registry.execute(cmd_id, event=event, widget=self.widget, context=self, **self.args)
+            ctx = CommandContext.create(self.widget, None, source="drag", event=event, key=None, extras={"context": self})
+            self.registry.execute(cmd_id, ctx=ctx, **self.args)
     
     def on_end(self, event):
         cmd_id = f"{self.base_id}.end"
         if self.registry.has_command(cmd_id):
-            self.registry.execute(cmd_id, event=event, widget=self.widget, context=self, **self.args)
+            ctx = CommandContext.create(self.widget, None, source="drag", event=event, key=None, extras={"context": self})
+            self.registry.execute(cmd_id, ctx=ctx, **self.args)
     
     def on_enter(self, event):
         cmd_id = f"{self.base_id}.enter"
         if self.registry.has_command(cmd_id):
-            self.registry.execute(cmd_id, event=event, widget=self.widget, **self.args)
+            ctx = CommandContext.create(self.widget, None, source="drop", event=event, key=None, extras={"context": self})
+            self.registry.execute(cmd_id, ctx=ctx, **self.args)
     
     def on_leave(self, event):
         cmd_id = f"{self.base_id}.leave"
         if self.registry.has_command(cmd_id):
-            self.registry.execute(cmd_id, event=event, widget=self.widget, **self.args)
+            ctx = CommandContext.create(self.widget, None, source="drop", event=event, key=None, extras={"context": self})
+            self.registry.execute(cmd_id, ctx=ctx, **self.args)
     
     def on_drop(self, event):
         cmd_id = f"{self.base_id}.drop"
         if self.registry.has_command(cmd_id):
-            self.registry.execute(cmd_id, event=event, widget=self.widget, **self.args)
+            ctx = CommandContext.create(self.widget, None, source="drop", event=event, key=None, extras={"context": self})
+            self.registry.execute(cmd_id, ctx=ctx, **self.args)
 
 class MouseActionKey:
 
@@ -183,7 +191,7 @@ class MouseStateManager:
     def __init__(self):
         self._press_positions = {}
         self._double_click_buttons = {}
-        self._suppress_groups = []
+        self._suppress_buttons = set()
         self._drag_threshold = QtWidgets.QApplication.startDragDistance()
         self._processed_events = set()
         self._last_cleanup_time = QtCore.QTime.currentTime()
@@ -231,18 +239,22 @@ class MouseStateManager:
         return (current_pos - start_pos).manhattanLength() >= self._drag_threshold
 
     def should_suppress_single(self, button):
-        for group in self._suppress_groups[:]:
-            if button in group:
-                self._suppress_groups.remove(group)
-                return True
+        if button in self._suppress_buttons:
+            self._suppress_buttons.discard(button)
+            return True
         return False
 
     def add_suppress_group(self, buttons):
-        if buttons:
-            self._suppress_groups.append(set(buttons))
+        if not buttons:
+            return
+        try:
+            for b in buttons:
+                self._suppress_buttons.add(b)
+        except Exception:
+            return
 
     def clear_suppress_groups(self):
-        self._suppress_groups.clear()
+        self._suppress_buttons.clear()
 
     def start_internal_drag(self, widget, context):
         self._internal_drag_contexts[id(widget)] = context
@@ -320,7 +332,8 @@ class MouseEventManager:
                     args = payload.args or {}
                     ctx = CommandDragContext(base_id, self._registry, widget, args)
                     if self._registry.has_command(f"{base_id}.start"):
-                        self._registry.execute(f"{base_id}.start", event=event, widget=widget, **args)
+                        cctx = CommandContext.create(widget, None, source="drag", event=event, key=key)
+                        self._registry.execute(f"{base_id}.start", ctx=cctx, **args)
                     return ctx
         result = self.execute_action(key, event)
         if isinstance(result, DragContext):
@@ -433,8 +446,8 @@ class MouseEventDispatcher(QtCore.QObject):
             candidate = BindingManager.instance().find_binding_widget_at(gpt)
             if candidate == self._target:
                 self._state.set_double_click_button(self._target, event.button())
-        except Exception:
-            pass
+        except Exception as e:
+            show_warning(None, "double click detection failed", exc=e)
 
     def _find_target_widget(self, event):
         try:
@@ -451,6 +464,13 @@ class MouseEventDispatcher(QtCore.QObject):
         ctx = self._state.get_internal_drag_context(self._target)
         if ctx is not None:
             if not ctx.cancelled:
+                try:
+                    released = MouseEventManager.map_qt_button(event.button())
+                    held = MouseEventManager.get_held_buttons(event.buttons(), exclude=released)
+                    if held:
+                        self._state.add_suppress_group(held)
+                except Exception:
+                    pass
                 ctx.on_end(event)
             self._state.end_internal_drag(self._target)
             self._state.clear_press_position(self._target)
@@ -519,7 +539,8 @@ class MouseEventDispatcher(QtCore.QObject):
                     args = payload.args or {}
                     registry = CommandRegistry()
                     if registry.has_command(f"{base_id}.drop"):
-                        registry.execute(f"{base_id}.drop", event=event, widget=widget, key=key, **args)
+                        ctx = CommandContext.create(widget, None, source="drop", event=event, key=key)
+                        registry.execute(f"{base_id}.drop", ctx=ctx, **args)
                         event.accept()
                         event.acceptProposedAction()
                         return

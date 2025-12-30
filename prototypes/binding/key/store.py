@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import Dict, Optional
 from pathlib import Path
 import json
-from ...utils import CommandPayload
+from ...utils import CommandPayload, show_warning
 from .sequence import KeySequence
 
 class KeyBindingStore:
@@ -15,8 +15,8 @@ class KeyBindingStore:
                 path = Path(__file__).resolve().parent.parent.parent / "key_bindings.json"
                 if path.exists():
                     cls._instance.load_from_file(str(path))
-            except Exception:
-                pass
+            except Exception as e:
+                show_warning(None, f"KeyBindingStore init load failed: {path}", exc=e)
         return cls._instance
     def get_all(self) -> Dict[KeySequence, Dict[str, CommandPayload]]:
         return {k: dict(v) for k, v in self._data.items()}
@@ -37,8 +37,8 @@ class KeyBindingStore:
         try:
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(out, f, ensure_ascii=False, indent=2)
-        except Exception:
-            pass
+        except Exception as e:
+            show_warning(None, f"KeyBindingStore.save_to_file failed: {path}", exc=e)
     
     def load_from_file(self, path: str) -> bool:
         try:

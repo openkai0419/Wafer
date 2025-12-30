@@ -4,7 +4,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from source.common.profiling import profiler
 from ...command.core import CommandRegistry
 from ...command.context import CommandContext
-from ...utils import CommandPayload
+from ...command.payload import CommandPayload
 from .sequence import KeySequence
 from .runtime import KeyNameResolver, KeySpec
 from .runtime import KeyPressState, RecentEventDeduper, ScanCodeMapper, KeyListenerRegistry

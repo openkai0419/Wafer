@@ -4,7 +4,7 @@ import json
 import inspect
 from dataclasses import dataclass, field
 from source.common.profiling import profiler
-from ..utils import CommandPayload
+from .payload import CommandPayload
 from .context import CommandContext
 
 COMMAND_MENU_MARKER = "__CommandMenuBuilder_Menu__"

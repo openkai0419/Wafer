@@ -1,5 +1,5 @@
 from typing import Dict, List, Tuple, Union, FrozenSet, Set, Optional
-from ...utils import CommandPayload
+from ...command.payload import CommandPayload
 from .runtime import KeyNameResolver, KeySpec
 from .sequence import KeySequence
 

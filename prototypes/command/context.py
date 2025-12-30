@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, Mapping, Optional
 
-from ..utils import show_warning
+from source.common.errors import show_warning
 
 
 def _global_pos_from_app() -> Any:

@@ -1,6 +1,40 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 from .manager import BindingManager
 
+
+def collect_bindable_widgets() -> list["WidgetRef"]:
+    out: list[WidgetRef] = []
+    for tl in QtWidgets.QApplication.topLevelWidgets():
+        for w in tl.findChildren(QtWidgets.QWidget):
+            if not hasattr(w, "set_mouse_bindings"):
+                continue
+            name = getattr(w, "name", "") or None
+            if name:
+                out.append(WidgetRef(name, w))
+    return out
+
+
+def open_mouse_binding_editor(parent: QtWidgets.QWidget | None = None) -> None:
+    ws = collect_bindable_widgets()
+    if not ws:
+        return
+    from .mouse.editors import MouseBindingEditor
+
+    dlg = MouseBindingEditor(ws, parent=parent)
+    dlg.exec()
+
+
+def open_shortcut_binding_editor(parent: QtWidgets.QWidget | None = None) -> None:
+    ws = collect_bindable_widgets()
+    if not ws:
+        return
+    from ..command.core import CommandRegistry
+    from .key.editors import ShortcutBindingEditor
+
+    cmds = list(CommandRegistry().get_all_commands().keys())
+    dlg = ShortcutBindingEditor(ws, cmds, parent=parent)
+    dlg.exec()
+
 class WidgetRef:
     def __init__(self, name: str, widget):
         self.name = name

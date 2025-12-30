@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import List, Tuple, Union, Dict
 from .binding.mouse.mouseeventmanager import MouseActionKey, MouseButton, ClickType
-from .utils import CommandPayload
+from .command.payload import CommandPayload
 
 KeySpec = Union[str, int]
 KeyChordSpec = Tuple[KeySpec, ...]

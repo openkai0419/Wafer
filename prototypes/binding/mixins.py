@@ -4,8 +4,8 @@ from PySide6 import QtWidgets
 from source.common.profiling import profiler
 from ..command.core import CommandRegistry
 from ..command.context import CommandContext
-from ..utils import CommandPayload
-from ..utils import show_warning
+from ..command.payload import CommandPayload
+from source.common.errors import show_warning
 from .mouse.mouseeventmanager import MouseEventManager, MouseEventDispatcher, MouseActionKey, ClickType
 from .key.shortcutmanager import ShortcutManager
 from .mouse.store import MouseBindingStore

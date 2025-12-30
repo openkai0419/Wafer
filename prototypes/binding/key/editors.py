@@ -3,7 +3,8 @@ from pathlib import Path
 from PySide6 import QtCore, QtGui, QtWidgets
 from source.common.funcs import uipx
 from ...command.ui import MenuBuilder
-from ...utils import format_payload_display, CommandPayload
+from ...command.payload import format_payload_display
+from ...command.payload import CommandPayload
 from ..common import WidgetRef
 from .store import KeyBindingStore
 from .shortcutmanager import ShortcutManager
@@ -534,7 +535,7 @@ class _KeySequenceSection(QtWidgets.QGroupBox):
         self.btn_global.clicked.connect(lambda: self._pick_cmd("*"))
         header.addWidget(self.btn_global,0)
         self.btn_overrides = QtWidgets.QToolButton(self)
-        self.btn_overrides.setText("カスタム")
+        self.btn_overrides.setText("専用")
         self.btn_overrides.setPopupMode(QtWidgets.QToolButton.InstantPopup)
         self.ov_menu = QtWidgets.QMenu(self.btn_overrides)
         self.ov_menu.aboutToShow.connect(self._refresh_overrides_menu)

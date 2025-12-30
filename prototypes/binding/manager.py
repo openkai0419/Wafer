@@ -9,7 +9,7 @@ from weakref import WeakSet
 from PySide6 import QtCore
 from .key.store import KeyBindingStore
 from .key.sequence import KeySequence
-from ..utils import show_warning
+from source.common.errors import show_warning
 
 class BindingManager:
     _instance: Optional["BindingManager"] = None

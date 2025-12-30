@@ -3,7 +3,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from source.common.profiling import profiler
 from ...command.core import CommandRegistry
 from ...command.context import CommandContext
-from ...utils import show_warning
+from source.common.errors import show_warning
 
 class ClickType(Enum):
     SINGLE = auto()

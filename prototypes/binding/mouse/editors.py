@@ -6,7 +6,8 @@ from source.common.funcs import uipx
 from .mouseeventmanager import MouseActionKey, ClickType, MouseButton, ModifierKey
 from ...command.ui import MenuBuilder
 from .store import MouseBindingStore
-from ...utils import format_payload_display, CommandPayload
+from ...command.payload import format_payload_display
+from ...command.payload import CommandPayload
 from ..common import WidgetRef
 
 

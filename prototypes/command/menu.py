@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, List, Optional
 from source.common.profiling import profiler
 from .core import register_command_defs
-from ..utils import show_warning
+from source.common.errors import show_warning
 
 
 def split_parts(raw: str) -> List[str]:

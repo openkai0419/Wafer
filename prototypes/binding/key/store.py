@@ -2,7 +2,8 @@ from __future__ import annotations
 from typing import Dict, Optional
 from pathlib import Path
 import json
-from ...utils import CommandPayload, show_warning
+from source.common.errors import show_warning
+from ...command.payload import CommandPayload
 from .sequence import KeySequence
 
 class KeyBindingStore:

@@ -3,6 +3,8 @@ import os
 import sys
 from PIL import Image
 
+from ..common.errors import show_warning
+
 class FileThumbnailer:
 
     def __init__(self):
@@ -58,12 +60,12 @@ class FileThumbnailer:
         handle = c_void_p()
         hr = self._shell32.SHCreateItemFromParsingName(file_path, None, byref(self._IShellItemImageFactory._iid_), byref(handle))
         if hr != 0:
-            print('SHCreateItemFromParsingName に失敗しました')
+            show_warning(None, f'SHCreateItemFromParsingName に失敗しました: {file_path} (hr={hr})', title='Thumbnail')
             return None
         factory = cast(handle, POINTER(self._IShellItemImageFactory))
         hbitmap = factory.GetImage(SIZE(size, size), 0)
         if not hbitmap:
-            print('GetImage に失敗しました')
+            show_warning(None, f'GetImage に失敗しました: {file_path}', title='Thumbnail')
             return None
         bmp = self._win32ui.CreateBitmapFromHandle(int(hbitmap))
         info = bmp.GetInfo()
@@ -82,7 +84,7 @@ class FileThumbnailer:
                 tiff = rep.TIFFRepresentation()
                 return Image.open(io.BytesIO(bytes(tiff)))
         except Exception as e:
-            print(f'QuickLook 失敗: {e}')
+            show_warning(None, f'QuickLook 失敗: {file_path}', title='Thumbnail', exc=e)
         ws = self._NSWorkspace.sharedWorkspace()
         icon = ws.iconForFile_(file_path)
         icon.setSize_((size, size))
@@ -114,7 +116,7 @@ class FileThumbnailer:
                     if icon_path:
                         return Image.open(icon_path)
         except Exception as e:
-            print(f'Linux fallback 失敗: {e}')
+            show_warning(None, f'Linux fallback 失敗: {file_path}', title='Thumbnail', exc=e)
         return None
 if __name__ == '__main__':
     thumb = FileThumbnailer()

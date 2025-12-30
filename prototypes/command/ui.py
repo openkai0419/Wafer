@@ -7,7 +7,8 @@ from source.common.funcs import uipx
 from source.common.profiling import profiler
 from .core import CommandMeta, CommandRegistry, COMMAND_MENU_MARKER
 from .context import CommandContext
-from ..utils import raise_error, show_warning, CommandPayload
+from source.common.errors import raise_error, show_warning
+from .payload import CommandPayload
 from .state import ActionGroupStateManager, log_error, log_warning
 from .menu import split_parts, is_sep_token, sep_path, is_section_token, section_parts, MenuHub
 from .state import CommandOptionStore

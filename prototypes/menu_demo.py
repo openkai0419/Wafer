@@ -1,12 +1,10 @@
 from PySide6 import QtCore, QtGui, QtWidgets
-from .command.core import CommandMeta, CommandParam, CommandRegistry
+from .command.core import CommandMeta, CommandParam
 from .command.context import CommandContext
 from .command.menu import RegistryBackedMenu
 from datetime import datetime
 from .command.ui import MenuBuilder
-from .binding.common import WidgetRef
-from .binding.mouse.editors import MouseBindingEditor
-from .binding.key.editors import ShortcutBindingEditor
+from .binding.common import open_mouse_binding_editor, open_shortcut_binding_editor
 
 
 class FileMenu(RegistryBackedMenu):
@@ -54,6 +52,14 @@ class CmdMenu(RegistryBackedMenu):
             print(f"Current sort order: {current}")
         else:
             print("No sort order selected")
+
+    def _print_is_demo_pane(self, ctx=None):
+        w = ctx.get("widget") if isinstance(ctx, CommandContext) else None
+        try:
+            from .demo_app import DemoPane
+            print(isinstance(w, DemoPane))
+        except Exception:
+            print(False)
     
     def create_definitions(self):
         return [
@@ -62,6 +68,7 @@ class CmdMenu(RegistryBackedMenu):
             {"path": "time", "meta": CommandMeta(display="Show Time", func=lambda: print(datetime.now().strftime("%Y-%m-%d %H:%M:%S")))} ,
             {"path": "test", "meta": CommandMeta(display="print test", params=[CommandParam(name="test", type=str, default="", description="test")], func=lambda test="": print(f"test: {test}"))},
             {"path": "Debug/printCtx", "meta": CommandMeta(display="Print Ctx", func=lambda ctx: (ctx.print_debug() if isinstance(ctx, CommandContext) else print("ctx=None")))},
+            {"path": "Debug/isDemoPane", "meta": CommandMeta(display="Is DemoPane?", func=self._print_is_demo_pane)},
             "-",
             ":Options",
             {"path": "Options/echo", "meta": CommandMeta(display="Echo", params=[CommandParam(name="text", type=str, default="echo"), CommandParam(name="repeat", type=int, default=1, min_value=1, max_value=8)], has_options=True, func=lambda text="echo", repeat=1: print(text * repeat))},
@@ -131,33 +138,25 @@ class ContextMenu(RegistryBackedMenu):
             {"path": "showAllMenu", "meta": CommandMeta(display="Show All Menu Here", func=self._show_all_menu)},
         ]
 
+
 class MenuMenu(RegistryBackedMenu):
     path_prefix = "menu"
-    
-    def _collect_widgets(self):
-        out = []
-        for tl in QtWidgets.QApplication.topLevelWidgets():
-            for w in tl.findChildren(QtWidgets.QWidget):
-                if hasattr(w, "set_mouse_bindings"):
-                    name = getattr(w, "name", "") or None
-                    if name:
-                        out.append(WidgetRef(name, w))
-        return out
-    
-    def _open_mouse_binding_editor(self):
-        ws = self._collect_widgets()
-        if not ws:
-            return
-        dlg = MouseBindingEditor(ws)
-        dlg.exec()
 
-    def _open_shortcut_binding_editor(self):
-        ws = self._collect_widgets()
-        if not ws:
-            return
-        cmds = list(CommandRegistry().get_all_commands().keys())
-        dlg = ShortcutBindingEditor(ws, cmds)
-        dlg.exec()
+    def _open_mouse_binding_editor(self, ctx=None):
+        parent = None
+        try:
+            parent = ctx.get("widget") if ctx is not None and hasattr(ctx, "get") else None
+        except Exception:
+            parent = None
+        open_mouse_binding_editor(parent=parent)
+
+    def _open_shortcut_binding_editor(self, ctx=None):
+        parent = None
+        try:
+            parent = ctx.get("widget") if ctx is not None and hasattr(ctx, "get") else None
+        except Exception:
+            parent = None
+        open_shortcut_binding_editor(parent=parent)
 
     def create_definitions(self):
         return [
@@ -165,3 +164,4 @@ class MenuMenu(RegistryBackedMenu):
             {"path": "binding/bindings", "meta": CommandMeta(display="Mouse Bindings...", func=self._open_mouse_binding_editor)},
             {"path": "binding/shortcutBindings", "meta": CommandMeta(display="Shortcut Bindings...", func=self._open_shortcut_binding_editor)},
         ]
+

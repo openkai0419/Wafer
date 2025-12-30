@@ -1,7 +1,7 @@
 from typing import Set, FrozenSet, Dict, List, Callable, Any, Tuple, Deque, Union
 from collections import deque
 from PySide6 import QtCore, QtGui
-from ...utils import show_warning
+from source.common.errors import show_warning
 
 KeySpec = Union[int, str]
 

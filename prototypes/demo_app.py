@@ -3,10 +3,9 @@ from source.common.profiling import profiler
 from source.common.funcs import uipx
 from .command.ui import MenuBuilder
 from .menu_demo import *
+from .drag_demo import * 
 from .binding.mixins import CommandBindingMixin
 from .binding.manager import BindingManager
-from .binding.mouse.mouseeventmanager import MouseActionKey, MouseButton, ClickType
-from .utils import CommandPayload
 from .defaults import default_mouse_bindings, default_key_bindings
 
 class DemoButton(QtWidgets.QPushButton, CommandBindingMixin):
@@ -43,7 +42,6 @@ class MainWindow(QtWidgets.QMainWindow, CommandBindingMixin):
         self.setWindowTitle("Prototype Command Test")
         self.setFocusPolicy(QtCore.Qt.ClickFocus)
         self.init_command_binding("Test Window", enable_drops=True)
-        from . import drag_demo
         cw = QtWidgets.QWidget(self)
         c = QtWidgets.QVBoxLayout(cw)
         l = QtWidgets.QHBoxLayout(cw)
@@ -65,17 +63,7 @@ class MainWindow(QtWidgets.QMainWindow, CommandBindingMixin):
         self.line2 = TestLineEdit("LineEdit 2", self)
         c.addWidget(self.line2, 0)
         BindingManager.activate(defaults=default_mouse_bindings(), key_defaults=default_key_bindings())
-        self._install_demo_ctx_binding()
         self._setup_menu_bar()
-
-    def _install_demo_ctx_binding(self):
-        try:
-            w = self.pane1
-            cur = w.get_mouse_bindings()
-            cur[MouseActionKey(MouseButton.MIDDLE, ClickType.SINGLE, ())] = CommandPayload("printCtx", {})
-            w.set_mouse_bindings(cur)
-        except Exception as e:
-            print(f"Failed to install demo ctx binding: {e}")
 
 
     def _setup_menu_bar(self):

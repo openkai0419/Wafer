@@ -77,11 +77,9 @@ class MouseBindingEditor(QtWidgets.QDialog):
         
     def _actions(self) -> List[Tuple[str, MouseButton, ClickType]]:
         r: List[Tuple[str, MouseButton, ClickType]] = []
-        buttons = [MouseButton.LEFT, MouseButton.RIGHT, MouseButton.MIDDLE, MouseButton.X1, MouseButton.X2]
-        for b in buttons:
+        for b in [MouseButton.LEFT, MouseButton.RIGHT, MouseButton.MIDDLE, MouseButton.X1, MouseButton.X2]:
             r.append((f"{b.name} SINGLE", b, ClickType.SINGLE))
             r.append((f"{b.name} DOUBLE", b, ClickType.DOUBLE))
-        for b in buttons:
             r.append((f"{b.name} DRAG", b, ClickType.DRAG_START))
         r.append(("WHEEL UP", MouseButton.NONE, ClickType.WHEEL_UP))
         r.append(("WHEEL DOWN", MouseButton.NONE, ClickType.WHEEL_DOWN))
@@ -89,21 +87,19 @@ class MouseBindingEditor(QtWidgets.QDialog):
         return r
 
     def _qualifiers_for_sections(self, button: MouseButton, click: ClickType) -> List[MouseQualifier]:
-        ordered_buttons = [MouseButton.LEFT, MouseButton.RIGHT, MouseButton.MIDDLE, MouseButton.X1, MouseButton.X2]
+        qs: List[MouseQualifier] = [MouseQualifier("none", None)]
         mods = [ModifierKey.SHIFT, ModifierKey.CTRL, ModifierKey.ALT]
-        anchor = MouseButton.MIDDLE if click in (ClickType.WHEEL_UP, ClickType.WHEEL_DOWN, ClickType.DROP) else button
         if click == ClickType.DROP:
-            qs: List[MouseQualifier] = [MouseQualifier("none", None)]
             for m in mods:
                 qs.append(MouseQualifier("modifier", m))
             return qs
-        qs: List[MouseQualifier] = []
-        for b in ordered_buttons:
-            if b == anchor:
-                qs.append(MouseQualifier("none", None))
-                continue
-            if b != button:
+        if click in (ClickType.WHEEL_UP, ClickType.WHEEL_DOWN, ClickType.DROP):
+            for b in [MouseButton.LEFT, MouseButton.RIGHT, MouseButton.MIDDLE, MouseButton.X1, MouseButton.X2]:
                 qs.append(MouseQualifier("mouse", b))
+        else:
+            for b in [MouseButton.LEFT, MouseButton.RIGHT, MouseButton.MIDDLE, MouseButton.X1, MouseButton.X2]:
+                if b != button:
+                    qs.append(MouseQualifier("mouse", b))
         for m in mods:
             qs.append(MouseQualifier("modifier", m))
         return qs

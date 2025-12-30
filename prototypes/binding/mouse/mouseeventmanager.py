@@ -67,31 +67,42 @@ class ExternalDropDynamicContext(DragContext):
         self.registry.execute(cmd_id, event=event, widget=self.widget, key=key, context=self, **args)
         return True
 
-    def _switch_if_needed(self, payload, key):
+    def _switch_if_needed(self, payload, key, event, allow_enter: bool):
         if self._active_payload is payload and self._active_key == key:
-            return False
+            return
+        if self._active_payload is not None and self._active_key is not None:
+            self._exec(self._active_payload, "leave", event, self._active_key)
         self._active_payload = payload
         self._active_key = key
-        return True
+        if allow_enter and self._active_payload is not None and self._active_key is not None:
+            self._exec(self._active_payload, "enter", event, self._active_key)
 
     def on_enter(self, event):
-        self._active_payload = None
-        self._active_key = None
-        return True
+        payload, key = self.resolver(event)
+        self._active_payload = payload
+        self._active_key = key
+        return self._exec(payload, "enter", event, key)
 
     def on_move(self, event):
         payload, key = self.resolver(event)
-        self._switch_if_needed(payload, key)
+        self._switch_if_needed(payload, key, event, allow_enter=True)
         return self._exec(self._active_payload, "move", event, self._active_key)
 
     def on_leave(self, event):
+        if self._active_payload is None or self._active_key is None:
+            return False
+        ok = self._exec(self._active_payload, "leave", event, self._active_key)
         self._active_payload = None
         self._active_key = None
-        return True
+        return ok
 
     def on_drop(self, event):
         payload, key = self.resolver(event)
-        self._switch_if_needed(payload, key)
+        if payload is not self._active_payload or key != self._active_key:
+            if self._active_payload is not None and self._active_key is not None:
+                self._exec(self._active_payload, "leave", event, self._active_key)
+            self._active_payload = payload
+            self._active_key = key
         ok = self._exec(self._active_payload, "drop", event, self._active_key)
         self._active_payload = None
         self._active_key = None
@@ -142,8 +153,6 @@ class MouseActionKey:
         return hash((self.button, self.click_type, self.held_buttons, self.modifiers))
 
     def __eq__(self, other):
-        if not isinstance(other, MouseActionKey):
-            return False
         return self.button == other.button and self.click_type == other.click_type and (self.held_buttons == other.held_buttons) and (self.modifiers == other.modifiers)
 
     def __repr__(self):
@@ -518,25 +527,9 @@ class MouseEventDispatcher(QtCore.QObject):
         event.accept()
         event.acceptProposedAction()
 
-    def _handle_drag_enter(self, event) -> bool:
+    def _handle_drag_enter(self, event):
         if self._state.is_event_processed(event):
-            return True
-        try:
-            from ..mixins import CommandBindingMixin
-            if isinstance(self._target, CommandBindingMixin):
-                ok = bool(self._target.drop_accept(event))
-                if not ok:
-                    try:
-                        self._state.end_external_drag(self._target)
-                    except Exception:
-                        pass
-                    try:
-                        event.ignore()
-                    except Exception:
-                        pass
-                    return False
-        except Exception:
-            pass
+            return
         def _resolve_drop(ev):
             m = MouseEventManager.get_modifiers(MouseEventManager._qt_modifiers_for_event(ev))
             k = MouseActionKey(MouseButton.NONE, ClickType.DROP, (), m)
@@ -556,33 +549,27 @@ class MouseEventDispatcher(QtCore.QObject):
                     payload = None
             return payload, k
 
-        try:
-            ctx = ExternalDropDynamicContext(self._target, CommandRegistry(), _resolve_drop)
-            ctx.on_enter(event)
+        payload, _ = _resolve_drop(event)
+        ctx = None
+        if payload is not None:
+            try:
+                ctx = ExternalDropDynamicContext(self._target, CommandRegistry(), _resolve_drop)
+                ctx.on_enter(event)
+            except Exception:
+                ctx = None
+        if ctx:
             self._state.start_external_drag(self._target, ctx)
-        except Exception:
-            return False
         event.accept()
         event.acceptProposedAction()
-        return True
 
     def _handle_drag_move(self, event):
         if self._state.is_event_processed(event):
-            return True
+            return
         ctx = self._state.get_external_drag_context(self._target)
-        if not ctx:
-            try:
-                event.ignore()
-            except Exception:
-                pass
-            return False
-        ctx.on_move(event)
-        try:
-            event.accept()
-            event.acceptProposedAction()
-        except Exception:
-            pass
-        return True
+        if ctx:
+            ctx.on_move(event)
+        event.accept()
+        event.acceptProposedAction()
 
     def _handle_drag_leave(self, event):
         if self._state.is_event_processed(event):
@@ -609,9 +596,11 @@ class MouseEventDispatcher(QtCore.QObject):
         elif isinstance(event, QtGui.QWheelEvent):
             self._handle_wheel(event)
         elif event.type() == QtCore.QEvent.DragEnter:
-            return bool(self._handle_drag_enter(event))
+            self._handle_drag_enter(event)
+            return True
         elif event.type() == QtCore.QEvent.DragMove:
-            return bool(self._handle_drag_move(event))
+            self._handle_drag_move(event)
+            return True
         elif event.type() == QtCore.QEvent.DragLeave:
             self._handle_drag_leave(event)
             return True

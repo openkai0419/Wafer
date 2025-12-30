@@ -5,6 +5,7 @@ import inspect
 from dataclasses import dataclass, field
 from source.common.profiling import profiler
 from ..utils import CommandPayload
+from .context import CommandContext
 
 COMMAND_MENU_MARKER = "__CommandMenuBuilder_Menu__"
 
@@ -79,14 +80,17 @@ class CommandRegistry:
         self._commands[cid] = command_class
 
     @profiler.profile
-    def execute(self, command_name: str, **kwargs) -> Any:
+    def execute(self, command_name: str, ctx=None, **kwargs) -> Any:
         if command_name not in self._commands:
             raise ValueError(f"Command {command_name} not found")
+        if ctx is None:
+            ctx = kwargs.pop("ctx", None)
+        if ctx is None:
+            ctx = CommandContext.build(None, "*", source="")
+        kwargs["ctx"] = ctx
         command_class = self._commands[command_name]
         command = command_class()
-        if hasattr(command, "call_execute"):
-            return command.call_execute(**kwargs)
-        return command.execute(**kwargs)
+        return command.call_execute(**kwargs) if hasattr(command, "call_execute") else command.execute(**kwargs)
 
     def has_command(self, name: str) -> bool:
         return name in self._commands
@@ -174,6 +178,41 @@ def _build_args(meta: CommandMeta, kwargs: Dict[str, Any]) -> Dict[str, Any]:
     return args
 
 
+def _invoke_compatible(fn: Callable[..., Any], values: Dict[str, Any]) -> Any:
+    sig = inspect.signature(fn)
+    params = list(sig.parameters.values())
+
+    used: set[str] = set()
+    args: list[Any] = []
+    kwargs: dict[str, Any] = {}
+    has_varkw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params)
+
+    for p in params:
+        if p.kind == inspect.Parameter.POSITIONAL_ONLY:
+            if p.name in values:
+                args.append(values[p.name])
+                used.add(p.name)
+                continue
+            if p.default is not inspect._empty:
+                args.append(p.default)
+                continue
+            raise TypeError(f"Missing required positional-only argument: {p.name}")
+
+    for p in params:
+        if p.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+            continue
+        if p.name in values:
+            kwargs[p.name] = values[p.name]
+            used.add(p.name)
+
+    if has_varkw:
+        for k, v in values.items():
+            if k not in used:
+                kwargs[k] = v
+
+    return fn(*args, **kwargs)
+
+
 def create_command_from_meta(meta: CommandMeta) -> type[CommandBase]:
     class _Cmd(CommandBase):
         pass
@@ -185,10 +224,8 @@ def create_command_from_meta(meta: CommandMeta) -> type[CommandBase]:
         param_names = set(sig.parameters.keys())
         
         def _wrapped_execute(self, **kwargs):
-            if accepts_kwargs:
-                return fn(**kwargs)
-            filtered_kwargs = {k: v for k, v in kwargs.items() if k in param_names}
-            return fn(**filtered_kwargs)
+            filtered_kwargs = dict(kwargs) if accepts_kwargs else {k: v for k, v in kwargs.items() if k in param_names}
+            return _invoke_compatible(fn, filtered_kwargs)
         setattr(_Cmd, "execute", _wrapped_execute)
     elif meta.drag_callbacks or meta.drop_callbacks:
         def _empty_execute(self, **kwargs):

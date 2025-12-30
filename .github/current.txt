@@ -90,4 +90,5 @@
 
 メモ
 - 現状、send2trash など一部外部依存が必要なモジュールがあるため、環境差異で ImportError が出る可能性がある。
+- image_viewer の入力処理は、将来的にバインディング/コマンド体系へ段階的に置き換える前提で整理中。
 - prototypes/ の試作は current.txt には含めない。prototypes/temporary.txt を参照。

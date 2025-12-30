@@ -1,5 +1,6 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 from .command.core import CommandMeta, CommandParam, CommandRegistry
+from .command.context import CommandContext
 from .command.menu import RegistryBackedMenu
 from datetime import datetime
 from .command.ui import MenuBuilder
@@ -57,9 +58,10 @@ class CmdMenu(RegistryBackedMenu):
     def create_definitions(self):
         return [
             ":Commands",
-            {"path": "hello", "meta": CommandMeta(display="Hello", params=[CommandParam(name="scope", type=str, default="", description="scope")], func=lambda scope="": print(f"hello from {scope}"))},
-            {"path": "time", "meta": CommandMeta(display="Show Time", func=lambda: print(datetime.now().strftime("%Y-%m-%d %H:%M:%S")))},
-            {"path": "test", "meta": CommandMeta(display="print test", params=[CommandParam(name="test", type=str, default="", description="test")], func=lambda test: print(f"test: {test}"))},
+            {"path": "hello", "meta": CommandMeta(display="Hello", func=lambda ctx: print(f"hello from {getattr(ctx, 'scope', '')}"))},
+            {"path": "time", "meta": CommandMeta(display="Show Time", func=lambda: print(datetime.now().strftime("%Y-%m-%d %H:%M:%S")))} ,
+            {"path": "test", "meta": CommandMeta(display="print test", params=[CommandParam(name="test", type=str, default="", description="test")], func=lambda test="": print(f"test: {test}"))},
+            {"path": "Debug/printCtx", "meta": CommandMeta(display="Print Ctx", func=lambda ctx: (ctx.print_debug() if isinstance(ctx, CommandContext) else print("ctx=None")))},
             "-",
             ":Options",
             {"path": "Options/echo", "meta": CommandMeta(display="Echo", params=[CommandParam(name="text", type=str, default="echo"), CommandParam(name="repeat", type=int, default=1, min_value=1, max_value=8)], has_options=True, func=lambda text="echo", repeat=1: print(text * repeat))},
@@ -67,12 +69,12 @@ class CmdMenu(RegistryBackedMenu):
             {"path": "Options/mode", "meta": CommandMeta(display="Mode", params=[CommandParam(name="mode", type=str, default="A", choices=["A","B","C"], description="Mode")], has_options=True, func=lambda mode="A": print(f"mode {mode}"))},
             "-",
             ":Toggle",
-            {"path": "Toggle/toggleVerbose", "meta": CommandMeta(display="Verbose Mode", checkable=True, default_checked=False, params=[CommandParam(name="checked", type=bool, default=False)], func=lambda checked=False: print("verbose on" if checked else "verbose off"))},
+            {"path": "Toggle/toggleVerbose", "meta": CommandMeta(display="Verbose Mode", checkable=True, default_checked=False, func=lambda ctx: print("verbose on" if ctx.get('checked', False) else "verbose off"))},
             "-",
             ":Sort Order",
-            {"path": "Sort/sortByName", "meta": CommandMeta(display="Name", checkable=True, default_checked=True, action_group="sort_order", params=[CommandParam(name="checked", type=bool, default=True)], func=lambda checked=False: print("Sort by Name" if checked else ""))},
-            {"path": "Sort/sortByDate", "meta": CommandMeta(display="Date", checkable=True, default_checked=False, action_group="sort_order", params=[CommandParam(name="checked", type=bool, default=False)], func=lambda checked=False: print("Sort by Date" if checked else ""))},
-            {"path": "Sort/sortBySize", "meta": CommandMeta(display="Size", checkable=True, default_checked=False, action_group="sort_order", params=[CommandParam(name="checked", type=bool, default=False)], func=lambda checked=False: print("Sort by Size" if checked else ""))},
+            {"path": "Sort/sortByName", "meta": CommandMeta(display="Name", checkable=True, default_checked=True, action_group="sort_order", func=lambda ctx: print("Sort by Name" if ctx.get('checked', False) else ""))},
+            {"path": "Sort/sortByDate", "meta": CommandMeta(display="Date", checkable=True, default_checked=False, action_group="sort_order", func=lambda ctx: print("Sort by Date" if ctx.get('checked', False) else ""))},
+            {"path": "Sort/sortBySize", "meta": CommandMeta(display="Size", checkable=True, default_checked=False, action_group="sort_order", func=lambda ctx: print("Sort by Size" if ctx.get('checked', False) else ""))},
             {"path": "Sort/-"},
             {"path": "Sort/cycleSortOrder", "meta": CommandMeta(display="Cycle Sort Order", hotkey="Ctrl+Shift+S", func=self._cycle_sort_order)},
             {"path": "Sort/printCurrentSort", "meta": CommandMeta(display="Show Current Sort Order", func=self._print_current_sort_order)},
@@ -81,37 +83,45 @@ class CmdMenu(RegistryBackedMenu):
 class ContextMenu(RegistryBackedMenu):
     path_prefix = "context"
 
-    def _prepare_context_menu(self):
+    def _prepare_context_menu(self, ctx=None):
         from .command.core import COMMAND_MENU_MARKER
         active_popup = QtWidgets.QApplication.activePopupWidget()
         if active_popup and active_popup.property(COMMAND_MENU_MARKER):
             active_popup.close()
-        pos = QtGui.QCursor.pos()
-        w = QtWidgets.QApplication.widgetAt(pos)
-        if w is None:
-            return None, None, None
-        target = w
+
+        seed = ctx if isinstance(ctx, CommandContext) else None
+        pos = seed.get("global_pos") if seed is not None else None
+        if pos is None:
+            pos = QtGui.QCursor.pos()
+
+        target = seed.get("widget") if seed is not None else None
+        if target is None:
+            target = QtWidgets.QApplication.widgetAt(pos)
+        if target is None:
+            return None, None
+
         while target and not hasattr(target, "binding_scope"):
             target = target.parentWidget()
         if not target:
-            return None, None, None
-        provider = target.provider if hasattr(target, "provider") and callable(getattr(target, "provider")) else None
-        return target, provider, pos
+            return None, None
+        return target, pos
 
-    def _show_context_menu_here(self):
-        target, provider, pos = self._prepare_context_menu()
+    def _show_context_menu_here(self, ctx=None):
+        target, pos = self._prepare_context_menu(ctx)
         if not target:
             return
-        b = MenuBuilder(target, context_provider=provider)
+        seed = ctx if isinstance(ctx, CommandContext) else None
+        b = MenuBuilder(target, seed_ctx=seed)
         b.build([":Menu", "-", "commands/:Test", "commands/-", "commands", "-", "file", "path", "Temp", "path.1", "Options"]) 
         m = b.menu
         m.exec(pos)
     
-    def _show_all_menu(self):
-        target, provider, pos = self._prepare_context_menu()
+    def _show_all_menu(self, ctx=None):
+        target, pos = self._prepare_context_menu(ctx)
         if not target:
             return
-        m = MenuBuilder(target, context_provider=provider).build_all_roots()
+        seed = ctx if isinstance(ctx, CommandContext) else None
+        m = MenuBuilder(target, seed_ctx=seed).build_all_roots()
         m.exec(pos)
 
     def create_definitions(self):

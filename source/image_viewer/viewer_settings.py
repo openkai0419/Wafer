@@ -1,5 +1,7 @@
+import atexit
 import json
 from pathlib import Path
+import weakref
 from PySide6 import QtCore
 from ..common.funcs import data_path
 
@@ -114,4 +116,15 @@ class SettingManager(QtCore.QObject):
             self.close()
         except Exception:
             pass
+
+def _shutdown_setting_manager(ref):
+    mgr = ref()
+    if mgr is None:
+        return
+    try:
+        mgr.close()
+    except Exception:
+        pass
+
 main_setting = SettingManager()
+atexit.register(_shutdown_setting_manager, weakref.ref(main_setting))

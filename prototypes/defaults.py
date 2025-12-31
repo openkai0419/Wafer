@@ -1,130 +1,87 @@
-from __future__ import annotations
-from typing import List, Tuple, Union, Dict
-from .binding.mouse.mouseeventmanager import MouseActionKey, MouseButton, ClickType
-from .command.payload import CommandPayload
+from .actions.command.payload import ScopedPayloads
 
-KeySpec = Union[str, int]
-KeyChordSpec = Tuple[KeySpec, ...]
+KeySpec = str | int
+KeyChordSpec = tuple[KeySpec, ...]
+MouseActionSpec = tuple[object, ...]
 
-def default_mouse_bindings() -> Dict[MouseActionKey, CommandPayload]:
+def get_all_mouse_bindings() -> dict[MouseActionSpec, ScopedPayloads]:
     return {
-        MouseActionKey(MouseButton.RIGHT, ClickType.SINGLE, ()): CommandPayload("showContextMenuHere", {}),
-        MouseActionKey(MouseButton.LEFT, ClickType.SINGLE, ()): CommandPayload("hello", {}),
-        MouseActionKey(MouseButton.LEFT, ClickType.DOUBLE, ()): CommandPayload("time", {}),
-        MouseActionKey(MouseButton.MIDDLE, ClickType.SINGLE, ()): CommandPayload("toggleVerbose", {}),
-        MouseActionKey(MouseButton.NONE, ClickType.WHEEL_UP, ()): CommandPayload("cycleSortOrder", {}),
-        MouseActionKey(MouseButton.NONE, ClickType.WHEEL_DOWN, ()): CommandPayload("printCurrentSort", {}),
-        MouseActionKey(MouseButton.X1, ClickType.SINGLE, ()): CommandPayload("echo", {"text": "X1", "repeat": 1}),
-        MouseActionKey(MouseButton.X2, ClickType.SINGLE, ()): CommandPayload("count", {"value": 1, "step": 3}),
-        MouseActionKey(MouseButton.LEFT, ClickType.DRAG_START, ()): CommandPayload("dragScroll", {}),
-        MouseActionKey(MouseButton.NONE, ClickType.DROP, ()): CommandPayload("simpleFileDrop", {}),
+        ("RIGHT", "SINGLE", ()): ScopedPayloads({
+            "*": {"id": "showContextMenuHere", "args": {}}
+        }),
+        ("LEFT", "SINGLE", ()): ScopedPayloads({
+            "*": {"id": "hello", "args": {}},
+            "Widget A": {"id": "file.0", "args": {}},
+            "Widget B": {"id": "file.1", "args": {}},
+        }),
+        ("LEFT", "SINGLE", ("RIGHT",)): ScopedPayloads({
+            "*": {"id": "path.0", "args": {}},
+            "Widget A": {"id": "echo", "args": {}},
+            "Widget B": {"id": "count", "args": {}},
+        }),
+        ("LEFT", "SINGLE", ("MIDDLE",)): ScopedPayloads({
+            "Widget A": {"id": "echo", "args": {"text": "echoe", "repeat": 7}},
+            "Widget B": {"id": "count", "args": {"value": 3, "step": 8}},
+        }),
+        ("X1", "SINGLE", ()): ScopedPayloads({
+            "*": {"id": "toggleVerbose", "args": {}}
+        }),
+        ("X2", "SINGLE", ()): ScopedPayloads({
+            "*": {"id": "mode", "args": {"mode": "C"}}
+        }),
+        ("LEFT", "DOUBLE", ()): ScopedPayloads({
+            "*": {"id": "hello", "args": {}}
+        }),
+        ("RIGHT", "SINGLE", ("LEFT",)): ScopedPayloads({
+            "*": {"id": "showAllMenu", "args": {}}
+        }),
+        ("MIDDLE", "SINGLE", ("LEFT",)): ScopedPayloads({
+            "*": {"id": "sortBySize", "args": {}}
+        }),
+        ("MIDDLE", "SINGLE", ("RIGHT",)): ScopedPayloads({
+            "*": {"id": "sortByName", "args": {}}
+        }),
+        ("MIDDLE", "SINGLE", ()): ScopedPayloads({
+            "*": {"id": "cycleSortOrder", "args": {}}
+        }),
+        ("LEFT", "DRAG_START", ()): ScopedPayloads({
+            "Widget A": {"id": "rectSelection", "args": {}},
+            "Drag Demo Widget": {"id": "widgetDrag", "args": {}},
+        }),
+        ("RIGHT", "DRAG_START", ()): ScopedPayloads({
+            "Widget A": {"id": "dragScroll", "args": {}}
+        }),
+        ("NONE", "DROP", ()): ScopedPayloads({
+            "Widget A": {"id": "dropFiles", "args": {}},
+            "Widget B": {"id": "simpleFileDrop", "args": {}},
+            "Drag Demo Widget": {"id": "filePathDrop", "args": {}},
+        }),
     }
 
-def default_key_bindings() -> List[Tuple[KeyChordSpec, CommandPayload]]:
-    return [
-        (("Shift", "F10"), CommandPayload("showContextMenuHere", {})),
-        (("H",), CommandPayload("hello", {})),
-        (("T",), CommandPayload("time", {})),
-        (("Control", "W"), CommandPayload("bindings", {})),
-        (("Control", "K"), CommandPayload("shortcutBindings", {})),
-        (("Alt", "M"), CommandPayload("mode", {"mode": "B"})),
-        (("Control", "E"), CommandPayload("echo", {"text": "Ctrl+E", "repeat": 2})),
-        (("F2",), CommandPayload("toggleVerbose", {})),
-        (("F3",), CommandPayload("cycleSortOrder", {})),
-    ]
-
-def get_all_mouse_bindings() -> Dict[MouseActionKey, Dict[str, CommandPayload]]:
+def get_all_key_bindings() -> dict[KeyChordSpec, ScopedPayloads]:
     return {
-        MouseActionKey(MouseButton.RIGHT, ClickType.SINGLE, ()): {
-            "*": CommandPayload("showContextMenuHere", {})
-        },
-        MouseActionKey(MouseButton.LEFT, ClickType.SINGLE, ()): {
-            "*": CommandPayload("hello", {}),
-            "Widget A": CommandPayload("file.0", {}),
-            "Widget B": CommandPayload("file.1", {}),
-        },
-        MouseActionKey(MouseButton.LEFT, ClickType.SINGLE, (MouseButton.RIGHT,)): {
-            "*": CommandPayload("path.0", {}),
-            "Widget A": CommandPayload("echo", {}),
-            "Widget B": CommandPayload("count", {}),
-        },
-        MouseActionKey(MouseButton.LEFT, ClickType.SINGLE, (MouseButton.MIDDLE,)): {
-            "Widget A": CommandPayload("echo", {"text": "echoe", "repeat": 7}),
-            "Widget B": CommandPayload("count", {"value": 3, "step": 8}),
-        },
-        MouseActionKey(MouseButton.X1, ClickType.SINGLE, ()): {
-            "*": CommandPayload("toggleVerbose", {})
-        },
-        MouseActionKey(MouseButton.X2, ClickType.SINGLE, ()): {
-            "*": CommandPayload("mode", {"mode": "C"})
-        },
-        MouseActionKey(MouseButton.LEFT, ClickType.DOUBLE, ()): {
-            "*": CommandPayload("hello", {})
-        },
-        MouseActionKey(MouseButton.RIGHT, ClickType.SINGLE, (MouseButton.LEFT,)): {
-            "*": CommandPayload("showAllMenu", {})
-        },
-        MouseActionKey(MouseButton.MIDDLE, ClickType.SINGLE, (MouseButton.LEFT,)): {
-            "*": CommandPayload("sortBySize", {})
-        },
-        MouseActionKey(MouseButton.MIDDLE, ClickType.SINGLE, (MouseButton.RIGHT,)): {
-            "*": CommandPayload("sortByName", {})
-        },
-        MouseActionKey(MouseButton.MIDDLE, ClickType.SINGLE, ()): {
-            "*": CommandPayload("cycleSortOrder", {})
-        },
-        MouseActionKey(MouseButton.LEFT, ClickType.DRAG_START, ()): {
-            "Widget A": CommandPayload("rectSelection", {}),
-            "Drag Demo Widget": CommandPayload("widgetDrag", {}),
-        },
-        MouseActionKey(MouseButton.RIGHT, ClickType.DRAG_START, ()): {
-            "Widget A": CommandPayload("dragScroll", {})
-        },
-        MouseActionKey(MouseButton.NONE, ClickType.DROP, ()): {
-            "Widget A": CommandPayload("dropFiles", {}),
-            "Widget B": CommandPayload("simpleFileDrop", {}),
-            "Drag Demo Widget": CommandPayload("filePathDrop", {}),
-        },
+        ("H",): ScopedPayloads({
+            "*": {"id": "hello", "args": {}}
+        }),
+        ("T",): ScopedPayloads({
+            "*": {"id": "time", "args": {}}
+        }),
+        ("Ctrl", "W"): ScopedPayloads({
+            "*": {"id": "bindings", "args": {}}
+        }),
+        ("A",): ScopedPayloads({
+            "*": {"id": "showContextMenuHere", "args": {}}
+        }),
+        ("E",): ScopedPayloads({
+            "*": {"id": "showContextMenuHere", "args": {}}
+        }),
+        ("Control", "Z"): ScopedPayloads({
+            "*": {"id": "hello", "args": {}}
+        }),
+        ("W",): ScopedPayloads({
+            "*": {"id": "file.0", "args": {}},
+            "Widget A": {"id": "file.1", "args": {}},
+            "Widget B": {"id": "file.2", "args": {}},
+            "Widget C": {"id": "file.3", "args": {}},
+        }),
     }
-
-def get_all_key_bindings() -> Dict[KeyChordSpec, Dict[str, CommandPayload]]:
-    return {
-        ("H",): {
-            "*": CommandPayload("hello", {})
-        },
-        ("T",): {
-            "*": CommandPayload("time", {})
-        },
-        ("Ctrl", "W"): {
-            "*": CommandPayload("bindings", {})
-        },
-        ("A",): {
-            "*": CommandPayload("showContextMenuHere", {})
-        },
-        ("E",): {
-            "*": CommandPayload("showContextMenuHere", {})
-        },
-        ("Control", "Z"): {
-            "*": CommandPayload("hello", {})
-        },
-        ("W",): {
-            "*": CommandPayload("file.0", {}),
-            "Widget A": CommandPayload("file.1", {}),
-            "Widget B": CommandPayload("file.2", {}),
-            "Widget C": CommandPayload("file.3", {}),
-        },
-    }
-
-def load_bindings_from_code():
-    from .binding.mouse.store import MouseBindingStore
-    from .binding.key.store import KeyBindingStore
-    from .binding.key.sequence import KeySequence
-    
-    mouse_store = MouseBindingStore()
-    mouse_store.set_all(get_all_mouse_bindings())
-    
-    key_store = KeyBindingStore()
-    key_bindings = {}
-    for spec, scopes in get_all_key_bindings().items():
-        key_bindings[KeySequence(spec)] = scopes
-    key_store.set_all(key_bindings)

@@ -2,7 +2,6 @@ from __future__ import annotations
 from typing import Dict, List, Optional, Any, Tuple, Union
 from pathlib import Path
 from PySide6 import QtWidgets
-from source.common.profiling import profiler
 from .mouse.mouseeventmanager import MouseActionKey
 from .mouse.store import MouseBindingStore
 from weakref import WeakSet
@@ -11,70 +10,40 @@ from .key.store import KeyBindingStore
 from .key.sequence import KeySequence
 from source.common.errors import show_warning
 
+
 class BindingManager:
     _instance: Optional["BindingManager"] = None
 
-    def __init__(self, file_path: Optional[str] = None):
-        if file_path:
-            self._file = Path(file_path)
-        else:
-            self._file = Path(__file__).resolve().parent.parent / "mouse_bindings.json"
+    def __init__(self, file_path: Optional[str] = None, key_file_path: Optional[str] = None):
+        base = Path(__file__).resolve().parent.parent
+        self._file = Path(file_path) if file_path else (base / "mouse_bindings.json")
         self._store = MouseBindingStore()
-        self._key_file = Path(__file__).resolve().parent.parent / "key_bindings.json"
+        self._key_file = Path(key_file_path) if key_file_path else (base / "key_bindings.json")
         self._key_store = KeyBindingStore()
-        self._key_defaults: List[Tuple[Tuple[Union[str,int], ...], Any]] = []
         self._widgets: "WeakSet[QtWidgets.QWidget]" = WeakSet()
 
     @classmethod
-    def instance(cls, file_path: Optional[str] = None) -> "BindingManager":
+    def instance(cls, file_path: Optional[str] = None, key_file_path: Optional[str] = None) -> "BindingManager":
         if cls._instance is None:
-            cls._instance = cls(file_path)
+            cls._instance = cls(file_path, key_file_path)
+        else:
+            if file_path:
+                cls._instance._file = Path(file_path)
+            if key_file_path:
+                cls._instance._key_file = Path(key_file_path)
         return cls._instance
+
+    @classmethod
+    def configure(cls, mouse_bindings_path: str | Path, key_bindings_path: str | Path) -> "BindingManager":
+        return cls.instance(str(mouse_bindings_path), str(key_bindings_path))
     
     @classmethod
-    def activate(cls, file_path: Optional[str] = None, defaults: Optional[Dict[MouseActionKey, Any]] = None, key_defaults: Optional[List[Tuple[Tuple[Union[str,int], ...], Any]]] = None):
-        mgr = cls.instance(file_path)
-        mgr.load_or_seed(defaults)
-        if key_defaults is not None:
-            mgr.set_key_defaults(key_defaults)
-            mgr.load_or_seed_keys()
+    def activate(cls, file_path: Optional[str] = None, *, key_file_path: Optional[str] = None):
+        mgr = cls.instance(file_path, key_file_path)
+        mgr._store.load_from_file(str(mgr._file))
+        mgr._key_store.load_from_file(str(mgr._key_file))
         mgr.apply_registered()
         return mgr
-    
-    @profiler.profile
-    def load_or_seed(self, defaults: Optional[Dict[MouseActionKey, Any]] = None) -> Dict[MouseActionKey, Dict[str, Any]]:
-        loaded = self._store.load_from_file(str(self._file))
-        if not loaded:
-            initial: Dict[MouseActionKey, Dict[str, Any]] = {}
-            if defaults:
-                for k, v in defaults.items():
-                    initial[k] = {"*": v}
-            self._store.set_all(initial)
-        return self._store.get_all()
-
-    def load_or_seed_keys(self):
-        from pathlib import Path
-        key_path = Path(__file__).resolve().parent.parent / "key_bindings.json"
-        loaded = self._key_store.load_from_file(str(key_path))
-        if loaded:
-            return
-        if not self._key_defaults:
-            return
-        data: Dict[KeySequence, Dict[str, Any]] = {}
-        for spec, payload in self._key_defaults:
-            seq = KeySequence(spec)
-            data[seq] = {"*": payload}
-        self._key_store.set_all(data)
-
-    def set_key_defaults(self, defaults: List[Tuple[Tuple[Union[str,int], ...], Any]]):
-        self._key_defaults = []
-        for spec, payload in list(defaults or []):
-            if not isinstance(spec, (tuple, list)):
-                continue
-            tup = tuple(spec)
-            if not tup:
-                continue
-            self._key_defaults.append((tup, payload))
     
     def apply_mouse_bindings(self, widgets: List[QtWidgets.QWidget]) -> None:
         data = self._store.get_all()
@@ -92,13 +61,6 @@ class BindingManager:
 
     def apply_key_bindings(self, widgets: List[QtWidgets.QWidget]) -> None:
         data = self._key_store.get_all()
-        base_logical: Dict[Tuple[Union[str,int], ...], Any] = {}
-        base_physical: Dict[Tuple[Union[str,int], ...], Any] = {}
-        for spec, payload in list(self._key_defaults or []):
-            if self._is_physical_spec(spec):
-                base_physical[spec] = payload
-            else:
-                base_logical[spec] = payload
         for w in widgets:
             if not (hasattr(w, "binding_scope") and callable(getattr(w, "binding_scope"))):
                 continue
@@ -113,10 +75,6 @@ class BindingManager:
                     store_physical[seq.to_tuple()] = cmd
                 else:
                     store_logical[seq] = cmd
-            if base_logical and hasattr(w, "set_key_bindings"):
-                w.set_key_bindings(base_logical)
-            if base_physical and hasattr(w, "set_physical_shortcut_bindings"):
-                w.set_physical_shortcut_bindings(base_physical)
             if store_logical and hasattr(w, "set_shortcut_bindings"):
                 w.set_shortcut_bindings(store_logical)
             if store_physical and hasattr(w, "set_physical_shortcut_bindings"):
@@ -147,6 +105,12 @@ class BindingManager:
             self._key_store.save_to_file(str(self._key_file))
         except Exception as e:
             show_warning(None, "BindingManager.save key bindings failed", exc=e)
+
+    def mouse_bindings_path(self) -> str:
+        return str(self._file)
+
+    def key_bindings_path(self) -> str:
+        return str(self._key_file)
 
     def _find_registered_in_hierarchy(self, widget: Optional[QtWidgets.QWidget]) -> Optional[QtWidgets.QWidget]:
         cur = widget
@@ -183,10 +147,4 @@ class BindingManager:
                     return False
         return True
 
-    def _is_physical_spec(self, spec: Tuple[Union[str,int], ...]) -> bool:
-        for t in spec:
-            if isinstance(t, int):
-                return True
-            if isinstance(t, str) and t.strip().upper().startswith("SC"):
-                return True
-        return False
+ 

@@ -4,7 +4,7 @@ from pathlib import Path
 from source.common.profiling import profiler
 from source.common.jsons import read_json_file, write_json_file
 from source.common.errors import show_warning
-from ...command.payload import CommandPayload
+from ...command.payload import CommandPayload, normalize_scoped_payloads
 from .mouseeventmanager import MouseActionKey, ModifierKey
 
 class MouseBindingStore:
@@ -16,21 +16,24 @@ class MouseBindingStore:
         return cls._instance
     def get_all(self) -> Dict[MouseActionKey, Dict[str, CommandPayload]]:
         return {k: dict(v) for k, v in self._map.items()}
-    def set_all(self, data: Dict[MouseActionKey, Dict[str, CommandPayload]]):
+
+    @staticmethod
+    def normalize_specs(data: Dict[Any, Any]) -> Dict[MouseActionKey, Dict[str, CommandPayload]]:
         nm: Dict[MouseActionKey, Dict[str, CommandPayload]] = {}
-        for k, scopes in data.items():
-            if not isinstance(scopes, dict):
-                raise TypeError("MouseBindingStore.set_all expects scopes dict")
-            dst: Dict[str, CommandPayload] = {}
-            for scope, cmd in scopes.items():
-                if cmd is None:
-                    continue
-                if not isinstance(cmd, CommandPayload):
-                    raise TypeError("MouseBindingStore requires CommandPayload")
-                dst[scope] = cmd
+        for k, scopes in (data or {}).items():
+            key = k if isinstance(k, MouseActionKey) else MouseActionKey.from_spec(k)
+            dst = normalize_scoped_payloads(scopes)
             if dst:
-                nm[k] = dst
-        self._map = nm
+                nm[key] = dst
+        return nm
+    def set_all(self, data: Dict[Any, Any]):
+        try:
+            self._map = self.normalize_specs(data)
+        except Exception as e:
+            raise TypeError("MouseBindingStore requires CommandPayload") from e
+
+    def set_all_from_specs(self, data: Dict[Any, Any]):
+        self.set_all(data)
     def set_binding(self, key: MouseActionKey, scope: str, command: Optional[Any]):
         if not scope:
             scope = "*"
@@ -41,9 +44,10 @@ class MouseBindingStore:
                 if not d:
                     self._map.pop(key, None)
             return
-        if not isinstance(command, CommandPayload):
-            raise TypeError("MouseBindingStore.set_binding requires CommandPayload")
-        norm = command
+        try:
+            norm = CommandPayload.from_any(command)
+        except Exception as e:
+            raise TypeError("MouseBindingStore.set_binding requires CommandPayload") from e
         d = self._map.setdefault(key, {})
         d[scope] = norm
     @profiler.profile

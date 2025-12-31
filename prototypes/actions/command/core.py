@@ -10,20 +10,43 @@ from .context import CommandContext
 COMMAND_MENU_MARKER = "__CommandMenuBuilder_Menu__"
 
 
-@dataclass
 class CommandParam:
-    name: str
-    type: type
-    default: Any = None
-    description: str = ""
-    choices: Optional[List[Any]] = None
-    min_value: Optional[Any] = None
-    max_value: Optional[Any] = None
-    widget_type: str = "auto"
+    __slots__ = ("name", "type", "default", "description", "choices", "min_value", "max_value", "widget_type")
+
+    def __init__(
+        self,
+        *,
+        name: str,
+        value: Any,
+        description: str = "",
+        default: Any = inspect._empty,
+        min_value: Optional[Any] = None,
+        max_value: Optional[Any] = None,
+        widget_type: str = "auto",
+    ):
+        if not name:
+            raise ValueError("name is required")
+        if isinstance(value, (list, tuple)):
+            xs = list(value)
+            if not xs:
+                raise ValueError("value choices must not be empty")
+            self.choices = xs
+            self.default = xs[0] if default is inspect._empty else default
+            self.type = type(self.default) if self.default is not None else type(xs[0])
+        else:
+            self.choices = None
+            self.default = value if default is inspect._empty else default
+            self.type = type(self.default) if self.default is not None else (type(value) if value is not None else str)
+        self.name = name
+        self.description = description
+        self.min_value = min_value
+        self.max_value = max_value
+        self.widget_type = widget_type
 
 
 @dataclass
 class CommandMeta:
+    path: str = ""
     id: str = ""
     display: str = ""
     params: List[CommandParam] = field(default_factory=list)
@@ -240,12 +263,11 @@ def create_command_from_meta(meta: CommandMeta) -> type[CommandBase]:
     return _Cmd
 
 
-def register_command_defs(defs: List[Dict[str, Any]]):
+def register_command_defs(defs: List[CommandMeta]):
     from .state import ActionGroupStateManager
     r = CommandRegistry()
     state_manager = ActionGroupStateManager()
-    for d in defs:
-        meta = d["meta"]
+    for meta in defs:
 
         acceptor = getattr(meta, "drop_acceptor", None)
         if callable(acceptor):
@@ -288,23 +310,19 @@ def register_command_defs(defs: List[Dict[str, Any]]):
         
         if not (meta.action_group and meta.checkable):
             continue
-        path = d.get("path", "")
-        command_id = path.split("/")[-1] if "/" in path else path
-        if command_id:
-            state_manager.register_member(meta.action_group, command_id)
+        if meta.id:
+            state_manager.register_member(meta.action_group, meta.id)
 
-def create_cycle_command(group_name: str, display: str, hotkey: str = "") -> Dict[str, Any]:
+def create_cycle_command(group_name: str, display: str, hotkey: str = "") -> CommandMeta:
     from .ui import CommandMenuBuilder
     def _cycle_func():
         builder = CommandMenuBuilder()
         result = builder.cycle_action_group(group_name)
         if result:
             print(f"Cycled to: {result}")
-    return {
-        "path": f"cycle_{group_name}",
-        "meta": CommandMeta(
-            display=display,
-            hotkey=hotkey,
-            func=_cycle_func
-        )
-    }
+    return CommandMeta(
+        path=f"cycle_{group_name}",
+        display=display,
+        hotkey=hotkey,
+        func=_cycle_func,
+    )

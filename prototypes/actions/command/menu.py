@@ -1,7 +1,7 @@
 from __future__ import annotations
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Sequence
 from source.common.profiling import profiler
-from .core import register_command_defs
+from .core import register_command_defs, CommandMeta
 from source.common.errors import show_warning
 
 
@@ -81,46 +81,17 @@ def prefixed_item_token(base_parts: List[str], s: str) -> str:
     return prefixed_path(base_parts, s)
 
 
-def normalize_def(base_parts: List[str], e: Dict[str, Any]) -> Dict[str, Any]:
-    if not isinstance(e, dict) or ("meta" not in e):
-        raise ValueError("Definition must be a dict with 'meta' and 'path'")
-    meta = e["meta"]
-    full_path = e.get("path")
+def normalize_meta(base_parts: List[str], meta: CommandMeta) -> CommandMeta:
+    full_path = getattr(meta, "path", "")
     if not full_path:
-        raise ValueError("Command 'path' is required and id is derived from its last segment")
+        raise ValueError("CommandMeta.path is required and id is derived from its last segment")
     full_path = prefixed_path(base_parts, str(full_path))
     parts = split_parts(full_path)
     if not parts or parts[-1] == "-" or str(parts[-1]).startswith(":"):
         raise ValueError(f"Invalid command path: {full_path}")
-    cid = parts[-1]
-    if hasattr(meta, "id"):
-        setattr(meta, "id", cid)
-    e["path"] = "/".join(parts)
-    return e
-
-
-def extract_raw_lists(res: Any) -> tuple[list[Dict[str, Any]], list[str], str]:
-    raw_defs_list: List[Dict[str, Any]] = []
-    raw_items_list: List[str] = []
-    kind = "none"
-    if isinstance(res, tuple) and len(res) == 2:
-        a, b = res  # type: ignore
-        if isinstance(a, list):
-            raw_defs_list = a
-        if isinstance(b, list):
-            raw_items_list = b
-        kind = "tuple"
-    elif isinstance(res, list):
-        for e in res:  # type: ignore
-            if isinstance(e, str):
-                raw_items_list.append(e)
-            elif isinstance(e, dict) and ("meta" in e):
-                raw_defs_list.append(e)
-        kind = "list"
-    elif res:
-        raw_defs_list = res  # type: ignore
-        kind = "defs"
-    return raw_defs_list, raw_items_list, kind
+    meta.id = parts[-1]
+    meta.path = "/".join(parts)
+    return meta
 
 
 class RegistryBackedMenu:
@@ -131,14 +102,6 @@ class RegistryBackedMenu:
     def __init__(self):
         self.ensure_registered()
 
-    def __init_subclass__(cls):
-        super().__init_subclass__()
-        if cls not in RegistryBackedMenu._flags:
-            try:
-                cls()
-            except Exception as e:
-                show_warning(None, f"RegistryBackedMenu init failed: {cls.__name__}", exc=e)
-
     @profiler.profile
     def ensure_registered(self):
         t = type(self)
@@ -147,29 +110,23 @@ class RegistryBackedMenu:
         res = self.create_definitions()
         base = getattr(self, "path_prefix", None)
         base_parts = split_parts(base) if isinstance(base, str) and base else []
-        defs: List[Dict[str, Any]] = []
+        defs: List[CommandMeta] = []
         items: List[str] = []
         cmd_paths: Dict[str, str] = {}
-        raw_defs_list, raw_items_list, kind = extract_raw_lists(res)
-        if kind == "list":
-            defs = []
-            items = []
-            for e in res:  # type: ignore
-                if isinstance(e, str):
-                    items.append(prefixed_item_token(base_parts, e))
-                elif isinstance(e, dict) and ("meta" in e):
-                    ne = normalize_def(base_parts, e)
-                    defs.append(ne)
-                    items.append(ne["path"])
-        else:
-            for e in raw_defs_list:
-                defs.append(normalize_def(base_parts, e))
-            for s in raw_items_list:
-                if isinstance(s, str):
-                    items.append(prefixed_item_token(base_parts, s))
-            if kind == "defs" and defs:
-                for e in defs:
-                    items.append(e["path"])
+        if res is None:
+            res = []
+        if not isinstance(res, list):
+            raise ValueError("create_definitions must return list[str|CommandMeta]")
+        for e in res:
+            if isinstance(e, str):
+                items.append(prefixed_item_token(base_parts, e))
+                continue
+            if isinstance(e, CommandMeta):
+                meta = normalize_meta(base_parts, e)
+                defs.append(meta)
+                items.append(meta.path)
+                continue
+            raise ValueError("create_definitions must return list[str|CommandMeta]")
         for s in items:
             if not isinstance(s, str) or not s or is_section_token(s) or is_sep_token(s):
                 continue
@@ -193,6 +150,16 @@ class RegistryBackedMenu:
 
     def create_definitions(self) -> Any:
         return []
+
+
+def register_menu_classes(menu_classes: Sequence[type[RegistryBackedMenu]]) -> None:
+    for cls in list(menu_classes or []):
+        if cls is None:
+            continue
+        try:
+            cls().ensure_registered()
+        except Exception as e:
+            show_warning(None, f"register_menu_classes failed: {getattr(cls, '__name__', str(cls))}", exc=e)
 
 
 class MenuHub:

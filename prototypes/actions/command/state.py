@@ -76,17 +76,38 @@ class PersistentStore:
 class CommandOptionStore(PersistentStore):
     _instance: Optional["CommandOptionStore"] = None
     _initialized = False
+    _default_path: Optional[Path] = None
 
     def __new__(cls):
         if cls._instance is None:
             cls._instance = object.__new__(cls)
         return cls._instance
     
-    def __init__(self):
+    def __init__(self, path: Optional[str | Path] = None):
+        desired = Path(path) if path else (CommandOptionStore._default_path or (Path(__file__).resolve().parent.parent / ".command_options.json"))
         if not CommandOptionStore._initialized:
-            path = Path(__file__).resolve().parent.parent / ".command_options.json"
-            super().__init__(path)
+            super().__init__(desired)
             CommandOptionStore._initialized = True
+        elif desired != getattr(self, "_path", None):
+            self._reconfigure(desired)
+
+    @classmethod
+    def configure(cls, path: str | Path) -> "CommandOptionStore":
+        cls._default_path = Path(path)
+        inst = cls._instance
+        if inst is not None:
+            try:
+                inst._reconfigure(cls._default_path)
+            except Exception:
+                pass
+        return cls()
+
+    def _reconfigure(self, path: Path) -> None:
+        self._path = Path(path)
+        self._map = {}
+        self._buffer = {}
+        self._loaded = False
+        self._flush_pending = False
 
     @profiler.profile
     def get(self, command_id: str) -> CommandPayload:

@@ -1,11 +1,9 @@
-from __future__ import annotations
 from pathlib import Path
-from .command.core import CommandMeta
-from .command.context import CommandContext
-from .command.menu import RegistryBackedMenu
+from .actions.command.core import CommandMeta
+from .actions.command.menu import RegistryBackedMenu
 
 
-def accept_local_existing_files(ctx: CommandContext) -> bool:
+def accept_local_existing_files(ctx) -> bool:
     try:
         event = ctx.get("event")
         if event is None or not hasattr(event, "mimeData"):
@@ -24,83 +22,77 @@ def accept_local_existing_files(ctx: CommandContext) -> bool:
 
 
 class DragDemoDragCommands(RegistryBackedMenu):
-    def _rect_selection_start(self, ctx: CommandContext):
+    def _rect_selection_start(self, ctx):
         print(f"[RectSelection] Start at {ctx.get('pos')}")
 
-    def _rect_selection_move(self, ctx: CommandContext):
+    def _rect_selection_move(self, ctx):
         print(f"[RectSelection] Moving to {ctx.get('pos')}")
 
-    def _rect_selection_end(self, ctx: CommandContext):
+    def _rect_selection_end(self, ctx):
         print(f"[RectSelection] End at {ctx.get('pos')}")
 
-    def _drag_scroll_start(self, ctx: CommandContext):
+    def _drag_scroll_start(self, ctx):
         print(f"[DragScroll] Start at {ctx.get('pos')}")
 
-    def _drag_scroll_move(self, ctx: CommandContext):
+    def _drag_scroll_move(self, ctx):
         print(f"[DragScroll] Moving to {ctx.get('pos')}")
 
-    def _drag_scroll_end(self, ctx: CommandContext):
+    def _drag_scroll_end(self, ctx):
         print(f"[DragScroll] End at {ctx.get('pos')}")
 
-    def _widget_drag_start(self, ctx: CommandContext):
+    def _widget_drag_start(self, ctx):
         pos, widget = ctx.get_many(["pos", "widget"])
         widget_name = widget.binding_scope() if widget and hasattr(widget, "binding_scope") else str(type(widget).__name__ if widget else "None")
         print(f"[WidgetDrag] Start on {widget_name} at {pos}")
 
-    def _widget_drag_move(self, ctx: CommandContext):
+    def _widget_drag_move(self, ctx):
         pos, widget = ctx.get_many(["pos", "widget"])
         widget_name = widget.binding_scope() if widget and hasattr(widget, "binding_scope") else str(type(widget).__name__ if widget else "None")
         print(f"[WidgetDrag] Moving on {widget_name} to {pos}")
 
-    def _widget_drag_end(self, ctx: CommandContext):
+    def _widget_drag_end(self, ctx):
         pos, widget = ctx.get_many(["pos", "widget"])
         widget_name = widget.binding_scope() if widget and hasattr(widget, "binding_scope") else str(type(widget).__name__ if widget else "None")
         print(f"[WidgetDrag] End on {widget_name} at {pos}")
 
     def create_definitions(self):
         return [
-            {
-                "path": "rectSelection",
-                "meta": CommandMeta(
-                    display="Rectangle Selection",
-                    category="drag",
-                    target_widgets=["Widget A"],
-                    drag_callbacks={
-                        "start": self._rect_selection_start,
-                        "move": self._rect_selection_move,
-                        "end": self._rect_selection_end,
-                    },
-                ),
-            },
-            {
-                "path": "dragScroll",
-                "meta": CommandMeta(
-                    display="Drag Scroll",
-                    category="drag",
-                    drag_callbacks={
-                        "start": self._drag_scroll_start,
-                        "move": self._drag_scroll_move,
-                        "end": self._drag_scroll_end,
-                    },
-                ),
-            },
-            {
-                "path": "widgetDrag",
-                "meta": CommandMeta(
-                    display="Widget Drag",
-                    category="drag",
-                    target_widgets=["Drag Demo Widget"],
-                    drag_callbacks={
-                        "start": self._widget_drag_start,
-                        "move": self._widget_drag_move,
-                        "end": self._widget_drag_end,
-                    },
-                ),
-            },
+            CommandMeta(
+                path="rectSelection",
+                display="Rectangle Selection",
+                category="drag",
+                target_widgets=["Widget A"],
+                drag_callbacks={
+                    "start": self._rect_selection_start,
+                    "move": self._rect_selection_move,
+                    "end": self._rect_selection_end,
+                },
+            ),
+            CommandMeta(
+                path="dragScroll",
+                display="Drag Scroll",
+                category="drag",
+                drag_callbacks={
+                    "start": self._drag_scroll_start,
+                    "move": self._drag_scroll_move,
+                    "end": self._drag_scroll_end,
+                },
+            ),
+            CommandMeta(
+                path="widgetDrag",
+                display="Widget Drag",
+                category="drag",
+                target_widgets=["Drag Demo Widget"],
+                drag_callbacks={
+                    "start": self._widget_drag_start,
+                    "move": self._widget_drag_move,
+                    "end": self._widget_drag_end,
+                },
+            ),
         ]
 
 class DragDemoDropCommands(RegistryBackedMenu):
-    def _drop_files_enter(self, ctx: CommandContext):
+    def _drop_files_enter(self, ctx):
         event, widget = ctx.get_many(["event", "widget"])
         print(f"[dropFiles.enter] Called - widget={widget}, event={type(event).__name__ if event else None}")
         if widget and hasattr(widget, "setText"):
@@ -113,20 +105,20 @@ class DragDemoDropCommands(RegistryBackedMenu):
             else:
                 widget.setText("📥 ENTER")
 
-    def _drop_files_move(self, ctx: CommandContext):
+    def _drop_files_move(self, ctx):
         pos, widget = ctx.get_many(["pos", "widget"])
         if pos is not None and hasattr(pos, "x"):
             print(f"[dropFiles.move] Called - pos=({pos.x()}, {pos.y()})")
         if widget and hasattr(widget, "setText") and pos is not None and hasattr(pos, "x"):
             widget.setText(f"🖱️ MOVE\n({pos.x()}, {pos.y()})")
 
-    def _drop_files_leave(self, ctx: CommandContext):
+    def _drop_files_leave(self, ctx):
         widget = ctx.get("widget")
         print("[dropFiles.leave] Called")
         if widget and hasattr(widget, "setText"):
             widget.setText("🚪 LEAVE\nFiles dragged out")
 
-    def _drop_files_drop(self, ctx: CommandContext):
+    def _drop_files_drop(self, ctx):
         event, widget = ctx.get_many(["event", "widget"])
         print(f"[dropFiles.drop] Called - widget={widget}, event={type(event).__name__ if event else None}")
         if not (widget and hasattr(widget, "setText")):
@@ -144,26 +136,26 @@ class DragDemoDropCommands(RegistryBackedMenu):
         more_text = f"\n+{len(urls)-5} more" if len(urls) > 5 else ""
         widget.setText(f"✅ DROP\n{len(urls)} file(s):\n{file_list}{more_text}")
 
-    def _simple_file_drop_enter(self, ctx: CommandContext):
+    def _simple_file_drop_enter(self, ctx):
         widget = ctx.get("widget")
         print("[simpleFileDrop.enter] Called")
         if widget and hasattr(widget, "setText"):
             widget.setText("📥 File(s) entered")
 
-    def _simple_file_drop_move(self, ctx: CommandContext):
+    def _simple_file_drop_move(self, ctx):
         pos, widget = ctx.get_many(["pos", "widget"])
         if pos is not None and hasattr(pos, "x"):
             print(f"[simpleFileDrop.move] pos=({pos.x()}, {pos.y()})")
         if widget and hasattr(widget, "setText") and pos is not None and hasattr(pos, "x"):
             widget.setText(f"🖱️ Moving\n({pos.x()}, {pos.y()})")
 
-    def _simple_file_drop_leave(self, ctx: CommandContext):
+    def _simple_file_drop_leave(self, ctx):
         widget = ctx.get("widget")
         print("[simpleFileDrop.leave] Called")
         if widget and hasattr(widget, "setText"):
             widget.setText("🚪 File(s) left")
 
-    def _simple_file_drop_drop(self, ctx: CommandContext):
+    def _simple_file_drop_drop(self, ctx):
         event, widget = ctx.get_many(["event", "widget"])
         print(f"[simpleFileDrop.drop] Called - widget={widget}")
         if not (widget and hasattr(widget, "setText")):
@@ -177,26 +169,26 @@ class DragDemoDropCommands(RegistryBackedMenu):
         print(f"[simpleFileDrop.drop] {len(urls)} files: {[Path(url).name for url in urls[:3]]}")
         widget.setText(f"✅ Dropped {len(urls)} file(s)\n{', '.join([Path(url).name for url in urls[:3]])}")
 
-    def _simple_file_drop_ctrl_enter(self, ctx: CommandContext):
+    def _simple_file_drop_ctrl_enter(self, ctx):
         widget = ctx.get("widget")
         print("[simpleFileDropCtrl.enter] Called")
         if widget and hasattr(widget, "setText"):
             widget.setText("📥 CTRL File(s) entered")
 
-    def _simple_file_drop_ctrl_move(self, ctx: CommandContext):
+    def _simple_file_drop_ctrl_move(self, ctx):
         pos, widget = ctx.get_many(["pos", "widget"])
         if pos is not None and hasattr(pos, "x"):
             print(f"[simpleFileDropCtrl.move] pos=({pos.x()}, {pos.y()})")
         if widget and hasattr(widget, "setText") and pos is not None and hasattr(pos, "x"):
             widget.setText(f"🖱️ CTRL Moving\n({pos.x()}, {pos.y()})")
 
-    def _simple_file_drop_ctrl_leave(self, ctx: CommandContext):
+    def _simple_file_drop_ctrl_leave(self, ctx):
         widget = ctx.get("widget")
         print("[simpleFileDropCtrl.leave] Called")
         if widget and hasattr(widget, "setText"):
             widget.setText("🚪 CTRL File(s) left")
 
-    def _simple_file_drop_ctrl_drop(self, ctx: CommandContext):
+    def _simple_file_drop_ctrl_drop(self, ctx):
         event, widget = ctx.get_many(["event", "widget"])
         print(f"[simpleFileDropCtrl.drop] Called - widget={widget}")
         if not (widget and hasattr(widget, "setText")):
@@ -210,22 +202,22 @@ class DragDemoDropCommands(RegistryBackedMenu):
         print(f"[simpleFileDropCtrl.drop] {len(urls)} files: {[Path(url).name for url in urls[:3]]}")
         widget.setText(f"✅ CTRL Dropped {len(urls)} file(s)\n{', '.join([Path(url).name for url in urls[:3]])}")
 
-    def _widget_drag_start(self, ctx: CommandContext):
+    def _widget_drag_start(self, ctx):
         pos, widget = ctx.get_many(["pos", "widget"])
         widget_name = widget.binding_scope() if widget and hasattr(widget, "binding_scope") else str(type(widget).__name__ if widget else "None")
         print(f"[WidgetDrag] Start on {widget_name} at {pos}")
 
-    def _widget_drag_move(self, ctx: CommandContext):
+    def _widget_drag_move(self, ctx):
         pos, widget = ctx.get_many(["pos", "widget"])
         widget_name = widget.binding_scope() if widget and hasattr(widget, "binding_scope") else str(type(widget).__name__ if widget else "None")
         print(f"[WidgetDrag] Moving on {widget_name} to {pos}")
 
-    def _widget_drag_end(self, ctx: CommandContext):
+    def _widget_drag_end(self, ctx):
         pos, widget = ctx.get_many(["pos", "widget"])
         widget_name = widget.binding_scope() if widget and hasattr(widget, "binding_scope") else str(type(widget).__name__ if widget else "None")
         print(f"[WidgetDrag] End on {widget_name} at {pos}")
 
-    def _file_path_drop(self, ctx: CommandContext):
+    def _file_path_drop(self, ctx):
         event = ctx.get("event")
         if not (event and hasattr(event, "mimeData")):
             return
@@ -236,7 +228,7 @@ class DragDemoDropCommands(RegistryBackedMenu):
         for url in mime.urls():
             print(f"[FilePathDrop] {url.toLocalFile()}")
 
-    def _file_path_move(self, ctx: CommandContext):
+    def _file_path_move(self, ctx):
         pos = ctx.get("pos")
         if pos is not None and hasattr(pos, "x"):
             print(f"[filePathDrop.move] pos=({pos.x()}, {pos.y()})")
@@ -245,60 +237,56 @@ class DragDemoDropCommands(RegistryBackedMenu):
 
     def create_definitions(self):
         return [
-            {
-                "path": "dropFiles",
-                "meta": CommandMeta(
-                    display="Drop Files",
-                    category="drop",
-                    target_widgets=["Widget A"],
-                    drop_acceptor=accept_local_existing_files,
-                    drop_callbacks={
-                        "enter": self._drop_files_enter,
-                        "move": self._drop_files_move,
-                        "leave": self._drop_files_leave,
-                        "drop": self._drop_files_drop,
-                    },
-                ),
-            },
-            {
-                "path": "simpleFileDrop",
-                "meta": CommandMeta(
-                    display="Simple File Drop",
-                    category="drop",
-                    drop_acceptor=accept_local_existing_files,
-                    drop_callbacks={
-                        "enter": self._simple_file_drop_enter,
-                        "move": self._simple_file_drop_move,
-                        "leave": self._simple_file_drop_leave,
-                        "drop": self._simple_file_drop_drop,
-                    },
-                ),
-            },
-            {
-                "path": "simpleFileDropCtrl",
-                "meta": CommandMeta(
-                    display="Simple File Drop (Ctrl)",
-                    category="drop",
-                    drop_acceptor=accept_local_existing_files,
-                    drop_callbacks={
-                        "enter": self._simple_file_drop_ctrl_enter,
-                        "move": self._simple_file_drop_ctrl_move,
-                        "leave": self._simple_file_drop_ctrl_leave,
-                        "drop": self._simple_file_drop_ctrl_drop,
-                    },
-                ),
-            },
-            {
-                "path": "filePathDrop",
-                "meta": CommandMeta(
-                    display="File Path Drop",
-                    category="drop",
-                    target_widgets=["Drag Demo Widget"],
-                    drop_acceptor=accept_local_existing_files,
-                    drop_callbacks={
-                        "move": self._file_path_move,
-                        "drop": self._file_path_drop,
-                    },
-                ),
-            },
+            CommandMeta(
+                path="dropFiles",
+                display="Drop Files",
+                category="drop",
+                target_widgets=["Widget A"],
+                drop_acceptor=accept_local_existing_files,
+                drop_callbacks={
+                    "enter": self._drop_files_enter,
+                    "move": self._drop_files_move,
+                    "leave": self._drop_files_leave,
+                    "drop": self._drop_files_drop,
+                },
+            ),
+            CommandMeta(
+                path="simpleFileDrop",
+                display="Simple File Drop",
+                category="drop",
+                drop_acceptor=accept_local_existing_files,
+                drop_callbacks={
+                    "enter": self._simple_file_drop_enter,
+                    "move": self._simple_file_drop_move,
+                    "leave": self._simple_file_drop_leave,
+                    "drop": self._simple_file_drop_drop,
+                },
+            ),
+            CommandMeta(
+                path="simpleFileDropCtrl",
+                display="Simple File Drop (Ctrl)",
+                category="drop",
+                drop_acceptor=accept_local_existing_files,
+                drop_callbacks={
+                    "enter": self._simple_file_drop_ctrl_enter,
+                    "move": self._simple_file_drop_ctrl_move,
+                    "leave": self._simple_file_drop_ctrl_leave,
+                    "drop": self._simple_file_drop_ctrl_drop,
+                },
+            ),
+            CommandMeta(
+                path="filePathDrop",
+                display="File Path Drop",
+                category="drop",
+                target_widgets=["Drag Demo Widget"],
+                drop_acceptor=accept_local_existing_files,
+                drop_callbacks={
+                    "move": self._file_path_move,
+                    "drop": self._file_path_drop,
+                },
+            ),
         ]
+
+
+def get_menu_classes() -> list[type[RegistryBackedMenu]]:
+    return [DragDemoDragCommands, DragDemoDropCommands]

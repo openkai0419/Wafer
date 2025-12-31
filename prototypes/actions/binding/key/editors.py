@@ -2,7 +2,7 @@ from typing import Dict, List, Any, Tuple
 from pathlib import Path
 from PySide6 import QtCore, QtGui, QtWidgets
 from source.common.funcs import uipx
-from ...command.ui import MenuBuilder
+from ...facade import get_builder
 from ...command.payload import format_payload_display
 from ...command.payload import CommandPayload
 from ..common import WidgetRef
@@ -218,7 +218,7 @@ class KeyBindingEditor(QtWidgets.QDialog):
         if key_seq is None:
             return
         btn = self.btn_add_binding
-        builder = MenuBuilder(self)
+        builder = get_builder(self)
         def _prep(m: QtWidgets.QMenu):
             act_none = QtGui.QAction("なし(解除)", m)
             act_none.triggered.connect(lambda: self._on_select_command(key_seq, None))
@@ -269,8 +269,8 @@ class KeyBindingEditor(QtWidgets.QDialog):
             except Exception:
                 pass
         try:
-            path = str(Path(__file__).resolve().parent.parent.parent / "key_bindings.json")
-            self._store.save_to_file(path)
+            from ..manager import BindingManager
+            self._store.save_to_file(BindingManager.instance().key_bindings_path())
         except Exception:
             pass
         self.accept()
@@ -283,7 +283,7 @@ class KeyBindingEditor(QtWidgets.QDialog):
 
     def _search(self):
         btn = self.btn_search
-        builder = MenuBuilder(self)
+        builder = get_builder(self)
         def _prep(m: QtWidgets.QMenu):
             act_none = QtGui.QAction("なし(解除)", m)
             act_none.triggered.connect(lambda: self._on_search_select(None))
@@ -385,14 +385,8 @@ class KeyBindingEditor(QtWidgets.QDialog):
         self._select_lists_for_sequence(new_seq)
 
     def _reset_all_defaults(self):
-        from ...defaults import default_key_bindings
-        defs = default_key_bindings()
-        self._draft = {}
-        for spec, payload in defs:
-            if not spec:
-                continue
-            seq = KeySequence(spec)
-            self._draft[seq] = {"*": payload}
+        from ...defaults import get_all_key_bindings
+        self._draft = KeyBindingStore.normalize_specs(get_all_key_bindings())
         self._store.set_all({})
         self._refresh_shortcuts()
         self._load_existing()
@@ -595,7 +589,7 @@ class _KeySequenceSection(QtWidgets.QGroupBox):
         btn = self.global_edit if scope == "*" else self.override_edits.get(scope)
         if btn is None:
             return
-        builder = MenuBuilder(self)
+        builder = get_builder(self)
         def _prep(m: QtWidgets.QMenu, sc=scope):
             act_none = QtGui.QAction("なし(解除)", m)
             act_none.triggered.connect(lambda _, s=sc: self._on_select(s, None))

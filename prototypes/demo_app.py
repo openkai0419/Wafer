@@ -1,12 +1,11 @@
+from __future__ import annotations
+
+from pathlib import Path
+
 from PySide6 import QtCore, QtWidgets
-from source.common.profiling import profiler
 from source.common.funcs import uipx
-from .command.ui import MenuBuilder
-from .menu_demo import *
-from .drag_demo import * 
-from .binding.mixins import CommandBindingMixin
-from .binding.manager import BindingManager
-from .defaults import default_mouse_bindings, default_key_bindings
+from .actions.binding.mixins import CommandBindingMixin
+from .actions import facade
 
 class DemoButton(QtWidgets.QPushButton, CommandBindingMixin):
     def __init__(self, name: str, parent=None):
@@ -62,18 +61,17 @@ class MainWindow(QtWidgets.QMainWindow, CommandBindingMixin):
         c.addWidget(self.line, 0)
         self.line2 = TestLineEdit("LineEdit 2", self)
         c.addWidget(self.line2, 0)
-        BindingManager.activate(defaults=default_mouse_bindings(), key_defaults=default_key_bindings())
         self._setup_menu_bar()
 
 
     def _setup_menu_bar(self):
         mb = self.menuBar()
-        builder = MenuBuilder(self)
+        builder = facade.get_builder(self)
         m = builder.use("binding")
         mb.addMenu(m)
 
     def closeEvent(self, event):
-        from .command.state import CommandOptionStore, ActionGroupStateManager
+        from .actions.command.state import CommandOptionStore, ActionGroupStateManager
         try:
             ActionGroupStateManager().commit()
             CommandOptionStore().commit()
@@ -81,36 +79,26 @@ class MainWindow(QtWidgets.QMainWindow, CommandBindingMixin):
             print(f"Failed to save settings: {e}")
         super().closeEvent(event)
 
-def add_focus_style(app):
-    def on_focus_changed(old, new):
-        if old is not None:
-            old.setProperty("focusHighlight", False)
-            old.style().unpolish(old)
-            old.style().polish(old)
-        if new is not None:
-            new.setProperty("focusHighlight", True)
-            new.style().unpolish(new)
-            new.style().polish(new)
-
-    app.focusChanged.connect(on_focus_changed)
-    app.setStyleSheet(
-        """
-        *[focusHighlight="true"] {
-            border: 2px solid #ffaa00;
-        }
-        """
-    )
-    return app
-
-
-
-def main():
-    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    # add_focus_style(app)
+def bootstrap() -> None:
+    root = Path(__file__).resolve().parent.parent
+    base = root / ".temp" / "demo_app"
+    
+    facade.setup(mouse_bindings=str(base / "mouse_bindings.json"), key_bindings=str(base / "key_bindings.json"), command_options=str(base / ".command_options.json"))
+    from . import menu_demo, drag_demo
+    facade.register_menus([*menu_demo.get_menu_classes(), *drag_demo.get_menu_classes()])
 
     w = MainWindow()
     w.resize(uipx(640), uipx(400))
     w.show()
+    
+    from .defaults import get_all_key_bindings, get_all_mouse_bindings
+    facade.activate(mouse_bindings=get_all_mouse_bindings(), key_bindings=get_all_key_bindings())
+    
+
+
+def main():
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    bootstrap()
     app.exec()
 
 

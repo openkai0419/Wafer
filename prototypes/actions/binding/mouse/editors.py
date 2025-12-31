@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from PySide6 import QtCore, QtGui, QtWidgets
 from source.common.funcs import uipx
 from .mouseeventmanager import MouseActionKey, ClickType, MouseButton, ModifierKey
-from ...command.ui import MenuBuilder
+from ...facade import get_builder
 from .store import MouseBindingStore
 from ...command.payload import format_payload_display
 from ...command.payload import CommandPayload
@@ -214,27 +214,24 @@ class MouseBindingEditor(QtWidgets.QDialog):
                         bindings[key] = cmd_widget
                 wref.widget.set_mouse_bindings(bindings)
         try:
-            path = str(Path(__file__).resolve().parent.parent.parent / "mouse_bindings.json")
-            self._store.save_to_file(path)
+            from ..manager import BindingManager
+            self._store.save_to_file(BindingManager.instance().mouse_bindings_path())
         except Exception:
             pass
         self.accept()
     def _reset_to_defaults(self):
         try:
-            from ...defaults import default_mouse_bindings
-            defs = default_mouse_bindings()
-            nd: Dict[MouseActionKey, Dict[str, object]] = {}
-            for k, v in defs.items():
-                nd[k] = {"*": v}
-            self._draft = nd
+            from ...defaults import get_all_mouse_bindings
+            defs = MouseBindingStore.normalize_specs(get_all_mouse_bindings())
+            self._draft = defs
             self._reload_sections()
         except Exception:
             pass
     def _reset_current_action(self):
         try:
             b, c = self._current_action()
-            from ...defaults import default_mouse_bindings
-            defs = default_mouse_bindings()
+            from ...defaults import get_all_mouse_bindings
+            defs = MouseBindingStore.normalize_specs(get_all_mouse_bindings())
             cur = self._store.get_all()
             aff_keys = set()
             for k in cur.keys():
@@ -248,7 +245,7 @@ class MouseBindingEditor(QtWidgets.QDialog):
                     aff_keys.add(k)
             for k in aff_keys:
                 if k in defs:
-                    self._draft[k] = {"*": defs[k]}
+                    self._draft[k] = dict(defs[k])
                 else:
                     self._draft[k] = {}
             self._reload_sections(skip_save=True)
@@ -357,7 +354,7 @@ class MouseSection(QtWidgets.QGroupBox):
         elif self._is_drop_type():
             self._show_category_menu(btn, scope, "drop")
         else:
-            builder = MenuBuilder(self)
+            builder = get_builder(self)
             def _prep(m: QtWidgets.QMenu, sc=scope):
                 act_none = QtGui.QAction("なし(解除)", m)
                 act_none.triggered.connect(lambda _, s=sc: self._on_select(s, None))

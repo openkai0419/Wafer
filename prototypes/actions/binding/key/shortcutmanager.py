@@ -50,14 +50,16 @@ class ShortcutManager(QtCore.QObject):
         for seq, cmd in bindings.items():
             if not seq or not cmd:
                 continue
-            if not isinstance(cmd, CommandPayload):
-                raise TypeError("Shortcut payload must be CommandPayload")
             if not isinstance(seq, KeySequence):
                 raise TypeError("Key must be KeySequence")
+            try:
+                payload = CommandPayload.from_any(cmd)
+            except Exception as e:
+                raise TypeError("Shortcut payload must be CommandPayload") from e
             combo = self._parse_key_sequence(seq)
             if not combo:
                 continue
-            norm[combo] = cmd
+            norm[combo] = payload
         self._keymap[wid] = norm
         self._states[wid] = KeyPressState()
     def get_bindings(self, widget: QtWidgets.QWidget) -> Dict[str, CommandPayload]:
@@ -83,12 +85,14 @@ class ShortcutManager(QtCore.QObject):
         for spec, cmd in bindings.items():
             if not cmd:
                 continue
-            if not isinstance(cmd, CommandPayload):
-                raise TypeError("payload must be CommandPayload")
+            try:
+                payload = CommandPayload.from_any(cmd)
+            except Exception as e:
+                raise TypeError("payload must be CommandPayload") from e
             combo = self._normalize(spec)
             if not combo or len(combo) > 2:
                 continue
-            norm[combo] = cmd
+            norm[combo] = payload
         self._keymap[wid] = norm
         self._states[wid] = KeyPressState()
 
@@ -119,12 +123,14 @@ class ShortcutManager(QtCore.QObject):
         for spec, cmd in bindings.items():
             if not cmd:
                 continue
-            if not isinstance(cmd, CommandPayload):
-                raise TypeError("payload must be CommandPayload")
+            try:
+                payload = CommandPayload.from_any(cmd)
+            except Exception as e:
+                raise TypeError("payload must be CommandPayload") from e
             combo = self._normalize_sc(spec)
             if not combo or len(combo) > 2:
                 continue
-            norm[combo] = cmd
+            norm[combo] = payload
         self._sc_keymap[wid] = norm
         self._states_sc[wid] = KeyPressState()
 

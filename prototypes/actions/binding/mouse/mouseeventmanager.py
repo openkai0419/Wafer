@@ -13,6 +13,24 @@ class ClickType(Enum):
     DRAG_START = auto()
     DROP = auto()
 
+    @staticmethod
+    def from_any(v):
+        if isinstance(v, ClickType):
+            return v
+        if isinstance(v, str):
+            s = v.strip().upper().replace("-", "_").replace(" ", "_")
+            aliases = {
+                "WHEELUP": "WHEEL_UP",
+                "WHEELDOWN": "WHEEL_DOWN",
+                "DRAGSTART": "DRAG_START",
+            }
+            s = aliases.get(s, s)
+            try:
+                return ClickType[s]
+            except Exception as e:
+                raise ValueError(f"invalid ClickType: {v}") from e
+        raise TypeError("ClickType must be ClickType or str")
+
 class MouseButton(Enum):
     LEFT = QtCore.Qt.LeftButton
     RIGHT = QtCore.Qt.RightButton
@@ -21,11 +39,55 @@ class MouseButton(Enum):
     X2 = QtCore.Qt.XButton2
     NONE = 0
 
+    @staticmethod
+    def from_any(v):
+        if isinstance(v, MouseButton):
+            return v
+        if isinstance(v, str):
+            s = v.strip().upper().replace("-", "_").replace(" ", "_")
+            aliases = {
+                "LMB": "LEFT",
+                "RMB": "RIGHT",
+                "MMB": "MIDDLE",
+                "MB1": "X1",
+                "MB2": "X2",
+                "XBUTTON1": "X1",
+                "XBUTTON2": "X2",
+            }
+            s = aliases.get(s, s)
+            try:
+                return MouseButton[s]
+            except Exception as e:
+                raise ValueError(f"invalid MouseButton: {v}") from e
+        raise TypeError("MouseButton must be MouseButton or str")
+
 class ModifierKey(Enum):
     CTRL = auto()
     SHIFT = auto()
     ALT = auto()
     META = auto()
+
+    @staticmethod
+    def from_any(v):
+        if isinstance(v, ModifierKey):
+            return v
+        if isinstance(v, str):
+            s = v.strip().upper().replace("-", "_").replace(" ", "_")
+            aliases = {
+                "CONTROL": "CTRL",
+                "CMD": "META",
+                "COMMAND": "META",
+                "WIN": "META",
+                "WINDOWS": "META",
+                "SUPER": "META",
+                "OPTION": "ALT",
+            }
+            s = aliases.get(s, s)
+            try:
+                return ModifierKey[s]
+            except Exception as e:
+                raise ValueError(f"invalid ModifierKey: {v}") from e
+        raise TypeError("ModifierKey must be ModifierKey or str")
 
 class DragContext:
     def __init__(self):
@@ -151,11 +213,37 @@ class CommandDragContext(DragContext):
 
 class MouseActionKey:
 
-    def __init__(self, button, click_type, held_buttons, modifiers=()):
-        self.button = button
-        self.click_type = click_type
-        self.held_buttons = frozenset(held_buttons)
-        self.modifiers = frozenset(modifiers)
+    @staticmethod
+    def from_spec(spec):
+        if isinstance(spec, MouseActionKey):
+            return spec
+        if not isinstance(spec, (tuple, list)):
+            raise TypeError("MouseActionKey spec must be tuple/list")
+        if len(spec) == 2:
+            button, click_type = spec
+            held_buttons = ()
+            modifiers = ()
+        elif len(spec) == 3:
+            button, click_type, held_buttons = spec
+            modifiers = ()
+        elif len(spec) == 4:
+            button, click_type, held_buttons, modifiers = spec
+        else:
+            raise ValueError("MouseActionKey spec must be (button, click_type[, held_buttons[, modifiers]])")
+        return MouseActionKey(button, click_type, held_buttons, modifiers)
+
+    def __init__(self, button, click_type=None, held_buttons=(), modifiers=()):
+        if click_type is None and isinstance(button, (tuple, list)):
+            k = MouseActionKey.from_spec(button)
+            self.button = k.button
+            self.click_type = k.click_type
+            self.held_buttons = k.held_buttons
+            self.modifiers = k.modifiers
+            return
+        self.button = MouseButton.from_any(button)
+        self.click_type = ClickType.from_any(click_type)
+        self.held_buttons = frozenset(MouseButton.from_any(b) for b in (held_buttons or ()))
+        self.modifiers = frozenset(ModifierKey.from_any(m) for m in (modifiers or ()))
 
     def __hash__(self):
         return hash((self.button, self.click_type, self.held_buttons, self.modifiers))

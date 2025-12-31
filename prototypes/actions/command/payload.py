@@ -85,3 +85,33 @@ def format_payload_display(data: Any) -> str:
     if not vals:
         return name
     return f"{name} - {' '.join(vals)}"
+
+
+class ScopedPayloads:
+    def __init__(self, scopes: Dict[str, Any]):
+        if not isinstance(scopes, dict):
+            raise TypeError("scopes must be dict")
+        self.scopes = scopes
+
+    def to_dict(self) -> Dict[str, Any]:
+        return self.scopes
+
+    @staticmethod
+    def from_any(v: Any) -> "ScopedPayloads":
+        if isinstance(v, ScopedPayloads):
+            return v
+        if isinstance(v, dict):
+            if "id" in v:
+                return ScopedPayloads({"*": v})
+            return ScopedPayloads(v)
+        raise TypeError("scopes must be dict or ScopedPayloads")
+
+
+def normalize_scoped_payloads(v: Any) -> Dict[str, CommandPayload]:
+    scopes = ScopedPayloads.from_any(v).to_dict()
+    out: Dict[str, CommandPayload] = {}
+    for scope, payload in scopes.items():
+        if payload is None:
+            continue
+        out[str(scope)] = CommandPayload.from_any(payload)
+    return out

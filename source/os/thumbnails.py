@@ -41,6 +41,7 @@ class FileThumbnailer:
             from gi.repository import Gio, Gtk
             self._Gio = Gio
             self._Gtk = Gtk
+            self._warned_linux_thumb_query = False
 
     def get_thumbnail(self, file_path, size=256):
         if not os.path.exists(file_path):
@@ -102,8 +103,10 @@ class FileThumbnailer:
             thumb_path = info.get_attribute_byte_string('thumbnail::path')
             if thumb_path and os.path.exists(thumb_path):
                 return Image.open(thumb_path)
-        except Exception:
-            pass
+        except Exception as e:
+            if not self._warned_linux_thumb_query:
+                self._warned_linux_thumb_query = True
+                show_warning(None, f'Linux thumbnail query failed, fallback to icon: {file_path}', title='Thumbnail', exc=e)
         try:
             info = gfile.query_info('standard::icon', 0, None)
             icon = info.get_icon()

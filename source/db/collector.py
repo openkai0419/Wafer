@@ -72,8 +72,6 @@ class ImageDB:
         except sqlite3.DatabaseError as e:
             logger.warning(f'[ERROR] DB corrupted: {e}')
             self._backup_and_recreate()
-        except:
-            raise
         self._ensure_schema()
 
     @profiler.profile
@@ -90,14 +88,14 @@ class ImageDB:
         if self.read_conn:
             try:
                 self.read_conn.close()
-            except:  # noqa
-                pass
+            except Exception as e:
+                logger.debug(f'read_conn.close() failed: {e}')
             self.read_conn = None
         if self.conn:
             try:
                 self.conn.close()
-            except:  # noqa
-                pass
+            except Exception as e:
+                logger.debug(f'conn.close() failed: {e}')
             self.conn = None
         # safe backup first
         try:

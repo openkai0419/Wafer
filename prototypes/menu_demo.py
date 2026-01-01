@@ -1,7 +1,8 @@
 from datetime import datetime
 
 from PySide6 import QtCore, QtGui, QtWidgets
-from .actions.facade import Classes, UI
+from .actions.facade import Classes, UI, Settings
+from source.common.errors import show_warning
 
 
 class FileMenu(Classes.MenuBase):
@@ -44,8 +45,15 @@ class CmdMenu(Classes.MenuBase):
         try:
             from .demo_app import DemoPane
             print(isinstance(w, DemoPane))
-        except Exception:
+        except Exception as e:
+            show_warning(None, "isDemoPane check failed", exc=e)
             print(False)
+
+    def _toggle_key_scope_mode(self, ctx=None):
+        cur = Settings.key_scope_mode()
+        nxt = "focus" if cur == "cursor" else "cursor"
+        Settings.set_key_scope_mode(nxt)
+        print(f"Key scope mode: {nxt}")
     
     def create_definitions(self):
         return [
@@ -63,6 +71,7 @@ class CmdMenu(Classes.MenuBase):
             "-",
             ":Toggle",
             Classes.Command(path="Toggle/toggleVerbose", display="Verbose Mode", checkable=True, default_checked=False, func=lambda ctx: print("verbose on" if ctx.get('checked', False) else "verbose off")),
+            Classes.Command(path="Toggle/toggleKeyScopeMode", display="Toggle Key Scope (Focus/Cursor)", func=self._toggle_key_scope_mode),
             "-",
             ":Sort Order",
             Classes.Command(path="Sort/sortByName", display="Name", checkable=True, default_checked=True, action_group="sort_order", func=lambda ctx: print("Sort by Name" if ctx.get('checked', False) else "")),
@@ -128,19 +137,11 @@ class MenuMenu(Classes.MenuBase):
     path_prefix = "menu"
 
     def _open_mouse_binding_editor(self, ctx=None):
-        parent = None
-        try:
-            parent = ctx.get("widget") if ctx is not None and hasattr(ctx, "get") else None
-        except Exception:
-            parent = None
+        parent = ctx.get("widget") if ctx is not None and hasattr(ctx, "get") else None
         UI.open_mouse_binding_editor(parent=parent)
 
     def _open_shortcut_binding_editor(self, ctx=None):
-        parent = None
-        try:
-            parent = ctx.get("widget") if ctx is not None and hasattr(ctx, "get") else None
-        except Exception:
-            parent = None
+        parent = ctx.get("widget") if ctx is not None and hasattr(ctx, "get") else None
         UI.open_shortcut_binding_editor(parent=parent)
 
     def create_definitions(self):

@@ -2,9 +2,11 @@ from typing import Any, Dict, List, Tuple, Union, Set, Callable, Iterable, Optio
 from weakref import WeakValueDictionary
 from PySide6 import QtCore, QtGui, QtWidgets
 from source.common.profiling import profiler
+from source.common.errors import show_warning
 from ...command.core import CommandRegistry
 from ...command.context import CommandContext
 from ...command.payload import CommandPayload
+from source.common.helpers import call_int0, widget_prop_bool
 from .sequence import KeySequence
 from .runtime import KeyNameResolver, KeySpec
 from .runtime import KeyListenerRegistry
@@ -19,6 +21,7 @@ class ShortcutManager(QtCore.QObject):
     _global: Optional['ShortcutManager'] = None
     _app_hooked_class: bool = False
     _scope_mode: str = "cursor"
+    BLOCK_PARENT_SHORTCUTS_PROP: str = "block_parent_shortcuts"
     MAX_COMBO_LEN = 2
     MAX_RECENT_EVENTS = 128
     def __init__(self):
@@ -149,16 +152,10 @@ class ShortcutManager(QtCore.QObject):
             self._widget_refs.pop(wid, None)
 
     def _get_scan_code(self, e: QtGui.QKeyEvent) -> int:
-        try:
-            return int(getattr(e, "nativeScanCode")())
-        except Exception:
-            return 0
+        return call_int0(e, "nativeScanCode", 0)
 
     def _get_timestamp(self, e: QtGui.QKeyEvent) -> int:
-        try:
-            return int(getattr(e, "timestamp")())
-        except Exception:
-            return 0
+        return call_int0(e, "timestamp", 0)
 
     def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:
         et = event.type()
@@ -236,18 +233,17 @@ class ShortcutManager(QtCore.QObject):
         widget = self._widget_refs.get(wid)
         kdisp = None
         if event is not None:
-            try:
-                kdisp = self._display_from_event(event)
-            except Exception:
-                kdisp = None
+            kdisp = self._display_from_event(event)
         if widget and hasattr(widget, "exec_command") and callable(widget.exec_command):
             widget.exec_command(payload, event=event, key=kdisp, source="key")
         else:
             args = dict(payload.args or {})
-            try:
-                scope = widget.binding_scope() if widget is not None and hasattr(widget, "binding_scope") and callable(widget.binding_scope) else ""
-            except Exception:
-                scope = ""
+            scope = ""
+            if widget is not None and hasattr(widget, "binding_scope") and callable(widget.binding_scope):
+                try:
+                    scope = widget.binding_scope() or ""
+                except Exception as e:
+                    show_warning(None, "binding_scope failed", exc=e)
             ctx = CommandContext.create(widget, scope, source="key", event=event, key=kdisp)
             self._registry.execute(payload.id, ctx=ctx, **args)
 
@@ -285,10 +281,7 @@ class ShortcutManager(QtCore.QObject):
         self._phys_listeners.remove_all(wid)
     def _emit_phys(self, is_press: bool, wid: int, e: QtGui.QKeyEvent):
         sc = self._get_scan_code(e)
-        try:
-            nv = int(getattr(e, "nativeVirtualKey")())
-        except Exception:
-            nv = 0
+        nv = call_int0(e, "nativeVirtualKey", 0)
         k = int(e.key())
         txt = self.key_text_from_event(e, pretty=True)
         disp = self._display_from_event(e)
@@ -347,31 +340,26 @@ class ShortcutManager(QtCore.QObject):
             return
         app = QtWidgets.QApplication.instance()
         if app and ShortcutManager._global is not None:
-            try:
-                for f in list(getattr(app, "eventFilters")() or []):
-                    if isinstance(f, ShortcutManager):
-                        try:
-                            app.removeEventFilter(f)
-                        except Exception:
-                            pass
-            except Exception:
-                pass
             app.installEventFilter(ShortcutManager._global)
             ShortcutManager._app_hooked_class = True
+
+    def _resolve_target_widget_id_from(self, start: QtWidgets.QWidget | None, targets: set[int]) -> int | None:
+        w = start
+        while w is not None:
+            wid = id(w)
+            if wid in targets:
+                return wid
+            if widget_prop_bool(w, self.BLOCK_PARENT_SHORTCUTS_PROP):
+                return None
+            w = w.parentWidget()
+        return None
     
     def _resolve_target_widget_id_focus(self) -> int | None:
         targets = set(self._keymap.keys()) | self._key_listeners.ids() | self._phys_listeners.ids()
         if not targets:
             return None
         w = QtWidgets.QApplication.focusWidget()
-        if not w:
-            return None
-        while w is not None:
-            wid = id(w)
-            if wid in targets:
-                return wid
-            w = w.parentWidget()
-        return None
+        return self._resolve_target_widget_id_from(w, targets)
 
     def _resolve_target_widget_id_cursor(self) -> int | None:
         targets = set(self._keymap.keys()) | self._key_listeners.ids() | self._phys_listeners.ids()
@@ -380,25 +368,14 @@ class ShortcutManager(QtCore.QObject):
         mw = QtWidgets.QApplication.activeModalWidget()
         if mw is not None:
             w = QtWidgets.QApplication.focusWidget() or mw
-            while w is not None:
-                wid = id(w)
-                if wid in targets:
-                    return wid
-                w = w.parentWidget()
-        try:
-            from ..manager import BindingManager
-            gpt = QtGui.QCursor.pos()
-            w = BindingManager.instance().find_binding_widget_at(gpt)
-            if not w:
-                return None
-            while w is not None:
-                wid = id(w)
-                if wid in targets:
-                    return wid
-                w = w.parentWidget()
+            wid = self._resolve_target_widget_id_from(w, targets)
+            if wid is not None:
+                return wid
+        if QtWidgets.QApplication.instance() is None:
             return None
-        except Exception:
-            return None
+        gpt = QtGui.QCursor.pos()
+        w = QtWidgets.QApplication.widgetAt(gpt)
+        return self._resolve_target_widget_id_from(w, targets)
 
     @classmethod
     def set_scope_mode(cls, mode: str):

@@ -1,18 +1,18 @@
 from __future__ import annotations
 from typing import Any, Callable, Dict, List, Optional
 from pathlib import Path
-import json
 from source.common.profiling import profiler
 from source.common.jsons import read_json_file, write_json_file
+from source.common.errors import show_warning
 from .payload import CommandPayload
 
 
 def log_warning(message: str):
-    print(f"WARNING: {message}")
+    show_warning(None, str(message), "Warning")
 
 
 def log_error(message: str):
-    print(f"ERROR: {message}")
+    show_warning(None, str(message), "Error")
 
 
 class PersistentStore:
@@ -29,10 +29,7 @@ class PersistentStore:
         self._loaded = True
         data = read_json_file(self._path, {})
         if isinstance(data, dict):
-            try:
-                self._map = {str(k): v for k, v in data.items() if isinstance(v, dict)}
-            except Exception:
-                self._map = {}
+            self._map = {str(k): v for k, v in data.items() if isinstance(v, dict)}
         else:
             self._map = {}
 
@@ -96,10 +93,7 @@ class CommandOptionStore(PersistentStore):
         cls._default_path = Path(path)
         inst = cls._instance
         if inst is not None:
-            try:
-                inst._reconfigure(cls._default_path)
-            except Exception:
-                pass
+            inst._reconfigure(cls._default_path)
         return cls()
 
     def _reconfigure(self, path: Path) -> None:
@@ -112,12 +106,15 @@ class CommandOptionStore(PersistentStore):
     @profiler.profile
     def get(self, command_id: str) -> CommandPayload:
         v = self._get_raw(command_id)
-        try:
-            if isinstance(v, dict) and "id" in v:
-                return CommandPayload(str(v["id"]), v.get("args"))
-            return CommandPayload(command_id, v if isinstance(v, dict) else {})
-        except Exception:
+        if isinstance(v, dict) and "id" in v:
+            cid = v.get("id", command_id)
+            args = v.get("args")
+            if not isinstance(args, dict):
+                args = {}
+            return CommandPayload(str(cid), args)
+        if not isinstance(v, dict):
             return CommandPayload(command_id, {})
+        return CommandPayload(command_id, v)
 
     def set(self, command_id: str, options: Dict[str, Any] | CommandPayload) -> bool:
         if isinstance(options, CommandPayload):
@@ -148,10 +145,13 @@ class ActionGroupStateManager:
     
     def _notify_observers(self, group_name: str, command_id: str):
         for observer in self._observers:
+            if not callable(observer):
+                log_warning(f"Observer is not callable: {observer}")
+                continue
             try:
                 observer(group_name, command_id)
             except Exception as e:
-                log_error(f"Observer notification failed: {e}")
+                log_error(f"Observer notification failed: {group_name} {command_id}: {e}")
     
     def register_member(self, group_name: str, command_id: str):
         if group_name not in self._group_members:
@@ -203,30 +203,33 @@ class ActionGroupStateManager:
         self._check_states[command_id] = checked
     
     def commit(self):
+        store = CommandOptionStore()
+        for group_name, command_id in self._group_states.items():
+            store.set(f"__group__{group_name}", {"selected": command_id})
+            members = self._group_members.get(group_name, [])
+            for member in members:
+                cur = store.get(member)
+                opts = getattr(cur, "args", None) if cur is not None else None
+                if not isinstance(opts, dict):
+                    opts = {}
+                opts["checked"] = (member == command_id)
+                store.set(member, opts)
+        ok = False
         try:
-            store = CommandOptionStore()
-            for group_name, command_id in self._group_states.items():
-                store.set(f"__group__{group_name}", {"selected": command_id})
-                members = self._group_members.get(group_name, [])
-                for member in members:
-                    cur = store.get(member)
-                    opts = getattr(cur, "args", None)
-                    if not isinstance(opts, dict):
-                        opts = opts.copy() if opts else {}
-                    opts["checked"] = (member == command_id)
-                    store.set(member, opts)
-            store.commit()
+            ok = bool(store.commit())
         except Exception as e:
-            log_error(f"Failed to save action group state: {e}")
+            log_error(f"Failed to commit action group state: {e}")
+            return
+        if not ok:
+            log_warning("Action group state commit returned False")
     
     def _load_state(self, group_name: str) -> Optional[str]:
-        try:
-            stored = CommandOptionStore().get(f"__group__{group_name}")
-            args = getattr(stored, "args", None)
-            if args and "selected" in args:
-                return str(args["selected"])
-        except Exception as e:
-            log_warning(f"Failed to load action group state: {e}")
+        stored = CommandOptionStore().get(f"__group__{group_name}")
+        args = getattr(stored, "args", None)
+        if isinstance(args, dict) and "selected" in args:
+            v = args.get("selected")
+            if v is not None:
+                return str(v)
         
         members = self._group_members.get(group_name)
         if not members:
@@ -234,13 +237,10 @@ class ActionGroupStateManager:
         
         store = CommandOptionStore()
         for member in members:
-            try:
-                stored = store.get(member)
-                args = getattr(stored, "args", None)
-                if args and args.get("checked"):
-                    return member
-            except Exception as e:
-                log_warning(f"Failed to check member state: {e}")
+            stored = store.get(member)
+            args = getattr(stored, "args", None)
+            if isinstance(args, dict) and args.get("checked"):
+                return member
         
         return None
     

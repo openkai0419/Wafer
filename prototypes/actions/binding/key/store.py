@@ -65,7 +65,7 @@ class KeyBindingStore:
         try:
             with open(path, "r", encoding="utf-8") as f:
                 raw = json.load(f)
-        except Exception:
+        except (OSError, ValueError, TypeError):
             return False
         if not isinstance(raw, list):
             return False

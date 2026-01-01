@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Literal
 
+from ..common.errors import show_warning
+
 CutCopy = Tuple[Literal["copy","cut"], List[Path]]  # ("copy"|"cut", [paths...])
 
 @dataclass
@@ -42,8 +44,8 @@ class ClipboardFilePaster:
                     data = bytes(md.data(k))
                     (effect,) = struct.unpack('<I', data[:4])
                     return 'cut' if effect == 2 else 'copy'
-                except Exception:
-                    pass
+                except (TypeError, ValueError, struct.error):
+                    continue
         return None
     
     def _extract_from_gnome_clipboard(self, md: QtCore.QMimeData) -> Optional[CutCopy]:
@@ -102,8 +104,8 @@ class ClipboardFilePaster:
                     p = Path(url.toLocalFile())
                     if p.exists():
                         paths.append(p)
-            except Exception:
-                pass
+            except (OSError, ValueError) as e:
+                show_warning(None, f"_parse_uri_list_text failed: {line}", exc=e)
         return paths
 
     def _parse_plain_text_paths(self, text: str) -> List[Path]:
@@ -117,8 +119,8 @@ class ClipboardFilePaster:
                 p = Path(s)
                 if p.exists():
                     paths.append(p)
-            except Exception:
-                pass
+            except (OSError, ValueError) as e:
+                show_warning(None, f"_parse_plain_text_paths failed: {s}", exc=e)
         return list(dict.fromkeys(paths))
 
     def collect_clipboard_files(self) -> Optional[CutCopy]:
@@ -148,8 +150,8 @@ class ClipboardFilePaster:
             try:
                 text = bytes(md.data('text/uri-list')).decode('utf-8', errors='replace')
                 paths = self._parse_uri_list_text(text)
-            except Exception:
-                pass
+            except Exception as e:
+                show_warning(None, "clipboard uri-list decode failed", exc=e)
         if not paths and md.hasText():
             paths = self._parse_plain_text_paths(md.text())
 
@@ -217,8 +219,8 @@ class ClipboardFilePaster:
             child_r = child.resolve(strict=False)
             parent_r = parent.resolve(strict=False)
             return (child_r == parent_r) or (parent_r in child_r.parents)
-        except Exception:
-            # 解決不能なときは安全側で False（後段で例外として拾われる）
+        except OSError as e:
+            show_warning(None, f"_is_subpath resolve failed: {child} vs {parent}", exc=e)
             return False
 
     def execute_paste(

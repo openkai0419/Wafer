@@ -2,6 +2,7 @@ import contextlib
 import json
 import sqlite3
 from ..common.funcs import normalize_path
+from ..common.helpers import try_json_loads
 from ..common.profiling import logger, profiler
 from .db_utils import retry_sqlite_connection
 
@@ -144,11 +145,6 @@ class SettingDB:
         with self._conn(read_only=True) as con:
             cur = con.execute('SELECT value FROM kv_store WHERE key = ?', (key,))
             row = cur.fetchone()
-            if row:
-                try:
-                    return json.loads(row[0])
-                except json.JSONDecodeError:
-                    logger.exception(f'Failed to decode JSON for key: {key}')
-                    return default
-            else:
+            if not row:
                 return default
+            return try_json_loads(row[0], default, on_error=lambda _e: logger.exception(f'Failed to decode JSON for key: {key}'))

@@ -25,16 +25,22 @@ class Settings:
         mouse_bindings: str | Path,
         key_bindings: str | Path,
         command_options: str | Path,
+        key_scope_mode: str | None = None,
         seed_mouse_specs=None,
         seed_key_specs=None,
     ):
         self.mouse_bindings = str(mouse_bindings)
         self.key_bindings = str(key_bindings)
         self.command_options = str(command_options)
+        self._key_scope_mode = str(key_scope_mode).strip().lower() if key_scope_mode is not None else None
         self._seed_mouse_specs = seed_mouse_specs
         self._seed_key_specs = seed_key_specs
         BindingManager.configure(self.mouse_bindings, self.key_bindings)
         CommandOptionStore.configure(self.command_options)
+        if self._key_scope_mode is not None:
+            from .binding.key.shortcutmanager import ShortcutManager
+
+            ShortcutManager.set_scope_mode(self._key_scope_mode)
 
     @classmethod
     def configure(
@@ -43,6 +49,7 @@ class Settings:
         mouse_bindings: str | Path,
         key_bindings: str | Path,
         command_options: str | Path,
+        key_scope_mode: str | None = None,
         seed_mouse_specs=None,
         seed_key_specs=None,
     ) -> "Settings":
@@ -52,12 +59,27 @@ class Settings:
             mouse_bindings=mouse_bindings,
             key_bindings=key_bindings,
             command_options=command_options,
+            key_scope_mode=key_scope_mode,
             seed_mouse_specs=seed_mouse_specs,
             seed_key_specs=seed_key_specs,
         )
         cls._instance = inst
         cls._configured = True
         return inst
+
+    @classmethod
+    def set_key_scope_mode(cls, mode: str) -> None:
+        from .binding.key.shortcutmanager import ShortcutManager
+
+        ShortcutManager.set_scope_mode(mode)
+        if cls._instance is not None:
+            cls._instance._key_scope_mode = str(mode).strip().lower()
+
+    @classmethod
+    def key_scope_mode(cls) -> str:
+        from .binding.key.shortcutmanager import ShortcutManager
+
+        return ShortcutManager.scope_mode()
 
     @classmethod
     def instance(cls) -> "Settings":
@@ -171,3 +193,10 @@ class UI:
         cmds = list(CommandRegistry().get_all_commands().keys())
         dlg = ShortcutBindingEditor(ws, cmds, parent=parent)
         dlg.exec()
+
+    @staticmethod
+    def set_block_parent(widget):
+        from .binding.key.shortcutmanager import ShortcutManager
+
+        widget.setProperty(ShortcutManager.BLOCK_PARENT_SHORTCUTS_PROP, True)
+        return widget

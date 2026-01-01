@@ -97,12 +97,18 @@ class TrayApp(QtWidgets.QSystemTrayIcon, TranslatorMixin):
         logger.info(Proc.get_subset('--collector'))
 
     def delete(self):
-        with contextlib.suppress(Exception):
+        try:
             self.zmq.stop()
-        with contextlib.suppress(Exception):
+        except Exception as e:
+            logger.debug(f'TrayApp.zmq.stop failed: {e}')
+        try:
             self.broker.stop()
-        with contextlib.suppress(Exception):
+        except Exception as e:
+            logger.debug(f'TrayApp.broker.stop failed: {e}')
+        try:
             close_publisher()
+        except Exception as e:
+            logger.debug(f'TrayApp.close_publisher failed: {e}')
 
     def quit(self):
         QtWidgets.QApplication.quit()

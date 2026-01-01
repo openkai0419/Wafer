@@ -9,6 +9,7 @@ from .store import MouseBindingStore
 from ...command.payload import format_payload_display
 from ...command.payload import CommandPayload
 from ..common import WidgetRef
+from source.common.errors import show_warning
 
 
 @dataclass(frozen=True)
@@ -138,7 +139,8 @@ class MouseBindingEditor(QtWidgets.QDialog):
         for s in self.sections:
             try:
                 key = s._current_key()
-            except Exception:
+            except Exception as e:
+                show_warning(self, "MouseBindingEditor _current_key failed", exc=e)
                 continue
             if key in self._draft:
                 self._draft.pop(key, None)
@@ -157,6 +159,8 @@ class MouseBindingEditor(QtWidgets.QDialog):
         return base
     def _clear_sections(self):
         lay = self.sections_layout
+        err = None
+        err_count = 0
         while True:
             item = lay.takeAt(0)
             if not item:
@@ -166,8 +170,9 @@ class MouseBindingEditor(QtWidgets.QDialog):
                 try:
                     w.hide()
                     w.setParent(None)
-                except Exception:
-                    pass
+                except Exception as e:
+                    err = err or e
+                    err_count += 1
                 w.deleteLater()
             sub = item.layout()
             if sub is not None:
@@ -176,9 +181,14 @@ class MouseBindingEditor(QtWidgets.QDialog):
             self.panel.update()
             self.scroll.viewport().update()
             QtWidgets.QApplication.processEvents()
-        except Exception:
-            pass
+        except Exception as e:
+            err = err or e
+            err_count += 1
+        if err is not None:
+            show_warning(self, f"MouseBindingEditor clear sections had {err_count} errors", exc=err)
     def _clear_layout_recursive(self, layout: QtWidgets.QLayout):
+        err = None
+        err_count = 0
         while True:
             it = layout.takeAt(0)
             if not it:
@@ -188,12 +198,15 @@ class MouseBindingEditor(QtWidgets.QDialog):
                 try:
                     w.hide()
                     w.setParent(None)
-                except Exception:
-                    pass
+                except Exception as e:
+                    err = err or e
+                    err_count += 1
                 w.deleteLater()
             sub = it.layout()
             if sub is not None:
                 self._clear_layout_recursive(sub)
+        if err is not None:
+            show_warning(self, f"MouseBindingEditor clear layout had {err_count} errors", exc=err)
     def _scope_targets(self) -> List[str]:
         return ["*"] + [w.name for w in self.widgets]
     def _apply(self):
@@ -216,19 +229,18 @@ class MouseBindingEditor(QtWidgets.QDialog):
         try:
             from ..manager import BindingManager
             self._store.save_to_file(BindingManager.instance().mouse_bindings_path())
-        except Exception:
-            pass
+        except Exception as e:
+            show_warning(self, "MouseBindingEditor save_to_file failed", exc=e)
         self.accept()
     def _reset_to_defaults(self):
         try:
             specs = Settings.seed_mouse_specs()
             if specs is None:
                 return
-            defs = MouseBindingStore.normalize_specs(specs)
-            self._draft = defs
+            self._draft = MouseBindingStore.normalize_specs(specs)
             self._reload_sections()
-        except Exception:
-            pass
+        except Exception as e:
+            show_warning(self, "MouseBindingEditor reset_to_defaults failed", exc=e)
     def _reset_current_action(self):
         try:
             b, c = self._current_action()
@@ -248,13 +260,10 @@ class MouseBindingEditor(QtWidgets.QDialog):
                 if k.button == b and k.click_type == c:
                     aff_keys.add(k)
             for k in aff_keys:
-                if k in defs:
-                    self._draft[k] = dict(defs[k])
-                else:
-                    self._draft[k] = {}
+                self._draft[k] = dict(defs[k]) if k in defs else {}
             self._reload_sections(skip_save=True)
-        except Exception:
-            pass
+        except Exception as e:
+            show_warning(self, "MouseBindingEditor reset_current_action failed", exc=e)
 
 class MouseSection(QtWidgets.QGroupBox):
     def __init__(self, parent: QtWidgets.QWidget, widgets: List[WidgetRef], qualifier: MouseQualifier, store: MouseBindingStore):
@@ -511,9 +520,14 @@ class MouseSection(QtWidgets.QGroupBox):
                 row.hide()
                 row.setParent(None)
                 row.deleteLater()
-        except Exception:
-            row.setParent(None)
-            row.deleteLater()
+        except Exception as e:
+            show_warning(self, f"MouseSection remove override failed: {scope}", exc=e)
+            try:
+                row.setParent(None)
+                row.deleteLater()
+            except Exception as e2:
+                show_warning(self, f"MouseSection remove override cleanup failed: {scope}", exc=e2)
+                return
         if not self.override_edits:
             self.overrides_container.setVisible(False)
         self._clear_binding(scope)
@@ -534,8 +548,8 @@ class MouseSection(QtWidgets.QGroupBox):
     def _clear_binding(self, scope: str):
         try:
             self.store.set_binding(self._current_key(), scope, None)
-        except Exception:
-            pass
+        except Exception as e:
+            show_warning(self, f"MouseSection clear binding failed: {scope}", exc=e)
     def _build_payload_with_options(self, cid: str) -> CommandPayload:
         return CommandPayload(cid, {})
     def _display(self, value: Any) -> str:

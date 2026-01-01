@@ -27,7 +27,7 @@ class CommandPayload:
     def from_json(s: str) -> "CommandPayload":
         try:
             return CommandPayload.from_dict(json.loads(s))
-        except Exception as e:
+        except (TypeError, ValueError) as e:
             raise TypeError("invalid json text") from e
 
     @staticmethod
@@ -63,10 +63,13 @@ def _ordered_arg_values(cid: str, args: Dict[str, Any]) -> List[str]:
 def format_payload_display(data: Any) -> str:
     try:
         p = CommandPayload.from_any(data)
-    except Exception:
+    except (TypeError, ValueError):
         try:
             return str(data)
-        except Exception:
+        except Exception as e:
+            from source.common.errors import show_warning
+
+            show_warning(None, "format_payload_display str() failed", exc=e)
             return ""
     cid = p.id
     args = dict(p.args or {})
@@ -77,7 +80,10 @@ def format_payload_display(data: Any) -> str:
     if meta is not None:
         try:
             name = str(getattr(meta, "display", cid) or cid)
-        except Exception:
+        except Exception as e:
+            from source.common.errors import show_warning
+
+            show_warning(None, "format_payload_display meta.display failed", exc=e)
             name = cid
     if not args:
         return name

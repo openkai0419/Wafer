@@ -51,14 +51,8 @@ class ComboParser:
             if not t:
                 return 0
             if t.startswith("SC"):
-                try:
-                    return int(t[2:])
-                except Exception:
-                    return 0
-            try:
-                return int(t)
-            except Exception:
-                return 0
+                t = t[2:]
+            return int(t) if t.isdigit() else 0
         xs = [to_sc_code(x) for x in spec]
         xs = [x for x in xs if x]
         return self._validate(xs)

@@ -52,23 +52,22 @@ class CommandBindingMixin:
         return dict(self._mouse_bindings)
 
     def drop_accept(self, event) -> bool:
-        try:
-            from ..command.core import resolve_drop_accept, invoke_compatible
-            acceptors = resolve_drop_accept(self.binding_scope())
-            if not acceptors:
-                return False
-            scope = self.binding_scope() if hasattr(self, "binding_scope") and callable(self.binding_scope) else ""
-            ctx = CommandContext.create(self, scope, source="drop.accept", event=event, key=None)
-            for acceptor in acceptors:
-                if not callable(acceptor):
-                    continue
-                values = {"ctx": ctx, "event": event, "widget": self, "scope": scope}
-                ok = bool(invoke_compatible(acceptor, values))
-                if ok:
+        from ..command.core import resolve_drop_accept, invoke_compatible
+
+        acceptors = resolve_drop_accept(self.binding_scope())
+        if not acceptors:
+            return False
+        ctx = CommandContext.create(self, self.binding_scope(), source="drop.accept", event=event, key=None)
+        values = {"ctx": ctx, "event": event, "widget": self, "scope": self.binding_scope()}
+        for acceptor in acceptors:
+            if not callable(acceptor):
+                continue
+            try:
+                if bool(invoke_compatible(acceptor, values)):
                     return True
-            return False
-        except Exception:
-            return False
+            except Exception as e:
+                show_warning(self, f"drop acceptor failed: {getattr(acceptor, '__name__', str(acceptor))}", exc=e)
+        return False
 
     def _resolve_fallback(self, key: MouseActionKey, event=None):
         cmd = self._store.resolve(self.binding_scope(), key)

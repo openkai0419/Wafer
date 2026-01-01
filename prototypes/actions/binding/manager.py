@@ -135,15 +135,11 @@ class BindingManager:
         for p in parts:
             u = str(p).upper()
             if u.startswith("SC"):
-                try:
-                    int(u[2:])
-                    continue
-                except Exception:
+                if not u[2:].isdigit():
                     return False
+                continue
             else:
-                try:
-                    int(u)
-                except Exception:
+                if not u.isdigit():
                     return False
         return True
 

@@ -3,6 +3,7 @@ import tempfile
 import time
 import psutil
 
+from ..common.errors import show_warning
 from ..common.funcs import data_path
 
 class SafeProcessLock:
@@ -34,15 +35,18 @@ class SafeProcessLock:
                             current_proc = psutil.Process(self.pid)
                             if existing_proc.exe() != current_proc.exe():
                                 return False
-                            else:
-                                return False
+                            return False
                         except psutil.Error:
-                            pass
-                    os.remove(self.lock_file)
-                except Exception:
+                            return False
                     try:
                         os.remove(self.lock_file)
-                    except Exception:
+                    except OSError:
+                        return False
+                except Exception as e:
+                    show_warning(None, f"SafeProcessLock.acquire failed: {self.lock_file}", exc=e)
+                    try:
+                        os.remove(self.lock_file)
+                    except OSError:
                         return False
                 time.sleep(0.1)
 
@@ -52,8 +56,8 @@ class SafeProcessLock:
                 with open(self.lock_file, 'r') as f:
                     if int(f.read().strip()) == self.pid:
                         os.remove(self.lock_file)
-            except Exception:
-                pass
+            except Exception as e:
+                show_warning(None, f"SafeProcessLock.release failed: {self.lock_file}", exc=e)
 
     def __enter__(self):
         if not self.acquire():

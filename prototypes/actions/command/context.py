@@ -11,7 +11,10 @@ def _global_pos_from_app() -> Any:
         from PySide6 import QtGui
         p = QtGui.QCursor.pos()
         return p if p is not None else None
-    except Exception:
+    except (ImportError, ModuleNotFoundError):
+        return None
+    except Exception as e:
+        show_warning(None, "QCursor.pos() failed", exc=e)
         return None
 
 
@@ -23,13 +26,13 @@ def _global_pos_from_event(event: Any) -> Any:
         try:
             p = gp()
             return p.toPoint() if hasattr(p, "toPoint") else p
-        except Exception:
+        except (RuntimeError, TypeError, AttributeError):
             return None
     gp = getattr(event, "globalPos", None)
     if callable(gp):
         try:
             return gp()
-        except Exception:
+        except (RuntimeError, TypeError, AttributeError):
             return None
     return None
 
@@ -42,13 +45,13 @@ def _local_pos_from_event(event: Any) -> Any:
         try:
             v = p()
             return v.toPoint() if hasattr(v, "toPoint") else v
-        except Exception:
+        except (RuntimeError, TypeError, AttributeError):
             return None
     p = getattr(event, "pos", None)
     if callable(p):
         try:
             return p()
-        except Exception:
+        except (RuntimeError, TypeError, AttributeError):
             return None
     return None
 
@@ -61,7 +64,7 @@ def _pos_from_global(widget: Any, global_pos: Any) -> Any:
         return None
     try:
         return m(global_pos)
-    except Exception:
+    except (RuntimeError, TypeError, AttributeError):
         return None
 
 
@@ -124,7 +127,8 @@ class CommandContext:
             try:
                 if hasattr(widget, "binding_scope") and callable(widget.binding_scope):
                     sc = str(widget.binding_scope() or "*")
-            except Exception:
+            except Exception as e:
+                show_warning(None, "binding_scope() failed", exc=e)
                 sc = "*"
         ctx = cls.build(widget, sc, source=source, event=event, key=key, start_pos=start_pos, start_global_pos=start_global_pos, extras=dict(extras or {}) or None)
         return cls.merge_seed(ctx, seed)
@@ -144,9 +148,11 @@ class CommandContext:
         return default
 
     def get_many(self, keys, default: Any = None) -> list:
+        if not keys:
+            return []
         try:
-            return [self.get(k, default) for k in (keys or [])]
-        except Exception:
+            return [self.get(k, default) for k in keys]
+        except TypeError:
             return []
 
     def put(self, key: str, value: Any) -> "CommandContext":
@@ -179,7 +185,7 @@ class CommandContext:
     def to_debug_dict(self) -> Dict[str, Any]:
         try:
             extras = dict(self.extras or {})
-        except Exception:
+        except (TypeError, ValueError):
             extras = {}
         return {
             "scope": self.scope,
@@ -200,8 +206,10 @@ class CommandContext:
     def print_debug(self, printer=print) -> None:
         try:
             printer(self.to_debug_dict())
-        except Exception:
+        except Exception as e:
+            show_warning(None, "CommandContext.print_debug failed", exc=e)
             try:
                 printer(self.to_debug_text())
-            except Exception:
+            except Exception as e2:
+                show_warning(None, "CommandContext.print_debug fallback failed", exc=e2)
                 return

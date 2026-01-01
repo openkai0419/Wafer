@@ -105,21 +105,23 @@ class MouseBindingStore:
         nm: Dict[MouseActionKey, Dict[str, CommandPayload]] = {}
         for e in data:
             try:
-                btn = MouseButton[e.get("button")] if isinstance(e.get("button"), str) else None
-                clk = ClickType[e.get("click")] if isinstance(e.get("click"), str) else None
+                btn_raw = e.get("button") if isinstance(e, dict) else None
+                clk_raw = e.get("click") if isinstance(e, dict) else None
+                btn = MouseButton.from_any(btn_raw) if btn_raw is not None else None
+                clk = ClickType.from_any(clk_raw) if clk_raw is not None else None
                 held_raw = e.get("held") or []
                 held = []
                 for h in held_raw:
                     try:
-                        held.append(MouseButton[h])
-                    except Exception:
+                        held.append(MouseButton.from_any(h))
+                    except (TypeError, ValueError) as ex:
                         if callable(on_error):
                             try:
                                 on_error("invalid held button", None)
-                            except Exception:
-                                show_warning(None, "MouseBindingStore on_error failed: invalid held button")
+                            except Exception as e:
+                                show_warning(None, "MouseBindingStore on_error failed: invalid held button", exc=e)
                         else:
-                            show_warning(None, "invalid held button")
+                            show_warning(None, "invalid held button", exc=ex)
                 scopes = e.get("scopes") or {}
                 if not btn or not clk or not isinstance(scopes, dict):
                     continue
@@ -136,8 +138,8 @@ class MouseBindingStore:
                             if callable(on_error):
                                 try:
                                     on_error("invalid payload json", ex)
-                                except Exception:
-                                    show_warning(None, "MouseBindingStore on_error failed: invalid payload json", exc=ex)
+                                except Exception as e:
+                                    show_warning(None, "MouseBindingStore on_error failed: invalid payload json", exc=e)
                             else:
                                 show_warning(None, "invalid payload json", exc=ex)
                     elif isinstance(cmd, dict):
@@ -147,24 +149,24 @@ class MouseBindingStore:
                             if callable(on_error):
                                 try:
                                     on_error("invalid payload dict", ex)
-                                except Exception:
-                                    show_warning(None, "MouseBindingStore on_error failed: invalid payload dict", exc=ex)
+                                except Exception as e:
+                                    show_warning(None, "MouseBindingStore on_error failed: invalid payload dict", exc=e)
                             else:
                                 show_warning(None, "invalid payload dict", exc=ex)
                     else:
                         if callable(on_error):
                             try:
                                 on_error("unsupported payload type", None)
-                            except Exception:
-                                show_warning(None, "MouseBindingStore on_error failed: unsupported payload type")
+                            except Exception as e:
+                                show_warning(None, "MouseBindingStore on_error failed: unsupported payload type", exc=e)
                         else:
                             show_warning(None, "unsupported payload type")
             except Exception as ex:
                 if callable(on_error):
                     try:
                         on_error("entry parse error", ex)
-                    except Exception:
-                        show_warning(None, "MouseBindingStore on_error failed: entry parse error", exc=ex)
+                    except Exception as e:
+                        show_warning(None, "MouseBindingStore on_error failed: entry parse error", exc=e)
                 else:
                     show_warning(None, "entry parse error", exc=ex)
         self._map = nm

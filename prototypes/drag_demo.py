@@ -1,23 +1,45 @@
 from pathlib import Path
 from .actions.facade import Classes
+from source.common.errors import show_warning
 
 
 def accept_local_existing_files(ctx) -> bool:
+    event = ctx.get("event") if hasattr(ctx, "get") else None
+    if event is None:
+        return False
+    md = getattr(event, "mimeData", None)
+    if not callable(md):
+        return False
     try:
-        event = ctx.get("event")
-        if event is None or not hasattr(event, "mimeData"):
-            return False
-        mime = event.mimeData()
-        if not mime or not mime.hasUrls():
-            return False
-        for url in mime.urls():
-            if hasattr(url, "isLocalFile") and url.isLocalFile():
-                p = Path(url.toLocalFile())
-                if p.is_file():
-                    return True
+        mime = md()
+    except Exception as e:
+        show_warning(None, "event.mimeData() failed", exc=e)
         return False
-    except Exception:
+    if not mime:
         return False
+    has_urls = getattr(mime, "hasUrls", None)
+    if not callable(has_urls) or not has_urls():
+        return False
+    urls_fn = getattr(mime, "urls", None)
+    if not callable(urls_fn):
+        return False
+    try:
+        urls = urls_fn()
+    except Exception as e:
+        show_warning(None, "mime.urls() failed", exc=e)
+        return False
+    for url in urls or []:
+        is_local = getattr(url, "isLocalFile", None)
+        to_local = getattr(url, "toLocalFile", None)
+        if callable(is_local) and is_local() and callable(to_local):
+            try:
+                p = Path(to_local())
+            except Exception as e:
+                show_warning(None, "url.toLocalFile() failed", exc=e)
+                continue
+            if p.is_file():
+                return True
+    return False
 
 
 class DragDemoDragCommands(Classes.MenuBase):

@@ -56,10 +56,10 @@ class FileChangeEmitter(FileSystemEventHandler):
         if DISABLE_MODIFY_EVENT:
             return
         if event.is_directory:
-            pass # self.folder_changed.emit(event.src_path)
+            return
         elif self._should_handle(event.src_path):
             self.file_changed.emit(event.src_path)
-            pass
+            return
 
     def on_deleted(self, event):
         if event.is_directory:
@@ -222,7 +222,7 @@ class WatchFolder:
         self.db_worker.trigger_cleanup()
 
     def cancel(self):
-        pass  # 仕様未定（必要なら Actor へキャンセルメッセージを追加）
+        return
 
     def stop(self):
         logger.debug('Stopping WatchFolder')
@@ -341,7 +341,7 @@ class WatchFolder:
         try:
             # 起床用のダミーメッセージ
             self._inbox.put_nowait(("__stop__", None))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f'_shutdown_actor wake failed: {e}')
         if getattr(self, "_actor_thread", None):
             self._actor_thread.join()

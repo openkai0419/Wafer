@@ -83,8 +83,10 @@ class CollectorProcess:
             self.folder_watcher.stop()
         if hasattr(self, 'setting_watcher') and self.setting_watcher:
             self.setting_watcher.stop()
-        with contextlib.suppress(Exception):
+        try:
             close_publisher()
+        except Exception as e:
+            logger.debug(f'close_publisher failed: {e}')
 
     def quit(self):
         self.stop()

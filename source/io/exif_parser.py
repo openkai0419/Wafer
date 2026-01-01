@@ -8,6 +8,8 @@ from typing import Any, Tuple, Dict, List
 from PIL import Image, ExifTags
 from PIL.TiffImagePlugin import IFDRational
 
+from ..common.errors import show_warning
+
 # --- 逆引きテーブル ---
 TAGS = ExifTags.TAGS
 GPSTAGS = ExifTags.GPSTAGS
@@ -66,13 +68,13 @@ def _looks_utf16(bytez: bytes) -> bool:
 def _decode_bytes_safely(b: bytes) -> str:
     try:
         return _clean_text(b.decode('utf-8'))
-    except Exception:
+    except UnicodeDecodeError:
         pass
     if _looks_utf16(b):
         for enc in ('utf-16', 'utf-16-le', 'utf-16-be'):
             try:
                 return _clean_text(b.decode(enc))
-            except Exception:
+            except UnicodeDecodeError:
                 continue
     try:
         return _clean_text(b.decode('utf-8', errors='ignore'))
@@ -84,7 +86,7 @@ def _decode_xp_value(v: Any) -> str:
     if isinstance(v, list):
         try:
             v = bytes(v)
-        except Exception:
+        except (TypeError, ValueError):
             return _clean_text(v)
     if isinstance(v, (bytes, bytearray)):
         v = bytes(v)
@@ -108,14 +110,14 @@ def _decode_user_comment(b: bytes) -> str:
         elif prefix == b'UNICODE\x00':
             try:
                 s = payload.decode('utf-16')
-            except Exception:
+            except UnicodeDecodeError:
                 s = payload.decode('utf-16-le', errors='ignore')
             return _clean_text(s)
         elif prefix == b'JIS\x00\x00\x00\x00':
             for enc in ('shift_jis', 'cp932', 'euc_jp'):
                 try:
                     return _clean_text(payload.decode(enc))
-                except Exception:
+                except UnicodeDecodeError:
                     continue
             return _clean_text(payload.decode('latin-1', errors='ignore'))
         else:
@@ -132,7 +134,7 @@ def _rational_to_float(x: Any) -> float | None:
             num, den = x
             return float(num) / float(den) if den else None
         return float(x)
-    except Exception:
+    except (TypeError, ValueError, ZeroDivisionError):
         return None
 
 
@@ -172,19 +174,19 @@ class ExifParser:
         if isinstance(v, IFDRational):
             try:
                 return _clean_text(str(float(v)))
-            except Exception:
+            except (TypeError, ValueError):
                 return _clean_text(f"{v.numerator}/{v.denominator}")
         if isinstance(v, tuple):
             try:
                 return _clean_text(", ".join(ExifParser._to_str(x) for x in v))
-            except Exception:
+            except (TypeError, ValueError, RecursionError):
                 return _clean_text(repr(v))
         if isinstance(v, list):
             try:
                 if v and isinstance(v[0], int) and 0 <= v[0] <= 255:
                     return _decode_bytes_safely(bytes(v))
-            except Exception:
-                pass
+            except (TypeError, ValueError, IndexError):
+                return _clean_text(v)
             return _clean_text(v)
         return _clean_text(v)
 
@@ -209,8 +211,8 @@ class ExifParser:
                 out["GPS/GPSLatitudeDecimal"] = lat
             if lon is not None:
                 out["GPS/GPSLongitudeDecimal"] = lon
-        except Exception:
-            pass
+        except Exception as e:
+            show_warning(None, "parse gps failed", exc=e)
         return out
 
     @classmethod
@@ -230,8 +232,8 @@ class ExifParser:
                 else:
                     key = f"Tag_{tag_id}"
                     out[key] = cls._to_str(val, tag_id=tag_id, tag_name=key)
-        except Exception:
-            pass
+        except Exception as e:
+            show_warning(None, "extract_exif failed", exc=e)
         return out
 
     @staticmethod

@@ -27,6 +27,7 @@
   - profiling.py: LoggerManager, FunctionProfiler
   - jsons.py: JSON read/write utilities
   - errors.py: error/warning helpers
+  - helpers.py: small reflective helpers
   - mutex.py: SafeProcessLock
   - funcs.py, hashes.py, classes.py: 共通関数/型/ハッシュ計算
 - db/

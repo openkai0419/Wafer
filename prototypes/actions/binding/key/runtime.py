@@ -21,11 +21,8 @@ class KeyPressState:
         k = int(key)
         if k in self.pressed:
             self.pressed.remove(k)
-        try:
-            while k in self.order:
-                self.order.remove(k)
-        except Exception:
-            pass
+        while k in self.order:
+            self.order.remove(k)
 
     def mark_fired(self, combo: Tuple[int, ...]):
         c = tuple(int(x) for x in combo)
@@ -133,31 +130,20 @@ class KeyNameResolver:
             'PgDown': 'PageDown',
         }
         self._allowed_keys = set()
-        
-        # 文字キー (A-Z)
         for i in range(ord('A'), ord('Z') + 1):
             self._allowed_keys.add(getattr(QtCore.Qt.Key, f'Key_{chr(i)}'))
-        
-        # 数字キー (0-9)
         for i in range(10):
             self._allowed_keys.add(getattr(QtCore.Qt.Key, f'Key_{i}'))
-        
-        # ファンクションキー (F1-F24)
         for i in range(1, 25):
-            try:
-                self._allowed_keys.add(getattr(QtCore.Qt.Key, f'Key_F{i}'))
-            except AttributeError:
-                pass
-        
-        # 修飾キー（組み合わせで使用）
+            k = getattr(QtCore.Qt.Key, f'Key_F{i}', None)
+            if k is not None:
+                self._allowed_keys.add(k)
         self._allowed_keys.update({
             QtCore.Qt.Key.Key_Shift,
             QtCore.Qt.Key.Key_Control,
             QtCore.Qt.Key.Key_Alt,
             QtCore.Qt.Key.Key_Meta,
         })
-        
-        # ナビゲーションキー
         self._allowed_keys.update({
             QtCore.Qt.Key.Key_Up,
             QtCore.Qt.Key.Key_Down,
@@ -170,8 +156,6 @@ class KeyNameResolver:
             QtCore.Qt.Key.Key_Insert,
             QtCore.Qt.Key.Key_Delete,
         })
-        
-        # 特殊キー
         self._allowed_keys.update({
             QtCore.Qt.Key.Key_Space,
             QtCore.Qt.Key.Key_Tab,
@@ -180,8 +164,6 @@ class KeyNameResolver:
             QtCore.Qt.Key.Key_Backspace,
             QtCore.Qt.Key.Key_Escape,
         })
-        
-        # 記号キー（よく使われるもの）
         symbol_keys = [
             'Minus', 'Equal', 'BracketLeft', 'BracketRight', 'Backslash',
             'Semicolon', 'Apostrophe', 'Comma', 'Period', 'Slash', 'Plus',
@@ -191,10 +173,9 @@ class KeyNameResolver:
             'Question', 'Exclam', 'Colon', 'Less', 'Greater'
         ]
         for sym in symbol_keys:
-            try:
-                self._allowed_keys.add(getattr(QtCore.Qt.Key, f'Key_{sym}'))
-            except AttributeError:
-                pass
+            k = getattr(QtCore.Qt.Key, f'Key_{sym}', None)
+            if k is not None:
+                self._allowed_keys.add(k)
         self._pretty_names = {
             'Control': 'Ctrl',
             'Meta': 'Win',

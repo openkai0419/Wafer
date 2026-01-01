@@ -39,8 +39,9 @@ def cleanup_old_logs_safe(log_dir=LOG_PATH, keep_latest=10):
                 except Exception as e:
                     print(f'Failed to delete {f}: {e}')
         return deleted
-    except:
-        pass
+    except Exception as e:
+        print(f'cleanup_old_logs_safe failed: {e}', file=sys.stderr)
+        return 0
 
 class LoggerManager:
     _instance = None
@@ -156,8 +157,8 @@ def create_exception_hook(logger):
         try:
             if QtWidgets.QApplication.instance():
                 QtWidgets.QMessageBox.critical(None, 'Unexpected Error', 'An unexpected error occurred. Please check the log file.')
-        except:
-            pass
+        except Exception as e:
+            print(f'Failed to show error dialog: {e}', file=sys.stderr)
         sys.exit(1)
     return exception_hook
 

@@ -8,6 +8,7 @@ from .exif_parser import ExifParser
 
 from ..common.profiling import logger
 from ..common.hashes import fast_sig_hash
+from ..common.helpers import call_int0, to_int
 from .manager import BaseLoader, BaseReader
 
 class ImageReader(BaseReader):
@@ -24,10 +25,7 @@ class ImageReader(BaseReader):
                 orientation = 1
                 exif_for_orient = img.getexif()
                 if exif_for_orient:
-                    try:
-                        orientation = int(exif_for_orient.get(274, 1))
-                    except Exception:
-                        orientation = 1
+                    orientation = to_int(exif_for_orient.get(274, 1), 1)
                 if orientation in (5, 6, 7, 8):
                     width, height = height, width
                 aspect = (width / height) if height else 1.0
@@ -118,20 +116,15 @@ class ImageLoader(BaseLoader):
             return flags
         if ext in ('.jpg', '.jpeg'):
             # 長辺から粗い縮小率を選ぶ
-            try:
-                # ファイルヘッダから大きさを取れないので、いったん通常デコードしてしまうのは本末転倒。
-                # そこで目安としてターゲットが小さければ強めに縮小。
-                longest = max(size.width(), size.height())
-                if longest <= 256:
-                    flags = cv2.IMREAD_REDUCED_COLOR_8
-                elif longest <= 512:
-                    flags = cv2.IMREAD_REDUCED_COLOR_4
-                elif longest <= 1024:
-                    flags = cv2.IMREAD_REDUCED_COLOR_2
-                else:
-                    flags = cv2.IMREAD_COLOR  # ほぼ原寸
-            except Exception:
-                pass
+            longest = max(call_int0(size, 'width', 0), call_int0(size, 'height', 0))
+            if longest <= 256:
+                flags = cv2.IMREAD_REDUCED_COLOR_8
+            elif longest <= 512:
+                flags = cv2.IMREAD_REDUCED_COLOR_4
+            elif longest <= 1024:
+                flags = cv2.IMREAD_REDUCED_COLOR_2
+            else:
+                flags = cv2.IMREAD_COLOR
         return flags
 
     # --- 変更点3: QImageコピー削減（numpyバッファを保持） ---
@@ -251,7 +244,7 @@ class ImageLoader(BaseLoader):
                 img = self._qt_read(path, size, keep_aspect=(ext == '.gif'))
                 if img is not None:
                     return img
-            except Exception:
-                pass
+            except Exception as qe:
+                logger.warning(f'[ImageLoader] Qt fallback failed: {path} ({qe})')
             logger.warning(f'[ImageLoader] Failed to load image: {path} ({e})')
             return None

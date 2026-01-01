@@ -27,7 +27,7 @@ class ClickType(Enum):
             s = aliases.get(s, s)
             try:
                 return ClickType[s]
-            except Exception as e:
+            except KeyError as e:
                 raise ValueError(f"invalid ClickType: {v}") from e
         raise TypeError("ClickType must be ClickType or str")
 
@@ -57,7 +57,7 @@ class MouseButton(Enum):
             s = aliases.get(s, s)
             try:
                 return MouseButton[s]
-            except Exception as e:
+            except KeyError as e:
                 raise ValueError(f"invalid MouseButton: {v}") from e
         raise TypeError("MouseButton must be MouseButton or str")
 
@@ -85,7 +85,7 @@ class ModifierKey(Enum):
             s = aliases.get(s, s)
             try:
                 return ModifierKey[s]
-            except Exception as e:
+            except KeyError as e:
                 raise ValueError(f"invalid ModifierKey: {v}") from e
         raise TypeError("ModifierKey must be ModifierKey or str")
 
@@ -252,18 +252,8 @@ class MouseActionKey:
         return self.button == other.button and self.click_type == other.click_type and (self.held_buttons == other.held_buttons) and (self.modifiers == other.modifiers)
 
     def __repr__(self):
-        try:
-            held_list = list(self.held_buttons)
-            held_list.sort(key=lambda b: b.value)
-            held = '+'.join((btn.name for btn in held_list))
-        except Exception as e:
-            held = f'[ERROR sorting held_buttons: {e}]'
-        try:
-            mods_list = list(self.modifiers)
-            mods_list.sort(key=lambda m: m.value)
-            mods = '+'.join((m.name for m in mods_list))
-        except Exception as e:
-            mods = f'[ERROR sorting modifiers: {e}]'
+        held = '+'.join((btn.name for btn in sorted(self.held_buttons, key=lambda b: b.name)))
+        mods = '+'.join((m.name for m in sorted(self.modifiers, key=lambda m: m.name)))
         prefix = '+'.join([p for p in (mods, held) if p])
         return f"{'+'.join([prefix, self.button.name])} {self.click_type.name}" if prefix else f'{self.button.name} {self.click_type.name}'
 
@@ -335,11 +325,8 @@ class MouseStateManager:
     def add_suppress_group(self, buttons):
         if not buttons:
             return
-        try:
-            for b in buttons:
-                self._suppress_buttons.add(b)
-        except Exception:
-            return
+        for b in buttons:
+            self._suppress_buttons.add(b)
 
     def clear_suppress_groups(self):
         self._suppress_buttons.clear()
@@ -397,10 +384,9 @@ class MouseEventManager:
             try:
                 result = self._resolver(key, *args, **kwargs)
                 handled = bool(result)
-            except Exception:
+            except Exception as e:
+                show_warning(None, f"Mouse resolver failed: {key}", exc=e)
                 handled = False
-        else:
-            print(f"[DEBUG] No action or resolver found for key={key}")
         if handled:
             if key.click_type == ClickType.SINGLE and key.held_buttons:
                 self._state.add_suppress_group(list(key.held_buttons))
@@ -441,13 +427,15 @@ class MouseEventManager:
         if callable(m):
             try:
                 return m()
-            except Exception:
+            except Exception as e:
+                show_warning(None, "event.modifiers() failed", exc=e)
                 return QtCore.Qt.NoModifier
         km = getattr(event, "keyboardModifiers", None)
         if callable(km):
             try:
                 return km()
-            except Exception:
+            except Exception as e:
+                show_warning(None, "event.keyboardModifiers() failed", exc=e)
                 return QtCore.Qt.NoModifier
         return QtCore.Qt.NoModifier
 
@@ -463,7 +451,8 @@ class MouseEventManager:
                 r.append(ModifierKey.ALT)
             if modifiers & QtCore.Qt.MetaModifier:
                 r.append(ModifierKey.META)
-        except Exception:
+        except Exception as e:
+            show_warning(None, "MouseEventManager.get_modifiers failed", exc=e)
             return tuple()
         return tuple(r)
 
@@ -542,7 +531,8 @@ class MouseEventDispatcher(QtCore.QObject):
             from ..manager import BindingManager
             gpt = self._get_global_pos(event)
             return BindingManager.instance().find_binding_widget_at(gpt)
-        except Exception:
+        except Exception as e:
+            show_warning(None, "find_binding_widget_at failed", exc=e)
             return None
 
     def _handle_mouse_release(self, event):
@@ -552,13 +542,10 @@ class MouseEventDispatcher(QtCore.QObject):
         ctx = self._state.get_internal_drag_context(self._target)
         if ctx is not None:
             if not ctx.cancelled:
-                try:
-                    released = MouseEventManager.map_qt_button(event.button())
-                    held = MouseEventManager.get_held_buttons(event.buttons(), exclude=released)
-                    if held:
-                        self._state.add_suppress_group(held)
-                except Exception:
-                    pass
+                released = MouseEventManager.map_qt_button(event.button())
+                held = MouseEventManager.get_held_buttons(event.buttons(), exclude=released)
+                if held:
+                    self._state.add_suppress_group(held)
                 ctx.on_end(event)
             self._state.end_internal_drag(self._target)
             self._state.clear_press_position(self._target)
@@ -643,19 +630,19 @@ class MouseEventDispatcher(QtCore.QObject):
             m = MouseEventManager.get_modifiers(MouseEventManager._qt_modifiers_for_event(ev))
             k = MouseActionKey(MouseButton.NONE, ClickType.DROP, (), m)
             payload = None
-            try:
-                if hasattr(self._target, "get_mouse_bindings"):
+            if hasattr(self._target, "get_mouse_bindings") and callable(getattr(self._target, "get_mouse_bindings")):
+                try:
                     payload = self._target.get_mouse_bindings().get(k)
-            except Exception:
-                payload = None
+                except Exception as e:
+                    show_warning(self._target, "get_mouse_bindings() failed", exc=e)
             if payload is None:
                 try:
                     from .store import MouseBindingStore
                     store = MouseBindingStore()
                     scope = self._target.binding_scope() if hasattr(self._target, "binding_scope") else "*"
                     payload = store.resolve(scope, k)
-                except Exception:
-                    payload = None
+                except Exception as e:
+                    show_warning(self._target, "MouseBindingStore.resolve failed", exc=e)
             return payload, k
 
         payload, _ = _resolve_drop(event)
@@ -664,7 +651,8 @@ class MouseEventDispatcher(QtCore.QObject):
             try:
                 ctx = ExternalDropDynamicContext(self._target, CommandRegistry(), _resolve_drop)
                 ctx.on_enter(event)
-            except Exception:
+            except Exception as e:
+                show_warning(self._target, "ExternalDropDynamicContext.on_enter failed", exc=e)
                 ctx = None
         if ctx:
             self._state.start_external_drag(self._target, ctx)

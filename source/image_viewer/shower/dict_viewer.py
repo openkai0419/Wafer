@@ -60,6 +60,7 @@ class DictRowWidget(QtWidgets.QFrame):
         self._key_names = dict(key_names or {})
         self._value_formatters = dict(value_formatters or {})
         self._compact = compact
+        self._formatter_failed_keys = set()
 
         self.setObjectName("dictRow")
         self.setFrameShape(QtWidgets.QFrame.NoFrame)
@@ -161,8 +162,10 @@ class DictRowWidget(QtWidgets.QFrame):
             try:
                 s = str(self._value_formatters[key](value))
                 return _truncate_text(s)
-            except Exception:
-                pass
+            except Exception as e:
+                if key not in self._formatter_failed_keys:
+                    self._formatter_failed_keys.add(key)
+                    logger.debug(f'DictRowWidget formatter failed: {key} ({e})')
 
         if value is None:
             return "—"

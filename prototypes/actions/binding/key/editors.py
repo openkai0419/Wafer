@@ -2,6 +2,7 @@ from typing import Dict, List, Any, Tuple
 from pathlib import Path
 from PySide6 import QtCore, QtGui, QtWidgets
 from source.common.funcs import uipx
+from source.common.errors import show_warning
 from ...facade import Settings, UI
 from ...command.payload import format_payload_display
 from ...command.payload import CommandPayload
@@ -18,11 +19,8 @@ class _SelectableList(QtWidgets.QListWidget):
         idx = self.indexAt(e.pos())
         if not idx.isValid():
             super().mousePressEvent(e)
-            try:
-                if self.count() > 0:
-                    self.setCurrentRow(0)
-            except Exception:
-                pass
+            if self.count() > 0:
+                self.setCurrentRow(0)
             return
         super().mousePressEvent(e)
 
@@ -103,13 +101,6 @@ class KeyBindingEditor(QtWidgets.QDialog):
         for seq, scopes in self._draft.items():
             if isinstance(scopes, dict) and "*" in scopes and isinstance(scopes["*"], CommandPayload):
                 seqs.append(seq)
-        for w in self.widgets:
-            try:
-                b = w.widget.get_shortcut_bindings()
-                for s in b.keys():
-                    pass
-            except Exception:
-                pass
         for seq in seqs:
             mod = seq.modifier or "(なし)"
             key = seq.key
@@ -143,20 +134,16 @@ class KeyBindingEditor(QtWidgets.QDialog):
                 items_main.append(k)
         for k in items_main:
             self.list_main.addItem(k)
-        try:
+        if self.list_mods.count() > 0:
             self.list_mods.setCurrentRow(0)
+        if self.list_main.count() > 0:
             self.list_main.setCurrentRow(0)
-        except Exception:
-            pass
 
     def _clear_initial_selection(self):
-        try:
-            if self.list_mods.count() > 0:
-                self.list_mods.setCurrentRow(0)
-            if self.list_main.count() > 0:
-                self.list_main.setCurrentRow(0)
-        except Exception:
-            pass
+        if self.list_mods.count() > 0:
+            self.list_mods.setCurrentRow(0)
+        if self.list_main.count() > 0:
+            self.list_main.setCurrentRow(0)
         self._refresh_shortcuts()
 
     def _split_seq(self, seq: KeySequence) -> Tuple[str, str]:
@@ -264,15 +251,14 @@ class KeyBindingEditor(QtWidgets.QDialog):
                 target = scopes.get(wref.name) or scopes.get("*")
                 if target:
                     bindings[seq] = target
-            try:
-                wref.widget.set_shortcut_bindings(bindings)
-            except Exception:
-                pass
+            w = wref.widget
+            if hasattr(w, "set_shortcut_bindings") and callable(getattr(w, "set_shortcut_bindings")):
+                w.set_shortcut_bindings(bindings)
+        from ..manager import BindingManager
         try:
-            from ..manager import BindingManager
             self._store.save_to_file(BindingManager.instance().key_bindings_path())
-        except Exception:
-            pass
+        except Exception as e:
+            show_warning(self, "save key bindings failed", exc=e)
         self.accept()
 
     def _display(self, value: Any) -> str:
@@ -507,10 +493,7 @@ class _TwoKeyCaptureDialog(QtWidgets.QDialog):
         super().changeEvent(event)
 
     def done(self, r: int) -> None:
-        try:
-            self._mgr.remove_key_listeners(self)
-        except Exception:
-            pass
+        self._mgr.remove_key_listeners(self)
         super().done(r)
 
 class _KeySequenceSection(QtWidgets.QGroupBox):
@@ -709,9 +692,14 @@ class _KeySequenceSection(QtWidgets.QGroupBox):
                 row.hide()
                 row.setParent(None)
                 row.deleteLater()
-        except Exception:
-            row.setParent(None)
-            row.deleteLater()
+        except Exception as e:
+            show_warning(self, f"KeyBindingEditor remove override failed: {scope}", exc=e)
+            try:
+                row.setParent(None)
+                row.deleteLater()
+            except Exception as e2:
+                show_warning(self, f"KeyBindingEditor remove override cleanup failed: {scope}", exc=e2)
+                return
         self._payloads.pop(scope, None)
         if not self.override_edits:
             self.overrides_container.setVisible(False)

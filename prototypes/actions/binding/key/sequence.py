@@ -81,7 +81,7 @@ class KeySpecCatalog:
         if k.startswith("F") and k[1:].isdigit():
             try:
                 return (2, int(k[1:]), k)
-            except Exception:
+            except ValueError:
                 return (2, 9999, k)
         if len(k) == 1 and ("0" <= k <= "9"):
             return (4, int(k), k)

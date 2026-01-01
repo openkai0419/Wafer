@@ -1,5 +1,6 @@
 import threading
 from ..common.profiling import logger, profiler
+from ..common.helpers import call0
 from ..zmq.zmq import Role, ZMQNode
 _node = None
 _node_lock = threading.Lock()
@@ -23,7 +24,7 @@ def close_publisher():
     with _node_lock:
         if _node is not None:
             try:
-                _node.stop()
+                call0(_node, 'stop')
             except Exception as e:
                 logger.warning(f'[node close failed] {e}')
             finally:

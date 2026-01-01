@@ -4,6 +4,7 @@ from pathlib import Path
 import weakref
 from PySide6 import QtCore
 from ..common.funcs import data_path
+from ..common.helpers import try_call0, try_cast, try_json_loads
 
 class AsyncSaver(QtCore.QObject):
     finished = QtCore.Signal()
@@ -37,7 +38,7 @@ class AsyncSaver(QtCore.QObject):
             if isinstance(value, (dict, list, tuple, set)):
                 return json.dumps(value)
             return value
-        except Exception:
+        except (TypeError, ValueError):
             return str(value)
 
 class SettingManager(QtCore.QObject):
@@ -73,15 +74,10 @@ class SettingManager(QtCore.QObject):
         if value is None:
             return default
         if value_type is not None:
-            try:
-                return value_type(value)
-            except Exception:
-                return default
+            return try_cast(value_type, value, default)
         if isinstance(value, str):
-            try:
-                return json.loads(value)
-            except Exception:
-                return value
+            v = try_json_loads(value, None)
+            return value if v is None else v
         return value
 
     def save_important(self, key, value):
@@ -112,19 +108,13 @@ class SettingManager(QtCore.QObject):
         self.settings.clear()
 
     def __del__(self):
-        try:
-            self.close()
-        except Exception:
-            pass
+        try_call0(self, 'close', None, 'SettingManager.__del__ close failed')
 
 def _shutdown_setting_manager(ref):
     mgr = ref()
     if mgr is None:
         return
-    try:
-        mgr.close()
-    except Exception:
-        pass
+    try_call0(mgr, 'close', None, 'SettingManager shutdown close failed')
 
 main_setting = SettingManager()
 atexit.register(_shutdown_setting_manager, weakref.ref(main_setting))

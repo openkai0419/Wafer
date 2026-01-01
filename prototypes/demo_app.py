@@ -56,9 +56,9 @@ class MainWindow(QtWidgets.QMainWindow, Classes.UIMixin):
         
         self.setCentralWidget(cw)
 
-        self.line = TestLineEdit("LineEdit 1", self)
+        self.line = UI.set_block_parent(TestLineEdit("LineEdit 1", self))
         c.addWidget(self.line, 0)
-        self.line2 = TestLineEdit("LineEdit 2", self)
+        self.line2 = UI.set_block_parent(TestLineEdit("LineEdit 2", self))
         c.addWidget(self.line2, 0)
         self._setup_menu_bar()
 

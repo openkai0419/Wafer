@@ -5,7 +5,7 @@ import threading
 import time
 import uuid
 from enum import Enum
-from queue import Empty, Queue
+from queue import Empty, Full, Queue
 from typing import Callable, Literal, Sequence
 import zmq
 from ..common.profiling import logger
@@ -32,30 +32,44 @@ def _to_b(x):
     return x if isinstance(x, (bytes, bytearray)) else str(x).encode('utf-8')
 
 def _tune(sock):
-    with contextlib.suppress(Exception):
+    try:
         sock.setsockopt(zmq.SNDTIMEO, ZMQ_SNDTIMEO_MS)
-    with contextlib.suppress(Exception):
+    except Exception as e:
+        logger.debug('setsockopt SNDTIMEO failed: %s', e)
+    try:
         sock.setsockopt(zmq.RCVTIMEO, ZMQ_RCVTIMEO_MS)
+    except Exception as e:
+        logger.debug('setsockopt RCVTIMEO failed: %s', e)
 
 def _close_linger0(sock):
-    with contextlib.suppress(Exception):
+    try:
         sock.setsockopt(zmq.LINGER, 0)
-    with contextlib.suppress(Exception):
+    except Exception as e:
+        logger.debug('setsockopt LINGER failed: %s', e)
+    try:
         sock.close()
+    except Exception as e:
+        logger.debug('socket close failed: %s', e)
 
 def _try_put(q, item):
     try:
         q.put_nowait(item)
         return True
-    except Exception:
+    except Full:
         with contextlib.suppress(Empty):
             q.get_nowait()
         try:
             q.put_nowait(item)
             return True
-        except Exception:
+        except Full:
             logger.info('queue full: drop message')
             return False
+        except Exception as e:
+            logger.info('queue put failed: %s', e)
+            return False
+    except Exception as e:
+        logger.info('queue put failed: %s', e)
+        return False
 
 def _drain(q, sentinel):
     out, seen = ([], False)
@@ -210,8 +224,10 @@ class ZMQBroker:
         self.ctx = zmq.Context.instance()
         self.router = self.ctx.socket(zmq.ROUTER)
         _tune(self.router)
-        with contextlib.suppress(Exception):
+        try:
             self.router.setsockopt(zmq.ROUTER_MANDATORY, 1)
+        except Exception as e:
+            logger.debug('setsockopt ROUTER_MANDATORY failed: %s', e)
         saved = read_port()
         if bind_port is None:
             port = parse_port(saved) if saved else DEFAULT_PORT
@@ -403,15 +419,21 @@ class ZMQNode:
         self.ctx = zmq.Context.instance()
         self.dealer = self.ctx.socket(zmq.DEALER)
         _tune(self.dealer)
-        with contextlib.suppress(Exception):
+        try:
             self.dealer.setsockopt(zmq.IMMEDIATE, 1)
-        with contextlib.suppress(Exception):
+        except Exception as e:
+            logger.debug('setsockopt IMMEDIATE failed: %s', e)
+        try:
             self.dealer.setsockopt(zmq.TCP_NODELAY, 1)
+        except Exception as e:
+            logger.debug('setsockopt TCP_NODELAY failed: %s', e)
         self.dealer.setsockopt(zmq.IDENTITY, self.node_id.encode('utf-8'))
         port = read_port() or DEFAULT_PORT
         self._addr = f'tcp://localhost:{port}'
-        with contextlib.suppress(Exception):
+        try:
             self.dealer.connect(self._addr)
+        except Exception as e:
+            logger.debug('dealer connect failed: %s', e)
         self._out_q = Queue(maxsize=NODE_SEND_QUEUE_MAXSIZE)
         self._sentinel = object()
         self._pending = {}
@@ -451,7 +473,7 @@ class ZMQNode:
                     self._handle_recv(frames_b)
                     did_work = True
             batch, sentinel = _drain(self._out_q, self._sentinel)
-            for data in batch:
+            for i, data in enumerate(batch):
                 try:
                     if isinstance(data, tuple):
                         self.dealer.send_multipart(list(data), copy=False)
@@ -459,7 +481,10 @@ class ZMQNode:
                         self.dealer.send(data, copy=False)
                     did_work = True
                 except zmq.Again:
-                    pass
+                    _try_put(self._out_q, data)
+                    for rest in batch[i + 1:]:
+                        _try_put(self._out_q, rest)
+                    break
                 except Exception as e:
                     logger.info('node: send error %s', e)
             if sentinel:
@@ -486,8 +511,10 @@ class ZMQNode:
         if tp not in (b'all', self.role.value.encode('utf-8')):
             return
         if self.on_message:
-            with contextlib.suppress(Exception):
+            try:
                 self.on_message(env)
+            except Exception:
+                logger.exception('on_message failed')
 
     def _heartbeat_loop(self):
         wire = f'heartbeat:{self.role.value}:{self.node_id}:{self.app_name}'

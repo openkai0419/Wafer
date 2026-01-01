@@ -1,4 +1,6 @@
-from .actions.command.payload import ScopedPayloads
+from .actions.facade import Classes
+
+ScopedPayloads = Classes.BindPayloads
 
 KeySpec = str | int
 KeyChordSpec = tuple[KeySpec, ...]
@@ -6,52 +8,52 @@ MouseActionSpec = tuple[object, ...]
 
 def get_all_mouse_bindings() -> dict[MouseActionSpec, ScopedPayloads]:
     return {
-        ("RIGHT", "SINGLE", ()): ScopedPayloads({
+        ("RIGHT", "SINGLE", ()): Classes.BindPayloads({
             "*": {"id": "showContextMenuHere", "args": {}}
         }),
-        ("LEFT", "SINGLE", ()): ScopedPayloads({
+        ("LEFT", "SINGLE", ()): Classes.BindPayloads({
             "*": {"id": "hello", "args": {}},
             "Widget A": {"id": "file.0", "args": {}},
             "Widget B": {"id": "file.1", "args": {}},
         }),
-        ("LEFT", "SINGLE", ("RIGHT",)): ScopedPayloads({
+        ("LEFT", "SINGLE", ("RIGHT",)): Classes.BindPayloads({
             "*": {"id": "path.0", "args": {}},
             "Widget A": {"id": "echo", "args": {}},
             "Widget B": {"id": "count", "args": {}},
         }),
-        ("LEFT", "SINGLE", ("MIDDLE",)): ScopedPayloads({
+        ("LEFT", "SINGLE", ("MIDDLE",)): Classes.BindPayloads({
             "Widget A": {"id": "echo", "args": {"text": "echoe", "repeat": 7}},
             "Widget B": {"id": "count", "args": {"value": 3, "step": 8}},
         }),
-        ("X1", "SINGLE", ()): ScopedPayloads({
+        ("X1", "SINGLE", ()): Classes.BindPayloads({
             "*": {"id": "toggleVerbose", "args": {}}
         }),
-        ("X2", "SINGLE", ()): ScopedPayloads({
+        ("X2", "SINGLE", ()): Classes.BindPayloads({
             "*": {"id": "mode", "args": {"mode": "C"}}
         }),
-        ("LEFT", "DOUBLE", ()): ScopedPayloads({
+        ("LEFT", "DOUBLE", ()): Classes.BindPayloads({
             "*": {"id": "hello", "args": {}}
         }),
-        ("RIGHT", "SINGLE", ("LEFT",)): ScopedPayloads({
+        ("RIGHT", "SINGLE", ("LEFT",)): Classes.BindPayloads({
             "*": {"id": "showAllMenu", "args": {}}
         }),
-        ("MIDDLE", "SINGLE", ("LEFT",)): ScopedPayloads({
+        ("MIDDLE", "SINGLE", ("LEFT",)): Classes.BindPayloads({
             "*": {"id": "sortBySize", "args": {}}
         }),
-        ("MIDDLE", "SINGLE", ("RIGHT",)): ScopedPayloads({
+        ("MIDDLE", "SINGLE", ("RIGHT",)): Classes.BindPayloads({
             "*": {"id": "sortByName", "args": {}}
         }),
-        ("MIDDLE", "SINGLE", ()): ScopedPayloads({
+        ("MIDDLE", "SINGLE", ()): Classes.BindPayloads({
             "*": {"id": "cycleSortOrder", "args": {}}
         }),
-        ("LEFT", "DRAG_START", ()): ScopedPayloads({
+        ("LEFT", "DRAG_START", ()): Classes.BindPayloads({
             "Widget A": {"id": "rectSelection", "args": {}},
             "Drag Demo Widget": {"id": "widgetDrag", "args": {}},
         }),
-        ("RIGHT", "DRAG_START", ()): ScopedPayloads({
+        ("RIGHT", "DRAG_START", ()): Classes.BindPayloads({
             "Widget A": {"id": "dragScroll", "args": {}}
         }),
-        ("NONE", "DROP", ()): ScopedPayloads({
+        ("NONE", "DROP", ()): Classes.BindPayloads({
             "Widget A": {"id": "dropFiles", "args": {}},
             "Widget B": {"id": "simpleFileDrop", "args": {}},
             "Drag Demo Widget": {"id": "filePathDrop", "args": {}},
@@ -60,25 +62,25 @@ def get_all_mouse_bindings() -> dict[MouseActionSpec, ScopedPayloads]:
 
 def get_all_key_bindings() -> dict[KeyChordSpec, ScopedPayloads]:
     return {
-        ("H",): ScopedPayloads({
+        ("H",): Classes.BindPayloads({
             "*": {"id": "hello", "args": {}}
         }),
-        ("T",): ScopedPayloads({
+        ("T",): Classes.BindPayloads({
             "*": {"id": "time", "args": {}}
         }),
-        ("Ctrl", "W"): ScopedPayloads({
+        ("Ctrl", "W"): Classes.BindPayloads({
             "*": {"id": "bindings", "args": {}}
         }),
-        ("A",): ScopedPayloads({
+        ("A",): Classes.BindPayloads({
             "*": {"id": "showContextMenuHere", "args": {}}
         }),
-        ("E",): ScopedPayloads({
+        ("E",): Classes.BindPayloads({
             "*": {"id": "showContextMenuHere", "args": {}}
         }),
-        ("Control", "Z"): ScopedPayloads({
+        ("Control", "Z"): Classes.BindPayloads({
             "*": {"id": "hello", "args": {}}
         }),
-        ("W",): ScopedPayloads({
+        ("W",): Classes.BindPayloads({
             "*": {"id": "file.0", "args": {}},
             "Widget A": {"id": "file.1", "args": {}},
             "Widget B": {"id": "file.2", "args": {}},

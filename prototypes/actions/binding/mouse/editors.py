@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from PySide6 import QtCore, QtGui, QtWidgets
 from source.common.funcs import uipx
 from .mouseeventmanager import MouseActionKey, ClickType, MouseButton, ModifierKey
-from ...facade import get_builder
+from ...facade import Settings, UI
 from .store import MouseBindingStore
 from ...command.payload import format_payload_display
 from ...command.payload import CommandPayload
@@ -221,8 +221,10 @@ class MouseBindingEditor(QtWidgets.QDialog):
         self.accept()
     def _reset_to_defaults(self):
         try:
-            from ...defaults import get_all_mouse_bindings
-            defs = MouseBindingStore.normalize_specs(get_all_mouse_bindings())
+            specs = Settings.seed_mouse_specs()
+            if specs is None:
+                return
+            defs = MouseBindingStore.normalize_specs(specs)
             self._draft = defs
             self._reload_sections()
         except Exception:
@@ -230,8 +232,10 @@ class MouseBindingEditor(QtWidgets.QDialog):
     def _reset_current_action(self):
         try:
             b, c = self._current_action()
-            from ...defaults import get_all_mouse_bindings
-            defs = MouseBindingStore.normalize_specs(get_all_mouse_bindings())
+            specs = Settings.seed_mouse_specs()
+            if specs is None:
+                return
+            defs = MouseBindingStore.normalize_specs(specs)
             cur = self._store.get_all()
             aff_keys = set()
             for k in cur.keys():
@@ -354,7 +358,7 @@ class MouseSection(QtWidgets.QGroupBox):
         elif self._is_drop_type():
             self._show_category_menu(btn, scope, "drop")
         else:
-            builder = get_builder(self)
+            builder = UI.get_builder(self)
             def _prep(m: QtWidgets.QMenu, sc=scope):
                 act_none = QtGui.QAction("なし(解除)", m)
                 act_none.triggered.connect(lambda _, s=sc: self._on_select(s, None))

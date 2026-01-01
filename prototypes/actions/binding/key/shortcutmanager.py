@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Tuple, Union, Set, FrozenSet, Callable, Iterable, Optional
+from typing import Any, Dict, List, Tuple, Union, Set, Callable, Iterable, Optional, cast
 from weakref import WeakValueDictionary
 from PySide6 import QtCore, QtGui, QtWidgets
 from source.common.profiling import profiler
@@ -7,30 +7,30 @@ from ...command.context import CommandContext
 from ...command.payload import CommandPayload
 from .sequence import KeySequence
 from .runtime import KeyNameResolver, KeySpec
-from .runtime import KeyPressState, RecentEventDeduper, ScanCodeMapper, KeyListenerRegistry
-from .combo import ComboParser, ComboMatcher
+from .runtime import KeyListenerRegistry
+from .combo import ComboParser
+from .chord_state import KeyChordStateManager, KeyEventStamp
 
 KeyChordSpec = Union[Tuple[KeySpec, ...], List[KeySpec]]
+KeyCombo = Tuple[int, ...]
 
 
 class ShortcutManager(QtCore.QObject):
     _global: Optional['ShortcutManager'] = None
     _app_hooked_class: bool = False
-    _scope_mode: str = "cursor"  # "focus" | "cursor"
+    _scope_mode: str = "cursor"
     MAX_COMBO_LEN = 2
     MAX_RECENT_EVENTS = 128
     def __init__(self):
         super().__init__()
-        self._keymap: Dict[int, Dict[FrozenSet[int], CommandPayload]] = {}
-        self._states: Dict[int, KeyPressState] = {}
+        self._keymap: Dict[int, Dict[KeyCombo, CommandPayload]] = {}
         self._key_listeners = KeyListenerRegistry()
+        self._consume_key_listener_ids: Set[int] = set()
         self._registry = CommandRegistry()
         self._app_hooked = False
         self._phys_listeners = KeyListenerRegistry()
-        self._sc_mapper = ScanCodeMapper()
-        self._sc_keymap: Dict[int, Dict[FrozenSet[int], CommandPayload]] = {}
-        self._states_sc: Dict[int, KeyPressState] = {}
-        self._deduper = RecentEventDeduper(self.MAX_RECENT_EVENTS)
+        self._sc_keymap: Dict[int, Dict[KeyCombo, CommandPayload]] = {}
+        self._state = KeyChordStateManager(max_recent_events=self.MAX_RECENT_EVENTS)
         self._resolver = KeyNameResolver()
         self._parser = ComboParser(self._resolver)
         self._widget_refs: WeakValueDictionary[int, QtWidgets.QWidget] = WeakValueDictionary()
@@ -39,6 +39,7 @@ class ShortcutManager(QtCore.QObject):
             self._is_global = True
         else:
             self._is_global = False
+
     @profiler.profile
     def set_bindings(self, widget: QtWidgets.QWidget, bindings: Dict[KeySequence, Any]):
         if not self._is_global and ShortcutManager._global is not None:
@@ -46,7 +47,7 @@ class ShortcutManager(QtCore.QObject):
         self._ensure_app_filter()
         wid = id(widget)
         self._widget_refs[wid] = widget
-        norm: Dict[FrozenSet[int], CommandPayload] = {}
+        norm: Dict[KeyCombo, CommandPayload] = {}
         for seq, cmd in bindings.items():
             if not seq or not cmd:
                 continue
@@ -61,7 +62,6 @@ class ShortcutManager(QtCore.QObject):
                 continue
             norm[combo] = payload
         self._keymap[wid] = norm
-        self._states[wid] = KeyPressState()
     def get_bindings(self, widget: QtWidgets.QWidget) -> Dict[str, CommandPayload]:
         if not self._is_global and ShortcutManager._global is not None:
             return ShortcutManager._global.get_bindings(widget)
@@ -81,7 +81,7 @@ class ShortcutManager(QtCore.QObject):
         self._ensure_app_filter()
         wid = id(widget)
         self._widget_refs[wid] = widget
-        norm: Dict[FrozenSet[int], CommandPayload] = {}
+        norm: Dict[KeyCombo, CommandPayload] = {}
         for spec, cmd in bindings.items():
             if not cmd:
                 continue
@@ -94,7 +94,6 @@ class ShortcutManager(QtCore.QObject):
                 continue
             norm[combo] = payload
         self._keymap[wid] = norm
-        self._states[wid] = KeyPressState()
 
     def get_key_bindings(self, widget: QtWidgets.QWidget) -> Dict[str, CommandPayload]:
         if not self._is_global and ShortcutManager._global is not None:
@@ -110,7 +109,6 @@ class ShortcutManager(QtCore.QObject):
             return ShortcutManager._global.clear_key_bindings(widget)
         wid = id(widget)
         self._keymap.pop(wid, None)
-        self._states.pop(wid, None)
         self._widget_refs.pop(wid, None)
 
     def set_physical_bindings(self, widget: QtWidgets.QWidget, bindings: Dict[KeyChordSpec, Any]):
@@ -119,7 +117,7 @@ class ShortcutManager(QtCore.QObject):
         self._ensure_app_filter()
         wid = id(widget)
         self._widget_refs[wid] = widget
-        norm: Dict[FrozenSet[int], CommandPayload] = {}
+        norm: Dict[KeyCombo, CommandPayload] = {}
         for spec, cmd in bindings.items():
             if not cmd:
                 continue
@@ -132,7 +130,6 @@ class ShortcutManager(QtCore.QObject):
                 continue
             norm[combo] = payload
         self._sc_keymap[wid] = norm
-        self._states_sc[wid] = KeyPressState()
 
     def get_physical_bindings(self, widget: QtWidgets.QWidget) -> Dict[str, CommandPayload]:
         if not self._is_global and ShortcutManager._global is not None:
@@ -148,7 +145,6 @@ class ShortcutManager(QtCore.QObject):
             return ShortcutManager._global.clear_physical_bindings(widget)
         wid = id(widget)
         self._sc_keymap.pop(wid, None)
-        self._states_sc.pop(wid, None)
         if wid not in self._keymap and wid not in self._sc_keymap:
             self._widget_refs.pop(wid, None)
 
@@ -179,7 +175,7 @@ class ShortcutManager(QtCore.QObject):
             return False
         et = event.type()
         if et == QtCore.QEvent.KeyPress:
-            e: QtGui.QKeyEvent = event  # type: ignore
+            e = cast(QtGui.QKeyEvent, event)
             if e.isAutoRepeat():
                 return False
             k = int(e.key())
@@ -188,66 +184,48 @@ class ShortcutManager(QtCore.QObject):
             self._emit_phys(True, wid, e)
             ts = self._get_timestamp(e)
             sc = self._get_scan_code(e)
-            stamp = (int(et), sc, k, ts, wid)
-            if not self._deduper.add_and_check(stamp):
+            if not self._state.dedupe(KeyEventStamp(int(et), int(sc), int(k), int(ts), int(wid))):
                 return False
             self._key_listeners.emit_press(wid, k)
-            if sc:
-                state_sc = self._states_sc.setdefault(wid, KeyPressState())
-                state_sc.add_pressed(sc)
-                if wid in self._sc_keymap:
-                    sc_combo = self._match_sc_combo(wid, require_len=2)
-                    if sc_combo and not state_sc.is_fired(sc_combo):
-                        state_sc.mark_fired(sc_combo)
-                        self._exec(wid, self._sc_keymap[wid][sc_combo], e)
-                        return True
-            if sc:
-                key_to_add = self._sc_mapper.map(wid, sc, k)
-            else:
-                key_to_add = k
-            state = self._states.setdefault(wid, KeyPressState())
-            state.add_pressed(int(key_to_add))
-            if wid in self._keymap:
-                combo = self._match_combo(wid, require_len=2)
-                if combo and not state.is_fired(combo):
-                    state.mark_fired(combo)
-                    self._exec(wid, self._keymap[wid][combo], e)
-                    return True
+            if wid in self._consume_key_listener_ids:
+                return True
+            payload = self._state.payload_for_press(
+                sc=int(sc),
+                key=int(k),
+                event=e,
+                logical_map=self._keymap.get(wid),
+                physical_map=self._sc_keymap.get(wid),
+                require_len=2,
+            )
+            if payload is not None:
+                self._exec(wid, payload, e)
+                return True
             return False
         if et == QtCore.QEvent.KeyRelease:
-            e: QtGui.QKeyEvent = event  # type: ignore
+            e = cast(QtGui.QKeyEvent, event)
             if e.isAutoRepeat():
                 return False
             k = int(e.key())
+            if k == QtCore.Qt.Key_unknown:
+                return False
             self._emit_phys(False, wid, e)
             ts = self._get_timestamp(e)
             sc = self._get_scan_code(e)
-            stamp = (int(et), sc, k, ts, wid)
-            if not self._deduper.add_and_check(stamp):
+            if not self._state.dedupe(KeyEventStamp(int(et), int(sc), int(k), int(ts), int(wid))):
                 return False
             if sc:
-                state_sc = self._states_sc.setdefault(wid, KeyPressState())
-                if wid in self._sc_keymap and not state_sc.is_consumed(sc):
-                    single_sc = frozenset((sc,))
-                    if single_sc in self._sc_keymap.get(wid, {}) and not state_sc.is_fired(single_sc):
-                        state_sc.mark_fired(single_sc)
-                        self._exec(wid, self._sc_keymap[wid][single_sc], e)
-                state_sc.remove_pressed(sc)
-                state_sc.cleanup_fired()
-                state_sc.unconsume(sc)
+                payload_sc = self._state.payload_for_physical_release(sc=int(sc), physical_map=self._sc_keymap.get(wid))
+                if payload_sc is not None:
+                    self._exec(wid, payload_sc, e)
             rk = k
             if sc:
-                rk = self._sc_mapper.pop(wid, sc, rk)
+                rk = self._state.pop_mapped_key(sc, rk)
             self._key_listeners.emit_release(wid, rk)
-            state = self._states.setdefault(wid, KeyPressState())
-            if wid in self._keymap and not state.is_consumed(rk):
-                single = frozenset((rk,))
-                if single in self._keymap.get(wid, {}) and not state.is_fired(single):
-                    state.mark_fired(single)
-                    self._exec(wid, self._keymap[wid][single], e)
-            state.remove_pressed(rk)
-            state.cleanup_fired()
-            state.unconsume(rk)
+            if wid in self._consume_key_listener_ids:
+                return True
+            payload = self._state.payload_for_logical_release(key=int(rk), logical_map=self._keymap.get(wid))
+            if payload is not None:
+                self._exec(wid, payload, e)
             return False
         if et in (QtCore.QEvent.FocusOut, QtCore.QEvent.Hide, QtCore.QEvent.WindowDeactivate):
             self._reset_states_for(wid)
@@ -273,39 +251,23 @@ class ShortcutManager(QtCore.QObject):
             ctx = CommandContext.create(widget, scope, source="key", event=event, key=kdisp)
             self._registry.execute(payload.id, ctx=ctx, **args)
 
-    def _normalize(self, spec: KeyChordSpec) -> FrozenSet[int]:
+    def _normalize(self, spec: KeyChordSpec) -> KeyCombo:
         if not isinstance(spec, (tuple, list)):
             raise TypeError("key spec must be tuple or list")
         return self._parser.from_spec(spec)
 
-    def _normalize_sc(self, spec: KeyChordSpec) -> FrozenSet[int]:
+    def _normalize_sc(self, spec: KeyChordSpec) -> KeyCombo:
         if not isinstance(spec, (tuple, list)):
             raise TypeError("scan code spec must be tuple or list")
         return self._parser.from_sc_spec(spec)
 
-    def _match_combo_generic(self, pressed: Set[int], combos: Dict[FrozenSet[int], CommandPayload], require_len: int = 0) -> FrozenSet[int] | None:
-        return ComboMatcher.best_match(pressed, combos, require_len)
-
-    def _match_combo(self, wid: int, require_len: int = 0) -> FrozenSet[int] | None:
-        state = self._states.get(wid)
-        if not state:
-            return None
-        return self._match_combo_generic(state.pressed, self._keymap.get(wid) or {}, require_len)
-
-    def _match_sc_combo(self, wid: int, require_len: int = 0) -> FrozenSet[int] | None:
-        state = self._states_sc.get(wid)
-        if not state:
-            return None
-        return self._match_combo_generic(state.pressed, self._sc_keymap.get(wid) or {}, require_len)
-
-    def _format(self, combo: FrozenSet[int]) -> str:
+    def _format(self, combo: KeyCombo) -> str:
         return self._resolver.format_combo(combo, pretty=False)
     
-    def _format_pretty(self, combo: FrozenSet[int]) -> str:
+    def _format_pretty(self, combo: KeyCombo) -> str:
         return self._resolver.format_combo(combo, pretty=True)
-    def _format_sc(self, combo: FrozenSet[int]) -> str:
-        xs = sorted(list(combo))
-        return "+".join(f"SC{int(x)}" for x in xs)
+    def _format_sc(self, combo: KeyCombo) -> str:
+        return "+".join(f"SC{int(x)}" for x in combo)
 
     def add_physical_key_listener(self, widget: QtWidgets.QWidget, on_press: Callable[[int, int, int, str, str], None] | None = None, on_release: Callable[[int, int, int, str, str], None] | None = None):
         if not self._is_global and ShortcutManager._global is not None:
@@ -356,17 +318,19 @@ class ShortcutManager(QtCore.QObject):
     
     def key_text_from_event(self, e: QtGui.QKeyEvent, pretty: bool = True) -> str:
         return self._resolver.key_text_from_event(e, pretty)
-    def _parse_key_sequence(self, seq: KeySequence) -> FrozenSet[int]:
+    def _parse_key_sequence(self, seq: KeySequence) -> KeyCombo:
         return self._parser.from_sequence(seq)
     
-    def _parse_string_combo(self, s: str) -> FrozenSet[int]:
+    def _parse_string_combo(self, s: str) -> KeyCombo:
         return self._parser.from_string(s)
 
-    def add_key_listener(self, widget: QtWidgets.QWidget, on_press: Callable[[int], None] | None = None, on_release: Callable[[int], None] | None = None):
+    def add_key_listener(self, widget: QtWidgets.QWidget, on_press: Callable[[int], None] | None = None, on_release: Callable[[int], None] | None = None, consume: bool = False):
         if not self._is_global and ShortcutManager._global is not None:
-            return ShortcutManager._global.add_key_listener(widget, on_press, on_release)
+            return ShortcutManager._global.add_key_listener(widget, on_press, on_release, consume=consume)
         self._ensure_app_filter()
         wid = id(widget)
+        if consume:
+            self._consume_key_listener_ids.add(wid)
         if on_press:
             self._key_listeners.add_press(wid, on_press)
         if on_release:
@@ -377,6 +341,7 @@ class ShortcutManager(QtCore.QObject):
             return ShortcutManager._global.remove_key_listeners(widget)
         wid = id(widget)
         self._key_listeners.remove_all(wid)
+        self._consume_key_listener_ids.discard(wid)
     def _ensure_app_filter(self):
         if ShortcutManager._app_hooked_class:
             return
@@ -401,24 +366,36 @@ class ShortcutManager(QtCore.QObject):
         w = QtWidgets.QApplication.focusWidget()
         if not w:
             return None
-        wid = id(w)
-        if wid in targets:
-            return wid
+        while w is not None:
+            wid = id(w)
+            if wid in targets:
+                return wid
+            w = w.parentWidget()
         return None
 
     def _resolve_target_widget_id_cursor(self) -> int | None:
         targets = set(self._keymap.keys()) | self._key_listeners.ids() | self._phys_listeners.ids()
         if not targets:
             return None
+        mw = QtWidgets.QApplication.activeModalWidget()
+        if mw is not None:
+            w = QtWidgets.QApplication.focusWidget() or mw
+            while w is not None:
+                wid = id(w)
+                if wid in targets:
+                    return wid
+                w = w.parentWidget()
         try:
             from ..manager import BindingManager
             gpt = QtGui.QCursor.pos()
             w = BindingManager.instance().find_binding_widget_at(gpt)
             if not w:
                 return None
-            wid = id(w)
-            if wid in targets:
-                return wid
+            while w is not None:
+                wid = id(w)
+                if wid in targets:
+                    return wid
+                w = w.parentWidget()
             return None
         except Exception:
             return None
@@ -434,14 +411,7 @@ class ShortcutManager(QtCore.QObject):
         return cls._scope_mode
 
     def _reset_states_for(self, wid: int):
-        state = self._states.get(wid)
-        if state:
-            state.reset()
-        state_sc = self._states_sc.get(wid)
-        if state_sc:
-            state_sc.reset()
+        self._state.reset()
 
     def _reset_all_states(self):
-        wids = set(self._keymap.keys()) | set(self._states.keys()) | set(self._sc_keymap.keys()) | set(self._states_sc.keys())
-        for wid in list(wids):
-            self._reset_states_for(wid)
+        self._state.reset()

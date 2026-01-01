@@ -1,4 +1,4 @@
-from typing import Set, FrozenSet, Dict, List, Callable, Any, Tuple, Deque, Union
+from typing import Set, Dict, List, Callable, Any, Tuple, Deque, Union
 from collections import deque
 from PySide6 import QtCore, QtGui
 from source.common.errors import show_warning
@@ -8,25 +8,39 @@ KeySpec = Union[int, str]
 class KeyPressState:
     def __init__(self):
         self.pressed: Set[int] = set()
-        self.fired: Set[FrozenSet[int]] = set()
+        self.order: List[int] = []
+        self.fired: Set[Tuple[int, ...]] = set()
         self.consumed: Dict[int, bool] = {}
     def add_pressed(self, key: int):
-        self.pressed.add(key)
+        k = int(key)
+        if k in self.pressed:
+            return
+        self.pressed.add(k)
+        self.order.append(k)
     def remove_pressed(self, key: int):
-        if key in self.pressed:
-            self.pressed.remove(key)
-    def mark_fired(self, combo: FrozenSet[int]):
-        self.fired.add(combo)
-        for key in combo:
-            self.consumed[key] = True
-    def is_fired(self, combo: FrozenSet[int]) -> bool:
-        return combo in self.fired
+        k = int(key)
+        if k in self.pressed:
+            self.pressed.remove(k)
+        try:
+            while k in self.order:
+                self.order.remove(k)
+        except Exception:
+            pass
+
+    def mark_fired(self, combo: Tuple[int, ...]):
+        c = tuple(int(x) for x in combo)
+        self.fired.add(c)
+        for key in c:
+            self.consumed[int(key)] = True
+
+    def is_fired(self, combo: Tuple[int, ...]) -> bool:
+        return tuple(combo) in self.fired
     def is_consumed(self, key: int) -> bool:
         return self.consumed.get(key, False)
     def unconsume(self, key: int):
         self.consumed.pop(key, None)
     def cleanup_fired(self):
-        to_remove = [c for c in self.fired if not c.issubset(self.pressed)]
+        to_remove = [c for c in self.fired if any(int(k) not in self.pressed for k in c)]
         for c in to_remove:
             self.fired.remove(c)
         keys_to_remove = [k for k in self.consumed if k not in self.pressed]
@@ -34,6 +48,7 @@ class KeyPressState:
             self.consumed.pop(k, None)
     def reset(self):
         self.pressed.clear()
+        self.order.clear()
         self.fired.clear()
         self.consumed.clear()
 
@@ -209,8 +224,8 @@ class KeyNameResolver:
         return name
     def format_keys(self, keys: List[int], sep: str = '+', pretty: bool = False) -> str:
         return sep.join(self.key_name(k, pretty) for k in keys)
-    def format_combo(self, combo: FrozenSet[int], pretty: bool = False) -> str:
-        return self.format_keys(sorted(combo), '+', pretty)
+    def format_combo(self, combo: Tuple[int, ...], pretty: bool = False) -> str:
+        return self.format_keys(list(combo), '+', pretty)
     def key_text_from_event(self, e: QtGui.QKeyEvent, pretty: bool = False) -> str:
         key = e.key()
         mods = e.modifiers()

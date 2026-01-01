@@ -4,10 +4,9 @@ from pathlib import Path
 
 from PySide6 import QtCore, QtWidgets
 from source.common.funcs import uipx
-from .actions.binding.mixins import CommandBindingMixin
-from .actions import facade
+from .actions.facade import Classes, Settings, UI
 
-class DemoButton(QtWidgets.QPushButton, CommandBindingMixin):
+class DemoButton(QtWidgets.QPushButton, Classes.UIMixin):
     def __init__(self, name: str, parent=None):
         super().__init__(name, parent)
         self.init_command_binding(name, enable_drops=True)
@@ -15,7 +14,7 @@ class DemoButton(QtWidgets.QPushButton, CommandBindingMixin):
     def extend_context(self, ctx, cmd=None, event=None, key=None, source=None):
         return {"button": self.binding_scope()}
 
-class DemoPane(QtWidgets.QFrame, CommandBindingMixin):
+class DemoPane(QtWidgets.QFrame, Classes.UIMixin):
     def __init__(self, name: str, parent=None):
         super().__init__(parent)
         self.setFrameShape(QtWidgets.QFrame.StyledPanel)
@@ -35,7 +34,7 @@ class TestLineEdit(QtWidgets.QLineEdit):
         super().__init__(parent)
         self.setPlaceholderText(f"Type here in {name}...")
 
-class MainWindow(QtWidgets.QMainWindow, CommandBindingMixin):
+class MainWindow(QtWidgets.QMainWindow, Classes.UIMixin):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Prototype Command Test")
@@ -66,15 +65,13 @@ class MainWindow(QtWidgets.QMainWindow, CommandBindingMixin):
 
     def _setup_menu_bar(self):
         mb = self.menuBar()
-        builder = facade.get_builder(self)
+        builder = UI.get_builder(self)
         m = builder.use("binding")
         mb.addMenu(m)
 
     def closeEvent(self, event):
-        from .actions.command.state import CommandOptionStore, ActionGroupStateManager
         try:
-            ActionGroupStateManager().commit()
-            CommandOptionStore().commit()
+            Settings.commit()
         except Exception as e:
             print(f"Failed to save settings: {e}")
         super().closeEvent(event)
@@ -83,16 +80,20 @@ def bootstrap() -> None:
     root = Path(__file__).resolve().parent.parent
     base = root / ".temp" / "demo_app"
     
-    facade.setup(mouse_bindings=str(base / "mouse_bindings.json"), key_bindings=str(base / "key_bindings.json"), command_options=str(base / ".command_options.json"))
+    Settings.configure(
+        mouse_bindings=str(base / "mouse_bindings.json"),
+        key_bindings=str(base / "key_bindings.json"),
+        command_options=str(base / ".command_options.json"),
+    )
     from . import menu_demo, drag_demo
-    facade.register_menus([*menu_demo.get_menu_classes(), *drag_demo.get_menu_classes()])
+    Settings.register_menus([*menu_demo.get_menu_classes(), *drag_demo.get_menu_classes()])
 
     w = MainWindow()
     w.resize(uipx(640), uipx(400))
     w.show()
     
     from .defaults import get_all_key_bindings, get_all_mouse_bindings
-    facade.activate(mouse_bindings=get_all_mouse_bindings(), key_bindings=get_all_key_bindings())
+    Settings.activate(mouse_bindings=get_all_mouse_bindings(), key_bindings=get_all_key_bindings())
     
 
 

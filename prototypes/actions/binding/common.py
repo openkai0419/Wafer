@@ -1,11 +1,18 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
 from PySide6 import QtCore, QtGui, QtWidgets
+
 from .manager import BindingManager
 
+
+@dataclass(frozen=True, slots=True)
 class WidgetRef:
-    def __init__(self, name: str, widget):
-        self.name = name
-        self.widget = widget
-    def __str__(self):
+    name: str
+    widget: QtWidgets.QWidget
+
+    def __str__(self) -> str:
         return self.name
 
 def resolve_scope_by_focus() -> tuple[str | None, QtWidgets.QWidget | None]:

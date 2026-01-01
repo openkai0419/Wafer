@@ -2,7 +2,7 @@ from typing import Dict, List, Any, Tuple
 from pathlib import Path
 from PySide6 import QtCore, QtGui, QtWidgets
 from source.common.funcs import uipx
-from ...facade import get_builder
+from ...facade import Settings, UI
 from ...command.payload import format_payload_display
 from ...command.payload import CommandPayload
 from ..common import WidgetRef
@@ -218,7 +218,7 @@ class KeyBindingEditor(QtWidgets.QDialog):
         if key_seq is None:
             return
         btn = self.btn_add_binding
-        builder = get_builder(self)
+        builder = UI.get_builder(self)
         def _prep(m: QtWidgets.QMenu):
             act_none = QtGui.QAction("なし(解除)", m)
             act_none.triggered.connect(lambda: self._on_select_command(key_seq, None))
@@ -283,7 +283,7 @@ class KeyBindingEditor(QtWidgets.QDialog):
 
     def _search(self):
         btn = self.btn_search
-        builder = get_builder(self)
+        builder = UI.get_builder(self)
         def _prep(m: QtWidgets.QMenu):
             act_none = QtGui.QAction("なし(解除)", m)
             act_none.triggered.connect(lambda: self._on_search_select(None))
@@ -385,8 +385,10 @@ class KeyBindingEditor(QtWidgets.QDialog):
         self._select_lists_for_sequence(new_seq)
 
     def _reset_all_defaults(self):
-        from ...defaults import get_all_key_bindings
-        self._draft = KeyBindingStore.normalize_specs(get_all_key_bindings())
+        specs = Settings.seed_key_specs()
+        if specs is None:
+            return
+        self._draft = KeyBindingStore.normalize_specs(specs)
         self._store.set_all({})
         self._refresh_shortcuts()
         self._load_existing()
@@ -417,7 +419,7 @@ class _TwoKeyCaptureDialog(QtWidgets.QDialog):
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
         l.addWidget(bb)
-        self._mgr.add_key_listener(self, on_press=self._on_press, on_release=self._on_release)
+        self._mgr.add_key_listener(self, on_press=self._on_press, on_release=self._on_release, consume=True)
 
     def _on_press(self, k: int):
         if self._final_keys:
@@ -474,13 +476,12 @@ class _TwoKeyCaptureDialog(QtWidgets.QDialog):
     def _reset_state(self):
         self._pressed_keys.clear()
         self._press_snapshot.clear()
-        if not self._final_keys:  # 確定していない場合のみクリア
+        if not self._final_keys:
             self._clear_display()
 
     def result_sequence(self) -> KeySequence | None:
         if not self._final_keys:
             return None
-        print(self._final_keys)
         return KeySequence(self._final_keys[:2])
 
     def accept(self) -> None:
@@ -589,7 +590,7 @@ class _KeySequenceSection(QtWidgets.QGroupBox):
         btn = self.global_edit if scope == "*" else self.override_edits.get(scope)
         if btn is None:
             return
-        builder = get_builder(self)
+        builder = UI.get_builder(self)
         def _prep(m: QtWidgets.QMenu, sc=scope):
             act_none = QtGui.QAction("なし(解除)", m)
             act_none.triggered.connect(lambda _, s=sc: self._on_select(s, None))

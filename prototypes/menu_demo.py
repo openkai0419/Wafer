@@ -1,42 +1,38 @@
 from datetime import datetime
 
 from PySide6 import QtCore, QtGui, QtWidgets
-from .actions.command.core import CommandMeta, CommandParam
-from .actions.command.menu import RegistryBackedMenu
-from .actions.facade import get_builder, open_mouse_binding_editor, open_shortcut_binding_editor
+from .actions.facade import Classes, UI
 
 
-class FileMenu(RegistryBackedMenu):
+class FileMenu(Classes.MenuBase):
     path_prefix = "file"
     def create_definitions(self):
         items = [":File"]
         for i in range(4):
-            items.append(CommandMeta(path=f"file.{i}", display=f"file {i}", func=(lambda x=i: (lambda: print(f"file {x}")))()))
+            items.append(Classes.Command(path=f"file.{i}", display=f"file {i}", func=(lambda x=i: (lambda: print(f"file {x}")))()))
         return items
 
 
-class PathMenu(RegistryBackedMenu):
+class PathMenu(Classes.MenuBase):
     path_prefix = "path"
     def create_definitions(self):
         items = [":Path", "-"]
         for i in range(4):
-            items.append(CommandMeta(path=f"path.{i}", display=f"path {i}", func=(lambda x=i: (lambda: print(f"path {x}")))()))
+            items.append(Classes.Command(path=f"path.{i}", display=f"path {i}", func=(lambda x=i: (lambda: print(f"path {x}")))()))
         i = 3
-        items.append(CommandMeta(path=f"Temp/path.Test{i}", display=f"Temp {i}", func=(lambda x=i: (lambda: print(f"path {x}")))()))
+        items.append(Classes.Command(path=f"Temp/path.Test{i}", display=f"Temp {i}", func=(lambda x=i: (lambda: print(f"path {x}")))()))
         return items
 
 
-class CmdMenu(RegistryBackedMenu):
+class CmdMenu(Classes.MenuBase):
     path_prefix = "commands"
     
     def _cycle_sort_order(self):
-        from .actions.command.ui import CommandMenuBuilder
-        builder = CommandMenuBuilder()
+        builder = Classes.CommandBuilder()
         result = builder.cycle_action_group("sort_order")
     
     def _print_current_sort_order(self):
-        from .actions.command.ui import CommandMenuBuilder
-        builder = CommandMenuBuilder()
+        builder = Classes.CommandBuilder()
         current = builder.get_action_group_current("sort_order")
         if current:
             print(f"Current sort order: {current}")
@@ -54,36 +50,35 @@ class CmdMenu(RegistryBackedMenu):
     def create_definitions(self):
         return [
             ":Commands",
-            CommandMeta(path="hello", display="Hello", func=lambda ctx: print(f"hello from {getattr(ctx, 'scope', '')}")),
-            CommandMeta(path="time", display="Show Time", func=lambda: print(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))),
-            CommandMeta(path="test", display="print test", params=[CommandParam(name="test", value="", description="test")], func=lambda test="": print(f"test: {test}")),
-            CommandMeta(path="Debug/printCtx", display="Print Ctx", func=lambda ctx: (ctx.print_debug() if ctx is not None and hasattr(ctx, "print_debug") else print("ctx=None"))),
-            CommandMeta(path="Debug/isDemoPane", display="Is DemoPane?", func=self._print_is_demo_pane),
+            Classes.Command(path="hello", display="Hello", func=lambda ctx: print(f"hello from {getattr(ctx, 'scope', '')}")),
+            Classes.Command(path="time", display="Show Time", func=lambda: print(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))),
+            Classes.Command(path="test", display="print test", params=[Classes.Param(name="test", value="", description="test")], func=lambda test="": print(f"test: {test}")),
+            Classes.Command(path="Debug/printCtx", display="Print Ctx", func=lambda ctx: (ctx.print_debug() if ctx is not None and hasattr(ctx, "print_debug") else print("ctx=None"))),
+            Classes.Command(path="Debug/isDemoPane", display="Is DemoPane?", func=self._print_is_demo_pane),
             "-",
             ":Options",
-            CommandMeta(path="Options/echo", display="Echo", params=[CommandParam(name="text", value="echo"), CommandParam(name="repeat", value=1, min_value=1, max_value=8)], has_options=True, func=lambda text="echo", repeat=1: print(text * repeat)),
-            CommandMeta(path="Options/count", display="Count", params=[CommandParam(name="value", value=1, description="Value"), CommandParam(name="step", value=1, min_value=1, max_value=10)], has_options=True, func=lambda value=1, step=1: print("count", " ".join(str(i) for i in range(value, value + step)))),
-            CommandMeta(path="Options/mode", display="Mode", params=[CommandParam(name="mode", value=["A", "B", "C"], description="Mode")], has_options=True, func=lambda mode="A": print(f"mode {mode}")),
+            Classes.Command(path="Options/echo", display="Echo", params=[Classes.Param(name="text", value="echo"), Classes.Param(name="repeat", value=1, min_value=1, max_value=8)], has_options=True, func=lambda text="echo", repeat=1: print(text * repeat)),
+            Classes.Command(path="Options/count", display="Count", params=[Classes.Param(name="value", value=1, description="Value"), Classes.Param(name="step", value=1, min_value=1, max_value=10)], has_options=True, func=lambda value=1, step=1: print("count", " ".join(str(i) for i in range(value, value + step)))),
+            Classes.Command(path="Options/mode", display="Mode", params=[Classes.Param(name="mode", value=["A", "B", "C"], description="Mode")], has_options=True, func=lambda mode="A": print(f"mode {mode}")),
             "-",
             ":Toggle",
-            CommandMeta(path="Toggle/toggleVerbose", display="Verbose Mode", checkable=True, default_checked=False, func=lambda ctx: print("verbose on" if ctx.get('checked', False) else "verbose off")),
+            Classes.Command(path="Toggle/toggleVerbose", display="Verbose Mode", checkable=True, default_checked=False, func=lambda ctx: print("verbose on" if ctx.get('checked', False) else "verbose off")),
             "-",
             ":Sort Order",
-            CommandMeta(path="Sort/sortByName", display="Name", checkable=True, default_checked=True, action_group="sort_order", func=lambda ctx: print("Sort by Name" if ctx.get('checked', False) else "")),
-            CommandMeta(path="Sort/sortByDate", display="Date", checkable=True, default_checked=False, action_group="sort_order", func=lambda ctx: print("Sort by Date" if ctx.get('checked', False) else "")),
-            CommandMeta(path="Sort/sortBySize", display="Size", checkable=True, default_checked=False, action_group="sort_order", func=lambda ctx: print("Sort by Size" if ctx.get('checked', False) else "")),
+            Classes.Command(path="Sort/sortByName", display="Name", checkable=True, default_checked=True, action_group="sort_order", func=lambda ctx: print("Sort by Name" if ctx.get('checked', False) else "")),
+            Classes.Command(path="Sort/sortByDate", display="Date", checkable=True, default_checked=False, action_group="sort_order", func=lambda ctx: print("Sort by Date" if ctx.get('checked', False) else "")),
+            Classes.Command(path="Sort/sortBySize", display="Size", checkable=True, default_checked=False, action_group="sort_order", func=lambda ctx: print("Sort by Size" if ctx.get('checked', False) else "")),
             "Sort/-",
-            CommandMeta(path="Sort/cycleSortOrder", display="Cycle Sort Order", hotkey="Ctrl+Shift+S", func=self._cycle_sort_order),
-            CommandMeta(path="Sort/printCurrentSort", display="Show Current Sort Order", func=self._print_current_sort_order),
+            Classes.Command(path="Sort/cycleSortOrder", display="Cycle Sort Order", hotkey="Ctrl+Shift+S", func=self._cycle_sort_order),
+            Classes.Command(path="Sort/printCurrentSort", display="Show Current Sort Order", func=self._print_current_sort_order),
         ]
 
-class ContextMenu(RegistryBackedMenu):
+class ContextMenu(Classes.MenuBase):
     path_prefix = "context"
 
     def _prepare_context_menu(self, ctx=None):
-        from .actions.command.core import COMMAND_MENU_MARKER
         active_popup = QtWidgets.QApplication.activePopupWidget()
-        if active_popup and active_popup.property(COMMAND_MENU_MARKER):
+        if active_popup and active_popup.property(Classes.MARKER):
             active_popup.close()
 
         seed = ctx if ctx is not None and hasattr(ctx, "get") else None
@@ -108,7 +103,7 @@ class ContextMenu(RegistryBackedMenu):
         if not target:
             return
         seed = ctx if ctx is not None and hasattr(ctx, "get") else None
-        b = get_builder(target, seed_ctx=seed)
+        b = UI.get_builder(target, seed_ctx=seed)
         b.build([":Menu", "-", "commands/:Test", "commands/-", "commands", "-", "file", "path", "Temp", "path.1", "Options"]) 
         m = b.menu
         m.exec(pos)
@@ -118,18 +113,18 @@ class ContextMenu(RegistryBackedMenu):
         if not target:
             return
         seed = ctx if ctx is not None and hasattr(ctx, "get") else None
-        m = get_builder(target, seed_ctx=seed).build_all_roots()
+        m = UI.get_builder(target, seed_ctx=seed).build_all_roots()
         m.exec(pos)
 
     def create_definitions(self):
         return [
             ":ContextMenu",
-            CommandMeta(path="showContextMenuHere", display="Show Context Menu Here", func=self._show_context_menu_here),
-            CommandMeta(path="showAllMenu", display="Show All Menu Here", func=self._show_all_menu),
+            Classes.Command(path="showContextMenuHere", display="Show Context Menu Here", func=self._show_context_menu_here),
+            Classes.Command(path="showAllMenu", display="Show All Menu Here", func=self._show_all_menu),
         ]
 
 
-class MenuMenu(RegistryBackedMenu):
+class MenuMenu(Classes.MenuBase):
     path_prefix = "menu"
 
     def _open_mouse_binding_editor(self, ctx=None):
@@ -138,7 +133,7 @@ class MenuMenu(RegistryBackedMenu):
             parent = ctx.get("widget") if ctx is not None and hasattr(ctx, "get") else None
         except Exception:
             parent = None
-        open_mouse_binding_editor(parent=parent)
+        UI.open_mouse_binding_editor(parent=parent)
 
     def _open_shortcut_binding_editor(self, ctx=None):
         parent = None
@@ -146,16 +141,16 @@ class MenuMenu(RegistryBackedMenu):
             parent = ctx.get("widget") if ctx is not None and hasattr(ctx, "get") else None
         except Exception:
             parent = None
-        open_shortcut_binding_editor(parent=parent)
+        UI.open_shortcut_binding_editor(parent=parent)
 
     def create_definitions(self):
         return [
             ":Menu",
-            CommandMeta(path="binding/bindings", display="Mouse Bindings...", func=self._open_mouse_binding_editor),
-            CommandMeta(path="binding/shortcutBindings", display="Shortcut Bindings...", func=self._open_shortcut_binding_editor),
+            Classes.Command(path="binding/bindings", display="Mouse Bindings...", func=self._open_mouse_binding_editor),
+            Classes.Command(path="binding/shortcutBindings", display="Shortcut Bindings...", func=self._open_shortcut_binding_editor),
         ]
 
 
-def get_menu_classes() -> list[type[RegistryBackedMenu]]:
+def get_menu_classes() -> list[type[Classes.MenuBase]]:
     return [FileMenu, PathMenu, CmdMenu, ContextMenu, MenuMenu]
 

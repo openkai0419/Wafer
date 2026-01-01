@@ -1,45 +1,49 @@
-from typing import Dict, List, Tuple, Union, FrozenSet, Set, Optional
+from typing import Dict, List, Tuple, Union, Optional
 from ...command.payload import CommandPayload
 from .runtime import KeyNameResolver, KeySpec
 from .sequence import KeySequence
 
 KeyChordSpec = Union[Tuple[KeySpec, ...], List[KeySpec]]
+KeyCombo = Tuple[int, ...]
 
 class ComboParser:
     def __init__(self, resolver: KeyNameResolver, max_len: int = 2):
         self._resolver = resolver
         self._max_len = max_len
     
-    def _validate_and_freeze(self, xs: List[int]) -> FrozenSet[int]:
+    def _validate(self, xs: List[int]) -> KeyCombo:
         if not xs or len(xs) > self._max_len:
-            return frozenset()
+            return tuple()
         if len(xs) == 2 and xs[0] == xs[1]:
-            return frozenset()
-        return frozenset(xs)
+            return tuple()
+        return tuple(xs)
     
-    def from_sequence(self, seq: KeySequence) -> FrozenSet[int]:
+    def from_sequence(self, seq: KeySequence) -> KeyCombo:
         tokens: List[int] = []
         for key_name in seq.to_tuple():
             tokens.append(self._resolver.to_key_code(self._resolver.normalize_token(key_name)))
         xs = [t for t in tokens if t]
-        return self._validate_and_freeze(xs)
-    def from_string(self, s: str) -> FrozenSet[int]:
+        return self._validate(xs)
+
+    def from_string(self, s: str) -> KeyCombo:
         if not s:
-            return frozenset()
+            return tuple()
         head = s.split(",")[0].strip()
         if not head:
-            return frozenset()
+            return tuple()
         parts = [p.strip() for p in head.replace("&", "+").split("+") if p.strip()]
         tokens: List[int] = []
         for p in parts:
             tokens.append(self._resolver.to_key_code(self._resolver.normalize_token(p)))
         xs = [t for t in tokens if t]
-        return self._validate_and_freeze(xs)
-    def from_spec(self, spec: KeyChordSpec) -> FrozenSet[int]:
+        return self._validate(xs)
+
+    def from_spec(self, spec: KeyChordSpec) -> KeyCombo:
         xs = [self._resolver.to_key_code(x) for x in spec]
         xs = [x for x in xs if x]
-        return self._validate_and_freeze(xs)
-    def from_sc_spec(self, spec: KeyChordSpec) -> FrozenSet[int]:
+        return self._validate(xs)
+
+    def from_sc_spec(self, spec: KeyChordSpec) -> KeyCombo:
         def to_sc_code(token: KeySpec) -> int:
             if isinstance(token, int):
                 return int(token)
@@ -57,16 +61,4 @@ class ComboParser:
                 return 0
         xs = [to_sc_code(x) for x in spec]
         xs = [x for x in xs if x]
-        return self._validate_and_freeze(xs)
-
-class ComboMatcher:
-    @staticmethod
-    def best_match(pressed: Set[int], combos: Dict[FrozenSet[int], CommandPayload], require_len: int = 0) -> Optional[FrozenSet[int]]:
-        best: Optional[FrozenSet[int]] = None
-        for c in combos.keys():
-            if require_len and len(c) != require_len:
-                continue
-            if c.issubset(pressed):
-                if not best or len(c) > len(best):
-                    best = c
-        return best
+        return self._validate(xs)

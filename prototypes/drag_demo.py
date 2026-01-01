@@ -1,6 +1,5 @@
 from pathlib import Path
-from .actions.command.core import CommandMeta
-from .actions.command.menu import RegistryBackedMenu
+from .actions.facade import Classes
 
 
 def accept_local_existing_files(ctx) -> bool:
@@ -21,7 +20,7 @@ def accept_local_existing_files(ctx) -> bool:
         return False
 
 
-class DragDemoDragCommands(RegistryBackedMenu):
+class DragDemoDragCommands(Classes.MenuBase):
     def _rect_selection_start(self, ctx):
         print(f"[RectSelection] Start at {ctx.get('pos')}")
 
@@ -57,7 +56,7 @@ class DragDemoDragCommands(RegistryBackedMenu):
 
     def create_definitions(self):
         return [
-            CommandMeta(
+            Classes.Command(
                 path="rectSelection",
                 display="Rectangle Selection",
                 category="drag",
@@ -68,7 +67,7 @@ class DragDemoDragCommands(RegistryBackedMenu):
                     "end": self._rect_selection_end,
                 },
             ),
-            CommandMeta(
+            Classes.Command(
                 path="dragScroll",
                 display="Drag Scroll",
                 category="drag",
@@ -78,7 +77,7 @@ class DragDemoDragCommands(RegistryBackedMenu):
                     "end": self._drag_scroll_end,
                 },
             ),
-            CommandMeta(
+            Classes.Command(
                 path="widgetDrag",
                 display="Widget Drag",
                 category="drag",
@@ -91,7 +90,7 @@ class DragDemoDragCommands(RegistryBackedMenu):
             ),
         ]
 
-class DragDemoDropCommands(RegistryBackedMenu):
+class DragDemoDropCommands(Classes.MenuBase):
     def _drop_files_enter(self, ctx):
         event, widget = ctx.get_many(["event", "widget"])
         print(f"[dropFiles.enter] Called - widget={widget}, event={type(event).__name__ if event else None}")
@@ -237,7 +236,7 @@ class DragDemoDropCommands(RegistryBackedMenu):
 
     def create_definitions(self):
         return [
-            CommandMeta(
+            Classes.Command(
                 path="dropFiles",
                 display="Drop Files",
                 category="drop",
@@ -250,7 +249,7 @@ class DragDemoDropCommands(RegistryBackedMenu):
                     "drop": self._drop_files_drop,
                 },
             ),
-            CommandMeta(
+            Classes.Command(
                 path="simpleFileDrop",
                 display="Simple File Drop",
                 category="drop",
@@ -262,7 +261,7 @@ class DragDemoDropCommands(RegistryBackedMenu):
                     "drop": self._simple_file_drop_drop,
                 },
             ),
-            CommandMeta(
+            Classes.Command(
                 path="simpleFileDropCtrl",
                 display="Simple File Drop (Ctrl)",
                 category="drop",
@@ -274,7 +273,7 @@ class DragDemoDropCommands(RegistryBackedMenu):
                     "drop": self._simple_file_drop_ctrl_drop,
                 },
             ),
-            CommandMeta(
+            Classes.Command(
                 path="filePathDrop",
                 display="File Path Drop",
                 category="drop",
@@ -288,5 +287,5 @@ class DragDemoDropCommands(RegistryBackedMenu):
         ]
 
 
-def get_menu_classes() -> list[type[RegistryBackedMenu]]:
+def get_menu_classes() -> list[type[Classes.MenuBase]]:
     return [DragDemoDragCommands, DragDemoDropCommands]

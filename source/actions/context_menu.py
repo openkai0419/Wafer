@@ -1,7 +1,8 @@
 import os
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from .commandbase import CommandMenuBuilder
+from .command.ui import CommandMenuBuilder
+from .command.context import CommandContext
 from .file_commands import FileCommands
 from ..common.funcs import normalize_path
 from ..lang.manager import TranslatorMixin
@@ -27,58 +28,46 @@ class ContextMenuBuilder(ActionManager):
         self.parent = parent
 
     def build_menu(self, path):
-        def get_context():
-            return {
-                "path": path,
-                "paths": self.get_selected_sources()
-            }
-        
         menu_items = [
             ":File",
             "file.open",
             "file.show_explorer",
-            "---",
+            "-",
             "file.copy_path",
             "file.copy_path_list",
-            "---",
+            "-",
             "file.cut",
             "file.copy",
             "file.delete",
-            "---",
+            "-",
             "file.paste",
         ]
-        
-        menu = self.command_builder.build(self.parent, menu_items, get_context)
-        
-        actions = menu.actions()
-        copy_path_list_index = None
-        for i, action in enumerate(actions):
-            if action.data() == "file.copy_path_list":
-                copy_path_list_index = i
-                break
-        
-        if copy_path_list_index is not None:
-            before = actions[copy_path_list_index + 1]
-            self.command_builder.create_custom_action(
-                menu,
-                self.parent,
-                self.t.tr("Copy FileName"),
-                lambda: self.copy_path(path),
-                before_action=before,
-            )
-            actions = menu.actions()
-            menu.insertSeparator(actions[copy_path_list_index + 2])
-            actions = menu.actions()
-            before2 = actions[copy_path_list_index + 3]
-            self.command_builder.create_custom_action(
-                menu,
-                self.parent,
-                self.t.tr("Select Folder"),
-                lambda: self.select_folder(path),
-                before_action=before2,
-            )
-        
+
+        seed_ctx = CommandContext.create(self.parent, "*", source="menu", extras={"path": path, "paths": self.get_selected_sources()})
+        menu = QtWidgets.QMenu(self.parent)
+        menu.setProperty("__CommandMenuBuilder_Menu__", True)
+        self.command_builder.build_into(menu, self.parent, menu_items, seed_ctx=seed_ctx)
+        self._insert_extras(menu, path)
         return menu
+
+    def _insert_extras(self, menu: QtWidgets.QMenu, path: str):
+        actions = menu.actions()
+        idx = next((i for i, a in enumerate(actions) if str(a.data()) == "file.copy_path_list"), None)
+        if idx is None:
+            return
+        before = actions[idx + 1] if idx + 1 < len(actions) else None
+        act1 = QtGui.QAction(self.t.tr("Copy FileName"), menu)
+        act1.triggered.connect(lambda: self.copy_path(path))
+        menu.insertAction(before, act1) if before is not None else menu.addAction(act1)
+        actions = menu.actions()
+        idx2 = next((i for i, a in enumerate(actions) if str(a.data()) == "file.copy_path_list"), None)
+        before_sep = actions[idx2 + 2] if idx2 is not None and idx2 + 2 < len(actions) else None
+        menu.insertSeparator(before_sep) if before_sep is not None else menu.addSeparator()
+        actions = menu.actions()
+        before2 = actions[idx2 + 3] if idx2 is not None and idx2 + 3 < len(actions) else None
+        act2 = QtGui.QAction(self.t.tr("Select Folder"), menu)
+        act2.triggered.connect(lambda: self.select_folder(path))
+        menu.insertAction(before2, act2) if before2 is not None else menu.addAction(act2)
     
     def copy_path(self, path):
         QtGui.QGuiApplication.clipboard().setText(path)
@@ -98,35 +87,25 @@ class FolderContextMenuBuilder(ActionManager):
         self.view = parent
 
     def build_menu(self, path):
-        def get_context():
-            return {"path": path}
-        
         menu_items = [
             ":Path",
             "file.copy_path",
             "file.show_explorer",
-            "---",
+            "-",
             "file.paste",
-            "---",
+            "-",
         ]
-        
-        menu = self.command_builder.build(self.root, menu_items, get_context)
-        
+
+        seed_ctx = CommandContext.create(self.root, "*", source="menu", extras={"path": path})
+        menu = QtWidgets.QMenu(self.root)
+        menu.setProperty("__CommandMenuBuilder_Menu__", True)
+        self.command_builder.build_into(menu, self.root, menu_items, seed_ctx=seed_ctx)
         if path in self.view.roots:
-            self.command_builder.create_custom_action(
-                menu,
-                self.root,
-                self.t.tr('Remove from view'),
-                lambda: self.remove(path),
-            )
+            a = menu.addAction(self.t.tr("Remove from view"))
+            a.triggered.connect(lambda: self.remove(path))
         else:
-            self.command_builder.create_custom_action(
-                menu,
-                self.root,
-                self.t.tr('Ignore this folder'),
-                lambda: self.ignore(path),
-            )
-        
+            a = menu.addAction(self.t.tr("Ignore this folder"))
+            a.triggered.connect(lambda: self.ignore(path))
         return menu
 
     def remove(self, path):

@@ -1,12 +1,12 @@
-import contextlib
 from PySide6 import QtWidgets
 from ..common.profiling import logger, profiler
 from ..constants import APP_NAME
+from ..actions.facade import Command
 from ..image_collector.progress_notifier import close_publisher
 from ..lang.manager import TranslatorMixin
-from ..os.process import Proc
 from ..qt.debounce import qt_debounce
 from ..zmq.zmq import Role, ZMQBroker, ZMQNode
+from .tray_commands import TRAY_MENU_ITEMS, ensure_registered
 
 class TrayApp(QtWidgets.QSystemTrayIcon, TranslatorMixin):
 
@@ -15,88 +15,35 @@ class TrayApp(QtWidgets.QSystemTrayIcon, TranslatorMixin):
         super().__init__(icon, parent)
         logger.info('TRAY APP EXECUTED')
         self.setToolTip(f'{APP_NAME}')
-        self.menu = QtWidgets.QMenu()
         self.show_state = False
-        self.show_action = self.menu.addAction(self.t.tr('Show Window'))
-        self.show_action.triggered.connect(self.show_if_not)
-        self.open_action = self.menu.addAction(self.t.tr('Open New Window'))
-        self.open_action.triggered.connect(self.show_anyways)
-        self.menu.addSeparator()
-        self.reload_action = self.menu.addAction(self.t.tr('ReScan All'))
-        self.reload_action.triggered.connect(self.rescan)
-        self.cleanup_action = self.menu.addAction(self.t.tr('Cleanup and Optimize'))
-        self.cleanup_action.triggered.connect(self.cleanup)
-        self.menu.addSeparator()
-        self.test_action = self.menu.addAction(self.t.tr('Test'))
-        self.test_action.triggered.connect(self.test)
-        self.test_action2 = self.menu.addAction(self.t.tr('Test2'))
-        self.test_action2.triggered.connect(self.test2)
-        self.menu.addSeparator()
-        self.quit_action = self.menu.addAction(self.t.tr('Quit'))
-        self.quit_action.triggered.connect(self.quit)
-        self.setContextMenu(self.menu)
         self.activated.connect(self.on_activated)
         self.broker = ZMQBroker()
         self.broker.start()
         self.zmq = ZMQNode(Role.COMMUNICATOR, on_message=self.on_notify)
         self.zmq.start()
-        QtWidgets.QApplication.instance().aboutToQuit.connect(self.delete)
+        ensure_registered()
+        self.setContextMenu(self._build_menu())
+        QtWidgets.QApplication.instance().aboutToQuit.connect(self.on_delete)
+
+    def _build_menu(self):
+        return Command.build_menu(TRAY_MENU_ITEMS, None, seed_ctx=self._ctx())
+
+    def _ctx(self):
+        return Command.create_context(None, "Tray", source="tray", extras={"tray": self})
 
     def on_notify(self, v):
         logger.info(f'NOTIFY : {v}')
 
-    def cleanup(self):
-        try:
-            self.zmq.send(targetprocess='ALL', table='*', topic='cleanup', message='True')
-        except Exception as e:
-            logger.warning(f'[toggle notify failed] {e}')
-
-    def rescan(self):
-        try:
-            self.zmq.send(targetprocess='ALL', table='*', topic='rescan', message='True')
-        except Exception as e:
-            logger.warning(f'[toggle notify failed] {e}')
-
-    def send_show_toggle(self, flag):
-        try:
-            self.zmq.send(targetprocess='ALL', table='*', topic='show_toggle', message='True' if flag else 'False')
-        except Exception as e:
-            logger.warning(f'[toggle notify failed] {e}')
-
-    def get_viewer_count(self):
-        try:
-            return self.zmq.get_sub_count()
-        except Exception as e:
-            logger.warning(f'[viewer count failed] {e}')
-            return 0
-
     @profiler.profile
     def on_activated(self, reason):
         if reason == QtWidgets.QSystemTrayIcon.Trigger:
-            self.show_if_not()
+            self._on_trigger()
 
     @qt_debounce(10)
-    def show_if_not(self):
-        c = self.get_viewer_count()
-        logger.info(c)
-        if c < 1:
-            self.show_anyways()
-        else:
-            self.show_state = not self.show_state
-            self.send_show_toggle(self.show_state)
+    def _on_trigger(self):
+        Command.execute('show_window', ctx=self._ctx())
 
-    @qt_debounce(500)
-    def show_anyways(self):
-        Proc.new_main('--viewer')
-
-    def test(self):
-        logger.info('SENDING TEST')
-        self.zmq.send(targetprocess='ALL', table='*', topic='none', message='TEST FUNCTION!')
-
-    def test2(self):
-        logger.info(Proc.get_subset('--collector'))
-
-    def delete(self):
+    def on_delete(self):
         try:
             self.zmq.stop()
         except Exception as e:
@@ -110,5 +57,4 @@ class TrayApp(QtWidgets.QSystemTrayIcon, TranslatorMixin):
         except Exception as e:
             logger.debug(f'TrayApp.close_publisher failed: {e}')
 
-    def quit(self):
-        QtWidgets.QApplication.quit()
+    

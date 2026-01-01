@@ -1,5 +1,5 @@
 from pathlib import Path
-from .actions.facade import Classes
+from source.actions.facade import Kit
 from source.common.errors import show_warning
 
 
@@ -42,7 +42,7 @@ def accept_local_existing_files(ctx) -> bool:
     return False
 
 
-class DragDemoDragCommands(Classes.MenuBase):
+class DragDemoDragCommands(Kit.MenuBase):
     def _rect_selection_start(self, ctx):
         print(f"[RectSelection] Start at {ctx.get('pos')}")
 
@@ -78,7 +78,7 @@ class DragDemoDragCommands(Classes.MenuBase):
 
     def create_definitions(self):
         return [
-            Classes.Command(
+            Kit.Command(
                 path="rectSelection",
                 display="Rectangle Selection",
                 category="drag",
@@ -89,7 +89,7 @@ class DragDemoDragCommands(Classes.MenuBase):
                     "end": self._rect_selection_end,
                 },
             ),
-            Classes.Command(
+            Kit.Command(
                 path="dragScroll",
                 display="Drag Scroll",
                 category="drag",
@@ -99,7 +99,7 @@ class DragDemoDragCommands(Classes.MenuBase):
                     "end": self._drag_scroll_end,
                 },
             ),
-            Classes.Command(
+            Kit.Command(
                 path="widgetDrag",
                 display="Widget Drag",
                 category="drag",
@@ -112,7 +112,7 @@ class DragDemoDragCommands(Classes.MenuBase):
             ),
         ]
 
-class DragDemoDropCommands(Classes.MenuBase):
+class DragDemoDropCommands(Kit.MenuBase):
     def _drop_files_enter(self, ctx):
         event, widget = ctx.get_many(["event", "widget"])
         print(f"[dropFiles.enter] Called - widget={widget}, event={type(event).__name__ if event else None}")
@@ -258,7 +258,7 @@ class DragDemoDropCommands(Classes.MenuBase):
 
     def create_definitions(self):
         return [
-            Classes.Command(
+            Kit.Command(
                 path="dropFiles",
                 display="Drop Files",
                 category="drop",
@@ -271,7 +271,7 @@ class DragDemoDropCommands(Classes.MenuBase):
                     "drop": self._drop_files_drop,
                 },
             ),
-            Classes.Command(
+            Kit.Command(
                 path="simpleFileDrop",
                 display="Simple File Drop",
                 category="drop",
@@ -283,7 +283,7 @@ class DragDemoDropCommands(Classes.MenuBase):
                     "drop": self._simple_file_drop_drop,
                 },
             ),
-            Classes.Command(
+            Kit.Command(
                 path="simpleFileDropCtrl",
                 display="Simple File Drop (Ctrl)",
                 category="drop",
@@ -295,7 +295,7 @@ class DragDemoDropCommands(Classes.MenuBase):
                     "drop": self._simple_file_drop_ctrl_drop,
                 },
             ),
-            Classes.Command(
+            Kit.Command(
                 path="filePathDrop",
                 display="File Path Drop",
                 category="drop",
@@ -309,5 +309,5 @@ class DragDemoDropCommands(Classes.MenuBase):
         ]
 
 
-def get_menu_classes() -> list[type[Classes.MenuBase]]:
+def get_menu_classes() -> list[type[Kit.MenuBase]]:
     return [DragDemoDragCommands, DragDemoDropCommands]

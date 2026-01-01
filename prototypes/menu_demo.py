@@ -1,40 +1,38 @@
 from datetime import datetime
 
 from PySide6 import QtCore, QtGui, QtWidgets
-from .actions.facade import Classes, UI, Settings
+from source.actions.facade import Kit, UI, Settings, Command
 from source.common.errors import show_warning
 
 
-class FileMenu(Classes.MenuBase):
+class FileMenu(Kit.MenuBase):
     path_prefix = "file"
     def create_definitions(self):
         items = [":File"]
         for i in range(4):
-            items.append(Classes.Command(path=f"file.{i}", display=f"file {i}", func=(lambda x=i: (lambda: print(f"file {x}")))()))
+            items.append(Kit.Command(path=f"file.{i}", display=f"file {i}", func=(lambda x=i: (lambda: print(f"file {x}")))()))
         return items
 
 
-class PathMenu(Classes.MenuBase):
+class PathMenu(Kit.MenuBase):
     path_prefix = "path"
     def create_definitions(self):
         items = [":Path", "-"]
         for i in range(4):
-            items.append(Classes.Command(path=f"path.{i}", display=f"path {i}", func=(lambda x=i: (lambda: print(f"path {x}")))()))
+            items.append(Kit.Command(path=f"path.{i}", display=f"path {i}", func=(lambda x=i: (lambda: print(f"path {x}")))()))
         i = 3
-        items.append(Classes.Command(path=f"Temp/path.Test{i}", display=f"Temp {i}", func=(lambda x=i: (lambda: print(f"path {x}")))()))
+        items.append(Kit.Command(path=f"Temp/path.Test{i}", display=f"Temp {i}", func=(lambda x=i: (lambda: print(f"path {x}")))()))
         return items
 
 
-class CmdMenu(Classes.MenuBase):
+class CmdMenu(Kit.MenuBase):
     path_prefix = "commands"
     
     def _cycle_sort_order(self):
-        builder = Classes.CommandBuilder()
-        result = builder.cycle_action_group("sort_order")
+        Command.cycle_action_group("sort_order")
     
     def _print_current_sort_order(self):
-        builder = Classes.CommandBuilder()
-        current = builder.get_action_group_current("sort_order")
+        current = Command.get_action_group_current("sort_order")
         if current:
             print(f"Current sort order: {current}")
         else:
@@ -58,36 +56,36 @@ class CmdMenu(Classes.MenuBase):
     def create_definitions(self):
         return [
             ":Commands",
-            Classes.Command(path="hello", display="Hello", func=lambda ctx: print(f"hello from {getattr(ctx, 'scope', '')}")),
-            Classes.Command(path="time", display="Show Time", func=lambda: print(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))),
-            Classes.Command(path="test", display="print test", params=[Classes.Param(name="test", value="", description="test")], func=lambda test="": print(f"test: {test}")),
-            Classes.Command(path="Debug/printCtx", display="Print Ctx", func=lambda ctx: (ctx.print_debug() if ctx is not None and hasattr(ctx, "print_debug") else print("ctx=None"))),
-            Classes.Command(path="Debug/isDemoPane", display="Is DemoPane?", func=self._print_is_demo_pane),
+            Kit.Command(path="hello", display="Hello", func=lambda ctx: print(f"hello from {getattr(ctx, 'scope', '')}")),
+            Kit.Command(path="time", display="Show Time", func=lambda: print(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))),
+            Kit.Command(path="test", display="print test", params=[Kit.Param(name="test", value="", description="test")], func=lambda test="": print(f"test: {test}")),
+            Kit.Command(path="Debug/printCtx", display="Print Ctx", func=lambda ctx: (ctx.print_debug() if ctx is not None and hasattr(ctx, "print_debug") else print("ctx=None"))),
+            Kit.Command(path="Debug/isDemoPane", display="Is DemoPane?", func=self._print_is_demo_pane),
             "-",
             ":Options",
-            Classes.Command(path="Options/echo", display="Echo", params=[Classes.Param(name="text", value="echo"), Classes.Param(name="repeat", value=1, min_value=1, max_value=8)], has_options=True, func=lambda text="echo", repeat=1: print(text * repeat)),
-            Classes.Command(path="Options/count", display="Count", params=[Classes.Param(name="value", value=1, description="Value"), Classes.Param(name="step", value=1, min_value=1, max_value=10)], has_options=True, func=lambda value=1, step=1: print("count", " ".join(str(i) for i in range(value, value + step)))),
-            Classes.Command(path="Options/mode", display="Mode", params=[Classes.Param(name="mode", value=["A", "B", "C"], description="Mode")], has_options=True, func=lambda mode="A": print(f"mode {mode}")),
+            Kit.Command(path="Options/echo", display="Echo", params=[Kit.Param(name="text", value="echo"), Kit.Param(name="repeat", value=1, min_value=1, max_value=8)], has_options=True, func=lambda text="echo", repeat=1: print(text * repeat)),
+            Kit.Command(path="Options/count", display="Count", params=[Kit.Param(name="value", value=1, description="Value"), Kit.Param(name="step", value=1, min_value=1, max_value=10)], has_options=True, func=lambda value=1, step=1: print("count", " ".join(str(i) for i in range(value, value + step)))),
+            Kit.Command(path="Options/mode", display="Mode", params=[Kit.Param(name="mode", value=["A", "B", "C"], description="Mode")], has_options=True, func=lambda mode="A": print(f"mode {mode}")),
             "-",
             ":Toggle",
-            Classes.Command(path="Toggle/toggleVerbose", display="Verbose Mode", checkable=True, default_checked=False, func=lambda ctx: print("verbose on" if ctx.get('checked', False) else "verbose off")),
-            Classes.Command(path="Toggle/toggleKeyScopeMode", display="Toggle Key Scope (Focus/Cursor)", func=self._toggle_key_scope_mode),
+            Kit.Command(path="Toggle/toggleVerbose", display="Verbose Mode", checkable=True, default_checked=False, func=lambda ctx: print("verbose on" if ctx.get('checked', False) else "verbose off")),
+            Kit.Command(path="Toggle/toggleKeyScopeMode", display="Toggle Key Scope (Focus/Cursor)", func=self._toggle_key_scope_mode),
             "-",
             ":Sort Order",
-            Classes.Command(path="Sort/sortByName", display="Name", checkable=True, default_checked=True, action_group="sort_order", func=lambda ctx: print("Sort by Name" if ctx.get('checked', False) else "")),
-            Classes.Command(path="Sort/sortByDate", display="Date", checkable=True, default_checked=False, action_group="sort_order", func=lambda ctx: print("Sort by Date" if ctx.get('checked', False) else "")),
-            Classes.Command(path="Sort/sortBySize", display="Size", checkable=True, default_checked=False, action_group="sort_order", func=lambda ctx: print("Sort by Size" if ctx.get('checked', False) else "")),
+            Kit.Command(path="Sort/sortByName", display="Name", checkable=True, default_checked=True, action_group="sort_order", func=lambda ctx: print("Sort by Name" if ctx.get('checked', False) else "")),
+            Kit.Command(path="Sort/sortByDate", display="Date", checkable=True, default_checked=False, action_group="sort_order", func=lambda ctx: print("Sort by Date" if ctx.get('checked', False) else "")),
+            Kit.Command(path="Sort/sortBySize", display="Size", checkable=True, default_checked=False, action_group="sort_order", func=lambda ctx: print("Sort by Size" if ctx.get('checked', False) else "")),
             "Sort/-",
-            Classes.Command(path="Sort/cycleSortOrder", display="Cycle Sort Order", hotkey="Ctrl+Shift+S", func=self._cycle_sort_order),
-            Classes.Command(path="Sort/printCurrentSort", display="Show Current Sort Order", func=self._print_current_sort_order),
+            Kit.Command(path="Sort/cycleSortOrder", display="Cycle Sort Order", hotkey="Ctrl+Shift+S", func=self._cycle_sort_order),
+            Kit.Command(path="Sort/printCurrentSort", display="Show Current Sort Order", func=self._print_current_sort_order),
         ]
 
-class ContextMenu(Classes.MenuBase):
+class ContextMenu(Kit.MenuBase):
     path_prefix = "context"
 
     def _prepare_context_menu(self, ctx=None):
         active_popup = QtWidgets.QApplication.activePopupWidget()
-        if active_popup and active_popup.property(Classes.MARKER):
+        if active_popup and active_popup.property(Kit.MARKER):
             active_popup.close()
 
         seed = ctx if ctx is not None and hasattr(ctx, "get") else None
@@ -112,9 +110,7 @@ class ContextMenu(Classes.MenuBase):
         if not target:
             return
         seed = ctx if ctx is not None and hasattr(ctx, "get") else None
-        b = UI.get_builder(target, seed_ctx=seed)
-        b.build([":Menu", "-", "commands/:Test", "commands/-", "commands", "-", "file", "path", "Temp", "path.1", "Options"]) 
-        m = b.menu
+        m = Command.build_menu([":Menu", "-", "commands/:Test", "commands/-", "commands", "-", "file", "path", "Temp", "path.1", "Options"], target, seed_ctx=seed)
         m.exec(pos)
     
     def _show_all_menu(self, ctx=None):
@@ -122,18 +118,18 @@ class ContextMenu(Classes.MenuBase):
         if not target:
             return
         seed = ctx if ctx is not None and hasattr(ctx, "get") else None
-        m = UI.get_builder(target, seed_ctx=seed).build_all_roots()
+        m = Command.build_all_roots(target, seed_ctx=seed)
         m.exec(pos)
 
     def create_definitions(self):
         return [
             ":ContextMenu",
-            Classes.Command(path="showContextMenuHere", display="Show Context Menu Here", func=self._show_context_menu_here),
-            Classes.Command(path="showAllMenu", display="Show All Menu Here", func=self._show_all_menu),
+            Kit.Command(path="showContextMenuHere", display="Show Context Menu Here", func=self._show_context_menu_here),
+            Kit.Command(path="showAllMenu", display="Show All Menu Here", func=self._show_all_menu),
         ]
 
 
-class MenuMenu(Classes.MenuBase):
+class MenuMenu(Kit.MenuBase):
     path_prefix = "menu"
 
     def _open_mouse_binding_editor(self, ctx=None):
@@ -147,11 +143,11 @@ class MenuMenu(Classes.MenuBase):
     def create_definitions(self):
         return [
             ":Menu",
-            Classes.Command(path="binding/bindings", display="Mouse Bindings...", func=self._open_mouse_binding_editor),
-            Classes.Command(path="binding/shortcutBindings", display="Shortcut Bindings...", func=self._open_shortcut_binding_editor),
+            Kit.Command(path="binding/bindings", display="Mouse Bindings...", func=self._open_mouse_binding_editor),
+            Kit.Command(path="binding/shortcutBindings", display="Shortcut Bindings...", func=self._open_shortcut_binding_editor),
         ]
 
 
-def get_menu_classes() -> list[type[Classes.MenuBase]]:
+def get_menu_classes() -> list[type[Kit.MenuBase]]:
     return [FileMenu, PathMenu, CmdMenu, ContextMenu, MenuMenu]
 

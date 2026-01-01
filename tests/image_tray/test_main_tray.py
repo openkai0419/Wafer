@@ -1,5 +1,10 @@
 import py_compile
+from pathlib import Path
 
 
 def test_compile():
-    py_compile.compile('source/image_tray/main_tray.py')
+    root = Path('source/image_tray')
+    for p in root.rglob('*.py'):
+        if '__pycache__' in p.parts:
+            continue
+        py_compile.compile(str(p), doraise=True)

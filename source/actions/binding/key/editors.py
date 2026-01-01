@@ -3,10 +3,11 @@ from pathlib import Path
 from PySide6 import QtCore, QtGui, QtWidgets
 from source.common.funcs import uipx
 from source.common.errors import show_warning
-from ...facade import Settings, UI
+from ...command.ui import MenuBuilder
 from ...command.payload import format_payload_display
 from ...command.payload import CommandPayload
 from ..common import WidgetRef
+from ..seed import get_seed_key_specs
 from .store import KeyBindingStore
 from .shortcutmanager import ShortcutManager
 from .sequence import KeySequence, KeySpecCatalog
@@ -205,7 +206,7 @@ class KeyBindingEditor(QtWidgets.QDialog):
         if key_seq is None:
             return
         btn = self.btn_add_binding
-        builder = UI.get_builder(self)
+        builder = MenuBuilder(self)
         def _prep(m: QtWidgets.QMenu):
             act_none = QtGui.QAction("なし(解除)", m)
             act_none.triggered.connect(lambda: self._on_select_command(key_seq, None))
@@ -269,7 +270,7 @@ class KeyBindingEditor(QtWidgets.QDialog):
 
     def _search(self):
         btn = self.btn_search
-        builder = UI.get_builder(self)
+        builder = MenuBuilder(self)
         def _prep(m: QtWidgets.QMenu):
             act_none = QtGui.QAction("なし(解除)", m)
             act_none.triggered.connect(lambda: self._on_search_select(None))
@@ -371,7 +372,7 @@ class KeyBindingEditor(QtWidgets.QDialog):
         self._select_lists_for_sequence(new_seq)
 
     def _reset_all_defaults(self):
-        specs = Settings.seed_key_specs()
+        specs = get_seed_key_specs()
         if specs is None:
             return
         self._draft = KeyBindingStore.normalize_specs(specs)
@@ -573,7 +574,7 @@ class _KeySequenceSection(QtWidgets.QGroupBox):
         btn = self.global_edit if scope == "*" else self.override_edits.get(scope)
         if btn is None:
             return
-        builder = UI.get_builder(self)
+        builder = MenuBuilder(self)
         def _prep(m: QtWidgets.QMenu, sc=scope):
             act_none = QtGui.QAction("なし(解除)", m)
             act_none.triggered.connect(lambda _, s=sc: self._on_select(s, None))

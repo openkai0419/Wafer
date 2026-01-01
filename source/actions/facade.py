@@ -6,11 +6,12 @@ from PySide6 import QtWidgets
 
 from .binding.common import WidgetRef
 from .binding.manager import BindingManager
+from .binding.seed import get_seed_key_specs, get_seed_mouse_specs, set_seed_specs
 from .command.state import CommandOptionStore
 
-class Classes:
+class Kit:
     from .binding.mixins import CommandBindingMixin as UIMixin
-    from .command.payload import ScopedPayloads as BindPayloads
+    from .command.payload import ScopedPayloads as Payloads
     from .command.core import COMMAND_MENU_MARKER as MARKER, CommandMeta as Command, CommandParam as Param
     from .command.menu import RegistryBackedMenu as MenuBase
     from .command.ui import CommandMenuBuilder as CommandBuilder
@@ -33,8 +34,7 @@ class Settings:
         self.key_bindings = str(key_bindings)
         self.command_options = str(command_options)
         self._key_scope_mode = str(key_scope_mode).strip().lower() if key_scope_mode is not None else None
-        self._seed_mouse_specs = seed_mouse_specs
-        self._seed_key_specs = seed_key_specs
+        set_seed_specs(mouse_specs=seed_mouse_specs, key_specs=seed_key_specs)
         BindingManager.configure(self.mouse_bindings, self.key_bindings)
         CommandOptionStore.configure(self.command_options)
         if self._key_scope_mode is not None:
@@ -89,11 +89,11 @@ class Settings:
 
     @classmethod
     def seed_mouse_specs(cls):
-        return cls.instance()._seed_mouse_specs
+        return get_seed_mouse_specs()
 
     @classmethod
     def seed_key_specs(cls):
-        return cls.instance()._seed_key_specs
+        return get_seed_key_specs()
 
     @classmethod
     def register_menus(cls, menu_classes) -> None:
@@ -110,12 +110,9 @@ class Settings:
         cls.instance()._commit()
 
     def _activate(self, *, mouse_bindings=None, key_bindings=None) -> BindingManager:
-        if mouse_bindings is not None:
-            self._seed_mouse_specs = mouse_bindings
-        if key_bindings is not None:
-            self._seed_key_specs = key_bindings
-        eff_mouse = mouse_bindings if mouse_bindings is not None else self._seed_mouse_specs
-        eff_key = key_bindings if key_bindings is not None else self._seed_key_specs
+        set_seed_specs(mouse_specs=mouse_bindings, key_specs=key_bindings)
+        eff_mouse = mouse_bindings if mouse_bindings is not None else get_seed_mouse_specs()
+        eff_key = key_bindings if key_bindings is not None else get_seed_key_specs()
         if (eff_mouse is not None or eff_key is not None) and not self._bindings_ok():
             self._set_bindings_from_specs(eff_mouse, eff_key)
             self._save_bindings()
@@ -154,11 +151,6 @@ class Settings:
 
 
 class UI:
-    @staticmethod
-    def get_builder(parent: QtWidgets.QWidget | None = None, *, seed_ctx=None):
-        from .command.ui import MenuBuilder
-
-        return MenuBuilder(parent, seed_ctx=seed_ctx)
 
     @staticmethod
     def collect_bindable_widgets() -> list[WidgetRef]:
@@ -188,9 +180,8 @@ class UI:
         if not ws:
             return
         from .binding.key.editors import ShortcutBindingEditor
-        from .command.core import CommandRegistry
 
-        cmds = list(CommandRegistry().get_all_commands().keys())
+        cmds = list(Command.registry().get_all_commands().keys())
         dlg = ShortcutBindingEditor(ws, cmds, parent=parent)
         dlg.exec()
 
@@ -200,3 +191,101 @@ class UI:
 
         widget.setProperty(ShortcutManager.BLOCK_PARENT_SHORTCUTS_PROP, True)
         return widget
+
+
+class Command:
+    @staticmethod
+    def get_builder(parent: QtWidgets.QWidget | None = None, *, seed_ctx=None):
+        from .command.ui import MenuBuilder
+        return MenuBuilder(parent, seed_ctx=seed_ctx)
+
+    @staticmethod
+    def create_context(
+        widget=None,
+        scope: str | None = None,
+        *,
+        source: str = "",
+        event=None,
+        key=None,
+        start_pos=None,
+        start_global_pos=None,
+        extras: dict | None = None,
+        seed=None,
+    ):
+        from .command.context import CommandContext
+
+        return CommandContext.create(
+            widget,
+            scope,
+            source=source,
+            event=event,
+            key=key,
+            start_pos=start_pos,
+            start_global_pos=start_global_pos,
+            extras=extras,
+            seed=seed,
+        )
+
+    @staticmethod
+    def registry():
+        from .command.core import CommandRegistry
+
+        return CommandRegistry()
+
+    @staticmethod
+    def execute(command_id: str, *, ctx=None, **kwargs):
+        if ctx is None:
+            ctx = kwargs.pop("ctx", None)
+        if ctx is None:
+            ctx = Command.create_context(None, "*", source="api")
+        return Command.registry().execute(str(command_id), ctx=ctx, **kwargs)
+
+    @staticmethod
+    def build_menu(
+        items: list[str],
+        parent: QtWidgets.QWidget | None = None,
+        *,
+        seed_ctx=None,
+        selection_callback=None,
+        allow_options_with_selection: bool = False,
+    ):
+        b = Command.get_builder(parent, seed_ctx=seed_ctx)
+        return b.build(list(items or []), selection_callback=selection_callback, allow_options_with_selection=allow_options_with_selection)
+
+    @staticmethod
+    def build_all_roots(
+        parent: QtWidgets.QWidget | None = None,
+        *,
+        seed_ctx=None,
+        selection_callback=None,
+        allow_options_with_selection: bool = False,
+    ):
+        b = Command.get_builder(parent, seed_ctx=seed_ctx)
+        return b.build_all_roots(selection_callback=selection_callback, allow_options_with_selection=allow_options_with_selection)
+
+    @staticmethod
+    def use_menu(folder: str, parent: QtWidgets.QWidget | None = None, *, seed_ctx=None):
+        b = Command.get_builder(parent, seed_ctx=seed_ctx)
+        return b.use(str(folder))
+
+    @staticmethod
+    def command_builder():
+        return Kit.CommandBuilder()
+
+    @staticmethod
+    def cycle_action_group(group_name: str):
+        return Command.command_builder().cycle_action_group(str(group_name))
+
+    @staticmethod
+    def get_action_group_current(group_name: str):
+        return Command.command_builder().get_action_group_current(str(group_name))
+
+    @staticmethod
+    def register_menus(menu_classes) -> None:
+        Settings.register_menus(menu_classes)
+
+    @staticmethod
+    def register_commands(defs) -> None:
+        from .command.core import register_command_defs
+
+        register_command_defs(defs)

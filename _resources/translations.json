@@ -1,4 +1,13 @@
 {
+  "Delete permanently (bypass recycle bin)": {
+    "en": "Delete permanently (bypass recycle bin)"
+  },
+  "Options": {
+    "en": "Options"
+  },
+  "Overwrite mode": {
+    "en": "Overwrite mode"
+  },
   "Apply": {
     "en": "Apply"
   },

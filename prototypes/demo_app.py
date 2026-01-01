@@ -4,9 +4,9 @@ from pathlib import Path
 
 from PySide6 import QtCore, QtWidgets
 from source.common.funcs import uipx
-from .actions.facade import Classes, Settings, UI
+from source.actions.facade import Kit, Settings, UI, Command
 
-class DemoButton(QtWidgets.QPushButton, Classes.UIMixin):
+class DemoButton(QtWidgets.QPushButton, Kit.UIMixin):
     def __init__(self, name: str, parent=None):
         super().__init__(name, parent)
         self.init_command_binding(name, enable_drops=True)
@@ -14,7 +14,7 @@ class DemoButton(QtWidgets.QPushButton, Classes.UIMixin):
     def extend_context(self, ctx, cmd=None, event=None, key=None, source=None):
         return {"button": self.binding_scope()}
 
-class DemoPane(QtWidgets.QFrame, Classes.UIMixin):
+class DemoPane(QtWidgets.QFrame, Kit.UIMixin):
     def __init__(self, name: str, parent=None):
         super().__init__(parent)
         self.setFrameShape(QtWidgets.QFrame.StyledPanel)
@@ -34,7 +34,7 @@ class TestLineEdit(QtWidgets.QLineEdit):
         super().__init__(parent)
         self.setPlaceholderText(f"Type here in {name}...")
 
-class MainWindow(QtWidgets.QMainWindow, Classes.UIMixin):
+class MainWindow(QtWidgets.QMainWindow, Kit.UIMixin):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Prototype Command Test")
@@ -65,8 +65,7 @@ class MainWindow(QtWidgets.QMainWindow, Classes.UIMixin):
 
     def _setup_menu_bar(self):
         mb = self.menuBar()
-        builder = UI.get_builder(self)
-        m = builder.use("binding")
+        m = Command.use_menu("binding", self)
         mb.addMenu(m)
 
     def closeEvent(self, event):

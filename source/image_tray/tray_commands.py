@@ -1,0 +1,110 @@
+from __future__ import annotations
+
+from typing import Any
+
+from PySide6 import QtWidgets
+
+from ..actions.facade import Kit
+from ..common.profiling import logger
+from ..os.process import Proc
+
+
+def _tray(ctx: Any):
+    t = getattr(ctx, "get", None)
+    tray = t("tray") if callable(t) else None
+    if tray is None:
+        raise ValueError("tray is required in ctx")
+    return tray
+
+
+def get_viewer_count(ctx=None) -> int:
+    tray = _tray(ctx)
+    try:
+        return int(tray.zmq.get_sub_count())
+    except Exception as e:
+        logger.warning(f'[viewer count failed] {e}')
+        return 0
+
+
+def _tray_send(ctx, *, topic: str, message: str):
+    tray = _tray(ctx)
+    try:
+        tray.zmq.send(targetprocess='ALL', table='*', topic=str(topic), message=str(message))
+    except Exception as e:
+        logger.warning(f'[{topic} notify failed] {e}')
+
+
+def send_show_toggle(ctx=None, flag: bool = False):
+    _tray_send(ctx, topic='show_toggle', message='True' if flag else 'False')
+
+
+def show_window(ctx=None):
+    tray = _tray(ctx)
+    c = get_viewer_count(ctx)
+    if c < 1:
+        Proc.new_main('--viewer')
+        return
+    tray.show_state = not bool(getattr(tray, 'show_state', False))
+    send_show_toggle(ctx, tray.show_state)
+
+
+def open_new_window(ctx=None):
+    Proc.new_main('--viewer')
+
+
+def rescan_all(ctx=None):
+    _tray_send(ctx, topic='rescan', message='True')
+
+
+def cleanup_optimize(ctx=None):
+    _tray_send(ctx, topic='cleanup', message='True')
+
+
+def test(ctx=None):
+    logger.info('SENDING TEST')
+    _tray_send(ctx, topic='none', message='TEST FUNCTION!')
+
+
+def test2(ctx=None):
+    logger.info(Proc.get_subset('--collector'))
+
+
+def quit(ctx=None):
+    QtWidgets.QApplication.quit()
+
+
+class TrayMenu(Kit.MenuBase):
+    path_prefix = "Tray"
+
+    def create_definitions(self):
+        c = Kit.Command
+        return [
+            c(path="show_window", display="Show Window", func=show_window),
+            c(path="open_new_window", display="Open New Window", func=open_new_window),
+            "-",
+            c(path="rescan_all", display="ReScan All", func=rescan_all),
+            c(path="cleanup_optimize", display="Cleanup and Optimize", func=cleanup_optimize),
+            "-",
+            c(path="test", display="Test", func=test),
+            c(path="test2", display="Test2", func=test2),
+            "-",
+            c(path="quit", display="Quit", func=quit),
+        ]
+
+
+TRAY_MENU_ITEMS = [
+    "show_window",
+    "open_new_window",
+    "-",
+    "rescan_all",
+    "cleanup_optimize",
+    "-",
+    "test",
+    "test2",
+    "-",
+    "quit",
+]
+
+
+def ensure_registered() -> None:
+    TrayMenu().ensure_registered()

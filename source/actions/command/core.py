@@ -63,6 +63,10 @@ class CommandMeta:
     drop_callbacks: Optional[Dict[str, Callable[..., Any]]] = None
     drop_acceptor: Optional[Callable[..., bool]] = None
 
+    def __post_init__(self):
+        if self.hotkey:
+            raise ValueError("hotkey must not be set on CommandMeta; it is resolved from bindings")
+
 
 class CommandBase:
     meta: CommandMeta = None
@@ -313,7 +317,7 @@ def register_command_defs(defs: List[CommandMeta]):
         if meta.id:
             state_manager.register_member(meta.action_group, meta.id)
 
-def create_cycle_command(group_name: str, display: str, hotkey: str = "") -> CommandMeta:
+def create_cycle_command(group_name: str, display: str) -> CommandMeta:
     from .ui import CommandMenuBuilder
     def _cycle_func():
         builder = CommandMenuBuilder()
@@ -323,6 +327,5 @@ def create_cycle_command(group_name: str, display: str, hotkey: str = "") -> Com
     return CommandMeta(
         path=f"cycle_{group_name}",
         display=display,
-        hotkey=hotkey,
         func=_cycle_func,
     )

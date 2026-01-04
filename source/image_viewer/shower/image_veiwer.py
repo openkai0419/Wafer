@@ -1,10 +1,11 @@
 from __future__ import annotations
 from PySide6 import QtCore, QtGui, QtWidgets
 from typing import Literal
+from ...actions.bridge import Kit
 
 FitMode = Literal["contain", "cover"]
 
-class ZoomPanGraphicsView(QtWidgets.QGraphicsView):
+class ZoomPanGraphicsView(QtWidgets.QGraphicsView, Kit.UIMixin):
     zoomChanged = QtCore.Signal(float)
 
     def __init__(self, parent=None):
@@ -22,6 +23,7 @@ class ZoomPanGraphicsView(QtWidgets.QGraphicsView):
         self.setDragMode(QtWidgets.QGraphicsView.NoDrag)
         self.setViewportUpdateMode(QtWidgets.QGraphicsView.SmartViewportUpdate)
         self.setBackgroundBrush(self.palette().brush(QtGui.QPalette.ColorRole.Dark))
+        self.init_command_binding("GraphicsView", enable_drops=True)
 
     # --- public API ---
     def set_image(self, pixmap: QtGui.QPixmap):

@@ -15,7 +15,7 @@ from .funcs import data_path
 logger = None
 profiler = None
 _initialized = False
-LOG_PATH = data_path('log')
+LOG_PATH = data_path('.log')
 
 def is_pid_active(pid):
     return psutil.pid_exists(pid)

@@ -1,4 +1,40 @@
 {
+  "AllMenu": {
+    "en": "AllMenu"
+  },
+  "File View": {
+    "en": "File View"
+  },
+  "Graphics View": {
+    "en": "Graphics View"
+  },
+  "GraphicsView": {
+    "en": "GraphicsView"
+  },
+  "Key Binding": {
+    "en": "Key Binding"
+  },
+  "Mouse Binding": {
+    "en": "Mouse Binding"
+  },
+  "Print Ctx": {
+    "en": "Print Ctx"
+  },
+  "Test": {
+    "en": "Test"
+  },
+  "binding": {
+    "en": "binding"
+  },
+  "debug": {
+    "en": "debug"
+  },
+  "menu": {
+    "en": "menu"
+  },
+  "menus": {
+    "en": "menus"
+  },
   "Delete permanently (bypass recycle bin)": {
     "en": "Delete permanently (bypass recycle bin)"
   },

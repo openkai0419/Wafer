@@ -100,15 +100,19 @@ class RegistryBackedMenu:
     _cmd_paths: Dict[type, Dict[str, str]] = {}
 
     def __init__(self):
-        self.ensure_registered()
+        self._ensure_registered()
+
+    @classmethod
+    def register(cls) -> None:
+        cls()
 
     @profiler.profile
-    def ensure_registered(self):
+    def _ensure_registered(self):
         t = type(self)
         if self._flags.get(t, False):
             return
         res = self.create_definitions()
-        base = getattr(self, "path_prefix", None)
+        base = getattr(self, "prefix", None)
         base_parts = split_parts(base) if isinstance(base, str) and base else []
         defs: List[CommandMeta] = []
         items: List[str] = []
@@ -157,7 +161,7 @@ def register_menu_classes(menu_classes: Sequence[type[RegistryBackedMenu]]) -> N
         if cls is None:
             continue
         try:
-            cls().ensure_registered()
+            cls.register()
         except Exception as e:
             show_warning(None, f"register_menu_classes failed: {getattr(cls, '__name__', str(cls))}", exc=e)
 

@@ -1,86 +1,81 @@
-from source.actions.facade import Kit
+from source.actions.bridge import Kit
 
-ScopedPayloads = Kit.Payloads
 
-KeySpec = str | int
-KeyChordSpec = tuple[KeySpec, ...]
-MouseActionSpec = tuple[object, ...]
-
-def get_all_mouse_bindings() -> dict[MouseActionSpec, ScopedPayloads]:
+def get_all_mouse_bindings():
     return {
-        ("RIGHT", "SINGLE", ()): Kit.Payloads({
+        Kit.Mouse("RIGHT", "SINGLE", ()): Kit.Bind({
             "*": {"id": "showContextMenuHere", "args": {}}
         }),
-        ("LEFT", "SINGLE", ()): Kit.Payloads({
+        Kit.Mouse("LEFT", "SINGLE", ()): Kit.Bind({
             "*": {"id": "hello", "args": {}},
             "Widget A": {"id": "file.0", "args": {}},
             "Widget B": {"id": "file.1", "args": {}},
         }),
-        ("LEFT", "SINGLE", ("RIGHT",)): Kit.Payloads({
+        Kit.Mouse("LEFT", "SINGLE", ("RIGHT",)): Kit.Bind({
             "*": {"id": "path.0", "args": {}},
             "Widget A": {"id": "echo", "args": {}},
             "Widget B": {"id": "count", "args": {}},
         }),
-        ("LEFT", "SINGLE", ("MIDDLE",)): Kit.Payloads({
+        Kit.Mouse("LEFT", "SINGLE", ("MIDDLE",)): Kit.Bind({
             "Widget A": {"id": "echo", "args": {"text": "echoe", "repeat": 7}},
             "Widget B": {"id": "count", "args": {"value": 3, "step": 8}},
         }),
-        ("X1", "SINGLE", ()): Kit.Payloads({
+        Kit.Mouse("X1", "SINGLE", ()): Kit.Bind({
             "*": {"id": "toggleVerbose", "args": {}}
         }),
-        ("X2", "SINGLE", ()): Kit.Payloads({
+        Kit.Mouse("X2", "SINGLE", ()): Kit.Bind({
             "*": {"id": "mode", "args": {"mode": "C"}}
         }),
-        ("LEFT", "DOUBLE", ()): Kit.Payloads({
+        Kit.Mouse("LEFT", "DOUBLE", ()): Kit.Bind({
             "*": {"id": "hello", "args": {}}
         }),
-        ("RIGHT", "SINGLE", ("LEFT",)): Kit.Payloads({
+        Kit.Mouse("RIGHT", "SINGLE", ("LEFT",)): Kit.Bind({
             "*": {"id": "showAllMenu", "args": {}}
         }),
-        ("MIDDLE", "SINGLE", ("LEFT",)): Kit.Payloads({
+        Kit.Mouse("MIDDLE", "SINGLE", ("LEFT",)): Kit.Bind({
             "*": {"id": "sortBySize", "args": {}}
         }),
-        ("MIDDLE", "SINGLE", ("RIGHT",)): Kit.Payloads({
+        Kit.Mouse("MIDDLE", "SINGLE", ("RIGHT",)): Kit.Bind({
             "*": {"id": "sortByName", "args": {}}
         }),
-        ("MIDDLE", "SINGLE", ()): Kit.Payloads({
+        Kit.Mouse("MIDDLE", "SINGLE", ()): Kit.Bind({
             "*": {"id": "cycleSortOrder", "args": {}}
         }),
-        ("LEFT", "DRAG_START", ()): Kit.Payloads({
+        Kit.Mouse("LEFT", "DRAG_START", ()): Kit.Bind({
             "Widget A": {"id": "rectSelection", "args": {}},
             "Drag Demo Widget": {"id": "widgetDrag", "args": {}},
         }),
-        ("RIGHT", "DRAG_START", ()): Kit.Payloads({
+        Kit.Mouse("RIGHT", "DRAG_START", ()): Kit.Bind({
             "Widget A": {"id": "dragScroll", "args": {}}
         }),
-        ("NONE", "DROP", ()): Kit.Payloads({
+        Kit.Mouse("NONE", "DROP", ()): Kit.Bind({
             "Widget A": {"id": "dropFiles", "args": {}},
             "Widget B": {"id": "simpleFileDrop", "args": {}},
             "Drag Demo Widget": {"id": "filePathDrop", "args": {}},
         }),
     }
 
-def get_all_key_bindings() -> dict[KeyChordSpec, ScopedPayloads]:
+def get_all_key_bindings():
     return {
-        ("H",): Kit.Payloads({
+        Kit.Key("H"): Kit.Bind({
             "*": {"id": "hello", "args": {}}
         }),
-        ("T",): Kit.Payloads({
+        Kit.Key("T"): Kit.Bind({
             "*": {"id": "time", "args": {}}
         }),
-        ("Ctrl", "W"): Kit.Payloads({
+        Kit.Key("Ctrl", "W"): Kit.Bind({
             "*": {"id": "bindings", "args": {}}
         }),
-        ("A",): Kit.Payloads({
+        Kit.Key("A"): Kit.Bind({
             "*": {"id": "showContextMenuHere", "args": {}}
         }),
-        ("E",): Kit.Payloads({
+        Kit.Key("E"): Kit.Bind({
             "*": {"id": "showContextMenuHere", "args": {}}
         }),
-        ("Control", "Z"): Kit.Payloads({
+        Kit.Key("Control", "Z"): Kit.Bind({
             "*": {"id": "hello", "args": {}}
         }),
-        ("W",): Kit.Payloads({
+        Kit.Key("W"): Kit.Bind({
             "*": {"id": "file.0", "args": {}},
             "Widget A": {"id": "file.1", "args": {}},
             "Widget B": {"id": "file.2", "args": {}},

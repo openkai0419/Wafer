@@ -162,6 +162,14 @@ class ShortcutManager(QtCore.QObject):
         if et in (QtCore.QEvent.ApplicationDeactivate, QtCore.QEvent.WindowDeactivate):
             self._reset_all_states()
             return False
+        if et not in (
+            QtCore.QEvent.KeyPress,
+            QtCore.QEvent.KeyRelease,
+            QtCore.QEvent.FocusOut,
+            QtCore.QEvent.Hide,
+            QtCore.QEvent.WindowDeactivate,
+        ):
+            return False
         if not isinstance(obj, QtWidgets.QWidget):
             return False
         if ShortcutManager._scope_mode == "cursor":
@@ -170,7 +178,6 @@ class ShortcutManager(QtCore.QObject):
             wid = self._resolve_target_widget_id_focus()
         if wid is None:
             return False
-        et = event.type()
         if et == QtCore.QEvent.KeyPress:
             e = cast(QtGui.QKeyEvent, event)
             if e.isAutoRepeat():

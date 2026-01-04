@@ -315,14 +315,14 @@ class ZMQBroker:
                 self._index_add(ident, role_b, app_b)
             return
         if text.startswith('get_count:'):
-            parts = text.split(':', 5)
+            parts = text.split(':')
             if len(parts) < 5:
                 return
-            role_tail = parts[4]
+            role_tail = ':'.join(parts[4:])
             role_str, req_id = (role_tail, None)
             if ',' in role_tail:
                 role_str, tail = role_tail.split(',', 1)
-                if 'request_id:' in tail:
+                if tail.startswith('request_id:'):
                     req_id = tail.split('request_id:', 1)[1]
             with self._lock:
                 counts = {}

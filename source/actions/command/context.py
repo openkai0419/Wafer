@@ -155,6 +155,47 @@ class CommandContext:
         except TypeError:
             return []
 
+    def get_widget(self, name: str, default: Any = None) -> Any:
+        ws = self.get_widgets(name)
+        return ws[0] if ws else default
+
+    def get_widgets(self, name: str, default: Optional[list] = None) -> list:
+        if not name:
+            return [] if default is None else list(default)
+        k = str(name)
+        cache = self.extras.get("__widget_cache__")
+        if not isinstance(cache, dict):
+            cache = {}
+            self.extras["__widget_cache__"] = cache
+        if k in cache:
+            xs = cache.get(k)
+            if not xs:
+                return [] if default is None else list(default)
+            try:
+                from ..binding.widget_registry import WidgetRegistry
+
+                reg = WidgetRegistry.instance()
+                if any(not reg.is_valid(w) for w in xs):
+                    cache.pop(k, None)
+                else:
+                    return list(xs)
+            except Exception:
+                return list(xs)
+        try:
+            from ..binding.widget_registry import WidgetRegistry
+
+            reg = WidgetRegistry.instance()
+            if not reg.has(k):
+                cache[k] = ()
+                return [] if default is None else list(default)
+            ws = reg.get_all(k)
+            cache[k] = tuple(ws)
+            return list(ws) if ws else ([] if default is None else list(default))
+        except Exception as e:
+            show_warning(None, "CommandContext.get_widgets failed", exc=e)
+            cache[k] = ()
+            return [] if default is None else list(default)
+
     def put(self, key: str, value: Any) -> "CommandContext":
         self.extras[str(key)] = value
         return self

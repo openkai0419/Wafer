@@ -1,7 +1,6 @@
 import argparse
 import signal
 import sys
-import logging
 import threading
 from source.common.funcs import get_setting_file_names
 from source.common.mutex import SafeProcessLock

@@ -4,7 +4,12 @@ from pathlib import Path
 
 from PySide6 import QtCore, QtWidgets
 from source.common.funcs import uipx
-from source.actions.facade import Kit, Settings, UI, Command
+from source.actions.bridge import Kit, Menu, Settings, UI
+
+from . import menu_demo, drag_demo
+for clss in [*menu_demo.get_menu_classes(), *drag_demo.get_menu_classes()]:
+    clss.register()
+
 
 class DemoButton(QtWidgets.QPushButton, Kit.UIMixin):
     def __init__(self, name: str, parent=None):
@@ -60,12 +65,12 @@ class MainWindow(QtWidgets.QMainWindow, Kit.UIMixin):
         c.addWidget(self.line, 0)
         self.line2 = UI.set_block_parent(TestLineEdit("LineEdit 2", self))
         c.addWidget(self.line2, 0)
-        self._setup_menu_bar()
+        self._setup_menu_bar()  
 
 
     def _setup_menu_bar(self):
         mb = self.menuBar()
-        m = Command.use_menu("binding", self)
+        m = Menu.use_menu("binding", self)
         mb.addMenu(m)
 
     def closeEvent(self, event):
@@ -79,18 +84,17 @@ def bootstrap() -> None:
     root = Path(__file__).resolve().parent.parent
     base = root / ".temp" / "demo_app"
     
-    Settings.configure(
-        mouse_bindings=str(base / "mouse_bindings.json"),
-        key_bindings=str(base / "key_bindings.json"),
-        command_options=str(base / ".command_options.json"),
-    )
-    from . import menu_demo, drag_demo
-    Settings.register_menus([*menu_demo.get_menu_classes(), *drag_demo.get_menu_classes()])
 
     w = MainWindow()
     w.resize(uipx(640), uipx(400))
     w.show()
     
+    Settings.configure(
+        mouse_bindings=str(base / "mouse_bindings.json"),
+        key_bindings=str(base / "key_bindings.json"),
+        command_options=str(base / ".command_options.json"),
+    )
+
     from .defaults import get_all_key_bindings, get_all_mouse_bindings
     Settings.activate(mouse_bindings=get_all_mouse_bindings(), key_bindings=get_all_key_bindings())
     

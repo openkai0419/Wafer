@@ -4,42 +4,31 @@ from typing import Any
 
 from PySide6 import QtWidgets
 
-from ..actions.facade import Kit
+from ..actions.bridge import Kit
 from ..common.profiling import logger
 from ..os.process import Proc
 
-
-def _tray(ctx: Any):
-    t = getattr(ctx, "get", None)
-    tray = t("tray") if callable(t) else None
-    if tray is None:
-        raise ValueError("tray is required in ctx")
-    return tray
-
+def _tray_send(ctx, *, topic: str, message: str):
+    tray = ctx.get("tray")
+    try:
+        tray.zmq.send(targetprocess='ALL', table='*', topic=str(topic), message=str(message))
+    except Exception as e:
+        logger.warning(f'[{topic} notify failed] {e}')
 
 def get_viewer_count(ctx=None) -> int:
-    tray = _tray(ctx)
+    tray = ctx.get("tray")
     try:
         return int(tray.zmq.get_sub_count())
     except Exception as e:
         logger.warning(f'[viewer count failed] {e}')
         return 0
 
-
-def _tray_send(ctx, *, topic: str, message: str):
-    tray = _tray(ctx)
-    try:
-        tray.zmq.send(targetprocess='ALL', table='*', topic=str(topic), message=str(message))
-    except Exception as e:
-        logger.warning(f'[{topic} notify failed] {e}')
-
-
 def send_show_toggle(ctx=None, flag: bool = False):
     _tray_send(ctx, topic='show_toggle', message='True' if flag else 'False')
 
 
 def show_window(ctx=None):
-    tray = _tray(ctx)
+    tray = ctx.get("tray")
     c = get_viewer_count(ctx)
     if c < 1:
         Proc.new_main('--viewer')
@@ -72,9 +61,8 @@ def test2(ctx=None):
 def quit(ctx=None):
     QtWidgets.QApplication.quit()
 
-
 class TrayMenu(Kit.MenuBase):
-    path_prefix = "Tray"
+    prefix = "Tray"
 
     def create_definitions(self):
         c = Kit.Command
@@ -92,19 +80,3 @@ class TrayMenu(Kit.MenuBase):
         ]
 
 
-TRAY_MENU_ITEMS = [
-    "show_window",
-    "open_new_window",
-    "-",
-    "rescan_all",
-    "cleanup_optimize",
-    "-",
-    "test",
-    "test2",
-    "-",
-    "quit",
-]
-
-
-def ensure_registered() -> None:
-    TrayMenu().ensure_registered()

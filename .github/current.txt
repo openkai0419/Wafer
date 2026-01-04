@@ -4,5 +4,35 @@
 
 方針
 - source/actions は「コマンド定義・実行」「メニュー構築」「キー/マウス等のバインディング」を担当する。
-- source/actions/facade.py は外部向けAPI専用。source/actions 配下の内部モジュールから facade を import しない。
-- バインディングのデフォルト(seed)は source/actions/binding/seed.py に保持し、facade.Settings が設定する。
+- source/actions/bridge.py は外部向けAPI専用。source/actions 配下の内部モジュールから bridge を import しない。
+- source/actions 配下の機能を外部から使う場合は、必ず bridge（Command/Menu/Kit/Settings/UI/Context）経由で参照・実行する。
+- バインディングのデフォルト(seed)は source/actions/binding/seed.py に保持し、bridge.Settings が設定する（API名は *_bindings に統一）。
+- バインディングのデフォルト宣言はタプル等のspecではなく、Kit.Key(...)/Kit.Mouse(...) で Key/MouseActionKey を直接生成して渡す。
+- キー型（Key/MouseActionKey）は異なるが、バインド値（Kit.Bind=ScopedPayloads=scope->CommandPayload）は共通なので、Storeの set_all/get_all/resolve/save/load は BindingStoreBase に集約する。
+- ビューア固有のコマンド定義やコンテキストメニューは source/image_viewer 直下に置く。
+- 実行は bridge.Command、メニュー構築/表示は bridge.Menu に分離して寄せる。
+
+コンテキストからのWidget参照
+- init_command_binding(name) で BindingManager に登録されたWidgetは、CommandContext.get_widget(name) / get_widgets(name) で名前から取得できる（同名は複数対応）。
+- これにより、どのWidgetから発動したコマンドでも、必要な別Widgetを安定して参照できる。
+- Widgetの登録/取得は source/actions/binding/widget_registry.py の WidgetRegistry が担当し、BindingManager はバインド適用のみ担当する。
+- バインド登録をしたくないWidgetは、bridge.UI.register_widget(name, widget) または WidgetRegistry.register(name, widget) で登録して ctx から参照できる。
+
+入力表示
+- コマンド定義側で hotkey を持たず、表示用のショートカット文字列は BindingManager/ShortcutManager の現在の割り当てからメニュー側で逆引きする。
+- メニューは aboutToShow でホットキー列を揃え、必要に応じて adjustSize() して幅を確定する。
+
+バインディング編集UI
+- Key/MouseのEditorは override UI/コマンドピッカー/レイアウト破棄を editors_common に集約し、個別Editorは差分のみ持つ。
+
+デバッグ出力
+- 環境変数などによるデバッグON/OFF切替は禁止。
+- デバッグ情報は常に logger.debug に渡す。
+- デバッグが増えすぎると情報が追えなくなるので、一時的に追加したものは適度に削除する。
+
+例外処理
+- try/except でログなしに例外を完全に握りつぶすのは、可能な限り避ける。
+- try/except を使う場合でも、少なくとも logger へ残す、または source/common/errors.py の show_warning / raise_error を使って通知・記録する。
+
+プロセス排他
+- source/common/mutex.py の SafeProcessLock は lock ファイルに pid+create_time を保存し、PID 再利用や psutil の取得失敗での誤判定を避ける。

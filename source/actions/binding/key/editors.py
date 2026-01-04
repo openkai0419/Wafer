@@ -1,16 +1,15 @@
 from typing import Dict, List, Any, Tuple
-from pathlib import Path
 from PySide6 import QtCore, QtGui, QtWidgets
 from source.common.funcs import uipx
 from source.common.errors import show_warning
-from ...command.ui import MenuBuilder
 from ...command.payload import format_payload_display
 from ...command.payload import CommandPayload
 from ..common import WidgetRef
-from ..seed import get_seed_key_specs
+from ..seed import get_seed_key_bindings
 from .store import KeyBindingStore
 from .shortcutmanager import ShortcutManager
 from .sequence import KeySequence, KeySpecCatalog
+from ..editors_common import ScopedPayloadSectionBase, clear_layout, popup_command_picker
 
 class _SelectableList(QtWidgets.QListWidget):
     def __init__(self, parent=None):
@@ -205,46 +204,24 @@ class KeyBindingEditor(QtWidgets.QDialog):
         key_seq = d.result_sequence()
         if key_seq is None:
             return
-        btn = self.btn_add_binding
-        builder = MenuBuilder(self)
-        def _prep(m: QtWidgets.QMenu):
-            act_none = QtGui.QAction("なし(解除)", m)
-            act_none.triggered.connect(lambda: self._on_select_command(key_seq, None))
-            first = m.actions()[0] if m.actions() else None
-            if first:
-                m.insertAction(first, act_none)
-                m.insertSeparator(first)
-            else:
-                m.addAction(act_none)
-        builder.popup_all_roots(btn, selection_callback=lambda cid: self._on_select_command(key_seq, cid), context_provider=None, prepare=_prep, allow_options_with_selection=True)
+        popup_command_picker(self, self.btn_add_binding, scope="*", on_select=lambda _, cid: self._on_select_command(key_seq, cid), allow_options_with_selection=True)
 
     def _on_select_command(self, seq: KeySequence, cid):
         if cid is None:
-            if seq in self._draft:
-                self._draft.pop(seq, None)
-            data = self._store.get_all()
-            if seq in data:
-                data.pop(seq, None)
-                self._store.set_all(data)
+            self._draft[seq] = {}
             self._refresh_shortcuts()
             self._rebuild_sections()
             self._rebuild_key_lists()
             return
         if not isinstance(cid, CommandPayload):
             raise TypeError("Selection must provide CommandPayload")
-        entry = self._draft.setdefault(seq, {})
-        entry["*"] = cid
+        self._draft[seq] = {"*": cid}
         self._refresh_shortcuts()
         self._rebuild_key_lists(preserve=False)
         self._select_lists_for_sequence(seq)
 
     def _apply(self):
-        data = self._store.get_all()
-        for seq, scopes in self._draft.items():
-            if scopes:
-                data[seq] = dict(scopes)
-            else:
-                data.pop(seq, None)
+        data = self._merged_data()
         self._store.set_all(data)
         for wref in self.widgets:
             bindings = {}
@@ -262,6 +239,15 @@ class KeyBindingEditor(QtWidgets.QDialog):
             show_warning(self, "save key bindings failed", exc=e)
         self.accept()
 
+    def _merged_data(self) -> Dict[KeySequence, Dict[str, CommandPayload]]:
+        base = self._store.get_all()
+        for k, v in self._draft.items():
+            if v:
+                base[k] = dict(v)
+            elif k in base:
+                base.pop(k, None)
+        return base
+
     def _display(self, value: Any) -> str:
         return format_payload_display(value)
 
@@ -269,18 +255,7 @@ class KeyBindingEditor(QtWidgets.QDialog):
         self.btn_add_binding.setEnabled(True)
 
     def _search(self):
-        btn = self.btn_search
-        builder = MenuBuilder(self)
-        def _prep(m: QtWidgets.QMenu):
-            act_none = QtGui.QAction("なし(解除)", m)
-            act_none.triggered.connect(lambda: self._on_search_select(None))
-            first = m.actions()[0] if m.actions() else None
-            if first:
-                m.insertAction(first, act_none)
-                m.insertSeparator(first)
-            else:
-                m.addAction(act_none)
-        builder.popup_all_roots(btn, selection_callback=lambda cid: self._on_search_select(cid), context_provider=None, prepare=_prep, allow_options_with_selection=True)
+        popup_command_picker(self, self.btn_search, scope="*", on_select=lambda _, cid: self._on_search_select(cid), allow_options_with_selection=True)
 
     def _on_search_select(self, cid):
         if cid is None:
@@ -293,28 +268,14 @@ class KeyBindingEditor(QtWidgets.QDialog):
         self._refresh_shortcuts()
 
     def _rebuild_sections(self):
-        while True:
-            it = self.section_layout.takeAt(0)
-            if not it:
-                break
-            w = it.widget()
-            if w:
-                w.hide()
-                w.setParent(None)
-                w.deleteLater()
+        clear_layout(self.section_layout, self, "KeyBindingEditor rebuild")
         sel_mod = self.list_mods.currentItem().text() if self.list_mods.currentRow() >= 0 else None
         sel_main = self.list_main.currentItem().text() if self.list_main.currentRow() >= 0 else None
         if sel_mod == "(すべて)":
             sel_mod = None
         if sel_main == "(すべて)":
             sel_main = None
-        data = self._store.get_all()
-        merged: Dict[KeySequence, Dict[str, CommandPayload]] = {}
-        for k, v in data.items():
-            if isinstance(v, dict):
-                merged[k] = dict(v)
-        for k, v in self._draft.items():
-            merged[k] = dict(v)
+        merged = self._merged_data()
         seqs: List[KeySequence] = []
         for seq, scopes in merged.items():
             a, b = self._split_seq(seq)
@@ -350,33 +311,24 @@ class KeyBindingEditor(QtWidgets.QDialog):
         self._refresh_shortcuts()
 
     def _on_section_remove(self, seq: KeySequence):
-        self._draft.pop(seq, None)
-        data = self._store.get_all()
-        if seq in data:
-            data.pop(seq, None)
-            self._store.set_all(data)
+        self._draft[seq] = {}
         self._refresh_shortcuts()
         self._rebuild_key_lists()
 
     def _on_section_reassign(self, old_seq: KeySequence, new_seq: KeySequence, scopes: Dict[str, CommandPayload]):
         if not isinstance(new_seq, KeySequence) or old_seq == new_seq:
             return
-        self._draft.pop(old_seq, None)
-        data = self._store.get_all()
-        if old_seq in data:
-            data.pop(old_seq, None)
-            self._store.set_all(data)
+        self._draft[old_seq] = {}
         self._draft[new_seq] = dict(scopes or {})
         self._refresh_shortcuts()
         self._rebuild_key_lists(preserve=False)
         self._select_lists_for_sequence(new_seq)
 
     def _reset_all_defaults(self):
-        specs = get_seed_key_specs()
+        specs = get_seed_key_bindings()
         if specs is None:
             return
         self._draft = KeyBindingStore.normalize_specs(specs)
-        self._store.set_all({})
         self._refresh_shortcuts()
         self._load_existing()
         self._refresh_lists()
@@ -497,51 +449,23 @@ class _TwoKeyCaptureDialog(QtWidgets.QDialog):
         self._mgr.remove_key_listeners(self)
         super().done(r)
 
-class _KeySequenceSection(QtWidgets.QGroupBox):
+class _KeySequenceSection(ScopedPayloadSectionBase):
     def __init__(self, parent: QtWidgets.QWidget, widgets: List[WidgetRef], sequence: KeySequence, scopes: Dict[str, CommandPayload], on_update, on_remove, on_reassign):
-        super().__init__(parent)
-        self.widgets = widgets
+        super().__init__(parent, widgets, header_button_text="コマンド")
         self.sequence = sequence
-        self.scopes = dict(scopes)
         self.on_update = on_update
         self.on_remove = on_remove
         self.on_reassign = on_reassign
         self.setTitle(str(self.sequence))
-        l = QtWidgets.QVBoxLayout(self)
-        header = QtWidgets.QHBoxLayout()
-        self.btn_global = QtWidgets.QPushButton("コマンド", self)
-        self.btn_global.setCursor(QtCore.Qt.PointingHandCursor)
-        self.btn_global.clicked.connect(lambda: self._pick_cmd("*"))
-        header.addWidget(self.btn_global,0)
-        self.btn_overrides = QtWidgets.QToolButton(self)
-        self.btn_overrides.setText("専用")
-        self.btn_overrides.setPopupMode(QtWidgets.QToolButton.InstantPopup)
-        self.ov_menu = QtWidgets.QMenu(self.btn_overrides)
-        self.ov_menu.aboutToShow.connect(self._refresh_overrides_menu)
-        self.btn_overrides.setMenu(self.ov_menu)
-        header.addWidget(self.btn_overrides,0)
         btn_assign = QtWidgets.QPushButton("割当変更", self)
         btn_assign.setCursor(QtCore.Qt.PointingHandCursor)
         btn_assign.clicked.connect(self._assign)
-        header.addWidget(btn_assign,0)
+        self.header.insertWidget(2, btn_assign, 0)
         rem = QtWidgets.QToolButton(self)
         rem.setText("削除")
         rem.clicked.connect(lambda: self.on_remove(self.sequence))
-        header.addWidget(rem,0)
-        header.addStretch(1)
-        l.addLayout(header)
-        self.global_edit = QtWidgets.QLineEdit(self)
-        self.global_edit.setReadOnly(True)
-        l.addWidget(self.global_edit)
-        self.overrides_container = QtWidgets.QWidget(self)
-        self.overrides_layout = QtWidgets.QVBoxLayout(self.overrides_container)
-        self.overrides_layout.setContentsMargins(uipx(4),uipx(4),uipx(4),uipx(4))
-        self.overrides_layout.setSpacing(uipx(6))
-        self.override_edits: Dict[str, QtWidgets.QLineEdit] = {}
-        l.addWidget(self.overrides_container)
-        self.overrides_container.setVisible(False)
-        self._payloads: Dict[str, CommandPayload] = {}
-        self._load()
+        self.header.insertWidget(3, rem, 0)
+        self.load_from_scopes(scopes)
 
     def _assign(self):
         d = _TwoKeyCaptureDialog(self)
@@ -558,152 +482,8 @@ class _KeySequenceSection(QtWidgets.QGroupBox):
                 scopes[scope] = self._payloads[scope]
         self.on_reassign(self.sequence, new_seq, scopes)
 
-    def _load(self):
-        found: Dict[str,str] = {}
-        for scope, cmd in self.scopes.items():
-            if isinstance(cmd, CommandPayload):
-                found[scope] = cmd.id
-                self._payloads[scope] = cmd
-        self._rebuild(found)
-        g = self._payloads.get("*")
-        if g:
-            self.global_edit.setText(format_payload_display(g))
-        self.overrides_container.setVisible(any(s != "*" for s in self._payloads.keys()))
-
-    def _pick_cmd(self, scope: str):
-        btn = self.global_edit if scope == "*" else self.override_edits.get(scope)
-        if btn is None:
-            return
-        builder = MenuBuilder(self)
-        def _prep(m: QtWidgets.QMenu, sc=scope):
-            act_none = QtGui.QAction("なし(解除)", m)
-            act_none.triggered.connect(lambda _, s=sc: self._on_select(s, None))
-            first = m.actions()[0] if m.actions() else None
-            if first:
-                m.insertAction(first, act_none)
-                m.insertSeparator(first)
-            else:
-                m.addAction(act_none)
-        builder.popup_all_roots(btn, selection_callback=lambda cid, sc=scope: self._on_select(sc, cid), context_provider=None, prepare=_prep, allow_options_with_selection=True)
-
-    def _on_select(self, scope: str, cid):
-        if cid is None:
-            if scope == "*":
-                self.global_edit.setText("")
-                self._payloads.pop("*", None)
-            else:
-                self._remove_override(scope)
-            self._commit()
-            return
-        if not isinstance(cid, CommandPayload):
-            raise TypeError("Selection must provide CommandPayload")
-        if scope == "*":
-            self.global_edit.setText(format_payload_display(cid))
-            self._payloads["*"] = cid
-        else:
-            if scope in self.override_edits:
-                self.override_edits[scope].setText(format_payload_display(cid))
-                self._payloads[scope] = cid
-        if scope != "*" and cid:
-            self.overrides_container.setVisible(True)
-        self._commit()
-
-    def _commit(self):
-        scopes: Dict[str, CommandPayload] = {}
-        if "*" in self._payloads:
-            scopes["*"] = self._payloads["*"]
-        for scope in list(self.override_edits.keys()):
-            if scope in self._payloads:
-                scopes[scope] = self._payloads[scope]
-        self.on_update(self.sequence, scopes)
-        self._refresh_overrides_menu()
-
-    def _refresh_overrides_menu(self):
-        self.ov_menu.clear()
-        remaining = [w.name for w in self.widgets if w.name not in self.override_edits]
-        if not remaining:
-            act = self.ov_menu.addAction("No more widgets")
-            act.setEnabled(False)
-            self.btn_overrides.setEnabled(False)
-            return
-        self.btn_overrides.setEnabled(True)
-        for scope in remaining:
-            act = self.ov_menu.addAction(scope)
-            act.triggered.connect(lambda _, sc=scope: self._add_override(sc))
-
-    def _rebuild(self, found: Dict[str,str]):
-        while True:
-            it = self.overrides_layout.takeAt(0)
-            if not it:
-                break
-            w = it.widget()
-            if w:
-                w.setParent(None)
-                w.deleteLater()
-        self.override_edits.clear()
-        ordered = sorted([s for s in found.keys() if s != "*"]) if found else []
-        for scope in ordered:
-            self._create_row(scope, found.get(scope, ""))
-        self.overrides_layout.addStretch(1)
-        self._refresh_overrides_menu()
-
-    def _create_row(self, scope: str, value: str):
-        row = QtWidgets.QWidget(self.overrides_container)
-        rl = QtWidgets.QHBoxLayout(row)
-        rl.setContentsMargins(0,0,0,0)
-        rl.setSpacing(uipx(6))
-        btn = QtWidgets.QPushButton(scope, row)
-        btn.setCursor(QtCore.Qt.PointingHandCursor)
-        btn.setStyleSheet("padding:2px 10px;")
-        btn.clicked.connect(lambda _, sc=scope: self._pick_cmd(sc))
-        edit = QtWidgets.QLineEdit(row)
-        edit.setReadOnly(True)
-        pv = self._payloads.get(scope)
-        if pv:
-            edit.setText(format_payload_display(pv))
-        elif value:
-            edit.setText(value)
-        rl.addWidget(btn,0)
-        rl.addWidget(edit,1)
-        self.override_edits[scope] = edit
-        self.overrides_layout.insertWidget(self.overrides_layout.count(), row)
-
-    def _add_override(self, scope: str):
-        if scope in self.override_edits:
-            return
-        self._create_row(scope, "")
-        self.overrides_container.setVisible(True)
-        self._refresh_overrides_menu()
-
-    def _remove_override(self, scope: str):
-        edit = self.override_edits.pop(scope, None)
-        if not edit:
-            return
-        row = edit.parent()
-        try:
-            idx = self.overrides_layout.indexOf(row)
-            if idx >= 0:
-                it = self.overrides_layout.takeAt(idx)
-                w = it.widget()
-                if w:
-                    w.hide()
-                    w.setParent(None)
-                    w.deleteLater()
-            else:
-                row.hide()
-                row.setParent(None)
-                row.deleteLater()
-        except Exception as e:
-            show_warning(self, f"KeyBindingEditor remove override failed: {scope}", exc=e)
-            try:
-                row.setParent(None)
-                row.deleteLater()
-            except Exception as e2:
-                show_warning(self, f"KeyBindingEditor remove override cleanup failed: {scope}", exc=e2)
-                return
-        self._payloads.pop(scope, None)
-        if not self.override_edits:
-            self.overrides_container.setVisible(False)
-        self._commit()
+    def _after_change(self) -> None:
+        super()._after_change()
+        self.on_update(self.sequence, self.collect_scopes())
 
 ShortcutBindingEditor = KeyBindingEditor

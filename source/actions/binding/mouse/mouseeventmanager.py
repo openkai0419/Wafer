@@ -212,34 +212,13 @@ class CommandDragContext(DragContext):
             self.registry.execute(cmd_id, ctx=ctx, **self.args)
 
 class MouseActionKey:
-
-    @staticmethod
-    def from_spec(spec):
-        if isinstance(spec, MouseActionKey):
-            return spec
-        if not isinstance(spec, (tuple, list)):
-            raise TypeError("MouseActionKey spec must be tuple/list")
-        if len(spec) == 2:
-            button, click_type = spec
-            held_buttons = ()
-            modifiers = ()
-        elif len(spec) == 3:
-            button, click_type, held_buttons = spec
-            modifiers = ()
-        elif len(spec) == 4:
-            button, click_type, held_buttons, modifiers = spec
-        else:
-            raise ValueError("MouseActionKey spec must be (button, click_type[, held_buttons[, modifiers]])")
-        return MouseActionKey(button, click_type, held_buttons, modifiers)
-
     def __init__(self, button, click_type=None, held_buttons=(), modifiers=()):
-        if click_type is None and isinstance(button, (tuple, list)):
-            k = MouseActionKey.from_spec(button)
-            self.button = k.button
-            self.click_type = k.click_type
-            self.held_buttons = k.held_buttons
-            self.modifiers = k.modifiers
-            return
+        if click_type is None:
+            raise TypeError("MouseActionKey requires click_type")
+        if held_buttons == {} or held_buttons is None:
+            held_buttons = ()
+        if modifiers == {} or modifiers is None:
+            modifiers = ()
         self.button = MouseButton.from_any(button)
         self.click_type = ClickType.from_any(click_type)
         self.held_buttons = frozenset(MouseButton.from_any(b) for b in (held_buttons or ()))
@@ -256,6 +235,24 @@ class MouseActionKey:
         mods = '+'.join((m.name for m in sorted(self.modifiers, key=lambda m: m.name)))
         prefix = '+'.join([p for p in (mods, held) if p])
         return f"{'+'.join([prefix, self.button.name])} {self.click_type.name}" if prefix else f'{self.button.name} {self.click_type.name}'
+
+    def to_dict(self):
+        return {
+            "button": self.button.name,
+            "click": self.click_type.name,
+            "held": [b.name for b in sorted(self.held_buttons, key=lambda x: x.name)],
+            "modifiers": [m.name for m in sorted(self.modifiers, key=lambda x: x.name)],
+        }
+
+    @classmethod
+    def from_dict(cls, d):
+        if not isinstance(d, dict):
+            raise TypeError("MouseActionKey dict required")
+        btn = MouseButton.from_any(d.get("button"))
+        clk = ClickType.from_any(d.get("click"))
+        held = tuple(MouseButton.from_any(x) for x in (d.get("held") or ()))
+        mods = tuple(ModifierKey.from_any(x) for x in (d.get("modifiers") or ()))
+        return cls(btn, clk, held, mods)
 
 class MouseStateManager:
     _instance = None

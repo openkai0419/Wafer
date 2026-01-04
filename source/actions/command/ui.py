@@ -210,6 +210,7 @@ class CommandMenuBuilder(TranslatorMixin):
     def build(self, parent: QtWidgets.QWidget, command_names: List[str], display_map: Optional[Dict[str, str]] = None, selection_callback: Optional[Callable[[Any], None]] = None) -> QtWidgets.QMenu:
         menu = QtWidgets.QMenu(parent)
         menu.setProperty(COMMAND_MENU_MARKER, True)
+        self._install_hotkey_alignment(menu)
         return self.build_into(menu, parent, command_names, display_map, selection_callback)
 
     @profiler.profile
@@ -249,12 +250,53 @@ class CommandMenuBuilder(TranslatorMixin):
             self._add_entry(target_menu, parent, command_id, meta, bool(meta.has_options) if (allow_options_with_selection or not selection_callback) else False, text_override, selection_callback, allow_options_with_selection, action_groups, group_defaults, seed_ctx=seed_ctx)
         return menu
 
+    def _install_hotkey_alignment(self, menu: QtWidgets.QMenu) -> None:
+        if menu is None:
+            return
+        if bool(menu.property("__hotkey_align_installed__")):
+            return
+        menu.setProperty("__hotkey_align_installed__", True)
+        menu.aboutToShow.connect(lambda m=menu: self._align_hotkeys_in_menu(m))
+
+    def _align_hotkeys_in_menu(self, menu: QtWidgets.QMenu) -> None:
+        try:
+            rows = menu.findChildren(CommandMenuRow)
+        except Exception:
+            return
+        if not rows:
+            return
+        labels: List[QtWidgets.QLabel] = []
+        for r in rows:
+            try:
+                r.ensure_initialized()
+            except Exception:
+                continue
+            lbl = getattr(r, "_hotkey_label", None)
+            if isinstance(lbl, QtWidgets.QLabel) and lbl.text().strip():
+                labels.append(lbl)
+        if not labels:
+            return
+        try:
+            maxw = 0
+            for lbl in labels:
+                fm = lbl.fontMetrics()
+                w = int(fm.horizontalAdvance(lbl.text()))
+                if w > maxw:
+                    maxw = w
+            maxw += int(uipx(12))
+            for lbl in labels:
+                lbl.setFixedWidth(maxw)
+            menu.adjustSize()
+        except Exception:
+            return
+
     @profiler.profile
     def _add_entry(self, menu: QtWidgets.QMenu, parent: QtWidgets.QWidget, name: str, meta: CommandMeta, with_options: bool, text_override: Optional[str], selection_callback: Optional[Callable[[Any], None]] = None, allow_options_with_selection: bool = False, action_groups: Optional[Dict[str, QtGui.QActionGroup]] = None, group_defaults: Optional[Dict[str, tuple[str, CommandMeta]]] = None, *, seed_ctx: Optional[CommandContext] = None):
         text = text_override or self.t.tr(meta.display)
         widget_action = QtWidgets.QWidgetAction(parent)
         widget_action.setData(name)
-        container = self._create_row_widget(parent, text, meta.hotkey, meta.icon or None, with_options, None, (lambda: self._show_options_and_close_menu(name, parent, menu, selection_callback if allow_options_with_selection else None, seed_ctx=seed_ctx)) if with_options else None, menu)
+        hotkey = self._resolve_hotkey(parent, name)
+        container = self._create_row_widget(parent, text, hotkey, meta.icon or None, with_options, None, (lambda: self._show_options_and_close_menu(name, parent, menu, selection_callback if allow_options_with_selection else None, seed_ctx=seed_ctx)) if with_options else None, menu)
         widget_action.setDefaultWidget(container)
         if meta.checkable and selection_callback is None:
             widget_action.setCheckable(True)
@@ -286,6 +328,29 @@ class CommandMenuBuilder(TranslatorMixin):
                     widget_action.trigger()
             main_area.mouseReleaseEvent = _row_click_any
         menu.addAction(widget_action)
+
+    def _resolve_hotkey(self, parent: QtWidgets.QWidget, command_id: str) -> str:
+        try:
+            from ..binding.manager import BindingManager
+            from ..binding.key.shortcutmanager import ShortcutManager
+        except Exception:
+            return ""
+
+        if not command_id:
+            return ""
+        bm = BindingManager.instance()
+        bw = bm.find_registered_ancestor(parent) if parent is not None else None
+        if bw is None:
+            return ""
+        try:
+            sm = ShortcutManager()
+            for k, payload in (sm.get_bindings(bw) or {}).items():
+                if isinstance(payload, CommandPayload) and payload.id == command_id and k:
+                    return str(k).strip()
+            return ""
+        except Exception as e:
+            show_warning(parent, "resolve hotkey failed", exc=e)
+            return ""
 
     def _select_and_close_menu(self, name: str, menu: QtWidgets.QMenu, callback: Callable[[Any], None]):
         menu.close()
@@ -465,6 +530,7 @@ class CommandMenuBuilder(TranslatorMixin):
             m = QtWidgets.QMenu(self.t.tr(part) or part, parent)
             current.addMenu(m)
             cache[cur_path] = m
+            self._install_hotkey_alignment(m)
             current = m
         return current
 
@@ -514,7 +580,7 @@ class CommandMenuRow(QtWidgets.QWidget):
 
         self._chk = QtWidgets.QLabel("", self._main)
         self._chk.setObjectName("checkMark")
-        self._chk.setFixedWidth(uipx(22))
+        self._chk.setFixedWidth(uipx(1))
         self._chk.setAlignment(QtCore.Qt.AlignCenter)
         self._chk.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
         self._ml.addWidget(self._chk, 0)
@@ -524,7 +590,7 @@ class CommandMenuRow(QtWidgets.QWidget):
         self._ml.addWidget(self._tl, 1)
 
         self._inner_spacer = QtWidgets.QWidget(self._main)
-        self._inner_spacer.setFixedWidth(uipx(22))
+        self._inner_spacer.setFixedWidth(0)
         self._inner_spacer.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
         self._ml.addWidget(self._inner_spacer, 0)
 
@@ -583,10 +649,13 @@ class CommandMenuRow(QtWidgets.QWidget):
 
         if self._hotkey and self._hotkey_label is None:
             try:
-                ss = QtGui.QKeySequence(self._hotkey).toString() if self._hotkey else ""
+                raw = str(self._hotkey)
+                ss_parsed = QtGui.QKeySequence(raw).toString() if raw else ""
+                ss = (ss_parsed or raw).strip()
+                if not ss:
+                    return
                 sl = QtWidgets.QLabel(ss, self._main)
                 sl.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-                sl.setMinimumWidth(uipx(60) if self._hotkey else 0)
                 self._ml.addWidget(sl, 0)
                 self._hotkey_label = sl
             except Exception as e:
@@ -641,8 +710,7 @@ class CommandMenuRow(QtWidgets.QWidget):
         try:
             style = self._menu_ref.style() if self._menu_ref is not None else self.style()
             icon_sz = style.pixelMetric(QtWidgets.QStyle.PM_SmallIconSize, None, self._menu_ref)
-            frame_w = style.pixelMetric(QtWidgets.QStyle.PM_DefaultFrameWidth, None, self._menu_ref)
-            return max(0, int(icon_sz + frame_w))
+            return max(0, min(int(icon_sz), int(uipx(22))))
         except Exception as e:
             show_warning(self, "CommandMenuRow gutter metric lookup failed", exc=e)
             return 22
@@ -654,6 +722,7 @@ class MenuBuilder:
         self._menu.setProperty(COMMAND_MENU_MARKER, True)
         self._ctx_parent = parent
         self._builder = CommandMenuBuilder()
+        self._builder._install_hotkey_alignment(self._menu)
         self._seed_ctx = seed_ctx
         self._hub = MenuHub()
 
@@ -750,12 +819,14 @@ class MenuBuilder:
                 prefixes = self._hub.find_folder_prefixes(it)
                 if len(prefixes) > 1:
                     raise ValueError(f"Ambiguous folder: {it}")
+                names: List[str] = []
                 if len(prefixes) == 1:
                     names = self._collect_folder(prefixes[0], rebase_to=it, on_missing=f"Unknown command or folder id: {it}")
                 elif self._hub.has_folder(it):
                     names = self._collect_folder(it, rebase_to=it, on_missing=f"Unknown command or folder id: {it}")
                 else:
-                    raise ValueError(f"Unknown command or folder id: {it}")
+                    raise_error(None, f"Unknown command or folder id: {it}")
+                    continue
                 self._add_names(all_names, names, seen, after_rebase=True)
         return self._build_into(all_names, selection_callback, allow_options_with_selection)
 

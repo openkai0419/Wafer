@@ -46,29 +46,27 @@ class BindingManager:
         return mgr
     
     def apply_mouse_bindings(self, widgets: List[QtWidgets.QWidget]) -> None:
-        data = self._store.get_all()
         for w in widgets:
             if not (hasattr(w, "binding_scope") and callable(getattr(w, "binding_scope"))):
                 continue
             name = w.binding_scope()
             applied: Dict[MouseActionKey, Any] = {}
-            for key, scopes in data.items():
-                cmd = scopes.get(name) or scopes.get("*")
+            for key in self._store.get_all().keys():
+                cmd = self._store.resolve(name, key)
                 if cmd:
                     applied[key] = cmd
             if hasattr(w, "set_mouse_bindings"):
                 w.set_mouse_bindings(applied)
 
     def apply_key_bindings(self, widgets: List[QtWidgets.QWidget]) -> None:
-        data = self._key_store.get_all()
         for w in widgets:
             if not (hasattr(w, "binding_scope") and callable(getattr(w, "binding_scope"))):
                 continue
             name = w.binding_scope()
             store_logical: Dict[KeySequence, Any] = {}
             store_physical: Dict[Tuple[Union[str, int], ...], Any] = {}
-            for seq, scopes in data.items():
-                cmd = scopes.get(name) or scopes.get("*")
+            for seq in self._key_store.get_all().keys():
+                cmd = self._key_store.resolve(name, seq)
                 if not cmd:
                     continue
                 if self._is_physical_seq(seq):
@@ -96,15 +94,17 @@ class BindingManager:
     def register(self, widget: QtWidgets.QWidget) -> None:
         try:
             self._widgets.add(widget)
+            from .widget_registry import WidgetRegistry
+
+            WidgetRegistry.instance().register_inferred(widget)
+            self.apply_mouse_bindings([widget])
+            self.apply_key_bindings([widget])
         except Exception as e:
             show_warning(None, "BindingManager.register failed", exc=e)
 
     def save(self) -> None:
         self._store.save_to_file(str(self._file))
-        try:
-            self._key_store.save_to_file(str(self._key_file))
-        except Exception as e:
-            show_warning(None, "BindingManager.save key bindings failed", exc=e)
+        self._key_store.save_to_file(str(self._key_file))
 
     def mouse_bindings_path(self) -> str:
         return str(self._file)

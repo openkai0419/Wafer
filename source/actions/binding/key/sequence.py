@@ -1,10 +1,15 @@
 from typing import Tuple, List, Optional, Dict, Any
 
 class KeySequence:
-    def __init__(self, keys: Tuple[str, ...] | List[str]):
-        if isinstance(keys, str):
-            raise TypeError("KeySequence requires tuple or list, not string")
-        self._keys = tuple(keys[:2]) if len(keys) > 2 else tuple(keys)
+    def __init__(self, keys):
+        if isinstance(keys, KeySequence):
+            self._keys = keys._keys
+            return
+        if not isinstance(keys, (tuple, list)):
+            raise TypeError("KeySequence keys must be list|tuple|KeySequence")
+        norm = [str(k).strip() for k in list(keys)]
+        norm = [k for k in norm if k]
+        self._keys = tuple(norm[:2])
         if not self._keys:
             raise ValueError("KeySequence requires at least one key")
     
@@ -54,6 +59,18 @@ class KeySequence:
     
     def __hash__(self) -> int:
         return hash(self._keys)
+
+
+class Key(KeySequence):
+    def __init__(self, *keys):
+        if len(keys) == 1:
+            one = keys[0]
+            if isinstance(one, str):
+                super().__init__([one])
+                return
+            super().__init__(one)
+            return
+        super().__init__(list(keys))
 
 class KeySpecCatalog:
     def __init__(self):

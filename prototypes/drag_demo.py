@@ -1,5 +1,5 @@
 from pathlib import Path
-from source.actions.facade import Kit
+from source.actions.bridge import Kit
 from source.common.errors import show_warning
 
 

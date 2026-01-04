@@ -5,12 +5,13 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from source.common.funcs import uipx
 from .mouseeventmanager import MouseActionKey, ClickType, MouseButton, ModifierKey
 from ...command.ui import MenuBuilder
-from ..seed import get_seed_mouse_specs
+from ..seed import get_seed_mouse_bindings
 from .store import MouseBindingStore
 from ...command.payload import format_payload_display
 from ...command.payload import CommandPayload
 from ..common import WidgetRef
 from source.common.errors import show_warning
+from ..editors_common import ScopedPayloadSectionBase, clear_layout
 
 
 @dataclass(frozen=True)
@@ -159,55 +160,13 @@ class MouseBindingEditor(QtWidgets.QDialog):
                 base.pop(k, None)
         return base
     def _clear_sections(self):
-        lay = self.sections_layout
-        err = None
-        err_count = 0
-        while True:
-            item = lay.takeAt(0)
-            if not item:
-                break
-            w = item.widget()
-            if w is not None:
-                try:
-                    w.hide()
-                    w.setParent(None)
-                except Exception as e:
-                    err = err or e
-                    err_count += 1
-                w.deleteLater()
-            sub = item.layout()
-            if sub is not None:
-                self._clear_layout_recursive(sub)
+        clear_layout(self.sections_layout, self, "MouseBindingEditor clear sections")
         try:
             self.panel.update()
             self.scroll.viewport().update()
             QtWidgets.QApplication.processEvents()
         except Exception as e:
-            err = err or e
-            err_count += 1
-        if err is not None:
-            show_warning(self, f"MouseBindingEditor clear sections had {err_count} errors", exc=err)
-    def _clear_layout_recursive(self, layout: QtWidgets.QLayout):
-        err = None
-        err_count = 0
-        while True:
-            it = layout.takeAt(0)
-            if not it:
-                break
-            w = it.widget()
-            if w is not None:
-                try:
-                    w.hide()
-                    w.setParent(None)
-                except Exception as e:
-                    err = err or e
-                    err_count += 1
-                w.deleteLater()
-            sub = it.layout()
-            if sub is not None:
-                self._clear_layout_recursive(sub)
-        if err is not None:
-            show_warning(self, f"MouseBindingEditor clear layout had {err_count} errors", exc=err)
+            show_warning(self, "MouseBindingEditor clear sections update failed", exc=e)
     def _scope_targets(self) -> List[str]:
         return ["*"] + [w.name for w in self.widgets]
     def _apply(self):
@@ -235,7 +194,7 @@ class MouseBindingEditor(QtWidgets.QDialog):
         self.accept()
     def _reset_to_defaults(self):
         try:
-            specs = get_seed_mouse_specs()
+            specs = get_seed_mouse_bindings()
             if specs is None:
                 return
             self._draft = MouseBindingStore.normalize_specs(specs)
@@ -245,7 +204,7 @@ class MouseBindingEditor(QtWidgets.QDialog):
     def _reset_current_action(self):
         try:
             b, c = self._current_action()
-            specs = get_seed_mouse_specs()
+            specs = get_seed_mouse_bindings()
             if specs is None:
                 return
             defs = MouseBindingStore.normalize_specs(specs)
@@ -266,51 +225,23 @@ class MouseBindingEditor(QtWidgets.QDialog):
         except Exception as e:
             show_warning(self, "MouseBindingEditor reset_current_action failed", exc=e)
 
-class MouseSection(QtWidgets.QGroupBox):
+class MouseSection(ScopedPayloadSectionBase):
     def __init__(self, parent: QtWidgets.QWidget, widgets: List[WidgetRef], qualifier: MouseQualifier, store: MouseBindingStore):
-        super().__init__(parent)
-        self.widgets = widgets
+        super().__init__(parent, widgets, header_button_text="")
         self.qualifier = qualifier
         self.store = store
         self.button: MouseButton = MouseButton.LEFT
         self.click: ClickType = ClickType.SINGLE
         self.setTitle("")
-        l = QtWidgets.QVBoxLayout(self)
-        header = QtWidgets.QHBoxLayout()
-        self.btn_global = QtWidgets.QPushButton(self._title(), self)
-        self.btn_global.setCursor(QtCore.Qt.PointingHandCursor)
         self.btn_global.setStyleSheet("padding:4px 12px;")
-        self.btn_global.clicked.connect(lambda: self._pick_cmd("*"))
-        header.addWidget(self.btn_global, 0)
-        self.btn_overrides = QtWidgets.QToolButton(self)
-        self.btn_overrides.setText("専用")
-        self.btn_overrides.setPopupMode(QtWidgets.QToolButton.InstantPopup)
         self.btn_overrides.setStyleSheet("padding:4px 4px;")
-        self.ov_menu = QtWidgets.QMenu(self.btn_overrides)
-        self.ov_menu.aboutToShow.connect(self._refresh_overrides_menu)
-        self.btn_overrides.setMenu(self.ov_menu)
-        header.addWidget(self.btn_overrides, 0)
-        header.addStretch(1)
-        l.addLayout(header)
-        self.global_edit = QtWidgets.QLineEdit(self)
-        self.global_edit.setReadOnly(True)
-        l.addWidget(self.global_edit)
-        self.overrides_container = QtWidgets.QWidget(self)
-        self.overrides_layout = QtWidgets.QVBoxLayout(self.overrides_container)
-        self.overrides_layout.setContentsMargins(uipx(4),uipx(4),uipx(4),uipx(4))
-        self.overrides_layout.setSpacing(uipx(6))
-        self.override_edits: Dict[str, QtWidgets.QLineEdit] = {}
-        self._payloads: Dict[str, CommandPayload] = {}
         self.list_order: List[str] = []
-        l.addWidget(self.overrides_container)
-        self.overrides_container.setVisible(False)
     def set_action(self, button: MouseButton, click: ClickType):
         self.button = button
         self.click = click
         t = self._title()
         self.setTitle("")
-        if hasattr(self, 'btn_global'):
-            self.btn_global.setText(t)
+        self.set_header_button_text(t)
     def _title(self) -> str:
         if self.qualifier.kind == "none":
             return "★ 単独での機能"
@@ -330,34 +261,9 @@ class MouseSection(QtWidgets.QGroupBox):
             return "(invalid)"
         return "(invalid)"
     def load_from_data(self, data: Dict[MouseActionKey, Dict[str,CommandPayload]]):
-        self.global_edit.clear()
-        for e in self.override_edits.values():
-            e.clear()
-        self._payloads.clear()
-        found: Dict[str,str] = {}
         expected_key = self._current_key()
-        for key, scopes in data.items():
-            if key != expected_key:
-                continue
-            
-            if "*" in scopes:
-                v = scopes.get("*", None)
-                if not isinstance(v, CommandPayload):
-                    raise TypeError("Mouse binding payload must be CommandPayload")
-                found["*"] = v.id
-                self._payloads["*"] = v
-            for scope, cmd in scopes.items():
-                if scope != "*" and cmd:
-                    if not isinstance(cmd, CommandPayload):
-                        raise TypeError("Mouse binding payload must be CommandPayload")
-                    found[scope] = cmd.id
-                    self._payloads[scope] = cmd
-        self._rebuild_overrides_entries(found)
-        g = found.get("*")
-        if g:
-            disp = self._display(self._payloads.get("*", g))
-            self.global_edit.setText(disp)
-        self.overrides_container.setVisible(any(s != "*" for s in found))
+        scopes = data.get(expected_key, {})
+        self.load_from_scopes(scopes)
     def _pick_cmd(self, scope: str):
         btn = self.global_edit if scope == "*" else self.override_edits.get(scope)
         if btn is None:
@@ -368,17 +274,7 @@ class MouseSection(QtWidgets.QGroupBox):
         elif self._is_drop_type():
             self._show_category_menu(btn, scope, "drop")
         else:
-            builder = MenuBuilder(self)
-            def _prep(m: QtWidgets.QMenu, sc=scope):
-                act_none = QtGui.QAction("なし(解除)", m)
-                act_none.triggered.connect(lambda _, s=sc: self._on_select(s, None))
-                first = m.actions()[0] if m.actions() else None
-                if first:
-                    m.insertAction(first, act_none)
-                    m.insertSeparator(first)
-                else:
-                    m.addAction(act_none)
-            builder.popup_all_roots(btn, selection_callback=lambda cid, sc=scope: self._on_select(sc, cid), context_provider=None, prepare=_prep, allow_options_with_selection=True)
+            super()._pick_cmd(scope)
     
     def _is_drag_type(self) -> bool:
         return self.click == ClickType.DRAG_START
@@ -411,128 +307,11 @@ class MouseSection(QtWidgets.QGroupBox):
         
         menu.exec(btn.mapToGlobal(btn.rect().bottomLeft()))
     def _on_select(self, scope: str, cid):
-        if cid is None:
-            if scope == "*":
-                self.global_edit.setText("")
-                self._clear_binding("*")
-                self._payloads.pop("*", None)
-            else:
-                self._remove_override(scope)
-            if not self.override_edits:
-                self.overrides_container.setVisible(False)
-            self._refresh_overrides_menu()
-            return
-        if not isinstance(cid, CommandPayload):
-            raise TypeError("Selection must provide CommandPayload")
-        dedicated = cid
-        target_display = dedicated
-        if scope == "*":
-            self.global_edit.setText(self._display(target_display))
-            if dedicated is not None:
-                self._payloads["*"] = dedicated
-            else:
-                self._payloads.pop("*", None)
-        else:
-            if scope in self.override_edits:
-                self.override_edits[scope].setText(self._display(target_display))
-                if dedicated is not None:
-                    self._payloads[scope] = dedicated
-                else:
-                    self._payloads.pop(scope, None)
-        if scope != "*" and cid:
-            self.overrides_container.setVisible(True)
+        super()._on_select(scope, cid)
     def collect_entries(self) -> Dict[MouseActionKey, Dict[str, CommandPayload]]:
         key = self._current_key()
-        scopes: Dict[str, CommandPayload] = {}
-        if "*" in self._payloads:
-            scopes["*"] = self._to_saved(self._payloads["*"])
-        for scope in list(self.override_edits.keys()):
-            if scope in self._payloads:
-                scopes[scope] = self._to_saved(self._payloads[scope])
+        scopes = self.collect_scopes()
         return {key: scopes} if scopes else {}
-    def _refresh_overrides_menu(self):
-        self.ov_menu.clear()
-        remaining = [w.name for w in self.widgets if w.name not in self.override_edits]
-        if not remaining:
-            act = self.ov_menu.addAction("No more widgets")
-            act.setEnabled(False)
-            self.btn_overrides.setEnabled(False)
-            return
-        self.btn_overrides.setEnabled(True)
-        for scope in remaining:
-            act = self.ov_menu.addAction(scope)
-            act.triggered.connect(lambda _, sc=scope: self._add_override(sc))
-    def _rebuild_overrides_entries(self, found: Dict[str,str]):
-        while True:
-            it = self.overrides_layout.takeAt(0)
-            if not it:
-                break
-            w = it.widget()
-            if w:
-                w.setParent(None)
-                w.deleteLater()
-        self.override_edits.clear()
-        ordered = sorted([s for s in found.keys() if s != "*"]) if found else []
-        for scope in ordered:
-            self._create_override_row(scope, found.get(scope, ""))
-        self.overrides_layout.addStretch(1)
-        self._refresh_overrides_menu()
-    def _create_override_row(self, scope: str, value: str):
-        row = QtWidgets.QWidget(self.overrides_container)
-        rl = QtWidgets.QHBoxLayout(row)
-        rl.setContentsMargins(0,0,0,0)
-        rl.setSpacing(uipx(6))
-        btn = QtWidgets.QPushButton(scope, row)
-        btn.setCursor(QtCore.Qt.PointingHandCursor)
-        btn.setStyleSheet("padding:2px 10px;")
-        btn.clicked.connect(lambda _, sc=scope: self._pick_cmd(sc))
-        edit = QtWidgets.QLineEdit(row)
-        edit.setReadOnly(True)
-        pv = self._payloads.get(scope)
-        if pv:
-            edit.setText(self._display(pv))
-        elif value:
-            edit.setText(self._display(value))
-        rl.addWidget(btn,0)
-        rl.addWidget(edit,1)
-        self.override_edits[scope] = edit
-        self.overrides_layout.insertWidget(self.overrides_layout.count(), row)
-    def _add_override(self, scope: str):
-        if scope in self.override_edits:
-            return
-        self._create_override_row(scope, "")
-        self.overrides_container.setVisible(True)
-        self._refresh_overrides_menu()
-    def _remove_override(self, scope: str):
-        edit = self.override_edits.pop(scope, None)
-        if not edit:
-            return
-        row = edit.parent()
-        try:
-            idx = self.overrides_layout.indexOf(row)
-            if idx >= 0:
-                it = self.overrides_layout.takeAt(idx)
-                w = it.widget()
-                if w:
-                    w.hide()
-                    w.setParent(None)
-                    w.deleteLater()
-            else:
-                row.hide()
-                row.setParent(None)
-                row.deleteLater()
-        except Exception as e:
-            show_warning(self, f"MouseSection remove override failed: {scope}", exc=e)
-            try:
-                row.setParent(None)
-                row.deleteLater()
-            except Exception as e2:
-                show_warning(self, f"MouseSection remove override cleanup failed: {scope}", exc=e2)
-                return
-        if not self.override_edits:
-            self.overrides_container.setVisible(False)
-        self._clear_binding(scope)
-        self._payloads.pop(scope, None)
     def _current_key(self) -> MouseActionKey:
         held: tuple[MouseButton, ...] = ()
         mods: tuple[ModifierKey, ...] = ()
@@ -546,11 +325,6 @@ class MouseSection(QtWidgets.QGroupBox):
                 mods = (m,)
         btn = MouseButton.NONE if self.click in (ClickType.WHEEL_UP, ClickType.WHEEL_DOWN, ClickType.DROP) else self.button
         return MouseActionKey(btn, self.click, held, mods)
-    def _clear_binding(self, scope: str):
-        try:
-            self.store.set_binding(self._current_key(), scope, None)
-        except Exception as e:
-            show_warning(self, f"MouseSection clear binding failed: {scope}", exc=e)
     def _build_payload_with_options(self, cid: str) -> CommandPayload:
         return CommandPayload(cid, {})
     def _display(self, value: Any) -> str:

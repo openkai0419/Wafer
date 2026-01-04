@@ -409,6 +409,10 @@ class ImageIndexer:
         self._progress_callback = None
         self._update_callback = None
 
+    @property
+    def db_path(self):
+        return self.db.db_path
+
     # ---- lifecycle & callbacks ----------------------------------------
     @profiler.profile
     def check_init(self):

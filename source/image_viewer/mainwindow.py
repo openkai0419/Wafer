@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from PySide6 import QtCore, QtWidgets
 
-from ..actions.context_menu import ContextMenuBuilder, FolderContextMenuBuilder
+from .commands.context_menu import ContextMenuBuilder, FolderContextMenuBuilder
 from ..common.funcs import get_data_db, get_setting_db, get_setting_file_names, uipx
 from ..common.profiling import logger, profiler
 from ..constants import APP_NAME, default_db_name
@@ -25,6 +25,9 @@ from .widgets.progress_bar import ThinProgressBar
 from .widgets.query_options import SingleRowOption
 from .widgets.scrollarea import AutoScrollArea
 from .widgets.table_combo import ComboBoxWithButtons
+
+from .commands.menu import MenuMenu
+MenuMenu.register()
 
 class WorkerSignals(QtCore.QObject):
     finished = QtCore.Signal(object, object, object)
@@ -80,6 +83,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.main_ui()
         self.reload_db(self.get_previous())
         QtWidgets.QApplication.instance().aboutToQuit.connect(self.on_close)
+
 
     @profiler.profile
     def get_previous(self):

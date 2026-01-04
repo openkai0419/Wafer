@@ -1,12 +1,14 @@
 from PySide6 import QtWidgets
 from ..common.profiling import logger, profiler
 from ..constants import APP_NAME
-from ..actions.facade import Command
+from ..actions.bridge import Command, Context, Menu
 from ..image_collector.progress_notifier import close_publisher
 from ..lang.manager import TranslatorMixin
 from ..qt.debounce import qt_debounce
 from ..zmq.zmq import Role, ZMQBroker, ZMQNode
-from .tray_commands import TRAY_MENU_ITEMS, ensure_registered
+from .tray_commands import TrayMenu
+
+TrayMenu.register()
 
 class TrayApp(QtWidgets.QSystemTrayIcon, TranslatorMixin):
 
@@ -21,15 +23,14 @@ class TrayApp(QtWidgets.QSystemTrayIcon, TranslatorMixin):
         self.broker.start()
         self.zmq = ZMQNode(Role.COMMUNICATOR, on_message=self.on_notify)
         self.zmq.start()
-        ensure_registered()
         self.setContextMenu(self._build_menu())
         QtWidgets.QApplication.instance().aboutToQuit.connect(self.on_delete)
 
     def _build_menu(self):
-        return Command.build_menu(TRAY_MENU_ITEMS, None, seed_ctx=self._ctx())
+        return Menu.use_menu(TrayMenu.prefix, None, seed_ctx=self._ctx())
 
     def _ctx(self):
-        return Command.create_context(None, "Tray", source="tray", extras={"tray": self})
+        return Context.create_context(None, "Tray", source="tray", extras={"tray": self})
 
     def on_notify(self, v):
         logger.info(f'NOTIFY : {v}')

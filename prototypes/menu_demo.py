@@ -1,12 +1,12 @@
 from datetime import datetime
 
 from PySide6 import QtCore, QtGui, QtWidgets
-from source.actions.facade import Kit, UI, Settings, Command
+from source.actions.bridge import Command, Context, Kit, Menu, Settings, UI
 from source.common.errors import show_warning
 
 
 class FileMenu(Kit.MenuBase):
-    path_prefix = "file"
+    prefix = "file"
     def create_definitions(self):
         items = [":File"]
         for i in range(4):
@@ -15,7 +15,7 @@ class FileMenu(Kit.MenuBase):
 
 
 class PathMenu(Kit.MenuBase):
-    path_prefix = "path"
+    prefix = "path"
     def create_definitions(self):
         items = [":Path", "-"]
         for i in range(4):
@@ -26,7 +26,7 @@ class PathMenu(Kit.MenuBase):
 
 
 class CmdMenu(Kit.MenuBase):
-    path_prefix = "commands"
+    prefix = "commands"
     
     def _cycle_sort_order(self):
         Command.cycle_action_group("sort_order")
@@ -76,50 +76,18 @@ class CmdMenu(Kit.MenuBase):
             Kit.Command(path="Sort/sortByDate", display="Date", checkable=True, default_checked=False, action_group="sort_order", func=lambda ctx: print("Sort by Date" if ctx.get('checked', False) else "")),
             Kit.Command(path="Sort/sortBySize", display="Size", checkable=True, default_checked=False, action_group="sort_order", func=lambda ctx: print("Sort by Size" if ctx.get('checked', False) else "")),
             "Sort/-",
-            Kit.Command(path="Sort/cycleSortOrder", display="Cycle Sort Order", hotkey="Ctrl+Shift+S", func=self._cycle_sort_order),
+            Kit.Command(path="Sort/cycleSortOrder", display="Cycle Sort Order", func=self._cycle_sort_order),
             Kit.Command(path="Sort/printCurrentSort", display="Show Current Sort Order", func=self._print_current_sort_order),
         ]
 
 class ContextMenu(Kit.MenuBase):
-    path_prefix = "context"
-
-    def _prepare_context_menu(self, ctx=None):
-        active_popup = QtWidgets.QApplication.activePopupWidget()
-        if active_popup and active_popup.property(Kit.MARKER):
-            active_popup.close()
-
-        seed = ctx if ctx is not None and hasattr(ctx, "get") else None
-        pos = seed.get("global_pos") if seed is not None else None
-        if pos is None:
-            pos = QtGui.QCursor.pos()
-
-        target = seed.get("widget") if seed is not None else None
-        if target is None:
-            target = QtWidgets.QApplication.widgetAt(pos)
-        if target is None:
-            return None, None
-
-        while target and not hasattr(target, "binding_scope"):
-            target = target.parentWidget()
-        if not target:
-            return None, None
-        return target, pos
+    prefix = "context"
 
     def _show_context_menu_here(self, ctx=None):
-        target, pos = self._prepare_context_menu(ctx)
-        if not target:
-            return
-        seed = ctx if ctx is not None and hasattr(ctx, "get") else None
-        m = Command.build_menu([":Menu", "-", "commands/:Test", "commands/-", "commands", "-", "file", "path", "Temp", "path.1", "Options"], target, seed_ctx=seed)
-        m.exec(pos)
+        Menu.exec_menu([":Menu", "-", "commands/:Test", "commands/-", "commands", "-", "file", "path", "Temp", "path.1", "Options", "echo"], ctx=ctx)
     
     def _show_all_menu(self, ctx=None):
-        target, pos = self._prepare_context_menu(ctx)
-        if not target:
-            return
-        seed = ctx if ctx is not None and hasattr(ctx, "get") else None
-        m = Command.build_all_roots(target, seed_ctx=seed)
-        m.exec(pos)
+        Menu.exec_all_roots(ctx=ctx)
 
     def create_definitions(self):
         return [
@@ -130,15 +98,16 @@ class ContextMenu(Kit.MenuBase):
 
 
 class MenuMenu(Kit.MenuBase):
-    path_prefix = "menu"
+    prefix = "menu"
+
+    def __get_parent(self, ctx):
+        return ctx.get("widget") if ctx is not None and hasattr(ctx, "get") else None
 
     def _open_mouse_binding_editor(self, ctx=None):
-        parent = ctx.get("widget") if ctx is not None and hasattr(ctx, "get") else None
-        UI.open_mouse_binding_editor(parent=parent)
+        UI.open_mouse_binding_editor(parent=self.__get_parent(ctx))
 
     def _open_shortcut_binding_editor(self, ctx=None):
-        parent = ctx.get("widget") if ctx is not None and hasattr(ctx, "get") else None
-        UI.open_shortcut_binding_editor(parent=parent)
+        UI.open_shortcut_binding_editor(parent=self.__get_parent(ctx))
 
     def create_definitions(self):
         return [

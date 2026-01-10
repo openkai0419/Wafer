@@ -152,14 +152,14 @@ class ViewerItems(QtCore.QObject):
         self.currentIndexChanged.emit(self._current_index)
 
     def _preferred_anchor_index(self) -> int | None:
+        if self._current_index is not None:
+            return self._current_index
         last = self.last_selected_index()
         if last is not None:
             return last
-        if self._current_index is not None:
-            return self._current_index
         return 0 if self.paths else None
 
-    def next_index(self, index: int | None = None, step: int = 1, wrap: bool = False) -> int | None:
+    def next_index(self, index: int | None = None, step: int = 1, loop: bool = False) -> int | None:
         if not self.paths:
             return None
         if index is None:
@@ -169,9 +169,9 @@ class ViewerItems(QtCore.QObject):
         nxt = index + max(1, step)
         if nxt < len(self.paths):
             return nxt
-        return 0 if wrap else len(self.paths) - 1
+        return 0 if loop else len(self.paths) - 1
 
-    def prev_index(self, index: int | None = None, step: int = 1, wrap: bool = False) -> int | None:
+    def prev_index(self, index: int | None = None, step: int = 1, loop: bool = False) -> int | None:
         if not self.paths:
             return None
         if index is None:
@@ -181,23 +181,23 @@ class ViewerItems(QtCore.QObject):
         prv = index - max(1, step)
         if prv >= 0:
             return prv
-        return len(self.paths) - 1 if wrap else 0
+        return len(self.paths) - 1 if loop else 0
 
-    def next_path(self, index: int | None = None, step: int = 1, wrap: bool = False) -> str | None:
-        return self.path_at(self.next_index(index=index, step=step, wrap=wrap))
+    def next_path(self, index: int | None = None, step: int = 1, loop: bool = False) -> str | None:
+        return self.path_at(self.next_index(index=index, step=step, loop=loop))
 
-    def prev_path(self, index: int | None = None, step: int = 1, wrap: bool = False) -> str | None:
-        return self.path_at(self.prev_index(index=index, step=step, wrap=wrap))
+    def prev_path(self, index: int | None = None, step: int = 1, loop: bool = False) -> str | None:
+        return self.path_at(self.prev_index(index=index, step=step, loop=loop))
 
     @profiler.profile
-    def move_current_next(self, step: int = 1, wrap: bool = False) -> str | None:
-        i = self.next_index(step=step, wrap=wrap)
+    def move_current_next(self, step: int = 1, loop: bool = False) -> str | None:
+        i = self.next_index(step=step, loop=loop)
         self.set_current_index(i)
         return self.path_at(i)
 
     @profiler.profile
-    def move_current_prev(self, step: int = 1, wrap: bool = False) -> str | None:
-        i = self.prev_index(step=step, wrap=wrap)
+    def move_current_prev(self, step: int = 1, loop: bool = False) -> str | None:
+        i = self.prev_index(step=step, loop=loop)
         self.set_current_index(i)
         return self.path_at(i)
 

@@ -27,7 +27,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon, TranslatorMixin):
         QtWidgets.QApplication.instance().aboutToQuit.connect(self.on_delete)
 
     def _build_menu(self):
-        return Menu.use_menu(TrayMenu.prefix, None, seed_ctx=self._ctx())
+        return Menu.session(None, seed_ctx=self._ctx()).use(TrayMenu.prefix).build()
 
     def _ctx(self):
         return Context.create_context(None, "Tray", source="tray", extras={"tray": self})

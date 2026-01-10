@@ -14,13 +14,15 @@
 
 ビューアの共有状態
 - source/image_viewer/viewer/items.py の ViewerItems が「ファイル一覧/選択/現在インデックス」を共有する状態として機能し、複数Widgetから同じ参照を使えるようにする。
+- source/image_viewer/commands/file_viewer.py の FileViewerCommands は ViewerItems を基準に ViewerWidget の表示(パス)を次/前へ切り替える。
 
 コンテキストからのWidget参照
-- init_command_binding(name) で BindingManager に登録されたWidgetは、CommandContext.get_widget(name) / get_widgets(name) で名前から取得できる（同名は複数対応）。
+- init_command_binding(name) で BindingManager に登録されたWidgetは、CommandContext.get_instance(name) / get_instances(name) で名前から取得できる（同名は複数対応）。
 - これにより、どのWidgetから発動したコマンドでも、必要な別Widgetを安定して参照できる。
-- 必須Widgetが取得できない場合は、コマンド側で黙って return せず例外で落とす（状態確認で握りつぶさない）。
 - Widgetの登録/取得は source/actions/binding/widget_registry.py の WidgetRegistry が担当し、BindingManager はバインド適用のみ担当する。
-- バインド登録をしたくないWidgetは、bridge.UI.register_widget(name, widget) または WidgetRegistry.register(name, widget) で登録して ctx から参照できる。
+- バインド登録をしたくない参照先は、bridge.UI.register_instance(name, instance) で登録して ctx から参照できる（QWidget以外も可）。
+- 内部の参照解決は InstanceRegistry に一本化し、WidgetRegistryは廃止する。
+- クロス参照が必要なコマンドは、可能なら親辿り等をせず、register_instanceで参照先を登録して ctx.get_widget(name) で直接取得する。
 
 入力表示
 - コマンド定義側で hotkey を持たず、表示用のショートカット文字列は BindingManager/ShortcutManager の現在の割り当てからメニュー側で逆引きする。
@@ -28,6 +30,10 @@
 
 メニュー定義
 - Kit.MenuBase / Kit.DragMenuBase は class 変数の prefix と commands だけで登録し、create_definitions/COMMAND_DEFS 方式は廃止する。
+- 呼び出し時のメニュー構造は MenuMaker が解決し、MenuPlan(hide/add/insert)で一時編集できるようにする。MenuBuilder は MenuPlan のトークン列から QMenu を生成するだけに絞る。
+- insert/hide のターゲットは id または path("/") で指定でき、見つからない場合は例外で落とす。
+- MenuPlan.add/insert は Kit.Command(CommandMeta) も受け取れ、MenuHubへ登録せずその場限りのコマンドをメニューへ追加できる（バインドピッカーには出ない）。
+- 外部からのメニュー生成/表示は bridge.Menu に統一し、Menu.session(parent, seed_ctx=...) / Menu.with_ctx(ctx) から menu/use/all_roots を作って hide/add/insert を適用し、最後に build()/exec() する。
 
 コマンド設計
 - コマンドは主にdrag/drop系のコマンドとそれ以外の汎用コマンドのに種類があり、drag/drop系のコマンドはそれぞれのバインドでしかできない。

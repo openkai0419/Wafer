@@ -3,34 +3,22 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from ...actions.bridge import Kit
 
 
-def _require_gv(ctx):
-    if ctx is None:
-        raise RuntimeError("GraphicsView not found: ctx is None")
-    get = getattr(ctx, "get", None)
-    w = get("widget") if callable(get) else None
-    if w is not None and hasattr(w, "fit_in_view"):
-        return w
-    gw = getattr(ctx, "get_widget", None)
-    if callable(gw):
-        w = gw("GraphicsView")
-        if w is not None:
-            return w
-    raise RuntimeError(f"GraphicsView not found in ctx: {type(ctx).__name__}")
-
+def _get_gv(ctx):
+    return ctx.get_instance("GraphicsView")
 
 def reset_view(ctx):
-    gv = _require_gv(ctx)
+    gv = _get_gv(ctx)
     gv.setTransform(QtGui.QTransform())
     gv.centerOn(gv.sceneRect().center())
     gv.fit_in_view(padding=0.0)
 
 
 def fit_in_view(ctx, padding: float = 0.0, mode: str | None = None):
-    gv = _require_gv(ctx)
+    gv = _get_gv(ctx)
     gv.fit_in_view(padding=float(padding), mode=mode)
 
 def toggle_fit_mode(ctx):
-    gv = _require_gv(ctx)
+    gv = _get_gv(ctx)
     gv.toggle_fit_mode()
     gv.fit_in_view(padding=0.0)
 
@@ -52,17 +40,17 @@ def _zoom(gv, *, base: float, steps: int):
 
 
 def zoom_in(ctx, base: float = 1.1):
-    gv = _require_gv(ctx)
+    gv = _get_gv(ctx)
     _zoom(gv, base=float(base), steps=int(ctx.get("wheel_steps")))
 
 
 def zoom_out(ctx, base: float = 1.1):
-    gv = _require_gv(ctx)
+    gv = _get_gv(ctx)
     _zoom(gv, base=float(base) ** -1.0, steps=int(ctx.get("wheel_steps")))
 
 
 def _pan_start(ctx):
-    gv = _require_gv(ctx)
+    gv = _get_gv(ctx)
     gv._is_panning = True
     gv._last_pos = ctx.pos
     gv.setCursor(QtCore.Qt.CursorShape.ClosedHandCursor)
@@ -70,7 +58,7 @@ def _pan_start(ctx):
 
 
 def _pan_move(ctx):
-    gv = _require_gv(ctx)
+    gv = _get_gv(ctx)
     if not getattr(gv, "_is_panning", False):
         return
     cur = ctx.pos
@@ -81,7 +69,7 @@ def _pan_move(ctx):
 
 
 def _pan_end(ctx):
-    gv = _require_gv(ctx)
+    gv = _get_gv(ctx)
     if not getattr(gv, "_is_panning", False):
         return
     gv._is_panning = False
@@ -89,7 +77,6 @@ def _pan_end(ctx):
 
 class GraphicsViewCommands(Kit.MenuBase):
     prefix = "GraphicsView"
-
     commands = [
         ":GraphicsView",
         Kit.Command(path="gv.reset_view", display="Reset View", func=reset_view),
@@ -121,7 +108,6 @@ class GraphicsViewCommands(Kit.MenuBase):
 
 class GraphicsViewDragCommands(Kit.DragMenuBase):
     prefix = "GraphicsView"
-
     commands = [
         Kit.Command(
             path="gv.pan",

@@ -8,6 +8,7 @@ from source.common.errors import show_warning
 from source.common.funcs import uipx
 
 from ..command.payload import CommandPayload, format_payload_display
+from ..command.maker import MenuMaker
 from ..command.ui import MenuBuilder
 from .common import WidgetRef
 
@@ -43,7 +44,8 @@ def popup_command_picker(
     on_select,
     allow_options_with_selection: bool = True,
 ):
-    builder = MenuBuilder(parent)
+    maker = MenuMaker()
+    builder = MenuBuilder(maker, parent)
 
     def _prep(m: QtWidgets.QMenu, sc=scope):
         act_none = QtGui.QAction("なし(解除)", m)

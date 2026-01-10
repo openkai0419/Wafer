@@ -94,9 +94,9 @@ class BindingManager:
     def register(self, widget: QtWidgets.QWidget) -> None:
         try:
             self._widgets.add(widget)
-            from .widget_registry import WidgetRegistry
+            from .instance_registry import InstanceRegistry
 
-            WidgetRegistry.instance().register_inferred(widget)
+            InstanceRegistry.instance().register_inferred(widget)
             self.apply_mouse_bindings([widget])
             self.apply_key_bindings([widget])
         except Exception as e:

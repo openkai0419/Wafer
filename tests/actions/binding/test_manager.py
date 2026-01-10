@@ -1,7 +1,7 @@
 from PySide6 import QtWidgets
 
 from source.actions.binding.manager import BindingManager
-from source.actions.binding.widget_registry import WidgetRegistry
+from source.actions.binding.instance_registry import InstanceRegistry
 from source.actions.binding.mixins import CommandBindingMixin
 from source.actions.command.context import CommandContext
 from source.actions.binding.key.store import KeyBindingStore
@@ -24,7 +24,7 @@ class _WCapture(QtWidgets.QWidget, CommandBindingMixin):
 
 def test_ctx_can_resolve_widget_by_name(qtbot):
     BindingManager._instance = None
-    WidgetRegistry._instance = None
+    InstanceRegistry._instance = None
     w1 = _W()
     w2 = _W()
     qtbot.addWidget(w1)
@@ -34,15 +34,15 @@ def test_ctx_can_resolve_widget_by_name(qtbot):
     w2.init_command_binding("viewer")
 
     ctx = CommandContext.create(w2, w2.binding_scope(), source="test")
-    assert ctx.get_widget("folder") is w1
-    assert ctx.get_widget("viewer") is w2
-    assert ctx.get_widgets("folder") == [w1]
-    assert ctx.get_widget("missing") is None
+    assert ctx.get_instance("folder") is w1
+    assert ctx.get_instance("viewer") is w2
+    assert ctx.get_instances("folder") == [w1]
+    assert ctx.get_instance("missing") is None
 
 
 def test_ctx_can_get_multiple_widgets_by_same_name(qtbot):
     BindingManager._instance = None
-    WidgetRegistry._instance = None
+    InstanceRegistry._instance = None
     w1 = _W()
     w2 = _W()
     w3 = _W()
@@ -55,46 +55,46 @@ def test_ctx_can_get_multiple_widgets_by_same_name(qtbot):
     w3.init_command_binding("other")
 
     ctx = CommandContext.create(w3, w3.binding_scope(), source="test")
-    xs = ctx.get_widgets("same")
+    xs = ctx.get_instances("same")
     assert set(xs) == {w1, w2}
 
 
 def test_ctx_can_get_context_only_widget(qtbot):
     BindingManager._instance = None
-    WidgetRegistry._instance = None
+    InstanceRegistry._instance = None
     anchor = _W()
     w = QtWidgets.QWidget()
     qtbot.addWidget(anchor)
     qtbot.addWidget(w)
 
     anchor.init_command_binding("anchor")
-    WidgetRegistry.instance().register("plain", w)
+    InstanceRegistry.instance().register("plain", w)
     ctx = CommandContext.create(anchor, anchor.binding_scope(), source="test")
-    assert ctx.get_widget("plain") is w
+    assert ctx.get_instance("plain") is w
 
 
 def test_ctx_filters_deleted_widget(qtbot):
     BindingManager._instance = None
-    WidgetRegistry._instance = None
+    InstanceRegistry._instance = None
     anchor = _W()
     w = QtWidgets.QWidget()
     qtbot.addWidget(anchor)
 
     anchor.init_command_binding("anchor")
-    WidgetRegistry.instance().register("gone", w)
+    InstanceRegistry.instance().register("gone", w)
     import shiboken6
 
     shiboken6.delete(w)
     QtWidgets.QApplication.processEvents()
 
     ctx = CommandContext.create(anchor, anchor.binding_scope(), source="test")
-    assert ctx.get_widget("gone") is None
-    assert ctx.get_widgets("gone") == []
+    assert ctx.get_instance("gone") is None
+    assert ctx.get_instances("gone") == []
 
 
 def test_register_applies_current_key_bindings(qtbot):
     BindingManager._instance = None
-    WidgetRegistry._instance = None
+    InstanceRegistry._instance = None
     store = KeyBindingStore()
     try:
         seq = Key("Control", "A")

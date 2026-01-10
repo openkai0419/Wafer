@@ -189,11 +189,11 @@ class CommandContext:
         except TypeError:
             return []
 
-    def get_widget(self, name: str, default: Any = None) -> Any:
-        ws = self.get_widgets(name)
-        return ws[0] if ws else default
+    def get_instance(self, name: str, default: Any = None) -> Any:
+        xs = self.get_instances(name)
+        return xs[0] if xs else default
 
-    def get_widgets(self, name: str, default: Optional[list] = None) -> list:
+    def get_instances(self, name: str, default: Optional[list] = None) -> list:
         if not name:
             return [] if default is None else list(default)
         k = str(name)
@@ -203,9 +203,9 @@ class CommandContext:
             if not xs:
                 return [] if default is None else list(default)
             try:
-                from ..binding.widget_registry import WidgetRegistry
+                from ..binding.instance_registry import InstanceRegistry
 
-                reg = WidgetRegistry.instance()
+                reg = InstanceRegistry.instance()
                 if any(not reg.is_valid(w) for w in xs):
                     cache.pop(k, None)
                 else:
@@ -213,15 +213,12 @@ class CommandContext:
             except Exception:
                 return list(xs)
         try:
-            from ..binding.widget_registry import WidgetRegistry
+            from ..binding.instance_registry import InstanceRegistry
 
-            reg = WidgetRegistry.instance()
-            if not reg.has(k):
-                cache[k] = ()
-                return [] if default is None else list(default)
-            ws = reg.get_all(k)
-            cache[k] = tuple(ws)
-            return list(ws) if ws else ([] if default is None else list(default))
+            reg = InstanceRegistry.instance()
+            xs = reg.get_all(k)
+            cache[k] = tuple(xs)
+            return list(xs) if xs else ([] if default is None else list(default))
         except Exception as e:
             show_warning(None, "CommandContext.get_widgets failed", exc=e)
             cache[k] = ()

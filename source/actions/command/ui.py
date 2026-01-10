@@ -11,7 +11,8 @@ from .context import CommandContext
 from source.common.errors import raise_error, show_warning
 from .payload import CommandPayload
 from .state import ActionGroupStateManager, log_error, log_warning
-from .menu import split_parts, is_sep_token, sep_path, is_section_token, section_parts, MenuHub
+from .menu import split_parts, is_sep_token, sep_path, is_section_token, section_parts
+from .maker import MenuMaker, MenuPlan
 from .state import CommandOptionStore
 
 
@@ -757,51 +758,18 @@ class CommandMenuRow(QtWidgets.QWidget):
 
 
 class MenuBuilder:
-    def __init__(self, parent: Optional[QtWidgets.QWidget] = None, *, seed_ctx: Optional[CommandContext] = None):
+    def __init__(self, maker: MenuMaker, parent: Optional[QtWidgets.QWidget] = None, *, seed_ctx: Optional[CommandContext] = None):
         self._menu = QtWidgets.QMenu(parent)
         self._menu.setProperty(COMMAND_MENU_MARKER, True)
         self._ctx_parent = parent
         self._builder = CommandMenuBuilder()
         self._builder._install_hotkey_alignment(self._menu)
         self._seed_ctx = seed_ctx
-        self._hub = MenuHub()
+        self._maker = maker
 
     @property
     def menu(self) -> QtWidgets.QMenu:
         return self._menu
-
-    def _add_names(self, dst: List[str], names: List[str], seen: set[str], after_rebase: bool) -> None:
-        for n in names:
-            if not (is_sep_token(n) or is_section_token(n)):
-                if n in seen:
-                    raise ValueError(f"Duplicate item after rebase: {n}" if after_rebase else f"Duplicate item: {n}")
-                seen.add(n)
-            dst.append(n)
-
-    def _collect_folder(self, key: str, rebase_to: str, on_missing: str) -> List[str]:
-        names = self._hub.collect_items_by_folder(key, rebase_to=rebase_to)
-        if not names:
-            raise ValueError(on_missing)
-        return names
-
-    def _flatten_for_use(self, n: str, base: str) -> str:
-        if is_sep_token(n):
-            sp = sep_path(str(n))
-            if sp and sp[0] == base:
-                sp = sp[1:]
-                return "/".join(sp + ["-"]) if sp else "-"
-            return n
-        if is_section_token(n):
-            parts = section_parts(str(n))
-            if parts and parts[0] == base:
-                head, label = parts[1:-1], parts[-1]
-                return "/".join(head + [":" + label]) if head else ":" + label
-            return n
-        p = split_parts(str(n))
-        if p and p[0] == base:
-            p = p[1:]
-            return "/".join(p)
-        return n
 
     def _build_into(self, names: List[str], selection_callback: Optional[Callable[[Any], None]], allow_options_with_selection: bool) -> QtWidgets.QMenu:
         if names:
@@ -820,105 +788,20 @@ class MenuBuilder:
         return self._menu
 
     @profiler.profile
-    def build(self, items: List[str], selection_callback: Optional[Callable[[Any], None]] = None, allow_options_with_selection: bool = False) -> QtWidgets.QMenu:
+    def build(self, plan: MenuPlan, selection_callback: Optional[Callable[[Any], None]] = None, allow_options_with_selection: bool = False) -> QtWidgets.QMenu:
         self._menu.clear()
-        all_names: List[str] = []
-        seen: set[str] = set()
-        for it in items:
-            if not it:
-                continue
-            if is_sep_token(it) or is_section_token(it):
-                all_names.append(it)
-                continue
-            if "/" in it:
-                parts = split_parts(it)
-                if len(parts) >= 2:
-                    orig_folder = parts[-1]
-                    if self._hub.has_folder(orig_folder):
-                        prefixes = self._hub.find_folder_prefixes(orig_folder)
-                        if not prefixes:
-                            raise ValueError(f"Unknown folder: {orig_folder}")
-                        if len(prefixes) > 1:
-                            raise ValueError(f"Ambiguous folder: {orig_folder}")
-                        names = self._collect_folder(prefixes[0], rebase_to=it, on_missing=f"Unknown folder: {orig_folder}")
-                        self._add_names(all_names, names, seen, after_rebase=True)
-                        continue
-                if self._hub.has_folder(it):
-                    names = self._collect_folder(it, rebase_to=it, on_missing=f"Unknown folder: {it}")
-                    self._add_names(all_names, names, seen, after_rebase=True)
-                    continue
-                path_cid = split_parts(it)[-1]
-                if not self._hub.get_path_by_command_id(path_cid):
-                    raise ValueError(f"Unknown command path or folder: {it}")
-                self._add_names(all_names, [it], seen, after_rebase=False)
-                continue
-            p = self._hub.get_path_by_command_id(it)
-            if p:
-                self._add_names(all_names, [it], seen, after_rebase=False)
-            else:
-                prefixes = self._hub.find_folder_prefixes(it)
-                if len(prefixes) > 1:
-                    raise ValueError(f"Ambiguous folder: {it}")
-                names: List[str] = []
-                if len(prefixes) == 1:
-                    names = self._collect_folder(prefixes[0], rebase_to=it, on_missing=f"Unknown command or folder id: {it}")
-                elif self._hub.has_folder(it):
-                    names = self._collect_folder(it, rebase_to=it, on_missing=f"Unknown command or folder id: {it}")
-                else:
-                    raise_error(None, f"Unknown command or folder id: {it}")
-                    continue
-                self._add_names(all_names, names, seen, after_rebase=True)
-        return self._build_into(all_names, selection_callback, allow_options_with_selection)
+        if plan is None:
+            return self._menu
+        return self._build_into(plan.resolve_tokens(), selection_callback, allow_options_with_selection)
 
     @profiler.profile
     def use(self, folder: str) -> QtWidgets.QMenu:
-        self._menu.clear()
-        s = (folder or "").strip("/")
-        if not s:
-            raise ValueError("Folder is required")
-        if self._hub.get_path_by_command_id(s):
-            raise ValueError(f"Command id is not allowed: {s}")
-        names: List[str] = []
-        if "/" in s:
-            if not self._hub.has_folder(s):
-                raise ValueError(f"Unknown folder: {s}")
-            names = self._hub.collect_items_by_folder(s, rebase_to=s)
-        else:
-            if not self._hub.has_folder(s):
-                prefs = self._hub.find_folder_prefixes(s)
-                if not prefs:
-                    raise ValueError(f"Unknown folder: {s}")
-            prefs = self._hub.find_folder_prefixes(s)
-            if len(prefs) > 1:
-                raise ValueError(f"Ambiguous folder: {s}")
-            pref = prefs[0] if prefs else s
-            names = self._hub.collect_items_by_folder(pref, rebase_to=s)
-        if not names:
-            raise ValueError(f"No items under folder: {s}")
-        names = [self._flatten_for_use(n, s) for n in names]
-        self._build_into(names, None, False)
-        t = split_parts(s)
-        self._menu.setTitle(self._builder.t.tr(t[-1]) if t else self._builder.t.tr(s))
-        return self._menu
+        plan = self._maker.use(folder)
+        return self.build(plan)
 
     def build_all_roots(self, selection_callback: Optional[Callable[[Any], None]] = None, allow_options_with_selection: bool = False) -> QtWidgets.QMenu:
-        roots: List[str] = []
-        seen = set()
-        for items in self._hub._menu_items.values():
-            for s in items:
-                if not isinstance(s, str) or not s or s == "---" or s.startswith(":"):
-                    continue
-                parts = [p for p in s.split("/") if p]
-                if len(parts) < 2:
-                    continue
-                r = parts[0]
-                if r in seen:
-                    continue
-                seen.add(r)
-                roots.append(r)
-        if not roots:
-            raise ValueError("No top-level menus registered")
-        return self.build(roots, selection_callback=selection_callback, allow_options_with_selection=allow_options_with_selection)
+        plan = self._maker.all_roots()
+        return self.build(plan, selection_callback=selection_callback, allow_options_with_selection=allow_options_with_selection)
 
     def popup_all_roots(self, anchor: QtWidgets.QWidget, selection_callback: Callable[[Any], None], context_provider: Optional[Callable[[], Any]] = None, prepare: Optional[Callable[[QtWidgets.QMenu], None]] = None, allow_options_with_selection: bool = False) -> None:
         prev_seed = self._seed_ctx

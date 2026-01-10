@@ -23,10 +23,10 @@ def test_navigation_next_prev():
     assert items.move_current_next() == 'c'
     assert items.current_index() == 2
 
-    assert items.move_current_next(wrap=True) == 'a'
+    assert items.move_current_next(loop=True) == 'a'
     assert items.current_index() == 0
 
-    assert items.move_current_prev(wrap=True) == 'c'
+    assert items.move_current_prev(loop=True) == 'c'
     assert items.current_index() == 2
 
 

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from PySide6 import QtCore, QtGui, QtWidgets
 from source.common.funcs import uipx
 from .mouseeventmanager import MouseActionKey, ClickType, MouseButton, ModifierKey
+from ...command.maker import MenuMaker
 from ...command.ui import MenuBuilder
 from ..seed import get_seed_mouse_bindings
 from .store import MouseBindingStore

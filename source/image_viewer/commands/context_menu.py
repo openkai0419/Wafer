@@ -2,7 +2,7 @@ import os
 
 from PySide6 import QtGui, QtWidgets
 
-from ...actions.bridge import Context, Menu
+from ...actions.bridge import Context, Kit, Menu
 from ...common.funcs import normalize_path
 from ...lang.manager import TranslatorMixin
 from ...qt.dialog import ConfirmDialog
@@ -27,41 +27,39 @@ class ContextMenuBuilder(ActionManager):
             source="menu",
             extras={"path": path, "paths": self.get_selected_sources()},
         )
-        menu = Menu.use_menu("File", self.parent, seed_ctx=seed_ctx)
-        self._insert_extras(menu, path)
-        return menu
-
-    def _insert_extras(self, menu: QtWidgets.QMenu, path: str):
-        actions = menu.actions()
-        idx = next(
-            (i for i, a in enumerate(actions) if str(a.data()) == "file.copy_path_list"),
-            None,
+        return (
+            Menu.session(self.parent, seed_ctx=seed_ctx)
+            .use("File")
+            .insert(
+                "file.copy_path_list",
+                [
+                    Kit.Command(path="inline.copy_path", display="Copy FileName", func=ContextMenuBuilder._cmd_copy_path),
+                    "-",
+                    Kit.Command(path="inline.select_folder", display="Select Folder", func=ContextMenuBuilder._cmd_select_folder),
+                ],
+            )
+            .build()
         )
-        if idx is None:
+
+    @staticmethod
+    def _cmd_copy_path(ctx):
+        get = getattr(ctx, "get", None)
+        path = get("path") if callable(get) else None
+        if not path:
             return
-        before = actions[idx + 1] if idx + 1 < len(actions) else None
-        act1 = QtGui.QAction(self.t.tr("Copy FileName"), menu)
-        act1.triggered.connect(lambda: self.copy_path(path))
-        menu.insertAction(before, act1) if before is not None else menu.addAction(act1)
-        actions = menu.actions()
-        idx2 = next(
-            (i for i, a in enumerate(actions) if str(a.data()) == "file.copy_path_list"),
-            None,
-        )
-        before_sep = actions[idx2 + 2] if idx2 is not None and idx2 + 2 < len(actions) else None
-        menu.insertSeparator(before_sep) if before_sep is not None else menu.addSeparator()
-        actions = menu.actions()
-        before2 = actions[idx2 + 3] if idx2 is not None and idx2 + 3 < len(actions) else None
-        act2 = QtGui.QAction(self.t.tr("Select Folder"), menu)
-        act2.triggered.connect(lambda: self.select_folder(path))
-        menu.insertAction(before2, act2) if before2 is not None else menu.addAction(act2)
+        QtGui.QGuiApplication.clipboard().setText(str(path))
 
-    def copy_path(self, path):
-        QtGui.QGuiApplication.clipboard().setText(path)
-
-    def select_folder(self, path):
-        folder = self.get_directory_from_path(path)
-        self.parent.folder_view.expand_and_select_path(folder)
+    @staticmethod
+    def _cmd_select_folder(ctx):
+        get = getattr(ctx, "get", None)
+        path = get("path") if callable(get) else None
+        if not path:
+            return
+        w = get("widget") if callable(get) else None
+        if w is None or not hasattr(w, "folder_view"):
+            raise RuntimeError("folder_view not found")
+        folder = ActionManager.get_directory_from_path(str(path))
+        w.folder_view.expand_and_select_path(folder)
 
     def get_selected_sources(self):
         return self.parent.items.selected_sources()
@@ -89,14 +87,66 @@ class FolderContextMenuBuilder(ActionManager):
             source="menu",
             extras={"path": path},
         )
-        menu = Menu.build_menu(menu_items, self.root, seed_ctx=seed_ctx)
         if path in self.view.roots:
-            a = menu.addAction(self.t.tr("Remove from view"))
-            a.triggered.connect(lambda: self.remove(path))
+            spec = Menu.session(self.root, seed_ctx=seed_ctx).menu(menu_items).add(
+                [
+                    "-",
+                    Kit.Command(path="inline.folder.remove_from_view", display="Remove from view", func=FolderContextMenuBuilder._cmd_remove_from_view),
+                ]
+            )
         else:
-            a = menu.addAction(self.t.tr("Ignore this folder"))
-            a.triggered.connect(lambda: self.ignore(path))
-        return menu
+            spec = Menu.session(self.root, seed_ctx=seed_ctx).menu(menu_items).add(
+                [
+                    "-",
+                    Kit.Command(path="inline.folder.ignore", display="Ignore this folder", func=FolderContextMenuBuilder._cmd_ignore_folder),
+                ]
+            )
+        return spec.build()
+
+    @staticmethod
+    def _cmd_remove_from_view(ctx):
+        get = getattr(ctx, "get", None)
+        path = get("path") if callable(get) else None
+        if not path:
+            return
+        root = get("widget") if callable(get) else None
+        if root is None or not hasattr(root, "folder_view") or not hasattr(root, "setting_db"):
+            raise RuntimeError("root widget not found")
+        view = root.folder_view
+        result = ConfirmDialog.ask(
+            f"Are you sure to Remove this folder?  (This does not delete folders)\\  {path}",
+            title="Confirm",
+            buttons=("Remove", "Cancel"),
+            parent=view,
+        )
+        if result != "Remove":
+            return
+        if hasattr(view, "roots") and path in view.roots and hasattr(view, "remove_root"):
+            view.remove_root(path)
+        root.setting_db.remove_parent_folder(path)
+
+    @staticmethod
+    def _cmd_ignore_folder(ctx):
+        get = getattr(ctx, "get", None)
+        path = get("path") if callable(get) else None
+        if not path:
+            return
+        root = get("widget") if callable(get) else None
+        if root is None or not hasattr(root, "folder_view") or not hasattr(root, "setting_db"):
+            raise RuntimeError("root widget not found")
+        view = root.folder_view
+        result = ConfirmDialog.ask(
+            f"Are you sure to Ingore this folder?  (This does not delete folders)\n  {path}",
+            title="Confirm",
+            buttons=("Ignore", "Cancel"),
+            parent=view,
+        )
+        if result != "Ignore":
+            return
+        p = normalize_path(str(path))
+        if hasattr(view, "add_excluded"):
+            view.add_excluded(p)
+        root.setting_db.add_ignore_folder(p)
 
     def remove(self, path):
         result = ConfirmDialog.ask(

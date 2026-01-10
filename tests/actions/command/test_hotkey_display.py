@@ -31,7 +31,7 @@ def test_menu_hotkey_is_resolved_from_bindings(qtbot):
     w = _BindWidget("*")
     qtbot.addWidget(w)
     w.set_shortcut_bindings({KeySequence(["Ctrl", "C"]): CommandPayload("file.copy", {})})
-    m = Menu.build_menu(["file.copy"], parent=w)
+    m = Menu.session(w).menu(["file.copy"]).build()
     assert _first_row_hotkey(m) == "Ctrl+C"
 
 
@@ -39,5 +39,5 @@ def test_menu_installs_hotkey_alignment_hook(qtbot):
     FileCommands.register()
     w = _BindWidget("*")
     qtbot.addWidget(w)
-    m = Menu.build_menu(["file.copy"], parent=w)
+    m = Menu.session(w).menu(["file.copy"]).build()
     assert bool(m.property("__hotkey_align_installed__")) is True

@@ -9,6 +9,7 @@ from .binding.manager import BindingManager
 from .binding.seed import get_seed_key_bindings, get_seed_mouse_bindings, set_seed_bindings
 from .command.core import CommandRegistry
 from .command.state import CommandOptionStore
+from source.common.errors import raise_error
 
 
 class Kit:
@@ -152,7 +153,7 @@ class Settings:
 
 class UI:
     @staticmethod
-    def collect_bindable_widgets() -> list[WidgetRef]:
+    def collect_bindable_instances() -> list[WidgetRef]:
         out: list[WidgetRef] = []
         for tl in QtWidgets.QApplication.topLevelWidgets():
             for w in tl.findChildren(QtWidgets.QWidget):
@@ -165,7 +166,7 @@ class UI:
 
     @staticmethod
     def open_mouse_binding_editor(parent: QtWidgets.QWidget | None = None) -> None:
-        ws = UI.collect_bindable_widgets()
+        ws = UI.collect_bindable_instances()
         if not ws:
             return
         from .binding.mouse.editors import MouseBindingEditor
@@ -175,7 +176,7 @@ class UI:
 
     @staticmethod
     def open_shortcut_binding_editor(parent: QtWidgets.QWidget | None = None) -> None:
-        ws = UI.collect_bindable_widgets()
+        ws = UI.collect_bindable_instances()
         if not ws:
             return
         from .binding.key.editors import ShortcutBindingEditor
@@ -192,15 +193,15 @@ class UI:
         return widget
 
     @staticmethod
-    def register_widget(name: str, widget: QtWidgets.QWidget) -> QtWidgets.QWidget:
+    def register_instance(name: str, instance) -> object:
         if not name:
             raise ValueError("name is required")
-        if widget is None:
-            raise ValueError("widget is required")
-        from .binding.widget_registry import WidgetRegistry
+        if instance is None:
+            raise ValueError("instance is required")
+        from .binding.instance_registry import InstanceRegistry
 
-        WidgetRegistry.instance().register(str(name), widget)
-        return widget
+        InstanceRegistry.instance().register(str(name), instance)
+        return instance
 
 
 class Command:
@@ -230,14 +231,114 @@ class Command:
 
         register_command_defs(defs)
 
-
-class Menu:
-    @staticmethod
-    def _get_builder(parent: QtWidgets.QWidget | None = None, *, seed_ctx=None):
+class MenuSession:
+    def __init__(
+        self,
+        parent: QtWidgets.QWidget | None = None,
+        *,
+        seed_ctx=None,
+        maker=None,
+        pos=None,
+    ):
+        from .command.maker import MenuMaker
         from .command.ui import MenuBuilder
 
-        return MenuBuilder(parent, seed_ctx=seed_ctx)
+        self.parent = parent
+        self.seed_ctx = seed_ctx
+        self.pos = pos
+        self.maker = maker if maker is not None else MenuMaker()
+        self.builder = MenuBuilder(self.maker, parent, seed_ctx=seed_ctx)
 
+    def menu(self, items):
+        try:
+            plan = self.maker.menu(Menu._normalize_menu_items(items))
+        except Exception as e:
+            raise_error(self.parent, str(e), "Error")
+        return MenuSpec(self, plan)
+
+    def use(self, folder: str):
+        try:
+            plan = self.maker.use(str(folder))
+        except Exception as e:
+            raise_error(self.parent, str(e), "Error")
+        return MenuSpec(self, plan)
+
+    def all_roots(self):
+        try:
+            plan = self.maker.all_roots()
+        except Exception as e:
+            raise_error(self.parent, str(e), "Error")
+        return MenuSpec(self, plan)
+
+    def build(
+        self,
+        plan,
+        *,
+        selection_callback=None,
+        allow_options_with_selection: bool = False,
+    ):
+        try:
+            return self.builder.build(
+                plan,
+                selection_callback=selection_callback,
+                allow_options_with_selection=allow_options_with_selection,
+            )
+        except Exception as e:
+            raise_error(self.parent, str(e), "Error")
+
+class MenuSpec:
+    def __init__(self, session: "MenuSession", plan):
+        self._session = session
+        self._plan = plan
+
+    def hide(self, targets):
+        try:
+            self._plan = self._plan.hide(targets)
+        except Exception as e:
+            raise_error(self._session.parent, str(e), "Error")
+        return self
+
+    def add(self, items):
+        try:
+            self._plan = self._plan.add(items)
+        except Exception as e:
+            raise_error(self._session.parent, str(e), "Error")
+        return self
+
+    def insert(self, target: str, items):
+        try:
+            self._plan = self._plan.insert(target, items)
+        except Exception as e:
+            raise_error(self._session.parent, str(e), "Error")
+        return self
+
+    def build(
+        self,
+        *,
+        selection_callback=None,
+        allow_options_with_selection: bool = False,
+    ):
+        return self._session.build(
+            self._plan,
+            selection_callback=selection_callback,
+            allow_options_with_selection=allow_options_with_selection,
+        )
+
+    def exec(
+        self,
+        pos=None,
+        *,
+        selection_callback=None,
+        allow_options_with_selection: bool = False,
+    ):
+        m = self.build(
+            selection_callback=selection_callback,
+            allow_options_with_selection=allow_options_with_selection,
+        )
+        p = pos if pos is not None else (self._session.pos if self._session.pos is not None else QtGui.QCursor.pos())
+        return m.exec(p)
+
+class Menu:
     @staticmethod
     def _normalize_menu_items(items) -> list[str]:
         if items is None:
@@ -250,63 +351,37 @@ class Menu:
         raise TypeError(f"items must be str or list[str], got: {type(items).__name__}")
 
     @staticmethod
-    def build_menu(
-        items,
+    def session(
         parent: QtWidgets.QWidget | None = None,
         *,
         seed_ctx=None,
-        selection_callback=None,
-        allow_options_with_selection: bool = False,
-    ):
-        b = Menu._get_builder(parent, seed_ctx=seed_ctx)
-        return b.build(Menu._normalize_menu_items(items), selection_callback=selection_callback, allow_options_with_selection=allow_options_with_selection)
+        maker=None,
+        pos=None,
+    ) -> "MenuSession":
+        return MenuSession(parent, seed_ctx=seed_ctx, maker=maker, pos=pos)
 
     @staticmethod
-    def exec_menu(items, ctx=None):
+    def with_ctx(ctx=None, *, maker=None) -> "MenuSession | None":
         target, pos = Context.prepare_context_menu(ctx)
         if not target:
-            return
+            return None
         seed = ctx if ctx is not None and hasattr(ctx, "get") else None
-        m = Menu.build_menu(items, target, seed_ctx=seed)
-        return m.exec(pos)
+        return Menu.session(target, seed_ctx=seed, maker=maker, pos=pos)
 
     @staticmethod
-    def exec_all_roots(ctx=None):
-        target, pos = Context.prepare_context_menu(ctx)
-        if not target:
+    def exec_menu(prefix: str, ctx) -> None:
+        s = Menu.with_ctx(ctx)
+        if s is None:
             return
-        seed = ctx if ctx is not None and hasattr(ctx, "get") else None
-        m = Menu.build_all_roots(target, seed_ctx=seed)
-        return m.exec(pos)
+        s.use(prefix).exec()
 
     @staticmethod
-    def use_menu(folder: str, parent: QtWidgets.QWidget | None = None, *, seed_ctx=None):
-        b = Menu._get_builder(parent, seed_ctx=seed_ctx)
-        return b.use(str(folder))
+    def exec_all_roots(ctx) -> None:
+        s = Menu.with_ctx(ctx)
+        if s is None:
+            return
+        s.all_roots().exec()
     
-    @staticmethod
-    def use_exec(folder: str, ctx=None):
-        target, pos = Context.prepare_context_menu(ctx)
-        if not target:
-            return
-        seed = ctx if ctx is not None and hasattr(ctx, "get") else None
-        m = Menu.use_menu(folder, target, seed_ctx=seed)
-        return m.exec(pos)
-
-    @staticmethod
-    def build_all_roots(
-        parent: QtWidgets.QWidget | None = None,
-        *,
-        seed_ctx=None,
-        selection_callback=None,
-        allow_options_with_selection: bool = False,
-    ):
-        b = Menu._get_builder(parent, seed_ctx=seed_ctx)
-        return b.build_all_roots(selection_callback=selection_callback, allow_options_with_selection=allow_options_with_selection)
-
-
-
-
 class Context:
     @staticmethod
     def prepare_context_menu(ctx=None):

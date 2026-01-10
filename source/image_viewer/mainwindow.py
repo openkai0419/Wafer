@@ -28,6 +28,7 @@ from .widgets.scrollarea import AutoScrollArea
 from .widgets.table_combo import ComboBoxWithButtons
 
 from .commands.menu import MenuMenu
+from ..actions.bridge import UI
 MenuMenu.setup_menu()
 
 class WorkerSignals(QtCore.QObject):
@@ -296,6 +297,8 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.right_layout.setSpacing(0)
 
         self.data_shower = ViewerWidget(self)
+        UI.register_instance("ViewerWidget", self.data_shower)
+        UI.register_instance("ViewerItems", self.items)
         
         self.right_layout.addWidget(self.data_shower)
 

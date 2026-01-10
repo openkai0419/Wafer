@@ -158,6 +158,8 @@ class ShortcutManager(QtCore.QObject):
         return call_int0(e, "timestamp", 0)
 
     def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:
+        if not isinstance(event, QtCore.QEvent):
+            return False
         et = event.type()
         if et in (QtCore.QEvent.ApplicationDeactivate, QtCore.QEvent.WindowDeactivate):
             self._reset_all_states()
@@ -251,7 +253,7 @@ class ShortcutManager(QtCore.QObject):
                     scope = widget.binding_scope() or ""
                 except Exception as e:
                     show_warning(None, "binding_scope failed", exc=e)
-            ctx = CommandContext.create(widget, scope, source="key", event=event, key=kdisp)
+            ctx = CommandContext.create(widget, scope, source="key", event=event)
             self._registry.execute(payload.id, ctx=ctx, **args)
 
     def _normalize(self, spec: KeyChordSpec) -> KeyCombo:

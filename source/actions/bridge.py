@@ -15,6 +15,7 @@ class Kit:
     from .binding.mixins import CommandBindingMixin as UIMixin
     from .command.core import COMMAND_MENU_MARKER as MARKER, CommandMeta as Command, CommandParam as Param
     from .command.menu import RegistryBackedMenu as MenuBase
+    from .command.menu import RegistryBackedCommandSet as DragMenuBase
     from .command.payload import ScopedPayloads as Bind
     from .command.ui import CommandMenuBuilder as CommandBuilder
     from .binding.key.sequence import Key as Key
@@ -260,6 +261,7 @@ class Menu:
         b = Menu._get_builder(parent, seed_ctx=seed_ctx)
         return b.build(Menu._normalize_menu_items(items), selection_callback=selection_callback, allow_options_with_selection=allow_options_with_selection)
 
+    @staticmethod
     def exec_menu(items, ctx=None):
         target, pos = Context.prepare_context_menu(ctx)
         if not target:
@@ -268,13 +270,28 @@ class Menu:
         m = Menu.build_menu(items, target, seed_ctx=seed)
         return m.exec(pos)
 
+    @staticmethod
     def exec_all_roots(ctx=None):
         target, pos = Context.prepare_context_menu(ctx)
         if not target:
             return
         seed = ctx if ctx is not None and hasattr(ctx, "get") else None
         m = Menu.build_all_roots(target, seed_ctx=seed)
-        m.exec(pos)
+        return m.exec(pos)
+
+    @staticmethod
+    def use_menu(folder: str, parent: QtWidgets.QWidget | None = None, *, seed_ctx=None):
+        b = Menu._get_builder(parent, seed_ctx=seed_ctx)
+        return b.use(str(folder))
+    
+    @staticmethod
+    def use_exec(folder: str, ctx=None):
+        target, pos = Context.prepare_context_menu(ctx)
+        if not target:
+            return
+        seed = ctx if ctx is not None and hasattr(ctx, "get") else None
+        m = Menu.use_menu(folder, target, seed_ctx=seed)
+        return m.exec(pos)
 
     @staticmethod
     def build_all_roots(
@@ -287,10 +304,7 @@ class Menu:
         b = Menu._get_builder(parent, seed_ctx=seed_ctx)
         return b.build_all_roots(selection_callback=selection_callback, allow_options_with_selection=allow_options_with_selection)
 
-    @staticmethod
-    def use_menu(folder: str, parent: QtWidgets.QWidget | None = None, *, seed_ctx=None):
-        b = Menu._get_builder(parent, seed_ctx=seed_ctx)
-        return b.use(str(folder))
+
 
 
 class Context:
@@ -324,7 +338,6 @@ class Context:
         *,
         source: str = "",
         event=None,
-        key=None,
         start_pos=None,
         start_global_pos=None,
         extras: dict | None = None,
@@ -337,7 +350,6 @@ class Context:
             scope,
             source=source,
             event=event,
-            key=key,
             start_pos=start_pos,
             start_global_pos=start_global_pos,
             extras=extras,

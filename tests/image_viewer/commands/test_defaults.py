@@ -16,6 +16,17 @@ def test_default_mouse_bindings_use_mouseactionkey():
     assert all(isinstance(k, MouseActionKey) for k in d.keys())
 
 
+def test_default_mouse_bindings_for_graphicsview():
+    d = default_mouse_bindings()
+    right_single = d[Kit.Mouse("RIGHT", "SINGLE")].to_dict()
+    assert right_single["*"]["id"] == "allmenu"
+
+    assert d[Kit.Mouse("NONE", "WHEEL_UP")].to_dict()["GraphicsView"]["id"] == "gv.zoom_in"
+    assert d[Kit.Mouse("NONE", "WHEEL_DOWN")].to_dict()["GraphicsView"]["id"] == "gv.zoom_out"
+    assert d[Kit.Mouse("LEFT", "DOUBLE")].to_dict()["GraphicsView"]["id"] == "gv.toggle_fit_mode"
+    assert d[Kit.Mouse("LEFT", "DRAG_START")].to_dict()["GraphicsView"]["id"] == "gv.pan"
+
+
 def test_kit_key_factory():
     k = Kit.Key("H")
     assert isinstance(k, KeySequence)

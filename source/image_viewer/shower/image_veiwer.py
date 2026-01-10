@@ -16,7 +16,7 @@ class ZoomPanGraphicsView(QtWidgets.QGraphicsView, Kit.UIMixin):
         self._max_scale = 50.0
         self._is_panning = False
         self._last_pos = QtCore.QPoint()
-        self._fit_mode: FitMode = "contain"  # ★ 追加：既定のフィットモード
+        self._fit_mode: FitMode = "contain"
         self.setRenderHints(QtGui.QPainter.Antialiasing | QtGui.QPainter.SmoothPixmapTransform)
         self.setTransformationAnchor(QtWidgets.QGraphicsView.AnchorUnderMouse)
         self.setResizeAnchor(QtWidgets.QGraphicsView.AnchorUnderMouse)
@@ -25,7 +25,6 @@ class ZoomPanGraphicsView(QtWidgets.QGraphicsView, Kit.UIMixin):
         self.setBackgroundBrush(self.palette().brush(QtGui.QPalette.ColorRole.Dark))
         self.init_command_binding("GraphicsView", enable_drops=True)
 
-    # --- public API ---
     def set_image(self, pixmap: QtGui.QPixmap):
         if self._pix_item is None:
             self._pix_item = self.scene().addPixmap(pixmap)
@@ -78,7 +77,7 @@ class ZoomPanGraphicsView(QtWidgets.QGraphicsView, Kit.UIMixin):
 
         self._clamp_scale()
         self.zoomChanged.emit(self._current_scale())
-    # --- helpers ---
+
     def _current_scale(self) -> float:
         m = self.transform()
         return (m.m11() + m.m22()) / 2.0
@@ -92,64 +91,6 @@ class ZoomPanGraphicsView(QtWidgets.QGraphicsView, Kit.UIMixin):
 
     def _set_scale(self, factor: float):
         self.scale(factor, factor)
-
-    # --- events ---
-    def wheelEvent(self, event: QtGui.QWheelEvent):
-        if not self._pix_item:
-            return
-        angle = event.angleDelta().y()
-        if angle == 0:
-            return
-        step = 1.0015
-        factor = step ** angle
-        if event.modifiers() & QtCore.Qt.KeyboardModifier.ControlModifier:
-            factor = step ** (angle * 0.5)
-        elif event.modifiers() & QtCore.Qt.KeyboardModifier.ShiftModifier:
-            factor = step ** (angle * 2.0)
-
-        before = self._current_scale()
-        self._set_scale(factor)
-        self._clamp_scale()
-        after = self._current_scale()
-        if before != after:
-            self.zoomChanged.emit(after)
-
-    def mousePressEvent(self, event: QtGui.QMouseEvent):
-        if event.button() == QtCore.Qt.MouseButton.LeftButton:
-            self._is_panning = True
-            self._last_pos = event.pos()
-            self.setCursor(QtCore.Qt.CursorShape.ClosedHandCursor)
-            self.setDragMode(QtWidgets.QGraphicsView.NoDrag)
-            event.accept()
-            return
-        if event.button() == QtCore.Qt.MouseButton.RightButton:
-            self.reset_view()
-            event.accept()
-            return
-        super().mousePressEvent(event)
-
-    def mouseMoveEvent(self, event: QtGui.QMouseEvent):
-        if self._is_panning:
-            dv = event.pos() - self._last_pos
-            self._last_pos = event.pos()
-            self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - dv.x())
-            self.verticalScrollBar().setValue(self.verticalScrollBar().value() - dv.y())
-            event.accept()
-            return
-        super().mouseMoveEvent(event)
-
-    def mouseReleaseEvent(self, event: QtGui.QMouseEvent):
-        if event.button() == QtCore.Qt.MouseButton.LeftButton and self._is_panning:
-            self._is_panning = False
-            self.setCursor(QtCore.Qt.CursorShape.ArrowCursor)
-            event.accept()
-            return
-        super().mouseReleaseEvent(event)
-
-    def mouseDoubleClickEvent(self, event: QtGui.QMouseEvent):
-        self.toggle_fit_mode()
-        self.fit_in_view()
-        event.accept()
 
 
 class ImageViewerWidget(QtWidgets.QWidget):
@@ -178,7 +119,6 @@ class ImageViewerWidget(QtWidgets.QWidget):
     def is_contain(self):
         return True if self.view._fit_mode == "contain" else False
 
-# --- demo ---
 if __name__ == "__main__":
     import sys
     app = QtWidgets.QApplication(sys.argv)

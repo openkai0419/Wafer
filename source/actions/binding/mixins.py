@@ -96,7 +96,7 @@ class CommandBindingMixin:
         self._shortcut_manager.set_key_bindings(self, bindings)
 
     def exec_command(self, cmd: Any, event=None, key: Optional[MouseActionKey]=None, source: Optional[str]=None, extra: Optional[Dict[str, Any]]=None):
-        self._execute_payload(cmd, event=event, key=key, source=source, extra=extra)
+        self._execute_payload(cmd, event=event, key=None, source=source, extra=extra)
 
     def extend_context(self, ctx: CommandContext, cmd: Any, event=None, key: Optional[MouseActionKey]=None, source: Optional[str]=None) -> Optional[Dict[str, Any]]:
         return None
@@ -111,7 +111,7 @@ class CommandBindingMixin:
         self._update_checkable_state(cmd, ctx)
 
     def _build_execution_context(self, cmd: CommandPayload, event=None, key: Optional[MouseActionKey]=None, source: Optional[str]=None, extra: Optional[Dict[str, Any]]=None) -> CommandContext:
-        ctx = CommandContext.create(self, self.binding_scope(), source=str(source or ""), event=event, key=key)
+        ctx = CommandContext.create(self, self.binding_scope(), source=str(source or ""), event=event)
         try:
             more = self.extend_context(ctx, cmd, event=event, key=key, source=source)
             if isinstance(more, dict) and more:

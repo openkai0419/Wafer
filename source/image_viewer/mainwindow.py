@@ -16,6 +16,7 @@ from ..qt.dialog import ConfirmDialog, InputDialog
 from ..qt.thread import main_thread
 from ..zmq.zmq import MessageEnvelope, Role, ZMQNode
 from .viewer.justifiedwidget import JustifiedVirtualScrollWidget
+from .viewer.items import ViewerItems
 from .shower.data_viewer import ViewerWidget
 from .viewer_settings import main_setting
 from .widgets.button_bar import IconButtonBar, IconButtonConfig
@@ -27,7 +28,7 @@ from .widgets.scrollarea import AutoScrollArea
 from .widgets.table_combo import ComboBoxWithButtons
 
 from .commands.menu import MenuMenu
-MenuMenu.register()
+MenuMenu.setup_menu()
 
 class WorkerSignals(QtCore.QObject):
     finished = QtCore.Signal(object, object, object)
@@ -277,7 +278,8 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.viewer.setWidgetResizable(True)
         self.viewer.verticalScrollBar().setSingleStep(25)
         self.viewer.horizontalScrollBar().setSingleStep(25)
-        self.content = JustifiedVirtualScrollWidget(self.viewer, self)
+        self.items = ViewerItems(self)
+        self.content = JustifiedVirtualScrollWidget(self.viewer, self, self.items)
         viewer_menu = ContextMenuBuilder(self)
         self.content.set_context_menu_builder(viewer_menu)
         self.viewer.setWidget(self.content)

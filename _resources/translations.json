@@ -1,4 +1,37 @@
 {
+  "mode": {
+    "en": "mode"
+  },
+  "padding": {
+    "en": "padding"
+  },
+  "Zoom In": {
+    "en": "Zoom In"
+  },
+  "Zoom Out": {
+    "en": "Zoom Out"
+  },
+  "base": {
+    "en": "base"
+  },
+  "Fit In View": {
+    "en": "Fit In View"
+  },
+  "Pan": {
+    "en": "Pan"
+  },
+  "Reset View": {
+    "en": "Reset View"
+  },
+  "Set Fit Mode": {
+    "en": "Set Fit Mode"
+  },
+  "Toggle Fit Mode": {
+    "en": "Toggle Fit Mode"
+  },
+  "Zoom (Wheel)": {
+    "en": "Zoom (Wheel)"
+  },
   "AllMenu": {
     "en": "AllMenu"
   },

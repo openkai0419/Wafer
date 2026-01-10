@@ -111,8 +111,8 @@ class RegistryBackedMenu:
         t = type(self)
         if self._flags.get(t, False):
             return
-        res = self.create_definitions()
-        base = getattr(self, "prefix", None)
+        res = getattr(t, "commands", None)
+        base = getattr(t, "prefix", None)
         base_parts = split_parts(base) if isinstance(base, str) and base else []
         defs: List[CommandMeta] = []
         items: List[str] = []
@@ -120,7 +120,7 @@ class RegistryBackedMenu:
         if res is None:
             res = []
         if not isinstance(res, list):
-            raise ValueError("create_definitions must return list[str|CommandMeta]")
+            raise ValueError("commands must be list[str|CommandMeta]")
         for e in res:
             if isinstance(e, str):
                 items.append(prefixed_item_token(base_parts, e))
@@ -130,7 +130,7 @@ class RegistryBackedMenu:
                 defs.append(meta)
                 items.append(meta.path)
                 continue
-            raise ValueError("create_definitions must return list[str|CommandMeta]")
+            raise ValueError("commands must be list[str|CommandMeta]")
         for s in items:
             if not isinstance(s, str) or not s or is_section_token(s) or is_sep_token(s):
                 continue
@@ -152,8 +152,38 @@ class RegistryBackedMenu:
             show_warning(None, f"MenuHub.register_paths failed: {t.__name__}", exc=e)
         self._flags[t] = True
 
-    def create_definitions(self) -> Any:
-        return []
+
+class RegistryBackedCommandSet:
+    _flags: Dict[type, bool] = {}
+
+    def __init__(self):
+        self._ensure_registered()
+
+    @classmethod
+    def register(cls) -> None:
+        cls()
+
+    @profiler.profile
+    def _ensure_registered(self):
+        t = type(self)
+        if self._flags.get(t, False):
+            return
+        res = getattr(t, "commands", None)
+        base = getattr(t, "prefix", None)
+        base_parts = split_parts(base) if isinstance(base, str) and base else []
+        defs: List[CommandMeta] = []
+        if res is None:
+            res = []
+        if not isinstance(res, list):
+            raise ValueError("commands must be list[CommandMeta]")
+        for e in res:
+            if isinstance(e, CommandMeta):
+                defs.append(normalize_meta(base_parts, e))
+                continue
+            raise ValueError("commands must be list[CommandMeta]")
+        if defs:
+            register_command_defs(defs)
+        self._flags[t] = True
 
 
 def register_menu_classes(menu_classes: Sequence[type[RegistryBackedMenu]]) -> None:

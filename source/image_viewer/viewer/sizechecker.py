@@ -32,7 +32,7 @@ class SizeMismatchChecker(QtCore.QTimer):
     def check(self):
         if not self._active:
             return
-        max_index = len(self.target_widget.image_paths)
+        max_index = len(self.target_widget.items.paths)
         for i, label in self.target_widget.widgets.items():
             if i >= max_index:
                 continue
@@ -41,7 +41,7 @@ class SizeMismatchChecker(QtCore.QTimer):
                 continue
             if _size_mismatch(pixmap.size(), label.size()):
                 if i not in self.target_widget.active_threads:
-                    runnable = ImageLoaderRunnable(i, self.target_widget.image_paths[i], label.size(), self.target_widget)
+                    runnable = ImageLoaderRunnable(i, self.target_widget.items.paths[i], label.size(), self.target_widget)
                     runnable.signal.image_ready.connect(self.target_widget._on_image_ready)
                     runnable.signal.widget_ready.connect(self.target_widget._on_widget_ready)
                     self.target_widget.active_threads[i] = runnable

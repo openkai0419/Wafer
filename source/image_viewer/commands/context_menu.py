@@ -64,7 +64,7 @@ class ContextMenuBuilder(ActionManager):
         self.parent.folder_view.expand_and_select_path(folder)
 
     def get_selected_sources(self):
-        return self.parent.content.get_selected_sources()
+        return self.parent.items.selected_sources()
 
 
 class FolderContextMenuBuilder(ActionManager):

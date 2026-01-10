@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Any, Callable, Dict, List, Optional
 import json
+from decimal import Decimal
 from PySide6 import QtCore, QtGui, QtWidgets
 from source.lang.manager import TranslatorMixin
 from source.common.funcs import uipx
@@ -76,10 +77,13 @@ class CommandOptionsDialog(QtWidgets.QDialog, TranslatorMixin):
         def make_int():
             w = QtWidgets.QSpinBox()
             if param.min_value is not None:
-                w.setMinimum(param.min_value)
+                w.setMinimum(int(param.min_value))
             if param.max_value is not None:
-                w.setMaximum(param.max_value)
-            w.setValue(int(self._initial.get(param.name, param.default) or 0))
+                w.setMaximum(int(param.max_value))
+            base = self._initial.get(param.name, param.default)
+            v = int(base or 0)
+            w.setValue(v)
+            w.setSingleStep(self._infer_int_step(v))
             return w
         def make_float():
             w = QtWidgets.QDoubleSpinBox()
@@ -87,7 +91,12 @@ class CommandOptionsDialog(QtWidgets.QDialog, TranslatorMixin):
                 w.setMinimum(param.min_value)
             if param.max_value is not None:
                 w.setMaximum(param.max_value)
-            w.setValue(float(self._initial.get(param.name, param.default) or 0.0))
+            base = self._initial.get(param.name, param.default)
+            v = float(base or 0.0)
+            w.setValue(v)
+            step, decimals = self._infer_float_step(v)
+            w.setDecimals(max(2, decimals))
+            w.setSingleStep(step)
             return w
         def make_str():
             w = QtWidgets.QLineEdit()
@@ -96,6 +105,33 @@ class CommandOptionsDialog(QtWidgets.QDialog, TranslatorMixin):
         factories = {bool: make_bool, int: make_int, float: make_float}
         f = factories.get(param.type, make_str)
         return f()
+
+    @staticmethod
+    def _infer_int_step(v: int) -> int:
+        a = abs(int(v))
+        if a == 0:
+            return 1
+        p = 1
+        while a % 10 == 0:
+            p *= 10
+            a //= 10
+        return p
+
+    @staticmethod
+    def _infer_float_step(v: float) -> tuple[float, int]:
+        x = float(v)
+        if x == 0.0:
+            return 1.0, 0
+        try:
+            d = Decimal(str(round(x, 12))).normalize()
+        except Exception:
+            return 0.1, 1
+        exp = d.as_tuple().exponent
+        decimals = max(0, -int(exp))
+        if decimals == 0:
+            return 1.0, 0
+        step = float(Decimal(1).scaleb(-decimals))
+        return step, decimals
 
     def get_values(self) -> Dict[str, Any]:
         values = {}
@@ -186,7 +222,7 @@ class CommandMenuBuilder(TranslatorMixin):
         if parent is None:
             return None
         scope = parent.binding_scope() if hasattr(parent, "binding_scope") and callable(parent.binding_scope) else ""
-        ctx = CommandContext.create(parent, scope, source="menu", event=None, key=None)
+        ctx = CommandContext.create(parent, scope, source="menu", event=None)
         try:
             if hasattr(parent, "extend_context") and callable(parent.extend_context):
                 more = parent.extend_context(ctx, CommandPayload(cmd_id, dict(args or {})), event=None, key=None, source="menu")
@@ -389,6 +425,8 @@ class CommandMenuBuilder(TranslatorMixin):
             opts = {}
         opts["checked"] = state
         store.set(name, opts)
+        if not store.commit():
+            log_warning(f"Failed to save command options: {name}")
 
     def _on_radio_toggled(self, name: str, container: QtWidgets.QWidget, state: bool, group_name: str):
         self._on_toggled(name, container, state)
@@ -406,7 +444,7 @@ class CommandMenuBuilder(TranslatorMixin):
                 result_action.trigger()
         else:
             try:
-                ctx = CommandContext.create(None, "*", source="cycle", event=None, key=None)
+                ctx = CommandContext.create(None, "*", source="cycle", event=None)
                 ctx.put("checked", True)
                 self.registry.execute(result, ctx=ctx)
             except Exception as e:
@@ -472,7 +510,7 @@ class CommandMenuBuilder(TranslatorMixin):
             if ctx is not None and getattr(command_class.meta, "checkable", False):
                 ctx.put("checked", bool(self._get_checked(command_name, command_class.meta)))
             if ctx is None:
-                ctx = CommandContext.create(parent, "*", source="menu", event=None, key=None, seed=seed_ctx)
+                ctx = CommandContext.create(parent, "*", source="menu", event=None, seed=seed_ctx)
             else:
                 CommandContext.merge_seed(ctx, seed_ctx)
             self.registry.execute(command_name, ctx=ctx, **merged)
@@ -482,6 +520,8 @@ class CommandMenuBuilder(TranslatorMixin):
             if not callable(selection_callback):
                 store = CommandOptionStore()
                 store.set(command_name, options)
+                if not store.commit():
+                    log_warning(f"Failed to save command options: {command_name}")
             if callable(selection_callback):
                 try:
                     selection_callback(CommandPayload(command_name, options))
@@ -503,14 +543,14 @@ class CommandMenuBuilder(TranslatorMixin):
             if parent is not None:
                 ctx = self._build_ctx(parent, name, args)
                 if ctx is None:
-                    ctx = CommandContext.create(parent, "*", source="menu", event=None, key=None, seed=seed_ctx)
+                    ctx = CommandContext.create(parent, "*", source="menu", event=None, seed=seed_ctx)
                 else:
                     CommandContext.merge_seed(ctx, seed_ctx)
                 if checked is not None:
                     ctx.put("checked", bool(checked))
                 self.registry.execute(name, ctx=ctx, **args)
             else:
-                ctx = CommandContext.create(None, "*", source="menu", event=None, key=None, seed=seed_ctx)
+                ctx = CommandContext.create(None, "*", source="menu", event=None, seed=seed_ctx)
                 if checked is not None:
                     ctx.put("checked", bool(checked))
                 self.registry.execute(name, ctx=ctx, **args)
@@ -888,7 +928,7 @@ class MenuBuilder:
                 if isinstance(v, CommandContext):
                     self._seed_ctx = v
                 elif isinstance(v, dict):
-                    self._seed_ctx = CommandContext.create(None, "*", source="menu.popup", event=None, key=None, extras=dict(v))
+                    self._seed_ctx = CommandContext.create(None, "*", source="menu.popup", event=None, extras=dict(v))
             except Exception as e:
                 show_warning(anchor, "context_provider failed", exc=e)
         menu = self.build_all_roots(selection_callback=selection_callback, allow_options_with_selection=allow_options_with_selection)

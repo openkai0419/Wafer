@@ -12,9 +12,13 @@
 - ビューア固有のコマンド定義やコンテキストメニューは source/image_viewer 直下に置く。
 - 実行は bridge.Command、メニュー構築/表示は bridge.Menu に分離して寄せる。
 
+ビューアの共有状態
+- source/image_viewer/viewer/items.py の ViewerItems が「ファイル一覧/選択/現在インデックス」を共有する状態として機能し、複数Widgetから同じ参照を使えるようにする。
+
 コンテキストからのWidget参照
 - init_command_binding(name) で BindingManager に登録されたWidgetは、CommandContext.get_widget(name) / get_widgets(name) で名前から取得できる（同名は複数対応）。
 - これにより、どのWidgetから発動したコマンドでも、必要な別Widgetを安定して参照できる。
+- 必須Widgetが取得できない場合は、コマンド側で黙って return せず例外で落とす（状態確認で握りつぶさない）。
 - Widgetの登録/取得は source/actions/binding/widget_registry.py の WidgetRegistry が担当し、BindingManager はバインド適用のみ担当する。
 - バインド登録をしたくないWidgetは、bridge.UI.register_widget(name, widget) または WidgetRegistry.register(name, widget) で登録して ctx から参照できる。
 
@@ -22,8 +26,22 @@
 - コマンド定義側で hotkey を持たず、表示用のショートカット文字列は BindingManager/ShortcutManager の現在の割り当てからメニュー側で逆引きする。
 - メニューは aboutToShow でホットキー列を揃え、必要に応じて adjustSize() して幅を確定する。
 
+メニュー定義
+- Kit.MenuBase / Kit.DragMenuBase は class 変数の prefix と commands だけで登録し、create_definitions/COMMAND_DEFS 方式は廃止する。
+
+コマンド設計
+- コマンドは主にdrag/drop系のコマンドとそれ以外の汎用コマンドのに種類があり、drag/drop系のコマンドはそれぞれのバインドでしかできない。
+- 汎用系のコマンドは可能な限り event 非依存にし、実行に必要なctx側で保障するようにすることで、キーや、メニュー、マウスにかかわらず実行できるようにする。
+- 汎用系のコマンドに値を渡す際はctxからgetする方法、引数として渡す方法があるが、基本的に引数で受け取るのはコマンド宣言時に設定してユーザーが編集かのうなもののみに限る。
+- 汎用系のコマンドでマウスの位置やホイールのステップ、Widgetなどの汎用的に使う値はキー、メニュー、マウスにかかわらず安定して動作させるため、ctxに渡す側で必ず値を渡すように保障し、コマンド側の安全保障は不要にする（引数がなかった場合はctx側の不具合とする）
+- ctx.event/ctx.keyはコマンドから取得できない（保持しない）。ユーザー操作に由来する値はpos/global_pos/wheel_steps等の派生フィールドで必ず保障する。
+- wheel_stepsはCommandContextの標準フィールドとして常に値が入る（ホイールは正規化、非ホイールは1）。コマンド側はctx.get("wheel_steps")だけで安定取得できる。
+- extrasは動的に有無が変わる値に限定し、ある/ないでコマンド側で分岐する前提のものだけを入れる。
+
 バインディング編集UI
 - Key/MouseのEditorは override UI/コマンドピッカー/レイアウト破棄を editors_common に集約し、個別Editorは差分のみ持つ。
+- コマンドのparamsが存在する場合はオプションを持つコマンドとして扱い、メニュー右の□(オプション)を表示可能にする。
+- CommandOptionsDialogの数値入力(QSpinBox/QDoubleSpinBox)は、既定値の桁からsingleStep/decimalsを自動推定して自然な調整単位にする。
 
 デバッグ出力
 - 環境変数などによるデバッグON/OFF切替は禁止。

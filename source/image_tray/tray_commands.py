@@ -64,19 +64,17 @@ def quit(ctx=None):
 class TrayMenu(Kit.MenuBase):
     prefix = "Tray"
 
-    def create_definitions(self):
-        c = Kit.Command
-        return [
-            c(path="show_window", display="Show Window", func=show_window),
-            c(path="open_new_window", display="Open New Window", func=open_new_window),
-            "-",
-            c(path="rescan_all", display="ReScan All", func=rescan_all),
-            c(path="cleanup_optimize", display="Cleanup and Optimize", func=cleanup_optimize),
-            "-",
-            c(path="test", display="Test", func=test),
-            c(path="test2", display="Test2", func=test2),
-            "-",
-            c(path="quit", display="Quit", func=quit),
-        ]
+    commands = [
+        Kit.Command(path="show_window", display="Show Window", func=show_window),
+        Kit.Command(path="open_new_window", display="Open New Window", func=open_new_window),
+        "-",
+        Kit.Command(path="rescan_all", display="ReScan All", func=rescan_all),
+        Kit.Command(path="cleanup_optimize", display="Cleanup and Optimize", func=cleanup_optimize),
+        "-",
+        Kit.Command(path="test", display="Test", func=test),
+        Kit.Command(path="test2", display="Test2", func=test2),
+        "-",
+        Kit.Command(path="quit", display="Quit", func=quit),
+    ]
 
 

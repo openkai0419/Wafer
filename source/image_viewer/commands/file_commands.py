@@ -117,7 +117,7 @@ def paste_here(ctx, overwrite_mode: str = "skip"):
 class FileCommands(Kit.MenuBase):
     prefix = "File"
 
-    COMMAND_DEFS = [
+    commands = [
         ":File",
         Kit.Command(path="file.open", display="Open File", func=open_file),
         Kit.Command(
@@ -164,6 +164,3 @@ class FileCommands(Kit.MenuBase):
             func=paste_here,
         ),
     ]
-
-    def create_definitions(self):
-        return self.COMMAND_DEFS

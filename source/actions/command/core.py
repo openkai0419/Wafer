@@ -66,6 +66,7 @@ class CommandMeta:
     def __post_init__(self):
         if self.hotkey:
             raise ValueError("hotkey must not be set on CommandMeta; it is resolved from bindings")
+        self.has_options = bool(self.has_options or self.params)
 
 
 class CommandBase:
@@ -198,11 +199,11 @@ def resolve_drop_accept(widget_scope: Optional[str]) -> Sequence[Callable[..., b
 
 
 def _build_args(meta: CommandMeta, kwargs: Dict[str, Any]) -> Dict[str, Any]:
-    args = {p.name: kwargs.get(p.name, p.default) for p in meta.params}
-    for k, v in kwargs.items():
-        if k not in args:
-            args[k] = v
-    return args
+    if "ctx" not in kwargs:
+        raise ValueError("ctx is required")
+    params = {p.name: kwargs.get(p.name, p.default) for p in meta.params}
+    params["ctx"] = kwargs["ctx"]
+    return params
 
 
 def _invoke_compatible(fn: Callable[..., Any], values: Dict[str, Any]) -> Any:

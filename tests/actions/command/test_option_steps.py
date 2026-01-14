@@ -17,7 +17,7 @@ def test_int_step_infers_trailing_zeros(qtbot, tmp_path):
     d = CommandOptionsDialog(_Cmd, w)
     sb = d.widgets["x"]
     assert isinstance(sb, QtWidgets.QSpinBox)
-    assert sb.singleStep() == 10
+    assert sb.singleStep() == 5
 
 
 def test_int_step_defaults_to_one(qtbot, tmp_path):
@@ -40,7 +40,7 @@ def test_float_step_infers_decimal_places(qtbot, tmp_path):
     sb = d.widgets["x"]
     assert isinstance(sb, QtWidgets.QDoubleSpinBox)
     assert sb.decimals() >= 2
-    assert abs(sb.singleStep() - 0.01) < 1e-12
+    assert abs(sb.singleStep() - 0.005) < 1e-12
 
 
 def test_float_step_one_decimal(qtbot, tmp_path):
@@ -52,7 +52,7 @@ def test_float_step_one_decimal(qtbot, tmp_path):
     sb = d.widgets["x"]
     assert isinstance(sb, QtWidgets.QDoubleSpinBox)
     assert sb.decimals() >= 2
-    assert abs(sb.singleStep() - 0.1) < 1e-12
+    assert abs(sb.singleStep() - 0.05) < 1e-12
 
 
 def test_float_display_min_two_decimals_keeps_step(qtbot, tmp_path):
@@ -64,7 +64,7 @@ def test_float_display_min_two_decimals_keeps_step(qtbot, tmp_path):
     sb = d.widgets["x"]
     assert isinstance(sb, QtWidgets.QDoubleSpinBox)
     assert sb.decimals() >= 2
-    assert abs(sb.singleStep() - 1.0) < 1e-12
+    assert abs(sb.singleStep() - 0.5) < 1e-12
 
 
 def test_float_display_preserves_more_decimals(qtbot, tmp_path):
@@ -76,7 +76,7 @@ def test_float_display_preserves_more_decimals(qtbot, tmp_path):
     sb = d.widgets["x"]
     assert isinstance(sb, QtWidgets.QDoubleSpinBox)
     assert sb.decimals() >= 3
-    assert abs(sb.singleStep() - 0.001) < 1e-12
+    assert abs(sb.singleStep() - 0.0005) < 1e-12
 
 
 def test_float_step_ignores_binary_noise(qtbot, tmp_path):
@@ -88,4 +88,4 @@ def test_float_step_ignores_binary_noise(qtbot, tmp_path):
     sb = d.widgets["x"]
     assert isinstance(sb, QtWidgets.QDoubleSpinBox)
     assert sb.decimals() == 2
-    assert abs(sb.singleStep() - 0.1) < 1e-12
+    assert abs(sb.singleStep() - 0.05) < 1e-12

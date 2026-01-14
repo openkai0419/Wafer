@@ -107,6 +107,8 @@ class CommandContext:
     start_pos: Any = None
     start_global_pos: Any = None
 
+    event: Any = None
+
     scope: str = "*"
     source: str = ""
     pos: Any = None
@@ -119,6 +121,7 @@ class CommandContext:
     def build(widget: Any = None, scope: Optional[str] = None, *, source: str = "", event: Any = None, start_pos: Any = None, start_global_pos: Any = None, extras: Optional[Dict[str, Any]] = None) -> "CommandContext":
         sc = "*" if not scope else str(scope)
         ctx = CommandContext(widget=widget, scope=sc, source=str(source or ""))
+        ctx.event = event if str(source or "").startswith("drop") else None
         ctx.global_pos = _global_pos_from_event(event) or _global_pos_from_app() or _zero_point()
         ctx.pos = _local_pos_from_event(event) or _pos_from_global(widget, ctx.global_pos) or _zero_point()
         ctx.start_pos = start_pos if start_pos is not None else None
@@ -129,30 +132,64 @@ class CommandContext:
             ctx.extras.update(extras)
         return ctx
 
+    def get_event(self, default: Any = None) -> Any:
+        ev = getattr(self, "event", None)
+        return ev if ev is not None else default
+
     @staticmethod
-    def merge_seed(ctx: "CommandContext", seed: Optional["CommandContext"]) -> "CommandContext":
+    def _merge_seed(ctx: "CommandContext", seed: Optional["CommandContext"], *, prefer_seed: bool) -> "CommandContext":
         if seed is None:
             return ctx
         try:
-            if ctx.pos is None and seed.pos is not None:
-                ctx.pos = seed.pos
-            if ctx.global_pos is None and seed.global_pos is not None:
-                ctx.global_pos = seed.global_pos
-            if ctx.start_pos is None and seed.start_pos is not None:
-                ctx.start_pos = seed.start_pos
-            if ctx.start_global_pos is None and seed.start_global_pos is not None:
-                ctx.start_global_pos = seed.start_global_pos
-            if not getattr(ctx, "wheel_steps", None) and getattr(seed, "wheel_steps", None):
-                ctx.wheel_steps = int(seed.wheel_steps)
-            if ctx.widget is None and seed.widget is not None:
-                ctx.widget = seed.widget
-            if ctx.scope == "*" and getattr(seed, "scope", "*") and seed.scope != "*":
-                ctx.scope = seed.scope
-            for k, v in (getattr(seed, "extras", None) or {}).items():
-                ctx.put_default(str(k), v)
+            if prefer_seed:
+                if seed.pos is not None:
+                    ctx.pos = seed.pos
+                if seed.global_pos is not None:
+                    ctx.global_pos = seed.global_pos
+                if seed.start_pos is not None:
+                    ctx.start_pos = seed.start_pos
+                if seed.start_global_pos is not None:
+                    ctx.start_global_pos = seed.start_global_pos
+                if getattr(seed, "wheel_steps", None):
+                    ctx.wheel_steps = int(seed.wheel_steps)
+                if seed.widget is not None:
+                    ctx.widget = seed.widget
+                if getattr(seed, "scope", None) and seed.scope != "*":
+                    ctx.scope = seed.scope
+                for k, v in (getattr(seed, "extras", None) or {}).items():
+                    ctx.extras[str(k)] = v
+            else:
+                if ctx.pos is None and seed.pos is not None:
+                    ctx.pos = seed.pos
+                if ctx.global_pos is None and seed.global_pos is not None:
+                    ctx.global_pos = seed.global_pos
+                if ctx.start_pos is None and seed.start_pos is not None:
+                    ctx.start_pos = seed.start_pos
+                if ctx.start_global_pos is None and seed.start_global_pos is not None:
+                    ctx.start_global_pos = seed.start_global_pos
+                if not getattr(ctx, "wheel_steps", None) and getattr(seed, "wheel_steps", None):
+                    ctx.wheel_steps = int(seed.wheel_steps)
+                if ctx.widget is None and seed.widget is not None:
+                    ctx.widget = seed.widget
+                if ctx.scope == "*" and getattr(seed, "scope", "*") and seed.scope != "*":
+                    ctx.scope = seed.scope
+                for k, v in (getattr(seed, "extras", None) or {}).items():
+                    ctx.put_default(str(k), v)
         except Exception as e:
-            show_warning(None, "CommandContext.merge_seed failed", exc=e)
+            show_warning(None, "CommandContext._merge_seed failed", exc=e)
         return ctx
+
+    @staticmethod
+    def merge_seed_prefer_seed(ctx: "CommandContext", seed: Optional["CommandContext"]) -> "CommandContext":
+        return CommandContext._merge_seed(ctx, seed, prefer_seed=True)
+
+    @staticmethod
+    def merge_seed_prefer_ctx(ctx: "CommandContext", seed: Optional["CommandContext"]) -> "CommandContext":
+        return CommandContext._merge_seed(ctx, seed, prefer_seed=False)
+
+    @staticmethod
+    def merge_seed(ctx: "CommandContext", seed: Optional["CommandContext"]) -> "CommandContext":
+        return CommandContext.merge_seed_prefer_seed(ctx, seed)
 
     @classmethod
     def create(cls, widget: Any = None, scope: Optional[str] = None, *, source: str = "", event: Any = None, start_pos: Any = None, start_global_pos: Any = None, extras: Optional[Dict[str, Any]] = None, seed: Optional["CommandContext"] = None) -> "CommandContext":
@@ -264,6 +301,7 @@ class CommandContext:
             "start_pos": self.start_pos,
             "start_global_pos": self.start_global_pos,
             "wheel_steps": self.wheel_steps,
+            "event_type": getattr(getattr(self.get_event(), "__class__", None), "__name__", None),
             "widget_type": getattr(getattr(self.widget, "__class__", None), "__name__", None),
             "extras": extras,
         }

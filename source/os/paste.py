@@ -273,8 +273,14 @@ class ClipboardFilePaster:
                 same_path = False  # 解決不能でも通常フローへ
 
             if same_path:
-                # cut: そのままは無意味/危険 -> ユニーク名に退避
-                # copy: 自己上書きは危険 -> ユニーク名に複製
+                if dec.mode == "overwrite":
+                    results.append({
+                        "action": "skip",
+                        "src": str(item.src),
+                        "dst": str(dst),
+                        "status": "skipped"
+                    })
+                    continue
                 dst = self._unique_path(dst.parent, dst.name)
 
             # --- 3) ディレクトリを自身の配下へ move しようとするケースを禁止 ---

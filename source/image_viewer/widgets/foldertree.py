@@ -4,6 +4,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from ...common.funcs import normalize_path
 from ...common.profiling import logger, profiler
 from ..viewer_settings import main_setting
+from ...actions.bridge import Kit
 
 FOLDER_ICON = QtGui.QIcon.fromTheme('folder')
 USER_ROLE_PATH = QtCore.Qt.UserRole
@@ -379,7 +380,7 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
         item = self.find_item_by_path(path)
         return self.indexFromItem(item) if item else None
 
-class LazyFolderTreeView(QtWidgets.QTreeView):
+class LazyFolderTreeView(QtWidgets.QTreeView, Kit.UIMixin):
     folder_selected = QtCore.Signal()
 
     def __init__(self, roots=None, excluded=None):
@@ -404,6 +405,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         self.viewport().installEventFilter(self)
         self.collapsed.connect(self.on_collapsed)
         self.context_menu_builder = None
+        self.init_command_binding("FolderTree", enable_drops=True)
 
     @profiler.profile
     def get_selected_paths(self):

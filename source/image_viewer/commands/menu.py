@@ -4,6 +4,7 @@ from ...common.funcs import data_path
 from .file_commands import FileCommands
 from .graphics_view import GraphicsViewCommands, GraphicsViewDragCommands
 from .file_viewer import FileViewerCommands
+from .justified_view import JustifiedViewCommands, JustifiedViewDragCommands, JustifiedViewDropCommands
 
 
 class MenuMenu(Kit.MenuBase):
@@ -25,9 +26,12 @@ class MenuMenu(Kit.MenuBase):
     @staticmethod
     def setup_menu():
         FileCommands.register()
+        JustifiedViewCommands.register()
+        JustifiedViewDragCommands.register()
+        JustifiedViewDropCommands.register()
+        FileViewerCommands.register()
         GraphicsViewCommands.register()
         GraphicsViewDragCommands.register()
-        FileViewerCommands.register()
         MenuMenu.register()
 
         Settings.configure(

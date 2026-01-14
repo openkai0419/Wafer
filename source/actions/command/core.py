@@ -49,6 +49,7 @@ class CommandMeta:
     path: str = ""
     id: str = ""
     display: str = ""
+    hidden: bool = False
     params: List[CommandParam] = field(default_factory=list)
     hotkey: str = ""
     icon: str = ""
@@ -132,8 +133,6 @@ class CommandRegistry:
     def get_commands_by_category(self, category: str, widget_scope: Optional[str] = None) -> Dict[str, type[CommandBase]]:
         result = {}
         for cid, cmd_class in self._commands.items():
-            if "." in cid:
-                continue
             meta = getattr(cmd_class, "meta", None)
             if meta and getattr(meta, "category", "") == category:
                 target_widgets = getattr(meta, "target_widgets", [])
@@ -262,9 +261,21 @@ def create_command_from_meta(meta: CommandMeta) -> type[CommandBase]:
             return invoke_compatible(fn, filtered_kwargs)
         setattr(_Cmd, "execute", _wrapped_execute)
     elif meta.drag_callbacks or meta.drop_callbacks:
-        def _empty_execute(self, **kwargs):
-            return None
-        setattr(_Cmd, "execute", _empty_execute)
+        callbacks = dict(getattr(meta, "drag_callbacks", None) or {}) or dict(getattr(meta, "drop_callbacks", None) or {})
+
+        def _dispatch_execute(self, **kwargs):
+            ctx = kwargs.get("ctx")
+            phase = None
+            if ctx is not None:
+                phase = ctx.get("phase")
+            if not phase:
+                return None
+            cb = callbacks.get(str(phase))
+            if not callable(cb):
+                return None
+            return invoke_compatible(cb, kwargs)
+
+        setattr(_Cmd, "execute", _dispatch_execute)
     return _Cmd
 
 
@@ -290,28 +301,6 @@ def register_command_defs(defs: List[CommandMeta]):
             raise ValueError(f"Command '{meta.id}' has category='drop' but uses func. Use drop_callbacks instead.")
         
         r.register(create_command_from_meta(meta))
-        
-        if meta.drag_callbacks:
-            for suffix, callback in meta.drag_callbacks.items():
-                sub_meta = CommandMeta(
-                    id=f"{meta.id}.{suffix}",
-                    display=f"{meta.display} ({suffix})",
-                    category=meta.category,
-                    target_widgets=meta.target_widgets,
-                    func=callback
-                )
-                r.register(create_command_from_meta(sub_meta))
-        
-        if meta.drop_callbacks:
-            for suffix, callback in meta.drop_callbacks.items():
-                sub_meta = CommandMeta(
-                    id=f"{meta.id}.{suffix}",
-                    display=f"{meta.display} ({suffix})",
-                    category=meta.category,
-                    target_widgets=meta.target_widgets,
-                    func=callback
-                )
-                r.register(create_command_from_meta(sub_meta))
         
         if not (meta.action_group and meta.checkable):
             continue

@@ -57,7 +57,7 @@ class CommandBindingMixin:
         acceptors = resolve_drop_accept(self.binding_scope())
         if not acceptors:
             return False
-        ctx = CommandContext.create(self, self.binding_scope(), source="drop.accept", event=event, key=None)
+        ctx = CommandContext.create(self, self.binding_scope(), source="drop.accept", event=event)
         values = {"ctx": ctx, "event": event, "widget": self, "scope": self.binding_scope()}
         for acceptor in acceptors:
             if not callable(acceptor):

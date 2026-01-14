@@ -288,25 +288,33 @@ class MouseSection(ScopedPayloadSectionBase):
         registry = CommandRegistry()
         widget_scope = None if scope == "*" else scope
         commands = registry.get_commands_by_category(category, widget_scope=widget_scope)
-        
-        menu = QtWidgets.QMenu(btn)
-        act_none = menu.addAction("なし(解除)")
-        act_none.triggered.connect(lambda: self._on_select(scope, None))
-        
-        if commands:
-            menu.addSeparator()
-            for cid, cmd_class in sorted(commands.items()):
-                meta = getattr(cmd_class, "meta", None)
-                if meta:
-                    display = getattr(meta, "display", cid)
-                    act = menu.addAction(display)
-                    payload = CommandPayload(cid, {})
-                    act.triggered.connect(lambda _, p=payload: self._on_select(scope, p))
-        else:
-            act_empty = menu.addAction(f"({category}コマンドなし)")
-            act_empty.setEnabled(False)
-        
-        menu.exec(btn.mapToGlobal(btn.rect().bottomLeft()))
+
+        names = sorted(commands.keys()) if commands else []
+        maker = MenuMaker()
+        builder = MenuBuilder(maker, self)
+
+        def _prep(m: QtWidgets.QMenu, sc=scope, cat=category):
+            act_none = QtGui.QAction("なし(解除)", m)
+            act_none.triggered.connect(lambda _, s=sc: self._on_select(s, None))
+            first = m.actions()[0] if m.actions() else None
+            if first:
+                m.insertAction(first, act_none)
+                m.insertSeparator(first)
+            else:
+                m.addAction(act_none)
+            if not names:
+                m.addSeparator()
+                act_empty = m.addAction(f"({cat}コマンドなし)")
+                act_empty.setEnabled(False)
+
+        builder.popup_names(
+            btn,
+            names,
+            selection_callback=lambda payload, sc=scope: self._on_select(sc, payload),
+            context_provider=None,
+            prepare=_prep,
+            allow_options_with_selection=True,
+        )
     def _on_select(self, scope: str, cid):
         super()._on_select(scope, cid)
     def collect_entries(self) -> Dict[MouseActionKey, Dict[str, CommandPayload]]:

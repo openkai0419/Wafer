@@ -1,4 +1,58 @@
 {
+  "Clear Selection": {
+    "en": "Clear Selection"
+  },
+  "Click Select": {
+    "en": "Click Select"
+  },
+  "Context Menu": {
+    "en": "Context Menu"
+  },
+  "JustifiedView": {
+    "en": "JustifiedView"
+  },
+  "Open Current": {
+    "en": "Open Current"
+  },
+  "Open Mouse Over": {
+    "en": "Open Mouse Over"
+  },
+  "Open Next": {
+    "en": "Open Next"
+  },
+  "Open Prev": {
+    "en": "Open Prev"
+  },
+  "Open Selected": {
+    "en": "Open Selected"
+  },
+  "Range Select": {
+    "en": "Range Select"
+  },
+  "Scroll To Current": {
+    "en": "Scroll To Current"
+  },
+  "Select All": {
+    "en": "Select All"
+  },
+  "Select Current": {
+    "en": "Select Current"
+  },
+  "Select Mouse Over": {
+    "en": "Select Mouse Over"
+  },
+  "Set Zoom": {
+    "en": "Set Zoom"
+  },
+  "Toggle Select": {
+    "en": "Toggle Select"
+  },
+  "Zoom Reset": {
+    "en": "Zoom Reset"
+  },
+  "loop": {
+    "en": "loop"
+  },
   "Prev File": {
     "en": "Prev File"
   },

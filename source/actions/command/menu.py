@@ -128,18 +128,30 @@ class RegistryBackedMenu:
             if isinstance(e, CommandMeta):
                 meta = normalize_meta(base_parts, e)
                 defs.append(meta)
-                items.append(meta.path)
+                if not bool(getattr(meta, "hidden", False)):
+                    items.append(meta.path)
                 continue
             raise ValueError("commands must be list[str|CommandMeta]")
+        for meta in defs:
+            cid = str(getattr(meta, "id", "") or "")
+            path = str(getattr(meta, "path", "") or "")
+            if not cid or not path:
+                continue
+            if cid in cmd_paths and cmd_paths[cid] != path:
+                raise ValueError(f"Duplicate command id in {t.__name__}: {cid}")
+            cmd_paths[cid] = path
         for s in items:
             if not isinstance(s, str) or not s or is_section_token(s) or is_sep_token(s):
                 continue
             parts = [p for p in s.split("/") if p]
-            if parts:
-                cid = parts[-1]
-                if cid in cmd_paths:
+            if not parts:
+                continue
+            cid = parts[-1]
+            if cid in cmd_paths:
+                if cmd_paths[cid] != s:
                     raise ValueError(f"Duplicate command id in {t.__name__}: {cid}")
-                cmd_paths[cid] = s
+                continue
+            cmd_paths[cid] = s
         if defs:
             register_command_defs(defs)
         if items:

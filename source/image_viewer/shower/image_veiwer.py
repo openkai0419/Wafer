@@ -25,6 +25,11 @@ class ZoomPanGraphicsView(QtWidgets.QGraphicsView, Kit.UIMixin):
         self.setBackgroundBrush(self.palette().brush(QtGui.QPalette.ColorRole.Dark))
         self.init_command_binding("GraphicsView", enable_drops=True)
 
+    def extend_context(self, ctx, cmd, event=None, key=None, source=None):
+        vw = ctx.get_instance("ViewerWidget")
+        p = getattr(vw, "path", None) if vw is not None else None
+        return {"path": p, "paths": [p] if p else []}
+
     def set_image(self, pixmap: QtGui.QPixmap):
         if self._pix_item is None:
             self._pix_item = self.scene().addPixmap(pixmap)

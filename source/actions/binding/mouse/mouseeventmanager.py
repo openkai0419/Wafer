@@ -124,12 +124,16 @@ class ExternalDropDynamicContext(DragContext):
         base_id = getattr(payload, "id", None)
         if not base_id:
             return False
-        cmd_id = f"{base_id}.{suffix}"
-        if not self.registry.has_command(cmd_id):
+        cmd_class = self.registry.get_command(base_id)
+        if not cmd_class:
             return False
-        args = getattr(payload, "args", None) or {}
-        ctx = CommandContext.create(self.widget, None, source="drop", event=event, extras={"context": self})
-        self.registry.execute(cmd_id, ctx=ctx, **args)
+        meta = getattr(cmd_class, "meta", None)
+        callbacks = getattr(meta, "drop_callbacks", None) or {}
+        if "drop" not in callbacks:
+            return False
+        args = dict(getattr(payload, "args", None) or {})
+        ctx = CommandContext.create(self.widget, None, source="drop", event=event, extras={"context": self, "phase": str(suffix)})
+        self.registry.execute(base_id, ctx=ctx, **args)
         return True
 
     def _switch_if_needed(self, payload, key, event, allow_enter: bool):
@@ -182,34 +186,34 @@ class CommandDragContext(DragContext):
         self.args = args or {}
     
     def on_move(self, event):
-        cmd_id = f"{self.base_id}.move"
-        if self.registry.has_command(cmd_id):
-            ctx = CommandContext.create(self.widget, None, source="drag", event=event, extras={"context": self})
-            self.registry.execute(cmd_id, ctx=ctx, **self.args)
+        cmd_class = self.registry.get_command(self.base_id)
+        if cmd_class and str("move") in (getattr(getattr(cmd_class, "meta", None), "drag_callbacks", None) or {}):
+            ctx = CommandContext.create(self.widget, None, source="drag", event=event, extras={"context": self, "phase": "move"})
+            self.registry.execute(self.base_id, ctx=ctx, **self.args)
     
     def on_end(self, event):
-        cmd_id = f"{self.base_id}.end"
-        if self.registry.has_command(cmd_id):
-            ctx = CommandContext.create(self.widget, None, source="drag", event=event, extras={"context": self})
-            self.registry.execute(cmd_id, ctx=ctx, **self.args)
+        cmd_class = self.registry.get_command(self.base_id)
+        if cmd_class and str("end") in (getattr(getattr(cmd_class, "meta", None), "drag_callbacks", None) or {}):
+            ctx = CommandContext.create(self.widget, None, source="drag", event=event, extras={"context": self, "phase": "end"})
+            self.registry.execute(self.base_id, ctx=ctx, **self.args)
     
     def on_enter(self, event):
-        cmd_id = f"{self.base_id}.enter"
-        if self.registry.has_command(cmd_id):
-            ctx = CommandContext.create(self.widget, None, source="drop", event=event, extras={"context": self})
-            self.registry.execute(cmd_id, ctx=ctx, **self.args)
+        cmd_class = self.registry.get_command(self.base_id)
+        if cmd_class and str("enter") in (getattr(getattr(cmd_class, "meta", None), "drop_callbacks", None) or {}):
+            ctx = CommandContext.create(self.widget, None, source="drop", event=event, extras={"context": self, "phase": "enter"})
+            self.registry.execute(self.base_id, ctx=ctx, **self.args)
     
     def on_leave(self, event):
-        cmd_id = f"{self.base_id}.leave"
-        if self.registry.has_command(cmd_id):
-            ctx = CommandContext.create(self.widget, None, source="drop", event=event, extras={"context": self})
-            self.registry.execute(cmd_id, ctx=ctx, **self.args)
+        cmd_class = self.registry.get_command(self.base_id)
+        if cmd_class and str("leave") in (getattr(getattr(cmd_class, "meta", None), "drop_callbacks", None) or {}):
+            ctx = CommandContext.create(self.widget, None, source="drop", event=event, extras={"context": self, "phase": "leave"})
+            self.registry.execute(self.base_id, ctx=ctx, **self.args)
     
     def on_drop(self, event):
-        cmd_id = f"{self.base_id}.drop"
-        if self.registry.has_command(cmd_id):
-            ctx = CommandContext.create(self.widget, None, source="drop", event=event, extras={"context": self})
-            self.registry.execute(cmd_id, ctx=ctx, **self.args)
+        cmd_class = self.registry.get_command(self.base_id)
+        if cmd_class and str("drop") in (getattr(getattr(cmd_class, "meta", None), "drop_callbacks", None) or {}):
+            ctx = CommandContext.create(self.widget, None, source="drop", event=event, extras={"context": self, "phase": "drop"})
+            self.registry.execute(self.base_id, ctx=ctx, **self.args)
 
 class MouseActionKey:
     def __init__(self, button, click_type=None, held_buttons=(), modifiers=()):
@@ -402,9 +406,11 @@ class MouseEventManager:
                     base_id = payload.id
                     args = payload.args or {}
                     ctx = CommandDragContext(base_id, self._registry, widget, args)
-                    if self._registry.has_command(f"{base_id}.start"):
+                    cmd_class = self._registry.get_command(base_id)
+                    if cmd_class and str("start") in (getattr(getattr(cmd_class, "meta", None), "drag_callbacks", None) or {}):
                         cctx = CommandContext.create(widget, None, source="drag", event=event)
-                        self._registry.execute(f"{base_id}.start", ctx=cctx, **args)
+                        cctx.put("phase", "start")
+                        self._registry.execute(base_id, ctx=cctx, **args)
                     return ctx
         result = self.execute_action(key, event)
         if isinstance(result, DragContext):
@@ -688,14 +694,25 @@ class MouseEventDispatcher(QtCore.QObject):
     def _handle_drop(self, event):
         if self._state.is_event_processed(event):
             return
+        from ..mixins import CommandBindingMixin
+        if not isinstance(self._target, CommandBindingMixin) or not self._target.drop_accept(event):
+            try:
+                event.ignore()
+            except Exception:
+                pass
+            return
         ctx = self._state.get_external_drag_context(self._target)
         if ctx:
-            ctx.on_drop(event)
+            executed = bool(ctx.on_drop(event))
             self._state.end_external_drag(self._target)
+            try:
+                (event.accept() if executed else event.ignore())
+            except Exception:
+                pass
+            return
         else:
             mods = MouseEventManager.get_modifiers(MouseEventManager._qt_modifiers_for_event(event))
             key = MouseActionKey(MouseButton.NONE, ClickType.DROP, frozenset(), mods)
-            from ..mixins import CommandBindingMixin
             widget = self._target
             if isinstance(widget, CommandBindingMixin):
                 bindings = widget.get_mouse_bindings()
@@ -704,18 +721,31 @@ class MouseEventDispatcher(QtCore.QObject):
                     base_id = payload.id
                     args = payload.args or {}
                     registry = CommandRegistry()
-                    if registry.has_command(f"{base_id}.drop"):
+                    cmd_class = registry.get_command(base_id)
+                    if cmd_class and str("drop") in (getattr(getattr(cmd_class, "meta", None), "drop_callbacks", None) or {}):
                         ctx = CommandContext.create(widget, None, source="drop", event=event)
-                        registry.execute(f"{base_id}.drop", ctx=ctx, **args)
-                        event.accept()
-                        event.acceptProposedAction()
+                        ctx.put("phase", "drop")
+                        registry.execute(base_id, ctx=ctx, **args)
+                        try:
+                            event.accept()
+                        except Exception:
+                            pass
                         return
-            self._manager.execute_action(key, event)
-        event.accept()
-        event.acceptProposedAction()
+            executed = bool(self._manager.execute_action(key, event))
+            try:
+                (event.accept() if executed else event.ignore())
+            except Exception:
+                pass
 
     def _handle_drag_enter(self, event):
         if self._state.is_event_processed(event):
+            return
+        from ..mixins import CommandBindingMixin
+        if not isinstance(self._target, CommandBindingMixin) or not self._target.drop_accept(event):
+            try:
+                event.ignore()
+            except Exception:
+                pass
             return
         def _resolve_drop(ev):
             m = MouseEventManager.get_modifiers(MouseEventManager._qt_modifiers_for_event(ev))
@@ -737,27 +767,70 @@ class MouseEventDispatcher(QtCore.QObject):
             return payload, k
 
         payload, _ = _resolve_drop(event)
-        ctx = None
-        if payload is not None:
+        if payload is None:
             try:
-                ctx = ExternalDropDynamicContext(self._target, CommandRegistry(), _resolve_drop)
-                ctx.on_enter(event)
-            except Exception as e:
-                show_warning(self._target, "ExternalDropDynamicContext.on_enter failed", exc=e)
-                ctx = None
-        if ctx:
-            self._state.start_external_drag(self._target, ctx)
-        event.accept()
-        event.acceptProposedAction()
+                event.ignore()
+            except Exception:
+                pass
+            return
+        base_id = getattr(payload, "id", None)
+        cmd_class = CommandRegistry().get_command(base_id) if base_id else None
+        callbacks = (getattr(getattr(cmd_class, "meta", None), "drop_callbacks", None) or {}) if cmd_class else {}
+        if not callbacks or "drop" not in callbacks:
+            try:
+                event.ignore()
+            except Exception:
+                pass
+            return
+        ctx = None
+        executed = False
+        try:
+            ctx = ExternalDropDynamicContext(self._target, CommandRegistry(), _resolve_drop)
+            executed = bool(ctx.on_enter(event))
+        except Exception as e:
+            show_warning(self._target, "ExternalDropDynamicContext.on_enter failed", exc=e)
+            ctx = None
+        if ctx is None:
+            try:
+                event.ignore()
+            except Exception:
+                pass
+            return
+        self._state.start_external_drag(self._target, ctx)
+        try:
+            (event.accept() if executed else event.ignore())
+        except Exception:
+            pass
 
     def _handle_drag_move(self, event):
         if self._state.is_event_processed(event):
             return
+        from ..mixins import CommandBindingMixin
+        if not isinstance(self._target, CommandBindingMixin) or not self._target.drop_accept(event):
+            ctx = self._state.get_external_drag_context(self._target)
+            if ctx:
+                try:
+                    ctx.on_leave(event)
+                except Exception:
+                    pass
+                self._state.end_external_drag(self._target)
+            try:
+                event.ignore()
+            except Exception:
+                pass
+            return
         ctx = self._state.get_external_drag_context(self._target)
         if ctx:
-            ctx.on_move(event)
-        event.accept()
-        event.acceptProposedAction()
+            executed = bool(ctx.on_move(event))
+            try:
+                (event.accept() if executed else event.ignore())
+            except Exception:
+                pass
+        else:
+            try:
+                event.ignore()
+            except Exception:
+                pass
 
     def _handle_drag_leave(self, event):
         if self._state.is_event_processed(event):

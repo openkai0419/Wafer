@@ -114,9 +114,16 @@ class Settings:
         set_seed_bindings(mouse_bindings=mouse_bindings, key_bindings=key_bindings)
         eff_mouse = mouse_bindings if mouse_bindings is not None else get_seed_mouse_bindings()
         eff_key = key_bindings if key_bindings is not None else get_seed_key_bindings()
-        if (eff_mouse is not None or eff_key is not None) and not self._bindings_ok():
-            self._set_bindings_from_specs(eff_mouse, eff_key)
-            self._save_bindings()
+        if eff_mouse is not None or eff_key is not None:
+            mouse_ok, key_ok = self._load_bindings()
+            if eff_mouse is not None and not mouse_ok:
+                from .binding.mouse.store import MouseBindingStore
+
+                MouseBindingStore().set_all(eff_mouse)
+            if eff_key is not None and not key_ok:
+                from .binding.key.store import KeyBindingStore
+
+                KeyBindingStore().set_all(eff_key)
         return BindingManager.activate()
 
     def _load_bindings(self) -> tuple[bool, bool]:
@@ -126,22 +133,6 @@ class Settings:
         mouse_ok = MouseBindingStore().load_from_file(self.mouse_bindings)
         key_ok = KeyBindingStore().load_from_file(self.key_bindings)
         return mouse_ok, key_ok
-
-    def _bindings_ok(self) -> bool:
-        mouse_ok, key_ok = self._load_bindings()
-        return mouse_ok and key_ok
-
-    def _save_bindings(self) -> None:
-        BindingManager.instance().save()
-
-    def _set_bindings_from_specs(self, mouse_specs=None, key_specs=None) -> None:
-        from .binding.key.store import KeyBindingStore
-        from .binding.mouse.store import MouseBindingStore
-
-        if mouse_specs is not None:
-            MouseBindingStore().set_all(mouse_specs)
-        if key_specs is not None:
-            KeyBindingStore().set_all(key_specs)
 
     def _commit(self) -> None:
         from .command.state import ActionGroupStateManager

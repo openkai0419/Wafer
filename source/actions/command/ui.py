@@ -71,34 +71,46 @@ class CommandOptionsDialog(QtWidgets.QDialog, TranslatorMixin):
                 if idx >= 0:
                     combo.setCurrentIndex(idx)
             return combo
+        
         def make_bool():
             w = QtWidgets.QCheckBox()
             w.setChecked(bool(self._initial.get(param.name, param.default)))
+
             return w
         def make_int():
             w = QtWidgets.QSpinBox()
-            if param.min_value is not None:
-                w.setMinimum(int(param.min_value))
-            if param.max_value is not None:
-                w.setMaximum(int(param.max_value))
             base = self._initial.get(param.name, param.default)
             v = int(base or 0)
+            if param.min_value is not None:
+                w.setMinimum(int(param.min_value))
+            else:
+                w.setMinimum(int(min(0, v)))
+            if param.max_value is not None:
+                w.setMaximum(int(param.max_value))
+            else:
+                w.setMaximum(int(self._infer_int_max(v)))
             w.setValue(v)
             w.setSingleStep(self._infer_int_step(v))
             return w
+        
         def make_float():
             w = QtWidgets.QDoubleSpinBox()
-            if param.min_value is not None:
-                w.setMinimum(param.min_value)
-            if param.max_value is not None:
-                w.setMaximum(param.max_value)
             base = self._initial.get(param.name, param.default)
             v = float(base or 0.0)
+            if param.min_value is not None:
+                w.setMinimum(float(param.min_value))
+            else:
+                w.setMinimum(float(min(0.0, v)))
+            if param.max_value is not None:
+                w.setMaximum(float(param.max_value))
+            else:
+                w.setMaximum(float(self._infer_float_max(v)))
             w.setValue(v)
             step, decimals = self._infer_float_step(v)
             w.setDecimals(max(2, decimals))
             w.setSingleStep(step)
             return w
+        
         def make_str():
             w = QtWidgets.QLineEdit()
             w.setText(str(self._initial.get(param.name, param.default) or ""))
@@ -116,7 +128,16 @@ class CommandOptionsDialog(QtWidgets.QDialog, TranslatorMixin):
         while a % 10 == 0:
             p *= 10
             a //= 10
-        return p
+        return 1 if p <= 1 else max(1, int(p // 2))
+
+    @staticmethod
+    def _infer_int_max(v: int) -> int:
+        a = abs(int(v))
+        if a == 0:
+            return 999
+        sq = a * a
+        digits = len(str(int(sq)))
+        return max(999, (10 ** (digits + 1)) - 1)
 
     @staticmethod
     def _infer_float_step(v: float) -> tuple[float, int]:
@@ -130,9 +151,18 @@ class CommandOptionsDialog(QtWidgets.QDialog, TranslatorMixin):
         exp = d.as_tuple().exponent
         decimals = max(0, -int(exp))
         if decimals == 0:
-            return 1.0, 0
-        step = float(Decimal(1).scaleb(-decimals))
-        return step, decimals
+            return 0.5, 1
+        step = float(Decimal(1).scaleb(-decimals)) / 2.0
+        return step, decimals + 1
+
+    @staticmethod
+    def _infer_float_max(v: float) -> float:
+        a = abs(float(v))
+        if a == 0.0:
+            return 999.0
+        sq = a * a
+        digits = len(str(int(sq)))
+        return float(max(999, (10 ** (digits + 1)) - 1))
 
     def get_values(self) -> Dict[str, Any]:
         values = {}
@@ -802,6 +832,39 @@ class MenuBuilder:
     def build_all_roots(self, selection_callback: Optional[Callable[[Any], None]] = None, allow_options_with_selection: bool = False) -> QtWidgets.QMenu:
         plan = self._maker.all_roots()
         return self.build(plan, selection_callback=selection_callback, allow_options_with_selection=allow_options_with_selection)
+
+    def build_names(self, names: List[str], selection_callback: Optional[Callable[[Any], None]] = None, allow_options_with_selection: bool = False) -> QtWidgets.QMenu:
+        self._menu.clear()
+        return self._build_into(list(names or []), selection_callback, allow_options_with_selection)
+
+    def popup_names(
+        self,
+        anchor: QtWidgets.QWidget,
+        names: List[str],
+        selection_callback: Callable[[Any], None],
+        context_provider: Optional[Callable[[], Any]] = None,
+        prepare: Optional[Callable[[QtWidgets.QMenu], None]] = None,
+        allow_options_with_selection: bool = False,
+    ) -> None:
+        prev_seed = self._seed_ctx
+        if callable(context_provider):
+            try:
+                v = context_provider()
+                if isinstance(v, CommandContext):
+                    self._seed_ctx = v
+                elif isinstance(v, dict):
+                    self._seed_ctx = CommandContext.create(None, "*", source="menu.popup", event=None, extras=dict(v))
+            except Exception as e:
+                show_warning(anchor, "context_provider failed", exc=e)
+        menu = self.build_names(names, selection_callback=selection_callback, allow_options_with_selection=allow_options_with_selection)
+        if callable(prepare):
+            try:
+                prepare(menu)
+            except Exception as e:
+                show_warning(anchor, "prepare(menu) failed", exc=e)
+        pos = anchor.mapToGlobal(QtCore.QPoint(0, anchor.height()))
+        menu.exec(pos)
+        self._seed_ctx = prev_seed
 
     def popup_all_roots(self, anchor: QtWidgets.QWidget, selection_callback: Callable[[Any], None], context_provider: Optional[Callable[[], Any]] = None, prepare: Optional[Callable[[QtWidgets.QMenu], None]] = None, allow_options_with_selection: bool = False) -> None:
         prev_seed = self._seed_ctx

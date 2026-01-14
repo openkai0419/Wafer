@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from PySide6 import QtCore, QtWidgets
 
-from .commands.context_menu import ContextMenuBuilder, FolderContextMenuBuilder
+from .commands.context_menu import FolderContextMenuBuilder
 from ..common.funcs import get_data_db, get_setting_db, get_setting_file_names, uipx
 from ..common.profiling import logger, profiler
 from ..constants import APP_NAME, default_db_name
@@ -281,8 +281,6 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.viewer.horizontalScrollBar().setSingleStep(25)
         self.items = ViewerItems(self)
         self.content = JustifiedVirtualScrollWidget(self.viewer, self, self.items)
-        viewer_menu = ContextMenuBuilder(self)
-        self.content.set_context_menu_builder(viewer_menu)
         self.viewer.setWidget(self.content)
         self.viewer.resized.connect(self.content.on_resize_event)
         self.viewer.set_speed_callback(self.content.get_adjusted_scroll_speed)

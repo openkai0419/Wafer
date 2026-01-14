@@ -16,7 +16,7 @@ class DemoButton(QtWidgets.QPushButton, Kit.UIMixin):
         super().__init__(name, parent)
         self.init_command_binding(name, enable_drops=True)
 
-    def extend_context(self, ctx, cmd=None, event=None, key=None, source=None):
+    def extend_context(self, *args, **kwargs):
         return {"button": self.binding_scope()}
 
 class DemoPane(QtWidgets.QFrame, Kit.UIMixin):
@@ -31,7 +31,7 @@ class DemoPane(QtWidgets.QFrame, Kit.UIMixin):
         l = QtWidgets.QVBoxLayout(self)
         l.addWidget(self._header, 1)
 
-    def extend_context(self, ctx, cmd=None, event=None, key=None, source=None):
+    def extend_context(self, *args, **kwargs):
         return {"pane": self.binding_scope(), "header": self._header.text(), "test": "True"}
 
 class TestLineEdit(QtWidgets.QLineEdit):

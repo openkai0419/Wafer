@@ -20,7 +20,7 @@ class ViewerWidget(QtWidgets.QSplitter):
         self.image_cache = MemoryLimitedImageCache(main_setting.get('window/chache_size', 500))
         self.main_ui()
         self.path: str | None = None
-
+        
     def main_ui(self):
         self.image_viewer = ImageViewerWidget(self)
         self.image_viewer.setMinimumSize(uipx(200), uipx(200))

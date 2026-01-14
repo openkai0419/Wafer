@@ -7,6 +7,7 @@
 - source/actions/bridge.py は外部向けAPI専用。source/actions 配下の内部モジュールから bridge を import しない。
 - source/actions 配下の機能を外部から使う場合は、必ず bridge（Command/Menu/Kit/Settings/UI/Context）経由で参照・実行する。
 - バインディングのデフォルト(seed)は source/actions/binding/seed.py に保持し、bridge.Settings が設定する（API名は *_bindings に統一）。
+- バインディングの永続化ファイルは起動時に自動生成しない。seedはメモリへ適用のみ行い、ファイル作成/保存は編集して保存(commit)した時だけ行う。
 - バインディングのデフォルト宣言はタプル等のspecではなく、Kit.Key(...)/Kit.Mouse(...) で Key/MouseActionKey を直接生成して渡す。
 - キー型（Key/MouseActionKey）は異なるが、バインド値（Kit.Bind=ScopedPayloads=scope->CommandPayload）は共通なので、Storeの set_all/get_all/resolve/save/load は BindingStoreBase に集約する。
 - ビューア固有のコマンド定義やコンテキストメニューは source/image_viewer 直下に置く。
@@ -15,6 +16,19 @@
 ビューアの共有状態
 - source/image_viewer/viewer/items.py の ViewerItems が「ファイル一覧/選択/現在インデックス」を共有する状態として機能し、複数Widgetから同じ参照を使えるようにする。
 - source/image_viewer/commands/file_viewer.py の FileViewerCommands は ViewerItems を基準に ViewerWidget の表示(パス)を次/前へ切り替える。
+
+JustifiedWidgetのaction移行
+- JustifiedVirtualScrollWidget は Kit.UIMixin(CommandBindingMixin) を継承して init_command_binding("JustifiedView") すると自動で register され、ctx.get_instance("JustifiedView") から参照できる。
+- 直接イベント処理でViewerWidget/ViewerItemsを操作せず、command（例: jv.open_current / jv.select_all / jv.zoom_in）へ寄せて段階的に置き換える。
+- JustifiedVirtualScrollWidget に「コマンドからしか呼ばれない薄いラッパー」を置かず、矩形選択/ドラッグ/コンテキストメニュー等の操作は source/image_viewer/commands 側で実装する。
+- Drag/Drop系コマンドは GraphicsView と同様に Kit.DragMenuBase へ分離し、通常メニュー(Kit.MenuBase)のコマンドと混在させない。
+- 引数はコマンド側でCommandMeta.paramsとして宣言されたものだけが実行時に渡される（未宣言のargsは捨てられる）。
+- Drag/Drop系はサブコマンドIDをRegistryへ登録せず、baseコマンド1つを呼び、ctx.extras.phase=start|move|end|enter|leave|drop で callbacks をdispatchする。
+- JustifiedViewのdropは Copy/Move を別コマンドに分割（jv.drop_files_copy / jv.drop_files_move）。重複時挙動は args.on_conflict = overwrite|rename|skip|confirm で指定する。
+- 引数だけが違う variants は冗長なラッパー関数を作らず、宣言側で lambda で固定値を渡して実装する。
+- MenuBase の内部状態名（例: _items）と同名のメソッド/属性をサブクラスで定義しない。
+- JustifiedViewのdrop_acceptor判定は source/os/drop.py の MimeDataParser.can_accept に統一する（accept時は通信なし、parse/ダウンロードはdrop時のみ）。
+- DROPの許可は drop_acceptor のみで制御し、drop_acceptor が登録されていないWidgetはファイルDROPを含めて一切 accept しない。
 
 コンテキストからのWidget参照
 - init_command_binding(name) で BindingManager に登録されたWidgetは、CommandContext.get_instance(name) / get_instances(name) で名前から取得できる（同名は複数対応）。
@@ -33,6 +47,7 @@
 - 呼び出し時のメニュー構造は MenuMaker が解決し、MenuPlan(hide/add/insert)で一時編集できるようにする。MenuBuilder は MenuPlan のトークン列から QMenu を生成するだけに絞る。
 - insert/hide のターゲットは id または path("/") で指定でき、見つからない場合は例外で落とす。
 - MenuPlan.add/insert は Kit.Command(CommandMeta) も受け取れ、MenuHubへ登録せずその場限りのコマンドをメニューへ追加できる（バインドピッカーには出ない）。
+- ユーザー操作として公開したくないコマンドは CommandMeta.hidden=True を使い、実行は可能なままメニュー/ピッカーの列挙から除外する。
 - 外部からのメニュー生成/表示は bridge.Menu に統一し、Menu.session(parent, seed_ctx=...) / Menu.with_ctx(ctx) から menu/use/all_roots を作って hide/add/insert を適用し、最後に build()/exec() する。
 
 コマンド設計
@@ -40,7 +55,9 @@
 - 汎用系のコマンドは可能な限り event 非依存にし、実行に必要なctx側で保障するようにすることで、キーや、メニュー、マウスにかかわらず実行できるようにする。
 - 汎用系のコマンドに値を渡す際はctxからgetする方法、引数として渡す方法があるが、基本的に引数で受け取るのはコマンド宣言時に設定してユーザーが編集かのうなもののみに限る。
 - 汎用系のコマンドでマウスの位置やホイールのステップ、Widgetなどの汎用的に使う値はキー、メニュー、マウスにかかわらず安定して動作させるため、ctxに渡す側で必ず値を渡すように保障し、コマンド側の安全保障は不要にする（引数がなかった場合はctx側の不具合とする）
+- ctx.get_instance/pos/global_pos 等の前提が崩れた場合はコマンド側で握りつぶさず、そのまま例外で落として不具合を検出しやすくする。
 - ctx.event/ctx.keyはコマンドから取得できない（保持しない）。ユーザー操作に由来する値はpos/global_pos/wheel_steps等の派生フィールドで必ず保障する。
+- ctx.event は通常は保持しないが、Drop系のみ ctx.get_event() で取得できるように保持する（Drop処理でmimeData等が必要なため）。
 - wheel_stepsはCommandContextの標準フィールドとして常に値が入る（ホイールは正規化、非ホイールは1）。コマンド側はctx.get("wheel_steps")だけで安定取得できる。
 - extrasは動的に有無が変わる値に限定し、ある/ないでコマンド側で分岐する前提のものだけを入れる。
 
@@ -48,6 +65,8 @@
 - Key/MouseのEditorは override UI/コマンドピッカー/レイアウト破棄を editors_common に集約し、個別Editorは差分のみ持つ。
 - コマンドのparamsが存在する場合はオプションを持つコマンドとして扱い、メニュー右の□(オプション)を表示可能にする。
 - CommandOptionsDialogの数値入力(QSpinBox/QDoubleSpinBox)は、既定値の桁からsingleStep/decimalsを自動推定して自然な調整単位にする。
+- MouseBindingsのカテゴリメニューは scope="*" の場合 widget_scope=None で検索し、target_widgets を持つコマンドは一致条件が満たせず候補から除外される。
+- "." は単なるネームスペースで特別扱いしない。
 
 デバッグ出力
 - 環境変数などによるデバッグON/OFF切替は禁止。

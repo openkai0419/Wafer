@@ -8,64 +8,7 @@ from ...lang.manager import TranslatorMixin
 from ...qt.dialog import ConfirmDialog
 
 
-class ActionManager(TranslatorMixin):
-    @staticmethod
-    def get_directory_from_path(path):
-        abs_path = os.path.abspath(path)
-        return abs_path if os.path.isdir(abs_path) else os.path.dirname(abs_path)
-
-
-class ContextMenuBuilder(ActionManager):
-    def __init__(self, parent=None, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.parent = parent
-
-    def build_menu(self, path):
-        seed_ctx = Context.create_context(
-            self.parent,
-            "*",
-            source="menu",
-            extras={"path": path, "paths": self.get_selected_sources()},
-        )
-        return (
-            Menu.session(self.parent, seed_ctx=seed_ctx)
-            .use("File")
-            .insert(
-                "file.copy_path_list",
-                [
-                    Kit.Command(path="inline.copy_path", display="Copy FileName", func=ContextMenuBuilder._cmd_copy_path),
-                    "-",
-                    Kit.Command(path="inline.select_folder", display="Select Folder", func=ContextMenuBuilder._cmd_select_folder),
-                ],
-            )
-            .build()
-        )
-
-    @staticmethod
-    def _cmd_copy_path(ctx):
-        get = getattr(ctx, "get", None)
-        path = get("path") if callable(get) else None
-        if not path:
-            return
-        QtGui.QGuiApplication.clipboard().setText(str(path))
-
-    @staticmethod
-    def _cmd_select_folder(ctx):
-        get = getattr(ctx, "get", None)
-        path = get("path") if callable(get) else None
-        if not path:
-            return
-        w = get("widget") if callable(get) else None
-        if w is None or not hasattr(w, "folder_view"):
-            raise RuntimeError("folder_view not found")
-        folder = ActionManager.get_directory_from_path(str(path))
-        w.folder_view.expand_and_select_path(folder)
-
-    def get_selected_sources(self):
-        return self.parent.items.selected_sources()
-
-
-class FolderContextMenuBuilder(ActionManager):
+class FolderContextMenuBuilder():
     def __init__(self, parent, root, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.root = root
@@ -83,7 +26,6 @@ class FolderContextMenuBuilder(ActionManager):
 
         seed_ctx = Context.create_context(
             self.root,
-            "*",
             source="menu",
             extras={"path": path},
         )

@@ -706,7 +706,11 @@ class MouseEventDispatcher(QtCore.QObject):
             executed = bool(ctx.on_drop(event))
             self._state.end_external_drag(self._target)
             try:
-                (event.accept() if executed else event.ignore())
+                if executed:
+                    event.setDropAction(QtCore.Qt.DropAction.IgnoreAction)
+                    event.accept()
+                else:
+                    event.ignore()
             except Exception:
                 pass
             return
@@ -733,7 +737,11 @@ class MouseEventDispatcher(QtCore.QObject):
                         return
             executed = bool(self._manager.execute_action(key, event))
             try:
-                (event.accept() if executed else event.ignore())
+                if executed:
+                    event.setDropAction(QtCore.Qt.DropAction.IgnoreAction)
+                    event.accept()
+                else:
+                    event.ignore()
             except Exception:
                 pass
 
@@ -843,7 +851,8 @@ class MouseEventDispatcher(QtCore.QObject):
     def eventFilter(self, watched, event):
         if not isinstance(event, QtCore.QEvent):
             return False
-        if watched is None or id(watched) not in self._watch_target_ids:
+        watch_ids = getattr(self, "_watch_target_ids", None)
+        if not watch_ids or watched is None or id(watched) not in watch_ids:
             return super().eventFilter(watched, event)
         if isinstance(event, QtGui.QMouseEvent):
             if event.type() == QtCore.QEvent.MouseButtonPress:

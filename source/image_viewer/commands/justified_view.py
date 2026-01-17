@@ -4,12 +4,11 @@ import platform
 from PySide6 import QtCore, QtGui
 
 from ...actions.bridge import Kit
-from ...common.funcs import uipx, normalize_path
+from ...common.funcs import uipx
 from ...qt.pixmap import PixmapFactory
 
 
 INTERNAL_MIME_FLAG = b"application/x-jvscroll-internal"
-
 
 class JustifiedViewCommands(Kit.MenuBase):
     prefix = "JustifiedView"
@@ -267,11 +266,11 @@ class JustifiedViewCommands(Kit.MenuBase):
         Kit.Command(path="jv.show_at_pos", display="Show at Pos", func=show_at_pos),
         Kit.Command(path="jv.show_selected", display="Show Selected", func=show_selected),
         "-",
-        Kit.Command(path="jv.select_current", display="Select Current", func=select_current, hidden=True),
-        Kit.Command(path="jv.scroll_to_current", display="Scroll To Current", func=scroll_to_current, hidden=True),
-        Kit.Command(path="jv.show_current", display="Show Current", func=show_current, hidden=True),
-        Kit.Command(path="jv.show_prev", display="Show Prev", func=show_prev, params=[Kit.Param(name="step", value=1), Kit.Param(name="loop", value=False)], hidden=True,),
-        Kit.Command(path="jv.show_next", display="Show Next", func=show_next, params=[Kit.Param(name="step", value=1), Kit.Param(name="loop", value=False)], hidden=True,),
+        Kit.Command(path="Current/jv.select_current", display="Select Current", func=select_current),
+        Kit.Command(path="Current/jv.scroll_to_current", display="Scroll To Current", func=scroll_to_current),
+        Kit.Command(path="Current/jv.show_current", display="Show Current", func=show_current),
+        Kit.Command(path="Current/jv.show_prev", display="Show Prev", func=show_prev, params=[Kit.Param(name="step", value=1), Kit.Param(name="loop", value=False)]),
+        Kit.Command(path="Current/jv.show_next", display="Show Next", func=show_next, params=[Kit.Param(name="step", value=1), Kit.Param(name="loop", value=False)]),
         "-",
         ":Scroll",
         Kit.Command(path="jv.scroll_up", display="Scroll Up", func=wheel_scroll_up, params=[Kit.Param(name="multiplier", value=4)]),
@@ -533,12 +532,10 @@ class JustifiedViewDropCommands(Kit.DragMenuBase):
 
     @staticmethod
     def _enter(ctx, *, op: str, on_conflict: str = "rename"):
-        #JustifiedViewDropCommands._apply_drop_action(ctx, op)
         JustifiedViewDropCommands._preview_update(ctx, JustifiedViewCommands.get_view(ctx), JustifiedViewCommands.get_items(ctx), op)
 
     @staticmethod
     def _move(ctx, *, op: str, on_conflict: str = "rename"):
-        #JustifiedViewDropCommands._apply_drop_action(ctx, op)
         JustifiedViewDropCommands._preview_update(ctx, JustifiedViewCommands.get_view(ctx), JustifiedViewCommands.get_items(ctx), op)
 
     @staticmethod
@@ -550,7 +547,6 @@ class JustifiedViewDropCommands(Kit.DragMenuBase):
         event = ctx.get_event()
         if event is None:
             return
-        JustifiedViewDropCommands._apply_drop_action(ctx, "ignore")
         view = JustifiedViewCommands.get_view(ctx)
         items = JustifiedViewCommands.get_items(ctx)
         dst_dir = JustifiedViewDropCommands._drop_target_dir_from_hover(ctx, view, items)
@@ -560,9 +556,10 @@ class JustifiedViewDropCommands(Kit.DragMenuBase):
 
         if not src_items:
             return
-        from ...os.drop import FileSaver, get_unique_filename, check_copy_conflict
-        from ...qt.dialog import FileConflictDialog, SingleFileConflictDialog
-        import shutil
+        from ...os.drop import FileSaver
+        from ...os.file_transfer_utils import unique_path
+        from ...qt.file_conflict_resolver import make_session
+        from ...os.file_transfer_utils import safe_remove
 
         if op not in ("copy", "move"):
             raise ValueError(f"Invalid op: {op}")
@@ -570,9 +567,7 @@ class JustifiedViewDropCommands(Kit.DragMenuBase):
             raise ValueError(f"Invalid on_conflict: {on_conflict}")
 
         saver = FileSaver()
-        confirmed_mode: str | None = None
-        same_apply_all = False
-        show_apply_all = len(src_items) > 1
+        session = make_session(op=op, parent=view, item_count=len(src_items))
         for item in src_items:
             name = str(getattr(item, "name", "") or "")
             if not name:
@@ -580,60 +575,25 @@ class JustifiedViewDropCommands(Kit.DragMenuBase):
             dst_path = os.path.join(dst_dir, name)
 
             if getattr(item, "is_local_file", lambda: False)():
-                conflict = check_copy_conflict(getattr(item, "source", None), dst_path)
-                if conflict:
-                    if not same_apply_all:
-                        src_path_for_ui = normalize_path(str(getattr(item, "source", "") or ""))
-                        msg = "同一パスのためスキップします。" if conflict == "same_path" else "コピー先がコピー元の中にあるためスキップします。"
-                        _, apply_all = SingleFileConflictDialog.ask(
-                            msg,
-                            path=src_path_for_ui,
-                            name=getattr(item, "name", "") or "",
-                            op=op,
-                            show_apply_all=show_apply_all,
-                            parent=view,
-                        )
-                        if apply_all:
-                            same_apply_all = True
+                src0 = str(getattr(item, "source", "") or "")
+                if src0 and session.resolve_copy_conflict(src_path=src0, dst_path=dst_path, name=name):
                     continue
             if os.path.exists(dst_path):
-                mode = on_conflict
-                if mode == "ask":
-                    if confirmed_mode is None:
-                        src_path_for_ui = item.source if getattr(item, "is_local_file", lambda: False)() else ""
-                        if src_path_for_ui:
-                            src_path_for_ui = normalize_path(src_path_for_ui)
-                        src_bytes_for_ui = item.source if getattr(item, "is_binary", False) and isinstance(getattr(item, "source", None), (bytes, bytearray)) else None
-                        res, apply_all = FileConflictDialog.ask(
-                            f"同名ファイルが存在します。",
-                            src_path=src_path_for_ui,
-                            dst_path=normalize_path(dst_path),
-                            src_name=getattr(item, "name", "") or "",
-                            src_bytes=src_bytes_for_ui,
-                            op=op,
-                            show_apply_all=show_apply_all,
-                            parent=view,
-                        )
-                        choice = FileConflictDialog.parse_choice(res)
-                        if choice is None or choice == "cancel":
-                            if apply_all:
-                                confirmed_mode = "skip"
-                            continue
-                        chosen = "overwrite" if choice == "overwrite" else "rename"
-                        if apply_all:
-                            confirmed_mode = chosen
-                        mode = chosen
-                    else:
-                        mode = confirmed_mode
+                src_path_for_ui = str(item.source) if getattr(item, "is_local_file", lambda: False)() else None
+                src_bytes_for_ui = item.source if getattr(item, "is_binary", False) and isinstance(getattr(item, "source", None), (bytes, bytearray)) else None
+                mode = session.resolve_exists(
+                    src_path=src_path_for_ui,
+                    dst_path=dst_path,
+                    name=name,
+                    src_bytes=src_bytes_for_ui,
+                    default_mode=on_conflict,
+                )
                 if mode == "skip":
                     continue
                 if mode == "rename":
-                    dst_path = os.path.join(dst_dir, get_unique_filename(dst_dir, name))
+                    dst_path = unique_path(dst_dir, name)
                 elif mode == "overwrite":
-                    if os.path.isdir(dst_path):
-                        shutil.rmtree(dst_path)
-                    else:
-                        os.remove(dst_path)
+                    safe_remove(dst_path)
 
             if getattr(item, "is_local_file", lambda: False)():
                 src_abs = os.path.abspath(str(item.source))

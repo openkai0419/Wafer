@@ -112,43 +112,35 @@ def paste_here(ctx, overwrite_mode: str = "skip"):
     d = a if os.path.isdir(a) else os.path.dirname(a)
     paster = ClipboardFilePaster()
     plans = paster.build_paste_plan(d)
-    from ...qt.dialog import FileConflictDialog
+    from ...qt.file_conflict_resolver import make_session
+    from ...os.file_transfer_utils import check_copy_conflict
 
     parent = ctx.get_instance("ViewerWidget") or ctx.get_instance("JustifiedView")
 
     conflict_count = sum(1 for p in plans if getattr(p, "conflict", False))
-    show_apply_all = conflict_count > 1
-    confirmed_mode = None
+    session = make_session(op=("move" if (plans and getattr(plans[0], "action", "copy") == "cut") else "copy"), parent=parent, item_count=conflict_count)
     decisions = {}
     for plan in plans:
         if not getattr(plan, "conflict", False):
             decisions[plan.index] = PasteDecision(mode="overwrite")
             continue
-        mode = overwrite_mode
-        if mode == "ask":
-            if confirmed_mode is None:
-                op = "move" if getattr(plan, "action", "copy") == "cut" else "copy"
-                res, apply_all = FileConflictDialog.ask(
-                    "同名ファイルが存在します。",
-                    src_path=str(getattr(plan, "src", "") or ""),
-                    dst_path=str(getattr(plan, "dst_default", "") or ""),
-                    src_name=str(getattr(getattr(plan, "src", None), "name", "") or ""),
-                    op=op,
-                    show_apply_all=show_apply_all,
-                    parent=parent,
-                )
-                choice = FileConflictDialog.parse_choice(res)
-                if choice is None or choice == "cancel":
-                    if apply_all:
-                        confirmed_mode = "skip"
+        srcp = getattr(plan, "src", None)
+        dstp = getattr(plan, "dst_default", None)
+        if srcp is not None and dstp is not None:
+            c = check_copy_conflict(srcp, dstp)
+            if c in ("same_path", "subpath"):
+                if session.resolve_copy_conflict(src_path=str(srcp), dst_path=str(dstp), name=str(getattr(srcp, "name", "") or "")):
                     decisions[plan.index] = PasteDecision(mode="skip")
                     continue
-                chosen = "overwrite" if choice == "overwrite" else "rename"
-                if apply_all:
-                    confirmed_mode = chosen
-                mode = chosen
-            else:
-                mode = confirmed_mode
+        mode = overwrite_mode
+        if mode == "ask":
+            mode = session.resolve_exists(
+                src_path=str(getattr(plan, "src", "") or ""),
+                dst_path=str(getattr(plan, "dst_default", "") or ""),
+                name=str(getattr(getattr(plan, "src", None), "name", "") or ""),
+                src_bytes=None,
+                default_mode="ask",
+            )
         decisions[plan.index] = PasteDecision(mode=mode if mode in ("overwrite", "rename", "skip") else "skip")
     paster.execute_paste(plans, decisions)
 

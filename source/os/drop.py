@@ -7,43 +7,12 @@ from PySide6.QtCore import QMimeData
 from PySide6.QtGui import QImage
 from ..common.profiling import logger
 from ..common.funcs import normalize_path
+from .file_transfer_utils import check_copy_conflict, sanitize_filename
 
 
-def _norm_abs_case(p: str) -> str:
-    return os.path.normcase(os.path.abspath(os.path.normpath(str(p))))
-
-
-def _is_same_path(a: str, b: str) -> bool:
-    return _norm_abs_case(a) == _norm_abs_case(b)
-
-
-def _is_subpath(child: str, parent: str) -> bool:
-    c = _norm_abs_case(child)
-    p = _norm_abs_case(parent)
-    cd, pd = os.path.splitdrive(c)[0].lower(), os.path.splitdrive(p)[0].lower()
-    if cd != pd:
-        return False
-    return os.path.commonpath([c, p]) == p and c != p
-
-
-def check_copy_conflict(src: str | None, dst: str | None) -> str | None:
-    if not src or not dst:
-        return None
-    if _is_same_path(src, dst):
-        return "same_path"
-    if os.path.isdir(src) and _is_subpath(dst, src):
-        return "subpath"
-    return None
-
-
-def get_unique_filename(directory, name):
-    base, ext = os.path.splitext(name)
-    candidate = name
-    counter = 1
-    while os.path.exists(os.path.join(directory, candidate)):
-        candidate = f'{base} ({counter}){ext}'
-        counter += 1
-    return candidate
+def _is_http_url(s: str) -> bool:
+    v = (s or '').strip().lower()
+    return v.startswith('http://') or v.startswith('https://')
 
 class ParsedItem:
     def __init__(self, source, name, is_binary=False, mime_type='', size=None):
@@ -132,49 +101,19 @@ class MimeDataParser:
                     url_str = url.toString()
                     if url_str.startswith('blob:'):
                         continue
-                    try:
-                        with requests.get(url_str, timeout=10, stream=True) as resp:
-                            if resp.status_code == 200:
-                                content = resp.content
-                                ct = resp.headers.get('Content-Type', '')
-                                cd = resp.headers.get('Content-Disposition', '')
-                                fname = self.parse_content_disposition(cd)
-                                if not fname:
-                                    fname = url.fileName() or url.host() or 'download'
-                                name, ext = os.path.splitext(fname)
-                                if not ext and ct.startswith('image/'):
-                                    ext = '.' + ct.split('/')[-1]
-                                if not ext:
-                                    ext = '.bin'
-                                suggested = name + ext
-                                size = len(content)
-                                items.append(ParsedItem(source=content, name=suggested, is_binary=True, mime_type=ct, size=size))
-                    except Exception as e:
-                        logger.warning(f'Failed to download {url_str}: {e}')
+                    if _is_http_url(url_str):
+                        fname = url.fileName() or url.host() or 'download'
+                        fname = sanitize_filename(fname, fallback='download')
+                        if not os.path.splitext(fname)[1]:
+                            fname = fname + '.bin'
+                        items.append(ParsedItem(source=url_str, name=fname, is_binary=False, mime_type='url'))
             if items:
                 return items
         if mime.hasText():
             t = (mime.text() or '').strip()
-            if t.startswith('http://') or t.startswith('https://'):
-                try:
-                    with requests.get(t, timeout=10, stream=True) as resp:
-                        if resp.status_code == 200:
-                            content = resp.content
-                            ct = resp.headers.get('Content-Type', '')
-                            cd = resp.headers.get('Content-Disposition', '')
-                            fname = self.parse_content_disposition(cd)
-                            if not fname:
-                                fname = 'download'
-                            name, ext = os.path.splitext(fname)
-                            if not ext and ct.startswith('image/'):
-                                ext = '.' + ct.split('/')[-1]
-                            if not ext:
-                                ext = '.bin'
-                            suggested = name + ext
-                            items.append(ParsedItem(source=content, name=suggested, is_binary=True, mime_type=ct, size=len(content)))
-                            return items
-                except Exception as e:
-                    logger.warning(f'Failed to download {t}: {e}')
+            if _is_http_url(t):
+                items.append(ParsedItem(source=t, name='download.bin', is_binary=False, mime_type='url'))
+                return items
         return items
 
     def _parse_windows_clipboard(self, mime, fmt):
@@ -242,4 +181,21 @@ class FileSaver:
                 logger.warning(f'Move requested for binary item; saved only: {target_path}')
             logger.info(f'Saved binary data to {target_path}')
             return
+        if isinstance(item.source, str) and _is_http_url(item.source):
+            url = item.source
+            try:
+                with requests.get(url, timeout=10, stream=True) as resp:
+                    if resp.status_code != 200:
+                        raise ValueError(f'HTTP {resp.status_code}')
+                    with open(target_path, 'wb') as f:
+                        for chunk in resp.iter_content(chunk_size=1024 * 256):
+                            if chunk:
+                                f.write(chunk)
+                if move:
+                    logger.warning(f'Move requested for URL item; downloaded only: {target_path}')
+                logger.info(f'Downloaded: {url} → {target_path}')
+                return
+            except Exception as e:
+                logger.warning(f'Failed to download {url}: {e}')
+                return
         raise ValueError('Invalid ParsedItem: inconsistent source and is_binary')

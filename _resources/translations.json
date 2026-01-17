@@ -1,4 +1,52 @@
 {
+  "Current": {
+    "en": "Current"
+  },
+  "Reset Scale": {
+    "en": "Reset Scale"
+  },
+  "Scale": {
+    "en": "Scale"
+  },
+  "Scale Down": {
+    "en": "Scale Down"
+  },
+  "Scale Up": {
+    "en": "Scale Up"
+  },
+  "Scroll": {
+    "en": "Scroll"
+  },
+  "Scroll Down": {
+    "en": "Scroll Down"
+  },
+  "Scroll Up": {
+    "en": "Scroll Up"
+  },
+  "Selection": {
+    "en": "Selection"
+  },
+  "Set Scale": {
+    "en": "Set Scale"
+  },
+  "Show Current": {
+    "en": "Show Current"
+  },
+  "Show Next": {
+    "en": "Show Next"
+  },
+  "Show Prev": {
+    "en": "Show Prev"
+  },
+  "Show Selected": {
+    "en": "Show Selected"
+  },
+  "Show at Pos": {
+    "en": "Show at Pos"
+  },
+  "Viewer": {
+    "en": "Viewer"
+  },
   "Clear Selection": {
     "en": "Clear Selection"
   },

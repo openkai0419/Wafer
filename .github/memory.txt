@@ -2,6 +2,77 @@
 - 目的: 大量のファイル(主に画像)をバックグラウンド収集してDB化し、高速検索と描画を提供する。
 - 実行: main.py から起動。GUI は PySide6。将来的に動画/音声/Zipへ拡張、プラグイン拡張を見据える。
 
+プロセス構成
+- 3ロール: viewer(GUI), collector(収集), communicator(トレイ/管理)。IPCは ZMQ。
+- main.py は引数なし起動だと viewer を起動し、別プロセスで communicator を立ち上げる。
+- communicator は設定DB名一覧に応じて collector を複数起動し、常駐する。
+- 多重起動防止は source/common/mutex.py の SafeProcessLock を使う（lockは user_data_dir 配下）。
+
+データ/設定ファイル配置
+- DBファイル
+	- データDB: data/{name}.db
+	- 設定DB: dirs/{name}.db
+- data_path/config_path は platformdirs の user_data_dir/user_config_dir を使い、APP_FILE_NAME をルートにする。
+- ログ: data_path('.log') 配下にプロセスPID別の debuglog_{pid}.log
+- リソース: _resources（アイコン等）。frozen時は sys.executable の親を基準に解決する。
+
+DB(画像メタDB)
+- source/db/collector.py の ImageDB がスキーマ管理・WAL・read/write接続を提供する。
+- 破損検知: PRAGMA quick_check が ok でなければ .bak を作って再生成（VACUUM INTO を優先）。
+- 主要テーブル/ビュー
+	- hash_index(file_hash)
+	- sources(source, file_hash, size, modified, created, collected, status)
+	- images(path, source, name, aspect_ratio)
+	- meta_info(path, key, value)
+	- tags(file_hash, key, value)
+	- images_full(images + sources のJOIN)
+	- kv_all(tags/meta_info/virtual(__filepath__) を統合し、同一keyはrankで優先)
+	- kv_meta(kv_all + file_hash を付与)
+
+検索
+- source/db/query.py の MetaInfoSearchEngine が read-only 接続で検索する（query_only=ON, temp_store=MEMORY）。
+- MetaQuery
+	- keys/keywords(include, exclude('-xxx'))/directories/only_direct_children をSQL条件へ展開
+	- query_mode: LIKE(ESCAPE対応) / GLOB
+	- sort_by: name/path/created/modified/size/collected/random（randomは取得後shuffle）
+
+収集(collector)
+- source/image_collector/main_collector.py の CollectorProcess
+	- SettingDB(dirs/{name}.db) から parent_folders/ignore_folders と kv(deleteflag等) を読む
+	- ImageIndexer(data/{name}.db) を作り、ignore_folders を exclude として反映
+	- WatchFolder(watchdog) で親フォルダを監視し、DBWorkerスレッドで update/remove/rescan/cleanup/ignore を直列実行
+	- SettingWatcher が設定DBファイル変更を監視し、親/ignore/deleteflag の変化をSignalで通知する
+
+IPC(ZMQ)
+- collector は ProgressAggregator から viewer 宛に通知する
+	- topic: progress/maximum/update/folderchanged 等（tableはdb名、viewer側は '*' または現在db名のみ受理）
+- viewer(MainWindow) は Role.VIEWER の subscriber を持ち、topicに応じて search(force)/UI更新を Qt.QueuedConnection で行う。
+
+共通ユーティリティ（重複実装しない）
+- source/common/funcs.py
+	- normalize_path（'\\'→'/' へ統一）
+	- data_path/config_path（platformdirs、ディレクトリ作成込み）
+	- get_data_db/get_setting_db/get_*_file_names
+	- uipx（DPIスケール）/native_sort
+- source/common/helpers.py
+	- call0/call_int0/to_int/try_json_loads/try_call0/widget_prop_bool
+- source/common/errors.py
+	- show_warning/raise_error（握りつぶさず stderr+logger へ寄せる）
+- source/common/hashes.py
+	- fast_sig_hash（先頭/中央/末尾をblake3で署名）/full_hash
+- source/common/jsons.py
+	- read_json_file/write_json_file
+- source/common/signal.py
+	- Signal（軽量なconnect/emit）
+- source/common/profiling.py
+	- logger/profiler（@profiler.profile を多用。デバッグON/OFFは環境変数禁止、logger.debugに寄せる）
+
+テスト
+- tests は source と同じ階層構造を維持し、ファイル名は test_<source_file>.py。
+- conftest.py に最小の qtbot fixture がある（QApplicationを作り、addWidgetでshow/processEvents）。
+- actions内部は bridge をimport禁止（ASTで検査）。
+- compileテストがあるため、構文エラーはまずここで落ちる。
+
 方針
 - source/actions は「コマンド定義・実行」「メニュー構築」「キー/マウス等のバインディング」を担当する。
 - source/actions/bridge.py は外部向けAPI専用。source/actions 配下の内部モジュールから bridge を import しない。
@@ -23,9 +94,7 @@ JustifiedWidgetのaction移行
 - JustifiedVirtualScrollWidget に「コマンドからしか呼ばれない薄いラッパー」を置かず、矩形選択/ドラッグ/コンテキストメニュー等の操作は source/image_viewer/commands 側で実装する。
 - Drag/Drop系コマンドは GraphicsView と同様に Kit.DragMenuBase へ分離し、通常メニュー(Kit.MenuBase)のコマンドと混在させない。
 - 引数はコマンド側でCommandMeta.paramsとして宣言されたものだけが実行時に渡される（未宣言のargsは捨てられる）。
-- Drag/Drop系はサブコマンドIDをRegistryへ登録せず、baseコマンド1つを呼び、ctx.extras.phase=start|move|end|enter|leave|drop で callbacks をdispatchする。
-- JustifiedViewのdropは Copy/Move を別コマンドに分割（jv.drop_files_copy / jv.drop_files_move）。重複時挙動は args.on_conflict = overwrite|rename|skip|confirm で指定する。
-- 引数だけが違う variants は冗長なラッパー関数を作らず、宣言側で lambda で固定値を渡して実装する。
+- Drag/Dropは「単一のdropコマンド + ctx.extras でphase等を渡す」方式を基本にし、具体IDや引数値の暫定案は .temp/temporary_memo.txt に退避する。
 - MenuBase の内部状態名（例: _items）と同名のメソッド/属性をサブクラスで定義しない。
 - JustifiedViewのdrop_acceptor判定は source/os/drop.py の MimeDataParser.can_accept に統一する（accept時は通信なし、parse/ダウンロードはdrop時のみ）。
 - DROPの許可は drop_acceptor のみで制御し、drop_acceptor が登録されていないWidgetはファイルDROPを含めて一切 accept しない。
@@ -78,4 +147,4 @@ JustifiedWidgetのaction移行
 - try/except を使う場合でも、少なくとも logger へ残す、または source/common/errors.py の show_warning / raise_error を使って通知・記録する。
 
 プロセス排他
-- source/common/mutex.py の SafeProcessLock は lock ファイルに pid+create_time を保存し、PID 再利用や psutil の取得失敗での誤判定を避ける。
+- SafeProcessLock は lock に pid+create_time を保存し、PID再利用の誤判定を避ける。

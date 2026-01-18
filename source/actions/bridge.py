@@ -332,14 +332,26 @@ class MenuSpec:
 class Menu:
     @staticmethod
     def _normalize_menu_items(items) -> list[str]:
+        from .command.core import CommandMeta
+
         if items is None:
             return []
         if isinstance(items, str):
             s = items.strip()
             return [s] if s else []
         if isinstance(items, (list, tuple)):
-            return [str(x) for x in items if x]
-        raise TypeError(f"items must be str or list[str], got: {type(items).__name__}")
+            out = []
+            for x in items:
+                if x is None:
+                    continue
+                if isinstance(x, CommandMeta):
+                    out.append(x)
+                    continue
+                s = str(x).strip()
+                if s:
+                    out.append(s)
+            return out
+        raise TypeError(f"items must be str or list[str|CommandMeta], got: {type(items).__name__}")
 
     @staticmethod
     def session(

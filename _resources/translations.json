@@ -1,4 +1,28 @@
 {
+  "open if folder": {
+    "en": "open if folder"
+  },
+  "File View Menu": {
+    "en": "File View Menu"
+  },
+  "Folder Tree Menu": {
+    "en": "Folder Tree Menu"
+  },
+  "FolderTree": {
+    "en": "FolderTree"
+  },
+  "Graphics View Menu": {
+    "en": "Graphics View Menu"
+  },
+  "Key Binding Window": {
+    "en": "Key Binding Window"
+  },
+  "Mouse Binding Window": {
+    "en": "Mouse Binding Window"
+  },
+  "Reload Tree": {
+    "en": "Reload Tree"
+  },
   "Current": {
     "en": "Current"
   },

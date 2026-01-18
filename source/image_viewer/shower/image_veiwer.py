@@ -97,6 +97,33 @@ class ZoomPanGraphicsView(QtWidgets.QGraphicsView, Kit.UIMixin):
     def _set_scale(self, factor: float):
         self.scale(factor, factor)
 
+    def zoom_at(self, factor: float, pos: QtCore.QPoint | None = None):
+        if self._pix_item is None:
+            return
+        before = self._current_scale()
+        if pos is None:
+            self.scale(factor, factor)
+            self._clamp_scale()
+        else:
+            scene_pos = self.mapToScene(pos)
+            viewport_center = self.viewport().rect().center()
+            offset = pos - viewport_center
+            had_vbar = self.verticalScrollBar().maximum() > 0
+            had_hbar = self.horizontalScrollBar().maximum() > 0
+            self.scale(factor, factor)
+            self._clamp_scale()
+            scale = self._current_scale()
+            scene_offset = QtCore.QPointF(offset.x() / scale, offset.y() / scale)
+            target = scene_pos - scene_offset
+            self.centerOn(target)
+            has_vbar = self.verticalScrollBar().maximum() > 0
+            has_hbar = self.horizontalScrollBar().maximum() > 0
+            if had_vbar != has_vbar or had_hbar != has_hbar:
+                QtCore.QTimer.singleShot(0, lambda: self.centerOn(target))
+        after = self._current_scale()
+        if before != after:
+            self.zoomChanged.emit(after)
+
 
 class ImageViewerWidget(QtWidgets.QWidget):
     resized = QtCore.Signal()

@@ -6,8 +6,10 @@ from typing import List
 from PySide6 import QtCore, QtGui
 
 from ...actions.bridge import Command, Kit
+from ...qt.dialog import ConfirmDialog
 from ...os.copy import ClipboardFileTransfer
 from ...os.paste import ClipboardFilePaster, PasteDecision
+from ...os.folders import show_in_explorer as reveal_in_explorer
 
 
 
@@ -34,20 +36,11 @@ def open_file(ctx):
     QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(path))
 
 
-def show_in_explorer(ctx):
+def show_in_explorer(ctx, show_first_if_folder: bool = False):
     path = _ctx_path(ctx)
     if not path:
         return
-    info = QtCore.QFileInfo(str(path))
-    if not info.exists():
-        return
-    if sys.platform.startswith("win"):
-        QtCore.QProcess.startDetached(
-            "explorer",
-            ["/select,", QtCore.QDir.toNativeSeparators(info.absoluteFilePath())],
-        )
-    else:
-        QtCore.QProcess.startDetached("xdg-open", [info.absolutePath()])
+    reveal_in_explorer(str(path), show_first_if_folder=bool(show_first_if_folder))
 
 
 def copy_path(ctx):
@@ -83,23 +76,36 @@ def cut_files(ctx):
     ClipboardFileTransfer().set_files(paths, cut=True)
 
 
-def delete_files(ctx, permanent: bool = False):
+def _confirm_delete(ctx, paths) -> bool:
+    parent = ctx.get("widget") if hasattr(ctx, "get") else None
+    if parent is None and hasattr(ctx, "get_instance"):
+        parent = ctx.get_instance("ViewerWidget") or ctx.get_instance("JustifiedView") or ctx.get_instance("FolderTree")
+    title = "Delete"
+    head = "Move to recycle bin?"
+    shown = "\n".join(paths[:5])
+    more = f"\n+{len(paths) - 5} more" if len(paths) > 5 else ""
+    msg = f"{head}\n{len(paths)} item(s)\n{shown}{more}"
+    return ConfirmDialog.ask(msg, title=title, buttons=("Delete", "Cancel"), parent=parent) == "Delete"
+
+
+def delete_files(ctx):
     paths = _ctx_paths(ctx)
     if not paths:
         return
-    if permanent:
-        for p in paths:
-            if os.path.exists(p) and os.path.isfile(p):
-                os.remove(p)
+    if not _confirm_delete(ctx, paths):
         return
+    norm_paths = [os.path.normpath(os.path.abspath(p)) for p in paths if p]
     try:
         import send2trash
-
-        for p in paths:
+        for p in norm_paths:
             if os.path.exists(p):
-                send2trash.send2trash(p)
+                try:
+                    send2trash.send2trash(p)
+                except Exception:
+                    if os.path.isfile(p):
+                        os.remove(p)
     except ImportError:
-        for p in paths:
+        for p in norm_paths:
             if os.path.exists(p) and os.path.isfile(p):
                 os.remove(p)
 
@@ -166,6 +172,13 @@ class FileCommands(Kit.MenuBase):
         Kit.Command(
             path="file.show_explorer",
             display="Reveal in Explorer",
+            params=[
+                Kit.Param(
+                    name="show_first_if_folder",
+                    value=False,
+                    description="open if folder",
+                )
+            ],
             func=show_in_explorer,
         ),
         "-",
@@ -184,13 +197,6 @@ class FileCommands(Kit.MenuBase):
         Kit.Command(
             path="file.delete",
             display="Delete",
-            params=[
-                Kit.Param(
-                    name="permanent",
-                    value=False,
-                    description="Delete permanently (do not use recycle bin)",
-                )
-            ],
             func=delete_files,
         ),
         "-",

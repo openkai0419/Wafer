@@ -5,6 +5,7 @@ def default_mouse_bindings():
     return {
         Kit.Mouse("RIGHT", "SINGLE"): Kit.Bind({
             "*": {"id": "allmenu", "args": {}},
+            "FolderTree": {"id": "showfoldertreemenu", "args": {}},
         }),
         Kit.Mouse("LEFT", "SINGLE"): Kit.Bind({
             "JustifiedView": {"id": "jv.click_select_at_pos", "args": {}},

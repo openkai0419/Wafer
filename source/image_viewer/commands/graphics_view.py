@@ -23,30 +23,24 @@ def toggle_fit_mode(ctx):
     gv.fit_in_view(padding=0.0)
 
 
-def _zoom(gv, *, base: float, steps: int):
-    if not hasattr(gv, "_pix_item"):
-        return
+def _zoom(gv, *, base: float, steps: int, pos=None):
     if getattr(gv, "_pix_item", None) is None:
         return
     s = int(steps)
     if s <= 0:
         return
-    before = gv._current_scale()
-    gv._set_scale(float(base) ** float(s))
-    gv._clamp_scale()
-    after = gv._current_scale()
-    if before != after:
-        gv.zoomChanged.emit(after)
+    factor = float(base) ** float(s)
+    gv.zoom_at(factor, pos)
 
 
 def zoom_in(ctx, base: float = 1.1):
     gv = _get_gv(ctx)
-    _zoom(gv, base=float(base), steps=int(ctx.get("wheel_steps")))
+    _zoom(gv, base=float(base), steps=int(ctx.get("wheel_steps")), pos=ctx.pos)
 
 
 def zoom_out(ctx, base: float = 1.1):
     gv = _get_gv(ctx)
-    _zoom(gv, base=float(base) ** -1.0, steps=int(ctx.get("wheel_steps")))
+    _zoom(gv, base=float(base) ** -1.0, steps=int(ctx.get("wheel_steps")), pos=ctx.pos)
 
 
 def _pan_start(ctx):

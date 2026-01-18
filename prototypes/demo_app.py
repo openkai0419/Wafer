@@ -14,7 +14,7 @@ for clss in [*menu_demo.get_menu_classes(), *drag_demo.get_menu_classes()]:
 class DemoButton(QtWidgets.QPushButton, Kit.UIMixin):
     def __init__(self, name: str, parent=None):
         super().__init__(name, parent)
-        self.init_command_binding(name, enable_drops=True)
+        self.init_command_binding(name, enable_drops=True, use_existing_events=True)
 
     def extend_context(self, *args, **kwargs):
         return {"button": self.binding_scope()}
@@ -70,7 +70,8 @@ class MainWindow(QtWidgets.QMainWindow, Kit.UIMixin):
 
     def _setup_menu_bar(self):
         mb = self.menuBar()
-        m = Menu.use_menu("binding", self)
+        m = Menu.session(self).use("binding").build()
+        m.setTitle("Binding")
         mb.addMenu(m)
 
     def closeEvent(self, event):

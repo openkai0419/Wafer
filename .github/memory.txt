@@ -77,6 +77,17 @@ IPC(ZMQ)
 - source/actions は「コマンド定義・実行」「メニュー構築」「キー/マウス等のバインディング」を担当する。
 - source/actions/bridge.py は外部向けAPI専用。source/actions 配下の内部モジュールから bridge を import しない。
 - source/actions 配下の機能を外部から使う場合は、必ず bridge（Command/Menu/Kit/Settings/UI/Context）経由で参照・実行する。
+
+bridgeでできること
+- Kit: 外部から actions の型や基底（UIMixin, MenuBase/DragMenuBase, CommandMeta/Param, Bind, Key/Mouse）に触れるための再export。
+- Settings: バインディング/コマンドオプションの設定ファイルパスを一括configureし、seed(default)を適用して BindingManager を activate/commit する窓口。
+- UI: バインド対象Widgetの収集、キー/マウスの編集UI起動、任意インスタンスの登録（UI.register_instance）を提供。
+- Command: コマンド実行と登録（Command.execute / Command.register_commands）。実行コンテキストは不足時に Context.create_context で生成可能。
+- Menu: メニューの構築/表示（Menu.session / Menu.with_ctx / Menu.exec_menu / Menu.exec_all_roots）。MenuPlanでhide/add/insertして一時編集してからbuild/exec。
+- Context: CommandContext生成と、現在のカーソル位置から対象Widget/posを決めるコンテキストメニュー準備（Context.prepare_context_menu）。
+
+bridgeとMenuの注意点
+- bridge.Menu._normalize_menu_items は CommandMeta を str() 化せず保持して MenuMaker へ渡す。これにより、コマンドを恒久登録せずに `Kit.Command(path="inline...", func=...)` をその場のメニュー項目として安全に差し込める。
 - バインディングのデフォルト(seed)は source/actions/binding/seed.py に保持し、bridge.Settings が設定する（API名は *_bindings に統一）。
 - バインディングの永続化ファイルは起動時に自動生成しない。seedはメモリへ適用のみ行い、ファイル作成/保存は編集して保存(commit)した時だけ行う。
 - バインディングのデフォルト宣言はタプル等のspecではなく、Kit.Key(...)/Kit.Mouse(...) で Key/MouseActionKey を直接生成して渡す。
@@ -116,12 +127,14 @@ JustifiedWidgetのaction移行
 - 呼び出し時のメニュー構造は MenuMaker が解決し、MenuPlan(hide/add/insert)で一時編集できるようにする。MenuBuilder は MenuPlan のトークン列から QMenu を生成するだけに絞る。
 - insert/hide のターゲットは id または path("/") で指定でき、見つからない場合は例外で落とす。
 - MenuPlan.add/insert は Kit.Command(CommandMeta) も受け取れ、MenuHubへ登録せずその場限りのコマンドをメニューへ追加できる（バインドピッカーには出ない）。
+- bridge.Menu._normalize_menu_items は CommandMeta を str() 化せず保持して MenuMaker へ渡す。これにより、コマンドを恒久登録せずに `Kit.Command(path="inline...", func=...)` をその場のメニュー項目として安全に差し込める。
 - ユーザー操作として公開したくないコマンドは CommandMeta.hidden=True を使い、実行は可能なままメニュー/ピッカーの列挙から除外する。
 - 外部からのメニュー生成/表示は bridge.Menu に統一し、Menu.session(parent, seed_ctx=...) / Menu.with_ctx(ctx) から menu/use/all_roots を作って hide/add/insert を適用し、最後に build()/exec() する。
 
 コマンド設計
 - コマンドは主にdrag/drop系のコマンドとそれ以外の汎用コマンドのに種類があり、drag/drop系のコマンドはそれぞれのバインドでしかできない。
 - 汎用系のコマンドは可能な限り event 非依存にし、実行に必要なctx側で保障するようにすることで、キーや、メニュー、マウスにかかわらず実行できるようにする。
+- 「commands に宣言して公開するコマンド」は、基本的にどこからでも呼び出され得る前提で設計する（キー/マウス/メニュー/別Widgetからの実行）。そのため、入力デバイスや発火元Widgetに依存する値は ctx（extend_context/Context.create_context）で供給し、コマンド側は同じロジックで動作する。
 - 汎用系のコマンドに値を渡す際はctxからgetする方法、引数として渡す方法があるが、基本的に引数で受け取るのはコマンド宣言時に設定してユーザーが編集かのうなもののみに限る。
 - 汎用系のコマンドでマウスの位置やホイールのステップ、Widgetなどの汎用的に使う値はキー、メニュー、マウスにかかわらず安定して動作させるため、ctxに渡す側で必ず値を渡すように保障し、コマンド側の安全保障は不要にする（引数がなかった場合はctx側の不具合とする）
 - ctx.get_instance/pos/global_pos 等の前提が崩れた場合はコマンド側で握りつぶさず、そのまま例外で落として不具合を検出しやすくする。
@@ -129,6 +142,7 @@ JustifiedWidgetのaction移行
 - ctx.event は通常は保持しないが、Drop系のみ ctx.get_event() で取得できるように保持する（Drop処理でmimeData等が必要なため）。
 - wheel_stepsはCommandContextの標準フィールドとして常に値が入る（ホイールは正規化、非ホイールは1）。コマンド側はctx.get("wheel_steps")だけで安定取得できる。
 - extrasは動的に有無が変わる値に限定し、ある/ないでコマンド側で分岐する前提のものだけを入れる。
+- 文字列pathの意味（ファイル/フォルダ等）は ctx 側で正規化して保証する（例: FolderTreeの操作は常にフォルダパスに正規化してからコマンドへ渡す）。
 
 バインディング編集UI
 - Key/MouseのEditorは override UI/コマンドピッカー/レイアウト破棄を editors_common に集約し、個別Editorは差分のみ持つ。

@@ -1,7 +1,5 @@
 from datetime import datetime, timedelta
 from PySide6 import QtCore, QtWidgets
-
-from .commands.context_menu import FolderContextMenuBuilder
 from ..common.funcs import get_data_db, get_setting_db, get_setting_file_names, uipx
 from ..common.profiling import logger, profiler
 from ..constants import APP_NAME, default_db_name
@@ -226,8 +224,6 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.setCentralWidget(self.splitter)
 
         self.folder_view = LazyFolderTreeView()
-        self.menu_builder = FolderContextMenuBuilder(self.folder_view, self)
-        self.folder_view.set_context_menu_builder(self.menu_builder)
         self.folder_view.folder_selected.connect(self.on_folder_selected)
 
         left_panel = QtWidgets.QWidget()

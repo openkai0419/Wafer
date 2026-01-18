@@ -5,6 +5,7 @@ from ...common.funcs import normalize_path
 from ...common.profiling import logger, profiler
 from ..viewer_settings import main_setting
 from ...actions.bridge import Kit
+from ...qt.dialog import ConfirmDialog
 
 FOLDER_ICON = QtGui.QIcon.fromTheme('folder')
 USER_ROLE_PATH = QtCore.Qt.UserRole
@@ -72,10 +73,8 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
     @profiler.profile
     def _remove_from_maps_recursive(self, base_path):
         base_path = normalize_path(base_path)
-        # Remove exact path
         self.path_item_map.pop(base_path, None)
         self._remove_from_trie(base_path)
-        # Remove all descendants in maps/trie by scanning keys (bounded by current tree size)
         to_remove = [p for p in list(self.path_item_map.keys()) if p.startswith(base_path + os.sep)]
         for p in to_remove:
             self.path_item_map.pop(p, None)
@@ -83,7 +82,6 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
 
     @profiler.profile
     def _update_item_path_recursive(self, item, old_base, new_base):
-        # Update this item and all descendants; fix maps/trie accordingly
         old_item_path = normalize_path(item.data(USER_ROLE_PATH))
         if not old_item_path.startswith(old_base):
             return
@@ -103,11 +101,7 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
         old_path = normalize_path(item.data(USER_ROLE_PATH))
         parent_item = item.parent() or self.invisibleRootItem()
         parent_path = None
-        if parent_item is self.invisibleRootItem():
-            # Root item rename is treated as full path rename
-            parent_path = normalize_path(os.path.dirname(old_path))
-        else:
-            parent_path = normalize_path(parent_item.data(USER_ROLE_PATH))
+        parent_path = normalize_path(os.path.dirname(old_path)) if parent_item is self.invisibleRootItem() else normalize_path(parent_item.data(USER_ROLE_PATH))
         dest_path = normalize_path(os.path.join(parent_path, new_name))
         if dest_path == old_path:
             return True
@@ -119,7 +113,6 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
             return False
         item.setText(os.path.basename(dest_path) or dest_path)
         self._update_item_path_recursive(item, old_path, dest_path)
-        # If it was a root, update roots list
         if parent_item is self.invisibleRootItem():
             try:
                 idx = self.roots.index(old_path)
@@ -133,7 +126,6 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
         old_path = normalize_path(item.data(USER_ROLE_PATH))
         new_parent_path = normalize_path(new_parent_item.data(USER_ROLE_PATH)) if new_parent_item is not self.invisibleRootItem() else None
         if new_parent_item is self.invisibleRootItem():
-            # Moving to root level is not supported via DnD
             return False
         dest_path = normalize_path(os.path.join(new_parent_path, os.path.basename(old_path)))
         if dest_path == old_path:
@@ -144,15 +136,12 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
         except Exception as e:
             logger.debug(f'Failed to move {old_path} -> {dest_path}: {e}')
             return False
-        # Detach and reattach in model
         src_parent = item.parent() or self.invisibleRootItem()
         row = item.row()
         taken = src_parent.takeRow(row)
         if not taken:
             return False
-        # Ensure destination has children loaded
         if not new_parent_item.hasChildren() or (new_parent_item.rowCount() == 1 and not new_parent_item.child(0).data(USER_ROLE_PATH)):
-            # placeholder only, clear it
             new_parent_item.removeRows(0, new_parent_item.rowCount())
         new_parent_item.appendRow(taken)
         moved_item = new_parent_item.child(new_parent_item.rowCount() - 1)
@@ -216,7 +205,6 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
             return False
         if not data or not data.hasFormat(self._mime_type):
             return False
-        # Only allow drop directly ON an item (not between). That is, row must be -1 and parent valid.
         if row != -1 or not parent.isValid():
             return False
         parent_item = self.itemFromIndex(parent)
@@ -236,7 +224,6 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
                 return False
             if target_norm.startswith(src_norm + os.sep):
                 return False
-            # Allow dropping onto current parent; will be treated as no-op in dropMimeData
         return True
 
     @profiler.profile
@@ -245,7 +232,6 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
             return False
         if not data.hasFormat(self._mime_type):
             return False
-        # Disallow between-item drop: must be a drop ON an item, i.e., row == -1 and valid parent
         if row != -1 or not parent.isValid():
             return False
         parent_item = self.itemFromIndex(parent) if parent.isValid() else None
@@ -253,6 +239,8 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
             return False
         target_path = parent_item.data(USER_ROLE_PATH)
         if not target_path or target_path in self.excluded:
+            return False
+        if not self._confirm_move(data, target_path):
             return False
         moved_any = False
         handled_noop = False
@@ -268,7 +256,6 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
                 continue
             if normalize_path(target_path).startswith(normalize_path(src) + os.sep):
                 continue
-            # Skip if target is current parent (no-op)
             src_parent = normalize_path(os.path.dirname(normalize_path(src)))
             if src_parent == normalize_path(target_path):
                 handled_noop = True
@@ -277,6 +264,20 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
         if moved_any:
             self.sort(0, QtCore.Qt.AscendingOrder)
         return moved_any or handled_noop
+
+    def _confirm_move(self, data, target_path) -> bool:
+        try:
+            src_paths = data.data(self._mime_type).data().decode('utf-8').split('\n')
+        except Exception:
+            return False
+        src_paths = [p for p in src_paths if p]
+        if not src_paths:
+            return False
+        parent = QtWidgets.QApplication.activeWindow()
+        shown = '\n'.join(src_paths[:5])
+        more = f"\n+{len(src_paths) - 5} more" if len(src_paths) > 5 else ""
+        msg = f"Are you sure to move {len(src_paths)} folder(s) to:\n{normalize_path(target_path)}\n\n{shown}{more}"
+        return ConfirmDialog.ask(msg, title="Confirm", buttons=("Move", "Cancel"), parent=parent) == "Move"
 
     @profiler.profile
     def setData(self, index, value, role=QtCore.Qt.EditRole):
@@ -387,6 +388,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView, Kit.UIMixin):
         super().__init__()
         self.setStyleSheet('QTreeView::item:selected { background-color: rgb(59, 128, 255);}')
         self.setHeaderHidden(True)
+        self.setContextMenuPolicy(QtCore.Qt.NoContextMenu)
         self.model_ = LazyFolderTreeModel(roots, excluded)
         self.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         self.setModel(self.model_)
@@ -402,10 +404,16 @@ class LazyFolderTreeView(QtWidgets.QTreeView, Kit.UIMixin):
         self.setDefaultDropAction(QtCore.Qt.MoveAction)
         self.expanded.connect(self.on_expanded)
         self.clicked.connect(self._on_item_clicked)
+        self.init_command_binding("FolderTree", enable_drops=True, use_existing_events=True)
         self.viewport().installEventFilter(self)
-        self.collapsed.connect(self.on_collapsed)
-        self.context_menu_builder = None
-        self.init_command_binding("FolderTree", enable_drops=True)
+
+    def extend_context(self, ctx, cmd, event=None, key=None, source=None):
+        pos = ctx.get("pos") if hasattr(ctx, "get") else None
+        idx = self.indexAt(pos) if pos is not None else QtCore.QModelIndex()
+        clicked = idx.data(USER_ROLE_PATH) if idx.isValid() else None
+        selected = self.get_selected_paths()
+        path = clicked or (selected[0] if selected else None)
+        return {"path": path, "paths": selected}
 
     @profiler.profile
     def get_selected_paths(self):
@@ -447,9 +455,6 @@ class LazyFolderTreeView(QtWidgets.QTreeView, Kit.UIMixin):
     def on_expanded(self, index):
         item = self.model_.itemFromIndex(index)
         self.model_.load_children(item)
-
-    def on_collapsed(self, index):
-        pass
 
     def _on_item_clicked(self, index):
         self.folder_selected.emit()
@@ -603,17 +608,3 @@ class LazyFolderTreeView(QtWidgets.QTreeView, Kit.UIMixin):
                     self.clearSelection()
                     self.folder_selected.emit()
         return super().eventFilter(source, event)
-
-    @profiler.profile
-    def set_context_menu_builder(self, builder):
-        self.context_menu_builder = builder
-
-    def contextMenuEvent(self, event):
-        index = self.indexAt(event.pos())
-        self.folder_selected.emit()
-        if not index.isValid():
-            return
-        path = index.data(USER_ROLE_PATH)
-        if self.context_menu_builder:
-            menu = self.context_menu_builder.build_menu(path)
-            menu.exec(event.globalPos())

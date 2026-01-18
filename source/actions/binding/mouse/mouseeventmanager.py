@@ -471,7 +471,7 @@ class MouseEventManager:
 
 class MouseEventDispatcher(QtCore.QObject):
 
-    def __init__(self, target_widget, mouse_event_manager, enable_drag=True):
+    def __init__(self, target_widget, mouse_event_manager, enable_drag=True, use_existing_events: bool | None = None):
         super().__init__(target_widget)
         self._manager = mouse_event_manager
         self._target = target_widget
@@ -479,6 +479,7 @@ class MouseEventDispatcher(QtCore.QObject):
         self._watch_target_ids = {id(w) for w in self._watch_targets}
         self._state = MouseStateManager.instance()
         self._enable_drag = enable_drag
+        self._use_existing_events = use_existing_events
         if enable_drag:
             for w in self._watch_targets:
                 try:
@@ -863,19 +864,32 @@ class MouseEventDispatcher(QtCore.QObject):
                 self._handle_double_click(event)
             elif event.type() == QtCore.QEvent.MouseButtonRelease:
                 self._handle_mouse_release(event)
+            if self._use_existing_events is not None:
+                return not self._use_existing_events
         elif isinstance(event, QtGui.QWheelEvent):
-            if self._handle_wheel(event):
+            handled = self._handle_wheel(event)
+            if self._use_existing_events is not None:
+                return not self._use_existing_events
+            if handled:
                 return True
         elif event.type() == QtCore.QEvent.DragEnter:
             self._handle_drag_enter(event)
+            if self._use_existing_events is not None:
+                return not self._use_existing_events
             return True
         elif event.type() == QtCore.QEvent.DragMove:
             self._handle_drag_move(event)
+            if self._use_existing_events is not None:
+                return not self._use_existing_events
             return True
         elif event.type() == QtCore.QEvent.DragLeave:
             self._handle_drag_leave(event)
+            if self._use_existing_events is not None:
+                return not self._use_existing_events
             return True
         elif event.type() == QtCore.QEvent.Drop:
             self._handle_drop(event)
+            if self._use_existing_events is not None:
+                return not self._use_existing_events
             return True
         return super().eventFilter(watched, event)

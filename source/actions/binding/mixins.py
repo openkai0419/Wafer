@@ -13,14 +13,14 @@ from .manager import BindingManager
 
 
 class CommandBindingMixin:
-    def init_command_binding(self, name: str, enable_drops: bool = False):
+    def init_command_binding(self, name: str, enable_drops: bool = False, use_existing_events: bool = False):
         if not name:
             raise ValueError("name is required")
         self.name = name
         self._registry = CommandRegistry()
         self._mouse_manager = MouseEventManager()
         self._mouse_manager.set_registry(self._registry)
-        self._mouse_dispatcher = MouseEventDispatcher(self, self._mouse_manager, enable_drag=enable_drops)
+        self._mouse_dispatcher = MouseEventDispatcher(self, self._mouse_manager, enable_drag=enable_drops, use_existing_events=use_existing_events)
         self._mouse_bindings: Dict[MouseActionKey, CommandPayload] = {}
         self._store = MouseBindingStore()
         self._shortcut_manager = ShortcutManager()

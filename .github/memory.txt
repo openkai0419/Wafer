@@ -150,6 +150,7 @@ JustifiedWidgetのaction移行
 - CommandOptionsDialogの数値入力(QSpinBox/QDoubleSpinBox)は、既定値の桁からsingleStep/decimalsを自動推定して自然な調整単位にする。
 - MouseBindingsのカテゴリメニューは scope="*" の場合 widget_scope=None で検索し、target_widgets を持つコマンドは一致条件が満たせず候補から除外される。
 - "." は単なるネームスペースで特別扱いしない。
+- バインディング保存はデフォルトとの差分を保存し、デフォルト削除は scopes の値を null として保存する。
 
 デバッグ出力
 - 環境変数などによるデバッグON/OFF切替は禁止。

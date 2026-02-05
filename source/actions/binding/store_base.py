@@ -67,24 +67,108 @@ class BindingStoreBase(Generic[K]):
         w = str(widget) if widget else "*"
         return d.get(w) or d.get("*")
 
-    def to_serializable(self) -> List[Dict[str, Any]]:
-        raise NotImplementedError
+    def _seed_specs(self) -> Any | None:
+        return None
 
-    def load_serializable(self, data: List[Dict[str, Any]]) -> None:
-        raise NotImplementedError
+    def _seed_data(self) -> Dict[K, Dict[str, CommandPayload]]:
+        specs = self._seed_specs()
+        if specs is None:
+            return {}
+        return self.normalize_specs(specs)
+
+    def _payload_equal(self, a: CommandPayload, b: CommandPayload) -> bool:
+        return a.id == b.id and (a.args or {}) == (b.args or {})
+
+    def _diff_data(self, cur: Dict[K, Dict[str, CommandPayload]], seed: Dict[K, Dict[str, CommandPayload]]) -> Dict[K, Dict[str, CommandPayload | None]]:
+        out: Dict[K, Dict[str, CommandPayload | None]] = {}
+        keys = set(seed.keys()) | set(cur.keys())
+        for k in keys:
+            cur_scopes = cur.get(k, {})
+            seed_scopes = seed.get(k, {})
+            changes: Dict[str, CommandPayload | None] = {}
+            for sc, c in cur_scopes.items():
+                s = seed_scopes.get(sc)
+                if s is None:
+                    changes[sc] = c
+                elif not self._payload_equal(c, s):
+                    changes[sc] = c
+            for sc in seed_scopes.keys():
+                if sc not in cur_scopes:
+                    changes[sc] = None
+            if changes:
+                out[k] = changes
+        return out
+
+    def _apply_diff(self, base: Dict[K, Dict[str, CommandPayload]], diff: Dict[K, Dict[str, CommandPayload | None]]) -> Dict[K, Dict[str, CommandPayload]]:
+        for k, scopes in diff.items():
+            if k not in base:
+                base[k] = {}
+            dst = base.get(k, {})
+            for sc, payload in scopes.items():
+                if payload is None:
+                    dst.pop(sc, None)
+                else:
+                    dst[sc] = payload
+            if dst:
+                base[k] = dst
+            else:
+                base.pop(k, None)
+        return base
+
+    def _to_items(self, data: Dict[K, Dict[str, CommandPayload | None]]) -> List[Dict[str, Any]]:
+        r: List[Dict[str, Any]] = []
+        for k, scopes in data.items():
+            r.append({"key": k.to_dict(), "scopes": {sc: (p.to_dict() if isinstance(p, CommandPayload) else None) for sc, p in scopes.items()}})
+        return r
+
+    def _from_items(self, data: List[Dict[str, Any]]) -> Dict[K, Dict[str, CommandPayload | None]]:
+        nm: Dict[K, Dict[str, CommandPayload | None]] = {}
+        for e in data:
+            if not isinstance(e, dict):
+                continue
+            key_obj = e.get("key")
+            scopes = e.get("scopes")
+            if not isinstance(scopes, dict):
+                continue
+            try:
+                key = self.key_type.from_dict(key_obj)
+            except Exception:
+                continue
+            dst: Dict[str, CommandPayload | None] = {}
+            for sc, obj in scopes.items():
+                if obj is None:
+                    dst[str(sc)] = None
+                    continue
+                try:
+                    dst[str(sc)] = CommandPayload.from_any(obj)
+                except Exception:
+                    continue
+            if dst:
+                nm[key] = dst
+        return nm
 
     def save_to_file(self, path: str) -> None:
         p = Path(path)
-        ok = write_json_file(p, self.to_serializable(), indent=2, ensure_ascii=False)
+        seed = self._seed_data()
+        diff = self._diff_data(self._data, seed)
+        payload = {"mode": "diff", "items": self._to_items(diff)}
+        ok = write_json_file(p, payload, indent=2, ensure_ascii=False)
         if not ok:
             show_warning(None, f"{type(self).__name__}.save_to_file failed: {path}")
 
     def load_from_file(self, path: str) -> bool:
         data = read_json_file(Path(path), None)
-        if not isinstance(data, list):
+        if not isinstance(data, dict):
+            return False
+        if data.get("mode") != "diff":
+            return False
+        items = data.get("items")
+        if not isinstance(items, list):
             return False
         try:
-            self.load_serializable(data)
+            seed = self._seed_data()
+            diff = self._from_items(items)
+            self._data = self._apply_diff(seed, diff)
             return True
         except Exception as e:
             show_warning(None, f"{type(self).__name__}.load_from_file failed: {path}", exc=e)

@@ -5,7 +5,6 @@ def default_mouse_bindings():
     return {
         Kit.Mouse("RIGHT", "SINGLE"): Kit.Bind({
             "*": {"id": "allmenu", "args": {}},
-            "FolderTree": {"id": "showfoldertreemenu", "args": {}},
         }),
         Kit.Mouse("LEFT", "SINGLE"): Kit.Bind({
             "JustifiedView": {"id": "jv.click_select_at_pos", "args": {}},
@@ -54,10 +53,10 @@ def default_mouse_bindings():
             "GraphicsView": {"id": "gv.pan", "args": {}},
         }),
         Kit.Mouse("NONE", "DROP"): Kit.Bind({
-            "JustifiedView": {"id": "jv.drop_files_move", "args": {"on_conflict": "ask"}},
+            "JustifiedView": {"id": "jv.drop_files_copy", "args": {"on_conflict": "ask"}},
         }),
         Kit.Mouse("NONE", "DROP", modifiers=("SHIFT",)): Kit.Bind({
-            "JustifiedView": {"id": "jv.drop_files_copy", "args": {"on_conflict": "ask"}},
+            "JustifiedView": {"id": "jv.drop_files_move", "args": {"on_conflict": "ask"}},
         }),
     }
 

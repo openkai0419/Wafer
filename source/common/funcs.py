@@ -123,4 +123,6 @@ def human_size(size: int) -> str:
     return f"{s:.1f} EB"
 
 def human_size_string(size: int) -> str:
+    if size is None:
+        return None
     return f"{human_size(size)} ({size:,} bytes)"

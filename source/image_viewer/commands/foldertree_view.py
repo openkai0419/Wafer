@@ -90,19 +90,10 @@ def ignore_folder(ctx):
         tree.add_excluded(p)
     root.setting_db.add_ignore_folder(p)
 
-
-def reload_tree(ctx):
-    tree = _ctx_tree(ctx)
-    if tree is None:
-        return
-    if hasattr(tree, "reload_tree"):
-        tree.reload_tree()
-
-
 def show_context_menu(ctx):
     tree = _ctx_tree(ctx)
     if tree is None:
-        return
+        raise RuntimeError("FolderTree not found")
     path = _ctx_dir_path(ctx)
     if not path:
         return
@@ -113,10 +104,20 @@ def show_context_menu(ctx):
             pass
     items = [
         ":Path",
-        "file.copy_path",
         "file.show_explorer",
         "-",
+        "file.copy_path",
+        "file.copy_path_list",
+        "-",
+        "file.select_path",
+        "-",
+        "-",
+        "file.cut",
+        "file.copy",
+        "file.delete",
+        "-",
         "file.paste",
+        "file.new_folder",
         "-",
     ]
     if hasattr(tree, "roots") and path in tree.roots:
@@ -131,12 +132,20 @@ def show_context_menu(ctx):
     s.menu(items).exec()
 
 
+
+def reload_tree(ctx):
+    tree = _ctx_tree(ctx)
+    if tree is None:
+        return
+    if hasattr(tree, "reload_tree"):
+        tree.reload_tree()
+
+
 class FolderTreeCommands(Kit.MenuBase):
     prefix = "FolderTree"
 
     commands = [
         ":FolderTree",
-        Kit.Command(path="ft.menu", display="Context Menu", func=show_context_menu, hidden=True),
         "-",
         Kit.Command(path="ft.reload_tree", display="Reload Tree", func=reload_tree),
     ]

@@ -79,6 +79,7 @@ class FolderListWidget(QWidget, TranslatorMixin):
 
     def get_folder_list(self):
         return [self.folder_list.item(i).text() for i in range(self.folder_list.count())]
+    
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     window = FolderListWidget()

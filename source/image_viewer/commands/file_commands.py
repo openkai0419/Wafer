@@ -6,9 +6,9 @@ from typing import List
 from PySide6 import QtCore, QtGui
 
 from ...actions.bridge import Command, Kit
-from ...qt.dialog import ConfirmDialog
+from ...qt.dialog import ConfirmDialog, ThumbnailConfirmDialog
 from ...os.copy import ClipboardFileTransfer
-from ...os.paste import ClipboardFilePaster, PasteDecision
+from ...os.save import paste_clipboard_files, unique_path, get_os_new_folder_name
 from ...os.folders import show_in_explorer as reveal_in_explorer
 
 
@@ -76,16 +76,45 @@ def cut_files(ctx):
     ClipboardFileTransfer().set_files(paths, cut=True)
 
 
+def _count_files_in_path(path: str) -> int:
+    if os.path.isfile(path):
+        return 1
+    if not os.path.isdir(path):
+        return 0
+    count = 0
+    for _, _, files in os.walk(path):
+        count += len(files)
+    return count
+
+
 def _confirm_delete(ctx, paths) -> bool:
     parent = ctx.get("widget") if hasattr(ctx, "get") else None
     if parent is None and hasattr(ctx, "get_instance"):
         parent = ctx.get_instance("ViewerWidget") or ctx.get_instance("JustifiedView") or ctx.get_instance("FolderTree")
     title = "Delete"
-    head = "Move to recycle bin?"
+    head = "Are you sure to delete"
+
+    total_files = 0
+    dir_count = 0
+    for p in paths:
+        if os.path.isdir(p):
+            dir_count += 1
+            total_files += _count_files_in_path(p)
+        elif os.path.isfile(p):
+            total_files += 1
+
     shown = "\n".join(paths[:5])
     more = f"\n+{len(paths) - 5} more" if len(paths) > 5 else ""
-    msg = f"{head}\n{len(paths)} item(s)\n{shown}{more}"
-    return ConfirmDialog.ask(msg, title=title, buttons=("Delete", "Cancel"), parent=parent) == "Delete"
+    if len(paths) == 1:
+        i = "item"
+    else:
+        i = "items"
+    if dir_count > 0:
+        msg = f"{head} {len(paths)} {i} ({total_files} files) ?\n{shown}{more}"
+    else:
+        msg = f"{head} {len(paths)} {i} ?\n{shown}{more}"
+    thumbs = [p for p in paths if p][:4]
+    return ThumbnailConfirmDialog.ask(msg, title=title, buttons=("Delete", "Cancel"), parent=parent, paths=thumbs) == "Delete"
 
 
 def delete_files(ctx):
@@ -116,39 +145,8 @@ def paste_here(ctx, overwrite_mode: str = "skip"):
         return
     a = os.path.abspath(path)
     d = a if os.path.isdir(a) else os.path.dirname(a)
-    paster = ClipboardFilePaster()
-    plans = paster.build_paste_plan(d)
-    from ...qt.file_conflict_resolver import make_session
-    from ...os.file_transfer_utils import check_copy_conflict
-
-    parent = ctx.get_instance("ViewerWidget") or ctx.get_instance("JustifiedView")
-
-    conflict_count = sum(1 for p in plans if getattr(p, "conflict", False))
-    session = make_session(op=("move" if (plans and getattr(plans[0], "action", "copy") == "cut") else "copy"), parent=parent, item_count=conflict_count)
-    decisions = {}
-    for plan in plans:
-        if not getattr(plan, "conflict", False):
-            decisions[plan.index] = PasteDecision(mode="overwrite")
-            continue
-        srcp = getattr(plan, "src", None)
-        dstp = getattr(plan, "dst_default", None)
-        if srcp is not None and dstp is not None:
-            c = check_copy_conflict(srcp, dstp)
-            if c in ("same_path", "subpath"):
-                if session.resolve_copy_conflict(src_path=str(srcp), dst_path=str(dstp), name=str(getattr(srcp, "name", "") or "")):
-                    decisions[plan.index] = PasteDecision(mode="skip")
-                    continue
-        mode = overwrite_mode
-        if mode == "ask":
-            mode = session.resolve_exists(
-                src_path=str(getattr(plan, "src", "") or ""),
-                dst_path=str(getattr(plan, "dst_default", "") or ""),
-                name=str(getattr(getattr(plan, "src", None), "name", "") or ""),
-                src_bytes=None,
-                default_mode="ask",
-            )
-        decisions[plan.index] = PasteDecision(mode=mode if mode in ("overwrite", "rename", "skip") else "skip")
-    paster.execute_paste(plans, decisions)
+    parent = ctx.get_instance("ViewerWidget") or ctx.get_instance("JustifiedView") or ctx.get_instance("FolderTree")
+    paste_clipboard_files(d, overwrite_mode=overwrite_mode, parent=parent)
 
 def _get_directory_from_path(path):
     abs_path = os.path.abspath(path)
@@ -162,6 +160,18 @@ def select_path(ctx):
     folder = _get_directory_from_path(str(path))
     ftree = ctx.get_instance("FolderTree")
     ftree.expand_and_select_path(folder)
+
+
+def make_new_folder_here(ctx, folder_name: str | None = None) -> str | None:
+    path = _ctx_path(ctx)
+    if not path:
+        return None
+    parent_dir = _get_directory_from_path(path)
+    name = folder_name or get_os_new_folder_name()
+    new_folder = unique_path(parent_dir, name)
+    os.makedirs(new_folder, exist_ok=True)
+    return new_folder
+
 
 class FileCommands(Kit.MenuBase):
     prefix = "File"
@@ -185,7 +195,7 @@ class FileCommands(Kit.MenuBase):
         Kit.Command(path="file.copy_path", display="Copy Path", func=copy_path),
         Kit.Command(
             path="file.copy_path_list",
-            display="Copy Path List",
+            display="Copy Paths",
             func=copy_path_list,
         ),
         Kit.Command(path="file.copy_filename", display="Copy FileName", func=copy_filename),
@@ -212,5 +222,17 @@ class FileCommands(Kit.MenuBase):
                 )
             ],
             func=paste_here,
+        ),
+                Kit.Command(
+            path="file.new_folder",
+            display="New Folder here",
+            params=[
+                Kit.Param(
+                    name="folder_name",
+                    value="",
+                    description="Folder name (empty for default)",
+                )
+            ],
+            func=make_new_folder_here,
         ),
     ]

@@ -9,7 +9,7 @@ from .binding.manager import BindingManager
 from .binding.seed import get_seed_key_bindings, get_seed_mouse_bindings, set_seed_bindings
 from .command.core import CommandRegistry
 from .command.state import CommandOptionStore
-from source.common.errors import raise_error
+from source.common.errors import raise_error, show_warning
 
 
 class Kit:
@@ -406,6 +406,10 @@ class Context:
         while target and not hasattr(target, "binding_scope"):
             target = target.parentWidget()
         if not target:
+            if seed is not None:
+                w = seed.get("widget")
+                if w is not None:
+                    show_warning(None, f"context menu target has no binding_scope: {type(w).__name__}")
             return None, None
         return target, pos
 
@@ -433,3 +437,14 @@ class Context:
             extras=extras,
             seed=seed,
         )
+
+    @staticmethod
+    def menu_ctx(widget=None, scope: str | None = None, *, pos=None, global_pos=None, extras: dict | None = None, seed=None):
+        ctx = Context.create_context(widget, scope, source="menu", extras=extras, seed=seed)
+        if pos is not None:
+            ctx.pos = pos
+        if global_pos is not None:
+            ctx.global_pos = global_pos
+        if widget is not None:
+            ctx.widget = widget
+        return ctx

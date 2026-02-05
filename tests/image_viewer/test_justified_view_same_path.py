@@ -1,6 +1,6 @@
 import os
 
-from source.os.drop import check_copy_conflict
+from source.os.save import check_copy_conflict
 
 
 def test_check_copy_conflict_same_path(tmp_path):

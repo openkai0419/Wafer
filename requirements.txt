@@ -15,3 +15,6 @@ shiboken6==6.9.1
 watchdog==6.0.0
 blake3==1.0.5
 Send2Trash>=1.8.0
+pytest==9.0.2
+pytest-qt==4.5.0
+Pygments==2.19.2

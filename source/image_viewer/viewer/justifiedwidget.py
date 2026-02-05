@@ -218,6 +218,9 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget, Kit.UIMixin):
     def _clear_all_widgets(self):
         for i in list(self.widgets.keys()):
             self._recycle_widget(i)
+        for runnable in self.active_threads.values():
+            if hasattr(runnable, 'cancel'):
+                runnable.cancel()
         self.widgets.clear()
         self.visible_indices.clear()
         self.rects = []

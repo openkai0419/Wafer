@@ -1,4 +1,13 @@
 {
+  "New Folder here": {
+    "en": "New Folder here"
+  },
+  "Copy Paths": {
+    "en": "Copy Paths"
+  },
+  "Open Binding Files in Explorer": {
+    "en": "Open Binding Files in Explorer"
+  },
   "open if folder": {
     "en": "open if folder"
   },

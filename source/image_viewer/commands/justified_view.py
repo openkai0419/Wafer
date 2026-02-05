@@ -1,13 +1,17 @@
 import os
+from pathlib import Path
 
 from PySide6 import QtCore, QtGui
 
 from ...actions.bridge import Kit
 from ...common.funcs import uipx
+from ...os.dragparser import MimeDataParser
+from ...os.save import drop_files_with_ui
 from ...qt.pixmap import PixmapFactory
 
 
-INTERNAL_MIME_FLAG = b"application/x-jvscroll-internal"
+INTERNAL_MIME_FLAG = b"application/x-jvscroll-internal" + f"{os.getpid()}".encode()
+
 
 class JustifiedViewCommands(Kit.MenuBase):
     prefix = "JustifiedView"
@@ -452,8 +456,6 @@ class JustifiedViewDropCommands(Kit.DragMenuBase):
         mime = event.mimeData() if hasattr(event, "mimeData") else None
         if mime is None:
             return False
-        from ...os.drop import MimeDataParser
-
         return MimeDataParser().can_accept(mime, deny_formats=(INTERNAL_MIME_FLAG.decode(),))
 
     @staticmethod
@@ -465,8 +467,6 @@ class JustifiedViewDropCommands(Kit.DragMenuBase):
             return []
         if mime.hasFormat(INTERNAL_MIME_FLAG.decode()):
             return []
-        from ...os.drop import MimeDataParser
-
         return MimeDataParser().parse(mime)
 
     @staticmethod
@@ -552,56 +552,17 @@ class JustifiedViewDropCommands(Kit.DragMenuBase):
         if not dst_dir:
             return
         src_items = JustifiedViewDropCommands._extract_items(event)
-
         if not src_items:
             return
-        from ...os.drop import FileSaver
-        from ...os.file_transfer_utils import unique_path
-        from ...qt.file_conflict_resolver import make_session
-        from ...os.file_transfer_utils import safe_remove
 
         if op not in ("copy", "move"):
             raise ValueError(f"Invalid op: {op}")
         if on_conflict not in ("overwrite", "rename", "skip", "ask"):
             raise ValueError(f"Invalid on_conflict: {on_conflict}")
 
-        saver = FileSaver()
-        session = make_session(op=op, parent=view, item_count=len(src_items))
-        for item in src_items:
-            name = str(getattr(item, "name", "") or "")
-            if not name:
-                continue
-            dst_path = os.path.join(dst_dir, name)
-
-            if getattr(item, "is_local_file", lambda: False)():
-                src0 = str(getattr(item, "source", "") or "")
-                if src0 and session.resolve_copy_conflict(src_path=src0, dst_path=dst_path, name=name):
-                    continue
-            if os.path.exists(dst_path):
-                src_path_for_ui = str(item.source) if getattr(item, "is_local_file", lambda: False)() else None
-                src_bytes_for_ui = item.source if getattr(item, "is_binary", False) and isinstance(getattr(item, "source", None), (bytes, bytearray)) else None
-                mode = session.resolve_exists(
-                    src_path=src_path_for_ui,
-                    dst_path=dst_path,
-                    name=name,
-                    src_bytes=src_bytes_for_ui,
-                    default_mode=on_conflict,
-                )
-                if mode == "skip":
-                    continue
-                if mode == "rename":
-                    dst_path = unique_path(dst_dir, name)
-                elif mode == "overwrite":
-                    safe_remove(dst_path)
-
-            if getattr(item, "is_local_file", lambda: False)():
-                src_abs = os.path.abspath(str(item.source))
-                if not os.path.exists(src_abs):
-                    continue
-                item.source = src_abs
-            saver.save(item, dst_path, move=(op == "move"))
+        drop_files_with_ui(src_items, dst_dir, op, overwrite_mode=on_conflict, parent=view)
         JustifiedViewDropCommands._preview_clear(view)
-        
+
     commands = [
         Kit.Command(
             path="jv.drop_files_copy",

@@ -107,6 +107,40 @@ class ConfirmDialog(BaseDialog):
         dialog.exec()
         return dialog.result_text
 
+class ThumbnailConfirmDialog(BaseDialog):
+
+    def __init__(self, message, *, paths=None, title='Confirm', buttons=('OK', 'Cancel'), parent=None):
+        super().__init__(message, title, buttons, parent=parent)
+        ps = [str(p) for p in (paths or []) if p]
+        if not ps:
+            return
+        size = uipx(256)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        for p in ps:
+            col = QVBoxLayout()
+            thumb = QLabel()
+            thumb.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            thumb.setScaledContents(False)
+            _set_thumb(thumb, p, None, size)
+            _, name = _split_path(p, '')
+            label = QLabel(name)
+            label.setAlignment(Qt.AlignHCenter)
+            label.setWordWrap(False)
+            col.addWidget(thumb, alignment=Qt.AlignHCenter)
+            col.addWidget(label, alignment=Qt.AlignHCenter)
+            row.addLayout(col)
+        row.addStretch(1)
+        self.content_layout.addStretch(1)
+        self.content_layout.addLayout(row)
+        self.content_layout.addStretch(1)
+
+    @staticmethod
+    def ask(message, *, paths=None, title='Confirm', buttons=('OK', 'Cancel'), parent=None):
+        dialog = ThumbnailConfirmDialog(message, paths=paths, title=title, buttons=buttons, parent=parent)
+        dialog.exec()
+        return dialog.result_text
+
 class InputDialog(BaseDialog, TranslatorMixin):
 
     def __init__(self, message, title='Input', buttons=('OK', 'Cancel'), parent=None):

@@ -2,7 +2,7 @@ from PySide6 import QtWidgets
 
 from source.actions.bridge import Menu
 from source.actions.command.core import CommandRegistry
-from source.image_viewer.commands.foldertree import FolderTreeCommands
+from source.image_viewer.commands.foldertree_view import FolderTreeCommands
 
 
 def test_foldertree_commands_register_paths(qtbot):

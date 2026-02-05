@@ -36,7 +36,7 @@ class _Ctx:
 def test_delete_files_cancel_does_not_delete(tmp_path, monkeypatch):
     p = tmp_path / "a.txt"
     p.write_text("x", encoding="utf-8")
-    monkeypatch.setattr(file_commands.ConfirmDialog, "ask", lambda *a, **k: "Cancel")
+    monkeypatch.setattr(file_commands.ThumbnailConfirmDialog, "ask", lambda *a, **k: "Cancel")
     file_commands.delete_files(_Ctx(path=str(p)))
     assert p.exists()
 
@@ -44,7 +44,7 @@ def test_delete_files_cancel_does_not_delete(tmp_path, monkeypatch):
 def test_delete_files_send2trash_failure_falls_back(tmp_path, monkeypatch):
     p = tmp_path / "a.txt"
     p.write_text("x", encoding="utf-8")
-    monkeypatch.setattr(file_commands.ConfirmDialog, "ask", lambda *a, **k: "Delete")
+    monkeypatch.setattr(file_commands.ThumbnailConfirmDialog, "ask", lambda *a, **k: "Delete")
     dummy = SimpleNamespace(send2trash=lambda *_a, **_k: (_ for _ in ()).throw(OSError("boom")))
     monkeypatch.setitem(sys.modules, "send2trash", dummy)
     file_commands.delete_files(_Ctx(path=str(p)))
@@ -53,3 +53,35 @@ def test_delete_files_send2trash_failure_falls_back(tmp_path, monkeypatch):
 
 def test_show_in_explorer_ignores_missing_path():
     file_commands.show_in_explorer(_Ctx(path="Z:/__missing__"))
+
+
+def test_make_new_folder_here_creates_folder(tmp_path):
+    folder = file_commands.make_new_folder_here(_Ctx(path=str(tmp_path)))
+    assert folder is not None
+    assert (tmp_path / "New Folder").exists()
+
+
+def test_make_new_folder_here_unique_names(tmp_path):
+    (tmp_path / "New Folder").mkdir()
+    folder = file_commands.make_new_folder_here(_Ctx(path=str(tmp_path)))
+    assert folder is not None
+    assert (tmp_path / "New Folder (2)").exists()
+
+
+def test_make_new_folder_here_with_file_path(tmp_path):
+    file_path = tmp_path / "test.txt"
+    file_path.write_text("x", encoding="utf-8")
+    folder = file_commands.make_new_folder_here(_Ctx(path=str(file_path)))
+    assert folder is not None
+    assert (tmp_path / "New Folder").exists()
+
+
+def test_make_new_folder_here_custom_name(tmp_path):
+    folder = file_commands.make_new_folder_here(_Ctx(path=str(tmp_path)), folder_name="MyFolder")
+    assert folder is not None
+    assert (tmp_path / "MyFolder").exists()
+
+
+def test_make_new_folder_here_returns_none_without_path():
+    result = file_commands.make_new_folder_here(_Ctx(path=None))
+    assert result is None

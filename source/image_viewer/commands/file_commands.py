@@ -1,6 +1,7 @@
 import os
 import json
 import sys
+from pathlib import Path
 from typing import List
 
 from PySide6 import QtCore, QtGui
@@ -163,6 +164,12 @@ def select_path(ctx):
     ftree.expand_and_select_path(folder)
 
 
+def _push_overlay(ctx, text: str, level: str = "info", duration: int = 3000):
+    stack = ctx.get_instance("OverlayStack")
+    if stack is not None:
+        stack.push(text, level=level, duration=duration)
+
+
 def scroll_to_file(ctx):
     path = _ctx_path(ctx)
     if not path:
@@ -172,9 +179,13 @@ def scroll_to_file(ctx):
         return
     idx = items.index_of_path(path)
     if idx is None:
+        _push_overlay(ctx, f"File not found in view")
         return
     view = ctx.get_instance("JustifiedView")
     if view is None or not hasattr(view, "rects"):
+        return
+    if idx >= len(view.rects):
+        _push_overlay(ctx, f"File out of visible area")
         return
     view.reinstall_scroll_index(idx, animated=True)
 

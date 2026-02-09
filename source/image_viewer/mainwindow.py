@@ -21,6 +21,7 @@ from .viewer_settings import main_setting
 from .widgets.button_bar import IconButtonBar, IconButtonConfig
 from .widgets.foldertree import LazyFolderTreeView
 from .widgets.loading_overlay import OverlayLoadingIndicator
+from .widgets.overlay_stack import OverlayStack
 from .widgets.progress_bar import ThinProgressBar
 from .widgets.query_options import SingleRowOption
 from .widgets.scrollarea import AutoScrollArea
@@ -310,8 +311,11 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         sizes = main_setting.get('window/splitter', [10, 800, 10])
         if sizes:
             self.splitter.setSizes(sizes)
-        self.loading_indicator = OverlayLoadingIndicator(self.viewer)
-        self.content.layout_ready.connect(self.loading_indicator.stop)
+        self.overlay_stack = OverlayStack(self.viewer)
+        UI.register_instance("OverlayStack", self.overlay_stack)
+        self.loading_indicator = OverlayLoadingIndicator()
+        self.overlay_stack.push_persistent(self.loading_indicator, key="loading")
+        self.content.layout_ready.connect(lambda: self.overlay_stack.hide_persistent("loading"))
 
     @profiler.profile
     def add_new_folder(self):
@@ -409,6 +413,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
     @profiler.profile
     def _start_search_runnable(self, query):
         self.loading_indicator.start()
+        self.overlay_stack.show_persistent("loading")
         runnable = SearchWorkerRunnable(self.dbpath, query)
         runnable.signals.finished.connect(self.on_search_finished)
         self.current_runnable = runnable

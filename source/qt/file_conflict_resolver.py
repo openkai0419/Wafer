@@ -1,110 +1,247 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable
+from typing import Dict, Iterable, List
 
 from ..common.funcs import normalize_path
-from ..os.save import ClipboardFilePaster, PasteDecision, check_copy_conflict
-from .dialog import ConfirmDialog, FileConflictDialog, SingleFileConflictDialog
+from ..os.save import (
+    MergeConflictItem,
+    PasteCancelledError,
+    PasteDecision,
+    check_copy_conflict,
+    scan_merge_conflicts,
+)
+from .dialog import FileConflictDialog, FolderConflictDialog, SingleFileConflictDialog
 
 
-@dataclass
-class ConflictResolveSession:
-    op: str
-    parent: object | None
-    show_apply_all: bool
-    confirmed_mode: str | None = None
-    same_apply_all: bool = False
-
-    def _skip_same_path(self, *, conflict: str, src_path: str, name: str) -> bool:
-        if conflict not in ("same_path", "subpath"):
-            return False
-        if self.same_apply_all:
-            return True
-        msg = "同一パスのためスキップします。" if conflict == "same_path" else "コピー先がコピー元の中にあるためスキップします。"
-        _, apply_all = SingleFileConflictDialog.ask(
-            msg,
-            path=normalize_path(src_path),
-            name=name,
-            op=self.op,
-            show_apply_all=self.show_apply_all,
-            parent=self.parent,
-        )
-        if apply_all:
-            self.same_apply_all = True
-        return True
-
-    def resolve_copy_conflict(self, *, src_path: str, dst_path: str, name: str) -> bool:
-        conflict = check_copy_conflict(src_path, dst_path)
-        return self._skip_same_path(conflict=conflict or "", src_path=src_path, name=name)
-
-    def resolve_exists(
+class ConflictResolver:
+    def __init__(
         self,
         *,
-        src_path: str | None,
-        dst_path: str,
-        name: str,
-        src_bytes: bytes | bytearray | None,
-        default_mode: str,
-    ) -> str:
-        if default_mode in ("overwrite", "rename", "skip"):
-            return default_mode
-        if self.confirmed_mode is not None:
-            return self.confirmed_mode
+        op: str,
+        overwrite_mode: str,
+        parent: object | None,
+        folder_message: str,
+    ):
+        self._op = op
+        self._overwrite_mode = overwrite_mode
+        self._parent = parent
+        self._folder_message = folder_message
+        self._folder_apply_all: str | None = None
+        self._file_apply_all: str | None = None
+        self._same_path_apply_all: str | None = None
+        self._subpath_apply_all: bool = False
+        self._show_folder_apply_all: bool = False
+        self._show_file_apply_all: bool = False
+        self._show_same_path_apply_all: bool = False
+        self._show_subpath_apply_all: bool = False
+
+    def resolve_plans(self, plans: List) -> Dict[int, PasteDecision]:
+        folder_conflicts: List[tuple[int, object]] = []
+        file_conflicts: List[tuple[int, object]] = []
+        same_path_items: List[tuple[int, object]] = []
+        subpath_items: List[tuple[int, object]] = []
+        no_conflict: List[tuple[int, object]] = []
+
+        for p in plans:
+            src = getattr(p, "src", None)
+            dst = getattr(p, "dst_default", None)
+            idx = int(getattr(p, "index", 0) or 0)
+
+            if dst is None:
+                no_conflict.append((idx, p))
+                continue
+
+            if src is not None:
+                c = check_copy_conflict(src, dst)
+                if c == "same_path":
+                    same_path_items.append((idx, p))
+                    continue
+                if c == "subpath":
+                    subpath_items.append((idx, p))
+                    continue
+
+            if not bool(getattr(p, "conflict", False)):
+                no_conflict.append((idx, p))
+                continue
+
+            if bool(getattr(p, "is_dir", False)) and src is not None:
+                folder_conflicts.append((idx, p))
+            else:
+                file_conflicts.append((idx, p))
+
+        self._show_folder_apply_all = len(folder_conflicts) > 1
+        self._show_same_path_apply_all = len(same_path_items) > 1
+        self._show_subpath_apply_all = len(subpath_items) > 1
+        total_file_conflicts = len(file_conflicts)
+        for _, p in folder_conflicts:
+            src = getattr(p, "src", None)
+            dst = getattr(p, "dst_default", None)
+            if src and dst:
+                total_file_conflicts += len(scan_merge_conflicts(Path(src), Path(dst)))
+        self._show_file_apply_all = total_file_conflicts > 1
+
+        decisions: Dict[int, PasteDecision] = {}
+
+        for idx, p in no_conflict:
+            decisions[idx] = PasteDecision(mode="overwrite")
+
+        for idx, p in subpath_items:
+            self._notify_subpath(getattr(p, "src", None))
+            decisions[idx] = PasteDecision(mode="skip")
+
+        for idx, p in same_path_items:
+            decisions[idx] = self._ask_same_path(getattr(p, "src", None))
+
+        for idx, p in folder_conflicts:
+            src = Path(getattr(p, "src", ""))
+            dst = Path(getattr(p, "dst_default", ""))
+            dec = self._ask_folder(src, dst)
+            decisions[idx] = dec
+
+        pending_merge_files: List[tuple[int, MergeConflictItem]] = []
+        for idx, p in folder_conflicts:
+            dec = decisions.get(idx)
+            if dec and dec.mode == "merge":
+                src = Path(getattr(p, "src", ""))
+                dst = Path(getattr(p, "dst_default", ""))
+                for c in scan_merge_conflicts(src, dst):
+                    pending_merge_files.append((idx, c))
+
+        for idx, p in file_conflicts:
+            src = getattr(p, "src", None)
+            dst = Path(getattr(p, "dst_default", ""))
+            src_path = str(src) if src else ""
+            name = str(getattr(src, "name", "") or getattr(p, "name", "") or "")
+            src_bytes = None
+            if src is None:
+                item = getattr(p, "parsed_item", None)
+                if item and getattr(item, "is_binary", False):
+                    src_bytes = getattr(item, "source", None)
+            dec = self._ask_file(src_path, str(dst), name, src_bytes)
+            decisions[idx] = dec
+
+        for idx, conflict in pending_merge_files:
+            dec = self._ask_file(str(conflict.src), str(conflict.dst), conflict.src.name, None)
+            parent_dec = decisions[idx]
+            if parent_dec.merge_decisions is None:
+                parent_dec.merge_decisions = {}
+            parent_dec.merge_decisions[conflict.rel_path] = dec
+
+        return decisions
+
+    def _notify_subpath(self, src) -> None:
+        if self._subpath_apply_all:
+            return
+        name = str(getattr(src, "name", "") or "")
+        _, apply_all = SingleFileConflictDialog.ask(
+            "コピー先がコピー元の中にあるためスキップします。",
+            path=normalize_path(str(src)),
+            name=name,
+            op=self._op,
+            show_apply_all=self._show_subpath_apply_all,
+            parent=self._parent,
+        )
+        if apply_all:
+            self._subpath_apply_all = True
+
+    def _ask_same_path(self, src) -> PasteDecision:
+        if self._overwrite_mode == "rename":
+            return PasteDecision(mode="rename")
+        if self._overwrite_mode in ("overwrite", "skip"):
+            return PasteDecision(mode="skip")
+
+        if self._same_path_apply_all is not None:
+            return PasteDecision(mode=self._same_path_apply_all)
+
+        name = str(getattr(src, "name", "") or "")
+        src_path = normalize_path(str(src)) if src else ""
+        res, apply_all = FileConflictDialog.ask(
+            "同一パスです。別名で保存しますか？",
+            src_path=src_path,
+            dst_path=src_path,
+            src_name=name,
+            op=self._op,
+            show_apply_all=self._show_same_path_apply_all,
+            buttons=('別名で保存', 'スキップ', 'キャンセル'),
+            parent=self._parent,
+        )
+        choice = FileConflictDialog.parse_choice(res)
+        if choice == "cancel":
+            raise PasteCancelledError()
+        if choice == "rename":
+            if apply_all:
+                self._same_path_apply_all = "rename"
+            return PasteDecision(mode="rename")
+        if apply_all:
+            self._same_path_apply_all = "skip"
+        return PasteDecision(mode="skip")
+
+    def _ask_folder(self, src: Path, dst: Path) -> PasteDecision:
+        if self._overwrite_mode in ("overwrite", "rename", "skip"):
+            mode_map = {"overwrite": "merge", "rename": "rename", "skip": "skip"}
+            return PasteDecision(mode=mode_map[self._overwrite_mode])
+
+        if self._folder_apply_all is not None:
+            return PasteDecision(mode=self._folder_apply_all)
+
+        res, apply_all = FolderConflictDialog.ask(
+            self._folder_message,
+            src_path=normalize_path(str(src)),
+            dst_path=normalize_path(str(dst)),
+            src_name=src.name,
+            op=self._op,
+            show_apply_all=self._show_folder_apply_all,
+            parent=self._parent,
+        )
+        choice = FolderConflictDialog.parse_choice(res)
+
+        if choice == "cancel":
+            raise PasteCancelledError()
+        if choice is None or choice == "skip":
+            if apply_all:
+                self._folder_apply_all = "skip"
+            return PasteDecision(mode="skip")
+        if choice == "merge":
+            if apply_all:
+                self._folder_apply_all = "merge"
+            return PasteDecision(mode="merge")
+        if apply_all:
+            self._folder_apply_all = "rename"
+        return PasteDecision(mode="rename")
+
+    def _ask_file(self, src_path: str, dst_path: str, name: str, src_bytes: bytes | bytearray | None) -> PasteDecision:
+        if self._overwrite_mode in ("overwrite", "rename", "skip"):
+            return PasteDecision(mode=self._overwrite_mode)
+
+        if self._file_apply_all is not None:
+            return PasteDecision(mode=self._file_apply_all)
+
         res, apply_all = FileConflictDialog.ask(
             "同名の項目が存在します。",
             src_path=normalize_path(src_path) if src_path else "",
             dst_path=normalize_path(dst_path),
             src_name=name,
             src_bytes=src_bytes,
-            op=self.op,
-            show_apply_all=self.show_apply_all,
-            parent=self.parent,
+            op=self._op,
+            show_apply_all=self._show_file_apply_all,
+            parent=self._parent,
         )
         choice = FileConflictDialog.parse_choice(res)
-        if choice is None or choice == "cancel":
+
+        if choice == "cancel":
+            raise PasteCancelledError()
+        if choice is None or choice == "skip":
             if apply_all:
-                self.confirmed_mode = "skip"
-            return "skip"
-        mode = "overwrite" if choice == "overwrite" else "rename"
+                self._file_apply_all = "skip"
+            return PasteDecision(mode="skip")
+        if choice == "overwrite":
+            if apply_all:
+                self._file_apply_all = "overwrite"
+            return PasteDecision(mode="overwrite")
         if apply_all:
-            self.confirmed_mode = mode
-        return mode
-
-
-def make_session(*, op: str, parent: object | None, item_count: int) -> ConflictResolveSession:
-    if op not in ("copy", "move"):
-        raise ValueError(f"Invalid op: {op}")
-    return ConflictResolveSession(op=op, parent=parent, show_apply_all=item_count > 1)
-
-
-def make_paste_resolver(
-    *,
-    op: str,
-    overwrite_mode: str,
-    parent: object | None,
-    item_count: int,
-    folder_message: str = "同名フォルダが存在します。ペーストしますか？",
-) -> tuple[ConflictResolveSession, Callable[[Path, Path, bool, str], PasteDecision]]:
-    session = make_session(op=op, parent=parent, item_count=item_count)
-
-    def resolve_exists(src: Path, dst: Path, is_dir: bool, action: str) -> PasteDecision:
-        if is_dir:
-            res = ConfirmDialog.ask(folder_message, title="Confirm", buttons=("OK", "キャンセル"), parent=parent)
-            return PasteDecision(mode=("merge" if res == "OK" else "skip"))
-        if overwrite_mode in ("overwrite", "rename", "skip"):
-            return PasteDecision(mode=overwrite_mode)
-        mode = session.resolve_exists(
-            src_path=str(src),
-            dst_path=str(dst),
-            name=str(getattr(src, "name", "") or ""),
-            src_bytes=None,
-            default_mode="ask",
-        )
-        return PasteDecision(mode=(mode if mode in ("overwrite", "rename", "skip") else "skip"))
-
-    return session, resolve_exists
+            self._file_apply_all = "rename"
+        return PasteDecision(mode="rename")
 
 
 def resolve_paste_plans_with_ui(
@@ -114,89 +251,14 @@ def resolve_paste_plans_with_ui(
     parent: object | None,
     op: str = "copy",
     folder_message: str = "同名フォルダが存在します。ペーストしますか？",
-) -> tuple[dict[int, PasteDecision], Callable[[Path, Path, bool, str], PasteDecision]]:
+) -> Dict[int, PasteDecision]:
     ps = list(plans or [])
     if not ps:
-        return {}, lambda *_: PasteDecision(mode="skip")
-
-    paster = ClipboardFilePaster()
-
-    special_conflict_count = 0
-    merge_child_conflict_count = 0
-    exists_conflict_count = 0
-    for p in ps:
-        src = getattr(p, "src", None)
-        dst = getattr(p, "dst_default", None)
-        if src is None or dst is None:
-            continue
-        if bool(getattr(p, "conflict", False)):
-            exists_conflict_count += 1
-        c = check_copy_conflict(src, dst)
-        if c in ("same_path", "subpath"):
-            special_conflict_count += 1
-        if bool(getattr(p, "is_dir", False)) and bool(getattr(p, "conflict", False)):
-            merge_child_conflict_count += paster.estimate_merge_conflict_count(Path(src), Path(dst), stop_at=2)
-
-    conflict_count = exists_conflict_count + special_conflict_count
-    if conflict_count <= 1 and merge_child_conflict_count > 1:
-        conflict_count = 2
-
-    session, resolve_exists = make_paste_resolver(
+        return {}
+    resolver = ConflictResolver(
         op=op,
         overwrite_mode=overwrite_mode,
         parent=parent,
-        item_count=conflict_count,
         folder_message=folder_message,
     )
-
-    decisions: dict[int, PasteDecision] = {}
-    for p in ps:
-        idx = int(getattr(p, "index", 0) or 0)
-        src = getattr(p, "src", None)
-        dst = getattr(p, "dst_default", None)
-        if dst is None:
-            decisions[idx] = PasteDecision(mode="skip")
-            continue
-
-        if src is None:
-            if not bool(getattr(p, "conflict", False)):
-                decisions[idx] = PasteDecision(mode="overwrite")
-            else:
-                decisions[idx] = resolve_exists(Path(dst), Path(dst), False, str(getattr(p, "action", "copy")))
-            continue
-
-        c = check_copy_conflict(src, dst)
-        if c in ("same_path", "subpath"):
-            if session.resolve_copy_conflict(src_path=str(src), dst_path=str(dst), name=str(getattr(src, "name", "") or "")):
-                decisions[idx] = PasteDecision(mode="skip")
-                continue
-
-        if not bool(getattr(p, "conflict", False)):
-            decisions[idx] = PasteDecision(mode="overwrite")
-            continue
-
-        decisions[idx] = resolve_exists(Path(src), Path(dst), bool(getattr(p, "is_dir", False)), str(getattr(p, "action", "copy")))
-
-    return decisions, resolve_exists
-
-
-def execute_paste_plans_with_ui(
-    *,
-    plans: Iterable[object],
-    overwrite_mode: str,
-    parent: object | None,
-    folder_message: str = "同名フォルダが存在します。ペーストしますか？",
-) -> list[dict[str, str]]:
-    ps = list(plans or [])
-    if not ps:
-        return []
-    op = "move" if (ps and getattr(ps[0], "action", "copy") == "cut") else "copy"
-    decisions, resolve_exists = resolve_paste_plans_with_ui(
-        plans=ps,
-        overwrite_mode=overwrite_mode,
-        parent=parent,
-        op=op,
-        folder_message=folder_message,
-    )
-    paster = ClipboardFilePaster()
-    return paster.execute_paste(ps, decisions, resolve_exists=resolve_exists)
+    return resolver.resolve_plans(ps)

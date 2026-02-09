@@ -161,8 +161,8 @@ class InputDialog(BaseDialog, TranslatorMixin):
 
 class FileConflictDialog(BaseDialog):
 
-    def __init__(self, message, *, src_path: str, dst_path: str, src_name: str = '', dst_name: str = '', src_bytes=None, op: str = 'copy', show_apply_all: bool = True, title='Confirm', parent=None):
-        super().__init__(message, title, buttons=('上書き', '別名で保存', 'キャンセル'), icon_type=QStyle.SP_MessageBoxWarning, parent=parent)
+    def __init__(self, message, *, src_path: str, dst_path: str, src_name: str = '', dst_name: str = '', src_bytes=None, op: str = 'copy', show_apply_all: bool = True, buttons=None, title='Confirm', parent=None):
+        super().__init__(message, title, buttons=buttons or ('上書き', '別名で保存', 'スキップ', 'キャンセル'), icon_type=QStyle.SP_MessageBoxWarning, parent=parent)
         self.apply_all_checkbox = None
         if show_apply_all:
             self.apply_all_checkbox = QCheckBox('同じ処理を以降すべての競合に適用')
@@ -218,8 +218,8 @@ class FileConflictDialog(BaseDialog):
             self.content_layout.addWidget(self.apply_all_checkbox)
 
     @staticmethod
-    def ask(message, *, src_path: str, dst_path: str, src_name: str = '', dst_name: str = '', src_bytes=None, op: str = 'copy', show_apply_all: bool = True, title='Confirm', parent=None):
-        dialog = FileConflictDialog(message, src_path=src_path, dst_path=dst_path, src_name=src_name, dst_name=dst_name, src_bytes=src_bytes, op=op, show_apply_all=show_apply_all, title=title, parent=parent)
+    def ask(message, *, src_path: str, dst_path: str, src_name: str = '', dst_name: str = '', src_bytes=None, op: str = 'copy', show_apply_all: bool = True, buttons=None, title='Confirm', parent=None):
+        dialog = FileConflictDialog(message, src_path=src_path, dst_path=dst_path, src_name=src_name, dst_name=dst_name, src_bytes=src_bytes, op=op, show_apply_all=show_apply_all, buttons=buttons, title=title, parent=parent)
         dialog.exec()
         return dialog.result_text, bool(dialog.apply_all_checkbox.isChecked()) if dialog.apply_all_checkbox is not None else False
 
@@ -230,10 +230,88 @@ class FileConflictDialog(BaseDialog):
             return None
         if t in ('キャンセル', 'Cancel'):
             return 'cancel'
+        if t in ('スキップ', 'Skip'):
+            return 'skip'
         if t in ('別名で保存', 'Rename'):
             return 'rename'
         if t in ('上書き', '上書きする', 'Overwrite'):
             return 'overwrite'
+        return None
+
+
+class FolderConflictDialog(BaseDialog):
+
+    def __init__(self, message, *, src_path: str, dst_path: str, src_name: str = '', dst_name: str = '', op: str = 'copy', show_apply_all: bool = True, title='Confirm', parent=None):
+        super().__init__(message, title, buttons=('マージ', '別名で保存', 'スキップ', 'キャンセル'), icon_type=QStyle.SP_MessageBoxWarning, parent=parent)
+        self.apply_all_checkbox = None
+        if show_apply_all:
+            self.apply_all_checkbox = QCheckBox('同じ処理を以降すべてのフォルダ競合に適用')
+            self.apply_all_checkbox.setChecked(False)
+
+        src_dir, src_file = _split_path(src_path, src_name)
+        dst_dir, dst_file = _split_path(dst_path, dst_name)
+
+        self.src_dir_label = QLabel(src_dir)
+        self.src_file_label = QLabel(src_file)
+        self.dst_dir_label = QLabel(dst_dir)
+        self.dst_file_label = QLabel(dst_file)
+        self.src_dir_label.setWordWrap(True)
+        self.dst_dir_label.setWordWrap(True)
+        self.src_file_label.setWordWrap(False)
+        self.dst_file_label.setWordWrap(False)
+
+        prov = QFileIconProvider()
+        folder_pix = prov.icon(QFileIconProvider.Folder).pixmap(uipx(64), uipx(64))
+
+        row = QHBoxLayout()
+        left = QVBoxLayout()
+        right = QVBoxLayout()
+        src_title = '移動元' if op == 'move' else 'コピー元'
+        dst_title = '移動先' if op == 'move' else 'コピー先'
+        src_icon = QLabel()
+        src_icon.setPixmap(folder_pix)
+        dst_icon = QLabel()
+        dst_icon.setPixmap(folder_pix)
+        left.addStretch(1)
+        left.addWidget(QLabel(src_title), alignment=Qt.AlignHCenter)
+        left.addWidget(src_icon, alignment=Qt.AlignHCenter)
+        left.addStretch(1)
+        left.addWidget(self.src_dir_label)
+        left.addWidget(self.src_file_label)
+        right.addStretch(1)
+        right.addWidget(QLabel(dst_title), alignment=Qt.AlignHCenter)
+        right.addWidget(dst_icon, alignment=Qt.AlignHCenter)
+        right.addStretch(1)
+        right.addWidget(self.dst_dir_label)
+        right.addWidget(self.dst_file_label)
+        row.addLayout(left)
+        row.addSpacing(uipx(12))
+        row.addLayout(right)
+        self.content_layout.addLayout(row)
+        self.content_layout.setSpacing(uipx(4))
+        self.content_layout.addSpacing(uipx(2))
+        if self.apply_all_checkbox is not None:
+            self.content_layout.addWidget(self.apply_all_checkbox)
+
+    @staticmethod
+    def ask(message, *, src_path: str, dst_path: str, src_name: str = '', dst_name: str = '', op: str = 'copy', show_apply_all: bool = True, title='Confirm', parent=None):
+        dialog = FolderConflictDialog(message, src_path=src_path, dst_path=dst_path, src_name=src_name, dst_name=dst_name, op=op, show_apply_all=show_apply_all, title=title, parent=parent)
+        dialog.exec()
+        return dialog.result_text, bool(dialog.apply_all_checkbox.isChecked()) if dialog.apply_all_checkbox is not None else False
+
+    @staticmethod
+    def parse_choice(result_text: str | None) -> str | None:
+        t = str(result_text or '')
+        if not t:
+            return None
+        if t in ('キャンセル', 'Cancel'):
+            return 'cancel'
+        if t in ('スキップ', 'Skip'):
+            return 'skip'
+        if t in ('別名で保存', 'Rename'):
+            return 'rename'
+        if t in ('マージ', 'Merge'):
+            return 'merge'
         return None
 
 

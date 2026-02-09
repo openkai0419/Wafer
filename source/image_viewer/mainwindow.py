@@ -15,6 +15,7 @@ from ..qt.thread import main_thread
 from ..zmq.zmq import MessageEnvelope, Role, ZMQNode
 from .viewer.justifiedwidget import JustifiedVirtualScrollWidget
 from .viewer.items import ViewerItems
+from .shower.data_model import DataViewModel
 from .shower.data_viewer import ViewerWidget
 from .viewer_settings import main_setting
 from .widgets.button_bar import IconButtonBar, IconButtonConfig
@@ -290,8 +291,10 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.right_layout.setContentsMargins(uipx(0), uipx(12), uipx(8), uipx(8))
         self.right_layout.setSpacing(0)
 
-        self.data_shower = ViewerWidget(self)
+        self.data_model = DataViewModel(dbpath_getter=lambda: self.dbpath, parent=self)
+        self.data_shower = ViewerWidget(self.data_model, self)
         UI.register_instance("ViewerWidget", self.data_shower)
+        UI.register_instance("DataViewModel", self.data_model)
         UI.register_instance("ViewerItems", self.items)
         
         self.right_layout.addWidget(self.data_shower)
@@ -418,6 +421,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.current_runnable = None
         self.current_query_start_time = None
         self.content.set_paths(paths, soruces, aspects)
+        self.data_model.set_items(paths, soruces)
         if self.run_folder:
             self.search_row_widget.run_folder_worker(self.dbpath, self.folder_view.get_selected_paths())
             self.run_folder = False

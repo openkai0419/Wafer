@@ -1,5 +1,5 @@
 from PySide6 import QtCore
-from ...common.profiling import profiler
+from ...common.profiling import profiler, logger
 QWIDGETSIZE_MAX = 16777215
 
 class CalculatorSignals(QtCore.QObject):
@@ -43,7 +43,8 @@ class JustifiedLayoutCalculator(QtCore.QRunnable):
                 y += self._line_height(line, line_width) + spacing
                 line.clear()
                 line_width = 0
-                if y > QWIDGETSIZE_MAX:   # ここで打ち切り
+                if y > QWIDGETSIZE_MAX:
+                    logger.debug(f"[JustifiedLayout] truncated y={y} max={QWIDGETSIZE_MAX} items={len(aspect_ratios)} processed={i} rects={len(rects)}")
                     break
             else:
                 line.append(aspect)

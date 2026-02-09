@@ -478,6 +478,7 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
 
 class LazyFolderTreeView(QtWidgets.QTreeView):
     folder_selected = QtCore.Signal()
+    current_path_changed = QtCore.Signal(object)
 
     def __init__(self, roots=None, excluded=None):
         super().__init__()
@@ -707,6 +708,13 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
             self.model_.sort(0, QtCore.Qt.AscendingOrder)
         return moved_all
 
+    def dragEnterEvent(self, event):
+        md = event.mimeData()
+        if md and (md.hasUrls() or md.hasFormat(self.model_._mime_type)):
+            event.acceptProposedAction()
+        else:
+            super().dragEnterEvent(event)
+
     def eventFilter(self, source, event):
         if not isinstance(event, QtCore.QEvent):
             return False
@@ -721,3 +729,160 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
                     self.clearSelection()
                     self.folder_selected.emit()
         return super().eventFilter(source, event)
+
+    def current_path(self) -> str | None:
+        idx = self.currentIndex()
+        return idx.data(USER_ROLE_PATH) if idx.isValid() else None
+
+    def _select_and_emit(self, path):
+        if not path:
+            return None
+        self.expand_and_select_path(path)
+        self.current_path_changed.emit(path)
+        return path
+
+    @profiler.profile
+    def navigate_next_visible(self) -> str | None:
+        idx = self.currentIndex()
+        if not idx.isValid():
+            first = self.model().index(0, 0)
+            if first.isValid():
+                return self._select_and_emit(first.data(USER_ROLE_PATH))
+            return None
+        below = self.indexBelow(idx)
+        while below.isValid():
+            path = below.data(USER_ROLE_PATH)
+            if path:
+                return self._select_and_emit(path)
+            below = self.indexBelow(below)
+        return None
+
+    @profiler.profile
+    def navigate_prev_visible(self) -> str | None:
+        idx = self.currentIndex()
+        if not idx.isValid():
+            return None
+        above = self.indexAbove(idx)
+        while above.isValid():
+            path = above.data(USER_ROLE_PATH)
+            if path:
+                return self._select_and_emit(path)
+            above = self.indexAbove(above)
+        return None
+
+    @profiler.profile
+    def navigate_parent(self) -> str | None:
+        idx = self.currentIndex()
+        if not idx.isValid():
+            return None
+        parent = idx.parent()
+        if parent.isValid():
+            path = parent.data(USER_ROLE_PATH)
+            if path:
+                return self._select_and_emit(path)
+        return None
+
+    @profiler.profile
+    def navigate_child(self) -> str | None:
+        idx = self.currentIndex()
+        if not idx.isValid():
+            return None
+        item = self.model_.itemFromIndex(idx)
+        if item is None:
+            return None
+        self.model_.load_children(item)
+        self.expand(idx)
+        if item.rowCount() > 0:
+            child = item.child(0)
+            if child:
+                path = child.data(USER_ROLE_PATH)
+                if path:
+                    return self._select_and_emit(path)
+        return None
+
+    @staticmethod
+    def _list_subdirs(path, excluded):
+        try:
+            entries = []
+            for entry in os.scandir(path):
+                if entry.is_dir(follow_symlinks=False):
+                    full = normalize_path(entry.path)
+                    if full not in excluded:
+                        entries.append(full)
+            return natsorted(entries, key=lambda p: os.path.basename(p).lower())
+        except (PermissionError, OSError):
+            return []
+
+    @staticmethod
+    def _deepest_last(path, excluded):
+        while True:
+            children = LazyFolderTreeView._list_subdirs(path, excluded)
+            if not children:
+                return path
+            path = children[-1]
+
+    @profiler.profile
+    def navigate_next_dfs(self) -> str | None:
+        current = self.current_path()
+        if not current:
+            sorted_roots = natsorted(self.model_.roots, key=lambda p: os.path.basename(p).lower())
+            return self._select_and_emit(sorted_roots[0]) if sorted_roots else None
+
+        current = normalize_path(current)
+        excluded = self.model_.excluded
+        sorted_roots = natsorted([normalize_path(r) for r in self.model_.roots], key=lambda p: os.path.basename(p).lower())
+        roots_set = set(sorted_roots)
+
+        children = self._list_subdirs(current, excluded)
+        if children:
+            return self._select_and_emit(children[0])
+
+        path = current
+        while True:
+            if path in roots_set:
+                try:
+                    idx = sorted_roots.index(path)
+                    if idx + 1 < len(sorted_roots):
+                        return self._select_and_emit(sorted_roots[idx + 1])
+                except ValueError:
+                    pass
+                return None
+            parent = normalize_path(os.path.dirname(path))
+            siblings = self._list_subdirs(parent, excluded)
+            try:
+                idx = siblings.index(path)
+                if idx + 1 < len(siblings):
+                    return self._select_and_emit(siblings[idx + 1])
+            except ValueError:
+                pass
+            path = parent
+
+    @profiler.profile
+    def navigate_prev_dfs(self) -> str | None:
+        current = self.current_path()
+        if not current:
+            return None
+
+        current = normalize_path(current)
+        excluded = self.model_.excluded
+        sorted_roots = natsorted([normalize_path(r) for r in self.model_.roots], key=lambda p: os.path.basename(p).lower())
+        roots_set = set(sorted_roots)
+
+        if current in roots_set:
+            try:
+                idx = sorted_roots.index(current)
+                if idx > 0:
+                    return self._select_and_emit(self._deepest_last(sorted_roots[idx - 1], excluded))
+            except ValueError:
+                pass
+            return None
+
+        parent = normalize_path(os.path.dirname(current))
+        siblings = self._list_subdirs(parent, excluded)
+        try:
+            idx = siblings.index(current)
+            if idx > 0:
+                return self._select_and_emit(self._deepest_last(siblings[idx - 1], excluded))
+        except ValueError:
+            pass
+        return self._select_and_emit(parent)

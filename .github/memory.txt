@@ -1,165 +1,115 @@
-プロジェクト概要
-- 目的: 大量のファイル(主に画像)をバックグラウンド収集してDB化し、高速検索と描画を提供する。
-- 実行: main.py から起動。GUI は PySide6。将来的に動画/音声/Zipへ拡張、プラグイン拡張を見据える。
+■ プロジェクト概要
+目的: 大量のファイル(主に画像)をバックグラウンド収集してDB化し、高速検索と描画を提供する画像ビューア。
+実行: main.py から起動。GUI は PySide6。将来的に動画/音声/Zip対応、プラグイン拡張を見据える。
 
-プロセス構成
+■ プロセス構成
 - 3ロール: viewer(GUI), collector(収集), communicator(トレイ/管理)。IPCは ZMQ。
-- main.py は引数なし起動だと viewer を起動し、別プロセスで communicator を立ち上げる。
+- main.py は引数なし起動で viewer を起動し、別プロセスで communicator を立ち上げる。
 - communicator は設定DB名一覧に応じて collector を複数起動し、常駐する。
-- 多重起動防止は source/common/mutex.py の SafeProcessLock を使う（lockは user_data_dir 配下）。
+- 多重起動防止は source/common/mutex.py の SafeProcessLock（lock に pid+create_time を保存し、PID再利用の誤判定を避ける）。
 
-データ/設定ファイル配置
-- DBファイル
-	- データDB: data/{name}.db
-	- 設定DB: dirs/{name}.db
+■ データ/設定ファイル配置
+- DBファイル: データDB=data/{name}.db、設定DB=dirs/{name}.db
 - data_path/config_path は platformdirs の user_data_dir/user_config_dir を使い、APP_FILE_NAME をルートにする。
-- ログ: data_path('.log') 配下にプロセスPID別の debuglog_{pid}.log
-- リソース: _resources（アイコン等）。frozen時は sys.executable の親を基準に解決する。
+- ログ: data_path('.log') 配下に debuglog_{pid}.log
+- リソース: _resources。frozen時は sys.executable の親を基準に解決。
 
-DB(画像メタDB)
-- source/db/collector.py の ImageDB がスキーマ管理・WAL・read/write接続を提供する。
-- 破損検知: PRAGMA quick_check が ok でなければ .bak を作って再生成（VACUUM INTO を優先）。
-- 主要テーブル/ビュー
-	- hash_index(file_hash)
-	- sources(source, file_hash, size, modified, created, collected, status)
-	- images(path, source, name, aspect_ratio)
-	- meta_info(path, key, value)
-	- tags(file_hash, key, value)
-	- images_full(images + sources のJOIN)
-	- kv_all(tags/meta_info/virtual(__filepath__) を統合し、同一keyはrankで優先)
-	- kv_meta(kv_all + file_hash を付与)
+■ DB(画像メタDB)
+- source/db/collector.py の ImageDB がスキーマ管理・WAL・read/write接続を提供。
+- 破損検知: PRAGMA quick_check が ok でなければ .bak を作って再生成。
+- 主要テーブル/ビュー: hash_index, sources, images, meta_info, tags, images_full, kv_all, kv_meta
 
-検索
-- source/db/query.py の MetaInfoSearchEngine が read-only 接続で検索する（query_only=ON, temp_store=MEMORY）。
-- MetaQuery
-	- keys/keywords(include, exclude('-xxx'))/directories/only_direct_children をSQL条件へ展開
-	- query_mode: LIKE(ESCAPE対応) / GLOB
-	- sort_by: name/path/created/modified/size/collected/random（randomは取得後shuffle）
+■ 検索
+- source/db/query.py の MetaInfoSearchEngine が read-only 接続で検索。
+- MetaQuery: keys/keywords/directories/only_direct_children をSQL条件へ展開。
 
-収集(collector)
+■ 収集(collector)
 - source/image_collector/main_collector.py の CollectorProcess
-	- SettingDB(dirs/{name}.db) から parent_folders/ignore_folders と kv(deleteflag等) を読む
-	- ImageIndexer(data/{name}.db) を作り、ignore_folders を exclude として反映
-	- WatchFolder(watchdog) で親フォルダを監視し、DBWorkerスレッドで update/remove/rescan/cleanup/ignore を直列実行
-	- SettingWatcher が設定DBファイル変更を監視し、親/ignore/deleteflag の変化をSignalで通知する
+- WatchFolder(watchdog)で親フォルダ監視、DBWorkerスレッドで update/remove/rescan/cleanup/ignore を直列実行。
+- SettingWatcher が設定DBファイル変更を監視し、変化をSignalで通知。
 
-IPC(ZMQ)
-- collector は ProgressAggregator から viewer 宛に通知する
-	- topic: progress/maximum/update/folderchanged 等（tableはdb名、viewer側は '*' または現在db名のみ受理）
-- viewer(MainWindow) は Role.VIEWER の subscriber を持ち、topicに応じて search(force)/UI更新を Qt.QueuedConnection で行う。
+■ IPC(ZMQ)
+- collector は ProgressAggregator から viewer 宛に通知（topic: progress/maximum/update/folderchanged 等）。
+- viewer(MainWindow) は Role.VIEWER の subscriber を持ち、Qt.QueuedConnection で search/UI更新。
 
-共通ユーティリティ（重複実装しない）
-- source/common/funcs.py
-	- normalize_path（'\\'→'/' へ統一）
-	- data_path/config_path（platformdirs、ディレクトリ作成込み）
-	- get_data_db/get_setting_db/get_*_file_names
-	- uipx（DPIスケール）/native_sort
-- source/common/helpers.py
-	- call0/call_int0/to_int/try_json_loads/try_call0/widget_prop_bool
-- source/common/errors.py
-	- show_warning/raise_error（握りつぶさず stderr+logger へ寄せる）
-- source/common/hashes.py
-	- fast_sig_hash（先頭/中央/末尾をblake3で署名）/full_hash
-- source/common/jsons.py
-	- read_json_file/write_json_file
-- source/common/signal.py
-	- Signal（軽量なconnect/emit）
-- source/common/profiling.py
-	- logger/profiler（@profiler.profile を多用。デバッグON/OFFは環境変数禁止、logger.debugに寄せる）
+■ 共通ユーティリティ（必ず使い回す）
+source/common/funcs.py:
+  - normalize_path（'\\'→'/'統一）、data_path/config_path（ディレクトリ作成込み）
+  - get_data_db/get_setting_db/get_*_file_names、uipx（DPIスケール）、native_sort
+source/common/helpers.py:
+  - call0/call_int0/to_int/try_json_loads/try_call0/widget_prop_bool
+source/common/errors.py:
+  - show_warning/raise_error（stderr+loggerへ寄せる）
+source/common/hashes.py:
+  - fast_sig_hash（先頭/中央/末尾をblake3で署名）、full_hash
+source/common/jsons.py:
+  - read_json_file/write_json_file
+source/common/signal.py:
+  - Signal（軽量なconnect/emit）
+source/common/profiling.py:
+  - logger/profiler（@profiler.profile を活用、logger.debugに寄せる）
 
-テスト
+■ テスト
 - tests は source と同じ階層構造を維持し、ファイル名は test_<source_file>.py。
-- conftest.py に最小の qtbot fixture がある（QApplicationを作り、addWidgetでshow/processEvents）。
 - actions内部は bridge をimport禁止（ASTで検査）。
-- compileテストがあるため、構文エラーはまずここで落ちる。
 
-方針
-- source/actions は「コマンド定義・実行」「メニュー構築」「キー/マウス等のバインディング」を担当する。
-- source/actions/bridge.py は外部向けAPI専用。source/actions 配下の内部モジュールから bridge を import しない。
-- source/actions 配下の機能を外部から使う場合は、必ず bridge（Command/Menu/Kit/Settings/UI/Context）経由で参照・実行する。
+■ actions/bridge アーキテクチャ
+- source/actions は「コマンド定義・実行」「メニュー構築」「キー/マウス等のバインディング」を担当。
+- bridge.py は外部向けAPI専用。source/actions 配下の内部モジュールから bridge を import しない。
+- 外部からは必ず bridge（Command/Menu/Kit/Settings/UI/Context）経由で参照・実行。
 
-bridgeでできること
-- Kit: 外部から actions の型や基底（UIMixin, MenuBase/DragMenuBase, CommandMeta/Param, Bind, Key/Mouse）に触れるための再export。
-- Settings: バインディング/コマンドオプションの設定ファイルパスを一括configureし、seed(default)を適用して BindingManager を activate/commit する窓口。
-- UI: バインド対象Widgetの収集、キー/マウスの編集UI起動、任意インスタンスの登録（UI.register_instance）を提供。
-- Command: コマンド実行と登録（Command.execute / Command.register_commands）。実行コンテキストは不足時に Context.create_context で生成可能。
-- Menu: メニューの構築/表示（Menu.session / Menu.with_ctx / Menu.exec_menu / Menu.exec_all_roots）。MenuPlanでhide/add/insertして一時編集してからbuild/exec。
-- Context: CommandContext生成と、現在のカーソル位置から対象Widget/posを決めるコンテキストメニュー準備（Context.prepare_context_menu）。
+bridgeの主要API:
+- Kit: 型や基底（UIMixin, MenuBase/DragMenuBase, CommandMeta/Param, Bind, Key/Mouse）の再export。
+- Settings: バインディング/コマンドオプションの設定ファイルパス一括configure、seed適用、activate/commit。
+- UI: バインド対象Widget収集、編集UI起動、register_instance。
+- Command: コマンド実行と登録（execute / register_commands）。
+- Menu: メニュー構築/表示（session / with_ctx / exec_menu / exec_all_roots）。
+- Context: CommandContext生成、prepare_context_menu。
 
-bridgeとMenuの注意点
-- bridge.Menu._normalize_menu_items は CommandMeta を str() 化せず保持して MenuMaker へ渡す。これにより、コマンドを恒久登録せずに `Kit.Command(path="inline...", func=...)` をその場のメニュー項目として安全に差し込める。
-- バインディングのデフォルト(seed)は source/actions/binding/seed.py に保持し、bridge.Settings が設定する（API名は *_bindings に統一）。
-- バインディングの永続化ファイルは起動時に自動生成しない。seedはメモリへ適用のみ行い、ファイル作成/保存は編集して保存(commit)した時だけ行う。
-- バインディングのデフォルト宣言はタプル等のspecではなく、Kit.Key(...)/Kit.Mouse(...) で Key/MouseActionKey を直接生成して渡す。
-- キー型（Key/MouseActionKey）は異なるが、バインド値（Kit.Bind=ScopedPayloads=scope->CommandPayload）は共通なので、Storeの set_all/get_all/resolve/save/load は BindingStoreBase に集約する。
+■ バインディング設計
+- デフォルト(seed)は source/actions/binding/seed.py に保持。
+- 永続化ファイルは起動時に自動生成しない。編集して保存(commit)した時だけ作成。
+- Kit.Key(...)/Kit.Mouse(...) で Key/MouseActionKey を直接生成して渡す。
+- バインド値（Kit.Bind=ScopedPayloads）は共通なので、Storeの set_all/get_all/resolve/save/load は BindingStoreBase に集約。
+- 保存はデフォルトとの差分のみ、デフォルト削除は scopes の値を null として保存。
+
+■ メニュー設計
+- Kit.MenuBase / Kit.DragMenuBase は class 変数の prefix と commands だけで登録。
+- MenuMaker が構造を解決し、MenuPlan(hide/add/insert)で一時編集可能。
+- insert/hide のターゲットは id または path("/") で指定、見つからない場合は例外。
+- CommandMeta を str() 化せず保持し、その場限りのコマンドをメニューへ追加可能。
+- 公開したくないコマンドは CommandMeta.hidden=True で列挙から除外。
+
+■ コマンド設計
+- 汎用コマンドとdrag/drop系の2種類。
+- wheel_stepsはCommandContextの標準フィールド（ホイールは正規化、非ホイールは1）。
+- ctx.get_event() は Drop系のみ利用可能（mimeData等が必要なため）。
+
+■ Widget参照
+- init_command_binding(name) で登録されたWidgetは ctx.get_instance(name) で取得可能。
+- バインド登録をしたくない参照先は bridge.UI.register_instance(name, instance) で登録。
+- 内部の参照解決は InstanceRegistry に一本化。
+
+■ ビューアの共有状態
+- source/image_viewer/viewer/items.py の ViewerItems が JustifiedView 用の「ファイル一覧/選択/現在インデックス」を管理。
+- source/image_viewer/shower/data_model.py の DataViewModel が DataViewer(右側詳細表示)用の独立したModel。
+  - DataViewModel は独自の paths/sources/selection/current_index を持ち、ViewerItemsとは独立。
+  - mainwindow.py で生成し UI.register_instance("DataViewModel") で登録。コマンドから ctx.get_instance("DataViewModel") で取得。
+  - pathChanged シグナル経由で ViewerWidget（View）を自動更新。set_items() で手動リスト設定。
+  - dbpath_getter コールバックでDB参照先を遅延解決。
 - ビューア固有のコマンド定義やコンテキストメニューは source/image_viewer 直下に置く。
-- 実行は bridge.Command、メニュー構築/表示は bridge.Menu に分離して寄せる。
 
-ビューアの共有状態
-- source/image_viewer/viewer/items.py の ViewerItems が「ファイル一覧/選択/現在インデックス」を共有する状態として機能し、複数Widgetから同じ参照を使えるようにする。
-- source/image_viewer/commands/file_viewer.py の FileViewerCommands は ViewerItems を基準に ViewerWidget の表示(パス)を次/前へ切り替える。
+■ FolderTreeナビゲーション
+- source/image_viewer/widgets/foldertree.py に6つのnavigateメソッド:
+  - navigate_next/prev_visible: Qt indexBelow/indexAbove（展開済みノードのみ）
+  - navigate_next/prev_dfs: ファイルシステムベースのDFS巡回（展開状態に依存しない、os.scandir + natsort）
+  - navigate_parent/child: 階層移動（childは自動expand + load_children）
+- DFS巡回は model_.excluded と model_.roots を境界として扱い、excluded フォルダをスキップ。
+- コマンドは foldertree_view.py で ft.next_folder_dfs, ft.prev_folder_dfs, ft.next_folder_visible, ft.prev_folder_visible, ft.parent_folder, ft.child_folder として登録。
+- 全コマンドに trigger_search パラメータ（デフォルトTrue）があり、True時は folder_selected シグナルで検索をトリガー。
 
-JustifiedWidgetのaction移行
-- JustifiedVirtualScrollWidget は Kit.UIMixin(CommandBindingMixin) を継承して init_command_binding("JustifiedView") すると自動で register され、ctx.get_instance("JustifiedView") から参照できる。
-- 直接イベント処理でViewerWidget/ViewerItemsを操作せず、command（例: jv.open_current / jv.select_all / jv.zoom_in）へ寄せて段階的に置き換える。
-- JustifiedVirtualScrollWidget に「コマンドからしか呼ばれない薄いラッパー」を置かず、矩形選択/ドラッグ/コンテキストメニュー等の操作は source/image_viewer/commands 側で実装する。
-- Drag/Drop系コマンドは GraphicsView と同様に Kit.DragMenuBase へ分離し、通常メニュー(Kit.MenuBase)のコマンドと混在させない。
-- 引数はコマンド側でCommandMeta.paramsとして宣言されたものだけが実行時に渡される（未宣言のargsは捨てられる）。
-- Drag/Dropは「単一のdropコマンド + ctx.extras でphase等を渡す」方式を基本にし、具体IDや引数値の暫定案は .temp/temporary_memo.txt に退避する。
-- MenuBase の内部状態名（例: _items）と同名のメソッド/属性をサブクラスで定義しない。
-- JustifiedViewのdrop_acceptor判定は source/os/drop.py の MimeDataParser.can_accept に統一する（accept時は通信なし、parse/ダウンロードはdrop時のみ）。
-- DROPの許可は drop_acceptor のみで制御し、drop_acceptor が登録されていないWidgetはファイルDROPを含めて一切 accept しない。
-
-コンテキストからのWidget参照
-- init_command_binding(name) で BindingManager に登録されたWidgetは、CommandContext.get_instance(name) / get_instances(name) で名前から取得できる（同名は複数対応）。
-- これにより、どのWidgetから発動したコマンドでも、必要な別Widgetを安定して参照できる。
-- Widgetの登録/取得は source/actions/binding/widget_registry.py の WidgetRegistry が担当し、BindingManager はバインド適用のみ担当する。
-- バインド登録をしたくない参照先は、bridge.UI.register_instance(name, instance) で登録して ctx から参照できる（QWidget以外も可）。
-- 内部の参照解決は InstanceRegistry に一本化し、WidgetRegistryは廃止する。
-- クロス参照が必要なコマンドは、可能なら親辿り等をせず、register_instanceで参照先を登録して ctx.get_widget(name) で直接取得する。
-
-入力表示
-- コマンド定義側で hotkey を持たず、表示用のショートカット文字列は BindingManager/ShortcutManager の現在の割り当てからメニュー側で逆引きする。
-- メニューは aboutToShow でホットキー列を揃え、必要に応じて adjustSize() して幅を確定する。
-
-メニュー定義
-- Kit.MenuBase / Kit.DragMenuBase は class 変数の prefix と commands だけで登録し、create_definitions/COMMAND_DEFS 方式は廃止する。
-- 呼び出し時のメニュー構造は MenuMaker が解決し、MenuPlan(hide/add/insert)で一時編集できるようにする。MenuBuilder は MenuPlan のトークン列から QMenu を生成するだけに絞る。
-- insert/hide のターゲットは id または path("/") で指定でき、見つからない場合は例外で落とす。
-- MenuPlan.add/insert は Kit.Command(CommandMeta) も受け取れ、MenuHubへ登録せずその場限りのコマンドをメニューへ追加できる（バインドピッカーには出ない）。
-- bridge.Menu._normalize_menu_items は CommandMeta を str() 化せず保持して MenuMaker へ渡す。これにより、コマンドを恒久登録せずに `Kit.Command(path="inline...", func=...)` をその場のメニュー項目として安全に差し込める。
-- ユーザー操作として公開したくないコマンドは CommandMeta.hidden=True を使い、実行は可能なままメニュー/ピッカーの列挙から除外する。
-- 外部からのメニュー生成/表示は bridge.Menu に統一し、Menu.session(parent, seed_ctx=...) / Menu.with_ctx(ctx) から menu/use/all_roots を作って hide/add/insert を適用し、最後に build()/exec() する。
-
-コマンド設計
-- コマンドは主にdrag/drop系のコマンドとそれ以外の汎用コマンドのに種類があり、drag/drop系のコマンドはそれぞれのバインドでしかできない。
-- 汎用系のコマンドは可能な限り event 非依存にし、実行に必要なctx側で保障するようにすることで、キーや、メニュー、マウスにかかわらず実行できるようにする。
-- 「commands に宣言して公開するコマンド」は、基本的にどこからでも呼び出され得る前提で設計する（キー/マウス/メニュー/別Widgetからの実行）。そのため、入力デバイスや発火元Widgetに依存する値は ctx（extend_context/Context.create_context）で供給し、コマンド側は同じロジックで動作する。
-- 汎用系のコマンドに値を渡す際はctxからgetする方法、引数として渡す方法があるが、基本的に引数で受け取るのはコマンド宣言時に設定してユーザーが編集かのうなもののみに限る。
-- 汎用系のコマンドでマウスの位置やホイールのステップ、Widgetなどの汎用的に使う値はキー、メニュー、マウスにかかわらず安定して動作させるため、ctxに渡す側で必ず値を渡すように保障し、コマンド側の安全保障は不要にする（引数がなかった場合はctx側の不具合とする）
-- ctx.get_instance/pos/global_pos 等の前提が崩れた場合はコマンド側で握りつぶさず、そのまま例外で落として不具合を検出しやすくする。
-- ctx.event/ctx.keyはコマンドから取得できない（保持しない）。ユーザー操作に由来する値はpos/global_pos/wheel_steps等の派生フィールドで必ず保障する。
-- ctx.event は通常は保持しないが、Drop系のみ ctx.get_event() で取得できるように保持する（Drop処理でmimeData等が必要なため）。
-- wheel_stepsはCommandContextの標準フィールドとして常に値が入る（ホイールは正規化、非ホイールは1）。コマンド側はctx.get("wheel_steps")だけで安定取得できる。
-- extrasは動的に有無が変わる値に限定し、ある/ないでコマンド側で分岐する前提のものだけを入れる。
-- 文字列pathの意味（ファイル/フォルダ等）は ctx 側で正規化して保証する（例: FolderTreeの操作は常にフォルダパスに正規化してからコマンドへ渡す）。
-
-バインディング編集UI
-- Key/MouseのEditorは override UI/コマンドピッカー/レイアウト破棄を editors_common に集約し、個別Editorは差分のみ持つ。
-- コマンドのparamsが存在する場合はオプションを持つコマンドとして扱い、メニュー右の□(オプション)を表示可能にする。
-- CommandOptionsDialogの数値入力(QSpinBox/QDoubleSpinBox)は、既定値の桁からsingleStep/decimalsを自動推定して自然な調整単位にする。
-- MouseBindingsのカテゴリメニューは scope="*" の場合 widget_scope=None で検索し、target_widgets を持つコマンドは一致条件が満たせず候補から除外される。
-- "." は単なるネームスペースで特別扱いしない。
-- バインディング保存はデフォルトとの差分を保存し、デフォルト削除は scopes の値を null として保存する。
-
-デバッグ出力
-- 環境変数などによるデバッグON/OFF切替は禁止。
-- デバッグ情報は常に logger.debug に渡す。
-- デバッグが増えすぎると情報が追えなくなるので、一時的に追加したものは適度に削除する。
-
-例外処理
-- try/except でログなしに例外を完全に握りつぶすのは、可能な限り避ける。
-- try/except を使う場合でも、少なくとも logger へ残す、または source/common/errors.py の show_warning / raise_error を使って通知・記録する。
-
-プロセス排他
-- SafeProcessLock は lock に pid+create_time を保存し、PID再利用の誤判定を避ける。
+■ JustifiedWidget
+- Kit.UIMixin を継承して init_command_binding("JustifiedView") で自動登録。
+- 操作は source/image_viewer/commands 側でコマンドとして実装。
+- Drag/Drop系は Kit.DragMenuBase へ分離。
+- drop_acceptor判定は source/os/drop.py の MimeDataParser.can_accept に統一。

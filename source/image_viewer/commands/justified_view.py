@@ -65,7 +65,8 @@ class JustifiedViewCommands(Kit.MenuBase):
         if resolved is None:
             return
         idx, _ = resolved
-        JustifiedViewCommands.get_view(ctx).reinstall_scroll_index(int(idx))
+        view = JustifiedViewCommands.get_view(ctx)
+        view.reinstall_scroll_index(int(idx), animated=True)
 
     @staticmethod
     def click_select_at_pos(ctx):

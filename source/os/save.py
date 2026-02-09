@@ -7,7 +7,7 @@ import struct
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, List, Literal, Optional, Tuple
+from typing import Dict, List, Literal, Optional, Tuple
 
 import requests
 from PySide6 import QtCore, QtGui
@@ -135,95 +135,6 @@ def copy_or_move(src: Path, dst: Path, *, action: Literal["copy", "cut"], follow
     return copy_file(src, dst, follow_symlinks)
 
 
-def merge_dir(
-    src: Path,
-    dst: Path,
-    *,
-    action: Literal["copy", "cut"],
-    follow_symlinks: bool = True,
-    resolve_exists: Callable[[Path, Path, bool, Literal["copy", "cut"]], "PasteDecision"] | None = None,
-) -> None:
-    dst.mkdir(parents=True, exist_ok=True)
-    for entry in src.iterdir():
-        s = Path(entry)
-        d = dst / s.name
-        is_dir = s.is_dir()
-        if d.exists() or d.is_symlink():
-            dec = resolve_exists(s, d, is_dir, action) if resolve_exists else PasteDecision(mode="rename")
-        else:
-            dec = PasteDecision(mode="overwrite")
-        if dec.mode == "skip":
-            continue
-        if dec.mode == "rename":
-            d = Path(unique_path(d.parent, d.name))
-        elif dec.mode == "overwrite":
-            if d.exists() or d.is_symlink():
-                safe_remove(d)
-        if is_dir:
-            if dec.mode == "merge" and d.exists():
-                merge_dir(s, d, action=action, follow_symlinks=follow_symlinks, resolve_exists=resolve_exists)
-            else:
-                copy_or_move(s, d, action=action, follow_symlinks=follow_symlinks)
-        else:
-            copy_or_move(s, d, action=action, follow_symlinks=follow_symlinks)
-    if action == "cut":
-        try:
-            src.rmdir()
-        except OSError:
-            pass
-
-
-def execute_local_file_op(
-    src: Path,
-    dst: Path,
-    *,
-    action: Literal["copy", "cut"],
-    decision: "PasteDecision",
-    follow_symlinks: bool = True,
-    resolve_exists: Callable[[Path, Path, bool, Literal["copy", "cut"]], "PasteDecision"] | None = None,
-) -> Dict[str, str]:
-    is_dir = src.is_dir()
-    if decision.mode == "skip":
-        return {"action": "skip", "src": str(src), "dst": "", "status": "skipped"}
-
-    if decision.mode in ("overwrite", "merge"):
-        final_dst = dst
-    elif decision.mode == "rename":
-        if decision.new_name_or_path:
-            p = Path(decision.new_name_or_path)
-            final_dst = p if p.is_absolute() else (dst.parent / p)
-        else:
-            final_dst = dst
-        if final_dst.exists():
-            final_dst = Path(unique_path(final_dst.parent, final_dst.name))
-    else:
-        return {"action": "unknown", "src": str(src), "dst": "", "status": "error", "error": f"unknown mode: {decision.mode}"}
-
-    conflict = check_copy_conflict(src, final_dst)
-    if conflict == "same_path":
-        if decision.mode == "overwrite" or (is_dir and decision.mode == "merge"):
-            return {"action": "skip", "src": str(src), "dst": str(final_dst), "status": "skipped"}
-        final_dst = Path(unique_path(final_dst.parent, final_dst.name))
-
-    if action == "cut" and is_dir and conflict in ("same_path", "subpath"):
-        return {"action": "move", "src": str(src), "dst": str(final_dst), "status": "skipped", "error": "cannot move into itself"}
-
-    if is_dir and conflict == "subpath":
-        return {"action": "skip", "src": str(src), "dst": str(final_dst), "status": "skipped", "error": "cannot copy into itself"}
-
-    try:
-        if decision.mode == "overwrite" and final_dst.exists():
-            safe_remove(final_dst)
-
-        if is_dir and decision.mode == "merge" and final_dst.exists():
-            merge_dir(src, final_dst, action=action, follow_symlinks=follow_symlinks, resolve_exists=resolve_exists)
-            return {"action": "move" if action == "cut" else "copy", "src": str(src), "dst": str(final_dst), "status": "ok"}
-        else:
-            done = copy_or_move(src, final_dst, action=action, follow_symlinks=follow_symlinks)
-            return {"action": "move" if action == "cut" else "copy", "src": str(src), "dst": str(done), "status": "ok"}
-    except Exception as e:
-        return {"action": "move" if action == "cut" else "copy", "src": str(src), "dst": str(final_dst), "status": "error", "error": repr(e)}
-
 
 def save_remote_item(item, target_path: str, *, move: bool = False) -> Dict[str, str]:
     d = os.path.dirname(target_path)
@@ -295,6 +206,184 @@ class DropPlanItem:
 class PasteDecision:
     mode: Literal["overwrite", "rename", "skip", "merge"]
     new_name_or_path: Optional[str] = None
+    merge_decisions: Optional[Dict[str, "PasteDecision"]] = None
+
+
+class PasteCancelledError(Exception):
+    pass
+
+
+@dataclass
+class MergeConflictItem:
+    src: Path
+    dst: Path
+    rel_path: str
+    is_dir: bool
+
+
+def _scan_merge_recursive(src: Path, dst: Path, root: Path, out: List[MergeConflictItem]) -> None:
+    try:
+        entries = sorted(src.iterdir(), key=lambda e: (not e.is_dir(), e.name))
+    except OSError:
+        return
+    for entry in entries:
+        d = dst / entry.name
+        if not d.exists() and not d.is_symlink():
+            continue
+        if entry.is_dir() and d.is_dir():
+            _scan_merge_recursive(entry, d, root, out)
+        else:
+            out.append(MergeConflictItem(
+                src=entry, dst=d,
+                rel_path=str(entry.relative_to(root)),
+                is_dir=entry.is_dir(),
+            ))
+
+
+def scan_merge_conflicts(src_dir: Path, dst_dir: Path) -> List[MergeConflictItem]:
+    out: List[MergeConflictItem] = []
+    if src_dir.is_dir() and dst_dir.is_dir():
+        _scan_merge_recursive(src_dir, dst_dir, src_dir, out)
+    return out
+
+
+class PasteExecutor:
+    def __init__(self, *, follow_symlinks: bool = True):
+        self._follow_symlinks = follow_symlinks
+
+    def execute_plans(
+        self,
+        plans: List[PastePlanItem],
+        decisions: Dict[int, PasteDecision],
+    ) -> List[Dict[str, str]]:
+        results: List[Dict[str, str]] = []
+        for item in plans:
+            dec = decisions.get(item.index)
+            if dec is None:
+                dec = PasteDecision(mode="skip")
+            result = self._execute_item(item.src, item.dst_default, item.action, dec)
+            results.append(result)
+        return results
+
+    def execute_drop_plans(
+        self,
+        plans: List[DropPlanItem],
+        decisions: Dict[int, PasteDecision],
+        *,
+        op: str,
+    ) -> List[Dict[str, str]]:
+        action: Literal["copy", "cut"] = "cut" if op == "move" else "copy"
+        results: List[Dict[str, str]] = []
+        for plan in plans:
+            dec = decisions.get(plan.index)
+            if dec is None or dec.mode == "skip":
+                results.append({"action": "skip", "src": str(plan.src or ""), "dst": "", "status": "skipped"})
+                continue
+            if plan.src is not None:
+                result = self._execute_item(plan.src, plan.dst_default, action, dec)
+                results.append(result)
+            else:
+                dst_path = str(plan.dst_default)
+                if dec.mode == "rename" and plan.suggested_dst:
+                    dst_path = str(plan.suggested_dst)
+                elif dec.mode == "overwrite" and plan.conflict:
+                    safe_remove(dst_path)
+                result = save_remote_item(plan.parsed_item, dst_path, move=(op == "move"))
+                results.append(result)
+        return results
+
+    def _execute_item(
+        self,
+        src: Path,
+        dst: Path,
+        action: Literal["copy", "cut"],
+        decision: PasteDecision,
+    ) -> Dict[str, str]:
+        is_dir = src.is_dir()
+        if decision.mode == "skip":
+            return {"action": "skip", "src": str(src), "dst": "", "status": "skipped"}
+
+        final_dst = self._resolve_dst(dst, decision)
+        if final_dst is None:
+            return {"action": "unknown", "src": str(src), "dst": "", "status": "error", "error": f"unknown mode: {decision.mode}"}
+
+        conflict = check_copy_conflict(src, final_dst)
+        if conflict == "same_path":
+            if decision.mode in ("overwrite", "merge"):
+                return {"action": "skip", "src": str(src), "dst": str(final_dst), "status": "skipped"}
+            final_dst = Path(unique_path(final_dst.parent, final_dst.name))
+
+        if action == "cut" and is_dir and conflict in ("same_path", "subpath"):
+            return {"action": "move", "src": str(src), "dst": str(final_dst), "status": "skipped", "error": "cannot move into itself"}
+        if is_dir and conflict == "subpath":
+            return {"action": "skip", "src": str(src), "dst": str(final_dst), "status": "skipped", "error": "cannot copy into itself"}
+
+        try:
+            if decision.mode == "overwrite" and final_dst.exists():
+                safe_remove(final_dst)
+            if is_dir and decision.mode == "merge" and final_dst.exists():
+                self._merge_dir(src, final_dst, action=action, merge_decisions=decision.merge_decisions or {}, root_src=src)
+                return {"action": "move" if action == "cut" else "copy", "src": str(src), "dst": str(final_dst), "status": "ok"}
+            done = copy_or_move(src, final_dst, action=action, follow_symlinks=self._follow_symlinks)
+            return {"action": "move" if action == "cut" else "copy", "src": str(src), "dst": str(done), "status": "ok"}
+        except Exception as e:
+            return {"action": "move" if action == "cut" else "copy", "src": str(src), "dst": str(final_dst), "status": "error", "error": repr(e)}
+
+    @staticmethod
+    def _resolve_dst(dst: Path, decision: PasteDecision) -> Path | None:
+        if decision.mode in ("overwrite", "merge"):
+            return dst
+        if decision.mode == "rename":
+            if decision.new_name_or_path:
+                p = Path(decision.new_name_or_path)
+                final = p if p.is_absolute() else (dst.parent / p)
+            else:
+                final = dst
+            if final.exists():
+                final = Path(unique_path(final.parent, final.name))
+            return final
+        if decision.mode == "skip":
+            return dst
+        return None
+
+    def _merge_dir(
+        self,
+        src: Path,
+        dst: Path,
+        *,
+        action: Literal["copy", "cut"],
+        merge_decisions: Dict[str, PasteDecision],
+        root_src: Path,
+    ) -> None:
+        dst.mkdir(parents=True, exist_ok=True)
+        for entry in src.iterdir():
+            d = dst / entry.name
+            is_dir = entry.is_dir()
+
+            if not d.exists() and not d.is_symlink():
+                copy_or_move(entry, d, action=action, follow_symlinks=self._follow_symlinks)
+                continue
+
+            if is_dir and d.is_dir():
+                self._merge_dir(entry, d, action=action, merge_decisions=merge_decisions, root_src=root_src)
+                continue
+
+            rel = str(entry.relative_to(root_src))
+            dec = merge_decisions.get(rel, PasteDecision(mode="overwrite"))
+
+            if dec.mode == "skip":
+                continue
+            if dec.mode == "rename":
+                copy_or_move(entry, Path(unique_path(d.parent, d.name)), action=action, follow_symlinks=self._follow_symlinks)
+            else:
+                safe_remove(d)
+                copy_or_move(entry, d, action=action, follow_symlinks=self._follow_symlinks)
+
+        if action == "cut":
+            try:
+                src.rmdir()
+            except OSError:
+                pass
 
 
 def build_drop_plans(parsed_items: List, dst_dir: str, op: str) -> List[DropPlanItem]:
@@ -339,48 +428,15 @@ def build_drop_plans(parsed_items: List, dst_dir: str, op: str) -> List[DropPlan
     return plans
 
 
-def execute_drop_plans(
-    plans: List[DropPlanItem],
-    decisions: Dict[int, PasteDecision],
-    *,
-    op: str,
-    resolve_exists: Callable[[Path, Path, bool, Literal["copy", "cut"]], PasteDecision] | None = None,
-) -> List[Dict[str, str]]:
-    action: Literal["copy", "cut"] = "cut" if op == "move" else "copy"
-    results: List[Dict[str, str]] = []
-
-    for plan in plans:
-        decision = decisions.get(plan.index)
-        if decision is None or decision.mode == "skip":
-            results.append({"action": "skip", "src": str(plan.src or ""), "dst": "", "status": "skipped"})
-            continue
-
-        if plan.src is not None:
-            dst = plan.suggested_dst if decision.mode == "rename" and plan.suggested_dst else plan.dst_default
-            result = execute_local_file_op(
-                plan.src, dst, action=action, decision=decision, resolve_exists=resolve_exists
-            )
-            results.append(result)
-        else:
-            dst_path = str(plan.dst_default)
-            if decision.mode == "rename" and plan.suggested_dst:
-                dst_path = str(plan.suggested_dst)
-            elif decision.mode == "overwrite" and plan.conflict:
-                safe_remove(dst_path)
-            result = save_remote_item(plan.parsed_item, dst_path, move=(op == "move"))
-            results.append(result)
-
-    return results
-
-
 class FileSaver:
     def save(self, item, target_path: str, move: bool = False) -> Dict[str, str]:
         if getattr(item, "is_local_file", lambda: False)():
             src = Path(str(getattr(item, "source", "")))
             dst = Path(target_path)
             action: Literal["copy", "cut"] = "cut" if move else "copy"
-            decision = PasteDecision(mode="overwrite")
-            return execute_local_file_op(src, dst, action=action, decision=decision)
+            plan = PastePlanItem(index=0, src=src, is_dir=src.is_dir(), action=action, dst_default=dst, conflict=dst.exists(), suggested_dst=None)
+            results = PasteExecutor().execute_plans([plan], {0: PasteDecision(mode="overwrite")})
+            return results[0] if results else {"action": "unknown", "src": str(src), "dst": "", "status": "error"}
         return save_remote_item(item, target_path, move=move)
 
 
@@ -542,65 +598,15 @@ class ClipboardFilePaster:
             )
         return plan
 
-    def estimate_merge_conflict_count(self, src_dir: Path, dst_dir: Path, *, stop_at: int = 2) -> int:
-        if stop_at <= 0:
-            return 0
-        if not src_dir.exists() or not src_dir.is_dir():
-            return 0
-        if not dst_dir.exists() or not dst_dir.is_dir():
-            return 0
-        try:
-            if check_copy_conflict(src_dir, dst_dir) == "subpath":
-                return 0
-        except Exception:
-            return 0
-        cnt = 0
-        stack: List[tuple[Path, Path]] = [(src_dir, dst_dir)]
-        while stack and cnt < stop_at:
-            sdir, ddir = stack.pop()
-            try:
-                for e in sdir.iterdir():
-                    s = Path(e)
-                    d = ddir / s.name
-                    if d.exists() or d.is_symlink():
-                        cnt += 1
-                        if cnt >= stop_at:
-                            break
-                    if s.is_dir() and d.exists() and d.is_dir():
-                        stack.append((s, d))
-            except OSError:
-                continue
-        return cnt
 
-    def execute_paste(
-        self,
-        plan: List[PastePlanItem],
-        decisions: Dict[int, PasteDecision],
-        *,
-        follow_symlinks: bool = True,
-        resolve_exists: Callable[[Path, Path, bool, Literal["copy", "cut"]], PasteDecision] | None = None,
-    ) -> List[Dict[str, str]]:
-        results: List[Dict[str, str]] = []
-        for item in plan:
-            dec = decisions.get(item.index)
-            if dec is None:
-                dec = PasteDecision(mode="skip")
-            dst = item.suggested_dst if dec.mode == "rename" and item.suggested_dst else item.dst_default
-            result = execute_local_file_op(
-                item.src, dst, action=item.action, decision=dec,
-                follow_symlinks=follow_symlinks, resolve_exists=resolve_exists
-            )
-            results.append(result)
-        return results
-
-def resolve_conflicts_with_ui(
+def _resolve_conflicts_with_ui(
     plans: List,
     *,
     op: str,
     overwrite_mode: str = "ask",
     parent: object | None = None,
     folder_message: str = "同名フォルダが存在します。ペーストしますか？",
-) -> Tuple[Dict[int, PasteDecision], Callable[[Path, Path, bool, Literal["copy", "cut"]], PasteDecision] | None]:
+) -> Dict[int, PasteDecision]:
     if overwrite_mode not in ("ask", "overwrite", "skip", "rename"):
         raise ValueError(f"Invalid overwrite_mode: {overwrite_mode}")
 
@@ -622,18 +628,17 @@ def paste_clipboard_files(
     parent: object | None = None,
     folder_message: str = "同名フォルダが存在します。ペーストしますか？",
 ) -> List[Dict[str, str]]:
-    paster = ClipboardFilePaster()
-
-    plans = paster.build_paste_plan(destination_dir)
+    plans = ClipboardFilePaster().build_paste_plan(destination_dir)
     if not plans:
         return []
-
-    op = "move" if (plans and plans[0].action == "cut") else "copy"
-    decisions, resolve_exists = resolve_conflicts_with_ui(
-        plans=plans, op=op, overwrite_mode=overwrite_mode, parent=parent, folder_message=folder_message
-    )
-
-    return paster.execute_paste(plans, decisions, resolve_exists=resolve_exists)
+    op = "move" if plans[0].action == "cut" else "copy"
+    try:
+        decisions = _resolve_conflicts_with_ui(
+            plans=plans, op=op, overwrite_mode=overwrite_mode, parent=parent, folder_message=folder_message
+        )
+    except PasteCancelledError:
+        return []
+    return PasteExecutor().execute_plans(plans, decisions)
 
 
 def execute_paste_plans_with_ui(
@@ -645,15 +650,14 @@ def execute_paste_plans_with_ui(
 ) -> List[Dict[str, str]]:
     if not plans:
         return []
-
-    paster = ClipboardFilePaster()
     op = "move" if plans[0].action == "cut" else "copy"
-
-    decisions, resolve_exists = resolve_conflicts_with_ui(
-        plans=plans, op=op, overwrite_mode=overwrite_mode, parent=parent, folder_message=folder_message
-    )
-
-    return paster.execute_paste(plans, decisions, resolve_exists=resolve_exists)
+    try:
+        decisions = _resolve_conflicts_with_ui(
+            plans=plans, op=op, overwrite_mode=overwrite_mode, parent=parent, folder_message=folder_message
+        )
+    except PasteCancelledError:
+        return []
+    return PasteExecutor().execute_plans(plans, decisions)
 
 
 def drop_files_with_ui(
@@ -669,15 +673,13 @@ def drop_files_with_ui(
         raise ValueError(f"Invalid op: {op}")
     if overwrite_mode not in ("overwrite", "rename", "skip", "ask"):
         raise ValueError(f"Invalid overwrite_mode: {overwrite_mode}")
-
-    # 1. 事前準備
     plans = build_drop_plans(parsed_items, destination_dir, op)
     if not plans:
         return []
-
-    # 2. 衝突解決
-    decisions, resolve_exists = resolve_conflicts_with_ui(
-        plans=plans, op=op, overwrite_mode=overwrite_mode, parent=parent, folder_message=folder_message
-    )
-
-    return execute_drop_plans(plans, decisions, op=op, resolve_exists=resolve_exists)
+    try:
+        decisions = _resolve_conflicts_with_ui(
+            plans=plans, op=op, overwrite_mode=overwrite_mode, parent=parent, folder_message=folder_message
+        )
+    except PasteCancelledError:
+        return []
+    return PasteExecutor().execute_drop_plans(plans, decisions, op=op)

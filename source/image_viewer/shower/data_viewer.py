@@ -1,5 +1,4 @@
 from PySide6 import QtCore, QtGui, QtWidgets
-from numpy import uint
 from natsort import natsorted
 
 from ...common.funcs import uipx, human_aspect_string, human_size_string, human_time
@@ -9,18 +8,23 @@ from ...db.query import MetaInfoSearchEngine
 from ...io.manager import LoaderClass
 from .dict_viewer import DictListWidget
 from .image_veiwer import ImageViewerWidget
+from .data_model import DataViewModel
 from ..viewer.cachemanager import FadeLabel, MemoryLimitedImageCache
 from ..viewer_settings import main_setting
 
 
 class ViewerWidget(QtWidgets.QSplitter):
-    def __init__(self, parent=None):
+    def __init__(self, model: DataViewModel, parent=None):
         super().__init__(QtCore.Qt.Vertical, parent)
-        self.root = parent
+        self.model = model
         self.image_cache = MemoryLimitedImageCache(main_setting.get('window/chache_size', 500))
         self.main_ui()
-        self.path: str | None = None
-        
+        self.model.pathChanged.connect(self._on_path_changed)
+
+    @property
+    def path(self) -> str | None:
+        return self.model.path()
+
     def main_ui(self):
         self.image_viewer = ImageViewerWidget(self)
         self.image_viewer.setMinimumSize(uipx(200), uipx(200))
@@ -49,31 +53,38 @@ class ViewerWidget(QtWidgets.QSplitter):
 
     @qt_throttle(100, 200)
     def throttle_get_image(self):
-        self.get_image()
+        self._load_and_show_image()
 
-    def get_image(self):
-        if not self.path:
+    def _on_path_changed(self, path):
+        if not path:
             return
-        key = (self.path, None, None)
+        self._update_meta(path)
+        self._load_and_show_image()
+
+    def _load_and_show_image(self):
+        path = self.model.path()
+        if not path:
+            return
+        key = (path, None, None)
         image = self.image_cache.get(key)
         if image is None or image.isNull():
-            image = LoaderClass.load(self.path)
+            image = LoaderClass.load(path)
         if image is None or image.isNull():
             return
-        self.image_viewer.set_image(image, self.path)
+        self.image_viewer.set_image(image, path)
         self.image_cache[key] = image
 
     def set_path(self, path: str | None):
         if not path:
             return
-        self.path = path
-        self.set_meta()
-        self.get_image()
+        self.model.set_path(path)
 
-    def set_meta(self):
-        db = MetaInfoSearchEngine(self.root.dbpath)
-        source, image, tags, meta_infos = db.get_metas(self.path)
-        # cleaunp for viewing
+    def _update_meta(self, path):
+        dbpath = self.model.dbpath
+        if not dbpath:
+            return
+        db = MetaInfoSearchEngine(dbpath)
+        source, image, tags, meta_infos = db.get_metas(path)
         if source.get("status"):
             source.pop("status")
         if image.get("source"):
@@ -87,4 +98,3 @@ class ViewerWidget(QtWidgets.QSplitter):
         meta_infos = {k: meta_infos[k] for k in natsorted(meta_infos)}
         tags = {k: tags[k] for k in natsorted(tags)}
         self.dict_viewer.set_data([source, image, tags, meta_infos])
-        self._last_cache_key = None

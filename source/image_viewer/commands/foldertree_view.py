@@ -141,11 +141,90 @@ def reload_tree(ctx):
         tree.reload_tree()
 
 
+def _navigate(ctx, method_name, trigger_search=True):
+    tree = _ctx_tree(ctx)
+    if tree is None:
+        return
+    method = getattr(tree, method_name, None)
+    if not callable(method):
+        return
+    path = method()
+    if path and bool(trigger_search) and hasattr(tree, "folder_selected"):
+        tree.folder_selected.emit()
+    return path
+
+
+def next_folder_dfs(ctx, trigger_search: bool = True):
+    return _navigate(ctx, "navigate_next_dfs", trigger_search=trigger_search)
+
+
+def prev_folder_dfs(ctx, trigger_search: bool = True):
+    return _navigate(ctx, "navigate_prev_dfs", trigger_search=trigger_search)
+
+
+def next_folder_visible(ctx, trigger_search: bool = True):
+    return _navigate(ctx, "navigate_next_visible", trigger_search=trigger_search)
+
+
+def prev_folder_visible(ctx, trigger_search: bool = True):
+    return _navigate(ctx, "navigate_prev_visible", trigger_search=trigger_search)
+
+
+def parent_folder(ctx, trigger_search: bool = True):
+    return _navigate(ctx, "navigate_parent", trigger_search=trigger_search)
+
+
+def child_folder(ctx, trigger_search: bool = True):
+    return _navigate(ctx, "navigate_child", trigger_search=trigger_search)
+
+
 class FolderTreeCommands(Kit.MenuBase):
     prefix = "FolderTree"
 
     commands = [
         ":FolderTree",
+        "-",
+        ":Navigate (Filesystem DFS)",
+        Kit.Command(
+            path="ft.next_folder_dfs",
+            display="Next Folder (DFS)",
+            func=next_folder_dfs,
+            params=[Kit.Param(name="trigger_search", value=True)],
+        ),
+        Kit.Command(
+            path="ft.prev_folder_dfs",
+            display="Prev Folder (DFS)",
+            func=prev_folder_dfs,
+            params=[Kit.Param(name="trigger_search", value=True)],
+        ),
+        "-",
+        ":Navigate (Visible Tree)",
+        Kit.Command(
+            path="ft.next_folder_visible",
+            display="Next Folder (Visible)",
+            func=next_folder_visible,
+            params=[Kit.Param(name="trigger_search", value=True)],
+        ),
+        Kit.Command(
+            path="ft.prev_folder_visible",
+            display="Prev Folder (Visible)",
+            func=prev_folder_visible,
+            params=[Kit.Param(name="trigger_search", value=True)],
+        ),
+        "-",
+        ":Navigate (Hierarchy)",
+        Kit.Command(
+            path="ft.parent_folder",
+            display="Parent Folder",
+            func=parent_folder,
+            params=[Kit.Param(name="trigger_search", value=True)],
+        ),
+        Kit.Command(
+            path="ft.child_folder",
+            display="Child Folder",
+            func=child_folder,
+            params=[Kit.Param(name="trigger_search", value=True)],
+        ),
         "-",
         Kit.Command(path="ft.reload_tree", display="Reload Tree", func=reload_tree),
     ]

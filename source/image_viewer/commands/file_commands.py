@@ -10,6 +10,7 @@ from ...qt.dialog import ConfirmDialog, ThumbnailConfirmDialog
 from ...os.copy import ClipboardFileTransfer
 from ...os.save import paste_clipboard_files, unique_path, get_os_new_folder_name
 from ...os.folders import show_in_explorer as reveal_in_explorer
+from ...common.profiling import logger
 
 
 
@@ -162,6 +163,22 @@ def select_path(ctx):
     ftree.expand_and_select_path(folder)
 
 
+def scroll_to_file(ctx):
+    path = _ctx_path(ctx)
+    if not path:
+        return
+    items = ctx.get_instance("ViewerItems")
+    if items is None:
+        return
+    idx = items.index_of_path(path)
+    if idx is None:
+        return
+    view = ctx.get_instance("JustifiedView")
+    if view is None or not hasattr(view, "rects"):
+        return
+    view.reinstall_scroll_index(idx, animated=True)
+
+
 def make_new_folder_here(ctx, folder_name: str | None = None) -> str | None:
     path = _ctx_path(ctx)
     if not path:
@@ -201,6 +218,7 @@ class FileCommands(Kit.MenuBase):
         Kit.Command(path="file.copy_filename", display="Copy FileName", func=copy_filename),
         "-",
         Kit.Command(path="file.select_path", display="Select Folder", func=select_path),
+        Kit.Command(path="file.scroll_to_file", display="Scroll To File", func=scroll_to_file),
         "-",
         Kit.Command(path="file.copy",  display="Copy", func=copy_files),
         Kit.Command(path="file.cut",  display="Cut", func=cut_files),

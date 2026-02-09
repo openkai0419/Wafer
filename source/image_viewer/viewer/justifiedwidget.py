@@ -1,4 +1,5 @@
 import bisect
+import math
 import os
 from PySide6 import QtCore, QtGui, QtWidgets
 from ...common.funcs import uipx
@@ -273,13 +274,30 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget, Kit.UIMixin):
         return None
 
     @profiler.profile
-    def reinstall_scroll_index(self, ind):
+    def reinstall_scroll_index(self, ind, animated: bool = False):
         scroll_area = self.parent_scroll
-        target_rect = self.rects[ind]
-        if isinstance(scroll_area, QtWidgets.QAbstractScrollArea):
-            bar = scroll_area.verticalScrollBar()
-            new_value = target_rect.center().y() - scroll_area.viewport().height() // 2
-            bar.setValue(new_value)
+        if not isinstance(scroll_area, QtWidgets.QAbstractScrollArea):
+            return
+        bar = scroll_area.verticalScrollBar()
+        if ind < len(self.rects):
+            target = self.rects[ind].center().y() - scroll_area.viewport().height() // 2
+        else:
+            target = bar.maximum()
+        target = max(bar.minimum(), min(target, bar.maximum()))
+        distance = abs(bar.value() - target)
+        if not animated or distance < 2:
+            bar.setValue(target)
+            return
+        if hasattr(self, '_scroll_anim') and self._scroll_anim is not None:
+            self._scroll_anim.stop()
+        duration = min(int(40 * math.log2(distance + 1)) + 2, 500)
+        anim = QtCore.QPropertyAnimation(bar, b"value", self)
+        anim.setDuration(duration)
+        anim.setStartValue(bar.value())
+        anim.setEndValue(target)
+        anim.setEasingCurve(QtCore.QEasingCurve.OutQuad)
+        self._scroll_anim = anim
+        anim.start()
 
     @profiler.profile
     def _on_layout_ready(self, rects):

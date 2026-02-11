@@ -51,7 +51,11 @@
 ■ メニュー/バインディングの方針
 - コマンド定義側で hotkey を持たず、表示用のショートカットは BindingManager から逆引き
 - バインディングの永続化ファイルは起動時に自動生成しない（編集して保存時のみ作成）
-- 保存はデフォルトとの差分のみ
+- 保存はデフォルトとの差分のみ（mode フィールドは廃止済み）
+- デフォルトバインディングは _resources/mouse_bindings/ と _resources/key_bindings/ にプリセットJSON（例: standard.json）として配置
+- プリセット名は seed.py で管理し、set_presets(mouse=..., key=...) で切り替え可能
+- 将来的にプリセット追加でユーザーがデフォルトバインディングセットを選択可能にする設計
+- defaults.py はもう Python オブジェクトでバインディングを定義しない。seed.py の re-export のみ
 
 ■ 過去の指摘・学習事項
 （ユーザーからの指摘や気づいた注意点をここに追記）
@@ -61,4 +65,5 @@
 - file_viewer.py の next_file/prev_file は _ensure_current_initialized で index 0 に初期化してから move するため、初回呼び出しで index 1 に移動する
 - DataViewModel と ViewerItems は独立したModel。DataviewModel はコマンド(file_viewer.py)から、ViewerItems はコマンド(justified_view.py)からそれぞれ操作される
 - FolderTreeのキーバインド(defaults.py)は未設定。コマンド登録のみ完了済み
+- get_resource_path() は pytest 時に __main__.__file__ がvenvを指すため_resourcesが見つからない。CWDフォールバックで解決済み
 

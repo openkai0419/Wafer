@@ -1,0 +1,84 @@
+{
+  "items": [
+    {
+      "key": {"button": "RIGHT", "click": "SINGLE", "held": [], "modifiers": []},
+      "scopes": {"*": {"id": "allmenu", "args": {}}}
+    },
+    {
+      "key": {"button": "LEFT", "click": "SINGLE", "held": [], "modifiers": []},
+      "scopes": {"JustifiedView": {"id": "jv.click_select_at_pos", "args": {}}}
+    },
+    {
+      "key": {"button": "LEFT", "click": "SINGLE", "held": [], "modifiers": ["CTRL"]},
+      "scopes": {"JustifiedView": {"id": "jv.toggle_at_pos", "args": {}}}
+    },
+    {
+      "key": {"button": "LEFT", "click": "SINGLE", "held": [], "modifiers": ["SHIFT"]},
+      "scopes": {"JustifiedView": {"id": "jv.range_select_at_pos", "args": {}}}
+    },
+    {
+      "key": {"button": "LEFT", "click": "DRAG_START", "held": [], "modifiers": ["SHIFT"]},
+      "scopes": {"JustifiedView": {"id": "jv.rect_select_replace", "args": {}}}
+    },
+    {
+      "key": {"button": "LEFT", "click": "DRAG_START", "held": [], "modifiers": ["ALT"]},
+      "scopes": {"JustifiedView": {"id": "jv.rect_select_add", "args": {}}}
+    },
+    {
+      "key": {"button": "LEFT", "click": "DRAG_START", "held": [], "modifiers": ["CTRL"]},
+      "scopes": {"JustifiedView": {"id": "jv.rect_select_remove", "args": {}}}
+    },
+    {
+      "key": {"button": "X1", "click": "SINGLE", "held": [], "modifiers": []},
+      "scopes": {"GraphicsView": {"id": "fv.prev_file", "args": {}}}
+    },
+    {
+      "key": {"button": "X2", "click": "SINGLE", "held": [], "modifiers": []},
+      "scopes": {"GraphicsView": {"id": "fv.next_file", "args": {}}}
+    },
+    {
+      "key": {"button": "NONE", "click": "WHEEL_UP", "held": [], "modifiers": []},
+      "scopes": {
+        "GraphicsView": {"id": "gv.zoom_in", "args": {}},
+        "JustifiedView": {"id": "jv.scroll_up", "args": {"multiplier": 4}}
+      }
+    },
+    {
+      "key": {"button": "NONE", "click": "WHEEL_DOWN", "held": [], "modifiers": []},
+      "scopes": {
+        "GraphicsView": {"id": "gv.zoom_out", "args": {}},
+        "JustifiedView": {"id": "jv.scroll_down", "args": {"multiplier": 4}}
+      }
+    },
+    {
+      "key": {"button": "NONE", "click": "WHEEL_UP", "held": [], "modifiers": ["CTRL"]},
+      "scopes": {"JustifiedView": {"id": "jv.scale_up", "args": {"ratio": 1.1}}}
+    },
+    {
+      "key": {"button": "NONE", "click": "WHEEL_DOWN", "held": [], "modifiers": ["CTRL"]},
+      "scopes": {"JustifiedView": {"id": "jv.scale_down", "args": {"ratio": 1.1}}}
+    },
+    {
+      "key": {"button": "LEFT", "click": "DOUBLE", "held": [], "modifiers": []},
+      "scopes": {
+        "JustifiedView": {"id": "jv.show_at_pos", "args": {}},
+        "GraphicsView": {"id": "gv.toggle_fit_mode", "args": {}}
+      }
+    },
+    {
+      "key": {"button": "LEFT", "click": "DRAG_START", "held": [], "modifiers": []},
+      "scopes": {
+        "JustifiedView": {"id": "jv.drag_files", "args": {}},
+        "GraphicsView": {"id": "gv.pan", "args": {}}
+      }
+    },
+    {
+      "key": {"button": "NONE", "click": "DROP", "held": [], "modifiers": []},
+      "scopes": {"JustifiedView": {"id": "jv.drop_files_copy", "args": {"on_conflict": "ask"}}}
+    },
+    {
+      "key": {"button": "NONE", "click": "DROP", "held": [], "modifiers": ["SHIFT"]},
+      "scopes": {"JustifiedView": {"id": "jv.drop_files_move", "args": {"on_conflict": "ask"}}}
+    }
+  ]
+}

@@ -6,7 +6,7 @@ from PySide6 import QtGui, QtWidgets
 
 from .binding.common import WidgetRef
 from .binding.manager import BindingManager
-from .binding.seed import get_seed_key_bindings, get_seed_mouse_bindings, set_seed_bindings
+from .binding.seed import get_key_preset, get_mouse_preset, set_presets
 from .command.core import CommandRegistry
 from .command.state import CommandOptionStore
 from source.common.errors import raise_error, show_warning
@@ -34,14 +34,11 @@ class Settings:
         key_bindings: str | Path,
         command_options: str | Path,
         key_scope_mode: str | None = None,
-        seed_mouse_bindings=None,
-        seed_key_bindings=None,
     ):
         self.mouse_bindings = str(mouse_bindings)
         self.key_bindings = str(key_bindings)
         self.command_options = str(command_options)
         self._key_scope_mode = str(key_scope_mode).strip().lower() if key_scope_mode is not None else None
-        set_seed_bindings(mouse_bindings=seed_mouse_bindings, key_bindings=seed_key_bindings)
         BindingManager.configure(self.mouse_bindings, self.key_bindings)
         CommandOptionStore.configure(self.command_options)
         if self._key_scope_mode is not None:
@@ -57,8 +54,6 @@ class Settings:
         key_bindings: str | Path,
         command_options: str | Path,
         key_scope_mode: str | None = None,
-        seed_mouse_bindings=None,
-        seed_key_bindings=None,
     ) -> "Settings":
         if cls._configured:
             raise RuntimeError("bridge is already configured")
@@ -67,8 +62,6 @@ class Settings:
             key_bindings=key_bindings,
             command_options=command_options,
             key_scope_mode=key_scope_mode,
-            seed_mouse_bindings=seed_mouse_bindings,
-            seed_key_bindings=seed_key_bindings,
         )
         cls._instance = inst
         cls._configured = True
@@ -95,35 +88,32 @@ class Settings:
         return cls._instance
 
     @classmethod
-    def seed_mouse_bindings(cls):
-        return get_seed_mouse_bindings()
+    def mouse_preset(cls) -> str:
+        return get_mouse_preset()
 
     @classmethod
-    def seed_key_bindings(cls):
-        return get_seed_key_bindings()
+    def key_preset(cls) -> str:
+        return get_key_preset()
 
     @classmethod
-    def activate(cls, *, mouse_bindings=None, key_bindings=None) -> BindingManager:
-        return cls.instance()._activate(mouse_bindings=mouse_bindings, key_bindings=key_bindings)
+    def activate(cls, *, mouse_preset: str | None = None, key_preset: str | None = None) -> BindingManager:
+        return cls.instance()._activate(mouse_preset=mouse_preset, key_preset=key_preset)
 
     @classmethod
     def commit(cls) -> None:
         cls.instance()._commit()
 
-    def _activate(self, *, mouse_bindings=None, key_bindings=None) -> BindingManager:
-        set_seed_bindings(mouse_bindings=mouse_bindings, key_bindings=key_bindings)
-        eff_mouse = mouse_bindings if mouse_bindings is not None else get_seed_mouse_bindings()
-        eff_key = key_bindings if key_bindings is not None else get_seed_key_bindings()
-        if eff_mouse is not None or eff_key is not None:
-            mouse_ok, key_ok = self._load_bindings()
-            if eff_mouse is not None and not mouse_ok:
-                from .binding.mouse.store import MouseBindingStore
-
-                MouseBindingStore().set_all(eff_mouse)
-            if eff_key is not None and not key_ok:
-                from .binding.key.store import KeyBindingStore
-
-                KeyBindingStore().set_all(eff_key)
+    def _activate(self, *, mouse_preset: str | None = None, key_preset: str | None = None) -> BindingManager:
+        set_presets(mouse=mouse_preset, key=key_preset)
+        mouse_ok, key_ok = self._load_bindings()
+        if not mouse_ok:
+            from .binding.mouse.store import MouseBindingStore
+            store = MouseBindingStore()
+            store._data = store._seed_data()
+        if not key_ok:
+            from .binding.key.store import KeyBindingStore
+            store = KeyBindingStore()
+            store._data = store._seed_data()
         return BindingManager.activate()
 
     def _load_bindings(self) -> tuple[bool, bool]:

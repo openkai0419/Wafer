@@ -30,16 +30,6 @@ class JustifiedViewCommands(Kit.MenuBase):
         return ctx.get_instance("ViewerWidget")
 
     @staticmethod
-    def _anchor_index(items):
-        cur = items.current_index()
-        if cur is not None:
-            return cur
-        last = items.last_selected_index()
-        if last is not None:
-            return last
-        return 0 if items.count() > 0 else None
-
-    @staticmethod
     def _resolve_index(ctx, index: int | None) -> tuple[int, str] | None:
         if index is None:
             return None
@@ -48,7 +38,6 @@ class JustifiedViewCommands(Kit.MenuBase):
         path = items.path_at(idx)
         if not path:
             return None
-        items.set_current_index(idx)
         return idx, path
 
     @staticmethod
@@ -129,26 +118,9 @@ class JustifiedViewCommands(Kit.MenuBase):
         JustifiedViewCommands._show_index(ctx, idx)
 
     @staticmethod
-    def show_current(ctx):
-        items = JustifiedViewCommands.get_items(ctx)
-        JustifiedViewCommands._show_index(ctx, JustifiedViewCommands._anchor_index(items))
-
-    @staticmethod
     def show_selected(ctx):
         items = JustifiedViewCommands.get_items(ctx)
-        JustifiedViewCommands._show_index(ctx, items.last_selected_index() or items.current_index())
-
-    @staticmethod
-    def show_next(ctx, step: int = 1, loop: bool = False):
-        items = JustifiedViewCommands.get_items(ctx)
-        idx = items.next_index(step=int(step), loop=bool(loop))
-        JustifiedViewCommands._show_index(ctx, idx)
-
-    @staticmethod
-    def show_prev(ctx, step: int = 1, loop: bool = False):
-        items = JustifiedViewCommands.get_items(ctx)
-        idx = items.prev_index(step=int(step), loop=bool(loop))
-        JustifiedViewCommands._show_index(ctx, idx)
+        JustifiedViewCommands._show_index(ctx, items.last_selected_index())
 
     @staticmethod
     def select_all(ctx):
@@ -162,23 +134,6 @@ class JustifiedViewCommands(Kit.MenuBase):
     @staticmethod
     def clear_selection(ctx):
         JustifiedViewCommands.get_items(ctx).clear_selection()
-
-    @staticmethod
-    def select_current(ctx):
-        items = JustifiedViewCommands.get_items(ctx)
-        idx = JustifiedViewCommands._anchor_index(items)
-        if idx is None:
-            items.clear_selection()
-            return
-        items.set_selected([int(idx)], last=0)
-
-    @staticmethod
-    def scroll_to_current(ctx):
-        items = JustifiedViewCommands.get_items(ctx)
-        idx = JustifiedViewCommands._anchor_index(items)
-        if idx is None:
-            return
-        JustifiedViewCommands._scroll_to_index(ctx, int(idx))
 
     @staticmethod
     def _scroll_by_wheel(ctx, direction: int):
@@ -255,6 +210,16 @@ class JustifiedViewCommands(Kit.MenuBase):
             return
         JustifiedViewCommands.set_scale(ctx, int(int(w) / 10))
 
+    @staticmethod
+    def move_to_next_row(ctx):
+        view = JustifiedViewCommands.get_view(ctx)
+        view.scroll_to_next_row(animated=True)
+
+    @staticmethod
+    def move_to_prev_row(ctx):
+        view = JustifiedViewCommands.get_view(ctx)
+        view.scroll_to_prev_row(animated=True)
+
     commands = [
         ":JustifiedView",
         "-",
@@ -270,15 +235,11 @@ class JustifiedViewCommands(Kit.MenuBase):
         Kit.Command(path="jv.show_at_pos", display="Show at Pos", func=show_at_pos),
         Kit.Command(path="jv.show_selected", display="Show Selected", func=show_selected),
         "-",
-        Kit.Command(path="Current/jv.select_current", display="Select Current", func=select_current),
-        Kit.Command(path="Current/jv.scroll_to_current", display="Scroll To Current", func=scroll_to_current),
-        Kit.Command(path="Current/jv.show_current", display="Show Current", func=show_current),
-        Kit.Command(path="Current/jv.show_prev", display="Show Prev", func=show_prev, params=[Kit.Param(name="step", value=1), Kit.Param(name="loop", value=False)]),
-        Kit.Command(path="Current/jv.show_next", display="Show Next", func=show_next, params=[Kit.Param(name="step", value=1), Kit.Param(name="loop", value=False)]),
-        "-",
         ":Scroll",
         Kit.Command(path="jv.scroll_up", display="Scroll Up", func=wheel_scroll_up, params=[Kit.Param(name="multiplier", value=4)]),
         Kit.Command(path="jv.scroll_down", display="Scroll Down", func=wheel_scroll_down, params=[Kit.Param(name="multiplier", value=4)]),
+        Kit.Command(path="jv.move_to_next_row", display="Next Row", func=move_to_next_row),
+        Kit.Command(path="jv.move_to_prev_row", display="Prev Row", func=move_to_prev_row),
         "-",
         ":Scale",
         Kit.Command(path="jv.scale_up", display="Scale Up", func=scale_up, params=[Kit.Param(name="ratio", value=1.1)]),

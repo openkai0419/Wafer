@@ -67,14 +67,24 @@ class BindingStoreBase(Generic[K]):
         w = str(widget) if widget else "*"
         return d.get(w) or d.get("*")
 
-    def _seed_specs(self) -> Any | None:
+    def _seed_file_path(self) -> str | None:
         return None
 
     def _seed_data(self) -> Dict[K, Dict[str, CommandPayload]]:
-        specs = self._seed_specs()
-        if specs is None:
+        path = self._seed_file_path()
+        if path:
+            return self._load_seed_file(path)
+        return {}
+
+    def _load_seed_file(self, path: str) -> Dict[K, Dict[str, CommandPayload]]:
+        data = read_json_file(Path(path), None)
+        if not isinstance(data, dict):
             return {}
-        return self.normalize_specs(specs)
+        items = data.get("items")
+        if not isinstance(items, list):
+            return {}
+        raw = self._from_items(items)
+        return {k: {sc: p for sc, p in scopes.items() if p is not None} for k, scopes in raw.items() if any(p is not None for p in scopes.values())}
 
     def _payload_equal(self, a: CommandPayload, b: CommandPayload) -> bool:
         return a.id == b.id and (a.args or {}) == (b.args or {})
@@ -151,7 +161,7 @@ class BindingStoreBase(Generic[K]):
         p = Path(path)
         seed = self._seed_data()
         diff = self._diff_data(self._data, seed)
-        payload = {"mode": "diff", "items": self._to_items(diff)}
+        payload = {"items": self._to_items(diff)}
         ok = write_json_file(p, payload, indent=2, ensure_ascii=False)
         if not ok:
             show_warning(None, f"{type(self).__name__}.save_to_file failed: {path}")
@@ -159,8 +169,6 @@ class BindingStoreBase(Generic[K]):
     def load_from_file(self, path: str) -> bool:
         data = read_json_file(Path(path), None)
         if not isinstance(data, dict):
-            return False
-        if data.get("mode") != "diff":
             return False
         items = data.get("items")
         if not isinstance(items, list):

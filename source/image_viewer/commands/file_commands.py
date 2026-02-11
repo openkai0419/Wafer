@@ -190,6 +190,16 @@ def scroll_to_file(ctx):
     view.reinstall_scroll_index(idx, animated=True)
 
 
+def show_file(ctx):
+    path = _ctx_path(ctx)
+    if not path:
+        return
+    shower = ctx.get_instance("ViewerWidget")
+    if shower is None:
+        return
+    shower.set_path(path)
+
+
 def make_new_folder_here(ctx, folder_name: str | None = None) -> str | None:
     path = _ctx_path(ctx)
     if not path:
@@ -230,6 +240,7 @@ class FileCommands(Kit.MenuBase):
         "-",
         Kit.Command(path="file.select_path", display="Select Folder", func=select_path),
         Kit.Command(path="file.scroll_to_file", display="Scroll To File", func=scroll_to_file),
+        #Kit.Command(path="file.show_file", display="Show File", func=show_file),
         "-",
         Kit.Command(path="file.copy",  display="Copy", func=copy_files),
         Kit.Command(path="file.cut",  display="Cut", func=cut_files),

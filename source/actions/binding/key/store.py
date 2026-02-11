@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-from typing import Any
-
 from ..store_base import BindingStoreBase
-from ..seed import get_seed_key_bindings
+from ..seed import get_key_preset_path
 from .sequence import KeySequence
 
 
 class KeyBindingStore(BindingStoreBase[KeySequence]):
     key_type = KeySequence
-    def _seed_specs(self) -> Any | None:
-        return get_seed_key_bindings()
+
+    def _seed_file_path(self) -> str | None:
+        return get_key_preset_path()
 

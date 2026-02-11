@@ -50,7 +50,12 @@ def get_setting_file_names():
     return [get_name_without_ext(a) for a in list_files(data_path(f'dirs/'), '.db')]
 
 def get_resource_path():
-    return get_main_based_directory() / '_resources'
+    p = get_main_based_directory() / '_resources'
+    if not p.is_dir():
+        cwd_p = Path.cwd() / '_resources'
+        if cwd_p.is_dir():
+            return cwd_p
+    return p
 
 def get_name_without_ext(path):
     return os.path.splitext(os.path.basename(path))[0]

@@ -6,12 +6,6 @@ from ...actions.bridge import Kit
 def _get_gv(ctx):
     return ctx.get_instance("GraphicsView")
 
-def reset_view(ctx):
-    gv = _get_gv(ctx)
-    gv.setTransform(QtGui.QTransform())
-    gv.centerOn(gv.sceneRect().center())
-    gv.fit_in_view(padding=0.0)
-
 
 def fit_in_view(ctx, padding: float = 0.0, mode: str | None = None):
     gv = _get_gv(ctx)
@@ -48,7 +42,6 @@ def _pan_start(ctx):
     gv._is_panning = True
     gv._last_pos = ctx.pos
     gv.setCursor(QtCore.Qt.CursorShape.ClosedHandCursor)
-    gv.setDragMode(QtWidgets.QGraphicsView.NoDrag)
 
 
 def _pan_move(ctx):
@@ -58,8 +51,7 @@ def _pan_move(ctx):
     cur = ctx.pos
     dv = cur - gv._last_pos
     gv._last_pos = cur
-    gv.horizontalScrollBar().setValue(gv.horizontalScrollBar().value() - dv.x())
-    gv.verticalScrollBar().setValue(gv.verticalScrollBar().value() - dv.y())
+    gv.pan_by(dv.x(), dv.y())
 
 
 def _pan_end(ctx):
@@ -73,7 +65,6 @@ class GraphicsViewCommands(Kit.MenuBase):
     prefix = "GraphicsView"
     commands = [
         ":GraphicsView",
-        Kit.Command(path="gv.reset_view", display="Reset View", func=reset_view),
         Kit.Command(
             path="gv.fit_in_view",
             display="Fit In View",

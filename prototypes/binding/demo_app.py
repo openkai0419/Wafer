@@ -96,8 +96,7 @@ def bootstrap() -> None:
         command_options=str(base / ".command_options.json"),
     )
 
-    from .defaults import get_all_key_bindings, get_all_mouse_bindings
-    Settings.activate(mouse_bindings=get_all_mouse_bindings(), key_bindings=get_all_key_bindings())
+    Settings.activate()
     
 
 

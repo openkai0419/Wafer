@@ -44,7 +44,6 @@ class MenuMenu(Kit.MenuBase):
         key_bindings=str(data_path("binding/key_bindings.json")),
         command_options=str(data_path("binding/command_options.json")),
         )
-        from .defaults import default_key_bindings, default_mouse_bindings
-        Settings.activate(mouse_bindings=default_mouse_bindings(), key_bindings=default_key_bindings())
+        Settings.activate()
 
 

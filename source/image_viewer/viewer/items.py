@@ -10,7 +10,6 @@ from .selectionmanager import SelectionManager
 class ViewerItems(QtCore.QObject):
     itemsChanged = QtCore.Signal()
     selectionChanged = QtCore.Signal(set)
-    currentIndexChanged = QtCore.Signal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -19,7 +18,6 @@ class ViewerItems(QtCore.QObject):
         self.aspect_ratios: list[float] = []
         self._selection = SelectionManager()
         self._selection.selectionChanged.connect(self._on_selection_changed)
-        self._current_index: int | None = None
         self._path_to_index: dict[str, int] = {}
 
     def _rebuild_index(self):
@@ -39,10 +37,8 @@ class ViewerItems(QtCore.QObject):
         self.aspect_ratios = list(aspect_ratios or [])
         self._normalize_lengths()
         self._rebuild_index()
-        self._current_index = self._clamp_index(self._current_index)
         self._selection.clear()
         self.itemsChanged.emit()
-        self.currentIndexChanged.emit(self._current_index)
 
     @profiler.profile
     def clear(self):
@@ -133,77 +129,5 @@ class ViewerItems(QtCore.QObject):
             return self.aspect_ratios[index]
         return None
 
-    def _clamp_index(self, index: int | None) -> int | None:
-        if index is None:
-            return None
-        if not self.paths:
-            return None
-        return max(0, min(index, len(self.paths) - 1))
-
-    def current_index(self) -> int | None:
-        return self._current_index
-
-    @profiler.profile
-    def set_current_index(self, index: int | None):
-        index = self._clamp_index(index)
-        if index == self._current_index:
-            return
-        self._current_index = index
-        self.currentIndexChanged.emit(self._current_index)
-
-    def _preferred_anchor_index(self) -> int | None:
-        if self._current_index is not None:
-            return self._current_index
-        last = self.last_selected_index()
-        if last is not None:
-            return last
-        return 0 if self.paths else None
-
-    def next_index(self, index: int | None = None, step: int = 1, loop: bool = False) -> int | None:
-        if not self.paths:
-            return None
-        if index is None:
-            index = self._preferred_anchor_index()
-        if index is None:
-            return None
-        nxt = index + max(1, step)
-        if nxt < len(self.paths):
-            return nxt
-        return 0 if loop else len(self.paths) - 1
-
-    def prev_index(self, index: int | None = None, step: int = 1, loop: bool = False) -> int | None:
-        if not self.paths:
-            return None
-        if index is None:
-            index = self._preferred_anchor_index()
-        if index is None:
-            return None
-        prv = index - max(1, step)
-        if prv >= 0:
-            return prv
-        return len(self.paths) - 1 if loop else 0
-
-    def next_path(self, index: int | None = None, step: int = 1, loop: bool = False) -> str | None:
-        return self.path_at(self.next_index(index=index, step=step, loop=loop))
-
-    def prev_path(self, index: int | None = None, step: int = 1, loop: bool = False) -> str | None:
-        return self.path_at(self.prev_index(index=index, step=step, loop=loop))
-
-    @profiler.profile
-    def move_current_next(self, step: int = 1, loop: bool = False) -> str | None:
-        i = self.next_index(step=step, loop=loop)
-        self.set_current_index(i)
-        return self.path_at(i)
-
-    @profiler.profile
-    def move_current_prev(self, step: int = 1, loop: bool = False) -> str | None:
-        i = self.prev_index(step=step, loop=loop)
-        self.set_current_index(i)
-        return self.path_at(i)
-
     def _on_selection_changed(self, _):
         self.selectionChanged.emit(self.selected_indices())
-        last = self.last_selected_index()
-        if last is not None and last != self._current_index:
-            self._current_index = self._clamp_index(last)
-            self.currentIndexChanged.emit(self._current_index)

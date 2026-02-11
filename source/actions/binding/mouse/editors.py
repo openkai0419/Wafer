@@ -6,7 +6,6 @@ from source.common.funcs import uipx
 from .mouseeventmanager import MouseActionKey, ClickType, MouseButton, ModifierKey
 from ...command.maker import MenuMaker
 from ...command.ui import MenuBuilder
-from ..seed import get_seed_mouse_bindings
 from .store import MouseBindingStore
 from ...command.payload import format_payload_display
 from ...command.payload import CommandPayload
@@ -195,20 +194,14 @@ class MouseBindingEditor(QtWidgets.QDialog):
         self.accept()
     def _reset_to_defaults(self):
         try:
-            specs = get_seed_mouse_bindings()
-            if specs is None:
-                return
-            self._draft = MouseBindingStore.normalize_specs(specs)
+            self._draft = MouseBindingStore()._seed_data()
             self._reload_sections()
         except Exception as e:
             show_warning(self, "MouseBindingEditor reset_to_defaults failed", exc=e)
     def _reset_current_action(self):
         try:
             b, c = self._current_action()
-            specs = get_seed_mouse_bindings()
-            if specs is None:
-                return
-            defs = MouseBindingStore.normalize_specs(specs)
+            defs = MouseBindingStore()._seed_data()
             cur = self._store.get_all()
             aff_keys = set()
             for k in cur.keys():

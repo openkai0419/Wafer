@@ -377,6 +377,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
     @profiler.profile
     def on_folder_selected(self):
         self.run_folder = True
+        self._folder_changed = True
         self.search()
 
     @QtCore.Slot(bool)
@@ -425,7 +426,9 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.last_executed_query = self.current_runnable.query
         self.current_runnable = None
         self.current_query_start_time = None
-        self.content.set_paths(paths, soruces, aspects)
+        keep_scroll = not getattr(self, '_folder_changed', False)
+        self._folder_changed = False
+        self.content.set_paths(paths, soruces, aspects, keep_scroll=keep_scroll)
         self.data_model.set_items(paths, soruces)
         if self.run_folder:
             self.search_row_widget.run_folder_worker(self.dbpath, self.folder_view.get_selected_paths())

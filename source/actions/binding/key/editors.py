@@ -5,7 +5,6 @@ from source.common.errors import show_warning
 from ...command.payload import format_payload_display
 from ...command.payload import CommandPayload
 from ..common import WidgetRef
-from ..seed import get_seed_key_bindings
 from .store import KeyBindingStore
 from .shortcutmanager import ShortcutManager
 from .sequence import KeySequence, KeySpecCatalog
@@ -325,10 +324,7 @@ class KeyBindingEditor(QtWidgets.QDialog):
         self._select_lists_for_sequence(new_seq)
 
     def _reset_all_defaults(self):
-        specs = get_seed_key_bindings()
-        if specs is None:
-            return
-        self._draft = KeyBindingStore.normalize_specs(specs)
+        self._draft = KeyBindingStore()._seed_data()
         self._refresh_shortcuts()
         self._load_existing()
         self._refresh_lists()

@@ -133,7 +133,7 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget, Kit.UIMixin):
         self.rects_tops = []
         self.rects_bottoms = []
         self.last_selections = []
-        self._restore_scroll_index = None
+        self._restore_scroll_path = None
         self._rect_select_mode = "replace"
         self._rect_select_dragging = False
         self._rect_select_start_pos = None
@@ -164,7 +164,7 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget, Kit.UIMixin):
 
     def extend_context(self, ctx, cmd, event=None, key=None, source=None):
         paths = self.items.selected_paths()
-        path = self.items.last_selected_path() or self.items.path_at(self.items.current_index())
+        path = self.items.last_selected_path()
         return {"path": path, "paths": paths}
 
     def _on_selection_changed(self, _):
@@ -203,7 +203,7 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget, Kit.UIMixin):
         self._update_visible_items()
 
     @profiler.profile
-    def set_paths(self, path_list, sources, aspect_ratios):
+    def set_paths(self, path_list, sources, aspect_ratios, keep_scroll=True):
         if not path_list:
             self.items.clear()
             self._clear_all_widgets()
@@ -212,7 +212,14 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget, Kit.UIMixin):
         if self.items.paths == path_list and self.items.sources == sources and self.items.aspect_ratios == aspect_ratios:
             self.layout_ready.emit()
             return
-        self.items.set_items(path_list, sources, aspect_ratios)
+        self.last_selections = self.items.selected_paths()
+        if keep_scroll:
+            center_idx = self.get_center_image_index()
+            self._restore_scroll_path = self.items.path_at(center_idx) if center_idx is not None else None
+        else:
+            self._restore_scroll_path = None
+        with self.items.selection_noemit():
+            self.items.set_items(path_list, sources, aspect_ratios)
         self._recalc_layout()
 
     @profiler.profile
@@ -239,8 +246,9 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget, Kit.UIMixin):
                 self.base_height = new_height
                 self._width_ref = width
                 self.base_height_changed.emit()
-        self._restore_scroll_index = self.get_center_image_index()
-        logger.info('on_resize_event')
+        center_idx = self.get_center_image_index()
+        self._restore_scroll_path = self.items.path_at(center_idx) if center_idx is not None else None
+        logger.debug(f'[resize] center_idx={center_idx}, restore_path={self._restore_scroll_path}')
         self._recalc_layout()
 
     @qt_debounce(100)
@@ -273,17 +281,49 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget, Kit.UIMixin):
                     return i
         return None
 
-    @profiler.profile
-    def reinstall_scroll_index(self, ind, animated: bool = False):
+    def _row_tops(self) -> list[int]:
+        if not self.rects:
+            return []
+        seen = []
+        prev = None
+        for t in self.rects_tops:
+            if t != prev:
+                seen.append(t)
+                prev = t
+        return seen
+
+    def _effective_scroll_top(self, bar):
+        if (hasattr(self, '_scroll_anim') and self._scroll_anim is not None
+                and self._scroll_anim.state() == QtCore.QAbstractAnimation.Running
+                and hasattr(self, '_scroll_target')):
+            return self._scroll_target
+        return bar.value()
+
+    def scroll_to_next_row(self, animated: bool = True):
         scroll_area = self.parent_scroll
         if not isinstance(scroll_area, QtWidgets.QAbstractScrollArea):
             return
         bar = scroll_area.verticalScrollBar()
-        if ind < len(self.rects):
-            target = self.rects[ind].center().y() - scroll_area.viewport().height() // 2
-        else:
-            target = bar.maximum()
-        target = max(bar.minimum(), min(target, bar.maximum()))
+        current_top = self._effective_scroll_top(bar)
+        rows = self._row_tops()
+        idx = bisect.bisect_right(rows, current_top)
+        if idx < len(rows):
+            self._scroll_to_y(rows[idx], bar, scroll_area, animated)
+
+    def scroll_to_prev_row(self, animated: bool = True):
+        scroll_area = self.parent_scroll
+        if not isinstance(scroll_area, QtWidgets.QAbstractScrollArea):
+            return
+        bar = scroll_area.verticalScrollBar()
+        current_top = self._effective_scroll_top(bar)
+        rows = self._row_tops()
+        idx = bisect.bisect_left(rows, current_top) - 1
+        if idx >= 0:
+            self._scroll_to_y(rows[idx], bar, scroll_area, animated)
+
+    def _scroll_to_y(self, y: int, bar, scroll_area, animated: bool):
+        target = max(bar.minimum(), min(y, bar.maximum()))
+        self._scroll_target = target
         distance = abs(bar.value() - target)
         if not animated or distance < 2:
             bar.setValue(target)
@@ -300,6 +340,18 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget, Kit.UIMixin):
         anim.start()
 
     @profiler.profile
+    def reinstall_scroll_index(self, ind, animated: bool = False):
+        scroll_area = self.parent_scroll
+        if not isinstance(scroll_area, QtWidgets.QAbstractScrollArea):
+            return
+        bar = scroll_area.verticalScrollBar()
+        if ind < len(self.rects):
+            y = self.rects[ind].center().y() - scroll_area.viewport().height() // 2
+        else:
+            y = bar.maximum()
+        self._scroll_to_y(y, bar, scroll_area, animated)
+
+    @profiler.profile
     def _on_layout_ready(self, rects):
         self.rects = rects
         self.rects_tops = [r.top() for r in rects]
@@ -308,38 +360,48 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget, Kit.UIMixin):
         self.size_checker.trigger()
         self.layout_ready.emit()
         if self.last_selections:
+            logger.debug(f'[layout_ready] restoring selections: {self.last_selections[:3]}...')
             indexes = [i for i in (self.items.index_of_path(p) for p in self.last_selections) if i is not None]
+            logger.debug(f'[layout_ready] resolved selection indexes: {indexes[:5]}')
             if indexes:
                 with self.items.selection_noemit():
                     self.items.set_selected(indexes, last=-1)
             else:
                 with self.items.selection_noemit():
                     self.items.clear_selection()
-        index = self.get_last_index()
-        logger.info(index)
+        index = self.get_restore_index()
+        logger.debug(f'[layout_ready] restore_index={index}, rects_len={len(self.rects)}')
         if index is not None:
-            if index < len(self.rects):
-                self.reinstall_scroll_index(index)
+            if index >= len(self.rects):
+                index = 0
+            self.reinstall_scroll_index(index)
         for i in self.visible_indices:
             if i < len(self.rects):
                 self._ensure_widget_visible(i)
 
     @profiler.profile
-    def get_last_index(self):
-        index = None
+    def get_restore_index(self):
         if main_setting.is_first_time('viewer/scroll'):
-            return main_setting.get('viewer/scroll', 0)
-        last = self.items.last_selected_index()
-        if last is not None:
-            return last
-        cur = self.items.current_index()
-        if cur is not None:
-            return cur
-        if self._restore_scroll_index is not None:
-            index = self._restore_scroll_index
-            self._restore_scroll_index = None
-            return index
-        return index
+            saved = main_setting.get('viewer/scroll', 0)
+            logger.debug(f'[restore] first_time, saved scroll index={saved}')
+            return saved
+        last_path = self.items.last_selected_path()
+        logger.debug(f'[restore] last_selected_path={last_path}')
+        if last_path is not None:
+            idx = self.items.index_of_path(last_path)
+            logger.debug(f'[restore] last_selected -> idx={idx}')
+            if idx is not None:
+                return idx
+        logger.debug(f'[restore] _restore_scroll_path={self._restore_scroll_path}')
+        if self._restore_scroll_path is not None:
+            path = self._restore_scroll_path
+            self._restore_scroll_path = None
+            idx = self.items.index_of_path(path)
+            logger.debug(f'[restore] scroll_path -> idx={idx}')
+            if idx is not None:
+                return idx
+        logger.debug('[restore] no restore target found')
+        return None
 
     @profiler.profile
     def _update_visible_items(self):

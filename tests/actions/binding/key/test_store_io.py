@@ -1,7 +1,9 @@
+import json
+
 from source.actions.binding.key.store import KeyBindingStore
 from source.actions.binding.key.sequence import Key
 from source.actions.command.payload import CommandPayload
-from source.actions.binding.seed import get_seed_mouse_bindings, get_seed_key_bindings, set_seed_bindings
+from source.actions.binding.seed import set_presets
 
 
 def test_key_store_save_load_roundtrip(tmp_path):
@@ -17,18 +19,21 @@ def test_key_store_save_load_roundtrip(tmp_path):
     assert set(got.keys()) == set(data.keys())
     assert got[next(iter(data.keys()))]["*"].to_dict() == {"id": "viewer.close", "args": {}}
 
-def test_key_store_diff_saves_deletions(tmp_path):
-    prev_mouse = get_seed_mouse_bindings()
-    prev_key = get_seed_key_bindings()
+def test_key_store_diff_saves_deletions(tmp_path, monkeypatch):
+    seed_dir = tmp_path / "key_bindings"
+    seed_dir.mkdir()
+    k = Key("Ctrl", "W")
+    seed_json = {"items": [{"key": k.to_dict(), "scopes": {"*": {"id": "viewer.close", "args": {}}}}]}
+    (seed_dir / "test_preset.json").write_text(json.dumps(seed_json), encoding="utf-8")
+    monkeypatch.setattr("source.actions.binding.seed.get_resource_path", lambda: tmp_path)
+    set_presets(key="test_preset")
     try:
-        seed = {Key("Ctrl", "W"): {"*": CommandPayload("viewer.close", {})}}
-        set_seed_bindings(mouse_bindings=prev_mouse, key_bindings=seed)
         store = KeyBindingStore()
         store.set_all({})
         p = tmp_path / "keys_diff.json"
         store.save_to_file(str(p))
-        store.set_all(seed)
+        store._data = store._seed_data()
         assert store.load_from_file(str(p))
         assert store.get_all() == {}
     finally:
-        set_seed_bindings(mouse_bindings=prev_mouse, key_bindings=prev_key)
+        set_presets(key="standard")

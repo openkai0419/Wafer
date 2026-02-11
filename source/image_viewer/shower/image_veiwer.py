@@ -5,12 +5,15 @@ from ...actions.bridge import Kit
 
 FitMode = Literal["contain", "cover"]
 
+_HUGE = 1_000_000_000.0
+
 class ZoomPanGraphicsView(QtWidgets.QGraphicsView, Kit.UIMixin):
     zoomChanged = QtCore.Signal(float)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setScene(QtWidgets.QGraphicsScene(self))
+        self.scene().setSceneRect(-_HUGE, -_HUGE, _HUGE * 2, _HUGE * 2)
         self._pix_item: QtWidgets.QGraphicsPixmapItem | None = None
         self._min_scale = 0.05
         self._max_scale = 50.0
@@ -18,10 +21,12 @@ class ZoomPanGraphicsView(QtWidgets.QGraphicsView, Kit.UIMixin):
         self._last_pos = QtCore.QPoint()
         self._fit_mode: FitMode = "contain"
         self.setRenderHints(QtGui.QPainter.Antialiasing | QtGui.QPainter.SmoothPixmapTransform)
-        self.setTransformationAnchor(QtWidgets.QGraphicsView.AnchorUnderMouse)
-        self.setResizeAnchor(QtWidgets.QGraphicsView.AnchorUnderMouse)
+        self.setTransformationAnchor(QtWidgets.QGraphicsView.NoAnchor)
+        self.setResizeAnchor(QtWidgets.QGraphicsView.NoAnchor)
         self.setDragMode(QtWidgets.QGraphicsView.NoDrag)
         self.setViewportUpdateMode(QtWidgets.QGraphicsView.SmartViewportUpdate)
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self.setBackgroundBrush(self.palette().brush(QtGui.QPalette.ColorRole.Dark))
         self.init_command_binding("GraphicsView", enable_drops=True)
 
@@ -36,8 +41,7 @@ class ZoomPanGraphicsView(QtWidgets.QGraphicsView, Kit.UIMixin):
             self._pix_item.setTransformationMode(QtCore.Qt.SmoothTransformation)
         else:
             self._pix_item.setPixmap(pixmap)
-        self.scene().setSceneRect(self._pix_item.boundingRect())
-        self.reset_view()
+        self.fit_in_view(padding=0.0)
 
     def set_fit_mode(self, mode: FitMode):
         self._fit_mode = mode
@@ -45,43 +49,34 @@ class ZoomPanGraphicsView(QtWidgets.QGraphicsView, Kit.UIMixin):
     def toggle_fit_mode(self):
         self._fit_mode = "cover" if self._fit_mode == "contain" else "contain"
 
-    def reset_view(self):
-        self.setTransform(QtGui.QTransform())
-        self.centerOn(self.sceneRect().center())
-        self.fit_in_view(padding=0.0)
+    def _image_rect(self) -> QtCore.QRectF | None:
+        if self._pix_item is None:
+            return None
+        return self._pix_item.boundingRect()
 
     def fit_in_view(self, padding: float = 0.0, mode: FitMode | None = None):
-        if not self._pix_item:
+        r = self._image_rect()
+        if r is None or r.isEmpty():
             return
-        r = self._pix_item.boundingRect().adjusted(padding, padding, -padding, -padding)
-        if r.isEmpty():
-            return
-
+        r = r.adjusted(padding, padding, -padding, -padding)
         mode = mode or self._fit_mode
-        view_rect = self.viewport().rect()
-        if view_rect.isEmpty():
+        vp = self.viewport().rect()
+        if vp.isEmpty():
             return
-
-        vw = max(1, view_rect.width())
-        vh = max(1, view_rect.height())
-        rw = max(1.0, r.width())
-        rh = max(1.0, r.height())
-
-        sx = vw / rw
-        sy = vh / rh
+        vw, vh = max(1, vp.width()), max(1, vp.height())
+        rw, rh = max(1.0, r.width()), max(1.0, r.height())
+        sx, sy = vw / rw, vh / rh
         s = min(sx, sy) if mode == "contain" else max(sx, sy)
-
-        self.setTransform(QtGui.QTransform())
+        s = max(self._min_scale, min(s, self._max_scale))
         t = QtGui.QTransform()
         t.scale(s, s)
         self.setTransform(t)
+        self.centerOn(r.center())
+        self.zoomChanged.emit(s)
 
-        cx = r.center().x()
-        cy = r.top() + (vh / (2.0 * s))
-        self.centerOn(QtCore.QPointF(cx, cy))
-
-        self._clamp_scale()
-        self.zoomChanged.emit(self._current_scale())
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.fit_in_view(padding=0.0)
 
     def _current_scale(self) -> float:
         m = self.transform()
@@ -90,39 +85,52 @@ class ZoomPanGraphicsView(QtWidgets.QGraphicsView, Kit.UIMixin):
     def _clamp_scale(self):
         s = self._current_scale()
         if s < self._min_scale:
-            self._set_scale(self._min_scale / s)
+            self.scale(self._min_scale / s, self._min_scale / s)
         elif s > self._max_scale:
-            self._set_scale(self._max_scale / s)
+            self.scale(self._max_scale / s, self._max_scale / s)
 
-    def _set_scale(self, factor: float):
-        self.scale(factor, factor)
+    def _clamp_center(self, margin_px: float = 50.0):
+        r = self._image_rect()
+        if r is None or r.isEmpty():
+            return
+        vp = self.viewport().rect()
+        if vp.isEmpty():
+            return
+        s = self._current_scale()
+        if s <= 0:
+            return
+        center = self.mapToScene(vp.center())
+        m = margin_px / s
+        hw = vp.width() / (2.0 * s) - m
+        hh = vp.height() / (2.0 * s) - m
+        cx = max(r.left() - hw, min(center.x(), r.right() + hw))
+        cy = max(r.top() - hh, min(center.y(), r.bottom() + hh))
+        if abs(cx - center.x()) > 0.01 or abs(cy - center.y()) > 0.01:
+            self.centerOn(QtCore.QPointF(cx, cy))
 
     def zoom_at(self, factor: float, pos: QtCore.QPoint | None = None):
         if self._pix_item is None:
             return
         before = self._current_scale()
-        if pos is None:
-            self.scale(factor, factor)
-            self._clamp_scale()
-        else:
-            scene_pos = self.mapToScene(pos)
-            viewport_center = self.viewport().rect().center()
-            offset = pos - viewport_center
-            had_vbar = self.verticalScrollBar().maximum() > 0
-            had_hbar = self.horizontalScrollBar().maximum() > 0
-            self.scale(factor, factor)
-            self._clamp_scale()
-            scale = self._current_scale()
-            scene_offset = QtCore.QPointF(offset.x() / scale, offset.y() / scale)
-            target = scene_pos - scene_offset
-            self.centerOn(target)
-            has_vbar = self.verticalScrollBar().maximum() > 0
-            has_hbar = self.horizontalScrollBar().maximum() > 0
-            if had_vbar != has_vbar or had_hbar != has_hbar:
-                QtCore.QTimer.singleShot(0, lambda: self.centerOn(target))
+        anchor = self.mapToScene(pos) if pos is not None else None
+        self.scale(factor, factor)
+        self._clamp_scale()
+        if anchor is not None:
+            new_at_pos = self.mapToScene(pos)
+            center = self.mapToScene(self.viewport().rect().center())
+            self.centerOn(center + (anchor - new_at_pos))
+        self._clamp_center()
         after = self._current_scale()
         if before != after:
             self.zoomChanged.emit(after)
+
+    def pan_by(self, dx: float, dy: float):
+        s = self._current_scale()
+        if s <= 0:
+            return
+        center = self.mapToScene(self.viewport().rect().center())
+        self.centerOn(QtCore.QPointF(center.x() - dx / s, center.y() - dy / s))
+        self._clamp_center()
 
 
 class ImageViewerWidget(QtWidgets.QWidget):

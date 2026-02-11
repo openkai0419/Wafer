@@ -5,7 +5,6 @@ def test_activate_does_not_write_binding_files(tmp_path):
     from source.actions.binding.manager import BindingManager
     from source.actions.bridge import Settings
     from source.actions.command.state import CommandOptionStore
-    from source.image_viewer.commands.defaults import default_key_bindings, default_mouse_bindings
 
     prev_settings_instance = getattr(Settings, "_instance", None)
     prev_settings_configured = getattr(Settings, "_configured", False)
@@ -30,8 +29,6 @@ def test_activate_does_not_write_binding_files(tmp_path):
             mouse_bindings=mouse_path,
             key_bindings=key_path,
             command_options=options_path,
-            seed_mouse_bindings=default_mouse_bindings(),
-            seed_key_bindings=default_key_bindings(),
         )
         Settings.activate()
 

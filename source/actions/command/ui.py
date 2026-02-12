@@ -40,6 +40,9 @@ class CommandOptionsDialog(QtWidgets.QDialog, TranslatorMixin):
             form.addRow(label, widget)
         layout.addLayout(form)
         row = QtWidgets.QHBoxLayout()
+        btn_default = QtWidgets.QPushButton(self.t.tr("リセット"), self)
+        btn_default.clicked.connect(self._on_reset_defaults)
+        row.addWidget(btn_default)
         row.addStretch(1)
         if self._binding_mode:
             btn_save = QtWidgets.QPushButton("設定", self)
@@ -196,6 +199,23 @@ class CommandOptionsDialog(QtWidgets.QDialog, TranslatorMixin):
                 self.accept()
         except Exception as e:
             log_error(f"Failed to execute command from dialog: {e}")
+
+    def _on_reset_defaults(self):
+        for param in self.command_class.meta.params:
+            widget = self.widgets.get(param.name)
+            if widget is None:
+                continue
+            v = param.default
+            if isinstance(widget, QtWidgets.QComboBox):
+                idx = widget.findData(v)
+                if idx >= 0:
+                    widget.setCurrentIndex(idx)
+            elif isinstance(widget, QtWidgets.QCheckBox):
+                widget.setChecked(bool(v))
+            elif isinstance(widget, (QtWidgets.QSpinBox, QtWidgets.QDoubleSpinBox)):
+                widget.setValue(v if v is not None else 0)
+            elif isinstance(widget, QtWidgets.QLineEdit):
+                widget.setText(str(v) if v is not None else "")
 
     def _on_save(self):
         self._did_save = True
@@ -494,6 +514,17 @@ class CommandMenuBuilder(TranslatorMixin):
                 self.state_manager.set_current(group_name, result, save=False)
                 return result
         return self.state_manager.find_default(group_name, self.registry)
+
+    def set_action_group_current(self, group_name: str, command_id: str) -> None:
+        self.state_manager.set_current(group_name, command_id)
+        group = self._action_groups.get(group_name)
+        if group:
+            for action in group.actions():
+                if str(action.data()) == command_id:
+                    action.blockSignals(True)
+                    action.setChecked(True)
+                    action.blockSignals(False)
+                    break
 
     def _update_checkmark(self, container: QtWidgets.QWidget, state: bool):
         lbl = container.findChild(QtWidgets.QLabel, "checkMark")

@@ -20,7 +20,7 @@ class MetaQuery:
         ascending: bool = True,
         append_mode: str = 'OR',
         splittext: str | None = None,
-        only_direct_children: bool = False,
+        include_subfolders: bool = True,
         require_keys: bool = True,
     ) -> None:
         self.keys = keys
@@ -32,7 +32,7 @@ class MetaQuery:
         self.ascending = ascending
         self.append_mode = append_mode
         self.splittext = splittext
-        self.only_direct_children = only_direct_children
+        self.include_subfolders = include_subfolders
         self.require_keys = require_keys
 
     def __eq__(self, other):
@@ -48,7 +48,7 @@ class MetaQuery:
             self.ascending,
             self.append_mode,
             self.splittext,
-            self.only_direct_children,
+            self.include_subfolders,
             self.require_keys,
         ) == (
             other.keys,
@@ -60,12 +60,12 @@ class MetaQuery:
             other.ascending,
             other.append_mode,
             other.splittext,
-            other.only_direct_children,
+            other.include_subfolders,
             other.require_keys,
         )
 
     def __hash__(self):
-        return hash((tuple(self.keys or []), tuple(self.keywords or []), self.query_mode, tuple(self.directories or []), self.keyword_mode, self.sort_by, self.ascending, self.append_mode, self.splittext, self.only_direct_children, self.require_keys))
+        return hash((tuple(self.keys or []), tuple(self.keywords or []), self.query_mode, tuple(self.directories or []), self.keyword_mode, self.sort_by, self.ascending, self.append_mode, self.splittext, self.include_subfolders, self.require_keys))
 
     @profiler.profile
     def normalize_inputs(self):
@@ -158,7 +158,7 @@ class MetaQuery:
                 nd = normalize_path_func(str(d))
                 prefix = (nd + "/") if nd else ""
                 esc_prefix = prefix.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
-                if self.only_direct_children:
+                if not self.include_subfolders:
                     dir_clauses.append(f"({alias_m}.path LIKE ? ESCAPE '\\' AND {alias_m}.path NOT LIKE ? ESCAPE '\\')")
                     dir_params.extend([f"{esc_prefix}%", f"{esc_prefix}%/%"])
                 else:
@@ -173,7 +173,7 @@ class MetaQuery:
 
     @profiler.profile
     def _is_fastpath_simple_keys(self):
-        # keys があり、include/exclude なし、directories なし、only_direct_children 無関係、
+        # keys があり、include/exclude なし、directories なし、include_subfolders 無関係、
         # require_keys が True（既定）であるケースを高速経路に乗せる
         keys, include_keywords, exclude_keywords = self.normalize_inputs()
         return (

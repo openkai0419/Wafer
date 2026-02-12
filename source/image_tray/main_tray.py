@@ -1,7 +1,7 @@
 from PySide6 import QtWidgets
 from ..common.profiling import logger, profiler
 from ..constants import APP_NAME
-from ..actions.bridge import Command, Context, Menu
+from ..actions.bridge import Command, Context, Menu, UI
 from ..image_collector.progress_notifier import close_publisher
 from ..lang.manager import TranslatorMixin
 from ..qt.debounce import qt_debounce
@@ -23,6 +23,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon, TranslatorMixin):
         self.broker.start()
         self.zmq = ZMQNode(Role.COMMUNICATOR, on_message=self.on_notify)
         self.zmq.start()
+        UI.register_instance("Tray", self)
         self.setContextMenu(self._build_menu())
         QtWidgets.QApplication.instance().aboutToQuit.connect(self.on_delete)
 
@@ -42,7 +43,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon, TranslatorMixin):
 
     @qt_debounce(10)
     def _on_trigger(self):
-        Command.execute('show_window', ctx=self._ctx())
+        Command.run('show_window')
 
     def on_delete(self):
         try:

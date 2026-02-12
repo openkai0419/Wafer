@@ -21,7 +21,7 @@
 
 ■ 検索
 - source/db/query.py の MetaInfoSearchEngine が read-only 接続で検索。
-- MetaQuery: keys/keywords/directories/only_direct_children をSQL条件へ展開。
+- MetaQuery: keys/keywords/directories/include_subfolders をSQL条件へ展開。
 
 ■ 収集(collector)
 - source/image_collector/main_collector.py の CollectorProcess

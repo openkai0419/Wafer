@@ -1,3 +1,9 @@
+■ learnings.txt の記載ルール
+- ここは「今後コードを実装する上で気をつけるべき方針・ルール・注意点」を記載する場所
+- 変更履歴、進捗ログ、「〜済み」「〜完了」等の状態報告は書かない
+- 「〜は廃止済み」のような過去の変更記録も書かない
+- 記載するのは「次に同じ場面に遭遇したときどうすべきか」という指針
+
 ■ コード実装の基本方針
 - 共通化・関数化を積極的に行い、少しでもコードを短く汎用的にする
 - 同じような型チェックや存在確認が複数箇所にある場合は共通関数化
@@ -6,9 +12,10 @@
 - ファイルがむやみに分散しすぎないように注意
 
 ■ 例外処理
+- 基本的にはshow_warining, もしくはraise_errorを利用し、後からの変更ができるように一箇所にまとめる
 - try/except でログなしに例外を完全に握りつぶすことは絶対に避ける
-- 少なくとも logger へ残す、または show_warning / raise_error を使用
-- try/except の代わりに型や存在確認で安全に動かすことを基本とする
+- 少なくとも logger へ残す、または show_warning / raise_error を使用すること。
+- try/except の代わりに型や存在確認で安全に動かすことを基本
 - ctx.get_instance/pos 等の前提が崩れた場合はコマンド側で握りつぶさず例外で落とす
 
 ■ デバッグ
@@ -46,24 +53,32 @@
 - 汎用コマンドは event 非依存にし、ctx 側で値を保障
 - キー/マウス/メニュー/別Widgetからの実行を前提に設計
 - 引数で受け取るのはコマンド宣言時に設定してユーザーが編集可能なもののみ
-- ctx.event/ctx.key はコマンドから取得不可（pos/global_pos/wheel_steps等の派生フィールドで保障）
+- コード上からの実行は Command.run(id, args) を使う。ctxは内部で自動生成
+- Command.run の args は「その場限り」で保存されず、get_args/set_args とは完全に独立
+- 基本的な使い方: Command.run(id, Command.get_args(id))
+- run は require_all=True で全パラメータ必須。不足/余剰/型不一致はすべてエラー
+- set_args は部分更新（update）可能。余剰キー/型不一致はエラー、不足は許容
+- validate_command_args (core.py) が型/choices/min/max/余剰/不足を一元検証
+
+■ CommandContext の構造
+- コマンド公開フィールド: pos, global_pos, wheel_steps, extras, event, start_pos, start_global_pos
+- 内部制御フィールド: _info (widget/scope/source を格納する dict), _widget_cache
+- _info はコマンドコードから触らない。get() でも _info にフォールバックしない
+- event は drag/drop 系コマンド（category="drag"/"drop"）でのみ保証される
+- category="drag"/"drop" のコマンドを event なしで実行するとエラーになる（core.py execute() で検証）
+- コマンドからウィジェットを取得する場合は必ず ctx.get_instance() を使う。ctx._info["widget"] は使わない
 
 ■ メニュー/バインディングの方針
 - コマンド定義側で hotkey を持たず、表示用のショートカットは BindingManager から逆引き
 - バインディングの永続化ファイルは起動時に自動生成しない（編集して保存時のみ作成）
-- 保存はデフォルトとの差分のみ（mode フィールドは廃止済み）
+- 保存はデフォルトとの差分のみ
 - デフォルトバインディングは _resources/mouse_bindings/ と _resources/key_bindings/ にプリセットJSON（例: standard.json）として配置
 - プリセット名は seed.py で管理し、set_presets(mouse=..., key=...) で切り替え可能
-- 将来的にプリセット追加でユーザーがデフォルトバインディングセットを選択可能にする設計
-- defaults.py はもう Python オブジェクトでバインディングを定義しない。seed.py の re-export のみ
+- defaults.py は Python オブジェクトでバインディングを定義しない。seed.py の re-export のみ
 
-■ 過去の指摘・学習事項
-（ユーザーからの指摘や気づいた注意点をここに追記）
-
-- 「後々使われるかもしれない」程度の関数は実装しない。現在使われていない関数は削除する。YAGNI原則を徹底する
+■ 実装上の注意点
+- 「後々使われるかもしれない」程度の関数は実装しない。YAGNI原則を徹底する
 - SelectionManager.set_selected(indexes, last) の last はリスト内の位置インデックス（indexes[last]が実際の値）
 - file_viewer.py の next_file/prev_file は _ensure_current_initialized で index 0 に初期化してから move するため、初回呼び出しで index 1 に移動する
 - DataViewModel と ViewerItems は独立したModel。DataviewModel はコマンド(file_viewer.py)から、ViewerItems はコマンド(justified_view.py)からそれぞれ操作される
-- FolderTreeのキーバインド(defaults.py)は未設定。コマンド登録のみ完了済み
-- get_resource_path() は pytest 時に __main__.__file__ がvenvを指すため_resourcesが見つからない。CWDフォールバックで解決済み
-
+- get_resource_path() は pytest 時に __main__.__file__ が venv を指すため _resources が見つからない。CWDフォールバックで対応している

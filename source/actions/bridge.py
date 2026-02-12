@@ -191,14 +191,6 @@ class Command:
         return CommandRegistry()
 
     @staticmethod
-    def execute(command_id: str, *, ctx=None, **kwargs):
-        if ctx is None:
-            ctx = kwargs.pop("ctx", None)
-        if ctx is None:
-            ctx = Context.create_context(None, "*", source="bridge")
-        return Command._registry().execute(str(command_id), ctx=ctx, **kwargs)
-
-    @staticmethod
     def cycle_action_group(group_name: str):
         return Kit.CommandBuilder().cycle_action_group(str(group_name))
 
@@ -207,10 +199,75 @@ class Command:
         return Kit.CommandBuilder().get_action_group_current(str(group_name))
 
     @staticmethod
+    def set_action_group_current(group_name: str, command_id: str):
+        Kit.CommandBuilder().set_action_group_current(str(group_name), str(command_id))
+
+    @staticmethod
+    def get_checked(command_id: str) -> bool:
+        return Kit.CommandBuilder()._get_checked(
+            str(command_id),
+            Command._registry().get_command(str(command_id)).meta
+        )
+
+    @staticmethod
     def register_commands(defs) -> None:
         from .command.core import register_command_defs
 
         register_command_defs(defs)
+
+    @staticmethod
+    def run(command_id: str, args: dict | None = None, extras: dict | None = None):
+        from .command.core import validate_command_args
+
+        reg = Command._registry()
+        cmd_class = reg.get_command(str(command_id))
+        if cmd_class is None:
+            raise ValueError(f"Command not found: {command_id}")
+        validated = dict(args or {})
+        validate_command_args(cmd_class.meta, validated, require_all=True)
+        ctx = Context.create_context(None, "*", source="run", extras=extras)
+        return reg.execute(str(command_id), ctx=ctx, **validated)
+
+    @staticmethod
+    def invoke(command_id: str, extras: dict | None = None, **kwargs):
+        reg = Command._registry()
+        cmd_class = reg.get_command(str(command_id))
+        if cmd_class is None:
+            raise ValueError(f"Command not found: {command_id}")
+        stored = CommandOptionStore().get(str(command_id))
+        saved = stored.args if isinstance(getattr(stored, "args", None), dict) else {}
+        args = {p.name: saved.get(p.name, p.default) for p in (cmd_class.meta.params or [])}
+        args.update(kwargs)
+        ctx = Context.create_context(None, "*", source="invoke", extras=extras)
+        return reg.execute(str(command_id), ctx=ctx, **args)
+
+    @staticmethod
+    def get_args(command_id: str) -> dict:
+        reg = Command._registry()
+        cmd_class = reg.get_command(str(command_id))
+        if cmd_class is None:
+            raise ValueError(f"Command not found: {command_id}")
+        stored = CommandOptionStore().get(str(command_id))
+        saved = stored.args if isinstance(getattr(stored, "args", None), dict) else {}
+        return {p.name: saved.get(p.name, p.default) for p in (cmd_class.meta.params or [])}
+
+    @staticmethod
+    def set_args(command_id: str, args: dict, *, commit: bool = True) -> None:
+        from .command.core import validate_command_args
+
+        reg = Command._registry()
+        cmd_class = reg.get_command(str(command_id))
+        if cmd_class is None:
+            raise ValueError(f"Command not found: {command_id}")
+        validate_command_args(cmd_class.meta, args)
+        param_names = {p.name for p in (cmd_class.meta.params or [])}
+        store = CommandOptionStore()
+        current = store.get(str(command_id))
+        merged = {k: v for k, v in (current.args or {}).items() if k in param_names}
+        merged.update(args)
+        store.set(str(command_id), merged)
+        if commit:
+            store.commit()
 
 class MenuSession:
     def __init__(
@@ -387,7 +444,7 @@ class Context:
         if pos is None:
             pos = QtGui.QCursor.pos()
 
-        target = seed.get("widget") if seed is not None else None
+        target = (seed._info.get("widget") if hasattr(seed, "_info") else None) if seed is not None else None
         if target is None:
             target = QtWidgets.QApplication.widgetAt(pos)
         if target is None:
@@ -397,7 +454,7 @@ class Context:
             target = target.parentWidget()
         if not target:
             if seed is not None:
-                w = seed.get("widget")
+                w = seed._info.get("widget") if hasattr(seed, "_info") else None
                 if w is not None:
                     show_warning(None, f"context menu target has no binding_scope: {type(w).__name__}")
             return None, None
@@ -436,5 +493,5 @@ class Context:
         if global_pos is not None:
             ctx.global_pos = global_pos
         if widget is not None:
-            ctx.widget = widget
+            ctx._info["widget"] = widget
         return ctx

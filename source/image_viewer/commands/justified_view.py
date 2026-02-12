@@ -3,7 +3,7 @@ from pathlib import Path
 
 from PySide6 import QtCore, QtGui
 
-from ...actions.bridge import Kit
+from ...actions.bridge import Kit, Command
 from ...common.funcs import uipx
 from ...os.dragparser import MimeDataParser
 from ...os.save import drop_files_with_ui
@@ -211,6 +211,12 @@ class JustifiedViewCommands(Kit.MenuBase):
         JustifiedViewCommands.set_scale(ctx, int(int(w) / 10))
 
     @staticmethod
+    def toggle_autoscroll(ctx):
+        w = ctx.get_instance("MainWindow")
+        if w:
+            w.auto_scroll()
+
+    @staticmethod
     def move_to_next_row(ctx):
         view = JustifiedViewCommands.get_view(ctx)
         view.scroll_to_next_row(animated=True)
@@ -219,6 +225,14 @@ class JustifiedViewCommands(Kit.MenuBase):
     def move_to_prev_row(ctx):
         view = JustifiedViewCommands.get_view(ctx)
         view.scroll_to_prev_row(animated=True)
+
+    @staticmethod
+    def set_scroll_anchor_top(ctx):
+        Command.set_action_group_current('jv_scroll_anchor', 'jv.scroll_anchor_top')
+
+    @staticmethod
+    def set_scroll_anchor_center(ctx):
+        Command.set_action_group_current('jv_scroll_anchor', 'jv.scroll_anchor_center')
 
     commands = [
         ":JustifiedView",
@@ -241,11 +255,18 @@ class JustifiedViewCommands(Kit.MenuBase):
         Kit.Command(path="jv.move_to_next_row", display="Next Row", func=move_to_next_row),
         Kit.Command(path="jv.move_to_prev_row", display="Prev Row", func=move_to_prev_row),
         "-",
+        ":Settings",
+        "Scroll Anchor/:Scroll Anchor",
+        Kit.Command(path="Scroll Anchor/jv.scroll_anchor_top", display="Top", func=set_scroll_anchor_top, checkable=True, action_group="jv_scroll_anchor"),
+        Kit.Command(path="Scroll Anchor/jv.scroll_anchor_center", display="Center", func=set_scroll_anchor_center, checkable=True, default_checked=True, action_group="jv_scroll_anchor"),
+        "-",
         ":Scale",
         Kit.Command(path="jv.scale_up", display="Scale Up", func=scale_up, params=[Kit.Param(name="ratio", value=1.1)]),
         Kit.Command(path="jv.scale_down", display="Scale Down", func=scale_down, params=[Kit.Param(name="ratio", value=1.1)]),
         Kit.Command(path="jv.set_scale", display="Set Scale", func=set_scale, params=[Kit.Param(name="height", value=500)]),
         Kit.Command(path="jv.scale_reset", display="Reset Scale", func=scale_reset),
+        "-",
+        Kit.Command(path="jv.toggle_autoscroll", display="AutoScroll", func=toggle_autoscroll),
         "-",
     ]
 

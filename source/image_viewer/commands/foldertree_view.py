@@ -141,6 +141,12 @@ def reload_tree(ctx):
         tree.reload_tree()
 
 
+def add_folder(ctx):
+    w = ctx.get_instance("MainWindow")
+    if w:
+        w.add_new_folder()
+
+
 def _navigate(ctx, method_name, trigger_search=True):
     tree = _ctx_tree(ctx)
     if tree is None:
@@ -227,4 +233,6 @@ class FolderTreeCommands(Kit.MenuBase):
         ),
         "-",
         Kit.Command(path="ft.reload_tree", display="Reload Tree", func=reload_tree),
+        "-",
+        Kit.Command(path="ft.add_folder", display="Add Folder", func=add_folder),
     ]

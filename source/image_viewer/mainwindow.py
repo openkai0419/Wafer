@@ -1,9 +1,7 @@
-from datetime import datetime, timedelta
 from PySide6 import QtCore, QtWidgets
 from ..common.funcs import get_data_db, get_setting_db, get_setting_file_names, uipx
 from ..common.profiling import logger, profiler
 from ..constants import APP_NAME, default_db_name
-from ..db.query import MetaInfoSearchEngine, MetaQuery
 from ..db.setting_db import SettingDB
 from ..image_setting.db_settings import DataBaseSettings
 from ..image_setting.setting_window import SettingsWindow
@@ -11,10 +9,11 @@ from ..lang.manager import TranslatorMixin
 from ..os.process import Proc
 from ..qt.debounce import qt_debounce
 from ..qt.dialog import ConfirmDialog, InputDialog
-from ..qt.thread import main_thread
 from ..zmq.zmq import MessageEnvelope, Role, ZMQNode
 from .viewer.justifiedwidget import JustifiedVirtualScrollWidget
 from .viewer.items import ViewerItems
+from ..qt.window import WindowSnapshot
+from .commands.window_commands import restore_always_on_top
 from .shower.data_model import DataViewModel
 from .shower.data_viewer import ViewerWidget
 from .viewer_settings import main_setting
@@ -28,36 +27,10 @@ from .widgets.scrollarea import AutoScrollArea
 from .widgets.table_combo import ComboBoxWithButtons
 
 from .commands.menu import MenuMenu
-from ..actions.bridge import UI
+from .search import SearchService
+from ..actions.bridge import UI, Command
 MenuMenu.setup_menu()
 
-class WorkerSignals(QtCore.QObject):
-    finished = QtCore.Signal(object, object, object)
-
-class SearchWorkerRunnable(QtCore.QRunnable):
-
-    def __init__(self, db_name, query):
-        super().__init__()
-        self.engine = MetaInfoSearchEngine(db_name)
-        self.query = query
-        self.signals = WorkerSignals()
-        self._cancelled = False
-
-    def cancel(self):
-        self._cancelled = True
-
-    @profiler.profile
-    def run(self):
-        if self._cancelled:
-            return
-        try:
-            paths, soruces, aspects = self.engine.get(self.query)
-        except Exception as e:
-            logger.exception(f'[SearchWorker] Search failed: {e}')
-            return
-        if self._cancelled:
-            return
-        self.signals.finished.emit(paths, soruces, aspects)
 
 class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
 
@@ -71,17 +44,17 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.dbname = None
         self.dbpath = None
         self.setting_db = None
-        self.current_runnable = None
-        self._is_fullscreen = False
+        self._pre_fullscreen_snap = None
         self.run_folder = True
-        self.query_timeout_threshold = timedelta(seconds=5)
-        self.current_query_start_time = None
-        self.query_lock = QtCore.QMutex()
-        self.pending_query = None
-        self.last_executed_query = None
-        main_thread.watch_start()
+        self.search_service = SearchService(lambda: self.dbpath, parent=self)
+        self.search_service.search_started.connect(self._on_search_started)
+        self.search_service.search_finished.connect(self._on_search_finished)
+        self.search_service.params_changed.connect(self._on_search_params_changed)
+        UI.register_instance("SearchService", self.search_service)
         self.start_ipc_listener()
         self.t.set_locale(main_setting.get('window/language', 'en'))
+        UI.register_instance("MainWindow", self)
+        restore_always_on_top(self)
         self.main_ui()
         self.reload_db(self.get_previous())
         QtWidgets.QApplication.instance().aboutToQuit.connect(self.on_close)
@@ -105,6 +78,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.dbname = name
         self.dbpath = get_data_db(name)
         self.setting_db = SettingDB(get_setting_db(name))
+        self.search_service.reset_state()
         self.folder_view.set(self.setting_db.get_all_parent_folders(), self.setting_db.get_all_ignore_folders())
         QtCore.QTimer.singleShot(0, lambda: self.folder_view.restore_state(self.dbname))
         self.run_folder = True
@@ -234,29 +208,27 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.left_layout.setSpacing(0)
         self.splitter.addWidget(left_panel)
 
-        self.only_direct_children = main_setting.get('query/only_direct_children', False)
         self.iconbar = IconButtonBar(
             left_buttons=[
-                IconButtonConfig('icons/settings.png', 'Settings', lambda: self.show_settings()),
-                IconButtonConfig('icons/open.png', 'Add File', lambda: self.add_new_folder()),
+                IconButtonConfig('icons/settings.png', 'Settings', lambda: Command.invoke("win.show_settings")),
+                IconButtonConfig('icons/open.png', 'Add File', lambda: Command.invoke("ft.add_folder")),
             ],
             right_buttons=[
                 IconButtonConfig(
                     'icons/save.png',
-                    'Bot Only',
-                    self.toggle_only_direct_children,
+                    'Include Subfolders',
+                    lambda checked: Command.invoke("qry.toggle_include_subfolders"),
                     checkable=True,
-                    checked=self.only_direct_children,
+                    checked=self.search_service.get('include_subfolders', True),
                 ),
-                IconButtonConfig('icons/save.png', 'AutoScroll', lambda: self.auto_scroll()),
-                IconButtonConfig('icons/save.png', 'Full Screen', lambda: self.toggle_fullscreen()),
-                IconButtonConfig('icons/save.png', 'Toggle Language', lambda: self.toggle_language()),
+                IconButtonConfig('icons/save.png', 'Full Screen', lambda: Command.invoke("win.toggle_fullscreen")),
+                IconButtonConfig('icons/save.png', 'Toggle Language', lambda: Command.invoke("win.toggle_language")),
             ],
         )
         self.dbcombo = ComboBoxWithButtons()
         self.dbcombo.textChanged.connect(self.reload_db)
-        self.dbcombo.addClicked.connect(self.on_add_database)
-        self.dbcombo.removeClicked.connect(self.on_remove_database)
+        self.dbcombo.addClicked.connect(lambda: Command.invoke("db.add_database"))
+        self.dbcombo.removeClicked.connect(lambda: Command.invoke("db.remove_database"))
 
         self.progress_bar = ThinProgressBar()
         self.left_layout.addWidget(self.iconbar)
@@ -270,7 +242,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.mid_layout.setContentsMargins(uipx(4), uipx(4), uipx(4), uipx(4))
         self.mid_layout.setSpacing(uipx(6))
         self.search_row_widget = SingleRowOption()
-        self.search_row_widget.settingchanged.connect(self.search)
+        self.search_row_widget.settingchanged.connect(self._on_search_setting_changed)
         self.mid_layout.addWidget(self.search_row_widget)
 
         self.viewer = AutoScrollArea()
@@ -316,6 +288,27 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.loading_indicator = OverlayLoadingIndicator()
         self.overlay_stack.push_persistent(self.loading_indicator, key="loading")
         self.content.layout_ready.connect(lambda: self.overlay_stack.hide_persistent("loading"))
+        self._sync_service_from_ui()
+
+    def _sync_service_from_ui(self):
+        values = self.search_row_widget.get_values()
+        self.search_service.set_params({
+            'keywords': values.get('keywords', ''),
+            'query_mode': values.get('query_mode', 'GLOB'),
+            'keyword_mode': values.get('keyword_mode', 'AND'),
+            'sort_by': values.get('sort_by', 'path'),
+            'ascending': values.get('ascending', True),
+            'splittext': values.get('splittext', ','),
+        })
+        keys = values.get('keys') or main_setting.get('query/keys')
+        self.search_service.set_keys(keys)
+        self.search_service.set_directories(self.folder_view.get_selected_paths())
+        from .commands.query_commands import sync_groups_from_args
+        sync_groups_from_args(self.search_service.params)
+
+    def _on_search_setting_changed(self):
+        self._sync_service_from_ui()
+        self.search_service.try_execute()
 
     @profiler.profile
     def add_new_folder(self):
@@ -323,12 +316,6 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         if folder_path:
             self.setting_db.add_parent_folder(folder_path)
             self.folder_view.add_root(folder_path)
-
-    @profiler.profile
-    def build_search_query(self):
-        kwargs = self.search_row_widget.get_values()
-        kwargs.update({'directories': self.folder_view.get_selected_paths(), 'only_direct_children': self.only_direct_children})
-        return MetaQuery(**kwargs)
 
     def show_settings(self):
         window = SettingsWindow(self)
@@ -341,18 +328,16 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         logger.debug('[RUNNING] reload_folderlist')
         self.folder_view.reload_tree()
 
-    def toggle_only_direct_children(self, checked):
-        logger.info(checked)
-        self.only_direct_children = checked
-        main_setting.set('query/only_direct_children', checked)
-        self.search(force=True)
-
     def toggle_fullscreen(self):
-        if not self._is_fullscreen:
+        if not (self.windowState() & QtCore.Qt.WindowFullScreen):
+            self._pre_fullscreen_snap = WindowSnapshot(self)
             self.showFullScreen()
         else:
-            self.showNormal()
-        self._is_fullscreen = not self._is_fullscreen
+            if self._pre_fullscreen_snap:
+                self._pre_fullscreen_snap.restore(self)
+                self._pre_fullscreen_snap = None
+            else:
+                self.showNormal()
 
     def moveEvent(self, event):
         super().moveEvent(event)
@@ -378,7 +363,8 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
     def on_folder_selected(self):
         self.run_folder = True
         self._folder_changed = True
-        self.search()
+        self.search_service.set_directories(self.folder_view.get_selected_paths())
+        self.search_service.try_execute()
 
     @QtCore.Slot(bool)
     def toggle_show(self, state):
@@ -389,55 +375,32 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         else:
             self.showMinimized()
 
-    @qt_debounce(150)
     @QtCore.Slot(bool)
-    @profiler.profile
     def search(self, force=False):
-        logger.debug('[RUNNING] search')
-        query = self.build_search_query()
-        now = datetime.now()
-        if not force:
-            if self.current_runnable and query == self.current_runnable.query or (self.last_executed_query and query == self.last_executed_query):
-                return
-        with QtCore.QMutexLocker(self.query_lock):
-            if self.current_runnable:
-                elapsed = now - self.current_query_start_time if self.current_query_start_time else timedelta.max
-                if elapsed < self.query_timeout_threshold:
-                    self.current_runnable.cancel()
-                else:
-                    logger.info('[SEARCH] query is taking more than expected, continueing without cancel.')
-                    self.pending_query = query
-                    return
-            self.pending_query = None
-            self._start_search_runnable(query)
+        self._sync_service_from_ui()
+        self.search_service.execute(force=force)
 
-    @profiler.profile
-    def _start_search_runnable(self, query):
+    def _on_search_params_changed(self, changed):
+        if 'include_subfolders' in changed:
+            btn = self.iconbar.right_buttons[0]
+            btn.blockSignals(True)
+            btn.setChecked(changed['include_subfolders'])
+            btn.blockSignals(False)
+
+    def _on_search_started(self):
         self.loading_indicator.start()
         self.overlay_stack.show_persistent("loading")
-        runnable = SearchWorkerRunnable(self.dbpath, query)
-        runnable.signals.finished.connect(self.on_search_finished)
-        self.current_runnable = runnable
-        main_thread.start(runnable, 7)
 
-    @QtCore.Slot(object, object)
+    @QtCore.Slot(object, object, object)
     @profiler.profile
-    def on_search_finished(self, paths, soruces, aspects):
-        self.last_executed_query = self.current_runnable.query
-        self.current_runnable = None
-        self.current_query_start_time = None
+    def _on_search_finished(self, paths, sources, aspects):
         keep_scroll = not getattr(self, '_folder_changed', False)
         self._folder_changed = False
-        self.content.set_paths(paths, soruces, aspects, keep_scroll=keep_scroll)
-        self.data_model.set_items(paths, soruces)
+        self.content.set_paths(paths, sources, aspects, keep_scroll=keep_scroll)
+        self.data_model.set_items(paths, sources)
         if self.run_folder:
             self.search_row_widget.run_folder_worker(self.dbpath, self.folder_view.get_selected_paths())
             self.run_folder = False
-        with QtCore.QMutexLocker(self.query_lock):
-            if self.pending_query:
-                query = self.pending_query
-                self.pending_query = None
-                self._start_search_runnable(query)
 
     def on_close(self):
         try:

@@ -7,16 +7,22 @@ from .foldertree_view import FolderTreeCommands, show_context_menu
 from .graphics_view import GraphicsViewCommands, GraphicsViewDragCommands
 from .file_viewer import FileViewerCommands
 from .justified_view import JustifiedViewCommands, JustifiedViewDragCommands, JustifiedViewDropCommands
+from .window_commands import WindowCommands
+from .query_commands import QueryCommands
+from .database_commands import DatabaseCommands
 
 
 class MenuMenu(Kit.MenuBase):
     prefix = ""
 
     commands = [
+        "debug/:Debug",
         Kit.Command(path="debug/printCtx", display="Print Ctx", func=lambda ctx: (ctx.print_debug())),
+        "menus/:Menus",
         Kit.Command(path="menus/showgraphicsviewmenu", display="Graphics View Menu", func=lambda ctx: Menu.exec_menu(GraphicsViewCommands.prefix, ctx)),
         Kit.Command(path="menus/showfilemenu",  display="File View Menu", func=lambda ctx: Menu.exec_menu(FileCommands.prefix, ctx)),
         Kit.Command(path="menus/showfoldertreemenu", display="Folder Tree Menu", func=lambda ctx: show_context_menu(ctx)),
+        "binding/:Binding",
         Kit.Command(path="binding/keybind",  display="Key Binding Window", func=lambda ctx: UI.open_shortcut_binding_editor(parent=MenuMenu._get_parent(ctx))),
         Kit.Command(path="binding/mousebind",  display="Mouse Binding Window", func=lambda ctx: UI.open_mouse_binding_editor(parent=MenuMenu._get_parent(ctx))),
         Kit.Command(path="binding/openbindingfolder", display="Open Binding Files in Explorer", func=lambda ctx: show_in_explorer(str(data_path("binding/")), show_first_if_folder=True)),
@@ -30,6 +36,7 @@ class MenuMenu(Kit.MenuBase):
     @staticmethod
     def setup_menu():
         FileCommands.register()
+        QueryCommands.register()
         FolderTreeCommands.register()
         JustifiedViewCommands.register()
         JustifiedViewDragCommands.register()
@@ -37,6 +44,8 @@ class MenuMenu(Kit.MenuBase):
         FileViewerCommands.register()
         GraphicsViewCommands.register()
         GraphicsViewDragCommands.register()
+        DatabaseCommands.register()
+        WindowCommands.register()
         MenuMenu.register()
 
         Settings.configure(

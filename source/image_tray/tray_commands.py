@@ -9,14 +9,14 @@ from ..common.profiling import logger
 from ..os.process import Proc
 
 def _tray_send(ctx, *, topic: str, message: str):
-    tray = ctx.get("tray")
+    tray = ctx.get_instance("Tray")
     try:
         tray.zmq.send(targetprocess='ALL', table='*', topic=str(topic), message=str(message))
     except Exception as e:
         logger.warning(f'[{topic} notify failed] {e}')
 
 def get_viewer_count(ctx=None) -> int:
-    tray = ctx.get("tray")
+    tray = ctx.get_instance("Tray")
     try:
         return int(tray.zmq.get_sub_count())
     except Exception as e:
@@ -28,7 +28,7 @@ def send_show_toggle(ctx=None, flag: bool = False):
 
 
 def show_window(ctx=None):
-    tray = ctx.get("tray")
+    tray = ctx.get_instance("Tray")
     c = get_viewer_count(ctx)
     if c < 1:
         Proc.new_main('--viewer')

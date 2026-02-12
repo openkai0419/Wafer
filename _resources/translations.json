@@ -1,4 +1,160 @@
 {
+  "AND": {
+    "en": "AND"
+  },
+  "Add Database": {
+    "en": "Add Database"
+  },
+  "Add Folder": {
+    "en": "Add Folder"
+  },
+  "Always on Top": {
+    "en": "Always on Top"
+  },
+  "Auto Execute on Change": {
+    "en": "Auto Execute on Change"
+  },
+  "AutoScroll": {
+    "en": "AutoScroll"
+  },
+  "Binding": {
+    "en": "Binding"
+  },
+  "Center": {
+    "en": "Center"
+  },
+  "Child Folder": {
+    "en": "Child Folder"
+  },
+  "Cycle Sort By": {
+    "en": "Cycle Sort By"
+  },
+  "Database": {
+    "en": "Database"
+  },
+  "Debug": {
+    "en": "Debug"
+  },
+  "Full Screen": {
+    "en": "Full Screen"
+  },
+  "GLOB": {
+    "en": "GLOB"
+  },
+  "Include Subfolders": {
+    "en": "Include Subfolders"
+  },
+  "Join Mode": {
+    "en": "Join Mode"
+  },
+  "LIKE": {
+    "en": "LIKE"
+  },
+  "Menus": {
+    "en": "Menus"
+  },
+  "Navigate (Filesystem DFS)": {
+    "en": "Navigate (Filesystem DFS)"
+  },
+  "Navigate (Hierarchy)": {
+    "en": "Navigate (Hierarchy)"
+  },
+  "Navigate (Visible Tree)": {
+    "en": "Navigate (Visible Tree)"
+  },
+  "Next Database": {
+    "en": "Next Database"
+  },
+  "Next Folder (DFS)": {
+    "en": "Next Folder (DFS)"
+  },
+  "Next Folder (Visible)": {
+    "en": "Next Folder (Visible)"
+  },
+  "Next Row": {
+    "en": "Next Row"
+  },
+  "OR": {
+    "en": "OR"
+  },
+  "Open New Window": {
+    "en": "Open New Window"
+  },
+  "Parent Folder": {
+    "en": "Parent Folder"
+  },
+  "Prev Database": {
+    "en": "Prev Database"
+  },
+  "Prev Folder (DFS)": {
+    "en": "Prev Folder (DFS)"
+  },
+  "Prev Folder (Visible)": {
+    "en": "Prev Folder (Visible)"
+  },
+  "Prev Row": {
+    "en": "Prev Row"
+  },
+  "Query": {
+    "en": "Query"
+  },
+  "Remove Database": {
+    "en": "Remove Database"
+  },
+  "Scroll Anchor": {
+    "en": "Scroll Anchor"
+  },
+  "Scroll To File": {
+    "en": "Scroll To File"
+  },
+  "Search": {
+    "en": "Search"
+  },
+  "Set Database": {
+    "en": "Set Database"
+  },
+  "Set Search Text to": {
+    "en": "Set Search Text to"
+  },
+  "Set Split Text to": {
+    "en": "Set Split Text to"
+  },
+  "Size": {
+    "en": "Size"
+  },
+  "Sort": {
+    "en": "Sort"
+  },
+  "Sort By": {
+    "en": "Sort By"
+  },
+  "Sort Order": {
+    "en": "Sort Order"
+  },
+  "Text": {
+    "en": "Text"
+  },
+  "Text Mode": {
+    "en": "Text Mode"
+  },
+  "Toggle Join Mode": {
+    "en": "Toggle Join Mode"
+  },
+  "Toggle Language": {
+    "en": "Toggle Language"
+  },
+  "Toggle Query Mode": {
+    "en": "Toggle Query Mode"
+  },
+  "Toggle Sort Order": {
+    "en": "Toggle Sort Order"
+  },
+  "Top": {
+    "en": "Top"
+  },
+  "Window": {
+    "en": "Window"
+  },
   "New Folder here": {
     "en": "New Folder here"
   },

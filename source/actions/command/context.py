@@ -103,29 +103,31 @@ def _wheel_steps_from_event(event: Any) -> Optional[int]:
 
 @dataclass(slots=True)
 class CommandContext:
-    widget: Any = None
-    start_pos: Any = None
-    start_global_pos: Any = None
-
-    event: Any = None
-
-    scope: str = "*"
-    source: str = ""
     pos: Any = None
     global_pos: Any = None
     wheel_steps: int = 1
     extras: Dict[str, Any] = field(default_factory=dict)
-    widget_cache: Dict[str, Any] = field(default_factory=dict)
+
+    event: Any = None
+    start_pos: Any = None
+    start_global_pos: Any = None
+
+    _info: Dict[str, Any] = field(default_factory=dict, repr=False)
+    _widget_cache: Dict[str, Any] = field(default_factory=dict, repr=False)
 
     @staticmethod
     def build(widget: Any = None, scope: Optional[str] = None, *, source: str = "", event: Any = None, start_pos: Any = None, start_global_pos: Any = None, extras: Optional[Dict[str, Any]] = None) -> "CommandContext":
-        sc = "*" if not scope else str(scope)
-        ctx = CommandContext(widget=widget, scope=sc, source=str(source or ""))
-        ctx.event = event if str(source or "").startswith("drop") else None
+        ctx = CommandContext()
+        ctx._info = {
+            "widget": widget,
+            "scope": "*" if not scope else str(scope),
+            "source": str(source or ""),
+        }
+        ctx.event = event
         ctx.global_pos = _global_pos_from_event(event) or _global_pos_from_app() or _zero_point()
         ctx.pos = _local_pos_from_event(event) or _pos_from_global(widget, ctx.global_pos) or _zero_point()
-        ctx.start_pos = start_pos if start_pos is not None else None
-        ctx.start_global_pos = start_global_pos if start_global_pos is not None else None
+        ctx.start_pos = start_pos
+        ctx.start_global_pos = start_global_pos
         ws = _wheel_steps_from_event(event)
         ctx.wheel_steps = int(ws) if ws is not None else 1
         if isinstance(extras, dict) and extras:
@@ -141,6 +143,8 @@ class CommandContext:
         if seed is None:
             return ctx
         try:
+            si = getattr(seed, "_info", None) or {}
+            ci = ctx._info
             if prefer_seed:
                 if seed.pos is not None:
                     ctx.pos = seed.pos
@@ -152,10 +156,10 @@ class CommandContext:
                     ctx.start_global_pos = seed.start_global_pos
                 if getattr(seed, "wheel_steps", None):
                     ctx.wheel_steps = int(seed.wheel_steps)
-                if seed.widget is not None:
-                    ctx.widget = seed.widget
-                if getattr(seed, "scope", None) and seed.scope != "*":
-                    ctx.scope = seed.scope
+                if si.get("widget") is not None:
+                    ci["widget"] = si["widget"]
+                if si.get("scope") and si["scope"] != "*":
+                    ci["scope"] = si["scope"]
                 for k, v in (getattr(seed, "extras", None) or {}).items():
                     ctx.extras[str(k)] = v
             else:
@@ -169,10 +173,10 @@ class CommandContext:
                     ctx.start_global_pos = seed.start_global_pos
                 if not getattr(ctx, "wheel_steps", None) and getattr(seed, "wheel_steps", None):
                     ctx.wheel_steps = int(seed.wheel_steps)
-                if ctx.widget is None and seed.widget is not None:
-                    ctx.widget = seed.widget
-                if ctx.scope == "*" and getattr(seed, "scope", "*") and seed.scope != "*":
-                    ctx.scope = seed.scope
+                if ci.get("widget") is None and si.get("widget") is not None:
+                    ci["widget"] = si["widget"]
+                if ci.get("scope", "*") == "*" and si.get("scope") and si["scope"] != "*":
+                    ci["scope"] = si["scope"]
                 for k, v in (getattr(seed, "extras", None) or {}).items():
                     ctx.put_default(str(k), v)
         except Exception as e:
@@ -211,11 +215,12 @@ class CommandContext:
                 return self.extras.get(k)
         except Exception as e:
             show_warning(None, f"CommandContext.get extras access failed: {k}", exc=e)
-        try:
-            if hasattr(self, k):
-                return getattr(self, k)
-        except Exception as e:
-            show_warning(None, f"CommandContext.get attr access failed: {k}", exc=e)
+        if not k.startswith("_"):
+            try:
+                if hasattr(self, k):
+                    return getattr(self, k)
+            except Exception as e:
+                show_warning(None, f"CommandContext.get attr access failed: {k}", exc=e)
         return default
 
     def get_many(self, keys, default: Any = None) -> list:
@@ -234,7 +239,7 @@ class CommandContext:
         if not name:
             return [] if default is None else list(default)
         k = str(name)
-        cache = self.widget_cache
+        cache = self._widget_cache
         if k in cache:
             xs = cache.get(k)
             if not xs:
@@ -281,28 +286,25 @@ class CommandContext:
             show_warning(None, "CommandContext.merge failed", exc=e)
         return self
 
-    def snapshot_start(self) -> "CommandContext":
-        if self.start_global_pos is None:
-            self.start_global_pos = self.global_pos
-        if self.start_pos is None:
-            self.start_pos = self.pos
-        return self
-
     def to_debug_dict(self) -> Dict[str, Any]:
         try:
             extras = dict(self.extras or {})
         except (TypeError, ValueError):
             extras = {}
+        info = dict(self._info or {})
+        widget = info.get("widget")
         return {
-            "scope": self.scope,
-            "source": self.source,
+            "info": {
+                "scope": info.get("scope", "*"),
+                "source": info.get("source", ""),
+                "widget_type": getattr(getattr(widget, "__class__", None), "__name__", None),
+            },
             "pos": self.pos,
             "global_pos": self.global_pos,
             "start_pos": self.start_pos,
             "start_global_pos": self.start_global_pos,
             "wheel_steps": self.wheel_steps,
             "event_type": getattr(getattr(self.get_event(), "__class__", None), "__name__", None),
-            "widget_type": getattr(getattr(self.widget, "__class__", None), "__name__", None),
             "extras": extras,
         }
 

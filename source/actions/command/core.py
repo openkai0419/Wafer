@@ -118,6 +118,10 @@ class CommandRegistry:
             raise ValueError("ctx is required")
         kwargs["ctx"] = ctx
         command_class = self._commands[command_name]
+        meta = getattr(command_class, "meta", None)
+        if meta and getattr(meta, "category", "") in ("drag", "drop"):
+            if getattr(ctx, "event", None) is None:
+                raise ValueError(f"Command '{command_name}' (category={meta.category}) requires event")
         command = command_class()
         return command.call_execute(**kwargs) if hasattr(command, "call_execute") else command.execute(**kwargs)
 
@@ -195,6 +199,32 @@ def register_drop_accept(widget_scope: str, acceptor: Callable[..., bool]) -> No
 
 def resolve_drop_accept(widget_scope: Optional[str]) -> Sequence[Callable[..., bool]]:
     return DropAcceptRegistry().resolve(widget_scope)
+
+
+def validate_command_args(meta: CommandMeta, args: Dict[str, Any], *, require_all: bool = False) -> None:
+    param_map = {p.name: p for p in (meta.params or [])}
+    extra = set(args.keys()) - set(param_map.keys())
+    if extra:
+        raise ValueError(f"Unknown args for '{meta.id}': {sorted(extra)}")
+    if require_all:
+        missing = set(param_map.keys()) - set(args.keys())
+        if missing:
+            raise ValueError(f"Missing args for '{meta.id}': {sorted(missing)}")
+    for name, value in args.items():
+        p = param_map[name]
+        if value is None:
+            continue
+        expected = p.type
+        if expected is not None and not isinstance(value, expected):
+            if expected is float and isinstance(value, int):
+                continue
+            raise TypeError(f"Arg '{name}' for '{meta.id}': expected {expected.__name__}, got {type(value).__name__}")
+        if p.choices is not None and value not in p.choices:
+            raise ValueError(f"Arg '{name}' for '{meta.id}': {value!r} not in {p.choices}")
+        if p.min_value is not None and value < p.min_value:
+            raise ValueError(f"Arg '{name}' for '{meta.id}': {value} < min {p.min_value}")
+        if p.max_value is not None and value > p.max_value:
+            raise ValueError(f"Arg '{name}' for '{meta.id}': {value} > max {p.max_value}")
 
 
 def _build_args(meta: CommandMeta, kwargs: Dict[str, Any]) -> Dict[str, Any]:

@@ -166,6 +166,34 @@ class SearchOptionPopup(QtWidgets.QDialog, TranslatorMixin):
     def get_splittext(self):
         return self.splittext.text() or ','
 
+    def _set_combo_silent(self, combo, data):
+        idx = combo.findData(data)
+        if idx < 0:
+            return
+        combo.blockSignals(True)
+        combo.setCurrentIndex(idx)
+        combo.blockSignals(False)
+
+    def _set_radio_silent(self, radio):
+        radio.blockSignals(True)
+        radio.setChecked(True)
+        radio.blockSignals(False)
+
+    def set_sort_by(self, key: str):
+        self._set_combo_silent(self.sort_by_combo, key)
+
+    def set_query_mode(self, mode: str):
+        self._set_combo_silent(self.query_type_combo, mode)
+
+    def set_keyword_mode(self, mode: str):
+        self._set_radio_silent(self.and_radio if mode == "AND" else self.or_radio)
+
+    def set_ascending(self, ascending: bool):
+        self._set_radio_silent(self.asc_radio if ascending else self.desc_radio)
+
+    def set_splittext(self, text: str):
+        self.splittext.setText(text)
+
 class SingleRowOption(QtWidgets.QWidget, TranslatorMixin):
     settingchanged = QtCore.Signal()
 
@@ -215,6 +243,24 @@ class SingleRowOption(QtWidgets.QWidget, TranslatorMixin):
         self._folder_worker = FolderComboUpdateWorker(dbname, paths)
         self._folder_worker.signals.finished.connect(self.keys_combo.remake)
         main_thread.start(self._folder_worker, 6)
+
+    def set_search_text(self, text: str):
+        self.search_bar.setText(text)
+
+    def set_splittext(self, text: str):
+        self.option_popup.set_splittext(text)
+
+    def set_sort_by(self, key: str):
+        self.option_popup.set_sort_by(key)
+
+    def set_query_mode(self, mode: str):
+        self.option_popup.set_query_mode(mode)
+
+    def set_keyword_mode(self, mode: str):
+        self.option_popup.set_keyword_mode(mode)
+
+    def set_ascending(self, ascending: bool):
+        self.option_popup.set_ascending(ascending)
 
     @profiler.profile
     def get_values(self):

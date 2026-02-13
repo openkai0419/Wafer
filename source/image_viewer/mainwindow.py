@@ -3,16 +3,11 @@ from ..common.funcs import get_data_db, get_setting_db, get_setting_file_names, 
 from ..common.profiling import logger, profiler
 from ..constants import APP_NAME, default_db_name
 from ..db.setting_db import SettingDB
-from ..image_setting.db_settings import DataBaseSettings
-from ..image_setting.setting_window import SettingsWindow
 from ..lang.manager import TranslatorMixin
-from ..os.process import Proc
 from ..qt.debounce import qt_debounce
-from ..qt.dialog import ConfirmDialog, InputDialog
-from ..zmq.zmq import MessageEnvelope, Role, ZMQNode
+from ..zmq.zmq import Role, ZMQNode
 from .viewer.justifiedwidget import JustifiedVirtualScrollWidget
 from .viewer.items import ViewerItems
-from ..qt.window import WindowSnapshot
 from .commands.window_commands import restore_always_on_top
 from .shower.data_model import DataViewModel
 from .shower.data_viewer import ViewerWidget
@@ -105,30 +100,6 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.dbcombo.setCurrentText(self.dbname)
         logger.debug('[DEBUG] reload_combo')
 
-    def on_add_database(self):
-        text = InputDialog.get_text(self.t.tr('Enter a name for the new table'), title=self.t.tr('Create New'), buttons=(self.t.tr('Create'), self.t.tr('Cancel')), parent=self)
-        if text is not None:
-            text = text.strip()
-            logger.info(text)
-            if not text:
-                return
-            elif text in get_setting_file_names():
-                return
-            else:
-                Proc.new_main('--collector', text)
-                self.dbcombo.addItem(text)
-                self.dbcombo.setCurrentText(text)
-                self.reload_db(text)
-
-    def on_remove_database(self):
-        if self.dbcombo.count() <= 1:
-            return
-        ret = ConfirmDialog.ask(self.t.trf('Delete table? : {dbname}', dbname=self.dbname), title=self.t.tr('Delete'), buttons=(self.t.tr('Delete'), self.t.tr('Cancel')), parent=self)
-        if ret == self.t.tr('Delete'):
-            self.setting_db.set_kv('deleteflag', True)
-            self.dbcombo.removeItem(self.dbname)
-            self.reload_db(self.dbcombo.currentText())
-
     @QtCore.Slot(int)
     def update_current(self, value):
         self.progress_bar.setProgress(int(value))
@@ -188,11 +159,6 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
                 logger.exception('Error processing IPC message: %s', env)
         self._subscriber = ZMQNode(Role.VIEWER, on_message=on_message, count='enable')
         self._subscriber.start()
-
-    def toggle_language(self):
-        new_locale = 'ja' if self.t.current_locale == 'en' else 'en'
-        self.t.set_locale(new_locale)
-        main_setting.save_important('window/language', new_locale)
 
     @profiler.profile
     def main_ui(self):
@@ -310,34 +276,11 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self._sync_service_from_ui()
         self.search_service.try_execute()
 
-    @profiler.profile
-    def add_new_folder(self):
-        folder_path = QtWidgets.QFileDialog.getExistingDirectory(self, self.t.tr('Select folder'))
-        if folder_path:
-            self.setting_db.add_parent_folder(folder_path)
-            self.folder_view.add_root(folder_path)
-
-    def show_settings(self):
-        window = SettingsWindow(self)
-        window.add_tab(DataBaseSettings())
-        window.show()
-
     @QtCore.Slot()
     @qt_debounce(1000)
     def reload_folderlist(self):
         logger.debug('[RUNNING] reload_folderlist')
         self.folder_view.reload_tree()
-
-    def toggle_fullscreen(self):
-        if not (self.windowState() & QtCore.Qt.WindowFullScreen):
-            self._pre_fullscreen_snap = WindowSnapshot(self)
-            self.showFullScreen()
-        else:
-            if self._pre_fullscreen_snap:
-                self._pre_fullscreen_snap.restore(self)
-                self._pre_fullscreen_snap = None
-            else:
-                self.showNormal()
 
     def moveEvent(self, event):
         super().moveEvent(event)
@@ -351,13 +294,6 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         if self.viewer.isscrolling():
             speed = self.content.get_adjusted_scroll_speed()
             self.viewer._scroll_speed = speed
-
-    def auto_scroll(self):
-        if self.viewer.isscrolling():
-            self.viewer.stop_auto_scroll()
-        else:
-            speed = self.content.get_adjusted_scroll_speed()
-            self.viewer.start_auto_scroll(speed)
 
     @profiler.profile
     def on_folder_selected(self):

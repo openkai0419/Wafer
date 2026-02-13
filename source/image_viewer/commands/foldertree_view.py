@@ -1,6 +1,6 @@
 import os
 
-from PySide6 import QtCore
+from PySide6 import QtCore, QtWidgets
 
 from ...actions.bridge import Kit, Menu
 from ...common.funcs import normalize_path
@@ -143,8 +143,12 @@ def reload_tree(ctx):
 
 def add_folder(ctx):
     w = ctx.get_instance("MainWindow")
-    if w:
-        w.add_new_folder()
+    if not w:
+        return
+    folder_path = QtWidgets.QFileDialog.getExistingDirectory(w, w.t.tr('Select folder'))
+    if folder_path:
+        w.setting_db.add_parent_folder(folder_path)
+        w.folder_view.add_root(folder_path)
 
 
 def _navigate(ctx, method_name, trigger_search=True):

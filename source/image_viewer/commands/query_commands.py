@@ -14,53 +14,20 @@ _KEYWORD_MAP = {"qry.keyword_and": "AND", "qry.keyword_or": "OR"}
 _ORDER_MAP = {"qry.order_asc": True, "qry.order_desc": False}
 
 
-def _win(ctx):
-    return ctx.get_instance("MainWindow")
+def _search_row(ctx):
+    w = ctx.get_instance("MainWindow")
+    return w.search_row_widget if w else None
 
 
 def _service(ctx):
     return ctx.get_instance("SearchService")
 
 
-def _update_sort_ui(w, key):
-    popup = w.search_row_widget.option_popup
-    idx = popup.sort_by_combo.findData(key)
-    if idx >= 0:
-        popup.sort_by_combo.blockSignals(True)
-        popup.sort_by_combo.setCurrentIndex(idx)
-        popup.sort_by_combo.blockSignals(False)
-
-
-def _update_mode_ui(w, mode):
-    popup = w.search_row_widget.option_popup
-    idx = popup.query_type_combo.findData(mode)
-    if idx >= 0:
-        popup.query_type_combo.blockSignals(True)
-        popup.query_type_combo.setCurrentIndex(idx)
-        popup.query_type_combo.blockSignals(False)
-
-
-def _update_keyword_ui(w, mode):
-    popup = w.search_row_widget.option_popup
-    radio = popup.and_radio if mode == "AND" else popup.or_radio
-    radio.blockSignals(True)
-    radio.setChecked(True)
-    radio.blockSignals(False)
-
-
-def _update_order_ui(w, ascending):
-    popup = w.search_row_widget.option_popup
-    radio = popup.asc_radio if ascending else popup.desc_radio
-    radio.blockSignals(True)
-    radio.setChecked(True)
-    radio.blockSignals(False)
-
-
 _GROUP_CONFIG = {
-    GROUP_SORT:    {"search_key": "sort_by",      "map": _SORT_MAP,    "ui_func": _update_sort_ui},
-    GROUP_MODE:    {"search_key": "query_mode",   "map": _MODE_MAP,    "ui_func": _update_mode_ui},
-    GROUP_KEYWORD: {"search_key": "keyword_mode", "map": _KEYWORD_MAP, "ui_func": _update_keyword_ui},
-    GROUP_ORDER:   {"search_key": "ascending",    "map": _ORDER_MAP,   "ui_func": _update_order_ui},
+    GROUP_SORT:    {"search_key": "sort_by",      "map": _SORT_MAP,    "ui_method": "set_sort_by"},
+    GROUP_MODE:    {"search_key": "query_mode",   "map": _MODE_MAP,    "ui_method": "set_query_mode"},
+    GROUP_KEYWORD: {"search_key": "keyword_mode", "map": _KEYWORD_MAP, "ui_method": "set_keyword_mode"},
+    GROUP_ORDER:   {"search_key": "ascending",    "map": _ORDER_MAP,   "ui_method": "set_ascending"},
 }
 
 
@@ -69,9 +36,9 @@ def _set_and_update(ctx, group, cmd_id, search_key, value):
     if svc:
         svc.set_param(search_key, value)
     ActionGroupStateManager().set_current(group, cmd_id, save=False)
-    w = _win(ctx)
-    if w:
-        _GROUP_CONFIG[group]["ui_func"](w, value)
+    row = _search_row(ctx)
+    if row:
+        getattr(row, _GROUP_CONFIG[group]["ui_method"])(value)
     if svc:
         svc.try_execute()
 
@@ -113,9 +80,9 @@ def _cycle_group(ctx, group):
     svc = _service(ctx)
     if svc:
         svc.set_param(cfg["search_key"], value)
-    w = _win(ctx)
-    if w:
-        cfg["ui_func"](w, value)
+    row = _search_row(ctx)
+    if row:
+        getattr(row, cfg["ui_method"])(value)
     if svc:
         svc.try_execute()
 
@@ -137,9 +104,9 @@ def cycle_sort(ctx, **kwargs):
     svc = _service(ctx)
     if svc:
         svc.set_param("sort_by", next_key)
-    w = _win(ctx)
-    if w:
-        _update_sort_ui(w, next_key)
+    row = _search_row(ctx)
+    if row:
+        row.set_sort_by(next_key)
     if svc:
         svc.try_execute()
 
@@ -163,16 +130,16 @@ def search(ctx, force=False):
 
 
 def set_search_text(ctx, text: str = ""):
-    w = _win(ctx)
-    if w:
-        w.search_row_widget.search_bar.setText(text)
+    row = _search_row(ctx)
+    if row:
+        row.set_search_text(text)
 
 
 def set_splittext(ctx, text: str = ","):
-    w = _win(ctx)
-    if not w:
+    row = _search_row(ctx)
+    if not row:
         return
-    w.search_row_widget.option_popup.splittext.setText(text)
+    row.set_splittext(text)
 
 
 def toggle_include_subfolders(ctx):

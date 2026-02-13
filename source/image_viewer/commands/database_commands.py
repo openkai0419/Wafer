@@ -1,6 +1,8 @@
 from ...actions.bridge import Kit
 from ...common.funcs import get_setting_file_names
 from ...common.profiling import logger
+from ...os.process import Proc
+from ...qt.dialog import ConfirmDialog, InputDialog
 
 
 def _win(ctx):
@@ -42,14 +44,40 @@ def set_database(ctx, name: str = ""):
 
 def add_database(ctx):
     w = _win(ctx)
-    if w:
-        w.on_add_database()
+    if not w:
+        return
+    text = InputDialog.get_text(
+        w.t.tr('Enter a name for the new table'),
+        title=w.t.tr('Create New'),
+        buttons=(w.t.tr('Create'), w.t.tr('Cancel')),
+        parent=w,
+    )
+    if text is None:
+        return
+    text = text.strip()
+    logger.info(f'[add_database] {text}')
+    if not text or text in get_setting_file_names():
+        return
+    Proc.new_main('--collector', text)
+    w.dbcombo.addItem(text)
+    w.dbcombo.setCurrentText(text)
+    w.reload_db(text)
 
 
 def remove_database(ctx):
     w = _win(ctx)
-    if w:
-        w.on_remove_database()
+    if not w or w.dbcombo.count() <= 1:
+        return
+    ret = ConfirmDialog.ask(
+        w.t.trf('Delete table? : {dbname}', dbname=w.dbname),
+        title=w.t.tr('Delete'),
+        buttons=(w.t.tr('Delete'), w.t.tr('Cancel')),
+        parent=w,
+    )
+    if ret == w.t.tr('Delete'):
+        w.setting_db.set_kv('deleteflag', True)
+        w.dbcombo.removeItem(w.dbname)
+        w.reload_db(w.dbcombo.currentText())
 
 
 class DatabaseCommands(Kit.MenuBase):

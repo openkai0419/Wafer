@@ -212,9 +212,15 @@ class JustifiedViewCommands(Kit.MenuBase):
 
     @staticmethod
     def toggle_autoscroll(ctx):
-        w = ctx.get_instance("MainWindow")
-        if w:
-            w.auto_scroll()
+        view = JustifiedViewCommands.get_view(ctx)
+        scroll = getattr(view, "parent_scroll", None)
+        if scroll is None:
+            return
+        if scroll.isscrolling():
+            scroll.stop_auto_scroll()
+        else:
+            speed = view.get_adjusted_scroll_speed() if hasattr(view, 'get_adjusted_scroll_speed') else 1.0
+            scroll.start_auto_scroll(speed)
 
     @staticmethod
     def move_to_next_row(ctx):

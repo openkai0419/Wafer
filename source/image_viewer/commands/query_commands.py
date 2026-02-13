@@ -87,18 +87,19 @@ def _cycle_group(ctx, group):
         svc.try_execute()
 
 
-def cycle_sort(ctx, **kwargs):
+def cycle_sort(ctx, reverse=False, **kwargs):
     enabled = [k for k in SORT_CHOICES if kwargs.get(k, True)]
     if not enabled:
         return
     sm = ActionGroupStateManager()
     current = sm.get_current(GROUP_SORT)
     current_key = _SORT_MAP.get(current)
+    step = -1 if reverse else 1
     try:
         idx = enabled.index(current_key)
-        next_key = enabled[(idx + 1) % len(enabled)]
+        next_key = enabled[(idx + step) % len(enabled)]
     except (ValueError, IndexError):
-        next_key = enabled[0]
+        next_key = enabled[-1 if reverse else 0]
     cmd_id = f"qry.sort_{next_key}"
     sm.set_current(GROUP_SORT, cmd_id)
     svc = _service(ctx)
@@ -221,7 +222,7 @@ class QueryCommands(Kit.MenuBase):
         Kit.Command(path="Sort Order/qry.order_desc", display="Descending", func=_make_order_func("qry.order_desc", False), checkable=True, default_checked=True, action_group=GROUP_ORDER),
         Kit.Command(
             path="qry.cycle_sort", display="Cycle Sort By", func=cycle_sort,
-            params=[Kit.Param(name=k, value=True) for k in SORT_CHOICES],
+            params=[Kit.Param(name=k, value=True) for k in SORT_CHOICES] + [Kit.Param(name="reverse", value=False)],
         ),
         Kit.Command(path="qry.cycle_order", display="Toggle Sort Order", func=cycle_order),
         "-",

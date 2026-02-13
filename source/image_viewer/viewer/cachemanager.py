@@ -3,77 +3,110 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from ...common.profiling import profiler
 from ...common.classes import singleton
 
-class FadeLabel(QtWidgets.QLabel):
+
+class FadePixmapItem(QtWidgets.QGraphicsObject):
     _FADE_DURATION = 120
 
     @profiler.profile
     def __init__(self, parent=None):
         super().__init__(parent)
         self.curpath = None
-        self._opacity = 0.0
-        eff = QtWidgets.QGraphicsOpacityEffect(self, opacity=self._opacity)
-        self.setGraphicsEffect(eff)
-        self.setScaledContents(True)
+        self._pixmap = QtGui.QPixmap()
+        self._size = QtCore.QSizeF()
+        self.setOpacity(0.0)
+        self.setAcceptedMouseButtons(QtCore.Qt.NoButton)
         self._fade_anim = QtCore.QPropertyAnimation(self, b'opacity', self)
         self._fade_anim.setDuration(self._FADE_DURATION)
         self._fade_anim.setEasingCurve(QtCore.QEasingCurve.OutCubic)
 
-    def get_opacity(self):
-        return self._opacity
+    def boundingRect(self):
+        return QtCore.QRectF(QtCore.QPointF(0, 0), self._size)
 
-    def set_opacity(self, v):
-        self._opacity = v
-        self.graphicsEffect().setOpacity(v)
-        self.update()
-    opacity = QtCore.Property(float, get_opacity, set_opacity)
+    def paint(self, painter, option, widget=None):
+        if not self._pixmap.isNull():
+            painter.drawPixmap(self.boundingRect().toRect(), self._pixmap)
 
     @profiler.profile
     def set_image(self, image, curpath=None):
         pixmap = QtGui.QPixmap.fromImage(image)
         if self.curpath != curpath:
-            self.setPixmap(pixmap)
+            self._pixmap = pixmap
             self.curpath = curpath
             self._fade_anim.stop()
-            self.set_opacity(0.0)
+            self.setOpacity(0.0)
             self._fade_anim.setStartValue(0.0)
             self._fade_anim.setEndValue(1.0)
             self._fade_anim.start()
-            QtCore.QTimer.singleShot(0, lambda: self.setToolTip(curpath))
+            self.setToolTip(curpath or "")
+            self.update()
         else:
-            self.setPixmap(pixmap)
-            self.curpath = curpath
+            self._pixmap = pixmap
+            self.update()
 
-class QLabelPool:
-    def __init__(self, parent=None):
+    def setGeometry(self, rect):
+        self.prepareGeometryChange()
+        self.setPos(rect.x(), rect.y())
+        self._size = QtCore.QSizeF(rect.width(), rect.height())
+        self.update()
+
+    def geometry(self):
+        return QtCore.QRectF(self.pos(), self._size).toRect()
+
+    def pixmap(self):
+        return self._pixmap
+
+    def size(self):
+        return self._size.toSize()
+
+    def clear(self):
+        self._pixmap = QtGui.QPixmap()
+        self.curpath = None
+        self.setToolTip("")
+        self.update()
+
+    def delete(self):
+        pass
+
+    def grab(self):
+        return self._pixmap.copy() if not self._pixmap.isNull() else QtGui.QPixmap(self.size())
+
+
+class GraphicsItemPool:
+    def __init__(self, scene):
         self._available = []
         self._in_use = set()
-        self._parent = parent
-    
+        self._scene = scene
+
     @profiler.profile
     def acquire(self):
         if self._available:
-            label = self._available.pop()
+            item = self._available.pop()
         else:
-            label = FadeLabel(self._parent)
-        label.clear()
-        label.show()
-        self._in_use.add(label)
-        return label
+            item = FadePixmapItem()
+            self._scene.addItem(item)
+        item.clear()
+        item.show()
+        self._in_use.add(item)
+        return item
 
     @profiler.profile
-    def release(self, label):
-        if isinstance(label, FadeLabel):
-            label.hide()
-            label.clear()
-            label.setParent(self._parent)
-            self._in_use.discard(label)
-            self._available.append(label)
+    def release(self, item):
+        if isinstance(item, FadePixmapItem):
+            item.hide()
+            item.clear()
+            self._in_use.discard(item)
+            self._available.append(item)
+        else:
+            item.hide()
+            self._in_use.discard(item)
+            if item.scene():
+                item.scene().removeItem(item)
 
     @profiler.profile
     def reset(self):
         while self._in_use:
-            label = self._in_use.pop()
-            self.release(label)
+            item = self._in_use.pop()
+            self.release(item)
 
 @singleton
 class MemoryLimitedImageCache:

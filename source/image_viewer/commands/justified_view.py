@@ -4,6 +4,7 @@ from pathlib import Path
 from PySide6 import QtCore, QtGui
 
 from ...actions.bridge import Kit, Command
+from ...actions.command.state import ActionGroupStateManager
 from ...common.funcs import uipx
 from ...os.dragparser import MimeDataParser
 from ...os.save import drop_files_with_ui
@@ -11,6 +12,10 @@ from ...qt.pixmap import PixmapFactory
 
 
 INTERNAL_MIME_FLAG = b"application/x-jvscroll-internal" + f"{os.getpid()}".encode()
+
+ORIENTATION_CHOICES = ["z", "reverse_z", "n", "reverse_n"]
+_ORIENTATION_MAP = {f"jv.orientation_{k}": k for k in ORIENTATION_CHOICES}
+_ORIENTATION_INDEX = {"z": 0, "reverse_z": 1, "n": 2, "reverse_n": 3}
 
 
 class JustifiedViewCommands(Kit.MenuBase):
@@ -139,18 +144,20 @@ class JustifiedViewCommands(Kit.MenuBase):
     def _scroll_by_wheel(ctx, direction: int):
         view = JustifiedViewCommands.get_view(ctx)
         scroll = getattr(view, "parent_scroll", None)
-        if scroll is None or not hasattr(scroll, "verticalScrollBar"):
+        if scroll is None or not hasattr(scroll, "_primary_bar"):
             return
         if hasattr(scroll, "stop_auto_scroll") and callable(getattr(scroll, "stop_auto_scroll")):
             try:
                 scroll.stop_auto_scroll()
             except Exception:
                 pass
-        bar = scroll.verticalScrollBar()
+        bar = scroll._primary_bar()
         steps = int(ctx.get("wheel_steps") or 1)
         step = int(getattr(bar, "singleStep", lambda: 25)() or 25)
         multiplier = int(ctx.get("multiplier") or 4)
         delta = max(1, step * max(1, multiplier)) * max(1, steps)
+        if hasattr(scroll, '_is_primary_reversed') and scroll._is_primary_reversed():
+            direction = -direction
         bar.setValue(int(bar.value()) + int(direction) * int(delta))
 
     @staticmethod
@@ -240,6 +247,49 @@ class JustifiedViewCommands(Kit.MenuBase):
     def set_scroll_anchor_center(ctx):
         Command.set_action_group_current('jv_scroll_anchor', 'jv.scroll_anchor_center')
 
+    @staticmethod
+    def set_orientation_z(ctx):
+        Command.set_action_group_current('jv_orientation', 'jv.orientation_z')
+        view = JustifiedViewCommands.get_view(ctx)
+        view.set_orientation(0)
+
+    @staticmethod
+    def set_orientation_reverse_z(ctx):
+        Command.set_action_group_current('jv_orientation', 'jv.orientation_reverse_z')
+        view = JustifiedViewCommands.get_view(ctx)
+        view.set_orientation(1)
+
+    @staticmethod
+    def set_orientation_n(ctx):
+        Command.set_action_group_current('jv_orientation', 'jv.orientation_n')
+        view = JustifiedViewCommands.get_view(ctx)
+        view.set_orientation(2)
+
+    @staticmethod
+    def set_orientation_reverse_n(ctx):
+        Command.set_action_group_current('jv_orientation', 'jv.orientation_reverse_n')
+        view = JustifiedViewCommands.get_view(ctx)
+        view.set_orientation(3)
+
+    @staticmethod
+    def cycle_orientation(ctx, reverse=False, **kwargs):
+        enabled = [k for k in ORIENTATION_CHOICES if kwargs.get(k, True)]
+        if not enabled:
+            return
+        sm = ActionGroupStateManager()
+        current = sm.get_current('jv_orientation')
+        current_key = _ORIENTATION_MAP.get(current)
+        step = -1 if reverse else 1
+        try:
+            idx = enabled.index(current_key)
+            next_key = enabled[(idx + step) % len(enabled)]
+        except (ValueError, IndexError):
+            next_key = enabled[-1 if reverse else 0]
+        cmd_id = f"jv.orientation_{next_key}"
+        sm.set_current('jv_orientation', cmd_id)
+        view = JustifiedViewCommands.get_view(ctx)
+        view.set_orientation(_ORIENTATION_INDEX[next_key])
+
     commands = [
         ":JustifiedView",
         "-",
@@ -256,8 +306,8 @@ class JustifiedViewCommands(Kit.MenuBase):
         Kit.Command(path="jv.show_selected", display="Show Selected", func=show_selected),
         "-",
         ":Scroll",
-        Kit.Command(path="jv.scroll_up", display="Scroll Up", func=wheel_scroll_up, params=[Kit.Param(name="multiplier", value=4)]),
-        Kit.Command(path="jv.scroll_down", display="Scroll Down", func=wheel_scroll_down, params=[Kit.Param(name="multiplier", value=4)]),
+        Kit.Command(path="jv.scroll_up", display="Scroll Up", func=wheel_scroll_up, params=[Kit.Param(name="multiplier", value=1.5)]),
+        Kit.Command(path="jv.scroll_down", display="Scroll Down", func=wheel_scroll_down, params=[Kit.Param(name="multiplier", value=1.5)]),
         Kit.Command(path="jv.move_to_next_row", display="Next Row", func=move_to_next_row),
         Kit.Command(path="jv.move_to_prev_row", display="Prev Row", func=move_to_prev_row),
         "-",
@@ -265,6 +315,15 @@ class JustifiedViewCommands(Kit.MenuBase):
         "Scroll Anchor/:Scroll Anchor",
         Kit.Command(path="Scroll Anchor/jv.scroll_anchor_top", display="Top", func=set_scroll_anchor_top, checkable=True, action_group="jv_scroll_anchor"),
         Kit.Command(path="Scroll Anchor/jv.scroll_anchor_center", display="Center", func=set_scroll_anchor_center, checkable=True, default_checked=True, action_group="jv_scroll_anchor"),
+        "Layout/:Layout",
+        Kit.Command(path="Layout/jv.orientation_z", display="Z (→↓)", func=set_orientation_z, checkable=True, default_checked=True, action_group="jv_orientation"),
+        Kit.Command(path="Layout/jv.orientation_reverse_z", display="Reverse Z (←↓)", func=set_orientation_reverse_z, checkable=True, action_group="jv_orientation"),
+        Kit.Command(path="Layout/jv.orientation_n", display="N (↓→)", func=set_orientation_n, checkable=True, action_group="jv_orientation"),
+        Kit.Command(path="Layout/jv.orientation_reverse_n", display="Reverse N (↓←)", func=set_orientation_reverse_n, checkable=True, action_group="jv_orientation"),
+        Kit.Command(
+            path="jv.cycle_orientation", display="Cycle Orientation", func=cycle_orientation,
+            params=[Kit.Param(name=k, value=True) for k in ORIENTATION_CHOICES] + [Kit.Param(name="reverse", value=False)],
+        ),
         "-",
         ":Scale",
         Kit.Command(path="jv.scale_up", display="Scale Up", func=scale_up, params=[Kit.Param(name="ratio", value=1.1)]),
@@ -303,9 +362,9 @@ class JustifiedViewDragCommands(Kit.DragMenuBase):
         mime.setUrls(urls)
         mime.setData(INTERNAL_MIME_FLAG.decode(), QtCore.QByteArray(b"1"))
         drag.setMimeData(mime)
-        w = view.widgets.get(int(index))
-        if w is not None:
-            pixmap = QtGui.QPixmap(w.grab())
+        pixmap = view.grab_widget_pixmap(int(index)) if hasattr(view, 'grab_widget_pixmap') else None
+        if pixmap is not None:
+            pixmap = QtGui.QPixmap(pixmap)
             pixmap = pixmap.scaled(QtCore.QSize(uipx(150), uipx(150)), QtCore.Qt.KeepAspectRatio, QtCore.Qt.FastTransformation)
             transparent = QtGui.QPixmap(pixmap.size())
             transparent.fill(QtCore.Qt.transparent)
@@ -332,16 +391,17 @@ class JustifiedViewDragCommands(Kit.DragMenuBase):
     def _rect_select_start(view, mode: str, pos):
         view._rect_select_mode = str(mode or "replace")
         view._rect_select_dragging = True
-        view._rect_select_start_pos = pos
-        view._rect_select_current_pos = pos
-        view.update()
+        scene_pos = view.to_scene_pos(pos) if hasattr(view, 'to_scene_pos') else pos
+        view._rect_select_start_pos = scene_pos
+        view._rect_select_current_pos = scene_pos
+        view.viewport().update()
 
     @staticmethod
     def _rect_select_move(view, pos):
         if not view._rect_select_dragging:
             return
-        view._rect_select_current_pos = pos
-        view.update()
+        view._rect_select_current_pos = view.to_scene_pos(pos) if hasattr(view, 'to_scene_pos') else pos
+        view.viewport().update()
 
     @staticmethod
     def _rect_select_end(view, items):
@@ -353,7 +413,7 @@ class JustifiedViewDragCommands(Kit.DragMenuBase):
         view._rect_select_start_pos = None
         view._rect_select_current_pos = None
         if start is None or cur is None:
-            view.update()
+            view.viewport().update()
             return
         rect = QtCore.QRect(start, cur).normalized()
         selected_indices = [i for i, r in enumerate(view.rects) if rect.intersects(r)]
@@ -364,7 +424,7 @@ class JustifiedViewDragCommands(Kit.DragMenuBase):
                 items.add_selection(selected_indices, last=-1)
             else:
                 items.set_selected(selected_indices, last=-1)
-        view.update()
+        view.viewport().update()
 
     @staticmethod
     def rect_select_move(ctx):
@@ -489,7 +549,7 @@ class JustifiedViewDropCommands(Kit.DragMenuBase):
         view._drop_preview_rect = None
         view._drop_preview_title = None
         view._drop_preview_text = None
-        view.update()
+        view.viewport().update()
 
     @staticmethod
     def _preview_update(ctx, view, items, op: str):
@@ -516,7 +576,7 @@ class JustifiedViewDropCommands(Kit.DragMenuBase):
         view._drop_preview_rect = r
         view._drop_preview_title = "Move to:" if op == "move" else "Copy to:"
         view._drop_preview_text = dst_dir
-        view.update()
+        view.viewport().update()
 
     @staticmethod
     def _enter(ctx, *, op: str, on_conflict: str = "rename"):

@@ -97,45 +97,39 @@ class JustifiedLayoutCalculator(QtCore.QRunnable):
         spacing = self.spacing
         base_width = self.base_height
         container_height = self.container_height
-        container_width = self.container_width
-        aspect_ratios = self.aspect_ratios
-        append_rects = rects.append
         i = 0
-        if reverse:
-            cur_x = container_width
-        else:
-            cur_x = 0
-        while i < len(aspect_ratios):
+        cur_x = 0
+        while i < len(self.aspect_ratios):
             if self._cancelled:
                 return
-            aspect = aspect_ratios[i]
+            aspect = self.aspect_ratios[i]
             h = base_width / aspect
             if line and line_height + h + spacing * len(line) > container_height:
-                cur_x = self._emit_vertical_line(rects, line, line_height, cur_x, reverse)
+                cur_x = self._emit_vertical_line(rects, line, line_height, cur_x)
                 line.clear()
                 line_height = 0
-                if abs(cur_x) > QWIDGETSIZE_MAX:
+                if cur_x > QWIDGETSIZE_MAX:
                     break
             else:
                 line.append(aspect)
                 line_height += h
                 i += 1
-        if line and (not self._cancelled):
-            self._emit_vertical_line(rects, line, line_height, cur_x, reverse)
+        if line and not self._cancelled:
+            self._emit_vertical_line(rects, line, line_height, cur_x)
+        if reverse and rects and not self._cancelled:
+            total_w = max(r.right() for r in rects)
+            rects = [QtCore.QRect(total_w - r.x() - r.width(), r.y(), r.width(), r.height()) for r in rects]
         if not self._cancelled:
             self.signals.layout_ready.emit(rects)
 
     @profiler.profile
-    def _emit_vertical_line(self, rects, line, line_height, cur_x, reverse):
+    def _emit_vertical_line(self, rects, line, line_height, cur_x):
         spacing = self.spacing
         base_width = self.base_height
         container_height = self.container_height
-        container_width = self.container_width
         total_spacing = spacing * (len(line) - 1)
         scale = max((container_height - total_spacing) / line_height, 0.1)
         iw = int(base_width * scale)
-        if reverse:
-            cur_x -= iw
         cur_y = 0
         for a in line:
             if self._cancelled:
@@ -143,11 +137,7 @@ class JustifiedLayoutCalculator(QtCore.QRunnable):
             ih = int(base_width / a * scale)
             rects.append(QtCore.QRect(cur_x, cur_y, iw, ih))
             cur_y += ih + spacing
-        if reverse:
-            cur_x -= spacing
-            cur_x = max(cur_x, 0)
-        else:
-            cur_x += iw + spacing
+        cur_x += iw + spacing
         return cur_x
 
     @profiler.profile

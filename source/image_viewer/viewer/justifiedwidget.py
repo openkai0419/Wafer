@@ -1,6 +1,5 @@
 import bisect
 import math
-import os
 from PySide6 import QtCore, QtGui, QtWidgets
 from ...common.funcs import uipx
 from ...common.profiling import logger, profiler
@@ -9,129 +8,42 @@ from ...qt.debounce import qt_debounce, qt_throttle
 from ...qt.pixmap import PixmapFactory
 from ...qt.thread import main_thread
 from ..viewer_settings import main_setting
-from .cachemanager import MemoryLimitedImageCache, QLabelPool
+from .cachemanager import MemoryLimitedImageCache, GraphicsItemPool
 from .calc_layout import JustifiedLayoutCalculator
 from .items import ViewerItems
 from .sizechecker import SizeMismatchChecker
 from ...actions.bridge import Kit
 
-class OverLayPainter(QtWidgets.QWidget):
 
-    def __init__(self, parent, spacing, *args, **kwargs):
-        super().__init__(parent, *args, **kwargs)
-        self.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
-        self.setAttribute(QtCore.Qt.WA_NoSystemBackground)
-        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-        self.setWindowFlags(QtCore.Qt.FramelessWindowHint)
-        self.setFocusPolicy(QtCore.Qt.NoFocus)
-        self.color = (59, 128, 255)
-        self.half_pos = spacing / 2
-        self._qcolor_main = QtGui.QColor(*self.color)
-        self._qcolor_fill_sel = QtGui.QColor(*self.color, 25)
-        self._qcolor_fill_drag = QtGui.QColor(*self.color, 50)
-        self._selection_pen = QtGui.QPen(self._qcolor_main, max(1, spacing * 0.5))
-        self._selection_pen.setCosmetic(True)
-        self._parent = parent
-        parent.installEventFilter(self)
-        self.resize(self._parent.size())
-        self.show()
-        logger.info(f'STACK UNDER : {self.stackUnder(self._parent)}')
-        self._last_state = None
-        self.viewport_rect = QtCore.QRect()
-        self.selection_indices = set()
-        self.visible_indices = set()
-        self.rects = []
-        self.drag_rect_start = None
-        self.drag_rect_current = None
-        self.is_shift_dragging = False
-        self.drop_rect = None
-        self.drop_title = None
-        self.drop_text = None
-        self.raise_()
-
-    def eventFilter(self, watched, event):
-        if not isinstance(event, QtCore.QEvent):
-            return False
-        if watched == self._parent and event.type() == QtCore.QEvent.Resize:
-            self.resize(self._parent.size())
-        return super().eventFilter(watched, event)
-
-    def set_paintvalue(self, viewport_rect, selection_indices, visible_indices, rects, drag_rect_start, drag_rect_current, is_shift_dragging, drop_rect, drop_title, drop_text):
-        state = (viewport_rect, frozenset(selection_indices), frozenset(visible_indices), drag_rect_start, drag_rect_current, is_shift_dragging, drop_rect, drop_title, drop_text)
-        if state != self._last_state:
-            self._last_state = state
-            self.viewport_rect = viewport_rect
-            self.selection_indices = selection_indices
-            self.visible_indices = visible_indices
-            self.rects = rects
-            self.drag_rect_start = drag_rect_start
-            self.drag_rect_current = drag_rect_current
-            self.is_shift_dragging = is_shift_dragging
-            self.drop_rect = drop_rect
-            self.drop_title = drop_title
-            self.drop_text = drop_text
-            self.update()
-
-    def paintEvent(self, event):
-        super().paintEvent(event)
-        painter = QtGui.QPainter(self)
-        painter.setRenderHint(QtGui.QPainter.Antialiasing, False)
-        painter.setClipRegion(event.region())
-        if not self.viewport_rect.isNull():
-            painter.setClipRect(self.viewport_rect, QtCore.Qt.IntersectClip)
-        space = self.half_pos - self._selection_pen.width() / 2
-        if self.selection_indices and self.visible_indices and self.rects:
-            indices = self.selection_indices & self.visible_indices
-            rect_list = []
-            for i in indices:
-                if 0 <= i < len(self.rects):
-                    r = self.rects[i]
-                    if r.intersects(self.viewport_rect):
-                        rect_list.append(r.adjusted(-space, -space, space, space))
-            if rect_list:
-                painter.setPen(self._selection_pen)
-                painter.setBrush(self._qcolor_fill_sel)
-                painter.drawRects(rect_list)
-        if self.is_shift_dragging and self.drag_rect_start and self.drag_rect_current:
-            selection_rect = QtCore.QRect(self.drag_rect_start, self.drag_rect_current).normalized()
-            dash_pen = QtGui.QPen(self._qcolor_main, 1, QtCore.Qt.DashLine)
-            dash_pen.setCosmetic(True)
-            painter.setPen(dash_pen)
-            painter.setBrush(self._qcolor_fill_drag)
-            painter.drawRect(selection_rect)
-        if self.drop_rect and not self.drop_rect.isNull():
-            r = self.drop_rect
-            painter.setPen(QtCore.Qt.NoPen)
-            painter.setBrush(QtGui.QColor(0, 0, 0, 160))
-            painter.drawRect(r)
-            if self.drop_title or self.drop_text:
-                inner = r.adjusted(2, 2, -2, -2)
-                painter.save()
-                painter.setPen(QtGui.QColor(255, 255, 255))
-                font = painter.font()
-                font.setBold(True)
-                painter.setFont(font)
-                fm = QtGui.QFontMetrics(font)
-                title = fm.elidedText(str(self.drop_title or ""), QtCore.Qt.ElideMiddle, max(1, inner.width() - int(self.half_pos)))
-                text = fm.elidedText(str(self.drop_text or ""), QtCore.Qt.ElideMiddle, max(1, inner.width() - int(self.half_pos)))
-                painter.drawText(inner, QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter, f"{title}\n{text}".strip())
-                painter.restore()
-        painter.end()
-
-class JustifiedVirtualScrollWidget(QtWidgets.QWidget, Kit.UIMixin):
+class JustifiedGraphicsView(QtWidgets.QGraphicsView, Kit.UIMixin):
+    layout_started = QtCore.Signal()
     layout_ready = QtCore.Signal()
     base_height_changed = QtCore.Signal()
+    resized = QtCore.Signal()
 
-    def __init__(self, scroll, root, items: ViewerItems | None = None, parent=None):
+    def __init__(self, root, items: ViewerItems | None = None, parent=None):
         super().__init__(parent)
+        self._scene = QtWidgets.QGraphicsScene(self)
+        self.setScene(self._scene)
+        self.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        self.setViewportUpdateMode(QtWidgets.QGraphicsView.MinimalViewportUpdate)
+        self.setOptimizationFlags(QtWidgets.QGraphicsView.DontAdjustForAntialiasing)
+        self.setRenderHint(QtGui.QPainter.SmoothPixmapTransform, False)
+
         self.root = root
         self.items = items or ViewerItems(self)
-        self.parent_scroll = scroll
         self.init_command_binding("JustifiedView", enable_drops=True)
         self.setObjectName('JustifiedVirtualScrollWidget')
+
         self.rects = []
-        self.rects_tops = []
-        self.rects_bottoms = []
+        self._primary_starts = []
+        self._primary_ends = []
+        self._vis_index_map = None
+        self._total_extent = 0
+        self._group_starts_cache = []
+        self._group_mids_cache = []
         self.last_selections = []
         self._restore_scroll_path = None
         self._rect_select_mode = "replace"
@@ -141,26 +53,133 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget, Kit.UIMixin):
         self._drop_preview_rect = None
         self._drop_preview_title = None
         self._drop_preview_text = None
+
         self.screen_width = QtGui.QGuiApplication.primaryScreen().availableGeometry().width()
         self.base_height = main_setting.get('viewer/zoom', int(self.screen_width / 10))
-        self._width_ref = self.width()
+        self._width_ref = 0
         self.min_height = int(self.screen_width / 30)
         self.max_height = int(self.screen_width)
         self.setMinimumWidth(self.min_height)
         self.spacing = uipx(4)
+        self.orientation = main_setting.get('viewer/orientation', 0)
+        self._hz = self.orientation <= 1
+        self._reversed = self.orientation == 3
         self.calculator = None
         self.image_cache = MemoryLimitedImageCache(main_setting.get('window/chache_size', 500))
-        self.label_pool = QLabelPool(self)
+        self.label_pool = GraphicsItemPool(self._scene)
         self.active_threads = {}
         self.error_placeholder = PixmapFactory.generate().toImage()
-        self.overlay_painter = OverLayPainter(self, self.spacing)
+
+        self.color = (59, 128, 255)
+        self._half_pos = self.spacing / 2
+        self._qcolor_main = QtGui.QColor(*self.color)
+        self._qcolor_fill_sel = QtGui.QColor(*self.color, 25)
+        self._qcolor_fill_drag = QtGui.QColor(*self.color, 50)
+        self._selection_pen = QtGui.QPen(self._qcolor_main, max(1, self.spacing * 0.5))
+        self._selection_pen.setCosmetic(True)
+
         self.items.selectionChanged.connect(self._on_selection_changed)
         self.widgets = {}
         self.visible_indices = set()
         self.size_checker = SizeMismatchChecker(self)
         self.size_checker.start()
-        self.parent_scroll.verticalScrollBar().valueChanged.connect(self._on_scroll_bar_changed)
-        self.parent_scroll.horizontalScrollBar().valueChanged.connect(self._on_scroll_bar_changed)
+
+        self.verticalScrollBar().valueChanged.connect(self._on_scroll_bar_changed)
+        self.horizontalScrollBar().valueChanged.connect(self._on_scroll_bar_changed)
+
+        self._scroll_speed = 100
+        self._speed_callback = self.get_adjusted_scroll_speed
+        self._connected_bar = None
+        self._auto_scroll_anim = None
+        self._setup_primary_scroll()
+
+    @property
+    def parent_scroll(self):
+        return self
+
+    def _is_horizontal(self):
+        return self._hz
+
+    def _is_primary_reversed(self):
+        return self._reversed
+
+    def _primary_bar(self):
+        return self.verticalScrollBar() if self._hz else self.horizontalScrollBar()
+
+    def _primary_viewport_size(self):
+        vp = self.viewport()
+        return vp.height() if self._hz else vp.width()
+
+    def _secondary_viewport_size(self):
+        vp = self.viewport()
+        return vp.width() if self._hz else vp.height()
+
+    def _primary_pos(self, point):
+        return point.y() if self._hz else point.x()
+
+    def _setup_primary_scroll(self):
+        bar = self._primary_bar()
+        if self._connected_bar is not None:
+            try:
+                self._connected_bar.sliderPressed.disconnect(self._on_auto_scroll_user_interaction)
+                self._connected_bar.actionTriggered.disconnect(self._on_auto_scroll_user_interaction)
+            except RuntimeError:
+                pass
+        if self._auto_scroll_anim is not None:
+            self._auto_scroll_anim.stop()
+        self._auto_scroll_anim = QtCore.QPropertyAnimation(bar, b"value")
+        self._auto_scroll_anim.setEasingCurve(QtCore.QEasingCurve.Linear)
+        bar.sliderPressed.connect(self._on_auto_scroll_user_interaction)
+        bar.actionTriggered.connect(self._on_auto_scroll_user_interaction)
+        self._connected_bar = bar
+
+    def set_orientation(self, orientation):
+        if self.orientation == orientation:
+            return
+        self.orientation = orientation
+        self._hz = orientation <= 1
+        self._reversed = orientation == 3
+        self._width_ref = self._secondary_viewport_size()
+        main_setting.set('viewer/orientation', orientation)
+        self._setup_primary_scroll()
+        self._recalc_layout()
+
+    def set_speed_callback(self, callback):
+        self._speed_callback = callback
+
+    def start_auto_scroll(self, speed=100):
+        self._scroll_speed = speed
+        self._start_auto_scroll_from_current()
+
+    def stop_auto_scroll(self):
+        self._auto_scroll_anim.stop()
+
+    def isscrolling(self):
+        return self._auto_scroll_anim.state() == QtCore.QAbstractAnimation.Running
+
+    def _on_auto_scroll_user_interaction(self):
+        if self.isscrolling():
+            self._start_auto_scroll_from_current()
+
+    def _start_auto_scroll_from_current(self):
+        bar = self._primary_bar()
+        start_value = bar.value()
+        if self._is_primary_reversed():
+            end_value = bar.minimum()
+        else:
+            end_value = bar.maximum()
+        distance = abs(end_value - start_value)
+        if distance < 1:
+            self.stop_auto_scroll()
+            return
+        if self._speed_callback:
+            self._scroll_speed = self._speed_callback()
+        duration = min(int(distance / max(self._scroll_speed, 0.01) * 1000), 2147483647)
+        self._auto_scroll_anim.stop()
+        self._auto_scroll_anim.setStartValue(start_value)
+        self._auto_scroll_anim.setEndValue(end_value)
+        self._auto_scroll_anim.setDuration(duration)
+        self._auto_scroll_anim.start()
 
     def extend_context(self, ctx, cmd, event=None, key=None, source=None):
         paths = self.items.selected_paths()
@@ -170,32 +189,97 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget, Kit.UIMixin):
     def _on_selection_changed(self, _):
         self.last_selections = self.items.selected_paths()
         logger.info(self.last_selections)
-        self.update()
+        self.viewport().update()
 
-    def paintEvent(self, event):
-        super().paintEvent(event)
-        scroll_y = self.parent_scroll.verticalScrollBar().value()
-        scroll_x = self.parent_scroll.horizontalScrollBar().value()
-        viewport_rect = self.parent_scroll.viewport().rect().translated(scroll_x, scroll_y)
-        self.overlay_painter.set_paintvalue(viewport_rect, self.items.selected_indices(), self.visible_indices, self.rects, self._rect_select_start_pos, self._rect_select_current_pos, self._rect_select_dragging, self._drop_preview_rect, self._drop_preview_title, self._drop_preview_text)
+    def _scene_view_rect(self):
+        return self.mapToScene(self.viewport().rect()).boundingRect().toAlignedRect()
+
+    def drawForeground(self, painter, rect):
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, False)
+        space = self._half_pos - self._selection_pen.width() / 2
+        view_rect = self._scene_view_rect()
+        sel_indices = self.items.selected_indices()
+        if sel_indices and self.visible_indices and self.rects:
+            indices = sel_indices & self.visible_indices
+            rect_list = []
+            for i in indices:
+                if 0 <= i < len(self.rects):
+                    r = self.rects[i]
+                    if r.intersects(view_rect):
+                        rect_list.append(QtCore.QRectF(r).adjusted(-space, -space, space, space))
+            if rect_list:
+                painter.setPen(self._selection_pen)
+                painter.setBrush(self._qcolor_fill_sel)
+                for r in rect_list:
+                    painter.drawRect(r)
+        if self._rect_select_dragging and self._rect_select_start_pos and self._rect_select_current_pos:
+            selection_rect = QtCore.QRectF(
+                QtCore.QPointF(self._rect_select_start_pos),
+                QtCore.QPointF(self._rect_select_current_pos)
+            ).normalized()
+            dash_pen = QtGui.QPen(self._qcolor_main, 1, QtCore.Qt.DashLine)
+            dash_pen.setCosmetic(True)
+            painter.setPen(dash_pen)
+            painter.setBrush(self._qcolor_fill_drag)
+            painter.drawRect(selection_rect)
+        if self._drop_preview_rect and not self._drop_preview_rect.isNull():
+            r = QtCore.QRectF(self._drop_preview_rect)
+            painter.setPen(QtCore.Qt.NoPen)
+            painter.setBrush(QtGui.QColor(0, 0, 0, 160))
+            painter.drawRect(r)
+            if self._drop_preview_title or self._drop_preview_text:
+                inner = r.adjusted(2, 2, -2, -2)
+                painter.save()
+                painter.setPen(QtGui.QColor(255, 255, 255))
+                font = painter.font()
+                font.setBold(True)
+                painter.setFont(font)
+                fm = QtGui.QFontMetrics(font)
+                title = fm.elidedText(str(self._drop_preview_title or ""), QtCore.Qt.ElideMiddle, max(1, int(inner.width() - self._half_pos)))
+                text = fm.elidedText(str(self._drop_preview_text or ""), QtCore.Qt.ElideMiddle, max(1, int(inner.width() - self._half_pos)))
+                painter.drawText(inner.toRect(), QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter, f"{title}\n{text}".strip())
+                painter.restore()
 
     @profiler.profile
     def get_mouse_pos_path(self):
-        i = self.index_at_pos(self.mapFromGlobal(QtCore.QCursor.pos()))
+        i = self.index_at_pos(self.viewport().mapFromGlobal(QtCore.QCursor.pos()))
         return self.items.path_at(i)
 
     def get_mouse_pos_source(self):
-        i = self.index_at_pos(self.mapFromGlobal(QtCore.QCursor.pos()))
+        i = self.index_at_pos(self.viewport().mapFromGlobal(QtCore.QCursor.pos()))
         return self.items.source_at(i)
 
     @profiler.profile
     def index_at_pos(self, pos):
-        y = pos.y()
-        start = bisect.bisect_left(self.rects_bottoms, y)
-        end = bisect.bisect_right(self.rects_tops, y)
-        for i in range(start, end):
-            if self.rects[i].contains(pos):
-                return i
+        scene_pos = self.mapToScene(pos)
+        p = self._primary_pos(scene_pos)
+        start = bisect.bisect_left(self._primary_ends, p)
+        end = bisect.bisect_right(self._primary_starts, p)
+        sp = scene_pos.toPoint()
+        if self._vis_index_map is not None:
+            for s in range(start, end):
+                i = self._vis_index_map[s]
+                if self.rects[i].contains(sp):
+                    return i
+        else:
+            for i in range(start, end):
+                if self.rects[i].contains(sp):
+                    return i
+        return None
+
+    def to_scene_pos(self, pos):
+        return self.mapToScene(pos).toPoint()
+
+    def grab_widget_pixmap(self, index):
+        w = self.widgets.get(index)
+        if w is None:
+            return None
+        if hasattr(w, 'pixmap'):
+            p = w.pixmap()
+            if not p.isNull():
+                return p
+        if isinstance(w, QtWidgets.QGraphicsProxyWidget) and w.widget():
+            return w.widget().grab()
         return None
 
     @qt_throttle(50, 100)
@@ -232,23 +316,36 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget, Kit.UIMixin):
         self.widgets.clear()
         self.visible_indices.clear()
         self.rects = []
-        self.setMinimumHeight(0)
+        self._primary_starts = []
+        self._primary_ends = []
+        self._vis_index_map = None
+        self._total_extent = 0
+        self._group_starts_cache = []
+        self._group_mids_cache = []
+        self._scene.setSceneRect(0, 0, 0, 0)
 
     @profiler.profile
     @qt_debounce(100)
     def on_resize_event(self):
-        width = self.width()
-        if width != self._width_ref:
-            scale = width / self._width_ref
+        sv = self._secondary_viewport_size()
+        if sv > 0 and self._width_ref > 0 and sv != self._width_ref:
+            scale = sv / self._width_ref
             new_height = int(self.base_height * scale)
             new_height = min(self.max_height, max(self.min_height, new_height))
             if new_height != self.base_height:
                 self.base_height = new_height
-                self._width_ref = width
+                self._width_ref = sv
                 self.base_height_changed.emit()
+        elif self._width_ref == 0 and sv > 0:
+            self._width_ref = sv
         center_idx = self.get_center_image_index()
         self._restore_scroll_path = self.items.path_at(center_idx) if center_idx is not None else None
         self._recalc_layout()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.resized.emit()
+        self.on_resize_event()
 
     @qt_debounce(100)
     def _debounce_recalc_layout(self):
@@ -256,40 +353,51 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget, Kit.UIMixin):
 
     @profiler.profile
     def _recalc_layout(self):
+        self.layout_started.emit()
         if self.calculator:
             self.calculator.cancel()
-        self.calculator = JustifiedLayoutCalculator(self.items.aspect_ratios, self.base_height, self.spacing, self.width(), self.height(), 1)
+        margin = self._half_pos
+        secondary = self._secondary_viewport_size() - margin * 2
+        primary_vp = self._primary_viewport_size()
+        bh = self.base_height
+        if self._is_horizontal():
+            cw, ch = secondary, primary_vp
+        else:
+            cw, ch = primary_vp, secondary
+            ratios = self.items.aspect_ratios
+            avg_aspect = sum(ratios) / len(ratios) if ratios else 1.0
+            bh = int(bh * avg_aspect)
+        self.calculator = JustifiedLayoutCalculator(self.items.aspect_ratios, bh, self.spacing, cw, ch, self.orientation)
         self.calculator.signals.layout_ready.connect(self._on_layout_ready)
         main_thread.start(self.calculator, 7)
 
     def get_adjusted_scroll_speed(self, base_speed=50):
         reference_height = self.screen_width / 10
         speed_ratio = self.base_height / reference_height
-        adjusted_speed = base_speed * max(0.1, min(speed_ratio, 1.0))
-        return adjusted_speed
+        return base_speed * max(0.1, min(speed_ratio, 1.0))
 
     @profiler.profile
     def get_center_image_index(self):
-        scroll_area = self.parent_scroll
-        if isinstance(scroll_area, QtWidgets.QAbstractScrollArea):
-            center_y = scroll_area.verticalScrollBar().value() + scroll_area.viewport().height() // 2
-            center_x = scroll_area.horizontalScrollBar().value() + scroll_area.viewport().width() // 2
-            center_point = QtCore.QPoint(center_x, center_y)
-            for i, r in enumerate(self.rects):
-                if r.contains(center_point):
+        if not self._primary_starts:
+            return None
+        center = self.mapToScene(self.viewport().rect().center()).toPoint()
+        p = self._primary_pos(center)
+        idx = bisect.bisect_right(self._primary_starts, p)
+        lo = max(0, idx - 2)
+        hi = min(len(self._primary_starts), idx + 2)
+        if self._vis_index_map is not None:
+            for s in range(lo, hi):
+                i = self._vis_index_map[s]
+                if self.rects[i].contains(center):
+                    return i
+        else:
+            for i in range(lo, hi):
+                if self.rects[i].contains(center):
                     return i
         return None
 
-    def _row_tops(self) -> list[int]:
-        if not self.rects:
-            return []
-        seen = []
-        prev = None
-        for t in self.rects_tops:
-            if t != prev:
-                seen.append(t)
-                prev = t
-        return seen
+    def _group_starts(self) -> list[int]:
+        return self._group_starts_cache
 
     def _effective_scroll_top(self, bar):
         if (hasattr(self, '_scroll_anim') and self._scroll_anim is not None
@@ -302,54 +410,53 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget, Kit.UIMixin):
         from ...actions.bridge import Command
         return Command.get_action_group_current('jv_scroll_anchor') == 'jv.scroll_anchor_center'
 
-    def _row_mids(self) -> list[int]:
-        if not self.rects:
-            return []
-        mids = []
-        prev_top = None
-        for i, t in enumerate(self.rects_tops):
-            if t != prev_top:
-                mids.append(t + self.rects[i].height() // 2)
-                prev_top = t
-        return mids
+    def _group_mids(self) -> list[int]:
+        return self._group_mids_cache
 
     def scroll_to_next_row(self, animated: bool = True):
-        scroll_area = self.parent_scroll
-        if not isinstance(scroll_area, QtWidgets.QAbstractScrollArea):
-            return
-        bar = scroll_area.verticalScrollBar()
-        vh = scroll_area.viewport().height()
+        bar = self._primary_bar()
+        vs = self._primary_viewport_size()
+        rev = self._is_primary_reversed()
         if self._is_center_anchor():
-            refs = self._row_mids()
-            current = self._effective_scroll_top(bar) + vh // 2
-            offset = vh // 2
+            refs = self._group_mids()
+            current = self._effective_scroll_top(bar) + vs // 2
+            offset = vs // 2
         else:
-            refs = self._row_tops()
+            refs = self._group_starts()
             current = self._effective_scroll_top(bar)
             offset = 0
-        idx = bisect.bisect_right(refs, current)
-        if idx < len(refs):
-            self._scroll_to_y(refs[idx] - offset, bar, scroll_area, animated)
+        if rev:
+            idx = bisect.bisect_left(refs, current) - 1
+            if idx >= 0:
+                self._scroll_to(refs[idx] - offset, animated)
+        else:
+            idx = bisect.bisect_right(refs, current)
+            if idx < len(refs):
+                self._scroll_to(refs[idx] - offset, animated)
 
     def scroll_to_prev_row(self, animated: bool = True):
-        scroll_area = self.parent_scroll
-        if not isinstance(scroll_area, QtWidgets.QAbstractScrollArea):
-            return
-        bar = scroll_area.verticalScrollBar()
-        vh = scroll_area.viewport().height()
+        bar = self._primary_bar()
+        vs = self._primary_viewport_size()
+        rev = self._is_primary_reversed()
         if self._is_center_anchor():
-            refs = self._row_mids()
-            current = self._effective_scroll_top(bar) + vh // 2
-            offset = vh // 2
+            refs = self._group_mids()
+            current = self._effective_scroll_top(bar) + vs // 2
+            offset = vs // 2
         else:
-            refs = self._row_tops()
+            refs = self._group_starts()
             current = self._effective_scroll_top(bar)
             offset = 0
-        idx = bisect.bisect_left(refs, current) - 1
-        if idx >= 0:
-            self._scroll_to_y(refs[idx] - offset, bar, scroll_area, animated)
+        if rev:
+            idx = bisect.bisect_right(refs, current)
+            if idx < len(refs):
+                self._scroll_to(refs[idx] - offset, animated)
+        else:
+            idx = bisect.bisect_left(refs, current) - 1
+            if idx >= 0:
+                self._scroll_to(refs[idx] - offset, animated)
 
-    def _scroll_to_y(self, y: int, bar, scroll_area, animated: bool):
+    def _scroll_to(self, y: int, animated: bool = True):
+        bar = self._primary_bar()
         target = max(bar.minimum(), min(y, bar.maximum()))
         self._scroll_target = target
         distance = abs(bar.value() - target)
@@ -369,27 +476,63 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget, Kit.UIMixin):
 
     @profiler.profile
     def reinstall_scroll_index(self, ind, animated: bool = False):
-        scroll_area = self.parent_scroll
-        if not isinstance(scroll_area, QtWidgets.QAbstractScrollArea):
-            return
-        bar = scroll_area.verticalScrollBar()
+        bar = self._primary_bar()
+        vs = self._primary_viewport_size()
         is_center = self._is_center_anchor()
-        vh = scroll_area.viewport().height()
         if ind < len(self.rects):
             rect = self.rects[ind]
             if is_center:
-                y = rect.center().y() - vh // 2
+                y = self._primary_pos(rect.center()) - vs // 2
             else:
-                y = rect.top()
+                y = self._primary_pos(rect.topLeft())
         else:
             y = bar.maximum()
-        self._scroll_to_y(y, bar, scroll_area, animated)
+        self._scroll_to(y, animated)
+
+    def _build_visibility_data(self, rects):
+        hz = self._hz
+        if hz:
+            starts = [r.top() for r in rects]
+            ends = [r.bottom() for r in rects]
+            self._total_extent = ends[-1] + self.spacing if ends else 0
+        else:
+            starts = [r.left() for r in rects]
+            ends = [r.right() for r in rects]
+            self._total_extent = max(ends) + self.spacing if ends else 0
+        if self._reversed and starts:
+            order = sorted(range(len(rects)), key=lambda i: starts[i])
+            self._primary_starts = [starts[i] for i in order]
+            self._primary_ends = [ends[i] for i in order]
+            self._vis_index_map = order
+        else:
+            self._primary_starts = starts
+            self._primary_ends = ends
+            self._vis_index_map = None
+        gs = []
+        gm = []
+        prev = None
+        ps = self._primary_starts
+        pe = self._primary_ends
+        for i in range(len(ps)):
+            s = ps[i]
+            if s != prev:
+                gs.append(s)
+                gm.append((s + pe[i]) // 2)
+                prev = s
+        self._group_starts_cache = gs
+        self._group_mids_cache = gm
 
     @profiler.profile
     def _on_layout_ready(self, rects):
         self.rects = rects
-        self.rects_tops = [r.top() for r in rects]
-        self.rects_bottoms = [r.bottom() for r in rects]
+        self._build_visibility_data(rects)
+        n = len(rects)
+        for i in list(self.visible_indices):
+            if i < n and i in self.widgets:
+                self.widgets[i].setGeometry(rects[i])
+            else:
+                self._recycle_widget(i)
+                self.visible_indices.discard(i)
         self._update_visible_items()
         self.size_checker.trigger()
         self.layout_ready.emit()
@@ -407,9 +550,6 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget, Kit.UIMixin):
         elif index >= len(self.rects):
             index = 0
         self.reinstall_scroll_index(index)
-        for i in self.visible_indices:
-            if i < len(self.rects):
-                self._ensure_widget_visible(i)
 
     @profiler.profile
     def get_restore_index(self):
@@ -432,18 +572,17 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget, Kit.UIMixin):
     def _update_visible_items(self):
         if not self.rects:
             return
-        scroll_area = self.parent_scroll
-        viewport = scroll_area.viewport()
-        scroll_y = scroll_area.verticalScrollBar().value()
-        scroll_x = scroll_area.horizontalScrollBar().value()
-        view_rect = viewport.rect().translated(scroll_x, scroll_y)
+        view_rect = self._scene_view_rect()
         visible_range = self._calculate_visible_indices(view_rect)
         expanded_range = self._expand_prefetch_range(visible_range)
         new_visible = set(expanded_range)
         newly_added = new_visible - self.visible_indices
         no_longer_visible = self.visible_indices - new_visible
         if newly_added:
-            center = (visible_range.start + visible_range.stop) // 2
+            if isinstance(visible_range, range):
+                center = (visible_range.start + visible_range.stop) // 2
+            else:
+                center = (min(visible_range) + max(visible_range)) // 2 if visible_range else 0
             sorted_added = sorted(newly_added, key=lambda i: abs(i - center))
             for i in sorted_added:
                 if i < len(self.rects):
@@ -452,31 +591,42 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget, Kit.UIMixin):
             self._recycle_widget(i)
         self.visible_indices = new_visible
         if self.rects:
-            total_height = self.rects[-1].bottom() + self.spacing
-            self.setMinimumHeight(total_height)
-        self.update()
+            margin = self._half_pos
+            if self._hz:
+                self._scene.setSceneRect(-margin, -margin, max(self.viewport().width(), 1), self._total_extent + margin)
+            else:
+                self._scene.setSceneRect(-margin, -margin, self._total_extent + margin, max(self.viewport().height(), 1))
+        self.viewport().update()
 
     @profiler.profile
     def _calculate_visible_indices(self, view_rect):
-        if not self.rects:
+        if not self.rects or not self._primary_starts or not self._primary_ends:
             return range(0, 0)
-        if not self.rects_bottoms or not self.rects_tops:
-            return
-        top = view_rect.top()
-        bottom = view_rect.bottom()
-        start = bisect.bisect_left(self.rects_bottoms, top)
-        end = bisect.bisect_right(self.rects_tops, bottom) - 1
-        start = max(0, min(start, len(self.rects) - 1))
-        end = max(start, min(end, len(self.rects) - 1))
+        hz = self._hz
+        p_start = view_rect.top() if hz else view_rect.left()
+        p_end = view_rect.bottom() if hz else view_rect.right()
+        start = bisect.bisect_left(self._primary_ends, p_start)
+        end = bisect.bisect_right(self._primary_starts, p_end) - 1
+        n = len(self._primary_starts)
+        start = max(0, min(start, n - 1))
+        end = max(start, min(end, n - 1))
+        if self._vis_index_map is not None:
+            return [self._vis_index_map[i] for i in range(start, end + 1)]
         return range(start, end + 1)
 
     @profiler.profile
-    def _expand_prefetch_range(self, visible_range):
-        if not visible_range:
+    def _expand_prefetch_range(self, visible):
+        if not visible:
             return range(0, 0)
-        prefetch = len(visible_range) + 3
-        start = max(0, visible_range.start - prefetch)
-        end = min(len(self.rects), visible_range.stop + prefetch)
+        if isinstance(visible, range):
+            prefetch = len(visible) + 3
+            start = max(0, visible.start - prefetch)
+            end = min(len(self.rects), visible.stop + prefetch)
+        else:
+            prefetch = len(visible) + 3
+            v_min, v_max = min(visible), max(visible)
+            start = max(0, v_min - prefetch)
+            end = min(len(self.rects), v_max + 1 + prefetch)
         return range(start, end)
 
     @profiler.profile
@@ -486,12 +636,11 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget, Kit.UIMixin):
             logger.warning(f'Index {i} out of range for paths (len={len(self.items.paths)})')
             return
         if i not in self.widgets:
-            label = self.label_pool.acquire()
-            label.stackUnder(self.overlay_painter)
-            label.setGeometry(rect)
-            self.widgets[i] = label
+            item = self.label_pool.acquire()
+            item.setGeometry(rect)
+            self.widgets[i] = item
             if i in self.image_cache:
-                label.set_image(self.image_cache[i], self.items.paths[i])
+                item.set_image(self.image_cache[i], self.items.paths[i])
             elif i not in self.active_threads:
                 runnable = ImageLoaderRunnable(i, self.items.paths[i], rect.size(), self)
                 runnable.signal.image_ready.connect(self._on_image_ready)
@@ -504,10 +653,10 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget, Kit.UIMixin):
     @profiler.profile
     def _recycle_widget(self, i):
         if i in self.widgets:
-            label = self.widgets.pop(i)
-            if hasattr(label, "delete"):
-                label.delete()
-            self.label_pool.release(label)
+            item = self.widgets.pop(i)
+            if hasattr(item, "delete"):
+                item.delete()
+            self.label_pool.release(item)
         if i in self.image_cache:
             del self.image_cache[i]
         if i in self.active_threads:
@@ -522,25 +671,26 @@ class JustifiedVirtualScrollWidget(QtWidgets.QWidget, Kit.UIMixin):
             logger.warning(f'_on_image_ready: index {index} out of range (len={len(self.items.paths)})')
             return
         if index in self.widgets:
-            label = self.widgets[index]
+            item = self.widgets[index]
             self.image_cache[index] = image
-            label.set_image(image, self.items.paths[index])
+            item.set_image(image, self.items.paths[index])
         if index in self.active_threads:
             del self.active_threads[index]
 
     @profiler.profile
     @QtCore.Slot(int, object, object)
-    def _on_widget_ready(self, index, widget, kwargs):
+    def _on_widget_ready(self, index, widget_class, kwargs):
         if index >= len(self.items.paths):
-            logger.warning(f'_on_image_ready: widget {widget} out of range (len={len(self.items.paths)})')
+            logger.warning(f'_on_widget_ready: index {index} out of range (len={len(self.items.paths)})')
             return
-
-        if issubclass(widget, QtWidgets.QWidget):
+        if issubclass(widget_class, QtWidgets.QWidget):
             rect = self.rects[index]
-            instance = widget(parent=self, **kwargs)
-            instance.setGeometry(rect)
-            instance.stackUnder(self.overlay_painter)
-            self.widgets[index] = instance
-        
+            instance = widget_class(**kwargs)
+            proxy = self._scene.addWidget(instance)
+            proxy.setGeometry(QtCore.QRectF(rect))
+            if index in self.widgets:
+                old = self.widgets.pop(index)
+                self.label_pool.release(old)
+            self.widgets[index] = proxy
         if index in self.active_threads:
             del self.active_threads[index]

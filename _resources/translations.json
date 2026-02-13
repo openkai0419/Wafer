@@ -1,4 +1,25 @@
 {
+  "Layout": {
+    "en": "Layout"
+  },
+  "N (↓→)": {
+    "en": "N (↓→)"
+  },
+  "Reverse N (↓←)": {
+    "en": "Reverse N (↓←)"
+  },
+  "Reverse Z (←↓)": {
+    "en": "Reverse Z (←↓)"
+  },
+  "Z (→↓)": {
+    "en": "Z (→↓)"
+  },
+  "multiplier": {
+    "en": "multiplier"
+  },
+  "リセット": {
+    "en": "リセット"
+  },
   "AND": {
     "en": "AND"
   },

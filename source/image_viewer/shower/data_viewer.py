@@ -9,7 +9,7 @@ from ...io.manager import LoaderClass
 from .dict_viewer import DictListWidget
 from .image_veiwer import ImageViewerWidget
 from .data_model import DataViewModel
-from ..viewer.cachemanager import FadeLabel, MemoryLimitedImageCache
+from ..viewer.cachemanager import MemoryLimitedImageCache
 from ..viewer_settings import main_setting
 
 

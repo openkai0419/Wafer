@@ -6,7 +6,7 @@ from ..db.setting_db import SettingDB
 from ..lang.manager import TranslatorMixin
 from ..qt.debounce import qt_debounce
 from ..zmq.zmq import Role, ZMQNode
-from .viewer.justifiedwidget import JustifiedVirtualScrollWidget
+from .viewer.justifiedwidget import JustifiedGraphicsView
 from .viewer.items import ViewerItems
 from .commands.window_commands import restore_always_on_top
 from .shower.data_model import DataViewModel
@@ -18,7 +18,6 @@ from .widgets.loading_overlay import OverlayLoadingIndicator
 from .widgets.overlay_stack import OverlayStack
 from .widgets.progress_bar import ThinProgressBar
 from .widgets.query_options import SingleRowOption
-from .widgets.scrollarea import AutoScrollArea
 from .widgets.table_combo import ComboBoxWithButtons
 
 from .commands.menu import MenuMenu
@@ -211,18 +210,13 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.search_row_widget.settingchanged.connect(self._on_search_setting_changed)
         self.mid_layout.addWidget(self.search_row_widget)
 
-        self.viewer = AutoScrollArea()
-        self.viewer.setWidgetResizable(True)
-        self.viewer.verticalScrollBar().setSingleStep(25)
-        self.viewer.horizontalScrollBar().setSingleStep(25)
         self.items = ViewerItems(self)
-        self.content = JustifiedVirtualScrollWidget(self.viewer, self, self.items)
-        self.viewer.setWidget(self.content)
-        self.viewer.resized.connect(self.content.on_resize_event)
-        self.viewer.set_speed_callback(self.content.get_adjusted_scroll_speed)
+        self.content = JustifiedGraphicsView(self, self.items)
+        self.content.verticalScrollBar().setSingleStep(25)
+        self.content.horizontalScrollBar().setSingleStep(25)
         self.content.base_height_changed.connect(self._on_zoom_changed)
 
-        self.mid_layout.addWidget(self.viewer)
+        self.mid_layout.addWidget(self.content)
         self.splitter.addWidget(mid_panel)
 
         right_panel = QtWidgets.QWidget()
@@ -249,10 +243,11 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         sizes = main_setting.get('window/splitter', [10, 800, 10])
         if sizes:
             self.splitter.setSizes(sizes)
-        self.overlay_stack = OverlayStack(self.viewer)
+        self.overlay_stack = OverlayStack(self.content)
         UI.register_instance("OverlayStack", self.overlay_stack)
         self.loading_indicator = OverlayLoadingIndicator()
         self.overlay_stack.push_persistent(self.loading_indicator, key="loading")
+        self.content.layout_started.connect(self._on_layout_started)
         self.content.layout_ready.connect(lambda: self.overlay_stack.hide_persistent("loading"))
         self._sync_service_from_ui()
 
@@ -291,9 +286,9 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.search_row_widget.on_move_event()
 
     def _on_zoom_changed(self):
-        if self.viewer.isscrolling():
+        if self.content.isscrolling():
             speed = self.content.get_adjusted_scroll_speed()
-            self.viewer._scroll_speed = speed
+            self.content._scroll_speed = speed
 
     @profiler.profile
     def on_folder_selected(self):
@@ -323,9 +318,15 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             btn.setChecked(changed['include_subfolders'])
             btn.blockSignals(False)
 
-    def _on_search_started(self):
+    def _show_loading(self):
         self.loading_indicator.start()
         self.overlay_stack.show_persistent("loading")
+
+    def _on_layout_started(self):
+        self._show_loading()
+
+    def _on_search_started(self):
+        self._show_loading()
 
     @QtCore.Slot(object, object, object)
     @profiler.profile

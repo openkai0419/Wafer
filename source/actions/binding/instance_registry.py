@@ -7,6 +7,11 @@ from PySide6 import QtCore, QtWidgets
 
 from source.common.errors import show_warning
 
+try:
+    from shiboken6 import isValid as _shiboken_isValid
+except (ImportError, ModuleNotFoundError):
+    _shiboken_isValid = None
+
 
 class InstanceRegistry:
     _instance: Optional["InstanceRegistry"] = None
@@ -37,19 +42,13 @@ class InstanceRegistry:
         if instance is None:
             return False
         if isinstance(instance, QtCore.QObject):
+            if _shiboken_isValid is not None:
+                try:
+                    return bool(_shiboken_isValid(instance))
+                except Exception as e:
+                    show_warning(None, "InstanceRegistry.is_valid shiboken6 failed", exc=e)
             try:
-                import shiboken6
-
-                return bool(shiboken6.isValid(instance))
-            except (ImportError, ModuleNotFoundError):
-                pass
-            except Exception as e:
-                show_warning(None, "InstanceRegistry.is_valid shiboken6 failed", exc=e)
-            try:
-                if isinstance(instance, QtWidgets.QWidget):
-                    instance.objectName()
-                else:
-                    instance.objectName()
+                instance.objectName()
                 return True
             except (RuntimeError, ReferenceError):
                 return False

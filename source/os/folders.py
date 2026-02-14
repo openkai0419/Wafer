@@ -1,10 +1,11 @@
 import os
 import sys
-import ctypes
-from ctypes import wintypes
 import subprocess
 
 from ..common.errors import show_warning
+
+
+_explorer_argtypes_set = False
 
 
 def show_in_explorer(path: str, *, show_first_if_folder: bool = False) -> None:
@@ -57,37 +58,52 @@ def _fallback_posix(path: str) -> None:
 		show_warning(None, f"xdg-open failed: {path}", exc=e)
 
 
+def _setup_explorer_argtypes():
+	global _explorer_argtypes_set
+	if _explorer_argtypes_set:
+		return
+	import ctypes
+	from ctypes import wintypes
+	shell32 = ctypes.windll.shell32
+	HRESULT = ctypes.c_long
+	shell32.SHParseDisplayName.argtypes = [wintypes.LPCWSTR, wintypes.LPVOID, ctypes.POINTER(wintypes.LPVOID), wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
+	shell32.SHParseDisplayName.restype = HRESULT
+	shell32.SHOpenFolderAndSelectItems.argtypes = [wintypes.LPVOID, wintypes.UINT, ctypes.POINTER(wintypes.LPVOID), wintypes.DWORD]
+	shell32.SHOpenFolderAndSelectItems.restype = HRESULT
+	_explorer_argtypes_set = True
+
+
 def _show_in_explorer_windows(path: str) -> bool:
+	import ctypes
+	from ctypes import wintypes
 	try:
+		_setup_explorer_argtypes()
 		shell32 = ctypes.windll.shell32
 		ole32 = ctypes.windll.ole32
 		COINIT_APARTMENTTHREADED = 2
 		ole32.CoInitializeEx(None, COINIT_APARTMENTTHREADED)
-		HRESULT = ctypes.c_long
-		shell32.SHParseDisplayName.argtypes = [wintypes.LPCWSTR, wintypes.LPVOID, ctypes.POINTER(wintypes.LPVOID), wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
-		shell32.SHParseDisplayName.restype = HRESULT
-		shell32.SHOpenFolderAndSelectItems.argtypes = [wintypes.LPVOID, wintypes.UINT, ctypes.POINTER(wintypes.LPVOID), wintypes.DWORD]
-		shell32.SHOpenFolderAndSelectItems.restype = HRESULT
-		pidl = wintypes.LPVOID()
-		wide = ctypes.c_wchar_p(path)
-		hr = shell32.SHParseDisplayName(wide, None, ctypes.byref(pidl), 0, None)
-		if hr != 0 or not pidl:
-			show_warning(None, f"SHParseDisplayName failed: {path} ({int(hr)})")
-			return False
 		try:
-			hr = shell32.SHOpenFolderAndSelectItems(pidl, 0, None, 0)
-			if hr != 0:
-				show_warning(None, f"SHOpenFolderAndSelectItems failed: {path} ({int(hr)})")
-			return hr == 0
+			pidl = wintypes.LPVOID()
+			wide = ctypes.c_wchar_p(path)
+			hr = shell32.SHParseDisplayName(wide, None, ctypes.byref(pidl), 0, None)
+			if hr != 0 or not pidl:
+				show_warning(None, f"SHParseDisplayName failed: {path} ({int(hr)})")
+				return False
+			try:
+				hr = shell32.SHOpenFolderAndSelectItems(pidl, 0, None, 0)
+				if hr != 0:
+					show_warning(None, f"SHOpenFolderAndSelectItems failed: {path} ({int(hr)})")
+				return hr == 0
+			finally:
+				ole32.CoTaskMemFree(pidl)
 		finally:
-			ole32.CoTaskMemFree(pidl)
 			ole32.CoUninitialize()
 	except Exception as e:
 		show_warning(None, f"SHOpenFolderAndSelectItems failed: {path}", exc=e)
 		return False
 
 
-def first_file(path: str) -> str | None:
+def _first_scandir(path: str, *, files_only: bool = False) -> str | None:
 	if not path:
 		return None
 	base = os.path.normpath(os.path.abspath(str(path)))
@@ -96,26 +112,21 @@ def first_file(path: str) -> str | None:
 	try:
 		with os.scandir(base) as it:
 			for entry in it:
-				try:
-					if entry.is_file(follow_symlinks=False):
-						return entry.path
-				except OSError:
-					continue
-	except OSError:
-		return None
-	return None
-
-
-def first_entry(path: str) -> str | None:
-	if not path:
-		return None
-	base = os.path.normpath(os.path.abspath(str(path)))
-	if not os.path.isdir(base):
-		return None
-	try:
-		with os.scandir(base) as it:
-			for entry in it:
+				if files_only:
+					try:
+						if not entry.is_file(follow_symlinks=False):
+							continue
+					except OSError:
+						continue
 				return entry.path
 	except OSError:
 		return None
 	return None
+
+
+def first_file(path: str) -> str | None:
+	return _first_scandir(path, files_only=True)
+
+
+def first_entry(path: str) -> str | None:
+	return _first_scandir(path)

@@ -6,12 +6,7 @@ from PySide6.QtCore import QMimeData
 from PySide6.QtGui import QImage
 
 from ..common.funcs import normalize_path
-from .save import sanitize_filename
-
-
-def _is_http_url(s: str) -> bool:
-    v = (s or "").strip().lower()
-    return v.startswith("http://") or v.startswith("https://")
+from .save import _is_http_url, sanitize_filename
 
 
 class ParsedItem:

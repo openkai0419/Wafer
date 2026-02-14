@@ -7,6 +7,22 @@ import time
 from ..common.funcs import get_data_db, get_data_file_names, get_setting_file_names
 from ..common.profiling import logger, profiler
 
+
+def apply_write_pragmas(conn: sqlite3.Connection):
+    conn.execute('PRAGMA journal_mode=WAL')
+    conn.execute('PRAGMA synchronous=NORMAL')
+    conn.execute('PRAGMA locking_mode=NORMAL')
+    conn.execute('PRAGMA foreign_keys=ON')
+
+
+def apply_read_pragmas(conn: sqlite3.Connection):
+    conn.execute('PRAGMA query_only=ON')
+    conn.execute('PRAGMA temp_store=MEMORY')
+    conn.execute('PRAGMA cache_size=-10000')
+    conn.execute('PRAGMA mmap_size=134217728')
+    conn.execute('PRAGMA foreign_keys=ON')
+
+
 @profiler.profile
 def connect_with_retry(path, timeout=3.0, retries=3, delay=1.0, **kwargs):
     last_exception = None
@@ -22,6 +38,7 @@ def connect_with_retry(path, timeout=3.0, retries=3, delay=1.0, **kwargs):
             raise
     logger.error('[connect_with_retry] All attempts failed. Raising last exception.')
     raise last_exception
+
 
 @profiler.profile
 def retry_sqlite_connection(db_name, timeout=3.0, interval=0.1):

@@ -1,20 +1,19 @@
-# exif_parser.py
 from __future__ import annotations
 import re
 import os
 import unicodedata
-from typing import Any, Tuple, Dict, List
+from typing import Any, Tuple, Dict
 
 from PIL import Image, ExifTags
 from PIL.TiffImagePlugin import IFDRational
 
 from ..common.errors import show_warning
 
-# --- 逆引きテーブル ---
 TAGS = ExifTags.TAGS
 GPSTAGS = ExifTags.GPSTAGS
 
-# Windows XP系タグ（UTF-16LE 固定）
+_ORIENTATION_TAG = 274
+
 XP_TAGS = {
     0x9C9B: "XPTitle",
     0x9C9C: "XPComment",
@@ -23,13 +22,9 @@ XP_TAGS = {
     0x9C9F: "XPSubject",
 }
 
-# 制御文字（\t, \n, \r を除く）除去用
 _CONTROL_CHARS_RE = re.compile(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]')
 
 
-# --------------------------
-# 汎用ユーティリティ
-# --------------------------
 def _clean_text(s: Any) -> str:
     if not isinstance(s, str):
         s = str(s)
@@ -50,9 +45,8 @@ def _looks_binary_payload(b: bytes) -> Tuple[bool, float]:
 
 
 def _summarize_binary_value(key: str, b: bytes, ratio: float) -> str:
-    size = len(b)
-    head = b[:6].hex()  # ← 以前の仕様（6バイト）に合わせる
-    return f"<bin={key}; ratio={ratio*100:.1f}%; size={size}; head={head}…>"
+    head = b[:6].hex()
+    return f"<bin={key}; ratio={ratio*100:.1f}%; size={len(b)}; head={head}…>"
 
 
 def _looks_utf16(bytez: bytes) -> bool:
@@ -61,8 +55,7 @@ def _looks_utf16(bytez: bytes) -> bool:
     if bytez.startswith(b'\xff\xfe') or bytez.startswith(b'\xfe\xff'):
         return True
     window = bytez[:64]
-    zero_ratio = window.count(b'\x00') / max(1, len(window))
-    return zero_ratio > 0.25
+    return window.count(b'\x00') / max(1, len(window)) > 0.25
 
 
 def _decode_bytes_safely(b: bytes) -> str:
@@ -103,25 +96,23 @@ def _decode_user_comment(b: bytes) -> str:
         return _decode_bytes_safely(bytes(b) if isinstance(b, bytearray) else b)
     b = bytes(b)
     prefix, payload = b[:8], b[8:]
-
     try:
         if prefix == b'ASCII\x00\x00\x00':
             return _clean_text(payload.decode('ascii', errors='ignore'))
-        elif prefix == b'UNICODE\x00':
+        if prefix == b'UNICODE\x00':
             try:
                 s = payload.decode('utf-16')
             except UnicodeDecodeError:
                 s = payload.decode('utf-16-le', errors='ignore')
             return _clean_text(s)
-        elif prefix == b'JIS\x00\x00\x00\x00':
+        if prefix == b'JIS\x00\x00\x00\x00':
             for enc in ('shift_jis', 'cp932', 'euc_jp'):
                 try:
                     return _clean_text(payload.decode(enc))
                 except UnicodeDecodeError:
                     continue
             return _clean_text(payload.decode('latin-1', errors='ignore'))
-        else:
-            return _decode_bytes_safely(payload)
+        return _decode_bytes_safely(payload)
     except Exception:
         return _decode_bytes_safely(payload)
 
@@ -152,14 +143,13 @@ def _dms_to_deg(dms: Any, ref: str | None) -> float | None:
     return deg
 
 
-# --------------------------
-# ExifParser 本体（Exif & info のみ）
-# --------------------------
-class ExifParser:
-    """Exif と Image.info だけを安全に取り出す最小ユーティリティ"""
+def _orientation_adjusted_size(w: int, h: int, orientation: int) -> Tuple[int, int]:
+    if orientation in (5, 6, 7, 8):
+        return h, w
+    return w, h
 
-    def __init__(self) -> None:
-        pass
+
+class ExifParser:
 
     @staticmethod
     def _to_str(v: Any, *, tag_id: int | None = None, tag_name: str | None = None) -> str:
@@ -216,29 +206,32 @@ class ExifParser:
         return out
 
     @classmethod
-    def extract_exif(cls, img: Image.Image) -> Dict[str, Any]:
+    def _extract_from_exif_obj(cls, exif) -> Dict[str, Any]:
         out: Dict[str, Any] = {}
+        if not exif:
+            return out
+        for tag_id, val in exif.items():
+            tag_name = TAGS.get(tag_id)
+            if tag_name == 'GPSInfo' and isinstance(val, dict):
+                out.update(cls._parse_gps(val))
+                continue
+            if tag_name:
+                out[tag_name] = cls._to_str(val, tag_id=tag_id, tag_name=tag_name)
+            else:
+                key = f"Tag_{tag_id}"
+                out[key] = cls._to_str(val, tag_id=tag_id, tag_name=key)
+        return out
+
+    @classmethod
+    def extract_exif(cls, img: Image.Image) -> Dict[str, Any]:
         try:
-            exif = img.getexif()
-            if not exif:
-                return out
-            for tag_id, val in exif.items():
-                tag_name = TAGS.get(tag_id)
-                if tag_name == 'GPSInfo' and isinstance(val, dict):
-                    out.update(cls._parse_gps(val))
-                    continue
-                if tag_name:
-                    out[f"{tag_name}"] = cls._to_str(val, tag_id=tag_id, tag_name=tag_name)
-                else:
-                    key = f"Tag_{tag_id}"
-                    out[key] = cls._to_str(val, tag_id=tag_id, tag_name=key)
+            return cls._extract_from_exif_obj(img.getexif())
         except Exception as e:
             show_warning(None, "extract_exif failed", exc=e)
-        return out
+            return {}
 
     @staticmethod
     def parse_info_dict(info: dict) -> Dict[str, str]:
-        """Image.info を {key: value_str} に整形"""
         out: Dict[str, str] = {}
         for k, v in (info or {}).items():
             key = str(k)
@@ -254,7 +247,8 @@ class ExifParser:
             out[key] = val_str
         return out
 
-    def parse_file(self, path: str) -> dict:
+    @classmethod
+    def parse_file(cls, path: str) -> dict:
         result = {
             "filepath": path,
             "filename": os.path.basename(path),
@@ -262,32 +256,55 @@ class ExifParser:
             "height": None,
             "aspect": None,
             "orientation": None,
-            "exif": {},          # dict[str, Any]
-            "info_items": {},    # dict[str, str]
-            "error": None,
-        }
-        try:
-            with Image.open(path) as img:
-                w, h, orient = self.basic_dims_with_orientation(img)
-                result["width"] = w
-                result["height"] = h
-                result["orientation"] = orient
-                result["aspect"] = (w / h) if h else None
-                result["exif"] = self.extract_exif(img)
-                result["info_items"] = self.parse_info_dict(img.info if img.info else {})
-        except Exception as e:
-            result["error"] = f"{e}"
-        return result
-
-    def parse_img(self, img) -> dict:
-        result = {
             "exif": {},
             "info_items": {},
             "error": None,
         }
         try:
-            result["exif"] = self.extract_exif(img)
-            result["info_items"] = self.parse_info_dict(img.info if img.info else {})
+            with Image.open(path) as img:
+                exif = img.getexif()
+                orientation = 1
+                if exif:
+                    raw = exif.get(_ORIENTATION_TAG)
+                    if isinstance(raw, int):
+                        orientation = raw
+                w, h = _orientation_adjusted_size(*img.size, orientation)
+                result["width"] = w
+                result["height"] = h
+                result["orientation"] = orientation
+                result["aspect"] = (w / h) if h else None
+                result["exif"] = cls._extract_from_exif_obj(exif)
+                result["info_items"] = cls.parse_info_dict(img.info or {})
         except Exception as e:
             result["error"] = f"{e}"
         return result
+
+    @classmethod
+    def parse_img(cls, img: Image.Image) -> dict:
+        try:
+            exif = img.getexif()
+            orientation = 1
+            if exif:
+                raw = exif.get(_ORIENTATION_TAG)
+                if isinstance(raw, int):
+                    orientation = raw
+            w, h = _orientation_adjusted_size(*img.size, orientation)
+            return {
+                "width": w,
+                "height": h,
+                "orientation": orientation,
+                "aspect": (w / h) if h else None,
+                "exif": cls._extract_from_exif_obj(exif),
+                "info_items": cls.parse_info_dict(img.info or {}),
+                "error": None,
+            }
+        except Exception as e:
+            return {
+                "width": None,
+                "height": None,
+                "orientation": None,
+                "aspect": None,
+                "exif": {},
+                "info_items": {},
+                "error": f"{e}",
+            }

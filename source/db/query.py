@@ -3,6 +3,8 @@ import sqlite3
 from pathlib import Path
 from random import shuffle
 from typing import Sequence
+
+from .db_utils import apply_read_pragmas
 from ..common.funcs import normalize_path
 from ..common.profiling import logger, profiler
 
@@ -251,25 +253,12 @@ class MetaInfoSearchEngine:
                     conn.close()
                     return False
                 
-            self._apply_connection_pragmas(conn)
+            apply_read_pragmas(conn)
             self.conn = conn
             return True
         except sqlite3.OperationalError as e:
             logger.warning(f'DB connection failed: {e}')
             return False
-
-    @profiler.profile
-    def _apply_connection_pragmas(self, conn: sqlite3.Connection) -> None:
-        try:
-            cur = conn.cursor()
-            cur.executescript("""
-                PRAGMA query_only=ON;
-                PRAGMA temp_store=MEMORY;
-                PRAGMA cache_size=-10000;
-                PRAGMA mmap_size=134217728;
-            """)
-        except Exception as e:
-            logger.warning(f'PRAGMA apply failed (non-fatal): {e}')
 
     def _normalize_path(self, path):
         return normalize_path(path)
@@ -310,8 +299,6 @@ class MetaInfoSearchEngine:
                 FROM images_full  AS m
                 JOIN ({distinct_paths}) AS s USING(path)
             """
-            #self._explain_query_plan(sql, params)
-
             rows = cur.execute(sql, params).fetchall()
             rows = list(rows); shuffle(rows)
         else:
@@ -328,7 +315,6 @@ class MetaInfoSearchEngine:
                     FROM images_full  AS m
                     JOIN ({distinct_paths}) AS s USING(path)
                 """
-            #self._explain_query_plan(sql, params)
             rows = cur.execute(sql, params).fetchall()
 
         return (
@@ -337,7 +323,6 @@ class MetaInfoSearchEngine:
             [r['aspect_ratio'] for r in rows],
         )
 
-    
     @profiler.profile
     def get_combined(self, queries):
         if not self._connect_if_needed():
@@ -372,7 +357,6 @@ class MetaInfoSearchEngine:
                 FROM images_full AS m
                 JOIN ({combined}) AS c USING(path)
             """
-            self._explain_query_plan(sql, params)
             rows = cur.execute(sql, params).fetchall()
             rows = list(rows); shuffle(rows)
         else:
@@ -381,7 +365,7 @@ class MetaInfoSearchEngine:
                     SELECT m.path, m.aspect_ratio
                     FROM images_full AS m
                     JOIN ({combined}) AS c USING(path)
-                    ORDER BY m."{sort_col}" {order}
+                    ORDER BY m.\"{sort_col}\" {order}
                 """
             else:
                 sql = f"""
@@ -389,7 +373,6 @@ class MetaInfoSearchEngine:
                     FROM images_full AS m
                     JOIN ({combined}) AS c USING(path)
                 """
-            self._explain_query_plan(sql, params)
             rows = cur.execute(sql, params).fetchall()
 
         return ([r['path'] for r in rows], [r['aspect_ratio'] for r in rows])

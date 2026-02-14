@@ -4,7 +4,7 @@ import time
 import pytest
 from pathlib import Path
 from source.db.query import MetaQuery, MetaInfoSearchEngine
-from source.db.collector import ImageDB
+from source.db.image_db import ImageDB
 from source.common.funcs import normalize_path
 
 

@@ -5,29 +5,75 @@ from PIL import Image
 
 from ..common.errors import show_warning
 
+
+_IShellItemImageFactory = None
+_shell_argtypes_set = False
+
+
+def _get_shell_item_factory_class():
+    global _IShellItemImageFactory, _shell_argtypes_set
+    if _IShellItemImageFactory is None:
+        import ctypes
+        from ctypes import POINTER, c_long, c_void_p, c_wchar_p, windll
+        from ctypes.wintypes import HANDLE, SIZE, UINT
+        from comtypes import COMMETHOD, GUID, IUnknown
+
+        HRESULT = c_long
+
+        class IShellItemImageFactory(IUnknown):
+            _iid_ = GUID('{bcc18b79-ba16-442f-80c4-8a59c30c463b}')
+            _methods_ = [COMMETHOD([], HRESULT, 'GetImage', (['in'], SIZE, 'size'), (['in'], UINT, 'flags'), (['out'], POINTER(HANDLE), 'phbm'))]
+
+        _IShellItemImageFactory = IShellItemImageFactory
+
+        if not _shell_argtypes_set:
+            shell32 = windll.shell32
+            shell32.SHCreateItemFromParsingName.argtypes = [c_wchar_p, c_void_p, POINTER(GUID), POINTER(c_void_p)]
+            shell32.SHCreateItemFromParsingName.restype = HRESULT
+            _shell_argtypes_set = True
+
+    return _IShellItemImageFactory
+
+
+_GPS_BESTEFFORT = 0x40
+_DIMENSION_KEYS = None
+
+
+def _get_dimension_keys():
+    global _DIMENSION_KEYS
+    if _DIMENSION_KEYS is None:
+        from win32com.propsys import pscon
+        _DIMENSION_KEYS = [
+            (pscon.PKEY_Image_HorizontalSize, pscon.PKEY_Image_VerticalSize),
+            (pscon.PKEY_Video_FrameWidth, pscon.PKEY_Video_FrameHeight),
+        ]
+    return _DIMENSION_KEYS
+
+
+def _get_dimensions_from_property_store(abs_path: str) -> tuple[int, int] | None:
+    from win32com.propsys import propsys
+    try:
+        store = propsys.SHGetPropertyStoreFromParsingName(
+            abs_path, None, _GPS_BESTEFFORT, propsys.IID_IPropertyStore
+        )
+    except Exception:
+        return None
+    for w_key, h_key in _get_dimension_keys():
+        try:
+            w = store.GetValue(w_key).GetValue()
+            h = store.GetValue(h_key).GetValue()
+            if w and h and isinstance(w, int) and isinstance(h, int):
+                return (w, h)
+        except Exception:
+            continue
+    return None
+
+
 class FileThumbnailer:
 
     def __init__(self):
         self.platform = sys.platform
-        if self.platform.startswith('win'):
-            import pythoncom
-            pythoncom.CoInitialize()
-            from ctypes import POINTER, c_long, c_void_p, c_wchar_p, windll
-            from ctypes.wintypes import HANDLE, SIZE, UINT
-            import win32ui
-            HRESULT = c_long
-            from comtypes import COMMETHOD, GUID, IUnknown
-
-            class IShellItemImageFactory(IUnknown):
-                _iid_ = GUID('{bcc18b79-ba16-442f-80c4-8a59c30c463b}')
-                _methods_ = [COMMETHOD([], HRESULT, 'GetImage', (['in'], SIZE, 'size'), (['in'], UINT, 'flags'), (['out'], POINTER(HANDLE), 'phbm'))]
-            self._IShellItemImageFactory = IShellItemImageFactory
-            self._shell32 = windll.shell32
-            self._gdi32 = windll.gdi32
-            self._win32ui = win32ui
-            self._shell32.SHCreateItemFromParsingName.argtypes = [c_wchar_p, c_void_p, POINTER(GUID), POINTER(c_void_p)]
-            self._shell32.SHCreateItemFromParsingName.restype = HRESULT
-        elif self.platform == 'darwin':
+        if self.platform == 'darwin':
             from Cocoa import NSURL, NSWorkspace
             from Quartz import CGSizeMake, QLThumbnailImageCreate, kCFAllocatorDefault
             self._NSWorkspace = NSWorkspace
@@ -43,6 +89,21 @@ class FileThumbnailer:
             self._Gtk = Gtk
             self._warned_linux_thumb_query = False
 
+    def get_file_dimensions(self, file_path: str) -> tuple[int, int] | None:
+        if not os.path.exists(file_path):
+            return None
+        if self.platform.startswith('win'):
+            return self._get_dimensions_windows(file_path)
+        return None
+
+    def _get_dimensions_windows(self, file_path: str) -> tuple[int, int] | None:
+        import pythoncom
+        pythoncom.CoInitialize()
+        try:
+            return _get_dimensions_from_property_store(os.path.abspath(file_path))
+        finally:
+            pythoncom.CoUninitialize()
+
     def get_thumbnail(self, file_path, size=256):
         if not os.path.exists(file_path):
             raise FileNotFoundError(f'ファイルが存在しません: {file_path}')
@@ -56,24 +117,44 @@ class FileThumbnailer:
             raise NotImplementedError('未対応のプラットフォームです。')
 
     def _get_thumbnail_windows(self, file_path, size):
-        from ctypes import POINTER, byref, c_void_p, cast
+        import pythoncom
+        pythoncom.CoInitialize()
+        try:
+            return self._get_thumbnail_windows_inner(file_path, size)
+        finally:
+            pythoncom.CoUninitialize()
+
+    def _get_thumbnail_windows_inner(self, file_path, size):
+        import ctypes
+        from ctypes import POINTER, byref, c_void_p, cast, windll
         from ctypes.wintypes import SIZE
+
+        factory_cls = _get_shell_item_factory_class()
+        shell32 = windll.shell32
+        gdi32 = windll.gdi32
+
+        abs_path = os.path.abspath(file_path)
         handle = c_void_p()
-        hr = self._shell32.SHCreateItemFromParsingName(file_path, None, byref(self._IShellItemImageFactory._iid_), byref(handle))
+        hr = shell32.SHCreateItemFromParsingName(abs_path, None, byref(factory_cls._iid_), byref(handle))
         if hr != 0:
             show_warning(None, f'SHCreateItemFromParsingName に失敗しました: {file_path} (hr={hr})', title='Thumbnail')
             return None
-        factory = cast(handle, POINTER(self._IShellItemImageFactory))
-        hbitmap = factory.GetImage(SIZE(size, size), 0)
-        if not hbitmap:
-            show_warning(None, f'GetImage に失敗しました: {file_path}', title='Thumbnail')
-            return None
-        bmp = self._win32ui.CreateBitmapFromHandle(int(hbitmap))
-        info = bmp.GetInfo()
-        data = bmp.GetBitmapBits(True)
-        self._gdi32.DeleteObject(c_void_p(int(hbitmap)))
-        img = Image.frombuffer('RGBA', (info['bmWidth'], info['bmHeight']), data, 'raw', 'BGRA', 0, 1).copy()
-        return img
+        factory = cast(handle, POINTER(factory_cls))
+        try:
+            hbitmap = factory.GetImage(SIZE(size, size), 0)
+            if not hbitmap:
+                show_warning(None, f'GetImage に失敗しました: {file_path}', title='Thumbnail')
+                return None
+            try:
+                import win32ui
+                bmp = win32ui.CreateBitmapFromHandle(int(hbitmap))
+                info = bmp.GetInfo()
+                data = bmp.GetBitmapBits(True)
+                return Image.frombuffer('RGBA', (info['bmWidth'], info['bmHeight']), data, 'raw', 'BGRA', 0, 1).copy()
+            finally:
+                gdi32.DeleteObject(c_void_p(int(hbitmap)))
+        finally:
+            del factory
 
     def _get_thumbnail_mac(self, file_path, size):
         try:
@@ -121,10 +202,3 @@ class FileThumbnailer:
         except Exception as e:
             show_warning(None, f'Linux fallback 失敗: {file_path}', title='Thumbnail', exc=e)
         return None
-if __name__ == '__main__':
-    thumb = FileThumbnailer()
-    img = thumb.get_thumbnail('C:\\Users\\openk\\Downloads\\13.mp4', size=256 * 256)
-    if img:
-        img.show()
-    else:
-        print('サムネイルを取得できませんでした。')

@@ -145,39 +145,22 @@ class CommandContext:
         try:
             si = getattr(seed, "_info", None) or {}
             ci = ctx._info
-            if prefer_seed:
-                if seed.pos is not None:
-                    ctx.pos = seed.pos
-                if seed.global_pos is not None:
-                    ctx.global_pos = seed.global_pos
-                if seed.start_pos is not None:
-                    ctx.start_pos = seed.start_pos
-                if seed.start_global_pos is not None:
-                    ctx.start_global_pos = seed.start_global_pos
-                if getattr(seed, "wheel_steps", None):
-                    ctx.wheel_steps = int(seed.wheel_steps)
-                if si.get("widget") is not None:
-                    ci["widget"] = si["widget"]
-                if si.get("scope") and si["scope"] != "*":
-                    ci["scope"] = si["scope"]
-                for k, v in (getattr(seed, "extras", None) or {}).items():
+            for attr in ("pos", "global_pos", "start_pos", "start_global_pos"):
+                sv = getattr(seed, attr, None)
+                if sv is not None and (prefer_seed or getattr(ctx, attr) is None):
+                    setattr(ctx, attr, sv)
+            sw = getattr(seed, "wheel_steps", None)
+            if sw and (prefer_seed or not getattr(ctx, "wheel_steps", None)):
+                ctx.wheel_steps = int(sw)
+            if si.get("widget") is not None and (prefer_seed or ci.get("widget") is None):
+                ci["widget"] = si["widget"]
+            ss = si.get("scope")
+            if ss and ss != "*" and (prefer_seed or ci.get("scope", "*") == "*"):
+                ci["scope"] = ss
+            for k, v in (getattr(seed, "extras", None) or {}).items():
+                if prefer_seed:
                     ctx.extras[str(k)] = v
-            else:
-                if ctx.pos is None and seed.pos is not None:
-                    ctx.pos = seed.pos
-                if ctx.global_pos is None and seed.global_pos is not None:
-                    ctx.global_pos = seed.global_pos
-                if ctx.start_pos is None and seed.start_pos is not None:
-                    ctx.start_pos = seed.start_pos
-                if ctx.start_global_pos is None and seed.start_global_pos is not None:
-                    ctx.start_global_pos = seed.start_global_pos
-                if not getattr(ctx, "wheel_steps", None) and getattr(seed, "wheel_steps", None):
-                    ctx.wheel_steps = int(seed.wheel_steps)
-                if ci.get("widget") is None and si.get("widget") is not None:
-                    ci["widget"] = si["widget"]
-                if ci.get("scope", "*") == "*" and si.get("scope") and si["scope"] != "*":
-                    ci["scope"] = si["scope"]
-                for k, v in (getattr(seed, "extras", None) or {}).items():
+                else:
                     ctx.put_default(str(k), v)
         except Exception as e:
             show_warning(None, "CommandContext._merge_seed failed", exc=e)

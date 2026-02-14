@@ -81,6 +81,8 @@ class CommandOptionStore(PersistentStore):
         return cls._instance
     
     def __init__(self, path: Optional[str | Path] = None):
+        if CommandOptionStore._initialized and path is None:
+            return
         desired = Path(path) if path else (CommandOptionStore._default_path or (Path(__file__).resolve().parent.parent / ".command_options.json"))
         if not CommandOptionStore._initialized:
             super().__init__(desired)

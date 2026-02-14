@@ -868,15 +868,7 @@ class MenuBuilder:
         self._menu.clear()
         return self._build_into(list(names or []), selection_callback, allow_options_with_selection)
 
-    def popup_names(
-        self,
-        anchor: QtWidgets.QWidget,
-        names: List[str],
-        selection_callback: Callable[[Any], None],
-        context_provider: Optional[Callable[[], Any]] = None,
-        prepare: Optional[Callable[[QtWidgets.QMenu], None]] = None,
-        allow_options_with_selection: bool = False,
-    ) -> None:
+    def _popup(self, anchor: QtWidgets.QWidget, build_fn: Callable[[], QtWidgets.QMenu], context_provider: Optional[Callable[[], Any]], prepare: Optional[Callable[[QtWidgets.QMenu], None]]) -> None:
         prev_seed = self._seed_ctx
         if callable(context_provider):
             try:
@@ -887,7 +879,7 @@ class MenuBuilder:
                     self._seed_ctx = CommandContext.create(None, "*", source="menu.popup", event=None, extras=dict(v))
             except Exception as e:
                 show_warning(anchor, "context_provider failed", exc=e)
-        menu = self.build_names(names, selection_callback=selection_callback, allow_options_with_selection=allow_options_with_selection)
+        menu = build_fn()
         if callable(prepare):
             try:
                 prepare(menu)
@@ -897,23 +889,16 @@ class MenuBuilder:
         menu.exec(pos)
         self._seed_ctx = prev_seed
 
+    def popup_names(
+        self,
+        anchor: QtWidgets.QWidget,
+        names: List[str],
+        selection_callback: Callable[[Any], None],
+        context_provider: Optional[Callable[[], Any]] = None,
+        prepare: Optional[Callable[[QtWidgets.QMenu], None]] = None,
+        allow_options_with_selection: bool = False,
+    ) -> None:
+        self._popup(anchor, lambda: self.build_names(names, selection_callback=selection_callback, allow_options_with_selection=allow_options_with_selection), context_provider, prepare)
+
     def popup_all_roots(self, anchor: QtWidgets.QWidget, selection_callback: Callable[[Any], None], context_provider: Optional[Callable[[], Any]] = None, prepare: Optional[Callable[[QtWidgets.QMenu], None]] = None, allow_options_with_selection: bool = False) -> None:
-        prev_seed = self._seed_ctx
-        if callable(context_provider):
-            try:
-                v = context_provider()
-                if isinstance(v, CommandContext):
-                    self._seed_ctx = v
-                elif isinstance(v, dict):
-                    self._seed_ctx = CommandContext.create(None, "*", source="menu.popup", event=None, extras=dict(v))
-            except Exception as e:
-                show_warning(anchor, "context_provider failed", exc=e)
-        menu = self.build_all_roots(selection_callback=selection_callback, allow_options_with_selection=allow_options_with_selection)
-        if callable(prepare):
-            try:
-                prepare(menu)
-            except Exception as e:
-                show_warning(anchor, "prepare(menu) failed", exc=e)
-        pos = anchor.mapToGlobal(QtCore.QPoint(0, anchor.height()))
-        menu.exec(pos)
-        self._seed_ctx = prev_seed
+        self._popup(anchor, lambda: self.build_all_roots(selection_callback=selection_callback, allow_options_with_selection=allow_options_with_selection), context_provider, prepare)

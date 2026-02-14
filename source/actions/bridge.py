@@ -379,26 +379,9 @@ class MenuSpec:
 class Menu:
     @staticmethod
     def _normalize_menu_items(items) -> list[str]:
-        from .command.core import CommandMeta
+        from .command.maker import MenuMaker
 
-        if items is None:
-            return []
-        if isinstance(items, str):
-            s = items.strip()
-            return [s] if s else []
-        if isinstance(items, (list, tuple)):
-            out = []
-            for x in items:
-                if x is None:
-                    continue
-                if isinstance(x, CommandMeta):
-                    out.append(x)
-                    continue
-                s = str(x).strip()
-                if s:
-                    out.append(s)
-            return out
-        raise TypeError(f"items must be str or list[str|CommandMeta], got: {type(items).__name__}")
+        return MenuMaker._normalize_menu_items(items)
 
     @staticmethod
     def session(

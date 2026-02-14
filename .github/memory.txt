@@ -15,7 +15,9 @@
 - リソース: _resources。frozen時は sys.executable の親を基準に解決。
 
 ■ DB(画像メタDB)
-- source/db/collector.py の ImageDB がスキーマ管理・WAL・read/write接続を提供。
+- source/db/image_db.py の ImageDB がスキーマ管理・WAL・read/write接続・CRUDを提供。
+- source/db/indexer.py の ImageIndexer がスキャン・差分検出・バッチ処理を提供。ImageDB に委譲。
+- source/db/db_utils.py に apply_write_pragmas/apply_read_pragmas を共通化。
 - 破損検知: PRAGMA quick_check が ok でなければ .bak を作って再生成。
 - 主要テーブル/ビュー: hash_index, sources, images, meta_info, tags, images_full, kv_all, kv_meta
 
@@ -25,6 +27,7 @@
 
 ■ 収集(collector)
 - source/image_collector/main_collector.py の CollectorProcess。Node生成、WatchFolder/SettingWatcher を起動。
+- ImageIndexer は source/db/indexer.py から import。
 - WatchFolder: watchdog → queue.put → 単一ワーカースレッド(_loop) → _flush(changed/deleted) → _exec(DB操作)。0.5秒バッチタイムアウト。
 - SettingWatcher(FileSystemEventHandler): 設定DBファイル変更を直接監視し、_check_changes() で parent/ignore/delete を一括検出。
 - ProgressAggregator: コンストラクタで Node を直接受け取り、進捗集約 + IPC 通知。
@@ -63,6 +66,22 @@ source/common/signal.py:
   - Signal（軽量なconnect/emit）
 source/common/profiling.py:
   - logger/profiler（@profiler.profile を活用、logger.debugに寄せる）
+
+■ IO（ファイル読み込み）
+source/io/manager.py:
+  - AutoRegister メタクラスで BaseReader/BaseLoader のサブクラスを自動登録。
+  - ReaderClass.read(path) / LoaderClass.load(path) で適切なリーダー/ローダーを自動選択。
+source/io/exif_parser.py:
+  - ExifParser は全メソッド classmethod/staticmethod のステートレスユーティリティ。
+  - parse_img(img): getexif 1回で orientation/width/height/aspect/exif/info_items を一括取得。
+  - parse_file(path): ファイルパスから同様の情報を取得。
+  - extract_exif(img): Image.Image から EXIF dict を取得。
+  - _extract_from_exif_obj(exif): exif オブジェクト直接受け取り版（getexif 二重呼び出し回避用）。
+  - _orientation_adjusted_size(w, h, orient): orientation によるサイズ反転を共通化。
+source/io/image_reader.py:
+  - ImageReader(BaseReader): 画像メタデータ収集用。ExifParser.parse_img を使用。
+  - ImageLoader(BaseLoader): 画像表示用。OpenCV→Qt のフォールバック付きロード。
+  - GIF は Qt ネイティブ(_qt_read)で処理。JPEG は IMREAD_REDUCED_* で軽量デコード。
 
 ■ テスト
 - tests は source と同じ階層構造を維持し、ファイル名は test_<source_file>.py。

@@ -461,8 +461,7 @@ class ClipboardFilePaster:
                     continue
         return None
 
-    def _extract_from_gnome_clipboard(self, md: QtCore.QMimeData) -> Optional[CutCopy]:
-        fmt = "x-special/gnome-copied-files"
+    def _extract_from_special_clipboard(self, md: QtCore.QMimeData, fmt: str) -> Optional[CutCopy]:
         if not md.hasFormat(fmt):
             return None
         try:
@@ -470,30 +469,7 @@ class ClipboardFilePaster:
             lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
             if not lines:
                 return None
-            op = lines[0].lower()
-            action = "cut" if op == "cut" else "copy"
-            paths: List[Path] = []
-            for ln in lines[1:]:
-                url = QtCore.QUrl(ln)
-                if url.isLocalFile():
-                    p = Path(url.toLocalFile())
-                    if p.exists():
-                        paths.append(p)
-            return (action, paths) if paths else None
-        except Exception:
-            return None
-
-    def _extract_from_nautilus_clipboard(self, md: QtCore.QMimeData) -> Optional[CutCopy]:
-        fmt = "x-special/nautilus-clipboard"
-        if not md.hasFormat(fmt):
-            return None
-        try:
-            raw = bytes(md.data(fmt)).decode("utf-8", errors="replace")
-            lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
-            if not lines:
-                return None
-            mode = lines[0].lower()
-            action = "cut" if mode == "cut" else "copy"
+            action: Literal["copy", "cut"] = "cut" if lines[0].lower() == "cut" else "copy"
             paths: List[Path] = []
             for ln in lines[1:]:
                 url = QtCore.QUrl(ln)
@@ -541,13 +517,10 @@ class ClipboardFilePaster:
         if md is None:
             return None
 
-        res = self._extract_from_gnome_clipboard(md)
-        if res:
-            return res
-
-        res = self._extract_from_nautilus_clipboard(md)
-        if res:
-            return res
+        for fmt in ("x-special/gnome-copied-files", "x-special/nautilus-clipboard"):
+            res = self._extract_from_special_clipboard(md, fmt)
+            if res:
+                return res
 
         paths: List[Path] = []
         if md.hasUrls():

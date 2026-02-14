@@ -19,10 +19,8 @@ class KeyPressState:
         self.order.append(k)
     def remove_pressed(self, key: int):
         k = int(key)
-        if k in self.pressed:
-            self.pressed.remove(k)
-        while k in self.order:
-            self.order.remove(k)
+        self.pressed.discard(k)
+        self.order = [x for x in self.order if x != k]
 
     def mark_fired(self, combo: Tuple[int, ...]):
         c = tuple(int(x) for x in combo)

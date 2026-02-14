@@ -1,347 +1,160 @@
 import os
 import queue
 import threading
-import time
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 from ..common.funcs import IMAGE_EXTENSIONS
 from ..common.profiling import logger, profiler
-from ..common.signal import Signal
 from .progress_notifier import ProgressAggregator
 
-extensions = set(IMAGE_EXTENSIONS)
+_EXTENSIONS = set(IMAGE_EXTENSIONS)
 DISABLE_MODIFY_EVENT = False
+_BATCH_TIMEOUT = 0.5
 
-def throttle(throttle_ms=100, idle_ms=200):
 
-    def decorator(func):
-        last_call = [0.0]
-        timer = [None]
-        lock = threading.Lock()
+class _FileEmitter(FileSystemEventHandler):
 
-        def wrapper(*args, **kwargs):
-            now = time.time() * 1000
-            with lock:
-                if now - last_call[0] >= throttle_ms:
-                    last_call[0] = now
-                    func(*args, **kwargs)
-                if timer[0]:
-                    timer[0].cancel()
+    def __init__(self, inbox):
+        self._inbox = inbox
 
-                def call_later():
-                    func(*args, **kwargs)
-                timer[0] = threading.Timer(idle_ms / 1000.0, call_later)
-                timer[0].daemon = True
-                timer[0].start()
-        return wrapper
-    return decorator
-
-class FileChangeEmitter(FileSystemEventHandler):
-    def __init__(self, extensions):
-        self.extensions = extensions
-        self.file_deleted = Signal()
-        self.file_changed = Signal()
-        self.folder_changed = Signal()
-
-    def _should_handle(self, path):
-        return os.path.splitext(path)[1].lower() in self.extensions
+    def _ext_ok(self, path):
+        return os.path.splitext(path)[1].lower() in _EXTENSIONS
 
     def on_created(self, event):
         if event.is_directory:
-            self.folder_changed.emit(event.src_path)
-        elif self._should_handle(event.src_path):
-            self.file_changed.emit(event.src_path)
+            self._inbox.put(('folder', event.src_path))
+        elif self._ext_ok(event.src_path):
+            self._inbox.put(('changed', event.src_path))
 
     def on_modified(self, event):
-        if DISABLE_MODIFY_EVENT:
+        if DISABLE_MODIFY_EVENT or event.is_directory:
             return
-        if event.is_directory:
-            return
-        elif self._should_handle(event.src_path):
-            self.file_changed.emit(event.src_path)
-            return
+        if self._ext_ok(event.src_path):
+            self._inbox.put(('changed', event.src_path))
 
     def on_deleted(self, event):
         if event.is_directory:
-            self.folder_changed.emit(event.src_path)
-        elif self._should_handle(event.src_path):
-            self.file_deleted.emit(event.src_path)
+            self._inbox.put(('folder', event.src_path))
+        elif self._ext_ok(event.src_path):
+            self._inbox.put(('deleted', event.src_path))
 
     def on_moved(self, event):
         if event.is_directory:
-            self.folder_changed.emit(event.dest_path)
+            self._inbox.put(('folder', event.dest_path))
         else:
-            if self._should_handle(event.src_path):
-                self.file_deleted.emit(event.src_path)
-            if self._should_handle(event.dest_path):
-                self.file_changed.emit(event.dest_path)
+            if self._ext_ok(event.src_path):
+                self._inbox.put(('deleted', event.src_path))
+            if self._ext_ok(event.dest_path):
+                self._inbox.put(('changed', event.dest_path))
 
-class DBWorker:
-    def __init__(self, database, progress_callback):
-        self.db = database
-        self.progress_callback = progress_callback
-        self.finished = Signal()
-        self._queue = queue.Queue()
+
+class WatchFolder:
+
+    def __init__(self, name, database, node=None):
+        self._progress = ProgressAggregator(name, node)
+        self._db = database
+        self._db.set_progress_callback(self._progress.add)
+        self._db.set_update_callback(lambda: self._progress.notify('update'))
+        self._q = queue.Queue()
+        self._emitter = _FileEmitter(self._q)
+        self._observer = None
+        self._folders = []
         self._stop = threading.Event()
-        self._thread = threading.Thread(target=self._run, daemon=True)
-        self._thread.start()
+        self._worker = threading.Thread(target=self._loop, daemon=True)
+        self._worker.start()
 
-    def _run(self):
-        while not self._stop.is_set():
-            try:
-                task, data = self._queue.get(timeout=0.1)
-            except queue.Empty:
-                continue
-            try:
-                if task == 'update':
-                    self._update(data)
-                elif task == 'remove':
-                    self._remove(data)
-                elif task == 'rescan':
-                    self._rescan(data)
-                elif task == 'ignore':
-                    self._ignore(data)
-                elif task == 'cleanup':
-                    self._cleanup()
-            finally:
-                self.finished.emit()
-                self._queue.task_done()
+    def start(self, folders):
+        self._stop_observer()
+        self._observer = Observer()
+        for path in folders:
+            if os.path.exists(path):
+                self._observer.schedule(self._emitter, path, recursive=True)
+        self._observer.start()
+        self._folders = folders
+        self.rescan_all()
 
-    def trigger_update(self, paths):
-        self._queue.put(('update', paths))
+    def rescan_all(self):
+        if self._folders:
+            self._q.put(('rescan', self._folders))
 
-    def trigger_remove(self, paths):
-        self._queue.put(('remove', paths))
+    def set_ignore(self, paths):
+        self._q.put(('ignore', paths))
 
-    def trigger_rescan(self, roots):
-        self._queue.put(('rescan', roots))
-
-    def trigger_ignore(self, paths):
-        self._queue.put(('ignore', paths))
-
-    def trigger_cleanup(self):
-        self._queue.put(('cleanup', None))
-
-    def _update(self, paths):
-        self.progress_callback(0, len(paths))
-        with self.db as indexer:
-            indexer.update_by_file_list(paths)
-        self.progress_callback(len(paths), 0)
-
-    def _remove(self, paths):
-        self.progress_callback(0, len(paths))
-        with self.db as indexer:
-            indexer.remove_by_file_list(paths)
-        self.progress_callback(len(paths), 0)
-
-    def _rescan(self, roots):
-        self.progress_callback(1, 2)
-        with self.db as indexer:
-            indexer.update_index(roots)
-        self.progress_callback(1, 0)
-
-    def _cleanup(self):
-        self.progress_callback(1, 2)
-        with self.db as indexer:
-            indexer.clean_unused()
-        self.progress_callback(1, 0)
-
-    def _ignore(self, paths):
-        self.progress_callback(1, 2)
-        with self.db as indexer:
-            indexer.set_exclude_paths(paths, run=True)
-        self.progress_callback(1, 0)
+    def clean(self):
+        self._q.put(('cleanup', None))
 
     def stop(self):
         self._stop.set()
-        self._queue.put((None, None))
-        self._thread.join()
+        self._q.put(('__stop__', None))
+        self._stop_observer()
+        self._worker.join(timeout=5.0)
 
-class WatchFolder:
-    def __init__(self, name, database):
-        self.folder_changed = Signal()
-        self._progress_aggregator = ProgressAggregator(name)
-        self.name = name
-        self.db = database
-        self.db.set_progress_callback(self.progress_callback)
-        self.db.set_update_callback(self.update_callback)
-
-        self.observer = None
-        self.old_observers = []
-        self.db_worker = DBWorker(database, self.progress_callback)
-
-        self.emitter = FileChangeEmitter(extensions)
-
-        self.emitter.folder_changed.connect(self._on_folder_change)
-        self._init_actor()
-
-    @profiler.profile
-    def progress_callback(self, current, total):
-        self._progress_aggregator.add(current, total)
-
-    @profiler.profile
-    def update_callback(self, message='update_done'):
-        logger.debug(f'Update: {message}')
-        self._progress_aggregator.notify_extra('update', message)
-
-    @profiler.profile
-    @throttle(1000, 2000)
-    def folderchange_callback(self, folder):
-        logger.debug(f'folder changed: {folder}')
-        self._progress_aggregator.notify_extra('folderchanged', '')
-
-    @profiler.profile
-    def start(self, folders):
-        if self.observer:
+    def _stop_observer(self):
+        if self._observer:
             try:
-                if self.observer.is_alive():
-                    self.observer.stop()
-                    self.observer.join()
-                self.old_observers.append(self.observer)
+                self._observer.stop()
+                self._observer.join()
             except Exception as e:
-                logger.warning(f'Failed to stop old observer: {e}')
+                logger.debug(f'observer stop: {e}')
+            self._observer = None
 
-        self.observer = Observer()
-        for path in folders:
-            if os.path.exists(path):
-                self.observer.schedule(self.emitter, path, recursive=True)
-        self.observer.start()
-
-        self.folders = folders
-        self.rescan_all()
-        self._cleanup_old_observers()
-
-    def rescan_all(self):
-        if hasattr(self, 'folders'):
-            self.db_worker.trigger_rescan(self.folders)
-
-    def set_ignore(self, paths):
-        self.db_worker.trigger_ignore(paths)
-
-    def clean(self):
-        self.db_worker.trigger_cleanup()
-
-    def cancel(self):
-        return
-
-    def stop(self):
-        logger.debug('Stopping WatchFolder')
-        if self.observer:
-            self.observer.stop()
-            self.observer.join()
-
-        self._shutdown_actor()
-
-        self.db_worker.stop()
-
-    def _cleanup_old_observers(self):
-        alive = [ob for ob in self.old_observers if ob.is_alive()]
-        self.old_observers = alive
-
-    def _on_folder_change(self, path):
-        try:
-            self.folderchange_callback(path)
-            self.folder_changed.emit(path)
-        except Exception as e:
-            logger.warning(f'_on_folder_change failed: {e}')
-
-    def _init_actor(self):
-        self._inbox = queue.Queue()
-        self._actor_stop = threading.Event()
-        self._actor_thread = threading.Thread(target=self._actor_loop, daemon=True)
-
-        self.emitter.file_deleted.connect(self._enqueue_deleted)
-        self.emitter.file_changed.connect(self._enqueue_changed)
-
-        self.db_worker.finished.connect(self._enqueue_finished)
-
-        self.deleted_set = set()
-        self.changed_set = set()
-        self._processing = False
-
-        self._actor_thread.start()
-
-    def _enqueue_deleted(self, path: str):
-        try:
-            self._inbox.put(("deleted", path))
-        except Exception as e:
-            logger.warning(f'_enqueue_deleted failed: {e}')
-
-    def _enqueue_changed(self, path: str):
-        try:
-            self._inbox.put(("changed", path))
-        except Exception as e:
-            logger.warning(f'_enqueue_changed failed: {e}')
-
-    def _enqueue_finished(self):
-        try:
-            self._inbox.put(("finished", None))
-        except Exception as e:
-            logger.warning(f'_enqueue_finished failed: {e}')
-
-    def _actor_loop(self):
-        while not self._actor_stop.is_set():
+    def _loop(self):
+        changed = set()
+        deleted = set()
+        folder_dirty = False
+        while not self._stop.is_set():
             try:
-                msg = self._inbox.get(timeout=1.0)
+                item = self._q.get(timeout=_BATCH_TIMEOUT)
             except queue.Empty:
-                self._flush_actor()
+                folder_dirty = self._flush(changed, deleted, folder_dirty)
                 continue
-
-            batch = [msg]
+            batch = [item]
             while True:
                 try:
-                    batch.append(self._inbox.get_nowait())
+                    batch.append(self._q.get_nowait())
                 except queue.Empty:
                     break
+            for kind, data in batch:
+                if kind == 'changed':
+                    changed.add(data)
+                elif kind == 'deleted':
+                    deleted.add(data)
+                elif kind == 'folder':
+                    folder_dirty = True
+                elif kind in ('rescan', 'ignore', 'cleanup'):
+                    folder_dirty = self._flush(changed, deleted, folder_dirty)
+                    self._exec(kind, data)
+                elif kind == '__stop__':
+                    return
 
-            need_flush = False
-
-            for kind, payload in batch:
-                if kind == "deleted":
-                    if payload not in self.deleted_set:
-                        self.deleted_set.add(payload)
-                        self.progress_callback(0, 1)
-                elif kind == "changed":
-                    if payload not in self.changed_set:
-                        self.changed_set.add(payload)
-                        self.progress_callback(0, 1)
-                elif kind == "finished":
-                    self._processing = False
-                    self.progress_callback(1, 0)
-                    need_flush = True
-
-            if need_flush:
-                self._flush_actor()
+    def _flush(self, changed, deleted, folder_dirty):
+        if deleted:
+            self._exec('remove', list(deleted))
+            deleted.clear()
+        if changed:
+            self._exec('update', list(changed))
+            changed.clear()
+        if folder_dirty:
+            self._progress.notify('folderchanged')
+        return False
 
     @profiler.profile
-    def _flush_actor(self):
-        if self._processing:
-            return
-
-        if self.deleted_set:
-            paths = list(self.deleted_set)
-            self.deleted_set.clear()
-            self._processing = True
-            self.progress_callback(1, 2)
-            self.db_worker.trigger_remove(paths)
-            return
-
-        if self.changed_set:
-            paths = list(self.changed_set)
-            self.changed_set.clear()
-            self._processing = True
-            self.progress_callback(1, 2)
-            self.db_worker.trigger_update(paths)
-            return
-
-    def _shutdown_actor(self):
-        if getattr(self, "_actor_stop", None) is None:
-            return
-        self._actor_stop.set()
+    def _exec(self, cmd, data=None):
         try:
-            # 起床用のダミーメッセージ
-            self._inbox.put_nowait(("__stop__", None))
-        except Exception as e:
-            logger.debug(f'_shutdown_actor wake failed: {e}')
-        if getattr(self, "_actor_thread", None):
-            self._actor_thread.join()
+            with self._db as indexer:
+                if cmd == 'update':
+                    self._progress.add(0, len(data))
+                    indexer.update_by_file_list(data)
+                elif cmd == 'remove':
+                    self._progress.add(0, len(data))
+                    indexer.remove_by_file_list(data)
+                elif cmd == 'rescan':
+                    indexer.update_index(data)
+                elif cmd == 'cleanup':
+                    self._progress.add(0, 1)
+                    indexer.clean_unused()
+                    self._progress.add(1, 0)
+                elif cmd == 'ignore':
+                    indexer.set_exclude_paths(data, run=True)
+        except Exception:
+            logger.exception(f'db exec {cmd} failed')

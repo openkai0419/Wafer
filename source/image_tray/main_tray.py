@@ -2,10 +2,9 @@ from PySide6 import QtWidgets
 from ..common.profiling import logger, profiler
 from ..constants import APP_NAME
 from ..actions.bridge import Command, Context, Menu, UI
-from ..image_collector.progress_notifier import close_publisher
 from ..lang.manager import TranslatorMixin
 from ..qt.debounce import qt_debounce
-from ..zmq.zmq import Role, ZMQBroker, ZMQNode
+from ..zmq.broker import Broker
 from .tray_commands import TrayMenu
 
 TrayMenu.register()
@@ -19,10 +18,8 @@ class TrayApp(QtWidgets.QSystemTrayIcon, TranslatorMixin):
         self.setToolTip(f'{APP_NAME}')
         self.show_state = False
         self.activated.connect(self.on_activated)
-        self.broker = ZMQBroker()
+        self.broker = Broker()
         self.broker.start()
-        self.zmq = ZMQNode(Role.COMMUNICATOR, on_message=self.on_notify)
-        self.zmq.start()
         UI.register_instance("Tray", self)
         self.setContextMenu(self._build_menu())
         QtWidgets.QApplication.instance().aboutToQuit.connect(self.on_delete)
@@ -32,9 +29,6 @@ class TrayApp(QtWidgets.QSystemTrayIcon, TranslatorMixin):
 
     def _ctx(self):
         return Context.create_context(None, "Tray", source="tray", extras={"tray": self})
-
-    def on_notify(self, v):
-        logger.info(f'NOTIFY : {v}')
 
     @profiler.profile
     def on_activated(self, reason):
@@ -47,16 +41,8 @@ class TrayApp(QtWidgets.QSystemTrayIcon, TranslatorMixin):
 
     def on_delete(self):
         try:
-            self.zmq.stop()
-        except Exception as e:
-            logger.debug(f'TrayApp.zmq.stop failed: {e}')
-        try:
             self.broker.stop()
         except Exception as e:
             logger.debug(f'TrayApp.broker.stop failed: {e}')
-        try:
-            close_publisher()
-        except Exception as e:
-            logger.debug(f'TrayApp.close_publisher failed: {e}')
 
     

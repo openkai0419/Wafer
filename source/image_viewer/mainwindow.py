@@ -5,7 +5,7 @@ from ..constants import APP_NAME, default_db_name
 from ..db.setting_db import SettingDB
 from ..lang.manager import TranslatorMixin
 from ..qt.debounce import qt_debounce
-from ..zmq.zmq import Role, ZMQNode
+from ..zmq.node import Node
 from .viewer.justifiedwidget import JustifiedGraphicsView
 from .viewer.items import ViewerItems
 from .commands.window_commands import restore_always_on_top
@@ -108,56 +108,32 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.progress_bar.setMaximum(int(value))
 
     def start_ipc_listener(self):
-        def on_message(env):
-            try:
-                if not self or not hasattr(self, 'dbname'):
-                    return
-            except RuntimeError:
-                return
-            table = env.table
-            topic = env.topic
-            message = env.message
-            if table not in ('*', self.dbname):
-                return
-            handlers = {
-                'update': lambda: QtCore.QMetaObject.invokeMethod(
-                    self,
-                    'search',
-                    QtCore.Qt.QueuedConnection,
-                    QtCore.Q_ARG(bool, True),
-                ),
-                'progress': lambda: QtCore.QMetaObject.invokeMethod(
-                    self,
-                    'update_current',
-                    QtCore.Qt.QueuedConnection,
-                    QtCore.Q_ARG(int, int(message)),
-                ),
-                'maximum': lambda: QtCore.QMetaObject.invokeMethod(
-                    self,
-                    'update_maximum',
-                    QtCore.Qt.QueuedConnection,
-                    QtCore.Q_ARG(int, int(message)),
-                ),
-                'folderchanged': lambda: QtCore.QMetaObject.invokeMethod(
-                    self,
-                    'reload_folderlist',
-                    QtCore.Qt.QueuedConnection,
-                ),
-                'show_toggle': lambda: QtCore.QMetaObject.invokeMethod(
-                    self,
-                    'toggle_show',
-                    QtCore.Qt.QueuedConnection,
-                    QtCore.Q_ARG(bool, message == 'True'),
-                ),
-            }
-            try:
-                handlers.get(topic, lambda: None)()
-            except RuntimeError:
-                pass
-            except Exception:
-                logger.exception('Error processing IPC message: %s', env)
-        self._subscriber = ZMQNode(Role.VIEWER, on_message=on_message, count='enable')
-        self._subscriber.start()
+        def _guarded(fn):
+            def handler(msg):
+                try:
+                    if msg.db and msg.db != self.dbname:
+                        return
+                    fn(msg)
+                except RuntimeError:
+                    pass
+            return handler
+
+        def _invoke(slot, *args):
+            QtCore.QMetaObject.invokeMethod(self, slot, QtCore.Qt.QueuedConnection, *args)
+
+        self._node = Node('viewer')
+        self._node.on('update', _guarded(
+            lambda msg: _invoke('search', QtCore.Q_ARG(bool, True))
+        )).on('progress', _guarded(
+            lambda msg: _invoke('update_current', QtCore.Q_ARG(int, int(msg.payload)))
+        )).on('maximum', _guarded(
+            lambda msg: _invoke('update_maximum', QtCore.Q_ARG(int, int(msg.payload)))
+        )).on('folderchanged', _guarded(
+            lambda msg: _invoke('reload_folderlist')
+        )).on('show_toggle', _guarded(
+            lambda msg: _invoke('toggle_show', QtCore.Q_ARG(bool, bool(msg.payload)))
+        ))
+        self._node.start()
 
     @profiler.profile
     def main_ui(self):
@@ -350,9 +326,9 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             self.t.dump_missing_keys()
         except Exception as e:
             logger.warning(e)
-        if hasattr(self, '_subscriber'):
+        if hasattr(self, '_node'):
             logger.info('on_close [STOPPING]')
-            self._subscriber.stop()
+            self._node.stop()
 
     def closeEvent(self, event):
         return super().closeEvent(event)

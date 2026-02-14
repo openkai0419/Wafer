@@ -10,6 +10,7 @@ pyinstaller-hooks-contrib==2025.5
 PySide6==6.9.1
 pywin32==311
 pyzmq==27.0.0
+msgpack==1.1.0
 requests==2.32.4
 shiboken6==6.9.1
 watchdog==6.0.0

@@ -24,13 +24,28 @@
 - MetaQuery: keys/keywords/directories/include_subfolders をSQL条件へ展開。
 
 ■ 収集(collector)
-- source/image_collector/main_collector.py の CollectorProcess
-- WatchFolder(watchdog)で親フォルダ監視、DBWorkerスレッドで update/remove/rescan/cleanup/ignore を直列実行。
-- SettingWatcher が設定DBファイル変更を監視し、変化をSignalで通知。
+- source/image_collector/main_collector.py の CollectorProcess。Node生成、WatchFolder/SettingWatcher を起動。
+- WatchFolder: watchdog → queue.put → 単一ワーカースレッド(_loop) → _flush(changed/deleted) → _exec(DB操作)。0.5秒バッチタイムアウト。
+- SettingWatcher(FileSystemEventHandler): 設定DBファイル変更を直接監視し、_check_changes() で parent/ignore/delete を一括検出。
+- ProgressAggregator: コンストラクタで Node を直接受け取り、進捗集約 + IPC 通知。
 
-■ IPC(ZMQ)
-- collector は ProgressAggregator から viewer 宛に通知（topic: progress/maximum/update/folderchanged 等）。
-- viewer(MainWindow) は Role.VIEWER の subscriber を持ち、Qt.QueuedConnection で search/UI更新。
+■ IPC(ZMQ) — Msg + Broker + Node アーキテクチャ
+- source/zmq/ は5ファイル構成: _core.py, message.py, broker.py, node.py, ipc_utils.py。msgpack による2フレームシリアライズ。
+- Msg (message.py): topic/src/dst/db/payload/rid を持つメッセージ。build(), to_frames(), from_frames(), reply(), make_rid()。
+- Broker (broker.py): ROUTER ソケット。Trayプロセスで起動。ピア管理（_PeerInfo）、ルーティング（dst: role/node_id/ALL + db フィルタ）、CoalescingQueue によるブロードキャスト合体。
+  - inject(msg): Tray自身からメッセージ送信（Node不要）。get_counts(): ロール別接続数取得。
+  - start() でポートファイル書き込み、stop() で削除。
+  - 管理プロトコル: mgmt.register / mgmt.heartbeat / mgmt.get_count。
+  - dbフィルタ: 空 db_set のピアは全メッセージ受信、指定ありのピアはマッチのみ受信。
+- Node (node.py): DEALER ソケット。全プロセス（Viewer/Collector 等）で使用。
+  - on(topic, handler) / off(topic): トピック別ハンドラ登録。_dispatch で rid→mgmt.registered→handler の優先順。
+  - send(topic, payload, dst, db) / notify(topic, payload)（dst='viewer'のショートカット）/ request(topic, payload, timeout)（同期リクエスト・リプライ）。
+  - 自動 heartbeat ループ、wait_registered() で登録完了待ち、viewer_id プロパティ。
+- _core.py: 共通定数（HEARTBEAT_INTERVAL/TIMEOUT, POLL_BASE/MAX_MS, DEFAULT_PORT等）+ ユーティリティ（tune_socket, close_socket, adaptive_poll, try_put, drain_queue）。
+- ipc_utils.py: write_broker_port / read_broker_port / remove_broker_port（JSON形式、data_path('ipc/broker.json')）。
+- Tray: Broker のみ使用。broker.inject() で送信、broker.get_counts() でカウント。
+- Viewer: Node('viewer') + on(topic, handler) チェーンで接続。msg.db によるクライアント側フィルタ。
+- Collector: Node('collector', db=name) + on(topic, handler) で接続。ProgressAggregator は node を直接参照して送信。
 
 ■ 共通ユーティリティ（必ず使い回す）
 source/common/funcs.py:

@@ -13,9 +13,9 @@ from ...qt.pixmap import PixmapFactory
 
 INTERNAL_MIME_FLAG = b"application/x-jvscroll-internal" + f"{os.getpid()}".encode()
 
-ORIENTATION_CHOICES = ["z", "reverse_z", "n", "reverse_n"]
+ORIENTATION_CHOICES = ["Z(↘)", "S(↙)", "И(↘)", "N(↙)"]
 _ORIENTATION_MAP = {f"jv.orientation_{k}": k for k in ORIENTATION_CHOICES}
-_ORIENTATION_INDEX = {"z": 0, "reverse_z": 1, "n": 2, "reverse_n": 3}
+_ORIENTATION_INDEX = {"Z(↘)": 0, "S(↙)": 1, "И(↘)": 2, "N(↙)": 3}
 
 
 class JustifiedViewCommands(Kit.MenuBase):
@@ -316,10 +316,10 @@ class JustifiedViewCommands(Kit.MenuBase):
         Kit.Command(path="Scroll Anchor/jv.scroll_anchor_top", display="Top", func=set_scroll_anchor_top, checkable=True, action_group="jv_scroll_anchor"),
         Kit.Command(path="Scroll Anchor/jv.scroll_anchor_center", display="Center", func=set_scroll_anchor_center, checkable=True, default_checked=True, action_group="jv_scroll_anchor"),
         "Layout/:Layout",
-        Kit.Command(path="Layout/jv.orientation_z", display="Z (→↓)", func=set_orientation_z, checkable=True, default_checked=True, action_group="jv_orientation"),
-        Kit.Command(path="Layout/jv.orientation_reverse_z", display="Reverse Z (←↓)", func=set_orientation_reverse_z, checkable=True, action_group="jv_orientation"),
-        Kit.Command(path="Layout/jv.orientation_n", display="N (↓→)", func=set_orientation_n, checkable=True, action_group="jv_orientation"),
-        Kit.Command(path="Layout/jv.orientation_reverse_n", display="Reverse N (↓←)", func=set_orientation_reverse_n, checkable=True, action_group="jv_orientation"),
+        Kit.Command(path="Layout/jv.orientation_z", display="Z (↘)", func=set_orientation_z, checkable=True, default_checked=True, action_group="jv_orientation"),
+        Kit.Command(path="Layout/jv.orientation_reverse_z", display="S (↙)", func=set_orientation_reverse_z, checkable=True, action_group="jv_orientation"),
+        Kit.Command(path="Layout/jv.orientation_n", display="И (↘)", func=set_orientation_n, checkable=True, action_group="jv_orientation"),
+        Kit.Command(path="Layout/jv.orientation_reverse_n", display="N (↙)", func=set_orientation_reverse_n, checkable=True, action_group="jv_orientation"),
         Kit.Command(
             path="jv.cycle_orientation", display="Cycle Orientation", func=cycle_orientation,
             params=[Kit.Param(name=k, value=True) for k in ORIENTATION_CHOICES] + [Kit.Param(name="reverse", value=False)],

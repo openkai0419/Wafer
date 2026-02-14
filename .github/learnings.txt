@@ -89,3 +89,11 @@
 - rect_select の開始/移動座標は to_scene_pos() でScene座標に変換してから保存する (drawForeground がScene座標で描画するため)
 - FadePixmapItem は setAcceptedMouseButtons(Qt.NoButton) でマウスを受け取らない。イベントはQGraphicsView (Kit.UIMixin) で処理
 - scene.setSceneRect() でスクロール可能範囲を制御。旧 setMinimumHeight() の代替
+
+■ SQLite クエリ設計
+- SQLite のビュー(VIEW)はマテリアライズされず毎回展開される。ROW_NUMBER等のウィンドウ関数を含むビューをクエリ条件に使うと極端に遅くなる
+- 検索クエリは kv_meta/kv_all ビューを経由せず、meta_info/tags/images テーブルに直接アクセスする（_make_subquery）
+- SQLite の compound SELECT（UNION/INTERSECT）を FROM 句のサブクエリとして使う場合、各 arm を括弧で囲んではいけない（構文エラーになる）
+  - NG: SELECT * FROM ((SELECT ...) UNION (SELECT ...)) AS c
+  - OK: SELECT * FROM (SELECT ... UNION SELECT ...) AS c
+- 読み取り専用接続では cache_size/mmap_size の PRAGMA を設定してキャッシュ効率を上げる

@@ -7,24 +7,25 @@ from PySide6 import QtWidgets
 from ..actions.bridge import Kit
 from ..common.profiling import logger
 from ..os.process import Proc
+from ..zmq.message import Msg
 
-def _tray_send(ctx, *, topic: str, message: str):
+def _tray_send(ctx, topic: str, payload=None):
     tray = ctx.get_instance("Tray")
     try:
-        tray.zmq.send(targetprocess='ALL', table='*', topic=str(topic), message=str(message))
+        tray.broker.inject(Msg.build(topic, payload))
     except Exception as e:
         logger.warning(f'[{topic} notify failed] {e}')
 
 def get_viewer_count(ctx=None) -> int:
     tray = ctx.get_instance("Tray")
     try:
-        return int(tray.zmq.get_sub_count())
+        return tray.broker.get_counts().get('viewer', 0)
     except Exception as e:
         logger.warning(f'[viewer count failed] {e}')
         return 0
 
 def send_show_toggle(ctx=None, flag: bool = False):
-    _tray_send(ctx, topic='show_toggle', message='True' if flag else 'False')
+    _tray_send(ctx, 'show_toggle', flag)
 
 
 def show_window(ctx=None):
@@ -42,16 +43,16 @@ def open_new_window(ctx=None):
 
 
 def rescan_all(ctx=None):
-    _tray_send(ctx, topic='rescan', message='True')
+    _tray_send(ctx, 'rescan')
 
 
 def cleanup_optimize(ctx=None):
-    _tray_send(ctx, topic='cleanup', message='True')
+    _tray_send(ctx, 'cleanup')
 
 
 def test(ctx=None):
     logger.info('SENDING TEST')
-    _tray_send(ctx, topic='none', message='TEST FUNCTION!')
+    _tray_send(ctx, 'test', 'TEST FUNCTION!')
 
 
 def test2(ctx=None):

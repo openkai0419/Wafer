@@ -6,6 +6,7 @@ from PySide6 import QtWidgets
 from source.actions.bridge import Menu
 from source.image_viewer.commands import file_commands
 from source.image_viewer.commands.file_commands import FileCommands
+from source.os.save import get_os_new_folder_name
 
 
 def test_file_commands_register_paths(qtbot):
@@ -58,14 +59,15 @@ def test_show_in_explorer_ignores_missing_path():
 def test_make_new_folder_here_creates_folder(tmp_path):
     folder = file_commands.make_new_folder_here(_Ctx(path=str(tmp_path)))
     assert folder is not None
-    assert (tmp_path / "New Folder").exists()
+    assert (tmp_path / get_os_new_folder_name()).exists()
 
 
 def test_make_new_folder_here_unique_names(tmp_path):
-    (tmp_path / "New Folder").mkdir()
+    name = get_os_new_folder_name()
+    (tmp_path / name).mkdir()
     folder = file_commands.make_new_folder_here(_Ctx(path=str(tmp_path)))
     assert folder is not None
-    assert (tmp_path / "New Folder (2)").exists()
+    assert (tmp_path / f"{name} (2)").exists()
 
 
 def test_make_new_folder_here_with_file_path(tmp_path):
@@ -73,7 +75,7 @@ def test_make_new_folder_here_with_file_path(tmp_path):
     file_path.write_text("x", encoding="utf-8")
     folder = file_commands.make_new_folder_here(_Ctx(path=str(file_path)))
     assert folder is not None
-    assert (tmp_path / "New Folder").exists()
+    assert (tmp_path / get_os_new_folder_name()).exists()
 
 
 def test_make_new_folder_here_custom_name(tmp_path):

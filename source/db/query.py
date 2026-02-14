@@ -3,8 +3,6 @@ import sqlite3
 from pathlib import Path
 from random import shuffle
 from typing import Sequence
-from functools import lru_cache
-
 from ..common.funcs import normalize_path
 from ..common.profiling import logger, profiler
 
@@ -76,128 +74,157 @@ class MetaQuery:
         keywords = self.keywords
         if isinstance(keywords, str):
             keywords = [w.strip() for w in keywords.split(self.splittext)] if self.splittext else [keywords]
-        include = [kw for kw in (keywords or []) if not kw.startswith('-')]
-        exclude = [kw[1:] for kw in (keywords or []) if kw.startswith('-')]
+        include = [kw for kw in (keywords or []) if kw and not kw.startswith('-')]
+        exclude = [kw[1:] for kw in (keywords or []) if kw and kw.startswith('-') and len(kw) > 1]
 
         self._normalized_cache = (keys, include, exclude)
         return self._normalized_cache
 
-    @profiler.profile
-    def build_conditions(
-        self,
-        normalize_path_func,
-        *,
-        alias_m: str = "k",
-        alias_k: str = "k",
-        require_keys: bool = True,
-    ):
-        keys, include_keywords, exclude_keywords = self.normalize_inputs()
-        if require_keys and (not keys):
-            return None, None  # 呼び出し側でハンドリング（=無効クエリ）
+    def _match_clause(self, field, keywords, op):
+        if not keywords:
+            return "", []
+        if self.query_mode.upper() == "GLOB":
+            clauses = [f"{field} GLOB ?" for _ in keywords]
+            values = [f"*{kw}*" for kw in keywords]
+        else:
+            def esc(s):
+                return s.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+            clauses = [f"{field} LIKE ? ESCAPE '\\'" for _ in keywords]
+            values = [f"%{esc(kw)}%" for kw in keywords]
+        return (" " + op + " ").join(clauses), values
 
-        def esc_like(s: str) -> str:
-            return s.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
-
-        conditions: list[str] = []
-        params: list[str] = []
-
-        # keys
-        if keys:
-            placeholders = ",".join("?" for _ in keys)
-            conditions.append(f'{alias_k}."key" IN ({placeholders})')
-            params.extend(keys)
-
-        # include
-        def match_clause(field: str, keywords: list[str], op: str):
-            if not keywords:
-                return "", []
-            if self.query_mode.upper() == "GLOB":
-                clauses = [f"{field} GLOB ?" for _ in keywords]
-                values = [f"*{kw}*" for kw in keywords]
+    def _dir_clause(self, path_field, normalize_path_func):
+        if not self.directories:
+            return "", []
+        clauses, params = [], []
+        for d in self.directories:
+            if not isinstance(d, str) or not d:
+                continue
+            nd = normalize_path_func(str(Path(d).resolve()))
+            prefix = (nd + "/") if nd else ""
+            esc_p = prefix.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+            if not self.include_subfolders:
+                clauses.append(f"({path_field} LIKE ? ESCAPE '\\' AND {path_field} NOT LIKE ? ESCAPE '\\')")
+                params.extend([f"{esc_p}%", f"{esc_p}%/%"])
             else:
-                clauses = [f"{field} LIKE ? ESCAPE '\\'" for _ in keywords]
-                values = [f"%{esc_like(kw)}%" for kw in keywords]
-            return (" " + op + " ").join(clauses), values
+                clauses.append(f"{path_field} LIKE ? ESCAPE '\\'")
+                params.append(f"{esc_p}%")
+        if not clauses:
+            return "", []
+        return "(" + " OR ".join(clauses) + ")", params
 
-        if include_keywords:
-            clause, values = match_clause(f'{alias_k}."value"', include_keywords, self.keyword_mode)
-            conditions.append(f"({clause})")
-            params.extend(values)
-
-        # exclude（同一 path のレコードにその語が存在しないこと）
-        if exclude_keywords:
-            clause_ex, values_ex = match_clause('k2."value"', exclude_keywords, "OR")
-            if keys:
-                placeholders = ",".join("?" for _ in keys)
-                conditions.append(
-                    "NOT EXISTS ("
-                    "  SELECT 1"
-                    "  FROM kv_meta k2"
-                    f"  WHERE k2.path = {alias_m}.path"
-                    f"    AND k2.\"key\" IN ({placeholders})"
-                    f"    AND ({clause_ex})"
-                    ")"
-                )
-                params.extend(keys)
-            else:
-                conditions.append(
-                    "NOT EXISTS ("
-                    "  SELECT 1"
-                    "  FROM kv_meta k2"
-                    f"  WHERE k2.path = {alias_m}.path"
-                    f"    AND ({clause_ex})"
-                    ")"
-                )
-            params.extend(values_ex)
-
-        # directories
-        if self.directories:
-            dirs = [str(Path(d).resolve()) for d in self.directories if isinstance(d, str) and d]
-            dir_clauses, dir_params = [], []
-            for d in dirs:
-                nd = normalize_path_func(str(d))
-                prefix = (nd + "/") if nd else ""
-                esc_prefix = prefix.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
-                if not self.include_subfolders:
-                    dir_clauses.append(f"({alias_m}.path LIKE ? ESCAPE '\\' AND {alias_m}.path NOT LIKE ? ESCAPE '\\')")
-                    dir_params.extend([f"{esc_prefix}%", f"{esc_prefix}%/%"])
-                else:
-                    dir_clauses.append(f"{alias_m}.path LIKE ? ESCAPE '\\'")
-                    dir_params.append(f"{esc_prefix}%")
-            if dir_clauses:
-                conditions.append("(" + " OR ".join(dir_clauses) + ")")
-                params.extend(dir_params)
-
-        return conditions, params
-
+    def _build_exclude(self, has_filepath, other_keys, query_all, exclude_kw):
+        parts, params = [], []
+        if has_filepath or query_all:
+            c, v = self._match_clause('efi.path', exclude_kw, "OR")
+            parts.append(f"SELECT efi.path FROM images AS efi WHERE {c}")
+            params.extend(v)
+        if other_keys or query_all:
+            conds, p = [], []
+            if other_keys:
+                conds.append(f"em.\"key\" IN ({','.join('?' for _ in other_keys)})")
+                p.extend(other_keys)
+            c, v = self._match_clause('em."value"', exclude_kw, "OR")
+            conds.append(f"({c})")
+            p.extend(v)
+            parts.append(f"SELECT em.path FROM meta_info AS em WHERE {' AND '.join(conds)}")
+            params.extend(p)
+            conds2, p2 = [], []
+            if other_keys:
+                conds2.append(f"et.\"key\" IN ({','.join('?' for _ in other_keys)})")
+                p2.extend(other_keys)
+            c2, v2 = self._match_clause('et."value"', exclude_kw, "OR")
+            conds2.append(f"({c2})")
+            p2.extend(v2)
+            parts.append(
+                f"SELECT ei.path FROM tags AS et "
+                f"JOIN sources AS es ON es.file_hash = et.file_hash "
+                f"JOIN images AS ei ON ei.source = es.source "
+                f"WHERE {' AND '.join(conds2)}"
+            )
+            params.extend(p2)
+        if not parts:
+            return "", []
+        return " UNION ".join(parts), params
 
     @profiler.profile
-    def _is_fastpath_simple_keys(self):
-        # keys があり、include/exclude なし、directories なし、include_subfolders 無関係、
-        # require_keys が True（既定）であるケースを高速経路に乗せる
-        keys, include_keywords, exclude_keywords = self.normalize_inputs()
-        return (
-            self.require_keys and
-            keys and
-            not include_keywords and
-            not exclude_keywords and
-            not self.directories
-        )
-
-    @profiler.profile
-    def _make_kv_subquery(self, normalize_path_func, *, require_keys_override: bool | None = None):
+    def _make_subquery(self, normalize_path_func, *, require_keys_override=None):
         rk = self.require_keys if require_keys_override is None else require_keys_override
-        conditions, params = self.build_conditions( normalize_path_func, alias_m="k", alias_k="k", require_keys=rk)
-        if conditions is None:
+        keys, include_kw, exclude_kw = self.normalize_inputs()
+        if rk and not keys:
             return (None, [])
-
-        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-        subquery = f"""
-            SELECT k.path AS path, k.file_hash AS file_hash, k."key" AS "key", k."value" AS "value"
-            FROM kv_meta AS k
-            {where}
-        """
-        return (subquery, params)
+        has_filepath = '__filepath__' in keys if keys else False
+        other_keys = [k for k in keys if k != '__filepath__'] if keys else []
+        query_all = not keys
+        parts, all_params = [], []
+        if has_filepath or query_all:
+            conds, params = [], []
+            if include_kw:
+                c, v = self._match_clause('i.path', include_kw, self.keyword_mode)
+                conds.append(f"({c})")
+                params.extend(v)
+            dc, dp = self._dir_clause('i.path', normalize_path_func)
+            if dc:
+                conds.append(dc)
+                params.extend(dp)
+            w = f"WHERE {' AND '.join(conds)}" if conds else ""
+            parts.append(
+                f"SELECT i.path, '__filepath__' AS \"key\", i.path AS \"value\" "
+                f"FROM images AS i {w}"
+            )
+            all_params.extend(params)
+        if other_keys or query_all:
+            conds, params = [], []
+            if other_keys:
+                conds.append(f"mi.\"key\" IN ({','.join('?' for _ in other_keys)})")
+                params.extend(other_keys)
+            if include_kw:
+                c, v = self._match_clause('mi."value"', include_kw, self.keyword_mode)
+                conds.append(f"({c})")
+                params.extend(v)
+            dc, dp = self._dir_clause('mi.path', normalize_path_func)
+            if dc:
+                conds.append(dc)
+                params.extend(dp)
+            w = f"WHERE {' AND '.join(conds)}" if conds else ""
+            parts.append(f"SELECT mi.path, mi.\"key\", mi.\"value\" FROM meta_info AS mi {w}")
+            all_params.extend(params)
+        if other_keys or query_all:
+            conds, params = [], []
+            if other_keys:
+                conds.append(f"t.\"key\" IN ({','.join('?' for _ in other_keys)})")
+                params.extend(other_keys)
+            if include_kw:
+                c, v = self._match_clause('t."value"', include_kw, self.keyword_mode)
+                conds.append(f"({c})")
+                params.extend(v)
+            dc, dp = self._dir_clause('i.path', normalize_path_func)
+            if dc:
+                conds.append(dc)
+                params.extend(dp)
+            w = f"WHERE {' AND '.join(conds)}" if conds else ""
+            parts.append(
+                f"SELECT i.path, t.\"key\", t.\"value\" "
+                f"FROM tags AS t "
+                f"JOIN sources AS s ON s.file_hash = t.file_hash "
+                f"JOIN images AS i ON i.source = s.source {w}"
+            )
+            all_params.extend(params)
+        if not parts:
+            return (None, [])
+        subquery = " UNION ALL ".join(parts)
+        if exclude_kw:
+            exc_sql, exc_params = self._build_exclude(
+                has_filepath, other_keys, query_all, exclude_kw
+            )
+            if exc_sql:
+                subquery = (
+                    f"SELECT sq.path, sq.\"key\", sq.\"value\" "
+                    f"FROM ({subquery}) AS sq "
+                    f"WHERE sq.path NOT IN ({exc_sql})"
+                )
+                all_params.extend(exc_params)
+        return (subquery, all_params)
 
 
 class MetaInfoSearchEngine:
@@ -216,7 +243,7 @@ class MetaInfoSearchEngine:
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
 
-            required = ('meta_info', "tags", 'images', 'kv_meta', "images_full")
+            required = ('meta_info', 'tags', 'images', 'images_full')
             for name in required:
                 cur.execute("SELECT name FROM sqlite_master WHERE name=?", (name,))
                 if not cur.fetchone():
@@ -238,6 +265,8 @@ class MetaInfoSearchEngine:
             cur.executescript("""
                 PRAGMA query_only=ON;
                 PRAGMA temp_store=MEMORY;
+                PRAGMA cache_size=-10000;
+                PRAGMA mmap_size=134217728;
             """)
         except Exception as e:
             logger.warning(f'PRAGMA apply failed (non-fatal): {e}')
@@ -266,7 +295,7 @@ class MetaInfoSearchEngine:
             return ([], [], [])
         cur = self.conn.cursor()
 
-        subq, params = query._make_kv_subquery(self._normalize_path)
+        subq, params = query._make_subquery(self._normalize_path)
         if not subq:
             return ([], [], [])
 
@@ -319,22 +348,21 @@ class MetaInfoSearchEngine:
         parts = []
         params: list[str] = []
         for q in queries:
-            subq, p = q._make_kv_subquery(self._normalize_path)
+            subq, p = q._make_subquery(self._normalize_path)
             if not subq:
                 if q.append_mode == 'AND':
                     return ([], [])
                 continue
-            parts.append(f"(SELECT DISTINCT path FROM ({subq}) s0)")
+            parts.append(f"SELECT DISTINCT path FROM ({subq}) s0")
             params.extend(p)
 
         if not parts:
             return ([], [])
 
-        # append_mode に応じて合成
         combined = parts[0]
         for i in range(1, len(parts)):
             op = "INTERSECT" if queries[i].append_mode == 'AND' else "UNION"
-            combined = f"({combined}) {op} {parts[i]}"
+            combined = f"{combined} {op} {parts[i]}"
 
         sort_col, order = self._build_sort_clause(queries[-1].sort_by, queries[-1].ascending)
 
@@ -374,7 +402,7 @@ class MetaInfoSearchEngine:
         cur = self.conn.cursor()
 
         # ★ keys 未指定でも動くように require_keys=False
-        q, p = query._make_kv_subquery(self._normalize_path, require_keys_override=False)
+        q, p = query._make_subquery(self._normalize_path, require_keys_override=False)
         if not q:
             return []
 
@@ -382,7 +410,7 @@ class MetaInfoSearchEngine:
         sql = f"""
             SELECT key, COUNT(*) AS freq
             FROM (
-                {q}
+                SELECT DISTINCT path, key FROM ({q}) AS raw
             ) AS items
             GROUP BY key
             {order}

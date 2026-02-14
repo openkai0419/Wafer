@@ -104,8 +104,7 @@ class GraphicsItemPool:
 
     @profiler.profile
     def reset(self):
-        while self._in_use:
-            item = self._in_use.pop()
+        for item in list(self._in_use):
             self.release(item)
 
 @singleton

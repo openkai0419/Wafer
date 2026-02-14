@@ -182,7 +182,6 @@ class JustifiedGraphicsView(QtWidgets.QGraphicsView, Kit.UIMixin):
 
     def _on_selection_changed(self, _):
         self.last_selections = self.items.selected_paths()
-        logger.info(self.last_selections)
         self.viewport().update()
 
     def _scene_view_rect(self):
@@ -519,9 +518,11 @@ class JustifiedGraphicsView(QtWidgets.QGraphicsView, Kit.UIMixin):
         if self.rects:
             margin = self._half_pos
             if self._hz:
-                self._scene.setSceneRect(-margin, -margin, max(self.viewport().width(), 1), self.rects.total_extent + margin)
+                new_rect = QtCore.QRectF(-margin, -margin, max(self.viewport().width(), 1), self.rects.total_extent + margin)
             else:
-                self._scene.setSceneRect(-margin, -margin, self.rects.total_extent + margin, max(self.viewport().height(), 1))
+                new_rect = QtCore.QRectF(-margin, -margin, self.rects.total_extent + margin, max(self.viewport().height(), 1))
+            if self._scene.sceneRect() != new_rect:
+                self._scene.setSceneRect(new_rect)
         self.viewport().update()
 
     @profiler.profile

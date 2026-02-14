@@ -86,8 +86,6 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         if event.type() == QtCore.QEvent.ActivationChange:
             if self.isActiveWindow():
                 self.reload_combo()
-            else:
-                print('inactiveated window')
         super().changeEvent(event)
 
     @qt_debounce(200)

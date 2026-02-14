@@ -79,12 +79,30 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
     @profiler.profile
     def _remove_from_maps_recursive(self, base_path):
         base_path = normalize_path(base_path)
-        self.path_item_map.pop(base_path, None)
-        self._remove_from_trie(base_path)
-        to_remove = [p for p in list(self.path_item_map.keys()) if p.startswith(base_path + os.sep)]
-        for p in to_remove:
-            self.path_item_map.pop(p, None)
-            self._remove_from_trie(p)
+        parts = base_path.split(os.sep)
+        node = self.path_item_trie
+        stack = []
+        for part in parts:
+            if part not in node:
+                self.path_item_map.pop(base_path, None)
+                return
+            stack.append((node, part))
+            node = node[part]
+        self._clear_subtree_map(node, base_path)
+        if stack:
+            parent, key = stack[-1]
+            del parent[key]
+            for parent, key in reversed(stack[:-1]):
+                if not parent.get(key):
+                    del parent[key]
+                else:
+                    break
+
+    def _clear_subtree_map(self, node, prefix):
+        self.path_item_map.pop(prefix, None)
+        for key, child in list(node.items()):
+            if key != '__item__':
+                self._clear_subtree_map(child, prefix + os.sep + key)
 
     @profiler.profile
     def _update_item_path_recursive(self, item, old_base, new_base):
@@ -492,7 +510,6 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         self.setEditTriggers(
             QtWidgets.QAbstractItemView.EditKeyPressed
             | QtWidgets.QAbstractItemView.SelectedClicked
-            | QtWidgets.QAbstractItemView.EditKeyPressed
             | QtWidgets.QAbstractItemView.DoubleClicked
         )
         self.setDragEnabled(True)

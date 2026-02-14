@@ -80,7 +80,6 @@ class ThinProgressBar(QtWidgets.QWidget):
         self._glow_offset = 0.0
         self._glow_timer = QtCore.QTimer(self)
         self._glow_timer.timeout.connect(self._updateGlow)
-        self._glow_timer.start(15)
         self._base_color = QtGui.QColor(0, 255, 0)
         self._tooltip = None
         self.setMouseTracking(True)
@@ -141,10 +140,13 @@ class ThinProgressBar(QtWidgets.QWidget):
 
     def fadeIn(self):
         self._fadeTo(1.0)
+        if not self._glow_timer.isActive():
+            self._glow_timer.start(15)
 
     def fadeOut(self, immediate=False):
         if immediate:
             self.setColorOpacity(0.0)
+            self._glow_timer.stop()
         else:
             self._fadeTo(0.0)
 
@@ -153,6 +155,8 @@ class ThinProgressBar(QtWidgets.QWidget):
 
     def setColorOpacity(self, opacity):
         self._color_opacity = opacity
+        if opacity <= 0.0:
+            self._glow_timer.stop()
         self.update()
 
     def getBaseColor(self):

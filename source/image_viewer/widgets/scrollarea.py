@@ -4,11 +4,8 @@ class ScrollBarColorStyle(QtWidgets.QProxyStyle):
     def drawComplexControl(self, control, option, painter, widget=None):
         if control == QtWidgets.QStyle.CC_ScrollBar:
             opt = QtWidgets.QStyleOptionSlider(option)
-
-            # 通常描画（背景やボタンなど）
             super().drawComplexControl(control, option, painter, widget)
 
-            # ハンドル部分を上書き描画
             if opt.subControls & QtWidgets.QStyle.SC_ScrollBarSlider:
                 rect = self.subControlRect(control, opt, QtWidgets.QStyle.SC_ScrollBarSlider, widget)
                 if rect.isValid():
@@ -26,7 +23,6 @@ class ScrollBarColorStyle(QtWidgets.QProxyStyle):
                         else:
                             rect.adjust(0, 4, 0, -4)
 
-                    # 角丸の塗りつぶし
                     painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
                     painter.setPen(QtCore.Qt.NoPen)
                     painter.setBrush(color)

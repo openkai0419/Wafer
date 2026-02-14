@@ -205,6 +205,7 @@ class DictRowWidget(QtWidgets.QFrame):
             if w:
                 w.deleteLater()
 
+        self._val_labels = {}
         row = 0
         for key in self._keys:
             key_label = QtWidgets.QLabel(self._display_key(key), self)
@@ -216,23 +217,28 @@ class DictRowWidget(QtWidgets.QFrame):
             val = self._stringify_preview(key, self._data.get(key))
             val_label = QtWidgets.QLabel(val, self)
             val_label.setWordWrap(True)
-            # 重要：リンク検出/HTML解析を無効化
             val_label.setTextFormat(QtCore.Qt.PlainText)
             val_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
             val_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
-            #val_label.setStyleSheet("QLabel { line-break: anywhere; }")
 
             self._grid.addWidget(key_label, row, 0)
             self._grid.addWidget(val_label, row, 1)
+            self._val_labels[key] = val_label
             row += 1
 
         self._grid.setColumnStretch(1, 1)
 
-    # ---- public ----
     def update_data(self, data: Mapping[str, Any]) -> None:
-        self._data = dict(data)
-        self._keys = list(self._data.keys())
-        self._build()
+        new_keys = list(data.keys())
+        if new_keys == self._keys and hasattr(self, '_val_labels'):
+            self._data = dict(data)
+            for key in self._keys:
+                val = self._stringify_preview(key, self._data.get(key))
+                self._val_labels[key].setText(val)
+        else:
+            self._data = dict(data)
+            self._keys = new_keys
+            self._build()
 
 
 class DictListWidget(QtWidgets.QWidget):
@@ -273,10 +279,16 @@ class DictListWidget(QtWidgets.QWidget):
         return QtCore.QSize(760, super().sizeHint().height())
 
     def set_data(self, items: Iterable[Mapping[str, Any]]) -> None:
-        """各行は自身の辞書のキー順で描画（表示はプレビュー）。"""
+        new_items = [dict(i) for i in items]
+        if len(new_items) == len(self._items):
+            for idx, it in enumerate(new_items):
+                self._items[idx] = it
+                w = self._layout.itemAt(idx).widget()
+                if isinstance(w, DictRowWidget):
+                    w.update_data(it)
+            return
         self.clear()
-        self._items = [dict(i) for i in items]
-
+        self._items = new_items
         for idx, it in enumerate(self._items):
             row = DictRowWidget(
                 idx,

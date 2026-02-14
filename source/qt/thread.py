@@ -9,6 +9,35 @@ from PySide6 import QtCore
 from ..common.profiling import logger, profiler
 
 
+class _CancellableSignals(QtCore.QObject):
+    finished = QtCore.Signal(object)
+
+
+class CancellableRunnable(QtCore.QRunnable):
+    def __init__(self):
+        super().__init__()
+        self.signals = _CancellableSignals()
+        self._cancelled = False
+
+    def cancel(self):
+        self._cancelled = True
+
+    def execute(self):
+        raise NotImplementedError
+
+    def run(self):
+        if self._cancelled:
+            return
+        try:
+            result = self.execute()
+        except Exception as e:
+            logger.exception(f'[{type(self).__name__}] failed: {e}')
+            return
+        if self._cancelled:
+            return
+        self.signals.finished.emit(result)
+
+
 class _AdjustProxy(QtCore.QObject):
     requestDelta = QtCore.Signal(int)
 

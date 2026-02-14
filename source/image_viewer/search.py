@@ -5,7 +5,7 @@ from PySide6 import QtCore
 from ..common.profiling import logger, profiler
 from ..db.query import MetaInfoSearchEngine, MetaQuery
 from ..qt.debounce import qt_debounce
-from ..qt.thread import main_thread
+from ..qt.thread import main_thread, CancellableRunnable
 from .viewer_settings import main_setting
 
 
@@ -25,34 +25,16 @@ _DEFAULTS = {
 _PERSIST_KEYS = {"query_mode", "keyword_mode", "sort_by", "ascending", "splittext", "include_subfolders", "auto_execute"}
 
 
-class _WorkerSignals(QtCore.QObject):
-    finished = QtCore.Signal(object, object, object)
-
-
-class _SearchWorker(QtCore.QRunnable):
+class _SearchWorker(CancellableRunnable):
 
     def __init__(self, dbpath, query):
         super().__init__()
         self.engine = MetaInfoSearchEngine(dbpath)
         self.query = query
-        self.signals = _WorkerSignals()
-        self._cancelled = False
-
-    def cancel(self):
-        self._cancelled = True
 
     @profiler.profile
-    def run(self):
-        if self._cancelled:
-            return
-        try:
-            paths, sources, aspects = self.engine.get(self.query)
-        except Exception as e:
-            logger.exception(f'[SearchWorker] Search failed: {e}')
-            return
-        if self._cancelled:
-            return
-        self.signals.finished.emit(paths, sources, aspects)
+    def execute(self):
+        return self.engine.get(self.query)
 
 
 class SearchService(QtCore.QObject):
@@ -169,14 +151,15 @@ class SearchService(QtCore.QObject):
         self._query_start_time = datetime.now()
         main_thread.start(worker, 7)
 
-    @QtCore.Slot(object, object, object)
+    @QtCore.Slot(object)
     @profiler.profile
-    def _on_worker_finished(self, paths, sources, aspects):
+    def _on_worker_finished(self, result):
         if self._current_worker is None:
             return
         self._last_query = self._current_worker.query
         self._current_worker = None
         self._query_start_time = None
+        paths, sources, aspects = result
         self.search_finished.emit(paths, sources, aspects)
         with QtCore.QMutexLocker(self._lock):
             if self._pending_query:

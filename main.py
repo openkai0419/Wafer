@@ -1,4 +1,5 @@
 import argparse
+import os
 import signal
 import sys
 import threading
@@ -46,10 +47,10 @@ def run_communicator():
     except:
         raise
 
-def run_collector(name):
+def run_collector(name, parent_pid=None):
     try:
         profiler.set_enabled(False)
-        with SafeProcessLock(f'{APP_FILE_NAME}_{name}'):
+        with SafeProcessLock(f'{APP_FILE_NAME}_{name}', parent_pid=parent_pid):
             initialize_profiling()
             logger.info(f'collector start :{name}')
             collector = CollectorProcess(name)
@@ -70,11 +71,13 @@ def run_collector(name):
         raise
 
 def run_all_collectors():
+    Proc.terminate_cmd('--collector')
     names = get_setting_file_names()
     if not names:
         names = [default_db_name]
+    my_pid = str(os.getpid())
     for name in names:
-        Proc.new_main('--collector', f'{name}')
+        Proc.new_main('--collector', f'{name}', '--parent-pid', my_pid)
     run_communicator()
 
 def run_viewer():
@@ -93,8 +96,9 @@ def main():
     group.add_argument('--communicator', action='store_true', help='run communicator. it will be solo')
     group.add_argument('--viewer', action='store_true', help='run new viewer')
     group.add_argument('--collector', nargs='?', const=True, help='run collector for each settings. make new with optional string')
+    parser.add_argument('--parent-pid', type=int, default=None)
     args = parser.parse_args()
-    if not any(vars(args).values()):
+    if not any([args.communicator, args.viewer, args.collector]):
         Proc.new_main('--communicator')
         run_viewer()
         return
@@ -102,7 +106,7 @@ def main():
         run_all_collectors()
     elif args.collector:
         if isinstance(args.collector, str):
-            run_collector(args.collector)
+            run_collector(args.collector, parent_pid=args.parent_pid)
         else:
             Proc.new_main('--communicator')
     elif args.viewer:

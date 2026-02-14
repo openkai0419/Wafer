@@ -172,6 +172,8 @@ class SearchService(QtCore.QObject):
     @QtCore.Slot(object, object, object)
     @profiler.profile
     def _on_worker_finished(self, paths, sources, aspects):
+        if self._current_worker is None:
+            return
         self._last_query = self._current_worker.query
         self._current_worker = None
         self._query_start_time = None

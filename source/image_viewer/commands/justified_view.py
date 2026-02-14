@@ -416,7 +416,7 @@ class JustifiedViewDragCommands(Kit.DragMenuBase):
             view.viewport().update()
             return
         rect = QtCore.QRect(start, cur).normalized()
-        selected_indices = [i for i, r in enumerate(view.rects) if rect.intersects(r)]
+        selected_indices = view.rects.intersecting_indices(rect) if view.rects else []
         if selected_indices:
             if view._rect_select_mode == "remove":
                 items.remove_selection(selected_indices)

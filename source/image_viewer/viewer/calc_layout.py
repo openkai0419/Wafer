@@ -1,9 +1,164 @@
+import bisect
 from PySide6 import QtCore
 from ...common.profiling import profiler, logger
 QWIDGETSIZE_MAX = 16777215
 
+
+class LayoutData:
+    __slots__ = (
+        '_aspects', '_bh', '_spacing', '_cw', '_hz', '_rev',
+        '_groups', '_group_si', '_sorted_starts', '_sorted_ends',
+        '_vis_group_map', '_total_extent', '_count',
+        'group_starts', 'group_ends', 'group_mids', '_cache',
+    )
+
+    def __init__(self, aspects, base_height, spacing, container_width,
+                 hz, reversed_secondary, groups):
+        self._aspects = aspects
+        self._bh = base_height
+        self._spacing = spacing
+        self._cw = container_width
+        self._hz = hz
+        self._rev = reversed_secondary
+        self._groups = groups
+        self._group_si = [g[0] for g in groups]
+        self._cache = {}
+        offsets = [g[2] for g in groups]
+        extents = [int(base_height * g[3]) for g in groups]
+        need_sort = any(offsets[i] > offsets[i + 1] for i in range(len(offsets) - 1))
+        if need_sort:
+            order = sorted(range(len(groups)), key=lambda i: offsets[i])
+            self._sorted_starts = [offsets[i] for i in order]
+            self._sorted_ends = [offsets[i] + extents[i] - 1 for i in order]
+            self._vis_group_map = order
+        else:
+            self._sorted_starts = offsets
+            self._sorted_ends = [o + e - 1 for o, e in zip(offsets, extents)]
+            self._vis_group_map = None
+        self._total_extent = (self._sorted_ends[-1] + spacing) if self._sorted_ends else 0
+        self._count = sum(g[1] for g in groups)
+        self.group_starts = self._sorted_starts
+        self.group_ends = [e + 1 for e in self._sorted_ends]
+        self.group_mids = [(s + e) // 2 for s, e in zip(self._sorted_starts, self._sorted_ends)]
+
+    @staticmethod
+    def empty():
+        d = LayoutData.__new__(LayoutData)
+        d._aspects = []
+        d._bh = 0
+        d._spacing = 0
+        d._cw = 0
+        d._hz = True
+        d._rev = False
+        d._groups = []
+        d._group_si = []
+        d._sorted_starts = []
+        d._sorted_ends = []
+        d._vis_group_map = None
+        d._total_extent = 0
+        d._count = 0
+        d.group_starts = []
+        d.group_ends = []
+        d.group_mids = []
+        d._cache = {}
+        return d
+
+    @property
+    def total_extent(self):
+        return self._total_extent
+
+    def __len__(self):
+        return self._count
+
+    def __bool__(self):
+        return self._count > 0
+
+    def __getitem__(self, i):
+        cached = self._cache.get(i)
+        if cached is not None:
+            return cached
+        r = self._compute(i)
+        self._cache[i] = r
+        return r
+
+    def _find_group(self, i):
+        return bisect.bisect_right(self._group_si, i) - 1
+
+    def _compute(self, i):
+        gi = self._find_group(i)
+        si, cnt, offset, scale = self._groups[gi]
+        bs = self._bh * scale
+        sp = self._spacing
+        fixed = int(bs)
+        if self._hz:
+            if self._rev:
+                cur = self._cw
+                for j in range(si, si + cnt):
+                    w = int(self._aspects[j] * bs)
+                    cur -= w
+                    if j == i:
+                        return QtCore.QRect(cur, offset, w, fixed)
+                    cur -= sp
+            else:
+                cur = 0
+                for j in range(si, i):
+                    cur += int(self._aspects[j] * bs) + sp
+                return QtCore.QRect(cur, offset, int(self._aspects[i] * bs), fixed)
+        else:
+            cur = 0
+            for j in range(si, i):
+                cur += int(bs / self._aspects[j]) + sp
+            return QtCore.QRect(offset, cur, fixed, int(bs / self._aspects[i]))
+
+    def _visible_group_range(self, p_start, p_end):
+        n = len(self._sorted_starts)
+        if n == 0:
+            return 0, -1
+        first = max(0, min(bisect.bisect_left(self._sorted_ends, p_start), n - 1))
+        last = max(first, min(bisect.bisect_right(self._sorted_starts, p_end) - 1, n - 1))
+        return first, last
+
+    def _iter_visible_groups(self, p_start, p_end):
+        first, last = self._visible_group_range(p_start, p_end)
+        for sgi in range(first, last + 1):
+            gi = self._vis_group_map[sgi] if self._vis_group_map else sgi
+            yield self._groups[gi][0], self._groups[gi][1]
+
+    def calculate_visible_indices(self, p_start, p_end):
+        first, last = self._visible_group_range(p_start, p_end)
+        if first > last:
+            return range(0, 0)
+        if self._vis_group_map is not None:
+            indices = []
+            for sgi in range(first, last + 1):
+                gi = self._vis_group_map[sgi]
+                indices.extend(range(self._groups[gi][0], self._groups[gi][0] + self._groups[gi][1]))
+            return indices
+        si_first = self._groups[first][0]
+        g_last = self._groups[last]
+        return range(si_first, g_last[0] + g_last[1])
+
+    def index_at_point(self, point):
+        p = point.y() if self._hz else point.x()
+        for si, cnt in self._iter_visible_groups(p, p):
+            for idx in range(si, si + cnt):
+                if self[idx].contains(point):
+                    return idx
+        return None
+
+    def intersecting_indices(self, rect):
+        p_start = rect.top() if self._hz else rect.left()
+        p_end = rect.bottom() if self._hz else rect.right()
+        result = []
+        for si, cnt in self._iter_visible_groups(p_start, p_end):
+            for idx in range(si, si + cnt):
+                if self[idx].intersects(rect):
+                    result.append(idx)
+        return result
+
+
 class CalculatorSignals(QtCore.QObject):
-    layout_ready = QtCore.Signal(list)
+    layout_ready = QtCore.Signal(object)
 
 class JustifiedLayoutCalculator(QtCore.QRunnable):
 
@@ -22,137 +177,57 @@ class JustifiedLayoutCalculator(QtCore.QRunnable):
         self._cancelled = True
 
     @profiler.profile
-    def _calculate_horizontal(self, reverse):
-        rects = []
-        y = 0
-        line = []
-        line_width = 0
-        spacing = self.spacing
-        base_height = self.base_height
-        container_width = self.container_width
-        aspect_ratios = self.aspect_ratios
-        append_rects = rects.append
-        i = 0
-        while i < len(aspect_ratios):
-            if self._cancelled:
-                return
-            aspect = aspect_ratios[i]
-            w = aspect * base_height
-            if line and line_width + w + spacing * len(line) > container_width:
-                self._emit_horizontal_line(rects, line, line_width, y, reverse)
-                y += self._line_height(line, line_width) + spacing
-                line.clear()
-                line_width = 0
-                if y > QWIDGETSIZE_MAX:
-                    logger.debug(f"[JustifiedLayout] truncated y={y} max={QWIDGETSIZE_MAX} items={len(aspect_ratios)} processed={i} rects={len(rects)}")
-                    break
-            else:
-                line.append(aspect)
-                line_width += w
-                i += 1
-        if line and (not self._cancelled):
-            self._emit_horizontal_line(rects, line, line_width, y, reverse)
-        if not self._cancelled:
-            self.signals.layout_ready.emit(rects)
-
-    @profiler.profile
-    def _emit_horizontal_line(self, rects, line, line_width, y, reverse):
-        spacing = self.spacing
-        base_height = self.base_height
-        container_width = self.container_width
-        total_spacing = spacing * (len(line) - 1)
-        scale = max((container_width - total_spacing) / line_width, 0.1)
-        ih = int(base_height * scale)
-        if reverse:
-            cur_x = container_width
-            for a in line:
-                if self._cancelled:
-                    return
-                iw = int(a * base_height * scale)
-                cur_x -= iw
-                rects.append(QtCore.QRect(cur_x, y, iw, ih))
-                cur_x -= spacing
-        else:
-            cur_x = 0
-            for a in line:
-                if self._cancelled:
-                    return
-                iw = int(a * base_height * scale)
-                rects.append(QtCore.QRect(cur_x, y, iw, ih))
-                cur_x += iw + spacing
-
-    @profiler.profile
-    def _line_height(self, line, line_width):
-        total_spacing = self.spacing * (len(line) - 1)
-        scale = max((self.container_width - total_spacing) / line_width, 0.1)
-        return int(self.base_height * scale)
-
-    @profiler.profile
-    def _calculate_vertical(self, reverse):
-        if self.container_height is None:
+    def _calculate(self, hz, reverse):
+        if not hz and self.container_height is None:
             raise ValueError('Vertical layout requires container_height')
-        rects = []
-        line = []
-        line_height = 0
+        groups = []
+        offset = 0
+        start_idx = 0
+        line_count = 0
+        line_extent = 0.0
         spacing = self.spacing
-        base_width = self.base_height
-        container_height = self.container_height
+        base = self.base_height
+        aspects = self.aspect_ratios
+        container = self.container_width if hz else self.container_height
         i = 0
-        cur_x = 0
-        while i < len(self.aspect_ratios):
+        while i < len(aspects):
             if self._cancelled:
                 return
-            aspect = self.aspect_ratios[i]
-            h = base_width / aspect
-            if line and line_height + h + spacing * len(line) > container_height:
-                cur_x = self._emit_vertical_line(rects, line, line_height, cur_x)
-                line.clear()
-                line_height = 0
-                if cur_x > QWIDGETSIZE_MAX:
+            ext = aspects[i] * base if hz else base / aspects[i]
+            if line_count > 0 and line_extent + ext + spacing * line_count > container:
+                total_sp = spacing * (line_count - 1)
+                scale = max((container - total_sp) / line_extent, 0.1)
+                groups.append((start_idx, line_count, offset, scale))
+                offset += int(base * scale) + spacing
+                start_idx = i
+                line_count = 0
+                line_extent = 0.0
+                if offset > QWIDGETSIZE_MAX:
+                    logger.debug(f"[JustifiedLayout] truncated offset={offset} max={QWIDGETSIZE_MAX} items={len(aspects)} processed={i}")
                     break
             else:
-                line.append(aspect)
-                line_height += h
+                line_count += 1
+                line_extent += ext
                 i += 1
-        if line and not self._cancelled:
-            self._emit_vertical_line(rects, line, line_height, cur_x)
-        if reverse and rects and not self._cancelled:
-            total_w = max(r.right() for r in rects)
-            rects = [QtCore.QRect(total_w - r.x() - r.width(), r.y(), r.width(), r.height()) for r in rects]
-        if not self._cancelled:
-            self.signals.layout_ready.emit(rects)
-
-    @profiler.profile
-    def _emit_vertical_line(self, rects, line, line_height, cur_x):
-        spacing = self.spacing
-        base_width = self.base_height
-        container_height = self.container_height
-        total_spacing = spacing * (len(line) - 1)
-        scale = max((container_height - total_spacing) / line_height, 0.1)
-        iw = int(base_width * scale)
-        cur_y = 0
-        for a in line:
-            if self._cancelled:
-                return cur_x
-            ih = int(base_width / a * scale)
-            rects.append(QtCore.QRect(cur_x, cur_y, iw, ih))
-            cur_y += ih + spacing
-        cur_x += iw + spacing
-        return cur_x
-
-    @profiler.profile
-    def _line_width(self, line, line_height):
-        total_spacing = self.spacing * (len(line) - 1)
-        scale = max((self.container_height - total_spacing) / line_height, 0.1)
-        return int(self.base_height * scale)
+        if line_count > 0 and not self._cancelled:
+            total_sp = spacing * (line_count - 1)
+            scale = max((container - total_sp) / line_extent, 0.1)
+            groups.append((start_idx, line_count, offset, scale))
+        if self._cancelled:
+            return
+        reversed_secondary = False
+        if reverse:
+            if hz:
+                reversed_secondary = True
+            elif groups:
+                last_g = groups[-1]
+                total = last_g[2] + int(base * last_g[3])
+                groups = [(si, cnt, total - ofs - int(base * sc), sc)
+                          for si, cnt, ofs, sc in groups]
+        layout = LayoutData(aspects, base, spacing, self.container_width,
+                           hz=hz, reversed_secondary=reversed_secondary, groups=groups)
+        self.signals.layout_ready.emit(layout)
 
     @profiler.profile
     def run(self):
-        if self.orientation == 0:
-            self._calculate_horizontal(reverse=False)
-        elif self.orientation == 1:
-            self._calculate_horizontal(reverse=True)
-        elif self.orientation == 2:
-            self._calculate_vertical(reverse=False)
-        elif self.orientation == 3:
-            self._calculate_vertical(reverse=True)
+        self._calculate(hz=self.orientation < 2, reverse=self.orientation % 2 == 1)

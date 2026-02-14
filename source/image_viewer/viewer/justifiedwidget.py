@@ -9,7 +9,7 @@ from ...qt.pixmap import PixmapFactory
 from ...qt.thread import main_thread
 from ..viewer_settings import main_setting
 from .cachemanager import MemoryLimitedImageCache, GraphicsItemPool
-from .calc_layout import JustifiedLayoutCalculator
+from .calc_layout import JustifiedLayoutCalculator, LayoutData
 from .items import ViewerItems
 from .sizechecker import SizeMismatchChecker
 from ...actions.bridge import Kit
@@ -37,13 +37,7 @@ class JustifiedGraphicsView(QtWidgets.QGraphicsView, Kit.UIMixin):
         self.init_command_binding("JustifiedView", enable_drops=True)
         self.setObjectName('JustifiedVirtualScrollWidget')
 
-        self.rects = []
-        self._primary_starts = []
-        self._primary_ends = []
-        self._vis_index_map = None
-        self._total_extent = 0
-        self._group_starts_cache = []
-        self._group_mids_cache = []
+        self.rects = LayoutData.empty()
         self.last_selections = []
         self._restore_scroll_path = None
         self._rect_select_mode = "replace"
@@ -251,21 +245,10 @@ class JustifiedGraphicsView(QtWidgets.QGraphicsView, Kit.UIMixin):
 
     @profiler.profile
     def index_at_pos(self, pos):
+        if not self.rects:
+            return None
         scene_pos = self.mapToScene(pos)
-        p = self._primary_pos(scene_pos)
-        start = bisect.bisect_left(self._primary_ends, p)
-        end = bisect.bisect_right(self._primary_starts, p)
-        sp = scene_pos.toPoint()
-        if self._vis_index_map is not None:
-            for s in range(start, end):
-                i = self._vis_index_map[s]
-                if self.rects[i].contains(sp):
-                    return i
-        else:
-            for i in range(start, end):
-                if self.rects[i].contains(sp):
-                    return i
-        return None
+        return self.rects.index_at_point(scene_pos.toPoint())
 
     def to_scene_pos(self, pos):
         return self.mapToScene(pos).toPoint()
@@ -315,13 +298,7 @@ class JustifiedGraphicsView(QtWidgets.QGraphicsView, Kit.UIMixin):
                 runnable.cancel()
         self.widgets.clear()
         self.visible_indices.clear()
-        self.rects = []
-        self._primary_starts = []
-        self._primary_ends = []
-        self._vis_index_map = None
-        self._total_extent = 0
-        self._group_starts_cache = []
-        self._group_mids_cache = []
+        self.rects = LayoutData.empty()
         self._scene.setSceneRect(0, 0, 0, 0)
 
     @profiler.profile
@@ -378,26 +355,13 @@ class JustifiedGraphicsView(QtWidgets.QGraphicsView, Kit.UIMixin):
 
     @profiler.profile
     def get_center_image_index(self):
-        if not self._primary_starts:
+        if not self.rects:
             return None
         center = self.mapToScene(self.viewport().rect().center()).toPoint()
-        p = self._primary_pos(center)
-        idx = bisect.bisect_right(self._primary_starts, p)
-        lo = max(0, idx - 2)
-        hi = min(len(self._primary_starts), idx + 2)
-        if self._vis_index_map is not None:
-            for s in range(lo, hi):
-                i = self._vis_index_map[s]
-                if self.rects[i].contains(center):
-                    return i
-        else:
-            for i in range(lo, hi):
-                if self.rects[i].contains(center):
-                    return i
-        return None
+        return self.rects.index_at_point(center)
 
     def _group_starts(self) -> list[int]:
-        return self._group_starts_cache
+        return self.rects.group_starts
 
     def _effective_scroll_top(self, bar):
         if (hasattr(self, '_scroll_anim') and self._scroll_anim is not None
@@ -410,50 +374,42 @@ class JustifiedGraphicsView(QtWidgets.QGraphicsView, Kit.UIMixin):
         from ...actions.bridge import Command
         return Command.get_action_group_current('jv_scroll_anchor') == 'jv.scroll_anchor_center'
 
+    def _group_ends(self) -> list[int]:
+        return self.rects.group_ends
+
     def _group_mids(self) -> list[int]:
-        return self._group_mids_cache
+        return self.rects.group_mids
+
+    def _scroll_row(self, forward: bool, animated: bool = True):
+        bar = self._primary_bar()
+        vs = self._primary_viewport_size()
+        rev = self._is_primary_reversed()
+        if self._is_center_anchor():
+            refs = self._group_mids()
+            current = self._effective_scroll_top(bar) + vs // 2
+            offset = vs // 2
+        elif rev:
+            refs = self._group_ends()
+            current = self._effective_scroll_top(bar) + vs
+            offset = vs
+        else:
+            refs = self._group_starts()
+            current = self._effective_scroll_top(bar)
+            offset = 0
+        if forward != rev:
+            idx = bisect.bisect_right(refs, current)
+            if idx < len(refs):
+                self._scroll_to(refs[idx] - offset, animated)
+        else:
+            idx = bisect.bisect_left(refs, current) - 1
+            if idx >= 0:
+                self._scroll_to(refs[idx] - offset, animated)
 
     def scroll_to_next_row(self, animated: bool = True):
-        bar = self._primary_bar()
-        vs = self._primary_viewport_size()
-        rev = self._is_primary_reversed()
-        if self._is_center_anchor():
-            refs = self._group_mids()
-            current = self._effective_scroll_top(bar) + vs // 2
-            offset = vs // 2
-        else:
-            refs = self._group_starts()
-            current = self._effective_scroll_top(bar)
-            offset = 0
-        if rev:
-            idx = bisect.bisect_left(refs, current) - 1
-            if idx >= 0:
-                self._scroll_to(refs[idx] - offset, animated)
-        else:
-            idx = bisect.bisect_right(refs, current)
-            if idx < len(refs):
-                self._scroll_to(refs[idx] - offset, animated)
+        self._scroll_row(True, animated)
 
     def scroll_to_prev_row(self, animated: bool = True):
-        bar = self._primary_bar()
-        vs = self._primary_viewport_size()
-        rev = self._is_primary_reversed()
-        if self._is_center_anchor():
-            refs = self._group_mids()
-            current = self._effective_scroll_top(bar) + vs // 2
-            offset = vs // 2
-        else:
-            refs = self._group_starts()
-            current = self._effective_scroll_top(bar)
-            offset = 0
-        if rev:
-            idx = bisect.bisect_right(refs, current)
-            if idx < len(refs):
-                self._scroll_to(refs[idx] - offset, animated)
-        else:
-            idx = bisect.bisect_left(refs, current) - 1
-            if idx >= 0:
-                self._scroll_to(refs[idx] - offset, animated)
+        self._scroll_row(False, animated)
 
     def _scroll_to(self, y: int, animated: bool = True):
         bar = self._primary_bar()
@@ -479,57 +435,27 @@ class JustifiedGraphicsView(QtWidgets.QGraphicsView, Kit.UIMixin):
         bar = self._primary_bar()
         vs = self._primary_viewport_size()
         is_center = self._is_center_anchor()
+        rev = self._is_primary_reversed()
         if ind < len(self.rects):
             rect = self.rects[ind]
             if is_center:
                 y = self._primary_pos(rect.center()) - vs // 2
+            elif rev:
+                primary_size = rect.height() if self._hz else rect.width()
+                y = self._primary_pos(rect.topLeft()) + primary_size - vs
             else:
                 y = self._primary_pos(rect.topLeft())
         else:
             y = bar.maximum()
         self._scroll_to(y, animated)
 
-    def _build_visibility_data(self, rects):
-        hz = self._hz
-        if hz:
-            starts = [r.top() for r in rects]
-            ends = [r.bottom() for r in rects]
-            self._total_extent = ends[-1] + self.spacing if ends else 0
-        else:
-            starts = [r.left() for r in rects]
-            ends = [r.right() for r in rects]
-            self._total_extent = max(ends) + self.spacing if ends else 0
-        if self._reversed and starts:
-            order = sorted(range(len(rects)), key=lambda i: starts[i])
-            self._primary_starts = [starts[i] for i in order]
-            self._primary_ends = [ends[i] for i in order]
-            self._vis_index_map = order
-        else:
-            self._primary_starts = starts
-            self._primary_ends = ends
-            self._vis_index_map = None
-        gs = []
-        gm = []
-        prev = None
-        ps = self._primary_starts
-        pe = self._primary_ends
-        for i in range(len(ps)):
-            s = ps[i]
-            if s != prev:
-                gs.append(s)
-                gm.append((s + pe[i]) // 2)
-                prev = s
-        self._group_starts_cache = gs
-        self._group_mids_cache = gm
-
     @profiler.profile
-    def _on_layout_ready(self, rects):
-        self.rects = rects
-        self._build_visibility_data(rects)
-        n = len(rects)
+    def _on_layout_ready(self, layout):
+        self.rects = layout
+        n = len(layout)
         for i in list(self.visible_indices):
             if i < n and i in self.widgets:
-                self.widgets[i].setGeometry(rects[i])
+                self.widgets[i].setGeometry(layout[i])
             else:
                 self._recycle_widget(i)
                 self.visible_indices.discard(i)
@@ -593,26 +519,19 @@ class JustifiedGraphicsView(QtWidgets.QGraphicsView, Kit.UIMixin):
         if self.rects:
             margin = self._half_pos
             if self._hz:
-                self._scene.setSceneRect(-margin, -margin, max(self.viewport().width(), 1), self._total_extent + margin)
+                self._scene.setSceneRect(-margin, -margin, max(self.viewport().width(), 1), self.rects.total_extent + margin)
             else:
-                self._scene.setSceneRect(-margin, -margin, self._total_extent + margin, max(self.viewport().height(), 1))
+                self._scene.setSceneRect(-margin, -margin, self.rects.total_extent + margin, max(self.viewport().height(), 1))
         self.viewport().update()
 
     @profiler.profile
     def _calculate_visible_indices(self, view_rect):
-        if not self.rects or not self._primary_starts or not self._primary_ends:
+        if not self.rects:
             return range(0, 0)
         hz = self._hz
         p_start = view_rect.top() if hz else view_rect.left()
         p_end = view_rect.bottom() if hz else view_rect.right()
-        start = bisect.bisect_left(self._primary_ends, p_start)
-        end = bisect.bisect_right(self._primary_starts, p_end) - 1
-        n = len(self._primary_starts)
-        start = max(0, min(start, n - 1))
-        end = max(start, min(end, n - 1))
-        if self._vis_index_map is not None:
-            return [self._vis_index_map[i] for i in range(start, end + 1)]
-        return range(start, end + 1)
+        return self.rects.calculate_visible_indices(p_start, p_end)
 
     @profiler.profile
     def _expand_prefetch_range(self, visible):

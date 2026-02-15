@@ -7,7 +7,7 @@ FitMode = Literal["contain", "cover"]
 
 _HUGE = 1_000_000_000.0
 
-class ZoomPanGraphicsView(QtWidgets.QGraphicsView, Kit.UIMixin):
+class ZoomPanImageView(QtWidgets.QGraphicsView, Kit.UIMixin):
     zoomChanged = QtCore.Signal(float)
 
     def __init__(self, parent=None):
@@ -28,10 +28,10 @@ class ZoomPanGraphicsView(QtWidgets.QGraphicsView, Kit.UIMixin):
         self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self.setBackgroundBrush(self.palette().brush(QtGui.QPalette.ColorRole.Dark))
-        self.init_command_binding("GraphicsView", enable_drops=True)
+        self.init_command_binding("ImageView", enable_drops=True)
 
     def extend_context(self, ctx, cmd, event=None, key=None, source=None):
-        vw = ctx.get_instance("ViewerWidget")
+        vw = ctx.get_instance("FileViewerWidget")
         p = getattr(vw, "path", None) if vw is not None else None
         return {"path": p, "paths": [p] if p else []}
 
@@ -137,7 +137,7 @@ class ImageViewerWidget(QtWidgets.QWidget):
     resized = QtCore.Signal()
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.view = ZoomPanGraphicsView(self)
+        self.view = ZoomPanImageView(self)
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.view)

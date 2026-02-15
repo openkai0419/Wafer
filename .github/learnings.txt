@@ -80,11 +80,11 @@
 - 「後々使われるかもしれない」程度の関数は実装しない。YAGNI原則を徹底する
 - SelectionManager.set_selected(indexes, last) の last はリスト内の位置インデックス（indexes[last]が実際の値）
 - file_viewer.py の next_file/prev_file は _ensure_current_initialized で index 0 に初期化してから move するため、初回呼び出しで index 1 に移動する
-- DataViewModel と ViewerItems は独立したModel。DataviewModel はコマンド(file_viewer.py)から、ViewerItems はコマンド(justified_view.py)からそれぞれ操作される
+- FileViewModel と ViewerItems は独立したModel。FileViewModel はコマンド(file_viewer.py)から、ViewerItems はコマンド(grid_view.py)からそれぞれ操作される
 - get_resource_path() は pytest 時に __main__.__file__ が venv を指すため _resources が見つからない。CWDフォールバックで対応している
 
-■ QGraphicsView (JustifiedGraphicsView) の注意点
-- JustifiedGraphicsView は QGraphicsView を継承。parent_scroll プロパティは self を返すので、justified_view.py のスクロール参照はそのまま動作する
+■ QGraphicsView (GridView) の注意点
+- GridView は QGraphicsView を継承。parent_scroll プロパティは self を返すので、grid_view.py のスクロール参照はそのまま動作する
 - index_at_pos() に渡す pos はView座標(widget座標)。内部で mapToScene() してScene座標に変換する
 - rect_select の開始/移動座標は to_scene_pos() でScene座標に変換してから保存する (drawForeground がScene座標で描画するため)
 - FadePixmapItem は setAcceptedMouseButtons(Qt.NoButton) でマウスを受け取らない。イベントはQGraphicsView (Kit.UIMixin) で処理

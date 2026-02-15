@@ -41,7 +41,7 @@ def _preview_mapping(mp: Mapping[str, Any]) -> str:
     return "{ " + ", ".join(parts) + " }"
 
 
-class DictRowWidget(QtWidgets.QFrame):
+class MetaRowWidget(QtWidgets.QFrame):
     rowActivated = QtCore.Signal(int, dict)
 
     def __init__(
@@ -165,7 +165,7 @@ class DictRowWidget(QtWidgets.QFrame):
             except Exception as e:
                 if key not in self._formatter_failed_keys:
                     self._formatter_failed_keys.add(key)
-                    logger.debug(f'DictRowWidget formatter failed: {key} ({e})')
+                    logger.debug(f'MetaRowWidget formatter failed: {key} ({e})')
 
         if value is None:
             return "—"
@@ -241,7 +241,7 @@ class DictRowWidget(QtWidgets.QFrame):
             self._build()
 
 
-class DictListWidget(QtWidgets.QWidget):
+class MetaListWidget(QtWidgets.QWidget):
     rowActivated = QtCore.Signal(int, dict)
 
     def __init__(
@@ -284,13 +284,13 @@ class DictListWidget(QtWidgets.QWidget):
             for idx, it in enumerate(new_items):
                 self._items[idx] = it
                 w = self._layout.itemAt(idx).widget()
-                if isinstance(w, DictRowWidget):
+                if isinstance(w, MetaRowWidget):
                     w.update_data(it)
             return
         self.clear()
         self._items = new_items
         for idx, it in enumerate(self._items):
-            row = DictRowWidget(
+            row = MetaRowWidget(
                 idx,
                 it,
                 key_names=self._key_names,
@@ -315,7 +315,7 @@ class DictListWidget(QtWidgets.QWidget):
     def add_item(self, item: Mapping[str, Any]) -> None:
         idx = len(self._items)
         self._items.append(dict(item))
-        row = DictRowWidget(
+        row = MetaRowWidget(
             idx,
             self._items[-1],
             key_names=self._key_names,
@@ -331,5 +331,5 @@ class DictListWidget(QtWidgets.QWidget):
             return
         self._items[index] = dict(item)
         w = self._layout.itemAt(index).widget()  # type: ignore[assignment]
-        if isinstance(w, DictRowWidget):
+        if isinstance(w, MetaRowWidget):
             w.update_data(self._items[index])

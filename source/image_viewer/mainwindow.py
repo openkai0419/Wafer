@@ -6,11 +6,11 @@ from ..db.setting_db import SettingDB
 from ..lang.manager import TranslatorMixin
 from ..qt.debounce import qt_debounce
 from ..zmq.node import Node
-from .viewer.justifiedwidget import JustifiedGraphicsView
+from .viewer.grid_view import GridView
 from .viewer.items import ViewerItems
 from .commands.window_commands import restore_always_on_top
-from .shower.data_model import DataViewModel
-from .shower.data_viewer import ViewerWidget
+from .shower.file_model import FileViewModel
+from .shower.file_viewer import FileViewerWidget
 from .viewer_settings import main_setting
 from .widgets.button_bar import IconButtonBar, IconButtonConfig
 from .widgets.foldertree import LazyFolderTreeView
@@ -185,7 +185,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.mid_layout.addWidget(self.search_row_widget)
 
         self.items = ViewerItems(self)
-        self.content = JustifiedGraphicsView(self, self.items)
+        self.content = GridView(self, self.items)
         self.content.verticalScrollBar().setSingleStep(25)
         self.content.horizontalScrollBar().setSingleStep(25)
         self.content.base_height_changed.connect(self._on_zoom_changed)
@@ -198,13 +198,13 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.right_layout.setContentsMargins(uipx(0), uipx(12), uipx(8), uipx(8))
         self.right_layout.setSpacing(0)
 
-        self.data_model = DataViewModel(dbpath_getter=lambda: self.dbpath, parent=self)
-        self.data_shower = ViewerWidget(self.data_model, self)
-        UI.register_instance("ViewerWidget", self.data_shower)
-        UI.register_instance("DataViewModel", self.data_model)
+        self.file_model = FileViewModel(dbpath_getter=lambda: self.dbpath, parent=self)
+        self.file_viewer = FileViewerWidget(self.file_model, self)
+        UI.register_instance("FileViewerWidget", self.file_viewer)
+        UI.register_instance("FileViewModel", self.file_model)
         UI.register_instance("ViewerItems", self.items)
         
-        self.right_layout.addWidget(self.data_shower)
+        self.right_layout.addWidget(self.file_viewer)
 
         self.splitter.addWidget(right_panel)
 
@@ -308,7 +308,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         keep_scroll = not getattr(self, '_folder_changed', False)
         self._folder_changed = False
         self.content.set_paths(paths, sources, aspects, keep_scroll=keep_scroll)
-        self.data_model.set_items(paths, sources)
+        self.file_model.set_items(paths, sources)
         if self.run_folder:
             self.search_row_widget.run_folder_worker(self.dbpath, self.folder_view.get_selected_paths())
             self.run_folder = False

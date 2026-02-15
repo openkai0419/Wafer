@@ -11,34 +11,34 @@ from ...os.save import drop_files_with_ui
 from ...qt.pixmap import PixmapFactory
 
 
-INTERNAL_MIME_FLAG = b"application/x-jvscroll-internal" + f"{os.getpid()}".encode()
+INTERNAL_MIME_FLAG = b"application/x-gridview-internal" + f"{os.getpid()}".encode()
 
 ORIENTATION_CHOICES = ["Z(↘)", "S(↙)", "И(↘)", "N(↙)"]
-_ORIENTATION_MAP = {f"jv.orientation_{k}": k for k in ORIENTATION_CHOICES}
+_ORIENTATION_MAP = {f"grid.orientation_{k}": k for k in ORIENTATION_CHOICES}
 _ORIENTATION_INDEX = {"Z(↘)": 0, "S(↙)": 1, "И(↘)": 2, "N(↙)": 3}
 
 
-class JustifiedViewCommands(Kit.MenuBase):
-    prefix = "JustifiedView"
+class GridViewCommands(Kit.MenuBase):
+    prefix = "GridView"
 
     @staticmethod
     def get_view(ctx):
-        return ctx.get_instance("JustifiedView")
+        return ctx.get_instance("GridView")
 
     @staticmethod
     def get_items(ctx):
         items = ctx.get_instance("ViewerItems")
-        return items or JustifiedViewCommands.get_view(ctx).items
+        return items or GridViewCommands.get_view(ctx).items
 
     @staticmethod
     def get_shower(ctx):
-        return ctx.get_instance("ViewerWidget")
+        return ctx.get_instance("FileViewerWidget")
 
     @staticmethod
     def _resolve_index(ctx, index: int | None) -> tuple[int, str] | None:
         if index is None:
             return None
-        items = JustifiedViewCommands.get_items(ctx)
+        items = GridViewCommands.get_items(ctx)
         idx = int(index)
         path = items.path_at(idx)
         if not path:
@@ -47,25 +47,25 @@ class JustifiedViewCommands(Kit.MenuBase):
 
     @staticmethod
     def _show_index(ctx, index: int | None):
-        resolved = JustifiedViewCommands._resolve_index(ctx, index)
+        resolved = GridViewCommands._resolve_index(ctx, index)
         if resolved is None:
             return
         _, path = resolved
-        JustifiedViewCommands.get_shower(ctx).set_path(path)
+        GridViewCommands.get_shower(ctx).set_path(path)
 
     @staticmethod
     def _scroll_to_index(ctx, index: int | None):
-        resolved = JustifiedViewCommands._resolve_index(ctx, index)
+        resolved = GridViewCommands._resolve_index(ctx, index)
         if resolved is None:
             return
         idx, _ = resolved
-        view = JustifiedViewCommands.get_view(ctx)
+        view = GridViewCommands.get_view(ctx)
         view.reinstall_scroll_index(int(idx), animated=True)
 
     @staticmethod
     def click_select_at_pos(ctx):
-        view = JustifiedViewCommands.get_view(ctx)
-        items = JustifiedViewCommands.get_items(ctx)
+        view = GridViewCommands.get_view(ctx)
+        items = GridViewCommands.get_items(ctx)
         idx = view.index_at_pos(ctx.pos)
         if idx is None:
             return
@@ -79,8 +79,8 @@ class JustifiedViewCommands(Kit.MenuBase):
 
     @staticmethod
     def select_at_pos(ctx):
-        view = JustifiedViewCommands.get_view(ctx)
-        items = JustifiedViewCommands.get_items(ctx)
+        view = GridViewCommands.get_view(ctx)
+        items = GridViewCommands.get_items(ctx)
         idx = view.index_at_pos(ctx.pos)
         if idx is None:
             return
@@ -88,8 +88,8 @@ class JustifiedViewCommands(Kit.MenuBase):
 
     @staticmethod
     def toggle_at_pos(ctx):
-        view = JustifiedViewCommands.get_view(ctx)
-        items = JustifiedViewCommands.get_items(ctx)
+        view = GridViewCommands.get_view(ctx)
+        items = GridViewCommands.get_items(ctx)
         idx = view.index_at_pos(ctx.pos)
         if idx is None:
             return
@@ -97,8 +97,8 @@ class JustifiedViewCommands(Kit.MenuBase):
 
     @staticmethod
     def range_select_at_pos(ctx):
-        view = JustifiedViewCommands.get_view(ctx)
-        items = JustifiedViewCommands.get_items(ctx)
+        view = GridViewCommands.get_view(ctx)
+        items = GridViewCommands.get_items(ctx)
         idx = view.index_at_pos(ctx.pos)
         if idx is None:
             return
@@ -114,22 +114,22 @@ class JustifiedViewCommands(Kit.MenuBase):
 
     @staticmethod
     def show_at_pos(ctx):
-        view = JustifiedViewCommands.get_view(ctx)
-        items = JustifiedViewCommands.get_items(ctx)
+        view = GridViewCommands.get_view(ctx)
+        items = GridViewCommands.get_items(ctx)
         idx = view.index_at_pos(ctx.pos)
         if idx is None:
             return
         idx = int(idx)
-        JustifiedViewCommands._show_index(ctx, idx)
+        GridViewCommands._show_index(ctx, idx)
 
     @staticmethod
     def show_selected(ctx):
-        items = JustifiedViewCommands.get_items(ctx)
-        JustifiedViewCommands._show_index(ctx, items.last_selected_index())
+        items = GridViewCommands.get_items(ctx)
+        GridViewCommands._show_index(ctx, items.last_selected_index())
 
     @staticmethod
     def select_all(ctx):
-        items = JustifiedViewCommands.get_items(ctx)
+        items = GridViewCommands.get_items(ctx)
         n = items.count()
         if n <= 0:
             items.clear_selection()
@@ -138,11 +138,11 @@ class JustifiedViewCommands(Kit.MenuBase):
 
     @staticmethod
     def clear_selection(ctx):
-        JustifiedViewCommands.get_items(ctx).clear_selection()
+        GridViewCommands.get_items(ctx).clear_selection()
 
     @staticmethod
     def _scroll_by_wheel(ctx, direction: int):
-        view = JustifiedViewCommands.get_view(ctx)
+        view = GridViewCommands.get_view(ctx)
         scroll = getattr(view, "parent_scroll", None)
         if scroll is None or not hasattr(scroll, "_primary_bar"):
             return
@@ -163,12 +163,12 @@ class JustifiedViewCommands(Kit.MenuBase):
     @staticmethod
     def wheel_scroll_up(ctx, multiplier: int = 4):
         ctx.put("multiplier", int(multiplier))
-        JustifiedViewCommands._scroll_by_wheel(ctx, -1)
+        GridViewCommands._scroll_by_wheel(ctx, -1)
 
     @staticmethod
     def wheel_scroll_down(ctx, multiplier: int = 4):
         ctx.put("multiplier", int(multiplier))
-        JustifiedViewCommands._scroll_by_wheel(ctx, 1)
+        GridViewCommands._scroll_by_wheel(ctx, 1)
 
     @staticmethod
     def _clamp(v: int, lo: int, hi: int) -> int:
@@ -176,10 +176,10 @@ class JustifiedViewCommands(Kit.MenuBase):
 
     @staticmethod
     def set_scale(ctx, height: int):
-        view = JustifiedViewCommands.get_view(ctx)
+        view = GridViewCommands.get_view(ctx)
         lo = getattr(view, "min_height", 1)
         hi = getattr(view, "max_height", max(int(lo), 1))
-        h = JustifiedViewCommands._clamp(int(height), int(lo), int(hi))
+        h = GridViewCommands._clamp(int(height), int(lo), int(hi))
         if int(getattr(view, "base_height", 0)) == h:
             return
         view.base_height = h
@@ -188,17 +188,17 @@ class JustifiedViewCommands(Kit.MenuBase):
 
     @staticmethod
     def scale_up(ctx, ratio: float = 1.1):
-        view = JustifiedViewCommands.get_view(ctx)
+        view = GridViewCommands.get_view(ctx)
         cur = int(getattr(view, "base_height", 0) or 0)
         if cur <= 0:
             return
         steps = int(ctx.get("wheel_steps") or 1)
         r = float(ratio) ** float(max(1, steps))
-        JustifiedViewCommands.set_scale(ctx, int(cur * r))
+        GridViewCommands.set_scale(ctx, int(cur * r))
 
     @staticmethod
     def scale_down(ctx, ratio: float = 1.1):
-        view = JustifiedViewCommands.get_view(ctx)
+        view = GridViewCommands.get_view(ctx)
         cur = int(getattr(view, "base_height", 0) or 0)
         if cur <= 0:
             return
@@ -207,19 +207,19 @@ class JustifiedViewCommands(Kit.MenuBase):
             return
         steps = int(ctx.get("wheel_steps") or 1)
         rr = float(r) ** float(max(1, steps))
-        JustifiedViewCommands.set_scale(ctx, int(cur / rr))
+        GridViewCommands.set_scale(ctx, int(cur / rr))
 
     @staticmethod
     def scale_reset(ctx):
-        view = JustifiedViewCommands.get_view(ctx)
+        view = GridViewCommands.get_view(ctx)
         w = getattr(view, "screen_width", None)
         if w is None:
             return
-        JustifiedViewCommands.set_scale(ctx, int(int(w) / 10))
+        GridViewCommands.set_scale(ctx, int(int(w) / 10))
 
     @staticmethod
     def toggle_autoscroll(ctx):
-        view = JustifiedViewCommands.get_view(ctx)
+        view = GridViewCommands.get_view(ctx)
         scroll = getattr(view, "parent_scroll", None)
         if scroll is None:
             return
@@ -231,44 +231,44 @@ class JustifiedViewCommands(Kit.MenuBase):
 
     @staticmethod
     def move_to_next_row(ctx):
-        view = JustifiedViewCommands.get_view(ctx)
+        view = GridViewCommands.get_view(ctx)
         view.scroll_to_next_row(animated=True)
 
     @staticmethod
     def move_to_prev_row(ctx):
-        view = JustifiedViewCommands.get_view(ctx)
+        view = GridViewCommands.get_view(ctx)
         view.scroll_to_prev_row(animated=True)
 
     @staticmethod
     def set_scroll_anchor_top(ctx):
-        Command.set_action_group_current('jv_scroll_anchor', 'jv.scroll_anchor_top')
+        Command.set_action_group_current('grid_scroll_anchor', 'grid.scroll_anchor_top')
 
     @staticmethod
     def set_scroll_anchor_center(ctx):
-        Command.set_action_group_current('jv_scroll_anchor', 'jv.scroll_anchor_center')
+        Command.set_action_group_current('grid_scroll_anchor', 'grid.scroll_anchor_center')
 
     @staticmethod
     def set_orientation_z(ctx):
-        Command.set_action_group_current('jv_orientation', 'jv.orientation_z')
-        view = JustifiedViewCommands.get_view(ctx)
+        Command.set_action_group_current('grid_orientation', 'grid.orientation_z')
+        view = GridViewCommands.get_view(ctx)
         view.set_orientation(0)
 
     @staticmethod
     def set_orientation_reverse_z(ctx):
-        Command.set_action_group_current('jv_orientation', 'jv.orientation_reverse_z')
-        view = JustifiedViewCommands.get_view(ctx)
+        Command.set_action_group_current('grid_orientation', 'grid.orientation_reverse_z')
+        view = GridViewCommands.get_view(ctx)
         view.set_orientation(1)
 
     @staticmethod
     def set_orientation_n(ctx):
-        Command.set_action_group_current('jv_orientation', 'jv.orientation_n')
-        view = JustifiedViewCommands.get_view(ctx)
+        Command.set_action_group_current('grid_orientation', 'grid.orientation_n')
+        view = GridViewCommands.get_view(ctx)
         view.set_orientation(2)
 
     @staticmethod
     def set_orientation_reverse_n(ctx):
-        Command.set_action_group_current('jv_orientation', 'jv.orientation_reverse_n')
-        view = JustifiedViewCommands.get_view(ctx)
+        Command.set_action_group_current('grid_orientation', 'grid.orientation_reverse_n')
+        view = GridViewCommands.get_view(ctx)
         view.set_orientation(3)
 
     @staticmethod
@@ -277,7 +277,7 @@ class JustifiedViewCommands(Kit.MenuBase):
         if not enabled:
             return
         sm = ActionGroupStateManager()
-        current = sm.get_current('jv_orientation')
+        current = sm.get_current('grid_orientation')
         current_key = _ORIENTATION_MAP.get(current)
         step = -1 if reverse else 1
         try:
@@ -285,59 +285,59 @@ class JustifiedViewCommands(Kit.MenuBase):
             next_key = enabled[(idx + step) % len(enabled)]
         except (ValueError, IndexError):
             next_key = enabled[-1 if reverse else 0]
-        cmd_id = f"jv.orientation_{next_key}"
-        sm.set_current('jv_orientation', cmd_id)
-        view = JustifiedViewCommands.get_view(ctx)
+        cmd_id = f"grid.orientation_{next_key}"
+        sm.set_current('grid_orientation', cmd_id)
+        view = GridViewCommands.get_view(ctx)
         view.set_orientation(_ORIENTATION_INDEX[next_key])
 
     commands = [
-        ":JustifiedView",
+        ":GridView",
         "-",
         ":Selection",
-        Kit.Command(path="jv.click_select_at_pos", display="Click Select", func=click_select_at_pos),
-        Kit.Command(path="jv.toggle_at_pos", display="Toggle Select", func=toggle_at_pos),
-        Kit.Command(path="jv.range_select_at_pos", display="Range Select", func=range_select_at_pos),
-        Kit.Command(path="jv.select_at_pos", display="Select", func=select_at_pos, hidden=True),
-        Kit.Command(path="jv.select_all", display="Select All", func=select_all),
-        Kit.Command(path="jv.clear_selection", display="Clear Selection", func=clear_selection),
+        Kit.Command(path="grid.click_select_at_pos", display="Click Select", func=click_select_at_pos),
+        Kit.Command(path="grid.toggle_at_pos", display="Toggle Select", func=toggle_at_pos),
+        Kit.Command(path="grid.range_select_at_pos", display="Range Select", func=range_select_at_pos),
+        Kit.Command(path="grid.select_at_pos", display="Select", func=select_at_pos, hidden=True),
+        Kit.Command(path="grid.select_all", display="Select All", func=select_all),
+        Kit.Command(path="grid.clear_selection", display="Clear Selection", func=clear_selection),
         "-",
         ":Viewer",
-        Kit.Command(path="jv.show_at_pos", display="Show at Pos", func=show_at_pos),
-        Kit.Command(path="jv.show_selected", display="Show Selected", func=show_selected),
+        Kit.Command(path="grid.show_at_pos", display="Show at Pos", func=show_at_pos),
+        Kit.Command(path="grid.show_selected", display="Show Selected", func=show_selected),
         "-",
         ":Scroll",
-        Kit.Command(path="jv.scroll_up", display="Scroll Up", func=wheel_scroll_up, params=[Kit.Param(name="multiplier", value=1.5)]),
-        Kit.Command(path="jv.scroll_down", display="Scroll Down", func=wheel_scroll_down, params=[Kit.Param(name="multiplier", value=1.5)]),
-        Kit.Command(path="jv.move_to_next_row", display="Next Row", func=move_to_next_row),
-        Kit.Command(path="jv.move_to_prev_row", display="Prev Row", func=move_to_prev_row),
+        Kit.Command(path="grid.scroll_up", display="Scroll Up", func=wheel_scroll_up, params=[Kit.Param(name="multiplier", value=1.5)]),
+        Kit.Command(path="grid.scroll_down", display="Scroll Down", func=wheel_scroll_down, params=[Kit.Param(name="multiplier", value=1.5)]),
+        Kit.Command(path="grid.move_to_next_row", display="Next Row", func=move_to_next_row),
+        Kit.Command(path="grid.move_to_prev_row", display="Prev Row", func=move_to_prev_row),
         "-",
         ":Settings",
         "Scroll Anchor/:Scroll Anchor",
-        Kit.Command(path="Scroll Anchor/jv.scroll_anchor_top", display="Top", func=set_scroll_anchor_top, checkable=True, action_group="jv_scroll_anchor"),
-        Kit.Command(path="Scroll Anchor/jv.scroll_anchor_center", display="Center", func=set_scroll_anchor_center, checkable=True, default_checked=True, action_group="jv_scroll_anchor"),
+        Kit.Command(path="Scroll Anchor/grid.scroll_anchor_top", display="Top", func=set_scroll_anchor_top, checkable=True, action_group="grid_scroll_anchor"),
+        Kit.Command(path="Scroll Anchor/grid.scroll_anchor_center", display="Center", func=set_scroll_anchor_center, checkable=True, default_checked=True, action_group="grid_scroll_anchor"),
         "Layout/:Layout",
-        Kit.Command(path="Layout/jv.orientation_z", display="Z (↘)", func=set_orientation_z, checkable=True, default_checked=True, action_group="jv_orientation"),
-        Kit.Command(path="Layout/jv.orientation_reverse_z", display="S (↙)", func=set_orientation_reverse_z, checkable=True, action_group="jv_orientation"),
-        Kit.Command(path="Layout/jv.orientation_n", display="И (↘)", func=set_orientation_n, checkable=True, action_group="jv_orientation"),
-        Kit.Command(path="Layout/jv.orientation_reverse_n", display="N (↙)", func=set_orientation_reverse_n, checkable=True, action_group="jv_orientation"),
+        Kit.Command(path="Layout/grid.orientation_z", display="Z (↘)", func=set_orientation_z, checkable=True, default_checked=True, action_group="grid_orientation"),
+        Kit.Command(path="Layout/grid.orientation_reverse_z", display="S (↙)", func=set_orientation_reverse_z, checkable=True, action_group="grid_orientation"),
+        Kit.Command(path="Layout/grid.orientation_n", display="И (↘)", func=set_orientation_n, checkable=True, action_group="grid_orientation"),
+        Kit.Command(path="Layout/grid.orientation_reverse_n", display="N (↙)", func=set_orientation_reverse_n, checkable=True, action_group="grid_orientation"),
         Kit.Command(
-            path="jv.cycle_orientation", display="Cycle Orientation", func=cycle_orientation,
+            path="grid.cycle_orientation", display="Cycle Orientation", func=cycle_orientation,
             params=[Kit.Param(name=k, value=True) for k in ORIENTATION_CHOICES] + [Kit.Param(name="reverse", value=False)],
         ),
         "-",
         ":Scale",
-        Kit.Command(path="jv.scale_up", display="Scale Up", func=scale_up, params=[Kit.Param(name="ratio", value=1.1)]),
-        Kit.Command(path="jv.scale_down", display="Scale Down", func=scale_down, params=[Kit.Param(name="ratio", value=1.1)]),
-        Kit.Command(path="jv.set_scale", display="Set Scale", func=set_scale, params=[Kit.Param(name="height", value=500)]),
-        Kit.Command(path="jv.scale_reset", display="Reset Scale", func=scale_reset),
+        Kit.Command(path="grid.scale_up", display="Scale Up", func=scale_up, params=[Kit.Param(name="ratio", value=1.1)]),
+        Kit.Command(path="grid.scale_down", display="Scale Down", func=scale_down, params=[Kit.Param(name="ratio", value=1.1)]),
+        Kit.Command(path="grid.set_scale", display="Set Scale", func=set_scale, params=[Kit.Param(name="height", value=500)]),
+        Kit.Command(path="grid.scale_reset", display="Reset Scale", func=scale_reset),
         "-",
-        Kit.Command(path="jv.toggle_autoscroll", display="AutoScroll", func=toggle_autoscroll),
+        Kit.Command(path="grid.toggle_autoscroll", display="AutoScroll", func=toggle_autoscroll),
         "-",
     ]
 
 
-class JustifiedViewDragCommands(Kit.DragMenuBase):
-    prefix = "JustifiedView"
+class GridViewDragCommands(Kit.DragMenuBase):
+    prefix = "GridView"
 
     @staticmethod
     def _noop(ctx):
@@ -345,8 +345,8 @@ class JustifiedViewDragCommands(Kit.DragMenuBase):
 
     @staticmethod
     def drag_files_start(ctx):
-        view = JustifiedViewCommands.get_view(ctx)
-        items = JustifiedViewCommands.get_items(ctx)
+        view = GridViewCommands.get_view(ctx)
+        items = GridViewCommands.get_items(ctx)
         pos = ctx.pos
         index = view.index_at_pos(pos)
         if index is None:
@@ -428,57 +428,57 @@ class JustifiedViewDragCommands(Kit.DragMenuBase):
 
     @staticmethod
     def rect_select_move(ctx):
-        JustifiedViewDragCommands._rect_select_move(JustifiedViewCommands.get_view(ctx), ctx.pos)
+        GridViewDragCommands._rect_select_move(GridViewCommands.get_view(ctx), ctx.pos)
 
     @staticmethod
     def rect_select_end(ctx):
-        JustifiedViewDragCommands._rect_select_end(JustifiedViewCommands.get_view(ctx), JustifiedViewCommands.get_items(ctx))
+        GridViewDragCommands._rect_select_end(GridViewCommands.get_view(ctx), GridViewCommands.get_items(ctx))
     commands = [
         Kit.Command(
-            path="jv.drag_files",
+            path="grid.drag_files",
             display="Drag Files",
             category="drag",
             drag_callbacks={"start": drag_files_start, "move": _noop, "end": _noop},
-            target_widgets=["JustifiedView"],
+            target_widgets=["GridView"],
         ),
         Kit.Command(
-            path="jv.rect_select_replace",
+            path="grid.rect_select_replace",
             display="Rect Select Replace",
             category="drag",
             drag_callbacks={
-                "start": lambda ctx: JustifiedViewDragCommands._rect_select_start(JustifiedViewCommands.get_view(ctx), "replace", ctx.pos),
+                "start": lambda ctx: GridViewDragCommands._rect_select_start(GridViewCommands.get_view(ctx), "replace", ctx.pos),
                 "move": rect_select_move,
                 "end": rect_select_end,
             },
-            target_widgets=["JustifiedView"],
+            target_widgets=["GridView"],
         ),
         Kit.Command(
-            path="jv.rect_select_add",
+            path="grid.rect_select_add",
             display="Rect Select Add",
             category="drag",
             drag_callbacks={
-                "start": lambda ctx: JustifiedViewDragCommands._rect_select_start(JustifiedViewCommands.get_view(ctx), "add", ctx.pos),
+                "start": lambda ctx: GridViewDragCommands._rect_select_start(GridViewCommands.get_view(ctx), "add", ctx.pos),
                 "move": rect_select_move,
                 "end": rect_select_end,
             },
-            target_widgets=["JustifiedView"],
+            target_widgets=["GridView"],
         ),
         Kit.Command(
-            path="jv.rect_select_remove",
+            path="grid.rect_select_remove",
             display="Rect Select Remove",
             category="drag",
             drag_callbacks={
-                "start": lambda ctx: JustifiedViewDragCommands._rect_select_start(JustifiedViewCommands.get_view(ctx), "remove", ctx.pos),
+                "start": lambda ctx: GridViewDragCommands._rect_select_start(GridViewCommands.get_view(ctx), "remove", ctx.pos),
                 "move": rect_select_move,
                 "end": rect_select_end,
             },
-            target_widgets=["JustifiedView"],
+            target_widgets=["GridView"],
         ),
     ]
 
 
-class JustifiedViewDropCommands(Kit.DragMenuBase):
-    prefix = "JustifiedView"
+class GridViewDropCommands(Kit.DragMenuBase):
+    prefix = "GridView"
 
     @staticmethod
     def _apply_drop_action(ctx, op: str) -> None:
@@ -537,12 +537,12 @@ class JustifiedViewDropCommands(Kit.DragMenuBase):
 
     @staticmethod
     def _drop_target_dir_from_hover(ctx, view, items) -> str | None:
-        idx = JustifiedViewDropCommands._hover_index(ctx, view)
+        idx = GridViewDropCommands._hover_index(ctx, view)
         if idx is not None:
             p = items.path_at(idx)
             if p:
                 return os.path.dirname(os.path.abspath(str(p)))
-        return JustifiedViewDropCommands._drop_target_dir(ctx, view)
+        return GridViewDropCommands._drop_target_dir(ctx, view)
 
     @staticmethod
     def _preview_clear(view):
@@ -555,22 +555,22 @@ class JustifiedViewDropCommands(Kit.DragMenuBase):
     def _preview_update(ctx, view, items, op: str):
         event = ctx.get_event()
         if event is None:
-            JustifiedViewDropCommands._preview_clear(view)
+            GridViewDropCommands._preview_clear(view)
             return
         mime = event.mimeData()
         if mime is None or mime.hasFormat(INTERNAL_MIME_FLAG.decode()):
-            JustifiedViewDropCommands._preview_clear(view)
+            GridViewDropCommands._preview_clear(view)
             return
-        idx = JustifiedViewDropCommands._hover_index(ctx, view)
+        idx = GridViewDropCommands._hover_index(ctx, view)
         if idx is None:
-            JustifiedViewDropCommands._preview_clear(view)
+            GridViewDropCommands._preview_clear(view)
             return
         if not (0 <= idx < len(view.rects)):
-            JustifiedViewDropCommands._preview_clear(view)
+            GridViewDropCommands._preview_clear(view)
             return
-        dst_dir = JustifiedViewDropCommands._drop_target_dir_from_hover(ctx, view, items)
+        dst_dir = GridViewDropCommands._drop_target_dir_from_hover(ctx, view, items)
         if not dst_dir:
-            JustifiedViewDropCommands._preview_clear(view)
+            GridViewDropCommands._preview_clear(view)
             return
         r = view.rects[idx]
         view._drop_preview_rect = r
@@ -580,27 +580,27 @@ class JustifiedViewDropCommands(Kit.DragMenuBase):
 
     @staticmethod
     def _enter(ctx, *, op: str, on_conflict: str = "rename"):
-        JustifiedViewDropCommands._preview_update(ctx, JustifiedViewCommands.get_view(ctx), JustifiedViewCommands.get_items(ctx), op)
+        GridViewDropCommands._preview_update(ctx, GridViewCommands.get_view(ctx), GridViewCommands.get_items(ctx), op)
 
     @staticmethod
     def _move(ctx, *, op: str, on_conflict: str = "rename"):
-        JustifiedViewDropCommands._preview_update(ctx, JustifiedViewCommands.get_view(ctx), JustifiedViewCommands.get_items(ctx), op)
+        GridViewDropCommands._preview_update(ctx, GridViewCommands.get_view(ctx), GridViewCommands.get_items(ctx), op)
 
     @staticmethod
     def _leave(ctx, *, op: str, on_conflict: str = "rename"):
-        JustifiedViewDropCommands._preview_clear(JustifiedViewCommands.get_view(ctx))
+        GridViewDropCommands._preview_clear(GridViewCommands.get_view(ctx))
 
     @staticmethod
     def _save(ctx, *, op: str, on_conflict: str = "rename"):
         event = ctx.get_event()
         if event is None:
             return
-        view = JustifiedViewCommands.get_view(ctx)
-        items = JustifiedViewCommands.get_items(ctx)
-        dst_dir = JustifiedViewDropCommands._drop_target_dir_from_hover(ctx, view, items)
+        view = GridViewCommands.get_view(ctx)
+        items = GridViewCommands.get_items(ctx)
+        dst_dir = GridViewDropCommands._drop_target_dir_from_hover(ctx, view, items)
         if not dst_dir:
             return
-        src_items = JustifiedViewDropCommands._extract_items(event)
+        src_items = GridViewDropCommands._extract_items(event)
         if not src_items:
             return
 
@@ -610,35 +610,35 @@ class JustifiedViewDropCommands(Kit.DragMenuBase):
             raise ValueError(f"Invalid on_conflict: {on_conflict}")
 
         drop_files_with_ui(src_items, dst_dir, op, overwrite_mode=on_conflict, parent=view)
-        JustifiedViewDropCommands._preview_clear(view)
+        GridViewDropCommands._preview_clear(view)
 
     commands = [
         Kit.Command(
-            path="jv.drop_files_copy",
+            path="grid.drop_files_copy",
             display="Drop Files (Copy)",
             category="drop",
             params=[Kit.Param(name="on_conflict", value=("ask", "overwrite", "rename", "skip"))],
             drop_acceptor=accept_external_drop,
             drop_callbacks={
-                "enter": lambda ctx, on_conflict="rename": JustifiedViewDropCommands._enter(ctx, op="copy", on_conflict=on_conflict),
-                "move": lambda ctx, on_conflict="rename": JustifiedViewDropCommands._move(ctx, op="copy", on_conflict=on_conflict),
-                "leave": lambda ctx, on_conflict="rename": JustifiedViewDropCommands._leave(ctx, op="copy", on_conflict=on_conflict),
-                "drop": lambda ctx, on_conflict="rename": JustifiedViewDropCommands._save(ctx, op="copy", on_conflict=on_conflict),
+                "enter": lambda ctx, on_conflict="rename": GridViewDropCommands._enter(ctx, op="copy", on_conflict=on_conflict),
+                "move": lambda ctx, on_conflict="rename": GridViewDropCommands._move(ctx, op="copy", on_conflict=on_conflict),
+                "leave": lambda ctx, on_conflict="rename": GridViewDropCommands._leave(ctx, op="copy", on_conflict=on_conflict),
+                "drop": lambda ctx, on_conflict="rename": GridViewDropCommands._save(ctx, op="copy", on_conflict=on_conflict),
             },
-            target_widgets=["JustifiedView"],
+            target_widgets=["GridView"],
         ),
         Kit.Command(
-            path="jv.drop_files_move",
+            path="grid.drop_files_move",
             display="Drop Files (Move)",
             category="drop",
             params=[Kit.Param(name="on_conflict", value=("ask", "overwrite", "rename", "skip"))],
             drop_acceptor=accept_external_drop,
             drop_callbacks={
-                "enter": lambda ctx, on_conflict="rename": JustifiedViewDropCommands._enter(ctx, op="move", on_conflict=on_conflict),
-                "move": lambda ctx, on_conflict="rename": JustifiedViewDropCommands._move(ctx, op="move", on_conflict=on_conflict),
-                "leave": lambda ctx, on_conflict="rename": JustifiedViewDropCommands._leave(ctx, op="move", on_conflict=on_conflict),
-                "drop": lambda ctx, on_conflict="rename": JustifiedViewDropCommands._save(ctx, op="move", on_conflict=on_conflict),
+                "enter": lambda ctx, on_conflict="rename": GridViewDropCommands._enter(ctx, op="move", on_conflict=on_conflict),
+                "move": lambda ctx, on_conflict="rename": GridViewDropCommands._move(ctx, op="move", on_conflict=on_conflict),
+                "leave": lambda ctx, on_conflict="rename": GridViewDropCommands._leave(ctx, op="move", on_conflict=on_conflict),
+                "drop": lambda ctx, on_conflict="rename": GridViewDropCommands._save(ctx, op="move", on_conflict=on_conflict),
             },
-            target_widgets=["JustifiedView"],
+            target_widgets=["GridView"],
         ),
     ]

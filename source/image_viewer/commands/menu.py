@@ -4,9 +4,9 @@ from ...os.folders import show_in_explorer
 
 from .file_commands import FileCommands
 from .foldertree_view import FolderTreeCommands, show_context_menu
-from .graphics_view import GraphicsViewCommands, GraphicsViewDragCommands
+from .image_view import ImageViewCommands, ImageViewDragCommands
 from .file_viewer import FileViewerCommands
-from .justified_view import JustifiedViewCommands, JustifiedViewDragCommands, JustifiedViewDropCommands
+from .grid_view import GridViewCommands, GridViewDragCommands, GridViewDropCommands
 from .window_commands import WindowCommands
 from .query_commands import QueryCommands
 from .database_commands import DatabaseCommands
@@ -19,7 +19,7 @@ class MenuMenu(Kit.MenuBase):
         "debug/:Debug",
         Kit.Command(path="debug/printCtx", display="Print Ctx", func=lambda ctx: (ctx.print_debug())),
         "menus/:Menus",
-        Kit.Command(path="menus/showgraphicsviewmenu", display="Graphics View Menu", func=lambda ctx: Menu.exec_menu(GraphicsViewCommands.prefix, ctx)),
+        Kit.Command(path="menus/showimageviewmenu", display="Image View Menu", func=lambda ctx: Menu.exec_menu(ImageViewCommands.prefix, ctx)),
         Kit.Command(path="menus/showfilemenu",  display="File View Menu", func=lambda ctx: Menu.exec_menu(FileCommands.prefix, ctx)),
         Kit.Command(path="menus/showfoldertreemenu", display="Folder Tree Menu", func=lambda ctx: show_context_menu(ctx)),
         "binding/:Binding",
@@ -38,12 +38,12 @@ class MenuMenu(Kit.MenuBase):
         FileCommands.register()
         QueryCommands.register()
         FolderTreeCommands.register()
-        JustifiedViewCommands.register()
-        JustifiedViewDragCommands.register()
-        JustifiedViewDropCommands.register()
+        GridViewCommands.register()
+        GridViewDragCommands.register()
+        GridViewDropCommands.register()
         FileViewerCommands.register()
-        GraphicsViewCommands.register()
-        GraphicsViewDragCommands.register()
+        ImageViewCommands.register()
+        ImageViewDragCommands.register()
         DatabaseCommands.register()
         WindowCommands.register()
         MenuMenu.register()

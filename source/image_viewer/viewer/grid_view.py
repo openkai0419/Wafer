@@ -15,7 +15,7 @@ from .sizechecker import SizeMismatchChecker
 from ...actions.bridge import Kit
 
 
-class JustifiedGraphicsView(QtWidgets.QGraphicsView, Kit.UIMixin):
+class GridView(QtWidgets.QGraphicsView, Kit.UIMixin):
     layout_started = QtCore.Signal()
     layout_ready = QtCore.Signal()
     base_height_changed = QtCore.Signal()
@@ -34,8 +34,8 @@ class JustifiedGraphicsView(QtWidgets.QGraphicsView, Kit.UIMixin):
 
         self.root = root
         self.items = items or ViewerItems(self)
-        self.init_command_binding("JustifiedView", enable_drops=True)
-        self.setObjectName('JustifiedVirtualScrollWidget')
+        self.init_command_binding("GridView", enable_drops=True)
+        self.setObjectName('GridView')
 
         self.rects = LayoutData.empty()
         self.last_selections = []
@@ -371,7 +371,7 @@ class JustifiedGraphicsView(QtWidgets.QGraphicsView, Kit.UIMixin):
 
     def _is_center_anchor(self):
         from ...actions.bridge import Command
-        return Command.get_action_group_current('jv_scroll_anchor') == 'jv.scroll_anchor_center'
+        return Command.get_action_group_current('grid_scroll_anchor') == 'grid.scroll_anchor_center'
 
     def _group_ends(self) -> list[int]:
         return self.rects.group_ends

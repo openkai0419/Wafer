@@ -3,16 +3,16 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from ...actions.bridge import Kit
 
 
-def _get_gv(ctx):
-    return ctx.get_instance("GraphicsView")
+def _get_imgv(ctx):
+    return ctx.get_instance("ImageView")
 
 
 def fit_in_view(ctx, padding: float = 0.0, mode: str | None = None):
-    gv = _get_gv(ctx)
+    gv = _get_imgv(ctx)
     gv.fit_in_view(padding=float(padding), mode=mode)
 
 def toggle_fit_mode(ctx):
-    gv = _get_gv(ctx)
+    gv = _get_imgv(ctx)
     gv.toggle_fit_mode()
     gv.fit_in_view(padding=0.0)
 
@@ -28,24 +28,24 @@ def _zoom(gv, *, base: float, steps: int, pos=None):
 
 
 def zoom_in(ctx, base: float = 1.1):
-    gv = _get_gv(ctx)
+    gv = _get_imgv(ctx)
     _zoom(gv, base=float(base), steps=int(ctx.get("wheel_steps")), pos=ctx.pos)
 
 
 def zoom_out(ctx, base: float = 1.1):
-    gv = _get_gv(ctx)
+    gv = _get_imgv(ctx)
     _zoom(gv, base=float(base) ** -1.0, steps=int(ctx.get("wheel_steps")), pos=ctx.pos)
 
 
 def _pan_start(ctx):
-    gv = _get_gv(ctx)
+    gv = _get_imgv(ctx)
     gv._is_panning = True
     gv._last_pos = ctx.pos
     gv.setCursor(QtCore.Qt.CursorShape.ClosedHandCursor)
 
 
 def _pan_move(ctx):
-    gv = _get_gv(ctx)
+    gv = _get_imgv(ctx)
     if not getattr(gv, "_is_panning", False):
         return
     cur = ctx.pos
@@ -55,18 +55,18 @@ def _pan_move(ctx):
 
 
 def _pan_end(ctx):
-    gv = _get_gv(ctx)
+    gv = _get_imgv(ctx)
     if not getattr(gv, "_is_panning", False):
         return
     gv._is_panning = False
     gv.setCursor(QtCore.Qt.CursorShape.ArrowCursor)
 
-class GraphicsViewCommands(Kit.MenuBase):
-    prefix = "GraphicsView"
+class ImageViewCommands(Kit.MenuBase):
+    prefix = "ImageView"
     commands = [
-        ":GraphicsView",
+        ":ImageView",
         Kit.Command(
-            path="gv.fit_in_view",
+            path="imgv.fit_in_view",
             display="Fit In View",
             func=fit_in_view,
             params=[
@@ -74,16 +74,16 @@ class GraphicsViewCommands(Kit.MenuBase):
                 Kit.Param(name="mode", value=("contain", "cover"), default=None),
             ],
         ),
-        Kit.Command(path="gv.toggle_fit_mode", display="Toggle Fit Mode", func=toggle_fit_mode),
+        Kit.Command(path="imgv.toggle_fit_mode", display="Toggle Fit Mode", func=toggle_fit_mode),
         "-",
         Kit.Command(
-            path="gv.zoom_in",
+            path="imgv.zoom_in",
             display="Zoom In",
             func=zoom_in,
             params=[Kit.Param(name="base", value=1.1)],
         ),
         Kit.Command(
-            path="gv.zoom_out",
+            path="imgv.zoom_out",
             display="Zoom Out",
             func=zoom_out,
             params=[Kit.Param(name="base", value=1.1)],
@@ -91,14 +91,14 @@ class GraphicsViewCommands(Kit.MenuBase):
     ]
 
 
-class GraphicsViewDragCommands(Kit.DragMenuBase):
-    prefix = "GraphicsView"
+class ImageViewDragCommands(Kit.DragMenuBase):
+    prefix = "ImageView"
     commands = [
         Kit.Command(
-            path="gv.pan",
+            path="imgv.pan",
             display="Pan",
             category="drag",
             drag_callbacks={"start": _pan_start, "move": _pan_move, "end": _pan_end},
-            target_widgets=["GraphicsView"],
+            target_widgets=["ImageView"],
         ),
     ]

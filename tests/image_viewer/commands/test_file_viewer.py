@@ -1,5 +1,5 @@
 from source.image_viewer.commands.file_viewer import next_file, prev_file
-from source.image_viewer.shower.data_model import DataViewModel
+from source.image_viewer.shower.file_model import FileViewModel
 
 
 class DummyCtx:
@@ -10,13 +10,13 @@ class DummyCtx:
         return default
 
     def get_instance(self, name, default=None):
-        if name == "DataViewModel":
+        if name == "FileViewModel":
             return self._model
         return default
 
 
 def _make_ctx(paths):
-    model = DataViewModel()
+    model = FileViewModel()
     model.set_items(paths, None)
     return DummyCtx(model), model
 

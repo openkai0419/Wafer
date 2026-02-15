@@ -7,11 +7,11 @@ def test_get_commands_by_category_includes_dot_ids():
     try:
         registry._commands = {}
 
-        base_meta = CommandMeta(id="filerunner.start", display="Base", category="drop", target_widgets=["JustifiedView"])
+        base_meta = CommandMeta(id="filerunner.start", display="Base", category="drop", target_widgets=["GridView"])
 
         registry.register(create_command_from_meta(base_meta))
 
-        out = registry.get_commands_by_category("drop", widget_scope="JustifiedView")
+        out = registry.get_commands_by_category("drop", widget_scope="GridView")
         assert "filerunner.start" in out
     finally:
         registry._commands = prev

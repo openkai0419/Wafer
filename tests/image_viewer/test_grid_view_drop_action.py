@@ -1,7 +1,7 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from source.actions.command.context import CommandContext
-from source.image_viewer.commands.justified_view import JustifiedViewDropCommands
+from source.image_viewer.commands.grid_view import GridViewDropCommands
 
 
 def _drag_enter_event(mime: QtCore.QMimeData) -> QtGui.QDragEnterEvent:
@@ -20,7 +20,7 @@ def test_drop_enter_sets_copy_action(qtbot):
     mime.setUrls([QtCore.QUrl.fromLocalFile(__file__)])
     ev = _drag_enter_event(mime)
     ctx = CommandContext.create(None, None, source="drop", event=ev)
-    JustifiedViewDropCommands._apply_drop_action(ctx, "copy")
+    GridViewDropCommands._apply_drop_action(ctx, "copy")
     assert ev.dropAction() == QtCore.Qt.DropAction.CopyAction
 
 
@@ -30,7 +30,7 @@ def test_drop_enter_sets_move_action(qtbot):
     mime.setUrls([QtCore.QUrl.fromLocalFile(__file__)])
     ev = _drag_enter_event(mime)
     ctx = CommandContext.create(None, None, source="drop", event=ev)
-    JustifiedViewDropCommands._apply_drop_action(ctx, "move")
+    GridViewDropCommands._apply_drop_action(ctx, "move")
     assert ev.dropAction() == QtCore.Qt.DropAction.MoveAction
 
 
@@ -40,5 +40,5 @@ def test_drop_enter_sets_ignore_action(qtbot):
     mime.setUrls([QtCore.QUrl.fromLocalFile(__file__)])
     ev = _drag_enter_event(mime)
     ctx = CommandContext.create(None, None, source="drop", event=ev)
-    JustifiedViewDropCommands._apply_drop_action(ctx, "ignore")
+    GridViewDropCommands._apply_drop_action(ctx, "ignore")
     assert ev.dropAction() == QtCore.Qt.DropAction.IgnoreAction

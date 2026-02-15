@@ -28,17 +28,17 @@ def test_preset_mouse_bindings_content():
     assert data[right_single]["*"].id == "allmenu"
 
     wheel_up = Kit.Mouse("NONE", "WHEEL_UP")
-    assert data[wheel_up]["GraphicsView"].id == "gv.zoom_in"
-    assert data[wheel_up]["JustifiedView"].id == "jv.scroll_up"
+    assert data[wheel_up]["ImageView"].id == "imgv.zoom_in"
+    assert data[wheel_up]["GridView"].id == "grid.scroll_up"
 
     wheel_down = Kit.Mouse("NONE", "WHEEL_DOWN")
-    assert data[wheel_down]["GraphicsView"].id == "gv.zoom_out"
+    assert data[wheel_down]["ImageView"].id == "imgv.zoom_out"
 
     dbl = Kit.Mouse("LEFT", "DOUBLE")
-    assert data[dbl]["GraphicsView"].id == "gv.toggle_fit_mode"
+    assert data[dbl]["ImageView"].id == "imgv.toggle_fit_mode"
 
     drag = Kit.Mouse("LEFT", "DRAG_START")
-    assert data[drag]["GraphicsView"].id == "gv.pan"
+    assert data[drag]["ImageView"].id == "imgv.pan"
 
 
 def test_kit_key_factory():

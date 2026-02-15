@@ -42,10 +42,10 @@ def test_wheel_steps_are_normalized_and_passed_to_ctx(qtbot):
     try:
         w = _W()
         qtbot.addWidget(w)
-        w.init_command_binding("GraphicsView")
+        w.init_command_binding("ImageView")
 
         key_up = MouseActionKey(MouseButton.NONE, ClickType.WHEEL_UP, (), ())
-        store.set_all({key_up: {"GraphicsView": CommandPayload("__test__.wheel_capture")}})
+        store.set_all({key_up: {"ImageView": CommandPayload("__test__.wheel_capture")}})
 
         _CaptureWheelSteps.captured = None
         ev = _wheel_event(angle_y=240)

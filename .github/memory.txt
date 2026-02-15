@@ -125,11 +125,11 @@ bridgeの主要API:
 - 内部の参照解決は InstanceRegistry に一本化。
 
 ■ ビューアの共有状態
-- source/image_viewer/viewer/items.py の ViewerItems が JustifiedView 用の「ファイル一覧/選択/現在インデックス」を管理。
-- source/image_viewer/shower/data_model.py の DataViewModel が DataViewer(右側詳細表示)用の独立したModel。
-  - DataViewModel は独自の paths/sources/selection/current_index を持ち、ViewerItemsとは独立。
-  - mainwindow.py で生成し UI.register_instance("DataViewModel") で登録。コマンドから ctx.get_instance("DataViewModel") で取得。
-  - pathChanged シグナル経由で ViewerWidget（View）を自動更新。set_items() で手動リスト設定。
+- source/image_viewer/viewer/items.py の ViewerItems が GridView 用の「ファイル一覧/選択/現在インデックス」を管理。
+- source/image_viewer/shower/file_model.py の FileViewModel が FileViewerWidget(右側詳細表示)用の独立したModel。
+  - FileViewModel は独自の paths/sources/selection/current_index を持ち、ViewerItemsとは独立。
+  - mainwindow.py で生成し UI.register_instance("FileViewModel") で登録。コマンドから ctx.get_instance("FileViewModel") で取得。
+  - pathChanged シグナル経由で FileViewerWidget（View）を自動更新。set_items() で手動リスト設定。
   - dbpath_getter コールバックでDB参照先を遅延解決。
 - ビューア固有のコマンド定義やコンテキストメニューは source/image_viewer 直下に置く。
 
@@ -142,14 +142,14 @@ bridgeの主要API:
 - コマンドは foldertree_view.py で ft.next_folder_dfs, ft.prev_folder_dfs, ft.next_folder_visible, ft.prev_folder_visible, ft.parent_folder, ft.child_folder として登録。
 - 全コマンドに trigger_search パラメータ（デフォルトTrue）があり、True時は folder_selected シグナルで検索をトリガー。
 
-■ JustifiedWidget (QGraphicsView ベース)
-- JustifiedGraphicsView (QGraphicsView + Kit.UIMixin) に移行済み。旧 QWidget + QScrollArea 構成は廃止。
+■ GridView (QGraphicsView ベース)
+- GridView (QGraphicsView + Kit.UIMixin) に移行済み。旧 QWidget + QScrollArea 構成は廃止。
 - QGraphicsScene 上に FadePixmapItem (QGraphicsObject) で画像を配置。動画等は QGraphicsProxyWidget で対応可能。
 - オーバーレイ描画は drawForeground() で統合 (旧 OverLayPainter は削除)。
 - AutoScrollArea機能 (自動スクロール) はGraphicsView内に統合。parent_scroll プロパティは self を返す。
 - 座標はすべてScene座標系。index_at_pos() 内で mapToScene() 変換。rect_select座標も to_scene_pos() で変換。
 - レイアウト計算 (calc_layout.py) は変更なし。rectリストをscene座標として使用。
-- Kit.UIMixin を継承して init_command_binding("JustifiedView") で自動登録。
-- 操作は source/image_viewer/commands 側でコマンドとして実装。
+- Kit.UIMixin を継承して init_command_binding("GridView") で自動登録。
+- 操作は source/image_viewer/commands 側でコマンドとして実装。コマンドプレフィックスは grid. 。
 - Drag/Drop系は Kit.DragMenuBase へ分離。
 - drop_acceptor判定は source/os/drop.py の MimeDataParser.can_accept に統一。

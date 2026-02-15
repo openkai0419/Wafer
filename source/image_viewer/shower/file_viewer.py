@@ -7,9 +7,9 @@ from ...common.profiling import logger, profiler
 from ...db.query import MetaInfoSearchEngine
 from ...io.manager import LoaderClass
 from ...qt.thread import CancellableRunnable, main_thread
-from .dict_viewer import DictListWidget
+from .meta_viewer import MetaListWidget
 from .image_viewer import ImageViewerWidget
-from .data_model import DataViewModel
+from .file_model import FileViewModel
 from ..viewer.cachemanager import MemoryLimitedImageCache
 from ..viewer_settings import main_setting
 
@@ -51,9 +51,9 @@ class _MetaWorker(CancellableRunnable):
         return [source, image, tags, meta_infos]
 
 
-class ViewerWidget(QtWidgets.QSplitter):
+class FileViewerWidget(QtWidgets.QSplitter):
 
-    def __init__(self, model: DataViewModel, parent=None):
+    def __init__(self, model: FileViewModel, parent=None):
         super().__init__(QtCore.Qt.Vertical, parent)
         self.model = model
         self.image_cache = MemoryLimitedImageCache(main_setting.get('window/chache_size', 500))
@@ -76,14 +76,14 @@ class ViewerWidget(QtWidgets.QSplitter):
         self.image_viewer.resized.connect(self.throttle_get_image)
         self.addWidget(self.image_viewer)
 
-        self.dict_viewer = DictListWidget()
+        self.meta_viewer = MetaListWidget()
 
         self.area = QtWidgets.QScrollArea(self)
         self.area.setWidgetResizable(True)
         self.area.setFrameShape(QtWidgets.QFrame.NoFrame)
         self.area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         self.area.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
-        self.area.setWidget(self.dict_viewer)
+        self.area.setWidget(self.meta_viewer)
         self.addWidget(self.area)
         self.setSizes(main_setting.get("window/sub_splitter", [10, 800]))
 
@@ -115,7 +115,7 @@ class ViewerWidget(QtWidgets.QSplitter):
         meta = self._pending_meta
         self._pending_meta = None
         self.image_viewer.set_image(image, path)
-        self.dict_viewer.set_data(meta)
+        self.meta_viewer.set_data(meta)
 
     def _load_and_show_image(self, path):
         if not path:

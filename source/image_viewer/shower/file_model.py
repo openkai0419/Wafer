@@ -5,7 +5,7 @@ from PySide6 import QtCore
 from ...common.profiling import profiler
 
 
-class DataViewModel(QtCore.QObject):
+class FileViewModel(QtCore.QObject):
     itemsChanged = QtCore.Signal()
     currentIndexChanged = QtCore.Signal(object)
     pathChanged = QtCore.Signal(object)

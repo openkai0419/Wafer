@@ -32,7 +32,7 @@ def test_drag_enter_is_rejected_without_drop_acceptor(qtbot):
             CommandMeta(
                 id="__test__.drop_no_acceptor",
                 category="drop",
-                target_widgets=["JustifiedView"],
+                target_widgets=["GridView"],
                 drop_callbacks={"drop": lambda ctx: None},
             )
         ]
@@ -42,9 +42,9 @@ def test_drag_enter_is_rejected_without_drop_acceptor(qtbot):
     try:
         w = _W()
         qtbot.addWidget(w)
-        w.init_command_binding("JustifiedView", enable_drops=True)
+        w.init_command_binding("GridView", enable_drops=True)
         key = MouseActionKey(MouseButton.NONE, ClickType.DROP, (), ())
-        store.set_all({key: {"JustifiedView": CommandPayload("__test__.drop_no_acceptor")}})
+        store.set_all({key: {"GridView": CommandPayload("__test__.drop_no_acceptor")}})
 
         mime = QtCore.QMimeData()
         mime.setUrls([QtCore.QUrl.fromLocalFile(__file__)])
@@ -71,7 +71,7 @@ def test_drag_enter_is_accepted_with_drop_acceptor(qtbot):
             CommandMeta(
                 id="__test__.drop_with_acceptor",
                 category="drop",
-                target_widgets=["JustifiedView"],
+                target_widgets=["GridView"],
                 drop_acceptor=_accept_any,
                 drop_callbacks={"drop": lambda ctx: None},
             )
@@ -82,9 +82,9 @@ def test_drag_enter_is_accepted_with_drop_acceptor(qtbot):
     try:
         w = _W()
         qtbot.addWidget(w)
-        w.init_command_binding("JustifiedView", enable_drops=True)
+        w.init_command_binding("GridView", enable_drops=True)
         key = MouseActionKey(MouseButton.NONE, ClickType.DROP, (), ())
-        store.set_all({key: {"JustifiedView": CommandPayload("__test__.drop_with_acceptor")}})
+        store.set_all({key: {"GridView": CommandPayload("__test__.drop_with_acceptor")}})
 
         mime = QtCore.QMimeData()
         mime.setUrls([QtCore.QUrl.fromLocalFile(__file__)])

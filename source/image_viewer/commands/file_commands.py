@@ -92,7 +92,7 @@ def _count_files_in_path(path: str) -> int:
 def _confirm_delete(ctx, paths) -> bool:
     parent = ctx.get("widget") if hasattr(ctx, "get") else None
     if parent is None and hasattr(ctx, "get_instance"):
-        parent = ctx.get_instance("ViewerWidget") or ctx.get_instance("JustifiedView") or ctx.get_instance("FolderTree")
+        parent = ctx.get_instance("FileViewerWidget") or ctx.get_instance("GridView") or ctx.get_instance("FolderTree")
     title = "Delete"
     head = "Are you sure to delete"
 
@@ -147,7 +147,7 @@ def paste_here(ctx, overwrite_mode: str = "skip"):
         return
     a = os.path.abspath(path)
     d = a if os.path.isdir(a) else os.path.dirname(a)
-    parent = ctx.get_instance("ViewerWidget") or ctx.get_instance("JustifiedView") or ctx.get_instance("FolderTree")
+    parent = ctx.get_instance("FileViewerWidget") or ctx.get_instance("GridView") or ctx.get_instance("FolderTree")
     paste_clipboard_files(d, overwrite_mode=overwrite_mode, parent=parent)
 
 def _get_directory_from_path(path):
@@ -181,7 +181,7 @@ def scroll_to_file(ctx):
     if idx is None:
         _push_overlay(ctx, f"File not found in view")
         return
-    view = ctx.get_instance("JustifiedView")
+    view = ctx.get_instance("GridView")
     if view is None or not hasattr(view, "rects"):
         return
     if idx >= len(view.rects):
@@ -194,7 +194,7 @@ def show_file(ctx):
     path = _ctx_path(ctx)
     if not path:
         return
-    shower = ctx.get_instance("ViewerWidget")
+    shower = ctx.get_instance("FileViewerWidget")
     if shower is None:
         return
     shower.set_path(path)

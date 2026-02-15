@@ -1,8 +1,8 @@
 from ...actions.bridge import Kit
 
 
-def _get_data_model(ctx):
-    return ctx.get_instance("DataViewModel")
+def _get_file_model(ctx):
+    return ctx.get_instance("FileViewModel")
 
 
 def _ensure_current_initialized(model) -> bool:
@@ -18,14 +18,14 @@ def _ensure_current_initialized(model) -> bool:
 
 
 def next_file(ctx, step: int = 1, loop: bool = False):
-    model = _get_data_model(ctx)
+    model = _get_file_model(ctx)
     if not _ensure_current_initialized(model):
         return
     model.move_current_next(step=int(step), loop=bool(loop))
 
 
 def prev_file(ctx, step: int = 1, loop: bool = False):
-    model = _get_data_model(ctx)
+    model = _get_file_model(ctx)
     if not _ensure_current_initialized(model):
         return
     model.move_current_prev(step=int(step), loop=bool(loop))

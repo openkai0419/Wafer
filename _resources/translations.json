@@ -281,8 +281,8 @@
   "Context Menu": {
     "en": "Context Menu"
   },
-  "JustifiedView": {
-    "en": "JustifiedView"
+  "GridView": {
+    "en": "GridView"
   },
   "Open Current": {
     "en": "Open Current"
@@ -380,11 +380,11 @@
   "File View": {
     "en": "File View"
   },
-  "Graphics View": {
-    "en": "Graphics View"
+  "Image View": {
+    "en": "Image View"
   },
-  "GraphicsView": {
-    "en": "GraphicsView"
+  "ImageView": {
+    "en": "ImageView"
   },
   "Key Binding": {
     "en": "Key Binding"

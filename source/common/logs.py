@@ -119,7 +119,7 @@ class AppLogger:
             node.send('dev.log', {
                 'level': level,
                 'text': text,
-            }, dst='viewer')
+            }, dst='viewer', priority=3)
         except Exception:
             pass
 

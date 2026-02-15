@@ -2,6 +2,7 @@ import py_compile
 import threading
 import time
 
+from source.zmq._core import QoS
 from source.zmq.broker import Broker, _CoalescingQueue, _PeerInfo
 from source.zmq.message import Msg
 from source.zmq.node import Node
@@ -12,6 +13,7 @@ def test_compile():
     py_compile.compile('source/zmq/broker.py')
     py_compile.compile('source/zmq/node.py')
     py_compile.compile('source/zmq/_core.py')
+    py_compile.compile('source/zmq/outbox.py')
 
 
 class TestMsg:
@@ -27,12 +29,19 @@ class TestMsg:
         assert restored.db == 'photos'
         assert restored.payload == {'count': 42}
         assert restored.rid is None
+        assert restored.qos == QoS.MID
 
     def test_roundtrip_with_rid(self):
         rid = Msg.make_rid('test-')
         msg = Msg.build('query', 'data', rid=rid)
         restored = Msg.from_frames(msg.to_frames())
         assert restored.rid == rid
+
+    def test_roundtrip_with_qos(self):
+        for qos_val in (QoS.LATEST, QoS.HIGH, QoS.MID, QoS.LOW, QoS.RELIABLE):
+            msg = Msg.build('test', 'data', qos=qos_val)
+            restored = Msg.from_frames(msg.to_frames())
+            assert restored.qos == qos_val
 
     def test_reply(self):
         original = Msg.build('request', 'hello', src='a', dst='b', db='db1', rid='r1')
@@ -83,11 +92,6 @@ class TestCoalescingQueue:
 
 class TestBrokerNode:
 
-    def _make_env(self, port):
-        broker = Broker(port=port)
-        broker.start()
-        return broker
-
     def test_register_and_counts(self):
         broker = Broker()
         broker.start()
@@ -113,11 +117,11 @@ class TestBrokerNode:
             idx.wait_registered(timeout=3.0)
 
             v = Node('viewer')
-            v.on('db.update', lambda msg: received.append(msg))
+            v.on('db.update', lambda msg: received.append(msg) or True)
             v.start(broker.port)
             v.wait_registered(timeout=3.0)
 
-            idx.notify('db.update', {'count': 10})
+            idx.send('db.update', {'count': 10}, dst='viewer')
             time.sleep(0.5)
             assert len(received) >= 1
             assert received[0].topic == 'db.update'
@@ -133,7 +137,7 @@ class TestBrokerNode:
         results = []
         try:
             node = Node('collector', db='photos')
-            node.on('work.assigned', lambda msg: results.append(msg.payload))
+            node.on('work.assigned', lambda msg: results.append(msg.payload) or True)
             node.start(broker.port)
             node.wait_registered(timeout=3.0)
 
@@ -171,7 +175,7 @@ class TestBrokerNode:
         received = []
         try:
             v = Node('viewer')
-            v.on('sys.notify', lambda msg: received.append(msg))
+            v.on('sys.notify', lambda msg: received.append(msg) or True)
             v.start(broker.port)
             v.wait_registered(timeout=3.0)
 
@@ -194,12 +198,12 @@ class TestBrokerNode:
             idx_ill.wait_registered(timeout=3.0)
 
             v = Node('viewer', db='photos')
-            v.on('db.progress', lambda m: v_msgs.append(m))
+            v.on('db.progress', lambda m: v_msgs.append(m) or True)
             v.start(broker.port)
             v.wait_registered(timeout=3.0)
 
             c_all = Node('communicator', db=['photos', 'illustrations'])
-            c_all.on('db.progress', lambda m: c_msgs.append(m))
+            c_all.on('db.progress', lambda m: c_msgs.append(m) or True)
             c_all.start(broker.port)
             c_all.wait_registered(timeout=3.0)
 
@@ -220,7 +224,7 @@ class TestBrokerNode:
         own_msgs = []
         try:
             node = Node('collector', db='photos')
-            node.on('broadcast', lambda m: own_msgs.append(m))
+            node.on('broadcast', lambda m: own_msgs.append(m) or True)
             node.start(broker.port)
             node.wait_registered(timeout=3.0)
 
@@ -229,4 +233,81 @@ class TestBrokerNode:
             assert len(own_msgs) == 0
         finally:
             node.stop()
+            broker.stop()
+
+
+class TestQoSRouting:
+
+    def test_latest_coalesces(self):
+        broker = Broker()
+        broker.start()
+        received = []
+        try:
+            sender = Node('collector', db='photos')
+            sender.start(broker.port)
+            sender.wait_registered(timeout=3.0)
+
+            viewer = Node('viewer')
+            viewer.on('progress', lambda m: received.append(m.payload) or True)
+            viewer.start(broker.port)
+            viewer.wait_registered(timeout=3.0)
+
+            for i in range(10):
+                sender.latest('progress', i, dst='viewer', db='photos')
+            time.sleep(0.5)
+
+            assert len(received) >= 1
+            assert received[-1] >= 5
+        finally:
+            viewer.stop()
+            sender.stop()
+            broker.stop()
+
+    def test_send_ordered_all_delivered(self):
+        broker = Broker()
+        broker.start()
+        received = []
+        try:
+            sender = Node('collector', db='photos')
+            sender.start(broker.port)
+            sender.wait_registered(timeout=3.0)
+
+            viewer = Node('viewer')
+            viewer.on('update', lambda m: received.append(m.payload) or True)
+            viewer.start(broker.port)
+            viewer.wait_registered(timeout=3.0)
+
+            for i in range(5):
+                sender.send('update', i, dst='viewer', priority=QoS.HIGH)
+            time.sleep(0.5)
+
+            assert received == [0, 1, 2, 3, 4]
+        finally:
+            viewer.stop()
+            sender.stop()
+            broker.stop()
+
+    def test_send_low_priority(self):
+        broker = Broker()
+        broker.start()
+        received = []
+        try:
+            sender = Node('collector', db='photos')
+            sender.start(broker.port)
+            sender.wait_registered(timeout=3.0)
+
+            viewer = Node('viewer')
+            viewer.on('dev.log', lambda m: received.append(m.payload) or True)
+            viewer.start(broker.port)
+            viewer.wait_registered(timeout=3.0)
+
+            for i in range(3):
+                sender.send('dev.log', {'n': i}, dst='viewer', priority=QoS.LOW)
+            time.sleep(0.5)
+
+            assert len(received) == 3
+            assert [r['n'] for r in received] == [0, 1, 2]
+        finally:
+            viewer.stop()
+            sender.stop()
             broker.stop()

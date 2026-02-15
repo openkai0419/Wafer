@@ -5,27 +5,31 @@ from typing import Any
 import msgpack
 
 from ..common.logs import AppLogger
+from ._core import QoS
 
 
 class Msg:
-    __slots__ = ('topic', 'src', 'dst', 'db', 'payload', 'rid')
+    __slots__ = ('topic', 'src', 'dst', 'db', 'payload', 'rid', 'qos')
 
-    def __init__(self, topic: str, src: str, dst: str, db: str, payload: Any, rid: str | None):
+    def __init__(self, topic: str, src: str, dst: str, db: str, payload: Any, rid: str | None, qos: int = QoS.MID):
         self.topic = topic
         self.src = src
         self.dst = dst
         self.db = db
         self.payload = payload
         self.rid = rid
+        self.qos = qos
 
     @classmethod
-    def build(cls, topic: str, payload: Any = None, *, src: str = '', dst: str = 'ALL', db: str = '', rid: str | None = None) -> Msg:
-        return cls(topic, src, dst, db, payload, rid)
+    def build(cls, topic: str, payload: Any = None, *, src: str = '', dst: str = 'ALL', db: str = '', rid: str | None = None, qos: int = QoS.MID) -> Msg:
+        return cls(topic, src, dst, db, payload, rid, qos)
 
     def to_frames(self) -> tuple[bytes, bytes]:
         header = {'t': self.topic, 's': self.src, 'd': self.dst, 'db': self.db}
         if self.rid:
             header['r'] = self.rid
+        if self.qos != QoS.MID:
+            header['q'] = self.qos
         return (msgpack.packb(header, use_bin_type=True), msgpack.packb(self.payload, use_bin_type=True))
 
     @classmethod
@@ -45,6 +49,7 @@ class Msg:
             db=header.get('db', ''),
             payload=payload,
             rid=header.get('r'),
+            qos=header.get('q', QoS.MID),
         )
 
     def reply(self, payload: Any = None, *, topic: str | None = None) -> Msg:
@@ -55,6 +60,7 @@ class Msg:
             db=self.db,
             payload=payload,
             rid=self.rid,
+            qos=self.qos,
         )
 
     @staticmethod

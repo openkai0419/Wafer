@@ -8,7 +8,7 @@ import zmq
 
 from ..common.logs import AppLogger
 from ._core import (
-    BROKER_QUEUE_MAX, DEFAULT_PORT, HEARTBEAT_TIMEOUT, POLL_BASE_MS,
+    BROKER_QUEUE_MAX, DEFAULT_PORT, HEARTBEAT_TIMEOUT, POLL_BASE_MS, QoS,
     adaptive_poll, close_socket, drain_queue, try_put, tune_socket,
 )
 from .ipc_utils import remove_broker_port, write_broker_port
@@ -75,6 +75,9 @@ class Broker:
 
         self._stop = threading.Event()
         self._direct_q: Queue = Queue(maxsize=BROKER_QUEUE_MAX)
+        self._high_q: Queue = Queue(maxsize=BROKER_QUEUE_MAX)
+        self._mid_q: Queue = Queue(maxsize=BROKER_QUEUE_MAX)
+        self._low_q: Queue = Queue(maxsize=BROKER_QUEUE_MAX)
         self._broadcast_q = _CoalescingQueue(maxsize=BROKER_QUEUE_MAX)
         self._sentinel = object()
 
@@ -202,13 +205,38 @@ class Broker:
         if not targets:
             return
 
-        key = (msg.topic, msg.dst, msg.db)
-        if msg.rid or msg.topic.startswith('spool.') or msg.topic.startswith('query.'):
-            frames = msg.to_frames()
+        frames = msg.to_frames()
+
+        if msg.rid:
             for t in targets:
                 try_put(self._direct_q, (t, frames))
+            return
+
+        qos = msg.qos
+        if qos == QoS.LATEST:
+            key = (msg.topic, msg.dst, msg.db)
+            self._broadcast_q.put(key, (targets, frames))
+        elif qos == QoS.HIGH:
+            for t in targets:
+                try_put(self._high_q, (t, frames))
+        elif qos == QoS.LOW:
+            for t in targets:
+                try_put(self._low_q, (t, frames))
         else:
-            self._broadcast_q.put(key, (targets, msg.to_frames()))
+            for t in targets:
+                try_put(self._mid_q, (t, frames))
+
+    def _send_direct(self, items, did_work):
+        for ident, frames in items:
+            try:
+                self._router.send_multipart([ident, *frames], copy=False)
+                did_work = True
+            except zmq.Again:
+                AppLogger.debug('broker: drop direct (timeout)')
+            except zmq.ZMQError as e:
+                if e.errno != zmq.EHOSTUNREACH:
+                    AppLogger.debug(f'broker: send error {e}')
+        return did_work
 
     def _io_loop(self):
         poller = zmq.Poller()
@@ -237,17 +265,13 @@ class Broker:
                     did_work = True
 
             batch, sentinel = drain_queue(self._direct_q, self._sentinel)
-            for ident, frames in batch:
-                try:
-                    self._router.send_multipart([ident, *frames], copy=False)
-                    did_work = True
-                except zmq.Again:
-                    AppLogger.debug('broker: drop direct (timeout)')
-                except zmq.ZMQError as e:
-                    if e.errno != zmq.EHOSTUNREACH:
-                        AppLogger.debug(f'broker: send error {e}')
+            did_work = self._send_direct(batch, did_work)
             if sentinel:
                 break
+
+            for q in (self._high_q, self._mid_q):
+                items, _ = drain_queue(q, self._sentinel)
+                did_work = self._send_direct(items, did_work)
 
             for _key, (targets, frames) in self._broadcast_q.drain():
                 for t in targets:
@@ -259,6 +283,9 @@ class Broker:
                     except zmq.ZMQError as e:
                         if e.errno != zmq.EHOSTUNREACH:
                             AppLogger.debug(f'broker: bcast error {e}')
+
+            low_items, _ = drain_queue(self._low_q, self._sentinel)
+            did_work = self._send_direct(low_items, did_work)
 
             idle_streak, poll_ms = adaptive_poll(did_work, idle_streak)
 

@@ -8,20 +8,21 @@ import zmq
 
 from ..common.logs import AppLogger
 from ._core import (
-    DEFAULT_PORT, HEARTBEAT_INTERVAL, NODE_QUEUE_MAX, POLL_BASE_MS,
+    DEFAULT_PORT, HEARTBEAT_INTERVAL, NODE_QUEUE_MAX, POLL_BASE_MS, QoS,
     adaptive_poll, close_socket, drain_queue, try_put, tune_socket,
 )
 from .ipc_utils import read_broker_port
 from .message import Msg
+from .outbox import OutboxStore
 
 
 class Node:
 
-    def __init__(self, role: str, db: str | list[str] = ''):
+    def __init__(self, role: str, db: str | list[str] = '', *, consumer: bool = False):
         self.role = role
         self.db = db
         self.node_id = f'{role}-{os.getpid()}'
-        self._handlers: dict[str, Callable[[Msg], None]] = {}
+        self._handlers: dict[str, Callable[[Msg], bool]] = {}
         self._viewer_id: int | None = None
 
         self._ctx = zmq.Context.instance()
@@ -45,6 +46,9 @@ class Node:
         self._io_thread: threading.Thread | None = None
         self._hb_thread: threading.Thread | None = None
         self._registered = threading.Event()
+        self._outbox: OutboxStore | None = None
+        if consumer:
+            self._handlers['outbox.notify'] = lambda _msg: self._consume_outbox() or True
 
     @property
     def viewer_id(self) -> int | None:
@@ -56,13 +60,40 @@ class Node:
             return ''
         return self.db
 
-    def on(self, topic: str, handler: Callable[[Msg], None]) -> Node:
+    def on(self, topic: str, handler: Callable[[Msg], bool]) -> Node:
         self._handlers[topic] = handler
         return self
 
     def off(self, topic: str) -> Node:
         self._handlers.pop(topic, None)
         return self
+
+    def _call_handler(self, msg: Msg) -> bool | None:
+        handler = self._handlers.get(msg.topic)
+        if not handler:
+            return None
+        try:
+            result = handler(msg)
+            if result is not True and result is not False:
+                AppLogger.warning(f'handler must return bool: {msg.topic}')
+                return None
+            return result
+        except Exception as e:
+            AppLogger.warning(f'handler error: {msg.topic}', exc=e)
+            return None
+
+    def _consume_outbox(self):
+        records = OutboxStore.scan_all()
+        if not records:
+            return
+        done: dict[str, list[int]] = {}
+        for rec in records:
+            msg = Msg.build(rec.topic, rec.payload, src=rec.source_db, dst=rec.dst, db=rec.db, qos=QoS.RELIABLE)
+            if self._call_handler(msg) is True:
+                done.setdefault(rec.source_db, []).append(rec.id)
+        for db_path, ids in done.items():
+            OutboxStore.remove_batch_from(db_path, ids)
+        OutboxStore.cleanup_empty_files()
 
     def connect(self, port: int):
         self._dealer.connect(f'tcp://127.0.0.1:{port}')
@@ -86,16 +117,26 @@ class Node:
         if self._io_thread:
             self._io_thread.join(timeout=2.0)
         close_socket(self._dealer)
+        if self._outbox:
+            self._outbox.delete_if_empty()
+            self._outbox.close()
 
     def wait_registered(self, timeout: float = 5.0) -> bool:
         return self._registered.wait(timeout)
 
-    def send(self, topic: str, payload: Any = None, *, dst: str = 'ALL', db: str = ''):
-        msg = Msg.build(topic, payload, src=self.node_id, dst=dst, db=db or self.default_db)
+    def send(self, topic: str, payload: Any = None, *, dst: str = 'ALL', db: str = '', priority: int = QoS.MID):
+        msg = Msg.build(topic, payload, src=self.node_id, dst=dst, db=db or self.default_db, qos=priority)
         try_put(self._out_q, msg.to_frames())
 
-    def notify(self, topic: str, payload: Any = None):
-        self.send(topic, payload, dst='viewer')
+    def latest(self, topic: str, payload: Any = None, *, dst: str = 'ALL', db: str = ''):
+        msg = Msg.build(topic, payload, src=self.node_id, dst=dst, db=db or self.default_db, qos=QoS.LATEST)
+        try_put(self._out_q, msg.to_frames())
+
+    def sure(self, topic: str, payload: Any = None, *, dst: str, db: str = ''):
+        if self._outbox is None:
+            self._outbox = OutboxStore(self.node_id)
+        self._outbox.push(topic, payload, dst, db)
+        self.send('outbox.notify', dst=dst, db=db, priority=QoS.HIGH)
 
     def request(self, topic: str, payload: Any = None, *, dst: str = 'ALL', db: str = '', timeout: float = 5.0) -> Msg | None:
         rid = Msg.make_rid(f'{self.node_id}-')
@@ -150,10 +191,7 @@ class Node:
 
         handler = self._handlers.get(msg.topic)
         if handler:
-            try:
-                handler(msg)
-            except Exception as e:
-                AppLogger.warning(f'handler error: {msg.topic}', exc=e)
+            self._call_handler(msg)
 
     def _io_loop(self):
         poller = zmq.Poller()

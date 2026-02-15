@@ -18,8 +18,8 @@ class CollectorProcess:
         self.folder_watcher = None
         self.setting_watcher = None
         self.zmq = Node('collector', db=name)
-        self.zmq.on('cleanup', lambda msg: self.cleanup())
-        self.zmq.on('rescan', lambda msg: self.rescan())
+        self.zmq.on('cleanup', lambda msg: self.cleanup() or True)
+        self.zmq.on('rescan', lambda msg: self.rescan() or True)
         self.zmq.start()
         AppLogger.set_node(self.zmq, role='collector')
 

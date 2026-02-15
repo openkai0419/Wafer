@@ -112,10 +112,11 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             def handler(msg):
                 try:
                     if msg.db and msg.db != self.dbname:
-                        return
+                        return True
                     fn(msg)
+                    return True
                 except RuntimeError:
-                    pass
+                    return True
             return handler
 
         def _invoke(slot, *args):
@@ -132,7 +133,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             lambda msg: _invoke('reload_folderlist')
         )).on('show_toggle', _guarded(
             lambda msg: _invoke('toggle_show', QtCore.Q_ARG(bool, bool(msg.payload)))
-        )).on('dev.log', lambda msg: self._handle_remote_log(msg))
+        )).on('dev.log', lambda msg: self._handle_remote_log(msg) or True)
         self._node.start()
         AppLogger.set_node(self._node, role='viewer')
 

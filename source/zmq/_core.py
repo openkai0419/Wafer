@@ -4,6 +4,15 @@ from queue import Empty, Full, Queue
 
 import zmq
 
+
+class QoS:
+    LATEST = 0
+    HIGH = 1
+    MID = 2
+    LOW = 3
+    RELIABLE = 4
+
+
 HEARTBEAT_INTERVAL = 5
 HEARTBEAT_TIMEOUT = 15
 POLL_BASE_MS = 10

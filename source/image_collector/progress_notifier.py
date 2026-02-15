@@ -29,13 +29,13 @@ class ProgressAggregator:
 
     def notify(self, topic, value=''):
         try:
-            self._node.send(topic, value, dst='viewer', db=self.tablename)
+            self._node.send(topic, value, dst='viewer', db=self.tablename, priority=1)
         except Exception as e:
             AppLogger.warning(f'[notify {topic} failed] {e}')
 
     def _send_progress(self):
         try:
-            self._node.send('maximum', self.maximum, dst='viewer', db=self.tablename)
-            self._node.send('progress', self.current, dst='viewer', db=self.tablename)
+            self._node.latest('maximum', self.maximum, dst='viewer', db=self.tablename)
+            self._node.latest('progress', self.current, dst='viewer', db=self.tablename)
         except Exception as e:
             AppLogger.warning(f'[progress notify failed] {e}')

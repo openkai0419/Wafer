@@ -82,3 +82,36 @@ prototypes/temporary.txtは、prototypesやtests以下のコードに関して�
 そのため、あなたが仕事をする上で大事だと感じたこと、このプロジェクトの方向性やユーザーの考え方、注意点やルール等を記載し、コードの些細な仕様や細かい変更履歴等を記載する事は避けてください。
 
 
+■AppLoggerの運用ルール
+source/common/logs.pyのAppLoggerはアプリケーション全体で唯一のログ出力手段です。print()やlogging直接使用は禁止し、必ずAppLoggerを経由してください。
+AppLoggerは開発者/システム向けのログ専用であり、ユーザーへのUI通知には使用しないこと。
+・5段階のレベルと用途:
+  - critical: 未キャッチ例外専用。_create_exception_hookからのみ発火する。AppLogger.critical()メソッドは存在しない。on_criticalシグナルのみ保持。
+  - error: 想定外の重大な異常の記録。ログ記録とシグナル発火のみ行い、例外のraiseは呼び出し側が明示的に行うこと。例外のexcパラメータに例外オブジェクトを渡すこと。
+  - warning: 軽度の問題や注意事項の記録。処理は中断しない。
+  - info: 正常な処理フローの記録。起動、終了、主要な処理の開始完了等。
+  - debug: 開発用の詳細情報。パフォーマンス計測結果等。
+・引数の形式:
+  - 第1引数textはf-stringで完成した文字列を渡すこと。printf形式(%s等)は使用禁止。
+  - error/warningにはexcキーワード引数で例外オブジェクトを渡せる。例外発生時は必ず渡すこと。
+・Signal連携:
+  - 各レベルにSignal(on_critical, on_error, on_warning, on_info, on_debug)があり、emit時にテキストが通知される。
+  - これらのシグナルはログ監視用途に利用可能だが、UI通知には使用しないこと。
+・禁止事項:
+  - _loggerの外部参照禁止（モジュールプライベート）。
+  - try-exceptでのエラー握りつぶし禁止。catchした例外は最低限AppLogger.warningかAppLogger.errorで記録すること。
+  - 一時的なデバッグ用のprint()は削除すること。
+
+■Notifierの運用ルール
+source/common/notifier.pyのNotifierはユーザー向けUI通知の専用手段です。AppLoggerとは完全に分離されています。
+・3段階のレベル:
+  - info: ユーザーに伝えるべき情報（操作結果の報告等）。
+  - warning: ユーザーに通知すべき軽度の問題（ファイルが見つからない、操作失敗等）。
+  - error: ユーザーに通知すべき重大な問題。
+・UI連携:
+  - mainwindow.pyでOverlayStackに接続済み。Notifier.warning/errorを呼ぶだけでUI表示される。
+  - OverlayStack.push()を直接呼ばないこと。必ずNotifierを経由して通知を統一する。
+・AppLoggerとの使い分け:
+  - 開発者向けログ（内部エラー、デバッグ情報等）→ AppLogger
+  - ユーザー向けUI通知（操作結果、ユーザーに見せるべき警告等）→ Notifier
+  - 両方必要な場合は両方呼ぶ（例: AppLogger.warning(...) + Notifier.warning(...)）。

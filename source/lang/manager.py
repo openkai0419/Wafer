@@ -1,9 +1,8 @@
 from pathlib import Path
 from PySide6 import QtCore
 from ..common.funcs import get_resource_path
-from ..common.errors import show_warning
+from ..common.logs import AppLogger
 from ..common.jsons import read_json_file, write_json_file
-from ..common.profiling import logger
 
 _t_instance = None
 
@@ -50,7 +49,7 @@ class TranslationManager(QtCore.QObject):
         try:
             return template.format(**kwargs)
         except KeyError as e:
-            show_warning(None, f'Missing format key: {e}', title='Translation')
+            AppLogger.warning(f'Missing format key: {e}')
             return template
 
     def set_locale(self, locale):
@@ -80,10 +79,7 @@ class TranslationManager(QtCore.QObject):
 
         write_json_file(output_path, out, indent=2, ensure_ascii=False)
         msg = f'Missing keys written to: {output_path}'
-        if logger is not None:
-            logger.info(msg)
-        else:
-            print(msg)
+        AppLogger.info(msg)
 
 
 class TranslatorMixin:
@@ -98,7 +94,7 @@ class TranslatorMixin:
             if hasattr(self, method_name):
                 getattr(translator.languageChanged, 'connect')(getattr(self, method_name))
             else:
-                show_warning(None, f'method {method_name} not defined in {self}', title='Translation')
+                AppLogger.warning(f'method {method_name} not defined in {self}')
         return translator
 
     def set_translation_method(self, method_name):

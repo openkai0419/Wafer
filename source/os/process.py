@@ -2,7 +2,7 @@ import os
 import subprocess
 import sys
 import psutil
-from ..common.profiling import logger
+from ..common.logs import AppLogger
 
 class ProcessMatcher:
 
@@ -58,10 +58,22 @@ class ProcessMatcher:
     @staticmethod
     def _same_executable(pcmd0, expected_normpath):
         try:
-            return os.path.samefile(pcmd0, expected_normpath)
+            if os.path.samefile(pcmd0, expected_normpath):
+                return True
         except (FileNotFoundError, PermissionError, OSError):
-            pcmd_norm = ProcessMatcher._normalize_path(pcmd0)
-            return pcmd_norm == expected_normpath
+            pass
+        pcmd_norm = ProcessMatcher._normalize_path(pcmd0)
+        if pcmd_norm == expected_normpath:
+            return True
+        base = getattr(sys, '_base_executable', None)
+        if base:
+            equiv = {
+                ProcessMatcher._normalize_path(sys.executable),
+                ProcessMatcher._normalize_path(base),
+            }
+            if pcmd_norm in equiv and expected_normpath in equiv:
+                return True
+        return False
 
 class Proc:
 
@@ -81,7 +93,7 @@ class Proc:
     def terminate_cmd(cls, *args, compare='subset'):
         matcher = ProcessMatcher(cls.cmd() + list(args))
         procs = matcher.find_subset() if compare == 'subset' else matcher.find_exact()
-        logger.info(procs)
+        AppLogger.info(f'terminate_cmd: {len(procs)} processes found')
         cls.terminate(procs)
         return len(procs)
 

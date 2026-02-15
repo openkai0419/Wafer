@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, Generic, List, Optional, Type, TypeVar
 
-from source.common.errors import show_warning
+from source.common.logs import AppLogger
 from source.common.jsons import read_json_file, write_json_file
 
 from ..command.payload import CommandPayload, normalize_scoped_payloads
@@ -164,7 +164,7 @@ class BindingStoreBase(Generic[K]):
         payload = {"items": self._to_items(diff)}
         ok = write_json_file(p, payload, indent=2, ensure_ascii=False)
         if not ok:
-            show_warning(None, f"{type(self).__name__}.save_to_file failed: {path}")
+            AppLogger.warning(f"{type(self).__name__}.save_to_file failed: {path}")
 
     def load_from_file(self, path: str) -> bool:
         data = read_json_file(Path(path), None)
@@ -179,5 +179,5 @@ class BindingStoreBase(Generic[K]):
             self._data = self._apply_diff(seed, diff)
             return True
         except Exception as e:
-            show_warning(None, f"{type(self).__name__}.load_from_file failed: {path}", exc=e)
+            AppLogger.warning(f"{type(self).__name__}.load_from_file failed: {path}", exc=e)
             return False

@@ -4,6 +4,7 @@ import json
 import inspect
 from dataclasses import dataclass, field
 from source.common.profiling import profiler
+from source.common.logs import AppLogger
 from .payload import CommandPayload
 from .context import CommandContext
 
@@ -123,6 +124,7 @@ class CommandRegistry:
             if getattr(ctx, "event", None) is None:
                 raise ValueError(f"Command '{command_name}' (category={meta.category}) requires event")
         command = command_class()
+        AppLogger.debug(f'cmd: {command_name}')
         return command.call_execute(**kwargs) if hasattr(command, "call_execute") else command.execute(**kwargs)
 
     def has_command(self, name: str) -> bool:
@@ -343,7 +345,7 @@ def create_cycle_command(group_name: str, display: str) -> CommandMeta:
         builder = CommandMenuBuilder()
         result = builder.cycle_action_group(group_name)
         if result:
-            print(f"Cycled to: {result}")
+            AppLogger.debug(f"Cycled to: {result}")
     return CommandMeta(
         path=f"cycle_{group_name}",
         display=display,

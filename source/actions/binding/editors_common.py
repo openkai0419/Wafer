@@ -4,7 +4,7 @@ from typing import Any, Dict, List
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from source.common.errors import show_warning
+from source.common.logs import AppLogger
 from source.common.funcs import uipx
 
 from ..command.payload import CommandPayload, format_payload_display
@@ -33,7 +33,7 @@ def clear_layout(layout: QtWidgets.QLayout, owner: QtWidgets.QWidget | None, lab
         if sub is not None:
             clear_layout(sub, owner, label)
     if err is not None:
-        show_warning(owner, f"{label} had {err_count} errors", exc=err)
+        AppLogger.warning(f"{label} had {err_count} errors", exc=err)
 
 
 def popup_command_picker(
@@ -234,11 +234,11 @@ class ScopedPayloadSectionBase(QtWidgets.QGroupBox):
                 row.setParent(None)
                 row.deleteLater()
         except Exception as e:
-            show_warning(self, f"ScopedPayloadSectionBase remove override failed: {scope}", exc=e)
+            AppLogger.warning(f"ScopedPayloadSectionBase remove override failed: {scope}", exc=e)
             try:
                 row.setParent(None)
                 row.deleteLater()
             except Exception as e2:
-                show_warning(self, f"ScopedPayloadSectionBase remove override cleanup failed: {scope}", exc=e2)
+                AppLogger.warning(f"ScopedPayloadSectionBase remove override cleanup failed: {scope}", exc=e2)
                 return
         self._payloads.pop(scope, None)

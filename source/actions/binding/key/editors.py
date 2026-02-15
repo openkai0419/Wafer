@@ -1,7 +1,7 @@
 from typing import Dict, List, Any, Tuple
 from PySide6 import QtCore, QtGui, QtWidgets
 from source.common.funcs import uipx
-from source.common.errors import show_warning
+from source.common.logs import AppLogger
 from ...command.payload import format_payload_display
 from ...command.payload import CommandPayload
 from ..common import WidgetRef
@@ -235,7 +235,7 @@ class KeyBindingEditor(QtWidgets.QDialog):
         try:
             self._store.save_to_file(BindingManager.instance().key_bindings_path())
         except Exception as e:
-            show_warning(self, "save key bindings failed", exc=e)
+            AppLogger.warning("save key bindings failed", exc=e)
         self.accept()
 
     def _merged_data(self) -> Dict[KeySequence, Dict[str, CommandPayload]]:

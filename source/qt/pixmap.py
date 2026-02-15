@@ -1,6 +1,6 @@
 from PySide6 import QtCore, QtGui
 from ..common.funcs import get_resource_path, uipx
-from ..common.profiling import logger
+from ..common.logs import AppLogger
 
 class PixmapFactory:
 
@@ -12,7 +12,7 @@ class PixmapFactory:
             if not pixmap.isNull():
                 return pixmap
         except Exception as e:
-            logger.warning(f'Failed to load error image: {e}')
+            AppLogger.warning(f'Failed to load error image: {e}')
         size = QtCore.QSize(64, 64)
         pixmap = QtGui.QPixmap(size)
         pixmap.fill(QtGui.QColor('#ccc'))

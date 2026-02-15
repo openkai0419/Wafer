@@ -1,7 +1,9 @@
 from PySide6 import QtCore, QtWidgets
 from ..common.funcs import get_data_db, get_setting_db, get_setting_file_names, uipx
-from ..common.profiling import logger, profiler
-from ..constants import APP_NAME, default_db_name
+from ..common.profiling import profiler
+from ..common.logs import AppLogger
+from ..common.notifier import Notifier
+from ..constants import APP_NAME, DEV_MODE, default_db_name
 from ..db.setting_db import SettingDB
 from ..lang.manager import TranslatorMixin
 from ..qt.debounce import qt_debounce
@@ -30,7 +32,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
 
     def __init__(self, icon=None, parent=None):
         super().__init__(parent=parent)
-        logger.info(f'New Window Running : {APP_NAME}')
+        AppLogger.info(f'New Window Running : {APP_NAME}')
         if icon:
             self.setWindowIcon(icon)
         self.setWindowTitle(APP_NAME)
@@ -80,7 +82,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.progress_bar.setProgress(int(0))
         self.progress_bar.setMaximum(int(0))
         self.reload_combo()
-        logger.info('[INFO] reload_db')
+        AppLogger.info(f'reload_db: {name}')
 
     def changeEvent(self, event):
         if event.type() == QtCore.QEvent.ActivationChange:
@@ -95,7 +97,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             names = ['default']
         self.dbcombo.setItems(names)
         self.dbcombo.setCurrentText(self.dbname)
-        logger.debug('[DEBUG] reload_combo')
+        AppLogger.debug('reload_combo')
 
     @QtCore.Slot(int)
     def update_current(self, value):
@@ -130,8 +132,9 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             lambda msg: _invoke('reload_folderlist')
         )).on('show_toggle', _guarded(
             lambda msg: _invoke('toggle_show', QtCore.Q_ARG(bool, bool(msg.payload)))
-        ))
+        )).on('dev.log', lambda msg: self._handle_remote_log(msg))
         self._node.start()
+        AppLogger.set_node(self._node, role='viewer')
 
     @profiler.profile
     def main_ui(self):
@@ -219,10 +222,14 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             self.splitter.setSizes(sizes)
         self.overlay_stack = OverlayStack(self.content)
         UI.register_instance("OverlayStack", self.overlay_stack)
+        Notifier.on_info.connect(lambda t: self.overlay_stack.push(t, "info"))
+        Notifier.on_warning.connect(lambda t: self.overlay_stack.push(t, "warning"))
+        Notifier.on_error.connect(lambda t: self.overlay_stack.push(t, "error"))
         self.loading_indicator = OverlayLoadingIndicator()
         self.overlay_stack.push_persistent(self.loading_indicator, key="loading")
         self.content.layout_started.connect(self._on_layout_started)
         self.content.layout_ready.connect(lambda: self.overlay_stack.hide_persistent("loading"))
+        self._setup_dev_panel()
         self._sync_service_from_ui()
 
     def _sync_service_from_ui(self):
@@ -248,7 +255,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
     @QtCore.Slot()
     @qt_debounce(1000)
     def reload_folderlist(self):
-        logger.debug('[RUNNING] reload_folderlist')
+        AppLogger.debug('[RUNNING] reload_folderlist')
         self.folder_view.reload_tree()
 
     def moveEvent(self, event):
@@ -268,7 +275,9 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
     def on_folder_selected(self):
         self.run_folder = True
         self._folder_changed = True
-        self.search_service.set_directories(self.folder_view.get_selected_paths())
+        dirs = self.folder_view.get_selected_paths()
+        AppLogger.debug(f'folder selected: {dirs}')
+        self.search_service.set_directories(dirs)
         self.search_service.try_execute()
 
     @QtCore.Slot(bool)
@@ -323,11 +332,37 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             main_setting.commit()
             self.t.dump_missing_keys()
         except Exception as e:
-            logger.warning(e)
+            AppLogger.warning(f'on_close failed: {e}', exc=e)
         if hasattr(self, '_node'):
-            logger.info('on_close [STOPPING]')
+            AppLogger.info('on_close [STOPPING]')
             self._node.stop()
 
     def closeEvent(self, event):
         return super().closeEvent(event)
 
+    def _setup_dev_panel(self):
+        if not DEV_MODE:
+            return
+        from .widgets.dev_log_panel import DevLogPanel
+        self._dev_panel = DevLogPanel(self)
+        self.addDockWidget(QtCore.Qt.BottomDockWidgetArea, self._dev_panel)
+
+    @QtCore.Slot(str, str, str, str)
+    def _on_dev_log(self, level: str, text: str, src: str, db: str):
+        if hasattr(self, '_dev_panel'):
+            self._dev_panel.append_log(level, text, src=src, db=db)
+
+    def _handle_remote_log(self, msg):
+        if not hasattr(self, '_dev_panel'):
+            return
+        p = msg.payload
+        if not isinstance(p, dict):
+            return
+        QtCore.QMetaObject.invokeMethod(
+            self, '_on_dev_log',
+            QtCore.Qt.QueuedConnection,
+            QtCore.Q_ARG(str, p.get('level', 'info')),
+            QtCore.Q_ARG(str, p.get('text', '')),
+            QtCore.Q_ARG(str, msg.src),
+            QtCore.Q_ARG(str, msg.db or ''),
+        )

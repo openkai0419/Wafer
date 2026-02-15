@@ -1,12 +1,12 @@
 from __future__ import annotations
+import os
 import threading
-import uuid
 from queue import Empty, Queue
 from typing import Any, Callable
 
 import zmq
 
-from ..common.profiling import logger
+from ..common.logs import AppLogger
 from ._core import (
     DEFAULT_PORT, HEARTBEAT_INTERVAL, NODE_QUEUE_MAX, POLL_BASE_MS,
     adaptive_poll, close_socket, drain_queue, try_put, tune_socket,
@@ -20,7 +20,7 @@ class Node:
     def __init__(self, role: str, db: str | list[str] = ''):
         self.role = role
         self.db = db
-        self.node_id = f'{role}-{uuid.uuid4().hex[:8]}'
+        self.node_id = f'{role}-{os.getpid()}'
         self._handlers: dict[str, Callable[[Msg], None]] = {}
         self._viewer_id: int | None = None
 
@@ -124,9 +124,13 @@ class Node:
 
     def _heartbeat_loop(self):
         while not self._stop.is_set():
-            msg = Msg.build('mgmt.heartbeat', src=self.node_id)
-            try_put(self._out_q, msg.to_frames())
-            self._stop.wait(HEARTBEAT_INTERVAL)
+            if self._registered.is_set():
+                msg = Msg.build('mgmt.heartbeat', src=self.node_id)
+                try_put(self._out_q, msg.to_frames())
+                self._stop.wait(HEARTBEAT_INTERVAL)
+            else:
+                self._send_register()
+                self._stop.wait(1.0)
 
     def _dispatch(self, msg: Msg):
         if msg.rid:
@@ -141,15 +145,15 @@ class Node:
             if isinstance(msg.payload, dict):
                 self._viewer_id = msg.payload.get('viewer_id')
             self._registered.set()
-            logger.info(f'registered as {self.node_id}, viewer_id={self._viewer_id}')
+            AppLogger.info(f'registered as {self.node_id}, viewer_id={self._viewer_id}')
             return
 
         handler = self._handlers.get(msg.topic)
         if handler:
             try:
                 handler(msg)
-            except Exception:
-                logger.exception('handler error: %s', msg.topic)
+            except Exception as e:
+                AppLogger.warning(f'handler error: {msg.topic}', exc=e)
 
     def _io_loop(self):
         poller = zmq.Poller()
@@ -186,7 +190,7 @@ class Node:
                     try_put(self._out_q, frames)
                     break
                 except Exception as e:
-                    logger.debug('node send error: %s', e)
+                    AppLogger.debug(f'node send error: {e}')
             if sentinel:
                 break
 

@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from source.actions.bridge import Command, Kit, Menu, Settings, UI
-from source.common.errors import show_warning
+from source.common.logs import AppLogger
 
 
 def _cycle_sort_order(ctx=None):
@@ -22,7 +22,7 @@ def _print_is_demo_pane(ctx=None):
         from .demo_app import DemoPane
         print(isinstance(w, DemoPane))
     except Exception as e:
-        show_warning(None, "isDemoPane check failed", exc=e)
+        AppLogger.warning("isDemoPane check failed", exc=e)
         print(False)
 
 

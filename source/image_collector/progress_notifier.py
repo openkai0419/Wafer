@@ -1,4 +1,5 @@
-from ..common.profiling import logger, profiler
+from ..common.profiling import profiler
+from ..common.logs import AppLogger
 
 
 class ProgressAggregator:
@@ -30,11 +31,11 @@ class ProgressAggregator:
         try:
             self._node.send(topic, value, dst='viewer', db=self.tablename)
         except Exception as e:
-            logger.warning(f'[notify {topic} failed] {e}')
+            AppLogger.warning(f'[notify {topic} failed] {e}')
 
     def _send_progress(self):
         try:
             self._node.send('maximum', self.maximum, dst='viewer', db=self.tablename)
             self._node.send('progress', self.current, dst='viewer', db=self.tablename)
         except Exception as e:
-            logger.warning(f'[progress notify failed] {e}')
+            AppLogger.warning(f'[progress notify failed] {e}')

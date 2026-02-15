@@ -1,7 +1,7 @@
 import os
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
-from ..common.profiling import logger
+from ..common.logs import AppLogger
 from ..common.signal import Signal
 
 
@@ -30,18 +30,21 @@ class SettingWatcher(FileSystemEventHandler):
             self._last_mtime = mtime
             self._check_changes()
         except Exception as e:
-            logger.warning(f'SettingWatcher error: {e}')
+            AppLogger.warning(f'SettingWatcher error: {e}', exc=e)
 
     def _check_changes(self):
         parents = set(self._db.get_all_parent_folders())
         if parents != self._parent_cache:
+            AppLogger.info(f'setting changed: parent folders ({len(parents)})')
             self._parent_cache = parents
             self.parentFoldersChanged.emit(list(parents))
         ignores = set(self._db.get_all_ignore_folders())
         if ignores != self._ignore_cache:
+            AppLogger.info(f'setting changed: ignore folders ({len(ignores)})')
             self._ignore_cache = ignores
             self.ignoreFoldersChanged.emit(list(ignores))
         if self._db.get_kv('deleteflag', False) == True:
+            AppLogger.info('setting changed: delete flag')
             self.deleteFlagEmit.emit()
 
     def start(self):

@@ -2,7 +2,8 @@ import bisect
 import math
 from PySide6 import QtCore, QtGui, QtWidgets
 from ...common.funcs import uipx
-from ...common.profiling import logger, profiler
+from ...common.profiling import profiler
+from ...common.logs import AppLogger
 from .loader import ImageLoaderRunnable
 from ...qt.debounce import qt_debounce, qt_throttle
 from ...qt.pixmap import PixmapFactory
@@ -556,7 +557,7 @@ class GridView(QtWidgets.QGraphicsView, Kit.UIMixin):
     def _ensure_widget_visible(self, i):
         rect = self.rects[i]
         if i >= len(self.items.paths):
-            logger.warning(f'Index {i} out of range for paths (len={len(self.items.paths)})')
+            AppLogger.warning(f'Index {i} out of range for paths (len={len(self.items.paths)})')
             return
         if i not in self.widgets:
             item = self.label_pool.acquire()
@@ -591,7 +592,7 @@ class GridView(QtWidgets.QGraphicsView, Kit.UIMixin):
     @QtCore.Slot(int, object)
     def _on_image_ready(self, index, image):
         if index >= len(self.items.paths):
-            logger.warning(f'_on_image_ready: index {index} out of range (len={len(self.items.paths)})')
+            AppLogger.warning(f'_on_image_ready: index {index} out of range (len={len(self.items.paths)})')
             return
         if index in self.widgets:
             item = self.widgets[index]
@@ -604,7 +605,7 @@ class GridView(QtWidgets.QGraphicsView, Kit.UIMixin):
     @QtCore.Slot(int, object, object)
     def _on_widget_ready(self, index, widget_class, kwargs):
         if index >= len(self.items.paths):
-            logger.warning(f'_on_widget_ready: index {index} out of range (len={len(self.items.paths)})')
+            AppLogger.warning(f'_on_widget_ready: index {index} out of range (len={len(self.items.paths)})')
             return
         if issubclass(widget_class, QtWidgets.QWidget):
             rect = self.rects[index]

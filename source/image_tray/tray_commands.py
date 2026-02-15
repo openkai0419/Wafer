@@ -5,7 +5,7 @@ from typing import Any
 from PySide6 import QtWidgets
 
 from ..actions.bridge import Kit
-from ..common.profiling import logger
+from ..common.logs import AppLogger
 from ..os.process import Proc
 from ..zmq.message import Msg
 
@@ -14,14 +14,14 @@ def _tray_send(ctx, topic: str, payload=None):
     try:
         tray.broker.inject(Msg.build(topic, payload))
     except Exception as e:
-        logger.warning(f'[{topic} notify failed] {e}')
+        AppLogger.warning(f'[{topic} notify failed] {e}')
 
 def get_viewer_count(ctx=None) -> int:
     tray = ctx.get_instance("Tray")
     try:
         return tray.broker.get_counts().get('viewer', 0)
     except Exception as e:
-        logger.warning(f'[viewer count failed] {e}')
+        AppLogger.warning(f'[viewer count failed] {e}')
         return 0
 
 def send_show_toggle(ctx=None, flag: bool = False):
@@ -32,6 +32,7 @@ def show_window(ctx=None):
     tray = ctx.get_instance("Tray")
     c = get_viewer_count(ctx)
     if c < 1:
+        AppLogger.info('launching new viewer')
         Proc.new_main('--viewer')
         return
     tray.show_state = not bool(getattr(tray, 'show_state', False))
@@ -39,6 +40,7 @@ def show_window(ctx=None):
 
 
 def open_new_window(ctx=None):
+    AppLogger.info('launching new viewer')
     Proc.new_main('--viewer')
 
 
@@ -51,12 +53,12 @@ def cleanup_optimize(ctx=None):
 
 
 def test(ctx=None):
-    logger.info('SENDING TEST')
+    AppLogger.info('SENDING TEST')
     _tray_send(ctx, 'test', 'TEST FUNCTION!')
 
 
 def test2(ctx=None):
-    logger.info(Proc.get_subset('--collector'))
+    AppLogger.info(Proc.get_subset('--collector'))
 
 
 def quit(ctx=None):

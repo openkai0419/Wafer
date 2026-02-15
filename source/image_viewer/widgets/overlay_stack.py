@@ -7,11 +7,12 @@ class OverlayItem(QtWidgets.QWidget):
     dismissed = QtCore.Signal(object)
 
     LEVEL_STYLES = {
+        "info": (QtGui.QColor(30, 30, 30, 210), QtGui.QColor(255, 255, 255)),
         "warning": (QtGui.QColor(30, 30, 30, 210), QtGui.QColor(255, 255, 255)),
         "error": (QtGui.QColor(120, 10, 10, 230), QtGui.QColor(255, 255, 255)),
     }
 
-    def __init__(self, text: str, level: str = "info", duration: int = 3000, parent=None):
+    def __init__(self, text: str, level: str = "warning", duration: int = 3000, parent=None):
         super().__init__(parent)
         self.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
@@ -19,7 +20,7 @@ class OverlayItem(QtWidgets.QWidget):
         self._label_prefix = {"error": "Error"}.get(level)
         self._display_text = f"{self._label_prefix}:\n{text}" if self._label_prefix else text
         self._level = level
-        self._bg_color, self._text_color = self.LEVEL_STYLES.get(level, self.LEVEL_STYLES["info"])
+        self._bg_color, self._text_color = self.LEVEL_STYLES.get(level, self.LEVEL_STYLES["warning"])
         self._opacity = 1.0
         self._fade_anim = None
         self._padding = uipx(6)

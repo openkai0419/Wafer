@@ -1,7 +1,7 @@
 import os
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from ..common.profiling import logger
+from ..common.logs import AppLogger
 from ..common.hashes import fast_sig_hash
 from .manager import BaseLoader, BaseReader
 
@@ -19,7 +19,7 @@ class LabelWidget(QtWidgets.QLabel):
         self.deleteLater()
 
     def resizeEvent(self, event, *args, **kwargs):
-        logger.info(self.path)
-        logger.info(self.size())
+        AppLogger.debug(f'LabelWidget resizeEvent: {self.path}')
+        AppLogger.debug(f'LabelWidget size: {self.size()}')
         self.setPixmap(QtGui.QPixmap.fromImage())
         return super().resizeEvent(event, *args, **kwargs)

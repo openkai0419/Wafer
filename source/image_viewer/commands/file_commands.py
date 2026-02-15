@@ -11,7 +11,8 @@ from ...qt.dialog import ConfirmDialog, ThumbnailConfirmDialog
 from ...os.copy import ClipboardFileTransfer
 from ...os.save import paste_clipboard_files, unique_path, get_os_new_folder_name
 from ...os.folders import show_in_explorer as reveal_in_explorer
-from ...common.profiling import logger
+from ...common.logs import AppLogger
+from ...common.notifier import Notifier
 
 
 
@@ -126,13 +127,16 @@ def delete_files(ctx):
     if not _confirm_delete(ctx, paths):
         return
     norm_paths = [os.path.normpath(os.path.abspath(p)) for p in paths if p]
+    AppLogger.info(f'Deleting {len(norm_paths)} files')
     try:
         import send2trash
         for p in norm_paths:
             if os.path.exists(p):
                 try:
                     send2trash.send2trash(p)
-                except Exception:
+                except Exception as e:
+                    AppLogger.warning(f'send2trash failed: {p}', exc=e)
+                    Notifier.info(f'send2trash failed: {p}')
                     if os.path.isfile(p):
                         os.remove(p)
     except ImportError:
@@ -164,12 +168,6 @@ def select_path(ctx):
     ftree.expand_and_select_path(folder)
 
 
-def _push_overlay(ctx, text: str, level: str = "info", duration: int = 3000):
-    stack = ctx.get_instance("OverlayStack")
-    if stack is not None:
-        stack.push(text, level=level, duration=duration)
-
-
 def scroll_to_file(ctx):
     path = _ctx_path(ctx)
     if not path:
@@ -179,13 +177,13 @@ def scroll_to_file(ctx):
         return
     idx = items.index_of_path(path)
     if idx is None:
-        _push_overlay(ctx, f"File not found in view")
+        Notifier.info("File not found in view")
         return
     view = ctx.get_instance("GridView")
     if view is None or not hasattr(view, "rects"):
         return
     if idx >= len(view.rects):
-        _push_overlay(ctx, f"File out of visible area")
+        Notifier.info("File out of visible area")
         return
     view.reinstall_scroll_index(idx, animated=True)
 

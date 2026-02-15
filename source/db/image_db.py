@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import Sequence
 
 from .db_utils import apply_read_pragmas, apply_write_pragmas, connect_with_retry
-from ..common.profiling import logger, profiler
+from ..common.profiling import profiler
+from ..common.logs import AppLogger
 
 
 _TABLES = (
@@ -139,7 +140,7 @@ class ImageDB:
             cur = conn.execute(f'PRAGMA wal_checkpoint({mode})')
             cur.close()
         except Exception:
-            logger.debug(f'wal_checkpoint({mode}) failed')
+            AppLogger.debug(f'wal_checkpoint({mode}) failed')
 
     @profiler.profile
     def initialize_database(self):
@@ -147,7 +148,7 @@ class ImageDB:
             if not self._integrity_check():
                 raise sqlite3.DatabaseError('Integrity check failed.')
         except sqlite3.DatabaseError as e:
-            logger.warning(f'[ERROR] DB corrupted: {e}')
+            AppLogger.warning(f'DB corrupted: {e}', exc=e)
             self._backup_and_recreate()
         self._ensure_schema()
 
@@ -157,7 +158,7 @@ class ImageDB:
             result = self.conn.execute('PRAGMA quick_check').fetchone()
             return result[0] == 'ok'
         except Exception as e:
-            logger.warning(f'[WARN] integrity_check failed: {e}')
+            AppLogger.warning(f'integrity_check failed: {e}', exc=e)
             return False
 
     @profiler.profile
@@ -166,13 +167,13 @@ class ImageDB:
             try:
                 self.read_conn.close()
             except Exception as e:
-                logger.debug(f'read_conn.close() failed: {e}')
+                AppLogger.debug(f'read_conn.close() failed: {e}')
             self.read_conn = None
         if self.conn:
             try:
                 self.conn.close()
             except Exception as e:
-                logger.debug(f'conn.close() failed: {e}')
+                AppLogger.debug(f'conn.close() failed: {e}')
             self.conn = None
         try:
             tmp = sqlite3.connect(str(self.db_path), check_same_thread=False)
@@ -193,13 +194,13 @@ class ImageDB:
                     except FileNotFoundError:
                         pass
         self.start()
-        logger.warning(f'[INFO] New DB created at: {self.db_path}')
+        AppLogger.warning(f'New DB created at: {self.db_path}')
 
     @profiler.profile
     def _ensure_schema(self):
         changed = self._detect_changed_tables()
         if changed:
-            logger.info(f'[Schema] Recreating tables: {changed}')
+            AppLogger.info(f'[Schema] Recreating tables: {changed}')
             self._drop_tables(changed)
         self.conn.execute('PRAGMA foreign_keys=ON')
         for _, _, sql in _TABLES:
@@ -242,7 +243,7 @@ class ImageDB:
                 result[source] = (mtime, size)
             cur.close()
         except Exception as e:
-            logger.warning(f'Failed to load previous data from DB: {e}')
+            AppLogger.warning(f'Failed to load previous data from DB: {e}', exc=e)
         return result
 
     @profiler.profile
@@ -327,7 +328,7 @@ class ImageDB:
 
     @profiler.profile
     def clean_unused(self):
-        logger.info('CLEANING UP DATABASE')
+        AppLogger.info('CLEANING UP DATABASE')
         try:
             cur = self.get_writer_cursor()
 
@@ -347,13 +348,13 @@ class ImageDB:
 
             self.conn.commit()
 
-            logger.info('RUNNING VACUUM')
+            AppLogger.info('RUNNING VACUUM')
             cur.execute('VACUUM')
-            logger.info('RUNNING ANALYZE')
+            AppLogger.info('RUNNING ANALYZE')
             cur.execute('ANALYZE')
             self.conn.commit()
             self.try_checkpoint()
         except Exception as e:
-            logger.exception('DATABASE CLEANUP FAILED: %s', e)
+            AppLogger.warning(f'DATABASE CLEANUP FAILED: {e}', exc=e)
         else:
-            logger.info('DATABASE CLEANUP END')
+            AppLogger.info('DATABASE CLEANUP END')

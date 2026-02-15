@@ -8,7 +8,7 @@ from weakref import WeakSet
 from PySide6 import QtCore
 from .key.store import KeyBindingStore
 from .key.sequence import KeySequence
-from source.common.errors import show_warning
+from source.common.logs import AppLogger
 
 
 class BindingManager:
@@ -100,7 +100,7 @@ class BindingManager:
             self.apply_mouse_bindings([widget])
             self.apply_key_bindings([widget])
         except Exception as e:
-            show_warning(None, "BindingManager.register failed", exc=e)
+            AppLogger.warning("BindingManager.register failed", exc=e)
 
     def save(self) -> None:
         self._store.save_to_file(str(self._file))
@@ -119,7 +119,7 @@ class BindingManager:
                 if cur in self._widgets:
                     return cur
             except Exception as e:
-                show_warning(None, "BindingManager hierarchy lookup failed", exc=e)
+                AppLogger.warning("BindingManager hierarchy lookup failed", exc=e)
             cur = cur.parentWidget()
         return None
 

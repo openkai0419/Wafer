@@ -3,7 +3,8 @@ from natsort import natsorted
 
 from ...common.funcs import uipx, human_aspect_string, human_size_string, human_time
 from ...qt.debounce import qt_debounce, qt_throttle
-from ...common.profiling import logger, profiler
+from ...common.profiling import profiler
+from ...common.logs import AppLogger
 from ...db.query import MetaInfoSearchEngine
 from ...io.manager import LoaderClass
 from ...qt.thread import CancellableRunnable, main_thread

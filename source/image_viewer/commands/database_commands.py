@@ -1,6 +1,6 @@
 from ...actions.bridge import Kit
 from ...common.funcs import get_setting_file_names
-from ...common.profiling import logger
+from ...common.logs import AppLogger
 from ...os.process import Proc
 from ...qt.dialog import ConfirmDialog, InputDialog
 
@@ -37,7 +37,7 @@ def set_database(ctx, name: str = ""):
     if not w or not name:
         return
     if name not in get_setting_file_names():
-        logger.warning(f'[set_database] database not found: {name}')
+        AppLogger.warning(f'[set_database] database not found: {name}')
         return
     w.reload_db(name)
 
@@ -55,7 +55,7 @@ def add_database(ctx):
     if text is None:
         return
     text = text.strip()
-    logger.info(f'[add_database] {text}')
+    AppLogger.info(f'[add_database] {text}')
     if not text or text in get_setting_file_names():
         return
     Proc.new_main('--collector', text)

@@ -2,7 +2,7 @@ from typing import Any, Dict, List, Tuple, Union, Set, Callable, Iterable, Optio
 from weakref import WeakValueDictionary
 from PySide6 import QtCore, QtGui, QtWidgets
 from source.common.profiling import profiler
-from source.common.errors import show_warning
+from source.common.logs import AppLogger
 from ...command.core import CommandRegistry
 from ...command.context import CommandContext
 from ...command.payload import CommandPayload
@@ -259,7 +259,7 @@ class ShortcutManager(QtCore.QObject):
                 try:
                     scope = widget.binding_scope() or ""
                 except Exception as e:
-                    show_warning(None, "binding_scope failed", exc=e)
+                    AppLogger.warning("binding_scope failed", exc=e)
             ctx = CommandContext.create(widget, scope, source="key", event=event)
             self._registry.execute(payload.id, ctx=ctx, **args)
 

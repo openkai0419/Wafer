@@ -6,7 +6,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from PIL import Image
 from .exif_parser import ExifParser
 
-from ..common.profiling import logger
+from ..common.logs import AppLogger
 from ..common.hashes import fast_sig_hash
 from ..common.helpers import call_int0
 from .manager import BaseLoader, BaseReader
@@ -40,7 +40,7 @@ class ImageReader(BaseReader):
             return (info, meta_info, tags, None)
 
         except Exception as e:
-            logger.warning(f'Failed to process {p}: {e}')
+            AppLogger.warning(f'Failed to process {p}: {e}')
             info = {
                 "source": p,
                 "path": p,
@@ -188,6 +188,6 @@ class ImageLoader(BaseLoader):
                 if img is not None:
                     return img
             except Exception as qe:
-                logger.warning(f'[ImageLoader] Qt fallback failed: {path} ({qe})')
-            logger.warning(f'[ImageLoader] Failed to load image: {path} ({e})')
+                AppLogger.warning(f'[ImageLoader] Qt fallback failed: {path} ({qe})')
+            AppLogger.warning(f'[ImageLoader] Failed to load image: {path} ({e})')
             return None

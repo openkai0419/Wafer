@@ -1,4 +1,5 @@
-from ..common.profiling import logger, profiler
+from ..common.profiling import profiler
+from ..common.logs import AppLogger
 
 class AutoRegister(type):
     def __init__(cls, name, bases, ns):

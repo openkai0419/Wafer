@@ -7,7 +7,7 @@ from typing import Any, Tuple, Dict
 from PIL import Image, ExifTags
 from PIL.TiffImagePlugin import IFDRational
 
-from ..common.errors import show_warning
+from ..common.logs import AppLogger
 
 TAGS = ExifTags.TAGS
 GPSTAGS = ExifTags.GPSTAGS
@@ -202,7 +202,7 @@ class ExifParser:
             if lon is not None:
                 out["GPS/GPSLongitudeDecimal"] = lon
         except Exception as e:
-            show_warning(None, "parse gps failed", exc=e)
+            AppLogger.warning("parse gps failed", exc=e)
         return out
 
     @classmethod
@@ -227,7 +227,7 @@ class ExifParser:
         try:
             return cls._extract_from_exif_obj(img.getexif())
         except Exception as e:
-            show_warning(None, "extract_exif failed", exc=e)
+            AppLogger.warning("extract_exif failed", exc=e)
             return {}
 
     @staticmethod

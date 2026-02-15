@@ -12,8 +12,7 @@ from typing import Dict, List, Literal, Optional, Tuple
 import requests
 from PySide6 import QtCore, QtGui
 
-from ..common.errors import show_warning
-from ..common.profiling import logger
+from ..common.logs import AppLogger
 
 
 def _norm_abs_case(p: str) -> str:
@@ -147,7 +146,7 @@ def save_remote_item(item, target_path: str, *, move: bool = False) -> Dict[str,
         try:
             with open(target_path, "wb") as f:
                 f.write(item.source)
-            logger.info(f"Saved binary data to {target_path}")
+            AppLogger.info(f"Saved binary data to {target_path}")
             return {"action": "save", "src": "(binary)", "dst": target_path, "status": "ok"}
         except Exception as e:
             return {"action": "save", "src": "(binary)", "dst": target_path, "status": "error", "error": repr(e)}
@@ -161,10 +160,10 @@ def save_remote_item(item, target_path: str, *, move: bool = False) -> Dict[str,
                     for chunk in resp.iter_content(chunk_size=1024 * 256):
                         if chunk:
                             f.write(chunk)
-            logger.info(f"Downloaded: {src_info} → {target_path}")
+            AppLogger.info(f"Downloaded: {src_info} → {target_path}")
             return {"action": "download", "src": src_info, "dst": target_path, "status": "ok"}
         except Exception as e:
-            logger.warning(f"Failed to download {src_info}: {e}")
+            AppLogger.warning(f"Failed to download {src_info}: {e}")
             return {"action": "download", "src": src_info, "dst": target_path, "status": "error", "error": repr(e)}
 
     return {"action": "unknown", "src": src_info, "dst": target_path, "status": "error", "error": "Invalid item type"}
@@ -327,6 +326,7 @@ class PasteExecutor:
             done = copy_or_move(src, final_dst, action=action, follow_symlinks=self._follow_symlinks)
             return {"action": "move" if action == "cut" else "copy", "src": str(src), "dst": str(done), "status": "ok"}
         except Exception as e:
+            AppLogger.warning(f'copy/move failed: {src} -> {final_dst}', exc=e)
             return {"action": "move" if action == "cut" else "copy", "src": str(src), "dst": str(final_dst), "status": "error", "error": repr(e)}
 
     @staticmethod
@@ -494,7 +494,7 @@ class ClipboardFilePaster:
                     if p.exists():
                         paths.append(p)
             except (OSError, ValueError) as e:
-                show_warning(None, f"_parse_uri_list_text failed: {line}", exc=e)
+                AppLogger.warning(f"_parse_uri_list_text failed: {line}", exc=e)
         return paths
 
     def _parse_plain_text_paths(self, text: str) -> List[Path]:
@@ -509,7 +509,7 @@ class ClipboardFilePaster:
                 if p.exists():
                     paths.append(p)
             except (OSError, ValueError) as e:
-                show_warning(None, f"_parse_plain_text_paths failed: {s}", exc=e)
+                AppLogger.warning(f"_parse_plain_text_paths failed: {s}", exc=e)
         return list(dict.fromkeys(paths))
 
     def collect_clipboard_files(self) -> Optional[CutCopy]:
@@ -534,7 +534,7 @@ class ClipboardFilePaster:
                 text = bytes(md.data("text/uri-list")).decode("utf-8", errors="replace")
                 paths = self._parse_uri_list_text(text)
             except Exception as e:
-                show_warning(None, "clipboard uri-list decode failed", exc=e)
+                AppLogger.warning("clipboard uri-list decode failed", exc=e)
         if not paths and md.hasText():
             paths = self._parse_plain_text_paths(md.text())
 

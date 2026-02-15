@@ -3,16 +3,12 @@ from typing import Any, Callable, Dict, List, Optional
 from pathlib import Path
 from source.common.profiling import profiler
 from source.common.jsons import read_json_file, write_json_file
-from source.common.errors import show_warning
+from source.common.logs import AppLogger
 from .payload import CommandPayload
 
 
 def log_warning(message: str):
-    show_warning(None, str(message), "Warning")
-
-
-def log_error(message: str):
-    show_warning(None, str(message), "Error")
+    AppLogger.warning(str(message))
 
 
 class PersistentStore:
@@ -153,7 +149,7 @@ class ActionGroupStateManager:
             try:
                 observer(group_name, command_id)
             except Exception as e:
-                log_error(f"Observer notification failed: {group_name} {command_id}: {e}")
+                log_warning(f"Observer notification failed: {group_name} {command_id}: {e}")
     
     def register_member(self, group_name: str, command_id: str):
         if group_name not in self._group_members:
@@ -220,7 +216,7 @@ class ActionGroupStateManager:
         try:
             ok = bool(store.commit())
         except Exception as e:
-            log_error(f"Failed to commit action group state: {e}")
+            log_warning(f"Failed to commit action group state: {e}")
             return
         if not ok:
             log_warning("Action group state commit returned False")

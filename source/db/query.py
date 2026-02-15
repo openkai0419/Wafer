@@ -6,7 +6,8 @@ from typing import Sequence
 
 from .db_utils import apply_read_pragmas
 from ..common.funcs import normalize_path
-from ..common.profiling import logger, profiler
+from ..common.profiling import profiler
+from ..common.logs import AppLogger
 
 class MetaQuery:
     def __init__(
@@ -249,7 +250,7 @@ class MetaInfoSearchEngine:
             for name in required:
                 cur.execute("SELECT name FROM sqlite_master WHERE name=?", (name,))
                 if not cur.fetchone():
-                    logger.warning(f"Required table/view '{name}' not found in DB.")
+                    AppLogger.warning(f"Required table/view '{name}' not found in DB.")
                     conn.close()
                     return False
                 
@@ -257,7 +258,7 @@ class MetaInfoSearchEngine:
             self.conn = conn
             return True
         except sqlite3.OperationalError as e:
-            logger.warning(f'DB connection failed: {e}')
+            AppLogger.warning(f'DB connection failed: {e}', exc=e)
             return False
 
     def _normalize_path(self, path):
@@ -407,11 +408,11 @@ class MetaInfoSearchEngine:
             cur = self.conn.cursor()
             rows = cur.execute(f'EXPLAIN QUERY PLAN {sql}', params).fetchall()
             plan_lines = [f"[{row['id']}] {row['detail']}" for row in rows]
-            logger.info('========= SQLite Execution Plan =========')
+            AppLogger.info('========= SQLite Execution Plan =========')
             for line in plan_lines:
-                logger.info(line)
+                AppLogger.info(line)
         except Exception as e:
-            logger.warning(f'EXPLAIN QUERY PLAN failed: {e}')
+            AppLogger.warning(f'EXPLAIN QUERY PLAN failed: {e}')
             return None
         
     @profiler.profile

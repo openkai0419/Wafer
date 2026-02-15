@@ -6,7 +6,8 @@ from typing import Any, Callable, Iterable, Mapping
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from ...common.funcs import uipx
-from ...common.profiling import logger, profiler
+from ...common.profiling import profiler
+from ...common.logs import AppLogger
 
 
 # ---- 追加：巨大値対策のしきい値 ----
@@ -165,7 +166,7 @@ class MetaRowWidget(QtWidgets.QFrame):
             except Exception as e:
                 if key not in self._formatter_failed_keys:
                     self._formatter_failed_keys.add(key)
-                    logger.debug(f'MetaRowWidget formatter failed: {key} ({e})')
+                    AppLogger.debug(f'MetaRowWidget formatter failed: {key} ({e})')
 
         if value is None:
             return "—"

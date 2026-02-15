@@ -67,9 +67,9 @@ def format_payload_display(data: Any) -> str:
         try:
             return str(data)
         except Exception as e:
-            from source.common.errors import show_warning
+            from source.common.logs import AppLogger
 
-            show_warning(None, "format_payload_display str() failed", exc=e)
+            AppLogger.warning("format_payload_display str() failed", exc=e)
             return ""
     cid = p.id
     args = dict(p.args or {})
@@ -81,9 +81,9 @@ def format_payload_display(data: Any) -> str:
         try:
             name = str(getattr(meta, "display", cid) or cid)
         except Exception as e:
-            from source.common.errors import show_warning
+            from source.common.logs import AppLogger
 
-            show_warning(None, "format_payload_display meta.display failed", exc=e)
+            AppLogger.warning("format_payload_display meta.display failed", exc=e)
             name = cid
     if not args:
         return name

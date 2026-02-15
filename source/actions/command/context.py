@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, Mapping, Optional
 
-from source.common.errors import show_warning
+from source.common.logs import AppLogger
 
 
 def _zero_point() -> Any:
@@ -23,7 +23,7 @@ def _global_pos_from_app() -> Any:
     except (ImportError, ModuleNotFoundError):
         return None
     except Exception as e:
-        show_warning(None, "QCursor.pos() failed", exc=e)
+        AppLogger.warning("QCursor.pos() failed", exc=e)
         return None
 
 
@@ -163,7 +163,7 @@ class CommandContext:
                 else:
                     ctx.put_default(str(k), v)
         except Exception as e:
-            show_warning(None, "CommandContext._merge_seed failed", exc=e)
+            AppLogger.warning("CommandContext._merge_seed failed", exc=e)
         return ctx
 
     @staticmethod
@@ -186,7 +186,7 @@ class CommandContext:
                 if hasattr(widget, "binding_scope") and callable(widget.binding_scope):
                     sc = str(widget.binding_scope() or "*")
             except Exception as e:
-                show_warning(None, "binding_scope() failed", exc=e)
+                AppLogger.warning("binding_scope() failed", exc=e)
                 sc = "*"
         ctx = cls.build(widget, sc, source=source, event=event, start_pos=start_pos, start_global_pos=start_global_pos, extras=dict(extras or {}) or None)
         return cls.merge_seed(ctx, seed)
@@ -197,13 +197,13 @@ class CommandContext:
             if k in self.extras:
                 return self.extras.get(k)
         except Exception as e:
-            show_warning(None, f"CommandContext.get extras access failed: {k}", exc=e)
+            AppLogger.warning(f"CommandContext.get extras access failed: {k}", exc=e)
         if not k.startswith("_"):
             try:
                 if hasattr(self, k):
                     return getattr(self, k)
             except Exception as e:
-                show_warning(None, f"CommandContext.get attr access failed: {k}", exc=e)
+                AppLogger.warning(f"CommandContext.get attr access failed: {k}", exc=e)
         return default
 
     def get_many(self, keys, default: Any = None) -> list:
@@ -245,7 +245,7 @@ class CommandContext:
             cache[k] = tuple(xs)
             return list(xs) if xs else ([] if default is None else list(default))
         except Exception as e:
-            show_warning(None, "CommandContext.get_widgets failed", exc=e)
+            AppLogger.warning("CommandContext.get_widgets failed", exc=e)
             cache[k] = ()
             return [] if default is None else list(default)
 
@@ -266,7 +266,7 @@ class CommandContext:
             for k, v in extras.items():
                 self.extras[str(k)] = v
         except Exception as e:
-            show_warning(None, "CommandContext.merge failed", exc=e)
+            AppLogger.warning("CommandContext.merge failed", exc=e)
         return self
 
     def to_debug_dict(self) -> Dict[str, Any]:
@@ -294,13 +294,10 @@ class CommandContext:
     def to_debug_text(self) -> str:
         return str(self.to_debug_dict())
 
-    def print_debug(self, printer=print) -> None:
+    def print_debug(self, printer=None) -> None:
+        if printer is None:
+            printer = AppLogger.debug
         try:
-            printer(self.to_debug_dict())
+            printer(self.to_debug_text())
         except Exception as e:
-            show_warning(None, "CommandContext.print_debug failed", exc=e)
-            try:
-                printer(self.to_debug_text())
-            except Exception as e2:
-                show_warning(None, "CommandContext.print_debug fallback failed", exc=e2)
-                return
+            AppLogger.warning("CommandContext.print_debug failed", exc=e)

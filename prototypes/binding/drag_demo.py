@@ -1,6 +1,6 @@
 from pathlib import Path
 from source.actions.bridge import Kit
-from source.common.errors import show_warning
+from source.common.logs import AppLogger
 
 
 def accept_local_existing_files(ctx) -> bool:
@@ -13,7 +13,7 @@ def accept_local_existing_files(ctx) -> bool:
     try:
         mime = md()
     except Exception as e:
-        show_warning(None, "event.mimeData() failed", exc=e)
+        AppLogger.warning("event.mimeData() failed", exc=e)
         return False
     if not mime:
         return False
@@ -26,7 +26,7 @@ def accept_local_existing_files(ctx) -> bool:
     try:
         urls = urls_fn()
     except Exception as e:
-        show_warning(None, "mime.urls() failed", exc=e)
+        AppLogger.warning("mime.urls() failed", exc=e)
         return False
     for url in urls or []:
         is_local = getattr(url, "isLocalFile", None)
@@ -35,7 +35,7 @@ def accept_local_existing_files(ctx) -> bool:
             try:
                 p = Path(to_local())
             except Exception as e:
-                show_warning(None, "url.toLocalFile() failed", exc=e)
+                AppLogger.warning("url.toLocalFile() failed", exc=e)
                 continue
             if p.is_file():
                 return True

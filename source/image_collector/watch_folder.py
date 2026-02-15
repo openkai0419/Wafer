@@ -4,7 +4,8 @@ import threading
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 from ..common.funcs import IMAGE_EXTENSIONS
-from ..common.profiling import logger, profiler
+from ..common.profiling import profiler
+from ..common.logs import AppLogger
 from .progress_notifier import ProgressAggregator
 
 _EXTENSIONS = set(IMAGE_EXTENSIONS)
@@ -71,10 +72,12 @@ class WatchFolder:
                 self._observer.schedule(self._emitter, path, recursive=True)
         self._observer.start()
         self._folders = folders
+        AppLogger.info(f'watch start: {len(folders)} folders')
         self.rescan_all()
 
     def rescan_all(self):
         if self._folders:
+            AppLogger.info(f'rescan: {len(self._folders)} folders')
             self._q.put(('rescan', self._folders))
 
     def set_ignore(self, paths):
@@ -95,7 +98,7 @@ class WatchFolder:
                 self._observer.stop()
                 self._observer.join()
             except Exception as e:
-                logger.debug(f'observer stop: {e}')
+                AppLogger.debug(f'observer stop: {e}')
             self._observer = None
 
     def _loop(self):
@@ -143,18 +146,23 @@ class WatchFolder:
         try:
             with self._db as indexer:
                 if cmd == 'update':
+                    AppLogger.info(f'db update: {len(data)} files')
                     self._progress.add(0, len(data))
                     indexer.update_by_file_list(data)
                 elif cmd == 'remove':
+                    AppLogger.info(f'db remove: {len(data)} files')
                     self._progress.add(0, len(data))
                     indexer.remove_by_file_list(data)
                 elif cmd == 'rescan':
+                    AppLogger.info(f'db rescan: {len(data)} folders')
                     indexer.update_index(data)
                 elif cmd == 'cleanup':
+                    AppLogger.info('db cleanup')
                     self._progress.add(0, 1)
                     indexer.clean_unused()
                     self._progress.add(1, 0)
                 elif cmd == 'ignore':
+                    AppLogger.info(f'db ignore: {len(data)} paths')
                     indexer.set_exclude_paths(data, run=True)
-        except Exception:
-            logger.exception(f'db exec {cmd} failed')
+        except Exception as e:
+            AppLogger.warning(f'db exec {cmd} failed', exc=e)

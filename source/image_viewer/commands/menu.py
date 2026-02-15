@@ -10,14 +10,13 @@ from .grid_view import GridViewCommands, GridViewDragCommands, GridViewDropComma
 from .window_commands import WindowCommands
 from .query_commands import QueryCommands
 from .database_commands import DatabaseCommands
+from .debug_commands import DebugCommands
 
 
 class MenuMenu(Kit.MenuBase):
     prefix = ""
 
     commands = [
-        "debug/:Debug",
-        Kit.Command(path="debug/printCtx", display="Print Ctx", func=lambda ctx: (ctx.print_debug())),
         "menus/:Menus",
         Kit.Command(path="menus/showimageviewmenu", display="Image View Menu", func=lambda ctx: Menu.exec_menu(ImageViewCommands.prefix, ctx)),
         Kit.Command(path="menus/showfilemenu",  display="File View Menu", func=lambda ctx: Menu.exec_menu(FileCommands.prefix, ctx)),
@@ -46,6 +45,7 @@ class MenuMenu(Kit.MenuBase):
         ImageViewDragCommands.register()
         DatabaseCommands.register()
         WindowCommands.register()
+        DebugCommands.register()
         MenuMenu.register()
 
         Settings.configure(

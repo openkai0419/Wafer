@@ -6,7 +6,8 @@ from typing import Callable, Optional
 
 import psutil
 from PySide6 import QtCore
-from ..common.profiling import logger, profiler
+from ..common.profiling import profiler
+from ..common.logs import AppLogger
 
 
 class _CancellableSignals(QtCore.QObject):
@@ -31,7 +32,7 @@ class CancellableRunnable(QtCore.QRunnable):
         try:
             result = self.execute()
         except Exception as e:
-            logger.exception(f'[{type(self).__name__}] failed: {e}')
+            AppLogger.warning(f'[{type(self).__name__}] failed: {e}', exc=e)
             return
         if self._cancelled:
             return
@@ -193,7 +194,7 @@ class AdaptiveThreadPool:
             new_count = max(self.base_limit, (current + 1) // 2)
             if new_count != current:
                 self.pool.setMaxThreadCount(new_count)
-                logger.debug(f'[ThreadPool] Halved maxThreadCount: {current} -> {new_count}')
+                AppLogger.debug(f'[ThreadPool] Halved maxThreadCount: {current} -> {new_count}')
             return
 
         # 従来の ±1 調整
@@ -205,7 +206,7 @@ class AdaptiveThreadPool:
         new_count = max(1, min(self.max_limit, max(self.base_limit, current + delta)))
         if new_count != current:
             self.pool.setMaxThreadCount(new_count)
-            logger.debug(f'[ThreadPool] Adjusted maxThreadCount: {current} -> {new_count} (delta {delta:+d})')
+            AppLogger.debug(f'[ThreadPool] Adjusted maxThreadCount: {current} -> {new_count} (delta {delta:+d})')
 
 
 

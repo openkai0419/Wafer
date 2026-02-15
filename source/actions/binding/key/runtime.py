@@ -1,7 +1,7 @@
 from typing import Set, Dict, List, Callable, Any, Tuple, Deque, Union
 from collections import deque
 from PySide6 import QtCore, QtGui
-from source.common.errors import show_warning
+from source.common.logs import AppLogger
 
 KeySpec = Union[int, str]
 
@@ -101,13 +101,13 @@ class KeyListenerRegistry:
             try:
                 cb(*args)
             except Exception as e:
-                show_warning(None, f"key press listener failed: {getattr(cb, '__name__', str(cb))}", exc=e)
+                AppLogger.warning(f"key press listener failed: {getattr(cb, '__name__', str(cb))}", exc=e)
     def emit_release(self, wid: int, *args: Any):
         for cb in list(self._release.get(int(wid), []) or []):
             try:
                 cb(*args)
             except Exception as e:
-                show_warning(None, f"key release listener failed: {getattr(cb, '__name__', str(cb))}", exc=e)
+                AppLogger.warning(f"key release listener failed: {getattr(cb, '__name__', str(cb))}", exc=e)
     def remove_all(self, wid: int):
         self._press.pop(int(wid), None)
         self._release.pop(int(wid), None)

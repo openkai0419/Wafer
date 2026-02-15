@@ -5,7 +5,8 @@ import sqlite3
 import stat
 import time
 from ..common.funcs import get_data_db, get_data_file_names, get_setting_file_names
-from ..common.profiling import logger, profiler
+from ..common.profiling import profiler
+from ..common.logs import AppLogger
 
 
 def apply_write_pragmas(conn: sqlite3.Connection):
@@ -31,12 +32,12 @@ def connect_with_retry(path, timeout=3.0, retries=3, delay=1.0, **kwargs):
             return sqlite3.connect(path, timeout=timeout, **kwargs)
         except sqlite3.OperationalError as e:
             last_exception = e
-            logger.warning(f'[connect_with_retry] Attempt {attempt + 1} failed: {e}')
+            AppLogger.warning(f'[connect_with_retry] Attempt {attempt + 1} failed: {e}')
             time.sleep(delay)
         except Exception as e:
-            logger.error(f'[connect_with_retry] Unexpected error: {e}')
+            AppLogger.error(f'[connect_with_retry] Unexpected error: {e}', exc=e)
             raise
-    logger.error('[connect_with_retry] All attempts failed. Raising last exception.')
+    AppLogger.error('[connect_with_retry] All attempts failed.', exc=last_exception)
     raise last_exception
 
 
@@ -51,51 +52,51 @@ def retry_sqlite_connection(db_name, timeout=3.0, interval=0.1):
 @profiler.profile
 def delete_database_files(dbname, retries=1000, delay=1.0, force=False):
     base = os.path.abspath(dbname)
-    logger.info(f'Deleting database files: {base}')
+    AppLogger.info(f'Deleting database files: {base}')
     patterns = [base, f'{base}-journal', f'{base}-wal', f'{base}-shm'] + glob.glob(f'{base}*')
     targets = {p for p in patterns if os.path.isfile(p)}
     if not targets:
-        logger.info('No database files found to delete.')
+        AppLogger.info('No database files found to delete.')
         return True
 
     def remove(path):
         try:
             os.remove(path)
-            logger.info(f'Deleted: {path}')
+            AppLogger.info(f'Deleted: {path}')
             return True
         except FileNotFoundError:
             return True
         except (PermissionError, OSError) as e:
             if getattr(e, 'errno', None) not in (None, errno.EACCES, errno.EBUSY):
-                logger.exception(f'Unexpected error on {path}')
-                raise
-            logger.warning(f'Failed to delete {path}: {e}')
+                AppLogger.error(f'Unexpected error on {path}: {e}', exc=e)
+            else:
+                AppLogger.warning(f'Failed to delete {path}: {e}')
             if force:
                 try:
                     os.chmod(path, os.stat(path).st_mode | stat.S_IWUSR)
                     os.remove(path)
-                    logger.info(f'Force-deleted: {path}')
+                    AppLogger.info(f'Force-deleted: {path}')
                     return True
                 except Exception as fe:
-                    logger.error(f'Force delete failed on {path}: {fe}')
+                    AppLogger.warning(f'Force delete failed on {path}: {fe}')
             return False
     for attempt in range(1, retries + 1):
         remaining = {p for p in targets if not remove(p)}
         if not remaining:
-            logger.info('All database files deleted successfully.')
+            AppLogger.info('All database files deleted successfully.')
             return True
-        logger.info(f'Retry {attempt}/{retries} in {delay:.1f}s… (remaining: {remaining})')
+        AppLogger.info(f'Retry {attempt}/{retries} in {delay:.1f}s… (remaining: {remaining})')
         time.sleep(delay)
-    logger.error(f'Failed to delete DB files after {retries} attempts: {remaining}')
+    AppLogger.warning(f'Failed to delete DB files after {retries} attempts: {remaining}')
     return False
 
 def clean_database():
-    logger.info('CLEAN DATABASES')
+    AppLogger.info('CLEAN DATABASES')
     settings = set(get_setting_file_names())
-    logger.info(settings)
+    AppLogger.info(settings)
     datas = set(get_data_file_names())
-    logger.info(datas)
+    AppLogger.info(datas)
     diff = datas - settings
-    logger.info(f'[DIFF] {diff}')
+    AppLogger.info(f'[DIFF] {diff}')
     for d in diff:
         delete_database_files(get_data_db(d))

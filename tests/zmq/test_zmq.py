@@ -152,15 +152,16 @@ class TestBrokerNode:
             v1.start(broker.port)
             v1.wait_registered(timeout=3.0)
 
-            v2 = Node('viewer', db='photos')
-            v2.start(broker.port)
-            v2.wait_registered(timeout=3.0)
+            idx = Node('collector', db='photos')
+            idx.start(broker.port)
+            idx.wait_registered(timeout=3.0)
 
             reply = v1.request('mgmt.get_count', timeout=3.0)
             assert reply is not None
-            assert reply.payload.get('viewer', 0) == 2
+            assert reply.payload.get('viewer', 0) == 1
+            assert reply.payload.get('collector', 0) == 1
         finally:
-            v2.stop()
+            idx.stop()
             v1.stop()
             broker.stop()
 
@@ -185,31 +186,31 @@ class TestBrokerNode:
     def test_db_filter(self):
         broker = Broker()
         broker.start()
-        v_photos_msgs = []
-        v_all_msgs = []
+        v_msgs = []
+        c_msgs = []
         try:
             idx_ill = Node('collector', db='illustrations')
             idx_ill.start(broker.port)
             idx_ill.wait_registered(timeout=3.0)
 
-            v_photos = Node('viewer', db='photos')
-            v_photos.on('db.progress', lambda m: v_photos_msgs.append(m))
-            v_photos.start(broker.port)
-            v_photos.wait_registered(timeout=3.0)
+            v = Node('viewer', db='photos')
+            v.on('db.progress', lambda m: v_msgs.append(m))
+            v.start(broker.port)
+            v.wait_registered(timeout=3.0)
 
-            v_all = Node('viewer', db=['photos', 'illustrations'])
-            v_all.on('db.progress', lambda m: v_all_msgs.append(m))
-            v_all.start(broker.port)
-            v_all.wait_registered(timeout=3.0)
+            c_all = Node('communicator', db=['photos', 'illustrations'])
+            c_all.on('db.progress', lambda m: c_msgs.append(m))
+            c_all.start(broker.port)
+            c_all.wait_registered(timeout=3.0)
 
-            idx_ill.notify('db.progress', 50)
+            idx_ill.send('db.progress', 50)
             time.sleep(0.5)
 
-            assert len(v_all_msgs) >= 1
-            assert len(v_photos_msgs) == 0
+            assert len(c_msgs) >= 1
+            assert len(v_msgs) == 0
         finally:
-            v_all.stop()
-            v_photos.stop()
+            c_all.stop()
+            v.stop()
             idx_ill.stop()
             broker.stop()
 

@@ -3,7 +3,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from source.common.profiling import profiler
 from ...command.core import CommandRegistry
 from ...command.context import CommandContext
-from source.common.errors import show_warning
+from source.common.logs import AppLogger
 
 class ClickType(Enum):
     SINGLE = auto()
@@ -377,7 +377,7 @@ class MouseEventManager:
                 result = self._resolver(key, *args, **kwargs)
                 handled = bool(result)
             except Exception as e:
-                show_warning(None, f"Mouse resolver failed: {key}", exc=e)
+                AppLogger.warning(f"Mouse resolver failed: {key}", exc=e)
                 handled = False
         if handled:
             if key.click_type == ClickType.SINGLE and key.held_buttons:
@@ -422,14 +422,14 @@ class MouseEventManager:
             try:
                 return m()
             except Exception as e:
-                show_warning(None, "event.modifiers() failed", exc=e)
+                AppLogger.warning("event.modifiers() failed", exc=e)
                 return QtCore.Qt.NoModifier
         km = getattr(event, "keyboardModifiers", None)
         if callable(km):
             try:
                 return km()
             except Exception as e:
-                show_warning(None, "event.keyboardModifiers() failed", exc=e)
+                AppLogger.warning("event.keyboardModifiers() failed", exc=e)
                 return QtCore.Qt.NoModifier
         return QtCore.Qt.NoModifier
 
@@ -446,7 +446,7 @@ class MouseEventManager:
             if modifiers & QtCore.Qt.MetaModifier:
                 r.append(ModifierKey.META)
         except Exception as e:
-            show_warning(None, "MouseEventManager.get_modifiers failed", exc=e)
+            AppLogger.warning("MouseEventManager.get_modifiers failed", exc=e)
             return tuple()
         return tuple(r)
 
@@ -575,7 +575,7 @@ class MouseEventDispatcher(QtCore.QObject):
             if candidate == self._target:
                 self._state.set_double_click_button(self._target, event.button())
         except Exception as e:
-            show_warning(None, "double click detection failed", exc=e)
+            AppLogger.warning("double click detection failed", exc=e)
 
     def _find_target_widget(self, event):
         try:
@@ -583,7 +583,7 @@ class MouseEventDispatcher(QtCore.QObject):
             gpt = self._get_global_pos(event)
             return BindingManager.instance().find_binding_widget_at(gpt)
         except Exception as e:
-            show_warning(None, "find_binding_widget_at failed", exc=e)
+            AppLogger.warning("find_binding_widget_at failed", exc=e)
             return None
 
     def _handle_mouse_release(self, event):
@@ -745,7 +745,7 @@ class MouseEventDispatcher(QtCore.QObject):
             try:
                 payload = self._target.get_mouse_bindings().get(key)
             except Exception as e:
-                show_warning(self._target, "get_mouse_bindings() failed", exc=e)
+                AppLogger.warning("get_mouse_bindings() failed", exc=e)
         if payload is None:
             try:
                 from .store import MouseBindingStore
@@ -753,7 +753,7 @@ class MouseEventDispatcher(QtCore.QObject):
                 scope = self._target.binding_scope() if hasattr(self._target, "binding_scope") else "*"
                 payload = store.resolve(scope, key)
             except Exception as e:
-                show_warning(self._target, "MouseBindingStore.resolve failed", exc=e)
+                AppLogger.warning("MouseBindingStore.resolve failed", exc=e)
         return payload, key
 
     def _handle_drag_enter(self, event):
@@ -789,7 +789,7 @@ class MouseEventDispatcher(QtCore.QObject):
             ctx = ExternalDropDynamicContext(self._target, CommandRegistry(), self._resolve_drop_payload)
             executed = bool(ctx.on_enter(event))
         except Exception as e:
-            show_warning(self._target, "ExternalDropDynamicContext.on_enter failed", exc=e)
+            AppLogger.warning("ExternalDropDynamicContext.on_enter failed", exc=e)
             ctx = None
         if ctx is None:
             try:

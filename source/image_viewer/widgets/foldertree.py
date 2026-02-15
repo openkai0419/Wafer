@@ -3,7 +3,8 @@ from pathlib import Path
 from natsort import natsorted
 from PySide6 import QtCore, QtGui, QtWidgets
 from ...common.funcs import normalize_path
-from ...common.profiling import logger, profiler
+from ...common.profiling import profiler
+from ...common.logs import AppLogger
 from ..viewer_settings import main_setting
 from ...actions.bridge import Kit, UI, Context
 from ...os.dragparser import MimeDataParser
@@ -415,7 +416,7 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
                             return True
             return False
         except Exception as e:
-            logger.debug(f'Failed to quick-check entries in {path}: {e}')
+            AppLogger.debug(f'Failed to quick-check entries in {path}: {e}')
             return False
 
     @profiler.profile
@@ -437,7 +438,7 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
                 parent_item.appendRow(child)
                 self._add_item(full_path, child)
         except Exception as e:
-            logger.debug(f'Failed to read {path}: {e}')
+            AppLogger.debug(f'Failed to read {path}: {e}')
 
     @profiler.profile
     def _is_valid_item(self, item):

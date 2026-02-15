@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, List, Optional, Sequence
 from source.common.profiling import profiler
 from .core import register_command_defs, CommandMeta
-from source.common.errors import show_warning
+from source.common.logs import AppLogger
 
 
 def split_parts(raw: str) -> List[str]:
@@ -50,7 +50,7 @@ def chain_providers(*providers: Optional[Callable[[], Dict[str, Any]]]) -> Optio
                 if isinstance(v, dict):
                     r.update(v)
             except Exception as e:
-                show_warning(None, f"chain_providers failed: {getattr(fn, '__name__', str(fn))}", exc=e)
+                AppLogger.warning(f"chain_providers failed: {getattr(fn, '__name__', str(fn))}", exc=e)
         return r
     return _p
 
@@ -161,7 +161,7 @@ class RegistryBackedMenu:
         try:
             MenuHub().register_paths(t, cmd_paths, items)
         except Exception as e:
-            show_warning(None, f"MenuHub.register_paths failed: {t.__name__}", exc=e)
+            AppLogger.warning(f"MenuHub.register_paths failed: {t.__name__}", exc=e)
         self._flags[t] = True
 
 
@@ -205,7 +205,7 @@ def register_menu_classes(menu_classes: Sequence[type[RegistryBackedMenu]]) -> N
         try:
             cls.register()
         except Exception as e:
-            show_warning(None, f"register_menu_classes failed: {getattr(cls, '__name__', str(cls))}", exc=e)
+            AppLogger.warning(f"register_menu_classes failed: {getattr(cls, '__name__', str(cls))}", exc=e)
 
 
 class MenuHub:

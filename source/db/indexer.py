@@ -11,7 +11,8 @@ from source.io.manager import ReaderClass
 from .image_db import ImageDB
 from ..common.funcs import IMAGE_EXTENSIONS, normalize_path
 from ..common.hashes import fast_sig_hash
-from ..common.profiling import logger, profiler
+from ..common.profiling import profiler
+from ..common.logs import AppLogger
 
 _CHUNK = 900
 _executor = concurrent.futures.ThreadPoolExecutor()
@@ -34,11 +35,11 @@ class ImageIndexer:
         if not self.db.conn:
             raise Exception('please use with __enter__')
         self.db.initialize_database()
-        logger.info(f'image indexer init end {self.db.db_path}')
+        AppLogger.info(f'image indexer init end {self.db.db_path}')
 
     def set_progress_callback(self, callback):
         self._progress_callback = callback
-        logger.debug('Progress callback set: %s', callback)
+        AppLogger.debug(f'Progress callback set: {callback}')
 
     def set_update_callback(self, callback):
         self._update_callback = callback
@@ -48,14 +49,14 @@ class ImageIndexer:
         if self._update_callback:
             self._update_callback()
         else:
-            logger.debug('Update callback is not set')
+            AppLogger.debug('Update callback is not set')
 
     @profiler.profile
     def _add_progress(self, current, total):
         if self._progress_callback:
             self._progress_callback(current, total)
         else:
-            logger.debug('Progress callback is not set')
+            AppLogger.debug('Progress callback is not set')
 
     @profiler.profile
     def start(self):
@@ -78,7 +79,7 @@ class ImageIndexer:
     @profiler.profile
     def set_exclude_paths(self, paths, run=False):
         self.exclude_paths = {normalize_path(p) for p in paths}
-        logger.info(f'[ExcludePaths] {len(self.exclude_paths)} paths set.')
+        AppLogger.info(f'[ExcludePaths] {len(self.exclude_paths)} paths set.')
         if run:
             self.remove_excluded_from_db()
 
@@ -93,21 +94,21 @@ class ImageIndexer:
     def remove_excluded_from_db(self):
         if not self.exclude_paths:
             return
-        logger.info('[ExcludePaths] Removing existing entries under exclude paths...')
+        AppLogger.info('[ExcludePaths] Removing existing entries under exclude paths...')
         cur = self.db.get_reader_cursor()
         cur.execute('SELECT source FROM sources')
         all_paths = [normalize_path(row[0]) for row in cur.fetchall()]
         cur.close()
         to_remove = [p for p in all_paths if self.is_path_excluded(p)]
         if not to_remove:
-            logger.info('[ExcludePaths] No matching entries to remove.')
+            AppLogger.info('[ExcludePaths] No matching entries to remove.')
             return
         self._add_progress(0, len(to_remove))
         for i in range(0, len(to_remove), _CHUNK):
             chunk = to_remove[i:i + _CHUNK]
             self.db.delete_sources_by_paths(chunk)
             self._add_progress(len(chunk), 0)
-        logger.info(f'[ExcludePaths] Removed {len(to_remove)} entries from DB.')
+        AppLogger.info(f'[ExcludePaths] Removed {len(to_remove)} entries from DB.')
         self.emit_update()
 
     @profiler.profile
@@ -134,7 +135,7 @@ class ImageIndexer:
             self._add_progress(0, 1)
             full_path = normalize_path(current)
             if self.is_path_excluded(full_path):
-                logger.debug(f'[Excluded] Skipping file: {full_path}')
+                AppLogger.debug(f'[Excluded] Skipping file: {full_path}')
                 self._add_progress(1, 0)
                 continue
             try:
@@ -145,7 +146,8 @@ class ImageIndexer:
                         elif entry.is_dir(follow_symlinks=False):
                             stack.append(entry.path)
                 self._add_progress(1, 0)
-            except Exception:
+            except Exception as e:
+                AppLogger.debug(f'scan_directory_fast error: {current} ({e})')
                 self._add_progress(1, 0)
                 continue
 
@@ -153,7 +155,7 @@ class ImageIndexer:
     def update_index(self, root_paths: Sequence[str] | str):
         if isinstance(root_paths, str):
             root_paths = [root_paths]
-        logger.info('UPDATE_INDEX')
+        AppLogger.info('UPDATE_INDEX')
         current_compare = {}
         file_info = {}
         for path in root_paths:
@@ -168,14 +170,14 @@ class ImageIndexer:
         added_or_modified, removed = self._detect_diff(current_compare, previous)
         self._add_progress(0, len(added_or_modified))
         self._add_progress(0, len(removed))
-        logger.info('added/modified: {}, removed: {}'.format(len(added_or_modified), len(removed)))
+        AppLogger.info(f'added/modified: {len(added_or_modified)}, removed: {len(removed)}')
 
         if removed:
             for i in range(0, len(removed), _CHUNK):
                 chunk = removed[i:i + _CHUNK]
                 self.db.delete_sources_by_paths(chunk)
                 self._add_progress(len(chunk), 0)
-            logger.info(f'deleted {len(removed)} files')
+            AppLogger.info(f'deleted {len(removed)} files')
             self.db.try_checkpoint('PASSIVE')
             self.emit_update()
 
@@ -197,7 +199,7 @@ class ImageIndexer:
             except FileNotFoundError:
                 self._add_progress(1, 0)
         if not stat_info:
-            logger.info('No valid files to update.')
+            AppLogger.info('No valid files to update.')
             return
         previous = {}
         keys = list(stat_info.keys())
@@ -219,7 +221,7 @@ class ImageIndexer:
             self.db.try_checkpoint()
             self.emit_update()
         else:
-            logger.info('[update_by_file_list] No updates needed.')
+            AppLogger.info('[update_by_file_list] No updates needed.')
 
     @profiler.profile
     def remove_by_file_list(self, file_paths):
@@ -235,13 +237,14 @@ class ImageIndexer:
             self._add_progress(len(chunk), 0)
         self.db.try_checkpoint()
         self.emit_update()
-        logger.info(f'[remove_by_file_list] Removed {len(normalized)} entries from DB')
+        AppLogger.info(f'[remove_by_file_list] Removed {len(normalized)} entries from DB')
 
     @staticmethod
     def _read_single(p):
         try:
             return ReaderClass.read(p)
-        except Exception:
+        except Exception as e:
+            AppLogger.debug(f'_read_single failed: {p} ({e})')
             norm = normalize_path(p)
             return ({'source': norm, 'path': norm, 'name': Path(p).name, 'aspect': None}, {}, {}, 'fail')
 
@@ -298,7 +301,7 @@ class ImageIndexer:
                 try:
                     self.db.upsert_batches(*item)
                 except Exception as e:
-                    logger.error(f'[WriterThread] Error in write_batch_to_db: {e}')
+                    AppLogger.warning(f'[WriterThread] Error in write_batch_to_db: {e}', exc=e)
                 finally:
                     write_queue.task_done()
 
@@ -346,7 +349,7 @@ class ImageIndexer:
             self.db.try_checkpoint('PASSIVE')
             self.emit_update()
             self._add_progress(len(batch), 0)
-            logger.info(f'[Adaptive Commit] {i}/{total} processed (batch={len(batch)}, {duration:.2f}s, target={target_s:.2f}s)')
+            AppLogger.info(f'[Adaptive Commit] {i}/{total} processed (batch={len(batch)}, {duration:.2f}s, target={target_s:.2f}s)')
 
         if acc_source or acc_image or acc_meta or acc_tag:
             write_queue.put((acc_source, acc_image, acc_meta, acc_tag))

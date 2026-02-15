@@ -9,7 +9,7 @@ from .binding.manager import BindingManager
 from .binding.seed import get_key_preset, get_mouse_preset, set_presets
 from .command.core import CommandRegistry
 from .command.state import CommandOptionStore
-from source.common.errors import raise_error, show_warning
+from source.common.logs import AppLogger
 
 
 class Kit:
@@ -291,21 +291,24 @@ class MenuSession:
         try:
             plan = self.maker.menu(Menu._normalize_menu_items(items))
         except Exception as e:
-            raise_error(self.parent, str(e), "Error")
+            AppLogger.warning(str(e), exc=e)
+            return None
         return MenuSpec(self, plan)
 
     def use(self, folder: str):
         try:
             plan = self.maker.use(str(folder))
         except Exception as e:
-            raise_error(self.parent, str(e), "Error")
+            AppLogger.warning(str(e), exc=e)
+            return None
         return MenuSpec(self, plan)
 
     def all_roots(self):
         try:
             plan = self.maker.all_roots()
         except Exception as e:
-            raise_error(self.parent, str(e), "Error")
+            AppLogger.warning(str(e), exc=e)
+            return None
         return MenuSpec(self, plan)
 
     def build(
@@ -322,7 +325,8 @@ class MenuSession:
                 allow_options_with_selection=allow_options_with_selection,
             )
         except Exception as e:
-            raise_error(self.parent, str(e), "Error")
+            AppLogger.warning(str(e), exc=e)
+            return None
 
 class MenuSpec:
     def __init__(self, session: "MenuSession", plan):
@@ -333,21 +337,21 @@ class MenuSpec:
         try:
             self._plan = self._plan.hide(targets)
         except Exception as e:
-            raise_error(self._session.parent, str(e), "Error")
+            AppLogger.warning(str(e), exc=e)
         return self
 
     def add(self, items):
         try:
             self._plan = self._plan.add(items)
         except Exception as e:
-            raise_error(self._session.parent, str(e), "Error")
+            AppLogger.warning(str(e), exc=e)
         return self
 
     def insert(self, target: str, items):
         try:
             self._plan = self._plan.insert(target, items)
         except Exception as e:
-            raise_error(self._session.parent, str(e), "Error")
+            AppLogger.warning(str(e), exc=e)
         return self
 
     def build(
@@ -439,7 +443,7 @@ class Context:
             if seed is not None:
                 w = seed._info.get("widget") if hasattr(seed, "_info") else None
                 if w is not None:
-                    show_warning(None, f"context menu target has no binding_scope: {type(w).__name__}")
+                    AppLogger.warning(f"context menu target has no binding_scope: {type(w).__name__}")
             return None, None
         return target, pos
 

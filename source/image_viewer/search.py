@@ -2,7 +2,8 @@ from datetime import datetime, timedelta
 
 from PySide6 import QtCore
 
-from ..common.profiling import logger, profiler
+from ..common.profiling import profiler
+from ..common.logs import AppLogger
 from ..db.query import MetaInfoSearchEngine, MetaQuery
 from ..qt.debounce import qt_debounce
 from ..qt.thread import main_thread, CancellableRunnable
@@ -121,7 +122,7 @@ class SearchService(QtCore.QObject):
     @qt_debounce(150)
     @profiler.profile
     def execute(self, force=False):
-        logger.debug('[RUNNING] SearchService.execute')
+        AppLogger.debug('[RUNNING] SearchService.execute')
         query = self.build_query()
         now = datetime.now()
         if not force:
@@ -135,7 +136,7 @@ class SearchService(QtCore.QObject):
                 if elapsed < self._timeout_threshold:
                     self._current_worker.cancel()
                 else:
-                    logger.info('[SEARCH] query is taking more than expected, continuing without cancel.')
+                    AppLogger.warning('query is taking more than expected, continuing without cancel.')
                     self._pending_query = query
                     return
             self._pending_query = None
@@ -160,6 +161,7 @@ class SearchService(QtCore.QObject):
         self._current_worker = None
         self._query_start_time = None
         paths, sources, aspects = result
+        AppLogger.debug(f'search done: {len(paths)} results')
         self.search_finished.emit(paths, sources, aspects)
         with QtCore.QMutexLocker(self._lock):
             if self._pending_query:

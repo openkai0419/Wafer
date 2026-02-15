@@ -1,7 +1,7 @@
 import os
 from blake3 import blake3
 
-from .errors import show_warning
+from .logs import AppLogger
 
 def fast_sig_hash(path: str, size=None, part_bytes = 256) -> str:
     try:
@@ -23,7 +23,7 @@ def fast_sig_hash(path: str, size=None, part_bytes = 256) -> str:
                     remaining -= len(chunk)
         return h.hexdigest(16)
     except (OSError, ValueError) as e:
-        show_warning(None, f"fast_sig_hash failed: {path}", exc=e)
+        AppLogger.warning(f"fast_sig_hash failed: {path}", exc=e)
         return "f"
 
 def full_hash(path: str, threads: int | None = None) -> str:
@@ -36,5 +36,5 @@ def full_hash(path: str, threads: int | None = None) -> str:
                 hasher.update(b)
         return hasher.hexdigest()
     except (OSError, ValueError) as e:
-        show_warning(None, f"full_hash failed: {path}", exc=e)
+        AppLogger.warning(f"full_hash failed: {path}", exc=e)
         return "f"

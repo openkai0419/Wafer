@@ -5,8 +5,10 @@ import sys
 import threading
 from source.common.funcs import get_setting_file_names
 from source.common.mutex import SafeProcessLock
-from source.common.profiling import initialize_profiling, logger, profiler
+from source.common.logs import AppLogger
+from source.common.profiling import profiler
 from source.constants import APP_FILE_NAME, APP_ID, APP_NAME, default_db_name
+import source.constants as constants
 from source.image_collector.main_collector import CollectorProcess
 from source.os.process import Proc
 from source.io.bootstrap import import_all 
@@ -26,7 +28,6 @@ def set_app_user_model_id(app_id):
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
 set_app_user_model_id(APP_ID)
 
-#logger.setLevel(logging.WARNING)
 
 def run_communicator():
     try:
@@ -34,7 +35,7 @@ def run_communicator():
         from PySide6 import QtWidgets
         from source.image_tray.main_tray import TrayApp
         with SafeProcessLock(f'{APP_FILE_NAME}_communicator'):
-            logger.info('COMMUNICATOR RUNNING')
+            AppLogger.info('COMMUNICATOR RUNNING')
             app = QtWidgets.QApplication(sys.argv)
             app.setQuitOnLastWindowClosed(False)
             app.setApplicationName(APP_NAME)
@@ -51,22 +52,21 @@ def run_collector(name, parent_pid=None):
     try:
         profiler.set_enabled(False)
         with SafeProcessLock(f'{APP_FILE_NAME}_{name}', parent_pid=parent_pid):
-            initialize_profiling()
-            logger.info(f'collector start :{name}')
+            AppLogger.info(f'collector start :{name}')
             collector = CollectorProcess(name)
             collector.start_watch()
             stop_event = threading.Event()
 
             def shutdown_handler(sig, frame):
-                logger.info('\n[Collector] Shutting down...')
+                AppLogger.info('[Collector] Shutting down...')
                 collector.stop()
                 stop_event.set()
             signal.signal(signal.SIGINT, shutdown_handler)
             signal.signal(signal.SIGTERM, shutdown_handler)
-            logger.info('[Collector] Running. Press Ctrl+C to exit.')
+            AppLogger.info('[Collector] Running. Press Ctrl+C to exit.')
             stop_event.wait()
     except FileExistsError:
-        logger.info(f"Collector '{name}' is already running.")
+        AppLogger.info(f"Collector '{name}' is already running.")
     except:
         raise
 
@@ -83,7 +83,6 @@ def run_all_collectors():
 def run_viewer():
     from PySide6 import QtWidgets
     from source.image_viewer.mainwindow import MainWindow
-    initialize_profiling()
     app = QtWidgets.QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     window = MainWindow(get_icon())
@@ -97,7 +96,10 @@ def main():
     group.add_argument('--viewer', action='store_true', help='run new viewer')
     group.add_argument('--collector', nargs='?', const=True, help='run collector for each settings. make new with optional string')
     parser.add_argument('--parent-pid', type=int, default=None)
+    parser.add_argument('--dev', action='store_true', help='enable developer mode')
     args = parser.parse_args()
+    if args.dev:
+        constants.DEV_MODE = True
     if not any([args.communicator, args.viewer, args.collector]):
         Proc.new_main('--communicator')
         run_viewer()

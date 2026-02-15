@@ -4,6 +4,8 @@ from typing import Any
 
 import msgpack
 
+from ..common.logs import AppLogger
+
 
 class Msg:
     __slots__ = ('topic', 'src', 'dst', 'db', 'payload', 'rid')
@@ -33,7 +35,8 @@ class Msg:
         try:
             header = msgpack.unpackb(frames[0], raw=False)
             payload = msgpack.unpackb(frames[1], raw=False)
-        except Exception:
+        except Exception as e:
+            AppLogger.debug(f'Msg.from_frames failed: {e}')
             return None
         return cls(
             topic=header.get('t', ''),

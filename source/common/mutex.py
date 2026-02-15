@@ -4,7 +4,7 @@ import time
 
 import psutil
 
-from ..common.errors import show_warning
+from ..common.logs import AppLogger
 from ..common.funcs import data_path
 
 class SafeProcessLock:
@@ -126,7 +126,7 @@ class SafeProcessLock:
                         time.sleep(0.1)
                         continue
                 except Exception as e:
-                    show_warning(None, f"SafeProcessLock.acquire failed: {self.lock_file}", exc=e)
+                    AppLogger.warning(f"SafeProcessLock.acquire failed: {self.lock_file}", exc=e)
                     if not self._try_remove_lock_file():
                         time.sleep(0.1)
                 time.sleep(0.1)
@@ -144,7 +144,7 @@ class SafeProcessLock:
                         return
                 self._try_remove_lock_file()
             except Exception as e:
-                show_warning(None, f"SafeProcessLock.release failed: {self.lock_file}", exc=e)
+                AppLogger.warning(f"SafeProcessLock.release failed: {self.lock_file}", exc=e)
 
     def __enter__(self):
         if not self.acquire():

@@ -6,7 +6,7 @@ from queue import Queue
 
 import zmq
 
-from ..common.profiling import logger
+from ..common.logs import AppLogger
 from ._core import (
     BROKER_QUEUE_MAX, DEFAULT_PORT, HEARTBEAT_TIMEOUT, POLL_BASE_MS,
     adaptive_poll, close_socket, drain_queue, try_put, tune_socket,
@@ -88,12 +88,13 @@ class Broker:
         self._prune_thread = threading.Thread(target=self._prune_loop, daemon=True)
 
     def start(self):
-        logger.info(f'Broker bound: tcp://127.0.0.1:{self.port}')
+        AppLogger.info(f'Broker bound: tcp://127.0.0.1:{self.port}')
         write_broker_port(self.port)
         self._io_thread.start()
         self._prune_thread.start()
 
     def stop(self):
+        AppLogger.info('Broker stopping')
         self._stop.set()
         try_put(self._direct_q, self._sentinel)
         self._io_thread.join(timeout=2.0)
@@ -111,9 +112,10 @@ class Broker:
         with self._lock:
             return {role: len(idents) for role, idents in self._by_role.items() if idents}
 
-    def _add_peer(self, ident: bytes, role: str, db_set: set[str], node_id: str):
+    def _add_peer(self, ident: bytes, role: str, db_set: set[str], node_id: str) -> bool:
         with self._lock:
             old = self._peers.get(ident)
+            is_new = not old or old.role != role
             if old:
                 self._by_role.get(old.role, set()).discard(ident)
                 self._by_node_id.pop(old.node_id, None)
@@ -121,12 +123,15 @@ class Broker:
             self._peers[ident] = peer
             self._by_role.setdefault(role, set()).add(ident)
             self._by_node_id[node_id] = ident
+            AppLogger.info(f'peer added: {node_id} role={role} db={db_set}')
+            return is_new
 
     def _remove_peer(self, ident: bytes):
         with self._lock:
             peer = self._peers.pop(ident, None)
             if not peer:
                 return
+            AppLogger.info(f'peer removed: {peer.node_id}')
             self._by_role.get(peer.role, set()).discard(ident)
             self._by_node_id.pop(peer.node_id, None)
 
@@ -171,14 +176,15 @@ class Broker:
                 db_set = {db_raw}
             else:
                 db_set = set()
-            self._add_peer(ident, role, db_set, node_id)
+            is_new = self._add_peer(ident, role, db_set, node_id)
             reply_payload = {'status': 'ok', 'node_id': node_id}
             if role == 'viewer':
-                self._viewer_counter += 1
+                if is_new:
+                    self._viewer_counter += 1
                 reply_payload['viewer_id'] = self._viewer_counter
             reply = msg.reply(reply_payload, topic='mgmt.registered')
             try_put(self._direct_q, (ident, reply.to_frames()))
-            logger.info(f'registered: {node_id} role={role} db={db_set}')
+            AppLogger.info(f'registered: {node_id} role={role} db={db_set}')
             return
 
         if topic == 'mgmt.heartbeat':
@@ -191,7 +197,8 @@ class Broker:
             try_put(self._direct_q, (ident, reply.to_frames()))
             return
 
-        targets = self._resolve_targets(msg, sender_ident=ident)
+        exclude = ident if topic != 'dev.log' else None
+        targets = self._resolve_targets(msg, sender_ident=exclude)
         if not targets:
             return
 
@@ -235,10 +242,10 @@ class Broker:
                     self._router.send_multipart([ident, *frames], copy=False)
                     did_work = True
                 except zmq.Again:
-                    logger.debug('broker: drop direct (timeout)')
+                    AppLogger.debug('broker: drop direct (timeout)')
                 except zmq.ZMQError as e:
                     if e.errno != zmq.EHOSTUNREACH:
-                        logger.debug('broker: send error %s', e)
+                        AppLogger.debug(f'broker: send error {e}')
             if sentinel:
                 break
 
@@ -251,7 +258,7 @@ class Broker:
                         pass
                     except zmq.ZMQError as e:
                         if e.errno != zmq.EHOSTUNREACH:
-                            logger.debug('broker: bcast error %s', e)
+                            AppLogger.debug(f'broker: bcast error {e}')
 
             idle_streak, poll_ms = adaptive_poll(did_work, idle_streak)
 
@@ -265,6 +272,6 @@ class Broker:
             for ident in stale:
                 peer = self._peers.get(ident)
                 if peer:
-                    logger.info(f'pruning stale peer: {peer.node_id}')
+                    AppLogger.info(f'pruning stale peer: {peer.node_id}')
                 self._remove_peer(ident)
             time.sleep(1)

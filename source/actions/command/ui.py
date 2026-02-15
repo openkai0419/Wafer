@@ -8,9 +8,9 @@ from source.common.funcs import uipx
 from source.common.profiling import profiler
 from .core import CommandMeta, CommandRegistry, COMMAND_MENU_MARKER
 from .context import CommandContext
-from source.common.errors import raise_error, show_warning
+from source.common.logs import AppLogger
 from .payload import CommandPayload
-from .state import ActionGroupStateManager, log_error, log_warning
+from .state import ActionGroupStateManager, log_warning
 from .menu import split_parts, is_sep_token, sep_path, is_section_token, section_parts
 from .maker import MenuMaker, MenuPlan
 from .state import CommandOptionStore
@@ -198,7 +198,7 @@ class CommandOptionsDialog(QtWidgets.QDialog, TranslatorMixin):
                 self._did_save = True
                 self.accept()
         except Exception as e:
-            log_error(f"Failed to execute command from dialog: {e}")
+            log_warning(f"Failed to execute command from dialog: {e}")
 
     def _on_reset_defaults(self):
         for param in self.command_class.meta.params:
@@ -280,7 +280,7 @@ class CommandMenuBuilder(TranslatorMixin):
                 if isinstance(more, dict) and more:
                     ctx.merge(more)
         except Exception as e:
-            show_warning(None, f"menu extend_context failed: {cmd_id}", exc=e)
+            AppLogger.warning(f"menu extend_context failed: {cmd_id}", exc=e)
         return ctx
 
     def _display_override(self, root_menu: QtWidgets.QMenu, cache: Dict[str, QtWidgets.QMenu], parent: QtWidgets.QWidget, target_menu: QtWidgets.QMenu, command_id: str, meta: CommandMeta, display_map: Optional[Dict[str, str]]):
@@ -436,7 +436,7 @@ class CommandMenuBuilder(TranslatorMixin):
                     return str(k).strip()
             return ""
         except Exception as e:
-            show_warning(parent, "resolve hotkey failed", exc=e)
+            AppLogger.warning("resolve hotkey failed", exc=e)
             return ""
 
     def _select_and_close_menu(self, name: str, menu: QtWidgets.QMenu, callback: Callable[[Any], None]):
@@ -445,7 +445,7 @@ class CommandMenuBuilder(TranslatorMixin):
             payload = CommandPayload(name, {})
             callback(payload)
         except Exception as e:
-            log_error(f"Failed to execute selection callback for '{name}': {e}")
+            log_warning(f"Failed to execute selection callback for '{name}': {e}")
 
     @profiler.profile
     def _get_checked(self, name: str, meta: CommandMeta) -> bool:
@@ -499,7 +499,7 @@ class CommandMenuBuilder(TranslatorMixin):
                 ctx.put("checked", True)
                 self.registry.execute(result, ctx=ctx)
             except Exception as e:
-                log_error(f"Failed to execute command: {e}")
+                log_warning(f"Failed to execute command: {e}")
         return result
 
     def get_action_group_current(self, group_name: str) -> Optional[str]:
@@ -588,7 +588,7 @@ class CommandMenuBuilder(TranslatorMixin):
                 try:
                     selection_callback(CommandPayload(command_name, options))
                 except Exception as e:
-                    log_error(f"Failed to call selection callback for '{command_name}': {e}")
+                    log_warning(f"Failed to call selection callback for '{command_name}': {e}")
         else:
             if not callable(selection_callback):
                 return
@@ -617,8 +617,7 @@ class CommandMenuBuilder(TranslatorMixin):
                     ctx.put("checked", bool(checked))
                 self.registry.execute(name, ctx=ctx, **args)
         except Exception as e:
-            log_error(f"Failed to execute command '{name}': {e}")
-            raise_error(None, str(e), self.t.tr("Error"))
+            log_warning(f"Failed to execute command '{name}': {e}")
 
     @profiler.profile
     def _get_or_create_submenu_chain(self, root_menu: QtWidgets.QMenu, cache: Dict[str, QtWidgets.QMenu], parts: List[str], parent: QtWidgets.QWidget) -> QtWidgets.QMenu:
@@ -729,13 +728,13 @@ class CommandMenuRow(QtWidgets.QWidget):
         try:
             self.setStyleSheet(CommandMenuRow._shared_style)
         except Exception as e:
-            show_warning(self, "CommandMenuRow.setStyleSheet failed", exc=e)
+            AppLogger.warning("CommandMenuRow.setStyleSheet failed", exc=e)
 
         gutter_w = self._compute_gutter()
         try:
             self._chk.setFixedWidth(gutter_w)
         except Exception as e:
-            show_warning(self, "CommandMenuRow._chk.setFixedWidth failed", exc=e)
+            AppLogger.warning("CommandMenuRow._chk.setFixedWidth failed", exc=e)
 
         if self._icon and self._icon_label is None:
             try:
@@ -747,7 +746,7 @@ class CommandMenuRow(QtWidgets.QWidget):
                 self._ml.insertWidget(1, il, 0)
                 self._icon_label = il
             except Exception as e:
-                show_warning(self, "CommandMenuRow icon setup failed", exc=e)
+                AppLogger.warning("CommandMenuRow icon setup failed", exc=e)
 
         if self._hotkey and self._hotkey_label is None:
             try:
@@ -761,7 +760,7 @@ class CommandMenuRow(QtWidgets.QWidget):
                 self._ml.addWidget(sl, 0)
                 self._hotkey_label = sl
             except Exception as e:
-                show_warning(self, "CommandMenuRow hotkey label setup failed", exc=e)
+                AppLogger.warning("CommandMenuRow hotkey label setup failed", exc=e)
 
         if self._has_options and self._options_btn is None:
             try:
@@ -790,9 +789,9 @@ class CommandMenuRow(QtWidgets.QWidget):
                         try:
                             self._options_btn.clicked.connect(self._on_options_callback)
                         except Exception as e:
-                            show_warning(self, "CommandMenuRow options callback connect failed", exc=e)
+                            AppLogger.warning("CommandMenuRow options callback connect failed", exc=e)
             except Exception as e:
-                show_warning(self, "CommandMenuRow options button setup failed", exc=e)
+                AppLogger.warning("CommandMenuRow options button setup failed", exc=e)
 
         if self._on_main_click is not None:
             try:
@@ -801,10 +800,10 @@ class CommandMenuRow(QtWidgets.QWidget):
                         try:
                             self._on_main_click()
                         except Exception as e:
-                            show_warning(self, "CommandMenuRow on_main_click failed", exc=e)
+                            AppLogger.warning("CommandMenuRow on_main_click failed", exc=e)
                 self._main.mouseReleaseEvent = _row_click
             except Exception as e:
-                show_warning(self, "CommandMenuRow mouseReleaseEvent hook failed", exc=e)
+                AppLogger.warning("CommandMenuRow mouseReleaseEvent hook failed", exc=e)
 
         self._inited = True
 
@@ -814,7 +813,7 @@ class CommandMenuRow(QtWidgets.QWidget):
             icon_sz = style.pixelMetric(QtWidgets.QStyle.PM_SmallIconSize, None, self._menu_ref)
             return max(0, min(int(icon_sz), int(uipx(22))))
         except Exception as e:
-            show_warning(self, "CommandMenuRow gutter metric lookup failed", exc=e)
+            AppLogger.warning("CommandMenuRow gutter metric lookup failed", exc=e)
             return 22
 
 
@@ -841,7 +840,7 @@ class MenuBuilder:
                     try:
                         parent = pw()
                     except Exception as e:
-                        show_warning(self._menu, "MenuBuilder parentWidget lookup failed", exc=e)
+                        AppLogger.warning("MenuBuilder parentWidget lookup failed", exc=e)
                         parent = None
             if parent is None:
                 parent = self._menu
@@ -878,13 +877,13 @@ class MenuBuilder:
                 elif isinstance(v, dict):
                     self._seed_ctx = CommandContext.create(None, "*", source="menu.popup", event=None, extras=dict(v))
             except Exception as e:
-                show_warning(anchor, "context_provider failed", exc=e)
+                AppLogger.warning("context_provider failed", exc=e)
         menu = build_fn()
         if callable(prepare):
             try:
                 prepare(menu)
             except Exception as e:
-                show_warning(anchor, "prepare(menu) failed", exc=e)
+                AppLogger.warning("prepare(menu) failed", exc=e)
         pos = anchor.mapToGlobal(QtCore.QPoint(0, anchor.height()))
         menu.exec(pos)
         self._seed_ctx = prev_seed

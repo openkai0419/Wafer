@@ -3,9 +3,9 @@ import json
 import sqlite3
 from ..common.funcs import normalize_path
 from ..common.helpers import try_json_loads
-from ..common.profiling import logger, profiler
+from ..common.profiling import profiler
+from ..common.logs import AppLogger
 from .db_utils import retry_sqlite_connection
-
 class SettingDB:
 
     def __init__(self, db_name):
@@ -28,12 +28,13 @@ class SettingDB:
             yield con
             if con.in_transaction:
                 con.commit()
-        except Exception:
-            try:
-                if con.in_transaction:
+        except Exception as e:
+            if con.in_transaction:
+                try:
                     con.rollback()
-            finally:
-                logger.exception("SQLite error during DB operation")
+                except Exception:
+                    pass
+            AppLogger.error(f"SQLite error during DB operation: {e}", exc=e)
             raise
         finally:
             con.close()
@@ -147,4 +148,4 @@ class SettingDB:
             row = cur.fetchone()
             if not row:
                 return default
-            return try_json_loads(row[0], default, on_error=lambda _e: logger.exception(f'Failed to decode JSON for key: {key}'))
+            return try_json_loads(row[0], default, on_error=lambda _e: AppLogger.warning(f'Failed to decode JSON for key: {key}'))

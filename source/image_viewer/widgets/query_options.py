@@ -1,5 +1,6 @@
 from PySide6 import QtCore, QtGui, QtWidgets
-from ...common.profiling import profiler, logger
+from ...common.profiling import profiler
+from ...common.logs import AppLogger
 from ...db.query import MetaInfoSearchEngine, MetaQuery
 from ...lang.manager import TranslatorMixin
 from ...qt.thread import main_thread

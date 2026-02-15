@@ -3,7 +3,7 @@ import os
 import sys
 from PIL import Image
 
-from ..common.errors import show_warning
+from ..common.logs import AppLogger
 
 
 _IShellItemImageFactory = None
@@ -56,7 +56,8 @@ def _get_dimensions_from_property_store(abs_path: str) -> tuple[int, int] | None
         store = propsys.SHGetPropertyStoreFromParsingName(
             abs_path, None, _GPS_BESTEFFORT, propsys.IID_IPropertyStore
         )
-    except Exception:
+    except Exception as e:
+        AppLogger.debug(f'PropertyStore open failed: {abs_path} ({e})')
         return None
     for w_key, h_key in _get_dimension_keys():
         try:
@@ -137,13 +138,13 @@ class FileThumbnailer:
         handle = c_void_p()
         hr = shell32.SHCreateItemFromParsingName(abs_path, None, byref(factory_cls._iid_), byref(handle))
         if hr != 0:
-            show_warning(None, f'SHCreateItemFromParsingName に失敗しました: {file_path} (hr={hr})', title='Thumbnail')
+            AppLogger.warning(f'SHCreateItemFromParsingName に失敗しました: {file_path} (hr={hr})')
             return None
         factory = cast(handle, POINTER(factory_cls))
         try:
             hbitmap = factory.GetImage(SIZE(size, size), 0)
             if not hbitmap:
-                show_warning(None, f'GetImage に失敗しました: {file_path}', title='Thumbnail')
+                AppLogger.warning(f'GetImage に失敗しました: {file_path}')
                 return None
             try:
                 import win32ui
@@ -166,7 +167,7 @@ class FileThumbnailer:
                 tiff = rep.TIFFRepresentation()
                 return Image.open(io.BytesIO(bytes(tiff)))
         except Exception as e:
-            show_warning(None, f'QuickLook 失敗: {file_path}', title='Thumbnail', exc=e)
+            AppLogger.warning(f'QuickLook 失敗: {file_path}', exc=e)
         ws = self._NSWorkspace.sharedWorkspace()
         icon = ws.iconForFile_(file_path)
         icon.setSize_((size, size))
@@ -187,7 +188,7 @@ class FileThumbnailer:
         except Exception as e:
             if not self._warned_linux_thumb_query:
                 self._warned_linux_thumb_query = True
-                show_warning(None, f'Linux thumbnail query failed, fallback to icon: {file_path}', title='Thumbnail', exc=e)
+                AppLogger.warning(f'Linux thumbnail query failed, fallback to icon: {file_path}', exc=e)
         try:
             info = gfile.query_info('standard::icon', 0, None)
             icon = info.get_icon()
@@ -200,5 +201,5 @@ class FileThumbnailer:
                     if icon_path:
                         return Image.open(icon_path)
         except Exception as e:
-            show_warning(None, f'Linux fallback 失敗: {file_path}', title='Thumbnail', exc=e)
+            AppLogger.warning(f'Linux fallback 失敗: {file_path}', exc=e)
         return None

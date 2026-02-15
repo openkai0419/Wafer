@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any, Callable
 
-from .errors import show_warning
+from .logs import AppLogger
 
 
 def get_callable(obj: Any, name: str) -> Callable[..., Any] | None:
@@ -28,7 +28,7 @@ def call_int0(obj: Any, name: str, default: int = 0) -> int:
     try:
         return int(v)
     except Exception as e:
-        show_warning(None, f"call_int0 failed: {type(obj).__name__}.{name}", exc=e)
+        AppLogger.warning(f"call_int0 failed: {type(obj).__name__}.{name}", exc=e)
         return int(default)
 
 
@@ -72,7 +72,7 @@ def try_call0(obj: Any, name: str, default: Any = None, warn_text: str | None = 
         return m()
     except Exception as e:
         if warn_text:
-            show_warning(None, warn_text, exc=e)
+            AppLogger.warning(warn_text, exc=e)
         return default
 
 
@@ -82,5 +82,5 @@ def widget_prop_bool(w: Any, name: str) -> bool:
     try:
         return bool(w.property(str(name)))
     except Exception as e:
-        show_warning(None, f"widget_prop_bool failed: {type(w).__name__}.{name}", exc=e)
+        AppLogger.warning(f"widget_prop_bool failed: {type(w).__name__}.{name}", exc=e)
         return False

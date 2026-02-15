@@ -1,5 +1,5 @@
 from PySide6 import QtCore
-from ...common.profiling import logger
+from ...common.logs import AppLogger
 from .loader import ImageLoaderRunnable
 from ...qt.thread import main_thread
 
@@ -48,4 +48,4 @@ class SizeMismatchChecker(QtCore.QTimer):
                     runnable.signal.widget_ready.connect(self.target_widget._on_widget_ready)
                     self.target_widget.active_threads[i] = runnable
                     main_thread.start(runnable, 5)
-        logger.debug('SizeMismatchChecker: check')
+        AppLogger.debug('SizeMismatchChecker: check')

@@ -2,7 +2,7 @@ import os
 import sys
 import subprocess
 
-from ..common.errors import show_warning
+from ..common.logs import AppLogger
 
 
 _explorer_argtypes_set = False
@@ -40,14 +40,14 @@ def _fallback_windows(path: str) -> None:
 	try:
 		subprocess.Popen(["explorer", "/select,", path])
 	except Exception as e:
-		show_warning(None, f"explorer failed: {path}", exc=e)
+		AppLogger.warning(f"explorer failed: {path}", exc=e)
 
 
 def _open_folder_windows(path: str) -> None:
 	try:
 		subprocess.Popen(["explorer", path])
 	except Exception as e:
-		show_warning(None, f"explorer failed: {path}", exc=e)
+		AppLogger.warning(f"explorer failed: {path}", exc=e)
 
 
 def _fallback_posix(path: str) -> None:
@@ -55,7 +55,7 @@ def _fallback_posix(path: str) -> None:
 		target = path if os.path.isdir(path) else os.path.dirname(path)
 		subprocess.Popen(["xdg-open", target])
 	except Exception as e:
-		show_warning(None, f"xdg-open failed: {path}", exc=e)
+		AppLogger.warning(f"xdg-open failed: {path}", exc=e)
 
 
 def _setup_explorer_argtypes():
@@ -87,19 +87,19 @@ def _show_in_explorer_windows(path: str) -> bool:
 			wide = ctypes.c_wchar_p(path)
 			hr = shell32.SHParseDisplayName(wide, None, ctypes.byref(pidl), 0, None)
 			if hr != 0 or not pidl:
-				show_warning(None, f"SHParseDisplayName failed: {path} ({int(hr)})")
+				AppLogger.warning(f"SHParseDisplayName failed: {path} ({int(hr)})")
 				return False
 			try:
 				hr = shell32.SHOpenFolderAndSelectItems(pidl, 0, None, 0)
 				if hr != 0:
-					show_warning(None, f"SHOpenFolderAndSelectItems failed: {path} ({int(hr)})")
+					AppLogger.warning(f"SHOpenFolderAndSelectItems failed: {path} ({int(hr)})")
 				return hr == 0
 			finally:
 				ole32.CoTaskMemFree(pidl)
 		finally:
 			ole32.CoUninitialize()
 	except Exception as e:
-		show_warning(None, f"SHOpenFolderAndSelectItems failed: {path}", exc=e)
+		AppLogger.warning(f"SHOpenFolderAndSelectItems failed: {path}", exc=e)
 		return False
 
 

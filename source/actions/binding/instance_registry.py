@@ -5,7 +5,7 @@ import weakref
 
 from PySide6 import QtCore, QtWidgets
 
-from source.common.errors import show_warning
+from source.common.logs import AppLogger
 
 try:
     from shiboken6 import isValid as _shiboken_isValid
@@ -34,7 +34,7 @@ class InstanceRegistry:
                 if n:
                     return str(n)
             except Exception as e:
-                show_warning(None, "InstanceRegistry.infer_name binding_scope failed", exc=e)
+                AppLogger.warning("InstanceRegistry.infer_name binding_scope failed", exc=e)
         n = getattr(instance, "name", None)
         return str(n) if n else None
 
@@ -46,14 +46,14 @@ class InstanceRegistry:
                 try:
                     return bool(_shiboken_isValid(instance))
                 except Exception as e:
-                    show_warning(None, "InstanceRegistry.is_valid shiboken6 failed", exc=e)
+                    AppLogger.warning("InstanceRegistry.is_valid shiboken6 failed", exc=e)
             try:
                 instance.objectName()
                 return True
             except (RuntimeError, ReferenceError):
                 return False
             except Exception as e:
-                show_warning(None, "InstanceRegistry.is_valid failed", exc=e)
+                AppLogger.warning("InstanceRegistry.is_valid failed", exc=e)
                 return False
         return True
 
@@ -81,7 +81,7 @@ class InstanceRegistry:
                 self._by_name[k] = xs
             xs.append(self._wrap(instance))
         except Exception as e:
-            show_warning(None, "InstanceRegistry.register failed", exc=e)
+            AppLogger.warning("InstanceRegistry.register failed", exc=e)
 
     def register_inferred(self, instance: Any) -> None:
         n = self.infer_name(instance)

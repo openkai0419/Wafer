@@ -11,12 +11,27 @@
 - 単一責任の原則に従い、関数やクラスは一つの責務に集中させる
 - ファイルがむやみに分散しすぎないように注意
 
-■ 例外処理
-- 基本的にはshow_warining, もしくはraise_errorを利用し、後からの変更ができるように一箇所にまとめる
+■ 例外処理・ログ・ユーザー通知
+- すべてのエラー・ログは AppLogger（source/common/logs.py）経由で一元管理する
+- 直接 logger.debug/info/warning/error を呼ばない。AppLogger.debug/info/warning/error を使う
+- _logger は logs.py 内部のプライベート変数であり、外部からimportしない
+- 各レベルの意味:
+  - critical: 未キャッチ例外専用。AppLogger.critical()メソッドは存在しない。_create_exception_hookからのみ発火
+  - error: 想定外の重大な異常の記録。ログ記録とシグナル発火のみ行い、例外のraiseは呼び出し側が明示的に行う
+  - warning: 軽微な問題。処理は中断しない
+  - info: 情報通知
+  - debug: デバッグ情報
+- error はログ記録のみでraiseしないため、raiseが必要な場合は呼び出し側で明示的にraiseする
+- 元の例外型を保持するため、raise（再送出）またはraise OriginalError(...) from excを使い、RuntimeErrorへの変換は避ける
+- error/warning に exc= パラメータで元の例外オブジェクトを渡すこと
 - try/except でログなしに例外を完全に握りつぶすことは絶対に避ける
-- 少なくとも logger へ残す、または show_warning / raise_error を使用すること。
 - try/except の代わりに型や存在確認で安全に動かすことを基本
 - ctx.get_instance/pos 等の前提が崩れた場合はコマンド側で握りつぶさず例外で落とす
+- profiling.py は FunctionProfiler のみ。ログ出力は AppLogger.debug 経由
+- AppLoggerは開発者/システム向けログ専用。ユーザーへのUI通知にはNotifier（source/common/notifier.py）を使う
+- Notifierはwarning/errorの2段階。呼ぶだけでOverlayStackに表示される
+- 両方必要な場合は AppLogger + Notifier の両方を呼ぶ
+- OverlayStack.push() を直接呼ばない。必ずNotifier経由で統一する
 
 ■ デバッグ
 - 環境変数などによるデバッグON/OFF切替は禁止

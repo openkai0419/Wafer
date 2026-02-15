@@ -5,7 +5,7 @@ from source.common.profiling import profiler
 from ..command.core import CommandRegistry
 from ..command.context import CommandContext
 from ..command.payload import CommandPayload
-from source.common.errors import show_warning
+from source.common.logs import AppLogger
 from .mouse.mouseeventmanager import MouseEventManager, MouseEventDispatcher, MouseActionKey, ClickType
 from .key.shortcutmanager import ShortcutManager
 from .mouse.store import MouseBindingStore
@@ -66,7 +66,7 @@ class CommandBindingMixin:
                 if bool(invoke_compatible(acceptor, values)):
                     return True
             except Exception as e:
-                show_warning(self, f"drop acceptor failed: {getattr(acceptor, '__name__', str(acceptor))}", exc=e)
+                AppLogger.warning(f"drop acceptor failed: {getattr(acceptor, '__name__', str(acceptor))}", exc=e)
         return False
 
     def _resolve_fallback(self, key: MouseActionKey, event=None):
@@ -117,7 +117,7 @@ class CommandBindingMixin:
             if isinstance(more, dict) and more:
                 ctx.merge(more)
         except Exception as e:
-            show_warning(None, f"extend_context failed: {type(self).__name__}", exc=e)
+            AppLogger.warning(f"extend_context failed: {type(self).__name__}", exc=e)
         if isinstance(extra, dict) and extra:
             ctx.merge(extra)
         return ctx
@@ -151,4 +151,4 @@ class CommandBindingMixin:
                 opts["checked"] = bool(ctx.get("checked", opts.get("checked", False)))
                 store.set(cmd.id, opts)
         except Exception as e:
-            show_warning(None, f"_update_checkable_state failed: {cmd.id}", exc=e)
+            AppLogger.warning(f"_update_checkable_state failed: {cmd.id}", exc=e)

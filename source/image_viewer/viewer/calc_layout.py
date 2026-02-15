@@ -1,6 +1,7 @@
 import bisect
 from PySide6 import QtCore
-from ...common.profiling import profiler, logger
+from ...common.profiling import profiler
+from ...common.logs import AppLogger
 SCROLLBAR_INT_MAX = 2147483647
 
 
@@ -203,7 +204,7 @@ class JustifiedLayoutCalculator(QtCore.QRunnable):
                 line_count = 0
                 line_extent = 0.0
                 if offset > SCROLLBAR_INT_MAX:
-                    logger.debug(f"[JustifiedLayout] truncated offset={offset} max={SCROLLBAR_INT_MAX} items={len(aspects)} processed={i}")
+                    AppLogger.debug(f"[JustifiedLayout] truncated offset={offset} max={SCROLLBAR_INT_MAX} items={len(aspects)} processed={i}")
                     break
             else:
                 line_count += 1

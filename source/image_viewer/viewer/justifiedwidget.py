@@ -157,7 +157,7 @@ class JustifiedGraphicsView(QtWidgets.QGraphicsView, Kit.UIMixin):
 
     def _start_auto_scroll_from_current(self):
         bar = self._primary_bar()
-        start_value = bar.value()
+        start_value = max(bar.minimum(), min(bar.value(), bar.maximum()))
         if self._is_primary_reversed():
             end_value = bar.minimum()
         else:
@@ -450,6 +450,7 @@ class JustifiedGraphicsView(QtWidgets.QGraphicsView, Kit.UIMixin):
 
     @profiler.profile
     def _on_layout_ready(self, layout):
+        was_scrolling = self.isscrolling()
         self.rects = layout
         n = len(layout)
         for i in list(self.visible_indices):
@@ -475,6 +476,8 @@ class JustifiedGraphicsView(QtWidgets.QGraphicsView, Kit.UIMixin):
         elif index >= len(self.rects):
             index = 0
         self.reinstall_scroll_index(index)
+        if was_scrolling:
+            self._start_auto_scroll_from_current()
 
     @profiler.profile
     def get_restore_index(self):

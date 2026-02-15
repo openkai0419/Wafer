@@ -116,7 +116,7 @@ class SearchService(QtCore.QObject):
 
     def try_execute(self):
         if self._params.get('auto_execute', True):
-            self.execute(force=True)
+            self.execute()
 
     @qt_debounce(150)
     @profiler.profile

@@ -1,27 +1,34 @@
 from __future__ import annotations
 import contextlib
+import json
+import time
+from pathlib import Path
 from queue import Empty, Full, Queue
 
 import zmq
 
-
-class QoS:
-    LATEST = 0
-    HIGH = 1
-    MID = 2
-    LOW = 3
-    RELIABLE = 4
+from ..common.funcs import data_path
 
 
-HEARTBEAT_INTERVAL = 5
-HEARTBEAT_TIMEOUT = 15
+class Priority:
+    HIGH = 0
+    MID = 1
+    LOW = 2
+
+
+HEARTBEAT_INTERVAL = 1
+HEARTBEAT_TIMEOUT = 3
+NODE_TIMEOUT = 5
 POLL_BASE_MS = 10
 POLL_MAX_MS = 50
 DEFAULT_PORT = 57556
 BROKER_QUEUE_MAX = 1000
 NODE_QUEUE_MAX = 200
+RECONNECT_FORCE_INTERVAL = 5.0
 ZMQ_SNDTIMEO_MS = 800
 ZMQ_RCVTIMEO_MS = 800
+
+_PORT_FILE = Path(data_path('ipc/broker.json'))
 
 
 def tune_socket(sock):
@@ -75,3 +82,29 @@ def adaptive_poll(did_work, idle_streak):
         return 0, POLL_BASE_MS
     idle_streak = min(idle_streak + 1, POLL_MAX_MS)
     return idle_streak, min(POLL_BASE_MS + idle_streak, POLL_MAX_MS)
+
+
+def write_broker_port(port: int):
+    _PORT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = _PORT_FILE.with_suffix('.tmp')
+    tmp.write_text(json.dumps({'port': port}))
+    tmp.replace(_PORT_FILE)
+
+
+def read_broker_port(timeout: float = 5.0) -> int | None:
+    end = time.time() + timeout
+    while True:
+        try:
+            data = json.loads(_PORT_FILE.read_text())
+            return int(data['port'])
+        except Exception:
+            if time.time() > end:
+                return None
+            time.sleep(0.1)
+
+
+def remove_broker_port():
+    try:
+        _PORT_FILE.unlink(missing_ok=True)
+    except Exception:
+        pass

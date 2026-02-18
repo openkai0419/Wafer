@@ -42,6 +42,12 @@ def _delete_db_files(db_path: str):
             AppLogger.warning(f'outbox file delete failed: {db_path}{suffix}', exc=e)
 
 
+def _connect(path: str) -> sqlite3.Connection:
+    conn = sqlite3.connect(path, timeout=5.0)
+    conn.execute('PRAGMA journal_mode=WAL')
+    return conn
+
+
 class OutboxRecord(NamedTuple):
     id: int
     topic: str
@@ -60,8 +66,7 @@ class OutboxStore:
 
     @staticmethod
     def _open(path: str) -> sqlite3.Connection:
-        conn = sqlite3.connect(path, timeout=5.0)
-        conn.execute('PRAGMA journal_mode=WAL')
+        conn = _connect(path)
         conn.execute('PRAGMA synchronous=NORMAL')
         conn.execute(_SCHEMA)
         conn.commit()
@@ -128,8 +133,7 @@ class OutboxStore:
                 continue
             db_path = str(db_file)
             try:
-                conn = sqlite3.connect(db_path, timeout=5.0)
-                conn.execute('PRAGMA journal_mode=WAL')
+                conn = _connect(db_path)
                 count = conn.execute('SELECT COUNT(*) FROM outbox').fetchone()[0]
                 conn.close()
             except Exception:
@@ -139,7 +143,7 @@ class OutboxStore:
                 _delete_db_files(db_path)
 
     @staticmethod
-    def scan_all() -> list[OutboxRecord]:
+    def scan_all(dst_filter: set[str] | None = None) -> list[OutboxRecord]:
         records = []
         outbox_dir = Path(_OUTBOX_DIR)
         if not outbox_dir.is_dir():
@@ -147,12 +151,13 @@ class OutboxStore:
         for db_file in outbox_dir.glob('*.db'):
             db_path = str(db_file)
             try:
-                conn = sqlite3.connect(db_path, timeout=5.0)
-                conn.execute('PRAGMA journal_mode=WAL')
+                conn = _connect(db_path)
                 rows = conn.execute(
                     'SELECT id, topic, payload, dst, db, created_at FROM outbox ORDER BY id',
                 ).fetchall()
                 for r in rows:
+                    if dst_filter and r[3] not in dst_filter:
+                        continue
                     records.append(OutboxRecord(
                         id=r[0], topic=r[1], payload=msgpack.unpackb(r[2], raw=False),
                         dst=r[3], db=r[4], created_at=r[5], source_db=db_path,
@@ -165,7 +170,7 @@ class OutboxStore:
     @staticmethod
     def remove_from(db_path: str, record_id: int):
         try:
-            conn = sqlite3.connect(db_path, timeout=5.0)
+            conn = _connect(db_path)
             conn.execute('DELETE FROM outbox WHERE id = ?', (record_id,))
             conn.commit()
             conn.close()
@@ -177,7 +182,7 @@ class OutboxStore:
         if not record_ids:
             return
         try:
-            conn = sqlite3.connect(db_path, timeout=5.0)
+            conn = _connect(db_path)
             conn.executemany('DELETE FROM outbox WHERE id = ?', [(rid,) for rid in record_ids])
             conn.commit()
             conn.close()

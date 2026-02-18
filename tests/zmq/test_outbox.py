@@ -3,7 +3,7 @@ import tempfile
 import time
 from unittest.mock import patch, MagicMock
 
-from source.zmq._core import QoS
+from source.zmq.transport import Priority
 from source.zmq.message import Msg
 from source.zmq.node import Node
 from source.zmq.outbox import OutboxStore, _extract_pid, _delete_db_files
@@ -193,12 +193,14 @@ class TestConsumeOutbox:
         with tempfile.TemporaryDirectory() as tmp:
             with patch('source.zmq.outbox._OUTBOX_DIR', tmp):
                 store = OutboxStore('sender-99999')
-                store.push('tag.add', {'hash': 'abc'}, 'indexer')
-                store.push('tag.remove', {'hash': 'def'}, 'indexer')
+                store.push('tag.add', {'hash': 'abc'}, 'ALL')
+                store.push('tag.remove', {'hash': 'def'}, 'ALL')
                 store.close()
 
                 node = Node.__new__(Node)
                 node._handlers = {}
+                node.node_id = 'consumer-1'
+                node.role = 'consumer'
 
                 received = []
 
@@ -208,7 +210,7 @@ class TestConsumeOutbox:
 
                 node.on('tag.add', handler)
                 node.on('tag.remove', handler)
-                node._consume_outbox()
+                node._process_outbox()
 
                 assert set(received) == {'tag.add', 'tag.remove'}
                 assert OutboxStore.scan_all() == []
@@ -217,13 +219,15 @@ class TestConsumeOutbox:
         with tempfile.TemporaryDirectory() as tmp:
             with patch('source.zmq.outbox._OUTBOX_DIR', tmp):
                 store = OutboxStore('sender-99999')
-                store.push('tag.add', 'data', 'indexer')
+                store.push('tag.add', 'data', 'ALL')
                 store.close()
 
                 node = Node.__new__(Node)
                 node._handlers = {}
+                node.node_id = 'consumer-1'
+                node.role = 'consumer'
                 node.on('tag.add', lambda msg: False)
-                node._consume_outbox()
+                node._process_outbox()
 
                 assert len(OutboxStore.scan_all()) == 1
 
@@ -231,29 +235,33 @@ class TestConsumeOutbox:
         with tempfile.TemporaryDirectory() as tmp:
             with patch('source.zmq.outbox._OUTBOX_DIR', tmp):
                 store = OutboxStore('sender-99999')
-                store.push('unknown.topic', 'data', 'indexer')
+                store.push('unknown.topic', 'data', 'ALL')
                 store.close()
 
                 node = Node.__new__(Node)
                 node._handlers = {}
-                node._consume_outbox()
+                node.node_id = 'consumer-1'
+                node.role = 'consumer'
+                node._process_outbox()
 
                 assert len(OutboxStore.scan_all()) == 1
 
-    def test_consume_msg_has_reliable_qos(self):
+    def test_consume_msg_fields(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch('source.zmq.outbox._OUTBOX_DIR', tmp):
                 store = OutboxStore('sender-99999')
-                store.push('tag.add', 'data', 'indexer')
+                store.push('tag.add', 'data', 'ALL')
                 store.close()
 
                 node = Node.__new__(Node)
                 node._handlers = {}
+                node.node_id = 'consumer-1'
+                node.role = 'consumer'
 
                 captured = []
                 node.on('tag.add', lambda msg: captured.append(msg) or True)
-                node._consume_outbox()
+                node._process_outbox()
 
-                assert captured[0].qos == QoS.RELIABLE
+                assert captured[0].priority == Priority.MID
                 assert captured[0].topic == 'tag.add'
                 assert captured[0].payload == 'data'

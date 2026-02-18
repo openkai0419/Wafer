@@ -1,17 +1,19 @@
 from __future__ import annotations
 import os
+import time
 import threading
+from pathlib import Path
 from queue import Empty, Queue
 from typing import Any, Callable
 
 import zmq
 
 from ..common.logs import AppLogger
-from ._core import (
-    DEFAULT_PORT, HEARTBEAT_INTERVAL, NODE_QUEUE_MAX, POLL_BASE_MS, QoS,
-    adaptive_poll, close_socket, drain_queue, try_put, tune_socket,
+from .transport import (
+    DEFAULT_PORT, HEARTBEAT_INTERVAL, NODE_QUEUE_MAX, NODE_TIMEOUT,
+    POLL_BASE_MS, RECONNECT_FORCE_INTERVAL, Priority,
+    adaptive_poll, close_socket, drain_queue, read_broker_port, try_put, tune_socket,
 )
-from .ipc_utils import read_broker_port
 from .message import Msg
 from .outbox import OutboxStore
 
@@ -26,17 +28,10 @@ class Node:
         self._viewer_id: int | None = None
 
         self._ctx = zmq.Context.instance()
-        self._dealer = self._ctx.socket(zmq.DEALER)
-        tune_socket(self._dealer)
-        try:
-            self._dealer.setsockopt(zmq.IMMEDIATE, 1)
-        except Exception:
-            pass
-        try:
-            self._dealer.setsockopt(zmq.TCP_NODELAY, 1)
-        except Exception:
-            pass
-        self._dealer.setsockopt(zmq.IDENTITY, self.node_id.encode('utf-8'))
+        self._dealer: zmq.Socket | None = None
+        self._current_port: int = 0
+        self._last_recv: float = 0.0
+        self._last_connect_time: float = 0.0
 
         self._out_q: Queue = Queue(maxsize=NODE_QUEUE_MAX)
         self._sentinel = object()
@@ -44,11 +39,11 @@ class Node:
         self._pending_lock = threading.Lock()
         self._stop = threading.Event()
         self._io_thread: threading.Thread | None = None
-        self._hb_thread: threading.Thread | None = None
         self._registered = threading.Event()
         self._outbox: OutboxStore | None = None
+        self._outbox_lock = threading.Lock()
         if consumer:
-            self._handlers['outbox.notify'] = lambda _msg: self._consume_outbox() or True
+            self._handlers['outbox.notify'] = lambda _msg: self._schedule_outbox_process() or True
 
     @property
     def viewer_id(self) -> int | None:
@@ -68,55 +63,17 @@ class Node:
         self._handlers.pop(topic, None)
         return self
 
-    def _call_handler(self, msg: Msg) -> bool | None:
-        handler = self._handlers.get(msg.topic)
-        if not handler:
-            return None
-        try:
-            result = handler(msg)
-            if result is not True and result is not False:
-                AppLogger.warning(f'handler must return bool: {msg.topic}')
-                return None
-            return result
-        except Exception as e:
-            AppLogger.warning(f'handler error: {msg.topic}', exc=e)
-            return None
-
-    def _consume_outbox(self):
-        records = OutboxStore.scan_all()
-        if not records:
-            return
-        done: dict[str, list[int]] = {}
-        for rec in records:
-            msg = Msg.build(rec.topic, rec.payload, src=rec.source_db, dst=rec.dst, db=rec.db, qos=QoS.RELIABLE)
-            if self._call_handler(msg) is True:
-                done.setdefault(rec.source_db, []).append(rec.id)
-        for db_path, ids in done.items():
-            OutboxStore.remove_batch_from(db_path, ids)
-        OutboxStore.cleanup_empty_files()
-
-    def connect(self, port: int):
-        self._dealer.connect(f'tcp://127.0.0.1:{port}')
-
     def start(self, port: int | None = None):
-        if port is not None:
-            self.connect(port)
-        else:
-            self.connect(read_broker_port() or DEFAULT_PORT)
+        target_port = port if port is not None else (read_broker_port() or DEFAULT_PORT)
+        self._connect(target_port)
         self._io_thread = threading.Thread(target=self._io_loop, daemon=True)
         self._io_thread.start()
-        self._send_register()
-        self._hb_thread = threading.Thread(target=self._heartbeat_loop, daemon=True)
-        self._hb_thread.start()
 
     def stop(self):
         self._stop.set()
         try_put(self._out_q, self._sentinel)
-        if self._hb_thread:
-            self._hb_thread.join(timeout=2.0)
         if self._io_thread:
             self._io_thread.join(timeout=2.0)
-        close_socket(self._dealer)
         if self._outbox:
             self._outbox.delete_if_empty()
             self._outbox.close()
@@ -124,19 +81,19 @@ class Node:
     def wait_registered(self, timeout: float = 5.0) -> bool:
         return self._registered.wait(timeout)
 
-    def send(self, topic: str, payload: Any = None, *, dst: str = 'ALL', db: str = '', priority: int = QoS.MID):
-        msg = Msg.build(topic, payload, src=self.node_id, dst=dst, db=db or self.default_db, qos=priority)
+    def send(self, topic: str, payload: Any = None, *, dst: str = 'ALL', db: str = '', priority: int = Priority.MID):
+        msg = Msg.build(topic, payload, src=self.node_id, dst=dst, db=db or self.default_db, priority=priority)
         try_put(self._out_q, msg.to_frames())
 
-    def latest(self, topic: str, payload: Any = None, *, dst: str = 'ALL', db: str = ''):
-        msg = Msg.build(topic, payload, src=self.node_id, dst=dst, db=db or self.default_db, qos=QoS.LATEST)
+    def send_latest(self, topic: str, payload: Any = None, *, dst: str = 'ALL', db: str = ''):
+        msg = Msg.build(topic, payload, src=self.node_id, dst=dst, db=db or self.default_db, coalesce=True)
         try_put(self._out_q, msg.to_frames())
 
-    def sure(self, topic: str, payload: Any = None, *, dst: str, db: str = ''):
+    def send_reliable(self, topic: str, payload: Any = None, *, dst: str, db: str = ''):
         if self._outbox is None:
             self._outbox = OutboxStore(self.node_id)
         self._outbox.push(topic, payload, dst, db)
-        self.send('outbox.notify', dst=dst, db=db, priority=QoS.HIGH)
+        self.send('outbox.notify', dst=dst, db=db, priority=Priority.HIGH)
 
     def request(self, topic: str, payload: Any = None, *, dst: str = 'ALL', db: str = '', timeout: float = 5.0) -> Msg | None:
         rid = Msg.make_rid(f'{self.node_id}-')
@@ -154,26 +111,106 @@ class Node:
             with self._pending_lock:
                 self._pending.pop(rid, None)
 
-    def _send_register(self):
-        msg = Msg.build(
-            'mgmt.register',
-            {'role': self.role, 'db': self.db},
-            src=self.node_id,
-            dst='broker',
-        )
-        try_put(self._out_q, msg.to_frames())
+    def _call_handler(self, msg: Msg) -> bool | None:
+        handler = self._handlers.get(msg.topic)
+        if not handler:
+            return None
+        try:
+            result = handler(msg)
+            if result is not True and result is not False:
+                AppLogger.warning(f'handler must return bool: {msg.topic}')
+                return None
+            return result
+        except Exception as e:
+            AppLogger.warning(f'handler error: {msg.topic}', exc=e)
+            return None
 
-    def _heartbeat_loop(self):
-        while not self._stop.is_set():
-            if self._registered.is_set():
-                msg = Msg.build('mgmt.heartbeat', src=self.node_id)
-                try_put(self._out_q, msg.to_frames())
-                self._stop.wait(HEARTBEAT_INTERVAL)
-            else:
-                self._send_register()
-                self._stop.wait(1.0)
+    def _schedule_outbox_process(self):
+        threading.Thread(target=self._try_process_outbox, daemon=True).start()
 
-    def _dispatch(self, msg: Msg):
+    def _try_process_outbox(self):
+        if not self._outbox_lock.acquire(blocking=False):
+            return
+        try:
+            self._process_outbox()
+        finally:
+            self._outbox_lock.release()
+
+    def _process_outbox(self):
+        dst_filter = {self.node_id, self.role, 'ALL'}
+        records = OutboxStore.scan_all(dst_filter=dst_filter)
+        if not records:
+            return
+        done: dict[str, list[int]] = {}
+        for rec in records:
+            node_id = Path(rec.source_db).stem
+            msg = Msg.build(rec.topic, rec.payload, src=node_id, dst=rec.dst, db=rec.db)
+            if self._call_handler(msg) is True:
+                done.setdefault(rec.source_db, []).append(rec.id)
+        for db_path, ids in done.items():
+            OutboxStore.remove_batch_from(db_path, ids)
+        OutboxStore.cleanup_empty_files()
+
+    def _create_socket(self) -> zmq.Socket:
+        sock = self._ctx.socket(zmq.DEALER)
+        tune_socket(sock)
+        try:
+            sock.setsockopt(zmq.IMMEDIATE, 1)
+        except Exception:
+            pass
+        try:
+            sock.setsockopt(zmq.TCP_NODELAY, 1)
+        except Exception:
+            pass
+        try:
+            sock.setsockopt(zmq.RECONNECT_IVL_MAX, 1000)
+        except Exception:
+            pass
+        sock.setsockopt(zmq.IDENTITY, self.node_id.encode('utf-8'))
+        return sock
+
+    def _connect(self, port: int):
+        if self._dealer:
+            close_socket(self._dealer)
+        self._dealer = self._create_socket()
+        self._dealer.connect(f'tcp://127.0.0.1:{port}')
+        self._current_port = port
+        self._last_recv = time.monotonic()
+        self._last_connect_time = time.monotonic()
+        self._registered.clear()
+
+    def _ensure_connection(self):
+        if self._registered.is_set():
+            if time.monotonic() - self._last_recv < NODE_TIMEOUT:
+                return
+            AppLogger.warning(f'broker timeout (port={self._current_port}), attempting reconnect')
+            self._registered.clear()
+
+        new_port = read_broker_port(timeout=0.3)
+        if not new_port:
+            return
+        if new_port != self._current_port:
+            AppLogger.info(f'broker port changed: {self._current_port} -> {new_port}')
+            self._connect(new_port)
+        elif time.monotonic() - self._last_connect_time > RECONNECT_FORCE_INTERVAL:
+            AppLogger.info(f'forcing reconnect on same port {new_port}')
+            self._connect(new_port)
+
+    def _send_to_broker(self, topic: str, payload: Any = None):
+        msg = Msg.build(topic, payload, src=self.node_id, dst='broker')
+        try:
+            self._dealer.send_multipart(list(msg.to_frames()), copy=False)
+        except Exception as e:
+            AppLogger.debug(f'send_to_broker failed ({topic}): {e}')
+
+    def _heartbeat_tick(self):
+        self._ensure_connection()
+        if self._registered.is_set():
+            self._send_to_broker('mgmt.heartbeat')
+        else:
+            self._send_to_broker('mgmt.register', {'role': self.role, 'db': self.db})
+
+    def _handle_received(self, msg: Msg):
         if msg.rid:
             with self._pending_lock:
                 pending = self._pending.get(msg.rid)
@@ -189,16 +226,25 @@ class Node:
             AppLogger.info(f'registered as {self.node_id}, viewer_id={self._viewer_id}')
             return
 
-        handler = self._handlers.get(msg.topic)
-        if handler:
-            self._call_handler(msg)
+        self._call_handler(msg)
 
     def _io_loop(self):
         poller = zmq.Poller()
-        poller.register(self._dealer, zmq.POLLIN)
+        registered_dealer = self._dealer
+        poller.register(registered_dealer, zmq.POLLIN)
         idle_streak, poll_ms = 0, POLL_BASE_MS
+        next_tick = 0.0
 
         while not self._stop.is_set():
+            now = time.monotonic()
+            if now >= next_tick:
+                self._heartbeat_tick()
+                next_tick = now + HEARTBEAT_INTERVAL
+                if self._dealer is not registered_dealer:
+                    poller = zmq.Poller()
+                    registered_dealer = self._dealer
+                    poller.register(registered_dealer, zmq.POLLIN)
+
             try:
                 events = dict(poller.poll(poll_ms))
             except zmq.ZMQError:
@@ -213,19 +259,18 @@ class Node:
                         break
                     msg = Msg.from_frames([bytes(f) for f in frames])
                     if msg:
-                        self._dispatch(msg)
+                        self._last_recv = time.monotonic()
+                        self._handle_received(msg)
                     did_work = True
 
             batch, sentinel = drain_queue(self._out_q, self._sentinel)
-            for frames in batch:
+            for i, frames in enumerate(batch):
                 try:
-                    if isinstance(frames, tuple):
-                        self._dealer.send_multipart(list(frames), copy=False)
-                    else:
-                        self._dealer.send(frames, copy=False)
+                    self._dealer.send_multipart(list(frames), copy=False)
                     did_work = True
                 except zmq.Again:
-                    try_put(self._out_q, frames)
+                    for remaining in batch[i:]:
+                        try_put(self._out_q, remaining)
                     break
                 except Exception as e:
                     AppLogger.debug(f'node send error: {e}')
@@ -234,4 +279,5 @@ class Node:
 
             idle_streak, poll_ms = adaptive_poll(did_work, idle_streak)
 
+        self._send_to_broker('mgmt.unregister')
         close_socket(self._dealer)

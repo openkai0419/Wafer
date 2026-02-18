@@ -5,31 +5,37 @@ from typing import Any
 import msgpack
 
 from ..common.logs import AppLogger
-from ._core import QoS
+from .transport import Priority
 
 
 class Msg:
-    __slots__ = ('topic', 'src', 'dst', 'db', 'payload', 'rid', 'qos')
+    __slots__ = ('topic', 'src', 'dst', 'db', 'payload', 'rid', 'priority', 'coalesce')
 
-    def __init__(self, topic: str, src: str, dst: str, db: str, payload: Any, rid: str | None, qos: int = QoS.MID):
+    def __init__(self, topic: str, src: str, dst: str, db: str, payload: Any,
+                 rid: str | None, priority: int = Priority.MID, coalesce: bool = False):
         self.topic = topic
         self.src = src
         self.dst = dst
         self.db = db
         self.payload = payload
         self.rid = rid
-        self.qos = qos
+        self.priority = priority
+        self.coalesce = coalesce
 
     @classmethod
-    def build(cls, topic: str, payload: Any = None, *, src: str = '', dst: str = 'ALL', db: str = '', rid: str | None = None, qos: int = QoS.MID) -> Msg:
-        return cls(topic, src, dst, db, payload, rid, qos)
+    def build(cls, topic: str, payload: Any = None, *, src: str = '', dst: str = 'ALL',
+              db: str = '', rid: str | None = None, priority: int = Priority.MID,
+              coalesce: bool = False) -> Msg:
+        return cls(topic, src, dst, db, payload, rid, priority, coalesce)
 
     def to_frames(self) -> tuple[bytes, bytes]:
         header = {'t': self.topic, 's': self.src, 'd': self.dst, 'db': self.db}
         if self.rid:
             header['r'] = self.rid
-        if self.qos != QoS.MID:
-            header['q'] = self.qos
+        if self.priority != Priority.MID:
+            header['p'] = self.priority
+        if self.coalesce:
+            header['c'] = True
         return (msgpack.packb(header, use_bin_type=True), msgpack.packb(self.payload, use_bin_type=True))
 
     @classmethod
@@ -49,7 +55,8 @@ class Msg:
             db=header.get('db', ''),
             payload=payload,
             rid=header.get('r'),
-            qos=header.get('q', QoS.MID),
+            priority=header.get('p', Priority.MID),
+            coalesce=header.get('c', False),
         )
 
     def reply(self, payload: Any = None, *, topic: str | None = None) -> Msg:
@@ -60,7 +67,8 @@ class Msg:
             db=self.db,
             payload=payload,
             rid=self.rid,
-            qos=self.qos,
+            priority=self.priority,
+            coalesce=self.coalesce,
         )
 
     @staticmethod

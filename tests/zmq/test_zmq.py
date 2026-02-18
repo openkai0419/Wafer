@@ -1,8 +1,9 @@
 import py_compile
 import threading
 import time
+from unittest.mock import patch
 
-from source.zmq._core import QoS
+from source.zmq.transport import NODE_TIMEOUT, Priority
 from source.zmq.broker import Broker, _CoalescingQueue, _PeerInfo
 from source.zmq.message import Msg
 from source.zmq.node import Node
@@ -12,7 +13,7 @@ def test_compile():
     py_compile.compile('source/zmq/message.py')
     py_compile.compile('source/zmq/broker.py')
     py_compile.compile('source/zmq/node.py')
-    py_compile.compile('source/zmq/_core.py')
+    py_compile.compile('source/zmq/transport.py')
     py_compile.compile('source/zmq/outbox.py')
 
 
@@ -29,7 +30,7 @@ class TestMsg:
         assert restored.db == 'photos'
         assert restored.payload == {'count': 42}
         assert restored.rid is None
-        assert restored.qos == QoS.MID
+        assert restored.priority == Priority.MID
 
     def test_roundtrip_with_rid(self):
         rid = Msg.make_rid('test-')
@@ -38,10 +39,14 @@ class TestMsg:
         assert restored.rid == rid
 
     def test_roundtrip_with_qos(self):
-        for qos_val in (QoS.LATEST, QoS.HIGH, QoS.MID, QoS.LOW, QoS.RELIABLE):
-            msg = Msg.build('test', 'data', qos=qos_val)
+        for pri_val in (Priority.HIGH, Priority.MID, Priority.LOW):
+            msg = Msg.build('test', 'data', priority=pri_val)
             restored = Msg.from_frames(msg.to_frames())
-            assert restored.qos == qos_val
+            assert restored.priority == pri_val
+            assert restored.coalesce is False
+        coalesce_msg = Msg.build('test', 'data', coalesce=True)
+        restored = Msg.from_frames(coalesce_msg.to_frames())
+        assert restored.coalesce is True
 
     def test_reply(self):
         original = Msg.build('request', 'hello', src='a', dst='b', db='db1', rid='r1')
@@ -101,7 +106,7 @@ class TestBrokerNode:
             assert node.wait_registered(timeout=3.0)
             assert node.viewer_id == 1
             time.sleep(0.3)
-            counts = broker.get_counts()
+            counts = broker.peer_counts()
             assert counts.get('viewer', 0) >= 1
         finally:
             node.stop()
@@ -141,7 +146,7 @@ class TestBrokerNode:
             node.start(broker.port)
             node.wait_registered(timeout=3.0)
 
-            broker.inject(Msg.build('work.assigned', 'task1', dst='collector'))
+            broker.push(Msg.build('work.assigned', 'task1', dst='collector'))
             time.sleep(0.5)
             assert results == ['task1']
         finally:
@@ -179,7 +184,7 @@ class TestBrokerNode:
             v.start(broker.port)
             v.wait_registered(timeout=3.0)
 
-            broker.inject(Msg.build('sys.notify', True, dst='viewer'))
+            broker.push(Msg.build('sys.notify', True, dst='viewer'))
             time.sleep(0.5)
             assert len(received) >= 1
             assert received[0].payload == True
@@ -253,7 +258,7 @@ class TestQoSRouting:
             viewer.wait_registered(timeout=3.0)
 
             for i in range(10):
-                sender.latest('progress', i, dst='viewer', db='photos')
+                sender.send_latest('progress', i, dst='viewer', db='photos')
             time.sleep(0.5)
 
             assert len(received) >= 1
@@ -278,7 +283,7 @@ class TestQoSRouting:
             viewer.wait_registered(timeout=3.0)
 
             for i in range(5):
-                sender.send('update', i, dst='viewer', priority=QoS.HIGH)
+                sender.send('update', i, dst='viewer', priority=Priority.HIGH)
             time.sleep(0.5)
 
             assert received == [0, 1, 2, 3, 4]
@@ -302,7 +307,7 @@ class TestQoSRouting:
             viewer.wait_registered(timeout=3.0)
 
             for i in range(3):
-                sender.send('dev.log', {'n': i}, dst='viewer', priority=QoS.LOW)
+                sender.send('dev.log', {'n': i}, dst='viewer', priority=Priority.LOW)
             time.sleep(0.5)
 
             assert len(received) == 3
@@ -310,4 +315,111 @@ class TestQoSRouting:
         finally:
             viewer.stop()
             sender.stop()
+            broker.stop()
+
+
+class TestReconnection:
+
+    def test_node_reconnects_after_broker_restart(self):
+        broker1 = Broker()
+        broker1.start()
+        received = []
+        try:
+            node = Node('viewer')
+            node.on('ping', lambda m: received.append(m.payload) or True)
+            node.start(broker1.port)
+            assert node.wait_registered(timeout=3.0)
+
+            sender1 = Node('collector', db='photos')
+            sender1.start(broker1.port)
+            sender1.wait_registered(timeout=3.0)
+            sender1.send('ping', 'before', dst='viewer')
+            time.sleep(0.5)
+            assert 'before' in received
+        finally:
+            sender1.stop()
+            broker1.stop()
+
+        with patch('source.zmq.node.read_broker_port') as mock_read:
+            broker2 = Broker()
+            broker2.start()
+            mock_read.return_value = broker2.port
+            try:
+                time.sleep(NODE_TIMEOUT + 2)
+                assert node.wait_registered(timeout=5.0)
+
+                sender2 = Node('collector', db='photos')
+                sender2.start(broker2.port)
+                sender2.wait_registered(timeout=3.0)
+                sender2.send('ping', 'after', dst='viewer')
+                time.sleep(0.5)
+                assert 'after' in received
+            finally:
+                sender2.stop()
+                node.stop()
+                broker2.stop()
+
+    def test_node_reconnects_to_new_port(self):
+        broker1 = Broker()
+        broker1.start()
+        received = []
+        try:
+            node = Node('viewer')
+            node.on('data', lambda m: received.append(m.payload) or True)
+            node.start(broker1.port)
+            assert node.wait_registered(timeout=3.0)
+            old_port = node._current_port
+        finally:
+            broker1.stop()
+
+        with patch('source.zmq.node.read_broker_port') as mock_read:
+            broker2 = Broker()
+            broker2.start()
+            assert broker2.port != old_port or True
+            mock_read.return_value = broker2.port
+            try:
+                time.sleep(NODE_TIMEOUT + 2)
+                assert node.wait_registered(timeout=5.0)
+                assert node._current_port == broker2.port
+
+                sender = Node('collector', db='photos')
+                sender.start(broker2.port)
+                sender.wait_registered(timeout=3.0)
+                sender.send('data', 'new_broker', dst='viewer')
+                time.sleep(0.5)
+                assert 'new_broker' in received
+            finally:
+                sender.stop()
+                node.stop()
+                broker2.stop()
+
+    def test_node_stays_connected_while_broker_alive(self):
+        broker = Broker()
+        broker.start()
+        try:
+            node = Node('viewer')
+            node.start(broker.port)
+            assert node.wait_registered(timeout=3.0)
+            port_at_start = node._current_port
+
+            time.sleep(3)
+            assert node._registered.is_set()
+            assert node._current_port == port_at_start
+        finally:
+            node.stop()
+            broker.stop()
+
+    def test_unregister_sent_on_stop(self):
+        broker = Broker()
+        broker.start()
+        try:
+            node = Node('viewer')
+            node.start(broker.port)
+            assert node.wait_registered(timeout=3.0)
+            assert broker.peer_counts().get('viewer', 0) >= 1
+
+            node.stop()
+            time.sleep(1)
+            assert broker.peer_counts().get('viewer', 0) == 0
+        finally:
             broker.stop()

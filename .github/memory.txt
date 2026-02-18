@@ -35,20 +35,20 @@
 - ProgressAggregator: コンストラクタで Node を直接受け取り、進捗集約 + IPC 通知。
 
 ■ IPC(ZMQ) — Msg + Broker + Node アーキテクチャ
-- source/zmq/ は6ファイル構成: _core.py, message.py, broker.py, node.py, ipc_utils.py, outbox.py。msgpack による2フレームシリアライズ。
-- QoS (Quality of Service): _core.py の QoS クラスで5段階を定義。
-  - LATEST (0): CoalescingQueue。同一キーで最新値のみ保持。progress, maximum 等の状態同期用。
-  - HIGH (1): Ordered FIFO 高優先。update, folderchanged 等のView向け通知。
-  - MID (2): Ordered FIFO 中優先。デフォルト。通常のイベント通知。
-  - LOW (3): Ordered FIFO 低優先。dev.log 等の遅延許容メッセージ。
-  - RELIABLE (4): Outbox永続化。タグ編集, Collector結果等のDB書き込み系。ZMQ は通知のみ、データはOutbox DB経由。
-- Msg (message.py): topic/src/dst/db/payload/rid/qos を持つメッセージ。build(), to_frames(), from_frames(), reply(), make_rid()。
-  - qos フィールドはヘッダーの 'q' キー。MID時は省略（帯域節約）。
+- source/zmq/ は5ファイル構成: transport.py, message.py, broker.py, node.py, outbox.py。msgpack による2フレームシリアライズ。
+- Priority: transport.py の Priority クラスで3段階を定義。HIGH(0) / MID(1) / LOW(2)。
+  - HIGH: Ordered FIFO 高優先。update, folderchanged 等のView向け通知。
+  - MID: Ordered FIFO 中優先。デフォルト。通常のイベント通知。
+  - LOW: Ordered FIFO 低優先。dev.log 等の遅延許容メッセージ。
+- Msg (message.py): topic/src/dst/db/payload/rid/priority/coalesce を持つメッセージ。build(), to_frames(), from_frames(), reply(), make_rid()。
+  - priority フィールドはヘッダーの 'p' キー。MID時は省略（帯域節約）。
+  - coalesce フィールドはヘッダーの 'c' キー。True時のみ付与。Broker で CoalescingQueue に振り分け。
 - Broker (broker.py): ROUTER ソケット。Trayプロセスで起動。ピア管理（_PeerInfo）、ルーティング（dst: role/node_id/ALL + db フィルタ）。
   - 5つのキュー: _direct_q（rid付きreq/reply）、_high_q、_mid_q、_broadcast_q（CoalescingQueue）、_low_q。
-  - drain順序: direct → high → mid → broadcast(LATEST) → low。
-  - inject(msg): Tray自身からメッセージ送信（Node不要）。get_counts(): ロール別接続数取得。
+  - drain順序: direct → high → mid → broadcast(coalesce) → low。
+  - push(msg): Tray自身からメッセージ送信（Node不要）。peer_counts(): ロール別接続数取得。
   - start() でポートファイル書き込み、stop() で削除。
+  - 内部: _register_peer/_unregister_peer/_refresh_peer（ピア管理）、_route_msg（メッセージルーティング）、_deliver_batch（バッチ配信）、_reaper_loop（staleピア刈り取り）。
   - 管理プロトコル: mgmt.register / mgmt.heartbeat / mgmt.get_count。
   - dbフィルタ: 空 db_set のピアは全メッセージ受信、指定ありのピアはマッチのみ受信。
 - Node (node.py): DEALER ソケット。全プロセス（Viewer/Collector/Communicator）で使用。
@@ -57,13 +57,15 @@
     True=処理成功、False=処理失敗。bool以外の戻り値は AppLogger.warning で検出。
     _call_handler() で呼び出し・エラーハンドリング・戻り値検証を一元化。
   - コンストラクタ引数 consumer=True: outbox消費者モード。
-    'outbox.notify' 受信時に scan_all → 各レコードを Msg(qos=RELIABLE) に変換 → on() 登録済みhandlerに委譲。
+    'outbox.notify' 受信時に scan_all → 各レコードを Msg に変換 → on() 登録済みhandlerに委譲。
     handler が True → レコード削除、False/None → 保持（次回リトライ）。
   - 4つの送信API:
     - send(topic, payload, dst, db, priority=MID): Ordered FIFO。通常のイベント通知。
-    - latest(topic, payload, dst, db): 最新値のみ。CoalescingQueue経由。
-    - sure(topic, payload, dst, db): 確実配信。Outbox DBに永続化 + outbox.notify通知。
+    - send_latest(topic, payload, dst, db): 最新値のみ。coalesce=True で CoalescingQueue 経由。
+    - send_reliable(topic, payload, dst, db): 確実配信。Outbox DBに永続化 + outbox.notify通知。
     - request(topic, payload, dst, db, timeout): 同期リクエスト・リプライ。
+  - 内部: _heartbeat_tick（定期的にbrokerへheartbeat/register送信）、_send_to_broker（broker宛管理メッセージ送信）、_handle_received（受信メッセージ処理）、_create_socket（DEALERソケット生成）。
+  - Outbox処理チェーン: _schedule_outbox_process（スレッド起動）→ _try_process_outbox（ロック付き実行）→ _process_outbox（バッチ処理）。
   - 自動 heartbeat ループ、wait_registered() で登録完了待ち、viewer_id プロパティ。
   - stop() で outbox が空なら自動削除（delete_if_empty）。
 - OutboxStore (outbox.py): プロセス個別のOutbox DB管理。data_path('outbox/{node_id}.db')。
@@ -71,13 +73,12 @@
   - delete_if_empty(): レコード0件なら自分のDBファイルを削除してTrue、そうでなければFalse。
   - scan_all/remove_from/remove_batch_from: 静的メソッド。受信側での引き取り用。
   - cleanup_empty_files(): 静的。outboxディレクトリを走査し、PID死亡 かつ レコード0件のDBファイルを削除。psutilでプロセス生存確認。
-  - sure() → outbox INSERT → ZMQ通知(outbox.notify) → 受信Node._consume_outbox → scan_all → handler(record) → True=delete → cleanup_empty_files。
-- _core.py: QoS + 共通定数（HEARTBEAT_INTERVAL/TIMEOUT, POLL_BASE/MAX_MS, DEFAULT_PORT等）+ ユーティリティ（tune_socket, close_socket, adaptive_poll, try_put, drain_queue）。
-- ipc_utils.py: write_broker_port / read_broker_port / remove_broker_port（JSON形式、data_path('ipc/broker.json')）。
-- Tray: Broker + Node('communicator') を両方使用。broker.inject() による直接送信に加え、
+  - send_reliable() → outbox INSERT → ZMQ通知(outbox.notify) → 受信Node._process_outbox → scan_all → handler(record) → True=delete → cleanup_empty_files。
+- transport.py: QoS + 共通定数（HEARTBEAT_INTERVAL/TIMEOUT, POLL_BASE/MAX_MS, DEFAULT_PORT等）+ ユーティリティ（tune_socket, close_socket, adaptive_poll, try_put, drain_queue）+ ポートファイル管理（write_broker_port / read_broker_port / remove_broker_port）。
+- Tray: Broker + Node('communicator') を両方使用。broker.push() による直接送信に加え、
   AppLogger.set_node(node, role='communicator') でログ転送も有効化。
 - Viewer: Node('viewer') + on(topic, handler) チェーンで接続。msg.db によるクライアント側フィルタ。
-- Collector: Node('collector', db=name) + on(topic, handler) で接続。ProgressAggregator は node.latest() で進捗送信、node.send(priority=HIGH) でイベント通知。
+- Collector: Node('collector', db=name) + on(topic, handler) で接続。ProgressAggregator は node.send_latest() で進捗送信、node.send(priority=HIGH) でイベント通知。
 
 ■ 共通ユーティリティ（必ず使い回す）
 source/common/funcs.py:
@@ -207,7 +208,7 @@ bridgeの主要API:
     append_log(level, text, src, db) で追加。src は '{role}-{pid}' 形式。
   - DebugCommands (Kit.MenuBase): Debug メニュー。dev.toggle_log_panel でパネル表示/非表示。
   - AppLogger の ZMQ 転送: 全プロセスのログを viewer に集約して表示。
-- ログ転送フロー: AppLogger._forward() → Node.send('dev.log', {level, text}, dst='viewer', priority=LOW)
+- ログ転送フロー: AppLogger._forward() → Node.send('dev.log', {level, text}, dst='viewer', priority=Priority.LOW)
   → mainwindow._handle_remote_log (msg.src から src 取得) → DevLogPanel.append_log。
 - ローカルログも AppLogger.on_* シグナル経由で DevLogPanel に接続（src = f'viewer-{pid}'）。
 - DebugCommands.register() は DEV_MODE=False 時は何もしない（メニューに表示されない）。

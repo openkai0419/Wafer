@@ -7,11 +7,11 @@ from queue import Queue
 import zmq
 
 from ..common.logs import AppLogger
-from ._core import (
-    BROKER_QUEUE_MAX, DEFAULT_PORT, HEARTBEAT_TIMEOUT, POLL_BASE_MS, QoS,
-    adaptive_poll, close_socket, drain_queue, try_put, tune_socket,
+from .transport import (
+    BROKER_QUEUE_MAX, DEFAULT_PORT, HEARTBEAT_TIMEOUT, POLL_BASE_MS, Priority,
+    adaptive_poll, close_socket, drain_queue, remove_broker_port, try_put,
+    tune_socket, write_broker_port,
 )
-from .ipc_utils import remove_broker_port, write_broker_port
 from .message import Msg
 
 
@@ -85,10 +85,10 @@ class Broker:
         self._by_role: dict[str, set[bytes]] = {}
         self._by_node_id: dict[str, bytes] = {}
         self._lock = threading.RLock()
-        self._viewer_counter = 0
+        self._viewer_ids: dict[bytes, int] = {}
 
         self._io_thread = threading.Thread(target=self._io_loop, daemon=True)
-        self._prune_thread = threading.Thread(target=self._prune_loop, daemon=True)
+        self._prune_thread = threading.Thread(target=self._reaper_loop, daemon=True)
 
     def start(self):
         AppLogger.info(f'Broker bound: tcp://127.0.0.1:{self.port}')
@@ -105,31 +105,43 @@ class Broker:
         close_socket(self._router)
         remove_broker_port()
 
-    def inject(self, msg: Msg):
+    def push(self, msg: Msg):
         targets = self._resolve_targets(msg, sender_ident=None)
         frames = msg.to_frames()
         for ident in targets:
             try_put(self._direct_q, (ident, frames))
 
-    def get_counts(self) -> dict[str, int]:
+    def peer_counts(self) -> dict[str, int]:
         with self._lock:
             return {role: len(idents) for role, idents in self._by_role.items() if idents}
 
-    def _add_peer(self, ident: bytes, role: str, db_set: set[str], node_id: str) -> bool:
+    def _register_peer(self, ident: bytes, role: str, db_set: set[str], node_id: str) -> int | None:
         with self._lock:
             old = self._peers.get(ident)
-            is_new = not old or old.role != role
             if old:
                 self._by_role.get(old.role, set()).discard(ident)
                 self._by_node_id.pop(old.node_id, None)
+                if old.role != role:
+                    self._viewer_ids.pop(ident, None)
             peer = _PeerInfo(role, db_set, node_id)
             self._peers[ident] = peer
             self._by_role.setdefault(role, set()).add(ident)
             self._by_node_id[node_id] = ident
+            viewer_id = None
+            if role == 'viewer':
+                if ident in self._viewer_ids:
+                    viewer_id = self._viewer_ids[ident]
+                else:
+                    used = set(self._viewer_ids.values())
+                    vid = 1
+                    while vid in used:
+                        vid += 1
+                    self._viewer_ids[ident] = vid
+                    viewer_id = vid
             AppLogger.info(f'peer added: {node_id} role={role} db={db_set}')
-            return is_new
+            return viewer_id
 
-    def _remove_peer(self, ident: bytes):
+    def _unregister_peer(self, ident: bytes):
         with self._lock:
             peer = self._peers.pop(ident, None)
             if not peer:
@@ -137,8 +149,9 @@ class Broker:
             AppLogger.info(f'peer removed: {peer.node_id}')
             self._by_role.get(peer.role, set()).discard(ident)
             self._by_node_id.pop(peer.node_id, None)
+            self._viewer_ids.pop(ident, None)
 
-    def _touch_peer(self, ident: bytes):
+    def _refresh_peer(self, ident: bytes):
         with self._lock:
             peer = self._peers.get(ident)
             if peer:
@@ -165,7 +178,7 @@ class Broker:
 
             return list(candidates)
 
-    def _handle_msg(self, ident: bytes, msg: Msg):
+    def _route_msg(self, ident: bytes, msg: Msg):
         topic = msg.topic
 
         if topic == 'mgmt.register':
@@ -179,23 +192,27 @@ class Broker:
                 db_set = {db_raw}
             else:
                 db_set = set()
-            is_new = self._add_peer(ident, role, db_set, node_id)
+            viewer_id = self._register_peer(ident, role, db_set, node_id)
             reply_payload = {'status': 'ok', 'node_id': node_id}
-            if role == 'viewer':
-                if is_new:
-                    self._viewer_counter += 1
-                reply_payload['viewer_id'] = self._viewer_counter
+            if viewer_id is not None:
+                reply_payload['viewer_id'] = viewer_id
             reply = msg.reply(reply_payload, topic='mgmt.registered')
             try_put(self._direct_q, (ident, reply.to_frames()))
             AppLogger.info(f'registered: {node_id} role={role} db={db_set}')
             return
 
+        if topic == 'mgmt.unregister':
+            self._unregister_peer(ident)
+            return
+
         if topic == 'mgmt.heartbeat':
-            self._touch_peer(ident)
+            self._refresh_peer(ident)
+            pong = msg.reply(None, topic='mgmt.pong')
+            try_put(self._direct_q, (ident, pong.to_frames()))
             return
 
         if topic == 'mgmt.get_count':
-            counts = self.get_counts()
+            counts = self.peer_counts()
             reply = msg.reply(counts, topic='mgmt.count_reply')
             try_put(self._direct_q, (ident, reply.to_frames()))
             return
@@ -212,21 +229,20 @@ class Broker:
                 try_put(self._direct_q, (t, frames))
             return
 
-        qos = msg.qos
-        if qos == QoS.LATEST:
+        if msg.coalesce:
             key = (msg.topic, msg.dst, msg.db)
             self._broadcast_q.put(key, (targets, frames))
-        elif qos == QoS.HIGH:
+        elif msg.priority == Priority.HIGH:
             for t in targets:
                 try_put(self._high_q, (t, frames))
-        elif qos == QoS.LOW:
+        elif msg.priority == Priority.LOW:
             for t in targets:
                 try_put(self._low_q, (t, frames))
         else:
             for t in targets:
                 try_put(self._mid_q, (t, frames))
 
-    def _send_direct(self, items, did_work):
+    def _deliver_batch(self, items, did_work):
         for ident, frames in items:
             try:
                 self._router.send_multipart([ident, *frames], copy=False)
@@ -261,17 +277,17 @@ class Broker:
                     ident = bytes(frames[0])
                     msg = Msg.from_frames([bytes(f) for f in frames[1:]])
                     if msg:
-                        self._handle_msg(ident, msg)
+                        self._route_msg(ident, msg)
                     did_work = True
 
             batch, sentinel = drain_queue(self._direct_q, self._sentinel)
-            did_work = self._send_direct(batch, did_work)
+            did_work = self._deliver_batch(batch, did_work)
             if sentinel:
                 break
 
             for q in (self._high_q, self._mid_q):
                 items, _ = drain_queue(q, self._sentinel)
-                did_work = self._send_direct(items, did_work)
+                did_work = self._deliver_batch(items, did_work)
 
             for _key, (targets, frames) in self._broadcast_q.drain():
                 for t in targets:
@@ -285,20 +301,20 @@ class Broker:
                             AppLogger.debug(f'broker: bcast error {e}')
 
             low_items, _ = drain_queue(self._low_q, self._sentinel)
-            did_work = self._send_direct(low_items, did_work)
+            did_work = self._deliver_batch(low_items, did_work)
 
             idle_streak, poll_ms = adaptive_poll(did_work, idle_streak)
 
-        close_socket(self._router)
-
-    def _prune_loop(self):
+    def _reaper_loop(self):
         while not self._stop.is_set():
             now = time.monotonic()
             with self._lock:
-                stale = [i for i, p in self._peers.items() if now - p.last_seen > HEARTBEAT_TIMEOUT]
-            for ident in stale:
-                peer = self._peers.get(ident)
-                if peer:
-                    AppLogger.info(f'pruning stale peer: {peer.node_id}')
-                self._remove_peer(ident)
-            time.sleep(1)
+                stale = [
+                    (ident, peer.node_id)
+                    for ident, peer in self._peers.items()
+                    if now - peer.last_seen > HEARTBEAT_TIMEOUT
+                ]
+            for ident, node_id in stale:
+                AppLogger.info(f'pruning stale peer: {node_id}')
+                self._unregister_peer(ident)
+            self._stop.wait(1)

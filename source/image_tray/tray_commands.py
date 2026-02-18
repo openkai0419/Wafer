@@ -12,14 +12,14 @@ from ..zmq.message import Msg
 def _tray_send(ctx, topic: str, payload=None):
     tray = ctx.get_instance("Tray")
     try:
-        tray.broker.inject(Msg.build(topic, payload))
+        tray.broker.push(Msg.build(topic, payload))
     except Exception as e:
         AppLogger.warning(f'[{topic} notify failed] {e}')
 
 def get_viewer_count(ctx=None) -> int:
     tray = ctx.get_instance("Tray")
     try:
-        return tray.broker.get_counts().get('viewer', 0)
+        return tray.broker.peer_counts().get('viewer', 0)
     except Exception as e:
         AppLogger.warning(f'[viewer count failed] {e}')
         return 0

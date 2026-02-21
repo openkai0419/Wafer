@@ -138,7 +138,8 @@ class Node:
 
     def _process_outbox(self):
         dst_filter = {self.node_id, self.role, 'ALL'}
-        records = OutboxStore.scan_all(dst_filter=dst_filter)
+        db_filter = self.default_db or None
+        records = OutboxStore.scan_all(dst_filter=dst_filter, db_filter=db_filter)
         if not records:
             return
         done: dict[str, list[int]] = {}

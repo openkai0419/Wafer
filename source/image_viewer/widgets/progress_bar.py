@@ -94,7 +94,7 @@ class ThinProgressBar(QtWidgets.QWidget):
         self._value_animation.setStartValue(self._animated_value)
         self._value_animation.setEndValue(value)
         self._value_animation.start()
-        if value == 0 or value >= self._maximum:
+        if self._maximum <= 0 or value >= self._maximum:
             self.fadeOut()
             value = 0
         else:

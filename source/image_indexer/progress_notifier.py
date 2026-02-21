@@ -1,3 +1,5 @@
+import threading
+
 from ..common.profiling import profiler
 from ..common.logs import AppLogger
 from ..zmq.transport import Priority
@@ -10,23 +12,33 @@ class ProgressAggregator:
         self._node = node
         self.current = 0
         self.maximum = 0
+        self._lock = threading.Lock()
 
     def reset(self):
+        with self._lock:
+            self._reset_unlocked()
+
+    def _reset_unlocked(self):
         self._send_progress()
         self.current = 0
         self.maximum = 0
 
     @profiler.profile
     def add(self, current_inc=0, total_inc=0):
-        if total_inc:
-            self.maximum += total_inc
-        if current_inc:
-            self.current += current_inc
-        if self.current >= self.maximum:
-            if self.current != 0 and self.maximum != 0:
-                self.reset()
-            return
-        self._send_progress()
+        with self._lock:
+            changed = False
+            if total_inc:
+                self.maximum += total_inc
+                changed = True
+            if current_inc:
+                self.current += current_inc
+                changed = True
+            if not changed:
+                return
+            if self.current >= self.maximum > 0:
+                self._reset_unlocked()
+            else:
+                self._send_progress()
 
     def notify(self, topic, value=''):
         try:

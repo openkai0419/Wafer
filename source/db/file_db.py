@@ -15,36 +15,56 @@ _TABLES = (
      'CREATE TABLE IF NOT EXISTS hash_index (file_hash TEXT PRIMARY KEY)'),
     ('sources', ('hash_index',),
      '''CREATE TABLE IF NOT EXISTS sources (
-        source TEXT PRIMARY KEY, file_hash TEXT NOT NULL,
-        size INTEGER, modified REAL, created REAL, collected REAL,
+        source TEXT PRIMARY KEY, 
+        file_hash TEXT NOT NULL,
+        size INTEGER, 
+        modified REAL, 
+        created REAL, 
+        collected REAL,
         status TEXT DEFAULT NULL,
         FOREIGN KEY(file_hash) REFERENCES hash_index(file_hash) ON DELETE CASCADE
     )'''),
-    ('images', ('sources',),
-     '''CREATE TABLE IF NOT EXISTS images (
-        path TEXT PRIMARY KEY, source TEXT NOT NULL, name TEXT, aspect_ratio REAL,
+    ('files', ('sources',),
+     '''CREATE TABLE IF NOT EXISTS files (
+        path TEXT PRIMARY KEY, 
+        source TEXT NOT NULL, 
+        name TEXT, 
+        aspect_ratio REAL,
         FOREIGN KEY(source) REFERENCES sources(source) ON DELETE CASCADE
     )'''),
-    ('meta_info', ('images',),
+    ('meta_info', ('files',),
      '''CREATE TABLE IF NOT EXISTS meta_info (
-        path TEXT NOT NULL, key TEXT NOT NULL, value TEXT,
+        path TEXT NOT NULL, 
+        key TEXT NOT NULL, 
+        value TEXT,
         PRIMARY KEY(path, key),
-        FOREIGN KEY(path) REFERENCES images(path) ON UPDATE CASCADE ON DELETE CASCADE
+        FOREIGN KEY(path) REFERENCES files(path) ON UPDATE CASCADE ON DELETE CASCADE
     )'''),
     ('tags', ('hash_index',),
      '''CREATE TABLE IF NOT EXISTS tags (
-        file_hash TEXT NOT NULL, key TEXT NOT NULL, value TEXT,
+        file_hash TEXT NOT NULL, 
+        key TEXT NOT NULL, 
+        value TEXT,
         PRIMARY KEY(file_hash, key),
         FOREIGN KEY(file_hash) REFERENCES hash_index(file_hash) ON UPDATE CASCADE ON DELETE CASCADE
+    )'''),
+    ('collection_status', ('sources',),
+     '''CREATE TABLE IF NOT EXISTS collection_status (
+        source TEXT NOT NULL, 
+        collector TEXT NOT NULL,
+        status TEXT DEFAULT 'pending',
+        collected_at REAL,
+        PRIMARY KEY(source, collector),
+        FOREIGN KEY(source) REFERENCES sources(source) ON DELETE CASCADE
     )'''),
 )
 
 _VIEWS = (
-    ('images_full',
-     '''CREATE VIEW images_full AS
+    ('files_full',
+     '''CREATE VIEW files_full AS
         SELECT i.path, i.source, i.name, i.aspect_ratio,
                s.file_hash, s.size, s.modified, s.created, s.collected, s.status
-        FROM images i JOIN sources s ON s.source = i.source'''),
+        FROM files i JOIN sources s ON s.source = i.source'''),
     ('kv_all',
      '''CREATE VIEW kv_all AS
         WITH base AS (
@@ -54,10 +74,10 @@ _VIEWS = (
             SELECT i.path AS path, t.key AS key, t.value AS value, 'tags' AS src, 0 AS rank
             FROM tags AS t
             JOIN sources AS s ON s.file_hash = t.file_hash
-            JOIN images  AS i ON i.source    = s.source
+            JOIN files  AS i ON i.source    = s.source
         UNION ALL
             SELECT i.path AS path, '__filepath__' AS key, i.path AS value, 'virtual' AS src, 1 AS rank
-            FROM images AS i
+            FROM files AS i
         ),
         picked AS (
             SELECT path, key, value, src, rank,
@@ -68,19 +88,20 @@ _VIEWS = (
     ('kv_meta',
      '''CREATE VIEW kv_meta AS
         SELECT k.path, vf.file_hash, k.key, k.value, k.src
-        FROM kv_all AS k JOIN images_full AS vf ON vf.path = k.path'''),
+        FROM kv_all AS k JOIN files_full AS vf ON vf.path = k.path'''),
 )
 
 _INDEXES_SQL = """
     CREATE INDEX IF NOT EXISTS idx_sources_file_hash ON sources(file_hash);
-    CREATE INDEX IF NOT EXISTS idx_images_source ON images(source);
+    CREATE INDEX IF NOT EXISTS idx_files_source ON files(source);
     CREATE INDEX IF NOT EXISTS idx_meta_info_key_fid ON meta_info(key, path);
     CREATE INDEX IF NOT EXISTS idx_tags_key_fid ON tags(key, file_hash);
-    CREATE INDEX IF NOT EXISTS idx_images_name_path ON images(name, path);
+    CREATE INDEX IF NOT EXISTS idx_files_name_path ON files(name, path);
     CREATE INDEX IF NOT EXISTS idx_sources_modified_source ON sources(modified, source);
     CREATE INDEX IF NOT EXISTS idx_sources_size_source ON sources(size, source);
     CREATE INDEX IF NOT EXISTS idx_sources_created_source ON sources(created, source);
     CREATE INDEX IF NOT EXISTS idx_sources_collected_source ON sources(collected, source);
+    CREATE INDEX IF NOT EXISTS idx_cs_collector_status ON collection_status(collector, status);
 """
 
 _EXPECTED_SIGNATURES: dict[str, frozenset] = {}
@@ -104,7 +125,7 @@ def _expected_table_signature(name, create_sql):
     return _EXPECTED_SIGNATURES[name]
 
 
-class ImageDB:
+class FileDB:
 
     def __init__(self, db_path: str | Path):
         self.db_path = Path(db_path)
@@ -293,7 +314,7 @@ class ImageDB:
             if image_entries:
                 cur.executemany(
                     '''
-                    INSERT INTO images (path, source, name, aspect_ratio)
+                    INSERT INTO files (path, source, name, aspect_ratio)
                     VALUES (?, ?, ?, ?)
                     ON CONFLICT(path) DO UPDATE SET
                         source       = excluded.source,
@@ -327,14 +348,171 @@ class ImageDB:
             cur.close()
 
     @profiler.profile
+    def upsert_basic_sources(self, source_entries, image_entries):
+        with self.conn:
+            cur = self.conn.cursor()
+            file_ids = {fid for _, fid, *_ in source_entries if fid}
+            if file_ids:
+                cur.executemany(
+                    'INSERT OR IGNORE INTO hash_index (file_hash) VALUES (?)',
+                    [(fid,) for fid in file_ids],
+                )
+            cur.executemany(
+                '''INSERT INTO sources (source, file_hash, size, modified, created, collected, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(source) DO UPDATE SET
+                    file_hash = excluded.file_hash,
+                    size      = excluded.size,
+                    modified  = excluded.modified,
+                    created   = excluded.created,
+                    collected = excluded.collected,
+                    status    = excluded.status''',
+                source_entries,
+            )
+            if image_entries:
+                cur.executemany(
+                    '''INSERT INTO files (path, source, name, aspect_ratio)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(path) DO UPDATE SET
+                        source       = excluded.source,
+                        name         = excluded.name,
+                        aspect_ratio = COALESCE(excluded.aspect_ratio, files.aspect_ratio)''',
+                    image_entries,
+                )
+            cur.close()
+
+    @profiler.profile
+    def upsert_collection_results(self, source_updates, image_entries, meta_info_entries, tag_entries, collector_status_entries):
+        with self.conn:
+            cur = self.conn.cursor()
+            if source_updates:
+                cur.executemany(
+                    '''UPDATE sources SET collected = ?, status = ? WHERE source = ?''',
+                    source_updates,
+                )
+            if image_entries:
+                cur.executemany(
+                    '''INSERT INTO files (path, source, name, aspect_ratio)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(path) DO UPDATE SET
+                        source       = excluded.source,
+                        name         = excluded.name,
+                        aspect_ratio = excluded.aspect_ratio''',
+                    image_entries,
+                )
+            if meta_info_entries:
+                cur.executemany(
+                    '''INSERT INTO meta_info (path, key, value)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(path, key) DO UPDATE SET value = excluded.value''',
+                    meta_info_entries,
+                )
+            file_ids = {fid for fid, *_ in tag_entries if fid}
+            if file_ids:
+                cur.executemany(
+                    'INSERT OR IGNORE INTO hash_index (file_hash) VALUES (?)',
+                    [(fid,) for fid in file_ids],
+                )
+            if tag_entries:
+                cur.executemany(
+                    '''INSERT INTO tags (file_hash, key, value)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(file_hash, key) DO UPDATE SET value = excluded.value''',
+                    tag_entries,
+                )
+            if collector_status_entries:
+                cur.executemany(
+                    '''INSERT INTO collection_status (source, collector, status, collected_at)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(source, collector) DO UPDATE SET
+                        status       = excluded.status,
+                        collected_at = excluded.collected_at''',
+                    collector_status_entries,
+                )
+            cur.close()
+
+    @profiler.profile
+    def insert_pending_collection(self, sources, collectors):
+        if not sources or not collectors:
+            return
+        with self.conn:
+            cur = self.conn.cursor()
+            entries = [(s, c, 'pending', None) for s in sources for c in collectors]
+            cur.executemany(
+                '''INSERT INTO collection_status (source, collector, status, collected_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(source, collector) DO UPDATE SET
+                    status       = 'pending',
+                    collected_at = NULL''',
+                entries,
+            )
+            cur.close()
+
+    @profiler.profile
+    def get_pending_sources(self, collector, limit=5000):
+        cur = self.get_reader_cursor()
+        cur.execute(
+            '''SELECT cs.source, s.modified, s.size, s.created
+            FROM collection_status cs
+            JOIN sources s ON s.source = cs.source
+            WHERE cs.collector = ? AND cs.status = 'pending'
+            LIMIT ?''',
+            (collector, limit),
+        )
+        rows = cur.fetchall()
+        cur.close()
+        return rows
+
+    @profiler.profile
+    def mark_dispatched(self, sources, collector):
+        if not sources:
+            return
+        with self.conn:
+            cur = self.conn.cursor()
+            for i in range(0, len(sources), 900):
+                chunk = sources[i:i + 900]
+                cur.executemany(
+                    '''UPDATE collection_status SET status = 'dispatched'
+                    WHERE source = ? AND collector = ? AND status = 'pending' ''',
+                    [(s, collector) for s in chunk],
+                )
+            cur.close()
+
+    @profiler.profile
+    def reset_stale_dispatched(self, collectors=None):
+        with self.conn:
+            cur = self.conn.cursor()
+            if collectors:
+                for c in collectors:
+                    cur.execute(
+                        '''UPDATE collection_status SET status = 'pending'
+                        WHERE collector = ? AND status = 'dispatched' ''',
+                        (c,),
+                    )
+            else:
+                cur.execute(
+                    '''UPDATE collection_status SET status = 'pending'
+                    WHERE status = 'dispatched' ''',
+                )
+            changed = cur.execute('SELECT changes()').fetchone()[0]
+            cur.close()
+        if changed:
+            AppLogger.info(f'[DB] Reset {changed} stale dispatched entries to pending')
+        return changed
+
+    @profiler.profile
     def clean_unused(self):
         AppLogger.info('CLEANING UP DATABASE')
         try:
             cur = self.get_writer_cursor()
 
             cur.execute('''
+                DELETE FROM collection_status
+                WHERE source NOT IN (SELECT source FROM sources)
+            ''')
+            cur.execute('''
                 DELETE FROM meta_info
-                WHERE path NOT IN (SELECT path FROM images)
+                WHERE path NOT IN (SELECT path FROM files)
             ''')
             cur.execute('''
                 DELETE FROM tags

@@ -32,20 +32,20 @@ class TestDevLogPanel:
 
     def test_src_tab_created(self, panel):
         panel.append_log('info', 'from viewer', src='viewer-100')
-        panel.append_log('info', 'from collector', src='collector-200')
+        panel.append_log('info', 'from indexer', src='indexer-200')
         assert 'viewer-100' in panel._src_tabs
-        assert 'collector-200' in panel._src_tabs
+        assert 'indexer-200' in panel._src_tabs
         assert panel._tab_widget.count() == 3  # All + 2 src tabs
 
     def test_src_tab_isolation(self, panel):
         panel.append_log('info', 'from viewer', src='viewer-100')
-        panel.append_log('info', 'from collector', src='collector-200')
+        panel.append_log('info', 'from indexer', src='indexer-200')
         viewer_text = panel._src_tabs['viewer-100'].toPlainText()
-        collector_text = panel._src_tabs['collector-200'].toPlainText()
+        indexer_text = panel._src_tabs['indexer-200'].toPlainText()
         assert 'from viewer' in viewer_text
-        assert 'from collector' not in viewer_text
-        assert 'from collector' in collector_text
-        assert 'from viewer' not in collector_text
+        assert 'from indexer' not in viewer_text
+        assert 'from indexer' in indexer_text
+        assert 'from viewer' not in indexer_text
 
     def test_level_filter(self, panel):
         panel.append_log('debug', 'debug msg', src='v-1')

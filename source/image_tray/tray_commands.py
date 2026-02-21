@@ -58,7 +58,7 @@ def test(ctx=None):
 
 
 def test2(ctx=None):
-    AppLogger.info(Proc.get_subset('--collector'))
+    AppLogger.info(Proc.get_subset('--indexer'))
 
 
 def quit(ctx=None):

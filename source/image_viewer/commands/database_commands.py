@@ -58,7 +58,7 @@ def add_database(ctx):
     AppLogger.info(f'[add_database] {text}')
     if not text or text in get_setting_file_names():
         return
-    Proc.new_main('--collector', text)
+    Proc.new_main('--indexer', text)
     w.dbcombo.addItem(text)
     w.dbcombo.setCurrentText(text)
     w.reload_db(text)

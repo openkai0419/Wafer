@@ -117,7 +117,7 @@ class TestBrokerNode:
         broker.start()
         received = []
         try:
-            idx = Node('collector', db='photos')
+            idx = Node('indexer', db='photos')
             idx.start(broker.port)
             idx.wait_registered(timeout=3.0)
 
@@ -141,12 +141,12 @@ class TestBrokerNode:
         broker.start()
         results = []
         try:
-            node = Node('collector', db='photos')
+            node = Node('indexer', db='photos')
             node.on('work.assigned', lambda msg: results.append(msg.payload) or True)
             node.start(broker.port)
             node.wait_registered(timeout=3.0)
 
-            broker.push(Msg.build('work.assigned', 'task1', dst='collector'))
+            broker.push(Msg.build('work.assigned', 'task1', dst='indexer'))
             time.sleep(0.5)
             assert results == ['task1']
         finally:
@@ -161,14 +161,14 @@ class TestBrokerNode:
             v1.start(broker.port)
             v1.wait_registered(timeout=3.0)
 
-            idx = Node('collector', db='photos')
+            idx = Node('indexer', db='photos')
             idx.start(broker.port)
             idx.wait_registered(timeout=3.0)
 
             reply = v1.request('mgmt.get_count', timeout=3.0)
             assert reply is not None
             assert reply.payload.get('viewer', 0) == 1
-            assert reply.payload.get('collector', 0) == 1
+            assert reply.payload.get('indexer', 0) == 1
         finally:
             idx.stop()
             v1.stop()
@@ -198,7 +198,7 @@ class TestBrokerNode:
         v_msgs = []
         c_msgs = []
         try:
-            idx_ill = Node('collector', db='illustrations')
+            idx_ill = Node('indexer', db='illustrations')
             idx_ill.start(broker.port)
             idx_ill.wait_registered(timeout=3.0)
 
@@ -228,7 +228,7 @@ class TestBrokerNode:
         broker.start()
         own_msgs = []
         try:
-            node = Node('collector', db='photos')
+            node = Node('indexer', db='photos')
             node.on('broadcast', lambda m: own_msgs.append(m) or True)
             node.start(broker.port)
             node.wait_registered(timeout=3.0)
@@ -248,7 +248,7 @@ class TestQoSRouting:
         broker.start()
         received = []
         try:
-            sender = Node('collector', db='photos')
+            sender = Node('indexer', db='photos')
             sender.start(broker.port)
             sender.wait_registered(timeout=3.0)
 
@@ -273,7 +273,7 @@ class TestQoSRouting:
         broker.start()
         received = []
         try:
-            sender = Node('collector', db='photos')
+            sender = Node('indexer', db='photos')
             sender.start(broker.port)
             sender.wait_registered(timeout=3.0)
 
@@ -297,7 +297,7 @@ class TestQoSRouting:
         broker.start()
         received = []
         try:
-            sender = Node('collector', db='photos')
+            sender = Node('indexer', db='photos')
             sender.start(broker.port)
             sender.wait_registered(timeout=3.0)
 
@@ -330,7 +330,7 @@ class TestReconnection:
             node.start(broker1.port)
             assert node.wait_registered(timeout=3.0)
 
-            sender1 = Node('collector', db='photos')
+            sender1 = Node('indexer', db='photos')
             sender1.start(broker1.port)
             sender1.wait_registered(timeout=3.0)
             sender1.send('ping', 'before', dst='viewer')
@@ -348,7 +348,7 @@ class TestReconnection:
                 time.sleep(NODE_TIMEOUT + 2)
                 assert node.wait_registered(timeout=5.0)
 
-                sender2 = Node('collector', db='photos')
+                sender2 = Node('indexer', db='photos')
                 sender2.start(broker2.port)
                 sender2.wait_registered(timeout=3.0)
                 sender2.send('ping', 'after', dst='viewer')
@@ -382,7 +382,7 @@ class TestReconnection:
                 assert node.wait_registered(timeout=5.0)
                 assert node._current_port == broker2.port
 
-                sender = Node('collector', db='photos')
+                sender = Node('indexer', db='photos')
                 sender.start(broker2.port)
                 sender.wait_registered(timeout=3.0)
                 sender.send('data', 'new_broker', dst='viewer')

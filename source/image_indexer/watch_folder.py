@@ -3,12 +3,10 @@ import queue
 import threading
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
-from ..common.funcs import IMAGE_EXTENSIONS
 from ..common.profiling import profiler
 from ..common.logs import AppLogger
 from .progress_notifier import ProgressAggregator
 
-_EXTENSIONS = set(IMAGE_EXTENSIONS)
 DISABLE_MODIFY_EVENT = False
 _BATCH_TIMEOUT = 0.5
 
@@ -18,41 +16,35 @@ class _FileEmitter(FileSystemEventHandler):
     def __init__(self, inbox):
         self._inbox = inbox
 
-    def _ext_ok(self, path):
-        return os.path.splitext(path)[1].lower() in _EXTENSIONS
-
     def on_created(self, event):
         if event.is_directory:
             self._inbox.put(('folder', event.src_path))
-        elif self._ext_ok(event.src_path):
+        else:
             self._inbox.put(('changed', event.src_path))
 
     def on_modified(self, event):
         if DISABLE_MODIFY_EVENT or event.is_directory:
             return
-        if self._ext_ok(event.src_path):
-            self._inbox.put(('changed', event.src_path))
+        self._inbox.put(('changed', event.src_path))
 
     def on_deleted(self, event):
         if event.is_directory:
             self._inbox.put(('folder', event.src_path))
-        elif self._ext_ok(event.src_path):
+        else:
             self._inbox.put(('deleted', event.src_path))
 
     def on_moved(self, event):
         if event.is_directory:
             self._inbox.put(('folder', event.dest_path))
         else:
-            if self._ext_ok(event.src_path):
-                self._inbox.put(('deleted', event.src_path))
-            if self._ext_ok(event.dest_path):
-                self._inbox.put(('changed', event.dest_path))
+            self._inbox.put(('deleted', event.src_path))
+            self._inbox.put(('changed', event.dest_path))
 
 
 class WatchFolder:
 
-    def __init__(self, name, database, node=None):
-        self._progress = ProgressAggregator(name, node)
+    def __init__(self, database, progress: ProgressAggregator):
+        self._progress = progress
         self._db = database
         self._db.set_progress_callback(self._progress.add)
         self._db.set_update_callback(lambda: self._progress.notify('update'))
@@ -147,11 +139,9 @@ class WatchFolder:
             with self._db as indexer:
                 if cmd == 'update':
                     AppLogger.info(f'db update: {len(data)} files')
-                    self._progress.add(0, len(data))
                     indexer.update_by_file_list(data)
                 elif cmd == 'remove':
                     AppLogger.info(f'db remove: {len(data)} files')
-                    self._progress.add(0, len(data))
                     indexer.remove_by_file_list(data)
                 elif cmd == 'rescan':
                     AppLogger.info(f'db rescan: {len(data)} folders')

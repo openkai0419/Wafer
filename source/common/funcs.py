@@ -7,7 +7,6 @@ from natsort import natsorted, ns
 from platformdirs import PlatformDirs
 from PySide6 import QtGui
 from ..constants import APP_FILE_NAME
-IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.bmp', '.gif', '.webp')
 
 def normalize_path(p):
     try:

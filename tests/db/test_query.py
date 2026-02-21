@@ -4,7 +4,7 @@ import time
 import pytest
 from pathlib import Path
 from source.db.query import MetaQuery, MetaInfoSearchEngine
-from source.db.image_db import ImageDB
+from source.db.file_db import FileDB
 from source.common.funcs import normalize_path
 
 
@@ -15,7 +15,7 @@ def db_path(tmp_path):
 
 @pytest.fixture
 def populated_db(db_path):
-    db = ImageDB(db_path)
+    db = FileDB(db_path)
     db.start()
     db.initialize_database()
     sources, images, metas, tags = [], [], [], []
@@ -57,7 +57,7 @@ class TestMetaQuerySubquery:
         q = MetaQuery(keys=["__filepath__"])
         sql, params = q._make_subquery(np)
         assert sql is not None
-        assert "images" in sql
+        assert "files" in sql
         assert "meta_info" not in sql.split("UNION")[0]
 
     def test_no_keys_require_keys_true(self):
@@ -69,7 +69,7 @@ class TestMetaQuerySubquery:
         q = MetaQuery(keys=None, require_keys=False)
         sql, params = q._make_subquery(np, require_keys_override=False)
         assert sql is not None
-        assert "images" in sql
+        assert "files" in sql
         assert "meta_info" in sql
         assert "tags" in sql
 
@@ -201,7 +201,7 @@ class TestMetaInfoSearchEngineListKeys:
         assert "dpi" in key_names
 
     def test_list_all_keys_dedup(self, db_path):
-        db = ImageDB(db_path)
+        db = FileDB(db_path)
         db.start()
         db.initialize_database()
         sources = [("src1", "hash1", 100, 1.0, 1.0, 1.0, None)]
@@ -252,14 +252,14 @@ class TestExplainQueryPlan:
         assert "kv_meta" not in plan.lower()
         assert "kv_all" not in plan.lower()
 
-    def test_filepath_uses_images_directly(self, populated_db):
+    def test_filepath_uses_files_directly(self, populated_db):
         engine = MetaInfoSearchEngine(populated_db)
         assert engine._connect_if_needed()
         q = MetaQuery(keys=["__filepath__"], keywords="vacation")
         subq, params = q._make_subquery(np)
         sql = f"SELECT DISTINCT path FROM ({subq}) s0"
         plan = self._plan_text(engine.conn, sql, params)
-        assert "images" in plan.lower()
+        assert "files" in plan.lower()
 
     def test_meta_key_uses_index(self, populated_db):
         engine = MetaInfoSearchEngine(populated_db)
@@ -278,7 +278,7 @@ class TestExplainQueryPlan:
         distinct_paths = f"SELECT DISTINCT path FROM ({subq}) s0"
         sql = f"""
             SELECT m.path, m.source, m.aspect_ratio
-            FROM images_full AS m
+            FROM files_full AS m
             JOIN ({distinct_paths}) AS s USING(path)
             ORDER BY m.name ASC
         """
@@ -328,7 +328,7 @@ class TestExplainQueryPlanRealDB:
         subq, params = q._make_subquery(np)
         sql = f"""
             SELECT m.path, m.source, m.aspect_ratio
-            FROM images_full AS m
+            FROM files_full AS m
             JOIN (SELECT DISTINCT path FROM ({subq}) s0) AS s USING(path)
             ORDER BY m.name ASC
         """
@@ -340,7 +340,7 @@ class TestExplainQueryPlanRealDB:
         subq, params = q._make_subquery(np)
         sql = f"""
             SELECT m.path, m.source, m.aspect_ratio
-            FROM images_full AS m
+            FROM files_full AS m
             JOIN (SELECT DISTINCT path FROM ({subq}) s0) AS s USING(path)
             ORDER BY m.name ASC
         """
@@ -349,7 +349,7 @@ class TestExplainQueryPlanRealDB:
 
     def test_directory_query(self, real_engine):
         assert real_engine._connect_if_needed()
-        sample = real_engine.conn.execute("SELECT path FROM images LIMIT 1").fetchone()
+        sample = real_engine.conn.execute("SELECT path FROM files LIMIT 1").fetchone()
         if not sample:
             pytest.skip("No image data")
         parts = sample[0].replace("\\", "/").split("/")
@@ -358,7 +358,7 @@ class TestExplainQueryPlanRealDB:
         subq, params = q._make_subquery(np)
         sql = f"""
             SELECT m.path, m.source, m.aspect_ratio
-            FROM images_full AS m
+            FROM files_full AS m
             JOIN (SELECT DISTINCT path FROM ({subq}) s0) AS s USING(path)
             ORDER BY m.name ASC
         """
@@ -367,7 +367,7 @@ class TestExplainQueryPlanRealDB:
 
     def test_list_all_keys_query(self, real_engine):
         assert real_engine._connect_if_needed()
-        sample = real_engine.conn.execute("SELECT path FROM images LIMIT 1").fetchone()
+        sample = real_engine.conn.execute("SELECT path FROM files LIMIT 1").fetchone()
         if not sample:
             pytest.skip("No image data")
         parts = sample[0].replace("\\", "/").split("/")

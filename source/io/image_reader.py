@@ -45,7 +45,7 @@ class ImageReader(BaseReader):
                 "source": p,
                 "path": p,
                 "name": os.path.basename(p),
-                "aspect": None,
+                "aspect": 1.0,
             }
             return (info, {}, {}, 'fail')
         

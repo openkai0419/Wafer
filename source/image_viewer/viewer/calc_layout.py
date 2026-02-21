@@ -194,7 +194,8 @@ class JustifiedLayoutCalculator(QtCore.QRunnable):
         while i < len(aspects):
             if self._cancelled:
                 return
-            ext = aspects[i] * base if hz else base / aspects[i]
+            a = aspects[i] or 1.0
+            ext = a * base if hz else base / a
             if line_count > 0 and line_extent + ext + spacing * line_count > container:
                 total_sp = spacing * (line_count - 1)
                 scale = max((container - total_sp) / line_extent, 0.1)

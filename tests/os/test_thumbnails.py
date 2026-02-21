@@ -3,7 +3,7 @@ import sys
 import tempfile
 import pytest
 from PIL import Image
-from source.os.thumbnails import FileThumbnailer
+from source.os.thumbnails import FileThumbnailer, get_aspect_ratios
 
 
 @pytest.fixture
@@ -55,3 +55,27 @@ def test_get_thumbnail_returns_image(thumbnailer):
 
 def test_platform_is_set(thumbnailer):
     assert thumbnailer.platform == sys.platform
+
+
+def test_get_aspect_ratios_empty():
+    result = get_aspect_ratios([])
+    assert result == {}
+
+
+@pytest.mark.skipif(not sys.platform.startswith("win"), reason="Windows only")
+def test_get_aspect_ratios_image():
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+        img = Image.new("RGB", (200, 100))
+        img.save(f, format="PNG")
+        path = f.name
+    try:
+        result = get_aspect_ratios([path])
+        if result:
+            assert abs(result[path] - 2.0) < 0.01
+    finally:
+        os.unlink(path)
+
+
+def test_get_aspect_ratios_nonexistent():
+    result = get_aspect_ratios(["/nonexistent/file.png"])
+    assert isinstance(result, dict)

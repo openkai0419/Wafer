@@ -128,9 +128,9 @@ class TestAppLogger:
 
     def test_set_node_with_role_sets_both(self):
         node = MagicMock()
-        AppLogger.set_node(node, role='collector')
+        AppLogger.set_node(node, role='indexer')
         assert AppLogger._node is node
-        assert AppLogger._role == 'collector'
+        assert AppLogger._role == 'indexer'
 
     def test_set_node_without_role_keeps_role(self):
         AppLogger._role = 'original'

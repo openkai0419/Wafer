@@ -272,7 +272,7 @@ class ExifParser:
                 result["width"] = w
                 result["height"] = h
                 result["orientation"] = orientation
-                result["aspect"] = (w / h) if h else None
+                result["aspect"] = (w / h) if h else 1.0
                 result["exif"] = cls._extract_from_exif_obj(exif)
                 result["info_items"] = cls.parse_info_dict(img.info or {})
         except Exception as e:
@@ -293,7 +293,7 @@ class ExifParser:
                 "width": w,
                 "height": h,
                 "orientation": orientation,
-                "aspect": (w / h) if h else None,
+                "aspect": (w / h) if h else 1.0,
                 "exif": cls._extract_from_exif_obj(exif),
                 "info_items": cls.parse_info_dict(img.info or {}),
                 "error": None,
@@ -303,7 +303,7 @@ class ExifParser:
                 "width": None,
                 "height": None,
                 "orientation": None,
-                "aspect": None,
+                "aspect": 1.0,
                 "exif": {},
                 "info_items": {},
                 "error": f"{e}",

@@ -11,7 +11,7 @@ import psutil
 from ..common.funcs import data_path
 from ..common.logs import AppLogger
 
-_OUTBOX_DIR = data_path('outbox/')
+_OUTBOX_DIR = data_path('.outbox/')
 
 _SCHEMA = '''
 CREATE TABLE IF NOT EXISTS outbox (
@@ -43,7 +43,7 @@ def _delete_db_files(db_path: str):
 
 
 def _connect(path: str) -> sqlite3.Connection:
-    conn = sqlite3.connect(path, timeout=5.0)
+    conn = sqlite3.connect(path, timeout=5.0, check_same_thread=False)
     conn.execute('PRAGMA journal_mode=WAL')
     return conn
 
@@ -143,7 +143,7 @@ class OutboxStore:
                 _delete_db_files(db_path)
 
     @staticmethod
-    def scan_all(dst_filter: set[str] | None = None) -> list[OutboxRecord]:
+    def scan_all(dst_filter: set[str] | None = None, db_filter: str | None = None) -> list[OutboxRecord]:
         records = []
         outbox_dir = Path(_OUTBOX_DIR)
         if not outbox_dir.is_dir():
@@ -157,6 +157,8 @@ class OutboxStore:
                 ).fetchall()
                 for r in rows:
                     if dst_filter and r[3] not in dst_filter:
+                        continue
+                    if db_filter is not None and r[4] != db_filter:
                         continue
                     records.append(OutboxRecord(
                         id=r[0], topic=r[1], payload=msgpack.unpackb(r[2], raw=False),

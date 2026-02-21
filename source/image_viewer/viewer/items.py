@@ -28,7 +28,7 @@ class ViewerItems(QtCore.QObject):
         if len(self.sources) != n:
             self.sources = (self.sources[:n] + [""] * n)[:n]
         if len(self.aspect_ratios) != n:
-            self.aspect_ratios = (self.aspect_ratios[:n] + [0.0] * n)[:n]
+            self.aspect_ratios = (self.aspect_ratios[:n] + [1.0] * n)[:n]
 
     @profiler.profile
     def set_items(self, paths: list[str] | None, sources: list[str] | None, aspect_ratios: list[float] | None):

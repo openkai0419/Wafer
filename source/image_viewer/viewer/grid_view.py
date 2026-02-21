@@ -342,7 +342,7 @@ class GridView(QtWidgets.QGraphicsView, Kit.UIMixin):
         else:
             cw, ch = primary_vp, secondary
             ratios = self.items.aspect_ratios
-            avg_aspect = sum(ratios) / len(ratios) if ratios else 1.0
+            avg_aspect = sum(r or 1.0 for r in ratios) / len(ratios) if ratios else 1.0
             bh = int(bh * avg_aspect)
         self.calculator = JustifiedLayoutCalculator(self.items.aspect_ratios, bh, self.spacing, cw, ch, self.orientation)
         self.calculator.signals.layout_ready.connect(self._on_layout_ready)

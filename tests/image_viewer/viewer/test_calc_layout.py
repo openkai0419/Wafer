@@ -165,3 +165,21 @@ def test_calculator_cancel():
     calc.signals.layout_ready.connect(lambda ld: received.append(ld))
     calc.run()
     assert len(received) == 0
+
+
+def test_calculator_none_aspect_ratios(qtbot):
+    received = []
+    calc = JustifiedLayoutCalculator([1.0, None, 0.8], 100, 5, 500, None, orientation=0)
+    calc.signals.layout_ready.connect(lambda ld: received.append(ld))
+    calc.run()
+    assert len(received) == 1
+    assert len(received[0]) == 3
+
+
+def test_calculator_zero_aspect_ratios(qtbot):
+    received = []
+    calc = JustifiedLayoutCalculator([1.0, 0.0, 0.8], 100, 5, 500, None, orientation=0)
+    calc.signals.layout_ready.connect(lambda ld: received.append(ld))
+    calc.run()
+    assert len(received) == 1
+    assert len(received[0]) == 3

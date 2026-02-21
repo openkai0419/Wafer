@@ -70,6 +70,30 @@ def _get_dimensions_from_property_store(abs_path: str) -> tuple[int, int] | None
     return None
 
 
+def get_aspect_ratios(paths: list[str]) -> dict[str, float]:
+    if not paths:
+        return {}
+    if sys.platform.startswith('win'):
+        return _get_aspect_ratios_windows(paths)
+    return {}
+
+
+def _get_aspect_ratios_windows(paths: list[str]) -> dict[str, float]:
+    import pythoncom
+    pythoncom.CoInitialize()
+    try:
+        result = {}
+        for p in paths:
+            dims = _get_dimensions_from_property_store(os.path.abspath(p))
+            if dims:
+                w, h = dims
+                if h > 0:
+                    result[p] = w / h
+        return result
+    finally:
+        pythoncom.CoUninitialize()
+
+
 class FileThumbnailer:
 
     def __init__(self):

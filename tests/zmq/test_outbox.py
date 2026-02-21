@@ -74,6 +74,26 @@ class TestOutboxStore:
                 topics = {r.topic for r in records}
                 assert topics == {'t1', 't2'}
 
+    def test_scan_all_db_filter(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch('source.zmq.outbox._OUTBOX_DIR', tmp):
+                store = OutboxStore('node-a')
+                store.push('t1', 'p1', 'indexer', db='db_alpha')
+                store.push('t2', 'p2', 'indexer', db='db_beta')
+                store.push('t3', 'p3', 'indexer', db='')
+                store.close()
+
+                records = OutboxStore.scan_all(db_filter='db_alpha')
+                assert len(records) == 1
+                assert records[0].topic == 't1'
+
+                records = OutboxStore.scan_all(db_filter='')
+                assert len(records) == 1
+                assert records[0].topic == 't3'
+
+                records = OutboxStore.scan_all(db_filter=None)
+                assert len(records) == 3
+
     def test_remove_from(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch('source.zmq.outbox._OUTBOX_DIR', tmp):
@@ -201,6 +221,7 @@ class TestConsumeOutbox:
                 node._handlers = {}
                 node.node_id = 'consumer-1'
                 node.role = 'consumer'
+                node.db = ''
 
                 received = []
 
@@ -226,6 +247,7 @@ class TestConsumeOutbox:
                 node._handlers = {}
                 node.node_id = 'consumer-1'
                 node.role = 'consumer'
+                node.db = ''
                 node.on('tag.add', lambda msg: False)
                 node._process_outbox()
 
@@ -242,6 +264,7 @@ class TestConsumeOutbox:
                 node._handlers = {}
                 node.node_id = 'consumer-1'
                 node.role = 'consumer'
+                node.db = ''
                 node._process_outbox()
 
                 assert len(OutboxStore.scan_all()) == 1
@@ -257,6 +280,7 @@ class TestConsumeOutbox:
                 node._handlers = {}
                 node.node_id = 'consumer-1'
                 node.role = 'consumer'
+                node.db = ''
 
                 captured = []
                 node.on('tag.add', lambda msg: captured.append(msg) or True)
@@ -265,3 +289,26 @@ class TestConsumeOutbox:
                 assert captured[0].priority == Priority.MID
                 assert captured[0].topic == 'tag.add'
                 assert captured[0].payload == 'data'
+
+    def test_consume_filters_by_db(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch('source.zmq.outbox._OUTBOX_DIR', tmp):
+                store = OutboxStore('sender-99999')
+                store.push('collect.result', 'mine', 'indexer', db='mydb')
+                store.push('collect.result', 'other', 'indexer', db='otherdb')
+                store.close()
+
+                node = Node.__new__(Node)
+                node._handlers = {}
+                node.node_id = 'indexer-1'
+                node.role = 'indexer'
+                node.db = 'mydb'
+
+                received = []
+                node.on('collect.result', lambda msg: received.append(msg.payload) or True)
+                node._process_outbox()
+
+                assert received == ['mine']
+                remaining = OutboxStore.scan_all()
+                assert len(remaining) == 1
+                assert remaining[0].db == 'otherdb'

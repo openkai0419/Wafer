@@ -29,7 +29,7 @@ def test_set_items_normalizes_lengths():
     assert len(vi.sources) == 2
     assert len(vi.aspect_ratios) == 2
     assert vi.sources[1] == ""
-    assert vi.aspect_ratios[1] == 0.0
+    assert vi.aspect_ratios[1] == 1.0
 
 
 def test_clear(items):

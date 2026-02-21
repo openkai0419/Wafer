@@ -3,11 +3,13 @@
 実行: main.py から起動。GUI は PySide6。将来的に動画/音声/Zip対応、プラグイン拡張を見据える。
 
 ■ プロセス構成
-- 3ロール: viewer(GUI), collector(収集), communicator(トレイ/管理)。IPCは ZMQ。
+- 4ロール: viewer(GUI), indexer(収集/インデクシング), collector(メタデータ抽出), communicator(トレイ/管理)。IPCは ZMQ。
 - main.py は引数なし起動で viewer を起動し、別プロセスで communicator を立ち上げる。
-- communicator は設定DB名一覧に応じて collector を複数起動し、常駐する。
+- communicator は設定DB名一覧に応じて indexer を複数起動し、常駐する。
+- indexer はDB単位で collector プロセスを起動・管理する（plugin単位で1プロセス）。
 - 多重起動防止は source/common/mutex.py の SafeProcessLock（lock に pid+create_time を保存し、PID再利用の誤判定を避ける）。
 - --dev 引数で開発者モード起動。DEV_MODE フラグ（source/constants.py）をセット。ログパネルやデバッグメニューが有効になる。
+- main.py の引数: --communicator, --viewer, --indexer <name>, --collector <name> --plugin <plugin>, --parent-pid, --dev。
 
 ■ データ/設定ファイル配置
 - DBファイル: データDB=data/{name}.db、設定DB=dirs/{name}.db
@@ -16,23 +18,66 @@
   - _LoggerFactory は遅延初期化: 初回(role未設定)はStreamHandlerのみ、set_role(role) 呼出後にFileHandler追加。
 - リソース: _resources。frozen時は sys.executable の親を基準に解決。
 
-■ DB(画像メタDB)
-- source/db/image_db.py の ImageDB がスキーマ管理・WAL・read/write接続・CRUDを提供。
-- source/db/indexer.py の ImageIndexer がスキャン・差分検出・バッチ処理を提供。ImageDB に委譲。
+■ DB(ファイルメタDB)
+- source/db/file_db.py の FileDB がスキーマ管理・WAL・read/write接続・CRUDを提供。
+- source/db/indexer.py の FileIndexer がスキャン・差分検出・Phase1基本登録を提供。FileDB に委譲。
 - source/db/db_utils.py に apply_write_pragmas/apply_read_pragmas を共通化。
 - 破損検知: PRAGMA quick_check が ok でなければ .bak を作って再生成。
-- 主要テーブル/ビュー: hash_index, sources, images, meta_info, tags, images_full, kv_all, kv_meta
+- 主要テーブル/ビュー: hash_index, sources, files, meta_info, tags, collection_status, files_full, kv_all, kv_meta
+- collection_status: Collectorごとのファイル処理状態を追跡。(source, collector) が PK。status='pending'|'dispatched'|'ok'|'fail'。
+  sources の CASCADE DELETE で自動削除。
+  pending→dispatched(送信時)→ok/fail(結果受信時)。再起動時にdispatchedをpendingに戻して再送。
+- 2段階登録:
+  Phase 1 (FileIndexer._register_basic_info): path/hash/mtime/size を sources に即時登録、files に aspectをget_aspect_ratios()で取得（失敗時は1.0）で登録、拡張子ベースでマッチするCollectorのみ collection_status に pending 行挿入。Viewerへ即座にupdate通知。
+  Phase 2 (CollectorWorker→CollectionWriter): Collectorがメタデータ抽出→ZMQ送信→Writerがmeta_info/tags/aspect上書きDB登録。
+- FileIndexer.__init__(db_path, collectors=None): collectors は [(name, extensions), ...] 形式。
+  EXTENSIONS=() は全ファイルマッチ、タプル指定は拡張子フィルタ。
+  _insert_pending_by_extension() で各ファイルの拡張子に応じて対応するCollectorのみpending作成。
+  main_indexer.py で get_collector_info() から取得して渡す。
+- FileDB の主要メソッド:
+  upsert_batches: 汎用一括UPSERT（全テーブル）
+  upsert_basic_sources: Phase 1 用。sources+files のみ。aspect_ratio は COALESCE で既存値を保持。
+  upsert_collection_results: Phase 2 用。sources UPDATE + files/meta_info/tags UPSERT + collection_status UPSERT。
+  insert_pending_collection: 指定 sources × collectors の pending 行を INSERT OR IGNORE。
+  get_pending_sources(collector, limit): pending 状態のファイルパス一覧。
+  mark_dispatched(sources, collector): pending→dispatched に更新（送信済みマーク）。
+  reset_stale_dispatched(collectors): dispatched→pending に戻す（再起動時の復旧用）。
 
 ■ 検索
 - source/db/query.py の MetaInfoSearchEngine が read-only 接続で検索。
 - MetaQuery: keys/keywords/directories/include_subfolders をSQL条件へ展開。
 
-■ 収集(collector)
-- source/image_collector/main_collector.py の CollectorProcess。Node生成、WatchFolder/SettingWatcher を起動。
-- ImageIndexer は source/db/indexer.py から import。
-- WatchFolder: watchdog → queue.put → 単一ワーカースレッド(_loop) → _flush(changed/deleted) → _exec(DB操作)。0.5秒バッチタイムアウト。
+■ 収集(indexer) + Collector分離アーキテクチャ
+- source/image_indexer/main_indexer.py の IndexerProcess。Node('indexer', db=name, consumer=True) 生成、WatchFolder/SettingWatcher/CollectorDispatcher/CollectionWriter を起動。
+- FileIndexer は source/db/indexer.py から import。Phase1のみ担当(スキャン+基本登録+pending挿入)。
+- WatchFolder: watchdog → queue.put → 単一ワーカースレッド(_loop) → _flush(changed/deleted) → _exec(DB操作)。0.5秒バッチタイムアウト。全ファイル監視（拡張子フィルタなし）。
 - SettingWatcher(FileSystemEventHandler): 設定DBファイル変更を直接監視し、_check_changes() で parent/ignore/delete を一括検出。
-- ProgressAggregator: コンストラクタで Node を直接受け取り、進捗集約 + IPC 通知。
+- ProgressAggregator: コンストラクタで Node を直接受け取り、進捗集約 + IPC 通知。WatchFolderとCollectionWriterで共有。
+- CollectorDispatcher (source/image_indexer/dispatcher.py):
+  - Collectorプロセスの起動(Proc.new_main)と終了管理。
+  - get_collector_names() から動的にcollectorリストを取得（デフォルト）。コンストラクタのcollectors引数で上書き可能。
+  - get_pending_sourcesで未処理パスを取得し、collect.batchトピックでCollectorに送信後、mark_dispatchedでstatus更新。
+  - 2秒間隔のポーリング + request_dispatch()による即時トリガー。
+  - start()時にreset_stale_dispatched()を呼び、前回未完了の配信を自動復旧。
+- CollectionWriter (source/image_indexer/writer.py):
+  - Node経由でcollect.resultトピックを受信し、内部キューに蓄積。
+  - collect.resultペイロードのcollectorフィールドからcollector名を動的取得（ハードコードなし）。
+  - 専用のFileDB接続を持ち、2秒間隔でバッチ書き込み(upsert_collection_results)。
+  - WatchFolderとは別のDB接続（スレッド安全のため独立FileDBインスタンス）。
+- source/image_collector/plugin.py:
+  - BaseCollectorPlugin(ABC): NAME/EXTENSIONS/process()を定義するプラグインインターフェース。
+  - ImageCollectorPlugin: PIL+ExifParserでメタデータ抽出。BUILTIN_PLUGINSに登録。
+  - get_collector_names(): BUILTIN_PLUGINSのキー一覧を返す。
+  - get_collector_info(): [(NAME, EXTENSIONS), ...] を返す。FileIndexerのcollectors引数用。
+  - get_collectors_for_path(path): 拡張子マッチするcollector名リスト。
+- source/image_collector/worker.py:
+  - CollectorWorker: Node('collector-{plugin}', db=name)でZMQ接続。collect.batchを受信し、ThreadPoolExecutorでプラグイン並列実行。
+  - 結果はsend_reliable('collect.result', {collector: plugin_name, results: [...]}, dst='indexer')で確実配信。
+  - run_collector(): SafeProcessLock付きのエントリーポイント。
+- ZMQトピック:
+  - collect.batch (Indexer→Collector): paths + file_info のバッチ配信
+  - collect.result (Collector→Indexer, send_reliable): collector名 + メタデータ結果の確実配信
+  - outbox.notify: send_reliable のトリガー通知
 
 ■ IPC(ZMQ) — Msg + Broker + Node アーキテクチャ
 - source/zmq/ は5ファイル構成: transport.py, message.py, broker.py, node.py, outbox.py。msgpack による2フレームシリアライズ。
@@ -51,7 +96,7 @@
   - 内部: _register_peer/_unregister_peer/_refresh_peer（ピア管理）、_route_msg（メッセージルーティング）、_deliver_batch（バッチ配信）、_reaper_loop（staleピア刈り取り）。
   - 管理プロトコル: mgmt.register / mgmt.heartbeat / mgmt.get_count。
   - dbフィルタ: 空 db_set のピアは全メッセージ受信、指定ありのピアはマッチのみ受信。
-- Node (node.py): DEALER ソケット。全プロセス（Viewer/Collector/Communicator）で使用。
+- Node (node.py): DEALER ソケット。全プロセス（Viewer/Indexer/Communicator）で使用。
   - node_id は `{role}-{os.getpid()}` 形式。ZMQ IDENTITYおよびMsg.srcに使用。
   - on(topic, handler) / off(topic): トピック別ハンドラ登録。handler は (Msg) -> bool。
     True=処理成功、False=処理失敗。bool以外の戻り値は AppLogger.warning で検出。
@@ -72,13 +117,15 @@
   - push/remove/remove_batch/pending/cleanup/close: ローカルDB操作。
   - delete_if_empty(): レコード0件なら自分のDBファイルを削除してTrue、そうでなければFalse。
   - scan_all/remove_from/remove_batch_from: 静的メソッド。受信側での引き取り用。
+  - scan_all(dst_filter, db_filter): dst_filterはノードID/ロール/ALL、db_filterは特定DBのレコードのみ取得（Node.default_dbで自動フィルタ）。
   - cleanup_empty_files(): 静的。outboxディレクトリを走査し、PID死亡 かつ レコード0件のDBファイルを削除。psutilでプロセス生存確認。
   - send_reliable() → outbox INSERT → ZMQ通知(outbox.notify) → 受信Node._process_outbox → scan_all → handler(record) → True=delete → cleanup_empty_files。
 - transport.py: QoS + 共通定数（HEARTBEAT_INTERVAL/TIMEOUT, POLL_BASE/MAX_MS, DEFAULT_PORT等）+ ユーティリティ（tune_socket, close_socket, adaptive_poll, try_put, drain_queue）+ ポートファイル管理（write_broker_port / read_broker_port / remove_broker_port）。
 - Tray: Broker + Node('communicator') を両方使用。broker.push() による直接送信に加え、
   AppLogger.set_node(node, role='communicator') でログ転送も有効化。
 - Viewer: Node('viewer') + on(topic, handler) チェーンで接続。msg.db によるクライアント側フィルタ。
-- Collector: Node('collector', db=name) + on(topic, handler) で接続。ProgressAggregator は node.send_latest() で進捗送信、node.send(priority=HIGH) でイベント通知。
+- Indexer: Node('indexer', db=name, consumer=True) + on(topic, handler) で接続。consumer=Trueでoutbox消費を有効化。ProgressAggregator は node.send_latest() で進捗送信、node.send(priority=HIGH) でイベント通知。
+- Collector: Node('collector-{plugin}', db=name) + send_reliable() でメタデータ結果を確実配信。
 
 ■ 共通ユーティリティ（必ず使い回す）
 source/common/funcs.py:
@@ -96,7 +143,7 @@ source/common/logs.py:
   - set_node(node, role): ZMQ Node を設定すると、全レベルのログが dev.log トピックで viewer に転送される。
     payload は {'level': level, 'text': text} のみ。role/pid は msg.src ヘッダー（node_id = '{role}-{pid}'）から取得。
   - set_role(role): ファイルハンドラの遅延追加。set_node から自動呼出。
-  - 全3プロセス(viewer/collector/communicator)でset_nodeを呼び出してログ転送を有効化。
+  - 全3プロセス(viewer/indexer/communicator)でset_nodeを呼び出してログ転送を有効化。
   - excepthook、ログクリーンアップも統合
 source/common/notifier.py:
   - Notifier: ユーザー向けUI通知専用。AppLoggerとは完全に分離
@@ -116,6 +163,9 @@ source/common/profiling.py:
 source/io/manager.py:
   - AutoRegister メタクラスで BaseReader/BaseLoader のサブクラスを自動登録。
   - ReaderClass.read(path) / LoaderClass.load(path) で適切なリーダー/ローダーを自動選択。
+  - LoaderClass.load(): 登録済みローダーで処理不可の場合、_load_thumbnail() でサムネイルフォールバック。
+    _get_thumbnailer() でFileThumbnailerをキャッシュ、get_thumbnail()→pil_to_qimage()→QPixmap変換。
+  - pil_to_qimage(img): PIL.Image→QImage変換。RGBA対応。
 source/io/exif_parser.py:
   - ExifParser は全メソッド classmethod/staticmethod のステートレスユーティリティ。
   - parse_img(img): getexif 1回で orientation/width/height/aspect/exif/info_items を一括取得。

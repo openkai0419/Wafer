@@ -1,7 +1,7 @@
 import py_compile
 
 from source.image_collector.worker import CollectorWorker, _MAX_WORKERS
-from source.image_collector.plugin import BUILTIN_PLUGINS
+from source.io.collector import collector_registry
 
 
 def test_compile():
@@ -19,8 +19,8 @@ def test_unknown_plugin_raises():
         CollectorWorker('test_db', 'nonexistent_plugin')
 
 
-def test_builtin_plugins_all_constructable():
-    for name, cls in BUILTIN_PLUGINS.items():
+def test_all_registered_plugins_constructable():
+    for name in collector_registry.names():
         worker = CollectorWorker('test_db', name)
         assert worker.plugin_name == name
         assert worker.db_name == 'test_db'

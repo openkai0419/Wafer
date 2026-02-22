@@ -1,3 +1,5 @@
 
 def import_all():
-    from . import image_reader 
+    from .collector import collector_registry
+    from .grid import grid_registry
+    from .viewer import viewer_registry

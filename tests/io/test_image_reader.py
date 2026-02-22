@@ -18,10 +18,6 @@ from source.io.exif_parser import (
 )
 
 
-def test_compile_image_reader():
-    py_compile.compile('source/io/image_reader.py')
-
-
 def test_compile_exif_parser():
     py_compile.compile('source/io/exif_parser.py')
 

@@ -63,15 +63,22 @@
   - Node経由でcollect.resultトピックを受信し、内部キューに蓄積。
   - collect.resultペイロードのcollectorフィールドからcollector名を動的取得（ハードコードなし）。
   - 専用のFileDB接続を持ち、2秒間隔でバッチ書き込み(upsert_collection_results)。
+  - 同一sourceに対する複数結果はdict重複排除（okを優先）してからDB書き込み。
+  - meta_info/tagsのvalue=Noneのエントリはスキップ（DB未登録）。
   - WatchFolderとは別のDB接続（スレッド安全のため独立FileDBインスタンス）。
-- source/image_collector/plugin.py:
-  - BaseCollectorPlugin(ABC): NAME/EXTENSIONS/process()を定義するプラグインインターフェース。
-  - ImageCollectorPlugin: PIL+ExifParserでメタデータ抽出。BUILTIN_PLUGINSに登録。
-  - get_collector_names(): BUILTIN_PLUGINSのキー一覧を返す。
-  - get_collector_info(): [(NAME, EXTENSIONS), ...] を返す。FileIndexerのcollectors引数用。
-  - get_collectors_for_path(path): 拡張子マッチするcollector名リスト。
+- source/image_collector/plugin.py: 削除済み（io/collector/ に統合）。
+  - 旧BUILTIN_PLUGINS辞書は廃止。collector_registry.get(name) に置換。
+  - CollectorResult(dataclass): プラグイン戻り値の型定義。source/io/collector/base.py に実体がある。
+    - 必須: source(str), status(bool)
+    - 省略可: path, name, aspect, file_hash, meta_info(dict), tags(dict)
+    - to_dict(): None値を除外したdictを返す。ZMQシリアライズ前に呼ぶ。
+    - path省略時はWriter側でsourceをデフォルト使用。コンテナ内ファイルは source::inner/path 形式。
+    - status: bool。DB保存時にWriter側で 'ok'/'fail' 文字列に変換。
+    - meta_info/tags内のvalue=NoneもWriter側でスキップ。
+  - 仮想パスセパレータ: VIRTUAL_PATH_SEPARATOR = '::' (constants.py)。Windowsでは':'がファイル名禁止文字のため安全。
 - source/image_collector/worker.py:
   - CollectorWorker: Node('collector-{plugin}', db=name)でZMQ接続。collect.batchを受信し、ThreadPoolExecutorでプラグイン並列実行。
+  - process()の結果がdictならlistにラップ、listならそのまま。フラット化してから送信。
   - 結果はsend_reliable('collect.result', {collector: plugin_name, results: [...]}, dst='indexer')で確実配信。
   - run_collector(): SafeProcessLock付きのエントリーポイント。
 - ZMQトピック:
@@ -159,24 +166,37 @@ source/common/signal.py:
 source/common/profiling.py:
   - FunctionProfilerのみ。@profiler.profile で関数計測。ログはAppLogger.debug経由
 
-■ IO（ファイル読み込み）
-source/io/manager.py:
-  - AutoRegister メタクラスで BaseReader/BaseLoader のサブクラスを自動登録。
-  - ReaderClass.read(path) / LoaderClass.load(path) で適切なリーダー/ローダーを自動選択。
-  - LoaderClass.load(): 登録済みローダーで処理不可の場合、_load_thumbnail() でサムネイルフォールバック。
-    _get_thumbnailer() でFileThumbnailerをキャッシュ、get_thumbnail()→pil_to_qimage()→QPixmap変換。
-  - pil_to_qimage(img): PIL.Image→QImage変換。RGBA対応。
+■ IO（プラグインレジストリ + ファイル読み込み）
+- source/io/registry.py: 拡張子ベース + 優先度ソートの共通プラグインレジストリ基盤。
+  - BasePlugin(ABC): NAME/EXTENSIONS/PRIORITY/match(path) を持つ基底クラス。
+    EXTENSIONS=() は全ファイルマッチ。PRIORITY は大きいほど高優先。
+  - PluginRegistry: register/resolve/resolve_all/plugins/names/info メソッド。
+    register時にPRIORITY降順ソート。resolveは最高優先度のマッチを返す。
+  - Collector/Grid/Viewer の3つのレジストリが共通基盤を使用。
+
+- source/io/collector/: メタデータ収集プラグイン（Collectorプロセス用）。
+  - base.py: BaseCollectorPlugin(BasePlugin, ABC) + CollectorResult(dataclass)。
+  - image.py: ImageCollectorPlugin — PIL+ExifParserでメタデータ抽出。PRIORITY=100。
+  - __init__.py: collector_registry + get_collector_names/get_collector_info/get_collectors_for_path。
+
+- source/io/grid/: GridView用サムネイル読み込みプラグイン。
+  - base.py: BaseGridPlugin(BasePlugin, ABC) — load(path, size) + create_cell_widget(parent)。
+    load()の戻り値: QImage→画像表示、QWidget→Widget埋め込み、None→エラー。
+  - image.py: ImageGridPlugin — OpenCV/Qt画像ロード。PRIORITY=100。
+  - fallback.py: FallbackGridPlugin — Windowsシェルサムネイル。PRIORITY=0, EXTENSIONS=()。
+  - __init__.py: grid_registry + load(path, size) 関数。
+
+- source/io/viewer/: FileViewer用個別表示Widgetプラグイン。
+  - base.py: BaseViewerPlugin(BasePlugin, ABC) — create_widget(parent)/load_content(path)/clear(widget)。
+    load_content()の戻り値: QImage→画像表示、QWidget→Widget埋め込み。
+  - image.py: ImageViewerPlugin — ImageViewerWidget管理。PRIORITY=100。
+  - __init__.py: viewer_registry + resolve_viewer(path) 関数。
+
+source/io/manager.py: 削除済み（LoaderClass, ReaderClass, BaseReader は廃止）。
+source/io/image_reader.py: 削除済み（ImageReader は ImageCollectorPlugin に移行済み）。
 source/io/exif_parser.py:
   - ExifParser は全メソッド classmethod/staticmethod のステートレスユーティリティ。
-  - parse_img(img): getexif 1回で orientation/width/height/aspect/exif/info_items を一括取得。
-  - parse_file(path): ファイルパスから同様の情報を取得。
-  - extract_exif(img): Image.Image から EXIF dict を取得。
-  - _extract_from_exif_obj(exif): exif オブジェクト直接受け取り版（getexif 二重呼び出し回避用）。
-  - _orientation_adjusted_size(w, h, orient): orientation によるサイズ反転を共通化。
-source/io/image_reader.py:
-  - ImageReader(BaseReader): 画像メタデータ収集用。ExifParser.parse_img を使用。
-  - ImageLoader(BaseLoader): 画像表示用。OpenCV→Qt のフォールバック付きロード。
-  - GIF は Qt ネイティブ(_qt_read)で処理。JPEG は IMREAD_REDUCED_* で軽量デコード。
+source/io/image_reader.py: 削除済み（ImageCollectorPluginへ統合済み）。
 
 ■ テスト
 - tests は source と同じ階層構造を維持し、ファイル名は test_<source_file>.py。

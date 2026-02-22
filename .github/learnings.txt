@@ -114,6 +114,12 @@
 - FadePixmapItem は setAcceptedMouseButtons(Qt.NoButton) でマウスを受け取らない。イベントはQGraphicsView (Kit.UIMixin) で処理
 - scene.setSceneRect() でスクロール可能範囲を制御。旧 setMinimumHeight() の代替
 
+■ プラグインレジストリの設計
+- CollectorResult は dataclass であり dict ではない。テスト等で dict として扱う場合は必ず to_dict() を呼ぶ
+- process() の戻り値は CollectorResult。worker.py では to_dict() で変換してから writer に渡す
+- PRIORITY は大きいほど高優先（reverse=True でソート）
+- EXTENSIONS=() は全ファイルにマッチするフォールバック用
+
 ■ SQLite クエリ設計
 - SQLite のビュー(VIEW)はマテリアライズされず毎回展開される。ROW_NUMBER等のウィンドウ関数を含むビューをクエリ条件に使うと極端に遅くなる
 - 検索クエリは kv_meta/kv_all ビューを経由せず、meta_info/tags/images テーブルに直接アクセスする（_make_subquery）

@@ -101,7 +101,7 @@ class WatchFolder:
             try:
                 item = self._q.get(timeout=_BATCH_TIMEOUT)
             except queue.Empty:
-                folder_dirty = self._flush(changed, deleted, moved, folder_dirty)
+                self._flush(changed, deleted, moved)
                 continue
             batch = [item]
             while True:
@@ -120,14 +120,20 @@ class WatchFolder:
                 elif kind == 'folder':
                     folder_dirty = True
                 elif kind in ('rescan', 'ignore', 'cleanup'):
-                    folder_dirty = self._flush(changed, deleted, moved, folder_dirty)
+                    self._flush(changed, deleted, moved)
                     self._exec(kind, data)
                 elif kind == '__stop__':
                     return
+            if folder_dirty:
+                self._progress.notify('folderchanged')
+                folder_dirty = False
 
-    def _flush(self, changed, deleted, moved, folder_dirty):
+    def _flush(self, changed, deleted, moved):
         if moved:
+            new_at_dst = {dst for src, dst in moved.items() if src in changed}
+            changed -= set(moved.keys())
             self._exec('rename', list(moved.items()))
+            changed.update(new_at_dst)
             moved.clear()
         if deleted:
             self._exec('remove', list(deleted))
@@ -135,9 +141,6 @@ class WatchFolder:
         if changed:
             self._exec('update', list(changed))
             changed.clear()
-        if folder_dirty:
-            self._progress.notify('folderchanged')
-        return False
 
     @profiler.profile
     def _exec(self, cmd, data=None):

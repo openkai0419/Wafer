@@ -75,35 +75,46 @@ class CollectionWriter:
             AppLogger.warning('[Writer] DB not available')
             return
 
-        source_updates = []
+        source_update_map: dict[str, tuple] = {}
         image_entries = []
         meta_info_entries = []
         tag_entries = []
-        collector_status = []
+        collector_status_map: dict[tuple[str, str], tuple] = {}
         now = time.time()
 
         for r in results:
             source = r.get('source')
-            info = r.get('info', {})
+            path = r.get('path', source)
+            name = r.get('name', '')
+            aspect = r.get('aspect')
+            file_hash = r.get('file_hash')
             meta_info = r.get('meta_info', {})
             tags = r.get('tags', {})
-            status = r.get('status', 'fail')
+            status = r.get('status')
             collector = r.get('collector', '')
 
-            path = info.get('path', source)
-            name = info.get('name', '')
-            aspect = info.get('aspect')
-            file_hash = info.get('file_hash')
-
-            ok = status != 'fail'
-            source_updates.append((now, 'ok' if ok else 'fail', source))
-            collector_status.append((source, collector, 'ok' if ok else 'fail', now))
+            ok = bool(status)
+            s_status = 'ok' if ok else 'fail'
+            prev = source_update_map.get(source)
+            if prev is None or s_status == 'ok':
+                source_update_map[source] = (now, s_status, source)
+            cs_key = (source, collector)
+            prev_cs = collector_status_map.get(cs_key)
+            if prev_cs is None or s_status == 'ok':
+                collector_status_map[cs_key] = (source, collector, s_status, now)
 
             if ok:
                 image_entries.append((path, source, name, aspect))
-                meta_info_entries.extend((path, k, v) for k, v in meta_info.items())
+                meta_info_entries.extend(
+                    (path, k, v) for k, v in meta_info.items() if v is not None
+                )
                 if file_hash:
-                    tag_entries.extend((file_hash, k, v) for k, v in tags.items())
+                    tag_entries.extend(
+                        (file_hash, k, v) for k, v in tags.items() if v is not None
+                    )
+
+        source_updates = list(source_update_map.values())
+        collector_status = list(collector_status_map.values())
 
         try:
             self._db.upsert_collection_results(

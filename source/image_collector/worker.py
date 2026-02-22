@@ -6,7 +6,8 @@ import threading
 from ..common.logs import AppLogger
 from ..common.funcs import normalize_path
 from ..zmq.node import Node
-from .plugin import BUILTIN_PLUGINS
+from ..io.collector import collector_registry
+from ..io.collector.base import CollectorResult
 
 
 _MAX_WORKERS = 4
@@ -17,7 +18,7 @@ class CollectorWorker:
     def __init__(self, db_name: str, plugin_name: str):
         self.db_name = db_name
         self.plugin_name = plugin_name
-        plugin_cls = BUILTIN_PLUGINS.get(plugin_name)
+        plugin_cls = collector_registry.get(plugin_name)
         if not plugin_cls:
             raise ValueError(f'Unknown plugin: {plugin_name}')
         self._plugin = plugin_cls()
@@ -61,9 +62,12 @@ class CollectorWorker:
 
         def process_one(p):
             info = file_info.get(p, (0.0, 0, 0.0))
-            return self._plugin.process(normalize_path(p), info)
+            result = self._plugin.process(normalize_path(p), info)
+            items = result if isinstance(result, list) else [result]
+            return [r.to_dict() if isinstance(r, CollectorResult) else r for r in items]
 
-        results = list(self._executor.map(process_one, paths))
+        nested = list(self._executor.map(process_one, paths))
+        results = [item for items in nested for item in items]
         self._node.send_reliable(
             'collect.result',
             {'collector': self.plugin_name, 'results': results},

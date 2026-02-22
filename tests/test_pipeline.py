@@ -8,7 +8,9 @@ from source.common.funcs import normalize_path
 from source.common.hashes import fast_sig_hash
 from source.db.file_db import FileDB
 from source.db.indexer import FileIndexer
-from source.image_collector.plugin import ImageCollectorPlugin, get_collector_info
+from source.io.collector import get_collector_info
+from source.io.collector.base import CollectorResult
+from source.io.collector.image import ImageCollectorPlugin
 from source.image_indexer.writer import CollectionWriter
 from source.image_indexer.progress_notifier import ProgressAggregator
 
@@ -55,7 +57,7 @@ def _run_collector_for_pending(db, plugin, collector_name):
     results = []
     for p in paths:
         info = file_info_map.get(p, (0.0, 0, 0.0))
-        result = plugin.process(p, info)
+        result = plugin.process(p, info).to_dict()
         result['collector'] = collector_name
         results.append(result)
     return results
@@ -104,9 +106,9 @@ class TestImagePipeline:
             plugin = ImageCollectorPlugin()
             results = _run_collector_for_pending(idx.db, plugin, 'image')
             assert len(results) == 1
-            assert results[0]['status'] == 'ok'
+            assert results[0]['status'] is True
             assert results[0]['source'] == norm
-            assert results[0]['info']['aspect'] == 2.0
+            assert results[0]['aspect'] == 2.0
 
             dispatched = idx.db.read_conn.execute(
                 "SELECT status FROM collection_status WHERE source=? AND collector='image'",
@@ -208,7 +210,7 @@ class TestImagePipeline:
             plugin = ImageCollectorPlugin()
             results = _run_collector_for_pending(idx.db, plugin, 'image')
             assert len(results) == 2
-            ok_results = [r for r in results if r['status'] == 'ok']
+            ok_results = [r for r in results if r['status'] is True]
             assert len(ok_results) == 2
 
             node = _StubNode()
@@ -372,7 +374,7 @@ class TestDispatcherSimulation:
             results = []
             for p in pending_paths:
                 info = file_info_map[p]
-                r = plugin.process(p, info)
+                r = plugin.process(p, info).to_dict()
                 r['collector'] = 'image'
                 results.append(r)
 

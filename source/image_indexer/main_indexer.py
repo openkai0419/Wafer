@@ -4,7 +4,7 @@ from ..common.logs import AppLogger
 from ..db.indexer import FileIndexer
 from ..db.db_utils import clean_database, delete_database_files
 from ..db.setting_db import SettingDB
-from ..image_collector.plugin import get_collector_info
+from ..io.collector import get_collector_info
 from ..zmq.node import Node
 from .dispatcher import CollectorDispatcher
 from .progress_notifier import ProgressAggregator

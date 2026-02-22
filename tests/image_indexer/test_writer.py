@@ -29,7 +29,7 @@ def test_handle_result_returns_true():
     node = _StubNode()
     progress = ProgressAggregator('test', node)
     writer = CollectionWriter('dummy.db', progress)
-    msg = _StubMsg({'collector': 'image', 'results': [{'source': 'a', 'info': {}, 'status': 'ok'}]})
+    msg = _StubMsg({'collector': 'image', 'results': [{'source': 'a', 'status': True}]})
     assert writer.handle_result(msg) is True
 
 
@@ -45,17 +45,30 @@ def test_handle_result_queues_results():
     node = _StubNode()
     progress = ProgressAggregator('test', node)
     writer = CollectionWriter('dummy.db', progress)
-    results = [{'source': f'p{i}', 'info': {}, 'status': 'ok'} for i in range(5)]
+    results = [{'source': f'p{i}', 'status': True} for i in range(5)]
     msg = _StubMsg({'collector': 'image', 'results': results})
     writer.handle_result(msg)
     assert writer._queue.qsize() == 5
+
+
+def test_handle_result_queues_multi_path_results():
+    node = _StubNode()
+    progress = ProgressAggregator('test', node)
+    writer = CollectionWriter('dummy.db', progress)
+    results = [
+        {'source': 'archive.zip', 'path': 'archive.zip::a.png', 'status': True},
+        {'source': 'archive.zip', 'path': 'archive.zip::b.png', 'status': True},
+    ]
+    msg = _StubMsg({'collector': 'zip', 'results': results})
+    writer.handle_result(msg)
+    assert writer._queue.qsize() == 2
 
 
 def test_handle_result_does_not_add_maximum():
     node = _StubNode()
     progress = ProgressAggregator('test', node)
     writer = CollectionWriter('dummy.db', progress)
-    results = [{'source': f'p{i}', 'info': {}, 'status': 'ok'} for i in range(3)]
+    results = [{'source': f'p{i}', 'status': True} for i in range(3)]
     msg = _StubMsg({'collector': 'image', 'results': results})
     writer.handle_result(msg)
     assert progress.maximum == 0
@@ -87,10 +100,13 @@ def test_write_batch_to_real_db(tmp_path):
 
     results = [{
         'source': 'src1',
-        'info': {'path': 'src1', 'name': 'updated.png', 'aspect': 1.5, 'file_hash': 'h1'},
+        'path': 'src1',
+        'name': 'updated.png',
+        'aspect': 1.5,
+        'file_hash': 'h1',
         'meta_info': {'width': '100', 'height': '200'},
         'tags': {'rating': '5'},
-        'status': 'ok',
+        'status': True,
     }]
     msg = _StubMsg({'collector': 'image', 'results': results})
     writer.handle_result(msg)
@@ -112,6 +128,185 @@ def test_write_batch_to_real_db(tmp_path):
     db2.exit()
 
 
+def test_write_batch_multi_path_per_source(tmp_path):
+    from source.db.file_db import FileDB
+
+    db_path = tmp_path / 'test_multi.db'
+    db = FileDB(db_path)
+    db.start()
+    db.initialize_database()
+
+    db.conn.execute("INSERT INTO hash_index (file_hash) VALUES ('h_zip')")
+    db.conn.execute(
+        "INSERT INTO sources (source, file_hash, size, modified, created, collected, status) "
+        "VALUES ('archive.zip', 'h_zip', 5000, 1.0, 1.0, NULL, 'indexed')"
+    )
+    db.conn.execute(
+        "INSERT INTO files (path, source, name, aspect_ratio) VALUES ('archive.zip', 'archive.zip', 'archive.zip', NULL)"
+    )
+    db.conn.commit()
+    db.exit()
+
+    node = _StubNode()
+    progress = ProgressAggregator('test', node)
+    writer = CollectionWriter(str(db_path), progress)
+    writer.start()
+
+    results = [
+        {
+            'source': 'archive.zip',
+            'path': 'archive.zip::img1.png',
+            'name': 'img1.png',
+            'aspect': 0.75,
+            'meta_info': {'width': '300', 'height': '400'},
+            'status': True,
+        },
+        {
+            'source': 'archive.zip',
+            'path': 'archive.zip::img2.jpg',
+            'name': 'img2.jpg',
+            'aspect': 1.5,
+            'meta_info': {'width': '600', 'height': '400'},
+            'status': True,
+        },
+    ]
+    msg = _StubMsg({'collector': 'zip', 'results': results})
+    writer.handle_result(msg)
+
+    time.sleep(_WRITE_INTERVAL + 1.0)
+    writer.stop()
+
+    db2 = FileDB(db_path)
+    db2.start()
+
+    rows = db2.read_conn.execute(
+        "SELECT path, name, aspect_ratio FROM files WHERE source='archive.zip' ORDER BY path"
+    ).fetchall()
+    paths = [r[0] for r in rows]
+    assert 'archive.zip::img1.png' in paths
+    assert 'archive.zip::img2.jpg' in paths
+
+    meta1 = db2.read_conn.execute(
+        "SELECT value FROM meta_info WHERE path='archive.zip::img1.png' AND key='width'"
+    ).fetchone()
+    assert meta1[0] == '300'
+
+    meta2 = db2.read_conn.execute(
+        "SELECT value FROM meta_info WHERE path='archive.zip::img2.jpg' AND key='width'"
+    ).fetchone()
+    assert meta2[0] == '600'
+
+    src_status = db2.read_conn.execute(
+        "SELECT status FROM sources WHERE source='archive.zip'"
+    ).fetchone()
+    assert src_status[0] == 'ok'
+
+    cs = db2.read_conn.execute(
+        "SELECT status FROM collection_status WHERE source='archive.zip' AND collector='zip'"
+    ).fetchone()
+    assert cs[0] == 'ok'
+    db2.exit()
+
+
 def test_constants():
     assert _WRITE_INTERVAL > 0
     assert _BATCH_SIZE > 0
+
+
+def test_write_batch_skips_none_meta_values(tmp_path):
+    from source.db.file_db import FileDB
+
+    db_path = tmp_path / 'test_none.db'
+    db = FileDB(db_path)
+    db.start()
+    db.initialize_database()
+
+    db.conn.execute("INSERT INTO hash_index (file_hash) VALUES ('h_n')")
+    db.conn.execute(
+        "INSERT INTO sources (source, file_hash, size, modified, created, collected, status) "
+        "VALUES ('src_n', 'h_n', 100, 1.0, 1.0, NULL, 'indexed')"
+    )
+    db.conn.execute(
+        "INSERT INTO files (path, source, name, aspect_ratio) VALUES ('src_n', 'src_n', 'test', 1.0)"
+    )
+    db.conn.commit()
+    db.exit()
+
+    node = _StubNode()
+    progress = ProgressAggregator('test', node)
+    writer = CollectionWriter(str(db_path), progress)
+    writer.start()
+
+    results = [{
+        'source': 'src_n',
+        'name': 'test.png',
+        'aspect': 1.0,
+        'file_hash': 'h_n',
+        'meta_info': {'width': '100', 'empty_key': None, 'height': '200'},
+        'tags': {'good': 'yes', 'bad': None},
+        'status': True,
+    }]
+    msg = _StubMsg({'collector': 'image', 'results': results})
+    writer.handle_result(msg)
+
+    time.sleep(_WRITE_INTERVAL + 1.0)
+    writer.stop()
+
+    db2 = FileDB(db_path)
+    db2.start()
+
+    meta_keys = db2.read_conn.execute(
+        "SELECT key FROM meta_info WHERE path='src_n' ORDER BY key"
+    ).fetchall()
+    keys = [r[0] for r in meta_keys]
+    assert 'width' in keys
+    assert 'height' in keys
+    assert 'empty_key' not in keys
+
+    tag_keys = db2.read_conn.execute(
+        "SELECT key FROM tags WHERE file_hash='h_n' ORDER BY key"
+    ).fetchall()
+    t_keys = [r[0] for r in tag_keys]
+    assert 'good' in t_keys
+    assert 'bad' not in t_keys
+    db2.exit()
+
+
+def test_write_batch_bool_status_false(tmp_path):
+    from source.db.file_db import FileDB
+
+    db_path = tmp_path / 'test_fail.db'
+    db = FileDB(db_path)
+    db.start()
+    db.initialize_database()
+
+    db.conn.execute("INSERT INTO hash_index (file_hash) VALUES ('hf')")
+    db.conn.execute(
+        "INSERT INTO sources (source, file_hash, size, modified, created, collected, status) "
+        "VALUES ('fail_src', 'hf', 50, 1.0, 1.0, NULL, 'indexed')"
+    )
+    db.conn.execute(
+        "INSERT INTO files (path, source, name, aspect_ratio) VALUES ('fail_src', 'fail_src', 'x', 1.0)"
+    )
+    db.conn.commit()
+    db.exit()
+
+    node = _StubNode()
+    progress = ProgressAggregator('test', node)
+    writer = CollectionWriter(str(db_path), progress)
+    writer.start()
+
+    results = [{'source': 'fail_src', 'name': 'x.png', 'status': False}]
+    msg = _StubMsg({'collector': 'image', 'results': results})
+    writer.handle_result(msg)
+
+    time.sleep(_WRITE_INTERVAL + 1.0)
+    writer.stop()
+
+    db2 = FileDB(db_path)
+    db2.start()
+    src = db2.read_conn.execute("SELECT status FROM sources WHERE source='fail_src'").fetchone()
+    assert src[0] == 'fail'
+    cs = db2.read_conn.execute("SELECT status FROM collection_status WHERE source='fail_src' AND collector='image'").fetchone()
+    assert cs[0] == 'fail'
+    db2.exit()

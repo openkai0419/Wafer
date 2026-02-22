@@ -1,6 +1,6 @@
 from ...common.funcs import uipx
 from ...common.profiling import profiler
-from ...io.manager import LoaderClass
+from ...io.grid import load as grid_load
 from ...qt.thread import AdaptiveThreadPool
 from PySide6 import QtCore, QtGui, QtWidgets
 
@@ -45,7 +45,7 @@ class ImageLoaderRunnable(QtCore.QRunnable):
                 return
         
         if image is None:
-            image = LoaderClass.load(self.path, self.size)
+            image = grid_load(self.path, self.size)
 
         if image is None:
             image = self.get_error_image()

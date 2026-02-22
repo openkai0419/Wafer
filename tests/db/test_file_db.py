@@ -244,6 +244,88 @@ def test_collection_status_cascade_delete(tmp_path):
     db.exit()
 
 
+def test_rename_paths_single_file(tmp_path):
+    db = FileDB(tmp_path / 'test.db')
+    db.start()
+    db.initialize_database()
+    db.upsert_batches(
+        [('c:/old/img.jpg', 'hash1', 100, 1.0, 1.0, 1.0, 'ok')],
+        [('c:/old/img.jpg', 'c:/old/img.jpg', 'img.jpg', 1.5)],
+        [('c:/old/img.jpg', 'width', '1920')],
+        [('hash1', 'rating', '5')],
+    )
+    db.insert_pending_collection(['c:/old/img.jpg'], ['image'])
+    db.rename_paths([('c:/old/img.jpg', 'c:/new/img.jpg')])
+    assert db.read_conn.execute("SELECT COUNT(*) FROM sources WHERE source='c:/old/img.jpg'").fetchone()[0] == 0
+    src_row = db.read_conn.execute("SELECT file_hash, size FROM sources WHERE source='c:/new/img.jpg'").fetchone()
+    assert src_row == ('hash1', 100)
+    file_row = db.read_conn.execute("SELECT name, aspect_ratio FROM files WHERE path='c:/new/img.jpg'").fetchone()
+    assert file_row == ('img.jpg', 1.5)
+    meta_row = db.read_conn.execute("SELECT value FROM meta_info WHERE path='c:/new/img.jpg' AND key='width'").fetchone()
+    assert meta_row[0] == '1920'
+    assert db.read_conn.execute("SELECT COUNT(*) FROM meta_info WHERE path='c:/old/img.jpg'").fetchone()[0] == 0
+    tag_row = db.read_conn.execute("SELECT value FROM tags WHERE file_hash='hash1' AND key='rating'").fetchone()
+    assert tag_row[0] == '5'
+    cs_row = db.read_conn.execute("SELECT source FROM collection_status WHERE source='c:/new/img.jpg'").fetchone()
+    assert cs_row is not None
+    assert db.read_conn.execute("SELECT COUNT(*) FROM collection_status WHERE source='c:/old/img.jpg'").fetchone()[0] == 0
+    db.exit()
+
+
+def test_rename_paths_batch(tmp_path):
+    db = FileDB(tmp_path / 'test.db')
+    db.start()
+    db.initialize_database()
+    db.upsert_batches(
+        [
+            ('c:/dir/a.jpg', 'hash_a', 100, 1.0, 1.0, 1.0, 'ok'),
+            ('c:/dir/b.jpg', 'hash_b', 200, 2.0, 2.0, 2.0, 'ok'),
+        ],
+        [
+            ('c:/dir/a.jpg', 'c:/dir/a.jpg', 'a.jpg', 1.0),
+            ('c:/dir/b.jpg', 'c:/dir/b.jpg', 'b.jpg', 2.0),
+        ],
+        [('c:/dir/a.jpg', 'k', 'v1'), ('c:/dir/b.jpg', 'k', 'v2')],
+        [],
+    )
+    db.rename_paths([
+        ('c:/dir/a.jpg', 'c:/new/a.jpg'),
+        ('c:/dir/b.jpg', 'c:/new/b.jpg'),
+    ])
+    prev = db.load_previous()
+    assert 'c:/new/a.jpg' in prev
+    assert 'c:/new/b.jpg' in prev
+    assert 'c:/dir/a.jpg' not in prev
+    assert 'c:/dir/b.jpg' not in prev
+    meta_a = db.read_conn.execute("SELECT value FROM meta_info WHERE path='c:/new/a.jpg' AND key='k'").fetchone()
+    assert meta_a[0] == 'v1'
+    db.exit()
+
+
+def test_rename_paths_updates_filename(tmp_path):
+    db = FileDB(tmp_path / 'test.db')
+    db.start()
+    db.initialize_database()
+    db.upsert_batches(
+        [('c:/dir/old_name.jpg', 'hash1', 100, 1.0, 1.0, 1.0, 'ok')],
+        [('c:/dir/old_name.jpg', 'c:/dir/old_name.jpg', 'old_name.jpg', 1.0)],
+        [], [],
+    )
+    db.rename_paths([('c:/dir/old_name.jpg', 'c:/dir/new_name.jpg')])
+    row = db.read_conn.execute("SELECT name FROM files WHERE path='c:/dir/new_name.jpg'").fetchone()
+    assert row[0] == 'new_name.jpg'
+    db.exit()
+
+
+def test_rename_paths_nonexistent_source(tmp_path):
+    db = FileDB(tmp_path / 'test.db')
+    db.start()
+    db.initialize_database()
+    db.rename_paths([('c:/nonexistent.jpg', 'c:/new.jpg')])
+    assert db.read_conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0] == 0
+    db.exit()
+
+
 def _setup_db_with_pending(tmp_path, sources_count=3):
     db = FileDB(tmp_path / 'test.db')
     db.start()

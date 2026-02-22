@@ -30,7 +30,7 @@ _TABLES = (
         source TEXT NOT NULL, 
         name TEXT, 
         aspect_ratio REAL,
-        FOREIGN KEY(source) REFERENCES sources(source) ON DELETE CASCADE
+        FOREIGN KEY(source) REFERENCES sources(source) ON UPDATE CASCADE ON DELETE CASCADE
     )'''),
     ('meta_info', ('files',),
      '''CREATE TABLE IF NOT EXISTS meta_info (
@@ -55,7 +55,7 @@ _TABLES = (
         status TEXT DEFAULT 'pending',
         collected_at REAL,
         PRIMARY KEY(source, collector),
-        FOREIGN KEY(source) REFERENCES sources(source) ON DELETE CASCADE
+        FOREIGN KEY(source) REFERENCES sources(source) ON UPDATE CASCADE ON DELETE CASCADE
     )'''),
 )
 
@@ -276,6 +276,19 @@ class FileDB:
             cur.executemany('DELETE FROM sources WHERE source = ?', [(p,) for p in paths])
             self.conn.commit()
         finally:
+            cur.close()
+
+    @profiler.profile
+    def rename_paths(self, pairs: Sequence[tuple[str, str]]):
+        if not pairs:
+            return
+        with self.conn:
+            cur = self.conn.cursor()
+            cur.execute('PRAGMA foreign_keys=ON')
+            for old, new in pairs:
+                cur.execute('UPDATE sources SET source = ? WHERE source = ?', (new, old))
+                name = os.path.basename(new)
+                cur.execute('UPDATE files SET path = ?, name = ? WHERE source = ?', (new, name, new))
             cur.close()
 
     @profiler.profile

@@ -154,3 +154,46 @@ def test_reentrant_context_manager(tmp_path):
             assert idx.db.conn is not None
         assert idx.db.conn is not None
     assert idx._ref_count == 0
+
+
+def test_rename_by_pairs(tmp_path):
+    import os
+    from source.common.funcs import normalize_path
+
+    src_dir = tmp_path / 'src'
+    src_dir.mkdir()
+    f1 = src_dir / 'a.bin'
+    f1.write_bytes(b'x' * 1024)
+    norm_old = normalize_path(str(f1))
+    st = os.stat(str(f1))
+    ctime = st.st_birthtime if hasattr(st, 'st_birthtime') else st.st_ctime
+    file_info = {norm_old: (st.st_mtime, st.st_size, ctime)}
+
+    db_path = tmp_path / 'test.db'
+    with FileIndexer(db_path) as idx:
+        idx.check_init()
+        idx._register_basic_info([norm_old], file_info)
+
+        dst_dir = tmp_path / 'dst'
+        dst_dir.mkdir()
+        f2 = dst_dir / 'a.bin'
+        f1.rename(f2)
+        norm_new = normalize_path(str(f2))
+
+        idx.rename_by_pairs([(str(f1), str(f2))])
+
+        prev = idx.db.load_previous()
+        assert norm_new in prev
+        assert norm_old not in prev
+
+        row = idx.db.read_conn.execute("SELECT name FROM files WHERE path=?", (norm_new,)).fetchone()
+        assert row is not None
+        assert row[0] == 'a.bin'
+
+
+def test_rename_by_pairs_skips_same_path(tmp_path):
+    db_path = tmp_path / 'test.db'
+    with FileIndexer(db_path) as idx:
+        idx.check_init()
+        idx.rename_by_pairs([('c:/same.jpg', 'c:/same.jpg')])
+        assert idx.db.read_conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0] == 0

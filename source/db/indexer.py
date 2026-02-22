@@ -241,6 +241,21 @@ class FileIndexer:
         AppLogger.info(f'[remove_by_file_list] Removed {len(normalized)} entries from DB')
 
     @profiler.profile
+    def rename_by_pairs(self, pairs):
+        normalized = [(normalize_path(old), normalize_path(new)) for old, new in pairs]
+        normalized = [(old, new) for old, new in normalized if old != new]
+        if not normalized:
+            return
+        self._add_progress(0, len(normalized))
+        for i in range(0, len(normalized), _CHUNK):
+            chunk = normalized[i:i + _CHUNK]
+            self.db.rename_paths(chunk)
+            self._add_progress(len(chunk), 0)
+        self.db.try_checkpoint()
+        self.emit_update()
+        AppLogger.info(f'[rename_by_pairs] Renamed {len(normalized)} entries')
+
+    @profiler.profile
     def _register_basic_info(self, paths, file_info):
         from ..os.thumbnails import get_aspect_ratios
         now = time.time()

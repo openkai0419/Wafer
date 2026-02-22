@@ -35,10 +35,9 @@ class _FileEmitter(FileSystemEventHandler):
 
     def on_moved(self, event):
         if event.is_directory:
-            self._inbox.put(('folder', event.dest_path))
-        else:
-            self._inbox.put(('deleted', event.src_path))
-            self._inbox.put(('changed', event.dest_path))
+            self._inbox.put(('folder', event.src_path))
+            return
+        self._inbox.put(('moved', (event.src_path, event.dest_path)))
 
 
 class WatchFolder:
@@ -96,12 +95,13 @@ class WatchFolder:
     def _loop(self):
         changed = set()
         deleted = set()
+        moved = {}
         folder_dirty = False
         while not self._stop.is_set():
             try:
                 item = self._q.get(timeout=_BATCH_TIMEOUT)
             except queue.Empty:
-                folder_dirty = self._flush(changed, deleted, folder_dirty)
+                folder_dirty = self._flush(changed, deleted, moved, folder_dirty)
                 continue
             batch = [item]
             while True:
@@ -114,15 +114,21 @@ class WatchFolder:
                     changed.add(data)
                 elif kind == 'deleted':
                     deleted.add(data)
+                elif kind == 'moved':
+                    src, dst = data
+                    moved[src] = dst
                 elif kind == 'folder':
                     folder_dirty = True
                 elif kind in ('rescan', 'ignore', 'cleanup'):
-                    folder_dirty = self._flush(changed, deleted, folder_dirty)
+                    folder_dirty = self._flush(changed, deleted, moved, folder_dirty)
                     self._exec(kind, data)
                 elif kind == '__stop__':
                     return
 
-    def _flush(self, changed, deleted, folder_dirty):
+    def _flush(self, changed, deleted, moved, folder_dirty):
+        if moved:
+            self._exec('rename', list(moved.items()))
+            moved.clear()
         if deleted:
             self._exec('remove', list(deleted))
             deleted.clear()
@@ -137,7 +143,10 @@ class WatchFolder:
     def _exec(self, cmd, data=None):
         try:
             with self._db as indexer:
-                if cmd == 'update':
+                if cmd == 'rename':
+                    AppLogger.info(f'db rename: {len(data)} files')
+                    indexer.rename_by_pairs(data)
+                elif cmd == 'update':
                     AppLogger.info(f'db update: {len(data)} files')
                     indexer.update_by_file_list(data)
                 elif cmd == 'remove':

@@ -7,7 +7,7 @@ from typing import Any, Tuple, Dict
 from PIL import Image, ExifTags
 from PIL.TiffImagePlugin import IFDRational
 
-from ..common.logs import AppLogger
+from ...common.logs import AppLogger
 
 TAGS = ExifTags.TAGS
 GPSTAGS = ExifTags.GPSTAGS

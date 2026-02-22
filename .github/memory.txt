@@ -193,10 +193,11 @@ source/common/profiling.py:
   - __init__.py: viewer_registry + resolve_viewer(path) 関数。
 
 source/io/manager.py: 削除済み（LoaderClass, ReaderClass, BaseReader は廃止）。
-source/io/image_reader.py: 削除済み（ImageReader は ImageCollectorPlugin に移行済み）。
-source/io/exif_parser.py:
-  - ExifParser は全メソッド classmethod/staticmethod のステートレスユーティリティ。
 source/io/image_reader.py: 削除済み（ImageCollectorPluginへ統合済み）。
+source/io/bootstrap.py: 削除済み（レジストリ方式では使用時importで自動初期化されるため不要）。
+source/io/collector/exif_parser.py:
+  - ExifParser は全メソッド classmethod/staticmethod のステートレスユーティリティ。
+  - io/ 直下から io/collector/ に移動（参照元が collector/image.py のみのため）。
 
 ■ テスト
 - tests は source と同じ階層構造を維持し、ファイル名は test_<source_file>.py。

@@ -11,7 +11,7 @@ class ImageCollectorPlugin(BaseCollectorPlugin):
 
     def process(self, path: str, file_info: tuple):
         from PIL import Image
-        from ..exif_parser import ExifParser
+        from .exif_parser import ExifParser
         try:
             with Image.open(path) as img:
                 res = ExifParser.parse_img(img)

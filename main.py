@@ -11,9 +11,6 @@ from source.constants import APP_FILE_NAME, APP_ID, APP_NAME, default_db_name
 import source.constants as constants
 from source.image_indexer.main_indexer import IndexerProcess
 from source.os.process import Proc
-from source.io.bootstrap import import_all 
-
-import_all()
 
 def get_icon():
     from PySide6 import QtGui

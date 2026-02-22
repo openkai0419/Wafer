@@ -156,22 +156,8 @@ class ImageViewerWidget(QtWidgets.QWidget):
         if self.view._pix_item is not None:
             self.view._pix_item.setPixmap(QtGui.QPixmap())
 
-    def load_image(self, path: str):
-        pm = QtGui.QPixmap(path)
-        self.view.set_image(pm)
-
     def set_contain(self, state):
         self.view.set_fit_mode("contain" if state else "cover")
 
     def is_contain(self):
         return True if self.view._fit_mode == "contain" else False
-
-if __name__ == "__main__":
-    import sys
-    app = QtWidgets.QApplication(sys.argv)
-    w = ImageViewerWidget()
-    if len(sys.argv) > 1:
-        w.load_image(sys.argv[1])
-    w.resize(1000, 700)
-    w.show()
-    sys.exit(app.exec())

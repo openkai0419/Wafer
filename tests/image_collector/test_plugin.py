@@ -54,7 +54,7 @@ def test_image_plugin_process_failure(tmp_path):
     result = plugin.process(str(bad_path), (0.0, 0, 0.0))
 
     assert result['status'] == 'fail'
-    assert result['info']['aspect'] == 1.0
+    assert result['info']['aspect'] is None
     assert result['meta_info'] == {}
 
 

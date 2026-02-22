@@ -1,10 +1,20 @@
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QCheckBox, QDialog, QFileIconProvider, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy, QStyle, QVBoxLayout
-from PySide6.QtGui import QPixmap
+from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtCore import QFileInfo
 from ..common.funcs import uipx
+from ..common.logs import AppLogger
+from ..os.thumbnails import FileThumbnailer
 import os
 from ..lang.manager import TranslatorMixin
+
+
+def _pil_to_qpixmap(img) -> QPixmap:
+    if img.mode != 'RGBA':
+        img = img.convert('RGBA')
+    data = img.tobytes('raw', 'BGRA')
+    qimage = QImage(data, img.width, img.height, img.width * 4, QImage.Format_ARGB32)
+    return QPixmap.fromImage(qimage.copy())
 
 
 def _split_path(path: str, fallback_name: str = ''):
@@ -35,9 +45,12 @@ def _pixmap_for_source(path: str, data, size: int) -> QPixmap:
             return _limit_pixmap_size(pix, size)
     p = str(path or '')
     if p and os.path.exists(p):
-        pix = QPixmap(p)
-        if not pix.isNull():
-            return _limit_pixmap_size(pix, size)
+        try:
+            pil_img = FileThumbnailer().get_thumbnail(p, size=size)
+            if pil_img is not None:
+                return _pil_to_qpixmap(pil_img)
+        except Exception as e:
+            AppLogger.warning(f'Thumbnail generation failed: {p}', exc=e)
     prov = QFileIconProvider()
     ico = prov.icon(QFileInfo(p)) if p else prov.icon(QFileIconProvider.File)
     return ico.pixmap(size, size)

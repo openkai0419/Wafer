@@ -1,14 +1,12 @@
 from typing import Dict, List, Any, Tuple
 from PySide6 import QtCore, QtGui, QtWidgets
 from source.common.funcs import uipx
-from source.common.logs import AppLogger
-from ...command.payload import format_payload_display
 from ...command.payload import CommandPayload
 from ..common import WidgetRef
 from .store import KeyBindingStore
 from .shortcutmanager import ShortcutManager
 from .sequence import KeySequence, KeySpecCatalog
-from ..editors_common import ScopedPayloadSectionBase, clear_layout, popup_command_picker
+from ..editors_common import BindingEditorBase, ScopedPayloadSectionBase, DraftOverlay, clear_layout, popup_command_picker
 
 class _SelectableList(QtWidgets.QListWidget):
     def __init__(self, parent=None):
@@ -23,21 +21,18 @@ class _SelectableList(QtWidgets.QListWidget):
             return
         super().mousePressEvent(e)
 
-class KeyBindingEditor(QtWidgets.QDialog):
+class KeyBindingEditor(BindingEditorBase):
     def __init__(self, widgets: List[WidgetRef], commands: List[str] | None = None, parent=None):
         if parent is None and isinstance(commands, QtWidgets.QWidget):
             parent = commands
             commands = None
-        super().__init__(parent)
-        self.widgets = widgets
+        super().__init__(widgets, KeyBindingStore(), parent)
         self._commands = list(commands or [])
         self.setWindowTitle("Key Bindings")
         self.resize(uipx(600), uipx(480))
-        self._store = KeyBindingStore()
         self._cat = KeySpecCatalog()
         self._mod_keys: List[str] = []
         self._main_keys: List[str] = []
-        self._draft: Dict[KeySequence, Dict[str, CommandPayload]] = {}
         self._filter_cmd_id: str | None = None
         self._build_ui()
         self._load_existing()
@@ -92,13 +87,10 @@ class KeyBindingEditor(QtWidgets.QDialog):
     def _load_existing(self):
         self._mod_keys = ["(なし)"]
         self._main_keys = []
-        data = self._store.get_all()
+        merged = self._merged_data()
         seqs: List[KeySequence] = []
-        for seq, scopes in data.items():
-            if isinstance(scopes, dict) and "*" in scopes and isinstance(scopes["*"], CommandPayload):
-                seqs.append(seq)
-        for seq, scopes in self._draft.items():
-            if isinstance(scopes, dict) and "*" in scopes and isinstance(scopes["*"], CommandPayload):
+        for seq, scopes in merged.items():
+            if DraftOverlay.has_any_payload(scopes):
                 seqs.append(seq)
         for seq in seqs:
             mod = seq.modifier or "(なし)"
@@ -207,14 +199,14 @@ class KeyBindingEditor(QtWidgets.QDialog):
 
     def _on_select_command(self, seq: KeySequence, cid):
         if cid is None:
-            self._draft[seq] = {}
+            self._draft.delete(seq)
             self._refresh_shortcuts()
             self._rebuild_sections()
             self._rebuild_key_lists()
             return
         if not isinstance(cid, CommandPayload):
             raise TypeError("Selection must provide CommandPayload")
-        self._draft[seq] = {"*": cid}
+        self._draft.update(seq, {"*": cid})
         self._refresh_shortcuts()
         self._rebuild_key_lists(preserve=False)
         self._select_lists_for_sequence(seq)
@@ -222,33 +214,10 @@ class KeyBindingEditor(QtWidgets.QDialog):
     def _apply(self):
         data = self._merged_data()
         self._store.set_all(data)
-        for wref in self.widgets:
-            bindings = {}
-            for seq, scopes in data.items():
-                target = scopes.get(wref.name) or scopes.get("*")
-                if target:
-                    bindings[seq] = target
-            w = wref.widget
-            if hasattr(w, "set_shortcut_bindings") and callable(getattr(w, "set_shortcut_bindings")):
-                w.set_shortcut_bindings(bindings)
+        self._apply_to_widgets(data, "set_shortcut_bindings")
         from ..manager import BindingManager
-        try:
-            self._store.save_to_file(BindingManager.instance().key_bindings_path())
-        except Exception as e:
-            AppLogger.warning("save key bindings failed", exc=e)
+        self._save_store(BindingManager.instance().key_bindings_path())
         self.accept()
-
-    def _merged_data(self) -> Dict[KeySequence, Dict[str, CommandPayload]]:
-        base = self._store.get_all()
-        for k, v in self._draft.items():
-            if v:
-                base[k] = dict(v)
-            elif k in base:
-                base.pop(k, None)
-        return base
-
-    def _display(self, value: Any) -> str:
-        return format_payload_display(value)
 
     def _update_add_button_enabled(self):
         self.btn_add_binding.setEnabled(True)
@@ -291,8 +260,7 @@ class KeyBindingEditor(QtWidgets.QDialog):
                 if found:
                     seqs.append(seq)
             else:
-                g = scopes.get("*")
-                if isinstance(g, CommandPayload):
+                if DraftOverlay.has_any_payload(scopes):
                     seqs.append(seq)
         def _section_key(s: KeySequence):
             return (self._key_sort_tuple(s.key), self._mod_priority(s.modifier or ""), s.modifier or "")
@@ -303,28 +271,25 @@ class KeyBindingEditor(QtWidgets.QDialog):
         self.section_container.setVisible(bool(seqs))
 
     def _on_section_update(self, seq: KeySequence, scopes: Dict[str, CommandPayload]):
-        if scopes:
-            self._draft[seq] = dict(scopes)
-        else:
-            self._draft.pop(seq, None)
+        self._draft.update(seq, scopes)
         self._refresh_shortcuts()
 
     def _on_section_remove(self, seq: KeySequence):
-        self._draft[seq] = {}
+        self._draft.delete(seq)
         self._refresh_shortcuts()
         self._rebuild_key_lists()
 
     def _on_section_reassign(self, old_seq: KeySequence, new_seq: KeySequence, scopes: Dict[str, CommandPayload]):
         if not isinstance(new_seq, KeySequence) or old_seq == new_seq:
             return
-        self._draft[old_seq] = {}
-        self._draft[new_seq] = dict(scopes or {})
+        self._draft.delete(old_seq)
+        self._draft.update(new_seq, scopes or {})
         self._refresh_shortcuts()
         self._rebuild_key_lists(preserve=False)
         self._select_lists_for_sequence(new_seq)
 
     def _reset_all_defaults(self):
-        self._draft = KeyBindingStore()._seed_data()
+        self._reset_draft_to_seed()
         self._refresh_shortcuts()
         self._load_existing()
         self._refresh_lists()

@@ -92,7 +92,7 @@ class CollectionWriter:
 
             path = info.get('path', source)
             name = info.get('name', '')
-            aspect = info.get('aspect', 1.0)
+            aspect = info.get('aspect')
             file_hash = info.get('file_hash')
 
             ok = status != 'fail'

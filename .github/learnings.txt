@@ -6,7 +6,8 @@
 
 ■ コード実装の基本方針
 - 共通化・関数化を積極的に行い、少しでもコードを短く汎用的にする
-- 同じような型チェックや存在確認が複数箇所にある場合は共通関数化
+- 同じような型チェックや存在確認が複数箇所にある場合は共通化
+- インターフェースレベルの共通化も積極的に行う
 - ただし、速度低下や壊れるリスクが高まる共通化は避ける
 - 単一責任の原則に従い、関数やクラスは一つの責務に集中させる
 - ファイルがむやみに分散しすぎないように注意
@@ -46,6 +47,8 @@
 
 ■ テストの扱い
 - tests は source の補助的なもの
+- sourceの変更に合わせてtestを更新し、sourceが正しく動作することを必ず確認する
+- 細かい挙動も必ずtestを作ること。
 - tests に合わせて source 側を変更することはない
 - source 側のコードが最も重要
 
@@ -90,6 +93,12 @@
 - デフォルトバインディングは _resources/mouse_bindings/ と _resources/key_bindings/ にプリセットJSON（例: standard.json）として配置
 - プリセット名は seed.py で管理し、set_presets(mouse=..., key=...) で切り替え可能
 - defaults.py は Python オブジェクトでバインディングを定義しない。seed.py の re-export のみ
+- binding/editors_common.py に共通基盤を集約:
+  - DraftOverlay: ドラフト状態管理（update/delete/merge/keys/replace_all）
+  - BindingEditorBase(QDialog): エディタ共通基盤（_merged_data, _apply_to_widgets, _save_store, _reset_draft_to_seed）
+  - ScopedPayloadSectionBase: スコープ別ペイロードUI
+- resolve_for_widget(data, widget_name) は store_base.py の共通関数。エディタとManagerの両方で利用
+- ドラフトの状態管理で pop と {} を使い分ける暗黙のルールが過去にバグを生んだ。DraftOverlay で _changes と _deleted を明確に分離して防止
 
 ■ 実装上の注意点
 - 「後々使われるかもしれない」程度の関数は実装しない。YAGNI原則を徹底する

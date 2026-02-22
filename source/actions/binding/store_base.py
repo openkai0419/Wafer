@@ -11,6 +11,15 @@ from ..command.payload import CommandPayload, normalize_scoped_payloads
 K = TypeVar("K")
 
 
+def resolve_for_widget(data: Dict[Any, Dict[str, Any]], widget_name: str) -> Dict[Any, Any]:
+    bindings = {}
+    for key, scopes in data.items():
+        target = scopes.get(widget_name) or scopes.get("*")
+        if target:
+            bindings[key] = target
+    return bindings
+
+
 class BindingStoreBase(Generic[K]):
     _instances: Dict[type, "BindingStoreBase[Any]"] = {}
     key_type: Type[Any] = object

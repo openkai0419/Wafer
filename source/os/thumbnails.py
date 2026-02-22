@@ -70,6 +70,38 @@ def _get_dimensions_from_property_store(abs_path: str) -> tuple[int, int] | None
     return None
 
 
+def _get_thumbnail_aspect_ratio(abs_path: str, size: int = 96) -> float | None:
+    import ctypes
+    from ctypes import POINTER, byref, c_void_p, cast, windll
+    from ctypes.wintypes import SIZE
+
+    factory_cls = _get_shell_item_factory_class()
+    shell32 = windll.shell32
+    gdi32 = windll.gdi32
+
+    handle = c_void_p()
+    hr = shell32.SHCreateItemFromParsingName(abs_path, None, byref(factory_cls._iid_), byref(handle))
+    if hr != 0:
+        return None
+    factory = cast(handle, POINTER(factory_cls))
+    try:
+        hbitmap = factory.GetImage(SIZE(size, size), 0)
+        if not hbitmap:
+            return None
+        try:
+            import win32ui
+            bmp = win32ui.CreateBitmapFromHandle(int(hbitmap))
+            info = bmp.GetInfo()
+            w, h = info['bmWidth'], info['bmHeight']
+            if h > 0 and w > 0:
+                return w / h
+            return None
+        finally:
+            gdi32.DeleteObject(c_void_p(int(hbitmap)))
+    finally:
+        del factory
+
+
 def get_aspect_ratios(paths: list[str]) -> dict[str, float]:
     if not paths:
         return {}
@@ -84,11 +116,16 @@ def _get_aspect_ratios_windows(paths: list[str]) -> dict[str, float]:
     try:
         result = {}
         for p in paths:
-            dims = _get_dimensions_from_property_store(os.path.abspath(p))
+            abs_path = os.path.abspath(p)
+            dims = _get_dimensions_from_property_store(abs_path)
             if dims:
                 w, h = dims
                 if h > 0:
                     result[p] = w / h
+                continue
+            ratio = _get_thumbnail_aspect_ratio(abs_path)
+            if ratio:
+                result[p] = ratio
         return result
     finally:
         pythoncom.CoUninitialize()

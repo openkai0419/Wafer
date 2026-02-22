@@ -397,7 +397,7 @@ class FileDB:
                     ON CONFLICT(path) DO UPDATE SET
                         source       = excluded.source,
                         name         = excluded.name,
-                        aspect_ratio = excluded.aspect_ratio''',
+                        aspect_ratio = COALESCE(excluded.aspect_ratio, files.aspect_ratio)''',
                     image_entries,
                 )
             if meta_info_entries:

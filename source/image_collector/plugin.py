@@ -25,7 +25,6 @@ class ImageCollectorPlugin(BaseCollectorPlugin):
                 res = ExifParser.parse_img(img)
                 if res['error']:
                     raise RuntimeError(res['error'])
-            aspect = res['aspect'] or 1.0
             meta_info = {**res['exif'], **res['info_items']}
             mtime, fsize, ctime = file_info
             return {
@@ -34,7 +33,7 @@ class ImageCollectorPlugin(BaseCollectorPlugin):
                     'source': path,
                     'path': path,
                     'name': os.path.basename(path),
-                    'aspect': aspect,
+                    'aspect': res['aspect'] or None,
                     'file_hash': fast_sig_hash(path, fsize, 256),
                 },
                 'meta_info': meta_info,
@@ -49,7 +48,7 @@ class ImageCollectorPlugin(BaseCollectorPlugin):
                     'source': path,
                     'path': path,
                     'name': os.path.basename(path),
-                    'aspect': 1.0,
+                    'aspect': None,
                 },
                 'meta_info': {},
                 'tags': {},

@@ -26,7 +26,7 @@ class ImageReader(BaseReader):
                 if res["error"]:
                     raise RuntimeError(res["error"])
 
-            aspect = res["aspect"] or 1.0
+            aspect = res["aspect"] or None
             meta_info = {**res["exif"], **res["info_items"]}
 
             info = {
@@ -45,7 +45,7 @@ class ImageReader(BaseReader):
                 "source": p,
                 "path": p,
                 "name": os.path.basename(p),
-                "aspect": 1.0,
+                "aspect": None,
             }
             return (info, {}, {}, 'fail')
         

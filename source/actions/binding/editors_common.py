@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, Generic, List, Set, TypeVar
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
@@ -11,6 +11,47 @@ from ..command.payload import CommandPayload, format_payload_display
 from ..command.maker import MenuMaker
 from ..command.ui import MenuBuilder
 from .common import WidgetRef
+from .store_base import BindingStoreBase, resolve_for_widget
+
+K = TypeVar("K")
+
+
+class DraftOverlay(Generic[K]):
+    def __init__(self):
+        self._changes: Dict[K, Dict[str, CommandPayload]] = {}
+        self._deleted: Set[K] = set()
+
+    def update(self, key: K, scopes: Dict[str, CommandPayload]) -> None:
+        if scopes:
+            self._changes[key] = dict(scopes)
+            self._deleted.discard(key)
+        else:
+            self.delete(key)
+
+    def delete(self, key: K) -> None:
+        self._changes.pop(key, None)
+        self._deleted.add(key)
+
+    def merge(self, store_data: Dict[K, Dict[str, CommandPayload]]) -> Dict[K, Dict[str, CommandPayload]]:
+        result = {k: dict(v) for k, v in store_data.items()}
+        for k in self._deleted:
+            result.pop(k, None)
+        for k, v in self._changes.items():
+            result[k] = dict(v)
+        return result
+
+    def keys(self) -> Set[K]:
+        return set(self._changes.keys()) | self._deleted
+
+    def replace_all(self, data: Dict[K, Dict[str, CommandPayload]]) -> None:
+        self._changes = {k: dict(v) for k, v in data.items() if v}
+        self._deleted = {k for k, v in data.items() if not v}
+
+    @staticmethod
+    def has_any_payload(scopes) -> bool:
+        if not isinstance(scopes, dict):
+            return False
+        return any(isinstance(v, CommandPayload) for v in scopes.values())
 
 
 def clear_layout(layout: QtWidgets.QLayout, owner: QtWidgets.QWidget | None, label: str) -> None:
@@ -64,6 +105,34 @@ def popup_command_picker(
         prepare=_prep,
         allow_options_with_selection=allow_options_with_selection,
     )
+
+
+class BindingEditorBase(QtWidgets.QDialog):
+    def __init__(self, widgets: List[WidgetRef], store: BindingStoreBase, parent=None):
+        super().__init__(parent)
+        self.widgets = widgets
+        self._store = store
+        self._draft: DraftOverlay = DraftOverlay()
+
+    def _merged_data(self) -> Dict:
+        return self._draft.merge(self._store.get_all())
+
+    def _apply_to_widgets(self, data: Dict, setter_attr: str) -> None:
+        for wref in self.widgets:
+            bindings = resolve_for_widget(data, wref.name)
+            setter = getattr(wref.widget, setter_attr, None)
+            if callable(setter):
+                setter(bindings)
+
+    def _save_store(self, path: str) -> None:
+        try:
+            self._store.save_to_file(path)
+        except Exception as e:
+            AppLogger.warning(f"{type(self).__name__} save failed", exc=e)
+
+    def _reset_draft_to_seed(self) -> None:
+        self._draft = DraftOverlay()
+        self._draft.replace_all(self._store._seed_data())
 
 
 class ScopedPayloadSectionBase(QtWidgets.QGroupBox):

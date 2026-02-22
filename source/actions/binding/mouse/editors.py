@@ -1,5 +1,4 @@
 from typing import Dict, List, Tuple, Any
-from pathlib import Path
 from dataclasses import dataclass
 from PySide6 import QtCore, QtGui, QtWidgets
 from source.common.funcs import uipx
@@ -7,11 +6,10 @@ from .mouseeventmanager import MouseActionKey, ClickType, MouseButton, ModifierK
 from ...command.maker import MenuMaker
 from ...command.ui import MenuBuilder
 from .store import MouseBindingStore
-from ...command.payload import format_payload_display
 from ...command.payload import CommandPayload
 from ..common import WidgetRef
 from source.common.logs import AppLogger
-from ..editors_common import ScopedPayloadSectionBase, clear_layout
+from ..editors_common import BindingEditorBase, ScopedPayloadSectionBase, DraftOverlay, clear_layout
 
 
 @dataclass(frozen=True)
@@ -19,14 +17,11 @@ class MouseQualifier:
     kind: str
     value: object | None
 
-class MouseBindingEditor(QtWidgets.QDialog):
+class MouseBindingEditor(BindingEditorBase):
     def __init__(self, widgets: List[WidgetRef], parent=None):
-        super().__init__(parent)
-        self.widgets = widgets
+        super().__init__(widgets, MouseBindingStore(), parent)
         self.setWindowTitle("Mouse Bindings")
         self.resize(uipx(640), uipx(480))
-        self._store = MouseBindingStore()
-        self._draft: Dict[MouseActionKey, Dict[str, str]] = {}
         self._setup()
         self._load_actions()
         self._reload_sections()
@@ -144,21 +139,9 @@ class MouseBindingEditor(QtWidgets.QDialog):
             except Exception as e:
                 AppLogger.warning("MouseBindingEditor _current_key failed", exc=e)
                 continue
-            if key in self._draft:
-                self._draft.pop(key, None)
             d = s.collect_entries()
-            if key in d:
-                scopes = d[key]
-                if scopes:
-                    self._draft[key] = dict(scopes)
-    def _merged_data(self) -> Dict[MouseActionKey, Dict[str, object]]:
-        base = self._store.get_all()
-        for k, v in self._draft.items():
-            if v:
-                base[k] = dict(v)
-            elif k in base:
-                base.pop(k, None)
-        return base
+            scopes = d.get(key, {})
+            self._draft.update(key, scopes)
     def _clear_sections(self):
         clear_layout(self.sections_layout, self, "MouseBindingEditor clear sections")
         try:
@@ -167,34 +150,17 @@ class MouseBindingEditor(QtWidgets.QDialog):
             QtWidgets.QApplication.processEvents()
         except Exception as e:
             AppLogger.warning("MouseBindingEditor clear sections update failed", exc=e)
-    def _scope_targets(self) -> List[str]:
-        return ["*"] + [w.name for w in self.widgets]
     def _apply(self):
         self._save_current_sections_to_draft()
-        data = self._store.get_all()
-        for key, scopes in self._draft.items():
-            if scopes:
-                data[key] = dict(scopes)
-            else:
-                data.pop(key, None)
+        data = self._merged_data()
         self._store.set_all(data)
-        for wref in self.widgets:
-            if hasattr(wref.widget, "set_mouse_bindings"):
-                bindings = {}
-                for key, scopes in data.items():
-                    cmd_widget = scopes.get(wref.name) or scopes.get("*")
-                    if cmd_widget:
-                        bindings[key] = cmd_widget
-                wref.widget.set_mouse_bindings(bindings)
-        try:
-            from ..manager import BindingManager
-            self._store.save_to_file(BindingManager.instance().mouse_bindings_path())
-        except Exception as e:
-            AppLogger.warning("MouseBindingEditor save_to_file failed", exc=e)
+        self._apply_to_widgets(data, "set_mouse_bindings")
+        from ..manager import BindingManager
+        self._save_store(BindingManager.instance().mouse_bindings_path())
         self.accept()
     def _reset_to_defaults(self):
         try:
-            self._draft = MouseBindingStore()._seed_data()
+            self._reset_draft_to_seed()
             self._reload_sections()
         except Exception as e:
             AppLogger.warning("MouseBindingEditor reset_to_defaults failed", exc=e)
@@ -214,7 +180,10 @@ class MouseBindingEditor(QtWidgets.QDialog):
                 if k.button == b and k.click_type == c:
                     aff_keys.add(k)
             for k in aff_keys:
-                self._draft[k] = dict(defs[k]) if k in defs else {}
+                if k in defs:
+                    self._draft.update(k, dict(defs[k]))
+                else:
+                    self._draft.delete(k)
             self._reload_sections(skip_save=True)
         except Exception as e:
             AppLogger.warning("MouseBindingEditor reset_current_action failed", exc=e)
@@ -327,9 +296,3 @@ class MouseSection(ScopedPayloadSectionBase):
                 mods = (m,)
         btn = MouseButton.NONE if self.click in (ClickType.WHEEL_UP, ClickType.WHEEL_DOWN, ClickType.DROP) else self.button
         return MouseActionKey(btn, self.click, held, mods)
-    def _build_payload_with_options(self, cid: str) -> CommandPayload:
-        return CommandPayload(cid, {})
-    def _display(self, value: Any) -> str:
-        return format_payload_display(value)
-    def _to_saved(self, value: CommandPayload) -> CommandPayload:
-        return value

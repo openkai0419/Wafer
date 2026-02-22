@@ -9,6 +9,7 @@ from PySide6 import QtCore
 from .key.store import KeyBindingStore
 from .key.sequence import KeySequence
 from source.common.logs import AppLogger
+from .store_base import resolve_for_widget
 
 
 class BindingManager:
@@ -46,29 +47,23 @@ class BindingManager:
         return mgr
     
     def apply_mouse_bindings(self, widgets: List[QtWidgets.QWidget]) -> None:
+        data = self._store.get_all()
         for w in widgets:
             if not (hasattr(w, "binding_scope") and callable(getattr(w, "binding_scope"))):
                 continue
-            name = w.binding_scope()
-            applied: Dict[MouseActionKey, Any] = {}
-            for key in self._store.get_all().keys():
-                cmd = self._store.resolve(name, key)
-                if cmd:
-                    applied[key] = cmd
+            bindings = resolve_for_widget(data, w.binding_scope())
             if hasattr(w, "set_mouse_bindings"):
-                w.set_mouse_bindings(applied)
+                w.set_mouse_bindings(bindings)
 
     def apply_key_bindings(self, widgets: List[QtWidgets.QWidget]) -> None:
+        data = self._key_store.get_all()
         for w in widgets:
             if not (hasattr(w, "binding_scope") and callable(getattr(w, "binding_scope"))):
                 continue
-            name = w.binding_scope()
+            resolved = resolve_for_widget(data, w.binding_scope())
             store_logical: Dict[KeySequence, Any] = {}
             store_physical: Dict[Tuple[Union[str, int], ...], Any] = {}
-            for seq in self._key_store.get_all().keys():
-                cmd = self._key_store.resolve(name, seq)
-                if not cmd:
-                    continue
+            for seq, cmd in resolved.items():
                 if self._is_physical_seq(seq):
                     store_physical[seq.to_tuple()] = cmd
                 else:

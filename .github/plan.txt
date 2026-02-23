@@ -1,162 +1,56 @@
 ======================================
-Indexer/Collector分離 — 確定設計
+将来計画
 ======================================
 
-■ プロセス階層 (確定)
-  Communicator (Tray, Broker常駐)
-    └── per DB: IndexerProcess
-          ├── Node('indexer', db=name)
-          ├── WatchFolder (watchdog)
-          ├── SettingWatcher
-          ├── DB管理 (唯一のwriter)
-          ├── Phase 1 基本登録 (即時)
-          ├── CollectorDispatcher (拡張子→Collectorルーティング)
-          └── per plugin: CollectorWorker (子プロセス)
-                ├── Node('collector-{plugin}', db=name)
-                └── ステートレスなメタデータ抽出のみ
-  Viewer (複数起動可能)
-    └── Node('viewer')
+■ IO プラグイン拡張
+- Grid/Viewer プラグインの WIDGET_CLASS + render() 排他モデルの実装（着手中）
+  - BaseGridPlugin / BaseViewerPlugin に WIDGET_CLASS と render() を追加
+  - GridHandler / ViewerHandler で WIDGET_CLASS の有無によるモード分岐
+  - FileViewerWidget に QStackedWidget 導入 + viewer_handler 統合
+- Collector の拡張子動的登録 (collector.register ZMQプロトコル)
+- Collector の自動発見・ロード機構
 
-■ Collector起動方式: 最初はA (IndexerがDB単位でCollectorを起動)、将来B (DB横断共有Worker) も可能な設計に
-  - CollectorWorkerはdb引数を受け取るが、将来的にlist[str]や空文字で複数DB対応可能にNode設計を活用
-  - APIは将来的には継承するクラスによって各DB単位か、DB横断かを選択する
-  - ルーティングはBrokerのdb_setフィルタ + dst指定で対応
-
-■ 2段階登録 (確定)
-  Phase 1 (Indexer即時):
-    - ファイル検出 → sources (path, fast_hash, mtime, size, ctime, status='indexed')
-    - files (path, source, name, aspect=サムネイルから推定)
-    - collection_status に各Collector分の'pending'行
-    - Viewerへ即座に'update'通知 → グリッド表示可能
-  Phase 2 (Collector非同期):
-    - IndexerがpendingパスをバッチでCollectorに送信
-    - CollectorがReaderClass等でメタデータ抽出 → Indexerに返送
-    - Indexerがmeta_info/tags/aspect_ratioを上書きDB登録
-    - collection_statusを'ok'/'fail'に更新
-
-■ DB変更 (確定)
-  新テーブル: collection_status
-    CREATE TABLE collection_status (
-      source TEXT NOT NULL,
-      collector TEXT NOT NULL,
-      status TEXT DEFAULT 'pending',  -- 'pending' | 'ok' | 'fail'
-      collected_at REAL,
-      PRIMARY KEY(source, collector),
-      FOREIGN KEY(source) REFERENCES sources(source) ON DELETE CASCADE
-    );
-    CREATE INDEX idx_cs_collector_status ON collection_status(collector, status);
-
-■ ZMQ通信プロトコル (確定)
-  Collector→Indexer (起動時): topic='collector.register', payload={name, extensions}
-  Indexer→Collector (パス配信): topic='collect.batch', payload={batch_id, paths, file_info}
-  Collector→Indexer (メタ返送): topic='collect.result', payload={batch_id, results: [{source, info, meta_info, tags, status}]}
-  既存: progress/maximum/update/folderchanged (src変更のみ indexer-*), rescan/cleanup (dst→indexer)
-
-■ Collectorプラグインインターフェース (確定)
-  class BaseCollectorPlugin:
-      NAME: str
-      EXTENSIONS: tuple[str, ...]
-      def process(self, path: str, file_info: tuple) -> dict  # {source, info, meta_info, tags, status}
-  Phase 1-3は ImageCollectorPlugin のみ。現ImageReader.read()のロジック移行。
-
-■ 段階的移行計画 (Phase 1→4の順に実施)
-  Phase 1: FileIndexer内部分離 ✔ 実装済
-    - _batch_process_images → _collect_batch_metadata に分離
-    - _register_basic_info() 新設 (Phase 1: sources+files即時登録 + pending挿入)
-    - collection_status テーブル追加 (source, collector, status, collected_at)
-    - upsert_basic_sources / upsert_collection_results / insert_pending_collection / get_pending_sources を FileDB に追加
-    - _update_meta_and_image が Phase1→Phase2 の2段階フローに
-    - _DEFAULT_COLLECTORS = ('image',)
-    - プロセス構造は変更なし
-  Phase 2: IndexerProcess化 ✔ 実装済
-    - CollectorProcess → IndexerProcess リネーム
-    - source/image_collector/ → source/image_indexer/ ディレクトリ移動
-    - main_collector.py → main_indexer.py ファイルリネーム
-    - --collector → --indexer 引数変更
-    - Node role を 'indexer' に
-    - メタ収集はまだ同一プロセス内
-  Phase 3: CollectorWorker分離 ✔ 実装済
-    - source/image_collector/plugin.py: BaseCollectorPlugin(ABC) + ImageCollectorPlugin + BUILTIN_PLUGINS
-    - source/image_collector/worker.py: CollectorWorker(Node+ThreadPoolExecutor) + run_collector()エントリーポイント
-    - source/image_indexer/dispatcher.py: CollectorDispatcher(プロセス起動/終了管理 + pendingパス配信)
-    - source/image_indexer/writer.py: CollectionWriter(collect.result受信→キュー→バッチDB書き込み)
-    - indexer.pyからPhase2コード(_read_single/_collect_batch_metadata/writerスレッド)を削除
-    - main_indexer.pyにDispatcher/Writer統合、Node consumer=True化
-    - main.pyに--collector引数追加
-    - collect.batch/collect.result ZMQプロトコル実装
-    - send_reliableのdb_filterサポート追加(outbox.py/node.py)
-    - WatchFolderとWriterでProgressAggregator共有化
-    - 未実装: collector.registerによる拡張子の動的登録 (Phase 4)
-  Phase 4: プラグイン基盤 (コア実装完了)
-    ✔ DB/クラスリネーム: ImageDB→FileDB, ImageIndexer→FileIndexer, images→files, images_full→files_full
-    ✔ ハードコード解消: _DEFAULT_COLLECTORS→get_collector_names()動的取得, writerのcollector名→ペイロードから動的取得
-    ✔ WatchFolderの全ファイル対応 (拡張子フィルタ撤廃)
-    ✔ scan_directory_fastの全ファイル対応 (IMAGE_EXTENSIONS撤廃)
-    ✔ FileIndexerのcollectors引数 + _insert_pending_by_extension()で拡張子ベースpending挿入
-    ✔ plugin.py: get_collector_names/get_collector_info/get_collectors_for_path ヘルパー関数
-    ✔ worker.py: collect.resultにcollectorフィールド追加
-    ✔ thumbnails.py: get_aspect_ratios()でPhase1 aspect推定
-    ✔ manager.py: LoaderClass._load_thumbnail() + pil_to_qimage() でサムネイルフォールバック
-    - 未実装(将来): 拡張子の動的登録 (collector.register ZMQプロトコル)
-    - 未実装(将来): プラグイン基底クラス: BaseThumbnailPlugin, BaseViewerPlugin, BaseQueryPlugin
-    - 未実装(将来): Collectorの自動発見・ロード機構
-
-■ リカバリ設計
-  - Collector停止時: collection_statusにpendingが残るため、再起動時にIndexerがpendingを再送
-  - Collectorはステートレス: 再起動時のリカバリ不要
-  - 将来: 同一plugin種別のCollectorを複数プロセスでスケールアウト可能
-
-■ Phase 1 aspect推定: サムネイルから取得 (source/os/thumbnails.py) ✔ 実装済
-  - get_aspect_ratios(paths)でOS APIから縦横比を一括取得（Windows: COM IPropertyStore）
-  - 対応Collectorが存在しないファイルもサムネイル表示可能
-  - Collectorが正確なaspectを取得したら上書き
-
-======================================
-以下は未着手の将来計画
-======================================
-
-Viewerの画像取得最適化
+■ Viewer の画像取得最適化
 - 現在は画像サイズ変更の度に毎回サイズごとの画像を取得しているがIO問い合わせが多い
 - ファイルのサイズは最大で取得してWidget側でリサイズする方針
 
-Pinterest方式でのレイアウト拡張、レイアウト表示のプラグイン化対応
-- 現在は縦幅指定、縦が揃った状態で動的に並ぶが、Pinterestのように横幅固定で縦がズレた状態のレイアウトも対応可能にしたい。
-- プラグイン化してどんな計算結果が帰ってきても、レイアウトが正しく動作するように機能を汎用化＆拡張
+■ レイアウト拡張
+- Pinterest方式でのレイアウト（横幅固定・縦可変）対応
+- レイアウト計算のプラグイン化、任意の計算結果に対応する汎用的なレイアウト基盤
 
-DBのデータ構造、書き込み仕様の再検討
+■ DB のデータ構造・書き込み仕様の再検討
 - ファイルに書き込まれない/DBのみに書き込まれるタグ情報の対応
-- パスが変更された場合でもタグを正しく追従させるため、ファイル単位での個別ハッシュ＆ハッシュ関連付け対応
-- index時には高速にfastハッシュを取得し、重複ハッシュがあった場合に重複確認のためフルハッシュを取得するように
+- パス変更でもタグを追従させるため、ファイル単位のハッシュ関連付け
+- index時には高速にfastハッシュを取得し、重複ハッシュがあった場合にフルハッシュで確認
 - 容量削減のためのDB構造最適化
-- 高速、軽量なクエリのためのビューの最適化
-- ファイルの移動によるパスのみの置き換え対応
+- 高速・軽量なクエリのためのビュー最適化
+- ファイル移動によるパスのみの置き換え対応
 
-Viewerからのタグ書き込み
+■ Viewer からのタグ書き込み
 - Viewer上で各ファイルに対してタグを追加＆編集可能に（関連付け自体はハッシュ）
 - 編集内容をzmq経由でIndexerに送る
-- タグ情報の編集は通信やIndexerプロセスが終了していた場合は消滅してしまうため、一時的にディスク保存できるように対応が必要
-- 永続化はCollectorプロセスも行うべきか
+- 通信やIndexerプロセスが終了していた場合のディスク一時保存対応
 
-DB形式等の共通設定の書き込み場所、形式の再検討
-- 現状は共通設定のsetting.dbがあるが、zmq通信があるため、機能を移行するべきか検討
+■ 検索機能の拡張
+- 時間範囲検索、プラグイン対応可能な拡張性の高い形式に変更
+- 行追加による複数クエリの組み合わせ（AND/OR合算/絞り込み）
 
-Viewerにファイルリスト機能を追加
-- コマンドでファイルリスト（ファイルブックマーク）機能を追加、選択したファイルをファイルリストに追加する機能と、ファイルリストに登録されている状態をUIに表示する機能、追加されたファイルリストをコピー/移動などをする機能
-- ファイルリスト情報をどこに保存するかは要検討
+■ Viewer の複数ファイル形式対応
+- 画像、動画、Zip、音声に対応するプラグイン可能な基盤と実装
 
-検索機能の拡張
-- 現在はテキスト検索のみだが、時間範囲検索、プラグイン対応可能な拡張性の高い形式に変更
-- 現在は一行のみだが、行を追加可能にし、複数のクエリの組み合わせによってAND、ORで合算/絞り込みを行える拡張性の高いクエリを実現する。
+■ Viewer の起動数による状態の複数保持
+- クエリの状態をブックマーク可能にし、UIの状態と検索状態を一元管理/保存/復元
+- communicatorによる起動数管理、起動数ごとに個別管理
+- 起動数によって保存状態を切り替え
 
-Viewerの複数ファイル形式対応
-- 様々なファイル形式に対応できる、プラグイン可能な拡張性の高い基盤と実装
-- 画像、動画、Zip、音声は対応したい。
+■ ファイルリスト機能
+- コマンドでファイルリスト（ファイルブックマーク）機能を追加
+- 選択ファイルのリスト追加、UIへの状態表示、リストからのコピー/移動
+- 保存場所は要検討
 
-Viewerの起動数による状態の複数保持
-- クエリの状態をブックマーク可能に、クラス化によってUIの状態と検索状態を拡張性高く一元管理/保存/復元可能にする
-- communicatorによる起動数管理、起動数ごとに個別で管理可能に
-- 起動数によってどの保存状態を使うかを切り替え
+■ 共通設定の管理見直し
+- 現状の共通設定setting.dbとzmq通信の役割分担を再検討
 
-その他
-- Zmqに問い合わせる外部通信の口を用意し、API層の設計を行い、将来のWebUI/モバイル対応の設計を行う
-- Collectorプラグインで、動画を渡すとAIによって内容を分析し、最適なタグ付けを行う機能連携
+■ 外部API・その他
+- Zmqに問い合わせる外部通信の口を用意し、API層の設計を行い、将来のWebUI/モバイル対応
+- Collectorプラグインで、動画をAIで内容分析し最適なタグ付けを行う機能連携

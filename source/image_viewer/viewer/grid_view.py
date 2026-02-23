@@ -9,10 +9,10 @@ from ...qt.debounce import qt_debounce, qt_throttle
 from ...qt.pixmap import PixmapFactory
 from ...qt.thread import main_thread
 from ..viewer_settings import main_setting
-from .cachemanager import MemoryLimitedImageCache, GraphicsItemPool
+from ...io.grid.handler import grid_handler
+from .cachemanager import MemoryLimitedImageCache, GraphicsItemPool, ProxyWidgetPool
 from .calc_layout import JustifiedLayoutCalculator, LayoutData
 from .items import ViewerItems
-from .sizechecker import SizeMismatchChecker
 from ...actions.bridge import Kit
 
 
@@ -62,7 +62,9 @@ class GridView(QtWidgets.QGraphicsView, Kit.UIMixin):
         self.calculator = None
         self.image_cache = MemoryLimitedImageCache(main_setting.get('window/chache_size', 500))
         self.label_pool = GraphicsItemPool(self._scene)
+        self.proxy_pool = ProxyWidgetPool(self._scene, grid_handler)
         self.active_threads = {}
+        self._widget_plugin_names: dict[int, str] = {}
         self.error_placeholder = PixmapFactory.generate().toImage()
 
         self.color = (59, 128, 255)
@@ -76,8 +78,6 @@ class GridView(QtWidgets.QGraphicsView, Kit.UIMixin):
         self.items.selectionChanged.connect(self._on_selection_changed)
         self.widgets = {}
         self.visible_indices = set()
-        self.size_checker = SizeMismatchChecker(self)
-        self.size_checker.start()
 
         self.verticalScrollBar().valueChanged.connect(self._on_scroll_bar_changed)
         self.horizontalScrollBar().valueChanged.connect(self._on_scroll_bar_changed)
@@ -285,6 +285,7 @@ class GridView(QtWidgets.QGraphicsView, Kit.UIMixin):
             self._restore_scroll_path = self.items.path_at(center_idx) if center_idx is not None else None
         else:
             self._restore_scroll_path = None
+        self._clear_all_widgets()
         with self.items.selection_noemit():
             self.items.set_items(path_list, sources, aspect_ratios)
         self._recalc_layout()
@@ -297,6 +298,7 @@ class GridView(QtWidgets.QGraphicsView, Kit.UIMixin):
             if hasattr(runnable, 'cancel'):
                 runnable.cancel()
         self.widgets.clear()
+        self._widget_plugin_names.clear()
         self.visible_indices.clear()
         self.rects = LayoutData.empty()
         self._scene.setSceneRect(0, 0, 0, 0)
@@ -449,6 +451,24 @@ class GridView(QtWidgets.QGraphicsView, Kit.UIMixin):
             y = bar.maximum()
         self._scroll_to(y, animated)
 
+    def _needs_reload(self, item, cell_size):
+        if not hasattr(item, 'pixmap'):
+            return False
+        pixmap = item.pixmap()
+        if pixmap.isNull():
+            return False
+        margin = uipx(3) * 2
+        return pixmap.width() < (cell_size.width() - margin) or pixmap.height() < (cell_size.height() - margin)
+
+    def _request_reload(self, i, rect):
+        if i in self.active_threads:
+            self.active_threads.pop(i).cancel()
+        runnable = ImageLoaderRunnable(i, self.items.paths[i], rect.size(), self)
+        runnable.signal.image_ready.connect(self._on_image_ready)
+        runnable.signal.widget_ready.connect(self._on_widget_ready)
+        self.active_threads[i] = runnable
+        main_thread.start(runnable, 5)
+
     @profiler.profile
     def _on_layout_ready(self, layout):
         was_scrolling = self.isscrolling()
@@ -457,11 +477,12 @@ class GridView(QtWidgets.QGraphicsView, Kit.UIMixin):
         for i in list(self.visible_indices):
             if i < n and i in self.widgets:
                 self.widgets[i].setGeometry(layout[i])
+                if self._needs_reload(self.widgets[i], layout[i].size()):
+                    self._request_reload(i, layout[i])
             else:
                 self._recycle_widget(i)
                 self.visible_indices.discard(i)
         self._update_visible_items()
-        self.size_checker.trigger()
         self.layout_ready.emit()
         if self.last_selections:
             indexes = [i for i in (self.items.index_of_path(p) for p in self.last_selections) if i is not None]
@@ -560,12 +581,14 @@ class GridView(QtWidgets.QGraphicsView, Kit.UIMixin):
             AppLogger.warning(f'Index {i} out of range for paths (len={len(self.items.paths)})')
             return
         if i not in self.widgets:
+            path = self.items.paths[i]
             item = self.label_pool.acquire()
             item.setGeometry(rect)
             self.widgets[i] = item
-            if i in self.image_cache:
-                item.set_image(self.image_cache[i], self.items.paths[i])
-            elif i not in self.active_threads:
+            cached = self.image_cache.get(path)
+            if cached is not None:
+                item.set_image(cached, path)
+            if (not cached or self._needs_reload(item, rect.size())) and i not in self.active_threads:
                 runnable = ImageLoaderRunnable(i, self.items.paths[i], rect.size(), self)
                 runnable.signal.image_ready.connect(self._on_image_ready)
                 runnable.signal.widget_ready.connect(self._on_widget_ready)
@@ -578,11 +601,13 @@ class GridView(QtWidgets.QGraphicsView, Kit.UIMixin):
     def _recycle_widget(self, i):
         if i in self.widgets:
             item = self.widgets.pop(i)
-            if hasattr(item, "delete"):
-                item.delete()
-            self.label_pool.release(item)
-        if i in self.image_cache:
-            del self.image_cache[i]
+            plugin_name = self._widget_plugin_names.pop(i, None)
+            if plugin_name is not None and isinstance(item, QtWidgets.QGraphicsProxyWidget):
+                self.proxy_pool.release(item, plugin_name)
+            else:
+                if hasattr(item, "delete"):
+                    item.delete()
+                self.label_pool.release(item)
         if i in self.active_threads:
             runnable = self.active_threads.pop(i)
             if hasattr(runnable, 'cancel'):
@@ -592,29 +617,31 @@ class GridView(QtWidgets.QGraphicsView, Kit.UIMixin):
     @QtCore.Slot(int, object)
     def _on_image_ready(self, index, image):
         if index >= len(self.items.paths):
-            AppLogger.warning(f'_on_image_ready: index {index} out of range (len={len(self.items.paths)})')
+            return
+        runnable = self.active_threads.pop(index, None)
+        if runnable is not None and runnable.path != self.items.paths[index]:
             return
         if index in self.widgets:
-            item = self.widgets[index]
-            self.image_cache[index] = image
-            item.set_image(image, self.items.paths[index])
-        if index in self.active_threads:
-            del self.active_threads[index]
+            path = self.items.paths[index]
+            self.image_cache[path] = image
+            self.widgets[index].set_image(image, path)
 
     @profiler.profile
-    @QtCore.Slot(int, object, object)
-    def _on_widget_ready(self, index, widget_class, kwargs):
+    @QtCore.Slot(int, str)
+    def _on_widget_ready(self, index, plugin_name):
         if index >= len(self.items.paths):
-            AppLogger.warning(f'_on_widget_ready: index {index} out of range (len={len(self.items.paths)})')
             return
-        if issubclass(widget_class, QtWidgets.QWidget):
+        runnable = self.active_threads.pop(index, None)
+        if runnable is not None and runnable.path != self.items.paths[index]:
+            return
+        proxy = self.proxy_pool.acquire(plugin_name)
+        if proxy is not None:
             rect = self.rects[index]
-            instance = widget_class(**kwargs)
-            proxy = self._scene.addWidget(instance)
             proxy.setGeometry(QtCore.QRectF(rect))
             if index in self.widgets:
-                old = self.widgets.pop(index)
-                self.label_pool.release(old)
+                self._recycle_widget(index)
             self.widgets[index] = proxy
-        if index in self.active_threads:
-            del self.active_threads[index]
+            self._widget_plugin_names[index] = plugin_name
+            path = self.items.paths[index]
+            size = rect.size().toSize()
+            grid_handler.render(path, proxy.widget(), size)

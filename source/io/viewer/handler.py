@@ -1,6 +1,5 @@
 from PySide6 import QtGui
 
-from ...common.logs import AppLogger
 from ..registry import PluginRegistry
 from ..grid.handler import grid_handler
 from .base import BaseViewerPlugin
@@ -20,21 +19,29 @@ class ViewerHandler:
     def resolve(self, path: str) -> type[BaseViewerPlugin] | None:
         return self.registry.resolve(path)
 
-    def create_widget(self, path: str, parent=None):
+    def has_widget(self, path: str) -> bool:
         plugin_cls = self.registry.resolve(path)
-        if plugin_cls is not None:
-            widget = plugin_cls().create_widget(parent)
-            if widget is not None:
-                return widget
-        return self.create_default_widget(parent)
+        return plugin_cls is not None and plugin_cls.WIDGET_CLASS is not None
+
+    def widget_classes(self) -> dict[str, type]:
+        return {
+            p.NAME: p.WIDGET_CLASS
+            for p in self.registry.plugins()
+            if p.WIDGET_CLASS is not None
+        }
 
     def load_content(self, path: str) -> QtGui.QImage | None:
         plugin_cls = self.registry.resolve(path)
-        if plugin_cls is not None:
+        if plugin_cls is not None and plugin_cls.WIDGET_CLASS is None:
             result = plugin_cls().load_content(path)
             if result is not None:
                 return result
         return self._grid.load(path)
+
+    def render(self, path: str, widget):
+        plugin_cls = self.registry.resolve(path)
+        if plugin_cls is not None and plugin_cls.WIDGET_CLASS is not None:
+            plugin_cls().render(path, widget)
 
 
 viewer_handler = ViewerHandler(grid_handler)

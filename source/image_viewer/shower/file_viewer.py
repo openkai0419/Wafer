@@ -6,7 +6,7 @@ from ...qt.debounce import qt_debounce, qt_throttle
 from ...common.profiling import profiler
 from ...common.logs import AppLogger
 from ...db.query import MetaInfoSearchEngine
-from ...io.grid.handler import grid_handler
+from ...io.viewer.handler import viewer_handler
 from ...qt.thread import CancellableRunnable, main_thread
 from .meta_viewer import MetaListWidget
 from .image_viewer import ImageViewerWidget
@@ -15,14 +15,17 @@ from ..viewer.cachemanager import MemoryLimitedImageCache
 from ..viewer_settings import main_setting
 
 
-class _ImageWorker(CancellableRunnable):
+_DEFAULT_WIDGET_NAME = '_default'
+
+
+class _ContentWorker(CancellableRunnable):
     def __init__(self, path):
         super().__init__()
         self.path = path
 
     @profiler.profile
     def execute(self):
-        image = grid_handler.load(self.path)
+        image = viewer_handler.load_content(self.path)
         if image is None or image.isNull():
             return None
         return (self.path, image)
@@ -59,10 +62,12 @@ class FileViewerWidget(QtWidgets.QSplitter):
         self.model = model
         self.image_cache = MemoryLimitedImageCache(main_setting.get('window/chache_size', 500))
         self._meta_worker = None
-        self._image_worker = None
+        self._content_worker = None
         self._pending_meta = None
-        self._pending_image = None
+        self._pending_content = None
         self._loading_path = None
+        self._widget_map: dict[str, QtWidgets.QWidget] = {}
+        self._current_plugin_name: str = _DEFAULT_WIDGET_NAME
         self.main_ui()
         self.model.pathChanged.connect(self._on_path_changed)
 
@@ -71,11 +76,21 @@ class FileViewerWidget(QtWidgets.QSplitter):
         return self.model.path()
 
     def main_ui(self):
-        self.image_viewer = ImageViewerWidget(self)
-        self.image_viewer.setMinimumSize(uipx(200), uipx(200))
+        self._stack = QtWidgets.QStackedWidget(self)
+        self._stack.setMinimumSize(uipx(200), uipx(200))
+
+        self.image_viewer = ImageViewerWidget()
         self.image_viewer.set_contain(main_setting.get("window/sub_fitmode", True))
         self.image_viewer.resized.connect(self.throttle_get_image)
-        self.addWidget(self.image_viewer)
+        self._stack.addWidget(self.image_viewer)
+        self._widget_map[_DEFAULT_WIDGET_NAME] = self.image_viewer
+
+        for name, widget_cls in viewer_handler.widget_classes().items():
+            widget = widget_cls(self._stack)
+            self._stack.addWidget(widget)
+            self._widget_map[name] = widget
+
+        self.addWidget(self._stack)
 
         self.meta_viewer = MetaListWidget()
 
@@ -90,6 +105,16 @@ class FileViewerWidget(QtWidgets.QSplitter):
 
         QtWidgets.QApplication.instance().aboutToQuit.connect(self.on_exit)
 
+    def _switch_to(self, plugin_name: str):
+        if plugin_name == self._current_plugin_name:
+            return
+        widget = self._widget_map.get(plugin_name)
+        if widget is None:
+            plugin_name = _DEFAULT_WIDGET_NAME
+            widget = self.image_viewer
+        self._stack.setCurrentWidget(widget)
+        self._current_plugin_name = plugin_name
+
     def on_exit(self):
         main_setting.set("window/sub_fitmode", self.image_viewer.is_contain())
         main_setting.set("window/sub_splitter", self.sizes())
@@ -97,53 +122,64 @@ class FileViewerWidget(QtWidgets.QSplitter):
 
     @qt_throttle(100, 200)
     def throttle_get_image(self):
-        self._load_and_show_image(self.model.path())
+        self._load_and_show_content(self.model.path())
 
     def _on_path_changed(self, path):
         if not path:
             return
         self._loading_path = path
         self._pending_meta = None
-        self._pending_image = None
+        self._pending_content = None
         self._update_meta(path)
-        self._load_and_show_image(path)
+
+        plugin_cls = viewer_handler.resolve(path)
+        if plugin_cls is not None and plugin_cls.WIDGET_CLASS is not None:
+            self._switch_to(plugin_cls.NAME)
+            widget = self._widget_map[plugin_cls.NAME]
+            viewer_handler.render(path, widget)
+            self._pending_content = (path, None)
+            self._try_show()
+        else:
+            self._switch_to(_DEFAULT_WIDGET_NAME)
+            self._load_and_show_content(path)
 
     def _try_show(self):
-        if self._pending_image is None or self._pending_meta is None:
+        if self._pending_content is None or self._pending_meta is None:
             return
-        path, image = self._pending_image
-        self._pending_image = None
+        path, image = self._pending_content
+        self._pending_content = None
         meta = self._pending_meta
         self._pending_meta = None
-        self.image_viewer.set_image(image, path)
+        if image is not None:
+            self.image_viewer.set_image(image, path)
         self.meta_viewer.set_data(meta)
 
-    def _load_and_show_image(self, path):
+    def _load_and_show_content(self, path):
         if not path:
             return
         key = (path, None, None)
         image = self.image_cache.get(key)
         if image is not None and not image.isNull():
-            self._pending_image = (path, image)
+            self._pending_content = (path, image)
             self._try_show()
             return
-        if self._image_worker:
-            self._image_worker.cancel()
-        worker = _ImageWorker(path)
-        worker.signals.finished.connect(self._on_image_finished)
-        self._image_worker = worker
+        if self._content_worker:
+            self._content_worker.cancel()
+        worker = _ContentWorker(path)
+        worker.signals.finished.connect(self._on_content_finished)
+        self._content_worker = worker
         main_thread.start(worker)
 
     @QtCore.Slot(object)
-    def _on_image_finished(self, result):
-        self._image_worker = None
+    def _on_content_finished(self, result):
+        self._content_worker = None
         if result is None:
             return
         path, image = result
         self.image_cache[(path, None, None)] = image
         if path != self._loading_path:
             return
-        self._pending_image = (path, image)
+        self._pending_content = (path, image)
         self._try_show()
 
     def set_path(self, path: str | None):

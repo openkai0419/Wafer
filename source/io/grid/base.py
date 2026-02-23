@@ -3,10 +3,11 @@ from ..registry import BasePlugin
 
 
 class BaseGridPlugin(BasePlugin):
+    WIDGET_CLASS = None
 
     @abstractmethod
     def load(self, path: str, size=None):
         ...
 
-    def create_cell_widget(self, parent=None):
-        return None
+    def render(self, path, widget, size=None):
+        pass

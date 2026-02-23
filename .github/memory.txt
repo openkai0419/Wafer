@@ -177,10 +177,15 @@ source/common/profiling.py:
 - source/io/grid/: GridView用サムネイル読み込み。
   - base.py: BaseGridPlugin(BasePlugin, ABC) — load(path, size) + create_cell_widget(parent)。
   - image.py: ImageGridPlugin — OpenCV/Qt画像ロード。PRIORITY=100。
+    JPEGはIMREAD_REDUCED_COLOR_8/4/2でデコード時縮小（≤256/512/1024px）。
   - handler.py: GridHandler クラス（シングルトン: grid_handler）。
     load(path, size): プラグイン→フォールバック(FileThumbnailer)の順で画像取得。
     _fallback_load(): Windowsシェルサムネイルによる標準フォールバック（旧FallbackGridPlugin相当）。
     ImageGridPlugin を自動登録済み。
+
+- source/image_viewer/viewer/loader.py: ImageLoaderRunnable
+  キャッシュキーはpathのみ。キャッシュHit判定は「キャッシュ画像のwidth/height >= 要求サイズ」。
+  セルサイズ縮小方向はキャッシュHit、拡大方向のみ再I/O。drawPixmapがQt側で自動スケール。
 
 - source/io/viewer/: FileViewer用個別表示プラグイン。
   - base.py: BaseViewerPlugin(BasePlugin, ABC) — create_widget(parent, optional)/load_content(path, abstract)/clear(widget, optional)。
@@ -201,17 +206,16 @@ source/common/profiling.py:
 - 各ディレクトリの __init__.py は空。外部からは handler.py のシングルトンを直接 import する。
 - source/io/collector/exif_parser.py: ExifParser（全 classmethod/staticmethod）。
 
-■ IO プラグイン設計方針（将来方向）
-- Grid/Viewer のプラグインは「Widget を返す」か「Image を返す」かの両方に対応する。
-  - Image(QImage) を返した場合: 標準の ImageViewerWidget でその画像を表示。
-  - Widget(QWidget) を返した場合: そのカスタムWidgetに表示を委譲。
-- Grid側の応用例: 動画プラグインがマウスオーバーで動画再生するカスタムセルWidgetを返す。
-- Viewer側の応用例: 動画プラグインが自動再生・フィットモード等の専用ViewerWidgetを返す。
-- FileViewerWidget は将来的に QStackedWidget で複数のプラグインWidgetを管理し、
-  ファイルの拡張子に応じて表示Widgetを切り替える設計を目指す。
-  - 起動時に全登録プラグインの create_widget() を呼んで Widget を事前生成・スタックに積む。
-  - パス変更時: resolve → スタック切り替え → load_content → 表示。
-  - create_widget() が None のプラグイン（例: ImageViewerPlugin）は標準Widget(ImageViewerWidget)を使用。
+■ IO プラグイン設計方針（Widget/Image 排他モデル）
+- プラグインは WIDGET_CLASS の有無で排他的にモードが決まる:
+  - WIDGET_CLASS = None (デフォルト): load()/load_content() で QImage を返す → 標準Widget で表示。
+  - WIDGET_CLASS 指定: render(path, widget, ...) でシステム管理の Widget に描画を委譲。load()/load_content() は使わない。
+- Widget のライフサイクル（生成・プーリング・再利用）はシステム側（Handler/GridView/FileViewerWidget）が管理する。
+  プラグインは WIDGET_CLASS（クラス定義）と render() のみを提供する。
+- Grid 側: WIDGET_CLASS 指定時は QGraphicsProxyWidget 経由でセルに埋め込み。システムがプーリング。
+- Viewer 側: FileViewerWidget が QStackedWidget で全プラグインの WIDGET_CLASS を事前生成・管理。
+  パス変更時: resolve → スタック切り替え → render(path, widget) → 表示。
+  WIDGET_CLASS = None のプラグイン（例: ImageViewerPlugin）は標準Widget(ImageViewerWidget)を使用。
 
 ■ テスト
 - tests は source と同じ階層構造を維持し、ファイル名は test_<source_file>.py。

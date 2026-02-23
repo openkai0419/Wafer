@@ -42,13 +42,25 @@ class GridHandler:
             AppLogger.debug(f'[GridHandler] Fallback load failed: {path} ({e})')
             return None
 
+    def resolve(self, path: str) -> type[BaseGridPlugin] | None:
+        return self.registry.resolve(path)
+
+    def has_widget(self, path: str) -> bool:
+        plugin_cls = self.registry.resolve(path)
+        return plugin_cls is not None and plugin_cls.WIDGET_CLASS is not None
+
     def load(self, path: str, size=None) -> QtGui.QImage | None:
         plugin_cls = self.registry.resolve(path)
-        if plugin_cls is not None:
+        if plugin_cls is not None and plugin_cls.WIDGET_CLASS is None:
             result = plugin_cls().load(path, size)
             if result is not None:
                 return result
         return self._fallback_load(path, size)
+
+    def render(self, path: str, widget, size=None):
+        plugin_cls = self.registry.resolve(path)
+        if plugin_cls is not None and plugin_cls.WIDGET_CLASS is not None:
+            plugin_cls().render(path, widget, size)
 
 
 grid_handler = GridHandler()

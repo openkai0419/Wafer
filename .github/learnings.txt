@@ -120,10 +120,11 @@
 - PRIORITY は大きいほど高優先（reverse=True でソート）
 - EXTENSIONS=() は全ファイルにマッチするフォールバック用
 - 各ディレクトリの __init__.py は空。外部から handler.py のシングルトンを直接 import する
-- Grid/Viewer プラグインは Widget か Image のどちらかを返せる設計にする
-  - Image 返却 → 標準Widget(ImageViewerWidget)で表示
-  - Widget 返却 → カスタムWidgetに表示委譲
-- FileViewerWidget は QStackedWidget で複数プラグインWidgetを管理する方向
+- Grid/Viewer プラグインは WIDGET_CLASS の有無で排他的にモードが決まる
+  - WIDGET_CLASS = None → load()/load_content() で QImage を返す → 標準Widget で表示
+  - WIDGET_CLASS 指定 → render(path, widget, ...) でシステム管理の Widget に描画を委譲
+  - 両方を同時に持つプラグインは存在しない（排他）
+- Widget のライフサイクル（生成/プーリング/再利用）はシステム側が管理する。プラグインは WIDGET_CLASS と render() のみ提供
 
 ■ SQLite クエリ設計
 - SQLite のビュー(VIEW)はマテリアライズされず毎回展開される。ROW_NUMBER等のウィンドウ関数を含むビューをクエリ条件に使うと極端に遅くなる

@@ -103,6 +103,8 @@ def _setup_widget(qtbot, bindings_map=None):
     if bindings_map:
         for key, label in bindings_map.items():
             mgr.bind(key, recorder.make_handler(label))
+            if key.click_type in (ClickType.WHEEL_UP, ClickType.WHEEL_DOWN):
+                w._mouse_bindings[key] = CommandPayload("__test__." + label)
 
     return w, recorder
 
@@ -716,3 +718,109 @@ class TestGetModifiers:
         mods = MouseEventManager.get_modifiers(CTRL | SHIFT)
         assert ModifierKey.CTRL in mods
         assert ModifierKey.SHIFT in mods
+
+
+# ---------------------------------------------------------------------------
+# 18. ホイール + held_buttons サプレステスト
+# ---------------------------------------------------------------------------
+
+def _wheel_event(angle_y: int, buttons=NO_BTN, mods=NO_MOD):
+    return QtGui.QWheelEvent(
+        QtCore.QPointF(50, 50),
+        QtCore.QPointF(50, 50),
+        QtCore.QPoint(0, 0),
+        QtCore.QPoint(0, angle_y),
+        buttons,
+        mods,
+        QtCore.Qt.ScrollPhase.NoScrollPhase,
+        False,
+    )
+
+
+def _inject_wheel(disp, widget, angle_y, buttons=NO_BTN, mods=NO_MOD):
+    disp._state._processed_events.clear()
+    ev = _wheel_event(angle_y, buttons, mods)
+    disp.eventFilter(widget, ev)
+
+
+class TestWheelWithHeldButtonSuppression:
+
+    def test_right_hold_wheel_suppresses_right_single(self, qtbot):
+        w, rec = _setup_widget(qtbot, {
+            MouseActionKey(MouseButton.RIGHT, ClickType.SINGLE): "R_SINGLE",
+            MouseActionKey(MouseButton.NONE, ClickType.WHEEL_UP, held_buttons=(MouseButton.RIGHT,)): "WHEEL_HELD_R",
+        })
+        d = w._mouse_dispatcher
+        with patch.object(d, "_find_target_widget", return_value=w):
+            _inject_press(d, w, RMB)
+            _inject_wheel(d, w, 120, buttons=RMB)
+            assert "WHEEL_HELD_R" in rec.labels
+
+            rec.clear()
+            _inject_release(d, w, RMB)
+            assert "R_SINGLE" not in rec.labels
+
+    def test_right_hold_wheel_down_suppresses_right_single(self, qtbot):
+        w, rec = _setup_widget(qtbot, {
+            MouseActionKey(MouseButton.RIGHT, ClickType.SINGLE): "R_SINGLE",
+            MouseActionKey(MouseButton.NONE, ClickType.WHEEL_DOWN, held_buttons=(MouseButton.RIGHT,)): "WDOWN_HELD_R",
+        })
+        d = w._mouse_dispatcher
+        with patch.object(d, "_find_target_widget", return_value=w):
+            _inject_press(d, w, RMB)
+            _inject_wheel(d, w, -120, buttons=RMB)
+            assert "WDOWN_HELD_R" in rec.labels
+
+            rec.clear()
+            _inject_release(d, w, RMB)
+            assert "R_SINGLE" not in rec.labels
+
+    def test_wheel_without_held_does_not_suppress(self, qtbot):
+        w, rec = _setup_widget(qtbot, {
+            MouseActionKey(MouseButton.RIGHT, ClickType.SINGLE): "R_SINGLE",
+            MouseActionKey(MouseButton.NONE, ClickType.WHEEL_UP): "WHEEL_PLAIN",
+        })
+        d = w._mouse_dispatcher
+        with patch.object(d, "_find_target_widget", return_value=w):
+            _inject_wheel(d, w, 120)
+            assert "WHEEL_PLAIN" in rec.labels
+
+            rec.clear()
+            _inject_press(d, w, RMB)
+            _inject_release(d, w, RMB)
+            assert "R_SINGLE" in rec.labels
+
+    def test_right_hold_multiple_wheels_suppresses_once(self, qtbot):
+        w, rec = _setup_widget(qtbot, {
+            MouseActionKey(MouseButton.RIGHT, ClickType.SINGLE): "R_SINGLE",
+            MouseActionKey(MouseButton.NONE, ClickType.WHEEL_UP, held_buttons=(MouseButton.RIGHT,)): "WHEEL_HELD_R",
+        })
+        d = w._mouse_dispatcher
+        with patch.object(d, "_find_target_widget", return_value=w):
+            _inject_press(d, w, RMB)
+            _inject_wheel(d, w, 120, buttons=RMB)
+            _inject_wheel(d, w, 120, buttons=RMB)
+            _inject_wheel(d, w, 120, buttons=RMB)
+            assert rec.labels.count("WHEEL_HELD_R") == 3
+
+            rec.clear()
+            _inject_release(d, w, RMB)
+            assert "R_SINGLE" not in rec.labels
+
+    def test_next_right_click_works_after_suppression(self, qtbot):
+        w, rec = _setup_widget(qtbot, {
+            MouseActionKey(MouseButton.RIGHT, ClickType.SINGLE): "R_SINGLE",
+            MouseActionKey(MouseButton.NONE, ClickType.WHEEL_UP, held_buttons=(MouseButton.RIGHT,)): "WHEEL_HELD_R",
+        })
+        d = w._mouse_dispatcher
+        with patch.object(d, "_find_target_widget", return_value=w):
+            _inject_press(d, w, RMB)
+            _inject_wheel(d, w, 120, buttons=RMB)
+            rec.clear()
+            _inject_release(d, w, RMB)
+            assert "R_SINGLE" not in rec.labels
+
+            rec.clear()
+            _inject_press(d, w, RMB)
+            _inject_release(d, w, RMB)
+            assert "R_SINGLE" in rec.labels

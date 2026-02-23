@@ -3,13 +3,14 @@ from ..registry import BasePlugin
 
 
 class BaseViewerPlugin(BasePlugin):
-
-    def create_widget(self, parent=None):
-        return None
+    WIDGET_CLASS = None
 
     @abstractmethod
     def load_content(self, path: str):
         ...
+
+    def render(self, path, widget):
+        pass
 
     def clear(self, widget):
         pass

@@ -1,6 +1,8 @@
 import pytest
 from PySide6 import QtGui, QtWidgets
-from source.image_viewer.viewer.cachemanager import MemoryLimitedImageCache
+from source.image_viewer.viewer.cachemanager import MemoryLimitedImageCache, ProxyWidgetPool
+from source.io.grid.handler import grid_handler
+from source.io.grid.base import BaseGridPlugin
 
 
 def _make_image(w, h):
@@ -60,6 +62,27 @@ def test_get_method(cache):
     assert cache.get("k") is not None
 
 
+def test_peek_returns_value_without_lru_update(cache):
+    size_per = 100 * 100 * 4
+    max_count = cache.max_bytes // size_per
+
+    for i in range(max_count):
+        cache[f"img_{i}"] = _make_image(100, 100)
+
+    result = cache.peek("img_0")
+    assert result is not None
+
+    for i in range(max_count, max_count + 2):
+        cache[f"img_{i}"] = _make_image(100, 100)
+
+    assert "img_0" not in cache
+
+
+def test_peek_returns_default_for_missing(cache):
+    assert cache.peek("missing") is None
+    assert cache.peek("missing", 42) == 42
+
+
 def test_lru_eviction(cache):
     small = _make_image(100, 100)
     size_per = 100 * 100 * 4
@@ -105,3 +128,58 @@ def test_current_bytes_tracking(cache):
     assert cache.current_bytes == 10 * 10 * 4 + 5 * 5 * 4
     del cache["a"]
     assert cache.current_bytes == 5 * 5 * 4
+
+
+class _DummyWidget(QtWidgets.QWidget):
+    pass
+
+
+class _DummyGridPlugin(BaseGridPlugin):
+    NAME = 'test_dummy'
+    EXTENSIONS = ('.dummy',)
+    PRIORITY = 50
+    WIDGET_CLASS = _DummyWidget
+
+    def load(self, path, size=None):
+        return None
+
+    def render(self, path, widget, size=None):
+        pass
+
+
+@pytest.fixture
+def proxy_pool(qtbot):
+    scene = QtWidgets.QGraphicsScene()
+    pool = ProxyWidgetPool(scene, grid_handler)
+    grid_handler.registry.register(_DummyGridPlugin)
+    yield pool
+    pool.reset()
+    plugins = grid_handler.registry._plugins
+    plugins[:] = [p for p in plugins if p is not _DummyGridPlugin]
+
+
+def test_proxy_pool_acquire_returns_proxy(proxy_pool):
+    proxy = proxy_pool.acquire('test_dummy')
+    assert proxy is not None
+    assert isinstance(proxy, QtWidgets.QGraphicsProxyWidget)
+    assert isinstance(proxy.widget(), _DummyWidget)
+
+
+def test_proxy_pool_acquire_unknown_returns_none(proxy_pool):
+    proxy = proxy_pool.acquire('nonexistent')
+    assert proxy is None
+
+
+def test_proxy_pool_release_and_reuse(proxy_pool):
+    proxy1 = proxy_pool.acquire('test_dummy')
+    proxy_pool.release(proxy1, 'test_dummy')
+    proxy2 = proxy_pool.acquire('test_dummy')
+    assert proxy1 is proxy2
+
+
+def test_proxy_pool_reset(proxy_pool):
+    proxy_pool.acquire('test_dummy')
+    proxy_pool.acquire('test_dummy')
+    proxy_pool.reset()
+    assert len(proxy_pool._in_use) == 0
+    assert all(len(v) == 0 for v in proxy_pool._pools.values())

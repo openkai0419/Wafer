@@ -77,6 +77,17 @@ def test_image_plugin_load_nonexistent():
     assert result is None
 
 
-def test_image_create_cell_widget():
-    plugin = ImageGridPlugin()
-    assert plugin.create_cell_widget() is None
+def test_image_widget_class_is_none():
+    assert ImageGridPlugin.WIDGET_CLASS is None
+
+
+def test_has_widget_image():
+    assert not grid_handler.has_widget('photo.jpg')
+
+
+def test_has_widget_unknown():
+    assert not grid_handler.has_widget('file.xyz')
+
+
+def test_render_does_nothing_without_widget_plugin():
+    grid_handler.render('photo.jpg', None)

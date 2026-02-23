@@ -50,9 +50,24 @@ def test_image_plugin_extensions():
     assert '.gif' in ImageViewerPlugin.EXTENSIONS
 
 
-def test_image_plugin_no_custom_widget():
-    plugin = ImageViewerPlugin()
-    assert plugin.create_widget() is None
+def test_image_plugin_widget_class_is_none():
+    assert ImageViewerPlugin.WIDGET_CLASS is None
+
+
+def test_has_widget_image():
+    assert not viewer_handler.has_widget('photo.jpg')
+
+
+def test_has_widget_unknown():
+    assert not viewer_handler.has_widget('file.xyz')
+
+
+def test_widget_classes_empty():
+    assert viewer_handler.widget_classes() == {}
+
+
+def test_render_does_nothing_without_widget_plugin():
+    viewer_handler.render('photo.jpg', None)
 
 
 def test_image_plugin_load_content(tmp_path):
@@ -73,19 +88,5 @@ def test_load_content_function(tmp_path):
 def test_create_default_widget(qtbot):
     from source.image_viewer.shower.image_viewer import ImageViewerWidget
     widget = viewer_handler.create_default_widget()
-    qtbot.addWidget(widget)
-    assert isinstance(widget, ImageViewerWidget)
-
-
-def test_create_widget_for_image(qtbot):
-    from source.image_viewer.shower.image_viewer import ImageViewerWidget
-    widget = viewer_handler.create_widget('photo.jpg')
-    qtbot.addWidget(widget)
-    assert isinstance(widget, ImageViewerWidget)
-
-
-def test_create_widget_for_unknown(qtbot):
-    from source.image_viewer.shower.image_viewer import ImageViewerWidget
-    widget = viewer_handler.create_widget('file.xyz')
     qtbot.addWidget(widget)
     assert isinstance(widget, ImageViewerWidget)

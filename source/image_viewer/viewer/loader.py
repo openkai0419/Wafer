@@ -2,11 +2,12 @@ from ...common.funcs import uipx
 from ...common.profiling import profiler
 from ...io.grid.handler import grid_handler
 from ...qt.thread import AdaptiveThreadPool
-from PySide6 import QtCore, QtGui, QtWidgets
+from PySide6 import QtCore, QtGui
+
 
 class ImageLoaderSignal(QtCore.QObject):
     image_ready = QtCore.Signal(int, object)
-    widget_ready = QtCore.Signal(int, object, object)
+    widget_ready = QtCore.Signal(int, str)
 
 
 class ImageLoaderRunnable(QtCore.QRunnable):
@@ -30,37 +31,38 @@ class ImageLoaderRunnable(QtCore.QRunnable):
         return self.receiver.error_placeholder.scaled(
             self.size,
             QtCore.Qt.IgnoreAspectRatio,
-            QtCore.Qt.SmoothTransformation 
-            ) 
+            QtCore.Qt.SmoothTransformation
+        )
 
     @AdaptiveThreadPool.register(30, 1000)
     def run(self):
         if self._cancelled:
             return
 
-        cache_key = (self.path, self.size.width(), self.size.height())
-        image = self.receiver.image_cache.get(cache_key)
+        plugin_cls = grid_handler.resolve(self.path)
+        if plugin_cls is not None and plugin_cls.WIDGET_CLASS is not None:
+            if not self._cancelled:
+                self.signal.widget_ready.emit(self.index, plugin_cls.NAME)
+            return
+
+        cached = self.receiver.image_cache.peek(self.path)
+        if cached is not None and cached.width() >= self.size.width() and cached.height() >= self.size.height():
+            if not self._cancelled:
+                self.signal.image_ready.emit(self.index, cached)
+            return
 
         if self._cancelled:
-                return
-        
-        if image is None:
-            image = grid_handler.load(self.path, self.size)
+            return
+
+        image = grid_handler.load(self.path, self.size)
 
         if image is None:
             image = self.get_error_image()
 
         if self._cancelled:
             return
+
         if isinstance(image, QtGui.QImage):
             if image.isNull():
                 image = self.get_error_image()
-            self.receiver.image_cache[cache_key] = image
             self.signal.image_ready.emit(self.index, image)
-        
-        if isinstance(image, list):
-            if issubclass(image[0], QtWidgets.QWidget):
-                self.signal.widget_ready.emit(self.index, image[0], image[1])
-
-
-        

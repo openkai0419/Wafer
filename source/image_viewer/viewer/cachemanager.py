@@ -107,6 +107,42 @@ class GraphicsItemPool:
         for item in list(self._in_use):
             self.release(item)
 
+
+class ProxyWidgetPool:
+    def __init__(self, scene, grid_handler):
+        self._pools: dict[str, list[QtWidgets.QGraphicsProxyWidget]] = {}
+        self._in_use: set[QtWidgets.QGraphicsProxyWidget] = set()
+        self._scene = scene
+        self._grid = grid_handler
+
+    def acquire(self, plugin_name: str) -> QtWidgets.QGraphicsProxyWidget:
+        pool = self._pools.get(plugin_name)
+        if pool:
+            proxy = pool.pop()
+        else:
+            plugin_cls = self._grid.registry.get(plugin_name)
+            if plugin_cls is None or plugin_cls.WIDGET_CLASS is None:
+                return None
+            widget = plugin_cls.WIDGET_CLASS()
+            proxy = self._scene.addWidget(widget)
+        proxy.show()
+        self._in_use.add(proxy)
+        return proxy
+
+    def release(self, proxy: QtWidgets.QGraphicsProxyWidget, plugin_name: str):
+        proxy.hide()
+        self._in_use.discard(proxy)
+        self._pools.setdefault(plugin_name, []).append(proxy)
+
+    def reset(self):
+        for proxy in list(self._in_use):
+            proxy.hide()
+        self._in_use.clear()
+        for pool in self._pools.values():
+            for proxy in pool:
+                proxy.hide()
+        self._pools.clear()
+
 @singleton
 class MemoryLimitedImageCache:
     def __init__(self, max_mbytes=100):
@@ -158,3 +194,6 @@ class MemoryLimitedImageCache:
             self.cache.move_to_end(key)
             return self.cache[key]
         return default
+
+    def peek(self, key, default=None):
+        return self.cache.get(key, default)

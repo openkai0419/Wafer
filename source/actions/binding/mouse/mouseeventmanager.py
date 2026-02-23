@@ -380,7 +380,7 @@ class MouseEventManager:
                 AppLogger.warning(f"Mouse resolver failed: {key}", exc=e)
                 handled = False
         if handled:
-            if key.click_type == ClickType.SINGLE and key.held_buttons:
+            if key.held_buttons:
                 self._state.add_suppress_group(list(key.held_buttons))
             event = args[0] if args else None
             if event is not None and hasattr(event, 'accept'):

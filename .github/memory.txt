@@ -166,38 +166,52 @@ source/common/signal.py:
 source/common/profiling.py:
   - FunctionProfilerのみ。@profiler.profile で関数計測。ログはAppLogger.debug経由
 
-■ IO（プラグインレジストリ + ファイル読み込み）
+■ IO（プラグインレジストリ + ハンドラ）
 - source/io/registry.py: 拡張子ベース + 優先度ソートの共通プラグインレジストリ基盤。
   - BasePlugin(ABC): NAME/EXTENSIONS/PRIORITY/match(path) を持つ基底クラス。
     EXTENSIONS=() は全ファイルマッチ。PRIORITY は大きいほど高優先。
-  - PluginRegistry: register/resolve/resolve_all/plugins/names/info メソッド。
+  - PluginRegistry: register/resolve/resolve_all/plugins/names/get/info メソッド。
     register時にPRIORITY降順ソート。resolveは最高優先度のマッチを返す。
-  - Collector/Grid/Viewer の3つのレジストリが共通基盤を使用。
+  - Collector/Grid/Viewer の3つのハンドラクラスがそれぞれ PluginRegistry を所有。
+
+- source/io/grid/: GridView用サムネイル読み込み。
+  - base.py: BaseGridPlugin(BasePlugin, ABC) — load(path, size) + create_cell_widget(parent)。
+  - image.py: ImageGridPlugin — OpenCV/Qt画像ロード。PRIORITY=100。
+  - handler.py: GridHandler クラス（シングルトン: grid_handler）。
+    load(path, size): プラグイン→フォールバック(FileThumbnailer)の順で画像取得。
+    _fallback_load(): Windowsシェルサムネイルによる標準フォールバック（旧FallbackGridPlugin相当）。
+    ImageGridPlugin を自動登録済み。
+
+- source/io/viewer/: FileViewer用個別表示プラグイン。
+  - base.py: BaseViewerPlugin(BasePlugin, ABC) — create_widget(parent, optional)/load_content(path, abstract)/clear(widget, optional)。
+  - image.py: ImageViewerPlugin — load_content()でgrid_handler.load()を呼ぶだけ。PRIORITY=100。
+    create_widget()は未実装（標準のImageViewerWidgetをViewerHandlerが直接生成）。
+  - handler.py: ViewerHandler クラス（シングルトン: viewer_handler(grid_handler)）。
+    create_default_widget(): ImageViewerWidget を標準Widgetとして生成。
+    create_widget(path): プラグインのcreate_widget→標準Widget のフォールバック。
+    load_content(path): プラグインのload_content→grid_handler.load のフォールバック。
+    ImageViewerPlugin を自動登録済み。現在は production では未使用（テストのみ）。
 
 - source/io/collector/: メタデータ収集プラグイン（Collectorプロセス用）。
   - base.py: BaseCollectorPlugin(BasePlugin, ABC) + CollectorResult(dataclass)。
   - image.py: ImageCollectorPlugin — PIL+ExifParserでメタデータ抽出。PRIORITY=100。
-  - __init__.py: collector_registry + get_collector_names/get_collector_info/get_collectors_for_path。
+  - handler.py: CollectorHandler クラス（シングルトン: collector_handler）。
+    names()/info()/collectors_for_path() を提供。ImageCollectorPlugin を自動登録済み。
 
-- source/io/grid/: GridView用サムネイル読み込みプラグイン。
-  - base.py: BaseGridPlugin(BasePlugin, ABC) — load(path, size) + create_cell_widget(parent)。
-    load()の戻り値: QImage→画像表示、QWidget→Widget埋め込み、None→エラー。
-  - image.py: ImageGridPlugin — OpenCV/Qt画像ロード。PRIORITY=100。
-  - fallback.py: FallbackGridPlugin — Windowsシェルサムネイル。PRIORITY=0, EXTENSIONS=()。
-  - __init__.py: grid_registry + load(path, size) 関数。
+- 各ディレクトリの __init__.py は空。外部からは handler.py のシングルトンを直接 import する。
+- source/io/collector/exif_parser.py: ExifParser（全 classmethod/staticmethod）。
 
-- source/io/viewer/: FileViewer用個別表示Widgetプラグイン。
-  - base.py: BaseViewerPlugin(BasePlugin, ABC) — create_widget(parent)/load_content(path)/clear(widget)。
-    load_content()の戻り値: QImage→画像表示、QWidget→Widget埋め込み。
-  - image.py: ImageViewerPlugin — ImageViewerWidget管理。PRIORITY=100。
-  - __init__.py: viewer_registry + resolve_viewer(path) 関数。
-
-source/io/manager.py: 削除済み（LoaderClass, ReaderClass, BaseReader は廃止）。
-source/io/image_reader.py: 削除済み（ImageCollectorPluginへ統合済み）。
-source/io/bootstrap.py: 削除済み（レジストリ方式では使用時importで自動初期化されるため不要）。
-source/io/collector/exif_parser.py:
-  - ExifParser は全メソッド classmethod/staticmethod のステートレスユーティリティ。
-  - io/ 直下から io/collector/ に移動（参照元が collector/image.py のみのため）。
+■ IO プラグイン設計方針（将来方向）
+- Grid/Viewer のプラグインは「Widget を返す」か「Image を返す」かの両方に対応する。
+  - Image(QImage) を返した場合: 標準の ImageViewerWidget でその画像を表示。
+  - Widget(QWidget) を返した場合: そのカスタムWidgetに表示を委譲。
+- Grid側の応用例: 動画プラグインがマウスオーバーで動画再生するカスタムセルWidgetを返す。
+- Viewer側の応用例: 動画プラグインが自動再生・フィットモード等の専用ViewerWidgetを返す。
+- FileViewerWidget は将来的に QStackedWidget で複数のプラグインWidgetを管理し、
+  ファイルの拡張子に応じて表示Widgetを切り替える設計を目指す。
+  - 起動時に全登録プラグインの create_widget() を呼んで Widget を事前生成・スタックに積む。
+  - パス変更時: resolve → スタック切り替え → load_content → 表示。
+  - create_widget() が None のプラグイン（例: ImageViewerPlugin）は標準Widget(ImageViewerWidget)を使用。
 
 ■ テスト
 - tests は source と同じ階層構造を維持し、ファイル名は test_<source_file>.py。

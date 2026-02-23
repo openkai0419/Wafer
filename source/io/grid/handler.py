@@ -1,11 +1,12 @@
-from PySide6 import QtCore
+from PySide6 import QtCore, QtGui
 
 from ...common.logs import AppLogger
+from ..registry import PluginRegistry
 from .base import BaseGridPlugin
+from .image import ImageGridPlugin
 
 
 def _pil_to_qimage(img):
-    from PySide6 import QtGui
     if img.mode != 'RGBA':
         img = img.convert('RGBA')
     data = img.tobytes('raw', 'BGRA')
@@ -13,21 +14,19 @@ def _pil_to_qimage(img):
     return qimage.copy()
 
 
-class FallbackGridPlugin(BaseGridPlugin):
-    NAME = 'fallback'
-    EXTENSIONS = ()
-    PRIORITY = 0
+class GridHandler:
 
-    _thumbnailer = None
+    def __init__(self):
+        self.registry = PluginRegistry()
+        self._thumbnailer = None
 
-    @classmethod
-    def _get_thumbnailer(cls):
-        if cls._thumbnailer is None:
+    def _get_thumbnailer(self):
+        if self._thumbnailer is None:
             from ...os.thumbnails import FileThumbnailer
-            cls._thumbnailer = FileThumbnailer()
-        return cls._thumbnailer
+            self._thumbnailer = FileThumbnailer()
+        return self._thumbnailer
 
-    def load(self, path: str, size=None):
+    def _fallback_load(self, path: str, size=None) -> QtGui.QImage | None:
         try:
             thumb_size = 256
             if size is not None:
@@ -40,5 +39,17 @@ class FallbackGridPlugin(BaseGridPlugin):
                 qimage = qimage.scaled(size, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
             return qimage
         except Exception as e:
-            AppLogger.debug(f'[FallbackGridPlugin] Failed: {path} ({e})')
+            AppLogger.debug(f'[GridHandler] Fallback load failed: {path} ({e})')
             return None
+
+    def load(self, path: str, size=None) -> QtGui.QImage | None:
+        plugin_cls = self.registry.resolve(path)
+        if plugin_cls is not None:
+            result = plugin_cls().load(path, size)
+            if result is not None:
+                return result
+        return self._fallback_load(path, size)
+
+
+grid_handler = GridHandler()
+grid_handler.registry.register(ImageGridPlugin)

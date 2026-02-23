@@ -1,13 +1,8 @@
 import py_compile
 import pytest
 
-from source.io.collector import (
-    collector_registry,
-    get_collector_names,
-    get_collector_info,
-    get_collectors_for_path,
-    CollectorResult,
-)
+from source.io.collector.handler import collector_handler
+from source.io.collector.base import CollectorResult
 from source.io.collector.base import BaseCollectorPlugin
 from source.io.collector.image import ImageCollectorPlugin
 
@@ -20,8 +15,8 @@ def test_compile_image():
     py_compile.compile('source/io/collector/image.py')
 
 
-def test_compile_init():
-    py_compile.compile('source/io/collector/__init__.py')
+def test_compile_handler():
+    py_compile.compile('source/io/collector/handler.py')
 
 
 def test_base_is_abstract():
@@ -30,7 +25,7 @@ def test_base_is_abstract():
 
 
 def test_image_plugin_registered():
-    names = collector_registry.names()
+    names = collector_handler.names()
     assert 'image' in names
 
 
@@ -45,24 +40,24 @@ def test_image_plugin_match():
 
 
 def test_get_collector_names():
-    names = get_collector_names()
+    names = collector_handler.names()
     assert 'image' in names
 
 
 def test_get_collector_info():
-    info = get_collector_info()
+    info = collector_handler.info()
     assert len(info) >= 1
     name, exts = info[0]
     assert name == 'image'
     assert '.jpg' in exts
 
 
-def test_get_collectors_for_path_image():
-    assert 'image' in get_collectors_for_path('photo.jpg')
+def test_collectors_for_path_image():
+    assert 'image' in collector_handler.collectors_for_path('photo.jpg')
 
 
-def test_get_collectors_for_path_non_image():
-    assert 'image' not in get_collectors_for_path('doc.txt')
+def test_collectors_for_path_non_image():
+    assert 'image' not in collector_handler.collectors_for_path('doc.txt')
 
 
 def test_image_plugin_process_success(tmp_path):
@@ -92,8 +87,8 @@ def test_image_plugin_process_failure():
 
 
 def test_registry_get_by_name():
-    assert collector_registry.get('image') is ImageCollectorPlugin
-    assert collector_registry.get('nonexistent') is None
+    assert collector_handler.registry.get('image') is ImageCollectorPlugin
+    assert collector_handler.registry.get('nonexistent') is None
 
 
 def test_collector_result_to_dict_omits_none():

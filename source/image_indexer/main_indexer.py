@@ -4,7 +4,7 @@ from ..common.logs import AppLogger
 from ..db.indexer import FileIndexer
 from ..db.db_utils import clean_database, delete_database_files
 from ..db.setting_db import SettingDB
-from ..io.collector import get_collector_info
+from ..io.collector.handler import collector_handler
 from ..zmq.node import Node
 from .dispatcher import CollectorDispatcher
 from .progress_notifier import ProgressAggregator
@@ -33,7 +33,7 @@ class IndexerProcess:
     def start_watch(self):
         AppLogger.info(f'indexer start_watch: {self.dname}')
         self.setting_db = SettingDB(get_setting_db(self.dname))
-        self.data_db = FileIndexer(get_data_db(self.dname), collectors=get_collector_info())
+        self.data_db = FileIndexer(get_data_db(self.dname), collectors=collector_handler.info())
         self.data_db.set_exclude_paths(self.setting_db.get_all_ignore_folders())
         if self.setting_db.get_kv('deleteflag', False) == True:
             self.delete()

@@ -8,7 +8,7 @@ from source.common.funcs import normalize_path
 from source.common.hashes import fast_sig_hash
 from source.db.file_db import FileDB
 from source.db.indexer import FileIndexer
-from source.io.collector import get_collector_info
+from source.io.collector.handler import collector_handler
 from source.io.collector.base import CollectorResult
 from source.io.collector.image import ImageCollectorPlugin
 from source.image_indexer.writer import CollectionWriter
@@ -77,7 +77,7 @@ class TestImagePipeline:
         jpg_path = img_dir / 'test.jpg'
         _create_test_image(jpg_path, width=200, height=100)
 
-        collectors = get_collector_info()
+        collectors = collector_handler.info()
         db_path = tmp_path / 'test.db'
 
         with FileIndexer(db_path, collectors=collectors) as idx:
@@ -159,7 +159,7 @@ class TestImagePipeline:
         txt_path = file_dir / 'readme.txt'
         _create_test_file(txt_path, b'hello world')
 
-        collectors = get_collector_info()
+        collectors = collector_handler.info()
         db_path = tmp_path / 'test.db'
 
         with FileIndexer(db_path, collectors=collectors) as idx:
@@ -190,7 +190,7 @@ class TestImagePipeline:
         _create_test_file(txt_path, b'text content')
         _create_test_file(bin_path, b'\x00' * 256)
 
-        collectors = get_collector_info()
+        collectors = collector_handler.info()
         db_path = tmp_path / 'test.db'
 
         with FileIndexer(db_path, collectors=collectors) as idx:
@@ -257,7 +257,7 @@ class TestImagePipeline:
         _create_test_image(f1, 50, 50)
         _create_test_image(f2, 50, 50)
 
-        collectors = get_collector_info()
+        collectors = collector_handler.info()
         db_path = tmp_path / 'test.db'
 
         with FileIndexer(db_path, collectors=collectors) as idx:
@@ -291,7 +291,7 @@ class TestImagePipeline:
         img_path = file_dir / 'evolving.jpg'
         _create_test_image(img_path, 80, 60)
 
-        collectors = get_collector_info()
+        collectors = collector_handler.info()
         db_path = tmp_path / 'test.db'
 
         with FileIndexer(db_path, collectors=collectors) as idx:
@@ -351,7 +351,7 @@ class TestDispatcherSimulation:
             _create_test_image(p, 100 + i * 10, 80 + i * 5, 'PNG')
             paths.append(p)
 
-        collectors = get_collector_info()
+        collectors = collector_handler.info()
         db_path = tmp_path / 'test.db'
 
         with FileIndexer(db_path, collectors=collectors) as idx:
@@ -411,7 +411,7 @@ class TestDispatcherSimulation:
         img = img_dir / 'orphan.jpg'
         _create_test_image(img, 50, 50)
 
-        collectors = get_collector_info()
+        collectors = collector_handler.info()
         db_path = tmp_path / 'test.db'
 
         with FileIndexer(db_path, collectors=collectors) as idx:

@@ -4,9 +4,8 @@ from ..registry import BasePlugin
 
 class BaseViewerPlugin(BasePlugin):
 
-    @abstractmethod
     def create_widget(self, parent=None):
-        ...
+        return None
 
     @abstractmethod
     def load_content(self, path: str):

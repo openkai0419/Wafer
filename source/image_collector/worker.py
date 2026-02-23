@@ -6,7 +6,7 @@ import threading
 from ..common.logs import AppLogger
 from ..common.funcs import normalize_path
 from ..zmq.node import Node
-from ..io.collector import collector_registry
+from ..io.collector.handler import collector_handler
 from ..io.collector.base import CollectorResult
 
 
@@ -18,7 +18,7 @@ class CollectorWorker:
     def __init__(self, db_name: str, plugin_name: str):
         self.db_name = db_name
         self.plugin_name = plugin_name
-        plugin_cls = collector_registry.get(plugin_name)
+        plugin_cls = collector_handler.registry.get(plugin_name)
         if not plugin_cls:
             raise ValueError(f'Unknown plugin: {plugin_name}')
         self._plugin = plugin_cls()

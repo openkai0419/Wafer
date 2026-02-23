@@ -6,7 +6,7 @@ from ...qt.debounce import qt_debounce, qt_throttle
 from ...common.profiling import profiler
 from ...common.logs import AppLogger
 from ...db.query import MetaInfoSearchEngine
-from ...io.grid import load as grid_load
+from ...io.grid.handler import grid_handler
 from ...qt.thread import CancellableRunnable, main_thread
 from .meta_viewer import MetaListWidget
 from .image_viewer import ImageViewerWidget
@@ -22,7 +22,7 @@ class _ImageWorker(CancellableRunnable):
 
     @profiler.profile
     def execute(self):
-        image = grid_load(self.path)
+        image = grid_handler.load(self.path)
         if image is None or image.isNull():
             return None
         return (self.path, image)

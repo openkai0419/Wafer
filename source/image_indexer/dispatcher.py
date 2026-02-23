@@ -5,7 +5,7 @@ from ..common.logs import AppLogger
 from ..common.profiling import profiler
 from ..db.indexer import FileIndexer
 from ..os.process import Proc
-from ..io.collector import get_collector_names
+from ..io.collector.handler import collector_handler
 
 _BATCH_SIZE = 1000
 _DISPATCH_INTERVAL = 2.0
@@ -16,7 +16,7 @@ class CollectorDispatcher:
     def __init__(self, db_name: str, indexer: FileIndexer, collectors=None):
         self._db_name = db_name
         self._indexer = indexer
-        self._collectors = list(collectors or get_collector_names())
+        self._collectors = list(collectors or collector_handler.names())
         self._node = None
         self._stop = threading.Event()
         self._dispatch_event = threading.Event()

@@ -11,7 +11,7 @@ from ...qt.thread import CancellableRunnable, main_thread
 from .meta_viewer import MetaListWidget
 from .image_viewer import ImageViewerWidget
 from .file_model import FileViewModel
-from ..viewer.cachemanager import MemoryLimitedImageCache
+from ..viewer.cachemanager import MemoryLimitedImageCache, fullsize_key
 from ..viewer_settings import main_setting
 
 
@@ -157,7 +157,7 @@ class FileViewerWidget(QtWidgets.QSplitter):
     def _load_and_show_content(self, path):
         if not path:
             return
-        key = (path, None, None)
+        key = fullsize_key(path)
         image = self.image_cache.get(key)
         if image is not None and not image.isNull():
             self._pending_content = (path, image)
@@ -176,7 +176,7 @@ class FileViewerWidget(QtWidgets.QSplitter):
         if result is None:
             return
         path, image = result
-        self.image_cache[(path, None, None)] = image
+        self.image_cache[fullsize_key(path)] = image
         if path != self._loading_path:
             return
         self._pending_content = (path, image)

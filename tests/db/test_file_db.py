@@ -184,13 +184,13 @@ def test_upsert_collection_results(tmp_path):
         [('c:/a.jpg', 'src1', 'a.jpg', 1.5)],
         [('c:/a.jpg', 'width', '1920')],
         [('hash1', 'rating', '5')],
-        [('src1', 'image', 'ok', 2.0)],
+        [('src1', 'exif', 'ok', 2.0)],
     )
     row = db.read_conn.execute("SELECT aspect_ratio FROM files WHERE path='c:/a.jpg'").fetchone()
     assert row[0] == 1.5
     status_row = db.read_conn.execute("SELECT status FROM sources WHERE source='src1'").fetchone()
     assert status_row[0] == 'ok'
-    cs_row = db.read_conn.execute("SELECT status FROM collection_status WHERE source='src1' AND collector='image'").fetchone()
+    cs_row = db.read_conn.execute("SELECT status FROM collection_status WHERE source='src1' AND collector='exif'").fetchone()
     assert cs_row[0] == 'ok'
     meta_row = db.read_conn.execute("SELECT value FROM meta_info WHERE path='c:/a.jpg' AND key='width'").fetchone()
     assert meta_row[0] == '1920'
@@ -205,8 +205,8 @@ def test_insert_pending_collection(tmp_path):
         [('src1', 'hash1', 100, 1.0, 1.0, 1.0, 'indexed'), ('src2', 'hash2', 200, 2.0, 2.0, 2.0, 'indexed')],
         [('c:/a.jpg', 'src1', 'a.jpg', None), ('c:/b.jpg', 'src2', 'b.jpg', None)],
     )
-    db.insert_pending_collection(['src1', 'src2'], ['image'])
-    rows = db.get_pending_sources('image')
+    db.insert_pending_collection(['src1', 'src2'], ['exif'])
+    rows = db.get_pending_sources('exif')
     assert len(rows) == 2
     sources = {r[0] for r in rows}
     assert sources == {'src1', 'src2'}
@@ -221,9 +221,9 @@ def test_get_pending_sources_excludes_completed(tmp_path):
         [('src1', 'hash1', 100, 1.0, 1.0, 1.0, 'indexed'), ('src2', 'hash2', 200, 2.0, 2.0, 2.0, 'indexed')],
         [('c:/a.jpg', 'src1', 'a.jpg', None), ('c:/b.jpg', 'src2', 'b.jpg', None)],
     )
-    db.insert_pending_collection(['src1', 'src2'], ['image'])
-    db.upsert_collection_results([], [], [], [], [('src1', 'image', 'ok', 1.0)])
-    rows = db.get_pending_sources('image')
+    db.insert_pending_collection(['src1', 'src2'], ['exif'])
+    db.upsert_collection_results([], [], [], [], [('src1', 'exif', 'ok', 1.0)])
+    rows = db.get_pending_sources('exif')
     assert len(rows) == 1
     assert rows[0][0] == 'src2'
     db.exit()
@@ -237,7 +237,7 @@ def test_collection_status_cascade_delete(tmp_path):
         [('src1', 'hash1', 100, 1.0, 1.0, 1.0, 'indexed')],
         [('c:/a.jpg', 'src1', 'a.jpg', None)],
     )
-    db.insert_pending_collection(['src1'], ['image'])
+    db.insert_pending_collection(['src1'], ['exif'])
     db.delete_sources_by_paths(['src1'])
     rows = db.conn.execute("SELECT COUNT(*) FROM collection_status").fetchone()[0]
     assert rows == 0
@@ -254,7 +254,7 @@ def test_rename_paths_single_file(tmp_path):
         [('c:/old/img.jpg', 'width', '1920')],
         [('hash1', 'rating', '5')],
     )
-    db.insert_pending_collection(['c:/old/img.jpg'], ['image'])
+    db.insert_pending_collection(['c:/old/img.jpg'], ['exif'])
     db.rename_paths([('c:/old/img.jpg', 'c:/new/img.jpg')])
     assert db.read_conn.execute("SELECT COUNT(*) FROM sources WHERE source='c:/old/img.jpg'").fetchone()[0] == 0
     src_row = db.read_conn.execute("SELECT file_hash, size FROM sources WHERE source='c:/new/img.jpg'").fetchone()
@@ -333,14 +333,14 @@ def _setup_db_with_pending(tmp_path, sources_count=3):
     srcs = [(f'src{i}', f'h{i}', 100, 1.0, 1.0, 1.0, 'indexed') for i in range(sources_count)]
     imgs = [(f'src{i}', f'src{i}', f'f{i}.jpg', 1.0) for i in range(sources_count)]
     db.upsert_basic_sources(srcs, imgs)
-    db.insert_pending_collection([f'src{i}' for i in range(sources_count)], ['image'])
+    db.insert_pending_collection([f'src{i}' for i in range(sources_count)], ['exif'])
     return db
 
 
 def test_mark_dispatched(tmp_path):
     db = _setup_db_with_pending(tmp_path)
-    db.mark_dispatched(['src0', 'src1'], 'image')
-    pending = db.get_pending_sources('image')
+    db.mark_dispatched(['src0', 'src1'], 'exif')
+    pending = db.get_pending_sources('exif')
     assert len(pending) == 1
     assert pending[0][0] == 'src2'
     dispatched = db.read_conn.execute(
@@ -352,8 +352,8 @@ def test_mark_dispatched(tmp_path):
 
 def test_mark_dispatched_empty(tmp_path):
     db = _setup_db_with_pending(tmp_path)
-    db.mark_dispatched([], 'image')
-    pending = db.get_pending_sources('image')
+    db.mark_dispatched([], 'exif')
+    pending = db.get_pending_sources('exif')
     assert len(pending) == 3
     db.exit()
 
@@ -364,7 +364,7 @@ def test_mark_dispatched_only_affects_pending(tmp_path):
         "UPDATE collection_status SET status='ok' WHERE source='src0'"
     )
     db.conn.commit()
-    db.mark_dispatched(['src0', 'src1'], 'image')
+    db.mark_dispatched(['src0', 'src1'], 'exif')
     ok = db.read_conn.execute(
         "SELECT status FROM collection_status WHERE source='src0'"
     ).fetchone()
@@ -374,20 +374,20 @@ def test_mark_dispatched_only_affects_pending(tmp_path):
 
 def test_reset_stale_dispatched(tmp_path):
     db = _setup_db_with_pending(tmp_path)
-    db.mark_dispatched(['src0', 'src1'], 'image')
-    changed = db.reset_stale_dispatched(['image'])
+    db.mark_dispatched(['src0', 'src1'], 'exif')
+    changed = db.reset_stale_dispatched(['exif'])
     assert changed == 2
-    pending = db.get_pending_sources('image')
+    pending = db.get_pending_sources('exif')
     assert len(pending) == 3
     db.exit()
 
 
 def test_reset_stale_dispatched_no_collectors(tmp_path):
     db = _setup_db_with_pending(tmp_path)
-    db.mark_dispatched(['src0'], 'image')
+    db.mark_dispatched(['src0'], 'exif')
     changed = db.reset_stale_dispatched()
     assert changed == 1
-    pending = db.get_pending_sources('image')
+    pending = db.get_pending_sources('exif')
     assert len(pending) == 3
     db.exit()
 
@@ -398,8 +398,8 @@ def test_reset_stale_dispatched_does_not_affect_ok(tmp_path):
         "UPDATE collection_status SET status='ok' WHERE source='src0'"
     )
     db.conn.commit()
-    db.mark_dispatched(['src1'], 'image')
-    changed = db.reset_stale_dispatched(['image'])
+    db.mark_dispatched(['src1'], 'exif')
+    changed = db.reset_stale_dispatched(['exif'])
     assert changed == 1
     ok = db.read_conn.execute(
         "SELECT status FROM collection_status WHERE source='src0'"

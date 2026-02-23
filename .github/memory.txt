@@ -199,9 +199,9 @@ source/common/profiling.py:
 
 - source/io/collector/: メタデータ収集プラグイン（Collectorプロセス用）。
   - base.py: BaseCollectorPlugin(BasePlugin, ABC) + CollectorResult(dataclass)。
-  - image.py: ImageCollectorPlugin — PIL+ExifParserでメタデータ抽出。PRIORITY=100。
+  - exif.py: ExifCollectorPlugin — PIL+ExifParserでメタデータ抽出。NAME='exif'。PRIORITY=100。
   - handler.py: CollectorHandler クラス（シングルトン: collector_handler）。
-    names()/info()/collectors_for_path() を提供。ImageCollectorPlugin を自動登録済み。
+    names()/info()/collectors_for_path() を提供。ExifCollectorPlugin を自動登録済み。
 
 - 各ディレクトリの __init__.py は空。外部からは handler.py のシングルトンを直接 import する。
 - source/io/collector/exif_parser.py: ExifParser（全 classmethod/staticmethod）。

@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 from PySide6 import QtCore, QtGui
 
 from source.image_viewer.viewer.loader import ImageLoaderRunnable
+from source.image_viewer.viewer.cachemanager import fullsize_key
 
 
 def test_compile():
@@ -125,6 +126,58 @@ class TestCacheHitWithSufficientSize:
     def test_cache_miss_width_sufficient_height_insufficient(self):
         cached_img = _make_image(300, 100)
         receiver, cache = _make_receiver({"test.jpg": cached_img})
+        new_img = _make_image(194, 194)
+
+        runnable = ImageLoaderRunnable(0, "test.jpg", QtCore.QSize(200, 200), receiver)
+        emitted = []
+        runnable.signal.image_ready.connect(lambda idx, img: emitted.append((idx, img)))
+
+        with patch("source.image_viewer.viewer.loader.grid_handler") as mock_gh:
+            mock_gh.resolve.return_value = None
+            mock_gh.load.return_value = new_img
+            runnable.run()
+
+        mock_gh.load.assert_called_once()
+        assert emitted[0][1] is new_img
+
+    def test_viewer_cache_fallback_hit(self):
+        fullsize_img = _make_image(2000, 2000)
+        receiver, cache = _make_receiver({fullsize_key("test.jpg"): fullsize_img})
+
+        runnable = ImageLoaderRunnable(0, "test.jpg", QtCore.QSize(200, 200), receiver)
+        emitted = []
+        runnable.signal.image_ready.connect(lambda idx, img: emitted.append((idx, img)))
+
+        with patch("source.image_viewer.viewer.loader.grid_handler") as mock_gh:
+            mock_gh.resolve.return_value = None
+            runnable.run()
+
+        assert len(emitted) == 1
+        assert emitted[0][1] is fullsize_img
+        mock_gh.load.assert_not_called()
+
+    def test_fullsize_cache_preferred_over_grid_cache(self):
+        grid_img = _make_image(300, 300)
+        viewer_img = _make_image(2000, 2000)
+        receiver, cache = _make_receiver({
+            "test.jpg": grid_img,
+            fullsize_key("test.jpg"): viewer_img,
+        })
+
+        runnable = ImageLoaderRunnable(0, "test.jpg", QtCore.QSize(200, 200), receiver)
+        emitted = []
+        runnable.signal.image_ready.connect(lambda idx, img: emitted.append((idx, img)))
+
+        with patch("source.image_viewer.viewer.loader.grid_handler") as mock_gh:
+            mock_gh.resolve.return_value = None
+            runnable.run()
+
+        assert len(emitted) == 1
+        assert emitted[0][1] is viewer_img
+
+    def test_viewer_cache_too_small_triggers_load(self):
+        small_img = _make_image(100, 100)
+        receiver, cache = _make_receiver({fullsize_key("test.jpg"): small_img})
         new_img = _make_image(194, 194)
 
         runnable = ImageLoaderRunnable(0, "test.jpg", QtCore.QSize(200, 200), receiver)

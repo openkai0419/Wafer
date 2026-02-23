@@ -5,6 +5,8 @@ from ..registry import PluginRegistry
 from .base import BaseGridPlugin
 from .image import ImageGridPlugin
 
+VIEWER_THUMBNAIL_DEFAULT_SIZE = 512
+
 
 def _pil_to_qimage(img):
     if img.mode != 'RGBA':
@@ -19,6 +21,7 @@ class GridHandler:
     def __init__(self):
         self.registry = PluginRegistry()
         self._thumbnailer = None
+        self.viewer_thumbnail_size = VIEWER_THUMBNAIL_DEFAULT_SIZE
 
     def _get_thumbnailer(self):
         if self._thumbnailer is None:
@@ -28,7 +31,7 @@ class GridHandler:
 
     def _fallback_load(self, path: str, size=None) -> QtGui.QImage | None:
         try:
-            thumb_size = 256
+            thumb_size = self.viewer_thumbnail_size
             if size is not None:
                 thumb_size = max(size.width(), size.height(), 256)
             pil_img = self._get_thumbnailer().get_thumbnail(path, size=thumb_size)

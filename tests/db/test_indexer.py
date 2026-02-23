@@ -69,7 +69,7 @@ def test_register_basic_info(tmp_path):
     ctime = st.st_birthtime if hasattr(st, 'st_birthtime') else st.st_ctime
     file_info = {norm: (st.st_mtime, st.st_size, ctime)}
 
-    collectors = [('image', ('.bin',))]
+    collectors = [('exif', ('.bin',))]
     db_path = tmp_path / 'test.db'
     with FileIndexer(db_path, collectors=collectors) as idx:
         idx.check_init()
@@ -84,7 +84,7 @@ def test_register_basic_info(tmp_path):
         file_row = idx.db.read_conn.execute("SELECT aspect_ratio FROM files WHERE path=?", (norm,)).fetchone()
         assert file_row is not None
 
-        pending = idx.db.get_pending_sources('image')
+        pending = idx.db.get_pending_sources('exif')
         assert len(pending) == 1
         assert pending[0][0] == norm
 
@@ -108,13 +108,13 @@ def test_register_basic_info_extension_filter(tmp_path):
         ctime = st.st_birthtime if hasattr(st, 'st_birthtime') else st.st_ctime
         file_info[norm] = (st.st_mtime, st.st_size, ctime)
 
-    collectors = [('image', ('.jpg', '.png'))]
+    collectors = [('exif', ('.jpg', '.png'))]
     db_path = tmp_path / 'test.db'
     with FileIndexer(db_path, collectors=collectors) as idx:
         idx.check_init()
         idx._register_basic_info([jpg_norm, txt_norm], file_info)
 
-        pending_image = idx.db.get_pending_sources('image')
+        pending_image = idx.db.get_pending_sources('exif')
         pending_paths = [r[0] for r in pending_image]
         assert jpg_norm in pending_paths
         assert txt_norm not in pending_paths
@@ -133,13 +133,13 @@ def test_update_meta_and_image_only_registers(tmp_path):
     ctime = st.st_birthtime if hasattr(st, 'st_birthtime') else st.st_ctime
     file_info = {norm: (st.st_mtime, st.st_size, ctime)}
 
-    collectors = [('image', ('.bin',))]
+    collectors = [('exif', ('.bin',))]
     db_path = tmp_path / 'test.db'
     with FileIndexer(db_path, collectors=collectors) as idx:
         idx.check_init()
         idx._update_meta_and_image([norm], file_info)
 
-        pending = idx.db.get_pending_sources('image')
+        pending = idx.db.get_pending_sources('exif')
         assert len(pending) == 1
         assert pending[0][0] == norm
 

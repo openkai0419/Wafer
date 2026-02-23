@@ -10,7 +10,7 @@ from source.db.file_db import FileDB
 from source.db.indexer import FileIndexer
 from source.io.collector.handler import collector_handler
 from source.io.collector.base import CollectorResult
-from source.io.collector.image import ImageCollectorPlugin
+from source.io.collector.exif import ExifCollectorPlugin
 from source.image_indexer.writer import CollectionWriter
 from source.image_indexer.progress_notifier import ProgressAggregator
 
@@ -99,19 +99,19 @@ class TestImagePipeline:
             assert file_row is not None
             assert file_row[0] == 'test.jpg'
 
-            pending = idx.db.get_pending_sources('image')
+            pending = idx.db.get_pending_sources('exif')
             assert len(pending) == 1
             assert pending[0][0] == norm
 
-            plugin = ImageCollectorPlugin()
-            results = _run_collector_for_pending(idx.db, plugin, 'image')
+            plugin = ExifCollectorPlugin()
+            results = _run_collector_for_pending(idx.db, plugin, 'exif')
             assert len(results) == 1
             assert results[0]['status'] is True
             assert results[0]['source'] == norm
             assert results[0]['aspect'] == 2.0
 
             dispatched = idx.db.read_conn.execute(
-                "SELECT status FROM collection_status WHERE source=? AND collector='image'",
+                "SELECT status FROM collection_status WHERE source=? AND collector='exif'",
                 (norm,),
             ).fetchone()
             assert dispatched[0] == 'dispatched'
@@ -120,7 +120,7 @@ class TestImagePipeline:
             progress = ProgressAggregator('test', node)
             writer = CollectionWriter(str(db_path), progress)
             writer.start()
-            _write_results_sync(writer, results, 'image')
+            _write_results_sync(writer, results, 'exif')
             writer.stop()
 
             db = FileDB(db_path)
@@ -143,12 +143,12 @@ class TestImagePipeline:
                 assert len(meta) > 0
 
                 cs = db.read_conn.execute(
-                    "SELECT status FROM collection_status WHERE source=? AND collector='image'",
+                    "SELECT status FROM collection_status WHERE source=? AND collector='exif'",
                     (norm,),
                 ).fetchone()
                 assert cs[0] == 'ok'
 
-                no_pending = db.get_pending_sources('image')
+                no_pending = db.get_pending_sources('exif')
                 assert len(no_pending) == 0
             finally:
                 db.exit()
@@ -175,7 +175,7 @@ class TestImagePipeline:
             ).fetchone()
             assert file_row[0] == 'readme.txt'
 
-            pending = idx.db.get_pending_sources('image')
+            pending = idx.db.get_pending_sources('exif')
             assert len(pending) == 0
 
     def test_mixed_files_extension_filter(self, tmp_path):
@@ -200,15 +200,15 @@ class TestImagePipeline:
             all_files = idx.db.read_conn.execute("SELECT path FROM files").fetchall()
             assert len(all_files) == 4
 
-            pending = idx.db.get_pending_sources('image')
+            pending = idx.db.get_pending_sources('exif')
             pending_paths = {r[0] for r in pending}
             assert normalize_path(str(jpg_path)) in pending_paths
             assert normalize_path(str(png_path)) in pending_paths
             assert normalize_path(str(txt_path)) not in pending_paths
             assert normalize_path(str(bin_path)) not in pending_paths
 
-            plugin = ImageCollectorPlugin()
-            results = _run_collector_for_pending(idx.db, plugin, 'image')
+            plugin = ExifCollectorPlugin()
+            results = _run_collector_for_pending(idx.db, plugin, 'exif')
             assert len(results) == 2
             ok_results = [r for r in results if r['status'] is True]
             assert len(ok_results) == 2
@@ -217,7 +217,7 @@ class TestImagePipeline:
             progress = ProgressAggregator('test', node)
             writer = CollectionWriter(str(db_path), progress)
             writer.start()
-            _write_results_sync(writer, results, 'image')
+            _write_results_sync(writer, results, 'exif')
             writer.stop()
 
             db = FileDB(db_path)
@@ -226,7 +226,7 @@ class TestImagePipeline:
                 for img_p in [jpg_path, png_path]:
                     norm = normalize_path(str(img_p))
                     cs = db.read_conn.execute(
-                        "SELECT status FROM collection_status WHERE source=? AND collector='image'",
+                        "SELECT status FROM collection_status WHERE source=? AND collector='exif'",
                         (norm,),
                     ).fetchone()
                     assert cs[0] == 'ok'
@@ -299,20 +299,20 @@ class TestImagePipeline:
             idx.update_index(str(file_dir))
             norm = normalize_path(str(img_path))
 
-            plugin = ImageCollectorPlugin()
-            results = _run_collector_for_pending(idx.db, plugin, 'image')
+            plugin = ExifCollectorPlugin()
+            results = _run_collector_for_pending(idx.db, plugin, 'exif')
 
             node = _StubNode()
             progress = ProgressAggregator('test', node)
             writer = CollectionWriter(str(db_path), progress)
             writer.start()
-            _write_results_sync(writer, results, 'image')
+            _write_results_sync(writer, results, 'exif')
             writer.stop()
 
         db_check = FileDB(db_path)
         db_check.start()
         cs_before = db_check.read_conn.execute(
-            "SELECT status FROM collection_status WHERE source=? AND collector='image'",
+            "SELECT status FROM collection_status WHERE source=? AND collector='exif'",
             (norm,),
         ).fetchone()
         assert cs_before[0] == 'ok'
@@ -335,7 +335,7 @@ class TestImagePipeline:
             ).fetchone()
             assert src_row[0] == 'indexed'
 
-            pending = idx.db.get_pending_sources('image')
+            pending = idx.db.get_pending_sources('exif')
             assert len(pending) == 1
             assert pending[0][0] == norm
 
@@ -358,42 +358,42 @@ class TestDispatcherSimulation:
             idx.check_init()
             idx.update_index(str(img_dir))
 
-            pending = idx.db.get_pending_sources('image')
+            pending = idx.db.get_pending_sources('exif')
             assert len(pending) == 5
 
             pending_paths = [r[0] for r in pending]
             file_info_map = {r[0]: (r[1], r[2], r[3]) for r in pending}
-            idx.db.mark_dispatched(pending_paths, 'image')
+            idx.db.mark_dispatched(pending_paths, 'exif')
 
             dispatched_count = idx.db.read_conn.execute(
-                "SELECT count(*) FROM collection_status WHERE collector='image' AND status='dispatched'"
+                "SELECT count(*) FROM collection_status WHERE collector='exif' AND status='dispatched'"
             ).fetchone()[0]
             assert dispatched_count == 5
 
-            plugin = ImageCollectorPlugin()
+            plugin = ExifCollectorPlugin()
             results = []
             for p in pending_paths:
                 info = file_info_map[p]
                 r = plugin.process(p, info).to_dict()
-                r['collector'] = 'image'
+                r['collector'] = 'exif'
                 results.append(r)
 
             node = _StubNode()
             progress = ProgressAggregator('test', node)
             writer = CollectionWriter(str(db_path), progress)
             writer.start()
-            _write_results_sync(writer, results, 'image')
+            _write_results_sync(writer, results, 'exif')
             writer.stop()
 
             db = FileDB(db_path)
             db.start()
             try:
                 ok_count = db.read_conn.execute(
-                    "SELECT count(*) FROM collection_status WHERE collector='image' AND status='ok'"
+                    "SELECT count(*) FROM collection_status WHERE collector='exif' AND status='ok'"
                 ).fetchone()[0]
                 assert ok_count == 5
 
-                pending_after = db.get_pending_sources('image')
+                pending_after = db.get_pending_sources('exif')
                 assert len(pending_after) == 0
 
                 for p in paths:
@@ -418,18 +418,18 @@ class TestDispatcherSimulation:
             idx.check_init()
             idx.update_index(str(img_dir))
 
-            pending = idx.db.get_pending_sources('image')
+            pending = idx.db.get_pending_sources('exif')
             paths = [r[0] for r in pending]
-            idx.db.mark_dispatched(paths, 'image')
+            idx.db.mark_dispatched(paths, 'exif')
 
             dispatched = idx.db.read_conn.execute(
                 "SELECT count(*) FROM collection_status WHERE status='dispatched'"
             ).fetchone()[0]
             assert dispatched == 1
 
-            idx.db.reset_stale_dispatched(['image'])
+            idx.db.reset_stale_dispatched(['exif'])
 
-            restored = idx.db.get_pending_sources('image')
+            restored = idx.db.get_pending_sources('exif')
             assert len(restored) == 1
 
 

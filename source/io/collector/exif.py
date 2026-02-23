@@ -1,13 +1,16 @@
 import os
 from ...common.logs import AppLogger
-from ...common.hashes import fast_sig_hash
 from .base import BaseCollectorPlugin, CollectorResult
 
 
-class ImageCollectorPlugin(BaseCollectorPlugin):
-    NAME = 'image'
+class ExifCollectorPlugin(BaseCollectorPlugin):
+    NAME = 'exif'
     EXTENSIONS = ('.jpg', '.jpeg', '.png', '.bmp', '.gif', '.webp')
     PRIORITY = 100
+
+    @staticmethod
+    def _prefixed_meta(raw: dict) -> dict:
+        return {f'exif.{k}': v for k, v in raw.items() if v is not None}
 
     def process(self, path: str, file_info: tuple):
         from PIL import Image
@@ -17,19 +20,15 @@ class ImageCollectorPlugin(BaseCollectorPlugin):
                 res = ExifParser.parse_img(img)
                 if res['error']:
                     raise RuntimeError(res['error'])
-            mtime, fsize, ctime = file_info
             return CollectorResult(
                 source=path,
                 status=True,
-                name=os.path.basename(path),
                 aspect=res['aspect'] or None,
-                file_hash=fast_sig_hash(path, fsize, 256),
-                meta_info={**res['exif'], **res['info_items']},
+                meta_info=self._prefixed_meta({**res['exif'], **res['info_items']}),
             )
         except Exception as e:
-            AppLogger.debug(f'ImageCollectorPlugin failed: {path} ({e})')
+            AppLogger.debug(f'ExifCollectorPlugin failed: {path} ({e})')
             return CollectorResult(
                 source=path,
                 status=False,
-                name=os.path.basename(path),
             )

@@ -10,6 +10,7 @@ from .grid_view import GridViewCommands, GridViewDragCommands, GridViewDropComma
 from .window_commands import WindowCommands
 from .query_commands import QueryCommands
 from .database_commands import DatabaseCommands
+from .setting_commands import SettingCommands, _restore_viewer_thumbnail_size
 from .debug_commands import DebugCommands
 
 
@@ -45,8 +46,10 @@ class MenuMenu(Kit.MenuBase):
         ImageViewDragCommands.register()
         DatabaseCommands.register()
         WindowCommands.register()
+        SettingCommands.register()
         DebugCommands.register()
         MenuMenu.register()
+        _restore_viewer_thumbnail_size()
 
         Settings.configure(
         mouse_bindings=str(data_path("binding/mouse_bindings.json")),

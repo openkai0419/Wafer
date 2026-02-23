@@ -2,6 +2,7 @@ from ...common.funcs import uipx
 from ...common.profiling import profiler
 from ...io.grid.handler import grid_handler
 from ...qt.thread import AdaptiveThreadPool
+from ..viewer.cachemanager import fullsize_key
 from PySide6 import QtCore, QtGui
 
 
@@ -45,7 +46,9 @@ class ImageLoaderRunnable(QtCore.QRunnable):
                 self.signal.widget_ready.emit(self.index, plugin_cls.NAME)
             return
 
-        cached = self.receiver.image_cache.peek(self.path)
+        cached = self.receiver.image_cache.peek(fullsize_key(self.path))
+        if cached is None:
+            cached = self.receiver.image_cache.peek(self.path)
         if cached is not None and cached.width() >= self.size.width() and cached.height() >= self.size.height():
             if not self._cancelled:
                 self.signal.image_ready.emit(self.index, cached)

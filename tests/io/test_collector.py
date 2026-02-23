@@ -4,15 +4,15 @@ import pytest
 from source.io.collector.handler import collector_handler
 from source.io.collector.base import CollectorResult
 from source.io.collector.base import BaseCollectorPlugin
-from source.io.collector.image import ImageCollectorPlugin
+from source.io.collector.exif import ExifCollectorPlugin
 
 
 def test_compile_base():
     py_compile.compile('source/io/collector/base.py')
 
 
-def test_compile_image():
-    py_compile.compile('source/io/collector/image.py')
+def test_compile_exif():
+    py_compile.compile('source/io/collector/exif.py')
 
 
 def test_compile_handler():
@@ -24,43 +24,43 @@ def test_base_is_abstract():
         BaseCollectorPlugin()
 
 
-def test_image_plugin_registered():
+def test_exif_plugin_registered():
     names = collector_handler.names()
-    assert 'image' in names
+    assert 'exif' in names
 
 
-def test_image_plugin_priority():
-    assert ImageCollectorPlugin.PRIORITY == 100
+def test_exif_plugin_priority():
+    assert ExifCollectorPlugin.PRIORITY == 100
 
 
-def test_image_plugin_match():
-    assert ImageCollectorPlugin.match('photo.jpg')
-    assert ImageCollectorPlugin.match('image.png')
-    assert not ImageCollectorPlugin.match('video.mp4')
+def test_exif_plugin_match():
+    assert ExifCollectorPlugin.match('photo.jpg')
+    assert ExifCollectorPlugin.match('image.png')
+    assert not ExifCollectorPlugin.match('video.mp4')
 
 
 def test_get_collector_names():
     names = collector_handler.names()
-    assert 'image' in names
+    assert 'exif' in names
 
 
 def test_get_collector_info():
     info = collector_handler.info()
     assert len(info) >= 1
     name, exts = info[0]
-    assert name == 'image'
+    assert name == 'exif'
     assert '.jpg' in exts
 
 
 def test_collectors_for_path_image():
-    assert 'image' in collector_handler.collectors_for_path('photo.jpg')
+    assert 'exif' in collector_handler.collectors_for_path('photo.jpg')
 
 
 def test_collectors_for_path_non_image():
-    assert 'image' not in collector_handler.collectors_for_path('doc.txt')
+    assert 'exif' not in collector_handler.collectors_for_path('doc.txt')
 
 
-def test_image_plugin_process_success(tmp_path):
+def test_exif_plugin_process_success(tmp_path):
     from PIL import Image
     import os
     from source.common.funcs import normalize_path
@@ -70,24 +70,27 @@ def test_image_plugin_process_success(tmp_path):
     ctime = st.st_birthtime if hasattr(st, 'st_birthtime') else st.st_ctime
     file_info = (st.st_mtime, st.st_size, ctime)
 
-    plugin = ImageCollectorPlugin()
+    plugin = ExifCollectorPlugin()
     result = plugin.process(normalize_path(str(img_path)), file_info)
     assert isinstance(result, CollectorResult)
     assert result.status is True
-    assert result.name == 'test.png'
+    assert result.name is None
+    assert result.file_hash is None
     assert result.aspect is not None
-    assert result.file_hash
+    if result.meta_info:
+        for key in result.meta_info:
+            assert key.startswith('exif.'), f'meta_info key missing prefix: {key}'
 
 
-def test_image_plugin_process_failure():
-    plugin = ImageCollectorPlugin()
+def test_exif_plugin_process_failure():
+    plugin = ExifCollectorPlugin()
     result = plugin.process('nonexistent.png', (0.0, 0, 0.0))
     assert isinstance(result, CollectorResult)
     assert result.status is False
 
 
 def test_registry_get_by_name():
-    assert collector_handler.registry.get('image') is ImageCollectorPlugin
+    assert collector_handler.registry.get('exif') is ExifCollectorPlugin
     assert collector_handler.registry.get('nonexistent') is None
 
 
@@ -128,16 +131,17 @@ def test_process_success_to_dict(tmp_path):
     ctime = st.st_birthtime if hasattr(st, 'st_birthtime') else st.st_ctime
     file_info = (st.st_mtime, st.st_size, ctime)
 
-    plugin = ImageCollectorPlugin()
+    plugin = ExifCollectorPlugin()
     result = plugin.process(normalize_path(str(img_path)), file_info)
     d = result.to_dict()
     assert d['status'] is True
-    for v in d.values():
-        assert v is not None
+    assert 'name' not in d
+    assert 'file_hash' not in d
+    assert 'aspect' in d
 
 
 def test_process_failure_to_dict_omits_none(tmp_path):
-    plugin = ImageCollectorPlugin()
+    plugin = ExifCollectorPlugin()
     result = plugin.process(str(tmp_path / 'missing.png'), (0.0, 0, 0.0))
     d = result.to_dict()
     assert d['status'] is False

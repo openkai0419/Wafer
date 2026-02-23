@@ -4,6 +4,10 @@ from ...common.profiling import profiler
 from ...common.classes import singleton
 
 
+def fullsize_key(path: str):
+    return ("orig", path)
+
+
 class FadePixmapItem(QtWidgets.QGraphicsObject):
     _FADE_DURATION = 120
 

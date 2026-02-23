@@ -85,7 +85,7 @@ class CollectionWriter:
         for r in results:
             source = r.get('source')
             path = r.get('path', source)
-            name = r.get('name', '')
+            name = r.get('name') or None
             aspect = r.get('aspect')
             file_hash = r.get('file_hash')
             meta_info = r.get('meta_info', {})
@@ -104,7 +104,8 @@ class CollectionWriter:
                 collector_status_map[cs_key] = (source, collector, s_status, now)
 
             if ok:
-                image_entries.append((path, source, name, aspect))
+                if name or aspect or (path != source):
+                    image_entries.append((path, source, name, aspect))
                 meta_info_entries.extend(
                     (path, k, v) for k, v in meta_info.items() if v is not None
                 )

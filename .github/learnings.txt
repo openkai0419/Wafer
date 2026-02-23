@@ -129,6 +129,16 @@
 - PRIORITY は大きいほど高優先（reverse=True でソート）
 - EXTENSIONS=() は全ファイルにマッチするフォールバック用
 - 各ディレクトリの __init__.py は空。外部から handler.py のシングルトンを直接 import する
+
+■ Collector プラグインのルール
+- 同じ拡張子に対応する複数のCollectorが登録可能。拡張子に該当するすべてのCollectorが並列で起動される
+- Dispatcherは拡張子ベースでフィルタし、該当するCollectorのみにpendingを登録する（_insert_pending_by_extension）
+- Collectorは基本的に meta_info（とstatus）のみを返す。name/aspect/file_hashはindexer側（Phase1）で設定される
+- meta_infoのキー名の衝突回避はプラグイン開発者の責任。簡易的なプレフィックスを付けることを推奨
+- name/aspect/file_hash等の共通値は上書き可能だが、複数プラグインが並列実行されるため順序保証がなく、上書きは非推奨
+- zipのように複数ソースを返すCollectorや特殊ケースのために、CollectorResultのname/aspect/file_hashフィールドは残す
+- Viewer/Gridプラグインは拡張子の優先度ベースで最も優先度の高い1つを使う（resolve）
+
 - Grid/Viewer プラグインは WIDGET_CLASS の有無で排他的にモードが決まる
   - WIDGET_CLASS = None → load()/load_content() で QImage を返す → 標準Widget で表示
   - WIDGET_CLASS 指定 → render(path, widget, ...) でシステム管理の Widget に描画を委譲

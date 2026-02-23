@@ -409,7 +409,7 @@ class FileDB:
                     VALUES (?, ?, ?, ?)
                     ON CONFLICT(path) DO UPDATE SET
                         source       = excluded.source,
-                        name         = excluded.name,
+                        name         = COALESCE(excluded.name, files.name),
                         aspect_ratio = COALESCE(excluded.aspect_ratio, files.aspect_ratio)''',
                     image_entries,
                 )

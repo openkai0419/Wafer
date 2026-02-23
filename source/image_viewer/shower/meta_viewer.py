@@ -5,7 +5,7 @@ from typing import Any, Callable, Iterable, Mapping
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from ...common.funcs import uipx
+from ...common.funcs import uipx, display_prefixed_key
 from ...common.profiling import profiler
 from ...common.logs import AppLogger
 
@@ -155,7 +155,9 @@ class MetaRowWidget(QtWidgets.QFrame):
         return "\n".join(parts)
 
     def _display_key(self, key: str) -> str:
-        return self._key_names.get(key, key)
+        if key in self._key_names:
+            return self._key_names[key]
+        return display_prefixed_key(key)
 
     def _stringify_preview(self, key: str, value: Any) -> str:
         # フォーマッタはプレビューにも適用。ただし戻り値が巨大なら切る

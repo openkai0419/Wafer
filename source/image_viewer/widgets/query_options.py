@@ -1,4 +1,5 @@
 from PySide6 import QtCore, QtGui, QtWidgets
+from ...common.funcs import display_prefixed_key
 from ...common.profiling import profiler
 from ...common.logs import AppLogger
 from ...db.query import MetaInfoSearchEngine, MetaQuery
@@ -62,7 +63,7 @@ class CheckableCombo(QtWidgets.QToolButton, TranslatorMixin):
         self.menu.clear()
         self.actions.clear()
         for key, count in datas:
-            self.add_item(f'{key} ({count})', key)
+            self.add_item(f'{display_prefixed_key(key)} ({count})', key)
         if not self.checked_items():
             for a in self.actions:
                 if a.data() == self.default_key:

@@ -130,3 +130,10 @@ def human_size_string(size: int) -> str:
     if size is None:
         return None
     return f"{human_size(size)} ({size:,} bytes)"
+
+
+def display_prefixed_key(key: str) -> str:
+    dot = key.find('.')
+    if dot > 0:
+        return f'[{key[:dot]}]  {key[dot + 1:]}'
+    return key

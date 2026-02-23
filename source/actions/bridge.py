@@ -210,6 +210,10 @@ class Command:
         )
 
     @staticmethod
+    def set_checked(command_id: str, state: bool):
+        Kit.CommandBuilder().set_checked(str(command_id), bool(state))
+
+    @staticmethod
     def register_commands(defs) -> None:
         from .command.core import register_command_defs
 

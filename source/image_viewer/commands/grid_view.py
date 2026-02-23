@@ -14,8 +14,10 @@ from ...qt.pixmap import PixmapFactory
 INTERNAL_MIME_FLAG = b"application/x-gridview-internal" + f"{os.getpid()}".encode()
 
 ORIENTATION_CHOICES = ["Z(↘)", "S(↙)", "И(↘)", "N(↙)"]
-_ORIENTATION_MAP = {f"grid.orientation_{k}": k for k in ORIENTATION_CHOICES}
-_ORIENTATION_INDEX = {"Z(↘)": 0, "S(↙)": 1, "И(↘)": 2, "N(↙)": 3}
+_CMD_IDS = ["grid.orientation_z", "grid.orientation_reverse_z", "grid.orientation_n", "grid.orientation_reverse_n"]
+_CMD_TO_CHOICE = dict(zip(_CMD_IDS, ORIENTATION_CHOICES))
+_CHOICE_TO_CMD = dict(zip(ORIENTATION_CHOICES, _CMD_IDS))
+_CHOICE_TO_INDEX = {c: i for i, c in enumerate(ORIENTATION_CHOICES)}
 
 
 class GridViewCommands(Kit.MenuBase):
@@ -278,17 +280,17 @@ class GridViewCommands(Kit.MenuBase):
             return
         sm = ActionGroupStateManager()
         current = sm.get_current('grid_orientation')
-        current_key = _ORIENTATION_MAP.get(current)
+        current_key = _CMD_TO_CHOICE.get(current)
         step = -1 if reverse else 1
         try:
             idx = enabled.index(current_key)
             next_key = enabled[(idx + step) % len(enabled)]
         except (ValueError, IndexError):
             next_key = enabled[-1 if reverse else 0]
-        cmd_id = f"grid.orientation_{next_key}"
+        cmd_id = _CHOICE_TO_CMD[next_key]
         sm.set_current('grid_orientation', cmd_id)
         view = GridViewCommands.get_view(ctx)
-        view.set_orientation(_ORIENTATION_INDEX[next_key])
+        view.set_orientation(_CHOICE_TO_INDEX[next_key])
 
     commands = [
         ":GridView",

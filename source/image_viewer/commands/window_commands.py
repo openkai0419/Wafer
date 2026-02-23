@@ -51,6 +51,7 @@ def toggle_always_on_top(ctx):
         return
     on_top = bool(w.windowFlags() & QtCore.Qt.WindowStaysOnTopHint)
     safe_set_window_flag(w, QtCore.Qt.WindowStaysOnTopHint, not on_top)
+    Command.set_checked("win.toggle_always_on_top", not on_top)
 
 
 def open_new_window(ctx):

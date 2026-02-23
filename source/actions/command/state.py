@@ -199,6 +199,13 @@ class ActionGroupStateManager:
     
     def set_check_state(self, command_id: str, checked: bool):
         self._check_states[command_id] = checked
+
+    def initialize_default(self, group_name: str, command_id: str):
+        if group_name in self._group_states:
+            return
+        self._group_states[group_name] = command_id
+        for member in self._group_members.get(group_name, []):
+            self._check_states[member] = (member == command_id)
     
     def commit(self):
         store = CommandOptionStore()
@@ -222,14 +229,17 @@ class ActionGroupStateManager:
             log_warning("Action group state commit returned False")
     
     def _load_state(self, group_name: str) -> Optional[str]:
+        members = self._group_members.get(group_name)
         stored = CommandOptionStore().get(f"__group__{group_name}")
         args = getattr(stored, "args", None)
         if isinstance(args, dict) and "selected" in args:
             v = args.get("selected")
             if v is not None:
-                return str(v)
+                v = str(v)
+                if not members or v in members:
+                    return v
+                log_warning(f"Stored group state '{v}' is not a member of '{group_name}', ignoring")
         
-        members = self._group_members.get(group_name)
         if not members:
             return None
         

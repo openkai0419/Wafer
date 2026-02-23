@@ -124,8 +124,8 @@ class CommandRegistry:
             if getattr(ctx, "event", None) is None:
                 raise ValueError(f"Command '{command_name}' (category={meta.category}) requires event")
         command = command_class()
-        AppLogger.debug(f'cmd: {command_name}')
-        return command.call_execute(**kwargs) if hasattr(command, "call_execute") else command.execute(**kwargs)
+        result = command.call_execute(**kwargs) if hasattr(command, "call_execute") else command.execute(**kwargs)
+        return result
 
     def has_command(self, name: str) -> bool:
         return name in self._commands

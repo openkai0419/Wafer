@@ -236,6 +236,7 @@ class CommandMenuBuilder(TranslatorMixin):
             return
         self.registry = CommandRegistry()
         self.state_manager = ActionGroupStateManager()
+        self._active_seed_ctx: Optional[CommandContext] = None
         if not CommandMenuBuilder._observer_registered:
             self.state_manager.add_observer(CommandMenuBuilder._on_state_changed_observer)
             CommandMenuBuilder._observer_registered = True
@@ -244,6 +245,7 @@ class CommandMenuBuilder(TranslatorMixin):
     _check_states: Dict[str, bool] = {}
     _action_groups: Dict[str, QtGui.QActionGroup] = {}
     _observer_registered: bool = False
+    _menu_cache: Dict[tuple, QtWidgets.QMenu] = {}
 
     @staticmethod
     def _on_state_changed_observer(group_name: str, command_id: str):
@@ -305,6 +307,9 @@ class CommandMenuBuilder(TranslatorMixin):
         menus_cache: Dict[str, QtWidgets.QMenu] = {}
         action_groups: Dict[str, QtGui.QActionGroup] = {}
         group_defaults: Dict[str, tuple[str, CommandMeta]] = {}
+        hotkey_map = self._resolve_hotkeys_batch(parent)
+        self._active_seed_ctx = seed_ctx
+        checkable_tracker: List[tuple] = []
         for name in command_names:
             if is_sep_token(name):
                 parts = sep_path(str(name))
@@ -334,7 +339,10 @@ class CommandMenuBuilder(TranslatorMixin):
                 self.state_manager.register_member(meta.action_group, command_id)
                 if meta.default_checked:
                     group_defaults[meta.action_group] = (command_id, meta)
-            self._add_entry(target_menu, parent, command_id, meta, bool(meta.has_options) if (allow_options_with_selection or not selection_callback) else False, text_override, selection_callback, allow_options_with_selection, action_groups, group_defaults, seed_ctx=seed_ctx)
+            self._add_entry(target_menu, parent, command_id, meta, bool(meta.has_options) if (allow_options_with_selection or not selection_callback) else False, text_override, selection_callback, allow_options_with_selection, action_groups, group_defaults, hotkey_map=hotkey_map, checkable_tracker=checkable_tracker)
+        for gname, (default_id, _) in group_defaults.items():
+            self.state_manager.initialize_default(gname, default_id)
+        menu.setProperty("__checkable_tracker__", checkable_tracker)
         return menu
 
     def _install_hotkey_alignment(self, menu: QtWidgets.QMenu) -> None:
@@ -370,7 +378,7 @@ class CommandMenuBuilder(TranslatorMixin):
                 w = int(fm.horizontalAdvance(lbl.text()))
                 if w > maxw:
                     maxw = w
-            maxw += int(uipx(12))
+            maxw += CommandMenuRow._ensure_px()["pad"]
             for lbl in labels:
                 lbl.setFixedWidth(maxw)
             menu.adjustSize()
@@ -378,12 +386,12 @@ class CommandMenuBuilder(TranslatorMixin):
             return
 
     @profiler.profile
-    def _add_entry(self, menu: QtWidgets.QMenu, parent: QtWidgets.QWidget, name: str, meta: CommandMeta, with_options: bool, text_override: Optional[str], selection_callback: Optional[Callable[[Any], None]] = None, allow_options_with_selection: bool = False, action_groups: Optional[Dict[str, QtGui.QActionGroup]] = None, group_defaults: Optional[Dict[str, tuple[str, CommandMeta]]] = None, *, seed_ctx: Optional[CommandContext] = None):
+    def _add_entry(self, menu: QtWidgets.QMenu, parent: QtWidgets.QWidget, name: str, meta: CommandMeta, with_options: bool, text_override: Optional[str], selection_callback: Optional[Callable[[Any], None]] = None, allow_options_with_selection: bool = False, action_groups: Optional[Dict[str, QtGui.QActionGroup]] = None, group_defaults: Optional[Dict[str, tuple[str, CommandMeta]]] = None, hotkey_map: Optional[Dict[str, str]] = None, checkable_tracker: Optional[List[tuple]] = None):
         text = text_override or self.t.tr(meta.display)
         widget_action = QtWidgets.QWidgetAction(parent)
         widget_action.setData(name)
-        hotkey = self._resolve_hotkey(parent, name)
-        container = self._create_row_widget(parent, text, hotkey, meta.icon or None, with_options, None, (lambda: self._show_options_and_close_menu(name, parent, menu, selection_callback if allow_options_with_selection else None, seed_ctx=seed_ctx)) if with_options else None, menu)
+        hotkey = (hotkey_map or {}).get(name, "")
+        container = self._create_row_widget(parent, text, hotkey, meta.icon or None, with_options, None, (lambda: self._show_options_and_close_menu(name, parent, menu, selection_callback if allow_options_with_selection else None)) if with_options else None, menu)
         widget_action.setDefaultWidget(container)
         if meta.checkable and selection_callback is None:
             widget_action.setCheckable(True)
@@ -402,13 +410,17 @@ class CommandMenuBuilder(TranslatorMixin):
                         self._action_groups[meta.action_group] = group
                     action_groups[meta.action_group].addAction(widget_action)
                 widget_action.toggled.connect(lambda state, n=name, c=container, g=meta.action_group: self._on_radio_toggled(n, c, state, g))
+                if checkable_tracker is not None:
+                    checkable_tracker.append((widget_action, container, name, meta, True))
             else:
                 widget_action.toggled.connect(lambda state, n=name, c=container: self._on_toggled(n, c, state))
+                if checkable_tracker is not None:
+                    checkable_tracker.append((widget_action, container, name, meta, False))
         if selection_callback is None:
-            widget_action.triggered.connect(lambda checked=False, n=name, m=meta, p=parent, s=seed_ctx: self._execute_and_close_menu(n, p, menu, checked if getattr(m, "checkable", False) else None, seed_ctx=s))
+            widget_action.triggered.connect(lambda checked=False, n=name, m=meta, p=parent: self._execute_and_close_menu(n, p, menu, checked if getattr(m, "checkable", False) else None))
         else:
             widget_action.triggered.connect(lambda checked=False, n=name: self._select_and_close_menu(n, menu, selection_callback))
-        main_area = container.findChild(QtWidgets.QWidget, "rowMain")
+        main_area = container._main
         if main_area is not None:
             def _row_click_any(event):
                 if event.button() == QtCore.Qt.LeftButton:
@@ -416,28 +428,30 @@ class CommandMenuBuilder(TranslatorMixin):
             main_area.mouseReleaseEvent = _row_click_any
         menu.addAction(widget_action)
 
-    def _resolve_hotkey(self, parent: QtWidgets.QWidget, command_id: str) -> str:
+    def _resolve_hotkeys_batch(self, parent: QtWidgets.QWidget) -> Dict[str, str]:
         try:
             from ..binding.manager import BindingManager
             from ..binding.key.shortcutmanager import ShortcutManager
         except Exception:
-            return ""
-
-        if not command_id:
-            return ""
+            return {}
+        if parent is None:
+            return {}
         bm = BindingManager.instance()
-        bw = bm.find_registered_ancestor(parent) if parent is not None else None
+        bw = bm.find_registered_ancestor(parent)
         if bw is None:
-            return ""
+            return {}
         try:
             sm = ShortcutManager()
+            result: Dict[str, str] = {}
             for k, payload in (sm.get_bindings(bw) or {}).items():
-                if isinstance(payload, CommandPayload) and payload.id == command_id and k:
-                    return str(k).strip()
-            return ""
+                if isinstance(payload, CommandPayload) and payload.id and k:
+                    key_str = str(k).strip()
+                    if key_str and payload.id not in result:
+                        result[payload.id] = key_str
+            return result
         except Exception as e:
-            AppLogger.warning("resolve hotkey failed", exc=e)
-            return ""
+            AppLogger.warning("resolve hotkeys batch failed", exc=e)
+            return {}
 
     def _select_and_close_menu(self, name: str, menu: QtWidgets.QMenu, callback: Callable[[Any], None]):
         menu.close()
@@ -449,12 +463,12 @@ class CommandMenuBuilder(TranslatorMixin):
 
     @profiler.profile
     def _get_checked(self, name: str, meta: CommandMeta) -> bool:
-        if name in self._check_states:
-            return self._check_states[name]
         stored = CommandOptionStore().get(name)
         args = getattr(stored, "args", None)
         if isinstance(args, dict) and "checked" in args:
             return bool(args["checked"])
+        if name in self._check_states:
+            return self._check_states[name]
         return meta.default_checked
 
     @profiler.profile
@@ -467,8 +481,11 @@ class CommandMenuBuilder(TranslatorMixin):
         return meta.default_checked
 
     def _on_toggled(self, name: str, container: QtWidgets.QWidget, state: bool):
-        self._check_states[name] = state
         self._update_checkmark(container, state)
+        self.set_checked(name, state)
+
+    def set_checked(self, name: str, state: bool):
+        self._check_states[name] = state
         store = CommandOptionStore()
         cur = store.get(name)
         opts = getattr(cur, "args", None)
@@ -527,7 +544,9 @@ class CommandMenuBuilder(TranslatorMixin):
                     break
 
     def _update_checkmark(self, container: QtWidgets.QWidget, state: bool):
-        lbl = container.findChild(QtWidgets.QLabel, "checkMark")
+        lbl = getattr(container, "_chk", None)
+        if lbl is None:
+            lbl = container.findChild(QtWidgets.QLabel, "checkMark")
         if lbl is not None:
             lbl.setText("✓" if state else "")
 
@@ -537,14 +556,14 @@ class CommandMenuBuilder(TranslatorMixin):
         w._on_main_click = on_main_click
         w._on_options_callback = (lambda: self._on_row_options(menu, on_options)) if on_options is not None else None
         if on_main_click is not None:
-            main_area = w.findChild(QtWidgets.QWidget, "rowMain")
+            main_area = w._main
             if main_area is not None:
                 def _row_click(event):
                     if event.button() == QtCore.Qt.LeftButton:
                         on_main_click()
                 main_area.mouseReleaseEvent = _row_click
         if w._inited and w._has_options and w._on_options_callback is not None:
-            btn = w.findChild(QtWidgets.QToolButton)
+            btn = w._options_btn
             if btn is not None:
                 btn.clicked.connect(w._on_options_callback)
         return w
@@ -553,13 +572,13 @@ class CommandMenuBuilder(TranslatorMixin):
         menu.close()
         on_options()
 
-    def _execute_and_close_menu(self, name: str, parent: Optional[QtWidgets.QWidget], menu: QtWidgets.QMenu, checked: Optional[bool] = None, *, seed_ctx: Optional[CommandContext] = None):
+    def _execute_and_close_menu(self, name: str, parent: Optional[QtWidgets.QWidget], menu: QtWidgets.QMenu, checked: Optional[bool] = None):
         menu.close()
-        self._execute(name, parent, checked, seed_ctx=seed_ctx)
+        self._execute(name, parent, checked, seed_ctx=self._active_seed_ctx)
 
-    def _show_options_and_close_menu(self, command_name: str, parent: QtWidgets.QWidget, menu: QtWidgets.QMenu, selection_callback: Optional[Callable[[Any], None]] = None, *, seed_ctx: Optional[CommandContext] = None):
+    def _show_options_and_close_menu(self, command_name: str, parent: QtWidgets.QWidget, menu: QtWidgets.QMenu, selection_callback: Optional[Callable[[Any], None]] = None):
         menu.close()
-        self._show_options(command_name, parent, selection_callback, seed_ctx=seed_ctx)
+        self._show_options(command_name, parent, selection_callback, seed_ctx=self._active_seed_ctx)
 
     @profiler.profile
     def _show_options(self, command_name: str, parent: QtWidgets.QWidget, selection_callback: Optional[Callable[[Any], None]] = None, *, seed_ctx: Optional[CommandContext] = None):
@@ -635,11 +654,25 @@ class CommandMenuBuilder(TranslatorMixin):
             current = m
         return current
 
+    def refresh_check_states(self, menu: QtWidgets.QMenu) -> None:
+        tracker = menu.property("__checkable_tracker__")
+        if not tracker:
+            return
+        for widget_action, container, name, meta, is_group in tracker:
+            if is_group:
+                checked = self._get_checked_for_group(name, meta.action_group, meta)
+            else:
+                checked = self._get_checked(name, meta)
+            widget_action.blockSignals(True)
+            widget_action.setChecked(checked)
+            widget_action.blockSignals(False)
+            self._update_checkmark(container, checked)
+
     def _create_section_action(self, parent: QtWidgets.QWidget, text: str) -> QtWidgets.QAction:
         a = QtWidgets.QWidgetAction(parent)
         w = QtWidgets.QWidget(parent)
         l = QtWidgets.QHBoxLayout(w)
-        s = uipx(11)
+        s = CommandMenuRow._ensure_px()["sec"]
         l.setContentsMargins(int(s * 1.6), int(s / 4), int(s * 1.6), 0)
         lbl = QtWidgets.QLabel(text)
         lbl.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
@@ -652,6 +685,19 @@ class CommandMenuBuilder(TranslatorMixin):
 
 class CommandMenuRow(QtWidgets.QWidget):
     _shared_style: Optional[str] = None
+    _px: Optional[Dict[str, int]] = None
+
+    @classmethod
+    def _ensure_px(cls) -> Dict[str, int]:
+        if cls._px is None:
+            cls._px = {
+                "mh": uipx(8), "mv": uipx(2), "mr": uipx(6),
+                "ih": uipx(4), "ir": uipx(8),
+                "sp": uipx(6), "chk": uipx(1),
+                "opt": uipx(22), "icon": uipx(16),
+                "sec": uipx(11), "pad": uipx(12),
+            }
+        return cls._px
 
     @profiler.profile
     def __init__(self, parent: QtWidgets.QWidget, text: str, hotkey: str, icon: Optional[str], has_options: bool, menu: QtWidgets.QMenu):
@@ -666,22 +712,23 @@ class CommandMenuRow(QtWidgets.QWidget):
         self._on_main_click: Optional[Callable[[], None]] = None
         self._on_options_callback: Optional[Callable[[], None]] = None
 
+        px = self._ensure_px()
+
         l = QtWidgets.QHBoxLayout(self)
-        l.setContentsMargins(uipx(8), uipx(2), uipx(6), uipx(2))
+        l.setContentsMargins(px["mh"], px["mv"], px["mr"], px["mv"])
         l.setSpacing(0)
 
-        # Minimal skeleton: main area with check mark and text only.
         self._main = QtWidgets.QWidget(self)
         self._main.setObjectName("rowMain")
         self._main.setCursor(QtCore.Qt.PointingHandCursor)
         self._main.setAttribute(QtCore.Qt.WA_Hover, True)
         self._ml = QtWidgets.QHBoxLayout(self._main)
-        self._ml.setContentsMargins(uipx(4), uipx(2), uipx(8), uipx(2))
-        self._ml.setSpacing(uipx(6))
+        self._ml.setContentsMargins(px["ih"], px["mv"], px["ir"], px["mv"])
+        self._ml.setSpacing(px["sp"])
 
         self._chk = QtWidgets.QLabel("", self._main)
         self._chk.setObjectName("checkMark")
-        self._chk.setFixedWidth(uipx(1))
+        self._chk.setFixedWidth(px["chk"])
         self._chk.setAlignment(QtCore.Qt.AlignCenter)
         self._chk.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
         self._ml.addWidget(self._chk, 0)
@@ -690,17 +737,7 @@ class CommandMenuRow(QtWidgets.QWidget):
         self._tl.setAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft)
         self._ml.addWidget(self._tl, 1)
 
-        self._inner_spacer = QtWidgets.QWidget(self._main)
-        self._inner_spacer.setFixedWidth(0)
-        self._inner_spacer.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
-        self._ml.addWidget(self._inner_spacer, 0)
-
         l.addWidget(self._main, 1)
-
-        self._options_spacer = QtWidgets.QWidget(self)
-        self._options_spacer.setFixedWidth(uipx(22))
-        self._options_spacer.setVisible(False)
-        l.addWidget(self._options_spacer, 0)
 
         self._icon_label: Optional[QtWidgets.QLabel] = None
         self._hotkey_label: Optional[QtWidgets.QLabel] = None
@@ -736,12 +773,13 @@ class CommandMenuRow(QtWidgets.QWidget):
         except Exception as e:
             AppLogger.warning("CommandMenuRow._chk.setFixedWidth failed", exc=e)
 
+        px = self._ensure_px()
+
         if self._icon and self._icon_label is None:
             try:
                 il = QtWidgets.QLabel(self._main)
                 qicon = QtGui.QIcon(self._icon) if isinstance(self._icon, str) else self._icon
-                sz = uipx(16)
-                pm = qicon.pixmap(sz, sz)
+                pm = qicon.pixmap(px["icon"], px["icon"])
                 il.setPixmap(pm)
                 self._ml.insertWidget(1, il, 0)
                 self._icon_label = il
@@ -764,32 +802,19 @@ class CommandMenuRow(QtWidgets.QWidget):
 
         if self._has_options and self._options_btn is None:
             try:
-                self._ml.removeWidget(self._inner_spacer)
-                self._inner_spacer.deleteLater()
-                
-                top_layout = self.layout()
-                idx = None
-                for i in range(top_layout.count()):
-                    w = top_layout.itemAt(i).widget()
-                    if w is self._options_spacer:
-                        idx = i
-                        break
-                if idx is not None:
-                    top_layout.removeWidget(self._options_spacer)
-                    self._options_spacer.deleteLater()
-                    btn = QtWidgets.QToolButton(self)
-                    btn.setText("□")
-                    btn.setAutoRaise(True)
-                    btn.setFixedWidth(uipx(22))
-                    btn.setCursor(QtCore.Qt.PointingHandCursor)
-                    btn.setFocusPolicy(QtCore.Qt.NoFocus)
-                    top_layout.insertWidget(idx, btn, 0)
-                    self._options_btn = btn
-                    if self._on_options_callback is not None:
-                        try:
-                            self._options_btn.clicked.connect(self._on_options_callback)
-                        except Exception as e:
-                            AppLogger.warning("CommandMenuRow options callback connect failed", exc=e)
+                btn = QtWidgets.QToolButton(self)
+                btn.setText("□")
+                btn.setAutoRaise(True)
+                btn.setFixedWidth(px["opt"])
+                btn.setCursor(QtCore.Qt.PointingHandCursor)
+                btn.setFocusPolicy(QtCore.Qt.NoFocus)
+                self.layout().addWidget(btn, 0)
+                self._options_btn = btn
+                if self._on_options_callback is not None:
+                    try:
+                        self._options_btn.clicked.connect(self._on_options_callback)
+                    except Exception as e:
+                        AppLogger.warning("CommandMenuRow options callback connect failed", exc=e)
             except Exception as e:
                 AppLogger.warning("CommandMenuRow options button setup failed", exc=e)
 
@@ -831,28 +856,46 @@ class MenuBuilder:
     def menu(self) -> QtWidgets.QMenu:
         return self._menu
 
+    def _resolve_parent(self) -> QtWidgets.QWidget:
+        parent = self._ctx_parent
+        if parent is None:
+            pw = getattr(self._menu, "parentWidget", None)
+            if callable(pw):
+                try:
+                    parent = pw()
+                except Exception as e:
+                    AppLogger.warning("MenuBuilder parentWidget lookup failed", exc=e)
+                    parent = None
+        if parent is None:
+            parent = self._menu
+        return parent
+
     def _build_into(self, names: List[str], selection_callback: Optional[Callable[[Any], None]], allow_options_with_selection: bool) -> QtWidgets.QMenu:
         if names:
-            parent = self._ctx_parent
-            if parent is None:
-                pw = getattr(self._menu, "parentWidget", None)
-                if callable(pw):
-                    try:
-                        parent = pw()
-                    except Exception as e:
-                        AppLogger.warning("MenuBuilder parentWidget lookup failed", exc=e)
-                        parent = None
-            if parent is None:
-                parent = self._menu
+            parent = self._resolve_parent()
             self._builder.build_into(self._menu, parent, names, display_map=None, selection_callback=selection_callback, allow_options_with_selection=allow_options_with_selection, seed_ctx=self._seed_ctx)
         return self._menu
 
     @profiler.profile
     def build(self, plan: MenuPlan, selection_callback: Optional[Callable[[Any], None]] = None, allow_options_with_selection: bool = False) -> QtWidgets.QMenu:
-        self._menu.clear()
         if plan is None:
+            self._menu.clear()
             return self._menu
-        return self._build_into(plan.resolve_tokens(), selection_callback, allow_options_with_selection)
+        tokens = plan.resolve_tokens()
+        parent = self._resolve_parent()
+        cache_key = (id(parent), tuple(tokens), selection_callback is not None, allow_options_with_selection)
+        cached = CommandMenuBuilder._menu_cache.get(cache_key)
+        if cached is not None:
+            self._builder._active_seed_ctx = self._seed_ctx
+            self._builder.refresh_check_states(cached)
+            self._menu = cached
+            return cached
+        self._menu = QtWidgets.QMenu(self._ctx_parent)
+        self._menu.setProperty(COMMAND_MENU_MARKER, True)
+        self._builder._install_hotkey_alignment(self._menu)
+        result = self._build_into(tokens, selection_callback, allow_options_with_selection)
+        CommandMenuBuilder._menu_cache[cache_key] = result
+        return result
 
     @profiler.profile
     def use(self, folder: str) -> QtWidgets.QMenu:

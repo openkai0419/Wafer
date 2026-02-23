@@ -1,4 +1,4 @@
-from ...actions.bridge import Kit
+from ...actions.bridge import Kit, Command
 from ...actions.command.state import ActionGroupStateManager
 from ..search import SORT_CHOICES
 
@@ -149,6 +149,7 @@ def toggle_include_subfolders(ctx):
         return
     current = svc.get('include_subfolders', True)
     svc.set_param('include_subfolders', not current)
+    Command.set_checked("qry.toggle_include_subfolders", not current)
     svc.try_execute()
 
 
@@ -158,6 +159,7 @@ def toggle_auto_execute(ctx):
         return
     current = svc.get('auto_execute', True)
     svc.set_param('auto_execute', not current)
+    Command.set_checked("qry.toggle_auto_execute", not current)
 
 
 def sync_groups_from_args(args):

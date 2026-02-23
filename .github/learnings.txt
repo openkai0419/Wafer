@@ -88,6 +88,15 @@
 
 ■ メニュー/バインディングの方針
 - コマンド定義側で hotkey を持たず、表示用のショートカットは BindingManager から逆引き
+- ホットキー解決はバッチ処理（_resolve_hotkeys_batch）で一括取得し、ループ内で個別に呼ばない
+- CommandMenuRow の uipx 値はクラスレベルキャッシュ（_px）で一度だけ計算し再利用する
+- findChild による DOM 探索はコスト高。保持している属性参照（_main, _chk, _options_btn等）を直接使う
+- QMenuはキャッシュされ次回表示時に refresh_check_states で状態を更新する。キャッシュキーは (parent_id, tokens, selection_callback有無, allow_options)
+- _get_checked はCommandOptionStoreを最優先で参照する。_check_statesはフォールバック用。外部からの状態変更（cycle, set_action_group_current, UIからの設定変更等）が正しく反映されるため
+- ActionGroupStateManager.initialize_default で初回ビルド時にグループのデフォルト状態を設定することで、メニュー未操作でもcycleが正しく動作する
+- checkableコマンドの状態の真実のソースはCommandOptionStore。コマンド関数内で状態を変更したら必ずCommand.set_checked(id, state)を呼んでCommandOptionStoreを更新すること。メニュー直接クリック時は_on_toggledが自動更新するが、invoke/run/外部UI等の経路ではset_checkedが唯一の同期手段
+- action_groupのコマンドIDマッピングは、コマンド定義のpath末尾（実際のコマンドID）と完全に一致させること。表示用ラベルやUnicode文字をIDに含めないこと（例: "grid.orientation_z" は正しいが "grid.orientation_Z(↘)" は不正）
+- _load_state は保存された値がグループの登録メンバーに含まれるかバリデーションする。不正な値が永続化されていた場合は無視してフォールバックする
 - バインディングの永続化ファイルは起動時に自動生成しない（編集して保存時のみ作成）
 - 保存はデフォルトとの差分のみ
 - デフォルトバインディングは _resources/mouse_bindings/ と _resources/key_bindings/ にプリセットJSON（例: standard.json）として配置

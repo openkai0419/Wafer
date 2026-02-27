@@ -1,8 +1,8 @@
 import pytest
 from PySide6 import QtGui, QtWidgets
 from source.image_viewer.viewer.cachemanager import MemoryLimitedImageCache, ProxyWidgetPool
-from source.io.grid.handler import grid_handler
-from source.io.grid.base import BaseGridPlugin
+from source.plugin_core.grid.handler import grid_handler
+from source.plugin_core.grid.base import BaseGridPlugin
 
 
 def _make_image(w, h):

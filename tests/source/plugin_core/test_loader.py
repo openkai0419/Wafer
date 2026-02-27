@@ -7,7 +7,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from source.io.loader import (
+from source.plugin_core.loader import (
     get_plugin_dir,
     _needs_install,
     _install_requirements,
@@ -24,14 +24,14 @@ from source.io.loader import (
     PluginLoader,
     load_plugins,
 )
-from source.io.registry import PluginRegistry
-from source.io.viewer.base import BaseViewerPlugin
-from source.io.grid.base import BaseGridPlugin
-from source.io.collector.base import BaseCollectorPlugin
+from source.plugin_core.registry import PluginRegistry
+from source.plugin_core.viewer.base import BaseViewerPlugin
+from source.plugin_core.grid.base import BaseGridPlugin
+from source.plugin_core.collector.base import BaseCollectorPlugin
 
 
 def test_compile():
-    py_compile.compile('source/io/loader.py')
+    py_compile.compile('source/plugin_core/loader.py')
 
 
 def test_get_plugin_dir_dev():
@@ -80,7 +80,7 @@ class TestInstallRequirements:
     def test_success(self, tmp_path):
         req = tmp_path / 'requirements.txt'
         req.write_text('')
-        with patch('source.io.loader._run_subprocess'):
+        with patch('source.plugin_core.loader._run_subprocess'):
             result = _install_requirements(str(tmp_path))
         assert result is True
         assert (tmp_path / _PACKAGES_DIR / _INSTALL_STAMP).exists()
@@ -122,7 +122,7 @@ class TestInstallRequirements:
     def test_failure(self, tmp_path):
         req = tmp_path / 'requirements.txt'
         req.write_text('nonexistent-pkg-xyz')
-        with patch('source.io.loader._run_subprocess', side_effect=RuntimeError('fail')):
+        with patch('source.plugin_core.loader._run_subprocess', side_effect=RuntimeError('fail')):
             result = _install_requirements(str(tmp_path))
         assert result is False
 
@@ -131,7 +131,7 @@ class TestInstallRequirements:
         req.write_text('')
         with patch.object(sys, 'frozen', True, create=True), \
              patch.object(sys, 'executable', r'C:\app\main.exe'), \
-             patch('source.io.loader._run_subprocess') as mock_sub:
+             patch('source.plugin_core.loader._run_subprocess') as mock_sub:
             _install_requirements(str(tmp_path))
         cmd = mock_sub.call_args[0][0]
         assert cmd[0] == r'C:\app\main.exe'
@@ -145,7 +145,7 @@ class TestInstallRequirements:
         if hasattr(sys, 'frozen'):
             delattr(sys, 'frozen')
         try:
-            with patch('source.io.loader._run_subprocess') as mock_sub:
+            with patch('source.plugin_core.loader._run_subprocess') as mock_sub:
                 _install_requirements(str(tmp_path))
             cmd = mock_sub.call_args[0][0]
             assert cmd[0] == sys.executable
@@ -159,7 +159,7 @@ class TestInstallRequirements:
         req = tmp_path / 'requirements.txt'
         req.write_text('')
         progress = MagicMock()
-        with patch('source.io.loader._run_subprocess') as mock_sub:
+        with patch('source.plugin_core.loader._run_subprocess') as mock_sub:
             _install_requirements(str(tmp_path), on_progress=progress)
         assert mock_sub.call_args[0][1] is progress
 
@@ -255,9 +255,9 @@ class TestPluginLoader:
         assert loader.load_all() == []
 
     def test_load_all_with_real_plugins(self):
-        from source.io.viewer.handler import viewer_handler
-        from source.io.grid.handler import grid_handler
-        from source.io.collector.handler import collector_handler
+        from source.plugin_core.viewer.handler import viewer_handler
+        from source.plugin_core.grid.handler import grid_handler
+        from source.plugin_core.collector.handler import collector_handler
         assert viewer_handler.registry.get('image') is not None
         assert grid_handler.registry.get('image') is not None
         assert collector_handler.registry.get('exif') is not None
@@ -270,7 +270,7 @@ def test_load_plugins_returns_list():
 
 class TestAnyNeedsInstall:
     def test_no_plugins_dir(self, tmp_path):
-        with patch('source.io.loader.get_plugin_dir', return_value=str(tmp_path / 'nope')):
+        with patch('source.plugin_core.loader.get_plugin_dir', return_value=str(tmp_path / 'nope')):
             assert any_needs_install() is False
 
     def test_all_installed(self, tmp_path):
@@ -282,14 +282,14 @@ class TestAnyNeedsInstall:
         stamp = vendor / _INSTALL_STAMP
         stamp.touch()
         os.utime(stamp, (time.time() + 10, time.time() + 10))
-        with patch('source.io.loader.get_plugin_dir', return_value=str(tmp_path)):
+        with patch('source.plugin_core.loader.get_plugin_dir', return_value=str(tmp_path)):
             assert any_needs_install() is False
 
     def test_one_needs_install(self, tmp_path):
         p1 = tmp_path / 'plugin_a'
         p1.mkdir()
         (p1 / 'requirements.txt').write_text('pkg')
-        with patch('source.io.loader.get_plugin_dir', return_value=str(tmp_path)):
+        with patch('source.plugin_core.loader.get_plugin_dir', return_value=str(tmp_path)):
             assert any_needs_install() is True
 
     def test_skips_hidden_and_pycache(self, tmp_path):
@@ -297,12 +297,12 @@ class TestAnyNeedsInstall:
         (tmp_path / '.hidden' / 'requirements.txt').write_text('pkg')
         (tmp_path / '__pycache__').mkdir()
         (tmp_path / '__pycache__' / 'requirements.txt').write_text('pkg')
-        with patch('source.io.loader.get_plugin_dir', return_value=str(tmp_path)):
+        with patch('source.plugin_core.loader.get_plugin_dir', return_value=str(tmp_path)):
             assert any_needs_install() is False
 
     def test_no_requirements_file(self, tmp_path):
         (tmp_path / 'plugin_a').mkdir()
-        with patch('source.io.loader.get_plugin_dir', return_value=str(tmp_path)):
+        with patch('source.plugin_core.loader.get_plugin_dir', return_value=str(tmp_path)):
             assert any_needs_install() is False
 
 
@@ -327,7 +327,7 @@ class TestInstallPluginDeps:
     def test_success(self, tmp_path):
         req = tmp_path / 'requirements.txt'
         req.write_text('')
-        with patch('source.io.loader._run_pip_frozen'):
+        with patch('source.plugin_core.loader._run_pip_frozen'):
             result = install_plugin_deps(str(tmp_path))
         assert result == 0
         assert (tmp_path / _PACKAGES_DIR / _INSTALL_STAMP).exists()
@@ -335,14 +335,14 @@ class TestInstallPluginDeps:
     def test_failure(self, tmp_path):
         req = tmp_path / 'requirements.txt'
         req.write_text('')
-        with patch('source.io.loader._run_pip_frozen', side_effect=RuntimeError('fail')):
+        with patch('source.plugin_core.loader._run_pip_frozen', side_effect=RuntimeError('fail')):
             result = install_plugin_deps(str(tmp_path))
         assert result == 1
 
     def test_passes_no_cache_dir(self, tmp_path):
         req = tmp_path / 'requirements.txt'
         req.write_text('')
-        with patch('source.io.loader._run_pip_frozen') as mock_frozen:
+        with patch('source.plugin_core.loader._run_pip_frozen') as mock_frozen:
             install_plugin_deps(str(tmp_path))
         args = mock_frozen.call_args[0][0]
         assert '--no-cache-dir' in args
@@ -374,7 +374,7 @@ class TestPluginLoaderSkipInstall:
         (plugin / '__init__.py').write_text('')
         registries = {'viewer': PluginRegistry(), 'grid': PluginRegistry(), 'collector': PluginRegistry()}
         loader = PluginLoader(str(tmp_path), registries, skip_install=True)
-        with patch('source.io.loader._install_requirements') as mock_install:
+        with patch('source.plugin_core.loader._install_requirements') as mock_install:
             loader.load_all()
         mock_install.assert_not_called()
 
@@ -385,7 +385,7 @@ class TestPluginLoaderSkipInstall:
         (plugin / '__init__.py').write_text('')
         registries = {'viewer': PluginRegistry(), 'grid': PluginRegistry(), 'collector': PluginRegistry()}
         loader = PluginLoader(str(tmp_path), registries, skip_install=False)
-        with patch('source.io.loader._install_requirements', return_value=True) as mock_install:
+        with patch('source.plugin_core.loader._install_requirements', return_value=True) as mock_install:
             loader.load_all()
         mock_install.assert_called_once()
 
@@ -432,7 +432,7 @@ class TestPluginLoaderModuleLoading:
 
     def test_loads_viewer_plugin(self, tmp_path):
         code = '''
-from source.io.viewer.base import BaseViewerPlugin
+from source.plugin_core.viewer.base import BaseViewerPlugin
 class TestViewer(BaseViewerPlugin):
     NAME = 'test_viewer_load'
     EXTENSIONS = ('.test',)
@@ -449,7 +449,7 @@ class TestViewer(BaseViewerPlugin):
 
     def test_loads_grid_plugin(self, tmp_path):
         code = '''
-from source.io.grid.base import BaseGridPlugin
+from source.plugin_core.grid.base import BaseGridPlugin
 class TestGrid(BaseGridPlugin):
     NAME = 'test_grid_load'
     EXTENSIONS = ('.test',)
@@ -466,7 +466,7 @@ class TestGrid(BaseGridPlugin):
 
     def test_loads_collector_plugin(self, tmp_path):
         code = '''
-from source.io.collector.base import BaseCollectorPlugin
+from source.plugin_core.collector.base import BaseCollectorPlugin
 class TestCollector(BaseCollectorPlugin):
     NAME = 'test_collector_load'
     EXTENSIONS = ('.test',)
@@ -506,7 +506,7 @@ class TestCollector(BaseCollectorPlugin):
         (plugin / 'requirements.txt').write_text('nonexistent-pkg')
         (plugin / '__init__.py').write_text('')
         (plugin / 'myplugin.py').write_text('''
-from source.io.viewer.base import BaseViewerPlugin
+from source.plugin_core.viewer.base import BaseViewerPlugin
 class X(BaseViewerPlugin):
     NAME = 'fail_viewer'
     EXTENSIONS = ()
@@ -516,7 +516,7 @@ class X(BaseViewerPlugin):
 ''')
         registries = {'viewer': PluginRegistry(), 'grid': PluginRegistry(), 'collector': PluginRegistry()}
         loader = PluginLoader(str(tmp_path), registries, skip_install=False)
-        with patch('source.io.loader._install_requirements', return_value=False):
+        with patch('source.plugin_core.loader._install_requirements', return_value=False):
             loaded = loader.load_all()
         assert 'failplugin' not in loaded
         assert registries['viewer'].get('fail_viewer') is None
@@ -579,15 +579,15 @@ class TestDiscoverPluginsAllTypes:
 
 class TestRealPluginIntegration:
     def test_image_plugin_registers_all_types(self):
-        from source.io.viewer.handler import viewer_handler
-        from source.io.grid.handler import grid_handler
-        from source.io.collector.handler import collector_handler
+        from source.plugin_core.viewer.handler import viewer_handler
+        from source.plugin_core.grid.handler import grid_handler
+        from source.plugin_core.collector.handler import collector_handler
         assert viewer_handler.registry.get('image') is not None
         assert grid_handler.registry.get('image') is not None
         assert collector_handler.registry.get('exif') is not None
 
     def test_collector_info_has_extensions(self):
-        from source.io.collector.handler import collector_handler
+        from source.plugin_core.collector.handler import collector_handler
         info = collector_handler.info()
         assert len(info) > 0
         for name, extensions in info:
@@ -595,13 +595,13 @@ class TestRealPluginIntegration:
             assert isinstance(extensions, tuple)
 
     def test_viewer_can_resolve_jpg(self):
-        from source.io.viewer.handler import viewer_handler
+        from source.plugin_core.viewer.handler import viewer_handler
         plugin = viewer_handler.registry.resolve('test.jpg')
         assert plugin is not None
         assert plugin.NAME == 'image'
 
     def test_grid_can_resolve_png(self):
-        from source.io.grid.handler import grid_handler
+        from source.plugin_core.grid.handler import grid_handler
         plugin = grid_handler.registry.resolve('test.png')
         assert plugin is not None
         assert plugin.NAME == 'image'
@@ -646,7 +646,7 @@ class TestSetupDllDirectory:
         lib_dir.mkdir()
         old_path = os.environ.get('PATH', '')
         try:
-            with patch('source.io.loader.os.add_dll_directory') as mock_add:
+            with patch('source.plugin_core.loader.os.add_dll_directory') as mock_add:
                 _setup_dll_directory(str(tmp_path))
                 mock_add.assert_called_once_with(str(lib_dir))
         finally:

@@ -2,8 +2,8 @@ import py_compile
 import pytest
 from PIL import Image
 
-from source.io.viewer.handler import viewer_handler
-from source.io.viewer.base import BaseViewerPlugin
+from source.plugin_core.viewer.handler import viewer_handler
+from source.plugin_core.viewer.base import BaseViewerPlugin
 
 
 def _get_image_plugin():
@@ -11,11 +11,11 @@ def _get_image_plugin():
 
 
 def test_compile_base():
-    py_compile.compile('source/io/viewer/base.py')
+    py_compile.compile('source/plugin_core/viewer/base.py')
 
 
 def test_compile_handler():
-    py_compile.compile('source/io/viewer/handler.py')
+    py_compile.compile('source/plugin_core/viewer/handler.py')
 
 
 def test_base_is_abstract():

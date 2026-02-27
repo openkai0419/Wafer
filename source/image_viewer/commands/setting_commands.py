@@ -1,7 +1,7 @@
 from PySide6 import QtWidgets
 
 from ...actions.bridge import Kit
-from ...io.grid.handler import grid_handler, VIEWER_THUMBNAIL_DEFAULT_SIZE
+from ...plugin_core.grid.handler import grid_handler, VIEWER_THUMBNAIL_DEFAULT_SIZE
 from ..viewer_settings import main_setting
 
 _SETTING_KEY = 'viewer/thumbnail_default_size'

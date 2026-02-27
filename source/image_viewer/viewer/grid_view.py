@@ -9,7 +9,7 @@ from ...qt.debounce import qt_debounce, qt_throttle
 from ...qt.pixmap import PixmapFactory
 from ...qt.thread import main_thread
 from ..viewer_settings import main_setting
-from ...io.grid.handler import grid_handler
+from ...plugin_core.grid.handler import grid_handler
 from .cachemanager import MemoryLimitedImageCache, GraphicsItemPool, ProxyWidgetPool
 from .calc_layout import JustifiedLayoutCalculator, LayoutData
 from .items import ViewerItems

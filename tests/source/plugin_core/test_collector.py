@@ -1,9 +1,9 @@
 import py_compile
 import pytest
 
-from source.io.collector.handler import collector_handler
-from source.io.collector.base import CollectorResult
-from source.io.collector.base import BaseCollectorPlugin
+from source.plugin_core.collector.handler import collector_handler
+from source.plugin_core.collector.base import CollectorResult
+from source.plugin_core.collector.base import BaseCollectorPlugin
 
 
 def _get_exif_plugin():
@@ -11,11 +11,11 @@ def _get_exif_plugin():
 
 
 def test_compile_base():
-    py_compile.compile('source/io/collector/base.py')
+    py_compile.compile('source/plugin_core/collector/base.py')
 
 
 def test_compile_handler():
-    py_compile.compile('source/io/collector/handler.py')
+    py_compile.compile('source/plugin_core/collector/handler.py')
 
 
 def test_base_is_abstract():

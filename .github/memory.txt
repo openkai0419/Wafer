@@ -59,14 +59,14 @@ OutboxStore: プロセス個別のOutbox DB。send_reliable→push→通知→�
 - signal.py: Signal(connect/emit)
 - profiling.py: FunctionProfiler(@profiler.profile)
 
-■ IO プラグインレジストリ（source/io/）
+■ プラグインレジストリ（source/plugin_core/）
 - registry.py: BasePlugin(NAME/EXTENSIONS/PRIORITY) + PluginRegistry(register/resolve/resolve_all)
 - collector/: BaseCollectorPlugin + CollectorResult(dataclass) + collector_handler
 - grid/: BaseGridPlugin(load/create_cell_widget) + grid_handler。フォールバック=FileThumbnailer
 - viewer/: BaseViewerPlugin(create_widget/load_content/clear) + viewer_handler
 - api.py: 公開APIモジュール。sys.modules['afterimages']に登録。プラグインはfrom afterimagesでインポート
 
-■ プラグインローダー（source/io/loader.py）
+■ プラグインローダー（source/plugin_core/loader.py）
 - plugins/直下にフォルダ単位で配置。*.py/requirements.txt/lib//。packages/
 - ロードフロー: requirements.txt→pip install --target=.packages/→sys.path追加→lib/ DLL設定→クラス自動検出・登録
 - pip installはSubprocess（Popen+ポーリング）。frozen exe時はsys.executable --install-depsで子プロセス起動

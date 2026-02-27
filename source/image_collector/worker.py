@@ -6,8 +6,8 @@ import threading
 from ..common.logs import AppLogger
 from ..common.funcs import normalize_path
 from ..zmq.node import Node
-from ..io.collector.handler import collector_handler
-from ..io.collector.base import CollectorResult
+from ..plugin_core.collector.handler import collector_handler
+from ..plugin_core.collector.base import CollectorResult
 
 
 _MAX_WORKERS = 4

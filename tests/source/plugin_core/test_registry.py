@@ -1,11 +1,11 @@
 import py_compile
 import pytest
 
-from source.io.registry import BasePlugin, PluginRegistry
+from source.plugin_core.registry import BasePlugin, PluginRegistry
 
 
 def test_compile():
-    py_compile.compile('source/io/registry.py')
+    py_compile.compile('source/plugin_core/registry.py')
 
 
 class DummyPluginA(BasePlugin):

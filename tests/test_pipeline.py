@@ -8,8 +8,8 @@ from source.common.funcs import normalize_path
 from source.common.hashes import fast_sig_hash
 from source.db.file_db import FileDB
 from source.db.indexer import FileIndexer
-from source.io.collector.handler import collector_handler
-from source.io.collector.base import CollectorResult
+from source.plugin_core.collector.handler import collector_handler
+from source.plugin_core.collector.base import CollectorResult
 from source.image_indexer.writer import CollectionWriter
 
 

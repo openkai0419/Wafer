@@ -2,7 +2,7 @@ import py_compile
 import pytest
 
 from unittest.mock import patch, MagicMock
-from source.io.grid.handler import grid_handler, VIEWER_THUMBNAIL_DEFAULT_SIZE
+from source.plugin_core.grid.handler import grid_handler, VIEWER_THUMBNAIL_DEFAULT_SIZE
 
 
 def test_compile():

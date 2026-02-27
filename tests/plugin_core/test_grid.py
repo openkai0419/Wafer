@@ -2,8 +2,8 @@ import py_compile
 import pytest
 from PIL import Image
 
-from source.io.grid.handler import grid_handler
-from source.io.grid.base import BaseGridPlugin
+from source.plugin_core.grid.handler import grid_handler
+from source.plugin_core.grid.base import BaseGridPlugin
 
 
 def _get_image_plugin():
@@ -11,11 +11,11 @@ def _get_image_plugin():
 
 
 def test_compile_base():
-    py_compile.compile('source/io/grid/base.py')
+    py_compile.compile('source/plugin_core/grid/base.py')
 
 
 def test_compile_handler():
-    py_compile.compile('source/io/grid/handler.py')
+    py_compile.compile('source/plugin_core/grid/handler.py')
 
 
 def test_base_is_abstract():

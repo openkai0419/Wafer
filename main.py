@@ -10,7 +10,7 @@ from source.common.profiling import profiler
 from source.constants import APP_FILE_NAME, APP_ID, APP_NAME, default_db_name
 import source.constants as constants
 from source.image_indexer.main_indexer import IndexerProcess
-from source.io.loader import load_plugins
+from source.plugin_core.loader import load_plugins
 from source.os.process import Proc
 
 def get_icon():
@@ -119,10 +119,10 @@ def main():
     if args.dev:
         constants.DEV_MODE = True
     if args.install_deps:
-        from source.io.loader import install_plugin_deps
+        from source.plugin_core.loader import install_plugin_deps
         sys.exit(install_plugin_deps(args.install_deps))
     if not any([args.communicator, args.viewer, args.indexer, args.collector]):
-        from source.io.loader import any_needs_install
+        from source.plugin_core.loader import any_needs_install
         app = _create_app()
         if any_needs_install():
             from source.qt.splash import InstallSplash
@@ -150,7 +150,7 @@ def main():
         else:
             AppLogger.warning('--collector requires a db name')
     elif args.viewer:
-        from source.io.loader import any_needs_install
+        from source.plugin_core.loader import any_needs_install
         app = _create_app()
         if any_needs_install():
             from source.qt.splash import InstallSplash

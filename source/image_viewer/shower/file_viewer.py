@@ -6,7 +6,7 @@ from ...qt.debounce import qt_debounce, qt_throttle
 from ...common.profiling import profiler
 from ...common.logs import AppLogger
 from ...db.query import MetaInfoSearchEngine
-from ...io.viewer.handler import viewer_handler
+from ...plugin_core.viewer.handler import viewer_handler
 from ...qt.thread import CancellableRunnable, main_thread
 from .meta_viewer import MetaListWidget
 from .image_viewer import ImageViewerWidget

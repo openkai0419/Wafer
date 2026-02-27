@@ -5,7 +5,7 @@ from ..common.logs import AppLogger
 from ..common.profiling import profiler
 from ..db.indexer import FileIndexer
 from ..os.process import Proc
-from ..io.collector.handler import collector_handler
+from ..plugin_core.collector.handler import collector_handler
 
 _BATCH_SIZE = 1000
 _DISPATCH_INTERVAL = 2.0

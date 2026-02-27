@@ -64,7 +64,7 @@ prototypes/          Experimental/prototype code
 
 ## Plugins
 
-Plugins are placed as folders under `plugins/`. `PluginLoader` (`source/io/loader.py`) auto-discovers and registers them at startup.
+Plugins are placed as folders under `plugins/`. `PluginLoader` (`source/plugin_core/loader.py`) auto-discovers and registers them at startup.
 
 ### Plugin Folder Structure
 

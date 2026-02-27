@@ -1,7 +1,7 @@
 import py_compile
 
 from source.image_collector.worker import CollectorWorker, _MAX_WORKERS
-from source.io.collector.handler import collector_handler
+from source.plugin_core.collector.handler import collector_handler
 
 
 def test_compile():

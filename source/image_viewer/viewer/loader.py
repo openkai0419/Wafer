@@ -1,6 +1,6 @@
 from ...common.funcs import uipx
 from ...common.profiling import profiler
-from ...io.grid.handler import grid_handler
+from ...plugin_core.grid.handler import grid_handler
 from ...qt.thread import AdaptiveThreadPool
 from ..viewer.cachemanager import fullsize_key
 from PySide6 import QtCore, QtGui

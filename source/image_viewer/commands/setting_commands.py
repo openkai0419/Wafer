@@ -37,13 +37,15 @@ def set_viewer_thumbnail_default_size(ctx):
 
 
 class SettingCommands(Kit.MenuBase):
-    prefix = "Setting"
+    NAME = "Setting"
 
-    commands = [
-        ":Setting",
-        Kit.Command(
-            path="setting.viewer_thumbnail_default_size",
-            display="Viewer Thumbnail Default Size",
-            func=set_viewer_thumbnail_default_size,
-        ),
-    ]
+    @classmethod
+    def commands(cls):
+        return [
+            ":Setting",
+            Kit.Command(
+                path="setting.viewer_thumbnail_default_size",
+                display="Viewer Thumbnail Default Size",
+                func=set_viewer_thumbnail_default_size,
+            ),
+        ]

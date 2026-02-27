@@ -2,6 +2,7 @@ import os
 import sys
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtWidgets import QApplication, QFileDialog, QListWidget, QMenu, QMessageBox, QPushButton, QStackedLayout, QVBoxLayout, QWidget
+from ...common.funcs import uipx
 from ...lang.manager import TranslatorMixin
 
 class FolderListWidget(QWidget, TranslatorMixin):
@@ -9,14 +10,14 @@ class FolderListWidget(QWidget, TranslatorMixin):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(self.t.tr('Folder List Manager'))
-        self.resize(400, 300)
+        self.resize(uipx(400), uipx(300))
         self.folder_list = QListWidget()
         self.folder_list.setContextMenuPolicy(Qt.CustomContextMenu)
         self.folder_list.customContextMenuRequested.connect(self.show_context_menu)
         self.folder_list.itemDoubleClicked.connect(self.replace_folder)
         self.folder_list.setAlternatingRowColors(True)
         self.add_button = QPushButton('+')
-        self.add_button.setFixedSize(25, 25)
+        self.add_button.setFixedSize(uipx(25), uipx(25))
         self.add_button.setToolTip(self.t.tr('Add folder'))
         self.overlay_layout = QVBoxLayout()
         self.overlay_layout.addWidget(self.folder_list)
@@ -26,12 +27,12 @@ class FolderListWidget(QWidget, TranslatorMixin):
         self.main_layout = QStackedLayout(self)
         self.main_layout.addWidget(container)
         self.add_button.setParent(self.folder_list)
-        self.add_button.move(self.folder_list.width() - 30, 5)
+        self.add_button.move(self.folder_list.width() - uipx(30), uipx(5))
         self.folder_list.resizeEvent = self.on_resize
         self.add_button.clicked.connect(self.add_folder)
 
     def on_resize(self, event):
-        self.add_button.move(self.folder_list.width() - 30, 5)
+        self.add_button.move(self.folder_list.width() - uipx(30), uipx(5))
         QListWidget.resizeEvent(self.folder_list, event)
 
     def show_context_menu(self, position):

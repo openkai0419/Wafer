@@ -40,6 +40,7 @@ class IndexerProcess:
             return
         with self.data_db as indexer:
             indexer.check_init()
+            indexer.backfill_pending_for_collectors()
 
         progress = ProgressAggregator(self.dname, self.zmq)
 

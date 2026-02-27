@@ -21,7 +21,7 @@ _CHOICE_TO_INDEX = {c: i for i, c in enumerate(ORIENTATION_CHOICES)}
 
 
 class GridViewCommands(Kit.MenuBase):
-    prefix = "GridView"
+    NAME = "GridView"
 
     @staticmethod
     def get_view(ctx):
@@ -292,54 +292,56 @@ class GridViewCommands(Kit.MenuBase):
         view = GridViewCommands.get_view(ctx)
         view.set_orientation(_CHOICE_TO_INDEX[next_key])
 
-    commands = [
-        ":GridView",
-        "-",
-        ":Selection",
-        Kit.Command(path="grid.click_select_at_pos", display="Click Select", func=click_select_at_pos),
-        Kit.Command(path="grid.toggle_at_pos", display="Toggle Select", func=toggle_at_pos),
-        Kit.Command(path="grid.range_select_at_pos", display="Range Select", func=range_select_at_pos),
-        Kit.Command(path="grid.select_at_pos", display="Select", func=select_at_pos, hidden=True),
-        Kit.Command(path="grid.select_all", display="Select All", func=select_all),
-        Kit.Command(path="grid.clear_selection", display="Clear Selection", func=clear_selection),
-        "-",
-        ":Viewer",
-        Kit.Command(path="grid.show_at_pos", display="Show at Pos", func=show_at_pos),
-        Kit.Command(path="grid.show_selected", display="Show Selected", func=show_selected),
-        "-",
-        ":Scroll",
-        Kit.Command(path="grid.scroll_up", display="Scroll Up", func=wheel_scroll_up, params=[Kit.Param(name="multiplier", value=1.5)]),
-        Kit.Command(path="grid.scroll_down", display="Scroll Down", func=wheel_scroll_down, params=[Kit.Param(name="multiplier", value=1.5)]),
-        Kit.Command(path="grid.move_to_next_row", display="Next Row", func=move_to_next_row),
-        Kit.Command(path="grid.move_to_prev_row", display="Prev Row", func=move_to_prev_row),
-        "-",
-        ":Settings",
-        "Scroll Anchor/:Scroll Anchor",
-        Kit.Command(path="Scroll Anchor/grid.scroll_anchor_top", display="Top", func=set_scroll_anchor_top, checkable=True, action_group="grid_scroll_anchor"),
-        Kit.Command(path="Scroll Anchor/grid.scroll_anchor_center", display="Center", func=set_scroll_anchor_center, checkable=True, default_checked=True, action_group="grid_scroll_anchor"),
-        "Layout/:Layout",
-        Kit.Command(path="Layout/grid.orientation_z", display="Z (↘)", func=set_orientation_z, checkable=True, default_checked=True, action_group="grid_orientation"),
-        Kit.Command(path="Layout/grid.orientation_reverse_z", display="S (↙)", func=set_orientation_reverse_z, checkable=True, action_group="grid_orientation"),
-        Kit.Command(path="Layout/grid.orientation_n", display="И (↘)", func=set_orientation_n, checkable=True, action_group="grid_orientation"),
-        Kit.Command(path="Layout/grid.orientation_reverse_n", display="N (↙)", func=set_orientation_reverse_n, checkable=True, action_group="grid_orientation"),
-        Kit.Command(
-            path="grid.cycle_orientation", display="Cycle Orientation", func=cycle_orientation,
-            params=[Kit.Param(name=k, value=True) for k in ORIENTATION_CHOICES] + [Kit.Param(name="reverse", value=False)],
-        ),
-        "-",
-        ":Scale",
-        Kit.Command(path="grid.scale_up", display="Scale Up", func=scale_up, params=[Kit.Param(name="ratio", value=1.1)]),
-        Kit.Command(path="grid.scale_down", display="Scale Down", func=scale_down, params=[Kit.Param(name="ratio", value=1.1)]),
-        Kit.Command(path="grid.set_scale", display="Set Scale", func=set_scale, params=[Kit.Param(name="height", value=500)]),
-        Kit.Command(path="grid.scale_reset", display="Reset Scale", func=scale_reset),
-        "-",
-        Kit.Command(path="grid.toggle_autoscroll", display="AutoScroll", func=toggle_autoscroll),
-        "-",
-    ]
+    @classmethod
+    def commands(cls):
+        return [
+            ":GridView",
+            "-",
+            ":Selection",
+            Kit.Command(path="grid.click_select_at_pos", display="Click Select", func=cls.click_select_at_pos),
+            Kit.Command(path="grid.toggle_at_pos", display="Toggle Select", func=cls.toggle_at_pos),
+            Kit.Command(path="grid.range_select_at_pos", display="Range Select", func=cls.range_select_at_pos),
+            Kit.Command(path="grid.select_at_pos", display="Select", func=cls.select_at_pos, hidden=True),
+            Kit.Command(path="grid.select_all", display="Select All", func=cls.select_all),
+            Kit.Command(path="grid.clear_selection", display="Clear Selection", func=cls.clear_selection),
+            "-",
+            ":Viewer",
+            Kit.Command(path="grid.show_at_pos", display="Show at Pos", func=cls.show_at_pos),
+            Kit.Command(path="grid.show_selected", display="Show Selected", func=cls.show_selected),
+            "-",
+            ":Scroll",
+            Kit.Command(path="grid.scroll_up", display="Scroll Up", func=cls.wheel_scroll_up, params=[Kit.Param(name="multiplier", value=1.5)]),
+            Kit.Command(path="grid.scroll_down", display="Scroll Down", func=cls.wheel_scroll_down, params=[Kit.Param(name="multiplier", value=1.5)]),
+            Kit.Command(path="grid.move_to_next_row", display="Next Row", func=cls.move_to_next_row),
+            Kit.Command(path="grid.move_to_prev_row", display="Prev Row", func=cls.move_to_prev_row),
+            "-",
+            ":Settings",
+            "Scroll Anchor/:Scroll Anchor",
+            Kit.Command(path="Scroll Anchor/grid.scroll_anchor_top", display="Top", func=cls.set_scroll_anchor_top, checkable=True, action_group="grid_scroll_anchor"),
+            Kit.Command(path="Scroll Anchor/grid.scroll_anchor_center", display="Center", func=cls.set_scroll_anchor_center, checkable=True, default_checked=True, action_group="grid_scroll_anchor"),
+            "Layout/:Layout",
+            Kit.Command(path="Layout/grid.orientation_z", display="Z (↘)", func=cls.set_orientation_z, checkable=True, default_checked=True, action_group="grid_orientation"),
+            Kit.Command(path="Layout/grid.orientation_reverse_z", display="S (↙)", func=cls.set_orientation_reverse_z, checkable=True, action_group="grid_orientation"),
+            Kit.Command(path="Layout/grid.orientation_n", display="И (↘)", func=cls.set_orientation_n, checkable=True, action_group="grid_orientation"),
+            Kit.Command(path="Layout/grid.orientation_reverse_n", display="N (↙)", func=cls.set_orientation_reverse_n, checkable=True, action_group="grid_orientation"),
+            Kit.Command(
+                path="grid.cycle_orientation", display="Cycle Orientation", func=cls.cycle_orientation,
+                params=[Kit.Param(name=k, value=True) for k in ORIENTATION_CHOICES] + [Kit.Param(name="reverse", value=False)],
+            ),
+            "-",
+            ":Scale",
+            Kit.Command(path="grid.scale_up", display="Scale Up", func=cls.scale_up, params=[Kit.Param(name="ratio", value=1.1)]),
+            Kit.Command(path="grid.scale_down", display="Scale Down", func=cls.scale_down, params=[Kit.Param(name="ratio", value=1.1)]),
+            Kit.Command(path="grid.set_scale", display="Set Scale", func=cls.set_scale, params=[Kit.Param(name="height", value=500)]),
+            Kit.Command(path="grid.scale_reset", display="Reset Scale", func=cls.scale_reset),
+            "-",
+            Kit.Command(path="grid.toggle_autoscroll", display="AutoScroll", func=cls.toggle_autoscroll),
+            "-",
+        ]
 
 
 class GridViewDragCommands(Kit.DragMenuBase):
-    prefix = "GridView"
+    NAME = "GridView"
 
     @staticmethod
     def _noop(ctx):
@@ -435,52 +437,55 @@ class GridViewDragCommands(Kit.DragMenuBase):
     @staticmethod
     def rect_select_end(ctx):
         GridViewDragCommands._rect_select_end(GridViewCommands.get_view(ctx), GridViewCommands.get_items(ctx))
-    commands = [
-        Kit.Command(
-            path="grid.drag_files",
-            display="Drag Files",
-            category="drag",
-            drag_callbacks={"start": drag_files_start, "move": _noop, "end": _noop},
-            target_widgets=["GridView"],
-        ),
-        Kit.Command(
-            path="grid.rect_select_replace",
-            display="Rect Select Replace",
-            category="drag",
-            drag_callbacks={
-                "start": lambda ctx: GridViewDragCommands._rect_select_start(GridViewCommands.get_view(ctx), "replace", ctx.pos),
-                "move": rect_select_move,
-                "end": rect_select_end,
-            },
-            target_widgets=["GridView"],
-        ),
-        Kit.Command(
-            path="grid.rect_select_add",
-            display="Rect Select Add",
-            category="drag",
-            drag_callbacks={
-                "start": lambda ctx: GridViewDragCommands._rect_select_start(GridViewCommands.get_view(ctx), "add", ctx.pos),
-                "move": rect_select_move,
-                "end": rect_select_end,
-            },
-            target_widgets=["GridView"],
-        ),
-        Kit.Command(
-            path="grid.rect_select_remove",
-            display="Rect Select Remove",
-            category="drag",
-            drag_callbacks={
-                "start": lambda ctx: GridViewDragCommands._rect_select_start(GridViewCommands.get_view(ctx), "remove", ctx.pos),
-                "move": rect_select_move,
-                "end": rect_select_end,
-            },
-            target_widgets=["GridView"],
-        ),
-    ]
+
+    @classmethod
+    def commands(cls):
+        return [
+            Kit.Command(
+                path="grid.drag_files",
+                display="Drag Files",
+                category="drag",
+                drag_callbacks={"start": cls.drag_files_start, "move": cls._noop, "end": cls._noop},
+                target_widgets=["GridView"],
+            ),
+            Kit.Command(
+                path="grid.rect_select_replace",
+                display="Rect Select Replace",
+                category="drag",
+                drag_callbacks={
+                    "start": lambda ctx: GridViewDragCommands._rect_select_start(GridViewCommands.get_view(ctx), "replace", ctx.pos),
+                    "move": cls.rect_select_move,
+                    "end": cls.rect_select_end,
+                },
+                target_widgets=["GridView"],
+            ),
+            Kit.Command(
+                path="grid.rect_select_add",
+                display="Rect Select Add",
+                category="drag",
+                drag_callbacks={
+                    "start": lambda ctx: GridViewDragCommands._rect_select_start(GridViewCommands.get_view(ctx), "add", ctx.pos),
+                    "move": cls.rect_select_move,
+                    "end": cls.rect_select_end,
+                },
+                target_widgets=["GridView"],
+            ),
+            Kit.Command(
+                path="grid.rect_select_remove",
+                display="Rect Select Remove",
+                category="drag",
+                drag_callbacks={
+                    "start": lambda ctx: GridViewDragCommands._rect_select_start(GridViewCommands.get_view(ctx), "remove", ctx.pos),
+                    "move": cls.rect_select_move,
+                    "end": cls.rect_select_end,
+                },
+                target_widgets=["GridView"],
+            ),
+        ]
 
 
 class GridViewDropCommands(Kit.DragMenuBase):
-    prefix = "GridView"
+    NAME = "GridView"
 
     @staticmethod
     def _apply_drop_action(ctx, op: str) -> None:
@@ -614,33 +619,35 @@ class GridViewDropCommands(Kit.DragMenuBase):
         drop_files_with_ui(src_items, dst_dir, op, overwrite_mode=on_conflict, parent=view)
         GridViewDropCommands._preview_clear(view)
 
-    commands = [
-        Kit.Command(
-            path="grid.drop_files_copy",
-            display="Drop Files (Copy)",
-            category="drop",
-            params=[Kit.Param(name="on_conflict", value=("ask", "overwrite", "rename", "skip"))],
-            drop_acceptor=accept_external_drop,
-            drop_callbacks={
-                "enter": lambda ctx, on_conflict="rename": GridViewDropCommands._enter(ctx, op="copy", on_conflict=on_conflict),
-                "move": lambda ctx, on_conflict="rename": GridViewDropCommands._move(ctx, op="copy", on_conflict=on_conflict),
-                "leave": lambda ctx, on_conflict="rename": GridViewDropCommands._leave(ctx, op="copy", on_conflict=on_conflict),
-                "drop": lambda ctx, on_conflict="rename": GridViewDropCommands._save(ctx, op="copy", on_conflict=on_conflict),
-            },
-            target_widgets=["GridView"],
-        ),
-        Kit.Command(
-            path="grid.drop_files_move",
-            display="Drop Files (Move)",
-            category="drop",
-            params=[Kit.Param(name="on_conflict", value=("ask", "overwrite", "rename", "skip"))],
-            drop_acceptor=accept_external_drop,
-            drop_callbacks={
-                "enter": lambda ctx, on_conflict="rename": GridViewDropCommands._enter(ctx, op="move", on_conflict=on_conflict),
-                "move": lambda ctx, on_conflict="rename": GridViewDropCommands._move(ctx, op="move", on_conflict=on_conflict),
-                "leave": lambda ctx, on_conflict="rename": GridViewDropCommands._leave(ctx, op="move", on_conflict=on_conflict),
-                "drop": lambda ctx, on_conflict="rename": GridViewDropCommands._save(ctx, op="move", on_conflict=on_conflict),
-            },
-            target_widgets=["GridView"],
-        ),
-    ]
+    @classmethod
+    def commands(cls):
+        return [
+            Kit.Command(
+                path="grid.drop_files_copy",
+                display="Drop Files (Copy)",
+                category="drop",
+                params=[Kit.Param(name="on_conflict", value=("ask", "overwrite", "rename", "skip"))],
+                drop_acceptor=cls.accept_external_drop,
+                drop_callbacks={
+                    "enter": lambda ctx, on_conflict="rename": GridViewDropCommands._enter(ctx, op="copy", on_conflict=on_conflict),
+                    "move": lambda ctx, on_conflict="rename": GridViewDropCommands._move(ctx, op="copy", on_conflict=on_conflict),
+                    "leave": lambda ctx, on_conflict="rename": GridViewDropCommands._leave(ctx, op="copy", on_conflict=on_conflict),
+                    "drop": lambda ctx, on_conflict="rename": GridViewDropCommands._save(ctx, op="copy", on_conflict=on_conflict),
+                },
+                target_widgets=["GridView"],
+            ),
+            Kit.Command(
+                path="grid.drop_files_move",
+                display="Drop Files (Move)",
+                category="drop",
+                params=[Kit.Param(name="on_conflict", value=("ask", "overwrite", "rename", "skip"))],
+                drop_acceptor=cls.accept_external_drop,
+                drop_callbacks={
+                    "enter": lambda ctx, on_conflict="rename": GridViewDropCommands._enter(ctx, op="move", on_conflict=on_conflict),
+                    "move": lambda ctx, on_conflict="rename": GridViewDropCommands._move(ctx, op="move", on_conflict=on_conflict),
+                    "leave": lambda ctx, on_conflict="rename": GridViewDropCommands._leave(ctx, op="move", on_conflict=on_conflict),
+                    "drop": lambda ctx, on_conflict="rename": GridViewDropCommands._save(ctx, op="move", on_conflict=on_conflict),
+                },
+                target_widgets=["GridView"],
+            ),
+        ]

@@ -1,4 +1,5 @@
 from __future__ import annotations
+import inspect
 from typing import Any, Callable, Dict, List, Optional, Sequence
 from source.common.profiling import profiler
 from .core import register_command_defs, CommandMeta
@@ -95,6 +96,7 @@ def normalize_meta(base_parts: List[str], meta: CommandMeta) -> CommandMeta:
 
 
 class RegistryBackedMenu:
+    NAME: str = ''
     _flags: Dict[type, bool] = {}
     _items: Dict[type, List[str]] = {}
     _cmd_paths: Dict[type, Dict[str, str]] = {}
@@ -106,21 +108,22 @@ class RegistryBackedMenu:
     def register(cls) -> None:
         cls()
 
+    @classmethod
+    def commands(cls) -> list:
+        return []
+
     @profiler.profile
     def _ensure_registered(self):
         t = type(self)
         if self._flags.get(t, False):
             return
-        res = getattr(t, "commands", None)
-        base = getattr(t, "prefix", None)
-        base_parts = split_parts(base) if isinstance(base, str) and base else []
+        res = t.commands()
+        base_parts = split_parts(t.NAME) if t.NAME else []
         defs: List[CommandMeta] = []
         items: List[str] = []
         cmd_paths: Dict[str, str] = {}
-        if res is None:
-            res = []
         if not isinstance(res, list):
-            raise ValueError("commands must be list[str|CommandMeta]")
+            raise ValueError("commands() must return list[str|CommandMeta]")
         for e in res:
             if isinstance(e, str):
                 items.append(prefixed_item_token(base_parts, e))
@@ -166,6 +169,7 @@ class RegistryBackedMenu:
 
 
 class RegistryBackedCommandSet:
+    NAME: str = ''
     _flags: Dict[type, bool] = {}
 
     def __init__(self):
@@ -175,24 +179,25 @@ class RegistryBackedCommandSet:
     def register(cls) -> None:
         cls()
 
+    @classmethod
+    def commands(cls) -> list:
+        return []
+
     @profiler.profile
     def _ensure_registered(self):
         t = type(self)
         if self._flags.get(t, False):
             return
-        res = getattr(t, "commands", None)
-        base = getattr(t, "prefix", None)
-        base_parts = split_parts(base) if isinstance(base, str) and base else []
+        res = t.commands()
+        base_parts = split_parts(t.NAME) if t.NAME else []
         defs: List[CommandMeta] = []
-        if res is None:
-            res = []
         if not isinstance(res, list):
-            raise ValueError("commands must be list[CommandMeta]")
+            raise ValueError("commands() must return list[CommandMeta]")
         for e in res:
             if isinstance(e, CommandMeta):
                 defs.append(normalize_meta(base_parts, e))
                 continue
-            raise ValueError("commands must be list[CommandMeta]")
+            raise ValueError("commands() must return list[CommandMeta]")
         if defs:
             register_command_defs(defs)
         self._flags[t] = True
@@ -206,6 +211,23 @@ def register_menu_classes(menu_classes: Sequence[type[RegistryBackedMenu]]) -> N
             cls.register()
         except Exception as e:
             AppLogger.warning(f"register_menu_classes failed: {getattr(cls, '__name__', str(cls))}", exc=e)
+
+
+def discover_command_classes(*modules) -> list[type]:
+    bases = (RegistryBackedMenu, RegistryBackedCommandSet)
+    found = []
+    seen = set()
+    for mod in modules:
+        for _, obj in inspect.getmembers(mod, inspect.isclass):
+            if any(obj is b for b in bases):
+                continue
+            if not issubclass(obj, bases):
+                continue
+            if id(obj) in seen:
+                continue
+            seen.add(id(obj))
+            found.append(obj)
+    return found
 
 
 class MenuHub:

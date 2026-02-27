@@ -3,7 +3,6 @@ from PySide6 import QtCore, QtGui
 from ...common.logs import AppLogger
 from ..registry import PluginRegistry
 from .base import BaseGridPlugin
-from .image import ImageGridPlugin
 
 VIEWER_THUMBNAIL_DEFAULT_SIZE = 512
 
@@ -67,4 +66,3 @@ class GridHandler:
 
 
 grid_handler = GridHandler()
-grid_handler.registry.register(ImageGridPlugin)

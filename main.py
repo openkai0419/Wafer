@@ -10,6 +10,7 @@ from source.common.profiling import profiler
 from source.constants import APP_FILE_NAME, APP_ID, APP_NAME, default_db_name
 import source.constants as constants
 from source.image_indexer.main_indexer import IndexerProcess
+from source.io.loader import load_plugins
 from source.os.process import Proc
 
 def get_icon():
@@ -77,11 +78,18 @@ def run_all_indexers():
         Proc.new_main('--indexer', f'{name}', '--parent-pid', my_pid)
     run_communicator()
 
-def run_viewer():
+def _create_app():
     from PySide6 import QtWidgets
-    from source.image_viewer.mainwindow import MainWindow
     app = QtWidgets.QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
+    return app
+
+
+def run_viewer(app=None):
+    from PySide6 import QtWidgets
+    from source.image_viewer.mainwindow import MainWindow
+    if app is None:
+        app = _create_app()
     window = MainWindow(get_icon())
     window.show()
     sys.exit(app.exec())
@@ -103,29 +111,55 @@ def main():
     group.add_argument('--viewer', action='store_true', help='run new viewer')
     group.add_argument('--indexer', nargs='?', const=True, help='run indexer for each settings. make new with optional string')
     group.add_argument('--collector', nargs='?', const=True, help='run collector process')
+    group.add_argument('--install-deps', type=str, default=None, help=argparse.SUPPRESS)
     parser.add_argument('--plugin', type=str, default='image', help='collector plugin name')
     parser.add_argument('--parent-pid', type=int, default=None)
     parser.add_argument('--dev', action='store_true', help='enable developer mode')
     args = parser.parse_args()
     if args.dev:
         constants.DEV_MODE = True
+    if args.install_deps:
+        from source.io.loader import install_plugin_deps
+        sys.exit(install_plugin_deps(args.install_deps))
     if not any([args.communicator, args.viewer, args.indexer, args.collector]):
+        from source.io.loader import any_needs_install
+        app = _create_app()
+        if any_needs_install():
+            from source.qt.splash import InstallSplash
+            splash = InstallSplash(APP_NAME, get_icon())
+            splash.show()
+            load_plugins(on_progress=app.processEvents)
+            splash.close()
+        else:
+            load_plugins()
         Proc.new_main('--communicator')
-        run_viewer()
-        return
+        run_viewer(app)
     if args.communicator:
+        load_plugins(skip_install=True)
         run_all_indexers()
     elif args.indexer:
+        load_plugins(skip_install=True)
         if isinstance(args.indexer, str):
             run_indexer(args.indexer, parent_pid=args.parent_pid)
         else:
             Proc.new_main('--communicator')
     elif args.collector:
+        load_plugins(skip_install=True)
         if isinstance(args.collector, str):
             run_collector(args.collector, args.plugin, parent_pid=args.parent_pid)
         else:
             AppLogger.warning('--collector requires a db name')
     elif args.viewer:
-        run_viewer()
+        from source.io.loader import any_needs_install
+        app = _create_app()
+        if any_needs_install():
+            from source.qt.splash import InstallSplash
+            splash = InstallSplash(APP_NAME, get_icon())
+            splash.show()
+            load_plugins(on_progress=app.processEvents)
+            splash.close()
+        else:
+            load_plugins()
+        run_viewer(app)
 if __name__ == '__main__':
     main()

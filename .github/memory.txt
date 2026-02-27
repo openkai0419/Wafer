@@ -1,303 +1,89 @@
 ■ プロジェクト概要
-目的: 大量のファイル(主に画像)をバックグラウンド収集してDB化し、高速検索と描画を提供する画像ビューア。
-実行: main.py から起動。GUI は PySide6。将来的に動画/音声/Zip対応、プラグイン拡張を見据える。
+画像メタデータをバックグラウンド収集・DB化し、高速検索・描画する画像ビューア。PySide6。
+将来的に動画/音声/Zip対応、プラグイン拡張を見据える。
 
-■ プロセス構成
-- 4ロール: viewer(GUI), indexer(収集/インデクシング), collector(メタデータ抽出), communicator(トレイ/管理)。IPCは ZMQ。
-- main.py は引数なし起動で viewer を起動し、別プロセスで communicator を立ち上げる。
-- communicator は設定DB名一覧に応じて indexer を複数起動し、常駐する。
-- indexer はDB単位で collector プロセスを起動・管理する（plugin単位で1プロセス）。
-- 多重起動防止は source/common/mutex.py の SafeProcessLock（lock に pid+create_time を保存し、PID再利用の誤判定を避ける）。
-- --dev 引数で開発者モード起動。DEV_MODE フラグ（source/constants.py）をセット。ログパネルやデバッグメニューが有効になる。
-- main.py の引数: --communicator, --viewer, --indexer <name>, --collector <name> --plugin <plugin>, --parent-pid, --dev。
+■ プロセス構成（4ロール、IPC=ZMQ）
+- viewer: GUI。Node('viewer')。
+- communicator(tray): Broker + Node('communicator')。設定DB名毎にindexerを起動し常駐。
+- indexer: DB単位。Node('indexer', db=name, consumer=True)。plugin単位でcollectorプロセスを起動。
+- collector: Node('collector-{plugin}', db=name)。メタデータ抽出。
+- 起動: main.py → InstallSplash → load_plugins → communicator → viewer。
+- 多重起動防止: SafeProcessLock（pid+create_time）。
+- --dev で DEV_MODE=True（ログパネル、デバッグメニュー有効化）。
 
 ■ データ/設定ファイル配置
-- DBファイル: データDB=data/{name}.db、設定DB=dirs/{name}.db
-- data_path/config_path は platformdirs の user_data_dir/user_config_dir を使い、APP_FILE_NAME をルートにする。
-- ログ: data_path('.log') 配下に {role}_{pid}.log。role未設定時は {pid}.log。
-  - _LoggerFactory は遅延初期化: 初回(role未設定)はStreamHandlerのみ、set_role(role) 呼出後にFileHandler追加。
-- リソース: _resources。frozen時は sys.executable の親を基準に解決。
+- データDB: data_path('{name}.db')、設定DB: config_path('{name}.db')
+- ログ: data_path('.log/{role}_{pid}.log')。RotatingFileHandler。
+- リソース: _resources/。frozen時はsys.executableの親基準。
 
-■ DB(ファイルメタDB)
-- source/db/file_db.py の FileDB がスキーマ管理・WAL・read/write接続・CRUDを提供。
-- source/db/indexer.py の FileIndexer がスキャン・差分検出・Phase1基本登録を提供。FileDB に委譲。
-- source/db/db_utils.py に apply_write_pragmas/apply_read_pragmas を共通化。
-- 破損検知: PRAGMA quick_check が ok でなければ .bak を作って再生成。
-- 主要テーブル/ビュー: hash_index, sources, files, meta_info, tags, collection_status, files_full, kv_all, kv_meta
-- collection_status: Collectorごとのファイル処理状態を追跡。(source, collector) が PK。status='pending'|'dispatched'|'ok'|'fail'。
-  sources の CASCADE DELETE で自動削除。
-  pending→dispatched(送信時)→ok/fail(結果受信時)。再起動時にdispatchedをpendingに戻して再送。
+■ DB スキーマ概要（source/db/）
+- FileDB(file_db.py): スキーマ管理・WAL・CRUD。破損検知時は.bakして再生成。
+- FileIndexer(indexer.py): スキャン・差分検出・Phase1登録。FileDBに委譲。
+- MetaInfoSearchEngine(query.py): read-only検索。
+- 主要テーブル: hash_index, sources, files, meta_info, tags, collection_status
 - 2段階登録:
-  Phase 1 (FileIndexer._register_basic_info): path/hash/mtime/size を sources に即時登録、files に aspectをget_aspect_ratios()で取得（失敗時は1.0）で登録、拡張子ベースでマッチするCollectorのみ collection_status に pending 行挿入。Viewerへ即座にupdate通知。
-  Phase 2 (CollectorWorker→CollectionWriter): Collectorがメタデータ抽出→ZMQ送信→Writerがmeta_info/tags/aspect上書きDB登録。
-- FileIndexer.__init__(db_path, collectors=None): collectors は [(name, extensions), ...] 形式。
-  EXTENSIONS=() は全ファイルマッチ、タプル指定は拡張子フィルタ。
-  _insert_pending_by_extension() で各ファイルの拡張子に応じて対応するCollectorのみpending作成。
-  main_indexer.py で get_collector_info() から取得して渡す。
-- FileDB の主要メソッド:
-  upsert_batches: 汎用一括UPSERT（全テーブル）
-  upsert_basic_sources: Phase 1 用。sources+files のみ。aspect_ratio は COALESCE で既存値を保持。
-  upsert_collection_results: Phase 2 用。sources UPDATE + files/meta_info/tags UPSERT + collection_status UPSERT。
-  insert_pending_collection: 指定 sources × collectors の pending 行を INSERT OR IGNORE。
-  get_pending_sources(collector, limit): pending 状態のファイルパス一覧。
-  mark_dispatched(sources, collector): pending→dispatched に更新（送信済みマーク）。
-  reset_stale_dispatched(collectors): dispatched→pending に戻す（再起動時の復旧用）。
+  Phase1(FileIndexer): path/hash/mtime/size→sources、aspect→files、拡張子マッチするCollector→collection_status(pending)
+  Phase2(CollectionWriter): Collector結果→meta_info/tags/aspect上書き
 
-■ 検索
-- source/db/query.py の MetaInfoSearchEngine が read-only 接続で検索。
-- MetaQuery: keys/keywords/directories/include_subfolders をSQL条件へ展開。
+■ 収集アーキテクチャ（source/image_indexer/）
+- WatchFolder: watchdog→queue→0.5秒バッチ→DB操作。全ファイル監視。
+- SettingWatcher: 設定DBファイル変更を直接監視。
+- CollectorDispatcher: pending取得→collect.batchでCollectorに送信→mark_dispatched。2秒ポーリング+即時トリガー。
+- CollectionWriter: collect.result受信→2秒バッチ→upsert_collection_results。同一sourceの重複はok優先。
+- ProgressAggregator: node.send_latest()で進捗送信。
 
-■ 収集(indexer) + Collector分離アーキテクチャ
-- source/image_indexer/main_indexer.py の IndexerProcess。Node('indexer', db=name, consumer=True) 生成、WatchFolder/SettingWatcher/CollectorDispatcher/CollectionWriter を起動。
-- FileIndexer は source/db/indexer.py から import。Phase1のみ担当(スキャン+基本登録+pending挿入)。
-- WatchFolder: watchdog → queue.put → 単一ワーカースレッド(_loop) → _flush(changed/deleted) → _exec(DB操作)。0.5秒バッチタイムアウト。全ファイル監視（拡張子フィルタなし）。
-- SettingWatcher(FileSystemEventHandler): 設定DBファイル変更を直接監視し、_check_changes() で parent/ignore/delete を一括検出。
-- ProgressAggregator: コンストラクタで Node を直接受け取り、進捗集約 + IPC 通知。WatchFolderとCollectionWriterで共有。
-- CollectorDispatcher (source/image_indexer/dispatcher.py):
-  - Collectorプロセスの起動(Proc.new_main)と終了管理。
-  - get_collector_names() から動的にcollectorリストを取得（デフォルト）。コンストラクタのcollectors引数で上書き可能。
-  - get_pending_sourcesで未処理パスを取得し、collect.batchトピックでCollectorに送信後、mark_dispatchedでstatus更新。
-  - 2秒間隔のポーリング + request_dispatch()による即時トリガー。
-  - start()時にreset_stale_dispatched()を呼び、前回未完了の配信を自動復旧。
-- CollectionWriter (source/image_indexer/writer.py):
-  - Node経由でcollect.resultトピックを受信し、内部キューに蓄積。
-  - collect.resultペイロードのcollectorフィールドからcollector名を動的取得（ハードコードなし）。
-  - 専用のFileDB接続を持ち、2秒間隔でバッチ書き込み(upsert_collection_results)。
-  - 同一sourceに対する複数結果はdict重複排除（okを優先）してからDB書き込み。
-  - meta_info/tagsのvalue=Noneのエントリはスキップ（DB未登録）。
-  - WatchFolderとは別のDB接続（スレッド安全のため独立FileDBインスタンス）。
-- source/image_collector/plugin.py: 削除済み（io/collector/ に統合）。
-  - 旧BUILTIN_PLUGINS辞書は廃止。collector_registry.get(name) に置換。
-  - CollectorResult(dataclass): プラグイン戻り値の型定義。source/io/collector/base.py に実体がある。
-    - 必須: source(str), status(bool)
-    - 省略可: path, name, aspect, file_hash, meta_info(dict), tags(dict)
-    - to_dict(): None値を除外したdictを返す。ZMQシリアライズ前に呼ぶ。
-    - path省略時はWriter側でsourceをデフォルト使用。コンテナ内ファイルは source::inner/path 形式。
-    - status: bool。DB保存時にWriter側で 'ok'/'fail' 文字列に変換。
-    - meta_info/tags内のvalue=NoneもWriter側でスキップ。
-  - 仮想パスセパレータ: VIRTUAL_PATH_SEPARATOR = '::' (constants.py)。Windowsでは':'がファイル名禁止文字のため安全。
-- source/image_collector/worker.py:
-  - CollectorWorker: Node('collector-{plugin}', db=name)でZMQ接続。collect.batchを受信し、ThreadPoolExecutorでプラグイン並列実行。
-  - process()の結果がdictならlistにラップ、listならそのまま。フラット化してから送信。
-  - 結果はsend_reliable('collect.result', {collector: plugin_name, results: [...]}, dst='indexer')で確実配信。
-  - run_collector(): SafeProcessLock付きのエントリーポイント。
-- ZMQトピック:
-  - collect.batch (Indexer→Collector): paths + file_info のバッチ配信
-  - collect.result (Collector→Indexer, send_reliable): collector名 + メタデータ結果の確実配信
-  - outbox.notify: send_reliable のトリガー通知
+■ ZMQ アーキテクチャ（source/zmq/）
+5ファイル: transport.py, message.py, broker.py, node.py, outbox.py。msgpackシリアライズ。
 
-■ IPC(ZMQ) — Msg + Broker + Node アーキテクチャ
-- source/zmq/ は5ファイル構成: transport.py, message.py, broker.py, node.py, outbox.py。msgpack による2フレームシリアライズ。
-- Priority: transport.py の Priority クラスで3段階を定義。HIGH(0) / MID(1) / LOW(2)。
-  - HIGH: Ordered FIFO 高優先。update, folderchanged 等のView向け通知。
-  - MID: Ordered FIFO 中優先。デフォルト。通常のイベント通知。
-  - LOW: Ordered FIFO 低優先。dev.log 等の遅延許容メッセージ。
-- Msg (message.py): topic/src/dst/db/payload/rid/priority/coalesce を持つメッセージ。build(), to_frames(), from_frames(), reply(), make_rid()。
-  - priority フィールドはヘッダーの 'p' キー。MID時は省略（帯域節約）。
-  - coalesce フィールドはヘッダーの 'c' キー。True時のみ付与。Broker で CoalescingQueue に振り分け。
-- Broker (broker.py): ROUTER ソケット。Trayプロセスで起動。ピア管理（_PeerInfo）、ルーティング（dst: role/node_id/ALL + db フィルタ）。
-  - 5つのキュー: _direct_q（rid付きreq/reply）、_high_q、_mid_q、_broadcast_q（CoalescingQueue）、_low_q。
-  - drain順序: direct → high → mid → broadcast(coalesce) → low。
-  - push(msg): Tray自身からメッセージ送信（Node不要）。peer_counts(): ロール別接続数取得。
-  - start() でポートファイル書き込み、stop() で削除。
-  - 内部: _register_peer/_unregister_peer/_refresh_peer（ピア管理）、_route_msg（メッセージルーティング）、_deliver_batch（バッチ配信）、_reaper_loop（staleピア刈り取り）。
-  - 管理プロトコル: mgmt.register / mgmt.heartbeat / mgmt.get_count。
-  - dbフィルタ: 空 db_set のピアは全メッセージ受信、指定ありのピアはマッチのみ受信。
-- Node (node.py): DEALER ソケット。全プロセス（Viewer/Indexer/Communicator）で使用。
-  - node_id は `{role}-{os.getpid()}` 形式。ZMQ IDENTITYおよびMsg.srcに使用。
-  - on(topic, handler) / off(topic): トピック別ハンドラ登録。handler は (Msg) -> bool。
-    True=処理成功、False=処理失敗。bool以外の戻り値は AppLogger.warning で検出。
-    _call_handler() で呼び出し・エラーハンドリング・戻り値検証を一元化。
-  - コンストラクタ引数 consumer=True: outbox消費者モード。
-    'outbox.notify' 受信時に scan_all → 各レコードを Msg に変換 → on() 登録済みhandlerに委譲。
-    handler が True → レコード削除、False/None → 保持（次回リトライ）。
-  - 4つの送信API:
-    - send(topic, payload, dst, db, priority=MID): Ordered FIFO。通常のイベント通知。
-    - send_latest(topic, payload, dst, db): 最新値のみ。coalesce=True で CoalescingQueue 経由。
-    - send_reliable(topic, payload, dst, db): 確実配信。Outbox DBに永続化 + outbox.notify通知。
-    - request(topic, payload, dst, db, timeout): 同期リクエスト・リプライ。
-  - 内部: _heartbeat_tick（定期的にbrokerへheartbeat/register送信）、_send_to_broker（broker宛管理メッセージ送信）、_handle_received（受信メッセージ処理）、_create_socket（DEALERソケット生成）。
-  - Outbox処理チェーン: _schedule_outbox_process（スレッド起動）→ _try_process_outbox（ロック付き実行）→ _process_outbox（バッチ処理）。
-  - 自動 heartbeat ループ、wait_registered() で登録完了待ち、viewer_id プロパティ。
-  - stop() で outbox が空なら自動削除（delete_if_empty）。
-- OutboxStore (outbox.py): プロセス個別のOutbox DB管理。data_path('outbox/{node_id}.db')。
-  - push/remove/remove_batch/pending/cleanup/close: ローカルDB操作。
-  - delete_if_empty(): レコード0件なら自分のDBファイルを削除してTrue、そうでなければFalse。
-  - scan_all/remove_from/remove_batch_from: 静的メソッド。受信側での引き取り用。
-  - scan_all(dst_filter, db_filter): dst_filterはノードID/ロール/ALL、db_filterは特定DBのレコードのみ取得（Node.default_dbで自動フィルタ）。
-  - cleanup_empty_files(): 静的。outboxディレクトリを走査し、PID死亡 かつ レコード0件のDBファイルを削除。psutilでプロセス生存確認。
-  - send_reliable() → outbox INSERT → ZMQ通知(outbox.notify) → 受信Node._process_outbox → scan_all → handler(record) → True=delete → cleanup_empty_files。
-- transport.py: QoS + 共通定数（HEARTBEAT_INTERVAL/TIMEOUT, POLL_BASE/MAX_MS, DEFAULT_PORT等）+ ユーティリティ（tune_socket, close_socket, adaptive_poll, try_put, drain_queue）+ ポートファイル管理（write_broker_port / read_broker_port / remove_broker_port）。
-- Tray: Broker + Node('communicator') を両方使用。broker.push() による直接送信に加え、
-  AppLogger.set_node(node, role='communicator') でログ転送も有効化。
-- Viewer: Node('viewer') + on(topic, handler) チェーンで接続。msg.db によるクライアント側フィルタ。
-- Indexer: Node('indexer', db=name, consumer=True) + on(topic, handler) で接続。consumer=Trueでoutbox消費を有効化。ProgressAggregator は node.send_latest() で進捗送信、node.send(priority=HIGH) でイベント通知。
-- Collector: Node('collector-{plugin}', db=name) + send_reliable() でメタデータ結果を確実配信。
+Broker(ROUTER): Trayで起動。ピア管理+ルーティング(dst: role/node_id/ALL, dbフィルタ)。
+  5キュー: direct(rid付き) → high → mid → broadcast(coalesce) → low。
 
-■ 共通ユーティリティ（必ず使い回す）
-source/common/funcs.py:
-  - normalize_path（'\\'→'/'統一）、data_path/config_path（ディレクトリ作成込み）
-  - get_data_db/get_setting_db/get_*_file_names、uipx（DPIスケール）、native_sort
-source/common/helpers.py:
-  - call0/call_int0/to_int/try_json_loads/try_call0/widget_prop_bool
-source/common/logs.py:
-  - _LoggerFactory: ログ基盤（RotatingFileHandler + StreamHandler）。内部専用
-  - _logger: モジュールプライベート。外部からimportしない
-  - AppLogger: 4レベル(error/warning/info/debug)の静的メソッド + Signal。on_criticalシグナルも保持
-  - critical()メソッドは存在しない。未キャッチ例外は_create_exception_hook専用
-  - error→RuntimeError(text)をraise（処理中断）、warning→raiseしない（処理続行）
-  - 各レベルにon_*シグナルがあるが、UI通知には使用しない（ログ監視用途のみ）
-  - set_node(node, role): ZMQ Node を設定すると、全レベルのログが dev.log トピックで viewer に転送される。
-    payload は {'level': level, 'text': text} のみ。role/pid は msg.src ヘッダー（node_id = '{role}-{pid}'）から取得。
-  - set_role(role): ファイルハンドラの遅延追加。set_node から自動呼出。
-  - 全3プロセス(viewer/indexer/communicator)でset_nodeを呼び出してログ転送を有効化。
-  - excepthook、ログクリーンアップも統合
-source/common/notifier.py:
-  - Notifier: ユーザー向けUI通知専用。AppLoggerとは完全に分離
-  - info/warning/errorの3段階。呼ぶだけでOverlayStackにUI表示される
-  - mainwindow.pyでOverlayStackに接続済み。OverlayStack.push()を直接呼ばないこと
-  - 開発者ログ→AppLogger、ユーザー通知→Notifier。両方必要なら両方呼ぶ
-source/common/hashes.py:
-  - fast_sig_hash（先頭/中央/末尾をblake3で署名）、full_hash
-source/common/jsons.py:
-  - read_json_file/write_json_file
-source/common/signal.py:
-  - Signal（軽量なconnect/emit）
-source/common/profiling.py:
-  - FunctionProfilerのみ。@profiler.profile で関数計測。ログはAppLogger.debug経由
+Node(DEALER): 全プロセスで使用。node_id='{role}-{pid}'。
+  4送信API:
+  - send(): Ordered FIFO通常配信
+  - send_latest(): coalesce=Trueで最新値のみ（進捗等）
+  - send_reliable(): Outbox DB永続化+確実配信
+  - request(): 同期リクエスト・リプライ
 
-■ IO（プラグインレジストリ + ハンドラ）
-- source/io/registry.py: 拡張子ベース + 優先度ソートの共通プラグインレジストリ基盤。
-  - BasePlugin(ABC): NAME/EXTENSIONS/PRIORITY/match(path) を持つ基底クラス。
-    EXTENSIONS=() は全ファイルマッチ。PRIORITY は大きいほど高優先。
-  - PluginRegistry: register/resolve/resolve_all/plugins/names/get/info メソッド。
-    register時にPRIORITY降順ソート。resolveは最高優先度のマッチを返す。
-  - Collector/Grid/Viewer の3つのハンドラクラスがそれぞれ PluginRegistry を所有。
+OutboxStore: プロセス個別のOutbox DB。send_reliable→push→通知→受信側scan_all→handler→削除。
 
-- source/io/grid/: GridView用サムネイル読み込み。
-  - base.py: BaseGridPlugin(BasePlugin, ABC) — load(path, size) + create_cell_widget(parent)。
-  - image.py: ImageGridPlugin — OpenCV/Qt画像ロード。PRIORITY=100。
-    JPEGはIMREAD_REDUCED_COLOR_8/4/2でデコード時縮小（≤256/512/1024px）。
-  - handler.py: GridHandler クラス（シングルトン: grid_handler）。
-    load(path, size): プラグイン→フォールバック(FileThumbnailer)の順で画像取得。
-    _fallback_load(): Windowsシェルサムネイルによる標準フォールバック（旧FallbackGridPlugin相当）。
-    ImageGridPlugin を自動登録済み。
+トピック: collect.batch(Indexer→Collector), collect.result(Collector→Indexer), outbox.notify, dev.log。
 
-- source/image_viewer/viewer/loader.py: ImageLoaderRunnable
-  キャッシュキーはpathのみ。キャッシュHit判定は「キャッシュ画像のwidth/height >= 要求サイズ」。
-  セルサイズ縮小方向はキャッシュHit、拡大方向のみ再I/O。drawPixmapがQt側で自動スケール。
+■ 共通ユーティリティ索引（source/common/）
+- funcs.py: normalize_path, data_path/config_path, uipx, native_sort, get_data_db/get_setting_db
+- helpers.py: call0, call_int0, to_int, try_json_loads, try_call0, widget_prop_bool
+- logs.py: AppLogger(4レベル静的メソッド+Signal)。set_node()でZMQログ転送有効化
+- notifier.py: Notifier(info/warning/error)。OverlayStack自動表示
+- hashes.py: fast_sig_hash(先頭/中央/末尾blake3), full_hash
+- jsons.py: read_json_file, write_json_file
+- signal.py: Signal(connect/emit)
+- profiling.py: FunctionProfiler(@profiler.profile)
 
-- source/io/viewer/: FileViewer用個別表示プラグイン。
-  - base.py: BaseViewerPlugin(BasePlugin, ABC) — create_widget(parent, optional)/load_content(path, abstract)/clear(widget, optional)。
-  - image.py: ImageViewerPlugin — load_content()でgrid_handler.load()を呼ぶだけ。PRIORITY=100。
-    create_widget()は未実装（標準のImageViewerWidgetをViewerHandlerが直接生成）。
-  - handler.py: ViewerHandler クラス（シングルトン: viewer_handler(grid_handler)）。
-    create_default_widget(): ImageViewerWidget を標準Widgetとして生成。
-    create_widget(path): プラグインのcreate_widget→標準Widget のフォールバック。
-    load_content(path): プラグインのload_content→grid_handler.load のフォールバック。
-    ImageViewerPlugin を自動登録済み。現在は production では未使用（テストのみ）。
+■ IO プラグインレジストリ（source/io/）
+- registry.py: BasePlugin(NAME/EXTENSIONS/PRIORITY) + PluginRegistry(register/resolve/resolve_all)
+- collector/: BaseCollectorPlugin + CollectorResult(dataclass) + collector_handler
+- grid/: BaseGridPlugin(load/create_cell_widget) + grid_handler。フォールバック=FileThumbnailer
+- viewer/: BaseViewerPlugin(create_widget/load_content/clear) + viewer_handler
+- api.py: 公開APIモジュール。sys.modules['afterimages']に登録。プラグインはfrom afterimagesでインポート
 
-- source/io/collector/: メタデータ収集プラグイン（Collectorプロセス用）。
-  - base.py: BaseCollectorPlugin(BasePlugin, ABC) + CollectorResult(dataclass)。
-  - exif.py: ExifCollectorPlugin — PIL+ExifParserでメタデータ抽出。NAME='exif'。PRIORITY=100。
-  - handler.py: CollectorHandler クラス（シングルトン: collector_handler）。
-    names()/info()/collectors_for_path() を提供。ExifCollectorPlugin を自動登録済み。
+■ プラグインローダー（source/io/loader.py）
+- plugins/直下にフォルダ単位で配置。*.py/requirements.txt/lib//。packages/
+- ロードフロー: requirements.txt→pip install --target=.packages/→sys.path追加→lib/ DLL設定→クラス自動検出・登録
+- pip installはSubprocess（Popen+ポーリング）。frozen exe時はsys.executable --install-depsで子プロセス起動
+- .packages/.installedスタンプで再インストールスキップ
 
-- 各ディレクトリの __init__.py は空。外部からは handler.py のシングルトンを直接 import する。
-- source/io/collector/exif_parser.py: ExifParser（全 classmethod/staticmethod）。
+■ actions/bridge アーキテクチャ（source/actions/）
+- bridge.pyは外部向けAPI専用。actions内部からbridge import禁止（ASTで検査）
+- 主要API: Kit(型再export), Settings(バインド設定), UI(Widget管理), Command(実行/登録), Menu(構築/表示), Context(ctx生成)
+- コマンドクラス: RegistryBackedMenu(メニュー付き) / RegistryBackedCommandSet(drag/drop専用)。NAME属性でプレフィックス定義
+- 自動検出: discover_command_classes()でissubclassベースに検出→register()
+- バインディング: seed.py(デフォルト) → BindingStoreBase(保存は差分のみ) → BindingManager(resolve)
+- プリセット: _resources/{mouse,key}_bindings/standard.json
 
-■ IO プラグイン設計方針（Widget/Image 排他モデル）
-- プラグインは WIDGET_CLASS の有無で排他的にモードが決まる:
-  - WIDGET_CLASS = None (デフォルト): load()/load_content() で QImage を返す → 標準Widget で表示。
-  - WIDGET_CLASS 指定: render(path, widget, ...) でシステム管理の Widget に描画を委譲。load()/load_content() は使わない。
-- Widget のライフサイクル（生成・プーリング・再利用）はシステム側（Handler/GridView/FileViewerWidget）が管理する。
-  プラグインは WIDGET_CLASS（クラス定義）と render() のみを提供する。
-- Grid 側: WIDGET_CLASS 指定時は QGraphicsProxyWidget 経由でセルに埋め込み。システムがプーリング。
-- Viewer 側: FileViewerWidget が QStackedWidget で全プラグインの WIDGET_CLASS を事前生成・管理。
-  パス変更時: resolve → スタック切り替え → render(path, widget) → 表示。
-  WIDGET_CLASS = None のプラグイン（例: ImageViewerPlugin）は標準Widget(ImageViewerWidget)を使用。
-
-■ テスト
-- tests は source と同じ階層構造を維持し、ファイル名は test_<source_file>.py。
-- actions内部は bridge をimport禁止（ASTで検査）。
-
-■ actions/bridge アーキテクチャ
-- source/actions は「コマンド定義・実行」「メニュー構築」「キー/マウス等のバインディング」を担当。
-- bridge.py は外部向けAPI専用。source/actions 配下の内部モジュールから bridge を import しない。
-- 外部からは必ず bridge（Command/Menu/Kit/Settings/UI/Context）経由で参照・実行。
-
-bridgeの主要API:
-- Kit: 型や基底（UIMixin, MenuBase/DragMenuBase, CommandMeta/Param, Bind, Key/Mouse）の再export。
-- Settings: バインディング/コマンドオプションの設定ファイルパス一括configure、seed適用、activate/commit。
-- UI: バインド対象Widget収集、編集UI起動、register_instance。
-- Command: コマンド実行と登録（execute / register_commands）。
-- Menu: メニュー構築/表示（session / with_ctx / exec_menu / exec_all_roots）。
-- Context: CommandContext生成、prepare_context_menu。
-
-■ バインディング設計
-- デフォルト(seed)は source/actions/binding/seed.py に保持。
-- 永続化ファイルは起動時に自動生成しない。編集して保存(commit)した時だけ作成。
-- Kit.Key(...)/Kit.Mouse(...) で Key/MouseActionKey を直接生成して渡す。
-- バインド値（Kit.Bind=ScopedPayloads）は共通なので、Storeの set_all/get_all/resolve/save/load は BindingStoreBase に集約。
-- 保存はデフォルトとの差分のみ、デフォルト削除は scopes の値を null として保存。
-
-■ メニュー設計
-- Kit.MenuBase / Kit.DragMenuBase は class 変数の prefix と commands だけで登録。
-- MenuMaker が構造を解決し、MenuPlan(hide/add/insert)で一時編集可能。
-- insert/hide のターゲットは id または path("/") で指定、見つからない場合は例外。
-- CommandMeta を str() 化せず保持し、その場限りのコマンドをメニューへ追加可能。
-- 公開したくないコマンドは CommandMeta.hidden=True で列挙から除外。
-
-■ コマンド設計
-- 汎用コマンドとdrag/drop系の2種類。
-- wheel_stepsはCommandContextの標準フィールド（ホイールは正規化、非ホイールは1）。
-- ctx.get_event() は Drop系のみ利用可能（mimeData等が必要なため）。
-
-■ Widget参照
-- init_command_binding(name) で登録されたWidgetは ctx.get_instance(name) で取得可能。
-- バインド登録をしたくない参照先は bridge.UI.register_instance(name, instance) で登録。
-- 内部の参照解決は InstanceRegistry に一本化。
-
-■ ビューアの共有状態
-- source/image_viewer/viewer/items.py の ViewerItems が GridView 用の「ファイル一覧/選択/現在インデックス」を管理。
-- source/image_viewer/shower/file_model.py の FileViewModel が FileViewerWidget(右側詳細表示)用の独立したModel。
-  - FileViewModel は独自の paths/sources/selection/current_index を持ち、ViewerItemsとは独立。
-  - mainwindow.py で生成し UI.register_instance("FileViewModel") で登録。コマンドから ctx.get_instance("FileViewModel") で取得。
-  - pathChanged シグナル経由で FileViewerWidget（View）を自動更新。set_items() で手動リスト設定。
-  - dbpath_getter コールバックでDB参照先を遅延解決。
-- ビューア固有のコマンド定義やコンテキストメニューは source/image_viewer 直下に置く。
-
-■ FolderTreeナビゲーション
-- source/image_viewer/widgets/foldertree.py に6つのnavigateメソッド:
-  - navigate_next/prev_visible: Qt indexBelow/indexAbove（展開済みノードのみ）
-  - navigate_next/prev_dfs: ファイルシステムベースのDFS巡回（展開状態に依存しない、os.scandir + natsort）
-  - navigate_parent/child: 階層移動（childは自動expand + load_children）
-- DFS巡回は model_.excluded と model_.roots を境界として扱い、excluded フォルダをスキップ。
-- コマンドは foldertree_view.py で ft.next_folder_dfs, ft.prev_folder_dfs, ft.next_folder_visible, ft.prev_folder_visible, ft.parent_folder, ft.child_folder として登録。
-- 全コマンドに trigger_search パラメータ（デフォルトTrue）があり、True時は folder_selected シグナルで検索をトリガー。
-
-■ GridView (QGraphicsView ベース)
-- GridView (QGraphicsView + Kit.UIMixin) に移行済み。旧 QWidget + QScrollArea 構成は廃止。
-- QGraphicsScene 上に FadePixmapItem (QGraphicsObject) で画像を配置。動画等は QGraphicsProxyWidget で対応可能。
-- オーバーレイ描画は drawForeground() で統合 (旧 OverLayPainter は削除)。
-- AutoScrollArea機能 (自動スクロール) はGraphicsView内に統合。parent_scroll プロパティは self を返す。
-- 座標はすべてScene座標系。index_at_pos() 内で mapToScene() 変換。rect_select座標も to_scene_pos() で変換。
-- レイアウト計算 (calc_layout.py) は変更なし。rectリストをscene座標として使用。
-- Kit.UIMixin を継承して init_command_binding("GridView") で自動登録。
-- 操作は source/image_viewer/commands 側でコマンドとして実装。コマンドプレフィックスは grid. 。
-- Drag/Drop系は Kit.DragMenuBase へ分離。
-- drop_acceptor判定は source/os/drop.py の MimeDataParser.can_accept に統一。
-
-■ 開発者モード（DEV_MODE）
-- --dev 引数で起動すると constants.DEV_MODE = True になる。
-- VSCode launch.json の "main :Python" 設定に "args": ["--dev"] を追加済み。
-- DEV_MODE 時のみ有効になる機能:
-  - DevLogPanel (QDockWidget): タブ型ログパネル。All タブ + プロセス別(src)タブの自動追加。
-    レベルフィルタ(ALL/DEBUG/INFO/WARNING/ERROR)、DBフィルタ、自動スクロール、クリア機能。
-    append_log(level, text, src, db) で追加。src は '{role}-{pid}' 形式。
-  - DebugCommands (Kit.MenuBase): Debug メニュー。dev.toggle_log_panel でパネル表示/非表示。
-  - AppLogger の ZMQ 転送: 全プロセスのログを viewer に集約して表示。
-- ログ転送フロー: AppLogger._forward() → Node.send('dev.log', {level, text}, dst='viewer', priority=Priority.LOW)
-  → mainwindow._handle_remote_log (msg.src から src 取得) → DevLogPanel.append_log。
-- ローカルログも AppLogger.on_* シグナル経由で DevLogPanel に接続（src = f'viewer-{pid}'）。
-- DebugCommands.register() は DEV_MODE=False 時は何もしない（メニューに表示されない）。
+■ ビューア構造（source/image_viewer/）
+- ViewerItems(viewer/items.py): GridView用のファイル一覧/選択/現在インデックス
+- FileViewModel(shower/file_model.py): FileViewerWidget用の独立Model。pathChangedシグナルでView自動更新
+- ImageLoaderRunnable(viewer/loader.py): キャッシュキーはpathのみ。width/height>=要求サイズならHit
+- FolderTree(widgets/foldertree.py): navigate_*メソッド6種。DFS巡回はexcluded/rootsを境界としてスキップ
+- GridView: QGraphicsView+Kit.UIMixin。FadePixmapItemで画像配置。drawForeground()でオーバーレイ
+- ビューア固有コマンド/メニューはsource/image_viewer直下に配置

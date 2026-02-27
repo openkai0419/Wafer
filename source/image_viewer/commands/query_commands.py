@@ -191,56 +191,58 @@ _SORT_DISPLAY = {
 }
 
 class QueryCommands(Kit.MenuBase):
-    prefix = "Query"
+    NAME = "Query"
 
-    commands = [
-        ":Query",
-        Kit.Command(
-            path="qry.search",
-            display="Search",
-            func=search,
-            params=[Kit.Param(name="force", value=True)],
-        ),
-        Kit.Command(path="qry.toggle_auto_execute", display="Auto Execute on Change", func=toggle_auto_execute, checkable=True, default_checked=True),
-        "-",
-        ":Search Options",
-        Kit.Command(path="qry.toggle_include_subfolders", display="Include Subfolders", func=toggle_include_subfolders, checkable=True, default_checked=True),
-        Kit.Command(
-            path="qry.set_search_text",
-            display="Set Search Text to",
-            func=set_search_text,
-            params=[Kit.Param(name="text", value="")],
-        ),
-        "-",
-        ":Sort",
-        "Sort By/:Sort By",
-        *[Kit.Command(
-            path=f"Sort By/qry.sort_{k}", display=_SORT_DISPLAY[k],
-            func=_make_sort_func(k), checkable=True,
-            default_checked=(k == "path"), action_group=GROUP_SORT,
-        ) for k in SORT_CHOICES],
-        "Sort Order/:Sort Order",
-        Kit.Command(path="Sort Order/qry.order_asc", display="Ascending", func=_make_order_func("qry.order_asc", True), checkable=True, action_group=GROUP_ORDER),
-        Kit.Command(path="Sort Order/qry.order_desc", display="Descending", func=_make_order_func("qry.order_desc", False), checkable=True, default_checked=True, action_group=GROUP_ORDER),
-        Kit.Command(
-            path="qry.cycle_sort", display="Cycle Sort By", func=cycle_sort,
-            params=[Kit.Param(name=k, value=True) for k in SORT_CHOICES] + [Kit.Param(name="reverse", value=False)],
-        ),
-        Kit.Command(path="qry.cycle_order", display="Toggle Sort Order", func=cycle_order),
-        "-",
-        ":Text",
-        "Text Mode/:Text Mode",
-        Kit.Command(path="Text Mode/qry.mode_glob", display="GLOB", func=_make_mode_func("qry.mode_glob", "GLOB"), checkable=True, default_checked=True, action_group=GROUP_MODE),
-        Kit.Command(path="Text Mode/qry.mode_like", display="LIKE", func=_make_mode_func("qry.mode_like", "LIKE"), checkable=True, action_group=GROUP_MODE),
-        "Join Mode/:Join Mode",
-        Kit.Command(path="Join Mode/qry.keyword_and", display="AND", func=_make_keyword_func("qry.keyword_and", "AND"), checkable=True, default_checked=True, action_group=GROUP_KEYWORD),
-        Kit.Command(path="Join Mode/qry.keyword_or", display="OR", func=_make_keyword_func("qry.keyword_or", "OR"), checkable=True, action_group=GROUP_KEYWORD),
-        Kit.Command(path="qry.cycle_mode", display="Toggle Query Mode", func=cycle_mode),
-        Kit.Command(path="qry.cycle_keyword", display="Toggle Join Mode", func=cycle_keyword),
-        Kit.Command(
-            path="qry.set_splittext",
-            display="Set Split Text to",
-            func=set_splittext,
-            params=[Kit.Param(name="text", value=",")],
-        ),
-    ]
+    @classmethod
+    def commands(cls):
+        return [
+            ":Query",
+            Kit.Command(
+                path="qry.search",
+                display="Search",
+                func=search,
+                params=[Kit.Param(name="force", value=True)],
+            ),
+            Kit.Command(path="qry.toggle_auto_execute", display="Auto Execute on Change", func=toggle_auto_execute, checkable=True, default_checked=True),
+            "-",
+            ":Search Options",
+            Kit.Command(path="qry.toggle_include_subfolders", display="Include Subfolders", func=toggle_include_subfolders, checkable=True, default_checked=True),
+            Kit.Command(
+                path="qry.set_search_text",
+                display="Set Search Text to",
+                func=set_search_text,
+                params=[Kit.Param(name="text", value="")],
+            ),
+            "-",
+            ":Sort",
+            "Sort By/:Sort By",
+            *[Kit.Command(
+                path=f"Sort By/qry.sort_{k}", display=_SORT_DISPLAY[k],
+                func=_make_sort_func(k), checkable=True,
+                default_checked=(k == "path"), action_group=GROUP_SORT,
+            ) for k in SORT_CHOICES],
+            "Sort Order/:Sort Order",
+            Kit.Command(path="Sort Order/qry.order_asc", display="Ascending", func=_make_order_func("qry.order_asc", True), checkable=True, action_group=GROUP_ORDER),
+            Kit.Command(path="Sort Order/qry.order_desc", display="Descending", func=_make_order_func("qry.order_desc", False), checkable=True, default_checked=True, action_group=GROUP_ORDER),
+            Kit.Command(
+                path="qry.cycle_sort", display="Cycle Sort By", func=cycle_sort,
+                params=[Kit.Param(name=k, value=True) for k in SORT_CHOICES] + [Kit.Param(name="reverse", value=False)],
+            ),
+            Kit.Command(path="qry.cycle_order", display="Toggle Sort Order", func=cycle_order),
+            "-",
+            ":Text",
+            "Text Mode/:Text Mode",
+            Kit.Command(path="Text Mode/qry.mode_glob", display="GLOB", func=_make_mode_func("qry.mode_glob", "GLOB"), checkable=True, default_checked=True, action_group=GROUP_MODE),
+            Kit.Command(path="Text Mode/qry.mode_like", display="LIKE", func=_make_mode_func("qry.mode_like", "LIKE"), checkable=True, action_group=GROUP_MODE),
+            "Join Mode/:Join Mode",
+            Kit.Command(path="Join Mode/qry.keyword_and", display="AND", func=_make_keyword_func("qry.keyword_and", "AND"), checkable=True, default_checked=True, action_group=GROUP_KEYWORD),
+            Kit.Command(path="Join Mode/qry.keyword_or", display="OR", func=_make_keyword_func("qry.keyword_or", "OR"), checkable=True, action_group=GROUP_KEYWORD),
+            Kit.Command(path="qry.cycle_mode", display="Toggle Query Mode", func=cycle_mode),
+            Kit.Command(path="qry.cycle_keyword", display="Toggle Join Mode", func=cycle_keyword),
+            Kit.Command(
+                path="qry.set_splittext",
+                display="Set Split Text to",
+                func=set_splittext,
+                params=[Kit.Param(name="text", value=",")],
+            ),
+        ]

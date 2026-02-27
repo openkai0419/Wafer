@@ -11,13 +11,15 @@ def toggle_dev_log(ctx):
 
 
 class DebugCommands(Kit.MenuBase):
-    prefix = "Debug"
+    NAME = "Debug"
 
-    commands = [
-        ":Debug",
-        Kit.Command(path="dev.toggle_log_panel", display="Toggle Log Panel", func=toggle_dev_log),
-        Kit.Command(path="debug/printCtx", display="Print Ctx", func=lambda ctx: (ctx.print_debug())),
-]
+    @classmethod
+    def commands(cls):
+        return [
+            ":Debug",
+            Kit.Command(path="dev.toggle_log_panel", display="Toggle Log Panel", func=toggle_dev_log),
+            Kit.Command(path="debug/printCtx", display="Print Ctx", func=lambda ctx: (ctx.print_debug())),
+        ]
 
     @classmethod
     def register(cls):

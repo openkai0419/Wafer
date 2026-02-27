@@ -70,7 +70,7 @@ class MetaRowWidget(QtWidgets.QFrame):
             QFrame#dictRow {
                 background: palette(base);
                 border: 1px solid palette(mid);
-                border-radius: 12px;
+                border-radius: {uipx(12)}px;
             }
             QLabel[keyRole="true"] {
                 font-weight: 600;
@@ -132,7 +132,7 @@ class MetaRowWidget(QtWidgets.QFrame):
 
         dlg = QtWidgets.QDialog(self)
         dlg.setWindowTitle(f"Value viewer - {key}")
-        dlg.resize(900, 600)
+        dlg.resize(uipx(900), uipx(600))
         lay = QtWidgets.QVBoxLayout(dlg)
         edit = QtWidgets.QPlainTextEdit(dlg)
         edit.setReadOnly(True)
@@ -279,7 +279,7 @@ class MetaListWidget(QtWidgets.QWidget):
             self.set_data(items)
 
     def sizeHint(self) -> QtCore.QSize:
-        return QtCore.QSize(760, super().sizeHint().height())
+        return QtCore.QSize(uipx(760), super().sizeHint().height())
 
     def set_data(self, items: Iterable[Mapping[str, Any]]) -> None:
         new_items = [dict(i) for i in items]

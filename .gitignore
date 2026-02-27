@@ -1,9 +1,11 @@
 venv/
 .venv/
 .env/
-log/
+.pytest_cache/
+.log/
 
 .temp/
+.packages/
 
 # Build artifacts
 build/

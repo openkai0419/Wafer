@@ -35,7 +35,7 @@ def _cleanup_old_logs(log_dir=_LOG_PATH, keep_latest=10):
         for f in log_files:
             base = re.sub(r'\.log(?:\.\d+)?$', '.log', f)
             if base not in primary_files[:keep_latest]:
-                match = re.search(r'\w+?_(\d+)\.log', os.path.basename(base))
+                match = re.search(r'(?:\w+?_)?(\d+)\.log', os.path.basename(base))
                 if match:
                     pid = int(match.group(1))
                     if _is_pid_active(pid):
@@ -59,32 +59,58 @@ def _make_log_id(role: str = '') -> str:
 class _LoggerFactory:
     _instance = None
     _file_handler = None
+    _log_id = None
+
+    @classmethod
+    def _make_file_handler(cls, log_id: str):
+        os.makedirs(_LOG_PATH, exist_ok=True)
+        fh = logging.handlers.RotatingFileHandler(
+            os.path.join(_LOG_PATH, f'{log_id}.log'),
+            maxBytes=100000, backupCount=5,
+            encoding='utf-8', delay=True,
+        )
+        fh.setLevel(logging.DEBUG)
+        fh.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
+        return fh
+
+    @classmethod
+    def _set_file_handler(cls, log_id: str):
+        if cls._file_handler is not None:
+            old_path = cls._file_handler.baseFilename
+            cls._instance.removeHandler(cls._file_handler)
+            cls._file_handler.close()
+            new_path = os.path.join(_LOG_PATH, f'{log_id}.log')
+            if os.path.exists(old_path) and os.path.normpath(old_path) != os.path.normpath(new_path):
+                try:
+                    os.rename(old_path, new_path)
+                except OSError:
+                    pass
+        fh = cls._make_file_handler(log_id)
+        cls._instance.addHandler(fh)
+        cls._file_handler = fh
+        cls._log_id = log_id
 
     @classmethod
     def get(cls, role: str = ''):
         log_id = _make_log_id(role)
-        if cls._instance is not None and cls._file_handler is None:
-            os.makedirs(_LOG_PATH, exist_ok=True)
-            log_filename = os.path.join(_LOG_PATH, f'{log_id}.log')
-            fh = logging.handlers.RotatingFileHandler(
-                log_filename, maxBytes=100000, backupCount=5,
-                encoding='utf-8', delay=True,
-            )
-            fh.setLevel(logging.DEBUG)
-            fh.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
-            cls._instance.addHandler(fh)
-            cls._file_handler = fh
-            return cls._instance
         if cls._instance is not None:
+            if log_id != cls._log_id:
+                cls._set_file_handler(log_id)
             return cls._instance
         logger = logging.getLogger(f'AppLog-{log_id}')
         logger.setLevel(logging.DEBUG)
-        if not logger.hasHandlers():
-            stream_handler = logging.StreamHandler()
-            stream_handler.setLevel(logging.DEBUG)
-            stream_handler.setFormatter(logging.Formatter('[%(levelname)s] %(message)s'))
-            logger.addHandler(stream_handler)
+        if not logger.handlers:
+            if sys.stderr is not None:
+                stream_handler = logging.StreamHandler()
+                stream_handler.setLevel(logging.DEBUG)
+                stream_handler.setFormatter(logging.Formatter('[%(levelname)s] %(message)s'))
+                logger.addHandler(stream_handler)
+            else:
+                cls._instance = logger
+                cls._set_file_handler(log_id)
+                return logger
         cls._instance = logger
+        cls._log_id = log_id
         return logger
 
 

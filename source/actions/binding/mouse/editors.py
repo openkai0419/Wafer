@@ -196,8 +196,8 @@ class MouseSection(ScopedPayloadSectionBase):
         self.button: MouseButton = MouseButton.LEFT
         self.click: ClickType = ClickType.SINGLE
         self.setTitle("")
-        self.btn_global.setStyleSheet("padding:4px 12px;")
-        self.btn_overrides.setStyleSheet("padding:4px 4px;")
+        self.btn_global.setStyleSheet(f"padding:{uipx(4)}px {uipx(12)}px;")
+        self.btn_overrides.setStyleSheet(f"padding:{uipx(4)}px {uipx(4)}px;")
         self.list_order: List[str] = []
     def set_action(self, button: MouseButton, click: ClickType):
         self.button = button

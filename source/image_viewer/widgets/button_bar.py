@@ -2,6 +2,7 @@ from PySide6 import QtWidgets
 from PySide6.QtCore import QSize
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QHBoxLayout, QSizePolicy, QSpacerItem, QWidget
+from ...common.funcs import uipx
 
 class IconButtonConfig:
 
@@ -14,9 +15,9 @@ class IconButtonConfig:
 
 class IconButtonBar(QWidget):
 
-    def __init__(self, left_buttons=None, right_buttons=None, icon_size=QSize(15, 15)):
+    def __init__(self, left_buttons=None, right_buttons=None, icon_size=None):
         super().__init__()
-        self.icon_size = icon_size
+        self.icon_size = icon_size or QSize(uipx(15), uipx(15))
         self.left_buttons = []
         self.right_buttons = []
         self.layout = QHBoxLayout(self)

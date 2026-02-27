@@ -52,9 +52,9 @@ class TooltipPopup(PopupWindow):
     def __init__(self, text, parent=None):
         super().__init__(parent=parent)
         layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(8, uipx(4), uipx(8), uipx(4))
+        layout.setContentsMargins(uipx(8), uipx(4), uipx(8), uipx(4))
         self.label = QtWidgets.QLabel(text)
-        self.label.setStyleSheet('color: white; background: black; padding: 2px; border-radius: 3px;')
+        self.label.setStyleSheet(f'color: white; background: black; padding: {uipx(2)}px; border-radius: {uipx(3)}px;')
         layout.addWidget(self.label)
 
     def setText(self, text):
@@ -66,8 +66,8 @@ class ThinProgressBar(QtWidgets.QWidget):
         super().__init__(parent)
         self._value = 0
         self._maximum = 0
-        self.setFixedHeight(3)
-        self.setMinimumWidth(100)
+        self.setFixedHeight(uipx(3))
+        self.setMinimumWidth(uipx(100))
         self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
         self._color_opacity = 0.0
         self._opacity_animation = QtCore.QVariantAnimation()

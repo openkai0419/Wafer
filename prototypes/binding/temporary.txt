@@ -1,15 +1,4 @@
-
-binding defaults
-- prototypes/defaults.py もタプルspecではなく Kit.Key/Kit.Mouse（Key/MouseActionKey）でキーを生成して返す。
-- キー型はKey/Mouseで違うが、バインド値（Kit.Bind=ScopedPayloads）は共通なので、set_all/get_all/resolve/save/load は Store基底に集約する。
 prototypes は試作用の UI/入力/コマンド実行の検証層。
 共通ロジックは source/actions 配下に集約し、prototypes はアプリ層のサンプルに寄せる。
-
-方針
-- bridge は外部API専用で、source/actions 内部から import しない。
-- バインディングのデフォルト(seed)は source/actions/binding/seed.py に保持し、bridge.Settings が設定する。
-- メニュー/実行/登録は bridge.Command/Menu を入口に統一し、actions/command 以下の直参照を避ける。
-
-入力表示
-- prototypes 側でコマンドを登録する際に標準のhotkeyを埋め込まず、メニューのショートカット表示は現在のバインドから自動表示する。
-- ショートカット表示のパース失敗は元文字列にフォールバックする。
+bridge は外部API専用。source/actions 内部から import しない。
+ショートカット表示のパース失敗は元文字列にフォールバック。

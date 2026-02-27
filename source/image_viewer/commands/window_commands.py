@@ -64,13 +64,15 @@ def restore_always_on_top(window):
 
 
 class WindowCommands(Kit.MenuBase):
-    prefix = "Window"
+    NAME = "Window"
 
-    commands = [
-        ":Window",
-        Kit.Command(path="win.show_settings", display="Settings", func=show_settings),
-        Kit.Command(path="win.toggle_fullscreen", display="Full Screen", func=toggle_fullscreen),
-        Kit.Command(path="win.toggle_always_on_top", display="Always on Top", func=toggle_always_on_top, checkable=True),
-        Kit.Command(path="win.open_new_window", display="Open New Window", func=open_new_window),
-        Kit.Command(path="win.toggle_language", display="Toggle Language", func=toggle_language),
-    ]
+    @classmethod
+    def commands(cls):
+        return [
+            ":Window",
+            Kit.Command(path="win.show_settings", display="Settings", func=show_settings),
+            Kit.Command(path="win.toggle_fullscreen", display="Full Screen", func=toggle_fullscreen),
+            Kit.Command(path="win.toggle_always_on_top", display="Always on Top", func=toggle_always_on_top, checkable=True),
+            Kit.Command(path="win.open_new_window", display="Open New Window", func=open_new_window),
+            Kit.Command(path="win.toggle_language", display="Toggle Language", func=toggle_language),
+        ]

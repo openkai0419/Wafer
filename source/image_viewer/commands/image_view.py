@@ -62,43 +62,49 @@ def _pan_end(ctx):
     gv.setCursor(QtCore.Qt.CursorShape.ArrowCursor)
 
 class ImageViewCommands(Kit.MenuBase):
-    prefix = "ImageView"
-    commands = [
-        ":ImageView",
-        Kit.Command(
-            path="imgv.fit_in_view",
-            display="Fit In View",
-            func=fit_in_view,
-            params=[
-                Kit.Param(name="padding", value=0.0),
-                Kit.Param(name="mode", value=("contain", "cover"), default=None),
-            ],
-        ),
-        Kit.Command(path="imgv.toggle_fit_mode", display="Toggle Fit Mode", func=toggle_fit_mode),
-        "-",
-        Kit.Command(
-            path="imgv.zoom_in",
-            display="Zoom In",
-            func=zoom_in,
-            params=[Kit.Param(name="base", value=1.1)],
-        ),
-        Kit.Command(
-            path="imgv.zoom_out",
-            display="Zoom Out",
-            func=zoom_out,
-            params=[Kit.Param(name="base", value=1.1)],
-        ),
-    ]
+    NAME = "ImageView"
+
+    @classmethod
+    def commands(cls):
+        return [
+            ":ImageView",
+            Kit.Command(
+                path="imgv.fit_in_view",
+                display="Fit In View",
+                func=fit_in_view,
+                params=[
+                    Kit.Param(name="padding", value=0.0),
+                    Kit.Param(name="mode", value=("contain", "cover"), default=None),
+                ],
+            ),
+            Kit.Command(path="imgv.toggle_fit_mode", display="Toggle Fit Mode", func=toggle_fit_mode),
+            "-",
+            Kit.Command(
+                path="imgv.zoom_in",
+                display="Zoom In",
+                func=zoom_in,
+                params=[Kit.Param(name="base", value=1.1)],
+            ),
+            Kit.Command(
+                path="imgv.zoom_out",
+                display="Zoom Out",
+                func=zoom_out,
+                params=[Kit.Param(name="base", value=1.1)],
+            ),
+        ]
 
 
 class ImageViewDragCommands(Kit.DragMenuBase):
-    prefix = "ImageView"
-    commands = [
-        Kit.Command(
-            path="imgv.pan",
-            display="Pan",
-            category="drag",
-            drag_callbacks={"start": _pan_start, "move": _pan_move, "end": _pan_end},
-            target_widgets=["ImageView"],
-        ),
-    ]
+    NAME = "ImageView"
+
+    @classmethod
+    def commands(cls):
+        return [
+            Kit.Command(
+                path="imgv.pan",
+                display="Pan",
+                category="drag",
+                drag_callbacks={"start": _pan_start, "move": _pan_move, "end": _pan_end},
+                target_widgets=["ImageView"],
+            ),
+        ]

@@ -72,7 +72,7 @@ class BaseDialog(QDialog):
         self.result_text = None
         icon = self.style().standardIcon(icon_type)
         icon_label = QLabel()
-        icon_label.setPixmap(icon.pixmap(32, 32))
+        icon_label.setPixmap(icon.pixmap(uipx(32), uipx(32)))
         self.message_label = QLabel(message)
         self.message_label.setWordWrap(True)
         self.message_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
@@ -97,13 +97,13 @@ class BaseDialog(QDialog):
         self.adjust_to_message()
 
     def adjust_to_message(self):
-        min_width = 300
-        max_width = 800
+        min_width = uipx(300)
+        max_width = uipx(800)
         message = self.message
         metrics = self.message_label.fontMetrics()
         lines = message.splitlines()
         line_widths = [metrics.boundingRect(line).width() for line in lines]
-        max_line_width = max(line_widths, default=min_width) + 50
+        max_line_width = max(line_widths, default=min_width) + uipx(50)
         final_width = max(min_width, min(max_line_width, max_width))
         self.message_label.setMinimumWidth(final_width)
         self.adjustSize()

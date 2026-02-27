@@ -65,19 +65,21 @@ def quit(ctx=None):
     QtWidgets.QApplication.quit()
 
 class TrayMenu(Kit.MenuBase):
-    prefix = "Tray"
+    NAME = "Tray"
 
-    commands = [
-        Kit.Command(path="show_window", display="Show Window", func=show_window),
-        Kit.Command(path="open_new_window", display="Open New Window", func=open_new_window),
-        "-",
-        Kit.Command(path="rescan_all", display="ReScan All", func=rescan_all),
-        Kit.Command(path="cleanup_optimize", display="Cleanup and Optimize", func=cleanup_optimize),
-        "-",
-        Kit.Command(path="test", display="Test", func=test),
-        Kit.Command(path="test2", display="Test2", func=test2),
-        "-",
-        Kit.Command(path="quit", display="Quit", func=quit),
-    ]
+    @classmethod
+    def commands(cls):
+        return [
+            Kit.Command(path="show_window", display="Show Window", func=show_window),
+            Kit.Command(path="open_new_window", display="Open New Window", func=open_new_window),
+            "-",
+            Kit.Command(path="rescan_all", display="ReScan All", func=rescan_all),
+            Kit.Command(path="cleanup_optimize", display="Cleanup and Optimize", func=cleanup_optimize),
+            "-",
+            Kit.Command(path="test", display="Test", func=test),
+            Kit.Command(path="test2", display="Test2", func=test2),
+            "-",
+            Kit.Command(path="quit", display="Quit", func=quit),
+        ]
 
 

@@ -32,21 +32,23 @@ def prev_file(ctx, step: int = 1, loop: bool = False):
 
 
 class FileViewerCommands(Kit.MenuBase):
-    prefix = "FileViewer"
+    NAME = "FileViewer"
 
-    commands = [
-        ":FileViewer",
-        Kit.Command(
-            path="fv.prev_file",
-            display="Prev File",
-            func=prev_file,
-            params=[Kit.Param(name="step", value=1), Kit.Param(name="loop", value=False)],
-        ),
-        Kit.Command(
-            path="fv.next_file",
-            display="Next File",
-            func=next_file,
-            params=[Kit.Param(name="step", value=1), Kit.Param(name="loop", value=False)],
-        ),
-        "-",
-    ]
+    @classmethod
+    def commands(cls):
+        return [
+            ":FileViewer",
+            Kit.Command(
+                path="fv.prev_file",
+                display="Prev File",
+                func=prev_file,
+                params=[Kit.Param(name="step", value=1), Kit.Param(name="loop", value=False)],
+            ),
+            Kit.Command(
+                path="fv.next_file",
+                display="Next File",
+                func=next_file,
+                params=[Kit.Param(name="step", value=1), Kit.Param(name="loop", value=False)],
+            ),
+            "-",
+        ]

@@ -3,7 +3,6 @@ from PySide6 import QtGui
 from ..registry import PluginRegistry
 from ..grid.handler import grid_handler
 from .base import BaseViewerPlugin
-from .image import ImageViewerPlugin
 
 
 class ViewerHandler:
@@ -45,4 +44,3 @@ class ViewerHandler:
 
 
 viewer_handler = ViewerHandler(grid_handler)
-viewer_handler.registry.register(ImageViewerPlugin)

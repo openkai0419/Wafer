@@ -210,67 +210,68 @@ def make_new_folder_here(ctx, folder_name: str | None = None) -> str | None:
 
 
 class FileCommands(Kit.MenuBase):
-    prefix = "File"
+    NAME = "File"
 
-    commands = [
-        ":File",
-        Kit.Command(path="file.open", display="Open File", func=open_file),
-        Kit.Command(
-            path="file.show_explorer",
-            display="Reveal in Explorer",
-            params=[
-                Kit.Param(
-                    name="show_first_if_folder",
-                    value=False,
-                    description="open if folder",
-                )
-            ],
-            func=show_in_explorer,
-        ),
-        "-",
-        Kit.Command(path="file.copy_path", display="Copy Path", func=copy_path),
-        Kit.Command(
-            path="file.copy_path_list",
-            display="Copy Paths",
-            func=copy_path_list,
-        ),
-        Kit.Command(path="file.copy_filename", display="Copy FileName", func=copy_filename),
-        "-",
-        Kit.Command(path="file.select_path", display="Select Folder", func=select_path),
-        Kit.Command(path="file.scroll_to_file", display="Scroll To File", func=scroll_to_file),
-        #Kit.Command(path="file.show_file", display="Show File", func=show_file),
-        "-",
-        Kit.Command(path="file.copy",  display="Copy", func=copy_files),
-        Kit.Command(path="file.cut",  display="Cut", func=cut_files),
-        Kit.Command(
-            path="file.delete",
-            display="Delete",
-            func=delete_files,
-        ),
-        "-",
-        Kit.Command(
-            path="file.paste",
-            display="Paste here",
-            params=[
-                Kit.Param(
-                    name="overwrite_mode",
-                    value=["ask", "skip", "overwrite", "rename"],
-                    description="Overwrite mode",
-                    default="ask",
-                )
-            ],
-            func=paste_here,
-        ),
-                Kit.Command(
-            path="file.new_folder",
-            display="New Folder here",
-            params=[
-                Kit.Param(
-                    name="folder_name",
-                    value="",
-                    description="Folder name (empty for default)",
-                )
-            ],
-            func=make_new_folder_here,
-        ),
-    ]
+    @classmethod
+    def commands(cls):
+        return [
+            ":File",
+            Kit.Command(path="file.open", display="Open File", func=open_file),
+            Kit.Command(
+                path="file.show_explorer",
+                display="Reveal in Explorer",
+                params=[
+                    Kit.Param(
+                        name="show_first_if_folder",
+                        value=False,
+                        description="open if folder",
+                    )
+                ],
+                func=show_in_explorer,
+            ),
+            "-",
+            Kit.Command(path="file.copy_path", display="Copy Path", func=copy_path),
+            Kit.Command(
+                path="file.copy_path_list",
+                display="Copy Paths",
+                func=copy_path_list,
+            ),
+            Kit.Command(path="file.copy_filename", display="Copy FileName", func=copy_filename),
+            "-",
+            Kit.Command(path="file.select_path", display="Select Folder", func=select_path),
+            Kit.Command(path="file.scroll_to_file", display="Scroll To File", func=scroll_to_file),
+            "-",
+            Kit.Command(path="file.copy", display="Copy", func=copy_files),
+            Kit.Command(path="file.cut", display="Cut", func=cut_files),
+            Kit.Command(
+                path="file.delete",
+                display="Delete",
+                func=delete_files,
+            ),
+            "-",
+            Kit.Command(
+                path="file.paste",
+                display="Paste here",
+                params=[
+                    Kit.Param(
+                        name="overwrite_mode",
+                        value=["ask", "skip", "overwrite", "rename"],
+                        description="Overwrite mode",
+                        default="ask",
+                    )
+                ],
+                func=paste_here,
+            ),
+            Kit.Command(
+                path="file.new_folder",
+                display="New Folder here",
+                params=[
+                    Kit.Param(
+                        name="folder_name",
+                        value="",
+                        description="Folder name (empty for default)",
+                    )
+                ],
+                func=make_new_folder_here,
+            ),
+        ]

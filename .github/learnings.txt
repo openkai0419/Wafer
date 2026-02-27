@@ -1,154 +1,52 @@
-■ learnings.txt の記載ルール
-- ここは「今後コードを実装する上で気をつけるべき方針・ルール・注意点」を記載する場所
-- 変更履歴、進捗ログ、「〜済み」「〜完了」等の状態報告は書かない
-- 「〜は廃止済み」のような過去の変更記録も書かない
-- 記載するのは「次に同じ場面に遭遇したときどうすべきか」という指針
+■ このファイルについて
+- copilot-instructions.md に記載済みのルールは書かない
+- コードを読めば分かる実装詳細は書かない
+- 「次に同じ場面に遭遇したときどうすべきか」という指針のみ記載
 
-■ コード実装の基本方針
-- 共通化・関数化を積極的に行い、少しでもコードを短く汎用的にする
-- 同じような型チェックや存在確認が複数箇所にある場合は共通化
-- インターフェースレベルの共通化も積極的に行う
-- ただし、速度低下や壊れるリスクが高まる共通化は避ける
-- 単一責任の原則に従い、関数やクラスは一つの責務に集中させる
-- ファイルがむやみに分散しすぎないように注意
+■ uipx() の適用ルール
+- ウィジェットサイズ、icon.pixmap、setContentsMargins、setSpacing等 → uipx()必須
+- スタイルシート内のpx値もuipx()でf-string化
+- QSizeデフォルト引数はNone→関数内でuipx()解決
+- 除外: QGraphicsScene内シーン座標、QPixmap内描画座標、0px、1px極小ボーダー
 
-■ 例外処理・ログ・ユーザー通知
-- すべてのエラー・ログは AppLogger（source/common/logs.py）経由で一元管理する
-- 直接 logger.debug/info/warning/error を呼ばない。AppLogger.debug/info/warning/error を使う
-- _logger は logs.py 内部のプライベート変数であり、外部からimportしない
-- 各レベルの意味:
-  - critical: 未キャッチ例外専用。AppLogger.critical()メソッドは存在しない。_create_exception_hookからのみ発火
-  - error: 想定外の重大な異常の記録。ログ記録とシグナル発火のみ行い、例外のraiseは呼び出し側が明示的に行う
-  - warning: 軽微な問題。処理は中断しない
-  - info: 情報通知
-  - debug: デバッグ情報
-- error はログ記録のみでraiseしないため、raiseが必要な場合は呼び出し側で明示的にraiseする
-- 元の例外型を保持するため、raise（再送出）またはraise OriginalError(...) from excを使い、RuntimeErrorへの変換は避ける
-- error/warning に exc= パラメータで元の例外オブジェクトを渡すこと
-- try/except でログなしに例外を完全に握りつぶすことは絶対に避ける
-- try/except の代わりに型や存在確認で安全に動かすことを基本
-- ctx.get_instance/pos 等の前提が崩れた場合はコマンド側で握りつぶさず例外で落とす
-- profiling.py は FunctionProfiler のみ。ログ出力は AppLogger.debug 経由
-- AppLoggerは開発者/システム向けログ専用。ユーザーへのUI通知にはNotifier（source/common/notifier.py）を使う
-- Notifierはwarning/errorの2段階。呼ぶだけでOverlayStackに表示される
-- 両方必要な場合は AppLogger + Notifier の両方を呼ぶ
-- OverlayStack.push() を直接呼ばない。必ずNotifier経由で統一する
+■ 例外処理の注意
+- error()はログのみ。raiseは呼び出し側が明示的に行う
+- 元の例外型を保持（RuntimeErrorへの変換禁止）。raise from exc を使う
+- try/exceptの代わりに型・存在確認で安全に動かすことを基本とする
+- ctx.get_instance/pos等の前提崩壊時はコマンド側で握りつぶさず例外で落とす
 
-■ デバッグ
-- 環境変数などによるデバッグON/OFF切替は禁止
-- デバッグ情報は常に logger.debug に渡す
-- 一時的に追加したデバッグログは適度に削除する（増えすぎると情報が追えなくなる）
-- 不具合調査時は必ず一時的なログを追加し、原因を特定してから修正する
-- 調査用の一時ログは修正完了後に必ず削除
+■ コマンド設計
+- commands()内で@staticmethodを参照する場合はcls.method_nameを使う
+- 汎用コマンドはevent非依存。キー/マウス/メニュー/別Widget全経路で動作すること
+- Command.runのargsは一時的。get_args/set_argsと独立
+- checkable状態の真実のソースはCommandOptionStore。コマンド関数内で状態変更したら必ずCommand.set_checked()を呼ぶ
+- action_groupのIDはコマンドのpath末尾と完全一致。表示用ラベルを含めない
 
-■ 互換性について
-- 現状未公開で一人で開発中のため、古いコードを残す互換性維持は不要
-- 常に最新で最適なコードを実装することに集中
+■ メニュー/バインディング
+- ホットキー解決は_resolve_hotkeys_batchでバッチ取得。ループ内個別呼出禁止
+- CommandMenuRowのuipx値はクラスレベルキャッシュ(_px)で再利用
+- findChildはコスト高。保持済み属性参照を使う
+- DraftOverlayの_changesと_deletedは明確に分離（pop/{}の暗黙ルールでバグ経験あり）
+- actions以下のバインディング周りのクラス、コマンドは必ずbridgeを経由
 
-■ テストの扱い
-- tests は source の補助的なもの
-- sourceの変更に合わせてtestを更新し、sourceが正しく動作することを必ず確認する
-- 細かい挙動も必ずtestを作ること。
-- tests に合わせて source 側を変更することはない
-- source 側のコードが最も重要
+■ GridView (QGraphicsView)
+- index_at_pos()はView座標を受取り、内部でmapToScene()変換
+- rect_selectの座標はto_scene_pos()でScene座標に変換して保存
+- scene.setSceneRect()でスクロール範囲を制御
 
-■ 一時ファイルの配置
-- デバッグ用の一時ファイルはルート直下に作成せず、必ず .temp ディレクトリ以下に作成
-- 一時的なコード、スクリプト、キャッシュファイル等も .temp 以下
+■ プラグイン設計の注意
+- CollectorResultはdataclass。dict扱いにはto_dict()が必要
+- PRIORITY大=高優先。EXTENSIONS=()は全ファイルマッチ
+- Collectorはmeta_info+statusのみ返す。name/aspect/file_hashはPhase1で設定
+- meta_infoキー衝突回避はプラグイン開発者責任（プレフィックス推奨）
+- Grid/ViewerのWIDGET_CLASSとload()は排他。Widget生成はシステム管理
 
-■ モジュール設計の思想
-- 複雑で複数のクラスを組み合わせるライブラリは、bridge.py や API のように入出力を分かりやすく設計する
-- モジュール単位で責任を分離し、外部から参照する際のエントリーポイントを明確にする
-- 初めてコードを読んだ人が「どこを見ればよいか」が一目で分かるようにする
-- 内部実装の詳細を隠蔽し、外部には必要なインターフェースのみを公開する
+■ SQLite の罠
+- VIEWはマテリアライズされない。ウィンドウ関数入りVIEWをクエリ条件に使うと極端に遅い
+- 検索はkv_meta/kv_allビューを経由せず直接テーブルアクセス
+- compound SELECTをFROM句サブクエリにする時、各armを括弧で囲むと構文エラー
+- 読み取り専用接続ではcache_size/mmap_sizeのPRAGMAを設定
 
-■ actions/bridge の境界
-- source/actions 配下の内部モジュールから bridge を import しない（ASTで検査）
-- 外部から actions の機能を使う場合は必ず bridge 経由
-- ビューア固有のコマンド定義やコンテキストメニューは source/image_viewer 直下に置く
-
-■ コマンド設計の原則
-- 汎用コマンドは event 非依存にし、ctx 側で値を保障
-- キー/マウス/メニュー/別Widgetからの実行を前提に設計
-- 引数で受け取るのはコマンド宣言時に設定してユーザーが編集可能なもののみ
-- コード上からの実行は Command.run(id, args) を使う。ctxは内部で自動生成
-- Command.run の args は「その場限り」で保存されず、get_args/set_args とは完全に独立
-- 基本的な使い方: Command.run(id, Command.get_args(id))
-- run は require_all=True で全パラメータ必須。不足/余剰/型不一致はすべてエラー
-- set_args は部分更新（update）可能。余剰キー/型不一致はエラー、不足は許容
-- validate_command_args (core.py) が型/choices/min/max/余剰/不足を一元検証
-
-■ CommandContext の構造
-- コマンド公開フィールド: pos, global_pos, wheel_steps, extras, event, start_pos, start_global_pos
-- 内部制御フィールド: _info (widget/scope/source を格納する dict), _widget_cache
-- _info はコマンドコードから触らない。get() でも _info にフォールバックしない
-- event は drag/drop 系コマンド（category="drag"/"drop"）でのみ保証される
-- category="drag"/"drop" のコマンドを event なしで実行するとエラーになる（core.py execute() で検証）
-- コマンドからウィジェットを取得する場合は必ず ctx.get_instance() を使う。ctx._info["widget"] は使わない
-
-■ メニュー/バインディングの方針
-- コマンド定義側で hotkey を持たず、表示用のショートカットは BindingManager から逆引き
-- ホットキー解決はバッチ処理（_resolve_hotkeys_batch）で一括取得し、ループ内で個別に呼ばない
-- CommandMenuRow の uipx 値はクラスレベルキャッシュ（_px）で一度だけ計算し再利用する
-- findChild による DOM 探索はコスト高。保持している属性参照（_main, _chk, _options_btn等）を直接使う
-- QMenuはキャッシュされ次回表示時に refresh_check_states で状態を更新する。キャッシュキーは (parent_id, tokens, selection_callback有無, allow_options)
-- _get_checked はCommandOptionStoreを最優先で参照する。_check_statesはフォールバック用。外部からの状態変更（cycle, set_action_group_current, UIからの設定変更等）が正しく反映されるため
-- ActionGroupStateManager.initialize_default で初回ビルド時にグループのデフォルト状態を設定することで、メニュー未操作でもcycleが正しく動作する
-- checkableコマンドの状態の真実のソースはCommandOptionStore。コマンド関数内で状態を変更したら必ずCommand.set_checked(id, state)を呼んでCommandOptionStoreを更新すること。メニュー直接クリック時は_on_toggledが自動更新するが、invoke/run/外部UI等の経路ではset_checkedが唯一の同期手段
-- action_groupのコマンドIDマッピングは、コマンド定義のpath末尾（実際のコマンドID）と完全に一致させること。表示用ラベルやUnicode文字をIDに含めないこと（例: "grid.orientation_z" は正しいが "grid.orientation_Z(↘)" は不正）
-- _load_state は保存された値がグループの登録メンバーに含まれるかバリデーションする。不正な値が永続化されていた場合は無視してフォールバックする
-- バインディングの永続化ファイルは起動時に自動生成しない（編集して保存時のみ作成）
-- 保存はデフォルトとの差分のみ
-- デフォルトバインディングは _resources/mouse_bindings/ と _resources/key_bindings/ にプリセットJSON（例: standard.json）として配置
-- プリセット名は seed.py で管理し、set_presets(mouse=..., key=...) で切り替え可能
-- defaults.py は Python オブジェクトでバインディングを定義しない。seed.py の re-export のみ
-- binding/editors_common.py に共通基盤を集約:
-  - DraftOverlay: ドラフト状態管理（update/delete/merge/keys/replace_all）
-  - BindingEditorBase(QDialog): エディタ共通基盤（_merged_data, _apply_to_widgets, _save_store, _reset_draft_to_seed）
-  - ScopedPayloadSectionBase: スコープ別ペイロードUI
-- resolve_for_widget(data, widget_name) は store_base.py の共通関数。エディタとManagerの両方で利用
-- ドラフトの状態管理で pop と {} を使い分ける暗黙のルールが過去にバグを生んだ。DraftOverlay で _changes と _deleted を明確に分離して防止
-
-■ 実装上の注意点
-- 「後々使われるかもしれない」程度の関数は実装しない。YAGNI原則を徹底する
-- SelectionManager.set_selected(indexes, last) の last はリスト内の位置インデックス（indexes[last]が実際の値）
-- file_viewer.py の next_file/prev_file は _ensure_current_initialized で index 0 に初期化してから move するため、初回呼び出しで index 1 に移動する
-- FileViewModel と ViewerItems は独立したModel。FileViewModel はコマンド(file_viewer.py)から、ViewerItems はコマンド(grid_view.py)からそれぞれ操作される
-- get_resource_path() は pytest 時に __main__.__file__ が venv を指すため _resources が見つからない。CWDフォールバックで対応している
-
-■ QGraphicsView (GridView) の注意点
-- GridView は QGraphicsView を継承。parent_scroll プロパティは self を返すので、grid_view.py のスクロール参照はそのまま動作する
-- index_at_pos() に渡す pos はView座標(widget座標)。内部で mapToScene() してScene座標に変換する
-- rect_select の開始/移動座標は to_scene_pos() でScene座標に変換してから保存する (drawForeground がScene座標で描画するため)
-- FadePixmapItem は setAcceptedMouseButtons(Qt.NoButton) でマウスを受け取らない。イベントはQGraphicsView (Kit.UIMixin) で処理
-- scene.setSceneRect() でスクロール可能範囲を制御。旧 setMinimumHeight() の代替
-
-■ プラグインレジストリの設計
-- CollectorResult は dataclass であり dict ではない。テスト等で dict として扱う場合は必ず to_dict() を呼ぶ
-- process() の戻り値は CollectorResult。worker.py では to_dict() で変換してから writer に渡す
-- PRIORITY は大きいほど高優先（reverse=True でソート）
-- EXTENSIONS=() は全ファイルにマッチするフォールバック用
-- 各ディレクトリの __init__.py は空。外部から handler.py のシングルトンを直接 import する
-
-■ Collector プラグインのルール
-- 同じ拡張子に対応する複数のCollectorが登録可能。拡張子に該当するすべてのCollectorが並列で起動される
-- Dispatcherは拡張子ベースでフィルタし、該当するCollectorのみにpendingを登録する（_insert_pending_by_extension）
-- Collectorは基本的に meta_info（とstatus）のみを返す。name/aspect/file_hashはindexer側（Phase1）で設定される
-- meta_infoのキー名の衝突回避はプラグイン開発者の責任。簡易的なプレフィックスを付けることを推奨
-- name/aspect/file_hash等の共通値は上書き可能だが、複数プラグインが並列実行されるため順序保証がなく、上書きは非推奨
-- zipのように複数ソースを返すCollectorや特殊ケースのために、CollectorResultのname/aspect/file_hashフィールドは残す
-- Viewer/Gridプラグインは拡張子の優先度ベースで最も優先度の高い1つを使う（resolve）
-
-- Grid/Viewer プラグインは WIDGET_CLASS の有無で排他的にモードが決まる
-  - WIDGET_CLASS = None → load()/load_content() で QImage を返す → 標準Widget で表示
-  - WIDGET_CLASS 指定 → render(path, widget, ...) でシステム管理の Widget に描画を委譲
-  - 両方を同時に持つプラグインは存在しない（排他）
-- Widget のライフサイクル（生成/プーリング/再利用）はシステム側が管理する。プラグインは WIDGET_CLASS と render() のみ提供
-
-■ SQLite クエリ設計
-- SQLite のビュー(VIEW)はマテリアライズされず毎回展開される。ROW_NUMBER等のウィンドウ関数を含むビューをクエリ条件に使うと極端に遅くなる
-- 検索クエリは kv_meta/kv_all ビューを経由せず、meta_info/tags/images テーブルに直接アクセスする（_make_subquery）
-- SQLite の compound SELECT（UNION/INTERSECT）を FROM 句のサブクエリとして使う場合、各 arm を括弧で囲んではいけない（構文エラーになる）
-  - NG: SELECT * FROM ((SELECT ...) UNION (SELECT ...)) AS c
-  - OK: SELECT * FROM (SELECT ... UNION SELECT ...) AS c
-- 読み取り専用接続では cache_size/mmap_size の PRAGMA を設定してキャッシュ効率を上げる
+■ その他の注意
+- SelectionManager.set_selected(indexes, last)のlastはリスト内位置インデックス
+- get_resource_path()はpytest時にCWDフォールバックで_resourcesを解決

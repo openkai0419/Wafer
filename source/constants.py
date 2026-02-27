@@ -4,4 +4,4 @@ APP_NAME = 'AfterImages'
 APP_ID = 'nop.imageviewer.afterimages'
 VIRTUAL_PATH_SEPARATOR = '::'
 
-DEV_MODE = False
+DEV_MODE = True

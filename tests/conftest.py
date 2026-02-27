@@ -1,5 +1,18 @@
+import sys
+import tempfile
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import pytest
 from PySide6 import QtWidgets
+from source.io.loader import load_plugins
+from source.actions.command.state import CommandOptionStore
+
+load_plugins(skip_install=True)
+
+_test_temp_dir = tempfile.TemporaryDirectory()
+CommandOptionStore.configure(Path(_test_temp_dir.name) / ".command_options.json")
 
 
 class _QtBot:

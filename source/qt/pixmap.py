@@ -13,21 +13,25 @@ class PixmapFactory:
                 return pixmap
         except Exception as e:
             AppLogger.warning(f'Failed to load error image: {e}')
-        size = QtCore.QSize(64, 64)
+        s = uipx(64)
+        size = QtCore.QSize(s, s)
         pixmap = QtGui.QPixmap(size)
         pixmap.fill(QtGui.QColor('#ccc'))
         painter = QtGui.QPainter(pixmap)
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
-        pen = QtGui.QPen(QtCore.Qt.red, 4)
+        m = uipx(10)
+        pen = QtGui.QPen(QtCore.Qt.red, uipx(4))
         painter.setPen(pen)
-        painter.drawLine(10, 10, 54, 54)
-        painter.drawLine(10, 54, 54, 10)
+        painter.drawLine(m, m, s - m, s - m)
+        painter.drawLine(m, s - m, s - m, m)
         painter.end()
         PixmapFactory.draw_centered_text_with_background(pixmap, 'error')
         return pixmap
 
     @staticmethod
-    def draw_centered_text_with_background(pixmap, text, font=None, padding=4, text_color=QtGui.QColor('#FFFFFF'), bg_color=QtGui.QColor('#3B80FF')):
+    def draw_centered_text_with_background(pixmap, text, font=None, padding=None, text_color=QtGui.QColor('#FFFFFF'), bg_color=QtGui.QColor('#3B80FF')):
+        if padding is None:
+            padding = uipx(4)
         pixmap_copy = QtGui.QPixmap(pixmap)
         painter = QtGui.QPainter(pixmap_copy)
         if font is None:

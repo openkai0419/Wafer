@@ -3,12 +3,7 @@
 ======================================
 
 ■ IO プラグイン拡張
-- Grid/Viewer プラグインの WIDGET_CLASS + render() 排他モデルの実装（着手中）
-  - BaseGridPlugin / BaseViewerPlugin に WIDGET_CLASS と render() を追加
-  - GridHandler / ViewerHandler で WIDGET_CLASS の有無によるモード分岐
-  - FileViewerWidget に QStackedWidget 導入 + viewer_handler 統合
 - Collector の拡張子動的登録 (collector.register ZMQプロトコル)
-- Collector の自動発見・ロード機構
 
 ■ Viewer の画像取得最適化
 - 現在は画像サイズ変更の度に毎回サイズごとの画像を取得しているがIO問い合わせが多い

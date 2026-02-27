@@ -11,7 +11,7 @@ class SettingsWindow(QDialog, TranslatorMixin):
         super().__init__(parent)
         self.setWindowTitle(self.t.tr('Settings'))
         self.setModal(False)
-        self.resize(500, 400)
+        self.resize(uipx(500), uipx(400))
         self.tabs = QTabWidget()
         self.tab_widgets = []
         self.ok_button = QPushButton('OK')

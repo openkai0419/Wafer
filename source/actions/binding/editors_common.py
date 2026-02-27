@@ -263,7 +263,7 @@ class ScopedPayloadSectionBase(QtWidgets.QGroupBox):
         rl.setSpacing(uipx(6))
         btn = QtWidgets.QPushButton(scope, row)
         btn.setCursor(QtCore.Qt.PointingHandCursor)
-        btn.setStyleSheet("padding:2px 10px;")
+        btn.setStyleSheet(f"padding:{uipx(2)}px {uipx(10)}px;")
         btn.clicked.connect(lambda _, sc=scope: self._pick_cmd(sc))
         edit = QtWidgets.QLineEdit(row)
         edit.setReadOnly(True)

@@ -293,6 +293,22 @@ class FileIndexer:
             self._add_progress(0, total_pending)
 
     @profiler.profile
+    def backfill_pending_for_collectors(self):
+        if not self._collectors:
+            return
+        for name, extensions in self._collectors:
+            sources = self.db.get_sources_without_collector(name)
+            if extensions:
+                ext_set = set(extensions)
+                sources = [p for p in sources if os.path.splitext(p)[1].lower() in ext_set]
+            if not sources:
+                continue
+            for i in range(0, len(sources), _CHUNK):
+                chunk = sources[i:i + _CHUNK]
+                self.db.insert_pending_collection(chunk, [name])
+            AppLogger.info(f'[Backfill] Added {len(sources)} pending entries for "{name}"')
+
+    @profiler.profile
     def _update_meta_and_image(self, paths, file_info):
         self._register_basic_info(paths, file_info)
 

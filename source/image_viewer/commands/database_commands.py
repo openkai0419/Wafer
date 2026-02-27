@@ -81,18 +81,20 @@ def remove_database(ctx):
 
 
 class DatabaseCommands(Kit.MenuBase):
-    prefix = "Database"
+    NAME = "Database"
 
-    commands = [
-        ":Database",
-        Kit.Command(path="db.next_database", display="Next Database", func=next_database),
-        Kit.Command(path="db.prev_database", display="Prev Database", func=prev_database),
-        Kit.Command(
-            path="db.set_database",
-            display="Set Database",
-            func=set_database,
-            params=[Kit.Param(name="name", value="")],
-        ),
-        Kit.Command(path="db.add_database", display="Add Database", func=add_database),
-        Kit.Command(path="db.remove_database", display="Remove Database", func=remove_database),
-    ]
+    @classmethod
+    def commands(cls):
+        return [
+            ":Database",
+            Kit.Command(path="db.next_database", display="Next Database", func=next_database),
+            Kit.Command(path="db.prev_database", display="Prev Database", func=prev_database),
+            Kit.Command(
+                path="db.set_database",
+                display="Set Database",
+                func=set_database,
+                params=[Kit.Param(name="name", value="")],
+            ),
+            Kit.Command(path="db.add_database", display="Add Database", func=add_database),
+            Kit.Command(path="db.remove_database", display="Remove Database", func=remove_database),
+        ]

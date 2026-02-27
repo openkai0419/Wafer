@@ -462,6 +462,21 @@ class FileDB:
             cur.close()
 
     @profiler.profile
+    def get_sources_without_collector(self, collector):
+        cur = self.get_reader_cursor()
+        cur.execute(
+            '''SELECT s.source FROM sources s
+            WHERE NOT EXISTS (
+                SELECT 1 FROM collection_status cs
+                WHERE cs.source = s.source AND cs.collector = ?
+            )''',
+            (collector,),
+        )
+        rows = [row[0] for row in cur.fetchall()]
+        cur.close()
+        return rows
+
+    @profiler.profile
     def get_pending_sources(self, collector, limit=5000):
         cur = self.get_reader_cursor()
         cur.execute(

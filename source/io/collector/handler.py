@@ -1,6 +1,5 @@
 from ..registry import PluginRegistry
 from .base import BaseCollectorPlugin, CollectorResult
-from .exif import ExifCollectorPlugin
 
 
 class CollectorHandler:
@@ -19,4 +18,3 @@ class CollectorHandler:
 
 
 collector_handler = CollectorHandler()
-collector_handler.registry.register(ExifCollectorPlugin)

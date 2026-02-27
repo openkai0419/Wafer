@@ -36,7 +36,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         if icon:
             self.setWindowIcon(icon)
         self.setWindowTitle(APP_NAME)
-        self.resize(1000, 700)
+        self.resize(uipx(1000), uipx(700))
         self.dbname = None
         self.dbpath = None
         self.setting_db = None

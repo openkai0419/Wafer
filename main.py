@@ -3,15 +3,15 @@ import os
 import signal
 import sys
 import threading
-from source.common.funcs import get_setting_file_names
-from source.common.mutex import SafeProcessLock
-from source.common.logs import AppLogger
-from source.common.profiling import profiler
-from source.constants import APP_FILE_NAME, APP_ID, APP_NAME, default_db_name
+from source.utils.paths import list_setting_db_names
+from source.utils.process_lock import SafeProcessLock
+from source.utils.logs import AppLogger
+from source.utils.profiling import profiler
+from source.constants import APP_DATA_DIR_NAME, APP_ID, APP_NAME, DEFAULT_DB_NAME
 import source.constants as constants
-from source.image_indexer.main_indexer import IndexerProcess
+from source.app.indexer.main_indexer import IndexerProcess
 from source.plugin_core.loader import load_plugins
-from source.os.process import Proc
+from source.core.platform.process import AppProcess
 
 def get_icon():
     from PySide6 import QtGui
@@ -31,13 +31,13 @@ def run_communicator():
     try:
         profiler.set_enabled(False)
         from PySide6 import QtWidgets
-        from source.image_tray.main_tray import TrayApp
-        with SafeProcessLock(f'{APP_FILE_NAME}_communicator'):
+        from source.app.tray.main_tray import TrayApp
+        with SafeProcessLock(f'{APP_DATA_DIR_NAME}_communicator'):
             AppLogger.info('COMMUNICATOR RUNNING')
             app = QtWidgets.QApplication(sys.argv)
             app.setQuitOnLastWindowClosed(False)
             app.setApplicationName(APP_NAME)
-            app.aboutToQuit.connect(lambda: Proc.terminate_cmd('--indexer'))
+            app.aboutToQuit.connect(lambda: AppProcess.terminate_cmd('--indexer'))
             tray_icon = TrayApp(get_icon())
             tray_icon.show()
             sys.exit(app.exec())
@@ -49,7 +49,7 @@ def run_communicator():
 def run_indexer(name, parent_pid=None):
     try:
         profiler.set_enabled(False)
-        with SafeProcessLock(f'{APP_FILE_NAME}_{name}', parent_pid=parent_pid):
+        with SafeProcessLock(f'{APP_DATA_DIR_NAME}_{name}', parent_pid=parent_pid):
             AppLogger.info(f'indexer start: {name}')
             indexer = IndexerProcess(name)
             indexer.start_watch()
@@ -69,13 +69,13 @@ def run_indexer(name, parent_pid=None):
         raise
 
 def run_all_indexers():
-    Proc.terminate_cmd('--indexer')
-    names = get_setting_file_names()
+    AppProcess.terminate_cmd('--indexer')
+    names = list_setting_db_names()
     if not names:
-        names = [default_db_name]
+        names = [DEFAULT_DB_NAME]
     my_pid = str(os.getpid())
     for name in names:
-        Proc.new_main('--indexer', f'{name}', '--parent-pid', my_pid)
+        AppProcess.new_main('--indexer', f'{name}', '--parent-pid', my_pid)
     run_communicator()
 
 def _create_app():
@@ -87,7 +87,7 @@ def _create_app():
 
 def run_viewer(app=None):
     from PySide6 import QtWidgets
-    from source.image_viewer.mainwindow import MainWindow
+    from source.app.viewer.mainwindow import MainWindow
     if app is None:
         app = _create_app()
     window = MainWindow(get_icon())
@@ -97,7 +97,7 @@ def run_viewer(app=None):
 def run_collector(name, plugin, parent_pid=None):
     try:
         profiler.set_enabled(False)
-        from source.image_collector.worker import run_collector as _run
+        from source.app.collector.worker import run_collector as _run
         _run(name, plugin, parent_pid=parent_pid)
     except FileExistsError:
         AppLogger.info(f"Collector '{plugin}' for '{name}' is already running.")
@@ -125,14 +125,14 @@ def main():
         from source.plugin_core.loader import any_needs_install
         app = _create_app()
         if any_needs_install():
-            from source.qt.splash import InstallSplash
+            from source.core.qt.splash import InstallSplash
             splash = InstallSplash(APP_NAME, get_icon())
             splash.show()
             load_plugins(on_progress=app.processEvents)
             splash.close()
         else:
             load_plugins()
-        Proc.new_main('--communicator')
+        AppProcess.new_main('--communicator')
         run_viewer(app)
     if args.communicator:
         load_plugins(skip_install=True)
@@ -142,7 +142,7 @@ def main():
         if isinstance(args.indexer, str):
             run_indexer(args.indexer, parent_pid=args.parent_pid)
         else:
-            Proc.new_main('--communicator')
+            AppProcess.new_main('--communicator')
     elif args.collector:
         load_plugins(skip_install=True)
         if isinstance(args.collector, str):
@@ -153,7 +153,7 @@ def main():
         from source.plugin_core.loader import any_needs_install
         app = _create_app()
         if any_needs_install():
-            from source.qt.splash import InstallSplash
+            from source.core.qt.splash import InstallSplash
             splash = InstallSplash(APP_NAME, get_icon())
             splash.show()
             load_plugins(on_progress=app.processEvents)

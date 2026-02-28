@@ -28,17 +28,17 @@ class DummyPluginAll(BasePlugin):
 
 class TestPluginRegistry:
 
-    def test_register_and_plugins(self):
+    def test_register_and_list_all(self):
         reg = PluginRegistry()
         reg.register(DummyPluginA)
         reg.register(DummyPluginB)
-        assert len(reg.plugins()) == 2
+        assert len(reg.list_all()) == 2
 
     def test_priority_order_descending(self):
         reg = PluginRegistry()
         reg.register(DummyPluginA)
         reg.register(DummyPluginB)
-        plugins = reg.plugins()
+        plugins = reg.list_all()
         assert plugins[0] is DummyPluginB
         assert plugins[1] is DummyPluginA
 
@@ -82,10 +82,10 @@ class TestPluginRegistry:
         names = reg.names()
         assert names == ['b', 'a']
 
-    def test_info(self):
+    def test_summary(self):
         reg = PluginRegistry()
         reg.register(DummyPluginA)
-        info = reg.info()
+        info = reg.summary()
         assert info == [('a', ('.txt',))]
 
 

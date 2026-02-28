@@ -2,12 +2,12 @@ import py_compile
 import pytest
 from PIL import Image
 
-from source.plugin_core.viewer.handler import viewer_handler
+from source.plugin_core.viewer.handler import viewer_resolver
 from source.plugin_core.viewer.base import BaseViewerPlugin
 
 
 def _get_image_plugin():
-    return viewer_handler.registry.get('image')
+    return viewer_resolver.registry.get('image')
 
 
 def test_compile_base():
@@ -24,21 +24,21 @@ def test_base_is_abstract():
 
 
 def test_image_plugin_registered():
-    assert 'image' in viewer_handler.registry.names()
+    assert 'image' in viewer_resolver.registry.names()
 
 
 def test_resolve_jpg():
     plugin_cls = _get_image_plugin()
-    assert viewer_handler.resolve('photo.jpg') is plugin_cls
+    assert viewer_resolver.resolve('photo.jpg') is plugin_cls
 
 
 def test_resolve_png():
     plugin_cls = _get_image_plugin()
-    assert viewer_handler.resolve('image.png') is plugin_cls
+    assert viewer_resolver.resolve('image.png') is plugin_cls
 
 
 def test_resolve_unknown():
-    assert viewer_handler.resolve('file.xyz') is None
+    assert viewer_resolver.resolve('file.xyz') is None
 
 
 def test_image_plugin_priority():
@@ -59,19 +59,19 @@ def test_image_plugin_widget_class_is_none():
 
 
 def test_has_widget_image():
-    assert not viewer_handler.has_widget('photo.jpg')
+    assert not viewer_resolver.has_widget('photo.jpg')
 
 
 def test_has_widget_unknown():
-    assert not viewer_handler.has_widget('file.xyz')
+    assert not viewer_resolver.has_widget('file.xyz')
 
 
 def test_widget_classes_empty():
-    assert viewer_handler.widget_classes() == {}
+    assert viewer_resolver.widget_classes() == {}
 
 
 def test_render_does_nothing_without_widget_plugin():
-    viewer_handler.render('photo.jpg', None)
+    viewer_resolver.render('photo.jpg', None)
 
 
 def test_image_plugin_load_content(tmp_path):
@@ -85,12 +85,12 @@ def test_image_plugin_load_content(tmp_path):
 def test_load_content_function(tmp_path):
     img_path = tmp_path / 'test.jpg'
     Image.new('RGB', (50, 50)).save(str(img_path))
-    result = viewer_handler.load_content(str(img_path))
+    result = viewer_resolver.load_content(str(img_path))
     assert result is not None
 
 
 def test_create_default_widget(qtbot):
-    from source.image_viewer.shower.image_viewer import ImageViewerWidget
-    widget = viewer_handler.create_default_widget()
+    from source.app.viewer.preview.image_viewer import ImageDisplayWidget
+    widget = viewer_resolver.create_default_widget()
     qtbot.addWidget(widget)
-    assert isinstance(widget, ImageViewerWidget)
+    assert isinstance(widget, ImageDisplayWidget)

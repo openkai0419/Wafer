@@ -1,5 +1,5 @@
 import os
-from source.common.logs import AppLogger
+from source.utils.logs import AppLogger
 from afterimages import BaseCollectorPlugin, CollectorResult
 
 

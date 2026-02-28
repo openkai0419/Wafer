@@ -2,12 +2,12 @@ import py_compile
 import pytest
 from PIL import Image
 
-from source.plugin_core.grid.handler import grid_handler
+from source.plugin_core.grid.handler import grid_resolver
 from source.plugin_core.grid.base import BaseGridPlugin
 
 
 def _get_image_plugin():
-    return grid_handler.registry.get('image')
+    return grid_resolver.registry.get('image')
 
 
 def test_compile_base():
@@ -24,16 +24,16 @@ def test_base_is_abstract():
 
 
 def test_image_plugin_registered():
-    assert 'image' in grid_handler.registry.names()
+    assert 'image' in grid_resolver.registry.names()
 
 
 def test_resolve_jpg():
     ImageGridPlugin = _get_image_plugin()
-    assert grid_handler.registry.resolve('photo.jpg') is ImageGridPlugin
+    assert grid_resolver.registry.resolve('photo.jpg') is ImageGridPlugin
 
 
 def test_resolve_unknown_extension():
-    assert grid_handler.registry.resolve('file.xyz') is None
+    assert grid_resolver.registry.resolve('file.xyz') is None
 
 
 def test_image_plugin_load(tmp_path):
@@ -59,7 +59,7 @@ def test_image_plugin_load_no_size(tmp_path):
 def test_grid_load_function(tmp_path):
     img_path = tmp_path / 'test.jpg'
     Image.new('RGB', (50, 50)).save(str(img_path))
-    result = grid_handler.load(str(img_path))
+    result = grid_resolver.load(str(img_path))
     assert result is not None
     assert not result.isNull()
 
@@ -67,7 +67,7 @@ def test_grid_load_function(tmp_path):
 def test_grid_load_fallback_for_unknown_extension(tmp_path):
     img_path = tmp_path / 'test.bmp'
     Image.new('RGB', (50, 50)).save(str(img_path), format='BMP')
-    result = grid_handler.load(str(img_path))
+    result = grid_resolver.load(str(img_path))
     assert result is not None
 
 
@@ -82,12 +82,12 @@ def test_image_widget_class_is_none():
 
 
 def test_has_widget_image():
-    assert not grid_handler.has_widget('photo.jpg')
+    assert not grid_resolver.has_widget('photo.jpg')
 
 
 def test_has_widget_unknown():
-    assert not grid_handler.has_widget('file.xyz')
+    assert not grid_resolver.has_widget('file.xyz')
 
 
 def test_render_does_nothing_without_widget_plugin():
-    grid_handler.render('photo.jpg', None)
+    grid_resolver.render('photo.jpg', None)

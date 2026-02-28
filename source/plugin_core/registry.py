@@ -33,7 +33,7 @@ class PluginRegistry:
     def resolve_all(self, path: str) -> list[type[BasePlugin]]:
         return [p for p in self._plugins if p.match(path)]
 
-    def plugins(self) -> list[type[BasePlugin]]:
+    def list_all(self) -> list[type[BasePlugin]]:
         return list(self._plugins)
 
     def names(self) -> list[str]:
@@ -45,5 +45,5 @@ class PluginRegistry:
                 return p
         return None
 
-    def info(self) -> list[tuple[str, tuple[str, ...]]]:
+    def summary(self) -> list[tuple[str, tuple[str, ...]]]:
         return [(p.NAME, p.EXTENSIONS) for p in self._plugins]

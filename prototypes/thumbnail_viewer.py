@@ -6,7 +6,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from PIL import Image
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from source.os.thumbnails import FileThumbnailer
+from source.core.platform.thumbnails import FileThumbnailer
 
 
 def pil_to_qpixmap(img: Image.Image) -> QtGui.QPixmap:

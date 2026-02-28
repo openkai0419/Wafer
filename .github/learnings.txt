@@ -3,10 +3,10 @@
 - コードを読めば分かる実装詳細は書かない
 - 「次に同じ場面に遭遇したときどうすべきか」という指針のみ記載
 
-■ uipx() の適用ルール
-- ウィジェットサイズ、icon.pixmap、setContentsMargins、setSpacing等 → uipx()必須
-- スタイルシート内のpx値もuipx()でf-string化
-- QSizeデフォルト引数はNone→関数内でuipx()解決
+■ dpix() の適用ルール
+- ウィジェットサイズ、icon.pixmap、setContentsMargins、setSpacing等 → dpix()必須
+- スタイルシート内のpx値もdpix()でf-string化
+- QSizeデフォルト引数はNone→関数内でdpix()解決
 - 除外: QGraphicsScene内シーン座標、QPixmap内描画座標、0px、1px極小ボーダー
 
 ■ 例外処理の注意
@@ -24,7 +24,7 @@
 
 ■ メニュー/バインディング
 - ホットキー解決は_resolve_hotkeys_batchでバッチ取得。ループ内個別呼出禁止
-- CommandMenuRowのuipx値はクラスレベルキャッシュ(_px)で再利用
+- CommandMenuRowのdpix値はクラスレベルキャッシュ(_px)で再利用
 - findChildはコスト高。保持済み属性参照を使う
 - DraftOverlayの_changesと_deletedは明確に分離（pop/{}の暗黙ルールでバグ経験あり）
 - actions以下のバインディング周りのクラス、コマンドは必ずbridgeを経由

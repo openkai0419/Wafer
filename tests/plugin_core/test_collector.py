@@ -1,13 +1,13 @@
 import py_compile
 import pytest
 
-from source.plugin_core.collector.handler import collector_handler
+from source.plugin_core.collector.handler import collector_resolver
 from source.plugin_core.collector.base import CollectorResult
 from source.plugin_core.collector.base import BaseCollectorPlugin
 
 
 def _get_exif_plugin():
-    return collector_handler.registry.get('exif')
+    return collector_resolver.registry.get('exif')
 
 
 def test_compile_base():
@@ -24,7 +24,7 @@ def test_base_is_abstract():
 
 
 def test_exif_plugin_registered():
-    names = collector_handler.names()
+    names = collector_resolver.names()
     assert 'exif' in names
 
 
@@ -40,12 +40,12 @@ def test_exif_plugin_match():
 
 
 def test_get_collector_names():
-    names = collector_handler.names()
+    names = collector_resolver.names()
     assert 'exif' in names
 
 
-def test_get_collector_info():
-    info = collector_handler.info()
+def test_get_collector_summary():
+    info = collector_resolver.summary()
     assert len(info) >= 1
     name, exts = info[0]
     assert name == 'exif'
@@ -53,17 +53,17 @@ def test_get_collector_info():
 
 
 def test_collectors_for_path_image():
-    assert 'exif' in collector_handler.collectors_for_path('photo.jpg')
+    assert 'exif' in collector_resolver.collectors_for_path('photo.jpg')
 
 
 def test_collectors_for_path_non_image():
-    assert 'exif' not in collector_handler.collectors_for_path('doc.txt')
+    assert 'exif' not in collector_resolver.collectors_for_path('doc.txt')
 
 
 def test_exif_plugin_process_success(tmp_path):
     from PIL import Image
     import os
-    from source.common.funcs import normalize_path
+    from source.utils.paths import normalize_path
     img_path = tmp_path / 'test.png'
     Image.new('RGB', (100, 200)).save(str(img_path))
     st = os.stat(str(img_path))
@@ -91,8 +91,8 @@ def test_exif_plugin_process_failure():
 
 def test_registry_get_by_name():
     ExifCollectorPlugin = _get_exif_plugin()
-    assert collector_handler.registry.get('exif') is ExifCollectorPlugin
-    assert collector_handler.registry.get('nonexistent') is None
+    assert collector_resolver.registry.get('exif') is ExifCollectorPlugin
+    assert collector_resolver.registry.get('nonexistent') is None
 
 
 def test_collector_result_to_dict_omits_none():
@@ -125,7 +125,7 @@ def test_collector_result_to_dict_with_meta():
 def test_process_success_to_dict(tmp_path):
     from PIL import Image
     import os
-    from source.common.funcs import normalize_path
+    from source.utils.paths import normalize_path
     img_path = tmp_path / 'keys.png'
     Image.new('RGB', (50, 50)).save(str(img_path))
     st = os.stat(str(img_path))

@@ -2,9 +2,9 @@ from .registry import BasePlugin, PluginRegistry
 from .viewer.base import BaseViewerPlugin
 from .grid.base import BaseGridPlugin
 from .collector.base import BaseCollectorPlugin, CollectorResult
-from ..actions.bridge import Kit
+from source.core.actions.bridge import ActionKit
 
-CommandMeta = Kit.Command
-CommandParam = Kit.Param
-RegistryBackedMenu = Kit.MenuBase
-RegistryBackedCommandSet = Kit.DragMenuBase
+CommandMeta = ActionKit.Command
+CommandParam = ActionKit.Param
+MenuGroup = ActionKit.MenuBase
+DragMenuGroup = ActionKit.DragMenuBase

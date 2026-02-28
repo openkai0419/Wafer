@@ -1,6 +1,6 @@
 from pathlib import Path
-from source.actions.bridge import Kit
-from source.common.logs import AppLogger
+from source.core.actions.bridge import ActionKit
+from source.utils.logs import AppLogger
 
 
 def accept_local_existing_files(ctx) -> bool:
@@ -226,9 +226,9 @@ def _file_path_move(ctx):
         print("[filePathDrop.move] Called")
 
 
-class DragDemoDragCommands(Kit.DragMenuBase):
+class DragDemoDragCommands(ActionKit.DragMenuBase):
     commands = [
-        Kit.Command(
+        ActionKit.Command(
             path="rectSelection",
             display="Rectangle Selection",
             category="drag",
@@ -239,7 +239,7 @@ class DragDemoDragCommands(Kit.DragMenuBase):
                 "end": _rect_selection_end,
             },
         ),
-        Kit.Command(
+        ActionKit.Command(
             path="dragScroll",
             display="Drag Scroll",
             category="drag",
@@ -249,7 +249,7 @@ class DragDemoDragCommands(Kit.DragMenuBase):
                 "end": _drag_scroll_end,
             },
         ),
-        Kit.Command(
+        ActionKit.Command(
             path="widgetDrag",
             display="Widget Drag",
             category="drag",
@@ -263,9 +263,9 @@ class DragDemoDragCommands(Kit.DragMenuBase):
     ]
 
 
-class DragDemoDropCommands(Kit.DragMenuBase):
+class DragDemoDropCommands(ActionKit.DragMenuBase):
     commands = [
-        Kit.Command(
+        ActionKit.Command(
             path="dropFiles",
             display="Drop Files",
             category="drop",
@@ -278,7 +278,7 @@ class DragDemoDropCommands(Kit.DragMenuBase):
                 "drop": _drop_files_drop,
             },
         ),
-        Kit.Command(
+        ActionKit.Command(
             path="simpleFileDrop",
             display="Simple File Drop",
             category="drop",
@@ -290,7 +290,7 @@ class DragDemoDropCommands(Kit.DragMenuBase):
                 "drop": _simple_file_drop_drop,
             },
         ),
-        Kit.Command(
+        ActionKit.Command(
             path="simpleFileDropCtrl",
             display="Simple File Drop (Ctrl)",
             category="drop",
@@ -302,7 +302,7 @@ class DragDemoDropCommands(Kit.DragMenuBase):
                 "drop": _simple_file_drop_ctrl_drop,
             },
         ),
-        Kit.Command(
+        ActionKit.Command(
             path="filePathDrop",
             display="File Path Drop",
             category="drop",

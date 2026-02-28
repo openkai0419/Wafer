@@ -7,7 +7,7 @@ import sys
 import time
 from pathlib import Path
 
-from ..common.logs import AppLogger
+from ..utils.logs import AppLogger
 from .registry import PluginRegistry
 from .viewer.base import BaseViewerPlugin
 from .grid.base import BaseGridPlugin
@@ -139,7 +139,7 @@ def _discover_plugins(module) -> list[tuple[str, type]]:
 
 
 def _discover_command_classes(module) -> list[type]:
-    from ..actions.command.menu import discover_command_classes
+    from source.core.actions.command.menu import discover_command_classes
     return discover_command_classes(module)
 
 
@@ -258,13 +258,13 @@ def any_needs_install() -> bool:
 
 
 def load_plugins(*, skip_install: bool = False, on_progress=None) -> list[str]:
-    from .viewer.handler import viewer_handler
-    from .grid.handler import grid_handler
-    from .collector.handler import collector_handler
+    from .viewer.handler import viewer_resolver
+    from .grid.handler import grid_resolver
+    from .collector.handler import collector_resolver
     registries = {
-        'viewer': viewer_handler.registry,
-        'grid': grid_handler.registry,
-        'collector': collector_handler.registry,
+        'viewer': viewer_resolver.registry,
+        'grid': grid_resolver.registry,
+        'collector': collector_resolver.registry,
     }
     loader = PluginLoader(get_plugin_dir(), registries, skip_install=skip_install)
     return loader.load_all(on_progress=on_progress)

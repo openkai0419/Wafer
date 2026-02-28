@@ -1,54 +1,54 @@
-from source.actions.bridge import Kit
+from source.core.actions.bridge import ActionKit
 
 
 def get_all_mouse_bindings():
     return {
-        Kit.Mouse("RIGHT", "SINGLE", ()): Kit.Bind({
+        ActionKit.Mouse("RIGHT", "SINGLE", ()): ActionKit.ScopedPayloads({
             "*": {"id": "showContextMenuHere", "args": {}}
         }),
-        Kit.Mouse("LEFT", "SINGLE", ()): Kit.Bind({
+        ActionKit.Mouse("LEFT", "SINGLE", ()): ActionKit.ScopedPayloads({
             "*": {"id": "hello", "args": {}},
             "Widget A": {"id": "file.0", "args": {}},
             "Widget B": {"id": "file.1", "args": {}},
         }),
-        Kit.Mouse("LEFT", "SINGLE", ("RIGHT",)): Kit.Bind({
+        ActionKit.Mouse("LEFT", "SINGLE", ("RIGHT",)): ActionKit.ScopedPayloads({
             "*": {"id": "path.0", "args": {}},
             "Widget A": {"id": "echo", "args": {}},
             "Widget B": {"id": "count", "args": {}},
         }),
-        Kit.Mouse("LEFT", "SINGLE", ("MIDDLE",)): Kit.Bind({
+        ActionKit.Mouse("LEFT", "SINGLE", ("MIDDLE",)): ActionKit.ScopedPayloads({
             "Widget A": {"id": "echo", "args": {"text": "echoe", "repeat": 7}},
             "Widget B": {"id": "count", "args": {"value": 3, "step": 8}},
         }),
-        Kit.Mouse("X1", "SINGLE", ()): Kit.Bind({
+        ActionKit.Mouse("X1", "SINGLE", ()): ActionKit.ScopedPayloads({
             "*": {"id": "toggleVerbose", "args": {}}
         }),
-        Kit.Mouse("X2", "SINGLE", ()): Kit.Bind({
+        ActionKit.Mouse("X2", "SINGLE", ()): ActionKit.ScopedPayloads({
             "*": {"id": "mode", "args": {"mode": "C"}}
         }),
-        Kit.Mouse("LEFT", "DOUBLE", ()): Kit.Bind({
+        ActionKit.Mouse("LEFT", "DOUBLE", ()): ActionKit.ScopedPayloads({
             "*": {"id": "hello", "args": {}}
         }),
-        Kit.Mouse("RIGHT", "SINGLE", ("LEFT",)): Kit.Bind({
+        ActionKit.Mouse("RIGHT", "SINGLE", ("LEFT",)): ActionKit.ScopedPayloads({
             "*": {"id": "showAllMenu", "args": {}}
         }),
-        Kit.Mouse("MIDDLE", "SINGLE", ("LEFT",)): Kit.Bind({
+        ActionKit.Mouse("MIDDLE", "SINGLE", ("LEFT",)): ActionKit.ScopedPayloads({
             "*": {"id": "sortBySize", "args": {}}
         }),
-        Kit.Mouse("MIDDLE", "SINGLE", ("RIGHT",)): Kit.Bind({
+        ActionKit.Mouse("MIDDLE", "SINGLE", ("RIGHT",)): ActionKit.ScopedPayloads({
             "*": {"id": "sortByName", "args": {}}
         }),
-        Kit.Mouse("MIDDLE", "SINGLE", ()): Kit.Bind({
+        ActionKit.Mouse("MIDDLE", "SINGLE", ()): ActionKit.ScopedPayloads({
             "*": {"id": "cycleSortOrder", "args": {}}
         }),
-        Kit.Mouse("LEFT", "DRAG_START", ()): Kit.Bind({
+        ActionKit.Mouse("LEFT", "DRAG_START", ()): ActionKit.ScopedPayloads({
             "Widget A": {"id": "rectSelection", "args": {}},
             "Drag Demo Widget": {"id": "widgetDrag", "args": {}},
         }),
-        Kit.Mouse("RIGHT", "DRAG_START", ()): Kit.Bind({
+        ActionKit.Mouse("RIGHT", "DRAG_START", ()): ActionKit.ScopedPayloads({
             "Widget A": {"id": "dragScroll", "args": {}}
         }),
-        Kit.Mouse("NONE", "DROP", ()): Kit.Bind({
+        ActionKit.Mouse("NONE", "DROP", ()): ActionKit.ScopedPayloads({
             "Widget A": {"id": "dropFiles", "args": {}},
             "Widget B": {"id": "simpleFileDrop", "args": {}},
             "Drag Demo Widget": {"id": "filePathDrop", "args": {}},
@@ -57,25 +57,25 @@ def get_all_mouse_bindings():
 
 def get_all_key_bindings():
     return {
-        Kit.Key("H"): Kit.Bind({
+        ActionKit.Key("H"): ActionKit.ScopedPayloads({
             "*": {"id": "hello", "args": {}}
         }),
-        Kit.Key("T"): Kit.Bind({
+        ActionKit.Key("T"): ActionKit.ScopedPayloads({
             "*": {"id": "time", "args": {}}
         }),
-        Kit.Key("Ctrl", "W"): Kit.Bind({
+        ActionKit.Key("Ctrl", "W"): ActionKit.ScopedPayloads({
             "*": {"id": "bindings", "args": {}}
         }),
-        Kit.Key("A"): Kit.Bind({
+        ActionKit.Key("A"): ActionKit.ScopedPayloads({
             "*": {"id": "showContextMenuHere", "args": {}}
         }),
-        Kit.Key("E"): Kit.Bind({
+        ActionKit.Key("E"): ActionKit.ScopedPayloads({
             "*": {"id": "showContextMenuHere", "args": {}}
         }),
-        Kit.Key("Control", "Z"): Kit.Bind({
+        ActionKit.Key("Control", "Z"): ActionKit.ScopedPayloads({
             "*": {"id": "hello", "args": {}}
         }),
-        Kit.Key("W"): Kit.Bind({
+        ActionKit.Key("W"): ActionKit.ScopedPayloads({
             "*": {"id": "file.0", "args": {}},
             "Widget A": {"id": "file.1", "args": {}},
             "Widget B": {"id": "file.2", "args": {}},

@@ -3,15 +3,15 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6 import QtCore, QtWidgets
-from source.common.funcs import uipx
-from source.actions.bridge import Kit, Menu, Settings, UI
+from source.utils.formatting import dpix
+from source.core.actions.bridge import ActionKit, Menu, Settings, UI
 
 from . import menu_demo, drag_demo
 for clss in [*menu_demo.get_menu_classes(), *drag_demo.get_menu_classes()]:
     clss.register()
 
 
-class DemoButton(QtWidgets.QPushButton, Kit.UIMixin):
+class DemoButton(QtWidgets.QPushButton, ActionKit.UIMixin):
     def __init__(self, name: str, parent=None):
         super().__init__(name, parent)
         self.init_command_binding(name, enable_drops=True, use_existing_events=True)
@@ -19,11 +19,11 @@ class DemoButton(QtWidgets.QPushButton, Kit.UIMixin):
     def extend_context(self, *args, **kwargs):
         return {"button": self.binding_scope()}
 
-class DemoPane(QtWidgets.QFrame, Kit.UIMixin):
+class DemoPane(QtWidgets.QFrame, ActionKit.UIMixin):
     def __init__(self, name: str, parent=None):
         super().__init__(parent)
         self.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.setMinimumSize(uipx(240), uipx(160))
+        self.setMinimumSize(dpix(240), dpix(160))
         self.init_command_binding(name, enable_drops=True)
         self._header = QtWidgets.QLabel(name, self)
         self._header.setAlignment(QtCore.Qt.AlignCenter)
@@ -39,7 +39,7 @@ class TestLineEdit(QtWidgets.QLineEdit):
         super().__init__(parent)
         self.setPlaceholderText(f"Type here in {name}...")
 
-class MainWindow(QtWidgets.QMainWindow, Kit.UIMixin):
+class MainWindow(QtWidgets.QMainWindow, ActionKit.UIMixin):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Prototype Command Test")
@@ -70,7 +70,7 @@ class MainWindow(QtWidgets.QMainWindow, Kit.UIMixin):
 
     def _setup_menu_bar(self):
         mb = self.menuBar()
-        m = Menu.session(self).use("binding").build()
+        m = Menu.session(self).from_folder("binding").build()
         m.setTitle("Binding")
         mb.addMenu(m)
 
@@ -87,7 +87,7 @@ def bootstrap() -> None:
     
 
     w = MainWindow()
-    w.resize(uipx(640), uipx(400))
+    w.resize(dpix(640), dpix(400))
     w.show()
     
     Settings.configure(

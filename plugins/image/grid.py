@@ -3,8 +3,8 @@ import cv2
 import numpy as np
 from PySide6 import QtCore, QtGui
 
-from source.common.logs import AppLogger
-from source.common.helpers import call_int0
+from source.utils.logs import AppLogger
+from source.utils.helpers import invoke_int
 from afterimages import BaseGridPlugin
 
 
@@ -82,7 +82,7 @@ class ImageGridPlugin(BaseGridPlugin):
         if size is None:
             return cv2.IMREAD_UNCHANGED
         if ext in ('.jpg', '.jpeg'):
-            longest = max(call_int0(size, 'width', 0), call_int0(size, 'height', 0))
+            longest = max(invoke_int(size, 'width', 0), invoke_int(size, 'height', 0))
             if longest <= 256:
                 return cv2.IMREAD_REDUCED_COLOR_8
             if longest <= 512:

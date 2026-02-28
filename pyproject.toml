@@ -2,3 +2,12 @@
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "--import-mode=importlib"
+
+[tool.pyright]
+pythonVersion = "3.10"
+pythonPlatform = "Windows"
+include = ["source"]
+typeCheckingMode = "off"
+reportMissingModuleSource = false
+reportMissingImports = "error"
+reportMissingTypeStubs = false

@@ -1,7 +1,7 @@
 from datetime import datetime
 
-from source.actions.bridge import Command, Kit, Menu, Settings, UI
-from source.common.logs import AppLogger
+from source.core.actions.bridge import Command, ActionKit, Menu, Settings, UI
+from source.utils.logs import AppLogger
 
 
 def _cycle_sort_order(ctx=None):
@@ -34,7 +34,7 @@ def _toggle_key_scope_mode(ctx=None):
 
 
 def _show_context_menu_here(ctx=None):
-    s = Menu.with_ctx(ctx)
+    s = Menu.from_context(ctx)
     if s is None:
         return
     s.menu([":Menu", "-", "commands/:Test", "commands/-", "commands", "-", "file", "path", "Temp", "path.1", "Options", "echo"]).exec()
@@ -56,70 +56,70 @@ def _open_shortcut_binding_editor(ctx=None):
     UI.open_shortcut_binding_editor(parent=_get_ctx_parent(ctx))
 
 
-class FileMenu(Kit.MenuBase):
+class FileMenu(ActionKit.MenuBase):
     prefix = "file"
     commands = [":File"] + [
-        Kit.Command(path=f"file.{i}", display=f"file {i}", func=(lambda x=i: (lambda: print(f"file {x}")))())
+        ActionKit.Command(path=f"file.{i}", display=f"file {i}", func=(lambda x=i: (lambda: print(f"file {x}")))())
         for i in range(4)
     ]
 
 
-class PathMenu(Kit.MenuBase):
+class PathMenu(ActionKit.MenuBase):
     prefix = "path"
     commands = [":Path", "-"] + [
-        Kit.Command(path=f"path.{i}", display=f"path {i}", func=(lambda x=i: (lambda: print(f"path {x}")))())
+        ActionKit.Command(path=f"path.{i}", display=f"path {i}", func=(lambda x=i: (lambda: print(f"path {x}")))())
         for i in range(4)
     ] + [
-        Kit.Command(path="Temp/path.Test3", display="Temp 3", func=(lambda: print("path 3")))
+        ActionKit.Command(path="Temp/path.Test3", display="Temp 3", func=(lambda: print("path 3")))
     ]
 
 
-class CmdMenu(Kit.MenuBase):
+class CmdMenu(ActionKit.MenuBase):
     prefix = "commands"
     commands = [
         ":Commands",
-        Kit.Command(path="hello", display="Hello", func=lambda ctx: print(f"hello from {getattr(ctx, 'scope', '')}")),
-        Kit.Command(path="time", display="Show Time", func=lambda: print(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))),
-        Kit.Command(path="test", display="print test", params=[Kit.Param(name="test", value="", description="test")], func=lambda test="": print(f"test: {test}")),
-        Kit.Command(path="Debug/printCtx", display="Print Ctx", func=lambda ctx: (ctx.print_debug() if ctx is not None and hasattr(ctx, "print_debug") else print("ctx=None"))),
-        Kit.Command(path="Debug/isDemoPane", display="Is DemoPane?", func=_print_is_demo_pane),
+        ActionKit.Command(path="hello", display="Hello", func=lambda ctx: print(f"hello from {getattr(ctx, 'scope', '')}")),
+        ActionKit.Command(path="time", display="Show Time", func=lambda: print(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))),
+        ActionKit.Command(path="test", display="print test", params=[ActionKit.Param(name="test", value="", description="test")], func=lambda test="": print(f"test: {test}")),
+        ActionKit.Command(path="Debug/printCtx", display="Print Ctx", func=lambda ctx: (ctx.print_debug() if ctx is not None and hasattr(ctx, "print_debug") else print("ctx=None"))),
+        ActionKit.Command(path="Debug/isDemoPane", display="Is DemoPane?", func=_print_is_demo_pane),
         "-",
         ":Options",
-        Kit.Command(path="Options/echo", display="Echo", params=[Kit.Param(name="text", value="echo"), Kit.Param(name="repeat", value=1, min_value=1, max_value=8)], func=lambda text="echo", repeat=1: print(text * repeat)),
-        Kit.Command(path="Options/count", display="Count", params=[Kit.Param(name="value", value=1, description="Value"), Kit.Param(name="step", value=1, min_value=1, max_value=10)], func=lambda value=1, step=1: print("count", " ".join(str(i) for i in range(value, value + step)))),
-        Kit.Command(path="Options/mode", display="Mode", params=[Kit.Param(name="mode", value=["A", "B", "C"], description="Mode")], func=lambda mode="A": print(f"mode {mode}")),
+        ActionKit.Command(path="Options/echo", display="Echo", params=[ActionKit.Param(name="text", value="echo"), ActionKit.Param(name="repeat", value=1, min_value=1, max_value=8)], func=lambda text="echo", repeat=1: print(text * repeat)),
+        ActionKit.Command(path="Options/count", display="Count", params=[ActionKit.Param(name="value", value=1, description="Value"), ActionKit.Param(name="step", value=1, min_value=1, max_value=10)], func=lambda value=1, step=1: print("count", " ".join(str(i) for i in range(value, value + step)))),
+        ActionKit.Command(path="Options/mode", display="Mode", params=[ActionKit.Param(name="mode", value=["A", "B", "C"], description="Mode")], func=lambda mode="A": print(f"mode {mode}")),
         "-",
         ":Toggle",
-        Kit.Command(path="Toggle/toggleVerbose", display="Verbose Mode", checkable=True, default_checked=False, func=lambda ctx: print("verbose on" if ctx and ctx.get("checked", False) else "verbose off")),
-        Kit.Command(path="Toggle/toggleKeyScopeMode", display="Toggle Key Scope (Focus/Cursor)", func=_toggle_key_scope_mode),
+        ActionKit.Command(path="Toggle/toggleVerbose", display="Verbose Mode", checkable=True, default_checked=False, func=lambda ctx: print("verbose on" if ctx and ctx.get("checked", False) else "verbose off")),
+        ActionKit.Command(path="Toggle/toggleKeyScopeMode", display="Toggle Key Scope (Focus/Cursor)", func=_toggle_key_scope_mode),
         "-",
         ":Sort Order",
-        Kit.Command(path="Sort/sortByName", display="Name", checkable=True, default_checked=True, action_group="sort_order", func=lambda ctx: print("Sort by Name" if ctx and ctx.get("checked", False) else "")),
-        Kit.Command(path="Sort/sortByDate", display="Date", checkable=True, default_checked=False, action_group="sort_order", func=lambda ctx: print("Sort by Date" if ctx and ctx.get("checked", False) else "")),
-        Kit.Command(path="Sort/sortBySize", display="Size", checkable=True, default_checked=False, action_group="sort_order", func=lambda ctx: print("Sort by Size" if ctx and ctx.get("checked", False) else "")),
+        ActionKit.Command(path="Sort/sortByName", display="Name", checkable=True, default_checked=True, action_group="sort_order", func=lambda ctx: print("Sort by Name" if ctx and ctx.get("checked", False) else "")),
+        ActionKit.Command(path="Sort/sortByDate", display="Date", checkable=True, default_checked=False, action_group="sort_order", func=lambda ctx: print("Sort by Date" if ctx and ctx.get("checked", False) else "")),
+        ActionKit.Command(path="Sort/sortBySize", display="Size", checkable=True, default_checked=False, action_group="sort_order", func=lambda ctx: print("Sort by Size" if ctx and ctx.get("checked", False) else "")),
         "Sort/-",
-        Kit.Command(path="Sort/cycleSortOrder", display="Cycle Sort Order", func=_cycle_sort_order),
-        Kit.Command(path="Sort/printCurrentSort", display="Show Current Sort Order", func=_print_current_sort_order),
+        ActionKit.Command(path="Sort/cycleSortOrder", display="Cycle Sort Order", func=_cycle_sort_order),
+        ActionKit.Command(path="Sort/printCurrentSort", display="Show Current Sort Order", func=_print_current_sort_order),
     ]
 
-class ContextMenu(Kit.MenuBase):
+class ContextMenu(ActionKit.MenuBase):
     prefix = "context"
     commands = [
         ":ContextMenu",
-        Kit.Command(path="showContextMenuHere", display="Show Context Menu Here", func=_show_context_menu_here),
-        Kit.Command(path="showAllMenu", display="Show All Menu Here", func=_show_all_menu),
+        ActionKit.Command(path="showContextMenuHere", display="Show Context Menu Here", func=_show_context_menu_here),
+        ActionKit.Command(path="showAllMenu", display="Show All Menu Here", func=_show_all_menu),
     ]
 
 
-class MenuMenu(Kit.MenuBase):
+class AppMenuRegistrar(ActionKit.MenuBase):
     prefix = "menu"
     commands = [
         ":Menu",
-        Kit.Command(path="binding/bindings", display="Mouse Bindings...", func=_open_mouse_binding_editor),
-        Kit.Command(path="binding/shortcutBindings", display="Shortcut Bindings...", func=_open_shortcut_binding_editor),
+        ActionKit.Command(path="binding/bindings", display="Mouse Bindings...", func=_open_mouse_binding_editor),
+        ActionKit.Command(path="binding/shortcutBindings", display="Shortcut Bindings...", func=_open_shortcut_binding_editor),
     ]
 
 
-def get_menu_classes() -> list[type[Kit.MenuBase]]:
-    return [FileMenu, PathMenu, CmdMenu, ContextMenu, MenuMenu]
+def get_menu_classes() -> list[type[ActionKit.MenuBase]]:
+    return [FileMenu, PathMenu, CmdMenu, ContextMenu, AppMenuRegistrar]
 

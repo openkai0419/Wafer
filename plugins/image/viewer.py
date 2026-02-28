@@ -8,5 +8,5 @@ class ImageViewerPlugin(BaseViewerPlugin):
     PRIORITY = 100
 
     def load_content(self, path: str) -> QtGui.QImage | None:
-        from source.plugin_core.grid.handler import grid_handler
-        return grid_handler.load(path)
+        from source.plugin_core.grid.handler import grid_resolver
+        return grid_resolver.load(path)

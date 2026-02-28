@@ -255,12 +255,12 @@ class TestPluginLoader:
         assert loader.load_all() == []
 
     def test_load_all_with_real_plugins(self):
-        from source.plugin_core.viewer.handler import viewer_handler
-        from source.plugin_core.grid.handler import grid_handler
-        from source.plugin_core.collector.handler import collector_handler
-        assert viewer_handler.registry.get('image') is not None
-        assert grid_handler.registry.get('image') is not None
-        assert collector_handler.registry.get('exif') is not None
+        from source.plugin_core.viewer.handler import viewer_resolver
+        from source.plugin_core.grid.handler import grid_resolver
+        from source.plugin_core.collector.handler import collector_resolver
+        assert viewer_resolver.registry.get('image') is not None
+        assert grid_resolver.registry.get('image') is not None
+        assert collector_resolver.registry.get('exif') is not None
 
 
 def test_load_plugins_returns_list():
@@ -579,30 +579,30 @@ class TestDiscoverPluginsAllTypes:
 
 class TestRealPluginIntegration:
     def test_image_plugin_registers_all_types(self):
-        from source.plugin_core.viewer.handler import viewer_handler
-        from source.plugin_core.grid.handler import grid_handler
-        from source.plugin_core.collector.handler import collector_handler
-        assert viewer_handler.registry.get('image') is not None
-        assert grid_handler.registry.get('image') is not None
-        assert collector_handler.registry.get('exif') is not None
+        from source.plugin_core.viewer.handler import viewer_resolver
+        from source.plugin_core.grid.handler import grid_resolver
+        from source.plugin_core.collector.handler import collector_resolver
+        assert viewer_resolver.registry.get('image') is not None
+        assert grid_resolver.registry.get('image') is not None
+        assert collector_resolver.registry.get('exif') is not None
 
-    def test_collector_info_has_extensions(self):
-        from source.plugin_core.collector.handler import collector_handler
-        info = collector_handler.info()
+    def test_collector_summary_has_extensions(self):
+        from source.plugin_core.collector.handler import collector_resolver
+        info = collector_resolver.summary()
         assert len(info) > 0
         for name, extensions in info:
             assert isinstance(name, str)
             assert isinstance(extensions, tuple)
 
     def test_viewer_can_resolve_jpg(self):
-        from source.plugin_core.viewer.handler import viewer_handler
-        plugin = viewer_handler.registry.resolve('test.jpg')
+        from source.plugin_core.viewer.handler import viewer_resolver
+        plugin = viewer_resolver.registry.resolve('test.jpg')
         assert plugin is not None
         assert plugin.NAME == 'image'
 
     def test_grid_can_resolve_png(self):
-        from source.plugin_core.grid.handler import grid_handler
-        plugin = grid_handler.registry.resolve('test.png')
+        from source.plugin_core.grid.handler import grid_resolver
+        plugin = grid_resolver.registry.resolve('test.png')
         assert plugin is not None
         assert plugin.NAME == 'image'
 

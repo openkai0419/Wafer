@@ -1,6 +1,6 @@
 from PySide6 import QtCore, QtGui
 
-from ...common.logs import AppLogger
+from ...utils.logs import AppLogger
 from ..registry import PluginRegistry
 from .base import BaseGridPlugin
 
@@ -15,22 +15,22 @@ def _pil_to_qimage(img):
     return qimage.copy()
 
 
-class GridHandler:
+class GridResolver:
 
     def __init__(self):
         self.registry = PluginRegistry()
         self._thumbnailer = None
-        self.viewer_thumbnail_size = VIEWER_THUMBNAIL_DEFAULT_SIZE
+        self.thumbnail_size = VIEWER_THUMBNAIL_DEFAULT_SIZE
 
     def _get_thumbnailer(self):
         if self._thumbnailer is None:
-            from ...os.thumbnails import FileThumbnailer
+            from source.core.platform.thumbnails import FileThumbnailer
             self._thumbnailer = FileThumbnailer()
         return self._thumbnailer
 
     def _fallback_load(self, path: str, size=None) -> QtGui.QImage | None:
         try:
-            thumb_size = self.viewer_thumbnail_size
+            thumb_size = self.thumbnail_size
             if size is not None:
                 thumb_size = max(size.width(), size.height(), 256)
             pil_img = self._get_thumbnailer().get_thumbnail(path, size=thumb_size)
@@ -41,7 +41,7 @@ class GridHandler:
                 qimage = qimage.scaled(size, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
             return qimage
         except Exception as e:
-            AppLogger.debug(f'[GridHandler] Fallback load failed: {path} ({e})')
+            AppLogger.debug(f'[GridResolver] Fallback load failed: {path} ({e})')
             return None
 
     def resolve(self, path: str) -> type[BaseGridPlugin] | None:
@@ -65,4 +65,4 @@ class GridHandler:
             plugin_cls().render(path, widget, size)
 
 
-grid_handler = GridHandler()
+grid_resolver = GridResolver()

@@ -1,19 +1,19 @@
 from PySide6 import QtGui
 
 from ..registry import PluginRegistry
-from ..grid.handler import grid_handler
+from ..grid.handler import grid_resolver
 from .base import BaseViewerPlugin
 
 
-class ViewerHandler:
+class ViewerResolver:
 
     def __init__(self, grid):
         self.registry = PluginRegistry()
         self._grid = grid
 
     def create_default_widget(self, parent=None):
-        from ...image_viewer.shower.image_viewer import ImageViewerWidget
-        return ImageViewerWidget(parent)
+        from source.app.viewer.preview.image_viewer import ImageDisplayWidget
+        return ImageDisplayWidget(parent)
 
     def resolve(self, path: str) -> type[BaseViewerPlugin] | None:
         return self.registry.resolve(path)
@@ -25,7 +25,7 @@ class ViewerHandler:
     def widget_classes(self) -> dict[str, type]:
         return {
             p.NAME: p.WIDGET_CLASS
-            for p in self.registry.plugins()
+            for p in self.registry.list_all()
             if p.WIDGET_CLASS is not None
         }
 
@@ -43,4 +43,4 @@ class ViewerHandler:
             plugin_cls().render(path, widget)
 
 
-viewer_handler = ViewerHandler(grid_handler)
+viewer_resolver = ViewerResolver(grid_resolver)

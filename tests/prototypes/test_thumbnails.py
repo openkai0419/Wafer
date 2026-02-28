@@ -3,7 +3,7 @@ import glob
 import pytest
 from PIL import Image
 
-from source.os.thumbnails import FileThumbnailer
+from source.core.platform.thumbnails import FileThumbnailer
 
 
 def _find_test_image():

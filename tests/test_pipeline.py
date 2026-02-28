@@ -4,18 +4,18 @@ from pathlib import Path
 
 from PIL import Image
 
-from source.common.funcs import normalize_path
-from source.common.hashes import fast_sig_hash
-from source.db.file_db import FileDB
-from source.db.indexer import FileIndexer
-from source.plugin_core.collector.handler import collector_handler
+from source.utils.paths import normalize_path
+from source.utils.hashes import fast_signature_hash
+from source.core.db.file_db import FileDB
+from source.core.db.indexer import FileIndexer
+from source.plugin_core.collector.handler import collector_resolver
 from source.plugin_core.collector.base import CollectorResult
-from source.image_indexer.writer import CollectionWriter
+from source.app.indexer.writer import CollectionWriter
 
 
 def _get_exif_plugin():
-    return collector_handler.registry.get('exif')
-from source.image_indexer.progress_notifier import ProgressAggregator
+    return collector_resolver.registry.get('exif')
+from source.app.indexer.progress_notifier import ProgressAggregator
 
 
 class _StubNode:
@@ -25,8 +25,8 @@ class _StubNode:
     def send(self, *a, **kw):
         self.sent.append(('send', a, kw))
 
-    def send_latest(self, *a, **kw):
-        self.sent.append(('send_latest', a, kw))
+    def send_coalesced(self, *a, **kw):
+        self.sent.append(('send_coalesced', a, kw))
 
 
 class _StubMsg:
@@ -80,15 +80,15 @@ class TestImagePipeline:
         jpg_path = img_dir / 'test.jpg'
         _create_test_image(jpg_path, width=200, height=100)
 
-        collectors = collector_handler.info()
+        collectors = collector_resolver.summary()
         db_path = tmp_path / 'test.db'
 
         with FileIndexer(db_path, collectors=collectors) as idx:
-            idx.check_init()
+            idx.initialize()
             idx.update_index(str(img_dir))
 
             norm = normalize_path(str(jpg_path))
-            prev = idx.db.load_previous()
+            prev = idx.db.load_existing_sources()
             assert norm in prev
 
             row = idx.db.read_conn.execute(
@@ -154,7 +154,7 @@ class TestImagePipeline:
                 no_pending = db.get_pending_sources('exif')
                 assert len(no_pending) == 0
             finally:
-                db.exit()
+                db.close()
 
     def test_non_image_skips_collector(self, tmp_path):
         file_dir = tmp_path / 'docs'
@@ -162,15 +162,15 @@ class TestImagePipeline:
         txt_path = file_dir / 'readme.txt'
         _create_test_file(txt_path, b'hello world')
 
-        collectors = collector_handler.info()
+        collectors = collector_resolver.summary()
         db_path = tmp_path / 'test.db'
 
         with FileIndexer(db_path, collectors=collectors) as idx:
-            idx.check_init()
+            idx.initialize()
             idx.update_index(str(file_dir))
 
             norm = normalize_path(str(txt_path))
-            prev = idx.db.load_previous()
+            prev = idx.db.load_existing_sources()
             assert norm in prev
 
             file_row = idx.db.read_conn.execute(
@@ -193,11 +193,11 @@ class TestImagePipeline:
         _create_test_file(txt_path, b'text content')
         _create_test_file(bin_path, b'\x00' * 256)
 
-        collectors = collector_handler.info()
+        collectors = collector_resolver.summary()
         db_path = tmp_path / 'test.db'
 
         with FileIndexer(db_path, collectors=collectors) as idx:
-            idx.check_init()
+            idx.initialize()
             idx.update_index(str(mix_dir))
 
             all_files = idx.db.read_conn.execute("SELECT path FROM files").fetchall()
@@ -250,7 +250,7 @@ class TestImagePipeline:
                 ).fetchone()
                 assert txt_cs[0] == 0
             finally:
-                db.exit()
+                db.close()
 
     def test_file_deletion_reflected(self, tmp_path):
         file_dir = tmp_path / 'volatile'
@@ -260,11 +260,11 @@ class TestImagePipeline:
         _create_test_image(f1, 50, 50)
         _create_test_image(f2, 50, 50)
 
-        collectors = collector_handler.info()
+        collectors = collector_resolver.summary()
         db_path = tmp_path / 'test.db'
 
         with FileIndexer(db_path, collectors=collectors) as idx:
-            idx.check_init()
+            idx.initialize()
             idx.update_index(str(file_dir))
 
             all_sources = idx.db.read_conn.execute("SELECT source FROM sources").fetchall()
@@ -273,7 +273,7 @@ class TestImagePipeline:
         f2.unlink()
 
         with FileIndexer(db_path, collectors=collectors) as idx:
-            idx.check_init()
+            idx.initialize()
             idx.update_index(str(file_dir))
 
             remaining = idx.db.read_conn.execute("SELECT source FROM sources").fetchall()
@@ -294,11 +294,11 @@ class TestImagePipeline:
         img_path = file_dir / 'evolving.jpg'
         _create_test_image(img_path, 80, 60)
 
-        collectors = collector_handler.info()
+        collectors = collector_resolver.summary()
         db_path = tmp_path / 'test.db'
 
         with FileIndexer(db_path, collectors=collectors) as idx:
-            idx.check_init()
+            idx.initialize()
             idx.update_index(str(file_dir))
             norm = normalize_path(str(img_path))
 
@@ -322,7 +322,7 @@ class TestImagePipeline:
         old_mtime = db_check.read_conn.execute(
             "SELECT modified FROM sources WHERE source=?", (norm,)
         ).fetchone()[0]
-        db_check.exit()
+        db_check.close()
 
         time.sleep(1.1)
         _create_test_image(img_path, 200, 100)
@@ -330,7 +330,7 @@ class TestImagePipeline:
         assert new_st.st_mtime != old_mtime
 
         with FileIndexer(db_path, collectors=collectors) as idx:
-            idx.check_init()
+            idx.initialize()
             idx.update_index(str(file_dir))
 
             src_row = idx.db.read_conn.execute(
@@ -354,11 +354,11 @@ class TestDispatcherSimulation:
             _create_test_image(p, 100 + i * 10, 80 + i * 5, 'PNG')
             paths.append(p)
 
-        collectors = collector_handler.info()
+        collectors = collector_resolver.summary()
         db_path = tmp_path / 'test.db'
 
         with FileIndexer(db_path, collectors=collectors) as idx:
-            idx.check_init()
+            idx.initialize()
             idx.update_index(str(img_dir))
 
             pending = idx.db.get_pending_sources('exif')
@@ -406,7 +406,7 @@ class TestDispatcherSimulation:
                     ).fetchone()
                     assert row[0] == 'ok'
             finally:
-                db.exit()
+                db.close()
 
     def test_reset_stale_dispatched(self, tmp_path):
         img_dir = tmp_path / 'stale'
@@ -414,11 +414,11 @@ class TestDispatcherSimulation:
         img = img_dir / 'orphan.jpg'
         _create_test_image(img, 50, 50)
 
-        collectors = collector_handler.info()
+        collectors = collector_resolver.summary()
         db_path = tmp_path / 'test.db'
 
         with FileIndexer(db_path, collectors=collectors) as idx:
-            idx.check_init()
+            idx.initialize()
             idx.update_index(str(img_dir))
 
             pending = idx.db.get_pending_sources('exif')
@@ -453,7 +453,7 @@ class TestWriterCollectorField:
             "INSERT INTO files (path, source, name, aspect_ratio) VALUES ('src1', 'src1', 'test', 1.0)"
         )
         db.conn.commit()
-        db.exit()
+        db.close()
 
         node = _StubNode()
         progress = ProgressAggregator('test', node)
@@ -479,4 +479,4 @@ class TestWriterCollectorField:
         ).fetchone()
         assert cs[0] == 'custom_plugin'
         assert cs[1] == 'ok'
-        db2.exit()
+        db2.close()

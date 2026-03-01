@@ -1,7 +1,7 @@
 from datetime import datetime
 
-from source.core.actions.bridge import Command, ActionKit, Menu, Settings, UI
-from source.utils.logs import AppLogger
+from afterimages.core.actions.bridge import Command, ActionKit, Menu, Settings, UI
+from afterimages.utils.logs import AppLogger
 
 
 def _cycle_sort_order(ctx=None):

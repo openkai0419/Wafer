@@ -6,7 +6,7 @@ addopts = "--import-mode=importlib"
 [tool.pyright]
 pythonVersion = "3.10"
 pythonPlatform = "Windows"
-include = ["source"]
+include = ["afterimages"]
 typeCheckingMode = "off"
 reportMissingModuleSource = false
 reportMissingImports = "error"

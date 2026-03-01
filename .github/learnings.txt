@@ -40,6 +40,10 @@
 - Collectorはmeta_info+statusのみ返す。name/aspect/file_hashはPhase1で設定
 - meta_infoキー衝突回避はプラグイン開発者責任（プレフィックス推奨）
 - Grid/ViewerのWIDGET_CLASSとload()は排他。Widget生成はシステム管理
+- BaseGridPlugin.release(widget)は画面外スクロール時にAdditionalWidgetPoolから呼ばれる。GPUリソース等の重い資源を保持するWIDGET_CLASSはsuspend/resume方式で対応。cleanup()は完全破壊のみ
+- BasePlugin.post_install(plugin_dir, on_progress)はpipインストール後に呼ばれるフック。DLLダウンロード等のネイティブ依存取得に使う
+- BasePlugin.configure()は全プラグインロード後に呼ばれるフック。QSurfaceFormat等のアプリ全体設定に使う。skip_install時も呼ばれる
+- AdditionalWidgetPool.warm_up()でWIDGET_CLASS持ちプラグインのWidgetを事前生成。Window表示前にQOpenGLWidgetを子として持たせることでサーフェスタイプ切り替え（＝Window再起動）を回避
 
 ■ SQLite の罠
 - VIEWはマテリアライズされない。ウィンドウ関数入りVIEWをクエリ条件に使うと極端に遅い
@@ -47,6 +51,49 @@
 - compound SELECTをFROM句サブクエリにする時、各armを括弧で囲むと構文エラー
 - 読み取り専用接続ではcache_size/mmap_sizeのPRAGMAを設定
 
+■ プロトタイプの方針
+- プロトタイプは完全な状態まで持っていき、そのままメイン側に統合できる品質にする
+- 複雑なOSレベルのハック（Win32 ColorKey透過等）はプロトタイプに不適。シンプルで強力な設計を選ぶ
+- テスト中に本番の統合先（GridView、OverlayStack等）との互換性も検証する
+
+■ 動画プレイヤー統合の制約
+- GridView = QGraphicsView。セルはFadePixmapItem(QPixmap)またはAdditionalWidget(viewport子Widget)
+- WIDGET_CLASSを持つプラグインはviewport直接配置（AdditionalWidgetPool管理）。QGraphicsProxyWidgetは使わない
+- QOpenGLWidgetはQGraphicsProxyWidgetでは動作しないため、viewport子Widget方式を採用
+- _sync_additional_widgets()でスクロール・レイアウト変更時にviewport座標へ同期。scrollbar.valueChangedに直接接続（throttle無し）
+- Widget判定は_ensure_widget_visibleでgrid_resolver.resolve()により同期的に行う（loader経由の非同期判定は廃止）
+- drawForeground()の選択矩形はviewport子Widgetの下に描画される点に注意
+- mpv render API (MpvRenderContext) + QOpenGLWidgetでネイティブウィンドウを回避し、Qt描画パイプラインに統合する
+- MpvCellWidgetはQWidget（軽量）。サムネイル表示がデフォルト。ホバー時にPlaybackSlotManagerが管理するMpvGLOverlayプール（QOpenGLWidget）を割り当てる
+- MpvGLOverlayはMpvCellWidgetの子Widget。activate時にsetParent(cell)で子化し、geometry=(0,0,w,h)で親全体を覆う。viewport()->scroll()による二重移動問題を回避
+- PlaybackSlotManagerはN個のselected枠+1個のhover枠を管理。selected超過時はLRU（OrderedDict）で最古を解放。hoverからselectへの昇格にも対応
+- hover activateはデバウンス（200ms）。高速スクロール中の不要なmpv起動を防止。QtDebounceManager(afterimages.plugin.qt_debounce_manager)を使用
+- MpvGLOverlay._ownerで所有MpvCellWidgetを追跡。leaveEventでMpvCellWidget._on_overlay_leave(owner)経由でSlotManagerに通知
+- BaseGridPlugin.select(widget, path) / deselect(widget)はGridResolverがGridView._on_selection_changed内の差分計算で呼び出す
+- GridView._prev_selection_setで前回選択を追跡し、新規selected/deselectedを差分算出。_ensure_widget_visibleでも復帰時のselect再適用を行う
+- warm_up時のサーフェスタイプ確保はPlaybackSlotManager.__init__でプールに1つMpvGLOverlayを事前生成して行う。遅延生成にするとwarm_upで確保されずウィンドウ再起動が発生する
+- サムネイル取得はafterimages.plugin.load_thumbnail（grid_resolver.load→FileThumbnailer）を_ThumbnailRunnerで非同期実行
+- ホバー時のマウスイベント：overlayが上に表示されるとcellのleaveEventが発火する場合がある。その時はカーソル位置がoverlay内かチェックして判断する。overlay自身のleaveEventで最終的にdeactivateする
+- QGraphicsOpacityEffectはQOpenGLWidgetに使用禁止。QtがオフスクリーンpixmapにレンダリングしようとしてGLコンテキストが壊れ、映像が表示されなくなる（音声のみ再生される）
+- PowerShellで日本語ファイルを編集するとエンコーディング破損する。日本語テキストはcreate_fileツールかPythonで書き換えること
+- ステールフレーム対策：activate時にGLコンテキスト初期化済み(_ctx存在)ならshow()しない。最初のフレーム到着時に_request_updateでshow。paintGLではawaitingかつframe未到着なら_clear_glで黒クリアし前の動画のフレームをレンダリングしない
+
 ■ その他の注意
 - SelectionManager.set_selected(indexes, last)のlastはリスト内位置インデックス
 - get_resource_path()はpytest時にCWDフォールバックで_resourcesを解決
+
+■ プラグインシステムの設計決定
+- 旧設計(source+plugins+API仮想モジュール)を廃止し、afterimages/を実パッケージ化。extension側がafterimages内部を直接importできる設計に移行
+- 旧API仮想モジュール方式は「制限された客」扱いだった。新設計はextensionを「同じエコシステムの一員」として基盤の力を最大限使える思想
+- afterimages.plugin.__init__.pyは「推奨入口」として残す。extensionが必要に応じてafterimages.coreやafterimages.utilsに直接入ることも許容する
+- 基盤(afterimages/)は安定を重視し慎重に変更。拡張(extensions/)は自由に追加・変更・削除可能
+- PluginRegistry.registerはNAME重複時に上書き（hotreload対応）
+- MemoryLimitedImageCacheはthreading.Lockでスレッドセーフ化済み
+- ViewerResolverはgrid_resolverへの依存をlazy import化。コンストラクタ引数での注入は廃止
+- ImageViewerPluginのload_contentはNone返却。ViewerResolverのフォールバック（grid_resolver.load）に委譲
+- プラグインのvendor_dirはsys.path.append（標準ライブラリ優先）
+- install_plugin_deps（frozen用）はpip._internal.cli.main.mainのみ使用。distlib等の内部API依存は禁止
+- _setup_dll_directoryは_load_oneで初回呼出+post_install後に再呼出の2箇所。両方必要
+- extensionsはafterimages.plugin（公開API）、afterimages.utils、afterimages.coreを直接import可能。afterimages.appへの依存は非推奨
+- afterimages.plugin.__init__.pyがextension向け公開API。BasePlugin/Collector/Grid/Viewer、AppLogger、load_thumbnail、CommandMeta等を再エクスポート
+- afterimages.plugin.qt_debounce_manager(QtDebounceManager)を公開。debounce(key,ms,cb)/cancel(key)でextensionからデバウンス利用可能

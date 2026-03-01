@@ -1,4 +1,4 @@
-from source.core.actions.bridge import ActionKit
+from afterimages.core.actions.bridge import ActionKit
 
 
 def get_all_mouse_bindings():

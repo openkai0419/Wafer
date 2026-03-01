@@ -1,6 +1,6 @@
 from pathlib import Path
-from source.core.actions.bridge import ActionKit
-from source.utils.logs import AppLogger
+from afterimages.core.actions.bridge import ActionKit
+from afterimages.utils.logs import AppLogger
 
 
 def accept_local_existing_files(ctx) -> bool:

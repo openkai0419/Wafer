@@ -46,7 +46,7 @@ echo.
 echo Build succeeded. See dist\%APPNAME%\main.exe
 
 robocopy _resources dist\%APPNAME%\_resources /E
-robocopy plugins    dist\%APPNAME%\plugins    /E /XD .vendor __pycache__
+robocopy extensions  dist\%APPNAME%\extensions  /E /XD .packages __pycache__ lib
 
 :END
 if %ERRFLAG%==1 (

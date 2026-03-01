@@ -7,6 +7,9 @@ venv/
 .temp/
 .packages/
 
+# Extension native libraries (user-provided)
+extensions/*/lib/
+
 # Build artifacts
 build/
 dist/

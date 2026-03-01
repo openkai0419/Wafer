@@ -1,12 +1,21 @@
 # AfterImages
 
-Image viewer and metadata finder.
+Extensible local file viewer with background metadata collection.
 
-## Overview
+## Design Philosophy
 
-This project provides an image viewer with background metadata collection. The viewer is built with **PySide6** and allows browsing images with metadata search. The collector watches specified folders and indexes files into a local SQLite database.
+AfterImages is built around the principle **"one foundation, many extensions"**.
 
-Future goals include video/audio/Zip support and a user-extensible plugin system.
+- **`afterimages/`** is the stable common foundation — it provides infrastructure for file collection, database indexing, search, and rendering, independent of any specific file format.
+- **`extensions/`** contains independent, folder-based extensions that implement support for specific file formats (images, video, audio, etc.).
+
+The core design goals are:
+
+1. **The foundation is stable; extensions are free.** The foundation is carefully designed and tested. Extensions can be added, modified, or removed by anyone.
+2. **Extensions are first-class participants, not restricted guests.** Extensions can directly import `afterimages` internals (`afterimages.plugin`, `afterimages.utils`, `afterimages.core`). They are part of the same ecosystem, not walled off behind an API boundary.
+3. **Extensions are independent of each other.** The image extension does not know about the video extension. Each extension communicates with the foundation through `afterimages/` alone.
+
+The ideal form of this project is an ecosystem where multiple developers freely build file format support on top of a shared `afterimages/` foundation.
 
 ## Requirements
 
@@ -36,16 +45,16 @@ build.bat
 
 `build.bat` does the following:
 - Runs PyInstaller with `main.spec`
-- Copies `_resources/` and `plugins/` into the dist folder
-- `plugins/.vendor/` and `__pycache__/` are excluded from dist (plugin dependencies are auto-installed at first run via bundled pip)
+- Copies `_resources/` and `extensions/` into the dist folder
+- `extensions/.packages/` and `__pycache__/` are excluded from dist (extension dependencies are auto-installed at first run via bundled pip)
 
 ## Project Structure
 
 ```
 main.py              Entry point
-source/              Application source code
-plugins/             External plugins (folder-based, auto-detected by PluginLoader)
-tests/               Tests (tests/source/, tests/plugins/, tests/prototypes/)
+afterimages/         Common foundation (utils, core, plugin, app)
+extensions/          File format extensions (folder-based, auto-detected by PluginLoader)
+tests/               Tests (tests/afterimages/, tests/extensions/, tests/prototypes/)
 _resources/          UI resources, key/mouse binding presets
 prototypes/          Experimental/prototype code
 .temp/               Temporary debug files and caches
@@ -55,45 +64,52 @@ prototypes/          Experimental/prototype code
 
 | File | Purpose |
 |---|---|
-| `requirements.txt` | Runtime dependencies (14 packages) |
-| `requirements-dev.txt` | Dev dependencies (`-r requirements.txt` + pyinstaller, pytest) |
+| `requirements.txt` | Runtime dependencies |
+| `requirements-dev.txt` | Dev dependencies (`-r requirements.txt` + pyinstaller, pytest, etc.) |
 | `pyproject.toml` | pytest configuration only (pythonpath, importlib mode). No package metadata |
-| `main.spec` | PyInstaller build spec (includes bundled pip for frozen plugin installs) |
+| `main.spec` | PyInstaller build spec (includes bundled pip for frozen extension installs) |
 | `setup.bat` | Creates `.venv` and installs `requirements-dev.txt` |
 | `build.bat` | Builds distributable exe via PyInstaller |
 
-## Plugins
+## Extensions
 
-Plugins are placed as folders under `plugins/`. `PluginLoader` (`source/plugin_core/loader.py`) auto-discovers and registers them at startup.
+Extensions are placed as folders under `extensions/`. `PluginLoader` (`afterimages/plugin/loader.py`) auto-discovers and registers them at startup.
 
-### Plugin Folder Structure
+### Extension Folder Structure
 
 ```
-plugins/<name>/
+extensions/<name>/
   *.py                Plugin classes (subclass BaseViewerPlugin / BaseGridPlugin / BaseCollectorPlugin)
   requirements.txt    Python dependencies (optional)
   lib/                Native DLLs (optional, auto-added to PATH)
-  .vendor/            pip install target (auto-generated, git-ignored)
+  .packages/          pip install target (auto-generated, git-ignored)
 ```
 
 ### How It Works
 
-1. If `requirements.txt` exists and dependencies are not installed (or outdated), they are auto-installed to `.vendor/` via pip
-2. `.vendor/` is added to `sys.path`
+1. If `requirements.txt` exists and dependencies are not installed (or outdated), they are auto-installed to `.packages/` via pip
+2. `.packages/` is added to `sys.path`
 3. `lib/` is added to DLL search paths
 4. All `*.py` files are imported and plugin classes are auto-discovered by inheritance
 5. In frozen (exe) builds, pip is invoked via `pip._internal.cli.main` (bundled as hidden import)
 
-### Example: Image Plugin
+### Example: Image Extension
 
-The built-in image plugin is at `plugins/image/` with its own `requirements.txt` (numpy, opencv-python, pillow). It provides Grid, Viewer, and Collector plugins for image files.
+The built-in image extension is at `extensions/image/` with its own `requirements.txt` (numpy, opencv-python, pillow). It provides Grid, Viewer, and Collector plugins for image files.
 
-### Plugin API
+### Extension API
 
-Plugin classes import base classes from the `afterimages` module:
+Extensions import base classes from `afterimages.plugin`:
 
 ```python
-from afterimages import BaseViewerPlugin, BaseGridPlugin, BaseCollectorPlugin, CollectorResult
+from afterimages.plugin import BaseViewerPlugin, BaseGridPlugin, BaseCollectorPlugin, CollectorResult
+```
+
+Extensions can also directly import from `afterimages.utils` and `afterimages.core` as needed:
+
+```python
+from afterimages.utils.logs import AppLogger
+from afterimages.core.db.query import FileSearchEngine
 ```
 
 Each plugin class must have a `NAME` class variable and inherit from one of the base classes.

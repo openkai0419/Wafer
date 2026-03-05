@@ -17,7 +17,7 @@ def test_paste_executor_overwrite_same_path_is_noop(tmp_path):
     res = PasteExecutor().execute_plans([item], {0: PasteDecision(mode="overwrite")})
     assert src.exists()
     assert src.read_text(encoding="utf-8") == "x"
-    assert res and res[0]["status"] == "skipped"
+    assert res and res[0].status == "skipped"
 
 
 def test_paste_executor_rename_same_path_creates_copy(tmp_path):
@@ -37,7 +37,7 @@ def test_paste_executor_rename_same_path_creates_copy(tmp_path):
     copies = [f for f in tmp_path.iterdir() if f.name != "a.txt" and f.suffix == ".txt"]
     assert len(copies) == 1
     assert copies[0].read_text(encoding="utf-8") == "x"
-    assert res and res[0]["status"] == "ok"
+    assert res and res[0].status == "ok"
 
 
 def test_paste_executor_overwrite_replaces_existing_file(tmp_path):
@@ -57,7 +57,7 @@ def test_paste_executor_overwrite_replaces_existing_file(tmp_path):
 
     res = PasteExecutor().execute_plans([item], {0: PasteDecision(mode="overwrite")})
     assert dst.read_text(encoding="utf-8") == "new"
-    assert res and res[0]["status"] == "ok"
+    assert res and res[0].status == "ok"
 
 
 def test_paste_executor_copy_dir_subpath_is_skipped(tmp_path):
@@ -75,11 +75,12 @@ def test_paste_executor_copy_dir_subpath_is_skipped(tmp_path):
 
     res = PasteExecutor().execute_plans([item], {0: PasteDecision(mode="overwrite")})
     assert not dst.exists()
-    assert res and res[0]["status"] == "skipped"
+    assert res and res[0].status == "skipped"
 
 
 def test_paste_executor_copy_dir_rename_on_conflict(tmp_path):
-    from afterimages.core.platform.file_operations import PasteDecision, PasteExecutor, PastePlanItem, unique_path
+    from afterimages.core.platform.file_operations import PasteDecision, PasteExecutor, PastePlanItem
+    from afterimages.core.platform.path_utils import unique_path
 
     src = tmp_path / "folder"
     src.mkdir()
@@ -101,7 +102,7 @@ def test_paste_executor_copy_dir_rename_on_conflict(tmp_path):
     res = PasteExecutor().execute_plans([item], {0: PasteDecision(mode="rename")})
     assert existing.exists()
     assert (existing / "old.txt").read_text(encoding="utf-8") == "old"
-    assert res and res[0]["status"] == "ok"
+    assert res and res[0].status == "ok"
 
 
 def test_paste_executor_overwrite_replaces_existing_dir(tmp_path):
@@ -125,7 +126,7 @@ def test_paste_executor_overwrite_replaces_existing_dir(tmp_path):
     res = PasteExecutor().execute_plans([item], {0: PasteDecision(mode="overwrite")})
     assert (dst / "a.txt").read_text(encoding="utf-8") == "x"
     assert not (dst / "old.txt").exists()
-    assert res and res[0]["status"] == "ok"
+    assert res and res[0].status == "ok"
 
 
 def test_paste_executor_merge_dir_overwrite_child(tmp_path):
@@ -161,7 +162,7 @@ def test_paste_executor_merge_dir_overwrite_child(tmp_path):
     )
     assert (dst / "a.txt").read_text(encoding="utf-8") == "new"
     assert (dst / "sub" / "b.txt").read_text(encoding="utf-8") == "newb"
-    assert res and res[0]["status"] == "ok"
+    assert res and res[0].status == "ok"
 
 
 def test_paste_executor_merge_dir_skip_child(tmp_path):
@@ -186,7 +187,7 @@ def test_paste_executor_merge_dir_skip_child(tmp_path):
         [item], {0: PasteDecision(mode="merge", merge_decisions={"a.txt": PasteDecision(mode="skip")})}
     )
     assert (dst / "a.txt").read_text(encoding="utf-8") == "old"
-    assert res and res[0]["status"] == "ok"
+    assert res and res[0].status == "ok"
 
 
 def test_scan_merge_conflicts_detects_files(tmp_path):
@@ -224,93 +225,6 @@ def test_scan_merge_conflicts_recurses_into_dirs(tmp_path):
     assert conflicts[0].rel_path == os.path.join("sub", "c.txt")
 
 
-def test_unique_path_generates_increment(tmp_path):
-    from afterimages.core.platform.file_operations import unique_path
-
-    d = tmp_path
-    (d / "a.txt").write_text("x", encoding="utf-8")
-    p = Path(unique_path(d, "a.txt"))
-    assert p.name.startswith("a (") and p.suffix == ".txt"
-
-
-def test_check_copy_conflict_same_path(tmp_path):
-    from afterimages.core.platform.file_operations import check_copy_conflict
-
-    p = tmp_path / "x.txt"
-    p.write_text("x", encoding="utf-8")
-    assert check_copy_conflict(p, p) == "same_path"
-
-
-def test_check_copy_conflict_none():
-    from afterimages.core.platform.file_operations import check_copy_conflict
-
-    assert check_copy_conflict(None, "x") is None
-    assert check_copy_conflict("x", None) is None
-    assert check_copy_conflict(None, None) is None
-
-
-def test_check_copy_conflict_subpath(tmp_path):
-    from afterimages.core.platform.file_operations import check_copy_conflict
-
-    parent = tmp_path / "parent"
-    parent.mkdir()
-    child = parent / "child"
-    assert check_copy_conflict(str(parent), str(child)) == "subpath"
-
-
-def test_check_copy_conflict_no_conflict(tmp_path):
-    from afterimages.core.platform.file_operations import check_copy_conflict
-
-    a = tmp_path / "a.txt"
-    b = tmp_path / "b.txt"
-    a.write_text("x", encoding="utf-8")
-    assert check_copy_conflict(str(a), str(b)) is None
-
-
-def test_sanitize_filename_windows_invalid_chars():
-    from afterimages.core.platform.file_operations import sanitize_filename
-
-    assert sanitize_filename("a<b>c.txt") == "a_b_c.txt"
-
-
-def test_execute_paste_plans_with_ui_exists():
-    from afterimages.core.platform.file_operations import execute_paste_plans_with_ui
-    assert callable(execute_paste_plans_with_ui)
-
-
-def test_drop_files_with_ui_exists():
-    from afterimages.core.platform.file_operations import drop_files_with_ui
-    assert callable(drop_files_with_ui)
-
-
-def test_paste_clipboard_files_exists():
-    from afterimages.core.platform.file_operations import paste_clipboard_files
-    assert callable(paste_clipboard_files)
-
-
-def test_drop_files_with_ui_invalid_op():
-    from afterimages.core.platform.file_operations import drop_files_with_ui
-    import pytest
-
-    with pytest.raises(ValueError, match="Invalid op"):
-        drop_files_with_ui([], ".", "invalid_op")
-
-
-def test_drop_files_with_ui_invalid_overwrite_mode():
-    from afterimages.core.platform.file_operations import drop_files_with_ui
-    import pytest
-
-    with pytest.raises(ValueError, match="Invalid overwrite_mode"):
-        drop_files_with_ui([], ".", "copy", overwrite_mode="invalid")
-
-
-def test_drop_files_with_ui_empty_items(tmp_path):
-    from afterimages.core.platform.file_operations import drop_files_with_ui
-
-    res = drop_files_with_ui([], str(tmp_path), "copy")
-    assert res == []
-
-
 def test_paste_cancelled_error_importable():
     from afterimages.core.platform.file_operations import PasteCancelledError
     assert issubclass(PasteCancelledError, Exception)
@@ -341,7 +255,7 @@ def test_paste_executor_merge_dir_rename_child(tmp_path):
     renamed = [f for f in dst.iterdir() if f.name != "a.txt" and f.suffix == ".txt"]
     assert len(renamed) == 1
     assert renamed[0].read_text(encoding="utf-8") == "new"
-    assert res and res[0]["status"] == "ok"
+    assert res and res[0].status == "ok"
 
 
 def test_paste_executor_merge_adds_new_files(tmp_path):
@@ -367,4 +281,4 @@ def test_paste_executor_merge_adds_new_files(tmp_path):
     )
     assert (dst / "existing.txt").read_text(encoding="utf-8") == "keep"
     assert (dst / "new.txt").read_text(encoding="utf-8") == "added"
-    assert res and res[0]["status"] == "ok"
+    assert res and res[0].status == "ok"

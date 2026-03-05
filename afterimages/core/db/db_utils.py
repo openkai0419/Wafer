@@ -41,15 +41,7 @@ def connect_with_retry(path, timeout=3.0, retries=3, delay=1.0, **kwargs):
 
 
 @profiler.profile
-def retry_sqlite_connection(db_name, timeout=3.0, interval=0.1):
-    retries = max(1, int(timeout / interval)) if interval > 0 else 1
-    conn = connect_with_retry(db_name, timeout=timeout, retries=retries, delay=interval, isolation_level=None)
-    conn.execute('PRAGMA foreign_keys = ON')
-    conn.execute('PRAGMA journal_mode=WAL')
-    return conn
-
-@profiler.profile
-def delete_database_files(dbname, retries=1000, delay=1.0, force=False):
+def delete_database_files(dbname, retries=10, delay=1.0, force=False):
     base = os.path.abspath(dbname)
     AppLogger.info(f'Deleting database files: {base}')
     patterns = [base, f'{base}-journal', f'{base}-wal', f'{base}-shm'] + glob.glob(f'{base}*')

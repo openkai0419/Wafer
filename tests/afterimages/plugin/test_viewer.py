@@ -3,7 +3,7 @@ import pytest
 from PIL import Image
 
 from afterimages.plugin.viewer.handler import viewer_resolver
-from afterimages.plugin.viewer.base import BaseViewerPlugin
+from afterimages.plugin.viewer.base import BaseViewerPlugin, ImageViewerPlugin, WidgetViewerPlugin
 
 
 def _get_image_plugin():
@@ -18,9 +18,9 @@ def test_compile_handler():
     py_compile.compile('afterimages/plugin/viewer/handler.py')
 
 
-def test_base_is_abstract():
+def test_image_viewer_plugin_is_abstract():
     with pytest.raises(TypeError):
-        BaseViewerPlugin()
+        ImageViewerPlugin()
 
 
 def test_image_plugin_registered():
@@ -53,17 +53,18 @@ def test_image_plugin_extensions():
     assert '.gif' in plugin_cls.EXTENSIONS
 
 
-def test_image_plugin_widget_class_is_none():
+def test_image_plugin_is_image_viewer_plugin():
     plugin_cls = _get_image_plugin()
-    assert plugin_cls.WIDGET_CLASS is None
+    assert issubclass(plugin_cls, ImageViewerPlugin)
+    assert not issubclass(plugin_cls, WidgetViewerPlugin)
 
 
-def test_has_widget_image():
-    assert not viewer_resolver.has_widget('photo.jpg')
+def test_is_widget_plugin_image():
+    assert not viewer_resolver.is_widget_plugin('photo.jpg')
 
 
-def test_has_widget_unknown():
-    assert not viewer_resolver.has_widget('file.xyz')
+def test_is_widget_plugin_unknown():
+    assert not viewer_resolver.is_widget_plugin('file.xyz')
 
 
 def test_widget_classes_empty():
@@ -71,7 +72,7 @@ def test_widget_classes_empty():
 
 
 def test_render_does_nothing_without_widget_plugin():
-    viewer_resolver.render('photo.jpg', None)
+    viewer_resolver.render(None, 'photo.jpg')
 
 
 def test_image_plugin_load_content_returns_none(tmp_path):

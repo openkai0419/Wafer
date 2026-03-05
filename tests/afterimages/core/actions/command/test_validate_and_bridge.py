@@ -15,7 +15,7 @@ from afterimages.core.actions.command.state import CommandOptionStore
 
 @pytest.fixture(autouse=True)
 def _isolate_registry():
-    reg = CommandRegistry()
+    reg = CommandRegistry.instance()
     prev = dict(reg._commands)
     yield
     reg._commands = prev
@@ -239,7 +239,7 @@ class TestBridgeCommand:
         )
         _register(meta)
         Command, _ = self._import_bridge()
-        store = CommandOptionStore()
+        store = CommandOptionStore.instance()
         store.set("t.stale", {"a": 1, "old_removed": 99})
         store.commit()
         Command.set_args("t.stale", {"a": 5})
@@ -262,7 +262,7 @@ class TestBridgeCommand:
         captured = {}
         def fn(ctx):
             captured["foo"] = ctx.get("foo")
-            captured["source"] = ctx._info.get("source")
+            captured["source"] = ctx._source
         meta = CommandMeta(path="t.ext", display="E", func=fn)
         _register(meta)
         Command, _ = self._import_bridge()
@@ -306,18 +306,20 @@ class TestBridgeCommand:
 
 
 class TestCommandContextInfo:
-    def test_info_not_accessible_via_get(self):
+    def test_private_fields_not_accessible_via_get(self):
         from afterimages.core.actions.command.context import CommandContext
         ctx = CommandContext.build(None, "*", source="test")
-        assert ctx.get("_info") is None
+        assert ctx.get("_widget") is None
+        assert ctx.get("_scope") is None
+        assert ctx.get("_source") is None
 
-    def test_info_stores_widget_scope_source(self):
+    def test_build_stores_widget_scope_source(self):
         from afterimages.core.actions.command.context import CommandContext
         widget = object()
         ctx = CommandContext.build(widget, "myscope", source="mouse")
-        assert ctx._info["widget"] is widget
-        assert ctx._info["scope"] == "myscope"
-        assert ctx._info["source"] == "mouse"
+        assert ctx._widget is widget
+        assert ctx._scope == "myscope"
+        assert ctx._source == "mouse"
 
     def test_get_public_fields_accessible(self):
         from afterimages.core.actions.command.context import CommandContext

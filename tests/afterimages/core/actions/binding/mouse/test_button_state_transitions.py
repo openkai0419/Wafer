@@ -3,10 +3,12 @@ from unittest.mock import patch
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from afterimages.core.actions.binding.mixins import CommandBindingMixin
-from afterimages.core.actions.binding.mouse.mouseeventmanager import (
+from afterimages.core.actions.binding.mouse.types import (
     ClickType,
     MouseActionKey,
     MouseButton,
+)
+from afterimages.core.actions.binding.mouse.manager import (
     MouseEventManager,
     MouseEventDispatcher,
     MouseStateManager,
@@ -167,7 +169,7 @@ class TestSingleButtonPressRelease:
 class TestModifiers:
 
     def test_ctrl_left_click(self, qtbot):
-        from afterimages.core.actions.binding.mouse.mouseeventmanager import ModifierKey
+        from afterimages.core.actions.binding.mouse.types import ModifierKey
         key = MouseActionKey(MouseButton.LEFT, ClickType.SINGLE, modifiers=(ModifierKey.CTRL,))
         w, rec = _setup_widget(qtbot, {key: "CTRL_L"})
         d = w._mouse_dispatcher
@@ -704,17 +706,17 @@ class TestMapQtButton:
 class TestGetModifiers:
 
     def test_no_modifiers(self):
-        from afterimages.core.actions.binding.mouse.mouseeventmanager import ModifierKey
+        from afterimages.core.actions.binding.mouse.types import ModifierKey
         mods = MouseEventManager.get_modifiers(NO_MOD)
         assert mods == ()
 
     def test_ctrl(self):
-        from afterimages.core.actions.binding.mouse.mouseeventmanager import ModifierKey
+        from afterimages.core.actions.binding.mouse.types import ModifierKey
         mods = MouseEventManager.get_modifiers(CTRL)
         assert ModifierKey.CTRL in mods
 
     def test_ctrl_shift(self):
-        from afterimages.core.actions.binding.mouse.mouseeventmanager import ModifierKey
+        from afterimages.core.actions.binding.mouse.types import ModifierKey
         mods = MouseEventManager.get_modifiers(CTRL | SHIFT)
         assert ModifierKey.CTRL in mods
         assert ModifierKey.SHIFT in mods

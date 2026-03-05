@@ -1,12 +1,13 @@
 from __future__ import annotations
-from typing import Any, Dict, Optional
+from typing import Any
 from PySide6 import QtWidgets
 from afterimages.utils.profiling import profiler
 from ..command.core import CommandRegistry
 from ..command.context import CommandContext
 from ..command.payload import CommandPayload
 from afterimages.utils.logs import AppLogger
-from .mouse.mouseeventmanager import MouseEventManager, MouseEventDispatcher, MouseActionKey, ClickType
+from .mouse.types import MouseActionKey, ClickType
+from .mouse.manager import MouseEventManager, MouseEventDispatcher
 from .key.shortcutmanager import ShortcutManager
 from .mouse.store import MouseBindingStore
 from .manager import BindingManager
@@ -17,12 +18,12 @@ class CommandBindingMixin:
         if not name:
             raise ValueError("name is required")
         self.name = name
-        self._registry = CommandRegistry()
+        self._registry = CommandRegistry.instance()
         self._mouse_manager = MouseEventManager()
         self._mouse_manager.set_registry(self._registry)
         self._mouse_dispatcher = MouseEventDispatcher(self, self._mouse_manager, enable_drag=enable_drops, use_existing_events=use_existing_events)
-        self._mouse_bindings: Dict[MouseActionKey, CommandPayload] = {}
-        self._store = MouseBindingStore()
+        self._mouse_bindings: dict[MouseActionKey, CommandPayload] = {}
+        self._store = MouseBindingStore.instance()
         self._shortcut_manager = ShortcutManager()
         self._mouse_manager.set_resolver(self._resolve_fallback)
         BindingManager.instance().register(self)
@@ -35,7 +36,7 @@ class CommandBindingMixin:
     def binding_scope(self) -> str:
         return self.name
 
-    def set_mouse_bindings(self, bindings: Dict[MouseActionKey, CommandPayload]):
+    def set_mouse_bindings(self, bindings: dict[MouseActionKey, CommandPayload]):
         self._mouse_bindings = {}
         self._mouse_manager.clear()
 
@@ -48,7 +49,7 @@ class CommandBindingMixin:
             self._mouse_manager.bind(k, lambda e=None, c=cmd, kk=k: self._execute_payload(c, event=e, key=kk, source="mouse"))
         self._mouse_manager.set_resolver(self._resolve_fallback)
 
-    def get_mouse_bindings(self) -> Dict[MouseActionKey, CommandPayload]:
+    def get_mouse_bindings(self) -> dict[MouseActionKey, CommandPayload]:
         return dict(self._mouse_bindings)
 
     def drop_accept(self, event) -> bool:
@@ -83,34 +84,39 @@ class CommandBindingMixin:
             return True
         return False
 
-    def set_shortcut_bindings(self, bindings: Dict[Any, CommandPayload]):
+    def set_shortcut_bindings(self, bindings: dict[Any, CommandPayload]):
         self._shortcut_manager.set_bindings(self, bindings)
 
-    def get_shortcut_bindings(self) -> Dict[str, CommandPayload]:
+    def get_shortcut_bindings(self) -> dict[str, CommandPayload]:
         return self._shortcut_manager.get_bindings(self)
 
-    def set_physical_shortcut_bindings(self, bindings: Dict[Any, CommandPayload]):
+    def set_physical_shortcut_bindings(self, bindings: dict[Any, CommandPayload]):
         self._shortcut_manager.set_physical_bindings(self, bindings)
 
-    def set_key_bindings(self, bindings: Dict[tuple, CommandPayload]):
+    def set_key_bindings(self, bindings: dict[tuple, CommandPayload]):
         self._shortcut_manager.set_key_bindings(self, bindings)
 
-    def exec_command(self, cmd: Any, event=None, key: Optional[MouseActionKey]=None, source: Optional[str]=None, extra: Optional[Dict[str, Any]]=None):
+    def exec_command(self, cmd: Any, event=None, key: MouseActionKey | None=None, source: str | None=None, extra: dict[str, Any] | None=None):
         self._execute_payload(cmd, event=event, key=None, source=source, extra=extra)
 
-    def extend_context(self, ctx: CommandContext, cmd: Any, event=None, key: Optional[MouseActionKey]=None, source: Optional[str]=None) -> Optional[Dict[str, Any]]:
+    def extend_context(self, ctx: CommandContext, cmd: Any, event=None, key: MouseActionKey | None=None, source: str | None=None) -> dict[str, Any] | None:
         return None
 
     @profiler.profile
-    def _execute_payload(self, cmd: CommandPayload, event=None, key: Optional[MouseActionKey]=None, source: Optional[str]=None, extra: Optional[Dict[str, Any]]=None):
+    def _execute_payload(self, cmd: CommandPayload, event=None, key: MouseActionKey | None=None, source: str | None=None, extra: dict[str, Any] | None=None):
         if not isinstance(cmd, CommandPayload):
             raise TypeError("Command payload must be CommandPayload")
+        if not self._registry.has_command(str(cmd.id)):
+            from afterimages.utils.notifier import Notifier
+            AppLogger.warning(f"Command not found: {cmd.id}")
+            Notifier.warning(f"Command not found: {cmd.id}")
+            return
         ctx = self._build_execution_context(cmd, event, key, source, extra)
         args = self._merge_arguments(cmd, ctx, source)
         self._registry.execute(str(cmd.id), ctx=ctx, **args)
         self._update_checkable_state(cmd, ctx)
 
-    def _build_execution_context(self, cmd: CommandPayload, event=None, key: Optional[MouseActionKey]=None, source: Optional[str]=None, extra: Optional[Dict[str, Any]]=None) -> CommandContext:
+    def _build_execution_context(self, cmd: CommandPayload, event=None, key: MouseActionKey | None=None, source: str | None=None, extra: dict[str, Any] | None=None) -> CommandContext:
         ctx = CommandContext.create(self, self.binding_scope(), source=str(source or ""), event=event)
         try:
             more = self.extend_context(ctx, cmd, event=event, key=key, source=source)
@@ -122,20 +128,16 @@ class CommandBindingMixin:
             ctx.merge(extra)
         return ctx
 
-    def _merge_arguments(self, cmd: CommandPayload, ctx: CommandContext, source: Optional[str]) -> Dict[str, Any]:
+    def _merge_arguments(self, cmd: CommandPayload, ctx: CommandContext, source: str | None) -> dict[str, Any]:
         from ..command.state import CommandOptionStore
-        store = CommandOptionStore()
+        store = CommandOptionStore.instance()
         stored_payload = store.get(cmd.id)
         args = dict(cmd.args or {}) or dict(stored_payload.args or {})
         cls = self._registry.get_command(str(cmd.id))
         if cls and getattr(getattr(cls, "meta", None), "checkable", False):
             meta = getattr(cls, "meta", None)
             cur_checked = bool(dict(getattr(stored_payload, "args", {}) or {}).get("checked", getattr(meta, "default_checked", False)))
-            if isinstance(source, str) and afterimages.startswith("mouse"):
-                new_checked = not cur_checked
-            else:
-                new_checked = not cur_checked
-            ctx.put("checked", new_checked)
+            ctx.put("checked", not cur_checked)
             if "checked" in args:
                 args.pop("checked", None)
         return args
@@ -145,7 +147,7 @@ class CommandBindingMixin:
             cls = self._registry.get_command(str(cmd.id))
             if cls and getattr(getattr(cls, "meta", None), "checkable", False):
                 from ..command.state import CommandOptionStore
-                store = CommandOptionStore()
+                store = CommandOptionStore.instance()
                 stored_payload = store.get(cmd.id)
                 opts = dict(getattr(stored_payload, "args", {}) or {})
                 opts["checked"] = bool(ctx.get("checked", opts.get("checked", False)))

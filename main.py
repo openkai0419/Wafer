@@ -48,6 +48,8 @@ def _load_plugins_with_splash(app):
 
 def _entry_viewer(app=None):
     from afterimages.app.viewer.mainwindow import MainWindow
+    from afterimages.plugin.loader import PluginLoader
+    PluginLoader.register_extension_commands()
     if app is None:
         app = _create_app()
     window = MainWindow(get_icon())
@@ -134,8 +136,8 @@ def main():
     if args.dev:
         constants.DEV_MODE = True
     if args.install_deps:
-        from afterimages.plugin.loader import install_plugin_deps
-        sys.exit(install_plugin_deps(args.install_deps))
+        from afterimages.plugin.loader import install_plugin_deps_inprocess
+        sys.exit(install_plugin_deps_inprocess(args.install_deps))
     if not any([args.tray, args.viewer, args.indexer, args.collector]):
         app = _create_app()
         _load_plugins_with_splash(app)

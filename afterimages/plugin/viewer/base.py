@@ -1,15 +1,22 @@
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from ..registry import BasePlugin
 
 
-class BaseViewerPlugin(BasePlugin):
-    WIDGET_CLASS = None
+class BaseViewerPlugin(BasePlugin, ABC):
+    pass
+
+
+class ImageViewerPlugin(BaseViewerPlugin):
 
     @abstractmethod
     def load_content(self, path: str):
         ...
 
-    def render(self, path, widget):
+
+class WidgetViewerPlugin(BaseViewerPlugin):
+    WIDGET_CLASS = None
+
+    def render(self, widget, path):
         pass
 
     def clear(self, widget):

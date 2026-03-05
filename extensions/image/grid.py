@@ -3,11 +3,11 @@ import cv2
 import numpy as np
 from PySide6 import QtCore, QtGui
 
-from afterimages.plugin import BaseGridPlugin
+from afterimages.plugin import ImageGridPlugin as _ImageGridPlugin
 from afterimages.utils.logs import AppLogger
 
 
-class ImageGridPlugin(BaseGridPlugin):
+class ImageGridPlugin(_ImageGridPlugin):
     NAME = 'image'
     EXTENSIONS = ('.jpg', '.jpeg', '.png', '.bmp', '.gif', '.webp')
     PRIORITY = 100

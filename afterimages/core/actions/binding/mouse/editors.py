@@ -1,10 +1,12 @@
-from typing import Dict, List, Tuple, Any
+from __future__ import annotations
+
+from typing import Any
 from dataclasses import dataclass
 from PySide6 import QtCore, QtGui, QtWidgets
 from afterimages.utils.formatting import dpix
-from .mouseeventmanager import MouseActionKey, ClickType, MouseButton, ModifierKey
+from .types import MouseActionKey, ClickType, MouseButton, ModifierKey
 from ...command.maker import MenuMaker
-from ...command.ui import MenuBuilder
+from ...command.menu_builder import MenuBuilder
 from .store import MouseBindingStore
 from ...command.payload import CommandPayload
 from ..common import WidgetRef
@@ -18,8 +20,8 @@ class MouseQualifier:
     value: object | None
 
 class MouseBindingEditor(BindingEditorBase):
-    def __init__(self, widgets: List[WidgetRef], parent=None):
-        super().__init__(widgets, MouseBindingStore(), parent)
+    def __init__(self, widgets: list[WidgetRef], parent=None):
+        super().__init__(widgets, MouseBindingStore.instance(), parent)
         self.setWindowTitle("Mouse Bindings")
         self.resize(dpix(640), dpix(480))
         self._setup()
@@ -32,7 +34,7 @@ class MouseBindingEditor(BindingEditorBase):
         left_layout = QtWidgets.QVBoxLayout(left_container)
         left_layout.setContentsMargins(0,0,0,0)
         left_layout.setSpacing(dpix(4))
-        label_actions = QtWidgets.QLabel("マウス操作:", left_container)
+        label_actions = QtWidgets.QLabel(self.t.tr("Mouse Actions:"), left_container)
         self.list_actions = QtWidgets.QListWidget(left_container)
         self.list_actions.setAlternatingRowColors(True)
         self.list_actions.currentRowChanged.connect(lambda _: self._reload_sections())
@@ -54,12 +56,12 @@ class MouseBindingEditor(BindingEditorBase):
         self.panel_layout.addWidget(self.sections_container, 1)
         footer = QtWidgets.QHBoxLayout()
         footer.addStretch(1)
-        self.btn_reset_action = QtWidgets.QPushButton("初期設定に戻す", self.panel)
+        self.btn_reset_action = QtWidgets.QPushButton(self.t.tr("Reset to Defaults"), self.panel)
         self.btn_reset_action.setCursor(QtCore.Qt.PointingHandCursor)
         self.btn_reset_action.clicked.connect(self._reset_current_action)
         footer.addWidget(self.btn_reset_action, 0)
         self.panel_layout.addLayout(footer)
-        self.sections: List['MouseSection'] = []
+        self.sections: list['MouseSection'] = []
         self.splitter.addWidget(left_container)
         self.splitter.addWidget(self.scroll)
         self.splitter.setCollapsible(0, False)
@@ -74,8 +76,8 @@ class MouseBindingEditor(BindingEditorBase):
         bb.rejected.connect(self.reject)
         l.addWidget(bb)
         
-    def _actions(self) -> List[Tuple[str, MouseButton, ClickType]]:
-        r: List[Tuple[str, MouseButton, ClickType]] = []
+    def _actions(self) -> list[tuple[str, MouseButton, ClickType]]:
+        r: list[tuple[str, MouseButton, ClickType]] = []
         for b in [MouseButton.LEFT, MouseButton.RIGHT, MouseButton.MIDDLE, MouseButton.X1, MouseButton.X2]:
             r.append((f"{b.name} SINGLE", b, ClickType.SINGLE))
             r.append((f"{b.name} DOUBLE", b, ClickType.DOUBLE))
@@ -86,8 +88,8 @@ class MouseBindingEditor(BindingEditorBase):
         r.append(("DROP", MouseButton.NONE, ClickType.DROP))
         return r
 
-    def _qualifiers_for_sections(self, button: MouseButton, click: ClickType) -> List[MouseQualifier]:
-        qs: List[MouseQualifier] = [MouseQualifier("none", None)]
+    def _qualifiers_for_sections(self, button: MouseButton, click: ClickType) -> list[MouseQualifier]:
+        qs: list[MouseQualifier] = [MouseQualifier("none", None)]
         mods = [ModifierKey.SHIFT, ModifierKey.CTRL, ModifierKey.ALT]
         if click == ClickType.DROP:
             for m in mods:
@@ -109,7 +111,7 @@ class MouseBindingEditor(BindingEditorBase):
             self.list_actions.addItem(label)
         if self.list_actions.count() > 0:
             self.list_actions.setCurrentRow(0)
-    def _current_action(self) -> Tuple[MouseButton, ClickType]:
+    def _current_action(self) -> tuple[MouseButton, ClickType]:
         idx = self.list_actions.currentRow()
         items = self._actions()
         if idx < 0 or idx >= len(items):
@@ -167,7 +169,7 @@ class MouseBindingEditor(BindingEditorBase):
     def _reset_current_action(self):
         try:
             b, c = self._current_action()
-            defs = MouseBindingStore()._seed_data()
+            defs = MouseBindingStore.instance()._seed_data()
             cur = self._store.get_all()
             aff_keys = set()
             for k in cur.keys():
@@ -189,7 +191,7 @@ class MouseBindingEditor(BindingEditorBase):
             AppLogger.warning("MouseBindingEditor reset_current_action failed", exc=e)
 
 class MouseSection(ScopedPayloadSectionBase):
-    def __init__(self, parent: QtWidgets.QWidget, widgets: List[WidgetRef], qualifier: MouseQualifier, store: MouseBindingStore):
+    def __init__(self, parent: QtWidgets.QWidget, widgets: list[WidgetRef], qualifier: MouseQualifier, store: MouseBindingStore):
         super().__init__(parent, widgets, header_button_text="")
         self.qualifier = qualifier
         self.store = store
@@ -198,7 +200,7 @@ class MouseSection(ScopedPayloadSectionBase):
         self.setTitle("")
         self.btn_global.setStyleSheet(f"padding:{dpix(4)}px {dpix(12)}px;")
         self.btn_overrides.setStyleSheet(f"padding:{dpix(4)}px {dpix(4)}px;")
-        self.list_order: List[str] = []
+        self.list_order: list[str] = []
     def set_action(self, button: MouseButton, click: ClickType):
         self.button = button
         self.click = click
@@ -207,23 +209,23 @@ class MouseSection(ScopedPayloadSectionBase):
         self.set_header_button_text(t)
     def _title(self) -> str:
         if self.qualifier.kind == "none":
-            return "★ 単独での機能"
+            return self.t.tr("Standalone Action")
         if self.qualifier.kind == "mouse":
             b = self.qualifier.value
             if isinstance(b, MouseButton):
-                return f"{b.name} 押しながら"
+                return self.t("{button} + Hold", button=b.name)
             return "(invalid)"
         if self.qualifier.kind == "modifier":
             m = self.qualifier.value
             if m == ModifierKey.SHIFT:
-                return "Shift 押しながら"
+                return self.t.tr("Hold Shift")
             if m == ModifierKey.CTRL:
-                return "Ctrl 押しながら"
+                return self.t.tr("Hold Ctrl")
             if m == ModifierKey.ALT:
-                return "Alt 押しながら"
+                return self.t.tr("Hold Alt")
             return "(invalid)"
         return "(invalid)"
-    def load_from_data(self, data: Dict[MouseActionKey, Dict[str,CommandPayload]]):
+    def load_from_data(self, data: dict[MouseActionKey, dict[str,CommandPayload]]):
         expected_key = self._current_key()
         scopes = data.get(expected_key, {})
         self.load_from_scopes(scopes)
@@ -247,7 +249,7 @@ class MouseSection(ScopedPayloadSectionBase):
     
     def _show_category_menu(self, btn, scope: str, category: str):
         from ...command.core import CommandRegistry
-        registry = CommandRegistry()
+        registry = CommandRegistry.instance()
         widget_scope = None if scope == "*" else scope
         commands = registry.get_commands_by_category(category, widget_scope=widget_scope)
 
@@ -256,7 +258,7 @@ class MouseSection(ScopedPayloadSectionBase):
         builder = MenuBuilder(maker, self)
 
         def _prep(m: QtWidgets.QMenu, sc=scope, cat=category):
-            act_none = QtGui.QAction("なし(解除)", m)
+            act_none = QtGui.QAction(self.t.tr("None (Unset)"), m)
             act_none.triggered.connect(lambda _, s=sc: self._on_select(s, None))
             first = m.actions()[0] if m.actions() else None
             if first:
@@ -266,7 +268,7 @@ class MouseSection(ScopedPayloadSectionBase):
                 m.addAction(act_none)
             if not names:
                 m.addSeparator()
-                act_empty = m.addAction(f"({cat}コマンドなし)")
+                act_empty = m.addAction(self.t("(No {cat} commands)", cat=cat))
                 act_empty.setEnabled(False)
 
         builder.popup_names(
@@ -279,7 +281,7 @@ class MouseSection(ScopedPayloadSectionBase):
         )
     def _on_select(self, scope: str, cid):
         super()._on_select(scope, cid)
-    def collect_entries(self) -> Dict[MouseActionKey, Dict[str, CommandPayload]]:
+    def collect_entries(self) -> dict[MouseActionKey, dict[str, CommandPayload]]:
         key = self._current_key()
         scopes = self.collect_scopes()
         return {key: scopes} if scopes else {}

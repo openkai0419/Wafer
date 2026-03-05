@@ -6,7 +6,7 @@ from PySide6.QtCore import QMimeData
 from PySide6.QtGui import QImage
 
 from afterimages.utils.paths import normalize_path
-from .file_operations import _is_http_url, sanitize_filename
+from .path_utils import is_http_url, sanitize_filename
 
 
 class ParsedItem:
@@ -96,7 +96,7 @@ class MimeDataParser:
                     url_str = url.toString()
                     if url_str.startswith("blob:"):
                         continue
-                    if _is_http_url(url_str):
+                    if is_http_url(url_str):
                         fname = url.fileName() or url.host() or "download"
                         fname = sanitize_filename(fname, fallback="download")
                         if not os.path.splitext(fname)[1]:
@@ -106,7 +106,7 @@ class MimeDataParser:
                 return items
         if mime.hasText():
             t = (mime.text() or "").strip()
-            if _is_http_url(t):
+            if is_http_url(t):
                 items.append(ParsedItem(source=t, name="download.bin", is_binary=False, mime_type="url"))
                 return items
         return items

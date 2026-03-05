@@ -5,7 +5,11 @@ from afterimages.utils.paths import normalize_path
 from afterimages.utils.helpers import try_json_loads
 from afterimages.utils.profiling import profiler
 from afterimages.utils.logs import AppLogger
-from .db_utils import retry_sqlite_connection
+from .db_utils import connect_with_retry
+
+_VALID_FOLDER_TABLES = frozenset({'parent_folders', 'ignore_folders'})
+
+
 class SettingDB:
 
     def __init__(self, db_name):
@@ -23,7 +27,9 @@ class SettingDB:
             finally:
                 con.close()
             return
-        con = retry_sqlite_connection(self.db_name)
+        con = connect_with_retry(self.db_name, timeout=3.0, retries=30, delay=0.1)
+        con.execute('PRAGMA foreign_keys=ON')
+        con.execute('PRAGMA journal_mode=WAL')
         try:
             yield con
             if con.in_transaction:
@@ -62,7 +68,12 @@ class SettingDB:
                 );
             ''')
 
+    def _validate_folder_type(self, folder_type):
+        if folder_type not in _VALID_FOLDER_TABLES:
+            raise ValueError(f'Invalid folder type: {folder_type}')
+
     def _sync_folders(self, folder_type, new_paths):
+        self._validate_folder_type(folder_type)
         norm_paths = set((normalize_path(p) for p in new_paths))
         with self._conn() as con:
             current = {row[0] for row in con.execute(f'SELECT path FROM {folder_type}')}
@@ -75,6 +86,7 @@ class SettingDB:
         return {'added': list(to_add), 'removed': list(to_remove)}
 
     def _add_folder(self, folder_type, path):
+        self._validate_folder_type(folder_type)
         norm_path = normalize_path(path)
         with self._conn() as con:
             cur = con.execute(f'SELECT 1 FROM {folder_type} WHERE path = ?', (norm_path,))
@@ -84,6 +96,7 @@ class SettingDB:
         return True
 
     def _remove_folder(self, folder_type, path):
+        self._validate_folder_type(folder_type)
         norm_path = normalize_path(path)
         with self._conn() as con:
             cur = con.execute(f'SELECT 1 FROM {folder_type} WHERE path = ?', (norm_path,))
@@ -93,6 +106,7 @@ class SettingDB:
         return True
 
     def _get_all_folders(self, folder_type):
+        self._validate_folder_type(folder_type)
         with self._conn(read_only=True) as con:
             cur = con.execute(f'SELECT path FROM {folder_type} ORDER BY id ASC')
             return [row[0] for row in cur.fetchall()]

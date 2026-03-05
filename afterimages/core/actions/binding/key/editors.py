@@ -1,4 +1,6 @@
-from typing import Dict, List, Any, Tuple
+from __future__ import annotations
+
+from typing import Any
 from PySide6 import QtCore, QtGui, QtWidgets
 from afterimages.utils.formatting import dpix
 from ...command.payload import CommandPayload
@@ -7,6 +9,7 @@ from .store import KeyBindingStore
 from .shortcutmanager import ShortcutManager
 from .sequence import KeySequence, KeySpecCatalog
 from ..editors_common import BindingEditorBase, ScopedPayloadSectionBase, DraftOverlay, clear_layout, popup_command_picker
+from afterimages.core.lang.manager import get_translator
 
 class _SelectableList(QtWidgets.QListWidget):
     def __init__(self, parent=None):
@@ -22,17 +25,17 @@ class _SelectableList(QtWidgets.QListWidget):
         super().mousePressEvent(e)
 
 class KeyBindingEditor(BindingEditorBase):
-    def __init__(self, widgets: List[WidgetRef], commands: List[str] | None = None, parent=None):
+    def __init__(self, widgets: list[WidgetRef], commands: list[str] | None = None, parent=None):
         if parent is None and isinstance(commands, QtWidgets.QWidget):
             parent = commands
             commands = None
-        super().__init__(widgets, KeyBindingStore(), parent)
+        super().__init__(widgets, KeyBindingStore.instance(), parent)
         self._commands = list(commands or [])
         self.setWindowTitle("Key Bindings")
         self.resize(dpix(600), dpix(480))
         self._cat = KeySpecCatalog()
-        self._mod_keys: List[str] = []
-        self._main_keys: List[str] = []
+        self._mod_keys: list[str] = []
+        self._main_keys: list[str] = []
         self._filter_cmd_id: str | None = None
         self._build_ui()
         self._load_existing()
@@ -46,22 +49,22 @@ class KeyBindingEditor(BindingEditorBase):
         col_mod = QtWidgets.QVBoxLayout()
         col_main = QtWidgets.QVBoxLayout()
         col_list = QtWidgets.QVBoxLayout()
-        col_mod.addWidget(QtWidgets.QLabel("装飾キー"), 0)
+        col_mod.addWidget(QtWidgets.QLabel(self.t.tr("Modifier Key")), 0)
         self.list_mods = _SelectableList(self)
         self.list_mods.currentItemChanged.connect(lambda: self._refresh_shortcuts())
         col_mod.addWidget(self.list_mods, 1)
-        col_main.addWidget(QtWidgets.QLabel("主キー"), 0)
+        col_main.addWidget(QtWidgets.QLabel(self.t.tr("Main Key")), 0)
         self.list_main = _SelectableList(self)
         self.list_main.currentItemChanged.connect(lambda: self._refresh_shortcuts())
         col_main.addWidget(self.list_main, 1)
         btns = QtWidgets.QHBoxLayout()
-        self.btn_add_binding = QtWidgets.QPushButton("新規追加", self)
+        self.btn_add_binding = QtWidgets.QPushButton(self.t.tr("Add New"), self)
         self.btn_add_binding.clicked.connect(self._add_binding)
         btns.addWidget(self.btn_add_binding, 0)
-        self.btn_search = QtWidgets.QPushButton("コマンド検索", self)
+        self.btn_search = QtWidgets.QPushButton(self.t.tr("Search Command"), self)
         self.btn_search.clicked.connect(self._search)
         btns.addWidget(self.btn_search, 0)
-        self.btn_reset_all = QtWidgets.QPushButton("デフォルト設定に戻す", self)
+        self.btn_reset_all = QtWidgets.QPushButton(self.t.tr("Reset to Defaults"), self)
         self.btn_reset_all.clicked.connect(self._reset_all_defaults)
         btns.addWidget(self.btn_reset_all, 0)
         btns.addStretch(1)
@@ -85,15 +88,15 @@ class KeyBindingEditor(BindingEditorBase):
         l.addWidget(bb, 0)
 
     def _load_existing(self):
-        self._mod_keys = ["(なし)"]
+        self._mod_keys = [self.t.tr("(None)")]
         self._main_keys = []
         merged = self._merged_data()
-        seqs: List[KeySequence] = []
+        seqs: list[KeySequence] = []
         for seq, scopes in merged.items():
             if DraftOverlay.has_any_payload(scopes):
                 seqs.append(seq)
         for seq in seqs:
-            mod = seq.modifier or "(なし)"
+            mod = seq.modifier or self.t.tr("(None)")
             key = seq.key
             if mod and mod not in self._mod_keys:
                 self._mod_keys.append(mod)
@@ -102,26 +105,26 @@ class KeyBindingEditor(BindingEditorBase):
 
     def _refresh_lists(self):
         self.list_mods.clear()
-        ordered_mods = ["(すべて)", "(なし)"] + self._sort_modifiers(self._mod_keys)
+        ordered_mods = [self.t.tr("(All)"), self.t.tr("(None)")] + self._sort_modifiers(self._mod_keys)
         items_mod = []
         seen = set()
         for k in ordered_mods:
             if k in seen:
                 continue
             seen.add(k)
-            if k in self._mod_keys or k in ("(すべて)", "(なし)"):
+            if k in self._mod_keys or k in (self.t.tr("(All)"), self.t.tr("(None)")):
                 items_mod.append(k)
         for k in items_mod:
             self.list_mods.addItem(k)
         self.list_main.clear()
-        ordered_main = ["(すべて)"] + self._sort_main_keys(self._main_keys)
+        ordered_main = [self.t.tr("(All)")] + self._sort_main_keys(self._main_keys)
         items_main = []
         seen2 = set()
         for k in ordered_main:
             if k in seen2:
                 continue
             seen2.add(k)
-            if k in self._main_keys or k == "(すべて)":
+            if k in self._main_keys or k == self.t.tr("(All)"):
                 items_main.append(k)
         for k in items_main:
             self.list_main.addItem(k)
@@ -137,14 +140,13 @@ class KeyBindingEditor(BindingEditorBase):
             self.list_main.setCurrentRow(0)
         self._refresh_shortcuts()
 
-    def _split_seq(self, seq: KeySequence) -> Tuple[str, str]:
-        mod = seq.modifier or "(なし)"
+    def _split_seq(self, seq: KeySequence) -> tuple[str, str]:
+        mod = seq.modifier or self.t.tr("(None)")
         key = seq.key
         return (mod, key)
 
     def _refresh_shortcuts(self):
         self._rebuild_sections()
-        self._update_add_button_enabled()
 
     def _rebuild_key_lists(self, preserve: bool = True):
         old_mod = self.list_mods.currentItem().text() if self.list_mods.currentRow() >= 0 else None
@@ -179,14 +181,14 @@ class KeyBindingEditor(BindingEditorBase):
     def _mod_priority(self, name: str) -> int:
         return self._cat.modifier_priority(name)
 
-    def _sort_modifiers(self, mods: List[str]) -> List[str]:
-        return self._cat.sort_modifiers(mods)
+    def _sort_modifiers(self, mods: list[str]) -> list[str]:
+        return self._cat.sort_modifiers(mods, exclude=(self.t.tr("(All)"), self.t.tr("(None)")))
 
     def _key_sort_tuple(self, k: str) -> tuple:
         return self._cat.key_sort_tuple(k)
 
-    def _sort_main_keys(self, keys: List[str]) -> List[str]:
-        return self._cat.sort_main_keys(keys)
+    def _sort_main_keys(self, keys: list[str]) -> list[str]:
+        return self._cat.sort_main_keys(keys, exclude=(self.t.tr("(All)"),))
 
     def _add_binding(self):
         d = _TwoKeyCaptureDialog(self)
@@ -219,9 +221,6 @@ class KeyBindingEditor(BindingEditorBase):
         self._save_store(BindingManager.instance().key_bindings_path())
         self.accept()
 
-    def _update_add_button_enabled(self):
-        self.btn_add_binding.setEnabled(True)
-
     def _search(self):
         popup_command_picker(self, self.btn_search, scope="*", on_select=lambda _, cid: self._on_search_select(cid), allow_options_with_selection=True)
 
@@ -239,12 +238,12 @@ class KeyBindingEditor(BindingEditorBase):
         clear_layout(self.section_layout, self, "KeyBindingEditor rebuild")
         sel_mod = self.list_mods.currentItem().text() if self.list_mods.currentRow() >= 0 else None
         sel_main = self.list_main.currentItem().text() if self.list_main.currentRow() >= 0 else None
-        if sel_mod == "(すべて)":
+        if sel_mod == self.t.tr("(All)"):
             sel_mod = None
-        if sel_main == "(すべて)":
+        if sel_main == self.t.tr("(All)"):
             sel_main = None
         merged = self._merged_data()
-        seqs: List[KeySequence] = []
+        seqs: list[KeySequence] = []
         for seq, scopes in merged.items():
             a, b = self._split_seq(seq)
             if sel_mod is not None and sel_mod != a:
@@ -270,7 +269,7 @@ class KeyBindingEditor(BindingEditorBase):
         self.section_layout.addStretch(1)
         self.section_container.setVisible(bool(seqs))
 
-    def _on_section_update(self, seq: KeySequence, scopes: Dict[str, CommandPayload]):
+    def _on_section_update(self, seq: KeySequence, scopes: dict[str, CommandPayload]):
         self._draft.update(seq, scopes)
         self._refresh_shortcuts()
 
@@ -279,7 +278,7 @@ class KeyBindingEditor(BindingEditorBase):
         self._refresh_shortcuts()
         self._rebuild_key_lists()
 
-    def _on_section_reassign(self, old_seq: KeySequence, new_seq: KeySequence, scopes: Dict[str, CommandPayload]):
+    def _on_section_reassign(self, old_seq: KeySequence, new_seq: KeySequence, scopes: dict[str, CommandPayload]):
         if not isinstance(new_seq, KeySequence) or old_seq == new_seq:
             return
         self._draft.delete(old_seq)
@@ -297,21 +296,22 @@ class KeyBindingEditor(BindingEditorBase):
 class _TwoKeyCaptureDialog(QtWidgets.QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("キー入力")
+        _t = get_translator()
+        self.setWindowTitle(_t.tr("Key Input"))
         self._mgr = ShortcutManager()
-        self._pressed_keys: List[Tuple[int, str]] = []
-        self._final_keys: List[str] = []
-        self._press_snapshot: List[Tuple[int, str]] = []
+        self._pressed_keys: list[tuple[int, str]] = []
+        self._final_keys: list[str] = []
+        self._press_snapshot: list[tuple[int, str]] = []
         l = QtWidgets.QVBoxLayout(self)
-        self.lbl = QtWidgets.QLabel("最大2つまでキーを押してください", self)
+        self.lbl = QtWidgets.QLabel(_t.tr("Press up to 2 keys"), self)
         l.addWidget(self.lbl)
         row = QtWidgets.QHBoxLayout()
         self.e1 = QtWidgets.QLineEdit(self)
         self.e1.setReadOnly(True)
-        self.e1.setPlaceholderText("1つ目のキー")
+        self.e1.setPlaceholderText(_t.tr("First Key"))
         self.e2 = QtWidgets.QLineEdit(self)
         self.e2.setReadOnly(True)
-        self.e2.setPlaceholderText("2つ目のキー")
+        self.e2.setPlaceholderText(_t.tr("Second Key"))
         row.addWidget(self.e1)
         row.addWidget(self.e2)
         l.addLayout(row)
@@ -361,7 +361,7 @@ class _TwoKeyCaptureDialog(QtWidgets.QDialog):
         if len(self._pressed_keys) >= 2:
             self.e2.setText(self._pressed_keys[1][1])
 
-    def _finalize_combo(self, keys: List[Tuple[int, str]] | None = None):
+    def _finalize_combo(self, keys: list[tuple[int, str]] | None = None):
         if self._final_keys:
             return
         src = list(keys) if keys is not None else list(self._press_snapshot) or list(self._pressed_keys)
@@ -411,19 +411,20 @@ class _TwoKeyCaptureDialog(QtWidgets.QDialog):
         super().done(r)
 
 class _KeySequenceSection(ScopedPayloadSectionBase):
-    def __init__(self, parent: QtWidgets.QWidget, widgets: List[WidgetRef], sequence: KeySequence, scopes: Dict[str, CommandPayload], on_update, on_remove, on_reassign):
-        super().__init__(parent, widgets, header_button_text="コマンド")
+    def __init__(self, parent: QtWidgets.QWidget, widgets: list[WidgetRef], sequence: KeySequence, scopes: dict[str, CommandPayload], on_update, on_remove, on_reassign):
+        _t = get_translator()
+        super().__init__(parent, widgets, header_button_text=_t.tr("Command"))
         self.sequence = sequence
         self.on_update = on_update
         self.on_remove = on_remove
         self.on_reassign = on_reassign
         self.setTitle(str(self.sequence))
-        btn_assign = QtWidgets.QPushButton("割当変更", self)
+        btn_assign = QtWidgets.QPushButton(self.t.tr("Reassign"), self)
         btn_assign.setCursor(QtCore.Qt.PointingHandCursor)
         btn_assign.clicked.connect(self._assign)
         self.header.insertWidget(2, btn_assign, 0)
         rem = QtWidgets.QToolButton(self)
-        rem.setText("削除")
+        rem.setText(self.t.tr("Delete"))
         rem.clicked.connect(lambda: self.on_remove(self.sequence))
         self.header.insertWidget(3, rem, 0)
         self.load_from_scopes(scopes)
@@ -435,7 +436,7 @@ class _KeySequenceSection(ScopedPayloadSectionBase):
         new_seq = d.result_sequence()
         if not new_seq:
             return
-        scopes: Dict[str, CommandPayload] = {}
+        scopes: dict[str, CommandPayload] = {}
         if "*" in self._payloads:
             scopes["*"] = self._payloads["*"]
         for scope in list(self.override_edits.keys()):

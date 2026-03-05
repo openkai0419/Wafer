@@ -375,7 +375,7 @@ class TestReconnection:
         with patch('afterimages.core.ipc.node.read_broker_port') as mock_read:
             broker2 = Broker()
             broker2.start()
-            assert broker2.port != old_port or True
+            assert broker2.port != old_port
             mock_read.return_value = broker2.port
             try:
                 time.sleep(NODE_TIMEOUT + 2)

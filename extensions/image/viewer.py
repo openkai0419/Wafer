@@ -1,7 +1,7 @@
-from afterimages.plugin import BaseViewerPlugin
+from afterimages.plugin import ImageViewerPlugin as _ImageViewerPlugin
 
 
-class ImageViewerPlugin(BaseViewerPlugin):
+class ImageViewerPlugin(_ImageViewerPlugin):
     NAME = 'image'
     EXTENSIONS = ('.jpg', '.jpeg', '.png', '.bmp', '.gif', '.webp')
     PRIORITY = 100

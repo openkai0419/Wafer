@@ -42,6 +42,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.database_path = None
         self.setting_db = None
         self._pre_fullscreen_snap = None
+        self._last_paths = None
         self.run_folder = True
         self.search_service = SearchService(lambda: self.database_path, parent=self)
         self.search_service.search_started.connect(self._on_search_started)
@@ -270,7 +271,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
 
     def _on_zoom_changed(self):
         if self.grid_view.is_scrolling():
-            speed = self.grid_view.get_adjusted_scroll_speed()
+            speed = self.grid_view.get_adjusted_scroll_speed(self.grid_view._autoscroll_base_speed)
             self.grid_view._scroll_speed = speed
 
     @profiler.profile
@@ -318,6 +319,10 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
     def _on_search_finished(self, paths, sources, aspects):
         keep_scroll = not getattr(self, '_folder_changed', False)
         self._folder_changed = False
+        if paths == self._last_paths:
+            self.overlay_stack.hide_persistent("loading")
+            return
+        self._last_paths = paths
         self.grid_view.set_paths(paths, sources, aspects, keep_scroll=keep_scroll)
         self.file_model.set_items(paths, sources)
         if self.run_folder:

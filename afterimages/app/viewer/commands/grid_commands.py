@@ -7,7 +7,7 @@ from afterimages.core.actions.bridge import ActionKit, Command
 from afterimages.core.actions.command.state import ActionGroupStateManager
 from afterimages.utils.formatting import dpix
 from afterimages.core.platform.dragparser import MimeDataParser
-from afterimages.core.platform.file_operations import drop_files_with_ui
+from afterimages.core.platform.paste import drop_files_with_ui
 from afterimages.core.qt.pixmap import PixmapFactory
 
 INTERNAL_MIME_TYPE = b"application/x-gridview-internal" + f"{os.getpid()}".encode()
@@ -21,6 +21,7 @@ _CHOICE_TO_INDEX = {c: i for i, c in enumerate(ORIENTATION_CHOICES)}
 
 class GridViewCommands(ActionKit.MenuBase):
     NAME = "GridView"
+    PRIORITY = 40
 
     @staticmethod
     def get_view(ctx):
@@ -219,7 +220,7 @@ class GridViewCommands(ActionKit.MenuBase):
         GridViewCommands.set_scale(ctx, int(int(w) / 10))
 
     @staticmethod
-    def toggle_autoscroll(ctx):
+    def toggle_autoscroll(ctx, speed: int = 50):
         view = GridViewCommands.get_view(ctx)
         scroll = getattr(view, "parent_scroll", None)
         if scroll is None:
@@ -227,8 +228,9 @@ class GridViewCommands(ActionKit.MenuBase):
         if scroll.is_scrolling():
             scroll.stop_auto_scroll()
         else:
-            speed = view.get_adjusted_scroll_speed() if hasattr(view, 'get_adjusted_scroll_speed') else 1.0
-            scroll.start_auto_scroll(speed)
+            base_speed = int(speed)
+            adjusted = view.get_adjusted_scroll_speed(base_speed) if hasattr(view, 'get_adjusted_scroll_speed') else float(base_speed)
+            scroll.start_auto_scroll(adjusted, base_speed)
 
     @staticmethod
     def move_to_next_row(ctx):
@@ -277,7 +279,7 @@ class GridViewCommands(ActionKit.MenuBase):
         enabled = [k for k in ORIENTATION_CHOICES if kwargs.get(k, True)]
         if not enabled:
             return
-        sm = ActionGroupStateManager()
+        sm = ActionGroupStateManager.instance()
         current = sm.get_current('grid_orientation')
         current_key = _CMD_TO_CHOICE.get(current)
         step = -1 if reverse else 1
@@ -334,7 +336,7 @@ class GridViewCommands(ActionKit.MenuBase):
             ActionKit.Command(path="grid.set_scale", display="Set Scale", func=cls.set_scale, params=[ActionKit.Param(name="height", value=500)]),
             ActionKit.Command(path="grid.scale_reset", display="Reset Scale", func=cls.scale_reset),
             "-",
-            ActionKit.Command(path="grid.toggle_autoscroll", display="AutoScroll", func=cls.toggle_autoscroll),
+            ActionKit.Command(path="grid.toggle_autoscroll", display="AutoScroll", func=cls.toggle_autoscroll, params=[ActionKit.Param(name="speed", value=50, min_value=1, max_value=500)]),
             "-",
         ]
 
@@ -381,7 +383,7 @@ class GridViewDragCommands(ActionKit.DragMenuBase):
             drag.setPixmap(pixmap)
             drag.setHotSpot(pixmap.rect().topLeft())
         def _run_drag():
-            from afterimages.core.actions.binding.mouse.mouseeventmanager import MouseStateManager
+            from afterimages.core.actions.binding.mouse.manager import MouseStateManager
             try:
                 drag.exec(QtCore.Qt.CopyAction | QtCore.Qt.MoveAction)
             finally:

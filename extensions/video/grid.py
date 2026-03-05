@@ -1,8 +1,8 @@
-from afterimages.plugin import BaseGridPlugin
+from afterimages.plugin import WidgetGridPlugin
 from .widget import MpvCellWidget
 
 
-class VideoGridPlugin(BaseGridPlugin):
+class VideoGridPlugin(WidgetGridPlugin):
     NAME = 'video'
     EXTENSIONS = (
         '.mp4', '.mkv', '.webm', '.avi', '.mov',
@@ -23,17 +23,20 @@ class VideoGridPlugin(BaseGridPlugin):
         fmt.setSwapBehavior(QSurfaceFormat.SwapBehavior.DoubleBuffer)
         QSurfaceFormat.setDefaultFormat(fmt)
 
-    def load(self, path, size=None):
-        return None
-
-    def render(self, path, widget, size=None):
+    def render(self, widget, path, size=None):
         widget.load(path, size)
 
     def release(self, widget):
         widget.suspend()
 
-    def select(self, widget, path):
-        widget.on_selected(path)
+    def appear(self, widget):
+        widget.on_selected()
+
+    def disappear(self, widget):
+        widget.on_deselected()
+
+    def select(self, widget):
+        widget.on_selected()
 
     def deselect(self, widget):
         widget.on_deselected()

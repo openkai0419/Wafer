@@ -58,14 +58,14 @@ def test_set_keys():
     svc = _make_service()
     svc.set_keys(["key1", "key2"])
     q = svc.build_query()
-    assert q.keys == ["key1", "key2"]
+    assert q.keys == ("key1", "key2")
 
 
 def test_set_directories():
     svc = _make_service()
     svc.set_directories(["/dir/a", "/dir/b"])
     q = svc.build_query()
-    assert q.directories == ["/dir/a", "/dir/b"]
+    assert q.directories == ("/dir/a", "/dir/b")
 
 
 def test_build_query_returns_meta_query():

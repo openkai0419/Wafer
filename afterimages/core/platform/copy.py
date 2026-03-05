@@ -31,8 +31,8 @@ class ClipboardFileTransfer:
 
     def _set_linux_gnome_clipboard(self, mime_data, urls, cut):
         desktop_env = os.environ.get('XDG_CURRENT_DESKTOP', '').lower()
-        if any((env in desktop_env for env in ['gnome', 'unity', 'xfce', 'cinnamon', 'mate'])):
+        if any(env in desktop_env for env in ['gnome', 'unity', 'xfce', 'cinnamon', 'mate']):
             op = 'cut' if cut else 'copy'
-            uri_list = ''.join((url.toString() + '\n' for url in urls))
+            uri_list = ''.join(url.toString() + '\n' for url in urls)
             data = f'{op}\n{uri_list}'.encode('utf-8')
             mime_data.setData('x-special/gnome-copied-files', data)

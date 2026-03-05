@@ -8,6 +8,7 @@ from .binding.common import WidgetRef
 from .binding.manager import BindingManager
 from .binding.presets import get_key_preset, get_mouse_preset, set_presets
 from .command.core import CommandRegistry
+from .command.menu_session import MenuSession, MenuSpec
 from .command.state import CommandOptionStore
 from afterimages.utils.logs import AppLogger
 
@@ -18,9 +19,9 @@ class ActionKit:
     from .command.menu import MenuGroup as MenuBase
     from .command.menu import DragMenuGroup as DragMenuBase
     from .command.payload import ScopedPayloads
-    from .command.ui import CommandMenuBuilder
+    from .command.menu_builder import CommandMenuBuilder
     from .binding.key.sequence import Key as Key
-    from .binding.mouse.mouseeventmanager import MouseActionKey as Mouse
+    from .binding.mouse.types import MouseActionKey as Mouse
 
 
 class Settings:
@@ -108,11 +109,11 @@ class Settings:
         mouse_ok, key_ok = self._load_bindings()
         if not mouse_ok:
             from .binding.mouse.store import MouseBindingStore
-            store = MouseBindingStore()
+            store = MouseBindingStore.instance()
             store._data = store._seed_data()
         if not key_ok:
             from .binding.key.store import KeyBindingStore
-            store = KeyBindingStore()
+            store = KeyBindingStore.instance()
             store._data = store._seed_data()
         return BindingManager.activate()
 
@@ -120,16 +121,16 @@ class Settings:
         from .binding.key.store import KeyBindingStore
         from .binding.mouse.store import MouseBindingStore
 
-        mouse_ok = MouseBindingStore().load_from_file(self.mouse_bindings)
-        key_ok = KeyBindingStore().load_from_file(self.key_bindings)
+        mouse_ok = MouseBindingStore.instance().load_from_file(self.mouse_bindings)
+        key_ok = KeyBindingStore.instance().load_from_file(self.key_bindings)
         return mouse_ok, key_ok
 
     def _commit(self) -> None:
         from .command.state import ActionGroupStateManager
 
         BindingManager.instance().save()
-        ActionGroupStateManager().commit()
-        CommandOptionStore().commit()
+        ActionGroupStateManager.instance().commit()
+        CommandOptionStore.instance().commit()
 
 
 class UI:
@@ -188,30 +189,33 @@ class UI:
 class Command:
     @staticmethod
     def _registry():
-        return CommandRegistry()
+        return CommandRegistry.instance()
 
     @staticmethod
     def cycle_action_group(group_name: str):
-        return ActionKit.CommandMenuBuilder().cycle_action_group(str(group_name))
+        return ActionKit.CommandMenuBuilder.instance().cycle_action_group(str(group_name))
 
     @staticmethod
     def get_action_group_current(group_name: str):
-        return ActionKit.CommandMenuBuilder().get_action_group_current(str(group_name))
+        return ActionKit.CommandMenuBuilder.instance().get_action_group_current(str(group_name))
 
     @staticmethod
     def set_action_group_current(group_name: str, command_id: str):
-        ActionKit.CommandMenuBuilder().set_action_group_current(str(group_name), str(command_id))
+        ActionKit.CommandMenuBuilder.instance().set_action_group_current(str(group_name), str(command_id))
 
     @staticmethod
     def get_checked(command_id: str) -> bool:
-        return ActionKit.CommandMenuBuilder()._get_checked(
+        cmd_class = Command._registry().get_command(str(command_id))
+        if cmd_class is None:
+            return False
+        return ActionKit.CommandMenuBuilder.instance()._get_checked(
             str(command_id),
-            Command._registry().get_command(str(command_id)).meta
+            cmd_class.meta
         )
 
     @staticmethod
     def set_checked(command_id: str, state: bool):
-        ActionKit.CommandMenuBuilder().set_checked(str(command_id), bool(state))
+        ActionKit.CommandMenuBuilder.instance().set_checked(str(command_id), bool(state))
 
     @staticmethod
     def register_commands(defs) -> None:
@@ -238,8 +242,8 @@ class Command:
         cmd_class = reg.get_command(str(command_id))
         if cmd_class is None:
             raise ValueError(f"Command not found: {command_id}")
-        stored = CommandOptionStore().get(str(command_id))
-        saved = stored.args if isinstance(getattr(stored, "args", None), dict) else {}
+        stored = CommandOptionStore.instance().get(str(command_id))
+        saved = stored.args if isinstance(stored.args, dict) else {}
         args = {p.name: saved.get(p.name, p.default) for p in (cmd_class.meta.params or [])}
         args.update(kwargs)
         ctx = Context.create_context(None, "*", source="invoke", extras=extras)
@@ -251,8 +255,8 @@ class Command:
         cmd_class = reg.get_command(str(command_id))
         if cmd_class is None:
             raise ValueError(f"Command not found: {command_id}")
-        stored = CommandOptionStore().get(str(command_id))
-        saved = stored.args if isinstance(getattr(stored, "args", None), dict) else {}
+        stored = CommandOptionStore.instance().get(str(command_id))
+        saved = stored.args if isinstance(stored.args, dict) else {}
         return {p.name: saved.get(p.name, p.default) for p in (cmd_class.meta.params or [])}
 
     @staticmethod
@@ -265,124 +269,13 @@ class Command:
             raise ValueError(f"Command not found: {command_id}")
         validate_command_args(cmd_class.meta, args)
         param_names = {p.name for p in (cmd_class.meta.params or [])}
-        store = CommandOptionStore()
+        store = CommandOptionStore.instance()
         current = store.get(str(command_id))
         merged = {k: v for k, v in (current.args or {}).items() if k in param_names}
         merged.update(args)
         store.set(str(command_id), merged)
         if commit:
             store.commit()
-
-class MenuSession:
-    def __init__(
-        self,
-        parent: QtWidgets.QWidget | None = None,
-        *,
-        seed_ctx=None,
-        maker=None,
-        pos=None,
-    ):
-        from .command.maker import MenuMaker
-        from .command.ui import MenuBuilder
-
-        self.parent = parent
-        self.seed_ctx = seed_ctx
-        self.pos = pos
-        self.maker = maker if maker is not None else MenuMaker()
-        self.builder = MenuBuilder(self.maker, parent, seed_ctx=seed_ctx)
-
-    def menu(self, items):
-        try:
-            plan = self.maker.menu(Menu._normalize_menu_items(items))
-        except Exception as e:
-            AppLogger.warning(str(e), exc=e)
-            return None
-        return MenuSpec(self, plan)
-
-    def from_folder(self, folder: str):
-        try:
-            plan = self.maker.from_folder(str(folder))
-        except Exception as e:
-            AppLogger.warning(str(e), exc=e)
-            return None
-        return MenuSpec(self, plan)
-
-    def all_roots(self):
-        try:
-            plan = self.maker.all_roots()
-        except Exception as e:
-            AppLogger.warning(str(e), exc=e)
-            return None
-        return MenuSpec(self, plan)
-
-    def build(
-        self,
-        plan,
-        *,
-        selection_callback=None,
-        allow_options_with_selection: bool = False,
-    ):
-        try:
-            return self.builder.build(
-                plan,
-                selection_callback=selection_callback,
-                allow_options_with_selection=allow_options_with_selection,
-            )
-        except Exception as e:
-            AppLogger.warning(str(e), exc=e)
-            return None
-
-class MenuSpec:
-    def __init__(self, session: "MenuSession", plan):
-        self._session = session
-        self._plan = plan
-
-    def hide(self, targets):
-        try:
-            self._plan = self._plan.hide(targets)
-        except Exception as e:
-            AppLogger.warning(str(e), exc=e)
-        return self
-
-    def add(self, items):
-        try:
-            self._plan = self._plan.add(items)
-        except Exception as e:
-            AppLogger.warning(str(e), exc=e)
-        return self
-
-    def insert(self, target: str, items):
-        try:
-            self._plan = self._plan.insert(target, items)
-        except Exception as e:
-            AppLogger.warning(str(e), exc=e)
-        return self
-
-    def build(
-        self,
-        *,
-        selection_callback=None,
-        allow_options_with_selection: bool = False,
-    ):
-        return self._session.build(
-            self._plan,
-            selection_callback=selection_callback,
-            allow_options_with_selection=allow_options_with_selection,
-        )
-
-    def exec(
-        self,
-        pos=None,
-        *,
-        selection_callback=None,
-        allow_options_with_selection: bool = False,
-    ):
-        m = self.build(
-            selection_callback=selection_callback,
-            allow_options_with_selection=allow_options_with_selection,
-        )
-        p = pos if pos is not None else (self._session.pos if self._session.pos is not None else QtGui.QCursor.pos())
-        return m.exec(p)
 
 class Menu:
     @staticmethod
@@ -414,14 +307,20 @@ class Menu:
         s = Menu.from_context(ctx)
         if s is None:
             return
-        s.from_folder(prefix).exec()
+        spec = s.from_folder(prefix)
+        if spec is None:
+            return
+        spec.exec()
 
     @staticmethod
     def exec_all_roots(ctx) -> None:
         s = Menu.from_context(ctx)
         if s is None:
             return
-        s.all_roots().exec()
+        spec = s.all_roots()
+        if spec is None:
+            return
+        spec.exec()
     
 class Context:
     @staticmethod
@@ -435,7 +334,7 @@ class Context:
         if pos is None:
             pos = QtGui.QCursor.pos()
 
-        target = (seed._info.get("widget") if hasattr(seed, "_info") else None) if seed is not None else None
+        target = (seed._widget if hasattr(seed, "_widget") else None) if seed is not None else None
         if target is None:
             target = QtWidgets.QApplication.widgetAt(pos)
         if target is None:
@@ -445,7 +344,7 @@ class Context:
             target = target.parentWidget()
         if not target:
             if seed is not None:
-                w = seed._info.get("widget") if hasattr(seed, "_info") else None
+                w = seed._widget if hasattr(seed, "_widget") else None
                 if w is not None:
                     AppLogger.warning(f"context menu target has no binding_scope: {type(w).__name__}")
             return None, None
@@ -484,5 +383,5 @@ class Context:
         if global_pos is not None:
             ctx.global_pos = global_pos
         if widget is not None:
-            ctx._info["widget"] = widget
+            ctx._widget = widget
         return ctx

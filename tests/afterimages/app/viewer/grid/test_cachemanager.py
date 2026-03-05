@@ -2,7 +2,7 @@ import pytest
 from PySide6 import QtGui, QtWidgets
 from afterimages.app.viewer.grid.cachemanager import MemoryLimitedImageCache, AdditionalWidgetPool
 from afterimages.plugin.grid.handler import grid_resolver
-from afterimages.plugin.grid.base import BaseGridPlugin
+from afterimages.plugin.grid.base import WidgetGridPlugin
 
 
 def _make_image(w, h):
@@ -134,14 +134,11 @@ class _DummyWidget(QtWidgets.QWidget):
     pass
 
 
-class _DummyGridPlugin(BaseGridPlugin):
+class _DummyGridPlugin(WidgetGridPlugin):
     NAME = 'test_dummy'
     EXTENSIONS = ('.dummy',)
     PRIORITY = 50
     WIDGET_CLASS = _DummyWidget
-
-    def load(self, path, size=None):
-        return None
 
     def render(self, path, widget, size=None):
         pass
@@ -182,7 +179,7 @@ def test_additional_pool_release_and_reuse(additional_pool, qtbot):
     assert w1 is w2
 
 
-def test_additional_pool_release_calls_grid_release(qtbot):
+def test_additional_pool_release_no_longer_calls_grid_release(qtbot):
     from unittest.mock import MagicMock
     resolver = MagicMock()
     resolver.registry.get.return_value = _DummyGridPlugin
@@ -190,7 +187,7 @@ def test_additional_pool_release_calls_grid_release(qtbot):
     parent = QtWidgets.QWidget()
     w = pool.acquire('test_dummy', parent)
     pool.release(w)
-    resolver.release.assert_called_once_with('test_dummy', w)
+    resolver.release.assert_not_called()
     pool.reset()
 
 
@@ -219,13 +216,11 @@ def test_additional_pool_reset_calls_cleanup(qtbot):
             super().__init__(parent)
             self.cleanup = MagicMock()
 
-    class _CleanPlugin(BaseGridPlugin):
+    class _CleanPlugin(WidgetGridPlugin):
         NAME = 'test_clean'
         EXTENSIONS = ('.clean',)
         PRIORITY = 50
         WIDGET_CLASS = _CleanableWidget
-        def load(self, path, size=None):
-            return None
 
     resolver = MagicMock()
     resolver.registry.get.return_value = _CleanPlugin
@@ -252,12 +247,12 @@ def test_additional_pool_warm_up(qtbot):
 
 def test_additional_pool_warm_up_skips_image_plugins(qtbot):
     from unittest.mock import MagicMock
+    from afterimages.plugin.grid.base import ImageGridPlugin
 
-    class _ImageLikePlugin(BaseGridPlugin):
+    class _ImageLikePlugin(ImageGridPlugin):
         NAME = 'image'
         EXTENSIONS = ('.jpg',)
         PRIORITY = 50
-        WIDGET_CLASS = None
         def load(self, path, size=None):
             return None
 

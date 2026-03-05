@@ -8,9 +8,9 @@ from afterimages.utils.logs import AppLogger
 from ..viewer_settings import app_settings
 from afterimages.core.actions.bridge import ActionKit, UI, Context
 from afterimages.core.platform.dragparser import MimeDataParser
-from afterimages.core.platform.file_operations import (    PastePlanItem, check_copy_conflict, unique_path,
-    execute_paste_plans_with_ui, drop_files_with_ui,
-)
+from afterimages.core.platform.file_operations import PastePlanItem
+from afterimages.core.platform.path_utils import check_copy_conflict, unique_path
+from afterimages.core.platform.paste import execute_paste_plans_with_ui, drop_files_with_ui
 
 
 FOLDER_ICON = QtGui.QIcon.fromTheme('folder')
@@ -141,10 +141,10 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
         )]
         parent_w = self.parent() or QtWidgets.QApplication.activeWindow()
         res = execute_paste_plans_with_ui(plans=plan, overwrite_mode="ask", parent=parent_w)
-        if not res or res[0].get("status") != "ok":
+        if not res or res[0].status != "ok":
             return False
 
-        final_dst = res[0].get("dst", dest_path)
+        final_dst = res[0].dst or dest_path
         final_dst = normalize_path(final_dst)
         item.setText(os.path.basename(final_dst) or final_dst)
         self._update_item_path_recursive(item, old_path, final_dst)
@@ -178,7 +178,7 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
         )]
         parent_w = self.parent() or QtWidgets.QApplication.activeWindow()
         res = execute_paste_plans_with_ui(plans=plan, overwrite_mode="ask", parent=parent_w)
-        if not res or res[0].get("status") != "ok":
+        if not res or res[0].status != "ok":
             return False
 
         src_parent = item.parent() or self.invisibleRootItem()
@@ -188,7 +188,7 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
             self._request_reload_tree()
             return True
 
-        final_dst = normalize_path(res[0].get("dst", dest_path))
+        final_dst = normalize_path(res[0].dst or dest_path)
         if not new_parent_item.hasChildren() or (new_parent_item.rowCount() == 1 and not new_parent_item.child(0).data(USER_ROLE_PATH)):
             new_parent_item.removeRows(0, new_parent_item.rowCount())
         new_parent_item.appendRow(taken)
@@ -355,10 +355,10 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
                 return False
 
             for r in res:
-                if r.get("status") != "ok":
+                if r.status != "ok":
                     continue
-                src = r.get("src")
-                dst = r.get("dst")
+                src = r.src
+                dst = r.dst
                 if not src or not dst:
                     continue
                 src_item = self.find_item_by_path(src)

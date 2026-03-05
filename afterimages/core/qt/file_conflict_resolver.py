@@ -8,9 +8,9 @@ from ..platform.file_operations import (
     MergeConflictItem,
     PasteCancelledError,
     PasteDecision,
-    check_copy_conflict,
     scan_merge_conflicts,
 )
+from ..platform.path_utils import check_copy_conflict
 from .dialog import FileConflictDialog, FolderConflictDialog, SingleFileConflictDialog
 
 
@@ -250,7 +250,7 @@ def resolve_paste_plans_with_ui(
     overwrite_mode: str,
     parent: object | None,
     op: str = "copy",
-    folder_message: str = "同名フォルダが存在します。ペーストしますか？",
+    folder_message: str = "Folder with the same name already exists. Proceed?",
 ) -> Dict[int, PasteDecision]:
     ps = list(plans or [])
     if not ps:

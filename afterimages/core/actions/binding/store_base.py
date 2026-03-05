@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, Generic, List, Optional, Type, TypeVar
+from typing import Any, Generic, Type, TypeVar
 
 from afterimages.utils.logs import AppLogger
 from afterimages.utils.json_io import read_json_file, write_json_file
@@ -11,7 +11,7 @@ from ..command.payload import CommandPayload, normalize_scoped_payloads
 K = TypeVar("K")
 
 
-def resolve_for_widget(data: Dict[Any, Dict[str, Any]], widget_name: str) -> Dict[Any, Any]:
+def resolve_for_widget(data: dict[Any, dict[str, Any]], widget_name: str) -> dict[Any, Any]:
     bindings = {}
     for key, scopes in data.items():
         target = scopes.get(widget_name) or scopes.get("*")
@@ -21,23 +21,23 @@ def resolve_for_widget(data: Dict[Any, Dict[str, Any]], widget_name: str) -> Dic
 
 
 class BindingStoreBase(Generic[K]):
-    _instances: Dict[type, "BindingStoreBase[Any]"] = {}
+    _instance: BindingStoreBase[Any] | None = None
     key_type: Type[Any] = object
 
-    def __new__(cls):
-        inst = cls._instances.get(cls)
-        if inst is None:
-            inst = super().__new__(cls)
+    @classmethod
+    def instance(cls) -> "BindingStoreBase[K]":
+        if cls._instance is None:
+            inst = object.__new__(cls)
             inst._data = {}
-            cls._instances[cls] = inst
-        return inst
+            cls._instance = inst
+        return cls._instance
 
-    def get_all(self) -> Dict[K, Dict[str, CommandPayload]]:
+    def get_all(self) -> dict[K, dict[str, CommandPayload]]:
         return {k: dict(v) for k, v in self._data.items()}
 
     @classmethod
-    def normalize_specs(cls, data: Dict[Any, Any]) -> Dict[K, Dict[str, CommandPayload]]:
-        nm: Dict[K, Dict[str, CommandPayload]] = {}
+    def normalize_specs(cls, data: dict[Any, Any]) -> dict[K, dict[str, CommandPayload]]:
+        nm: dict[K, dict[str, CommandPayload]] = {}
         for key, scopes in (data or {}).items():
             if not isinstance(key, cls.key_type):
                 raise TypeError(f"{cls.__name__} requires {cls.key_type.__name__} keys")
@@ -49,7 +49,7 @@ class BindingStoreBase(Generic[K]):
                 nm[key] = dst
         return nm
 
-    def set_all(self, data: Dict[Any, Any]) -> None:
+    def set_all(self, data: dict[Any, Any]) -> None:
         self._data = self.normalize_specs(data)
 
     def set_binding(self, key: K, scope: str, command: Any | None) -> None:
@@ -69,7 +69,7 @@ class BindingStoreBase(Generic[K]):
             raise TypeError(f"{type(self).__name__}.set_binding requires CommandPayload") from e
         self._data.setdefault(key, {})[sc] = norm
 
-    def resolve(self, widget: str, key: K) -> Optional[CommandPayload]:
+    def resolve(self, widget: str, key: K) -> CommandPayload | None:
         d = self._data.get(key)
         if not d:
             return None
@@ -79,13 +79,13 @@ class BindingStoreBase(Generic[K]):
     def _seed_file_path(self) -> str | None:
         return None
 
-    def _seed_data(self) -> Dict[K, Dict[str, CommandPayload]]:
+    def _seed_data(self) -> dict[K, dict[str, CommandPayload]]:
         path = self._seed_file_path()
         if path:
             return self._load_seed_file(path)
         return {}
 
-    def _load_seed_file(self, path: str) -> Dict[K, Dict[str, CommandPayload]]:
+    def _load_seed_file(self, path: str) -> dict[K, dict[str, CommandPayload]]:
         data = read_json_file(Path(path), None)
         if not isinstance(data, dict):
             return {}
@@ -98,13 +98,13 @@ class BindingStoreBase(Generic[K]):
     def _payload_equal(self, a: CommandPayload, b: CommandPayload) -> bool:
         return a.id == b.id and (a.args or {}) == (b.args or {})
 
-    def _diff_data(self, cur: Dict[K, Dict[str, CommandPayload]], seed: Dict[K, Dict[str, CommandPayload]]) -> Dict[K, Dict[str, CommandPayload | None]]:
-        out: Dict[K, Dict[str, CommandPayload | None]] = {}
+    def _diff_data(self, cur: dict[K, dict[str, CommandPayload]], seed: dict[K, dict[str, CommandPayload]]) -> dict[K, dict[str, CommandPayload | None]]:
+        out: dict[K, dict[str, CommandPayload | None]] = {}
         keys = set(seed.keys()) | set(cur.keys())
         for k in keys:
             cur_scopes = cur.get(k, {})
             seed_scopes = seed.get(k, {})
-            changes: Dict[str, CommandPayload | None] = {}
+            changes: dict[str, CommandPayload | None] = {}
             for sc, c in cur_scopes.items():
                 s = seed_scopes.get(sc)
                 if s is None:
@@ -118,7 +118,7 @@ class BindingStoreBase(Generic[K]):
                 out[k] = changes
         return out
 
-    def _apply_diff(self, base: Dict[K, Dict[str, CommandPayload]], diff: Dict[K, Dict[str, CommandPayload | None]]) -> Dict[K, Dict[str, CommandPayload]]:
+    def _apply_diff(self, base: dict[K, dict[str, CommandPayload]], diff: dict[K, dict[str, CommandPayload | None]]) -> dict[K, dict[str, CommandPayload]]:
         for k, scopes in diff.items():
             if k not in base:
                 base[k] = {}
@@ -134,14 +134,14 @@ class BindingStoreBase(Generic[K]):
                 base.pop(k, None)
         return base
 
-    def _to_items(self, data: Dict[K, Dict[str, CommandPayload | None]]) -> List[Dict[str, Any]]:
-        r: List[Dict[str, Any]] = []
+    def _to_items(self, data: dict[K, dict[str, CommandPayload | None]]) -> list[dict[str, Any]]:
+        r: list[dict[str, Any]] = []
         for k, scopes in data.items():
             r.append({"key": k.to_dict(), "scopes": {sc: (p.to_dict() if isinstance(p, CommandPayload) else None) for sc, p in scopes.items()}})
         return r
 
-    def _from_items(self, data: List[Dict[str, Any]]) -> Dict[K, Dict[str, CommandPayload | None]]:
-        nm: Dict[K, Dict[str, CommandPayload | None]] = {}
+    def _from_items(self, data: list[dict[str, Any]]) -> dict[K, dict[str, CommandPayload | None]]:
+        nm: dict[K, dict[str, CommandPayload | None]] = {}
         for e in data:
             if not isinstance(e, dict):
                 continue
@@ -153,7 +153,7 @@ class BindingStoreBase(Generic[K]):
                 key = self.key_type.from_dict(key_obj)
             except Exception:
                 continue
-            dst: Dict[str, CommandPayload | None] = {}
+            dst: dict[str, CommandPayload | None] = {}
             for sc, obj in scopes.items():
                 if obj is None:
                     dst[str(sc)] = None

@@ -38,6 +38,7 @@ def set_viewer_thumbnail_default_size(ctx):
 
 class SettingCommands(ActionKit.MenuBase):
     NAME = "Setting"
+    PRIORITY = 90
 
     @classmethod
     def commands(cls):

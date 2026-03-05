@@ -6,7 +6,10 @@ from unittest.mock import patch, MagicMock
 from afterimages.core.ipc.transport import Priority
 from afterimages.core.ipc.message import Message
 from afterimages.core.ipc.node import Node
-from afterimages.core.ipc.outbox import OutboxStore, _extract_pid, _delete_db_files
+from afterimages.core.ipc.outbox import (
+    OutboxStore, _extract_pid, _delete_db_files,
+    scan_all_outbox, remove_outbox_from, remove_outbox_batch_from, cleanup_empty_outbox_files,
+)
 
 
 class TestOutboxStore:
@@ -69,7 +72,7 @@ class TestOutboxStore:
                 s1.close()
                 s2.close()
 
-                records = OutboxStore.scan_all()
+                records = scan_all_outbox()
                 assert len(records) == 2
                 topics = {r.topic for r in records}
                 assert topics == {'t1', 't2'}
@@ -83,15 +86,15 @@ class TestOutboxStore:
                 store.push('t3', 'p3', 'indexer', db='')
                 store.close()
 
-                records = OutboxStore.scan_all(db_filter='db_alpha')
+                records = scan_all_outbox(db_filter='db_alpha')
                 assert len(records) == 1
                 assert records[0].topic == 't1'
 
-                records = OutboxStore.scan_all(db_filter='')
+                records = scan_all_outbox(db_filter='')
                 assert len(records) == 1
                 assert records[0].topic == 't3'
 
-                records = OutboxStore.scan_all(db_filter=None)
+                records = scan_all_outbox(db_filter=None)
                 assert len(records) == 3
 
     def test_remove_from(self):
@@ -102,7 +105,7 @@ class TestOutboxStore:
                 db_path = store._path
                 store.close()
 
-                OutboxStore.remove_from(db_path, rid)
+                remove_outbox_from(db_path, rid)
 
                 store2 = OutboxStore('node-x')
                 assert store2.pending() == []
@@ -116,7 +119,7 @@ class TestOutboxStore:
                 db_path = store._path
                 store.close()
 
-                OutboxStore.remove_batch_from(db_path, ids[:2])
+                remove_outbox_batch_from(db_path, ids[:2])
 
                 store2 = OutboxStore('node-y')
                 assert len(store2.pending()) == 2
@@ -160,7 +163,7 @@ class TestOutboxStore:
                 assert os.path.exists(db_path)
 
                 with patch('afterimages.core.ipc.outbox.psutil.pid_exists', return_value=False):
-                    OutboxStore.cleanup_empty_files()
+                    cleanup_empty_outbox_files()
                 assert not os.path.exists(db_path)
 
     def test_cleanup_empty_files_keeps_alive_pid(self):
@@ -171,7 +174,7 @@ class TestOutboxStore:
                 store.close()
 
                 with patch('afterimages.core.ipc.outbox.psutil.pid_exists', return_value=True):
-                    OutboxStore.cleanup_empty_files()
+                    cleanup_empty_outbox_files()
                 assert os.path.exists(db_path)
 
     def test_cleanup_empty_files_keeps_nonempty(self):
@@ -183,7 +186,7 @@ class TestOutboxStore:
                 store.close()
 
                 with patch('afterimages.core.ipc.outbox.psutil.pid_exists', return_value=False):
-                    OutboxStore.cleanup_empty_files()
+                    cleanup_empty_outbox_files()
                 assert os.path.exists(db_path)
 
 
@@ -234,7 +237,7 @@ class TestConsumeOutbox:
                 node._process_outbox()
 
                 assert set(received) == {'tag.add', 'tag.remove'}
-                assert OutboxStore.scan_all() == []
+                assert scan_all_outbox() == []
 
     def test_consume_keeps_on_false(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -251,7 +254,7 @@ class TestConsumeOutbox:
                 node.subscribe('tag.add', lambda msg: False)
                 node._process_outbox()
 
-                assert len(OutboxStore.scan_all()) == 1
+                assert len(scan_all_outbox()) == 1
 
     def test_consume_skips_unhandled_topic(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -267,7 +270,7 @@ class TestConsumeOutbox:
                 node.db = ''
                 node._process_outbox()
 
-                assert len(OutboxStore.scan_all()) == 1
+                assert len(scan_all_outbox()) == 1
 
     def test_consume_msg_fields(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -309,6 +312,6 @@ class TestConsumeOutbox:
                 node._process_outbox()
 
                 assert received == ['mine']
-                remaining = OutboxStore.scan_all()
+                remaining = scan_all_outbox()
                 assert len(remaining) == 1
                 assert remaining[0].db == 'otherdb'

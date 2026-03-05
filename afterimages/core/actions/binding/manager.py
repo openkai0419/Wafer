@@ -1,8 +1,8 @@
 from __future__ import annotations
-from typing import Dict, List, Optional, Any, Tuple, Union
+from typing import Any
 from pathlib import Path
 from PySide6 import QtWidgets
-from .mouse.mouseeventmanager import MouseActionKey
+from .mouse.types import MouseActionKey
 from .mouse.store import MouseBindingStore
 from weakref import WeakSet
 from PySide6 import QtCore
@@ -13,18 +13,18 @@ from .store_base import resolve_for_widget
 
 
 class BindingManager:
-    _instance: Optional["BindingManager"] = None
+    _instance: "BindingManager" | None = None
 
-    def __init__(self, file_path: Optional[str] = None, key_file_path: Optional[str] = None):
+    def __init__(self, file_path: str | None = None, key_file_path: str | None = None):
         base = Path(__file__).resolve().parent.parent
         self._file = Path(file_path) if file_path else (base / "mouse_bindings.json")
-        self._store = MouseBindingStore()
+        self._store = MouseBindingStore.instance()
         self._key_file = Path(key_file_path) if key_file_path else (base / "key_bindings.json")
-        self._key_store = KeyBindingStore()
+        self._key_store = KeyBindingStore.instance()
         self._widgets: "WeakSet[QtWidgets.QWidget]" = WeakSet()
 
     @classmethod
-    def instance(cls, file_path: Optional[str] = None, key_file_path: Optional[str] = None) -> "BindingManager":
+    def instance(cls, file_path: str | None = None, key_file_path: str | None = None) -> "BindingManager":
         if cls._instance is None:
             cls._instance = cls(file_path, key_file_path)
         else:
@@ -39,14 +39,14 @@ class BindingManager:
         return cls.instance(str(mouse_bindings_path), str(key_bindings_path))
     
     @classmethod
-    def activate(cls, file_path: Optional[str] = None, *, key_file_path: Optional[str] = None):
+    def activate(cls, file_path: str | None = None, *, key_file_path: str | None = None):
         mgr = cls.instance(file_path, key_file_path)
         mgr._store.load_from_file(str(mgr._file))
         mgr._key_store.load_from_file(str(mgr._key_file))
         mgr.apply_registered()
         return mgr
     
-    def apply_mouse_bindings(self, widgets: List[QtWidgets.QWidget]) -> None:
+    def apply_mouse_bindings(self, widgets: list[QtWidgets.QWidget]) -> None:
         data = self._store.get_all()
         for w in widgets:
             if not (hasattr(w, "binding_scope") and callable(getattr(w, "binding_scope"))):
@@ -55,14 +55,14 @@ class BindingManager:
             if hasattr(w, "set_mouse_bindings"):
                 w.set_mouse_bindings(bindings)
 
-    def apply_key_bindings(self, widgets: List[QtWidgets.QWidget]) -> None:
+    def apply_key_bindings(self, widgets: list[QtWidgets.QWidget]) -> None:
         data = self._key_store.get_all()
         for w in widgets:
             if not (hasattr(w, "binding_scope") and callable(getattr(w, "binding_scope"))):
                 continue
             resolved = resolve_for_widget(data, w.binding_scope())
-            store_logical: Dict[KeySequence, Any] = {}
-            store_physical: Dict[Tuple[Union[str, int], ...], Any] = {}
+            store_logical: dict[KeySequence, Any] = {}
+            store_physical: dict[tuple[str | int, ...], Any] = {}
             for seq, cmd in resolved.items():
                 if self._is_physical_seq(seq):
                     store_physical[seq.to_tuple()] = cmd
@@ -78,7 +78,7 @@ class BindingManager:
         self.apply_mouse_bindings(ws)
         self.apply_key_bindings(ws)
 
-    def clear_shortcuts(self, widgets: List[QtWidgets.QWidget]) -> None:
+    def clear_shortcuts(self, widgets: list[QtWidgets.QWidget]) -> None:
         for w in widgets:
             if hasattr(w, "set_shortcut_bindings"):
                 w.set_shortcut_bindings({})
@@ -107,7 +107,7 @@ class BindingManager:
     def key_bindings_path(self) -> str:
         return str(self._key_file)
 
-    def _find_registered_in_hierarchy(self, widget: Optional[QtWidgets.QWidget]) -> Optional[QtWidgets.QWidget]:
+    def _find_registered_in_hierarchy(self, widget: QtWidgets.QWidget | None) -> QtWidgets.QWidget | None:
         cur = widget
         while cur is not None:
             try:
@@ -118,11 +118,11 @@ class BindingManager:
             cur = cur.parentWidget()
         return None
 
-    def find_binding_widget_at(self, global_pos: QtCore.QPoint) -> Optional[QtWidgets.QWidget]:
+    def find_binding_widget_at(self, global_pos: QtCore.QPoint) -> QtWidgets.QWidget | None:
         w = QtWidgets.QApplication.widgetAt(global_pos)
         return self._find_registered_in_hierarchy(w)
 
-    def find_registered_ancestor(self, widget: QtWidgets.QWidget) -> Optional[QtWidgets.QWidget]:
+    def find_registered_ancestor(self, widget: QtWidgets.QWidget) -> QtWidgets.QWidget | None:
         return self._find_registered_in_hierarchy(widget)
 
     def _is_physical_seq(self, seq: KeySequence) -> bool:

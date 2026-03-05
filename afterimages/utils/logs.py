@@ -99,18 +99,13 @@ class _LoggerFactory:
             return cls._instance
         logger = logging.getLogger(f'AppLog-{log_id}')
         logger.setLevel(logging.DEBUG)
-        if not logger.handlers:
-            if sys.stderr is not None:
-                stream_handler = logging.StreamHandler()
-                stream_handler.setLevel(logging.DEBUG)
-                stream_handler.setFormatter(logging.Formatter('[%(levelname)s] %(message)s'))
-                logger.addHandler(stream_handler)
-            else:
-                cls._instance = logger
-                cls._set_file_handler(log_id)
-                return logger
+        if not logger.handlers and sys.stderr is not None:
+            stream_handler = logging.StreamHandler()
+            stream_handler.setLevel(logging.DEBUG)
+            stream_handler.setFormatter(logging.Formatter('[%(levelname)s] %(message)s'))
+            logger.addHandler(stream_handler)
         cls._instance = logger
-        cls._log_id = log_id
+        cls._set_file_handler(log_id)
         return logger
 
 

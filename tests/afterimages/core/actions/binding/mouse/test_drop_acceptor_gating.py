@@ -1,7 +1,7 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from afterimages.core.actions.binding.mixins import CommandBindingMixin
-from afterimages.core.actions.binding.mouse.mouseeventmanager import ClickType, MouseActionKey, MouseButton
+from afterimages.core.actions.binding.mouse.types import ClickType, MouseActionKey, MouseButton
 from afterimages.core.actions.binding.mouse.store import MouseBindingStore
 from afterimages.core.actions.command.core import CommandMeta, CommandRegistry, DropAcceptRegistry, register_command_defs
 from afterimages.core.actions.command.payload import CommandPayload
@@ -22,11 +22,11 @@ def _drag_enter_event(mime: QtCore.QMimeData) -> QtGui.QDragEnterEvent:
 
 
 def test_drag_enter_is_rejected_without_drop_acceptor(qtbot):
-    reg = CommandRegistry()
+    reg = CommandRegistry.instance()
     prev_cmds = reg.get_all_commands()
-    prev_acceptors = dict(getattr(DropAcceptRegistry(), "_acceptors", {}) or {})
+    prev_acceptors = dict(getattr(DropAcceptRegistry.instance(), "_acceptors", {}) or {})
     reg._commands = {}
-    DropAcceptRegistry()._acceptors = {}
+    DropAcceptRegistry.instance()._acceptors = {}
     register_command_defs(
         [
             CommandMeta(
@@ -38,7 +38,7 @@ def test_drag_enter_is_rejected_without_drop_acceptor(qtbot):
         ]
     )
 
-    store = MouseBindingStore()
+    store = MouseBindingStore.instance()
     try:
         w = _W()
         qtbot.addWidget(w)
@@ -54,18 +54,18 @@ def test_drag_enter_is_rejected_without_drop_acceptor(qtbot):
     finally:
         store.set_all({})
         reg._commands = prev_cmds
-        DropAcceptRegistry()._acceptors = prev_acceptors
+        DropAcceptRegistry.instance()._acceptors = prev_acceptors
 
 
 def test_drag_enter_is_accepted_with_drop_acceptor(qtbot):
     def _accept_any(ctx) -> bool:
         return True
 
-    reg = CommandRegistry()
+    reg = CommandRegistry.instance()
     prev_cmds = reg.get_all_commands()
-    prev_acceptors = dict(getattr(DropAcceptRegistry(), "_acceptors", {}) or {})
+    prev_acceptors = dict(getattr(DropAcceptRegistry.instance(), "_acceptors", {}) or {})
     reg._commands = {}
-    DropAcceptRegistry()._acceptors = {}
+    DropAcceptRegistry.instance()._acceptors = {}
     register_command_defs(
         [
             CommandMeta(
@@ -78,7 +78,7 @@ def test_drag_enter_is_accepted_with_drop_acceptor(qtbot):
         ]
     )
 
-    store = MouseBindingStore()
+    store = MouseBindingStore.instance()
     try:
         w = _W()
         qtbot.addWidget(w)
@@ -94,4 +94,4 @@ def test_drag_enter_is_accepted_with_drop_acceptor(qtbot):
     finally:
         store.set_all({})
         reg._commands = prev_cmds
-        DropAcceptRegistry()._acceptors = prev_acceptors
+        DropAcceptRegistry.instance()._acceptors = prev_acceptors

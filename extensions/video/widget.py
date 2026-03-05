@@ -11,6 +11,10 @@ PREVIEW_VOLUME = 40
 GL_COLOR_BUFFER_BIT = 0x00004000
 _MPV_EVENT_PLAYBACK_RESTART = 21
 
+_volume = PREVIEW_VOLUME
+_hover_autoplay = True
+_appear_autoplay = True
+
 
 def _get_proc_address(_, name):
     from PySide6.QtGui import QOpenGLContext
@@ -89,10 +93,14 @@ class MpvGLOverlay(QOpenGLWidget):
                 idle='yes',
                 loop='inf',
             )
-            self.player.volume = PREVIEW_VOLUME
+            self.player.volume = _volume
             self.player.register_event_callback(self._on_mpv_event)
         else:
             self.player = None
+
+    def set_volume(self, volume: int):
+        if self.player:
+            self.player.volume = volume
 
     @profiler.profile
     def initializeGL(self):
@@ -229,7 +237,7 @@ class PlaybackSlotManager:
 
     HOVER_DEBOUNCE_MS = 300
 
-    def __init__(self, parent, max_selected=4):
+    def __init__(self, parent, max_selected=3):
         self._parent = parent
         self._max_selected = max_selected
         self._mpv_available = MpvGLOverlay._ensure_mpv()
@@ -244,6 +252,20 @@ class PlaybackSlotManager:
             overlay = MpvGLOverlay(parent)
             overlay.hide()
             self._pool.append(overlay)
+
+    def set_volume(self, volume: int):
+        for overlay in self._pool:
+            overlay.set_volume(volume)
+        if self._hover_overlay is not None:
+            self._hover_overlay.set_volume(volume)
+        for overlay in self._selected.values():
+            overlay.set_volume(volume)
+
+    def set_max_selected(self, count: int):
+        self._max_selected = max(1, count)
+        while len(self._selected) > self._max_selected:
+            _, evicted = self._selected.popitem(last=False)
+            self._release_overlay(evicted)
 
     def _is_in_use(self, overlay) -> bool:
         if overlay is self._hover_overlay:
@@ -443,7 +465,7 @@ class MpvCellWidget(QWidget):
 
     def enterEvent(self, event):
         super().enterEvent(event)
-        if self._path and self._slot_manager:
+        if self._path and self._slot_manager and _hover_autoplay:
             self._slot_manager.activate_hover(self, self._path)
 
     def leaveEvent(self, event):
@@ -473,9 +495,9 @@ class MpvCellWidget(QWidget):
         if self._slot_manager:
             self._slot_manager.resize_overlay(self)
 
-    def on_selected(self, path):
-        if self._slot_manager:
-            self._slot_manager.activate_select(self, path)
+    def on_selected(self):
+        if self._slot_manager and self._path and _appear_autoplay:
+            self._slot_manager.activate_select(self, self._path)
 
     def on_deselected(self):
         if self._slot_manager:

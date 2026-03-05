@@ -212,7 +212,7 @@ class TestLoggerFactory:
             _LoggerFactory.get('viewer')
             assert _LoggerFactory._file_handler is handler_before
 
-    def test_dev_mode_adds_file_handler_on_role(self, tmp_path):
+    def test_file_handler_always_created(self, tmp_path):
         import os
         import logging
         from afterimages.utils.logs import _LoggerFactory
@@ -228,7 +228,7 @@ class TestLoggerFactory:
 
         with patch('afterimages.utils.logs._LOG_PATH', str(tmp_path)):
             _LoggerFactory.get('')
-            assert _LoggerFactory._file_handler is None
-            _LoggerFactory.get('indexer')
             assert _LoggerFactory._file_handler is not None
+            assert _LoggerFactory._log_id == str(pid)
+            _LoggerFactory.get('indexer')
             assert _LoggerFactory._file_handler.baseFilename.endswith(f'indexer_{pid}.log')

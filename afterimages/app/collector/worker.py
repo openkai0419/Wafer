@@ -17,10 +17,9 @@ class CollectorWorker:
     def __init__(self, db_name: str, plugin_name: str):
         self.db_name = db_name
         self.plugin_name = plugin_name
-        plugin_cls = collector_resolver.registry.get(plugin_name)
-        if not plugin_cls:
+        self._plugin = collector_resolver.registry.instance(plugin_name)
+        if not self._plugin:
             raise ValueError(f'Unknown plugin: {plugin_name}')
-        self._plugin = plugin_cls()
         self._node = Node(f'collector-{plugin_name}', db=db_name)
         self._node.subscribe('collect.batch', self._handle_batch)
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=_MAX_WORKERS)

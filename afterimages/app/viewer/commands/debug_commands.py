@@ -11,6 +11,7 @@ def toggle_dev_log(ctx):
 
 class DebugCommands(ActionKit.MenuBase):
     NAME = "Debug"
+    PRIORITY = 100
 
     @classmethod
     def commands(cls):

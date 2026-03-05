@@ -9,7 +9,8 @@ from PySide6 import QtCore, QtGui
 from afterimages.core.actions.bridge import Command, ActionKit
 from afterimages.core.qt.dialog import ConfirmDialog, ThumbnailConfirmDialog
 from afterimages.core.platform.copy import ClipboardFileTransfer
-from afterimages.core.platform.file_operations import paste_clipboard_files, unique_path, get_os_new_folder_name
+from afterimages.core.platform.paste import paste_clipboard_files
+from afterimages.core.platform.path_utils import unique_path, get_os_new_folder_name
 from afterimages.core.platform.folders import show_in_explorer as reveal_in_explorer
 from afterimages.utils.logs import AppLogger
 from afterimages.utils.notifier import Notifier
@@ -210,6 +211,7 @@ def make_new_folder_here(ctx, folder_name: str | None = None) -> str | None:
 
 class FileCommands(ActionKit.MenuBase):
     NAME = "File"
+    PRIORITY = 10
 
     @classmethod
     def commands(cls):

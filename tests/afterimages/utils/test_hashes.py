@@ -95,5 +95,6 @@ def test_fast_vs_full_different():
         fl = full_hash(path)
         assert isinstance(fh, str)
         assert isinstance(fl, str)
+        assert fh != fl
     finally:
         os.unlink(path)

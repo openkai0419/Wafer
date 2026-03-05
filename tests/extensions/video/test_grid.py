@@ -32,17 +32,17 @@ def test_video_grid_plugin_match():
     assert not VideoGridPlugin.match('test.png')
 
 
-def test_video_grid_plugin_load_returns_none():
+def test_video_grid_plugin_is_widget_plugin():
     from extensions.video.grid import VideoGridPlugin
-    plugin = VideoGridPlugin()
-    assert plugin.load('test.mp4') is None
+    from afterimages.plugin.grid.base import WidgetGridPlugin
+    assert issubclass(VideoGridPlugin, WidgetGridPlugin)
 
 
 def test_video_grid_plugin_render_calls_load():
     from extensions.video.grid import VideoGridPlugin
     plugin = VideoGridPlugin()
     widget = MagicMock()
-    plugin.render('test.mp4', widget)
+    plugin.render(widget, 'test.mp4')
     widget.load.assert_called_once_with('test.mp4', None)
 
 
@@ -51,7 +51,7 @@ def test_video_grid_plugin_render_passes_size():
     plugin = VideoGridPlugin()
     widget = MagicMock()
     size = MagicMock()
-    plugin.render('test.mp4', widget, size)
+    plugin.render(widget, 'test.mp4', size)
     widget.load.assert_called_once_with('test.mp4', size)
 
 
@@ -68,6 +68,30 @@ def test_post_install_calls_ensure_mpv_dll():
     with patch('extensions.video._downloader.ensure_mpv_dll') as mock_dl:
         VideoGridPlugin.post_install('/fake/dir')
         mock_dl.assert_called_once()
+
+
+def test_video_grid_plugin_select_calls_on_selected():
+    from extensions.video.grid import VideoGridPlugin
+    plugin = VideoGridPlugin()
+    widget = MagicMock()
+    plugin.select(widget)
+    widget.on_selected.assert_called_once()
+
+
+def test_video_grid_plugin_appear_calls_on_selected():
+    from extensions.video.grid import VideoGridPlugin
+    plugin = VideoGridPlugin()
+    widget = MagicMock()
+    plugin.appear(widget)
+    widget.on_selected.assert_called_once()
+
+
+def test_video_grid_plugin_disappear_calls_on_deselected():
+    from extensions.video.grid import VideoGridPlugin
+    plugin = VideoGridPlugin()
+    widget = MagicMock()
+    plugin.disappear(widget)
+    widget.on_deselected.assert_called_once()
 
 
 def test_configure_sets_default_surface_format():

@@ -1,17 +1,30 @@
-from typing import Dict, List, Tuple, Union, Optional
+from __future__ import annotations
+
+from PySide6 import QtCore
+
 from ...command.payload import CommandPayload
 from .runtime import KeyNameResolver, KeySpec
 from .sequence import KeySequence
 
-KeyChordSpec = Union[Tuple[KeySpec, ...], List[KeySpec]]
-KeyCombo = Tuple[int, ...]
+KeyChordSpec = tuple[KeySpec, ...] | list[KeySpec]
+KeyCombo = tuple[int, ...]
+
+_MODIFIER_MAP: tuple[tuple[QtCore.Qt.KeyboardModifier, int], ...] = (
+    (QtCore.Qt.ControlModifier, int(QtCore.Qt.Key_Control)),
+    (QtCore.Qt.ShiftModifier, int(QtCore.Qt.Key_Shift)),
+    (QtCore.Qt.AltModifier, int(QtCore.Qt.Key_Alt)),
+    (QtCore.Qt.MetaModifier, int(QtCore.Qt.Key_Meta)),
+)
+
+def modifier_keys_from_qt(mods) -> list[int]:
+    return [key for flag, key in _MODIFIER_MAP if mods & flag]
 
 class ComboParser:
     def __init__(self, resolver: KeyNameResolver, max_len: int = 2):
         self._resolver = resolver
         self._max_len = max_len
     
-    def _validate(self, xs: List[int]) -> KeyCombo:
+    def _validate(self, xs: list[int]) -> KeyCombo:
         if not xs or len(xs) > self._max_len:
             return tuple()
         if len(xs) == 2 and xs[0] == xs[1]:
@@ -19,7 +32,7 @@ class ComboParser:
         return tuple(xs)
     
     def from_sequence(self, seq: KeySequence) -> KeyCombo:
-        tokens: List[int] = []
+        tokens: list[int] = []
         for key_name in seq.to_tuple():
             tokens.append(self._resolver.to_key_code(self._resolver.normalize_token(key_name)))
         xs = [t for t in tokens if t]
@@ -32,7 +45,7 @@ class ComboParser:
         if not head:
             return tuple()
         parts = [p.strip() for p in head.replace("&", "+").split("+") if p.strip()]
-        tokens: List[int] = []
+        tokens: list[int] = []
         for p in parts:
             tokens.append(self._resolver.to_key_code(self._resolver.normalize_token(p)))
         xs = [t for t in tokens if t]

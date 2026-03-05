@@ -1,4 +1,32 @@
 {
+  "Autoplay on Appear": {
+    "en": "Autoplay on Appear",
+    "ja": ""
+  },
+  "Appear Autoplay": {
+    "en": "Appear Autoplay"
+  },
+  "Autoplay": {
+    "en": "Autoplay"
+  },
+  "Autoplay on Hover": {
+    "en": "Autoplay on Hover"
+  },
+  "Max Playback Slots": {
+    "en": "Max Playback Slots"
+  },
+  "Preview Volume": {
+    "en": "Preview Volume"
+  },
+  "Video Grid": {
+    "en": "Video Grid"
+  },
+  "speed": {
+    "en": "speed"
+  },
+  "volume": {
+    "en": "volume"
+  },
   "Set Keyword Delimiter to": {
     "en": "Set Keyword Delimiter to"
   },
@@ -447,7 +475,8 @@
     "en": "Overwrite mode"
   },
   "Apply": {
-    "en": "Apply"
+    "en": "Apply",
+    "ja": "設定"
   },
   "Folder Settings": {
     "en": "Folder Settings"
@@ -519,7 +548,8 @@
     "en": "Ascending"
   },
   "Cancel": {
-    "en": "Cancel"
+    "en": "Cancel",
+    "ja": "キャンセル"
   },
   "Collected": {
     "en": "Collected"
@@ -528,7 +558,8 @@
     "en": "Created"
   },
   "Delete": {
-    "en": "Delete"
+    "en": "Delete",
+    "ja": "削除"
   },
   "Delete table? : {dbname}": {
     "en": "Delete table? : {dbname}"
@@ -568,5 +599,110 @@
   },
   "Split by:": {
     "en": "Split by:"
+  },
+  "Mouse Actions:": {
+    "en": "Mouse Actions:",
+    "ja": "マウス操作:"
+  },
+  "Reset to Defaults": {
+    "en": "Reset to Defaults",
+    "ja": "初期設定に戻す"
+  },
+  "Standalone Action": {
+    "en": "Standalone Action",
+    "ja": " 単独での機能"
+  },
+  "{button} + Hold": {
+    "en": "{button} + Hold",
+    "ja": "{button} 押しながら"
+  },
+  "Hold Shift": {
+    "en": "Hold Shift",
+    "ja": "Shift 押しながら"
+  },
+  "Hold Ctrl": {
+    "en": "Hold Ctrl",
+    "ja": "Ctrl 押しながら"
+  },
+  "Hold Alt": {
+    "en": "Hold Alt",
+    "ja": "Alt 押しながら"
+  },
+  "None (Unset)": {
+    "en": "None (Unset)",
+    "ja": "なし(解除)"
+  },
+  "(No {cat} commands)": {
+    "en": "(No {cat} commands)",
+    "ja": "({cat}コマンドなし)"
+  },
+  "Mouse Bindings": {
+    "en": "Mouse Bindings"
+  },
+  "Modifier Key": {
+    "en": "Modifier Key",
+    "ja": "装飾キー"
+  },
+  "Main Key": {
+    "en": "Main Key",
+    "ja": "主キー"
+  },
+  "Add New": {
+    "en": "Add New",
+    "ja": "新規追加"
+  },
+  "Search Command": {
+    "en": "Search Command",
+    "ja": "コマンド検索"
+  },
+  "Key Input": {
+    "en": "Key Input",
+    "ja": "キー入力"
+  },
+  "Press up to 2 keys": {
+    "en": "Press up to 2 keys",
+    "ja": "最大2つまでキーを押してください"
+  },
+  "First Key": {
+    "en": "First Key",
+    "ja": "1つ目のキー"
+  },
+  "Second Key": {
+    "en": "Second Key",
+    "ja": "2つ目のキー"
+  },
+  "Command": {
+    "en": "Command",
+    "ja": "コマンド"
+  },
+  "Reassign": {
+    "en": "Reassign",
+    "ja": "割当変更"
+  },
+  "Key Bindings": {
+    "en": "Key Bindings"
+  },
+  "(None)": {
+    "en": "(None)",
+    "ja": "(なし)"
+  },
+  "(All)": {
+    "en": "(All)",
+    "ja": "(すべて)"
+  },
+  "Per-Widget": {
+    "en": "Per-Widget",
+    "ja": "専用"
+  },
+  "No more widgets": {
+    "en": "No more widgets"
+  },
+  "Execute": {
+    "en": "Execute",
+    "ja": "実行"
+  },
+  "Save": {
+    "en": "Save",
+    "ja": "保存"
   }
 }

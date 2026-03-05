@@ -13,8 +13,9 @@ class TestDebugCommands:
         from afterimages.app.viewer.commands.debug_commands import DebugCommands
         DebugCommands.register()
 
-    @patch('afterimages.constants.DEV_MODE', False)
+    @patch('afterimages.app.viewer.commands.debug_commands.DEV_MODE', False)
     def test_skip_register_in_normal_mode(self):
-        from importlib import reload
-        import afterimages.app.viewer.commands.debug_commands as mod
-        reload(mod)
+        from afterimages.app.viewer.commands.debug_commands import DebugCommands
+        with patch.object(DebugCommands, 'commands', wraps=DebugCommands.commands) as mock_cmds:
+            DebugCommands.register()
+            mock_cmds.assert_not_called()

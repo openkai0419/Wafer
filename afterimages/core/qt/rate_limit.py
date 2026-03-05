@@ -57,23 +57,26 @@ class QtThrottleManager(QObject):
         now = time.time() * 1000
         state = self._states.get(key)
         if state:
-            last_call, idle_timer = state
+            last_call, idle_timer, pending = state
             idle_timer.stop()
+            pending[:] = [args, kwargs]
             idle_timer.start(idle_ms)
             if now - last_call >= throttle_ms:
-                self._states[key] = (now, idle_timer)
+                self._states[key] = (now, idle_timer, pending)
                 callback(*args, **kwargs)
         else:
             idle_timer = QTimer(self)
             idle_timer.setSingleShot(True)
+            pending = [args, kwargs]
 
             @Slot()
             def on_idle():
-                callback(*args, **kwargs)
+                a, kw = pending
+                callback(*a, **kw)
                 self._states.pop(key, None)
             idle_timer.timeout.connect(on_idle)
             idle_timer.start(idle_ms)
-            self._states[key] = (now, idle_timer)
+            self._states[key] = (now, idle_timer, pending)
             callback(*args, **kwargs)
 _qt_throttle_manager = QtThrottleManager()
 

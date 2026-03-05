@@ -9,7 +9,7 @@ def fast_signature_hash(path: str, size=None, part_bytes = 256) -> str:
             st = os.stat(path)
             size = st.st_size
         if size == 0:
-            return "z"  # 任意のゼロサイズ印
+            return "z"
         offsets = [0, max(0, size // 2 - part_bytes // 2), max(0, size - part_bytes)]
         h = blake3()
         with open(path, 'rb', buffering=1024*1024) as f:

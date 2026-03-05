@@ -16,11 +16,11 @@ def test_hidden_command_is_registered_but_not_listed_in_picker_menu():
 
     _HiddenMenu.register()
 
-    reg = CommandRegistry()
+    reg = CommandRegistry.instance()
     assert reg.has_command("__test_hidden_visible_cmd__")
     assert reg.has_command("__test_hidden_internal_cmd__")
 
-    hub = MenuHub()
+    hub = MenuHub.instance()
     assert hub.get_path_by_command_id("__test_hidden_visible_cmd__") == "__TestHiddenMenu__/__test_hidden_visible_cmd__"
     assert hub.get_path_by_command_id("__test_hidden_internal_cmd__") == "__TestHiddenMenu__/__test_hidden_internal_cmd__"
 

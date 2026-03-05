@@ -4,7 +4,11 @@ import threading
 
 from pathlib import Path
 
-from afterimages.core.db.file_db import FileDB, _table_signature, _expected_table_signature, _TABLES
+from afterimages.core.db.file_db import (
+    FileDB, _table_signature, _expected_table_signature, _TABLES,
+    _SQL_UPSERT_SOURCES, _SQL_UPSERT_FILES, _SQL_UPSERT_FILES_COALESCE,
+    _SQL_UPSERT_META, _SQL_UPSERT_TAGS, _SQL_UPSERT_COLLECTION_STATUS,
+)
 
 
 def test_compile():
@@ -17,6 +21,16 @@ def test_filedb_start_exit(tmp_path):
     db.initialize_database()
     assert db.conn is not None
     assert db.read_conn is not None
+    db.close()
+    assert db.conn is None
+    assert db.read_conn is None
+
+
+def test_filedb_double_close_no_error(tmp_path):
+    db = FileDB(tmp_path / 'test.db')
+    db.start()
+    db.initialize_database()
+    db.close()
     db.close()
 
 
@@ -491,4 +505,55 @@ def test_concurrent_writes_no_error(tmp_path):
     t1.join()
     t2.join()
     assert errors == [], f'Concurrent writes raised errors: {errors}'
+    db.close()
+
+
+def test_sql_constants_are_valid():
+    conn = sqlite3.connect(':memory:')
+    for _, _, sql in _TABLES:
+        conn.execute(sql)
+    conn.commit()
+    for const in [_SQL_UPSERT_SOURCES, _SQL_UPSERT_FILES, _SQL_UPSERT_FILES_COALESCE,
+                  _SQL_UPSERT_META, _SQL_UPSERT_TAGS, _SQL_UPSERT_COLLECTION_STATUS]:
+        assert 'INSERT' in const
+        assert 'ON CONFLICT' in const
+    conn.close()
+
+
+def test_ensure_hash_indexes_deduplicates(tmp_path):
+    db = FileDB(tmp_path / 'test.db')
+    db.start()
+    db.initialize_database()
+    cur = db.get_writer_cursor()
+    db._ensure_hash_indexes(cur,
+        [('src1', 'hash1', 100, 1.0, 1.0, 1.0, 'ok'), ('src2', 'hash1', 200, 2.0, 2.0, 2.0, 'ok')],
+        [('hash1', 'tag', 'val'), ('hash2', 'tag', 'val')],
+    )
+    db.conn.commit()
+    rows = db.conn.execute("SELECT COUNT(*) FROM hash_index").fetchone()[0]
+    assert rows == 2
+    cur.close()
+    db.close()
+
+
+def test_backup_and_recreate_corrupt_db(tmp_path):
+    db_path = tmp_path / 'corrupt.db'
+    conn = sqlite3.connect(str(db_path))
+    conn.execute('PRAGMA journal_mode=WAL')
+    conn.execute('CREATE TABLE dummy (id INTEGER, data TEXT)')
+    conn.executemany(
+        'INSERT INTO dummy VALUES (?, ?)',
+        [(i, 'x' * 200) for i in range(500)],
+    )
+    conn.commit()
+    conn.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+    conn.close()
+    with open(str(db_path), 'r+b') as f:
+        f.seek(4096 * 2)
+        f.write(b'\x00' * 4096)
+    db = FileDB(db_path)
+    db.start()
+    db.initialize_database()
+    assert db.conn is not None
+    assert db.backup_path.exists()
     db.close()

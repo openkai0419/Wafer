@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Iterable, List
+from typing import Any, Iterable
 
 from .core import CommandMeta, CommandRegistry, register_command_defs
-from .menu import MenuHub, is_section_token, is_sep_token, split_menu_path, normalize_command_meta
+from .menu import MenuHub, MENU_SEPARATOR, MENU_SECTION_PREFIX, is_section_token, is_sep_token, split_menu_path, normalize_command_meta
 
 
 @dataclass(frozen=True)
@@ -16,11 +16,11 @@ class _ResolvedItem:
 
 
 class MenuPlan:
-    def __init__(self, hub: MenuHub, items: List[_ResolvedItem]):
+    def __init__(self, hub: MenuHub, items: list[_ResolvedItem]):
         self._hub = hub
         self._items = list(items)
 
-    def resolve_tokens(self) -> List[str]:
+    def resolve_tokens(self) -> list[str]:
         return [x.token for x in self._items]
 
     def hide(self, targets: Iterable[str]) -> "MenuPlan":
@@ -58,7 +58,7 @@ class MenuPlan:
             shift += len(extra)
         return MenuPlan(self._hub, out)
 
-    def _find_target_indexes(self, t: str) -> List[int]:
+    def _find_target_indexes(self, t: str) -> list[int]:
         if "/" in t:
             token_matches = [i for i, x in enumerate(self._items) if x.kind == "cmd" and x.token.strip("/") == t]
             if token_matches:
@@ -71,8 +71,8 @@ class MenuPlan:
             return canon_matches
         return [i for i, x in enumerate(self._items) if x.kind == "cmd" and x.command_id == t]
 
-    def _resolve_items(self, raw_items: Any) -> List[_ResolvedItem]:
-        out: List[_ResolvedItem] = []
+    def _resolve_items(self, raw_items: Any) -> list[_ResolvedItem]:
+        out: list[_ResolvedItem] = []
         for entry in MenuMaker._normalize_menu_items(raw_items):
             if isinstance(entry, CommandMeta):
                 out.append(MenuMaker._meta_to_resolved(entry))
@@ -84,17 +84,17 @@ class MenuPlan:
 
 class MenuMaker:
     def __init__(self):
-        self._hub = MenuHub()
+        self._hub = MenuHub.instance()
 
     @staticmethod
-    def _normalize_menu_items(items: Any) -> List[Any]:
+    def _normalize_menu_items(items: Any) -> list[Any]:
         if items is None:
             return []
         if isinstance(items, str):
             s = items.strip()
             return [s] if s else []
         if isinstance(items, (list, tuple)):
-            out: List[Any] = []
+            out: list[Any] = []
             for x in items:
                 if x is None:
                     continue
@@ -110,7 +110,7 @@ class MenuMaker:
     @staticmethod
     def _meta_to_resolved(meta: CommandMeta) -> _ResolvedItem:
         m = normalize_command_meta([], meta)
-        if not CommandRegistry().has_command(str(m.id)):
+        if not CommandRegistry.instance().has_command(str(m.id)):
             register_command_defs([m])
         return _ResolvedItem(token=str(m.path), kind="cmd", command_id=str(m.id), canonical_path=str(m.path))
 
@@ -128,7 +128,7 @@ class MenuMaker:
         return _ResolvedItem(token=str(token), kind="cmd", command_id=cid, canonical_path=str(canon))
 
     @staticmethod
-    def _resolve_one(hub: MenuHub, it: str) -> List[_ResolvedItem]:
+    def _resolve_one(hub: MenuHub, it: str) -> list[_ResolvedItem]:
         s = str(it or "").strip()
         if not s:
             return []
@@ -174,7 +174,7 @@ class MenuMaker:
             parts = split_menu_path(s.strip())
             if parts and parts[0] == base:
                 rel = parts[1:-1]
-                return "/".join(rel + ["-"]) if rel else "-"
+                return "/".join(rel + [MENU_SEPARATOR]) if rel else MENU_SEPARATOR
             return s
         if is_section_token(s):
             parts = split_menu_path(s)
@@ -190,7 +190,7 @@ class MenuMaker:
         return s
 
     def menu(self, items: Any) -> MenuPlan:
-        resolved: List[_ResolvedItem] = []
+        resolved: list[_ResolvedItem] = []
         for it in self._normalize_menu_items(items):
             if isinstance(it, CommandMeta):
                 resolved.append(self._meta_to_resolved(it))
@@ -222,20 +222,19 @@ class MenuMaker:
         return self.menu(flat)
 
     def all_roots(self) -> MenuPlan:
-        roots: List[str] = []
-        seen: set[str] = set()
-        for items in self._hub._menu_items.values():
+        root_priority: dict[str, int] = {}
+        for cls, items in self._hub._menu_items.items():
+            priority = getattr(cls, 'PRIORITY', 0)
             for s in items:
-                if not isinstance(s, str) or not s or s == "---" or s.startswith(":"):
+                if not isinstance(s, str) or not s or s == "---" or s.startswith(MENU_SECTION_PREFIX):
                     continue
                 parts = split_menu_path(s)
                 if len(parts) < 2:
                     continue
                 r = parts[0]
-                if r in seen:
-                    continue
-                seen.add(r)
-                roots.append(r)
-        if not roots:
+                if r not in root_priority:
+                    root_priority[r] = priority
+        if not root_priority:
             raise ValueError("No top-level menus registered")
+        roots = sorted(root_priority, key=lambda r: root_priority[r])
         return self.menu(roots)

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 import weakref
 
 from PySide6 import QtCore, QtWidgets
@@ -14,10 +14,10 @@ except (ImportError, ModuleNotFoundError):
 
 
 class InstanceRegistry:
-    _instance: Optional["InstanceRegistry"] = None
+    _instance: "InstanceRegistry" | None = None
 
     def __init__(self):
-        self._by_name: Dict[str, List[Any]] = {}
+        self._by_name: dict[str, list[Any]] = {}
 
     @classmethod
     def instance(cls) -> "InstanceRegistry":
@@ -25,7 +25,7 @@ class InstanceRegistry:
             cls._instance = cls()
         return cls._instance
 
-    def infer_name(self, instance: Any) -> Optional[str]:
+    def infer_name(self, instance: Any) -> str | None:
         if instance is None:
             return None
         if hasattr(instance, "binding_scope") and callable(getattr(instance, "binding_scope")):
@@ -91,15 +91,15 @@ class InstanceRegistry:
     def has(self, name: str) -> bool:
         return bool(self.get_all(name))
 
-    def get_all(self, name: str) -> List[Any]:
+    def get_all(self, name: str) -> list[Any]:
         if not name:
             return []
         k = str(name)
         xs = self._by_name.get(k)
         if not xs:
             return []
-        out: List[Any] = []
-        kept: List[Any] = []
+        out: list[Any] = []
+        kept: list[Any] = []
         for entry in xs:
             v = self._unwrap(entry)
             if v is None:

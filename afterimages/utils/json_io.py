@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 import json
 
+from .logs import AppLogger
 from .profiling import profiler
 
 
@@ -15,7 +16,8 @@ def read_json_file(path: str | Path, default: Any = None) -> Any:
             return default
         with p.open("r", encoding="utf-8") as f:
             return json.load(f)
-    except Exception:
+    except Exception as e:
+        AppLogger.warning(f"read_json_file failed: {path}", exc=e)
         return default
 
 
@@ -33,5 +35,6 @@ def write_json_file(
         with p.open("w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=ensure_ascii, indent=indent)
         return True
-    except Exception:
+    except Exception as e:
+        AppLogger.warning(f"write_json_file failed: {path}", exc=e)
         return False

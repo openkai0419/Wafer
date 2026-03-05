@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any, Callable, Dict, List, Optional, Sequence, Mapping
+from typing import Any, Callable, Sequence, Mapping
 import json
 import inspect
 from dataclasses import dataclass, field
@@ -21,8 +21,8 @@ class CommandParam:
         value: Any,
         description: str = "",
         default: Any = inspect._empty,
-        min_value: Optional[Any] = None,
-        max_value: Optional[Any] = None,
+        min_value: Any | None = None,
+        max_value: Any | None = None,
         widget_type: str = "auto",
     ):
         if not name:
@@ -51,7 +51,7 @@ class CommandMeta:
     id: str = ""
     display: str = ""
     hidden: bool = False
-    params: List[CommandParam] = field(default_factory=list)
+    params: list[CommandParam] = field(default_factory=list)
     hotkey: str = ""
     icon: str = ""
     has_options: bool = False
@@ -59,11 +59,12 @@ class CommandMeta:
     default_checked: bool = False
     action_group: str = ""
     category: str = ""
-    target_widgets: List[str] = field(default_factory=list)
-    func: Optional[Callable[..., Any]] = None
-    drag_callbacks: Optional[Dict[str, Callable[..., Any]]] = None
-    drop_callbacks: Optional[Dict[str, Callable[..., Any]]] = None
-    drop_acceptor: Optional[Callable[..., bool]] = None
+    priority: int = 0
+    target_widgets: list[str] = field(default_factory=list)
+    func: Callable[..., Any] | None = None
+    drag_callbacks: dict[str, Callable[..., Any]] | None = None
+    drop_callbacks: dict[str, Callable[..., Any]] | None = None
+    drop_acceptor: Callable[..., bool] | None = None
 
     def __post_init__(self):
         if self.hotkey:
@@ -75,7 +76,7 @@ class CommandBase:
     meta: CommandMeta = None
 
     def __init__(self):
-        self._last_kwargs: Optional[Dict[str, Any]] = None
+        self._last_kwargs: dict[str, Any] | None = None
 
     def execute(self, **kwargs) -> Any:
         raise NotImplementedError
@@ -93,35 +94,44 @@ class CommandBase:
 
 
 class CommandRegistry:
-    _instance: Optional[CommandRegistry] = None
+    _instance: CommandRegistry | None = None
 
-    def __new__(cls):
+    @classmethod
+    def instance(cls) -> CommandRegistry:
         if cls._instance is None:
-            cls._instance = super().__new__(cls)
+            cls._instance = cls.__new__(cls)
             cls._instance._commands = {}
         return cls._instance
 
     def register(self, command_class: type[CommandBase]) -> None:
-        cid = getattr(command_class.meta, "id", None)
-        if not cid:
+        meta = command_class.meta
+        if meta is None or not meta.id:
             raise ValueError("Command id is required")
-        if cid in self._commands:
-            raise ValueError(f"Duplicate command id: {cid}")
+        cid = meta.id
+        existing = self._commands.get(cid)
+        if existing is not None:
+            old_priority = existing.meta.priority if existing.meta else 0
+            new_priority = meta.priority
+            if new_priority < old_priority:
+                AppLogger.debug(f"Command '{cid}' not overridden (priority {new_priority} < {old_priority})")
+                return
+            AppLogger.info(f"Command '{cid}' overridden (priority {old_priority} -> {new_priority})")
         self._commands[cid] = command_class
 
     @profiler.profile
     def execute(self, command_name: str, ctx=None, **kwargs) -> Any:
         if command_name not in self._commands:
-            raise ValueError(f"Command {command_name} not found")
+            AppLogger.warning(f"Command not found: {command_name}")
+            return None
         if ctx is None:
             ctx = kwargs.pop("ctx", None)
         if ctx is None:
             raise ValueError("ctx is required")
         kwargs["ctx"] = ctx
         command_class = self._commands[command_name]
-        meta = getattr(command_class, "meta", None)
-        if meta and getattr(meta, "category", "") in ("drag", "drop"):
-            if getattr(ctx, "event", None) is None:
+        meta = command_class.meta
+        if meta and meta.category in ("drag", "drop"):
+            if ctx.event is None:
                 raise ValueError(f"Command '{command_name}' (category={meta.category}) requires event")
         command = command_class()
         result = command.dispatch(**kwargs) if hasattr(command, "dispatch") else command.execute(**kwargs)
@@ -130,39 +140,39 @@ class CommandRegistry:
     def has_command(self, name: str) -> bool:
         return name in self._commands
 
-    def get_command(self, name: str) -> Optional[type[CommandBase]]:
+    def get_command(self, name: str) -> type[CommandBase] | None:
         return self._commands.get(name)
 
-    def get_all_commands(self) -> Dict[str, type[CommandBase]]:
+    def get_all_commands(self) -> dict[str, type[CommandBase]]:
         return self._commands.copy()
 
-    def get_commands_by_category(self, category: str, widget_scope: Optional[str] = None) -> Dict[str, type[CommandBase]]:
+    def get_commands_by_category(self, category: str, widget_scope: str | None = None) -> dict[str, type[CommandBase]]:
         result = {}
         for cid, cmd_class in self._commands.items():
-            meta = getattr(cmd_class, "meta", None)
-            if meta and getattr(meta, "category", "") == category:
-                target_widgets = getattr(meta, "target_widgets", [])
-                if not target_widgets:
+            meta = cmd_class.meta
+            if meta and meta.category == category:
+                if not meta.target_widgets:
                     result[cid] = cmd_class
-                elif widget_scope and widget_scope in target_widgets:
+                elif widget_scope and widget_scope in meta.target_widgets:
                     result[cid] = cmd_class
         return result
 
-    def get_all_categories(self) -> List[str]:
+    def get_all_categories(self) -> list[str]:
         categories = set()
         for cmd_class in self._commands.values():
-            meta = getattr(cmd_class, "meta", None)
-            if meta and getattr(meta, "category", ""):
+            meta = cmd_class.meta
+            if meta and meta.category:
                 categories.add(meta.category)
         return sorted(categories)
 
 
 class DropAcceptRegistry:
-    _instance: Optional[DropAcceptRegistry] = None
+    _instance: DropAcceptRegistry | None = None
 
-    def __new__(cls):
+    @classmethod
+    def instance(cls) -> DropAcceptRegistry:
         if cls._instance is None:
-            cls._instance = super().__new__(cls)
+            cls._instance = cls.__new__(cls)
             cls._instance._acceptors = {}
         return cls._instance
 
@@ -179,13 +189,13 @@ class DropAcceptRegistry:
             return
         items.append(acceptor)
 
-    def resolve(self, widget_scope: Optional[str]) -> Sequence[Callable[..., bool]]:
+    def resolve(self, widget_scope: str | None) -> Sequence[Callable[..., bool]]:
         if not widget_scope:
             widget_scope = "*"
         if widget_scope == "*":
             return tuple(self._acceptors.get("*") or ())
 
-        out: List[Callable[..., bool]] = []
+        out: list[Callable[..., bool]] = []
         for a in self._acceptors.get(widget_scope) or ():
             if callable(a) and not any(x is a for x in out):
                 out.append(a)
@@ -196,14 +206,14 @@ class DropAcceptRegistry:
 
 
 def register_drop_accept(widget_scope: str, acceptor: Callable[..., bool]) -> None:
-    DropAcceptRegistry().register(widget_scope, acceptor)
+    DropAcceptRegistry.instance().register(widget_scope, acceptor)
 
 
-def resolve_drop_accept(widget_scope: Optional[str]) -> Sequence[Callable[..., bool]]:
-    return DropAcceptRegistry().resolve(widget_scope)
+def resolve_drop_accept(widget_scope: str | None) -> Sequence[Callable[..., bool]]:
+    return DropAcceptRegistry.instance().resolve(widget_scope)
 
 
-def validate_command_args(meta: CommandMeta, args: Dict[str, Any], *, require_all: bool = False) -> None:
+def validate_command_args(meta: CommandMeta, args: dict[str, Any], *, require_all: bool = False) -> None:
     param_map = {p.name: p for p in (meta.params or [])}
     extra = set(args.keys()) - set(param_map.keys())
     if extra:
@@ -229,7 +239,7 @@ def validate_command_args(meta: CommandMeta, args: Dict[str, Any], *, require_al
             raise ValueError(f"Arg '{name}' for '{meta.id}': {value} > max {p.max_value}")
 
 
-def _build_args(meta: CommandMeta, kwargs: Dict[str, Any]) -> Dict[str, Any]:
+def _build_args(meta: CommandMeta, kwargs: dict[str, Any]) -> dict[str, Any]:
     if "ctx" not in kwargs:
         raise ValueError("ctx is required")
     params = {p.name: kwargs.get(p.name, p.default) for p in meta.params}
@@ -237,7 +247,7 @@ def _build_args(meta: CommandMeta, kwargs: Dict[str, Any]) -> Dict[str, Any]:
     return params
 
 
-def _call_with_matching_args(fn: Callable[..., Any], values: Dict[str, Any]) -> Any:
+def _call_with_matching_args(fn: Callable[..., Any], values: dict[str, Any]) -> Any:
     sig = inspect.signature(fn)
     params = list(sig.parameters.values())
 
@@ -311,17 +321,17 @@ def create_command_from_meta(meta: CommandMeta) -> type[CommandBase]:
     return _Cmd
 
 
-def register_command_defs(defs: List[CommandMeta]):
+def register_command_defs(defs: list[CommandMeta]):
     from .state import ActionGroupStateManager
-    r = CommandRegistry()
-    state_manager = ActionGroupStateManager()
+    r = CommandRegistry.instance()
+    state_manager = ActionGroupStateManager.instance()
     for meta in defs:
 
         acceptor = getattr(meta, "drop_acceptor", None)
         if callable(acceptor):
             scopes = getattr(meta, "target_widgets", None) or ["*"]
             for scope in scopes:
-                DropAcceptRegistry().register(scope, acceptor)
+                DropAcceptRegistry.instance().register(scope, acceptor)
         
         if meta.category == "drag" and not meta.drag_callbacks:
             raise ValueError(f"Command '{meta.id}' has category='drag' but missing drag_callbacks. Use drag_callbacks instead of func.")
@@ -340,9 +350,9 @@ def register_command_defs(defs: List[CommandMeta]):
             state_manager.register_member(meta.action_group, meta.id)
 
 def create_cycle_command(group_name: str, display: str) -> CommandMeta:
-    from .ui import CommandMenuBuilder
+    from .menu_builder import CommandMenuBuilder
     def _cycle_func():
-        builder = CommandMenuBuilder()
+        builder = CommandMenuBuilder.instance()
         result = builder.cycle_action_group(group_name)
         if result:
             AppLogger.debug(f"Cycled to: {result}")

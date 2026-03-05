@@ -32,6 +32,7 @@ def prev_file(ctx, step: int = 1, loop: bool = False):
 
 class FileViewerCommands(ActionKit.MenuBase):
     NAME = "FileViewer"
+    PRIORITY = 50
 
     @classmethod
     def commands(cls):

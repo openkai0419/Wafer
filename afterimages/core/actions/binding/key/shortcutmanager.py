@@ -1,4 +1,6 @@
-from typing import Any, Dict, List, Tuple, Union, Set, Callable, Iterable, Optional, cast
+from __future__ import annotations
+
+from typing import Any, Callable, Iterable, cast
 from weakref import WeakValueDictionary
 from PySide6 import QtCore, QtGui, QtWidgets
 from afterimages.utils.profiling import profiler
@@ -8,13 +10,10 @@ from ...command.context import CommandContext
 from ...command.payload import CommandPayload
 from afterimages.utils.helpers import invoke_int, widget_prop_bool
 from .sequence import KeySequence
-from .runtime import KeyNameResolver, KeySpec
+from .runtime import KeyNameResolver
 from .runtime import KeyListenerRegistry
-from .combo import ComboParser
+from .combo import ComboParser, KeyChordSpec, KeyCombo
 from .chord_state import KeyChordStateManager, KeyEventStamp
-
-KeyChordSpec = Union[Tuple[KeySpec, ...], List[KeySpec]]
-KeyCombo = Tuple[int, ...]
 
 
 def _delegate_to_global(fn):
@@ -28,7 +27,7 @@ def _delegate_to_global(fn):
 
 
 class ShortcutManager(QtCore.QObject):
-    _global: Optional['ShortcutManager'] = None
+    _global: 'ShortcutManager' | None = None
     _app_hooked_class: bool = False
     _scope_mode: str = "cursor"
     BLOCK_PARENT_SHORTCUTS_PROP: str = "block_parent_shortcuts"
@@ -36,18 +35,18 @@ class ShortcutManager(QtCore.QObject):
     MAX_RECENT_EVENTS = 128
     def __init__(self):
         super().__init__()
-        self._keymap: Dict[int, Dict[KeyCombo, CommandPayload]] = {}
+        self._keymap: dict[int, dict[KeyCombo, CommandPayload]] = {}
         self._key_listeners = KeyListenerRegistry()
-        self._consume_key_listener_ids: Set[int] = set()
-        self._registry = CommandRegistry()
+        self._consume_key_listener_ids: set[int] = set()
+        self._registry = CommandRegistry.instance()
         self._app_hooked = False
         self._phys_listeners = KeyListenerRegistry()
-        self._sc_keymap: Dict[int, Dict[KeyCombo, CommandPayload]] = {}
+        self._sc_keymap: dict[int, dict[KeyCombo, CommandPayload]] = {}
         self._state = KeyChordStateManager(max_recent_events=self.MAX_RECENT_EVENTS)
         self._resolver = KeyNameResolver()
         self._parser = ComboParser(self._resolver)
         self._widget_refs: WeakValueDictionary[int, QtWidgets.QWidget] = WeakValueDictionary()
-        self._targets_cache: Optional[Set[int]] = None
+        self._targets_cache: set[int] | None = None
         if ShortcutManager._global is None:
             ShortcutManager._global = self
             self._is_global = True
@@ -56,11 +55,11 @@ class ShortcutManager(QtCore.QObject):
 
     @_delegate_to_global
     @profiler.profile
-    def set_bindings(self, widget: QtWidgets.QWidget, bindings: Dict[KeySequence, Any]):
+    def set_bindings(self, widget: QtWidgets.QWidget, bindings: dict[KeySequence, Any]):
         self._ensure_app_filter()
         wid = id(widget)
         self._widget_refs[wid] = widget
-        norm: Dict[KeyCombo, CommandPayload] = {}
+        norm: dict[KeyCombo, CommandPayload] = {}
         for seq, cmd in bindings.items():
             if not seq or not cmd:
                 continue
@@ -77,9 +76,9 @@ class ShortcutManager(QtCore.QObject):
         self._keymap[wid] = norm
         self._invalidate_targets_cache()
     @_delegate_to_global
-    def get_bindings(self, widget: QtWidgets.QWidget) -> Dict[str, CommandPayload]:
+    def get_bindings(self, widget: QtWidgets.QWidget) -> dict[str, CommandPayload]:
         wid = id(widget)
-        r: Dict[str, CommandPayload] = {}
+        r: dict[str, CommandPayload] = {}
         for combo, payload in self._keymap.get(wid, {}).items():
             r[self._format_pretty(combo)] = payload
         return r
@@ -88,11 +87,11 @@ class ShortcutManager(QtCore.QObject):
         self.clear_key_bindings(widget)
 
     @_delegate_to_global
-    def set_key_bindings(self, widget: QtWidgets.QWidget, bindings: Dict[KeyChordSpec, Any]):
+    def set_key_bindings(self, widget: QtWidgets.QWidget, bindings: dict[KeyChordSpec, Any]):
         self._ensure_app_filter()
         wid = id(widget)
         self._widget_refs[wid] = widget
-        norm: Dict[KeyCombo, CommandPayload] = {}
+        norm: dict[KeyCombo, CommandPayload] = {}
         for spec, cmd in bindings.items():
             if not cmd:
                 continue
@@ -108,9 +107,9 @@ class ShortcutManager(QtCore.QObject):
         self._invalidate_targets_cache()
 
     @_delegate_to_global
-    def get_key_bindings(self, widget: QtWidgets.QWidget) -> Dict[str, CommandPayload]:
+    def get_key_bindings(self, widget: QtWidgets.QWidget) -> dict[str, CommandPayload]:
         wid = id(widget)
-        r: Dict[str, CommandPayload] = {}
+        r: dict[str, CommandPayload] = {}
         for combo, payload in self._keymap.get(wid, {}).items():
             r[self._format(combo)] = payload
         return r
@@ -123,11 +122,11 @@ class ShortcutManager(QtCore.QObject):
         self._invalidate_targets_cache()
 
     @_delegate_to_global
-    def set_physical_bindings(self, widget: QtWidgets.QWidget, bindings: Dict[KeyChordSpec, Any]):
+    def set_physical_bindings(self, widget: QtWidgets.QWidget, bindings: dict[KeyChordSpec, Any]):
         self._ensure_app_filter()
         wid = id(widget)
         self._widget_refs[wid] = widget
-        norm: Dict[KeyCombo, CommandPayload] = {}
+        norm: dict[KeyCombo, CommandPayload] = {}
         for spec, cmd in bindings.items():
             if not cmd:
                 continue
@@ -143,9 +142,9 @@ class ShortcutManager(QtCore.QObject):
         self._invalidate_targets_cache()
 
     @_delegate_to_global
-    def get_physical_bindings(self, widget: QtWidgets.QWidget) -> Dict[str, CommandPayload]:
+    def get_physical_bindings(self, widget: QtWidgets.QWidget) -> dict[str, CommandPayload]:
         wid = id(widget)
-        r: Dict[str, CommandPayload] = {}
+        r: dict[str, CommandPayload] = {}
         for combo, payload in self._sc_keymap.get(wid, {}).items():
             r[self._format_sc(combo)] = payload
         return r
@@ -169,7 +168,7 @@ class ShortcutManager(QtCore.QObject):
             return False
         et = event.type()
         if et in (QtCore.QEvent.ApplicationDeactivate, QtCore.QEvent.WindowDeactivate):
-            self._reset_all_states()
+            self._reset_states()
             return False
         if et not in (
             QtCore.QEvent.KeyPress,
@@ -241,11 +240,11 @@ class ShortcutManager(QtCore.QObject):
                 self._exec(wid, payload, e)
             return False
         if et in (QtCore.QEvent.FocusOut, QtCore.QEvent.Hide, QtCore.QEvent.WindowDeactivate):
-            self._reset_states_for(wid)
+            self._reset_states()
             return False
         return False
 
-    def _exec(self, wid: int, payload: CommandPayload, event: Optional[QtGui.QKeyEvent] = None):
+    def _exec(self, wid: int, payload: CommandPayload, event: QtGui.QKeyEvent | None = None):
         widget = self._widget_refs.get(wid)
         kdisp = None
         if event is not None:
@@ -261,6 +260,11 @@ class ShortcutManager(QtCore.QObject):
                 except Exception as e:
                     AppLogger.warning("binding_scope failed", exc=e)
             ctx = CommandContext.create(widget, scope, source="key", event=event)
+            if not self._registry.has_command(str(payload.id)):
+                from afterimages.utils.notifier import Notifier
+                AppLogger.warning(f"Command not found: {payload.id}")
+                Notifier.warning(f"Command not found: {payload.id}")
+                return
             self._registry.execute(payload.id, ctx=ctx, **args)
 
     def _normalize(self, spec: KeyChordSpec) -> KeyCombo:
@@ -306,17 +310,8 @@ class ShortcutManager(QtCore.QObject):
         else:
             self._phys_listeners.emit_release(wid, sc, nv, k, txt, disp)
     def _display_from_event(self, e: QtGui.QKeyEvent) -> str:
-        mods = e.modifiers()
-        mod_keys: List[int] = []
-        if mods & QtCore.Qt.ControlModifier:
-            mod_keys.append(int(QtCore.Qt.Key_Control))
-        if mods & QtCore.Qt.ShiftModifier:
-            mod_keys.append(int(QtCore.Qt.Key_Shift))
-        if mods & QtCore.Qt.AltModifier:
-            mod_keys.append(int(QtCore.Qt.Key_Alt))
-        if mods & QtCore.Qt.MetaModifier:
-            mod_keys.append(int(QtCore.Qt.Key_Meta))
-        keys = mod_keys + [int(e.key())]
+        from .combo import modifier_keys_from_qt
+        keys = modifier_keys_from_qt(e.modifiers()) + [int(e.key())]
         return self._resolver.format_keys(keys, "+", True)
     
     def key_name(self, key: int, pretty: bool = True) -> str:
@@ -362,12 +357,12 @@ class ShortcutManager(QtCore.QObject):
     def _invalidate_targets_cache(self):
         self._targets_cache = None
 
-    def _get_targets(self) -> Set[int]:
+    def _get_targets(self) -> set[int]:
         if self._targets_cache is None:
             self._targets_cache = set(self._keymap.keys()) | self._key_listeners.ids() | self._phys_listeners.ids()
         return self._targets_cache
 
-    def _resolve_target_widget_id_from(self, start: QtWidgets.QWidget | None, targets: Set[int]) -> int | None:
+    def _resolve_target_widget_id_from(self, start: QtWidgets.QWidget | None, targets: set[int]) -> int | None:
         w = start
         while w is not None:
             wid = id(w)
@@ -411,8 +406,5 @@ class ShortcutManager(QtCore.QObject):
     def scope_mode(cls) -> str:
         return cls._scope_mode
 
-    def _reset_states_for(self, wid: int):
-        self._state.reset()
-
-    def _reset_all_states(self):
+    def _reset_states(self):
         self._state.reset()

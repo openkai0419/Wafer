@@ -68,7 +68,7 @@ def test_on_delta_increase():
     pool.pool.setMaxThreadCount(pool.base_limit)
     pool._on_delta_requested(+1)
     new_count = pool.pool.maxThreadCount()
-    assert new_count >= pool.base_limit
+    assert new_count == min(pool.base_limit + 1, pool.max_limit)
     pool.pool.setMaxThreadCount(original)
 
 
@@ -111,3 +111,13 @@ def test_pool_start_does_not_raise():
     pool = AdaptiveThreadPool()
     r = _SumRunnable(1, 2)
     pool.submit(r)
+
+
+def test_singleton_init_not_reset():
+    pool = AdaptiveThreadPool()
+    original_base = pool.base_limit
+    original_proxy = pool._proxy
+    pool2 = AdaptiveThreadPool()
+    assert pool2 is pool
+    assert pool2.base_limit == original_base
+    assert pool2._proxy is original_proxy

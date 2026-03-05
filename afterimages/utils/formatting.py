@@ -30,7 +30,6 @@ def format_aspect(ratio: float, max_denominator: int = 100) -> str:
         return None
     if ratio <= 0:
         return "N/A"
-    frac = math.floor(ratio * max_denominator + 0.5)
     for den in range(1, max_denominator + 1):
         num = round(ratio * den)
         if abs(num / den - ratio) < 1e-6:

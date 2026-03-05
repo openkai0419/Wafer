@@ -15,7 +15,7 @@ from .transport import (
     adaptive_poll, close_socket, drain_queue, read_broker_port, try_put, tune_socket,
 )
 from .message import Message
-from .outbox import OutboxStore
+from .outbox import OutboxStore, scan_all_outbox, remove_outbox_batch_from, cleanup_empty_outbox_files
 
 
 class Node:
@@ -41,9 +41,11 @@ class Node:
         self._io_thread: threading.Thread | None = None
         self._registered = threading.Event()
         self._outbox: OutboxStore | None = None
-        self._outbox_lock = threading.Lock()
+        self._outbox_event = threading.Event()
+        self._outbox_thread: threading.Thread | None = None
         if consumer:
-            self._handlers['outbox.notify'] = lambda _msg: self._schedule_outbox_process() or True
+            self._handlers['outbox.notify'] = lambda _msg: self._notify_outbox() or True
+            self._outbox_thread = threading.Thread(target=self._outbox_worker, daemon=True)
 
     @property
     def viewer_id(self) -> int | None:
@@ -68,12 +70,17 @@ class Node:
         self._connect(target_port)
         self._io_thread = threading.Thread(target=self._io_loop, daemon=True)
         self._io_thread.start()
+        if self._outbox_thread:
+            self._outbox_thread.start()
 
     def stop(self):
         self._stop.set()
+        self._outbox_event.set()
         try_put(self._out_q, self._sentinel)
         if self._io_thread:
             self._io_thread.join(timeout=2.0)
+        if self._outbox_thread:
+            self._outbox_thread.join(timeout=2.0)
         if self._outbox:
             self._outbox.delete_if_empty()
             self._outbox.close()
@@ -125,21 +132,21 @@ class Node:
             AppLogger.warning(f'handler error: {msg.topic}', exc=e)
             return None
 
-    def _schedule_outbox_process(self):
-        threading.Thread(target=self._try_process_outbox, daemon=True).start()
+    def _notify_outbox(self):
+        self._outbox_event.set()
 
-    def _try_process_outbox(self):
-        if not self._outbox_lock.acquire(blocking=False):
-            return
-        try:
+    def _outbox_worker(self):
+        while not self._stop.is_set():
+            self._outbox_event.wait(timeout=30)
+            self._outbox_event.clear()
+            if self._stop.is_set():
+                break
             self._process_outbox()
-        finally:
-            self._outbox_lock.release()
 
     def _process_outbox(self):
         dst_filter = {self.node_id, self.role, 'ALL'}
         db_filter = self.default_db or None
-        records = OutboxStore.scan_all(dst_filter=dst_filter, db_filter=db_filter)
+        records = scan_all_outbox(dst_filter=dst_filter, db_filter=db_filter)
         if not records:
             return
         done: dict[str, list[int]] = {}
@@ -149,8 +156,8 @@ class Node:
             if self._call_handler(msg) is True:
                 done.setdefault(rec.source_db, []).append(rec.id)
         for db_path, ids in done.items():
-            OutboxStore.remove_batch_from(db_path, ids)
-        OutboxStore.cleanup_empty_files()
+            remove_outbox_batch_from(db_path, ids)
+        cleanup_empty_outbox_files()
 
     def _create_socket(self) -> zmq.Socket:
         sock = self._ctx.socket(zmq.DEALER)
@@ -225,6 +232,10 @@ class Node:
                 self._viewer_id = msg.payload.get('viewer_id')
             self._registered.set()
             AppLogger.info(f'registered as {self.node_id}, viewer_id={self._viewer_id}')
+            return
+
+        if msg.topic == 'mgmt.not_registered':
+            self._registered.clear()
             return
 
         self._call_handler(msg)

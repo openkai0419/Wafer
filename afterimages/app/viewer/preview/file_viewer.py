@@ -7,6 +7,7 @@ from afterimages.utils.profiling import profiler
 from afterimages.utils.logs import AppLogger
 from afterimages.core.db.query import FileSearchEngine
 from afterimages.plugin.viewer.handler import viewer_resolver
+from afterimages.plugin.viewer.base import WidgetViewerPlugin as _WidgetViewerPlugin
 from afterimages.core.qt.thread import CancellableRunnable, thread_pool
 from .meta_viewer import MetaListWidget
 from .image_viewer import ImageDisplayWidget
@@ -133,10 +134,10 @@ class FileViewerWidget(QtWidgets.QSplitter):
         self._update_meta(path)
 
         plugin_cls = viewer_resolver.resolve(path)
-        if plugin_cls is not None and plugin_cls.WIDGET_CLASS is not None:
+        if plugin_cls is not None and issubclass(plugin_cls, _WidgetViewerPlugin):
             self._switch_to(plugin_cls.NAME)
             widget = self._widget_map[plugin_cls.NAME]
-            viewer_resolver.render(path, widget)
+            viewer_resolver.render(widget, path)
             self._pending_content = (path, None)
             self._try_show()
         else:

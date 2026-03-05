@@ -1,6 +1,6 @@
 from afterimages.core.actions.binding.key.sequence import KeySequence
 from afterimages.core.actions.binding.key.store import KeyBindingStore
-from afterimages.core.actions.binding.mouse.mouseeventmanager import MouseActionKey, MouseButton, ClickType
+from afterimages.core.actions.binding.mouse.types import MouseActionKey, MouseButton, ClickType
 from afterimages.core.actions.binding.mouse.store import MouseBindingStore
 from afterimages.core.actions.binding.presets import set_presets
 from afterimages.core.actions.bridge import ActionKit
@@ -8,21 +8,21 @@ from afterimages.core.actions.bridge import ActionKit
 
 def test_preset_mouse_bindings_load():
     set_presets(mouse="standard")
-    data = MouseBindingStore()._seed_data()
+    data = MouseBindingStore.instance()._seed_data()
     assert data
     assert all(isinstance(k, MouseActionKey) for k in data.keys())
 
 
 def test_preset_key_bindings_load():
     set_presets(key="standard")
-    data = KeyBindingStore()._seed_data()
+    data = KeyBindingStore.instance()._seed_data()
     assert data
     assert all(isinstance(k, KeySequence) for k in data.keys())
 
 
 def test_preset_mouse_bindings_content():
     set_presets(mouse="standard")
-    data = MouseBindingStore()._seed_data()
+    data = MouseBindingStore.instance()._seed_data()
     right_single = ActionKit.Mouse("RIGHT", "SINGLE")
     assert right_single in data
     assert data[right_single]["*"].id == "allmenu"

@@ -4,7 +4,7 @@ from unittest.mock import patch, MagicMock, PropertyMock
 from PIL import Image
 from PIL.TiffImagePlugin import IFDRational
 
-from _plugins_image.exif_parser import (
+from extensions.image.exif_parser import (
     ExifParser,
     _clean_text,
     _looks_binary_payload,

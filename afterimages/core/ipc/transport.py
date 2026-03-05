@@ -4,13 +4,11 @@ import json
 import time
 from pathlib import Path
 from queue import Empty, Full, Queue
+from typing import Any
 
 import zmq
 
 from afterimages.utils.paths import resolve_data_path
-import threading as _threading
-_drop_counter = [0]
-_drop_count_lock = _threading.Lock()
 
 
 class Priority:
@@ -34,7 +32,7 @@ ZMQ_RCVTIMEO_MS = 800
 _PORT_FILE = Path(resolve_data_path('ipc/broker.json'))
 
 
-def tune_socket(sock):
+def tune_socket(sock: zmq.Socket) -> None:
     for opt, val in ((zmq.SNDTIMEO, ZMQ_SNDTIMEO_MS), (zmq.RCVTIMEO, ZMQ_RCVTIMEO_MS)):
         try:
             sock.setsockopt(opt, val)
@@ -42,7 +40,7 @@ def tune_socket(sock):
             pass
 
 
-def close_socket(sock):
+def close_socket(sock: zmq.Socket) -> None:
     try:
         sock.setsockopt(zmq.LINGER, 0)
     except Exception:
@@ -53,7 +51,7 @@ def close_socket(sock):
         pass
 
 
-def try_put(q: Queue, item):
+def try_put(q: Queue, item: Any) -> None:
     try:
         q.put_nowait(item)
     except Full:
@@ -62,19 +60,13 @@ def try_put(q: Queue, item):
         try:
             q.put_nowait(item)
         except Full:
-            return False
-        with _drop_count_lock:
-            _drop_counter[0] += 1
-            count = _drop_counter[0]
-        if count <= 5 or count % 100 == 0:
-            from afterimages.utils.logs import AppLogger
-            AppLogger.debug(f'zmq queue eviction (total={count})')
-        return True
-    return True
+            return
+        from afterimages.utils.logs import AppLogger
+        AppLogger.debug('zmq queue eviction')
 
 
-def drain_queue(q: Queue, sentinel):
-    out = []
+def drain_queue(q: Queue, sentinel: object) -> tuple[list[Any], bool]:
+    out: list[Any] = []
     seen = False
     while True:
         try:
@@ -88,7 +80,7 @@ def drain_queue(q: Queue, sentinel):
     return out, seen
 
 
-def adaptive_poll(did_work, idle_streak):
+def adaptive_poll(did_work: bool, idle_streak: int) -> tuple[int, int]:
     if did_work:
         return 0, POLL_BASE_MS
     idle_streak = min(idle_streak + 1, POLL_MAX_MS)

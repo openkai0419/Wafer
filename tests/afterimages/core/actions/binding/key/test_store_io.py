@@ -7,7 +7,7 @@ from afterimages.core.actions.binding.presets import set_presets
 
 
 def test_key_store_save_load_roundtrip(tmp_path):
-    store = KeyBindingStore()
+    store = KeyBindingStore.instance()
     data = {Key("Ctrl", "W"): {"*": CommandPayload("viewer.close", {})}}
     store.set_all(data)
     p = tmp_path / "keys.json"
@@ -28,7 +28,7 @@ def test_key_store_diff_saves_deletions(tmp_path, monkeypatch):
     monkeypatch.setattr("afterimages.core.actions.binding.presets.get_resource_path", lambda: tmp_path)
     set_presets(key="test_preset")
     try:
-        store = KeyBindingStore()
+        store = KeyBindingStore.instance()
         store.set_all({})
         p = tmp_path / "keys_diff.json"
         store.save_to_file(str(p))

@@ -36,6 +36,7 @@ _COMMAND_MODULES = [
 
 class AppMenuRegistrar(ActionKit.MenuBase):
     NAME = ""
+    PRIORITY = 110
 
     @classmethod
     def commands(cls):

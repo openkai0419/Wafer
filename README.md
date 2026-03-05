@@ -79,7 +79,7 @@ Extensions are placed as folders under `extensions/`. `PluginLoader` (`afterimag
 
 ```
 extensions/<name>/
-  *.py                Plugin classes (subclass BaseViewerPlugin / BaseGridPlugin / BaseCollectorPlugin)
+  *.py                Plugin classes (subclass ImageGridPlugin / WidgetGridPlugin / ImageViewerPlugin / WidgetViewerPlugin / BaseCollectorPlugin)
   requirements.txt    Python dependencies (optional)
   lib/                Native DLLs (optional, auto-added to PATH)
   .packages/          pip install target (auto-generated, git-ignored)
@@ -102,7 +102,7 @@ The built-in image extension is at `extensions/image/` with its own `requirement
 Extensions import base classes from `afterimages.plugin`:
 
 ```python
-from afterimages.plugin import BaseViewerPlugin, BaseGridPlugin, BaseCollectorPlugin, CollectorResult
+from afterimages.plugin import ImageGridPlugin, WidgetGridPlugin, ImageViewerPlugin, WidgetViewerPlugin, BaseCollectorPlugin, CollectorResult
 ```
 
 Extensions can also directly import from `afterimages.utils` and `afterimages.core` as needed:

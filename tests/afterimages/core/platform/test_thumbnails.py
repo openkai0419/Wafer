@@ -4,7 +4,7 @@ import tempfile
 import zipfile
 import pytest
 from PIL import Image
-from afterimages.core.platform.thumbnails import FileThumbnailer, get_aspect_ratios
+from afterimages.core.platform.thumbnails import FileThumbnailer
 
 
 @pytest.fixture
@@ -67,14 +67,14 @@ def test_platform_is_set(thumbnailer):
 
 
 def test_get_aspect_ratios_empty():
-    assert get_aspect_ratios([]) == {}
+    assert FileThumbnailer.get_aspect_ratios([]) == {}
 
 
 @pytest.mark.skipif(not sys.platform.startswith("win"), reason="Windows only")
 def test_get_aspect_ratios_image():
     path = _create_temp_image(200, 100)
     try:
-        result = get_aspect_ratios([path])
+        result = FileThumbnailer.get_aspect_ratios([path])
         if result:
             assert abs(result[path] - 2.0) < 0.01
     finally:
@@ -82,14 +82,14 @@ def test_get_aspect_ratios_image():
 
 
 def test_get_aspect_ratios_nonexistent():
-    assert isinstance(get_aspect_ratios(["/nonexistent/file.png"]), dict)
+    assert isinstance(FileThumbnailer.get_aspect_ratios(["/nonexistent/file.png"]), dict)
 
 
 @pytest.mark.skipif(not sys.platform.startswith("win"), reason="Windows only")
 def test_get_aspect_ratios_zip_with_landscape_image():
     zip_path, tmp_dir = _create_temp_zip_with_image(400, 200)
     try:
-        result = get_aspect_ratios([zip_path])
+        result = FileThumbnailer.get_aspect_ratios([zip_path])
         assert zip_path in result
         assert abs(result[zip_path] - 2.0) < 0.1
     finally:
@@ -101,7 +101,7 @@ def test_get_aspect_ratios_zip_with_landscape_image():
 def test_get_aspect_ratios_zip_with_portrait_image():
     zip_path, tmp_dir = _create_temp_zip_with_image(200, 400)
     try:
-        result = get_aspect_ratios([zip_path])
+        result = FileThumbnailer.get_aspect_ratios([zip_path])
         assert zip_path in result
         assert abs(result[zip_path] - 0.5) < 0.1
     finally:
@@ -114,7 +114,7 @@ def test_get_aspect_ratios_mixed_image_and_zip():
     img_path = _create_temp_image(300, 100)
     zip_path, tmp_dir = _create_temp_zip_with_image(100, 400)
     try:
-        result = get_aspect_ratios([img_path, zip_path])
+        result = FileThumbnailer.get_aspect_ratios([img_path, zip_path])
         if img_path in result:
             assert abs(result[img_path] - 3.0) < 0.1
         assert zip_path in result

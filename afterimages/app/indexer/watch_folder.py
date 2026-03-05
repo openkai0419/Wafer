@@ -1,6 +1,7 @@
 import os
 import queue
 import threading
+import time
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 from afterimages.utils.profiling import profiler
@@ -9,6 +10,44 @@ from .progress_notifier import ProgressAggregator
 
 DISABLE_MODIFY_EVENT = False
 _BATCH_TIMEOUT = 0.5
+_STABLE_THRESHOLD = 2.0
+
+
+def _stat_signature(path):
+    try:
+        st = os.stat(path)
+        return (st.st_mtime_ns, st.st_size)
+    except OSError:
+        return None
+
+
+def _extract_stable(pending):
+    now = time.monotonic()
+    stable = set()
+    for p, (ts, prev_sig) in list(pending.items()):
+        if now - ts < _STABLE_THRESHOLD:
+            continue
+        cur_sig = _stat_signature(p)
+        if cur_sig is None:
+            stable.add(p)
+        elif cur_sig != prev_sig:
+            pending[p] = (now, cur_sig)
+        else:
+            stable.add(p)
+    for p in stable:
+        del pending[p]
+    if stable:
+        AppLogger.debug(f'[stabilize] {len(stable)} files stabilized, {len(pending)} still pending')
+    return stable
+
+
+def _drain_queue(q, first_item):
+    batch = [first_item]
+    while True:
+        try:
+            batch.append(q.get_nowait())
+        except queue.Empty:
+            return batch
 
 
 class _FileEventHandler(FileSystemEventHandler):
@@ -20,7 +59,7 @@ class _FileEventHandler(FileSystemEventHandler):
         if event.is_directory:
             self._inbox.put(('folder', event.src_path))
         else:
-            self._inbox.put(('changed', event.src_path))
+            self._inbox.put(('created', event.src_path))
 
     def on_modified(self, event):
         if DISABLE_MODIFY_EVENT or event.is_directory:
@@ -38,6 +77,68 @@ class _FileEventHandler(FileSystemEventHandler):
             self._inbox.put(('folder', event.src_path))
             return
         self._inbox.put(('moved', (event.src_path, event.dest_path)))
+
+
+class _EventAccumulator:
+
+    def __init__(self):
+        self._pending = {}
+        self._notified = set()
+        self._ready = set()
+        self._deleted = set()
+        self._moved = {}
+        self._folder_dirty = False
+
+    def on_created(self, path):
+        self._pending.pop(path, None)
+        self._notified.discard(path)
+        self._ready.add(path)
+
+    def on_changed(self, path, now):
+        if path in self._ready:
+            return
+        if path not in self._notified and path not in self._pending:
+            self._ready.add(path)
+            self._notified.add(path)
+        else:
+            self._pending[path] = (now, _stat_signature(path))
+
+    def on_deleted(self, path):
+        self._pending.pop(path, None)
+        self._notified.discard(path)
+        self._ready.discard(path)
+        self._deleted.add(path)
+
+    def on_moved(self, src, dst):
+        self._pending.pop(src, None)
+        self._notified.discard(src)
+        self._ready.discard(src)
+        self._moved[src] = dst
+
+    def on_folder(self):
+        self._folder_dirty = True
+
+    def consume_folder_dirty(self):
+        if self._folder_dirty:
+            self._folder_dirty = False
+            return True
+        return False
+
+    def drain(self):
+        stable = _extract_stable(self._pending)
+        stable.update(self._ready)
+        self._ready.clear()
+        deleted = set(self._deleted)
+        moved = dict(self._moved)
+        self._deleted.clear()
+        self._moved.clear()
+        return stable, deleted, moved
+
+    def drain_all(self):
+        self._ready.update(self._pending)
+        self._pending.clear()
+        self._notified.clear()
+        return self.drain()
 
 
 class FolderWatcher:
@@ -93,40 +194,32 @@ class FolderWatcher:
             self._observer = None
 
     def _loop(self):
-        changed = set()
-        deleted = set()
-        moved = {}
-        folder_dirty = False
+        acc = _EventAccumulator()
         while not self._stop.is_set():
             try:
                 item = self._q.get(timeout=_BATCH_TIMEOUT)
             except queue.Empty:
-                self._flush(changed, deleted, moved)
+                self._flush(*acc.drain())
                 continue
-            batch = [item]
-            while True:
-                try:
-                    batch.append(self._q.get_nowait())
-                except queue.Empty:
-                    break
-            for kind, data in batch:
-                if kind == 'changed':
-                    changed.add(data)
+            now = time.monotonic()
+            for kind, data in _drain_queue(self._q, item):
+                if kind == 'created':
+                    acc.on_created(data)
+                elif kind == 'changed':
+                    acc.on_changed(data, now)
                 elif kind == 'deleted':
-                    deleted.add(data)
+                    acc.on_deleted(data)
                 elif kind == 'moved':
-                    src, dst = data
-                    moved[src] = dst
+                    acc.on_moved(*data)
                 elif kind == 'folder':
-                    folder_dirty = True
+                    acc.on_folder()
                 elif kind in ('rescan', 'ignore', 'cleanup'):
-                    self._flush(changed, deleted, moved)
+                    self._flush(*acc.drain_all())
                     self._exec(kind, data)
                 elif kind == '__stop__':
                     return
-            if folder_dirty:
+            if acc.consume_folder_dirty():
                 self._progress.send_event('folderchanged')
-                folder_dirty = False
 
     def _flush(self, changed, deleted, moved):
         if moved:
@@ -134,13 +227,10 @@ class FolderWatcher:
             changed -= set(moved.keys())
             self._exec('rename', list(moved.items()))
             changed.update(new_at_dst)
-            moved.clear()
         if deleted:
             self._exec('remove', list(deleted))
-            deleted.clear()
         if changed:
             self._exec('update', list(changed))
-            changed.clear()
 
     @profiler.profile
     def _exec(self, cmd, data=None):

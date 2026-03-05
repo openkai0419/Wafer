@@ -2,7 +2,7 @@ from afterimages.core.actions.command.core import CommandRegistry, CommandMeta, 
 
 
 def test_get_commands_by_category_includes_dot_ids():
-    registry = CommandRegistry()
+    registry = CommandRegistry.instance()
     prev = registry.get_all_commands()
     try:
         registry._commands = {}

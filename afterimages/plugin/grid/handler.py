@@ -2,7 +2,7 @@ from PySide6 import QtCore, QtGui
 
 from ...utils.logs import AppLogger
 from ..registry import PluginRegistry
-from .base import BaseGridPlugin
+from .base import BaseGridPlugin, ImageGridPlugin, WidgetGridPlugin
 
 VIEWER_THUMBNAIL_DEFAULT_SIZE = 512
 
@@ -47,37 +47,65 @@ class GridResolver:
     def resolve(self, path: str) -> type[BaseGridPlugin] | None:
         return self.registry.resolve(path)
 
-    def has_widget(self, path: str) -> bool:
-        plugin_cls = self.registry.resolve(path)
-        return plugin_cls is not None and plugin_cls.WIDGET_CLASS is not None
+    def is_widget_plugin(self, path: str) -> bool:
+        return isinstance(self.registry.resolve_instance(path), WidgetGridPlugin)
 
     def load(self, path: str, size=None) -> QtGui.QImage | None:
-        plugin_cls = self.registry.resolve(path)
-        if plugin_cls is not None and plugin_cls.WIDGET_CLASS is None:
-            result = plugin_cls().load(path, size)
+        instance = self.registry.resolve_instance(path)
+        if isinstance(instance, ImageGridPlugin):
+            result = instance.load(path, size)
             if result is not None:
                 return result
         return self._fallback_load(path, size)
 
-    def render(self, path: str, widget, size=None):
-        plugin_cls = self.registry.resolve(path)
-        if plugin_cls is not None and plugin_cls.WIDGET_CLASS is not None:
-            plugin_cls().render(path, widget, size)
-
-    def release(self, plugin_name: str, widget):
-        plugin_cls = self.registry.get(plugin_name)
-        if plugin_cls is not None and plugin_cls.WIDGET_CLASS is not None:
-            plugin_cls().release(widget)
-
-    def select(self, plugin_name: str, widget, path: str):
-        plugin_cls = self.registry.get(plugin_name)
-        if plugin_cls is not None and plugin_cls.WIDGET_CLASS is not None:
-            plugin_cls().select(widget, path)
-
-    def deselect(self, plugin_name: str, widget):
-        plugin_cls = self.registry.get(plugin_name)
-        if plugin_cls is not None and plugin_cls.WIDGET_CLASS is not None:
-            plugin_cls().deselect(widget)
-
 
 grid_resolver = GridResolver()
+
+
+class WidgetNotifier:
+
+    def __init__(self, registry: PluginRegistry):
+        self._registry = registry
+        self._names: dict[int, str] = {}
+
+    def plugin_name(self, index: int) -> str | None:
+        return self._names.get(index)
+
+    def _notify(self, index: int, method: str, widget):
+        name = self._names.get(index)
+        if not name:
+            return
+        instance = self._registry.instance(name)
+        if isinstance(instance, WidgetGridPlugin):
+            getattr(instance, method)(widget)
+
+    def bind(self, index: int, plugin_name: str, widget, path: str, size=None):
+        self._names[index] = plugin_name
+        instance = self._registry.instance(plugin_name)
+        if isinstance(instance, WidgetGridPlugin):
+            instance.render(widget, path, size)
+
+    def unbind(self, index: int, widget):
+        name = self._names.pop(index, None)
+        if not name:
+            return
+        instance = self._registry.instance(name)
+        if isinstance(instance, WidgetGridPlugin):
+            if widget.isVisible():
+                instance.disappear(widget)
+            instance.release(widget)
+
+    def appear(self, index: int, widget):
+        self._notify(index, 'appear', widget)
+
+    def disappear(self, index: int, widget):
+        self._notify(index, 'disappear', widget)
+
+    def select(self, index: int, widget):
+        self._notify(index, 'select', widget)
+
+    def deselect(self, index: int, widget):
+        self._notify(index, 'deselect', widget)
+
+    def clear(self):
+        self._names.clear()

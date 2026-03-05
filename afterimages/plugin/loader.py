@@ -5,6 +5,7 @@ import io
 import os
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -49,13 +50,29 @@ def _run_subprocess(cmd: list[str], on_progress=None):
     if sys.platform == 'win32':
         kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
     proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, **kwargs)
-    while proc.poll() is None:
-        if on_progress:
-            on_progress()
-        time.sleep(0.05)
-    if proc.returncode != 0:
-        stderr_out = proc.stderr.read().decode(errors='replace') if proc.stderr else ''
-        raise RuntimeError(f'pip exited with code {proc.returncode}: {stderr_out}')
+    stderr_chunks: list[bytes] = []
+
+    def _drain_stderr():
+        while True:
+            data = proc.stderr.read(4096)
+            if not data:
+                break
+            stderr_chunks.append(data)
+
+    drain_thread = threading.Thread(target=_drain_stderr, daemon=True)
+    drain_thread.start()
+    try:
+        while proc.poll() is None:
+            if on_progress:
+                on_progress()
+            time.sleep(0.05)
+        drain_thread.join(timeout=5)
+        if proc.returncode != 0:
+            stderr_out = b''.join(stderr_chunks).decode(errors='replace')
+            raise RuntimeError(f'pip exited with code {proc.returncode}: {stderr_out}')
+    finally:
+        if proc.stderr:
+            proc.stderr.close()
 
 
 def _install_requirements(plugin_dir: str, on_progress=None) -> bool:
@@ -81,7 +98,7 @@ def _install_requirements(plugin_dir: str, on_progress=None) -> bool:
         return False
 
 
-def install_plugin_deps(plugin_dir: str) -> int:
+def install_plugin_deps_inprocess(plugin_dir: str) -> int:
     vendor_dir = os.path.join(plugin_dir, _PACKAGES_DIR)
     req_file = os.path.join(plugin_dir, 'requirements.txt')
     os.makedirs(vendor_dir, exist_ok=True)
@@ -139,6 +156,8 @@ def _setup_dll_directory(folder: str):
 
 class PluginLoader:
 
+    _deferred_commands: list[type] = []
+
     def __init__(self, plugin_dir: str, registries: dict[str, PluginRegistry], *, skip_install: bool = False):
         self._plugin_dir = plugin_dir
         self._registries = registries
@@ -190,6 +209,15 @@ class PluginLoader:
 
         _setup_dll_directory(folder)
 
+        total, discovered = self._import_and_register(name, folder)
+
+        if did_install and discovered:
+            self._run_post_install(name, folder, discovered, on_progress)
+            _setup_dll_directory(folder)
+
+        return total
+
+    def _import_and_register(self, name: str, folder: str) -> tuple[int, list[type]]:
         pkg_name = f'_plugins_{name}'
         if pkg_name not in sys.modules:
             spec = importlib.util.spec_from_file_location(
@@ -207,7 +235,7 @@ class PluginLoader:
                 spec.loader.exec_module(mod)
 
         total = 0
-        discovered_classes = []
+        discovered = []
         for filename in sorted(os.listdir(folder)):
             if not filename.endswith('.py') or filename.startswith('_'):
                 continue
@@ -218,7 +246,6 @@ class PluginLoader:
             try:
                 sub_spec = importlib.util.spec_from_file_location(
                     module_name, filepath,
-                    submodule_search_locations=[],
                 )
                 sub_mod = importlib.util.module_from_spec(sub_spec)
                 sys.modules[module_name] = sub_mod
@@ -228,26 +255,16 @@ class PluginLoader:
                     registry = self._registries.get(registry_key)
                     if registry is not None:
                         registry.register(plugin_cls)
-                        discovered_classes.append(plugin_cls)
+                        discovered.append(plugin_cls)
                         total += 1
                 for cmd_cls in _discover_command_classes(sub_mod):
-                    try:
-                        cmd_cls.register()
-                        total += 1
-                    except Exception as e:
-                        AppLogger.warning(
-                            f'[PluginLoader] Failed to register command: {cmd_cls.__name__} ({e})', exc=e
-                        )
+                    PluginLoader._deferred_commands.append(cmd_cls)
             except Exception as e:
                 AppLogger.warning(
                     f'[PluginLoader] Failed to load module: {module_name} ({e})', exc=e
                 )
 
-        if did_install and discovered_classes:
-            self._run_post_install(name, folder, discovered_classes, on_progress)
-            _setup_dll_directory(folder)
-
-        return total
+        return total, discovered
 
     def _run_post_install(self, name, folder, classes, on_progress=None):
         seen = set()
@@ -261,6 +278,17 @@ class PluginLoader:
                 AppLogger.warning(
                     f'[PluginLoader] post_install failed for {plugin_cls.NAME}: {e}', exc=e
                 )
+
+    @staticmethod
+    def register_extension_commands():
+        for cmd_cls in PluginLoader._deferred_commands:
+            try:
+                cmd_cls.register()
+            except Exception as e:
+                AppLogger.warning(
+                    f'[PluginLoader] Failed to register command: {cmd_cls.__name__} ({e})', exc=e
+                )
+        PluginLoader._deferred_commands.clear()
 
 
 def any_needs_install() -> bool:

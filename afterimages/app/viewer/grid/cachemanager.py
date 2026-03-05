@@ -122,8 +122,9 @@ class AdditionalWidgetPool:
             widget = pool.pop()
             widget.setParent(parent)
         else:
+            from afterimages.plugin.grid.base import WidgetGridPlugin
             plugin_cls = self._grid.registry.get(plugin_name)
-            if plugin_cls is None or plugin_cls.WIDGET_CLASS is None:
+            if plugin_cls is None or not issubclass(plugin_cls, WidgetGridPlugin):
                 return None
             widget = plugin_cls.WIDGET_CLASS(parent)
         self._in_use[widget] = plugin_name
@@ -144,12 +145,12 @@ class AdditionalWidgetPool:
         if plugin_name is None:
             return
         widget.hide()
-        self._grid.release(plugin_name, widget)
         self._pools.setdefault(plugin_name, []).append(widget)
 
     def warm_up(self, parent: QtWidgets.QWidget):
+        from afterimages.plugin.grid.base import WidgetGridPlugin
         for plugin_cls in self._grid.registry.list_all():
-            if plugin_cls.WIDGET_CLASS is None:
+            if not issubclass(plugin_cls, WidgetGridPlugin):
                 continue
             name = plugin_cls.NAME
             if self._pools.get(name):

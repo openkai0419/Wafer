@@ -6,6 +6,18 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from afterimages.utils.formatting import dpix
 
 
+@pytest.fixture(autouse=True, scope="module")
+def _configure_command_store(tmp_path_factory):
+    from afterimages.core.actions.command.state import CommandOptionStore
+    prev = CommandOptionStore._instance, CommandOptionStore._initialized, CommandOptionStore._default_path
+    CommandOptionStore._instance = None
+    CommandOptionStore._initialized = False
+    CommandOptionStore._default_path = None
+    CommandOptionStore.configure(tmp_path_factory.mktemp("grid") / "cmd.json")
+    yield
+    CommandOptionStore._instance, CommandOptionStore._initialized, CommandOptionStore._default_path = prev
+
+
 def test_compile():
     py_compile.compile('afterimages/app/viewer/grid/grid_view.py')
 
@@ -141,9 +153,11 @@ class TestOverlayCoordinateMapping:
         with patch('afterimages.app.viewer.grid.grid_view.grid_resolver'):
             gv = self.GridView(MagicMock())
             qtbot.addWidget(gv)
+            gv.show()
             gv.resize(800, 600)
             QtWidgets.QApplication.processEvents()
             gv._scene.setSceneRect(0, 0, 800, 5000)
+            QtWidgets.QApplication.processEvents()
             for scroll_y in [0, 200, 1000, 3000]:
                 gv.verticalScrollBar().setValue(scroll_y)
                 QtWidgets.QApplication.processEvents()
@@ -264,7 +278,6 @@ class TestEnsureWidgetVisible:
         fake.widgets = {}
         fake._additional_widgets = {}
         fake.active_loaders = {}
-        fake._widget_plugin_names = {}
         fake._needs_reload = lambda item, size: self.GridView._needs_reload(fake, item, size)
         return fake
 
@@ -444,7 +457,6 @@ class TestCachePathKeyIntegration:
         fake.widgets = {}
         fake._additional_widgets = {}
         fake.active_loaders = {}
-        fake._widget_plugin_names = {}
         fake._needs_reload = lambda item, size: self.GridView._needs_reload(fake, item, size)
 
         small_rect = QtCore.QRectF(0, 0, 200, 200)
@@ -487,7 +499,6 @@ class TestEnsureAdditionalWidget:
         fake.widgets = {}
         fake._additional_widgets = {}
         fake.active_loaders = {}
-        fake._widget_plugin_names = {}
         fake._needs_reload = lambda item, size: self.GridView._needs_reload(fake, item, size)
         return fake
 
@@ -495,10 +506,14 @@ class TestEnsureAdditionalWidget:
     @patch('afterimages.app.viewer.grid.grid_view.thread_pool')
     @patch('afterimages.app.viewer.grid.grid_view.ImageLoaderRunnable')
     def test_widget_class_plugin_creates_additional_widget(self, MockLoader, mock_thread, mock_resolver):
-        mock_plugin = MagicMock()
-        mock_plugin.WIDGET_CLASS = MagicMock
-        mock_plugin.NAME = 'test_vid'
-        mock_resolver.resolve.return_value = mock_plugin
+        from afterimages.plugin.grid.base import WidgetGridPlugin
+
+        class _StubWidgetPlugin(WidgetGridPlugin):
+            NAME = 'test_vid'
+            EXTENSIONS = ('.mp4',)
+            WIDGET_CLASS = MagicMock
+
+        mock_resolver.resolve.return_value = _StubWidgetPlugin
         fake = self._make_fake(['test.mp4'])
         fake.rects = {0: QtCore.QRectF(0, 0, 200, 200)}
         mock_widget = MagicMock()
@@ -508,8 +523,8 @@ class TestEnsureAdditionalWidget:
 
         fake.additional_pool.acquire.assert_called_once()
         assert 0 in fake._additional_widgets
-        assert fake._widget_plugin_names[0] == 'test_vid'
-        mock_resolver.render.assert_called_once()
+        fake._notifier.bind.assert_called_once_with(
+            0, 'test_vid', mock_widget, 'test.mp4', fake.rects[0].size())
         MockLoader.assert_not_called()
         fake.pixmap_item_pool.acquire.assert_not_called()
 
@@ -517,9 +532,14 @@ class TestEnsureAdditionalWidget:
     @patch('afterimages.app.viewer.grid.grid_view.thread_pool')
     @patch('afterimages.app.viewer.grid.grid_view.ImageLoaderRunnable')
     def test_existing_additional_widget_not_recreated(self, MockLoader, mock_thread, mock_resolver):
-        mock_plugin = MagicMock()
-        mock_plugin.WIDGET_CLASS = MagicMock
-        mock_resolver.resolve.return_value = mock_plugin
+        from afterimages.plugin.grid.base import WidgetGridPlugin
+
+        class _StubWidgetPlugin(WidgetGridPlugin):
+            NAME = 'test_vid'
+            EXTENSIONS = ('.mp4',)
+            WIDGET_CLASS = MagicMock
+
+        mock_resolver.resolve.return_value = _StubWidgetPlugin
         fake = self._make_fake(['test.mp4'])
         fake.rects = {0: QtCore.QRectF(0, 0, 200, 200)}
         fake._additional_widgets = {0: MagicMock()}
@@ -540,7 +560,6 @@ class TestRecycleWidget:
         fake = MagicMock()
         fake.widgets = {0: MagicMock()}
         fake._additional_widgets = {}
-        fake._widget_plugin_names = {}
         fake.active_loaders = {}
 
         self.GridView._recycle_widget(fake, 0)
@@ -548,28 +567,87 @@ class TestRecycleWidget:
         fake.pixmap_item_pool.release.assert_called_once()
         assert 0 not in fake.widgets
 
-    def test_recycle_additional_widget(self):
+    def test_recycle_additional_widget_calls_unbind(self):
         fake = MagicMock()
         fake.widgets = {}
         widget = MagicMock()
         fake._additional_widgets = {0: widget}
-        fake._widget_plugin_names = {0: 'test_vid'}
         fake.active_loaders = {}
 
         self.GridView._recycle_widget(fake, 0)
 
+        fake._notifier.unbind.assert_called_once_with(0, widget)
         fake.additional_pool.release.assert_called_once_with(widget)
         assert 0 not in fake._additional_widgets
-        assert 0 not in fake._widget_plugin_names
 
     def test_recycle_cancels_active_loader(self):
         fake = MagicMock()
         fake.widgets = {}
         fake._additional_widgets = {}
-        fake._widget_plugin_names = {}
         loader = MagicMock()
         fake.active_loaders = {0: loader}
 
         self.GridView._recycle_widget(fake, 0)
 
         loader.cancel.assert_called_once()
+
+
+class TestAutoScroll:
+    def test_start_auto_scroll_stores_base_speed(self):
+        gv = MagicMock()
+        gv._scroll_speed = 100
+        gv._autoscroll_base_speed = 50
+        gv._speed_callback = None
+        anim = MagicMock()
+        gv._auto_scroll_anim = anim
+        bar = MagicMock()
+        bar.value.return_value = 0
+        bar.minimum.return_value = 0
+        bar.maximum.return_value = 10000
+        gv._primary_bar.return_value = bar
+        gv._is_primary_reversed.return_value = False
+
+        from afterimages.app.viewer.grid.grid_view import GridView
+        GridView.start_auto_scroll(gv, speed=30, base_speed=100)
+        assert gv._autoscroll_base_speed == 100
+        assert gv._scroll_speed == 30
+
+    def test_start_auto_scroll_default_base_speed(self):
+        gv = MagicMock()
+        gv._scroll_speed = 100
+        gv._autoscroll_base_speed = 50
+        gv._speed_callback = None
+        anim = MagicMock()
+        gv._auto_scroll_anim = anim
+        bar = MagicMock()
+        bar.value.return_value = 0
+        bar.minimum.return_value = 0
+        bar.maximum.return_value = 10000
+        gv._primary_bar.return_value = bar
+        gv._is_primary_reversed.return_value = False
+
+        from afterimages.app.viewer.grid.grid_view import GridView
+        GridView.start_auto_scroll(gv, speed=25)
+        assert gv._autoscroll_base_speed == 50
+
+    def test_get_adjusted_scroll_speed_scales_with_base(self):
+        gv = MagicMock()
+        gv.base_height = 100
+        gv.screen_width = 1920
+
+        from afterimages.app.viewer.grid.grid_view import GridView
+        slow = GridView.get_adjusted_scroll_speed(gv, 10)
+        fast = GridView.get_adjusted_scroll_speed(gv, 100)
+        assert fast > slow
+
+    def test_speed_callback_uses_base_speed_attribute(self):
+        gv = MagicMock()
+        gv._autoscroll_base_speed = 200
+        gv.base_height = 100
+        gv.screen_width = 1920
+
+        from afterimages.app.viewer.grid.grid_view import GridView
+        expected = GridView.get_adjusted_scroll_speed(gv, 200)
+
+        callback = lambda: GridView.get_adjusted_scroll_speed(gv, gv._autoscroll_base_speed)
+        assert callback() == expected

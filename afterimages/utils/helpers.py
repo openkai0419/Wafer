@@ -17,19 +17,7 @@ def invoke(obj: Any, name: str) -> Any:
 
 
 def invoke_int(obj: Any, name: str, default: int = 0) -> int:
-    v = invoke(obj, name)
-    if v is None:
-        return int(default)
-    if isinstance(v, int) and not isinstance(v, bool):
-        return int(v)
-    if isinstance(v, str):
-        s = v.strip()
-        return int(s) if s.isdigit() else int(default)
-    try:
-        return int(v)
-    except Exception as e:
-        AppLogger.warning(f"invoke_int failed: {type(obj).__name__}.{name}", exc=e)
-        return int(default)
+    return to_int(invoke(obj, name), default)
 
 
 def to_int(v: Any, default: int = 0) -> int:

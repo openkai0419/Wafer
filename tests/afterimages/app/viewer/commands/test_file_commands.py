@@ -6,7 +6,7 @@ from PySide6 import QtWidgets
 from afterimages.core.actions.bridge import Menu
 from afterimages.app.viewer.commands import file_commands
 from afterimages.app.viewer.commands.file_commands import FileCommands
-from afterimages.core.platform.file_operations import get_os_new_folder_name
+from afterimages.core.platform.path_utils import get_os_new_folder_name
 
 
 def test_file_commands_register_paths(qtbot):

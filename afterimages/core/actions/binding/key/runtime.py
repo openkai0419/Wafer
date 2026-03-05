@@ -1,16 +1,18 @@
-from typing import Set, Dict, List, Callable, Any, Tuple, Deque, Union
+from __future__ import annotations
+
+from typing import Callable, Any, Deque
 from collections import deque
 from PySide6 import QtCore, QtGui
 from afterimages.utils.logs import AppLogger
 
-KeySpec = Union[int, str]
+KeySpec = int | str
 
 class KeyPressState:
     def __init__(self):
-        self.pressed: Set[int] = set()
-        self.order: List[int] = []
-        self.fired: Set[Tuple[int, ...]] = set()
-        self.consumed: Dict[int, bool] = {}
+        self.pressed: set[int] = set()
+        self.order: list[int] = []
+        self.fired: set[tuple[int, ...]] = set()
+        self.consumed: dict[int, bool] = {}
     def add_pressed(self, key: int):
         k = int(key)
         if k in self.pressed:
@@ -22,13 +24,13 @@ class KeyPressState:
         self.pressed.discard(k)
         self.order = [x for x in self.order if x != k]
 
-    def mark_fired(self, combo: Tuple[int, ...]):
+    def mark_fired(self, combo: tuple[int, ...]):
         c = tuple(int(x) for x in combo)
         self.fired.add(c)
         for key in c:
             self.consumed[int(key)] = True
 
-    def is_fired(self, combo: Tuple[int, ...]) -> bool:
+    def is_fired(self, combo: tuple[int, ...]) -> bool:
         return tuple(combo) in self.fired
     def is_consumed(self, key: int) -> bool:
         return self.consumed.get(key, False)
@@ -50,15 +52,15 @@ class KeyPressState:
 class RecentEventDeduper:
     def __init__(self, limit: int = 128):
         self._limit = int(limit) if limit and limit > 0 else 128
-        self._queue: Deque[Tuple[Any, ...]] = deque()
-        self._set: set[Tuple[Any, ...]] = set()
+        self._queue: Deque[tuple[Any, ...]] = deque()
+        self._set: set[tuple[Any, ...]] = set()
     def set_limit(self, n: int):
         self._limit = int(n) if n and n > 0 else self._limit
         self._shrink()
     def clear(self):
         self._queue.clear()
         self._set.clear()
-    def add_and_check(self, stamp: Tuple[Any, ...]) -> bool:
+    def add_and_check(self, stamp: tuple[Any, ...]) -> bool:
         if stamp in self._set:
             return False
         self._queue.append(stamp)
@@ -72,7 +74,7 @@ class RecentEventDeduper:
 
 class ScanCodeMapper:
     def __init__(self):
-        self._map: Dict[int, Dict[int, int]] = {}
+        self._map: dict[int, dict[int, int]] = {}
     def record(self, wid: int, sc: int, key: int) -> int:
         m = self._map.setdefault(int(wid), {})
         if sc not in m:
@@ -86,8 +88,8 @@ class ScanCodeMapper:
 
 class KeyListenerRegistry:
     def __init__(self):
-        self._press: Dict[int, List[Callable[..., None]]] = {}
-        self._release: Dict[int, List[Callable[..., None]]] = {}
+        self._press: dict[int, list[Callable[..., None]]] = {}
+        self._release: dict[int, list[Callable[..., None]]] = {}
     def add_press(self, wid: int, cb: Callable[..., None]):
         lst = self._press.setdefault(int(wid), [])
         if cb not in lst:
@@ -201,21 +203,12 @@ class KeyNameResolver:
         if pretty and name in self._pretty_names:
             return self._pretty_names[name]
         return name
-    def format_keys(self, keys: List[int], sep: str = '+', pretty: bool = False) -> str:
+    def format_keys(self, keys: list[int], sep: str = '+', pretty: bool = False) -> str:
         return sep.join(self.key_name(k, pretty) for k in keys)
-    def format_combo(self, combo: Tuple[int, ...], pretty: bool = False) -> str:
+    def format_combo(self, combo: tuple[int, ...], pretty: bool = False) -> str:
         return self.format_keys(list(combo), '+', pretty)
     def key_text_from_event(self, e: QtGui.QKeyEvent, pretty: bool = False) -> str:
-        key = e.key()
-        mods = e.modifiers()
-        keys = []
-        if mods & QtCore.Qt.KeyboardModifier.ControlModifier:
-            keys.append(self.to_key_code('Control'))
-        if mods & QtCore.Qt.KeyboardModifier.AltModifier:
-            keys.append(self.to_key_code('Alt'))
-        if mods & QtCore.Qt.KeyboardModifier.ShiftModifier:
-            keys.append(self.to_key_code('Shift'))
-        if mods & QtCore.Qt.KeyboardModifier.MetaModifier:
-            keys.append(self.to_key_code('Meta'))
-        keys.append(key)
+        from .combo import modifier_keys_from_qt
+        keys = modifier_keys_from_qt(e.modifiers())
+        keys.append(e.key())
         return self.format_keys(keys, '+', pretty)

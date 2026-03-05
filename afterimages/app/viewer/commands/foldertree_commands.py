@@ -53,7 +53,7 @@ def remove_from_view(ctx):
     if not hasattr(tree, "roots") or path not in tree.roots or not hasattr(tree, "remove_root"):
         return
     result = ConfirmDialog.ask(
-        f"Are you sure to Remove this folder?  (This does not delete folders)\\  {path}",
+        f"Are you sure to Remove this folder?  (This does not delete folders)\n  {path}",
         title="Confirm",
         buttons=("Remove", "Cancel"),
         parent=tree,
@@ -77,7 +77,7 @@ def ignore_folder(ctx):
     if hasattr(tree, "roots") and path in tree.roots:
         return
     result = ConfirmDialog.ask(
-        f"Are you sure to Ingore this folder?  (This does not delete folders)\n  {path}",
+        f"Are you sure to Ignore this folder?  (This does not delete folders)\n  {path}",
         title="Confirm",
         buttons=("Ignore", "Cancel"),
         parent=tree,
@@ -189,6 +189,7 @@ def child_folder(ctx, trigger_search: bool = True):
 
 class FolderTreeCommands(ActionKit.MenuBase):
     NAME = "FolderTree"
+    PRIORITY = 30
 
     @classmethod
     def commands(cls):

@@ -4,7 +4,7 @@ from __future__ import annotations
 def test_int_default_99_allows_100(qtbot, tmp_path):
     from afterimages.core.actions.command.core import CommandMeta, CommandParam
     from afterimages.core.actions.command.state import CommandOptionStore
-    from afterimages.core.actions.command.ui import CommandOptionsDialog
+    from afterimages.core.actions.command.option_dialog import CommandOptionsDialog
 
     prev_instance = getattr(CommandOptionStore, "_instance", None)
     prev_initialized = getattr(CommandOptionStore, "_initialized", False)
@@ -32,7 +32,7 @@ def test_int_default_99_allows_100(qtbot, tmp_path):
 def test_float_default_99_allows_100(qtbot, tmp_path):
     from afterimages.core.actions.command.core import CommandMeta, CommandParam
     from afterimages.core.actions.command.state import CommandOptionStore
-    from afterimages.core.actions.command.ui import CommandOptionsDialog
+    from afterimages.core.actions.command.option_dialog import CommandOptionsDialog
 
     prev_instance = getattr(CommandOptionStore, "_instance", None)
     prev_initialized = getattr(CommandOptionStore, "_initialized", False)

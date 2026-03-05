@@ -62,6 +62,8 @@ class AdaptiveThreadPool:
         return cls._instance
 
     def __init__(self, base_limit=3, max_limit=-2, cpu_threshold=65):
+        if getattr(self, '_initialized', False):
+            return
         super().__init__()
         self.pool = QtCore.QThreadPool.globalInstance()
 
@@ -83,8 +85,6 @@ class AdaptiveThreadPool:
         self.cpu_threshold = cpu_threshold
 
         self.pool.setMaxThreadCount(self.base_limit)
-
-        self.cpu_threshold = cpu_threshold
 
         self._proxy = _AdjustProxy()
         self._proxy.requestDelta.connect(self._on_delta_requested, QtCore.Qt.QueuedConnection)

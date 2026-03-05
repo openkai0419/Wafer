@@ -7,7 +7,7 @@ class ProcessMatcher:
 
     def __init__(self, cmd_list):
         if not cmd_list:
-            raise ValueError('cmd_listは空にできません')
+            raise ValueError('cmd_list must not be empty')
         self._raw_cmd = list(cmd_list)
         self.exe_path = self._normalize_path(cmd_list[0])
         self.args_set = set(cmd_list[1:])

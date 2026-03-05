@@ -21,6 +21,11 @@
 - Command.runのargsは一時的。get_args/set_argsと独立
 - checkable状態の真実のソースはCommandOptionStore。コマンド関数内で状態変更したら必ずCommand.set_checked()を呼ぶ
 - action_groupのIDはコマンドのpath末尾と完全一致。表示用ラベルを含めない
+- シングルトン: actions以下は全てinstance()パターンに統一。__new__やdict pattern禁止。テストでは_instance=Noneでリセット
+- CommandOptionStore.configure()はinstance()前に必ず呼ぶ。テストではtmp_pathで初期化し、finally内で_instance/_default_pathを復元
+- re-exportだけのファイル(ui.py等)は作らず実モジュールから直接importさせる
+- KeyCombo/KeyChordSpec等の型エイリアスもcombo.pyに一元化
+- modifier_keys_from_qt()でQt修飾キー→Key_*変換を一元管理（combo.py）
 
 ■ メニュー/バインディング
 - ホットキー解決は_resolve_hotkeys_batchでバッチ取得。ループ内個別呼出禁止
@@ -36,14 +41,25 @@
 
 ■ プラグイン設計の注意
 - CollectorResultはdataclass。dict扱いにはto_dict()が必要
+- PluginRegistryはregister()時にインスタンスを生成・キャッシュ。resolve_instance(path)/instance(name)で取得。resolverはissubclass(cls,...)の代わりにisinstance(instance,...)を使用
 - PRIORITY大=高優先。EXTENSIONS=()は全ファイルマッチ
 - Collectorはmeta_info+statusのみ返す。name/aspect/file_hashはPhase1で設定
 - meta_infoキー衝突回避はプラグイン開発者責任（プレフィックス推奨）
 - Grid/ViewerのWIDGET_CLASSとload()は排他。Widget生成はシステム管理
+- WidgetViewerPlugin.render(widget, path)とWidgetGridPlugin.render(widget, path, size)で引数順を統一。操作対象のwidgetが先
+- WidgetViewerPlugin.clear(widget)とWidgetGridPlugin.release(widget)は異なるセマンティクス（clear=コンテンツリセット、release=リソース解放）のため名前は別
 - BaseGridPlugin.release(widget)は画面外スクロール時にAdditionalWidgetPoolから呼ばれる。GPUリソース等の重い資源を保持するWIDGET_CLASSはsuspend/resume方式で対応。cleanup()は完全破壊のみ
 - BasePlugin.post_install(plugin_dir, on_progress)はpipインストール後に呼ばれるフック。DLLダウンロード等のネイティブ依存取得に使う
 - BasePlugin.configure()は全プラグインロード後に呼ばれるフック。QSurfaceFormat等のアプリ全体設定に使う。skip_install時も呼ばれる
 - AdditionalWidgetPool.warm_up()でWIDGET_CLASS持ちプラグインのWidgetを事前生成。Window表示前にQOpenGLWidgetを子として持たせることでサーフェスタイプ切り替え（＝Window再起動）を回避
+- プラグインのGrid/View/Commandは個別に登録・登録解除できる設計を前提とする
+- コマンドはctx経由で取得し、UIがコマンド状態を参照する時はコマンド不在を考慮する
+- プラグインが読み込まれていなくてもアプリが落ちないこと（直接importしたファイル不在はエラーで可）
+- CommandRegistry.execute()は未登録コマンドでNone返却+warning。ValueErrorは投げない
+- CommandMenuBuilder.build_into()は未知コマンドIDをスキップ（warningログ）
+- バインディング実行時（mixins/ShortcutManager）は未登録コマンドをNotifier.warningでユーザー通知
+- bridge.pyのCommand.get_checked()は未登録コマンドでFalse返却。MenuSpec.exec()はbuild失敗でNone返却
+- CommandMeta.priorityフィールドで同一IDの上書き優先度を制御（高い方が勝つ、同値は後勝ち）
 
 ■ SQLite の罠
 - VIEWはマテリアライズされない。ウィンドウ関数入りVIEWをクエリ条件に使うと極端に遅い
@@ -78,6 +94,16 @@
 - PowerShellで日本語ファイルを編集するとエンコーディング破損する。日本語テキストはcreate_fileツールかPythonで書き換えること
 - ステールフレーム対策：activate時にGLコンテキスト初期化済み(_ctx存在)ならshow()しない。最初のフレーム到着時に_request_updateでshow。paintGLではawaitingかつframe未到着なら_clear_glで黒クリアし前の動画のフレームをレンダリングしない
 
+■ テスト環境の注意
+- tests/conftest.pyでload_plugins(skip_install=True)を呼んでextensionレジストリを初期化する
+- extensionのvendored numpy（.packages/numpy）がsys.modulesを汚染する。conftest.pyでプラグインロード後にnumpy関連モジュールをsys.modulesから除去すること
+- Qtウィジェットテストでスクロールバー表示等によるviewportリサイズを検証する場合はshow()を呼んでから検証する
+- pytest-qtはrequirements-dev.txtに記載。venvにインストールが必要
+- IPCテストはtests/afterimages/core/ipc/conftest.pyで_PORT_FILEをtmp_pathに隔離。アプリ実行中のポート競合とポートファイル汚染を防止する
+- GridViewを実インスタンス化するテスト（show()やprocessEvents()を使う場合）はCommandOptionStore.configure()をmodule-scoped fixtureで初期化する。未初期化だとQt遅延イベント経由で_is_center_anchor→CommandOptionStoreが呼ばれRuntimeError
+- SearchQuery.__post_init__はlist引数をtupleに変換する。テストでは比較もtupleで行う
+- テストの重複ファイル・重複メソッド名に注意。Pythonは同名メソッドを後勝ちで上書きし、pytestは1つしか収集しない
+
 ■ その他の注意
 - SelectionManager.set_selected(indexes, last)のlastはリスト内位置インデックス
 - get_resource_path()はpytest時にCWDフォールバックで_resourcesを解決
@@ -88,12 +114,15 @@
 - afterimages.plugin.__init__.pyは「推奨入口」として残す。extensionが必要に応じてafterimages.coreやafterimages.utilsに直接入ることも許容する
 - 基盤(afterimages/)は安定を重視し慎重に変更。拡張(extensions/)は自由に追加・変更・削除可能
 - PluginRegistry.registerはNAME重複時に上書き（hotreload対応）
+- PluginLoaderのspec_from_file_locationでsubmodule_search_locations=[]を渡すと全サブモジュールがpackage扱いになり相対importが壊れる（別モジュールオブジェクトが生成される）。必ずNone(デフォルト)にすること
+- extension側のMenuGroup(コマンド)はPluginLoader._deferred_commandsに一時保持し、register_extension_commands()でMainWindow/viewer commandsの後に登録する。これによりAllMenuで拡張コマンドが末尾に表示される
+- MenuGroup.PRIORITYでAllMenuのルート表示順を制御。昇順ソート（小さい値=上部、大きい値=下部）。同値は登録順維持（stable sort）。viewer標準は10刻み(10-110)、extensionは1000台を推奨
 - MemoryLimitedImageCacheはthreading.Lockでスレッドセーフ化済み
 - ViewerResolverはgrid_resolverへの依存をlazy import化。コンストラクタ引数での注入は廃止
 - ImageViewerPluginのload_contentはNone返却。ViewerResolverのフォールバック（grid_resolver.load）に委譲
 - プラグインのvendor_dirはsys.path.append（標準ライブラリ優先）
-- install_plugin_deps（frozen用）はpip._internal.cli.main.mainのみ使用。distlib等の内部API依存は禁止
+- install_plugin_deps_inprocess（frozen用）はpip._internal.cli.main.mainのみ使用。distlib等の内部API依存は禁止
 - _setup_dll_directoryは_load_oneで初回呼出+post_install後に再呼出の2箇所。両方必要
 - extensionsはafterimages.plugin（公開API）、afterimages.utils、afterimages.coreを直接import可能。afterimages.appへの依存は非推奨
-- afterimages.plugin.__init__.pyがextension向け公開API。BasePlugin/Collector/Grid/Viewer、AppLogger、load_thumbnail、CommandMeta等を再エクスポート
+- afterimages.plugin.__init__.pyがextension向け公開API。BasePlugin/Collector/Grid/Viewer、load_thumbnail、CommandMeta等を再エクスポート。AppLoggerやprofilerは公開APIに含めない（extensionはafterimages.utilsから直接import）
 - afterimages.plugin.qt_debounce_manager(QtDebounceManager)を公開。debounce(key,ms,cb)/cancel(key)でextensionからデバウンス利用可能

@@ -1,4 +1,6 @@
-from typing import Tuple, List, Optional, Dict, Any
+from __future__ import annotations
+
+from typing import Any
 
 class KeySequence:
     def __init__(self, keys):
@@ -14,7 +16,7 @@ class KeySequence:
             raise ValueError("KeySequence requires at least one key")
     
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "KeySequence":
+    def from_dict(cls, data: dict[str, Any]) -> "KeySequence":
         modifier = data.get("modifier", "")
         key = data.get("key", "")
         if not key:
@@ -23,16 +25,16 @@ class KeySequence:
             return cls([modifier, key])
         return cls([key])
     
-    def to_dict(self) -> Dict[str, str]:
+    def to_dict(self) -> dict[str, str]:
         if len(self._keys) == 1:
             return {"key": self._keys[0]}
         return {"modifier": self._keys[0], "key": self._keys[1]}
     
-    def to_tuple(self) -> Tuple[str, ...]:
+    def to_tuple(self) -> tuple[str, ...]:
         return self._keys
     
     @property
-    def modifier(self) -> Optional[str]:
+    def modifier(self) -> str | None:
         return self._keys[0] if len(self._keys) > 1 else None
     
     @property
@@ -80,11 +82,11 @@ class KeySpecCatalog:
         self.nav = ["Home", "End", "PageUp", "PageDown", "Insert", "Delete"]
     def modifier_priority(self, name: str) -> int:
         return self.modifiers.index(name) if name in self.modifiers else 9
-    def sort_modifiers(self, mods: List[str]) -> List[str]:
-        xs = [m for m in mods if m not in ("(すべて)", "(なし)")]
+    def sort_modifiers(self, mods: list[str], exclude: tuple[str, ...] = ()) -> list[str]:
+        xs = [m for m in mods if m not in exclude]
         xs.sort(key=lambda x: (self.modifier_priority(x), x))
         return xs
-    def key_sort_tuple(self, k: str) -> Tuple[int, object, str]:
+    def key_sort_tuple(self, k: str) -> tuple[int, object, str]:
         if not k:
             return (9, "", "")
         if k in self.modifiers:
@@ -105,7 +107,7 @@ class KeySpecCatalog:
         if len(k) == 1 and ("A" <= k <= "Z"):
             return (5, k, k)
         return (2, k, k)
-    def sort_main_keys(self, keys: List[str]) -> List[str]:
-        xs = [k for k in keys if k not in ("(すべて)",)]
+    def sort_main_keys(self, keys: list[str], exclude: tuple[str, ...] = ()) -> list[str]:
+        xs = [k for k in keys if k not in exclude]
         xs.sort(key=lambda k: self.key_sort_tuple(k))
         return xs

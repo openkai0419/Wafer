@@ -1,12 +1,15 @@
 from __future__ import annotations
 import inspect
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Any, Callable, Sequence
 from afterimages.utils.profiling import profiler
 from .core import register_command_defs, CommandMeta
 from afterimages.utils.logs import AppLogger
 
+MENU_SEPARATOR = "-"
+MENU_SECTION_PREFIX = ":"
 
-def split_menu_path(raw: str) -> List[str]:
+
+def split_menu_path(raw: str) -> list[str]:
     return [p for p in raw.split("/") if p]
 
 
@@ -14,37 +17,37 @@ def is_sep_token(s: Any) -> bool:
     if not isinstance(s, str):
         return False
     parts = split_menu_path(s.strip())
-    return bool(parts) and parts[-1] == "-"
+    return bool(parts) and parts[-1] == MENU_SEPARATOR
 
 
-def sep_path(s: str) -> List[str]:
+def sep_path(s: str) -> list[str]:
     parts = split_menu_path(s.strip())
-    return parts[:-1] if parts and parts[-1] == "-" else []
+    return parts[:-1] if parts and parts[-1] == MENU_SEPARATOR else []
 
 
 def is_section_token(s: Any) -> bool:
     if not isinstance(s, str):
         return False
     parts = split_menu_path(s)
-    return bool(parts) and str(parts[-1]).startswith(":")
+    return bool(parts) and str(parts[-1]).startswith(MENU_SECTION_PREFIX)
 
 
-def section_parts(s: str) -> List[str]:
+def section_parts(s: str) -> list[str]:
     parts = split_menu_path(s)
     if not parts:
         return []
     head = parts[:-1]
-    label = parts[-1][1:] if parts[-1].startswith(":") else parts[-1]
+    label = parts[-1][1:] if parts[-1].startswith(MENU_SECTION_PREFIX) else parts[-1]
     return head + [label]
 
 
 @profiler.profile
-def merge_dict_providers(*providers: Optional[Callable[[], Dict[str, Any]]]) -> Optional[Callable[[], Dict[str, Any]]]:
+def merge_dict_providers(*providers: Callable[[], dict[str, Any]] | None) -> Callable[[], dict[str, Any]] | None:
     ps = [p for p in providers if callable(p)]
     if not ps:
         return None
     def _p():
-        r: Dict[str, Any] = {}
+        r: dict[str, Any] = {}
         for fn in ps:
             try:
                 v = fn() or {}
@@ -56,7 +59,7 @@ def merge_dict_providers(*providers: Optional[Callable[[], Dict[str, Any]]]) -> 
     return _p
 
 
-def prefixed_path(base_parts: List[str], p: str) -> str:
+def prefixed_path(base_parts: list[str], p: str) -> str:
     pparts = split_menu_path(p)
     if not base_parts:
         return "/".join(pparts)
@@ -65,30 +68,29 @@ def prefixed_path(base_parts: List[str], p: str) -> str:
     return "/".join(base_parts + pparts)
 
 
-def prefixed_item_token(base_parts: List[str], s: str) -> str:
+def prefixed_item_token(base_parts: list[str], s: str) -> str:
     if not base_parts:
         return s
     if is_sep_token(s):
         sparts = sep_path(s)
-        return "/".join(base_parts + sparts + ["-"])
+        return "/".join(base_parts + sparts + [MENU_SEPARATOR])
     if is_section_token(s):
         sparts = section_parts(s)
         if not sparts:
             return s
         head, label = sparts[:-1], sparts[-1]
         if head[:len(base_parts)] == base_parts:
-            return "/".join(head + [":" + label])
-        return "/".join(base_parts + head + [":" + label])
+            return "/".join(head + [MENU_SECTION_PREFIX + label])
+        return "/".join(base_parts + head + [MENU_SECTION_PREFIX + label])
     return prefixed_path(base_parts, s)
 
 
-def normalize_command_meta(base_parts: List[str], meta: CommandMeta) -> CommandMeta:
-    full_path = getattr(meta, "path", "")
-    if not full_path:
+def normalize_command_meta(base_parts: list[str], meta: CommandMeta) -> CommandMeta:
+    if not meta.path:
         raise ValueError("CommandMeta.path is required and id is derived from its last segment")
-    full_path = prefixed_path(base_parts, str(full_path))
+    full_path = prefixed_path(base_parts, str(meta.path))
     parts = split_menu_path(full_path)
-    if not parts or parts[-1] == "-" or str(parts[-1]).startswith(":"):
+    if not parts or parts[-1] == MENU_SEPARATOR or str(parts[-1]).startswith(MENU_SECTION_PREFIX):
         raise ValueError(f"Invalid command path: {full_path}")
     meta.id = parts[-1]
     meta.path = "/".join(parts)
@@ -97,9 +99,10 @@ def normalize_command_meta(base_parts: List[str], meta: CommandMeta) -> CommandM
 
 class MenuGroup:
     NAME: str = ''
-    _flags: Dict[type, bool] = {}
-    _items: Dict[type, List[str]] = {}
-    _cmd_paths: Dict[type, Dict[str, str]] = {}
+    PRIORITY: int = 0
+    _flags: dict[type, bool] = {}
+    _items: dict[type, list[str]] = {}
+    _cmd_paths: dict[type, dict[str, str]] = {}
 
     def __init__(self):
         self._ensure_registered()
@@ -119,9 +122,9 @@ class MenuGroup:
             return
         res = t.commands()
         base_parts = split_menu_path(t.NAME) if t.NAME else []
-        defs: List[CommandMeta] = []
-        items: List[str] = []
-        cmd_paths: Dict[str, str] = {}
+        defs: list[CommandMeta] = []
+        items: list[str] = []
+        cmd_paths: dict[str, str] = {}
         if not isinstance(res, list):
             raise ValueError("commands() must return list[str|CommandMeta]")
         for e in res:
@@ -131,13 +134,13 @@ class MenuGroup:
             if isinstance(e, CommandMeta):
                 meta = normalize_command_meta(base_parts, e)
                 defs.append(meta)
-                if not bool(getattr(meta, "hidden", False)):
+                if not meta.hidden:
                     items.append(meta.path)
                 continue
             raise ValueError("commands must be list[str|CommandMeta]")
         for meta in defs:
-            cid = str(getattr(meta, "id", "") or "")
-            path = str(getattr(meta, "path", "") or "")
+            cid = meta.id
+            path = meta.path
             if not cid or not path:
                 continue
             if cid in cmd_paths and cmd_paths[cid] != path:
@@ -162,7 +165,7 @@ class MenuGroup:
         if cmd_paths:
             self._cmd_paths[t] = cmd_paths
         try:
-            MenuHub().register_paths(t, cmd_paths, items)
+            MenuHub.instance().register_paths(t, cmd_paths, items)
         except Exception as e:
             AppLogger.warning(f"MenuHub.register_paths failed: {t.__name__}", exc=e)
         self._flags[t] = True
@@ -170,7 +173,7 @@ class MenuGroup:
 
 class DragMenuGroup:
     NAME: str = ''
-    _flags: Dict[type, bool] = {}
+    _flags: dict[type, bool] = {}
 
     def __init__(self):
         self._ensure_registered()
@@ -190,7 +193,7 @@ class DragMenuGroup:
             return
         res = t.commands()
         base_parts = split_menu_path(t.NAME) if t.NAME else []
-        defs: List[CommandMeta] = []
+        defs: list[CommandMeta] = []
         if not isinstance(res, list):
             raise ValueError("commands() must return list[CommandMeta]")
         for e in res:
@@ -231,20 +234,23 @@ def discover_command_classes(*modules) -> list[type]:
 
 
 class MenuHub:
-    _instance: Optional["MenuHub"] = None
-    def __new__(cls):
+    _instance: "MenuHub" | None = None
+
+    @classmethod
+    def instance(cls) -> "MenuHub":
         if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._all_paths = {}
-            cls._instance._by_menu = {}
-            cls._instance._menu_items = {}
-            cls._instance._folder_blocks = {}
-            cls._instance._folder_set = set()
-            cls._instance._folder_prefix_map = {}
+            inst = object.__new__(cls)
+            inst._all_paths = {}
+            inst._by_menu = {}
+            inst._menu_items = {}
+            inst._folder_blocks = {}
+            inst._folder_set = set()
+            inst._folder_prefix_map = {}
+            cls._instance = inst
         return cls._instance
     
     @profiler.profile
-    def register_paths(self, menu_cls: type, cmd_paths: Dict[str, str], items: Optional[List[str]] = None):
+    def register_paths(self, menu_cls: type, cmd_paths: dict[str, str], items: list[str] | None = None):
         if cmd_paths:
             self._by_menu[menu_cls] = dict(cmd_paths)
             for k, v in cmd_paths.items():
@@ -263,7 +269,7 @@ class MenuHub:
         f = folder.strip("/")
         return f in self._folder_set if f else False
     
-    def find_folder_prefixes(self, name: str) -> List[str]:
+    def find_folder_prefixes(self, name: str) -> list[str]:
         n = name.strip("/")
         return self._folder_prefix_map.get(n, []) if n else []
     
@@ -285,16 +291,16 @@ class MenuHub:
                     self._folder_prefix_map[folder_name].append(folder_path)
     
     @profiler.profile
-    def collect_items_by_folder(self, folder: str, rebase_to: Optional[str] = None) -> List[str]:
+    def collect_items_by_folder(self, folder: str, rebase_to: str | None = None) -> list[str]:
         f = folder.strip("/")
         fparts = split_menu_path(f)
-        filtered: List[List[str]] = self._folder_blocks.get(f, [])
-        out: List[str] = []
+        filtered: list[list[str]] = self._folder_blocks.get(f, [])
+        out: list[str] = []
         pre = rebase_to.strip("/") if rebase_to else f
         first = True
         for b in filtered:
             if not first:
-                out.append(f"{pre}/-")
+                out.append(f"{pre}/{MENU_SEPARATOR}")
             first = False
             for s in b:
                 if not isinstance(s, str) or not s:
@@ -302,12 +308,12 @@ class MenuHub:
                 if is_sep_token(s):
                     src = sep_path(str(s))
                     if not src:
-                        out.append(f"{pre}/-")
+                        out.append(f"{pre}/{MENU_SEPARATOR}")
                         continue
                     if src[:len(fparts)] != fparts:
                         continue
                     rel = src[len(fparts):]
-                    out.append("/".join([pre] + rel + ["-"]))
+                    out.append("/".join([pre] + rel + [MENU_SEPARATOR]))
                     continue
                 if is_section_token(s):
                     parts = section_parts(s)
@@ -318,7 +324,7 @@ class MenuHub:
                     if head[:len(fparts)] != fparts:
                         continue
                     rel = head[len(fparts):]
-                    out.append("/".join([pre] + rel + [":" + label]))
+                    out.append("/".join([pre] + rel + [MENU_SECTION_PREFIX + label]))
                     continue
                 if "/" in s:
                     pfull = s
@@ -330,13 +336,13 @@ class MenuHub:
         return out
 
     @profiler.profile
-    def _index_folder_blocks(self, items: List[str]):
-        cur: List[str] = []
+    def _index_folder_blocks(self, items: list[str]):
+        cur: list[str] = []
         def _flush():
             nonlocal cur
             if not cur:
                 return
-            folders: Dict[str, None] = {}
+            folders: dict[str, None] = {}
             for s in cur:
                 if not isinstance(s, str) or not s or is_sep_token(s) or is_section_token(s):
                     continue

@@ -1,9 +1,7 @@
 from .registry import BasePlugin, PluginRegistry
-from .viewer.base import BaseViewerPlugin
-from .grid.base import BaseGridPlugin
+from .viewer.base import BaseViewerPlugin, ImageViewerPlugin, WidgetViewerPlugin
+from .grid.base import BaseGridPlugin, ImageGridPlugin, WidgetGridPlugin
 from .collector.base import BaseCollectorPlugin, CollectorResult
-from afterimages.utils.logs import AppLogger
-from afterimages.utils.profiling import profiler
 from afterimages.core.actions.bridge import ActionKit
 from afterimages.core.qt.rate_limit import QtDebounceManager as _QtDebounceManager
 

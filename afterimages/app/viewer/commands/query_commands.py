@@ -35,7 +35,7 @@ def _set_and_update(ctx, group, cmd_id, search_key, value):
     svc = _service(ctx)
     if svc:
         svc.set_param(search_key, value)
-    ActionGroupStateManager().set_current(group, cmd_id, save=False)
+    ActionGroupStateManager.instance().set_current(group, cmd_id, save=False)
     row = _search_row(ctx)
     if row:
         getattr(row, _GROUP_CONFIG[group]["ui_method"])(value)
@@ -69,7 +69,7 @@ def _make_order_func(cmd_id, ascending):
 
 
 def _cycle_group(ctx, group):
-    sm = ActionGroupStateManager()
+    sm = ActionGroupStateManager.instance()
     new_cmd = sm.cycle(group)
     if not new_cmd:
         return
@@ -91,7 +91,7 @@ def cycle_sort(ctx, reverse=False, **kwargs):
     enabled = [k for k in SORT_CHOICES if kwargs.get(k, True)]
     if not enabled:
         return
-    sm = ActionGroupStateManager()
+    sm = ActionGroupStateManager.instance()
     current = sm.get_current(GROUP_SORT)
     current_key = _SORT_MAP.get(current)
     step = -1 if reverse else 1
@@ -163,7 +163,7 @@ def toggle_auto_execute(ctx):
 
 
 def sync_groups_from_args(args):
-    sm = ActionGroupStateManager()
+    sm = ActionGroupStateManager.instance()
     sort_by = args.get('sort_by', 'path')
     sort_cmd = f"qry.sort_{sort_by}"
     if sort_cmd in _SORT_MAP:
@@ -192,6 +192,7 @@ _SORT_DISPLAY = {
 
 class QueryCommands(ActionKit.MenuBase):
     NAME = "Query"
+    PRIORITY = 20
 
     @classmethod
     def commands(cls):

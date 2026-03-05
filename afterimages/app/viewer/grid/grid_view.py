@@ -8,7 +8,8 @@ from afterimages.core.qt.rate_limit import qt_debounce, qt_throttle
 from afterimages.core.qt.pixmap import PixmapFactory
 from afterimages.core.qt.thread import thread_pool
 from ..viewer_settings import app_settings
-from afterimages.plugin.grid.handler import grid_resolver
+from afterimages.plugin.grid.handler import grid_resolver, WidgetNotifier
+from afterimages.plugin.grid.base import WidgetGridPlugin as _WidgetGridPlugin
 from .cachemanager import MemoryLimitedImageCache, GraphicsItemPool, AdditionalWidgetPool
 from .calc_layout import JustifiedLayoutCalculator, LayoutData
 from .items import GridItemModel
@@ -131,7 +132,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self.additional_pool = AdditionalWidgetPool(grid_resolver)
         self.additional_pool.warm_up(self.viewport())
         self.active_loaders = {}
-        self._widget_plugin_names: dict[int, str] = {}
+        self._notifier = WidgetNotifier(grid_resolver.registry)
         self.error_placeholder = PixmapFactory.create_error_placeholder().toImage()
 
         self.color = (59, 128, 255)
@@ -157,7 +158,8 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self.viewport().installEventFilter(self)
 
         self._scroll_speed = 100
-        self._speed_callback = self.get_adjusted_scroll_speed
+        self._autoscroll_base_speed = 50
+        self._speed_callback = lambda: self.get_adjusted_scroll_speed(self._autoscroll_base_speed)
         self._connected_bar = None
         self._auto_scroll_anim = None
         self._setup_primary_scroll()
@@ -226,8 +228,9 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
     def set_speed_callback(self, callback):
         self._speed_callback = callback
 
-    def start_auto_scroll(self, speed=100):
+    def start_auto_scroll(self, speed=100, base_speed=50):
         self._scroll_speed = speed
+        self._autoscroll_base_speed = base_speed
         self._start_auto_scroll_from_current()
 
     def stop_auto_scroll(self):
@@ -271,14 +274,12 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self._prev_selection_set = set(current_selection)
         for i in newly_deselected:
             widget = self._additional_widgets.get(i)
-            plugin_name = self._widget_plugin_names.get(i)
-            if widget is not None and plugin_name is not None:
-                grid_resolver.deselect(plugin_name, widget)
+            if widget is not None:
+                self._notifier.deselect(i, widget)
         for i in newly_selected:
             widget = self._additional_widgets.get(i)
-            plugin_name = self._widget_plugin_names.get(i)
-            if widget is not None and plugin_name is not None and i < len(self.items.paths):
-                grid_resolver.select(plugin_name, widget, self.items.paths[i])
+            if widget is not None:
+                self._notifier.select(i, widget)
         self.last_selections = self.items.selected_paths()
         self._overlay.update()
 
@@ -358,7 +359,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
                 runnable.cancel()
         self.widgets.clear()
         self._additional_widgets.clear()
-        self._widget_plugin_names.clear()
+        self._notifier.clear()
         self.active_loaders.clear()
         self.visible_indices.clear()
         self.rects = LayoutData.empty()
@@ -652,15 +653,14 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         if i not in self.widgets:
             path = self.items.paths[i]
             plugin_cls = grid_resolver.resolve(path)
-            if plugin_cls is not None and plugin_cls.WIDGET_CLASS is not None:
+            if plugin_cls is not None and issubclass(plugin_cls, _WidgetGridPlugin):
                 widget = self.additional_pool.acquire(plugin_cls.NAME, self.viewport())
                 if widget is not None:
                     self._additional_widgets[i] = widget
-                    self._widget_plugin_names[i] = plugin_cls.NAME
-                    grid_resolver.render(path, widget, rect.size())
+                    self._notifier.bind(i, plugin_cls.NAME, widget, path, rect.size())
                     self._sync_additional_widget(i)
                     if i in self.items.selected_indices():
-                        grid_resolver.select(plugin_cls.NAME, widget, path)
+                        self._notifier.select(i, widget)
                 return
             item = self.pixmap_item_pool.acquire()
             item.setGeometry(rect)
@@ -680,7 +680,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
     def _recycle_widget(self, i):
         if i in self._additional_widgets:
             widget = self._additional_widgets.pop(i)
-            self._widget_plugin_names.pop(i, None)
+            self._notifier.unbind(i, widget)
             self.additional_pool.release(widget)
         if i in self.widgets:
             item = self.widgets.pop(i)
@@ -723,6 +723,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         if not mapped.intersects(vp_rect):
             if widget.isVisible():
                 widget.hide()
+                self._notifier.disappear(index, widget)
             return
         current = widget.geometry()
         if current != mapped:
@@ -732,6 +733,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
                 widget.setGeometry(mapped)
         if not widget.isVisible():
             widget.show()
+            self._notifier.appear(index, widget)
 
     @profiler.profile
     def _sync_additional_widgets(self):

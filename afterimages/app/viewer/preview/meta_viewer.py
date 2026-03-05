@@ -65,15 +65,15 @@ class MetaRowWidget(QtWidgets.QFrame):
         self.setObjectName("dictRow")
         self.setFrameShape(QtWidgets.QFrame.NoFrame)
         self.setStyleSheet(
-            """
-            QFrame#dictRow {
+            f"""
+            QFrame#dictRow {{
                 background: palette(base);
                 border: 1px solid palette(mid);
                 border-radius: {dpix(12)}px;
-            }
-            QLabel[keyRole="true"] {
+            }}
+            QLabel[keyRole="true"] {{
                 font-weight: 600;
-            }
+            }}
             """
         )
 

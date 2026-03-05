@@ -25,15 +25,19 @@ class _PeerInfo:
         self.last_seen = time.monotonic()
 
 
+_CoalesceKey = tuple[str, str, str]
+_CoalesceValue = tuple[list[bytes], tuple[bytes, bytes]]
+
+
 class _CoalescingQueue:
 
     def __init__(self, maxsize: int):
         self.maxsize = maxsize
-        self._dq: collections.deque = collections.deque()
-        self._map: dict = {}
+        self._dq: collections.deque[_CoalesceKey] = collections.deque()
+        self._map: dict[_CoalesceKey, _CoalesceValue] = {}
         self._lock = threading.Lock()
 
-    def put(self, key, value):
+    def put(self, key: _CoalesceKey, value: _CoalesceValue) -> None:
         with self._lock:
             if key in self._map:
                 self._map[key] = value
@@ -44,9 +48,9 @@ class _CoalescingQueue:
             self._dq.append(key)
             self._map[key] = value
 
-    def drain(self) -> list[tuple]:
+    def drain(self) -> list[tuple[_CoalesceKey, _CoalesceValue]]:
         with self._lock:
-            out = []
+            out: list[tuple[_CoalesceKey, _CoalesceValue]] = []
             while self._dq:
                 k = self._dq.popleft()
                 v = self._map.pop(k, None)
@@ -206,6 +210,12 @@ class Broker:
             return
 
         if topic == 'mgmt.heartbeat':
+            with self._lock:
+                known = ident in self._peers
+            if not known:
+                reply = msg.reply(None, topic='mgmt.not_registered')
+                try_put(self._direct_q, (ident, reply.to_frames()))
+                return
             self._refresh_peer(ident)
             pong = msg.reply(None, topic='mgmt.pong')
             try_put(self._direct_q, (ident, pong.to_frames()))

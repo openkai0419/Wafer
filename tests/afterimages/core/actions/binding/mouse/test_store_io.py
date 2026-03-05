@@ -1,13 +1,13 @@
 import json
 
 from afterimages.core.actions.binding.mouse.store import MouseBindingStore
-from afterimages.core.actions.binding.mouse.mouseeventmanager import MouseActionKey
+from afterimages.core.actions.binding.mouse.types import MouseActionKey
 from afterimages.core.actions.command.payload import CommandPayload
 from afterimages.core.actions.binding.presets import set_presets, get_mouse_preset, get_mouse_preset_path
 
 
 def test_mouse_store_save_load_roundtrip(tmp_path):
-    store = MouseBindingStore()
+    store = MouseBindingStore.instance()
     k = MouseActionKey("LEFT", "SINGLE", (), ())
     data = {k: {"*": CommandPayload("viewer.next", {})}}
     store.set_all(data)
@@ -29,7 +29,7 @@ def test_mouse_store_diff_saves_deletions(tmp_path, monkeypatch):
     monkeypatch.setattr("afterimages.core.actions.binding.presets.get_resource_path", lambda: tmp_path)
     set_presets(mouse="test_preset")
     try:
-        store = MouseBindingStore()
+        store = MouseBindingStore.instance()
         store.set_all({})
         p = tmp_path / "mouse_diff.json"
         store.save_to_file(str(p))

@@ -15,8 +15,8 @@ def plugin_env(tmp_path):
     stub_dir.mkdir(parents=True)
     (stub_dir / '__init__.py').write_text('')
     (stub_dir / 'grid.py').write_text(
-        'from afterimages.plugin.grid.base import BaseGridPlugin\n'
-        'class StubGridPlugin(BaseGridPlugin):\n'
+        'from afterimages.plugin.grid.base import ImageGridPlugin\n'
+        'class StubGridPlugin(ImageGridPlugin):\n'
         '    NAME = "stub_test"\n'
         '    EXTENSIONS = (".stub",)\n'
         '    PRIORITY = 10\n'
@@ -121,8 +121,8 @@ class TestConfigureHook:
         broken_dir.mkdir(parents=True)
         (broken_dir / '__init__.py').write_text('')
         (broken_dir / 'grid.py').write_text(
-            'from afterimages.plugin.grid.base import BaseGridPlugin\n'
-            'class BrokenConfigure(BaseGridPlugin):\n'
+            'from afterimages.plugin.grid.base import ImageGridPlugin\n'
+            'class BrokenConfigure(ImageGridPlugin):\n'
             '    NAME = "broken"\n'
             '    EXTENSIONS = (".brk",)\n'
             '    PRIORITY = 10\n'
@@ -148,3 +148,85 @@ class TestBasePluginHooksDefault:
 
     def test_configure_default_is_noop(self):
         BasePlugin.configure()
+
+
+class TestDeferredCommandRegistration:
+
+    def test_commands_deferred_not_registered_immediately(self, tmp_path):
+        plugin_dir = tmp_path / 'plugins'
+        cmd_dir = plugin_dir / 'cmd_plugin'
+        cmd_dir.mkdir(parents=True)
+        (cmd_dir / '__init__.py').write_text('')
+        (cmd_dir / 'commands.py').write_text(
+            'from afterimages.core.actions.command.menu import MenuGroup\n'
+            'from afterimages.core.actions.command.core import CommandMeta\n'
+            'class TestCmdGroup(MenuGroup):\n'
+            '    NAME = "TestCmd"\n'
+            '    @classmethod\n'
+            '    def commands(cls):\n'
+            '        return [CommandMeta(path="tcmd.noop", display="Noop", func=lambda ctx: None)]\n'
+        )
+        registries = _make_registries()
+        PluginLoader._deferred_commands.clear()
+        loader = PluginLoader(str(plugin_dir), registries, skip_install=True)
+        loader.load_all()
+        assert len(PluginLoader._deferred_commands) > 0
+        from afterimages.core.actions.command.core import CommandRegistry
+        reg = CommandRegistry.instance()
+        assert not reg.has_command('tcmd.noop')
+        PluginLoader.register_extension_commands()
+        assert reg.has_command('tcmd.noop')
+        for key in list(sys.modules):
+            if key.startswith('_plugins_cmd_plugin'):
+                del sys.modules[key]
+
+
+class TestSubmoduleRelativeImport:
+
+    def test_submodule_not_treated_as_package(self, tmp_path):
+        plugin_dir = tmp_path / 'plugins'
+        rel_dir = plugin_dir / 'rel_plugin'
+        rel_dir.mkdir(parents=True)
+        (rel_dir / '__init__.py').write_text('')
+        (rel_dir / 'state.py').write_text('value = 42\n')
+        (rel_dir / 'reader.py').write_text(
+            'from .state import value\n'
+            'def get(): return value\n'
+        )
+        registries = _make_registries()
+        loader = PluginLoader(str(plugin_dir), registries, skip_install=True)
+        loader.load_all()
+        mod = sys.modules.get('_plugins_rel_plugin.reader')
+        assert mod is not None
+        assert mod.get() == 42
+        state_mod = sys.modules.get('_plugins_rel_plugin.state')
+        assert state_mod is not None
+        assert state_mod.value == 42
+        assert not hasattr(mod, '__path__')
+        for key in list(sys.modules):
+            if key.startswith('_plugins_rel_plugin'):
+                del sys.modules[key]
+
+
+class TestRunSubprocess:
+
+    def test_stderr_drained_without_deadlock(self, tmp_path):
+        from afterimages.plugin.loader import _run_subprocess
+        script = tmp_path / 'noisy.py'
+        script.write_text(
+            'import sys\n'
+            'sys.stderr.write("x" * 100000 + "\\n")\n'
+            'sys.exit(0)\n'
+        )
+        _run_subprocess([sys.executable, str(script)])
+
+    def test_stderr_captured_on_failure(self, tmp_path):
+        from afterimages.plugin.loader import _run_subprocess
+        script = tmp_path / 'fail.py'
+        script.write_text(
+            'import sys\n'
+            'sys.stderr.write("custom error msg\\n")\n'
+            'sys.exit(1)\n'
+        )
+        with pytest.raises(RuntimeError, match="custom error msg"):
+            _run_subprocess([sys.executable, str(script)])

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Mapping
 
 from afterimages.utils.logs import AppLogger
 
@@ -77,7 +77,7 @@ def _pos_from_global(widget: Any, global_pos: Any) -> Any:
         return None
 
 
-def _wheel_steps_from_event(event: Any) -> Optional[int]:
+def _wheel_steps_from_event(event: Any) -> int | None:
     if event is None:
         return None
     ad = getattr(event, "angleDelta", None)
@@ -106,23 +106,23 @@ class CommandContext:
     pos: Any = None
     global_pos: Any = None
     wheel_steps: int = 1
-    extras: Dict[str, Any] = field(default_factory=dict)
+    extras: dict[str, Any] = field(default_factory=dict)
 
     event: Any = None
     start_pos: Any = None
     start_global_pos: Any = None
 
-    _info: Dict[str, Any] = field(default_factory=dict, repr=False)
-    _widget_cache: Dict[str, Any] = field(default_factory=dict, repr=False)
+    _widget: Any = field(default=None, repr=False)
+    _scope: str = field(default="*", repr=False)
+    _source: str = field(default="", repr=False)
+    _widget_cache: dict[str, Any] = field(default_factory=dict, repr=False)
 
     @staticmethod
-    def build(widget: Any = None, scope: Optional[str] = None, *, source: str = "", event: Any = None, start_pos: Any = None, start_global_pos: Any = None, extras: Optional[Dict[str, Any]] = None) -> "CommandContext":
+    def build(widget: Any = None, scope: str | None = None, *, source: str = "", event: Any = None, start_pos: Any = None, start_global_pos: Any = None, extras: dict[str, Any] | None = None) -> "CommandContext":
         ctx = CommandContext()
-        ctx._info = {
-            "widget": widget,
-            "scope": "*" if not scope else str(scope),
-            "source": str(source or ""),
-        }
+        ctx._widget = widget
+        ctx._scope = "*" if not scope else str(scope)
+        ctx._source = str(source or "")
         ctx.event = event
         ctx.global_pos = _global_pos_from_event(event) or _global_pos_from_app() or _zero_point()
         ctx.pos = _local_pos_from_event(event) or _pos_from_global(widget, ctx.global_pos) or _zero_point()
@@ -135,16 +135,13 @@ class CommandContext:
         return ctx
 
     def get_event(self, default: Any = None) -> Any:
-        ev = getattr(self, "event", None)
-        return ev if ev is not None else default
+        return self.event if self.event is not None else default
 
     @staticmethod
-    def _merge_seed(ctx: "CommandContext", seed: Optional["CommandContext"], *, prefer_seed: bool) -> "CommandContext":
+    def _merge_seed(ctx: "CommandContext", seed: "CommandContext" | None, *, prefer_seed: bool) -> "CommandContext":
         if seed is None:
             return ctx
         try:
-            si = getattr(seed, "_info", None) or {}
-            ci = ctx._info
             for attr in ("pos", "global_pos", "start_pos", "start_global_pos"):
                 sv = getattr(seed, attr, None)
                 if sv is not None and (prefer_seed or getattr(ctx, attr) is None):
@@ -152,11 +149,12 @@ class CommandContext:
             sw = getattr(seed, "wheel_steps", None)
             if sw and (prefer_seed or not getattr(ctx, "wheel_steps", None)):
                 ctx.wheel_steps = int(sw)
-            if si.get("widget") is not None and (prefer_seed or ci.get("widget") is None):
-                ci["widget"] = si["widget"]
-            ss = si.get("scope")
-            if ss and ss != "*" and (prefer_seed or ci.get("scope", "*") == "*"):
-                ci["scope"] = ss
+            seed_widget = getattr(seed, "_widget", None)
+            if seed_widget is not None and (prefer_seed or ctx._widget is None):
+                ctx._widget = seed_widget
+            seed_scope = getattr(seed, "_scope", "*")
+            if seed_scope and seed_scope != "*" and (prefer_seed or ctx._scope == "*"):
+                ctx._scope = seed_scope
             for k, v in (getattr(seed, "extras", None) or {}).items():
                 if prefer_seed:
                     ctx.extras[str(k)] = v
@@ -167,19 +165,19 @@ class CommandContext:
         return ctx
 
     @staticmethod
-    def merge_seed_prefer_seed(ctx: "CommandContext", seed: Optional["CommandContext"]) -> "CommandContext":
+    def merge_seed_prefer_seed(ctx: "CommandContext", seed: "CommandContext" | None) -> "CommandContext":
         return CommandContext._merge_seed(ctx, seed, prefer_seed=True)
 
     @staticmethod
-    def merge_seed_prefer_ctx(ctx: "CommandContext", seed: Optional["CommandContext"]) -> "CommandContext":
+    def merge_seed_prefer_ctx(ctx: "CommandContext", seed: "CommandContext" | None) -> "CommandContext":
         return CommandContext._merge_seed(ctx, seed, prefer_seed=False)
 
     @staticmethod
-    def merge_seed(ctx: "CommandContext", seed: Optional["CommandContext"]) -> "CommandContext":
+    def merge_seed(ctx: "CommandContext", seed: "CommandContext" | None) -> "CommandContext":
         return CommandContext.merge_seed_prefer_seed(ctx, seed)
 
     @classmethod
-    def create(cls, widget: Any = None, scope: Optional[str] = None, *, source: str = "", event: Any = None, start_pos: Any = None, start_global_pos: Any = None, extras: Optional[Dict[str, Any]] = None, seed: Optional["CommandContext"] = None) -> "CommandContext":
+    def create(cls, widget: Any = None, scope: str | None = None, *, source: str = "", event: Any = None, start_pos: Any = None, start_global_pos: Any = None, extras: dict[str, Any] | None = None, seed: "CommandContext" | None = None) -> "CommandContext":
         sc = scope
         if not sc and widget is not None:
             try:
@@ -193,32 +191,22 @@ class CommandContext:
 
     def get(self, key: str, default: Any = None) -> Any:
         k = str(key)
-        try:
-            if k in self.extras:
-                return self.extras.get(k)
-        except Exception as e:
-            AppLogger.warning(f"CommandContext.get extras access failed: {k}", exc=e)
-        if not k.startswith("_"):
-            try:
-                if hasattr(self, k):
-                    return getattr(self, k)
-            except Exception as e:
-                AppLogger.warning(f"CommandContext.get attr access failed: {k}", exc=e)
+        if k in self.extras:
+            return self.extras[k]
+        if not k.startswith("_") and hasattr(self, k):
+            return getattr(self, k)
         return default
 
     def get_many(self, keys, default: Any = None) -> list:
         if not keys:
             return []
-        try:
-            return [self.get(k, default) for k in keys]
-        except TypeError:
-            return []
+        return [self.get(k, default) for k in keys]
 
     def get_instance(self, name: str, default: Any = None) -> Any:
         xs = self.get_instances(name)
         return xs[0] if xs else default
 
-    def get_instances(self, name: str, default: Optional[list] = None) -> list:
+    def get_instances(self, name: str, default: list | None = None) -> list:
         if not name:
             return [] if default is None else list(default)
         k = str(name)
@@ -259,28 +247,19 @@ class CommandContext:
             self.extras[k] = value
         return self
 
-    def merge(self, extras: Optional[Mapping[str, Any]]) -> "CommandContext":
+    def merge(self, extras: Mapping[str, Any] | None) -> "CommandContext":
         if not extras:
             return self
-        try:
-            for k, v in extras.items():
-                self.extras[str(k)] = v
-        except Exception as e:
-            AppLogger.warning("CommandContext.merge failed", exc=e)
+        for k, v in extras.items():
+            self.extras[str(k)] = v
         return self
 
-    def to_debug_dict(self) -> Dict[str, Any]:
-        try:
-            extras = dict(self.extras or {})
-        except (TypeError, ValueError):
-            extras = {}
-        info = dict(self._info or {})
-        widget = info.get("widget")
+    def to_debug_dict(self) -> dict[str, Any]:
         return {
             "info": {
-                "scope": info.get("scope", "*"),
-                "source": info.get("source", ""),
-                "widget_type": getattr(getattr(widget, "__class__", None), "__name__", None),
+                "scope": self._scope,
+                "source": self._source,
+                "widget_type": getattr(getattr(self._widget, "__class__", None), "__name__", None),
             },
             "pos": self.pos,
             "global_pos": self.global_pos,
@@ -288,7 +267,7 @@ class CommandContext:
             "start_global_pos": self.start_global_pos,
             "wheel_steps": self.wheel_steps,
             "event_type": getattr(getattr(self.get_event(), "__class__", None), "__name__", None),
-            "extras": extras,
+            "extras": dict(self.extras),
         }
 
     def to_debug_text(self) -> str:
@@ -297,7 +276,4 @@ class CommandContext:
     def print_debug(self, printer=None) -> None:
         if printer is None:
             printer = AppLogger.debug
-        try:
-            printer(self.to_debug_text())
-        except Exception as e:
-            AppLogger.warning("CommandContext.print_debug failed", exc=e)
+        printer(self.to_debug_text())

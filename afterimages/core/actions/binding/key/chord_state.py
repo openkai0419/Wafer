@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Set, Dict, Tuple
 
 from PySide6 import QtCore, QtGui
 
 from ...command.payload import CommandPayload
 from .runtime import KeyPressState, RecentEventDeduper, ScanCodeMapper
-
-KeyCombo = Tuple[int, ...]
-
+from .combo import KeyCombo, modifier_keys_from_qt
 
 @dataclass(frozen=True)
 class KeyEventStamp:
@@ -18,7 +15,6 @@ class KeyEventStamp:
     key: int
     timestamp: int
     widget_id: int
-
 
 class KeyChordStateManager:
     def __init__(self, *, max_recent_events: int = 128):
@@ -36,26 +32,16 @@ class KeyChordStateManager:
     def dedupe(self, stamp: KeyEventStamp) -> bool:
         return self._deduper.add_and_check((stamp.event_type, stamp.scan_code, stamp.key, stamp.timestamp, stamp.widget_id))
 
-    def modifiers_from_event(self, e: QtGui.QKeyEvent) -> Set[int]:
-        mods = e.modifiers()
-        ks: Set[int] = set()
-        if mods & QtCore.Qt.ControlModifier:
-            ks.add(int(QtCore.Qt.Key_Control))
-        if mods & QtCore.Qt.ShiftModifier:
-            ks.add(int(QtCore.Qt.Key_Shift))
-        if mods & QtCore.Qt.AltModifier:
-            ks.add(int(QtCore.Qt.Key_Alt))
-        if mods & QtCore.Qt.MetaModifier:
-            ks.add(int(QtCore.Qt.Key_Meta))
-        return ks
+    def modifiers_from_event(self, e: QtGui.QKeyEvent) -> set[int]:
+        return set(modifier_keys_from_qt(e.modifiers()))
 
-    def pressed_for_match(self, *, include_modifiers: Set[int] | None = None) -> Set[int]:
+    def pressed_for_match(self, *, include_modifiers: set[int] | None = None) -> set[int]:
         s = set(self._logical.pressed)
         if include_modifiers:
             s.update(include_modifiers)
         return s
 
-    def physical_pressed_for_match(self) -> Set[int]:
+    def physical_pressed_for_match(self) -> set[int]:
         return set(self._physical.pressed)
 
     def payload_for_press(
@@ -64,10 +50,10 @@ class KeyChordStateManager:
         sc: int,
         key: int,
         event: QtGui.QKeyEvent,
-        logical_map: Dict[KeyCombo, CommandPayload] | None,
-        physical_map: Dict[KeyCombo, CommandPayload] | None,
+        logical_map: dict[KeyCombo, CommandPayload] | None,
+        physical_map: dict[KeyCombo, CommandPayload] | None,
         require_len: int = 2,
-    ) -> Optional[CommandPayload]:
+    ) -> CommandPayload | None:
         if sc:
             self.add_physical_press(sc)
             if physical_map:
@@ -84,7 +70,7 @@ class KeyChordStateManager:
                 return logical_map[combo]
         return None
 
-    def payload_for_physical_release(self, *, sc: int, physical_map: Dict[KeyCombo, CommandPayload] | None) -> Optional[CommandPayload]:
+    def payload_for_physical_release(self, *, sc: int, physical_map: dict[KeyCombo, CommandPayload] | None) -> CommandPayload | None:
         payload = None
         was_down = bool(sc) and int(sc) in self._physical.pressed
         if sc and physical_map and was_down:
@@ -93,7 +79,7 @@ class KeyChordStateManager:
             self.remove_physical_press(sc)
         return payload
 
-    def payload_for_logical_release(self, *, key: int, logical_map: Dict[KeyCombo, CommandPayload] | None) -> Optional[CommandPayload]:
+    def payload_for_logical_release(self, *, key: int, logical_map: dict[KeyCombo, CommandPayload] | None) -> CommandPayload | None:
         payload = None
         was_down = int(key) in self._logical.pressed
         if logical_map and was_down:
@@ -150,7 +136,7 @@ class KeyChordStateManager:
         if sc is not None:
             self._physical.consumed[int(sc)] = True
 
-    def physical_single_fire(self, *, sc: int, combo_map: Dict[KeyCombo, CommandPayload]) -> Optional[CommandPayload]:
+    def physical_single_fire(self, *, sc: int, combo_map: dict[KeyCombo, CommandPayload]) -> CommandPayload | None:
         if self.is_physical_consumed(sc):
             return None
         single = (int(sc),)
@@ -159,7 +145,7 @@ class KeyChordStateManager:
             return combo_map[single]
         return None
 
-    def logical_single_fire(self, *, key: int, combo_map: Dict[KeyCombo, CommandPayload]) -> Optional[CommandPayload]:
+    def logical_single_fire(self, *, key: int, combo_map: dict[KeyCombo, CommandPayload]) -> CommandPayload | None:
         if self.is_logical_consumed(key):
             return None
         single = (int(key),)
@@ -175,7 +161,7 @@ class KeyChordStateManager:
             return None
         return tuple(int(x) for x in order[-require_len:])
 
-    def _primary_modifier(self, mods: Set[int]) -> int | None:
+    def _primary_modifier(self, mods: set[int]) -> int | None:
         if int(QtCore.Qt.Key_Control) in mods:
             return int(QtCore.Qt.Key_Control)
         if int(QtCore.Qt.Key_Shift) in mods:

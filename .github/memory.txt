@@ -64,8 +64,10 @@ extensionsはplugin/utils/coreを参照可、appは非推奨
 
 Broker(ROUTER): Trayで起動。ピア管理+ルーティング(dst: role/node_id/ALL, dbフィルタ)。
   5キュー: direct(rid付き) → high → mid → broadcast(coalesce) → low。
+  未登録ピアからのheartbeatにはpongではなくmgmt.not_registeredを返す。これにより再起動後の再登録を検知可能。
 
 Node(DEALER): 全プロセスで使用。node_id='{role}-{pid}'。
+  mgmt.not_registered受信時にself._registered.clear()→次のheartbeat_tickで再登録を試行。
   4送信API:
   - send(): Ordered FIFO通常配信
   - send_latest(): coalesce=Trueで最新値のみ（進捗等）
@@ -89,14 +91,14 @@ OutboxStore: プロセス個別のOutbox DB。send_reliable→push→通知→�
 
 ■ プラグインフレームワーク（afterimages/plugin/）
 - __init__.py: extension向け公開API。BasePlugin/Grid/Viewer/Collector、load_thumbnail、CommandMeta等を再エクスポート
-- registry.py: BasePlugin(NAME/EXTENSIONS/PRIORITY) + PluginRegistry(register/resolve/resolve_all)
+- registry.py: BasePlugin(NAME/EXTENSIONS/PRIORITY) + PluginRegistry(register/resolve/resolve_instance/instance。インスタンスはregister時にキャッシュ)
 - collector/: BaseCollectorPlugin + CollectorResult(dataclass) + collector_resolver
-- grid/: BaseGridPlugin(load/create_cell_widget) + grid_resolver。フォールバック=FileThumbnailer
-- viewer/: BaseViewerPlugin(create_widget/load_content/clear) + viewer_resolver
+- grid/: BaseGridPlugin → ImageGridPlugin(load) / WidgetGridPlugin(WIDGET_CLASS/render/release/appear/disappear/select/deselect) + grid_resolver。フォールバック=FileThumbnailer
+- viewer/: BaseViewerPlugin → ImageViewerPlugin(load_content) / WidgetViewerPlugin(WIDGET_CLASS/render(widget,path)/clear) + viewer_resolver
 
 ■ プラグインローダー（afterimages/plugin/loader.py）
 - extensions/直下にフォルダ単位で配置。*.py/requirements.txt/lib/.packages/
-- ロードフロー: requirements.txt→pip install --target=.packages/→sys.path追加→lib/ DLL設定→クラス自動検出・登録
+- ロードフロー: requirements.txt→pip install --target=.packages/→sys.path追加→lib/ DLL設定→_import_and_registerでクラス自動検出・登録
 - pip installはSubprocess（Popen+ポーリング）。frozen exe時はsys.executable --install-depsで子プロセス起動
 - .packages/.installedスタンプで再インストールスキップ
 
@@ -107,6 +109,11 @@ OutboxStore: プロセス個別のOutbox DB。send_reliable→push→通知→�
 - 自動検出: discover_command_classes()でissubclassベースに検出→register()
 - バインディング: seed.py(デフォルト) → BindingStoreBase(保存は差分のみ) → BindingManager(resolve)
 - プリセット: _resources/{mouse,key}_bindings/standard.json
+- シングルトン: 全てinstance()パターンに統一済み（CommandRegistry.instance()等）
+- メニュートークン: MENU_SEPARATOR("-"), MENU_SECTION_PREFIX(":")。menu.pyで定数定義
+- editors翻訳: TranslatorMixin経由。翻訳キーは_resources/translations.json
+- プラグインのGrid/View/Commandは個別に登録・登録解除可能な設計。未登録コマンドへの参照は安全にフォールバック
+- extension側のMenuGroupはGrid/View別に分離する（例: VideoGridCommands, 将来のVideoViewCommands）
 
 ■ ビューア構造（afterimages/app/viewer/）
 - GridItemModel(grid/items.py): GridView用のファイル一覧/選択/現在インデックス

@@ -102,35 +102,6 @@ def _get_thumbnail_aspect_ratio(abs_path: str, size: int = 96) -> float | None:
         del factory
 
 
-def get_aspect_ratios(paths: list[str]) -> dict[str, float]:
-    if not paths:
-        return {}
-    if sys.platform.startswith('win'):
-        return _get_aspect_ratios_windows(paths)
-    return {}
-
-
-def _get_aspect_ratios_windows(paths: list[str]) -> dict[str, float]:
-    import pythoncom
-    pythoncom.CoInitialize()
-    try:
-        result = {}
-        for p in paths:
-            abs_path = os.path.abspath(p)
-            dims = _get_dimensions_from_property_store(abs_path)
-            if dims:
-                w, h = dims
-                if h > 0:
-                    result[p] = w / h
-                continue
-            ratio = _get_thumbnail_aspect_ratio(abs_path)
-            if ratio:
-                result[p] = ratio
-        return result
-    finally:
-        pythoncom.CoUninitialize()
-
-
 class FileThumbnailer:
 
     def __init__(self):
@@ -166,9 +137,38 @@ class FileThumbnailer:
         finally:
             pythoncom.CoUninitialize()
 
+    @staticmethod
+    def get_aspect_ratios(paths: list[str]) -> dict[str, float]:
+        if not paths:
+            return {}
+        if sys.platform.startswith('win'):
+            return FileThumbnailer._get_aspect_ratios_windows(paths)
+        return {}
+
+    @staticmethod
+    def _get_aspect_ratios_windows(paths: list[str]) -> dict[str, float]:
+        import pythoncom
+        pythoncom.CoInitialize()
+        try:
+            result = {}
+            for p in paths:
+                abs_path = os.path.abspath(p)
+                dims = _get_dimensions_from_property_store(abs_path)
+                if dims:
+                    w, h = dims
+                    if h > 0:
+                        result[p] = w / h
+                    continue
+                ratio = _get_thumbnail_aspect_ratio(abs_path)
+                if ratio:
+                    result[p] = ratio
+            return result
+        finally:
+            pythoncom.CoUninitialize()
+
     def get_thumbnail(self, file_path, size=256):
         if not os.path.exists(file_path):
-            raise FileNotFoundError(f'ファイルが存在しません: {file_path}')
+            raise FileNotFoundError(f'File not found: {file_path}')
         if self.platform.startswith('win'):
             return self._get_thumbnail_windows(file_path, size)
         elif self.platform == 'darwin':
@@ -176,7 +176,7 @@ class FileThumbnailer:
         elif self.platform.startswith('linux'):
             return self._get_thumbnail_linux(file_path, size)
         else:
-            raise NotImplementedError('未対応のプラットフォームです。')
+            raise NotImplementedError('Unsupported platform')
 
     def _get_thumbnail_windows(self, file_path, size):
         import pythoncom
@@ -199,13 +199,13 @@ class FileThumbnailer:
         handle = c_void_p()
         hr = shell32.SHCreateItemFromParsingName(abs_path, None, byref(factory_cls._iid_), byref(handle))
         if hr != 0:
-            AppLogger.warning(f'SHCreateItemFromParsingName に失敗しました: {file_path} (hr={hr})')
+            AppLogger.warning(f'SHCreateItemFromParsingName failed: {file_path} (hr={hr})')
             return None
         factory = cast(handle, POINTER(factory_cls))
         try:
             hbitmap = factory.GetImage(SIZE(size, size), 0)
             if not hbitmap:
-                AppLogger.warning(f'GetImage に失敗しました: {file_path}')
+                AppLogger.warning(f'GetImage failed: {file_path}')
                 return None
             try:
                 import win32ui
@@ -228,7 +228,7 @@ class FileThumbnailer:
                 tiff = rep.TIFFRepresentation()
                 return Image.open(io.BytesIO(bytes(tiff)))
         except Exception as e:
-            AppLogger.warning(f'QuickLook 失敗: {file_path}', exc=e)
+            AppLogger.warning(f'QuickLook failed: {file_path}', exc=e)
         ws = self._NSWorkspace.sharedWorkspace()
         icon = ws.iconForFile_(file_path)
         icon.setSize_((size, size))
@@ -262,5 +262,5 @@ class FileThumbnailer:
                     if icon_path:
                         return Image.open(icon_path)
         except Exception as e:
-            AppLogger.warning(f'Linux fallback 失敗: {file_path}', exc=e)
+            AppLogger.warning(f'Linux icon fallback failed: {file_path}', exc=e)
         return None

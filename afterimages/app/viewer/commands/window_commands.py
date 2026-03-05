@@ -65,6 +65,7 @@ def restore_always_on_top(window):
 
 class WindowCommands(ActionKit.MenuBase):
     NAME = "Window"
+    PRIORITY = 70
 
     @classmethod
     def commands(cls):

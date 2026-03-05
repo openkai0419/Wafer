@@ -27,6 +27,7 @@ class PluginRegistry:
 
     def __init__(self):
         self._plugins: list[type[BasePlugin]] = []
+        self._instances: dict[str, BasePlugin] = {}
 
     def register(self, plugin_cls: type[BasePlugin]):
         existing = next((i for i, p in enumerate(self._plugins) if p.NAME == plugin_cls.NAME), None)
@@ -35,12 +36,17 @@ class PluginRegistry:
         else:
             self._plugins.append(plugin_cls)
         self._plugins.sort(key=lambda c: c.PRIORITY, reverse=True)
+        self._instances[plugin_cls.NAME] = plugin_cls()
 
     def resolve(self, path: str) -> type[BasePlugin] | None:
         for p in self._plugins:
             if p.match(path):
                 return p
         return None
+
+    def resolve_instance(self, path: str) -> BasePlugin | None:
+        cls = self.resolve(path)
+        return self._instances.get(cls.NAME) if cls else None
 
     def resolve_all(self, path: str) -> list[type[BasePlugin]]:
         return [p for p in self._plugins if p.match(path)]
@@ -56,6 +62,9 @@ class PluginRegistry:
             if p.NAME == name:
                 return p
         return None
+
+    def instance(self, name: str) -> BasePlugin | None:
+        return self._instances.get(name)
 
     def summary(self) -> list[tuple[str, tuple[str, ...]]]:
         return [(p.NAME, p.EXTENSIONS) for p in self._plugins]

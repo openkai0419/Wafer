@@ -116,6 +116,55 @@ class TestSearchQuerySubquery:
         assert exclude == ["c"]
 
 
+class TestSearchQueryDataclass:
+
+    def test_frozen_immutable(self):
+        q = SearchQuery(keys=["dpi"])
+        import pytest
+        with pytest.raises(AttributeError):
+            q.keys = ("other",)
+
+    def test_list_args_converted_to_tuple(self):
+        q = SearchQuery(keys=["a", "b"], keywords=["c"], directories=["D:/x"])
+        assert isinstance(q.keys, tuple)
+        assert isinstance(q.keywords, tuple)
+        assert isinstance(q.directories, tuple)
+        assert q.keys == ("a", "b")
+
+    def test_none_args_stay_none(self):
+        q = SearchQuery()
+        assert q.keys is None
+        assert q.keywords is None
+        assert q.directories is None
+
+    def test_string_args_stay_string(self):
+        q = SearchQuery(keys="single_key", keywords="word")
+        assert isinstance(q.keys, str)
+        assert isinstance(q.keywords, str)
+
+    def test_equality(self):
+        q1 = SearchQuery(keys=["dpi"], keywords="test")
+        q2 = SearchQuery(keys=["dpi"], keywords="test")
+        assert q1 == q2
+
+    def test_inequality(self):
+        q1 = SearchQuery(keys=["dpi"])
+        q2 = SearchQuery(keys=["Artist"])
+        assert q1 != q2
+
+    def test_hashable(self):
+        q1 = SearchQuery(keys=["dpi"], keywords="test")
+        q2 = SearchQuery(keys=["dpi"], keywords="test")
+        assert hash(q1) == hash(q2)
+        s = {q1, q2}
+        assert len(s) == 1
+
+    def test_hash_differs(self):
+        q1 = SearchQuery(keys=["dpi"])
+        q2 = SearchQuery(keys=["Artist"])
+        assert hash(q1) != hash(q2)
+
+
 class TestFileSearchEngineGet:
 
     def test_get_by_meta_key(self, populated_db):
@@ -234,6 +283,15 @@ class TestFileSearchEngineCombined:
         q2 = SearchQuery(keys=["__filepath__"], keywords="vacation", append_mode="AND")
         paths, aspects = engine.search_multi([q1, q2])
         assert all("vacation" in p for p in paths)
+
+    def test_skipped_middle_query_preserves_intersect(self, populated_db):
+        engine = FileSearchEngine(populated_db)
+        q1 = SearchQuery(keys=["dpi"], append_mode="OR")
+        q2 = SearchQuery(keys=["nonexistent_key_xyz"], keywords="nope", append_mode="OR")
+        q3 = SearchQuery(keys=["__filepath__"], keywords="vacation", append_mode="AND")
+        paths, aspects = engine.search_multi([q1, q2, q3])
+        assert all("vacation" in p for p in paths)
+        assert len(paths) == 100
 
 
 class TestExplainQueryPlan:

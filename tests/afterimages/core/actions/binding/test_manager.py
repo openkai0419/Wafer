@@ -95,7 +95,7 @@ def test_ctx_filters_deleted_widget(qtbot):
 def test_register_applies_current_key_bindings(qtbot):
     BindingManager._instance = None
     InstanceRegistry._instance = None
-    store = KeyBindingStore()
+    store = KeyBindingStore.instance()
     try:
         seq = Key("Control", "A")
         store.set_all({seq: {"*": CommandPayload("dummy")}})

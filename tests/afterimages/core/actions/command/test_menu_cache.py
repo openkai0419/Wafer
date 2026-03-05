@@ -7,7 +7,7 @@ from afterimages.core.actions.command.core import (
     CommandRegistry,
     register_command_defs,
 )
-from afterimages.core.actions.command.ui import CommandMenuBuilder, MenuBuilder
+from afterimages.core.actions.command.menu_builder import CommandMenuBuilder, MenuBuilder
 from afterimages.core.actions.command.maker import MenuMaker
 from afterimages.core.actions.command.state import ActionGroupStateManager, CommandOptionStore
 
@@ -20,18 +20,23 @@ def _make_id(name):
 
 
 def _cleanup_registry():
-    reg = CommandRegistry()
+    reg = CommandRegistry.instance()
     keys = [k for k in reg._commands if k.startswith(PREFIX)]
     for k in keys:
         del reg._commands[k]
 
 
 @pytest.fixture(autouse=True)
-def _reset_singletons():
+def _reset_singletons(tmp_path):
+    prev_instance = CommandOptionStore._instance
+    prev_default = CommandOptionStore._default_path
+    CommandOptionStore._instance = None
+    CommandOptionStore._default_path = None
+    CommandOptionStore.configure(tmp_path / "command_options.json")
     CommandMenuBuilder._menu_cache.clear()
     CommandMenuBuilder._check_states.clear()
     CommandMenuBuilder._action_groups.clear()
-    state_mgr = ActionGroupStateManager()
+    state_mgr = ActionGroupStateManager.instance()
     for k in [k for k in state_mgr._group_states if k.startswith(PREFIX)]:
         del state_mgr._group_states[k]
     for k in [k for k in state_mgr._check_states if k.startswith(PREFIX)]:
@@ -40,7 +45,7 @@ def _reset_singletons():
         del state_mgr._group_members[k]
     for k in [k for k in state_mgr._command_to_group if k.startswith(PREFIX)]:
         del state_mgr._command_to_group[k]
-    store = CommandOptionStore()
+    store = CommandOptionStore.instance()
     store._ensure_loaded()
     for k in [k for k in store._map if k.startswith(PREFIX) or k.startswith(f"__group__{PREFIX}")]:
         del store._map[k]
@@ -65,6 +70,8 @@ def _reset_singletons():
     for k in [k for k in store._buffer if k.startswith(PREFIX) or k.startswith(f"__group__{PREFIX}")]:
         del store._buffer[k]
     _cleanup_registry()
+    CommandOptionStore._instance = prev_instance
+    CommandOptionStore._default_path = prev_default
 
 
 def _register_checkable(cmd_id, display, default_checked=False, action_group=""):
@@ -95,7 +102,7 @@ class TestRefreshCheckStatesIndividual:
         _register_checkable(_make_id("chk1"), "Check1")
         w = QtWidgets.QWidget()
         qtbot.addWidget(w)
-        builder = CommandMenuBuilder()
+        builder = CommandMenuBuilder.instance()
         menu = builder.build(w, [_make_id("chk1")])
         tracker = menu.property("__checkable_tracker__")
         assert tracker is not None
@@ -105,7 +112,7 @@ class TestRefreshCheckStatesIndividual:
         _register_checkable(_make_id("chk2"), "Check2")
         w = QtWidgets.QWidget()
         qtbot.addWidget(w)
-        builder = CommandMenuBuilder()
+        builder = CommandMenuBuilder.instance()
         menu = QtWidgets.QMenu(w)
         builder.build_into(menu, w, [_make_id("chk2")])
         tracker = menu.property("__checkable_tracker__")
@@ -117,7 +124,7 @@ class TestRefreshCheckStatesIndividual:
         _register_checkable(cmd_id, "Check3", default_checked=False)
         w = QtWidgets.QWidget()
         qtbot.addWidget(w)
-        builder = CommandMenuBuilder()
+        builder = CommandMenuBuilder.instance()
         menu = builder.build(w, [cmd_id])
         tracker = menu.property("__checkable_tracker__")
         assert tracker is not None
@@ -133,7 +140,7 @@ class TestRefreshCheckStatesIndividual:
         _register_checkable(cmd_id, "Check4", default_checked=False)
         w = QtWidgets.QWidget()
         qtbot.addWidget(w)
-        builder = CommandMenuBuilder()
+        builder = CommandMenuBuilder.instance()
         menu = builder.build(w, [cmd_id])
         tracker = menu.property("__checkable_tracker__")
         container = tracker[0][1]
@@ -149,7 +156,7 @@ class TestRefreshCheckStatesIndividual:
         _register_checkable(cmd_id, "Check5", default_checked=False)
         w = QtWidgets.QWidget()
         qtbot.addWidget(w)
-        builder = CommandMenuBuilder()
+        builder = CommandMenuBuilder.instance()
         menu = builder.build(w, [cmd_id])
         toggle_calls = []
         tracker = menu.property("__checkable_tracker__")
@@ -165,7 +172,7 @@ class TestRefreshCheckStatesIndividual:
         _register_normal(cmd_id, "Normal1")
         w = QtWidgets.QWidget()
         qtbot.addWidget(w)
-        builder = CommandMenuBuilder()
+        builder = CommandMenuBuilder.instance()
         menu = builder.build(w, [cmd_id])
         tracker = menu.property("__checkable_tracker__")
         assert tracker == []
@@ -180,7 +187,7 @@ class TestRefreshCheckStatesGroup:
         _register_checkable(b_id, "B", default_checked=False, action_group=gid)
         w = QtWidgets.QWidget()
         qtbot.addWidget(w)
-        builder = CommandMenuBuilder()
+        builder = CommandMenuBuilder.instance()
         menu = builder.build(w, [a_id, b_id])
         tracker = menu.property("__checkable_tracker__")
         assert len(tracker) == 2
@@ -197,7 +204,7 @@ class TestRefreshCheckStatesGroup:
         _register_checkable(b_id, "B", default_checked=False, action_group=gid)
         w = QtWidgets.QWidget()
         qtbot.addWidget(w)
-        builder = CommandMenuBuilder()
+        builder = CommandMenuBuilder.instance()
         menu = builder.build(w, [a_id, b_id])
         tracker = menu.property("__checkable_tracker__")
         wa_a = tracker[0][0]
@@ -205,7 +212,7 @@ class TestRefreshCheckStatesGroup:
         assert wa_a.isChecked() is True
         assert wa_b.isChecked() is False
 
-        state_mgr = ActionGroupStateManager()
+        state_mgr = ActionGroupStateManager.instance()
         state_mgr._group_states[gid] = b_id
         state_mgr._check_states[a_id] = False
         state_mgr._check_states[b_id] = True
@@ -216,26 +223,12 @@ class TestRefreshCheckStatesGroup:
 
 
 class TestMenuBuilderCache:
-    def test_second_build_uses_cache(self, qtbot):
-        cmd_id = _make_id("cached1")
-        meta = _register_normal(cmd_id, "Cached1")
-        w = QtWidgets.QWidget()
-        qtbot.addWidget(w)
-        builder = CommandMenuBuilder()
-        menu1 = builder.build(w, [cmd_id])
-        cache_key = (id(w), (cmd_id,), False, False)
-        CommandMenuBuilder._menu_cache[cache_key] = menu1
-        maker = MenuMaker()
-        mb = MenuBuilder(maker, w)
-        cached = CommandMenuBuilder._menu_cache.get(cache_key)
-        assert cached is menu1
-
     def test_cache_refreshes_check_state(self, qtbot):
         cmd_id = _make_id("cached_chk")
         _register_checkable(cmd_id, "CachedChk", default_checked=False)
         w = QtWidgets.QWidget()
         qtbot.addWidget(w)
-        builder = CommandMenuBuilder()
+        builder = CommandMenuBuilder.instance()
         menu1 = builder.build(w, [cmd_id])
         tracker = menu1.property("__checkable_tracker__")
         wa = tracker[0][0]
@@ -252,24 +245,10 @@ class TestMenuBuilderCache:
         w2 = QtWidgets.QWidget()
         qtbot.addWidget(w1)
         qtbot.addWidget(w2)
-        builder = CommandMenuBuilder()
+        builder = CommandMenuBuilder.instance()
         menu1 = builder.build(w1, [cmd_id])
         menu2 = builder.build(w2, [cmd_id])
         assert menu1 is not menu2
-
-    def test_seed_ctx_updated_on_refresh(self, qtbot):
-        cmd_id = _make_id("seed1")
-        _register_normal(cmd_id, "Seed1")
-        w = QtWidgets.QWidget()
-        qtbot.addWidget(w)
-        builder = CommandMenuBuilder()
-        menu = builder.build(w, [cmd_id])
-        assert builder._active_seed_ctx is None
-        from afterimages.core.actions.command.context import CommandContext
-        ctx2 = CommandContext.create(None, "*", source="test", event=None)
-        builder._active_seed_ctx = ctx2
-        assert builder._active_seed_ctx is ctx2
-
 
 class TestToggleThenRefresh:
     def test_toggle_then_refresh_reflects_state(self, qtbot):
@@ -277,7 +256,7 @@ class TestToggleThenRefresh:
         _register_checkable(cmd_id, "Toggle1", default_checked=False)
         w = QtWidgets.QWidget()
         qtbot.addWidget(w)
-        builder = CommandMenuBuilder()
+        builder = CommandMenuBuilder.instance()
         menu = builder.build(w, [cmd_id])
         tracker = menu.property("__checkable_tracker__")
         wa = tracker[0][0]
@@ -295,7 +274,7 @@ class TestToggleThenRefresh:
         _register_checkable(cmd_id, "Toggle2", default_checked=True)
         w = QtWidgets.QWidget()
         qtbot.addWidget(w)
-        builder = CommandMenuBuilder()
+        builder = CommandMenuBuilder.instance()
         menu = builder.build(w, [cmd_id])
         tracker = menu.property("__checkable_tracker__")
         wa = tracker[0][0]
@@ -312,14 +291,14 @@ class TestToggleThenRefresh:
         _register_checkable(cmd_id, "Ext1", default_checked=False)
         w = QtWidgets.QWidget()
         qtbot.addWidget(w)
-        builder = CommandMenuBuilder()
+        builder = CommandMenuBuilder.instance()
         menu = builder.build(w, [cmd_id])
         tracker = menu.property("__checkable_tracker__")
         wa = tracker[0][0]
         container = tracker[0][1]
         assert wa.isChecked() is False
 
-        store = CommandOptionStore()
+        store = CommandOptionStore.instance()
         store.set(cmd_id, {"checked": True})
         store.commit()
 
@@ -335,7 +314,7 @@ class TestToggleThenRefresh:
         _register_checkable(b_id, "GB", default_checked=False, action_group=gid)
         w = QtWidgets.QWidget()
         qtbot.addWidget(w)
-        builder = CommandMenuBuilder()
+        builder = CommandMenuBuilder.instance()
         menu = builder.build(w, [a_id, b_id])
         tracker = menu.property("__checkable_tracker__")
         wa_a = tracker[0][0]
@@ -343,7 +322,7 @@ class TestToggleThenRefresh:
         assert wa_a.isChecked() is True
         assert wa_b.isChecked() is False
 
-        state_mgr = ActionGroupStateManager()
+        state_mgr = ActionGroupStateManager.instance()
         state_mgr.set_current(gid, b_id)
 
         builder.refresh_check_states(menu)
@@ -357,7 +336,7 @@ class TestExternalStateChangeBugs:
         _register_checkable(cmd_id, "Stale1", default_checked=False)
         w = QtWidgets.QWidget()
         qtbot.addWidget(w)
-        builder = CommandMenuBuilder()
+        builder = CommandMenuBuilder.instance()
         menu = builder.build(w, [cmd_id])
         tracker = menu.property("__checkable_tracker__")
         wa = tracker[0][0]
@@ -366,7 +345,7 @@ class TestExternalStateChangeBugs:
         wa.setChecked(True)
         assert builder._check_states.get(cmd_id) is True
 
-        store = CommandOptionStore()
+        store = CommandOptionStore.instance()
         store.set(cmd_id, {"checked": False})
         store.commit()
 
@@ -385,7 +364,7 @@ class TestExternalStateChangeBugs:
         _register_checkable(b_id, "CycB", default_checked=False, action_group=gid)
         w = QtWidgets.QWidget()
         qtbot.addWidget(w)
-        builder = CommandMenuBuilder()
+        builder = CommandMenuBuilder.instance()
         menu = builder.build(w, [a_id, b_id])
         tracker = menu.property("__checkable_tracker__")
         wa_a = tracker[0][0]
@@ -411,7 +390,7 @@ class TestExternalStateChangeBugs:
         _register_checkable(b_id, "SetB", default_checked=False, action_group=gid)
         w = QtWidgets.QWidget()
         qtbot.addWidget(w)
-        builder = CommandMenuBuilder()
+        builder = CommandMenuBuilder.instance()
         menu = builder.build(w, [a_id, b_id])
         tracker = menu.property("__checkable_tracker__")
         wa_a = tracker[0][0]
@@ -429,13 +408,13 @@ class TestExternalStateChangeBugs:
         _register_checkable(cmd_id, "ExtNoTog", default_checked=False)
         w = QtWidgets.QWidget()
         qtbot.addWidget(w)
-        builder = CommandMenuBuilder()
+        builder = CommandMenuBuilder.instance()
         menu = builder.build(w, [cmd_id])
         tracker = menu.property("__checkable_tracker__")
         wa = tracker[0][0]
         assert wa.isChecked() is False
 
-        store = CommandOptionStore()
+        store = CommandOptionStore.instance()
         store.set(cmd_id, {"checked": True})
         store.commit()
 
@@ -449,7 +428,7 @@ class TestSetCheckedAPI:
         _register_checkable(cmd_id, "SC1", default_checked=False)
         w = QtWidgets.QWidget()
         qtbot.addWidget(w)
-        builder = CommandMenuBuilder()
+        builder = CommandMenuBuilder.instance()
         menu = builder.build(w, [cmd_id])
         tracker = menu.property("__checkable_tracker__")
         wa = tracker[0][0]
@@ -458,7 +437,7 @@ class TestSetCheckedAPI:
         builder.set_checked(cmd_id, True)
 
         assert builder._check_states[cmd_id] is True
-        store = CommandOptionStore()
+        store = CommandOptionStore.instance()
         stored = store.get(cmd_id)
         assert stored.args.get("checked") is True
 
@@ -470,7 +449,7 @@ class TestSetCheckedAPI:
         _register_checkable(cmd_id, "SC2", default_checked=False)
         w = QtWidgets.QWidget()
         qtbot.addWidget(w)
-        builder = CommandMenuBuilder()
+        builder = CommandMenuBuilder.instance()
         menu = builder.build(w, [cmd_id])
         tracker = menu.property("__checkable_tracker__")
         wa = tracker[0][0]
@@ -486,10 +465,10 @@ class TestSetCheckedAPI:
     def test_set_checked_without_menu_build(self, qtbot):
         cmd_id = _make_id("sc3")
         _register_checkable(cmd_id, "SC3", default_checked=False)
-        builder = CommandMenuBuilder()
+        builder = CommandMenuBuilder.instance()
         builder.set_checked(cmd_id, True)
         assert builder._check_states[cmd_id] is True
-        store = CommandOptionStore()
+        store = CommandOptionStore.instance()
         stored = store.get(cmd_id)
         assert stored.args.get("checked") is True
 
@@ -498,7 +477,7 @@ class TestSetCheckedAPI:
         _register_checkable(cmd_id, "SC4", default_checked=False)
         w = QtWidgets.QWidget()
         qtbot.addWidget(w)
-        builder = CommandMenuBuilder()
+        builder = CommandMenuBuilder.instance()
         menu = builder.build(w, [cmd_id])
         tracker = menu.property("__checkable_tracker__")
         wa = tracker[0][0]

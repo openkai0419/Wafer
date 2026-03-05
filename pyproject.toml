@@ -1,7 +1,7 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-addopts = "--import-mode=importlib"
+addopts = "--import-mode=importlib -p pytestqt"
 
 [tool.pyright]
 pythonVersion = "3.10"

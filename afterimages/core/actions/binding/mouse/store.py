@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from ..store_base import BindingStoreBase
 from ..presets import get_mouse_preset_path
-from .mouseeventmanager import MouseActionKey
+from .types import MouseActionKey
 
 
 class MouseBindingStore(BindingStoreBase[MouseActionKey]):

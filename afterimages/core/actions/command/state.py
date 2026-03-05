@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable
 from pathlib import Path
 from afterimages.utils.profiling import profiler
 from afterimages.utils.json_io import read_json_file, write_json_file
@@ -9,8 +9,8 @@ from .payload import CommandPayload
 
 class PersistentStore:
     def __init__(self, path: Path):
-        self._map: Dict[str, Any] = {}
-        self._buffer: Dict[str, Any] = {}
+        self._map: dict[str, Any] = {}
+        self._buffer: dict[str, Any] = {}
         self._loaded = False
         self._path = path
         self._flush_pending = False
@@ -33,13 +33,13 @@ class PersistentStore:
         self._flush_pending = False
         return bool(write_json_file(self._path, self._map, indent=2, ensure_ascii=False))
 
-    def _get_raw(self, key: str) -> Dict[str, Any]:
+    def _get_raw(self, key: str) -> dict[str, Any]:
         self._ensure_loaded()
         if key in self._buffer:
             return self._buffer[key]
         return self._map.get(key, {})
 
-    def _set_raw(self, key: str, value: Dict[str, Any]) -> bool:
+    def _set_raw(self, key: str, value: dict[str, Any]) -> bool:
         self._ensure_loaded()
         self._buffer[str(key)] = value
         self._flush_pending = True
@@ -50,7 +50,7 @@ class PersistentStore:
             return True
         return self._flush()
 
-    def clear(self, key: Optional[str] = None) -> bool:
+    def clear(self, key: str | None = None) -> bool:
         self._ensure_loaded()
         if key is None:
             self._map.clear()
@@ -63,32 +63,28 @@ class PersistentStore:
 
 
 class CommandOptionStore(PersistentStore):
-    _instance: Optional["CommandOptionStore"] = None
+    _instance: "CommandOptionStore" | None = None
     _initialized = False
-    _default_path: Optional[Path] = None
+    _default_path: Path | None = None
 
-    def __new__(cls):
+    @classmethod
+    def instance(cls) -> "CommandOptionStore":
         if cls._instance is None:
-            cls._instance = object.__new__(cls)
+            if cls._default_path is None:
+                raise RuntimeError("CommandOptionStore.configure() must be called before instance()")
+            inst = object.__new__(cls)
+            PersistentStore.__init__(inst, cls._default_path)
+            cls._initialized = True
+            cls._instance = inst
         return cls._instance
-    
-    def __init__(self, path: Optional[str | Path] = None):
-        if CommandOptionStore._initialized and path is None:
-            return
-        desired = Path(path) if path else (CommandOptionStore._default_path or (Path(__file__).resolve().parent.parent / ".command_options.json"))
-        if not CommandOptionStore._initialized:
-            super().__init__(desired)
-            CommandOptionStore._initialized = True
-        elif desired != getattr(self, "_path", None):
-            self._reconfigure(desired)
 
     @classmethod
     def configure(cls, path: str | Path) -> "CommandOptionStore":
         cls._default_path = Path(path)
-        inst = cls._instance
-        if inst is not None:
+        inst = cls.instance()
+        if inst._path != cls._default_path:
             inst._reconfigure(cls._default_path)
-        return cls()
+        return inst
 
     def _reconfigure(self, path: Path) -> None:
         self._path = Path(path)
@@ -110,23 +106,25 @@ class CommandOptionStore(PersistentStore):
             return CommandPayload(command_id, {})
         return CommandPayload(command_id, v)
 
-    def set(self, command_id: str, options: Dict[str, Any] | CommandPayload) -> bool:
+    def set(self, command_id: str, options: dict[str, Any] | CommandPayload) -> bool:
         if isinstance(options, CommandPayload):
             return self._set_raw(str(command_id), {"id": options.id, "args": options.args})
         return self._set_raw(str(command_id), {"id": str(command_id), "args": options or {}})
 
 
 class ActionGroupStateManager:
-    _instance: Optional["ActionGroupStateManager"] = None
-    
-    def __new__(cls):
+    _instance: "ActionGroupStateManager" | None = None
+
+    @classmethod
+    def instance(cls) -> "ActionGroupStateManager":
         if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._group_states = {}
-            cls._instance._group_members = {}
-            cls._instance._command_to_group = {}
-            cls._instance._check_states = {}
-            cls._instance._observers = []
+            inst = object.__new__(cls)
+            inst._group_states = {}
+            inst._group_members = {}
+            inst._command_to_group = {}
+            inst._check_states = {}
+            inst._observers = []
+            cls._instance = inst
         return cls._instance
     
     def add_observer(self, observer: Callable[[str, str], None]):
@@ -154,14 +152,14 @@ class ActionGroupStateManager:
             self._group_members[group_name].append(command_id)
         self._command_to_group[command_id] = group_name
     
-    def get_members(self, group_name: str) -> List[str]:
+    def get_members(self, group_name: str) -> list[str]:
         return self._group_members.get(group_name, [])
     
-    def get_group_for_command(self, command_id: str) -> Optional[str]:
+    def get_group_for_command(self, command_id: str) -> str | None:
         return self._command_to_group.get(command_id)
     
     @profiler.profile
-    def get_current(self, group_name: str) -> Optional[str]:
+    def get_current(self, group_name: str) -> str | None:
         if group_name in self._group_states:
             return self._group_states[group_name]
         result = self._load_state(group_name)
@@ -180,7 +178,7 @@ class ActionGroupStateManager:
             self.commit()
     
     @profiler.profile
-    def cycle(self, group_name: str) -> Optional[str]:
+    def cycle(self, group_name: str) -> str | None:
         members = self._group_members.get(group_name)
         if not members:
             return None
@@ -204,7 +202,7 @@ class ActionGroupStateManager:
             self._check_states[member] = (member == command_id)
     
     def commit(self):
-        store = CommandOptionStore()
+        store = CommandOptionStore.instance()
         for group_name, command_id in self._group_states.items():
             store.set(f"__group__{group_name}", {"selected": command_id})
             members = self._group_members.get(group_name, [])
@@ -224,9 +222,9 @@ class ActionGroupStateManager:
         if not ok:
             AppLogger.warning("Action group state commit returned False")
     
-    def _load_state(self, group_name: str) -> Optional[str]:
+    def _load_state(self, group_name: str) -> str | None:
         members = self._group_members.get(group_name)
-        stored = CommandOptionStore().get(f"__group__{group_name}")
+        stored = CommandOptionStore.instance().get(f"__group__{group_name}")
         args = getattr(stored, "args", None)
         if isinstance(args, dict) and "selected" in args:
             v = args.get("selected")
@@ -239,7 +237,7 @@ class ActionGroupStateManager:
         if not members:
             return None
         
-        store = CommandOptionStore()
+        store = CommandOptionStore.instance()
         for member in members:
             stored = store.get(member)
             args = getattr(stored, "args", None)
@@ -248,7 +246,7 @@ class ActionGroupStateManager:
         
         return None
     
-    def find_default(self, group_name: str, registry) -> Optional[str]:
+    def find_default(self, group_name: str, registry) -> str | None:
         members = self._group_members.get(group_name)
         if not members:
             return None

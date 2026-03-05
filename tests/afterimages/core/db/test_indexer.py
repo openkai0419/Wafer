@@ -46,6 +46,31 @@ def test_fileindexer_exclude_paths(tmp_path):
     assert not idx.is_path_excluded(normalize_path(str(tmp_path / 'e' / 'f')))
 
 
+def test_exclude_paths_uses_sorted_list():
+    idx = FileIndexer('x.db')
+    idx.set_exclude_paths(['/z/path', '/a/path', '/m/path'])
+    assert isinstance(idx.exclude_paths, list)
+    assert idx.exclude_paths == sorted(idx.exclude_paths)
+
+
+def test_is_path_excluded_many_paths():
+    from afterimages.utils.paths import normalize_path
+    idx = FileIndexer('x.db')
+    raw_paths = [f'C:/root/dir{i:04d}' for i in range(500)]
+    idx.set_exclude_paths(raw_paths)
+    target = normalize_path('C:/root/dir0250')
+    assert idx.is_path_excluded(target)
+    assert idx.is_path_excluded(target + '/sub/file.jpg')
+    assert not idx.is_path_excluded(normalize_path('C:/root/other'))
+    assert not idx.is_path_excluded(target + 'x')
+
+
+def test_is_path_excluded_empty():
+    idx = FileIndexer('x.db')
+    idx.set_exclude_paths([])
+    assert not idx.is_path_excluded('C:/any/path')
+
+
 def test_detect_diff():
     idx = FileIndexer('x.db')
     current = {'a': (1.0, 100), 'b': (2.0, 200), 'c': (3.0, 300)}
@@ -123,7 +148,7 @@ def test_register_basic_info_extension_filter(tmp_path):
         assert len(files) == 2
 
 
-def test_update_meta_and_image_only_registers(tmp_path):
+def test_register_basic_info_delegates_correctly(tmp_path):
     import os
     from afterimages.utils.paths import normalize_path
     f1 = tmp_path / 'img.bin'
@@ -137,7 +162,7 @@ def test_update_meta_and_image_only_registers(tmp_path):
     db_path = tmp_path / 'test.db'
     with FileIndexer(db_path, collectors=collectors) as idx:
         idx.initialize()
-        idx._update_meta_and_image([norm], file_info)
+        idx._register_basic_info([norm], file_info)
 
         pending = idx.db.get_pending_sources('exif')
         assert len(pending) == 1

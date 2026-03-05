@@ -1,4 +1,5 @@
 from __future__ import annotations
+import bisect
 import os
 import threading
 import time
@@ -83,15 +84,20 @@ class FileIndexer:
 
     @profiler.profile
     def set_exclude_paths(self, paths, run=False):
-        self.exclude_paths = {normalize_path(p) for p in paths}
+        sorted_paths = sorted(normalize_path(p) for p in paths)
+        self.exclude_paths = sorted_paths
         AppLogger.info(f'[ExcludePaths] {len(self.exclude_paths)} paths set.')
         if run:
             self.remove_excluded_from_db()
 
     @profiler.profile
     def is_path_excluded(self, path):
-        for ex in self.exclude_paths:
-            if path == ex or path.startswith(ex + '/'):
+        if not self.exclude_paths:
+            return False
+        idx = bisect.bisect_right(self.exclude_paths, path)
+        if idx > 0:
+            candidate = self.exclude_paths[idx - 1]
+            if path == candidate or path.startswith(candidate + '/'):
                 return True
         return False
 
@@ -187,7 +193,7 @@ class FileIndexer:
             self.emit_update()
 
         if added_or_modified:
-            self._update_meta_and_image(added_or_modified, file_info)
+            self._register_basic_info(added_or_modified, file_info)
 
     @profiler.profile
     def update_by_file_list(self, file_paths):
@@ -218,7 +224,7 @@ class FileIndexer:
         to_update = [p for p, (mt, sz, ct) in stat_info.items() if p not in previous or (mt, sz) != previous[p]]
         if to_update:
             self._add_progress(0, len(to_update))
-            self._update_meta_and_image(to_update, stat_info)
+            self._register_basic_info(to_update, stat_info)
             self.db.try_checkpoint()
             self.emit_update()
         else:
@@ -256,11 +262,11 @@ class FileIndexer:
 
     @profiler.profile
     def _register_basic_info(self, paths, file_info):
-        from ..platform.thumbnails import get_aspect_ratios
+        from ..platform.thumbnails import FileThumbnailer
         now = time.time()
         for i in range(0, len(paths), _CHUNK):
             chunk = paths[i:i + _CHUNK]
-            aspect_map = get_aspect_ratios(chunk)
+            aspect_map = FileThumbnailer.get_aspect_ratios(chunk)
             source_entries = []
             file_entries = []
             for p in chunk:
@@ -306,10 +312,6 @@ class FileIndexer:
                 chunk = sources[i:i + _CHUNK]
                 self.db.insert_pending_collection(chunk, [name])
             AppLogger.info(f'[Backfill] Added {len(sources)} pending entries for "{name}"')
-
-    @profiler.profile
-    def _update_meta_and_image(self, paths, file_info):
-        self._register_basic_info(paths, file_info)
 
     @profiler.profile
     def purge_orphan_records(self):

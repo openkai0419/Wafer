@@ -104,6 +104,44 @@ _INDEXES_SQL = """
     CREATE INDEX IF NOT EXISTS idx_cs_collector_status ON collection_status(collector, status);
 """
 
+_SQL_UPSERT_SOURCES = '''INSERT INTO sources (source, file_hash, size, modified, created, collected, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(source) DO UPDATE SET
+        file_hash = excluded.file_hash,
+        size      = excluded.size,
+        modified  = excluded.modified,
+        created   = excluded.created,
+        collected = excluded.collected,
+        status    = excluded.status'''
+
+_SQL_UPSERT_FILES = '''INSERT INTO files (path, source, name, aspect_ratio)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(path) DO UPDATE SET
+        source       = excluded.source,
+        name         = excluded.name,
+        aspect_ratio = excluded.aspect_ratio'''
+
+_SQL_UPSERT_FILES_COALESCE = '''INSERT INTO files (path, source, name, aspect_ratio)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(path) DO UPDATE SET
+        source       = excluded.source,
+        name         = COALESCE(excluded.name, files.name),
+        aspect_ratio = COALESCE(excluded.aspect_ratio, files.aspect_ratio)'''
+
+_SQL_UPSERT_META = '''INSERT INTO meta_info (path, key, value)
+    VALUES (?, ?, ?)
+    ON CONFLICT(path, key) DO UPDATE SET value = excluded.value'''
+
+_SQL_UPSERT_TAGS = '''INSERT INTO tags (file_hash, key, value)
+    VALUES (?, ?, ?)
+    ON CONFLICT(file_hash, key) DO UPDATE SET value = excluded.value'''
+
+_SQL_UPSERT_COLLECTION_STATUS = '''INSERT INTO collection_status (source, collector, status, collected_at)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(source, collector) DO UPDATE SET
+        status       = excluded.status,
+        collected_at = excluded.collected_at'''
+
 _EXPECTED_SIGNATURES: dict[str, frozenset] = {}
 
 
@@ -147,8 +185,10 @@ class FileDB:
         self.try_checkpoint()
         if self.conn:
             self.conn.close()
+            self.conn = None
         if self.read_conn:
             self.read_conn.close()
+            self.read_conn = None
 
     def get_writer_cursor(self):
         return self.conn.cursor()
@@ -199,9 +239,11 @@ class FileDB:
             self.conn = None
         try:
             tmp = sqlite3.connect(str(self.db_path), check_same_thread=False)
-            tmp.execute('PRAGMA journal_mode=WAL')
-            tmp.execute('VACUUM INTO ?', (str(self.backup_path),))
-            tmp.close()
+            try:
+                tmp.execute('PRAGMA journal_mode=WAL')
+                tmp.execute('VACUUM INTO ?', (str(self.backup_path),))
+            finally:
+                tmp.close()
             for suf in ('', '-wal', '-shm'):
                 try:
                     os.remove(str(self.db_path) + suf)
@@ -215,7 +257,11 @@ class FileDB:
                         os.remove(str(self.db_path) + suf)
                     except FileNotFoundError:
                         pass
-        self.start()
+        try:
+            self.start()
+        except Exception as e:
+            AppLogger.error(f'Failed to recreate DB at {self.db_path}: {e}', exc=e)
+            raise
         AppLogger.warning(f'New DB created at: {self.db_path}')
 
     @profiler.profile
@@ -293,107 +339,43 @@ class FileDB:
                 cur.execute('UPDATE files SET path = ?, name = ? WHERE source = ?', (new, name, new))
             cur.close()
 
+    @staticmethod
+    def _ensure_hash_indexes(cur, source_entries, tag_entries=()):
+        file_hashes = set()
+        for _, fid, *_ in source_entries:
+            if fid:
+                file_hashes.add(fid)
+        for fid, *_ in tag_entries:
+            if fid:
+                file_hashes.add(fid)
+        if file_hashes:
+            cur.executemany(
+                'INSERT OR IGNORE INTO hash_index (file_hash) VALUES (?)',
+                [(h,) for h in file_hashes],
+            )
+
     @profiler.profile
     def upsert_batches(self, source_entries, image_entries, meta_info_entries, tag_entries):
         with self._write_lock, self.conn:
             cur = self.conn.cursor()
-
-            file_ids = set()
-            for _, fid, *_ in source_entries:
-                if fid:
-                    file_ids.add(fid)
-            for fid, *_ in tag_entries:
-                if fid:
-                    file_ids.add(fid)
-            if file_ids:
-                cur.executemany(
-                    'INSERT OR IGNORE INTO hash_index (file_hash) VALUES (?)',
-                    [(fid,) for fid in file_ids],
-                )
-
-            cur.executemany(
-                '''
-                INSERT INTO sources (source, file_hash, size, modified, created, collected, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(source) DO UPDATE SET
-                file_hash = excluded.file_hash,
-                size      = excluded.size,
-                modified  = excluded.modified,
-                created   = excluded.created,
-                collected = excluded.collected,
-                status    = excluded.status
-                ''',
-                source_entries,
-            )
-
+            self._ensure_hash_indexes(cur, source_entries, tag_entries)
+            cur.executemany(_SQL_UPSERT_SOURCES, source_entries)
             if image_entries:
-                cur.executemany(
-                    '''
-                    INSERT INTO files (path, source, name, aspect_ratio)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(path) DO UPDATE SET
-                        source       = excluded.source,
-                        name         = excluded.name,
-                        aspect_ratio = excluded.aspect_ratio
-                    ''',
-                    image_entries,
-                )
-
+                cur.executemany(_SQL_UPSERT_FILES, image_entries)
             if meta_info_entries:
-                cur.executemany(
-                    '''
-                    INSERT INTO meta_info (path, key, value)
-                    VALUES (?, ?, ?)
-                    ON CONFLICT(path, key) DO UPDATE SET
-                        value = excluded.value
-                    ''',
-                    meta_info_entries,
-                )
-
+                cur.executemany(_SQL_UPSERT_META, meta_info_entries)
             if tag_entries:
-                cur.executemany(
-                    '''
-                    INSERT INTO tags (file_hash, key, value)
-                    VALUES (?, ?, ?)
-                    ON CONFLICT(file_hash, key) DO UPDATE SET
-                        value = excluded.value
-                    ''',
-                    tag_entries,
-                )
+                cur.executemany(_SQL_UPSERT_TAGS, tag_entries)
             cur.close()
 
     @profiler.profile
     def upsert_basic_sources(self, source_entries, image_entries):
         with self._write_lock, self.conn:
             cur = self.conn.cursor()
-            file_ids = {fid for _, fid, *_ in source_entries if fid}
-            if file_ids:
-                cur.executemany(
-                    'INSERT OR IGNORE INTO hash_index (file_hash) VALUES (?)',
-                    [(fid,) for fid in file_ids],
-                )
-            cur.executemany(
-                '''INSERT INTO sources (source, file_hash, size, modified, created, collected, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(source) DO UPDATE SET
-                    file_hash = excluded.file_hash,
-                    size      = excluded.size,
-                    modified  = excluded.modified,
-                    created   = excluded.created,
-                    collected = excluded.collected,
-                    status    = excluded.status''',
-                source_entries,
-            )
+            self._ensure_hash_indexes(cur, source_entries)
+            cur.executemany(_SQL_UPSERT_SOURCES, source_entries)
             if image_entries:
-                cur.executemany(
-                    '''INSERT INTO files (path, source, name, aspect_ratio)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(path) DO UPDATE SET
-                        source       = excluded.source,
-                        name         = excluded.name,
-                        aspect_ratio = COALESCE(excluded.aspect_ratio, files.aspect_ratio)''',
-                    image_entries,
-                )
+                cur.executemany(_SQL_UPSERT_FILES_COALESCE, image_entries)
             cur.close()
 
     @profiler.profile
@@ -402,48 +384,18 @@ class FileDB:
             cur = self.conn.cursor()
             if source_updates:
                 cur.executemany(
-                    '''UPDATE sources SET collected = ?, status = ? WHERE source = ?''',
+                    'UPDATE sources SET collected = ?, status = ? WHERE source = ?',
                     source_updates,
                 )
             if image_entries:
-                cur.executemany(
-                    '''INSERT INTO files (path, source, name, aspect_ratio)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(path) DO UPDATE SET
-                        source       = excluded.source,
-                        name         = COALESCE(excluded.name, files.name),
-                        aspect_ratio = COALESCE(excluded.aspect_ratio, files.aspect_ratio)''',
-                    image_entries,
-                )
+                cur.executemany(_SQL_UPSERT_FILES_COALESCE, image_entries)
             if meta_info_entries:
-                cur.executemany(
-                    '''INSERT INTO meta_info (path, key, value)
-                    VALUES (?, ?, ?)
-                    ON CONFLICT(path, key) DO UPDATE SET value = excluded.value''',
-                    meta_info_entries,
-                )
-            file_ids = {fid for fid, *_ in tag_entries if fid}
-            if file_ids:
-                cur.executemany(
-                    'INSERT OR IGNORE INTO hash_index (file_hash) VALUES (?)',
-                    [(fid,) for fid in file_ids],
-                )
+                cur.executemany(_SQL_UPSERT_META, meta_info_entries)
+            self._ensure_hash_indexes(cur, [], tag_entries)
             if tag_entries:
-                cur.executemany(
-                    '''INSERT INTO tags (file_hash, key, value)
-                    VALUES (?, ?, ?)
-                    ON CONFLICT(file_hash, key) DO UPDATE SET value = excluded.value''',
-                    tag_entries,
-                )
+                cur.executemany(_SQL_UPSERT_TAGS, tag_entries)
             if collector_status_entries:
-                cur.executemany(
-                    '''INSERT INTO collection_status (source, collector, status, collected_at)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(source, collector) DO UPDATE SET
-                        status       = excluded.status,
-                        collected_at = excluded.collected_at''',
-                    collector_status_entries,
-                )
+                cur.executemany(_SQL_UPSERT_COLLECTION_STATUS, collector_status_entries)
             cur.close()
 
     @profiler.profile
@@ -462,6 +414,7 @@ class FileDB:
                 entries,
             )
             cur.close()
+
 
     @profiler.profile
     def get_sources_without_collector(self, collector):

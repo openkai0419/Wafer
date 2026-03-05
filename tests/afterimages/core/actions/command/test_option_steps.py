@@ -2,7 +2,7 @@ from PySide6 import QtWidgets
 
 from afterimages.core.actions.command.core import CommandMeta, CommandParam
 from afterimages.core.actions.command.state import CommandOptionStore
-from afterimages.core.actions.command.ui import CommandOptionsDialog
+from afterimages.core.actions.command.option_dialog import CommandOptionsDialog
 
 
 class _Cmd:
@@ -89,3 +89,37 @@ def test_float_step_ignores_binary_noise(qtbot, tmp_path):
     assert isinstance(sb, QtWidgets.QDoubleSpinBox)
     assert sb.decimals() == 2
     assert abs(sb.singleStep() - 0.05) < 1e-12
+
+
+def test_execute_does_not_close_dialog(qtbot, tmp_path):
+    CommandOptionStore.configure(tmp_path / "opts.json")
+    _Cmd.meta = CommandMeta(id="__test__.exec_noclose", display="exec", params=[CommandParam(name="x", value=10)])
+    called = []
+    def callback(values):
+        called.append(values)
+    w = QtWidgets.QWidget()
+    qtbot.addWidget(w)
+    d = CommandOptionsDialog(_Cmd, w, execute_callback=callback)
+    qtbot.addWidget(d)
+    d.show()
+    d._on_execute()
+    assert len(called) == 1
+    assert d.isVisible()
+    assert not d.did_save()
+    d.close()
+
+
+def test_save_closes_dialog_without_execute(qtbot, tmp_path):
+    CommandOptionStore.configure(tmp_path / "opts.json")
+    _Cmd.meta = CommandMeta(id="__test__.save_noexec", display="save", params=[CommandParam(name="x", value=10)])
+    called = []
+    def callback(values):
+        called.append(values)
+    w = QtWidgets.QWidget()
+    qtbot.addWidget(w)
+    d = CommandOptionsDialog(_Cmd, w, execute_callback=callback)
+    qtbot.addWidget(d)
+    d.show()
+    d._on_save()
+    assert len(called) == 0
+    assert d.did_save()

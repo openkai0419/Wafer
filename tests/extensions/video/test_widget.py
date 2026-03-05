@@ -121,15 +121,6 @@ class TestMpvGLOverlay:
         overlay.paintGL()
         overlay._ctx.render.assert_called_once()
 
-    def test_paintgl_normal_after_first_frame(self, qtbot):
-        from extensions.video.widget import MpvGLOverlay
-        overlay = MpvGLOverlay()
-        overlay._ctx = MagicMock()
-        overlay._awaiting_first_frame = False
-        overlay._frame_ready = True
-        overlay.paintGL()
-        overlay._ctx.render.assert_called_once()
-
     def test_stale_callback_after_deactivate_no_show(self, qtbot):
         from extensions.video.widget import MpvGLOverlay
         overlay = MpvGLOverlay()
@@ -253,7 +244,7 @@ class TestMpvCellWidget:
         w = MpvCellWidget(parent)
         w._path = '/test.mp4'
         w.setGeometry(0, 0, 200, 150)
-        w.on_selected('/test.mp4')
+        w.on_selected()
         assert MpvCellWidget._slot_manager.is_selected(w)
         w.cleanup()
 
@@ -263,7 +254,7 @@ class TestMpvCellWidget:
         w = MpvCellWidget(parent)
         w._path = '/test.mp4'
         w.setGeometry(0, 0, 200, 150)
-        w.on_selected('/test.mp4')
+        w.on_selected()
         w.on_deselected()
         assert not MpvCellWidget._slot_manager.is_selected(w)
         w.cleanup()

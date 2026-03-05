@@ -25,7 +25,7 @@ class PixmapFactory:
         painter.drawLine(m, m, s - m, s - m)
         painter.drawLine(m, s - m, s - m, m)
         painter.end()
-        PixmapFactory.draw_centered_text_with_background(pixmap, 'error')
+        pixmap = PixmapFactory.draw_centered_text_with_background(pixmap, 'error')
         return pixmap
 
     @staticmethod

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Generic, List, Set, TypeVar
+from typing import Any, Generic, TypeVar
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
@@ -9,19 +9,20 @@ from afterimages.utils.formatting import dpix
 
 from ..command.payload import CommandPayload, format_payload_display
 from ..command.maker import MenuMaker
-from ..command.ui import MenuBuilder
+from ..command.menu_builder import MenuBuilder
 from .common import WidgetRef
 from .store_base import BindingStoreBase, resolve_for_widget
+from afterimages.core.lang.manager import TranslatorMixin, get_translator
 
 K = TypeVar("K")
 
 
 class DraftOverlay(Generic[K]):
     def __init__(self):
-        self._changes: Dict[K, Dict[str, CommandPayload]] = {}
-        self._deleted: Set[K] = set()
+        self._changes: dict[K, dict[str, CommandPayload]] = {}
+        self._deleted: set[K] = set()
 
-    def update(self, key: K, scopes: Dict[str, CommandPayload]) -> None:
+    def update(self, key: K, scopes: dict[str, CommandPayload]) -> None:
         if scopes:
             self._changes[key] = dict(scopes)
             self._deleted.discard(key)
@@ -32,7 +33,7 @@ class DraftOverlay(Generic[K]):
         self._changes.pop(key, None)
         self._deleted.add(key)
 
-    def merge(self, store_data: Dict[K, Dict[str, CommandPayload]]) -> Dict[K, Dict[str, CommandPayload]]:
+    def merge(self, store_data: dict[K, dict[str, CommandPayload]]) -> dict[K, dict[str, CommandPayload]]:
         result = {k: dict(v) for k, v in store_data.items()}
         for k in self._deleted:
             result.pop(k, None)
@@ -40,10 +41,10 @@ class DraftOverlay(Generic[K]):
             result[k] = dict(v)
         return result
 
-    def keys(self) -> Set[K]:
+    def keys(self) -> set[K]:
         return set(self._changes.keys()) | self._deleted
 
-    def replace_all(self, data: Dict[K, Dict[str, CommandPayload]]) -> None:
+    def replace_all(self, data: dict[K, dict[str, CommandPayload]]) -> None:
         self._changes = {k: dict(v) for k, v in data.items() if v}
         self._deleted = {k for k, v in data.items() if not v}
 
@@ -89,7 +90,7 @@ def popup_command_picker(
     builder = MenuBuilder(maker, parent)
 
     def _prep(m: QtWidgets.QMenu, sc=scope):
-        act_none = QtGui.QAction("なし(解除)", m)
+        act_none = QtGui.QAction(get_translator().tr("None (Unset)"), m)
         act_none.triggered.connect(lambda _, s=sc: on_select(s, None))
         first = m.actions()[0] if m.actions() else None
         if first:
@@ -107,17 +108,17 @@ def popup_command_picker(
     )
 
 
-class BindingEditorBase(QtWidgets.QDialog):
-    def __init__(self, widgets: List[WidgetRef], store: BindingStoreBase, parent=None):
+class BindingEditorBase(TranslatorMixin, QtWidgets.QDialog):
+    def __init__(self, widgets: list[WidgetRef], store: BindingStoreBase, parent=None):
         super().__init__(parent)
         self.widgets = widgets
         self._store = store
         self._draft: DraftOverlay = DraftOverlay()
 
-    def _merged_data(self) -> Dict:
+    def _merged_data(self) -> dict:
         return self._draft.merge(self._store.get_all())
 
-    def _apply_to_widgets(self, data: Dict, setter_attr: str) -> None:
+    def _apply_to_widgets(self, data: dict, setter_attr: str) -> None:
         for wref in self.widgets:
             bindings = resolve_for_widget(data, wref.name)
             setter = getattr(wref.widget, setter_attr, None)
@@ -135,17 +136,17 @@ class BindingEditorBase(QtWidgets.QDialog):
         self._draft.replace_all(self._store._seed_data())
 
 
-class ScopedPayloadSectionBase(QtWidgets.QGroupBox):
+class ScopedPayloadSectionBase(TranslatorMixin, QtWidgets.QGroupBox):
     def __init__(
         self,
         parent: QtWidgets.QWidget,
-        widgets: List[WidgetRef],
+        widgets: list[WidgetRef],
         *,
         header_button_text: str,
     ):
         super().__init__(parent)
         self.widgets = widgets
-        self._payloads: Dict[str, CommandPayload] = {}
+        self._payloads: dict[str, CommandPayload] = {}
         l = QtWidgets.QVBoxLayout(self)
         header = QtWidgets.QHBoxLayout()
         self.header = header
@@ -154,7 +155,7 @@ class ScopedPayloadSectionBase(QtWidgets.QGroupBox):
         self.btn_global.clicked.connect(lambda: self._pick_cmd("*"))
         header.addWidget(self.btn_global, 0)
         self.btn_overrides = QtWidgets.QToolButton(self)
-        self.btn_overrides.setText("専用")
+        self.btn_overrides.setText(self.t.tr("Per-Widget"))
         self.btn_overrides.setPopupMode(QtWidgets.QToolButton.InstantPopup)
         self.ov_menu = QtWidgets.QMenu(self.btn_overrides)
         self.ov_menu.aboutToShow.connect(self._refresh_overrides_menu)
@@ -169,19 +170,19 @@ class ScopedPayloadSectionBase(QtWidgets.QGroupBox):
         self.overrides_layout = QtWidgets.QVBoxLayout(self.overrides_container)
         self.overrides_layout.setContentsMargins(dpix(4), dpix(4), dpix(4), dpix(4))
         self.overrides_layout.setSpacing(dpix(6))
-        self.override_edits: Dict[str, QtWidgets.QLineEdit] = {}
+        self.override_edits: dict[str, QtWidgets.QLineEdit] = {}
         l.addWidget(self.overrides_container)
         self.overrides_container.setVisible(False)
 
     def set_header_button_text(self, text: str) -> None:
         self.btn_global.setText(str(text))
 
-    def load_from_scopes(self, scopes: Dict[str, Any]) -> None:
+    def load_from_scopes(self, scopes: dict[str, Any]) -> None:
         self.global_edit.clear()
         for e in self.override_edits.values():
             e.clear()
         self._payloads.clear()
-        found: Dict[str, str] = {}
+        found: dict[str, str] = {}
         for scope, cmd in (scopes or {}).items():
             if isinstance(cmd, CommandPayload):
                 found[str(scope)] = cmd.id
@@ -192,8 +193,8 @@ class ScopedPayloadSectionBase(QtWidgets.QGroupBox):
             self.global_edit.setText(format_payload_display(g))
         self.overrides_container.setVisible(any(s != "*" for s in self._payloads.keys()))
 
-    def collect_scopes(self) -> Dict[str, CommandPayload]:
-        scopes: Dict[str, CommandPayload] = {}
+    def collect_scopes(self) -> dict[str, CommandPayload]:
+        scopes: dict[str, CommandPayload] = {}
         if "*" in self._payloads:
             scopes["*"] = self._payloads["*"]
         for scope in list(self.override_edits.keys()):
@@ -238,7 +239,7 @@ class ScopedPayloadSectionBase(QtWidgets.QGroupBox):
         self.ov_menu.clear()
         remaining = [w.name for w in self.widgets if w.name not in self.override_edits]
         if not remaining:
-            act = self.ov_menu.addAction("No more widgets")
+            act = self.ov_menu.addAction(self.t.tr("No more widgets"))
             act.setEnabled(False)
             self.btn_overrides.setEnabled(False)
             return
@@ -247,7 +248,7 @@ class ScopedPayloadSectionBase(QtWidgets.QGroupBox):
             act = self.ov_menu.addAction(scope)
             act.triggered.connect(lambda _, sc=scope: self._add_override(sc))
 
-    def _rebuild(self, found: Dict[str, str]) -> None:
+    def _rebuild(self, found: dict[str, str]) -> None:
         clear_layout(self.overrides_layout, self, "ScopedPayloadSectionBase rebuild")
         self.override_edits.clear()
         ordered = sorted([s for s in found.keys() if s != "*"]) if found else []

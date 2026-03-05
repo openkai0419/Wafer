@@ -68,3 +68,30 @@ class TestQtDebounceManager:
         manager.debounce('k', 30, cb)
         _flush_events(80)
         assert 'k' not in manager._timers
+
+
+class TestQtThrottleManager:
+    @pytest.fixture
+    def manager(self, qtbot):
+        from afterimages.core.qt.rate_limit import QtThrottleManager
+        return QtThrottleManager()
+
+    def test_throttle_fires_immediately(self, manager, qtbot):
+        cb = MagicMock()
+        manager.throttle('k', 200, 100, cb, 'first')
+        cb.assert_called_once_with('first')
+
+    def test_throttle_idle_fires_with_latest_args(self, manager, qtbot):
+        received = []
+
+        def cb(val):
+            received.append(val)
+
+        manager.throttle('k', 5000, 50, cb, 'first')
+        assert received == ['first']
+
+        manager.throttle('k', 5000, 50, cb, 'second')
+        manager.throttle('k', 5000, 50, cb, 'third')
+
+        _flush_events(150)
+        assert received[-1] == 'third'

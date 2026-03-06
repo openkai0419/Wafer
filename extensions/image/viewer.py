@@ -1,4 +1,4 @@
-from afterimages.plugin import ImageViewerPlugin as _ImageViewerPlugin
+from wayfer.plugin import ImageViewerPlugin as _ImageViewerPlugin
 
 
 class ImageViewerPlugin(_ImageViewerPlugin):

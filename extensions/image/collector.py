@@ -1,6 +1,6 @@
 import os
-from afterimages.plugin import BaseCollectorPlugin, CollectorResult
-from afterimages.utils.logs import AppLogger
+from wayfer.plugin import BaseCollectorPlugin, CollectorResult
+from wayfer.utils.logs import AppLogger
 
 
 class ExifCollectorPlugin(BaseCollectorPlugin):

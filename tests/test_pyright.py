@@ -5,7 +5,7 @@ import sys
 
 def test_pyright_no_errors():
     result = subprocess.run(
-        [sys.executable, "-m", "pyright", "afterimages/", "--outputjson"],
+        [sys.executable, "-m", "pyright", "wayfer/", "--outputjson"],
         capture_output=True,
         text=True,
         timeout=120,

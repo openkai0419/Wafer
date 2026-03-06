@@ -1,5 +1,5 @@
-from afterimages.plugin import MenuGroup, CommandMeta, CommandParam
-from afterimages.core.actions.bridge import Command
+from wayfer.plugin import MenuGroup, CommandMeta, CommandParam
+from wayfer.core.actions.bridge import Command
 
 
 def _slot_manager():

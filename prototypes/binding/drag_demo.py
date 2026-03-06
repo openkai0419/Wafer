@@ -1,6 +1,6 @@
 from pathlib import Path
-from afterimages.core.actions.bridge import ActionKit
-from afterimages.utils.logs import AppLogger
+from wayfer.core.actions.bridge import ActionKit
+from wayfer.utils.logs import AppLogger
 
 
 def accept_local_existing_files(ctx) -> bool:

@@ -28,7 +28,7 @@ _MANUAL_HINT = (
 
 def _log(msg, *, level='info', exc=None):
     try:
-        from afterimages.utils.logs import AppLogger
+        from wayfer.utils.logs import AppLogger
         fn = getattr(AppLogger, level, AppLogger.info)
         if exc and level in ('error', 'warning'):
             fn(msg, exc=exc)
@@ -64,7 +64,7 @@ def _safe_download(url: str, dest: str, *, allowed_hosts: tuple[str, ...] | None
 def _find_asset_url() -> str | None:
     req = urllib.request.Request(
         _GITHUB_LATEST_API,
-        headers={'Accept': 'application/vnd.github+json', 'User-Agent': 'afterimages-video-plugin'},
+        headers={'Accept': 'application/vnd.github+json', 'User-Agent': 'wayfer-video-plugin'},
     )
     with urllib.request.urlopen(req, timeout=30) as resp:
         body = resp.read(_MAX_API_RESPONSE + 1)

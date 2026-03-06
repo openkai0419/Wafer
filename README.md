@@ -1,21 +1,21 @@
-# AfterImages
+# Wayfer
 
 Extensible local file viewer with background metadata collection.
 
 ## Design Philosophy
 
-AfterImages is built around the principle **"one foundation, many extensions"**.
+Wayfer is built around the principle **"one foundation, many extensions"**.
 
-- **`afterimages/`** is the stable common foundation — it provides infrastructure for file collection, database indexing, search, and rendering, independent of any specific file format.
+- **`wayfer/`** is the stable common foundation — it provides infrastructure for file collection, database indexing, search, and rendering, independent of any specific file format.
 - **`extensions/`** contains independent, folder-based extensions that implement support for specific file formats (images, video, audio, etc.).
 
 The core design goals are:
 
 1. **The foundation is stable; extensions are free.** The foundation is carefully designed and tested. Extensions can be added, modified, or removed by anyone.
-2. **Extensions are first-class participants, not restricted guests.** Extensions can directly import `afterimages` internals (`afterimages.plugin`, `afterimages.utils`, `afterimages.core`). They are part of the same ecosystem, not walled off behind an API boundary.
-3. **Extensions are independent of each other.** The image extension does not know about the video extension. Each extension communicates with the foundation through `afterimages/` alone.
+2. **Extensions are first-class participants, not restricted guests.** Extensions can directly import `wayfer` internals (`wayfer.plugin`, `wayfer.utils`, `wayfer.core`). They are part of the same ecosystem, not walled off behind an API boundary.
+3. **Extensions are independent of each other.** The image extension does not know about the video extension. Each extension communicates with the foundation through `wayfer/` alone.
 
-The ideal form of this project is an ecosystem where multiple developers freely build file format support on top of a shared `afterimages/` foundation.
+The ideal form of this project is an ecosystem where multiple developers freely build file format support on top of a shared `wayfer/` foundation.
 
 ## Requirements
 
@@ -40,7 +40,7 @@ python -m pytest tests/
 ```bash
 # Build a distributable exe with PyInstaller
 build.bat
-# Output: dist/AfterImages/main.exe
+# Output: dist/Wayfer/main.exe
 ```
 
 `build.bat` does the following:
@@ -52,9 +52,9 @@ build.bat
 
 ```
 main.py              Entry point
-afterimages/         Common foundation (utils, core, plugin, app)
+wayfer/         Common foundation (utils, core, plugin, app)
 extensions/          File format extensions (folder-based, auto-detected by PluginLoader)
-tests/               Tests (tests/afterimages/, tests/extensions/, tests/prototypes/)
+tests/               Tests (tests/wayfer/, tests/extensions/, tests/prototypes/)
 _resources/          UI resources, key/mouse binding presets
 prototypes/          Experimental/prototype code
 .temp/               Temporary debug files and caches
@@ -73,7 +73,7 @@ prototypes/          Experimental/prototype code
 
 ## Extensions
 
-Extensions are placed as folders under `extensions/`. `PluginLoader` (`afterimages/plugin/loader.py`) auto-discovers and registers them at startup.
+Extensions are placed as folders under `extensions/`. `PluginLoader` (`wayfer/plugin/loader.py`) auto-discovers and registers them at startup.
 
 ### Extension Folder Structure
 
@@ -99,17 +99,17 @@ The built-in image extension is at `extensions/image/` with its own `requirement
 
 ### Extension API
 
-Extensions import base classes from `afterimages.plugin`:
+Extensions import base classes from `wayfer.plugin`:
 
 ```python
-from afterimages.plugin import ImageGridPlugin, WidgetGridPlugin, ImageViewerPlugin, WidgetViewerPlugin, BaseCollectorPlugin, CollectorResult
+from wayfer.plugin import ImageGridPlugin, WidgetGridPlugin, ImageViewerPlugin, WidgetViewerPlugin, BaseCollectorPlugin, CollectorResult
 ```
 
-Extensions can also directly import from `afterimages.utils` and `afterimages.core` as needed:
+Extensions can also directly import from `wayfer.utils` and `wayfer.core` as needed:
 
 ```python
-from afterimages.utils.logs import AppLogger
-from afterimages.core.db.query import FileSearchEngine
+from wayfer.utils.logs import AppLogger
+from wayfer.core.db.query import FileSearchEngine
 ```
 
 Each plugin class must have a `NAME` class variable and inherit from one of the base classes.

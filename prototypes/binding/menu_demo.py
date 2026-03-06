@@ -1,7 +1,7 @@
 from datetime import datetime
 
-from afterimages.core.actions.bridge import Command, ActionKit, Menu, Settings, UI
-from afterimages.utils.logs import AppLogger
+from wayfer.core.actions.bridge import Command, ActionKit, Menu, Settings, UI
+from wayfer.utils.logs import AppLogger
 
 
 def _cycle_sort_order(ctx=None):

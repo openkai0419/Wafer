@@ -662,7 +662,7 @@ class TestThumbnailRunner:
         runner = _ThumbnailRunner('/test.mp4', QtCore.QSize(200, 150))
         results = []
         runner.signals.ready.connect(lambda p, i: results.append((p, i)))
-        with patch('afterimages.plugin.load_thumbnail', return_value=image):
+        with patch('wayfer.plugin.load_thumbnail', return_value=image):
             runner.run()
         assert len(results) == 1
         assert results[0][0] == '/test.mp4'
@@ -673,7 +673,7 @@ class TestThumbnailRunner:
         results = []
         runner.signals.ready.connect(lambda p, i: results.append((p, i)))
         runner.cancel()
-        with patch('afterimages.plugin.load_thumbnail') as mock_load:
+        with patch('wayfer.plugin.load_thumbnail') as mock_load:
             runner.run()
             mock_load.assert_not_called()
         assert len(results) == 0
@@ -683,6 +683,6 @@ class TestThumbnailRunner:
         runner = _ThumbnailRunner('/test.mp4', QtCore.QSize(200, 150))
         results = []
         runner.signals.ready.connect(lambda p, i: results.append((p, i)))
-        with patch('afterimages.plugin.load_thumbnail', return_value=None):
+        with patch('wayfer.plugin.load_thumbnail', return_value=None):
             runner.run()
         assert len(results) == 0

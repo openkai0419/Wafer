@@ -34,7 +34,7 @@ def test_video_grid_plugin_match():
 
 def test_video_grid_plugin_is_widget_plugin():
     from extensions.video.grid import VideoGridPlugin
-    from afterimages.plugin.grid.base import WidgetGridPlugin
+    from wayfer.plugin.grid.base import WidgetGridPlugin
     assert issubclass(VideoGridPlugin, WidgetGridPlugin)
 
 

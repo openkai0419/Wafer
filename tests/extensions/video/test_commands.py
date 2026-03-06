@@ -235,7 +235,7 @@ class TestVideoGridCommandsMenuGroup:
 
     def test_commands_contains_expected_paths(self):
         from extensions.video.commands import VideoGridCommands
-        from afterimages.core.actions.command.core import CommandMeta
+        from wayfer.core.actions.command.core import CommandMeta
         cmds = VideoGridCommands.commands()
         paths = [c.path for c in cmds if isinstance(c, CommandMeta)]
         assert "vgrid.set_volume" in paths
@@ -246,7 +246,7 @@ class TestVideoGridCommandsMenuGroup:
 
 @pytest.fixture()
 def video_registry(monkeypatch):
-    from afterimages.core.actions.command.core import CommandRegistry
+    from wayfer.core.actions.command.core import CommandRegistry
     registry = CommandRegistry.instance()
     prev = dict(registry._commands)
     registry._commands = {}
@@ -260,14 +260,14 @@ def video_registry(monkeypatch):
 class TestRegistryExecution:
     def test_set_volume_via_registry(self, video_registry):
         from extensions.video import widget as w
-        from afterimages.core.actions.command.context import CommandContext
+        from wayfer.core.actions.command.context import CommandContext
         ctx = CommandContext.create(None, "*", source="menu")
         video_registry.execute("vgrid.set_volume", ctx=ctx, volume=75)
         assert w._volume == 75
 
     def test_set_volume_default_via_registry(self, video_registry):
         from extensions.video import widget as w
-        from afterimages.core.actions.command.context import CommandContext
+        from wayfer.core.actions.command.context import CommandContext
         w._volume = 80
         ctx = CommandContext.create(None, "*", source="menu")
         video_registry.execute("vgrid.set_volume", ctx=ctx)
@@ -275,7 +275,7 @@ class TestRegistryExecution:
 
     def test_set_max_slots_via_registry(self, video_registry):
         from extensions.video.widget import MpvCellWidget
-        from afterimages.core.actions.command.context import CommandContext
+        from wayfer.core.actions.command.context import CommandContext
         mock_sm = MagicMock()
         MpvCellWidget._slot_manager = mock_sm
         ctx = CommandContext.create(None, "*", source="menu")
@@ -284,7 +284,7 @@ class TestRegistryExecution:
 
     def test_toggle_hover_via_registry(self, video_registry):
         from extensions.video import widget as w
-        from afterimages.core.actions.command.context import CommandContext
+        from wayfer.core.actions.command.context import CommandContext
         assert w._hover_autoplay is True
         ctx = CommandContext.create(None, "*", source="menu")
         with patch("extensions.video.commands.Command"):
@@ -293,7 +293,7 @@ class TestRegistryExecution:
 
     def test_toggle_appear_via_registry(self, video_registry):
         from extensions.video import widget as w
-        from afterimages.core.actions.command.context import CommandContext
+        from wayfer.core.actions.command.context import CommandContext
         assert w._appear_autoplay is True
         ctx = CommandContext.create(None, "*", source="menu")
         with patch("extensions.video.commands.Command"):

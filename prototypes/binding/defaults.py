@@ -1,4 +1,4 @@
-from afterimages.core.actions.bridge import ActionKit
+from wayfer.core.actions.bridge import ActionKit
 
 
 def get_all_mouse_bindings():

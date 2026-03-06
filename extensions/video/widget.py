@@ -3,9 +3,9 @@ from PySide6.QtGui import QImage, QPainter, QCursor
 from PySide6.QtWidgets import QWidget
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from collections import OrderedDict
-from afterimages.plugin import qt_debounce_manager
-from afterimages.utils.logs import AppLogger
-from afterimages.utils.profiling import profiler
+from wayfer.plugin import qt_debounce_manager
+from wayfer.utils.logs import AppLogger
+from wayfer.utils.profiling import profiler
 
 PREVIEW_VOLUME = 40
 GL_COLOR_BUFFER_BIT = 0x00004000
@@ -43,7 +43,7 @@ class _ThumbnailRunner(QRunnable):
     def run(self):
         if self._cancelled:
             return
-        from afterimages.plugin import load_thumbnail
+        from wayfer.plugin import load_thumbnail
         image = load_thumbnail(self.path, self.size)
         if not self._cancelled and image is not None:
             self.signals.ready.emit(self.path, image)

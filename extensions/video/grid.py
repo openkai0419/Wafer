@@ -1,4 +1,4 @@
-from afterimages.plugin import WidgetGridPlugin
+from wayfer.plugin import WidgetGridPlugin
 from .widget import MpvCellWidget
 
 

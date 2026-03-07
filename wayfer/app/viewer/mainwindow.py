@@ -76,8 +76,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         prevname = app_settings.get('window/tablename', DEFAULT_DB_NAME)
         if prevname in names:
             return prevname
-        elif len(names) >= 1:
-            return names[0]
+        return names[0]
 
     @QtCore.Slot(str)
     def reload_database(self, name):
@@ -103,8 +102,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         else:
             dirs = self.folder_view.get_selected_paths()
             if dirs:
-                from pathlib import PurePosixPath
-                label = ', '.join(PurePosixPath(d).name or d for d in dirs)
+                label = ', '.join(d.rsplit('/', 1)[-1] or d for d in dirs)
             else:
                 label = self.database_name or ''
         self.setWindowTitle(f'{label} - {APP_NAME}' if label else APP_NAME)
@@ -395,8 +393,8 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             try:
                 geo = QtCore.QByteArray(base64.b64decode(ui.window_geometry))
                 self.restoreGeometry(geo)
-            except Exception:
-                pass
+            except Exception as e:
+                AppLogger.warning(f'restore_ui_state geometry failed: {e}', exc=e)
         if ui.splitter_sizes:
             self.splitter.setSizes(ui.splitter_sizes)
         if ui.grid_settings:

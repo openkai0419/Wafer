@@ -28,6 +28,14 @@ class PluginRegistry:
     def __init__(self):
         self._plugins: list[type[BasePlugin]] = []
         self._instances: dict[str, BasePlugin] = {}
+        self._ext_cache: dict[str, type[BasePlugin]] = {}
+
+    def _rebuild_ext_cache(self):
+        cache: dict[str, type[BasePlugin]] = {}
+        for p in self._plugins:
+            for ext in p.EXTENSIONS:
+                cache.setdefault(ext, p)
+        self._ext_cache = cache
 
     def register(self, plugin_cls: type[BasePlugin]):
         existing = next((i for i, p in enumerate(self._plugins) if p.NAME == plugin_cls.NAME), None)
@@ -37,10 +45,16 @@ class PluginRegistry:
             self._plugins.append(plugin_cls)
         self._plugins.sort(key=lambda c: c.PRIORITY, reverse=True)
         self._instances[plugin_cls.NAME] = plugin_cls()
+        self._rebuild_ext_cache()
 
     def resolve(self, path: str) -> type[BasePlugin] | None:
+        ext = os.path.splitext(path)[1].lower()
+        if ext:
+            cached = self._ext_cache.get(ext)
+            if cached is not None:
+                return cached
         for p in self._plugins:
-            if p.match(path):
+            if not p.EXTENSIONS and p.match(path):
                 return p
         return None
 

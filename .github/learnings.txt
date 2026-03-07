@@ -42,6 +42,7 @@
 ■ プラグイン設計の注意
 - CollectorResultはdataclass。dict扱いにはto_dict()が必要
 - PluginRegistryはregister()時にインスタンスを生成・キャッシュ。resolve_instance(path)/instance(name)で取得。resolverはissubclass(cls,...)の代わりにisinstance(instance,...)を使用
+- PluginRegistry.resolve()は_ext_cacheで拡張子→プラグインクラスをO(1)解決。register()時にキャッシュ再構築。EXTENSIONS=()のcatch-allプラグインはフォールバック走査
 - PRIORITY大=高優先。EXTENSIONS=()は全ファイルマッチ
 - Collectorはmeta_info+statusのみ返す。name/aspect/file_hashはPhase1で設定
 - meta_infoキー衝突回避はプラグイン開発者責任（プレフィックス推奨）
@@ -82,7 +83,10 @@
 - mpv render API (MpvRenderContext) + QOpenGLWidgetでネイティブウィンドウを回避し、Qt描画パイプラインに統合する
 - MpvCellWidgetはQWidget（軽量）。サムネイル表示がデフォルト。ホバー時にPlaybackSlotManagerが管理するMpvGLOverlayプール（QOpenGLWidget）を割り当てる
 - MpvGLOverlayはMpvCellWidgetの子Widget。activate時にsetParent(cell)で子化し、geometry=(0,0,w,h)で親全体を覆う。viewport()->scroll()による二重移動問題を回避
-- PlaybackSlotManagerはN個のselected枠+1個のhover枠を管理。selected超過時はLRU（OrderedDict）で最古を解放。hoverからselectへの昇格にも対応
+- PlaybackSlotManagerはN個のselected枠+1個のhover枠+M個のappeared枠を管理。selected超過時はLRU（OrderedDict）で最古を解放。hoverからselectへの昇格、appearedからselectへの昇格にも対応
+- appear/selectは独立したライフサイクル。_appeared_cellsセットで可視状態を追跡し、_appeared辞書でオーバーレイ所有を管理。select時にappearedから昇格（overlay移動）しても_appeared_cellsには残る。deselect時に_appeared_cellsに含まれていればオーバーレイを_appearedに復帰させる
+- @require デコレータ（wayfer.core.actions.command.require）でインスタンス注入。@require_v でctx.get()値注入。Ctxクラスは廃止
+- path/pathsのようなフォールバックロジックがあるctx値は補助関数（_ctx_path等）で関数内から直接呼ぶ。デコレータ化しない
 - hover activateはデバウンス（200ms）。高速スクロール中の不要なmpv起動を防止。QtDebounceManager(wayfer.plugin.qt_debounce_manager)を使用
 - MpvGLOverlay._ownerで所有MpvCellWidgetを追跡。leaveEventでMpvCellWidget._on_overlay_leave(owner)経由でSlotManagerに通知
 - BaseGridPlugin.select(widget, path) / deselect(widget)はGridResolverがGridView._on_selection_changed内の差分計算で呼び出す

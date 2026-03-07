@@ -7,6 +7,7 @@ from typing import List
 from PySide6 import QtCore, QtGui
 
 from ....core.actions.bridge import Command, ActionKit
+from ....core.actions.command.require import require
 from ....core.qt.dialog import ConfirmDialog, ThumbnailConfirmDialog
 from ....core.platform.copy import ClipboardFileTransfer
 from ....core.platform.paste import paste_clipboard_files
@@ -48,15 +49,17 @@ def show_in_explorer(ctx, show_first_if_folder: bool = False):
 
 def copy_path(ctx):
     path = _ctx_path(ctx)
-    if path is None:
+    if not path:
         return
     QtGui.QGuiApplication.clipboard().setText(str(path))
+
 
 def copy_filename(ctx):
     path = _ctx_path(ctx)
     if not path:
         return
     QtGui.QGuiApplication.clipboard().setText(str(os.path.basename(path)))
+
 
 def copy_path_list(ctx):
     paths = _ctx_paths(ctx)
@@ -158,29 +161,23 @@ def _get_directory_from_path(path):
     abs_path = os.path.abspath(path)
     return abs_path if os.path.isdir(abs_path) else os.path.dirname(abs_path)
 
-def select_path(ctx):
-    get = getattr(ctx, "get", None)
-    path = get("path") if callable(get) else None
-    if not path:
-        return
-    folder = _get_directory_from_path(str(path))
-    ftree = ctx.get_instance("FolderTree")
-    ftree.expand_and_select_path(folder)
-
-
-def scroll_to_file(ctx):
+@require(ftree="FolderTree")
+def select_path(ctx, ftree):
     path = _ctx_path(ctx)
     if not path:
         return
-    items = ctx.get_instance("GridItemModel")
-    if items is None:
+    folder = _get_directory_from_path(str(path))
+    ftree.expand_and_select_path(folder)
+
+
+@require(items="GridItemModel", view="GridView")
+def scroll_to_file(ctx, items, view):
+    path = _ctx_path(ctx)
+    if not path:
         return
     idx = items.index_of_path(path)
     if idx is None:
         Notifier.info("File not found in view")
-        return
-    view = ctx.get_instance("GridView")
-    if view is None or not hasattr(view, "rects"):
         return
     if idx >= len(view.rects):
         Notifier.info("File out of visible area")
@@ -188,12 +185,10 @@ def scroll_to_file(ctx):
     view.scroll_to_index(idx, animated=True)
 
 
-def show_file(ctx):
+@require(shower="FileViewerWidget")
+def show_file(ctx, shower):
     path = _ctx_path(ctx)
     if not path:
-        return
-    shower = ctx.get_instance("FileViewerWidget")
-    if shower is None:
         return
     shower.set_path(path)
 

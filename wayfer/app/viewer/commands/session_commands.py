@@ -1,6 +1,8 @@
 from PySide6 import QtWidgets
 
 from ....core.actions.bridge import ActionKit
+from ....core.actions.command.require import require
+from ....core.qt.dialog import InputDialog
 from ....utils.logs import AppLogger
 from ....utils.notifier import Notifier
 from ..session import BookmarkEntry, BookmarkStore
@@ -16,17 +18,16 @@ def _bm_store():
     return _bookmark_store
 
 
-def _win(ctx):
-    return ctx.get_instance("MainWindow")
-
-
-def save_bookmark(ctx, name: str = ''):
-    w = _win(ctx)
-    if not w:
-        return
+@require(w="MainWindow")
+def save_bookmark(ctx, w, name: str = ''):
     if not name:
-        name, ok = QtWidgets.QInputDialog.getText(w, 'Save Bookmark', 'Bookmark name:')
-        if not ok or not name.strip():
+        name = InputDialog.get_text(
+            'Bookmark name:',
+            title='Save Bookmark',
+            buttons=('Save', 'Cancel'),
+            parent=w,
+        )
+        if not name or not name.strip():
             return
         name = name.strip()
     query = w.capture_query_state()
@@ -36,10 +37,8 @@ def save_bookmark(ctx, name: str = ''):
     AppLogger.info(f'Bookmark saved: {name} ({entry.bookmark_id})')
 
 
-def restore_bookmark(ctx, bookmark_id: str = ''):
-    w = _win(ctx)
-    if not w:
-        return
+@require(w="MainWindow")
+def restore_bookmark(ctx, w, bookmark_id: str = ''):
     if not bookmark_id:
         entries = _bm_store().list_bookmarks()
         if not entries:
@@ -60,8 +59,8 @@ def restore_bookmark(ctx, bookmark_id: str = ''):
     Notifier.info(f'Bookmark restored: {entry.name}')
 
 
-def delete_bookmark(ctx, bookmark_id: str = ''):
-    w = _win(ctx)
+@require(w="MainWindow")
+def delete_bookmark(ctx, w, bookmark_id: str = ''):
     if not bookmark_id:
         entries = _bm_store().list_bookmarks()
         if not entries:

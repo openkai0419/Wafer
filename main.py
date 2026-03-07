@@ -145,6 +145,7 @@ def main():
         for sid in restore_ids[1:]:
             AppProcess.new_main('--viewer', '--session', sid)
         _entry_viewer(app, session_id=restore_ids[0] if restore_ids else None)
+        return
     if args.tray:
         load_plugins(skip_install=True)
         _entry_tray()

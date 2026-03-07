@@ -243,14 +243,17 @@ class PlaybackSlotManager:
 
     HOVER_DEBOUNCE_MS = 300
 
-    def __init__(self, parent, max_selected=3):
+    def __init__(self, parent, max_selected=3, max_appeared=6):
         self._parent = parent
         self._max_selected = max_selected
+        self._max_appeared = max_appeared
         self.volume = DEFAULT_VOLUME
         self.hover_autoplay = True
         self.appear_autoplay = True
         self._mpv_available = MpvGLOverlay._ensure_mpv()
         self._pool: list[MpvGLOverlay] = []
+        self._appeared_cells: set = set()
+        self._appeared: OrderedDict = OrderedDict()
         self._selected: OrderedDict = OrderedDict()
         self._hover_cell = None
         self._hover_overlay: MpvGLOverlay | None = None
@@ -283,6 +286,9 @@ class PlaybackSlotManager:
         for v in self._selected.values():
             if v is overlay:
                 return True
+        for v in self._appeared.values():
+            if v is overlay:
+                return True
         return False
 
     def _acquire(self) -> MpvGLOverlay | None:
@@ -311,7 +317,7 @@ class PlaybackSlotManager:
 
     @profiler.profile
     def activate_hover(self, cell, path):
-        if cell in self._selected:
+        if cell in self._selected or cell in self._appeared_cells:
             return
         if self._hover_cell is cell:
             return
@@ -330,7 +336,7 @@ class PlaybackSlotManager:
         self._pending_hover_path = None
         if cell is None or path is None:
             return
-        if cell in self._selected:
+        if cell in self._selected or cell in self._appeared_cells:
             return
         overlay = self._acquire()
         if overlay is None:
@@ -354,7 +360,10 @@ class PlaybackSlotManager:
             return
         if self._pending_hover_cell is cell:
             self._cancel_pending()
-        if self._hover_cell is cell and self._hover_overlay is not None:
+        overlay = self._appeared.pop(cell, None)
+        if overlay is not None:
+            pass
+        elif self._hover_cell is cell and self._hover_overlay is not None:
             overlay = self._hover_overlay
             self._hover_cell = None
             self._hover_overlay = None
@@ -374,14 +383,22 @@ class PlaybackSlotManager:
     def deactivate_select(self, cell):
         overlay = self._selected.pop(cell, None)
         if overlay is not None:
-            self._release_overlay(overlay)
+            if cell in self._appeared_cells:
+                self._appeared[cell] = overlay
+            else:
+                self._release_overlay(overlay)
 
     def is_selected(self, cell) -> bool:
         return cell in self._selected
 
+    def is_appeared(self, cell) -> bool:
+        return cell in self._appeared_cells
+
     def overlay_for(self, cell) -> MpvGLOverlay | None:
         if cell in self._selected:
             return self._selected[cell]
+        if cell in self._appeared:
+            return self._appeared[cell]
         if self._hover_cell is cell:
             return self._hover_overlay
         return None
@@ -390,7 +407,7 @@ class PlaybackSlotManager:
         return self._hover_cell is cell or self._pending_hover_cell is cell
 
     def on_overlay_leave(self, cell):
-        if cell in self._selected:
+        if cell in self._selected or cell in self._appeared_cells:
             return
         if self._hover_cell is cell:
             self.deactivate_hover()
@@ -401,8 +418,43 @@ class PlaybackSlotManager:
             overlay.setGeometry(0, 0, cell.width(), cell.height())
 
     @profiler.profile
+    def activate_appear(self, cell, path):
+        if cell in self._appeared_cells:
+            return
+        self._appeared_cells.add(cell)
+        if cell in self._selected:
+            return
+        if self._pending_hover_cell is cell:
+            self._cancel_pending()
+        if self._hover_cell is cell and self._hover_overlay is not None:
+            overlay = self._hover_overlay
+            self._hover_cell = None
+            self._hover_overlay = None
+            if not overlay.isVisible() or overlay._path != path:
+                overlay.activate(path, owner=cell)
+        else:
+            overlay = self._acquire()
+            if overlay is None:
+                return
+            overlay.activate(path, owner=cell)
+        while len(self._appeared) >= self._max_appeared:
+            _, evicted = self._appeared.popitem(last=False)
+            if evicted is not None:
+                self._release_overlay(evicted)
+        self._appeared[cell] = overlay
+
+    @profiler.profile
+    def deactivate_appear(self, cell):
+        self._appeared_cells.discard(cell)
+        overlay = self._appeared.pop(cell, None)
+        if overlay is not None:
+            if cell not in self._selected:
+                self._release_overlay(overlay)
+
+    @profiler.profile
     def release_cell(self, cell):
         self.deactivate_select(cell)
+        self.deactivate_appear(cell)
         if self._hover_cell is cell or self._pending_hover_cell is cell:
             self.deactivate_hover()
 
@@ -413,6 +465,11 @@ class PlaybackSlotManager:
             overlay.deactivate()
             overlay.cleanup()
         self._selected.clear()
+        for overlay in list(self._appeared.values()):
+            overlay.deactivate()
+            overlay.cleanup()
+        self._appeared.clear()
+        self._appeared_cells.clear()
         for overlay in self._pool:
             overlay.cleanup()
         self._pool.clear()
@@ -535,8 +592,18 @@ class MpvCellWidget(QWidget):
             self._slot_manager.resize_overlay(self)
 
     @profiler.profile
-    def on_selected(self):
+    def on_appeared(self):
         if self._slot_manager and self._path and self._slot_manager.appear_autoplay:
+            self._slot_manager.activate_appear(self, self._path)
+
+    @profiler.profile
+    def on_disappeared(self):
+        if self._slot_manager:
+            self._slot_manager.deactivate_appear(self)
+
+    @profiler.profile
+    def on_selected(self):
+        if self._slot_manager and self._path:
             self._slot_manager.activate_select(self, self._path)
 
     @profiler.profile

@@ -1,33 +1,27 @@
-from wayfer.plugin import MenuGroup, CommandMeta, CommandParam
+from wayfer.plugin import MenuGroup, CommandMeta, CommandParam, require, require_v
 from wayfer.core.actions.bridge import Command
 
 
-def set_volume(ctx, volume: int = 40):
-    sm = ctx.get_instance("VideoSlotManager")
-    if sm:
-        sm.set_volume(volume)
+@require(sm="VideoSlotManager")
+def set_volume(ctx, sm, volume: int = 40):
+    sm.set_volume(volume)
 
 
-def set_max_playback_slots(ctx, max_slots: int = 3):
-    sm = ctx.get_instance("VideoSlotManager")
-    if sm:
-        sm.set_max_selected(int(max_slots))
+@require(sm="VideoSlotManager")
+def set_max_playback_slots(ctx, sm, max_slots: int = 3):
+    sm.set_max_selected(int(max_slots))
 
 
-def toggle_hover_autoplay(ctx):
-    sm = ctx.get_instance("VideoSlotManager")
-    if not sm:
-        return
+@require(sm="VideoSlotManager")
+def toggle_hover_autoplay(ctx, sm):
     sm.hover_autoplay = not sm.hover_autoplay
     Command.set_checked("vgrid.toggle_hover_autoplay", sm.hover_autoplay)
     if not sm.hover_autoplay:
         sm.deactivate_hover()
 
 
-def toggle_appear_autoplay(ctx):
-    sm = ctx.get_instance("VideoSlotManager")
-    if not sm:
-        return
+@require(sm="VideoSlotManager")
+def toggle_appear_autoplay(ctx, sm):
     sm.appear_autoplay = not sm.appear_autoplay
     Command.set_checked("vgrid.toggle_appear_autoplay", sm.appear_autoplay)
 

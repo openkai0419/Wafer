@@ -266,6 +266,17 @@ class TestSessionStoreAllocateAnonId:
         tmp_store.save_session(SessionEntry(session_id='Work'))
         assert tmp_store.allocate_anon_id() == 'anon-1'
 
+    def test_registers_in_active_ids(self, tmp_store):
+        new_id = tmp_store.allocate_anon_id()
+        assert new_id in tmp_store.get_active_session_ids()
+
+    def test_consecutive_allocations_unique(self, tmp_store):
+        id1 = tmp_store.allocate_anon_id()
+        id2 = tmp_store.allocate_anon_id()
+        assert id1 != id2
+        assert id1 == 'anon-1'
+        assert id2 == 'anon-2'
+
 
 class TestSessionStoreFileIntegrity:
 
@@ -338,3 +349,15 @@ class TestBookmarkStore:
         store = BookmarkStore(base_dir=d)
         store.save_bookmark(BookmarkEntry(bookmark_id='first'))
         assert os.path.isdir(d)
+
+    def test_entry_path_rejects_traversal(self, tmp_bm_store):
+        with pytest.raises(ValueError):
+            tmp_bm_store._entry_path('../../etc/passwd')
+
+    def test_entry_path_rejects_empty(self, tmp_bm_store):
+        with pytest.raises(ValueError):
+            tmp_bm_store._entry_path('')
+
+    def test_entry_path_accepts_valid_hex(self, tmp_bm_store):
+        p = tmp_bm_store._entry_path('abc123def456')
+        assert p.name == 'abc123def456.json'

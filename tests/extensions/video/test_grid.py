@@ -78,19 +78,27 @@ def test_video_grid_plugin_select_calls_on_selected():
     widget.on_selected.assert_called_once()
 
 
-def test_video_grid_plugin_appear_calls_on_selected():
+def test_video_grid_plugin_appear_calls_on_appeared():
     from extensions.video.grid import VideoGridPlugin
     plugin = VideoGridPlugin()
     widget = MagicMock()
     plugin.appear(widget)
-    widget.on_selected.assert_called_once()
+    widget.on_appeared.assert_called_once()
 
 
-def test_video_grid_plugin_disappear_calls_on_deselected():
+def test_video_grid_plugin_disappear_calls_on_disappeared():
     from extensions.video.grid import VideoGridPlugin
     plugin = VideoGridPlugin()
     widget = MagicMock()
     plugin.disappear(widget)
+    widget.on_disappeared.assert_called_once()
+
+
+def test_video_grid_plugin_deselect_calls_on_deselected():
+    from extensions.video.grid import VideoGridPlugin
+    plugin = VideoGridPlugin()
+    widget = MagicMock()
+    plugin.deselect(widget)
     widget.on_deselected.assert_called_once()
 
 

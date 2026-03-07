@@ -34,11 +34,11 @@ class VideoGridPlugin(WidgetGridPlugin):
 
     @profiler.profile
     def appear(self, widget):
-        widget.on_selected()
+        widget.on_appeared()
 
     @profiler.profile
     def disappear(self, widget):
-        widget.on_deselected()
+        widget.on_disappeared()
 
     @profiler.profile
     def select(self, widget):

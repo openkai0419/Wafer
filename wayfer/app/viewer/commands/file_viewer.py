@@ -1,12 +1,8 @@
 from ....core.actions.bridge import ActionKit
-
-def _get_file_model(ctx):
-    return ctx.get_instance("FileViewModel")
+from ....core.actions.command.require import require
 
 
 def _ensure_current_initialized(model) -> bool:
-    if model is None:
-        return False
     if model.count() <= 0:
         return False
     cur = model.current_index()
@@ -16,15 +12,15 @@ def _ensure_current_initialized(model) -> bool:
     return True
 
 
-def next_file(ctx, step: int = 1, loop: bool = False):
-    model = _get_file_model(ctx)
+@require(model="FileViewModel")
+def next_file(ctx, model, step: int = 1, loop: bool = False):
     if not _ensure_current_initialized(model):
         return
     model.move_current_next(step=int(step), loop=bool(loop))
 
 
-def prev_file(ctx, step: int = 1, loop: bool = False):
-    model = _get_file_model(ctx)
+@require(model="FileViewModel")
+def prev_file(ctx, model, step: int = 1, loop: bool = False):
     if not _ensure_current_initialized(model):
         return
     model.move_current_prev(step=int(step), loop=bool(loop))

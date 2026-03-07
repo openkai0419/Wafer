@@ -259,6 +259,42 @@ class TestMpvCellWidget:
         assert not MpvCellWidget._slot_manager.is_selected(w)
         w.cleanup()
 
+    def test_on_appeared_activates_appear(self, qtbot):
+        from extensions.video.widget import MpvCellWidget
+        parent = QtWidgets.QWidget()
+        w = MpvCellWidget(parent)
+        w._path = '/test.mp4'
+        w.setGeometry(0, 0, 200, 150)
+        w.on_appeared()
+        assert MpvCellWidget._slot_manager.is_appeared(w)
+        w.cleanup()
+
+    def test_on_disappeared_deactivates_appear(self, qtbot):
+        from extensions.video.widget import MpvCellWidget
+        parent = QtWidgets.QWidget()
+        w = MpvCellWidget(parent)
+        w._path = '/test.mp4'
+        w.setGeometry(0, 0, 200, 150)
+        w.on_appeared()
+        w.on_disappeared()
+        assert not MpvCellWidget._slot_manager.is_appeared(w)
+        w.cleanup()
+
+    def test_deselect_keeps_playback_if_appeared(self, qtbot):
+        from extensions.video.widget import MpvCellWidget
+        parent = QtWidgets.QWidget()
+        w = MpvCellWidget(parent)
+        w._path = '/test.mp4'
+        w.setGeometry(0, 0, 200, 150)
+        w.on_appeared()
+        w.on_selected()
+        overlay = MpvCellWidget._slot_manager._selected[w]
+        w.on_deselected()
+        assert not MpvCellWidget._slot_manager.is_selected(w)
+        assert MpvCellWidget._slot_manager.is_appeared(w)
+        assert MpvCellWidget._slot_manager._appeared[w] is overlay
+        w.cleanup()
+
     def test_overlay_leave_deactivates_hover(self, qtbot):
         from extensions.video.widget import MpvCellWidget
         parent = QtWidgets.QWidget()

@@ -137,3 +137,21 @@ def test_acquire_removes_lock_when_process_disappears(tmp_path, monkeypatch):
 
     lock = process_lock_mod.SafeProcessLock('app')
     assert lock.acquire() is True
+
+
+class TestFileLock:
+
+    def test_lock_creates_lock_file(self, tmp_path):
+        from wayfer.utils.process_lock import file_lock
+        lock_path = str(tmp_path / 'test.lock')
+        with file_lock(lock_path):
+            import os
+            assert os.path.exists(lock_path)
+
+    def test_lock_allows_sequential_acquisition(self, tmp_path):
+        from wayfer.utils.process_lock import file_lock
+        lock_path = str(tmp_path / 'test.lock')
+        with file_lock(lock_path):
+            pass
+        with file_lock(lock_path):
+            pass

@@ -24,6 +24,14 @@ def _reset_shared(monkeypatch):
     yield
 
 
+@pytest.fixture(autouse=True)
+def _suppress_notifier(monkeypatch):
+    monkeypatch.setattr(
+        "wayfer.core.actions.command.require.Notifier",
+        type("FakeNotifier", (), {"warning": staticmethod(lambda msg: None)}),
+    )
+
+
 def _make_ctx(sm=None):
     ctx = MagicMock()
     ctx.get_instance = MagicMock(return_value=sm)
@@ -169,23 +177,23 @@ class TestHoverAutoplayFlag:
 
 
 class TestAppearAutoplayFlag:
-    def test_on_selected_skipped_when_appear_disabled(self):
+    def test_on_appeared_skipped_when_appear_disabled(self):
         from extensions.video.widget import MpvCellWidget
         cell = MagicMock(spec=MpvCellWidget)
         cell._path = '/test.mp4'
         cell._slot_manager = MagicMock()
         cell._slot_manager.appear_autoplay = False
-        MpvCellWidget.on_selected(cell)
-        cell._slot_manager.activate_select.assert_not_called()
+        MpvCellWidget.on_appeared(cell)
+        cell._slot_manager.activate_appear.assert_not_called()
 
-    def test_on_selected_called_when_appear_enabled(self):
+    def test_on_appeared_called_when_appear_enabled(self):
         from extensions.video.widget import MpvCellWidget
         cell = MagicMock(spec=MpvCellWidget)
         cell._path = '/test.mp4'
         cell._slot_manager = MagicMock()
         cell._slot_manager.appear_autoplay = True
-        MpvCellWidget.on_selected(cell)
-        cell._slot_manager.activate_select.assert_called_once()
+        MpvCellWidget.on_appeared(cell)
+        cell._slot_manager.activate_appear.assert_called_once()
 
 
 class TestSlotManagerSetVolume:
@@ -197,6 +205,7 @@ class TestSlotManagerSetVolume:
         sm._pool = [overlay_pool]
         sm._hover_overlay = None
         sm._selected = {MagicMock(): overlay_selected}
+        sm._appeared = {}
         sm.set_volume(80)
         assert sm.volume == 80
         overlay_pool.set_volume.assert_called_once_with(80)
@@ -208,6 +217,7 @@ class TestSlotManagerSetVolume:
         sm._pool = []
         sm._hover_overlay = None
         sm._selected = {}
+        sm._appeared = {}
         sm.set_volume(200)
         assert sm.volume == 100
 
@@ -217,6 +227,7 @@ class TestSlotManagerSetVolume:
         sm._pool = []
         sm._hover_overlay = None
         sm._selected = {}
+        sm._appeared = {}
         sm.set_volume(-10)
         assert sm.volume == 0
 
@@ -227,6 +238,7 @@ class TestSlotManagerSetVolume:
         sm._pool = []
         sm._hover_overlay = hover
         sm._selected = {}
+        sm._appeared = {}
         sm.set_volume(50)
         assert sm.volume == 50
         hover.set_volume.assert_called_once_with(50)
@@ -239,6 +251,7 @@ class TestSlotManagerSetMaxSelected:
         sm = object.__new__(PlaybackSlotManager)
         sm._pool = []
         sm._parent = MagicMock()
+        sm._appeared = OrderedDict()
         sel = OrderedDict()
         for i in range(4):
             sel[MagicMock()] = MagicMock()
@@ -253,6 +266,7 @@ class TestSlotManagerSetMaxSelected:
         sm = object.__new__(PlaybackSlotManager)
         sm._pool = []
         sm._parent = MagicMock()
+        sm._appeared = OrderedDict()
         sm._selected = OrderedDict()
         sm.set_max_selected(0)
         assert sm._max_selected == 1

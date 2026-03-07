@@ -3,6 +3,7 @@ from .viewer.base import BaseViewerPlugin, ImageViewerPlugin, WidgetViewerPlugin
 from .grid.base import BaseGridPlugin, ImageGridPlugin, WidgetGridPlugin
 from .collector.base import BaseCollectorPlugin, CollectorResult
 from ..core.actions.bridge import ActionKit
+from ..core.actions.command.require import require, require_v
 from ..core.qt.rate_limit import QtDebounceManager as _QtDebounceManager
 
 qt_debounce_manager = _QtDebounceManager()

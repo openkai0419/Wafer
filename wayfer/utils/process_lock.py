@@ -1,11 +1,49 @@
+import contextlib
 import json
 import os
+import sys
 import time
 
 import psutil
 
 from ..utils.logs import AppLogger
 from ..utils.paths import resolve_data_path
+
+_FILE_LOCK_TIMEOUT = 5.0
+_FILE_LOCK_RETRY = 0.02
+
+
+@contextlib.contextmanager
+def file_lock(lock_path: str, timeout: float = _FILE_LOCK_TIMEOUT):
+    os.makedirs(os.path.dirname(lock_path) or '.', exist_ok=True)
+    fd = os.open(lock_path, os.O_CREAT | os.O_RDWR)
+    try:
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                if sys.platform == 'win32':
+                    import msvcrt
+                    msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except (OSError, IOError):
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(f'file lock timeout: {lock_path}')
+                time.sleep(_FILE_LOCK_RETRY)
+        yield
+    finally:
+        try:
+            if sys.platform == 'win32':
+                import msvcrt
+                msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(fd, fcntl.LOCK_UN)
+        except Exception:
+            pass
+        os.close(fd)
 
 class SafeProcessLock:
 

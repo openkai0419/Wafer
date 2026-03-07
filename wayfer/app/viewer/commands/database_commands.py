@@ -1,25 +1,22 @@
 from ....core.actions.bridge import ActionKit
+from ....core.actions.command.require import require
 from ....utils.paths import list_setting_db_names
 from ....utils.logs import AppLogger
 from ....core.platform.process import AppProcess
 from ....core.qt.dialog import ConfirmDialog, InputDialog
 
-def _win(ctx):
-    return ctx.get_instance("MainWindow")
+
+@require(w="MainWindow")
+def next_database(ctx, w):
+    _cycle_database(w, 1)
 
 
-def next_database(ctx):
-    _cycle_database(ctx, 1)
+@require(w="MainWindow")
+def prev_database(ctx, w):
+    _cycle_database(w, -1)
 
 
-def prev_database(ctx):
-    _cycle_database(ctx, -1)
-
-
-def _cycle_database(ctx, direction: int):
-    w = _win(ctx)
-    if not w:
-        return
+def _cycle_database(w, direction: int):
     names = list_setting_db_names()
     if not names or len(names) <= 1:
         return
@@ -31,9 +28,9 @@ def _cycle_database(ctx, direction: int):
     w.reload_database(names[new_idx])
 
 
-def set_database(ctx, name: str = ""):
-    w = _win(ctx)
-    if not w or not name:
+@require(w="MainWindow")
+def set_database(ctx, w, name: str = ""):
+    if not name:
         return
     if name not in list_setting_db_names():
         AppLogger.warning(f'[set_database] database not found: {name}')
@@ -41,10 +38,8 @@ def set_database(ctx, name: str = ""):
     w.reload_database(name)
 
 
-def add_database(ctx):
-    w = _win(ctx)
-    if not w:
-        return
+@require(w="MainWindow")
+def add_database(ctx, w):
     text = InputDialog.get_text(
         w.t.tr('Enter a name for the new table'),
         title=w.t.tr('Create New'),
@@ -63,9 +58,9 @@ def add_database(ctx):
     w.reload_database(text)
 
 
-def remove_database(ctx):
-    w = _win(ctx)
-    if not w or w.database_combo.count() <= 1:
+@require(w="MainWindow")
+def remove_database(ctx, w):
+    if w.database_combo.count() <= 1:
         return
     ret = ConfirmDialog.ask(
         w.t.tr_format('Delete table? : {dbname}', dbname=w.database_name),

@@ -1,19 +1,7 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from ....core.actions.bridge import ActionKit
-
-def _get_imgv(ctx):
-    return ctx.get_instance("ImageView")
-
-
-def fit_in_view(ctx, padding: float = 0.0, mode: str | None = None):
-    gv = _get_imgv(ctx)
-    gv.fit_in_view(padding=float(padding), mode=mode)
-
-def toggle_fit_mode(ctx):
-    gv = _get_imgv(ctx)
-    gv.toggle_fit_mode()
-    gv.fit_in_view(padding=0.0)
+from ....core.actions.command.require import require
 
 
 def _zoom(gv, *, base: float, steps: int, pos=None):
@@ -26,25 +14,36 @@ def _zoom(gv, *, base: float, steps: int, pos=None):
     gv.zoom_at(factor, pos)
 
 
-def zoom_in(ctx, base: float = 1.1):
-    gv = _get_imgv(ctx)
+@require(gv="ImageView")
+def fit_in_view(ctx, gv, padding: float = 0.0, mode: str | None = None):
+    gv.fit_in_view(padding=float(padding), mode=mode)
+
+
+@require(gv="ImageView")
+def toggle_fit_mode(ctx, gv):
+    gv.toggle_fit_mode()
+    gv.fit_in_view(padding=0.0)
+
+
+@require(gv="ImageView")
+def zoom_in(ctx, gv, base: float = 1.1):
     _zoom(gv, base=float(base), steps=int(ctx.get("wheel_steps")), pos=ctx.pos)
 
 
-def zoom_out(ctx, base: float = 1.1):
-    gv = _get_imgv(ctx)
+@require(gv="ImageView")
+def zoom_out(ctx, gv, base: float = 1.1):
     _zoom(gv, base=float(base) ** -1.0, steps=int(ctx.get("wheel_steps")), pos=ctx.pos)
 
 
-def _pan_start(ctx):
-    gv = _get_imgv(ctx)
+@require(gv="ImageView")
+def _pan_start(ctx, gv):
     gv._is_panning = True
     gv._last_pos = ctx.pos
     gv.setCursor(QtCore.Qt.CursorShape.ClosedHandCursor)
 
 
-def _pan_move(ctx):
-    gv = _get_imgv(ctx)
+@require(gv="ImageView")
+def _pan_move(ctx, gv):
     if not getattr(gv, "_is_panning", False):
         return
     cur = ctx.pos
@@ -53,8 +52,8 @@ def _pan_move(ctx):
     gv.pan_by(dv.x(), dv.y())
 
 
-def _pan_end(ctx):
-    gv = _get_imgv(ctx)
+@require(gv="ImageView")
+def _pan_end(ctx, gv):
     if not getattr(gv, "_is_panning", False):
         return
     gv._is_panning = False

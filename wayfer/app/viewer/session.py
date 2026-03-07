@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import os
+import re
 import uuid
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, fields, asdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from ...utils.json_io import read_json_file, write_json_file
 from ...utils.paths import resolve_data_path
+from ...utils.process_lock import file_lock
 
 _STORE_FILENAME = 'sessions.json'
 _BOOKMARK_DIR = 'bookmarks'
@@ -21,6 +24,13 @@ def _new_id() -> str:
     return uuid.uuid4().hex[:12]
 
 
+def _flat_from_dict(cls, data: dict[str, Any]):
+    if not isinstance(data, dict):
+        return cls()
+    known = {f.name for f in fields(cls)}
+    return cls(**{k: v for k, v in data.items() if k in known})
+
+
 @dataclass
 class QueryState:
     database_name: str = ''
@@ -32,10 +42,7 @@ class QueryState:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> QueryState:
-        if not isinstance(data, dict):
-            return cls()
-        known = {f.name for f in cls.__dataclass_fields__.values()}
-        return cls(**{k: v for k, v in data.items() if k in known})
+        return _flat_from_dict(cls, data)
 
 
 @dataclass
@@ -50,10 +57,7 @@ class UIState:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> UIState:
-        if not isinstance(data, dict):
-            return cls()
-        known = {f.name for f in cls.__dataclass_fields__.values()}
-        return cls(**{k: v for k, v in data.items() if k in known})
+        return _flat_from_dict(cls, data)
 
 
 @dataclass
@@ -129,6 +133,7 @@ class SessionStore:
 
     def __init__(self, path: str | None = None):
         self._path = path or resolve_data_path(_STORE_FILENAME)
+        self._lock_path = self._path + '.lock'
 
     def _load_raw(self) -> dict[str, Any]:
         data = read_json_file(self._path, default=None)
@@ -138,6 +143,13 @@ class SessionStore:
 
     def _save_raw(self, data: dict[str, Any]) -> None:
         write_json_file(self._path, data)
+
+    def _locked_update(self, fn: Callable[[dict[str, Any]], Any]) -> Any:
+        with file_lock(self._lock_path):
+            raw = self._load_raw()
+            result = fn(raw)
+            self._save_raw(raw)
+            return result
 
     def list_sessions(self) -> list[SessionEntry]:
         raw = self._load_raw()
@@ -153,30 +165,30 @@ class SessionStore:
 
     def save_session(self, entry: SessionEntry) -> None:
         entry.updated_at = _now_iso()
-        raw = self._load_raw()
-        raw.setdefault('sessions', {})[entry.session_id] = entry.to_dict()
-        self._save_raw(raw)
+        def _update(raw):
+            raw.setdefault('sessions', {})[entry.session_id] = entry.to_dict()
+        self._locked_update(_update)
 
     def delete_session(self, session_id: str) -> bool:
-        raw = self._load_raw()
-        sessions = raw.get('sessions', {})
-        if session_id not in sessions:
-            return False
-        del sessions[session_id]
-        active = raw.get('active_session_ids', [])
-        if session_id in active:
-            active.remove(session_id)
-        self._save_raw(raw)
-        return True
+        def _update(raw):
+            sessions = raw.get('sessions', {})
+            if session_id not in sessions:
+                return False
+            del sessions[session_id]
+            active = raw.get('active_session_ids', [])
+            if session_id in active:
+                active.remove(session_id)
+            return True
+        return self._locked_update(_update)
 
     def get_active_session_ids(self) -> list[str]:
         raw = self._load_raw()
         return list(raw.get('active_session_ids', []))
 
     def set_active_session_ids(self, ids: list[str]) -> None:
-        raw = self._load_raw()
-        raw['active_session_ids'] = list(ids)
-        self._save_raw(raw)
+        def _update(raw):
+            raw['active_session_ids'] = list(ids)
+        self._locked_update(_update)
 
     def get_restore_session_ids(self) -> list[str]:
         raw = self._load_raw()
@@ -185,23 +197,26 @@ class SessionStore:
         return [sid for sid in ids if sid in sessions]
 
     def set_restore_session_ids(self, ids: list[str]) -> None:
-        raw = self._load_raw()
-        raw['restore_session_ids'] = list(ids)
-        self._save_raw(raw)
+        def _update(raw):
+            raw['restore_session_ids'] = list(ids)
+        self._locked_update(_update)
 
     def allocate_anon_id(self) -> str:
-        raw = self._load_raw()
-        used: set[int] = set()
-        for sid in list(raw.get('sessions', {}).keys()) + raw.get('active_session_ids', []):
-            if sid.startswith('anon-'):
-                try:
-                    used.add(int(sid[5:]))
-                except ValueError:
-                    pass
-        n = 1
-        while n in used:
-            n += 1
-        return f'anon-{n}'
+        def _update(raw):
+            used: set[int] = set()
+            for sid in list(raw.get('sessions', {}).keys()) + raw.get('active_session_ids', []):
+                if sid.startswith('anon-'):
+                    try:
+                        used.add(int(sid[5:]))
+                    except ValueError:
+                        pass
+            n = 1
+            while n in used:
+                n += 1
+            new_id = f'anon-{n}'
+            raw.setdefault('active_session_ids', []).append(new_id)
+            return new_id
+        return self._locked_update(_update)
 
 
 class BookmarkStore:
@@ -210,8 +225,9 @@ class BookmarkStore:
         self._base = Path(base_dir) if base_dir else Path(resolve_data_path(_BOOKMARK_DIR))
 
     def _entry_path(self, bookmark_id: str) -> Path:
-        safe_id = bookmark_id.replace('/', '').replace('\\', '').replace('..', '')
-        return self._base / f'{safe_id}.json'
+        if not bookmark_id or not re.fullmatch(r'[\w-]+', bookmark_id):
+            raise ValueError(f'invalid bookmark id: {bookmark_id!r}')
+        return self._base / f'{bookmark_id}.json'
 
     def list_bookmarks(self) -> list[BookmarkEntry]:
         if not self._base.is_dir():

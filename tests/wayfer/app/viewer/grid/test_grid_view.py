@@ -653,3 +653,93 @@ class TestAutoScroll:
 
         callback = lambda: GridView.get_adjusted_scroll_speed(gv, gv._autoscroll_base_speed)
         assert callback() == expected
+
+
+class TestFindCenterIndexEffectiveScroll:
+    def test_uses_scroll_target_when_animating(self):
+        from wayfer.app.viewer.grid.grid_view import GridView
+        from wayfer.app.viewer.grid.calc_layout import LayoutData
+
+        rects_raw = [
+            QtCore.QRect(0, 0, 200, 100),
+            QtCore.QRect(200, 0, 200, 100),
+            QtCore.QRect(0, 110, 200, 100),
+            QtCore.QRect(200, 110, 200, 100),
+            QtCore.QRect(0, 220, 200, 100),
+        ]
+        layout = LayoutData(rects_raw, 320, True)
+
+        gv = MagicMock()
+        gv.rects = layout
+        gv._hz = True
+        gv.spacing = 10
+        gv._primary_viewport_size.return_value = 200
+        gv._effective_scroll_top.return_value = 110
+        gv.mapToScene.return_value = QtCore.QPointF(100, 50)
+
+        idx = GridView._find_center_index(gv)
+        assert idx in (2, 3)
+
+    def test_uses_actual_pos_when_not_animating(self):
+        from wayfer.app.viewer.grid.grid_view import GridView
+        from wayfer.app.viewer.grid.calc_layout import LayoutData
+
+        rects_raw = [
+            QtCore.QRect(0, 0, 200, 100),
+            QtCore.QRect(200, 0, 200, 100),
+            QtCore.QRect(0, 110, 200, 100),
+        ]
+        layout = LayoutData(rects_raw, 210, True)
+
+        gv = MagicMock()
+        gv.rects = layout
+        gv._hz = True
+        gv.spacing = 10
+        gv._primary_viewport_size.return_value = 200
+        gv._effective_scroll_top.return_value = 0
+        gv.mapToScene.return_value = QtCore.QPointF(100, 50)
+
+        idx = GridView._find_center_index(gv)
+        assert idx in (0, 1)
+
+    def test_scroll_row_chains_through_rows(self):
+        from wayfer.app.viewer.grid.grid_view import GridView
+        from wayfer.app.viewer.grid.calc_layout import LayoutData
+
+        rects_raw = [
+            QtCore.QRect(0, 0, 200, 100),
+            QtCore.QRect(200, 0, 200, 100),
+            QtCore.QRect(0, 110, 200, 100),
+            QtCore.QRect(200, 110, 200, 100),
+            QtCore.QRect(0, 220, 200, 100),
+            QtCore.QRect(200, 220, 200, 100),
+        ]
+        layout = LayoutData(rects_raw, 320, True)
+
+        gv = MagicMock()
+        gv.rects = layout
+        gv._hz = True
+        gv.spacing = 10
+        gv._scroll_anim = None
+        gv._scroll_target = 0
+        gv._primary_viewport_size.return_value = 200
+        gv._is_primary_reversed.return_value = False
+        gv._is_center_anchor.return_value = False
+        gv.mapToScene.return_value = QtCore.QPointF(100, 50)
+        gv._effective_scroll_top.return_value = 0
+
+        targets = []
+
+        def capture_scroll_to(target, animated=True):
+            targets.append(target)
+            gv._scroll_target = target
+            gv._effective_scroll_top.return_value = target
+
+        gv._scroll_to = capture_scroll_to
+        gv._find_center_index = lambda: GridView._find_center_index(gv)
+
+        GridView._scroll_row(gv, forward=True, animated=False)
+        GridView._scroll_row(gv, forward=True, animated=False)
+
+        assert len(targets) == 2
+        assert targets[1] > targets[0]

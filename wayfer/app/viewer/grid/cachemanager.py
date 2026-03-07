@@ -47,6 +47,7 @@ class FadePixmapItem(QtWidgets.QGraphicsObject):
             self._pixmap = pixmap
             self.update()
 
+    @profiler.profile
     def setGeometry(self, rect):
         self.prepareGeometryChange()
         self.setPos(rect.x(), rect.y())
@@ -62,6 +63,7 @@ class FadePixmapItem(QtWidgets.QGraphicsObject):
     def size(self):
         return self._size.toSize()
 
+    @profiler.profile
     def clear(self):
         self._pixmap = QtGui.QPixmap()
         self.current_path = None
@@ -147,6 +149,7 @@ class AdditionalWidgetPool:
         widget.hide()
         self._pools.setdefault(plugin_name, []).append(widget)
 
+    @profiler.profile
     def warm_up(self, parent: QtWidgets.QWidget):
         from ....plugin.grid.base import WidgetGridPlugin
         for plugin_cls in self._grid.registry.list_all():
@@ -167,6 +170,7 @@ class AdditionalWidgetPool:
         if hasattr(widget, 'cleanup'):
             widget.cleanup()
 
+    @profiler.profile
     def reset(self):
         for widget in list(self._in_use):
             self._safe_cleanup(widget)

@@ -1,6 +1,7 @@
 from PySide6 import QtCore, QtGui
 
 from ...utils.logs import AppLogger
+from ...utils.profiling import profiler
 from ..registry import PluginRegistry
 from .base import BaseGridPlugin, ImageGridPlugin, WidgetGridPlugin
 
@@ -44,6 +45,7 @@ class GridResolver:
             AppLogger.debug(f'[GridResolver] Fallback load failed: {path} ({e})')
             return None
 
+    @profiler.profile
     def resolve(self, path: str) -> type[BaseGridPlugin] | None:
         return self.registry.resolve(path)
 
@@ -71,6 +73,7 @@ class WidgetNotifier:
     def plugin_name(self, index: int) -> str | None:
         return self._names.get(index)
 
+    @profiler.profile
     def _notify(self, index: int, method: str, widget):
         name = self._names.get(index)
         if not name:
@@ -79,12 +82,14 @@ class WidgetNotifier:
         if isinstance(instance, WidgetGridPlugin):
             getattr(instance, method)(widget)
 
+    @profiler.profile
     def bind(self, index: int, plugin_name: str, widget, path: str, size=None):
         self._names[index] = plugin_name
         instance = self._registry.instance(plugin_name)
         if isinstance(instance, WidgetGridPlugin):
             instance.render(widget, path, size)
 
+    @profiler.profile
     def unbind(self, index: int, widget):
         name = self._names.pop(index, None)
         if not name:
@@ -95,15 +100,19 @@ class WidgetNotifier:
                 instance.disappear(widget)
             instance.release(widget)
 
+    @profiler.profile
     def appear(self, index: int, widget):
         self._notify(index, 'appear', widget)
 
+    @profiler.profile
     def disappear(self, index: int, widget):
         self._notify(index, 'disappear', widget)
 
+    @profiler.profile
     def select(self, index: int, widget):
         self._notify(index, 'select', widget)
 
+    @profiler.profile
     def deselect(self, index: int, widget):
         self._notify(index, 'deselect', widget)
 

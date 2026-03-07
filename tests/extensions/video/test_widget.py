@@ -34,7 +34,7 @@ class TestMpvGLOverlay:
         assert overlay._path == '/test.mp4'
         assert overlay._awaiting_first_frame
         QtWidgets.QApplication.instance().processEvents()
-        overlay.player.play.assert_called_once_with('/test.mp4')
+        overlay.player.command_async.assert_called_once_with('loadfile', '/test.mp4')
 
     def test_activate_hidden_when_ctx_exists(self, qtbot):
         from extensions.video.widget import MpvGLOverlay
@@ -77,7 +77,7 @@ class TestMpvGLOverlay:
         overlay.activate('/test.mp4')
         QtWidgets.QApplication.instance().processEvents()
         overlay.deactivate()
-        overlay.player.command.assert_called_with('stop')
+        overlay.player.command_async.assert_called_with('stop')
         assert overlay._path is None
         assert not overlay.isVisible()
 

@@ -7,13 +7,9 @@ from wayfer.plugin import qt_debounce_manager
 from wayfer.utils.logs import AppLogger
 from wayfer.utils.profiling import profiler
 
-PREVIEW_VOLUME = 40
+DEFAULT_VOLUME = 40
 GL_COLOR_BUFFER_BIT = 0x00004000
 _MPV_EVENT_PLAYBACK_RESTART = 21
-
-_volume = PREVIEW_VOLUME
-_hover_autoplay = True
-_appear_autoplay = True
 
 
 def _get_proc_address(_, name):
@@ -92,8 +88,18 @@ class MpvGLOverlay(QOpenGLWidget):
                 keep_open='yes',
                 idle='yes',
                 loop='inf',
+                demuxer_max_back_bytes='128KiB',
+                osd_level=0,
+                sub='no',
+                framedrop='vo',
+                opengl_pbo='yes',
+                vd_lavc_threads=2,
+                demuxer_lavf_analyzeduration=0.1,
+                demuxer_lavf_probesize=32768,
+                video_latency_hacks='yes',
+                hr_seek='no',
             )
-            self.player.volume = _volume
+            self.player.volume = DEFAULT_VOLUME
             self.player.register_event_callback(self._on_mpv_event)
         else:
             self.player = None
@@ -136,12 +142,12 @@ class MpvGLOverlay(QOpenGLWidget):
         self._frame_ready = True
         self._on_update.emit()
 
+    @profiler.profile
     def _show_first_frame(self):
         if self._awaiting_first_frame:
             self._awaiting_first_frame = False
             if not self.isVisible():
                 self.show()
-                self.raise_()
             self.update()
 
     @Slot()
@@ -203,11 +209,11 @@ class MpvGLOverlay(QOpenGLWidget):
             generation = self._play_generation
             QTimer.singleShot(0, lambda: self._deferred_play(path, generation))
 
+    @profiler.profile
     def _deferred_play(self, path, generation):
         if generation != self._play_generation or self.player is None:
             return
-        self.player.pause = False
-        self.player.play(path)
+        self.player.command_async('loadfile', path)
 
     @profiler.profile
     def deactivate(self):
@@ -216,7 +222,7 @@ class MpvGLOverlay(QOpenGLWidget):
         self._awaiting_first_frame = False
         self._playback_ready = False
         if self.player:
-            self.player.command('stop')
+            self.player.command_async('stop')
         self._path = None
         self._frame_ready = False
         self.hide()
@@ -240,6 +246,9 @@ class PlaybackSlotManager:
     def __init__(self, parent, max_selected=3):
         self._parent = parent
         self._max_selected = max_selected
+        self.volume = DEFAULT_VOLUME
+        self.hover_autoplay = True
+        self.appear_autoplay = True
         self._mpv_available = MpvGLOverlay._ensure_mpv()
         self._pool: list[MpvGLOverlay] = []
         self._selected: OrderedDict = OrderedDict()
@@ -254,12 +263,13 @@ class PlaybackSlotManager:
             self._pool.append(overlay)
 
     def set_volume(self, volume: int):
+        self.volume = max(0, min(100, int(volume)))
         for overlay in self._pool:
-            overlay.set_volume(volume)
+            overlay.set_volume(self.volume)
         if self._hover_overlay is not None:
-            self._hover_overlay.set_volume(volume)
+            self._hover_overlay.set_volume(self.volume)
         for overlay in self._selected.values():
-            overlay.set_volume(volume)
+            overlay.set_volume(self.volume)
 
     def set_max_selected(self, count: int):
         self._max_selected = max(1, count)
@@ -283,9 +293,11 @@ class PlaybackSlotManager:
             if not self._is_in_use(overlay):
                 return overlay
         overlay = MpvGLOverlay(self._parent)
+        overlay.set_volume(self.volume)
         overlay.hide()
         return overlay
 
+    @profiler.profile
     def _release_overlay(self, overlay):
         overlay.deactivate()
         overlay.setParent(self._parent)
@@ -297,6 +309,7 @@ class PlaybackSlotManager:
         self._pending_hover_cell = None
         self._pending_hover_path = None
 
+    @profiler.profile
     def activate_hover(self, cell, path):
         if cell in self._selected:
             return
@@ -309,6 +322,7 @@ class PlaybackSlotManager:
         self._pending_hover_path = path
         qt_debounce_manager.debounce(self._debounce_key, self.HOVER_DEBOUNCE_MS, self._apply_hover)
 
+    @profiler.profile
     def _apply_hover(self):
         cell = self._pending_hover_cell
         path = self._pending_hover_path
@@ -325,6 +339,7 @@ class PlaybackSlotManager:
         self._hover_overlay = overlay
         overlay.activate(path, owner=cell)
 
+    @profiler.profile
     def deactivate_hover(self):
         self._cancel_pending()
         overlay = self._hover_overlay
@@ -333,6 +348,7 @@ class PlaybackSlotManager:
         if overlay is not None:
             self._release_overlay(overlay)
 
+    @profiler.profile
     def activate_select(self, cell, path):
         if cell in self._selected:
             return
@@ -354,6 +370,7 @@ class PlaybackSlotManager:
             self._release_overlay(evicted)
         self._selected[cell] = overlay
 
+    @profiler.profile
     def deactivate_select(self, cell):
         overlay = self._selected.pop(cell, None)
         if overlay is not None:
@@ -383,6 +400,7 @@ class PlaybackSlotManager:
         if overlay is not None:
             overlay.setGeometry(0, 0, cell.width(), cell.height())
 
+    @profiler.profile
     def release_cell(self, cell):
         self.deactivate_select(cell)
         if self._hover_cell is cell or self._pending_hover_cell is cell:
@@ -414,6 +432,23 @@ class MpvCellWidget(QWidget):
         cls._thread_pool = QThreadPool()
         cls._thread_pool.setMaxThreadCount(2)
         cls._slot_manager = PlaybackSlotManager(parent)
+        from wayfer.core.actions.bridge import UI
+        UI.register_instance("VideoSlotManager", cls._slot_manager)
+        cls._restore_settings()
+
+    @classmethod
+    def _restore_settings(cls):
+        sm = cls._slot_manager
+        if sm is None:
+            return
+        try:
+            from wayfer.core.actions.bridge import Command
+            sm.set_volume(int(Command.get_args("vgrid.set_volume").get("volume", DEFAULT_VOLUME)))
+            sm.set_max_selected(int(Command.get_args("vgrid.set_max_playback_slots").get("max_slots", 3)))
+            sm.hover_autoplay = Command.get_checked("vgrid.toggle_hover_autoplay")
+            sm.appear_autoplay = Command.get_checked("vgrid.toggle_appear_autoplay")
+        except Exception as e:
+            AppLogger.warning(f"Video grid settings restoration incomplete: {e}", exc=e)
 
     @classmethod
     def _on_overlay_leave(cls, cell):
@@ -463,11 +498,13 @@ class MpvCellWidget(QWidget):
         else:
             painter.fillRect(self.rect(), Qt.GlobalColor.black)
 
+    @profiler.profile
     def enterEvent(self, event):
         super().enterEvent(event)
-        if self._path and self._slot_manager and _hover_autoplay:
+        if self._path and self._slot_manager and self._slot_manager.hover_autoplay:
             self._slot_manager.activate_hover(self, self._path)
 
+    @profiler.profile
     def leaveEvent(self, event):
         super().leaveEvent(event)
         if not self._slot_manager:
@@ -481,6 +518,7 @@ class MpvCellWidget(QWidget):
                 return
         self._slot_manager.deactivate_hover()
 
+    @profiler.profile
     def moveEvent(self, event):
         super().moveEvent(event)
         if not self._slot_manager or not self._path or not self.isVisible():
@@ -490,15 +528,18 @@ class MpvCellWidget(QWidget):
         elif self._slot_manager.is_hovering(self):
             self._slot_manager.deactivate_hover()
 
+    @profiler.profile
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if self._slot_manager:
             self._slot_manager.resize_overlay(self)
 
+    @profiler.profile
     def on_selected(self):
-        if self._slot_manager and self._path and _appear_autoplay:
+        if self._slot_manager and self._path and self._slot_manager.appear_autoplay:
             self._slot_manager.activate_select(self, self._path)
 
+    @profiler.profile
     def on_deselected(self):
         if self._slot_manager:
             self._slot_manager.deactivate_select(self)

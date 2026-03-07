@@ -1,5 +1,6 @@
 from contextlib import contextmanager
 from PySide6 import QtCore
+from ....utils.profiling import profiler
 
 class SelectionManager(QtCore.QObject):
     selectionChanged = QtCore.Signal(set)
@@ -22,6 +23,7 @@ class SelectionManager(QtCore.QObject):
         finally:
             self._signals_blocked = False
 
+    @profiler.profile
     def select(self, index):
         if index not in self._selected:
             self._selected.add(index)
@@ -49,6 +51,7 @@ class SelectionManager(QtCore.QObject):
                 self._anchor_index = None
             self._emit({index})
 
+    @profiler.profile
     def toggle(self, index):
         if index in self._selected:
             self._selected.remove(index)
@@ -59,6 +62,7 @@ class SelectionManager(QtCore.QObject):
             self._anchor_index = index
         self._emit({index})
 
+    @profiler.profile
     def clear(self):
         if self._selected:
             temp = self._selected.copy()
@@ -69,6 +73,7 @@ class SelectionManager(QtCore.QObject):
     def is_selected(self, index):
         return index in self._selected
 
+    @profiler.profile
     def set_selected(self, indexes, last=0):
         temp = self._selected.copy()
         self._selected = set(indexes)

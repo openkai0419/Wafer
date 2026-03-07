@@ -278,6 +278,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         path = self.items.last_selected_path()
         return {"path": path, "paths": paths}
 
+    @profiler.profile
     def _on_selection_changed(self, current_selection):
         newly_selected = current_selection - self._prev_selection_set
         newly_deselected = self._prev_selection_set - current_selection
@@ -328,10 +329,12 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
                 return p
         return None
 
+    @profiler.profile
     @qt_throttle(50, 100)
     def _on_scroll_bar_changed(self, *args, **kwargs):
         self._update_visible_items()
 
+    @profiler.profile
     def scrollContentsBy(self, dx, dy):
         super().scrollContentsBy(dx, dy)
         self._overlay.move(0, 0)
@@ -453,22 +456,23 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         rects = self.rects
         if not rects:
             return None
-        center = self.mapToScene(self.viewport().rect().center()).toPoint()
+        bar = self._primary_bar()
+        vs = self._primary_viewport_size()
+        hz = self._hz
+        scroll_top = self._effective_scroll_top(bar)
+        center_p = scroll_top + vs // 2
+        actual = self.mapToScene(self.viewport().rect().center()).toPoint()
+        center = QtCore.QPoint(actual.x(), center_p) if hz else QtCore.QPoint(center_p, actual.y())
         idx = rects.index_at_point(center)
         if idx is not None:
             return idx
-        hz = self._hz
         biased = QtCore.QPoint(center.x() - self.spacing, center.y()) if hz else QtCore.QPoint(center.x(), center.y() - self.spacing)
         idx = rects.index_at_point(biased)
         if idx is not None:
             return idx
-        bar = self._primary_bar()
-        vs = self._primary_viewport_size()
-        scroll_top = self._effective_scroll_top(bar)
         visible = rects.calculate_visible_indices(scroll_top, scroll_top + vs)
         if not visible:
             return None
-        center_p = scroll_top + vs // 2
         return min(visible, key=lambda i: (
             abs(((rects[i].y() + rects[i].height() // 2) if hz else (rects[i].x() + rects[i].width() // 2)) - center_p),
             (rects[i].x() if hz else rects[i].y()),

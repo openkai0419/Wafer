@@ -17,116 +17,142 @@ def _patch_mpv(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _reset_shared(monkeypatch):
-    from extensions.video import widget as w
     from extensions.video.widget import MpvCellWidget
     monkeypatch.setattr(MpvCellWidget, '_slot_manager', None)
     monkeypatch.setattr(MpvCellWidget, '_thread_pool', None)
     monkeypatch.setattr(MpvCellWidget, '_shared_initialized', False)
-    monkeypatch.setattr(w, '_volume', 40)
-    monkeypatch.setattr(w, '_hover_autoplay', True)
-    monkeypatch.setattr(w, '_appear_autoplay', True)
     yield
 
 
+def _make_ctx(sm=None):
+    ctx = MagicMock()
+    ctx.get_instance = MagicMock(return_value=sm)
+    return ctx
+
+
 class TestSetVolume:
-    def test_set_volume_updates_module_state(self):
-        from extensions.video import widget as w
+    def test_set_volume_calls_slot_manager(self):
         from extensions.video.commands import set_volume
-        set_volume(MagicMock(), volume=75)
-        assert w._volume == 75
+        sm = MagicMock()
+        ctx = _make_ctx(sm)
+        set_volume(ctx, volume=75)
+        sm.set_volume.assert_called_once_with(75)
 
-    def test_set_volume_clamps_max(self):
-        from extensions.video import widget as w
+    def test_set_volume_noop_without_instance(self):
         from extensions.video.commands import set_volume
-        set_volume(MagicMock(), volume=200)
-        assert w._volume == 100
+        ctx = _make_ctx(None)
+        set_volume(ctx, volume=50)
 
-    def test_set_volume_clamps_min(self):
-        from extensions.video import widget as w
+    def test_set_volume_uses_ctx_get_instance(self):
         from extensions.video.commands import set_volume
-        set_volume(MagicMock(), volume=-10)
-        assert w._volume == 0
-
-    def test_set_volume_propagates_to_slot_manager(self):
-        from extensions.video.widget import MpvCellWidget
-        from extensions.video.commands import set_volume
-        mock_sm = MagicMock()
-        MpvCellWidget._slot_manager = mock_sm
-        set_volume(MagicMock(), volume=60)
-        mock_sm.set_volume.assert_called_once_with(60)
+        sm = MagicMock()
+        ctx = _make_ctx(sm)
+        set_volume(ctx, volume=60)
+        ctx.get_instance.assert_called_once_with("VideoSlotManager")
 
 
 class TestSetMaxPlaybackSlots:
     def test_set_max_playback_slots(self):
-        from extensions.video.widget import MpvCellWidget, PlaybackSlotManager
-        mock_sm = MagicMock(spec=PlaybackSlotManager)
-        mock_sm._max_selected = 3
-        mock_sm._selected = {}
-        MpvCellWidget._slot_manager = mock_sm
         from extensions.video.commands import set_max_playback_slots
-        set_max_playback_slots(MagicMock(), max_slots=5)
-        mock_sm.set_max_selected.assert_called_once_with(5)
+        sm = MagicMock()
+        ctx = _make_ctx(sm)
+        set_max_playback_slots(ctx, max_slots=5)
+        sm.set_max_selected.assert_called_once_with(5)
+
+    def test_set_max_playback_slots_noop_without_instance(self):
+        from extensions.video.commands import set_max_playback_slots
+        ctx = _make_ctx(None)
+        set_max_playback_slots(ctx, max_slots=5)
 
 
 class TestToggleHoverAutoplay:
     def test_toggle_hover_off(self):
-        from extensions.video import widget as w
         from extensions.video.commands import toggle_hover_autoplay
-        assert w._hover_autoplay is True
+        sm = MagicMock()
+        sm.hover_autoplay = True
+        ctx = _make_ctx(sm)
         with patch("extensions.video.commands.Command"):
-            toggle_hover_autoplay(MagicMock())
-        assert w._hover_autoplay is False
+            toggle_hover_autoplay(ctx)
+        assert sm.hover_autoplay is False
 
-    def test_toggle_hover_on(self, monkeypatch):
-        from extensions.video import widget as w
+    def test_toggle_hover_on(self):
         from extensions.video.commands import toggle_hover_autoplay
-        monkeypatch.setattr(w, '_hover_autoplay', False)
+        sm = MagicMock()
+        sm.hover_autoplay = False
+        ctx = _make_ctx(sm)
         with patch("extensions.video.commands.Command"):
-            toggle_hover_autoplay(MagicMock())
-        assert w._hover_autoplay is True
+            toggle_hover_autoplay(ctx)
+        assert sm.hover_autoplay is True
 
     def test_toggle_hover_off_deactivates_hover(self):
-        from extensions.video.widget import MpvCellWidget
         from extensions.video.commands import toggle_hover_autoplay
-        mock_sm = MagicMock()
-        MpvCellWidget._slot_manager = mock_sm
+        sm = MagicMock()
+        sm.hover_autoplay = True
+        ctx = _make_ctx(sm)
         with patch("extensions.video.commands.Command"):
-            toggle_hover_autoplay(MagicMock())
-        mock_sm.deactivate_hover.assert_called_once()
+            toggle_hover_autoplay(ctx)
+        sm.deactivate_hover.assert_called_once()
+
+    def test_toggle_hover_on_does_not_deactivate(self):
+        from extensions.video.commands import toggle_hover_autoplay
+        sm = MagicMock()
+        sm.hover_autoplay = False
+        ctx = _make_ctx(sm)
+        with patch("extensions.video.commands.Command"):
+            toggle_hover_autoplay(ctx)
+        sm.deactivate_hover.assert_not_called()
 
     def test_set_checked_uses_vgrid_path(self):
         from extensions.video.commands import toggle_hover_autoplay
+        sm = MagicMock()
+        sm.hover_autoplay = True
+        ctx = _make_ctx(sm)
         with patch("extensions.video.commands.Command") as cmd:
-            toggle_hover_autoplay(MagicMock())
+            toggle_hover_autoplay(ctx)
             cmd.set_checked.assert_called_once_with("vgrid.toggle_hover_autoplay", False)
+
+    def test_noop_without_instance(self):
+        from extensions.video.commands import toggle_hover_autoplay
+        ctx = _make_ctx(None)
+        with patch("extensions.video.commands.Command") as cmd:
+            toggle_hover_autoplay(ctx)
+            cmd.set_checked.assert_not_called()
 
 
 class TestToggleAppearAutoplay:
     def test_toggle_appear_off(self):
-        from extensions.video import widget as w
         from extensions.video.commands import toggle_appear_autoplay
-        assert w._appear_autoplay is True
+        sm = MagicMock()
+        sm.appear_autoplay = True
+        ctx = _make_ctx(sm)
         with patch("extensions.video.commands.Command"):
-            toggle_appear_autoplay(MagicMock())
-        assert w._appear_autoplay is False
+            toggle_appear_autoplay(ctx)
+        assert sm.appear_autoplay is False
 
-    def test_toggle_appear_on(self, monkeypatch):
-        from extensions.video import widget as w
+    def test_toggle_appear_on(self):
         from extensions.video.commands import toggle_appear_autoplay
-        monkeypatch.setattr(w, '_appear_autoplay', False)
+        sm = MagicMock()
+        sm.appear_autoplay = False
+        ctx = _make_ctx(sm)
         with patch("extensions.video.commands.Command"):
-            toggle_appear_autoplay(MagicMock())
-        assert w._appear_autoplay is True
+            toggle_appear_autoplay(ctx)
+        assert sm.appear_autoplay is True
+
+    def test_noop_without_instance(self):
+        from extensions.video.commands import toggle_appear_autoplay
+        ctx = _make_ctx(None)
+        with patch("extensions.video.commands.Command") as cmd:
+            toggle_appear_autoplay(ctx)
+            cmd.set_checked.assert_not_called()
 
 
 class TestHoverAutoplayFlag:
-    def test_enter_event_skipped_when_hover_disabled(self, monkeypatch):
-        from extensions.video import widget as w
+    def test_enter_event_skipped_when_hover_disabled(self):
         from extensions.video.widget import MpvCellWidget
-        monkeypatch.setattr(w, '_hover_autoplay', False)
         cell = MagicMock(spec=MpvCellWidget)
         cell._path = '/test.mp4'
         cell._slot_manager = MagicMock()
+        cell._slot_manager.hover_autoplay = False
         with patch.object(MpvCellWidget.__bases__[0], 'enterEvent'):
             MpvCellWidget.enterEvent(cell, MagicMock())
         cell._slot_manager.activate_hover.assert_not_called()
@@ -136,19 +162,19 @@ class TestHoverAutoplayFlag:
         cell = MagicMock(spec=MpvCellWidget)
         cell._path = '/test.mp4'
         cell._slot_manager = MagicMock()
+        cell._slot_manager.hover_autoplay = True
         with patch.object(MpvCellWidget.__bases__[0], 'enterEvent'):
             MpvCellWidget.enterEvent(cell, MagicMock())
         cell._slot_manager.activate_hover.assert_called_once()
 
 
 class TestAppearAutoplayFlag:
-    def test_on_selected_skipped_when_appear_disabled(self, monkeypatch):
-        from extensions.video import widget as w
+    def test_on_selected_skipped_when_appear_disabled(self):
         from extensions.video.widget import MpvCellWidget
-        monkeypatch.setattr(w, '_appear_autoplay', False)
         cell = MagicMock(spec=MpvCellWidget)
         cell._path = '/test.mp4'
         cell._slot_manager = MagicMock()
+        cell._slot_manager.appear_autoplay = False
         MpvCellWidget.on_selected(cell)
         cell._slot_manager.activate_select.assert_not_called()
 
@@ -157,12 +183,13 @@ class TestAppearAutoplayFlag:
         cell = MagicMock(spec=MpvCellWidget)
         cell._path = '/test.mp4'
         cell._slot_manager = MagicMock()
+        cell._slot_manager.appear_autoplay = True
         MpvCellWidget.on_selected(cell)
         cell._slot_manager.activate_select.assert_called_once()
 
 
 class TestSlotManagerSetVolume:
-    def test_set_volume_propagates_to_all_overlays(self):
+    def test_set_volume_stores_and_propagates(self):
         from extensions.video.widget import PlaybackSlotManager
         sm = object.__new__(PlaybackSlotManager)
         overlay_pool = MagicMock()
@@ -171,8 +198,27 @@ class TestSlotManagerSetVolume:
         sm._hover_overlay = None
         sm._selected = {MagicMock(): overlay_selected}
         sm.set_volume(80)
+        assert sm.volume == 80
         overlay_pool.set_volume.assert_called_once_with(80)
         overlay_selected.set_volume.assert_called_once_with(80)
+
+    def test_set_volume_clamps_max(self):
+        from extensions.video.widget import PlaybackSlotManager
+        sm = object.__new__(PlaybackSlotManager)
+        sm._pool = []
+        sm._hover_overlay = None
+        sm._selected = {}
+        sm.set_volume(200)
+        assert sm.volume == 100
+
+    def test_set_volume_clamps_min(self):
+        from extensions.video.widget import PlaybackSlotManager
+        sm = object.__new__(PlaybackSlotManager)
+        sm._pool = []
+        sm._hover_overlay = None
+        sm._selected = {}
+        sm.set_volume(-10)
+        assert sm.volume == 0
 
     def test_set_volume_includes_hover_overlay(self):
         from extensions.video.widget import PlaybackSlotManager
@@ -182,6 +228,7 @@ class TestSlotManagerSetVolume:
         sm._hover_overlay = hover
         sm._selected = {}
         sm.set_volume(50)
+        assert sm.volume == 50
         hover.set_volume.assert_called_once_with(50)
 
 
@@ -257,48 +304,54 @@ def video_registry(monkeypatch):
     registry._commands = prev
 
 
+@pytest.fixture()
+def mock_slot_manager():
+    from wayfer.core.actions.binding.instance_registry import InstanceRegistry
+    reg = InstanceRegistry.instance()
+    sm = MagicMock()
+    sm.hover_autoplay = True
+    sm.appear_autoplay = True
+    sm.volume = 40
+    reg.register("VideoSlotManager", sm)
+    yield sm
+    entries = reg._by_name.get("VideoSlotManager", [])
+    entries.clear()
+
+
 class TestRegistryExecution:
-    def test_set_volume_via_registry(self, video_registry):
-        from extensions.video import widget as w
+    def test_set_volume_via_registry(self, video_registry, mock_slot_manager):
         from wayfer.core.actions.command.context import CommandContext
         ctx = CommandContext.create(None, "*", source="menu")
         video_registry.execute("vgrid.set_volume", ctx=ctx, volume=75)
-        assert w._volume == 75
+        mock_slot_manager.set_volume.assert_called_once_with(75)
 
-    def test_set_volume_default_via_registry(self, video_registry):
-        from extensions.video import widget as w
+    def test_set_volume_default_via_registry(self, video_registry, mock_slot_manager):
         from wayfer.core.actions.command.context import CommandContext
-        w._volume = 80
         ctx = CommandContext.create(None, "*", source="menu")
         video_registry.execute("vgrid.set_volume", ctx=ctx)
-        assert w._volume == 40
+        mock_slot_manager.set_volume.assert_called_once_with(40)
 
-    def test_set_max_slots_via_registry(self, video_registry):
-        from extensions.video.widget import MpvCellWidget
+    def test_set_max_slots_via_registry(self, video_registry, mock_slot_manager):
         from wayfer.core.actions.command.context import CommandContext
-        mock_sm = MagicMock()
-        MpvCellWidget._slot_manager = mock_sm
         ctx = CommandContext.create(None, "*", source="menu")
         video_registry.execute("vgrid.set_max_playback_slots", ctx=ctx, max_slots=7)
-        mock_sm.set_max_selected.assert_called_once_with(7)
+        mock_slot_manager.set_max_selected.assert_called_once_with(7)
 
-    def test_toggle_hover_via_registry(self, video_registry):
-        from extensions.video import widget as w
+    def test_toggle_hover_via_registry(self, video_registry, mock_slot_manager):
         from wayfer.core.actions.command.context import CommandContext
-        assert w._hover_autoplay is True
+        assert mock_slot_manager.hover_autoplay is True
         ctx = CommandContext.create(None, "*", source="menu")
         with patch("extensions.video.commands.Command"):
             video_registry.execute("vgrid.toggle_hover_autoplay", ctx=ctx)
-        assert w._hover_autoplay is False
+        assert mock_slot_manager.hover_autoplay is False
 
-    def test_toggle_appear_via_registry(self, video_registry):
-        from extensions.video import widget as w
+    def test_toggle_appear_via_registry(self, video_registry, mock_slot_manager):
         from wayfer.core.actions.command.context import CommandContext
-        assert w._appear_autoplay is True
+        assert mock_slot_manager.appear_autoplay is True
         ctx = CommandContext.create(None, "*", source="menu")
         with patch("extensions.video.commands.Command"):
             video_registry.execute("vgrid.toggle_appear_autoplay", ctx=ctx)
-        assert w._appear_autoplay is False
+        assert mock_slot_manager.appear_autoplay is False
 
     def test_registered_command_ids(self, video_registry):
         assert video_registry.has_command("vgrid.set_volume")

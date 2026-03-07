@@ -1,4 +1,5 @@
 from wayfer.plugin import WidgetGridPlugin
+from wayfer.utils.profiling import profiler
 from .widget import MpvCellWidget
 
 
@@ -23,20 +24,26 @@ class VideoGridPlugin(WidgetGridPlugin):
         fmt.setSwapBehavior(QSurfaceFormat.SwapBehavior.DoubleBuffer)
         QSurfaceFormat.setDefaultFormat(fmt)
 
+    @profiler.profile
     def render(self, widget, path, size=None):
         widget.load(path, size)
 
+    @profiler.profile
     def release(self, widget):
         widget.suspend()
 
+    @profiler.profile
     def appear(self, widget):
         widget.on_selected()
 
+    @profiler.profile
     def disappear(self, widget):
         widget.on_deselected()
 
+    @profiler.profile
     def select(self, widget):
         widget.on_selected()
 
+    @profiler.profile
     def deselect(self, widget):
         widget.on_deselected()

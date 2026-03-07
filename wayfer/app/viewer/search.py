@@ -102,6 +102,7 @@ class SearchService(QtCore.QObject):
         self._keys = None
         self._directories = None
 
+    @profiler.profile
     def build_query(self):
         return SearchQuery(
             keys=self._keys,

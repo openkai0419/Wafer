@@ -55,6 +55,7 @@ class LayoutData:
     def __getitem__(self, i):
         return self._rects[i]
 
+    @profiler.profile
     def calculate_visible_indices(self, p_start, p_end):
         if not self._count:
             return []
@@ -62,6 +63,7 @@ class LayoutData:
         hi = bisect.bisect_right(self._sorted_primary_starts, p_end)
         return self._sorted_indices[lo:hi]
 
+    @profiler.profile
     def index_at_point(self, point):
         px, py = point.x(), point.y()
         p = py if self._is_horizontal else px

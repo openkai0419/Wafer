@@ -2,39 +2,34 @@ from wayfer.plugin import MenuGroup, CommandMeta, CommandParam
 from wayfer.core.actions.bridge import Command
 
 
-def _slot_manager():
-    from .widget import MpvCellWidget
-    return MpvCellWidget._slot_manager
-
-
 def set_volume(ctx, volume: int = 40):
-    from . import widget as w
-    w._volume = max(0, min(100, int(volume)))
-    sm = _slot_manager()
+    sm = ctx.get_instance("VideoSlotManager")
     if sm:
-        sm.set_volume(w._volume)
+        sm.set_volume(volume)
 
 
 def set_max_playback_slots(ctx, max_slots: int = 3):
-    sm = _slot_manager()
+    sm = ctx.get_instance("VideoSlotManager")
     if sm:
         sm.set_max_selected(int(max_slots))
 
 
 def toggle_hover_autoplay(ctx):
-    from . import widget as w
-    w._hover_autoplay = not w._hover_autoplay
-    Command.set_checked("vgrid.toggle_hover_autoplay", w._hover_autoplay)
-    if not w._hover_autoplay:
-        sm = _slot_manager()
-        if sm:
-            sm.deactivate_hover()
+    sm = ctx.get_instance("VideoSlotManager")
+    if not sm:
+        return
+    sm.hover_autoplay = not sm.hover_autoplay
+    Command.set_checked("vgrid.toggle_hover_autoplay", sm.hover_autoplay)
+    if not sm.hover_autoplay:
+        sm.deactivate_hover()
 
 
 def toggle_appear_autoplay(ctx):
-    from . import widget as w
-    w._appear_autoplay = not w._appear_autoplay
-    Command.set_checked("vgrid.toggle_appear_autoplay", w._appear_autoplay)
+    sm = ctx.get_instance("VideoSlotManager")
+    if not sm:
+        return
+    sm.appear_autoplay = not sm.appear_autoplay
+    Command.set_checked("vgrid.toggle_appear_autoplay", sm.appear_autoplay)
 
 
 class VideoGridCommands(MenuGroup):

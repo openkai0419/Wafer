@@ -1,12 +1,8 @@
 import importlib
 import importlib.util
 import inspect
-import io
 import os
-import subprocess
 import sys
-import threading
-import time
 from pathlib import Path
 
 from ..utils.logs import AppLogger
@@ -14,6 +10,7 @@ from .registry import PluginRegistry
 from .viewer.base import BaseViewerPlugin
 from .grid.base import BaseGridPlugin
 from .collector.base import BaseCollectorPlugin
+from .installer import install_requirements as _install_requirements
 
 
 _REGISTRY_MAP = {
@@ -45,87 +42,7 @@ def _needs_install(plugin_dir: str) -> bool:
     return os.path.getmtime(req_file) > os.path.getmtime(stamp)
 
 
-def _run_subprocess(cmd: list[str], on_progress=None):
-    kwargs = {}
-    if sys.platform == 'win32':
-        kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
-    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, **kwargs)
-    stderr_chunks: list[bytes] = []
 
-    def _drain_stderr():
-        while True:
-            data = proc.stderr.read(4096)
-            if not data:
-                break
-            stderr_chunks.append(data)
-
-    drain_thread = threading.Thread(target=_drain_stderr, daemon=True)
-    drain_thread.start()
-    try:
-        while proc.poll() is None:
-            if on_progress:
-                on_progress()
-            time.sleep(0.05)
-        drain_thread.join(timeout=5)
-        if proc.returncode != 0:
-            stderr_out = b''.join(stderr_chunks).decode(errors='replace')
-            raise RuntimeError(f'pip exited with code {proc.returncode}: {stderr_out}')
-    finally:
-        if proc.stderr:
-            proc.stderr.close()
-
-
-def _install_requirements(plugin_dir: str, on_progress=None) -> bool:
-    vendor_dir = os.path.join(plugin_dir, _PACKAGES_DIR)
-    req_file = os.path.join(plugin_dir, 'requirements.txt')
-    os.makedirs(vendor_dir, exist_ok=True)
-    try:
-        if getattr(sys, 'frozen', False):
-            cmd = [sys.executable, '--install-deps', plugin_dir]
-        else:
-            cmd = [
-                sys.executable, '-m', 'pip',
-                'install', '--target', vendor_dir,
-                '-r', req_file,
-                '--quiet', '--disable-pip-version-check',
-            ]
-        _run_subprocess(cmd, on_progress)
-        Path(vendor_dir, _INSTALL_STAMP).touch()
-        AppLogger.info(f'[PluginLoader] Installed dependencies: {os.path.basename(plugin_dir)}')
-        return True
-    except Exception as e:
-        AppLogger.warning(f'[PluginLoader] pip install failed for {os.path.basename(plugin_dir)}: {e}', exc=e)
-        return False
-
-
-def install_plugin_deps_inprocess(plugin_dir: str) -> int:
-    vendor_dir = os.path.join(plugin_dir, _PACKAGES_DIR)
-    req_file = os.path.join(plugin_dir, 'requirements.txt')
-    os.makedirs(vendor_dir, exist_ok=True)
-    pip_args = [
-        'install', '--target', vendor_dir,
-        '-r', req_file,
-        '--quiet', '--disable-pip-version-check',
-        '--no-cache-dir',
-    ]
-    try:
-        from pip._internal.cli.main import main as pip_main
-        buf = io.StringIO()
-        saved_out, saved_err = sys.stdout, sys.stderr
-        sys.stdout = sys.stderr = buf
-        try:
-            ret = pip_main(pip_args)
-        except SystemExit as e:
-            ret = e.code if isinstance(e.code, int) else 1
-        finally:
-            sys.stdout, sys.stderr = saved_out, saved_err
-        if ret != 0:
-            raise RuntimeError(f'pip exited with code {ret}: {buf.getvalue()}')
-        Path(vendor_dir, _INSTALL_STAMP).touch()
-        return 0
-    except Exception as e:
-        AppLogger.warning(f'[PluginLoader] pip install failed: {e}', exc=e)
-        return 1
 
 
 def _discover_plugins(module) -> list[tuple[str, type]]:

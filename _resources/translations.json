@@ -1,4 +1,24 @@
 {
+  "Bookmark": {
+    "en": "Bookmark",
+    "ja": ""
+  },
+  "Delete Bookmark": {
+    "en": "Delete Bookmark",
+    "ja": ""
+  },
+  "List Bookmarks": {
+    "en": "List Bookmarks",
+    "ja": ""
+  },
+  "Restore Bookmark": {
+    "en": "Restore Bookmark",
+    "ja": ""
+  },
+  "Save Bookmark": {
+    "en": "Save Bookmark",
+    "ja": ""
+  },
   "max_slots": {
     "en": "max_slots",
     "ja": ""

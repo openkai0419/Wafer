@@ -16,6 +16,21 @@ for mod_name in list(sys.modules.keys()):
         del sys.modules[mod_name]
 
 
+@pytest.fixture(autouse=True)
+def _close_qt_widgets_after_test():
+    yield
+    try:
+        from PySide6 import QtWidgets
+        app = QtWidgets.QApplication.instance()
+        if app is None:
+            return
+        for w in app.topLevelWidgets():
+            w.close()
+        app.processEvents()
+    except ImportError:
+        pass
+
+
 @pytest.fixture(autouse=True, scope='session')
 def _cleanup_background_resources():
     yield

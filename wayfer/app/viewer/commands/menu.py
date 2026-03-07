@@ -13,6 +13,7 @@ from . import (
     database_commands,
     setting_commands,
     debug_commands,
+    session_commands,
 )
 from .file_commands import FileCommands
 from .foldertree_commands import show_context_menu
@@ -31,6 +32,7 @@ _COMMAND_MODULES = [
     database_commands,
     setting_commands,
     debug_commands,
+    session_commands,
 ]
 
 
@@ -58,16 +60,15 @@ class AppMenuRegistrar(ActionKit.MenuBase):
 
     @staticmethod
     def setup_menu():
-        for cls in discover_command_classes(*_COMMAND_MODULES):
-            cls.register()
-        AppMenuRegistrar.register()
-        _restore_thumbnail_size()
-
         Settings.configure(
             mouse_bindings=str(resolve_data_path("binding/mouse_bindings.json")),
             key_bindings=str(resolve_data_path("binding/key_bindings.json")),
             command_options=str(resolve_data_path("binding/command_options.json")),
         )
+        for cls in discover_command_classes(*_COMMAND_MODULES):
+            cls.register()
+        AppMenuRegistrar.register()
+        _restore_thumbnail_size()
         Settings.activate()
 
 

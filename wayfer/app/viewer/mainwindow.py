@@ -25,15 +25,22 @@ from .widgets.combo_with_buttons import ComboBoxWithButtons
 
 from .commands.menu import AppMenuRegistrar
 from .search import SearchService
+from .session import QueryState, UIState, SessionEntry, SessionStore
 from ...core.actions.bridge import UI, Command
 AppMenuRegistrar.setup_menu()
 
 
 class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
 
-    def __init__(self, icon=None, parent=None):
+    def __init__(self, icon=None, parent=None, session_id=None):
         super().__init__(parent=parent)
-        AppLogger.info(f'New Window Running : {APP_NAME}')
+        self._session_store = SessionStore()
+        if session_id:
+            self.session_id = session_id
+        else:
+            self.session_id = self._session_store.allocate_anon_id()
+        self._session_entry: SessionEntry | None = self._session_store.get_session(self.session_id)
+        AppLogger.info(f'New Window Running : {APP_NAME} (session={self.session_id})')
         if icon:
             self.setWindowIcon(icon)
         self.setWindowTitle(APP_NAME)
@@ -54,7 +61,10 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         UI.register_instance("MainWindow", self)
         restore_always_on_top(self)
         self.setup_ui()
-        self.reload_database(self.get_last_used_db_name())
+        if self._session_entry:
+            self._restore_from_session(self._session_entry)
+        else:
+            self.reload_database(self.get_last_used_db_name())
         QtWidgets.QApplication.instance().aboutToQuit.connect(self.on_close)
 
 
@@ -84,7 +94,20 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.progress_bar.setProgress(int(0))
         self.progress_bar.setMaximum(int(0))
         self.refresh_db_selector()
+        self._update_title()
         AppLogger.info(f'reload_database: {name}')
+
+    def _update_title(self):
+        if self.session_id and not self.session_id.startswith('anon-'):
+            label = self.session_id
+        else:
+            dirs = self.folder_view.get_selected_paths()
+            if dirs:
+                from pathlib import PurePosixPath
+                label = ', '.join(PurePosixPath(d).name or d for d in dirs)
+            else:
+                label = self.database_name or ''
+        self.setWindowTitle(f'{label} - {APP_NAME}' if label else APP_NAME)
 
     def changeEvent(self, event):
         if event.type() == QtCore.QEvent.ActivationChange:
@@ -125,6 +148,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             QtCore.QMetaObject.invokeMethod(self, slot, QtCore.Qt.QueuedConnection, *args)
 
         self._node = Node('viewer')
+        self._node.session_id = self.session_id
         self._node.subscribe('update', _guarded(
             lambda msg: _invoke('search', QtCore.Q_ARG(bool, True))
         )).subscribe('progress', _guarded(
@@ -281,12 +305,13 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         dirs = self.folder_view.get_selected_paths()
         AppLogger.debug(f'folder selected: {dirs}')
         self.search_service.set_directories(dirs)
+        self._update_title()
         self.search_service.execute_if_auto()
 
     @QtCore.Slot(bool)
     def toggle_show(self, state):
         if state and self.isMinimized():
-            self.showNormal()
+            self.setWindowState(self.windowState() & ~QtCore.Qt.WindowMinimized)
             self.raise_()
             self.activateWindow()
         else:
@@ -329,9 +354,91 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             self.search_row_widget.run_folder_worker(self.database_path, self.folder_view.get_selected_paths())
             self.run_folder = False
 
+    def capture_query_state(self) -> QueryState:
+        return QueryState(
+            database_name=self.database_name or '',
+            search_params=self.search_service.params,
+            folder_state=dict(zip(
+                ('expanded', 'selected'),
+                self.folder_view.get_state(),
+            )),
+        )
+
+    def capture_ui_state(self) -> UIState:
+        import base64
+        geo_bytes = bytes(self.saveGeometry())
+        return UIState(
+            window_geometry=base64.b64encode(geo_bytes).decode('ascii'),
+            splitter_sizes=self.splitter.sizes(),
+            scroll_index=self.grid_view.get_center_image_index(),
+            grid_settings={
+                'zoom': self.grid_view.base_height,
+                'orientation': self.grid_view.orientation,
+                'layout_mode': self.grid_view.layout_mode,
+            },
+        )
+
+    def restore_query_state(self, query: QueryState) -> None:
+        if query.database_name and query.database_name != self.database_name:
+            self.reload_database(query.database_name)
+        if query.search_params:
+            self.search_service.set_params(query.search_params)
+        if query.folder_state:
+            expanded = query.folder_state.get('expanded', [])
+            selected = query.folder_state.get('selected', [])
+            self.folder_view.set_state((expanded, selected))
+        QtCore.QTimer.singleShot(0, lambda: self.search(force=True))
+
+    def restore_ui_state(self, ui: UIState) -> None:
+        import base64
+        if ui.window_geometry:
+            try:
+                geo = QtCore.QByteArray(base64.b64decode(ui.window_geometry))
+                self.restoreGeometry(geo)
+            except Exception:
+                pass
+        if ui.splitter_sizes:
+            self.splitter.setSizes(ui.splitter_sizes)
+        if ui.grid_settings:
+            gs = ui.grid_settings
+            if 'zoom' in gs:
+                self.grid_view.base_height = gs['zoom']
+                app_settings.set('viewer/zoom', gs['zoom'])
+            if 'orientation' in gs:
+                self.grid_view.set_orientation(gs['orientation'])
+            if 'layout_mode' in gs:
+                self.grid_view.set_layout_mode(gs['layout_mode'])
+        if ui.scroll_index is not None:
+            app_settings.save_immediate('viewer/scroll', ui.scroll_index)
+
+    def _restore_from_session(self, entry: SessionEntry):
+        if entry.query_snapshot:
+            db_name = entry.query_snapshot.database_name or self.get_last_used_db_name()
+        else:
+            db_name = self.get_last_used_db_name()
+        self.reload_database(db_name)
+        if entry.query_snapshot:
+            self.restore_query_state(entry.query_snapshot)
+        if entry.ui:
+            self.restore_ui_state(entry.ui)
+
+    def _save_session(self):
+        entry = SessionEntry(
+            session_id=self.session_id,
+            name=self._session_entry.name if self._session_entry else '',
+            ui=self.capture_ui_state(),
+            query_snapshot=self.capture_query_state(),
+        )
+        if self._session_entry:
+            entry.created_at = self._session_entry.created_at
+            entry.bookmark_id = self._session_entry.bookmark_id
+        self._session_store.save_session(entry)
+        self._session_entry = entry
+
     def on_close(self):
         try:
             self.folder_view.save_state(self.database_name)
+            self._save_session()
             app_settings.save_immediate('window/tablename', self.database_name)
             app_settings.set('window/geometry', self.saveGeometry())
             app_settings.set('viewer/scroll', self.grid_view.get_center_image_index())

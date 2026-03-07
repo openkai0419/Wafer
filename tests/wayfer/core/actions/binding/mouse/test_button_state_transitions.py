@@ -101,6 +101,7 @@ def _setup_widget(qtbot, bindings_map=None):
 
     recorder = ActionRecorder()
     mgr = w._mouse_manager
+    mgr.clear()
 
     if bindings_map:
         for key, label in bindings_map.items():

@@ -2,6 +2,7 @@
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "--import-mode=importlib -p pytestqt"
+timeout = 30
 
 [tool.pyright]
 pythonVersion = "3.10"

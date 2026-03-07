@@ -46,14 +46,14 @@ def _load_plugins_with_splash(app):
         load_plugins()
 
 
-def _entry_viewer(app=None):
+def _entry_viewer(app=None, session_id=None):
     from wayfer.app.viewer.mainwindow import MainWindow
     from wayfer.plugin.loader import PluginLoader
     PluginLoader.register_extension_commands()
     profiler.start()
     if app is None:
         app = _create_app()
-    window = MainWindow(get_icon())
+    window = MainWindow(get_icon(), session_id=session_id)
     window.show()
     sys.exit(app.exec())
 
@@ -129,21 +129,22 @@ def main():
     group.add_argument('--viewer', action='store_true', help='run new viewer')
     group.add_argument('--indexer', nargs='?', const=True, help='run indexer for each settings. make new with optional string')
     group.add_argument('--collector', nargs='?', const=True, help='run collector process')
-    group.add_argument('--install-deps', type=str, default=None, help=argparse.SUPPRESS)
     parser.add_argument('--plugin', type=str, default='image', help='collector plugin name')
     parser.add_argument('--parent-pid', type=int, default=None)
+    parser.add_argument('--session', type=str, default=None, help='session ID for viewer')
     parser.add_argument('--dev', action='store_true', help='enable developer mode')
     args = parser.parse_args()
     if args.dev:
         constants.DEV_MODE = True
-    if args.install_deps:
-        from wayfer.plugin.loader import install_plugin_deps_inprocess
-        sys.exit(install_plugin_deps_inprocess(args.install_deps))
     if not any([args.tray, args.viewer, args.indexer, args.collector]):
         app = _create_app()
         _load_plugins_with_splash(app)
         AppProcess.new_main('--tray')
-        _entry_viewer(app)
+        from wayfer.app.viewer.session import SessionStore
+        restore_ids = SessionStore().get_restore_session_ids()
+        for sid in restore_ids[1:]:
+            AppProcess.new_main('--viewer', '--session', sid)
+        _entry_viewer(app, session_id=restore_ids[0] if restore_ids else None)
     if args.tray:
         load_plugins(skip_install=True)
         _entry_tray()
@@ -162,6 +163,6 @@ def main():
     elif args.viewer:
         app = _create_app()
         _load_plugins_with_splash(app)
-        _entry_viewer(app)
+        _entry_viewer(app, session_id=args.session)
 if __name__ == '__main__':
     main()

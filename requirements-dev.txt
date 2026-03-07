@@ -4,3 +4,4 @@ pyinstaller-hooks-contrib==2025.5
 pyright==1.1.396
 pytest==9.0.2
 pytest-qt==4.5.0
+pytest-timeout==2.3.1

@@ -121,7 +121,10 @@
 - ViewerResolverはgrid_resolverへの依存をlazy import化。コンストラクタ引数での注入は廃止
 - ImageViewerPluginのload_contentはNone返却。ViewerResolverのフォールバック（grid_resolver.load）に委譲
 - プラグインのvendor_dirはsys.path.append（標準ライブラリ優先）
-- install_plugin_deps_inprocess（frozen用）はpip._internal.cli.main.mainのみ使用。distlib等の内部API依存は禁止
+- frozen環境でのpip実行にはEmbeddedPython（wayfer/plugin/installer.py）を使用。pip._internal直呼出は禁止（distlibのfinder問題で壊れる）
+- frozen build時はbuild.batでextension依存を.packagesに事前インストール。ユーザー追加extension用にEmbeddedPythonが動的DLで対応
+- setup_menu()ではSettings.configure()をコマンド登録より先に実行する。登録失敗がconfigure未実行を引き起こさないようにする
+- main.specからpipバンドルを削除済み。frozen buildにpipは不要（EmbeddedPythonが代替）
 - _setup_dll_directoryは_load_oneで初回呼出+post_install後に再呼出の2箇所。両方必要
 - extensionsはwayfer.plugin（公開API）、wayfer.utils、wayfer.coreを直接import可能。wayfer.appへの依存は非推奨
 - wayfer.plugin.__init__.pyがextension向け公開API。BasePlugin/Collector/Grid/Viewer、load_thumbnail、CommandMeta等を再エクスポート。AppLoggerやprofilerは公開APIに含めない（extensionはwayfer.utilsから直接import）

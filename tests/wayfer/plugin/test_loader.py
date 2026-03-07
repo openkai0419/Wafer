@@ -211,7 +211,7 @@ class TestSubmoduleRelativeImport:
 class TestRunSubprocess:
 
     def test_stderr_drained_without_deadlock(self, tmp_path):
-        from wayfer.plugin.loader import _run_subprocess
+        from wayfer.plugin.installer import _run_subprocess
         script = tmp_path / 'noisy.py'
         script.write_text(
             'import sys\n'
@@ -221,7 +221,7 @@ class TestRunSubprocess:
         _run_subprocess([sys.executable, str(script)])
 
     def test_stderr_captured_on_failure(self, tmp_path):
-        from wayfer.plugin.loader import _run_subprocess
+        from wayfer.plugin.installer import _run_subprocess
         script = tmp_path / 'fail.py'
         script.write_text(
             'import sys\n'

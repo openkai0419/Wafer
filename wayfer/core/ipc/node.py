@@ -24,6 +24,7 @@ class Node:
         self.role = role
         self.db = db
         self.node_id = f'{role}-{os.getpid()}'
+        self.session_id: str = ''
         self._handlers: dict[str, Callable[[Message], bool]] = {}
         self._viewer_id: int | None = None
 
@@ -216,7 +217,9 @@ class Node:
         if self._registered.is_set():
             self._send_to_broker('mgmt.heartbeat')
         else:
-            self._send_to_broker('mgmt.register', {'role': self.role, 'db': self.db})
+            self._send_to_broker('mgmt.register', {
+                'role': self.role, 'db': self.db, 'session_id': self.session_id,
+            })
 
     def _handle_received(self, msg: Message):
         if msg.request_id:

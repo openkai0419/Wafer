@@ -1,4 +1,5 @@
 from __future__ import annotations
+import os
 from typing import Any, Callable
 from pathlib import Path
 from ....utils.profiling import profiler
@@ -70,10 +71,12 @@ class CommandOptionStore(PersistentStore):
     @classmethod
     def instance(cls) -> "CommandOptionStore":
         if cls._instance is None:
-            if cls._default_path is None:
-                raise RuntimeError("CommandOptionStore.configure() must be called before instance()")
             inst = object.__new__(cls)
-            PersistentStore.__init__(inst, cls._default_path)
+            if cls._default_path is not None:
+                PersistentStore.__init__(inst, cls._default_path)
+            else:
+                PersistentStore.__init__(inst, Path(os.devnull))
+                inst._loaded = True
             cls._initialized = True
             cls._instance = inst
         return cls._instance

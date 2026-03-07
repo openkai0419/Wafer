@@ -9,6 +9,7 @@ from ...utils.logs import AppLogger
 from ...constants import DEV_MODE
 from ...core.platform.process import AppProcess
 from ...core.ipc.message import Message
+from ...app.viewer.session import SessionStore
 def _tray_send(ctx, topic: str, payload=None):
     tray = ctx.get_instance("Tray")
     try:
@@ -32,16 +33,25 @@ def show_window(ctx=None):
     tray = ctx.get_instance("Tray")
     c = get_viewer_count(ctx)
     if c < 1:
-        AppLogger.info('launching new viewer')
-        AppProcess.new_main('--viewer')
+        store = SessionStore()
+        restore_ids = store.get_restore_session_ids()
+        if restore_ids:
+            AppLogger.info(f'restoring {len(restore_ids)} viewer(s): {restore_ids}')
+            for sid in restore_ids:
+                AppProcess.new_main('--viewer', '--session', sid)
+        else:
+            AppLogger.info('launching new viewer (no previous session)')
+            AppProcess.new_main('--viewer')
         return
     tray.show_state = not bool(getattr(tray, 'show_state', False))
     send_show_toggle(ctx, tray.show_state)
 
 
 def open_new_window(ctx=None):
-    AppLogger.info('launching new viewer')
-    AppProcess.new_main('--viewer')
+    store = SessionStore()
+    sid = store.allocate_anon_id()
+    AppLogger.info(f'launching new viewer: {sid}')
+    AppProcess.new_main('--viewer', '--session', sid)
 
 
 def rescan_all(ctx=None):

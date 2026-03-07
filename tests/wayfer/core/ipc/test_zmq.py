@@ -409,6 +409,115 @@ class TestReconnection:
             node.stop()
             broker.stop()
 
+
+class TestSessionTracking:
+
+    def _make_broker(self, tmp_path, session_ids=()):
+        from wayfer.app.viewer.session import SessionStore, SessionEntry
+        store_path = str(tmp_path / 'sessions.json')
+        store = SessionStore(path=store_path)
+        for sid in session_ids:
+            store.save_session(SessionEntry(session_id=sid))
+        broker = Broker()
+        broker._restore_debounce_sec = 0.2
+        broker.set_session_store_factory(lambda: SessionStore(path=store_path))
+        return broker, store
+
+    def test_session_id_in_peer_info(self, tmp_path):
+        broker, store = self._make_broker(tmp_path)
+        broker.start()
+        try:
+            node = Node('viewer')
+            node.session_id = 'anon-1'
+            node.start(broker.port)
+            assert node.wait_registered(timeout=3.0)
+            time.sleep(0.3)
+            assert broker.active_viewer_session_ids() == ['anon-1']
+        finally:
+            node.stop()
+            broker.stop()
+
+    def test_viewer_connect_updates_restore_and_active(self, tmp_path):
+        broker, store = self._make_broker(tmp_path, session_ids=['anon-1'])
+        broker.start()
+        try:
+            node = Node('viewer')
+            node.session_id = 'anon-1'
+            node.start(broker.port)
+            assert node.wait_registered(timeout=3.0)
+            time.sleep(0.3)
+            assert 'anon-1' in store.get_restore_session_ids()
+            assert 'anon-1' in store.get_active_session_ids()
+        finally:
+            node.stop()
+            broker.stop()
+
+    def test_debounce_single_close_updates_restore(self, tmp_path):
+        broker, store = self._make_broker(tmp_path, session_ids=['anon-1', 'anon-2'])
+        broker.start()
+        try:
+            n1 = Node('viewer')
+            n1.session_id = 'anon-1'
+            n1.start(broker.port)
+            n1.wait_registered(timeout=3.0)
+
+            n2 = Node('viewer')
+            n2.node_id = 'viewer-2'
+            n2.session_id = 'anon-2'
+            n2.start(broker.port)
+            n2.wait_registered(timeout=3.0)
+            time.sleep(0.3)
+
+            n1.stop()
+            time.sleep(0.5)
+
+            assert 'anon-2' in store.get_restore_session_ids()
+            assert 'anon-1' not in store.get_restore_session_ids()
+        finally:
+            n2.stop()
+            broker.stop()
+
+    def test_debounce_all_close_preserves_restore(self, tmp_path):
+        broker, store = self._make_broker(tmp_path, session_ids=['anon-1', 'anon-2'])
+        broker.start()
+        try:
+            n1 = Node('viewer')
+            n1.session_id = 'anon-1'
+            n1.start(broker.port)
+            n1.wait_registered(timeout=3.0)
+
+            n2 = Node('viewer')
+            n2.node_id = 'viewer-2'
+            n2.session_id = 'anon-2'
+            n2.start(broker.port)
+            n2.wait_registered(timeout=3.0)
+            time.sleep(0.3)
+
+            n1.stop()
+            n2.stop()
+            time.sleep(broker._restore_debounce_sec + 0.5)
+
+            restore = store.get_restore_session_ids()
+            assert 'anon-1' in restore
+            assert 'anon-2' in restore
+        finally:
+            broker.stop()
+
+    def test_node_session_id_sent_in_registration(self):
+        broker = Broker()
+        broker.start()
+        try:
+            node = Node('viewer')
+            node.session_id = 'Work'
+            node.start(broker.port)
+            assert node.wait_registered(timeout=3.0)
+            time.sleep(0.3)
+            sids = broker.active_viewer_session_ids()
+            assert 'Work' in sids
+        finally:
+            node.stop()
+            broker.stop()
+
     def test_unregister_sent_on_stop(self):
         broker = Broker()
         broker.start()

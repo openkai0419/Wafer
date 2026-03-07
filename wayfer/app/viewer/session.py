@@ -1,0 +1,242 @@
+from __future__ import annotations
+
+import uuid
+from dataclasses import dataclass, field, asdict
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from ...utils.json_io import read_json_file, write_json_file
+from ...utils.paths import resolve_data_path
+
+_STORE_FILENAME = 'sessions.json'
+_BOOKMARK_DIR = 'bookmarks'
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _new_id() -> str:
+    return uuid.uuid4().hex[:12]
+
+
+@dataclass
+class QueryState:
+    database_name: str = ''
+    search_params: dict[str, Any] = field(default_factory=dict)
+    folder_state: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> QueryState:
+        if not isinstance(data, dict):
+            return cls()
+        known = {f.name for f in cls.__dataclass_fields__.values()}
+        return cls(**{k: v for k, v in data.items() if k in known})
+
+
+@dataclass
+class UIState:
+    window_geometry: str = ''
+    splitter_sizes: list[int] = field(default_factory=list)
+    scroll_index: int | None = None
+    grid_settings: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> UIState:
+        if not isinstance(data, dict):
+            return cls()
+        known = {f.name for f in cls.__dataclass_fields__.values()}
+        return cls(**{k: v for k, v in data.items() if k in known})
+
+
+@dataclass
+class BookmarkEntry:
+    bookmark_id: str = field(default_factory=_new_id)
+    name: str = ''
+    query: QueryState = field(default_factory=QueryState)
+    created_at: str = field(default_factory=_now_iso)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            'bookmark_id': self.bookmark_id,
+            'name': self.name,
+            'query': self.query.to_dict(),
+            'created_at': self.created_at,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> BookmarkEntry:
+        if not isinstance(data, dict):
+            return cls()
+        query = QueryState.from_dict(data.get('query', {}))
+        return cls(
+            bookmark_id=data.get('bookmark_id', _new_id()),
+            name=data.get('name', ''),
+            query=query,
+            created_at=data.get('created_at', _now_iso()),
+        )
+
+
+@dataclass
+class SessionEntry:
+    session_id: str = field(default_factory=_new_id)
+    name: str = ''
+    ui: UIState = field(default_factory=UIState)
+    bookmark_id: str = ''
+    query_snapshot: QueryState | None = None
+    created_at: str = field(default_factory=_now_iso)
+    updated_at: str = field(default_factory=_now_iso)
+
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {
+            'session_id': self.session_id,
+            'name': self.name,
+            'ui': self.ui.to_dict(),
+            'bookmark_id': self.bookmark_id,
+            'created_at': self.created_at,
+            'updated_at': self.updated_at,
+        }
+        if self.query_snapshot is not None:
+            d['query_snapshot'] = self.query_snapshot.to_dict()
+        return d
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> SessionEntry:
+        if not isinstance(data, dict):
+            return cls()
+        ui = UIState.from_dict(data.get('ui', {}))
+        qs_raw = data.get('query_snapshot')
+        qs = QueryState.from_dict(qs_raw) if isinstance(qs_raw, dict) else None
+        return cls(
+            session_id=data.get('session_id', _new_id()),
+            name=data.get('name', ''),
+            ui=ui,
+            bookmark_id=data.get('bookmark_id', ''),
+            query_snapshot=qs,
+            created_at=data.get('created_at', _now_iso()),
+            updated_at=data.get('updated_at', _now_iso()),
+        )
+
+
+class SessionStore:
+
+    def __init__(self, path: str | None = None):
+        self._path = path or resolve_data_path(_STORE_FILENAME)
+
+    def _load_raw(self) -> dict[str, Any]:
+        data = read_json_file(self._path, default=None)
+        if isinstance(data, dict):
+            return data
+        return {'sessions': {}, 'active_session_ids': [], 'restore_session_ids': []}
+
+    def _save_raw(self, data: dict[str, Any]) -> None:
+        write_json_file(self._path, data)
+
+    def list_sessions(self) -> list[SessionEntry]:
+        raw = self._load_raw()
+        sessions = raw.get('sessions', {})
+        return [SessionEntry.from_dict(v) for v in sessions.values()]
+
+    def get_session(self, session_id: str) -> SessionEntry | None:
+        raw = self._load_raw()
+        entry = raw.get('sessions', {}).get(session_id)
+        if entry is None:
+            return None
+        return SessionEntry.from_dict(entry)
+
+    def save_session(self, entry: SessionEntry) -> None:
+        entry.updated_at = _now_iso()
+        raw = self._load_raw()
+        raw.setdefault('sessions', {})[entry.session_id] = entry.to_dict()
+        self._save_raw(raw)
+
+    def delete_session(self, session_id: str) -> bool:
+        raw = self._load_raw()
+        sessions = raw.get('sessions', {})
+        if session_id not in sessions:
+            return False
+        del sessions[session_id]
+        active = raw.get('active_session_ids', [])
+        if session_id in active:
+            active.remove(session_id)
+        self._save_raw(raw)
+        return True
+
+    def get_active_session_ids(self) -> list[str]:
+        raw = self._load_raw()
+        return list(raw.get('active_session_ids', []))
+
+    def set_active_session_ids(self, ids: list[str]) -> None:
+        raw = self._load_raw()
+        raw['active_session_ids'] = list(ids)
+        self._save_raw(raw)
+
+    def get_restore_session_ids(self) -> list[str]:
+        raw = self._load_raw()
+        ids = raw.get('restore_session_ids', [])
+        sessions = raw.get('sessions', {})
+        return [sid for sid in ids if sid in sessions]
+
+    def set_restore_session_ids(self, ids: list[str]) -> None:
+        raw = self._load_raw()
+        raw['restore_session_ids'] = list(ids)
+        self._save_raw(raw)
+
+    def allocate_anon_id(self) -> str:
+        raw = self._load_raw()
+        used: set[int] = set()
+        for sid in list(raw.get('sessions', {}).keys()) + raw.get('active_session_ids', []):
+            if sid.startswith('anon-'):
+                try:
+                    used.add(int(sid[5:]))
+                except ValueError:
+                    pass
+        n = 1
+        while n in used:
+            n += 1
+        return f'anon-{n}'
+
+
+class BookmarkStore:
+
+    def __init__(self, base_dir: str | None = None):
+        self._base = Path(base_dir) if base_dir else Path(resolve_data_path(_BOOKMARK_DIR))
+
+    def _entry_path(self, bookmark_id: str) -> Path:
+        safe_id = bookmark_id.replace('/', '').replace('\\', '').replace('..', '')
+        return self._base / f'{safe_id}.json'
+
+    def list_bookmarks(self) -> list[BookmarkEntry]:
+        if not self._base.is_dir():
+            return []
+        entries = []
+        for f in sorted(self._base.iterdir()):
+            if f.suffix == '.json' and f.is_file():
+                data = read_json_file(f)
+                if isinstance(data, dict):
+                    entries.append(BookmarkEntry.from_dict(data))
+        return entries
+
+    def get_bookmark(self, bookmark_id: str) -> BookmarkEntry | None:
+        data = read_json_file(self._entry_path(bookmark_id))
+        if not isinstance(data, dict):
+            return None
+        return BookmarkEntry.from_dict(data)
+
+    def save_bookmark(self, entry: BookmarkEntry) -> None:
+        self._base.mkdir(parents=True, exist_ok=True)
+        write_json_file(self._entry_path(entry.bookmark_id), entry.to_dict())
+
+    def delete_bookmark(self, bookmark_id: str) -> bool:
+        p = self._entry_path(bookmark_id)
+        if not p.is_file():
+            return False
+        p.unlink()
+        return True

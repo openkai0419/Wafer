@@ -16,12 +16,13 @@ from .message import Message
 
 
 class _PeerInfo:
-    __slots__ = ('role', 'db_set', 'node_id', 'last_seen')
+    __slots__ = ('role', 'db_set', 'node_id', 'session_id', 'last_seen')
 
-    def __init__(self, role: str, db_set: set[str], node_id: str):
+    def __init__(self, role: str, db_set: set[str], node_id: str, session_id: str = ''):
         self.role = role
         self.db_set = db_set
         self.node_id = node_id
+        self.session_id = session_id
         self.last_seen = time.monotonic()
 
 
@@ -90,6 +91,9 @@ class Broker:
         self._by_node_id: dict[str, bytes] = {}
         self._lock = threading.RLock()
         self._viewer_ids: dict[bytes, int] = {}
+        self._restore_debounce: threading.Timer | None = None
+        self._restore_debounce_sec: float = 1.0
+        self._session_store_factory: Any = None
 
         self._io_thread = threading.Thread(target=self._io_loop, daemon=True)
         self._prune_thread = threading.Thread(target=self._reaper_loop, daemon=True)
@@ -102,6 +106,7 @@ class Broker:
 
     def stop(self):
         AppLogger.info('Broker stopping')
+        self._cancel_restore_debounce()
         self._stop.set()
         try_put(self._direct_q, self._sentinel)
         self._io_thread.join(timeout=2.0)
@@ -119,7 +124,8 @@ class Broker:
         with self._lock:
             return {role: len(idents) for role, idents in self._by_role.items() if idents}
 
-    def _register_peer(self, ident: bytes, role: str, db_set: set[str], node_id: str) -> int | None:
+    def _register_peer(self, ident: bytes, role: str, db_set: set[str], node_id: str,
+                        session_id: str = '') -> int | None:
         with self._lock:
             old = self._peers.get(ident)
             if old:
@@ -127,7 +133,7 @@ class Broker:
                 self._by_node_id.pop(old.node_id, None)
                 if old.role != role:
                     self._viewer_ids.pop(ident, None)
-            peer = _PeerInfo(role, db_set, node_id)
+            peer = _PeerInfo(role, db_set, node_id, session_id)
             self._peers[ident] = peer
             self._by_role.setdefault(role, set()).add(ident)
             self._by_node_id[node_id] = ident
@@ -142,7 +148,8 @@ class Broker:
                         vid += 1
                     self._viewer_ids[ident] = vid
                     viewer_id = vid
-            AppLogger.info(f'peer added: {node_id} role={role} db={db_set}')
+                self._on_viewer_connected(session_id)
+            AppLogger.info(f'peer added: {node_id} role={role} db={db_set} session={session_id}')
             return viewer_id
 
     def _unregister_peer(self, ident: bytes):
@@ -154,6 +161,8 @@ class Broker:
             self._by_role.get(peer.role, set()).discard(ident)
             self._by_node_id.pop(peer.node_id, None)
             self._viewer_ids.pop(ident, None)
+            if peer.role == 'viewer':
+                self._on_viewer_disconnected()
 
     def _refresh_peer(self, ident: bytes):
         with self._lock:
@@ -189,6 +198,7 @@ class Broker:
             payload = msg.payload if isinstance(msg.payload, dict) else {}
             role = payload.get('role', '')
             db_raw = payload.get('db', '')
+            session_id = payload.get('session_id', '')
             node_id = msg.source
             if isinstance(db_raw, list):
                 db_set = set(db_raw)
@@ -196,7 +206,7 @@ class Broker:
                 db_set = {db_raw}
             else:
                 db_set = set()
-            viewer_id = self._register_peer(ident, role, db_set, node_id)
+            viewer_id = self._register_peer(ident, role, db_set, node_id, session_id)
             reply_payload = {'status': 'ok', 'node_id': node_id}
             if viewer_id is not None:
                 reply_payload['viewer_id'] = viewer_id
@@ -328,3 +338,59 @@ class Broker:
                 AppLogger.info(f'pruning stale peer: {node_id}')
                 self._unregister_peer(ident)
             self._stop.wait(1)
+
+    def set_session_store_factory(self, factory):
+        self._session_store_factory = factory
+
+    def _get_session_store(self):
+        if self._session_store_factory:
+            return self._session_store_factory()
+        from ...app.viewer.session import SessionStore
+        return SessionStore()
+
+    def active_viewer_session_ids(self) -> list[str]:
+        with self._lock:
+            viewer_idents = self._by_role.get('viewer', set())
+            return [
+                self._peers[i].session_id
+                for i in viewer_idents
+                if i in self._peers and self._peers[i].session_id
+            ]
+
+    def _on_viewer_connected(self, session_id: str):
+        if not session_id:
+            return
+        try:
+            store = self._get_session_store()
+            restore = store.get_restore_session_ids()
+            if session_id not in restore:
+                restore.append(session_id)
+                store.set_restore_session_ids(restore)
+            active = store.get_active_session_ids()
+            if session_id not in active:
+                active.append(session_id)
+                store.set_active_session_ids(active)
+        except Exception as e:
+            AppLogger.warning(f'_on_viewer_connected failed: {e}', exc=e)
+
+    def _on_viewer_disconnected(self):
+        self._cancel_restore_debounce()
+        self._restore_debounce = threading.Timer(
+            self._restore_debounce_sec, self._debounce_fire)
+        self._restore_debounce.daemon = True
+        self._restore_debounce.start()
+
+    def _cancel_restore_debounce(self):
+        if self._restore_debounce is not None:
+            self._restore_debounce.cancel()
+            self._restore_debounce = None
+
+    def _debounce_fire(self):
+        try:
+            active = self.active_viewer_session_ids()
+            store = self._get_session_store()
+            store.set_active_session_ids(active)
+            if active:
+                store.set_restore_session_ids(list(active))
+        except Exception as e:
+            AppLogger.warning(f'_debounce_fire failed: {e}', exc=e)

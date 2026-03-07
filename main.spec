@@ -1,17 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 
-from PyInstaller.utils.hooks import collect_submodules, collect_data_files
-
-pip_imports = collect_submodules('pip')
-pip_datas = collect_data_files('pip')
-
 a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=pip_datas,
-    hiddenimports=['send2trash'] + pip_imports,
+    datas=[],
+    hiddenimports=['send2trash', 'PySide6.QtOpenGLWidgets'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

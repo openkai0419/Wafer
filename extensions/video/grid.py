@@ -1,5 +1,5 @@
-from wayfer.plugin import WidgetGridPlugin
-from wayfer.utils.profiling import profiler
+from wafer.plugin import WidgetGridPlugin
+from wafer.utils.profiling import profiler
 from .widget import MpvCellWidget
 
 
@@ -11,6 +11,7 @@ class VideoGridPlugin(WidgetGridPlugin):
     )
     PRIORITY = 100
     WIDGET_CLASS = MpvCellWidget
+    REQUIRE_THUMBNAIL = True
 
     @classmethod
     def post_install(cls, plugin_dir, on_progress=None):
@@ -27,6 +28,10 @@ class VideoGridPlugin(WidgetGridPlugin):
     @profiler.profile
     def render(self, widget, path, size=None):
         widget.load(path, size)
+
+    @profiler.profile
+    def on_thumb_loaded(self, widget, image):
+        widget.set_thumbnail(image)
 
     @profiler.profile
     def release(self, widget):

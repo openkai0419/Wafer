@@ -19,7 +19,6 @@ def _patch_mpv(monkeypatch):
 def _reset_shared(monkeypatch):
     from extensions.video.widget import MpvCellWidget
     monkeypatch.setattr(MpvCellWidget, '_slot_manager', None)
-    monkeypatch.setattr(MpvCellWidget, '_thread_pool', None)
     monkeypatch.setattr(MpvCellWidget, '_shared_initialized', False)
     yield
 
@@ -27,7 +26,7 @@ def _reset_shared(monkeypatch):
 @pytest.fixture(autouse=True)
 def _suppress_notifier(monkeypatch):
     monkeypatch.setattr(
-        "wayfer.core.actions.command.require.Notifier",
+        "wafer.core.actions.command.require.Notifier",
         type("FakeNotifier", (), {"warning": staticmethod(lambda msg: None)}),
     )
 
@@ -296,7 +295,7 @@ class TestVideoGridCommandsMenuGroup:
 
     def test_commands_contains_expected_paths(self):
         from extensions.video.commands import VideoGridCommands
-        from wayfer.core.actions.command.core import CommandMeta
+        from wafer.core.actions.command.core import CommandMeta
         cmds = VideoGridCommands.commands()
         paths = [c.path for c in cmds if isinstance(c, CommandMeta)]
         assert "vgrid.set_volume" in paths
@@ -307,7 +306,7 @@ class TestVideoGridCommandsMenuGroup:
 
 @pytest.fixture()
 def video_registry(monkeypatch):
-    from wayfer.core.actions.command.core import CommandRegistry
+    from wafer.core.actions.command.core import CommandRegistry
     registry = CommandRegistry.instance()
     prev = dict(registry._commands)
     registry._commands = {}
@@ -320,7 +319,7 @@ def video_registry(monkeypatch):
 
 @pytest.fixture()
 def mock_slot_manager():
-    from wayfer.core.actions.binding.instance_registry import InstanceRegistry
+    from wafer.core.actions.binding.instance_registry import InstanceRegistry
     reg = InstanceRegistry.instance()
     sm = MagicMock()
     sm.hover_autoplay = True
@@ -334,25 +333,25 @@ def mock_slot_manager():
 
 class TestRegistryExecution:
     def test_set_volume_via_registry(self, video_registry, mock_slot_manager):
-        from wayfer.core.actions.command.context import CommandContext
+        from wafer.core.actions.command.context import CommandContext
         ctx = CommandContext.create(None, "*", source="menu")
         video_registry.execute("vgrid.set_volume", ctx=ctx, volume=75)
         mock_slot_manager.set_volume.assert_called_once_with(75)
 
     def test_set_volume_default_via_registry(self, video_registry, mock_slot_manager):
-        from wayfer.core.actions.command.context import CommandContext
+        from wafer.core.actions.command.context import CommandContext
         ctx = CommandContext.create(None, "*", source="menu")
         video_registry.execute("vgrid.set_volume", ctx=ctx)
         mock_slot_manager.set_volume.assert_called_once_with(40)
 
     def test_set_max_slots_via_registry(self, video_registry, mock_slot_manager):
-        from wayfer.core.actions.command.context import CommandContext
+        from wafer.core.actions.command.context import CommandContext
         ctx = CommandContext.create(None, "*", source="menu")
         video_registry.execute("vgrid.set_max_playback_slots", ctx=ctx, max_slots=7)
         mock_slot_manager.set_max_selected.assert_called_once_with(7)
 
     def test_toggle_hover_via_registry(self, video_registry, mock_slot_manager):
-        from wayfer.core.actions.command.context import CommandContext
+        from wafer.core.actions.command.context import CommandContext
         assert mock_slot_manager.hover_autoplay is True
         ctx = CommandContext.create(None, "*", source="menu")
         with patch("extensions.video.commands.Command"):
@@ -360,7 +359,7 @@ class TestRegistryExecution:
         assert mock_slot_manager.hover_autoplay is False
 
     def test_toggle_appear_via_registry(self, video_registry, mock_slot_manager):
-        from wayfer.core.actions.command.context import CommandContext
+        from wafer.core.actions.command.context import CommandContext
         assert mock_slot_manager.appear_autoplay is True
         ctx = CommandContext.create(None, "*", source="menu")
         with patch("extensions.video.commands.Command"):

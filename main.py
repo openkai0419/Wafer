@@ -3,16 +3,16 @@ import os
 import signal
 import sys
 import threading
-from wayfer.utils.paths import list_setting_db_names
-from wayfer.utils.process_lock import SafeProcessLock
-from wayfer.utils.logs import AppLogger
-from wayfer.utils.profiling import profiler
-from wayfer.constants import APP_DATA_DIR_NAME, APP_ID, APP_NAME, DEFAULT_DB_NAME
-from wayfer.app.indexer.main_indexer import IndexerProcess
-from wayfer.plugin.loader import load_plugins
-from wayfer.core.platform.process import AppProcess
-from wayfer.core.platform.process_checker import ParentProcessChecker
-import wayfer.constants as constants
+from wafer.utils.paths import list_setting_db_names
+from wafer.utils.process_lock import SafeProcessLock
+from wafer.utils.logs import AppLogger
+from wafer.utils.profiling import profiler
+from wafer.constants import APP_DATA_DIR_NAME, APP_ID, APP_NAME, DEFAULT_DB_NAME
+from wafer.app.indexer.main_indexer import IndexerProcess
+from wafer.plugin.loader import load_plugins
+from wafer.core.platform.process import AppProcess
+from wafer.core.platform.process_checker import ParentProcessChecker
+import wafer.constants as constants
 
 def get_icon():
     from PySide6 import QtGui
@@ -35,9 +35,9 @@ def _create_app():
     return app
 
 def _load_plugins_with_splash(app):
-    from wayfer.plugin.loader import any_needs_install
+    from wafer.plugin.loader import any_needs_install
     if any_needs_install():
-        from wayfer.core.qt.splash import InstallSplash
+        from wafer.core.qt.splash import InstallSplash
         splash = InstallSplash(APP_NAME, get_icon())
         splash.show()
         load_plugins(on_progress=app.processEvents)
@@ -47,8 +47,8 @@ def _load_plugins_with_splash(app):
 
 
 def _entry_viewer(app=None, session_id=None):
-    from wayfer.app.viewer.mainwindow import MainWindow
-    from wayfer.plugin.loader import PluginLoader
+    from wafer.app.viewer.mainwindow import MainWindow
+    from wafer.plugin.loader import PluginLoader
     PluginLoader.register_extension_commands()
     profiler.start()
     if app is None:
@@ -61,7 +61,7 @@ def _entry_tray():
     try:
         profiler.set_enabled(False)
         from PySide6 import QtWidgets
-        from wayfer.app.tray.main_tray import TrayApp
+        from wafer.app.tray.main_tray import TrayApp
 
         procs = AppProcess.get_by_args_subset('--indexer')
         AppProcess.terminate_and_wait(procs)
@@ -117,7 +117,7 @@ def _entry_indexer(name, parent_pid=None):
 def _entry_collector(name, plugin, parent_pid=None):
     try:
         profiler.set_enabled(False)
-        from wayfer.app.collector.worker import run_collector as _run
+        from wafer.app.collector.worker import run_collector as _run
         _run(name, plugin, parent_pid=parent_pid)
     except FileExistsError:
         AppLogger.info(f"Collector '{plugin}' for '{name}' is already running.")
@@ -140,7 +140,7 @@ def main():
         app = _create_app()
         _load_plugins_with_splash(app)
         AppProcess.new_main('--tray')
-        from wayfer.app.viewer.session import SessionStore
+        from wafer.app.viewer.session import SessionStore
         restore_ids = SessionStore().get_restore_session_ids()
         for sid in restore_ids[1:]:
             AppProcess.new_main('--viewer', '--session', sid)

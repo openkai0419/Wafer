@@ -1,4 +1,36 @@
 {
+  "New Window": {
+    "en": "New Window",
+    "ja": ""
+  },
+  "Delete Session": {
+    "en": "Delete Session",
+    "ja": ""
+  },
+  "Open Session": {
+    "en": "Open Session",
+    "ja": ""
+  },
+  "Rename Session": {
+    "en": "Rename Session",
+    "ja": ""
+  },
+  "Session": {
+    "en": "Session",
+    "ja": ""
+  },
+  "Session Color": {
+    "en": "Session Color",
+    "ja": ""
+  },
+  "Session List": {
+    "en": "Session List",
+    "ja": ""
+  },
+  "No saved sessions": {
+    "en": "No saved sessions",
+    "ja": ""
+  },
   "Bookmark": {
     "en": "Bookmark",
     "ja": ""

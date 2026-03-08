@@ -1,6 +1,6 @@
 from pathlib import Path
-from wayfer.core.actions.bridge import ActionKit
-from wayfer.utils.logs import AppLogger
+from wafer.core.actions.bridge import ActionKit
+from wafer.utils.logs import AppLogger
 
 
 def accept_local_existing_files(ctx) -> bool:

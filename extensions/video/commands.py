@@ -1,5 +1,5 @@
-from wayfer.plugin import MenuGroup, CommandMeta, CommandParam, require, require_v
-from wayfer.core.actions.bridge import Command
+from wafer.plugin import MenuGroup, CommandMeta, CommandParam, require, require_v
+from wafer.core.actions.bridge import Command
 
 
 @require(sm="VideoSlotManager")

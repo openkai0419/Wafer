@@ -3,19 +3,19 @@
 将来的に動画/音声/Zip対応、extension拡張を見据える。
 
 ■ 設計思想
-- 根幹思想: 「基盤は一つ、対応は多数」。wayfer/が安定した共通基盤、extensions/が自由に増減するファイル対応
-- 基盤(wayfer/)は慎重に設計され頻繁には変わらない。拡張(extensions/)は誰でも追加・変更・削除できる
-- extensionはwayfer内部パッケージを直接import可能。API越しの制限ではなく、同一エコシステムの一員として基盤を最大活用する設計
-- 拡張同士は独立。imageがvideoを知る必要はない。各拡張はwayfer/という共通言語だけで基盤と対話する
-- 理想形: 複数の開発者がwayfer/を基盤に、様々なファイル形式への対応を自由に開発し合えるエコシステム
+- 根幹思想: 「基盤は一つ、対応は多数」。wafer/が安定した共通基盤、extensions/が自由に増減するファイル対応
+- 基盤(wafer/)は慎重に設計され頻繁には変わらない。拡張(extensions/)は誰でも追加・変更・削除できる
+- extensionはwafer内部パッケージを直接import可能。API越しの制限ではなく、同一エコシステムの一員として基盤を最大活用する設計
+- 拡張同士は独立。imageがvideoを知る必要はない。各拡張はwafer/という共通言語だけで基盤と対話する
+- 理想形: 複数の開発者がwafer/を基盤に、様々なファイル形式への対応を自由に開発し合えるエコシステム
 - コードは「extensionを書く人」の視点で読みやすく、命名は明快に、インターフェースは直感的に保つ
 
-■ ディレクトリ構成（wayfer/）
-- wayfer/app/ : プロセス群（viewer, tray, collector, indexer）。各OSプロセスのエントリーポイント
-- wayfer/core/ : インフラ・ライブラリ層（actions, db, lang, platform, qt, setting, ipc）
-- wayfer/plugin/ : プラグインフレームワーク。__init__.pyがextension向け公開API
-- wayfer/utils/ : 最基底ユーティリティ（全モジュールが依存）
-- wayfer/constants.py : 定数定義（最基底）
+■ ディレクトリ構成（wafer/）
+- wafer/app/ : プロセス群（viewer, tray, collector, indexer）。各OSプロセスのエントリーポイント
+- wafer/core/ : インフラ・ライブラリ層（actions, db, lang, platform, qt, setting, ipc）
+- wafer/plugin/ : プラグインフレームワーク。__init__.pyがextension向け公開API
+- wafer/utils/ : 最基底ユーティリティ（全モジュールが依存）
+- wafer/constants.py : 定数定義（最基底）
 - extensions/ : ファイル形式ごとの拡張（フォルダ単位。例: extensions/image/）
 依存方向: constants/utils ← core ← plugin ← app
 extensionsはplugin/utils/coreを参照可、appは非推奨
@@ -43,7 +43,7 @@ extensionsはplugin/utils/coreを参照可、appは非推奨
 - ログ: data_path('.log/{role}_{pid}.log')。RotatingFileHandler。
 - リソース: _resources/。frozen時はsys.executableの親基準。
 
-■ DB スキーマ概要（wayfer/core/db/）
+■ DB スキーマ概要（wafer/core/db/）
 - FileDB(file_db.py): スキーマ管理・WAL・CRUD。破損検知時は.bakして再生成。
 - FileIndexer(indexer.py): スキャン・差分検出・Phase1登録。FileDBに委譲。
 - FileSearchEngine(query.py): read-only検索。
@@ -52,14 +52,14 @@ extensionsはplugin/utils/coreを参照可、appは非推奨
   Phase1(FileIndexer): path/hash/mtime/size→sources、aspect→files、拡張子マッチするCollector→collection_status(pending)
   Phase2(CollectionWriter): Collector結果→meta_info/tags/aspect上書き
 
-■ 収集アーキテクチャ（wayfer/app/indexer/）
+■ 収集アーキテクチャ（wafer/app/indexer/）
 - FolderWatcher: watchdog→queue→0.5秒バッチ→DB操作。全ファイル監視。
 - SettingWatcher: 設定DBファイル変更を直接監視。
 - CollectorDispatcher: pending取得→collect.batchでCollectorに送信→mark_dispatched。2秒ポーリング+即時トリガー。
 - CollectionWriter: collect.result受信→2秒バッチ→upsert_collection_results。同一sourceの重複はok優先。
 - ProgressAggregator: node.send_coalesced()で進捗・イベント送信。send_eventもcoalesce配信。
 
-■ IPC アーキテクチャ（wayfer/core/ipc/）
+■ IPC アーキテクチャ（wafer/core/ipc/）
 5ファイル: transport.py, message.py, broker.py, node.py, outbox.py。msgpackシリアライズ。
 
 Broker(ROUTER): Trayで起動。ピア管理+ルーティング(dst: role/node_id/ALL, dbフィルタ)。
@@ -78,7 +78,7 @@ OutboxStore: プロセス個別のOutbox DB。send_reliable→push→通知→�
 
 トピック: collect.batch(Indexer→Collector), collect.result(Collector→Indexer), outbox.notify, dev.log。
 
-■ 共通ユーティリティ索引（wayfer/utils/）
+■ 共通ユーティリティ索引（wafer/utils/）
 - paths.py: normalize_path, resolve_data_path/resolve_config_path, natural_sort, data_db_path/setting_db_path, list_data_db_names/list_setting_db_names, stem
 - formatting.py: dpix, split_last, is_dark_theme, format_timestamp/format_aspect/format_size/format_size_detail, display_prefixed_key
 - helpers.py: invoke, invoke_int, to_int, try_json_loads, try_invoke, widget_prop_bool
@@ -89,20 +89,26 @@ OutboxStore: プロセス個別のOutbox DB。send_reliable→push→通知→�
 - signal.py: Signal(connect/emit)
 - profiling.py: FunctionProfiler(@profiler.profile)
 
-■ プラグインフレームワーク（wayfer/plugin/）
+■ プラグインフレームワーク（wafer/plugin/）
 - __init__.py: extension向け公開API。BasePlugin/Grid/Viewer/Collector、load_thumbnail、CommandMeta等を再エクスポート
-- registry.py: BasePlugin(NAME/EXTENSIONS/PRIORITY) + PluginRegistry(register/resolve/resolve_instance/instance。インスタンスはregister時にキャッシュ)
+- registry.py: BasePlugin(NAME/EXTENSIONS/PRIORITY/match/can_handle) + PluginRegistry(register/resolve/resolve_chain/resolve_instance/instance。インスタンスはregister時にキャッシュ)
+  - resolve(): match() + can_handle()で1つ返す。Collector/Loader等can_handle()が有効な場面向け
+  - resolve_chain(): match()のみで候補リスト返却(priority順)。Grid描画パス向け。can_handle()を呼ばない
 - collector/: BaseCollectorPlugin + CollectorResult(dataclass) + collector_resolver
-- grid/: BaseGridPlugin → ImageGridPlugin(load) / WidgetGridPlugin(WIDGET_CLASS/render/release/appear/disappear/select/deselect) + grid_resolver。フォールバック=FileThumbnailer
+- grid/: BaseGridPlugin → ImageGridPlugin(load) / WidgetGridPlugin(WIDGET_CLASS/render→bool/release/appear/disappear/select/deselect) + grid_resolver。フォールバック=FileThumbnailer
+  - render()→bool: Trueでハンドル成功、Falseで次の候補へフォールバック
+  - bind()→bool: render()のboolを伝搬。False時にrelease()を自動呼び出し
+  - grid_viewの_ensure_widget_visible(): resolve_chain() + render→boolフォールバックループ
+  - GridResolver.load(): resolve_chain()で最初のImageGridPluginを探して使う
 - viewer/: BaseViewerPlugin → ImageViewerPlugin(load_content) / WidgetViewerPlugin(WIDGET_CLASS/render(widget,path)/clear) + viewer_resolver
 
-■ プラグインローダー（wayfer/plugin/loader.py）
+■ プラグインローダー（wafer/plugin/loader.py）
 - extensions/直下にフォルダ単位で配置。*.py/requirements.txt/lib/.packages/
 - ロードフロー: requirements.txt→pip install --target=.packages/→sys.path追加→lib/ DLL設定→_import_and_registerでクラス自動検出・登録
 - pip installはSubprocess（Popen+ポーリング）。frozen exe時はsys.executable --install-depsで子プロセス起動
 - .packages/.installedスタンプで再インストールスキップ
 
-■ actions/bridge アーキテクチャ（wayfer/core/actions/）
+■ actions/bridge アーキテクチャ（wafer/core/actions/）
 - bridge.pyは外部向けAPI専用。actions内部からbridge import禁止（ASTで検査）
 - 主要API: ActionKit(型再export), Settings(バインド設定), UI(Widget管理), Command(実行/登録), Menu(構築/表示), Context(ctx生成)
 - コマンドクラス: MenuGroup(メニュー付き) / DragMenuGroup(drag/drop専用)。NAME属性でプレフィックス定義
@@ -115,10 +121,10 @@ OutboxStore: プロセス個別のOutbox DB。send_reliable→push→通知→�
 - プラグインのGrid/View/Commandは個別に登録・登録解除可能な設計。未登録コマンドへの参照は安全にフォールバック
 - extension側のMenuGroupはGrid/View別に分離する（例: VideoGridCommands, 将来のVideoViewCommands）
 
-■ ビューア構造（wayfer/app/viewer/）
+■ ビューア構造（wafer/app/viewer/）
 - GridItemModel(grid/items.py): GridView用のファイル一覧/選択/現在インデックス
 - FileViewModel(preview/file_model.py): FileViewerWidget用の独立Model。pathChangedシグナルでView自動更新
 - ImageLoaderRunnable(grid/loader.py): キャッシュキーはpathのみ。width/height>=要求サイズならHit
 - FolderTree(widgets/foldertree.py): navigate_*メソッド6種。DFS巡回はexcluded/rootsを境界としてスキップ
 - GridView: QGraphicsView+ActionKit.UIMixin。FadePixmapItemで画像配置。drawForeground()でオーバーレイ
-- ビューア固有コマンド/メニューはwayfer/app/viewer/直下に配置
+- ビューア固有コマンド/メニューはwafer/app/viewer/直下に配置

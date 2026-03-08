@@ -3,8 +3,8 @@ import cv2
 import numpy as np
 from PySide6 import QtCore, QtGui
 
-from wayfer.plugin import ImageGridPlugin as _ImageGridPlugin
-from wayfer.utils.logs import AppLogger
+from wafer.plugin import ImageGridPlugin as _ImageGridPlugin
+from wafer.utils.logs import AppLogger
 
 
 class ImageGridPlugin(_ImageGridPlugin):

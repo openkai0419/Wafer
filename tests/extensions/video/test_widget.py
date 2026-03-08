@@ -19,7 +19,6 @@ def _patch_mpv(monkeypatch):
 def _reset_shared(monkeypatch):
     from extensions.video.widget import MpvCellWidget
     monkeypatch.setattr(MpvCellWidget, '_slot_manager', None)
-    monkeypatch.setattr(MpvCellWidget, '_thread_pool', None)
     monkeypatch.setattr(MpvCellWidget, '_shared_initialized', False)
     yield
 
@@ -158,54 +157,34 @@ class TestMpvCellWidget:
         parent = QtWidgets.QWidget()
         w = MpvCellWidget(parent)
         assert isinstance(MpvCellWidget._slot_manager, PlaybackSlotManager)
-        assert MpvCellWidget._thread_pool is not None
         w.cleanup()
 
     def test_load_sets_path(self, qtbot):
         from extensions.video.widget import MpvCellWidget
         w = MpvCellWidget()
         w.resize(200, 150)
-        with patch.object(MpvCellWidget._thread_pool, 'start'):
-            w.load('/test.mp4')
+        w.load('/test.mp4')
         assert w._path == '/test.mp4'
         w.cleanup()
 
-    def test_load_starts_thumbnail_runner(self, qtbot):
-        from extensions.video.widget import MpvCellWidget
-        w = MpvCellWidget()
-        w.resize(200, 150)
-        with patch.object(MpvCellWidget._thread_pool, 'start') as mock_start:
-            w.load('/test.mp4')
-            mock_start.assert_called_once()
-        w.cleanup()
-
-    def test_load_cancels_previous_runner(self, qtbot):
-        from extensions.video.widget import MpvCellWidget
-        w = MpvCellWidget()
-        w.resize(200, 150)
-        with patch.object(MpvCellWidget._thread_pool, 'start'):
-            w.load('/a.mp4')
-            first = w._current_runner
-            w.load('/b.mp4')
-        assert first._cancelled
-        w.cleanup()
-
-    def test_on_thumbnail_ready_matching_path(self, qtbot):
+    def test_set_thumbnail_sets_image(self, qtbot):
         from extensions.video.widget import MpvCellWidget
         w = MpvCellWidget()
         w._path = '/test.mp4'
         image = QtGui.QImage(100, 100, QtGui.QImage.Format_ARGB32)
-        w._on_thumbnail_ready('/test.mp4', image)
+        w.set_thumbnail(image)
         assert w._thumbnail is image
         w.cleanup()
 
-    def test_on_thumbnail_ready_stale_path_ignored(self, qtbot):
+    def test_set_thumbnail_skips_when_already_set(self, qtbot):
         from extensions.video.widget import MpvCellWidget
         w = MpvCellWidget()
-        w._path = '/new.mp4'
-        image = QtGui.QImage(100, 100, QtGui.QImage.Format_ARGB32)
-        w._on_thumbnail_ready('/old.mp4', image)
-        assert w._thumbnail is None
+        w._path = '/test.mp4'
+        first = QtGui.QImage(10, 10, QtGui.QImage.Format_ARGB32)
+        w._thumbnail = first
+        second = QtGui.QImage(20, 20, QtGui.QImage.Format_ARGB32)
+        w.set_thumbnail(second)
+        assert w._thumbnail is first
         w.cleanup()
 
     def test_suspend_clears_state(self, qtbot):
@@ -692,33 +671,4 @@ class TestPlaybackSlotManager:
 
 
 class TestThumbnailRunner:
-    def test_run_emits_result(self, qtbot):
-        from extensions.video.widget import _ThumbnailRunner
-        image = QtGui.QImage(50, 50, QtGui.QImage.Format_ARGB32)
-        runner = _ThumbnailRunner('/test.mp4', QtCore.QSize(200, 150))
-        results = []
-        runner.signals.ready.connect(lambda p, i: results.append((p, i)))
-        with patch('wayfer.plugin.load_thumbnail', return_value=image):
-            runner.run()
-        assert len(results) == 1
-        assert results[0][0] == '/test.mp4'
-
-    def test_cancelled_runner_does_not_emit(self, qtbot):
-        from extensions.video.widget import _ThumbnailRunner
-        runner = _ThumbnailRunner('/test.mp4', QtCore.QSize(200, 150))
-        results = []
-        runner.signals.ready.connect(lambda p, i: results.append((p, i)))
-        runner.cancel()
-        with patch('wayfer.plugin.load_thumbnail') as mock_load:
-            runner.run()
-            mock_load.assert_not_called()
-        assert len(results) == 0
-
-    def test_none_result_not_emitted(self, qtbot):
-        from extensions.video.widget import _ThumbnailRunner
-        runner = _ThumbnailRunner('/test.mp4', QtCore.QSize(200, 150))
-        results = []
-        runner.signals.ready.connect(lambda p, i: results.append((p, i)))
-        with patch('wayfer.plugin.load_thumbnail', return_value=None):
-            runner.run()
-        assert len(results) == 0
+    pass

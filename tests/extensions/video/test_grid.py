@@ -22,6 +22,7 @@ def test_video_grid_plugin_attributes():
     assert '.mkv' in VideoGridPlugin.EXTENSIONS
     assert '.webm' in VideoGridPlugin.EXTENSIONS
     assert VideoGridPlugin.WIDGET_CLASS is not None
+    assert VideoGridPlugin.REQUIRE_THUMBNAIL is True
 
 
 def test_video_grid_plugin_match():
@@ -34,7 +35,7 @@ def test_video_grid_plugin_match():
 
 def test_video_grid_plugin_is_widget_plugin():
     from extensions.video.grid import VideoGridPlugin
-    from wayfer.plugin.grid.base import WidgetGridPlugin
+    from wafer.plugin.grid.base import WidgetGridPlugin
     assert issubclass(VideoGridPlugin, WidgetGridPlugin)
 
 
@@ -100,6 +101,15 @@ def test_video_grid_plugin_deselect_calls_on_deselected():
     widget = MagicMock()
     plugin.deselect(widget)
     widget.on_deselected.assert_called_once()
+
+
+def test_video_grid_plugin_on_thumb_loaded_calls_set_thumbnail():
+    from extensions.video.grid import VideoGridPlugin
+    plugin = VideoGridPlugin()
+    widget = MagicMock()
+    image = MagicMock()
+    plugin.on_thumb_loaded(widget, image)
+    widget.set_thumbnail.assert_called_once_with(image)
 
 
 def test_configure_sets_default_surface_format():

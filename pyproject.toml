@@ -7,7 +7,7 @@ timeout = 30
 [tool.pyright]
 pythonVersion = "3.10"
 pythonPlatform = "Windows"
-include = ["wayfer"]
+include = ["wafer"]
 typeCheckingMode = "off"
 reportMissingModuleSource = false
 reportMissingImports = "error"

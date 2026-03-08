@@ -3,8 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6 import QtCore, QtWidgets
-from wayfer.utils.formatting import dpix
-from wayfer.core.actions.bridge import ActionKit, Menu, Settings, UI
+from wafer.utils.formatting import dpix
+from wafer.core.actions.bridge import ActionKit, Menu, Settings, UI
 
 from . import menu_demo, drag_demo
 for clss in [*menu_demo.get_menu_classes(), *drag_demo.get_menu_classes()]:

@@ -1,11 +1,11 @@
-from PySide6.QtCore import Qt, Slot, Signal, QSize, QSizeF, QThreadPool, QRunnable, QObject, QRect, QTimer
+from PySide6.QtCore import Qt, Slot, Signal, QObject, QRect, QTimer
 from PySide6.QtGui import QImage, QPainter, QCursor
 from PySide6.QtWidgets import QWidget
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from collections import OrderedDict
-from wayfer.plugin import qt_debounce_manager
-from wayfer.utils.logs import AppLogger
-from wayfer.utils.profiling import profiler
+from wafer.plugin import qt_debounce_manager
+from wafer.utils.logs import AppLogger
+from wafer.utils.profiling import profiler
 
 DEFAULT_VOLUME = 40
 GL_COLOR_BUFFER_BIT = 0x00004000
@@ -19,30 +19,6 @@ def _get_proc_address(_, name):
         return 0
     addr = ctx.getProcAddress(name)
     return int(addr) if addr else 0
-
-
-class _ThumbnailSignals(QObject):
-    ready = Signal(str, QImage)
-
-
-class _ThumbnailRunner(QRunnable):
-    def __init__(self, path, size):
-        super().__init__()
-        self.path = path
-        self.size = size
-        self.signals = _ThumbnailSignals()
-        self._cancelled = False
-
-    def cancel(self):
-        self._cancelled = True
-
-    def run(self):
-        if self._cancelled:
-            return
-        from wayfer.plugin import load_thumbnail
-        image = load_thumbnail(self.path, self.size)
-        if not self._cancelled and image is not None:
-            self.signals.ready.emit(self.path, image)
 
 
 class MpvGLOverlay(QOpenGLWidget):
@@ -478,7 +454,6 @@ class PlaybackSlotManager:
 class MpvCellWidget(QWidget):
 
     _slot_manager: PlaybackSlotManager | None = None
-    _thread_pool: QThreadPool | None = None
     _shared_initialized = False
 
     @classmethod
@@ -486,10 +461,8 @@ class MpvCellWidget(QWidget):
         if cls._shared_initialized:
             return
         cls._shared_initialized = True
-        cls._thread_pool = QThreadPool()
-        cls._thread_pool.setMaxThreadCount(2)
         cls._slot_manager = PlaybackSlotManager(parent)
-        from wayfer.core.actions.bridge import UI
+        from wafer.core.actions.bridge import UI
         UI.register_instance("VideoSlotManager", cls._slot_manager)
         cls._restore_settings()
 
@@ -499,7 +472,7 @@ class MpvCellWidget(QWidget):
         if sm is None:
             return
         try:
-            from wayfer.core.actions.bridge import Command
+            from wafer.core.actions.bridge import Command
             sm.set_volume(int(Command.get_args("vgrid.set_volume").get("volume", DEFAULT_VOLUME)))
             sm.set_max_selected(int(Command.get_args("vgrid.set_max_playback_slots").get("max_slots", 3)))
             sm.hover_autoplay = Command.get_checked("vgrid.toggle_hover_autoplay")
@@ -520,7 +493,6 @@ class MpvCellWidget(QWidget):
         self.setMouseTracking(True)
         self._path = None
         self._thumbnail = None
-        self._current_runner = None
         self._init_shared(parent)
 
     @profiler.profile
@@ -528,25 +500,12 @@ class MpvCellWidget(QWidget):
         self._path = path
         self._thumbnail = None
         self.update()
-        if self._current_runner:
-            self._current_runner.cancel()
-        thumb_size = None
-        if size is not None:
-            thumb_size = size.toSize() if isinstance(size, QSizeF) else size
-        if thumb_size is None or thumb_size.isEmpty():
-            s = self.size()
-            thumb_size = QSize(s.width(), s.height()) if not s.isEmpty() else None
-        runner = _ThumbnailRunner(path, thumb_size)
-        runner.signals.ready.connect(self._on_thumbnail_ready, Qt.ConnectionType.QueuedConnection)
-        self._current_runner = runner
-        if self._thread_pool:
-            self._thread_pool.start(runner)
 
-    @Slot(str, QImage)
-    def _on_thumbnail_ready(self, path, image):
-        if path == self._path:
-            self._thumbnail = image
-            self.update()
+    def set_thumbnail(self, image):
+        if self._thumbnail is not None:
+            return
+        self._thumbnail = image
+        self.update()
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -615,9 +574,6 @@ class MpvCellWidget(QWidget):
     def suspend(self):
         if self._slot_manager:
             self._slot_manager.release_cell(self)
-        if self._current_runner:
-            self._current_runner.cancel()
-            self._current_runner = None
         self._path = None
         self._thumbnail = None
 

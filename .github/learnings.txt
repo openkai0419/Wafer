@@ -85,25 +85,33 @@
 - MpvGLOverlayはMpvCellWidgetの子Widget。activate時にsetParent(cell)で子化し、geometry=(0,0,w,h)で親全体を覆う。viewport()->scroll()による二重移動問題を回避
 - PlaybackSlotManagerはN個のselected枠+1個のhover枠+M個のappeared枠を管理。selected超過時はLRU（OrderedDict）で最古を解放。hoverからselectへの昇格、appearedからselectへの昇格にも対応
 - appear/selectは独立したライフサイクル。_appeared_cellsセットで可視状態を追跡し、_appeared辞書でオーバーレイ所有を管理。select時にappearedから昇格（overlay移動）しても_appeared_cellsには残る。deselect時に_appeared_cellsに含まれていればオーバーレイを_appearedに復帰させる
-- @require デコレータ（wayfer.core.actions.command.require）でインスタンス注入。@require_v でctx.get()値注入。Ctxクラスは廃止
+- @require デコレータ（wafer.core.actions.command.require）でインスタンス注入。@require_v でctx.get()値注入。Ctxクラスは廃止
 - path/pathsのようなフォールバックロジックがあるctx値は補助関数（_ctx_path等）で関数内から直接呼ぶ。デコレータ化しない
-- hover activateはデバウンス（200ms）。高速スクロール中の不要なmpv起動を防止。QtDebounceManager(wayfer.plugin.qt_debounce_manager)を使用
+- hover activateはデバウンス（200ms）。高速スクロール中の不要なmpv起動を防止。QtDebounceManager(wafer.plugin.qt_debounce_manager)を使用
 - MpvGLOverlay._ownerで所有MpvCellWidgetを追跡。leaveEventでMpvCellWidget._on_overlay_leave(owner)経由でSlotManagerに通知
 - BaseGridPlugin.select(widget, path) / deselect(widget)はGridResolverがGridView._on_selection_changed内の差分計算で呼び出す
 - GridView._prev_selection_setで前回選択を追跡し、新規selected/deselectedを差分算出。_ensure_widget_visibleでも復帰時のselect再適用を行う
 - warm_up時のサーフェスタイプ確保はPlaybackSlotManager.__init__でプールに1つMpvGLOverlayを事前生成して行う。遅延生成にするとwarm_upで確保されずウィンドウ再起動が発生する
-- サムネイル取得はwayfer.plugin.load_thumbnail（grid_resolver.load→FileThumbnailer）を_ThumbnailRunnerで非同期実行
+- サムネイル取得はwafer.plugin.load_thumbnail（grid_resolver.load→FileThumbnailer）を_ThumbnailRunnerで非同期実行
 - ホバー時のマウスイベント：overlayが上に表示されるとcellのleaveEventが発火する場合がある。その時はカーソル位置がoverlay内かチェックして判断する。overlay自身のleaveEventで最終的にdeactivateする
 - QGraphicsOpacityEffectはQOpenGLWidgetに使用禁止。QtがオフスクリーンpixmapにレンダリングしようとしてGLコンテキストが壊れ、映像が表示されなくなる（音声のみ再生される）
 - PowerShellで日本語ファイルを編集するとエンコーディング破損する。日本語テキストはcreate_fileツールかPythonで書き換えること
 - ステールフレーム対策：activate時にGLコンテキスト初期化済み(_ctx存在)ならshow()しない。最初のフレーム到着時に_request_updateでshow。paintGLではawaitingかつframe未到着なら_clear_glで黒クリアし前の動画のフレームをレンダリングしない
+
+■ セッション管理の設計方針
+- 匿名セッションは廃止。全ウィンドウは必ず名前付きセッション
+- デフォルト名はDEFAULT_SESSION_NAME("Wafer")。連番は1始まり（"Wafer 1", "Wafer 2"...）
+- セッション管理コマンドはSessionCommandsを廃止しWindowCommandsに統合。win.new_window, win.session_list, win.open_session等
+- CommandParamにchoices_fn(callable value)とrequiredを追加。required未充足時はCommandOptionsDialogを自動表示
+- コマンド実行の責任統一: stored args解決とrequiredチェックはCommand.invoke()に集約。メニュー(_execute)・キーバインド(_exec)はctxを構築してCommand.invoke()に委譲。mixin経路のみcheckable toggle等の固有処理があるため直接registry.executeを使うが、requiredチェックは追加済み
+- Trayプロセスも独自QApplicationを持つためInputDialogを表示可能（parent=None）
 
 ■ テスト環境の注意
 - tests/conftest.pyでload_plugins(skip_install=True)を呼んでextensionレジストリを初期化する
 - extensionのvendored numpy（.packages/numpy）がsys.modulesを汚染する。conftest.pyでプラグインロード後にnumpy関連モジュールをsys.modulesから除去すること
 - Qtウィジェットテストでスクロールバー表示等によるviewportリサイズを検証する場合はshow()を呼んでから検証する
 - pytest-qtはrequirements-dev.txtに記載。venvにインストールが必要
-- IPCテストはtests/wayfer/core/ipc/conftest.pyで_PORT_FILEをtmp_pathに隔離。アプリ実行中のポート競合とポートファイル汚染を防止する
+- IPCテストはtests/wafer/core/ipc/conftest.pyで_PORT_FILEをtmp_pathに隔離。アプリ実行中のポート競合とポートファイル汚染を防止する
 - GridViewを実インスタンス化するテスト（show()やprocessEvents()を使う場合）はCommandOptionStore.configure()をmodule-scoped fixtureで初期化する。未初期化だとQt遅延イベント経由で_is_center_anchor→CommandOptionStoreが呼ばれRuntimeError
 - SearchQuery.__post_init__はlist引数をtupleに変換する。テストでは比較もtupleで行う
 - テストの重複ファイル・重複メソッド名に注意。Pythonは同名メソッドを後勝ちで上書きし、pytestは1つしか収集しない
@@ -113,10 +121,10 @@
 - get_resource_path()はpytest時にCWDフォールバックで_resourcesを解決
 
 ■ プラグインシステムの設計決定
-- 旧設計(source+plugins+API仮想モジュール)を廃止し、wayfer/を実パッケージ化。extension側がwayfer内部を直接importできる設計に移行
+- 旧設計(source+plugins+API仮想モジュール)を廃止し、wafer/を実パッケージ化。extension側がwafer内部を直接importできる設計に移行
 - 旧API仮想モジュール方式は「制限された客」扱いだった。新設計はextensionを「同じエコシステムの一員」として基盤の力を最大限使える思想
-- wayfer.plugin.__init__.pyは「推奨入口」として残す。extensionが必要に応じてwayfer.coreやwayfer.utilsに直接入ることも許容する
-- 基盤(wayfer/)は安定を重視し慎重に変更。拡張(extensions/)は自由に追加・変更・削除可能
+- wafer.plugin.__init__.pyは「推奨入口」として残す。extensionが必要に応じてwafer.coreやwafer.utilsに直接入ることも許容する
+- 基盤(wafer/)は安定を重視し慎重に変更。拡張(extensions/)は自由に追加・変更・削除可能
 - PluginRegistry.registerはNAME重複時に上書き（hotreload対応）
 - PluginLoaderのspec_from_file_locationでsubmodule_search_locations=[]を渡すと全サブモジュールがpackage扱いになり相対importが壊れる（別モジュールオブジェクトが生成される）。必ずNone(デフォルト)にすること
 - extension側のMenuGroup(コマンド)はPluginLoader._deferred_commandsに一時保持し、register_extension_commands()でMainWindow/viewer commandsの後に登録する。これによりAllMenuで拡張コマンドが末尾に表示される
@@ -125,11 +133,11 @@
 - ViewerResolverはgrid_resolverへの依存をlazy import化。コンストラクタ引数での注入は廃止
 - ImageViewerPluginのload_contentはNone返却。ViewerResolverのフォールバック（grid_resolver.load）に委譲
 - プラグインのvendor_dirはsys.path.append（標準ライブラリ優先）
-- frozen環境でのpip実行にはEmbeddedPython（wayfer/plugin/installer.py）を使用。pip._internal直呼出は禁止（distlibのfinder問題で壊れる）
+- frozen環境でのpip実行にはEmbeddedPython（wafer/plugin/installer.py）を使用。pip._internal直呼出は禁止（distlibのfinder問題で壊れる）
 - frozen build時はbuild.batでextension依存を.packagesに事前インストール。ユーザー追加extension用にEmbeddedPythonが動的DLで対応
 - setup_menu()ではSettings.configure()をコマンド登録より先に実行する。登録失敗がconfigure未実行を引き起こさないようにする
 - main.specからpipバンドルを削除済み。frozen buildにpipは不要（EmbeddedPythonが代替）
 - _setup_dll_directoryは_load_oneで初回呼出+post_install後に再呼出の2箇所。両方必要
-- extensionsはwayfer.plugin（公開API）、wayfer.utils、wayfer.coreを直接import可能。wayfer.appへの依存は非推奨
-- wayfer.plugin.__init__.pyがextension向け公開API。BasePlugin/Collector/Grid/Viewer、load_thumbnail、CommandMeta等を再エクスポート。AppLoggerやprofilerは公開APIに含めない（extensionはwayfer.utilsから直接import）
-- wayfer.plugin.qt_debounce_manager(QtDebounceManager)を公開。debounce(key,ms,cb)/cancel(key)でextensionからデバウンス利用可能
+- extensionsはwafer.plugin（公開API）、wafer.utils、wafer.coreを直接import可能。wafer.appへの依存は非推奨
+- wafer.plugin.__init__.pyがextension向け公開API。BasePlugin/Collector/Grid/Viewer、load_thumbnail、CommandMeta等を再エクスポート。AppLoggerやprofilerは公開APIに含めない（extensionはwafer.utilsから直接import）
+- wafer.plugin.qt_debounce_manager(QtDebounceManager)を公開。debounce(key,ms,cb)/cancel(key)でextensionからデバウンス利用可能

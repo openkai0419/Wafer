@@ -7,7 +7,7 @@ from typing import Any
 from PIL import Image, ExifTags
 from PIL.TiffImagePlugin import IFDRational
 
-from wayfer.utils.logs import AppLogger
+from wafer.utils.logs import AppLogger
 
 TAGS = ExifTags.TAGS
 GPSTAGS = ExifTags.GPSTAGS

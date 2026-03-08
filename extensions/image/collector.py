@@ -1,6 +1,6 @@
 import os
-from wayfer.plugin import BaseCollectorPlugin, CollectorResult
-from wayfer.utils.logs import AppLogger
+from wafer.plugin import BaseCollectorPlugin, CollectorResult
+from wafer.utils.logs import AppLogger
 
 
 class ExifCollectorPlugin(BaseCollectorPlugin):

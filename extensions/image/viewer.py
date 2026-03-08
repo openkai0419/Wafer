@@ -1,4 +1,4 @@
-from wayfer.plugin import ImageViewerPlugin as _ImageViewerPlugin
+from wafer.plugin import ImageViewerPlugin as _ImageViewerPlugin
 
 
 class ImageViewerPlugin(_ImageViewerPlugin):

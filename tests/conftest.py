@@ -2,8 +2,8 @@ import sys
 
 import pytest
 
-from wayfer.utils.logs import set_suppress_dialog
-from wayfer.plugin.loader import load_plugins, PluginLoader
+from wafer.utils.logs import set_suppress_dialog
+from wafer.plugin.loader import load_plugins, PluginLoader
 
 set_suppress_dialog(True)
 
@@ -35,12 +35,12 @@ def _close_qt_widgets_after_test():
 def _cleanup_background_resources():
     yield
     try:
-        from wayfer.utils.profiling import profiler
+        from wafer.utils.profiling import profiler
         profiler.stop()
     except Exception:
         pass
     try:
-        from wayfer.app.viewer.viewer_settings import app_settings
+        from wafer.app.viewer.viewer_settings import app_settings
         app_settings.close()
     except Exception:
         pass

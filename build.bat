@@ -5,7 +5,7 @@ set ERRFLAG=0
 
 set VENV=.venv\Scripts\activate.bat
 
-set APPNAME=Wayfer
+set APPNAME=Wafer
 
 REM Activate virtual environment
 if exist "%VENV%" (

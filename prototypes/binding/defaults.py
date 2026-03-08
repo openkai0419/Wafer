@@ -1,4 +1,4 @@
-from wayfer.core.actions.bridge import ActionKit
+from wafer.core.actions.bridge import ActionKit
 
 
 def get_all_mouse_bindings():

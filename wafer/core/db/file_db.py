@@ -238,6 +238,8 @@ class FileDB:
                 AppLogger.debug(f'conn.close() failed: {e}')
             self.conn = None
         try:
+            if self.backup_path.exists():
+                os.remove(self.backup_path)
             tmp = sqlite3.connect(str(self.db_path), check_same_thread=False)
             try:
                 tmp.execute('PRAGMA journal_mode=WAL')
@@ -247,16 +249,24 @@ class FileDB:
             for suf in ('', '-wal', '-shm'):
                 try:
                     os.remove(str(self.db_path) + suf)
-                except FileNotFoundError:
-                    pass
-        except Exception:
+                except (FileNotFoundError, PermissionError) as e:
+                    if isinstance(e, PermissionError):
+                        AppLogger.warning(f'Cannot remove {self.db_path}{suf}: {e}', exc=e)
+        except Exception as e:
+            AppLogger.warning(f'VACUUM INTO backup failed: {e}', exc=e)
             if self.db_path.exists():
-                shutil.copy(self.db_path, self.backup_path)
+                try:
+                    if self.backup_path.exists():
+                        os.remove(self.backup_path)
+                    shutil.copy(self.db_path, self.backup_path)
+                except Exception as copy_err:
+                    AppLogger.warning(f'Backup copy also failed: {copy_err}', exc=copy_err)
                 for suf in ('', '-wal', '-shm'):
                     try:
                         os.remove(str(self.db_path) + suf)
-                    except FileNotFoundError:
-                        pass
+                    except (FileNotFoundError, PermissionError) as rm_err:
+                        if isinstance(rm_err, PermissionError):
+                            AppLogger.warning(f'Cannot remove {self.db_path}{suf}: {rm_err}', exc=rm_err)
         try:
             self.start()
         except Exception as e:

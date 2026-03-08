@@ -1,4 +1,5 @@
 import py_compile
+from unittest.mock import MagicMock
 
 from wafer.app.indexer.dispatcher import CollectorDispatcher, _BATCH_SIZE, _DISPATCH_INTERVAL
 
@@ -12,47 +13,44 @@ def test_constants():
     assert _DISPATCH_INTERVAL > 0
 
 
-def test_init_with_defaults(tmp_path):
-    from wafer.core.db.indexer import FileIndexer
-    idx = FileIndexer(tmp_path / 'test.db')
-    dispatcher = CollectorDispatcher('testdb', idx)
-    assert dispatcher._db_name == 'testdb'
-    assert 'exif' in dispatcher._collectors
-
-
 def test_init_with_custom_collectors(tmp_path):
-    from wafer.core.db.indexer import FileIndexer
-    idx = FileIndexer(tmp_path / 'test.db')
-    dispatcher = CollectorDispatcher('testdb', idx, collectors=['exif', 'video'])
+    scheduler = MagicMock()
+    db_path = tmp_path / 'test.db'
+    dispatcher = CollectorDispatcher('testdb', db_path, scheduler, collectors=['exif', 'video'])
     assert dispatcher._collectors == ['exif', 'video']
 
 
 def test_request_dispatch_sets_event(tmp_path):
-    from wafer.core.db.indexer import FileIndexer
-    idx = FileIndexer(tmp_path / 'test.db')
-    dispatcher = CollectorDispatcher('testdb', idx)
+    scheduler = MagicMock()
+    db_path = tmp_path / 'test.db'
+    dispatcher = CollectorDispatcher('testdb', db_path, scheduler, collectors=['exif'])
     assert not dispatcher._dispatch_event.is_set()
     dispatcher.request_dispatch()
     assert dispatcher._dispatch_event.is_set()
 
 
-def test_reset_stale_on_start(tmp_path):
-    from wafer.core.db.indexer import FileIndexer
+def test_reset_stale_submits_command(tmp_path):
+    scheduler = MagicMock()
     db_path = tmp_path / 'test.db'
-    with FileIndexer(db_path) as idx:
-        idx.initialize()
-        idx.db.upsert_basic_sources(
-            [('src1', 'h1', 100, 1.0, 1.0, 1.0, 'indexed')],
-            [('src1', 'src1', 'f.jpg', 1.0)],
-        )
-        idx.db.insert_pending_collection(['src1'], ['exif'])
-        idx.db.mark_dispatched(['src1'], 'exif')
-
-    idx2 = FileIndexer(db_path)
-    dispatcher = CollectorDispatcher('testdb', idx2)
+    dispatcher = CollectorDispatcher('testdb', db_path, scheduler, collectors=['exif'])
     dispatcher._reset_stale()
+    assert scheduler.submit.called
+    cmd = scheduler.submit.call_args[0][0]
+    assert cmd.operation == 'reset_stale'
+    assert cmd.data['collectors'] == ['exif']
 
-    with idx2 as idx:
-        pending = idx.db.get_pending_sources('exif')
-        assert len(pending) == 1
-        assert pending[0][0] == 'src1'
+
+def test_dispatched_paths_tracking(tmp_path):
+    scheduler = MagicMock()
+    db_path = tmp_path / 'test.db'
+    dispatcher = CollectorDispatcher('testdb', db_path, scheduler, collectors=['exif'])
+    dispatcher._dispatched_paths.setdefault('exif', set()).update(['a', 'b'])
+    dispatcher._clear_dispatched('exif', ['a'])
+    assert dispatcher._dispatched_paths['exif'] == {'b'}
+
+
+def test_clear_dispatched_nonexistent_collector(tmp_path):
+    scheduler = MagicMock()
+    db_path = tmp_path / 'test.db'
+    dispatcher = CollectorDispatcher('testdb', db_path, scheduler, collectors=['exif'])
+    dispatcher._clear_dispatched('nonexistent', ['a'])

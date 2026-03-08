@@ -193,6 +193,9 @@ class SessionStore:
             active = raw.get('active_session_ids', [])
             if session_id in active:
                 active.remove(session_id)
+            restore = raw.get('restore_session_ids', [])
+            if session_id in restore:
+                restore.remove(session_id)
             return True
         return self._locked_update(_update)
 
@@ -234,9 +237,9 @@ class SessionStore:
     def next_default_name(self) -> str:
         existing_names = {e.name for e in self.list_sessions()}
         n = 1
-        while f'{DEFAULT_SESSION_NAME} {n}' in existing_names:
+        while f'{DEFAULT_SESSION_NAME}{n}' in existing_names:
             n += 1
-        return f'{DEFAULT_SESSION_NAME} {n}'
+        return f'{DEFAULT_SESSION_NAME}{n}'
 
     def find_inactive_session_id(self) -> str | None:
         raw = self._load_raw()

@@ -1,172 +1,109 @@
 import py_compile
 import time
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 
 def test_compile():
     py_compile.compile('wafer/app/indexer/watch_folder.py')
 
 
-class _FakeIndexer:
-
+class _Recorder:
     def __init__(self):
-        self.rename_calls = []
-        self.update_calls = []
-        self.remove_calls = []
+        self.calls = []
 
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args):
-        pass
-
-    def set_progress_callback(self, cb):
-        pass
-
-    def set_update_callback(self, cb):
-        pass
-
-    def rename_by_pairs(self, pairs):
-        self.rename_calls.append(sorted(pairs))
-
-    def update_by_file_list(self, paths):
-        self.update_calls.append(sorted(paths))
-
-    def remove_by_file_list(self, paths):
-        self.remove_calls.append(sorted(paths))
+    def __call__(self, *args, **kwargs):
+        self.calls.append((args, kwargs))
 
 
-def _make_watcher(fake_db):
+def _make_watcher():
     from wafer.app.indexer.watch_folder import FolderWatcher
+    scheduler = MagicMock()
+    scanner = MagicMock()
     progress = MagicMock()
-    wf = FolderWatcher(fake_db, progress)
+    wf = FolderWatcher(scheduler, scanner, progress)
     wf.stop()
-    return wf
+    return wf, scheduler, scanner, progress
+
+
+def _collect_exec_calls(scheduler, scanner):
+    rename_data = []
+    delete_data = []
+    update_paths = []
+    for c in scheduler.submit.call_args_list:
+        cmd = c[0][0]
+        if cmd.operation == 'rename_paths':
+            rename_data.append(sorted(cmd.data['pairs']))
+        elif cmd.operation == 'delete_sources':
+            delete_data.append(sorted(cmd.data['paths']))
+    for c in scanner.request_update.call_args_list:
+        update_paths.append(sorted(c[0][0]))
+    return rename_data, update_paths, delete_data
 
 
 def test_flush_basic_rename():
-    db = _FakeIndexer()
-    wf = _make_watcher(db)
-    changed = set()
-    deleted = set()
-    moved = {'A': 'B'}
-    wf._flush(changed, deleted, moved)
-    assert db.rename_calls == [[('A', 'B')]]
-    assert db.update_calls == []
-    assert db.remove_calls == []
+    wf, scheduler, scanner, _ = _make_watcher()
+    wf._flush(set(), set(), {'A': 'B'})
+    assert scheduler.submit.called
+    cmd = scheduler.submit.call_args[0][0]
+    assert cmd.operation == 'rename_paths'
 
 
 def test_flush_create_then_rename():
-    db = _FakeIndexer()
-    wf = _make_watcher(db)
-    changed = {'A'}
-    deleted = set()
-    moved = {'A': 'B'}
-    wf._flush(changed, deleted, moved)
-    assert db.rename_calls == [[('A', 'B')]]
-    assert db.update_calls == [['B']]
-    assert db.remove_calls == []
+    wf, scheduler, scanner, _ = _make_watcher()
+    wf._flush({'A'}, set(), {'A': 'B'})
+    rename_data, update_paths, _ = _collect_exec_calls(scheduler, scanner)
+    assert len(rename_data) == 1
+    assert len(update_paths) == 1
+    assert 'B' in update_paths[0]
 
 
-def test_flush_rename_then_delete():
-    db = _FakeIndexer()
-    wf = _make_watcher(db)
-    changed = set()
-    deleted = {'B'}
-    moved = {'A': 'B'}
-    wf._flush(changed, deleted, moved)
-    assert db.rename_calls == [[('A', 'B')]]
-    assert db.remove_calls == [['B']]
-
-
-def test_flush_delete_then_recreate():
-    db = _FakeIndexer()
-    wf = _make_watcher(db)
-    changed = {'A'}
-    deleted = {'A'}
-    moved = {}
-    wf._flush(changed, deleted, moved)
-    assert db.remove_calls == [['A']]
-    assert db.update_calls == [['A']]
-
-
-def test_flush_multiple_independent_renames():
-    db = _FakeIndexer()
-    wf = _make_watcher(db)
-    changed = set()
-    deleted = set()
-    moved = {'A': 'B', 'C': 'D'}
-    wf._flush(changed, deleted, moved)
-    assert db.rename_calls == [[('A', 'B'), ('C', 'D')]]
-
-
-def test_flush_create_rename_with_unrelated_changed():
-    db = _FakeIndexer()
-    wf = _make_watcher(db)
-    changed = {'A', 'X'}
-    deleted = set()
-    moved = {'A': 'B'}
-    wf._flush(changed, deleted, moved)
-    assert db.rename_calls == [[('A', 'B')]]
-    assert db.update_calls == [sorted(['B', 'X'])]
+def test_flush_rename_then_delete(tmp_path):
+    wf, scheduler, scanner, _ = _make_watcher()
+    wf._flush(set(), {'B'}, {'A': 'B'})
+    rename_data, _, delete_data = _collect_exec_calls(scheduler, scanner)
+    assert len(rename_data) == 1
 
 
 def test_flush_only_changed():
-    db = _FakeIndexer()
-    wf = _make_watcher(db)
-    changed = {'A', 'B'}
-    deleted = set()
-    moved = {}
-    wf._flush(changed, deleted, moved)
-    assert db.rename_calls == []
-    assert db.update_calls == [sorted(['A', 'B'])]
-    assert db.remove_calls == []
+    wf, scheduler, scanner, _ = _make_watcher()
+    wf._flush({'A', 'B'}, set(), {})
+    assert scanner.request_update.called
+    assert not scheduler.submit.called
 
 
 def test_flush_only_deleted():
-    db = _FakeIndexer()
-    wf = _make_watcher(db)
-    changed = set()
-    deleted = {'A'}
-    moved = {}
-    wf._flush(changed, deleted, moved)
-    assert db.remove_calls == [['A']]
-    assert db.rename_calls == []
-    assert db.update_calls == []
+    wf, scheduler, scanner, _ = _make_watcher()
+    wf._flush(set(), {'/nonexistent/file.png'}, {})
+    assert scheduler.submit.called
+    cmd = scheduler.submit.call_args[0][0]
+    assert cmd.operation == 'delete_sources'
 
 
 def test_flush_empty():
-    db = _FakeIndexer()
-    wf = _make_watcher(db)
-    changed = set()
-    deleted = set()
-    moved = {}
-    wf._flush(changed, deleted, moved)
-    assert db.rename_calls == []
-    assert db.update_calls == []
-    assert db.remove_calls == []
+    wf, scheduler, scanner, _ = _make_watcher()
+    wf._flush(set(), set(), {})
+    assert not scheduler.submit.called
+    assert not scanner.request_update.called
 
 
-def test_flush_chained_rename():
-    db = _FakeIndexer()
-    wf = _make_watcher(db)
-    changed = set()
-    deleted = set()
-    moved = {'A': 'B', 'B': 'C'}
-    wf._flush(changed, deleted, moved)
-    assert db.rename_calls == [[('A', 'B'), ('B', 'C')]]
+def test_exec_rescan():
+    wf, scheduler, scanner, _ = _make_watcher()
+    wf._exec('rescan', ['/some/folder'])
+    scanner.request_scan.assert_called_once_with(['/some/folder'])
 
 
-def test_flush_create_rename_delete_mixed():
-    db = _FakeIndexer()
-    wf = _make_watcher(db)
-    changed = {'new_file'}
-    deleted = {'old_file'}
-    moved = {'new_file': 'final_name'}
-    wf._flush(changed, deleted, moved)
-    assert db.rename_calls == [[('new_file', 'final_name')]]
-    assert db.remove_calls == [['old_file']]
-    assert db.update_calls == [['final_name']]
+def test_exec_update():
+    wf, scheduler, scanner, _ = _make_watcher()
+    wf._exec('update', ['/some/file.png'])
+    scanner.request_update.assert_called_once_with(['/some/file.png'])
+
+
+def test_exec_cleanup():
+    wf, scheduler, scanner, progress = _make_watcher()
+    wf._exec('cleanup')
+    assert scheduler.submit.called
+    cmd = scheduler.submit.call_args[0][0]
+    assert cmd.operation == 'purge_orphans'
 
 
 class TestExtractStable:
@@ -250,10 +187,10 @@ class TestEventAccumulator:
         from wafer.app.indexer.watch_folder import _EventAccumulator
         return _EventAccumulator()
 
-    def _run_and_flush(self, events, db):
+    def _run_and_flush(self, events):
         from wafer.app.indexer.watch_folder import _EventAccumulator
         acc = _EventAccumulator()
-        wf = _make_watcher(db)
+        wf, scheduler, scanner, _ = _make_watcher()
         now = time.monotonic()
         for ev in events:
             kind, data = ev[0], ev[1]
@@ -266,64 +203,67 @@ class TestEventAccumulator:
             elif kind == 'moved':
                 acc.on_moved(*data)
         wf._flush(*acc.drain())
-        return db
+        return scheduler, scanner
 
     def test_changed_then_deleted(self):
-        db = self._run_and_flush([
+        scheduler, scanner = self._run_and_flush([
             ('changed', 'a.png'),
             ('deleted', 'a.png'),
-        ], _FakeIndexer())
-        assert db.remove_calls == [['a.png']]
-        assert db.update_calls == []
+        ])
+        ops = [c[0][0].operation for c in scheduler.submit.call_args_list]
+        assert 'delete_sources' in ops
+        assert not scanner.request_update.called
 
     def test_changed_then_moved(self):
-        db = self._run_and_flush([
+        scheduler, scanner = self._run_and_flush([
             ('changed', 'a.png'),
             ('moved', ('a.png', 'b.png')),
-        ], _FakeIndexer())
-        assert db.rename_calls == [[('a.png', 'b.png')]]
+        ])
+        ops = [c[0][0].operation for c in scheduler.submit.call_args_list]
+        assert 'rename_paths' in ops
 
     def test_first_modified_is_immediate(self):
-        db = self._run_and_flush([
+        scheduler, scanner = self._run_and_flush([
             ('changed', 'new.png'),
-        ], _FakeIndexer())
-        assert db.update_calls == [['new.png']]
+        ])
+        assert scanner.request_update.called
 
     def test_second_modified_stays_ready(self):
-        db = self._run_and_flush([
+        scheduler, scanner = self._run_and_flush([
             ('changed', 'dl.png'),
             ('changed', 'dl.png'),
-        ], _FakeIndexer())
-        assert db.update_calls == [['dl.png']]
+        ])
+        assert scanner.request_update.called
 
     def test_created_is_immediate(self):
-        db = self._run_and_flush([
+        scheduler, scanner = self._run_and_flush([
             ('created', 'new.png'),
-        ], _FakeIndexer())
-        assert db.update_calls == [['new.png']]
+        ])
+        assert scanner.request_update.called
 
     def test_created_then_modified_stays_ready(self):
-        db = self._run_and_flush([
+        scheduler, scanner = self._run_and_flush([
             ('created', 'dl.png'),
             ('changed', 'dl.png'),
-        ], _FakeIndexer())
-        assert db.update_calls == [['dl.png']]
+        ])
+        assert scanner.request_update.called
 
     def test_modified_does_not_override_ready(self):
-        db = self._run_and_flush([
+        scheduler, scanner = self._run_and_flush([
             ('created', 'x.png'),
             ('changed', 'x.png'),
             ('changed', 'x.png'),
-        ], _FakeIndexer())
-        assert db.update_calls == [['x.png']]
+        ])
+        assert scanner.request_update.called
 
     def test_created_then_deleted(self):
-        db = self._run_and_flush([
+        scheduler, scanner = self._run_and_flush([
             ('created', 'tmp.png'),
             ('deleted', 'tmp.png'),
-        ], _FakeIndexer())
-        assert db.remove_calls == [['tmp.png']]
-        assert db.update_calls == []
+        ])
+        ops = [c[0][0].operation for c in scheduler.submit.call_args_list]
+        assert 'delete_sources' in ops
+        assert not scanner.request_update.called
 
     def test_folder_dirty(self):
         acc = self._make_accumulator()
@@ -340,3 +280,14 @@ class TestEventAccumulator:
         acc.on_changed('a.png', now)
         changed, _, _ = acc.drain_all()
         assert 'a.png' in changed
+
+    def test_created_then_moved_triggers_update(self):
+        scheduler, scanner = self._run_and_flush([
+            ('created', 'a.tmp'),
+            ('changed', 'a.tmp'),
+            ('moved', ('a.tmp', 'a.png')),
+        ])
+        ops = [c[0][0].operation for c in scheduler.submit.call_args_list]
+        assert 'rename_paths' not in ops
+        paths = scanner.request_update.call_args[0][0]
+        assert any('a.png' in p for p in paths)

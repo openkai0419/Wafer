@@ -246,9 +246,17 @@ def delete_session(ctx, w, session: str = '', sid: str = ''):
     )
     if result != QtWidgets.QMessageBox.Yes:
         return
+    is_own = entry.session_id == w.session_id
     if store.delete_session(entry.session_id):
         Notifier.info(f'Session deleted: {entry.name}')
         AppLogger.info(f'Session deleted: {entry.session_id}')
+        if is_own:
+            w._session_deleted = True
+            w.close()
+        else:
+            node = getattr(w, '_node', None)
+            if node:
+                node.send('session.close', entry.session_id, dst='viewer')
 
 
 @require(w="MainWindow")

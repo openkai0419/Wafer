@@ -48,6 +48,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
                 self.session_id = self._session_store.create_session(name)
                 self._session_store.claim_session(self.session_id)
         self._session_entry: SessionEntry | None = self._session_store.get_session(self.session_id)
+        self._session_deleted = False
         AppLogger.info(f'New Window Running : {APP_NAME} (session={self.session_id})')
         if icon:
             self.setWindowIcon(icon)
@@ -199,8 +200,11 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             lambda msg: (
                 _invoke('raise_window') if msg.payload == self.session_id else None,
                 True,
-            )[-1]
-        ).subscribe('dev.log', lambda msg: self._handle_remote_log(msg) or True)
+            )[-1]        ).subscribe('session.close',
+            lambda msg: (
+                _invoke('close_by_session_delete') if msg.payload == self.session_id else None,
+                True,
+            )[-1]        ).subscribe('dev.log', lambda msg: self._handle_remote_log(msg) or True)
         self._node.start()
         AppLogger.set_node(self._node, role='viewer')
 
@@ -356,6 +360,11 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             self.showMinimized()
 
     @QtCore.Slot()
+    def close_by_session_delete(self):
+        self._session_deleted = True
+        self.close()
+
+    @QtCore.Slot()
     def raise_window(self):
         if self.isMinimized() or not self.isVisible():
             if self.isMinimized():
@@ -487,6 +496,8 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             self.restore_ui_state(entry.ui)
 
     def _save_session(self):
+        if self._session_deleted:
+            return
         prev = self._session_entry
         entry = SessionEntry(
             session_id=self.session_id,

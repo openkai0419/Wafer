@@ -186,6 +186,13 @@ class TestSessionStoreSession:
         tmp_store.delete_session('x')
         assert 'x' not in tmp_store.get_active_session_ids()
 
+    def test_delete_removes_from_restore(self, tmp_store):
+        tmp_store.save_session(SessionEntry(session_id='r1'))
+        tmp_store.save_session(SessionEntry(session_id='r2'))
+        tmp_store.set_restore_session_ids(['r1', 'r2'])
+        tmp_store.delete_session('r1')
+        assert tmp_store.get_restore_session_ids() == ['r2']
+
     def test_overwrite_session(self, tmp_store):
         entry = SessionEntry(session_id='s1', name='Old')
         tmp_store.save_session(entry)

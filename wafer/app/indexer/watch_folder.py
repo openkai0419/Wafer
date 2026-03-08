@@ -4,9 +4,13 @@ import threading
 import time
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
-from ...utils.profiling import profiler
 from ...utils.logs import AppLogger
+from ...utils.paths import normalize_path
+from ...utils.profiling import profiler
 from .progress_notifier import ProgressAggregator
+from .scanner import DirectoryScanner
+from .scheduler import TaskScheduler
+from .write_command import WriteCommand, WritePriority
 
 DISABLE_MODIFY_EVENT = False
 _BATCH_TIMEOUT = 0.5
@@ -25,12 +29,16 @@ def _extract_stable(pending):
     now = time.monotonic()
     stable = set()
     for p, (ts, prev_sig) in list(pending.items()):
-        if now - ts < _STABLE_THRESHOLD:
+        age = now - ts
+        if age < _STABLE_THRESHOLD:
+            AppLogger.debug(f'[stabilize] not yet ({age:.1f}s < {_STABLE_THRESHOLD}s): {p}')
             continue
         cur_sig = _stat_signature(p)
         if cur_sig is None:
+            AppLogger.debug(f'[stabilize] file gone (stat=None): {p}')
             stable.add(p)
         elif cur_sig != prev_sig:
+            AppLogger.debug(f'[stabilize] sig changed (prev={prev_sig}, cur={cur_sig}), resetting: {p}')
             pending[p] = (now, cur_sig)
         else:
             stable.add(p)
@@ -57,25 +65,33 @@ class _FileEventHandler(FileSystemEventHandler):
 
     def on_created(self, event):
         if event.is_directory:
+            AppLogger.debug(f'[watchdog] created dir: {event.src_path}')
             self._inbox.put(('folder', event.src_path))
         else:
+            AppLogger.debug(f'[watchdog] created file: {event.src_path}')
             self._inbox.put(('created', event.src_path))
 
     def on_modified(self, event):
         if DISABLE_MODIFY_EVENT or event.is_directory:
+            AppLogger.debug(f'[watchdog] modified skipped (disable={DISABLE_MODIFY_EVENT}, dir={event.is_directory}): {event.src_path}')
             return
+        AppLogger.debug(f'[watchdog] modified file: {event.src_path}')
         self._inbox.put(('changed', event.src_path))
 
     def on_deleted(self, event):
         if event.is_directory:
+            AppLogger.debug(f'[watchdog] deleted dir: {event.src_path}')
             self._inbox.put(('folder', event.src_path))
         else:
+            AppLogger.debug(f'[watchdog] deleted file: {event.src_path}')
             self._inbox.put(('deleted', event.src_path))
 
     def on_moved(self, event):
         if event.is_directory:
+            AppLogger.debug(f'[watchdog] moved dir: {event.src_path}')
             self._inbox.put(('folder', event.src_path))
             return
+        AppLogger.debug(f'[watchdog] moved file: {event.src_path} -> {event.dest_path}')
         self._inbox.put(('moved', (event.src_path, event.dest_path)))
 
 
@@ -85,25 +101,32 @@ class _EventAccumulator:
         self._pending = {}
         self._notified = set()
         self._ready = set()
+        self._new = set()
         self._deleted = set()
         self._moved = {}
         self._folder_dirty = False
 
     def on_created(self, path):
+        AppLogger.debug(f'[acc] created: {path}')
         self._pending.pop(path, None)
         self._notified.discard(path)
         self._ready.add(path)
+        self._new.add(path)
 
     def on_changed(self, path, now):
         if path in self._ready:
+            AppLogger.debug(f'[acc] changed skip (already ready): {path}')
             return
         if path not in self._notified and path not in self._pending:
+            AppLogger.debug(f'[acc] changed -> ready (first notify): {path}')
             self._ready.add(path)
             self._notified.add(path)
         else:
+            AppLogger.debug(f'[acc] changed -> pending (notified={path in self._notified}, pending={path in self._pending}): {path}')
             self._pending[path] = (now, _stat_signature(path))
 
     def on_deleted(self, path):
+        AppLogger.debug(f'[acc] deleted: {path}')
         self._pending.pop(path, None)
         self._notified.discard(path)
         self._ready.discard(path)
@@ -112,10 +135,19 @@ class _EventAccumulator:
     def on_moved(self, src, dst):
         self._pending.pop(src, None)
         self._notified.discard(src)
+        was_new = src in self._new
         self._ready.discard(src)
-        self._moved[src] = dst
+        self._new.discard(src)
+        if was_new:
+            AppLogger.debug(f'[acc] moved -> ready dst (src was new): {src} -> {dst}')
+            self._ready.add(dst)
+            self._new.add(dst)
+        else:
+            AppLogger.debug(f'[acc] moved -> rename: {src} -> {dst}')
+            self._moved[src] = dst
 
     def on_folder(self):
+        AppLogger.debug('[acc] folder dirty')
         self._folder_dirty = True
 
     def consume_folder_dirty(self):
@@ -128,13 +160,17 @@ class _EventAccumulator:
         stable = _extract_stable(self._pending)
         stable.update(self._ready)
         self._ready.clear()
+        self._new.clear()
         deleted = set(self._deleted)
         moved = dict(self._moved)
         self._deleted.clear()
         self._moved.clear()
+        if stable or deleted or moved:
+            AppLogger.debug(f'[acc] drain: stable={len(stable)}, deleted={len(deleted)}, moved={len(moved)}, still_pending={len(self._pending)}')
         return stable, deleted, moved
 
     def drain_all(self):
+        AppLogger.debug(f'[acc] drain_all: ready={len(self._ready)}, pending={len(self._pending)}')
         self._ready.update(self._pending)
         self._pending.clear()
         self._notified.clear()
@@ -143,11 +179,15 @@ class _EventAccumulator:
 
 class FolderWatcher:
 
-    def __init__(self, database, progress: ProgressAggregator):
+    def __init__(
+        self,
+        scheduler: TaskScheduler,
+        scanner: DirectoryScanner,
+        progress: ProgressAggregator,
+    ):
+        self._scheduler = scheduler
+        self._scanner = scanner
         self._progress = progress
-        self._db = database
-        self._db.set_progress_callback(self._progress.increment)
-        self._db.set_update_callback(lambda: self._progress.send_event('update'))
         self._q = queue.Queue()
         self._emitter = _FileEventHandler(self._q)
         self._observer = None
@@ -173,7 +213,7 @@ class FolderWatcher:
             self._q.put(('rescan', self._folders))
 
     def set_ignore_paths(self, paths):
-        self._q.put(('ignore', paths))
+        self._scanner.set_exclude_paths(paths)
 
     def request_cleanup(self):
         self._q.put(('cleanup', None))
@@ -213,7 +253,7 @@ class FolderWatcher:
                     acc.on_moved(*data)
                 elif kind == 'folder':
                     acc.on_folder()
-                elif kind in ('rescan', 'ignore', 'cleanup'):
+                elif kind in ('rescan', 'cleanup'):
                     self._flush(*acc.drain_all())
                     self._exec(kind, data)
                 elif kind == '__stop__':
@@ -222,6 +262,9 @@ class FolderWatcher:
                 self._progress.send_event('folderchanged')
 
     def _flush(self, changed, deleted, moved):
+        if not changed and not deleted and not moved:
+            return
+        AppLogger.debug(f'[flush] changed={len(changed)}, deleted={len(deleted)}, moved={len(moved)}')
         if moved:
             new_at_dst = {dst for src, dst in moved.items() if src in changed}
             changed -= set(moved.keys())
@@ -234,27 +277,52 @@ class FolderWatcher:
 
     @profiler.profile
     def _exec(self, cmd, data=None):
-        try:
-            with self._db as indexer:
-                if cmd == 'rename':
-                    AppLogger.info(f'db rename: {len(data)} files')
-                    indexer.rename_by_pairs(data)
-                elif cmd == 'update':
-                    AppLogger.info(f'db update: {len(data)} files')
-                    indexer.update_by_file_list(data)
-                elif cmd == 'remove':
-                    AppLogger.info(f'db remove: {len(data)} files')
-                    indexer.remove_by_file_list(data)
-                elif cmd == 'rescan':
-                    AppLogger.info(f'db rescan: {len(data)} folders')
-                    indexer.update_index(data)
-                elif cmd == 'cleanup':
-                    AppLogger.info('db cleanup')
-                    self._progress.increment(0, 1)
-                    indexer.purge_orphan_records()
-                    self._progress.increment(1, 0)
-                elif cmd == 'ignore':
-                    AppLogger.info(f'db ignore: {len(data)} paths')
-                    indexer.set_exclude_paths(data, run=True)
-        except Exception as e:
-            AppLogger.warning(f'db exec {cmd} failed', exc=e)
+        if cmd == 'rename':
+            AppLogger.info(f'watcher rename: {len(data)} files')
+            pairs = [
+                (normalize_path(old), normalize_path(new))
+                for old, new in data
+                if normalize_path(old) != normalize_path(new)
+            ]
+            if pairs:
+                self._progress.increment(0, len(pairs))
+                self._scheduler.submit(WriteCommand.create(
+                    'rename_paths',
+                    priority=WritePriority.REALTIME,
+                    data={'pairs': pairs},
+                    on_complete=lambda n=len(pairs): (
+                        self._progress.increment(n, 0),
+                        self._progress.send_event('update'),
+                    ),
+                ))
+        elif cmd == 'update':
+            AppLogger.info(f'watcher update: {len(data)} files')
+            self._scanner.request_update(data)
+        elif cmd == 'remove':
+            AppLogger.info(f'watcher remove: {len(data)} files')
+            paths = [normalize_path(p) for p in data if not os.path.exists(p)]
+            if paths:
+                self._progress.increment(0, len(paths))
+                self._scheduler.submit(WriteCommand.create(
+                    'delete_sources',
+                    priority=WritePriority.REALTIME,
+                    data={'paths': paths},
+                    on_complete=lambda n=len(paths): (
+                        self._progress.increment(n, 0),
+                        self._progress.send_event('update'),
+                    ),
+                ))
+        elif cmd == 'rescan':
+            AppLogger.info(f'watcher rescan: {len(data)} folders')
+            self._scanner.request_scan(data)
+        elif cmd == 'cleanup':
+            AppLogger.info('watcher cleanup')
+            self._progress.increment(0, 1)
+            self._scheduler.submit(WriteCommand.create(
+                'purge_orphans',
+                priority=WritePriority.MAINTENANCE,
+                on_complete=lambda: (
+                    self._progress.increment(1, 0),
+                    self._progress.send_event('update'),
+                ),
+            ))

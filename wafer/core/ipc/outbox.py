@@ -1,6 +1,7 @@
 from __future__ import annotations
 import os
 import sqlite3
+import threading
 import time
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -61,6 +62,7 @@ class OutboxStore:
 
     def __init__(self, node_id: str):
         self._path = os.path.join(_OUTBOX_DIR, f'{node_id}.db')
+        self._lock = threading.Lock()
         self._conn = self._open(self._path)
 
     @staticmethod
@@ -73,27 +75,31 @@ class OutboxStore:
 
     def push(self, topic: str, payload: Any, dst: str, db: str = '') -> int:
         blob = msgpack.packb(payload, use_bin_type=True)
-        cur = self._conn.execute(
-            'INSERT INTO outbox (topic, payload, dst, db, created_at) VALUES (?, ?, ?, ?, ?)',
-            (topic, blob, dst, db, time.time()),
-        )
-        self._conn.commit()
-        return cur.lastrowid
+        with self._lock:
+            cur = self._conn.execute(
+                'INSERT INTO outbox (topic, payload, dst, db, created_at) VALUES (?, ?, ?, ?, ?)',
+                (topic, blob, dst, db, time.time()),
+            )
+            self._conn.commit()
+            return cur.lastrowid
 
     def remove(self, record_id: int):
-        self._conn.execute('DELETE FROM outbox WHERE id = ?', (record_id,))
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute('DELETE FROM outbox WHERE id = ?', (record_id,))
+            self._conn.commit()
 
     def remove_batch(self, record_ids: list[int]):
         if not record_ids:
             return
-        self._conn.executemany('DELETE FROM outbox WHERE id = ?', [(rid,) for rid in record_ids])
-        self._conn.commit()
+        with self._lock:
+            self._conn.executemany('DELETE FROM outbox WHERE id = ?', [(rid,) for rid in record_ids])
+            self._conn.commit()
 
     def pending(self) -> list[OutboxRecord]:
-        rows = self._conn.execute(
-            'SELECT id, topic, payload, dst, db, created_at FROM outbox ORDER BY id',
-        ).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                'SELECT id, topic, payload, dst, db, created_at FROM outbox ORDER BY id',
+            ).fetchall()
         return [
             OutboxRecord(
                 id=r[0], topic=r[1], payload=msgpack.unpackb(r[2], raw=False),
@@ -104,8 +110,9 @@ class OutboxStore:
 
     def cleanup(self, max_age_days: int = 30):
         cutoff = time.time() - max_age_days * 86400
-        self._conn.execute('DELETE FROM outbox WHERE created_at < ?', (cutoff,))
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute('DELETE FROM outbox WHERE created_at < ?', (cutoff,))
+            self._conn.commit()
 
     def close(self):
         try:

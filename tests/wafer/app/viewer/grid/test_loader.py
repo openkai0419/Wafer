@@ -20,8 +20,15 @@ def _make_grid_view(cached_images=None):
     cache = {}
     if cached_images:
         cache.update(cached_images)
+
+    def _peek_if_sufficient(key, size, default=None):
+        img = cache.get(key)
+        if img is not None and img.width() >= size.width() and img.height() >= size.height():
+            return img
+        return default
+
     grid_view.image_cache = MagicMock()
-    grid_view.image_cache.peek = MagicMock(side_effect=lambda k, d=None: cache.get(k, d))
+    grid_view.image_cache.peek_if_sufficient = MagicMock(side_effect=_peek_if_sufficient)
     grid_view.image_cache.__setitem__ = MagicMock(side_effect=cache.__setitem__)
     grid_view.error_placeholder = _make_image(50, 50)
     return grid_view, cache

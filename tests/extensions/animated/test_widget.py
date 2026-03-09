@@ -68,6 +68,29 @@ class TestFrameCache:
         result = cache.get('a.gif')
         assert result == (frames2, [50, 50])
 
+    def test_get_if_sufficient_returns_entry_when_large_enough(self):
+        from extensions.animated.widget import FrameCache
+        cache = FrameCache()
+        pm = QtGui.QPixmap(200, 100)
+        cache.put('a.gif', [pm], [100])
+        result = cache.get_if_sufficient('a.gif', QtCore.QSize(200, 100))
+        assert result is not None
+        assert result[0][0].width() == 200
+
+    def test_get_if_sufficient_evicts_undersized_entry(self):
+        from extensions.animated.widget import FrameCache
+        cache = FrameCache()
+        pm = QtGui.QPixmap(50, 50)
+        cache.put('a.gif', [pm], [100])
+        result = cache.get_if_sufficient('a.gif', QtCore.QSize(200, 200))
+        assert result is None
+        assert cache.get('a.gif') is None
+
+    def test_get_if_sufficient_returns_none_for_missing(self):
+        from extensions.animated.widget import FrameCache
+        cache = FrameCache()
+        assert cache.get_if_sufficient('missing.gif', QtCore.QSize(10, 10)) is None
+
 
 class TestDecodeRunner:
 

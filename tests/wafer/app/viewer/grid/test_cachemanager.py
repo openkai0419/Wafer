@@ -130,6 +130,74 @@ def test_current_bytes_tracking(cache):
     assert cache.current_bytes == 5 * 5 * 4
 
 
+def test_get_if_sufficient_returns_image_when_large_enough(cache):
+    from PySide6 import QtCore
+    cache["k"] = _make_image(200, 100)
+    result = cache.get_if_sufficient("k", QtCore.QSize(200, 100))
+    assert result is not None
+    assert result.width() == 200
+
+
+def test_get_if_sufficient_returns_default_when_too_small(cache):
+    from PySide6 import QtCore
+    cache["k"] = _make_image(50, 50)
+    assert cache.get_if_sufficient("k", QtCore.QSize(100, 100)) is None
+    assert cache.get_if_sufficient("k", QtCore.QSize(100, 100), 42) == 42
+
+
+def test_get_if_sufficient_returns_default_for_missing(cache):
+    from PySide6 import QtCore
+    assert cache.get_if_sufficient("missing", QtCore.QSize(10, 10)) is None
+
+
+def test_get_if_sufficient_updates_lru(cache):
+    from PySide6 import QtCore
+    size_per = 100 * 100 * 4
+    max_count = cache.max_bytes // size_per
+
+    for i in range(max_count):
+        cache[f"img_{i}"] = _make_image(100, 100)
+
+    cache.get_if_sufficient("img_0", QtCore.QSize(50, 50))
+
+    for i in range(max_count, max_count + 2):
+        cache[f"img_{i}"] = _make_image(100, 100)
+
+    assert "img_0" in cache
+    assert "img_1" not in cache
+
+
+def test_peek_if_sufficient_returns_image_when_large_enough(cache):
+    from PySide6 import QtCore
+    cache["k"] = _make_image(200, 100)
+    result = cache.peek_if_sufficient("k", QtCore.QSize(200, 100))
+    assert result is not None
+    assert result.width() == 200
+
+
+def test_peek_if_sufficient_returns_default_when_too_small(cache):
+    from PySide6 import QtCore
+    cache["k"] = _make_image(50, 50)
+    assert cache.peek_if_sufficient("k", QtCore.QSize(100, 100)) is None
+    assert cache.peek_if_sufficient("k", QtCore.QSize(100, 100), 42) == 42
+
+
+def test_peek_if_sufficient_does_not_update_lru(cache):
+    from PySide6 import QtCore
+    size_per = 100 * 100 * 4
+    max_count = cache.max_bytes // size_per
+
+    for i in range(max_count):
+        cache[f"img_{i}"] = _make_image(100, 100)
+
+    cache.peek_if_sufficient("img_0", QtCore.QSize(50, 50))
+
+    for i in range(max_count, max_count + 2):
+        cache[f"img_{i}"] = _make_image(100, 100)
+
+    assert "img_0" not in cache
+
+
 class _DummyWidget(QtWidgets.QWidget):
     pass
 

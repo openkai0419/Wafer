@@ -17,6 +17,21 @@ class FrameCache:
             self._order.append(path)
         return entry
 
+    def get_if_sufficient(self, path: str, size: QtCore.QSize) -> tuple[list[QtGui.QPixmap], list[int]] | None:
+        entry = self._cache.get(path)
+        if entry is None:
+            return None
+        frames, delays = entry
+        if frames:
+            first = frames[0]
+            if first.width() < size.width() or first.height() < size.height():
+                del self._cache[path]
+                self._order.remove(path)
+                return None
+        self._order.remove(path)
+        self._order.append(path)
+        return entry
+
     def put(self, path: str, frames: list[QtGui.QPixmap], delays: list[int]):
         if path in self._cache:
             self._order.remove(path)
@@ -155,7 +170,10 @@ class AnimatedCellWidget(QtWidgets.QWidget):
         self._frame_index = 0
         self._accumulated = 0
         self._cancel_runners()
-        cached = _frame_cache.get(path)
+        if size is not None:
+            cached = _frame_cache.get_if_sufficient(path, size)
+        else:
+            cached = _frame_cache.get(path)
         if cached is not None:
             self._frames, self._delays = cached
             self._thumbnail = self._frames[0] if self._frames else None

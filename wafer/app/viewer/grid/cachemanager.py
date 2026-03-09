@@ -239,6 +239,21 @@ class MemoryLimitedImageCache:
                 return self.cache[key]
             return default
 
+    def get_if_sufficient(self, key, size, default=None):
+        with self._lock:
+            image = self.cache.get(key)
+            if image is not None and image.width() >= size.width() and image.height() >= size.height():
+                self.cache.move_to_end(key)
+                return image
+            return default
+
     def peek(self, key, default=None):
         with self._lock:
             return self.cache.get(key, default)
+
+    def peek_if_sufficient(self, key, size, default=None):
+        with self._lock:
+            image = self.cache.get(key)
+            if image is not None and image.width() >= size.width() and image.height() >= size.height():
+                return image
+            return default

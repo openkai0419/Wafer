@@ -13,12 +13,12 @@ class ImageLoaderSignal(QtCore.QObject):
 class ImageLoaderRunnable(QtCore.QRunnable):
 
     @profiler.profile
-    def __init__(self, index, path, size, grid_view):
+    def __init__(self, index, path, cell_size, grid_view):
         super().__init__()
         self.index = index
         self.path = path
-        self.margin = dpix(3)
-        self.size = size - QtCore.QSize(self.margin * 2, self.margin * 2)
+        margin = dpix(3)
+        self.size = cell_size - QtCore.QSize(margin * 2, margin * 2)
         self.grid_view = grid_view
         self._cancelled = False
         self.signal = ImageLoaderSignal()
@@ -38,10 +38,11 @@ class ImageLoaderRunnable(QtCore.QRunnable):
         if self._cancelled:
             return
 
-        cached = self.grid_view.image_cache.peek(fullsize_key(self.path))
+        cache = self.grid_view.image_cache
+        cached = cache.peek_if_sufficient(fullsize_key(self.path), self.size)
         if cached is None:
-            cached = self.grid_view.image_cache.peek(self.path)
-        if cached is not None and cached.width() >= self.size.width() and cached.height() >= self.size.height():
+            cached = cache.peek_if_sufficient(self.path, self.size)
+        if cached is not None:
             if not self._cancelled:
                 self.signal.image_ready.emit(self.index, cached)
             return

@@ -552,6 +552,10 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         margin = dpix(3) * 2
         return pixmap.width() < (cell_size.width() - margin) or pixmap.height() < (cell_size.height() - margin)
 
+    def _content_size(self, cell_size):
+        margin = dpix(3) * 2
+        return QtCore.QSize(int(cell_size.width()) - margin, int(cell_size.height()) - margin)
+
     def _request_reload(self, i, rect):
         if i in self._additional_widgets:
             return

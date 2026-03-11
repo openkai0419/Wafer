@@ -6,7 +6,7 @@ from ...utils.profiling import profiler
 from ...utils.logs import AppLogger
 from ...core.db.query import FileSearchEngine, SearchQuery
 from ...core.qt.rate_limit import qt_debounce
-from ...core.qt.thread import thread_pool, CancellableRunnable
+from ...core.qt.thread import utility_pool, CancellableRunnable
 
 
 SORT_CHOICES = ["path", "name", "created", "modified", "collected", "size", "random"]
@@ -138,7 +138,7 @@ class SearchService(QtCore.QObject):
         worker.signals.finished.connect(self._on_worker_finished)
         self._current_worker = worker
         self._query_start_time = datetime.now()
-        thread_pool.submit(worker, 7)
+        utility_pool.submit(worker, 7)
 
     @QtCore.Slot(object)
     @profiler.profile

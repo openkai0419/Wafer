@@ -125,29 +125,23 @@ class LayoutData:
         return best
 
 
-class CalculatorSignals(QtCore.QObject):
-    layout_ready = QtCore.Signal(object)
-
-
-class _BaseLayoutCalculator(QtCore.QRunnable):
+class _BaseLayoutCalculator:
 
     def __init__(self, aspect_ratios, base_size, spacing, container_width, container_height, orientation=0):
-        super().__init__()
-        self.signals = CalculatorSignals()
         self.aspect_ratios = aspect_ratios
         self.spacing = spacing
         self.base_size = base_size
         self.container_width = container_width
         self.container_height = container_height
         self._cancelled = False
+        self._result = None
         self.orientation = orientation
 
     def cancel(self):
         self._cancelled = True
 
     def _emit(self, rects, total_extent, hz):
-        layout = LayoutData(rects, total_extent, hz)
-        self.signals.layout_ready.emit(layout)
+        self._result = LayoutData(rects, total_extent, hz)
 
 
 class JustifiedLayoutCalculator(_BaseLayoutCalculator):

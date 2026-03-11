@@ -54,6 +54,16 @@ class GridResolver:
     def resolve_chain(self, path: str) -> list[type[BaseGridPlugin]]:
         return self.registry.resolve_chain(path)
 
+    def resolve_instance(self, path: str) -> BaseGridPlugin | None:
+        return self.registry.resolve_instance(path)
+
+    def resolve_image_instance(self, path: str) -> ImageGridPlugin | None:
+        for cls in self.registry.resolve_chain(path):
+            inst = self.registry.instance(cls.NAME)
+            if isinstance(inst, ImageGridPlugin):
+                return inst
+        return None
+
     def is_widget_plugin(self, path: str) -> bool:
         return isinstance(self.registry.resolve_instance(path), WidgetGridPlugin)
 
@@ -90,10 +100,7 @@ class WidgetNotifier:
             getattr(instance, method)(widget)
 
     @profiler.profile
-    def bind(self, index: int, plugin_name: str, widget, path: str, size=None):
-        instance = self._registry.instance(plugin_name)
-        if isinstance(instance, WidgetGridPlugin):
-            instance.render(widget, path, size)
+    def bind(self, index: int, plugin_name: str):
         self._names[index] = plugin_name
 
     def require_thumbnail(self, plugin_name: str) -> bool:

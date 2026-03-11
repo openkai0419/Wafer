@@ -266,7 +266,7 @@ class TestNeedsReload:
         assert self._call(item, 600, 600) is False
 
 
-class TestEnsureWidgetVisible:
+class TestSetupCell:
     @pytest.fixture(autouse=True)
     def _import(self, qtbot):
         from wafer.app.viewer.grid.grid_view import GridView
@@ -277,92 +277,63 @@ class TestEnsureWidgetVisible:
         fake.items.paths = paths
         fake.widgets = {}
         fake._additional_widgets = {}
-        fake.active_loaders = {}
+        fake._pipeline = MagicMock()
         fake._needs_reload = lambda item, size: self.GridView._needs_reload(fake, item, size)
-        fake._request_reload = lambda i, rect: self.GridView._request_reload(fake, i, rect)
+        fake._content_size = lambda cell_size: self.GridView._content_size(fake, cell_size)
         return fake
 
     @patch('wafer.app.viewer.grid.grid_view.grid_resolver')
-    @patch('wafer.app.viewer.grid.grid_view.thread_pool')
-    @patch('wafer.app.viewer.grid.grid_view.ImageLoaderRunnable')
-    def test_small_cached_triggers_loader(self, MockLoader, mock_thread, mock_resolver):
-        mock_resolver.resolve.return_value = None
+    def test_small_cached_triggers_pipeline(self, mock_resolver):
+        mock_resolver.resolve_chain.return_value = []
         fake = self._make_fake(['img.jpg'])
         fake.rects = {0: QtCore.QRectF(0, 0, 600, 600)}
         fake.image_cache.get.return_value = _make_image(100, 100)
         fake.pixmap_item_pool.acquire.return_value = MockItem()
 
-        self.GridView._ensure_widget_visible(fake, 0)
+        self.GridView._setup_cell(fake, 0)
 
-        MockLoader.assert_called_once()
-        mock_thread.submit.assert_called_once()
+        fake._pipeline.schedule_render.assert_called_once()
 
     @patch('wafer.app.viewer.grid.grid_view.grid_resolver')
-    @patch('wafer.app.viewer.grid.grid_view.thread_pool')
-    @patch('wafer.app.viewer.grid.grid_view.ImageLoaderRunnable')
-    def test_sufficient_cached_no_loader(self, MockLoader, mock_thread, mock_resolver):
-        mock_resolver.resolve.return_value = None
+    def test_sufficient_cached_always_schedules_pipeline(self, mock_resolver):
         fake = self._make_fake(['img.jpg'])
         fake.rects = {0: QtCore.QRectF(0, 0, 200, 200)}
         fake.image_cache.get.return_value = _make_image(200, 200)
         fake.pixmap_item_pool.acquire.return_value = MockItem()
 
-        self.GridView._ensure_widget_visible(fake, 0)
+        self.GridView._setup_cell(fake, 0)
 
-        MockLoader.assert_not_called()
-        mock_thread.submit.assert_not_called()
+        fake._pipeline.schedule_render.assert_called_once()
 
     @patch('wafer.app.viewer.grid.grid_view.grid_resolver')
-    @patch('wafer.app.viewer.grid.grid_view.thread_pool')
-    @patch('wafer.app.viewer.grid.grid_view.ImageLoaderRunnable')
-    def test_no_cache_starts_loader(self, MockLoader, mock_thread, mock_resolver):
-        mock_resolver.resolve.return_value = None
+    def test_no_cache_starts_pipeline(self, mock_resolver):
+        mock_resolver.resolve_chain.return_value = []
         fake = self._make_fake(['img.jpg'])
         fake.rects = {0: QtCore.QRectF(0, 0, 200, 200)}
         fake.image_cache.get.return_value = None
         fake.pixmap_item_pool.acquire.return_value = MockItem()
 
-        self.GridView._ensure_widget_visible(fake, 0)
+        self.GridView._setup_cell(fake, 0)
 
-        MockLoader.assert_called_once()
-        mock_thread.submit.assert_called_once()
-
-    @patch('wafer.app.viewer.grid.grid_view.grid_resolver')
-    @patch('wafer.app.viewer.grid.grid_view.thread_pool')
-    @patch('wafer.app.viewer.grid.grid_view.ImageLoaderRunnable')
-    def test_active_thread_prevents_duplicate(self, MockLoader, mock_thread, mock_resolver):
-        mock_resolver.resolve.return_value = None
-        fake = self._make_fake(['img.jpg'])
-        fake.rects = {0: QtCore.QRectF(0, 0, 200, 200)}
-        fake.image_cache.get.return_value = None
-        fake.active_loaders = {0: MagicMock()}
-        fake.pixmap_item_pool.acquire.return_value = MockItem()
-
-        self.GridView._ensure_widget_visible(fake, 0)
-
-        MockLoader.assert_not_called()
+        fake._pipeline.schedule_render.assert_called_once()
 
     @patch('wafer.app.viewer.grid.grid_view.grid_resolver')
-    @patch('wafer.app.viewer.grid.grid_view.thread_pool')
-    @patch('wafer.app.viewer.grid.grid_view.ImageLoaderRunnable')
-    def test_small_cached_sets_image_before_loader(self, MockLoader, mock_thread, mock_resolver):
-        mock_resolver.resolve.return_value = None
+    def test_small_cached_sets_image_before_pipeline(self, mock_resolver):
+        mock_resolver.resolve_chain.return_value = []
         fake = self._make_fake(['img.jpg'])
         fake.rects = {0: QtCore.QRectF(0, 0, 600, 600)}
         fake.image_cache.get.return_value = _make_image(100, 100)
         mock_item = MockItem()
         fake.pixmap_item_pool.acquire.return_value = mock_item
 
-        self.GridView._ensure_widget_visible(fake, 0)
+        self.GridView._setup_cell(fake, 0)
 
         assert mock_item.current_path == 'img.jpg'
-        MockLoader.assert_called_once()
+        fake._pipeline.schedule_render.assert_called_once()
 
     @patch('wafer.app.viewer.grid.grid_view.grid_resolver')
-    @patch('wafer.app.viewer.grid.grid_view.thread_pool')
-    @patch('wafer.app.viewer.grid.grid_view.ImageLoaderRunnable')
-    def test_existing_widget_not_recreated(self, MockLoader, mock_thread, mock_resolver):
-        mock_resolver.resolve.return_value = None
+    def test_existing_widget_not_recreated(self, mock_resolver):
+        mock_resolver.resolve_chain.return_value = []
         fake = self._make_fake(['img.jpg'])
         rect = QtCore.QRectF(0, 0, 200, 200)
         fake.rects = {0: rect}
@@ -370,126 +341,67 @@ class TestEnsureWidgetVisible:
         existing.geometry.return_value = rect
         fake.widgets = {0: existing}
 
-        self.GridView._ensure_widget_visible(fake, 0)
+        self.GridView._setup_cell(fake, 0)
 
         fake.pixmap_item_pool.acquire.assert_not_called()
-        MockLoader.assert_not_called()
+        fake._pipeline.schedule_render.assert_not_called()
 
-
-class TestOnImageReady:
-    @pytest.fixture(autouse=True)
-    def _import(self, qtbot):
-        from wafer.app.viewer.grid.grid_view import GridView
-        self.GridView = GridView
-
-    def _make_fake(self, paths, widgets=None, threads=None):
-        fake = MagicMock()
-        fake.items.paths = paths
-        fake.widgets = widgets or {}
-        fake.active_loaders = threads or {}
-        fake.image_cache = {}
-        return fake
-
-    def test_stale_path_rejected(self):
-        fake = self._make_fake(
-            ['new.jpg'],
-            widgets={0: MagicMock()},
-            threads={0: MagicMock(path='old.jpg')},
-        )
-        self.GridView._on_image_ready(fake, 0, _make_image(200, 200))
-
-        fake.widgets[0].set_image.assert_not_called()
-
-    def test_matching_path_updates_widget_and_cache(self):
-        widget = MagicMock()
-        fake = self._make_fake(
-            ['img.jpg'],
-            widgets={0: widget},
-            threads={0: MagicMock(path='img.jpg')},
-        )
-        image = _make_image(200, 200)
-
-        self.GridView._on_image_ready(fake, 0, image)
-
-        widget.set_image.assert_called_once_with(image, 'img.jpg')
-        assert fake.image_cache['img.jpg'] is image
-
-    def test_out_of_range_index_ignored(self):
+    @patch('wafer.app.viewer.grid.grid_view.grid_resolver')
+    def test_content_size_passed_to_pipeline(self, mock_resolver):
+        mock_resolver.resolve_chain.return_value = []
         fake = self._make_fake(['img.jpg'])
-        self.GridView._on_image_ready(fake, 5, _make_image(200, 200))
+        fake.rects = {0: QtCore.QRectF(0, 0, 200, 200)}
+        fake.image_cache.get.return_value = None
+        fake.pixmap_item_pool.acquire.return_value = MockItem()
 
-    def test_no_runnable_still_updates(self):
-        widget = MagicMock()
-        fake = self._make_fake(
-            ['img.jpg'],
-            widgets={0: widget},
-        )
-        image = _make_image(200, 200)
+        self.GridView._setup_cell(fake, 0)
 
-        self.GridView._on_image_ready(fake, 0, image)
-
-        widget.set_image.assert_called_once_with(image, 'img.jpg')
-        assert fake.image_cache['img.jpg'] is image
-
-    def test_widget_removed_during_load(self):
-        fake = self._make_fake(
-            ['img.jpg'],
-            widgets={},
-            threads={0: MagicMock(path='img.jpg')},
-        )
-        self.GridView._on_image_ready(fake, 0, _make_image(200, 200))
-
-        assert 'img.jpg' not in fake.image_cache
+        call_args = fake._pipeline.schedule_render.call_args
+        size = call_args[0][2]
+        expected = self.GridView._content_size(fake, fake.rects[0].size())
+        assert size == expected
 
 
-class TestCachePathKeyIntegration:
+class TestSetupCellResize:
     @pytest.fixture(autouse=True)
     def _import(self, qtbot):
         from wafer.app.viewer.grid.grid_view import GridView
         self.GridView = GridView
 
     @patch('wafer.app.viewer.grid.grid_view.grid_resolver')
-    @patch('wafer.app.viewer.grid.grid_view.thread_pool')
-    @patch('wafer.app.viewer.grid.grid_view.ImageLoaderRunnable')
-    def test_resize_then_scroll_triggers_reload(self, MockLoader, mock_thread, mock_resolver):
-        mock_resolver.resolve.return_value = None
+    def test_resize_then_scroll_triggers_pipeline(self, mock_resolver):
+        mock_resolver.resolve_chain.return_value = []
         fake = MagicMock()
         fake.items.paths = ['a.jpg']
         fake.widgets = {}
         fake._additional_widgets = {}
-        fake.active_loaders = {}
+        fake._pipeline = MagicMock()
         fake._needs_reload = lambda item, size: self.GridView._needs_reload(fake, item, size)
-        fake._request_reload = lambda i, rect: self.GridView._request_reload(fake, i, rect)
+        fake._content_size = lambda cell_size: self.GridView._content_size(fake, cell_size)
 
         small_rect = QtCore.QRectF(0, 0, 200, 200)
         fake.rects = {0: small_rect}
         fake.image_cache.get.return_value = None
         fake.pixmap_item_pool.acquire.return_value = MockItem()
 
-        self.GridView._ensure_widget_visible(fake, 0)
-        assert MockLoader.call_count == 1
+        self.GridView._setup_cell(fake, 0)
+        assert fake._pipeline.schedule_render.call_count == 1
 
-        mock_item = fake.widgets[0]
-        mock_item.set_image(_make_image(200 - LOADER_MARGIN, 200 - LOADER_MARGIN), 'a.jpg')
-
-        MockLoader.reset_mock()
-        mock_thread.reset_mock()
+        fake._pipeline.schedule_render.reset_mock()
 
         big_rect = QtCore.QRectF(0, 0, 600, 600)
         fake.rects = {0: big_rect}
         fake.widgets = {}
-        fake.active_loaders = {}
         small_cached = _make_image(200 - LOADER_MARGIN, 200 - LOADER_MARGIN)
         fake.image_cache.get.return_value = small_cached
         fake.pixmap_item_pool.acquire.return_value = MockItem()
 
-        self.GridView._ensure_widget_visible(fake, 0)
+        self.GridView._setup_cell(fake, 0)
 
-        MockLoader.assert_called_once()
-        assert MockLoader.call_args[0][2] == big_rect.size()
+        fake._pipeline.schedule_render.assert_called_once()
 
 
-class TestEnsureAdditionalWidget:
+class TestSetupCellAdditionalWidget:
     @pytest.fixture(autouse=True)
     def _import(self, qtbot):
         from wafer.app.viewer.grid.grid_view import GridView
@@ -500,41 +412,29 @@ class TestEnsureAdditionalWidget:
         fake.items.paths = paths
         fake.widgets = {}
         fake._additional_widgets = {}
-        fake.active_loaders = {}
+        fake._pipeline = MagicMock()
         fake._needs_reload = lambda item, size: self.GridView._needs_reload(fake, item, size)
+        fake._content_size = lambda cell_size: self.GridView._content_size(fake, cell_size)
         return fake
 
     @patch('wafer.app.viewer.grid.grid_view.grid_resolver')
-    @patch('wafer.app.viewer.grid.grid_view.thread_pool')
-    @patch('wafer.app.viewer.grid.grid_view.ImageLoaderRunnable')
-    def test_widget_class_plugin_creates_additional_widget(self, MockLoader, mock_thread, mock_resolver):
-        from wafer.plugin.grid.base import WidgetGridPlugin
-
-        class _StubWidgetPlugin(WidgetGridPlugin):
-            NAME = 'test_vid'
-            EXTENSIONS = ('.mp4',)
-            WIDGET_CLASS = MagicMock
-
-        mock_resolver.resolve_chain.return_value = [_StubWidgetPlugin]
+    def test_widget_class_plugin_creates_pixmap_item_and_defers(self, mock_resolver):
         fake = self._make_fake(['test.mp4'])
         fake.rects = {0: QtCore.QRectF(0, 0, 200, 200)}
-        mock_widget = MagicMock()
-        fake.additional_pool.acquire.return_value = mock_widget
-        fake._notifier.bind.return_value = True
+        fake.image_cache.get.return_value = None
+        mock_item = MockItem()
+        fake.pixmap_item_pool.acquire.return_value = mock_item
 
-        self.GridView._ensure_widget_visible(fake, 0)
+        self.GridView._setup_cell(fake, 0)
 
-        fake.additional_pool.acquire.assert_called_once()
-        assert 0 in fake._additional_widgets
-        fake._notifier.bind.assert_called_once_with(
-            0, 'test_vid', mock_widget, 'test.mp4', fake.rects[0].size())
-        MockLoader.assert_not_called()
-        fake.pixmap_item_pool.acquire.assert_not_called()
+        fake.pixmap_item_pool.acquire.assert_called_once()
+        assert 0 in fake.widgets
+        assert 0 not in fake._additional_widgets
+        fake._pipeline.schedule_render.assert_called_once()
+        fake.additional_pool.acquire.assert_not_called()
 
     @patch('wafer.app.viewer.grid.grid_view.grid_resolver')
-    @patch('wafer.app.viewer.grid.grid_view.thread_pool')
-    @patch('wafer.app.viewer.grid.grid_view.ImageLoaderRunnable')
-    def test_existing_additional_widget_not_recreated(self, MockLoader, mock_thread, mock_resolver):
+    def test_existing_additional_widget_not_recreated(self, mock_resolver):
         from wafer.plugin.grid.base import WidgetGridPlugin
 
         class _StubWidgetPlugin(WidgetGridPlugin):
@@ -547,10 +447,10 @@ class TestEnsureAdditionalWidget:
         fake.rects = {0: QtCore.QRectF(0, 0, 200, 200)}
         fake._additional_widgets = {0: MagicMock()}
 
-        self.GridView._ensure_widget_visible(fake, 0)
+        self.GridView._setup_cell(fake, 0)
 
         fake.additional_pool.acquire.assert_not_called()
-        MockLoader.assert_not_called()
+        fake._pipeline.schedule_render.assert_not_called()
 
 
 class TestRecycleWidget:
@@ -563,36 +463,37 @@ class TestRecycleWidget:
         fake = MagicMock()
         fake.widgets = {0: MagicMock()}
         fake._additional_widgets = {}
-        fake.active_loaders = {}
+        fake._pipeline = MagicMock()
 
         self.GridView._recycle_widget(fake, 0)
 
         fake.pixmap_item_pool.release.assert_called_once()
         assert 0 not in fake.widgets
+        fake._pipeline.cancel_index.assert_called_once_with(0)
 
     def test_recycle_additional_widget_calls_unbind(self):
         fake = MagicMock()
         fake.widgets = {}
         widget = MagicMock()
         fake._additional_widgets = {0: widget}
-        fake.active_loaders = {}
+        fake._pipeline = MagicMock()
 
         self.GridView._recycle_widget(fake, 0)
 
         fake._notifier.unbind.assert_called_once_with(0, widget)
         fake.additional_pool.release.assert_called_once_with(widget)
         assert 0 not in fake._additional_widgets
+        fake._pipeline.cancel_index.assert_called_once_with(0)
 
-    def test_recycle_cancels_active_loader(self):
+    def test_recycle_cancels_pipeline_task(self):
         fake = MagicMock()
         fake.widgets = {}
         fake._additional_widgets = {}
-        loader = MagicMock()
-        fake.active_loaders = {0: loader}
+        fake._pipeline = MagicMock()
 
         self.GridView._recycle_widget(fake, 0)
 
-        loader.cancel.assert_called_once()
+        fake._pipeline.cancel_index.assert_called_once_with(0)
 
 
 class TestAutoScroll:

@@ -93,3 +93,42 @@ class FunctionProfiler:
 
 
 profiler = FunctionProfiler(interval=5)
+
+
+class MainThreadWatchdog:
+    INTERVAL_MS = 16
+    THRESHOLD_MS = 50
+
+    def __init__(self):
+        self._timer = None
+        self._last_tick = 0.0
+        self._enabled = False
+
+    def start(self):
+        if self._enabled:
+            return
+        from PySide6.QtCore import QTimer, Qt
+        self._enabled = True
+        self._last_tick = time.perf_counter()
+        self._timer = QTimer()
+        self._timer.setTimerType(Qt.TimerType.PreciseTimer)
+        self._timer.timeout.connect(self._tick)
+        self._timer.start(self.INTERVAL_MS)
+        AppLogger.info('[Watchdog] MainThread watchdog started')
+
+    def _tick(self):
+        now = time.perf_counter()
+        elapsed_ms = (now - self._last_tick) * 1000
+        self._last_tick = now
+        if elapsed_ms > self.THRESHOLD_MS:
+            AppLogger.warning(f'[Watchdog] MainThread blocked for {elapsed_ms:.1f}ms (threshold={self.THRESHOLD_MS}ms)')
+
+    def stop(self):
+        if self._timer is not None:
+            self._timer.stop()
+            self._timer = None
+        self._enabled = False
+        AppLogger.info('[Watchdog] MainThread watchdog stopped')
+
+
+watchdog = MainThreadWatchdog()

@@ -147,7 +147,8 @@ class AdditionalWidgetPool:
         if plugin_name is None:
             return
         widget.hide()
-        self._pools.setdefault(plugin_name, []).append(widget)
+        pool = self._pools.setdefault(plugin_name, [])
+        pool.append(widget)
 
     @profiler.profile
     def warm_up(self, parent: QtWidgets.QWidget):

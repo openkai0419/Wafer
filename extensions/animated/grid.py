@@ -1,8 +1,10 @@
 import os
 
+from PySide6 import QtCore, QtGui
+
 from wafer.plugin import WidgetGridPlugin
 from wafer.utils.profiling import profiler
-from .widget import AnimatedCellWidget
+from .widget import AnimatedCellWidget, _frame_cache
 
 _PNG_SIGNATURE_LEN = 8
 _CHUNK_HEADER_LEN = 8
@@ -40,6 +42,35 @@ def _is_animated_gif(header: bytes) -> bool:
     return b'NETSCAPE2.0' in header or b'ANIMEXTS1.0' in header
 
 
+_DEFAULT_DELAY = 100
+_MIN_DELAY = 20
+
+
+def _decode_frames(path: str, size: QtCore.QSize | None, job) -> tuple[list[QtGui.QPixmap], list[int]]:
+    reader = QtGui.QImageReader(path)
+    reader.setAutoTransform(True)
+    pixmaps: list[QtGui.QPixmap] = []
+    delays: list[int] = []
+    count = reader.imageCount()
+    if count <= 0:
+        count = 1024
+    for i in range(count):
+        if job.is_cancelled():
+            return [], []
+        delay = reader.nextImageDelay()
+        if delay < _MIN_DELAY:
+            delay = _DEFAULT_DELAY
+        image = reader.read()
+        if image.isNull():
+            break
+        if size is not None and image.size() != size:
+            image = image.scaled(
+                size, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+        pixmaps.append(QtGui.QPixmap.fromImage(image))
+        delays.append(delay)
+    return pixmaps, delays
+
+
 class AnimatedGridPlugin(WidgetGridPlugin):
     NAME = 'animated'
     EXTENSIONS = ('.gif', '.apng', '.webp', '.png')
@@ -67,8 +98,21 @@ class AnimatedGridPlugin(WidgetGridPlugin):
         return False
 
     @profiler.profile
-    def render(self, widget, path, size=None):
-        widget.load(path, size)
+    def render(self, job):
+        cached = _frame_cache.get_if_sufficient(job.path, job.size)
+        if cached is not None:
+            frames, delays = cached
+            job.invoke(lambda w: w.set_frames(job.path, frames, delays))
+            return
+        job.post(lambda: self._decode_and_set(job), priority=0)
+
+    @staticmethod
+    def _decode_and_set(job):
+        frames, delays = _decode_frames(job.path, job.size, job)
+        if job.is_cancelled() or not frames:
+            return
+        _frame_cache.put(job.path, frames, delays)
+        job.invoke(lambda w: w.set_frames(job.path, frames, delays))
 
     @profiler.profile
     def on_thumb_loaded(self, widget, image):

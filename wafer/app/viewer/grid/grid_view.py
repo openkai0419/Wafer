@@ -2,15 +2,14 @@ import math
 from PySide6 import QtCore, QtGui, QtWidgets
 from ....utils.formatting import dpix
 from ....utils.profiling import profiler
-from .loader import ImageLoaderRunnable
 from ....core.qt.rate_limit import qt_debounce, qt_throttle
-from ....core.qt.pixmap import PixmapFactory
-from ....core.qt.thread import thread_pool
+from ....core.qt.dispatcher import Dispatcher
 from ..viewer_settings import app_settings
 from ....plugin.grid.handler import grid_resolver, WidgetNotifier
 from ....plugin.grid.base import WidgetGridPlugin as _WidgetGridPlugin
 from .cachemanager import MemoryLimitedImageCache, GraphicsItemPool, AdditionalWidgetPool
-from .calc_layout import JustifiedLayoutCalculator, MasonryLayoutCalculator, LayoutData
+from .calc_layout import LayoutData
+from .pipeline import GridPipeline
 from .items import GridItemModel
 from ....core.actions.bridge import ActionKit
 
@@ -128,14 +127,21 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self._hz = self.orientation <= 1
         self._reversed = self.orientation == 3
         self.layout_mode = 'justified'
-        self.calculator = None
         self.image_cache = MemoryLimitedImageCache(app_settings.get('window/cache_size', 500))
         self.pixmap_item_pool = GraphicsItemPool(self._scene)
         self.additional_pool = AdditionalWidgetPool(grid_resolver)
         self.additional_pool.warm_up(self.viewport())
-        self.active_loaders = {}
         self._notifier = WidgetNotifier(grid_resolver.registry)
-        self.error_placeholder = PixmapFactory.create_error_placeholder().toImage()
+        from ....core.qt.thread import grid_thumb_pool, grid_render_pool, utility_pool
+        self._thumb_dispatcher = Dispatcher(grid_thumb_pool)
+        self._render_dispatcher = Dispatcher(grid_render_pool)
+        self._utility_dispatcher = Dispatcher(utility_pool)
+        self._pipeline = GridPipeline(
+            self._thumb_dispatcher, self._render_dispatcher,
+            self._utility_dispatcher,
+            self.image_cache, self._widget_lookup, self._promote_to_widget,
+        )
+        self._pipeline.layout_ready.connect(self._on_layout_ready)
 
         self.color = (59, 128, 255)
         self._half_pos = self.spacing / 2
@@ -367,13 +373,10 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             self._recycle_widget(i)
         for i in list(self._additional_widgets.keys()):
             self._recycle_widget(i)
-        for runnable in self.active_loaders.values():
-            if hasattr(runnable, 'cancel'):
-                runnable.cancel()
         self.widgets.clear()
         self._additional_widgets.clear()
         self._notifier.clear()
-        self.active_loaders.clear()
+        self._pipeline.cancel_all()
         self.visible_indices.clear()
         self.rects = LayoutData.empty()
         self._scene.setSceneRect(0, 0, 0, 0)
@@ -408,8 +411,6 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
     @profiler.profile
     def _recalc_layout(self):
         self.layout_started.emit()
-        if self.calculator:
-            self.calculator.cancel()
         margin = self._half_pos
         secondary = self._secondary_viewport_size() - margin * 2
         primary_vp = self._primary_viewport_size()
@@ -418,16 +419,14 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             cw, ch = secondary, primary_vp
         else:
             cw, ch = primary_vp, secondary
-        if self.layout_mode == 'masonry':
-            self.calculator = MasonryLayoutCalculator(self.items.aspect_ratios, bh, self.spacing, cw, ch, self.orientation)
-        else:
-            if not self._is_horizontal():
-                ratios = self.items.aspect_ratios
-                avg_aspect = sum(r or 1.0 for r in ratios) / len(ratios) if ratios else 1.0
-                bh = int(bh * avg_aspect)
-            self.calculator = JustifiedLayoutCalculator(self.items.aspect_ratios, bh, self.spacing, cw, ch, self.orientation)
-        self.calculator.signals.layout_ready.connect(self._on_layout_ready)
-        thread_pool.submit(self.calculator, 7)
+        if self.layout_mode != 'masonry' and not self._is_horizontal():
+            ratios = self.items.aspect_ratios
+            avg_aspect = sum(r or 1.0 for r in ratios) / len(ratios) if ratios else 1.0
+            bh = int(bh * avg_aspect)
+        self._pipeline.request_layout(
+            self.items.aspect_ratios, bh, self.spacing,
+            cw, ch, self.orientation, self.layout_mode,
+        )
 
     def get_adjusted_scroll_speed(self, base_speed=50):
         reference_height = self.screen_width / 10
@@ -556,43 +555,11 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         margin = dpix(3) * 2
         return QtCore.QSize(int(cell_size.width()) - margin, int(cell_size.height()) - margin)
 
-    def _request_reload(self, i, rect):
-        if i in self._additional_widgets:
-            return
-        if i in self.active_loaders:
-            self.active_loaders.pop(i).cancel()
-        runnable = ImageLoaderRunnable(i, self.items.paths[i], rect.size(), self)
-        runnable.signal.image_ready.connect(self._on_image_ready)
-        self.active_loaders[i] = runnable
-        thread_pool.submit(runnable, 5)
-
-    def _dispatch_widget_thumbnail(self, i, path, size):
-        cached = self.image_cache.get(path)
-        if cached is not None:
-            widget = self._additional_widgets.get(i)
-            if widget is not None:
-                self._notifier.on_thumb_loaded(i, widget, cached)
-            return
-        if i in self.active_loaders:
-            self.active_loaders.pop(i).cancel()
-        runnable = ImageLoaderRunnable(i, path, size, self)
-        runnable.signal.image_ready.connect(self._on_thumb_ready)
-        self.active_loaders[i] = runnable
-        thread_pool.submit(runnable, 5)
-
-    @profiler.profile
-    @QtCore.Slot(int, object)
-    def _on_thumb_ready(self, index, image):
-        if index >= len(self.items.paths):
-            return
-        runnable = self.active_loaders.pop(index, None)
-        if runnable is not None and runnable.path != self.items.paths[index]:
-            return
-        path = self.items.paths[index]
-        self.image_cache[path] = image
+    def _widget_lookup(self, index):
         widget = self._additional_widgets.get(index)
         if widget is not None:
-            self._notifier.on_thumb_loaded(index, widget, image)
+            return widget
+        return self.widgets.get(index)
 
     @profiler.profile
     def _on_layout_ready(self, layout):
@@ -603,7 +570,9 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             if i < n and i in self.widgets:
                 self.widgets[i].setGeometry(layout[i])
                 if self._needs_reload(self.widgets[i], layout[i].size()):
-                    self._request_reload(i, layout[i])
+                    self._pipeline.schedule_render(
+                        i, self.items.paths[i], self._content_size(layout[i].size()),
+                    )
             else:
                 self._recycle_widget(i)
                 self.visible_indices.discard(i)
@@ -670,7 +639,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             sorted_added = sorted(newly_added, key=lambda i: abs(i - center))
             for i in sorted_added:
                 if i < len(self.rects):
-                    self._ensure_widget_visible(i)
+                    self._setup_cell(i)
         self.visible_indices = new_visible
         if self.rects:
             margin = self._half_pos
@@ -708,7 +677,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         return range(start, end)
 
     @profiler.profile
-    def _ensure_widget_visible(self, i):
+    def _setup_cell(self, i):
         rect = self.rects[i]
         if i >= len(self.items.paths):
             return
@@ -716,28 +685,13 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             return
         if i not in self.widgets:
             path = self.items.paths[i]
-            for plugin_cls in grid_resolver.resolve_chain(path):
-                if not issubclass(plugin_cls, _WidgetGridPlugin):
-                    break
-                widget = self.additional_pool.acquire(plugin_cls.NAME, self.viewport())
-                if widget is None:
-                    continue
-                self._notifier.bind(i, plugin_cls.NAME, widget, path, rect.size())
-                self._additional_widgets[i] = widget
-                if self._notifier.require_thumbnail(plugin_cls.NAME):
-                    self._dispatch_widget_thumbnail(i, path, rect.size())
-                self._sync_additional_widget(i)
-                if i in self.items.selected_indices():
-                    self._notifier.select(i, widget)
-                return
             item = self.pixmap_item_pool.acquire()
             item.setGeometry(rect)
             self.widgets[i] = item
             cached = self.image_cache.get(path)
             if cached is not None:
                 item.set_image(cached, path)
-            if (not cached or self._needs_reload(item, rect.size())) and i not in self.active_loaders:
-                self._request_reload(i, rect)
+            self._pipeline.schedule_render(i, path, self._content_size(rect.size()))
         elif self.widgets[i].geometry() != rect:
             self.widgets[i].setGeometry(rect)
 
@@ -750,23 +704,32 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         if i in self.widgets:
             item = self.widgets.pop(i)
             self.pixmap_item_pool.release(item)
-        if i in self.active_loaders:
-            runnable = self.active_loaders.pop(i)
-            if hasattr(runnable, 'cancel'):
-                runnable.cancel()
+        self._pipeline.cancel_index(i)
 
     @profiler.profile
-    @QtCore.Slot(int, object)
-    def _on_image_ready(self, index, image):
+    def _promote_to_widget(self, index, plugin_name):
+        if index not in self.visible_indices:
+            return
+        if index in self._additional_widgets:
+            return
         if index >= len(self.items.paths):
             return
-        runnable = self.active_loaders.pop(index, None)
-        if runnable is not None and runnable.path != self.items.paths[index]:
+        widget = self.additional_pool.acquire(plugin_name, self.viewport())
+        if widget is None:
             return
         if index in self.widgets:
-            path = self.items.paths[index]
-            self.image_cache[path] = image
-            self.widgets[index].set_image(image, path)
+            self.pixmap_item_pool.release(self.widgets.pop(index))
+        self._notifier.bind(index, plugin_name)
+        self._additional_widgets[index] = widget
+        self._sync_additional_widget(index)
+        if index in self.items.selected_indices():
+            self._notifier.select(index, widget)
+        path = self.items.paths[index]
+        cached = self.image_cache.get(path)
+        if cached is not None:
+            instance = grid_resolver.registry.instance(plugin_name)
+            if isinstance(instance, _WidgetGridPlugin):
+                instance.on_thumb_loaded(widget, cached)
 
     @profiler.profile
     def _sync_additional_widget(self, index, vp_rect=None):
@@ -805,6 +768,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         if not self._additional_widgets:
             return
         vp_rect = self.viewport().rect()
-        for idx in self.visible_indices & self._additional_widgets.keys():
+        targets = self.visible_indices & self._additional_widgets.keys()
+        for idx in targets:
             self._sync_additional_widget(idx, vp_rect)
         self._overlay.raise_()

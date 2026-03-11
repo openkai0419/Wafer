@@ -4,7 +4,7 @@ from ....utils.profiling import profiler
 from ....utils.logs import AppLogger
 from ....core.db.query import FileSearchEngine, SearchQuery
 from ....core.lang.manager import TranslatorMixin
-from ....core.qt.thread import thread_pool
+from ....core.qt.thread import utility_pool
 
 class FilterKeySignals(QtCore.QObject):
     finished = QtCore.Signal(list)
@@ -230,7 +230,7 @@ class SearchOptionsBar(QtWidgets.QWidget, TranslatorMixin):
             self._folder_worker.cancel()
         self._folder_worker = FilterKeyUpdateWorker(dbname, paths)
         self._folder_worker.signals.finished.connect(self.keys_combo.remake)
-        thread_pool.submit(self._folder_worker, 6)
+        utility_pool.submit(self._folder_worker, 6)
 
     def set_search_text(self, text: str):
         self.search_bar.setText(text)

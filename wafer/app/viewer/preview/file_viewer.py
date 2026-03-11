@@ -8,7 +8,7 @@ from ....utils.logs import AppLogger
 from ....core.db.query import FileSearchEngine
 from ....plugin.viewer.handler import viewer_resolver
 from ....plugin.viewer.base import WidgetViewerPlugin as _WidgetViewerPlugin
-from ....core.qt.thread import CancellableRunnable, thread_pool
+from ....core.qt.thread import CancellableRunnable, utility_pool
 from .meta_viewer import MetaListWidget
 from .image_viewer import ImageDisplayWidget
 from .file_model import FileViewModel
@@ -169,7 +169,7 @@ class FileViewerWidget(QtWidgets.QSplitter):
         worker = _ContentWorker(path)
         worker.signals.finished.connect(self._on_content_finished)
         self._content_worker = worker
-        thread_pool.submit(worker)
+        utility_pool.submit(worker)
 
     @QtCore.Slot(object)
     def _on_content_finished(self, result):
@@ -197,7 +197,7 @@ class FileViewerWidget(QtWidgets.QSplitter):
         worker = _MetaWorker(dbpath, path)
         worker.signals.finished.connect(lambda result, p=path: self._on_meta_finished(p, result))
         self._meta_worker = worker
-        thread_pool.submit(worker)
+        utility_pool.submit(worker)
 
     def _on_meta_finished(self, path, result):
         self._meta_worker = None

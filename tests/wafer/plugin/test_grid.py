@@ -1,5 +1,6 @@
 import py_compile
 import pytest
+from unittest.mock import MagicMock
 from PIL import Image
 
 from wafer.plugin.grid.handler import grid_resolver
@@ -86,6 +87,15 @@ def test_is_widget_plugin_image():
     assert not grid_resolver.is_widget_plugin('photo.jpg')
 
 
+def test_resolve_instance_returns_plugin():
+    instance = grid_resolver.resolve_instance('photo.jpg')
+    assert isinstance(instance, ImageGridPlugin)
+
+
+def test_resolve_instance_unknown_returns_none():
+    assert grid_resolver.resolve_instance('file.xyz') is None
+
+
 def test_is_widget_plugin_unknown():
     assert not grid_resolver.is_widget_plugin('file.xyz')
 
@@ -101,6 +111,168 @@ def test_base_lifecycle_defaults_are_noop():
     p.appear(None)
     p.disappear(None)
     p.on_thumb_loaded(None, None)
+
+
+def test_widget_grid_plugin_render_default_noop():
+    from unittest.mock import MagicMock
+    class _ConcretePlugin(WidgetGridPlugin):
+        NAME = 'noop'
+        EXTENSIONS = ('.noop',)
+    p = _ConcretePlugin()
+    job = MagicMock()
+    p.render(job)
+
+
+class TestImageGridPluginRender:
+
+    @pytest.fixture(autouse=True)
+    def _qapp(self):
+        from PySide6 import QtWidgets
+        app = QtWidgets.QApplication.instance()
+        if app is None:
+            app = QtWidgets.QApplication([])
+        return app
+
+    def test_render_loads_and_invokes(self, tmp_path):
+        import time
+        from PySide6 import QtCore, QtWidgets
+        from wafer.core.qt.dispatcher import Dispatcher, CancelToken
+        from wafer.plugin.grid.cell_job import CellJob
+        img_path = tmp_path / 'test.png'
+        Image.new('RGB', (100, 100)).save(str(img_path))
+        plugin = _get_image_plugin()()
+        dispatcher = Dispatcher()
+
+        class FakeCache:
+            def __init__(self):
+                self.store = {}
+            def get(self, key, default=None):
+                return self.store.get(key, default)
+            def get_if_sufficient(self, key, size, default=None):
+                image = self.store.get(key)
+                if image is not None and image.width() >= size.width() and image.height() >= size.height():
+                    return image
+                return default
+            def __setitem__(self, key, value):
+                self.store[key] = value
+
+        cache = FakeCache()
+        result_widget = MagicMock()
+        job = CellJob(
+            index=0, path=str(img_path), size=QtCore.QSize(50, 50),
+            image_cache=cache, cancel=CancelToken(), dispatcher=dispatcher,
+            widget_lookup=lambda i: result_widget,
+        )
+        plugin.render(job)
+        app = QtWidgets.QApplication.instance()
+        deadline = time.monotonic() + 3.0
+        while not result_widget.set_image.called and time.monotonic() < deadline:
+            app.processEvents(QtCore.QEventLoop.AllEvents, 50)
+            time.sleep(0.01)
+        result_widget.set_image.assert_called_once()
+        assert str(img_path) in cache.store
+
+    def test_render_uses_cache_hit(self, tmp_path):
+        import time
+        from PySide6 import QtCore, QtWidgets
+        from wafer.core.qt.dispatcher import Dispatcher, CancelToken
+        from wafer.plugin.grid.cell_job import CellJob
+        plugin = _get_image_plugin()()
+        dispatcher = Dispatcher()
+        sentinel = MagicMock()
+
+        class FakeCache:
+            def get(self, key, default=None):
+                return sentinel
+            def get_if_sufficient(self, key, size, default=None):
+                return sentinel
+            def __setitem__(self, key, value):
+                pass
+
+        result_widget = MagicMock()
+        job = CellJob(
+            index=0, path='/fake.png', size=QtCore.QSize(50, 50),
+            image_cache=FakeCache(), cancel=CancelToken(), dispatcher=dispatcher,
+            widget_lookup=lambda i: result_widget,
+        )
+        plugin.render(job)
+        app = QtWidgets.QApplication.instance()
+        deadline = time.monotonic() + 3.0
+        while not result_widget.set_image.called and time.monotonic() < deadline:
+            app.processEvents(QtCore.QEventLoop.AllEvents, 50)
+            time.sleep(0.01)
+        result_widget.set_image.assert_called_once_with(sentinel, '/fake.png')
+
+    def test_render_skips_when_cancelled(self, tmp_path):
+        import time
+        from PySide6 import QtCore, QtWidgets
+        from wafer.core.qt.dispatcher import Dispatcher, CancelToken
+        from wafer.plugin.grid.cell_job import CellJob
+        img_path = tmp_path / 'test.png'
+        Image.new('RGB', (100, 100)).save(str(img_path))
+        plugin = _get_image_plugin()()
+        dispatcher = Dispatcher()
+
+        class FakeCache:
+            def get(self, key, default=None):
+                return None
+            def get_if_sufficient(self, key, size, default=None):
+                return None
+            def __setitem__(self, key, value):
+                pass
+
+        cancel = CancelToken()
+        cancel.set()
+        result_widget = MagicMock()
+        job = CellJob(
+            index=0, path=str(img_path), size=QtCore.QSize(50, 50),
+            image_cache=FakeCache(), cancel=cancel, dispatcher=dispatcher,
+            widget_lookup=lambda i: result_widget,
+        )
+        plugin.render(job)
+        time.sleep(0.1)
+        QtWidgets.QApplication.instance().processEvents()
+        result_widget.set_image.assert_not_called()
+
+    def test_render_shows_error_placeholder_on_load_failure(self):
+        import time
+        from PySide6 import QtCore, QtGui, QtWidgets
+        from wafer.core.qt.dispatcher import Dispatcher, CancelToken
+        from wafer.plugin.grid.cell_job import CellJob
+        plugin = _get_image_plugin()()
+        dispatcher = Dispatcher()
+
+        class FakeCache:
+            def __init__(self):
+                self.store = {}
+            def get(self, key, default=None):
+                return self.store.get(key, default)
+            def get_if_sufficient(self, key, size, default=None):
+                image = self.store.get(key)
+                if image is not None and image.width() >= size.width() and image.height() >= size.height():
+                    return image
+                return default
+            def __setitem__(self, key, value):
+                self.store[key] = value
+
+        cache = FakeCache()
+        result_widget = MagicMock()
+        job = CellJob(
+            index=0, path='/nonexistent_file.png', size=QtCore.QSize(50, 50),
+            image_cache=cache, cancel=CancelToken(), dispatcher=dispatcher,
+            widget_lookup=lambda i: result_widget,
+        )
+        plugin.render(job)
+        app = QtWidgets.QApplication.instance()
+        deadline = time.monotonic() + 3.0
+        while not result_widget.set_image.called and time.monotonic() < deadline:
+            app.processEvents(QtCore.QEventLoop.AllEvents, 50)
+            time.sleep(0.01)
+        result_widget.set_image.assert_called_once()
+        img = result_widget.set_image.call_args[0][0]
+        assert isinstance(img, QtGui.QImage)
+        assert not img.isNull()
+        assert '/nonexistent_file.png' in cache.store
 
 
 def test_require_thumbnail_default_false():
@@ -236,20 +408,19 @@ class TestWidgetNotifier:
         notifier = WidgetNotifier(registry)
         return notifier, mock
 
-    def test_bind_registers_and_calls_render(self):
+    def test_bind_registers_name(self):
         from unittest.mock import MagicMock
         notifier, plugin = self._make_notifier()
-        widget = MagicMock()
-        notifier.bind(0, 'video', widget, '/test.mp4', (200, 200))
+        notifier.bind(0, 'video')
         assert notifier.plugin_name(0) == 'video'
-        plugin.render.assert_called_once_with(widget, '/test.mp4', (200, 200))
+        plugin.render.assert_not_called()
 
     def test_unbind_visible_calls_disappear_and_release(self):
         from unittest.mock import MagicMock
         notifier, plugin = self._make_notifier()
         widget = MagicMock()
         widget.isVisible.return_value = True
-        notifier.bind(0, 'video', widget, '/test.mp4')
+        notifier.bind(0, 'video')
         plugin.reset_mock()
         notifier.unbind(0, widget)
         plugin.disappear.assert_called_once_with(widget)
@@ -261,7 +432,7 @@ class TestWidgetNotifier:
         notifier, plugin = self._make_notifier()
         widget = MagicMock()
         widget.isVisible.return_value = False
-        notifier.bind(0, 'video', widget, '/test.mp4')
+        notifier.bind(0, 'video')
         plugin.reset_mock()
         notifier.unbind(0, widget)
         plugin.disappear.assert_not_called()
@@ -277,7 +448,7 @@ class TestWidgetNotifier:
         from unittest.mock import MagicMock
         notifier, plugin = self._make_notifier()
         widget = MagicMock()
-        notifier.bind(0, 'video', widget, '/test.mp4')
+        notifier.bind(0, 'video')
         plugin.reset_mock()
         notifier.appear(0, widget)
         plugin.appear.assert_called_once_with(widget)
@@ -286,7 +457,7 @@ class TestWidgetNotifier:
         from unittest.mock import MagicMock
         notifier, plugin = self._make_notifier()
         widget = MagicMock()
-        notifier.bind(0, 'video', widget, '/test.mp4')
+        notifier.bind(0, 'video')
         plugin.reset_mock()
         notifier.disappear(0, widget)
         plugin.disappear.assert_called_once_with(widget)
@@ -295,7 +466,7 @@ class TestWidgetNotifier:
         from unittest.mock import MagicMock
         notifier, plugin = self._make_notifier()
         widget = MagicMock()
-        notifier.bind(0, 'video', widget, '/test.mp4')
+        notifier.bind(0, 'video')
         plugin.reset_mock()
         notifier.select(0, widget)
         plugin.select.assert_called_once_with(widget)
@@ -304,7 +475,7 @@ class TestWidgetNotifier:
         from unittest.mock import MagicMock
         notifier, plugin = self._make_notifier()
         widget = MagicMock()
-        notifier.bind(0, 'video', widget, '/test.mp4')
+        notifier.bind(0, 'video')
         plugin.reset_mock()
         notifier.deselect(0, widget)
         plugin.deselect.assert_called_once_with(widget)
@@ -318,8 +489,8 @@ class TestWidgetNotifier:
     def test_clear_removes_all(self):
         from unittest.mock import MagicMock
         notifier, plugin = self._make_notifier()
-        notifier.bind(0, 'video', MagicMock(), '/a.mp4')
-        notifier.bind(1, 'video', MagicMock(), '/b.mp4')
+        notifier.bind(0, 'video')
+        notifier.bind(1, 'video')
         notifier.clear()
         assert notifier.plugin_name(0) is None
         assert notifier.plugin_name(1) is None
@@ -347,7 +518,7 @@ class TestWidgetNotifier:
         notifier, plugin = self._make_notifier()
         widget = MagicMock()
         image = MagicMock()
-        notifier.bind(0, 'video', widget, '/test.mp4')
+        notifier.bind(0, 'video')
         plugin.reset_mock()
         notifier.on_thumb_loaded(0, widget, image)
         plugin.on_thumb_loaded.assert_called_once_with(widget, image)

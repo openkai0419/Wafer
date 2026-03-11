@@ -1,3 +1,4 @@
+import threading
 from collections import OrderedDict
 
 from PySide6 import QtCore, QtGui, QtWidgets
@@ -41,106 +42,51 @@ class FrameCache:
     def __init__(self, max_entries=128):
         self._max = max_entries
         self._cache: OrderedDict[str, tuple[list[QtGui.QPixmap], list[int]]] = OrderedDict()
+        self._lock = threading.Lock()
 
     @profiler.profile
     def get(self, path: str) -> tuple[list[QtGui.QPixmap], list[int]] | None:
-        entry = self._cache.get(path)
-        if entry is not None:
-            self._cache.move_to_end(path)
-        return entry
+        with self._lock:
+            entry = self._cache.get(path)
+            if entry is not None:
+                self._cache.move_to_end(path)
+            return entry
 
     @profiler.profile
     def get_if_sufficient(self, path: str, size: QtCore.QSize) -> tuple[list[QtGui.QPixmap], list[int]] | None:
-        entry = self._cache.get(path)
-        if entry is None:
-            return None
-        frames, delays = entry
-        if frames:
-            first = frames[0]
-            if first.width() < size.width() or first.height() < size.height():
-                self._cache.pop(path)
-                _disposer.schedule(frames)
+        with self._lock:
+            entry = self._cache.get(path)
+            if entry is None:
                 return None
-        self._cache.move_to_end(path)
-        return entry
+            frames, delays = entry
+            if frames:
+                first = frames[0]
+                if first.width() < size.width() or first.height() < size.height():
+                    self._cache.pop(path)
+                    return None
+            self._cache.move_to_end(path)
+            return entry
 
     @profiler.profile
     def put(self, path: str, frames: list[QtGui.QPixmap], delays: list[int]):
-        if path in self._cache:
-            self._cache.pop(path)
-        elif len(self._cache) >= self._max:
-            _, (old_frames, _) = self._cache.popitem(last=False)
-            _disposer.schedule(old_frames)
-        self._cache[path] = (frames, delays)
+        with self._lock:
+            if path in self._cache:
+                self._cache.pop(path)
+            elif len(self._cache) >= self._max:
+                self._cache.popitem(last=False)
+            self._cache[path] = (frames, delays)
 
     def __contains__(self, path: str) -> bool:
-        return path in self._cache
+        with self._lock:
+            return path in self._cache
 
     def remove(self, path: str):
-        entry = self._cache.pop(path, None)
-        if entry is not None:
-            _disposer.schedule(entry[0])
+        with self._lock:
+            self._cache.pop(path, None)
 
     def clear(self):
-        self._cache.clear()
-
-
-_DEFAULT_DELAY = 100
-_MIN_DELAY = 20
-
-
-class _DecodeSignals(QtCore.QObject):
-    ready = QtCore.Signal(str, list, list)
-
-
-class _DecodeRunner(QtCore.QRunnable):
-    def __init__(self, path: str, size: QtCore.QSize | None):
-        super().__init__()
-        self.path = path
-        self.size = size
-        self.signals = _DecodeSignals()
-        self._cancelled = False
-
-    def cancel(self):
-        self._cancelled = True
-
-    def run(self):
-        if self._cancelled:
-            return
-        reader = QtGui.QImageReader(self.path)
-        reader.setAutoTransform(True)
-        pixmaps: list[QtGui.QPixmap] = []
-        delays: list[int] = []
-        count = reader.imageCount()
-        if count <= 0:
-            count = 1024
-        for i in range(count):
-            if self._cancelled:
-                return
-            delay = reader.nextImageDelay()
-            if delay < _MIN_DELAY:
-                delay = _DEFAULT_DELAY
-            image = reader.read()
-            if image.isNull():
-                break
-            if self.size is not None and image.size() != self.size:
-                image = image.scaled(
-                    self.size, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
-            pixmaps.append(QtGui.QPixmap.fromImage(image))
-            delays.append(delay)
-        if not self._cancelled:
-            self.signals.ready.emit(self.path, pixmaps, delays)
-
-
-_thread_pool: QtCore.QThreadPool | None = None
-
-
-def _get_thread_pool() -> QtCore.QThreadPool:
-    global _thread_pool
-    if _thread_pool is None:
-        _thread_pool = QtCore.QThreadPool()
-        _thread_pool.setMaxThreadCount(2)
-    return _thread_pool
+        with self._lock:
+            self._cache.clear()
 
 
 class AnimationDriver(QtCore.QObject):
@@ -167,7 +113,6 @@ class AnimationDriver(QtCore.QObject):
         if not self._cells and self._timer.isActive():
             self._timer.stop()
 
-    @profiler.profile
     def _tick(self):
         self._elapsed += self._interval
         for cell in list(self._cells):
@@ -197,40 +142,24 @@ class AnimatedCellWidget(QtWidgets.QWidget):
         self._accumulated = 0
         self._playing = False
         self._thumbnail: QtGui.QPixmap | None = None
-        self._decode_runner: _DecodeRunner | None = None
-        self._load_size: QtCore.QSize | None = None
         self._scaled_pixmap: QtGui.QPixmap | None = None
         self._scaled_key: tuple = ()
 
     @profiler.profile
-    def load(self, path: str, size: QtCore.QSize | None = None):
+    def set_frames(self, path: str, frames: list[QtGui.QPixmap], delays: list[int]):
         self._path = path
-        self._load_size = size
+        self._frames = frames
+        self._delays = delays
         self._frame_index = 0
         self._accumulated = 0
-        self._cancel_runners()
-        if size is not None:
-            cached = _frame_cache.get_if_sufficient(path, size)
-        else:
-            cached = _frame_cache.get(path)
-        if cached is not None:
-            self._frames, self._delays = cached
-            self._thumbnail = self._frames[0] if self._frames else None
-            if self.isVisible():
-                self.update()
-            return
-        self._frames = []
-        self._delays = []
-        self._thumbnail = None
-        self._start_decode(path, size)
-
-    def _start_decode(self, path: str, size: QtCore.QSize | None):
-        pool = _get_thread_pool()
-        decode = _DecodeRunner(path, size)
-        decode.signals.ready.connect(
-            self._on_decode_ready, QtCore.Qt.ConnectionType.QueuedConnection)
-        self._decode_runner = decode
-        pool.start(decode)
+        self._scaled_pixmap = None
+        self._scaled_key = ()
+        if frames:
+            self._thumbnail = frames[0]
+        if self.isVisible():
+            self.update()
+            if len(frames) > 1:
+                self.start()
 
     @profiler.profile
     def set_thumbnail(self, image):
@@ -239,27 +168,6 @@ class AnimatedCellWidget(QtWidgets.QWidget):
         self._thumbnail = QtGui.QPixmap.fromImage(image) if isinstance(image, QtGui.QImage) else image
         if self.isVisible():
             self.update()
-
-    def _cancel_runners(self):
-        if self._decode_runner is not None:
-            self._decode_runner.cancel()
-            self._decode_runner = None
-
-    @QtCore.Slot(str, list, list)
-    @profiler.profile
-    def _on_decode_ready(self, path: str, pixmaps: list[QtGui.QPixmap], delays: list[int]):
-        if path != self._path:
-            return
-        self._decode_runner = None
-        self._frames = pixmaps
-        self._delays = delays
-        if pixmaps:
-            self._thumbnail = pixmaps[0]
-            _frame_cache.put(path, pixmaps, delays)
-        if self.isVisible():
-            self.update()
-            if len(self._frames) > 1:
-                self.start()
 
     def start(self):
         if self._playing or len(self._frames) <= 1:
@@ -277,14 +185,12 @@ class AnimatedCellWidget(QtWidgets.QWidget):
     @profiler.profile
     def suspend(self):
         self.stop()
-        self._cancel_runners()
         path = self._path
         frames = self._frames
         self._frames = []
         self._delays = []
         self._thumbnail = None
         self._path = ''
-        self._load_size = None
         self._frame_index = 0
         self._accumulated = 0
         self._scaled_pixmap = None
@@ -292,7 +198,6 @@ class AnimatedCellWidget(QtWidgets.QWidget):
         if frames and (not path or path not in _frame_cache):
             _disposer.schedule(frames)
 
-    @profiler.profile
     def advance(self, elapsed_ms: int):
         if not self._frames or not self._delays:
             return
@@ -305,13 +210,10 @@ class AnimatedCellWidget(QtWidgets.QWidget):
 
     @profiler.profile
     def on_appeared(self):
-        if not self._frames and self._path and self._decode_runner is None:
-            self._start_decode(self._path, self._load_size)
         self.start()
 
     @profiler.profile
     def on_disappeared(self):
-        self._cancel_runners()
         self.stop()
 
     def on_selected(self):

@@ -129,89 +129,71 @@ def test_vertical_layout():
     assert d[0].width() == 100
 
 
-def test_calculator_emits_layout(qtbot):
-    received = []
+def test_calculator_produces_layout():
     calc = JustifiedLayoutCalculator([1.0, 1.5, 0.8], 100, 5, 500, None, orientation=0)
-    calc.signals.layout_ready.connect(lambda ld: received.append(ld))
     calc.run()
-    assert len(received) == 1
-    assert isinstance(received[0], LayoutData)
-    assert len(received[0]) == 3
+    assert calc._result is not None
+    assert isinstance(calc._result, LayoutData)
+    assert len(calc._result) == 3
 
 
 def test_calculator_cancel():
     calc = JustifiedLayoutCalculator([1.0] * 100, 100, 5, 500, None, orientation=0)
     calc.cancel()
-    received = []
-    calc.signals.layout_ready.connect(lambda ld: received.append(ld))
     calc.run()
-    assert len(received) == 0
+    assert calc._result is None
 
 
-def test_calculator_none_aspect_ratios(qtbot):
-    received = []
+def test_calculator_none_aspect_ratios():
     calc = JustifiedLayoutCalculator([1.0, None, 0.8], 100, 5, 500, None, orientation=0)
-    calc.signals.layout_ready.connect(lambda ld: received.append(ld))
     calc.run()
-    assert len(received) == 1
-    assert len(received[0]) == 3
+    assert calc._result is not None
+    assert len(calc._result) == 3
 
 
-def test_calculator_zero_aspect_ratios(qtbot):
-    received = []
+def test_calculator_zero_aspect_ratios():
     calc = JustifiedLayoutCalculator([1.0, 0.0, 0.8], 100, 5, 500, None, orientation=0)
-    calc.signals.layout_ready.connect(lambda ld: received.append(ld))
     calc.run()
-    assert len(received) == 1
-    assert len(received[0]) == 3
+    assert calc._result is not None
+    assert len(calc._result) == 3
 
 
-def test_justified_rects_no_overlap(qtbot):
-    received = []
+def test_justified_rects_no_overlap():
     calc = JustifiedLayoutCalculator([1.5, 1.0, 0.8, 1.2, 2.0], 100, 5, 500, None, orientation=0)
-    calc.signals.layout_ready.connect(lambda ld: received.append(ld))
     calc.run()
-    layout = received[0]
+    layout = calc._result
     for i in range(len(layout)):
         for j in range(i + 1, len(layout)):
             assert not layout[i].intersects(layout[j])
 
 
-def test_justified_reversed_horizontal(qtbot):
-    received = []
+def test_justified_reversed_horizontal():
     calc = JustifiedLayoutCalculator([1.5, 1.0], 100, 5, 500, None, orientation=1)
-    calc.signals.layout_ready.connect(lambda ld: received.append(ld))
     calc.run()
-    layout = received[0]
+    layout = calc._result
     assert layout[0].left() > layout[1].left()
 
 
-def test_masonry_emits_layout(qtbot):
-    received = []
+def test_masonry_produces_layout():
     calc = MasonryLayoutCalculator([1.0, 1.5, 0.8, 1.2], 150, 5, 500, None, orientation=0)
-    calc.signals.layout_ready.connect(lambda ld: received.append(ld))
     calc.run()
-    assert len(received) == 1
-    assert isinstance(received[0], LayoutData)
-    assert len(received[0]) == 4
+    assert calc._result is not None
+    assert isinstance(calc._result, LayoutData)
+    assert len(calc._result) == 4
 
 
-def test_masonry_columns_equal_width(qtbot):
-    received = []
+def test_masonry_columns_equal_width():
     calc = MasonryLayoutCalculator([1.0, 1.5, 0.8, 1.2, 1.0, 0.5], 100, 5, 500, None, orientation=0)
-    calc.signals.layout_ready.connect(lambda ld: received.append(ld))
     calc.run()
-    layout = received[0]
+    layout = calc._result
     widths = {layout[i].width() for i in range(len(layout))}
     assert len(widths) == 1
 
 
-def test_masonry_no_overlap(qtbot):
-    received = []
+def test_masonry_no_overlap():
     calc = MasonryLayoutCalculator([1.0, 1.5, 0.8, 1.2, 2.0, 0.5], 100, 5, 500, None, orientation=0)
-    calc.signals.layout_ready.connect(lambda ld: received.append(ld))
     calc.run()
-    layout = received[0]
+    layout = calc._result
     for i in range(len(layout)):
         for j in range(i + 1, len(layout)):
             assert not layout[i].intersects(layout[j])
@@ -220,44 +202,34 @@ def test_masonry_no_overlap(qtbot):
 def test_masonry_cancel():
     calc = MasonryLayoutCalculator([1.0] * 100, 100, 5, 500, None, orientation=0)
     calc.cancel()
-    received = []
-    calc.signals.layout_ready.connect(lambda ld: received.append(ld))
     calc.run()
-    assert len(received) == 0
+    assert calc._result is None
 
 
-def test_masonry_reversed(qtbot):
-    normal_received = []
+def test_masonry_reversed():
     calc = MasonryLayoutCalculator([1.0, 1.5, 0.8], 100, 5, 500, None, orientation=0)
-    calc.signals.layout_ready.connect(lambda ld: normal_received.append(ld))
     calc.run()
 
-    rev_received = []
     calc2 = MasonryLayoutCalculator([1.0, 1.5, 0.8], 100, 5, 500, None, orientation=1)
-    calc2.signals.layout_ready.connect(lambda ld: rev_received.append(ld))
     calc2.run()
 
-    normal_item0_x = normal_received[0][0].x()
-    rev_item0_x = rev_received[0][0].x()
+    normal_item0_x = calc._result[0].x()
+    rev_item0_x = calc2._result[0].x()
     assert normal_item0_x != rev_item0_x
 
 
-def test_masonry_none_aspect_ratios(qtbot):
-    received = []
+def test_masonry_none_aspect_ratios():
     calc = MasonryLayoutCalculator([1.0, None, 0.8], 100, 5, 500, None, orientation=0)
-    calc.signals.layout_ready.connect(lambda ld: received.append(ld))
     calc.run()
-    assert len(received) == 1
-    assert len(received[0]) == 3
+    assert calc._result is not None
+    assert len(calc._result) == 3
 
 
-def test_masonry_single_item(qtbot):
-    received = []
+def test_masonry_single_item():
     calc = MasonryLayoutCalculator([1.0], 100, 5, 500, None, orientation=0)
-    calc.signals.layout_ready.connect(lambda ld: received.append(ld))
     calc.run()
-    assert len(received) == 1
-    assert len(received[0]) == 1
+    assert calc._result is not None
+    assert len(calc._result) == 1
 
 
 def test_layout_data_basic_construction():
@@ -343,13 +315,11 @@ class TestNearestInDirection:
         assert nxt in (2, 3)
         assert d[nxt].x() >= d[0].x() + d[0].width()
 
-    def test_masonry_varied_heights(self, qtbot):
+    def test_masonry_varied_heights(self):
         aspects = [1.0, 0.5, 1.5, 0.8, 2.0, 0.7, 1.2, 0.6, 0.9, 1.1, 0.4, 1.8]
         calc = MasonryLayoutCalculator(aspects, 100, 5, 400, None, orientation=0)
-        received = []
-        calc.signals.layout_ready.connect(lambda ld: received.append(ld))
         calc.run()
-        layout = received[0]
+        layout = calc._result
         for i in range(len(layout)):
             fwd = layout.nearest_in_direction(i, True)
             bwd = layout.nearest_in_direction(i, False)
@@ -358,13 +328,11 @@ class TestNearestInDirection:
             if bwd is not None:
                 assert (layout[bwd].y() + layout[bwd].height()) <= layout[i].y()
 
-    def test_forward_chain_no_stall(self, qtbot):
+    def test_forward_chain_no_stall(self):
         aspects = [1.0, 0.5, 1.5, 0.8, 2.0, 0.7, 1.2, 0.6, 0.9, 1.1, 0.4, 1.8]
         calc = MasonryLayoutCalculator(aspects, 100, 5, 400, None, orientation=0)
-        received = []
-        calc.signals.layout_ready.connect(lambda ld: received.append(ld))
         calc.run()
-        layout = received[0]
+        layout = calc._result
         idx = 0
         steps = 0
         for _ in range(50):
@@ -376,13 +344,11 @@ class TestNearestInDirection:
             steps += 1
         assert steps > 0
 
-    def test_backward_chain_no_stall(self, qtbot):
+    def test_backward_chain_no_stall(self):
         aspects = [1.0, 0.5, 1.5, 0.8, 2.0, 0.7, 1.2, 0.6, 0.9, 1.1, 0.4, 1.8]
         calc = MasonryLayoutCalculator(aspects, 100, 5, 400, None, orientation=0)
-        received = []
-        calc.signals.layout_ready.connect(lambda ld: received.append(ld))
         calc.run()
-        layout = received[0]
+        layout = calc._result
         last_idx = len(layout) - 1
         idx = last_idx
         steps = 0
@@ -395,13 +361,11 @@ class TestNearestInDirection:
             steps += 1
         assert steps > 0
 
-    def test_roundtrip_consistency(self, qtbot):
+    def test_roundtrip_consistency(self):
         aspects = [0.8, 1.2, 0.5, 1.5, 1.0, 0.7, 2.0, 0.6]
         calc = MasonryLayoutCalculator(aspects, 120, 5, 500, None, orientation=0)
-        received = []
-        calc.signals.layout_ready.connect(lambda ld: received.append(ld))
         calc.run()
-        layout = received[0]
+        layout = calc._result
         idx = 0
         forward_path = [idx]
         for _ in range(50):

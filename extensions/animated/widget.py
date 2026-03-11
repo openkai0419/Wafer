@@ -320,7 +320,6 @@ class AnimatedCellWidget(QtWidgets.QWidget):
     def on_deselected(self):
         pass
 
-    @profiler.profile
     def paintEvent(self, event):
         if not self._frames:
             pixmap = self._thumbnail

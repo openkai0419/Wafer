@@ -1,130 +1,66 @@
-■ プロジェクト概要
-画像メタデータをバックグラウンド収集・DB化し、高速検索・描画する画像ビューア。PySide6。
-将来的に動画/音声/Zip対応、extension拡張を見据える。
+■ このファイルについて
+- コードを読むだけでは分からない設計判断、技術的制約、不具合回避のメモ
+- ルール（守るべき規約）はrule.txtに記載。ここには書かない
+- アーキテクチャ詳細は /memories/repo/*.md に記載。ここでは重複しない
 
-■ 設計思想
-- 根幹思想: 「基盤は一つ、対応は多数」。wafer/が安定した共通基盤、extensions/が自由に増減するファイル対応
-- 基盤(wafer/)は慎重に設計され頻繁には変わらない。拡張(extensions/)は誰でも追加・変更・削除できる
-- extensionはwafer内部パッケージを直接import可能。API越しの制限ではなく、同一エコシステムの一員として基盤を最大活用する設計
-- 拡張同士は独立。imageがvideoを知る必要はない。各拡張はwafer/という共通言語だけで基盤と対話する
-- 理想形: 複数の開発者がwafer/を基盤に、様々なファイル形式への対応を自由に開発し合えるエコシステム
-- コードは「extensionを書く人」の視点で読みやすく、命名は明快に、インターフェースは直感的に保つ
+■ SQLite の罠
+- VIEWはマテリアライズされない。ウィンドウ関数入りVIEWをクエリ条件に使うと極端に遅い
+- 検索はkv_meta/kv_allビューを経由せず直接テーブルアクセスにすることで回避
+- compound SELECTをFROM句サブクエリにする時、各armを括弧で囲むと構文エラー
+- 読み取り専用接続ではcache_size/mmap_sizeのPRAGMAを設定
 
-■ ディレクトリ構成（wafer/）
-- wafer/app/ : プロセス群（viewer, tray, collector, indexer）。各OSプロセスのエントリーポイント
-- wafer/core/ : インフラ・ライブラリ層（actions, db, lang, platform, qt, setting, ipc）
-- wafer/plugin/ : プラグインフレームワーク。__init__.pyがextension向け公開API
-- wafer/utils/ : 最基底ユーティリティ（全モジュールが依存）
-- wafer/constants.py : 定数定義（最基底）
-- extensions/ : ファイル形式ごとの拡張（フォルダ単位。例: extensions/image/）
-依存方向: constants/utils ← core ← plugin ← app
-extensionsはplugin/utils/coreを参照可、appは非推奨
+■ 動画プレイヤー統合の制約と設計判断
+- QOpenGLWidgetはQGraphicsProxyWidgetでは動作しない → viewport子Widget方式を採用
+- WIDGET_CLASSを持つプラグインはviewport直接配置（AdditionalWidgetPool管理）
+- _sync_additional_widgets()でスクロール・レイアウト変更時にviewport座標へ同期。scrollbar.valueChangedに直接接続（throttle無し）
+- Widget判定は_ensure_widget_visibleでgrid_resolver.resolve()により同期的に行う（loader経由の非同期判定は廃止）
+- drawForeground()の選択矩形はviewport子Widgetの下に描画される点に注意
+- mpv render API (MpvRenderContext) + QOpenGLWidgetでネイティブウィンドウを回避し、Qt描画パイプラインに統合する
+- MpvCellWidgetはQWidget（軽量）。サムネイル表示がデフォルト。ホバー時にPlaybackSlotManagerが管理するMpvGLOverlayプール（QOpenGLWidget）を割り当てる
+- MpvGLOverlayはMpvCellWidgetの子Widget。activate時にsetParent(cell)で子化し、geometry=(0,0,w,h)で親全体を覆う。viewport()->scroll()による二重移動問題を回避
+- PlaybackSlotManagerはN個のselected枠+1個のhover枠+M個のappeared枠を管理。selected超過時はLRU（OrderedDict）で最古を解放。hoverからselectへの昇格、appearedからselectへの昇格にも対応
+- appear/selectは独立したライフサイクル。_appeared_cellsセットで可視状態を追跡し、_appeared辞書でオーバーレイ所有を管理。select時にappearedから昇格（overlay移動）しても_appeared_cellsには残る
+- hover activateはデバウンス（200ms）で高速スクロール中の不要なmpv起動を防止
+- MpvGLOverlay._ownerで所有MpvCellWidgetを追跡。leaveEventでMpvCellWidget._on_overlay_leave(owner)経由でSlotManagerに通知
+- GridView._prev_selection_setで前回選択を追跡し、新規selected/deselectedを差分算出。_ensure_widget_visibleでも復帰時のselect再適用を行う
+- サムネイル取得はwafer.plugin.load_thumbnail（grid_resolver.load→FileThumbnailer）を_ThumbnailRunnerで非同期実行
 
-■ プロセス構成（4ロール、IPC=ZMQ）
-- viewer: GUI。Node('viewer')。複数起動可能。バックグラウンドプロセスとは独立
-- tray: タスクトレイ常駐。Broker + Node('tray')。設定DB名毎にindexerを起動し管理。常に1つのみ
-- indexer: DB単位。Node('indexer', db=name, consumer=True)。plugin単位でcollectorプロセスを起動
-- collector: Node('collector-{plugin}', db=name)。メタデータ抽出
-- 起動: main.py → InstallSplash → load_plugins → tray → viewer
-- 多重起動防止: SafeProcessLock（pid+create_time）
-- --dev で DEV_MODE=True（ログパネル、デバッグメニュー有効化）
+■ Qt/OpenGL の不具合回避
+- QGraphicsOpacityEffectはQOpenGLWidgetに使用禁止。QtがオフスクリーンpixmapにレンダリングしようとしてGLコンテキストが壊れ、映像が表示されなくなる（音声のみ再生される）
+- ステールフレーム対策：activate時にGLコンテキスト初期化済み(_ctx存在)ならshow()しない。最初のフレーム到着時に_request_updateでshow。paintGLではawaitingかつframe未到着なら_clear_glで黒クリアし前の動画のフレームをレンダリングしない
+- warm_up時のサーフェスタイプ確保はPlaybackSlotManager.__init__でプールに1つMpvGLOverlayを事前生成して行う。遅延生成にするとwarm_upで確保されずウィンドウ再起動が発生する
+- ホバー時のマウスイベント：overlayが上に表示されるとcellのleaveEventが発火する場合がある。カーソル位置がoverlay内かチェックして判断。overlay自身のleaveEventで最終的にdeactivateする
+- AdditionalWidgetPool.warm_up()でWIDGET_CLASS持ちプラグインのWidgetを事前生成。Window表示前にQOpenGLWidgetを子として持たせることでサーフェスタイプ切り替え（＝Window再起動）を回避
 
-■ プロセスライフサイクル設計方針
-- Viewerは閲覧専用で自由に起動・終了する。バックグラウンドプロセスを管理しない
-- Trayがバックグラウンド全体のオーナー。終了時にIndexer/Collectorを必ず全削除する
-- プロセスツリー: Tray → Indexer → Collector（各プロセスが直接の子を管理）
-- 正常終了: Trayのshutdown_children()が全子孫をterminate→wait→kill
-- 異常終了: Indexer/CollectorのParentProcessChecker(process_checker.py)が親PID死亡を検知→自己停止
-- Trayがない場合、Indexer/CollectorはZMQ通信不能で機能しないため、再起動を待つのみ
-- --indexer単体起動は--trayを起動しindexer管理をtrayに委譲する設計
+■ プラグインシステムの設計決定経緯
+- 旧設計(source+plugins+API仮想モジュール)を廃止し、wafer/を実パッケージ化。旧方式は「制限された客」扱いだった
+- wafer.plugin.__init__.pyは「推奨入口」として残す。extensionが必要に応じてwafer.coreやwafer.utilsに直接入ることも許容
+- PluginRegistry.registerはNAME重複時に上書き（hotreload対応）
+- PluginLoaderのspec_from_file_locationでsubmodule_search_locations=[]を渡すと全サブモジュールがpackage扱いになり相対importが壊れる（別モジュールオブジェクトが生成される）。必ずNone(デフォルト)にすること
+- PluginRegistry.resolve()は_ext_cacheで拡張子→プラグインクラスをO(1)解決。register()時にキャッシュ再構築。EXTENSIONS=()のcatch-allプラグインはフォールバック走査
+- CollectorResultはdataclass。dict扱いにはto_dict()が必要
+- resolverはissubclass(cls,...)の代わりにisinstance(instance,...)を使用
+- meta_infoキー衝突回避はプラグイン開発者責任（プレフィックス推奨）
+- プラグインのvendor_dirはsys.path.append（標準ライブラリ優先）
+- frozen build時はbuild.batでextension依存を.packagesに事前インストール。ユーザー追加extension用にEmbeddedPythonが動的DLで対応
+- main.specからpipバンドルを削除済み。frozen buildにpipは不要（EmbeddedPythonが代替）
+- BasePlugin.post_install(plugin_dir, on_progress)はpipインストール後のフック。DLLダウンロード等に使う
+- BasePlugin.configure()は全プラグインロード後のフック。QSurfaceFormat等に使う。skip_install時も呼ばれる
+- MemoryLimitedImageCacheはthreading.Lockでスレッドセーフ化済み
+- ViewerResolverはgrid_resolverへの依存をlazy import化。コンストラクタ引数での注入は廃止
+- ImageViewerPluginのload_contentはNone返却。ViewerResolverのフォールバック（grid_resolver.load）に委譲
 
-■ データ/設定ファイル配置
-- データDB: data_path('{name}.db')、設定DB: config_path('{name}.db')
-- ログ: data_path('.log/{role}_{pid}.log')。RotatingFileHandler。
-- リソース: _resources/。frozen時はsys.executableの親基準。
+■ DraftOverlayの注意
+- _changesと_deletedは明確に分離すること（pop/{}の暗黙ルールでバグ経験あり）
 
-■ DB スキーマ概要（wafer/core/db/）
-- FileDB(file_db.py): スキーマ管理・WAL・CRUD。破損検知時は.bakして再生成。
-- FileIndexer(indexer.py): スキャン・差分検出・Phase1登録。FileDBに委譲。
-- FileSearchEngine(query.py): read-only検索。
-- 主要テーブル: hash_index, sources, files, meta_info, tags, collection_status
-- 2段階登録:
-  Phase1(FileIndexer): path/hash/mtime/size→sources、aspect→files、拡張子マッチするCollector→collection_status(pending)
-  Phase2(CollectionWriter): Collector結果→meta_info/tags/aspect上書き
+■ セッション管理の設計判断
+- Trayプロセスも独自QApplicationを持つためInputDialogを表示可能（parent=None）
 
-■ 収集アーキテクチャ（wafer/app/indexer/）
-- FolderWatcher: watchdog→queue→0.5秒バッチ→DB操作。全ファイル監視。
-- SettingWatcher: 設定DBファイル変更を直接監視。
-- CollectorDispatcher: pending取得→collect.batchでCollectorに送信→mark_dispatched。2秒ポーリング+即時トリガー。
-- CollectionWriter: collect.result受信→2秒バッチ→upsert_collection_results。同一sourceの重複はok優先。
-- ProgressAggregator: node.send_coalesced()で進捗・イベント送信。send_eventもcoalesce配信。
+■ 検索状態管理の注意
+- SearchService / ActionGroupStateManager / Session/Bookmark の3系統を同期する必要がある
+- Session/Bookmark復元時にsync_groups_from_args()が呼ばれないとActionGroupStateManager状態が不整合になる
 
-■ IPC アーキテクチャ（wafer/core/ipc/）
-5ファイル: transport.py, message.py, broker.py, node.py, outbox.py。msgpackシリアライズ。
-
-Broker(ROUTER): Trayで起動。ピア管理+ルーティング(dst: role/node_id/ALL, dbフィルタ)。
-  5キュー: direct(rid付き) → high → mid → broadcast(coalesce) → low。
-  未登録ピアからのheartbeatにはpongではなくmgmt.not_registeredを返す。これにより再起動後の再登録を検知可能。
-
-Node(DEALER): 全プロセスで使用。node_id='{role}-{pid}'。
-  mgmt.not_registered受信時にself._registered.clear()→次のheartbeat_tickで再登録を試行。
-  4送信API:
-  - send(): Ordered FIFO通常配信
-  - send_latest(): coalesce=Trueで最新値のみ（進捗等）
-  - send_reliable(): Outbox DB永続化+確実配信
-  - request(): 同期リクエスト・リプライ
-
-OutboxStore: プロセス個別のOutbox DB。send_reliable→push→通知→受信側scan_all→handler→削除。
-
-トピック: collect.batch(Indexer→Collector), collect.result(Collector→Indexer), outbox.notify, dev.log。
-
-■ 共通ユーティリティ索引（wafer/utils/）
-- paths.py: normalize_path, resolve_data_path/resolve_config_path, natural_sort, data_db_path/setting_db_path, list_data_db_names/list_setting_db_names, stem
-- formatting.py: dpix, split_last, is_dark_theme, format_timestamp/format_aspect/format_size/format_size_detail, display_prefixed_key
-- helpers.py: invoke, invoke_int, to_int, try_json_loads, try_invoke, widget_prop_bool
-- logs.py: AppLogger(4レベル静的メソッド+Signal)。set_node()でZMQログ転送有効化
-- notifier.py: Notifier(info/warning/error)。OverlayStack自動表示
-- hashes.py: fast_signature_hash(先頭/中央/末尾blake3), full_hash
-- json_io.py: read_json_file, write_json_file
-- signal.py: Signal(connect/emit)
-- profiling.py: FunctionProfiler(@profiler.profile)
-
-■ プラグインフレームワーク（wafer/plugin/）
-- __init__.py: extension向け公開API。BasePlugin/Grid/Viewer/Collector、load_thumbnail、CommandMeta等を再エクスポート
-- registry.py: BasePlugin(NAME/EXTENSIONS/PRIORITY/match/can_handle) + PluginRegistry(register/resolve/resolve_chain/resolve_instance/instance。インスタンスはregister時にキャッシュ)
-  - resolve(): match() + can_handle()で1つ返す。Collector/Loader等can_handle()が有効な場面向け
-  - resolve_chain(): match()のみで候補リスト返却(priority順)。Grid描画パス向け。can_handle()を呼ばない
-- collector/: BaseCollectorPlugin + CollectorResult(dataclass) + collector_resolver
-- grid/: BaseGridPlugin → ImageGridPlugin(load) / WidgetGridPlugin(WIDGET_CLASS/render→bool/release/appear/disappear/select/deselect) + grid_resolver。フォールバック=FileThumbnailer
-  - render()→bool: Trueでハンドル成功、Falseで次の候補へフォールバック
-  - bind()→bool: render()のboolを伝搬。False時にrelease()を自動呼び出し
-  - grid_viewの_ensure_widget_visible(): resolve_chain() + render→boolフォールバックループ
-  - GridResolver.load(): resolve_chain()で最初のImageGridPluginを探して使う
-- viewer/: BaseViewerPlugin → ImageViewerPlugin(load_content) / WidgetViewerPlugin(WIDGET_CLASS/render(widget,path)/clear) + viewer_resolver
-
-■ プラグインローダー（wafer/plugin/loader.py）
-- extensions/直下にフォルダ単位で配置。*.py/requirements.txt/lib/.packages/
-- ロードフロー: requirements.txt→pip install --target=.packages/→sys.path追加→lib/ DLL設定→_import_and_registerでクラス自動検出・登録
-- pip installはSubprocess（Popen+ポーリング）。frozen exe時はsys.executable --install-depsで子プロセス起動
-- .packages/.installedスタンプで再インストールスキップ
-
-■ actions/bridge アーキテクチャ（wafer/core/actions/）
-- bridge.pyは外部向けAPI専用。actions内部からbridge import禁止（ASTで検査）
-- 主要API: ActionKit(型再export), Settings(バインド設定), UI(Widget管理), Command(実行/登録), Menu(構築/表示), Context(ctx生成)
-- コマンドクラス: MenuGroup(メニュー付き) / DragMenuGroup(drag/drop専用)。NAME属性でプレフィックス定義
-- 自動検出: discover_command_classes()でissubclassベースに検出→register()
-- バインディング: seed.py(デフォルト) → BindingStoreBase(保存は差分のみ) → BindingManager(resolve)
-- プリセット: _resources/{mouse,key}_bindings/standard.json
-- シングルトン: 全てinstance()パターンに統一済み（CommandRegistry.instance()等）
-- メニュートークン: MENU_SEPARATOR("-"), MENU_SECTION_PREFIX(":")。menu.pyで定数定義
-- editors翻訳: TranslatorMixin経由。翻訳キーは_resources/translations.json
-- プラグインのGrid/View/Commandは個別に登録・登録解除可能な設計。未登録コマンドへの参照は安全にフォールバック
-- extension側のMenuGroupはGrid/View別に分離する（例: VideoGridCommands, 将来のVideoViewCommands）
-
-■ ビューア構造（wafer/app/viewer/）
-- GridItemModel(grid/items.py): GridView用のファイル一覧/選択/現在インデックス
-- FileViewModel(preview/file_model.py): FileViewerWidget用の独立Model。pathChangedシグナルでView自動更新
-- ImageLoaderRunnable(grid/loader.py): キャッシュキーはpathのみ。width/height>=要求サイズならHit
-- FolderTree(widgets/foldertree.py): navigate_*メソッド6種。DFS巡回はexcluded/rootsを境界としてスキップ
-- GridView: QGraphicsView+ActionKit.UIMixin。FadePixmapItemで画像配置。drawForeground()でオーバーレイ
-- ビューア固有コマンド/メニューはwafer/app/viewer/直下に配置
+■ その他
+- SelectionManager.set_selected(indexes, last)のlastはリスト内位置インデックス
+- get_resource_path()はpytest時にCWDフォールバックで_resourcesを解決
+- PowerShellで日本語ファイルを編集するとエンコーディング破損する。日本語テキストはcreate_fileツールかPythonで書き換えること

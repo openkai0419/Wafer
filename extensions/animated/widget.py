@@ -187,6 +187,8 @@ class AnimatedCellWidget(QtWidgets.QWidget):
         self.stop()
         path = self._path
         frames = self._frames
+        thumbnail = self._thumbnail
+        scaled = self._scaled_pixmap
         self._frames = []
         self._delays = []
         self._thumbnail = None
@@ -195,8 +197,15 @@ class AnimatedCellWidget(QtWidgets.QWidget):
         self._accumulated = 0
         self._scaled_pixmap = None
         self._scaled_key = ()
+        to_dispose: list[QtGui.QPixmap] = []
+        if scaled is not None:
+            to_dispose.append(scaled)
         if frames and (not path or path not in _frame_cache):
-            _disposer.schedule(frames)
+            to_dispose.extend(frames)
+        elif thumbnail is not None:
+            to_dispose.append(thumbnail)
+        if to_dispose:
+            _disposer.schedule(to_dispose)
 
     def advance(self, elapsed_ms: int):
         if not self._frames or not self._delays:
@@ -233,18 +242,17 @@ class AnimatedCellWidget(QtWidgets.QWidget):
         ww, wh = self.width(), self.height()
         if pw <= 0 or ph <= 0 or ww <= 0 or wh <= 0:
             return
-        key = (id(pixmap), ww, wh)
-        if key != self._scaled_key:
-            scale = min(ww / pw, wh / ph)
-            dw, dh = int(pw * scale), int(ph * scale)
-            if dw == pw and dh == ph:
-                self._scaled_pixmap = pixmap
-            else:
+        if pw > ww or ph > wh:
+            key = (id(pixmap), ww, wh)
+            if key != self._scaled_key:
+                scale = min(ww / pw, wh / ph)
+                dw, dh = int(pw * scale), int(ph * scale)
                 self._scaled_pixmap = pixmap.scaled(
-                    dw, dh, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
-            self._scaled_key = key
-        scaled = self._scaled_pixmap
+                    dw, dh, QtCore.Qt.KeepAspectRatio, QtCore.Qt.FastTransformation)
+                self._scaled_key = key
+            pixmap = self._scaled_pixmap
+            pw, ph = pixmap.width(), pixmap.height()
         painter = QtGui.QPainter(self)
-        x = (ww - scaled.width()) // 2
-        y = (wh - scaled.height()) // 2
-        painter.drawPixmap(x, y, scaled)
+        x = (ww - pw) // 2
+        y = (wh - ph) // 2
+        painter.drawPixmap(x, y, pixmap)

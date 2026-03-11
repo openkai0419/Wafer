@@ -49,7 +49,7 @@
 - Grid/ViewerのWIDGET_CLASSとload()は排他。Widget生成はシステム管理
 - Collectorはmeta_info+statusのみ返す。name/aspect/file_hashはPhase1で設定
 - PRIORITY大=高優先。EXTENSIONS=()は全ファイルマッチ
-- render()→bool: Trueでハンドル成功、Falseで次候補へフォールバック
+- render(job)は戻り値なし。フォールバックはresolve_chain内のcan_handle()で制御
 - BaseGridPlugin.select(widget, path) / deselect(widget)はGridResolverがGridView._on_selection_changed内の差分計算で呼び出す
 - プラグインのGrid/View/Commandは個別に登録・登録解除できる設計を前提とする
 - コマンドはctx経由で取得し、UIがコマンド状態を参照する時はコマンド不在を考慮する

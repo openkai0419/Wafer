@@ -48,6 +48,20 @@ def _make_fallback_task(job, cancel):
     return task
 
 
+def _execute_plugin_render(plugin, job, cancel, thumb_dispatcher):
+    if cancel.is_set():
+        return
+    if not isinstance(plugin, _WidgetGridPlugin):
+        fkey = fullsize_key(job.path)
+        cached = job.image_cache.get_if_sufficient(fkey, job.size)
+        if cached is not None:
+            job.invoke(lambda item: item.set_image(cached, job.path))
+            return
+    plugin.render(job)
+    if isinstance(plugin, _WidgetGridPlugin) and plugin.REQUIRE_THUMBNAIL and not cancel.is_set():
+        _load_widget_thumbnail(plugin, job, cancel, thumb_dispatcher)
+
+
 def _make_resolve_task(job, cancel, promote_fn, thumb_dispatcher):
     def task():
         if cancel.is_set():
@@ -66,16 +80,7 @@ def _make_resolve_task(job, cancel, promote_fn, thumb_dispatcher):
         if isinstance(plugin, _WidgetGridPlugin):
             name = plugin.NAME
             job.invoke_raw(lambda: promote_fn(job.index, name))
-            plugin.render(job)
-            if plugin.REQUIRE_THUMBNAIL and not cancel.is_set():
-                _load_widget_thumbnail(plugin, job, cancel, thumb_dispatcher)
-        else:
-            fkey = fullsize_key(job.path)
-            cached = job.image_cache.get_if_sufficient(fkey, job.size)
-            if cached is not None:
-                job.invoke(lambda item: item.set_image(cached, job.path))
-                return
-            plugin.render(job)
+        _execute_plugin_render(plugin, job, cancel, thumb_dispatcher)
     return task
 
 
@@ -157,21 +162,9 @@ class GridPipeline(QtCore.QObject):
         )
 
         if plugin is not None:
-            require_thumb = isinstance(plugin, _WidgetGridPlugin) and plugin.REQUIRE_THUMBNAIL
-
-            def make_task(p=plugin, j=job, c=cancel, thumb=require_thumb, td=self._thumb_dispatcher):
+            def make_task(p=plugin, j=job, c=cancel, td=self._thumb_dispatcher):
                 def task():
-                    if c.is_set():
-                        return
-                    if not isinstance(p, _WidgetGridPlugin):
-                        fkey = fullsize_key(j.path)
-                        cached = j.image_cache.get_if_sufficient(fkey, j.size)
-                        if cached is not None:
-                            j.invoke(lambda item: item.set_image(cached, j.path))
-                            return
-                    p.render(j)
-                    if thumb and not c.is_set():
-                        _load_widget_thumbnail(p, j, c, td)
+                    _execute_plugin_render(p, j, c, td)
                 return task
 
             self._render_dispatcher.post(make_task(), priority=plugin.PRIORITY, cancel=cancel)

@@ -337,20 +337,20 @@ def test_disappear_calls_on_disappeared():
     widget.on_disappeared.assert_called_once()
 
 
-def test_select_calls_on_selected():
+def test_select_is_noop():
     from extensions.animated.grid import AnimatedGridPlugin
     plugin = AnimatedGridPlugin()
     widget = MagicMock()
     plugin.select(widget)
-    widget.on_selected.assert_called_once()
+    widget.on_selected.assert_not_called()
 
 
-def test_deselect_calls_on_deselected():
+def test_deselect_is_noop():
     from extensions.animated.grid import AnimatedGridPlugin
     plugin = AnimatedGridPlugin()
     widget = MagicMock()
     plugin.deselect(widget)
-    widget.on_deselected.assert_called_once()
+    widget.on_deselected.assert_not_called()
 
 
 def test_on_thumb_loaded_calls_set_thumbnail():

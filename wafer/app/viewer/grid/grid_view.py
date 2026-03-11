@@ -629,8 +629,12 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         new_visible = set(expanded_range)
         newly_added = new_visible - self.visible_indices
         no_longer_visible = self.visible_indices - new_visible
-        for i in no_longer_visible:
-            self._recycle_widget(i)
+        vp = self.viewport()
+        if no_longer_visible:
+            vp.setUpdatesEnabled(False)
+            for i in no_longer_visible:
+                self._recycle_widget(i)
+            vp.setUpdatesEnabled(True)
         if newly_added:
             if isinstance(visible_range, range):
                 center = (visible_range.start + visible_range.stop) // 2
@@ -714,8 +718,11 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             return
         if index >= len(self.items.paths):
             return
-        widget = self.additional_pool.acquire(plugin_name, self.viewport())
+        vp = self.viewport()
+        vp.setUpdatesEnabled(False)
+        widget = self.additional_pool.acquire(plugin_name, vp)
         if widget is None:
+            vp.setUpdatesEnabled(True)
             return
         if index in self.widgets:
             self.pixmap_item_pool.release(self.widgets.pop(index))
@@ -730,6 +737,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             instance = grid_resolver.registry.instance(plugin_name)
             if isinstance(instance, _WidgetGridPlugin):
                 instance.on_thumb_loaded(widget, cached)
+        vp.setUpdatesEnabled(True)
 
     @profiler.profile
     def _sync_additional_widget(self, index, vp_rect=None):
@@ -739,6 +747,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         if index >= len(self.rects):
             if widget.isVisible():
                 widget.hide()
+                self._notifier.disappear(index, widget)
             return
         scene_rect = self.rects[index]
         if vp_rect is None:
@@ -748,8 +757,10 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             int(vp_point.x()), int(vp_point.y()),
             scene_rect.width(), scene_rect.height(),
         )
-        if not mapped.intersects(vp_rect):
-            if widget.isVisible():
+        visible = mapped.intersects(vp_rect)
+        was_visible = widget.isVisible()
+        if not visible:
+            if was_visible:
                 widget.hide()
                 self._notifier.disappear(index, widget)
             return
@@ -759,7 +770,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
                 widget.move(mapped.topLeft())
             else:
                 widget.setGeometry(mapped)
-        if not widget.isVisible():
+        if not was_visible:
             widget.show()
             self._notifier.appear(index, widget)
 

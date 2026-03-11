@@ -117,6 +117,14 @@
 ■ セッション管理の設計判断
 - Trayプロセスも独自QApplicationを持つためInputDialogを表示可能（parent=None）
 
+■ AnimatedCellWidget / GridView スクロール最適化の知見
+- _sync_additional_widgetでサイズ不変時はmove()のみ使う。setGeometry()はresizeEvent+paintEventを誘発する
+- setUpdatesEnabled(False/True)はhide()が大量発生する区間（recycle）には有効だが、move()中心の区間（_sync_additional_widgets）では逆効果。Trueに戻した瞬間にバッチrepaintが発火し、かえってスパイクが増える
+- QPixmapの即時破棄（Noneや[]代入）はGDI/GPUリソースの同期解放でメインスレッドを止める。_PixmapDisposerでタイマー分割破棄する
+- paintEventでのアップスケール（数ピクセル差）はFrameごとに2-4ms。_decode_framesがjob.sizeでプリスケール済みならアップスケールをスキップし、中央描画でパディングを吸収する
+- AnimatedGridPlugin.can_handleはBGスレッド（_make_resolve_task内）で実行されるためUIは止めない。ファイルI/O節約のためキャッシュは有効だがUI直結の最適化ではない
+- image.scaled()はFastTransformationで十分。セルサイズ（500px程度）ではSmoothとの視覚差が小さくスクロール時は気づかない
+
 ■ 検索状態管理の注意
 - SearchService / ActionGroupStateManager / Session/Bookmark の3系統を同期する必要がある
 - Session/Bookmark復元時にsync_groups_from_args()が呼ばれないとActionGroupStateManager状態が不整合になる

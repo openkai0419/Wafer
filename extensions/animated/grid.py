@@ -1,4 +1,5 @@
 import os
+from functools import lru_cache
 
 from PySide6 import QtCore, QtGui
 
@@ -42,6 +43,25 @@ def _is_animated_gif(header: bytes) -> bool:
     return b'NETSCAPE2.0' in header or b'ANIMEXTS1.0' in header
 
 
+@lru_cache(maxsize=8192)
+def _is_animated(path: str) -> bool:
+    ext = os.path.splitext(path)[1].lower()
+    if ext == '.apng':
+        return True
+    try:
+        with open(path, 'rb') as f:
+            header = f.read(_HEADER_READ_SIZE)
+    except OSError:
+        return False
+    if ext == '.png':
+        return _has_actl_chunk(header)
+    if ext == '.webp':
+        return _is_animated_webp(header)
+    if ext == '.gif':
+        return _is_animated_gif(header)
+    return False
+
+
 _DEFAULT_DELAY = 100
 _MIN_DELAY = 20
 
@@ -65,7 +85,7 @@ def _decode_frames(path: str, size: QtCore.QSize | None, job) -> tuple[list[QtGu
             break
         if size is not None and image.size() != size:
             image = image.scaled(
-                size, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+                size, QtCore.Qt.KeepAspectRatio, QtCore.Qt.FastTransformation)
         pixmaps.append(QtGui.QPixmap.fromImage(image))
         delays.append(delay)
     return pixmaps, delays
@@ -81,21 +101,7 @@ class AnimatedGridPlugin(WidgetGridPlugin):
     @classmethod
     @profiler.profile
     def can_handle(cls, path: str) -> bool:
-        ext = os.path.splitext(path)[1].lower()
-        if ext == '.apng':
-            return True
-        try:
-            with open(path, 'rb') as f:
-                header = f.read(_HEADER_READ_SIZE)
-        except OSError:
-            return False
-        if ext == '.png':
-            return _has_actl_chunk(header)
-        if ext == '.webp':
-            return _is_animated_webp(header)
-        if ext == '.gif':
-            return _is_animated_gif(header)
-        return False
+        return _is_animated(path)
 
     @profiler.profile
     def render(self, job):
@@ -129,11 +135,3 @@ class AnimatedGridPlugin(WidgetGridPlugin):
     @profiler.profile
     def disappear(self, widget):
         widget.on_disappeared()
-
-    @profiler.profile
-    def select(self, widget):
-        widget.on_selected()
-
-    @profiler.profile
-    def deselect(self, widget):
-        widget.on_deselected()

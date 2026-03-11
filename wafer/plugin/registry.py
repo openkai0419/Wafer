@@ -1,5 +1,6 @@
 import os
 from abc import ABC, abstractmethod
+from ..utils.profiling import profiler
 
 
 class BasePlugin(ABC):
@@ -33,6 +34,7 @@ class PluginRegistry:
         self._plugins: list[type[BasePlugin]] = []
         self._instances: dict[str, BasePlugin] = {}
         self._ext_cache: dict[str, list[type[BasePlugin]]] = {}
+        self._chain_cache: dict[str, list[type[BasePlugin]]] = {}
 
     def _rebuild_ext_cache(self):
         cache: dict[str, list[type[BasePlugin]]] = {}
@@ -50,7 +52,9 @@ class PluginRegistry:
         self._plugins.sort(key=lambda c: c.PRIORITY, reverse=True)
         self._instances[plugin_cls.NAME] = plugin_cls()
         self._rebuild_ext_cache()
+        self._chain_cache.clear()
 
+    @profiler.profile
     def resolve(self, path: str) -> type[BasePlugin] | None:
         ext = os.path.splitext(path)[1].lower()
         if ext:
@@ -62,12 +66,17 @@ class PluginRegistry:
                 return p
         return None
 
+    @profiler.profile
     def resolve_chain(self, path: str) -> list[type[BasePlugin]]:
         ext = os.path.splitext(path)[1].lower()
+        cached = self._chain_cache.get(ext)
+        if cached is not None:
+            return cached
         candidates = list(self._ext_cache.get(ext, [])) if ext else []
         for p in self._plugins:
             if not p.EXTENSIONS and p.match(path) and p not in candidates:
                 candidates.append(p)
+        self._chain_cache[ext] = candidates
         return candidates
 
     def resolve_instance(self, path: str) -> BasePlugin | None:

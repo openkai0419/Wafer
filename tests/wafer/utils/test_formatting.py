@@ -1,4 +1,37 @@
 from wafer.utils.formatting import split_last, format_timestamp, format_aspect, format_size, format_size_detail
+import wafer.utils.formatting as _fmt_mod
+
+
+def test_dpix_caches_dpi_value():
+    _fmt_mod._cached_dpi = None
+    from wafer.utils.formatting import dpix
+    from PySide6 import QtGui
+    if QtGui.QGuiApplication.primaryScreen() is None:
+        assert dpix(10) == 10
+        return
+    result1 = dpix(10)
+    assert _fmt_mod._cached_dpi is not None
+    cached = _fmt_mod._cached_dpi
+    result2 = dpix(10)
+    assert _fmt_mod._cached_dpi is cached
+    assert result1 == result2
+
+
+def test_dpix_uses_cached_value():
+    _fmt_mod._cached_dpi = 192.0
+    from wafer.utils.formatting import dpix
+    assert dpix(10) == 20
+    assert dpix(5) == 10
+    _fmt_mod._cached_dpi = None
+
+
+def test_dpix_no_screen_returns_raw(monkeypatch):
+    _fmt_mod._cached_dpi = None
+    from PySide6 import QtGui
+    monkeypatch.setattr(QtGui.QGuiApplication, "primaryScreen", lambda: None)
+    from wafer.utils.formatting import dpix
+    assert dpix(5) == 5
+    _fmt_mod._cached_dpi = None
 
 
 def test_split_last():

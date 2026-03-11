@@ -10,6 +10,7 @@ from ...constants import DEV_MODE
 from ...core.platform.process import AppProcess
 from ...core.ipc.message import Message
 from ...core.qt.dialog import InputDialog
+from ...utils.notifier import Notifier
 from ...app.viewer.session import SessionStore
 def _tray_send(ctx, topic: str, payload=None):
     tray = ctx.get_instance("Tray")
@@ -45,7 +46,7 @@ def show_window(ctx=None):
             if inactive:
                 AppProcess.new_main('--viewer', '--session', inactive)
             else:
-                sid = store.create_session(store.next_default_name())
+                sid = store.create_session_with_unique_name(store.next_default_name())
                 AppProcess.new_main('--viewer', '--session', sid)
         return
     tray.show_state = not bool(getattr(tray, 'show_state', False))
@@ -65,6 +66,14 @@ def open_new_window(ctx=None):
         return
     name = name.strip()
     sid = store.create_session(name)
+    if sid is None:
+        existing = store.find_session_by_name(name)
+        if existing:
+            if existing.session_id in store.get_active_session_ids():
+                Notifier.warning(f'Session already open: {name}')
+            else:
+                AppProcess.new_main('--viewer', '--session', existing.session_id)
+        return
     AppLogger.info(f'launching new viewer: {sid}')
     AppProcess.new_main('--viewer', '--session', sid)
 

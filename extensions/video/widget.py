@@ -122,9 +122,15 @@ class MpvGLOverlay(QOpenGLWidget):
     def _show_first_frame(self):
         if self._awaiting_first_frame:
             self._awaiting_first_frame = False
-            if not self.isVisible():
-                self.show()
-            self.update()
+            gen = self._play_generation
+            QTimer.singleShot(0, lambda: self._deferred_show(gen))
+
+    def _deferred_show(self, generation):
+        if generation != self._play_generation:
+            return
+        if not self.isVisible():
+            self.show()
+        self.update()
 
     @Slot()
     def _request_update(self):
@@ -145,6 +151,7 @@ class MpvGLOverlay(QOpenGLWidget):
         f.glClearColor(0.0, 0.0, 0.0, 1.0)
         f.glClear(GL_COLOR_BUFFER_BIT)
 
+    @profiler.profile
     def paintGL(self):
         if self._ctx is None:
             return
@@ -203,6 +210,7 @@ class MpvGLOverlay(QOpenGLWidget):
         self._frame_ready = False
         self.hide()
 
+    @profiler.profile
     def cleanup(self):
         self._play_generation += 1
         if self._ctx:
@@ -267,6 +275,7 @@ class PlaybackSlotManager:
                 return True
         return False
 
+    @profiler.profile
     def _acquire(self) -> MpvGLOverlay | None:
         if not self._mpv_available:
             return None
@@ -434,6 +443,7 @@ class PlaybackSlotManager:
         if self._hover_cell is cell or self._pending_hover_cell is cell:
             self.deactivate_hover()
 
+    @profiler.profile
     def cleanup(self):
         self._cancel_pending()
         self.deactivate_hover()
@@ -507,6 +517,7 @@ class MpvCellWidget(QWidget):
         self._thumbnail = image
         self.update()
 
+    @profiler.profile
     def paintEvent(self, event):
         painter = QPainter(self)
         if self._thumbnail and not self._thumbnail.isNull():

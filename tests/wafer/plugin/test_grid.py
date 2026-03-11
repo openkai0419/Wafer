@@ -405,6 +405,52 @@ def test_resolve_chain_empty_for_unknown():
     assert grid_resolver.registry.resolve_chain('file.xyz') == []
 
 
+def test_resolve_chain_uses_cache():
+    from wafer.plugin.registry import PluginRegistry
+    from wafer.plugin.grid.base import ImageGridPlugin as _ImageBase
+
+    class Stub(_ImageBase):
+        NAME = 'stub_cache'
+        EXTENSIONS = ('.cachetest',)
+        PRIORITY = 100
+        def load(self, path, size=None):
+            return None
+
+    reg = PluginRegistry()
+    reg.register(Stub)
+    first = reg.resolve_chain('a.cachetest')
+    second = reg.resolve_chain('b.cachetest')
+    assert first is second
+
+
+def test_resolve_chain_cache_cleared_on_register():
+    from wafer.plugin.registry import PluginRegistry
+    from wafer.plugin.grid.base import ImageGridPlugin as _ImageBase
+
+    class A(_ImageBase):
+        NAME = 'a_clear'
+        EXTENSIONS = ('.clr',)
+        PRIORITY = 100
+        def load(self, path, size=None):
+            return None
+
+    class B(_ImageBase):
+        NAME = 'b_clear'
+        EXTENSIONS = ('.clr',)
+        PRIORITY = 200
+        def load(self, path, size=None):
+            return None
+
+    reg = PluginRegistry()
+    reg.register(A)
+    first = reg.resolve_chain('x.clr')
+    assert first == [A]
+    reg.register(B)
+    second = reg.resolve_chain('x.clr')
+    assert second == [B, A]
+    assert first is not second
+
+
 def test_resolve_chain_includes_all_candidates():
     chain = grid_resolver.registry.resolve_chain('test.gif')
     names = [p.NAME for p in chain]

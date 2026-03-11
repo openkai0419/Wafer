@@ -267,6 +267,23 @@ class TestAnimatedCellWidget:
         widget.on_disappeared()
         assert not widget._playing
 
+    def test_on_disappeared_cancels_decode_runner(self, widget):
+        from extensions.animated.widget import _DecodeRunner
+        runner = _DecodeRunner('test.gif', None)
+        widget._path = 'test.gif'
+        widget._decode_runner = runner
+        widget.on_disappeared()
+        assert runner._cancelled
+        assert widget._decode_runner is None
+
+    def test_on_appeared_restarts_decode_when_no_frames(self, widget):
+        widget._path = 'test.gif'
+        widget._load_size = QtCore.QSize(100, 100)
+        widget._frames = []
+        widget.on_appeared()
+        assert widget._decode_runner is not None
+        widget._cancel_runners()
+
     def test_load_with_cache_hit(self, widget):
         from extensions.animated.widget import _frame_cache
         frames = [MagicMock(), MagicMock()]
@@ -306,9 +323,9 @@ class TestAnimatedCellWidget:
 
     def test_on_decode_ready_sets_frames(self, widget, qtbot):
         widget._path = 'test.gif'
-        images = [QtGui.QImage(10, 10, QtGui.QImage.Format.Format_ARGB32)]
+        pixmaps = [QtGui.QPixmap(10, 10)]
         delays = [100]
-        widget._on_decode_ready('test.gif', images, delays)
+        widget._on_decode_ready('test.gif', pixmaps, delays)
         assert len(widget._frames) == 1
         assert widget._delays == [100]
         assert widget._thumbnail is not None
@@ -318,6 +335,20 @@ class TestAnimatedCellWidget:
         widget._on_decode_ready('old.gif', [], [])
         assert widget._frames == []
         assert widget._thumbnail is None
+
+    def test_decode_runner_emits_pixmaps(self, qtbot, tmp_path):
+        from extensions.animated.widget import _DecodeRunner
+        from PIL import Image
+        gif_path = str(tmp_path / 'test.gif')
+        frames = [Image.new('RGB', (10, 10), c) for c in ['red', 'blue']]
+        frames[0].save(gif_path, save_all=True, append_images=frames[1:], duration=100, loop=0)
+        runner = _DecodeRunner(gif_path, None)
+        results = []
+        runner.signals.ready.connect(lambda p, pxs, d: results.append((p, pxs, d)))
+        runner.run()
+        assert len(results) == 1
+        for px in results[0][1]:
+            assert isinstance(px, QtGui.QPixmap)
 
     def test_set_thumbnail_sets_pixmap(self, widget):
         widget._path = 'test.gif'

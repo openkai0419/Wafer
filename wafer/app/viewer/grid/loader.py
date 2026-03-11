@@ -33,6 +33,7 @@ class ImageLoaderRunnable(QtCore.QRunnable):
             QtCore.Qt.SmoothTransformation
         )
 
+    @profiler.profile
     @AdaptiveThreadPool.register(30, 1000)
     def run(self):
         if self._cancelled:

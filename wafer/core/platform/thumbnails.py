@@ -5,6 +5,7 @@ import sys
 from PIL import Image
 
 from ...utils.logs import AppLogger
+from ...utils.profiling import profiler
 
 _IShellItemImageFactory = None
 _shell_argtypes_set = False

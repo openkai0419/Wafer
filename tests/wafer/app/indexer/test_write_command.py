@@ -1,5 +1,4 @@
 import py_compile
-import time
 
 from wafer.app.indexer.write_command import WriteCommand, WritePriority
 
@@ -40,7 +39,6 @@ def test_priority_queue_ordering():
     import queue
     q = queue.PriorityQueue()
     cmd_low = WriteCommand.create('purge', priority=WritePriority.MAINTENANCE)
-    time.sleep(0.001)
     cmd_high = WriteCommand.create('delete', priority=WritePriority.REALTIME)
     q.put(cmd_low)
     q.put(cmd_high)
@@ -54,10 +52,22 @@ def test_same_priority_fifo():
     import queue
     q = queue.PriorityQueue()
     cmd1 = WriteCommand.create('op_a', priority=WritePriority.SCAN)
-    time.sleep(0.001)
     cmd2 = WriteCommand.create('op_b', priority=WritePriority.SCAN)
     q.put(cmd1)
     q.put(cmd2)
+    first = q.get()
+    second = q.get()
+    assert first.operation == 'op_a'
+    assert second.operation == 'op_b'
+
+
+def test_same_priority_fifo_reverse_put():
+    import queue
+    q = queue.PriorityQueue()
+    cmd1 = WriteCommand.create('op_a', priority=WritePriority.SCAN)
+    cmd2 = WriteCommand.create('op_b', priority=WritePriority.SCAN)
+    q.put(cmd2)
+    q.put(cmd1)
     first = q.get()
     second = q.get()
     assert first.operation == 'op_a'

@@ -805,6 +805,6 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         if not self._additional_widgets:
             return
         vp_rect = self.viewport().rect()
-        for idx in self._additional_widgets:
+        for idx in self.visible_indices & self._additional_widgets.keys():
             self._sync_additional_widget(idx, vp_rect)
         self._overlay.raise_()

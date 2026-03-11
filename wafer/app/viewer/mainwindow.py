@@ -45,7 +45,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
                 self._session_store.claim_session(inactive)
             else:
                 name = DEFAULT_SESSION_NAME if not self._session_store.list_sessions() else self._session_store.next_default_name()
-                self.session_id = self._session_store.create_session(name)
+                self.session_id = self._session_store.create_session_with_unique_name(name)
                 self._session_store.claim_session(self.session_id)
         self._session_entry: SessionEntry | None = self._session_store.get_session(self.session_id)
         self._session_deleted = False

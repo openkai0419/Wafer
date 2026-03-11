@@ -5,6 +5,7 @@ from PySide6 import QtCore, QtGui
 
 from wafer.plugin import ImageGridPlugin as _ImageGridPlugin
 from wafer.utils.logs import AppLogger
+from wafer.utils.profiling import profiler
 
 
 class ImageGridPlugin(_ImageGridPlugin):
@@ -12,6 +13,7 @@ class ImageGridPlugin(_ImageGridPlugin):
     EXTENSIONS = ('.jpg', '.jpeg', '.png', '.bmp', '.gif', '.webp')
     PRIORITY = 100
 
+    @profiler.profile
     def load(self, path: str, size=None) -> QtGui.QImage | None:
         ext = os.path.splitext(path)[-1].lower()
         try:
@@ -52,6 +54,7 @@ class ImageGridPlugin(_ImageGridPlugin):
             AppLogger.warning(f'[ImageGridPlugin] Failed to load image: {path} ({e})')
             return None
 
+    @profiler.profile
     def _qt_read(self, path, size, keep_aspect):
         reader = QtGui.QImageReader(path)
         reader.setAutoTransform(True)
@@ -91,6 +94,7 @@ class ImageGridPlugin(_ImageGridPlugin):
             return cv2.IMREAD_COLOR
         return cv2.IMREAD_UNCHANGED
 
+    @profiler.profile
     def _numpy_to_qimage(self, img):
         if img.dtype == np.uint16:
             img = (img >> 8).astype(np.uint8)

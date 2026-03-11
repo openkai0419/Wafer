@@ -228,11 +228,44 @@ class SessionStore:
             return True
         return self._locked_update(_update)
 
-    def create_session(self, name: str, color: str = '') -> str:
-        sid = _new_id()
-        entry = SessionEntry(session_id=sid, name=name, color=color)
-        self.save_session(entry)
-        return sid
+    def has_session_name(self, name: str) -> bool:
+        return any(e.name == name for e in self.list_sessions())
+
+    def find_session_by_name(self, name: str) -> SessionEntry | None:
+        for e in self.list_sessions():
+            if e.name == name:
+                return e
+        return None
+
+    def create_session(self, name: str, color: str = '') -> str | None:
+        def _update(raw):
+            sessions = raw.setdefault('sessions', {})
+            for v in sessions.values():
+                if v.get('name') == name:
+                    return None
+            sid = _new_id()
+            entry = SessionEntry(session_id=sid, name=name, color=color)
+            entry.updated_at = _now_iso()
+            sessions[sid] = entry.to_dict()
+            return sid
+        return self._locked_update(_update)
+
+    def create_session_with_unique_name(self, base_name: str = '', color: str = '') -> str:
+        def _update(raw):
+            sessions = raw.setdefault('sessions', {})
+            existing = {v.get('name') for v in sessions.values()}
+            name = base_name or f'{DEFAULT_SESSION_NAME}1'
+            if name in existing:
+                n = 1
+                while f'{base_name} ({n})' in existing:
+                    n += 1
+                name = f'{base_name} ({n})'
+            sid = _new_id()
+            entry = SessionEntry(session_id=sid, name=name, color=color)
+            entry.updated_at = _now_iso()
+            sessions[sid] = entry.to_dict()
+            return sid
+        return self._locked_update(_update)
 
     def next_default_name(self) -> str:
         existing_names = {e.name for e in self.list_sessions()}
@@ -251,12 +284,6 @@ class SessionStore:
 
     def list_session_names(self) -> list[str]:
         return [e.name for e in self.list_sessions()]
-
-    def find_session_by_name(self, name: str) -> SessionEntry | None:
-        for e in self.list_sessions():
-            if e.name == name:
-                return e
-        return None
 
     def set_session_color(self, session_id: str, color: str) -> bool:
         def _update(raw):
@@ -277,6 +304,9 @@ class SessionStore:
             data = sessions.get(session_id)
             if data is None:
                 return False
+            for sid, v in sessions.items():
+                if sid != session_id and v.get('name') == new_name:
+                    return False
             entry = SessionEntry.from_dict(data)
             entry.name = new_name
             entry.updated_at = _now_iso()

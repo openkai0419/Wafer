@@ -77,6 +77,7 @@ class LayoutData:
                 return i
         return None
 
+    @profiler.profile
     def intersecting_indices(self, rect):
         p_start = rect.top() if self._is_horizontal else rect.left()
         p_end = rect.bottom() if self._is_horizontal else rect.right()
@@ -91,6 +92,7 @@ class LayoutData:
                 result.append(i)
         return result
 
+    @profiler.profile
     def nearest_in_direction(self, idx, forward):
         if idx is None or idx >= self._count:
             return None

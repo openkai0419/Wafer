@@ -66,6 +66,7 @@ class TestMpvGLOverlay:
         overlay._frame_ready = True
         overlay._frame_generation = overlay._play_generation
         overlay._request_update()
+        QtWidgets.QApplication.instance().processEvents()
         assert overlay.isVisible()
         assert not overlay._awaiting_first_frame
 
@@ -339,6 +340,7 @@ class TestStaleFramePrevention:
         overlay._frame_generation = overlay._play_generation
         overlay._frame_ready = True
         overlay._request_update()
+        QtWidgets.QApplication.instance().processEvents()
         assert overlay.isVisible()
         assert not overlay._awaiting_first_frame
         overlay._ctx.render.reset_mock()
@@ -382,6 +384,7 @@ class TestStaleFramePrevention:
         overlay._frame_generation = overlay._play_generation
         overlay._frame_ready = True
         overlay._request_update()
+        QtWidgets.QApplication.instance().processEvents()
         assert overlay.isVisible()
 
     def test_frame_before_playback_ready_then_playback_ready_shows(self, qtbot):
@@ -395,7 +398,23 @@ class TestStaleFramePrevention:
         overlay._request_update()
         assert not overlay.isVisible()
         overlay._handle_playback_ready(overlay._play_generation)
+        QtWidgets.QApplication.instance().processEvents()
         assert overlay.isVisible()
+
+    def test_deferred_show_cancelled_by_deactivate(self, qtbot):
+        from extensions.video.widget import MpvGLOverlay
+        overlay = MpvGLOverlay()
+        overlay.player = MagicMock()
+        overlay._ctx = MagicMock()
+        overlay.activate('/a.mp4')
+        overlay._handle_playback_ready(overlay._play_generation)
+        overlay._frame_generation = overlay._play_generation
+        overlay._frame_ready = True
+        overlay._request_update()
+        assert not overlay._awaiting_first_frame
+        overlay.deactivate()
+        QtWidgets.QApplication.instance().processEvents()
+        assert not overlay.isVisible()
 
 
 class TestPlaybackSlotManager:

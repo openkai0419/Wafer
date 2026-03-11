@@ -70,17 +70,37 @@ class TestCanHandle:
         assert AnimatedGridPlugin.can_handle(apng_path) is True
 
     def test_png_with_actl_chunk(self, tmp_path):
+        import struct
         from extensions.animated.grid import AnimatedGridPlugin
         png_path = str(tmp_path / 'anim.png')
+        sig = b'\x89PNG\r\n\x1a\n'
+        ihdr = struct.pack('>I', 13) + b'IHDR' + b'\x00' * 13 + b'\x00' * 4
+        actl = struct.pack('>I', 8) + b'acTL' + b'\x00' * 8 + b'\x00' * 4
         with open(png_path, 'wb') as f:
-            f.write(b'\x89PNG\r\n\x1a\n' + b'\x00' * 20 + b'acTL' + b'\x00' * 20)
+            f.write(sig + ihdr + actl)
         assert AnimatedGridPlugin.can_handle(png_path) is True
 
+    def test_png_with_actl_in_data_not_chunk(self, tmp_path):
+        import struct
+        from extensions.animated.grid import AnimatedGridPlugin
+        png_path = str(tmp_path / 'fake_anim.png')
+        sig = b'\x89PNG\r\n\x1a\n'
+        data_with_actl = b'\x00' * 4 + b'acTL' + b'\x00' * 5
+        ihdr = struct.pack('>I', len(data_with_actl)) + b'IHDR' + data_with_actl + b'\x00' * 4
+        idat = struct.pack('>I', 0) + b'IDAT' + b'\x00' * 4
+        with open(png_path, 'wb') as f:
+            f.write(sig + ihdr + idat)
+        assert AnimatedGridPlugin.can_handle(png_path) is False
+
     def test_animated_webp(self, tmp_path):
+        import struct
         from extensions.animated.grid import AnimatedGridPlugin
         webp_path = str(tmp_path / 'anim.webp')
+        riff_header = b'RIFF' + b'\x00' * 4 + b'WEBP'
+        vp8x = b'VP8X' + struct.pack('<I', 10) + b'\x00' * 10
+        anim = b'ANIM' + struct.pack('<I', 6) + b'\x00' * 6
         with open(webp_path, 'wb') as f:
-            f.write(b'RIFF' + b'\x00' * 4 + b'WEBP' + b'VP8X' + b'\x00' * 10 + b'ANIM' + b'\x00' * 10)
+            f.write(riff_header + vp8x + anim)
         assert AnimatedGridPlugin.can_handle(webp_path) is True
 
     def test_static_webp(self, tmp_path):

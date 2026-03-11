@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-import time
+import itertools
 from dataclasses import dataclass, field
 from typing import Any, Callable
+
+_seq_counter = itertools.count()
 
 
 class WritePriority:
@@ -17,7 +19,7 @@ class WritePriority:
 @dataclass(order=True)
 class WriteCommand:
     priority: int
-    timestamp: float = field(compare=True)
+    _seq: int = field(compare=True)
     operation: str = field(compare=False)
     data: dict[str, Any] | None = field(default=None, compare=False, repr=False)
     on_complete: Callable[[], None] | None = field(default=None, compare=False, repr=False)
@@ -32,7 +34,7 @@ class WriteCommand:
     ) -> WriteCommand:
         return cls(
             priority=priority,
-            timestamp=time.monotonic(),
+            _seq=next(_seq_counter),
             operation=operation,
             data=data,
             on_complete=on_complete,

@@ -8,6 +8,7 @@ from .base import BaseGridPlugin, ImageGridPlugin, WidgetGridPlugin
 VIEWER_THUMBNAIL_DEFAULT_SIZE = 512
 
 
+@profiler.profile
 def _pil_to_qimage(img):
     if img.mode != 'RGBA':
         img = img.convert('RGBA')
@@ -29,6 +30,7 @@ class GridResolver:
             self._thumbnailer = FileThumbnailer()
         return self._thumbnailer
 
+    @profiler.profile
     def _fallback_load(self, path: str, size=None) -> QtGui.QImage | None:
         try:
             thumb_size = self.thumbnail_size
@@ -55,6 +57,7 @@ class GridResolver:
     def is_widget_plugin(self, path: str) -> bool:
         return isinstance(self.registry.resolve_instance(path), WidgetGridPlugin)
 
+    @profiler.profile
     def load(self, path: str, size=None) -> QtGui.QImage | None:
         for plugin_cls in self.registry.resolve_chain(path):
             instance = self.registry.instance(plugin_cls.NAME)

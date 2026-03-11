@@ -261,23 +261,23 @@ class TestSessionStoreRestoreIds:
 class TestNextDefaultName:
 
     def test_first_default(self, tmp_store):
-        assert tmp_store.next_default_name() == f'{DEFAULT_SESSION_NAME} 1'
+        assert tmp_store.next_default_name() == f'{DEFAULT_SESSION_NAME}1'
 
     def test_second_default(self, tmp_store):
-        tmp_store.create_session(f'{DEFAULT_SESSION_NAME} 1')
-        assert tmp_store.next_default_name() == f'{DEFAULT_SESSION_NAME} 2'
+        tmp_store.create_session(f'{DEFAULT_SESSION_NAME}1')
+        assert tmp_store.next_default_name() == f'{DEFAULT_SESSION_NAME}2'
 
     def test_fills_gap(self, tmp_store):
-        tmp_store.create_session(f'{DEFAULT_SESSION_NAME} 1')
-        tmp_store.create_session(f'{DEFAULT_SESSION_NAME} 2')
-        tmp_store.create_session(f'{DEFAULT_SESSION_NAME} 4')
-        assert tmp_store.next_default_name() == f'{DEFAULT_SESSION_NAME} 3'
+        tmp_store.create_session(f'{DEFAULT_SESSION_NAME}1')
+        tmp_store.create_session(f'{DEFAULT_SESSION_NAME}2')
+        tmp_store.create_session(f'{DEFAULT_SESSION_NAME}4')
+        assert tmp_store.next_default_name() == f'{DEFAULT_SESSION_NAME}3'
 
     def test_next_after_all_used(self, tmp_store):
-        tmp_store.create_session(f'{DEFAULT_SESSION_NAME} 1')
-        tmp_store.create_session(f'{DEFAULT_SESSION_NAME} 2')
-        tmp_store.create_session(f'{DEFAULT_SESSION_NAME} 3')
-        assert tmp_store.next_default_name() == f'{DEFAULT_SESSION_NAME} 4'
+        tmp_store.create_session(f'{DEFAULT_SESSION_NAME}1')
+        tmp_store.create_session(f'{DEFAULT_SESSION_NAME}2')
+        tmp_store.create_session(f'{DEFAULT_SESSION_NAME}3')
+        assert tmp_store.next_default_name() == f'{DEFAULT_SESSION_NAME}4'
 
 
 class TestFindInactiveSession:
@@ -408,6 +408,20 @@ class TestCreateSession:
         entry = tmp_store.get_session(sid)
         assert entry.color == '#1ABC9C'
 
+    def test_duplicate_name_returns_none(self, tmp_store):
+        tmp_store.create_session('Dup')
+        assert tmp_store.create_session('Dup') is None
+
+    def test_duplicate_name_does_not_add_session(self, tmp_store):
+        tmp_store.create_session('Only')
+        tmp_store.create_session('Only')
+        assert len(tmp_store.list_sessions()) == 1
+
+    def test_different_names_allowed(self, tmp_store):
+        assert tmp_store.create_session('Alpha') is not None
+        assert tmp_store.create_session('Beta') is not None
+        assert len(tmp_store.list_sessions()) == 2
+
 
 class TestRenameSession:
 
@@ -425,6 +439,16 @@ class TestRenameSession:
 
     def test_rename_nonexistent_returns_false(self, tmp_store):
         assert tmp_store.rename_session('no-such-id', 'Name') is False
+
+    def test_rename_duplicate_returns_false(self, tmp_store):
+        tmp_store.create_session('Taken')
+        sid = tmp_store.create_session('Mine')
+        assert tmp_store.rename_session(sid, 'Taken') is False
+        assert tmp_store.get_session(sid).name == 'Mine'
+
+    def test_rename_to_own_name_succeeds(self, tmp_store):
+        sid = tmp_store.create_session('Same')
+        assert tmp_store.rename_session(sid, 'Same') is True
 
 
 class TestSessionColors:
@@ -484,3 +508,63 @@ class TestClaimSession:
         active = tmp_store.get_active_session_ids()
         assert 's1' in active
         assert 's2' in active
+
+
+class TestHasSessionName:
+
+    def test_empty_store(self, tmp_store):
+        assert tmp_store.has_session_name('any') is False
+
+    def test_existing_name(self, tmp_store):
+        tmp_store.create_session('Exists')
+        assert tmp_store.has_session_name('Exists') is True
+
+    def test_missing_name(self, tmp_store):
+        tmp_store.create_session('Other')
+        assert tmp_store.has_session_name('Missing') is False
+
+
+class TestFindSessionByName:
+
+    def test_empty_store(self, tmp_store):
+        assert tmp_store.find_session_by_name('any') is None
+
+    def test_found(self, tmp_store):
+        sid = tmp_store.create_session('Target')
+        found = tmp_store.find_session_by_name('Target')
+        assert found is not None
+        assert found.session_id == sid
+
+    def test_not_found(self, tmp_store):
+        tmp_store.create_session('Other')
+        assert tmp_store.find_session_by_name('Missing') is None
+
+
+class TestCreateSessionWithUniqueName:
+
+    def test_no_conflict(self, tmp_store):
+        sid = tmp_store.create_session_with_unique_name('Fresh')
+        entry = tmp_store.get_session(sid)
+        assert entry.name == 'Fresh'
+
+    def test_conflict_appends_suffix(self, tmp_store):
+        tmp_store.create_session('Dup')
+        sid = tmp_store.create_session_with_unique_name('Dup')
+        entry = tmp_store.get_session(sid)
+        assert entry.name == 'Dup (1)'
+
+    def test_conflict_increments_suffix(self, tmp_store):
+        tmp_store.create_session('Dup')
+        tmp_store.create_session_with_unique_name('Dup')
+        sid = tmp_store.create_session_with_unique_name('Dup')
+        entry = tmp_store.get_session(sid)
+        assert entry.name == 'Dup (2)'
+
+    def test_with_color(self, tmp_store):
+        sid = tmp_store.create_session_with_unique_name('Colored', color='#FF0000')
+        assert tmp_store.get_session(sid).color == '#FF0000'
+
+    def test_empty_base_name_uses_default(self, tmp_store):
+        sid = tmp_store.create_session_with_unique_name()
+        entry = tmp_store.get_session(sid)
+        assert entry.name == f'{DEFAULT_SESSION_NAME}1'

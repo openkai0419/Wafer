@@ -164,7 +164,6 @@ def show_session_popup(ctx, w):
 
 @require(w="MainWindow")
 def create_session(ctx, w):
-    from ..widgets.session_popup import ColorPalette
     store = _ss_store()
     default_name = store.next_default_name()
     name = InputDialog.get_text(
@@ -178,6 +177,11 @@ def create_session(ctx, w):
         return
     name = name.strip()
     sid = store.create_session(name)
+    if sid is None:
+        existing = store.find_session_by_name(name)
+        if existing:
+            open_session(ctx, sid=existing.session_id)
+        return
     AppLogger.info(f'Session created: {name} ({sid})')
     Notifier.info(f'Session created: {name}')
     AppProcess.new_main('--viewer', '--session', sid)
@@ -225,12 +229,16 @@ def rename_session(ctx, w, session: str = '', sid: str = ''):
     if not name or not name.strip():
         return
     name = name.strip()
-    if store.rename_session(entry.session_id, name):
-        Notifier.info(f'Session renamed: {name}')
-        AppLogger.info(f'Session renamed: {entry.session_id} -> {name}')
-        if w.session_id == entry.session_id:
-            w._session_entry.name = name
-            w._update_title()
+    if name == entry.name:
+        return
+    if not store.rename_session(entry.session_id, name):
+        Notifier.warning(f'Session name already exists: {name}')
+        return
+    Notifier.info(f'Session renamed: {name}')
+    AppLogger.info(f'Session renamed: {entry.session_id} -> {name}')
+    if w.session_id == entry.session_id:
+        w._session_entry.name = name
+        w._update_title()
 
 
 @require(w="MainWindow")

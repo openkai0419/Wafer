@@ -3,13 +3,17 @@ import math
 from PySide6 import QtGui
 
 
+_cached_dpi: float | None = None
+
+
 def dpix(px, base_dpi=96):
-    screen = QtGui.QGuiApplication.primaryScreen()
-    if screen is None:
-        return px
-    current_dpi = screen.logicalDotsPerInch()
-    scale = current_dpi / base_dpi
-    return int(px * scale)
+    global _cached_dpi
+    if _cached_dpi is None:
+        screen = QtGui.QGuiApplication.primaryScreen()
+        if screen is None:
+            return px
+        _cached_dpi = screen.logicalDotsPerInch()
+    return int(px * _cached_dpi / base_dpi)
 
 def split_last(lst):
     return (lst[:-1], lst[-1]) if lst else ([], None)

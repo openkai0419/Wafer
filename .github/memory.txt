@@ -80,6 +80,8 @@
 - MpvCellWidgetはQWidget（軽量）。サムネイル表示がデフォルト。ホバー時にPlaybackSlotManagerが管理するMpvGLOverlayプール（QOpenGLWidget）を割り当てる
 - MpvGLOverlayはMpvCellWidgetの子Widget。activate時にsetParent(cell)で子化し、geometry=(0,0,w,h)で親全体を覆う。viewport()->scroll()による二重移動問題を回避
 - PlaybackSlotManagerはN個のselected枠+1個のhover枠+M個のappeared枠を管理。selected超過時はLRU（OrderedDict）で最古を解放。hoverからselectへの昇格、appearedからselectへの昇格にも対応
+- MpvGLOverlay._MPV_OPTIONSにmpv生成オプションを集約。_create_player()でMPVインスタンスを生成し、__init__(player=)で外部注入に対応
+- PlaybackSlotManagerは_player_poolにmpv.MPVインスタンスを事前生成（PLAYER_POOL_TARGET=2）。Dispatcher(utility_pool)でBGスレッド生成→メインスレッドにinvokeで返却。_acquire()でプール空時に使い、消費後に自動補充。cleanup()で_warm_cancel.set()し未到着分もterminateで安全に解放
 - appear/selectは独立したライフサイクル。_appeared_cellsセットで可視状態を追跡し、_appeared辞書でオーバーレイ所有を管理。select時にappearedから昇格（overlay移動）しても_appeared_cellsには残る
 - hover activateはデバウンス（200ms）で高速スクロール中の不要なmpv起動を防止
 - MpvGLOverlay._ownerで所有MpvCellWidgetを追跡。leaveEventでMpvCellWidget._on_overlay_leave(owner)経由でSlotManagerに通知

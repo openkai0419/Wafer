@@ -27,6 +27,24 @@ class MpvGLOverlay(QOpenGLWidget):
     _proc_addr_cb = None
     _init_attempted = False
 
+    _MPV_OPTIONS = dict(
+        vo='libmpv',
+        hwdec='auto',
+        keep_open='yes',
+        idle='yes',
+        loop='inf',
+        demuxer_max_back_bytes='128KiB',
+        osd_level=0,
+        sub='no',
+        framedrop='vo',
+        opengl_pbo='yes',
+        vd_lavc_threads=2,
+        demuxer_lavf_analyzeduration=0.1,
+        demuxer_lavf_probesize=32768,
+        video_latency_hacks='yes',
+        hr_seek='no',
+    )
+
     _on_update = Signal()
 
     @classmethod
@@ -42,10 +60,18 @@ class MpvGLOverlay(QOpenGLWidget):
         except (OSError, ImportError):
             return False
 
+    @classmethod
+    def _create_player(cls):
+        if cls._mpv is None:
+            return None
+        player = cls._mpv.MPV(**cls._MPV_OPTIONS)
+        player.volume = DEFAULT_VOLUME
+        return player
+
     _on_playback_ready = Signal(int)
 
     @profiler.profile
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, player=None):
         super().__init__(parent)
         self._ctx = None
         self._frame_ready = False
@@ -57,28 +83,9 @@ class MpvGLOverlay(QOpenGLWidget):
         self._awaiting_first_frame = False
         self._on_update.connect(self._request_update, Qt.ConnectionType.QueuedConnection)
         self._on_playback_ready.connect(self._handle_playback_ready, Qt.ConnectionType.QueuedConnection)
-        if self._mpv:
-            self.player = self._mpv.MPV(
-                vo='libmpv',
-                hwdec='auto',
-                keep_open='yes',
-                idle='yes',
-                loop='inf',
-                demuxer_max_back_bytes='128KiB',
-                osd_level=0,
-                sub='no',
-                framedrop='vo',
-                opengl_pbo='yes',
-                vd_lavc_threads=2,
-                demuxer_lavf_analyzeduration=0.1,
-                demuxer_lavf_probesize=32768,
-                video_latency_hacks='yes',
-                hr_seek='no',
-            )
-            self.player.volume = DEFAULT_VOLUME
+        self.player = player if player is not None else (self._create_player() if self._mpv else None)
+        if self.player:
             self.player.register_event_callback(self._on_mpv_event)
-        else:
-            self.player = None
 
     def set_volume(self, volume: int):
         if self.player:
@@ -226,6 +233,7 @@ class MpvGLOverlay(QOpenGLWidget):
 class PlaybackSlotManager:
 
     HOVER_DEBOUNCE_MS = 300
+    PLAYER_POOL_TARGET = 2
 
     def __init__(self, parent, max_selected=3, max_appeared=6):
         self._parent = parent
@@ -236,6 +244,10 @@ class PlaybackSlotManager:
         self.appear_autoplay = True
         self._mpv_available = MpvGLOverlay._ensure_mpv()
         self._pool: list[MpvGLOverlay] = []
+        self._player_pool: list = []
+        self._warming_count = 0
+        self._warm_cancel = None
+        self._dispatcher = None
         self._appeared_cells: set = set()
         self._appeared: OrderedDict = OrderedDict()
         self._selected: OrderedDict = OrderedDict()
@@ -245,9 +257,14 @@ class PlaybackSlotManager:
         self._pending_hover_path = None
         self._debounce_key = f'PlaybackSlotManager.hover.{id(self)}'
         if self._mpv_available:
+            from wafer.core.qt.dispatcher import Dispatcher, CancelToken
+            from wafer.core.qt.thread import utility_pool
+            self._dispatcher = Dispatcher(pool=utility_pool)
+            self._warm_cancel = CancelToken()
             overlay = MpvGLOverlay(parent)
             overlay.hide()
             self._pool.append(overlay)
+            self._warm_players()
 
     def set_volume(self, volume: int):
         self.volume = max(0, min(100, int(volume)))
@@ -263,6 +280,29 @@ class PlaybackSlotManager:
         while len(self._selected) > self._max_selected:
             _, evicted = self._selected.popitem(last=False)
             self._release_overlay(evicted)
+
+    def _warm_players(self):
+        if self._dispatcher is None:
+            return
+        while self._warming_count + len(self._player_pool) < self.PLAYER_POOL_TARGET:
+            self._warming_count += 1
+            self._dispatcher.post(self._bg_create_player, cancel=self._warm_cancel)
+
+    def _bg_create_player(self):
+        try:
+            player = MpvGLOverlay._create_player()
+        except Exception:
+            player = None
+        self._dispatcher.invoke(lambda p=player: self._on_player_warmed(p))
+
+    def _on_player_warmed(self, player):
+        self._warming_count -= 1
+        if self._warm_cancel and self._warm_cancel.is_set():
+            if player is not None:
+                player.terminate()
+            return
+        if player is not None:
+            self._player_pool.append(player)
 
     def _is_in_use(self, overlay) -> bool:
         if overlay is self._hover_overlay:
@@ -283,9 +323,11 @@ class PlaybackSlotManager:
             overlay = self._pool.pop()
             if not self._is_in_use(overlay):
                 return overlay
-        overlay = MpvGLOverlay(self._parent)
+        player = self._player_pool.pop() if self._player_pool else None
+        overlay = MpvGLOverlay(self._parent, player=player)
         overlay.set_volume(self.volume)
         overlay.hide()
+        self._warm_players()
         return overlay
 
     @profiler.profile
@@ -445,6 +487,8 @@ class PlaybackSlotManager:
 
     @profiler.profile
     def cleanup(self):
+        if self._warm_cancel:
+            self._warm_cancel.set()
         self._cancel_pending()
         self.deactivate_hover()
         for overlay in list(self._selected.values()):
@@ -459,6 +503,10 @@ class PlaybackSlotManager:
         for overlay in self._pool:
             overlay.cleanup()
         self._pool.clear()
+        for player in self._player_pool:
+            player.terminate()
+        self._player_pool.clear()
+        self._warming_count = 0
 
 
 class MpvCellWidget(QWidget):

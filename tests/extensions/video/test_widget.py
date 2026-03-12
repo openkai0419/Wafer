@@ -24,6 +24,19 @@ def _reset_shared(monkeypatch):
 
 
 class TestMpvGLOverlay:
+    def test_create_player(self, qtbot):
+        from extensions.video.widget import MpvGLOverlay
+        player = MpvGLOverlay._create_player()
+        assert player is not None
+        assert player.volume == 40
+
+    def test_init_with_prewarmed_player(self, qtbot):
+        from extensions.video.widget import MpvGLOverlay
+        player = MagicMock()
+        overlay = MpvGLOverlay(player=player)
+        assert overlay.player is player
+        player.register_event_callback.assert_called_once()
+
     def test_activate_deferred_play(self, qtbot):
         from extensions.video.widget import MpvGLOverlay
         overlay = MpvGLOverlay()
@@ -425,7 +438,9 @@ class TestPlaybackSlotManager:
     @pytest.fixture
     def manager(self, parent):
         from extensions.video.widget import PlaybackSlotManager
-        return PlaybackSlotManager(parent, max_selected=2)
+        mgr = PlaybackSlotManager(parent, max_selected=2)
+        yield mgr
+        mgr.cleanup()
 
     def _make_cell(self, parent):
         from extensions.video.widget import MpvCellWidget
@@ -687,6 +702,24 @@ class TestPlaybackSlotManager:
         pool_count = sum(1 for o in manager._pool if o is overlay)
         assert pool_count == 1
         cell.cleanup()
+
+    def test_acquire_uses_prewarmed_player(self, manager, parent):
+        while manager._pool:
+            manager._pool.pop()
+        prewarmed = MagicMock()
+        manager._player_pool.append(prewarmed)
+        overlay = manager._acquire()
+        assert overlay is not None
+        assert overlay.player is prewarmed
+
+    def test_cleanup_terminates_prewarmed_players(self, manager, parent):
+        player1 = MagicMock()
+        player2 = MagicMock()
+        manager._player_pool.extend([player1, player2])
+        manager.cleanup()
+        player1.terminate.assert_called_once()
+        player2.terminate.assert_called_once()
+        assert len(manager._player_pool) == 0
 
 
 class TestThumbnailRunner:

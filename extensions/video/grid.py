@@ -1,6 +1,6 @@
 from wafer.plugin import WidgetGridPlugin
 from wafer.utils.profiling import profiler
-from .widget import MpvCellWidget
+from .widget import MpvCellWidget, DEFAULT_VOLUME
 
 
 class VideoGridPlugin(WidgetGridPlugin):
@@ -52,3 +52,31 @@ class VideoGridPlugin(WidgetGridPlugin):
     @profiler.profile
     def deselect(self, widget):
         widget.on_deselected()
+
+    def save_state(self):
+        sm = MpvCellWidget._slot_manager
+        if sm is None:
+            return MpvCellWidget._pending_grid_state or {}
+        return {
+            'volume': sm.volume,
+            'hover_autoplay': sm.hover_autoplay,
+            'appear_autoplay': sm.appear_autoplay,
+            'max_selected': sm._max_selected,
+        }
+
+    def restore_state(self, state):
+        sm = MpvCellWidget._slot_manager
+        if sm is None:
+            MpvCellWidget._pending_grid_state = state
+            return
+        self._apply_state(sm, state)
+
+    @staticmethod
+    def _apply_state(sm, state):
+        from wafer.core.actions.bridge import Command
+        sm.set_volume(state.get('volume', DEFAULT_VOLUME))
+        sm.set_max_selected(state.get('max_selected', 3))
+        sm.hover_autoplay = state.get('hover_autoplay', True)
+        sm.appear_autoplay = state.get('appear_autoplay', True)
+        Command.set_checked('vgrid.toggle_hover_autoplay', sm.hover_autoplay)
+        Command.set_checked('vgrid.toggle_appear_autoplay', sm.appear_autoplay)

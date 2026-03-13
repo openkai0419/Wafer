@@ -542,6 +542,7 @@ class MpvCellWidget(QWidget):
 
     _slot_manager: PlaybackSlotManager | None = None
     _shared_initialized = False
+    _pending_grid_state: dict | None = None
 
     @classmethod
     def _init_shared(cls, parent):
@@ -551,21 +552,14 @@ class MpvCellWidget(QWidget):
         cls._slot_manager = PlaybackSlotManager(parent)
         from wafer.core.actions.bridge import UI
         UI.register_instance("VideoSlotManager", cls._slot_manager)
-        cls._restore_settings()
-
-    @classmethod
-    def _restore_settings(cls):
-        sm = cls._slot_manager
-        if sm is None:
-            return
-        try:
+        if cls._pending_grid_state is not None:
+            from .grid import VideoGridPlugin
+            VideoGridPlugin._apply_state(cls._slot_manager, cls._pending_grid_state)
+            cls._pending_grid_state = None
+        else:
             from wafer.core.actions.bridge import Command
-            sm.set_volume(int(Command.get_args("vgrid.set_volume").get("volume", DEFAULT_VOLUME)))
-            sm.set_max_selected(int(Command.get_args("vgrid.set_max_playback_slots").get("max_slots", 3)))
-            sm.hover_autoplay = Command.get_checked("vgrid.toggle_hover_autoplay")
-            sm.appear_autoplay = Command.get_checked("vgrid.toggle_appear_autoplay")
-        except Exception as e:
-            AppLogger.warning(f"Video grid settings restoration incomplete: {e}", exc=e)
+            Command.set_checked('vgrid.toggle_hover_autoplay', cls._slot_manager.hover_autoplay)
+            Command.set_checked('vgrid.toggle_appear_autoplay', cls._slot_manager.appear_autoplay)
 
     @classmethod
     def _on_overlay_leave(cls, cell):

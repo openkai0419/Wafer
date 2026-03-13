@@ -26,6 +26,7 @@ CYCLE_CHOICES = [f"{m} {o}" for m in _MODE_LABELS for o in ORIENTATION_CHOICES]
 
 _INDEX_TO_ORI_CMD = {i: cmd for i, cmd in enumerate(_CMD_IDS)}
 _VALUE_TO_MODE_CMD = {v: _MODE_CMDS[k] for k, v in _MODE_VALUES.items()}
+_SCROLL_ANCHOR_CMDS = ('grid.scroll_anchor_top', 'grid.scroll_anchor_center')
 
 
 def sync_grid_groups_from_settings(grid_settings: dict) -> None:

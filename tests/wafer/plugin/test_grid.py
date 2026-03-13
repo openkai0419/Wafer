@@ -477,3 +477,34 @@ def test_resolve_chain_includes_all_candidates():
     assert 'animated' in names
     assert 'image' in names
     assert names.index('animated') < names.index('image')
+
+
+def test_all_classes_returns_name_cls_tuples():
+    from wafer.plugin.registry import PluginRegistry
+    from wafer.plugin.grid.base import ImageGridPlugin as _ImageBase
+
+    class P1(_ImageBase):
+        NAME = 'p1'
+        EXTENSIONS = ('.p1',)
+        def load(self, path, size=None):
+            return None
+
+    class P2(_ImageBase):
+        NAME = 'p2'
+        EXTENSIONS = ('.p2',)
+        def load(self, path, size=None):
+            return None
+
+    reg = PluginRegistry()
+    reg.register(P1)
+    reg.register(P2)
+    result = reg.all_classes()
+    assert ('p1', P1) in result
+    assert ('p2', P2) in result
+    assert len(result) == 2
+
+
+def test_all_classes_empty_registry():
+    from wafer.plugin.registry import PluginRegistry
+    reg = PluginRegistry()
+    assert reg.all_classes() == []

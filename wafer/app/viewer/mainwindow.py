@@ -11,7 +11,6 @@ from ...core.qt.rate_limit import qt_debounce
 from ...core.ipc.node import Node
 from .grid.grid_view import GridView
 from .grid.items import GridItemModel
-from .commands.window_commands import restore_always_on_top
 from .preview.file_model import FileViewModel
 from .preview.file_viewer import FileViewerWidget
 from .viewer_settings import app_settings
@@ -69,7 +68,6 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.start_ipc_listener()
         self.t.set_locale(app_settings.get('window/language', 'en'))
         UI.register_instance("MainWindow", self)
-        restore_always_on_top(self)
         self.setup_ui()
         if self._session_entry:
             self._restore_from_session(self._session_entry)
@@ -90,14 +88,11 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
 
     @QtCore.Slot(str)
     def reload_database(self, name):
-        if not app_settings.check_and_mark_seen('tree/state/reload'):
-            self.folder_view.save_state(self.database_name)
         self.database_name = name
         self.database_path = data_db_path(name)
         self.setting_db = SettingDB(setting_db_path(name))
         self.search_service.reset_state()
         self.folder_view.set_folders(self.setting_db.get_all_parent_folders(), self.setting_db.get_all_ignore_folders())
-        QtCore.QTimer.singleShot(0, lambda: self.folder_view.restore_state(self.database_name))
         self.run_folder = True
         QtCore.QTimer.singleShot(0, lambda: self.search(force=True))
         self.progress_bar.setProgress(int(0))
@@ -301,11 +296,51 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self._register_component_states()
         self._setup_dev_panel()
         self._sync_service_from_ui()
+        self._sync_default_checked_states()
+
+    def _sync_default_checked_states(self):
+        Command.set_checked('win.toggle_always_on_top',
+                            bool(self.windowFlags() & QtCore.Qt.WindowStaysOnTopHint))
+        Command.set_checked('qry.toggle_include_subfolders',
+                            self.search_service.get('include_subfolders', True))
+        Command.set_checked('qry.toggle_auto_execute',
+                            self.search_service.get('auto_execute', True))
+        from .commands.grid_commands import sync_grid_groups_from_settings, _SCROLL_ANCHOR_CMDS
+        sync_grid_groups_from_settings({
+            'orientation': self.grid_view.orientation,
+            'layout_mode': self.grid_view.layout_mode,
+        })
+        Command.set_action_group_current(
+            'grid_scroll_anchor', _SCROLL_ANCHOR_CMDS[1], save=False)
 
     def _register_component_states(self):
         store = StateStore.instance()
         store.register('main_splitter', self._save_splitter, self._restore_splitter)
         store.register('grid', self._save_grid, self._restore_grid)
+        store.register('window', self._save_window_state, self._restore_window_state)
+        self._register_grid_plugin_states(store)
+
+    def _save_window_state(self):
+        on_top = bool(self.windowFlags() & QtCore.Qt.WindowStaysOnTopHint)
+        return {'always_on_top': on_top}
+
+    def _restore_window_state(self, state):
+        from .commands.window_commands import _apply_always_on_top
+        if 'always_on_top' in state:
+            _apply_always_on_top(self, state['always_on_top'])
+
+    def _register_grid_plugin_states(self, store):
+        from ...plugin.grid.base import WidgetGridPlugin as _WGP
+        from .grid.grid_view import grid_resolver
+        for name, cls in grid_resolver.registry.all_classes():
+            inst = grid_resolver.registry.instance(name)
+            if inst is not None and isinstance(inst, _WGP):
+                p = inst
+                store.register(
+                    f'grid_plugin.{name}',
+                    lambda p=p: p.save_state(),
+                    lambda s, p=p: p.restore_state(s),
+                )
 
     def _save_splitter(self):
         return {'sizes': self.splitter.sizes()}
@@ -316,11 +351,13 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             self.splitter.setSizes(sizes)
 
     def _save_grid(self):
+        from .commands.grid_commands import _SCROLL_ANCHOR_CMDS
         return {
             'zoom': self.grid_view.base_height,
             'orientation': self.grid_view.orientation,
             'layout_mode': self.grid_view.layout_mode,
             'scroll_index': self.grid_view.get_center_image_index(),
+            'scroll_anchor': Command.get_action_group_current('grid_scroll_anchor') or _SCROLL_ANCHOR_CMDS[1],
         }
 
     def _restore_grid(self, state):
@@ -334,6 +371,10 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         sync_grid_groups_from_settings(state)
         if state.get('scroll_index') is not None:
             self.grid_view.set_pending_scroll_index(state['scroll_index'])
+        if 'scroll_anchor' in state:
+            from .commands.grid_commands import _SCROLL_ANCHOR_CMDS
+            if state['scroll_anchor'] in _SCROLL_ANCHOR_CMDS:
+                Command.set_action_group_current('grid_scroll_anchor', state['scroll_anchor'], save=False)
 
     def _sync_service_from_ui(self):
         values = self.search_row_widget.get_values()
@@ -448,9 +489,11 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             self.run_folder = False
 
     def capture_query_state(self) -> QueryState:
+        params = self.search_service.params
+        params['keys'] = self.search_row_widget.keys_combo.previous_key
         return QueryState(
             database_name=self.database_name or '',
-            search_params=self.search_service.params,
+            search_params=params,
             folder_state=dict(zip(
                 ('expanded', 'selected'),
                 self.folder_view.get_state(),
@@ -473,6 +516,12 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             self._apply_params_to_ui(query.search_params)
             from .commands.query_commands import sync_groups_from_args
             sync_groups_from_args(query.search_params)
+            Command.set_checked('qry.toggle_include_subfolders', query.search_params.get('include_subfolders', True))
+            Command.set_checked('qry.toggle_auto_execute', query.search_params.get('auto_execute', True))
+        if 'keys' in query.search_params:
+            keys = query.search_params['keys']
+            if isinstance(keys, list):
+                self.search_row_widget.keys_combo.previous_key = keys
         if query.folder_state:
             expanded = query.folder_state.get('expanded', [])
             selected = query.folder_state.get('selected', [])
@@ -535,7 +584,6 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
 
     def on_close(self):
         try:
-            self.folder_view.save_state(self.database_name)
             self._save_session()
             app_settings.save_immediate('window/tablename', self.database_name)
             app_settings.commit()

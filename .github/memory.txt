@@ -4,11 +4,14 @@
 - アーキテクチャ詳細は /memories/repo/*.md に記載。ここでは重複しない
 
 ■ UI状態の保存/復元の設計思想
+- Session（SessionEntry/StateStore）が唯一の状態保存先。app_settings(INI)はグローバル設定（language, cache_size, thumbnail_default_size, tablename）のみ
 - コマンドは「操作の実行」のみに責任を持つ。状態保存はStateStore（Session）が担う
 - checkable状態の真実のソースはWidget/Pluginの実状態。CommandOptionStoreはメニュー表示用キャッシュ
-- Volume/Muted/FitMode/Loop/Speed等のViewer状態はSessionEntry.ui.plugin_statesに保存
-- SettingManagerからViewer状態関連の設定（video/volume, video/muted等）は段階的に移行
-- StateStoreはwafer/core/に汎用的に定義。Plugin専用にしない。wafer側WidgetもPlugin側Widgetも同じ仕組みで参加
+- StateStoreはwafer/core/に汎用的に定義。wafer側WidgetもPlugin側Widgetも同じ仕組みで参加
+- WidgetGridPluginのsave_state/restore_stateは_register_grid_plugin_statesでStateStoreに動的登録される（キー: grid_plugin.{name}）
+- WidgetViewerPluginのsave_state/restore_stateはfile_viewer._register_statesでStateStoreに動的登録される（キー: viewer_plugin.{name}）
+- video/volume, video/muted, tree/state等のセッションスコープ状態はINIから完全移行済み
+- VideoGridPlugin.restore_stateはWidget未生成時にMpvCellWidget._pending_grid_stateに保持し、_init_shared時に自動適用する（遅延復元）
 
 ■ Dispatcher / Pipeline スレッドモデルの設計思想
 目的: アプリ全体のBG処理を「1つの経路」に統一し、独自ワーカークラスやスレッドプール乱立を防ぐ。

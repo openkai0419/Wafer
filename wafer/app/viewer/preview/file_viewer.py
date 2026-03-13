@@ -110,7 +110,7 @@ class FileViewerWidget(QtWidgets.QSplitter):
                 continue
             w = widget
             p = plugin
-            store.register(name, lambda p=p, w=w: p.save_state(w), lambda s, p=p, w=w: p.restore_state(w, s))
+            store.register(f'viewer_plugin.{name}', lambda p=p, w=w: p.save_state(w), lambda s, p=p, w=w: p.restore_state(w, s))
 
     def _save_state(self):
         return {

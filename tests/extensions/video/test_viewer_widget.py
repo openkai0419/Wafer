@@ -3,31 +3,6 @@ from unittest.mock import MagicMock, patch, PropertyMock, call
 from PySide6 import QtCore, QtWidgets
 
 
-class _FakeSettings:
-    def __init__(self):
-        self._store = {}
-        self._calls = []
-
-    def get(self, key, default=None, value_type=None):
-        return self._store.get(key, default)
-
-    def set(self, key, value):
-        self._store[key] = value
-        self._calls.append((key, value))
-
-    def commit(self):
-        pass
-
-
-@pytest.fixture(autouse=True)
-def _patch_app_settings(monkeypatch):
-    fake = _FakeSettings()
-    monkeypatch.setattr(
-        "extensions.video.viewer_widget.app_settings", fake
-    )
-    return fake
-
-
 @pytest.fixture(autouse=True)
 def _patch_mpv_viewer(monkeypatch):
     import sys
@@ -79,6 +54,17 @@ class TestVideoViewerWidgetInit:
         assert w._muted is False
         assert w._cover_mode is False
         assert w._looping is False
+        w.cleanup()
+
+    def test_init_syncs_default_checked_states(self, qtbot, _patch_command):
+        from extensions.video.viewer_widget import VideoViewerWidget, Command
+        Command.reset_mock()
+        w = VideoViewerWidget()
+        calls = Command.set_checked.call_args_list
+        synced = {c.args[0]: c.args[1] for c in calls}
+        assert synced["vview.toggle_mute"] is False
+        assert synced["vview.toggle_fit_mode"] is False
+        assert synced["vview.toggle_loop"] is False
         w.cleanup()
 
 
@@ -389,59 +375,15 @@ class TestFormatTime:
         assert _format_time(-5) == '00:00'
 
 
-class TestVolumePersistence:
-    def _make_widget(self, qtbot, mock_mpv):
+class TestVideoViewerWidgetDefaultState:
+    def test_default_volume_uses_constant(self, qtbot):
+        from extensions.video.viewer_widget import VideoViewerWidget, DEFAULT_VOLUME
+        w = VideoViewerWidget()
+        assert w._volume == DEFAULT_VOLUME
+        w.cleanup()
+
+    def test_default_muted_false(self, qtbot):
         from extensions.video.viewer_widget import VideoViewerWidget
         w = VideoViewerWidget()
-        mock_player = MagicMock()
-        mock_player.pause = False
-        mock_mpv.MPV.return_value = mock_player
-        w.load('/test.mp4')
-        return w, mock_player
-
-    def test_restores_volume_from_settings(self, qtbot, _patch_app_settings):
-        _patch_app_settings._store["video/volume"] = 80
-        from extensions.video.viewer_widget import VideoViewerWidget
-        w = VideoViewerWidget()
-        assert w._volume == 80
-        assert w._control_bar.volume_slider.value() == 80
-        w.cleanup()
-
-    def test_restores_muted_from_settings(self, qtbot, _patch_app_settings):
-        _patch_app_settings._store["video/muted"] = True
-        from extensions.video.viewer_widget import VideoViewerWidget
-        w = VideoViewerWidget()
-        assert w._muted is True
-        assert w._control_bar.btn_volume._icon_key == 'muted'
-        w.cleanup()
-
-    def test_set_volume_saves(self, qtbot, _patch_mpv_viewer, _patch_app_settings):
-        w, _ = self._make_widget(qtbot, _patch_mpv_viewer)
-        w.set_volume(65)
-        assert ("video/volume", 65) in _patch_app_settings._calls
-        w.cleanup()
-
-    def test_toggle_mute_saves(self, qtbot, _patch_mpv_viewer, _patch_app_settings):
-        w, _ = self._make_widget(qtbot, _patch_mpv_viewer)
-        _patch_app_settings._calls.clear()
-        w.toggle_mute()
-        assert ("video/muted", True) in _patch_app_settings._calls
-        w.toggle_mute()
-        assert ("video/muted", False) in _patch_app_settings._calls
-        w.cleanup()
-
-    def test_volume_slider_change_saves(self, qtbot, _patch_mpv_viewer, _patch_app_settings):
-        w, _ = self._make_widget(qtbot, _patch_mpv_viewer)
-        _patch_app_settings._calls.clear()
-        w._on_volume_changed(42)
-        assert ("video/volume", 42) in _patch_app_settings._calls
-        w.cleanup()
-
-    def test_unmute_via_slider_saves_both(self, qtbot, _patch_mpv_viewer, _patch_app_settings):
-        w, _ = self._make_widget(qtbot, _patch_mpv_viewer)
-        w.toggle_mute()
-        _patch_app_settings._calls.clear()
-        w._on_volume_changed(30)
-        assert ("video/muted", False) in _patch_app_settings._calls
-        assert ("video/volume", 30) in _patch_app_settings._calls
+        assert w._muted is False
         w.cleanup()

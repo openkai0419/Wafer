@@ -55,13 +55,12 @@ def toggle_always_on_top(ctx):
     if not w:
         return
     on_top = bool(w.windowFlags() & QtCore.Qt.WindowStaysOnTopHint)
-    safe_set_window_flag(w, QtCore.Qt.WindowStaysOnTopHint, not on_top)
-    Command.set_checked("win.toggle_always_on_top", not on_top)
+    _apply_always_on_top(w, not on_top)
 
 
-def restore_always_on_top(window):
-    if Command.get_checked("win.toggle_always_on_top"):
-        window.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, True)
+def _apply_always_on_top(window, on_top: bool):
+    safe_set_window_flag(window, QtCore.Qt.WindowStaysOnTopHint, on_top)
+    Command.set_checked("win.toggle_always_on_top", on_top)
 
 
 def _session_names():

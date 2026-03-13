@@ -60,6 +60,6 @@ class VideoGridCommands(MenuGroup):
                 display="Autoplay on Appear",
                 func=toggle_appear_autoplay,
                 checkable=True,
-                default_checked=True,
+                default_checked=False,
             ),
         ]

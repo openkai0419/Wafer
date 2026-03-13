@@ -7,7 +7,6 @@ from ....utils.profiling import profiler
 from ....utils.logs import AppLogger
 from ....core.qt.dispatcher import Dispatcher, CancelToken
 from ....core.qt.thread import utility_pool
-from ..viewer_settings import app_settings
 from ....core.actions.bridge import ActionKit, UI, Context
 from ....core.platform.dragparser import MimeDataParser
 from ....core.platform.file_operations import PastePlanItem
@@ -645,12 +644,6 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
             for i in range(self.model().rowCount(idx)):
                 stack.append(self.model().index(i, 0, idx))
         return (expanded, selected)
-
-    def save_state(self, name):
-        app_settings.save_immediate(f'tree/state/{name}', self.get_state())
-
-    def restore_state(self, name):
-        self.set_state(app_settings.get(f'tree/state/{name}', ([], [])))
 
     @profiler.profile
     def set_state(self, states):

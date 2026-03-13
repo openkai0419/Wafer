@@ -101,5 +101,8 @@ class PluginRegistry:
     def instance(self, name: str) -> BasePlugin | None:
         return self._instances.get(name)
 
+    def all_classes(self) -> list[tuple[str, type[BasePlugin]]]:
+        return [(p.NAME, p) for p in self._plugins]
+
     def summary(self) -> list[tuple[str, tuple[str, ...]]]:
         return [(p.NAME, p.EXTENSIONS) for p in self._plugins]

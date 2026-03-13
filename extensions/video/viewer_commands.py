@@ -93,7 +93,7 @@ class VideoViewerCommands(MenuGroup):
                 path="vview.set_volume",
                 display="Volume",
                 func=set_volume,
-                params=[CommandParam(name="volume", value=100, min_value=0, max_value=100)],
+                params=[CommandParam(name="volume", value=50, min_value=0, max_value=100)],
             ),
             CommandMeta(
                 path="vview.toggle_mute",

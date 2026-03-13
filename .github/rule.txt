@@ -16,10 +16,10 @@
 - ctx.get_instance/pos等の前提崩壊時はコマンド側で握りつぶさず例外で落とす
 
 ■ コマンド設計
-- commands()内で@staticmethodを参照する場合はcls.method_nameを使う
 - 汎用コマンドはevent非依存。キー/マウス/メニュー/別Widget全経路で動作すること
 - Command.runのargsは一時的。get_args/set_argsと独立
-- UI関連を直接操作するコマンドの場合、checkable状態の真実のソースはWidget/Pluginの実状態。コマンド関数内で状態変更したら必ずCommand.set_checked()でメニュー表示を同期する。
+- UI関連を直接操作するコマンドの場合、状態の真実のソースはWidget/Pluginの実状態。コマンド関数内で状態変更したら必ずCommand.set_checked()でメニュー表示を同期する。
+- コマンドは"UI/設定をその値に変更する"責任のみを負う。再起動時に再現する等、実態の保存と再現はStateやOption等の別の設定を利用すること。
 - action_groupのIDはコマンドのpath末尾と完全一致。表示用ラベルを含めない
 - シングルトン: actions以下は全てinstance()パターンに統一。__new__やdict pattern禁止。テストでは_instance=Noneでリセット
 - CommandOptionStore.configure()はinstance()前に必ず呼ぶ。テストではtmp_pathで初期化し、finally内で_instance/_default_pathを復元
@@ -34,7 +34,7 @@
 - ホットキー解決は_resolve_hotkeys_batchでバッチ取得。ループ内個別呼出禁止
 - CommandMenuRowのdpix値はクラスレベルキャッシュ(_px)で再利用
 - findChildはコスト高。保持済み属性参照を使う
-- actions以下のバインディング周りのクラス、コマンドは必ずbridgeを経由
+- actions以下のバインディング周りのクラス、コマンドを外部から使う場合は必ずbridgeを経由
 - コマンド実行の責任統一: stored args解決とrequiredチェックはCommand.invoke()に集約。メニュー/キーバインドはctxを構築してCommand.invoke()に委譲
 
 ■ GridView (QGraphicsView)

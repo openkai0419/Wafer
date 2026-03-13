@@ -1,4 +1,48 @@
 {
+  "Contain/Cover": {
+    "en": "Contain/Cover",
+    "ja": ""
+  },
+  "Loop": {
+    "en": "Loop",
+    "ja": ""
+  },
+  "Mute": {
+    "en": "Mute",
+    "ja": ""
+  },
+  "Next Frame": {
+    "en": "Next Frame",
+    "ja": ""
+  },
+  "Play/Pause": {
+    "en": "Play/Pause",
+    "ja": ""
+  },
+  "Playback Speed": {
+    "en": "Playback Speed",
+    "ja": ""
+  },
+  "Previous Frame": {
+    "en": "Previous Frame",
+    "ja": ""
+  },
+  "Seek Backward": {
+    "en": "Seek Backward",
+    "ja": ""
+  },
+  "Seek Forward": {
+    "en": "Seek Forward",
+    "ja": ""
+  },
+  "Video Viewer": {
+    "en": "Video Viewer",
+    "ja": ""
+  },
+  "Volume": {
+    "en": "Volume",
+    "ja": ""
+  },
   "New Window": {
     "en": "New Window",
     "ja": ""

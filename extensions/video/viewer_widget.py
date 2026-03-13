@@ -6,7 +6,6 @@ from PySide6.QtWidgets import (
 from wafer.utils.formatting import dpix
 from wafer.utils.logs import AppLogger
 from wafer.core.actions.bridge import ActionKit, UI, Command
-from wafer.app.viewer.viewer_settings import app_settings
 
 DEFAULT_VOLUME = 50
 _CONTROL_BAR_HEIGHT = 36
@@ -290,8 +289,8 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
         self.setMouseTracking(True)
         self._path = None
         self._player = None
-        self._volume = app_settings.get("video/volume", DEFAULT_VOLUME, int)
-        self._muted = app_settings.get("video/muted", False, bool)
+        self._volume = DEFAULT_VOLUME
+        self._muted = False
         self._speed = 1.0
         self._cover_mode = False
         self._looping = False
@@ -339,6 +338,9 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
 
         self.init_command_binding("VideoView")
         UI.register_instance("VideoViewerWidget", self)
+        Command.set_checked("vview.toggle_mute", self._muted)
+        Command.set_checked("vview.toggle_fit_mode", self._cover_mode)
+        Command.set_checked("vview.toggle_loop", self._looping)
 
     def extend_context(self, ctx, cmd, event=None, key=None, source=None):
         return {"path": self._path, "paths": [self._path] if self._path else []}
@@ -420,7 +422,6 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
         self._control_bar.volume_slider.setValue(self._volume)
         self._control_bar.volume_slider.blockSignals(False)
         self._update_volume_icon()
-        app_settings.set("video/volume", self._volume)
 
     def toggle_mute(self):
         self._muted = not self._muted
@@ -428,7 +429,6 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
             self._player.mute = self._muted
         self._update_volume_icon()
         Command.set_checked("vview.toggle_mute", self._muted)
-        app_settings.set("video/muted", self._muted)
 
     def set_speed(self, speed):
         self._speed = max(0.25, min(3.0, float(speed)))
@@ -454,11 +454,9 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
             if self._player:
                 self._player.mute = False
             Command.set_checked("vview.toggle_mute", False)
-            app_settings.set("video/muted", False)
         if self._player:
             self._player.volume = value
         self._update_volume_icon()
-        app_settings.set("video/volume", self._volume)
 
     def _on_seek_pressed(self):
         self._seek_dragging = True

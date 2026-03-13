@@ -242,13 +242,14 @@ class AnimatedCellWidget(QtWidgets.QWidget):
         ww, wh = self.width(), self.height()
         if pw <= 0 or ph <= 0 or ww <= 0 or wh <= 0:
             return
-        if pw > ww or ph > wh:
+        if pw != ww or ph != wh:
             key = (id(pixmap), ww, wh)
             if key != self._scaled_key:
                 scale = min(ww / pw, wh / ph)
                 dw, dh = int(pw * scale), int(ph * scale)
+                mode = QtCore.Qt.FastTransformation if self._playing else QtCore.Qt.SmoothTransformation
                 self._scaled_pixmap = pixmap.scaled(
-                    dw, dh, QtCore.Qt.KeepAspectRatio, QtCore.Qt.FastTransformation)
+                    dw, dh, QtCore.Qt.KeepAspectRatio, mode)
                 self._scaled_key = key
             pixmap = self._scaled_pixmap
             pw, ph = pixmap.width(), pixmap.height()

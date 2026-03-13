@@ -1,6 +1,7 @@
 from unittest.mock import patch
 from wafer.app.viewer.search import SearchService, _DEFAULTS, SORT_CHOICES
 from wafer.core.db.query import SearchQuery
+from wafer.core.qt.dispatcher import CancelToken
 
 
 def _make_service():
@@ -113,3 +114,21 @@ def test_params_returns_copy():
     assert svc.get("sort_by") != "random" or svc.get("sort_by") == p1["sort_by"]
     p2 = svc.params
     assert p2 is not p1
+
+
+def test_dispatcher_and_cancel_token_initialized():
+    svc = _make_service()
+    assert svc._dispatcher is not None
+    assert svc._current_cancel is None
+    assert svc._current_query is None
+
+
+def test_cancel_token_on_new_search():
+    svc = _make_service()
+    cancel = CancelToken()
+    svc._current_cancel = cancel
+    svc._current_query = svc.build_query()
+    svc.set_param("keywords", "changed")
+    new_cancel = CancelToken()
+    svc._current_cancel = new_cancel
+    assert cancel is not new_cancel

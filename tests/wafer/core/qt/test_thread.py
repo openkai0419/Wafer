@@ -1,56 +1,9 @@
-import time
 import pytest
 from PySide6 import QtCore, QtWidgets
 from wafer.core.qt.thread import (
-    CancellableRunnable, AdaptiveThreadPool, SimpleThreadPool,
+    AdaptiveThreadPool, SimpleThreadPool,
     grid_thumb_pool, grid_render_pool, utility_pool, _HALVE_SENTINEL,
 )
-
-
-class _SumRunnable(CancellableRunnable):
-    def __init__(self, a, b):
-        super().__init__()
-        self.a = a
-        self.b = b
-
-    def execute(self):
-        return self.a + self.b
-
-
-class _ErrorRunnable(CancellableRunnable):
-    def execute(self):
-        raise ValueError("intentional error")
-
-
-class _SlowRunnable(CancellableRunnable):
-    def execute(self):
-        time.sleep(0.5)
-        return "done"
-
-
-def test_cancellable_runnable_execute():
-    r = _SumRunnable(3, 4)
-    received = []
-    r.signals.finished.connect(lambda v: received.append(v))
-    r.run()
-    assert received == [7]
-
-
-def test_cancellable_runnable_cancelled():
-    r = _SumRunnable(1, 2)
-    r.cancel()
-    received = []
-    r.signals.finished.connect(lambda v: received.append(v))
-    r.run()
-    assert received == []
-
-
-def test_cancellable_runnable_error_does_not_emit():
-    r = _ErrorRunnable()
-    received = []
-    r.signals.finished.connect(lambda v: received.append(v))
-    r.run()
-    assert received == []
 
 
 def test_adaptive_pool_is_independent():
@@ -100,17 +53,23 @@ def test_on_delta_halve():
 
 
 def test_start_runnable_direct():
-    r = _SumRunnable(10, 20)
-    received = []
-    r.signals.finished.connect(lambda v: received.append(v))
+    class _TestRunnable(QtCore.QRunnable):
+        def __init__(self):
+            super().__init__()
+            self.result = None
+        def run(self):
+            self.result = 10 + 20
+    r = _TestRunnable()
     r.run()
-    assert received == [30]
+    assert r.result == 30
 
 
 def test_pool_submit_does_not_raise():
     pool = AdaptiveThreadPool('test_submit', base_limit=2)
-    r = _SumRunnable(1, 2)
-    pool.submit(r)
+    class _TestRunnable(QtCore.QRunnable):
+        def run(self):
+            pass
+    pool.submit(_TestRunnable())
 
 
 def test_named_pool_instances_are_distinct():
@@ -121,8 +80,10 @@ def test_named_pool_instances_are_distinct():
 
 def test_simple_thread_pool_submit():
     pool = SimpleThreadPool('test_simple')
-    r = _SumRunnable(5, 6)
-    pool.submit(r)
+    class _TestRunnable(QtCore.QRunnable):
+        def run(self):
+            pass
+    pool.submit(_TestRunnable())
 
 
 def test_simple_thread_pool_default_max():

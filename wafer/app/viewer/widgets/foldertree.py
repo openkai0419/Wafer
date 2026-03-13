@@ -5,12 +5,42 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from ....utils.paths import normalize_path
 from ....utils.profiling import profiler
 from ....utils.logs import AppLogger
+from ....core.qt.dispatcher import Dispatcher, CancelToken
+from ....core.qt.thread import utility_pool
 from ..viewer_settings import app_settings
 from ....core.actions.bridge import ActionKit, UI, Context
 from ....core.platform.dragparser import MimeDataParser
 from ....core.platform.file_operations import PastePlanItem
 from ....core.platform.path_utils import check_copy_conflict, unique_path
 from ....core.platform.paste import execute_paste_plans_with_ui, drop_files_with_ui
+
+
+def _scan_children(path, excluded):
+    children = []
+    try:
+        for entry in natsorted(os.scandir(path), key=lambda e: e.name.lower()):
+            if not entry.is_dir(follow_symlinks=False):
+                continue
+            full = normalize_path(entry.path)
+            if full in excluded:
+                continue
+            has_sub = _has_subfolders_bg(full, excluded)
+            children.append((full, has_sub))
+    except Exception:
+        pass
+    return children
+
+
+def _has_subfolders_bg(path, excluded):
+    try:
+        with os.scandir(path) as it:
+            for entry in it:
+                if entry.is_dir(follow_symlinks=False):
+                    if normalize_path(entry.path) not in excluded:
+                        return True
+        return False
+    except Exception:
+        return False
 
 
 FOLDER_ICON = QtGui.QIcon.fromTheme('folder')
@@ -38,6 +68,8 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
         self.path_item_map = {}
         self.path_item_trie = {}
         self._mime_type = 'application/x-foldertree-paths'
+        self._dispatcher = Dispatcher(utility_pool)
+        self._pending_expands: dict[str, CancelToken] = {}
 
     @profiler.profile
     def clear_cache(self):
@@ -214,7 +246,7 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
             if root in self.excluded:
                 continue
             item = create_folder_item(root)
-            if self.has_subfolders(root):
+            if _has_subfolders_bg(root, self.excluded):
                 item.setChild(0, QtGui.QStandardItem())
             self.appendRow(item)
             self._add_item(root, item)
@@ -406,17 +438,7 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
 
     @profiler.profile
     def has_subfolders(self, path):
-        try:
-            with os.scandir(path) as it:
-                for entry in it:
-                    if entry.is_dir(follow_symlinks=False):
-                        full_path = normalize_path(entry.path)
-                        if full_path not in self.excluded:
-                            return True
-            return False
-        except Exception as e:
-            AppLogger.debug(f'Failed to quick-check entries in {path}: {e}')
-            return False
+        return _has_subfolders_bg(path, self.excluded)
 
     @profiler.profile
     def load_children(self, parent_item):
@@ -424,20 +446,41 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
             return
         parent_item.removeRows(0, parent_item.rowCount())
         path = parent_item.data(USER_ROLE_PATH)
-        try:
-            for entry in natsorted(os.scandir(path), key=lambda e: e.name.lower()):
-                if not entry.is_dir(follow_symlinks=False):
-                    continue
-                full_path = normalize_path(entry.path)
-                if full_path in self.excluded:
-                    continue
-                child = create_folder_item(full_path)
-                if self.has_subfolders(full_path):
-                    child.setChild(0, QtGui.QStandardItem())
-                parent_item.appendRow(child)
-                self._add_item(full_path, child)
-        except Exception as e:
-            AppLogger.debug(f'Failed to read {path}: {e}')
+        children = _scan_children(path, self.excluded)
+        self._apply_children(parent_item, path, children)
+
+    def request_expand(self, item):
+        path = item.data(USER_ROLE_PATH)
+        if not path:
+            return
+        if item.hasChildren() and item.child(0).data(USER_ROLE_PATH):
+            return
+        if path in self._pending_expands:
+            return
+        cancel = CancelToken()
+        self._pending_expands[path] = cancel
+        excluded = set(self.excluded)
+
+        def task():
+            children = _scan_children(path, excluded)
+            if cancel.is_set():
+                self._dispatcher.invoke(lambda: self._pending_expands.pop(path, None))
+                return
+            self._dispatcher.invoke(lambda: self._apply_children(item, path, children))
+
+        self._dispatcher.post(task)
+
+    def _apply_children(self, item, path, children):
+        self._pending_expands.pop(path, None)
+        if not self._is_valid_item(item):
+            return
+        item.removeRows(0, item.rowCount())
+        for full_path, has_sub in children:
+            child = create_folder_item(full_path)
+            if has_sub:
+                child.setChild(0, QtGui.QStandardItem())
+            item.appendRow(child)
+            self._add_item(full_path, child)
 
     @profiler.profile
     def _is_valid_item(self, item):
@@ -581,7 +624,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
     @profiler.profile
     def on_expanded(self, index):
         item = self.model_.itemFromIndex(index)
-        self.model_.load_children(item)
+        self.model_.request_expand(item)
 
     def _on_item_clicked(self, index):
         self.folder_selected.emit()

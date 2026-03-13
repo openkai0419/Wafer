@@ -4,31 +4,8 @@ from ....utils.profiling import profiler
 from ....utils.logs import AppLogger
 from ....core.db.query import FileSearchEngine, SearchQuery
 from ....core.lang.manager import TranslatorMixin
+from ....core.qt.dispatcher import Dispatcher, CancelToken
 from ....core.qt.thread import utility_pool
-
-class FilterKeySignals(QtCore.QObject):
-    finished = QtCore.Signal(list)
-
-class FilterKeyUpdateWorker(QtCore.QRunnable):
-
-    def __init__(self, db_name, selected_path):
-        super().__init__()
-        self.signals = FilterKeySignals()
-        self.engine = FileSearchEngine(db_name)
-        self.selected_path = selected_path
-        self._cancelled = False
-
-    def cancel(self):
-        self._cancelled = True
-
-    @QtCore.Slot()
-    def run(self):
-        if self._cancelled:
-            return
-        query = SearchQuery(directories=self.selected_path)
-        results = self.engine.list_all_keys(query, sort_by_freq=True)
-        if not self._cancelled:
-            self.signals.finished.emit(results)
 
 class CheckableCombo(QtWidgets.QToolButton, TranslatorMixin):
     action_changed = QtCore.Signal()
@@ -185,10 +162,13 @@ class SearchOptionPopup(QtWidgets.QDialog, TranslatorMixin):
 
 class SearchOptionsBar(QtWidgets.QWidget, TranslatorMixin):
     settingchanged = QtCore.Signal()
+    _UNSET = object()
 
     def __init__(self, parent=None):
         super().__init__(parent=parent)
-        self._folder_worker = None
+        self._dispatcher = Dispatcher(utility_pool)
+        self._key_cancel = None
+        self._last_paths = self._UNSET
         self.setup()
 
     def setup(self):
@@ -224,13 +204,24 @@ class SearchOptionsBar(QtWidgets.QWidget, TranslatorMixin):
 
     @profiler.profile
     def run_folder_worker(self, dbname, paths):
-        if self._folder_worker and self._folder_worker.selected_path == paths:
+        key = tuple(paths) if paths else None
+        if self._last_paths == key:
             return
-        if self._folder_worker:
-            self._folder_worker.cancel()
-        self._folder_worker = FilterKeyUpdateWorker(dbname, paths)
-        self._folder_worker.signals.finished.connect(self.keys_combo.remake)
-        utility_pool.submit(self._folder_worker, 6)
+        self._last_paths = key
+        if self._key_cancel:
+            self._key_cancel.set()
+        cancel = CancelToken()
+        self._key_cancel = cancel
+
+        def task():
+            engine = FileSearchEngine(dbname)
+            query = SearchQuery(directories=paths)
+            results = engine.list_all_keys(query, sort_by_freq=True)
+            if cancel.is_set():
+                return
+            self._dispatcher.invoke(lambda: self.keys_combo.remake(results))
+
+        self._dispatcher.post(task, priority=6, cancel=cancel)
 
     def set_search_text(self, text: str):
         self.search_bar.setText(text)

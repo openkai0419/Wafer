@@ -2,7 +2,12 @@ import os
 import shutil
 import tempfile
 from PySide6 import QtWidgets
-from wafer.app.viewer.widgets.foldertree import LazyFolderTreeView
+from wafer.app.viewer.widgets.foldertree import (
+    LazyFolderTreeView,
+    _scan_children,
+    _has_subfolders_bg,
+)
+from wafer.utils.paths import normalize_path
 
 
 def create_fs_tree(base):
@@ -67,6 +72,94 @@ def test_set_state_preserves_multi_selection(qtbot):
 
 
 import py_compile
+
+
+def test_scan_children_returns_dirs_only():
+    tmpdir = tempfile.mkdtemp()
+    try:
+        create_fs_tree(tmpdir)
+        children = _scan_children(tmpdir, set())
+        names = [os.path.basename(p) for p, _ in children]
+        assert 'A' in names
+        assert 'B' in names
+        assert 'file.txt' not in names
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_scan_children_excludes_paths():
+    tmpdir = tempfile.mkdtemp()
+    try:
+        create_fs_tree(tmpdir)
+        excluded = {normalize_path(os.path.join(tmpdir, 'A'))}
+        children = _scan_children(tmpdir, excluded)
+        names = [os.path.basename(p) for p, _ in children]
+        assert 'A' not in names
+        assert 'B' in names
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_scan_children_reports_subfolders():
+    tmpdir = tempfile.mkdtemp()
+    try:
+        create_fs_tree(tmpdir)
+        children = _scan_children(tmpdir, set())
+        child_map = {os.path.basename(p): has_sub for p, has_sub in children}
+        assert child_map['A'] is True
+        assert child_map['B'] is False
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_scan_children_nonexistent_dir():
+    result = _scan_children('/nonexistent/path/that/does/not/exist', set())
+    assert result == []
+
+
+def test_has_subfolders_true():
+    tmpdir = tempfile.mkdtemp()
+    try:
+        create_fs_tree(tmpdir)
+        assert _has_subfolders_bg(tmpdir, set()) is True
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_has_subfolders_false():
+    tmpdir = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(tmpdir, 'leaf'))
+        assert _has_subfolders_bg(os.path.join(tmpdir, 'leaf'), set()) is False
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_has_subfolders_with_exclusion():
+    tmpdir = tempfile.mkdtemp()
+    try:
+        sub = os.path.join(tmpdir, 'only_child')
+        os.makedirs(sub)
+        excluded = {normalize_path(sub)}
+        assert _has_subfolders_bg(tmpdir, excluded) is False
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_has_subfolders_nonexistent():
+    assert _has_subfolders_bg('/nonexistent/path', set()) is False
+
+
+def test_model_dispatcher_initialized(qtbot):
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    tmpdir = tempfile.mkdtemp()
+    try:
+        tree = LazyFolderTreeView(roots=[tmpdir], excluded=[])
+        qtbot.addWidget(tree)
+        assert tree.model_._dispatcher is not None
+        assert tree.model_._pending_expands == {}
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 def test_compile():

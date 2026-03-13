@@ -14,9 +14,9 @@
 
 ● 使うべきクラスと役割
 - Dispatcher (wafer/core/qt/dispatcher.py):
-  アプリに1つ。MainWindowで生成し各コンポーネントに注入。
+  各コンポーネントが Dispatcher(utility_pool) で自前生成。MainWindowから注入ではない。
   post(fn) = BGスレッド実行、invoke(fn) = メインスレッド実行。
-  内部でAdaptiveThreadPool（共有シングルトン）を使用。
+  内部でutility_pool（SimpleThreadPool共有シングルトン）を使用。
 
 - CancelToken (wafer/core/qt/dispatcher.py):
   キャンセル用フラグ。set()でキャンセル、is_set()で確認。
@@ -36,13 +36,16 @@
 2. 多重タスク（FolderTree）:
    dict[key, CancelToken]でノード単位管理 → post(task) → invoke(子ノード追加)
    Dispatcher直接利用。
+   _build_roots(), load_children(), add_root()は同期のまま（expand_path連鎖が即時子ノードを前提）。
+   on_expanded()のみrequest_expand()経由で非同期化。
 
 3. 大量タスク+プールWidget（Grid）:
    GridPipeline。可視範囲差分でキャンセル/起動を自動管理。
 
 ● 新しいBG処理を追加するとき
 - QRunnable, QThread, threading.Thread を直接作らない
-- Dispatcherを注入してもらい、post() + CancelToken で実装する
+- CancellableRunnable は廃止済み（thread.pyから削除）。Dispatcher + CancelToken で代替
+- Dispatcherをutility_poolで自前生成し、post() + CancelToken で実装する
 - UI反映が必要ならinvoke()でメインに戻す
 - 変数名規約: CommandContextはctx
 

@@ -6,7 +6,8 @@ from ...utils.profiling import profiler
 from ...utils.logs import AppLogger
 from ...core.db.query import FileSearchEngine, SearchQuery
 from ...core.qt.rate_limit import qt_debounce
-from ...core.qt.thread import utility_pool, CancellableRunnable
+from ...core.qt.dispatcher import Dispatcher, CancelToken
+from ...core.qt.thread import utility_pool
 
 
 SORT_CHOICES = ["path", "name", "created", "modified", "collected", "size", "random"]
@@ -23,18 +24,6 @@ _DEFAULTS = {
 }
 
 
-class _SearchWorker(CancellableRunnable):
-
-    def __init__(self, dbpath, query):
-        super().__init__()
-        self.engine = FileSearchEngine(dbpath)
-        self.query = query
-
-    @profiler.profile
-    def execute(self):
-        return self.engine.search(self.query)
-
-
 class SearchService(QtCore.QObject):
     search_started = QtCore.Signal()
     search_finished = QtCore.Signal(object, object, object)
@@ -43,10 +32,12 @@ class SearchService(QtCore.QObject):
     def __init__(self, dbpath_getter, parent=None):
         super().__init__(parent)
         self._dbpath_getter = dbpath_getter
+        self._dispatcher = Dispatcher(utility_pool)
         self._params = self._load_defaults()
         self._keys = None
         self._directories = None
-        self._current_worker = None
+        self._current_cancel = None
+        self._current_query = None
         self._last_query = None
         self._pending_query = None
         self._query_start_time = None
@@ -113,46 +104,54 @@ class SearchService(QtCore.QObject):
         AppLogger.debug('[RUNNING] SearchService.execute')
         query = self.build_query()
         now = datetime.now()
-        if not force:
-            if self._current_worker and query == self._current_worker.query:
-                return
-            if self._last_query and query == self._last_query:
-                return
         with QtCore.QMutexLocker(self._lock):
-            if self._current_worker:
+            if not force:
+                if self._current_cancel and not self._current_cancel.is_set() and query == self._current_query:
+                    return
+                if self._last_query and query == self._last_query:
+                    return
+            if self._current_cancel and not self._current_cancel.is_set():
                 elapsed = now - self._query_start_time if self._query_start_time else timedelta.max
                 if elapsed < self._timeout_threshold:
-                    self._current_worker.cancel()
+                    self._current_cancel.set()
                 else:
                     AppLogger.warning('query is taking more than expected, continuing without cancel.')
                     self._pending_query = query
                     return
             self._pending_query = None
-            self._start_worker(query)
+            self._start_search(query)
 
     @profiler.profile
-    def _start_worker(self, query):
+    def _start_search(self, query):
         self.search_started.emit()
         dbpath = self._dbpath_getter()
-        worker = _SearchWorker(dbpath, query)
-        worker.signals.finished.connect(self._on_worker_finished)
-        self._current_worker = worker
+        cancel = CancelToken()
+        self._current_cancel = cancel
+        self._current_query = query
         self._query_start_time = datetime.now()
-        utility_pool.submit(worker, 7)
 
-    @QtCore.Slot(object)
+        def task():
+            engine = FileSearchEngine(dbpath)
+            result = engine.search(query)
+            if cancel.is_set():
+                return
+            self._dispatcher.invoke(lambda: self._on_search_finished(cancel, query, result))
+
+        self._dispatcher.post(task, priority=7, cancel=cancel)
+
     @profiler.profile
-    def _on_worker_finished(self, result):
-        if self._current_worker is None:
+    def _on_search_finished(self, cancel, query, result):
+        if cancel is not self._current_cancel:
             return
-        self._last_query = self._current_worker.query
-        self._current_worker = None
+        self._last_query = query
+        self._current_cancel = None
+        self._current_query = None
         self._query_start_time = None
         paths, sources, aspects = result
         AppLogger.debug(f'search done: {len(paths)} results')
         self.search_finished.emit(paths, sources, aspects)
         with QtCore.QMutexLocker(self._lock):
             if self._pending_query:
-                query = self._pending_query
+                pq = self._pending_query
                 self._pending_query = None
-                self._start_worker(query)
+                self._start_search(pq)

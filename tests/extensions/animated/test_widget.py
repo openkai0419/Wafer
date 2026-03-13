@@ -287,3 +287,41 @@ class TestAnimatedCellWidget:
     def test_on_selected_deselected_noop(self, widget):
         widget.on_selected()
         widget.on_deselected()
+
+    def test_paint_scales_up_small_pixmap(self, widget, qtbot):
+        pm = QtGui.QPixmap(50, 50)
+        pm.fill(QtGui.QColor('red'))
+        widget.set_frames('up.gif', [pm], [100])
+        widget.resize(200, 200)
+        qtbot.addWidget(widget)
+        widget.show()
+        qtbot.waitExposed(widget)
+        widget.repaint()
+        assert widget._scaled_pixmap is not None
+        assert widget._scaled_pixmap.width() == 200
+        assert widget._scaled_pixmap.height() == 200
+
+    def test_paint_scales_down_large_pixmap(self, widget, qtbot):
+        pm = QtGui.QPixmap(400, 200)
+        pm.fill(QtGui.QColor('blue'))
+        widget.set_frames('down.gif', [pm], [100])
+        widget.resize(100, 100)
+        qtbot.addWidget(widget)
+        widget.show()
+        qtbot.waitExposed(widget)
+        widget.repaint()
+        assert widget._scaled_pixmap is not None
+        assert widget._scaled_pixmap.width() == 100
+        assert widget._scaled_pixmap.height() == 50
+
+    def test_paint_uses_smooth_when_stopped(self, widget, qtbot):
+        pm = QtGui.QPixmap(50, 50)
+        pm.fill(QtGui.QColor('green'))
+        widget.set_frames('smooth.gif', [pm], [100])
+        widget._playing = False
+        widget.resize(200, 200)
+        qtbot.addWidget(widget)
+        widget.show()
+        qtbot.waitExposed(widget)
+        widget.repaint()
+        assert widget._scaled_pixmap is not None

@@ -8,7 +8,8 @@ from ....utils.logs import AppLogger
 from ....core.db.query import FileSearchEngine
 from ....plugin.viewer.handler import viewer_resolver
 from ....plugin.viewer.base import WidgetViewerPlugin as _WidgetViewerPlugin
-from ....core.qt.thread import CancellableRunnable, utility_pool
+from ....core.qt.dispatcher import Dispatcher, CancelToken
+from ....core.qt.thread import utility_pool
 from .meta_viewer import MetaListWidget
 from .image_viewer import ImageDisplayWidget
 from .file_model import FileViewModel
@@ -19,41 +20,21 @@ from ..viewer_settings import app_settings
 _DEFAULT_WIDGET_NAME = '_default'
 
 
-class _ContentWorker(CancellableRunnable):
-    def __init__(self, path):
-        super().__init__()
-        self.path = path
-
-    @profiler.profile
-    def execute(self):
-        image = viewer_resolver.load_content(self.path)
-        if image is None or image.isNull():
-            return None
-        return (self.path, image)
-
-
-class _MetaWorker(CancellableRunnable):
-    def __init__(self, dbpath, path):
-        super().__init__()
-        self.engine = FileSearchEngine(dbpath)
-        self.path = path
-
-    @profiler.profile
-    def execute(self):
-        source, image, tags, meta_infos = self.engine.get_all_metadata(self.path)
-        if source.get("status"):
-            source.pop("status")
-        if image.get("source"):
-            image.pop("source")
-        if image.get("aspect_ratio"):
-            image["aspect_ratio"] = format_aspect(image.get("aspect_ratio"))
-        source["size"] = format_size_detail(source.get("size"))
-        source["modified"] = format_timestamp(source.get("modified"))
-        source["created"] = format_timestamp(source.get("created"))
-        source["collected"] = format_timestamp(source.get("collected"))
-        meta_infos = {k: meta_infos[k] for k in natsorted(meta_infos)}
-        tags = {k: tags[k] for k in natsorted(tags)}
-        return [source, image, tags, meta_infos]
+def _format_meta(engine, path):
+    source, image, tags, meta_infos = engine.get_all_metadata(path)
+    if source.get("status"):
+        source.pop("status")
+    if image.get("source"):
+        image.pop("source")
+    if image.get("aspect_ratio"):
+        image["aspect_ratio"] = format_aspect(image.get("aspect_ratio"))
+    source["size"] = format_size_detail(source.get("size"))
+    source["modified"] = format_timestamp(source.get("modified"))
+    source["created"] = format_timestamp(source.get("created"))
+    source["collected"] = format_timestamp(source.get("collected"))
+    meta_infos = {k: meta_infos[k] for k in natsorted(meta_infos)}
+    tags = {k: tags[k] for k in natsorted(tags)}
+    return [source, image, tags, meta_infos]
 
 
 class FileViewerWidget(QtWidgets.QSplitter):
@@ -62,8 +43,9 @@ class FileViewerWidget(QtWidgets.QSplitter):
         super().__init__(QtCore.Qt.Vertical, parent)
         self.model = model
         self.image_cache = MemoryLimitedImageCache(app_settings.get('window/cache_size', 500))
-        self._meta_worker = None
-        self._content_worker = None
+        self._dispatcher = Dispatcher(utility_pool)
+        self._content_cancel = None
+        self._meta_cancel = None
         self._pending_meta = None
         self._pending_content = None
         self._loading_path = None
@@ -164,20 +146,26 @@ class FileViewerWidget(QtWidgets.QSplitter):
             self._pending_content = (path, image)
             self._try_show()
             return
-        if self._content_worker:
-            self._content_worker.cancel()
-        worker = _ContentWorker(path)
-        worker.signals.finished.connect(self._on_content_finished)
-        self._content_worker = worker
-        utility_pool.submit(worker)
+        if self._content_cancel:
+            self._content_cancel.set()
+        cancel = CancelToken()
+        self._content_cancel = cancel
 
-    @QtCore.Slot(object)
-    def _on_content_finished(self, result):
-        self._content_worker = None
-        if result is None:
+        def task():
+            image = viewer_resolver.load_content(path)
+            if cancel.is_set():
+                return
+            if image is None or image.isNull():
+                return
+            self.image_cache[fullsize_key(path)] = image
+            self._dispatcher.invoke(lambda: self._on_content_ready(cancel, path, image))
+
+        self._dispatcher.post(task, cancel=cancel)
+
+    def _on_content_ready(self, cancel, path, image):
+        if cancel is not self._content_cancel:
             return
-        path, image = result
-        self.image_cache[fullsize_key(path)] = image
+        self._content_cancel = None
         if path != self._loading_path:
             return
         self._pending_content = (path, image)
@@ -192,15 +180,24 @@ class FileViewerWidget(QtWidgets.QSplitter):
         dbpath = self.model.dbpath
         if not dbpath:
             return
-        if self._meta_worker:
-            self._meta_worker.cancel()
-        worker = _MetaWorker(dbpath, path)
-        worker.signals.finished.connect(lambda result, p=path: self._on_meta_finished(p, result))
-        self._meta_worker = worker
-        utility_pool.submit(worker)
+        if self._meta_cancel:
+            self._meta_cancel.set()
+        cancel = CancelToken()
+        self._meta_cancel = cancel
 
-    def _on_meta_finished(self, path, result):
-        self._meta_worker = None
+        def task():
+            engine = FileSearchEngine(dbpath)
+            result = _format_meta(engine, path)
+            if cancel.is_set():
+                return
+            self._dispatcher.invoke(lambda: self._on_meta_ready(cancel, path, result))
+
+        self._dispatcher.post(task, cancel=cancel)
+
+    def _on_meta_ready(self, cancel, path, result):
+        if cancel is not self._meta_cancel:
+            return
+        self._meta_cancel = None
         if path != self._loading_path:
             return
         self._pending_meta = result

@@ -94,7 +94,7 @@ def _decode_frames(path: str, size: QtCore.QSize | None, is_stale) -> tuple[list
 
 class AnimatedGridPlugin(WidgetGridPlugin):
     NAME = 'animated'
-    EXTENSIONS = ('.gif', '.apng', '.webp', '.png')
+    EXTENSIONS = ('.gif', '.apng', '.webp')
     PRIORITY = 200
     WIDGET_CLASS = AnimatedCellWidget
     REQUIRE_THUMBNAIL = True

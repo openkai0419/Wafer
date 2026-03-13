@@ -23,6 +23,24 @@ class _DispatchSignals(QtCore.QObject):
     _to_main = QtCore.Signal(object)
 
 
+class _PostRunnable(QtCore.QRunnable):
+    __slots__ = ('_fn', '_cancel')
+
+    def __init__(self, fn, cancel):
+        super().__init__()
+        self.setAutoDelete(True)
+        self._fn = fn
+        self._cancel = cancel
+
+    def run(self):
+        if self._cancel is not None and self._cancel.is_set():
+            return
+        try:
+            self._fn()
+        except Exception as e:
+            AppLogger.warning(f'[Dispatcher.post] task failed: {e}', exc=e)
+
+
 class Dispatcher:
 
     def __init__(self, pool=None):
@@ -34,15 +52,7 @@ class Dispatcher:
         self._pool = pool
 
     def post(self, fn: Callable, priority: int = 5, cancel: Optional[CancelToken] = None):
-        class _Runnable(QtCore.QRunnable):
-            def run(self_):
-                if cancel is not None and cancel.is_set():
-                    return
-                try:
-                    fn()
-                except Exception as e:
-                    AppLogger.warning(f'[Dispatcher.post] task failed: {e}', exc=e)
-        self._pool.submit(_Runnable(), priority)
+        self._pool.submit(_PostRunnable(fn, cancel), priority)
 
     def invoke(self, fn: Callable):
         self._signals._to_main.emit(fn)

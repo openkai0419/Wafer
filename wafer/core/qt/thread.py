@@ -10,35 +10,6 @@ from ...utils.profiling import profiler
 from ...utils.logs import AppLogger
 
 
-class _CancellableSignals(QtCore.QObject):
-    finished = QtCore.Signal(object)
-
-
-class CancellableRunnable(QtCore.QRunnable):
-    def __init__(self):
-        super().__init__()
-        self.signals = _CancellableSignals()
-        self._cancelled = False
-
-    def cancel(self):
-        self._cancelled = True
-
-    def execute(self):
-        raise NotImplementedError
-
-    def run(self):
-        if self._cancelled:
-            return
-        try:
-            result = self.execute()
-        except Exception as e:
-            AppLogger.warning(f'[{type(self).__name__}] failed: {e}', exc=e)
-            return
-        if self._cancelled:
-            return
-        self.signals.finished.emit(result)
-
-
 class SimpleThreadPool:
 
     def __init__(self, name: str = 'simple'):

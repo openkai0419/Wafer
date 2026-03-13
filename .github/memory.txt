@@ -22,37 +22,34 @@
   キャンセル用フラグ。set()でキャンセル、is_set()で確認。
   post()のcancel引数に渡すと実行前に自動チェック。
 
-- CellJob (wafer/plugin/grid/cell_job.py):
-  Grid専用。1セルのBGレンダリングに必要な情報をまとめたファサード。
-  invoke(fn)はキャンセル+widget生存の2段階ガード付き。
-  GridPipelineが生成し、plugin.render(job)に渡す。Grid以外では不要。
-
 - GridPipeline (wafer/app/viewer/grid/pipeline.py):
   Grid専用のBGタスクスケジューラ。レイアウト計算と可視セルのrender管理。
   dict[int, CancelToken]で可視範囲の差分管理。GridViewはこれに委譲するだけ。
+  ImageGridPlugin: BGでplugin.load()→cache→invoke(set_image)。
+  WidgetGridPlugin: BGでplugin解決→invokeでメインに戻し_promote_to_widget→plugin.render(widget, path, size)をメインスレッドで呼ぶ。
 
 ● コンポーネント別の利用パターン
 1. 単発タスク（SearchService, FileViewerWidget, QueryOptions）:
    CancelToken1つ保持 → 新リクエストで前回キャンセル → post(task) → invoke(結果反映)
-   CellJob不要。Dispatcher直接利用。
+   Dispatcher直接利用。
 
 2. 多重タスク（FolderTree）:
    dict[key, CancelToken]でノード単位管理 → post(task) → invoke(子ノード追加)
-   CellJob不要。Dispatcher直接利用。
+   Dispatcher直接利用。
 
 3. 大量タスク+プールWidget（Grid）:
-   GridPipeline + CellJob。可視範囲差分でキャンセル/起動を自動管理。
+   GridPipeline。可視範囲差分でキャンセル/起動を自動管理。
 
 ● 新しいBG処理を追加するとき
 - QRunnable, QThread, threading.Thread を直接作らない
 - Dispatcherを注入してもらい、post() + CancelToken で実装する
 - UI反映が必要ならinvoke()でメインに戻す
-- 変数名規約: CellJobはjob、CommandContextはctx
+- 変数名規約: CommandContextはctx
 
-● plugin.render(job) のルール
-- render()はBGスレッドで呼ばれる
-- ImageGridPlugin: render(job)のデフォルト実装がload→cache→invokeを行う。サブクラスはload()のみ実装すればよい
-- WidgetGridPlugin: render(job)でjob.invoke(lambda w: w.xxx())を使いWidget操作をメインに委譲
+● plugin.render() のルール
+- WidgetGridPlugin.render(widget, path, size)はメインスレッドで呼ばれる
+- ImageGridPlugin: load()のみ実装。BGでの呼び出しとcache→set_imageはPipelineが管理
+- WidgetGridPlugin: render(widget, path, size)でWidget操作を直接行う。BGワークが必要ならDispatcher.post()を自分で呼び、完了時にwidget._path != pathでスタルチェック後dispatcher.invoke()でメインに戻す
 - appear/disappear/select/deselect/release はメインスレッドで直接呼ばれる（WidgetNotifier経由）
 - WidgetNotifier.bind(index, plugin_name) は名前登録のみ。renderは呼ばない（Pipelineの責任）
 
@@ -67,13 +64,14 @@
 - WIDGET_CLASSを持つプラグインはviewport直接配置（AdditionalWidgetPool管理）
 - _sync_additional_widgets()でスクロール・レイアウト変更時にviewport座標へ同期。scrollbar.valueChangedに直接接続（throttle無し）
 - Widget判定は_setup_cellでは行わない。常にPixmapItemを作成し、プラグイン解決はGridPipeline BGタスク（_make_resolve_task）で実行。WidgetGridPluginが見つかった場合はinvoke_raw→_promote_to_widgetでメインスレッドに戻す。can_handleはBGで評価されるためメインスレッドを止めない
-- GridPipelineが全BGタスク（レイアウト計算・画像ロード・サムネイル取得）を一元管理。Dispatcher.post()でBGスレッド実行、CellJob.invoke()でメインスレッド帰還
-- CellJob.image_cacheは画像専用キャッシュ（MemoryLimitedImageCache）。FrameCacheはanimated extension固有で分離維持（threading.Lock追加済み、BGスレッドから安全にアクセス可能）
-- animated extensionのWidget（AnimatedCellWidget）は受動的な描画担当。BGデコードはgrid.py:_decode_frames()がPipeline BG上で実行し、set_frames()でメインスレッドに結果を渡す。_DecodeRunner/_DecodeSignals/_get_thread_pool()は廃止済み
-- animated/videoともにREQUIRE_THUMBNAIL=True。サムネイル取得はpipeline側の_load_widget_thumbnailがthumb_dispatcher（thumb pool）に投入。render()内でサムネイルを取得しない。render poolスレッドは即座に開放される
-- _load_widget_thumbnailはthumb_dispatcher.post()で非同期投入される。render poolとthumb poolは別プールなので互いにブロックしない
+- GridPipelineが全BGタスク（レイアウト計算・画像ロード・サムネイル取得）を一元管理。Dispatcher.post()でBGスレッド実行、Signal直接emit（AutoConnection→QueuedConnection）でメインスレッド帰還。_deliver_thumbnailのみinvoke()経由
+- Pipeline._load_image()がキャッシュチェック→ロード→エラー処理→キャッシュ保存→emit の共通処理を統合。_dispatch_resolve内のImagePluginとfallbackの両方で使う
+- animated extensionのWidget（AnimatedCellWidget）は受動的な描画担当。BGデコードはAnimatedGridPlugin._dispatcher（grid_render_pool）で実行。render()でwidget._path=pathを設定後、_decode_and_setをpost。BGでwidget._path!=pathのスタルチェック後、invoke()でメインに戻しset_frames()。_DecodeRunner/_DecodeSignals/_get_thread_pool()は廃止済み
+- animated/videoともにREQUIRE_THUMBNAIL=True。サムネイル取得はpipeline側の_dispatch_thumbnailがthumb_dispatcher（thumb pool）に投入。render()内でサムネイルを取得しない。render poolスレッドは即座に開放される
+- _dispatch_thumbnailはthumb_dispatcher.post()で非同期投入される。render poolとthumb poolは別プールなので互いにブロックしない
+- _deliver_thumbnailはisinstance(widget, plugin.WIDGET_CLASS)ガード付き。BGサムネイル取得中にセルがリサイクルされ別プラグイン型（例: FadePixmapItem）に差し替わった場合、配信をスキップする
 - _BaseLayoutCalculatorはQRunnableから通常クラスに変更済み。CalculatorSignals廃止、_resultを直接参照
-- _setup_cellはメインスレッドでPixmapItem取得のみ行い、常にpipeline.schedule_render()を呼ぶ。pluginを渡さない場合はBGで遅延解決（_make_resolve_task）。pluginを渡す場合は直接renderする（リサイズリロード用）。CellJob.invoke_raw()はwidget_lookupを経由せず直接関数を実行するメインスレッド呼び出し（promote用）
+- _setup_cellはメインスレッドでPixmapItem取得のみ行い、常にpipeline.schedule_render()を呼ぶ。pluginを渡さない場合はBGで遅延解決→WidgetGridPluginならinvokeでメインに戻しpromote→render(widget,path,size)。pluginを渡す場合は直接renderする（リサイズリロード用）
 - loader.py（ImageLoaderRunnable/ImageLoaderSignal）は廃止。active_loadersも廃止
 - drawForeground()の選択矩形はviewport子Widgetの下に描画される点に注意
 - mpv render API (MpvRenderContext) + QOpenGLWidgetでネイティブウィンドウを回避し、Qt描画パイプラインに統合する
@@ -86,7 +84,7 @@
 - hover activateはデバウンス（200ms）で高速スクロール中の不要なmpv起動を防止
 - MpvGLOverlay._ownerで所有MpvCellWidgetを追跡。leaveEventでMpvCellWidget._on_overlay_leave(owner)経由でSlotManagerに通知
 - GridView._prev_selection_setで前回選択を追跡し、新規selected/deselectedを差分算出。_ensure_widget_visibleでも復帰時のselect再適用を行う
-- サムネイル取得はwafer.plugin.load_thumbnail（grid_resolver.load→FileThumbnailer）を_ThumbnailRunnerで非同期実行
+- サムネイル取得はpipeline._dispatch_thumbnail内の無名タスクでgrid_resolver.load→FileThumbnailerを非同期実行
 
 ■ Qt/OpenGL の不具合回避
 - QGraphicsOpacityEffectはQOpenGLWidgetに使用禁止。QtがオフスクリーンpixmapにレンダリングしようとしてGLコンテキストが壊れ、映像が表示されなくなる（音声のみ再生される）

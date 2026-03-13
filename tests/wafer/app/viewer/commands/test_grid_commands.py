@@ -6,6 +6,7 @@ from wafer.app.viewer.commands.grid_commands import (
     _CMD_TO_CHOICE,
     _CHOICE_TO_CMD,
     _CHOICE_TO_INDEX,
+    sync_grid_groups_from_settings,
 )
 from wafer.core.actions.command.state import ActionGroupStateManager, CommandOptionStore
 
@@ -198,3 +199,96 @@ class TestToggleAutoscrollCommand:
 
         scroll.stop_auto_scroll.assert_called_once()
         scroll.start_auto_scroll.assert_not_called()
+
+
+ORI_GROUP = "grid_orientation"
+MODE_GROUP = "grid_layout_mode"
+
+
+def _register_grid_groups():
+    sm = ActionGroupStateManager.instance()
+    for cmd_id in _CMD_IDS:
+        sm.register_member(ORI_GROUP, cmd_id)
+    sm.register_member(MODE_GROUP, "grid.layout_justified")
+    sm.register_member(MODE_GROUP, "grid.layout_masonry")
+
+
+class TestSyncGridGroupsFromSettings:
+
+    def test_sync_orientation(self):
+        _register_grid_groups()
+        sync_grid_groups_from_settings({'orientation': 2})
+        sm = ActionGroupStateManager.instance()
+        assert sm.get_current(ORI_GROUP) == 'grid.orientation_n'
+
+    def test_sync_layout_mode(self):
+        _register_grid_groups()
+        sync_grid_groups_from_settings({'layout_mode': 'masonry'})
+        sm = ActionGroupStateManager.instance()
+        assert sm.get_current(MODE_GROUP) == 'grid.layout_masonry'
+
+    def test_sync_both(self):
+        _register_grid_groups()
+        sync_grid_groups_from_settings({'orientation': 1, 'layout_mode': 'justified'})
+        sm = ActionGroupStateManager.instance()
+        assert sm.get_current(ORI_GROUP) == 'grid.orientation_reverse_z'
+        assert sm.get_current(MODE_GROUP) == 'grid.layout_justified'
+
+    def test_sync_does_not_persist(self):
+        _register_grid_groups()
+        store = CommandOptionStore.instance()
+        store._ensure_loaded()
+        store._map.pop(f"__group__{ORI_GROUP}", None)
+        store._buffer.clear()
+
+        sync_grid_groups_from_settings({'orientation': 3})
+        sm = ActionGroupStateManager.instance()
+        assert sm.get_current(ORI_GROUP) == 'grid.orientation_reverse_n'
+
+        assert f"__group__{ORI_GROUP}" not in store._buffer
+        assert f"__group__{ORI_GROUP}" not in store._map
+
+    def test_empty_settings_no_crash(self):
+        _register_grid_groups()
+        sync_grid_groups_from_settings({})
+
+    def test_invalid_orientation_ignored(self):
+        _register_grid_groups()
+        sm = ActionGroupStateManager.instance()
+        sm.set_current(ORI_GROUP, 'grid.orientation_z', save=False)
+        sync_grid_groups_from_settings({'orientation': 99})
+        assert sm.get_current(ORI_GROUP) == 'grid.orientation_z'
+
+    def test_invalid_layout_mode_ignored(self):
+        _register_grid_groups()
+        sm = ActionGroupStateManager.instance()
+        sm.set_current(MODE_GROUP, 'grid.layout_justified', save=False)
+        sync_grid_groups_from_settings({'layout_mode': 'nonexistent'})
+        assert sm.get_current(MODE_GROUP) == 'grid.layout_justified'
+
+
+class TestGridCommandsSavePolicy:
+
+    def test_orientation_commands_do_not_persist(self):
+        _register_grid_groups()
+        store = CommandOptionStore.instance()
+        store._ensure_loaded()
+        store._map.pop(f"__group__{ORI_GROUP}", None)
+        store._buffer.clear()
+
+        sm = ActionGroupStateManager.instance()
+        sm.set_current(ORI_GROUP, 'grid.orientation_n', save=False)
+
+        assert f"__group__{ORI_GROUP}" not in store._buffer
+
+    def test_layout_mode_commands_do_not_persist(self):
+        _register_grid_groups()
+        store = CommandOptionStore.instance()
+        store._ensure_loaded()
+        store._map.pop(f"__group__{MODE_GROUP}", None)
+        store._buffer.clear()
+
+        sm = ActionGroupStateManager.instance()
+        sm.set_current(MODE_GROUP, 'grid.layout_masonry', save=False)
+
+        assert f"__group__{MODE_GROUP}" not in store._buffer

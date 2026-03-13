@@ -442,6 +442,8 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         if query.search_params:
             self.search_service.set_params(query.search_params)
             self._apply_params_to_ui(query.search_params)
+            from .commands.query_commands import sync_groups_from_args
+            sync_groups_from_args(query.search_params)
         if query.folder_state:
             expanded = query.folder_state.get('expanded', [])
             selected = query.folder_state.get('selected', [])
@@ -481,6 +483,8 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
                 self.grid_view.set_orientation(gs['orientation'])
             if 'layout_mode' in gs:
                 self.grid_view.set_layout_mode(gs['layout_mode'])
+            from .commands.grid_commands import sync_grid_groups_from_settings
+            sync_grid_groups_from_settings(gs)
         if ui.scroll_index is not None:
             self.grid_view.set_pending_scroll_index(ui.scroll_index)
 

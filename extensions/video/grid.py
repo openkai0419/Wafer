@@ -26,8 +26,8 @@ class VideoGridPlugin(WidgetGridPlugin):
         QSurfaceFormat.setDefaultFormat(fmt)
 
     @profiler.profile
-    def render(self, job):
-        job.invoke(lambda w: w.load(job.path, job.size))
+    def render(self, widget, path, size):
+        widget.load(path, size)
 
     @profiler.profile
     def on_thumb_loaded(self, widget, image):

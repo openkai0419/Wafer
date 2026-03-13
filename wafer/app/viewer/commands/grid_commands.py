@@ -24,6 +24,23 @@ _MODE_CMDS = {"Justified": "grid.layout_justified", "Masonry": "grid.layout_maso
 _MODE_CMD_TO_LABEL = {v: k for k, v in _MODE_CMDS.items()}
 CYCLE_CHOICES = [f"{m} {o}" for m in _MODE_LABELS for o in ORIENTATION_CHOICES]
 
+_INDEX_TO_ORI_CMD = {i: cmd for i, cmd in enumerate(_CMD_IDS)}
+_VALUE_TO_MODE_CMD = {v: _MODE_CMDS[k] for k, v in _MODE_VALUES.items()}
+
+
+def sync_grid_groups_from_settings(grid_settings: dict) -> None:
+    sm = ActionGroupStateManager.instance()
+    orientation = grid_settings.get('orientation')
+    if orientation is not None:
+        cmd = _INDEX_TO_ORI_CMD.get(orientation)
+        if cmd:
+            sm.set_current('grid_orientation', cmd, save=False)
+    layout_mode = grid_settings.get('layout_mode')
+    if layout_mode is not None:
+        cmd = _VALUE_TO_MODE_CMD.get(layout_mode)
+        if cmd:
+            sm.set_current('grid_layout_mode', cmd, save=False)
+
 
 class GridViewCommands(ActionKit.MenuBase):
     NAME = "GridView"
@@ -250,45 +267,45 @@ class GridViewCommands(ActionKit.MenuBase):
 
     @staticmethod
     def set_scroll_anchor_top(ctx):
-        Command.set_action_group_current('grid_scroll_anchor', 'grid.scroll_anchor_top')
+        Command.set_action_group_current('grid_scroll_anchor', 'grid.scroll_anchor_top', save=False)
 
     @staticmethod
     def set_scroll_anchor_center(ctx):
-        Command.set_action_group_current('grid_scroll_anchor', 'grid.scroll_anchor_center')
+        Command.set_action_group_current('grid_scroll_anchor', 'grid.scroll_anchor_center', save=False)
 
     @staticmethod
     def set_orientation_z(ctx):
-        Command.set_action_group_current('grid_orientation', 'grid.orientation_z')
+        Command.set_action_group_current('grid_orientation', 'grid.orientation_z', save=False)
         view = GridViewCommands.get_view(ctx)
         view.set_orientation(0)
 
     @staticmethod
     def set_orientation_reverse_z(ctx):
-        Command.set_action_group_current('grid_orientation', 'grid.orientation_reverse_z')
+        Command.set_action_group_current('grid_orientation', 'grid.orientation_reverse_z', save=False)
         view = GridViewCommands.get_view(ctx)
         view.set_orientation(1)
 
     @staticmethod
     def set_orientation_n(ctx):
-        Command.set_action_group_current('grid_orientation', 'grid.orientation_n')
+        Command.set_action_group_current('grid_orientation', 'grid.orientation_n', save=False)
         view = GridViewCommands.get_view(ctx)
         view.set_orientation(2)
 
     @staticmethod
     def set_orientation_reverse_n(ctx):
-        Command.set_action_group_current('grid_orientation', 'grid.orientation_reverse_n')
+        Command.set_action_group_current('grid_orientation', 'grid.orientation_reverse_n', save=False)
         view = GridViewCommands.get_view(ctx)
         view.set_orientation(3)
 
     @staticmethod
     def set_layout_justified(ctx):
-        Command.set_action_group_current('grid_layout_mode', 'grid.layout_justified')
+        Command.set_action_group_current('grid_layout_mode', 'grid.layout_justified', save=False)
         view = GridViewCommands.get_view(ctx)
         view.set_layout_mode('justified')
 
     @staticmethod
     def set_layout_masonry(ctx):
-        Command.set_action_group_current('grid_layout_mode', 'grid.layout_masonry')
+        Command.set_action_group_current('grid_layout_mode', 'grid.layout_masonry', save=False)
         view = GridViewCommands.get_view(ctx)
         view.set_layout_mode('masonry')
 
@@ -311,9 +328,9 @@ class GridViewCommands(ActionKit.MenuBase):
             next_key = enabled[-1 if reverse else 0]
         next_mode, next_ori = next_key.split(" ", 1)
         view = GridViewCommands.get_view(ctx)
-        sm.set_current('grid_layout_mode', _MODE_CMDS[next_mode])
+        sm.set_current('grid_layout_mode', _MODE_CMDS[next_mode], save=False)
         view.set_layout_mode(_MODE_VALUES[next_mode])
-        sm.set_current('grid_orientation', _CHOICE_TO_CMD[next_ori])
+        sm.set_current('grid_orientation', _CHOICE_TO_CMD[next_ori], save=False)
         view.set_orientation(_CHOICE_TO_INDEX[next_ori])
 
     @classmethod

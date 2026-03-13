@@ -70,7 +70,7 @@ def _make_order_func(cmd_id, ascending):
 
 def _cycle_group(ctx, group):
     sm = ActionGroupStateManager.instance()
-    new_cmd = sm.cycle(group)
+    new_cmd = sm.cycle(group, save=False)
     if not new_cmd:
         return
     cfg = _GROUP_CONFIG[group]
@@ -101,7 +101,7 @@ def cycle_sort(ctx, reverse=False, **kwargs):
     except (ValueError, IndexError):
         next_key = enabled[-1 if reverse else 0]
     cmd_id = f"qry.sort_{next_key}"
-    sm.set_current(GROUP_SORT, cmd_id)
+    sm.set_current(GROUP_SORT, cmd_id, save=False)
     svc = _service(ctx)
     if svc:
         svc.set_param("sort_by", next_key)

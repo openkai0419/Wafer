@@ -4,6 +4,7 @@ from functools import lru_cache
 from PySide6 import QtCore, QtGui
 
 from wafer.plugin import WidgetGridPlugin
+from wafer.core.qt.dispatcher import Dispatcher
 from wafer.utils.profiling import profiler
 from .widget import AnimatedCellWidget, _frame_cache
 
@@ -66,7 +67,7 @@ _DEFAULT_DELAY = 100
 _MIN_DELAY = 20
 
 
-def _decode_frames(path: str, size: QtCore.QSize | None, job) -> tuple[list[QtGui.QPixmap], list[int]]:
+def _decode_frames(path: str, size: QtCore.QSize | None, is_stale) -> tuple[list[QtGui.QPixmap], list[int]]:
     reader = QtGui.QImageReader(path)
     reader.setAutoTransform(True)
     pixmaps: list[QtGui.QPixmap] = []
@@ -75,7 +76,7 @@ def _decode_frames(path: str, size: QtCore.QSize | None, job) -> tuple[list[QtGu
     if count <= 0:
         count = 1024
     for i in range(count):
-        if job.is_cancelled():
+        if is_stale():
             return [], []
         delay = reader.nextImageDelay()
         if delay < _MIN_DELAY:
@@ -98,27 +99,34 @@ class AnimatedGridPlugin(WidgetGridPlugin):
     WIDGET_CLASS = AnimatedCellWidget
     REQUIRE_THUMBNAIL = True
 
+    def __init__(self):
+        super().__init__()
+        from wafer.core.qt.thread import grid_render_pool
+        self._dispatcher = Dispatcher(grid_render_pool)
+
     @classmethod
     @profiler.profile
     def can_handle(cls, path: str) -> bool:
         return _is_animated(path)
 
     @profiler.profile
-    def render(self, job):
-        cached = _frame_cache.get_if_sufficient(job.path, job.size)
+    def render(self, widget, path, size):
+        cached = _frame_cache.get_if_sufficient(path, size)
         if cached is not None:
             frames, delays = cached
-            job.invoke(lambda w: w.set_frames(job.path, frames, delays))
+            widget.set_frames(path, frames, delays)
             return
-        job.post(lambda: self._decode_and_set(job), priority=0)
+        widget._path = path
+        self._dispatcher.post(
+            lambda: self._decode_and_set(widget, path, size), priority=0)
 
-    @staticmethod
-    def _decode_and_set(job):
-        frames, delays = _decode_frames(job.path, job.size, job)
-        if job.is_cancelled() or not frames:
+    def _decode_and_set(self, widget, path, size):
+        frames, delays = _decode_frames(path, size, lambda: widget._path != path)
+        if widget._path != path or not frames:
             return
-        _frame_cache.put(job.path, frames, delays)
-        job.invoke(lambda w: w.set_frames(job.path, frames, delays))
+        _frame_cache.put(path, frames, delays)
+        self._dispatcher.invoke(
+            lambda: widget.set_frames(path, frames, delays) if widget._path == path else None)
 
     @profiler.profile
     def on_thumb_loaded(self, widget, image):

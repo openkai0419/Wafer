@@ -629,7 +629,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         for idx in to_select:
             selmodel.select(idx, QtCore.QItemSelectionModel.Select | QtCore.QItemSelectionModel.Rows)
         if to_select:
-            self.setCurrentIndex(to_select[0])
+            selmodel.setCurrentIndex(to_select[0], QtCore.QItemSelectionModel.NoUpdate)
             self.scrollTo(to_select[0], QtWidgets.QAbstractItemView.PositionAtCenter)
 
     @profiler.profile

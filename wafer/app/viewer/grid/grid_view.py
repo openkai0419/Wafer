@@ -567,7 +567,12 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self.rects = layout
         n = len(layout)
         for i in list(self.visible_indices):
-            if i < n and i in self.widgets:
+            if i >= n:
+                self._recycle_widget(i)
+                self.visible_indices.discard(i)
+            elif i in self._additional_widgets:
+                pass
+            elif i in self.widgets:
                 self.widgets[i].setGeometry(layout[i])
                 if self._needs_reload(self.widgets[i], layout[i].size()):
                     self._pipeline.schedule_render(
@@ -577,7 +582,6 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
                 self._recycle_widget(i)
                 self.visible_indices.discard(i)
         self._update_visible_items()
-        self._sync_additional_widgets()
         self.layout_ready.emit()
         if self.last_selections:
             indexes = [i for i in (self.items.index_of_path(p) for p in self.last_selections) if i is not None]
@@ -645,6 +649,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
                 if i < len(self.rects):
                     self._setup_cell(i)
         self.visible_indices = new_visible
+        self._sync_additional_widgets()
         if self.rects:
             margin = self._half_pos
             if self._hz:
@@ -779,7 +784,6 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         if not self._additional_widgets:
             return
         vp_rect = self.viewport().rect()
-        targets = self.visible_indices & self._additional_widgets.keys()
-        for idx in targets:
+        for idx in list(self._additional_widgets):
             self._sync_additional_widget(idx, vp_rect)
         self._overlay.raise_()

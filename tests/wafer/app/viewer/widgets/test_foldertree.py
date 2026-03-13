@@ -40,6 +40,32 @@ def test_rename_and_move(qtbot):
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
+def test_set_state_preserves_multi_selection(qtbot):
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    tmpdir = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(tmpdir, 'X'), exist_ok=True)
+        os.makedirs(os.path.join(tmpdir, 'Y'), exist_ok=True)
+        os.makedirs(os.path.join(tmpdir, 'Z'), exist_ok=True)
+        tree = LazyFolderTreeView(roots=[tmpdir], excluded=[])
+        qtbot.addWidget(tree)
+        tree.model_._build_roots([tmpdir])
+
+        root_norm = tmpdir.replace('\\', '/')
+        path_x = os.path.join(tmpdir, 'X').replace('\\', '/')
+        path_y = os.path.join(tmpdir, 'Y').replace('\\', '/')
+        path_z = os.path.join(tmpdir, 'Z').replace('\\', '/')
+
+        tree.set_state(([root_norm], [path_x, path_y, path_z]))
+        selected = tree.get_selected_paths()
+        assert sorted(selected) == sorted([path_x, path_y, path_z])
+
+        expanded, selected_out = tree.get_state()
+        assert sorted(selected_out) == sorted([path_x, path_y, path_z])
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 import py_compile
 
 

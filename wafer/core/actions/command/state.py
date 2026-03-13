@@ -181,14 +181,14 @@ class ActionGroupStateManager:
             self.commit()
     
     @profiler.profile
-    def cycle(self, group_name: str) -> str | None:
+    def cycle(self, group_name: str, *, save: bool = True) -> str | None:
         members = self._group_members.get(group_name)
         if not members:
             return None
         current = self.get_current(group_name)
         current_idx = members.index(current) if current in members else -1
         result = members[(current_idx + 1) % len(members)]
-        self.set_current(group_name, result)
+        self.set_current(group_name, result, save=save)
         return result
     
     def get_check_state(self, command_id: str) -> bool:

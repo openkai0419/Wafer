@@ -317,8 +317,8 @@ class CommandMenuBuilder(TranslatorMixin):
                 return result
         return self.state_manager.find_default(group_name, self.registry)
 
-    def set_action_group_current(self, group_name: str, command_id: str) -> None:
-        self.state_manager.set_current(group_name, command_id)
+    def set_action_group_current(self, group_name: str, command_id: str, *, save: bool = True) -> None:
+        self.state_manager.set_current(group_name, command_id, save=save)
         group = self._action_groups.get(group_name)
         if group:
             for action in group.actions():

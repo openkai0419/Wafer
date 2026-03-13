@@ -41,48 +41,20 @@ def test_video_grid_plugin_is_widget_plugin():
 
 def test_video_grid_plugin_render_calls_load():
     from extensions.video.grid import VideoGridPlugin
-    from wafer.core.qt.dispatcher import Dispatcher, CancelToken
-    from wafer.plugin.grid.cell_job import CellJob
-    from PySide6 import QtCore, QtWidgets
-    import time
+    from PySide6 import QtCore
     plugin = VideoGridPlugin()
     widget = MagicMock()
-    dispatcher = Dispatcher()
-    job = CellJob(
-        index=0, path='test.mp4', size=QtCore.QSize(),
-        image_cache={}, cancel=CancelToken(), dispatcher=dispatcher,
-        widget_lookup=lambda i: widget,
-    )
-    plugin.render(job)
-    app = QtWidgets.QApplication.instance()
-    deadline = time.monotonic() + 2.0
-    while not widget.load.called and time.monotonic() < deadline:
-        app.processEvents(QtCore.QEventLoop.AllEvents, 50)
-        time.sleep(0.01)
+    plugin.render(widget, 'test.mp4', QtCore.QSize())
     widget.load.assert_called_once_with('test.mp4', QtCore.QSize())
 
 
 def test_video_grid_plugin_render_passes_size():
     from extensions.video.grid import VideoGridPlugin
-    from wafer.core.qt.dispatcher import Dispatcher, CancelToken
-    from wafer.plugin.grid.cell_job import CellJob
-    from PySide6 import QtCore, QtWidgets
-    import time
+    from PySide6 import QtCore
     plugin = VideoGridPlugin()
     widget = MagicMock()
-    dispatcher = Dispatcher()
     size = QtCore.QSize(320, 240)
-    job = CellJob(
-        index=0, path='test.mp4', size=size,
-        image_cache={}, cancel=CancelToken(), dispatcher=dispatcher,
-        widget_lookup=lambda i: widget,
-    )
-    plugin.render(job)
-    app = QtWidgets.QApplication.instance()
-    deadline = time.monotonic() + 2.0
-    while not widget.load.called and time.monotonic() < deadline:
-        app.processEvents(QtCore.QEventLoop.AllEvents, 50)
-        time.sleep(0.01)
+    plugin.render(widget, 'test.mp4', size)
     widget.load.assert_called_once_with('test.mp4', size)
 
 

@@ -25,25 +25,12 @@ class ImageGridPlugin(BaseGridPlugin):
     def load(self, path: str, size=None):
         ...
 
-    def render(self, job):
-        cached = job.image_cache.get_if_sufficient(job.path, job.size)
-        if cached is not None:
-            job.invoke(lambda item: item.set_image(cached, job.path))
-            return
-        image = self.load(job.path, job.size)
-        if job.is_cancelled():
-            return
-        if image is None or (isinstance(image, QtGui.QImage) and image.isNull()):
-            image = _get_error_image(job.size)
-        job.image_cache[job.path] = image
-        job.invoke(lambda item: item.set_image(image, job.path))
-
 
 class WidgetGridPlugin(BaseGridPlugin):
     WIDGET_CLASS = None
     REQUIRE_THUMBNAIL = False
 
-    def render(self, job):
+    def render(self, widget, path, size):
         pass
 
     def on_thumb_loaded(self, widget, image):

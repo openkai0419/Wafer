@@ -200,8 +200,8 @@ class Command:
         return ActionKit.CommandMenuBuilder.instance().get_action_group_current(str(group_name))
 
     @staticmethod
-    def set_action_group_current(group_name: str, command_id: str):
-        ActionKit.CommandMenuBuilder.instance().set_action_group_current(str(group_name), str(command_id))
+    def set_action_group_current(group_name: str, command_id: str, *, save: bool = True):
+        ActionKit.CommandMenuBuilder.instance().set_action_group_current(str(group_name), str(command_id), save=save)
 
     @staticmethod
     def get_checked(command_id: str) -> bool:

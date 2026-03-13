@@ -7,7 +7,6 @@ from unittest.mock import MagicMock
 
 from wafer.core.qt.dispatcher import Dispatcher, CancelToken
 from wafer.app.viewer.grid.pipeline import GridPipeline
-from wafer.plugin.grid.cell_job import CellJob
 from wafer.plugin.grid.base import ImageGridPlugin, WidgetGridPlugin
 
 
@@ -76,8 +75,9 @@ class _StubWidgetPlugin(WidgetGridPlugin):
     REQUIRE_THUMBNAIL = True
     PRIORITY = 5
 
-    def render(self, job):
-        self._last_job = job
+    def render(self, widget, path, size):
+        self._last_widget = widget
+        self._last_path = path
 
     def on_thumb_loaded(self, widget, image):
         widget.set_thumb(image)
@@ -475,59 +475,6 @@ class TestPipelineFallbackRender:
         time.sleep(0.3)
         QtWidgets.QApplication.instance().processEvents()
         widget.set_image.assert_not_called()
-
-
-class TestCellJobGuardedInvoke:
-    def test_cancelled_between_post_and_invoke(self, dispatcher):
-        cancel = CancelToken()
-        result = {'called': False}
-
-        def lookup(i):
-            return MagicMock()
-
-        job = CellJob(0, '/a.png', QtCore.QSize(100, 100), image_cache=_FakeCache(), cancel=cancel, dispatcher=dispatcher, widget_lookup=lookup)
-
-        cancel.set()
-        job.invoke(lambda w: result.update({'called': True}))
-
-        time.sleep(0.2)
-        QtWidgets.QApplication.instance().processEvents()
-        assert not result['called']
-
-    def test_widget_removed_between_post_and_invoke(self, dispatcher):
-        cancel = CancelToken()
-        result = {'called': False}
-        widgets = {0: MagicMock()}
-
-        job = CellJob(0, '/a.png', QtCore.QSize(100, 100), image_cache=_FakeCache(), cancel=cancel, dispatcher=dispatcher, widget_lookup=lambda i: widgets.get(i))
-
-        del widgets[0]
-        job.invoke(lambda w: result.update({'called': True}))
-
-        time.sleep(0.2)
-        QtWidgets.QApplication.instance().processEvents()
-        assert not result['called']
-
-    def test_invoke_reaches_widget_when_valid(self, dispatcher):
-        cancel = CancelToken()
-        result = {}
-        widget = MagicMock()
-
-        job = CellJob(0, '/a.png', QtCore.QSize(100, 100), image_cache=_FakeCache(), cancel=cancel, dispatcher=dispatcher, widget_lookup=lambda i: widget)
-        job.invoke(lambda w: result.update({'w': w}))
-
-        _process_events_until(lambda: 'w' in result)
-        assert result['w'] is widget
-
-    def test_invoke_runs_on_main_thread(self, dispatcher):
-        cancel = CancelToken()
-        result = {}
-
-        job = CellJob(0, '', QtCore.QSize(), None, cancel, dispatcher, lambda i: 'w')
-        job.invoke(lambda w: result.update({'tid': threading.current_thread().ident}))
-
-        _process_events_until(lambda: 'tid' in result)
-        assert result['tid'] == threading.main_thread().ident
 
 
 class TestPipelineFullsizeKeyOptimization:

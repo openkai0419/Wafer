@@ -3,89 +3,19 @@ from typing import Callable, Optional
 from PySide6 import QtCore, QtGui
 
 from ....core.qt.dispatcher import Dispatcher, CancelToken
-from ....plugin.grid.cell_job import CellJob
 from ....plugin.grid.handler import grid_resolver
-from ....plugin.grid.base import WidgetGridPlugin as _WidgetGridPlugin, _get_error_image
+from ....plugin.grid.base import (
+    ImageGridPlugin as _ImageGridPlugin,
+    WidgetGridPlugin as _WidgetGridPlugin,
+    _get_error_image,
+)
 from .calc_layout import JustifiedLayoutCalculator, MasonryLayoutCalculator, LayoutData
 from .cachemanager import fullsize_key
 
 
-def _load_widget_thumbnail(plugin, job, cancel, thumb_dispatcher):
-    def task():
-        if cancel.is_set():
-            return
-        cached = job.image_cache.get(fullsize_key(job.path))
-        if cached is None:
-            cached = job.image_cache.get(job.path)
-        if cached is not None:
-            job.invoke(lambda w: plugin.on_thumb_loaded(w, cached))
-            return
-        image = grid_resolver.load(job.path, job.size)
-        if image is None or cancel.is_set():
-            return
-        job.image_cache[job.path] = image
-        job.invoke(lambda w: plugin.on_thumb_loaded(w, image))
-    thumb_dispatcher.post(task, priority=5, cancel=cancel)
-
-
-def _make_fallback_task(job, cancel):
-    def task():
-        if cancel.is_set():
-            return
-        cached = job.image_cache.get_if_sufficient(fullsize_key(job.path), job.size)
-        if cached is None:
-            cached = job.image_cache.get_if_sufficient(job.path, job.size)
-        if cached is not None:
-            job.invoke(lambda item: item.set_image(cached, job.path))
-            return
-        image = grid_resolver.load(job.path, job.size)
-        if cancel.is_set():
-            return
-        if image is None or (isinstance(image, QtGui.QImage) and image.isNull()):
-            image = _get_error_image(job.size)
-        job.image_cache[job.path] = image
-        job.invoke(lambda item: item.set_image(image, job.path))
-    return task
-
-
-def _execute_plugin_render(plugin, job, cancel, thumb_dispatcher):
-    if cancel.is_set():
-        return
-    if not isinstance(plugin, _WidgetGridPlugin):
-        fkey = fullsize_key(job.path)
-        cached = job.image_cache.get_if_sufficient(fkey, job.size)
-        if cached is not None:
-            job.invoke(lambda item: item.set_image(cached, job.path))
-            return
-    plugin.render(job)
-    if isinstance(plugin, _WidgetGridPlugin) and plugin.REQUIRE_THUMBNAIL and not cancel.is_set():
-        _load_widget_thumbnail(plugin, job, cancel, thumb_dispatcher)
-
-
-def _make_resolve_task(job, cancel, promote_fn, thumb_dispatcher):
-    def task():
-        if cancel.is_set():
-            return
-        plugin = None
-        for plugin_cls in grid_resolver.resolve_chain(job.path):
-            if not plugin_cls.can_handle(job.path):
-                continue
-            plugin = grid_resolver.registry.instance(plugin_cls.NAME)
-            break
-        if cancel.is_set():
-            return
-        if plugin is None:
-            _make_fallback_task(job, cancel)()
-            return
-        if isinstance(plugin, _WidgetGridPlugin):
-            name = plugin.NAME
-            job.invoke_raw(lambda: promote_fn(job.index, name))
-        _execute_plugin_render(plugin, job, cancel, thumb_dispatcher)
-    return task
-
-
 class GridPipeline(QtCore.QObject):
     layout_ready = QtCore.Signal(object)
+    _image_ready = QtCore.Signal(int, str, object)
 
     def __init__(
         self,
@@ -106,6 +36,7 @@ class GridPipeline(QtCore.QObject):
         self._promote_fn = promote_fn
         self._active: dict[int, CancelToken] = {}
         self._layout_cancel: CancelToken | None = None
+        self._image_ready.connect(self._on_image_ready)
 
     def request_layout(
         self,
@@ -140,7 +71,7 @@ class GridPipeline(QtCore.QObject):
                 return
             layout = calc._result
             if layout is not None:
-                self._utility_dispatcher.invoke(lambda: self.layout_ready.emit(layout))
+                self.layout_ready.emit(layout)
 
         self._utility_dispatcher.post(task, priority=7, cancel=cancel)
 
@@ -150,29 +81,121 @@ class GridPipeline(QtCore.QObject):
         cancel = CancelToken()
         self._active[index] = cancel
 
-        job = CellJob(
-            index=index,
-            path=path,
-            size=size,
-            image_cache=self._cache,
-            cancel=cancel,
-            dispatcher=self._thumb_dispatcher,
-            widget_lookup=self._widget_lookup,
-            render_dispatcher=self._render_dispatcher,
+        if plugin is not None:
+            if isinstance(plugin, _WidgetGridPlugin):
+                self._dispatch_widget_render(index, path, size, plugin, cancel)
+            else:
+                self._dispatch_image_load(index, path, size, plugin, cancel)
+        else:
+            self._dispatch_resolve(index, path, size, cancel)
+
+    def _dispatch_resolve(self, index, path, size, cancel):
+        def task():
+            if cancel.is_set():
+                return
+            plugin = None
+            for plugin_cls in grid_resolver.resolve_chain(path):
+                if not plugin_cls.can_handle(path):
+                    continue
+                plugin = grid_resolver.registry.instance(plugin_cls.NAME)
+                break
+            if cancel.is_set():
+                return
+            if plugin is None:
+                self._load_image(index, path, size, grid_resolver.load, cancel)
+                return
+            if isinstance(plugin, _WidgetGridPlugin):
+                self._thumb_dispatcher.invoke(
+                    lambda: self._on_resolve_widget(index, path, size, plugin, cancel)
+                )
+            else:
+                self._load_image(index, path, size, plugin.load, cancel)
+
+        self._render_dispatcher.post(task, priority=100, cancel=cancel)
+
+    def _on_resolve_widget(self, index, path, size, plugin, cancel):
+        if cancel.is_set() or index not in self._active:
+            return
+        self._promote_fn(index, plugin.NAME)
+        widget = self._widget_lookup(index)
+        if widget is not None:
+            plugin.render(widget, path, size)
+        if plugin.REQUIRE_THUMBNAIL:
+            self._dispatch_thumbnail(index, path, size, plugin, cancel)
+
+    def _dispatch_widget_render(self, index, path, size, plugin, cancel):
+        widget = self._widget_lookup(index)
+        if widget is not None:
+            plugin.render(widget, path, size)
+        if plugin.REQUIRE_THUMBNAIL:
+            self._dispatch_thumbnail(index, path, size, plugin, cancel)
+
+    def _dispatch_image_load(self, index, path, size, plugin, cancel):
+        fkey = fullsize_key(path)
+        cached = self._cache.get_if_sufficient(fkey, size)
+        if cached is None:
+            cached = self._cache.get_if_sufficient(path, size)
+        if cached is not None:
+            widget = self._widget_lookup(index)
+            if widget is not None:
+                widget.set_image(cached, path)
+            return
+        self._render_dispatcher.post(
+            lambda: self._load_image(index, path, size, plugin.load, cancel),
+            priority=plugin.PRIORITY, cancel=cancel,
         )
 
-        if plugin is not None:
-            def make_task(p=plugin, j=job, c=cancel, td=self._thumb_dispatcher):
-                def task():
-                    _execute_plugin_render(p, j, c, td)
-                return task
+    def _load_image(self, index, path, size, load_fn, cancel):
+        fkey = fullsize_key(path)
+        cached = self._cache.get_if_sufficient(fkey, size)
+        if cached is None:
+            cached = self._cache.get_if_sufficient(path, size)
+        if cached is not None:
+            self._image_ready.emit(index, path, cached)
+            return
+        image = load_fn(path, size)
+        if cancel.is_set():
+            return
+        if image is None or (isinstance(image, QtGui.QImage) and image.isNull()):
+            image = _get_error_image(size)
+        self._cache[path] = image
+        self._image_ready.emit(index, path, image)
 
-            self._render_dispatcher.post(make_task(), priority=plugin.PRIORITY, cancel=cancel)
-        else:
-            self._render_dispatcher.post(
-                _make_resolve_task(job, cancel, self._promote_fn, self._thumb_dispatcher),
-                priority=100, cancel=cancel,
+    def _dispatch_thumbnail(self, index, path, size, plugin, cancel):
+        def task():
+            if cancel.is_set():
+                return
+            cached = self._cache.get(fullsize_key(path))
+            if cached is None:
+                cached = self._cache.get(path)
+            if cached is not None:
+                self._thumb_dispatcher.invoke(
+                    lambda: self._deliver_thumbnail(index, plugin, cached)
+                )
+                return
+            image = grid_resolver.load(path, size)
+            if image is None or cancel.is_set():
+                return
+            self._cache[path] = image
+            self._thumb_dispatcher.invoke(
+                lambda: self._deliver_thumbnail(index, plugin, image)
             )
+        self._thumb_dispatcher.post(task, priority=5, cancel=cancel)
+
+    def _deliver_thumbnail(self, index, plugin, image):
+        if index not in self._active:
+            return
+        widget = self._widget_lookup(index)
+        if widget is not None and isinstance(widget, plugin.WIDGET_CLASS):
+            plugin.on_thumb_loaded(widget, image)
+
+    @QtCore.Slot(int, str, object)
+    def _on_image_ready(self, index, path, image):
+        if index not in self._active:
+            return
+        widget = self._widget_lookup(index)
+        if widget is not None:
+            widget.set_image(image, path)
 
     def cancel_index(self, index: int):
         token = self._active.pop(index, None)

@@ -123,10 +123,15 @@ class TestCanHandle:
         assert AnimatedGridPlugin.can_handle(txt_path) is False
 
 
-def _wait_for_widget(widget, attr, expected, timeout=3.0):
+def _wait_for_widget(widget, attr, expected, timeout=3.0, negate=False):
     app = QtWidgets.QApplication.instance()
     deadline = time.monotonic() + timeout
-    while getattr(widget, attr) != expected and time.monotonic() < deadline:
+    while time.monotonic() < deadline:
+        val = getattr(widget, attr)
+        if negate and val != expected:
+            return
+        if not negate and val == expected:
+            return
         app.processEvents(QtCore.QEventLoop.AllEvents, 50)
         time.sleep(0.01)
 
@@ -134,26 +139,15 @@ def _wait_for_widget(widget, attr, expected, timeout=3.0):
 def test_render_posts_decode_without_thumbnail(qtbot, tmp_path):
     from extensions.animated.grid import AnimatedGridPlugin
     from extensions.animated.widget import AnimatedCellWidget, _frame_cache
-    from wafer.core.qt.dispatcher import Dispatcher, CancelToken
-    from wafer.plugin.grid.cell_job import CellJob
     from PIL import Image
     gif_path = str(tmp_path / 'anim.gif')
     frames = [Image.new('RGB', (10, 10), c) for c in ['red', 'blue']]
     frames[0].save(gif_path, save_all=True, append_images=frames[1:], duration=100, loop=0)
     plugin = AnimatedGridPlugin()
     widget = AnimatedCellWidget()
-    dispatcher = Dispatcher()
-    render_dispatcher = Dispatcher()
-    cache = {}
-    job = CellJob(
-        index=0, path=gif_path, size=QtCore.QSize(10, 10),
-        image_cache=cache, cancel=CancelToken(), dispatcher=dispatcher,
-        widget_lookup=lambda i: widget,
-        render_dispatcher=render_dispatcher,
-    )
-    plugin.render(job)
-    assert gif_path not in cache
-    _wait_for_widget(widget, '_path', gif_path)
+    plugin.render(widget, gif_path, QtCore.QSize(10, 10))
+    assert widget._path == gif_path
+    _wait_for_widget(widget, '_frames', [], negate=True)
     assert len(widget._frames) >= 2
     _frame_cache.remove(gif_path)
     widget.suspend()
@@ -163,24 +157,14 @@ def test_render_posts_decode_without_thumbnail(qtbot, tmp_path):
 def test_render_calls_load(qtbot, tmp_path):
     from extensions.animated.grid import AnimatedGridPlugin
     from extensions.animated.widget import AnimatedCellWidget, _frame_cache
-    from wafer.core.qt.dispatcher import Dispatcher, CancelToken
-    from wafer.plugin.grid.cell_job import CellJob
     from PIL import Image
     gif_path = str(tmp_path / 'anim.gif')
     frames = [Image.new('RGB', (10, 10), c) for c in ['red', 'blue']]
     frames[0].save(gif_path, save_all=True, append_images=frames[1:], duration=100, loop=0)
     plugin = AnimatedGridPlugin()
     widget = AnimatedCellWidget()
-    dispatcher = Dispatcher()
-    render_dispatcher = Dispatcher()
-    job = CellJob(
-        index=0, path=gif_path, size=QtCore.QSize(10, 10),
-        image_cache={}, cancel=CancelToken(), dispatcher=dispatcher,
-        widget_lookup=lambda i: widget,
-        render_dispatcher=render_dispatcher,
-    )
-    plugin.render(job)
-    _wait_for_widget(widget, '_path', gif_path)
+    plugin.render(widget, gif_path, QtCore.QSize(10, 10))
+    _wait_for_widget(widget, '_frames', [], negate=True)
     assert widget._path == gif_path
     assert len(widget._frames) >= 2
     _frame_cache.remove(gif_path)
@@ -191,76 +175,46 @@ def test_render_calls_load(qtbot, tmp_path):
 def test_render_with_cache_hit(qtbot, tmp_path):
     from extensions.animated.grid import AnimatedGridPlugin
     from extensions.animated.widget import AnimatedCellWidget, _frame_cache
-    from wafer.core.qt.dispatcher import Dispatcher, CancelToken
-    from wafer.plugin.grid.cell_job import CellJob
     frames = [QtGui.QPixmap(10, 10), QtGui.QPixmap(10, 10)]
     delays = [100, 100]
     path = '/cached/anim.gif'
     _frame_cache.put(path, frames, delays)
     plugin = AnimatedGridPlugin()
     widget = AnimatedCellWidget()
-    dispatcher = Dispatcher()
-    job = CellJob(
-        index=0, path=path, size=QtCore.QSize(10, 10),
-        image_cache={}, cancel=CancelToken(), dispatcher=dispatcher,
-        widget_lookup=lambda i: widget,
-    )
-    plugin.render(job)
-    _wait_for_widget(widget, '_path', path)
+    plugin.render(widget, path, QtCore.QSize(10, 10))
     assert widget._frames is frames
     _frame_cache.remove(path)
     widget.suspend()
     widget.deleteLater()
 
 
-def test_render_cancelled_does_not_invoke(qtbot, tmp_path):
+def test_render_stale_after_suspend_does_not_set_frames(qtbot, tmp_path):
     from extensions.animated.grid import AnimatedGridPlugin
     from extensions.animated.widget import AnimatedCellWidget, _frame_cache
-    from wafer.core.qt.dispatcher import Dispatcher, CancelToken
-    from wafer.plugin.grid.cell_job import CellJob
     from PIL import Image
     gif_path = str(tmp_path / 'anim.gif')
     frames = [Image.new('RGB', (10, 10), c) for c in ['red', 'blue']]
     frames[0].save(gif_path, save_all=True, append_images=frames[1:], duration=100, loop=0)
     plugin = AnimatedGridPlugin()
     widget = AnimatedCellWidget()
-    dispatcher = Dispatcher()
-    render_dispatcher = Dispatcher()
-    cancel = CancelToken()
-    cancel.set()
-    job = CellJob(
-        index=0, path=gif_path, size=QtCore.QSize(10, 10),
-        image_cache={}, cancel=cancel, dispatcher=dispatcher,
-        widget_lookup=lambda i: widget,
-        render_dispatcher=render_dispatcher,
-    )
-    plugin.render(job)
-    time.sleep(0.1)
+    plugin.render(widget, gif_path, QtCore.QSize(10, 10))
+    widget.suspend()
+    time.sleep(0.3)
     QtWidgets.QApplication.instance().processEvents(QtCore.QEventLoop.AllEvents, 50)
-    assert widget._path == ''
     assert widget._frames == []
+    _frame_cache.remove(gif_path)
     widget.deleteLater()
 
 
 def test_render_nonexistent_no_frames(qtbot):
     from extensions.animated.grid import AnimatedGridPlugin
     from extensions.animated.widget import AnimatedCellWidget
-    from wafer.core.qt.dispatcher import Dispatcher, CancelToken
-    from wafer.plugin.grid.cell_job import CellJob
     plugin = AnimatedGridPlugin()
     widget = AnimatedCellWidget()
-    dispatcher = Dispatcher()
-    render_dispatcher = Dispatcher()
-    job = CellJob(
-        index=0, path='/nonexistent/file.gif', size=QtCore.QSize(10, 10),
-        image_cache={}, cancel=CancelToken(), dispatcher=dispatcher,
-        widget_lookup=lambda i: widget,
-        render_dispatcher=render_dispatcher,
-    )
-    plugin.render(job)
+    plugin.render(widget, '/nonexistent/file.gif', QtCore.QSize(10, 10))
     time.sleep(0.3)
     QtWidgets.QApplication.instance().processEvents(QtCore.QEventLoop.AllEvents, 50)
-    assert widget._path == ''
+    assert widget._path == '/nonexistent/file.gif'
     assert widget._frames == []
     widget.deleteLater()
 
@@ -273,9 +227,7 @@ class TestDecodeFrames:
         gif_path = str(tmp_path / 'test.gif')
         imgs = [Image.new('RGB', (10, 10), c) for c in ['red', 'blue']]
         imgs[0].save(gif_path, save_all=True, append_images=imgs[1:], duration=100, loop=0)
-        job = MagicMock()
-        job.is_cancelled.return_value = False
-        pixmaps, delays = _decode_frames(gif_path, None, job)
+        pixmaps, delays = _decode_frames(gif_path, None, lambda: False)
         assert len(pixmaps) == 2
         assert len(delays) == 2
 
@@ -285,11 +237,8 @@ class TestDecodeFrames:
         gif_path = str(tmp_path / 'many.gif')
         imgs = [Image.new('RGB', (10, 10), 'red') for _ in range(20)]
         imgs[0].save(gif_path, save_all=True, append_images=imgs[1:], duration=50, loop=0)
-        job = MagicMock()
-        job.is_cancelled.return_value = True
-        pixmaps, delays = _decode_frames(gif_path, None, job)
+        pixmaps, delays = _decode_frames(gif_path, None, lambda: True)
         assert pixmaps == [] and delays == []
-        job.is_cancelled.assert_called_once()
 
     def test_scaled_size(self, tmp_path):
         from extensions.animated.grid import _decode_frames
@@ -297,18 +246,14 @@ class TestDecodeFrames:
         gif_path = str(tmp_path / 'big.gif')
         imgs = [Image.new('RGB', (100, 100), c) for c in ['red', 'blue']]
         imgs[0].save(gif_path, save_all=True, append_images=imgs[1:], duration=100, loop=0)
-        job = MagicMock()
-        job.is_cancelled.return_value = False
-        pixmaps, delays = _decode_frames(gif_path, QtCore.QSize(50, 50), job)
+        pixmaps, delays = _decode_frames(gif_path, QtCore.QSize(50, 50), lambda: False)
         assert len(pixmaps) == 2
         for px in pixmaps:
             assert px.width() <= 50 and px.height() <= 50
 
     def test_nonexistent_file(self):
         from extensions.animated.grid import _decode_frames
-        job = MagicMock()
-        job.is_cancelled.return_value = False
-        pixmaps, delays = _decode_frames('/nonexistent/file.gif', None, job)
+        pixmaps, delays = _decode_frames('/nonexistent/file.gif', None, lambda: False)
         assert pixmaps == []
         assert delays == []
 

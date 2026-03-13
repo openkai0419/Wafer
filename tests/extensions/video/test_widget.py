@@ -260,6 +260,8 @@ class TestMpvCellWidget:
         w.setGeometry(0, 0, 200, 150)
         w.on_appeared()
         assert MpvCellWidget._slot_manager.is_appeared(w)
+        QtWidgets.QApplication.instance().processEvents()
+        assert w in MpvCellWidget._slot_manager._appeared
         w.cleanup()
 
     def test_on_disappeared_deactivates_appear(self, qtbot):
@@ -269,6 +271,7 @@ class TestMpvCellWidget:
         w._path = '/test.mp4'
         w.setGeometry(0, 0, 200, 150)
         w.on_appeared()
+        QtWidgets.QApplication.instance().processEvents()
         w.on_disappeared()
         assert not MpvCellWidget._slot_manager.is_appeared(w)
         w.cleanup()
@@ -280,6 +283,7 @@ class TestMpvCellWidget:
         w._path = '/test.mp4'
         w.setGeometry(0, 0, 200, 150)
         w.on_appeared()
+        QtWidgets.QApplication.instance().processEvents()
         w.on_selected()
         overlay = MpvCellWidget._slot_manager._selected[w]
         w.on_deselected()
@@ -720,6 +724,73 @@ class TestPlaybackSlotManager:
         player1.terminate.assert_called_once()
         player2.terminate.assert_called_once()
         assert len(manager._player_pool) == 0
+
+    def test_appear_staggered_one_per_flush(self, manager, parent):
+        c1 = self._make_cell(parent)
+        c2 = self._make_cell(parent)
+        manager.activate_appear(c1, '/a.mp4')
+        manager.activate_appear(c2, '/b.mp4')
+        assert manager.is_appeared(c1)
+        assert manager.is_appeared(c2)
+        assert c1 not in manager._appeared
+        assert c2 not in manager._appeared
+        assert len(manager._appear_queue) == 2
+        manager._flush_appear_queue()
+        assert c1 in manager._appeared
+        assert c2 not in manager._appeared
+        assert len(manager._appear_queue) == 1
+        manager._flush_appear_queue()
+        assert c2 in manager._appeared
+        assert len(manager._appear_queue) == 0
+        c1.cleanup()
+        c2.cleanup()
+
+    def test_appear_deactivate_removes_from_queue(self, manager, parent):
+        c1 = self._make_cell(parent)
+        c2 = self._make_cell(parent)
+        manager.activate_appear(c1, '/a.mp4')
+        manager.activate_appear(c2, '/b.mp4')
+        manager.deactivate_appear(c1)
+        assert len(manager._appear_queue) == 1
+        assert manager._appear_queue[0][0] is c2
+        c1.cleanup()
+        c2.cleanup()
+
+    def test_appear_flush_skips_deactivated(self, manager, parent):
+        c1 = self._make_cell(parent)
+        manager.activate_appear(c1, '/a.mp4')
+        manager.deactivate_appear(c1)
+        manager._flush_appear_queue()
+        assert c1 not in manager._appeared
+        c1.cleanup()
+
+    def test_appear_cleanup_clears_queue(self, manager, parent):
+        c1 = self._make_cell(parent)
+        manager.activate_appear(c1, '/a.mp4')
+        assert len(manager._appear_queue) == 1
+        manager.cleanup()
+        assert len(manager._appear_queue) == 0
+        assert not manager._appear_flushing
+        c1.cleanup()
+
+    def test_appear_promotes_hover_on_flush(self, manager, parent):
+        cell = self._make_cell(parent)
+        manager.activate_hover(cell, '/a.mp4')
+        manager._apply_hover()
+        hover_overlay = manager._hover_overlay
+        manager.activate_appear(cell, '/a.mp4')
+        manager._flush_appear_queue()
+        assert manager._hover_cell is None
+        assert manager._appeared[cell] is hover_overlay
+        cell.cleanup()
+
+    def test_appear_release_cell_removes_from_queue(self, manager, parent):
+        cell = self._make_cell(parent)
+        manager.activate_appear(cell, '/a.mp4')
+        assert len(manager._appear_queue) == 1
+        manager.release_cell(cell)
+        assert len(manager._appear_queue) == 0
+        cell.cleanup()
 
 
 class TestThumbnailRunner:

@@ -255,6 +255,8 @@ class PlaybackSlotManager:
         self._hover_overlay: MpvGLOverlay | None = None
         self._pending_hover_cell = None
         self._pending_hover_path = None
+        self._appear_queue: list[tuple] = []
+        self._appear_flushing = False
         self._debounce_key = f'PlaybackSlotManager.hover.{id(self)}'
         if self._mpv_available:
             from wafer.core.qt.dispatcher import Dispatcher, CancelToken
@@ -451,6 +453,30 @@ class PlaybackSlotManager:
         self._appeared_cells.add(cell)
         if cell in self._selected:
             return
+        self._appear_queue.append((cell, path))
+        if not self._appear_flushing:
+            self._appear_flushing = True
+            QTimer.singleShot(0, self._flush_appear_queue)
+
+    def _flush_appear_queue(self):
+        if not self._appear_queue:
+            self._appear_flushing = False
+            return
+        cell, path = self._appear_queue.pop(0)
+        if cell not in self._appeared_cells or cell in self._selected:
+            if self._appear_queue:
+                QTimer.singleShot(0, self._flush_appear_queue)
+            else:
+                self._appear_flushing = False
+            return
+        self._activate_appear_overlay(cell, path)
+        if self._appear_queue:
+            QTimer.singleShot(0, self._flush_appear_queue)
+        else:
+            self._appear_flushing = False
+
+    @profiler.profile
+    def _activate_appear_overlay(self, cell, path):
         if self._pending_hover_cell is cell:
             self._cancel_pending()
         if self._hover_cell is cell and self._hover_overlay is not None:
@@ -473,6 +499,7 @@ class PlaybackSlotManager:
     @profiler.profile
     def deactivate_appear(self, cell):
         self._appeared_cells.discard(cell)
+        self._appear_queue = [(c, p) for c, p in self._appear_queue if c is not cell]
         overlay = self._appeared.pop(cell, None)
         if overlay is not None:
             if cell not in self._selected:
@@ -490,6 +517,8 @@ class PlaybackSlotManager:
         if self._warm_cancel:
             self._warm_cancel.set()
         self._cancel_pending()
+        self._appear_queue.clear()
+        self._appear_flushing = False
         self.deactivate_hover()
         for overlay in list(self._selected.values()):
             overlay.deactivate()
@@ -565,7 +594,6 @@ class MpvCellWidget(QWidget):
         self._thumbnail = image
         self.update()
 
-    @profiler.profile
     def paintEvent(self, event):
         painter = QPainter(self)
         if self._thumbnail and not self._thumbnail.isNull():

@@ -59,16 +59,15 @@ class TestUIState:
     def test_defaults(self):
         u = UIState()
         assert u.window_geometry == ''
-        assert u.splitter_sizes == []
-        assert u.scroll_index is None
-        assert u.grid_settings == {}
+        assert u.component_states == {}
 
     def test_roundtrip(self):
         u = UIState(
             window_geometry='abc123==',
-            splitter_sizes=[100, 500, 200],
-            scroll_index=42,
-            grid_settings={'zoom': 150, 'orientation': 1, 'layout_mode': 'masonry'},
+            component_states={
+                'main_splitter': {'sizes': [100, 500, 200]},
+                'grid': {'zoom': 150, 'orientation': 1, 'layout_mode': 'masonry'},
+            },
         )
         restored = UIState.from_dict(u.to_dict())
         assert restored == u
@@ -111,14 +110,14 @@ class TestSessionEntry:
         assert e.query_snapshot is None
 
     def test_roundtrip_with_snapshot(self):
-        ui = UIState(splitter_sizes=[10, 80, 10], scroll_index=5)
+        ui = UIState(component_states={'main_splitter': {'sizes': [10, 80, 10]}, 'grid': {'scroll_index': 5}})
         qs = QueryState(database_name='db1', search_params={'sort_by': 'name'})
         e = SessionEntry(session_id='s1', name='Work', color='#4A90D9', ui=ui, query_snapshot=qs)
         restored = SessionEntry.from_dict(e.to_dict())
         assert restored.session_id == 's1'
         assert restored.name == 'Work'
         assert restored.color == '#4A90D9'
-        assert restored.ui.splitter_sizes == [10, 80, 10]
+        assert restored.ui.component_states['main_splitter']['sizes'] == [10, 80, 10]
         assert restored.query_snapshot.database_name == 'db1'
 
     def test_roundtrip_with_bookmark_ref(self):
@@ -149,7 +148,7 @@ class TestSessionStoreSession:
         assert tmp_store.get_session('nonexistent') is None
 
     def test_save_and_get(self, tmp_store):
-        ui = UIState(scroll_index=5)
+        ui = UIState(component_states={'grid': {'scroll_index': 5}})
         qs = QueryState(database_name='mydb')
         entry = SessionEntry(session_id='s1', name='Main', ui=ui, query_snapshot=qs)
         tmp_store.save_session(entry)
@@ -157,7 +156,7 @@ class TestSessionStoreSession:
         loaded = tmp_store.get_session('s1')
         assert loaded is not None
         assert loaded.name == 'Main'
-        assert loaded.ui.scroll_index == 5
+        assert loaded.ui.component_states['grid']['scroll_index'] == 5
         assert loaded.query_snapshot.database_name == 'mydb'
 
     def test_save_updates_timestamp(self, tmp_store):
@@ -197,12 +196,12 @@ class TestSessionStoreSession:
         entry = SessionEntry(session_id='s1', name='Old')
         tmp_store.save_session(entry)
         entry.name = 'New'
-        entry.ui.splitter_sizes = [1, 2, 3]
+        entry.ui.component_states = {'main_splitter': {'sizes': [1, 2, 3]}}
         tmp_store.save_session(entry)
 
         loaded = tmp_store.get_session('s1')
         assert loaded.name == 'New'
-        assert loaded.ui.splitter_sizes == [1, 2, 3]
+        assert loaded.ui.component_states['main_splitter']['sizes'] == [1, 2, 3]
         assert len(tmp_store.list_sessions()) == 1
 
 

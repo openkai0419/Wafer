@@ -19,7 +19,7 @@
 - commands()内で@staticmethodを参照する場合はcls.method_nameを使う
 - 汎用コマンドはevent非依存。キー/マウス/メニュー/別Widget全経路で動作すること
 - Command.runのargsは一時的。get_args/set_argsと独立
-- checkable状態の真実のソースはCommandOptionStore。コマンド関数内で状態変更したら必ずCommand.set_checked()を呼ぶ
+- UI関連を直接操作するコマンドの場合、checkable状態の真実のソースはWidget/Pluginの実状態。コマンド関数内で状態変更したら必ずCommand.set_checked()でメニュー表示を同期する。
 - action_groupのIDはコマンドのpath末尾と完全一致。表示用ラベルを含めない
 - シングルトン: actions以下は全てinstance()パターンに統一。__new__やdict pattern禁止。テストでは_instance=Noneでリセット
 - CommandOptionStore.configure()はinstance()前に必ず呼ぶ。テストではtmp_pathで初期化し、finally内で_instance/_default_pathを復元
@@ -52,6 +52,7 @@
 - render(widget, path, size)は戻り値なし。フォールバックはresolve_chain内のcan_handle()で制御。BGワークが必要なプラグインはDispatcher.post()を自分で呼ぶ
 - BaseGridPlugin.select(widget, path) / deselect(widget)はGridResolverがGridView._on_selection_changed内の差分計算で呼び出す
 - プラグインのGrid/View/Commandは個別に登録・登録解除できる設計を前提とする
+- 汎用的な機能をプラグイン専用のインターフェースで提供しない。wafer側でも使う仕組みはwafer側に汎用的に定義し、プラグイン基底クラスはそれを利用する形にする
 - コマンドはctx経由で取得し、UIがコマンド状態を参照する時はコマンド不在を考慮する
 - プラグインが読み込まれていなくてもアプリが落ちないこと（直接importしたファイル不在はエラーで可）
 

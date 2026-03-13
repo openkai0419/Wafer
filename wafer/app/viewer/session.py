@@ -60,9 +60,7 @@ class QueryState:
 @dataclass
 class UIState:
     window_geometry: str = ''
-    splitter_sizes: list[int] = field(default_factory=list)
-    scroll_index: int | None = None
-    grid_settings: dict[str, Any] = field(default_factory=dict)
+    component_states: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

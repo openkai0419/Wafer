@@ -1,0 +1,64 @@
+from __future__ import annotations
+
+from typing import Any, Callable
+
+from ..utils.logs import AppLogger
+
+SaveFn = Callable[[], dict[str, Any]]
+RestoreFn = Callable[[dict[str, Any]], None]
+
+
+class StateStore:
+    _instance: StateStore | None = None
+
+    @classmethod
+    def instance(cls) -> StateStore:
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+
+    def __init__(self):
+        self._entries: dict[str, tuple[SaveFn, RestoreFn]] = {}
+        self._pending: dict[str, dict[str, Any]] = {}
+
+    def register(self, namespace: str, save: SaveFn, restore: RestoreFn):
+        self._entries[namespace] = (save, restore)
+        pending = self._pending.pop(namespace, None)
+        if pending is not None:
+            try:
+                restore(pending)
+            except Exception as e:
+                AppLogger.warning(f"StateStore deferred restore failed for '{namespace}': {e}", exc=e)
+
+    def unregister(self, namespace: str):
+        self._entries.pop(namespace, None)
+
+    def save_all(self) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for ns, (save, _) in self._entries.items():
+            try:
+                state = save()
+            except Exception as e:
+                AppLogger.warning(f"StateStore save failed for '{ns}': {e}", exc=e)
+                continue
+            if state:
+                result[ns] = state
+        return result
+
+    def restore_all(self, states: dict[str, Any]):
+        self._pending.clear()
+        for ns, state in states.items():
+            if not isinstance(state, dict):
+                continue
+            entry = self._entries.get(ns)
+            if entry is not None:
+                try:
+                    entry[1](state)
+                except Exception as e:
+                    AppLogger.warning(f"StateStore restore failed for '{ns}': {e}", exc=e)
+            else:
+                self._pending[ns] = state
+
+    def clear(self):
+        self._entries.clear()
+        self._pending.clear()

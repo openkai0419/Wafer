@@ -3,6 +3,13 @@
 - ルール（守るべき規約）はrule.txtに記載。ここには書かない
 - アーキテクチャ詳細は /memories/repo/*.md に記載。ここでは重複しない
 
+■ UI状態の保存/復元の設計思想
+- コマンドは「操作の実行」のみに責任を持つ。状態保存はStateStore（Session）が担う
+- checkable状態の真実のソースはWidget/Pluginの実状態。CommandOptionStoreはメニュー表示用キャッシュ
+- Volume/Muted/FitMode/Loop/Speed等のViewer状態はSessionEntry.ui.plugin_statesに保存
+- SettingManagerからViewer状態関連の設定（video/volume, video/muted等）は段階的に移行
+- StateStoreはwafer/core/に汎用的に定義。Plugin専用にしない。wafer側WidgetもPlugin側Widgetも同じ仕組みで参加
+
 ■ Dispatcher / Pipeline スレッドモデルの設計思想
 目的: アプリ全体のBG処理を「1つの経路」に統一し、独自ワーカークラスやスレッドプール乱立を防ぐ。
 

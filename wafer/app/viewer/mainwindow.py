@@ -27,6 +27,7 @@ from .commands.menu import AppMenuRegistrar
 from .search import SearchService
 from .session import QueryState, UIState, SessionEntry, SessionStore
 from ...core.actions.bridge import UI, Command
+from ...core.state import StateStore
 AppMenuRegistrar.setup_menu()
 
 
@@ -297,8 +298,42 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.overlay_stack.push_persistent(self.loading_indicator, key="loading")
         self.grid_view.layout_started.connect(self._on_layout_started)
         self.grid_view.layout_ready.connect(lambda: self.overlay_stack.hide_persistent("loading"))
+        self._register_component_states()
         self._setup_dev_panel()
         self._sync_service_from_ui()
+
+    def _register_component_states(self):
+        store = StateStore.instance()
+        store.register('main_splitter', self._save_splitter, self._restore_splitter)
+        store.register('grid', self._save_grid, self._restore_grid)
+
+    def _save_splitter(self):
+        return {'sizes': self.splitter.sizes()}
+
+    def _restore_splitter(self, state):
+        sizes = state.get('sizes')
+        if sizes:
+            self.splitter.setSizes(sizes)
+
+    def _save_grid(self):
+        return {
+            'zoom': self.grid_view.base_height,
+            'orientation': self.grid_view.orientation,
+            'layout_mode': self.grid_view.layout_mode,
+            'scroll_index': self.grid_view.get_center_image_index(),
+        }
+
+    def _restore_grid(self, state):
+        if 'zoom' in state:
+            self.grid_view.base_height = state['zoom']
+        if 'orientation' in state:
+            self.grid_view.set_orientation(state['orientation'])
+        if 'layout_mode' in state:
+            self.grid_view.set_layout_mode(state['layout_mode'])
+        from .commands.grid_commands import sync_grid_groups_from_settings
+        sync_grid_groups_from_settings(state)
+        if state.get('scroll_index') is not None:
+            self.grid_view.set_pending_scroll_index(state['scroll_index'])
 
     def _sync_service_from_ui(self):
         values = self.search_row_widget.get_values()
@@ -427,13 +462,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         geo_bytes = bytes(self.saveGeometry())
         return UIState(
             window_geometry=base64.b64encode(geo_bytes).decode('ascii'),
-            splitter_sizes=self.splitter.sizes(),
-            scroll_index=self.grid_view.get_center_image_index(),
-            grid_settings={
-                'zoom': self.grid_view.base_height,
-                'orientation': self.grid_view.orientation,
-                'layout_mode': self.grid_view.layout_mode,
-            },
+            component_states=StateStore.instance().save_all(),
         )
 
     def restore_query_state(self, query: QueryState) -> None:
@@ -473,20 +502,8 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
                 self.restoreGeometry(geo)
             except Exception as e:
                 AppLogger.warning(f'restore_ui_state geometry failed: {e}', exc=e)
-        if ui.splitter_sizes:
-            self.splitter.setSizes(ui.splitter_sizes)
-        if ui.grid_settings:
-            gs = ui.grid_settings
-            if 'zoom' in gs:
-                self.grid_view.base_height = gs['zoom']
-            if 'orientation' in gs:
-                self.grid_view.set_orientation(gs['orientation'])
-            if 'layout_mode' in gs:
-                self.grid_view.set_layout_mode(gs['layout_mode'])
-            from .commands.grid_commands import sync_grid_groups_from_settings
-            sync_grid_groups_from_settings(gs)
-        if ui.scroll_index is not None:
-            self.grid_view.set_pending_scroll_index(ui.scroll_index)
+        if ui.component_states:
+            StateStore.instance().restore_all(ui.component_states)
 
     def _restore_from_session(self, entry: SessionEntry):
         if entry.query_snapshot:

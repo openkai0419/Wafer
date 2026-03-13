@@ -50,23 +50,22 @@ class TestUIStateRoundtrip:
         ui = UIState()
         restored = UIState.from_dict(ui.to_dict())
         assert restored.window_geometry == ''
-        assert restored.splitter_sizes == []
-        assert restored.scroll_index is None
-        assert restored.grid_settings == {}
+        assert restored.component_states == {}
 
     def test_full_state(self):
         ui = UIState(
             window_geometry='base64geometry==',
-            splitter_sizes=[300, 700],
-            scroll_index=42,
-            grid_settings={'base_height': 200, 'spacing': 4, 'layout_mode': 'justified'},
+            component_states={
+                'main_splitter': {'sizes': [300, 700]},
+                'grid': {'base_height': 200, 'spacing': 4, 'layout_mode': 'justified', 'scroll_index': 42},
+            },
         )
         restored = UIState.from_dict(ui.to_dict())
         assert restored.window_geometry == 'base64geometry=='
-        assert restored.splitter_sizes == [300, 700]
-        assert restored.scroll_index == 42
-        assert restored.grid_settings['base_height'] == 200
-        assert restored.grid_settings['layout_mode'] == 'justified'
+        assert restored.component_states['main_splitter']['sizes'] == [300, 700]
+        assert restored.component_states['grid']['scroll_index'] == 42
+        assert restored.component_states['grid']['base_height'] == 200
+        assert restored.component_states['grid']['layout_mode'] == 'justified'
 
 
 class TestSessionEntryRoundtrip:
@@ -86,9 +85,10 @@ class TestSessionEntryRoundtrip:
         )
         ui = UIState(
             window_geometry='geom',
-            splitter_sizes=[250, 750],
-            scroll_index=10,
-            grid_settings={'base_height': 180},
+            component_states={
+                'main_splitter': {'sizes': [250, 750]},
+                'grid': {'base_height': 180, 'scroll_index': 10},
+            },
         )
         entry = SessionEntry(
             session_id='sess001',
@@ -104,8 +104,8 @@ class TestSessionEntryRoundtrip:
         assert restored.name == 'My Session'
         assert restored.color == '#4A90D9'
         assert restored.bookmark_id == 'bm001'
-        assert restored.ui.splitter_sizes == [250, 750]
-        assert restored.ui.scroll_index == 10
+        assert restored.ui.component_states['main_splitter']['sizes'] == [250, 750]
+        assert restored.ui.component_states['grid']['scroll_index'] == 10
         assert restored.query_snapshot is not None
         assert restored.query_snapshot.database_name == 'main.db'
         assert restored.query_snapshot.search_params['keywords'] == 'test'
@@ -160,15 +160,18 @@ class TestSessionStoreRoundtrip:
             search_params={'keywords': 'sunset', 'sort_by': 'modified'},
         )
         entry.query_snapshot = qs
-        entry.ui = UIState(splitter_sizes=[300, 700], scroll_index=5)
+        entry.ui = UIState(component_states={
+            'main_splitter': {'sizes': [300, 700]},
+            'grid': {'scroll_index': 5},
+        })
         store.save_session(entry)
 
         loaded = store.get_session(sid)
         assert loaded.query_snapshot is not None
         assert loaded.query_snapshot.database_name == 'test.db'
         assert loaded.query_snapshot.search_params['keywords'] == 'sunset'
-        assert loaded.ui.splitter_sizes == [300, 700]
-        assert loaded.ui.scroll_index == 5
+        assert loaded.ui.component_states['main_splitter']['sizes'] == [300, 700]
+        assert loaded.ui.component_states['grid']['scroll_index'] == 5
 
     def test_multiple_sessions_isolation(self, tmp_path):
         store = SessionStore(str(tmp_path / 'sessions.json'))
@@ -211,16 +214,17 @@ class TestSessionStoreRoundtrip:
         )
         entry.ui = UIState(
             window_geometry='geo_data',
-            splitter_sizes=[200, 400, 400],
-            scroll_index=99,
-            grid_settings={'base_height': 250, 'spacing': 8},
+            component_states={
+                'main_splitter': {'sizes': [200, 400, 400]},
+                'grid': {'base_height': 250, 'spacing': 8, 'scroll_index': 99},
+            },
         )
         store.save_session(entry)
 
         restored = store.get_session(sid)
         assert restored.query_snapshot.search_params == full_params
         assert restored.query_snapshot.folder_state['expanded'] == ['/a', '/b']
-        assert restored.ui.grid_settings['base_height'] == 250
+        assert restored.ui.component_states['grid']['base_height'] == 250
 
     def test_delete_session_removes_data(self, tmp_path):
         store = SessionStore(str(tmp_path / 'sessions.json'))

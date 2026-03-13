@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Any
 from ..registry import BasePlugin
 
 
@@ -20,4 +21,10 @@ class WidgetViewerPlugin(BaseViewerPlugin):
         pass
 
     def clear(self, widget):
+        pass
+
+    def save_state(self, widget) -> dict[str, Any]:
+        return {}
+
+    def restore_state(self, widget, state: dict[str, Any]) -> None:
         pass

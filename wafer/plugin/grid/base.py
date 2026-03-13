@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Any
 from PySide6 import QtCore, QtGui
 from ..registry import BasePlugin
 
@@ -49,4 +50,10 @@ class WidgetGridPlugin(BaseGridPlugin):
         pass
 
     def deselect(self, widget):
+        pass
+
+    def save_state(self) -> dict[str, Any]:
+        return {}
+
+    def restore_state(self, state: dict[str, Any]) -> None:
         pass

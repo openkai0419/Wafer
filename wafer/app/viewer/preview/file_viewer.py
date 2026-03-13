@@ -10,6 +10,7 @@ from ....plugin.viewer.handler import viewer_resolver
 from ....plugin.viewer.base import WidgetViewerPlugin as _WidgetViewerPlugin
 from ....core.qt.dispatcher import Dispatcher, CancelSlot
 from ....core.qt.thread import utility_pool
+from ....core.state import StateStore
 from .meta_viewer import MetaListWidget
 from .image_viewer import ImageDisplayWidget
 from .file_model import FileViewModel
@@ -63,7 +64,6 @@ class FileViewerWidget(QtWidgets.QSplitter):
         self._stack.setMinimumSize(dpix(200), dpix(200))
 
         self.image_viewer = ImageDisplayWidget()
-        self.image_viewer.set_contain_mode(app_settings.get("window/sub_fitmode", True))
         self.image_viewer.resized.connect(self.update_content)
         self._stack.addWidget(self.image_viewer)
         self._widget_map[_DEFAULT_WIDGET_NAME] = self.image_viewer
@@ -84,8 +84,9 @@ class FileViewerWidget(QtWidgets.QSplitter):
         self.area.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         self.area.setWidget(self.meta_viewer)
         self.addWidget(self.area)
-        self.setSizes(app_settings.get("window/sub_splitter", [10, 800]))
+        self.setSizes([10, 800])
 
+        self._register_states()
         QtWidgets.QApplication.instance().aboutToQuit.connect(self.on_exit)
 
     def _switch_to(self, plugin_name: str):
@@ -98,10 +99,33 @@ class FileViewerWidget(QtWidgets.QSplitter):
         self._stack.setCurrentWidget(widget)
         self._current_plugin_name = plugin_name
 
+    def _register_states(self):
+        store = StateStore.instance()
+        store.register('file_viewer', self._save_state, self._restore_state)
+        for name, widget in self._widget_map.items():
+            if name == _DEFAULT_WIDGET_NAME:
+                continue
+            plugin = viewer_resolver.registry.instance(name)
+            if plugin is None or not isinstance(plugin, _WidgetViewerPlugin):
+                continue
+            w = widget
+            p = plugin
+            store.register(name, lambda p=p, w=w: p.save_state(w), lambda s, p=p, w=w: p.restore_state(w, s))
+
+    def _save_state(self):
+        return {
+            'fit_mode': 'contain' if self.image_viewer.is_contain_mode() else 'cover',
+            'splitter_sizes': self.sizes(),
+        }
+
+    def _restore_state(self, state):
+        if 'fit_mode' in state:
+            self.image_viewer.set_contain_mode(state['fit_mode'] == 'contain')
+        if 'splitter_sizes' in state:
+            self.setSizes(state['splitter_sizes'])
+
     def on_exit(self):
-        app_settings.set("window/sub_fitmode", self.image_viewer.is_contain_mode())
-        app_settings.set("window/sub_splitter", self.sizes())
-        app_settings.commit()
+        pass
 
     @qt_throttle(100, 200)
     def update_content(self):

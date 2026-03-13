@@ -147,13 +147,13 @@ class FileViewerWidget(QtWidgets.QSplitter):
             self._try_show()
             return
         if self._content_cancel:
-            self._content_cancel.set()
+            self._content_cancel.cancel()
         cancel = CancelToken()
         self._content_cancel = cancel
 
         def task():
             image = viewer_resolver.load_content(path)
-            if cancel.is_set():
+            if cancel.is_cancelled():
                 return
             if image is None or image.isNull():
                 return
@@ -181,14 +181,14 @@ class FileViewerWidget(QtWidgets.QSplitter):
         if not dbpath:
             return
         if self._meta_cancel:
-            self._meta_cancel.set()
+            self._meta_cancel.cancel()
         cancel = CancelToken()
         self._meta_cancel = cancel
 
         def task():
             engine = FileSearchEngine(dbpath)
             result = _format_meta(engine, path)
-            if cancel.is_set():
+            if cancel.is_cancelled():
                 return
             self._dispatcher.invoke(lambda: self._on_meta_ready(cancel, path, result))
 

@@ -12,10 +12,10 @@ class CancelToken:
     def __init__(self):
         self._event = threading.Event()
 
-    def set(self):
+    def cancel(self):
         self._event.set()
 
-    def is_set(self) -> bool:
+    def is_cancelled(self) -> bool:
         return self._event.is_set()
 
 
@@ -33,7 +33,7 @@ class _PostRunnable(QtCore.QRunnable):
         self._cancel = cancel
 
     def run(self):
-        if self._cancel is not None and self._cancel.is_set():
+        if self._cancel is not None and self._cancel.is_cancelled():
             return
         try:
             self._fn()

@@ -209,7 +209,7 @@ class SearchOptionsBar(QtWidgets.QWidget, TranslatorMixin):
             return
         self._last_paths = key
         if self._key_cancel:
-            self._key_cancel.set()
+            self._key_cancel.cancel()
         cancel = CancelToken()
         self._key_cancel = cancel
 
@@ -217,7 +217,7 @@ class SearchOptionsBar(QtWidgets.QWidget, TranslatorMixin):
             engine = FileSearchEngine(dbname)
             query = SearchQuery(directories=paths)
             results = engine.list_all_keys(query, sort_by_freq=True)
-            if cancel.is_set():
+            if cancel.is_cancelled():
                 return
             self._dispatcher.invoke(lambda: self.keys_combo.remake(results))
 

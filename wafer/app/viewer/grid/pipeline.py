@@ -49,12 +49,12 @@ class GridPipeline(QtCore.QObject):
         layout_mode='justified',
     ):
         if self._layout_cancel is not None:
-            self._layout_cancel.set()
+            self._layout_cancel.cancel()
         cancel = CancelToken()
         self._layout_cancel = cancel
 
         def task():
-            if cancel.is_set():
+            if cancel.is_cancelled():
                 return
             if layout_mode == 'masonry':
                 calc = MasonryLayoutCalculator(
@@ -67,7 +67,7 @@ class GridPipeline(QtCore.QObject):
                     container_width, container_height, orientation,
                 )
             calc.run()
-            if cancel.is_set():
+            if cancel.is_cancelled():
                 return
             layout = calc._result
             if layout is not None:
@@ -91,7 +91,7 @@ class GridPipeline(QtCore.QObject):
 
     def _dispatch_resolve(self, index, path, size, cancel):
         def task():
-            if cancel.is_set():
+            if cancel.is_cancelled():
                 return
             plugin = None
             for plugin_cls in grid_resolver.resolve_chain(path):
@@ -99,7 +99,7 @@ class GridPipeline(QtCore.QObject):
                     continue
                 plugin = grid_resolver.registry.instance(plugin_cls.NAME)
                 break
-            if cancel.is_set():
+            if cancel.is_cancelled():
                 return
             if plugin is None:
                 self._load_image(index, path, size, grid_resolver.load, cancel)
@@ -114,7 +114,7 @@ class GridPipeline(QtCore.QObject):
         self._render_dispatcher.post(task, priority=100, cancel=cancel)
 
     def _on_resolve_widget(self, index, path, size, plugin, cancel):
-        if cancel.is_set() or index not in self._active:
+        if cancel.is_cancelled() or index not in self._active:
             return
         self._promote_fn(index, plugin.NAME)
         widget = self._widget_lookup(index)
@@ -154,7 +154,7 @@ class GridPipeline(QtCore.QObject):
             self._image_ready.emit(index, path, cached)
             return
         image = load_fn(path, size)
-        if cancel.is_set():
+        if cancel.is_cancelled():
             return
         if image is None or (isinstance(image, QtGui.QImage) and image.isNull()):
             image = _get_error_image(size)
@@ -163,7 +163,7 @@ class GridPipeline(QtCore.QObject):
 
     def _dispatch_thumbnail(self, index, path, size, plugin, cancel):
         def task():
-            if cancel.is_set():
+            if cancel.is_cancelled():
                 return
             cached = self._cache.get(fullsize_key(path))
             if cached is None:
@@ -174,7 +174,7 @@ class GridPipeline(QtCore.QObject):
                 )
                 return
             image = grid_resolver.load(path, size)
-            if image is None or cancel.is_set():
+            if image is None or cancel.is_cancelled():
                 return
             self._cache[path] = image
             self._thumb_dispatcher.invoke(
@@ -200,14 +200,14 @@ class GridPipeline(QtCore.QObject):
     def cancel_index(self, index: int):
         token = self._active.pop(index, None)
         if token is not None:
-            token.set()
+            token.cancel()
 
     def cancel_all(self):
         if self._layout_cancel is not None:
-            self._layout_cancel.set()
+            self._layout_cancel.cancel()
             self._layout_cancel = None
         for token in self._active.values():
-            token.set()
+            token.cancel()
         self._active.clear()
 
     def active_count(self) -> int:

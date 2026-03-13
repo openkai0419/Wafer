@@ -4,7 +4,7 @@ from functools import lru_cache
 from PySide6 import QtCore, QtGui
 
 from wafer.plugin import WidgetGridPlugin
-from wafer.core.qt.dispatcher import Dispatcher
+from wafer.core.qt.dispatcher import Dispatcher, CancelToken
 from wafer.utils.profiling import profiler
 from .widget import AnimatedCellWidget, _frame_cache
 
@@ -116,13 +116,21 @@ class AnimatedGridPlugin(WidgetGridPlugin):
             frames, delays = cached
             widget.set_frames(path, frames, delays)
             return
+        old = getattr(widget, '_decode_cancel', None)
+        if old is not None:
+            old.cancel()
+        cancel = CancelToken()
+        widget._decode_cancel = cancel
         widget._path = path
         self._dispatcher.post(
-            lambda: self._decode_and_set(widget, path, size), priority=0)
+            lambda: self._decode_and_set(widget, path, size, cancel),
+            priority=0, cancel=cancel)
 
-    def _decode_and_set(self, widget, path, size):
-        frames, delays = _decode_frames(path, size, lambda: widget._path != path)
-        if widget._path != path or not frames:
+    def _decode_and_set(self, widget, path, size, cancel):
+        def is_stale():
+            return cancel.is_cancelled() or widget._path != path
+        frames, delays = _decode_frames(path, size, is_stale)
+        if cancel.is_cancelled() or widget._path != path or not frames:
             return
         _frame_cache.put(path, frames, delays)
         self._dispatcher.invoke(
@@ -134,6 +142,10 @@ class AnimatedGridPlugin(WidgetGridPlugin):
 
     @profiler.profile
     def release(self, widget):
+        cancel = getattr(widget, '_decode_cancel', None)
+        if cancel is not None:
+            cancel.cancel()
+            widget._decode_cancel = None
         widget.suspend()
 
     @profiler.profile

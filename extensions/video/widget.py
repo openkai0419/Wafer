@@ -299,7 +299,7 @@ class PlaybackSlotManager:
 
     def _on_player_warmed(self, player):
         self._warming_count -= 1
-        if self._warm_cancel and self._warm_cancel.is_set():
+        if self._warm_cancel and self._warm_cancel.is_cancelled():
             if player is not None:
                 player.terminate()
             return
@@ -515,7 +515,7 @@ class PlaybackSlotManager:
     @profiler.profile
     def cleanup(self):
         if self._warm_cancel:
-            self._warm_cancel.set()
+            self._warm_cancel.cancel()
         self._cancel_pending()
         self._appear_queue.clear()
         self._appear_flushing = False

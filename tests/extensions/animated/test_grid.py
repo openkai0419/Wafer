@@ -11,7 +11,6 @@ def test_animated_grid_plugin_attributes():
     assert '.gif' in AnimatedGridPlugin.EXTENSIONS
     assert '.apng' in AnimatedGridPlugin.EXTENSIONS
     assert '.webp' in AnimatedGridPlugin.EXTENSIONS
-    assert '.png' in AnimatedGridPlugin.EXTENSIONS
     assert AnimatedGridPlugin.PRIORITY == 200
     assert AnimatedGridPlugin.WIDGET_CLASS is not None
     assert AnimatedGridPlugin.REQUIRE_THUMBNAIL is True
@@ -23,7 +22,7 @@ def test_animated_grid_plugin_match():
     assert AnimatedGridPlugin.match('test.GIF')
     assert AnimatedGridPlugin.match('test.apng')
     assert AnimatedGridPlugin.match('test.webp')
-    assert AnimatedGridPlugin.match('test.png')
+    assert not AnimatedGridPlugin.match('test.png')
     assert not AnimatedGridPlugin.match('test.jpg')
     assert not AnimatedGridPlugin.match('test.mp4')
 
@@ -264,6 +263,42 @@ def test_release_calls_suspend():
     widget = MagicMock()
     plugin.release(widget)
     widget.suspend.assert_called_once()
+
+
+def test_release_cancels_decode_token():
+    from extensions.animated.grid import AnimatedGridPlugin
+    from wafer.core.qt.dispatcher import CancelToken
+    plugin = AnimatedGridPlugin()
+    widget = MagicMock()
+    token = CancelToken()
+    widget._decode_cancel = token
+    plugin.release(widget)
+    assert token.is_cancelled()
+    assert widget._decode_cancel is None
+
+
+def test_render_cancels_previous_token(qtbot, tmp_path):
+    from extensions.animated.grid import AnimatedGridPlugin
+    from extensions.animated.widget import AnimatedCellWidget, _frame_cache
+    from wafer.core.qt.dispatcher import CancelToken
+    from PIL import Image
+    gif_path = str(tmp_path / 'anim.gif')
+    frames = [Image.new('RGB', (10, 10), c) for c in ['red', 'blue']]
+    frames[0].save(gif_path, save_all=True, append_images=frames[1:], duration=100, loop=0)
+    plugin = AnimatedGridPlugin()
+    widget = AnimatedCellWidget()
+    plugin.render(widget, gif_path, QtCore.QSize(10, 10))
+    first_token = widget._decode_cancel
+    assert first_token is not None
+    gif_path2 = str(tmp_path / 'anim2.gif')
+    frames[0].save(gif_path2, save_all=True, append_images=frames[1:], duration=100, loop=0)
+    plugin.render(widget, gif_path2, QtCore.QSize(10, 10))
+    assert first_token.is_cancelled()
+    assert widget._decode_cancel is not first_token
+    _frame_cache.remove(gif_path)
+    _frame_cache.remove(gif_path2)
+    widget.suspend()
+    widget.deleteLater()
 
 
 def test_appear_calls_on_appeared():

@@ -106,14 +106,14 @@ class SearchService(QtCore.QObject):
         now = datetime.now()
         with QtCore.QMutexLocker(self._lock):
             if not force:
-                if self._current_cancel and not self._current_cancel.is_set() and query == self._current_query:
+                if self._current_cancel and not self._current_cancel.is_cancelled() and query == self._current_query:
                     return
                 if self._last_query and query == self._last_query:
                     return
-            if self._current_cancel and not self._current_cancel.is_set():
+            if self._current_cancel and not self._current_cancel.is_cancelled():
                 elapsed = now - self._query_start_time if self._query_start_time else timedelta.max
                 if elapsed < self._timeout_threshold:
-                    self._current_cancel.set()
+                    self._current_cancel.cancel()
                 else:
                     AppLogger.warning('query is taking more than expected, continuing without cancel.')
                     self._pending_query = query
@@ -133,7 +133,7 @@ class SearchService(QtCore.QObject):
         def task():
             engine = FileSearchEngine(dbpath)
             result = engine.search(query)
-            if cancel.is_set():
+            if cancel.is_cancelled():
                 return
             self._dispatcher.invoke(lambda: self._on_search_finished(cancel, query, result))
 

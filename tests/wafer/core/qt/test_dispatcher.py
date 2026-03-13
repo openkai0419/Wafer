@@ -30,12 +30,12 @@ def _process_events_until(predicate, timeout_ms=3000):
 class TestCancelToken:
     def test_initial_state(self):
         token = CancelToken()
-        assert not token.is_set()
+        assert not token.is_cancelled()
 
     def test_set(self):
         token = CancelToken()
-        token.set()
-        assert token.is_set()
+        token.cancel()
+        assert token.is_cancelled()
 
     def test_thread_safe(self):
         token = CancelToken()
@@ -43,12 +43,12 @@ class TestCancelToken:
 
         def worker():
             time.sleep(0.01)
-            token.set()
+            token.cancel()
 
         t = threading.Thread(target=worker)
         t.start()
         t.join()
-        assert token.is_set()
+        assert token.is_cancelled()
 
 
 class TestDispatcherPost:
@@ -66,7 +66,7 @@ class TestDispatcherPost:
     def test_post_with_cancel_skips(self, dispatcher):
         result = {'called': False}
         cancel = CancelToken()
-        cancel.set()
+        cancel.cancel()
 
         def task():
             result['called'] = True
@@ -170,14 +170,14 @@ class TestDispatcherIntegration:
         result = {'invoked': False}
 
         def bg_task():
-            if cancel.is_set():
+            if cancel.is_cancelled():
                 return
             time.sleep(0.1)
-            if cancel.is_set():
+            if cancel.is_cancelled():
                 return
             dispatcher.invoke(lambda: result.update({'invoked': True}))
 
-        cancel.set()
+        cancel.cancel()
         dispatcher.post(bg_task, cancel=cancel)
         time.sleep(0.3)
         QtWidgets.QApplication.instance().processEvents()

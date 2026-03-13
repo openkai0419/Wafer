@@ -115,7 +115,7 @@ class TestGridPipelineCancel:
 
         pipeline.cancel_all()
         assert pipeline.active_count() == 0
-        assert all(t.is_set() for t in tokens)
+        assert all(t.is_cancelled() for t in tokens)
 
     def test_cancel_index(self, dispatcher):
         cache = FakeCache()
@@ -124,7 +124,7 @@ class TestGridPipelineCancel:
         token = CancelToken()
         pipeline._active[5] = token
         pipeline.cancel_index(5)
-        assert token.is_set()
+        assert token.is_cancelled()
         assert 5 not in pipeline._active
 
     def test_cancel_nonexistent_index(self, dispatcher):
@@ -158,7 +158,7 @@ class TestScheduleRender:
                         })())
             pipeline.schedule_render(0, '/a.png', QtCore.QSize(200, 200))
 
-        assert old_token.is_set()
+        assert old_token.is_cancelled()
 
     def test_schedule_render_no_plugin_uses_deferred_resolve(self, dispatcher):
         cache = FakeCache()

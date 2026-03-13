@@ -218,7 +218,7 @@ class TestPipelineCancelDuringRender:
             first_token = pipeline._active.get(0)
             pipeline.schedule_render(0, '/second.png', QtCore.QSize(200, 200))
 
-        assert first_token.is_set()
+        assert first_token.is_cancelled()
         _process_events_until(lambda: widget.set_image.called)
         final_path = widget.set_image.call_args[0][1]
         assert final_path == '/second.png'

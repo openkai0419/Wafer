@@ -645,3 +645,89 @@ class TestFindCenterIndexEffectiveScroll:
 
         assert len(targets) == 2
         assert targets[1] > targets[0]
+
+
+class TestOnLayoutReadyWidgetRerender:
+    @pytest.fixture(autouse=True)
+    def _import(self, qtbot):
+        from wafer.app.viewer.grid.grid_view import GridView
+        self.GridView = GridView
+
+    def _make_fake(self, paths):
+        fake = MagicMock()
+        fake.items.paths = paths
+        fake.widgets = {}
+        fake._additional_widgets = {}
+        fake._pipeline = MagicMock()
+        fake._notifier = MagicMock()
+        fake.visible_indices = set()
+        fake.is_scrolling.return_value = False
+        fake.last_selections = []
+        fake._prev_selection_set = set()
+        fake._pending_scroll_index = None
+        fake._content_size = lambda cell_size: self.GridView._content_size(fake, cell_size)
+        fake.get_restore_index.return_value = 0
+        fake.rects = []
+        return fake
+
+    @patch('wafer.app.viewer.grid.grid_view.grid_resolver')
+    def test_widget_cell_rerendered_on_size_increase(self, mock_resolver):
+        from wafer.plugin.grid.base import WidgetGridPlugin
+        from wafer.app.viewer.grid.calc_layout import LayoutData
+
+        class _Stub(WidgetGridPlugin):
+            NAME = 'stub'
+            EXTENSIONS = ('.gif',)
+            WIDGET_CLASS = MagicMock
+
+        stub_instance = _Stub()
+        mock_resolver.registry.instance.return_value = stub_instance
+
+        fake = self._make_fake(['anim.gif'])
+        widget = MagicMock()
+        widget.size.return_value = QtCore.QSize(200, 200)
+        fake._additional_widgets = {0: widget}
+        fake.visible_indices = {0}
+        fake._notifier.plugin_name.return_value = 'stub'
+
+        layout = LayoutData([QtCore.QRect(0, 0, 400, 400)], 400, True)
+
+        self.GridView._on_layout_ready(fake, layout)
+
+        fake._pipeline.schedule_render.assert_called_once()
+        args = fake._pipeline.schedule_render.call_args[0]
+        assert args[0] == 0
+        assert args[1] == 'anim.gif'
+        assert args[3] is stub_instance
+
+    @patch('wafer.app.viewer.grid.grid_view.grid_resolver')
+    def test_widget_cell_not_rerendered_on_same_size(self, mock_resolver):
+        from wafer.app.viewer.grid.calc_layout import LayoutData
+
+        fake = self._make_fake(['anim.gif'])
+        widget = MagicMock()
+        widget.size.return_value = QtCore.QSize(200, 200)
+        fake._additional_widgets = {0: widget}
+        fake.visible_indices = {0}
+
+        layout = LayoutData([QtCore.QRect(0, 0, 200, 200)], 200, True)
+
+        self.GridView._on_layout_ready(fake, layout)
+
+        fake._pipeline.schedule_render.assert_not_called()
+
+    @patch('wafer.app.viewer.grid.grid_view.grid_resolver')
+    def test_widget_cell_not_rerendered_on_size_decrease(self, mock_resolver):
+        from wafer.app.viewer.grid.calc_layout import LayoutData
+
+        fake = self._make_fake(['anim.gif'])
+        widget = MagicMock()
+        widget.size.return_value = QtCore.QSize(400, 400)
+        fake._additional_widgets = {0: widget}
+        fake.visible_indices = {0}
+
+        layout = LayoutData([QtCore.QRect(0, 0, 200, 200)], 200, True)
+
+        self.GridView._on_layout_ready(fake, layout)
+
+        fake._pipeline.schedule_render.assert_not_called()

@@ -86,7 +86,7 @@ def _decode_frames(path: str, size: QtCore.QSize | None, is_stale) -> tuple[list
             break
         if size is not None and image.size() != size:
             image = image.scaled(
-                size, QtCore.Qt.KeepAspectRatio, QtCore.Qt.FastTransformation)
+                size, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
         pixmaps.append(QtGui.QPixmap.fromImage(image))
         delays.append(delay)
     return pixmaps, delays

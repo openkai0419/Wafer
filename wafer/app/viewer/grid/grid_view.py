@@ -571,7 +571,17 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
                 self._recycle_widget(i)
                 self.visible_indices.discard(i)
             elif i in self._additional_widgets:
-                pass
+                old_size = self._additional_widgets[i].size()
+                new_size = layout[i].size()
+                if old_size.width() < new_size.width() or old_size.height() < new_size.height():
+                    plugin_name = self._notifier.plugin_name(i)
+                    if plugin_name is not None:
+                        instance = grid_resolver.registry.instance(plugin_name)
+                        if isinstance(instance, _WidgetGridPlugin):
+                            self._pipeline.schedule_render(
+                                i, self.items.paths[i],
+                                self._content_size(new_size), instance,
+                            )
             elif i in self.widgets:
                 self.widgets[i].setGeometry(layout[i])
                 if self._needs_reload(self.widgets[i], layout[i].size()):

@@ -3,7 +3,7 @@ import time
 
 import pytest
 from PySide6 import QtCore, QtWidgets
-from wafer.core.qt.dispatcher import Dispatcher, CancelToken
+from wafer.core.qt.dispatcher import Dispatcher, CancelToken, CancelSlot
 
 
 @pytest.fixture()
@@ -49,6 +49,37 @@ class TestCancelToken:
         t.start()
         t.join()
         assert token.is_cancelled()
+
+
+class TestCancelSlot:
+    def test_initial_state(self):
+        slot = CancelSlot()
+        assert slot._token is None
+
+    def test_renew_returns_token(self):
+        slot = CancelSlot()
+        token = slot.renew()
+        assert isinstance(token, CancelToken)
+        assert not token.is_cancelled()
+
+    def test_renew_cancels_previous(self):
+        slot = CancelSlot()
+        first = slot.renew()
+        second = slot.renew()
+        assert first.is_cancelled()
+        assert not second.is_cancelled()
+        assert slot._token is second
+
+    def test_cancel_cancels_current(self):
+        slot = CancelSlot()
+        token = slot.renew()
+        slot.cancel()
+        assert token.is_cancelled()
+        assert slot._token is None
+
+    def test_cancel_when_empty(self):
+        slot = CancelSlot()
+        slot.cancel()
 
 
 class TestDispatcherPost:

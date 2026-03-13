@@ -4,7 +4,7 @@ from ....utils.profiling import profiler
 from ....utils.logs import AppLogger
 from ....core.db.query import FileSearchEngine, SearchQuery
 from ....core.lang.manager import TranslatorMixin
-from ....core.qt.dispatcher import Dispatcher, CancelToken
+from ....core.qt.dispatcher import Dispatcher, CancelSlot
 from ....core.qt.thread import utility_pool
 
 class CheckableCombo(QtWidgets.QToolButton, TranslatorMixin):
@@ -167,7 +167,7 @@ class SearchOptionsBar(QtWidgets.QWidget, TranslatorMixin):
     def __init__(self, parent=None):
         super().__init__(parent=parent)
         self._dispatcher = Dispatcher(utility_pool)
-        self._key_cancel = None
+        self._key_cancel = CancelSlot()
         self._last_paths = self._UNSET
         self.setup()
 
@@ -208,10 +208,7 @@ class SearchOptionsBar(QtWidgets.QWidget, TranslatorMixin):
         if self._last_paths == key:
             return
         self._last_paths = key
-        if self._key_cancel:
-            self._key_cancel.cancel()
-        cancel = CancelToken()
-        self._key_cancel = cancel
+        cancel = self._key_cancel.renew()
 
         def task():
             engine = FileSearchEngine(dbname)

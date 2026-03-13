@@ -19,6 +19,24 @@ class CancelToken:
         return self._event.is_set()
 
 
+class CancelSlot:
+    __slots__ = ('_token',)
+
+    def __init__(self):
+        self._token: CancelToken | None = None
+
+    def renew(self) -> CancelToken:
+        if self._token is not None:
+            self._token.cancel()
+        self._token = CancelToken()
+        return self._token
+
+    def cancel(self):
+        if self._token is not None:
+            self._token.cancel()
+            self._token = None
+
+
 class _DispatchSignals(QtCore.QObject):
     _to_main = QtCore.Signal(object)
 

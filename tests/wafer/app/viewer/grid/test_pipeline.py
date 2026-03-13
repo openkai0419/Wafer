@@ -135,10 +135,10 @@ class TestGridPipelineCancel:
     def test_cancel_all_clears_layout_cancel(self, dispatcher):
         cache = FakeCache()
         pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: None, lambda i, n: None)
-        pipeline._layout_cancel = CancelToken()
+        token = pipeline._layout_cancel.renew()
 
         pipeline.cancel_all()
-        assert pipeline._layout_cancel is None
+        assert token.is_cancelled()
 
 
 class TestScheduleRender:

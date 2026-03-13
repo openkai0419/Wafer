@@ -2,7 +2,7 @@ from typing import Callable, Optional
 
 from PySide6 import QtCore, QtGui
 
-from ....core.qt.dispatcher import Dispatcher, CancelToken
+from ....core.qt.dispatcher import Dispatcher, CancelToken, CancelSlot
 from ....plugin.grid.handler import grid_resolver
 from ....plugin.grid.base import (
     ImageGridPlugin as _ImageGridPlugin,
@@ -35,7 +35,7 @@ class GridPipeline(QtCore.QObject):
         self._widget_lookup = widget_lookup
         self._promote_fn = promote_fn
         self._active: dict[int, CancelToken] = {}
-        self._layout_cancel: CancelToken | None = None
+        self._layout_cancel = CancelSlot()
         self._image_ready.connect(self._on_image_ready)
 
     def request_layout(
@@ -48,10 +48,7 @@ class GridPipeline(QtCore.QObject):
         orientation=0,
         layout_mode='justified',
     ):
-        if self._layout_cancel is not None:
-            self._layout_cancel.cancel()
-        cancel = CancelToken()
-        self._layout_cancel = cancel
+        cancel = self._layout_cancel.renew()
 
         def task():
             if cancel.is_cancelled():
@@ -203,9 +200,7 @@ class GridPipeline(QtCore.QObject):
             token.cancel()
 
     def cancel_all(self):
-        if self._layout_cancel is not None:
-            self._layout_cancel.cancel()
-            self._layout_cancel = None
+        self._layout_cancel.cancel()
         for token in self._active.values():
             token.cancel()
         self._active.clear()

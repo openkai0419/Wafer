@@ -8,7 +8,7 @@ from ....utils.logs import AppLogger
 from ....core.db.query import FileSearchEngine
 from ....plugin.viewer.handler import viewer_resolver
 from ....plugin.viewer.base import WidgetViewerPlugin as _WidgetViewerPlugin
-from ....core.qt.dispatcher import Dispatcher, CancelToken
+from ....core.qt.dispatcher import Dispatcher, CancelSlot
 from ....core.qt.thread import utility_pool
 from .meta_viewer import MetaListWidget
 from .image_viewer import ImageDisplayWidget
@@ -44,8 +44,8 @@ class FileViewerWidget(QtWidgets.QSplitter):
         self.model = model
         self.image_cache = MemoryLimitedImageCache(app_settings.get('window/cache_size', 500))
         self._dispatcher = Dispatcher(utility_pool)
-        self._content_cancel = None
-        self._meta_cancel = None
+        self._content_cancel = CancelSlot()
+        self._meta_cancel = CancelSlot()
         self._pending_meta = None
         self._pending_content = None
         self._loading_path = None
@@ -146,10 +146,7 @@ class FileViewerWidget(QtWidgets.QSplitter):
             self._pending_content = (path, image)
             self._try_show()
             return
-        if self._content_cancel:
-            self._content_cancel.cancel()
-        cancel = CancelToken()
-        self._content_cancel = cancel
+        cancel = self._content_cancel.renew()
 
         def task():
             image = viewer_resolver.load_content(path)
@@ -163,9 +160,8 @@ class FileViewerWidget(QtWidgets.QSplitter):
         self._dispatcher.post(task, cancel=cancel)
 
     def _on_content_ready(self, cancel, path, image):
-        if cancel is not self._content_cancel:
+        if cancel.is_cancelled():
             return
-        self._content_cancel = None
         if path != self._loading_path:
             return
         self._pending_content = (path, image)
@@ -180,10 +176,7 @@ class FileViewerWidget(QtWidgets.QSplitter):
         dbpath = self.model.dbpath
         if not dbpath:
             return
-        if self._meta_cancel:
-            self._meta_cancel.cancel()
-        cancel = CancelToken()
-        self._meta_cancel = cancel
+        cancel = self._meta_cancel.renew()
 
         def task():
             engine = FileSearchEngine(dbpath)
@@ -195,9 +188,8 @@ class FileViewerWidget(QtWidgets.QSplitter):
         self._dispatcher.post(task, cancel=cancel)
 
     def _on_meta_ready(self, cancel, path, result):
-        if cancel is not self._meta_cancel:
+        if cancel.is_cancelled():
             return
-        self._meta_cancel = None
         if path != self._loading_path:
             return
         self._pending_meta = result

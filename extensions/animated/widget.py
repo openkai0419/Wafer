@@ -3,6 +3,7 @@ from collections import OrderedDict
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from wafer.core.qt.dispatcher import CancelSlot
 from wafer.utils.profiling import profiler
 
 _DISPOSE_INTERVAL = 16
@@ -144,6 +145,7 @@ class AnimatedCellWidget(QtWidgets.QWidget):
         self._thumbnail: QtGui.QPixmap | None = None
         self._scaled_pixmap: QtGui.QPixmap | None = None
         self._scaled_key: tuple = ()
+        self._cancel_slot = CancelSlot()
 
     @profiler.profile
     def set_frames(self, path: str, frames: list[QtGui.QPixmap], delays: list[int]):

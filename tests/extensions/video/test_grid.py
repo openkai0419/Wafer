@@ -163,6 +163,7 @@ def test_save_state_returns_slot_manager_values():
     sm.appear_autoplay = True
     sm.select_autoplay = True
     sm._max_selected = 5
+    sm.pause_in_background = False
     old = MpvCellWidget._slot_manager
     MpvCellWidget._slot_manager = sm
     try:
@@ -174,6 +175,7 @@ def test_save_state_returns_slot_manager_values():
             'appear_autoplay': True,
             'select_autoplay': True,
             'max_selected': 5,
+            'pause_in_background': False,
         }
     finally:
         MpvCellWidget._slot_manager = old
@@ -194,12 +196,14 @@ def test_restore_state_applies_values():
                 'appear_autoplay': True,
                 'select_autoplay': False,
                 'max_selected': 4,
+                'pause_in_background': True,
             })
         sm.set_volume.assert_called_once_with(60)
         sm.set_max_selected.assert_called_once_with(4)
         assert sm.hover_autoplay == False
         assert sm.appear_autoplay == True
         assert sm.select_autoplay == False
+        assert sm.pause_in_background == True
     finally:
         MpvCellWidget._slot_manager = old
 
@@ -237,6 +241,7 @@ def test_deferred_restore_applied_on_init_shared(qtbot):
             'appear_autoplay': False,
             'select_autoplay': False,
             'max_selected': 7,
+            'pause_in_background': True,
         })
         assert MpvCellWidget._pending_grid_state is not None
         sm = MagicMock(spec=PlaybackSlotManager)
@@ -254,6 +259,7 @@ def test_deferred_restore_applied_on_init_shared(qtbot):
         assert sm.hover_autoplay is False
         assert sm.appear_autoplay is False
         assert sm.select_autoplay is False
+        assert sm.pause_in_background is True
         assert MpvCellWidget._pending_grid_state is None
     finally:
         MpvCellWidget._slot_manager = old_sm

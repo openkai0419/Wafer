@@ -184,6 +184,7 @@ class TestMpvCellWidget:
         assert synced.get('vgrid.toggle_hover_autoplay') is True
         assert synced.get('vgrid.toggle_appear_autoplay') is True
         assert synced.get('vgrid.toggle_select_autoplay') is True
+        assert synced.get('vgrid.toggle_pause_in_background') is False
         w.cleanup()
 
     def test_init_shared_skips_default_sync_when_pending(self, qtbot, monkeypatch):
@@ -836,6 +837,54 @@ class TestPlaybackSlotManager:
         manager.release_cell(cell)
         assert len(manager._appear_queue) == 0
         cell.cleanup()
+
+    def test_pause_in_background_default_false(self, manager):
+        assert manager.pause_in_background is False
+
+    def test_background_pauses_when_enabled(self, manager, parent):
+        from PySide6.QtCore import Qt
+        manager.pause_in_background = True
+        cell = self._make_cell(parent)
+        manager.activate_select(cell, '/a.mp4')
+        overlay = manager._selected[cell]
+        overlay.player = MagicMock()
+        overlay.player.pause = False
+        manager._on_app_state_changed(Qt.ApplicationState.ApplicationInactive)
+        assert overlay.player.pause is True
+        assert manager._paused_by_background is True
+        cell.cleanup()
+
+    def test_background_does_not_pause_when_disabled(self, manager, parent):
+        from PySide6.QtCore import Qt
+        cell = self._make_cell(parent)
+        manager.activate_select(cell, '/a.mp4')
+        overlay = manager._selected[cell]
+        overlay.player = MagicMock()
+        overlay.player.pause = False
+        manager._on_app_state_changed(Qt.ApplicationState.ApplicationInactive)
+        assert overlay.player.pause is False
+        assert manager._paused_by_background is False
+        cell.cleanup()
+
+    def test_foreground_resumes_after_background(self, manager, parent):
+        from PySide6.QtCore import Qt
+        manager.pause_in_background = True
+        cell = self._make_cell(parent)
+        manager.activate_select(cell, '/a.mp4')
+        overlay = manager._selected[cell]
+        overlay.player = MagicMock()
+        overlay.player.pause = False
+        manager._on_app_state_changed(Qt.ApplicationState.ApplicationInactive)
+        assert overlay.player.pause is True
+        manager._on_app_state_changed(Qt.ApplicationState.ApplicationActive)
+        assert overlay.player.pause is False
+        assert manager._paused_by_background is False
+        cell.cleanup()
+
+    def test_foreground_noop_when_not_paused_by_background(self, manager, parent):
+        from PySide6.QtCore import Qt
+        manager._on_app_state_changed(Qt.ApplicationState.ApplicationActive)
+        assert manager._paused_by_background is False
 
 
 class TestThumbnailRunner:

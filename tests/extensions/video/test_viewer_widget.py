@@ -54,6 +54,7 @@ class TestVideoViewerWidgetInit:
         assert w._muted is False
         assert w._cover_mode is False
         assert w._looping is False
+        assert w._pause_in_background is False
         w.cleanup()
 
     def test_init_syncs_default_checked_states(self, qtbot, _patch_command):
@@ -65,6 +66,8 @@ class TestVideoViewerWidgetInit:
         assert synced["vview.toggle_mute"] is False
         assert synced["vview.toggle_fit_mode"] is False
         assert synced["vview.toggle_loop"] is False
+        assert synced["vview.toggle_loop"] is False
+        assert synced["vview.toggle_pause_in_background"] is False
         w.cleanup()
 
 
@@ -223,6 +226,53 @@ class TestVideoViewerWidgetControls:
         w.toggle_loop()
         assert w._looping is True
         assert player.__setitem__.call_args_list[-1] == (('loop-file', 'inf'),)
+        w.cleanup()
+
+    def test_toggle_pause_in_background(self, qtbot, _patch_mpv_viewer):
+        w, player = self._make_widget(qtbot, _patch_mpv_viewer)
+        assert w._pause_in_background is False
+        w.toggle_pause_in_background()
+        assert w._pause_in_background is True
+        w.toggle_pause_in_background()
+        assert w._pause_in_background is False
+        w.cleanup()
+
+    def test_background_pauses_when_enabled(self, qtbot, _patch_mpv_viewer):
+        w, player = self._make_widget(qtbot, _patch_mpv_viewer)
+        w.set_pause_in_background(True)
+        player.pause = False
+        w._on_app_state_changed(QtCore.Qt.ApplicationState.ApplicationInactive)
+        assert player.pause is True
+        assert w._paused_by_background is True
+        w.cleanup()
+
+    def test_background_does_not_pause_when_disabled(self, qtbot, _patch_mpv_viewer):
+        w, player = self._make_widget(qtbot, _patch_mpv_viewer)
+        assert w._pause_in_background is False
+        player.pause = False
+        w._on_app_state_changed(QtCore.Qt.ApplicationState.ApplicationInactive)
+        assert player.pause is False
+        assert w._paused_by_background is False
+        w.cleanup()
+
+    def test_foreground_resumes_after_background(self, qtbot, _patch_mpv_viewer):
+        w, player = self._make_widget(qtbot, _patch_mpv_viewer)
+        w.set_pause_in_background(True)
+        player.pause = False
+        w._on_app_state_changed(QtCore.Qt.ApplicationState.ApplicationInactive)
+        assert player.pause is True
+        w._on_app_state_changed(QtCore.Qt.ApplicationState.ApplicationActive)
+        assert player.pause is False
+        assert w._paused_by_background is False
+        w.cleanup()
+
+    def test_foreground_does_not_resume_if_manually_paused(self, qtbot, _patch_mpv_viewer):
+        w, player = self._make_widget(qtbot, _patch_mpv_viewer)
+        player.pause = True
+        w._on_app_state_changed(QtCore.Qt.ApplicationState.ApplicationInactive)
+        assert w._paused_by_background is False
+        w._on_app_state_changed(QtCore.Qt.ApplicationState.ApplicationActive)
+        assert player.pause is True
         w.cleanup()
 
 

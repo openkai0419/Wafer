@@ -1,6 +1,6 @@
 from PySide6.QtCore import Qt, Slot, Signal, QObject, QRect, QTimer
 from PySide6.QtGui import QImage, QPainter, QCursor
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QWidget, QApplication
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from collections import OrderedDict
 from wafer.plugin import qt_debounce_manager
@@ -245,6 +245,8 @@ class PlaybackSlotManager:
         self.hover_autoplay = True
         self.appear_autoplay = True
         self.select_autoplay = True
+        self.pause_in_background = False
+        self._paused_by_background = False
         self._mpv_available = MpvGLOverlay._ensure_mpv()
         self._pool: list[MpvGLOverlay] = []
         self._player_pool: list = []
@@ -271,6 +273,10 @@ class PlaybackSlotManager:
             self._pool.append(overlay)
             self._warm_players()
 
+        app = QApplication.instance()
+        if app:
+            app.applicationStateChanged.connect(self._on_app_state_changed)
+
     def set_volume(self, volume: int):
         self.volume = max(0, min(100, int(volume)))
         for overlay in self._pool:
@@ -285,6 +291,26 @@ class PlaybackSlotManager:
         while len(self._selected) > self._max_selected:
             _, evicted = self._selected.popitem(last=False)
             self._release_overlay(evicted)
+
+    def _on_app_state_changed(self, state):
+        if state != Qt.ApplicationState.ApplicationActive:
+            if self.pause_in_background and not self._paused_by_background:
+                self._paused_by_background = True
+                for overlay in self._iter_active_overlays():
+                    if overlay.player:
+                        overlay.player.pause = True
+        else:
+            if self._paused_by_background:
+                self._paused_by_background = False
+                for overlay in self._iter_active_overlays():
+                    if overlay.player:
+                        overlay.player.pause = False
+
+    def _iter_active_overlays(self):
+        if self._hover_overlay is not None:
+            yield self._hover_overlay
+        yield from self._selected.values()
+        yield from self._appeared.values()
 
     def _warm_players(self):
         if self._dispatcher is None:
@@ -564,6 +590,7 @@ class MpvCellWidget(QWidget):
             Command.set_checked('vgrid.toggle_hover_autoplay', cls._slot_manager.hover_autoplay)
             Command.set_checked('vgrid.toggle_appear_autoplay', cls._slot_manager.appear_autoplay)
             Command.set_checked('vgrid.toggle_select_autoplay', cls._slot_manager.select_autoplay)
+            Command.set_checked('vgrid.toggle_pause_in_background', cls._slot_manager.pause_in_background)
 
     @classmethod
     def _on_overlay_leave(cls, cell):

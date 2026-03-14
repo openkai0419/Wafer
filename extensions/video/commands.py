@@ -32,6 +32,12 @@ def toggle_select_autoplay(ctx, sm):
     Command.set_checked("vgrid.toggle_select_autoplay", sm.select_autoplay)
 
 
+@require(sm="VideoSlotManager")
+def toggle_pause_in_background(ctx, sm):
+    sm.pause_in_background = not sm.pause_in_background
+    Command.set_checked("vgrid.toggle_pause_in_background", sm.pause_in_background)
+
+
 class VideoGridCommands(MenuGroup):
     NAME = "Video Grid"
     PRIORITY = 1000
@@ -74,5 +80,12 @@ class VideoGridCommands(MenuGroup):
                 func=toggle_appear_autoplay,
                 checkable=True,
                 default_checked=False,
+            ),
+            "-",
+            CommandMeta(
+                path="vgrid.toggle_pause_in_background",
+                display="Pause in Background",
+                func=toggle_pause_in_background,
+                checkable=True,
             ),
         ]

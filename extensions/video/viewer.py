@@ -24,6 +24,7 @@ class VideoViewerPlugin(WidgetViewerPlugin):
             'speed': widget._speed,
             'fit_mode': widget._cover_mode,
             'loop': widget._looping,
+            'pause_in_background': widget._pause_in_background,
         }
 
     def restore_state(self, widget, state):
@@ -32,3 +33,4 @@ class VideoViewerPlugin(WidgetViewerPlugin):
         widget.set_speed(state.get('speed', 1.0))
         widget.set_cover_mode(state.get('fit_mode', False))
         widget.set_looping(state.get('loop', False))
+        widget.set_pause_in_background(state.get('pause_in_background', False))

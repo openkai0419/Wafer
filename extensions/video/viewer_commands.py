@@ -52,6 +52,11 @@ def toggle_loop(ctx, vw):
     vw.toggle_loop()
 
 
+@require(vw="VideoViewerWidget")
+def toggle_pause_in_background(ctx, vw):
+    vw.toggle_pause_in_background()
+
+
 class VideoViewerCommands(MenuGroup):
     NAME = "Video Viewer"
     PRIORITY = 1100
@@ -118,6 +123,13 @@ class VideoViewerCommands(MenuGroup):
                 path="vview.toggle_loop",
                 display="Loop",
                 func=toggle_loop,
+                checkable=True,
+            ),
+            "-",
+            CommandMeta(
+                path="vview.toggle_pause_in_background",
+                display="Pause in Background",
+                func=toggle_pause_in_background,
                 checkable=True,
             ),
         ]

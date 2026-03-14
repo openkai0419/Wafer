@@ -1,7 +1,7 @@
 from PySide6.QtCore import Qt, QTimer, QEvent, QPoint, QRectF
 from PySide6.QtGui import QCursor, QPalette, QColor, QPainter
 from PySide6.QtWidgets import (
-    QWidget, QHBoxLayout, QSlider, QLabel, QAbstractButton,
+    QWidget, QHBoxLayout, QSlider, QLabel, QAbstractButton, QApplication,
 )
 from wafer.utils.formatting import dpix
 from wafer.utils.logs import AppLogger
@@ -258,6 +258,8 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
         self._speed = 1.0
         self._cover_mode = False
         self._looping = False
+        self._pause_in_background = False
+        self._paused_by_background = False
         self._seek_dragging = False
         self._controls_visible = False
 
@@ -305,8 +307,12 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
         Command.set_checked("vview.toggle_mute", self._muted)
         Command.set_checked("vview.toggle_fit_mode", self._cover_mode)
         Command.set_checked("vview.toggle_loop", self._looping)
+        Command.set_checked("vview.toggle_pause_in_background", self._pause_in_background)
 
         ThemeManager.instance().on_theme_changed.connect(self._on_theme_changed)
+        app = QApplication.instance()
+        if app:
+            app.applicationStateChanged.connect(self._on_app_state_changed)
 
     def _on_theme_changed(self, palette):
         self._control_bar.apply_theme(palette)
@@ -435,6 +441,14 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
             self._player['loop-file'] = 'inf' if self._looping else 'no'
         Command.set_checked("vview.toggle_loop", self._looping)
 
+    def toggle_pause_in_background(self):
+        self._pause_in_background = not self._pause_in_background
+        Command.set_checked("vview.toggle_pause_in_background", self._pause_in_background)
+
+    def set_pause_in_background(self, enabled: bool):
+        self._pause_in_background = enabled
+        Command.set_checked("vview.toggle_pause_in_background", self._pause_in_background)
+
     def _on_volume_changed(self, value):
         self._volume = value
         if self._muted and value > 0:
@@ -526,7 +540,8 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        w, h = self.width(), self.height()
+        s = event.size()
+        w, h = s.width(), s.height()
         self._player_area.setGeometry(0, 0, w, h)
         bar_h = dpix(_CONTROL_BAR_HEIGHT)
         self._control_bar.setGeometry(0, h - bar_h, w, bar_h)
@@ -535,9 +550,19 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
 
     def hideEvent(self, event):
         super().hideEvent(event)
-        self._stop_playback()
-        self._pos_timer.stop()
         self._hide_controls()
+
+    def _on_app_state_changed(self, state):
+        if state != Qt.ApplicationState.ApplicationActive:
+            if self._pause_in_background and self._player and not self._player.pause:
+                self._paused_by_background = True
+                self._player.pause = True
+                self._update_play_button()
+        else:
+            if self._paused_by_background and self._player and self._path:
+                self._paused_by_background = False
+                self._player.pause = False
+                self._update_play_button()
 
     def cleanup(self):
         self._pos_timer.stop()

@@ -119,6 +119,21 @@ class TestToggleLoop:
         vw.toggle_loop.assert_called_once()
 
 
+class TestTogglePauseInBackground:
+    def test_calls_toggle_pause_in_background(self):
+        from extensions.video.viewer_commands import toggle_pause_in_background
+        vw = MagicMock()
+        ctx = _make_ctx(vw)
+        toggle_pause_in_background(ctx)
+        vw.toggle_pause_in_background.assert_called_once()
+
+    def test_noop_without_instance(self):
+        from extensions.video.viewer_commands import toggle_pause_in_background
+        ctx = _make_ctx(None)
+        result = toggle_pause_in_background(ctx)
+        assert result is None
+
+
 class TestVideoViewerCommandsMeta:
     def test_name(self):
         from extensions.video.viewer_commands import VideoViewerCommands

@@ -251,6 +251,42 @@ class TestSelectAutoplayFlag:
         cell._slot_manager.activate_select.assert_called_once()
 
 
+class TestTogglePauseInBackground:
+    def test_toggle_pause_in_background_on(self):
+        from extensions.video.commands import toggle_pause_in_background
+        sm = MagicMock()
+        sm.pause_in_background = False
+        ctx = _make_ctx(sm)
+        with patch("extensions.video.commands.Command"):
+            toggle_pause_in_background(ctx)
+        assert sm.pause_in_background is True
+
+    def test_toggle_pause_in_background_off(self):
+        from extensions.video.commands import toggle_pause_in_background
+        sm = MagicMock()
+        sm.pause_in_background = True
+        ctx = _make_ctx(sm)
+        with patch("extensions.video.commands.Command"):
+            toggle_pause_in_background(ctx)
+        assert sm.pause_in_background is False
+
+    def test_set_checked_uses_vgrid_path(self):
+        from extensions.video.commands import toggle_pause_in_background
+        sm = MagicMock()
+        sm.pause_in_background = False
+        ctx = _make_ctx(sm)
+        with patch("extensions.video.commands.Command") as cmd:
+            toggle_pause_in_background(ctx)
+            cmd.set_checked.assert_called_once_with("vgrid.toggle_pause_in_background", True)
+
+    def test_noop_without_instance(self):
+        from extensions.video.commands import toggle_pause_in_background
+        ctx = _make_ctx(None)
+        with patch("extensions.video.commands.Command") as cmd:
+            toggle_pause_in_background(ctx)
+            cmd.set_checked.assert_not_called()
+
+
 class TestSlotManagerSetVolume:
     def test_set_volume_stores_and_propagates(self):
         from extensions.video.widget import PlaybackSlotManager

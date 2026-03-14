@@ -48,6 +48,7 @@ class TestVideoViewerPluginState:
         widget._speed = 1.5
         widget._cover_mode = True
         widget._looping = False
+        widget._pause_in_background = False
         state = plugin.save_state(widget)
         assert state == {
             'volume': 75,
@@ -55,6 +56,7 @@ class TestVideoViewerPluginState:
             'speed': 1.5,
             'fit_mode': True,
             'loop': False,
+            'pause_in_background': False,
         }
 
     def test_restore_state_calls_setters(self):
@@ -67,6 +69,7 @@ class TestVideoViewerPluginState:
             'speed': 2.0,
             'fit_mode': True,
             'loop': True,
+            'pause_in_background': False,
         }
         plugin.restore_state(widget, state)
         widget.set_volume.assert_called_once_with(60)
@@ -74,6 +77,7 @@ class TestVideoViewerPluginState:
         widget.set_speed.assert_called_once_with(2.0)
         widget.set_cover_mode.assert_called_once_with(True)
         widget.set_looping.assert_called_once_with(True)
+        widget.set_pause_in_background.assert_called_once_with(False)
 
     def test_restore_state_defaults(self):
         from unittest.mock import MagicMock
@@ -86,14 +90,16 @@ class TestVideoViewerPluginState:
         widget.set_speed.assert_called_once_with(1.0)
         widget.set_cover_mode.assert_called_once_with(False)
         widget.set_looping.assert_called_once_with(False)
+        widget.set_pause_in_background.assert_called_once_with(False)
 
     def test_restore_state_idempotent(self):
         from unittest.mock import MagicMock
         plugin = VideoViewerPlugin()
         widget = MagicMock()
-        state = {'volume': 50, 'muted': False, 'speed': 1.0, 'fit_mode': False, 'loop': False}
+        state = {'volume': 50, 'muted': False, 'speed': 1.0, 'fit_mode': False, 'loop': False, 'pause_in_background': False}
         plugin.restore_state(widget, state)
         plugin.restore_state(widget, state)
         assert widget.set_muted.call_count == 2
         assert widget.set_cover_mode.call_count == 2
         assert widget.set_looping.call_count == 2
+        assert widget.set_pause_in_background.call_count == 2

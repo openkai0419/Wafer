@@ -153,12 +153,12 @@ class TestSessionCommands:
             folder_state={'expanded': ['/a'], 'selected': '/a'},
         )
         parent_ui = UIState(
-            window_geometry='base64geom==',
+            window_state={'geometry': 'base64geom==', 'always_on_top': False},
             component_states={'grid': {'scroll_index': 42}},
         )
         entry.query_snapshot = parent_query
         entry.ui = UIState(
-            window_geometry='',
+            window_state={},
             component_states=parent_ui.component_states,
         )
         store.save_session(entry)
@@ -166,5 +166,5 @@ class TestSessionCommands:
         loaded = store.get_session(sid)
         assert loaded.query_snapshot.database_name == 'parent.db'
         assert loaded.query_snapshot.search_params['keywords'] == 'sunset'
-        assert loaded.ui.window_geometry == ''
+        assert loaded.ui.window_state == {}
         assert loaded.ui.component_states['grid']['scroll_index'] == 42

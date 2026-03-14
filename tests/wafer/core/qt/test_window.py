@@ -185,28 +185,29 @@ class TestWindowStateController:
         assert win.isVisible()
 
     def test_save_and_restore_geometry(self, ctrl, win):
-        geo_str = ctrl.save_geometry()
-        assert isinstance(geo_str, str)
-        base64.b64decode(geo_str)
-        ctrl.restore_geometry(geo_str)
+        state = ctrl.save_full_state()
+        assert isinstance(state['geometry'], str)
+        base64.b64decode(state['geometry'])
+        ctrl.restore_full_state(state)
 
-    def test_save_state_default(self, ctrl):
-        state = ctrl.save_state()
-        assert state == {'always_on_top': False}
+    def test_save_full_state_default(self, ctrl):
+        state = ctrl.save_full_state()
+        assert state['always_on_top'] is False
+        assert 'geometry' in state
 
-    def test_save_state_with_on_top(self, ctrl):
+    def test_save_full_state_with_on_top(self, ctrl):
         ctrl.set_always_on_top(True)
-        state = ctrl.save_state()
-        assert state == {'always_on_top': True}
+        state = ctrl.save_full_state()
+        assert state['always_on_top'] is True
 
-    def test_restore_state(self, ctrl):
-        ctrl.restore_state({'always_on_top': True})
+    def test_restore_full_state(self, ctrl):
+        ctrl.restore_full_state({'always_on_top': True})
         assert ctrl.is_always_on_top
-        ctrl.restore_state({'always_on_top': False})
+        ctrl.restore_full_state({'always_on_top': False})
         assert not ctrl.is_always_on_top
 
-    def test_restore_state_ignores_unknown_keys(self, ctrl):
-        ctrl.restore_state({'unknown_key': 42})
+    def test_restore_full_state_ignores_unknown_keys(self, ctrl):
+        ctrl.restore_full_state({'unknown_key': 42})
         assert not ctrl.is_always_on_top
 
 

@@ -263,10 +263,8 @@ class ShortcutManager(QtCore.QObject):
             from ...bridge import Command
             try:
                 Command.invoke(str(payload.id), ctx=ctx, **args)
-            except ValueError:
-                from .....utils.notifier import Notifier
-                AppLogger.warning(f"Command not found: {payload.id}")
-                Notifier.warning(f"Command not found: {payload.id}")
+            except ValueError as e:
+                AppLogger.warning(f"Command invoke failed: {payload.id}", exc=e)
 
     def _normalize(self, spec: KeyChordSpec) -> KeyCombo:
         if not isinstance(spec, (tuple, list)):

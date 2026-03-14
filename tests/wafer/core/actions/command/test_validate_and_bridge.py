@@ -146,10 +146,10 @@ class TestBridgeCommand:
         with pytest.raises(ValueError, match="Unknown args"):
             Command.run("t.nop2", {"bogus": 1})
 
-    def test_run_unknown_command_raises(self):
+    def test_run_unknown_command_returns_none(self):
         Command, _ = self._import_bridge()
-        with pytest.raises(ValueError, match="Command not found"):
-            Command.run("nonexistent.cmd")
+        result = Command.run("nonexistent.cmd")
+        assert result is None
 
     def test_run_type_error(self):
         meta = CommandMeta(path="t.typed", display="T", func=lambda ctx, n=0: n, params=[CommandParam(name="n", value=0)])

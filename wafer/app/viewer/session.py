@@ -59,7 +59,7 @@ class QueryState:
 
 @dataclass
 class UIState:
-    window_geometry: str = ''
+    window_state: dict[str, Any] = field(default_factory=dict)
     component_states: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -67,7 +67,15 @@ class UIState:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> UIState:
-        return _flat_from_dict(cls, data)
+        if not isinstance(data, dict):
+            return cls()
+        ws = data.get('window_state', {})
+        if not ws and 'window_geometry' in data:
+            ws = {'geometry': data['window_geometry']}
+        return cls(
+            window_state=ws,
+            component_states=data.get('component_states', {}),
+        )
 
 
 @dataclass

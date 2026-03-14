@@ -176,7 +176,7 @@ def create_session(ctx, w):
     entry = store.get_session(sid)
     entry.query_snapshot = w.capture_query_state()
     ui = w.capture_ui_state()
-    ui.window_geometry = ''
+    ui.window_state = {}
     entry.ui = ui
     store.save_session(entry)
     AppLogger.info(f'Session created: {name} ({sid})')

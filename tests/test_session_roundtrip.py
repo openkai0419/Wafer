@@ -49,23 +49,32 @@ class TestUIStateRoundtrip:
     def test_empty_state(self):
         ui = UIState()
         restored = UIState.from_dict(ui.to_dict())
-        assert restored.window_geometry == ''
+        assert restored.window_state == {}
         assert restored.component_states == {}
 
     def test_full_state(self):
         ui = UIState(
-            window_geometry='base64geometry==',
+            window_state={'geometry': 'base64geometry==', 'always_on_top': False},
             component_states={
                 'main_splitter': {'sizes': [300, 700]},
                 'grid': {'base_height': 200, 'spacing': 4, 'layout_mode': 'justified', 'scroll_index': 42},
             },
         )
         restored = UIState.from_dict(ui.to_dict())
-        assert restored.window_geometry == 'base64geometry=='
+        assert restored.window_state == {'geometry': 'base64geometry==', 'always_on_top': False}
         assert restored.component_states['main_splitter']['sizes'] == [300, 700]
         assert restored.component_states['grid']['scroll_index'] == 42
         assert restored.component_states['grid']['base_height'] == 200
         assert restored.component_states['grid']['layout_mode'] == 'justified'
+
+    def test_migration_from_old_window_geometry(self):
+        old_data = {
+            'window_geometry': 'old_base64_geo==',
+            'component_states': {'main_splitter': {'sizes': [200, 800]}},
+        }
+        restored = UIState.from_dict(old_data)
+        assert restored.window_state == {'geometry': 'old_base64_geo=='}
+        assert restored.component_states['main_splitter']['sizes'] == [200, 800]
 
 
 class TestSessionEntryRoundtrip:
@@ -84,7 +93,7 @@ class TestSessionEntryRoundtrip:
             folder_state={'selected': '/images'},
         )
         ui = UIState(
-            window_geometry='geom',
+            window_state={'geometry': 'geom', 'always_on_top': False},
             component_states={
                 'main_splitter': {'sizes': [250, 750]},
                 'grid': {'base_height': 180, 'scroll_index': 10},
@@ -213,7 +222,7 @@ class TestSessionStoreRoundtrip:
             folder_state={'expanded': ['/a', '/b'], 'selected': '/a'},
         )
         entry.ui = UIState(
-            window_geometry='geo_data',
+            window_state={'geometry': 'geo_data'},
             component_states={
                 'main_splitter': {'sizes': [200, 400, 400]},
                 'grid': {'base_height': 250, 'spacing': 8, 'scroll_index': 99},

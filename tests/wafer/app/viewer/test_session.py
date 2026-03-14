@@ -58,12 +58,12 @@ class TestUIState:
 
     def test_defaults(self):
         u = UIState()
-        assert u.window_geometry == ''
+        assert u.window_state == {}
         assert u.component_states == {}
 
     def test_roundtrip(self):
         u = UIState(
-            window_geometry='abc123==',
+            window_state={'geometry': 'abc123==', 'always_on_top': False},
             component_states={
                 'main_splitter': {'sizes': [100, 500, 200]},
                 'grid': {'zoom': 150, 'orientation': 1, 'layout_mode': 'masonry'},

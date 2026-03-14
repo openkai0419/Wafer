@@ -157,7 +157,12 @@ class MouseEventManager:
                     args = payload.args or {}
                     ctx = CommandDragContext(base_id, self._registry, widget, args)
                     cmd_class = self._registry.get_command(base_id)
-                    meta = cmd_class.meta if cmd_class else None
+                    if cmd_class is None:
+                        from .....utils.notifier import Notifier
+                        AppLogger.warning(f"Command not found: {base_id}")
+                        Notifier.warning(f"Command not found: {base_id}")
+                        return None
+                    meta = cmd_class.meta
                     if meta and "start" in (meta.drag_callbacks or {}):
                         cctx = CommandContext.create(widget, None, source="drag", event=event)
                         cctx.put("phase", "start")
@@ -479,7 +484,13 @@ class MouseEventDispatcher(QtCore.QObject):
                     args = payload.args or {}
                     registry = CommandRegistry.instance()
                     cmd_class = registry.get_command(base_id)
-                    meta = cmd_class.meta if cmd_class else None
+                    if cmd_class is None:
+                        from .....utils.notifier import Notifier
+                        AppLogger.warning(f"Command not found: {base_id}")
+                        Notifier.warning(f"Command not found: {base_id}")
+                        event.ignore()
+                        return
+                    meta = cmd_class.meta
                     if meta and "drop" in (meta.drop_callbacks or {}):
                         ctx = CommandContext.create(widget, None, source="drop", event=event)
                         ctx.put("phase", "drop")

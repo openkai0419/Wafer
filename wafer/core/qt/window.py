@@ -67,17 +67,16 @@ class WindowStateController:
     def minimize(self):
         self._window.showMinimized()
 
-    def save_geometry(self) -> str:
+    def save_full_state(self) -> dict:
         geo_bytes = bytes(self._window.saveGeometry())
-        return base64.b64encode(geo_bytes).decode('ascii')
+        return {
+            'geometry': base64.b64encode(geo_bytes).decode('ascii'),
+            'always_on_top': self.is_always_on_top,
+        }
 
-    def restore_geometry(self, data: str):
-        geo = QtCore.QByteArray(base64.b64decode(data))
-        self._window.restoreGeometry(geo)
-
-    def save_state(self) -> dict:
-        return {'always_on_top': self.is_always_on_top}
-
-    def restore_state(self, state: dict):
+    def restore_full_state(self, state: dict):
+        if 'geometry' in state:
+            geo = QtCore.QByteArray(base64.b64decode(state['geometry']))
+            self._window.restoreGeometry(geo)
         if 'always_on_top' in state:
             self.set_always_on_top(state['always_on_top'])

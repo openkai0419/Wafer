@@ -328,15 +328,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         store = StateStore.instance()
         store.register('main_splitter', self._save_splitter, self._restore_splitter)
         store.register('grid', self._save_grid, self._restore_grid)
-        store.register('window', self._save_window_state, self._restore_window_state)
         self._register_grid_plugin_states(store)
-
-    def _save_window_state(self):
-        return self.window_state.save_state()
-
-    def _restore_window_state(self, state):
-        self.window_state.restore_state(state)
-        Command.set_checked('win.toggle_always_on_top', self.window_state.is_always_on_top)
 
     def _register_grid_plugin_states(self, store):
         from ...plugin.grid.base import WidgetGridPlugin as _WGP
@@ -500,7 +492,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
 
     def capture_ui_state(self) -> UIState:
         return UIState(
-            window_geometry=self.window_state.save_geometry(),
+            window_state=self.window_state.save_full_state(),
             component_states=StateStore.instance().save_all(),
         )
 
@@ -514,8 +506,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             sync_groups_from_args(query.search_params)
             Command.set_checked('qry.toggle_include_subfolders', query.search_params.get('include_subfolders', True))
             Command.set_checked('qry.toggle_auto_execute', query.search_params.get('auto_execute', True))
-        if 'keys' in query.search_params:
-            keys = query.search_params['keys']
+            keys = query.search_params.get('keys')
             if isinstance(keys, list):
                 self.search_row_widget.keys_combo.previous_key = keys
         if query.folder_state:
@@ -540,11 +531,12 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             row.set_search_text(params['keywords'])
 
     def restore_ui_state(self, ui: UIState) -> None:
-        if ui.window_geometry:
+        if ui.window_state:
             try:
-                self.window_state.restore_geometry(ui.window_geometry)
+                self.window_state.restore_full_state(ui.window_state)
+                Command.set_checked('win.toggle_always_on_top', self.window_state.is_always_on_top)
             except Exception as e:
-                AppLogger.warning(f'restore_ui_state geometry failed: {e}', exc=e)
+                AppLogger.warning(f'restore_ui_state window_state failed: {e}', exc=e)
         if ui.component_states:
             StateStore.instance().restore_all(ui.component_states)
 
@@ -562,17 +554,10 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
     def _save_session(self):
         if self._session_deleted:
             return
-        prev = self._session_entry
-        entry = SessionEntry(
-            session_id=self.session_id,
-            name=prev.name if prev else DEFAULT_SESSION_NAME,
-            color=prev.color if prev else '',
-            ui=self.capture_ui_state(),
-            query_snapshot=self.capture_query_state(),
-        )
-        if prev:
-            entry.created_at = prev.created_at
-            entry.bookmark_id = prev.bookmark_id
+        entry = self._session_entry or SessionEntry(
+            session_id=self.session_id, name=DEFAULT_SESSION_NAME)
+        entry.ui = self.capture_ui_state()
+        entry.query_snapshot = self.capture_query_state()
         self._session_store.save_session(entry)
         self._session_entry = entry
 

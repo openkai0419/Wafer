@@ -8,6 +8,7 @@
 - コマンドは「操作の実行」のみに責任を持つ。状態保存はStateStore（Session）が担う
 - checkable状態の真実のソースはWidget/Pluginの実状態。CommandOptionStoreはメニュー表示用キャッシュ
 - StateStoreはwafer/core/に汎用的に定義。wafer側WidgetもPlugin側Widgetも同じ仕組みで参加
+- UIState.window_stateにジオメトリ+always_on_topを統合（旧window_geometryは廃止）。WindowStateController.save_full_state/restore_full_stateで一経路化
 - WidgetGridPluginのsave_state/restore_stateは_register_grid_plugin_statesでStateStoreに動的登録される（キー: grid_plugin.{name}）
 - WidgetViewerPluginのsave_state/restore_stateはfile_viewer._register_statesでStateStoreに動的登録される（キー: viewer_plugin.{name}）
 - video/volume, video/muted, tree/state等のセッションスコープ状態はINIから完全移行済み
@@ -168,6 +169,16 @@ Widget初期化時のデフォルト状態と乖離するため、以下の同�
 ■ 検索状態管理の注意
 - SearchService / ActionGroupStateManager / Session/Bookmark の3系統を同期する必要がある
 - Session/Bookmark復元時にsync_groups_from_args()が呼ばれないとActionGroupStateManager状態が不整合になる
+
+■ 存在しないコマンドの実行ハンドリング
+- Command.invoke() / Command.run() はコマンドが見つからない場合、ValueErrorをraiseせず AppLogger.warning + Notifier.warning + return None で処理する
+- get_args() / set_args() は明示的な設定APIのため、存在しないコマンドに対してはValueErrorをraiseする（従来通り）
+- ShortcutManager._exec()はCommand.invoke()のtry-except ValueErrorを維持（他のValueError捕捉用）。コマンド不在のNotifyはinvoke側が担当
+- mixins._execute_payload()は独自にhas_command()チェック + Notifier通知済み
+- mouse/manager.pyのexecute_drag_start, _handle_dropはcmd_class=None時にNotifier.warning通知する
+- _handle_drag_enterはUIゲーティング（ドロップ受入判定）のためNotify不要。cmd不在時はevent.ignore()のみ
+- メニュー構築(menu_builder)は存在しないコマンドを警告ログで skip する（メニュー項目を表示しない）
+- バインディングJSONは起動時にコマンド存在チェックを行わない（プラグイン再追加の可能性があるため蓄積を許容）
 
 ■ その他
 - SelectionManager.set_selected(indexes, last)のlastはリスト内位置インデックス

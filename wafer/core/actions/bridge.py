@@ -226,11 +226,14 @@ class Command:
     @staticmethod
     def run(command_id: str, args: dict | None = None, extras: dict | None = None):
         from .command.core import validate_command_args
+        from ...utils.notifier import Notifier
 
         reg = Command._registry()
         cmd_class = reg.get_command(str(command_id))
         if cmd_class is None:
-            raise ValueError(f"Command not found: {command_id}")
+            AppLogger.warning(f"Command not found: {command_id}")
+            Notifier.warning(f"Command not found: {command_id}")
+            return None
         validated = dict(args or {})
         validate_command_args(cmd_class.meta, validated, require_all=True)
         ctx = Context.create_context(None, "*", source="run", extras=extras)
@@ -238,10 +241,14 @@ class Command:
 
     @staticmethod
     def invoke(command_id: str, extras: dict | None = None, *, ctx=None, parent=None, **kwargs):
+        from ...utils.notifier import Notifier
+
         reg = Command._registry()
         cmd_class = reg.get_command(str(command_id))
         if cmd_class is None:
-            raise ValueError(f"Command not found: {command_id}")
+            AppLogger.warning(f"Command not found: {command_id}")
+            Notifier.warning(f"Command not found: {command_id}")
+            return None
         stored = CommandOptionStore.instance().get(str(command_id))
         saved = stored.args if isinstance(stored.args, dict) else {}
         args = {p.name: saved.get(p.name, p.default) for p in (cmd_class.meta.params or [])}

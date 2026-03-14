@@ -55,9 +55,9 @@ build.bat
 main.py              Entry point
 wafer/         Common foundation (utils, core, plugin, app)
 extensions/          File format extensions (folder-based, auto-detected by PluginLoader)
-tests/               Tests (tests/wafer/, tests/extensions/, tests/prototypes/)
+tests/               Tests (tests/wafer/, tests/extensions/, tests/.prototypes/)
 _resources/          UI resources, key/mouse binding presets
-prototypes/          Experimental/prototype code
+.prototypes/         Experimental/prototype code
 .temp/               Temporary debug files and caches
 ```
 

@@ -1,4 +1,0 @@
-prototypes は試作用の UI/入力/コマンド実行の検証層。
-共通ロジックは source/actions 配下に集約し、prototypes はアプリ層のサンプルに寄せる。
-bridge は外部API専用。source/actions 内部から import しない。
-ショートカット表示のパース失敗は元文字列にフォールバック。

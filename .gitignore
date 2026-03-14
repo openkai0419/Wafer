@@ -6,6 +6,9 @@ venv/
 
 .temp/
 .packages/
+.vscode/
+.prototypes/
+tests/.prototypes/
 
 # Extension native libraries (user-provided)
 extensions/*/lib/

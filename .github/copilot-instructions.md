@@ -31,10 +31,10 @@ extensions/は、その土台を利用して「画像」「動画」「音声」
 main.pyをエントリーポイントとして、ディレクトリ構成は以下のような形になっています。
 - wafer: 共通基盤パッケージ（wafer.utils, wafer.core, wafer.plugin, wafer.app）
 - extensions: ファイル形式ごとの拡張（フォルダ単位。例: extensions/image/）。PluginLoaderが自動検出・登録。requirements.txtに依存を記載することで、自動的にインストールされる
-- tests: テストコード（tests/wafer/, tests/extensions/, tests/prototypes/ の3階層。importlibモード）
+- tests: テストコード（tests/wafer/, tests/extensions/, tests/.prototypes/ の3階層。importlibモード）
 - .temp: 一時的なデバッグ用のコードやスクリプト、キャッシュファイル等。ソース側を汚さないこと
 - _resources: 画像やUIレイアウト、バインディングプリセット等のリソースファイル
-- prototypes: 新機能の試作コードや実験的なコード
+- .prototypes: 新機能の試作コードや実験的なコード
 - pyproject.toml: テスト実行用の設定（pytest の pythonpath, importlibモード）。パッケージメタデータは含まない
 - requirements.txt: ランタイム依存。requirements-dev.txt: 開発ツール含む（-r requirements.txt で参照）
 
@@ -93,7 +93,7 @@ main.pyをエントリーポイントとして、ディレクトリ構成は以�
 - .github/memory.md はコードから読み解けない設計判断、技術的制約、不具合回避のメモ
 - ルールとメモは明確に分離する。守るべき規約→rule.md、経験ベースの知識→memory.md
 - 新しい方針や注意点は積極的に追記し、不要になった情報は削除して常に最新に保つ
-- prototypes/temporary.md は prototypes や tests 以下のコードに関する一時的なメモ
+- .prototypes/temporary.md は .prototypes や tests 以下のコードに関する一時的なメモ
 - 実装前にメモを確認し、実装後にメモに反する変更がないか確認する
 - ただしメモは補助的なものであり、最適なコードの実装が最も重要。メモが間違っている可能性も考慮する
 - メモは日本語で簡潔に。コードの些細な仕様や細かい変更履歴は記載しない

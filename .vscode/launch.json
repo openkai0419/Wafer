@@ -13,10 +13,10 @@
             "console": "integratedTerminal"
         },
         {
-            "name": "prototypes.binding (runner) :Python",
+            "name": ".prototypes.binding (runner) :Python",
             "type": "debugpy",
             "request": "launch",
-            "module": "prototypes.binding.main",
+            "module": ".prototypes.binding.main",
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
             "justMyCode": true,

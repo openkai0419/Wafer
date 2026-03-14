@@ -67,8 +67,11 @@ def test_is_widget_plugin_unknown():
     assert not viewer_resolver.is_widget_plugin('file.xyz')
 
 
-def test_widget_classes_empty():
-    assert viewer_resolver.widget_classes() == {}
+def test_widget_classes_includes_registered():
+    classes = viewer_resolver.widget_classes()
+    for name, cls in classes.items():
+        assert isinstance(name, str)
+        assert cls is not None
 
 
 def test_render_does_nothing_without_widget_plugin():

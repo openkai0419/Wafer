@@ -28,11 +28,7 @@ class VideoViewerPlugin(WidgetViewerPlugin):
 
     def restore_state(self, widget, state):
         widget.set_volume(state.get('volume', DEFAULT_VOLUME))
-        muted = state.get('muted', False)
-        if muted != widget._muted:
-            widget.toggle_mute()
+        widget.set_muted(state.get('muted', False))
         widget.set_speed(state.get('speed', 1.0))
-        if state.get('fit_mode', False) != widget._cover_mode:
-            widget.toggle_fit_mode()
-        if state.get('loop', False) != widget._looping:
-            widget.toggle_loop()
+        widget.set_cover_mode(state.get('fit_mode', False))
+        widget.set_looping(state.get('loop', False))

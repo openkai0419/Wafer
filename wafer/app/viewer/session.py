@@ -143,6 +143,13 @@ class SessionEntry:
 
 
 class SessionStore:
+    _instance: SessionStore | None = None
+
+    @classmethod
+    def instance(cls) -> SessionStore:
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
 
     def __init__(self, path: str | None = None):
         self._path = path or resolve_data_path(_STORE_FILENAME)
@@ -314,6 +321,13 @@ class SessionStore:
 
 
 class BookmarkStore:
+    _instance: BookmarkStore | None = None
+
+    @classmethod
+    def instance(cls) -> BookmarkStore:
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
 
     def __init__(self, base_dir: str | None = None):
         self._base = Path(base_dir) if base_dir else Path(resolve_data_path(_BOOKMARK_DIR))

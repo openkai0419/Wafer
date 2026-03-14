@@ -10,28 +10,13 @@ from wafer.core.db.file_db import FileDB
 from wafer.core.db.indexer import FileIndexer
 from wafer.plugin.collector.handler import collector_resolver
 from wafer.plugin.collector.base import CollectorResult
-from wafer.app.indexer.writer import CollectionWriter
+from wafer.app.indexer.db_writer import DatabaseWriter
+from wafer.app.indexer.collector_receiver import _parse_batch
+from wafer.app.indexer.write_command import WriteCommand, WritePriority
 
 
 def _get_exif_plugin():
     return collector_resolver.registry.get('exif')
-from wafer.app.indexer.progress_notifier import ProgressAggregator
-
-
-class _StubNode:
-    def __init__(self):
-        self.sent = []
-
-    def send(self, *a, **kw):
-        self.sent.append(('send', a, kw))
-
-    def send_coalesced(self, *a, **kw):
-        self.sent.append(('send_coalesced', a, kw))
-
-
-class _StubMsg:
-    def __init__(self, payload):
-        self.payload = payload
 
 
 def _create_test_image(path, width=100, height=80, fmt='JPEG'):
@@ -67,9 +52,11 @@ def _run_collector_for_pending(db, plugin, collector_name):
 
 
 def _write_results_sync(writer, results, collector_name):
-    msg = _StubMsg({'collector': collector_name, 'results': results})
-    writer.handle_result(msg)
-    writer._flush_all()
+    for r in results:
+        r.setdefault('collector', collector_name)
+    data = _parse_batch(results)
+    cmd = WriteCommand.create('upsert_results', priority=WritePriority.COLLECTION, data=data)
+    writer.execute(cmd)
 
 
 class TestImagePipeline:
@@ -119,12 +106,10 @@ class TestImagePipeline:
             ).fetchone()
             assert dispatched[0] == 'dispatched'
 
-            node = _StubNode()
-            progress = ProgressAggregator('test', node)
-            writer = CollectionWriter(str(db_path), progress)
+            writer = DatabaseWriter(str(db_path))
             writer.start()
             _write_results_sync(writer, results, 'exif')
-            writer.stop()
+            writer.close()
 
             db = FileDB(db_path)
             db.start()
@@ -216,12 +201,10 @@ class TestImagePipeline:
             ok_results = [r for r in results if r['status'] is True]
             assert len(ok_results) == 2
 
-            node = _StubNode()
-            progress = ProgressAggregator('test', node)
-            writer = CollectionWriter(str(db_path), progress)
+            writer = DatabaseWriter(str(db_path))
             writer.start()
             _write_results_sync(writer, results, 'exif')
-            writer.stop()
+            writer.close()
 
             db = FileDB(db_path)
             db.start()
@@ -305,12 +288,10 @@ class TestImagePipeline:
             plugin = _get_exif_plugin()()
             results = _run_collector_for_pending(idx.db, plugin, 'exif')
 
-            node = _StubNode()
-            progress = ProgressAggregator('test', node)
-            writer = CollectionWriter(str(db_path), progress)
+            writer = DatabaseWriter(str(db_path))
             writer.start()
             _write_results_sync(writer, results, 'exif')
-            writer.stop()
+            writer.close()
 
         db_check = FileDB(db_path)
         db_check.start()
@@ -381,12 +362,10 @@ class TestDispatcherSimulation:
                 r['collector'] = 'exif'
                 results.append(r)
 
-            node = _StubNode()
-            progress = ProgressAggregator('test', node)
-            writer = CollectionWriter(str(db_path), progress)
+            writer = DatabaseWriter(str(db_path))
             writer.start()
             _write_results_sync(writer, results, 'exif')
-            writer.stop()
+            writer.close()
 
             db = FileDB(db_path)
             db.start()
@@ -455,22 +434,21 @@ class TestWriterCollectorField:
         db.conn.commit()
         db.close()
 
-        node = _StubNode()
-        progress = ProgressAggregator('test', node)
-        writer = CollectionWriter(str(db_path), progress)
+        writer = DatabaseWriter(str(db_path))
         writer.start()
 
         results = [{
             'source': 'src1',
-            'info': {'path': 'src1', 'name': 'result.png', 'aspect': 1.5, 'file_hash': 'h1'},
+            'path': 'src1',
+            'name': 'result.png',
+            'aspect': 1.5,
+            'file_hash': 'h1',
             'meta_info': {'width': '100'},
             'tags': {},
-            'status': 'ok',
+            'status': True,
         }]
-        msg = _StubMsg({'collector': 'custom_plugin', 'results': results})
-        writer.handle_result(msg)
-        writer._flush_all()
-        writer.stop()
+        _write_results_sync(writer, results, 'custom_plugin')
+        writer.close()
 
         db2 = FileDB(db_path)
         db2.start()

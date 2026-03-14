@@ -34,7 +34,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
 
     def __init__(self, icon=None, parent=None, session_id=None):
         super().__init__(parent=parent)
-        self._session_store = SessionStore()
+        self._session_store = SessionStore.instance()
         if session_id:
             self.session_id = session_id
             self._session_store.claim_session(session_id)
@@ -128,18 +128,24 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         label = f'\u25BC {entry.name}' if entry and entry.name else '\u25BC Window'
         btn.setText(label)
         color = entry.color if entry and entry.color else ''
+        fs = dpix(12)
+        pad_v = dpix(3)
+        pad_h = dpix(8)
+        bw = dpix(1)
+        bw_l = dpix(3)
+        br = dpix(4)
         if color:
             btn.setStyleSheet(
                 f"QPushButton {{ background: transparent; color: #ccc;"
-                f"  border: 1px solid {color}; border-left: 3px solid {color};"
-                f"  border-radius: 4px; padding: 3px 8px; font-size: 12px; text-align: left; }}"
+                f"  border: {bw}px solid {color}; border-left: {bw_l}px solid {color};"
+                f"  border-radius: {br}px; padding: {pad_v}px {pad_h}px; font-size: {fs}px; text-align: left; }}"
                 f"QPushButton:hover {{ background: rgba(255,255,255,0.08); color: white; }}"
             )
         else:
             btn.setStyleSheet(
-                "QPushButton { background: transparent; color: #ccc; border: 1px solid #555;"
-                "  border-radius: 4px; padding: 3px 8px; font-size: 12px; text-align: left; }"
-                "QPushButton:hover { background: rgba(255,255,255,0.08); color: white; }"
+                f"QPushButton {{ background: transparent; color: #ccc; border: {bw}px solid #555;"
+                f"  border-radius: {br}px; padding: {pad_v}px {pad_h}px; font-size: {fs}px; text-align: left; }}"
+                f"QPushButton:hover {{ background: rgba(255,255,255,0.08); color: white; }}"
             )
 
     def changeEvent(self, event):

@@ -2,6 +2,7 @@ import py_compile
 
 from wafer.app.viewer.session import (
     QueryState,
+    UIState,
     BookmarkEntry,
     BookmarkStore,
     SessionEntry,
@@ -75,8 +76,8 @@ class TestSessionCommands:
         store = SessionStore(path=str(tmp_path / 'sessions.json'))
         store.save_session(SessionEntry(session_id='s1'))
         store.set_active_session_ids(['s1'])
+        monkeypatch.setattr(SessionStore, '_instance', store)
         from wafer.app.viewer.commands import session_commands
-        monkeypatch.setattr(session_commands, '_session_store', store)
         alive = session_commands._get_alive_session_ids()
         assert 's1' in alive
 
@@ -117,3 +118,53 @@ class TestSessionCommands:
     def test_find_session_by_name_not_found(self, tmp_path):
         store = SessionStore(path=str(tmp_path / 'sessions.json'))
         assert store.find_session_by_name('Ghost') is None
+
+    def test_rename_duplicate_rejected_via_store(self, tmp_path):
+        store = SessionStore(path=str(tmp_path / 'sessions.json'))
+        store.create_session('Alpha')
+        sid_b = store.create_session('Beta')
+        assert not store.rename_session(sid_b, 'Alpha')
+        assert store.get_session(sid_b).name == 'Beta'
+
+    def test_rename_to_own_name_succeeds_via_store(self, tmp_path):
+        store = SessionStore(path=str(tmp_path / 'sessions.json'))
+        sid = store.create_session('Same')
+        assert store.rename_session(sid, 'Same')
+
+    def test_ss_store_returns_singleton(self, monkeypatch):
+        from wafer.app.viewer.commands.session_commands import _ss_store
+        a = _ss_store()
+        b = _ss_store()
+        assert a is b
+
+    def test_bm_store_returns_singleton(self, monkeypatch):
+        from wafer.app.viewer.commands.session_commands import _bm_store
+        a = _bm_store()
+        b = _bm_store()
+        assert a is b
+
+    def test_create_session_inherits_state_without_geometry(self, tmp_path):
+        store = SessionStore(path=str(tmp_path / 'sessions.json'))
+        sid = store.create_session('Child')
+        entry = store.get_session(sid)
+        parent_query = QueryState(
+            database_name='parent.db',
+            search_params={'keywords': 'sunset', 'sort_by': 'modified'},
+            folder_state={'expanded': ['/a'], 'selected': '/a'},
+        )
+        parent_ui = UIState(
+            window_geometry='base64geom==',
+            component_states={'grid': {'scroll_index': 42}},
+        )
+        entry.query_snapshot = parent_query
+        entry.ui = UIState(
+            window_geometry='',
+            component_states=parent_ui.component_states,
+        )
+        store.save_session(entry)
+
+        loaded = store.get_session(sid)
+        assert loaded.query_snapshot.database_name == 'parent.db'
+        assert loaded.query_snapshot.search_params['keywords'] == 'sunset'
+        assert loaded.ui.window_geometry == ''
+        assert loaded.ui.component_states['grid']['scroll_index'] == 42

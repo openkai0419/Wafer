@@ -430,6 +430,13 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
         self._update_volume_icon()
         Command.set_checked("vview.toggle_mute", self._muted)
 
+    def set_muted(self, muted: bool):
+        self._muted = muted
+        if self._player:
+            self._player.mute = self._muted
+        self._update_volume_icon()
+        Command.set_checked("vview.toggle_mute", self._muted)
+
     def set_speed(self, speed):
         self._speed = max(0.25, min(3.0, float(speed)))
         if self._player:
@@ -441,8 +448,20 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
             self._player['panscan'] = 1.0 if self._cover_mode else 0.0
         Command.set_checked("vview.toggle_fit_mode", self._cover_mode)
 
+    def set_cover_mode(self, cover: bool):
+        self._cover_mode = cover
+        if self._player:
+            self._player['panscan'] = 1.0 if self._cover_mode else 0.0
+        Command.set_checked("vview.toggle_fit_mode", self._cover_mode)
+
     def toggle_loop(self):
         self._looping = not self._looping
+        if self._player:
+            self._player['loop-file'] = 'inf' if self._looping else 'no'
+        Command.set_checked("vview.toggle_loop", self._looping)
+
+    def set_looping(self, looping: bool):
+        self._looping = looping
         if self._player:
             self._player['loop-file'] = 'inf' if self._looping else 'no'
         Command.set_checked("vview.toggle_loop", self._looping)

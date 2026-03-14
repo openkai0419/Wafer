@@ -567,3 +567,46 @@ class TestCreateSessionWithUniqueName:
         sid = tmp_store.create_session_with_unique_name()
         entry = tmp_store.get_session(sid)
         assert entry.name == f'{DEFAULT_SESSION_NAME}1'
+
+    def test_many_collisions(self, tmp_store):
+        tmp_store.create_session('X')
+        for i in range(1, 6):
+            tmp_store.create_session(f'X ({i})')
+        sid = tmp_store.create_session_with_unique_name('X')
+        assert tmp_store.get_session(sid).name == 'X (6)'
+
+
+class TestSessionStoreInstance:
+
+    def test_singleton(self):
+        old = SessionStore._instance
+        try:
+            SessionStore._instance = None
+            a = SessionStore.instance()
+            b = SessionStore.instance()
+            assert a is b
+        finally:
+            SessionStore._instance = old
+
+    def test_separate_from_constructor(self):
+        old = SessionStore._instance
+        try:
+            SessionStore._instance = None
+            inst = SessionStore.instance()
+            fresh = SessionStore()
+            assert fresh is not inst
+        finally:
+            SessionStore._instance = old
+
+
+class TestBookmarkStoreInstance:
+
+    def test_singleton(self):
+        old = BookmarkStore._instance
+        try:
+            BookmarkStore._instance = None
+            a = BookmarkStore.instance()
+            b = BookmarkStore.instance()
+            assert a is b
+        finally:
+            BookmarkStore._instance = old

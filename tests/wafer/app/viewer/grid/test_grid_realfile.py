@@ -13,6 +13,20 @@ from wafer.plugin.grid.base import ImageGridPlugin, WidgetGridPlugin
 
 
 @pytest.fixture(autouse=True, scope="module")
+def _disable_mpv():
+    try:
+        from extensions.video.widget import MpvGLOverlay
+        orig = MpvGLOverlay._mpv, MpvGLOverlay._proc_addr_cb, MpvGLOverlay._init_attempted
+        MpvGLOverlay._init_attempted = True
+        MpvGLOverlay._mpv = None
+        MpvGLOverlay._proc_addr_cb = None
+        yield
+        MpvGLOverlay._mpv, MpvGLOverlay._proc_addr_cb, MpvGLOverlay._init_attempted = orig
+    except ImportError:
+        yield
+
+
+@pytest.fixture(autouse=True, scope="module")
 def _configure_command_store(tmp_path_factory):
     from wafer.core.actions.command.state import CommandOptionStore
     prev = CommandOptionStore._instance, CommandOptionStore._initialized, CommandOptionStore._default_path

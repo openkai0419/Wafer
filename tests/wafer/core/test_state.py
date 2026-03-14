@@ -1,3 +1,5 @@
+import threading
+
 import pytest
 from wafer.core.state import StateStore
 
@@ -149,3 +151,45 @@ class TestStateStore:
 
         assert received_a == {'volume': 80, 'muted': True}
         assert received_b == {'fit_mode': 'cover'}
+
+    def test_save_all_safe_during_unregister(self):
+        store = StateStore.instance()
+        barrier = threading.Barrier(2, timeout=2)
+        results = {}
+
+        def slow_save():
+            barrier.wait()
+            return {'slow': True}
+
+        store.register('will_remove', lambda: {'x': 1}, lambda s: None)
+        store.register('slow', slow_save, lambda s: None)
+
+        def bg():
+            results['saved'] = store.save_all()
+
+        t = threading.Thread(target=bg)
+        t.start()
+        barrier.wait()
+        store.unregister('will_remove')
+        t.join(timeout=3)
+        assert 'slow' in results['saved']
+
+    def test_concurrent_register_restore(self):
+        store = StateStore.instance()
+        store.restore_all({'ns_a': {'v': 1}, 'ns_b': {'v': 2}})
+        received = {}
+
+        def register_a():
+            store.register('ns_a', lambda: {}, lambda s: received.update({'a': s}))
+
+        def register_b():
+            store.register('ns_b', lambda: {}, lambda s: received.update({'b': s}))
+
+        t1 = threading.Thread(target=register_a)
+        t2 = threading.Thread(target=register_b)
+        t1.start()
+        t2.start()
+        t1.join(timeout=2)
+        t2.join(timeout=2)
+        assert received.get('a') == {'v': 1}
+        assert received.get('b') == {'v': 2}

@@ -35,7 +35,7 @@ def show_window(ctx=None):
     tray = ctx.get_instance("Tray")
     c = get_viewer_count(ctx)
     if c < 1:
-        store = SessionStore()
+        store = SessionStore.instance()
         restore_ids = store.get_restore_session_ids()
         if restore_ids:
             AppLogger.info(f'restoring {len(restore_ids)} viewer(s): {restore_ids}')
@@ -54,7 +54,7 @@ def show_window(ctx=None):
 
 
 def open_new_window(ctx=None):
-    store = SessionStore()
+    store = SessionStore.instance()
     default_name = store.next_default_name()
     name = InputDialog.get_text(
         'Session name:',

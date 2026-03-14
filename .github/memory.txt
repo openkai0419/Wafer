@@ -138,6 +138,33 @@
 - AnimatedGridPlugin.can_handleはBGスレッド（_make_resolve_task内）で実行されるためUIは止めない。ファイルI/O節約のためキャッシュは有効だがUI直結の最適化ではない
 - image.scaled()はFastTransformationで十分。セルサイズ（500px程度）ではSmoothとの視覚差が小さくスクロール時は気づかない
 
+■ checkableコマンドとWidget実状態の同期ルール
+CommandOptionStore（永続JSON）はメニューのchecked状態をセッション横断で保持する。
+Widget初期化時のデフォルト状態と乖離するため、以下の同期が必須:
+
+● checked状態の読み取り優先順位（_get_checked）
+  1. CommandOptionStore（永続JSON）← 前回セッションの古い値が残る
+  2. _check_states（実行時メモリ） 
+  3. meta.default_checked（コマンド定義）
+  → Widget初期化直後にCommand.set_checked()を呼び、1を実状態で上書きする必要がある
+
+● ActionGroup（_get_checked_for_group）
+  1. ActionGroupStateManager.get_current() → 未取得時は_load_state()でCommandOptionStoreから遅延読込
+  2. group_defaults / meta.default_checked
+  → sm.set_current()で実状態を同期する必要がある
+
+● 同期ポイント一覧（Session復元がある場合は上書きされるので安全）
+  - MainWindow._sync_default_checked_states(): win.toggle_always_on_top, qry.toggle_include_subfolders/auto_execute, grid action groups, grid_scroll_anchor
+  - VideoViewerWidget.__init__(): vview.toggle_mute/fit_mode/loop
+  - MpvCellWidget._init_shared(): vgrid.toggle_hover/appear_autoplay（pending stateがない場合のelseブランチ）
+  - _sync_service_from_ui() → sync_groups_from_args(): GROUP_SORT/ORDER/MODE/KEYWORD
+  - sync_grid_groups_from_settings(): grid_layout_mode, grid_orientation
+
+● 新しいcheckableコマンドを追加する際の注意
+  - Widget/Pluginの初期状態とdefault_checkedの値を一致させること
+  - Widgetの__init__またはPlugin初期化時にCommand.set_checked()で実状態をCommandOptionStoreに反映すること
+  - 怠ると「メニューにチェックが入っているが実際の機能はオフ」のバグが発生する
+
 ■ 検索状態管理の注意
 - SearchService / ActionGroupStateManager / Session/Bookmark の3系統を同期する必要がある
 - Session/Bookmark復元時にsync_groups_from_args()が呼ばれないとActionGroupStateManager状態が不整合になる

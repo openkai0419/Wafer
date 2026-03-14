@@ -34,10 +34,10 @@ class ColorPalette(QtWidgets.QWidget):
         for c in SESSION_COLORS:
             btn = QtWidgets.QPushButton()
             btn.setFixedSize(dpix(20), dpix(20))
-            border = '2px solid white' if c == current else '2px solid transparent'
+            border = f'{dpix(2)}px solid white' if c == current else f'{dpix(2)}px solid transparent'
             btn.setStyleSheet(
                 f"QPushButton {{ background: {c}; border: {border}; border-radius: {dpix(10)}px; }}"
-                f"QPushButton:hover {{ border: 2px solid #ccc; }}"
+                f"QPushButton:hover {{ border: {dpix(2)}px solid #ccc; }}"
             )
             btn.setCursor(QtCore.Qt.PointingHandCursor)
             btn.clicked.connect(lambda checked=False, color=c: self.color_selected.emit(color))
@@ -46,9 +46,9 @@ class ColorPalette(QtWidgets.QWidget):
         btn_none.setFixedSize(dpix(20), dpix(20))
         btn_none.setToolTip("No color")
         btn_none.setStyleSheet(
-            "QPushButton { background: transparent; color: #888; border: 1px solid #555;"
-            f"  border-radius: {dpix(10)}px; font-size: 10px; }}"
-            "QPushButton:hover { color: white; border-color: #ccc; }"
+            f"QPushButton {{ background: transparent; color: #888; border: {dpix(1)}px solid #555;"
+            f"  border-radius: {dpix(10)}px; font-size: {dpix(10)}px; }}"
+            f"QPushButton:hover {{ color: white; border-color: #ccc; }}"
         )
         btn_none.setCursor(QtCore.Qt.PointingHandCursor)
         btn_none.clicked.connect(lambda: self.color_selected.emit(''))
@@ -78,13 +78,13 @@ class SessionItemWidget(QtWidgets.QWidget):
         self._label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
         self._label.setCursor(QtCore.Qt.PointingHandCursor)
         label_color = '#7cb3ff' if current else 'white'
-        self._label.setStyleSheet(f"color: {label_color}; font-size: 13px;")
+        self._label.setStyleSheet(f"color: {label_color}; font-size: {dpix(13)}px;")
         self._label.mousePressEvent = lambda _: self.open_requested.emit(self.session_id)
         layout.addWidget(self._label)
 
         if alive:
             dot = QtWidgets.QLabel("\u25CF")
-            dot.setStyleSheet("color: #4CAF50; font-size: 10px;")
+            dot.setStyleSheet(f"color: #4CAF50; font-size: {dpix(10)}px;")
             dot.setToolTip("Running")
             layout.addWidget(dot)
 
@@ -114,9 +114,10 @@ class SessionItemWidget(QtWidgets.QWidget):
 
     @staticmethod
     def _btn_style():
+        fs = dpix(13)
         return (
-            "QPushButton { background: transparent; color: #aaa; border: none; font-size: 13px; }"
-            "QPushButton:hover { color: white; background: rgba(255,255,255,0.1); border-radius: 3px; }"
+            f"QPushButton {{ background: transparent; color: #aaa; border: none; font-size: {fs}px; }}"
+            f"QPushButton:hover {{ color: white; background: rgba(255,255,255,0.1); border-radius: {dpix(3)}px; }}"
         )
 
 
@@ -155,9 +156,9 @@ class SessionPopup(QtWidgets.QFrame, TranslatorMixin):
         btn_new = QtWidgets.QPushButton(f"+ {self.t.tr('New Window')}")
         btn_new.setCursor(QtCore.Qt.PointingHandCursor)
         btn_new.setStyleSheet(
-            "QPushButton { background: transparent; color: #7cb3ff; border: none;"
-            "  font-size: 13px; padding: 6px 8px; text-align: left; }"
-            "QPushButton:hover { background: rgba(255,255,255,0.08); border-radius: 4px; }"
+            f"QPushButton {{ background: transparent; color: #7cb3ff; border: none;"
+            f"  font-size: {dpix(13)}px; padding: {dpix(6)}px {dpix(8)}px; text-align: left; }}"
+            f"QPushButton:hover {{ background: rgba(255,255,255,0.08); border-radius: {dpix(4)}px; }}"
         )
         btn_new.clicked.connect(self._on_create)
         self._layout.addWidget(btn_new)
@@ -191,7 +192,7 @@ class SessionPopup(QtWidgets.QFrame, TranslatorMixin):
             self._list_layout.addWidget(row)
         if not sessions:
             empty = QtWidgets.QLabel(self.t.tr("No saved sessions"))
-            empty.setStyleSheet("color: #888; font-size: 12px; padding: 8px;")
+            empty.setStyleSheet(f"color: #888; font-size: {dpix(12)}px; padding: {dpix(8)}px;")
             empty.setAlignment(QtCore.Qt.AlignCenter)
             self._list_layout.addWidget(empty)
 

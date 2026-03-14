@@ -9,22 +9,12 @@ from ....utils.notifier import Notifier
 from ..session import BookmarkEntry, BookmarkStore, SessionStore
 
 
-_bookmark_store = None
-_session_store = None
-
-
 def _bm_store():
-    global _bookmark_store
-    if _bookmark_store is None:
-        _bookmark_store = BookmarkStore()
-    return _bookmark_store
+    return BookmarkStore.instance()
 
 
 def _ss_store():
-    global _session_store
-    if _session_store is None:
-        _session_store = SessionStore()
-    return _session_store
+    return SessionStore.instance()
 
 
 @require(w="MainWindow")
@@ -182,6 +172,12 @@ def create_session(ctx, w):
         if existing:
             open_session(ctx, sid=existing.session_id)
         return
+    entry = store.get_session(sid)
+    entry.query_snapshot = w.capture_query_state()
+    ui = w.capture_ui_state()
+    ui.window_geometry = ''
+    entry.ui = ui
+    store.save_session(entry)
     AppLogger.info(f'Session created: {name} ({sid})')
     Notifier.info(f'Session created: {name}')
     AppProcess.new_main('--viewer', '--session', sid)

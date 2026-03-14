@@ -54,10 +54,12 @@ class MpvGLOverlay(QOpenGLWidget):
         cls._init_attempted = True
         try:
             import mpv
+            proc_addr_cb = mpv.MpvGlGetProcAddressFn(_get_proc_address)
             cls._mpv = mpv
-            cls._proc_addr_cb = mpv.MpvGlGetProcAddressFn(_get_proc_address)
+            cls._proc_addr_cb = proc_addr_cb
             return True
-        except (OSError, ImportError):
+        except (OSError, ImportError, AttributeError):
+            cls._mpv = None
             return False
 
     @classmethod

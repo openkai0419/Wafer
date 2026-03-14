@@ -14,6 +14,46 @@ from .menu_item import CommandMenuRow
 from .option_dialog import CommandOptionsDialog
 
 
+class StickyMenu(QtWidgets.QMenu):
+    _STICKY_DURATION_MS = 1000
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._sticky_action: QtGui.QAction | None = None
+        self._sticky_timer = QtCore.QTimer(self)
+        self._sticky_timer.setSingleShot(True)
+        self._sticky_timer.timeout.connect(self._release_sticky)
+
+    def _release_sticky(self):
+        self._sticky_action = None
+
+    def mouseReleaseEvent(self, event):
+        action = self.actionAt(event.position().toPoint())
+        if action and action.menu():
+            if self._sticky_action == action:
+                self._sticky_action = None
+                self._sticky_timer.stop()
+            else:
+                self._sticky_action = action
+                self._sticky_timer.start(self._STICKY_DURATION_MS)
+            return
+        self._sticky_action = None
+        self._sticky_timer.stop()
+        super().mouseReleaseEvent(event)
+
+    def event(self, e):
+        if self._sticky_action is not None and e.type() == QtCore.QEvent.MouseMove:
+            hover_action = self.actionAt(e.position().toPoint())
+            if hover_action is not None and hover_action.menu() is not None and hover_action != self._sticky_action:
+                return True
+        return super().event(e)
+
+    def hideEvent(self, event):
+        self._sticky_action = None
+        self._sticky_timer.stop()
+        super().hideEvent(event)
+
+
 class CommandMenuBuilder(TranslatorMixin):
     _instance: "CommandMenuBuilder" | None = None
     _initialized: bool = False
@@ -81,7 +121,7 @@ class CommandMenuBuilder(TranslatorMixin):
 
     @profiler.profile
     def build(self, parent: QtWidgets.QWidget, command_names: list[str], display_map: dict[str, str] | None = None, selection_callback: Callable[[Any], None] | None = None) -> QtWidgets.QMenu:
-        menu = QtWidgets.QMenu(parent)
+        menu = StickyMenu(parent)
         menu.setProperty(COMMAND_MENU_MARKER, True)
         self._install_hotkey_alignment(menu)
         return self.build_into(menu, parent, command_names, display_map, selection_callback)
@@ -426,7 +466,7 @@ class CommandMenuBuilder(TranslatorMixin):
             if cur_path in cache:
                 current = cache[cur_path]
                 continue
-            m = QtWidgets.QMenu(self.t.tr(part) or part, parent)
+            m = StickyMenu(self.t.tr(part) or part, parent)
             current.addMenu(m)
             cache[cur_path] = m
             self._install_hotkey_alignment(m)
@@ -464,7 +504,7 @@ class CommandMenuBuilder(TranslatorMixin):
 
 class MenuBuilder:
     def __init__(self, maker: MenuMaker, parent: QtWidgets.QWidget | None = None, *, seed_ctx: CommandContext | None = None):
-        self._menu = QtWidgets.QMenu(parent)
+        self._menu = StickyMenu(parent)
         self._menu.setProperty(COMMAND_MENU_MARKER, True)
         self._ctx_parent = parent
         self._builder = CommandMenuBuilder.instance()
@@ -510,7 +550,7 @@ class MenuBuilder:
             self._builder.refresh_check_states(cached)
             self._menu = cached
             return cached
-        self._menu = QtWidgets.QMenu(self._ctx_parent)
+        self._menu = StickyMenu(self._ctx_parent)
         self._menu.setProperty(COMMAND_MENU_MARKER, True)
         self._builder._install_hotkey_alignment(self._menu)
         result = self._build_into(tokens, selection_callback, allow_options_with_selection)

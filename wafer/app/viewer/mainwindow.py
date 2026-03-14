@@ -133,9 +133,9 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         fs = dpix(12)
         pad_v = dpix(3)
         pad_h = dpix(8)
-        bw = dpix(1)
-        bw_l = dpix(3)
-        br = dpix(4)
+        bw = dpix(2)
+        bw_l = dpix(5)
+        br = dpix(6)
         if color:
             btn.setStyleSheet(
                 f"QPushButton {{ background: transparent; color: {p.text_primary};"

@@ -409,11 +409,11 @@ class TestThemeIntegration:
         bar = VideoControlBar()
         bar.apply_theme(LIGHT)
         style = bar.styleSheet()
-        assert LIGHT.text_accent in style
+        assert LIGHT.accent in style
         assert LIGHT.border_default in style
         bar.apply_theme(DARK)
         style = bar.styleSheet()
-        assert DARK.text_accent in style
+        assert DARK.accent in style
 
     def test_volume_popup_theme_applied(self, qtbot):
         from extensions.video.viewer_widget import VolumePopup
@@ -421,7 +421,7 @@ class TestThemeIntegration:
         popup = VolumePopup()
         popup.apply_theme(LIGHT)
         style = popup.styleSheet()
-        assert LIGHT.text_accent in style
+        assert LIGHT.accent in style
         popup.close()
 
     def test_theme_change_propagates_to_control_bar(self, qtbot):
@@ -432,8 +432,8 @@ class TestThemeIntegration:
         tm = ThemeManager.instance()
         tm.set_light()
         style = w._control_bar.styleSheet()
-        assert LIGHT.text_accent in style
+        assert LIGHT.accent in style
         tm.set_dark()
         style = w._control_bar.styleSheet()
-        assert DARK.text_accent in style
+        assert DARK.accent in style
         w.cleanup()

@@ -176,9 +176,42 @@ Widget初期化時のデフォルト状態と乖離するため、以下の同�
 
 ■ テーマシステムの設計方針
 - ライト/ダーク対応のため、ハードコード色を廃止しカラートークン方式に移行する
-- ThemePalette（frozen dataclass）: bg_primary, text_primary, border_default等の意味名でdark/light各1インスタンス（DARK, LIGHT）
+- ThemePalette（frozen dataclass）: bg_*, text_*, accent, accent_text, border_*, success/warning/error/info
 - ThemeManager（Singleton）: 現在パレット提供・切替・on_theme_changed Signal通知
 - 配置: wafer/core/color/ (theme_palette.py, theme.py, __init__.py)
 - extensionはThemeManager.instance().paletteで現在パレットを取得して使用
 - 既存ハードコード箇所は段階的にトークン参照へ移行（一括変換不要）
-- is_dark_theme()（formatting.py）はThemeManager._detect_dark()に統合済み
+- from_system()でQPaletteから動的生成。is_darkはpalette.bg_primaryの明度で判定
+
+■ カラートークンの使い分けルール
+● テキスト系
+  - text_primary: 本文テキスト。QPalette.WindowTextから導出
+  - text_secondary: 補助テキスト。Dark時はMidlight、Light時はMid
+  - text_muted: 薄いテキスト（プレースホルダ等）。PlaceholderTextから導出（WindowTextと近すぎる場合はdarker(160)で補正）
+  - text_accent: テキスト上のアクセント色（リンク、カレントセッション名等）。QPalette.LinkまたはHighlightから背景との距離が大きい方を採用
+● 背景系
+  - bg_primary: メイン背景。QPalette.Window
+  - bg_secondary / bg_elevated: セカンダリ背景。QPalette.Base
+  - bg_hover / bg_pressed: hover/press時の半透明オーバーレイ
+● 差し色（accent）
+  - accent: 選択背景、スライダー塗り色、フォーカスリングなど「操作対象」の差し色。常に#3B80FF固定（from_systemでもフォールバック）
+  - accent_text: accent背景上で読めるテキスト色。常に#ffffff固定
+  - 差し色を使う箇所: FolderTree選択背景、GridView選択矩形、Videoシークバー再生済み部分、Video音量バー、pixmap.pyデフォルトbg_color
+● ボーダー系
+  - border_default: 標準ボーダー。Dark時はLight(QPalette.Light)、Light時はMid
+  - border_subtle: 薄いボーダー
+● ステータス系
+  - success/warning/error: 状態表示色。dark/lightで固定値
+  - info: text_accentと同値
+
+■ ハードコード色の禁止と例外
+- 新規コードではThemePaletteのトークンを使うこと。直接#xxxxxxを書かない
+- 例外: ThemePalette自体の定義（DARK/LIGHT/from_system内）、QSSのpalette()関数参照
+
+■ アイコンシステム（wafer/core/qt/icon_engine.py）
+- _REGISTRYにキー→描画関数(IconDrawFn)を登録。@_register('key')デコレータで追加
+- themed_icon(key): QIconEngineベース。描画時にThemeManager.palette.text_primaryで自動着色。Disabledはalpha=80
+- icon_draw(key, painter, rect, color): 任意カラーで直接描画。カスタムpaintEvent内で使用（例: _MediaButton）
+- padding: themed_icon(padding=0.15)でアイコン領域の内側余白を比率指定（0.0-0.5）
+- アイコンはSVG/PNGファイルではなくQPainterPathで描画。解像度非依存
+- 新しいアイコン追加時は@_register('key')でicon_engine.pyに描画関数を追加

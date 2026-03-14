@@ -11,6 +11,7 @@ from .cachemanager import MemoryLimitedImageCache, GraphicsItemPool, AdditionalW
 from .calc_layout import LayoutData
 from .pipeline import GridPipeline
 from .items import GridItemModel
+from ....core.color.theme import ThemeManager
 from ....core.actions.bridge import ActionKit
 
 class _SelectionOverlay(QtWidgets.QWidget):
@@ -143,11 +144,13 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         )
         self._pipeline.layout_ready.connect(self._on_layout_ready)
 
-        self.color = (59, 128, 255)
+        _accent = QtGui.QColor(ThemeManager.instance().palette.accent)
         self._half_pos = self.spacing / 2
-        self._qcolor_main = QtGui.QColor(*self.color)
-        self._qcolor_fill_sel = QtGui.QColor(*self.color, 25)
-        self._qcolor_fill_drag = QtGui.QColor(*self.color, 50)
+        self._qcolor_main = _accent
+        self._qcolor_fill_sel = QtGui.QColor(_accent)
+        self._qcolor_fill_sel.setAlpha(25)
+        self._qcolor_fill_drag = QtGui.QColor(_accent)
+        self._qcolor_fill_drag.setAlpha(50)
         self._selection_pen = QtGui.QPen(self._qcolor_main, max(1, self.spacing * 0.5))
         self._selection_pen.setCosmetic(True)
 

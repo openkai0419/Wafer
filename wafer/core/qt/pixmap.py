@@ -30,7 +30,9 @@ class PixmapFactory:
         return pixmap
 
     @staticmethod
-    def draw_centered_text_with_background(pixmap, text, font=None, padding=None, text_color=QtGui.QColor('#FFFFFF'), bg_color=QtGui.QColor('#3B80FF')):
+    def draw_centered_text_with_background(pixmap, text, font=None, padding=None, text_color=QtGui.QColor('#FFFFFF'), bg_color=None):
+        if bg_color is None:
+            bg_color = QtGui.QColor(ThemeManager.instance().palette.accent)
         if padding is None:
             padding = dpix(4)
         pixmap_copy = QtGui.QPixmap(pixmap)

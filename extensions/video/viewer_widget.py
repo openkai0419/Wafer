@@ -40,7 +40,7 @@ def _build_control_style(palette):
         margin: {-dpix(4)}px 0;
     }}
     #seekSlider::sub-page:horizontal {{
-        background: {palette.text_accent};
+        background: {palette.accent};
         border-radius: {dpix(2)}px;
     }}
     QLabel {{
@@ -69,7 +69,7 @@ def _build_volume_popup_style(palette):
         border-radius: {dpix(2)}px;
     }}
     #volumePopupSlider::add-page:vertical {{
-        background: {palette.text_accent};
+        background: {palette.accent};
         border-radius: {dpix(2)}px;
     }}
     """
@@ -77,10 +77,10 @@ def _build_volume_popup_style(palette):
 
 class _MediaButton(QAbstractButton):
 
-    def __init__(self, icon_key, size=28, padding=7, parent=None):
+    def __init__(self, icon_key, size=28, padding=0.25, parent=None):
         super().__init__(parent)
         self._icon_key = icon_key
-        self._padding = padding
+        self._padding = max(0.0, min(0.5, padding))
         s = dpix(size)
         self.setFixedSize(s, s)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -100,7 +100,10 @@ class _MediaButton(QAbstractButton):
             p.setBrush(hover)
             p.setPen(Qt.PenStyle.NoPen)
             p.drawRoundedRect(self.rect(), dpix(3), dpix(3))
-        r = QRectF(self.rect()).adjusted(dpix(self._padding), dpix(self._padding), -dpix(self._padding), -dpix(self._padding))
+        rect = QRectF(self.rect())
+        dx = rect.width() * self._padding
+        dy = rect.height() * self._padding
+        r = rect.adjusted(dx, dy, -dx, -dy)
         icon_draw(self._icon_key, p, r, QColor(palette.text_primary))
         p.end()
 
@@ -183,10 +186,10 @@ class VideoControlBar(QWidget):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(dpix(8), dpix(2), dpix(8), dpix(0))
 
-        self.btn_play = _MediaButton('play', padding=8)
+        self.btn_play = _MediaButton('play', padding=0.33)
         layout.addWidget(self.btn_play)
 
-        layout.addSpacing(dpix(3))
+        layout.addSpacing(dpix(2))
 
         self.seek_slider = QSlider(Qt.Orientation.Horizontal)
         self.seek_slider.setObjectName('seekSlider')
@@ -198,9 +201,9 @@ class VideoControlBar(QWidget):
         self.time_label = QLabel('00:00 / 00:00')
         layout.addWidget(self.time_label)
 
-        layout.addSpacing(dpix(3))
+        layout.addSpacing(dpix(2))
 
-        self.btn_volume = _MediaButton('volume', padding=6)
+        self.btn_volume = _MediaButton('volume', padding=0.28)
         layout.addWidget(self.btn_volume)
 
         self.volume_popup = VolumePopup()

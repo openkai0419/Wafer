@@ -187,7 +187,7 @@ def _draw_plus(p: QPainter, r: QRectF, color: QColor):
     p.setPen(Qt.PenStyle.NoPen)
     p.setBrush(color)
     s = min(r.width(), r.height())
-    bw = s * 0.15
+    bw = s * 0.10
     arm = s * 0.38
     cx, cy = r.center().x(), r.center().y()
     h_bar = QPainterPath()
@@ -202,7 +202,7 @@ def _draw_minus(p: QPainter, r: QRectF, color: QColor):
     p.setPen(Qt.PenStyle.NoPen)
     p.setBrush(color)
     s = min(r.width(), r.height())
-    bw = s * 0.15
+    bw = s * 0.10
     arm = s * 0.38
     cy = r.center().y()
     cx = r.center().x()

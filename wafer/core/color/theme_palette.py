@@ -24,6 +24,9 @@ class ThemePalette:
     text_muted: str
     text_accent: str
 
+    accent: str
+    accent_text: str
+
     border_default: str
     border_subtle: str
 
@@ -68,6 +71,8 @@ class ThemePalette:
             text_secondary=_hex(mid if not dark else midlight),
             text_muted=_hex(muted),
             text_accent=_hex(accent),
+            accent="#3B80FF",
+            accent_text="#ffffff",
             border_default=_hex(border),
             border_subtle=_hex(midlight if not dark else QtGui.QColor(border).darker(120)),
             success="#4CAF50" if dark else "#2e7d32",
@@ -89,6 +94,9 @@ DARK = ThemePalette(
     text_muted="#888",
     text_accent="#7cb3ff",
 
+    accent="#3B80FF",
+    accent_text="#ffffff",
+
     border_default="#555",
     border_subtle="#444",
 
@@ -109,6 +117,9 @@ LIGHT = ThemePalette(
     text_secondary="#555",
     text_muted="#888",
     text_accent="#1a73e8",
+
+    accent="#1a73e8",
+    accent_text="#ffffff",
 
     border_default="#ccc",
     border_subtle="#e0e0e0",

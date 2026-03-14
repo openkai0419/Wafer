@@ -544,7 +544,9 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         super().__init__()
         from ....core.color.theme import ThemeManager
         _p = ThemeManager.instance().palette
-        self.setStyleSheet(f'QTreeView::item:selected {{ background-color: {_p.text_accent}; }}')
+        self.setStyleSheet(
+            f'QTreeView::item:selected {{ background-color: {_p.accent}; color: {_p.accent_text}; }}'
+        )
         self.setHeaderHidden(True)
         self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.model_ = LazyFolderTreeModel(roots, excluded)

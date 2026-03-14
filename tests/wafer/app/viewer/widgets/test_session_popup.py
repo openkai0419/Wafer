@@ -77,7 +77,7 @@ class TestSessionItemWidget:
         assert item.layout().count() == 4
 
     def test_color_dot_present(self, qtbot):
-        item = SessionItemWidget('s1', 'Work', color='#FF0000')
+        item = SessionItemWidget('s1', 'Work', color='#FF0000', alive=True)
         qtbot.addWidget(item)
         assert item.layout().count() == 5
 

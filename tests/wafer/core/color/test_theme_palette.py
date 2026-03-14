@@ -27,10 +27,13 @@ class TestThemePalette:
             bg_hover="rgba(0,0,0,0.1)", bg_pressed="rgba(0,0,0,0.2)",
             text_primary="#eee", text_secondary="#ddd",
             text_muted="#bbb", text_accent="#00f",
+            accent="#3B80FF", accent_text="#ffffff",
             border_default="#444", border_subtle="#555",
             success="#0f0", warning="#ff0", error="#f00", info="#00f",
         )
         assert p.bg_primary == "#111"
+        assert p.accent == "#3B80FF"
+        assert p.accent_text == "#ffffff"
 
     def test_from_system(self, qtbot):
         p = ThemePalette.from_system()

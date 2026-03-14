@@ -50,6 +50,7 @@ class FileViewerWidget(QtWidgets.QSplitter):
         self._pending_meta = None
         self._pending_content = None
         self._loading_path = None
+        self._target_plugin: str | None = None
         self._widget_map: dict[str, QtWidgets.QWidget] = {}
         self._current_plugin_name: str = _DEFAULT_WIDGET_NAME
         self.setup_ui()
@@ -137,17 +138,16 @@ class FileViewerWidget(QtWidgets.QSplitter):
         self._loading_path = path
         self._pending_meta = None
         self._pending_content = None
+        self._target_plugin = None
         self._update_meta(path)
 
         plugin_cls = viewer_resolver.resolve(path)
         if plugin_cls is not None and issubclass(plugin_cls, _WidgetViewerPlugin):
-            self._switch_to(plugin_cls.NAME)
-            widget = self._widget_map[plugin_cls.NAME]
-            viewer_resolver.render(widget, path)
+            self._target_plugin = plugin_cls.NAME
             self._pending_content = (path, None)
             self._try_show()
         else:
-            self._switch_to(_DEFAULT_WIDGET_NAME)
+            self._target_plugin = _DEFAULT_WIDGET_NAME
             self._load_and_show_content(path)
 
     def _try_show(self):
@@ -157,9 +157,15 @@ class FileViewerWidget(QtWidgets.QSplitter):
         self._pending_content = None
         meta = self._pending_meta
         self._pending_meta = None
+
+        target = self._target_plugin or _DEFAULT_WIDGET_NAME
         if image is not None:
             self.image_viewer.set_image(image, path)
+        elif target != _DEFAULT_WIDGET_NAME:
+            widget = self._widget_map[target]
+            viewer_resolver.render(widget, path)
         self.meta_viewer.set_data(meta)
+        self._switch_to(target)
 
     def _load_and_show_content(self, path):
         if not path:

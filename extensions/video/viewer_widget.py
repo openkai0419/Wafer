@@ -1,14 +1,16 @@
-from PySide6.QtCore import Qt, QTimer, QEvent, QPoint, QRectF, QPointF
-from PySide6.QtGui import QCursor, QPalette, QColor, QPainter, QPainterPath, QPen
+from PySide6.QtCore import Qt, QTimer, QEvent, QPoint, QRectF
+from PySide6.QtGui import QCursor, QPalette, QColor, QPainter
 from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QSlider, QLabel, QAbstractButton,
 )
 from wafer.utils.formatting import dpix
 from wafer.utils.logs import AppLogger
 from wafer.core.actions.bridge import ActionKit, UI, Command
+from wafer.core.color.theme import ThemeManager
+from wafer.core.qt.icon_engine import icon_draw
 
 DEFAULT_VOLUME = 50
-_CONTROL_BAR_HEIGHT = 36
+_CONTROL_BAR_HEIGHT = 32
 _HIDE_DELAY_MS = 3000
 _POSITION_UPDATE_MS = 250
 _VOLUME_POPUP_HIDE_MS = 400
@@ -23,51 +25,51 @@ def _format_time(seconds):
     return f'{h}:{m:02d}:{s:02d}' if h else f'{m:02d}:{s:02d}'
 
 
-def _build_control_style():
+def _build_control_style(palette):
     return f"""
     #seekSlider::groove:horizontal {{
         height: {dpix(4)}px;
-        background: #555;
+        background: {palette.border_default};
         border-radius: {dpix(2)}px;
     }}
     #seekSlider::handle:horizontal {{
         width: {dpix(12)}px;
         height: {dpix(12)}px;
-        background: #fff;
+        background: {palette.text_primary};
         border-radius: {dpix(6)}px;
         margin: {-dpix(4)}px 0;
     }}
     #seekSlider::sub-page:horizontal {{
-        background: #09f;
+        background: {palette.text_accent};
         border-radius: {dpix(2)}px;
     }}
     QLabel {{
-        color: #bbb;
+        color: {palette.text_primary};
         font-size: {dpix(11)}px;
     }}
     """
 
 
-def _build_volume_popup_style():
+def _build_volume_popup_style(palette):
     return f"""
     #volumePopupSlider::groove:vertical {{
         width: {dpix(4)}px;
-        background: #555;
+        background: {palette.border_default};
         border-radius: {dpix(2)}px;
     }}
     #volumePopupSlider::handle:vertical {{
         width: {dpix(10)}px;
         height: {dpix(10)}px;
-        background: #fff;
+        background: {palette.text_primary};
         border-radius: {dpix(5)}px;
         margin: 0 {-dpix(3)}px;
     }}
     #volumePopupSlider::sub-page:vertical {{
-        background: #555;
+        background: {palette.border_default};
         border-radius: {dpix(2)}px;
     }}
     #volumePopupSlider::add-page:vertical {{
-        background: #09f;
+        background: {palette.text_accent};
         border-radius: {dpix(2)}px;
     }}
     """
@@ -89,71 +91,18 @@ class _MediaButton(QAbstractButton):
         self.update()
 
     def paintEvent(self, event):
+        palette = ThemeManager.instance().palette
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         if self.underMouse():
-            p.setBrush(QColor(255, 255, 255, 30))
+            hover = QColor(palette.text_primary)
+            hover.setAlpha(30)
+            p.setBrush(hover)
             p.setPen(Qt.PenStyle.NoPen)
             p.drawRoundedRect(self.rect(), dpix(3), dpix(3))
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor(220, 220, 220))
         r = QRectF(self.rect()).adjusted(dpix(self._padding), dpix(self._padding), -dpix(self._padding), -dpix(self._padding))
-        getattr(self, f'_draw_{self._icon_key}', self._draw_play)(p, r)
+        icon_draw(self._icon_key, p, r, QColor(palette.text_primary))
         p.end()
-
-    def _draw_play(self, p, r):
-        ox = r.width() * 0.2
-        path = QPainterPath()
-        path.moveTo(QPointF(r.left() + ox, r.top()))
-        path.lineTo(QPointF(r.right(), r.center().y()))
-        path.lineTo(QPointF(r.left() + ox, r.bottom()))
-        path.closeSubpath()
-        p.drawPath(path)
-
-    def _draw_pause(self, p, r):
-        w = r.width() * 0.3
-        p.drawRect(QRectF(r.left(), r.top(), w, r.height()))
-        p.drawRect(QRectF(r.right() - w, r.top(), w, r.height()))
-
-    def _draw_volume(self, p, r):
-        sw = r.width() * 0.35
-        sh = r.height() * 0.5
-        sy = r.center().y() - sh / 2
-        p.drawRect(QRectF(r.left(), sy, sw, sh))
-        path = QPainterPath()
-        path.moveTo(QPointF(r.left() + sw, sy))
-        path.lineTo(QPointF(r.center().x() + sw * 0.3, r.top()))
-        path.lineTo(QPointF(r.center().x() + sw * 0.3, r.bottom()))
-        path.lineTo(QPointF(r.left() + sw, sy + sh))
-        path.closeSubpath()
-        p.drawPath(path)
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        pen = QPen(QColor(220, 220, 220), dpix(1.5))
-        p.setPen(pen)
-        cx = r.center().x() + sw * 0.5
-        for i, rad in enumerate([r.height() * 0.25, r.height() * 0.4]):
-            arc_r = QRectF(cx - rad, r.center().y() - rad, rad * 2, rad * 2)
-            p.drawArc(arc_r, -45 * 16, 90 * 16)
-
-    def _draw_muted(self, p, r):
-        sw = r.width() * 0.35
-        sh = r.height() * 0.5
-        sy = r.center().y() - sh / 2
-        p.drawRect(QRectF(r.left(), sy, sw, sh))
-        path = QPainterPath()
-        path.moveTo(QPointF(r.left() + sw, sy))
-        path.lineTo(QPointF(r.center().x() + sw * 0.3, r.top()))
-        path.lineTo(QPointF(r.center().x() + sw * 0.3, r.bottom()))
-        path.lineTo(QPointF(r.left() + sw, sy + sh))
-        path.closeSubpath()
-        p.drawPath(path)
-        pen = QPen(QColor(220, 80, 80), dpix(2))
-        p.setPen(pen)
-        x1 = r.right() - r.width() * 0.25
-        p.drawLine(QPointF(x1 - dpix(3), r.center().y() - dpix(3)),
-                    QPointF(x1 + dpix(3), r.center().y() + dpix(3)))
-        p.drawLine(QPointF(x1 + dpix(3), r.center().y() - dpix(3)),
-                    QPointF(x1 - dpix(3), r.center().y() + dpix(3)))
 
     def enterEvent(self, event):
         super().enterEvent(event)
@@ -171,9 +120,6 @@ class VolumePopup(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setAutoFillBackground(True)
-        pal = self.palette()
-        pal.setColor(QPalette.ColorRole.Window, QColor(30, 30, 30, 230))
-        self.setPalette(pal)
         self.setFixedSize(dpix(48), dpix(120))
         self.setMouseTracking(True)
 
@@ -184,12 +130,19 @@ class VolumePopup(QWidget):
         self.slider.setRange(0, 100)
         self.slider.setValue(DEFAULT_VOLUME)
         layout.addWidget(self.slider)
-        self.setStyleSheet(_build_volume_popup_style())
-
         self._hide_timer = QTimer(self)
         self._hide_timer.setSingleShot(True)
         self._hide_timer.setInterval(_VOLUME_POPUP_HIDE_MS)
         self._hide_timer.timeout.connect(self.hide)
+        self.apply_theme(ThemeManager.instance().palette)
+
+    def apply_theme(self, palette):
+        pal = self.palette()
+        bg = QColor(palette.bg_primary)
+        bg.setAlpha(230)
+        pal.setColor(QPalette.ColorRole.Window, bg)
+        self.setPalette(pal)
+        self.setStyleSheet(_build_volume_popup_style(palette))
 
     def show_at(self, global_pos):
         self.move(global_pos.x() - self.width() // 2, global_pos.y() - self.height())
@@ -211,18 +164,26 @@ class VideoControlBar(QWidget):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_NativeWindow)
         self.setAutoFillBackground(True)
-        p = self.palette()
-        p.setColor(QPalette.ColorRole.Window, QColor(20, 20, 20, 200))
-        self.setPalette(p)
         self.setMouseTracking(True)
         self._setup_ui()
-        self.setStyleSheet(_build_control_style())
+        self.apply_theme(ThemeManager.instance().palette)
+
+    def apply_theme(self, palette):
+        p = self.palette()
+        bg = QColor(palette.bg_primary)
+        bg.setAlpha(200)
+        p.setColor(QPalette.ColorRole.Window, bg)
+        self.setPalette(p)
+        self.setStyleSheet(_build_control_style(palette))
+        self.volume_popup.apply_theme(palette)
+        self.btn_play.update()
+        self.btn_volume.update()
 
     def _setup_ui(self):
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(dpix(10), dpix(1), dpix(10), dpix(1))
+        layout.setContentsMargins(dpix(8), dpix(2), dpix(8), dpix(0))
 
-        self.btn_play = _MediaButton('play', padding=dpix(8))
+        self.btn_play = _MediaButton('play', padding=8)
         layout.addWidget(self.btn_play)
 
         layout.addSpacing(dpix(3))
@@ -239,7 +200,7 @@ class VideoControlBar(QWidget):
 
         layout.addSpacing(dpix(3))
 
-        self.btn_volume = _MediaButton('volume', padding=dpix(6))
+        self.btn_volume = _MediaButton('volume', padding=6)
         layout.addWidget(self.btn_volume)
 
         self.volume_popup = VolumePopup()
@@ -341,6 +302,11 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
         Command.set_checked("vview.toggle_mute", self._muted)
         Command.set_checked("vview.toggle_fit_mode", self._cover_mode)
         Command.set_checked("vview.toggle_loop", self._looping)
+
+        ThemeManager.instance().on_theme_changed.connect(self._on_theme_changed)
+
+    def _on_theme_changed(self, palette):
+        self._control_bar.apply_theme(palette)
 
     def extend_context(self, ctx, cmd, event=None, key=None, source=None):
         return {"path": self._path, "paths": [self._path] if self._path else []}

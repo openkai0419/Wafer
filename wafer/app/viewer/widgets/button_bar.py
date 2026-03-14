@@ -1,16 +1,19 @@
 from PySide6 import QtWidgets
 from PySide6.QtCore import QSize
-from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QHBoxLayout, QSizePolicy, QSpacerItem, QWidget
 from ....utils.formatting import dpix
+from ....core.qt.icon_engine import themed_icon
+from ....core.color.theme import ThemeManager
+
 class IconButtonConfig:
 
-    def __init__(self, icon_path, tooltip='', callback=None, checkable=False, checked=False):
-        self.icon_path = icon_path
+    def __init__(self, icon_key, tooltip='', callback=None, checkable=False, checked=False, padding=0.15):
+        self.icon_key = icon_key
         self.tooltip = tooltip
         self.callback = callback
         self.checkable = checkable
         self.checked = checked
+        self.padding = padding
 
 class IconButtonBar(QWidget):
 
@@ -19,18 +22,25 @@ class IconButtonBar(QWidget):
         self.icon_size = icon_size or QSize(dpix(15), dpix(15))
         self.left_buttons = []
         self.right_buttons = []
+        self._icon_keys: list[tuple[QtWidgets.QPushButton, str, float]] = []
         self.layout = QHBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.layout.setSpacing(0)
         self._add_button_group(left_buttons or [], side='left')
         self._add_spacer()
         self._add_button_group(right_buttons or [], side='right')
+        ThemeManager.instance().on_theme_changed.connect(self._on_theme_changed)
+
+    def _on_theme_changed(self, palette):
+        for btn, key, pad in self._icon_keys:
+            btn.setIcon(themed_icon(key, padding=pad))
 
     def _add_button_group(self, configs, side='left'):
         for cfg in configs:
             btn = QtWidgets.QPushButton()
-            btn.setIcon(QIcon(cfg.icon_path))
+            btn.setIcon(themed_icon(cfg.icon_key, padding=cfg.padding))
             btn.setIconSize(self.icon_size)
+            self._icon_keys.append((btn, cfg.icon_key, cfg.padding))
             btn.setToolTip(cfg.tooltip)
             btn.setCheckable(cfg.checkable)
             if btn.isCheckable():

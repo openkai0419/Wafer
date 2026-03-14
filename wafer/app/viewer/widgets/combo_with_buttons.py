@@ -1,7 +1,10 @@
 import sys
-from PySide6.QtCore import QSignalBlocker, Qt, Signal
+from PySide6.QtCore import QSignalBlocker, QSize, Qt, Signal
 from PySide6.QtWidgets import QApplication, QComboBox, QHBoxLayout, QPushButton, QWidget
 from ....core.lang.manager import TranslatorMixin
+from ....core.qt.icon_engine import themed_icon
+from ....core.color.theme import ThemeManager
+
 class ComboBoxWithButtons(QWidget, TranslatorMixin):
     addClicked = Signal()
     removeClicked = Signal()
@@ -10,8 +13,10 @@ class ComboBoxWithButtons(QWidget, TranslatorMixin):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.combo = QComboBox()
-        self.button_add = QPushButton('+')
-        self.button_remove = QPushButton('-')
+        self.button_add = QPushButton()
+        self.button_add.setIcon(themed_icon('plus', padding=0.15))
+        self.button_remove = QPushButton()
+        self.button_remove.setIcon(themed_icon('minus', padding=0.15))
         self.combo.currentIndexChanged.connect(self.on_changed)
         self.button_add.setToolTip(self.t.tr('Add item'))
         self.button_remove.setToolTip(self.t.tr('Remove current item'))
@@ -25,11 +30,20 @@ class ComboBoxWithButtons(QWidget, TranslatorMixin):
         self.setLayout(layout)
         self.button_add.clicked.connect(self.addClicked.emit)
         self.button_remove.clicked.connect(self.removeClicked.emit)
+        ThemeManager.instance().on_theme_changed.connect(self._on_theme_changed)
+
+    def _on_theme_changed(self, palette):
+        self.button_add.setIcon(themed_icon('plus', padding=0.15))
+        self.button_remove.setIcon(themed_icon('minus', padding=0.15))
 
     def resizeEvent(self, event):
         h = self.combo.height()
         self.button_add.setFixedSize(h, h)
         self.button_remove.setFixedSize(h, h)
+        isz = max(1, int(h * 0.55))
+        icon_sz = QSize(isz, isz)
+        self.button_add.setIconSize(icon_sz)
+        self.button_remove.setIconSize(icon_sz)
         return super().resizeEvent(event)
 
     def addItem(self, text):

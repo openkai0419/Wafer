@@ -387,3 +387,53 @@ class TestVideoViewerWidgetDefaultState:
         w = VideoViewerWidget()
         assert w._muted is False
         w.cleanup()
+
+
+class TestThemeIntegration:
+    def test_control_bar_uses_palette_bg(self, qtbot):
+        from extensions.video.viewer_widget import VideoControlBar
+        from wafer.core.color.theme import ThemeManager
+        bar = VideoControlBar()
+        palette = ThemeManager.instance().palette
+        bg = bar.palette().color(QtWidgets.QWidget().backgroundRole())
+        from PySide6.QtGui import QColor
+        expected = QColor(palette.bg_primary)
+        expected.setAlpha(200)
+        assert bg.red() == expected.red()
+        assert bg.green() == expected.green()
+        assert bg.blue() == expected.blue()
+
+    def test_apply_theme_updates_stylesheet(self, qtbot):
+        from extensions.video.viewer_widget import VideoControlBar
+        from wafer.core.color.theme_palette import DARK, LIGHT
+        bar = VideoControlBar()
+        bar.apply_theme(LIGHT)
+        style = bar.styleSheet()
+        assert LIGHT.text_accent in style
+        assert LIGHT.border_default in style
+        bar.apply_theme(DARK)
+        style = bar.styleSheet()
+        assert DARK.text_accent in style
+
+    def test_volume_popup_theme_applied(self, qtbot):
+        from extensions.video.viewer_widget import VolumePopup
+        from wafer.core.color.theme_palette import LIGHT
+        popup = VolumePopup()
+        popup.apply_theme(LIGHT)
+        style = popup.styleSheet()
+        assert LIGHT.text_accent in style
+        popup.close()
+
+    def test_theme_change_propagates_to_control_bar(self, qtbot):
+        from extensions.video.viewer_widget import VideoViewerWidget
+        from wafer.core.color.theme import ThemeManager
+        from wafer.core.color.theme_palette import LIGHT, DARK
+        w = VideoViewerWidget()
+        tm = ThemeManager.instance()
+        tm.set_light()
+        style = w._control_bar.styleSheet()
+        assert LIGHT.text_accent in style
+        tm.set_dark()
+        style = w._control_bar.styleSheet()
+        assert DARK.text_accent in style
+        w.cleanup()

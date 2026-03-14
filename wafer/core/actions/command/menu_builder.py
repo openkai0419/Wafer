@@ -543,7 +543,12 @@ class MenuBuilder:
             return self._menu
         tokens = plan.resolve_tokens()
         parent = self._resolve_parent()
-        cache_key = (id(parent), tuple(tokens), selection_callback is not None, allow_options_with_selection)
+        if selection_callback is not None:
+            self._menu = StickyMenu(self._ctx_parent)
+            self._menu.setProperty(COMMAND_MENU_MARKER, True)
+            self._builder._install_hotkey_alignment(self._menu)
+            return self._build_into(tokens, selection_callback, allow_options_with_selection)
+        cache_key = (id(parent), tuple(tokens), False, allow_options_with_selection)
         cached = CommandMenuBuilder._menu_cache.get(cache_key)
         if cached is not None:
             self._builder._active_seed_ctx = self._seed_ctx
@@ -553,7 +558,7 @@ class MenuBuilder:
         self._menu = StickyMenu(self._ctx_parent)
         self._menu.setProperty(COMMAND_MENU_MARKER, True)
         self._builder._install_hotkey_alignment(self._menu)
-        result = self._build_into(tokens, selection_callback, allow_options_with_selection)
+        result = self._build_into(tokens, None, allow_options_with_selection)
         CommandMenuBuilder._menu_cache[cache_key] = result
         return result
 

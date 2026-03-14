@@ -1,4 +1,8 @@
 {
+  "Autoplay on Select": {
+    "en": "Autoplay on Select",
+    "ja": ""
+  },
   "Contain/Cover": {
     "en": "Contain/Cover",
     "ja": ""
@@ -756,24 +760,24 @@
     "en": "Reset to Defaults",
     "ja": "初期設定に戻す"
   },
-  "Standalone Action": {
-    "en": "Standalone Action",
-    "ja": " 単独での機能"
+  "★ No Modifier": {
+    "en": "★ No Modifier",
+    "ja": "★ 修飾なし"
   },
-  "{button} + Hold": {
-    "en": "{button} + Hold",
+  "{button} +": {
+    "en": "{button}+",
     "ja": "{button} 押しながら"
   },
-  "Hold Shift": {
-    "en": "Hold Shift",
+  "Shift +": {
+    "en": "Shift+",
     "ja": "Shift 押しながら"
   },
-  "Hold Ctrl": {
-    "en": "Hold Ctrl",
+  "Ctrl +": {
+    "en": "Ctrl+",
     "ja": "Ctrl 押しながら"
   },
-  "Hold Alt": {
-    "en": "Hold Alt",
+  "Alt +": {
+    "en": "Alt+",
     "ja": "Alt 押しながら"
   },
   "None (Unset)": {
@@ -838,9 +842,9 @@
     "en": "(All)",
     "ja": "(すべて)"
   },
-  "Per-Widget": {
-    "en": "Per-Widget",
-    "ja": "専用"
+  "Override": {
+    "en": "Override",
+    "ja": "個別設定"
   },
   "No more widgets": {
     "en": "No more widgets"

@@ -1,5 +1,6 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 from ....utils.formatting import dpix
+from ....core.color.theme import ThemeManager
 from ....core.lang.manager import TranslatorMixin
 from ..session import SESSION_COLORS
 
@@ -31,13 +32,14 @@ class ColorPalette(QtWidgets.QWidget):
         layout = QtWidgets.QHBoxLayout(self)
         layout.setContentsMargins(dpix(4), dpix(4), dpix(4), dpix(4))
         layout.setSpacing(dpix(4))
+        p = ThemeManager.instance().palette
         for c in SESSION_COLORS:
             btn = QtWidgets.QPushButton()
             btn.setFixedSize(dpix(20), dpix(20))
-            border = f'{dpix(2)}px solid white' if c == current else f'{dpix(2)}px solid transparent'
+            border = f'{dpix(2)}px solid {p.text_primary}' if c == current else f'{dpix(2)}px solid transparent'
             btn.setStyleSheet(
                 f"QPushButton {{ background: {c}; border: {border}; border-radius: {dpix(10)}px; }}"
-                f"QPushButton:hover {{ border: {dpix(2)}px solid #ccc; }}"
+                f"QPushButton:hover {{ border: {dpix(2)}px solid {p.border_default}; }}"
             )
             btn.setCursor(QtCore.Qt.PointingHandCursor)
             btn.clicked.connect(lambda checked=False, color=c: self.color_selected.emit(color))
@@ -46,9 +48,9 @@ class ColorPalette(QtWidgets.QWidget):
         btn_none.setFixedSize(dpix(20), dpix(20))
         btn_none.setToolTip("No color")
         btn_none.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: #888; border: {dpix(1)}px solid #555;"
+            f"QPushButton {{ background: transparent; color: {p.text_muted}; border: {dpix(1)}px solid {p.border_default};"
             f"  border-radius: {dpix(10)}px; font-size: {dpix(10)}px; }}"
-            f"QPushButton:hover {{ color: white; border-color: #ccc; }}"
+            f"QPushButton:hover {{ color: {p.text_primary}; border-color: {p.border_default}; }}"
         )
         btn_none.setCursor(QtCore.Qt.PointingHandCursor)
         btn_none.clicked.connect(lambda: self.color_selected.emit(''))
@@ -62,37 +64,49 @@ class SessionItemWidget(QtWidgets.QWidget):
     open_requested = QtCore.Signal(str)
     color_requested = QtCore.Signal(str)
 
+    @staticmethod
+    def _hover_bg():
+        return ThemeManager.instance().palette.bg_hover
+
+    @staticmethod
+    def _press_bg():
+        return ThemeManager.instance().palette.bg_pressed
+
     def __init__(self, session_id: str, name: str, color: str = '',
                  alive: bool = False, current: bool = False, parent=None):
         super().__init__(parent)
         self.session_id = session_id
+        self.setCursor(QtCore.Qt.PointingHandCursor)
+        self.setAttribute(QtCore.Qt.WA_StyledBackground)
+        self._radius = dpix(4)
+        self.setStyleSheet(f"border-radius: {self._radius}px;")
+
         layout = QtWidgets.QHBoxLayout(self)
         layout.setContentsMargins(dpix(8), dpix(3), dpix(4), dpix(3))
         layout.setSpacing(dpix(4))
 
-        if color:
-            layout.addWidget(ColorDot(color, 10))
+        p = ThemeManager.instance().palette
+
+        if alive:
+            dot = QtWidgets.QLabel("\u25CF")
+            dot.setStyleSheet(f"color: {p.success}; font-size: {dpix(10)}px; background: transparent;")
+            dot.setToolTip("Running")
+            layout.addWidget(dot)
 
         display = f'{name}' if current else name
         self._label = QtWidgets.QLabel(display)
         self._label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-        self._label.setCursor(QtCore.Qt.PointingHandCursor)
-        label_color = '#7cb3ff' if current else 'white'
-        self._label.setStyleSheet(f"color: {label_color}; font-size: {dpix(13)}px;")
-        self._label.mousePressEvent = lambda _: self.open_requested.emit(self.session_id)
+        label_color = p.text_accent if current else p.text_primary
+        self._label.setStyleSheet(
+            f"color: {label_color}; font-size: {dpix(13)}px; background: transparent;"
+        )
         layout.addWidget(self._label)
-
-        if alive:
-            dot = QtWidgets.QLabel("\u25CF")
-            dot.setStyleSheet(f"color: #4CAF50; font-size: {dpix(10)}px;")
-            dot.setToolTip("Running")
-            layout.addWidget(dot)
 
         btn_color = QtWidgets.QPushButton("\u25CF")
         btn_color.setFixedSize(dpix(22), dpix(22))
         btn_color.setToolTip("Color")
         btn_color.setCursor(QtCore.Qt.PointingHandCursor)
-        btn_color.setStyleSheet(self._btn_style())
+        btn_color.setStyleSheet(self._color_btn_style(color, p))
         btn_color.clicked.connect(lambda: self.color_requested.emit(self.session_id))
         layout.addWidget(btn_color)
 
@@ -112,12 +126,47 @@ class SessionItemWidget(QtWidgets.QWidget):
         btn_delete.clicked.connect(lambda: self.delete_requested.emit(self.session_id))
         layout.addWidget(btn_delete)
 
+    def enterEvent(self, event):
+        self.setStyleSheet(
+            f"background: {self._hover_bg()}; border-radius: {self._radius}px;"
+        )
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.setStyleSheet(f"border-radius: {self._radius}px;")
+        super().leaveEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == QtCore.Qt.LeftButton:
+            self.setStyleSheet(
+                f"background: {self._press_bg()}; border-radius: {self._radius}px;"
+            )
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == QtCore.Qt.LeftButton:
+            self.setStyleSheet(
+                f"background: {self._hover_bg()}; border-radius: {self._radius}px;"
+            )
+            self.open_requested.emit(self.session_id)
+        super().mouseReleaseEvent(event)
+
     @staticmethod
     def _btn_style():
+        p = ThemeManager.instance().palette
         fs = dpix(13)
         return (
-            f"QPushButton {{ background: transparent; color: #aaa; border: none; font-size: {fs}px; }}"
-            f"QPushButton:hover {{ color: white; background: rgba(255,255,255,0.1); border-radius: {dpix(3)}px; }}"
+            f"QPushButton {{ background: transparent; color: {p.text_secondary}; border: none; font-size: {fs}px; }}"
+            f"QPushButton:hover {{ color: {p.text_primary}; background: {p.bg_hover}; border-radius: {dpix(3)}px; }}"
+        )
+
+    @staticmethod
+    def _color_btn_style(color: str, p):
+        fs = dpix(13)
+        text_color = color if color else p.text_secondary
+        return (
+            f"QPushButton {{ background: transparent; color: {text_color}; border: none; font-size: {fs}px; }}"
+            f"QPushButton:hover {{ color: {text_color}; background: {p.bg_hover}; border-radius: {dpix(3)}px; }}"
         )
 
 
@@ -140,12 +189,13 @@ class SessionPopup(QtWidgets.QFrame, TranslatorMixin):
 
         self._container = QtWidgets.QWidget()
         self._container.setObjectName("session_popup_container")
+        p = ThemeManager.instance().palette
         self._container.setStyleSheet(
-            "#session_popup_container {"
-            "  background: #2b2b2b;"
-            "  border: 1px solid #555;"
-            "  border-radius: 6px;"
-            "}"
+            f"#session_popup_container {{"
+            f"  background: {p.bg_elevated};"
+            f"  border: 1px solid {p.border_default};"
+            f"  border-radius: 6px;"
+            f"}}"
         )
         self._outer.addWidget(self._container)
 
@@ -156,16 +206,17 @@ class SessionPopup(QtWidgets.QFrame, TranslatorMixin):
         btn_new = QtWidgets.QPushButton(f"+ {self.t.tr('New Window')}")
         btn_new.setCursor(QtCore.Qt.PointingHandCursor)
         btn_new.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: #7cb3ff; border: none;"
+            f"QPushButton {{ background: transparent; color: {p.text_accent}; border: none;"
             f"  font-size: {dpix(13)}px; padding: {dpix(6)}px {dpix(8)}px; text-align: left; }}"
-            f"QPushButton:hover {{ background: rgba(255,255,255,0.08); border-radius: {dpix(4)}px; }}"
+            f"QPushButton:hover {{ background: {p.bg_hover}; border-radius: {dpix(4)}px; }}"
+            f"QPushButton:pressed {{ background: {p.bg_pressed}; border-radius: {dpix(4)}px; }}"
         )
         btn_new.clicked.connect(self._on_create)
         self._layout.addWidget(btn_new)
 
         sep = QtWidgets.QFrame()
         sep.setFrameShape(QtWidgets.QFrame.HLine)
-        sep.setStyleSheet("color: #444;")
+        sep.setStyleSheet(f"color: {p.border_subtle};")
         self._layout.addWidget(sep)
 
         self._list_layout = QtWidgets.QVBoxLayout()
@@ -192,7 +243,8 @@ class SessionPopup(QtWidgets.QFrame, TranslatorMixin):
             self._list_layout.addWidget(row)
         if not sessions:
             empty = QtWidgets.QLabel(self.t.tr("No saved sessions"))
-            empty.setStyleSheet(f"color: #888; font-size: {dpix(12)}px; padding: {dpix(8)}px;")
+            p = ThemeManager.instance().palette
+            empty.setStyleSheet(f"color: {p.text_muted}; font-size: {dpix(12)}px; padding: {dpix(8)}px;")
             empty.setAlignment(QtCore.Qt.AlignCenter)
             self._list_layout.addWidget(empty)
 

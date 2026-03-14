@@ -155,7 +155,7 @@ class ScopedPayloadSectionBase(TranslatorMixin, QtWidgets.QGroupBox):
         self.btn_global.clicked.connect(lambda: self._pick_cmd("*"))
         header.addWidget(self.btn_global, 0)
         self.btn_overrides = QtWidgets.QToolButton(self)
-        self.btn_overrides.setText(self.t.tr("Per-Widget"))
+        self.btn_overrides.setText(self.t.tr("Override"))
         self.btn_overrides.setPopupMode(QtWidgets.QToolButton.InstantPopup)
         self.ov_menu = QtWidgets.QMenu(self.btn_overrides)
         self.ov_menu.aboutToShow.connect(self._refresh_overrides_menu)

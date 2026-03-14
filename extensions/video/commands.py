@@ -26,6 +26,12 @@ def toggle_appear_autoplay(ctx, sm):
     Command.set_checked("vgrid.toggle_appear_autoplay", sm.appear_autoplay)
 
 
+@require(sm="VideoSlotManager")
+def toggle_select_autoplay(ctx, sm):
+    sm.select_autoplay = not sm.select_autoplay
+    Command.set_checked("vgrid.toggle_select_autoplay", sm.select_autoplay)
+
+
 class VideoGridCommands(MenuGroup):
     NAME = "Video Grid"
     PRIORITY = 1000
@@ -48,6 +54,13 @@ class VideoGridCommands(MenuGroup):
             ),
             "-",
             ":Autoplay",
+            CommandMeta(
+                path="vgrid.toggle_select_autoplay",
+                display="Autoplay on Select",
+                func=toggle_select_autoplay,
+                checkable=True,
+                default_checked=True,
+            ),
             CommandMeta(
                 path="vgrid.toggle_hover_autoplay",
                 display="Autoplay on Hover",

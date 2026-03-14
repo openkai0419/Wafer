@@ -1,6 +1,7 @@
 from PySide6 import QtCore, QtWidgets
 from ...utils.paths import data_db_path, setting_db_path, list_setting_db_names
 from ...utils.formatting import dpix
+from ...core.color.theme import ThemeManager
 from ...utils.profiling import profiler
 from ...utils.logs import AppLogger
 from ...utils.notifier import Notifier
@@ -128,6 +129,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         label = f'\u25BC {entry.name}' if entry and entry.name else '\u25BC Window'
         btn.setText(label)
         color = entry.color if entry and entry.color else ''
+        p = ThemeManager.instance().palette
         fs = dpix(12)
         pad_v = dpix(3)
         pad_h = dpix(8)
@@ -136,16 +138,18 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         br = dpix(4)
         if color:
             btn.setStyleSheet(
-                f"QPushButton {{ background: transparent; color: #ccc;"
+                f"QPushButton {{ background: transparent; color: {p.text_primary};"
                 f"  border: {bw}px solid {color}; border-left: {bw_l}px solid {color};"
                 f"  border-radius: {br}px; padding: {pad_v}px {pad_h}px; font-size: {fs}px; text-align: left; }}"
-                f"QPushButton:hover {{ background: rgba(255,255,255,0.08); color: white; }}"
+                f"QPushButton:hover {{ background: {p.bg_hover}; color: {p.text_accent}; }}"
+                f"QPushButton:pressed {{ background: {p.bg_pressed}; color: {p.text_accent}; }}"
             )
         else:
             btn.setStyleSheet(
-                f"QPushButton {{ background: transparent; color: #ccc; border: {bw}px solid #555;"
+                f"QPushButton {{ background: transparent; color: {p.text_primary}; border: {bw}px solid {p.border_default};"
                 f"  border-radius: {br}px; padding: {pad_v}px {pad_h}px; font-size: {fs}px; text-align: left; }}"
-                f"QPushButton:hover {{ background: rgba(255,255,255,0.08); color: white; }}"
+                f"QPushButton:hover {{ background: {p.bg_hover}; color: {p.text_accent}; }}"
+                f"QPushButton:pressed {{ background: {p.bg_pressed}; color: {p.text_accent}; }}"
             )
 
     def changeEvent(self, event):

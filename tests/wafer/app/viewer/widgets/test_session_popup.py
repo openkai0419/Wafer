@@ -1,5 +1,6 @@
 import pytest
 from unittest.mock import MagicMock
+from wafer.core.color.theme import ThemeManager
 from wafer.app.viewer.widgets.session_popup import (
     SessionItemWidget, SessionPopup, ColorDot, ColorPalette,
 )
@@ -56,12 +57,14 @@ class TestSessionItemWidget:
         item = SessionItemWidget('s1', 'Work', current=True)
         qtbot.addWidget(item)
         assert item._label.text() == 'Work'
-        assert '#7cb3ff' in item._label.styleSheet()
+        p = ThemeManager.instance().palette
+        assert p.text_accent in item._label.styleSheet()
 
     def test_not_current_label(self, qtbot):
         item = SessionItemWidget('s1', 'Work', current=False)
         qtbot.addWidget(item)
-        assert 'white' in item._label.styleSheet()
+        p = ThemeManager.instance().palette
+        assert p.text_primary in item._label.styleSheet()
 
     def test_alive_dot_present(self, qtbot):
         item = SessionItemWidget('s1', 'Work', alive=True)
@@ -105,6 +108,44 @@ class TestSessionItemWidget:
             color_btn.click()
         assert sig.args == ['s1']
 
+    def test_hover_changes_background(self, qtbot):
+        from PySide6 import QtCore, QtGui
+        item = SessionItemWidget('s1', 'Work')
+        qtbot.addWidget(item)
+        enter_ev = QtGui.QEnterEvent(
+            QtCore.QPointF(5, 5), QtCore.QPointF(5, 5), QtCore.QPointF(5, 5),
+        )
+        item.enterEvent(enter_ev)
+        assert 'background' in item.styleSheet()
+        item.leaveEvent(QtCore.QEvent(QtCore.QEvent.Leave))
+        assert 'background' not in item.styleSheet()
+
+    def test_press_changes_background(self, qtbot):
+        from PySide6 import QtCore, QtGui
+        item = SessionItemWidget('s1', 'Work')
+        qtbot.addWidget(item)
+        press_ev = QtGui.QMouseEvent(
+            QtCore.QEvent.MouseButtonPress,
+            QtCore.QPointF(5, 5), QtCore.Qt.LeftButton,
+            QtCore.Qt.LeftButton, QtCore.Qt.NoModifier,
+        )
+        item.mousePressEvent(press_ev)
+        p = ThemeManager.instance().palette
+        assert p.bg_pressed in item.styleSheet()
+
+    def test_release_emits_open(self, qtbot):
+        from PySide6 import QtCore, QtGui
+        item = SessionItemWidget('s1', 'Work')
+        qtbot.addWidget(item)
+        release_ev = QtGui.QMouseEvent(
+            QtCore.QEvent.MouseButtonRelease,
+            QtCore.QPointF(5, 5), QtCore.Qt.LeftButton,
+            QtCore.Qt.LeftButton, QtCore.Qt.NoModifier,
+        )
+        with qtbot.waitSignal(item.open_requested) as sig:
+            item.mouseReleaseEvent(release_ev)
+        assert sig.args == ['s1']
+
 
 class TestSessionPopup:
 
@@ -122,9 +163,10 @@ class TestSessionPopup:
             current_session_id='s1',
         )
         row = popup._list_layout.itemAt(0).widget()
-        assert '#7cb3ff' in row._label.styleSheet()
+        p = ThemeManager.instance().palette
+        assert p.text_accent in row._label.styleSheet()
         row2 = popup._list_layout.itemAt(1).widget()
-        assert 'white' in row2._label.styleSheet()
+        assert p.text_primary in row2._label.styleSheet()
 
     def test_populate_empty_placeholder(self, qtbot):
         popup = SessionPopup()

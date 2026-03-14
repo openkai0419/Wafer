@@ -61,6 +61,7 @@ class VideoGridPlugin(WidgetGridPlugin):
             'volume': sm.volume,
             'hover_autoplay': sm.hover_autoplay,
             'appear_autoplay': sm.appear_autoplay,
+            'select_autoplay': sm.select_autoplay,
             'max_selected': sm._max_selected,
         }
 
@@ -78,5 +79,7 @@ class VideoGridPlugin(WidgetGridPlugin):
         sm.set_max_selected(state.get('max_selected', 3))
         sm.hover_autoplay = state.get('hover_autoplay', True)
         sm.appear_autoplay = state.get('appear_autoplay', True)
+        sm.select_autoplay = state.get('select_autoplay', True)
         Command.set_checked('vgrid.toggle_hover_autoplay', sm.hover_autoplay)
         Command.set_checked('vgrid.toggle_appear_autoplay', sm.appear_autoplay)
+        Command.set_checked('vgrid.toggle_select_autoplay', sm.select_autoplay)

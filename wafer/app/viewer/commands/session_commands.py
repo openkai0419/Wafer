@@ -2,6 +2,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from ....core.actions.bridge import ActionKit
 from ....core.actions.command.require import require
+from ....core.color.theme import ThemeManager
 from ....core.qt.dialog import InputDialog
 from ....core.platform.process import AppProcess
 from ....utils.logs import AppLogger
@@ -273,7 +274,8 @@ def color_session(ctx, w, session: str = '', sid: str = '', popup=None):
     palette = ColorPalette(current=entry.color, parent=w)
     palette.setWindowFlags(QtCore.Qt.Popup | QtCore.Qt.FramelessWindowHint)
     palette.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-    palette.setStyleSheet("background: #2b2b2b; border: 1px solid #555; border-radius: 4px;")
+    _p = ThemeManager.instance().palette
+    palette.setStyleSheet(f"background: {_p.bg_elevated}; border: 1px solid {_p.border_default}; border-radius: 4px;")
 
     _sid = entry.session_id
 

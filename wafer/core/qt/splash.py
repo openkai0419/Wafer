@@ -1,6 +1,7 @@
 from PySide6 import QtWidgets, QtCore, QtGui
 
 from ...utils.formatting import dpix
+from ..color.theme import ThemeManager
 
 
 class InstallSplash(QtWidgets.QWidget):
@@ -12,7 +13,8 @@ class InstallSplash(QtWidgets.QWidget):
         w, h = dpix(360), dpix(80)
         self.setFixedSize(w, h)
         self.setWindowFlags(QtCore.Qt.Window | QtCore.Qt.FramelessWindowHint)
-        self.setStyleSheet('background:#2b2b2b;')
+        p = ThemeManager.instance().palette
+        self.setStyleSheet(f'background:{p.bg_secondary};')
 
         icon_size = dpix(48)
         margin = dpix(16)
@@ -27,7 +29,7 @@ class InstallSplash(QtWidgets.QWidget):
         text_width = w - margin * 3 - icon_size
         self._label = QtWidgets.QLabel(message, self)
         self._label.setAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft)
-        self._label.setStyleSheet(f'color:#cccccc; font-size:{dpix(14)}px;')
+        self._label.setStyleSheet(f'color:{p.text_primary}; font-size:{dpix(14)}px;')
         self._label.setGeometry(text_left, 0, text_width, h)
         self._drag_pos = None
 

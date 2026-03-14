@@ -43,7 +43,9 @@ class MouseBindingEditor(BindingEditorBase):
         self.scroll = QtWidgets.QScrollArea(self.splitter)
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
-        self.scroll.setStyleSheet("QScrollArea{border:none;} QScrollArea> QWidget{background:#000;}")
+        from wafer.core.color.theme import ThemeManager
+        _p = ThemeManager.instance().palette
+        self.scroll.setStyleSheet(f"QScrollArea{{border:none;}} QScrollArea> QWidget{{background:{_p.bg_primary};}}")
         self.panel = QtWidgets.QWidget(self.scroll)
         self.panel.setAttribute(QtCore.Qt.WA_StyledBackground, True)
         self.scroll.setWidget(self.panel)
@@ -209,20 +211,20 @@ class MouseSection(ScopedPayloadSectionBase):
         self.set_header_button_text(t)
     def _title(self) -> str:
         if self.qualifier.kind == "none":
-            return self.t.tr("Standalone Action")
+            return self.t.tr("★ No Modifier")
         if self.qualifier.kind == "mouse":
             b = self.qualifier.value
             if isinstance(b, MouseButton):
-                return self.t("{button} + Hold", button=b.name)
+                return self.t("{button} +", button=b.name)
             return "(invalid)"
         if self.qualifier.kind == "modifier":
             m = self.qualifier.value
             if m == ModifierKey.SHIFT:
-                return self.t.tr("Hold Shift")
+                return self.t.tr("Shift +")
             if m == ModifierKey.CTRL:
-                return self.t.tr("Hold Ctrl")
+                return self.t.tr("Ctrl +")
             if m == ModifierKey.ALT:
-                return self.t.tr("Hold Alt")
+                return self.t.tr("Alt +")
             return "(invalid)"
         return "(invalid)"
     def load_from_data(self, data: dict[MouseActionKey, dict[str,CommandPayload]]):

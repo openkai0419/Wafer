@@ -161,6 +161,7 @@ def test_save_state_returns_slot_manager_values():
     sm.volume = 75
     sm.hover_autoplay = False
     sm.appear_autoplay = True
+    sm.select_autoplay = True
     sm._max_selected = 5
     old = MpvCellWidget._slot_manager
     MpvCellWidget._slot_manager = sm
@@ -171,6 +172,7 @@ def test_save_state_returns_slot_manager_values():
             'volume': 75,
             'hover_autoplay': False,
             'appear_autoplay': True,
+            'select_autoplay': True,
             'max_selected': 5,
         }
     finally:
@@ -190,12 +192,14 @@ def test_restore_state_applies_values():
                 'volume': 60,
                 'hover_autoplay': False,
                 'appear_autoplay': True,
+                'select_autoplay': False,
                 'max_selected': 4,
             })
         sm.set_volume.assert_called_once_with(60)
         sm.set_max_selected.assert_called_once_with(4)
         assert sm.hover_autoplay == False
         assert sm.appear_autoplay == True
+        assert sm.select_autoplay == False
     finally:
         MpvCellWidget._slot_manager = old
 
@@ -231,6 +235,7 @@ def test_deferred_restore_applied_on_init_shared(qtbot):
             'volume': 55,
             'hover_autoplay': False,
             'appear_autoplay': False,
+            'select_autoplay': False,
             'max_selected': 7,
         })
         assert MpvCellWidget._pending_grid_state is not None
@@ -248,6 +253,7 @@ def test_deferred_restore_applied_on_init_shared(qtbot):
         sm.set_max_selected.assert_called_once_with(7)
         assert sm.hover_autoplay is False
         assert sm.appear_autoplay is False
+        assert sm.select_autoplay is False
         assert MpvCellWidget._pending_grid_state is None
     finally:
         MpvCellWidget._slot_manager = old_sm

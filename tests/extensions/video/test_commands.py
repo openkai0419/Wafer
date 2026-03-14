@@ -195,6 +195,62 @@ class TestAppearAutoplayFlag:
         cell._slot_manager.activate_appear.assert_called_once()
 
 
+class TestToggleSelectAutoplay:
+    def test_toggle_select_off(self):
+        from extensions.video.commands import toggle_select_autoplay
+        sm = MagicMock()
+        sm.select_autoplay = True
+        ctx = _make_ctx(sm)
+        with patch("extensions.video.commands.Command"):
+            toggle_select_autoplay(ctx)
+        assert sm.select_autoplay is False
+
+    def test_toggle_select_on(self):
+        from extensions.video.commands import toggle_select_autoplay
+        sm = MagicMock()
+        sm.select_autoplay = False
+        ctx = _make_ctx(sm)
+        with patch("extensions.video.commands.Command"):
+            toggle_select_autoplay(ctx)
+        assert sm.select_autoplay is True
+
+    def test_set_checked_uses_vgrid_path(self):
+        from extensions.video.commands import toggle_select_autoplay
+        sm = MagicMock()
+        sm.select_autoplay = True
+        ctx = _make_ctx(sm)
+        with patch("extensions.video.commands.Command") as cmd:
+            toggle_select_autoplay(ctx)
+            cmd.set_checked.assert_called_once_with("vgrid.toggle_select_autoplay", False)
+
+    def test_noop_without_instance(self):
+        from extensions.video.commands import toggle_select_autoplay
+        ctx = _make_ctx(None)
+        with patch("extensions.video.commands.Command") as cmd:
+            toggle_select_autoplay(ctx)
+            cmd.set_checked.assert_not_called()
+
+
+class TestSelectAutoplayFlag:
+    def test_on_selected_skipped_when_select_disabled(self):
+        from extensions.video.widget import MpvCellWidget
+        cell = MagicMock(spec=MpvCellWidget)
+        cell._path = '/test.mp4'
+        cell._slot_manager = MagicMock()
+        cell._slot_manager.select_autoplay = False
+        MpvCellWidget.on_selected(cell)
+        cell._slot_manager.activate_select.assert_not_called()
+
+    def test_on_selected_called_when_select_enabled(self):
+        from extensions.video.widget import MpvCellWidget
+        cell = MagicMock(spec=MpvCellWidget)
+        cell._path = '/test.mp4'
+        cell._slot_manager = MagicMock()
+        cell._slot_manager.select_autoplay = True
+        MpvCellWidget.on_selected(cell)
+        cell._slot_manager.activate_select.assert_called_once()
+
+
 class TestSlotManagerSetVolume:
     def test_set_volume_stores_and_propagates(self):
         from extensions.video.widget import PlaybackSlotManager
@@ -302,6 +358,7 @@ class TestVideoGridCommandsMenuGroup:
         assert "vgrid.set_max_playback_slots" in paths
         assert "vgrid.toggle_hover_autoplay" in paths
         assert "vgrid.toggle_appear_autoplay" in paths
+        assert "vgrid.toggle_select_autoplay" in paths
 
 
 @pytest.fixture()
@@ -324,6 +381,7 @@ def mock_slot_manager():
     sm = MagicMock()
     sm.hover_autoplay = True
     sm.appear_autoplay = True
+    sm.select_autoplay = True
     sm.volume = 40
     reg.register("VideoSlotManager", sm)
     yield sm
@@ -366,8 +424,17 @@ class TestRegistryExecution:
             video_registry.execute("vgrid.toggle_appear_autoplay", ctx=ctx)
         assert mock_slot_manager.appear_autoplay is False
 
+    def test_toggle_select_via_registry(self, video_registry, mock_slot_manager):
+        from wafer.core.actions.command.context import CommandContext
+        assert mock_slot_manager.select_autoplay is True
+        ctx = CommandContext.create(None, "*", source="menu")
+        with patch("extensions.video.commands.Command"):
+            video_registry.execute("vgrid.toggle_select_autoplay", ctx=ctx)
+        assert mock_slot_manager.select_autoplay is False
+
     def test_registered_command_ids(self, video_registry):
         assert video_registry.has_command("vgrid.set_volume")
         assert video_registry.has_command("vgrid.set_max_playback_slots")
         assert video_registry.has_command("vgrid.toggle_hover_autoplay")
         assert video_registry.has_command("vgrid.toggle_appear_autoplay")
+        assert video_registry.has_command("vgrid.toggle_select_autoplay")

@@ -173,3 +173,12 @@ Widget初期化時のデフォルト状態と乖離するため、以下の同�
 - SelectionManager.set_selected(indexes, last)のlastはリスト内位置インデックス
 - get_resource_path()はpytest時にCWDフォールバックで_resourcesを解決
 - PowerShellで日本語ファイルを編集するとエンコーディング破損する。日本語テキストはcreate_fileツールかPythonで書き換えること
+
+■ テーマシステムの設計方針
+- ライト/ダーク対応のため、ハードコード色を廃止しカラートークン方式に移行する
+- ThemePalette（frozen dataclass）: bg_primary, text_primary, border_default等の意味名でdark/light各1インスタンス（DARK, LIGHT）
+- ThemeManager（Singleton）: 現在パレット提供・切替・on_theme_changed Signal通知
+- 配置: wafer/core/color/ (theme_palette.py, theme.py, __init__.py)
+- extensionはThemeManager.instance().paletteで現在パレットを取得して使用
+- 既存ハードコード箇所は段階的にトークン参照へ移行（一括変換不要）
+- is_dark_theme()（formatting.py）はThemeManager._detect_dark()に統合済み

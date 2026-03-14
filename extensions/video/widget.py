@@ -234,7 +234,7 @@ class MpvGLOverlay(QOpenGLWidget):
 
 class PlaybackSlotManager:
 
-    HOVER_DEBOUNCE_MS = 300
+    HOVER_DEBOUNCE_MS = 150
     PLAYER_POOL_TARGET = 2
 
     def __init__(self, parent, max_selected=3, max_appeared=6):
@@ -244,6 +244,7 @@ class PlaybackSlotManager:
         self.volume = DEFAULT_VOLUME
         self.hover_autoplay = True
         self.appear_autoplay = True
+        self.select_autoplay = True
         self._mpv_available = MpvGLOverlay._ensure_mpv()
         self._pool: list[MpvGLOverlay] = []
         self._player_pool: list = []
@@ -562,6 +563,7 @@ class MpvCellWidget(QWidget):
             from wafer.core.actions.bridge import Command
             Command.set_checked('vgrid.toggle_hover_autoplay', cls._slot_manager.hover_autoplay)
             Command.set_checked('vgrid.toggle_appear_autoplay', cls._slot_manager.appear_autoplay)
+            Command.set_checked('vgrid.toggle_select_autoplay', cls._slot_manager.select_autoplay)
 
     @classmethod
     def _on_overlay_leave(cls, cell):
@@ -645,7 +647,7 @@ class MpvCellWidget(QWidget):
 
     @profiler.profile
     def on_selected(self):
-        if self._slot_manager and self._path:
+        if self._slot_manager and self._path and self._slot_manager.select_autoplay:
             self._slot_manager.activate_select(self, self._path)
 
     @profiler.profile

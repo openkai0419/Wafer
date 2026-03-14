@@ -2,6 +2,7 @@ from PySide6 import QtCore, QtGui
 from ...utils.paths import get_resource_path
 from ...utils.formatting import dpix
 from ...utils.logs import AppLogger
+from ..color.theme import ThemeManager
 class PixmapFactory:
 
     @staticmethod
@@ -16,7 +17,7 @@ class PixmapFactory:
         s = dpix(64)
         size = QtCore.QSize(s, s)
         pixmap = QtGui.QPixmap(size)
-        pixmap.fill(QtGui.QColor('#ccc'))
+        pixmap.fill(QtGui.QColor(ThemeManager.instance().palette.text_primary))
         painter = QtGui.QPainter(pixmap)
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
         m = dpix(10)

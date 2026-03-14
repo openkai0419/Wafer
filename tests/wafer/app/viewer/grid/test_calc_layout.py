@@ -174,6 +174,22 @@ def test_justified_reversed_horizontal():
     assert layout[0].left() > layout[1].left()
 
 
+def test_justified_reversed_vertical_total_extent_matches_forward():
+    aspects = [1.5, 1.0, 0.8, 1.2, 2.0, 0.9, 1.1, 1.4]
+
+    forward = JustifiedLayoutCalculator(aspects, 100, 5, 500, 300, orientation=2)
+    forward.run()
+
+    reversed_calc = JustifiedLayoutCalculator(aspects, 100, 5, 500, 300, orientation=3)
+    reversed_calc.run()
+
+    forward_layout = forward._result
+    reversed_layout = reversed_calc._result
+
+    assert reversed_layout.total_extent == forward_layout.total_extent
+    assert max(r.x() + r.width() for r in reversed_layout) + 5 == reversed_layout.total_extent
+
+
 def test_masonry_produces_layout():
     calc = MasonryLayoutCalculator([1.0, 1.5, 0.8, 1.2], 150, 5, 500, None, orientation=0)
     calc.run()

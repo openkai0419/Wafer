@@ -115,6 +115,39 @@ class TestGridViewOverlayIntegration:
             gv._overlay.update.assert_called()
 
 
+class TestGridViewScrollRange:
+    @pytest.fixture(autouse=True)
+    def _import(self, qtbot):
+        from wafer.app.viewer.grid.grid_view import GridView
+        self.GridView = GridView
+
+    def test_justified_reverse_vertical_has_horizontal_scroll_range(self, qtbot):
+        from wafer.app.viewer.grid.calc_layout import JustifiedLayoutCalculator
+
+        with patch('wafer.app.viewer.grid.grid_view.grid_resolver'):
+            gv = self.GridView(MagicMock())
+            qtbot.addWidget(gv)
+            gv.resize(320, 240)
+            gv.show()
+            QtWidgets.QApplication.processEvents()
+            gv.set_orientation(3)
+
+            calc = JustifiedLayoutCalculator(
+                [1.5, 1.0, 0.8, 1.2, 2.0, 0.9, 1.1, 1.4],
+                100,
+                5,
+                500,
+                200,
+                orientation=3,
+            )
+            calc.run()
+
+            gv._on_layout_ready(calc._result)
+            QtWidgets.QApplication.processEvents()
+
+            assert gv.horizontalScrollBar().maximum() > 0
+
+
 class TestOverlayCoordinateMapping:
     @pytest.fixture(autouse=True)
     def _import(self, qtbot):

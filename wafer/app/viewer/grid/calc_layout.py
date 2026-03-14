@@ -229,8 +229,7 @@ class JustifiedLayoutCalculator(_BaseLayoutCalculator):
                     cur += h + spacing
 
         if groups:
-            last_g = groups[-1]
-            total_extent = last_g[2] + int(base * last_g[3]) + spacing
+            total_extent = max(ofs + int(base * sc) for _, _, ofs, sc in groups) + spacing
         else:
             total_extent = 0
         self._emit(rects, total_extent, hz)

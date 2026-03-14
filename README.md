@@ -1,6 +1,6 @@
 # Wafer
 
-Wafer: an wide-aspect file explorer & viewer
+Wafer: an wide-aspect file explorer & viewer for Windows
 Extensible local file viewer with background metadata collection.
 
 ## Design Philosophy

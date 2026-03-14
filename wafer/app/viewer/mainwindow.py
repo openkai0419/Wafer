@@ -28,6 +28,7 @@ from .search import SearchService
 from .session import QueryState, UIState, SessionEntry, SessionStore
 from ...core.actions.bridge import UI, Command
 from ...core.state import StateStore
+from ...core.qt.window import WindowStateController
 AppMenuRegistrar.setup_menu()
 
 
@@ -58,7 +59,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.database_name = None
         self.database_path = None
         self.setting_db = None
-        self._pre_fullscreen_snap = None
+        self.window_state = WindowStateController(self)
         self._last_paths = None
         self.run_folder = True
         self.search_service = SearchService(lambda: self.database_path, parent=self)
@@ -310,7 +311,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
 
     def _sync_default_checked_states(self):
         Command.set_checked('win.toggle_always_on_top',
-                            bool(self.windowFlags() & QtCore.Qt.WindowStaysOnTopHint))
+                            self.window_state.is_always_on_top)
         Command.set_checked('qry.toggle_include_subfolders',
                             self.search_service.get('include_subfolders', True))
         Command.set_checked('qry.toggle_auto_execute',
@@ -331,13 +332,11 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self._register_grid_plugin_states(store)
 
     def _save_window_state(self):
-        on_top = bool(self.windowFlags() & QtCore.Qt.WindowStaysOnTopHint)
-        return {'always_on_top': on_top}
+        return self.window_state.save_state()
 
     def _restore_window_state(self, state):
-        from .commands.window_commands import _apply_always_on_top
-        if 'always_on_top' in state:
-            _apply_always_on_top(self, state['always_on_top'])
+        self.window_state.restore_state(state)
+        Command.set_checked('win.toggle_always_on_top', self.window_state.is_always_on_top)
 
     def _register_grid_plugin_states(self, store):
         from ...plugin.grid.base import WidgetGridPlugin as _WGP
@@ -437,13 +436,9 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
     @QtCore.Slot(bool)
     def toggle_show(self, state):
         if self.isMinimized() or not self.isVisible():
-            if self.isMinimized():
-                self.setWindowState(self.windowState() & ~QtCore.Qt.WindowMinimized)
-            self.show()
-            self.raise_()
-            self.activateWindow()
+            self.window_state.restore_or_activate()
         else:
-            self.showMinimized()
+            self.window_state.minimize()
 
     @QtCore.Slot()
     def close_by_session_delete(self):
@@ -452,14 +447,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
 
     @QtCore.Slot()
     def raise_window(self):
-        if self.isMinimized() or not self.isVisible():
-            if self.isMinimized():
-                self.setWindowState(self.windowState() & ~QtCore.Qt.WindowMinimized)
-            self.show()
-            self.raise_()
-            self.activateWindow()
-        else:
-            self.showMinimized()
+        self.window_state.restore_or_activate()
 
     @QtCore.Slot(bool)
     def search(self, force=False):
@@ -511,10 +499,8 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         )
 
     def capture_ui_state(self) -> UIState:
-        import base64
-        geo_bytes = bytes(self.saveGeometry())
         return UIState(
-            window_geometry=base64.b64encode(geo_bytes).decode('ascii'),
+            window_geometry=self.window_state.save_geometry(),
             component_states=StateStore.instance().save_all(),
         )
 
@@ -554,11 +540,9 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             row.set_search_text(params['keywords'])
 
     def restore_ui_state(self, ui: UIState) -> None:
-        import base64
         if ui.window_geometry:
             try:
-                geo = QtCore.QByteArray(base64.b64decode(ui.window_geometry))
-                self.restoreGeometry(geo)
+                self.window_state.restore_geometry(ui.window_geometry)
             except Exception as e:
                 AppLogger.warning(f'restore_ui_state geometry failed: {e}', exc=e)
         if ui.component_states:

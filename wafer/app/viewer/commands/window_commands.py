@@ -4,7 +4,6 @@ from ....core.actions.bridge import Command, ActionKit
 from ....core.setting.folder_settings import FolderSettings
 from ....core.setting.setting_window import SettingsWindow
 from ....core.platform.process import AppProcess
-from ....core.qt.window import WindowSnapshot, safe_set_window_flag
 from ..viewer_settings import app_settings
 from .session_commands import (
     show_session_popup, create_session,
@@ -30,15 +29,7 @@ def toggle_fullscreen(ctx):
     w = _win(ctx)
     if not w:
         return
-    if not (w.windowState() & QtCore.Qt.WindowFullScreen):
-        w._pre_fullscreen_snap = WindowSnapshot(w)
-        w.showFullScreen()
-    else:
-        if w._pre_fullscreen_snap:
-            w._pre_fullscreen_snap.restore(w)
-            w._pre_fullscreen_snap = None
-        else:
-            w.showNormal()
+    w.window_state.toggle_fullscreen()
 
 
 def toggle_language(ctx):
@@ -54,13 +45,8 @@ def toggle_always_on_top(ctx):
     w = _win(ctx)
     if not w:
         return
-    on_top = bool(w.windowFlags() & QtCore.Qt.WindowStaysOnTopHint)
-    _apply_always_on_top(w, not on_top)
-
-
-def _apply_always_on_top(window, on_top: bool):
-    safe_set_window_flag(window, QtCore.Qt.WindowStaysOnTopHint, on_top)
-    Command.set_checked("win.toggle_always_on_top", on_top)
+    w.window_state.set_always_on_top(not w.window_state.is_always_on_top)
+    Command.set_checked("win.toggle_always_on_top", w.window_state.is_always_on_top)
 
 
 def _session_names():

@@ -186,45 +186,36 @@ class TestToggleShow:
             win = MainWindow.__new__(MainWindow)
             win.isMinimized = MagicMock(return_value=False)
             win.isVisible = MagicMock(return_value=True)
-            win.windowState = MagicMock(return_value=0)
-            win.setWindowState = MagicMock()
-            win.show = MagicMock()
-            win.raise_ = MagicMock()
-            win.activateWindow = MagicMock()
-            win.showMinimized = MagicMock()
+            win.window_state = MagicMock()
             return win
 
     def test_visible_window_gets_minimized(self):
         win = self._make_win()
         win.toggle_show(True)
-        win.showMinimized.assert_called_once()
-        win.show.assert_not_called()
+        win.window_state.minimize.assert_called_once()
+        win.window_state.restore_or_activate.assert_not_called()
 
     def test_minimized_window_gets_restored(self):
-        from PySide6 import QtCore
         win = self._make_win()
         win.isMinimized.return_value = True
-        win.windowState.return_value = QtCore.Qt.WindowMinimized
         win.toggle_show(False)
-        win.setWindowState.assert_called_once()
-        win.show.assert_called_once()
-        win.showMinimized.assert_not_called()
+        win.window_state.restore_or_activate.assert_called_once()
+        win.window_state.minimize.assert_not_called()
 
     def test_hidden_window_gets_shown(self):
         win = self._make_win()
         win.isVisible.return_value = False
         win.toggle_show(True)
-        win.show.assert_called_once()
-        win.raise_.assert_called_once()
-        win.showMinimized.assert_not_called()
+        win.window_state.restore_or_activate.assert_called_once()
+        win.window_state.minimize.assert_not_called()
 
     def test_ignores_state_arg(self):
         win = self._make_win()
         win.toggle_show(True)
-        win.showMinimized.assert_called_once()
-        win.showMinimized.reset_mock()
+        win.window_state.minimize.assert_called_once()
+        win.window_state.minimize.reset_mock()
         win.toggle_show(False)
-        win.showMinimized.assert_called_once()
+        win.window_state.minimize.assert_called_once()
 
 
 class TestRaiseWindow:
@@ -233,48 +224,10 @@ class TestRaiseWindow:
         with patch('wafer.app.viewer.mainwindow.MainWindow.__init__', lambda self, *a, **kw: None):
             from wafer.app.viewer.mainwindow import MainWindow
             win = MainWindow.__new__(MainWindow)
-            win.isMinimized = MagicMock(return_value=False)
-            win.isVisible = MagicMock(return_value=True)
-            win.windowState = MagicMock(return_value=0)
-            win.setWindowState = MagicMock()
-            win.show = MagicMock()
-            win.raise_ = MagicMock()
-            win.activateWindow = MagicMock()
-            win.showMinimized = MagicMock()
+            win.window_state = MagicMock()
             return win
 
-    def test_minimizes_visible_window(self):
+    def test_always_calls_restore_or_activate(self):
         win = self._make_win()
         win.raise_window()
-        win.showMinimized.assert_called_once()
-        win.show.assert_not_called()
-
-    def test_restores_minimized_window(self):
-        from PySide6 import QtCore
-        win = self._make_win()
-        win.isMinimized.return_value = True
-        win.windowState.return_value = QtCore.Qt.WindowMinimized
-        win.raise_window()
-        win.setWindowState.assert_called_once()
-        win.show.assert_called_once()
-        win.showMinimized.assert_not_called()
-
-    def test_shows_hidden_window(self):
-        win = self._make_win()
-        win.isVisible.return_value = False
-        win.raise_window()
-        win.show.assert_called_once()
-        win.raise_.assert_called_once()
-        win.showMinimized.assert_not_called()
-
-    def test_toggle_cycle(self):
-        from PySide6 import QtCore
-        win = self._make_win()
-        win.raise_window()
-        win.showMinimized.assert_called_once()
-        win.isMinimized.return_value = True
-        win.windowState.return_value = QtCore.Qt.WindowMinimized
-        win.showMinimized.reset_mock()
-        win.raise_window()
-        win.show.assert_called_once()
-        win.showMinimized.assert_not_called()
+        win.window_state.restore_or_activate.assert_called_once()

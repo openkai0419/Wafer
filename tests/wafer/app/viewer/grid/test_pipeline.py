@@ -189,3 +189,99 @@ class TestGridPipelineIntegration:
 
         pipeline.cancel_all()
         assert pipeline.active_count() == 0
+
+
+class TestDispatchThumbnail:
+    def test_thumbnail_reloads_when_cached_too_small(self, dispatcher):
+        from PySide6.QtGui import QImage
+        from wafer.plugin.grid.base import WidgetGridPlugin
+        cache = FakeCache()
+        small_image = QImage(50, 50, QImage.Format_ARGB32)
+        cache['video.mp4'] = small_image
+
+        delivered = {}
+
+        class FakeWidget:
+            pass
+
+        class FakePlugin(WidgetGridPlugin):
+            NAME = 'fake_vid'
+            WIDGET_CLASS = FakeWidget
+            REQUIRE_THUMBNAIL = True
+
+            def on_thumb_loaded(self, widget, image):
+                delivered['image'] = image
+
+        widget = FakeWidget()
+        pipeline = GridPipeline(
+            dispatcher, dispatcher, dispatcher, cache,
+            lambda i: widget, lambda i, n: None,
+        )
+        pipeline._active[0] = CancelToken()
+
+        loaded = {}
+
+        def fake_load(path, size=None):
+            img = QImage(200, 200, QImage.Format_ARGB32)
+            loaded['called'] = True
+            return img
+
+        import wafer.app.viewer.grid.pipeline as _mod
+        orig = _mod.grid_resolver.load
+        _mod.grid_resolver.load = fake_load
+        try:
+            plugin = FakePlugin()
+            cancel = CancelToken()
+            pipeline._active[0] = cancel
+            pipeline._dispatch_thumbnail(0, 'video.mp4', QtCore.QSize(200, 200), plugin, cancel)
+            _process_events_until(lambda: 'image' in delivered, timeout_ms=5000)
+            assert 'called' in loaded
+            assert delivered['image'].width() == 200
+        finally:
+            _mod.grid_resolver.load = orig
+
+    def test_thumbnail_uses_cache_when_sufficient(self, dispatcher):
+        from PySide6.QtGui import QImage
+        from wafer.plugin.grid.base import WidgetGridPlugin
+        cache = FakeCache()
+        big_image = QImage(300, 300, QImage.Format_ARGB32)
+        cache['video.mp4'] = big_image
+
+        delivered = {}
+
+        class FakeWidget:
+            pass
+
+        class FakePlugin(WidgetGridPlugin):
+            NAME = 'fake_vid2'
+            WIDGET_CLASS = FakeWidget
+            REQUIRE_THUMBNAIL = True
+
+            def on_thumb_loaded(self, widget, image):
+                delivered['image'] = image
+
+        widget = FakeWidget()
+        pipeline = GridPipeline(
+            dispatcher, dispatcher, dispatcher, cache,
+            lambda i: widget, lambda i, n: None,
+        )
+
+        loaded = {}
+
+        def fake_load(path, size=None):
+            loaded['called'] = True
+            return QImage(200, 200, QImage.Format_ARGB32)
+
+        import wafer.app.viewer.grid.pipeline as _mod
+        orig = _mod.grid_resolver.load
+        _mod.grid_resolver.load = fake_load
+        try:
+            plugin = FakePlugin()
+            cancel = CancelToken()
+            pipeline._active[0] = cancel
+            pipeline._dispatch_thumbnail(0, 'video.mp4', QtCore.QSize(200, 200), plugin, cancel)
+            _process_events_until(lambda: 'image' in delivered, timeout_ms=5000)
+            assert 'called' not in loaded
+            assert delivered['image'] is big_image
+        finally:
+            _mod.grid_resolver.load = orig

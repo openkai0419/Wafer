@@ -281,7 +281,7 @@ class TestPipelineWidgetPluginThumbnail:
     def test_widget_plugin_thumbnail_uses_cache(self, dispatcher):
         widgets = {}
         cache = _FakeCache()
-        cached_thumb = _make_image(64, 64)
+        cached_thumb = _make_image(300, 300)
         cache['/vid.mp4'] = cached_thumb
         pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None)
 

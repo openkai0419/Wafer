@@ -162,9 +162,9 @@ class GridPipeline(QtCore.QObject):
         def task():
             if cancel.is_cancelled():
                 return
-            cached = self._cache.get(fullsize_key(path))
+            cached = self._cache.get_if_sufficient(fullsize_key(path), size)
             if cached is None:
-                cached = self._cache.get(path)
+                cached = self._cache.get_if_sufficient(path, size)
             if cached is not None:
                 self._thumb_dispatcher.invoke(
                     lambda: self._deliver_thumbnail(index, plugin, cached)

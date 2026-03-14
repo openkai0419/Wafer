@@ -582,13 +582,12 @@ class MpvCellWidget(QWidget):
 
     @profiler.profile
     def load(self, path, size=None):
+        if self._path != path:
+            self._thumbnail = None
         self._path = path
-        self._thumbnail = None
         self.update()
 
     def set_thumbnail(self, image):
-        if self._thumbnail is not None:
-            return
         self._thumbnail = image
         self.update()
 

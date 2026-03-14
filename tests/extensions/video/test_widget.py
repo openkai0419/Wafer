@@ -207,6 +207,25 @@ class TestMpvCellWidget:
         assert w._path == '/test.mp4'
         w.cleanup()
 
+    def test_load_clears_thumbnail_on_new_path(self, qtbot):
+        from extensions.video.widget import MpvCellWidget
+        w = MpvCellWidget()
+        w._path = '/old.mp4'
+        w._thumbnail = QtGui.QImage(10, 10, QtGui.QImage.Format_ARGB32)
+        w.load('/new.mp4')
+        assert w._thumbnail is None
+        w.cleanup()
+
+    def test_load_keeps_thumbnail_on_same_path(self, qtbot):
+        from extensions.video.widget import MpvCellWidget
+        w = MpvCellWidget()
+        thumb = QtGui.QImage(10, 10, QtGui.QImage.Format_ARGB32)
+        w._path = '/test.mp4'
+        w._thumbnail = thumb
+        w.load('/test.mp4')
+        assert w._thumbnail is thumb
+        w.cleanup()
+
     def test_set_thumbnail_sets_image(self, qtbot):
         from extensions.video.widget import MpvCellWidget
         w = MpvCellWidget()
@@ -216,7 +235,7 @@ class TestMpvCellWidget:
         assert w._thumbnail is image
         w.cleanup()
 
-    def test_set_thumbnail_skips_when_already_set(self, qtbot):
+    def test_set_thumbnail_replaces_existing(self, qtbot):
         from extensions.video.widget import MpvCellWidget
         w = MpvCellWidget()
         w._path = '/test.mp4'
@@ -224,7 +243,7 @@ class TestMpvCellWidget:
         w._thumbnail = first
         second = QtGui.QImage(20, 20, QtGui.QImage.Format_ARGB32)
         w.set_thumbnail(second)
-        assert w._thumbnail is first
+        assert w._thumbnail is second
         w.cleanup()
 
     def test_suspend_clears_state(self, qtbot):

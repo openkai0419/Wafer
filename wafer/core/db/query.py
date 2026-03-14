@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -199,6 +200,12 @@ _SORT_COLUMNS = {
     'modified': 'modified', 'size': 'size', 'collected': 'collected',
 }
 
+_NUM_SPLIT = re.compile(r'(\d+)').split
+
+
+def _natural_key(s):
+    return [int(c) if c.isdigit() else c.casefold() for c in _NUM_SPLIT(s)]
+
 
 class FileSearchEngine:
     def __init__(self, db_path):
@@ -263,13 +270,23 @@ class FileSearchEngine:
     @profiler.profile
     def _fetch_sorted(self, columns, path_query, params, sort_by, ascending):
         cur = self.conn.cursor()
-        col_str = ', '.join(f'm.{c}' for c in columns)
-        order = self._build_order_clause(sort_by, ascending)
-        sql = f"SELECT {col_str} FROM files_full AS m JOIN ({path_query}) AS s USING(path){order}"
-        rows = cur.execute(sql, params).fetchall()
-        if sort_by == 'random':
-            rows = list(rows)
+        sort_col = _SORT_COLUMNS.get(sort_by)
+        need_natural = sort_by in ('name', 'path')
+        extra = sort_col if need_natural and sort_col not in columns else None
+        select_cols = [*columns, extra] if extra else columns
+        col_str = ', '.join(f'm.{c}' for c in select_cols)
+        if need_natural:
+            sql = f"SELECT {col_str} FROM files_full AS m JOIN ({path_query}) AS s USING(path)"
+            rows = list(cur.execute(sql, params).fetchall())
+            rows.sort(key=lambda r: _natural_key(r[sort_col] or ''), reverse=not ascending)
+        elif sort_by == 'random':
+            sql = f"SELECT {col_str} FROM files_full AS m JOIN ({path_query}) AS s USING(path)"
+            rows = list(cur.execute(sql, params).fetchall())
             shuffle(rows)
+        else:
+            order = self._build_order_clause(sort_by, ascending)
+            sql = f"SELECT {col_str} FROM files_full AS m JOIN ({path_query}) AS s USING(path){order}"
+            rows = cur.execute(sql, params).fetchall()
         return rows
 
     @profiler.profile

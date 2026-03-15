@@ -279,3 +279,34 @@ def _draw_muted(p: QPainter, r: QRectF, color: QColor):
     cy = r.center().y()
     p.drawLine(QPointF(x1 - d, cy - d), QPointF(x1 + d, cy + d))
     p.drawLine(QPointF(x1 + d, cy - d), QPointF(x1 - d, cy + d))
+
+
+@_register('cross')
+def _draw_cross(p: QPainter, r: QRectF, color: QColor):
+    lw = max(1.5, min(r.width(), r.height()) * 0.14)
+    pen = QPen(color, lw)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    p.setPen(pen)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    m = min(r.width(), r.height()) * 0.15
+    p.drawLine(QPointF(r.left() + m, r.top() + m), QPointF(r.right() - m, r.bottom() - m))
+    p.drawLine(QPointF(r.right() - m, r.top() + m), QPointF(r.left() + m, r.bottom() - m))
+
+
+@_register('sort')
+def _draw_sort(p: QPainter, r: QRectF, color: QColor):
+    lw = max(1.5, min(r.width(), r.height()) * 0.12)
+    pen = QPen(color, lw)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    p.setPen(pen)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    cx = r.center().x()
+    head = min(r.width(), r.height()) * 0.22
+    top = r.top() + r.height() * 0.12
+    bot = r.bottom() - r.height() * 0.12
+    p.drawLine(QPointF(cx, top), QPointF(cx - head, top + head))
+    p.drawLine(QPointF(cx, top), QPointF(cx + head, top + head))
+    p.drawLine(QPointF(cx, top), QPointF(cx, bot))
+    p.drawLine(QPointF(cx, bot), QPointF(cx - head, bot - head))
+    p.drawLine(QPointF(cx, bot), QPointF(cx + head, bot - head))

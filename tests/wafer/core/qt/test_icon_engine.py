@@ -47,6 +47,7 @@ class TestIconDraw:
 ALL_KEYS = [
     'gear', 'folder_plus', 'subfolder', 'fullscreen',
     'plus', 'minus', 'play', 'pause', 'volume', 'muted',
+    'cross', 'sort',
 ]
 
 

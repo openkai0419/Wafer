@@ -54,11 +54,10 @@ class TestFilterRow:
         assert params['query_mode'] == 'LIKE'
         assert op == 'OR'
 
-    def test_type_combo_excludes_directory(self, qapp):
-        row = FilterRow(TextFilter)
-        items = [row.type_combo.itemData(i) for i in range(row.type_combo.count())]
-        assert 'directory' not in items
-        assert 'text' in items
+    def test_write_entry_wrong_type_ignored(self, qapp):
+        row = FilterRow(TextFilter, show_op=True)
+        row.write_entry('directory', {'directories': ['/a']}, 'OR')
+        assert row.filter_cls is TextFilter
 
     def test_param_widget_exists(self, qapp):
         row = FilterRow(TextFilter)
@@ -84,29 +83,50 @@ class TestSearchContainer:
         container = SearchContainer()
         assert container._rows[0].filter_cls is TextFilter
 
-    def test_default_row_not_removable(self, qapp):
+    def test_default_row_removable(self, qapp):
         container = SearchContainer()
         container.show()
-        assert not container._rows[0].remove_button.isVisibleTo(container)
+        assert container._rows[0].remove_button.isVisibleTo(container)
 
-    def test_add_filter(self, qapp):
+    def test_add_row(self, qapp):
         container = SearchContainer()
-        container._on_add_filter()
+        container._add_row(TextFilter)
         assert len(container._rows) == 2
         assert container._rows[1]._has_op
-        container.show()
-        assert container._rows[1].remove_button.isVisibleTo(container)
 
     def test_remove_filter(self, qapp):
         container = SearchContainer()
-        container._on_add_filter()
+        container._add_row(TextFilter)
         second = container._rows[1]
         container._on_remove_row(second)
         assert len(container._rows) == 1
 
-    def test_cannot_remove_only_row(self, qapp):
+    def test_remove_all_rows(self, qapp):
         container = SearchContainer()
-        assert not container._rows[0].remove_button.isVisible()
+        first = container._rows[0]
+        container._on_remove_row(first)
+        assert len(container._rows) == 0
+        assert not container._empty_row.isHidden()
+
+    def test_remove_first_updates_op_visibility(self, qapp):
+        container = SearchContainer()
+        container._add_row(TextFilter)
+        assert container._rows[1]._has_op
+        first = container._rows[0]
+        container._on_remove_row(first)
+        assert len(container._rows) == 1
+        assert not container._rows[0]._has_op
+
+    def test_tools_move_to_last_row(self, qapp):
+        container = SearchContainer()
+        container._add_row(TextFilter)
+        assert container._tools_host is container._rows[-1]
+
+    def test_tools_in_empty_state(self, qapp):
+        container = SearchContainer()
+        container._on_remove_row(container._rows[0])
+        assert container._tools_host is None
+        assert not container._empty_row.isHidden()
 
     def test_build_filter_entries_no_directories(self, qapp):
         container = SearchContainer()
@@ -127,15 +147,21 @@ class TestSearchContainer:
 
     def test_build_entries_multiple_rows(self, qapp):
         container = SearchContainer()
-        container._on_add_filter()
+        container._add_row(TextFilter)
         entries = container.build_filter_entries()
         assert len(entries) == 2
+
+    def test_build_entries_empty(self, qapp):
+        container = SearchContainer()
+        container._on_remove_row(container._rows[0])
+        entries = container.build_filter_entries()
+        assert len(entries) == 0
 
     def test_get_sort_defaults(self, qapp):
         container = SearchContainer()
         sort_name, ascending = container.get_sort()
-        assert isinstance(sort_name, str)
-        assert isinstance(ascending, bool)
+        assert sort_name == 'path'
+        assert ascending is False
 
     def test_set_sort(self, qapp):
         container = SearchContainer()
@@ -150,12 +176,33 @@ class TestSearchContainer:
         _, ascending = container.get_sort()
         assert ascending is True
 
+    def test_set_sort_by(self, qapp):
+        container = SearchContainer()
+        container.set_sort_by('name')
+        sort_name, _ = container.get_sort()
+        assert sort_name == 'name'
+
+    def test_sort_menu_syncs(self, qapp):
+        container = SearchContainer()
+        container.set_sort('size', True)
+        checked_sort = [a for a in container._sort_group.actions() if a.isChecked()]
+        assert len(checked_sort) == 1
+        assert checked_sort[0].data() == 'size'
+        checked_order = [a for a in container._order_group.actions() if a.isChecked()]
+        assert len(checked_order) == 1
+        assert checked_order[0].data() is True
+
     def test_get_values_returns_dict(self, qapp):
         container = SearchContainer()
         values = container.get_values()
         assert isinstance(values, dict)
         assert 'sort_by' in values
         assert 'ascending' in values
+
+    def test_get_values_empty(self, qapp):
+        container = SearchContainer()
+        container._on_remove_row(container._rows[0])
+        assert container.get_values() == {}
 
     def test_set_search_text(self, qapp):
         container = SearchContainer()
@@ -167,7 +214,7 @@ class TestSearchContainer:
         container = SearchContainer()
         signals = []
         container.filter_changed.connect(lambda: signals.append(True))
-        container._on_add_filter()
+        container._add_row(TextFilter)
         assert len(signals) >= 1
 
 
@@ -213,9 +260,32 @@ class TestSearchContainerState:
         assert not container._rows[0]._has_op
         assert container._rows[1]._has_op
 
+    def test_restore_empty_rows_keeps_existing(self, qapp):
+        container = SearchContainer()
+        container.set_search_text('keep')
+        state = {'rows': [], 'sort_by': 'size', 'ascending': True}
+        container.restore_state(state)
+        assert len(container._rows) == 1
+        sort_name, ascending = container.get_sort()
+        assert sort_name == 'size'
+        assert ascending is True
+
+    def test_restore_updates_tool_placement(self, qapp):
+        container = SearchContainer()
+        state = {
+            'rows': [
+                {'filter': 'text', 'params': {'keywords': 'a'}, 'op': None},
+                {'filter': 'text', 'params': {'keywords': 'b'}, 'op': 'OR'},
+            ],
+            'sort_by': 'path',
+            'ascending': True,
+        }
+        container.restore_state(state)
+        assert container._tools_host is container._rows[-1]
+
     def test_roundtrip_save_restore(self, qapp):
         container1 = SearchContainer()
-        container1._on_add_filter()
+        container1._add_row(TextFilter)
         state = container1.save_state()
         container2 = SearchContainer()
         container2.restore_state(state)
@@ -276,7 +346,7 @@ class TestUpdateKeyCombos:
 
     def test_all_rows_receive_data(self, qapp):
         container = SearchContainer()
-        container._on_add_filter()
+        container._add_row(TextFilter)
         container._key_store.set_data([('__filepath__', 10), ('prompt', 5)])
         for row in container._rows:
             w = row.get_param_widget()
@@ -287,7 +357,7 @@ class TestUpdateKeyCombos:
     def test_new_row_receives_existing_data(self, qapp):
         container = SearchContainer()
         container._key_store.set_data([('__filepath__', 20), ('artist', 8)])
-        container._on_add_filter()
+        container._add_row(TextFilter)
         w = container._rows[1].get_param_widget()
         items = [a.data() for a in w.keys_combo.actions]
         assert '__filepath__' in items

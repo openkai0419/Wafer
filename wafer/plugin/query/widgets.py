@@ -4,6 +4,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from ...utils.formatting import dpix, display_prefixed_key
 from ...core.lang.manager import TranslatorMixin
+from ...core.qt.icon_engine import themed_icon
 
 
 class CheckableCombo(QtWidgets.QToolButton, TranslatorMixin):
@@ -76,6 +77,11 @@ class TextFilterWidget(QtWidgets.QWidget, TranslatorMixin):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(dpix(2))
 
+        self.option_button = QtWidgets.QToolButton()
+        self.option_button.setIcon(themed_icon('gear', padding=0.18))
+        self.option_button.setFixedSize(dpix(28), dpix(24))
+        self.option_button.clicked.connect(self._toggle_option_popup)
+
         self.keys_combo = CheckableCombo()
         self.keys_combo.action_changed.connect(self.changed)
 
@@ -83,13 +89,9 @@ class TextFilterWidget(QtWidgets.QWidget, TranslatorMixin):
         self.search_bar.setPlaceholderText(self.t.tr('Enter search terms...'))
         self.search_bar.textChanged.connect(self.changed)
 
-        self.option_button = QtWidgets.QPushButton(self.t.tr('\u2699'))
-        self.option_button.setFixedWidth(dpix(28))
-        self.option_button.clicked.connect(self._toggle_option_popup)
-
         layout.addWidget(self.keys_combo)
-        layout.addWidget(self.search_bar, 1)
         layout.addWidget(self.option_button)
+        layout.addWidget(self.search_bar, 1)
 
         self._option_popup = _TextFilterPopup(self.option_button, self)
         self._option_popup.changed.connect(self.changed)

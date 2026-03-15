@@ -14,9 +14,9 @@ class ComboBoxWithButtons(QWidget, TranslatorMixin):
         super().__init__(parent)
         self.combo = QComboBox()
         self.button_add = QPushButton()
-        self.button_add.setIcon(themed_icon('plus', padding=0.15))
+        self.button_add.setIcon(themed_icon('plus'))
         self.button_remove = QPushButton()
-        self.button_remove.setIcon(themed_icon('minus', padding=0.15))
+        self.button_remove.setIcon(themed_icon('minus'))
         self.combo.currentIndexChanged.connect(self.on_changed)
         self.button_add.setToolTip(self.t.tr('Add item'))
         self.button_remove.setToolTip(self.t.tr('Remove current item'))
@@ -33,8 +33,8 @@ class ComboBoxWithButtons(QWidget, TranslatorMixin):
         ThemeManager.instance().on_theme_changed.connect(self._on_theme_changed)
 
     def _on_theme_changed(self, palette):
-        self.button_add.setIcon(themed_icon('plus', padding=0.15))
-        self.button_remove.setIcon(themed_icon('minus', padding=0.15))
+        self.button_add.setIcon(themed_icon('plus'))
+        self.button_remove.setIcon(themed_icon('minus'))
 
     def resizeEvent(self, event):
         h = self.combo.height()

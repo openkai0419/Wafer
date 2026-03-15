@@ -231,8 +231,8 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
 
         self.iconbar = IconButtonBar(
             left_buttons=[
-                IconButtonConfig('gear', 'Settings', lambda: Command.invoke("win.show_settings"), padding=0.07),
-                IconButtonConfig('folder_plus', 'Add Folder', lambda: Command.invoke("ft.add_folder"), padding=0.17),
+                IconButtonConfig('gear', 'Settings', lambda: Command.invoke("win.show_settings")),
+                IconButtonConfig('folder_plus', 'Add Folder', lambda: Command.invoke("ft.add_folder")),
             ],
             right_buttons=[
                 IconButtonConfig(
@@ -241,9 +241,8 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
                     lambda checked: Command.invoke("qry.toggle_include_subfolders"),
                     checkable=True,
                     checked=self.search_service.get('include_subfolders', True),
-                    padding=0.15,
                 ),
-                IconButtonConfig('fullscreen', 'Full Screen', lambda: Command.invoke("win.toggle_fullscreen"), padding=0.18),
+                IconButtonConfig('fullscreen', 'Full Screen', lambda: Command.invoke("win.toggle_fullscreen")),
             ],
         )
         self.database_combo = ComboBoxWithButtons()

@@ -46,7 +46,7 @@ class FilterRow(QtWidgets.QWidget):
         layout.addWidget(self._widget_placeholder, 1)
 
         self.remove_button = QtWidgets.QToolButton()
-        self.remove_button.setIcon(themed_icon('cross', padding=0.2))
+        self.remove_button.setIcon(themed_icon('cross'))
         self.remove_button.setFixedSize(dpix(24), dpix(24))
         self.remove_button.clicked.connect(lambda: self.remove_requested.emit(self))
         layout.addWidget(self.remove_button)
@@ -155,7 +155,7 @@ class SearchContainer(QtWidgets.QWidget, TranslatorMixin):
     def _build_sort_button(self) -> QtWidgets.QToolButton:
         btn = QtWidgets.QToolButton(self)
         btn.setPopupMode(QtWidgets.QToolButton.InstantPopup)
-        btn.setIcon(themed_icon('sort', padding=0.15))
+        btn.setIcon(themed_icon('sort'))
         btn.setFixedSize(dpix(28), dpix(24))
 
         menu = QtWidgets.QMenu(btn)
@@ -192,7 +192,7 @@ class SearchContainer(QtWidgets.QWidget, TranslatorMixin):
 
     def _build_add_button(self) -> QtWidgets.QToolButton:
         btn = QtWidgets.QToolButton(self)
-        btn.setIcon(themed_icon('plus', padding=0.2))
+        btn.setIcon(themed_icon('plus'))
         btn.setFixedHeight(dpix(24))
         btn.setMinimumWidth(dpix(28))
         btn.clicked.connect(self._on_add_clicked)
@@ -267,8 +267,9 @@ class SearchContainer(QtWidgets.QWidget, TranslatorMixin):
             return
         self._detach_tools()
         if target:
-            target.layout().addWidget(self._sort_button)
-            target.layout().addWidget(self._add_button)
+            idx = target.layout().indexOf(target.remove_button)
+            target.layout().insertWidget(idx, self._sort_button)
+            target.layout().insertWidget(idx + 1, self._add_button)
             self._sort_button.show()
             self._add_button.show()
             self._add_button.setSizePolicy(

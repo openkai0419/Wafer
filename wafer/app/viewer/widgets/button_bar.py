@@ -7,13 +7,13 @@ from ....core.color.theme import ThemeManager
 
 class IconButtonConfig:
 
-    def __init__(self, icon_key, tooltip='', callback=None, checkable=False, checked=False, padding=0.15):
+    def __init__(self, icon_key, tooltip='', callback=None, checkable=False, checked=False, margin=0.0):
         self.icon_key = icon_key
         self.tooltip = tooltip
         self.callback = callback
         self.checkable = checkable
         self.checked = checked
-        self.padding = padding
+        self.margin = margin
 
 class IconButtonBar(QWidget):
 
@@ -32,15 +32,15 @@ class IconButtonBar(QWidget):
         ThemeManager.instance().on_theme_changed.connect(self._on_theme_changed)
 
     def _on_theme_changed(self, palette):
-        for btn, key, pad in self._icon_keys:
-            btn.setIcon(themed_icon(key, padding=pad))
+        for btn, key, margin in self._icon_keys:
+            btn.setIcon(themed_icon(key, margin=margin))
 
     def _add_button_group(self, configs, side='left'):
         for cfg in configs:
             btn = QtWidgets.QPushButton()
-            btn.setIcon(themed_icon(cfg.icon_key, padding=cfg.padding))
+            btn.setIcon(themed_icon(cfg.icon_key, margin=cfg.margin))
             btn.setIconSize(self.icon_size)
-            self._icon_keys.append((btn, cfg.icon_key, cfg.padding))
+            self._icon_keys.append((btn, cfg.icon_key, cfg.margin))
             btn.setToolTip(cfg.tooltip)
             btn.setCheckable(cfg.checkable)
             if btn.isCheckable():

@@ -78,7 +78,7 @@ class TextFilterWidget(QtWidgets.QWidget, TranslatorMixin):
         layout.setSpacing(dpix(2))
 
         self.option_button = QtWidgets.QToolButton()
-        self.option_button.setIcon(themed_icon('gear', padding=0.18))
+        self.option_button.setIcon(themed_icon('gear_small'))
         self.option_button.setFixedSize(dpix(28), dpix(24))
         self.option_button.clicked.connect(self._toggle_option_popup)
 

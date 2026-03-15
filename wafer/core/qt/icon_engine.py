@@ -12,29 +12,35 @@ from ..color.theme import ThemeManager
 
 IconDrawFn = Callable[[QPainter, QRectF, QColor], None]
 
-_REGISTRY: dict[str, IconDrawFn] = {}
+_REGISTRY: dict[str, tuple[IconDrawFn, float]] = {}
 
 
-def _register(key: str):
+def _register(key: str, padding: float = 0.15):
     def decorator(fn: IconDrawFn) -> IconDrawFn:
-        _REGISTRY[key] = fn
+        _REGISTRY[key] = (fn, padding)
         return fn
     return decorator
 
 
 class _ThemedIconEngine(QIconEngine):
 
-    def __init__(self, draw_fn: IconDrawFn, padding: float = 0.0):
+    def __init__(self, draw_fn: IconDrawFn, padding: float = 0.0, margin: float = 0.0):
         super().__init__()
         self._draw_fn = draw_fn
         self._padding = max(0.0, min(0.5, padding))
+        self._margin = max(0.0, min(0.5, margin))
 
     def _padded_rect(self, rect: QRectF) -> QRectF:
-        if self._padding <= 0:
-            return rect
-        dx = rect.width() * self._padding
-        dy = rect.height() * self._padding
-        return rect.adjusted(dx, dy, -dx, -dy)
+        r = rect
+        if self._margin > 0:
+            dx = r.width() * self._margin
+            dy = r.height() * self._margin
+            r = r.adjusted(dx, dy, -dx, -dy)
+        if self._padding > 0:
+            dx = r.width() * self._padding
+            dy = r.height() * self._padding
+            r = r.adjusted(dx, dy, -dx, -dy)
+        return r
 
     def paint(self, painter, rect, mode, state):
         palette = ThemeManager.instance().palette
@@ -55,23 +61,24 @@ class _ThemedIconEngine(QIconEngine):
         return pm
 
     def clone(self):
-        return _ThemedIconEngine(self._draw_fn, self._padding)
+        return _ThemedIconEngine(self._draw_fn, self._padding, self._margin)
 
 
-def themed_icon(key: str, padding: float = 0.15) -> QIcon:
-    fn = _REGISTRY.get(key)
-    if fn is None:
+def themed_icon(key: str, margin: float = 0.0) -> QIcon:
+    entry = _REGISTRY.get(key)
+    if entry is None:
         return QIcon()
-    return QIcon(_ThemedIconEngine(fn, padding))
+    fn, padding = entry
+    return QIcon(_ThemedIconEngine(fn, padding, margin))
 
 
 def icon_draw(key: str, painter: QPainter, rect: QRectF, color: QColor):
-    fn = _REGISTRY.get(key)
-    if fn:
-        fn(painter, rect, color)
+    entry = _REGISTRY.get(key)
+    if entry:
+        entry[0](painter, rect, color)
 
 
-@_register('gear')
+@_register('gear', padding=0.06)
 def _draw_gear(p: QPainter, r: QRectF, color: QColor):
     p.setPen(Qt.PenStyle.NoPen)
     p.setBrush(color)
@@ -79,7 +86,7 @@ def _draw_gear(p: QPainter, r: QRectF, color: QColor):
     s = min(r.width(), r.height()) * 0.5
     outer = s * 0.95
     inner = s * 0.60
-    hole_r = s * 0.22
+    hole_r = s * 0.25
     teeth = 8
     n = teeth * 4
     path = QPainterPath()
@@ -98,7 +105,34 @@ def _draw_gear(p: QPainter, r: QRectF, color: QColor):
     p.drawPath(path.subtracted(hole))
 
 
-@_register('folder_plus')
+@_register('gear_small', padding=0.05)
+def _draw_gear_small(p: QPainter, r: QRectF, color: QColor):
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(color)
+    cx, cy = r.center().x(), r.center().y()
+    s = min(r.width(), r.height()) * 0.4
+    outer = s * 0.95
+    inner = s * 0.55
+    hole_r = s * 0.25
+    teeth = 6
+    n = teeth * 4
+    path = QPainterPath()
+    for i in range(n):
+        angle = 2 * math.pi * i / n - math.pi / 2
+        phase = i % 4
+        rad = inner if phase == 0 or phase == 3 else outer
+        pt = QPointF(cx + rad * math.cos(angle), cy + rad * math.sin(angle))
+        if i == 0:
+            path.moveTo(pt)
+        else:
+            path.lineTo(pt)
+    path.closeSubpath()
+    hole = QPainterPath()
+    hole.addEllipse(QPointF(cx, cy), hole_r, hole_r)
+    p.drawPath(path.subtracted(hole))
+
+
+@_register('folder_plus', padding=0.17)
 def _draw_folder_plus(p: QPainter, r: QRectF, color: QColor):
     p.setPen(Qt.PenStyle.NoPen)
     p.setBrush(color)
@@ -162,7 +196,7 @@ def _draw_subfolder(p: QPainter, r: QRectF, color: QColor):
     p.drawPath(front)
 
 
-@_register('fullscreen')
+@_register('fullscreen', padding=0.18)
 def _draw_fullscreen(p: QPainter, r: QRectF, color: QColor):
     lw = max(1.5, min(r.width(), r.height()) * 0.12)
     pen = QPen(color, lw)
@@ -182,7 +216,7 @@ def _draw_fullscreen(p: QPainter, r: QRectF, color: QColor):
     p.drawLine(QPointF(ir.right(), ir.bottom()), QPointF(ir.right(), ir.bottom() - arm))
 
 
-@_register('plus')
+@_register('plus', padding=0.14)
 def _draw_plus(p: QPainter, r: QRectF, color: QColor):
     p.setPen(Qt.PenStyle.NoPen)
     p.setBrush(color)
@@ -281,9 +315,9 @@ def _draw_muted(p: QPainter, r: QRectF, color: QColor):
     p.drawLine(QPointF(x1 + d, cy - d), QPointF(x1 - d, cy + d))
 
 
-@_register('cross')
+@_register('cross', padding=0.2)
 def _draw_cross(p: QPainter, r: QRectF, color: QColor):
-    lw = max(1.5, min(r.width(), r.height()) * 0.14)
+    lw = max(1.5, min(r.width(), r.height()) * 0.17)
     pen = QPen(color, lw)
     pen.setCapStyle(Qt.PenCapStyle.RoundCap)
     p.setPen(pen)
@@ -293,9 +327,9 @@ def _draw_cross(p: QPainter, r: QRectF, color: QColor):
     p.drawLine(QPointF(r.right() - m, r.top() + m), QPointF(r.left() + m, r.bottom() - m))
 
 
-@_register('sort')
+@_register('sort', padding=0.09)
 def _draw_sort(p: QPainter, r: QRectF, color: QColor):
-    lw = max(1.5, min(r.width(), r.height()) * 0.12)
+    lw = max(1.5, min(r.width(), r.height()) * 0.10)
     pen = QPen(color, lw)
     pen.setCapStyle(Qt.PenCapStyle.RoundCap)
     pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
@@ -303,8 +337,8 @@ def _draw_sort(p: QPainter, r: QRectF, color: QColor):
     p.setBrush(Qt.BrushStyle.NoBrush)
     cx = r.center().x()
     head = min(r.width(), r.height()) * 0.22
-    top = r.top() + r.height() * 0.12
-    bot = r.bottom() - r.height() * 0.12
+    top = r.top() + r.height() * 0.10
+    bot = r.bottom() - r.height() * 0.10
     p.drawLine(QPointF(cx, top), QPointF(cx - head, top + head))
     p.drawLine(QPointF(cx, top), QPointF(cx + head, top + head))
     p.drawLine(QPointF(cx, top), QPointF(cx, bot))

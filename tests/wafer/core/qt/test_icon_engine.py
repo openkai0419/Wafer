@@ -45,7 +45,7 @@ class TestIconDraw:
 
 
 ALL_KEYS = [
-    'gear', 'folder_plus', 'subfolder', 'fullscreen',
+    'gear', 'gear_small', 'folder_plus', 'subfolder', 'fullscreen',
     'plus', 'minus', 'play', 'pause', 'volume', 'muted',
     'cross', 'sort',
 ]
@@ -93,28 +93,29 @@ class TestPadding:
         pm = icon.pixmap(QSize(32, 32))
         assert pm.width() == 32
 
-    def test_zero_padding(self):
+    def test_zero_margin(self):
         from wafer.core.qt.icon_engine import themed_icon
-        icon = themed_icon('gear', padding=0.0)
+        icon = themed_icon('gear', margin=0.0)
         assert not icon.isNull()
 
-    def test_large_padding(self):
+    def test_large_margin(self):
         from wafer.core.qt.icon_engine import themed_icon
-        icon = themed_icon('gear', padding=0.35)
+        icon = themed_icon('gear', margin=0.35)
         pm = icon.pixmap(QSize(32, 32))
         assert pm.width() == 32
 
     def test_padding_clamped(self):
         from wafer.core.qt.icon_engine import themed_icon, _ThemedIconEngine
         from wafer.core.qt.icon_engine import _REGISTRY
-        engine = _ThemedIconEngine(_REGISTRY['gear'], padding=0.8)
+        fn, _ = _REGISTRY['gear']
+        engine = _ThemedIconEngine(fn, padding=0.8)
         assert engine._padding == 0.5
-        engine2 = _ThemedIconEngine(_REGISTRY['gear'], padding=-0.1)
+        engine2 = _ThemedIconEngine(fn, padding=-0.1)
         assert engine2._padding == 0.0
 
-    @pytest.mark.parametrize("padding", [0.0, 0.1, 0.2, 0.3])
-    def test_various_paddings_render(self, padding):
+    @pytest.mark.parametrize("margin", [0.0, 0.1, 0.2, 0.3])
+    def test_various_margins_render(self, margin):
         from wafer.core.qt.icon_engine import themed_icon
-        icon = themed_icon('folder_plus', padding=padding)
+        icon = themed_icon('folder_plus', margin=margin)
         pm = icon.pixmap(QSize(32, 32))
         assert pm.width() == 32

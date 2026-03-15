@@ -4,7 +4,7 @@ from pathlib import Path
 
 from wafer.core.db.file_db import FileDB
 from wafer.core.db.query import FileSearchEngine
-from wafer.core.db.composer import SearchComposer
+from wafer.plugin.query.composer import SearchComposer
 from wafer.plugin.query.base import BaseFilterPlugin
 from wafer.plugin.query.builtin import (
     TextFilter, DirectoryFilter,
@@ -105,10 +105,11 @@ class TestTextFilterBuildPathQuery:
         assert sql is not None
         assert "meta_info" in sql
 
-    def test_no_keys_require_true_returns_none_for_none_keys(self):
+    def test_no_keys_require_true_returns_empty_for_none_keys(self):
         params = {'keys': None, 'require_keys': True}
         sql, bind = TextFilter.build_path_query(params, np)
-        assert sql is None
+        assert sql is not None
+        assert 'WHERE 0' in sql
 
     def test_no_keys_require_true_returns_empty_for_empty_list(self):
         params = {'keys': [], 'require_keys': True}
@@ -313,10 +314,10 @@ class TestComposerCombineLogic:
         paths, _, _ = composer.execute(engine, entries, NaturalNameSort, True)
         assert len(paths) == 0
 
-    def test_none_keys_returns_all(self, engine, composer):
+    def test_none_keys_returns_nothing(self, engine, composer):
         entries = [(TextFilter, {'keys': None}, None)]
         paths, _, _ = composer.execute(engine, entries, NaturalNameSort, True)
-        assert len(paths) == 200
+        assert len(paths) == 0
 
     def test_filter_returns_none_skipped(self, engine, composer):
         entries = [

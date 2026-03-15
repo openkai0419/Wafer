@@ -117,3 +117,21 @@ class TestTextFilterWriteParams:
         assert result['query_mode'] == original['query_mode']
         assert result['keyword_mode'] == original['keyword_mode']
         assert result['keyword_separator'] == original['keyword_separator']
+
+
+class TestCheckableComboRemake:
+
+    def test_remake_emits_action_changed(self, qapp):
+        w = TextFilter.create_widget()
+        signals = []
+        w.keys_combo.action_changed.connect(lambda: signals.append(True))
+        w.keys_combo.remake([('__filepath__', 10), ('prompt', 5)])
+        assert len(signals) == 1
+
+    def test_remake_twice_emits_each_time(self, qapp):
+        w = TextFilter.create_widget()
+        signals = []
+        w.keys_combo.action_changed.connect(lambda: signals.append(True))
+        w.keys_combo.remake([('__filepath__', 10)])
+        w.keys_combo.remake([('__filepath__', 8), ('prompt', 3)])
+        assert len(signals) == 2

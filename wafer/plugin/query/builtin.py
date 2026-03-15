@@ -75,6 +75,10 @@ class TextFilter(BaseFilterPlugin):
 
     @classmethod
     def bind_key_store(cls, widget, key_store):
+        prev = getattr(widget, '_bound_key_store', None)
+        if prev is not None:
+            prev.updated.disconnect(widget.keys_combo.remake)
+        widget._bound_key_store = key_store
         key_store.updated.connect(widget.keys_combo.remake)
         if key_store.data:
             widget.keys_combo.remake(key_store.data)
@@ -82,16 +86,13 @@ class TextFilter(BaseFilterPlugin):
     @classmethod
     @profiler.profile
     def build_path_query(cls, params, normalize_path):
-        raw_keys = params.get('keys')
         keys, include_kw, exclude_kw = _normalize_text_inputs(params)
         query_mode = params.get('query_mode', 'LIKE')
         keyword_mode = params.get('keyword_mode', 'OR')
         require_keys = params.get('require_keys', True)
 
         if require_keys and not keys:
-            if raw_keys is not None:
-                return "SELECT path FROM files WHERE 0", []
-            return None, []
+            return "SELECT path FROM files WHERE 0", []
 
         has_filepath = '__filepath__' in keys
         other_keys = [k for k in keys if k != '__filepath__']

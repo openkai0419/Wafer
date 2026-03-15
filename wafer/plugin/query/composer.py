@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from ...utils.profiling import profiler
-from ...plugin.query.base import BaseFilterPlugin, BaseSortPlugin
+from .base import BaseFilterPlugin, BaseSortPlugin
 
 
 class SearchComposer:

@@ -157,6 +157,14 @@ class TestSmokeViewer:
                         win.setting_db.get_all_parent_folders(),
                         win.setting_db.get_all_ignore_folders(),
                     )
+
+                    from wafer.core.db.query import FileSearchEngine
+                    from wafer.plugin.query.composer import SearchComposer
+                    engine = FileSearchEngine(db_path)
+                    keys = SearchComposer().list_all_keys(engine, [])
+                    win.search_row_widget._key_store.set_data(keys)
+                    QtWidgets.QApplication.instance().processEvents()
+
                     win.search_service.reset_state()
                     win.search(force=True)
 
@@ -169,9 +177,9 @@ class TestSmokeViewer:
 
                     win.search_service.search_finished.connect(_intercept)
 
-                    _process_events_until(lambda: 'paths' in search_done)
-
-                    assert 'paths' in search_done, 'search_finished never fired'
+                    _process_events_until(
+                        lambda: len(search_done.get('paths', [])) == 3
+                    )
                     assert len(search_done['paths']) == 3
 
                     assert win.grid_view is not None

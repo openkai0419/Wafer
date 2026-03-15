@@ -5,7 +5,7 @@ from PySide6 import QtCore
 from ...utils.profiling import profiler
 from ...utils.logs import AppLogger
 from ...core.db.query import FileSearchEngine
-from ...core.db.composer import SearchComposer
+from ...plugin.query.composer import SearchComposer
 from ...core.qt.rate_limit import qt_debounce
 from ...core.qt.dispatcher import Dispatcher, CancelToken
 from ...core.qt.thread import utility_pool
@@ -87,19 +87,15 @@ class SearchService(QtCore.QObject):
     def set_entries_builder(self, builder):
         self._entries_builder = builder
 
-    @property
-    def has_entries_builder(self):
-        return self._entries_builder is not None
-
     def reset_state(self):
         self._last_snapshot = None
         self._keys = None
         self._directories = None
         self._external_entries = None
-        self._entries_builder = None
 
-    def _query_snapshot(self):
-        entries = self.build_filter_entries()
+    def _query_snapshot(self, entries=None):
+        if entries is None:
+            entries = self.build_filter_entries()
         entries_key = tuple(
             (cls.NAME, repr(sorted(params.items())), op)
             for cls, params, op in entries
@@ -147,7 +143,10 @@ class SearchService(QtCore.QObject):
     @profiler.profile
     def execute(self, force=False):
         AppLogger.debug('[RUNNING] SearchService.execute')
-        snapshot = self._query_snapshot()
+        filter_entries = self.build_filter_entries()
+        sort_plugin = self.resolve_sort()
+        ascending = self._params.get('ascending', True)
+        snapshot = self._query_snapshot(filter_entries)
         now = datetime.now()
         with QtCore.QMutexLocker(self._lock):
             if not force:
@@ -164,15 +163,12 @@ class SearchService(QtCore.QObject):
                     self._pending_snapshot = snapshot
                     return
             self._pending_snapshot = None
-            self._start_search(snapshot)
+            self._start_search(snapshot, filter_entries, sort_plugin, ascending)
 
     @profiler.profile
-    def _start_search(self, snapshot):
+    def _start_search(self, snapshot, filter_entries, sort_plugin, ascending):
         self.search_started.emit()
         dbpath = self._dbpath_getter()
-        filter_entries = self.build_filter_entries()
-        sort_plugin = self.resolve_sort()
-        ascending = self._params.get('ascending', True)
         cancel = CancelToken()
         self._current_cancel = cancel
         self._current_snapshot = snapshot
@@ -200,6 +196,5 @@ class SearchService(QtCore.QObject):
         self.search_finished.emit(paths, sources, aspects)
         with QtCore.QMutexLocker(self._lock):
             if self._pending_snapshot:
-                pq = self._pending_snapshot
                 self._pending_snapshot = None
-                self._start_search(pq)
+                self.execute(force=True)

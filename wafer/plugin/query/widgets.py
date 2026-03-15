@@ -48,6 +48,7 @@ class CheckableCombo(QtWidgets.QToolButton, TranslatorMixin):
                     a.setChecked(True)
                     break
         self.setUpdatesEnabled(True)
+        self.action_changed.emit()
 
     def _on_key_changed(self):
         self.previous_key = self.checked_items()

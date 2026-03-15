@@ -264,9 +264,9 @@ def test_entries_builder_reflects_param_changes():
     assert snap1 != snap2
 
 
-def test_reset_state_clears_entries_builder():
+def test_reset_state_keeps_entries_builder():
     svc = _make_service()
     svc.set_entries_builder(lambda: [(TextFilter, {'keywords': 'x', 'keys': None, 'query_mode': 'GLOB', 'keyword_mode': 'AND', 'keyword_separator': ','}, None)])
     svc.reset_state()
     result = svc.build_filter_entries()
-    assert result[0][1]['keywords'] == ''
+    assert result[0][1]['keywords'] == 'x'

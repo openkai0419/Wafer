@@ -131,7 +131,7 @@
 ■ 検索フィルタプラグインシステム
 - 検索をSearchQuery単一クラスからFilter/Sort/Composerの3層プラグイン構成に分解
 - wafer/plugin/query/: base.py(基底), handler.py(レジストリ), builtin.py(TextFilter, DirectoryFilter, 各Sort)
-- wafer/core/db/composer.py: SearchComposer。filter_entries + sort_plugin → (paths, sources, aspects)
+- wafer/plugin/query/composer.py: SearchComposer。filter_entries + sort_plugin → (paths, sources, aspects)
 - SearchService: build_filter_entries() + resolve_sort() + _query_snapshot()でdedup
 - SearchComposer.list_all_keys(): CTE使用でpath集合を1回だけ評価し、meta_info+tagsからキー列挙
 - PluginLoaderの_REGISTRY_MAPにBaseFilterPlugin('filter'), BaseSortPlugin('sort')を追加済み

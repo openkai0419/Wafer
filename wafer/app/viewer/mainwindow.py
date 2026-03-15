@@ -379,13 +379,12 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
 
     def _sync_service_from_ui(self):
         dirs = self.folder_view.get_selected_paths()
-        if not self.search_service.has_entries_builder:
-            self.search_service.set_entries_builder(
-                lambda: self.search_row_widget.build_filter_entries(
-                    self.folder_view.get_selected_paths(),
-                    self.search_service.get('include_subfolders', True),
-                )
+        self.search_service.set_entries_builder(
+            lambda: self.search_row_widget.build_filter_entries(
+                self.folder_view.get_selected_paths(),
+                self.search_service.get('include_subfolders', True),
             )
+        )
         self.search_service.set_directories(dirs)
         sort_by, ascending = self.search_row_widget.get_sort()
         self.search_service.set_params({

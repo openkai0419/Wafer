@@ -3,7 +3,7 @@ from ....utils.formatting import display_prefixed_key
 from ....utils.profiling import profiler
 from ....utils.logs import AppLogger
 from ....core.db.query import FileSearchEngine
-from ....core.db.composer import SearchComposer
+from ....plugin.query.composer import SearchComposer
 from ....core.lang.manager import TranslatorMixin
 from ....core.qt.dispatcher import Dispatcher, CancelSlot
 from ....core.qt.thread import utility_pool

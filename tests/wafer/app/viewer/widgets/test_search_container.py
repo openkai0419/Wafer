@@ -3,7 +3,7 @@ from unittest.mock import patch, MagicMock
 
 from PySide6 import QtWidgets
 
-from wafer.plugin.query.builtin import TextFilter, DirectoryFilter
+from wafer.builtins.filters import TextFilter, DirectoryFilter
 from wafer.plugin.query.base import KeyStore
 from wafer.app.viewer.widgets.search_container import SearchContainer, FilterRow
 

@@ -10,7 +10,8 @@ from ...core.qt.rate_limit import qt_debounce
 from ...core.qt.dispatcher import Dispatcher, CancelToken
 from ...core.qt.thread import utility_pool
 from ...plugin.query.handler import sort_registry
-from ...plugin.query.builtin import TextFilter, DirectoryFilter, NaturalPathSort
+from ...builtins.filters import TextFilter, DirectoryFilter
+from ...builtins.sorts import NaturalPathSort
 
 
 SORT_CHOICES = ["path", "name", "created", "modified", "collected", "size", "random"]

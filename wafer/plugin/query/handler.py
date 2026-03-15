@@ -35,21 +35,3 @@ class SortRegistry:
 
 filter_registry = FilterRegistry()
 sort_registry = SortRegistry()
-
-
-def register_builtins():
-    from .builtin import (
-        TextFilter, DirectoryFilter,
-        NaturalPathSort, NaturalNameSort,
-        ModifiedSort, CreatedSort, SizeSort, CollectedSort,
-        RandomSort,
-    )
-    for cls in [TextFilter, DirectoryFilter]:
-        filter_registry.register(cls)
-    for cls in [NaturalPathSort, NaturalNameSort,
-                ModifiedSort, CreatedSort, SizeSort, CollectedSort,
-                RandomSort]:
-        sort_registry.register(cls)
-
-
-register_builtins()

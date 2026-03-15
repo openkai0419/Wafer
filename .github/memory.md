@@ -145,6 +145,11 @@
 ■ セッション管理の設計判断
 - Trayプロセスも独自QApplicationを持つためInputDialogを表示可能（parent=None）
 
+■ テスト結果の確認方法
+- tests/conftest.pyのpytestフック（pytest_configure / pytest_runtest_logreport / pytest_sessionfinish）で.temp/test_summary.txtにサマリーを自動書き出し
+- 内容: total / passed / failed / skipped / error / exitstatus / duration / 失敗テスト一覧
+- PowerShellパイプで結果が取れない問題の根本対策。ターミナル出力はOut-Nullで捨て、ファイルを読む
+
 ■ AnimatedCellWidget / GridView スクロール最適化の知見
 - _sync_additional_widgetでサイズ不変時はmove()のみ使う。setGeometry()はresizeEvent+paintEventを誘発する
 - setUpdatesEnabled(False/True)はhide()が大量発生する区間（recycle）には有効だが、move()中心の区間（_sync_additional_widgets）では逆効果。Trueに戻した瞬間にバッチrepaintが発火し、かえってスパイクが増える

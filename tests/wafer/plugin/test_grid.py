@@ -34,7 +34,8 @@ def test_resolve_jpg():
 
 
 def test_resolve_unknown_extension():
-    assert grid_resolver.registry.resolve('file.xyz') is None
+    from wafer.builtins.grid import SystemThumbnailPlugin
+    assert grid_resolver.registry.resolve('file.xyz') is SystemThumbnailPlugin
 
 
 def test_image_plugin_load(tmp_path):
@@ -92,8 +93,10 @@ def test_resolve_instance_returns_plugin():
     assert isinstance(instance, ImageGridPlugin)
 
 
-def test_resolve_instance_unknown_returns_none():
-    assert grid_resolver.resolve_instance('file.xyz') is None
+def test_resolve_instance_unknown_returns_system_thumbnail():
+    from wafer.builtins.grid import SystemThumbnailPlugin
+    instance = grid_resolver.resolve_instance('file.xyz')
+    assert isinstance(instance, SystemThumbnailPlugin)
 
 
 def test_is_widget_plugin_unknown():
@@ -393,7 +396,8 @@ def test_resolve_instance():
 
 
 def test_resolve_instance_unknown():
-    assert grid_resolver.registry.resolve_instance('file.xyz') is None
+    from wafer.builtins.grid import SystemThumbnailPlugin
+    assert isinstance(grid_resolver.registry.resolve_instance('file.xyz'), SystemThumbnailPlugin)
 
 
 def test_resolve_chain_returns_priority_sorted():
@@ -422,7 +426,9 @@ def test_resolve_chain_returns_priority_sorted():
 
 
 def test_resolve_chain_empty_for_unknown():
-    assert grid_resolver.registry.resolve_chain('file.xyz') == []
+    from wafer.builtins.grid import SystemThumbnailPlugin
+    chain = grid_resolver.registry.resolve_chain('file.xyz')
+    assert chain == [SystemThumbnailPlugin]
 
 
 def test_resolve_chain_uses_cache():

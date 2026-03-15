@@ -12,7 +12,7 @@ from ....core.qt.dispatcher import Dispatcher, CancelSlot
 from ....core.qt.thread import utility_pool
 from ....plugin.query.handler import filter_registry, sort_registry
 from ....plugin.query.base import KeyStore
-from ....plugin.query.builtin import TextFilter, DirectoryFilter
+from ....builtins.filters import TextFilter, DirectoryFilter
 
 
 class FilterRow(QtWidgets.QWidget):

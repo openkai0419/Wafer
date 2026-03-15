@@ -4,11 +4,14 @@ from PySide6 import QtWidgets
 
 from wafer.plugin.query.base import BaseFilterPlugin, BaseSortPlugin, KeyStore
 from wafer.plugin.query.handler import FilterRegistry, SortRegistry, filter_registry, sort_registry
-from wafer.plugin.query.builtin import (
+from wafer.builtins.filters import (
     TextFilter, DirectoryFilter,
+    _normalize_text_inputs, _match_clause, _escape_like,
+)
+from wafer.builtins.sorts import (
     NaturalPathSort, NaturalNameSort,
     ModifiedSort, CreatedSort, SizeSort, CollectedSort, RandomSort,
-    _normalize_text_inputs, _match_clause, _escape_like, _natural_key,
+    _natural_key,
 )
 
 

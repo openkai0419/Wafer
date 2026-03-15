@@ -1,7 +1,7 @@
 from unittest.mock import patch
 from wafer.app.viewer.search import SearchService, _DEFAULTS, SORT_CHOICES
 from wafer.core.qt.dispatcher import CancelToken
-from wafer.plugin.query.builtin import TextFilter, DirectoryFilter
+from wafer.builtins.filters import TextFilter, DirectoryFilter
 
 
 def _make_service():

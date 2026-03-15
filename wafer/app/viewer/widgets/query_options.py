@@ -7,7 +7,7 @@ from ....plugin.query.composer import SearchComposer
 from ....core.lang.manager import TranslatorMixin
 from ....core.qt.dispatcher import Dispatcher, CancelSlot
 from ....core.qt.thread import utility_pool
-from ....plugin.query.builtin import DirectoryFilter
+from ....builtins.filters import DirectoryFilter
 
 class CheckableCombo(QtWidgets.QToolButton, TranslatorMixin):
     action_changed = QtCore.Signal()

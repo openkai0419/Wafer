@@ -6,8 +6,8 @@ from wafer.core.db.file_db import FileDB
 from wafer.core.db.query import FileSearchEngine
 from wafer.plugin.query.composer import SearchComposer
 from wafer.plugin.query.base import BaseFilterPlugin
-from wafer.plugin.query.builtin import (
-    TextFilter, DirectoryFilter,
+from wafer.builtins.filters import TextFilter, DirectoryFilter
+from wafer.builtins.sorts import (
     NaturalPathSort, NaturalNameSort,
     ModifiedSort, CreatedSort, SizeSort, CollectedSort, RandomSort,
 )

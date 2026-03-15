@@ -56,6 +56,14 @@
 - コマンドはctx経由で取得し、UIがコマンド状態を参照する時はコマンド不在を考慮する
 - プラグインが読み込まれていなくてもアプリが落ちないこと（直接importしたファイル不在はエラーで可）
 
+■ ビルトインとExtensionの二層構成
+- ビルトイン実装はwafer/builtins/に配置。extensionと同じプラグインインターフェースを使う
+- extensions/はPluginLoaderが外部ディレクトリから自動検出。wafer/builtins/はload_plugins()内でregister_all()により登録
+- ビルトインとextensionの唯一の違いはexe化時にwafer/builtins/は自動的に同梱される点。設計・インターフェースは同一
+- Grid/Viewerのフォールバックはビルトインプラグイン（EXTENSIONS=(), PRIORITY=-100）として登録。Resolverにフォールバックロジックをハードコードしない
+- Filter/Sortのビルトイン実装もwafer/builtins/filters.py, sorts.pyに配置。wafer/plugin/query/builtin.pyはre-export用の互換レイヤー
+- コマンドはCommandMeta/ActionKit系で別体系のためbuiltinsに含めない。wafer/app/以下とextensions/に分散するのが正しい
+
 ■ 未登録コマンドへの安全なフォールバック
 - CommandRegistry.execute()は未登録コマンドでNone返却+warning。ValueErrorは投げない
 - CommandMenuBuilder.build_into()は未知コマンドIDをスキップ（warningログ）
@@ -91,3 +99,5 @@
 - GridViewを実インスタンス化するテスト（show()やprocessEvents()を使う場合）はCommandOptionStore.configure()をmodule-scoped fixtureで初期化する
 - SearchQuery.__post_init__はlist引数をtupleに変換する。テストでは比較もtupleで行う
 - テストの重複ファイル・重複メソッド名に注意。Pythonは同名メソッドを後勝ちで上書きし、pytestは1つしか収集しない
+- conftest.pyのpytest_sessionfinishフックでテスト結果を.temp/test_summary.txtに自動書き出し。テスト実行後はターミナル出力ではなくこのファイルを読んで結果を確認すること
+- pyproject.tomlのtimeout=30で各テスト30秒タイムアウト（pytest-timeout）。不要なプロセス残留を防止

@@ -1,6 +1,5 @@
-from PySide6 import QtCore, QtGui
+from PySide6 import QtGui
 
-from ...utils.logs import AppLogger
 from ...utils.profiling import profiler
 from ..registry import PluginRegistry
 from .base import BaseGridPlugin, ImageGridPlugin, WidgetGridPlugin
@@ -8,44 +7,11 @@ from .base import BaseGridPlugin, ImageGridPlugin, WidgetGridPlugin
 VIEWER_THUMBNAIL_DEFAULT_SIZE = 512
 
 
-@profiler.profile
-def _pil_to_qimage(img):
-    if img.mode != 'RGBA':
-        img = img.convert('RGBA')
-    data = img.tobytes('raw', 'BGRA')
-    qimage = QtGui.QImage(data, img.width, img.height, img.width * 4, QtGui.QImage.Format_ARGB32)
-    return qimage.copy()
-
-
 class GridResolver:
 
     def __init__(self):
         self.registry = PluginRegistry()
-        self._thumbnailer = None
         self.thumbnail_size = VIEWER_THUMBNAIL_DEFAULT_SIZE
-
-    def _get_thumbnailer(self):
-        if self._thumbnailer is None:
-            from ...core.platform.thumbnails import FileThumbnailer
-            self._thumbnailer = FileThumbnailer()
-        return self._thumbnailer
-
-    @profiler.profile
-    def _fallback_load(self, path: str, size=None) -> QtGui.QImage | None:
-        try:
-            thumb_size = self.thumbnail_size
-            if size is not None:
-                thumb_size = max(size.width(), size.height(), 256)
-            pil_img = self._get_thumbnailer().get_thumbnail(path, size=thumb_size)
-            if pil_img is None:
-                return None
-            qimage = _pil_to_qimage(pil_img)
-            if size is not None:
-                qimage = qimage.scaled(size, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
-            return qimage
-        except Exception as e:
-            AppLogger.debug(f'[GridResolver] Fallback load failed: {path} ({e})')
-            return None
 
     @profiler.profile
     def resolve(self, path: str) -> type[BaseGridPlugin] | None:
@@ -75,7 +41,7 @@ class GridResolver:
                 result = instance.load(path, size)
                 if result is not None:
                     return result
-        return self._fallback_load(path, size)
+        return None
 
 
 grid_resolver = GridResolver()

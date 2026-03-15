@@ -1,7 +1,7 @@
 import pytest
 from PySide6 import QtWidgets
 
-from wafer.plugin.query.builtin import TextFilter
+from wafer.builtins.filters import TextFilter
 
 
 @pytest.fixture()

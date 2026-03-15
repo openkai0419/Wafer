@@ -27,13 +27,13 @@ class ViewerResolver:
         }
 
     def load_content(self, path: str) -> QtGui.QImage | None:
-        instance = self.registry.resolve_instance(path)
-        if isinstance(instance, ImageViewerPlugin):
-            result = instance.load_content(path)
-            if result is not None:
-                return result
-        from ..grid.handler import grid_resolver
-        return grid_resolver.load(path)
+        for plugin_cls in self.registry.resolve_chain(path):
+            instance = self.registry.instance(plugin_cls.NAME)
+            if isinstance(instance, ImageViewerPlugin):
+                result = instance.load_content(path)
+                if result is not None:
+                    return result
+        return None
 
     def render(self, widget, path: str):
         instance = self.registry.resolve_instance(path)

@@ -38,7 +38,8 @@ def test_resolve_png():
 
 
 def test_resolve_unknown():
-    assert viewer_resolver.resolve('file.xyz') is None
+    from wafer.builtins.viewer import DefaultViewerPlugin
+    assert viewer_resolver.resolve('file.xyz') is DefaultViewerPlugin
 
 
 def test_image_plugin_priority():

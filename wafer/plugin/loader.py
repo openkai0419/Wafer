@@ -109,8 +109,11 @@ class PluginLoader:
             for plugin_cls in registry.list_all():
                 if id(plugin_cls) not in seen:
                     seen.add(id(plugin_cls))
+                    configure = getattr(plugin_cls, 'configure', None)
+                    if configure is None:
+                        continue
                     try:
-                        plugin_cls.configure()
+                        configure()
                     except Exception as e:
                         AppLogger.warning(
                             f'[PluginLoader] configure failed: {plugin_cls.NAME} ({e})', exc=e
@@ -235,5 +238,7 @@ def load_plugins(*, skip_install: bool = False, on_progress=None) -> list[str]:
         'filter': filter_registry,
         'sort': sort_registry,
     }
+    from ..builtins import register_all
+    register_all(registries)
     loader = PluginLoader(get_plugin_dir(), registries, skip_install=skip_install)
     return loader.load_all(on_progress=on_progress)

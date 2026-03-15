@@ -93,9 +93,10 @@ class TestGridPluginResolution:
             plugin_cls = grid_resolver.resolve(f'test{ext}')
             assert plugin_cls is not None, f'No plugin resolved for {ext}'
 
-    def test_unknown_extension_returns_none(self):
-        assert grid_resolver.resolve('test.xyz123') is None
-        assert grid_resolver.resolve('test.abc') is None
+    def test_unknown_extension_resolves_to_system_thumbnail(self):
+        from wafer.builtins.grid import SystemThumbnailPlugin
+        assert grid_resolver.resolve('test.xyz123') is SystemThumbnailPlugin
+        assert grid_resolver.resolve('test.abc') is SystemThumbnailPlugin
 
 
 class TestCollectorPluginResolution:
@@ -253,10 +254,11 @@ class TestFallbackForUnsupportedExtensions:
         _create_dummy_file(path, b'')
         result = grid_resolver.load(path)
 
-    def test_no_plugin_resolved_for_unsupported(self):
-        assert grid_resolver.resolve('file.xyz123') is None
-        assert grid_resolver.resolve('file.abc') is None
-        assert grid_resolver.resolve('file.dat') is None
+    def test_unsupported_resolves_to_system_thumbnail(self):
+        from wafer.builtins.grid import SystemThumbnailPlugin
+        assert grid_resolver.resolve('file.xyz123') is SystemThumbnailPlugin
+        assert grid_resolver.resolve('file.abc') is SystemThumbnailPlugin
+        assert grid_resolver.resolve('file.dat') is SystemThumbnailPlugin
 
     def test_fallback_load_returns_image_for_known_image(self, tmp_path):
         path = str(tmp_path / 'test.jpg')
@@ -269,15 +271,18 @@ class TestFallbackForUnsupportedExtensions:
 
 class TestPluginAbsenceDoesntCrash:
 
-    def test_resolve_none_for_missing_extension(self):
-        assert grid_resolver.resolve('test.nosuchext') is None
+    def test_no_specific_plugin_resolved_for_missing_extension(self):
+        from wafer.builtins.grid import SystemThumbnailPlugin
+        assert grid_resolver.resolve('test.nosuchext') is SystemThumbnailPlugin
 
-    def test_resolve_chain_empty_for_missing(self):
+    def test_resolve_chain_includes_fallback_for_missing(self):
+        from wafer.builtins.grid import SystemThumbnailPlugin
         chain = grid_resolver.resolve_chain('test.nosuchext')
-        assert chain == []
+        assert SystemThumbnailPlugin in chain
 
-    def test_resolve_instance_none_for_missing(self):
-        assert grid_resolver.resolve_instance('test.nosuchext') is None
+    def test_resolve_instance_for_missing_is_system_thumbnail(self):
+        from wafer.builtins.grid import SystemThumbnailPlugin
+        assert isinstance(grid_resolver.resolve_instance('test.nosuchext'), SystemThumbnailPlugin)
 
     def test_load_fallback_for_missing_extension(self, tmp_path):
         path = str(tmp_path / 'test.nosuchext')

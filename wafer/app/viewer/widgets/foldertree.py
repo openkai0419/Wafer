@@ -7,7 +7,7 @@ from ....utils.profiling import profiler
 from ....utils.logs import AppLogger
 from ....core.qt.dispatcher import Dispatcher, CancelToken
 from ....core.qt.thread import utility_pool
-from ....core.actions.bridge import ActionKit, UI, Context
+from ....core.commands.bridge import ActionKit, UI, Context
 from ....core.platform.dragparser import MimeDataParser
 from ....core.platform.file_operations import PastePlanItem
 from ....core.platform.path_utils import check_copy_conflict, unique_path

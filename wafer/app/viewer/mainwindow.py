@@ -26,7 +26,7 @@ from .widgets.combo_with_buttons import ComboBoxWithButtons
 from .commands.menu import AppMenuRegistrar
 from .search import SearchService
 from .session import QueryState, UIState, SessionEntry, SessionStore
-from ...core.actions.bridge import UI, Command
+from ...core.commands.bridge import UI, Command
 from ...core.state import StateStore
 from ...core.qt.window import WindowStateController
 AppMenuRegistrar.setup_menu()

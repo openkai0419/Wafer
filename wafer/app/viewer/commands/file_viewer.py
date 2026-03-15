@@ -1,5 +1,5 @@
-from ....core.actions.bridge import ActionKit
-from ....core.actions.command.require import require
+from ....core.commands.bridge import ActionKit
+from ....core.commands.command.require import require
 
 
 def _ensure_current_initialized(model) -> bool:

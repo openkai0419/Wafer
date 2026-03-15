@@ -1,4 +1,4 @@
-from ....core.actions.bridge import ActionKit
+from ....core.commands.bridge import ActionKit
 from ....constants import DEV_MODE
 
 def toggle_dev_log(ctx):

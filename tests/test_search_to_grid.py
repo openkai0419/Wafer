@@ -73,7 +73,7 @@ def _build_populated_db(tmp_path, images):
 
 @pytest.fixture(autouse=True, scope="module")
 def _configure_command_store(tmp_path_factory):
-    from wafer.core.actions.command.state import CommandOptionStore
+    from wafer.core.commands.command.state import CommandOptionStore
     prev = CommandOptionStore._instance, CommandOptionStore._initialized, CommandOptionStore._default_path
     CommandOptionStore._instance = None
     CommandOptionStore._initialized = False

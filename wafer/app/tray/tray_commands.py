@@ -4,7 +4,7 @@ from typing import Any
 
 from PySide6 import QtWidgets
 
-from ...core.actions.bridge import ActionKit
+from ...core.commands.bridge import ActionKit
 from ...utils.logs import AppLogger
 from ...constants import DEV_MODE
 from ...core.platform.process import AppProcess

@@ -60,7 +60,7 @@ def _discover_plugins(module) -> list[tuple[str, type]]:
 
 
 def _discover_command_classes(module) -> list[type]:
-    from ..core.actions.command.menu import discover_command_classes
+    from ..core.commands.command.menu import discover_command_classes
     return discover_command_classes(module)
 
 

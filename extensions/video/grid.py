@@ -75,7 +75,7 @@ class VideoGridPlugin(WidgetGridPlugin):
 
     @staticmethod
     def _apply_state(sm, state):
-        from wafer.core.actions.bridge import Command
+        from wafer.core.commands.bridge import Command
         sm.set_volume(state.get('volume', DEFAULT_VOLUME))
         sm.set_max_selected(state.get('max_selected', 3))
         sm.hover_autoplay = state.get('hover_autoplay', True)

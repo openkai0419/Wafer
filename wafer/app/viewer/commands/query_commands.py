@@ -1,5 +1,5 @@
-from ....core.actions.bridge import ActionKit, Command
-from ....core.actions.command.state import ActionGroupStateManager
+from ....core.commands.bridge import ActionKit, Command
+from ....core.commands.command.state import ActionGroupStateManager
 from ..search import SORT_CHOICES
 
 

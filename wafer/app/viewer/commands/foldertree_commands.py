@@ -2,7 +2,7 @@ import os
 
 from PySide6 import QtCore, QtWidgets
 
-from ....core.actions.bridge import ActionKit, Menu
+from ....core.commands.bridge import ActionKit, Menu
 from ....utils.paths import normalize_path
 from ....core.qt.dialog import ConfirmDialog
 

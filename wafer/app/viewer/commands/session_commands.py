@@ -1,7 +1,7 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from ....core.actions.bridge import ActionKit
-from ....core.actions.command.require import require
+from ....core.commands.bridge import ActionKit
+from ....core.commands.command.require import require
 from ....core.color.theme import ThemeManager
 from ....core.qt.dialog import InputDialog
 from ....core.platform.process import AppProcess

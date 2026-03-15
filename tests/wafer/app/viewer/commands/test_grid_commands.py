@@ -8,7 +8,7 @@ from wafer.app.viewer.commands.grid_commands import (
     _CHOICE_TO_INDEX,
     sync_grid_groups_from_settings,
 )
-from wafer.core.actions.command.state import ActionGroupStateManager, CommandOptionStore
+from wafer.core.commands.command.state import ActionGroupStateManager, CommandOptionStore
 
 
 GROUP = "grid_orientation"

@@ -1,7 +1,7 @@
 from PySide6 import QtWidgets
 
-from wafer.core.actions.bridge import Menu
-from wafer.core.actions.command.core import CommandRegistry
+from wafer.core.commands.bridge import Menu
+from wafer.core.commands.command.core import CommandRegistry
 from wafer.app.viewer.commands.foldertree_commands import FolderTreeCommands
 
 

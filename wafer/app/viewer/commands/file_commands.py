@@ -6,8 +6,8 @@ from typing import List
 
 from PySide6 import QtCore, QtGui
 
-from ....core.actions.bridge import Command, ActionKit
-from ....core.actions.command.require import require
+from ....core.commands.bridge import Command, ActionKit
+from ....core.commands.command.require import require
 from ....core.qt.dialog import ConfirmDialog, ThumbnailConfirmDialog
 from ....core.platform.copy import ClipboardFileTransfer
 from ....core.platform.paste import paste_clipboard_files

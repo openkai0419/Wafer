@@ -1,7 +1,7 @@
 from __future__ import annotations
 from PySide6 import QtCore, QtGui, QtWidgets
 from typing import Literal
-from ....core.actions.bridge import ActionKit
+from ....core.commands.bridge import ActionKit
 FitMode = Literal["contain", "cover"]
 
 _HUGE = 1_000_000_000.0

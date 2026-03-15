@@ -1,5 +1,5 @@
-from ....core.actions.bridge import ActionKit
-from ....core.actions.command.require import require
+from ....core.commands.bridge import ActionKit
+from ....core.commands.command.require import require
 from ....utils.paths import list_setting_db_names
 from ....utils.logs import AppLogger
 from ....core.platform.process import AppProcess

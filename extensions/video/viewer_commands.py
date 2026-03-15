@@ -1,5 +1,5 @@
 from wafer.plugin import MenuGroup, CommandMeta, CommandParam, require
-from wafer.core.actions.bridge import Command
+from wafer.core.commands.bridge import Command
 
 
 @require(vw="VideoViewerWidget")

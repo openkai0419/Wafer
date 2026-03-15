@@ -579,14 +579,14 @@ class MpvCellWidget(QWidget):
             return
         cls._shared_initialized = True
         cls._slot_manager = PlaybackSlotManager(parent)
-        from wafer.core.actions.bridge import UI
+        from wafer.core.commands.bridge import UI
         UI.register_instance("VideoSlotManager", cls._slot_manager)
         if cls._pending_grid_state is not None:
             from .grid import VideoGridPlugin
             VideoGridPlugin._apply_state(cls._slot_manager, cls._pending_grid_state)
             cls._pending_grid_state = None
         else:
-            from wafer.core.actions.bridge import Command
+            from wafer.core.commands.bridge import Command
             Command.set_checked('vgrid.toggle_hover_autoplay', cls._slot_manager.hover_autoplay)
             Command.set_checked('vgrid.toggle_appear_autoplay', cls._slot_manager.appear_autoplay)
             Command.set_checked('vgrid.toggle_select_autoplay', cls._slot_manager.select_autoplay)

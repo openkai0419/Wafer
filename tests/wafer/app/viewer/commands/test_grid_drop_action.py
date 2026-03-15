@@ -1,6 +1,6 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from wafer.core.actions.command.context import CommandContext
+from wafer.core.commands.command.context import CommandContext
 from wafer.app.viewer.commands.grid_commands import GridViewDropCommands
 
 

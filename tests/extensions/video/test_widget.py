@@ -177,7 +177,7 @@ class TestMpvCellWidget:
         from extensions.video.widget import MpvCellWidget
         from unittest.mock import MagicMock
         mock_cmd = MagicMock()
-        monkeypatch.setattr('wafer.core.actions.bridge.Command.set_checked', mock_cmd)
+        monkeypatch.setattr('wafer.core.commands.bridge.Command.set_checked', mock_cmd)
         MpvCellWidget._pending_grid_state = None
         w = MpvCellWidget()
         synced = {c.args[0]: c.args[1] for c in mock_cmd.call_args_list}
@@ -191,7 +191,7 @@ class TestMpvCellWidget:
         from extensions.video.widget import MpvCellWidget
         from unittest.mock import MagicMock
         mock_cmd = MagicMock()
-        monkeypatch.setattr('wafer.core.actions.bridge.Command.set_checked', mock_cmd)
+        monkeypatch.setattr('wafer.core.commands.bridge.Command.set_checked', mock_cmd)
         MpvCellWidget._pending_grid_state = {'hover_autoplay': False, 'appear_autoplay': False, 'select_autoplay': False, 'volume': 50}
         w = MpvCellWidget()
         synced = {c.args[0]: c.args[1] for c in mock_cmd.call_args_list}

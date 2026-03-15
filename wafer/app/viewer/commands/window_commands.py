@@ -1,6 +1,6 @@
 from PySide6 import QtCore
 
-from ....core.actions.bridge import Command, ActionKit
+from ....core.commands.bridge import Command, ActionKit
 from ....core.setting.folder_settings import FolderSettings
 from ....core.setting.setting_window import SettingsWindow
 from ....core.platform.process import AppProcess

@@ -161,8 +161,8 @@ class TestDeferredCommandRegistration:
         cmd_dir.mkdir(parents=True)
         (cmd_dir / '__init__.py').write_text('')
         (cmd_dir / 'commands.py').write_text(
-            'from wafer.core.actions.command.menu import MenuGroup\n'
-            'from wafer.core.actions.command.core import CommandMeta\n'
+            'from wafer.core.commands.command.menu import MenuGroup\n'
+            'from wafer.core.commands.command.core import CommandMeta\n'
             'class TestCmdGroup(MenuGroup):\n'
             '    NAME = "TestCmd"\n'
             '    @classmethod\n'
@@ -174,7 +174,7 @@ class TestDeferredCommandRegistration:
         loader = PluginLoader(str(plugin_dir), registries, skip_install=True)
         loader.load_all()
         assert len(PluginLoader._deferred_commands) > 0
-        from wafer.core.actions.command.core import CommandRegistry
+        from wafer.core.commands.command.core import CommandRegistry
         reg = CommandRegistry.instance()
         assert not reg.has_command('tcmd.noop')
         PluginLoader.register_extension_commands()

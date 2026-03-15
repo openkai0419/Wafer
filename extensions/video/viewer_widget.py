@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
 )
 from wafer.utils.formatting import dpix
 from wafer.utils.logs import AppLogger
-from wafer.core.actions.bridge import ActionKit, UI, Command
+from wafer.core.commands.bridge import ActionKit, UI, Command
 from wafer.core.color.theme import ThemeManager
 from wafer.core.qt.icon_engine import icon_draw
 

@@ -26,7 +26,7 @@
 - re-exportだけのファイル(ui.py等)は作らず実モジュールから直接importさせる
 - KeyCombo/KeyChordSpec等の型エイリアスもcombo.pyに一元化
 - modifier_keys_from_qt()でQt修飾キー→Key_*変換を一元管理（combo.py）
-- @require デコレータ（wafer.core.actions.command.require）でインスタンス注入。@require_v でctx.get()値注入。Ctxクラスは廃止
+- @require デコレータ（wafer.core.commands.command.require）でインスタンス注入。@require_v でctx.get()値注入。Ctxクラスは廃止
 - path/pathsのようなフォールバックロジックがあるctx値は補助関数（_ctx_path等）で関数内から直接呼ぶ。デコレータ化しない
 - CommandMeta.priorityフィールドで同一IDの上書き優先度を制御（高い方が勝つ、同値は後勝ち）
 

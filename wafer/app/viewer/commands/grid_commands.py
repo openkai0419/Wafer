@@ -3,8 +3,8 @@ from pathlib import Path
 
 from PySide6 import QtCore, QtGui
 
-from ....core.actions.bridge import ActionKit, Command
-from ....core.actions.command.state import ActionGroupStateManager
+from ....core.commands.bridge import ActionKit, Command
+from ....core.commands.command.state import ActionGroupStateManager
 from ....utils.formatting import dpix
 from ....core.platform.dragparser import MimeDataParser
 from ....core.platform.paste import drop_files_with_ui
@@ -426,7 +426,7 @@ class GridViewDragCommands(ActionKit.DragMenuBase):
             drag.setPixmap(pixmap)
             drag.setHotSpot(pixmap.rect().topLeft())
         def _run_drag():
-            from ....core.actions.binding.mouse.manager import MouseStateManager
+            from ....core.commands.binding.mouse.manager import MouseStateManager
             try:
                 drag.exec(QtCore.Qt.CopyAction | QtCore.Qt.MoveAction)
             finally:

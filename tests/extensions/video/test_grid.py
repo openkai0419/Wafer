@@ -189,7 +189,7 @@ def test_restore_state_applies_values():
     MpvCellWidget._slot_manager = sm
     try:
         plugin = VideoGridPlugin()
-        with patch('wafer.core.actions.bridge.Command') as mock_cmd:
+        with patch('wafer.core.commands.bridge.Command') as mock_cmd:
             plugin.restore_state({
                 'volume': 60,
                 'hover_autoplay': False,
@@ -248,8 +248,8 @@ def test_deferred_restore_applied_on_init_shared(qtbot):
         MpvCellWidget._slot_manager = sm
         MpvCellWidget._shared_initialized = False
         with patch('extensions.video.widget.PlaybackSlotManager', return_value=sm):
-            with patch('wafer.core.actions.bridge.UI'):
-                with patch('wafer.core.actions.bridge.Command'):
+            with patch('wafer.core.commands.bridge.UI'):
+                with patch('wafer.core.commands.bridge.Command'):
                     from PySide6.QtWidgets import QWidget
                     parent = QWidget()
                     qtbot.addWidget(parent)

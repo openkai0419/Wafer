@@ -12,7 +12,7 @@ from .calc_layout import LayoutData
 from .pipeline import GridPipeline
 from .items import GridItemModel
 from ....core.color.theme import ThemeManager
-from ....core.actions.bridge import ActionKit
+from ....core.commands.bridge import ActionKit
 
 class _SelectionOverlay(QtWidgets.QWidget):
     def __init__(self, grid_view, parent):
@@ -450,7 +450,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         return bar.value()
 
     def _is_center_anchor(self):
-        from ....core.actions.bridge import Command
+        from ....core.commands.bridge import Command
         return Command.get_action_group_current('grid_scroll_anchor') == 'grid.scroll_anchor_center'
 
     def _find_center_index(self):

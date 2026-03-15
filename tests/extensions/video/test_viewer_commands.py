@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 @pytest.fixture(autouse=True)
 def _suppress_notifier(monkeypatch):
     monkeypatch.setattr(
-        "wafer.core.actions.command.require.Notifier",
+        "wafer.core.commands.command.require.Notifier",
         type("FakeNotifier", (), {"warning": staticmethod(lambda msg: None)}),
     )
 

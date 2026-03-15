@@ -128,6 +128,20 @@
 ■ DraftOverlayの注意
 - _changesと_deletedは明確に分離すること（pop/{}の暗黙ルールでバグ経験あり）
 
+■ 検索フィルタプラグインシステム
+- 検索をSearchQuery単一クラスからFilter/Sort/Composerの3層プラグイン構成に分解
+- wafer/plugin/query/: base.py(基底), handler.py(レジストリ), builtin.py(TextFilter, DirectoryFilter, 各Sort)
+- wafer/core/db/composer.py: SearchComposer。filter_entries + sort_plugin → (paths, sources, aspects)
+- SearchService: build_filter_entries() + resolve_sort() + _query_snapshot()でdedup
+- SearchComposer.list_all_keys(): CTE使用でpath集合を1回だけ評価し、meta_info+tagsからキー列挙
+- PluginLoaderの_REGISTRY_MAPにBaseFilterPlugin('filter'), BaseSortPlugin('sort')を追加済み
+- SearchQuery/FileSearchEngine.search()はquery.pyに残存。段階的に廃止予定
+- 旧テスト(test_query.py 146テスト)はquery.pyのSearchQueryを直接テストしており維持中
+- KeyStore (wafer/plugin/query/base.py): DBから取得したkey一覧[(key,count)]を保持する共有オブザーバブル。updated Signalで全購読者に自動配信
+- SearchContainerがKeyStoreを所有。FilterRow生成時にkey_storeを注入→_set_filter_typeでcls.bind_key_store(widget, key_store)を呼びシグナル接続+既存データの即時適用
+- 新規行追加時もbind_key_store経由で既存データが即座に適用されるため、run_folder_worker再実行不要
+- BaseFilterPlugin.bind_key_store()はデフォルトno-op。TextFilterがオーバーライドしてkeys_combo.remakeを接続
+
 ■ セッション管理の設計判断
 - Trayプロセスも独自QApplicationを持つためInputDialogを表示可能（parent=None）
 

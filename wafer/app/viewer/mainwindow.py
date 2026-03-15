@@ -20,7 +20,7 @@ from .widgets.foldertree import LazyFolderTreeView
 from .widgets.loading_overlay import OverlayLoadingIndicator
 from .widgets.overlay_stack import OverlayStack
 from .widgets.progress_bar import ThinProgressBar
-from .widgets.query_options import SearchOptionsBar
+from .widgets.search_container import SearchContainer
 from .widgets.combo_with_buttons import ComboBoxWithButtons
 
 from .commands.menu import AppMenuRegistrar
@@ -264,8 +264,8 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.mid_layout = QtWidgets.QVBoxLayout(mid_panel)
         self.mid_layout.setContentsMargins(dpix(4), dpix(4), dpix(4), dpix(4))
         self.mid_layout.setSpacing(dpix(6))
-        self.search_row_widget = SearchOptionsBar()
-        self.search_row_widget.settingchanged.connect(self._on_search_setting_changed)
+        self.search_row_widget = SearchContainer()
+        self.search_row_widget.filter_changed.connect(self._on_search_setting_changed)
         self.mid_layout.addWidget(self.search_row_widget)
 
         self.grid_items = GridItemModel(self)
@@ -378,17 +378,27 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
                 Command.set_action_group_current('grid_scroll_anchor', state['scroll_anchor'], save=False)
 
     def _sync_service_from_ui(self):
+        dirs = self.folder_view.get_selected_paths()
+        if not self.search_service.has_entries_builder:
+            self.search_service.set_entries_builder(
+                lambda: self.search_row_widget.build_filter_entries(
+                    self.folder_view.get_selected_paths(),
+                    self.search_service.get('include_subfolders', True),
+                )
+            )
+        self.search_service.set_directories(dirs)
+        sort_by, ascending = self.search_row_widget.get_sort()
+        self.search_service.set_params({
+            'sort_by': sort_by,
+            'ascending': ascending,
+        })
         values = self.search_row_widget.get_values()
         self.search_service.set_params({
             'keywords': values.get('keywords', ''),
             'query_mode': values.get('query_mode', 'GLOB'),
             'keyword_mode': values.get('keyword_mode', 'AND'),
-            'sort_by': values.get('sort_by', 'path'),
-            'ascending': values.get('ascending', True),
             'keyword_separator': values.get('keyword_separator', ','),
         })
-        self.search_service.set_keys(values.get('keys'))
-        self.search_service.set_directories(self.folder_view.get_selected_paths())
         from .commands.query_commands import sync_groups_from_args
         sync_groups_from_args(self.search_service.params)
 
@@ -480,7 +490,8 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
 
     def capture_query_state(self) -> QueryState:
         params = self.search_service.params
-        params['keys'] = self.search_row_widget.keys_combo.previous_key
+        container_state = self.search_row_widget.save_state()
+        params['filter_rows'] = container_state.get('rows', [])
         return QueryState(
             database_name=self.database_name or '',
             search_params=params,
@@ -501,14 +512,19 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             self.reload_database(query.database_name)
         if query.search_params:
             self.search_service.set_params(query.search_params)
-            self._apply_params_to_ui(query.search_params)
             from .commands.query_commands import sync_groups_from_args
             sync_groups_from_args(query.search_params)
             Command.set_checked('qry.toggle_include_subfolders', query.search_params.get('include_subfolders', True))
             Command.set_checked('qry.toggle_auto_execute', query.search_params.get('auto_execute', True))
-            keys = query.search_params.get('keys')
-            if isinstance(keys, list):
-                self.search_row_widget.keys_combo.previous_key = keys
+            filter_rows = query.search_params.get('filter_rows')
+            if filter_rows:
+                self.search_row_widget.restore_state({
+                    'rows': filter_rows,
+                    'sort_by': query.search_params.get('sort_by', 'path'),
+                    'ascending': query.search_params.get('ascending', True),
+                })
+            else:
+                self._apply_params_to_ui(query.search_params)
         if query.folder_state:
             expanded = query.folder_state.get('expanded', [])
             selected = query.folder_state.get('selected', [])

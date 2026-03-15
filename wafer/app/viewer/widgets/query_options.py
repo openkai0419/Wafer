@@ -2,10 +2,12 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from ....utils.formatting import display_prefixed_key
 from ....utils.profiling import profiler
 from ....utils.logs import AppLogger
-from ....core.db.query import FileSearchEngine, SearchQuery
+from ....core.db.query import FileSearchEngine
+from ....core.db.composer import SearchComposer
 from ....core.lang.manager import TranslatorMixin
 from ....core.qt.dispatcher import Dispatcher, CancelSlot
 from ....core.qt.thread import utility_pool
+from ....plugin.query.builtin import DirectoryFilter
 
 class CheckableCombo(QtWidgets.QToolButton, TranslatorMixin):
     action_changed = QtCore.Signal()
@@ -212,8 +214,11 @@ class SearchOptionsBar(QtWidgets.QWidget, TranslatorMixin):
 
         def task():
             engine = FileSearchEngine(dbname)
-            query = SearchQuery(directories=paths)
-            results = engine.list_all_keys(query, sort_by_freq=True)
+            composer = SearchComposer()
+            entries = []
+            if paths:
+                entries.append((DirectoryFilter, {'directories': paths}, None))
+            results = composer.list_all_keys(engine, entries, sort_by_freq=True)
             if cancel.is_cancelled():
                 return
             self._dispatcher.invoke(lambda: self.keys_combo.remake(results))

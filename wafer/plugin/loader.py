@@ -10,6 +10,7 @@ from .registry import PluginRegistry
 from .viewer.base import BaseViewerPlugin
 from .grid.base import BaseGridPlugin
 from .collector.base import BaseCollectorPlugin
+from .query.base import BaseFilterPlugin, BaseSortPlugin
 from .installer import install_requirements as _install_requirements
 
 
@@ -17,6 +18,8 @@ _REGISTRY_MAP = {
     BaseViewerPlugin: 'viewer',
     BaseGridPlugin: 'grid',
     BaseCollectorPlugin: 'collector',
+    BaseFilterPlugin: 'filter',
+    BaseSortPlugin: 'sort',
 }
 
 _PACKAGES_DIR = '.packages'
@@ -224,10 +227,13 @@ def load_plugins(*, skip_install: bool = False, on_progress=None) -> list[str]:
     from .viewer.handler import viewer_resolver
     from .grid.handler import grid_resolver
     from .collector.handler import collector_resolver
+    from .query.handler import filter_registry, sort_registry
     registries = {
         'viewer': viewer_resolver.registry,
         'grid': grid_resolver.registry,
         'collector': collector_resolver.registry,
+        'filter': filter_registry,
+        'sort': sort_registry,
     }
     loader = PluginLoader(get_plugin_dir(), registries, skip_install=skip_install)
     return loader.load_all(on_progress=on_progress)

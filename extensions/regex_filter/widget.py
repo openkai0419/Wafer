@@ -37,8 +37,8 @@ class RegexFilterWidget(QtWidgets.QWidget, TranslatorMixin):
         self.case_button.toggled.connect(lambda: self.changed.emit())
 
         layout.addWidget(self.keys_combo)
-        layout.addWidget(self.regex_input, 1)
         layout.addWidget(self.case_button)
+        layout.addWidget(self.regex_input, 1)
 
     def read_params(self) -> dict:
         if self.keys_combo.actions:

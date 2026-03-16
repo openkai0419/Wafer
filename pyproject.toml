@@ -3,6 +3,9 @@ testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "--import-mode=importlib -p pytestqt"
 timeout = 30
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
 
 [tool.pyright]
 pythonVersion = "3.10"

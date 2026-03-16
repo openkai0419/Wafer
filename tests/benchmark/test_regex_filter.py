@@ -237,6 +237,7 @@ def _extract_like_hint(pattern):
     return max(literals, key=len) if literals else ''
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize('n', SIZES)
 class TestRegexBenchmark:
 

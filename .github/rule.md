@@ -101,3 +101,10 @@
 - テストの重複ファイル・重複メソッド名に注意。Pythonは同名メソッドを後勝ちで上書きし、pytestは1つしか収集しない
 - conftest.pyのpytest_sessionfinishフックでテスト結果を.temp/test_summary.txtに自動書き出し。テスト実行後はターミナル出力ではなくこのファイルを読んで結果を確認すること
 - pyproject.tomlのtimeout=30で各テスト30秒タイムアウト（pytest-timeout）。不要なプロセス残留を防止
+
+■ テスト用データセット (.sample/)
+- dataset_downloader.pyは目視デバッグ・ストレステスト用。自動テストは自前でPIL画像を生成する
+- 新しいextensionを追加したらdataset_downloader.pyにもそのファイル形式の生成/DLを追加する
+- 対応するextensionが存在しないファイル形式（audio, archive等）はdataset_downloaderに含めない
+- .sample/coco/ は手動DL専用ディレクトリ。statusコマンドで検出・表示するがmanifest管理はしない
+- Picsumの利用可能IDリストは_picsum_ids.jsonにキャッシュ。ユニークID優先で重複を最小化する

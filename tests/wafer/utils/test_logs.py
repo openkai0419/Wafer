@@ -2,6 +2,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
+import wafer.constants
 from wafer.utils.logs import AppLogger
 
 
@@ -93,19 +94,40 @@ class TestAppLogger:
     def test_set_node_forwards_log(self):
         node = MagicMock()
         AppLogger.set_node(node, role='test')
-        AppLogger.info("hello")
+        AppLogger.warning("hello")
         node.send.assert_called_once()
         args = node.send.call_args
         assert args[0][0] == 'dev.log'
         payload = args[0][1]
-        assert payload['level'] == 'info'
+        assert payload['level'] == 'warning'
         assert payload['text'] == 'hello'
 
     def test_set_node_none_no_forward(self):
         AppLogger.set_node(None)
         AppLogger.info("no forward")
 
-    def test_forward_all_levels(self):
+    @patch('wafer.constants.DEV_MODE', False)
+    def test_forward_only_warning_and_error_in_non_dev(self):
+        node = MagicMock()
+        AppLogger.set_node(node, role='r')
+        AppLogger.debug("d")
+        AppLogger.info("i")
+        AppLogger.warning("w")
+        AppLogger.error("e")
+        assert node.send.call_count == 2
+        levels = [c[0][1]['level'] for c in node.send.call_args_list]
+        assert levels == ['warning', 'error']
+
+    @patch('wafer.constants.DEV_MODE', False)
+    def test_forward_skips_debug_and_info_in_non_dev(self):
+        node = MagicMock()
+        AppLogger.set_node(node, role='r')
+        AppLogger.debug("d")
+        AppLogger.info("i")
+        node.send.assert_not_called()
+
+    @patch('wafer.constants.DEV_MODE', True)
+    def test_forward_all_levels_in_dev_mode(self):
         node = MagicMock()
         AppLogger.set_node(node, role='r')
         AppLogger.debug("d")
@@ -120,7 +142,7 @@ class TestAppLogger:
         node = MagicMock()
         node.send.side_effect = RuntimeError("zmq fail")
         AppLogger.set_node(node, role='r')
-        AppLogger.info("should not raise")
+        AppLogger.warning("should not raise")
 
     def test_set_role_updates_role(self):
         AppLogger.set_role('viewer')

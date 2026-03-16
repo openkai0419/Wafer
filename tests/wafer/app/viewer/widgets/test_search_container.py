@@ -379,3 +379,21 @@ class TestUpdateKeyCombos:
             w = row.get_param_widget()
             items = [a.data() for a in w.keys_combo.actions]
             assert '__filepath__' in items
+
+
+class TestInvalidateKeyCache:
+
+    def test_invalidate_allows_same_paths(self, qapp):
+        container = SearchContainer()
+        with patch.object(container, '_dispatcher') as mock_disp:
+            container.run_folder_worker('db1.db', ['/a'])
+            assert mock_disp.post.call_count == 1
+            container.invalidate_key_cache()
+            container.run_folder_worker('db2.db', ['/a'])
+            assert mock_disp.post.call_count == 2
+
+    def test_invalidate_resets_last_paths(self, qapp):
+        container = SearchContainer()
+        container._last_paths = ('/some/path',)
+        container.invalidate_key_cache()
+        assert container._last_paths != ('/some/path',)

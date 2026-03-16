@@ -94,6 +94,8 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.database_path = data_db_path(name)
         self.setting_db = SettingDB(setting_db_path(name))
         self.search_service.reset_state()
+        self._last_paths = None
+        self.search_row_widget.invalidate_key_cache()
         self.folder_view.set_folders(self.setting_db.get_all_parent_folders(), self.setting_db.get_all_ignore_folders())
         self.run_folder = True
         QtCore.QTimer.singleShot(0, lambda: self.search(force=True))

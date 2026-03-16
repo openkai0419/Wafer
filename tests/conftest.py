@@ -183,10 +183,5 @@ def sample_videos(sample_dir: Path) -> list[Path]:
 
 
 @pytest.fixture(scope='session')
-def sample_audio(sample_dir: Path) -> list[Path]:
-    return _sample_paths(sample_dir, 'audio')
-
-
-@pytest.fixture(scope='session')
-def sample_archives(sample_dir: Path) -> list[Path]:
-    return _sample_paths(sample_dir, 'archive')
+def sample_animated(sample_dir: Path) -> list[Path]:
+    return _sample_paths(sample_dir, 'animated')

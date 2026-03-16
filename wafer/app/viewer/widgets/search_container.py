@@ -316,6 +316,9 @@ class SearchContainer(QtWidgets.QWidget, TranslatorMixin):
         for action in self._order_group.actions():
             action.setChecked(action.data() == self._ascending)
 
+    def invalidate_key_cache(self):
+        self._last_paths = object()
+
     @profiler.profile
     def run_folder_worker(self, dbname, paths):
         key = tuple(paths) if paths else None

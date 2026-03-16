@@ -10,6 +10,7 @@ from PySide6 import QtCore, QtGui
 from extensions.image.loader import (
     load_image,
     _imread_flags_for_size,
+    _jpeg_dimensions,
     _classify_opencv_array,
     _numpy_to_qimage,
     _qt_read,
@@ -146,29 +147,85 @@ class TestLoadImageEdgeCases:
         assert result is None or isinstance(result, QtGui.QImage)
 
 
+class TestJpegDimensions:
+    def test_valid_jpeg(self, tmp_path):
+        p = tmp_path / 'test.jpg'
+        Image.new('RGB', (800, 600), (0, 0, 255)).save(str(p), quality=90)
+        data = np.fromfile(str(p), dtype=np.uint8)
+        assert _jpeg_dimensions(data) == (800, 600)
+
+    def test_large_jpeg(self, tmp_path):
+        p = tmp_path / 'large.jpg'
+        Image.new('RGB', (4000, 3000), (255, 0, 0)).save(str(p), quality=85)
+        data = np.fromfile(str(p), dtype=np.uint8)
+        assert _jpeg_dimensions(data) == (4000, 3000)
+
+    def test_non_jpeg_returns_none(self, tmp_path):
+        p = tmp_path / 'test.png'
+        Image.new('RGB', (100, 100)).save(str(p))
+        data = np.fromfile(str(p), dtype=np.uint8)
+        assert _jpeg_dimensions(data) is None
+
+    def test_truncated_returns_none(self):
+        assert _jpeg_dimensions(np.array([0xFF, 0xD8], dtype=np.uint8)) is None
+
+    def test_empty_returns_none(self):
+        assert _jpeg_dimensions(np.array([], dtype=np.uint8)) is None
+
+    def test_garbage_returns_none(self):
+        assert _jpeg_dimensions(np.array([0x00, 0x00, 0x00], dtype=np.uint8)) is None
+
+
 class TestImreadFlagsForSize:
+    @pytest.fixture()
+    def jpeg_data_4000x3000(self, tmp_path):
+        p = tmp_path / 'big.jpg'
+        Image.new('RGB', (4000, 3000)).save(str(p), quality=50)
+        return np.fromfile(str(p), dtype=np.uint8)
+
+    @pytest.fixture()
+    def jpeg_data_800x600(self, tmp_path):
+        p = tmp_path / 'small.jpg'
+        Image.new('RGB', (800, 600)).save(str(p), quality=50)
+        return np.fromfile(str(p), dtype=np.uint8)
+
     def test_none_size(self):
         assert _imread_flags_for_size('.png', None) == cv2.IMREAD_UNCHANGED
-
-    def test_jpg_small(self):
-        size = QtCore.QSize(200, 200)
-        assert _imread_flags_for_size('.jpg', size) == cv2.IMREAD_REDUCED_COLOR_8
-
-    def test_jpg_medium(self):
-        size = QtCore.QSize(400, 400)
-        assert _imread_flags_for_size('.jpeg', size) == cv2.IMREAD_REDUCED_COLOR_4
-
-    def test_jpg_large(self):
-        size = QtCore.QSize(800, 800)
-        assert _imread_flags_for_size('.jpg', size) == cv2.IMREAD_REDUCED_COLOR_2
-
-    def test_jpg_very_large(self):
-        size = QtCore.QSize(2000, 2000)
-        assert _imread_flags_for_size('.jpg', size) == cv2.IMREAD_COLOR
 
     def test_png_with_size(self):
         size = QtCore.QSize(200, 200)
         assert _imread_flags_for_size('.png', size) == cv2.IMREAD_UNCHANGED
+
+    def test_large_jpeg_gets_reduced_8(self, jpeg_data_4000x3000):
+        size = QtCore.QSize(200, 200)
+        assert _imread_flags_for_size('.jpg', size, jpeg_data_4000x3000) == cv2.IMREAD_REDUCED_COLOR_8
+
+    def test_large_jpeg_gets_reduced_4(self, jpeg_data_4000x3000):
+        size = QtCore.QSize(600, 600)
+        assert _imread_flags_for_size('.jpg', size, jpeg_data_4000x3000) == cv2.IMREAD_REDUCED_COLOR_4
+
+    def test_large_jpeg_gets_reduced_2(self, jpeg_data_4000x3000):
+        size = QtCore.QSize(1200, 1200)
+        assert _imread_flags_for_size('.jpeg', size, jpeg_data_4000x3000) == cv2.IMREAD_REDUCED_COLOR_2
+
+    def test_large_jpeg_gets_full_color(self, jpeg_data_4000x3000):
+        size = QtCore.QSize(2500, 2500)
+        assert _imread_flags_for_size('.jpg', size, jpeg_data_4000x3000) == cv2.IMREAD_COLOR
+
+    def test_small_jpeg_never_reduced_below_display(self, jpeg_data_800x600):
+        size = QtCore.QSize(200, 200)
+        flags = _imread_flags_for_size('.jpg', size, jpeg_data_800x600)
+        assert flags != cv2.IMREAD_REDUCED_COLOR_8
+        assert flags in (cv2.IMREAD_COLOR, cv2.IMREAD_REDUCED_COLOR_2, cv2.IMREAD_REDUCED_COLOR_4)
+
+    def test_small_jpeg_at_display_size(self, jpeg_data_800x600):
+        size = QtCore.QSize(600, 600)
+        flags = _imread_flags_for_size('.jpg', size, jpeg_data_800x600)
+        assert flags == cv2.IMREAD_COLOR
+
+    def test_jpeg_without_data_falls_back_to_color(self):
+        size = QtCore.QSize(200, 200)
+        assert _imread_flags_for_size('.jpg', size) == cv2.IMREAD_COLOR
 
 
 class TestClassifyOpencvArray:

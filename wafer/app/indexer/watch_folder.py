@@ -31,14 +31,11 @@ def _extract_stable(pending):
     for p, (ts, prev_sig) in list(pending.items()):
         age = now - ts
         if age < _STABLE_THRESHOLD:
-            AppLogger.debug(f'[stabilize] not yet ({age:.1f}s < {_STABLE_THRESHOLD}s): {p}')
             continue
         cur_sig = _stat_signature(p)
         if cur_sig is None:
-            AppLogger.debug(f'[stabilize] file gone (stat=None): {p}')
             stable.add(p)
         elif cur_sig != prev_sig:
-            AppLogger.debug(f'[stabilize] sig changed (prev={prev_sig}, cur={cur_sig}), resetting: {p}')
             pending[p] = (now, cur_sig)
         else:
             stable.add(p)
@@ -65,33 +62,25 @@ class _FileEventHandler(FileSystemEventHandler):
 
     def on_created(self, event):
         if event.is_directory:
-            AppLogger.debug(f'[watchdog] created dir: {event.src_path}')
             self._inbox.put(('folder', event.src_path))
         else:
-            AppLogger.debug(f'[watchdog] created file: {event.src_path}')
             self._inbox.put(('created', event.src_path))
 
     def on_modified(self, event):
         if DISABLE_MODIFY_EVENT or event.is_directory:
-            AppLogger.debug(f'[watchdog] modified skipped (disable={DISABLE_MODIFY_EVENT}, dir={event.is_directory}): {event.src_path}')
             return
-        AppLogger.debug(f'[watchdog] modified file: {event.src_path}')
         self._inbox.put(('changed', event.src_path))
 
     def on_deleted(self, event):
         if event.is_directory:
-            AppLogger.debug(f'[watchdog] deleted dir: {event.src_path}')
             self._inbox.put(('folder', event.src_path))
         else:
-            AppLogger.debug(f'[watchdog] deleted file: {event.src_path}')
             self._inbox.put(('deleted', event.src_path))
 
     def on_moved(self, event):
         if event.is_directory:
-            AppLogger.debug(f'[watchdog] moved dir: {event.src_path}')
             self._inbox.put(('folder', event.src_path))
             return
-        AppLogger.debug(f'[watchdog] moved file: {event.src_path} -> {event.dest_path}')
         self._inbox.put(('moved', (event.src_path, event.dest_path)))
 
 
@@ -107,7 +96,6 @@ class _EventAccumulator:
         self._folder_dirty = False
 
     def on_created(self, path):
-        AppLogger.debug(f'[acc] created: {path}')
         self._pending.pop(path, None)
         self._notified.discard(path)
         self._ready.add(path)
@@ -115,18 +103,14 @@ class _EventAccumulator:
 
     def on_changed(self, path, now):
         if path in self._ready:
-            AppLogger.debug(f'[acc] changed skip (already ready): {path}')
             return
         if path not in self._notified and path not in self._pending:
-            AppLogger.debug(f'[acc] changed -> ready (first notify): {path}')
             self._ready.add(path)
             self._notified.add(path)
         else:
-            AppLogger.debug(f'[acc] changed -> pending (notified={path in self._notified}, pending={path in self._pending}): {path}')
             self._pending[path] = (now, _stat_signature(path))
 
     def on_deleted(self, path):
-        AppLogger.debug(f'[acc] deleted: {path}')
         self._pending.pop(path, None)
         self._notified.discard(path)
         self._ready.discard(path)
@@ -139,15 +123,12 @@ class _EventAccumulator:
         self._ready.discard(src)
         self._new.discard(src)
         if was_new:
-            AppLogger.debug(f'[acc] moved -> ready dst (src was new): {src} -> {dst}')
             self._ready.add(dst)
             self._new.add(dst)
         else:
-            AppLogger.debug(f'[acc] moved -> rename: {src} -> {dst}')
             self._moved[src] = dst
 
     def on_folder(self):
-        AppLogger.debug('[acc] folder dirty')
         self._folder_dirty = True
 
     def consume_folder_dirty(self):

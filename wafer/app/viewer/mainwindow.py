@@ -478,15 +478,15 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
     def _on_search_finished(self, paths, sources, aspects):
         keep_scroll = not getattr(self, '_folder_changed', False)
         self._folder_changed = False
+        if self.run_folder:
+            self.search_row_widget.run_folder_worker(self.database_path, self.folder_view.get_selected_paths())
+            self.run_folder = False
         if paths == self._last_paths:
             self.overlay_stack.hide_persistent("loading")
             return
         self._last_paths = paths
         self.grid_view.set_paths(paths, sources, aspects, keep_scroll=keep_scroll)
         self.file_model.set_items(paths, sources)
-        if self.run_folder:
-            self.search_row_widget.run_folder_worker(self.database_path, self.folder_view.get_selected_paths())
-            self.run_folder = False
 
     def capture_query_state(self) -> QueryState:
         params = self.search_service.params

@@ -17,6 +17,12 @@ class VideoViewerPlugin(WidgetViewerPlugin):
     def clear(self, widget):
         widget.clear()
 
+    def activate(self, widget):
+        widget.activate()
+
+    def deactivate(self, widget):
+        widget.deactivate()
+
     def save_state(self, widget):
         return {
             'volume': widget._volume,

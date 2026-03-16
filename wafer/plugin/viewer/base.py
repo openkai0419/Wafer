@@ -23,6 +23,12 @@ class WidgetViewerPlugin(BaseViewerPlugin):
     def clear(self, widget):
         pass
 
+    def activate(self, widget):
+        pass
+
+    def deactivate(self, widget):
+        pass
+
     def save_state(self, widget) -> dict[str, Any]:
         return {}
 

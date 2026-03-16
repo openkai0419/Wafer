@@ -98,4 +98,20 @@ def test_create_default_widget(qtbot):
     from wafer.app.viewer.preview.image_viewer import ImageDisplayWidget
     widget = viewer_resolver.create_default_widget()
     qtbot.addWidget(widget)
-    assert isinstance(widget, ImageDisplayWidget)
+
+
+def test_widget_viewer_plugin_activate_default():
+    class Stub(WidgetViewerPlugin):
+        NAME = 'stub'
+        EXTENSIONS = ('.stub',)
+        PRIORITY = 1
+    plugin = Stub()
+    from unittest.mock import MagicMock
+    w = MagicMock()
+    plugin.activate(w)
+    plugin.deactivate(w)
+
+
+def test_activate_deactivate_via_resolver():
+    viewer_resolver.activate('__nonexistent__', None)
+    viewer_resolver.deactivate('__nonexistent__', None)

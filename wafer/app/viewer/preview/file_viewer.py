@@ -65,7 +65,6 @@ class FileViewerWidget(QtWidgets.QSplitter):
         self._stack.setMinimumSize(dpix(200), dpix(200))
 
         self.image_viewer = ImageDisplayWidget()
-        self.image_viewer.resized.connect(self.update_content)
         self._stack.addWidget(self.image_viewer)
         self._widget_map[_DEFAULT_WIDGET_NAME] = self.image_viewer
 
@@ -93,12 +92,19 @@ class FileViewerWidget(QtWidgets.QSplitter):
     def _switch_to(self, plugin_name: str):
         if plugin_name == self._current_plugin_name:
             return
+        prev_name = self._current_plugin_name
+        if prev_name == _DEFAULT_WIDGET_NAME:
+            self.image_viewer.clear()
+        else:
+            viewer_resolver.deactivate(prev_name, self._widget_map[prev_name])
         widget = self._widget_map.get(plugin_name)
         if widget is None:
             plugin_name = _DEFAULT_WIDGET_NAME
             widget = self.image_viewer
         self._stack.setCurrentWidget(widget)
         self._current_plugin_name = plugin_name
+        if plugin_name != _DEFAULT_WIDGET_NAME:
+            viewer_resolver.activate(plugin_name, widget)
 
     def _register_states(self):
         store = StateStore.instance()
@@ -128,53 +134,29 @@ class FileViewerWidget(QtWidgets.QSplitter):
     def on_exit(self):
         pass
 
-    @qt_throttle(100, 200)
-    def update_content(self):
-        self._load_and_show_content(self.model.path())
-
     def _on_path_changed(self, path):
         if not path:
             return
         self._loading_path = path
         self._pending_meta = None
         self._pending_content = None
-        self._target_plugin = None
         self._update_meta(path)
+        self._load_content(path)
 
+    def _load_content(self, path):
         plugin_cls = viewer_resolver.resolve(path)
         if plugin_cls is not None and issubclass(plugin_cls, _WidgetViewerPlugin):
             self._target_plugin = plugin_cls.NAME
             self._pending_content = (path, None)
-            self._try_show()
-        else:
-            self._target_plugin = _DEFAULT_WIDGET_NAME
-            self._load_and_show_content(path)
-
-    def _try_show(self):
-        if self._pending_content is None or self._pending_meta is None:
+            self._flush()
             return
-        path, image = self._pending_content
-        self._pending_content = None
-        meta = self._pending_meta
-        self._pending_meta = None
 
-        target = self._target_plugin or _DEFAULT_WIDGET_NAME
-        if image is not None:
-            self.image_viewer.set_image(image, path)
-        elif target != _DEFAULT_WIDGET_NAME:
-            widget = self._widget_map[target]
-            viewer_resolver.render(widget, path)
-        self.meta_viewer.set_data(meta)
-        self._switch_to(target)
-
-    def _load_and_show_content(self, path):
-        if not path:
-            return
+        self._target_plugin = _DEFAULT_WIDGET_NAME
         key = fullsize_key(path)
         image = self.image_cache.get(key)
         if image is not None and not image.isNull():
             self._pending_content = (path, image)
-            self._try_show()
+            self._flush()
             return
         cancel = self._content_cancel.renew()
 
@@ -182,9 +164,10 @@ class FileViewerWidget(QtWidgets.QSplitter):
             image = viewer_resolver.load_content(path)
             if cancel.is_cancelled():
                 return
-            if image is None or image.isNull():
-                return
-            self.image_cache[fullsize_key(path)] = image
+            if image is not None and not image.isNull():
+                self.image_cache[fullsize_key(path)] = image
+            else:
+                image = None
             self._dispatcher.invoke(lambda: self._on_content_ready(cancel, path, image))
 
         self._dispatcher.post(task, cancel=cancel)
@@ -195,7 +178,25 @@ class FileViewerWidget(QtWidgets.QSplitter):
         if path != self._loading_path:
             return
         self._pending_content = (path, image)
-        self._try_show()
+        self._flush()
+
+    def _flush(self):
+        if self._pending_content is None or self._pending_meta is None:
+            return
+        path, image = self._pending_content
+        self._pending_content = None
+        meta = self._pending_meta
+        self._pending_meta = None
+
+        target = self._target_plugin or _DEFAULT_WIDGET_NAME
+        self._switch_to(target)
+        if image is not None:
+            self.image_viewer.set_image(image, path)
+        elif target != _DEFAULT_WIDGET_NAME:
+            viewer_resolver.render(self._widget_map[target], path)
+        else:
+            self.image_viewer.clear()
+        self.meta_viewer.set_data(meta)
 
     def set_path(self, path: str | None):
         if not path:
@@ -223,4 +224,4 @@ class FileViewerWidget(QtWidgets.QSplitter):
         if path != self._loading_path:
             return
         self._pending_meta = result
-        self._try_show()
+        self._flush()

@@ -91,49 +91,63 @@ def _make_viewer_stub():
         'stub_widget': stub_widget,
     }
 
-    viewer._try_show = lambda: FileViewerWidget._try_show(viewer)
+    viewer._flush = lambda: FileViewerWidget._flush(viewer)
     viewer._switch_to = lambda name: FileViewerWidget._switch_to(viewer, name)
     viewer._on_path_changed = lambda path: FileViewerWidget._on_path_changed(viewer, path)
-    viewer._load_and_show_content = lambda path: FileViewerWidget._load_and_show_content(viewer, path)
+    viewer._load_content = lambda path: FileViewerWidget._load_content(viewer, path)
     viewer._update_meta = MagicMock()
     return viewer
 
 
-def test_try_show_does_not_switch_when_content_missing():
+def test_flush_does_not_switch_when_content_missing():
     viewer = _make_viewer_stub()
     viewer._target_plugin = _DEFAULT_WIDGET_NAME
     viewer._pending_meta = [{'size': '0'}, {}, {}, {}]
     viewer._pending_content = None
-    viewer._try_show()
+    viewer._flush()
     assert viewer._pending_meta is not None
 
 
-def test_try_show_does_not_switch_when_meta_missing():
+def test_flush_does_not_switch_when_meta_missing():
     viewer = _make_viewer_stub()
     viewer._target_plugin = _DEFAULT_WIDGET_NAME
     viewer._pending_content = ('/a.png', MagicMock())
     viewer._pending_meta = None
-    viewer._try_show()
+    viewer._flush()
     assert viewer._pending_content is not None
 
 
-def test_try_show_switches_after_both_ready_for_image():
+def test_flush_shows_image_for_default():
     viewer = _make_viewer_stub()
     viewer._target_plugin = _DEFAULT_WIDGET_NAME
     img = MagicMock()
     viewer._pending_content = ('/a.png', img)
     viewer._pending_meta = [{'size': '0'}, {}, {}, {}]
 
-    viewer._try_show()
+    viewer._flush()
 
     assert viewer._current_plugin_name == _DEFAULT_WIDGET_NAME
     viewer.image_viewer.set_image.assert_called_once_with(img, '/a.png')
+    viewer.image_viewer.clear.assert_not_called()
     viewer.meta_viewer.set_data.assert_called_once()
     assert viewer._pending_content is None
     assert viewer._pending_meta is None
 
 
-def test_try_show_switches_after_both_ready_for_widget_plugin():
+def test_flush_clears_image_when_content_none_for_default():
+    viewer = _make_viewer_stub()
+    viewer._target_plugin = _DEFAULT_WIDGET_NAME
+    viewer._pending_content = ('/a.zip', None)
+    viewer._pending_meta = [{'size': '0'}, {}, {}, {}]
+
+    viewer._flush()
+
+    viewer.image_viewer.clear.assert_called_once()
+    viewer.image_viewer.set_image.assert_not_called()
+    viewer.meta_viewer.set_data.assert_called_once()
+
+
+def test_flush_renders_widget_plugin():
     viewer = _make_viewer_stub()
     viewer._target_plugin = 'stub_widget'
     viewer._pending_content = ('/a.mp4', None)
@@ -142,20 +156,40 @@ def test_try_show_switches_after_both_ready_for_widget_plugin():
     call_order = []
     with patch('wafer.app.viewer.preview.file_viewer.viewer_resolver') as mock_resolver:
         mock_resolver.render = lambda w, p: call_order.append('render')
+        mock_resolver.deactivate = MagicMock()
+        mock_resolver.activate = MagicMock()
 
         def tracking_switch(name):
             call_order.append('switch')
             FileViewerWidget._switch_to(viewer, name)
         viewer._switch_to = tracking_switch
-        viewer._try_show = lambda: FileViewerWidget._try_show(viewer)
+        viewer._flush = lambda: FileViewerWidget._flush(viewer)
 
-        viewer._try_show()
+        viewer._flush()
 
-    assert call_order == ['render', 'switch']
+    assert call_order == ['switch', 'render']
     assert viewer._current_plugin_name == 'stub_widget'
 
 
-def test_on_path_changed_widget_does_not_switch_immediately():
+def test_on_path_changed_dispatches_both_pipelines():
+    viewer = _make_viewer_stub()
+    viewer._dispatcher = MagicMock()
+    viewer._meta_cancel = MagicMock()
+    viewer._content_cancel = MagicMock()
+    viewer.image_cache = MagicMock()
+    viewer.image_cache.get.return_value = None
+    viewer.model = MagicMock()
+    viewer.model.dbpath = None
+
+    with patch('wafer.app.viewer.preview.file_viewer.viewer_resolver') as mock_resolver:
+        mock_resolver.resolve.return_value = None
+        viewer._on_path_changed('/test.png')
+
+    viewer._update_meta.assert_called_once_with('/test.png')
+    assert viewer._target_plugin == _DEFAULT_WIDGET_NAME
+
+
+def test_on_path_changed_widget_sets_target():
     viewer = _make_viewer_stub()
     viewer._dispatcher = MagicMock()
     viewer._meta_cancel = MagicMock()
@@ -172,20 +206,55 @@ def test_on_path_changed_widget_does_not_switch_immediately():
     assert viewer._target_plugin == 'stub_widget'
 
 
-def test_on_path_changed_image_does_not_switch_immediately():
+def test_switch_to_deactivates_previous_widget_plugin():
     viewer = _make_viewer_stub()
-    viewer._dispatcher = MagicMock()
-    viewer._meta_cancel = MagicMock()
-    viewer._content_cancel = MagicMock()
-    viewer.image_cache = MagicMock()
-    viewer.image_cache.get.return_value = None
-    viewer.model = MagicMock()
-    viewer.model.dbpath = None
+    viewer._current_plugin_name = 'stub_widget'
 
-    initial_plugin = viewer._current_plugin_name
     with patch('wafer.app.viewer.preview.file_viewer.viewer_resolver') as mock_resolver:
-        mock_resolver.resolve.return_value = None
-        viewer._on_path_changed('/test.png')
+        viewer._switch_to = lambda name: FileViewerWidget._switch_to(viewer, name)
+        viewer._switch_to(_DEFAULT_WIDGET_NAME)
 
-    assert viewer._current_plugin_name == initial_plugin
-    assert viewer._target_plugin == _DEFAULT_WIDGET_NAME
+        mock_resolver.deactivate.assert_called_once_with(
+            'stub_widget', viewer._widget_map['stub_widget'])
+
+    assert viewer._current_plugin_name == _DEFAULT_WIDGET_NAME
+
+
+def test_switch_to_activates_new_widget_plugin():
+    viewer = _make_viewer_stub()
+    viewer._current_plugin_name = _DEFAULT_WIDGET_NAME
+
+    with patch('wafer.app.viewer.preview.file_viewer.viewer_resolver') as mock_resolver:
+        viewer._switch_to = lambda name: FileViewerWidget._switch_to(viewer, name)
+        viewer._switch_to('stub_widget')
+
+        mock_resolver.activate.assert_called_once_with(
+            'stub_widget', viewer._widget_map['stub_widget'])
+    viewer.image_viewer.clear.assert_called_once()
+    assert viewer._current_plugin_name == 'stub_widget'
+
+
+def test_switch_to_deactivates_and_activates_between_plugins():
+    viewer = _make_viewer_stub()
+    viewer._widget_map['other_plugin'] = MagicMock()
+    viewer._current_plugin_name = 'stub_widget'
+
+    with patch('wafer.app.viewer.preview.file_viewer.viewer_resolver') as mock_resolver:
+        viewer._switch_to = lambda name: FileViewerWidget._switch_to(viewer, name)
+        viewer._switch_to('other_plugin')
+
+        mock_resolver.deactivate.assert_called_once_with(
+            'stub_widget', viewer._widget_map['stub_widget'])
+        mock_resolver.activate.assert_called_once_with(
+            'other_plugin', viewer._widget_map['other_plugin'])
+
+
+def test_switch_to_default_does_not_activate():
+    viewer = _make_viewer_stub()
+    viewer._current_plugin_name = 'stub_widget'
+
+    with patch('wafer.app.viewer.preview.file_viewer.viewer_resolver') as mock_resolver:
+        viewer._switch_to = lambda name: FileViewerWidget._switch_to(viewer, name)
+        viewer._switch_to(_DEFAULT_WIDGET_NAME)
+
+        mock_resolver.activate.assert_not_called()

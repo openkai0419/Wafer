@@ -360,6 +360,15 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
         self._pos_timer.stop()
         self._hide_controls()
 
+    def activate(self):
+        if self._player and self._path:
+            self._pos_timer.start()
+
+    def deactivate(self):
+        self._stop_playback()
+        self._pos_timer.stop()
+        self._hide_controls()
+
     def _stop_playback(self):
         if self._player:
             try:

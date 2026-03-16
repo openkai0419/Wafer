@@ -37,6 +37,20 @@ class TestVideoViewerPluginRender:
         plugin.clear(widget)
         widget.clear.assert_called_once()
 
+    def test_activate_calls_activate(self):
+        from unittest.mock import MagicMock
+        plugin = VideoViewerPlugin()
+        widget = MagicMock()
+        plugin.activate(widget)
+        widget.activate.assert_called_once()
+
+    def test_deactivate_calls_deactivate(self):
+        from unittest.mock import MagicMock
+        plugin = VideoViewerPlugin()
+        widget = MagicMock()
+        plugin.deactivate(widget)
+        widget.deactivate.assert_called_once()
+
 
 class TestVideoViewerPluginState:
     def test_save_state(self):

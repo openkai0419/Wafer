@@ -40,5 +40,15 @@ class ViewerResolver:
         if isinstance(instance, WidgetViewerPlugin):
             instance.render(widget, path)
 
+    def activate(self, name: str, widget):
+        instance = self.registry.instance(name)
+        if isinstance(instance, WidgetViewerPlugin):
+            instance.activate(widget)
+
+    def deactivate(self, name: str, widget):
+        instance = self.registry.instance(name)
+        if isinstance(instance, WidgetViewerPlugin):
+            instance.deactivate(widget)
+
 
 viewer_resolver = ViewerResolver()

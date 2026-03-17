@@ -1,10 +1,8 @@
-import threading
-from collections import OrderedDict
-
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from wafer.core.qt.dispatcher import CancelSlot
 from wafer.utils.profiling import profiler
+from ._common import FrameCache, AnimationDriver, get_driver, _grid_cache
 
 _DISPOSE_INTERVAL = 16
 _DISPOSE_BATCH = 8
@@ -36,100 +34,6 @@ class _PixmapDisposer:
 
 
 _disposer = _PixmapDisposer()
-
-
-class FrameCache:
-
-    def __init__(self, max_entries=128):
-        self._max = max_entries
-        self._cache: OrderedDict[str, tuple[list[QtGui.QPixmap], list[int]]] = OrderedDict()
-        self._lock = threading.Lock()
-
-    @profiler.profile
-    def get(self, path: str) -> tuple[list[QtGui.QPixmap], list[int]] | None:
-        with self._lock:
-            entry = self._cache.get(path)
-            if entry is not None:
-                self._cache.move_to_end(path)
-            return entry
-
-    @profiler.profile
-    def get_if_sufficient(self, path: str, size: QtCore.QSize) -> tuple[list[QtGui.QPixmap], list[int]] | None:
-        with self._lock:
-            entry = self._cache.get(path)
-            if entry is None:
-                return None
-            frames, delays = entry
-            if frames:
-                first = frames[0]
-                if first.width() < size.width() or first.height() < size.height():
-                    self._cache.pop(path)
-                    return None
-            self._cache.move_to_end(path)
-            return entry
-
-    @profiler.profile
-    def put(self, path: str, frames: list[QtGui.QPixmap], delays: list[int]):
-        with self._lock:
-            if path in self._cache:
-                self._cache.pop(path)
-            elif len(self._cache) >= self._max:
-                self._cache.popitem(last=False)
-            self._cache[path] = (frames, delays)
-
-    def __contains__(self, path: str) -> bool:
-        with self._lock:
-            return path in self._cache
-
-    def remove(self, path: str):
-        with self._lock:
-            self._cache.pop(path, None)
-
-    def clear(self):
-        with self._lock:
-            self._cache.clear()
-
-
-class AnimationDriver(QtCore.QObject):
-
-    frame_advanced = QtCore.Signal()
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._timer = QtCore.QTimer(self)
-        self._timer.setTimerType(QtCore.Qt.PreciseTimer)
-        self._timer.timeout.connect(self._tick)
-        self._cells: set['AnimatedCellWidget'] = set()
-        self._elapsed = 0
-        self._interval = 33
-
-    def register(self, cell: 'AnimatedCellWidget'):
-        self._cells.add(cell)
-        if not self._timer.isActive():
-            self._elapsed = 0
-            self._timer.start(self._interval)
-
-    def unregister(self, cell: 'AnimatedCellWidget'):
-        self._cells.discard(cell)
-        if not self._cells and self._timer.isActive():
-            self._timer.stop()
-
-    def _tick(self):
-        self._elapsed += self._interval
-        for cell in list(self._cells):
-            cell.advance(self._elapsed)
-        self.frame_advanced.emit()
-
-
-_driver: AnimationDriver | None = None
-_frame_cache = FrameCache()
-
-
-def _get_driver() -> AnimationDriver:
-    global _driver
-    if _driver is None:
-        _driver = AnimationDriver()
-    return _driver
 
 
 class AnimatedCellWidget(QtWidgets.QWidget):
@@ -176,13 +80,13 @@ class AnimatedCellWidget(QtWidgets.QWidget):
             return
         self._playing = True
         self._accumulated = 0
-        _get_driver().register(self)
+        get_driver().register(self)
 
     def stop(self):
         if not self._playing:
             return
         self._playing = False
-        _get_driver().unregister(self)
+        get_driver().unregister(self)
 
     @profiler.profile
     def suspend(self):
@@ -202,21 +106,23 @@ class AnimatedCellWidget(QtWidgets.QWidget):
         to_dispose: list[QtGui.QPixmap] = []
         if scaled is not None:
             to_dispose.append(scaled)
-        if frames and (not path or path not in _frame_cache):
+        if frames and (not path or path not in _grid_cache):
             to_dispose.extend(frames)
         elif thumbnail is not None:
             to_dispose.append(thumbnail)
         if to_dispose:
             _disposer.schedule(to_dispose)
 
-    def advance(self, elapsed_ms: int):
+    def advance(self, delta_ms: int):
         if not self._frames or not self._delays:
             return
-        self._accumulated += _get_driver()._interval
-        delay = self._delays[self._frame_index]
-        if self._accumulated >= delay:
-            self._accumulated -= delay
+        self._accumulated += delta_ms
+        changed = False
+        while self._accumulated >= self._delays[self._frame_index]:
+            self._accumulated -= self._delays[self._frame_index]
             self._frame_index = (self._frame_index + 1) % len(self._frames)
+            changed = True
+        if changed:
             self.update()
 
     @profiler.profile

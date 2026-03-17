@@ -235,8 +235,9 @@ class TestAnimatedCellWidget:
         widget._playing = True
         widget._accumulated = 0
         widget.advance(33)
-        widget.advance(66)
-        assert widget._frame_index > 0 or widget._accumulated > 0
+        assert widget._frame_index == 1
+        widget.advance(33)
+        assert widget._frame_index == 2
 
     def test_on_appeared_starts(self, widget):
         widget._frames = [MagicMock(), MagicMock()]

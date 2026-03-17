@@ -137,7 +137,8 @@ def _wait_for_widget(widget, attr, expected, timeout=3.0, negate=False):
 
 def test_render_posts_decode_without_thumbnail(qtbot, tmp_path):
     from extensions.animated.grid import AnimatedGridPlugin
-    from extensions.animated.widget import AnimatedCellWidget, _frame_cache
+    from extensions.animated._common import _grid_cache
+    from extensions.animated.widget import AnimatedCellWidget
     from PIL import Image
     gif_path = str(tmp_path / 'anim.gif')
     frames = [Image.new('RGB', (10, 10), c) for c in ['red', 'blue']]
@@ -148,14 +149,15 @@ def test_render_posts_decode_without_thumbnail(qtbot, tmp_path):
     assert widget._path == gif_path
     _wait_for_widget(widget, '_frames', [], negate=True)
     assert len(widget._frames) >= 2
-    _frame_cache.remove(gif_path)
+    _grid_cache.remove(gif_path)
     widget.suspend()
     widget.deleteLater()
 
 
 def test_render_calls_load(qtbot, tmp_path):
     from extensions.animated.grid import AnimatedGridPlugin
-    from extensions.animated.widget import AnimatedCellWidget, _frame_cache
+    from extensions.animated._common import _grid_cache
+    from extensions.animated.widget import AnimatedCellWidget
     from PIL import Image
     gif_path = str(tmp_path / 'anim.gif')
     frames = [Image.new('RGB', (10, 10), c) for c in ['red', 'blue']]
@@ -166,30 +168,32 @@ def test_render_calls_load(qtbot, tmp_path):
     _wait_for_widget(widget, '_frames', [], negate=True)
     assert widget._path == gif_path
     assert len(widget._frames) >= 2
-    _frame_cache.remove(gif_path)
+    _grid_cache.remove(gif_path)
     widget.suspend()
     widget.deleteLater()
 
 
 def test_render_with_cache_hit(qtbot, tmp_path):
     from extensions.animated.grid import AnimatedGridPlugin
-    from extensions.animated.widget import AnimatedCellWidget, _frame_cache
+    from extensions.animated._common import _grid_cache
+    from extensions.animated.widget import AnimatedCellWidget
     frames = [QtGui.QPixmap(10, 10), QtGui.QPixmap(10, 10)]
     delays = [100, 100]
     path = '/cached/anim.gif'
-    _frame_cache.put(path, frames, delays)
+    _grid_cache.put(path, frames, delays)
     plugin = AnimatedGridPlugin()
     widget = AnimatedCellWidget()
     plugin.render(widget, path, QtCore.QSize(10, 10))
     assert widget._frames is frames
-    _frame_cache.remove(path)
+    _grid_cache.remove(path)
     widget.suspend()
     widget.deleteLater()
 
 
 def test_render_stale_after_suspend_does_not_set_frames(qtbot, tmp_path):
     from extensions.animated.grid import AnimatedGridPlugin
-    from extensions.animated.widget import AnimatedCellWidget, _frame_cache
+    from extensions.animated._common import _grid_cache
+    from extensions.animated.widget import AnimatedCellWidget
     from PIL import Image
     gif_path = str(tmp_path / 'anim.gif')
     frames = [Image.new('RGB', (10, 10), c) for c in ['red', 'blue']]
@@ -201,7 +205,7 @@ def test_render_stale_after_suspend_does_not_set_frames(qtbot, tmp_path):
     time.sleep(0.3)
     QtWidgets.QApplication.instance().processEvents(QtCore.QEventLoop.AllEvents, 50)
     assert widget._frames == []
-    _frame_cache.remove(gif_path)
+    _grid_cache.remove(gif_path)
     widget.deleteLater()
 
 
@@ -221,38 +225,38 @@ def test_render_nonexistent_no_frames(qtbot):
 class TestDecodeFrames:
 
     def test_decodes_animated_gif(self, tmp_path):
-        from extensions.animated.grid import _decode_frames
+        from extensions.animated._common import decode_frames
         from PIL import Image
         gif_path = str(tmp_path / 'test.gif')
         imgs = [Image.new('RGB', (10, 10), c) for c in ['red', 'blue']]
         imgs[0].save(gif_path, save_all=True, append_images=imgs[1:], duration=100, loop=0)
-        pixmaps, delays = _decode_frames(gif_path, None, lambda: False)
+        pixmaps, delays = decode_frames(gif_path, None, lambda: False)
         assert len(pixmaps) == 2
         assert len(delays) == 2
 
     def test_cancel_mid_decode(self, tmp_path):
-        from extensions.animated.grid import _decode_frames
+        from extensions.animated._common import decode_frames
         from PIL import Image
         gif_path = str(tmp_path / 'many.gif')
         imgs = [Image.new('RGB', (10, 10), 'red') for _ in range(20)]
         imgs[0].save(gif_path, save_all=True, append_images=imgs[1:], duration=50, loop=0)
-        pixmaps, delays = _decode_frames(gif_path, None, lambda: True)
+        pixmaps, delays = decode_frames(gif_path, None, lambda: True)
         assert pixmaps == [] and delays == []
 
     def test_scaled_size(self, tmp_path):
-        from extensions.animated.grid import _decode_frames
+        from extensions.animated._common import decode_frames
         from PIL import Image
         gif_path = str(tmp_path / 'big.gif')
         imgs = [Image.new('RGB', (100, 100), c) for c in ['red', 'blue']]
         imgs[0].save(gif_path, save_all=True, append_images=imgs[1:], duration=100, loop=0)
-        pixmaps, delays = _decode_frames(gif_path, QtCore.QSize(50, 50), lambda: False)
+        pixmaps, delays = decode_frames(gif_path, QtCore.QSize(50, 50), lambda: False)
         assert len(pixmaps) == 2
         for px in pixmaps:
             assert px.width() <= 50 and px.height() <= 50
 
     def test_nonexistent_file(self):
-        from extensions.animated.grid import _decode_frames
-        pixmaps, delays = _decode_frames('/nonexistent/file.gif', None, lambda: False)
+        from extensions.animated._common import decode_frames
+        pixmaps, delays = decode_frames('/nonexistent/file.gif', None, lambda: False)
         assert pixmaps == []
         assert delays == []
 
@@ -281,7 +285,8 @@ def test_release_cancels_cancel_slot():
 
 def test_render_cancels_previous_token(qtbot, tmp_path):
     from extensions.animated.grid import AnimatedGridPlugin
-    from extensions.animated.widget import AnimatedCellWidget, _frame_cache
+    from extensions.animated._common import _grid_cache
+    from extensions.animated.widget import AnimatedCellWidget
     from PIL import Image
     gif_path = str(tmp_path / 'anim.gif')
     frames = [Image.new('RGB', (10, 10), c) for c in ['red', 'blue']]
@@ -296,8 +301,8 @@ def test_render_cancels_previous_token(qtbot, tmp_path):
     plugin.render(widget, gif_path2, QtCore.QSize(10, 10))
     assert first_token.is_cancelled()
     assert widget._cancel_slot._token is not first_token
-    _frame_cache.remove(gif_path)
-    _frame_cache.remove(gif_path2)
+    _grid_cache.remove(gif_path)
+    _grid_cache.remove(gif_path2)
     widget.suspend()
     widget.deleteLater()
 

@@ -11,9 +11,14 @@ from .dispatcher import CollectorDispatcher
 from .progress_notifier import ProgressAggregator
 from .scanner import DirectoryScanner
 from .scheduler import TaskScheduler, PeriodicTask
+from .task import Task, TaskPriority
 from .watch_folder import FolderWatcher
 from .watch_setting import SettingWatcher
-from .write_command import WriteCommand, WritePriority
+
+_CLEANUP_INTERVAL = 5 * 60 * 60.0
+_IDLE_RESCAN_INTERVAL = 3 * 60 * 60.0
+_RETRY_STALE_INTERVAL = 5 * 60.0
+_CHECKPOINT_INTERVAL = 1 * 60.0
 
 
 class IndexerProcess:
@@ -22,6 +27,7 @@ class IndexerProcess:
         self.db_name = name
         self.setting_db = None
         self.scheduler = None
+        self.writer = None
         self.scanner = None
         self.folder_watcher = None
         self.setting_watcher = None
@@ -42,41 +48,82 @@ class IndexerProcess:
             self.delete()
             return
 
-        writer = DatabaseWriter(db_path)
-        self.scheduler = TaskScheduler(writer)
-        self.scheduler.add_periodic_task(PeriodicTask(
-            name='truncate_checkpoint',
-            interval=60.0,
-            create_command=lambda: WriteCommand.create(
-                'checkpoint', priority=WritePriority.MAINTENANCE,
-                data={'mode': 'TRUNCATE'},
-            ),
-        ))
+        self.writer = DatabaseWriter(db_path)
+        self.writer.start()
+        self.writer.initialize()
+
+        self.scheduler = TaskScheduler()
+        self._register_periodic_tasks()
         self.scheduler.start()
 
         collectors = collector_resolver.summary()
         progress = ProgressAggregator(self.db_name, self.zmq)
 
-        self.scanner = DirectoryScanner(db_path, self.scheduler, progress, collectors)
+        self.scanner = DirectoryScanner(db_path, self.scheduler, self.writer, progress, collectors)
         self.scanner.set_exclude_paths(self.setting_db.get_all_ignore_folders())
         self.scanner.start()
         self.scanner.backfill_pending()
 
-        self.receiver = CollectorReceiver(self.scheduler, progress)
+        self.receiver = CollectorReceiver(self.scheduler, self.writer, progress)
         self.zmq.subscribe('collect.result', self.receiver.handle_result)
 
         self.dispatcher = CollectorDispatcher(
-            self.db_name, db_path, self.scheduler,
+            self.db_name, db_path, self.scheduler, self.writer,
         )
         self.dispatcher.start(self.zmq)
 
-        self.folder_watcher = FolderWatcher(self.scheduler, self.scanner, progress)
+        self.folder_watcher = FolderWatcher(self.scheduler, self.writer, self.scanner, progress)
         self.folder_watcher.start(self.setting_db.get_all_parent_folders())
         self.setting_watcher = SettingWatcher(self.setting_db)
         self.setting_watcher.parent_folders_changed.connect(self.folder_watcher.start)
         self.setting_watcher.ignore_folders_changed.connect(self.folder_watcher.set_ignore_paths)
         self.setting_watcher.delete_requested.connect(self.delete)
         self.setting_watcher.start()
+
+    def _register_periodic_tasks(self):
+        self.scheduler.add_periodic_task(PeriodicTask(
+            name='truncate_checkpoint',
+            interval=_CHECKPOINT_INTERVAL,
+            create_task=lambda: Task.create(
+                'checkpoint',
+                priority=TaskPriority.MAINTENANCE,
+                run=lambda: self.writer.checkpoint('TRUNCATE'),
+            ),
+        ))
+        self.scheduler.add_periodic_task(PeriodicTask(
+            name='retry_stale_dispatched',
+            interval=_RETRY_STALE_INTERVAL,
+            idle_only=True,
+            create_task=lambda: Task.create(
+                'reset_stale',
+                priority=TaskPriority.RETRY,
+                run=lambda: self.writer.reset_stale(),
+            ),
+        ))
+        self.scheduler.add_periodic_task(PeriodicTask(
+            name='idle_rescan',
+            interval=_IDLE_RESCAN_INTERVAL,
+            idle_only=True,
+            create_task=lambda: Task.create(
+                'idle_rescan',
+                priority=TaskPriority.MAINTENANCE,
+                run=lambda: self._request_idle_rescan(),
+            ),
+        ))
+        self.scheduler.add_periodic_task(PeriodicTask(
+            name='cleanup_optimize',
+            interval=_CLEANUP_INTERVAL,
+            idle_only=True,
+            create_task=lambda: Task.create(
+                'cleanup_optimize',
+                priority=TaskPriority.MAINTENANCE,
+                run=lambda: self.writer.purge_orphans(),
+            ),
+        ))
+
+    def _request_idle_rescan(self):
+        if self.folder_watcher:
+            self.folder_watcher.rescan_all()
 
     def rescan(self):
         if self.folder_watcher:
@@ -103,6 +150,8 @@ class IndexerProcess:
             self.scanner.stop()
         if self.scheduler:
             self.scheduler.stop()
+        if self.writer:
+            self.writer.close()
         if self.setting_watcher:
             self.setting_watcher.stop()
         try:

@@ -4,17 +4,19 @@ import time
 from typing import Any
 
 from ...utils.logs import AppLogger
+from .db_writer import DatabaseWriter
 from .progress_notifier import ProgressAggregator
 from .scheduler import TaskScheduler
-from .write_command import WriteCommand, WritePriority
+from .task import Task, TaskPriority
 
 _BATCH_SIZE = 900
 
 
 class CollectorReceiver:
 
-    def __init__(self, scheduler: TaskScheduler, progress: ProgressAggregator):
+    def __init__(self, scheduler: TaskScheduler, writer: DatabaseWriter, progress: ProgressAggregator):
         self._scheduler = scheduler
+        self._writer = writer
         self._progress = progress
 
     def handle_result(self, msg) -> bool:
@@ -34,10 +36,13 @@ class CollectorReceiver:
         for i in range(0, len(results), _BATCH_SIZE):
             chunk = results[i:i + _BATCH_SIZE]
             data = _parse_batch(chunk)
-            self._scheduler.submit(WriteCommand.create(
+            self._scheduler.submit(Task.create(
                 'upsert_results',
-                priority=WritePriority.COLLECTION,
-                data=data,
+                priority=TaskPriority.COLLECTION,
+                run=lambda d=data: self._writer.upsert_results(
+                    d['source_updates'], d['image_entries'],
+                    d['meta_info_entries'], d['tag_entries'], d['collector_status'],
+                ),
                 on_complete=lambda n=len(chunk): (
                     self._progress.increment(n, 0),
                     self._progress.send_event('update'),

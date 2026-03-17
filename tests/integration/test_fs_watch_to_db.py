@@ -49,9 +49,11 @@ def _build_watcher_stack(tmp_path):
     node = _StubNode()
     progress = ProgressAggregator('test', node)
     writer = DatabaseWriter(db_path)
-    scheduler = TaskScheduler(writer)
-    scanner = DirectoryScanner(db_path, scheduler, progress, collectors)
-    watcher = FolderWatcher(scheduler, scanner, progress)
+    writer.start()
+    writer.initialize()
+    scheduler = TaskScheduler()
+    scanner = DirectoryScanner(db_path, scheduler, writer, progress, collectors)
+    watcher = FolderWatcher(scheduler, writer, scanner, progress)
     return db_path, writer, scheduler, scanner, watcher
 
 

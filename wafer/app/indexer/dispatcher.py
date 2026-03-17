@@ -9,8 +9,9 @@ from ...utils.logs import AppLogger
 from ...utils.profiling import profiler
 from ...core.platform.process import AppProcess
 from ...plugin.collector.handler import collector_resolver
+from .db_writer import DatabaseWriter
 from .scheduler import TaskScheduler
-from .write_command import WriteCommand, WritePriority
+from .task import Task, TaskPriority
 
 _BATCH_SIZE = 1000
 _DISPATCH_INTERVAL = 2.0
@@ -23,11 +24,13 @@ class CollectorDispatcher:
         db_name: str,
         db_path: str | Path,
         scheduler: TaskScheduler,
+        writer: DatabaseWriter,
         collectors=None,
     ):
         self._db_name = db_name
         self._db_path = Path(db_path)
         self._scheduler = scheduler
+        self._writer = writer
         self._collectors = list(collectors or collector_resolver.names())
         self._dispatched_paths: dict[str, set[str]] = {}
         self._dispatched_lock = threading.Lock()
@@ -50,10 +53,10 @@ class CollectorDispatcher:
         self._thread.start()
 
     def _reset_stale(self):
-        self._scheduler.submit(WriteCommand.create(
+        self._scheduler.submit(Task.create(
             'reset_stale',
-            priority=WritePriority.DISPATCH,
-            data={'collectors': self._collectors},
+            priority=TaskPriority.DISPATCH,
+            run=lambda: self._writer.reset_stale(self._collectors),
         ))
 
     def stop(self):
@@ -117,10 +120,10 @@ class CollectorDispatcher:
             file_info = {row[0]: (row[1], row[2], row[3]) for row in rows}
             with self._dispatched_lock:
                 self._dispatched_paths.setdefault(collector, set()).update(paths)
-            self._scheduler.submit(WriteCommand.create(
+            self._scheduler.submit(Task.create(
                 'mark_dispatched',
-                priority=WritePriority.DISPATCH,
-                data={'sources': paths, 'collector': collector},
+                priority=TaskPriority.DISPATCH,
+                run=lambda ps=paths, c=collector: self._writer.mark_dispatched(ps, c),
                 on_complete=lambda c=collector, ps=paths: self._clear_dispatched(c, ps),
             ))
             self._node.send(

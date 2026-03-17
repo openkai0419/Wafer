@@ -7,10 +7,11 @@ from watchdog.observers import Observer
 from ...utils.logs import AppLogger
 from ...utils.paths import normalize_path
 from ...utils.profiling import profiler
+from .db_writer import DatabaseWriter
 from .progress_notifier import ProgressAggregator
 from .scanner import DirectoryScanner
 from .scheduler import TaskScheduler
-from .write_command import WriteCommand, WritePriority
+from .task import Task, TaskPriority
 
 DISABLE_MODIFY_EVENT = False
 _BATCH_TIMEOUT = 0.5
@@ -163,10 +164,12 @@ class FolderWatcher:
     def __init__(
         self,
         scheduler: TaskScheduler,
+        writer: DatabaseWriter,
         scanner: DirectoryScanner,
         progress: ProgressAggregator,
     ):
         self._scheduler = scheduler
+        self._writer = writer
         self._scanner = scanner
         self._progress = progress
         self._q = queue.Queue()
@@ -267,10 +270,10 @@ class FolderWatcher:
             ]
             if pairs:
                 self._progress.increment(0, len(pairs))
-                self._scheduler.submit(WriteCommand.create(
+                self._scheduler.submit(Task.create(
                     'rename_paths',
-                    priority=WritePriority.REALTIME,
-                    data={'pairs': pairs},
+                    priority=TaskPriority.REALTIME,
+                    run=lambda p=pairs: self._writer.rename_paths(p),
                     on_complete=lambda n=len(pairs): (
                         self._progress.increment(n, 0),
                         self._progress.send_event('update'),
@@ -284,10 +287,10 @@ class FolderWatcher:
             paths = [normalize_path(p) for p in data if not os.path.exists(p)]
             if paths:
                 self._progress.increment(0, len(paths))
-                self._scheduler.submit(WriteCommand.create(
+                self._scheduler.submit(Task.create(
                     'delete_sources',
-                    priority=WritePriority.REALTIME,
-                    data={'paths': paths},
+                    priority=TaskPriority.REALTIME,
+                    run=lambda p=paths: self._writer.delete_sources(p),
                     on_complete=lambda n=len(paths): (
                         self._progress.increment(n, 0),
                         self._progress.send_event('update'),
@@ -299,9 +302,10 @@ class FolderWatcher:
         elif cmd == 'cleanup':
             AppLogger.info('watcher cleanup')
             self._progress.increment(0, 1)
-            self._scheduler.submit(WriteCommand.create(
+            self._scheduler.submit(Task.create(
                 'purge_orphans',
-                priority=WritePriority.MAINTENANCE,
+                priority=TaskPriority.MAINTENANCE,
+                run=lambda: self._writer.purge_orphans(),
                 on_complete=lambda: (
                     self._progress.increment(1, 0),
                     self._progress.send_event('update'),

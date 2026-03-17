@@ -7,11 +7,10 @@ from queue import Empty, PriorityQueue
 from typing import Callable
 
 from ...utils.logs import AppLogger
-from .db_writer import DatabaseWriter
-from .write_command import WriteCommand, WritePriority
+from .task import Task, TaskPriority
 
 _QUEUE_POLL_INTERVAL = 1.0
-_IDLE_THRESHOLD = 300.0
+_IDLE_THRESHOLD = 5 * 60.0
 _STOP_PRIORITY = 999
 
 
@@ -19,7 +18,7 @@ _STOP_PRIORITY = 999
 class PeriodicTask:
     name: str
     interval: float
-    create_command: Callable[[], WriteCommand]
+    create_task: Callable[[], Task]
     idle_only: bool = False
     last_run: float = field(default=0.0)
 
@@ -31,62 +30,59 @@ class PeriodicTask:
 
 class TaskScheduler:
 
-    def __init__(self, writer: DatabaseWriter):
-        self._writer = writer
-        self._queue: PriorityQueue[WriteCommand] = PriorityQueue()
+    def __init__(self):
+        self._queue: PriorityQueue[Task] = PriorityQueue()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._last_active_time = time.monotonic()
         self._idle_threshold = _IDLE_THRESHOLD
         self._periodic_tasks: list[PeriodicTask] = []
 
-    @property
-    def writer(self) -> DatabaseWriter:
-        return self._writer
+    def submit(self, task: Task):
+        self._queue.put(task)
 
-    def submit(self, command: WriteCommand):
-        self._queue.put(command)
-
-    def add_periodic_task(self, task: PeriodicTask):
-        self._periodic_tasks.append(task)
+    def add_periodic_task(self, periodic: PeriodicTask):
+        self._periodic_tasks.append(periodic)
 
     def start(self):
-        self._writer.start()
-        self._writer.initialize()
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
 
     def stop(self):
-        self.submit(WriteCommand.create('__stop__', priority=_STOP_PRIORITY))
+        self.submit(Task.create('__stop__', priority=_STOP_PRIORITY, run=lambda: None))
         if self._thread:
             self._thread.join(timeout=10.0)
         self._stop.set()
-        self._writer.close()
 
     def _loop(self):
         while not self._stop.is_set():
             self._check_periodic_tasks()
             try:
-                cmd = self._queue.get(timeout=_QUEUE_POLL_INTERVAL)
+                task = self._queue.get(timeout=_QUEUE_POLL_INTERVAL)
             except Empty:
                 continue
-            if cmd.operation == '__stop__':
+            if task.name == '__stop__':
                 break
-            self._writer.execute(cmd)
-            if cmd.on_complete:
+            if task.cancel_token and task.cancel_token.is_cancelled:
+                continue
+            try:
+                task.run()
+            except Exception as e:
+                AppLogger.error(f'[Scheduler] task failed: {task.name}: {e}', exc=e)
+            if task.on_complete:
                 try:
-                    cmd.on_complete()
+                    task.on_complete()
                 except Exception as e:
                     AppLogger.warning(
-                        f'[Scheduler] on_complete callback failed for {cmd.operation}: {e}', exc=e,
+                        f'[Scheduler] on_complete failed: {task.name}: {e}', exc=e,
                     )
-            if cmd.priority <= WritePriority.SCAN:
+            if task.priority <= TaskPriority.SCAN:
                 self._last_active_time = time.monotonic()
 
     def _check_periodic_tasks(self):
         now = time.monotonic()
         is_idle = (now - self._last_active_time) >= self._idle_threshold
-        for task in self._periodic_tasks:
-            if task.should_run(now, is_idle):
-                self.submit(task.create_command())
-                task.last_run = now
+        for periodic in self._periodic_tasks:
+            if periodic.should_run(now, is_idle):
+                self.submit(periodic.create_task())
+                periodic.last_run = now

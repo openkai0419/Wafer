@@ -12,7 +12,6 @@ from wafer.plugin.collector.handler import collector_resolver
 from wafer.plugin.collector.base import CollectorResult
 from wafer.app.indexer.db_writer import DatabaseWriter
 from wafer.app.indexer.collector_receiver import _parse_batch
-from wafer.app.indexer.write_command import WriteCommand, WritePriority
 
 
 def _get_exif_plugin():
@@ -55,8 +54,10 @@ def _write_results_sync(writer, results, collector_name):
     for r in results:
         r.setdefault('collector', collector_name)
     data = _parse_batch(results)
-    cmd = WriteCommand.create('upsert_results', priority=WritePriority.COLLECTION, data=data)
-    writer.execute(cmd)
+    writer.upsert_results(
+        data['source_updates'], data['image_entries'],
+        data['meta_info_entries'], data['tag_entries'], data['collector_status'],
+    )
 
 
 class TestImagePipeline:

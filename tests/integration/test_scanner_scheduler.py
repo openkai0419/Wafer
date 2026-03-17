@@ -12,7 +12,7 @@ from wafer.plugin.collector.handler import collector_resolver
 from wafer.app.indexer.db_writer import DatabaseWriter
 from wafer.app.indexer.scanner import DirectoryScanner
 from wafer.app.indexer.scheduler import TaskScheduler
-from wafer.app.indexer.write_command import WriteCommand, WritePriority
+from wafer.app.indexer.task import Task, TaskPriority
 from wafer.app.indexer.progress_notifier import ProgressAggregator
 
 
@@ -58,8 +58,10 @@ class TestScannerSchedulerPipeline:
         node = _StubNode()
         progress = ProgressAggregator('test', node)
         writer = DatabaseWriter(db_path)
-        scheduler = TaskScheduler(writer)
-        scanner = DirectoryScanner(db_path, scheduler, progress, collectors)
+        writer.start()
+        writer.initialize()
+        scheduler = TaskScheduler()
+        scanner = DirectoryScanner(db_path, scheduler, writer, progress, collectors)
 
         scheduler.start()
         scanner.start()
@@ -99,8 +101,10 @@ class TestScannerSchedulerPipeline:
         node = _StubNode()
         progress = ProgressAggregator('test', node)
         writer = DatabaseWriter(db_path)
-        scheduler = TaskScheduler(writer)
-        scanner = DirectoryScanner(db_path, scheduler, progress, collectors)
+        writer.start()
+        writer.initialize()
+        scheduler = TaskScheduler()
+        scanner = DirectoryScanner(db_path, scheduler, writer, progress, collectors)
 
         scheduler.start()
         scanner.start()
@@ -150,8 +154,10 @@ class TestScannerSchedulerPipeline:
         node = _StubNode()
         progress = ProgressAggregator('test', node)
         writer = DatabaseWriter(db_path)
-        scheduler = TaskScheduler(writer)
-        scanner = DirectoryScanner(db_path, scheduler, progress, collectors)
+        writer.start()
+        writer.initialize()
+        scheduler = TaskScheduler()
+        scanner = DirectoryScanner(db_path, scheduler, writer, progress, collectors)
         scanner.set_exclude_paths([str(skip_dir)])
 
         scheduler.start()
@@ -187,8 +193,10 @@ class TestScannerSchedulerPipeline:
         node = _StubNode()
         progress = ProgressAggregator('test', node)
         writer = DatabaseWriter(db_path)
-        scheduler = TaskScheduler(writer)
-        scanner = DirectoryScanner(db_path, scheduler, progress, collectors)
+        writer.start()
+        writer.initialize()
+        scheduler = TaskScheduler()
+        scanner = DirectoryScanner(db_path, scheduler, writer, progress, collectors)
 
         scheduler.start()
         scanner.start()
@@ -219,37 +227,38 @@ class TestScannerSchedulerPipeline:
             scanner.stop()
             scheduler.stop()
 
-    def test_command_priority_ordering(self, tmp_path):
+    def test_task_priority_ordering(self, tmp_path):
         db_path = tmp_path / 'test.db'
         writer = DatabaseWriter(db_path)
-        scheduler = TaskScheduler(writer)
+        writer.start()
+        writer.initialize()
+        scheduler = TaskScheduler()
         scheduler.start()
         time.sleep(0.3)
 
         executed_ops = []
-        original_execute = writer.execute
-
-        def tracking_execute(cmd):
-            executed_ops.append(cmd.operation)
-            if cmd.operation != '__noop__':
-                original_execute(cmd)
-
-        writer.execute = tracking_execute
 
         for _ in range(3):
-            scheduler.submit(WriteCommand.create(
-                '__noop__', priority=WritePriority.MAINTENANCE,
+            scheduler.submit(Task.create(
+                'noop_low', priority=TaskPriority.MAINTENANCE,
+                run=lambda: executed_ops.append('low'),
             ))
-        scheduler.submit(WriteCommand.create(
-            '__noop__', priority=WritePriority.REALTIME,
+        done = threading.Event()
+        scheduler.submit(Task.create(
+            'noop_high', priority=TaskPriority.REALTIME,
+            run=lambda: executed_ops.append('high'),
+            on_complete=done.set,
         ))
 
-        time.sleep(2.0)
+        done.wait(timeout=5.0)
+        time.sleep(1.0)
         scheduler.stop()
+        writer.close()
 
-        if len(executed_ops) >= 2:
-            first_noop = executed_ops[0]
-            assert first_noop == '__noop__'
+        assert len(executed_ops) >= 2
+        high_idx = executed_ops.index('high')
+        low_indices = [i for i, x in enumerate(executed_ops) if x == 'low']
+        assert any(high_idx < li for li in low_indices)
 
     def test_scan_result_searchable(self, tmp_path):
         img_dir = tmp_path / 'images'
@@ -262,8 +271,10 @@ class TestScannerSchedulerPipeline:
         node = _StubNode()
         progress = ProgressAggregator('test', node)
         writer = DatabaseWriter(db_path)
-        scheduler = TaskScheduler(writer)
-        scanner = DirectoryScanner(db_path, scheduler, progress, collectors)
+        writer.start()
+        writer.initialize()
+        scheduler = TaskScheduler()
+        scanner = DirectoryScanner(db_path, scheduler, writer, progress, collectors)
 
         scheduler.start()
         scanner.start()

@@ -12,9 +12,10 @@ from ...utils.hashes import fast_signature_hash
 from ...utils.logs import AppLogger
 from ...utils.paths import normalize_path
 from ...utils.profiling import profiler
+from .db_writer import DatabaseWriter
 from .progress_notifier import ProgressAggregator
 from .scheduler import TaskScheduler
-from .write_command import WriteCommand, WritePriority
+from .task import CancelToken, Task, TaskPriority
 
 _CHUNK = 400
 
@@ -25,11 +26,13 @@ class DirectoryScanner:
         self,
         db_path: str | Path,
         scheduler: TaskScheduler,
+        writer: DatabaseWriter,
         progress: ProgressAggregator,
         collectors: list[tuple[str, list[str]]] | None = None,
     ):
         self._db_path = Path(db_path)
         self._scheduler = scheduler
+        self._writer = writer
         self._progress = progress
         self._collectors = collectors or []
         self._exclude_paths: list[str] = []
@@ -39,6 +42,7 @@ class DirectoryScanner:
         self._request_lock = threading.Lock()
         self._request_event = threading.Event()
         self._thread: threading.Thread | None = None
+        self._current_token = CancelToken()
 
     def start(self):
         uri = self._db_path.resolve().as_uri()
@@ -59,6 +63,7 @@ class DirectoryScanner:
             self._read_conn = None
 
     def request_scan(self, folders: list[str]):
+        self._cancel_current()
         with self._request_lock:
             self._request_queue.append(('rescan', folders))
         self._request_event.set()
@@ -78,6 +83,11 @@ class DirectoryScanner:
         with self._request_lock:
             self._request_queue.append(('backfill', None))
         self._request_event.set()
+
+    def _cancel_current(self):
+        self._current_token.cancel()
+        self._progress.reset()
+        self._current_token = CancelToken()
 
     def _loop(self):
         while not self._stop.is_set():
@@ -111,15 +121,21 @@ class DirectoryScanner:
     @profiler.profile
     def _do_full_scan(self, root_paths: Sequence[str]):
         AppLogger.info(f'[Scanner] Full scan: {len(root_paths)} folders')
+        token = self._current_token
         current_compare: dict[str, tuple] = {}
         file_info: dict[str, tuple] = {}
         self._progress.increment(0, 1)
         for path in root_paths:
+            if token.is_cancelled:
+                return
             for norm_p, info in self._scan_directory(path):
                 mtime, fsize, ctime = info
                 current_compare[norm_p] = (mtime, fsize)
                 file_info[norm_p] = (mtime, fsize, ctime)
         self._progress.increment(1, 0)
+
+        if token.is_cancelled:
+            return
 
         previous = self._load_existing_sources()
         added_or_modified = [
@@ -132,20 +148,26 @@ class DirectoryScanner:
 
         if removed:
             for i in range(0, len(removed), _CHUNK):
+                if token.is_cancelled:
+                    return
                 chunk = removed[i:i + _CHUNK]
-                self._scheduler.submit(WriteCommand.create(
+                self._scheduler.submit(Task.create(
                     'delete_sources',
-                    priority=WritePriority.SCAN,
-                    data={'paths': chunk},
+                    priority=TaskPriority.SCAN,
+                    run=lambda c=chunk: self._writer.delete_sources(c),
+                    cancel_token=token,
                     on_complete=lambda n=len(chunk): self._progress.increment(n, 0),
                 ))
-            self._scheduler.submit(WriteCommand.create(
-                'checkpoint', priority=WritePriority.SCAN, data={'mode': 'PASSIVE'},
+            self._scheduler.submit(Task.create(
+                'checkpoint',
+                priority=TaskPriority.SCAN,
+                run=lambda: self._writer.checkpoint('PASSIVE'),
+                cancel_token=token,
                 on_complete=lambda: self._progress.send_event('update'),
             ))
 
         if added_or_modified:
-            self._register_and_submit(added_or_modified, file_info)
+            self._register_and_submit(added_or_modified, file_info, token)
 
     @profiler.profile
     def _do_update_files(self, file_paths: list[str]):
@@ -181,15 +203,18 @@ class DirectoryScanner:
         ]
         if to_update:
             self._progress.increment(0, len(to_update))
-            self._register_and_submit(to_update, stat_info)
+            token = self._current_token
+            self._register_and_submit(to_update, stat_info, token)
         else:
             AppLogger.info('[Scanner] No updates needed.')
 
     @profiler.profile
-    def _register_and_submit(self, paths: list[str], file_info: dict):
+    def _register_and_submit(self, paths: list[str], file_info: dict, token: CancelToken):
         from ...core.platform.thumbnails import FileThumbnailer
         now = time.time()
         for i in range(0, len(paths), _CHUNK):
+            if token.is_cancelled:
+                return
             chunk = paths[i:i + _CHUNK]
             aspect_map = FileThumbnailer.get_aspect_ratios(chunk)
             source_entries = []
@@ -199,19 +224,20 @@ class DirectoryScanner:
                 file_hash = fast_signature_hash(p, fsize, 256)
                 source_entries.append((p, file_hash, fsize, mtime, ctime, now, 'indexed'))
                 file_entries.append((p, p, Path(p).name, aspect_map.get(p, 1.0)))
-            self._scheduler.submit(WriteCommand.create(
+            self._scheduler.submit(Task.create(
                 'upsert_sources',
-                priority=WritePriority.SCAN,
-                data={'source_entries': source_entries, 'image_entries': file_entries},
+                priority=TaskPriority.SCAN,
+                run=lambda se=source_entries, ie=file_entries: self._writer.upsert_sources(se, ie),
+                cancel_token=token,
                 on_complete=lambda n=len(chunk): (
                     self._progress.increment(n, 0),
                     self._progress.send_event('update'),
                 ),
             ))
-        self._submit_pending_by_extension(paths)
+        self._submit_pending_by_extension(paths, token)
         AppLogger.info(f'[Scanner] Registered {len(paths)} files')
 
-    def _submit_pending_by_extension(self, paths: list[str]):
+    def _submit_pending_by_extension(self, paths: list[str], token: CancelToken):
         if not self._collectors:
             return
         collector_paths: dict[str, list[str]] = {}
@@ -222,10 +248,11 @@ class DirectoryScanner:
                     collector_paths.setdefault(name, []).append(p)
         total_pending = 0
         for name, matched_paths in collector_paths.items():
-            self._scheduler.submit(WriteCommand.create(
+            self._scheduler.submit(Task.create(
                 'insert_pending',
-                priority=WritePriority.SCAN,
-                data={'sources': matched_paths, 'collectors': [name]},
+                priority=TaskPriority.SCAN,
+                run=lambda mp=matched_paths, n=name: self._writer.insert_pending(mp, [n]),
+                cancel_token=token,
             ))
             total_pending += len(matched_paths)
         if total_pending:
@@ -243,13 +270,15 @@ class DirectoryScanner:
         to_remove = [p for p in all_paths if self._is_excluded(p)]
         if not to_remove:
             return
+        token = self._current_token
         self._progress.increment(0, len(to_remove))
         for i in range(0, len(to_remove), _CHUNK):
             chunk = to_remove[i:i + _CHUNK]
-            self._scheduler.submit(WriteCommand.create(
+            self._scheduler.submit(Task.create(
                 'delete_sources',
-                priority=WritePriority.SCAN,
-                data={'paths': chunk},
+                priority=TaskPriority.SCAN,
+                run=lambda c=chunk: self._writer.delete_sources(c),
+                cancel_token=token,
                 on_complete=lambda n=len(chunk): self._progress.increment(n, 0),
             ))
         AppLogger.info(f'[Scanner] Submitted removal of {len(to_remove)} excluded entries')
@@ -257,8 +286,11 @@ class DirectoryScanner:
     def _do_backfill(self):
         if not self._collectors:
             return
+        token = self._current_token
         cur = self._read_conn.cursor()
         for name, extensions in self._collectors:
+            if token.is_cancelled:
+                break
             cur.execute(
                 '''SELECT s.source FROM sources s
                 WHERE NOT EXISTS (
@@ -275,10 +307,11 @@ class DirectoryScanner:
                 continue
             for i in range(0, len(sources), _CHUNK):
                 chunk = sources[i:i + _CHUNK]
-                self._scheduler.submit(WriteCommand.create(
+                self._scheduler.submit(Task.create(
                     'insert_pending',
-                    priority=WritePriority.SCAN,
-                    data={'sources': chunk, 'collectors': [name]},
+                    priority=TaskPriority.SCAN,
+                    run=lambda c=chunk, n=name: self._writer.insert_pending(c, [n]),
+                    cancel_token=token,
                 ))
             AppLogger.info(f'[Scanner] Backfill: {len(sources)} pending for "{name}"')
         cur.close()

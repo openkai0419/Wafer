@@ -14,19 +14,21 @@ def test_chunk_positive():
 
 def _make_scanner(tmp_path, collectors=None):
     from wafer.core.db.file_db import FileDB
+    from wafer.app.indexer.db_writer import DatabaseWriter
     db_path = tmp_path / 'test.db'
     db = FileDB(db_path)
     db.start()
     db.initialize_database()
     db.close()
     scheduler = MagicMock()
+    writer = MagicMock()
     progress = MagicMock()
-    scanner = DirectoryScanner(db_path, scheduler, progress, collectors)
-    return scanner, scheduler, progress
+    scanner = DirectoryScanner(db_path, scheduler, writer, progress, collectors)
+    return scanner, scheduler, writer, progress
 
 
 def test_set_exclude_paths(tmp_path):
-    scanner, scheduler, _ = _make_scanner(tmp_path)
+    scanner, scheduler, _, _ = _make_scanner(tmp_path)
     scanner.start()
     scanner.set_exclude_paths(['/a/b', '/c/d'])
     assert len(scanner._exclude_paths) == 2
@@ -35,7 +37,7 @@ def test_set_exclude_paths(tmp_path):
 
 
 def test_is_excluded(tmp_path):
-    scanner, _, _ = _make_scanner(tmp_path)
+    scanner, *_ = _make_scanner(tmp_path)
     scanner._exclude_paths = ['/a/b', '/c/d']
     assert scanner._is_excluded('/a/b')
     assert scanner._is_excluded('/a/b/sub/file.png')
@@ -44,27 +46,27 @@ def test_is_excluded(tmp_path):
 
 
 def test_is_excluded_empty(tmp_path):
-    scanner, _, _ = _make_scanner(tmp_path)
+    scanner, *_ = _make_scanner(tmp_path)
     scanner._exclude_paths = []
     assert not scanner._is_excluded('/any/path')
 
 
 def test_request_scan_queues(tmp_path):
-    scanner, _, _ = _make_scanner(tmp_path)
+    scanner, *_ = _make_scanner(tmp_path)
     scanner.request_scan(['/folder1'])
     assert len(scanner._request_queue) == 1
     assert scanner._request_queue[0] == ('rescan', ['/folder1'])
 
 
 def test_request_update_queues(tmp_path):
-    scanner, _, _ = _make_scanner(tmp_path)
+    scanner, *_ = _make_scanner(tmp_path)
     scanner.request_update(['/file.png'])
     assert len(scanner._request_queue) == 1
     assert scanner._request_queue[0] == ('update', ['/file.png'])
 
 
 def test_backfill_pending_queues(tmp_path):
-    scanner, _, _ = _make_scanner(tmp_path)
+    scanner, *_ = _make_scanner(tmp_path)
     scanner.backfill_pending()
     assert len(scanner._request_queue) == 1
     assert scanner._request_queue[0] == ('backfill', None)
@@ -86,7 +88,7 @@ def test_get_stat():
 
 
 def test_start_stop(tmp_path):
-    scanner, _, _ = _make_scanner(tmp_path)
+    scanner, *_ = _make_scanner(tmp_path)
     scanner.start()
     assert scanner._read_conn is not None
     assert scanner._thread is not None
@@ -95,7 +97,7 @@ def test_start_stop(tmp_path):
 
 
 def test_load_existing_sources_empty(tmp_path):
-    scanner, _, _ = _make_scanner(tmp_path)
+    scanner, *_ = _make_scanner(tmp_path)
     scanner.start()
     result = scanner._load_existing_sources()
     assert result == {}
@@ -104,7 +106,7 @@ def test_load_existing_sources_empty(tmp_path):
 
 def test_full_scan_with_files(tmp_path):
     import time
-    scanner, scheduler, progress = _make_scanner(tmp_path)
+    scanner, scheduler, _, progress = _make_scanner(tmp_path)
     scanner.start()
     scan_dir = tmp_path / 'data'
     scan_dir.mkdir()
@@ -112,32 +114,35 @@ def test_full_scan_with_files(tmp_path):
     (scan_dir / 'b.txt').write_text('y')
     scanner._do_full_scan([str(scan_dir)])
     assert scheduler.submit.called
-    ops = [c[0][0].operation for c in scheduler.submit.call_args_list]
+    ops = [c[0][0].name for c in scheduler.submit.call_args_list]
     assert 'upsert_sources' in ops
     scanner.stop()
 
 
 def test_full_scan_empty_dir(tmp_path):
-    scanner, scheduler, progress = _make_scanner(tmp_path)
+    scanner, scheduler, _, progress = _make_scanner(tmp_path)
     scanner.start()
     scan_dir = tmp_path / 'empty'
     scan_dir.mkdir()
     scanner._do_full_scan([str(scan_dir)])
-    ops = [c[0][0].operation for c in scheduler.submit.call_args_list]
+    ops = [c[0][0].name for c in scheduler.submit.call_args_list]
     assert 'upsert_sources' not in ops
     scanner.stop()
 
 
 def test_submit_pending_by_extension(tmp_path):
-    scanner, scheduler, _ = _make_scanner(tmp_path, collectors=[('exif', ['.jpg', '.png'])])
-    scanner._submit_pending_by_extension(['/a.jpg', '/b.png', '/c.txt'])
+    from wafer.app.indexer.task import CancelToken
+    scanner, scheduler, writer, _ = _make_scanner(tmp_path, collectors=[('exif', ['.jpg', '.png'])])
+    token = CancelToken()
+    scanner._submit_pending_by_extension(['/a.jpg', '/b.png', '/c.txt'], token)
     assert scheduler.submit.called
-    cmd = scheduler.submit.call_args[0][0]
-    assert cmd.operation == 'insert_pending'
-    assert set(cmd.data['sources']) == {'/a.jpg', '/b.png'}
+    task = scheduler.submit.call_args[0][0]
+    assert task.name == 'insert_pending'
 
 
 def test_submit_pending_no_collectors(tmp_path):
-    scanner, scheduler, _ = _make_scanner(tmp_path, collectors=[])
-    scanner._submit_pending_by_extension(['/a.jpg'])
+    from wafer.app.indexer.task import CancelToken
+    scanner, scheduler, _, _ = _make_scanner(tmp_path, collectors=[])
+    token = CancelToken()
+    scanner._submit_pending_by_extension(['/a.jpg'], token)
     assert not scheduler.submit.called

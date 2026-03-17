@@ -16,49 +16,52 @@ def test_compile():
 
 def _make_receiver():
     scheduler = MagicMock()
+    writer = MagicMock()
     progress = MagicMock()
-    receiver = CollectorReceiver(scheduler, progress)
-    return receiver, scheduler, progress
+    receiver = CollectorReceiver(scheduler, writer, progress)
+    return receiver, scheduler, writer, progress
 
 
 def test_handle_result_returns_true():
-    receiver, _, _ = _make_receiver()
+    receiver, _, _, _ = _make_receiver()
     msg = _StubMsg({'collector': 'exif', 'results': [{'source': 'a', 'status': True}]})
     assert receiver.handle_result(msg) is True
 
 
 def test_handle_result_invalid_payload():
-    receiver, scheduler, _ = _make_receiver()
+    receiver, scheduler, _, _ = _make_receiver()
     msg = _StubMsg('not_a_dict')
     assert receiver.handle_result(msg) is True
     assert not scheduler.submit.called
 
 
-def test_handle_result_submits_commands():
-    receiver, scheduler, _ = _make_receiver()
+def test_handle_result_submits_tasks():
+    receiver, scheduler, _, _ = _make_receiver()
     results = [{'source': f'p{i}', 'status': True} for i in range(5)]
     msg = _StubMsg({'collector': 'exif', 'results': results})
     receiver.handle_result(msg)
     assert scheduler.submit.called
-    cmd = scheduler.submit.call_args[0][0]
-    assert cmd.operation == 'upsert_results'
+    task = scheduler.submit.call_args[0][0]
+    assert task.name == 'upsert_results'
 
 
 def test_handle_result_empty_results():
-    receiver, scheduler, _ = _make_receiver()
+    receiver, scheduler, _, _ = _make_receiver()
     msg = _StubMsg({'collector': 'exif', 'results': []})
     receiver.handle_result(msg)
     assert not scheduler.submit.called
 
 
 def test_handle_result_sets_collector_on_results():
-    receiver, scheduler, _ = _make_receiver()
+    receiver, scheduler, writer, _ = _make_receiver()
     results = [{'source': 'a', 'status': True}]
     msg = _StubMsg({'collector': 'test_coll', 'results': results})
     receiver.handle_result(msg)
-    cmd = scheduler.submit.call_args[0][0]
-    cs = cmd.data['collector_status']
-    assert any(c[1] == 'test_coll' for c in cs)
+    task = scheduler.submit.call_args[0][0]
+    task.run()
+    call_args = writer.upsert_results.call_args
+    collector_status = call_args[0][4]
+    assert any(c[1] == 'test_coll' for c in collector_status)
 
 
 def test_parse_batch_ok_status():

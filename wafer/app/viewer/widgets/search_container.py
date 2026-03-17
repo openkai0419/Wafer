@@ -219,11 +219,22 @@ class SearchContainer(QtWidgets.QWidget, TranslatorMixin):
         menu.exec(self._add_button.mapToGlobal(
             QtCore.QPoint(0, self._add_button.height())))
 
+    def _collect_inherited_params(self) -> dict:
+        merged = {}
+        for row in self._rows:
+            if row.filter_cls and row.get_param_widget():
+                params = row.filter_cls.read_params(row.get_param_widget())
+                merged.update(row.filter_cls.inheritable_params(params))
+        return merged
+
     def _add_row(self, filter_cls, emit=True):
+        inherited = self._collect_inherited_params()
         is_first = len(self._rows) == 0
         row = FilterRow(filter_cls, show_op=not is_first, key_store=self._key_store, parent=self)
         row.changed.connect(self._on_row_changed)
         row.remove_requested.connect(self._on_remove_row)
+        if inherited and row.get_param_widget():
+            filter_cls.write_params(row.get_param_widget(), inherited)
         self._rows.append(row)
         self._filter_stack.addWidget(row)
         self._update_tool_placement()

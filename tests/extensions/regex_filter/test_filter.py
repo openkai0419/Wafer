@@ -188,6 +188,26 @@ class TestExtractLiteralHints:
         assert 'ab' in hints
 
 
+class TestInheritableParams:
+
+    def test_exports_keys_and_ignore_case(self):
+        params = {
+            'keys': ['__filepath__', 'prompt'],
+            'pattern': r'photo.*2024',
+            'ignore_case': True,
+        }
+        result = RegexFilter.inheritable_params(params)
+        assert result == {'keys': ['__filepath__', 'prompt'], 'ignore_case': True}
+        assert 'pattern' not in result
+
+    def test_empty_params(self):
+        assert RegexFilter.inheritable_params({}) == {}
+
+    def test_partial_params(self):
+        result = RegexFilter.inheritable_params({'ignore_case': False})
+        assert result == {'ignore_case': False}
+
+
 class TestBuildPathQuery:
 
     def test_empty_pattern_returns_none(self, tmp_path):

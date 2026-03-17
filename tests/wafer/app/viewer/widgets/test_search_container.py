@@ -397,3 +397,69 @@ class TestInvalidateKeyCache:
         container._last_paths = ('/some/path',)
         container.invalidate_key_cache()
         assert container._last_paths != ('/some/path',)
+
+
+class TestFilterInheritance:
+
+    def test_new_row_inherits_settings_from_existing(self, qapp):
+        container = SearchContainer()
+        primary = container._rows[0].get_param_widget()
+        primary.write_params({
+            'query_mode': 'LIKE',
+            'keyword_mode': 'OR',
+            'keyword_separator': ' ',
+            'keys': ['prompt', '__filepath__'],
+        })
+        container._add_row(TextFilter)
+        second = container._rows[1].get_param_widget()
+        params = second.read_params()
+        assert params['query_mode'] == 'LIKE'
+        assert params['keyword_mode'] == 'OR'
+        assert params['keyword_separator'] == ' '
+
+    def test_new_row_does_not_inherit_keywords(self, qapp):
+        container = SearchContainer()
+        primary = container._rows[0].get_param_widget()
+        primary.write_params({'keywords': 'sunset'})
+        container._add_row(TextFilter)
+        second = container._rows[1].get_param_widget()
+        params = second.read_params()
+        assert params['keywords'] == ''
+
+    def test_later_row_overwrites_earlier(self, qapp):
+        container = SearchContainer()
+        primary = container._rows[0].get_param_widget()
+        primary.write_params({'query_mode': 'LIKE'})
+        container._add_row(TextFilter)
+        second = container._rows[1].get_param_widget()
+        second.write_params({'query_mode': 'GLOB'})
+        container._add_row(TextFilter)
+        third = container._rows[2].get_param_widget()
+        params = third.read_params()
+        assert params['query_mode'] == 'GLOB'
+
+    def test_collect_inherited_params_empty_when_no_rows(self, qapp):
+        container = SearchContainer()
+        container._on_remove_row(container._rows[0])
+        assert container._collect_inherited_params() == {}
+
+    def test_cross_filter_inheritance_keys(self, qapp):
+        from extensions.regex_filter.filter import RegexFilter
+        container = SearchContainer()
+        container._key_store.set_data([('__filepath__', 10), ('prompt', 5)])
+        primary = container._rows[0].get_param_widget()
+        primary.write_params({'keys': ['prompt']})
+        primary.keys_combo.previous_key = ['prompt']
+        primary.keys_combo.remake(container._key_store.data)
+        container._add_row(RegexFilter)
+        second = container._rows[1].get_param_widget()
+        params = second.read_params()
+        assert 'prompt' in (params.get('keys') or [])
+
+    def test_first_row_no_inheritance(self, qapp):
+        container = SearchContainer()
+        container._on_remove_row(container._rows[0])
+        container._add_row(TextFilter)
+        params = container._rows[0].get_param_widget().read_params()
+        assert params['query_mode'] == 'GLOB'
+        assert params['keyword_mode'] == 'AND'

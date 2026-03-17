@@ -40,6 +40,7 @@ class ZoomPanImageView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             self._pix_item.setTransformationMode(QtCore.Qt.SmoothTransformation)
         else:
             self._pix_item.setPixmap(pixmap)
+            self.viewport().update()
         self.fit_in_view(padding=0.0)
 
     def set_fit_mode(self, mode: FitMode):

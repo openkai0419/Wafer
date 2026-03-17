@@ -55,6 +55,10 @@ class TestBaseFilterPlugin:
     def test_default_bind_key_store(self):
         BaseFilterPlugin.bind_key_store(None, None)
 
+    def test_default_inheritable_params(self):
+        assert BaseFilterPlugin.inheritable_params({}) == {}
+        assert BaseFilterPlugin.inheritable_params({'keys': ['a']}) == {}
+
     def test_default_display_name(self):
         assert BaseFilterPlugin.DISPLAY_NAME == ''
 
@@ -94,6 +98,33 @@ class TestKeyStore:
         store.set_data([('b', 2)])
         assert len(received) == 2
         assert store.data == [('b', 2)]
+
+
+class TestTextFilterInheritableParams:
+
+    def test_exports_settings_only(self):
+        params = {
+            'keys': ['__filepath__', 'prompt'],
+            'keywords': 'sunset',
+            'query_mode': 'LIKE',
+            'keyword_mode': 'OR',
+            'keyword_separator': ' ',
+        }
+        result = TextFilter.inheritable_params(params)
+        assert result == {
+            'keys': ['__filepath__', 'prompt'],
+            'query_mode': 'LIKE',
+            'keyword_mode': 'OR',
+            'keyword_separator': ' ',
+        }
+        assert 'keywords' not in result
+
+    def test_empty_params(self):
+        assert TextFilter.inheritable_params({}) == {}
+
+    def test_partial_params(self):
+        result = TextFilter.inheritable_params({'keys': ['prompt']})
+        assert result == {'keys': ['prompt']}
 
 
 class TestTextFilterBindKeyStore:

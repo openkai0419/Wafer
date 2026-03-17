@@ -59,7 +59,7 @@ class RegexFilterWidget(QtWidgets.QWidget, TranslatorMixin):
         if 'keys' in params:
             keys = params['keys']
             if isinstance(keys, list):
-                self.keys_combo.previous_key = keys
+                self.keys_combo.set_checked(keys)
         if 'ignore_case' in params:
             self.case_button.blockSignals(True)
             self.case_button.setChecked(params['ignore_case'])

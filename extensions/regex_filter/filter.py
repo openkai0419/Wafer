@@ -169,6 +169,10 @@ class RegexFilter(BaseFilterPlugin):
         widget.write_params(params)
 
     @classmethod
+    def inheritable_params(cls, params):
+        return {k: params[k] for k in ('keys', 'ignore_case') if k in params}
+
+    @classmethod
     def bind_key_store(cls, widget, key_store):
         prev = getattr(widget, '_bound_key_store', None)
         if prev is not None:

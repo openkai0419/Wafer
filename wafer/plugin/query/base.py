@@ -57,6 +57,10 @@ class BaseFilterPlugin(ABC):
         pass
 
     @classmethod
+    def inheritable_params(cls, params: dict) -> dict:
+        return {}
+
+    @classmethod
     def bind_key_store(cls, widget: QtWidgets.QWidget, key_store: KeyStore) -> None:
         pass
 

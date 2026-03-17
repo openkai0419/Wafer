@@ -58,6 +58,13 @@ class CheckableCombo(QtWidgets.QToolButton, TranslatorMixin):
     def checked_items(self):
         return [a.data() for a in self.actions if a.isChecked()]
 
+    def set_checked(self, keys: list):
+        self.previous_key = keys
+        for a in self.actions:
+            a.blockSignals(True)
+            a.setChecked(a.data() in keys)
+            a.blockSignals(False)
+
     def update_translation(self):
         self._update_label()
 
@@ -132,7 +139,7 @@ class TextFilterWidget(QtWidgets.QWidget, TranslatorMixin):
         if 'keys' in params:
             keys = params['keys']
             if isinstance(keys, list):
-                self.keys_combo.previous_key = keys
+                self.keys_combo.set_checked(keys)
         self._option_popup.set_settings(params)
 
     def move_popup(self):

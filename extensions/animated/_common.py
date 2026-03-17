@@ -65,7 +65,52 @@ def is_animated(path: str) -> bool:
 _MIN_DELAY = 4
 
 
+def _is_apng(path: str) -> bool:
+    ext = os.path.splitext(path)[1].lower()
+    if ext == '.apng':
+        return True
+    if ext != '.png':
+        return False
+    try:
+        with open(path, 'rb') as f:
+            header = f.read(_HEADER_READ_SIZE)
+    except OSError:
+        return False
+    return _has_actl_chunk(header)
+
+
+def _decode_apng(path: str, size: QtCore.QSize | None, is_stale) -> tuple[list[QtGui.QPixmap], list[int]]:
+    from PIL import Image
+    try:
+        pil_img = Image.open(path)
+    except Exception:
+        return [], []
+    if not getattr(pil_img, 'is_animated', False):
+        return [], []
+    pixmaps: list[QtGui.QPixmap] = []
+    delays: list[int] = []
+    for i in range(pil_img.n_frames):
+        if is_stale():
+            return [], []
+        pil_img.seek(i)
+        frame = pil_img.convert('RGBA')
+        data = frame.tobytes('raw', 'RGBA')
+        qimg = QtGui.QImage(data, frame.width, frame.height,
+                            QtGui.QImage.Format.Format_RGBA8888).copy()
+        if size is not None and qimg.size() != size:
+            qimg = qimg.scaled(
+                size, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+        delay = int(pil_img.info.get('duration', 0))
+        if delay < _MIN_DELAY:
+            delay = _MIN_DELAY
+        pixmaps.append(QtGui.QPixmap.fromImage(qimg))
+        delays.append(delay)
+    return pixmaps, delays
+
+
 def decode_frames(path: str, size: QtCore.QSize | None, is_stale) -> tuple[list[QtGui.QPixmap], list[int]]:
+    if _is_apng(path):
+        return _decode_apng(path, size, is_stale)
     reader = QtGui.QImageReader(path)
     reader.setAutoTransform(True)
     pixmaps: list[QtGui.QPixmap] = []

@@ -106,6 +106,47 @@ class TestDecodeFrames:
         assert pixmaps == []
         assert delays == []
 
+    def test_decodes_apng(self, qapp, tmp_path):
+        from extensions.animated._common import decode_frames
+        from PIL import Image
+        apng_path = str(tmp_path / 'test.apng')
+        imgs = [Image.new('RGBA', (10, 10), c) for c in ['red', 'blue', 'green']]
+        imgs[0].save(apng_path, 'PNG', save_all=True, append_images=imgs[1:], duration=[100, 200, 300], loop=0)
+        pixmaps, delays = decode_frames(apng_path, None, lambda: False)
+        assert len(pixmaps) == 3
+        assert delays == [100, 200, 300]
+
+    def test_decodes_apng_with_png_extension(self, qapp, tmp_path):
+        from extensions.animated._common import decode_frames
+        from PIL import Image
+        import struct
+        png_path = str(tmp_path / 'anim.png')
+        imgs = [Image.new('RGBA', (10, 10), c) for c in ['red', 'blue']]
+        imgs[0].save(png_path, 'PNG', save_all=True, append_images=imgs[1:], duration=100, loop=0)
+        pixmaps, delays = decode_frames(png_path, None, lambda: False)
+        assert len(pixmaps) == 2
+        assert len(delays) == 2
+
+    def test_apng_cancel_returns_empty(self, qapp, tmp_path):
+        from extensions.animated._common import decode_frames
+        from PIL import Image
+        apng_path = str(tmp_path / 'cancel.apng')
+        imgs = [Image.new('RGBA', (10, 10), 'red') for _ in range(10)]
+        imgs[0].save(apng_path, 'PNG', save_all=True, append_images=imgs[1:], duration=50, loop=0)
+        pixmaps, delays = decode_frames(apng_path, None, lambda: True)
+        assert pixmaps == [] and delays == []
+
+    def test_apng_scaled_size(self, qapp, tmp_path):
+        from extensions.animated._common import decode_frames
+        from PIL import Image
+        apng_path = str(tmp_path / 'big.apng')
+        imgs = [Image.new('RGBA', (100, 100), c) for c in ['red', 'blue']]
+        imgs[0].save(apng_path, 'PNG', save_all=True, append_images=imgs[1:], duration=100, loop=0)
+        pixmaps, delays = decode_frames(apng_path, QtCore.QSize(50, 50), lambda: False)
+        assert len(pixmaps) == 2
+        for px in pixmaps:
+            assert px.width() <= 50 and px.height() <= 50
+
 
 class TestFrameCache:
 

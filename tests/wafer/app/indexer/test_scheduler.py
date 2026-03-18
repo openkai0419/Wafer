@@ -134,27 +134,27 @@ def test_periodic_task():
     )
     now = time.monotonic()
     task.last_run = now - 2.0
-    assert task.should_run(now, is_idle=False)
+    assert task.should_run(now, idle_duration=0.0)
     task.last_run = now
-    assert not task.should_run(now, is_idle=False)
+    assert not task.should_run(now, idle_duration=0.0)
 
 
-def test_periodic_task_idle_only():
+def test_periodic_task_idle_delay():
     task = PeriodicTask(
         name='cleanup',
         interval=1.0,
         create_task=lambda: Task.create('purge', priority=TaskPriority.MAINTENANCE, run=lambda: None),
-        idle_only=True,
+        idle_delay=300.0,
     )
     now = time.monotonic()
     task.last_run = now - 2.0
-    assert not task.should_run(now, is_idle=False)
-    assert task.should_run(now, is_idle=True)
+    assert not task.should_run(now, idle_duration=60.0)
+    assert task.should_run(now, idle_duration=300.0)
+    assert task.should_run(now, idle_duration=600.0)
 
 
 def test_idle_detection():
     s = TaskScheduler()
-    s._idle_threshold = 0.1
     s.start()
 
     triggered = threading.Event()
@@ -167,7 +167,7 @@ def test_idle_detection():
             run=lambda: None,
             on_complete=triggered.set,
         ),
-        idle_only=True,
+        idle_delay=0.1,
     ))
 
     s._last_active_time = time.monotonic() - 1.0

@@ -10,7 +10,6 @@ from ...utils.logs import AppLogger
 from .task import Task, TaskPriority
 
 _QUEUE_POLL_INTERVAL = 1.0
-_IDLE_THRESHOLD = 5 * 60.0
 _STOP_PRIORITY = 999
 
 
@@ -19,11 +18,11 @@ class PeriodicTask:
     name: str
     interval: float
     create_task: Callable[[], Task]
-    idle_only: bool = False
+    idle_delay: float = 0.0
     last_run: float = field(default=0.0)
 
-    def should_run(self, now: float, is_idle: bool) -> bool:
-        if self.idle_only and not is_idle:
+    def should_run(self, now: float, idle_duration: float) -> bool:
+        if idle_duration < self.idle_delay:
             return False
         return (now - self.last_run) >= self.interval
 
@@ -35,7 +34,6 @@ class TaskScheduler:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._last_active_time = time.monotonic()
-        self._idle_threshold = _IDLE_THRESHOLD
         self._periodic_tasks: list[PeriodicTask] = []
 
     def submit(self, task: Task):
@@ -81,8 +79,8 @@ class TaskScheduler:
 
     def _check_periodic_tasks(self):
         now = time.monotonic()
-        is_idle = (now - self._last_active_time) >= self._idle_threshold
+        idle_duration = now - self._last_active_time
         for periodic in self._periodic_tasks:
-            if periodic.should_run(now, is_idle):
+            if periodic.should_run(now, idle_duration):
                 self.submit(periodic.create_task())
                 periodic.last_run = now

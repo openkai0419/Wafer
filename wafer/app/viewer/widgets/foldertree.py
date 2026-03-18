@@ -472,6 +472,7 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
     def _apply_children(self, item, path, children):
         self._pending_expands.pop(path, None)
         if not self._is_valid_item(item):
+            AppLogger.debug(f'[FolderTree._apply_children] SKIPPED (invalid item): {path}')
             return
         item.removeRows(0, item.rowCount())
         for full_path, has_sub in children:
@@ -615,9 +616,11 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
             current_path = normalize_path(os.path.join(current_path, part))
             item = self.model_.find_item_by_path(current_path)
             if not self.model_._is_valid_item(item):
+                AppLogger.debug(f'[FolderTree.expand_path] item not found at: {current_path} (target: {path})')
                 return None
             index = self.model_.indexFromItem(item)
             if not index.isValid():
+                AppLogger.debug(f'[FolderTree.expand_path] invalid index at: {current_path} (target: {path})')
                 return None
             self.expand(index)
             self.model_.load_children(item)
@@ -647,6 +650,10 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
                 selected.append(path)
             for i in range(self.model().rowCount(idx)):
                 stack.append(self.model().index(i, 0, idx))
+        pending = list(self.model_._pending_expands.keys())
+        AppLogger.debug(f'[FolderTree.get_state] expanded={len(expanded)} selected={len(selected)} pending_expands={pending}')
+        if expanded:
+            AppLogger.debug(f'[FolderTree.get_state] paths={expanded}')
         return (expanded, selected)
 
     @profiler.profile
@@ -655,6 +662,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
             expanded, selected = states
         except Exception:
             return
+        AppLogger.debug(f'[FolderTree.set_state] restoring expanded={len(expanded)} selected={len(selected)}')
         selmodel = self.selectionModel()
         selmodel.clearSelection()
         to_select = []
@@ -662,6 +670,8 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
             index = self.expand_path(path)
             if index and index.isValid():
                 self.model_.load_children(self.model_.itemFromIndex(index))
+            else:
+                AppLogger.debug(f'[FolderTree.set_state] expand FAILED: {path}')
         for path in selected:
             index = self.model_.find_index_by_path(path)
             if index and index.isValid():
@@ -736,6 +746,9 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
 
     @profiler.profile
     def reload_tree(self):
+        import traceback
+        caller = traceback.extract_stack(limit=3)[0]
+        AppLogger.debug(f'[FolderTree.reload_tree] called from {caller.filename}:{caller.lineno} {caller.name}')
         state = self.get_state()
         roots = [item.data(USER_ROLE_PATH) for item in iter_root_items(self.model_)]
         self.model_.clear()

@@ -4,11 +4,12 @@ import re
 import struct
 import sys
 from pathlib import Path
-from typing import Dict, List, Literal, Optional
+from typing import Callable, Dict, List, Literal, Optional
 
-from PySide6 import QtCore, QtGui
+from PySide6 import QtCore, QtGui, QtWidgets
 
 from ...utils.logs import AppLogger
+from ...utils.notifier import Notifier
 from .path_utils import unique_path
 from .file_operations import (
     CutCopy,
@@ -19,6 +20,8 @@ from .file_operations import (
     PasteExecutor,
     PastePlanItem,
     build_drop_plans,
+    save_remote_item,
+    safe_remove,
 )
 
 
@@ -176,6 +179,102 @@ def _resolve_conflicts_with_ui(
     )
 
 
+def _run_with_progress(
+    parent: QtWidgets.QWidget | None,
+    label: str,
+    total: int,
+    execute_fn: Callable[[int], OperationResult],
+) -> List[OperationResult]:
+    if total == 0:
+        return []
+
+    from ...core.qt.dispatcher import CancelToken, Dispatcher
+    from ...core.qt.thread import utility_pool
+
+    token = CancelToken()
+    results: list[OperationResult] = []
+
+    dialog = QtWidgets.QProgressDialog(label, "Cancel", 0, total, parent)
+    dialog.setWindowModality(QtCore.Qt.WindowModal)
+    dialog.setMinimumDuration(0)
+    dialog.setAutoReset(False)
+    dialog.setAutoClose(False)
+    dialog.canceled.connect(token.cancel)
+    dialog.setValue(0)
+
+    dispatcher = Dispatcher(utility_pool)
+
+    def _close_dialog():
+        try:
+            dialog.canceled.disconnect(token.cancel)
+        except RuntimeError:
+            pass
+        dialog.close()
+
+    def bg_task():
+        for i in range(total):
+            if token.is_cancelled():
+                break
+            result = execute_fn(i)
+            results.append(result)
+            dispatcher.invoke(lambda v=i + 1: dialog.setValue(v))
+        dispatcher.invoke(_close_dialog)
+
+    dispatcher.post(bg_task)
+    dialog.exec()
+
+    ok_count = sum(1 for r in results if r.status == "ok")
+    if token.is_cancelled():
+        Notifier.info(f"Operation cancelled ({ok_count} completed)")
+    elif ok_count:
+        Notifier.info(f"{ok_count} file(s) processed")
+    return results
+
+
+def _execute_paste_items(
+    plans: List[PastePlanItem],
+    decisions: Dict[int, PasteDecision],
+    parent: QtWidgets.QWidget | None,
+    op: str,
+) -> List[OperationResult]:
+    executor = PasteExecutor()
+    label = "Moving files..." if op == "move" else "Copying files..."
+
+    def step(i: int) -> OperationResult:
+        item = plans[i]
+        dec = decisions.get(item.index, PasteDecision(mode="skip"))
+        return executor._execute_item(item.src, item.dst_default, item.action, dec)
+
+    return _run_with_progress(parent, label, len(plans), step)
+
+
+def _execute_drop_items(
+    plans: List[DropPlanItem],
+    decisions: Dict[int, PasteDecision],
+    parent: QtWidgets.QWidget | None,
+    op: str,
+) -> List[OperationResult]:
+    executor = PasteExecutor()
+    action: Literal["copy", "cut"] = "cut" if op == "move" else "copy"
+    label = "Moving files..." if op == "move" else "Copying files..."
+
+    def step(i: int) -> OperationResult:
+        plan = plans[i]
+        dec = decisions.get(plan.index)
+        if dec is None or dec.mode == "skip":
+            return OperationResult(action="skip", src=str(plan.src or ""), dst="", status="skipped")
+        if plan.src is not None:
+            return executor._execute_item(plan.src, plan.dst_default, action, dec)
+        dst_path = str(plan.dst_default)
+        if dec.mode == "rename" and plan.suggested_dst:
+            dst_path = str(plan.suggested_dst)
+        elif dec.mode == "overwrite" and plan.conflict:
+            safe_remove(dst_path)
+        return save_remote_item(plan.parsed_item, dst_path, move=(op == "move"))
+
+    return _run_with_progress(parent, label, len(plans), step)
+
+
 def paste_clipboard_files(
     destination_dir: Path | str,
     *,
@@ -193,7 +292,7 @@ def paste_clipboard_files(
         )
     except PasteCancelledError:
         return []
-    return PasteExecutor().execute_plans(plans, decisions)
+    return _execute_paste_items(plans, decisions, parent, op)
 
 
 def execute_paste_plans_with_ui(
@@ -212,7 +311,7 @@ def execute_paste_plans_with_ui(
         )
     except PasteCancelledError:
         return []
-    return PasteExecutor().execute_plans(plans, decisions)
+    return _execute_paste_items(plans, decisions, parent, op)
 
 
 def drop_files_with_ui(
@@ -237,4 +336,4 @@ def drop_files_with_ui(
         )
     except PasteCancelledError:
         return []
-    return PasteExecutor().execute_drop_plans(plans, decisions, op=op)
+    return _execute_drop_items(plans, decisions, parent, op)

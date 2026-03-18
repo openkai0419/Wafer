@@ -15,11 +15,6 @@ from .task import Task, TaskPriority
 from .watch_folder import FolderWatcher
 from .watch_setting import SettingWatcher
 
-_CLEANUP_INTERVAL = 5 * 60 * 60.0
-_IDLE_RESCAN_INTERVAL = 3 * 60 * 60.0
-_RETRY_STALE_INTERVAL = 5 * 60.0
-_CHECKPOINT_INTERVAL = 1 * 60.0
-
 
 class IndexerProcess:
 
@@ -83,7 +78,7 @@ class IndexerProcess:
     def _register_periodic_tasks(self):
         self.scheduler.add_periodic_task(PeriodicTask(
             name='truncate_checkpoint',
-            interval=_CHECKPOINT_INTERVAL,
+            interval=60*1.0,
             create_task=lambda: Task.create(
                 'checkpoint',
                 priority=TaskPriority.MAINTENANCE,
@@ -92,8 +87,8 @@ class IndexerProcess:
         ))
         self.scheduler.add_periodic_task(PeriodicTask(
             name='retry_stale_dispatched',
-            interval=_RETRY_STALE_INTERVAL,
-            idle_only=True,
+            interval=60*5.0,
+            idle_delay=60*1.0,
             create_task=lambda: Task.create(
                 'reset_stale',
                 priority=TaskPriority.RETRY,
@@ -102,8 +97,8 @@ class IndexerProcess:
         ))
         self.scheduler.add_periodic_task(PeriodicTask(
             name='idle_rescan',
-            interval=_IDLE_RESCAN_INTERVAL,
-            idle_only=True,
+            interval=60*60*1.0,
+            idle_delay=60*5.0,
             create_task=lambda: Task.create(
                 'idle_rescan',
                 priority=TaskPriority.MAINTENANCE,
@@ -112,8 +107,8 @@ class IndexerProcess:
         ))
         self.scheduler.add_periodic_task(PeriodicTask(
             name='cleanup_optimize',
-            interval=_CLEANUP_INTERVAL,
-            idle_only=True,
+            interval=60*60*12.0,
+            idle_delay=60*30.0,
             create_task=lambda: Task.create(
                 'cleanup_optimize',
                 priority=TaskPriority.MAINTENANCE,

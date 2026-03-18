@@ -9,7 +9,6 @@ class SettingWatcher(FileSystemEventHandler):
     def __init__(self, setting_db):
         self.parent_folders_changed = Signal()
         self.ignore_folders_changed = Signal()
-        self.delete_requested = Signal()
         self._db = setting_db
         self._db_path = os.path.abspath(setting_db.db_name)
         self._last_mtime = os.path.getmtime(self._db_path) if os.path.exists(self._db_path) else None
@@ -42,9 +41,6 @@ class SettingWatcher(FileSystemEventHandler):
             AppLogger.info(f'setting changed: ignore folders ({len(ignores)})')
             self._ignore_cache = ignores
             self.ignore_folders_changed.emit(list(ignores))
-        if self._db.get_setting('deleteflag', False) == True:
-            AppLogger.info('setting changed: delete flag')
-            self.delete_requested.emit()
 
     def start(self):
         dir_path = os.path.dirname(self._db_path) or '.'

@@ -9,6 +9,7 @@ def test_compile():
 
 
 def test_task_priority_ordering():
+    assert TaskPriority.SHUTDOWN < TaskPriority.REALTIME
     assert TaskPriority.REALTIME < TaskPriority.SCAN
     assert TaskPriority.SCAN < TaskPriority.COLLECTION
     assert TaskPriority.COLLECTION < TaskPriority.DISPATCH

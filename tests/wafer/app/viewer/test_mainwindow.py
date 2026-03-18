@@ -74,12 +74,16 @@ class TestSearchResultDiffCheck:
             win.grid_view = MagicMock()
             win.file_model = MagicMock()
             win.overlay_stack = MagicMock()
-            win.run_folder = False
+            win.search_row_widget = MagicMock()
+            win.database_path = 'test.db'
+            win.folder_view = MagicMock()
+            win.folder_view.get_selected_paths.return_value = []
 
             win._on_search_finished(paths, sources, aspects)
             win.grid_view.set_paths.assert_not_called()
             win.file_model.set_items.assert_not_called()
             win.overlay_stack.hide_persistent.assert_called_once_with("loading")
+            win.search_row_widget.run_folder_worker.assert_called_once()
 
     def test_update_when_paths_changed(self):
         from unittest.mock import MagicMock, patch
@@ -96,13 +100,16 @@ class TestSearchResultDiffCheck:
             win.grid_view = MagicMock()
             win.file_model = MagicMock()
             win.overlay_stack = MagicMock()
-            win.run_folder = False
             win.search_row_widget = MagicMock()
+            win.database_path = 'test.db'
+            win.folder_view = MagicMock()
+            win.folder_view.get_selected_paths.return_value = []
 
             win._on_search_finished(new_paths, sources, aspects)
             win.grid_view.set_paths.assert_called_once()
             win.file_model.set_items.assert_called_once()
             assert win._last_paths is new_paths
+            win.search_row_widget.run_folder_worker.assert_called_once()
 
     def test_first_search_always_updates(self):
         from unittest.mock import MagicMock, patch
@@ -118,12 +125,43 @@ class TestSearchResultDiffCheck:
             win.grid_view = MagicMock()
             win.file_model = MagicMock()
             win.overlay_stack = MagicMock()
-            win.run_folder = False
             win.search_row_widget = MagicMock()
+            win.database_path = 'test.db'
+            win.folder_view = MagicMock()
+            win.folder_view.get_selected_paths.return_value = []
 
             win._on_search_finished(paths, sources, aspects)
             win.grid_view.set_paths.assert_called_once()
             assert win._last_paths is paths
+            win.search_row_widget.run_folder_worker.assert_called_once()
+
+
+class TestOnDbContentUpdated:
+
+    def _make_win(self):
+        with patch('wafer.app.viewer.mainwindow.MainWindow.__init__', lambda self, *a, **kw: None):
+            from wafer.app.viewer.mainwindow import MainWindow
+            win = MainWindow.__new__(MainWindow)
+            win.search_row_widget = MagicMock()
+            win.search_row_widget.get_sort.return_value = ('path', True)
+            win.search_row_widget.get_values.return_value = {}
+            win.search_service = MagicMock()
+            win.search_service.get.return_value = True
+            win.search_service.params = {}
+            win.folder_view = MagicMock()
+            win.folder_view.get_selected_paths.return_value = []
+            win.database_path = 'test.db'
+            return win
+
+    def test_invalidates_key_cache(self):
+        win = self._make_win()
+        win._on_db_content_updated()
+        win.search_row_widget.invalidate_key_cache.assert_called_once()
+
+    def test_triggers_force_search(self):
+        win = self._make_win()
+        win._on_db_content_updated()
+        win.search_service.execute.assert_called_once_with(force=True)
 
 
 class TestSyncSessionButton:

@@ -195,3 +195,46 @@ def test_multiple_submits(scheduler):
 
     assert done.wait(timeout=10.0)
     assert count['n'] == 10
+
+
+def test_cancel_all_cancels_tracked_tokens(scheduler):
+    from wafer.app.indexer.task import CancelToken
+    tokens = [CancelToken() for _ in range(3)]
+    for i, tok in enumerate(tokens):
+        scheduler.submit(Task.create(f'op_{i}', cancel_token=tok, run=lambda: None))
+    scheduler.cancel_all()
+    for tok in tokens:
+        assert tok.is_cancelled
+
+
+def test_cancel_all_drains_queue(scheduler):
+    barrier = threading.Event()
+    scheduler.submit(Task.create(
+        'blocker',
+        priority=TaskPriority.REALTIME,
+        run=lambda: barrier.wait(5.0),
+    ))
+    time.sleep(0.2)
+    for i in range(5):
+        scheduler.submit(Task.create(f'pending_{i}', run=lambda: None))
+    scheduler.cancel_all()
+    barrier.set()
+    time.sleep(0.5)
+    assert scheduler._queue.empty()
+
+
+def test_cancel_all_then_submit_new_task(scheduler):
+    scheduler.cancel_all()
+    done = threading.Event()
+    scheduler.submit(Task.create('after_cancel', run=lambda: None, on_complete=done.set))
+    assert done.wait(timeout=5.0)
+
+
+def test_stop_from_task_thread_no_hang():
+    s = TaskScheduler()
+    s.start()
+    done = threading.Event()
+    s.submit(Task.create('self_stop', run=lambda: (s.stop(), done.set())))
+    assert done.wait(timeout=5.0)
+    s._thread.join(timeout=2.0)
+    assert not s._thread.is_alive()

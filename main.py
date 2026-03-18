@@ -89,9 +89,9 @@ def _entry_indexer(name, parent_pid=None):
         profiler.set_enabled(False)
         with SafeProcessLock(f'{APP_DATA_DIR_NAME}_{name}', parent_pid=parent_pid):
             AppLogger.info(f'indexer start: {name}')
-            indexer = IndexerProcess(name)
-            indexer.start_watch()
             stop_event = threading.Event()
+            indexer = IndexerProcess(name, stop_event=stop_event)
+            indexer.start_watch()
 
             def shutdown():
                 AppLogger.info('[Indexer] Shutting down...')

@@ -7,7 +7,7 @@ from queue import Empty, PriorityQueue
 from typing import Callable
 
 from ...utils.logs import AppLogger
-from .task import Task, TaskPriority
+from .task import CancelToken, Task, TaskPriority
 
 _QUEUE_POLL_INTERVAL = 1.0
 _STOP_PRIORITY = 999
@@ -35,9 +35,25 @@ class TaskScheduler:
         self._thread: threading.Thread | None = None
         self._last_active_time = time.monotonic()
         self._periodic_tasks: list[PeriodicTask] = []
+        self._tokens: set[CancelToken] = set()
+        self._tokens_lock = threading.Lock()
 
     def submit(self, task: Task):
+        if task.cancel_token:
+            with self._tokens_lock:
+                self._tokens.add(task.cancel_token)
         self._queue.put(task)
+
+    def cancel_all(self):
+        with self._tokens_lock:
+            for token in self._tokens:
+                token.cancel()
+            self._tokens.clear()
+        while not self._queue.empty():
+            try:
+                self._queue.get_nowait()
+            except Empty:
+                break
 
     def add_periodic_task(self, periodic: PeriodicTask):
         self._periodic_tasks.append(periodic)
@@ -47,10 +63,10 @@ class TaskScheduler:
         self._thread.start()
 
     def stop(self):
-        self.submit(Task.create('__stop__', priority=_STOP_PRIORITY, run=lambda: None))
-        if self._thread:
-            self._thread.join(timeout=10.0)
         self._stop.set()
+        self.submit(Task.create('__stop__', priority=_STOP_PRIORITY, run=lambda: None))
+        if self._thread and self._thread is not threading.current_thread():
+            self._thread.join(timeout=10.0)
 
     def _loop(self):
         while not self._stop.is_set():

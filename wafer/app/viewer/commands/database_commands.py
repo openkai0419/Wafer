@@ -69,8 +69,9 @@ def remove_database(ctx, w):
         parent=w,
     )
     if ret == w.t.tr('Delete'):
-        w.setting_db.set_setting('deleteflag', True)
-        w.database_combo.removeItem(w.database_name)
+        db_name = w.database_name
+        w._node.send_reliable('db.delete', db_name, dst='indexer', db=db_name)
+        w.database_combo.removeItem(db_name)
         w.reload_database(w.database_combo.currentText())
 
 

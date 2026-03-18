@@ -61,7 +61,6 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.setting_db = None
         self.window_state = WindowStateController(self)
         self._last_paths = None
-        self.run_folder = True
         self.search_service = SearchService(lambda: self.database_path, parent=self)
         self.search_service.search_started.connect(self._on_search_started)
         self.search_service.search_finished.connect(self._on_search_finished)
@@ -97,7 +96,6 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self._last_paths = None
         self.search_row_widget.invalidate_key_cache()
         self.folder_view.set_folders(self.setting_db.get_all_parent_folders(), self.setting_db.get_all_ignore_folders())
-        self.run_folder = True
         QtCore.QTimer.singleShot(0, lambda: self.search(force=True))
         self.progress_bar.setProgress(int(0))
         self.progress_bar.setMaximum(int(0))
@@ -155,12 +153,6 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
                 f"QPushButton:pressed {{ background: {p.bg_pressed}; color: {p.text_accent}; }}"
             )
 
-    def changeEvent(self, event):
-        if event.type() == QtCore.QEvent.ActivationChange:
-            if self.isActiveWindow():
-                self.refresh_db_selector()
-        super().changeEvent(event)
-
     @qt_debounce(200)
     def refresh_db_selector(self):
         names = list_setting_db_names()
@@ -169,6 +161,17 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.database_combo.setItems(names)
         self.database_combo.setCurrentText(self.database_name)
         AppLogger.debug('refresh_db_selector')
+
+    @QtCore.Slot(str)
+    def _on_db_created(self, name: str):
+        if self.database_combo.combo.findText(name) < 0:
+            self.database_combo.addItem(name)
+
+    @QtCore.Slot(str)
+    def _on_db_deleted(self, name: str):
+        self.database_combo.removeItem(name)
+        if self.database_name == name:
+            self.reload_database(self.database_combo.currentText())
 
     @QtCore.Slot(int)
     def update_progress_value(self, value):
@@ -196,7 +199,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self._node = Node('viewer')
         self._node.session_id = self.session_id
         self._node.subscribe('update', _guarded(
-            lambda msg: _invoke('search', QtCore.Q_ARG(bool, True))
+            lambda msg: _invoke('_on_db_content_updated')
         )).subscribe('progress', _guarded(
             lambda msg: _invoke('update_progress_value', QtCore.Q_ARG(int, int(msg.payload)))
         )).subscribe('maximum', _guarded(
@@ -213,7 +216,12 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             lambda msg: (
                 _invoke('close_by_session_delete') if msg.payload == self.session_id else None,
                 True,
-            )[-1]        ).subscribe('dev.log', lambda msg: self._handle_remote_log(msg) or True)
+            )[-1]        ).subscribe('dev.log', lambda msg: self._handle_remote_log(msg) or True
+        ).subscribe('db.created',
+            lambda msg: (_invoke('_on_db_created', QtCore.Q_ARG(str, str(msg.payload))), True)[-1]
+        ).subscribe('db.deleted',
+            lambda msg: (_invoke('_on_db_deleted', QtCore.Q_ARG(str, str(msg.payload))), True)[-1]
+        )
         self._node.start()
         AppLogger.set_node(self._node, role='viewer')
 
@@ -427,7 +435,6 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
 
     @profiler.profile
     def on_folder_selected(self):
-        self.run_folder = True
         self._folder_changed = True
         dirs = self.folder_view.get_selected_paths()
         AppLogger.debug(f'folder selected: {dirs}')
@@ -456,6 +463,11 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self._sync_service_from_ui()
         self.search_service.execute(force=force)
 
+    @QtCore.Slot()
+    def _on_db_content_updated(self):
+        self.search_row_widget.invalidate_key_cache()
+        self.search(force=True)
+
     def _on_search_params_changed(self, changed):
         if 'include_subfolders' in changed:
             btn = self.iconbar.right_buttons[0]
@@ -478,9 +490,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
     def _on_search_finished(self, paths, sources, aspects):
         keep_scroll = not getattr(self, '_folder_changed', False)
         self._folder_changed = False
-        if self.run_folder:
-            self.search_row_widget.run_folder_worker(self.database_path, self.folder_view.get_selected_paths())
-            self.run_folder = False
+        self.search_row_widget.run_folder_worker(self.database_path, self.folder_view.get_selected_paths())
         if paths == self._last_paths:
             self.overlay_stack.hide_persistent("loading")
             return

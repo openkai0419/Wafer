@@ -9,6 +9,7 @@ _seq_counter = itertools.count()
 
 
 class TaskPriority:
+    SHUTDOWN = -1
     REALTIME = 0
     SCAN = 10
     COLLECTION = 20

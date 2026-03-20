@@ -281,3 +281,52 @@ class TestNearestInDirection:
             backward_path.append(idx)
         assert forward_path[-1] == backward_path[0]
         assert backward_path[-1] == forward_path[0]
+
+
+class TestSecondaryAxisFilter:
+    def test_primary_only_returns_all_columns(self):
+        rects = [
+            QtCore.QRect(0, 0, 100, 100),
+            QtCore.QRect(500, 0, 100, 100),
+            QtCore.QRect(1000, 0, 100, 100),
+        ]
+        d = _make_layout(rects)
+        visible = d.calculate_visible_indices(0, 200)
+        assert set(visible) == {0, 1, 2}
+
+    def test_secondary_filter_excludes_offscreen(self):
+        rects = [
+            QtCore.QRect(0, 0, 100, 100),
+            QtCore.QRect(500, 0, 100, 100),
+            QtCore.QRect(1000, 0, 100, 100),
+        ]
+        d = _make_layout(rects)
+        visible = d.calculate_visible_indices(0, 200, s_start=0, s_end=200)
+        assert 0 in visible
+        assert 1 not in visible
+        assert 2 not in visible
+
+    def test_bsp_like_large_rects(self):
+        rects = [
+            QtCore.QRect(0, 0, 500, 5000),
+            QtCore.QRect(505, 0, 500, 2500),
+            QtCore.QRect(505, 2505, 500, 2500),
+            QtCore.QRect(0, 5005, 1005, 5000),
+        ]
+        d = _make_layout(rects)
+        all_vis = d.calculate_visible_indices(0, 800)
+        filtered = d.calculate_visible_indices(0, 800, s_start=0, s_end=1100)
+        assert len(all_vis) >= len(filtered)
+        for i in filtered:
+            r = rects[i]
+            assert r.y() < 800
+
+    def test_none_secondary_preserves_old_behavior(self):
+        rects = [
+            QtCore.QRect(0, 0, 100, 100),
+            QtCore.QRect(500, 0, 100, 100),
+        ]
+        d = _make_layout(rects)
+        all_vis = d.calculate_visible_indices(0, 200)
+        none_vis = d.calculate_visible_indices(0, 200, s_start=None, s_end=None)
+        assert set(all_vis) == set(none_vis)

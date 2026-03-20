@@ -168,3 +168,76 @@ class TestNearestInDirection:
         d = _make_layout(rects)
         assert d.nearest_in_direction(1, False) == 0
         assert d.nearest_in_direction(2, False) is None
+
+
+class TestSecondaryAxisFilter:
+    def test_primary_only_returns_all_columns(self):
+        rects = [
+            QtCore.QRect(0, 0, 100, 100),
+            QtCore.QRect(500, 0, 100, 100),
+            QtCore.QRect(1000, 0, 100, 100),
+        ]
+        d = _make_layout(rects)
+        visible = d.calculate_visible_indices(0, 200)
+        assert set(visible) == {0, 1, 2}
+
+    def test_secondary_filter_excludes_offscreen(self):
+        rects = [
+            QtCore.QRect(0, 0, 100, 100),
+            QtCore.QRect(500, 0, 100, 100),
+            QtCore.QRect(1000, 0, 100, 100),
+        ]
+        d = _make_layout(rects)
+        visible = d.calculate_visible_indices(0, 200, s_start=0, s_end=200)
+        assert 0 in visible
+        assert 1 not in visible
+        assert 2 not in visible
+
+    def test_secondary_filter_partial(self):
+        rects = [
+            QtCore.QRect(0, 0, 100, 100),
+            QtCore.QRect(500, 0, 100, 100),
+            QtCore.QRect(1000, 0, 100, 100),
+        ]
+        d = _make_layout(rects)
+        visible = d.calculate_visible_indices(0, 200, s_start=400, s_end=700)
+        assert 0 not in visible
+        assert 1 in visible
+        assert 2 not in visible
+
+    def test_bsp_like_large_rects(self):
+        rects = [
+            QtCore.QRect(0, 0, 500, 5000),
+            QtCore.QRect(505, 0, 500, 2500),
+            QtCore.QRect(505, 2505, 500, 2500),
+            QtCore.QRect(0, 5005, 1005, 5000),
+        ]
+        d = _make_layout(rects)
+        visible_no_filter = d.calculate_visible_indices(0, 800)
+        visible_filtered = d.calculate_visible_indices(0, 800, s_start=0, s_end=1100)
+        assert len(visible_no_filter) >= len(visible_filtered)
+        for i in visible_filtered:
+            r = rects[i]
+            assert r.y() < 800 and r.y() + r.height() > 0
+            assert r.x() < 1100 and r.x() + r.width() > 0
+
+    def test_secondary_filter_vertical_layout(self):
+        rects = [
+            QtCore.QRect(0, 0, 100, 100),
+            QtCore.QRect(0, 500, 100, 100),
+            QtCore.QRect(0, 1000, 100, 100),
+        ]
+        d = _make_layout(rects, hz=False)
+        visible = d.calculate_visible_indices(0, 200, s_start=0, s_end=200)
+        assert 0 in visible
+        assert 1 not in visible
+
+    def test_none_secondary_preserves_old_behavior(self):
+        rects = [
+            QtCore.QRect(0, 0, 100, 100),
+            QtCore.QRect(500, 0, 100, 100),
+        ]
+        d = _make_layout(rects)
+        all_vis = d.calculate_visible_indices(0, 200)
+        none_vis = d.calculate_visible_indices(0, 200, s_start=None, s_end=None)
+        assert set(all_vis) == set(none_vis)

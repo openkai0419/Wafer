@@ -471,7 +471,10 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         idx = rects.index_at_point(biased)
         if idx is not None:
             return idx
-        visible = rects.calculate_visible_indices(scroll_top, scroll_top + vs)
+        view_rect = self._scene_view_rect()
+        s_start = view_rect.left() if hz else view_rect.top()
+        s_end = view_rect.right() if hz else view_rect.bottom()
+        visible = rects.calculate_visible_indices(scroll_top, scroll_top + vs, s_start, s_end)
         if not visible:
             return None
         return min(visible, key=lambda i: (
@@ -681,7 +684,9 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         hz = self._hz
         p_start = view_rect.top() if hz else view_rect.left()
         p_end = view_rect.bottom() if hz else view_rect.right()
-        return self.rects.calculate_visible_indices(p_start, p_end)
+        s_start = view_rect.left() if hz else view_rect.top()
+        s_end = view_rect.right() if hz else view_rect.bottom()
+        return self.rects.calculate_visible_indices(p_start, p_end, s_start, s_end)
 
     @profiler.profile
     def _expand_prefetch_range(self, visible):
@@ -691,12 +696,24 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             prefetch = len(visible) + 3
             start = max(0, visible.start - prefetch)
             end = min(len(self.rects), visible.stop + prefetch)
+            return range(start, end)
+        rects = self.rects
+        view_rect = self._scene_view_rect()
+        hz = self._hz
+        margin = self.base_height * 2
+        if hz:
+            expanded = rects.calculate_visible_indices(
+                view_rect.top() - margin, view_rect.bottom() + margin,
+                view_rect.left(), view_rect.right(),
+            )
         else:
-            prefetch = len(visible) + 3
-            v_min, v_max = min(visible), max(visible)
-            start = max(0, v_min - prefetch)
-            end = min(len(self.rects), v_max + 1 + prefetch)
-        return range(start, end)
+            expanded = rects.calculate_visible_indices(
+                view_rect.left() - margin, view_rect.right() + margin,
+                view_rect.top(), view_rect.bottom(),
+            )
+        result = set(visible)
+        result.update(expanded)
+        return sorted(result)
 
     @profiler.profile
     def _setup_cell(self, i):

@@ -55,12 +55,21 @@ class LayoutData:
         return self._rects[i]
 
     @profiler.profile
-    def calculate_visible_indices(self, p_start, p_end):
+    def calculate_visible_indices(self, p_start, p_end, s_start=None, s_end=None):
         if not self._count:
             return []
         lo = bisect.bisect_left(self._sorted_primary_starts, p_start - self._max_primary_size)
         hi = bisect.bisect_right(self._sorted_primary_starts, p_end)
-        return self._sorted_indices[lo:hi]
+        indices = self._sorted_indices[lo:hi]
+        if s_start is None:
+            return indices
+        rects = self._rects
+        hz = self._is_horizontal
+        if hz:
+            return [i for i in indices
+                    if rects[i].x() < s_end and rects[i].x() + rects[i].width() > s_start]
+        return [i for i in indices
+                if rects[i].y() < s_end and rects[i].y() + rects[i].height() > s_start]
 
     @profiler.profile
     def index_at_point(self, point):

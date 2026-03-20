@@ -611,6 +611,7 @@ class TestFindCenterIndexEffectiveScroll:
         gv._primary_viewport_size.return_value = 200
         gv._effective_scroll_top.return_value = 110
         gv.mapToScene.return_value = QtCore.QPointF(100, 50)
+        gv._scene_view_rect.return_value = QtCore.QRect(0, 110, 400, 200)
 
         idx = GridView._find_center_index(gv)
         assert idx in (2, 3)
@@ -633,6 +634,7 @@ class TestFindCenterIndexEffectiveScroll:
         gv._primary_viewport_size.return_value = 200
         gv._effective_scroll_top.return_value = 0
         gv.mapToScene.return_value = QtCore.QPointF(100, 50)
+        gv._scene_view_rect.return_value = QtCore.QRect(0, 0, 400, 200)
 
         idx = GridView._find_center_index(gv)
         assert idx in (0, 1)
@@ -661,6 +663,7 @@ class TestFindCenterIndexEffectiveScroll:
         gv._is_primary_reversed.return_value = False
         gv._is_center_anchor.return_value = False
         gv.mapToScene.return_value = QtCore.QPointF(100, 50)
+        gv._scene_view_rect.return_value = QtCore.QRect(0, 0, 400, 200)
         gv._effective_scroll_top.return_value = 0
 
         targets = []

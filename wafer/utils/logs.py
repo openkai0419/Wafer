@@ -6,6 +6,7 @@ import logging.handlers
 import os
 import re
 import sys
+import threading
 
 import psutil
 
@@ -218,12 +219,28 @@ def _create_exception_hook():
     return exception_hook
 
 
+def _create_threading_exception_hook():
+    def hook(args):
+        if args.exc_type is SystemExit:
+            return
+        if _logger is not None:
+            _logger.critical(
+                f'Uncaught exception in thread {args.thread.name if args.thread else "<unknown>"}',
+                exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
+            )
+        AppLogger.on_critical.emit(
+            f'Uncaught exception in thread {args.thread.name if args.thread else "<unknown>"}'
+        )
+    return hook
+
+
 def _initialize():
     global _logger, _initialized
     if _initialized:
         return
     _logger = _LoggerFactory.get()
     sys.excepthook = _create_exception_hook()
+    threading.excepthook = _create_threading_exception_hook()
     _cleanup_old_logs(keep_latest=0)
     _initialized = True
 

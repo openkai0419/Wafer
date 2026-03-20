@@ -56,23 +56,26 @@ class CollectorWorker:
         return True
 
     def _process_batch(self, paths, file_info_raw):
-        file_info = {p: tuple(v) for p, v in file_info_raw.items()}
+        try:
+            file_info = {p: tuple(v) for p, v in file_info_raw.items()}
 
-        def process_one(p):
-            info = file_info.get(p, (0.0, 0, 0.0))
-            result = self._plugin.process(normalize_path(p), info)
-            items = result if isinstance(result, list) else [result]
-            return [r.to_dict() if isinstance(r, CollectorResult) else r for r in items]
+            def process_one(p):
+                info = file_info.get(p, (0.0, 0, 0.0))
+                result = self._plugin.process(normalize_path(p), info)
+                items = result if isinstance(result, list) else [result]
+                return [r.to_dict() if isinstance(r, CollectorResult) else r for r in items]
 
-        nested = list(self._executor.map(process_one, paths))
-        results = [item for items in nested for item in items]
-        self._node.send_reliable(
-            'collect.result',
-            {'collector': self.plugin_name, 'results': results},
-            dst='indexer',
-            db=self.db_name,
-        )
-        AppLogger.info(f'[Collector] Sent {len(results)} results for db={self.db_name}')
+            nested = list(self._executor.map(process_one, paths))
+            results = [item for items in nested for item in items]
+            self._node.send_reliable(
+                'collect.result',
+                {'collector': self.plugin_name, 'results': results},
+                dst='indexer',
+                db=self.db_name,
+            )
+            AppLogger.info(f'[Collector] Sent {len(results)} results for db={self.db_name}')
+        except Exception as e:
+            AppLogger.error(f'[Collector] _process_batch failed: {e}', exc=e)
 
 
 def run_collector(db_name: str, plugin_name: str, parent_pid: int | None = None):

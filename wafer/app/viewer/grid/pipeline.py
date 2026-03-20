@@ -63,6 +63,7 @@ class GridPipeline(QtCore.QObject):
                 aspect_ratios, base_height, spacing,
                 container_width, container_height, orientation,
             )
+            calc.bind_cancel_token(cancel)
             calc.run()
             if cancel.is_cancelled():
                 return

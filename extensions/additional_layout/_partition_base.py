@@ -1,13 +1,14 @@
 import random
 
 from PySide6 import QtCore
-from wafer.plugin.layout import BaseLayoutPlugin, BaseLayoutCalculator, SCROLLBAR_INT_MAX
+from wafer.plugin.layout import BaseLayoutCalculator, SCROLLBAR_INT_MAX
 from wafer.utils.profiling import profiler
 from wafer.utils.logs import AppLogger
 
 
-def _partition(rects, cancelled, rng, sorted_ar, ar_prefix, inv_prefix,
-               start, count, x, y, w, h, spacing):
+def _recursive_partition(rects, cancelled, sorted_ar, ar_prefix, inv_prefix,
+                         start, count, x, y, w, h, spacing,
+                         split_point_fn, ratio_fn):
     if count <= 0 or w <= 0 or h <= 0:
         return
     if count == 1:
@@ -25,9 +26,35 @@ def _partition(rects, cancelled, rng, sorted_ar, ar_prefix, inv_prefix,
     elif not split_x and w > 0 and w / (h * 0.3) > 5.0:
         split_x = True
 
-    left_count = round(max(1, min(count - 1, rng.gauss(count / 2, max(1, count / 8)))))
-    left_count = max(1, min(count - 1, left_count))
+    left_count = split_point_fn(count)
 
+    ratio = ratio_fn(sorted_ar, ar_prefix, inv_prefix,
+                     start, count, left_count, split_x)
+
+    if split_x:
+        left_w = max(1, int(w * ratio) - spacing // 2)
+        right_w = max(1, w - left_w - spacing)
+        _recursive_partition(rects, cancelled, sorted_ar, ar_prefix, inv_prefix,
+                             start, left_count, x, y, left_w, h, spacing,
+                             split_point_fn, ratio_fn)
+        _recursive_partition(rects, cancelled, sorted_ar, ar_prefix, inv_prefix,
+                             start + left_count, count - left_count,
+                             x + left_w + spacing, y, right_w, h, spacing,
+                             split_point_fn, ratio_fn)
+    else:
+        top_h = max(1, int(h * ratio) - spacing // 2)
+        bottom_h = max(1, h - top_h - spacing)
+        _recursive_partition(rects, cancelled, sorted_ar, ar_prefix, inv_prefix,
+                             start, left_count, x, y, w, top_h, spacing,
+                             split_point_fn, ratio_fn)
+        _recursive_partition(rects, cancelled, sorted_ar, ar_prefix, inv_prefix,
+                             start + left_count, count - left_count,
+                             x, y + top_h + spacing, w, bottom_h, spacing,
+                             split_point_fn, ratio_fn)
+
+
+def ar_weighted_ratio(sorted_ar, ar_prefix, inv_prefix,
+                      start, count, left_count, split_x):
     if split_x:
         left_ar = ar_prefix[start + left_count] - ar_prefix[start]
         total_ar = ar_prefix[start + count] - ar_prefix[start]
@@ -36,27 +63,22 @@ def _partition(rects, cancelled, rng, sorted_ar, ar_prefix, inv_prefix,
         left_inv = inv_prefix[start + left_count] - inv_prefix[start]
         total_inv = inv_prefix[start + count] - inv_prefix[start]
         ratio = left_inv / total_inv if total_inv > 0 else left_count / count
-    ratio = max(0.1, min(0.9, ratio))
-
-    if split_x:
-        left_w = max(1, int(w * ratio) - spacing // 2)
-        right_w = max(1, w - left_w - spacing)
-        _partition(rects, cancelled, rng, sorted_ar, ar_prefix, inv_prefix,
-                   start, left_count, x, y, left_w, h, spacing)
-        _partition(rects, cancelled, rng, sorted_ar, ar_prefix, inv_prefix,
-                   start + left_count, count - left_count,
-                   x + left_w + spacing, y, right_w, h, spacing)
-    else:
-        top_h = max(1, int(h * ratio) - spacing // 2)
-        bottom_h = max(1, h - top_h - spacing)
-        _partition(rects, cancelled, rng, sorted_ar, ar_prefix, inv_prefix,
-                   start, left_count, x, y, w, top_h, spacing)
-        _partition(rects, cancelled, rng, sorted_ar, ar_prefix, inv_prefix,
-                   start + left_count, count - left_count,
-                   x, y + top_h + spacing, w, bottom_h, spacing)
+    return max(0.1, min(0.9, ratio))
 
 
-class BspPartitionCalculator(BaseLayoutCalculator):
+def equal_ratio(sorted_ar, ar_prefix, inv_prefix,
+                start, count, left_count, split_x):
+    return max(0.1, min(0.9, left_count / count))
+
+
+class PartitionCalculatorBase(BaseLayoutCalculator):
+
+    def _split_point(self, count):
+        raise NotImplementedError
+
+    def _area_ratio(self, sorted_ar, ar_prefix, inv_prefix,
+                    start, count, left_count, split_x):
+        raise NotImplementedError
 
     @profiler.profile
     def _calculate(self):
@@ -72,7 +94,7 @@ class BspPartitionCalculator(BaseLayoutCalculator):
 
         container = self.container_width if hz else self.container_height
         if container is None:
-            raise ValueError('BSP partition layout requires container dimension')
+            raise ValueError('Partition layout requires container dimension')
 
         ar = [a if a and a > 0 else 1.0 for a in aspects]
 
@@ -96,12 +118,17 @@ class BspPartitionCalculator(BaseLayoutCalculator):
 
         if total_primary > SCROLLBAR_INT_MAX:
             total_primary = SCROLLBAR_INT_MAX
-            AppLogger.debug(f"[BspPartitionLayout] clamped total_primary to {SCROLLBAR_INT_MAX}")
+            AppLogger.debug(f"[PartitionLayout] clamped total_primary to {SCROLLBAR_INT_MAX}")
 
         sorted_rects = [None] * n
-        rng = random.Random(n)
-        _partition(sorted_rects, lambda: self._cancelled, rng, sorted_ar, ar_prefix, inv_prefix,
-                   0, n, 0, 0, container, total_primary, spacing)
+        if hz:
+            pw, ph = container, total_primary
+        else:
+            pw, ph = total_primary, container
+        _recursive_partition(sorted_rects, lambda: self._cancelled,
+                             sorted_ar, ar_prefix, inv_prefix,
+                             0, n, 0, 0, pw, ph, spacing,
+                             self._split_point, self._area_ratio)
 
         if self._cancelled:
             return
@@ -126,27 +153,12 @@ class BspPartitionCalculator(BaseLayoutCalculator):
                 r = rects[i]
                 rects[i] = QtCore.QRect(container - r.x() - r.width(), r.y(), r.width(), r.height())
         elif not hz and reverse and total_primary > 0:
-            flip = total_primary - spacing
             for i in range(n):
                 r = rects[i]
-                rects[i] = QtCore.QRect(flip - r.x() - r.width(), r.y(), r.width(), r.height())
+                rects[i] = QtCore.QRect(total_primary - r.x() - r.width(), r.y(), r.width(), r.height())
 
         self._emit(rects, total_primary, hz)
 
     @profiler.profile
     def run(self):
         self._calculate()
-
-
-class BspPartitionLayout(BaseLayoutPlugin):
-    NAME = 'bspPartition'
-    DISPLAY_NAME = 'BSP Partition'
-    PRIORITY = 85
-
-    @classmethod
-    def create_calculator(cls, aspect_ratios, base_size, spacing,
-                          container_width, container_height, orientation):
-        return BspPartitionCalculator(
-            aspect_ratios, base_size, spacing,
-            container_width, container_height, orientation,
-        )

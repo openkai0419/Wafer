@@ -62,7 +62,10 @@ class FunctionProfiler:
     def _report_loop(self):
         while not self._stop_event.wait(self.interval):
             if self.enabled:
-                self.report()
+                try:
+                    self.report()
+                except Exception as e:
+                    AppLogger.warning(f'[Profiler] report failed: {e}', exc=e)
 
     def report(self):
         with self.lock:

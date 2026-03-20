@@ -1,6 +1,10 @@
 import bisect
+from typing import TYPE_CHECKING
 from PySide6 import QtCore
 from ...utils.profiling import profiler
+
+if TYPE_CHECKING:
+    from ...core.qt.dispatcher import CancelToken
 SCROLLBAR_INT_MAX = 2147483647
 
 
@@ -141,12 +145,23 @@ class _BaseLayoutCalculator:
         self.base_size = base_size
         self.container_width = container_width
         self.container_height = container_height
-        self._cancelled = False
+        self._cancelled_flag = False
+        self._cancel_token = None
         self._result = None
         self.orientation = orientation
 
+    @property
+    def _cancelled(self):
+        if self._cancelled_flag:
+            return True
+        token = self._cancel_token
+        return token is not None and token.is_cancelled()
+
+    def bind_cancel_token(self, token):
+        self._cancel_token = token
+
     def cancel(self):
-        self._cancelled = True
+        self._cancelled_flag = True
 
     def _emit(self, rects, total_extent, hz):
         self._result = LayoutData(rects, total_extent, hz)

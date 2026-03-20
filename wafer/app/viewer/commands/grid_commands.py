@@ -354,7 +354,7 @@ class GridViewCommands(ActionKit.MenuBase):
             next_key = enabled[(idx + step) % len(enabled)]
         except (ValueError, IndexError):
             next_key = enabled[-1 if reverse else 0]
-        next_mode, next_ori = next_key.split(" ", 1)
+        next_mode, next_ori = next_key.rsplit(" ", 1)
         view = GridViewCommands.get_view(ctx)
         sm.set_current('grid_layout_mode', cmds[next_mode], save=False)
         view.set_layout_mode(values[next_mode])

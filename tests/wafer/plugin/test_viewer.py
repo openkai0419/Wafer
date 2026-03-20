@@ -79,12 +79,13 @@ def test_render_does_nothing_without_widget_plugin():
     viewer_resolver.render(None, 'photo.jpg')
 
 
-def test_image_plugin_load_content_returns_none(tmp_path):
+def test_image_plugin_load_content_returns_image(tmp_path):
     img_path = tmp_path / 'test.png'
     Image.new('RGB', (50, 50)).save(str(img_path))
     plugin = _get_image_plugin()()
     result = plugin.load_content(str(img_path))
-    assert result is None
+    from PySide6 import QtGui
+    assert isinstance(result, QtGui.QImage)
 
 
 def test_load_content_function(tmp_path):

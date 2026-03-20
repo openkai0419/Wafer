@@ -20,7 +20,11 @@ def qapp():
 
 @pytest.fixture()
 def dispatcher(qapp):
-    return Dispatcher()
+    from wafer.core.qt.thread import SimpleThreadPool
+    pool = SimpleThreadPool('test_pipeline_integ')
+    d = Dispatcher(pool=pool)
+    yield d
+    pool.pool.waitForDone(5000)
 
 
 class _FakeCache:

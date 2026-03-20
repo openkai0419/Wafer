@@ -11,6 +11,7 @@ from .viewer.base import BaseViewerPlugin
 from .grid.base import BaseGridPlugin
 from .collector.base import BaseCollectorPlugin
 from .query.base import BaseFilterPlugin, BaseSortPlugin
+from .layout.base import BaseLayoutPlugin
 from .installer import install_requirements as _install_requirements
 
 
@@ -20,6 +21,7 @@ _REGISTRY_MAP = {
     BaseCollectorPlugin: 'collector',
     BaseFilterPlugin: 'filter',
     BaseSortPlugin: 'sort',
+    BaseLayoutPlugin: 'layout',
 }
 
 _PACKAGES_DIR = '.packages'
@@ -195,8 +197,11 @@ class PluginLoader:
             if id(plugin_cls) in seen:
                 continue
             seen.add(id(plugin_cls))
+            fn = getattr(plugin_cls, 'post_install', None)
+            if fn is None:
+                continue
             try:
-                plugin_cls.post_install(folder, on_progress)
+                fn(folder, on_progress)
             except Exception as e:
                 AppLogger.warning(
                     f'[PluginLoader] post_install failed for {plugin_cls.NAME}: {e}', exc=e
@@ -231,12 +236,14 @@ def load_plugins(*, skip_install: bool = False, on_progress=None) -> list[str]:
     from .grid.handler import grid_resolver
     from .collector.handler import collector_resolver
     from .query.handler import filter_registry, sort_registry
+    from .layout.handler import layout_registry
     registries = {
         'viewer': viewer_resolver.registry,
         'grid': grid_resolver.registry,
         'collector': collector_resolver.registry,
         'filter': filter_registry,
         'sort': sort_registry,
+        'layout': layout_registry,
     }
     from ..builtins import register_all
     register_all(registries)

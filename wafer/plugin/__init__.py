@@ -1,7 +1,9 @@
-from .registry import BasePlugin, PluginRegistry
+from .registry import PluginBase, BasePlugin, PluginRegistry
 from .viewer.base import BaseViewerPlugin, ImageViewerPlugin, WidgetViewerPlugin
 from .grid.base import BaseGridPlugin, ImageGridPlugin, WidgetGridPlugin
 from .collector.base import BaseCollectorPlugin, CollectorResult
+from .query.base import BaseFilterPlugin, BaseSortPlugin
+from .layout.base import BaseLayoutPlugin
 from ..core.commands.bridge import ActionKit
 from ..core.commands.command.require import require, require_v
 from ..core.qt.rate_limit import QtDebounceManager as _QtDebounceManager

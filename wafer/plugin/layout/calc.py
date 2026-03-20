@@ -1,7 +1,6 @@
 import bisect
 from PySide6 import QtCore
-from ....utils.profiling import profiler
-from ....utils.logs import AppLogger
+from ...utils.profiling import profiler
 SCROLLBAR_INT_MAX = 2147483647
 
 
@@ -143,96 +142,10 @@ class _BaseLayoutCalculator:
     def _emit(self, rects, total_extent, hz):
         self._result = LayoutData(rects, total_extent, hz)
 
-
-class JustifiedLayoutCalculator(_BaseLayoutCalculator):
-
-    def __init__(self, aspect_ratios, base_height, spacing, container_width, container_height, orientation=0):
-        super().__init__(aspect_ratios, base_height, spacing, container_width, container_height, orientation)
-
-    @property
-    def base_height(self):
-        return self.base_size
-
-    @profiler.profile
-    def _calculate(self, hz, reverse):
-        if not hz and self.container_height is None:
-            raise ValueError('Vertical layout requires container_height')
-        spacing = self.spacing
+    def _build_justified_rects(self, groups, hz, reverse):
         base = self.base_size
         aspects = self.aspect_ratios
-        container = self.container_width if hz else self.container_height
-        n = len(aspects)
-        if n == 0:
-            self._emit([], 0, hz)
-            return
-
-        prefix = [0.0] * (n + 1)
-        for i in range(n):
-            a = aspects[i] or 1.0
-            prefix[i + 1] = prefix[i] + (a * base if hz else base / a)
-
-        INF = float('inf')
-        dp = [INF] * (n + 1)
-        dp[0] = 0.0
-        parent = [0] * (n + 1)
-
-        min_ext = min((a or 1.0) * base if hz else base / (a or 1.0) for a in aspects)
-        max_per_row = max(1, int((container + spacing) / (min_ext + spacing))) + 1
-
-        for j in range(1, n + 1):
-            if self._cancelled:
-                return
-            i_lo = max(j - max_per_row, 0)
-            best_j = dp[j]
-            for i in range(j - 1, i_lo - 1, -1):
-                if dp[i] >= best_j:
-                    break
-                line_ext = prefix[j] - prefix[i]
-                if line_ext <= 0:
-                    continue
-                count = j - i
-                total_sp = spacing * (count - 1)
-                scale = (container - total_sp) / line_ext
-                if scale < 0.1:
-                    break
-                r = scale - 1.0
-                cost = 0.0 if (j == n and r > 0) else abs(r) ** 3
-                candidate = dp[i] + cost
-                if candidate < best_j:
-                    best_j = candidate
-                    dp[j] = candidate
-                    parent[j] = i
-
-        if self._cancelled:
-            return
-
-        breaks = []
-        j = n
-        while j > 0:
-            breaks.append(parent[j])
-            j = parent[j]
-        breaks.reverse()
-
-        groups = []
-        offset = 0
-        num_rows = len(breaks)
-        for k in range(num_rows):
-            si = breaks[k]
-            ei = breaks[k + 1] if k + 1 < num_rows else n
-            cnt = ei - si
-            line_ext = prefix[ei] - prefix[si]
-            total_sp = spacing * (cnt - 1)
-            scale = max((container - total_sp) / line_ext, 0.1) if line_ext > 0 else 1.0
-            if k == num_rows - 1 and scale > 1.0:
-                scale = 1.0
-            groups.append((si, cnt, offset, scale))
-            offset += int(base * scale) + spacing
-            if offset > SCROLLBAR_INT_MAX:
-                AppLogger.debug(f"[JustifiedLayout] truncated offset={offset} max={SCROLLBAR_INT_MAX} items={n}")
-                break
-
-        if not groups or self._cancelled:
-            return
+        spacing = self.spacing
 
         if not hz and reverse:
             last_g = groups[-1]
@@ -267,68 +180,5 @@ class JustifiedLayoutCalculator(_BaseLayoutCalculator):
                     rects[j] = QtCore.QRect(grp_offset, cur, fixed, h)
                     cur += h + spacing
 
-        if groups:
-            total_extent = max(ofs + int(base * sc) for _, _, ofs, sc in groups) + spacing
-        else:
-            total_extent = 0
+        total_extent = max(ofs + int(base * sc) for _, _, ofs, sc in groups) + spacing
         self._emit(rects, total_extent, hz)
-
-    @profiler.profile
-    def run(self):
-        self._calculate(hz=self.orientation < 2, reverse=self.orientation % 2 == 1)
-
-
-class MasonryLayoutCalculator(_BaseLayoutCalculator):
-
-    @profiler.profile
-    def _calculate(self):
-        hz = self.orientation < 2
-        reverse = self.orientation % 2 == 1
-        spacing = self.spacing
-        aspects = self.aspect_ratios
-        base = self.base_size
-        n = len(aspects)
-
-        container = self.container_width if hz else self.container_height
-        if container is None:
-            raise ValueError('Vertical masonry requires container_height')
-        num_lanes = max(1, round((container + spacing) / (base + spacing)))
-        lane_size = (container - spacing * (num_lanes - 1)) / num_lanes
-        lane_int = max(1, int(lane_size))
-        lane_offsets = [0] * num_lanes
-        lane_positions = [l * (lane_int + spacing) for l in range(num_lanes)]
-        if hz and reverse:
-            lane_positions = [container - lp - lane_int for lp in lane_positions]
-
-        rects = [None] * n
-        final_count = n
-        for i in range(n):
-            if self._cancelled:
-                return
-            a = aspects[i] or 1.0
-            lane = min(range(num_lanes), key=lambda c: lane_offsets[c])
-            primary_offset = lane_offsets[lane]
-            if hz:
-                item_var = max(1, int(lane_int / a))
-                rects[i] = QtCore.QRect(lane_positions[lane], primary_offset, lane_int, item_var)
-            else:
-                item_var = max(1, int(lane_int * a))
-                rects[i] = QtCore.QRect(primary_offset, lane_positions[lane], item_var, lane_int)
-            lane_offsets[lane] = primary_offset + item_var + spacing
-            if lane_offsets[lane] > SCROLLBAR_INT_MAX:
-                final_count = i + 1
-                AppLogger.debug(f"[MasonryLayout] truncated at item {i}")
-                break
-
-        total_extent = max(lane_offsets) if lane_offsets else 0
-        if not hz and reverse and total_extent > 0:
-            flip = total_extent - spacing
-            for i in range(final_count):
-                r = rects[i]
-                rects[i] = QtCore.QRect(flip - r.x() - r.width(), r.y(), r.width(), r.height())
-
-        self._emit(rects[:final_count], total_extent, hz)
-
-    @profiler.profile
-    def run(self):
-        self._calculate()

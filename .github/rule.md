@@ -67,11 +67,16 @@
 - プラグインが読み込まれていなくてもアプリが落ちないこと（直接importしたファイル不在はエラーで可）
 
 ■ ビルトインとExtensionの二層構成
+- 全プラグイン基底クラスはPluginBase（wafer/plugin/registry.py）を継承する。PluginBaseはNAME, PRIORITY, configure(), post_install()を提供
+  - BasePlugin(PluginBase, ABC): Grid/Viewer/Collector用。EXTENSIONS, match(), can_handle()を追加
+  - BaseFilterPlugin(PluginBase, ABC), BaseSortPlugin(PluginBase, ABC): Query用
+  - BaseLayoutPlugin(PluginBase, ABC): Layout用
 - ビルトイン実装はwafer/builtins/に配置。extensionと同じプラグインインターフェースを使う
 - extensions/はPluginLoaderが外部ディレクトリから自動検出。wafer/builtins/はload_plugins()内でregister_all()により登録
 - ビルトインとextensionの唯一の違いはexe化時にwafer/builtins/は自動的に同梱される点。設計・インターフェースは同一
 - Grid/Viewerのフォールバックはビルトインプラグイン（EXTENSIONS=(), PRIORITY=-100）として登録。Resolverにフォールバックロジックをハードコードしない
-- Filter/Sortのビルトイン実装もwafer/builtins/filters.py, sorts.pyに配置。wafer/plugin/query/builtin.pyはre-export用の互換レイヤー
+- Filter/Sort/Layoutのビルトイン実装もwafer/builtins/に配置（filters.py, sorts.py, layouts.py）
+- Layoutプラグインはlayout_registry（wafer/plugin/layout/handler.py）に登録。BaseLayoutPlugin.create_calculator()でcalculatorを生成。grid_commands.pyのレイアウトメニューはregistryから動的に構築される
 - コマンドはCommandMeta/ActionKit系で別体系のためbuiltinsに含めない。wafer/app/以下とextensions/に分散するのが正しい
 
 ■ 未登録コマンドへの安全なフォールバック

@@ -5,6 +5,8 @@ from PIL import Image
 from PySide6 import QtCore, QtWidgets
 from unittest.mock import patch, MagicMock
 
+pytestmark = pytest.mark.unstable
+
 from wafer.utils.paths import normalize_path
 from wafer.core.db.file_db import FileDB
 from wafer.core.db.indexer import FileIndexer

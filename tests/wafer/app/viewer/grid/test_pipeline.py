@@ -5,7 +5,7 @@ import pytest
 from PySide6 import QtCore, QtWidgets
 from wafer.core.qt.dispatcher import Dispatcher, CancelToken
 from wafer.app.viewer.grid.pipeline import GridPipeline
-from wafer.app.viewer.grid.calc_layout import LayoutData
+from wafer.plugin.layout.calc import LayoutData
 
 
 @pytest.fixture()
@@ -18,7 +18,11 @@ def qapp():
 
 @pytest.fixture()
 def dispatcher(qapp):
-    return Dispatcher()
+    from wafer.core.qt.thread import SimpleThreadPool
+    pool = SimpleThreadPool('test_pipeline')
+    d = Dispatcher(pool=pool)
+    yield d
+    pool.pool.waitForDone(5000)
 
 
 class FakeCache:
@@ -99,9 +103,8 @@ class TestGridPipelineLayout:
         pipeline.layout_ready.connect(lambda layout: result.update({'layout': layout}))
 
         pipeline.request_layout([], 100, 4, 800, 600)
-        _process_events_until(lambda: 'layout' in result)
-        layout = result['layout']
-        assert len(layout) == 0
+        _process_events_until(lambda: 'layout' in result, timeout_ms=1000)
+        assert 'layout' not in result
 
 
 class TestGridPipelineCancel:

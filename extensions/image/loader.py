@@ -25,24 +25,28 @@ def load_image(path: str, size: QtCore.QSize | None = None) -> QtGui.QImage | No
         arr = cv2.imdecode(data, flags)
 
         if _classify_opencv_array(arr, ext) != 'opencv':
-            img = _qt_read(path, size, keep_aspect=False)
+            img = _qt_read(path, size, keep_aspect=True)
             if img is not None:
                 return img
 
         if arr is None:
-            return _qt_read(path, size, keep_aspect=False)
+            return _qt_read(path, size, keep_aspect=True)
 
         if size is not None:
             h, w = arr.shape[:2]
             if (abs(w - size.width()) + abs(h - size.height())) > 2:
-                interp = cv2.INTER_AREA if (size.width() < w or size.height() < h) else cv2.INTER_LANCZOS4
-                arr = cv2.resize(arr, (size.width(), size.height()), interpolation=interp)
+                sw, sh = size.width() / w, size.height() / h
+                scale = max(sw, sh)
+                new_w = max(1, round(w * scale))
+                new_h = max(1, round(h * scale))
+                interp = cv2.INTER_AREA if scale < 1.0 else cv2.INTER_LANCZOS4
+                arr = cv2.resize(arr, (new_w, new_h), interpolation=interp)
 
         return _numpy_to_qimage(arr)
 
     except Exception as e:
         try:
-            img = _qt_read(path, size, keep_aspect=(ext == '.gif'))
+            img = _qt_read(path, size, keep_aspect=True)
             if img is not None:
                 return img
         except Exception as qe:
@@ -75,7 +79,7 @@ def _approx_aspect_keep_size(reader, target):
     rw, rh = sz.width(), sz.height()
     if rw <= 0 or rh <= 0 or tw <= 0 or th <= 0:
         return target
-    scale = tw / rw if rw >= rh else th / rh
+    scale = max(tw / rw, th / rh)
     return QtCore.QSize(max(1, int(rw * scale)), max(1, int(rh * scale)))
 
 

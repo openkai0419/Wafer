@@ -23,20 +23,44 @@ for mod_name in list(sys.modules.keys()):
 def _close_qt_widgets_after_test():
     yield
     try:
+        from wafer.core.qt.thread import grid_thumb_pool, grid_render_pool
+        grid_thumb_pool.pool.waitForDone(3000)
+        grid_render_pool.pool.waitForDone(3000)
+    except Exception:
+        pass
+    try:
+        from extensions.animated._common import _driver, _viewer_driver
+        if _driver is not None:
+            _driver._timer.stop()
+            _driver._cells.clear()
+        if _viewer_driver is not None:
+            _viewer_driver._timer.stop()
+            _viewer_driver._cells.clear()
+    except Exception:
+        pass
+    try:
         from PySide6 import QtWidgets
         app = QtWidgets.QApplication.instance()
-        if app is None:
-            return
-        for w in app.topLevelWidgets():
-            w.close()
-        app.processEvents()
-    except ImportError:
+        if app is not None:
+            app.processEvents()
+    except Exception:
         pass
 
 
 @pytest.fixture(autouse=True, scope='session')
 def _cleanup_background_resources():
     yield
+    try:
+        from PySide6 import QtWidgets
+        import shiboken6
+        app = QtWidgets.QApplication.instance()
+        if app is not None:
+            for w in app.topLevelWidgets():
+                if shiboken6.isValid(w):
+                    w.hide()
+            app.processEvents()
+    except Exception:
+        pass
     try:
         from wafer.utils.profiling import profiler
         profiler.stop()
@@ -64,6 +88,20 @@ def _category_of(nodeid: str) -> str:
     if len(parts) >= 3 and parts[0] == 'tests':
         return parts[1]
     return 'root'
+
+
+def pytest_addoption(parser):
+    parser.addoption('--run-unstable', action='store_true', default=False,
+                     help='Run tests marked as unstable (may crash the process)')
+
+
+def pytest_collection_modifyitems(config, items):
+    if config.getoption('--run-unstable'):
+        return
+    skip = pytest.mark.skip(reason='needs --run-unstable option to run')
+    for item in items:
+        if 'unstable' in item.keywords:
+            item.add_marker(skip)
 
 
 def pytest_configure(config):

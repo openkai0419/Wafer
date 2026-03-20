@@ -28,7 +28,8 @@ def _isolate_registry():
 @pytest.fixture(autouse=True)
 def _isolate_drop_accept():
     dar = DropAcceptRegistry.instance()
-    prev = dict(dar._acceptors)
+    prev = {k: list(v) for k, v in dar._acceptors.items()}
+    dar._acceptors = {}
     yield
     dar._acceptors = prev
 

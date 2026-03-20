@@ -33,6 +33,7 @@ class MpvGLOverlay(QOpenGLWidget):
         keep_open='yes',
         idle='yes',
         loop='inf',
+        panscan=1.0,
         demuxer_max_back_bytes='128KiB',
         osd_level=0,
         sub='no',
@@ -621,7 +622,22 @@ class MpvCellWidget(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         if self._thumbnail and not self._thumbnail.isNull():
-            painter.drawImage(self.rect(), self._thumbnail)
+            ww, wh = self.width(), self.height()
+            iw, ih = self._thumbnail.width(), self._thumbnail.height()
+            if iw > 0 and ih > 0 and ww > 0 and wh > 0:
+                scale = max(ww / iw, wh / ih)
+                src_w = ww / scale
+                src_h = wh / scale
+                sx = (iw - src_w) / 2
+                sy = (ih - src_h) / 2
+                painter.fillRect(self.rect(), Qt.GlobalColor.black)
+                painter.drawImage(
+                    self.rect(),
+                    self._thumbnail,
+                    QRect(int(sx), int(sy), int(src_w), int(src_h)),
+                )
+            else:
+                painter.drawImage(self.rect(), self._thumbnail)
         else:
             painter.fillRect(self.rect(), Qt.GlobalColor.black)
 

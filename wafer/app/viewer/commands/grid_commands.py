@@ -18,15 +18,26 @@ _CMD_TO_CHOICE = dict(zip(_CMD_IDS, ORIENTATION_CHOICES))
 _CHOICE_TO_CMD = dict(zip(ORIENTATION_CHOICES, _CMD_IDS))
 _CHOICE_TO_INDEX = {c: i for i, c in enumerate(ORIENTATION_CHOICES)}
 
-_MODE_LABELS = ["Justified", "Masonry"]
-_MODE_VALUES = {"Justified": "justified", "Masonry": "masonry"}
-_MODE_CMDS = {"Justified": "grid.layout_justified", "Masonry": "grid.layout_masonry"}
-_MODE_CMD_TO_LABEL = {v: k for k, v in _MODE_CMDS.items()}
-CYCLE_CHOICES = [f"{m} {o}" for m in _MODE_LABELS for o in ORIENTATION_CHOICES]
-
 _INDEX_TO_ORI_CMD = {i: cmd for i, cmd in enumerate(_CMD_IDS)}
-_VALUE_TO_MODE_CMD = {v: _MODE_CMDS[k] for k, v in _MODE_VALUES.items()}
 _SCROLL_ANCHOR_CMDS = ('grid.scroll_anchor_top', 'grid.scroll_anchor_center')
+
+
+def _get_layout_modes():
+    from ....plugin.layout.handler import layout_registry
+    layouts = layout_registry.list_all()
+    if not layouts:
+        return [], {}, {}, {}, {}
+    labels = [cls.DISPLAY_NAME for cls in layouts]
+    values = {cls.DISPLAY_NAME: cls.NAME for cls in layouts}
+    cmds = {cls.DISPLAY_NAME: f"grid.layout_{cls.NAME}" for cls in layouts}
+    cmd_to_label = {v: k for k, v in cmds.items()}
+    value_to_cmd = {v: cmds[k] for k, v in values.items()}
+    return labels, values, cmds, cmd_to_label, value_to_cmd
+
+
+def _get_cycle_choices():
+    labels, *_ = _get_layout_modes()
+    return [f"{m} {o}" for m in labels for o in ORIENTATION_CHOICES]
 
 
 def sync_grid_groups_from_settings(grid_settings: dict) -> None:
@@ -38,7 +49,8 @@ def sync_grid_groups_from_settings(grid_settings: dict) -> None:
             sm.set_current('grid_orientation', cmd, save=False)
     layout_mode = grid_settings.get('layout_mode')
     if layout_mode is not None:
-        cmd = _VALUE_TO_MODE_CMD.get(layout_mode)
+        _, _, _, _, value_to_cmd = _get_layout_modes()
+        cmd = value_to_cmd.get(layout_mode)
         if cmd:
             sm.set_current('grid_layout_mode', cmd, save=False)
 
@@ -299,27 +311,42 @@ class GridViewCommands(ActionKit.MenuBase):
         view.set_orientation(3)
 
     @staticmethod
-    def set_layout_justified(ctx):
-        Command.set_action_group_current('grid_layout_mode', 'grid.layout_justified', save=False)
+    def set_layout(ctx, mode):
+        cmd_id = f"grid.layout_{mode}"
+        Command.set_action_group_current('grid_layout_mode', cmd_id, save=False)
         view = GridViewCommands.get_view(ctx)
-        view.set_layout_mode('justified')
+        view.set_layout_mode(mode)
 
-    @staticmethod
-    def set_layout_masonry(ctx):
-        Command.set_action_group_current('grid_layout_mode', 'grid.layout_masonry', save=False)
-        view = GridViewCommands.get_view(ctx)
-        view.set_layout_mode('masonry')
+    @classmethod
+    def _layout_commands(cls):
+        from ....plugin.layout.handler import layout_registry
+        cmds = []
+        for layout_cls in layout_registry.list_all():
+            name = layout_cls.NAME
+            display = layout_cls.DISPLAY_NAME
+            is_default = (name == 'justified')
+            cmds.append(ActionKit.Command(
+                path=f"Layout/grid.layout_{name}",
+                display=display,
+                func=lambda ctx, m=name: cls.set_layout(ctx, m),
+                checkable=True,
+                default_checked=is_default,
+                action_group="grid_layout_mode",
+            ))
+        return cmds
 
     @staticmethod
     def cycle_orientation(ctx, reverse=False, **kwargs):
-        enabled = [k for k in CYCLE_CHOICES if kwargs.get(k, True)]
+        cycle_choices = _get_cycle_choices()
+        enabled = [k for k in cycle_choices if kwargs.get(k, True)]
         if not enabled:
             return
+        labels, values, cmds, cmd_to_label, _ = _get_layout_modes()
         sm = ActionGroupStateManager.instance()
         current_ori = sm.get_current('grid_orientation')
         current_mode = sm.get_current('grid_layout_mode')
         ori_label = _CMD_TO_CHOICE.get(current_ori, ORIENTATION_CHOICES[0])
-        mode_label = _MODE_CMD_TO_LABEL.get(current_mode, _MODE_LABELS[0])
+        mode_label = cmd_to_label.get(current_mode, labels[0] if labels else '')
         current_key = f"{mode_label} {ori_label}"
         step = -1 if reverse else 1
         try:
@@ -329,8 +356,8 @@ class GridViewCommands(ActionKit.MenuBase):
             next_key = enabled[-1 if reverse else 0]
         next_mode, next_ori = next_key.split(" ", 1)
         view = GridViewCommands.get_view(ctx)
-        sm.set_current('grid_layout_mode', _MODE_CMDS[next_mode], save=False)
-        view.set_layout_mode(_MODE_VALUES[next_mode])
+        sm.set_current('grid_layout_mode', cmds[next_mode], save=False)
+        view.set_layout_mode(values[next_mode])
         sm.set_current('grid_orientation', _CHOICE_TO_CMD[next_ori], save=False)
         view.set_orientation(_CHOICE_TO_INDEX[next_ori])
 
@@ -362,15 +389,14 @@ class GridViewCommands(ActionKit.MenuBase):
             ActionKit.Command(path="Scroll Anchor/grid.scroll_anchor_top", display="Top", func=cls.set_scroll_anchor_top, checkable=True, action_group="grid_scroll_anchor"),
             ActionKit.Command(path="Scroll Anchor/grid.scroll_anchor_center", display="Center", func=cls.set_scroll_anchor_center, checkable=True, default_checked=True, action_group="grid_scroll_anchor"),
             "Layout/:Layout",
-            ActionKit.Command(path="Layout/grid.layout_justified", display="Justified", func=cls.set_layout_justified, checkable=True, default_checked=True, action_group="grid_layout_mode"),
-            ActionKit.Command(path="Layout/grid.layout_masonry", display="Masonry", func=cls.set_layout_masonry, checkable=True, action_group="grid_layout_mode"),
+            *cls._layout_commands(),
             ActionKit.Command(path="Layout/grid.orientation_z", display="Z (↘)", func=cls.set_orientation_z, checkable=True, default_checked=True, action_group="grid_orientation"),
             ActionKit.Command(path="Layout/grid.orientation_reverse_z", display="S (↙)", func=cls.set_orientation_reverse_z, checkable=True, action_group="grid_orientation"),
             ActionKit.Command(path="Layout/grid.orientation_n", display="И (↘)", func=cls.set_orientation_n, checkable=True, action_group="grid_orientation"),
             ActionKit.Command(path="Layout/grid.orientation_reverse_n", display="N (↙)", func=cls.set_orientation_reverse_n, checkable=True, action_group="grid_orientation"),
             ActionKit.Command(
                 path="grid.cycle_orientation", display="Cycle Orientation", func=cls.cycle_orientation,
-                params=[ActionKit.Param(name=k, value=True) for k in CYCLE_CHOICES] + [ActionKit.Param(name="reverse", value=False)],
+                params=[ActionKit.Param(name=k, value=True) for k in _get_cycle_choices()] + [ActionKit.Param(name="reverse", value=False)],
             ),
             "-",
             ":Scale",

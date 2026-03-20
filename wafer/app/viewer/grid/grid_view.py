@@ -8,7 +8,7 @@ from ..viewer_settings import app_settings
 from ....plugin.grid.handler import grid_resolver, WidgetNotifier
 from ....plugin.grid.base import WidgetGridPlugin as _WidgetGridPlugin
 from .cachemanager import MemoryLimitedImageCache, GraphicsItemPool, AdditionalWidgetPool
-from .calc_layout import LayoutData
+from ....plugin.layout.calc import LayoutData
 from .pipeline import GridPipeline
 from .items import GridItemModel
 from ....core.color.theme import ThemeManager

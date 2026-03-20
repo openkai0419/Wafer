@@ -125,8 +125,33 @@ class TestLoadImageResized:
         size = QtCore.QSize(48, 36)
         img = load_image(jpeg_file, size)
         assert img is not None
-        assert img.width() == 48
-        assert img.height() == 36
+        assert abs(img.width() - 48) <= 1
+        assert abs(img.height() - 36) <= 1
+
+    def test_resize_circumscribed_landscape_to_square(self, rgb_png):
+        size = QtCore.QSize(50, 50)
+        img = load_image(rgb_png, size)
+        assert img is not None
+        assert img.width() > 50
+        assert img.height() == 50
+
+    def test_resize_circumscribed_portrait_to_square(self, tmp_path):
+        p = tmp_path / 'portrait.png'
+        Image.new('RGB', (60, 120), (0, 255, 0)).save(str(p))
+        size = QtCore.QSize(100, 100)
+        img = load_image(str(p), size)
+        assert img is not None
+        assert img.width() == 100
+        assert img.height() > 100
+
+    def test_resize_circumscribed_wide_jpeg(self, tmp_path):
+        p = tmp_path / 'wide.jpg'
+        Image.new('RGB', (400, 100), (0, 0, 255)).save(str(p), quality=90)
+        size = QtCore.QSize(200, 200)
+        img = load_image(str(p), size)
+        assert img is not None
+        assert img.width() > 200
+        assert img.height() == 200
 
 
 class TestLoadImageEdgeCases:

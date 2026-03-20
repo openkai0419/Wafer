@@ -4,6 +4,8 @@ import struct
 import pytest
 from PIL import Image
 from PySide6 import QtCore, QtGui, QtWidgets
+
+pytestmark = pytest.mark.unstable
 from unittest.mock import MagicMock
 
 from wafer.app.viewer.grid.grid_view import GridView

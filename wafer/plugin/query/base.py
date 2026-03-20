@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING
 
 from PySide6 import QtCore
 
+from ..registry import PluginBase
+
 if TYPE_CHECKING:
     from PySide6 import QtWidgets
 
@@ -25,10 +27,8 @@ class KeyStore(QtCore.QObject):
         self.updated.emit(results)
 
 
-class BaseFilterPlugin(ABC):
-    NAME: str = ''
+class BaseFilterPlugin(PluginBase, ABC):
     DISPLAY_NAME: str = ''
-    PRIORITY: int = 0
     SCOPE: str = 'row'
 
     @classmethod
@@ -65,9 +65,7 @@ class BaseFilterPlugin(ABC):
         pass
 
 
-class BaseSortPlugin(ABC):
-    NAME: str = ''
-    PRIORITY: int = 0
+class BaseSortPlugin(PluginBase, ABC):
     SQL_COLUMN: str | None = None
 
     @classmethod

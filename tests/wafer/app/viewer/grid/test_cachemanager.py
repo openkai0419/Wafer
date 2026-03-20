@@ -198,6 +198,117 @@ def test_peek_if_sufficient_does_not_update_lru(cache):
     assert "img_0" not in cache
 
 
+class TestFadePixmapItemRendering:
+    @pytest.fixture(autouse=True)
+    def setup(self, qapp):
+        from wafer.app.viewer.grid.cachemanager import FadePixmapItem
+        from PySide6 import QtWidgets, QtCore
+        scene = QtWidgets.QGraphicsScene()
+        self.item = FadePixmapItem()
+        scene.addItem(self.item)
+        self.scene = scene
+        yield
+        scene.clear()
+
+    def test_paint_basic(self):
+        from PySide6 import QtGui, QtCore
+        img = QtGui.QImage(200, 100, QtGui.QImage.Format_ARGB32)
+        img.fill(QtGui.QColor(255, 0, 0))
+        self.item.setGeometry(QtCore.QRect(0, 0, 100, 100))
+        self.item.set_image(img, "test")
+        pixmap = QtGui.QPixmap(100, 100)
+        pixmap.fill(QtGui.QColor(0, 0, 0, 0))
+        painter = QtGui.QPainter(pixmap)
+        self.item.paint(painter, None)
+        painter.end()
+
+    def test_landscape_in_square_cell(self):
+        from PySide6 import QtGui, QtCore
+        img = QtGui.QImage(200, 100, QtGui.QImage.Format_ARGB32)
+        img.fill(QtGui.QColor(255, 0, 0))
+        self.item.setGeometry(QtCore.QRect(0, 0, 200, 200))
+        self.item.set_image(img, "landscape_test")
+        target = QtGui.QPixmap(200, 200)
+        target.fill(QtGui.QColor(0, 0, 0, 0))
+        painter = QtGui.QPainter(target)
+        self.item.paint(painter, None)
+        painter.end()
+        result = target.toImage()
+        top_pixel = result.pixelColor(100, 10)
+        mid_pixel = result.pixelColor(100, 100)
+        bot_pixel = result.pixelColor(100, 190)
+        assert top_pixel.red() == 255 and top_pixel.alpha() == 255
+        assert mid_pixel.red() == 255 and mid_pixel.alpha() == 255
+        assert bot_pixel.red() == 255 and bot_pixel.alpha() == 255
+
+    def test_portrait_in_square_cell(self):
+        from PySide6 import QtGui, QtCore
+        img = QtGui.QImage(100, 200, QtGui.QImage.Format_ARGB32)
+        img.fill(QtGui.QColor(0, 0, 255))
+        self.item.setGeometry(QtCore.QRect(0, 0, 200, 200))
+        self.item.set_image(img, "portrait_test")
+        target = QtGui.QPixmap(200, 200)
+        target.fill(QtGui.QColor(0, 0, 0, 0))
+        painter = QtGui.QPainter(target)
+        self.item.paint(painter, None)
+        painter.end()
+        result = target.toImage()
+        left_pixel = result.pixelColor(10, 100)
+        mid_pixel = result.pixelColor(100, 100)
+        right_pixel = result.pixelColor(190, 100)
+        assert left_pixel.blue() == 255 and left_pixel.alpha() == 255
+        assert mid_pixel.blue() == 255 and mid_pixel.alpha() == 255
+        assert right_pixel.blue() == 255 and right_pixel.alpha() == 255
+
+    def test_exact_aspect_fills_cell(self):
+        from PySide6 import QtGui, QtCore
+        img = QtGui.QImage(200, 100, QtGui.QImage.Format_ARGB32)
+        img.fill(QtGui.QColor(255, 0, 0))
+        self.item.setGeometry(QtCore.QRect(0, 0, 200, 100))
+        self.item.set_image(img, "exact_test")
+        target = QtGui.QPixmap(200, 100)
+        target.fill(QtGui.QColor(0, 0, 0, 0))
+        painter = QtGui.QPainter(target)
+        self.item.paint(painter, None)
+        painter.end()
+        result = target.toImage()
+        top_pixel = result.pixelColor(100, 5)
+        mid_pixel = result.pixelColor(100, 50)
+        bot_pixel = result.pixelColor(100, 95)
+        assert top_pixel.red() == 255 and top_pixel.alpha() == 255
+        assert mid_pixel.red() == 255 and mid_pixel.alpha() == 255
+        assert bot_pixel.red() == 255 and bot_pixel.alpha() == 255
+
+    def test_with_loaded_image_file(self, tmp_path):
+        from PySide6 import QtGui, QtCore
+        from PIL import Image as PILImage
+        from extensions.image.loader import load_image
+
+        cell_w, cell_h = 200, 200
+        img_path = str(tmp_path / "wide.png")
+        PILImage.new("RGB", (400, 100), (0, 255, 0)).save(img_path)
+        loaded = load_image(img_path, QtCore.QSize(cell_w, cell_h))
+        assert loaded is not None
+        assert loaded.width() >= cell_w or loaded.height() >= cell_h
+        aspect_ratio = loaded.width() / loaded.height()
+        assert abs(aspect_ratio - 4.0) < 0.1
+
+        self.item.setGeometry(QtCore.QRect(0, 0, cell_w, cell_h))
+        self.item.set_image(loaded, img_path)
+        target = QtGui.QPixmap(cell_w, cell_h)
+        target.fill(QtGui.QColor(0, 0, 0, 0))
+        painter = QtGui.QPainter(target)
+        self.item.paint(painter, None)
+        painter.end()
+        result = target.toImage()
+        center = result.pixelColor(100, 100)
+        assert center.green() == 255 and center.alpha() == 255
+        top = result.pixelColor(100, 5)
+        assert top.green() == 255 and top.alpha() == 255
+        bottom = result.pixelColor(100, 195)
+        assert bottom.green() == 255 and bottom.alpha() == 255
+
+
 class _DummyWidget(QtWidgets.QWidget):
     pass
 

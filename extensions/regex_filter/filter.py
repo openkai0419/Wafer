@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from wafer.plugin.query.base import BaseFilterPlugin
+from wafer.plugin import BaseFilterPlugin
 from wafer.utils.profiling import profiler
 
 

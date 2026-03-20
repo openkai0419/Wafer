@@ -7,6 +7,7 @@ def register_all(registries):
         ModifiedSort, CreatedSort, SizeSort, CollectedSort,
         RandomSort,
     )
+    from .layouts import JustifiedLayout, MasonryLayout
 
     registries['grid'].register(SystemThumbnailPlugin)
     registries['viewer'].register(DefaultViewerPlugin)
@@ -17,3 +18,5 @@ def register_all(registries):
                 ModifiedSort, CreatedSort, SizeSort, CollectedSort,
                 RandomSort]:
         registries['sort'].register(cls)
+    for cls in [JustifiedLayout, MasonryLayout]:
+        registries['layout'].register(cls)

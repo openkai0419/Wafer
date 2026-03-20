@@ -3,10 +3,21 @@ from abc import ABC, abstractmethod
 from ..utils.profiling import profiler
 
 
-class BasePlugin(ABC):
+class PluginBase:
     NAME: str = ''
-    EXTENSIONS: tuple[str, ...] = ()
     PRIORITY: int = 0
+
+    @classmethod
+    def post_install(cls, plugin_dir: str, on_progress=None):
+        pass
+
+    @classmethod
+    def configure(cls):
+        pass
+
+
+class BasePlugin(PluginBase, ABC):
+    EXTENSIONS: tuple[str, ...] = ()
 
     @classmethod
     def match(cls, path: str) -> bool:
@@ -18,14 +29,6 @@ class BasePlugin(ABC):
     @classmethod
     def can_handle(cls, path: str) -> bool:
         return True
-
-    @classmethod
-    def post_install(cls, plugin_dir: str, on_progress=None):
-        pass
-
-    @classmethod
-    def configure(cls):
-        pass
 
 
 class PluginRegistry:

@@ -9,7 +9,8 @@ from ....plugin.grid.base import (
     WidgetGridPlugin as _WidgetGridPlugin,
     _get_error_image,
 )
-from .calc_layout import JustifiedLayoutCalculator, MasonryLayoutCalculator, LayoutData
+from ....plugin.layout.handler import layout_registry
+from ....plugin.layout.calc import LayoutData
 from .cachemanager import fullsize_key
 
 
@@ -53,16 +54,15 @@ class GridPipeline(QtCore.QObject):
         def task():
             if cancel.is_cancelled():
                 return
-            if layout_mode == 'masonry':
-                calc = MasonryLayoutCalculator(
-                    aspect_ratios, base_height, spacing,
-                    container_width, container_height, orientation,
-                )
-            else:
-                calc = JustifiedLayoutCalculator(
-                    aspect_ratios, base_height, spacing,
-                    container_width, container_height, orientation,
-                )
+            layout_cls = layout_registry.get(layout_mode)
+            if layout_cls is None:
+                layout_cls = layout_registry.get('justified')
+            if layout_cls is None:
+                return
+            calc = layout_cls.create_calculator(
+                aspect_ratios, base_height, spacing,
+                container_width, container_height, orientation,
+            )
             calc.run()
             if cancel.is_cancelled():
                 return

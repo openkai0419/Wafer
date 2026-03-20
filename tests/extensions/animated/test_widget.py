@@ -289,7 +289,7 @@ class TestAnimatedCellWidget:
         widget.on_selected()
         widget.on_deselected()
 
-    def test_paint_scales_up_small_pixmap(self, widget, qtbot):
+    def test_paint_fills_cell_small_pixmap(self, widget, qtbot):
         pm = QtGui.QPixmap(50, 50)
         pm.fill(QtGui.QColor('red'))
         widget.set_frames('up.gif', [pm], [100])
@@ -298,11 +298,12 @@ class TestAnimatedCellWidget:
         widget.show()
         qtbot.waitExposed(widget)
         widget.repaint()
-        assert widget._scaled_pixmap is not None
-        assert widget._scaled_pixmap.width() == 200
-        assert widget._scaled_pixmap.height() == 200
+        grab = widget.grab()
+        img = grab.toImage()
+        center = img.pixelColor(100, 100)
+        assert center.red() > 200
 
-    def test_paint_scales_down_large_pixmap(self, widget, qtbot):
+    def test_paint_fills_cell_large_pixmap(self, widget, qtbot):
         pm = QtGui.QPixmap(400, 200)
         pm.fill(QtGui.QColor('blue'))
         widget.set_frames('down.gif', [pm], [100])
@@ -313,15 +314,16 @@ class TestAnimatedCellWidget:
         from PySide6.QtWidgets import QApplication
         QApplication.processEvents()
         widget.repaint()
-        assert widget._scaled_pixmap is not None
-        ww, wh = widget.width(), widget.height()
-        scale = min(ww / 400, wh / 200)
-        assert widget._scaled_pixmap.width() == int(400 * scale)
-        assert widget._scaled_pixmap.height() == int(200 * scale)
+        grab = widget.grab()
+        img = grab.toImage()
+        corner = img.pixelColor(5, 5)
+        center = img.pixelColor(50, 50)
+        assert corner.blue() > 200
+        assert center.blue() > 200
 
-    def test_paint_uses_smooth_when_stopped(self, widget, qtbot):
+    def test_paint_no_gap_for_non_square(self, widget, qtbot):
         pm = QtGui.QPixmap(50, 50)
-        pm.fill(QtGui.QColor('green'))
+        pm.fill(QtGui.QColor(0, 255, 0))
         widget.set_frames('smooth.gif', [pm], [100])
         widget._playing = False
         widget.setFixedSize(200, 200)
@@ -331,4 +333,7 @@ class TestAnimatedCellWidget:
         from PySide6.QtWidgets import QApplication
         QApplication.processEvents()
         widget.repaint()
-        assert widget._scaled_pixmap is not None
+        grab = widget.grab()
+        img = grab.toImage()
+        edge = img.pixelColor(5, 5)
+        assert edge.green() > 200

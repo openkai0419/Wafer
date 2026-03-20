@@ -28,7 +28,20 @@ class FadePixmapItem(QtWidgets.QGraphicsObject):
 
     def paint(self, painter, option, widget=None):
         if not self._pixmap.isNull():
-            painter.drawPixmap(self.boundingRect().toRect(), self._pixmap)
+            br = self.boundingRect().toRect()
+            pw, ph = self._pixmap.width(), self._pixmap.height()
+            bw, bh = br.width(), br.height()
+            if pw > 0 and ph > 0 and bw > 0 and bh > 0:
+                scale = max(bw / pw, bh / ph)
+                src_w = bw / scale
+                src_h = bh / scale
+                src_x = (pw - src_w) / 2
+                src_y = (ph - src_h) / 2
+                painter.drawPixmap(
+                    QtCore.QRectF(br),
+                    self._pixmap,
+                    QtCore.QRectF(src_x, src_y, src_w, src_h),
+                )
 
     @profiler.profile
     def set_image(self, image, curpath=None):

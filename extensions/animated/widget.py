@@ -47,8 +47,6 @@ class AnimatedCellWidget(QtWidgets.QWidget):
         self._accumulated = 0
         self._playing = False
         self._thumbnail: QtGui.QPixmap | None = None
-        self._scaled_pixmap: QtGui.QPixmap | None = None
-        self._scaled_key: tuple = ()
         self._cancel_slot = CancelSlot()
 
     @profiler.profile
@@ -58,8 +56,6 @@ class AnimatedCellWidget(QtWidgets.QWidget):
         self._delays = delays
         self._frame_index = 0
         self._accumulated = 0
-        self._scaled_pixmap = None
-        self._scaled_key = ()
         if frames:
             self._thumbnail = frames[0]
         if self.isVisible():
@@ -94,18 +90,13 @@ class AnimatedCellWidget(QtWidgets.QWidget):
         path = self._path
         frames = self._frames
         thumbnail = self._thumbnail
-        scaled = self._scaled_pixmap
         self._frames = []
         self._delays = []
         self._thumbnail = None
         self._path = ''
         self._frame_index = 0
         self._accumulated = 0
-        self._scaled_pixmap = None
-        self._scaled_key = ()
         to_dispose: list[QtGui.QPixmap] = []
-        if scaled is not None:
-            to_dispose.append(scaled)
         if frames and (not path or path not in _grid_cache):
             to_dispose.extend(frames)
         elif thumbnail is not None:
@@ -150,18 +141,17 @@ class AnimatedCellWidget(QtWidgets.QWidget):
         ww, wh = self.width(), self.height()
         if pw <= 0 or ph <= 0 or ww <= 0 or wh <= 0:
             return
-        if pw != ww or ph != wh:
-            key = (id(pixmap), ww, wh)
-            if key != self._scaled_key:
-                scale = min(ww / pw, wh / ph)
-                dw, dh = int(pw * scale), int(ph * scale)
-                mode = QtCore.Qt.FastTransformation if self._playing else QtCore.Qt.SmoothTransformation
-                self._scaled_pixmap = pixmap.scaled(
-                    dw, dh, QtCore.Qt.KeepAspectRatio, mode)
-                self._scaled_key = key
-            pixmap = self._scaled_pixmap
-            pw, ph = pixmap.width(), pixmap.height()
         painter = QtGui.QPainter(self)
-        x = (ww - pw) // 2
-        y = (wh - ph) // 2
-        painter.drawPixmap(x, y, pixmap)
+        if pw == ww and ph == wh:
+            painter.drawPixmap(0, 0, pixmap)
+        else:
+            scale = max(ww / pw, wh / ph)
+            src_w = ww / scale
+            src_h = wh / scale
+            sx = (pw - src_w) / 2
+            sy = (ph - src_h) / 2
+            painter.drawPixmap(
+                QtCore.QRectF(0, 0, ww, wh),
+                pixmap,
+                QtCore.QRectF(sx, sy, src_w, src_h),
+            )

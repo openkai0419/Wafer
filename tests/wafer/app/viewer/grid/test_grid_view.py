@@ -122,7 +122,7 @@ class TestGridViewScrollRange:
         self.GridView = GridView
 
     def test_justified_reverse_vertical_has_horizontal_scroll_range(self, qtbot):
-        from wafer.app.viewer.grid.calc_layout import JustifiedLayoutCalculator
+        from wafer.builtins.layouts import JustifiedLayoutCalculator
 
         with patch('wafer.app.viewer.grid.grid_view.grid_resolver'):
             gv = self.GridView(MagicMock())
@@ -593,7 +593,7 @@ class TestAutoScroll:
 class TestFindCenterIndexEffectiveScroll:
     def test_uses_scroll_target_when_animating(self):
         from wafer.app.viewer.grid.grid_view import GridView
-        from wafer.app.viewer.grid.calc_layout import LayoutData
+        from wafer.plugin.layout.calc import LayoutData
 
         rects_raw = [
             QtCore.QRect(0, 0, 200, 100),
@@ -617,7 +617,7 @@ class TestFindCenterIndexEffectiveScroll:
 
     def test_uses_actual_pos_when_not_animating(self):
         from wafer.app.viewer.grid.grid_view import GridView
-        from wafer.app.viewer.grid.calc_layout import LayoutData
+        from wafer.plugin.layout.calc import LayoutData
 
         rects_raw = [
             QtCore.QRect(0, 0, 200, 100),
@@ -639,7 +639,7 @@ class TestFindCenterIndexEffectiveScroll:
 
     def test_scroll_row_chains_through_rows(self):
         from wafer.app.viewer.grid.grid_view import GridView
-        from wafer.app.viewer.grid.calc_layout import LayoutData
+        from wafer.plugin.layout.calc import LayoutData
 
         rects_raw = [
             QtCore.QRect(0, 0, 200, 100),
@@ -706,7 +706,7 @@ class TestOnLayoutReadyWidgetRerender:
     @patch('wafer.app.viewer.grid.grid_view.grid_resolver')
     def test_widget_cell_rerendered_on_size_increase(self, mock_resolver):
         from wafer.plugin.grid.base import WidgetGridPlugin
-        from wafer.app.viewer.grid.calc_layout import LayoutData
+        from wafer.plugin.layout.calc import LayoutData
 
         class _Stub(WidgetGridPlugin):
             NAME = 'stub'
@@ -735,7 +735,7 @@ class TestOnLayoutReadyWidgetRerender:
 
     @patch('wafer.app.viewer.grid.grid_view.grid_resolver')
     def test_widget_cell_not_rerendered_on_same_size(self, mock_resolver):
-        from wafer.app.viewer.grid.calc_layout import LayoutData
+        from wafer.plugin.layout.calc import LayoutData
 
         fake = self._make_fake(['anim.gif'])
         widget = MagicMock()
@@ -751,7 +751,7 @@ class TestOnLayoutReadyWidgetRerender:
 
     @patch('wafer.app.viewer.grid.grid_view.grid_resolver')
     def test_widget_cell_not_rerendered_on_size_decrease(self, mock_resolver):
-        from wafer.app.viewer.grid.calc_layout import LayoutData
+        from wafer.plugin.layout.calc import LayoutData
 
         fake = self._make_fake(['anim.gif'])
         widget = MagicMock()

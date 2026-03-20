@@ -16,7 +16,11 @@ def qapp():
 
 @pytest.fixture()
 def dispatcher(qapp):
-    return Dispatcher()
+    from wafer.core.qt.thread import SimpleThreadPool
+    pool = SimpleThreadPool('test_dispatcher')
+    d = Dispatcher(pool=pool)
+    yield d
+    pool.pool.waitForDone(5000)
 
 
 def _process_events_until(predicate, timeout_ms=3000):

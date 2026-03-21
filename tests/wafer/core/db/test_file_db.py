@@ -41,7 +41,7 @@ def test_filedb_upsert_and_load(tmp_path):
     sources = [('src1', 'hash1', 100, 1.0)]
     images = [('c:/test/img.jpg', 'src1', 1.5)]
     metas = [('c:/test/img.jpg', 'dpi', '72', None)]
-    tags = [('hash1', 'rating', '5')]
+    tags = [('hash1', 'rating', '5', 5.0)]
     db.upsert_batches(sources, images, metas, tags)
     prev = db.load_existing_sources()
     assert 'src1' in prev
@@ -69,7 +69,7 @@ def test_schema_no_change_preserves_data(tmp_path):
         [('src1', 'hash1', 100, 1.0)],
         [('c:/a.jpg', 'src1', 1.0)],
         [('c:/a.jpg', 'k', 'v', None)],
-        [('hash1', 'tag', 'val')],
+        [('hash1', 'tag', 'val', None)],
     )
     db.close()
     db2 = FileDB(tmp_path / 'test.db')
@@ -197,7 +197,7 @@ def test_upsert_collection_results(tmp_path):
     db.upsert_collection_results(
         [('c:/a.jpg', 'src1', 1.5)],
         [('c:/a.jpg', 'width', '1920', 1920.0)],
-        [('hash1', 'rating', '5')],
+        [('hash1', 'rating', '5', 5.0)],
         [('src1', 'exif', 'ok', 2.0)],
     )
     row = db.read_conn.execute("SELECT aspect_ratio FROM files WHERE path='c:/a.jpg'").fetchone()
@@ -266,7 +266,7 @@ def test_rename_paths_single_file(tmp_path):
         [('c:/old/img.jpg', 'width', '1920', 1920.0),
          ('c:/old/img.jpg', 'name', 'img.jpg', None),
          ('c:/old/img.jpg', 'path', 'c:/old/img.jpg', None)],
-        [('hash1', 'rating', '5')],
+        [('hash1', 'rating', '5', 5.0)],
     )
     db.insert_pending_collection(['c:/old/img.jpg'], ['exif'])
     db.rename_paths([('c:/old/img.jpg', 'c:/new/img.jpg')])
@@ -528,7 +528,7 @@ def test_ensure_hash_indexes_deduplicates(tmp_path):
     cur = db.get_writer_cursor()
     db._ensure_hash_indexes(cur,
         [('src1', 'hash1', 100, 1.0), ('src2', 'hash2', 200, 2.0)],
-        [('hash1', 'tag', 'val')],
+        [('hash1', 'tag', 'val', None)],
     )
     db.conn.commit()
     rows = db.conn.execute("SELECT COUNT(*) FROM hash_index").fetchone()[0]

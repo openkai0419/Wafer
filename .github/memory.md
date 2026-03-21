@@ -3,6 +3,11 @@
 - ルール（守るべき規約）はrule.txtに記載。ここには書かない
 - アーキテクチャ詳細は /memories/repo/*.md に記載。ここでは重複しない
 
+■ テスト保守の注意
+- ソース側のクラス名・定数値（NAME, PRIORITY等）を変更したら、対応するテストも必ず同時に更新する
+- テストが壊れたまま放置すると、コレクションエラーで全テストが実行できなくなり、フルテストの実行コストが倍増する
+- 特にimportレベルのエラー（クラスリネーム等）はpytest全体のコレクションを止めるため影響が大きい
+
 ■ UI状態の保存/復元の設計思想
 - Session（SessionEntry/StateStore）が唯一の状態保存先。app_settings(INI)はグローバル設定（language, cache_size, thumbnail_default_size, tablename）のみ
 - コマンドは「操作の実行」のみに責任を持つ。状態保存はStateStore（Session）が担う

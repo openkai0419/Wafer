@@ -57,7 +57,7 @@ def large_db(tmp_path_factory):
             metas.append((path, "modified", str(float(1700000000 + idx)), float(1700000000 + idx)))
             metas.append((path, "created", str(float(1700000000 + idx)), float(1700000000 + idx)))
             metas.append((path, "collected", str(float(1700000000 + idx)), float(1700000000 + idx)))
-            tags.append((fhash, "rating", f"{(idx % 5) + 1}"))
+            tags.append((fhash, "rating", f"{(idx % 5) + 1}", float((idx % 5) + 1)))
             idx += 1
 
     db.upsert_batches(sources, images, metas, tags)

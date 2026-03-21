@@ -96,7 +96,7 @@ def _parse_batch(results: list[dict[str, Any]]) -> dict[str, Any]:
                     meta_info_entries.append((path, k, str(v), _try_float(v)))
             if file_hash:
                 tag_entries.extend(
-                    (file_hash, k, v) for k, v in tags.items() if v is not None
+                    (file_hash, k, str(v), _try_float(v)) for k, v in tags.items() if v is not None
                 )
 
     return {

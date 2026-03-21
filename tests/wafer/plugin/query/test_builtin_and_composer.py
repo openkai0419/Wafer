@@ -42,9 +42,9 @@ def populated_db(tmp_path):
         metas.append((path, "collected", str(float(1700000000 + i)), float(1700000000 + i)))
         if i % 3 == 0:
             metas.append((path, "Artist", f"photographer_{i % 5}", None))
-        tags.append((fhash, "rating", f"{(i % 5) + 1}"))
+        tags.append((fhash, "rating", f"{(i % 5) + 1}", float((i % 5) + 1)))
         if i % 2 == 0:
-            tags.append((fhash, "category", "landscape" if i < 100 else "office"))
+            tags.append((fhash, "category", "landscape" if i < 100 else "office", None))
     db.upsert_batches(sources, images, metas, tags)
     db.conn.execute("ANALYZE")
     db.conn.commit()
@@ -75,7 +75,7 @@ def special_db(tmp_path):
         metas.append((path, "path", path, None))
         metas.append((path, "name", name, None))
         metas.append((path, "Comment", comment, None))
-        tags.append((fhash, "rating", "3"))
+        tags.append((fhash, "rating", "3", 3.0))
     db.upsert_batches(sources, images, metas, tags)
     db.conn.execute("ANALYZE")
     db.conn.commit()

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from ...utils.profiling import profiler
+from ...core.db.query import _kv_sort_join
 from .base import BaseFilterPlugin, BaseSortPlugin
 
 
@@ -150,13 +151,12 @@ class SearchComposer:
         has_custom_sort = 'sort_rows' in vars(sort_plugin)
         if has_custom_sort:
             if meta_key:
-                col_str += f', _sk.value AS {meta_key}, _sk.value_num AS {meta_key}_num'
+                kv_join, kv_select, _, kv_params = _kv_sort_join(meta_key)
                 sql = (
-                    f"SELECT {col_str} FROM files_full AS m "
-                    f"JOIN ({path_sql}) AS s USING(path) "
-                    f"LEFT JOIN meta_info AS _sk ON _sk.path = m.path AND _sk.\"key\" = ?"
+                    f"SELECT {col_str}{kv_select} FROM files_full AS m "
+                    f"JOIN ({path_sql}) AS s USING(path){kv_join}"
                 )
-                rows = list(engine.fetch(sql, [*params, meta_key]))
+                rows = list(engine.fetch(sql, [*params, *kv_params]))
             else:
                 sql = (
                     f"SELECT {col_str} FROM files_full AS m "
@@ -166,13 +166,13 @@ class SearchComposer:
             return sort_plugin.sort_rows(rows, ascending)
         elif meta_key:
             order = 'ASC' if ascending else 'DESC'
+            kv_join, _, kv_order, kv_params = _kv_sort_join(meta_key)
             sql = (
                 f"SELECT {col_str} FROM files_full AS m "
-                f"JOIN ({path_sql}) AS s USING(path) "
-                f"LEFT JOIN meta_info AS _sk ON _sk.path = m.path AND _sk.\"key\" = ? "
-                f"ORDER BY _sk.value_num {order}"
+                f"JOIN ({path_sql}) AS s USING(path){kv_join} "
+                f"ORDER BY {kv_order} {order}"
             )
-            return engine.fetch(sql, [*params, meta_key])
+            return engine.fetch(sql, [*params, *kv_params])
         else:
             sql = (
                 f"SELECT {col_str} FROM files_full AS m "

@@ -119,7 +119,7 @@ def test_upsert_collection_results(writer):
     writer.upsert_results(
         [],
         [('/a.png', 'width', '1920', 1920.0)],
-        [('hash1', 'rating', '5')],
+        [('hash1', 'rating', '5', 5.0)],
         [('/a.png', 'exif', 'ok', 2.0)],
     )
 

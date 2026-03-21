@@ -42,6 +42,7 @@ _TABLES = (
         file_hash TEXT NOT NULL, 
         key TEXT NOT NULL, 
         value TEXT,
+        value_num REAL,
         PRIMARY KEY(file_hash, key),
         FOREIGN KEY(file_hash) REFERENCES hash_index(file_hash) ON UPDATE CASCADE ON DELETE CASCADE
     )'''),
@@ -65,23 +66,23 @@ _VIEWS = (
     ('kv_all',
      '''CREATE VIEW kv_all AS
         WITH base AS (
-            SELECT mi.path AS path, mi.key AS key, mi.value AS value, 'meta_info' AS src, 2 AS rank
+            SELECT mi.path AS path, mi.key AS key, mi.value AS value, mi.value_num AS value_num, 'meta_info' AS src, 2 AS rank
             FROM meta_info AS mi
         UNION ALL
-            SELECT i.path AS path, t.key AS key, t.value AS value, 'tags' AS src, 0 AS rank
+            SELECT i.path AS path, t.key AS key, t.value AS value, t.value_num AS value_num, 'tags' AS src, 0 AS rank
             FROM tags AS t
             JOIN sources AS s ON s.file_hash = t.file_hash
             JOIN files  AS i ON i.source    = s.source
         ),
         picked AS (
-            SELECT path, key, value, src, rank,
+            SELECT path, key, value, value_num, src, rank,
                 ROW_NUMBER() OVER (PARTITION BY path, key ORDER BY rank, src) AS rn
             FROM base
         )
-        SELECT path, key, value, src FROM picked WHERE rn = 1'''),
+        SELECT path, key, value, value_num, src FROM picked WHERE rn = 1'''),
     ('kv_meta',
      '''CREATE VIEW kv_meta AS
-        SELECT k.path, vf.file_hash, k.key, k.value, k.src
+        SELECT k.path, vf.file_hash, k.key, k.value, k.value_num, k.src
         FROM kv_all AS k JOIN files_full AS vf ON vf.path = k.path'''),
 )
 
@@ -93,6 +94,7 @@ _INDEXES_SQL = """
     CREATE INDEX IF NOT EXISTS idx_meta_info_key_num ON meta_info(key, value_num);
     CREATE INDEX IF NOT EXISTS idx_tags_key_fid ON tags(key, file_hash);
     CREATE INDEX IF NOT EXISTS idx_tags_key_value ON tags(key, value);
+    CREATE INDEX IF NOT EXISTS idx_tags_key_num ON tags(key, value_num);
     CREATE INDEX IF NOT EXISTS idx_sources_modified_source ON sources(modified, source);
     CREATE INDEX IF NOT EXISTS idx_sources_size_source ON sources(size, source);
     CREATE INDEX IF NOT EXISTS idx_cs_collector_status ON collection_status(collector, status);
@@ -123,9 +125,11 @@ _SQL_UPSERT_META = '''INSERT INTO meta_info (path, key, value, value_num)
         value     = excluded.value,
         value_num = excluded.value_num'''
 
-_SQL_UPSERT_TAGS = '''INSERT INTO tags (file_hash, key, value)
-    VALUES (?, ?, ?)
-    ON CONFLICT(file_hash, key) DO UPDATE SET value = excluded.value'''
+_SQL_UPSERT_TAGS = '''INSERT INTO tags (file_hash, key, value, value_num)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(file_hash, key) DO UPDATE SET
+        value     = excluded.value,
+        value_num = excluded.value_num'''
 
 _SQL_UPSERT_COLLECTION_STATUS = '''INSERT INTO collection_status (source, collector, status, collected_at)
     VALUES (?, ?, ?, ?)

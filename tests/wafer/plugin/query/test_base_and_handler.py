@@ -220,6 +220,35 @@ class TestSortRegistry:
         assert items[1] is RandomSort
 
 
+class TestSortRegistryValidation:
+
+    def test_register_valid_meta_key(self):
+        class Good(BaseSortPlugin):
+            NAME = '_test_good'
+            PRIORITY = 0
+            META_KEY = 'valid_key'
+        reg = SortRegistry()
+        reg.register(Good)
+        assert reg.get('_test_good') is Good
+
+    def test_register_none_meta_key(self):
+        class NoMeta(BaseSortPlugin):
+            NAME = '_test_nometa'
+            PRIORITY = 0
+        reg = SortRegistry()
+        reg.register(NoMeta)
+        assert reg.get('_test_nometa') is NoMeta
+
+    def test_register_invalid_meta_key_raises(self):
+        class Bad(BaseSortPlugin):
+            NAME = '_test_bad'
+            PRIORITY = 0
+            META_KEY = 'DROP TABLE'
+        reg = SortRegistry()
+        with pytest.raises(ValueError, match='Invalid META_KEY'):
+            reg.register(Bad)
+
+
 class TestGlobalRegistries:
 
     def test_builtins_registered_in_filter_registry(self):

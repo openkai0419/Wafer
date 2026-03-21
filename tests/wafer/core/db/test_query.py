@@ -3,7 +3,7 @@ import sqlite3
 import time
 import pytest
 from pathlib import Path
-from wafer.core.db.query import SearchQuery, FileSearchEngine
+from wafer.core.db.query import SearchQuery, FileSearchEngine, _kv_sort_join
 from wafer.utils.formatting import natural_key
 from wafer.core.db.file_db import FileDB
 from wafer.utils.paths import normalize_path
@@ -39,9 +39,9 @@ def populated_db(db_path):
         metas.append((path, "collected", str(mtime), mtime))
         if i % 3 == 0:
             metas.append((path, "Artist", f"photographer_{i % 5}", None))
-        tags.append((fhash, "rating", f"{(i % 5) + 1}"))
+        tags.append((fhash, "rating", f"{(i % 5) + 1}", float((i % 5) + 1)))
         if i % 2 == 0:
-            tags.append((fhash, "category", "landscape" if i < 100 else "office"))
+            tags.append((fhash, "category", "landscape" if i < 100 else "office", None))
     db.upsert_batches(sources, images, metas, tags)
     db.conn.execute("ANALYZE")
     db.conn.commit()
@@ -72,7 +72,7 @@ def special_char_db(tmp_path):
         metas.append((path, "path", path, None))
         metas.append((path, "name", name, None))
         metas.append((path, "Comment", comment, None))
-        tags.append((fhash, "rating", "3"))
+        tags.append((fhash, "rating", "3", 3.0))
     db.upsert_batches(sources, images, metas, tags)
     db.conn.execute("ANALYZE")
     db.conn.commit()
@@ -317,7 +317,7 @@ class TestFileSearchEngineListKeys:
         sources = [("src1", "hash1", 100, 1.0)]
         images = [("c:/test/img.jpg", "src1", 1.5)]
         metas = [("c:/test/img.jpg", "shared_key", "meta_val", None)]
-        tags = [("hash1", "shared_key", "tag_val")]
+        tags = [("hash1", "shared_key", "tag_val", None)]
         db.upsert_batches(sources, images, metas, tags)
         db.conn.commit()
         db.close()
@@ -1119,7 +1119,7 @@ class TestNaturalKeyEdgeCases:
     def test_unicode_characters(self):
         keys = [natural_key(n) for n in ["画僁E.jpg", "画僁E0.jpg", "画僁E.jpg"]]
         names = ["画僁E.jpg", "画僁E0.jpg", "画僁E.jpg"]
-        assert sorted(names, key=natural_key) == ["画僁E.jpg", "画僁E.jpg", "画僁E0.jpg"]
+        assert sorted(names, key=natural_key) == ["画僁E0.jpg", "画僁E.jpg", "画僁E.jpg"]
 
     def test_only_digits(self):
         names = ["100", "20", "3", "1"]
@@ -1186,6 +1186,31 @@ class TestSearchQueryNormalizeInputs:
         q = SearchQuery(keys=None)
         keys, include, exclude = q.normalize_inputs()
         assert keys == []
+
+
+class TestKvSortJoinValidation:
+
+    def test_valid_identifier(self):
+        join, select, order, params = _kv_sort_join('name')
+        assert 'name' in select
+        assert params == ['name', 'name']
+
+    def test_valid_identifier_with_underscore(self):
+        join, select, order, params = _kv_sort_join('my_key_2')
+        assert 'my_key_2' in select
+
+    @pytest.mark.parametrize('bad_key', [
+        'DROP TABLE',
+        'x; --',
+        '1invalid',
+        '',
+        'a b',
+        'key"name',
+        "key'name",
+    ])
+    def test_rejects_invalid_identifier(self, bad_key):
+        with pytest.raises(ValueError, match='Invalid META_KEY'):
+            _kv_sort_join(bad_key)
 
 
 class TestExplainQueryPlanRealDB:

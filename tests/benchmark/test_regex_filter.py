@@ -39,7 +39,7 @@ def _setup_db(tmp_path, n):
         PRIMARY KEY(path, key),
         FOREIGN KEY(path) REFERENCES files(path))''')
     conn.execute('''CREATE TABLE IF NOT EXISTS tags (
-        file_hash TEXT NOT NULL, key TEXT NOT NULL, value TEXT,
+        file_hash TEXT NOT NULL, key TEXT NOT NULL, value TEXT, value_num REAL,
         PRIMARY KEY(file_hash, key),
         FOREIGN KEY(file_hash) REFERENCES hash_index(file_hash))''')
     conn.execute('''CREATE VIEW IF NOT EXISTS files_full AS
@@ -74,13 +74,13 @@ def _setup_db(tmp_path, n):
         meta_rows.append((path, 'path', path, None))
         meta_rows.append((path, 'name', name, None))
         meta_rows.append((path, 'description', meta_val, None))
-        tag_rows.append((fhash, 'category', meta_val))
+        tag_rows.append((fhash, 'category', meta_val, None))
 
     conn.executemany('INSERT INTO hash_index VALUES (?)', hash_rows)
     conn.executemany('INSERT INTO sources VALUES (?,?,?,?)', sources_rows)
     conn.executemany('INSERT INTO files VALUES (?,?,?)', files_rows)
     conn.executemany('INSERT INTO meta_info VALUES (?,?,?,?)', meta_rows)
-    conn.executemany('INSERT INTO tags VALUES (?,?,?)', tag_rows)
+    conn.executemany('INSERT INTO tags VALUES (?,?,?,?)', tag_rows)
     conn.commit()
     conn.close()
     return db_path

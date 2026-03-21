@@ -1,5 +1,5 @@
 from extensions.additional_layout.multispan import (
-    MultiSpanLayout, MultiSpan2x2Layout, MultiSpanCalculator,
+    MultiSpanLayout, MultiSpanTilingLayout, MultiSpanCalculator,
 )
 from wafer.plugin.layout.base import BaseLayoutPlugin
 from wafer.plugin.layout.calc import LayoutData
@@ -488,17 +488,17 @@ def test_no_cell_gaps_all_orientations():
 
 
 def test_2x2_is_plugin():
-    assert issubclass(MultiSpan2x2Layout, BaseLayoutPlugin)
-    assert MultiSpan2x2Layout.NAME == 'multiSpan2x2'
-    assert MultiSpan2x2Layout.DISPLAY_NAME == 'MultiSpan 2x2 Grid'
+    assert issubclass(MultiSpanTilingLayout, BaseLayoutPlugin)
+    assert MultiSpanTilingLayout.NAME == 'multiSpanTiling'
+    assert MultiSpanTilingLayout.DISPLAY_NAME == 'MultiSpan Tiling'
 
 
 def test_2x2_priority():
-    assert MultiSpan2x2Layout.PRIORITY == 84
+    assert MultiSpanTilingLayout.PRIORITY == 84
 
 
 def test_2x2_create_calculator():
-    calc = MultiSpan2x2Layout.create_calculator([1.0, 1.5], 100, 5, 500, 500, 0)
+    calc = MultiSpanTilingLayout.create_calculator([1.0, 1.5], 100, 5, 500, 500, 0)
     assert isinstance(calc, MultiSpanCalculator)
     assert calc._max_span_c == 2
     assert calc._max_span_r == 2
@@ -510,7 +510,7 @@ def test_2x2_create_calculator():
 
 def test_2x2_no_span_exceeds_1x2():
     aspects = [1.0] * 50
-    calc = MultiSpan2x2Layout.create_calculator(aspects, 100, 5, 800, 800, 0)
+    calc = MultiSpanTilingLayout.create_calculator(aspects, 100, 5, 800, 800, 0)
     calc.run()
     layout = calc._result
     base = 100 / 2
@@ -535,7 +535,7 @@ def test_2x2_no_span_exceeds_1x2():
 
 def test_2x2_no_overlap():
     aspects = [1.5, 1.0, 0.5, 1.8, 0.3, 2.0, 1.0, 0.8, 1.2, 0.6] * 10
-    calc = MultiSpan2x2Layout.create_calculator(aspects, 100, 5, 600, 600, 0)
+    calc = MultiSpanTilingLayout.create_calculator(aspects, 100, 5, 600, 600, 0)
     calc.run()
     layout = calc._result
     assert len(layout) == len(aspects)
@@ -549,7 +549,7 @@ def test_2x2_no_overlap():
 def test_2x2_all_orientations_no_overlap():
     aspects = [1.5, 1.0, 0.5, 1.8, 0.3, 2.0, 1.0] * 10
     for ori in range(4):
-        calc = MultiSpan2x2Layout.create_calculator(aspects, 100, 5, 500, 500, ori)
+        calc = MultiSpanTilingLayout.create_calculator(aspects, 100, 5, 500, 500, ori)
         calc.run()
         layout = calc._result
         assert len(layout) == len(aspects)
@@ -562,7 +562,7 @@ def test_2x2_all_orientations_no_overlap():
 
 def test_2x2_has_multispan():
     aspects = [2.0, 0.5] * 20
-    calc = MultiSpan2x2Layout.create_calculator(aspects, 100, 5, 600, 600, 0)
+    calc = MultiSpanTilingLayout.create_calculator(aspects, 100, 5, 600, 600, 0)
     calc.run()
     layout = calc._result
     base = 100 / 2
@@ -577,7 +577,7 @@ def test_2x2_has_multispan():
 def test_2x2_no_none_rects():
     for n in [1, 5, 20, 100]:
         aspects = [0.5 + (i % 5) * 0.5 for i in range(n)]
-        calc = MultiSpan2x2Layout.create_calculator(aspects, 100, 5, 500, 500, 0)
+        calc = MultiSpanTilingLayout.create_calculator(aspects, 100, 5, 500, 500, 0)
         calc.run()
         layout = calc._result
         assert len(layout) == n

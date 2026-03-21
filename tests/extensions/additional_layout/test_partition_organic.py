@@ -12,7 +12,7 @@ def test_is_plugin():
 
 
 def test_priority():
-    assert OrganicPartitionLayout.PRIORITY == 85
+    assert OrganicPartitionLayout.PRIORITY == 87
 
 
 def test_create_calculator():

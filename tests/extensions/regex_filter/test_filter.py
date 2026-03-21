@@ -33,7 +33,7 @@ def _setup_db(tmp_path, files=None, meta=None, tags=None):
         PRIMARY KEY(path, key),
         FOREIGN KEY(path) REFERENCES files(path))''')
     conn.execute('''CREATE TABLE tags (
-        file_hash TEXT NOT NULL, key TEXT NOT NULL, value TEXT,
+        file_hash TEXT NOT NULL, key TEXT NOT NULL, value TEXT, value_num REAL,
         PRIMARY KEY(file_hash, key),
         FOREIGN KEY(file_hash) REFERENCES hash_index(file_hash))''')
     conn.execute('''CREATE VIEW files_full AS
@@ -65,8 +65,8 @@ def _setup_db(tmp_path, files=None, meta=None, tags=None):
 
     for path, key, value in (tags or []):
         fhash = hashlib.md5(path.encode()).hexdigest()
-        conn.execute('INSERT OR REPLACE INTO tags VALUES (?,?,?)',
-                     (fhash, key, value))
+        conn.execute('INSERT OR REPLACE INTO tags VALUES (?,?,?,?)',
+                     (fhash, key, value, None))
 
     conn.commit()
     conn.close()

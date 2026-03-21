@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -169,6 +170,29 @@ class SearchQuery:
         return (subquery, all_params)
 
 
+_IDENTIFIER_RE = re.compile(r'^[a-zA-Z_]\w*$')
+
+
+def _kv_sort_join(meta_key: str):
+    if not _IDENTIFIER_RE.fullmatch(meta_key):
+        raise ValueError(f'Invalid META_KEY: {meta_key!r}')
+    join = (
+        f' LEFT JOIN meta_info AS _mi ON _mi.path = m.path AND _mi."key" = ?'
+        f' LEFT JOIN ('
+        f'SELECT i.path, t.value, t.value_num'
+        f' FROM tags t JOIN sources s ON s.file_hash = t.file_hash'
+        f' JOIN files i ON i.source = s.source'
+        f' WHERE t."key" = ?'
+        f') AS _tg ON _tg.path = m.path'
+    )
+    select = (
+        f', COALESCE(_tg.value, _mi.value) AS {meta_key}'
+        f', COALESCE(_tg.value_num, _mi.value_num) AS {meta_key}_num'
+    )
+    order_expr = 'COALESCE(_tg.value_num, _mi.value_num)'
+    return join, select, order_expr, [meta_key, meta_key]
+
+
 class FileSearchEngine:
     def __init__(self, db_path):
         self.db_path = str(db_path)
@@ -231,22 +255,19 @@ class FileSearchEngine:
         has_custom_sort = plugin and 'sort_rows' in vars(plugin)
         if has_custom_sort:
             if meta_key:
-                col_str += f', _sk.value AS {meta_key}, _sk.value_num AS {meta_key}_num'
-                join_clause = f' LEFT JOIN meta_info AS _sk ON _sk.path = m.path AND _sk."key" = ?'
-                sql = f"SELECT {col_str} FROM files_full AS m JOIN ({path_query}) AS s USING(path){join_clause}"
-                rows = list(cur.execute(sql, [*params, meta_key]).fetchall())
+                kv_join, kv_select, _, kv_params = _kv_sort_join(meta_key)
+                sql = f"SELECT {col_str}{kv_select} FROM files_full AS m JOIN ({path_query}) AS s USING(path){kv_join}"
+                rows = list(cur.execute(sql, [*params, *kv_params]).fetchall())
             else:
                 sql = f"SELECT {col_str} FROM files_full AS m JOIN ({path_query}) AS s USING(path)"
                 rows = list(cur.execute(sql, params).fetchall())
             rows = plugin.sort_rows(rows, ascending)
         elif meta_key:
             order = 'ASC' if ascending else 'DESC'
-            join_clause = (
-                f' LEFT JOIN meta_info AS _sk ON _sk.path = m.path AND _sk."key" = ?'
-                f' ORDER BY _sk.value_num {order}'
-            )
+            kv_join, _, kv_order, kv_params = _kv_sort_join(meta_key)
+            join_clause = f'{kv_join} ORDER BY {kv_order} {order}'
             sql = f"SELECT {col_str} FROM files_full AS m JOIN ({path_query}) AS s USING(path){join_clause}"
-            rows = cur.execute(sql, [*params, meta_key]).fetchall()
+            rows = cur.execute(sql, [*params, *kv_params]).fetchall()
         else:
             sql = f"SELECT {col_str} FROM files_full AS m JOIN ({path_query}) AS s USING(path)"
             rows = cur.execute(sql, params).fetchall()

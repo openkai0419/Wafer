@@ -84,7 +84,7 @@ class IndexerProcess:
     def _register_periodic_tasks(self):
         self.scheduler.add_periodic_task(PeriodicTask(
             name='truncate_checkpoint',
-            interval=60*1.0,
+            interval=10.0,
             once_per_idle=True,
             create_task=lambda: Task.create(
                 'checkpoint',
@@ -136,7 +136,7 @@ class IndexerProcess:
         self.scheduler.add_periodic_task(PeriodicTask(
             name='idle_progress_reset',
             interval=60*20.0,
-            idle_delay=60*1.0,
+            idle_delay=30.0,
             once_per_idle=True,
             create_task=lambda: Task.create(
                 'progress_reset',

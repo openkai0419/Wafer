@@ -2,7 +2,7 @@ import py_compile
 import time
 from unittest.mock import MagicMock
 
-from wafer.app.indexer.collector_receiver import CollectorReceiver, _parse_batch, _BATCH_SIZE
+from wafer.app.indexer.collector_receiver import CollectorReceiver, _parse_batch, _BATCH_SIZE, _try_float
 
 
 class _StubMsg:
@@ -134,3 +134,85 @@ def test_parse_batch_ok_overrides_fail():
 
 def test_batch_size_positive():
     assert _BATCH_SIZE > 0
+
+
+def test_try_float_none():
+    assert _try_float(None) is None
+
+
+def test_try_float_int():
+    assert _try_float(42) == 42.0
+
+
+def test_try_float_float():
+    assert _try_float(3.14) == 3.14
+
+
+def test_try_float_numeric_string():
+    assert _try_float('123.456') == 123.456
+
+
+def test_try_float_non_numeric_string():
+    assert _try_float('hello') is None
+
+
+def test_try_float_exif_datetime():
+    result = _try_float('2024:01:15 10:30:45')
+    assert isinstance(result, float)
+    assert result > 0
+    from datetime import datetime, timezone
+    expected = datetime(2024, 1, 15, 10, 30, 45, tzinfo=timezone.utc).timestamp()
+    assert result == expected
+
+
+def test_try_float_iso_datetime():
+    result = _try_float('2024-01-15 10:30:45')
+    assert isinstance(result, float)
+    from datetime import datetime, timezone
+    expected = datetime(2024, 1, 15, 10, 30, 45, tzinfo=timezone.utc).timestamp()
+    assert result == expected
+
+
+def test_try_float_date_only_colon():
+    result = _try_float('2024:06:01')
+    assert isinstance(result, float)
+    from datetime import datetime, timezone
+    expected = datetime(2024, 6, 1, tzinfo=timezone.utc).timestamp()
+    assert result == expected
+
+
+def test_try_float_date_only_hyphen():
+    result = _try_float('2024-06-01')
+    assert isinstance(result, float)
+    from datetime import datetime, timezone
+    expected = datetime(2024, 6, 1, tzinfo=timezone.utc).timestamp()
+    assert result == expected
+
+
+def test_try_float_invalid_date():
+    assert _try_float('not-a-date') is None
+
+
+def test_try_float_empty_string():
+    assert _try_float('') is None
+
+
+def test_try_float_preserves_existing_numeric():
+    assert _try_float('100') == 100.0
+    assert _try_float('3.14') == 3.14
+
+
+def test_parse_batch_exif_datetime_value_num():
+    results = [{
+        'source': 'img.jpg',
+        'file_hash': 'h1',
+        'meta_info': {'exif.DateTimeOriginal': '2024:01:15 10:30:45'},
+        'status': True,
+        'collector': 'exif',
+    }]
+    data = _parse_batch(results)
+    dt_entry = [e for e in data['meta_info_entries'] if e[1] == 'exif.DateTimeOriginal']
+    assert len(dt_entry) == 1
+    assert dt_entry[0][2] == '2024:01:15 10:30:45'
+    assert isinstance(dt_entry[0][3], float)
+    assert dt_entry[0][3] > 0

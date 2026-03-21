@@ -51,6 +51,25 @@ class CollectorReceiver:
         AppLogger.info(f'[Receiver] Queued {len(results)} results')
 
 
+_DATETIME_FORMATS = (
+    '%Y:%m:%d %H:%M:%S',
+    '%Y-%m-%d %H:%M:%S',
+    '%Y:%m:%d',
+    '%Y-%m-%d',
+)
+
+
+def _try_parse_datetime(s: str):
+    from datetime import datetime, timezone
+    for fmt in _DATETIME_FORMATS:
+        try:
+            dt = datetime.strptime(s.strip(), fmt)
+            return dt.replace(tzinfo=timezone.utc).timestamp()
+        except ValueError:
+            continue
+    return None
+
+
 def _try_float(v):
     if v is None:
         return None
@@ -59,7 +78,12 @@ def _try_float(v):
     try:
         return float(v)
     except (ValueError, TypeError):
-        return None
+        pass
+    if isinstance(v, str):
+        ts = _try_parse_datetime(v)
+        if ts is not None:
+            return ts
+    return None
 
 
 def _parse_batch(results: list[dict[str, Any]]) -> dict[str, Any]:

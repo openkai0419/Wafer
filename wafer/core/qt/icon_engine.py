@@ -327,6 +327,19 @@ def _draw_cross(p: QPainter, r: QRectF, color: QColor):
     p.drawLine(QPointF(r.right() - m, r.top() + m), QPointF(r.left() + m, r.bottom() - m))
 
 
+@_register('chevron_down', padding=0.15)
+def _draw_chevron_down(p: QPainter, r: QRectF, color: QColor):
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(color)
+    oy = r.height() * 0.15
+    path = QPainterPath()
+    path.moveTo(QPointF(r.left(), r.top() + oy))
+    path.lineTo(QPointF(r.right(), r.top() + oy))
+    path.lineTo(QPointF(r.center().x(), r.bottom() - oy))
+    path.closeSubpath()
+    p.drawPath(path)
+
+
 @_register('sort', padding=0.09)
 def _draw_sort(p: QPainter, r: QRectF, color: QColor):
     lw = max(1.5, min(r.width(), r.height()) * 0.10)

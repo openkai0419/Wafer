@@ -60,7 +60,7 @@ class CollectorWorker:
             file_info = {p: tuple(v) for p, v in file_info_raw.items()}
 
             def process_one(p):
-                info = file_info.get(p, (0.0, 0, 0.0))
+                info = file_info.get(p, (0.0, 0))
                 result = self._plugin.process(normalize_path(p), info)
                 items = result if isinstance(result, list) else [result]
                 return [r.to_dict() if isinstance(r, CollectorResult) else r for r in items]

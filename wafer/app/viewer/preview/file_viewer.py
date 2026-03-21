@@ -23,16 +23,19 @@ _DEFAULT_WIDGET_NAME = '_default'
 
 def _format_meta(engine, path):
     source, image, tags, meta_infos = engine.get_all_metadata(path)
-    if source.get("status"):
-        source.pop("status")
     if image.get("source"):
         image.pop("source")
     if image.get("aspect_ratio"):
         image["aspect_ratio"] = format_aspect(image.get("aspect_ratio"))
     source["size"] = format_size_detail(source.get("size"))
     source["modified"] = format_timestamp(source.get("modified"))
-    source["created"] = format_timestamp(source.get("created"))
-    source["collected"] = format_timestamp(source.get("collected"))
+    for k in ('created', 'collected', 'modified', 'size'):
+        raw = meta_infos.get(k)
+        if raw is not None:
+            try:
+                meta_infos[k] = format_timestamp(float(raw)) if k != 'size' else format_size_detail(float(raw))
+            except (ValueError, TypeError):
+                pass
     meta_infos = {k: meta_infos[k] for k in natsorted(meta_infos)}
     tags = {k: tags[k] for k in natsorted(tags)}
     return [source, image, tags, meta_infos]

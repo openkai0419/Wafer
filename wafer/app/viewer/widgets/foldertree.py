@@ -336,6 +336,8 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
         if not target_path or target_path in self.excluded:
             return False
         target_norm = normalize_path(target_path)
+        if not os.path.isdir(target_norm):
+            return False
 
         if data.hasFormat(self._mime_type):
             if action != QtCore.Qt.MoveAction:

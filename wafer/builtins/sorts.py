@@ -44,25 +44,25 @@ class NaturalNameSort(BaseSortPlugin):
 class ModifiedSort(BaseSortPlugin):
     NAME = 'modified'
     PRIORITY = 80
-    SQL_COLUMN = 'modified'
+    META_KEY = 'modified'
 
 
 class CreatedSort(BaseSortPlugin):
     NAME = 'created'
     PRIORITY = 70
-    SQL_COLUMN = 'created'
+    META_KEY = 'created'
 
 
 class SizeSort(BaseSortPlugin):
     NAME = 'size'
     PRIORITY = 60
-    SQL_COLUMN = 'size'
+    META_KEY = 'size'
 
 
 class CollectedSort(BaseSortPlugin):
     NAME = 'collected'
     PRIORITY = 50
-    SQL_COLUMN = 'collected'
+    META_KEY = 'collected'
 
 
 class RandomSort(BaseSortPlugin):

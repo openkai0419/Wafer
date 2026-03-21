@@ -24,12 +24,18 @@ def populated_db(db_path):
         path = f"{d}/img_{i:04d}.jpg"
         source = path
         fhash = f"hash_{i:04d}"
-        sources.append((source, fhash, 1000 + i, float(1700000000 + i), float(1700000000 + i), float(1700000000 + i), None))
+        mtime = float(1700000000 + i)
+        fsize = 1000 + i
+        sources.append((source, fhash, fsize, mtime))
         images.append((path, source, f"img_{i:04d}.jpg", 1.5))
-        metas.append((path, "dpi", f"{72 + (i % 4) * 24}"))
-        metas.append((path, "Comment", f"photo number {i}"))
+        metas.append((path, "dpi", f"{72 + (i % 4) * 24}", None))
+        metas.append((path, "Comment", f"photo number {i}", None))
+        metas.append((path, "size", str(fsize), float(fsize)))
+        metas.append((path, "modified", str(mtime), mtime))
+        metas.append((path, "created", str(mtime), mtime))
+        metas.append((path, "collected", str(mtime), mtime))
         if i % 3 == 0:
-            metas.append((path, "Artist", f"photographer_{i % 5}"))
+            metas.append((path, "Artist", f"photographer_{i % 5}", None))
         tags.append((fhash, "rating", f"{(i % 5) + 1}"))
         if i % 2 == 0:
             tags.append((fhash, "category", "landscape" if i < 100 else "office"))
@@ -58,9 +64,9 @@ def special_char_db(tmp_path):
         ("C:/data/sub_dir/nested.jpg", "nested.jpg", "h8", "nested"),
     ]
     for path, name, fhash, comment in special_names:
-        sources.append((path, fhash, 100, 1.0, 1.0, 1.0, None))
+        sources.append((path, fhash, 100, 1.0))
         images.append((path, path, name, 1.5))
-        metas.append((path, "Comment", comment))
+        metas.append((path, "Comment", comment, None))
         tags.append((fhash, "rating", "3"))
     db.upsert_batches(sources, images, metas, tags)
     db.conn.execute("ANALYZE")
@@ -304,9 +310,9 @@ class TestFileSearchEngineListKeys:
         db = FileDB(db_path)
         db.start()
         db.initialize_database()
-        sources = [("src1", "hash1", 100, 1.0, 1.0, 1.0, None)]
+        sources = [("src1", "hash1", 100, 1.0)]
         images = [("c:/test/img.jpg", "src1", "img.jpg", 1.5)]
-        metas = [("c:/test/img.jpg", "shared_key", "meta_val")]
+        metas = [("c:/test/img.jpg", "shared_key", "meta_val", None)]
         tags = [("hash1", "shared_key", "tag_val")]
         db.upsert_batches(sources, images, metas, tags)
         db.conn.commit()
@@ -869,7 +875,7 @@ class TestAspectRatioFallback:
         db = FileDB(db_path)
         db.start()
         db.initialize_database()
-        sources = [("C:/test/img.jpg", "hash1", 100, 1.0, 1.0, 1.0, None)]
+        sources = [("C:/test/img.jpg", "hash1", 100, 1.0)]
         images = [("C:/test/img.jpg", "C:/test/img.jpg", "img.jpg", None)]
         db.upsert_batches(sources, images, [], [])
         db.conn.commit()
@@ -884,7 +890,7 @@ class TestAspectRatioFallback:
         db = FileDB(db_path)
         db.start()
         db.initialize_database()
-        sources = [("C:/test/img.jpg", "hash1", 100, 1.0, 1.0, 1.0, None)]
+        sources = [("C:/test/img.jpg", "hash1", 100, 1.0)]
         images = [("C:/test/img.jpg", "C:/test/img.jpg", "img.jpg", 1.777)]
         db.upsert_batches(sources, images, [], [])
         db.conn.commit()
@@ -1074,8 +1080,8 @@ class TestSearchSourceValues:
         db.start()
         db.initialize_database()
         sources = [
-            ("src_a.png", "h1", 100, 1.0, 1.0, 1.0, None),
-            ("src_b.png", "h2", 200, 2.0, 2.0, 2.0, None),
+            ("src_a.png", "h1", 100, 1.0),
+            ("src_b.png", "h2", 200, 2.0),
         ]
         images = [
             ("C:/dir/a.jpg", "src_a.png", "a.jpg", 1.5),

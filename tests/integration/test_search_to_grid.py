@@ -33,7 +33,6 @@ def _process_events_until(predicate, timeout_ms=10000):
 def _write_results_to_db(db, results):
     data = _parse_batch(results)
     db.upsert_collection_results(
-        data['source_updates'],
         data['image_entries'],
         data['meta_info_entries'],
         data['tag_entries'],
@@ -58,11 +57,11 @@ def _build_populated_db(tmp_path, images):
         pending = idx.db.get_pending_sources('exif')
         if pending:
             paths = [row[0] for row in pending]
-            file_info_map = {row[0]: (row[1], row[2], row[3]) for row in pending}
+            file_info_map = {row[0]: (row[1], row[2]) for row in pending}
             idx.db.mark_dispatched(paths, 'exif')
             results = []
             for p in paths:
-                info = file_info_map.get(p, (0.0, 0, 0.0))
+                info = file_info_map.get(p, (0.0, 0))
                 r = plugin.process(p, info).to_dict()
                 r['collector'] = 'exif'
                 results.append(r)

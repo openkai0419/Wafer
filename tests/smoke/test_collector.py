@@ -55,7 +55,7 @@ class TestSmokeCollector:
         file_info = {}
         for p in paths:
             st = os.stat(p)
-            file_info[p] = (st.st_mtime, st.st_size, st.st_ctime)
+            file_info[p] = (st.st_mtime, st.st_size)
 
         broker = Broker()
         broker.start()
@@ -94,7 +94,7 @@ class TestSmokeCollector:
         _create_test_image(img_path, 400, 300)
         norm_path = normalize_path(str(img_path))
         st = os.stat(norm_path)
-        info = (st.st_mtime, st.st_size, st.st_ctime)
+        info = (st.st_mtime, st.st_size)
 
         plugin = collector_resolver.registry.get('exif')()
         result = plugin.process(norm_path, info)

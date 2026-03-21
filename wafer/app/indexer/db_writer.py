@@ -37,14 +37,14 @@ class DatabaseWriter:
         self._db.try_checkpoint('PASSIVE')
 
     @profiler.profile
-    def upsert_sources(self, source_entries, image_entries):
-        self._db.upsert_basic_sources(source_entries, image_entries)
+    def upsert_sources(self, source_entries, image_entries, meta_info_entries=()):
+        self._db.upsert_basic_sources(source_entries, image_entries, meta_info_entries)
         self._db.try_checkpoint('PASSIVE')
 
     @profiler.profile
-    def upsert_results(self, source_updates, image_entries, meta_info_entries, tag_entries, collector_status_entries):
+    def upsert_results(self, image_entries, meta_info_entries, tag_entries, collector_status_entries):
         self._db.upsert_collection_results(
-            source_updates, image_entries, meta_info_entries, tag_entries, collector_status_entries,
+            image_entries, meta_info_entries, tag_entries, collector_status_entries,
         )
         self._db.try_checkpoint('PASSIVE')
 

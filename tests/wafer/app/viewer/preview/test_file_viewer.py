@@ -11,37 +11,37 @@ def test_compile():
 def test_format_meta_strips_status_and_source():
     engine = MagicMock()
     engine.get_all_metadata.return_value = (
-        {"path": "/a.png", "status": "active", "size": 1024, "modified": 0, "created": 0, "collected": 0},
+        {"path": "/a.png", "size": 1024, "modified": 0},
         {"source": "/a.png", "width": 100, "height": 200},
         {},
         {},
     )
     result = _format_meta(engine, "/a.png")
     source, image, tags, meta = result
-    assert "status" not in source
     assert "source" not in image
 
 
 def test_format_meta_formats_size_and_timestamps():
     engine = MagicMock()
     engine.get_all_metadata.return_value = (
-        {"size": 2048, "modified": 1700000000, "created": 1700000000, "collected": 1700000000},
+        {"size": 2048, "modified": 1700000000},
         {},
         {},
-        {},
+        {"created": "1700000000", "collected": "1700000000", "modified": "1700000000", "size": "2048"},
     )
     result = _format_meta(engine, "/a.png")
     source = result[0]
+    meta = result[3]
     assert isinstance(source["size"], str)
     assert isinstance(source["modified"], str)
-    assert isinstance(source["created"], str)
-    assert isinstance(source["collected"], str)
+    assert isinstance(meta["created"], str)
+    assert isinstance(meta["collected"], str)
 
 
 def test_format_meta_sorts_tags_and_meta():
     engine = MagicMock()
     engine.get_all_metadata.return_value = (
-        {"size": 0, "modified": 0, "created": 0, "collected": 0},
+        {"size": 0, "modified": 0},
         {},
         {"z_tag": "1", "a_tag": "2"},
         {"z_key": "x", "a_key": "y"},
@@ -56,7 +56,7 @@ def test_format_meta_sorts_tags_and_meta():
 def test_format_meta_aspect_ratio():
     engine = MagicMock()
     engine.get_all_metadata.return_value = (
-        {"size": 0, "modified": 0, "created": 0, "collected": 0},
+        {"size": 0, "modified": 0},
         {"aspect_ratio": 1.5},
         {},
         {},

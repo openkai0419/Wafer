@@ -27,7 +27,7 @@ def _setup_db(tmp_path, n):
     conn.execute('''CREATE TABLE IF NOT EXISTS sources (
         source TEXT PRIMARY KEY,
         file_hash TEXT NOT NULL,
-        size INTEGER, modified REAL, created REAL, collected REAL, status TEXT,
+        size INTEGER, modified REAL,
         FOREIGN KEY(file_hash) REFERENCES hash_index(file_hash))''')
     conn.execute('''CREATE TABLE IF NOT EXISTS files (
         path TEXT PRIMARY KEY,
@@ -36,7 +36,7 @@ def _setup_db(tmp_path, n):
         aspect_ratio REAL,
         FOREIGN KEY(source) REFERENCES sources(source))''')
     conn.execute('''CREATE TABLE IF NOT EXISTS meta_info (
-        path TEXT NOT NULL, key TEXT NOT NULL, value TEXT,
+        path TEXT NOT NULL, key TEXT NOT NULL, value TEXT, value_num REAL,
         PRIMARY KEY(path, key),
         FOREIGN KEY(path) REFERENCES files(path))''')
     conn.execute('''CREATE TABLE IF NOT EXISTS tags (
@@ -45,7 +45,7 @@ def _setup_db(tmp_path, n):
         FOREIGN KEY(file_hash) REFERENCES hash_index(file_hash))''')
     conn.execute('''CREATE VIEW IF NOT EXISTS files_full AS
         SELECT i.path, i.source, i.name, i.aspect_ratio,
-               s.file_hash, s.size, s.modified, s.created, s.collected, s.status
+               s.file_hash, s.size, s.modified
         FROM files i JOIN sources s ON s.source = i.source''')
     conn.executescript('''
         CREATE INDEX IF NOT EXISTS idx_meta_info_key_fid ON meta_info(key, path);
@@ -70,15 +70,15 @@ def _setup_db(tmp_path, n):
             meta_val = f'tag_normal_description_{i}'
         name = os.path.basename(path)
         hash_rows.append((fhash,))
-        sources_rows.append((source, fhash, 1024 * i, float(i), float(i), float(i), 'ok'))
+        sources_rows.append((source, fhash, 1024 * i, float(i)))
         files_rows.append((path, source, name, 1.5))
-        meta_rows.append((path, 'description', meta_val))
+        meta_rows.append((path, 'description', meta_val, None))
         tag_rows.append((fhash, 'category', meta_val))
 
     conn.executemany('INSERT INTO hash_index VALUES (?)', hash_rows)
-    conn.executemany('INSERT INTO sources VALUES (?,?,?,?,?,?,?)', sources_rows)
+    conn.executemany('INSERT INTO sources VALUES (?,?,?,?)', sources_rows)
     conn.executemany('INSERT INTO files VALUES (?,?,?,?)', files_rows)
-    conn.executemany('INSERT INTO meta_info VALUES (?,?,?)', meta_rows)
+    conn.executemany('INSERT INTO meta_info VALUES (?,?,?,?)', meta_rows)
     conn.executemany('INSERT INTO tags VALUES (?,?,?)', tag_rows)
     conn.commit()
     conn.close()

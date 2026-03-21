@@ -30,13 +30,16 @@ def populated_db(tmp_path):
         path = f"{d}/img_{i:04d}.jpg"
         source = path
         fhash = f"hash_{i:04d}"
-        sources.append((source, fhash, 1000 + i, float(1700000000 + i),
-                         float(1700000000 + i), float(1700000000 + i), None))
+        sources.append((source, fhash, 1000 + i, float(1700000000 + i)))
         images.append((path, source, f"img_{i:04d}.jpg", 1.5))
-        metas.append((path, "dpi", f"{72 + (i % 4) * 24}"))
-        metas.append((path, "Comment", f"photo number {i}"))
+        metas.append((path, "dpi", f"{72 + (i % 4) * 24}", None))
+        metas.append((path, "Comment", f"photo number {i}", None))
+        metas.append((path, "size", str(1000 + i), float(1000 + i)))
+        metas.append((path, "modified", str(float(1700000000 + i)), float(1700000000 + i)))
+        metas.append((path, "created", str(float(1700000000 + i)), float(1700000000 + i)))
+        metas.append((path, "collected", str(float(1700000000 + i)), float(1700000000 + i)))
         if i % 3 == 0:
-            metas.append((path, "Artist", f"photographer_{i % 5}"))
+            metas.append((path, "Artist", f"photographer_{i % 5}", None))
         tags.append((fhash, "rating", f"{(i % 5) + 1}"))
         if i % 2 == 0:
             tags.append((fhash, "category", "landscape" if i < 100 else "office"))
@@ -65,9 +68,9 @@ def special_db(tmp_path):
         ("C:/data/sub_dir/nested.jpg", "nested.jpg", "h8", "nested"),
     ]
     for path, name, fhash, comment in special_names:
-        sources.append((path, fhash, 100, 1.0, 1.0, 1.0, None))
+        sources.append((path, fhash, 100, 1.0))
         images.append((path, path, name, 1.5))
-        metas.append((path, "Comment", comment))
+        metas.append((path, "Comment", comment, None))
         tags.append((fhash, "rating", "3"))
     db.upsert_batches(sources, images, metas, tags)
     db.conn.execute("ANALYZE")

@@ -19,9 +19,6 @@ _TABLES = (
         file_hash TEXT NOT NULL,
         size INTEGER, 
         modified REAL, 
-        created REAL, 
-        collected REAL,
-        status TEXT DEFAULT NULL,
         FOREIGN KEY(file_hash) REFERENCES hash_index(file_hash) ON DELETE CASCADE
     )'''),
     ('files', ('sources',),
@@ -37,6 +34,7 @@ _TABLES = (
         path TEXT NOT NULL, 
         key TEXT NOT NULL, 
         value TEXT,
+        value_num REAL,
         PRIMARY KEY(path, key),
         FOREIGN KEY(path) REFERENCES files(path) ON UPDATE CASCADE ON DELETE CASCADE
     )'''),
@@ -63,7 +61,7 @@ _VIEWS = (
     ('files_full',
      '''CREATE VIEW files_full AS
         SELECT i.path, i.source, i.name, i.aspect_ratio,
-               s.file_hash, s.size, s.modified, s.created, s.collected, s.status
+               s.file_hash, s.size, s.modified
         FROM files i JOIN sources s ON s.source = i.source'''),
     ('kv_all',
      '''CREATE VIEW kv_all AS
@@ -95,24 +93,20 @@ _INDEXES_SQL = """
     CREATE INDEX IF NOT EXISTS idx_sources_file_hash ON sources(file_hash);
     CREATE INDEX IF NOT EXISTS idx_files_source ON files(source);
     CREATE INDEX IF NOT EXISTS idx_meta_info_key_fid ON meta_info(key, path);
+    CREATE INDEX IF NOT EXISTS idx_meta_info_key_num ON meta_info(key, value_num);
     CREATE INDEX IF NOT EXISTS idx_tags_key_fid ON tags(key, file_hash);
     CREATE INDEX IF NOT EXISTS idx_files_name_path ON files(name, path);
     CREATE INDEX IF NOT EXISTS idx_sources_modified_source ON sources(modified, source);
     CREATE INDEX IF NOT EXISTS idx_sources_size_source ON sources(size, source);
-    CREATE INDEX IF NOT EXISTS idx_sources_created_source ON sources(created, source);
-    CREATE INDEX IF NOT EXISTS idx_sources_collected_source ON sources(collected, source);
     CREATE INDEX IF NOT EXISTS idx_cs_collector_status ON collection_status(collector, status);
 """
 
-_SQL_UPSERT_SOURCES = '''INSERT INTO sources (source, file_hash, size, modified, created, collected, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+_SQL_UPSERT_SOURCES = '''INSERT INTO sources (source, file_hash, size, modified)
+    VALUES (?, ?, ?, ?)
     ON CONFLICT(source) DO UPDATE SET
         file_hash = excluded.file_hash,
         size      = excluded.size,
-        modified  = excluded.modified,
-        created   = excluded.created,
-        collected = excluded.collected,
-        status    = excluded.status'''
+        modified  = excluded.modified'''
 
 _SQL_UPSERT_FILES = '''INSERT INTO files (path, source, name, aspect_ratio)
     VALUES (?, ?, ?, ?)
@@ -128,9 +122,11 @@ _SQL_UPSERT_FILES_COALESCE = '''INSERT INTO files (path, source, name, aspect_ra
         name         = COALESCE(excluded.name, files.name),
         aspect_ratio = COALESCE(excluded.aspect_ratio, files.aspect_ratio)'''
 
-_SQL_UPSERT_META = '''INSERT INTO meta_info (path, key, value)
-    VALUES (?, ?, ?)
-    ON CONFLICT(path, key) DO UPDATE SET value = excluded.value'''
+_SQL_UPSERT_META = '''INSERT INTO meta_info (path, key, value, value_num)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(path, key) DO UPDATE SET
+        value     = excluded.value,
+        value_num = excluded.value_num'''
 
 _SQL_UPSERT_TAGS = '''INSERT INTO tags (file_hash, key, value)
     VALUES (?, ?, ?)
@@ -379,24 +375,21 @@ class FileDB:
             cur.close()
 
     @profiler.profile
-    def upsert_basic_sources(self, source_entries, image_entries):
+    def upsert_basic_sources(self, source_entries, image_entries, meta_info_entries=()):
         with self._write_lock, self.conn:
             cur = self.conn.cursor()
             self._ensure_hash_indexes(cur, source_entries)
             cur.executemany(_SQL_UPSERT_SOURCES, source_entries)
             if image_entries:
                 cur.executemany(_SQL_UPSERT_FILES_COALESCE, image_entries)
+            if meta_info_entries:
+                cur.executemany(_SQL_UPSERT_META, meta_info_entries)
             cur.close()
 
     @profiler.profile
-    def upsert_collection_results(self, source_updates, image_entries, meta_info_entries, tag_entries, collector_status_entries):
+    def upsert_collection_results(self, image_entries, meta_info_entries, tag_entries, collector_status_entries):
         with self._write_lock, self.conn:
             cur = self.conn.cursor()
-            if source_updates:
-                cur.executemany(
-                    'UPDATE sources SET collected = ?, status = ? WHERE source = ?',
-                    source_updates,
-                )
             if image_entries:
                 cur.executemany(_SQL_UPSERT_FILES_COALESCE, image_entries)
             if meta_info_entries:
@@ -445,7 +438,7 @@ class FileDB:
     def get_pending_sources(self, collector, limit=5000):
         cur = self.get_reader_cursor()
         cur.execute(
-            '''SELECT cs.source, s.modified, s.size, s.created
+            '''SELECT cs.source, s.modified, s.size
             FROM collection_status cs
             JOIN sources s ON s.source = cs.source
             WHERE cs.collector = ? AND cs.status = 'pending'

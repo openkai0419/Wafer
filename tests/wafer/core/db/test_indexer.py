@@ -103,9 +103,6 @@ def test_register_basic_info(tmp_path):
         prev = idx.db.load_existing_sources()
         assert norm in prev
 
-        row = idx.db.read_conn.execute("SELECT status FROM sources WHERE source=?", (norm,)).fetchone()
-        assert row[0] == 'indexed'
-
         file_row = idx.db.read_conn.execute("SELECT aspect_ratio FROM files WHERE path=?", (norm,)).fetchone()
         assert file_row is not None
 
@@ -265,7 +262,7 @@ def test_backfill_pending_skips_existing(tmp_path):
         paths = _register_files(idx, tmp_path, ['a.jpg', 'b.png'])
         pending_before = idx.db.get_pending_sources('image')
         assert len(pending_before) == 2
-        idx.db.upsert_collection_results([], [], [], [], [(paths[0], 'image', 'ok', 1.0)])
+        idx.db.upsert_collection_results([], [], [], [(paths[0], 'image', 'ok', 1.0)])
         idx.backfill_pending_for_collectors()
         row = idx.db.read_conn.execute(
             "SELECT status FROM collection_status WHERE source=? AND collector='image'",

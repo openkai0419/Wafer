@@ -219,15 +219,21 @@ class DirectoryScanner:
             aspect_map = FileThumbnailer.get_aspect_ratios(chunk)
             source_entries = []
             file_entries = []
+            meta_info_entries = []
             for p in chunk:
                 mtime, fsize, ctime = file_info.get(p, (0.0, 0, 0.0))
                 file_hash = fast_signature_hash(p, fsize, 256)
-                source_entries.append((p, file_hash, fsize, mtime, ctime, now, 'indexed'))
-                file_entries.append((p, p, Path(p).name, aspect_map.get(p, 1.0)))
+                source_entries.append((p, file_hash, fsize, mtime))
+                name = Path(p).name
+                file_entries.append((p, p, name, aspect_map.get(p, 1.0)))
+                meta_info_entries.append((p, 'name', name, None))
+                meta_info_entries.append((p, 'size', str(fsize), float(fsize)))
+                meta_info_entries.append((p, 'modified', str(mtime), mtime))
+                meta_info_entries.append((p, 'created', str(ctime), ctime))
             self._scheduler.submit(Task.create(
                 'upsert_sources',
                 priority=TaskPriority.SCAN,
-                run=lambda se=source_entries, ie=file_entries: self._writer.upsert_sources(se, ie),
+                run=lambda se=source_entries, ie=file_entries, me=meta_info_entries: self._writer.upsert_sources(se, ie, me),
                 cancel_token=token,
                 on_complete=lambda n=len(chunk): (
                     self._progress.increment(n, 0),

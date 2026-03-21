@@ -22,5 +22,5 @@ class CollectorResult:
 class BaseCollectorPlugin(BasePlugin):
 
     @abstractmethod
-    def process(self, path: str, file_info: tuple[float, int, float]) -> CollectorResult:
+    def process(self, path: str, file_info: tuple[float, int]) -> CollectorResult:
         ...

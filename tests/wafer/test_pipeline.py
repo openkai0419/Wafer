@@ -30,8 +30,7 @@ def _create_test_file(path, content=b'dummy'):
 def _get_file_info(path):
     norm = normalize_path(str(path))
     st = os.stat(str(path))
-    ctime = st.st_birthtime if hasattr(st, 'st_birthtime') else st.st_ctime
-    return norm, (st.st_mtime, st.st_size, ctime)
+    return norm, (st.st_mtime, st.st_size)
 
 
 def _run_collector_for_pending(db, plugin, collector_name):
@@ -39,11 +38,11 @@ def _run_collector_for_pending(db, plugin, collector_name):
     if not pending:
         return []
     paths = [row[0] for row in pending]
-    file_info_map = {row[0]: (row[1], row[2], row[3]) for row in pending}
+    file_info_map = {row[0]: (row[1], row[2]) for row in pending}
     db.mark_dispatched(paths, collector_name)
     results = []
     for p in paths:
-        info = file_info_map.get(p, (0.0, 0, 0.0))
+        info = file_info_map.get(p, (0.0, 0))
         result = plugin.process(p, info).to_dict()
         result['collector'] = collector_name
         results.append(result)
@@ -55,7 +54,7 @@ def _write_results_sync(writer, results, collector_name):
         r.setdefault('collector', collector_name)
     data = _parse_batch(results)
     writer.upsert_results(
-        data['source_updates'], data['image_entries'],
+        data['image_entries'],
         data['meta_info_entries'], data['tag_entries'], data['collector_status'],
     )
 
@@ -78,11 +77,6 @@ class TestImagePipeline:
             norm = normalize_path(str(jpg_path))
             prev = idx.db.load_existing_sources()
             assert norm in prev
-
-            row = idx.db.read_conn.execute(
-                "SELECT status FROM sources WHERE source=?", (norm,)
-            ).fetchone()
-            assert row[0] == 'indexed'
 
             file_row = idx.db.read_conn.execute(
                 "SELECT name, aspect_ratio FROM files WHERE path=?", (norm,)
@@ -116,9 +110,9 @@ class TestImagePipeline:
             db.start()
             try:
                 src_row = db.read_conn.execute(
-                    "SELECT status FROM sources WHERE source=?", (norm,)
+                    "SELECT source FROM sources WHERE source=?", (norm,)
                 ).fetchone()
-                assert src_row[0] == 'ok'
+                assert src_row is not None
 
                 file_row = db.read_conn.execute(
                     "SELECT name, aspect_ratio FROM files WHERE path=?", (norm,)
@@ -218,15 +212,15 @@ class TestImagePipeline:
                     ).fetchone()
                     assert cs[0] == 'ok'
                     src = db.read_conn.execute(
-                        "SELECT status FROM sources WHERE source=?", (norm,)
+                        "SELECT source FROM sources WHERE source=?", (norm,)
                     ).fetchone()
-                    assert src[0] == 'ok'
+                    assert src is not None
 
                 txt_norm = normalize_path(str(txt_path))
                 txt_src = db.read_conn.execute(
-                    "SELECT status FROM sources WHERE source=?", (txt_norm,)
+                    "SELECT source FROM sources WHERE source=?", (txt_norm,)
                 ).fetchone()
-                assert txt_src[0] == 'indexed'
+                assert txt_src is not None
 
                 txt_cs = db.read_conn.execute(
                     "SELECT count(*) FROM collection_status WHERE source=?",
@@ -315,11 +309,6 @@ class TestImagePipeline:
             idx.initialize()
             idx.update_index(str(file_dir))
 
-            src_row = idx.db.read_conn.execute(
-                "SELECT status FROM sources WHERE source=?", (norm,)
-            ).fetchone()
-            assert src_row[0] == 'indexed'
-
             pending = idx.db.get_pending_sources('exif')
             assert len(pending) == 1
             assert pending[0][0] == norm
@@ -347,7 +336,7 @@ class TestDispatcherSimulation:
             assert len(pending) == 5
 
             pending_paths = [r[0] for r in pending]
-            file_info_map = {r[0]: (r[1], r[2], r[3]) for r in pending}
+            file_info_map = {r[0]: (r[1], r[2]) for r in pending}
             idx.db.mark_dispatched(pending_paths, 'exif')
 
             dispatched_count = idx.db.read_conn.execute(
@@ -382,9 +371,9 @@ class TestDispatcherSimulation:
                 for p in paths:
                     norm = normalize_path(str(p))
                     row = db.read_conn.execute(
-                        "SELECT status FROM sources WHERE source=?", (norm,)
+                        "SELECT source FROM sources WHERE source=?", (norm,)
                     ).fetchone()
-                    assert row[0] == 'ok'
+                    assert row is not None
             finally:
                 db.close()
 
@@ -426,8 +415,8 @@ class TestWriterCollectorField:
 
         db.conn.execute("INSERT INTO hash_index (file_hash) VALUES ('h1')")
         db.conn.execute(
-            "INSERT INTO sources (source, file_hash, size, modified, created, collected, status) "
-            "VALUES ('src1', 'h1', 100, 1.0, 1.0, NULL, 'indexed')"
+            "INSERT INTO sources (source, file_hash, size, modified) "
+            "VALUES ('src1', 'h1', 100, 1.0)"
         )
         db.conn.execute(
             "INSERT INTO files (path, source, name, aspect_ratio) VALUES ('src1', 'src1', 'test', 1.0)"

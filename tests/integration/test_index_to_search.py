@@ -26,11 +26,11 @@ def _run_collector_for_pending(db, plugin, collector_name):
     if not pending:
         return []
     paths = [row[0] for row in pending]
-    file_info_map = {row[0]: (row[1], row[2], row[3]) for row in pending}
+    file_info_map = {row[0]: (row[1], row[2]) for row in pending}
     db.mark_dispatched(paths, collector_name)
     results = []
     for p in paths:
-        info = file_info_map.get(p, (0.0, 0, 0.0))
+        info = file_info_map.get(p, (0.0, 0))
         result = plugin.process(p, info).to_dict()
         result['collector'] = collector_name
         results.append(result)
@@ -40,7 +40,6 @@ def _run_collector_for_pending(db, plugin, collector_name):
 def _write_results_to_db(db, results):
     data = _parse_batch(results)
     db.upsert_collection_results(
-        data['source_updates'],
         data['image_entries'],
         data['meta_info_entries'],
         data['tag_entries'],

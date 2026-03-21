@@ -152,7 +152,7 @@ class TestTextFilterBindKeyStore:
 class TestBaseSortPlugin:
 
     def test_default_sql_column_none(self):
-        assert BaseSortPlugin.SQL_COLUMN is None
+        assert BaseSortPlugin.META_KEY is None
 
     def test_sort_rows_raises(self):
         with pytest.raises(NotImplementedError):
@@ -164,8 +164,8 @@ class TestBaseSortPlugin:
     def test_concrete_subclass_sql_column(self):
         class MySort(BaseSortPlugin):
             NAME = 'my'
-            SQL_COLUMN = 'created'
-        assert MySort.SQL_COLUMN == 'created'
+            META_KEY = 'created'
+        assert MySort.META_KEY == 'created'
 
 
 class TestFilterRegistry:
@@ -371,26 +371,26 @@ class TestSortPluginAttributes:
 
     def test_natural_path_sort(self):
         assert NaturalPathSort.NAME == 'path'
-        assert NaturalPathSort.SQL_COLUMN is None
+        assert NaturalPathSort.META_KEY is None
         assert 'path' in NaturalPathSort.required_columns()
 
     def test_natural_name_sort(self):
         assert NaturalNameSort.NAME == 'name'
-        assert NaturalNameSort.SQL_COLUMN is None
+        assert NaturalNameSort.META_KEY is None
         assert 'name' in NaturalNameSort.required_columns()
 
     def test_modified_sort(self):
-        assert ModifiedSort.SQL_COLUMN == 'modified'
+        assert ModifiedSort.META_KEY == 'modified'
 
     def test_created_sort(self):
-        assert CreatedSort.SQL_COLUMN == 'created'
+        assert CreatedSort.META_KEY == 'created'
 
     def test_size_sort(self):
-        assert SizeSort.SQL_COLUMN == 'size'
+        assert SizeSort.META_KEY == 'size'
 
     def test_collected_sort(self):
-        assert CollectedSort.SQL_COLUMN == 'collected'
+        assert CollectedSort.META_KEY == 'collected'
 
     def test_random_sort(self):
-        assert RandomSort.SQL_COLUMN is None
+        assert RandomSort.META_KEY is None
         assert RandomSort.NAME == 'random'

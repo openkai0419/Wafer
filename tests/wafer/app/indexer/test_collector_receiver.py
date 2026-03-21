@@ -60,7 +60,7 @@ def test_handle_result_sets_collector_on_results():
     task = scheduler.submit.call_args[0][0]
     task.run()
     call_args = writer.upsert_results.call_args
-    collector_status = call_args[0][4]
+    collector_status = call_args[0][3]
     assert any(c[1] == 'test_coll' for c in collector_status)
 
 
@@ -77,11 +77,11 @@ def test_parse_batch_ok_status():
         'collector': 'exif',
     }]
     data = _parse_batch(results)
-    assert len(data['source_updates']) == 1
-    assert data['source_updates'][0][1] == 'ok'
     assert len(data['image_entries']) == 1
     assert data['image_entries'][0][2] == 'test.png'
-    assert len(data['meta_info_entries']) == 1
+    meta_keys = [e[1] for e in data['meta_info_entries']]
+    assert 'collected' in meta_keys
+    assert 'width' in meta_keys
     assert len(data['tag_entries']) == 1
     assert len(data['collector_status']) == 1
 
@@ -89,7 +89,6 @@ def test_parse_batch_ok_status():
 def test_parse_batch_fail_status():
     results = [{'source': 'fail_src', 'status': False, 'collector': 'exif'}]
     data = _parse_batch(results)
-    assert data['source_updates'][0][1] == 'fail'
     assert data['collector_status'][0][2] == 'fail'
     assert data['image_entries'] == []
     assert data['meta_info_entries'] == []
@@ -108,6 +107,7 @@ def test_parse_batch_skips_none_meta():
     data = _parse_batch(results)
     meta_keys = [e[1] for e in data['meta_info_entries']]
     assert 'width' in meta_keys
+    assert 'collected' in meta_keys
     assert 'empty' not in meta_keys
     tag_keys = [e[1] for e in data['tag_entries']]
     assert 'good' in tag_keys
@@ -120,7 +120,6 @@ def test_parse_batch_multi_path():
         {'source': 'zip.zip', 'path': 'zip.zip::b.png', 'name': 'b.png', 'aspect': 1.5, 'status': True, 'collector': 'zip'},
     ]
     data = _parse_batch(results)
-    assert len(data['source_updates']) == 1
     assert len(data['image_entries']) == 2
 
 
@@ -130,7 +129,6 @@ def test_parse_batch_ok_overrides_fail():
         {'source': 'src', 'name': 'ok.png', 'status': True, 'collector': 'exif'},
     ]
     data = _parse_batch(results)
-    assert data['source_updates'][0][1] == 'ok'
     assert data['collector_status'][0][2] == 'ok'
 
 

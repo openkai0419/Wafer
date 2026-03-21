@@ -38,9 +38,9 @@ def test_filedb_upsert_and_load(tmp_path):
     db = FileDB(tmp_path / 'test.db')
     db.start()
     db.initialize_database()
-    sources = [('src1', 'hash1', 100, 1.0, 1.0, 1.0, 'ok')]
+    sources = [('src1', 'hash1', 100, 1.0)]
     images = [('c:/test/img.jpg', 'src1', 'img.jpg', 1.5)]
-    metas = [('c:/test/img.jpg', 'dpi', '72')]
+    metas = [('c:/test/img.jpg', 'dpi', '72', None)]
     tags = [('hash1', 'rating', '5')]
     db.upsert_batches(sources, images, metas, tags)
     prev = db.load_existing_sources()
@@ -53,7 +53,7 @@ def test_filedb_delete_sources(tmp_path):
     db = FileDB(tmp_path / 'test.db')
     db.start()
     db.initialize_database()
-    sources = [('src1', 'hash1', 100, 1.0, 1.0, 1.0, 'ok')]
+    sources = [('src1', 'hash1', 100, 1.0)]
     db.upsert_batches(sources, [], [], [])
     db.delete_sources_by_paths(['src1'])
     prev = db.load_existing_sources()
@@ -66,9 +66,9 @@ def test_schema_no_change_preserves_data(tmp_path):
     db.start()
     db.initialize_database()
     db.upsert_batches(
-        [('src1', 'hash1', 100, 1.0, 1.0, 1.0, 'ok')],
+        [('src1', 'hash1', 100, 1.0)],
         [('c:/a.jpg', 'src1', 'a.jpg', 1.0)],
-        [('c:/a.jpg', 'k', 'v')],
+        [('c:/a.jpg', 'k', 'v', None)],
         [('hash1', 'tag', 'val')],
     )
     db.close()
@@ -85,7 +85,7 @@ def test_schema_change_drops_and_recreates(tmp_path):
     db.start()
     db.initialize_database()
     db.upsert_batches(
-        [('src1', 'hash1', 100, 1.0, 1.0, 1.0, 'ok')],
+        [('src1', 'hash1', 100, 1.0)],
         [('c:/a.jpg', 'src1', 'a.jpg', 1.0)], [], [],
     )
     db.conn.execute('ALTER TABLE sources ADD COLUMN extra_col TEXT')
@@ -106,9 +106,9 @@ def test_schema_change_cascades_to_children(tmp_path):
     db.start()
     db.initialize_database()
     db.upsert_batches(
-        [('src1', 'hash1', 100, 1.0, 1.0, 1.0, 'ok')],
+        [('src1', 'hash1', 100, 1.0)],
         [('c:/a.jpg', 'src1', 'a.jpg', 1.0)],
-        [('c:/a.jpg', 'k', 'v')], [],
+        [('c:/a.jpg', 'k', 'v', None)], [],
     )
     db.conn.execute('ALTER TABLE sources ADD COLUMN extra_col TEXT')
     db.conn.commit()
@@ -159,7 +159,7 @@ def test_upsert_basic_sources(tmp_path):
     db = FileDB(tmp_path / 'test.db')
     db.start()
     db.initialize_database()
-    sources = [('src1', 'hash1', 100, 1.0, 1.0, 1.0, 'indexed')]
+    sources = [('src1', 'hash1', 100, 1.0)]
     images = [('c:/a.jpg', 'src1', 'a.jpg', None)]
     db.upsert_basic_sources(sources, images)
     prev = db.load_existing_sources()
@@ -174,11 +174,11 @@ def test_upsert_basic_sources_preserves_existing_aspect(tmp_path):
     db.start()
     db.initialize_database()
     db.upsert_basic_sources(
-        [('src1', 'hash1', 100, 1.0, 1.0, 1.0, 'indexed')],
+        [('src1', 'hash1', 100, 1.0)],
         [('c:/a.jpg', 'src1', 'a.jpg', 1.5)],
     )
     db.upsert_basic_sources(
-        [('src1', 'hash1', 100, 2.0, 1.0, 2.0, 'indexed')],
+        [('src1', 'hash1', 100, 2.0)],
         [('c:/a.jpg', 'src1', 'a.jpg', None)],
     )
     row = db.read_conn.execute("SELECT aspect_ratio FROM files WHERE path='c:/a.jpg'").fetchone()
@@ -191,20 +191,17 @@ def test_upsert_collection_results(tmp_path):
     db.start()
     db.initialize_database()
     db.upsert_basic_sources(
-        [('src1', 'hash1', 100, 1.0, 1.0, 1.0, 'indexed')],
+        [('src1', 'hash1', 100, 1.0)],
         [('c:/a.jpg', 'src1', 'a.jpg', None)],
     )
     db.upsert_collection_results(
-        [(2.0, 'ok', 'src1')],
         [('c:/a.jpg', 'src1', 'a.jpg', 1.5)],
-        [('c:/a.jpg', 'width', '1920')],
+        [('c:/a.jpg', 'width', '1920', 1920.0)],
         [('hash1', 'rating', '5')],
         [('src1', 'exif', 'ok', 2.0)],
     )
     row = db.read_conn.execute("SELECT aspect_ratio FROM files WHERE path='c:/a.jpg'").fetchone()
     assert row[0] == 1.5
-    status_row = db.read_conn.execute("SELECT status FROM sources WHERE source='src1'").fetchone()
-    assert status_row[0] == 'ok'
     cs_row = db.read_conn.execute("SELECT status FROM collection_status WHERE source='src1' AND collector='exif'").fetchone()
     assert cs_row[0] == 'ok'
     meta_row = db.read_conn.execute("SELECT value FROM meta_info WHERE path='c:/a.jpg' AND key='width'").fetchone()
@@ -217,7 +214,7 @@ def test_insert_pending_collection(tmp_path):
     db.start()
     db.initialize_database()
     db.upsert_basic_sources(
-        [('src1', 'hash1', 100, 1.0, 1.0, 1.0, 'indexed'), ('src2', 'hash2', 200, 2.0, 2.0, 2.0, 'indexed')],
+        [('src1', 'hash1', 100, 1.0), ('src2', 'hash2', 200, 2.0)],
         [('c:/a.jpg', 'src1', 'a.jpg', None), ('c:/b.jpg', 'src2', 'b.jpg', None)],
     )
     db.insert_pending_collection(['src1', 'src2'], ['exif'])
@@ -233,11 +230,11 @@ def test_get_pending_sources_excludes_completed(tmp_path):
     db.start()
     db.initialize_database()
     db.upsert_basic_sources(
-        [('src1', 'hash1', 100, 1.0, 1.0, 1.0, 'indexed'), ('src2', 'hash2', 200, 2.0, 2.0, 2.0, 'indexed')],
+        [('src1', 'hash1', 100, 1.0), ('src2', 'hash2', 200, 2.0)],
         [('c:/a.jpg', 'src1', 'a.jpg', None), ('c:/b.jpg', 'src2', 'b.jpg', None)],
     )
     db.insert_pending_collection(['src1', 'src2'], ['exif'])
-    db.upsert_collection_results([], [], [], [], [('src1', 'exif', 'ok', 1.0)])
+    db.upsert_collection_results([], [], [], [('src1', 'exif', 'ok', 1.0)])
     rows = db.get_pending_sources('exif')
     assert len(rows) == 1
     assert rows[0][0] == 'src2'
@@ -249,7 +246,7 @@ def test_collection_status_cascade_delete(tmp_path):
     db.start()
     db.initialize_database()
     db.upsert_basic_sources(
-        [('src1', 'hash1', 100, 1.0, 1.0, 1.0, 'indexed')],
+        [('src1', 'hash1', 100, 1.0)],
         [('c:/a.jpg', 'src1', 'a.jpg', None)],
     )
     db.insert_pending_collection(['src1'], ['exif'])
@@ -264,9 +261,9 @@ def test_rename_paths_single_file(tmp_path):
     db.start()
     db.initialize_database()
     db.upsert_batches(
-        [('c:/old/img.jpg', 'hash1', 100, 1.0, 1.0, 1.0, 'ok')],
+        [('c:/old/img.jpg', 'hash1', 100, 1.0)],
         [('c:/old/img.jpg', 'c:/old/img.jpg', 'img.jpg', 1.5)],
-        [('c:/old/img.jpg', 'width', '1920')],
+        [('c:/old/img.jpg', 'width', '1920', 1920.0)],
         [('hash1', 'rating', '5')],
     )
     db.insert_pending_collection(['c:/old/img.jpg'], ['exif'])
@@ -293,14 +290,14 @@ def test_rename_paths_batch(tmp_path):
     db.initialize_database()
     db.upsert_batches(
         [
-            ('c:/dir/a.jpg', 'hash_a', 100, 1.0, 1.0, 1.0, 'ok'),
-            ('c:/dir/b.jpg', 'hash_b', 200, 2.0, 2.0, 2.0, 'ok'),
+            ('c:/dir/a.jpg', 'hash_a', 100, 1.0),
+            ('c:/dir/b.jpg', 'hash_b', 200, 2.0),
         ],
         [
             ('c:/dir/a.jpg', 'c:/dir/a.jpg', 'a.jpg', 1.0),
             ('c:/dir/b.jpg', 'c:/dir/b.jpg', 'b.jpg', 2.0),
         ],
-        [('c:/dir/a.jpg', 'k', 'v1'), ('c:/dir/b.jpg', 'k', 'v2')],
+        [('c:/dir/a.jpg', 'k', 'v1', None), ('c:/dir/b.jpg', 'k', 'v2', None)],
         [],
     )
     db.rename_paths([
@@ -322,7 +319,7 @@ def test_rename_paths_updates_filename(tmp_path):
     db.start()
     db.initialize_database()
     db.upsert_batches(
-        [('c:/dir/old_name.jpg', 'hash1', 100, 1.0, 1.0, 1.0, 'ok')],
+        [('c:/dir/old_name.jpg', 'hash1', 100, 1.0)],
         [('c:/dir/old_name.jpg', 'c:/dir/old_name.jpg', 'old_name.jpg', 1.0)],
         [], [],
     )
@@ -345,7 +342,7 @@ def _setup_db_with_pending(tmp_path, sources_count=3):
     db = FileDB(tmp_path / 'test.db')
     db.start()
     db.initialize_database()
-    srcs = [(f'src{i}', f'h{i}', 100, 1.0, 1.0, 1.0, 'indexed') for i in range(sources_count)]
+    srcs = [(f'src{i}', f'h{i}', 100, 1.0) for i in range(sources_count)]
     imgs = [(f'src{i}', f'src{i}', f'f{i}.jpg', 1.0) for i in range(sources_count)]
     db.upsert_basic_sources(srcs, imgs)
     db.insert_pending_collection([f'src{i}' for i in range(sources_count)], ['exif'])
@@ -428,9 +425,9 @@ def test_get_sources_without_collector(tmp_path):
     db.start()
     db.initialize_database()
     db.upsert_basic_sources(
-        [('src1', 'h1', 100, 1.0, 1.0, 1.0, 'indexed'),
-         ('src2', 'h2', 200, 2.0, 2.0, 2.0, 'indexed'),
-         ('src3', 'h3', 300, 3.0, 3.0, 3.0, 'indexed')],
+        [('src1', 'h1', 100, 1.0),
+         ('src2', 'h2', 200, 2.0),
+         ('src3', 'h3', 300, 3.0)],
         [('c:/a.jpg', 'src1', 'a.jpg', None),
          ('c:/b.jpg', 'src2', 'b.jpg', None),
          ('c:/c.jpg', 'src3', 'c.jpg', None)],
@@ -446,7 +443,7 @@ def test_get_sources_without_collector_empty_when_all_have(tmp_path):
     db.start()
     db.initialize_database()
     db.upsert_basic_sources(
-        [('src1', 'h1', 100, 1.0, 1.0, 1.0, 'indexed')],
+        [('src1', 'h1', 100, 1.0)],
         [('c:/a.jpg', 'src1', 'a.jpg', None)],
     )
     db.insert_pending_collection(['src1'], ['exif'])
@@ -460,7 +457,7 @@ def test_get_sources_without_collector_new_collector(tmp_path):
     db.start()
     db.initialize_database()
     db.upsert_basic_sources(
-        [('src1', 'h1', 100, 1.0, 1.0, 1.0, 'indexed')],
+        [('src1', 'h1', 100, 1.0)],
         [('c:/a.jpg', 'src1', 'a.jpg', None)],
     )
     db.insert_pending_collection(['src1'], ['exif'])
@@ -474,7 +471,7 @@ def test_concurrent_writes_no_error(tmp_path):
     db.start()
     db.initialize_database()
     count = 50
-    srcs = [(f'src{i}', f'h{i}', 100, 1.0, 1.0, 1.0, 'indexed') for i in range(count)]
+    srcs = [(f'src{i}', f'h{i}', 100, 1.0) for i in range(count)]
     imgs = [(f'src{i}', f'src{i}', f'f{i}.jpg', 1.0) for i in range(count)]
     db.upsert_basic_sources(srcs, imgs)
     db.insert_pending_collection([f'src{i}' for i in range(count)], ['exif'])
@@ -492,7 +489,7 @@ def test_concurrent_writes_no_error(tmp_path):
         try:
             barrier.wait()
             db.upsert_basic_sources(
-                [(f'src_new{i}', f'hn{i}', 200, 2.0, 2.0, 2.0, 'indexed') for i in range(10)],
+                [(f'src_new{i}', f'hn{i}', 200, 2.0) for i in range(10)],
                 [(f'src_new{i}', f'src_new{i}', f'n{i}.jpg', 1.0) for i in range(10)],
             )
         except Exception as e:
@@ -526,7 +523,7 @@ def test_ensure_hash_indexes_deduplicates(tmp_path):
     db.initialize_database()
     cur = db.get_writer_cursor()
     db._ensure_hash_indexes(cur,
-        [('src1', 'hash1', 100, 1.0, 1.0, 1.0, 'ok'), ('src2', 'hash1', 200, 2.0, 2.0, 2.0, 'ok')],
+        [('src1', 'hash1', 100, 1.0), ('src2', 'hash1', 200, 2.0)],
         [('hash1', 'tag', 'val'), ('hash2', 'tag', 'val')],
     )
     db.conn.commit()

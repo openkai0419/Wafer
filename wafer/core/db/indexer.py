@@ -2,7 +2,6 @@ from __future__ import annotations
 import bisect
 import os
 import threading
-import time
 from pathlib import Path
 from typing import Sequence
 
@@ -263,18 +262,23 @@ class FileIndexer:
     @profiler.profile
     def _register_basic_info(self, paths, file_info):
         from ..platform.thumbnails import FileThumbnailer
-        now = time.time()
         for i in range(0, len(paths), _CHUNK):
             chunk = paths[i:i + _CHUNK]
             aspect_map = FileThumbnailer.get_aspect_ratios(chunk)
             source_entries = []
             file_entries = []
+            meta_entries = []
             for p in chunk:
                 mtime, fsize, ctime = file_info.get(p, (0.0, 0, 0.0))
                 file_hash = fast_signature_hash(p, fsize, 256)
-                source_entries.append((p, file_hash, fsize, mtime, ctime, now, 'indexed'))
-                file_entries.append((p, p, Path(p).name, aspect_map.get(p, 1.0)))
-            self.db.upsert_basic_sources(source_entries, file_entries)
+                name = Path(p).name
+                source_entries.append((p, file_hash, fsize, mtime))
+                file_entries.append((p, p, name, aspect_map.get(p, 1.0)))
+                meta_entries.append((p, 'name', name, None))
+                meta_entries.append((p, 'size', str(fsize), float(fsize)))
+                meta_entries.append((p, 'modified', str(mtime), mtime))
+                meta_entries.append((p, 'created', str(ctime), ctime))
+            self.db.upsert_basic_sources(source_entries, file_entries, meta_entries)
             self.db.try_checkpoint('PASSIVE')
             self._add_progress(len(chunk), 0)
             self.emit_update()

@@ -41,7 +41,7 @@ def test_initialize_creates_tables(writer):
 
 
 def test_upsert_and_delete_sources(writer):
-    source_entries = [('/a.png', 'hash1', 100, 1.0, 1.0, 1.0, 'indexed')]
+    source_entries = [('/a.png', 'hash1', 100, 1.0)]
     image_entries = [('/a.png', '/a.png', 'a.png', 1.5)]
     writer.upsert_sources(source_entries, image_entries)
 
@@ -62,7 +62,7 @@ def test_upsert_and_delete_sources(writer):
 
 
 def test_rename_paths(writer):
-    source_entries = [('/old.png', 'hash1', 100, 1.0, 1.0, 1.0, 'indexed')]
+    source_entries = [('/old.png', 'hash1', 100, 1.0)]
     image_entries = [('/old.png', '/old.png', 'old.png', 1.0)]
     writer.upsert_sources(source_entries, image_entries)
 
@@ -76,7 +76,7 @@ def test_rename_paths(writer):
 
 
 def test_insert_pending_and_mark_dispatched(writer):
-    source_entries = [('/a.png', 'hash1', 100, 1.0, 1.0, 1.0, 'indexed')]
+    source_entries = [('/a.png', 'hash1', 100, 1.0)]
     image_entries = [('/a.png', '/a.png', 'a.png', 1.0)]
     writer.upsert_sources(source_entries, image_entries)
 
@@ -96,7 +96,7 @@ def test_insert_pending_and_mark_dispatched(writer):
 
 
 def test_reset_stale(writer):
-    source_entries = [('/a.png', 'hash1', 100, 1.0, 1.0, 1.0, 'indexed')]
+    source_entries = [('/a.png', 'hash1', 100, 1.0)]
     image_entries = [('/a.png', '/a.png', 'a.png', 1.0)]
     writer.upsert_sources(source_entries, image_entries)
     writer.insert_pending(['/a.png'], ['exif'])
@@ -111,22 +111,19 @@ def test_reset_stale(writer):
 
 
 def test_upsert_collection_results(writer):
-    source_entries = [('/a.png', 'hash1', 100, 1.0, 1.0, 1.0, 'indexed')]
+    source_entries = [('/a.png', 'hash1', 100, 1.0)]
     image_entries = [('/a.png', '/a.png', 'a.png', 1.0)]
     writer.upsert_sources(source_entries, image_entries)
     writer.insert_pending(['/a.png'], ['exif'])
 
     writer.upsert_results(
-        [(2.0, 'ok', '/a.png')],
         [],
-        [('/a.png', 'width', '1920')],
+        [('/a.png', 'width', '1920', 1920.0)],
         [('hash1', 'rating', '5')],
         [('/a.png', 'exif', 'ok', 2.0)],
     )
 
     cur = writer.db.get_reader_cursor()
-    cur.execute("SELECT status FROM sources WHERE source='/a.png'")
-    assert cur.fetchone()[0] == 'ok'
     cur.execute("SELECT value FROM meta_info WHERE path='/a.png' AND key='width'")
     assert cur.fetchone()[0] == '1920'
     cur.execute("SELECT value FROM tags WHERE file_hash='hash1' AND key='rating'")

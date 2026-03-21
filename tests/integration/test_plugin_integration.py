@@ -316,7 +316,7 @@ class TestIndexingWithVariousFileTypes:
             all_files = idx.db.read_conn.execute("SELECT path FROM files").fetchall()
             assert len(all_files) == 10
 
-            all_sources = idx.db.read_conn.execute("SELECT source, status FROM sources").fetchall()
+            all_sources = idx.db.read_conn.execute("SELECT source FROM sources").fetchall()
             assert len(all_sources) == 10
 
             pending = idx.db.get_pending_sources('exif')

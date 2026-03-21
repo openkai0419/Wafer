@@ -1,12 +1,13 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-addopts = "--import-mode=importlib -p pytestqt"
+addopts = "--import-mode=importlib -p pytestqt -m 'not benchmark and not slow'"
 timeout = 30
 timeout_method = "thread"
 qt_default_raising = true
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "benchmark: performance benchmarks (deselect with '-m \"not benchmark\"')",
     "unstable: tests that may crash the process (e.g. native mpv). skipped unless --run-unstable is given",
 ]
 

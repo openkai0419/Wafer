@@ -76,10 +76,9 @@ class TestFsWatchToDb:
 
             norm = normalize_path(str(img_dir / 'new_file.jpg'))
             row = writer.db.read_conn.execute(
-                "SELECT status FROM sources WHERE source=?", (norm,)
+                "SELECT source FROM sources WHERE source=?", (norm,)
             ).fetchone()
             assert row is not None
-            assert row[0] == 'indexed'
         finally:
             watcher.stop()
             scanner.stop()

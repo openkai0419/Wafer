@@ -40,7 +40,7 @@ class CollectorReceiver:
                 'upsert_results',
                 priority=TaskPriority.COLLECTION,
                 run=lambda d=data: self._writer.upsert_results(
-                    d['source_updates'], d['image_entries'],
+                    d['image_entries'],
                     d['meta_info_entries'], d['tag_entries'], d['collector_status'],
                 ),
                 on_complete=lambda n=len(chunk): (
@@ -51,8 +51,18 @@ class CollectorReceiver:
         AppLogger.info(f'[Receiver] Queued {len(results)} results')
 
 
+def _try_float(v):
+    if v is None:
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    try:
+        return float(v)
+    except (ValueError, TypeError):
+        return None
+
+
 def _parse_batch(results: list[dict[str, Any]]) -> dict[str, Any]:
-    source_update_map: dict[str, tuple] = {}
     image_entries: list[tuple] = []
     meta_info_entries: list[tuple] = []
     tag_entries: list[tuple] = []
@@ -72,9 +82,6 @@ def _parse_batch(results: list[dict[str, Any]]) -> dict[str, Any]:
 
         ok = bool(status)
         s_status = 'ok' if ok else 'fail'
-        prev = source_update_map.get(source)
-        if prev is None or s_status == 'ok':
-            source_update_map[source] = (now, s_status, source)
         cs_key = (source, collector)
         prev_cs = collector_status_map.get(cs_key)
         if prev_cs is None or s_status == 'ok':
@@ -83,16 +90,16 @@ def _parse_batch(results: list[dict[str, Any]]) -> dict[str, Any]:
         if ok:
             if name or aspect or (path != source):
                 image_entries.append((path, source, name, aspect))
-            meta_info_entries.extend(
-                (path, k, v) for k, v in meta_info.items() if v is not None
-            )
+            meta_info_entries.append((path, 'collected', str(now), now))
+            for k, v in meta_info.items():
+                if v is not None:
+                    meta_info_entries.append((path, k, str(v), _try_float(v)))
             if file_hash:
                 tag_entries.extend(
                     (file_hash, k, v) for k, v in tags.items() if v is not None
                 )
 
     return {
-        'source_updates': list(source_update_map.values()),
         'image_entries': image_entries,
         'meta_info_entries': meta_info_entries,
         'tag_entries': tag_entries,

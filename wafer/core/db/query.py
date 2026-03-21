@@ -195,9 +195,9 @@ class SearchQuery:
         return (subquery, all_params)
 
 
-_SORT_COLUMNS = {
-    'path': 'path', 'name': 'name', 'created': 'created',
-    'modified': 'modified', 'size': 'size', 'collected': 'collected',
+_META_SORT_KEYS = {
+    'created': 'created', 'modified': 'modified',
+    'size': 'size', 'collected': 'collected',
 }
 
 _NUM_SPLIT = re.compile(r'(\d+)').split
@@ -241,11 +241,15 @@ class FileSearchEngine:
 
     @staticmethod
     def _build_order_clause(sort_by, ascending):
-        col = _SORT_COLUMNS.get(sort_by)
-        if not col:
-            return ""
+        meta_key = _META_SORT_KEYS.get(sort_by)
+        if not meta_key:
+            return "", []
         order = 'ASC' if ascending else 'DESC'
-        return f' ORDER BY m."{col}" {order}'
+        return (
+            f' LEFT JOIN meta_info AS _sk ON _sk.path = m.path AND _sk."key" = ?'
+            f' ORDER BY _sk.value_num {order}',
+            [meta_key],
+        )
 
     @profiler.profile
     def _build_path_query(self, queries):
@@ -270,12 +274,13 @@ class FileSearchEngine:
     @profiler.profile
     def _fetch_sorted(self, columns, path_query, params, sort_by, ascending):
         cur = self.conn.cursor()
-        sort_col = _SORT_COLUMNS.get(sort_by)
         need_natural = sort_by in ('name', 'path')
-        extra = sort_col if need_natural and sort_col not in columns else None
-        select_cols = [*columns, extra] if extra else columns
-        col_str = ', '.join(f'm.{c}' for c in select_cols)
+        col_str = ', '.join(f'm.{c}' for c in columns)
         if need_natural:
+            sort_col = sort_by
+            extra = sort_col if sort_col not in columns else None
+            if extra:
+                col_str = ', '.join(f'm.{c}' for c in [*columns, extra])
             sql = f"SELECT {col_str} FROM files_full AS m JOIN ({path_query}) AS s USING(path)"
             rows = list(cur.execute(sql, params).fetchall())
             rows.sort(key=lambda r: _natural_key(r[sort_col] or ''), reverse=not ascending)
@@ -284,9 +289,13 @@ class FileSearchEngine:
             rows = list(cur.execute(sql, params).fetchall())
             shuffle(rows)
         else:
-            order = self._build_order_clause(sort_by, ascending)
-            sql = f"SELECT {col_str} FROM files_full AS m JOIN ({path_query}) AS s USING(path){order}"
-            rows = cur.execute(sql, params).fetchall()
+            join_clause, extra_params = self._build_order_clause(sort_by, ascending)
+            if join_clause:
+                sql = f"SELECT {col_str} FROM files_full AS m JOIN ({path_query}) AS s USING(path){join_clause}"
+                rows = cur.execute(sql, [*params, *extra_params]).fetchall()
+            else:
+                sql = f"SELECT {col_str} FROM files_full AS m JOIN ({path_query}) AS s USING(path)"
+                rows = cur.execute(sql, params).fetchall()
         return rows
 
     @profiler.profile

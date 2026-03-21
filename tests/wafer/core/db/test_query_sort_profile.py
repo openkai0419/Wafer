@@ -47,11 +47,14 @@ def large_db(tmp_path_factory):
             fhash = f"hash_{idx:06d}"
             sources.append((
                 path, fhash, 1000 + idx,
-                float(1700000000 + idx), float(1700000000 + idx),
-                float(1700000000 + idx), None,
+                float(1700000000 + idx),
             ))
             images.append((path, path, name, 1.0 + (idx % 10) * 0.1))
-            metas.append((path, "dpi", f"{72 + (idx % 4) * 24}"))
+            metas.append((path, "dpi", f"{72 + (idx % 4) * 24}", None))
+            metas.append((path, "size", str(1000 + idx), float(1000 + idx)))
+            metas.append((path, "modified", str(float(1700000000 + idx)), float(1700000000 + idx)))
+            metas.append((path, "created", str(float(1700000000 + idx)), float(1700000000 + idx)))
+            metas.append((path, "collected", str(float(1700000000 + idx)), float(1700000000 + idx)))
             tags.append((fhash, "rating", f"{(idx % 5) + 1}"))
             idx += 1
 

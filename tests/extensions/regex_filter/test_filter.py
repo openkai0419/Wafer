@@ -23,13 +23,13 @@ def _setup_db(tmp_path, files=None, meta=None, tags=None):
     conn.execute('CREATE TABLE hash_index (file_hash TEXT PRIMARY KEY)')
     conn.execute('''CREATE TABLE sources (
         source TEXT PRIMARY KEY, file_hash TEXT NOT NULL,
-        size INTEGER, modified REAL, created REAL, collected REAL, status TEXT,
+        size INTEGER, modified REAL,
         FOREIGN KEY(file_hash) REFERENCES hash_index(file_hash))''')
     conn.execute('''CREATE TABLE files (
         path TEXT PRIMARY KEY, source TEXT NOT NULL, name TEXT, aspect_ratio REAL,
         FOREIGN KEY(source) REFERENCES sources(source))''')
     conn.execute('''CREATE TABLE meta_info (
-        path TEXT NOT NULL, key TEXT NOT NULL, value TEXT,
+        path TEXT NOT NULL, key TEXT NOT NULL, value TEXT, value_num REAL,
         PRIMARY KEY(path, key),
         FOREIGN KEY(path) REFERENCES files(path))''')
     conn.execute('''CREATE TABLE tags (
@@ -38,7 +38,7 @@ def _setup_db(tmp_path, files=None, meta=None, tags=None):
         FOREIGN KEY(file_hash) REFERENCES hash_index(file_hash))''')
     conn.execute('''CREATE VIEW files_full AS
         SELECT i.path, i.source, i.name, i.aspect_ratio,
-               s.file_hash, s.size, s.modified, s.created, s.collected, s.status
+               s.file_hash, s.size, s.modified
         FROM files i JOIN sources s ON s.source = i.source''')
     conn.executescript('''
         CREATE INDEX idx_meta_key ON meta_info(key, path);
@@ -50,14 +50,14 @@ def _setup_db(tmp_path, files=None, meta=None, tags=None):
         source = path
         name = os.path.basename(path)
         conn.execute('INSERT OR IGNORE INTO hash_index VALUES (?)', (fhash,))
-        conn.execute('INSERT INTO sources VALUES (?,?,?,?,?,?,?)',
-                     (source, fhash, 100, 1.0, 1.0, 1.0, 'ok'))
+        conn.execute('INSERT INTO sources VALUES (?,?,?,?)',
+                     (source, fhash, 100, 1.0))
         conn.execute('INSERT INTO files VALUES (?,?,?,?)',
                      (path, source, name, 1.0))
 
     for path, key, value in (meta or []):
-        conn.execute('INSERT OR REPLACE INTO meta_info VALUES (?,?,?)',
-                     (path, key, value))
+        conn.execute('INSERT OR REPLACE INTO meta_info VALUES (?,?,?,?)',
+                     (path, key, value, None))
 
     for path, key, value in (tags or []):
         fhash = hashlib.md5(path.encode()).hexdigest()

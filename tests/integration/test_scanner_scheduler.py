@@ -83,10 +83,9 @@ class TestScannerSchedulerPipeline:
             for i in range(5):
                 norm = normalize_path(str(img_dir / f'img_{i}.jpg'))
                 row = writer.db.read_conn.execute(
-                    "SELECT status FROM sources WHERE source=?", (norm,)
+                    "SELECT source FROM sources WHERE source=?", (norm,)
                 ).fetchone()
                 assert row is not None
-                assert row[0] == 'indexed'
         finally:
             scanner.stop()
             scheduler.stop()

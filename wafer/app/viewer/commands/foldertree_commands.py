@@ -19,6 +19,13 @@ def _ctx_path(ctx) -> str | None:
     return str(p) if p else None
 
 
+def _ctx_normalized_path(ctx) -> str | None:
+    path = _ctx_path(ctx)
+    if not path:
+        return None
+    return normalize_path(os.path.abspath(path))
+
+
 def _ctx_dir_path(ctx) -> str | None:
     path = _ctx_path(ctx)
     if not path:
@@ -44,7 +51,7 @@ def remove_from_view(ctx):
     tree = _ctx_tree(ctx)
     if tree is None:
         return
-    path = _ctx_dir_path(ctx)
+    path = _ctx_normalized_path(ctx)
     if not path:
         return
     root = _ctx_root(tree)
@@ -68,7 +75,7 @@ def ignore_folder(ctx):
     tree = _ctx_tree(ctx)
     if tree is None:
         return
-    path = _ctx_dir_path(ctx)
+    path = _ctx_normalized_path(ctx)
     if not path:
         return
     root = _ctx_root(tree)
@@ -93,38 +100,44 @@ def show_context_menu(ctx):
     tree = _ctx_tree(ctx)
     if tree is None:
         raise RuntimeError("FolderTree not found")
-    path = _ctx_dir_path(ctx)
+    path = _ctx_normalized_path(ctx)
     if not path:
         return
+    exists = os.path.isdir(path)
     if hasattr(tree, "folder_selected"):
         try:
             tree.folder_selected.emit()
         except Exception:
             pass
-    items = [
-        ":Path",
-        "file.show_explorer",
-        "-",
-        "file.copy_path",
-        "file.copy_path_list",
-        "-",
-        "file.select_path",
-        "-",
-        "-",
-        "file.cut",
-        "file.copy",
-        "file.delete",
-        "-",
-        "file.paste",
-        "file.new_folder",
-        "-",
-    ]
+    items = []
+    if exists:
+        items.extend([
+            ":Path",
+            "file.show_explorer",
+            "-",
+            "file.copy_path",
+            "file.copy_path_list",
+            "-",
+            "file.select_path",
+            "-",
+            "-",
+            "file.cut",
+            "file.copy",
+            "file.delete",
+            "-",
+            "file.paste",
+            "file.new_folder",
+            "-",
+        ])
+    else:
+        items.extend([
+            "file.copy_path",
+            "-",
+        ])
     if hasattr(tree, "roots") and path in tree.roots:
         items.append(ActionKit.Command(path="inline.folder.remove_from_view", display="Remove from view", func=remove_from_view))
     else:
-        items.extend([
-            ActionKit.Command(path="inline.folder.ignore", display="Ignore this folder", func=ignore_folder),
-        ])
+        items.append(ActionKit.Command(path="inline.folder.ignore", display="Ignore this folder", func=ignore_folder))
     s = Menu.from_context(ctx)
     if s is None:
         return

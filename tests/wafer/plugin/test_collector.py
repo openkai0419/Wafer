@@ -67,8 +67,7 @@ def test_exif_plugin_process_success(tmp_path):
     img_path = tmp_path / 'test.png'
     Image.new('RGB', (100, 200)).save(str(img_path))
     st = os.stat(str(img_path))
-    ctime = st.st_birthtime if hasattr(st, 'st_birthtime') else st.st_ctime
-    file_info = (st.st_mtime, st.st_size, ctime)
+    file_info = (st.st_mtime, st.st_size)
 
     plugin = _get_exif_plugin()()
     result = plugin.process(normalize_path(str(img_path)), file_info)
@@ -84,7 +83,7 @@ def test_exif_plugin_process_success(tmp_path):
 
 def test_exif_plugin_process_failure():
     plugin = _get_exif_plugin()()
-    result = plugin.process('nonexistent.png', (0.0, 0, 0.0))
+    result = plugin.process('nonexistent.png', (0.0, 0))
     assert isinstance(result, CollectorResult)
     assert result.status is False
 
@@ -129,8 +128,7 @@ def test_process_success_to_dict(tmp_path):
     img_path = tmp_path / 'keys.png'
     Image.new('RGB', (50, 50)).save(str(img_path))
     st = os.stat(str(img_path))
-    ctime = st.st_birthtime if hasattr(st, 'st_birthtime') else st.st_ctime
-    file_info = (st.st_mtime, st.st_size, ctime)
+    file_info = (st.st_mtime, st.st_size)
 
     plugin = _get_exif_plugin()()
     result = plugin.process(normalize_path(str(img_path)), file_info)
@@ -143,7 +141,7 @@ def test_process_success_to_dict(tmp_path):
 
 def test_process_failure_to_dict_omits_none(tmp_path):
     plugin = _get_exif_plugin()()
-    result = plugin.process(str(tmp_path / 'missing.png'), (0.0, 0, 0.0))
+    result = plugin.process(str(tmp_path / 'missing.png'), (0.0, 0))
     d = result.to_dict()
     assert d['status'] is False
     for v in d.values():

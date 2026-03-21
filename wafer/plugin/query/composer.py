@@ -152,14 +152,15 @@ class SearchComposer:
     @profiler.profile
     def _fetch(self, engine, columns, path_sql, params, sort_plugin, ascending):
         col_str = ', '.join(f'm.{c}' for c in columns)
-        if sort_plugin.SQL_COLUMN:
+        if sort_plugin.META_KEY:
             order = 'ASC' if ascending else 'DESC'
             sql = (
                 f"SELECT {col_str} FROM files_full AS m "
                 f"JOIN ({path_sql}) AS s USING(path) "
-                f"ORDER BY m.\"{sort_plugin.SQL_COLUMN}\" {order}"
+                f"LEFT JOIN meta_info AS _sk ON _sk.path = m.path AND _sk.\"key\" = ? "
+                f"ORDER BY _sk.value_num {order}"
             )
-            return engine.fetch(sql, params)
+            return engine.fetch(sql, [*params, sort_plugin.META_KEY])
         else:
             sql = (
                 f"SELECT {col_str} FROM files_full AS m "

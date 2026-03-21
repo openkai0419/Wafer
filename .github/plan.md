@@ -8,6 +8,8 @@
 - メタデータもkv形式に統一する？
 - 色検索（Collectorと併用）
 
+■ ViewerのリストとGridのリストを分離する。ViewerリストもったままGrid検索できるように
+
 ■ コレクタープラグインの戻り値を数値かStrかどっちか
 ■ file_viewerを整理する
 

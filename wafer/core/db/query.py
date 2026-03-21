@@ -173,9 +173,15 @@ class SearchQuery:
 _IDENTIFIER_RE = re.compile(r'^[a-zA-Z_]\w*$')
 
 
-def _kv_sort_join(meta_key: str):
+def _kv_sort_join(meta_key: str, conn: sqlite3.Connection | None = None):
     if not _IDENTIFIER_RE.fullmatch(meta_key):
         raise ValueError(f'Invalid META_KEY: {meta_key!r}')
+    if conn is not None and not conn.execute(
+        'SELECT 1 FROM tags WHERE "key" = ? LIMIT 1', (meta_key,)
+    ).fetchone():
+        join = f' LEFT JOIN meta_info AS _mi ON _mi.path = m.path AND _mi."key" = ?'
+        select = f', _mi.value AS {meta_key}, _mi.value_num AS {meta_key}_num'
+        return join, select, '_mi.value_num', [meta_key]
     join = (
         f' LEFT JOIN meta_info AS _mi ON _mi.path = m.path AND _mi."key" = ?'
         f' LEFT JOIN ('
@@ -255,7 +261,7 @@ class FileSearchEngine:
         has_custom_sort = plugin and 'sort_rows' in vars(plugin)
         if has_custom_sort:
             if meta_key:
-                kv_join, kv_select, _, kv_params = _kv_sort_join(meta_key)
+                kv_join, kv_select, _, kv_params = _kv_sort_join(meta_key, self.conn)
                 sql = f"SELECT {col_str}{kv_select} FROM files_full AS m JOIN ({path_query}) AS s USING(path){kv_join}"
                 rows = list(cur.execute(sql, [*params, *kv_params]).fetchall())
             else:
@@ -264,7 +270,7 @@ class FileSearchEngine:
             rows = plugin.sort_rows(rows, ascending)
         elif meta_key:
             order = 'ASC' if ascending else 'DESC'
-            kv_join, _, kv_order, kv_params = _kv_sort_join(meta_key)
+            kv_join, _, kv_order, kv_params = _kv_sort_join(meta_key, self.conn)
             join_clause = f'{kv_join} ORDER BY {kv_order} {order}'
             sql = f"SELECT {col_str} FROM files_full AS m JOIN ({path_query}) AS s USING(path){join_clause}"
             rows = cur.execute(sql, [*params, *kv_params]).fetchall()

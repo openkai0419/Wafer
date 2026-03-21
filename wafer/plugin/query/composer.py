@@ -151,7 +151,7 @@ class SearchComposer:
         has_custom_sort = 'sort_rows' in vars(sort_plugin)
         if has_custom_sort:
             if meta_key:
-                kv_join, kv_select, _, kv_params = _kv_sort_join(meta_key)
+                kv_join, kv_select, _, kv_params = _kv_sort_join(meta_key, engine.conn)
                 sql = (
                     f"SELECT {col_str}{kv_select} FROM files_full AS m "
                     f"JOIN ({path_sql}) AS s USING(path){kv_join}"
@@ -166,7 +166,7 @@ class SearchComposer:
             return sort_plugin.sort_rows(rows, ascending)
         elif meta_key:
             order = 'ASC' if ascending else 'DESC'
-            kv_join, _, kv_order, kv_params = _kv_sort_join(meta_key)
+            kv_join, _, kv_order, kv_params = _kv_sort_join(meta_key, engine.conn)
             sql = (
                 f"SELECT {col_str} FROM files_full AS m "
                 f"JOIN ({path_sql}) AS s USING(path){kv_join} "

@@ -18,8 +18,8 @@ def apply_write_pragmas(conn: sqlite3.Connection):
 def apply_read_pragmas(conn: sqlite3.Connection):
     conn.execute('PRAGMA query_only=ON')
     conn.execute('PRAGMA temp_store=MEMORY')
-    conn.execute('PRAGMA cache_size=-10000')
-    conn.execute('PRAGMA mmap_size=134217728')
+    conn.execute('PRAGMA cache_size=-50000')
+    conn.execute('PRAGMA mmap_size=536870912')
     conn.execute('PRAGMA foreign_keys=ON')
 
 

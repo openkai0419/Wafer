@@ -1212,6 +1212,35 @@ class TestKvSortJoinValidation:
         with pytest.raises(ValueError, match='Invalid META_KEY'):
             _kv_sort_join(bad_key)
 
+    def test_no_conn_returns_full_join(self):
+        join, select, order, params = _kv_sort_join('name')
+        assert '_tg' in join
+        assert '_mi' in join
+        assert 'COALESCE' in select
+        assert params == ['name', 'name']
+
+    def test_conn_key_absent_in_tags_skips_tags_join(self, populated_db):
+        conn = sqlite3.connect(f'file:{populated_db}?mode=ro', uri=True)
+        try:
+            join, select, order, params = _kv_sort_join('modified', conn)
+            assert '_tg' not in join
+            assert '_mi' in join
+            assert 'COALESCE' not in select
+            assert params == ['modified']
+        finally:
+            conn.close()
+
+    def test_conn_key_present_in_tags_uses_full_join(self, populated_db):
+        conn = sqlite3.connect(f'file:{populated_db}?mode=ro', uri=True)
+        try:
+            join, select, order, params = _kv_sort_join('rating', conn)
+            assert '_tg' in join
+            assert '_mi' in join
+            assert 'COALESCE' in select
+            assert params == ['rating', 'rating']
+        finally:
+            conn.close()
+
 
 class TestExplainQueryPlanRealDB:
 

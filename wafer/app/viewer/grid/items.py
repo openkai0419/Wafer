@@ -16,6 +16,7 @@ class GridItemModel(QtCore.QObject):
         self.paths: list[str] = []
         self.sources: list[str] = []
         self.aspect_ratios: list[float] = []
+        self.avg_aspect: float = 1.0
         self._selection = SelectionManager()
         self._selection.selectionChanged.connect(self._on_selection_changed)
         self._path_to_index: dict[str, int] = {}
@@ -37,6 +38,8 @@ class GridItemModel(QtCore.QObject):
         self.aspect_ratios = list(aspect_ratios or [])
         self._normalize_lengths()
         self._rebuild_index()
+        ratios = self.aspect_ratios
+        self.avg_aspect = sum(r or 1.0 for r in ratios) / len(ratios) if ratios else 1.0
         self._selection.clear()
         self.itemsChanged.emit()
 

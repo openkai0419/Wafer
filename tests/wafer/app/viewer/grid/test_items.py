@@ -165,3 +165,28 @@ def test_selection_changed_signal():
     vi.selectionChanged.connect(lambda s: received.append(s))
     vi.toggle_selection(0)
     assert len(received) == 1
+
+
+def test_avg_aspect(items):
+    assert items.avg_aspect == pytest.approx(2.0)
+
+
+def test_avg_aspect_empty():
+    vi = GridItemModel()
+    assert vi.avg_aspect == 1.0
+    vi.set_items([], [], [])
+    assert vi.avg_aspect == 1.0
+
+
+def test_avg_aspect_none_treated_as_one():
+    vi = GridItemModel()
+    vi.set_items(['a', 'b'], ['sa', 'sb'], [None, 3.0])
+    assert vi.avg_aspect == pytest.approx(2.0)
+
+
+def test_avg_aspect_updated_on_set_items():
+    vi = GridItemModel()
+    vi.set_items(['a'], ['sa'], [4.0])
+    assert vi.avg_aspect == pytest.approx(4.0)
+    vi.set_items(['a', 'b'], ['sa', 'sb'], [2.0, 6.0])
+    assert vi.avg_aspect == pytest.approx(4.0)

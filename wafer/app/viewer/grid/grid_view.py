@@ -423,9 +423,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         else:
             cw, ch = primary_vp, secondary
         if self.layout_mode != 'masonry' and not self._is_horizontal():
-            ratios = self.items.aspect_ratios
-            avg_aspect = sum(r or 1.0 for r in ratios) / len(ratios) if ratios else 1.0
-            bh = int(bh * avg_aspect)
+            bh = int(bh * self.items.avg_aspect)
         self._pipeline.request_layout(
             self.items.aspect_ratios, bh, self.spacing,
             cw, ch, self.orientation, self.layout_mode,
@@ -727,10 +725,15 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             item = self.pixmap_item_pool.acquire()
             item.setGeometry(rect)
             self.widgets[i] = item
-            cached = self.image_cache.get(path)
+            content_size = self._content_size(rect.size())
+            cached = self.image_cache.get_if_sufficient(path, content_size)
             if cached is not None:
                 item.set_image(cached, path)
-            self._pipeline.schedule_render(i, path, self._content_size(rect.size()))
+            else:
+                cached = self.image_cache.get(path)
+                if cached is not None:
+                    item.set_image(cached, path)
+                self._pipeline.schedule_render(i, path, content_size)
         elif self.widgets[i].geometry() != rect:
             self.widgets[i].setGeometry(rect)
 

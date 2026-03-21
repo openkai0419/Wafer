@@ -8,7 +8,7 @@ from wafer.plugin.layout.calc import LayoutData
 def test_optimized_justified_layout_is_plugin():
     assert issubclass(OptimizedJustifiedLayout, BaseLayoutPlugin)
     assert OptimizedJustifiedLayout.NAME == 'optimizedJustified'
-    assert OptimizedJustifiedLayout.DISPLAY_NAME == 'Optimized Justified'
+    assert OptimizedJustifiedLayout.DISPLAY_NAME == 'Justified (Optimized)'
 
 
 def test_optimized_justified_create_calculator():

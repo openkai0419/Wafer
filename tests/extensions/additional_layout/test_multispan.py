@@ -12,7 +12,7 @@ def test_is_plugin():
 
 
 def test_priority():
-    assert MultiSpanLayout.PRIORITY == 83
+    assert MultiSpanLayout.PRIORITY == 86
 
 
 def test_create_calculator():

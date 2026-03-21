@@ -7,8 +7,8 @@ from wafer.plugin.layout.calc import LayoutData
 
 def test_is_plugin():
     assert issubclass(OrganicPartitionLayout, BaseLayoutPlugin)
-    assert OrganicPartitionLayout.NAME == 'partitionOrganic'
-    assert OrganicPartitionLayout.DISPLAY_NAME == 'Partition (Organic)'
+    assert OrganicPartitionLayout.NAME == 'ratioPartition'
+    assert OrganicPartitionLayout.DISPLAY_NAME == 'Partition (Aspect)'
 
 
 def test_priority():

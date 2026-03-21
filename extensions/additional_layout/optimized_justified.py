@@ -64,7 +64,10 @@ class OptimizedJustifiedLayoutCalculator(BaseLayoutCalculator):
                     le = pj - prefix[cs + i]
                     if le <= 0:
                         continue
-                    sc = (container - spacing * (j - i - 1)) / le
+                    total_sp = spacing * (j - i - 1)
+                    if le > container - total_sp + container * 0.5:
+                        break
+                    sc = (container - total_sp) / le
                     if sc < 0.1:
                         break
                     r = sc - 1.0
@@ -120,7 +123,7 @@ class OptimizedJustifiedLayoutCalculator(BaseLayoutCalculator):
 
 class OptimizedJustifiedLayout(BaseLayoutPlugin):
     NAME = 'optimizedJustified'
-    DISPLAY_NAME = 'Optimized Justified'
+    DISPLAY_NAME = 'Justified (Optimized)'
     PRIORITY = 95
 
     @classmethod

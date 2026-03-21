@@ -46,7 +46,7 @@ class MultiSpanCalculator(BaseLayoutCalculator):
         hz = self.orientation < 2
         reverse = self.orientation % 2 == 1
         spacing = self.spacing
-        base = self.base_size
+        base = self.base_size / 2
         aspects = self.aspect_ratios
         n = len(aspects)
         if n == 0:
@@ -65,16 +65,25 @@ class MultiSpanCalculator(BaseLayoutCalculator):
         area_norm = max(1, MAX_SPAN_C * MAX_SPAN_R - 1)
         gap_spans_multi = [(sc, sr, sa, area) for sc, sr, sa, area in span_table
                           if sc <= GAP_MAX_SPAN and sr <= GAP_MAX_SPAN and area > 1]
-        gap_span_1x1_ar = next(sa for sc, sr, sa, area in span_table if area == 1)
         gap_threshold = num_cols
+
+        spans_by_sc: dict[int, list[tuple]] = {}
+        for sc, sr, span_ar, area in span_table:
+            if sc not in spans_by_sc:
+                spans_by_sc[sc] = []
+            spans_by_sc[sc].append((sr, span_ar, area))
 
         heights = [0] * num_cols
         h_min = 0
         h_max = 0
-        occupied = set()
+        occ_rows: dict[int, bytearray] = {}
         rects = [None] * n
         item_idx = 0
         base_row = 0
+
+        _make = _make_rect
+        _pw = POSITION_WEIGHT
+        _aw = AREA_WEIGHT
 
         while item_idx < n:
             if self._cancelled:
@@ -85,13 +94,17 @@ class MultiSpanCalculator(BaseLayoutCalculator):
 
             if ceiling - frontier >= gap_threshold:
                 filled_any = False
-                for r in range(base_row, ceiling):
+                for row in range(base_row, ceiling):
                     if item_idx >= n or self._cancelled:
                         break
+                    row_data = occ_rows.get(row)
+                    if row_data is None:
+                        row_data = bytearray(num_cols)
+                        occ_rows[row] = row_data
                     for c in range(num_cols):
                         if item_idx >= n:
                             break
-                        if (r, c) in occupied:
+                        if row_data[c]:
                             continue
 
                         img_ar = ar[item_idx]
@@ -102,8 +115,11 @@ class MultiSpanCalculator(BaseLayoutCalculator):
                                 continue
                             ok = True
                             for dr in range(sr):
+                                rd = occ_rows.get(row + dr)
+                                if rd is None:
+                                    continue
                                 for dc in range(sc):
-                                    if (r + dr, c + dc) in occupied:
+                                    if rd[c + dc]:
                                         ok = False
                                         break
                                 if not ok:
@@ -117,46 +133,75 @@ class MultiSpanCalculator(BaseLayoutCalculator):
 
                         sc, sr = best_sc, best_sr
                         for dr in range(sr):
+                            rd = occ_rows.get(row + dr)
+                            if rd is None:
+                                rd = bytearray(num_cols)
+                                occ_rows[row + dr] = rd
                             for dc in range(sc):
-                                occupied.add((r + dr, c + dc))
+                                rd[c + dc] = 1
                         for dc in range(sc):
-                            top = r + sr
+                            top = row + sr
                             if heights[c + dc] < top:
                                 heights[c + dc] = top
                                 if top > h_max:
                                     h_max = top
 
-                        rects[item_idx] = _make_rect(c, r, sc, sr,
-                                                     cell_w, cell_h, spacing, hz)
+                        rects[item_idx] = _make(c, row, sc, sr,
+                                                cell_w, cell_h, spacing, hz)
                         item_idx += 1
                         filled_any = True
 
                 h_min = min(heights)
                 if h_min > base_row:
-                    occupied = {(gr, gc) for gr, gc in occupied if gr >= h_min}
+                    for r_del in range(base_row, h_min):
+                        occ_rows.pop(r_del, None)
                     base_row = h_min
                 if filled_any:
                     continue
 
             img_ar = ar[item_idx]
             best_score = -1e9
-            best_slot = None
+            best_slot_r = 0
+            best_slot_c = 0
+            best_slot_sc = 1
+            best_slot_sr = 1
 
-            for sc, sr, span_ar, area in span_table:
-                ar_match = min(img_ar, span_ar) / max(img_ar, span_ar)
-                base_score = ar_match + AREA_WEIGHT * (area - 1) / area_norm
-                for c in range(num_cols - sc + 1):
-                    row = max(heights[c:c + sc])
-                    gap = row - frontier
-                    score = base_score - POSITION_WEIGHT * gap / (gap + num_cols)
-                    if score > best_score:
-                        best_score = score
-                        best_slot = (row, c, sc, sr)
+            for sc, sr_entries in spans_by_sc.items():
+                c_end = num_cols - sc + 1
+                if sc == 1:
+                    rows_for_c = heights
+                elif sc == 2:
+                    rows_for_c = [
+                        a if a > b else b
+                        for a, b in zip(heights, heights[1:])
+                    ]
+                else:
+                    rows_for_c = [
+                        (a if a > b else b) if (a if a > b else b) > cc else cc
+                        for a, b, cc in zip(heights, heights[1:], heights[2:])
+                    ]
+                for sr, span_ar, area in sr_entries:
+                    ar_match = min(img_ar, span_ar) / max(img_ar, span_ar)
+                    base_score = ar_match + _aw * (area - 1) / area_norm
+                    for c in range(c_end):
+                        row = rows_for_c[c]
+                        gap = row - frontier
+                        score = base_score - _pw * gap / (gap + num_cols)
+                        if score > best_score:
+                            best_score = score
+                            best_slot_r = row
+                            best_slot_c = c
+                            best_slot_sc = sc
+                            best_slot_sr = sr
 
-            r, c, sc, sr = best_slot
+            r, c, sc, sr = best_slot_r, best_slot_c, best_slot_sc, best_slot_sr
             for dr in range(sr):
+                rd = occ_rows.get(r + dr)
+                if rd is None:
+                    rd = bytearray(num_cols)
+                    occ_rows[r + dr] = rd
                 for dc in range(sc):
-                    occupied.add((r + dr, c + dc))
+                    rd[c + dc] = 1
             top = r + sr
             for dc in range(sc):
                 heights[c + dc] = top
@@ -164,8 +209,8 @@ class MultiSpanCalculator(BaseLayoutCalculator):
                 h_max = top
             h_min = min(heights)
 
-            rects[item_idx] = _make_rect(c, r, sc, sr,
-                                         cell_w, cell_h, spacing, hz)
+            rects[item_idx] = _make(c, r, sc, sr,
+                                    cell_w, cell_h, spacing, hz)
             item_idx += 1
 
         total_primary = int(h_max * (cell_h + spacing) - spacing) if n > 0 else 0
@@ -195,7 +240,7 @@ class MultiSpanCalculator(BaseLayoutCalculator):
 class MultiSpanLayout(BaseLayoutPlugin):
     NAME = 'multiSpan'
     DISPLAY_NAME = 'MultiSpan Grid'
-    PRIORITY = 83
+    PRIORITY = 86
 
     @classmethod
     def create_calculator(cls, aspect_ratios, base_size, spacing,

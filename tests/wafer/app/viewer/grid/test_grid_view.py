@@ -313,6 +313,7 @@ class TestSetupCell:
         fake._pipeline = MagicMock()
         fake._needs_reload = lambda item, size: self.GridView._needs_reload(fake, item, size)
         fake._content_size = lambda cell_size: self.GridView._content_size(fake, cell_size)
+        fake.image_cache.get_if_sufficient.return_value = None
         return fake
 
     @patch('wafer.app.viewer.grid.grid_view.grid_resolver')
@@ -328,15 +329,18 @@ class TestSetupCell:
         fake._pipeline.schedule_render.assert_called_once()
 
     @patch('wafer.app.viewer.grid.grid_view.grid_resolver')
-    def test_sufficient_cached_always_schedules_pipeline(self, mock_resolver):
+    def test_sufficient_cached_skips_pipeline(self, mock_resolver):
         fake = self._make_fake(['img.jpg'])
         fake.rects = {0: QtCore.QRectF(0, 0, 200, 200)}
-        fake.image_cache.get.return_value = _make_image(200, 200)
-        fake.pixmap_item_pool.acquire.return_value = MockItem()
+        sufficient = _make_image(200, 200)
+        fake.image_cache.get_if_sufficient.return_value = sufficient
+        mock_item = MockItem()
+        fake.pixmap_item_pool.acquire.return_value = mock_item
 
         self.GridView._setup_cell(fake, 0)
 
-        fake._pipeline.schedule_render.assert_called_once()
+        fake._pipeline.schedule_render.assert_not_called()
+        assert mock_item.current_path == 'img.jpg'
 
     @patch('wafer.app.viewer.grid.grid_view.grid_resolver')
     def test_no_cache_starts_pipeline(self, mock_resolver):
@@ -415,6 +419,7 @@ class TestSetupCellResize:
         small_rect = QtCore.QRectF(0, 0, 200, 200)
         fake.rects = {0: small_rect}
         fake.image_cache.get.return_value = None
+        fake.image_cache.get_if_sufficient.return_value = None
         fake.pixmap_item_pool.acquire.return_value = MockItem()
 
         self.GridView._setup_cell(fake, 0)
@@ -427,6 +432,7 @@ class TestSetupCellResize:
         fake.widgets = {}
         small_cached = _make_image(200 - LOADER_MARGIN, 200 - LOADER_MARGIN)
         fake.image_cache.get.return_value = small_cached
+        fake.image_cache.get_if_sufficient.return_value = None
         fake.pixmap_item_pool.acquire.return_value = MockItem()
 
         self.GridView._setup_cell(fake, 0)
@@ -448,6 +454,7 @@ class TestSetupCellAdditionalWidget:
         fake._pipeline = MagicMock()
         fake._needs_reload = lambda item, size: self.GridView._needs_reload(fake, item, size)
         fake._content_size = lambda cell_size: self.GridView._content_size(fake, cell_size)
+        fake.image_cache.get_if_sufficient.return_value = None
         return fake
 
     @patch('wafer.app.viewer.grid.grid_view.grid_resolver')

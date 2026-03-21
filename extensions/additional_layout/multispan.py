@@ -6,15 +6,16 @@ from wafer.utils.logs import AppLogger
 MAX_SPAN_C = 3
 MAX_SPAN_R = 3
 GAP_MAX_SPAN = 2
-AREA_WEIGHT = 0.08
+AREA_WEIGHT = 0.35
+AREA_WEIGHT_GAP = 0.4
 POSITION_WEIGHT = 0.2
 
 
-def _build_span_table(num_cols, cell_w, cell_h, spacing, hz):
+def _build_span_table(num_cols, cell_w, cell_h, spacing, hz, max_span_c, max_span_r):
     spans = []
-    max_c = min(MAX_SPAN_C, num_cols)
+    max_c = min(max_span_c, num_cols)
     for sc in range(1, max_c + 1):
-        for sr in range(1, MAX_SPAN_R + 1):
+        for sr in range(1, max_span_r + 1):
             if hz:
                 w = sc * cell_w + (sc - 1) * spacing
                 h = sr * cell_h + (sr - 1) * spacing
@@ -41,6 +42,16 @@ def _make_rect(c, r, sc, sr, cell_w, cell_h, spacing, hz):
 
 class MultiSpanCalculator(BaseLayoutCalculator):
 
+    def __init__(self, aspect_ratios, base_size, spacing,
+                 container_width, container_height, orientation,
+                 max_span_c=MAX_SPAN_C, max_span_r=MAX_SPAN_R,
+                 max_area=None):
+        super().__init__(aspect_ratios, base_size, spacing,
+                         container_width, container_height, orientation)
+        self._max_span_c = max_span_c
+        self._max_span_r = max_span_r
+        self._max_area = max_area or max_span_c * max_span_r
+
     @profiler.profile
     def _calculate(self):
         hz = self.orientation < 2
@@ -61,11 +72,17 @@ class MultiSpanCalculator(BaseLayoutCalculator):
         num_cols = max(1, round((container + spacing) / (base + spacing)))
         cell_w = (container - spacing * (num_cols - 1)) / num_cols
         cell_h = cell_w
-        span_table = _build_span_table(num_cols, cell_w, cell_h, spacing, hz)
-        area_norm = max(1, MAX_SPAN_C * MAX_SPAN_R - 1)
+        max_sc = self._max_span_c
+        max_sr = self._max_span_r
+        max_area = self._max_area
+        gap_max = min(GAP_MAX_SPAN, max_sc, max_sr)
+        span_table = _build_span_table(num_cols, cell_w, cell_h, spacing, hz, max_sc, max_sr)
+        if max_area < max_sc * max_sr:
+            span_table = [(sc, sr, sa, a) for sc, sr, sa, a in span_table if a <= max_area]
+        area_norm = max(1, max_area - 1)
         gap_spans_multi = [(sc, sr, sa, area) for sc, sr, sa, area in span_table
-                          if sc <= GAP_MAX_SPAN and sr <= GAP_MAX_SPAN and area > 1]
-        gap_threshold = num_cols
+                          if sc <= gap_max and sr <= gap_max and area > 1]
+        gap_threshold = max(max_sc, max_sr) * 2 - 1
 
         spans_by_sc: dict[int, list[tuple]] = {}
         for sc, sr, span_ar, area in span_table:
@@ -84,6 +101,7 @@ class MultiSpanCalculator(BaseLayoutCalculator):
         _make = _make_rect
         _pw = POSITION_WEIGHT
         _aw = AREA_WEIGHT
+        _awg = AREA_WEIGHT_GAP
 
         while item_idx < n:
             if self._cancelled:
@@ -127,8 +145,9 @@ class MultiSpanCalculator(BaseLayoutCalculator):
                             if not ok:
                                 continue
                             ar_match = min(img_ar, span_ar) / max(img_ar, span_ar)
-                            if ar_match > multi_score:
-                                multi_score = ar_match
+                            gap_score = ar_match + _awg * (area - 1) / area_norm
+                            if gap_score > multi_score:
+                                multi_score = gap_score
                                 best_sc, best_sr = sc, sr
 
                         sc, sr = best_sc, best_sr
@@ -248,4 +267,19 @@ class MultiSpanLayout(BaseLayoutPlugin):
         return MultiSpanCalculator(
             aspect_ratios, base_size, spacing,
             container_width, container_height, orientation,
+        )
+
+
+class MultiSpanTilingLayout(BaseLayoutPlugin):
+    NAME = 'multiSpanTiling'
+    DISPLAY_NAME = 'MultiSpan Tiling'
+    PRIORITY = 84
+
+    @classmethod
+    def create_calculator(cls, aspect_ratios, base_size, spacing,
+                          container_width, container_height, orientation):
+        return MultiSpanCalculator(
+            aspect_ratios, base_size, spacing,
+            container_width, container_height, orientation,
+            max_span_c=2, max_span_r=2, max_area=2,
         )

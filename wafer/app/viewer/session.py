@@ -295,6 +295,38 @@ class SessionStore:
                 return sid
         return None
 
+    def acquire_or_create(self, session_id: str | None = None,
+                          default_name: str = DEFAULT_SESSION_NAME) -> tuple[str, SessionEntry]:
+        def _update(raw):
+            sessions = raw.setdefault('sessions', {})
+            active = raw.setdefault('active_session_ids', [])
+            active_set = set(active)
+            if session_id and session_id in sessions:
+                sid = session_id
+            else:
+                sid = None
+                for s in sessions:
+                    if s not in active_set:
+                        sid = s
+                        break
+                if sid is None:
+                    existing_names = {v.get('name') for v in sessions.values()}
+                    if not sessions:
+                        name = default_name
+                    else:
+                        n = 1
+                        while f'{default_name}{n}' in existing_names:
+                            n += 1
+                        name = f'{default_name}{n}'
+                    sid = _new_id()
+                    entry = SessionEntry(session_id=sid, name=name)
+                    entry.updated_at = _now_iso()
+                    sessions[sid] = entry.to_dict()
+            if sid not in active_set:
+                active.append(sid)
+            return sid, SessionEntry.from_dict(sessions[sid])
+        return self._locked_update(_update)
+
     def list_session_names(self) -> list[str]:
         return [e.name for e in self.list_sessions()]
 

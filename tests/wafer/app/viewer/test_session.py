@@ -568,6 +568,49 @@ class TestCreateSessionWithUniqueName:
         entry = tmp_store.get_session(sid)
         assert entry.name == f'{DEFAULT_SESSION_NAME}1'
 
+
+class TestAcquireOrCreate:
+
+    def test_with_existing_session_id(self, tmp_store):
+        tmp_store.save_session(SessionEntry(session_id='s1', name='Existing'))
+        sid, entry = tmp_store.acquire_or_create(session_id='s1')
+        assert sid == 's1'
+        assert entry.name == 'Existing'
+        assert 's1' in tmp_store.get_active_session_ids()
+
+    def test_claims_inactive_when_no_id(self, tmp_store):
+        tmp_store.save_session(SessionEntry(session_id='s1', name='A'))
+        sid, entry = tmp_store.acquire_or_create()
+        assert sid == 's1'
+        assert 's1' in tmp_store.get_active_session_ids()
+
+    def test_creates_new_when_all_active(self, tmp_store):
+        tmp_store.save_session(SessionEntry(session_id='s1', name='A'))
+        tmp_store.set_active_session_ids(['s1'])
+        sid, entry = tmp_store.acquire_or_create()
+        assert sid != 's1'
+        assert entry.name == f'{DEFAULT_SESSION_NAME}1'
+        assert sid in tmp_store.get_active_session_ids()
+
+    def test_creates_default_name_on_empty_store(self, tmp_store):
+        sid, entry = tmp_store.acquire_or_create()
+        assert entry.name == DEFAULT_SESSION_NAME
+        assert sid in tmp_store.get_active_session_ids()
+        assert tmp_store.get_session(sid) is not None
+
+    def test_does_not_double_claim(self, tmp_store):
+        tmp_store.save_session(SessionEntry(session_id='s1', name='A'))
+        tmp_store.set_active_session_ids(['s1'])
+        tmp_store.acquire_or_create(session_id='s1')
+        active = tmp_store.get_active_session_ids()
+        assert active.count('s1') == 1
+
+    def test_single_file_operation(self, tmp_store):
+        sid, entry = tmp_store.acquire_or_create()
+        loaded = tmp_store.get_session(sid)
+        assert loaded is not None
+        assert loaded.name == entry.name
+
     def test_many_collisions(self, tmp_store):
         tmp_store.create_session('X')
         for i in range(1, 6):

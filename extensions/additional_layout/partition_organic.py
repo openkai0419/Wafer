@@ -16,7 +16,7 @@ class OrganicPartitionCalculator(PartitionCalculatorBase):
 class OrganicPartitionLayout(BaseLayoutPlugin):
     NAME = 'ratioPartition'
     DISPLAY_NAME = 'Partition (Aspect)'
-    PRIORITY = 85
+    PRIORITY = 87
 
     @classmethod
     def create_calculator(cls, aspect_ratios, base_size, spacing,

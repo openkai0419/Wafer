@@ -29,6 +29,8 @@ from .session import QueryState, UIState, SessionEntry, SessionStore
 from ...core.commands.bridge import UI, Command
 from ...core.state import StateStore
 from ...core.qt.window import WindowStateController
+from ...core.qt.dispatcher import Dispatcher, CancelToken
+from ...core.qt.thread import utility_pool
 AppMenuRegistrar.setup_menu()
 
 
@@ -37,21 +39,10 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
     def __init__(self, icon=None, parent=None, session_id=None):
         super().__init__(parent=parent)
         self._session_store = SessionStore.instance()
-        if session_id:
-            self.session_id = session_id
-            self._session_store.claim_session(session_id)
-        else:
-            inactive = self._session_store.find_inactive_session_id()
-            if inactive:
-                self.session_id = inactive
-                self._session_store.claim_session(inactive)
-            else:
-                name = DEFAULT_SESSION_NAME if not self._session_store.list_sessions() else self._session_store.next_default_name()
-                self.session_id = self._session_store.create_session_with_unique_name(name)
-                self._session_store.claim_session(self.session_id)
-        self._session_entry: SessionEntry | None = self._session_store.get_session(self.session_id)
+        self.session_id = None
+        self._session_entry = None
         self._session_deleted = False
-        AppLogger.info(f'New Window Running : {APP_NAME} (session={self.session_id})')
+        self._session_ready = False
         if icon:
             self.setWindowIcon(icon)
         self.setWindowTitle(APP_NAME)
@@ -61,20 +52,38 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.setting_db = None
         self.window_state = WindowStateController(self)
         self._last_paths = None
+        self._dispatcher = Dispatcher(utility_pool)
+        self._db_reload_cancel: CancelToken | None = None
         self.search_service = SearchService(lambda: self.database_path, parent=self)
         self.search_service.search_started.connect(self._on_search_started)
         self.search_service.search_finished.connect(self._on_search_finished)
         self.search_service.params_changed.connect(self._on_search_params_changed)
         UI.register_instance("SearchService", self.search_service)
-        self.start_ipc_listener()
         self.t.set_locale(app_settings.get('window/language', 'en'))
         UI.register_instance("MainWindow", self)
         self.setup_ui()
-        if self._session_entry:
-            self._restore_from_session(self._session_entry)
+        self._show_loading()
+        QtWidgets.QApplication.instance().aboutToQuit.connect(self.on_close)
+        self._acquire_session_async(session_id)
+
+    def _acquire_session_async(self, requested_id):
+        store = self._session_store
+        def task():
+            sid, entry = store.acquire_or_create(requested_id)
+            self._dispatcher.invoke(lambda: self._on_session_acquired(sid, entry))
+        self._dispatcher.post(task, priority=9)
+
+    def _on_session_acquired(self, sid, entry):
+        self.session_id = sid
+        self._session_entry = entry
+        self._session_ready = True
+        AppLogger.info(f'New Window Running : {APP_NAME} (session={self.session_id})')
+        self.start_ipc_listener()
+        self._update_title()
+        if entry:
+            self._restore_from_session(entry)
         else:
             self.reload_database(self.get_last_used_db_name())
-        QtWidgets.QApplication.instance().aboutToQuit.connect(self.on_close)
 
 
     @profiler.profile
@@ -88,20 +97,46 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         return names[0]
 
     @QtCore.Slot(str)
-    def reload_database(self, name):
+    def reload_database(self, name, on_complete=None):
         self.database_name = name
         self.database_path = data_db_path(name)
-        self.setting_db = SettingDB(setting_db_path(name))
         self.search_service.reset_state()
         self._last_paths = None
         self.search_row_widget.invalidate_key_cache()
-        self.folder_view.set_folders(self.setting_db.get_all_parent_folders(), self.setting_db.get_all_ignore_folders())
-        QtCore.QTimer.singleShot(0, lambda: self.search(force=True))
         self.progress_bar.setProgress(int(0))
         self.progress_bar.setMaximum(int(0))
         self.refresh_db_selector()
         self._update_title()
         AppLogger.info(f'reload_database: {name}')
+        self._reload_db_async(name, on_complete)
+
+    def _reload_db_async(self, name, on_complete=None):
+        if self._db_reload_cancel:
+            self._db_reload_cancel.cancel()
+        cancel = CancelToken()
+        self._db_reload_cancel = cancel
+        db_path = setting_db_path(name)
+
+        def task():
+            sdb = SettingDB(db_path)
+            roots = sdb.get_all_parent_folders()
+            excluded = sdb.get_all_ignore_folders()
+            if cancel.is_cancelled():
+                return
+            self._dispatcher.invoke(lambda: self._apply_db_reload(sdb, roots, excluded, cancel, on_complete))
+
+        self._dispatcher.post(task, priority=8, cancel=cancel)
+
+    def _apply_db_reload(self, sdb, roots, excluded, cancel, on_complete=None):
+        if cancel.is_cancelled():
+            return
+        self._db_reload_cancel = None
+        self.setting_db = sdb
+        self.folder_view.set_folders(roots, excluded)
+        if on_complete:
+            on_complete()
+        else:
+            QtCore.QTimer.singleShot(0, lambda: self.search(force=True))
 
     def _update_title(self):
         if self._session_entry and self._session_entry.name:
@@ -373,6 +408,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
     def _restore_grid(self, state):
         if 'zoom' in state:
             self.grid_view.base_height = state['zoom']
+            self.grid_view._zoom_restore_guard = True
         if 'orientation' in state:
             self.grid_view.set_orientation(state['orientation'])
         if 'layout_mode' in state:
@@ -385,6 +421,9 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             from .commands.grid_commands import _SCROLL_ANCHOR_CMDS
             if state['scroll_anchor'] in _SCROLL_ANCHOR_CMDS:
                 Command.set_action_group_current('grid_scroll_anchor', state['scroll_anchor'], save=False)
+        if 'zoom' in state:
+            QtCore.QTimer.singleShot(500, lambda: setattr(
+                self.grid_view, '_zoom_restore_guard', False))
 
     def _sync_service_from_ui(self):
         dirs = self.folder_view.get_selected_paths()
@@ -519,7 +558,9 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
 
     def restore_query_state(self, query: QueryState) -> None:
         if query.database_name and query.database_name != self.database_name:
-            self.reload_database(query.database_name)
+            self.reload_database(query.database_name, on_complete=lambda: self.restore_query_state(
+                QueryState(search_params=query.search_params, folder_state=query.folder_state)))
+            return
         if query.search_params:
             self.search_service.set_params(query.search_params)
             from .commands.query_commands import sync_groups_from_args
@@ -538,8 +579,12 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         if query.folder_state:
             expanded = query.folder_state.get('expanded', [])
             selected = query.folder_state.get('selected', [])
-            self.folder_view.set_state((expanded, selected))
-        QtCore.QTimer.singleShot(0, lambda: self.search(force=True))
+            self.folder_view.set_state_async(
+                (expanded, selected),
+                on_complete=lambda: QtCore.QTimer.singleShot(0, lambda: self.search(force=True)),
+            )
+        else:
+            QtCore.QTimer.singleShot(0, lambda: self.search(force=True))
 
     def _apply_params_to_ui(self, params):
         row = self.search_row_widget
@@ -571,14 +616,19 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             db_name = entry.query_snapshot.database_name or self.get_last_used_db_name()
         else:
             db_name = self.get_last_used_db_name()
-        self.reload_database(db_name)
-        if entry.query_snapshot:
-            self.restore_query_state(entry.query_snapshot)
-        if entry.ui:
-            self.restore_ui_state(entry.ui)
+
+        def on_db_ready():
+            if entry.query_snapshot:
+                self.restore_query_state(entry.query_snapshot)
+            else:
+                QtCore.QTimer.singleShot(0, lambda: self.search(force=True))
+            if entry.ui:
+                self.restore_ui_state(entry.ui)
+
+        self.reload_database(db_name, on_complete=on_db_ready)
 
     def _save_session(self):
-        if self._session_deleted:
+        if self._session_deleted or not self._session_ready:
             return
         entry = self._session_entry or SessionEntry(
             session_id=self.session_id, name=DEFAULT_SESSION_NAME)
@@ -590,7 +640,8 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
     def on_close(self):
         try:
             self._save_session()
-            app_settings.save_immediate('window/tablename', self.database_name)
+            if self.database_name:
+                app_settings.save_immediate('window/tablename', self.database_name)
             app_settings.commit()
             self.t.dump_missing_keys()
         except Exception as e:

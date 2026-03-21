@@ -117,6 +117,41 @@
 - conftest.pyのpytest_sessionfinishフックでテスト結果を.temp/test_summary.txtに自動書き出し。テスト実行後はターミナル出力ではなくこのファイルを読んで結果を確認すること
 - pyproject.tomlのtimeout=30で各テスト30秒タイムアウト（pytest-timeout）。不要なプロセス残留を防止
 
+■ テスト実行のルール
+個別テスト実行とフルテスト実行で共通のルールを以下に定める。無駄な再実行を避け、1回の実行で確実に結果を得ること。
+
+● 実行コマンド
+- venvを必ず使用: .venv\Scripts\python.exe -m pytest
+- 個別テスト: .venv\Scripts\python.exe -m pytest tests/path/to/test_file.py -x -q
+- フルテスト: .venv\Scripts\python.exe -m pytest tests/ -p no:cacheprovider -q
+- フルテスト実行時は必ず -p no:cacheprovider を付与する。前回のlastfailedキャッシュが残っていると--lfオプションなしでも挙動に影響することがある
+- -q（quiet）を付けて出力量を抑える。-v は個別調査時のみ使う
+
+● 出力とパイプの禁止事項
+- フルテストの出力を Select-Object, Where-Object 等のPowerShellパイプで加工しない。パイプ処理はexit codeを変えるため、テスト成功でもexit code 1になり「失敗した」と誤判定する原因になる
+- 出力が長い場合でもパイプで切り取らず、そのまま実行する。結果の確認は .temp/test_summary.txt を読むことで行う
+
+● 結果の確認方法
+- テスト実行後は .temp/test_summary.txt を読んで結果を確認する（ターミナル出力のパースは行わない）
+- summary にはtotal/passed/failed/skipped/error/duration/カテゴリ別集計/失敗ノードが記録されている
+- failed: 0 かつ error: 0 であれば成功。それ以外は失敗ノードを確認して対処する
+
+● キャッシュ管理
+- .pytest_cache/v/cache/lastfailed に過去の失敗テストが蓄積される。テストファイルのリネームや削除後に古いエントリが残り、不整合の原因になる
+- フルテスト時は -p no:cacheprovider で回避する。個別テスト時はキャッシュの影響は軽微なので不要
+- __pycache__ の手動削除は原則不要。テストファイルの大規模リネーム時のみ検討する
+
+● タイムアウト
+- pyproject.toml で timeout=30（秒）、timeout_method="thread" が設定済み
+- 30秒を超えるテストは @pytest.mark.slow を付与し、通常実行では -m "not slow" で除外できるようにする
+- テスト内で固定sleepを使わない。条件付きポーリング（タイムアウト付きwhileループやQtBot.waitUntil）を使う
+
+● ウィンドウ・リソースのクリーンアップ
+- conftest.py の _close_qt_widgets_after_test（各テスト後）と _cleanup_background_resources（セッション終了時）が自動でクリーンアップを行う
+- テストでQWidgetを生成した場合、テスト内で明示的にclose()やdeleteLater()を呼ぶ必要はない（fixtureが処理する）。ただしshow()したウィンドウが残る場合はテスト内でclose()を呼ぶこと
+- QApplicationはpytest-qtが管理する。テスト内でQApplication()を直接生成しない
+
+
 ■ テスト用データセット (.sample/)
 - dataset_downloader.pyは目視デバッグ・ストレステスト用。自動テストは自前でPIL画像を生成する
 - 新しいextensionを追加したらdataset_downloader.pyにもそのファイル形式の生成/DLを追加する

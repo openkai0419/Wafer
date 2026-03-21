@@ -1,11 +1,13 @@
 import os
 import shutil
 import tempfile
+import time
 from PySide6 import QtWidgets
 from wafer.app.viewer.widgets.foldertree import (
     LazyFolderTreeView,
     _scan_children,
     _has_subfolders_bg,
+    _collect_segments_for_paths,
 )
 from wafer.utils.paths import normalize_path
 
@@ -164,3 +166,70 @@ def test_model_dispatcher_initialized(qtbot):
 
 def test_compile():
     py_compile.compile('wafer/app/viewer/widgets/foldertree.py')
+
+
+def test_collect_segments_basic():
+    root = normalize_path('/data/photos')
+    paths = [
+        normalize_path('/data/photos/A/A1'),
+        normalize_path('/data/photos/B'),
+    ]
+    segments = _collect_segments_for_paths(paths, [root])
+    assert root in segments
+    assert normalize_path('/data/photos/A') in segments
+    assert normalize_path('/data/photos/A/A1') in segments
+    assert normalize_path('/data/photos/B') in segments
+
+
+def test_collect_segments_deduplicates():
+    root = normalize_path('/r')
+    paths = [normalize_path('/r/A/B'), normalize_path('/r/A/C')]
+    segments = _collect_segments_for_paths(paths, [root])
+    assert segments.count(normalize_path('/r/A')) == 1
+
+
+def test_set_state_async_expands_and_selects(qtbot):
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    tmpdir = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(tmpdir, 'X'), exist_ok=True)
+        os.makedirs(os.path.join(tmpdir, 'Y'), exist_ok=True)
+        tree = LazyFolderTreeView(roots=[tmpdir], excluded=[])
+        qtbot.addWidget(tree)
+        tree.model_._build_roots([tmpdir])
+
+        root_norm = normalize_path(tmpdir)
+        path_x = normalize_path(os.path.join(tmpdir, 'X'))
+        path_y = normalize_path(os.path.join(tmpdir, 'Y'))
+
+        done = []
+        tree.set_state_async(
+            ([root_norm], [path_x, path_y]),
+            on_complete=lambda: done.append(True),
+        )
+
+        deadline = time.monotonic() + 5.0
+        while not done and time.monotonic() < deadline:
+            app.processEvents()
+            time.sleep(0.01)
+
+        assert done, "set_state_async did not complete"
+        selected = tree.get_selected_paths()
+        assert sorted(selected) == sorted([path_x, path_y])
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_set_state_async_empty_states(qtbot):
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    tmpdir = tempfile.mkdtemp()
+    try:
+        tree = LazyFolderTreeView(roots=[tmpdir], excluded=[])
+        qtbot.addWidget(tree)
+        tree.model_._build_roots([tmpdir])
+
+        done = []
+        tree.set_state_async(([], []), on_complete=lambda: done.append(True))
+        assert done
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)

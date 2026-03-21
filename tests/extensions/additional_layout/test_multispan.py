@@ -1,5 +1,5 @@
 from extensions.additional_layout.multispan import (
-    MultiSpanLayout, MultiSpanCalculator,
+    MultiSpanLayout, MultiSpan2x2Layout, MultiSpanCalculator,
 )
 from wafer.plugin.layout.base import BaseLayoutPlugin
 from wafer.plugin.layout.calc import LayoutData
@@ -357,3 +357,231 @@ def test_gap_fill_prefers_multispan_over_1x1():
     for i in range(len(layout)):
         for j in range(i + 1, len(layout)):
             assert not layout[i].intersects(layout[j]), f"Items {i} and {j} overlap"
+
+
+def test_two_pass_square_prefers_2x2():
+    aspects = [1.0] * 20
+    calc = MultiSpanCalculator(aspects, 100, 5, 600, 600, 0)
+    calc.run()
+    layout = calc._result
+    base = 100 / 2
+    num_cols = max(1, round(605 / (base + 5)))
+    cell_w = (600 - 5 * (num_cols - 1)) / num_cols
+    big_count = sum(1 for i in range(len(aspects))
+                    if layout[i].width() > cell_w * 1.5
+                    and layout[i].height() > cell_w * 1.5)
+    assert big_count >= 3, (
+        f"Square images should often get 2x2+: got {big_count} large cells"
+    )
+
+
+def test_two_pass_no_none_rects():
+    for n in [1, 5, 20, 100]:
+        aspects = [0.5 + (i % 5) * 0.5 for i in range(n)]
+        calc = MultiSpanCalculator(aspects, 100, 5, 500, 500, 0)
+        calc.run()
+        layout = calc._result
+        assert layout is not None
+        assert len(layout) == n
+        for i in range(n):
+            assert layout[i] is not None, f"rect[{i}] is None for n={n}"
+            assert layout[i].width() > 0
+            assert layout[i].height() > 0
+
+
+def test_two_pass_all_items_placed_no_overlap():
+    for n in [10, 50, 200, 500]:
+        aspects = [0.3 + (i * 7 % 13) * 0.25 for i in range(n)]
+        for ori in range(4):
+            calc = MultiSpanCalculator(aspects, 100, 5, 600, 600, ori)
+            calc.run()
+            layout = calc._result
+            assert len(layout) == n
+            for i in range(n):
+                assert layout[i] is not None, (
+                    f"n={n} ori={ori}: rect[{i}] is None"
+                )
+            for i in range(n):
+                for j in range(i + 1, n):
+                    assert not layout[i].intersects(layout[j]), (
+                        f"n={n} ori={ori}: items {i} and {j} overlap"
+                    )
+
+
+def test_two_pass_deferred_items_fill_gaps():
+    aspects = [3.0] * 10 + [1.0] * 10
+    calc = MultiSpanCalculator(aspects, 100, 5, 600, 600, 0)
+    calc.run()
+    layout = calc._result
+    assert len(layout) == 20
+    for i in range(20):
+        assert layout[i] is not None
+    for i in range(20):
+        for j in range(i + 1, 20):
+            assert not layout[i].intersects(layout[j])
+
+
+def test_two_pass_extreme_ar_no_crash():
+    aspects = [0.1, 10.0, 0.05, 20.0, 1.0] * 10
+    calc = MultiSpanCalculator(aspects, 100, 5, 500, 500, 0)
+    calc.run()
+    layout = calc._result
+    assert len(layout) == 50
+    for i in range(50):
+        assert layout[i] is not None
+
+
+def _cell_gap_ratio(aspects, base_size, spacing, container, orientation=0):
+    calc = MultiSpanCalculator(aspects, base_size, spacing,
+                               container, container, orientation)
+    calc.run()
+    layout = calc._result
+    n = len(aspects)
+    base = base_size / 2
+    num_cols = max(1, round((container + spacing) / (base + spacing)))
+    cell_w = (container - spacing * (num_cols - 1)) / num_cols
+    step = cell_w + spacing
+    max_r = max(layout[i].y() + layout[i].height() for i in range(n))
+    max_cr = int(max_r / step) + 1
+    occ = bytearray(max_cr * num_cols)
+    for i in range(n):
+        r = layout[i]
+        c0 = round(r.x() / step)
+        r0 = round(r.y() / step)
+        cw = max(1, round(r.width() / cell_w))
+        ch = max(1, round(r.height() / cell_w))
+        for dr in range(ch):
+            for dc in range(cw):
+                row_i = r0 + dr
+                col_i = c0 + dc
+                if row_i < max_cr and col_i < num_cols:
+                    occ[row_i * num_cols + col_i] = 1
+    total = max_cr * num_cols
+    gaps = total - sum(occ)
+    return gaps, total, gaps / total if total > 0 else 0.0
+
+
+def test_no_cell_gaps_uniform_square():
+    gaps, total, ratio = _cell_gap_ratio([1.0] * 50, 200, 5, 1200)
+    assert ratio < 0.10, f"Square items: cell gap ratio {ratio:.3f} ({gaps}/{total})"
+
+
+def test_no_cell_gaps_mixed_ar():
+    aspects = [1.0, 1.5, 0.8, 2.0, 0.5, 1.2, 1.0, 0.7, 1.8, 0.4] * 10
+    gaps, total, ratio = _cell_gap_ratio(aspects, 200, 5, 1200)
+    assert ratio < 0.12, f"Mixed AR: cell gap ratio {ratio:.3f} ({gaps}/{total})"
+
+
+def test_no_cell_gaps_alternating_extreme():
+    aspects = [3.0, 0.3] * 50
+    gaps, total, ratio = _cell_gap_ratio(aspects, 200, 5, 1200)
+    assert ratio < 0.10, f"Extreme AR: cell gap ratio {ratio:.3f} ({gaps}/{total})"
+
+
+def test_no_cell_gaps_all_orientations():
+    aspects = [1.0, 1.5, 0.5, 2.0, 0.8] * 20
+    for ori in range(4):
+        gaps, total, ratio = _cell_gap_ratio(aspects, 200, 5, 1200, ori)
+        assert ratio < 0.20, (
+            f"ori={ori}: cell gap ratio {ratio:.3f} ({gaps}/{total})"
+        )
+
+
+def test_2x2_is_plugin():
+    assert issubclass(MultiSpan2x2Layout, BaseLayoutPlugin)
+    assert MultiSpan2x2Layout.NAME == 'multiSpan2x2'
+    assert MultiSpan2x2Layout.DISPLAY_NAME == 'MultiSpan 2x2 Grid'
+
+
+def test_2x2_priority():
+    assert MultiSpan2x2Layout.PRIORITY == 84
+
+
+def test_2x2_create_calculator():
+    calc = MultiSpan2x2Layout.create_calculator([1.0, 1.5], 100, 5, 500, 500, 0)
+    assert isinstance(calc, MultiSpanCalculator)
+    assert calc._max_span_c == 2
+    assert calc._max_span_r == 2
+    assert calc._max_area == 2
+    calc.run()
+    assert calc._result is not None
+    assert len(calc._result) == 2
+
+
+def test_2x2_no_span_exceeds_1x2():
+    aspects = [1.0] * 50
+    calc = MultiSpan2x2Layout.create_calculator(aspects, 100, 5, 800, 800, 0)
+    calc.run()
+    layout = calc._result
+    base = 100 / 2
+    num_cols = max(1, round((800 + 5) / (base + 5)))
+    cell_w = (800 - 5 * (num_cols - 1)) / num_cols
+    one_cell = cell_w + 2
+    two_cell = cell_w * 2 + 5 + 2
+    for i in range(len(layout)):
+        w, h = layout[i].width(), layout[i].height()
+        wide = w > one_cell
+        tall = h > one_cell
+        assert not (wide and tall), (
+            f"item {i}: {w}x{h} is 2x2 but max_area=2 allows only 1x2/2x1"
+        )
+        assert w <= two_cell, (
+            f"item {i}: width {w} exceeds 2-cell max {two_cell}"
+        )
+        assert h <= two_cell, (
+            f"item {i}: height {h} exceeds 2-cell max {two_cell}"
+        )
+
+
+def test_2x2_no_overlap():
+    aspects = [1.5, 1.0, 0.5, 1.8, 0.3, 2.0, 1.0, 0.8, 1.2, 0.6] * 10
+    calc = MultiSpan2x2Layout.create_calculator(aspects, 100, 5, 600, 600, 0)
+    calc.run()
+    layout = calc._result
+    assert len(layout) == len(aspects)
+    for i in range(len(layout)):
+        for j in range(i + 1, len(layout)):
+            assert not layout[i].intersects(layout[j]), (
+                f"Items {i} and {j} overlap"
+            )
+
+
+def test_2x2_all_orientations_no_overlap():
+    aspects = [1.5, 1.0, 0.5, 1.8, 0.3, 2.0, 1.0] * 10
+    for ori in range(4):
+        calc = MultiSpan2x2Layout.create_calculator(aspects, 100, 5, 500, 500, ori)
+        calc.run()
+        layout = calc._result
+        assert len(layout) == len(aspects)
+        for i in range(len(layout)):
+            for j in range(i + 1, len(layout)):
+                assert not layout[i].intersects(layout[j]), (
+                    f"ori={ori}: items {i} and {j} overlap"
+                )
+
+
+def test_2x2_has_multispan():
+    aspects = [2.0, 0.5] * 20
+    calc = MultiSpan2x2Layout.create_calculator(aspects, 100, 5, 600, 600, 0)
+    calc.run()
+    layout = calc._result
+    base = 100 / 2
+    num_cols = max(1, round(605 / (base + 5)))
+    cell_w = (600 - 5 * (num_cols - 1)) / num_cols
+    multispan_count = sum(1 for i in range(len(layout))
+                          if layout[i].width() > cell_w * 1.5
+                          or layout[i].height() > cell_w * 1.5)
+    assert multispan_count > 0, "2x2 layout should produce 1x2/2x1 multispan cells"
+
+
+def test_2x2_no_none_rects():
+    for n in [1, 5, 20, 100]:
+        aspects = [0.5 + (i % 5) * 0.5 for i in range(n)]
+        calc = MultiSpan2x2Layout.create_calculator(aspects, 100, 5, 500, 500, 0)
+        calc.run()
+        layout = calc._result
+        assert len(layout) == n
+        for i in range(n):
+            assert layout[i] is not None
+            assert layout[i].width() > 0
+            assert layout[i].height() > 0

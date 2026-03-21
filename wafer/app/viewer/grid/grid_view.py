@@ -120,6 +120,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self.screen_width = QtGui.QGuiApplication.primaryScreen().availableGeometry().width()
         self.base_height = int(self.screen_width / 10)
         self._width_ref = 0
+        self._zoom_restore_guard = False
         self.min_height = int(self.screen_width / 30)
         self.max_height = int(self.screen_width)
         self.setMinimumWidth(self.min_height)
@@ -389,13 +390,14 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
     def on_resize_event(self):
         sv = self._secondary_viewport_size()
         if sv > 0 and self._width_ref > 0 and sv != self._width_ref:
-            scale = sv / self._width_ref
-            new_height = int(self.base_height * scale)
-            new_height = min(self.max_height, max(self.min_height, new_height))
-            if new_height != self.base_height:
-                self.base_height = new_height
-                self._width_ref = sv
-                self.base_height_changed.emit()
+            if not self._zoom_restore_guard:
+                scale = sv / self._width_ref
+                new_height = int(self.base_height * scale)
+                new_height = min(self.max_height, max(self.min_height, new_height))
+                if new_height != self.base_height:
+                    self.base_height = new_height
+                    self.base_height_changed.emit()
+            self._width_ref = sv
         elif self._width_ref == 0 and sv > 0:
             self._width_ref = sv
         center_idx = self.get_center_image_index()

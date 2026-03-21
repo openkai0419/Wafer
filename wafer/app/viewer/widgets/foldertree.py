@@ -30,6 +30,35 @@ def _scan_children(path, excluded):
     return children
 
 
+def _collect_segments_for_paths(paths, roots):
+    segments = []
+    seen = set()
+    for path in paths:
+        root = None
+        for r in roots:
+            if path.startswith(r):
+                root = r
+                break
+        if root is None:
+            continue
+        if root not in seen:
+            seen.add(root)
+            segments.append(root)
+        try:
+            rel = os.path.relpath(path, root)
+        except ValueError:
+            continue
+        if rel in ('.', ''):
+            continue
+        current = root
+        for part in rel.split(os.sep):
+            current = normalize_path(os.path.join(current, part))
+            if current not in seen:
+                seen.add(current)
+                segments.append(current)
+    return segments
+
+
 def _has_subfolders_bg(path, excluded):
     try:
         with os.scandir(path) as it:
@@ -681,6 +710,67 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         if to_select:
             selmodel.setCurrentIndex(to_select[0], QtCore.QItemSelectionModel.NoUpdate)
             self.scrollTo(to_select[0], QtWidgets.QAbstractItemView.PositionAtCenter)
+
+    def set_state_async(self, states, on_complete=None):
+        try:
+            expanded, selected = states
+        except Exception:
+            if on_complete:
+                on_complete()
+            return
+        if not expanded and not selected:
+            if on_complete:
+                on_complete()
+            return
+        roots = [normalize_path(r) for r in self.model_.roots]
+        all_paths = list(dict.fromkeys(expanded + selected))
+        segments = _collect_segments_for_paths(
+            [normalize_path(p) for p in all_paths], roots)
+        excluded = set(self.model_.excluded)
+        dispatcher = self.model_._dispatcher
+
+        def task():
+            children_map = {}
+            for seg in segments:
+                children_map[seg] = _scan_children(seg, excluded)
+            dispatcher.invoke(lambda: self._apply_state_async(
+                expanded, selected, children_map, on_complete))
+
+        dispatcher.post(task, priority=8)
+
+    def _apply_state_async(self, expanded, selected, children_map, on_complete):
+        model = self.model_
+        for seg_path, children in children_map.items():
+            item = model.path_item_map.get(normalize_path(seg_path))
+            if not model._is_valid_item(item):
+                continue
+            if item.hasChildren() and item.child(0).data(USER_ROLE_PATH):
+                continue
+            model._apply_children(item, seg_path, children)
+        for path in expanded:
+            path = normalize_path(path)
+            item = model.path_item_map.get(path)
+            if model._is_valid_item(item):
+                index = model.indexFromItem(item)
+                if index.isValid():
+                    self.expand(index)
+        selmodel = self.selectionModel()
+        selmodel.clearSelection()
+        to_select = []
+        for path in selected:
+            path = normalize_path(path)
+            item = model.path_item_map.get(path)
+            if model._is_valid_item(item):
+                index = model.indexFromItem(item)
+                if index and index.isValid():
+                    to_select.append(index)
+        for idx in to_select:
+            selmodel.select(idx, QtCore.QItemSelectionModel.Select | QtCore.QItemSelectionModel.Rows)
+        if to_select:
+            selmodel.setCurrentIndex(to_select[0], QtCore.QItemSelectionModel.NoUpdate)
+            self.scrollTo(to_select[0], QtWidgets.QAbstractItemView.PositionAtCenter)
+        if on_complete:
+            on_complete()
 
     @profiler.profile
     def expand_and_select_path(self, path):

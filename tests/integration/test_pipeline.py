@@ -79,10 +79,9 @@ class TestImagePipeline:
             assert norm in prev
 
             file_row = idx.db.read_conn.execute(
-                "SELECT name, aspect_ratio FROM files WHERE path=?", (norm,)
+                "SELECT aspect_ratio FROM files WHERE path=?", (norm,)
             ).fetchone()
             assert file_row is not None
-            assert file_row[0] == 'test.jpg'
 
             pending = idx.db.get_pending_sources('exif')
             assert len(pending) == 1
@@ -115,10 +114,9 @@ class TestImagePipeline:
                 assert src_row is not None
 
                 file_row = db.read_conn.execute(
-                    "SELECT name, aspect_ratio FROM files WHERE path=?", (norm,)
+                    "SELECT aspect_ratio FROM files WHERE path=?", (norm,)
                 ).fetchone()
-                assert file_row[0] == 'test.jpg'
-                assert file_row[1] == 2.0
+                assert file_row[0] == 2.0
 
                 meta = db.read_conn.execute(
                     "SELECT key, value FROM meta_info WHERE path=?", (norm,)
@@ -153,10 +151,10 @@ class TestImagePipeline:
             prev = idx.db.load_existing_sources()
             assert norm in prev
 
-            file_row = idx.db.read_conn.execute(
-                "SELECT name FROM files WHERE path=?", (norm,)
+            name_row = idx.db.read_conn.execute(
+                "SELECT value FROM meta_info WHERE path=? AND key='name'", (norm,)
             ).fetchone()
-            assert file_row[0] == 'readme.txt'
+            assert name_row[0] == 'readme.txt'
 
             pending = idx.db.get_pending_sources('exif')
             assert len(pending) == 0
@@ -419,7 +417,7 @@ class TestWriterCollectorField:
             "VALUES ('src1', 'h1', 100, 1.0)"
         )
         db.conn.execute(
-            "INSERT INTO files (path, source, name, aspect_ratio) VALUES ('src1', 'src1', 'test', 1.0)"
+            "INSERT INTO files (path, source, aspect_ratio) VALUES ('src1', 'src1', 1.0)"
         )
         db.conn.commit()
         db.close()

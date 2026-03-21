@@ -11,8 +11,8 @@ from wafer.builtins.filters import (
 from wafer.builtins.sorts import (
     NaturalPathSort, NaturalNameSort,
     ModifiedSort, CreatedSort, SizeSort, CollectedSort, RandomSort,
-    _natural_key,
 )
+from wafer.utils.formatting import natural_key
 
 
 class TestBaseFilterPlugin:
@@ -104,7 +104,7 @@ class TestTextFilterInheritableParams:
 
     def test_exports_settings_only(self):
         params = {
-            'keys': ['__filepath__', 'prompt'],
+            'keys': ['path', 'prompt'],
             'keywords': 'sunset',
             'query_mode': 'LIKE',
             'keyword_mode': 'OR',
@@ -112,7 +112,7 @@ class TestTextFilterInheritableParams:
         }
         result = TextFilter.inheritable_params(params)
         assert result == {
-            'keys': ['__filepath__', 'prompt'],
+            'keys': ['path', 'prompt'],
             'query_mode': 'LIKE',
             'keyword_mode': 'OR',
             'keyword_separator': ' ',
@@ -131,11 +131,11 @@ class TestTextFilterBindKeyStore:
 
     def test_bind_connects_and_applies(self, qapp):
         store = KeyStore()
-        store.set_data([('__filepath__', 10), ('prompt', 5)])
+        store.set_data([('path', 10), ('prompt', 5)])
         widget = TextFilter.create_widget()
         TextFilter.bind_key_store(widget, store)
         items = [a.data() for a in widget.keys_combo.actions]
-        assert '__filepath__' in items
+        assert 'path' in items
         assert 'prompt' in items
 
     def test_bind_receives_future_updates(self, qapp):
@@ -143,9 +143,9 @@ class TestTextFilterBindKeyStore:
         widget = TextFilter.create_widget()
         TextFilter.bind_key_store(widget, store)
         assert len(widget.keys_combo.actions) == 0
-        store.set_data([('__filepath__', 20), ('artist', 8)])
+        store.set_data([('path', 20), ('artist', 8)])
         items = [a.data() for a in widget.keys_combo.actions]
-        assert '__filepath__' in items
+        assert 'path' in items
         assert 'artist' in items
 
 
@@ -157,9 +157,6 @@ class TestBaseSortPlugin:
     def test_sort_rows_raises(self):
         with pytest.raises(NotImplementedError):
             BaseSortPlugin.sort_rows([], True)
-
-    def test_default_required_columns(self):
-        assert BaseSortPlugin.required_columns() == ()
 
     def test_concrete_subclass_sql_column(self):
         class MySort(BaseSortPlugin):
@@ -242,8 +239,8 @@ class TestGlobalRegistries:
 class TestNormalizeTextInputs:
 
     def test_string_keys(self):
-        keys, inc, exc = _normalize_text_inputs({'keys': '__filepath__'})
-        assert keys == ['__filepath__']
+        keys, inc, exc = _normalize_text_inputs({'keys': 'path'})
+        assert keys == ['path']
 
     def test_list_keys(self):
         keys, inc, exc = _normalize_text_inputs({'keys': ['dpi', 'Comment']})
@@ -345,26 +342,26 @@ class TestEscapeLike:
 class TestNaturalKey:
 
     def test_pure_alpha(self):
-        assert _natural_key('abc') == ['abc']
+        assert natural_key('abc') == ['abc']
 
     def test_pure_digits(self):
-        assert _natural_key('123') == ['', 123, '']
+        assert natural_key('123') == ['', 123, '']
 
     def test_mixed(self):
-        result = _natural_key('img_10.jpg')
+        result = natural_key('img_10.jpg')
         assert any(isinstance(c, int) for c in result)
         assert 10 in result
 
     def test_ordering(self):
         names = ['img_2.jpg', 'img_10.jpg', 'img_1.jpg']
-        sorted_names = sorted(names, key=_natural_key)
+        sorted_names = sorted(names, key=natural_key)
         assert sorted_names == ['img_1.jpg', 'img_2.jpg', 'img_10.jpg']
 
     def test_case_insensitive(self):
-        assert _natural_key('ABC') == _natural_key('abc')
+        assert natural_key('ABC') == natural_key('abc')
 
     def test_leading_zeros(self):
-        assert _natural_key('file_001.jpg') == _natural_key('file_1.jpg')
+        assert natural_key('file_001.jpg') == natural_key('file_1.jpg')
 
 
 class TestSortPluginAttributes:
@@ -372,12 +369,10 @@ class TestSortPluginAttributes:
     def test_natural_path_sort(self):
         assert NaturalPathSort.NAME == 'path'
         assert NaturalPathSort.META_KEY is None
-        assert 'path' in NaturalPathSort.required_columns()
 
     def test_natural_name_sort(self):
         assert NaturalNameSort.NAME == 'name'
-        assert NaturalNameSort.META_KEY is None
-        assert 'name' in NaturalNameSort.required_columns()
+        assert NaturalNameSort.META_KEY == 'name'
 
     def test_modified_sort(self):
         assert ModifiedSort.META_KEY == 'modified'

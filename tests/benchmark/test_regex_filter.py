@@ -32,7 +32,6 @@ def _setup_db(tmp_path, n):
     conn.execute('''CREATE TABLE IF NOT EXISTS files (
         path TEXT PRIMARY KEY,
         source TEXT NOT NULL,
-        name TEXT,
         aspect_ratio REAL,
         FOREIGN KEY(source) REFERENCES sources(source))''')
     conn.execute('''CREATE TABLE IF NOT EXISTS meta_info (
@@ -44,7 +43,7 @@ def _setup_db(tmp_path, n):
         PRIMARY KEY(file_hash, key),
         FOREIGN KEY(file_hash) REFERENCES hash_index(file_hash))''')
     conn.execute('''CREATE VIEW IF NOT EXISTS files_full AS
-        SELECT i.path, i.source, i.name, i.aspect_ratio,
+        SELECT i.path, i.source, i.aspect_ratio,
                s.file_hash, s.size, s.modified
         FROM files i JOIN sources s ON s.source = i.source''')
     conn.executescript('''
@@ -71,13 +70,15 @@ def _setup_db(tmp_path, n):
         name = os.path.basename(path)
         hash_rows.append((fhash,))
         sources_rows.append((source, fhash, 1024 * i, float(i)))
-        files_rows.append((path, source, name, 1.5))
+        files_rows.append((path, source, 1.5))
+        meta_rows.append((path, 'path', path, None))
+        meta_rows.append((path, 'name', name, None))
         meta_rows.append((path, 'description', meta_val, None))
         tag_rows.append((fhash, 'category', meta_val))
 
     conn.executemany('INSERT INTO hash_index VALUES (?)', hash_rows)
     conn.executemany('INSERT INTO sources VALUES (?,?,?,?)', sources_rows)
-    conn.executemany('INSERT INTO files VALUES (?,?,?,?)', files_rows)
+    conn.executemany('INSERT INTO files VALUES (?,?,?)', files_rows)
     conn.executemany('INSERT INTO meta_info VALUES (?,?,?,?)', meta_rows)
     conn.executemany('INSERT INTO tags VALUES (?,?,?)', tag_rows)
     conn.commit()

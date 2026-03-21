@@ -273,7 +273,8 @@ class FileIndexer:
                 file_hash = fast_signature_hash(p, fsize, 256)
                 name = Path(p).name
                 source_entries.append((p, file_hash, fsize, mtime))
-                file_entries.append((p, p, name, aspect_map.get(p, 1.0)))
+                file_entries.append((p, p, aspect_map.get(p, 1.0)))
+                meta_entries.append((p, 'path', p, None))
                 meta_entries.append((p, 'name', name, None))
                 meta_entries.append((p, 'size', str(fsize), float(fsize)))
                 meta_entries.append((p, 'modified', str(mtime), mtime))

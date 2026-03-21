@@ -26,7 +26,7 @@ def _setup_db(tmp_path, files=None, meta=None, tags=None):
         size INTEGER, modified REAL,
         FOREIGN KEY(file_hash) REFERENCES hash_index(file_hash))''')
     conn.execute('''CREATE TABLE files (
-        path TEXT PRIMARY KEY, source TEXT NOT NULL, name TEXT, aspect_ratio REAL,
+        path TEXT PRIMARY KEY, source TEXT NOT NULL, aspect_ratio REAL,
         FOREIGN KEY(source) REFERENCES sources(source))''')
     conn.execute('''CREATE TABLE meta_info (
         path TEXT NOT NULL, key TEXT NOT NULL, value TEXT, value_num REAL,
@@ -37,7 +37,7 @@ def _setup_db(tmp_path, files=None, meta=None, tags=None):
         PRIMARY KEY(file_hash, key),
         FOREIGN KEY(file_hash) REFERENCES hash_index(file_hash))''')
     conn.execute('''CREATE VIEW files_full AS
-        SELECT i.path, i.source, i.name, i.aspect_ratio,
+        SELECT i.path, i.source, i.aspect_ratio,
                s.file_hash, s.size, s.modified
         FROM files i JOIN sources s ON s.source = i.source''')
     conn.executescript('''
@@ -52,8 +52,12 @@ def _setup_db(tmp_path, files=None, meta=None, tags=None):
         conn.execute('INSERT OR IGNORE INTO hash_index VALUES (?)', (fhash,))
         conn.execute('INSERT INTO sources VALUES (?,?,?,?)',
                      (source, fhash, 100, 1.0))
-        conn.execute('INSERT INTO files VALUES (?,?,?,?)',
-                     (path, source, name, 1.0))
+        conn.execute('INSERT INTO files VALUES (?,?,?)',
+                     (path, source, 1.0))
+        conn.execute('INSERT OR REPLACE INTO meta_info VALUES (?,?,?,?)',
+                     (path, 'path', path, None))
+        conn.execute('INSERT OR REPLACE INTO meta_info VALUES (?,?,?,?)',
+                     (path, 'name', name, None))
 
     for path, key, value in (meta or []):
         conn.execute('INSERT OR REPLACE INTO meta_info VALUES (?,?,?,?)',
@@ -192,12 +196,12 @@ class TestInheritableParams:
 
     def test_exports_keys_and_ignore_case(self):
         params = {
-            'keys': ['__filepath__', 'prompt'],
+            'keys': ['path', 'prompt'],
             'pattern': r'photo.*2024',
             'ignore_case': True,
         }
         result = RegexFilter.inheritable_params(params)
-        assert result == {'keys': ['__filepath__', 'prompt'], 'ignore_case': True}
+        assert result == {'keys': ['path', 'prompt'], 'ignore_case': True}
         assert 'pattern' not in result
 
     def test_empty_params(self):
@@ -212,13 +216,13 @@ class TestBuildPathQuery:
 
     def test_empty_pattern_returns_none(self, tmp_path):
         sql, bind = RegexFilter.build_path_query(
-            {'pattern': '', 'keys': ['__filepath__']}, lambda p: p
+            {'pattern': '', 'keys': ['path']}, lambda p: p
         )
         assert sql is None
 
     def test_invalid_regex_returns_none(self, tmp_path):
         sql, bind = RegexFilter.build_path_query(
-            {'pattern': '[invalid', 'keys': ['__filepath__']}, lambda p: p
+            {'pattern': '[invalid', 'keys': ['path']}, lambda p: p
         )
         assert sql is None
 
@@ -230,7 +234,7 @@ class TestBuildPathQuery:
 
     def test_filepath_key_produces_sql(self, tmp_path):
         sql, bind = RegexFilter.build_path_query(
-            {'pattern': 'test', 'keys': ['__filepath__']}, lambda p: p
+            {'pattern': 'test', 'keys': ['path']}, lambda p: p
         )
         assert sql is not None
         assert 'files' in sql
@@ -254,7 +258,7 @@ class TestPathFiltering:
         ])
         result = _query(db, {
             'pattern': r'IMG_\d+\.jpg',
-            'keys': ['__filepath__'],
+            'keys': ['path'],
         })
         assert result == {'c:/photos/IMG_0001.jpg', 'c:/photos/IMG_0002.jpg'}
 
@@ -262,7 +266,7 @@ class TestPathFiltering:
         db = _setup_db(tmp_path, files=['c:/a.jpg', 'c:/b.png'])
         result = _query(db, {
             'pattern': r'zzz_nonexistent',
-            'keys': ['__filepath__'],
+            'keys': ['path'],
         })
         assert result == set()
 
@@ -270,7 +274,7 @@ class TestPathFiltering:
         db = _setup_db(tmp_path, files=['c:/a.jpg', 'c:/b.jpg'])
         result = _query(db, {
             'pattern': r'\.jpg$',
-            'keys': ['__filepath__'],
+            'keys': ['path'],
         })
         assert result == {'c:/a.jpg', 'c:/b.jpg'}
 
@@ -281,7 +285,7 @@ class TestPathFiltering:
         ])
         result = _query(db, {
             'pattern': r'Test',
-            'keys': ['__filepath__'],
+            'keys': ['path'],
         })
         assert result == {'c:/photos/Test.jpg'}
 
@@ -292,7 +296,7 @@ class TestPathFiltering:
         ])
         result = _query(db, {
             'pattern': r'test',
-            'keys': ['__filepath__'],
+            'keys': ['path'],
             'ignore_case': True,
         })
         assert result == {'c:/photos/Test.jpg', 'c:/photos/test.jpg'}
@@ -305,7 +309,7 @@ class TestPathFiltering:
         ])
         result = _query(db, {
             'pattern': r'\d{4}-\d{2}-\d{2}_',
-            'keys': ['__filepath__'],
+            'keys': ['path'],
         })
         assert result == {
             'c:/photos/2024-01-15_sunset.jpg',
@@ -320,7 +324,7 @@ class TestPathFiltering:
         ])
         result = _query(db, {
             'pattern': r'(cat|dog)_photo',
-            'keys': ['__filepath__'],
+            'keys': ['path'],
         })
         assert result == {'c:/cat_photo.jpg', 'c:/dog_photo.jpg'}
 
@@ -331,7 +335,7 @@ class TestPathFiltering:
         ])
         result = _query(db, {
             'pattern': r'file\.txt',
-            'keys': ['__filepath__'],
+            'keys': ['path'],
         })
         assert result == {'c:/file.txt'}
 
@@ -342,7 +346,7 @@ class TestPathFiltering:
         ])
         result = _query(db, {
             'pattern': r'^\w:/\d+\.jpg$',
-            'keys': ['__filepath__'],
+            'keys': ['path'],
         })
         assert result == {'c:/123.jpg'}
 
@@ -353,7 +357,7 @@ class TestPathFiltering:
         ])
         result = _query(db, {
             'pattern': r'100%_done',
-            'keys': ['__filepath__'],
+            'keys': ['path'],
         })
         assert result == {'c:/photos/100%_done.jpg'}
 
@@ -364,7 +368,7 @@ class TestPathFiltering:
         ])
         result = _query(db, {
             'pattern': '日本',
-            'keys': ['__filepath__'],
+            'keys': ['path'],
         })
         assert result == {'c:/photos/日本_旅行.jpg'}
 
@@ -425,7 +429,7 @@ class TestPostFilter:
         ])
         result = _query(db, {
             'pattern': r'IMG_\d{4}',
-            'keys': ['__filepath__'],
+            'keys': ['path'],
         })
         assert result == {'c:/photos/IMG_0001.jpg'}
 
@@ -437,7 +441,7 @@ class TestPostFilter:
         )
         result = _query(db, {
             'pattern': r'IMG_\d{4}',
-            'keys': ['__filepath__', 'desc'],
+            'keys': ['path', 'desc'],
         })
         assert 'c:/IMG_test.jpg' in result
 
@@ -448,7 +452,7 @@ class TestEdgeCases:
         db = _setup_db(tmp_path)
         result = _query(db, {
             'pattern': r'test',
-            'keys': ['__filepath__'],
+            'keys': ['path'],
         })
         assert result == set()
 
@@ -456,7 +460,7 @@ class TestEdgeCases:
         db = _setup_db(tmp_path, files=['c:/a.jpg'])
         result = _query(db, {
             'pattern': r'^$',
-            'keys': ['__filepath__'],
+            'keys': ['path'],
         })
         assert result == set()
 
@@ -467,7 +471,7 @@ class TestEdgeCases:
         ])
         result = _query(db, {
             'pattern': r'test_\d{4}_photo',
-            'keys': ['__filepath__'],
+            'keys': ['path'],
         })
         assert result == {'c:/photos/test_1234_photo.jpg'}
 
@@ -478,7 +482,7 @@ class TestEdgeCases:
         ])
         result = _query(db, {
             'pattern': r'path\\to\\file',
-            'keys': ['__filepath__'],
+            'keys': ['path'],
         })
         assert 'c:/path\\to\\file.jpg' in result
 
@@ -486,7 +490,7 @@ class TestEdgeCases:
         db = _setup_db(tmp_path, files=['c:/a.jpg'])
         result = _query(db, {
             'pattern': r'.+',
-            'keys': ['__filepath__'],
+            'keys': ['path'],
         })
         assert result == {'c:/a.jpg'}
 
@@ -508,7 +512,7 @@ class TestEdgeCases:
         ])
         result = _query(db, {
             'pattern': r'100%_complete',
-            'keys': ['__filepath__'],
+            'keys': ['path'],
         })
         assert result == {'c:/100%_complete.jpg'}
 
@@ -519,7 +523,7 @@ class TestEdgeCases:
         ])
         result = _query(db, {
             'pattern': r'a_b',
-            'keys': ['__filepath__'],
+            'keys': ['path'],
         })
         assert result == {'c:/a_b.jpg'}
 
@@ -532,6 +536,6 @@ class TestEdgeCases:
 
         result = _query(db, {
             'pattern': pattern,
-            'keys': ['__filepath__'],
+            'keys': ['path'],
         })
         assert expected == result

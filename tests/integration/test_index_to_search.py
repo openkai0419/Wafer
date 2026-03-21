@@ -85,7 +85,7 @@ class TestIndexToSearch:
 
         engine = FileSearchEngine(str(db_path))
         result_paths, _, _ = engine.search(SearchQuery(
-            keys='__filepath__',
+            keys='path',
             keywords='alpha',
         ))
         norms = [normalize_path(str(p)) for p in paths]
@@ -277,7 +277,7 @@ class TestIndexToSearch:
         assert len(all_paths) == 3
 
         txt_paths, _, _ = engine.search(SearchQuery(
-            keys='__filepath__', keywords='.txt',
+            keys='path', keywords='.txt',
         ))
         assert len(txt_paths) == 1
         assert txt_paths[0].endswith('readme.txt')

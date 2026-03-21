@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import os
-import re
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
-from random import shuffle
 from typing import Sequence
 
 from .db_utils import apply_read_pragmas
+from ...utils.formatting import natural_key
 from ...utils.paths import normalize_path
 from ...utils.profiling import profiler
 from ...utils.logs import AppLogger
@@ -96,36 +95,31 @@ class SearchQuery:
         w = f"WHERE {' AND '.join(conds)}" if conds else ""
         return f"SELECT {select_expr} FROM {from_clause} {w}", params
 
-    def _build_exclude(self, has_filepath, other_keys, query_all, exclude_kw):
+    def _build_exclude(self, keys, query_all, exclude_kw):
         parts, params = [], []
-        if has_filepath or query_all:
-            c, v = self._match_clause('efi.path', exclude_kw, "OR")
-            parts.append(f"SELECT efi.path FROM files AS efi WHERE {c}")
-            params.extend(v)
-        if other_keys or query_all:
-            conds, p = [], []
-            if other_keys:
-                conds.append(f"em.\"key\" IN ({','.join('?' for _ in other_keys)})")
-                p.extend(other_keys)
-            c, v = self._match_clause('em."value"', exclude_kw, "OR")
-            conds.append(f"({c})")
-            p.extend(v)
-            parts.append(f"SELECT em.path FROM meta_info AS em WHERE {' AND '.join(conds)}")
-            params.extend(p)
-            conds2, p2 = [], []
-            if other_keys:
-                conds2.append(f"et.\"key\" IN ({','.join('?' for _ in other_keys)})")
-                p2.extend(other_keys)
-            c2, v2 = self._match_clause('et."value"', exclude_kw, "OR")
-            conds2.append(f"({c2})")
-            p2.extend(v2)
-            parts.append(
-                f"SELECT ei.path FROM tags AS et "
-                f"JOIN sources AS es ON es.file_hash = et.file_hash "
-                f"JOIN files AS ei ON ei.source = es.source "
-                f"WHERE {' AND '.join(conds2)}"
-            )
-            params.extend(p2)
+        conds, p = [], []
+        if keys:
+            conds.append(f"em.\"key\" IN ({','.join('?' for _ in keys)})")
+            p.extend(keys)
+        c, v = self._match_clause('em."value"', exclude_kw, "OR")
+        conds.append(f"({c})")
+        p.extend(v)
+        parts.append(f"SELECT em.path FROM meta_info AS em WHERE {' AND '.join(conds)}")
+        params.extend(p)
+        conds2, p2 = [], []
+        if keys:
+            conds2.append(f"et.\"key\" IN ({','.join('?' for _ in keys)})")
+            p2.extend(keys)
+        c2, v2 = self._match_clause('et."value"', exclude_kw, "OR")
+        conds2.append(f"({c2})")
+        p2.extend(v2)
+        parts.append(
+            f"SELECT ei.path FROM tags AS et "
+            f"JOIN sources AS es ON es.file_hash = et.file_hash "
+            f"JOIN files AS ei ON ei.source = es.source "
+            f"WHERE {' AND '.join(conds2)}"
+        )
+        params.extend(p2)
         if not parts:
             return "", []
         return " UNION ".join(parts), params
@@ -136,54 +130,34 @@ class SearchQuery:
         keys, include_kw, exclude_kw = self.normalize_inputs()
         if rk and not keys:
             return (None, [])
-        has_filepath = '__filepath__' in keys if keys else False
-        other_keys = [k for k in keys if k != '__filepath__'] if keys else []
         query_all = not keys
         parts, all_params = [], []
 
-        if has_filepath or query_all:
-            conds, params = [], []
-            if include_kw:
-                c, v = self._match_clause('i.path', include_kw, self.keyword_mode)
-                conds.append(f"({c})")
-                params.extend(v)
-            dc, dp = self._dir_clause('i.path', normalize_path_func)
-            if dc:
-                conds.append(dc)
-                params.extend(dp)
-            w = f"WHERE {' AND '.join(conds)}" if conds else ""
-            parts.append(
-                f"SELECT i.path, '__filepath__' AS \"key\", i.path AS \"value\" "
-                f"FROM files AS i {w}"
-            )
-            all_params.extend(params)
+        sql, p = self._kv_part(
+            'meta_info AS mi', 'mi."key"', 'mi."value"', 'mi.path',
+            'mi.path, mi."key", mi."value"',
+            keys if not query_all else [], include_kw, normalize_path_func,
+        )
+        parts.append(sql)
+        all_params.extend(p)
 
-        if other_keys or query_all:
-            sql, p = self._kv_part(
-                'meta_info AS mi', 'mi."key"', 'mi."value"', 'mi.path',
-                'mi.path, mi."key", mi."value"',
-                other_keys, include_kw, normalize_path_func,
-            )
-            parts.append(sql)
-            all_params.extend(p)
-
-            sql, p = self._kv_part(
-                'tags AS t '
-                'JOIN sources AS s ON s.file_hash = t.file_hash '
-                'JOIN files AS i ON i.source = s.source',
-                't."key"', 't."value"', 'i.path',
-                'i.path, t."key", t."value"',
-                other_keys, include_kw, normalize_path_func,
-            )
-            parts.append(sql)
-            all_params.extend(p)
+        sql, p = self._kv_part(
+            'tags AS t '
+            'JOIN sources AS s ON s.file_hash = t.file_hash '
+            'JOIN files AS i ON i.source = s.source',
+            't."key"', 't."value"', 'i.path',
+            'i.path, t."key", t."value"',
+            keys if not query_all else [], include_kw, normalize_path_func,
+        )
+        parts.append(sql)
+        all_params.extend(p)
 
         if not parts:
             return (None, [])
         subquery = " UNION ALL ".join(parts)
         if exclude_kw:
             exc_sql, exc_params = self._build_exclude(
-                has_filepath, other_keys, query_all, exclude_kw
+                keys if not query_all else [], query_all, exclude_kw
             )
             if exc_sql:
                 subquery = (
@@ -193,18 +167,6 @@ class SearchQuery:
                 )
                 all_params.extend(exc_params)
         return (subquery, all_params)
-
-
-_META_SORT_KEYS = {
-    'created': 'created', 'modified': 'modified',
-    'size': 'size', 'collected': 'collected',
-}
-
-_NUM_SPLIT = re.compile(r'(\d+)').split
-
-
-def _natural_key(s):
-    return [int(c) if c.isdigit() else c.casefold() for c in _NUM_SPLIT(s)]
 
 
 class FileSearchEngine:
@@ -239,18 +201,6 @@ class FileSearchEngine:
     def _normalize_path(self, path):
         return normalize_path(path)
 
-    @staticmethod
-    def _build_order_clause(sort_by, ascending):
-        meta_key = _META_SORT_KEYS.get(sort_by)
-        if not meta_key:
-            return "", []
-        order = 'ASC' if ascending else 'DESC'
-        return (
-            f' LEFT JOIN meta_info AS _sk ON _sk.path = m.path AND _sk."key" = ?'
-            f' ORDER BY _sk.value_num {order}',
-            [meta_key],
-        )
-
     @profiler.profile
     def _build_path_query(self, queries):
         parts, modes, params = [], [], []
@@ -273,29 +223,33 @@ class FileSearchEngine:
 
     @profiler.profile
     def _fetch_sorted(self, columns, path_query, params, sort_by, ascending):
+        from ...plugin.query.handler import sort_registry
         cur = self.conn.cursor()
-        need_natural = sort_by in ('name', 'path')
         col_str = ', '.join(f'm.{c}' for c in columns)
-        if need_natural:
-            sort_col = sort_by
-            extra = sort_col if sort_col not in columns else None
-            if extra:
-                col_str = ', '.join(f'm.{c}' for c in [*columns, extra])
-            sql = f"SELECT {col_str} FROM files_full AS m JOIN ({path_query}) AS s USING(path)"
-            rows = list(cur.execute(sql, params).fetchall())
-            rows.sort(key=lambda r: _natural_key(r[sort_col] or ''), reverse=not ascending)
-        elif sort_by == 'random':
-            sql = f"SELECT {col_str} FROM files_full AS m JOIN ({path_query}) AS s USING(path)"
-            rows = list(cur.execute(sql, params).fetchall())
-            shuffle(rows)
-        else:
-            join_clause, extra_params = self._build_order_clause(sort_by, ascending)
-            if join_clause:
+        plugin = sort_registry.get(sort_by)
+        meta_key = getattr(plugin, 'META_KEY', None) if plugin else None
+        has_custom_sort = plugin and 'sort_rows' in vars(plugin)
+        if has_custom_sort:
+            if meta_key:
+                col_str += f', _sk.value AS {meta_key}, _sk.value_num AS {meta_key}_num'
+                join_clause = f' LEFT JOIN meta_info AS _sk ON _sk.path = m.path AND _sk."key" = ?'
                 sql = f"SELECT {col_str} FROM files_full AS m JOIN ({path_query}) AS s USING(path){join_clause}"
-                rows = cur.execute(sql, [*params, *extra_params]).fetchall()
+                rows = list(cur.execute(sql, [*params, meta_key]).fetchall())
             else:
                 sql = f"SELECT {col_str} FROM files_full AS m JOIN ({path_query}) AS s USING(path)"
-                rows = cur.execute(sql, params).fetchall()
+                rows = list(cur.execute(sql, params).fetchall())
+            rows = plugin.sort_rows(rows, ascending)
+        elif meta_key:
+            order = 'ASC' if ascending else 'DESC'
+            join_clause = (
+                f' LEFT JOIN meta_info AS _sk ON _sk.path = m.path AND _sk."key" = ?'
+                f' ORDER BY _sk.value_num {order}'
+            )
+            sql = f"SELECT {col_str} FROM files_full AS m JOIN ({path_query}) AS s USING(path){join_clause}"
+            rows = cur.execute(sql, [*params, meta_key]).fetchall()
+        else:
+            sql = f"SELECT {col_str} FROM files_full AS m JOIN ({path_query}) AS s USING(path)"
+            rows = cur.execute(sql, params).fetchall()
         return rows
 
     @profiler.profile
@@ -434,4 +388,4 @@ class FileSearchEngine:
         return dict(row) if row else {}
 
     def get_all_metadata(self, path):
-        return [self.get_source_by_path(path), self.get_file_record(path), self.get_tags_by_path(path), self.get_meta_info_by_path(path)]
+        return [self.get_file_record(path), self.get_tags_by_path(path), self.get_meta_info_by_path(path)]

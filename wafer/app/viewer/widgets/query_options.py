@@ -18,7 +18,7 @@ class CheckableCombo(QtWidgets.QToolButton, TranslatorMixin):
         self.setPopupMode(QtWidgets.QToolButton.InstantPopup)
         self.menu = QtWidgets.QMenu(self)
         self.actions = []
-        self.default_key = '__filepath__'
+        self.default_key = 'path'
         self.previous_key = [self.default_key]
         if items:
             for name, data in items:

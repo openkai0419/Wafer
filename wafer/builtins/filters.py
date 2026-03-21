@@ -96,38 +96,25 @@ class TextFilter(BaseFilterPlugin):
         if require_keys and not keys:
             return "SELECT path FROM files WHERE 0", []
 
-        has_filepath = '__filepath__' in keys
-        other_keys = [k for k in keys if k != '__filepath__']
         query_all = not keys
         parts, all_params = [], []
 
-        if has_filepath or query_all:
-            conds, bind = [], []
-            if include_kw:
-                c, v = _match_clause('i.path', include_kw, keyword_mode, query_mode)
-                conds.append(f"({c})")
-                bind.extend(v)
-            w = f"WHERE {' AND '.join(conds)}" if conds else ""
-            parts.append(f"SELECT i.path FROM files AS i {w}")
-            all_params.extend(bind)
+        sql, p = _kv_part(
+            'meta_info AS mi', 'mi."key"', 'mi."value"', 'mi.path',
+            keys if not query_all else [], include_kw, keyword_mode, query_mode,
+        )
+        parts.append(sql)
+        all_params.extend(p)
 
-        if other_keys or query_all:
-            sql, p = _kv_part(
-                'meta_info AS mi', 'mi."key"', 'mi."value"', 'mi.path',
-                other_keys, include_kw, keyword_mode, query_mode,
-            )
-            parts.append(sql)
-            all_params.extend(p)
-
-            sql, p = _kv_part(
-                'tags AS t '
-                'JOIN sources AS s ON s.file_hash = t.file_hash '
-                'JOIN files AS i ON i.source = s.source',
-                't."key"', 't."value"', 'i.path',
-                other_keys, include_kw, keyword_mode, query_mode,
-            )
-            parts.append(sql)
-            all_params.extend(p)
+        sql, p = _kv_part(
+            'tags AS t '
+            'JOIN sources AS s ON s.file_hash = t.file_hash '
+            'JOIN files AS i ON i.source = s.source',
+            't."key"', 't."value"', 'i.path',
+            keys if not query_all else [], include_kw, keyword_mode, query_mode,
+        )
+        parts.append(sql)
+        all_params.extend(p)
 
         if not parts:
             return None, []
@@ -136,7 +123,7 @@ class TextFilter(BaseFilterPlugin):
 
         if exclude_kw:
             exc_sql, exc_params = cls._build_exclude(
-                has_filepath, other_keys, query_all, exclude_kw, query_mode
+                keys if not query_all else [], query_all, exclude_kw, query_mode
             )
             if exc_sql:
                 subquery = (
@@ -148,36 +135,31 @@ class TextFilter(BaseFilterPlugin):
         return f"SELECT DISTINCT path FROM ({subquery})", all_params
 
     @classmethod
-    def _build_exclude(cls, has_filepath, other_keys, query_all, exclude_kw, query_mode):
+    def _build_exclude(cls, keys, query_all, exclude_kw, query_mode):
         parts, params = [], []
-        if has_filepath or query_all:
-            c, v = _match_clause('efi.path', exclude_kw, "OR", query_mode)
-            parts.append(f"SELECT efi.path FROM files AS efi WHERE {c}")
-            params.extend(v)
-        if other_keys or query_all:
-            conds, p = [], []
-            if other_keys:
-                conds.append(f"em.\"key\" IN ({','.join('?' for _ in other_keys)})")
-                p.extend(other_keys)
-            c, v = _match_clause('em."value"', exclude_kw, "OR", query_mode)
-            conds.append(f"({c})")
-            p.extend(v)
-            parts.append(f"SELECT em.path FROM meta_info AS em WHERE {' AND '.join(conds)}")
-            params.extend(p)
-            conds2, p2 = [], []
-            if other_keys:
-                conds2.append(f"et.\"key\" IN ({','.join('?' for _ in other_keys)})")
-                p2.extend(other_keys)
-            c2, v2 = _match_clause('et."value"', exclude_kw, "OR", query_mode)
-            conds2.append(f"({c2})")
-            p2.extend(v2)
-            parts.append(
-                f"SELECT ei.path FROM tags AS et "
-                f"JOIN sources AS es ON es.file_hash = et.file_hash "
-                f"JOIN files AS ei ON ei.source = es.source "
-                f"WHERE {' AND '.join(conds2)}"
-            )
-            params.extend(p2)
+        conds, p = [], []
+        if keys:
+            conds.append(f"em.\"key\" IN ({','.join('?' for _ in keys)})")
+            p.extend(keys)
+        c, v = _match_clause('em."value"', exclude_kw, "OR", query_mode)
+        conds.append(f"({c})")
+        p.extend(v)
+        parts.append(f"SELECT em.path FROM meta_info AS em WHERE {' AND '.join(conds)}")
+        params.extend(p)
+        conds2, p2 = [], []
+        if keys:
+            conds2.append(f"et.\"key\" IN ({','.join('?' for _ in keys)})")
+            p2.extend(keys)
+        c2, v2 = _match_clause('et."value"', exclude_kw, "OR", query_mode)
+        conds2.append(f"({c2})")
+        p2.extend(v2)
+        parts.append(
+            f"SELECT ei.path FROM tags AS et "
+            f"JOIN sources AS es ON es.file_hash = et.file_hash "
+            f"JOIN files AS ei ON ei.source = es.source "
+            f"WHERE {' AND '.join(conds2)}"
+        )
+        params.extend(p2)
         if not parts:
             return "", []
         return " UNION ".join(parts), params

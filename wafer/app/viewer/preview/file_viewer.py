@@ -22,23 +22,30 @@ _DEFAULT_WIDGET_NAME = '_default'
 
 
 def _format_meta(engine, path):
-    source, image, tags, meta_infos = engine.get_all_metadata(path)
-    if image.get("source"):
-        image.pop("source")
-    if image.get("aspect_ratio"):
-        image["aspect_ratio"] = format_aspect(image.get("aspect_ratio"))
-    source["size"] = format_size_detail(source.get("size"))
-    source["modified"] = format_timestamp(source.get("modified"))
+    file_rec, tags, meta_infos = engine.get_all_metadata(path)
+    source = file_rec.pop("source", None)
+    if source and source != file_rec.get("path"):
+        file_rec["source"] = source
+    if file_rec.get("aspect_ratio"):
+        file_rec["aspect_ratio"] = format_aspect(file_rec["aspect_ratio"])
+    standard = {}
+    prefixed = {}
+    for k, v in meta_infos.items():
+        if '.' in k:
+            prefixed[k] = v
+        else:
+            standard[k] = v
     for k in ('created', 'collected', 'modified', 'size'):
-        raw = meta_infos.get(k)
+        raw = standard.get(k)
         if raw is not None:
             try:
-                meta_infos[k] = format_timestamp(float(raw)) if k != 'size' else format_size_detail(float(raw))
+                standard[k] = format_timestamp(float(raw)) if k != 'size' else format_size_detail(float(raw))
             except (ValueError, TypeError):
                 pass
-    meta_infos = {k: meta_infos[k] for k in natsorted(meta_infos)}
+    standard = {k: standard[k] for k in natsorted(standard)}
     tags = {k: tags[k] for k in natsorted(tags)}
-    return [source, image, tags, meta_infos]
+    prefixed = {k: prefixed[k] for k in natsorted(prefixed)}
+    return [file_rec, standard, tags, prefixed]
 
 
 class FileViewerWidget(QtWidgets.QSplitter):

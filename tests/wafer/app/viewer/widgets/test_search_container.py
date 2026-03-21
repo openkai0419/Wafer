@@ -319,23 +319,23 @@ class TestUpdateKeyCombos:
 
     def test_filepath_present_when_in_results(self, qapp):
         container = SearchContainer()
-        container._key_store.set_data([('__filepath__', 10), ('prompt', 5), ('artist', 3)])
+        container._key_store.set_data([('path', 10), ('prompt', 5), ('artist', 3)])
         w = container._rows[0].get_param_widget()
         items = [a.data() for a in w.keys_combo.actions]
-        assert '__filepath__' in items
+        assert 'path' in items
 
     def test_filepath_default_checked(self, qapp):
         container = SearchContainer()
-        container._key_store.set_data([('__filepath__', 10), ('prompt', 5)])
+        container._key_store.set_data([('path', 10), ('prompt', 5)])
         w = container._rows[0].get_param_widget()
-        fp_action = next(a for a in w.keys_combo.actions if a.data() == '__filepath__')
+        fp_action = next(a for a in w.keys_combo.actions if a.data() == 'path')
         assert fp_action.isChecked()
 
     def test_counts_passed_through(self, qapp):
         container = SearchContainer()
-        container._key_store.set_data([('__filepath__', 10), ('prompt', 5)])
+        container._key_store.set_data([('path', 10), ('prompt', 5)])
         w = container._rows[0].get_param_widget()
-        fp_action = next(a for a in w.keys_combo.actions if a.data() == '__filepath__')
+        fp_action = next(a for a in w.keys_combo.actions if a.data() == 'path')
         assert '(10)' in fp_action.text()
 
     def test_empty_results_no_actions(self, qapp):
@@ -347,25 +347,25 @@ class TestUpdateKeyCombos:
     def test_all_rows_receive_data(self, qapp):
         container = SearchContainer()
         container._add_row(TextFilter)
-        container._key_store.set_data([('__filepath__', 10), ('prompt', 5)])
+        container._key_store.set_data([('path', 10), ('prompt', 5)])
         for row in container._rows:
             w = row.get_param_widget()
             items = [a.data() for a in w.keys_combo.actions]
-            assert '__filepath__' in items
+            assert 'path' in items
             assert 'prompt' in items
 
     def test_new_row_receives_existing_data(self, qapp):
         container = SearchContainer()
-        container._key_store.set_data([('__filepath__', 20), ('artist', 8)])
+        container._key_store.set_data([('path', 20), ('artist', 8)])
         container._add_row(TextFilter)
         w = container._rows[1].get_param_widget()
         items = [a.data() for a in w.keys_combo.actions]
-        assert '__filepath__' in items
+        assert 'path' in items
         assert 'artist' in items
 
     def test_restored_rows_receive_existing_data(self, qapp):
         container = SearchContainer()
-        container._key_store.set_data([('__filepath__', 15), ('prompt', 7)])
+        container._key_store.set_data([('path', 15), ('prompt', 7)])
         state = {
             'rows': [
                 {'filter': 'text', 'params': {'keywords': 'a'}, 'op': None},
@@ -378,7 +378,7 @@ class TestUpdateKeyCombos:
         for row in container._rows:
             w = row.get_param_widget()
             items = [a.data() for a in w.keys_combo.actions]
-            assert '__filepath__' in items
+            assert 'path' in items
 
 
 class TestInvalidateKeyCache:
@@ -408,7 +408,7 @@ class TestFilterInheritance:
             'query_mode': 'LIKE',
             'keyword_mode': 'OR',
             'keyword_separator': ' ',
-            'keys': ['prompt', '__filepath__'],
+            'keys': ['prompt', 'path'],
         })
         container._add_row(TextFilter)
         second = container._rows[1].get_param_widget()
@@ -446,7 +446,7 @@ class TestFilterInheritance:
     def test_cross_filter_inheritance_keys(self, qapp):
         from extensions.regex_filter.filter import RegexFilter
         container = SearchContainer()
-        container._key_store.set_data([('__filepath__', 10), ('prompt', 5)])
+        container._key_store.set_data([('path', 10), ('prompt', 5)])
         primary = container._rows[0].get_param_widget()
         primary.write_params({'keys': ['prompt']})
         primary.keys_combo.previous_key = ['prompt']

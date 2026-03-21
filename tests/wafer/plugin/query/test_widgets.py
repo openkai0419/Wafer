@@ -59,7 +59,7 @@ class TestTextFilterReadParams:
 
     def test_keys_empty_list_when_all_unchecked(self, qapp):
         w = TextFilter.create_widget()
-        w.keys_combo.remake([('__filepath__', 10), ('prompt', 5)])
+        w.keys_combo.remake([('path', 10), ('prompt', 5)])
         for a in w.keys_combo.actions:
             a.setChecked(False)
         params = TextFilter.read_params(w)
@@ -67,9 +67,9 @@ class TestTextFilterReadParams:
 
     def test_keys_after_remake(self, qapp):
         w = TextFilter.create_widget()
-        w.keys_combo.remake([('__filepath__', 10), ('prompt', 5)])
+        w.keys_combo.remake([('path', 10), ('prompt', 5)])
         params = TextFilter.read_params(w)
-        assert params['keys'] == ['__filepath__']
+        assert params['keys'] == ['path']
 
     def test_after_typing(self, qapp):
         w = TextFilter.create_widget()
@@ -125,13 +125,13 @@ class TestCheckableComboRemake:
         w = TextFilter.create_widget()
         signals = []
         w.keys_combo.action_changed.connect(lambda: signals.append(True))
-        w.keys_combo.remake([('__filepath__', 10), ('prompt', 5)])
+        w.keys_combo.remake([('path', 10), ('prompt', 5)])
         assert len(signals) == 1
 
     def test_remake_twice_emits_each_time(self, qapp):
         w = TextFilter.create_widget()
         signals = []
         w.keys_combo.action_changed.connect(lambda: signals.append(True))
-        w.keys_combo.remake([('__filepath__', 10)])
-        w.keys_combo.remake([('__filepath__', 8), ('prompt', 3)])
+        w.keys_combo.remake([('path', 10)])
+        w.keys_combo.remake([('path', 8), ('prompt', 3)])
         assert len(signals) == 2

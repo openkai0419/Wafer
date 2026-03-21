@@ -143,7 +143,7 @@ class TestSearchToGrid:
         assert model.count() == 1
 
         no_paths, no_sources, no_aspects = engine.search(SearchQuery(
-            keys='__filepath__',
+            keys='path',
             keywords='nonexistent_file_xyz',
         ))
         model.set_items(no_paths, no_sources, no_aspects)
@@ -165,7 +165,7 @@ class TestSearchToGrid:
 
         svc = SearchService(lambda: str(db_path))
         svc.search_finished.connect(on_finished)
-        svc.set_keys('__filepath__')
+        svc.set_keys('path')
 
         svc.execute(force=True)
         _process_events_until(lambda: 'paths' in received, timeout_ms=10000)
@@ -187,7 +187,7 @@ class TestSearchToGrid:
         svc = SearchService(lambda: str(db_path))
         svc.search_finished.connect(on_finished)
         svc.set_param('keywords', 'keep')
-        svc.set_keys('__filepath__')
+        svc.set_keys('path')
 
         svc.execute(force=True)
         _process_events_until(lambda: 'paths' in received, timeout_ms=10000)

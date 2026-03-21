@@ -78,7 +78,7 @@ def test_parse_batch_ok_status():
     }]
     data = _parse_batch(results)
     assert len(data['image_entries']) == 1
-    assert data['image_entries'][0][2] == 'test.png'
+    assert data['image_entries'][0][2] == 1.5
     meta_keys = [e[1] for e in data['meta_info_entries']]
     assert 'collected' in meta_keys
     assert 'width' in meta_keys

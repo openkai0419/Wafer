@@ -139,7 +139,7 @@ class TestFsWatchToDb:
 
             engine = FileSearchEngine(str(db_path))
             paths, _, _ = engine.search(SearchQuery(
-                keys='__filepath__', keywords='new_name',
+                keys='path', keywords='new_name',
             ))
             assert len(paths) >= 1
             assert any('new_name' in p for p in paths)

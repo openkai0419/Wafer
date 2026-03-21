@@ -8,62 +8,86 @@ def test_compile():
     py_compile.compile('wafer/app/viewer/preview/file_viewer.py')
 
 
-def test_format_meta_strips_status_and_source():
+def test_format_meta_source_same_as_path():
     engine = MagicMock()
     engine.get_all_metadata.return_value = (
-        {"path": "/a.png", "size": 1024, "modified": 0},
-        {"source": "/a.png", "width": 100, "height": 200},
+        {"path": "/a.png", "source": "/a.png", "name": "a.png", "aspect_ratio": None},
         {},
         {},
     )
     result = _format_meta(engine, "/a.png")
-    source, image, tags, meta = result
-    assert "source" not in image
+    file_rec = result[0]
+    assert "source" not in file_rec
+
+
+def test_format_meta_source_differs_from_path():
+    engine = MagicMock()
+    engine.get_all_metadata.return_value = (
+        {"path": "/a.png", "source": "/other/a.png", "name": "a.png", "aspect_ratio": None},
+        {},
+        {},
+    )
+    result = _format_meta(engine, "/a.png")
+    file_rec = result[0]
+    assert file_rec["source"] == "/other/a.png"
 
 
 def test_format_meta_formats_size_and_timestamps():
     engine = MagicMock()
     engine.get_all_metadata.return_value = (
-        {"size": 2048, "modified": 1700000000},
-        {},
+        {"path": "/a.png", "source": "/a.png", "name": "a.png", "aspect_ratio": None},
         {},
         {"created": "1700000000", "collected": "1700000000", "modified": "1700000000", "size": "2048"},
     )
     result = _format_meta(engine, "/a.png")
-    source = result[0]
-    meta = result[3]
-    assert isinstance(source["size"], str)
-    assert isinstance(source["modified"], str)
-    assert isinstance(meta["created"], str)
-    assert isinstance(meta["collected"], str)
+    standard = result[1]
+    assert isinstance(standard["created"], str)
+    assert isinstance(standard["collected"], str)
+    assert isinstance(standard["modified"], str)
+    assert isinstance(standard["size"], str)
 
 
 def test_format_meta_sorts_tags_and_meta():
     engine = MagicMock()
     engine.get_all_metadata.return_value = (
-        {"size": 0, "modified": 0},
-        {},
+        {"path": "/a.png", "source": "/a.png", "name": "a.png", "aspect_ratio": None},
         {"z_tag": "1", "a_tag": "2"},
         {"z_key": "x", "a_key": "y"},
     )
     result = _format_meta(engine, "/a.png")
     tags = result[2]
-    meta = result[3]
+    standard = result[1]
     assert list(tags.keys()) == ["a_tag", "z_tag"]
-    assert list(meta.keys()) == ["a_key", "z_key"]
+    assert list(standard.keys()) == ["a_key", "z_key"]
 
 
 def test_format_meta_aspect_ratio():
     engine = MagicMock()
     engine.get_all_metadata.return_value = (
-        {"size": 0, "modified": 0},
-        {"aspect_ratio": 1.5},
+        {"path": "/a.png", "source": "/a.png", "name": "a.png", "aspect_ratio": 1.5},
         {},
         {},
     )
     result = _format_meta(engine, "/a.png")
-    image = result[1]
-    assert isinstance(image["aspect_ratio"], str)
+    file_rec = result[0]
+    assert isinstance(file_rec["aspect_ratio"], str)
+
+
+def test_format_meta_splits_prefixed_meta():
+    engine = MagicMock()
+    engine.get_all_metadata.return_value = (
+        {"path": "/a.png", "source": "/a.png", "name": "a.png", "aspect_ratio": None},
+        {},
+        {"name": "a.png", "size": "1024", "exif.width": "100", "exif.height": "200"},
+    )
+    result = _format_meta(engine, "/a.png")
+    standard = result[1]
+    prefixed = result[3]
+    assert "name" in standard
+    assert "size" in standard
+    assert "exif.width" not in standard
+    assert "exif.width" in prefixed
+    assert "exif.height" in prefixed
 
 
 class _StubWidgetPlugin(WidgetViewerPlugin):

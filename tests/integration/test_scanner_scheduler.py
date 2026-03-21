@@ -291,7 +291,7 @@ class TestScannerSchedulerPipeline:
 
         engine = FileSearchEngine(str(db_path))
         paths, _, _ = engine.search(SearchQuery(
-            keys='__filepath__', keywords='findme',
+            keys='path', keywords='findme',
         ))
         assert len(paths) == 1
         assert 'findme' in paths[0]

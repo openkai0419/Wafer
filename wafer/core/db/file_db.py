@@ -25,7 +25,6 @@ _TABLES = (
      '''CREATE TABLE IF NOT EXISTS files (
         path TEXT PRIMARY KEY, 
         source TEXT NOT NULL, 
-        name TEXT, 
         aspect_ratio REAL,
         FOREIGN KEY(source) REFERENCES sources(source) ON UPDATE CASCADE ON DELETE CASCADE
     )'''),
@@ -60,7 +59,7 @@ _TABLES = (
 _VIEWS = (
     ('files_full',
      '''CREATE VIEW files_full AS
-        SELECT i.path, i.source, i.name, i.aspect_ratio,
+        SELECT i.path, i.source, i.aspect_ratio,
                s.file_hash, s.size, s.modified
         FROM files i JOIN sources s ON s.source = i.source'''),
     ('kv_all',
@@ -73,9 +72,6 @@ _VIEWS = (
             FROM tags AS t
             JOIN sources AS s ON s.file_hash = t.file_hash
             JOIN files  AS i ON i.source    = s.source
-        UNION ALL
-            SELECT i.path AS path, '__filepath__' AS key, i.path AS value, 'virtual' AS src, 1 AS rank
-            FROM files AS i
         ),
         picked AS (
             SELECT path, key, value, src, rank,
@@ -93,9 +89,10 @@ _INDEXES_SQL = """
     CREATE INDEX IF NOT EXISTS idx_sources_file_hash ON sources(file_hash);
     CREATE INDEX IF NOT EXISTS idx_files_source ON files(source);
     CREATE INDEX IF NOT EXISTS idx_meta_info_key_fid ON meta_info(key, path);
+    CREATE INDEX IF NOT EXISTS idx_meta_info_key_value ON meta_info(key, value);
     CREATE INDEX IF NOT EXISTS idx_meta_info_key_num ON meta_info(key, value_num);
     CREATE INDEX IF NOT EXISTS idx_tags_key_fid ON tags(key, file_hash);
-    CREATE INDEX IF NOT EXISTS idx_files_name_path ON files(name, path);
+    CREATE INDEX IF NOT EXISTS idx_tags_key_value ON tags(key, value);
     CREATE INDEX IF NOT EXISTS idx_sources_modified_source ON sources(modified, source);
     CREATE INDEX IF NOT EXISTS idx_sources_size_source ON sources(size, source);
     CREATE INDEX IF NOT EXISTS idx_cs_collector_status ON collection_status(collector, status);
@@ -108,18 +105,16 @@ _SQL_UPSERT_SOURCES = '''INSERT INTO sources (source, file_hash, size, modified)
         size      = excluded.size,
         modified  = excluded.modified'''
 
-_SQL_UPSERT_FILES = '''INSERT INTO files (path, source, name, aspect_ratio)
-    VALUES (?, ?, ?, ?)
+_SQL_UPSERT_FILES = '''INSERT INTO files (path, source, aspect_ratio)
+    VALUES (?, ?, ?)
     ON CONFLICT(path) DO UPDATE SET
         source       = excluded.source,
-        name         = excluded.name,
         aspect_ratio = excluded.aspect_ratio'''
 
-_SQL_UPSERT_FILES_COALESCE = '''INSERT INTO files (path, source, name, aspect_ratio)
-    VALUES (?, ?, ?, ?)
+_SQL_UPSERT_FILES_COALESCE = '''INSERT INTO files (path, source, aspect_ratio)
+    VALUES (?, ?, ?)
     ON CONFLICT(path) DO UPDATE SET
         source       = excluded.source,
-        name         = COALESCE(excluded.name, files.name),
         aspect_ratio = COALESCE(excluded.aspect_ratio, files.aspect_ratio)'''
 
 _SQL_UPSERT_META = '''INSERT INTO meta_info (path, key, value, value_num)
@@ -341,8 +336,16 @@ class FileDB:
             cur.execute('PRAGMA foreign_keys=ON')
             for old, new in pairs:
                 cur.execute('UPDATE sources SET source = ? WHERE source = ?', (new, old))
+                cur.execute('UPDATE files SET path = ? WHERE source = ?', (new, new))
                 name = os.path.basename(new)
-                cur.execute('UPDATE files SET path = ?, name = ? WHERE source = ?', (new, name, new))
+                cur.execute(
+                    "UPDATE meta_info SET value = ? WHERE path = ? AND key = 'path'",
+                    (new, new),
+                )
+                cur.execute(
+                    "UPDATE meta_info SET value = ? WHERE path = ? AND key = 'name'",
+                    (name, new),
+                )
             cur.close()
 
     @staticmethod

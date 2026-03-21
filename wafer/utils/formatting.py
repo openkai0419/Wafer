@@ -1,6 +1,14 @@
 import datetime
 import math
+import re
 from PySide6 import QtGui
+
+
+_NUM_SPLIT = re.compile(r'(\d+)').split
+
+
+def natural_key(s):
+    return [int(c) if c.isdigit() else c.casefold() for c in _NUM_SPLIT(s)]
 
 
 _cached_dpi: float | None = None
@@ -27,7 +35,7 @@ def format_timestamp(ts: float) -> str:
     if ts is None:
         return None
     dt = datetime.datetime.fromtimestamp(ts)
-    return dt.strftime("%Y-%m-%d %H:%M:%S")
+    return  dt.strftime("%Y-%m-%d %H:%M:%S")
 
 def format_aspect(ratio: float, max_denominator: int = 100) -> str:
     if ratio is None:

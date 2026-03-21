@@ -37,9 +37,6 @@ class SearchComposer:
             for col in filter_cls.required_columns():
                 if col not in columns:
                     columns.append(col)
-        for col in sort_plugin.required_columns():
-            if col not in columns:
-                columns.append(col)
 
         rows = self._fetch(
             engine, columns, combined_sql, combined_params, sort_plugin, ascending
@@ -80,9 +77,6 @@ class SearchComposer:
         sql = (
             f"WITH matched_paths AS ({combined_sql}) "
             f'SELECT "key", COUNT(*) AS freq FROM ('
-            f"  SELECT DISTINCT mp.path, '__filepath__' AS \"key\""
-            f"  FROM matched_paths AS mp"
-            f"  UNION ALL"
             f'  SELECT DISTINCT mp.path, kv."key"'
             f"  FROM matched_paths AS mp"
             f"  JOIN meta_info AS kv ON kv.path = mp.path"
@@ -152,7 +146,25 @@ class SearchComposer:
     @profiler.profile
     def _fetch(self, engine, columns, path_sql, params, sort_plugin, ascending):
         col_str = ', '.join(f'm.{c}' for c in columns)
-        if sort_plugin.META_KEY:
+        meta_key = sort_plugin.META_KEY
+        has_custom_sort = 'sort_rows' in vars(sort_plugin)
+        if has_custom_sort:
+            if meta_key:
+                col_str += f', _sk.value AS {meta_key}, _sk.value_num AS {meta_key}_num'
+                sql = (
+                    f"SELECT {col_str} FROM files_full AS m "
+                    f"JOIN ({path_sql}) AS s USING(path) "
+                    f"LEFT JOIN meta_info AS _sk ON _sk.path = m.path AND _sk.\"key\" = ?"
+                )
+                rows = list(engine.fetch(sql, [*params, meta_key]))
+            else:
+                sql = (
+                    f"SELECT {col_str} FROM files_full AS m "
+                    f"JOIN ({path_sql}) AS s USING(path)"
+                )
+                rows = list(engine.fetch(sql, params))
+            return sort_plugin.sort_rows(rows, ascending)
+        elif meta_key:
             order = 'ASC' if ascending else 'DESC'
             sql = (
                 f"SELECT {col_str} FROM files_full AS m "
@@ -160,11 +172,10 @@ class SearchComposer:
                 f"LEFT JOIN meta_info AS _sk ON _sk.path = m.path AND _sk.\"key\" = ? "
                 f"ORDER BY _sk.value_num {order}"
             )
-            return engine.fetch(sql, [*params, sort_plugin.META_KEY])
+            return engine.fetch(sql, [*params, meta_key])
         else:
             sql = (
                 f"SELECT {col_str} FROM files_full AS m "
                 f"JOIN ({path_sql}) AS s USING(path)"
             )
-            rows = list(engine.fetch(sql, params))
-            return sort_plugin.sort_rows(rows, ascending)
+            return engine.fetch(sql, params)

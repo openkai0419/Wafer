@@ -225,7 +225,9 @@ class DirectoryScanner:
                 file_hash = fast_signature_hash(p, fsize, 256)
                 source_entries.append((p, file_hash, fsize, mtime))
                 name = Path(p).name
-                file_entries.append((p, p, name, aspect_map.get(p, 1.0)))
+                file_entries.append((p, p, aspect_map.get(p, 1.0)))
+                meta_info_entries.append((p, 'file_hash', file_hash, None))
+                meta_info_entries.append((p, 'path', p, None))
                 meta_info_entries.append((p, 'name', name, None))
                 meta_info_entries.append((p, 'size', str(fsize), float(fsize)))
                 meta_info_entries.append((p, 'modified', str(mtime), mtime))

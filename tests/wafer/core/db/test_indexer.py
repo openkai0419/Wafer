@@ -208,7 +208,9 @@ def test_rename_by_pairs(tmp_path):
         assert norm_new in prev
         assert norm_old not in prev
 
-        row = idx.db.read_conn.execute("SELECT name FROM files WHERE path=?", (norm_new,)).fetchone()
+        row = idx.db.read_conn.execute(
+            "SELECT value FROM meta_info WHERE path=? AND key='name'", (norm_new,)
+        ).fetchone()
         assert row is not None
         assert row[0] == 'a.bin'
 

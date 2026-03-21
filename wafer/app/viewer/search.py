@@ -14,7 +14,10 @@ from ...builtins.filters import TextFilter, DirectoryFilter
 from ...builtins.sorts import NaturalPathSort
 
 
-SORT_CHOICES = ["path", "name", "created", "modified", "collected", "size", "random"]
+def _build_sort_choices():
+    return [s.NAME for s in sort_registry.list_all()]
+
+SORT_CHOICES = _build_sort_choices()
 
 _DEFAULTS = {
     "keywords": "",

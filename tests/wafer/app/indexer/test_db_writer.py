@@ -42,7 +42,7 @@ def test_initialize_creates_tables(writer):
 
 def test_upsert_and_delete_sources(writer):
     source_entries = [('/a.png', 'hash1', 100, 1.0)]
-    image_entries = [('/a.png', '/a.png', 'a.png', 1.5)]
+    image_entries = [('/a.png', '/a.png', 1.5)]
     writer.upsert_sources(source_entries, image_entries)
 
     cur = writer.db.get_reader_cursor()
@@ -63,7 +63,7 @@ def test_upsert_and_delete_sources(writer):
 
 def test_rename_paths(writer):
     source_entries = [('/old.png', 'hash1', 100, 1.0)]
-    image_entries = [('/old.png', '/old.png', 'old.png', 1.0)]
+    image_entries = [('/old.png', '/old.png', 1.0)]
     writer.upsert_sources(source_entries, image_entries)
 
     writer.rename_paths([('/old.png', '/new.png')])
@@ -77,7 +77,7 @@ def test_rename_paths(writer):
 
 def test_insert_pending_and_mark_dispatched(writer):
     source_entries = [('/a.png', 'hash1', 100, 1.0)]
-    image_entries = [('/a.png', '/a.png', 'a.png', 1.0)]
+    image_entries = [('/a.png', '/a.png', 1.0)]
     writer.upsert_sources(source_entries, image_entries)
 
     writer.insert_pending(['/a.png'], ['exif'])
@@ -97,7 +97,7 @@ def test_insert_pending_and_mark_dispatched(writer):
 
 def test_reset_stale(writer):
     source_entries = [('/a.png', 'hash1', 100, 1.0)]
-    image_entries = [('/a.png', '/a.png', 'a.png', 1.0)]
+    image_entries = [('/a.png', '/a.png', 1.0)]
     writer.upsert_sources(source_entries, image_entries)
     writer.insert_pending(['/a.png'], ['exif'])
     writer.mark_dispatched(['/a.png'], 'exif')
@@ -112,7 +112,7 @@ def test_reset_stale(writer):
 
 def test_upsert_collection_results(writer):
     source_entries = [('/a.png', 'hash1', 100, 1.0)]
-    image_entries = [('/a.png', '/a.png', 'a.png', 1.0)]
+    image_entries = [('/a.png', '/a.png', 1.0)]
     writer.upsert_sources(source_entries, image_entries)
     writer.insert_pending(['/a.png'], ['exif'])
 

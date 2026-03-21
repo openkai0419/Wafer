@@ -88,8 +88,8 @@ def _parse_batch(results: list[dict[str, Any]]) -> dict[str, Any]:
             collector_status_map[cs_key] = (source, collector, s_status, now)
 
         if ok:
-            if name or aspect or (path != source):
-                image_entries.append((path, source, name, aspect))
+            if aspect or (path != source):
+                image_entries.append((path, source, aspect))
             meta_info_entries.append((path, 'collected', str(now), now))
             for k, v in meta_info.items():
                 if v is not None:

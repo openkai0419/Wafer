@@ -3,7 +3,8 @@ import sqlite3
 import time
 import pytest
 from pathlib import Path
-from wafer.core.db.query import SearchQuery, FileSearchEngine, _natural_key
+from wafer.core.db.query import SearchQuery, FileSearchEngine
+from wafer.utils.formatting import natural_key
 from wafer.core.db.file_db import FileDB
 from wafer.utils.paths import normalize_path
 
@@ -27,7 +28,9 @@ def populated_db(db_path):
         mtime = float(1700000000 + i)
         fsize = 1000 + i
         sources.append((source, fhash, fsize, mtime))
-        images.append((path, source, f"img_{i:04d}.jpg", 1.5))
+        images.append((path, source, 1.5))
+        metas.append((path, "path", path, None))
+        metas.append((path, "name", f"img_{i:04d}.jpg", None))
         metas.append((path, "dpi", f"{72 + (i % 4) * 24}", None))
         metas.append((path, "Comment", f"photo number {i}", None))
         metas.append((path, "size", str(fsize), float(fsize)))
@@ -65,7 +68,9 @@ def special_char_db(tmp_path):
     ]
     for path, name, fhash, comment in special_names:
         sources.append((path, fhash, 100, 1.0))
-        images.append((path, path, name, 1.5))
+        images.append((path, path, 1.5))
+        metas.append((path, "path", path, None))
+        metas.append((path, "name", name, None))
         metas.append((path, "Comment", comment, None))
         tags.append((fhash, "rating", "3"))
     db.upsert_batches(sources, images, metas, tags)
@@ -89,11 +94,10 @@ class TestSearchQuerySubquery:
         assert "kv_meta" not in sql
 
     def test_keys_filepath(self, populated_db):
-        q = SearchQuery(keys=["__filepath__"])
+        q = SearchQuery(keys=["path"])
         sql, params = q._make_subquery(np)
         assert sql is not None
-        assert "files" in sql
-        assert "meta_info" not in sql.split("UNION")[0]
+        assert "meta_info" in sql
 
     def test_no_keys_require_keys_true(self):
         q = SearchQuery(keys=None, require_keys=True)
@@ -133,36 +137,36 @@ class TestSearchQuerySubquery:
         assert "NOT LIKE" in sql
 
     def test_empty_keyword_filtered(self):
-        q = SearchQuery(keys=["__filepath__"], keywords="", keyword_separator=",")
+        q = SearchQuery(keys=["path"], keywords="", keyword_separator=",")
         keys, include, exclude = q.normalize_inputs()
         assert include == []
         assert exclude == []
 
     def test_dash_only_keyword_filtered(self):
-        q = SearchQuery(keys=["__filepath__"], keywords="-", keyword_separator=",")
+        q = SearchQuery(keys=["path"], keywords="-", keyword_separator=",")
         keys, include, exclude = q.normalize_inputs()
         assert include == []
         assert exclude == []
 
     def test_mixed_empty_keywords(self):
-        q = SearchQuery(keys=["__filepath__"], keywords="a,,b,-,-c", keyword_separator=",")
+        q = SearchQuery(keys=["path"], keywords="a,,b,-,-c", keyword_separator=",")
         keys, include, exclude = q.normalize_inputs()
         assert include == ["a", "b"]
         assert exclude == ["c"]
 
     def test_tuple_keywords_bypass_separator(self):
-        q = SearchQuery(keys=["__filepath__"], keywords=("a,b", "c"), keyword_separator=",")
+        q = SearchQuery(keys=["path"], keywords=("a,b", "c"), keyword_separator=",")
         keys, include, exclude = q.normalize_inputs()
         assert include == ["a,b", "c"]
 
     def test_keywords_whitespace_strip(self):
-        q = SearchQuery(keys=["__filepath__"], keywords=" a , b , -c ", keyword_separator=",")
+        q = SearchQuery(keys=["path"], keywords=" a , b , -c ", keyword_separator=",")
         keys, include, exclude = q.normalize_inputs()
         assert include == ["a", "b"]
         assert exclude == ["c"]
 
     def test_exclude_only(self):
-        q = SearchQuery(keys=["__filepath__"], keywords="-a,-b", keyword_separator=",")
+        q = SearchQuery(keys=["path"], keywords="-a,-b", keyword_separator=",")
         keys, include, exclude = q.normalize_inputs()
         assert include == []
         assert exclude == ["a", "b"]
@@ -231,7 +235,7 @@ class TestFileSearchEngineGet:
 
     def test_get_by_filepath_keyword(self, populated_db):
         engine = FileSearchEngine(populated_db)
-        paths, sources, aspects = engine.search(SearchQuery(keys=["__filepath__"], keywords="vacation"))
+        paths, sources, aspects = engine.search(SearchQuery(keys=["path"], keywords="vacation"))
         assert all("vacation" in p for p in paths)
         assert len(paths) == 100
 
@@ -283,7 +287,7 @@ class TestFileSearchEngineGet:
 
     def test_get_glob_mode(self, populated_db):
         engine = FileSearchEngine(populated_db)
-        paths, _, _ = engine.search(SearchQuery(keys=["__filepath__"], keywords="*vacation*", query_mode="GLOB"))
+        paths, _, _ = engine.search(SearchQuery(keys=["path"], keywords="*vacation*", query_mode="GLOB"))
         assert len(paths) == 100
 
 
@@ -294,7 +298,7 @@ class TestFileSearchEngineListKeys:
         q = SearchQuery(directories=["C:/photos/vacation"])
         keys = engine.list_all_keys(q, sort_by_freq=True)
         key_names = [k[0] for k in keys]
-        assert "__filepath__" in key_names
+        assert "path" in key_names
         assert "dpi" in key_names
         assert "Comment" in key_names
 
@@ -311,7 +315,7 @@ class TestFileSearchEngineListKeys:
         db.start()
         db.initialize_database()
         sources = [("src1", "hash1", 100, 1.0)]
-        images = [("c:/test/img.jpg", "src1", "img.jpg", 1.5)]
+        images = [("c:/test/img.jpg", "src1", 1.5)]
         metas = [("c:/test/img.jpg", "shared_key", "meta_val", None)]
         tags = [("hash1", "shared_key", "tag_val")]
         db.upsert_batches(sources, images, metas, tags)
@@ -329,15 +333,15 @@ class TestFileSearchEngineCombined:
 
     def test_get_combined_union(self, populated_db):
         engine = FileSearchEngine(populated_db)
-        q1 = SearchQuery(keys=["__filepath__"], keywords="vacation", append_mode="OR")
-        q2 = SearchQuery(keys=["__filepath__"], keywords="work", append_mode="OR")
+        q1 = SearchQuery(keys=["path"], keywords="vacation", append_mode="OR")
+        q2 = SearchQuery(keys=["path"], keywords="work", append_mode="OR")
         paths, aspects = engine.search_multi([q1, q2])
         assert len(paths) == 200
 
     def test_get_combined_intersect(self, populated_db):
         engine = FileSearchEngine(populated_db)
         q1 = SearchQuery(keys=["dpi"], append_mode="OR")
-        q2 = SearchQuery(keys=["__filepath__"], keywords="vacation", append_mode="AND")
+        q2 = SearchQuery(keys=["path"], keywords="vacation", append_mode="AND")
         paths, aspects = engine.search_multi([q1, q2])
         assert all("vacation" in p for p in paths)
 
@@ -345,7 +349,7 @@ class TestFileSearchEngineCombined:
         engine = FileSearchEngine(populated_db)
         q1 = SearchQuery(keys=["dpi"], append_mode="OR")
         q2 = SearchQuery(keys=["nonexistent_key_xyz"], keywords="nope", append_mode="OR")
-        q3 = SearchQuery(keys=["__filepath__"], keywords="vacation", append_mode="AND")
+        q3 = SearchQuery(keys=["path"], keywords="vacation", append_mode="AND")
         paths, aspects = engine.search_multi([q1, q2, q3])
         assert all("vacation" in p for p in paths)
         assert len(paths) == 100
@@ -355,30 +359,30 @@ class TestNaturalKey:
 
     def test_basic_order(self):
         names = ["IMG_1.jpg", "IMG_10.jpg", "IMG_2.jpg", "IMG_100.jpg"]
-        assert sorted(names, key=_natural_key) == [
+        assert sorted(names, key=natural_key) == [
             "IMG_1.jpg", "IMG_2.jpg", "IMG_10.jpg", "IMG_100.jpg",
         ]
 
     def test_pure_alpha(self):
         names = ["banana", "apple", "cherry"]
-        assert sorted(names, key=_natural_key) == ["apple", "banana", "cherry"]
+        assert sorted(names, key=natural_key) == ["apple", "banana", "cherry"]
 
     def test_pure_numeric_prefix(self):
         names = ["3_file", "1_file", "20_file", "10_file"]
-        assert sorted(names, key=_natural_key) == [
+        assert sorted(names, key=natural_key) == [
             "1_file", "3_file", "10_file", "20_file",
         ]
 
     def test_case_insensitive(self):
         names = ["B.jpg", "a.jpg", "C.jpg"]
-        assert sorted(names, key=_natural_key) == ["a.jpg", "B.jpg", "C.jpg"]
+        assert sorted(names, key=natural_key) == ["a.jpg", "B.jpg", "C.jpg"]
 
     def test_empty_string(self):
-        assert _natural_key("") == [""]
+        assert natural_key("") == [""]
 
     def test_leading_zeros_equal(self):
-        assert _natural_key("file_001.jpg") == _natural_key("file_01.jpg")
-        assert _natural_key("file_01.jpg") == _natural_key("file_1.jpg")
+        assert natural_key("file_001.jpg") == natural_key("file_01.jpg")
+        assert natural_key("file_01.jpg") == natural_key("file_1.jpg")
 
 
 class TestMatchClause:
@@ -401,7 +405,7 @@ class TestMatchClause:
         assert values == ["%a\\\\b%"]
 
     def test_glob_wraps_wildcard(self):
-        q = SearchQuery(keys=["__filepath__"], query_mode="GLOB")
+        q = SearchQuery(keys=["path"], query_mode="GLOB")
         clause, values = q._match_clause("v", ["test"], "OR")
         assert "GLOB" in clause
         assert values == ["*test*"]
@@ -447,7 +451,7 @@ class TestSpecialCharSearch:
     def test_like_percent_in_filepath(self, special_char_db):
         engine = FileSearchEngine(special_char_db)
         paths, _, _ = engine.search(SearchQuery(
-            keys=["__filepath__"], keywords="100%", query_mode="LIKE",
+            keys=["path"], keywords="100%", query_mode="LIKE",
         ))
         assert len(paths) == 1
         assert "100%_done" in paths[0]
@@ -455,15 +459,15 @@ class TestSpecialCharSearch:
     def test_like_underscore_in_filepath(self, special_char_db):
         engine = FileSearchEngine(special_char_db)
         paths, _, _ = engine.search(SearchQuery(
-            keys=["__filepath__"], keywords="under_score", query_mode="LIKE",
+            keys=["path"], keywords="under_score", query_mode="LIKE",
         ))
         assert len(paths) == 1
 
     def test_like_underscore_not_wildcard(self, special_char_db):
         engine = FileSearchEngine(special_char_db)
-        all_paths, _, _ = engine.search(SearchQuery(keys=["__filepath__"]))
+        all_paths, _, _ = engine.search(SearchQuery(keys=["path"]))
         paths_dot, _, _ = engine.search(SearchQuery(
-            keys=["__filepath__"], keywords="under.score", query_mode="LIKE",
+            keys=["path"], keywords="under.score", query_mode="LIKE",
         ))
         assert len(paths_dot) == 0
 
@@ -477,14 +481,14 @@ class TestSpecialCharSearch:
     def test_glob_star_literal(self, special_char_db):
         engine = FileSearchEngine(special_char_db)
         paths, _, _ = engine.search(SearchQuery(
-            keys=["__filepath__"], keywords="star", query_mode="GLOB",
+            keys=["path"], keywords="star", query_mode="GLOB",
         ))
         assert any("star*glob" in p for p in paths)
 
     def test_case_insensitive_like(self, special_char_db):
         engine = FileSearchEngine(special_char_db)
         paths, _, _ = engine.search(SearchQuery(
-            keys=["__filepath__"], keywords="upper", query_mode="LIKE",
+            keys=["path"], keywords="upper", query_mode="LIKE",
         ))
         assert len(paths) == 1
 
@@ -517,9 +521,9 @@ class TestExcludeVariants:
 
     def test_exclude_only_no_include(self, populated_db):
         engine = FileSearchEngine(populated_db)
-        all_paths, _, _ = engine.search(SearchQuery(keys=["__filepath__"]))
+        all_paths, _, _ = engine.search(SearchQuery(keys=["path"]))
         excluded, _, _ = engine.search(SearchQuery(
-            keys=["__filepath__"], keywords="-vacation", keyword_separator=",",
+            keys=["path"], keywords="-vacation", keyword_separator=",",
         ))
         assert len(excluded) < len(all_paths)
         assert all("vacation" not in p for p in excluded)
@@ -553,25 +557,25 @@ class TestSearchMultiEdgeCases:
 
     def test_single_query(self, populated_db):
         engine = FileSearchEngine(populated_db)
-        q = SearchQuery(keys=["__filepath__"], keywords="vacation")
+        q = SearchQuery(keys=["path"], keywords="vacation")
         paths_single, _, _ = engine.search(q)
         paths_multi, _ = engine.search_multi([q])
         assert set(paths_single) == set(paths_multi)
 
     def test_all_and_with_no_match_returns_empty(self, populated_db):
         engine = FileSearchEngine(populated_db)
-        q1 = SearchQuery(keys=["__filepath__"], append_mode="OR")
+        q1 = SearchQuery(keys=["path"], append_mode="OR")
         q2 = SearchQuery(keys=["nonexistent"], keywords="nope", append_mode="AND")
         paths, _ = engine.search_multi([q1, q2])
         assert paths == []
 
     def test_sort_uses_last_query(self, populated_db):
         engine = FileSearchEngine(populated_db)
-        q1 = SearchQuery(keys=["__filepath__"], sort_by="name", ascending=True, append_mode="OR")
-        q2 = SearchQuery(keys=["__filepath__"], sort_by="name", ascending=False, append_mode="OR")
+        q1 = SearchQuery(keys=["path"], sort_by="name", ascending=True, append_mode="OR")
+        q2 = SearchQuery(keys=["path"], sort_by="name", ascending=False, append_mode="OR")
         paths, _ = engine.search_multi([q1, q2])
         names = [os.path.basename(p) for p in paths]
-        assert names == sorted(names, key=_natural_key, reverse=True)
+        assert names == sorted(names, key=natural_key, reverse=True)
 
 
 class TestSortVariants:
@@ -607,7 +611,7 @@ class TestMultipleDirectories:
     def test_search_two_directories(self, populated_db):
         engine = FileSearchEngine(populated_db)
         paths, _, _ = engine.search(SearchQuery(
-            keys=["__filepath__"],
+            keys=["path"],
             directories=["C:/photos/vacation", "C:/photos/work"],
         ))
         assert len(paths) == 200
@@ -615,7 +619,7 @@ class TestMultipleDirectories:
     def test_search_one_directory_subset(self, populated_db):
         engine = FileSearchEngine(populated_db)
         paths, _, _ = engine.search(SearchQuery(
-            keys=["__filepath__"],
+            keys=["path"],
             directories=["C:/photos/vacation"],
         ))
         assert len(paths) == 100
@@ -649,7 +653,7 @@ class TestEngineLookupMethods:
         engine = FileSearchEngine(populated_db)
         rec = engine.get_file_record("C:/photos/vacation/img_0000.jpg")
         assert rec.get("path") is not None
-        assert rec.get("name") == "img_0000.jpg"
+        assert rec.get("source") is not None
 
     def test_get_file_record_nonexistent(self, populated_db):
         engine = FileSearchEngine(populated_db)
@@ -669,10 +673,9 @@ class TestEngineLookupMethods:
     def test_get_all_metadata(self, populated_db):
         engine = FileSearchEngine(populated_db)
         result = engine.get_all_metadata("C:/photos/vacation/img_0000.jpg")
-        assert len(result) == 4
-        source, file_rec, tags, meta = result
-        assert source.get("file_hash") == "hash_0000"
-        assert file_rec.get("name") == "img_0000.jpg"
+        assert len(result) == 3
+        file_rec, tags, meta = result
+        assert file_rec.get("path") is not None
         assert "rating" in tags
         assert "dpi" in meta
 
@@ -681,7 +684,7 @@ class TestEngineConnectionEdgeCases:
 
     def test_nonexistent_db_path(self, tmp_path):
         engine = FileSearchEngine(str(tmp_path / "does_not_exist.db"))
-        paths, sources, aspects = engine.search(SearchQuery(keys=["__filepath__"]))
+        paths, sources, aspects = engine.search(SearchQuery(keys=["path"]))
         assert paths == []
         assert sources == []
         assert aspects == []
@@ -692,13 +695,13 @@ class TestEngineConnectionEdgeCases:
         conn.execute("CREATE TABLE dummy (id INTEGER)")
         conn.close()
         engine = FileSearchEngine(db_path)
-        paths, sources, aspects = engine.search(SearchQuery(keys=["__filepath__"]))
+        paths, sources, aspects = engine.search(SearchQuery(keys=["path"]))
         assert paths == []
 
     def test_reconnect_after_valid(self, populated_db):
         engine = FileSearchEngine(populated_db)
-        paths1, _, _ = engine.search(SearchQuery(keys=["__filepath__"]))
-        paths2, _, _ = engine.search(SearchQuery(keys=["__filepath__"]))
+        paths1, _, _ = engine.search(SearchQuery(keys=["path"]))
+        paths2, _, _ = engine.search(SearchQuery(keys=["path"]))
         assert paths1 == paths2
 
 
@@ -721,7 +724,7 @@ class TestExplainQueryPlan:
     def test_filepath_uses_files_directly(self, populated_db):
         engine = FileSearchEngine(populated_db)
         assert engine._connect_if_needed()
-        q = SearchQuery(keys=["__filepath__"], keywords="vacation")
+        q = SearchQuery(keys=["path"], keywords="vacation")
         subq, params = q._make_subquery(np)
         sql = f"SELECT DISTINCT path FROM ({subq}) s0"
         plan = self._plan_text(engine.conn, sql, params)
@@ -746,7 +749,7 @@ class TestExplainQueryPlan:
             SELECT m.path, m.source, m.aspect_ratio
             FROM files_full AS m
             JOIN ({distinct_paths}) AS s USING(path)
-            ORDER BY m.name ASC
+            ORDER BY m.path ASC
         """
         plan = self._plan_text(engine.conn, sql, params)
         assert "kv_meta" not in plan.lower()
@@ -788,19 +791,19 @@ class TestMixedKeys:
 
     def test_filepath_and_meta_key(self, populated_db):
         engine = FileSearchEngine(populated_db)
-        paths, _, _ = engine.search(SearchQuery(keys=["__filepath__", "dpi"]))
+        paths, _, _ = engine.search(SearchQuery(keys=["path", "dpi"]))
         assert len(paths) == 200
 
     def test_filepath_and_meta_key_with_keyword(self, populated_db):
         engine = FileSearchEngine(populated_db)
         paths, _, _ = engine.search(SearchQuery(
-            keys=["__filepath__", "dpi"], keywords="vacation",
+            keys=["path", "dpi"], keywords="vacation",
         ))
         assert len(paths) > 0
 
     def test_filepath_and_tag_key(self, populated_db):
         engine = FileSearchEngine(populated_db)
-        paths, _, _ = engine.search(SearchQuery(keys=["__filepath__", "rating"]))
+        paths, _, _ = engine.search(SearchQuery(keys=["path", "rating"]))
         assert len(paths) == 200
 
     def test_meta_and_tag_keys(self, populated_db):
@@ -829,14 +832,14 @@ class TestEmptyDB:
 
     def test_search_empty(self, empty_db):
         engine = FileSearchEngine(empty_db)
-        paths, sources, aspects = engine.search(SearchQuery(keys=["__filepath__"]))
+        paths, sources, aspects = engine.search(SearchQuery(keys=["path"]))
         assert paths == []
         assert sources == []
         assert aspects == []
 
     def test_search_multi_empty(self, empty_db):
         engine = FileSearchEngine(empty_db)
-        q = SearchQuery(keys=["__filepath__"])
+        q = SearchQuery(keys=["path"])
         paths, aspects = engine.search_multi([q])
         assert paths == []
         assert aspects == []
@@ -865,7 +868,7 @@ class TestEmptyDB:
     def test_get_all_metadata_empty(self, empty_db):
         engine = FileSearchEngine(empty_db)
         result = engine.get_all_metadata("C:/any/file.jpg")
-        assert result == [{}, {}, {}, {}]
+        assert result == [{}, {}, {}]
 
 
 class TestAspectRatioFallback:
@@ -876,12 +879,13 @@ class TestAspectRatioFallback:
         db.start()
         db.initialize_database()
         sources = [("C:/test/img.jpg", "hash1", 100, 1.0)]
-        images = [("C:/test/img.jpg", "C:/test/img.jpg", "img.jpg", None)]
-        db.upsert_batches(sources, images, [], [])
+        images = [("C:/test/img.jpg", "C:/test/img.jpg", None)]
+        metas = [("C:/test/img.jpg", "path", "C:/test/img.jpg", None)]
+        db.upsert_batches(sources, images, metas, [])
         db.conn.commit()
         db.close()
         engine = FileSearchEngine(db_path)
-        paths, sources_out, aspects = engine.search(SearchQuery(keys=["__filepath__"]))
+        paths, sources_out, aspects = engine.search(SearchQuery(keys=["path"]))
         assert len(paths) == 1
         assert aspects[0] == 1.0
 
@@ -891,12 +895,13 @@ class TestAspectRatioFallback:
         db.start()
         db.initialize_database()
         sources = [("C:/test/img.jpg", "hash1", 100, 1.0)]
-        images = [("C:/test/img.jpg", "C:/test/img.jpg", "img.jpg", 1.777)]
-        db.upsert_batches(sources, images, [], [])
+        images = [("C:/test/img.jpg", "C:/test/img.jpg", 1.777)]
+        metas = [("C:/test/img.jpg", "path", "C:/test/img.jpg", None)]
+        db.upsert_batches(sources, images, metas, [])
         db.conn.commit()
         db.close()
         engine = FileSearchEngine(db_path)
-        paths, _, aspects = engine.search(SearchQuery(keys=["__filepath__"]))
+        paths, _, aspects = engine.search(SearchQuery(keys=["path"]))
         assert aspects[0] == pytest.approx(1.777)
 
 
@@ -905,7 +910,7 @@ class TestIncludeExcludeCombined:
     def test_include_and_exclude(self, populated_db):
         engine = FileSearchEngine(populated_db)
         paths, _, _ = engine.search(SearchQuery(
-            keys=["__filepath__"],
+            keys=["path"],
             keywords="vacation,-img_0000",
             keyword_separator=",",
         ))
@@ -927,7 +932,7 @@ class TestIncludeExcludeCombined:
     def test_exclude_everything_returns_empty(self, populated_db):
         engine = FileSearchEngine(populated_db)
         paths, _, _ = engine.search(SearchQuery(
-            keys=["__filepath__"],
+            keys=["path"],
             keywords="vacation,-vacation",
             keyword_separator=",",
         ))
@@ -939,7 +944,7 @@ class TestDirectoryFilterEdgeCases:
     def test_no_match_directory(self, populated_db):
         engine = FileSearchEngine(populated_db)
         paths, _, _ = engine.search(SearchQuery(
-            keys=["__filepath__"],
+            keys=["path"],
             directories=["C:/nonexistent_directory"],
         ))
         assert paths == []
@@ -947,7 +952,7 @@ class TestDirectoryFilterEdgeCases:
     def test_include_subfolders_true_nested(self, special_char_db):
         engine = FileSearchEngine(special_char_db)
         paths, _, _ = engine.search(SearchQuery(
-            keys=["__filepath__"],
+            keys=["path"],
             directories=["C:/data"],
             include_subfolders=True,
         ))
@@ -957,7 +962,7 @@ class TestDirectoryFilterEdgeCases:
     def test_include_subfolders_false_excludes_nested(self, special_char_db):
         engine = FileSearchEngine(special_char_db)
         paths, _, _ = engine.search(SearchQuery(
-            keys=["__filepath__"],
+            keys=["path"],
             directories=["C:/data"],
             include_subfolders=False,
         ))
@@ -1000,14 +1005,14 @@ class TestListAllKeysWithKeywords:
         q = SearchQuery(keywords="vacation", keyword_separator=",")
         keys = engine.list_all_keys(q)
         key_names = [k[0] for k in keys]
-        assert "__filepath__" in key_names
+        assert "path" in key_names
 
     def test_list_keys_filtered_by_directory(self, populated_db):
         engine = FileSearchEngine(populated_db)
         q = SearchQuery(directories=["C:/photos/vacation"])
         keys = engine.list_all_keys(q)
         key_names = [k[0] for k in keys]
-        assert "__filepath__" in key_names
+        assert "path" in key_names
         assert "dpi" in key_names
 
     def test_list_keys_sorted_alphabetically(self, populated_db):
@@ -1066,7 +1071,7 @@ class TestSearchSourceValues:
     def test_search_returns_correct_sources(self, populated_db):
         engine = FileSearchEngine(populated_db)
         paths, sources, _ = engine.search(SearchQuery(
-            keys=["__filepath__"], keywords="img_0000",
+            keys=["path"], keywords="img_0000",
         ))
         assert len(paths) > 0
         for path, source in zip(paths, sources):
@@ -1084,14 +1089,18 @@ class TestSearchSourceValues:
             ("src_b.png", "h2", 200, 2.0),
         ]
         images = [
-            ("C:/dir/a.jpg", "src_a.png", "a.jpg", 1.5),
-            ("C:/dir/b.jpg", "src_b.png", "b.jpg", 2.0),
+            ("C:/dir/a.jpg", "src_a.png", 1.5),
+            ("C:/dir/b.jpg", "src_b.png", 2.0),
         ]
-        db.upsert_batches(sources, images, [], [])
+        metas = [
+            ("C:/dir/a.jpg", "path", "C:/dir/a.jpg", None),
+            ("C:/dir/b.jpg", "path", "C:/dir/b.jpg", None),
+        ]
+        db.upsert_batches(sources, images, metas, [])
         db.conn.commit()
         db.close()
         engine = FileSearchEngine(db_path)
-        paths, srcs, _ = engine.search(SearchQuery(keys=["__filepath__"]))
+        paths, srcs, _ = engine.search(SearchQuery(keys=["path"]))
         result_map = dict(zip(paths, srcs))
         assert result_map[np("C:/dir/a.jpg")] == "src_a.png"
         assert result_map[np("C:/dir/b.jpg")] == "src_b.png"
@@ -1101,24 +1110,24 @@ class TestNaturalKeyEdgeCases:
 
     def test_special_characters(self):
         names = ["a-1.jpg", "a-10.jpg", "a-2.jpg"]
-        assert sorted(names, key=_natural_key) == ["a-1.jpg", "a-2.jpg", "a-10.jpg"]
+        assert sorted(names, key=natural_key) == ["a-1.jpg", "a-2.jpg", "a-10.jpg"]
 
     def test_mixed_alpha_numeric(self):
         names = ["file10b", "file2a", "file10a", "file2b"]
-        assert sorted(names, key=_natural_key) == ["file2a", "file2b", "file10a", "file10b"]
+        assert sorted(names, key=natural_key) == ["file2a", "file2b", "file10a", "file10b"]
 
     def test_unicode_characters(self):
-        keys = [_natural_key(n) for n in ["画像1.jpg", "画像10.jpg", "画像2.jpg"]]
-        names = ["画像1.jpg", "画像10.jpg", "画像2.jpg"]
-        assert sorted(names, key=_natural_key) == ["画像1.jpg", "画像2.jpg", "画像10.jpg"]
+        keys = [natural_key(n) for n in ["画僁E.jpg", "画僁E0.jpg", "画僁E.jpg"]]
+        names = ["画僁E.jpg", "画僁E0.jpg", "画僁E.jpg"]
+        assert sorted(names, key=natural_key) == ["画僁E.jpg", "画僁E.jpg", "画僁E0.jpg"]
 
     def test_only_digits(self):
         names = ["100", "20", "3", "1"]
-        assert sorted(names, key=_natural_key) == ["1", "3", "20", "100"]
+        assert sorted(names, key=natural_key) == ["1", "3", "20", "100"]
 
     def test_long_number_sequences(self):
         names = ["file_999999.jpg", "file_1000000.jpg", "file_100.jpg"]
-        assert sorted(names, key=_natural_key) == [
+        assert sorted(names, key=natural_key) == [
             "file_100.jpg", "file_999999.jpg", "file_1000000.jpg",
         ]
 
@@ -1137,7 +1146,7 @@ class TestBuildPathQueryEdgeCases:
         engine = FileSearchEngine(populated_db)
         assert engine._connect_if_needed()
         q_null = SearchQuery(keys=None, require_keys=True, append_mode="OR")
-        q_valid = SearchQuery(keys=["__filepath__"], append_mode="OR")
+        q_valid = SearchQuery(keys=["path"], append_mode="OR")
         result, params = engine._build_path_query([q_null, q_valid])
         assert result is not None
 
@@ -1151,24 +1160,24 @@ class TestBuildPathQueryEdgeCases:
 class TestSearchQueryNormalizeInputs:
 
     def test_none_keywords(self):
-        q = SearchQuery(keys=["__filepath__"], keywords=None)
+        q = SearchQuery(keys=["path"], keywords=None)
         keys, include, exclude = q.normalize_inputs()
         assert include == []
         assert exclude == []
 
     def test_single_keyword_no_separator(self):
-        q = SearchQuery(keys=["__filepath__"], keywords="hello world")
+        q = SearchQuery(keys=["path"], keywords="hello world")
         keys, include, exclude = q.normalize_inputs()
         assert include == ["hello world"]
         assert exclude == []
 
     def test_keyword_separator_splits(self):
-        q = SearchQuery(keys=["__filepath__"], keywords="a|b|c", keyword_separator="|")
+        q = SearchQuery(keys=["path"], keywords="a|b|c", keyword_separator="|")
         keys, include, exclude = q.normalize_inputs()
         assert include == ["a", "b", "c"]
 
     def test_exclude_with_no_include(self):
-        q = SearchQuery(keys=["__filepath__"], keywords="-only_exclude", keyword_separator=",")
+        q = SearchQuery(keys=["path"], keywords="-only_exclude", keyword_separator=",")
         keys, include, exclude = q.normalize_inputs()
         assert include == []
         assert exclude == ["only_exclude"]
@@ -1222,21 +1231,21 @@ class TestExplainQueryPlanRealDB:
             SELECT m.path, m.source, m.aspect_ratio
             FROM files_full AS m
             JOIN (SELECT DISTINCT path FROM ({subq}) s0) AS s USING(path)
-            ORDER BY m.name ASC
+            ORDER BY m.path ASC
         """
         plan, rows, avg_ms = self._plan_and_time(real_engine, f"meta key='{key}'", sql, params)
         assert "kv_meta" not in plan.lower()
 
     def test_filepath_query(self, real_engine):
-        q = SearchQuery(keys=["__filepath__"], keywords="img")
+        q = SearchQuery(keys=["path"], keywords="img")
         subq, params = q._make_subquery(np)
         sql = f"""
             SELECT m.path, m.source, m.aspect_ratio
             FROM files_full AS m
             JOIN (SELECT DISTINCT path FROM ({subq}) s0) AS s USING(path)
-            ORDER BY m.name ASC
+            ORDER BY m.path ASC
         """
-        plan, rows, avg_ms = self._plan_and_time(real_engine, "__filepath__ keyword='img'", sql, params)
+        plan, rows, avg_ms = self._plan_and_time(real_engine, "path keyword='img'", sql, params)
         assert "kv_meta" not in plan.lower()
 
     def test_directory_query(self, real_engine):
@@ -1246,13 +1255,13 @@ class TestExplainQueryPlanRealDB:
             pytest.skip("No image data")
         parts = sample[0].replace("\\", "/").split("/")
         sample_dir = "/".join(parts[:4])
-        q = SearchQuery(keys=["__filepath__"], directories=[sample_dir])
+        q = SearchQuery(keys=["path"], directories=[sample_dir])
         subq, params = q._make_subquery(np)
         sql = f"""
             SELECT m.path, m.source, m.aspect_ratio
             FROM files_full AS m
             JOIN (SELECT DISTINCT path FROM ({subq}) s0) AS s USING(path)
-            ORDER BY m.name ASC
+            ORDER BY m.path ASC
         """
         plan, rows, avg_ms = self._plan_and_time(real_engine, f"directory='{sample_dir}'", sql, params)
         assert "kv_meta" not in plan.lower()

@@ -49,7 +49,9 @@ def large_db(tmp_path_factory):
                 path, fhash, 1000 + idx,
                 float(1700000000 + idx),
             ))
-            images.append((path, path, name, 1.0 + (idx % 10) * 0.1))
+            images.append((path, path, 1.0 + (idx % 10) * 0.1))
+            metas.append((path, "path", path, None))
+            metas.append((path, "name", name, None))
             metas.append((path, "dpi", f"{72 + (idx % 4) * 24}", None))
             metas.append((path, "size", str(1000 + idx), float(1000 + idx)))
             metas.append((path, "modified", str(float(1700000000 + idx)), float(1700000000 + idx)))
@@ -135,7 +137,7 @@ class TestSortProfileSynthetic:
     def test_sort_all_files(self, large_db, sort_by, ascending):
         engine = FileSearchEngine(large_db)
         q = SearchQuery(
-            keys=["__filepath__"],
+            keys=["path"],
             sort_by=sort_by,
             ascending=ascending,
         )
@@ -146,7 +148,7 @@ class TestSortProfileSynthetic:
     def test_sort_name_asc_with_keyword(self, large_db):
         engine = FileSearchEngine(large_db)
         q = SearchQuery(
-            keys=["__filepath__"],
+            keys=["path"],
             keywords="vacation",
             sort_by="name",
             ascending=True,
@@ -157,7 +159,7 @@ class TestSortProfileSynthetic:
     def test_sort_name_asc_with_directory(self, large_db):
         engine = FileSearchEngine(large_db)
         q = SearchQuery(
-            keys=["__filepath__"],
+            keys=["path"],
             directories=["C:/photos/vacation_2023"],
             sort_by="name",
             ascending=True,
@@ -168,7 +170,7 @@ class TestSortProfileSynthetic:
     def test_sort_path_asc_with_directory(self, large_db):
         engine = FileSearchEngine(large_db)
         q = SearchQuery(
-            keys=["__filepath__"],
+            keys=["path"],
             directories=["C:/photos/work"],
             sort_by="path",
             ascending=True,
@@ -199,9 +201,9 @@ class TestSortProfileSynthetic:
 
     def test_sort_multi_query_intersect(self, large_db):
         engine = FileSearchEngine(large_db)
-        q1 = SearchQuery(keys=["__filepath__"], append_mode="OR")
+        q1 = SearchQuery(keys=["path"], append_mode="OR")
         q2 = SearchQuery(
-            keys=["__filepath__"],
+            keys=["path"],
             keywords="vacation",
             sort_by="name",
             ascending=True,
@@ -213,14 +215,14 @@ class TestSortProfileSynthetic:
     def test_sort_multi_query_union(self, large_db):
         engine = FileSearchEngine(large_db)
         q1 = SearchQuery(
-            keys=["__filepath__"],
+            keys=["path"],
             keywords="vacation",
             sort_by="name",
             ascending=True,
             append_mode="OR",
         )
         q2 = SearchQuery(
-            keys=["__filepath__"],
+            keys=["path"],
             keywords="work",
             sort_by="name",
             ascending=True,
@@ -232,7 +234,7 @@ class TestSortProfileSynthetic:
     def test_verify_natural_order(self, large_db):
         engine = FileSearchEngine(large_db)
         q = SearchQuery(
-            keys=["__filepath__"],
+            keys=["path"],
             directories=["C:/photos/vacation_2023/day_1"],
             sort_by="name",
             ascending=True,
@@ -249,7 +251,7 @@ class TestSortProfileSynthetic:
     def test_verify_natural_order_desc(self, large_db):
         engine = FileSearchEngine(large_db)
         q = SearchQuery(
-            keys=["__filepath__"],
+            keys=["path"],
             directories=["C:/photos/vacation_2023/day_1"],
             sort_by="name",
             ascending=False,
@@ -262,7 +264,7 @@ class TestSortProfileSynthetic:
     def test_verify_natural_path_order(self, large_db):
         engine = FileSearchEngine(large_db)
         q = SearchQuery(
-            keys=["__filepath__"],
+            keys=["path"],
             directories=["C:/photos/vacation_2023"],
             sort_by="path",
             ascending=True,
@@ -286,7 +288,7 @@ class TestSortProfileRealDB:
     def test_sort_all(self, real_db, sort_by, ascending):
         engine = FileSearchEngine(real_db)
         q = SearchQuery(
-            keys=["__filepath__"],
+            keys=["path"],
             sort_by=sort_by,
             ascending=ascending,
         )
@@ -305,7 +307,7 @@ class TestSortProfileRealDB:
 
         for sort_by in ("name", "path"):
             q = SearchQuery(
-                keys=["__filepath__"],
+                keys=["path"],
                 directories=[sample_dir],
                 sort_by=sort_by,
                 ascending=True,
@@ -317,14 +319,14 @@ class TestSortProfileRealDB:
         engine = FileSearchEngine(real_db)
         assert engine._connect_if_needed()
         sample = engine.conn.execute(
-            "SELECT name FROM files WHERE name IS NOT NULL LIMIT 1"
+            "SELECT value FROM meta_info WHERE key = 'name' LIMIT 1"
         ).fetchone()
         if not sample:
             pytest.skip("No data in real DB")
         fragment = sample[0][:3]
 
         q = SearchQuery(
-            keys=["__filepath__"],
+            keys=["path"],
             keywords=fragment,
             sort_by="name",
             ascending=True,

@@ -202,36 +202,27 @@ class RegexFilter(BaseFilterPlugin):
         if require_keys and not keys:
             return "SELECT path FROM files WHERE 0", []
 
-        has_filepath = '__filepath__' in keys
-        other_keys = [k for k in keys if k != '__filepath__']
         query_all = not keys
         hints = _extract_literal_hints(pattern)
 
         parts, all_params = [], []
 
-        if has_filepath or query_all:
-            conds, bind = _build_like_conditions('i.path', hints)
-            w = f"WHERE {' AND '.join(conds)}" if conds else ""
-            parts.append(f"SELECT i.path FROM files AS i {w}")
-            all_params.extend(bind)
+        sql, p = cls._kv_part(
+            'meta_info AS mi', 'mi."key"', 'mi."value"', 'mi.path',
+            keys if not query_all else [], hints,
+        )
+        parts.append(sql)
+        all_params.extend(p)
 
-        if other_keys or query_all:
-            sql, p = cls._kv_part(
-                'meta_info AS mi', 'mi."key"', 'mi."value"', 'mi.path',
-                other_keys, hints,
-            )
-            parts.append(sql)
-            all_params.extend(p)
-
-            sql, p = cls._kv_part(
-                'tags AS t '
-                'JOIN sources AS s ON s.file_hash = t.file_hash '
-                'JOIN files AS i ON i.source = s.source',
-                't."key"', 't."value"', 'i.path',
-                other_keys, hints,
-            )
-            parts.append(sql)
-            all_params.extend(p)
+        sql, p = cls._kv_part(
+            'tags AS t '
+            'JOIN sources AS s ON s.file_hash = t.file_hash '
+            'JOIN files AS i ON i.source = s.source',
+            't."key"', 't."value"', 'i.path',
+            keys if not query_all else [], hints,
+        )
+        parts.append(sql)
+        all_params.extend(p)
 
         if not parts:
             return None, []
@@ -272,11 +263,11 @@ class RegexFilter(BaseFilterPlugin):
         if isinstance(keys, str):
             keys = [keys]
 
-        has_filepath = '__filepath__' in keys
-        other_keys = [k for k in keys if k != '__filepath__']
+        has_path = 'path' in keys
+        other_keys = [k for k in keys if k != 'path']
         query_all = not keys
 
-        if has_filepath and not other_keys and not query_all:
+        if has_path and not other_keys and not query_all:
             return [r for r in rows if compiled.search(r['path'])]
 
         return rows

@@ -71,7 +71,3 @@ class BaseSortPlugin(PluginBase, ABC):
     @classmethod
     def sort_rows(cls, rows: list, ascending: bool) -> list:
         raise NotImplementedError
-
-    @classmethod
-    def required_columns(cls) -> tuple[str, ...]:
-        return ()

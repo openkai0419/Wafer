@@ -1,16 +1,9 @@
 from __future__ import annotations
 
-import re
 from random import shuffle
 
 from ..plugin.query.base import BaseSortPlugin
-
-
-_NUM_SPLIT = re.compile(r'(\d+)').split
-
-
-def _natural_key(s):
-    return [int(c) if c.isdigit() else c.casefold() for c in _NUM_SPLIT(s)]
+from ..utils.formatting import natural_key
 
 
 class NaturalPathSort(BaseSortPlugin):
@@ -19,26 +12,19 @@ class NaturalPathSort(BaseSortPlugin):
 
     @classmethod
     def sort_rows(cls, rows, ascending):
-        rows.sort(key=lambda r: _natural_key(r['path'] or ''), reverse=not ascending)
+        rows.sort(key=lambda r: natural_key(r['path'] or ''), reverse=not ascending)
         return rows
-
-    @classmethod
-    def required_columns(cls):
-        return ('path',)
 
 
 class NaturalNameSort(BaseSortPlugin):
     NAME = 'name'
     PRIORITY = 90
+    META_KEY = 'name'
 
     @classmethod
     def sort_rows(cls, rows, ascending):
-        rows.sort(key=lambda r: _natural_key(r['name'] or ''), reverse=not ascending)
+        rows.sort(key=lambda r: natural_key(r['name'] or ''), reverse=not ascending)
         return rows
-
-    @classmethod
-    def required_columns(cls):
-        return ('name',)
 
 
 class ModifiedSort(BaseSortPlugin):

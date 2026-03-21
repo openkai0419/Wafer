@@ -242,10 +242,10 @@ class DirectoryScanner:
                     self._progress.send_event('update'),
                 ),
             ))
-        self._submit_pending_by_extension(paths, token)
+        self._submit_pending_by_extension(paths)
         AppLogger.info(f'[Scanner] Registered {len(paths)} files')
 
-    def _submit_pending_by_extension(self, paths: list[str], token: CancelToken):
+    def _submit_pending_by_extension(self, paths: list[str]):
         if not self._collectors:
             return
         collector_paths: dict[str, list[str]] = {}
@@ -254,17 +254,12 @@ class DirectoryScanner:
             for name, extensions in self._collectors:
                 if not extensions or ext in extensions:
                     collector_paths.setdefault(name, []).append(p)
-        total_pending = 0
         for name, matched_paths in collector_paths.items():
             self._scheduler.submit(Task.create(
                 'insert_pending',
                 priority=TaskPriority.SCAN,
                 run=lambda mp=matched_paths, n=name: self._writer.insert_pending(mp, [n]),
-                cancel_token=token,
             ))
-            total_pending += len(matched_paths)
-        if total_pending:
-            self._progress.increment(0, total_pending)
 
     def _submit_remove_excluded(self):
         if not self._exclude_paths:
@@ -294,11 +289,8 @@ class DirectoryScanner:
     def _do_backfill(self):
         if not self._collectors:
             return
-        token = self._current_token
         cur = self._read_conn.cursor()
         for name, extensions in self._collectors:
-            if token.is_cancelled:
-                break
             cur.execute(
                 '''SELECT s.source FROM sources s
                 WHERE NOT EXISTS (
@@ -319,7 +311,6 @@ class DirectoryScanner:
                     'insert_pending',
                     priority=TaskPriority.SCAN,
                     run=lambda c=chunk, n=name: self._writer.insert_pending(c, [n]),
-                    cancel_token=token,
                 ))
             AppLogger.info(f'[Scanner] Backfill: {len(sources)} pending for "{name}"')
         cur.close()

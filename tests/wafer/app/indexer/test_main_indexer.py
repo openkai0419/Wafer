@@ -101,3 +101,95 @@ class TestDelete:
         proc.delete()
         mock_del_files.assert_called_once()
         node.send.assert_called_with('db.deleted', 'test', dst='viewer')
+
+
+class TestPeriodicBackfill:
+
+    @patch('wafer.app.indexer.main_indexer.Node')
+    def test_register_periodic_tasks_includes_backfill(self, mock_node_cls):
+        mock_node_cls.return_value = MagicMock()
+        proc = IndexerProcess('test')
+        proc.scheduler = MagicMock()
+        proc._register_periodic_tasks()
+        names = [call.args[0].name for call in proc.scheduler.add_periodic_task.call_args_list]
+        assert 'backfill_pending' in names
+
+    @patch('wafer.app.indexer.main_indexer.Node')
+    def test_request_backfill_delegates_to_scanner(self, mock_node_cls):
+        mock_node_cls.return_value = MagicMock()
+        proc = IndexerProcess('test')
+        proc.scanner = MagicMock()
+        proc._request_backfill()
+        proc.scanner.backfill_pending.assert_called_once()
+
+    @patch('wafer.app.indexer.main_indexer.Node')
+    def test_request_backfill_without_scanner(self, mock_node_cls):
+        mock_node_cls.return_value = MagicMock()
+        proc = IndexerProcess('test')
+        proc.scanner = None
+        proc._request_backfill()
+
+
+class TestIdleProgressReset:
+
+    @patch('wafer.app.indexer.main_indexer.Node')
+    def test_register_includes_idle_progress_reset(self, mock_node_cls):
+        mock_node_cls.return_value = MagicMock()
+        proc = IndexerProcess('test')
+        proc.scheduler = MagicMock()
+        proc._register_periodic_tasks()
+        names = [call.args[0].name for call in proc.scheduler.add_periodic_task.call_args_list]
+        assert 'idle_progress_reset' in names
+
+    @patch('wafer.app.indexer.main_indexer.Node')
+    def test_idle_progress_reset_calls_reset_when_active(self, mock_node_cls):
+        mock_node_cls.return_value = MagicMock()
+        proc = IndexerProcess('test')
+        proc.scheduler = MagicMock()
+        proc._progress = MagicMock()
+        proc._progress.maximum = 100
+        proc._register_periodic_tasks()
+        tasks = {call.args[0].name: call.args[0] for call in proc.scheduler.add_periodic_task.call_args_list}
+        task = tasks['idle_progress_reset'].create_task()
+        task.run()
+        proc._progress.reset.assert_called_once()
+
+    @patch('wafer.app.indexer.main_indexer.Node')
+    def test_idle_progress_reset_skips_when_already_zero(self, mock_node_cls):
+        mock_node_cls.return_value = MagicMock()
+        proc = IndexerProcess('test')
+        proc.scheduler = MagicMock()
+        proc._progress = MagicMock()
+        proc._progress.maximum = 0
+        proc._register_periodic_tasks()
+        tasks = {call.args[0].name: call.args[0] for call in proc.scheduler.add_periodic_task.call_args_list}
+        task = tasks['idle_progress_reset'].create_task()
+        task.run()
+        proc._progress.reset.assert_not_called()
+
+
+class TestPeriodicTaskConfig:
+
+    @patch('wafer.app.indexer.main_indexer.Node')
+    def test_once_per_idle_flags(self, mock_node_cls):
+        mock_node_cls.return_value = MagicMock()
+        proc = IndexerProcess('test')
+        proc.scheduler = MagicMock()
+        proc._register_periodic_tasks()
+        tasks = {call.args[0].name: call.args[0] for call in proc.scheduler.add_periodic_task.call_args_list}
+        assert tasks['truncate_checkpoint'].once_per_idle is True
+        assert tasks['cleanup_optimize'].once_per_idle is True
+        assert tasks['idle_progress_reset'].once_per_idle is True
+        assert tasks['retry_stale_dispatched'].once_per_idle is False
+        assert tasks['backfill_pending'].once_per_idle is False
+        assert tasks['idle_rescan'].once_per_idle is False
+
+    @patch('wafer.app.indexer.main_indexer.Node')
+    def test_idle_rescan_is_retry_priority(self, mock_node_cls):
+        mock_node_cls.return_value = MagicMock()
+        proc = IndexerProcess('test')
+        proc.scheduler = MagicMock()
+        proc._register_periodic_tasks()
+        tasks = {call.args[0].name: call.args[0] for call in proc.scheduler.add_periodic_task.call_args_list}
+        task = tasks['idle_rescan'].create_task()
+        assert task.priority == TaskPriority.RETRY

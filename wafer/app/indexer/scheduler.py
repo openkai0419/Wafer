@@ -19,10 +19,14 @@ class PeriodicTask:
     interval: float
     create_task: Callable[[], Task]
     idle_delay: float = 0.0
+    once_per_idle: bool = False
     last_run: float = field(default=0.0)
+    _idle_done: bool = field(default=False, repr=False)
 
     def should_run(self, now: float, idle_duration: float) -> bool:
         if idle_duration < self.idle_delay:
+            return False
+        if self.once_per_idle and self._idle_done:
             return False
         return (now - self.last_run) >= self.interval
 
@@ -90,8 +94,14 @@ class TaskScheduler:
                     AppLogger.warning(
                         f'[Scheduler] on_complete failed: {task.name}: {e}', exc=e,
                     )
-            if task.priority <= TaskPriority.SCAN:
+            if task.priority <= TaskPriority.DISPATCH:
                 self._last_active_time = time.monotonic()
+                self._reset_once_per_idle_flags()
+
+    def _reset_once_per_idle_flags(self):
+        for periodic in self._periodic_tasks:
+            if periodic.once_per_idle:
+                periodic._idle_done = False
 
     def _check_periodic_tasks(self):
         now = time.monotonic()
@@ -100,3 +110,5 @@ class TaskScheduler:
             if periodic.should_run(now, idle_duration):
                 self.submit(periodic.create_task())
                 periodic.last_run = now
+                if periodic.once_per_idle:
+                    periodic._idle_done = True

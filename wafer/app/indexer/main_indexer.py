@@ -31,6 +31,7 @@ class IndexerProcess:
         self.setting_watcher = None
         self.dispatcher = None
         self.receiver = None
+        self._progress = None
         self.zmq = Node('indexer', db=name, consumer=True)
         self.zmq.subscribe('cleanup', lambda msg: self.cleanup() or True)
         self.zmq.subscribe('rescan', lambda msg: self.rescan() or True)
@@ -55,6 +56,7 @@ class IndexerProcess:
 
         collectors = collector_resolver.summary()
         progress = ProgressAggregator(self.db_name, self.zmq)
+        self._progress = progress
 
         self.scanner = DirectoryScanner(db_path, self.scheduler, self.writer, progress, collectors)
         self.scanner.set_exclude_paths(self.setting_db.get_all_ignore_folders())
@@ -65,7 +67,7 @@ class IndexerProcess:
         self.zmq.subscribe('collect.result', self.receiver.handle_result)
 
         self.dispatcher = CollectorDispatcher(
-            self.db_name, db_path, self.scheduler, self.writer,
+            self.db_name, db_path, self.scheduler, self.writer, progress,
         )
         self.dispatcher.start(self.zmq)
 
@@ -83,6 +85,7 @@ class IndexerProcess:
         self.scheduler.add_periodic_task(PeriodicTask(
             name='truncate_checkpoint',
             interval=60*1.0,
+            once_per_idle=True,
             create_task=lambda: Task.create(
                 'checkpoint',
                 priority=TaskPriority.MAINTENANCE,
@@ -100,12 +103,22 @@ class IndexerProcess:
             ),
         ))
         self.scheduler.add_periodic_task(PeriodicTask(
+            name='backfill_pending',
+            interval=60*10.0,
+            idle_delay=60*2.0,
+            create_task=lambda: Task.create(
+                'backfill_pending',
+                priority=TaskPriority.RETRY,
+                run=lambda: self._request_backfill(),
+            ),
+        ))
+        self.scheduler.add_periodic_task(PeriodicTask(
             name='idle_rescan',
             interval=60*60*1.0,
             idle_delay=60*5.0,
             create_task=lambda: Task.create(
                 'idle_rescan',
-                priority=TaskPriority.MAINTENANCE,
+                priority=TaskPriority.RETRY,
                 run=lambda: self._request_idle_rescan(),
             ),
         ))
@@ -113,12 +126,28 @@ class IndexerProcess:
             name='cleanup_optimize',
             interval=60*60*12.0,
             idle_delay=60*30.0,
+            once_per_idle=True,
             create_task=lambda: Task.create(
                 'cleanup_optimize',
                 priority=TaskPriority.MAINTENANCE,
                 run=lambda: self.writer.purge_orphans(),
             ),
         ))
+        self.scheduler.add_periodic_task(PeriodicTask(
+            name='idle_progress_reset',
+            interval=60*20.0,
+            idle_delay=60*1.0,
+            once_per_idle=True,
+            create_task=lambda: Task.create(
+                'progress_reset',
+                priority=TaskPriority.MAINTENANCE,
+                run=lambda: self._progress.reset() if self._progress and self._progress.maximum > 0 else None,
+            ),
+        ))
+
+    def _request_backfill(self):
+        if self.scanner:
+            self.scanner.backfill_pending()
 
     def _request_idle_rescan(self):
         if self.folder_watcher:

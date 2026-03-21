@@ -10,10 +10,11 @@ from ...utils.profiling import profiler
 from ...core.platform.process import AppProcess
 from ...plugin.collector.handler import collector_resolver
 from .db_writer import DatabaseWriter
+from .progress_notifier import ProgressAggregator
 from .scheduler import TaskScheduler
 from .task import Task, TaskPriority
 
-_BATCH_SIZE = 1000
+_BATCH_SIZE = 1200
 _DISPATCH_INTERVAL = 2.0
 
 
@@ -25,12 +26,14 @@ class CollectorDispatcher:
         db_path: str | Path,
         scheduler: TaskScheduler,
         writer: DatabaseWriter,
+        progress: ProgressAggregator,
         collectors=None,
     ):
         self._db_name = db_name
         self._db_path = Path(db_path)
         self._scheduler = scheduler
         self._writer = writer
+        self._progress = progress
         self._collectors = list(collectors or collector_resolver.names())
         self._dispatched_paths: dict[str, set[str]] = {}
         self._dispatched_lock = threading.Lock()
@@ -126,6 +129,7 @@ class CollectorDispatcher:
                 run=lambda ps=paths, c=collector: self._writer.mark_dispatched(ps, c),
                 on_complete=lambda c=collector, ps=paths: self._clear_dispatched(c, ps),
             ))
+            self._progress.increment(0, len(paths))
             self._node.send(
                 'collect.batch',
                 {'paths': paths, 'file_info': file_info},

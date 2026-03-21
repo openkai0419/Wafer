@@ -238,3 +238,79 @@ def test_stop_from_task_thread_no_hang():
     assert done.wait(timeout=5.0)
     s._thread.join(timeout=2.0)
     assert not s._thread.is_alive()
+
+
+@pytest.mark.parametrize('priority,resets', [
+    (TaskPriority.REALTIME, True),
+    (TaskPriority.SCAN, True),
+    (TaskPriority.COLLECTION, True),
+    (TaskPriority.DISPATCH, True),
+    (TaskPriority.RETRY, False),
+    (TaskPriority.MAINTENANCE, False),
+])
+def test_idle_timer_reset_by_priority(priority, resets):
+    s = TaskScheduler()
+    s.start()
+    stale = time.monotonic() - 600
+    s._last_active_time = stale
+    done = threading.Event()
+    s.submit(Task.create('op', priority=priority, run=lambda: None, on_complete=done.set))
+    assert done.wait(timeout=5.0)
+    time.sleep(0.1)
+    if resets:
+        assert s._last_active_time > stale
+    else:
+        assert s._last_active_time == stale
+    s.stop()
+
+
+def test_once_per_idle_fires_once_then_suppressed():
+    task = PeriodicTask(
+        name='once_check',
+        interval=0.0,
+        idle_delay=0.0,
+        once_per_idle=True,
+        create_task=lambda: Task.create('op', priority=TaskPriority.MAINTENANCE, run=lambda: None),
+    )
+    now = time.monotonic()
+    assert task.should_run(now, idle_duration=10.0)
+    task._idle_done = True
+    task.last_run = now - 1.0
+    assert not task.should_run(now, idle_duration=10.0)
+
+
+def test_once_per_idle_resets_on_active_task():
+    s = TaskScheduler()
+    s.start()
+
+    run_count = {'n': 0}
+    s.add_periodic_task(PeriodicTask(
+        name='once_task',
+        interval=0.0,
+        idle_delay=0.0,
+        once_per_idle=True,
+        create_task=lambda: Task.create(
+            'maint',
+            priority=TaskPriority.MAINTENANCE,
+            run=lambda: None,
+            on_complete=lambda: run_count.__setitem__('n', run_count['n'] + 1),
+        ),
+    ))
+
+    s._last_active_time = time.monotonic() - 100
+    time.sleep(3.0)
+    first_count = run_count['n']
+    assert first_count >= 1
+
+    time.sleep(2.0)
+    assert run_count['n'] == first_count
+
+    done = threading.Event()
+    s.submit(Task.create('work', priority=TaskPriority.SCAN, run=lambda: None, on_complete=done.set))
+    assert done.wait(timeout=5.0)
+
+    s._last_active_time = time.monotonic() - 100
+    time.sleep(3.0)
+    assert run_count['n'] > first_count
+
+    s.stop()

@@ -131,18 +131,39 @@ def test_full_scan_empty_dir(tmp_path):
 
 
 def test_submit_pending_by_extension(tmp_path):
-    from wafer.app.indexer.task import CancelToken
     scanner, scheduler, writer, _ = _make_scanner(tmp_path, collectors=[('exif', ['.jpg', '.png'])])
-    token = CancelToken()
-    scanner._submit_pending_by_extension(['/a.jpg', '/b.png', '/c.txt'], token)
+    scanner._submit_pending_by_extension(['/a.jpg', '/b.png', '/c.txt'])
     assert scheduler.submit.called
     task = scheduler.submit.call_args[0][0]
     assert task.name == 'insert_pending'
+    assert task.cancel_token is None
 
 
 def test_submit_pending_no_collectors(tmp_path):
-    from wafer.app.indexer.task import CancelToken
     scanner, scheduler, _, _ = _make_scanner(tmp_path, collectors=[])
-    token = CancelToken()
-    scanner._submit_pending_by_extension(['/a.jpg'], token)
+    scanner._submit_pending_by_extension(['/a.jpg'])
     assert not scheduler.submit.called
+
+
+def test_backfill_tasks_not_cancellable(tmp_path):
+    from wafer.core.db.file_db import FileDB
+    from wafer.app.indexer.db_writer import DatabaseWriter
+    db_path = tmp_path / 'test.db'
+    db = FileDB(db_path)
+    db.start()
+    db.initialize_database()
+    db.conn.execute("INSERT INTO hash_index (file_hash) VALUES ('h1')")
+    db.conn.execute("INSERT INTO sources (source, file_hash, size, modified) VALUES ('/a.jpg', 'h1', 100, 1.0)")
+    db.conn.commit()
+    db.close()
+    scheduler = MagicMock()
+    writer = MagicMock()
+    progress = MagicMock()
+    scanner = DirectoryScanner(db_path, scheduler, writer, progress, [('image', ['.jpg'])])
+    scanner.start()
+    scanner._do_backfill()
+    assert scheduler.submit.called
+    for call in scheduler.submit.call_args_list:
+        task = call[0][0]
+        assert task.cancel_token is None
+    scanner.stop()

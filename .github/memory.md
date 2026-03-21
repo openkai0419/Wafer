@@ -49,6 +49,8 @@
    Dispatcher直接利用。
    _build_roots(), load_children(), add_root()は同期のまま（expand_path連鎖が即時子ノードを前提）。
    on_expanded()のみrequest_expand()経由で非同期化。
+   _programmatic_expandカウンターでプログラム的展開中はon_expanded→request_expandを抑制。
+   expand_path/set_state/reload_tree等のプログラム的操作と、ユーザーのクリック展開の非同期ロードが競合しないようにする。
 
 3. 大量タスク+プールWidget（Grid）:
    GridPipeline。可視範囲差分でキャンセル/起動を自動管理。

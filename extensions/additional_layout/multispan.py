@@ -26,20 +26,6 @@ def _build_span_table(num_cols, cell_w, cell_h, spacing, hz, max_span_c, max_spa
     return spans
 
 
-def _make_rect(c, r, sc, sr, cell_w, cell_h, spacing, hz):
-    if hz:
-        return QtCore.QRect(
-            int(c * (cell_w + spacing)),
-            int(r * (cell_h + spacing)),
-            int(sc * cell_w + (sc - 1) * spacing),
-            int(sr * cell_h + (sr - 1) * spacing))
-    return QtCore.QRect(
-        int(r * (cell_h + spacing)),
-        int(c * (cell_w + spacing)),
-        int(sr * cell_h + (sr - 1) * spacing),
-        int(sc * cell_w + (sc - 1) * spacing))
-
-
 class MultiSpanCalculator(BaseLayoutCalculator):
 
     def __init__(self, aspect_ratios, base_size, spacing,
@@ -90,6 +76,21 @@ class MultiSpanCalculator(BaseLayoutCalculator):
                 spans_by_sc[sc] = []
             spans_by_sc[sc].append((sr, span_ar, area))
 
+        _QRect = QtCore.QRect
+        step = cell_w + spacing
+        col_pos = [int(c * step) for c in range(num_cols)]
+        span_dims: dict[tuple[int, int], tuple[int, int]] = {}
+        for sc, sr, _, _ in span_table:
+            if (sc, sr) not in span_dims:
+                if hz:
+                    span_dims[(sc, sr)] = (
+                        int(sc * cell_w + (sc - 1) * spacing),
+                        int(sr * cell_h + (sr - 1) * spacing))
+                else:
+                    span_dims[(sc, sr)] = (
+                        int(sr * cell_h + (sr - 1) * spacing),
+                        int(sc * cell_w + (sc - 1) * spacing))
+
         heights = [0] * num_cols
         h_min = 0
         h_max = 0
@@ -98,10 +99,10 @@ class MultiSpanCalculator(BaseLayoutCalculator):
         item_idx = 0
         base_row = 0
 
-        _make = _make_rect
         _pw = POSITION_WEIGHT
         _aw = AREA_WEIGHT
         _awg = AREA_WEIGHT_GAP
+        _sc_keys = sorted(spans_by_sc.keys())
 
         while item_idx < n:
             if self._cancelled:
@@ -144,7 +145,7 @@ class MultiSpanCalculator(BaseLayoutCalculator):
                                     break
                             if not ok:
                                 continue
-                            ar_match = min(img_ar, span_ar) / max(img_ar, span_ar)
+                            ar_match = img_ar / span_ar if img_ar <= span_ar else span_ar / img_ar
                             gap_score = ar_match + _awg * (area - 1) / area_norm
                             if gap_score > multi_score:
                                 multi_score = gap_score
@@ -165,8 +166,11 @@ class MultiSpanCalculator(BaseLayoutCalculator):
                                 if top > h_max:
                                     h_max = top
 
-                        rects[item_idx] = _make(c, row, sc, sr,
-                                                cell_w, cell_h, spacing, hz)
+                        sw, sh = span_dims[(sc, sr)]
+                        if hz:
+                            rects[item_idx] = _QRect(col_pos[c], int(row * step), sw, sh)
+                        else:
+                            rects[item_idx] = _QRect(int(row * step), col_pos[c], sw, sh)
                         item_idx += 1
                         filled_any = True
 
@@ -185,33 +189,34 @@ class MultiSpanCalculator(BaseLayoutCalculator):
             best_slot_sc = 1
             best_slot_sr = 1
 
-            for sc, sr_entries in spans_by_sc.items():
+            for sc in _sc_keys:
                 c_end = num_cols - sc + 1
-                if sc == 1:
-                    rows_for_c = heights
-                elif sc == 2:
-                    rows_for_c = [
-                        a if a > b else b
-                        for a, b in zip(heights, heights[1:])
-                    ]
-                else:
-                    rows_for_c = [
-                        (a if a > b else b) if (a if a > b else b) > cc else cc
-                        for a, b, cc in zip(heights, heights[1:], heights[2:])
-                    ]
-                for sr, span_ar, area in sr_entries:
-                    ar_match = min(img_ar, span_ar) / max(img_ar, span_ar)
-                    base_score = ar_match + _aw * (area - 1) / area_norm
-                    for c in range(c_end):
-                        row = rows_for_c[c]
-                        gap = row - frontier
-                        score = base_score - _pw * gap / (gap + num_cols)
-                        if score > best_score:
-                            best_score = score
-                            best_slot_r = row
-                            best_slot_c = c
-                            best_slot_sc = sc
-                            best_slot_sr = sr
+                best_c = 0
+                best_row = heights[0]
+                for dc in range(1, sc):
+                    if heights[dc] > best_row:
+                        best_row = heights[dc]
+                for c in range(1, c_end):
+                    row = heights[c]
+                    for dc in range(1, sc):
+                        h = heights[c + dc]
+                        if h > row:
+                            row = h
+                    if row < best_row:
+                        best_row = row
+                        best_c = c
+
+                gap = best_row - frontier
+                penalty = _pw * gap / (gap + num_cols)
+                for sr, span_ar, area in spans_by_sc[sc]:
+                    ar_match = img_ar / span_ar if img_ar <= span_ar else span_ar / img_ar
+                    score = ar_match + _aw * (area - 1) / area_norm - penalty
+                    if score > best_score:
+                        best_score = score
+                        best_slot_r = best_row
+                        best_slot_c = best_c
+                        best_slot_sc = sc
+                        best_slot_sr = sr
 
             r, c, sc, sr = best_slot_r, best_slot_c, best_slot_sc, best_slot_sr
             for dr in range(sr):
@@ -228,11 +233,14 @@ class MultiSpanCalculator(BaseLayoutCalculator):
                 h_max = top
             h_min = min(heights)
 
-            rects[item_idx] = _make(c, r, sc, sr,
-                                    cell_w, cell_h, spacing, hz)
+            sw, sh = span_dims[(sc, sr)]
+            if hz:
+                rects[item_idx] = _QRect(col_pos[c], int(r * step), sw, sh)
+            else:
+                rects[item_idx] = _QRect(int(r * step), col_pos[c], sw, sh)
             item_idx += 1
 
-        total_primary = int(h_max * (cell_h + spacing) - spacing) if n > 0 else 0
+        total_primary = int(h_max * step - spacing) if n > 0 else 0
         if total_primary > SCROLLBAR_INT_MAX:
             total_primary = SCROLLBAR_INT_MAX
             AppLogger.debug(f"[MultiSpanLayout] clamped total_primary to {SCROLLBAR_INT_MAX}")
@@ -243,10 +251,10 @@ class MultiSpanCalculator(BaseLayoutCalculator):
                 if r is None:
                     continue
                 if hz:
-                    rects[i] = QtCore.QRect(
+                    rects[i] = _QRect(
                         container - r.x() - r.width(), r.y(), r.width(), r.height())
                 else:
-                    rects[i] = QtCore.QRect(
+                    rects[i] = _QRect(
                         total_primary - r.x() - r.width(), r.y(), r.width(), r.height())
 
         self._emit(rects, total_primary, hz)

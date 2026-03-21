@@ -99,8 +99,14 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
         self._dispatcher = Dispatcher(utility_pool)
         self._pending_expands: dict[str, CancelToken] = {}
 
+    def cancel_pending_expands(self):
+        for token in self._pending_expands.values():
+            token.cancel()
+        self._pending_expands.clear()
+
     @profiler.profile
     def clear_cache(self):
+        self.cancel_pending_expands()
         self.path_item_map.clear()
         self.path_item_trie.clear()
 
@@ -592,6 +598,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         self.setAcceptDrops(True)
         self.setDropIndicatorShown(True)
         self.setDefaultDropAction(QtCore.Qt.MoveAction)
+        self._programmatic_expand = 0
         self.expanded.connect(self.on_expanded)
         self.clicked.connect(self._on_item_clicked)
         UI.register_instance("FolderTree", self)
@@ -641,23 +648,29 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         parts = path.split(os.sep)
         current_item = None
         current_path = ''
-        for part in parts:
-            current_path = normalize_path(os.path.join(current_path, part))
-            item = self.model_.find_item_by_path(current_path)
-            if not self.model_._is_valid_item(item):
-                AppLogger.debug(f'[FolderTree.expand_path] item not found at: {current_path} (target: {path})')
-                return None
-            index = self.model_.indexFromItem(item)
-            if not index.isValid():
-                AppLogger.debug(f'[FolderTree.expand_path] invalid index at: {current_path} (target: {path})')
-                return None
-            self.expand(index)
-            self.model_.load_children(item)
-            current_item = item
+        self._programmatic_expand += 1
+        try:
+            for part in parts:
+                current_path = normalize_path(os.path.join(current_path, part))
+                item = self.model_.find_item_by_path(current_path)
+                if not self.model_._is_valid_item(item):
+                    AppLogger.debug(f'[FolderTree.expand_path] item not found at: {current_path} (target: {path})')
+                    return None
+                index = self.model_.indexFromItem(item)
+                if not index.isValid():
+                    AppLogger.debug(f'[FolderTree.expand_path] invalid index at: {current_path} (target: {path})')
+                    return None
+                self.model_.load_children(item)
+                self.expand(index)
+                current_item = item
+        finally:
+            self._programmatic_expand -= 1
         return self.model_.indexFromItem(current_item) if current_item else None
 
     @profiler.profile
     def on_expanded(self, index):
+        if self._programmatic_expand:
+            return
         item = self.model_.itemFromIndex(index)
         self.model_.request_expand(item)
 
@@ -747,13 +760,17 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
             if item.hasChildren() and item.child(0).data(USER_ROLE_PATH):
                 continue
             model._apply_children(item, seg_path, children)
-        for path in expanded:
-            path = normalize_path(path)
-            item = model.path_item_map.get(path)
-            if model._is_valid_item(item):
-                index = model.indexFromItem(item)
-                if index.isValid():
-                    self.expand(index)
+        self._programmatic_expand += 1
+        try:
+            for path in expanded:
+                path = normalize_path(path)
+                item = model.path_item_map.get(path)
+                if model._is_valid_item(item):
+                    index = model.indexFromItem(item)
+                    if index.isValid():
+                        self.expand(index)
+        finally:
+            self._programmatic_expand -= 1
         selmodel = self.selectionModel()
         selmodel.clearSelection()
         to_select = []
@@ -951,7 +968,11 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         if item is None:
             return None
         self.model_.load_children(item)
-        self.expand(idx)
+        self._programmatic_expand += 1
+        try:
+            self.expand(idx)
+        finally:
+            self._programmatic_expand -= 1
         if item.rowCount() > 0:
             child = item.child(0)
             if child:

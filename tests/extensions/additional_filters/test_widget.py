@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from PySide6 import QtCore
+from PySide6 import QtCore, QtGui
 
-from extensions.additional_filters.widget import DateRangeWidget, _SectionCombo, _DateInput
+from extensions.additional_filters.widget import (
+    DateRangeWidget, _SectionCombo, _DateInput, _CalendarPopup,
+)
 from extensions.additional_filters.filter import is_date_key
 
 
@@ -120,6 +122,53 @@ class TestDateInput:
         qtbot.addWidget(di)
         di.set_empty()
         assert di._line.text() == ''
+
+    def test_popup_resets_button_down(self, qtbot):
+        di = _DateInput()
+        qtbot.addWidget(di)
+        di._drop_btn.setDown(True)
+        di._show_popup()
+        assert di._popup is not None
+        di._popup.close()
+        assert not di._drop_btn.isDown()
+
+
+class TestCalendarPopup:
+
+    def test_window_flags(self, qtbot):
+        popup = _CalendarPopup()
+        qtbot.addWidget(popup)
+        flags = popup.windowFlags()
+        assert flags & QtCore.Qt.FramelessWindowHint
+        assert flags & QtCore.Qt.Tool
+
+    def test_close_on_escape(self, qtbot):
+        popup = _CalendarPopup()
+        qtbot.addWidget(popup)
+        popup.show()
+        assert popup.isVisible()
+        event = QtGui.QKeyEvent(
+            QtCore.QEvent.KeyPress, QtCore.Qt.Key_Escape,
+            QtCore.Qt.NoModifier)
+        popup.keyPressEvent(event)
+        assert not popup.isVisible()
+
+    def test_popup_closed_signal_on_close(self, qtbot):
+        popup = _CalendarPopup()
+        qtbot.addWidget(popup)
+        popup.show()
+        closed = []
+        popup.popup_closed.connect(lambda: closed.append(True))
+        popup.close()
+        assert closed
+
+    def test_close_on_leave(self, qtbot):
+        popup = _CalendarPopup()
+        qtbot.addWidget(popup)
+        popup.show()
+        assert popup.isVisible()
+        popup.leaveEvent(QtCore.QEvent(QtCore.QEvent.Leave))
+        assert not popup.isVisible()
 
 
 class TestDateRangeWidget:

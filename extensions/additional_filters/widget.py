@@ -18,9 +18,13 @@ class _CalendarPopup(QtWidgets.QFrame):
     date_selected = QtCore.Signal(QtCore.QDate)
     today_selected = QtCore.Signal()
     cleared = QtCore.Signal()
+    popup_closed = QtCore.Signal()
 
     def __init__(self, parent=None):
-        super().__init__(parent, QtCore.Qt.Popup)
+        super().__init__(parent)
+        self.setWindowFlags(
+            QtCore.Qt.FramelessWindowHint | QtCore.Qt.Tool)
+
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -55,6 +59,15 @@ class _CalendarPopup(QtWidgets.QFrame):
         self.cleared.emit()
         self.close()
 
+    def leaveEvent(self, event):
+        super().leaveEvent(event)
+        self.close()
+
+    def eventFilter(self, obj, event):
+        if event.type() == QtCore.QEvent.WindowDeactivate:
+            self.close()
+        return super().eventFilter(obj, event)
+
     def show_at(self, global_pos: QtCore.QPoint,
                 current_date: QtCore.QDate | None = None):
         today = QtCore.QDate.currentDate()
@@ -83,6 +96,7 @@ class _CalendarPopup(QtWidgets.QFrame):
 
         self.move(global_pos)
         self.show()
+        self.activateWindow()
 
 
 class _DateInput(QtWidgets.QWidget):
@@ -99,16 +113,17 @@ class _DateInput(QtWidgets.QWidget):
         layout.setSpacing(0)
 
         self._line = QtWidgets.QLineEdit()
-        self._line.setFixedWidth(dpix(80))
+        self._line.setMinimumWidth(dpix(80))
         self._line.editingFinished.connect(self._on_text_edited)
         layout.addWidget(self._line)
 
         self._drop_btn = QtWidgets.QToolButton()
         self._drop_btn.setIcon(themed_icon('chevron_down'))
-        self._drop_btn.setFixedSize(dpix(20), dpix(22))
-        self._drop_btn.clicked.connect(self._show_popup)
+        self._drop_btn.setMinimumSize(dpix(20), dpix(22))
+        self._drop_btn.setFocusPolicy(QtCore.Qt.NoFocus)
         ThemeManager.instance().on_theme_changed.connect(
             lambda _: self._drop_btn.setIcon(themed_icon('chevron_down')))
+        self._drop_btn.released.connect(self._show_popup)
         layout.addWidget(self._drop_btn)
 
         self._popup: _CalendarPopup | None = None
@@ -197,6 +212,8 @@ class _DateInput(QtWidgets.QWidget):
             self._popup.date_selected.connect(self.set_date)
             self._popup.today_selected.connect(self.set_today)
             self._popup.cleared.connect(self.set_empty)
+            self._popup.popup_closed.connect(
+                lambda: self._drop_btn.setDown(False))
         current = (self._date if self._state == 'date'
                    else QtCore.QDate.currentDate())
         pos = self.mapToGlobal(QtCore.QPoint(0, self.height()))
@@ -271,13 +288,14 @@ class DateRangeWidget(QtWidgets.QWidget, TranslatorMixin):
         self.mode_combo = QtWidgets.QComboBox()
         self.mode_combo.addItem('Last', 'preset')
         self.mode_combo.addItem('Between', 'range')
-        self.mode_combo.setFixedWidth(dpix(68))
+        self.mode_combo.setSizeAdjustPolicy(
+            QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents)
         self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
 
         self.preset_value = QtWidgets.QSpinBox()
-        self.preset_value.setRange(1, 9999)
+        self.preset_value.setRange(1, 999)
         self.preset_value.setValue(7)
-        self.preset_value.setFixedWidth(dpix(55))
+        self.preset_value.setMinimumWidth(dpix(48))
         self.preset_value.valueChanged.connect(lambda: self.changed.emit())
 
         self.preset_unit = QtWidgets.QComboBox()
@@ -285,7 +303,8 @@ class DateRangeWidget(QtWidgets.QWidget, TranslatorMixin):
                             ('months', 'months'), ('years', 'years')]:
             self.preset_unit.addItem(label, data)
         self.preset_unit.setCurrentIndex(1)
-        self.preset_unit.setFixedWidth(dpix(70))
+        self.preset_unit.setSizeAdjustPolicy(
+            QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents)
         self.preset_unit.currentIndexChanged.connect(lambda: self.changed.emit())
 
         self.preset_from_label = QtWidgets.QLabel('from')

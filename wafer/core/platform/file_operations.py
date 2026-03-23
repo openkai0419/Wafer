@@ -9,13 +9,13 @@ from typing import TYPE_CHECKING, Dict, List, Literal, Optional, Tuple
 import requests
 
 from ...utils.logs import AppLogger
-from .path_utils import check_copy_conflict, is_http_url, unique_path
+from .path_utils import check_copy_conflict, is_http_url, sanitize_filename, unique_path, validate_filename
 
 if TYPE_CHECKING:
     from .dragparser import ParsedItem
 
 
-def safe_remove(path: str | Path) -> None:
+def _safe_remove(path: str | Path) -> None:
     p = Path(path)
     if not p.exists() and not p.is_symlink():
         return
@@ -26,34 +26,34 @@ def safe_remove(path: str | Path) -> None:
         shutil.rmtree(p)
 
 
-def copy_file(src: Path, dst: Path, follow_symlinks: bool = True) -> Path:
+def _copy_file(src: Path, dst: Path, follow_symlinks: bool = True) -> Path:
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dst, follow_symlinks=follow_symlinks)
     return dst
 
 
-def copy_dir(src: Path, dst: Path, follow_symlinks: bool = True) -> Path:
+def _copy_dir(src: Path, dst: Path, follow_symlinks: bool = True) -> Path:
     if dst.exists():
         raise FileExistsError(f"Destination exists: {dst}")
     shutil.copytree(src, dst, symlinks=not follow_symlinks, dirs_exist_ok=False)
     return dst
 
 
-def move_any(src: Path, dst: Path) -> Path:
+def _move_any(src: Path, dst: Path) -> Path:
     dst.parent.mkdir(parents=True, exist_ok=True)
     return Path(shutil.move(str(src), str(dst)))
 
 
-def copy_or_move(src: Path, dst: Path, *, action: Literal["copy", "cut"], follow_symlinks: bool = True) -> Path:
+def _copy_or_move(src: Path, dst: Path, *, action: Literal["copy", "cut"], follow_symlinks: bool = True) -> Path:
     if action == "cut":
-        return move_any(src, dst)
+        return _move_any(src, dst)
     if src.is_dir():
-        return copy_dir(src, dst, follow_symlinks)
-    return copy_file(src, dst, follow_symlinks)
+        return _copy_dir(src, dst, follow_symlinks)
+    return _copy_file(src, dst, follow_symlinks)
 
 
 
-def save_remote_item(item: ParsedItem, target_path: str, *, move: bool = False) -> OperationResult:
+def _save_remote_item(item: ParsedItem, target_path: str, *, move: bool = False) -> OperationResult:
     d = os.path.dirname(target_path)
     if d:
         os.makedirs(d, exist_ok=True)
@@ -168,7 +168,7 @@ def scan_merge_conflicts(src_dir: Path, dst_dir: Path) -> List[MergeConflictItem
     return out
 
 
-class PasteExecutor:
+class FileExecutor:
     def __init__(self, *, follow_symlinks: bool = True):
         self._follow_symlinks = follow_symlinks
 
@@ -208,10 +208,36 @@ class PasteExecutor:
                 if dec.mode == "rename" and plan.suggested_dst:
                     dst_path = str(plan.suggested_dst)
                 elif dec.mode == "overwrite" and plan.conflict:
-                    safe_remove(dst_path)
-                result = save_remote_item(plan.parsed_item, dst_path, move=(op == "move"))
+                    _safe_remove(dst_path)
+                result = _save_remote_item(plan.parsed_item, dst_path, move=(op == "move"))
                 results.append(result)
         return results
+
+    def rename(self, path: Path, new_name: str) -> OperationResult:
+        issues = validate_filename(new_name)
+        if issues:
+            return OperationResult(
+                action="rename", src=str(path), dst="",
+                status="error", error=f"invalid filename: {', '.join(issues)}",
+            )
+        new_path = path.parent / new_name
+        try:
+            if path.resolve() == new_path.resolve():
+                path.rename(new_path)
+                return OperationResult(action="rename", src=str(path), dst=str(new_path), status="ok")
+        except OSError as e:
+            return OperationResult(action="rename", src=str(path), dst=str(new_path), status="error", error=repr(e))
+        if new_path.exists():
+            return OperationResult(
+                action="rename", src=str(path), dst=str(new_path),
+                status="error", error="destination already exists",
+            )
+        try:
+            path.rename(new_path)
+            return OperationResult(action="rename", src=str(path), dst=str(new_path), status="ok")
+        except OSError as e:
+            AppLogger.warning(f"rename failed: {path} -> {new_path}", exc=e)
+            return OperationResult(action="rename", src=str(path), dst=str(new_path), status="error", error=repr(e))
 
     def _execute_item(
         self,
@@ -241,11 +267,11 @@ class PasteExecutor:
 
         try:
             if decision.mode == "overwrite" and final_dst.exists():
-                safe_remove(final_dst)
+                _safe_remove(final_dst)
             if is_dir and decision.mode == "merge" and final_dst.exists():
                 self._merge_dir(src, final_dst, action=action, merge_decisions=decision.merge_decisions or {}, root_src=src)
                 return OperationResult(action="move" if action == "cut" else "copy", src=str(src), dst=str(final_dst), status="ok")
-            done = copy_or_move(src, final_dst, action=action, follow_symlinks=self._follow_symlinks)
+            done = _copy_or_move(src, final_dst, action=action, follow_symlinks=self._follow_symlinks)
             return OperationResult(action="move" if action == "cut" else "copy", src=str(src), dst=str(done), status="ok")
         except Exception as e:
             AppLogger.warning(f'copy/move failed: {src} -> {final_dst}', exc=e)
@@ -283,7 +309,7 @@ class PasteExecutor:
             is_dir = entry.is_dir()
 
             if not d.exists() and not d.is_symlink():
-                copy_or_move(entry, d, action=action, follow_symlinks=self._follow_symlinks)
+                _copy_or_move(entry, d, action=action, follow_symlinks=self._follow_symlinks)
                 continue
 
             if is_dir and d.is_dir():
@@ -296,10 +322,10 @@ class PasteExecutor:
             if dec.mode == "skip":
                 continue
             if dec.mode == "rename":
-                copy_or_move(entry, Path(unique_path(d.parent, d.name)), action=action, follow_symlinks=self._follow_symlinks)
+                _copy_or_move(entry, Path(unique_path(d.parent, d.name)), action=action, follow_symlinks=self._follow_symlinks)
             else:
-                safe_remove(d)
-                copy_or_move(entry, d, action=action, follow_symlinks=self._follow_symlinks)
+                _safe_remove(d)
+                _copy_or_move(entry, d, action=action, follow_symlinks=self._follow_symlinks)
 
         if action == "cut":
             try:
@@ -357,6 +383,11 @@ class FileSaver:
             dst = Path(target_path)
             action: Literal["copy", "cut"] = "cut" if move else "copy"
             plan = PastePlanItem(index=0, src=src, is_dir=src.is_dir(), action=action, dst_default=dst, conflict=dst.exists(), suggested_dst=None)
-            results = PasteExecutor().execute_plans([plan], {0: PasteDecision(mode="overwrite")})
+            results = FileExecutor().execute_plans([plan], {0: PasteDecision(mode="overwrite")})
             return results[0] if results else OperationResult(action="unknown", src=str(src), dst="", status="error")
-        return save_remote_item(item, target_path, move=move)
+        return _save_remote_item(item, target_path, move=move)
+
+
+PasteExecutor = FileExecutor
+safe_remove = _safe_remove
+save_remote_item = _save_remote_item

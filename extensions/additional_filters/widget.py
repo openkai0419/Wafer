@@ -59,6 +59,16 @@ class _CalendarPopup(QtWidgets.QFrame):
         self.cleared.emit()
         self.close()
 
+    def closeEvent(self, event):
+        super().closeEvent(event)
+        self.popup_closed.emit()
+
+    def keyPressEvent(self, event):
+        if event.key() == QtCore.Qt.Key_Escape:
+            self.close()
+        else:
+            super().keyPressEvent(event)
+
     def leaveEvent(self, event):
         super().leaveEvent(event)
         self.close()

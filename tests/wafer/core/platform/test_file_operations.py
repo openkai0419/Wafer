@@ -3,8 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 
-def test_paste_executor_overwrite_same_path_is_noop(tmp_path):
-    from wafer.core.platform.file_operations import PasteDecision, PasteExecutor, PastePlanItem
+def test_file_executor_overwrite_same_path_is_noop(tmp_path):
+    from wafer.core.platform.file_operations import FileExecutor, PasteDecision, PastePlanItem
 
     src = tmp_path / "a.txt"
     src.write_text("x", encoding="utf-8")
@@ -14,14 +14,14 @@ def test_paste_executor_overwrite_same_path_is_noop(tmp_path):
         dst_default=Path(src), conflict=True, suggested_dst=None,
     )
 
-    res = PasteExecutor().execute_plans([item], {0: PasteDecision(mode="overwrite")})
+    res = FileExecutor().execute_plans([item], {0: PasteDecision(mode="overwrite")})
     assert src.exists()
     assert src.read_text(encoding="utf-8") == "x"
     assert res and res[0].status == "skipped"
 
 
-def test_paste_executor_rename_same_path_creates_copy(tmp_path):
-    from wafer.core.platform.file_operations import PasteDecision, PasteExecutor, PastePlanItem
+def test_file_executor_rename_same_path_creates_copy(tmp_path):
+    from wafer.core.platform.file_operations import FileExecutor, PasteDecision, PastePlanItem
 
     src = tmp_path / "a.txt"
     src.write_text("x", encoding="utf-8")
@@ -31,7 +31,7 @@ def test_paste_executor_rename_same_path_creates_copy(tmp_path):
         dst_default=Path(src), conflict=True, suggested_dst=None,
     )
 
-    res = PasteExecutor().execute_plans([item], {0: PasteDecision(mode="rename")})
+    res = FileExecutor().execute_plans([item], {0: PasteDecision(mode="rename")})
     assert src.exists()
     assert src.read_text(encoding="utf-8") == "x"
     copies = [f for f in tmp_path.iterdir() if f.name != "a.txt" and f.suffix == ".txt"]
@@ -40,8 +40,8 @@ def test_paste_executor_rename_same_path_creates_copy(tmp_path):
     assert res and res[0].status == "ok"
 
 
-def test_paste_executor_overwrite_replaces_existing_file(tmp_path):
-    from wafer.core.platform.file_operations import PasteDecision, PasteExecutor, PastePlanItem
+def test_file_executor_overwrite_replaces_existing_file(tmp_path):
+    from wafer.core.platform.file_operations import FileExecutor, PasteDecision, PastePlanItem
 
     src = tmp_path / "src.txt"
     src.write_text("new", encoding="utf-8")
@@ -55,13 +55,13 @@ def test_paste_executor_overwrite_replaces_existing_file(tmp_path):
         dst_default=Path(dst), conflict=True, suggested_dst=None,
     )
 
-    res = PasteExecutor().execute_plans([item], {0: PasteDecision(mode="overwrite")})
+    res = FileExecutor().execute_plans([item], {0: PasteDecision(mode="overwrite")})
     assert dst.read_text(encoding="utf-8") == "new"
     assert res and res[0].status == "ok"
 
 
-def test_paste_executor_copy_dir_subpath_is_skipped(tmp_path):
-    from wafer.core.platform.file_operations import PasteDecision, PasteExecutor, PastePlanItem
+def test_file_executor_copy_dir_subpath_is_skipped(tmp_path):
+    from wafer.core.platform.file_operations import FileExecutor, PasteDecision, PastePlanItem
 
     src = tmp_path / "A"
     (src / "child").mkdir(parents=True)
@@ -73,13 +73,13 @@ def test_paste_executor_copy_dir_subpath_is_skipped(tmp_path):
         dst_default=Path(dst), conflict=False, suggested_dst=None,
     )
 
-    res = PasteExecutor().execute_plans([item], {0: PasteDecision(mode="overwrite")})
+    res = FileExecutor().execute_plans([item], {0: PasteDecision(mode="overwrite")})
     assert not dst.exists()
     assert res and res[0].status == "skipped"
 
 
-def test_paste_executor_copy_dir_rename_on_conflict(tmp_path):
-    from wafer.core.platform.file_operations import PasteDecision, PasteExecutor, PastePlanItem
+def test_file_executor_copy_dir_rename_on_conflict(tmp_path):
+    from wafer.core.platform.file_operations import FileExecutor, PasteDecision, PastePlanItem
     from wafer.core.platform.path_utils import unique_path
 
     src = tmp_path / "folder"
@@ -99,14 +99,14 @@ def test_paste_executor_copy_dir_rename_on_conflict(tmp_path):
         suggested_dst=Path(unique_path(dst_dir, src.name)),
     )
 
-    res = PasteExecutor().execute_plans([item], {0: PasteDecision(mode="rename")})
+    res = FileExecutor().execute_plans([item], {0: PasteDecision(mode="rename")})
     assert existing.exists()
     assert (existing / "old.txt").read_text(encoding="utf-8") == "old"
     assert res and res[0].status == "ok"
 
 
-def test_paste_executor_overwrite_replaces_existing_dir(tmp_path):
-    from wafer.core.platform.file_operations import PasteDecision, PasteExecutor, PastePlanItem
+def test_file_executor_overwrite_replaces_existing_dir(tmp_path):
+    from wafer.core.platform.file_operations import FileExecutor, PasteDecision, PastePlanItem
 
     src = tmp_path / "srcdir"
     src.mkdir()
@@ -123,15 +123,15 @@ def test_paste_executor_overwrite_replaces_existing_dir(tmp_path):
         dst_default=Path(dst), conflict=True, suggested_dst=None,
     )
 
-    res = PasteExecutor().execute_plans([item], {0: PasteDecision(mode="overwrite")})
+    res = FileExecutor().execute_plans([item], {0: PasteDecision(mode="overwrite")})
     assert (dst / "a.txt").read_text(encoding="utf-8") == "x"
     assert not (dst / "old.txt").exists()
     assert res and res[0].status == "ok"
 
 
-def test_paste_executor_merge_dir_overwrite_child(tmp_path):
+def test_file_executor_merge_dir_overwrite_child(tmp_path):
     import os
-    from wafer.core.platform.file_operations import PasteDecision, PasteExecutor, PastePlanItem
+    from wafer.core.platform.file_operations import FileExecutor, PasteDecision, PastePlanItem
 
     src = tmp_path / "folder"
     src.mkdir()
@@ -157,7 +157,7 @@ def test_paste_executor_merge_dir_overwrite_child(tmp_path):
         dst_default=Path(dst), conflict=True, suggested_dst=None,
     )
 
-    res = PasteExecutor().execute_plans(
+    res = FileExecutor().execute_plans(
         [item], {0: PasteDecision(mode="merge", merge_decisions=merge_decisions)}
     )
     assert (dst / "a.txt").read_text(encoding="utf-8") == "new"
@@ -165,8 +165,8 @@ def test_paste_executor_merge_dir_overwrite_child(tmp_path):
     assert res and res[0].status == "ok"
 
 
-def test_paste_executor_merge_dir_skip_child(tmp_path):
-    from wafer.core.platform.file_operations import PasteDecision, PasteExecutor, PastePlanItem
+def test_file_executor_merge_dir_skip_child(tmp_path):
+    from wafer.core.platform.file_operations import FileExecutor, PasteDecision, PastePlanItem
 
     src = tmp_path / "folder"
     src.mkdir()
@@ -183,7 +183,7 @@ def test_paste_executor_merge_dir_skip_child(tmp_path):
         dst_default=Path(dst), conflict=True, suggested_dst=None,
     )
 
-    res = PasteExecutor().execute_plans(
+    res = FileExecutor().execute_plans(
         [item], {0: PasteDecision(mode="merge", merge_decisions={"a.txt": PasteDecision(mode="skip")})}
     )
     assert (dst / "a.txt").read_text(encoding="utf-8") == "old"
@@ -230,8 +230,8 @@ def test_paste_cancelled_error_importable():
     assert issubclass(PasteCancelledError, Exception)
 
 
-def test_paste_executor_merge_dir_rename_child(tmp_path):
-    from wafer.core.platform.file_operations import PasteDecision, PasteExecutor, PastePlanItem
+def test_file_executor_merge_dir_rename_child(tmp_path):
+    from wafer.core.platform.file_operations import FileExecutor, PasteDecision, PastePlanItem
 
     src = tmp_path / "folder"
     src.mkdir()
@@ -248,7 +248,7 @@ def test_paste_executor_merge_dir_rename_child(tmp_path):
         dst_default=Path(dst), conflict=True, suggested_dst=None,
     )
 
-    res = PasteExecutor().execute_plans(
+    res = FileExecutor().execute_plans(
         [item], {0: PasteDecision(mode="merge", merge_decisions={"a.txt": PasteDecision(mode="rename")})}
     )
     assert (dst / "a.txt").read_text(encoding="utf-8") == "old"
@@ -258,8 +258,8 @@ def test_paste_executor_merge_dir_rename_child(tmp_path):
     assert res and res[0].status == "ok"
 
 
-def test_paste_executor_merge_adds_new_files(tmp_path):
-    from wafer.core.platform.file_operations import PasteDecision, PasteExecutor, PastePlanItem
+def test_file_executor_merge_adds_new_files(tmp_path):
+    from wafer.core.platform.file_operations import FileExecutor, PasteDecision, PastePlanItem
 
     src = tmp_path / "folder"
     src.mkdir()
@@ -276,9 +276,91 @@ def test_paste_executor_merge_adds_new_files(tmp_path):
         dst_default=Path(dst), conflict=True, suggested_dst=None,
     )
 
-    res = PasteExecutor().execute_plans(
+    res = FileExecutor().execute_plans(
         [item], {0: PasteDecision(mode="merge", merge_decisions={})}
     )
     assert (dst / "existing.txt").read_text(encoding="utf-8") == "keep"
     assert (dst / "new.txt").read_text(encoding="utf-8") == "added"
     assert res and res[0].status == "ok"
+
+
+def test_paste_executor_alias():
+    from wafer.core.platform.file_operations import FileExecutor, PasteExecutor
+    assert PasteExecutor is FileExecutor
+
+
+def test_file_executor_rename_basic(tmp_path):
+    from wafer.core.platform.file_operations import FileExecutor
+
+    src = tmp_path / "a.txt"
+    src.write_text("content", encoding="utf-8")
+
+    res = FileExecutor().rename(src, "b.txt")
+    assert res.status == "ok"
+    assert not src.exists()
+    assert (tmp_path / "b.txt").exists()
+    assert (tmp_path / "b.txt").read_text(encoding="utf-8") == "content"
+
+
+def test_file_executor_rename_invalid_chars(tmp_path):
+    from wafer.core.platform.file_operations import FileExecutor
+
+    src = tmp_path / "a.txt"
+    src.write_text("x", encoding="utf-8")
+
+    res = FileExecutor().rename(src, "a<b>.txt")
+    assert res.status == "error"
+    assert "invalid_chars" in res.error
+    assert src.exists()
+
+
+def test_file_executor_rename_reserved_name(tmp_path):
+    from wafer.core.platform.file_operations import FileExecutor
+
+    src = tmp_path / "a.txt"
+    src.write_text("x", encoding="utf-8")
+
+    res = FileExecutor().rename(src, "CON.txt")
+    assert res.status == "error"
+    assert "reserved_name" in res.error
+    assert src.exists()
+
+
+def test_file_executor_rename_empty_name(tmp_path):
+    from wafer.core.platform.file_operations import FileExecutor
+
+    src = tmp_path / "a.txt"
+    src.write_text("x", encoding="utf-8")
+
+    res = FileExecutor().rename(src, "")
+    assert res.status == "error"
+    assert "empty" in res.error
+    assert src.exists()
+
+
+def test_file_executor_rename_destination_exists(tmp_path):
+    from wafer.core.platform.file_operations import FileExecutor
+
+    src = tmp_path / "a.txt"
+    src.write_text("a_content", encoding="utf-8")
+    dst = tmp_path / "b.txt"
+    dst.write_text("b_content", encoding="utf-8")
+
+    res = FileExecutor().rename(src, "b.txt")
+    assert res.status == "error"
+    assert "already exists" in res.error
+    assert src.exists()
+    assert dst.read_text(encoding="utf-8") == "b_content"
+
+
+def test_file_executor_rename_case_change(tmp_path):
+    from wafer.core.platform.file_operations import FileExecutor
+
+    src = tmp_path / "hello.txt"
+    src.write_text("content", encoding="utf-8")
+
+    res = FileExecutor().rename(src, "Hello.txt")
+    assert res.status == "ok"
+    actual = [f for f in tmp_path.iterdir() if f.suffix == ".txt"]
+    assert len(actual) == 1
+    assert actual[0].read_text(encoding="utf-8") == "content"

@@ -1,7 +1,7 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-addopts = "--import-mode=importlib -p pytestqt -m 'not benchmark and not slow'"
+addopts = "--import-mode=importlib -p pytestqt -m 'not benchmark and not slow' --tb=short"
 timeout = 30
 timeout_method = "thread"
 qt_default_raising = true

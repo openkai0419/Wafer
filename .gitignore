@@ -10,6 +10,7 @@ venv/
 .vscode/
 .prototypes/
 tests/.prototypes/
+tests/test_summary.txt
 
 # Extension native libraries (user-provided)
 extensions/*/lib/

@@ -14,14 +14,14 @@ from .path_utils import unique_path
 from .file_operations import (
     CutCopy,
     DropPlanItem,
+    FileExecutor,
     OperationResult,
     PasteCancelledError,
     PasteDecision,
-    PasteExecutor,
     PastePlanItem,
+    _safe_remove,
+    _save_remote_item,
     build_drop_plans,
-    save_remote_item,
-    safe_remove,
 )
 
 
@@ -237,7 +237,7 @@ def _execute_paste_items(
     parent: QtWidgets.QWidget | None,
     op: str,
 ) -> List[OperationResult]:
-    executor = PasteExecutor()
+    executor = FileExecutor()
     label = "Moving files..." if op == "move" else "Copying files..."
 
     def step(i: int) -> OperationResult:
@@ -254,7 +254,7 @@ def _execute_drop_items(
     parent: QtWidgets.QWidget | None,
     op: str,
 ) -> List[OperationResult]:
-    executor = PasteExecutor()
+    executor = FileExecutor()
     action: Literal["copy", "cut"] = "cut" if op == "move" else "copy"
     label = "Moving files..." if op == "move" else "Copying files..."
 
@@ -269,8 +269,8 @@ def _execute_drop_items(
         if dec.mode == "rename" and plan.suggested_dst:
             dst_path = str(plan.suggested_dst)
         elif dec.mode == "overwrite" and plan.conflict:
-            safe_remove(dst_path)
-        return save_remote_item(plan.parsed_item, dst_path, move=(op == "move"))
+            _safe_remove(dst_path)
+        return _save_remote_item(plan.parsed_item, dst_path, move=(op == "move"))
 
     return _run_with_progress(parent, label, len(plans), step)
 

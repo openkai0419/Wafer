@@ -158,16 +158,20 @@ def test_flush_shows_image_for_default():
     assert viewer._pending_meta is None
 
 
-def test_flush_clears_image_when_content_none_for_default():
+def test_flush_shows_error_image_when_content_none_for_default():
     viewer = _make_viewer_stub()
     viewer._target_plugin = _DEFAULT_WIDGET_NAME
     viewer._pending_content = ('/a.zip', None)
     viewer._pending_meta = [{'size': '0'}, {}, {}, {}]
 
-    viewer._flush()
+    with patch('wafer.app.viewer.preview.file_viewer.PixmapFactory') as mock_factory:
+        mock_error_img = MagicMock()
+        mock_factory.create_viewer_error_placeholder.return_value = mock_error_img
+        viewer._flush = lambda: FileViewerWidget._flush(viewer)
+        viewer._flush()
 
-    viewer.image_viewer.clear.assert_called_once()
-    viewer.image_viewer.set_image.assert_not_called()
+    viewer.image_viewer.set_image.assert_called_once_with(mock_error_img, '/a.zip')
+    viewer.image_viewer.clear.assert_not_called()
     viewer.meta_viewer.set_data.assert_called_once()
 
 

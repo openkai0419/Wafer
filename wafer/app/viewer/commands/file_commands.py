@@ -12,6 +12,7 @@ from ....core.qt.dialog import ConfirmDialog, ThumbnailConfirmDialog
 from ....core.platform.copy import ClipboardFileTransfer
 from ....core.platform.paste import paste_clipboard_files
 from ....core.platform.path_utils import unique_path, get_os_new_folder_name
+from ....core.platform.file_operations import FileExecutor
 from ....core.platform.folders import show_in_explorer as reveal_in_explorer
 from ....utils.logs import AppLogger
 from ....utils.notifier import Notifier
@@ -204,6 +205,68 @@ def make_new_folder_here(ctx, folder_name: str | None = None) -> str | None:
     return new_folder
 
 
+def rename_file(ctx):
+    path = _ctx_path(ctx)
+    if not path or not os.path.isfile(path):
+        return
+    from ....core.qt.dialog import InputDialog
+    parent = ctx.get_instance("FileViewerWidget") or ctx.get_instance("GridView")
+    old_name = os.path.basename(path)
+    new_name = InputDialog.get_text(
+        f'Rename: {old_name}',
+        title='Rename',
+        parent=parent,
+        default=old_name,
+    )
+    if not new_name or new_name == old_name:
+        return
+    result = FileExecutor().rename(Path(path), new_name)
+    if result.status == "ok":
+        Notifier.info(f'Renamed: {old_name} \u2192 {new_name}')
+    else:
+        AppLogger.warning(f'Rename failed: {path} ({result.error})')
+        Notifier.warning(f'Rename failed: {result.error}')
+
+
+@require(items="GridItemModel", w="MainWindow")
+def batch_rename(ctx, items, w):
+    paths_str = items.selected_paths()
+    if not paths_str:
+        Notifier.info('No files selected')
+        return
+    file_paths = [Path(p) for p in paths_str if os.path.isfile(p)]
+    if not file_paths:
+        Notifier.info('No files selected')
+        return
+    metadata = _fetch_metadata(w.database_path, paths_str) if w.database_path else {}
+    from ..renamer import BatchRenameDialog
+    dlg = BatchRenameDialog(file_paths, metadata=metadata, parent=w)
+    dlg.exec()
+
+
+def _fetch_metadata(db_path, paths: List[str]) -> dict[str, dict[str, str]]:
+    import sqlite3
+    result: dict[str, dict[str, str]] = {}
+    if not db_path or not os.path.isfile(str(db_path)):
+        return result
+    try:
+        uri = Path(db_path).resolve().as_uri()
+        conn = sqlite3.connect(f'{uri}?mode=ro', uri=True, timeout=1.0)
+        try:
+            placeholders = ','.join('?' * len(paths))
+            rows = conn.execute(
+                f'SELECT path, key, value FROM kv_all WHERE path IN ({placeholders})',
+                paths,
+            ).fetchall()
+            for path, key, value in rows:
+                result.setdefault(path, {})[key] = value or ''
+        finally:
+            conn.close()
+    except Exception as e:
+        AppLogger.warning(f'Failed to fetch metadata for rename', exc=e)
+    return result
+
+
 class FileCommands(ActionKit.MenuBase):
     NAME = "File"
     PRIORITY = 10
@@ -270,4 +333,7 @@ class FileCommands(ActionKit.MenuBase):
                 ],
                 func=make_new_folder_here,
             ),
+            "-",
+            ActionKit.Command(path="file.rename", display="Rename", func=rename_file),
+            ActionKit.Command(path="file.batch_rename", display="Batch Rename", func=batch_rename),
         ]

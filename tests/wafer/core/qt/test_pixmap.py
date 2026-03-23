@@ -16,6 +16,13 @@ def test_error_placeholder_has_text(qtbot):
     assert center_color != QtGui.QColor('#ccc')
 
 
+def test_viewer_error_placeholder_returns_qimage(qtbot):
+    from wafer.core.qt.pixmap import PixmapFactory
+    image = PixmapFactory.create_viewer_error_placeholder()
+    assert isinstance(image, QtGui.QImage)
+    assert not image.isNull()
+
+
 def test_draw_centered_text_returns_modified_copy(qtbot):
     from wafer.core.qt.pixmap import PixmapFactory
     original = QtGui.QPixmap(100, 100)

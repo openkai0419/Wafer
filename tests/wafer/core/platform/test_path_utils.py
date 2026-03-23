@@ -51,6 +51,15 @@ def test_sanitize_filename_fallback():
     assert sanitize_filename("...") == "download"
 
 
+def test_sanitize_filename_reserved_name():
+    from wafer.core.platform.path_utils import sanitize_filename
+
+    assert sanitize_filename("CON") == "_CON"
+    assert sanitize_filename("con.txt") == "_con.txt"
+    assert sanitize_filename("NUL.tar.gz") == "_NUL.tar.gz"
+    assert sanitize_filename("normal.txt") == "normal.txt"
+
+
 def test_unique_path_generates_increment(tmp_path):
     from wafer.core.platform.path_utils import unique_path
 
@@ -76,6 +85,56 @@ def test_is_http_url():
     assert not is_http_url("ftp://example.com")
     assert not is_http_url("")
     assert not is_http_url("not a url")
+
+
+def test_validate_filename_valid():
+    from wafer.core.platform.path_utils import validate_filename
+
+    assert validate_filename("hello.txt") == []
+    assert validate_filename("my file (2).jpg") == []
+    assert validate_filename("a") == []
+
+
+def test_validate_filename_empty():
+    from wafer.core.platform.path_utils import validate_filename
+
+    assert "empty" in validate_filename("")
+    assert "empty" in validate_filename("   ")
+
+
+def test_validate_filename_invalid_chars():
+    from wafer.core.platform.path_utils import validate_filename
+
+    issues = validate_filename("a<b>.txt")
+    assert "invalid_chars" in issues
+
+
+def test_validate_filename_reserved_name():
+    from wafer.core.platform.path_utils import validate_filename
+
+    assert "reserved_name" in validate_filename("CON")
+    assert "reserved_name" in validate_filename("con.txt")
+    assert "reserved_name" in validate_filename("NUL.tar.gz")
+    assert "reserved_name" in validate_filename("COM1")
+    assert "reserved_name" in validate_filename("LPT9.log")
+    assert "reserved_name" not in validate_filename("CONSOLE.txt")
+
+
+def test_validate_filename_trailing_dot_or_space():
+    from wafer.core.platform.path_utils import validate_filename
+
+    assert "trailing_dot_or_space" in validate_filename("hello.")
+    assert "trailing_dot_or_space" in validate_filename("hello ")
+    assert "trailing_dot_or_space" not in validate_filename("hello.txt")
+
+
+def test_validate_filename_too_long():
+    from wafer.core.platform.path_utils import validate_filename
+
+    assert "too_long" in validate_filename("a" * 256)
+    assert "too_long" not in validate_filename("a" * 100)
+    assert "too_long" not in validate_filename("あ" * 255)
+    assert "too_long" in validate_filename("あ" * 256)
 
 
 def test_get_os_new_folder_name():

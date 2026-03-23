@@ -8,6 +8,12 @@
 - テストが壊れたまま放置すると、コレクションエラーで全テストが実行できなくなり、フルテストの実行コストが倍増する
 - 特にimportレベルのエラー（クラスリネーム等）はpytest全体のコレクションを止めるため影響が大きい
 
+■ ファイル操作の統一設計
+- 全ファイル操作はFileExecutor（旧PasteExecutor）を経由する。os.rename()やPath.rename()の直接使用は禁止
+- 低レベル関数（_safe_remove, _copy_file等）はプライベート化。外部からの直接呼び出しを防ぐ
+- validate_filename()でWindows予約名（CON,NUL等）や不正文字を事前検証。DBメタデータをファイル名に使う箇所は必ず検証を通す
+- PasteExecutor/safe_remove/save_remote_itemは後方互換エイリアスとして残存。将来的に削除
+
 ■ UI状態の保存/復元の設計思想
 - Session（SessionEntry/StateStore）が唯一の状態保存先。app_settings(INI)はグローバル設定（language, cache_size, thumbnail_default_size, tablename）のみ
 - コマンドは「操作の実行」のみに責任を持つ。状態保存はStateStore（Session）が担う
@@ -153,9 +159,9 @@
 - Trayプロセスも独自QApplicationを持つためInputDialogを表示可能（parent=None）
 
 ■ テスト結果の確認方法
-- tests/conftest.pyのpytestフック（pytest_configure / pytest_runtest_logreport / pytest_sessionfinish）で.temp/test_summary.txtにサマリーを自動書き出し
-- 内容: total / passed / failed / skipped / error / exitstatus / duration / 失敗テスト一覧
-- PowerShellパイプで結果が取れない問題の根本対策。ターミナル出力はOut-Nullで捨て、ファイルを読む
+- tests/conftest.pyのpytestフック（pytest_configure / pytest_runtest_logreport / pytest_sessionfinish）でtests/test_summary.txtにサマリーを自動書き出し
+- 内容: total / passed / failed / skipped / error / exitstatus / duration / カテゴリ別集計 / 失敗テスト一覧+原因
+- pyproject.tomlのaddoptsで--tb=short等のオプションを固定済み。コマンドラインでの追加指定は不要
 
 ■ AnimatedCellWidget / GridView スクロール最適化の知見
 - _sync_additional_widgetでサイズ不変時はmove()のみ使う。setGeometry()はresizeEvent+paintEventを誘発する

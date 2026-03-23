@@ -8,6 +8,10 @@ def register_all(registries):
         RandomSort,
     )
     from .layouts import JustifiedLayout, MasonryLayout
+    from .rename_sources import (
+        NameSource, FixedSource, SequentialSource,
+        MetaSource, DateSource, RandomSource, ExtSource,
+    )
 
     registries['grid'].register(SystemThumbnailPlugin)
     registries['viewer'].register(DefaultViewerPlugin)
@@ -20,3 +24,6 @@ def register_all(registries):
         registries['sort'].register(cls)
     for cls in [JustifiedLayout, MasonryLayout]:
         registries['layout'].register(cls)
+    for cls in [NameSource, FixedSource, SequentialSource,
+                MetaSource, DateSource, RandomSource, ExtSource]:
+        registries['rename_source'].register(cls)

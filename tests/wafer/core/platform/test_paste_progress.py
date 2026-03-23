@@ -67,14 +67,12 @@ class TestRunWithProgress:
 
     def test_cancel_stops_processing(self, qapp, tmp_path):
         from wafer.core.platform.paste import _run_with_progress
-        from wafer.core.qt.dispatcher import CancelToken
 
-        processed = []
-        total = 5
-        cancel_at = 2
+        total = 10
+        cancel_at = 3
 
         def execute_fn(idx: int) -> OperationResult:
-            processed.append(idx)
+            time.sleep(0.05)
             if idx == cancel_at:
                 for w in qapp.topLevelWidgets():
                     if isinstance(w, QtWidgets.QProgressDialog):
@@ -82,7 +80,7 @@ class TestRunWithProgress:
                             w, "cancel", QtCore.Qt.QueuedConnection
                         )
                         break
-                time.sleep(0.15)
+                time.sleep(0.3)
             return OperationResult(action="move", src=f"s{idx}", dst=f"d{idx}", status="ok")
 
         results = _run_with_progress(None, "Test cancel", total, execute_fn)

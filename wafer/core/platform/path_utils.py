@@ -47,6 +47,29 @@ def check_copy_conflict(src: str | Path | None, dst: str | Path | None) -> str |
 
 _invalid_name_re = re.compile(r"[\\/:*?\"<>|\x00-\x1f]")
 
+_WINDOWS_RESERVED = frozenset({
+    "CON", "PRN", "AUX", "NUL",
+    *(f"COM{i}" for i in range(1, 10)),
+    *(f"LPT{i}" for i in range(1, 10)),
+})
+
+
+def validate_filename(name: str) -> list[str]:
+    issues: list[str] = []
+    if not name or not name.strip():
+        issues.append("empty")
+        return issues
+    if _invalid_name_re.search(name):
+        issues.append("invalid_chars")
+    base = name.split(".")[0].upper().rstrip(" ")
+    if base in _WINDOWS_RESERVED:
+        issues.append("reserved_name")
+    if name != name.rstrip(". "):
+        issues.append("trailing_dot_or_space")
+    if len(name.encode("utf-16-le")) // 2 > 255:
+        issues.append("too_long")
+    return issues
+
 
 def get_os_new_folder_name() -> str:
     if sys.platform != "win32":
@@ -71,7 +94,12 @@ def sanitize_filename(name: str | None, *, fallback: str = "download") -> str:
     s = os.path.basename(s)
     s = _invalid_name_re.sub("_", s)
     s = s.strip(" .")
-    return s or fallback
+    if not s:
+        return fallback
+    base = s.split(".")[0].upper().rstrip(" ")
+    if base in _WINDOWS_RESERVED:
+        s = f"_{s}"
+    return s
 
 
 def unique_path(dest_dir: str | Path, name: str) -> str:

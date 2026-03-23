@@ -12,6 +12,7 @@ from .grid.base import BaseGridPlugin
 from .collector.base import BaseCollectorPlugin
 from .query.base import BaseFilterPlugin, BaseSortPlugin
 from .layout.base import BaseLayoutPlugin
+from .rename.base import BaseRenameSourcePlugin
 from .installer import install_requirements as _install_requirements
 
 
@@ -22,6 +23,7 @@ _REGISTRY_MAP = {
     BaseFilterPlugin: 'filter',
     BaseSortPlugin: 'sort',
     BaseLayoutPlugin: 'layout',
+    BaseRenameSourcePlugin: 'rename_source',
 }
 
 _PACKAGES_DIR = '.packages'
@@ -237,6 +239,7 @@ def load_plugins(*, skip_install: bool = False, on_progress=None) -> list[str]:
     from .collector.handler import collector_resolver
     from .query.handler import filter_registry, sort_registry
     from .layout.handler import layout_registry
+    from .rename.handler import rename_source_registry
     registries = {
         'viewer': viewer_resolver.registry,
         'grid': grid_resolver.registry,
@@ -244,6 +247,7 @@ def load_plugins(*, skip_install: bool = False, on_progress=None) -> list[str]:
         'filter': filter_registry,
         'sort': sort_registry,
         'layout': layout_registry,
+        'rename_source': rename_source_registry,
     }
     from ..builtins import register_all
     register_all(registries)

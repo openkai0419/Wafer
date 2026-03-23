@@ -73,7 +73,7 @@ def _cleanup_background_resources():
         pass
 
 
-_SUMMARY_PATH = os.path.join(os.path.dirname(__file__), '..', '.temp', 'test_summary.txt')
+_SUMMARY_PATH = os.path.join(os.path.dirname(__file__), 'test_summary.txt')
 _test_start_time = 0.0
 _test_counts = {'passed': 0, 'failed': 0, 'skipped': 0, 'error': 0}
 _category_counts: dict[str, dict[str, int]] = {}

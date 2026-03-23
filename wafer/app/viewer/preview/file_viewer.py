@@ -9,6 +9,7 @@ from ....core.db.query import FileSearchEngine
 from ....plugin.viewer.handler import viewer_resolver
 from ....plugin.viewer.base import WidgetViewerPlugin as _WidgetViewerPlugin
 from ....core.qt.dispatcher import Dispatcher, CancelSlot
+from ....core.qt.pixmap import PixmapFactory
 from ....core.qt.thread import utility_pool
 from ....core.state import StateStore
 from .meta_viewer import MetaListWidget
@@ -205,7 +206,7 @@ class FileViewerWidget(QtWidgets.QSplitter):
         elif target != _DEFAULT_WIDGET_NAME:
             viewer_resolver.render(self._widget_map[target], path)
         else:
-            self.image_viewer.clear()
+            self.image_viewer.set_image(PixmapFactory.create_viewer_error_placeholder(), path)
         self.meta_viewer.set_data(meta)
 
     def set_path(self, path: str | None):

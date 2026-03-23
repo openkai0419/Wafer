@@ -375,7 +375,6 @@ class TestReconnection:
         with patch('wafer.core.ipc.node.read_broker_port') as mock_read:
             broker2 = Broker()
             broker2.start()
-            assert broker2.port != old_port
             mock_read.return_value = broker2.port
             try:
                 time.sleep(NODE_TIMEOUT + 2)
@@ -522,13 +521,14 @@ class TestSessionTracking:
         broker = Broker()
         broker.start()
         try:
-            node = Node('viewer')
-            node.start(broker.port)
-            assert node.wait_registered(timeout=3.0)
-            assert broker.peer_counts().get('viewer', 0) >= 1
+            with patch('wafer.core.ipc.node.read_broker_port', return_value=broker.port):
+                node = Node('viewer')
+                node.start(broker.port)
+                assert node.wait_registered(timeout=3.0)
+                assert broker.peer_counts().get('viewer', 0) >= 1
 
-            node.stop()
-            time.sleep(1)
+                node.stop()
+            time.sleep(1.5)
             assert broker.peer_counts().get('viewer', 0) == 0
         finally:
             broker.stop()

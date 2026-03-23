@@ -5,6 +5,7 @@ from wafer.core.color.theme_palette import DARK, LIGHT, ThemePalette
 class TestThemeManager:
 
     def setup_method(self):
+        ThemeManager.on_theme_changed._callbacks.clear()
         ThemeManager._instance = None
 
     def test_singleton(self, qtbot):

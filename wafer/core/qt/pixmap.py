@@ -6,14 +6,21 @@ from ..color.theme import ThemeManager
 class PixmapFactory:
 
     @staticmethod
-    def create_error_placeholder():
+    def _load_resource_image(filename: str) -> QtGui.QPixmap | None:
         try:
-            imgpath = get_resource_path() / 'fail_fetch_02.png'
+            imgpath = get_resource_path() / filename
             pixmap = QtGui.QPixmap(imgpath)
             if not pixmap.isNull():
                 return pixmap
         except Exception as e:
-            AppLogger.warning(f'Failed to load error image: {e}')
+            AppLogger.warning(f'Failed to load resource image {filename}: {e}')
+        return None
+
+    @staticmethod
+    def create_error_placeholder():
+        pixmap = PixmapFactory._load_resource_image('fail_fetch_02.png')
+        if pixmap is not None:
+            return pixmap
         s = dpix(64)
         size = QtCore.QSize(s, s)
         pixmap = QtGui.QPixmap(size)
@@ -28,6 +35,13 @@ class PixmapFactory:
         painter.end()
         pixmap = PixmapFactory.draw_centered_text_with_background(pixmap, 'error')
         return pixmap
+
+    @staticmethod
+    def create_viewer_error_placeholder() -> QtGui.QImage:
+        pixmap = PixmapFactory._load_resource_image('fail_fetch_01.png')
+        if pixmap is not None:
+            return pixmap.toImage()
+        return PixmapFactory.create_error_placeholder().toImage()
 
     @staticmethod
     def draw_centered_text_with_background(pixmap, text, font=None, padding=None, text_color=QtGui.QColor('#FFFFFF'), bg_color=None):

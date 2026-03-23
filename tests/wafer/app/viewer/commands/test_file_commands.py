@@ -78,6 +78,60 @@ def test_make_new_folder_here_with_file_path(tmp_path):
     assert (tmp_path / get_os_new_folder_name()).exists()
 
 
+def test_rename_file_success(tmp_path, monkeypatch):
+    f = tmp_path / "old.txt"
+    f.write_text("hi", encoding="utf-8")
+    from wafer.core.qt import dialog as _dlg_mod
+    monkeypatch.setattr(
+        _dlg_mod.InputDialog, "get_text",
+        staticmethod(lambda *a, **k: "new.txt"),
+    )
+    file_commands.rename_file(_Ctx(path=str(f)))
+    assert not f.exists()
+    assert (tmp_path / "new.txt").exists()
+
+
+def test_rename_file_cancel(tmp_path, monkeypatch):
+    f = tmp_path / "old.txt"
+    f.write_text("hi", encoding="utf-8")
+    from wafer.core.qt import dialog as _dlg_mod
+    monkeypatch.setattr(
+        _dlg_mod.InputDialog, "get_text",
+        staticmethod(lambda *a, **k: None),
+    )
+    file_commands.rename_file(_Ctx(path=str(f)))
+    assert f.exists()
+
+
+def test_rename_file_same_name(tmp_path, monkeypatch):
+    f = tmp_path / "old.txt"
+    f.write_text("hi", encoding="utf-8")
+    from wafer.core.qt import dialog as _dlg_mod
+    monkeypatch.setattr(
+        _dlg_mod.InputDialog, "get_text",
+        staticmethod(lambda *a, **k: "old.txt"),
+    )
+    file_commands.rename_file(_Ctx(path=str(f)))
+    assert f.exists()
+
+
+def test_rename_file_conflict(tmp_path, monkeypatch):
+    f = tmp_path / "old.txt"
+    f.write_text("hi", encoding="utf-8")
+    (tmp_path / "taken.txt").write_text("x", encoding="utf-8")
+    from wafer.core.qt import dialog as _dlg_mod
+    monkeypatch.setattr(
+        _dlg_mod.InputDialog, "get_text",
+        staticmethod(lambda *a, **k: "taken.txt"),
+    )
+    file_commands.rename_file(_Ctx(path=str(f)))
+    assert f.exists()
+
+
+def test_rename_file_no_path():
+    file_commands.rename_file(_Ctx())
+
+
 def test_make_new_folder_here_custom_name(tmp_path):
     folder = file_commands.make_new_folder_here(_Ctx(path=str(tmp_path)), folder_name="MyFolder")
     assert folder is not None

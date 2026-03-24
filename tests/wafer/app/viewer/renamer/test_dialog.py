@@ -448,3 +448,220 @@ class TestProgressiveThumbnailLoading:
         assert not token.is_cancelled()
         dlg.close()
         assert token.is_cancelled()
+
+
+class TestSegTableSelectionSync:
+
+    @patch.object(BatchRenameDialog, '_start_async_init')
+    def test_seg_click_updates_selected_row(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameDialog(tmp_files)
+        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        qtbot.addWidget(dlg)
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
+        dlg._seg_table.selectRow(1)
+        assert dlg._selected_row == 1
+        dlg.close()
+
+    @patch.object(BatchRenameDialog, '_start_async_init')
+    def test_seg_selection_syncs_preview(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameDialog(tmp_files)
+        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        qtbot.addWidget(dlg)
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
+        dlg._seg_table.selectRow(2)
+        preview_rows = dlg._preview.selectionModel().selectedRows()
+        assert preview_rows and preview_rows[0].row() == 2
+        dlg.close()
+
+    @patch.object(BatchRenameDialog, '_start_async_init')
+    def test_preview_selection_syncs_seg(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameDialog(tmp_files)
+        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        qtbot.addWidget(dlg)
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
+        dlg._preview.selectRow(0)
+        seg_rows = dlg._seg_table.selectionModel().selectedRows()
+        assert seg_rows and seg_rows[0].row() == 0
+        dlg.close()
+
+
+class TestStatusClickNavigation:
+
+    @patch.object(BatchRenameDialog, '_start_async_init')
+    def test_scroll_to_next_issue_no_issues(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameDialog(tmp_files)
+        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        qtbot.addWidget(dlg)
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
+        dlg._scroll_to_next_issue()
+        assert dlg._selected_row in (-1, 0, 1, 2)
+        dlg.close()
+
+    @patch.object(BatchRenameDialog, '_start_async_init')
+    def test_scroll_to_next_issue_finds_conflict(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameDialog(tmp_files)
+        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        qtbot.addWidget(dlg)
+        results = [
+            RenameResult(original='a.jpg', segments=['a', '.jpg'], new_name='a.jpg'),
+            RenameResult(original='b.jpg', segments=['b', '.jpg'], new_name='b.jpg', conflict=True),
+            RenameResult(original='c.jpg', segments=['c', '.jpg'], new_name='c.jpg'),
+        ]
+        dlg._on_refresh_done(results)
+        dlg._selected_row = -1
+        dlg._scroll_to_next_issue()
+        assert dlg._selected_row == 1
+        dlg.close()
+
+    @patch.object(BatchRenameDialog, '_start_async_init')
+    def test_scroll_wraps_around(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameDialog(tmp_files)
+        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        qtbot.addWidget(dlg)
+        results = [
+            RenameResult(original='a.jpg', segments=['a', '.jpg'], new_name='a.jpg', conflict=True),
+            RenameResult(original='b.jpg', segments=['b', '.jpg'], new_name='b.jpg'),
+            RenameResult(original='c.jpg', segments=['c', '.jpg'], new_name='c.jpg'),
+        ]
+        dlg._on_refresh_done(results)
+        dlg._selected_row = 2
+        dlg._scroll_to_next_issue()
+        assert dlg._selected_row == 0
+        dlg.close()
+
+
+class TestOpacitySlider:
+
+    @patch.object(BatchRenameDialog, '_start_async_init')
+    def test_slider_exists(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameDialog(tmp_files)
+        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        qtbot.addWidget(dlg)
+        assert hasattr(dlg, '_opacity_slider')
+        assert dlg._opacity_slider.value() == 20
+        dlg.close()
+
+    @patch.object(BatchRenameDialog, '_start_async_init')
+    def test_slider_changes_overlay_opacity(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameDialog(tmp_files)
+        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        qtbot.addWidget(dlg)
+        dlg._opacity_slider.setValue(50)
+        assert abs(dlg._overlay._row_opacity - 0.5) < 0.01
+        assert abs(dlg._overlay._sel_opacity - 0.3) < 0.01
+        dlg.close()
+
+    @patch.object(BatchRenameDialog, '_start_async_init')
+    def test_slider_zero_opacity(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameDialog(tmp_files)
+        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        qtbot.addWidget(dlg)
+        dlg._opacity_slider.setValue(0)
+        assert dlg._overlay._row_opacity == 0.0
+        dlg.close()
+
+
+class TestAllColumnsEditable:
+
+    @patch.object(BatchRenameDialog, '_start_async_init')
+    def test_name_column_editable(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameDialog(tmp_files)
+        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        qtbot.addWidget(dlg)
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
+        idx = dlg._seg_model.index(0, 0)
+        flags = dlg._seg_model.flags(idx)
+        assert flags & Qt.ItemIsEditable
+        dlg.close()
+
+    @patch.object(BatchRenameDialog, '_start_async_init')
+    def test_ext_column_editable(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameDialog(tmp_files)
+        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        qtbot.addWidget(dlg)
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
+        ext_sec = dlg._ext_section
+        idx = dlg._seg_model.index(0, ext_sec)
+        flags = dlg._seg_model.flags(idx)
+        assert flags & Qt.ItemIsEditable
+        dlg.close()
+
+    @patch.object(BatchRenameDialog, '_start_async_init')
+    def test_add_column_not_editable(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameDialog(tmp_files)
+        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        qtbot.addWidget(dlg)
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
+        add_sec = dlg._add_section
+        idx = dlg._seg_model.index(0, add_sec)
+        flags = dlg._seg_model.flags(idx)
+        assert not (flags & Qt.ItemIsEditable)
+        dlg.close()
+
+    @patch.object(BatchRenameDialog, '_start_async_init')
+    def test_edit_name_column_stores_override(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameDialog(tmp_files)
+        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        qtbot.addWidget(dlg)
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
+        with patch.object(dlg, '_refresh'):
+            idx = dlg._seg_model.index(0, 0)
+            dlg._seg_model.setData(idx, 'custom_name', Qt.EditRole)
+            path_key = str(dlg._paths[0])
+            assert path_key in dlg._columns[0].overrides
+            assert dlg._columns[0].overrides[path_key] == 'custom_name'
+        dlg.close()
+
+    @patch.object(BatchRenameDialog, '_start_async_init')
+    def test_edit_ext_column_stores_override(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameDialog(tmp_files)
+        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        qtbot.addWidget(dlg)
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
+        ext_sec = dlg._ext_section
+        with patch.object(dlg, '_refresh'):
+            idx = dlg._seg_model.index(0, ext_sec)
+            dlg._seg_model.setData(idx, '.png', Qt.EditRole)
+            path_key = str(dlg._paths[0])
+            assert path_key in dlg._ext_column.overrides
+            assert dlg._ext_column.overrides[path_key] == '.png'
+        dlg.close()
+
+
+class TestRenameColumnOverrides:
+
+    def test_override_bypasses_source(self):
+        col = RenameColumn(NameSource())
+        segment = _make_segment(Path('test.jpg'))
+        assert col.evaluate(segment) == 'test'
+        col.overrides[str(segment.original_path)] = 'custom'
+        assert col.evaluate(segment) == 'custom'
+
+    def test_override_bypasses_post(self):
+        col = RenameColumn(NameSource(), PostProcess(prefix='X_'))
+        segment = _make_segment(Path('test.jpg'))
+        assert col.evaluate(segment) == 'X_test'
+        col.overrides[str(segment.original_path)] = 'raw'
+        assert col.evaluate(segment) == 'raw'
+
+    def test_no_override_uses_normal_path(self):
+        col = RenameColumn(NameSource())
+        segment = _make_segment(Path('hello.png'))
+        assert col.evaluate(segment) == 'hello'
+
+
+def _make_segment(path: Path):
+    from wafer.plugin.rename.base import SegmentInfo
+    return SegmentInfo(
+        index=0, total=1, original_path=path,
+        stem=path.stem, ext=path.suffix.lstrip('.'), metadata={},
+    )

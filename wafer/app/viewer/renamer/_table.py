@@ -84,7 +84,7 @@ class SegmentModel(QtCore.QAbstractTableModel):
         self._add_section = 0
         self._ext_section = 1
         self._colors: _ColorSet | None = None
-        self._is_fixed: list[bool] = []
+        self._paths: list = []
 
     def set_colors(self, colors: _ColorSet):
         self._colors = colors
@@ -95,12 +95,10 @@ class SegmentModel(QtCore.QAbstractTableModel):
         add_label: str,
         ext_label: str,
     ):
-        from ....builtins.rename_sources import FixedSource
         self.beginResetModel()
         self._columns = columns
         self._add_section = len(columns)
         self._ext_section = len(columns) + 1
-        self._is_fixed = [isinstance(col.source, FixedSource) for col in columns]
         headers = []
         for col in columns:
             prefix = '' if col.enabled else '\u25cc '
@@ -110,9 +108,11 @@ class SegmentModel(QtCore.QAbstractTableModel):
         self._headers = headers
         self.endResetModel()
 
-    def refresh(self, results: list[RenameResult]):
+    def refresh(self, results: list[RenameResult], paths: list | None = None):
         self.beginResetModel()
         self._results = results
+        if paths is not None:
+            self._paths = paths
         self.endResetModel()
 
     def rowCount(self, parent=QtCore.QModelIndex()):
@@ -136,7 +136,7 @@ class SegmentModel(QtCore.QAbstractTableModel):
         if col == self._add_section:
             return None
 
-        if role == Qt.DisplayRole:
+        if role in (Qt.DisplayRole, Qt.EditRole):
             if col < seg_n:
                 return r.segments[col] if col < len(r.segments) else ''
             if col == self._ext_section:
@@ -152,8 +152,12 @@ class SegmentModel(QtCore.QAbstractTableModel):
             if col < seg_n:
                 if not self._columns[col].enabled:
                     return c.disabled_fg
+                if self._is_overridden(row, col):
+                    return c.overridden_fg
                 return c.warn if has_issue else c.ok
             if col == self._ext_section:
+                if self._is_overridden(row, col):
+                    return c.overridden_fg
                 return c.warn if has_issue else c.ok
             return None
 
@@ -167,7 +171,7 @@ class SegmentModel(QtCore.QAbstractTableModel):
     def flags(self, index):
         col = index.column()
         base = Qt.ItemIsEnabled | Qt.ItemIsSelectable
-        if col < len(self._is_fixed) and self._is_fixed[col]:
+        if col < self._add_section or col == self._ext_section:
             return base | Qt.ItemIsEditable
         return base
 
@@ -176,17 +180,34 @@ class SegmentModel(QtCore.QAbstractTableModel):
             return False
         col = index.column()
         row = index.row()
-        if col < len(self._is_fixed) and self._is_fixed[col]:
+        if col < self._add_section:
             self._results[row].segments[col] = str(value)
             self.dataChanged.emit(index, index, [Qt.DisplayRole])
             return True
+        if col == self._ext_section and self._results[row].segments:
+            self._results[row].segments[-1] = str(value)
+            self.dataChanged.emit(index, index, [Qt.DisplayRole])
+            return True
+        return False
+
+    def _is_overridden(self, row, col):
+        if not self._paths or row >= len(self._paths):
+            return False
+        key = str(self._paths[row])
+        if col < len(self._columns):
+            return key in self._columns[col].overrides
+        if col == self._ext_section:
+            from ._engine import RenameColumn
+            p = self.parent()
+            if p and hasattr(p, '_ext_column'):
+                return key in p._ext_column.overrides
         return False
 
 
 class _ColorSet:
     __slots__ = (
         'muted', 'warn', 'ok', 'accent', 'err_bg', 'disabled_fg',
-        'ext_bg', 'missing_fg', 'strikeout_font',
+        'ext_bg', 'missing_fg', 'overridden_fg', 'strikeout_font',
     )
 
     def __init__(self, palette, mono_font: QtGui.QFont):
@@ -198,6 +219,7 @@ class _ColorSet:
         self.disabled_fg = QtGui.QColor(palette.text_muted)
         self.ext_bg = QtGui.QBrush(QtGui.QColor(palette.bg_secondary))
         self.missing_fg = QtGui.QColor(palette.text_muted)
+        self.overridden_fg = QtGui.QColor(palette.text_accent)
         f = QtGui.QFont(mono_font)
         f.setStrikeOut(True)
         self.strikeout_font = f

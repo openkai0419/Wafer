@@ -17,9 +17,16 @@ class ThumbnailOverlay(QtWidgets.QWidget):
         super().__init__(parent)
         self._dlg = dialog
         self._tbl = table
+        self._row_opacity = 0.2
+        self._sel_opacity = 0.12
         self.setAttribute(Qt.WA_TransparentForMouseEvents)
         self.setAttribute(Qt.WA_NoSystemBackground)
         self.setAutoFillBackground(False)
+
+    def set_opacity(self, value: float):
+        self._row_opacity = value
+        self._sel_opacity = value * 0.6
+        self.update()
 
     def paintEvent(self, event):
         painter = QtGui.QPainter(self)
@@ -41,7 +48,7 @@ class ThumbnailOverlay(QtWidgets.QWidget):
         if last < 0:
             last = tbl.model().rowCount() - 1
 
-        painter.setOpacity(0.2)
+        painter.setOpacity(self._row_opacity)
         for row in range(first, last + 1):
             pix = self._dlg._thumb_for_row(row)
             if not pix or pix.isNull():
@@ -53,7 +60,7 @@ class ThumbnailOverlay(QtWidgets.QWidget):
         sel = self._dlg._selected_row
         pix = self._dlg._thumb_for_row(sel) if sel >= 0 else None
         if pix and not pix.isNull():
-            painter.setOpacity(0.12)
+            painter.setOpacity(self._sel_opacity)
             full = QtCore.QRect(col1_x, 0, col1_w, vp_h)
             self._draw_cover(painter, pix, full)
 

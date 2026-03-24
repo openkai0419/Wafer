@@ -51,8 +51,12 @@ class RenameColumn:
         self.source = source
         self.post = post or PostProcess()
         self.enabled = enabled
+        self.overrides: dict[str, str] = {}
 
     def evaluate(self, segment: SegmentInfo) -> str:
+        key = str(segment.original_path)
+        if key in self.overrides:
+            return self.overrides[key]
         return self.post.apply(self.source.evaluate(segment))
 
 

@@ -8,7 +8,7 @@ from typing import Any
 from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
 
-from ....builtins.rename_sources import FixedSource, ExtSource, NameSource
+from ....builtins.rename_sources import ExtSource, NameSource
 from ....core.color.theme import ThemeManager
 from ....core.platform.file_operations import FileExecutor
 from ....core.qt.dispatcher import Dispatcher, CancelToken
@@ -129,6 +129,7 @@ class BatchRenameDialog(QtWidgets.QDialog):
         self._results: list[RenameResult] = []
         self._popup: ColumnSettingsPopup | None = None
         self._syncing = False
+        self._syncing_selection = False
         self._refreshing = False
         self._refresh_cancel: CancelToken | None = None
         self._init_done = False
@@ -227,9 +228,10 @@ class BatchRenameDialog(QtWidgets.QDialog):
         self._seg_table.setFont(self._mono)
         self._seg_table.setShowGrid(True)
         self._seg_table.verticalHeader().setVisible(False)
-        self._seg_table.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        self._seg_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self._seg_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._seg_table.setEditTriggers(QtWidgets.QAbstractItemView.DoubleClicked)
-        self._seg_table.setFocusPolicy(Qt.NoFocus)
+        self._seg_table.setFocusPolicy(Qt.ClickFocus)
         self._seg_table.verticalHeader().setDefaultSectionSize(row_h)
         self._seg_table.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self._seg_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
@@ -254,6 +256,7 @@ class BatchRenameDialog(QtWidgets.QDialog):
             f"gridline-color: {p.border_subtle}; border: none; "
             f"color: {p.text_primary}; }}"
             f"QTableView::item {{ padding: 0 {dpix(2)}px; }}"
+            f"QTableView::item:selected {{ background: {p.bg_hover}; }}"
         )
         self._seg_frame = seg_frame
         sf_lay.addWidget(self._seg_table)
@@ -263,6 +266,7 @@ class BatchRenameDialog(QtWidgets.QDialog):
         self._preview.verticalScrollBar().valueChanged.connect(self._sync_from_preview)
         self._seg_model.dataChanged.connect(self._on_seg_data_changed)
         self._seg_table.doubleClicked.connect(self._on_seg_dblclick)
+        self._seg_table.selectionModel().selectionChanged.connect(self._on_seg_selection)
         self._seg_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self._seg_table.customContextMenuRequested.connect(self._on_row_context)
         self._preview.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -273,8 +277,25 @@ class BatchRenameDialog(QtWidgets.QDialog):
 
         self._status = QtWidgets.QLabel()
         self._status.setStyleSheet(f"color: {p.text_muted}; font-size: {dpix(11)}px;")
+        self._status.installEventFilter(self)
         bar.addWidget(self._status)
         bar.addStretch()
+
+        opacity_slider = QtWidgets.QSlider(Qt.Horizontal)
+        opacity_slider.setRange(0, 100)
+        opacity_slider.setValue(20)
+        opacity_slider.setFixedWidth(dpix(60))
+        opacity_slider.setToolTip('Thumbnail opacity')
+        opacity_slider.setStyleSheet(
+            f"QSlider::groove:horizontal {{ background: {p.bg_hover}; "
+            f"height: {dpix(4)}px; border-radius: {dpix(2)}px; }}"
+            f"QSlider::handle:horizontal {{ background: {p.text_muted}; "
+            f"width: {dpix(10)}px; margin: -{dpix(3)}px 0; "
+            f"border-radius: {dpix(5)}px; }}"
+        )
+        opacity_slider.valueChanged.connect(self._on_opacity_changed)
+        self._opacity_slider = opacity_slider
+        bar.addWidget(opacity_slider)
 
         self._rename_btn = QtWidgets.QPushButton('Rename')
         self._rename_btn.setStyleSheet(
@@ -407,6 +428,9 @@ class BatchRenameDialog(QtWidgets.QDialog):
         ]
         if not entering_need_load:
             return
+        visible = self._visible_row_range()
+        center = (visible.start + visible.stop) // 2
+        entering_need_load.sort(key=lambda r: abs(r - center))
         cancel = CancelToken()
         rows_paths = [(r, self._paths[r]) for r in entering_need_load]
         for r, _ in rows_paths:
@@ -466,8 +490,14 @@ class BatchRenameDialog(QtWidgets.QDialog):
         return None
 
     def _on_preview_selection(self):
+        if self._syncing_selection:
+            return
         rows = self._preview.selectionModel().selectedRows()
         self._selected_row = rows[0].row() if rows else -1
+        self._syncing_selection = True
+        if rows:
+            self._seg_table.selectRow(rows[0].row())
+        self._syncing_selection = False
         self._overlay.update()
 
     def eventFilter(self, obj, event):
@@ -478,6 +508,9 @@ class BatchRenameDialog(QtWidgets.QDialog):
                 if event.type() == QtCore.QEvent.Resize:
                     self._overlay.update()
                     self._update_visible_thumbnails()
+        if obj is self._status and event.type() == QtCore.QEvent.MouseButtonPress:
+            self._scroll_to_next_issue()
+            return True
         return super().eventFilter(obj, event)
 
     def _sync_from_preview(self, val):
@@ -496,23 +529,59 @@ class BatchRenameDialog(QtWidgets.QDialog):
             self._overlay.update()
             self._update_visible_thumbnails()
 
+    def _on_seg_selection(self):
+        if self._syncing_selection:
+            return
+        rows = self._seg_table.selectionModel().selectedRows()
+        if not rows:
+            return
+        row = rows[0].row()
+        self._selected_row = row
+        self._syncing_selection = True
+        self._preview.selectRow(row)
+        self._syncing_selection = False
+        self._overlay.update()
+
+    def _scroll_to_next_issue(self):
+        if not self._results:
+            return
+        issue_rows = [
+            i for i, r in enumerate(self._results)
+            if r.conflict or r.errors or r.missing
+        ]
+        if not issue_rows:
+            return
+        current = self._selected_row
+        target = next((r for r in issue_rows if r > current), issue_rows[0])
+        self._preview.selectRow(target)
+        self._seg_table.selectRow(target)
+
+    def _on_opacity_changed(self, value):
+        self._overlay.set_opacity(value / 100.0)
+
     def _on_seg_data_changed(self, top_left, bottom_right, roles):
         if self._refreshing:
             return
         col = top_left.column()
         row = top_left.row()
-        if col < len(self._columns) and isinstance(self._columns[col].source, FixedSource):
-            value = self._seg_model.data(top_left, Qt.DisplayRole)
-            if value is not None and row < len(self._paths):
-                path_key = str(self._paths[row])
-                self._columns[col].source.overrides[path_key] = value
-                self._refresh()
+        if row >= len(self._paths):
+            return
+        value = self._seg_model.data(top_left, Qt.DisplayRole)
+        if value is None:
+            return
+        path_key = str(self._paths[row])
+        if col < len(self._columns):
+            self._columns[col].overrides[path_key] = value
+        elif col == self._ext_section:
+            self._ext_column.overrides[path_key] = value
+        else:
+            return
+        self._refresh()
 
     def _on_seg_dblclick(self, index):
         col = index.column()
-        if col < len(self._columns) and isinstance(self._columns[col].source, FixedSource):
-            return
-        self._on_seg_header_click(col)
+        if col == self._add_section:
+            self._show_add_menu(col)
 
     @property
     def _add_section(self):
@@ -531,7 +600,7 @@ class BatchRenameDialog(QtWidgets.QDialog):
         )
         self._refresh()
 
-    def _refresh(self):
+    def _refresh(self, prepare=None):
         if self._refresh_cancel:
             self._refresh_cancel.cancel()
         self._rename_btn.setEnabled(False)
@@ -543,8 +612,14 @@ class BatchRenameDialog(QtWidgets.QDialog):
         metadata = dict(self._metadata)
         keys = list(self._keys)
         initial_keys = list(self._initial_keys)
+        results_snapshot = list(self._results)
 
         def task():
+            nonlocal paths, keys
+            if cancel.is_cancelled():
+                return
+            if prepare:
+                paths, keys = prepare(paths, keys, results_snapshot)
             if cancel.is_cancelled():
                 return
             results = RenameEngine.preview(
@@ -553,19 +628,28 @@ class BatchRenameDialog(QtWidgets.QDialog):
             )
             if cancel.is_cancelled():
                 return
+            conflicts = sum(1 for r in results if r.conflict)
+            errors = sum(1 for r in results if r.errors)
+            missing = sum(1 for r in results if r.missing)
             self._dispatcher.invoke(
-                lambda: cancel.is_cancelled() or self._on_refresh_done(results)
+                lambda: cancel.is_cancelled() or self._on_refresh_done(
+                    results, paths, keys, (conflicts, errors, missing),
+                )
             )
 
         self._dispatcher.post(task, cancel=cancel)
 
-    def _on_refresh_done(self, results):
+    def _on_refresh_done(self, results, paths=None, keys=None, stats=None):
         self._refreshing = True
+        if paths is not None:
+            self._paths = paths
+            self._keys = keys
         self._results = results
         self._preview_model.refresh(self._results)
-        self._seg_model.refresh(self._results)
+        self._seg_model.refresh(self._results, self._paths)
         self._auto_size_segments()
-        self._update_status()
+        if stats:
+            self._apply_status(*stats)
         self._update_visible_thumbnails()
         self._refreshing = False
 
@@ -600,11 +684,8 @@ class BatchRenameDialog(QtWidgets.QDialog):
         h = min(max(2 * table_h + dpix(80), dpix(300)), dpix(900))
         self.resize(w, h)
 
-    def _update_status(self):
+    def _apply_status(self, conflicts, errors, missing):
         p = self._p
-        conflicts = sum(1 for r in self._results if r.conflict)
-        errors = sum(1 for r in self._results if r.errors)
-        missing = sum(1 for r in self._results if r.missing)
         issues = conflicts + errors + missing
         if issues:
             parts = []
@@ -618,39 +699,47 @@ class BatchRenameDialog(QtWidgets.QDialog):
             self._status.setStyleSheet(
                 f"color: {p.warning}; font-size: {dpix(11)}px;"
             )
+            self._status.setCursor(Qt.PointingHandCursor)
         else:
             ex = f' ({len(self._excluded)} excluded)' if self._excluded else ''
             self._status.setText(f'\u2713 {len(self._results)} files ready{ex}')
             self._status.setStyleSheet(
                 f"color: {p.success}; font-size: {dpix(11)}px;"
             )
+            self._status.setCursor(Qt.ArrowCursor)
         self._rename_btn.setEnabled(not issues and bool(self._results))
 
     def _on_preview_sort(self, section):
         if not self._results:
             return
-        pairs = list(zip(self._paths, self._keys, self._results))
-        if section == 0:
-            pairs.sort(key=lambda x: natural_key(x[0].name))
-        else:
-            pairs.sort(key=lambda x: natural_key(x[2].new_name))
-        self._paths = [pp for pp, _, _ in pairs]
-        self._keys = [kk for _, kk, _ in pairs]
-        self._refresh()
+        col = section
+
+        def prepare(paths, keys, results):
+            pairs = list(zip(paths, keys, results))
+            if col == 0:
+                pairs.sort(key=lambda x: natural_key(x[0].name))
+            else:
+                pairs.sort(key=lambda x: natural_key(x[2].new_name))
+            return [p for p, _, _ in pairs], [k for _, k, _ in pairs]
+
+        self._refresh(prepare=prepare)
 
     def _sort_by_segment(self, section, ascending):
         if not self._results:
             return
-        pairs = list(zip(self._paths, self._keys, self._results))
-        pairs.sort(
-            key=lambda x: natural_key(
-                x[2].segments[section] if section < len(x[2].segments) else ''
-            ),
-            reverse=not ascending,
-        )
-        self._paths = [pp for pp, _, _ in pairs]
-        self._keys = [kk for _, kk, _ in pairs]
-        self._refresh()
+        sec, asc = section, ascending
+
+        def prepare(paths, keys, results):
+            pairs = list(zip(paths, keys, results))
+            pairs.sort(
+                key=lambda x: natural_key(
+                    x[2].segments[sec] if sec < len(x[2].segments) else ''
+                ),
+                reverse=not asc,
+            )
+            return [p for p, _, _ in pairs], [k for _, k, _ in pairs]
+
+        self._refresh(prepare=prepare)
 
     def _on_seg_header_click(self, section):
         if section == self._add_section:

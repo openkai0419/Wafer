@@ -234,37 +234,10 @@ def batch_rename(ctx, items, w):
     if not paths_str:
         Notifier.info('No files selected')
         return
-    file_paths = [Path(p) for p in paths_str if os.path.isfile(p)]
-    if not file_paths:
-        Notifier.info('No files selected')
-        return
-    metadata = _fetch_metadata(w.database_path, paths_str) if w.database_path else {}
+    file_paths = [Path(p) for p in paths_str]
     from ..renamer import BatchRenameDialog
-    dlg = BatchRenameDialog(file_paths, metadata=metadata, parent=w)
-    dlg.exec()
+    BatchRenameDialog.open(file_paths, keys=paths_str, db_path=w.database_path, parent=w)
 
-
-def _fetch_metadata(db_path, paths: List[str]) -> dict[str, dict[str, str]]:
-    import sqlite3
-    result: dict[str, dict[str, str]] = {}
-    if not db_path or not os.path.isfile(str(db_path)):
-        return result
-    try:
-        uri = Path(db_path).resolve().as_uri()
-        conn = sqlite3.connect(f'{uri}?mode=ro', uri=True, timeout=1.0)
-        try:
-            placeholders = ','.join('?' * len(paths))
-            rows = conn.execute(
-                f'SELECT path, key, value FROM kv_all WHERE path IN ({placeholders})',
-                paths,
-            ).fetchall()
-            for path, key, value in rows:
-                result.setdefault(path, {})[key] = value or ''
-        finally:
-            conn.close()
-    except Exception as e:
-        AppLogger.warning(f'Failed to fetch metadata for rename', exc=e)
-    return result
 
 
 class FileCommands(ActionKit.MenuBase):

@@ -22,7 +22,6 @@ class TestSegmentInfo:
     def test_defaults(self):
         s = _make_segment()
         assert s.metadata == {}
-        assert s.stat is None
 
     def test_with_metadata(self):
         s = _make_segment(metadata={'width': '1920'})

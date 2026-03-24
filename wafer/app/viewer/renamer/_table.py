@@ -1,9 +1,206 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
 
 from ....utils.formatting import dpix
+
+if TYPE_CHECKING:
+    from ._engine import RenameResult, RenameColumn
+
+
+class PreviewModel(QtCore.QAbstractTableModel):
+
+    HEADERS = ['Original', 'Result']
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._results: list[RenameResult] = []
+        self._colors: _ColorSet | None = None
+
+    def set_colors(self, colors: _ColorSet):
+        self._colors = colors
+
+    def refresh(self, results: list[RenameResult]):
+        self.beginResetModel()
+        self._results = results
+        self.endResetModel()
+
+    def rowCount(self, parent=QtCore.QModelIndex()):
+        return 0 if parent.isValid() else len(self._results)
+
+    def columnCount(self, parent=QtCore.QModelIndex()):
+        return 0 if parent.isValid() else 2
+
+    def headerData(self, section, orientation, role=Qt.DisplayRole):
+        if orientation == Qt.Horizontal and role == Qt.DisplayRole:
+            return self.HEADERS[section] if section < 2 else ''
+        return None
+
+    def data(self, index, role=Qt.DisplayRole):
+        if not index.isValid():
+            return None
+        r = self._results[index.row()]
+        col = index.column()
+        if role == Qt.DisplayRole:
+            if col == 0:
+                return r.original
+            has_issue = r.conflict or r.errors or r.missing
+            if r.missing:
+                return f'\u2716 {r.new_name}'
+            if has_issue:
+                return f'\u26a0 {r.new_name}'
+            return r.new_name
+        c = self._colors
+        if c is None:
+            return None
+        has_issue = r.conflict or r.errors or r.missing
+        if role == Qt.ForegroundRole:
+            if col == 0:
+                return c.missing_fg if r.missing else c.muted
+            return c.warn if has_issue else c.accent
+        if role == Qt.BackgroundRole:
+            if col == 1 and has_issue:
+                return c.err_bg
+            return None
+        if role == Qt.FontRole:
+            if col == 0 and r.missing:
+                return c.strikeout_font
+        return None
+
+    def flags(self, index):
+        return Qt.ItemIsEnabled | Qt.ItemIsSelectable
+
+
+class SegmentModel(QtCore.QAbstractTableModel):
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._results: list[RenameResult] = []
+        self._columns: list[RenameColumn] = []
+        self._headers: list[str] = []
+        self._add_section = 0
+        self._ext_section = 1
+        self._colors: _ColorSet | None = None
+        self._is_fixed: list[bool] = []
+
+    def set_colors(self, colors: _ColorSet):
+        self._colors = colors
+
+    def configure(
+        self,
+        columns: list[RenameColumn],
+        add_label: str,
+        ext_label: str,
+    ):
+        from ....builtins.rename_sources import FixedSource
+        self.beginResetModel()
+        self._columns = columns
+        self._add_section = len(columns)
+        self._ext_section = len(columns) + 1
+        self._is_fixed = [isinstance(col.source, FixedSource) for col in columns]
+        headers = []
+        for col in columns:
+            prefix = '' if col.enabled else '\u25cc '
+            headers.append(f'{prefix}{col.source.DISPLAY} \u25bc')
+        headers.append(add_label)
+        headers.append(f'{ext_label} \u25bc')
+        self._headers = headers
+        self.endResetModel()
+
+    def refresh(self, results: list[RenameResult]):
+        self.beginResetModel()
+        self._results = results
+        self.endResetModel()
+
+    def rowCount(self, parent=QtCore.QModelIndex()):
+        return 0 if parent.isValid() else len(self._results)
+
+    def columnCount(self, parent=QtCore.QModelIndex()):
+        return 0 if parent.isValid() else len(self._headers)
+
+    def headerData(self, section, orientation, role=Qt.DisplayRole):
+        if orientation == Qt.Horizontal and role == Qt.DisplayRole:
+            return self._headers[section] if section < len(self._headers) else ''
+        return None
+
+    def data(self, index, role=Qt.DisplayRole):
+        if not index.isValid():
+            return None
+        row, col = index.row(), index.column()
+        r = self._results[row]
+        seg_n = len(self._columns)
+
+        if col == self._add_section:
+            return None
+
+        if role == Qt.DisplayRole:
+            if col < seg_n:
+                return r.segments[col] if col < len(r.segments) else ''
+            if col == self._ext_section:
+                return r.segments[-1] if r.segments else ''
+            return None
+
+        c = self._colors
+        if c is None:
+            return None
+        has_issue = r.conflict or r.errors or r.missing
+
+        if role == Qt.ForegroundRole:
+            if col < seg_n:
+                if not self._columns[col].enabled:
+                    return c.disabled_fg
+                return c.warn if has_issue else c.ok
+            if col == self._ext_section:
+                return c.warn if has_issue else c.ok
+            return None
+
+        if role == Qt.BackgroundRole:
+            if col == self._ext_section:
+                return c.ext_bg
+            return None
+
+        return None
+
+    def flags(self, index):
+        col = index.column()
+        base = Qt.ItemIsEnabled | Qt.ItemIsSelectable
+        if col < len(self._is_fixed) and self._is_fixed[col]:
+            return base | Qt.ItemIsEditable
+        return base
+
+    def setData(self, index, value, role=Qt.EditRole):
+        if role != Qt.EditRole:
+            return False
+        col = index.column()
+        row = index.row()
+        if col < len(self._is_fixed) and self._is_fixed[col]:
+            self._results[row].segments[col] = str(value)
+            self.dataChanged.emit(index, index, [Qt.DisplayRole])
+            return True
+        return False
+
+
+class _ColorSet:
+    __slots__ = (
+        'muted', 'warn', 'ok', 'accent', 'err_bg', 'disabled_fg',
+        'ext_bg', 'missing_fg', 'strikeout_font',
+    )
+
+    def __init__(self, palette, mono_font: QtGui.QFont):
+        self.muted = QtGui.QColor(palette.text_muted)
+        self.warn = QtGui.QColor(palette.warning)
+        self.ok = QtGui.QColor(palette.text_primary)
+        self.accent = QtGui.QColor(palette.text_accent)
+        self.err_bg = QtGui.QBrush(QtGui.QColor(palette.bg_hover))
+        self.disabled_fg = QtGui.QColor(palette.text_muted)
+        self.ext_bg = QtGui.QBrush(QtGui.QColor(palette.bg_secondary))
+        self.missing_fg = QtGui.QColor(palette.text_muted)
+        f = QtGui.QFont(mono_font)
+        f.setStrikeOut(True)
+        self.strikeout_font = f
 
 
 class PreviewDelegate(QtWidgets.QStyledItemDelegate):
@@ -22,7 +219,7 @@ class PreviewDelegate(QtWidgets.QStyledItemDelegate):
             painter.restore()
 
 
-class SyncedTable(QtWidgets.QTableWidget):
+class SyncedView(QtWidgets.QTableView):
 
     def __init__(self, forward_target=None, parent=None):
         super().__init__(parent)

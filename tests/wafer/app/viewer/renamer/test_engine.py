@@ -143,21 +143,23 @@ class TestRenameEngine:
     def test_metadata_pass_through(self):
         paths = [Path('a.jpg')]
         from wafer.builtins.rename_sources import MetaSource
-        from wafer.utils.paths import normalize_path
         cols = [RenameColumn(MetaSource(key='width'))]
         ext = RenameColumn(ExtSource())
+        key = str(Path('a.jpg')).replace('\\', '/')
         results = RenameEngine.preview(
             paths, cols, ext,
-            metadata={normalize_path('a.jpg'): {'width': '1920'}},
+            metadata={key: {'width': '1920'}},
+            keys=[key],
         )
         assert results[0].new_name == '1920.jpg'
 
     def test_initial_paths_reindexing(self):
         paths = [Path('b.jpg'), Path('a.jpg')]
-        initial = [Path('a.jpg'), Path('b.jpg')]
+        keys = [str(p).replace('\\', '/') for p in paths]
+        initial_keys = [str(p).replace('\\', '/') for p in [Path('a.jpg'), Path('b.jpg')]]
         cols = [RenameColumn(SequentialSource(start=1, step=1, padding=1))]
         ext = RenameColumn(ExtSource())
-        results = RenameEngine.preview(paths, cols, ext, initial_paths=initial)
+        results = RenameEngine.preview(paths, cols, ext, keys=keys, initial_keys=initial_keys)
         assert results[0].new_name == '2.jpg'
         assert results[1].new_name == '1.jpg'
 

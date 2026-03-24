@@ -4,11 +4,11 @@ import re
 from PySide6 import QtGui
 
 
-_NUM_SPLIT = re.compile(r'(\d+)').split
+_NUM_SPLIT = re.compile(r'([0-9]+)').split
 
 
 def natural_key(s):
-    return [int(c) if c.isdigit() else c.casefold() for c in _NUM_SPLIT(s)]
+    return [int(c) if c.isascii() and c.isdigit() else c.casefold() for c in _NUM_SPLIT(s)]
 
 
 _cached_dpi: float | None = None

@@ -2,7 +2,6 @@ import os
 import time
 import pytest
 from pathlib import Path
-from unittest.mock import MagicMock
 
 from wafer.plugin.rename.base import SegmentInfo, RenameConfigWidget, DropdownButton
 from wafer.builtins.rename_sources import (
@@ -100,18 +99,13 @@ class TestDateSource:
         assert 'S' in s.fmt
 
     def test_modified(self):
-        stat = MagicMock()
-        stat.st_mtime = 1700000000.0
-        stat.st_ctime = 1600000000.0
         s = DateSource(source='modified', fmt='%Y')
-        result = s.evaluate(_seg(stat=stat))
+        result = s.evaluate(_seg(metadata={'modified': '1700000000.0'}))
         assert result.isdigit() and len(result) == 4
 
     def test_created(self):
-        stat = MagicMock()
-        stat.st_ctime = 1700000000.0
         s = DateSource(source='created', fmt='%Y%m%d')
-        result = s.evaluate(_seg(stat=stat))
+        result = s.evaluate(_seg(metadata={'created': '1700000000.0'}))
         assert len(result) == 8
 
     def test_now(self):
@@ -119,21 +113,17 @@ class TestDateSource:
         result = s.evaluate(_seg())
         assert result == str(time.localtime().tm_year)
 
-    def test_no_stat(self):
+    def test_no_metadata(self):
         s = DateSource(source='modified')
-        assert s.evaluate(_seg(stat=None)) == ''
+        assert s.evaluate(_seg()) == ''
 
     def test_invalid_format_returns_placeholder(self):
-        stat = MagicMock()
-        stat.st_mtime = 1700000000.0
         s = DateSource(fmt='%Y%m%d%')
-        assert s.evaluate(_seg(stat=stat)) == '?'
+        assert s.evaluate(_seg(metadata={'modified': '1700000000.0'})) == '?'
 
     def test_bare_percent_returns_placeholder(self):
-        stat = MagicMock()
-        stat.st_mtime = 1700000000.0
         s = DateSource(fmt='%')
-        assert s.evaluate(_seg(stat=stat)) == '?'
+        assert s.evaluate(_seg(metadata={'modified': '1700000000.0'})) == '?'
 
     def test_serialise_roundtrip(self):
         s = DateSource('created', '%H%M')

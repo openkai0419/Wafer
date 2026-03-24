@@ -164,17 +164,19 @@ class DateSource(BaseRenameSourcePlugin):
 
     def evaluate(self, segment):
         ts = None
-        if self.source == 'modified' and segment.stat:
-            ts = segment.stat.st_mtime
-        elif self.source == 'created' and segment.stat:
-            ts = segment.stat.st_ctime
+        if self.source == 'modified':
+            raw = segment.metadata.get('modified')
+            ts = float(raw) if raw else None
+        elif self.source == 'created':
+            raw = segment.metadata.get('created')
+            ts = float(raw) if raw else None
         elif self.source == 'now':
             ts = datetime.now().timestamp()
         if not ts:
             return ''
         try:
             return datetime.fromtimestamp(ts).strftime(self.fmt)
-        except ValueError:
+        except (ValueError, OSError):
             return '?'
 
     def serialise(self):

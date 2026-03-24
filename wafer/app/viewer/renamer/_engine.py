@@ -6,7 +6,6 @@ from pathlib import Path
 
 from ....core.platform.path_utils import validate_filename
 from ....plugin.rename.base import BaseRenameSourcePlugin, SegmentInfo
-from ....utils.paths import normalize_path
 
 
 @dataclass
@@ -64,6 +63,7 @@ class RenameResult:
     new_name: str
     conflict: bool = False
     errors: list[str] = field(default_factory=list)
+    missing: bool = False
 
 
 class RenameEngine:
@@ -74,17 +74,17 @@ class RenameEngine:
         columns: list[RenameColumn],
         ext_column: RenameColumn,
         metadata: dict[str, dict[str, str]] | None = None,
-        file_stats: dict | None = None,
-        initial_paths: list[Path] | None = None,
+        keys: list[str] | None = None,
+        initial_keys: list[str] | None = None,
     ) -> list[RenameResult]:
         metadata = metadata or {}
-        file_stats = file_stats or {}
         total = len(paths)
-        seq_base = initial_paths if initial_paths is not None else paths
-        seq_map = {normalize_path(p): i for i, p in enumerate(seq_base)}
+        if keys is None:
+            keys = [str(p).replace('\\', '/') for p in paths]
+        seq_base = initial_keys if initial_keys is not None else keys
+        seq_map = {k: i for i, k in enumerate(seq_base)}
         results: list[RenameResult] = []
-        for i, p in enumerate(paths):
-            key = normalize_path(p)
+        for i, (p, key) in enumerate(zip(paths, keys)):
             stem, ext = p.stem, p.suffix.lstrip('.')
             segment = SegmentInfo(
                 index=seq_map.get(key, i),
@@ -93,7 +93,6 @@ class RenameEngine:
                 stem=stem,
                 ext=ext,
                 metadata=metadata.get(key, {}),
-                stat=file_stats.get(key),
             )
             segs = [col.evaluate(segment) for col in columns]
             ext_part = ext_column.evaluate(segment)

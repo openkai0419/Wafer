@@ -194,7 +194,7 @@ class DirectoryScanner:
                 f"SELECT source, modified, size FROM sources WHERE source IN ({','.join(['?'] * len(chunk))})",
                 chunk,
             )
-            previous.update({normalize_path(row[0]): (row[1], row[2]) for row in cur.fetchall()})
+            previous.update({row[0]: (row[1], row[2]) for row in cur.fetchall()})
         cur.close()
 
         to_update = [
@@ -268,7 +268,7 @@ class DirectoryScanner:
             return
         cur = self._read_conn.cursor()
         cur.execute('SELECT source FROM sources')
-        all_paths = [normalize_path(row[0]) for row in cur.fetchall()]
+        all_paths = [row[0] for row in cur.fetchall()]
         cur.close()
         to_remove = [p for p in all_paths if self._is_excluded(p)]
         if not to_remove:
@@ -321,7 +321,7 @@ class DirectoryScanner:
             cur = self._read_conn.cursor()
             cur.execute('SELECT source, modified, size FROM sources')
             for source, mtime, size in cur.fetchall():
-                result[normalize_path(source)] = (mtime, size)
+                result[source] = (mtime, size)
             cur.close()
         except Exception as e:
             AppLogger.warning(f'[Scanner] Failed to load existing sources: {e}', exc=e)

@@ -384,6 +384,12 @@ class TestNaturalKey:
         assert natural_key("file_001.jpg") == natural_key("file_01.jpg")
         assert natural_key("file_01.jpg") == natural_key("file_1.jpg")
 
+    def test_unicode_digits(self):
+        assert natural_key("file①.jpg") == ["file①.jpg"]
+        assert natural_key("②③") == ["②③"]
+        names = ["b①", "a②", "c"]
+        assert sorted(names, key=natural_key) == ["a②", "b①", "c"]
+
 
 class TestMatchClause:
 

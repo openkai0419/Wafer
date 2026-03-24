@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 class ThumbnailOverlay(QtWidgets.QWidget):
 
     def __init__(
-        self, dialog: BatchRenameDialog, table: QtWidgets.QTableWidget, parent=None,
+        self, dialog: BatchRenameDialog, table: QtWidgets.QTableView, parent=None,
     ):
         super().__init__(parent)
         self._dlg = dialog
@@ -34,14 +34,19 @@ class ThumbnailOverlay(QtWidgets.QWidget):
         col1_x = header.sectionPosition(1) - header.offset()
         col1_w = header.sectionSize(1)
 
+        first = tbl.indexAt(vp.rect().topLeft()).row()
+        last = tbl.indexAt(vp.rect().bottomLeft()).row()
+        if first < 0:
+            first = 0
+        if last < 0:
+            last = tbl.model().rowCount() - 1
+
         painter.setOpacity(0.2)
-        for row in range(tbl.rowCount()):
-            rect = tbl.visualRect(tbl.model().index(row, 0))
-            if rect.bottom() < 0 or rect.top() > vp_h:
-                continue
+        for row in range(first, last + 1):
             pix = self._dlg._thumb_for_row(row)
             if not pix or pix.isNull():
                 continue
+            rect = tbl.visualRect(tbl.model().index(row, 0))
             cell = QtCore.QRect(col0_x, rect.y(), col0_w, rect.height())
             self._draw_cover(painter, pix, cell)
 

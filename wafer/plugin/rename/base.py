@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from os import stat_result
 from pathlib import Path
 
 from PySide6 import QtCore, QtWidgets
@@ -21,7 +20,6 @@ class SegmentInfo:
     stem: str
     ext: str
     metadata: dict[str, str] = field(default_factory=dict)
-    stat: stat_result | None = None
 
 
 def style_input(p):

@@ -136,6 +136,10 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         if on_complete:
             on_complete()
         else:
+            self.search_row_widget.run_folder_worker(
+                self.database_path,
+                self.folder_view.get_selected_paths(),
+            )
             QtCore.QTimer.singleShot(0, lambda: self.search(force=True))
 
     def _update_title(self):
@@ -347,7 +351,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.loading_indicator = OverlayLoadingIndicator()
         self.overlay_stack.push_persistent(self.loading_indicator, key="loading")
         self.grid_view.layout_started.connect(self._on_layout_started)
-        self.grid_view.layout_ready.connect(lambda: self.overlay_stack.hide_persistent("loading"))
+        self.grid_view.layout_ready.connect(self._hide_loading)
         self._register_component_states()
         self._setup_dev_panel()
         self._sync_service_from_ui()
@@ -518,6 +522,10 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.loading_indicator.start()
         self.overlay_stack.show_persistent("loading")
 
+    def _hide_loading(self):
+        self.loading_indicator.stop()
+        self.overlay_stack.hide_persistent("loading")
+
     def _on_layout_started(self):
         self._show_loading()
 
@@ -531,7 +539,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self._folder_changed = False
         self.search_row_widget.run_folder_worker(self.database_path, self.folder_view.get_selected_paths())
         if paths == self._last_paths:
-            self.overlay_stack.hide_persistent("loading")
+            self._hide_loading()
             return
         self._last_paths = paths
         self.grid_view.set_paths(paths, sources, aspects, keep_scroll=keep_scroll)
@@ -576,15 +584,22 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
                 })
             else:
                 self._apply_params_to_ui(query.search_params)
+        def _search_after_keys():
+            self.search_row_widget.run_folder_worker(
+                self.database_path,
+                self.folder_view.get_selected_paths(),
+                on_complete=lambda: self.search(force=True),
+            )
+
         if query.folder_state:
             expanded = query.folder_state.get('expanded', [])
             selected = query.folder_state.get('selected', [])
             self.folder_view.set_state_async(
                 (expanded, selected),
-                on_complete=lambda: QtCore.QTimer.singleShot(0, lambda: self.search(force=True)),
+                on_complete=lambda: QtCore.QTimer.singleShot(0, _search_after_keys),
             )
         else:
-            QtCore.QTimer.singleShot(0, lambda: self.search(force=True))
+            QtCore.QTimer.singleShot(0, _search_after_keys)
 
     def _apply_params_to_ui(self, params):
         row = self.search_row_widget

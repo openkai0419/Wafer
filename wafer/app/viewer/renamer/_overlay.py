@@ -18,14 +18,14 @@ class ThumbnailOverlay(QtWidgets.QWidget):
         self._dlg = dialog
         self._tbl = table
         self._row_opacity = 0.2
-        self._sel_opacity = 0.12
+        self._sel_opacity = 0.2
         self.setAttribute(Qt.WA_TransparentForMouseEvents)
         self.setAttribute(Qt.WA_NoSystemBackground)
         self.setAutoFillBackground(False)
 
     def set_opacity(self, value: float):
         self._row_opacity = value
-        self._sel_opacity = value * 0.6
+        self._sel_opacity = value
         self.update()
 
     def paintEvent(self, event):

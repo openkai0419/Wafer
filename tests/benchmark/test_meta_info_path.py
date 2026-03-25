@@ -117,16 +117,6 @@ SQL_PROPOSED_PATH_SEARCH = """
     WHERE mi."key" = 'path' AND mi.value LIKE ?
 """
 
-SQL_CURRENT_FILEPATH_KV = """
-    SELECT path, "key", value FROM kv_all
-    WHERE "key" = 'path' AND value LIKE ?
-"""
-
-SQL_PROPOSED_PATH_KV = """
-    SELECT path, "key", value FROM kv_all
-    WHERE "key" = 'path' AND value LIKE ?
-"""
-
 SQL_CURRENT_NAME_FROM_FILES_FULL = """
     SELECT mi.path, mi.value AS name
     FROM meta_info AS mi
@@ -220,22 +210,6 @@ class TestPathSearchBenchmark:
         print(f'\n--- Path LIKE search (n={n:,}, keyword={keyword}) ---')
         print(f'  Current (files PK scan):  avg={avg_cur*1000:.2f}ms  min={min_cur*1000:.2f}  max={max_cur*1000:.2f}  rows={rows_cur}')
         print(f'  Proposed (meta_info):      avg={avg_prop*1000:.2f}ms  min={min_prop*1000:.2f}  max={max_prop*1000:.2f}  rows={rows_prop}')
-        ratio = avg_prop / avg_cur if avg_cur > 0 else float('inf')
-        print(f'  Ratio (proposed/current):  {ratio:.2f}x')
-
-    def test_kv_all_path_search(self, populated_db):
-        conn, n = populated_db
-        keyword = '%folder010%'
-
-        avg_cur, rows_cur, min_cur, max_cur = _measure(
-            conn, SQL_CURRENT_FILEPATH_KV, (keyword,),
-        )
-        avg_prop, rows_prop, min_prop, max_prop = _measure(
-            conn, SQL_PROPOSED_PATH_KV, (keyword,),
-        )
-        print(f'\n--- kv_all path search (n={n:,}, keyword={keyword}) ---')
-        print(f'  Current (__filepath__):    avg={avg_cur*1000:.2f}ms  min={min_cur*1000:.2f}  max={max_cur*1000:.2f}  rows={rows_cur}')
-        print(f'  Proposed (path key):       avg={avg_prop*1000:.2f}ms  min={min_prop*1000:.2f}  max={max_prop*1000:.2f}  rows={rows_prop}')
         ratio = avg_prop / avg_cur if avg_cur > 0 else float('inf')
         print(f'  Ratio (proposed/current):  {ratio:.2f}x')
 

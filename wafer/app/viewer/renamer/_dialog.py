@@ -42,7 +42,17 @@ def _fetch_metadata_sync(db_path, paths_str):
                 chunk = paths_str[start:start + _SQL_CHUNK_SIZE]
                 placeholders = ','.join('?' * len(chunk))
                 rows = conn.execute(
-                    f'SELECT path, key, value FROM kv_all WHERE path IN ({placeholders})',
+                    f'SELECT path, key, value FROM meta_info'
+                    f' WHERE path IN ({placeholders})',
+                    chunk,
+                ).fetchall()
+                for path, key, value in rows:
+                    result.setdefault(path, {})[key] = value or ''
+                rows = conn.execute(
+                    f'SELECT i.path, t.key, t.value FROM tags AS t'
+                    f' JOIN sources AS s ON s.file_hash = t.file_hash'
+                    f' JOIN files AS i ON i.source = s.source'
+                    f' WHERE i.path IN ({placeholders})',
                     chunk,
                 ).fetchall()
                 for path, key, value in rows:
@@ -284,7 +294,7 @@ class BatchRenameDialog(QtWidgets.QDialog):
         opacity_slider = QtWidgets.QSlider(Qt.Horizontal)
         opacity_slider.setRange(0, 100)
         opacity_slider.setValue(20)
-        opacity_slider.setFixedWidth(dpix(60))
+        opacity_slider.setMinimumWidth(dpix(200))
         opacity_slider.setToolTip('Thumbnail opacity')
         opacity_slider.setStyleSheet(
             f"QSlider::groove:horizontal {{ background: {p.bg_hover}; "
@@ -296,6 +306,7 @@ class BatchRenameDialog(QtWidgets.QDialog):
         opacity_slider.valueChanged.connect(self._on_opacity_changed)
         self._opacity_slider = opacity_slider
         bar.addWidget(opacity_slider)
+        bar.addStretch()
 
         self._rename_btn = QtWidgets.QPushButton('Rename')
         self._rename_btn.setStyleSheet(
@@ -335,11 +346,16 @@ class BatchRenameDialog(QtWidgets.QDialog):
                 'post': dataclasses.asdict(col.post),
                 'enabled': col.enabled,
             })
-        return {
+        state: dict[str, Any] = {
             'columns': columns,
             'ext_post': dataclasses.asdict(self._ext_column.post),
             'ext_enabled': self._ext_column.enabled,
+            'opacity': self._opacity_slider.value(),
         }
+        geo = self.saveGeometry().toBase64().data()
+        if geo:
+            state['geometry'] = geo.decode('ascii')
+        return state
 
     def _restore_columns_from_state(self):
         state = self._saved_state
@@ -366,8 +382,19 @@ class BatchRenameDialog(QtWidgets.QDialog):
         super().showEvent(event)
         if not self._init_done:
             self._init_done = True
+            self._restore_ui_from_state()
             self._rebuild()
             self._start_async_init()
+
+    def _restore_ui_from_state(self):
+        state = self._saved_state
+        if not state:
+            return
+        if 'opacity' in state:
+            self._opacity_slider.setValue(state['opacity'])
+        geo = state.get('geometry')
+        if geo:
+            self.restoreGeometry(QtCore.QByteArray.fromBase64(geo.encode('ascii')))
 
     def _start_async_init(self):
         cancel = CancelToken()

@@ -332,9 +332,11 @@ class SearchContainer(QtWidgets.QWidget, TranslatorMixin):
         self._last_paths = object()
 
     @profiler.profile
-    def run_folder_worker(self, dbname, paths):
+    def run_folder_worker(self, dbname, paths, on_complete=None):
         key = tuple(paths) if paths else None
         if self._last_paths == key:
+            if on_complete:
+                on_complete()
             return
         self._last_paths = key
         cancel = self._key_cancel.renew()
@@ -348,7 +350,11 @@ class SearchContainer(QtWidgets.QWidget, TranslatorMixin):
             results = composer.list_all_keys(engine, entries, sort_by_freq=True)
             if cancel.is_cancelled():
                 return
-            self._dispatcher.invoke(lambda: self._key_store.set_data(results))
+            def apply():
+                self._key_store.set_data(results)
+                if on_complete:
+                    on_complete()
+            self._dispatcher.invoke(apply)
 
         self._dispatcher.post(task, priority=6, cancel=cancel)
 

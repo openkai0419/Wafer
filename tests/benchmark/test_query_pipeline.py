@@ -805,37 +805,6 @@ class TestAlternativeApproaches:
         print(f'  Sort overhead (SQL):  {(avg1 - avg3)*1000:.2f}ms')
         print(f'  Sort overhead (Py):   {(avg2 - avg3)*1000:.2f}ms')
 
-    def test_union_all_vs_or(self, gen_db):
-        conn, n, _ = gen_db
-        if n != GENERATED_SIZES[-1]:
-            pytest.skip('only largest')
-
-        kw = '%folder01%'
-
-        sql_union = """
-        SELECT DISTINCT path FROM (
-            SELECT mi.path FROM meta_info AS mi
-            WHERE mi."key" IN ('name','path') AND (mi."value" LIKE ? ESCAPE '\\')
-            UNION ALL
-            SELECT i.path FROM tags AS t
-            JOIN sources AS s ON s.file_hash = t.file_hash
-            JOIN files AS i ON i.source = s.source
-            WHERE t."key" IN ('name','path') AND (t."value" LIKE ? ESCAPE '\\')
-        )
-        """
-
-        sql_kv_all = """
-        SELECT DISTINCT path FROM kv_all
-        WHERE "key" IN ('name','path') AND (value LIKE ? ESCAPE '\\')
-        """
-
-        print(f'\n[gen n={n:,}] === UNION ALL vs kv_all view ===')
-
-        avg1, mn1, mx1, rows1 = _measure_sql(conn, sql_union, (kw, kw))
-        avg2, mn2, mx2, rows2 = _measure_sql(conn, sql_kv_all, (kw,))
-        print(f'  UNION ALL:  {_fmt(avg1, mn1, mx1, rows1)}')
-        print(f'  kv_all:     {_fmt(avg2, mn2, mx2, rows2)}')
-
     def test_files_full_view_vs_direct_join(self, gen_db):
         conn, n, _ = gen_db
         if n != GENERATED_SIZES[-1]:

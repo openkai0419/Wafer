@@ -774,3 +774,31 @@ class TestOnLayoutReadyWidgetRerender:
         self.GridView._on_layout_ready(fake, layout)
 
         fake._pipeline.schedule_render.assert_not_called()
+
+
+class TestRecalcLayoutEmptyGuard:
+    @pytest.fixture(autouse=True)
+    def _import(self, qtbot):
+        from wafer.app.viewer.grid.grid_view import GridView
+        self.GridView = GridView
+
+    @patch('wafer.app.viewer.grid.grid_view.grid_resolver')
+    def test_no_layout_started_when_empty(self, mock_resolver, qtbot):
+        gv = self.GridView(MagicMock())
+        qtbot.addWidget(gv)
+        gv.items.clear()
+        signals = []
+        gv.layout_started.connect(lambda: signals.append('started'))
+        gv._recalc_layout()
+        assert 'started' not in signals
+
+    @patch('wafer.app.viewer.grid.grid_view.grid_resolver')
+    def test_layout_started_when_items_present(self, mock_resolver, qtbot):
+        gv = self.GridView(MagicMock())
+        qtbot.addWidget(gv)
+        gv.items.set_items(['a.png'], ['a.png'], [1.0])
+        gv.resize(400, 300)
+        signals = []
+        gv.layout_started.connect(lambda: signals.append('started'))
+        gv._recalc_layout()
+        assert 'started' in signals

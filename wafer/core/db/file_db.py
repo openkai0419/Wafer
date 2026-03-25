@@ -63,27 +63,6 @@ _VIEWS = (
         SELECT i.path, i.source, i.aspect_ratio,
                s.file_hash, s.size, s.modified
         FROM files i JOIN sources s ON s.source = i.source'''),
-    ('kv_all',
-     '''CREATE VIEW kv_all AS
-        WITH base AS (
-            SELECT mi.path AS path, mi.key AS key, mi.value AS value, mi.value_num AS value_num, 'meta_info' AS src, 2 AS rank
-            FROM meta_info AS mi
-        UNION ALL
-            SELECT i.path AS path, t.key AS key, t.value AS value, t.value_num AS value_num, 'tags' AS src, 0 AS rank
-            FROM tags AS t
-            JOIN sources AS s ON s.file_hash = t.file_hash
-            JOIN files  AS i ON i.source    = s.source
-        ),
-        picked AS (
-            SELECT path, key, value, value_num, src, rank,
-                ROW_NUMBER() OVER (PARTITION BY path, key ORDER BY rank, src) AS rn
-            FROM base
-        )
-        SELECT path, key, value, value_num, src FROM picked WHERE rn = 1'''),
-    ('kv_meta',
-     '''CREATE VIEW kv_meta AS
-        SELECT k.path, vf.file_hash, k.key, k.value, k.value_num, k.src
-        FROM kv_all AS k JOIN files_full AS vf ON vf.path = k.path'''),
 )
 
 _INDEXES_SQL = """

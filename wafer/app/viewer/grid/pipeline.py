@@ -2,6 +2,7 @@ from typing import Callable, Optional
 
 from PySide6 import QtCore, QtGui
 
+from ....utils.logs import AppLogger
 from ....core.qt.dispatcher import Dispatcher, CancelToken, CancelSlot
 from ....plugin.grid.handler import grid_resolver
 from ....plugin.grid.base import (
@@ -58,6 +59,7 @@ class GridPipeline(QtCore.QObject):
             if layout_cls is None:
                 layout_cls = layout_registry.get('justified')
             if layout_cls is None:
+                AppLogger.warning(f'no layout plugin found for mode={layout_mode}')
                 return
             calc = layout_cls.create_calculator(
                 aspect_ratios, base_height, spacing,

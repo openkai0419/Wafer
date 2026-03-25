@@ -82,7 +82,8 @@
 
 ■ SQLite の罠
 - VIEWはマテリアライズされない。ウィンドウ関数入りVIEWをクエリ条件に使うと極端に遅い
-- 検索はkv_meta/kv_allビューを経由せず直接テーブルアクセスにすることで回避
+- kv_all/kv_metaビューは削除済み。メタデータ取得はmeta_info→tagsの2クエリで行い、同一キーはtagsが勝つ（tags-wins）
+- 検索・ソートも直接テーブルアクセス。_kv_sort_joinはCOALESCE(tags, meta_info)でtags-winsを実現
 - compound SELECTをFROM句サブクエリにする時、各armを括弧で囲むと構文エラー
 - 読み取り専用接続ではcache_size/mmap_sizeのPRAGMAを設定
 - IN句のプレースホルダが多すぎるとSQLITE_MAX_VARIABLE_NUMBERを超えてエラー。大量パスのクエリは必ずチャンク分割する（_SQL_CHUNK_SIZE=4000）

@@ -91,7 +91,6 @@ class TestSearchQuerySubquery:
         sql, params = q._make_subquery(np)
         assert sql is not None
         assert "meta_info" in sql
-        assert "kv_meta" not in sql
 
     def test_keys_filepath(self, populated_db):
         q = SearchQuery(keys=["path"])
@@ -717,16 +716,6 @@ class TestExplainQueryPlan:
         rows = conn.execute(f"EXPLAIN QUERY PLAN {sql}", params).fetchall()
         return "\n".join(r["detail"] for r in rows)
 
-    def test_no_kv_meta_in_plan(self, populated_db):
-        engine = FileSearchEngine(populated_db)
-        assert engine._connect_if_needed()
-        q = SearchQuery(keys=["dpi"])
-        subq, params = q._make_subquery(np)
-        sql = f"SELECT DISTINCT path FROM ({subq}) s0"
-        plan = self._plan_text(engine.conn, sql, params)
-        assert "kv_meta" not in plan.lower()
-        assert "kv_all" not in plan.lower()
-
     def test_filepath_uses_files_directly(self, populated_db):
         engine = FileSearchEngine(populated_db)
         assert engine._connect_if_needed()
@@ -758,8 +747,6 @@ class TestExplainQueryPlan:
             ORDER BY m.path ASC
         """
         plan = self._plan_text(engine.conn, sql, params)
-        assert "kv_meta" not in plan.lower()
-        assert "kv_all" not in plan.lower()
 
 
 class TestTagKeySearch:
@@ -1294,7 +1281,6 @@ class TestExplainQueryPlanRealDB:
             ORDER BY m.path ASC
         """
         plan, rows, avg_ms = self._plan_and_time(real_engine, f"meta key='{key}'", sql, params)
-        assert "kv_meta" not in plan.lower()
 
     def test_filepath_query(self, real_engine):
         q = SearchQuery(keys=["path"], keywords="img")
@@ -1306,7 +1292,6 @@ class TestExplainQueryPlanRealDB:
             ORDER BY m.path ASC
         """
         plan, rows, avg_ms = self._plan_and_time(real_engine, "path keyword='img'", sql, params)
-        assert "kv_meta" not in plan.lower()
 
     def test_directory_query(self, real_engine):
         assert real_engine._connect_if_needed()
@@ -1324,7 +1309,6 @@ class TestExplainQueryPlanRealDB:
             ORDER BY m.path ASC
         """
         plan, rows, avg_ms = self._plan_and_time(real_engine, f"directory='{sample_dir}'", sql, params)
-        assert "kv_meta" not in plan.lower()
 
     def test_list_all_keys_query(self, real_engine):
         assert real_engine._connect_if_needed()
@@ -1342,4 +1326,3 @@ class TestExplainQueryPlanRealDB:
             ORDER BY freq DESC
         """
         plan, rows, avg_ms = self._plan_and_time(real_engine, f"list_all_keys dir='{sample_dir}'", sql, params)
-        assert "kv_meta" not in plan.lower()

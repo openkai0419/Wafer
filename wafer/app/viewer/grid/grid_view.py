@@ -415,6 +415,8 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
 
     @profiler.profile
     def _recalc_layout(self):
+        if not self.items.aspect_ratios:
+            return
         self.layout_started.emit()
         margin = self._half_pos
         secondary = self._secondary_viewport_size() - margin * 2

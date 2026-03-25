@@ -74,6 +74,7 @@ class TestSearchResultDiffCheck:
             win.grid_view = MagicMock()
             win.file_model = MagicMock()
             win.overlay_stack = MagicMock()
+            win.loading_indicator = MagicMock()
             win.search_row_widget = MagicMock()
             win.database_path = 'test.db'
             win.folder_view = MagicMock()
@@ -82,6 +83,7 @@ class TestSearchResultDiffCheck:
             win._on_search_finished(paths, sources, aspects)
             win.grid_view.set_paths.assert_not_called()
             win.file_model.set_items.assert_not_called()
+            win.loading_indicator.stop.assert_called_once()
             win.overlay_stack.hide_persistent.assert_called_once_with("loading")
             win.search_row_widget.run_folder_worker.assert_called_once()
 
@@ -100,6 +102,7 @@ class TestSearchResultDiffCheck:
             win.grid_view = MagicMock()
             win.file_model = MagicMock()
             win.overlay_stack = MagicMock()
+            win.loading_indicator = MagicMock()
             win.search_row_widget = MagicMock()
             win.database_path = 'test.db'
             win.folder_view = MagicMock()
@@ -125,6 +128,7 @@ class TestSearchResultDiffCheck:
             win.grid_view = MagicMock()
             win.file_model = MagicMock()
             win.overlay_stack = MagicMock()
+            win.loading_indicator = MagicMock()
             win.search_row_widget = MagicMock()
             win.database_path = 'test.db'
             win.folder_view = MagicMock()

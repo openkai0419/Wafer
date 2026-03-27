@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt, QTimer, QEvent, QPoint, QRectF
+from PySide6.QtCore import Qt, QTimer, QEvent, QPoint, QRectF, Signal
 from PySide6.QtGui import QCursor, QPalette, QColor, QPainter
 from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QSlider, QLabel, QAbstractButton, QApplication,
@@ -233,6 +233,7 @@ class VideoControlBar(QWidget):
 
 class VideoViewerWidget(QWidget, ActionKit.UIMixin):
 
+    _playback_ended = Signal()
     _mpv_mod = None
     _mpv_checked = False
 
@@ -263,6 +264,7 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
         self._seek_dragging = False
         self._controls_visible = False
         self._autoplay_advance = None
+        self._prev_time_pos = None
 
         self._player_area = QWidget(self)
         self._player_area.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
@@ -310,6 +312,8 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
         Command.set_checked("vview.toggle_loop", self._looping)
         Command.set_checked("vview.toggle_pause_in_background", self._pause_in_background)
 
+        self._playback_ended.connect(self._fire_autoplay_advance)
+
         ThemeManager.instance().on_theme_changed.connect(self._on_theme_changed)
         app = QApplication.instance()
         if app:
@@ -342,12 +346,15 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
             self._player.speed = self._speed
             self._player['panscan'] = 1.0 if self._cover_mode else 0.0
             self._player['loop-file'] = 'inf' if self._looping else 'no'
+            self._player.observe_property('time-pos', self._on_mpv_time_pos)
+            self._player.observe_property('eof-reached', self._on_mpv_eof)
         except Exception as e:
             AppLogger.error(f'Failed to create mpv player: {e}', exc=e)
             self._player = None
 
     def load(self, path):
         self._path = path
+        self._prev_time_pos = None
         self._ensure_player()
         if self._player:
             self._player.play(path)
@@ -358,6 +365,7 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
     def clear(self):
         self._path = None
         self._autoplay_advance = None
+        self._prev_time_pos = None
         self._stop_playback()
         self._pos_timer.stop()
         self._hide_controls()
@@ -463,6 +471,38 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
 
     def set_autoplay_advance(self, advance):
         self._autoplay_advance = advance
+        if advance is not None and self._player and not self._looping:
+            try:
+                if self._player.eof_reached:
+                    self._playback_ended.emit()
+            except Exception:
+                pass
+
+    def _on_mpv_time_pos(self, name, value):
+        if not self._autoplay_advance or not self._looping:
+            self._prev_time_pos = value
+            return
+        if value is not None and self._prev_time_pos is not None:
+            try:
+                dur = self._player.duration
+            except Exception:
+                self._prev_time_pos = value
+                return
+            if dur and self._prev_time_pos > dur * 0.8 and value < dur * 0.2:
+                self._prev_time_pos = value
+                self._playback_ended.emit()
+                return
+        self._prev_time_pos = value
+
+    def _on_mpv_eof(self, name, value):
+        if value and self._autoplay_advance and not self._looping:
+            self._playback_ended.emit()
+
+    def _fire_autoplay_advance(self):
+        if self._autoplay_advance:
+            cb = self._autoplay_advance
+            self._autoplay_advance = None
+            cb()
 
     def _on_volume_changed(self, value):
         self._volume = value
@@ -512,15 +552,6 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
             self._control_bar.seek_slider.setValue(int(pos / dur * 1000))
             self._control_bar.seek_slider.blockSignals(False)
         self._update_play_button()
-        if self._autoplay_advance and not self._looping:
-            try:
-                eof = self._player.eof_reached
-            except Exception:
-                eof = False
-            if eof:
-                cb = self._autoplay_advance
-                self._autoplay_advance = None
-                cb()
 
     def _show_controls(self):
         if not self._controls_visible:

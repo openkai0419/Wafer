@@ -163,6 +163,7 @@ class FileViewerWidget(QtWidgets.QSplitter):
             self._autoplay_interval = int(state['autoplay_interval'])
         if 'autoplay_loop' in state:
             self._autoplay_loop = bool(state['autoplay_loop'])
+        Command.set_checked('fv.toggle_slideshow', False)
 
     def on_exit(self):
         pass

@@ -97,14 +97,14 @@ def test_toggle_slideshow_starts_autoplay():
     fv = MagicMock()
     fv.autoplay_active = False
     ctx = _SlideshowCtx(fv)
-    toggle_slideshow(ctx, interval_ms=5000, loop=True)
+    toggle_slideshow(ctx, interval=5.0, loop=True)
     fv.toggle_autoplay.assert_called_once_with(interval_ms=5000, loop=True)
 
 
 def test_start_slideshow_calls_start():
     fv = MagicMock()
     ctx = _SlideshowCtx(fv)
-    start_slideshow(ctx, interval_ms=2000, loop=False)
+    start_slideshow(ctx, interval=2.0, loop=False)
     fv.start_autoplay.assert_called_once_with(interval_ms=2000, loop=False)
 
 

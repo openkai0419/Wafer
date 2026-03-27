@@ -27,17 +27,17 @@ def prev_file(ctx, model, step: int = 1, loop: bool = False):
 
 
 @require(fv="FileViewerWidget")
-def toggle_slideshow(ctx, fv, interval_ms: int = 3000, loop: bool = True):
+def toggle_slideshow(ctx, fv, interval: float = 3.0, loop: bool = True):
     fv.toggle_autoplay(
-        interval_ms=int(interval_ms),
+        interval_ms=int(float(interval) * 1000),
         loop=bool(loop),
     )
 
 
 @require(fv="FileViewerWidget")
-def start_slideshow(ctx, fv, interval_ms: int = 3000, loop: bool = True):
+def start_slideshow(ctx, fv, interval: float = 3.0, loop: bool = True):
     fv.start_autoplay(
-        interval_ms=int(interval_ms),
+        interval_ms=int(float(interval) * 1000),
         loop=bool(loop),
     )
 
@@ -74,7 +74,7 @@ class FileViewerCommands(ActionKit.MenuBase):
                 func=toggle_slideshow,
                 checkable=True,
                 params=[
-                    ActionKit.Param(name="interval_ms", value=3000, min_value=500, max_value=60000),
+                    ActionKit.Param(name="interval", value=3.0, min_value=0.5, max_value=60.0),
                     ActionKit.Param(name="loop", value=True),
                 ],
             ),
@@ -84,7 +84,7 @@ class FileViewerCommands(ActionKit.MenuBase):
                 func=start_slideshow,
                 hidden=True,
                 params=[
-                    ActionKit.Param(name="interval_ms", value=3000, min_value=500, max_value=60000),
+                    ActionKit.Param(name="interval", value=3.0, min_value=0.5, max_value=60.0),
                     ActionKit.Param(name="loop", value=True),
                 ],
             ),

@@ -121,6 +121,7 @@ class TestAutoplayState:
         state = w._save_state()
         assert state['autoplay_interval'] == 5000
         assert state['autoplay_loop'] is False
+        assert 'autoplay_active' not in state
 
     def test_restore_state_sets_autoplay_fields(self, qtbot):
         from wafer.app.viewer.preview.file_model import FileViewModel
@@ -133,6 +134,16 @@ class TestAutoplayState:
         })
         assert w._autoplay_interval == 7000
         assert w._autoplay_loop is True
+        assert w._autoplay_active is False
+
+    def test_restore_state_resets_slideshow_checkbox(self, qtbot):
+        from wafer.app.viewer.preview.file_model import FileViewModel
+        model = FileViewModel()
+        w = FileViewerWidget(model)
+        qtbot.addWidget(w)
+        with patch('wafer.app.viewer.preview.file_viewer.Command') as mock_cmd:
+            w._restore_state({'autoplay_interval': 3000})
+            mock_cmd.set_checked.assert_called_with('fv.toggle_slideshow', False)
 
     def test_start_stop_autoplay(self, qtbot):
         from wafer.app.viewer.preview.file_model import FileViewModel

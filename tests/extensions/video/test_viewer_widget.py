@@ -487,3 +487,174 @@ class TestThemeIntegration:
         style = w._control_bar.styleSheet()
         assert DARK.accent in style
         w.cleanup()
+
+
+class TestAutoplayObserver:
+
+    def _make_widget(self, qtbot, mock_mpv):
+        from extensions.video.viewer_widget import VideoViewerWidget
+        w = VideoViewerWidget()
+        mock_player = MagicMock()
+        mock_player.pause = False
+        mock_player.duration = 10.0
+        mock_mpv.MPV.return_value = mock_player
+        w.load('/test.mp4')
+        return w, mock_player
+
+    def test_ensure_player_registers_observers(self, qtbot, _patch_mpv_viewer):
+        w, player = self._make_widget(qtbot, _patch_mpv_viewer)
+        observe_calls = {c.args[0] for c in player.observe_property.call_args_list}
+        assert 'time-pos' in observe_calls
+        assert 'eof-reached' in observe_calls
+        w.cleanup()
+
+    def test_eof_observer_fires_advance_when_not_looping(self, qtbot, _patch_mpv_viewer):
+        w, player = self._make_widget(qtbot, _patch_mpv_viewer)
+        called = []
+        w._autoplay_advance = lambda: called.append(True)
+        w._looping = False
+        w._on_mpv_eof('eof-reached', True)
+        from PySide6.QtWidgets import QApplication
+        QApplication.processEvents()
+        assert len(called) == 1
+        assert w._autoplay_advance is None
+        w.cleanup()
+
+    def test_eof_observer_ignored_when_looping(self, qtbot, _patch_mpv_viewer):
+        w, player = self._make_widget(qtbot, _patch_mpv_viewer)
+        called = []
+        w._autoplay_advance = lambda: called.append(True)
+        w._looping = True
+        w._on_mpv_eof('eof-reached', True)
+        from PySide6.QtWidgets import QApplication
+        QApplication.processEvents()
+        assert len(called) == 0
+        assert w._autoplay_advance is not None
+        w.cleanup()
+
+    def test_eof_observer_ignored_when_no_advance(self, qtbot, _patch_mpv_viewer):
+        w, player = self._make_widget(qtbot, _patch_mpv_viewer)
+        w._autoplay_advance = None
+        w._looping = False
+        w._on_mpv_eof('eof-reached', True)
+        from PySide6.QtWidgets import QApplication
+        QApplication.processEvents()
+        w.cleanup()
+
+    def test_eof_observer_ignored_when_value_false(self, qtbot, _patch_mpv_viewer):
+        w, player = self._make_widget(qtbot, _patch_mpv_viewer)
+        called = []
+        w._autoplay_advance = lambda: called.append(True)
+        w._looping = False
+        w._on_mpv_eof('eof-reached', False)
+        from PySide6.QtWidgets import QApplication
+        QApplication.processEvents()
+        assert len(called) == 0
+        w.cleanup()
+
+    def test_time_pos_wraparound_fires_advance_when_looping(self, qtbot, _patch_mpv_viewer):
+        w, player = self._make_widget(qtbot, _patch_mpv_viewer)
+        called = []
+        w._autoplay_advance = lambda: called.append(True)
+        w._looping = True
+        player.duration = 10.0
+        w._prev_time_pos = 9.0
+        w._on_mpv_time_pos('time-pos', 0.5)
+        from PySide6.QtWidgets import QApplication
+        QApplication.processEvents()
+        assert len(called) == 1
+        assert w._autoplay_advance is None
+        w.cleanup()
+
+    def test_time_pos_no_wraparound_no_advance(self, qtbot, _patch_mpv_viewer):
+        w, player = self._make_widget(qtbot, _patch_mpv_viewer)
+        called = []
+        w._autoplay_advance = lambda: called.append(True)
+        w._looping = True
+        player.duration = 10.0
+        w._prev_time_pos = 3.0
+        w._on_mpv_time_pos('time-pos', 4.0)
+        from PySide6.QtWidgets import QApplication
+        QApplication.processEvents()
+        assert len(called) == 0
+        assert w._autoplay_advance is not None
+        w.cleanup()
+
+    def test_time_pos_not_looping_only_tracks(self, qtbot, _patch_mpv_viewer):
+        w, player = self._make_widget(qtbot, _patch_mpv_viewer)
+        called = []
+        w._autoplay_advance = lambda: called.append(True)
+        w._looping = False
+        w._prev_time_pos = 9.0
+        w._on_mpv_time_pos('time-pos', 0.5)
+        from PySide6.QtWidgets import QApplication
+        QApplication.processEvents()
+        assert len(called) == 0
+        assert w._prev_time_pos == 0.5
+        w.cleanup()
+
+    def test_load_resets_prev_time_pos(self, qtbot, _patch_mpv_viewer):
+        w, player = self._make_widget(qtbot, _patch_mpv_viewer)
+        w._prev_time_pos = 5.0
+        w.load('/test2.mp4')
+        assert w._prev_time_pos is None
+        w.cleanup()
+
+    def test_clear_resets_prev_time_pos(self, qtbot, _patch_mpv_viewer):
+        w, player = self._make_widget(qtbot, _patch_mpv_viewer)
+        w._prev_time_pos = 5.0
+        w.clear()
+        assert w._prev_time_pos is None
+        w.cleanup()
+
+    def test_fire_autoplay_advance_only_once(self, qtbot, _patch_mpv_viewer):
+        w, player = self._make_widget(qtbot, _patch_mpv_viewer)
+        called = []
+        w._autoplay_advance = lambda: called.append(True)
+        w._fire_autoplay_advance()
+        w._fire_autoplay_advance()
+        assert len(called) == 1
+        w.cleanup()
+
+    def test_deactivate_clears_autoplay(self, qtbot, _patch_mpv_viewer):
+        w, player = self._make_widget(qtbot, _patch_mpv_viewer)
+        w._autoplay_advance = lambda: None
+        w.deactivate()
+        assert w._autoplay_advance is None
+        w.cleanup()
+
+    def test_set_autoplay_advance_fires_immediately_on_eof(self, qtbot, _patch_mpv_viewer):
+        w, player = self._make_widget(qtbot, _patch_mpv_viewer)
+        player.eof_reached = True
+        w._looping = False
+        called = []
+        w.set_autoplay_advance(lambda: called.append(True))
+        from PySide6.QtWidgets import QApplication
+        QApplication.processEvents()
+        assert len(called) == 1
+        assert w._autoplay_advance is None
+        w.cleanup()
+
+    def test_set_autoplay_advance_no_fire_when_not_eof(self, qtbot, _patch_mpv_viewer):
+        w, player = self._make_widget(qtbot, _patch_mpv_viewer)
+        player.eof_reached = False
+        w._looping = False
+        called = []
+        w.set_autoplay_advance(lambda: called.append(True))
+        from PySide6.QtWidgets import QApplication
+        QApplication.processEvents()
+        assert len(called) == 0
+        assert w._autoplay_advance is not None
+        w.cleanup()
+
+    def test_set_autoplay_advance_no_fire_when_looping(self, qtbot, _patch_mpv_viewer):
+        w, player = self._make_widget(qtbot, _patch_mpv_viewer)
+        player.eof_reached = True
+        w._looping = True
+        called = []
+        w.set_autoplay_advance(lambda: called.append(True))
+        from PySide6.QtWidgets import QApplication
+        QApplication.processEvents()
+        assert len(called) == 0
+        assert w._autoplay_advance is not None
+        w.cleanup()

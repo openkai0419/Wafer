@@ -6,6 +6,7 @@ from pathlib import Path
 
 from ....core.platform.path_utils import validate_filename
 from ....plugin.rename.base import BaseRenameSourcePlugin, SegmentInfo
+from ....utils.logs import AppLogger
 
 
 @dataclass
@@ -27,8 +28,8 @@ class PostProcess:
             if self.find_regex:
                 try:
                     text = re.sub(self.find, self.replace, text)
-                except re.error:
-                    pass
+                except re.error as exc:
+                    AppLogger.debug(f'Regex error in PostProcess.apply: {exc}')
             else:
                 text = text.replace(self.find, self.replace)
         if self.case_mode == 'upper':
@@ -80,7 +81,7 @@ class RenameEngine:
         metadata: dict[str, dict[str, str]] | None = None,
         keys: list[str] | None = None,
         initial_keys: list[str] | None = None,
-    ) -> list[RenameResult]:
+    ) -> tuple[list[RenameResult], list[str]]:
         metadata = metadata or {}
         total = len(paths)
         if keys is None:
@@ -107,22 +108,30 @@ class RenameEngine:
                 RenameResult(
                     original=p.name,
                     segments=segs + [ext_part],
-                    new_name=''.join(enabled_parts) + ext_part,
+                    new_name=''.join(enabled_parts) + (ext_part if ext_column.enabled else ''),
                 )
             )
+        regex_errors: list[str] = []
+        for col in [*columns, ext_column]:
+            if col.post.find_regex and col.post.find:
+                try:
+                    re.compile(col.post.find)
+                except re.error as exc:
+                    regex_errors.append(f'regex: {exc}')
+        existing_full = {str(p).lower() for p in paths}
         seen: dict[str, list[int]] = {}
-        for idx, r in enumerate(results):
-            seen.setdefault(r.new_name.lower(), []).append(idx)
-        for indices in seen.values():
-            if len(indices) > 1:
-                for idx in indices:
-                    results[idx].conflict = True
-        existing_names = {p.name.lower() for p in paths}
         for idx, (r, p) in enumerate(zip(results, paths)):
             issues = validate_filename(r.new_name)
             if issues:
                 r.errors = issues
-            if not r.conflict and r.new_name.lower() != p.name.lower():
-                if r.new_name.lower() in existing_names:
-                    r.conflict = True
-        return results
+            full = str(p.parent / r.new_name).lower()
+            seen.setdefault(full, []).append(idx)
+        for full_path, indices in seen.items():
+            if len(indices) > 1:
+                for idx in indices:
+                    results[idx].conflict = True
+            elif full_path in existing_full:
+                idx = indices[0]
+                if results[idx].new_name.lower() != paths[idx].name.lower():
+                    results[idx].conflict = True
+        return results, regex_errors

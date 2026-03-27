@@ -124,6 +124,23 @@ def test_rename_file_conflict(tmp_path, monkeypatch):
         _dlg_mod.InputDialog, "get_text",
         staticmethod(lambda *a, **k: "taken.txt"),
     )
+    from wafer.core.platform.file_operations import OperationResult
+    monkeypatch.setattr(
+        file_commands, "execute_paste_plans_with_ui",
+        lambda **kw: [OperationResult(action="skip", src=str(f), dst="", status="skipped")],
+    )
+    file_commands.rename_file(_Ctx(path=str(f)))
+    assert f.exists()
+
+
+def test_rename_file_invalid_name(tmp_path, monkeypatch):
+    f = tmp_path / "old.txt"
+    f.write_text("hi", encoding="utf-8")
+    from wafer.core.qt import dialog as _dlg_mod
+    monkeypatch.setattr(
+        _dlg_mod.InputDialog, "get_text",
+        staticmethod(lambda *a, **k: "bad<name>.txt"),
+    )
     file_commands.rename_file(_Ctx(path=str(f)))
     assert f.exists()
 

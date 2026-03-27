@@ -6,8 +6,8 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
 
 from wafer.plugin.rename.base import DropdownButton, ToggleButton, RenameConfigWidget
-from wafer.app.viewer.renamer._popup import ColumnSettingsPopup, _ClickOutsideFilter
-from wafer.app.viewer.renamer._engine import RenameColumn, PostProcess
+from wafer.app.viewer.renamer.popup import ColumnSettingsPopup, ClickOutsideFilter
+from wafer.app.viewer.renamer.engine import RenameColumn, PostProcess
 from wafer.builtins.rename_sources import (
     NameSource, FixedSource, MetaSource, ExtSource,
     SequentialSource, DateSource, RandomSource,
@@ -95,7 +95,7 @@ class TestColumnSettingsPopup:
         col = RenameColumn(NameSource())
         popup = ColumnSettingsPopup(col)
         qtbot.addWidget(popup)
-        assert isinstance(popup._click_filter, _ClickOutsideFilter)
+        assert isinstance(popup._click_filter, ClickOutsideFilter)
 
     def test_close_removes_event_filter(self, qtbot):
         col = RenameColumn(NameSource())
@@ -153,6 +153,17 @@ class TestColumnSettingsPopup:
         qtbot.addWidget(popup)
         assert popup.windowFlags() & Qt.Tool
 
+    def test_ext_column_has_enabled_checkbox(self, qtbot):
+        col = RenameColumn(ExtSource())
+        popup = ColumnSettingsPopup(col, is_ext=True)
+        qtbot.addWidget(popup)
+        checkboxes = popup.findChildren(QtWidgets.QCheckBox)
+        enabled_cb = [cb for cb in checkboxes if 'Include' in cb.text()]
+        assert len(enabled_cb) == 1
+        assert enabled_cb[0].isChecked()
+        enabled_cb[0].setChecked(False)
+        assert not col.enabled
+
     def test_source_config_widget_embedded(self, qtbot):
         src = FixedSource('hello')
         col = RenameColumn(src)
@@ -174,8 +185,8 @@ class TestColumnSettingsPopup:
 
     def test_no_isinstance_in_popup(self):
         import inspect
-        from wafer.app.viewer.renamer import _popup
-        source_text = inspect.getsource(_popup)
+        from wafer.app.viewer.renamer import popup
+        source_text = inspect.getsource(popup)
         assert 'isinstance' not in source_text
         assert 'hasattr' not in source_text
 

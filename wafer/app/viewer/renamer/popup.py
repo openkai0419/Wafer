@@ -9,7 +9,7 @@ from ....plugin.rename.base import (
 )
 from ....utils.formatting import dpix
 from ....core.color.theme import ThemeManager
-from ._engine import RenameColumn
+from .engine import RenameColumn
 
 
 def _section_label(text, p):
@@ -21,7 +21,7 @@ def _section_label(text, p):
     return lbl
 
 
-class _ClickOutsideFilter(QtCore.QObject):
+class ClickOutsideFilter(QtCore.QObject):
     closed = Signal()
 
     def __init__(self, target: QtWidgets.QWidget):
@@ -50,7 +50,7 @@ class ColumnSettingsPopup(QtWidgets.QFrame):
         self, column: RenameColumn, *, is_ext=False, meta_keys=None, parent=None,
     ):
         super().__init__(parent, Qt.Tool | Qt.FramelessWindowHint)
-        self._click_filter = _ClickOutsideFilter(self)
+        self._click_filter = ClickOutsideFilter(self)
         QtWidgets.QApplication.instance().installEventFilter(self._click_filter)
         self._click_filter.closed.connect(self.close)
         self._column = column
@@ -106,15 +106,15 @@ class ColumnSettingsPopup(QtWidgets.QFrame):
                 sort_row.addWidget(btn)
             lay.addLayout(sort_row)
 
-            en_cb = QtWidgets.QCheckBox('Include in filename')
-            en_cb.setChecked(column.enabled)
-            en_cb.setStyleSheet(
-                f"color: {p.text_primary}; font-size: {dpix(11)}px;"
-            )
-            en_cb.toggled.connect(
-                lambda v: (setattr(column, 'enabled', v), self.changed.emit())
-            )
-            lay.addWidget(en_cb)
+        en_cb = QtWidgets.QCheckBox('Include in filename')
+        en_cb.setChecked(column.enabled)
+        en_cb.setStyleSheet(
+            f"color: {p.text_primary}; font-size: {dpix(11)}px;"
+        )
+        en_cb.toggled.connect(
+            lambda v: (setattr(column, 'enabled', v), self.changed.emit())
+        )
+        lay.addWidget(en_cb)
 
         self._sep(lay, p)
         lay.addWidget(_section_label('Post-process', p))
@@ -182,10 +182,10 @@ class ColumnSettingsPopup(QtWidgets.QFrame):
 
         tb.toggled.connect(_trim_toggle)
         tss.valueChanged.connect(
-            lambda v: (setattr(post, 'trim_start', v or None), self.changed.emit())
+            lambda v: (setattr(post, 'trim_start', v), self.changed.emit())
         )
         tes.valueChanged.connect(
-            lambda v: (setattr(post, 'trim_end', v or None), self.changed.emit())
+            lambda v: (setattr(post, 'trim_end', v), self.changed.emit())
         )
 
         has_repl = bool(post.find)
@@ -311,7 +311,7 @@ class ColumnSettingsPopup(QtWidgets.QFrame):
         if self._anchor_window:
             self._anchor_offset = self.pos() - self._anchor_window.pos()
 
-    def close(self):
+    def closeEvent(self, event):
         if self._anchor_window:
             self._anchor_window.removeEventFilter(self)
             self._anchor_window = None
@@ -319,4 +319,4 @@ class ColumnSettingsPopup(QtWidgets.QFrame):
         if app and self._click_filter:
             app.removeEventFilter(self._click_filter)
             self._click_filter = None
-        super().close()
+        super().closeEvent(event)

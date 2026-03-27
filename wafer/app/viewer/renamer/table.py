@@ -8,7 +8,7 @@ from PySide6.QtCore import Qt
 from ....utils.formatting import dpix
 
 if TYPE_CHECKING:
-    from ._engine import RenameResult, RenameColumn
+    from .engine import RenameResult, RenameColumn
 
 
 class PreviewModel(QtCore.QAbstractTableModel):
@@ -18,9 +18,10 @@ class PreviewModel(QtCore.QAbstractTableModel):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._results: list[RenameResult] = []
-        self._colors: _ColorSet | None = None
+        self._colors: ColorSet | None = None
+        self._sort_section: int = -1
 
-    def set_colors(self, colors: _ColorSet):
+    def set_colors(self, colors: ColorSet):
         self._colors = colors
 
     def refresh(self, results: list[RenameResult]):
@@ -34,9 +35,18 @@ class PreviewModel(QtCore.QAbstractTableModel):
     def columnCount(self, parent=QtCore.QModelIndex()):
         return 0 if parent.isValid() else 2
 
+    def set_sort_indicator(self, section: int):
+        self._sort_section = section
+        self.headerDataChanged.emit(Qt.Horizontal, 0, 1)
+
     def headerData(self, section, orientation, role=Qt.DisplayRole):
         if orientation == Qt.Horizontal and role == Qt.DisplayRole:
-            return self.HEADERS[section] if section < 2 else ''
+            if section < 2:
+                label = self.HEADERS[section]
+                if self._sort_section == section:
+                    label += ' \u25b2'
+                return label
+            return ''
         return None
 
     def data(self, index, role=Qt.DisplayRole):
@@ -80,33 +90,58 @@ class SegmentModel(QtCore.QAbstractTableModel):
         super().__init__(parent)
         self._results: list[RenameResult] = []
         self._columns: list[RenameColumn] = []
+        self._ext_column: RenameColumn | None = None
         self._headers: list[str] = []
         self._add_section = 0
         self._ext_section = 1
-        self._colors: _ColorSet | None = None
+        self._colors: ColorSet | None = None
         self._paths: list = []
+        self._sort_section: int = -1
+        self._sort_ascending: bool = True
 
-    def set_colors(self, colors: _ColorSet):
+    def set_colors(self, colors: ColorSet):
         self._colors = colors
 
     def configure(
         self,
         columns: list[RenameColumn],
+        ext_column: RenameColumn,
         add_label: str,
         ext_label: str,
     ):
         self.beginResetModel()
         self._columns = columns
+        self._ext_column = ext_column
         self._add_section = len(columns)
         self._ext_section = len(columns) + 1
-        headers = []
-        for col in columns:
-            prefix = '' if col.enabled else '\u25cc '
-            headers.append(f'{prefix}{col.source.DISPLAY} \u25bc')
-        headers.append(add_label)
-        headers.append(f'{ext_label} \u25bc')
-        self._headers = headers
+        self._sort_section = -1
+        self._sort_ascending = True
+        self._build_headers(add_label, ext_label)
         self.endResetModel()
+
+    def _build_headers(self, add_label: str = '', ext_label: str = ''):
+        if not add_label and self._headers:
+            add_label = self._headers[self._add_section] if self._add_section < len(self._headers) else ''
+        if not ext_label and self._ext_column:
+            ext_label = self._ext_column.source.DISPLAY
+        headers = []
+        for i, col in enumerate(self._columns):
+            prefix = '' if col.enabled else '\u25cc '
+            indicator = ''
+            if self._sort_section == i:
+                indicator = ' \u25b2' if self._sort_ascending else ' \u25bc'
+            headers.append(f'{prefix}{col.source.DISPLAY}{indicator}')
+        headers.append(add_label)
+        headers.append(ext_label)
+        self._headers = headers
+
+    def set_sort_indicator(self, section: int, ascending: bool = True):
+        self._sort_section = section
+        self._sort_ascending = ascending
+        self._build_headers()
+        self.headerDataChanged.emit(
+            Qt.Horizontal, 0, len(self._headers) - 1,
+        )
 
     def refresh(self, results: list[RenameResult], paths: list | None = None):
         self.beginResetModel()
@@ -196,15 +231,12 @@ class SegmentModel(QtCore.QAbstractTableModel):
         key = str(self._paths[row])
         if col < len(self._columns):
             return key in self._columns[col].overrides
-        if col == self._ext_section:
-            from ._engine import RenameColumn
-            p = self.parent()
-            if p and hasattr(p, '_ext_column'):
-                return key in p._ext_column.overrides
+        if col == self._ext_section and self._ext_column is not None:
+            return key in self._ext_column.overrides
         return False
 
 
-class _ColorSet:
+class ColorSet:
     __slots__ = (
         'muted', 'warn', 'ok', 'accent', 'err_bg', 'disabled_fg',
         'ext_bg', 'missing_fg', 'overridden_fg', 'strikeout_font',
@@ -253,8 +285,9 @@ class SyncedView(QtWidgets.QTableView):
     def wheelEvent(self, event):
         if self._fwd:
             sb = self._fwd.verticalScrollBar()
-            delta = event.angleDelta().y()
-            sb.setValue(sb.value() - delta // 3)
+            row_h = self._fwd.verticalHeader().defaultSectionSize() or 1
+            steps = event.angleDelta().y() // 120
+            sb.setValue(sb.value() - steps * row_h)
             event.accept()
         else:
             super().wheelEvent(event)

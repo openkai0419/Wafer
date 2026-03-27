@@ -1,1 +1,1 @@
-from ._dialog import BatchRenameDialog
+from .dialog import BatchRenameDialog

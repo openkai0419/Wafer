@@ -4,7 +4,7 @@ from pathlib import Path
 from wafer.builtins.rename_sources import (
     NameSource, FixedSource, SequentialSource, ExtSource,
 )
-from wafer.app.viewer.renamer._engine import (
+from wafer.app.viewer.renamer.engine import (
     PostProcess, RenameColumn, RenameResult, RenameEngine,
 )
 
@@ -23,6 +23,12 @@ class TestPostProcess:
     def test_trim_end_only(self):
         assert PostProcess(trim_end=-1).apply('abcde') == 'abcd'
 
+    def test_trim_start_zero(self):
+        assert PostProcess(trim_start=0).apply('abcde') == 'abcde'
+
+    def test_trim_end_zero(self):
+        assert PostProcess(trim_end=0).apply('abcde') == ''
+
     def test_find_replace(self):
         assert PostProcess(find='a', replace='x').apply('banana') == 'bxnxnx'
 
@@ -30,7 +36,8 @@ class TestPostProcess:
         assert PostProcess(find=r'\d+', replace='N', find_regex=True).apply('abc123def') == 'abcNdef'
 
     def test_find_replace_regex_invalid(self):
-        assert PostProcess(find='[invalid', replace='x', find_regex=True).apply('test') == 'test'
+        pp = PostProcess(find='[invalid', replace='x', find_regex=True)
+        assert pp.apply('test') == 'test'
 
     def test_case_upper(self):
         assert PostProcess(case_mode='upper').apply('hello') == 'HELLO'
@@ -74,7 +81,7 @@ class TestRenameEngine:
         paths = [Path('a.jpg'), Path('b.jpg')]
         cols = [RenameColumn(NameSource())]
         ext = RenameColumn(ExtSource())
-        results = RenameEngine.preview(paths, cols, ext)
+        results, _ = RenameEngine.preview(paths, cols, ext)
         assert len(results) == 2
         assert results[0].new_name == 'a.jpg'
         assert results[1].new_name == 'b.jpg'
@@ -85,7 +92,7 @@ class TestRenameEngine:
         paths = [Path('a.jpg'), Path('b.jpg')]
         cols = [RenameColumn(FixedSource('prefix_')), RenameColumn(NameSource())]
         ext = RenameColumn(ExtSource())
-        results = RenameEngine.preview(paths, cols, ext)
+        results, _ = RenameEngine.preview(paths, cols, ext)
         assert results[0].new_name == 'prefix_a.jpg'
         assert results[1].new_name == 'prefix_b.jpg'
 
@@ -93,7 +100,7 @@ class TestRenameEngine:
         paths = [Path('a.jpg'), Path('b.jpg')]
         cols = [RenameColumn(FixedSource('same'))]
         ext = RenameColumn(ExtSource())
-        results = RenameEngine.preview(paths, cols, ext)
+        results, _ = RenameEngine.preview(paths, cols, ext)
         assert results[0].conflict
         assert results[1].conflict
 
@@ -101,7 +108,7 @@ class TestRenameEngine:
         paths = [Path('x.jpg'), Path('y.jpg'), Path('z.jpg')]
         cols = [RenameColumn(SequentialSource(start=1, step=1, padding=3))]
         ext = RenameColumn(ExtSource())
-        results = RenameEngine.preview(paths, cols, ext)
+        results, _ = RenameEngine.preview(paths, cols, ext)
         assert results[0].new_name == '001.jpg'
         assert results[1].new_name == '002.jpg'
         assert results[2].new_name == '003.jpg'
@@ -113,14 +120,14 @@ class TestRenameEngine:
             RenameColumn(NameSource()),
         ]
         ext = RenameColumn(ExtSource())
-        results = RenameEngine.preview(paths, cols, ext)
+        results, _ = RenameEngine.preview(paths, cols, ext)
         assert results[0].new_name == 'a.jpg'
 
     def test_segments_include_all(self):
         paths = [Path('a.jpg')]
         cols = [RenameColumn(FixedSource('x')), RenameColumn(NameSource())]
         ext = RenameColumn(ExtSource())
-        results = RenameEngine.preview(paths, cols, ext)
+        results, _ = RenameEngine.preview(paths, cols, ext)
         assert len(results[0].segments) == 3
         assert results[0].segments[0] == 'x'
         assert results[0].segments[1] == 'a'
@@ -130,14 +137,14 @@ class TestRenameEngine:
         paths = [Path('a.jpg')]
         cols = [RenameColumn(NameSource())]
         ext = RenameColumn(ExtSource('remove'))
-        results = RenameEngine.preview(paths, cols, ext)
+        results, _ = RenameEngine.preview(paths, cols, ext)
         assert results[0].new_name == 'a'
 
     def test_custom_ext(self):
         paths = [Path('a.jpg')]
         cols = [RenameColumn(NameSource())]
         ext = RenameColumn(ExtSource('custom', 'png'))
-        results = RenameEngine.preview(paths, cols, ext)
+        results, _ = RenameEngine.preview(paths, cols, ext)
         assert results[0].new_name == 'a.png'
 
     def test_metadata_pass_through(self):
@@ -146,7 +153,7 @@ class TestRenameEngine:
         cols = [RenameColumn(MetaSource(key='width'))]
         ext = RenameColumn(ExtSource())
         key = str(Path('a.jpg')).replace('\\', '/')
-        results = RenameEngine.preview(
+        results, _ = RenameEngine.preview(
             paths, cols, ext,
             metadata={key: {'width': '1920'}},
             keys=[key],
@@ -159,7 +166,7 @@ class TestRenameEngine:
         initial_keys = [str(p).replace('\\', '/') for p in [Path('a.jpg'), Path('b.jpg')]]
         cols = [RenameColumn(SequentialSource(start=1, step=1, padding=1))]
         ext = RenameColumn(ExtSource())
-        results = RenameEngine.preview(paths, cols, ext, keys=keys, initial_keys=initial_keys)
+        results, _ = RenameEngine.preview(paths, cols, ext, keys=keys, initial_keys=initial_keys)
         assert results[0].new_name == '2.jpg'
         assert results[1].new_name == '1.jpg'
 
@@ -173,12 +180,12 @@ class TestRenameEngine:
         cols_a[0].source.overrides[str(Path('a.jpg'))] = 'Name'
         cols_a[0].source.overrides[str(Path('b.jpg'))] = 'name'
         ext = RenameColumn(ExtSource())
-        results = RenameEngine.preview(paths, cols_a, ext)
+        results, _ = RenameEngine.preview(paths, cols_a, ext)
         assert results[0].conflict
         assert results[1].conflict
 
     def test_empty_paths(self):
-        results = RenameEngine.preview(
+        results, _ = RenameEngine.preview(
             [], [RenameColumn(NameSource())], RenameColumn(ExtSource()),
         )
         assert results == []
@@ -187,33 +194,90 @@ class TestRenameEngine:
         paths = [Path('a.jpg')]
         cols = [RenameColumn(FixedSource('CON'))]
         ext = RenameColumn(ExtSource())
-        results = RenameEngine.preview(paths, cols, ext)
+        results, _ = RenameEngine.preview(paths, cols, ext)
         assert 'reserved_name' in results[0].errors
 
     def test_no_errors_on_valid_filename(self):
         paths = [Path('a.jpg')]
         cols = [RenameColumn(NameSource())]
         ext = RenameColumn(ExtSource())
-        results = RenameEngine.preview(paths, cols, ext)
+        results, _ = RenameEngine.preview(paths, cols, ext)
         assert results[0].errors == []
 
     def test_conflict_with_existing_sibling(self):
         paths = [Path('a.jpg'), Path('b.jpg')]
         cols = [RenameColumn(FixedSource('b'))]
         ext = RenameColumn(ExtSource())
-        results = RenameEngine.preview(paths, cols, ext)
+        results, _ = RenameEngine.preview(paths, cols, ext)
         assert results[0].conflict
+
+    def test_no_conflict_across_different_dirs(self):
+        paths = [Path('dir1/a.jpg'), Path('dir2/b.jpg')]
+        cols = [RenameColumn(FixedSource('same'))]
+        ext = RenameColumn(ExtSource())
+        results, _ = RenameEngine.preview(paths, cols, ext)
+        assert not results[0].conflict
+        assert not results[1].conflict
+
+    def test_conflict_within_same_dir(self):
+        paths = [Path('dir1/a.jpg'), Path('dir1/b.jpg')]
+        cols = [RenameColumn(FixedSource('same'))]
+        ext = RenameColumn(ExtSource())
+        results, _ = RenameEngine.preview(paths, cols, ext)
+        assert results[0].conflict
+        assert results[1].conflict
+
+    def test_existing_sibling_conflict_respects_dir(self):
+        paths = [Path('dir1/a.jpg'), Path('dir2/b.jpg')]
+        cols = [RenameColumn(FixedSource('b'))]
+        ext = RenameColumn(ExtSource())
+        results, _ = RenameEngine.preview(paths, cols, ext)
+        assert not results[0].conflict
+        assert not results[1].conflict
 
     def test_errors_on_path_separator(self):
         paths = [Path('a.jpg')]
         cols = [RenameColumn(FixedSource('sub/name'))]
         ext = RenameColumn(ExtSource())
-        results = RenameEngine.preview(paths, cols, ext)
+        results, _ = RenameEngine.preview(paths, cols, ext)
         assert 'invalid_chars' in results[0].errors
 
     def test_errors_on_backslash(self):
         paths = [Path('a.jpg')]
         cols = [RenameColumn(FixedSource('sub\\name'))]
         ext = RenameColumn(ExtSource())
-        results = RenameEngine.preview(paths, cols, ext)
+        results, _ = RenameEngine.preview(paths, cols, ext)
         assert 'invalid_chars' in results[0].errors
+
+    def test_ext_disabled_removes_extension(self):
+        paths = [Path('a.jpg')]
+        cols = [RenameColumn(NameSource())]
+        ext = RenameColumn(ExtSource(), enabled=False)
+        results, _ = RenameEngine.preview(paths, cols, ext)
+        assert results[0].new_name == 'a'
+        assert results[0].segments[-1] == '.jpg'
+
+    def test_ext_enabled_includes_extension(self):
+        paths = [Path('a.jpg')]
+        cols = [RenameColumn(NameSource())]
+        ext = RenameColumn(ExtSource(), enabled=True)
+        results, _ = RenameEngine.preview(paths, cols, ext)
+        assert results[0].new_name == 'a.jpg'
+
+    def test_regex_error_returned_as_global(self):
+        paths = [Path('a.jpg'), Path('b.jpg')]
+        col = RenameColumn(NameSource(), PostProcess(find='[invalid', replace='x', find_regex=True))
+        ext = RenameColumn(ExtSource())
+        results, global_errors = RenameEngine.preview(paths, [col], ext)
+        assert any('regex' in e for e in global_errors)
+        assert not results[0].errors
+        assert not results[1].errors
+
+    def test_valid_regex_no_global_error(self):
+        paths = [Path('a.jpg')]
+        col = RenameColumn(NameSource(), PostProcess(find=r'\w+', replace='x', find_regex=True))
+        ext = RenameColumn(ExtSource())
+        results, global_errors = RenameEngine.preview(paths, [col], ext)
+        assert not global_errors
+        assert not results[0].errors
+        assert results[0].new_name == 'x.jpg'

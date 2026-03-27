@@ -6,7 +6,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
 
 if TYPE_CHECKING:
-    from ._dialog import BatchRenameDialog
+    from .dialog import BatchRenameDialog
 
 
 class ThumbnailOverlay(QtWidgets.QWidget):
@@ -50,15 +50,15 @@ class ThumbnailOverlay(QtWidgets.QWidget):
 
         painter.setOpacity(self._row_opacity)
         for row in range(first, last + 1):
-            pix = self._dlg._thumb_for_row(row)
+            pix = self._dlg.thumb_for_row(row)
             if not pix or pix.isNull():
                 continue
             rect = tbl.visualRect(tbl.model().index(row, 0))
             cell = QtCore.QRect(col0_x, rect.y(), col0_w, rect.height())
             self._draw_cover(painter, pix, cell)
 
-        sel = self._dlg._selected_row
-        pix = self._dlg._thumb_for_row(sel) if sel >= 0 else None
+        sel = self._dlg.selected_row
+        pix = self._dlg.thumb_for_row(sel) if sel >= 0 else None
         if pix and not pix.isNull():
             painter.setOpacity(self._sel_opacity)
             full = QtCore.QRect(col1_x, 0, col1_w, vp_h)

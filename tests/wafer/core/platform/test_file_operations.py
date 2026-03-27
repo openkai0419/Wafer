@@ -289,78 +289,27 @@ def test_paste_executor_alias():
     assert PasteExecutor is FileExecutor
 
 
-def test_file_executor_rename_basic(tmp_path):
-    from wafer.core.platform.file_operations import FileExecutor
-
-    src = tmp_path / "a.txt"
-    src.write_text("content", encoding="utf-8")
-
-    res = FileExecutor().rename(src, "b.txt")
-    assert res.status == "ok"
-    assert not src.exists()
-    assert (tmp_path / "b.txt").exists()
-    assert (tmp_path / "b.txt").read_text(encoding="utf-8") == "content"
-
-
-def test_file_executor_rename_invalid_chars(tmp_path):
-    from wafer.core.platform.file_operations import FileExecutor
-
-    src = tmp_path / "a.txt"
-    src.write_text("x", encoding="utf-8")
-
-    res = FileExecutor().rename(src, "a<b>.txt")
-    assert res.status == "error"
-    assert "invalid_chars" in res.error
-    assert src.exists()
-
-
-def test_file_executor_rename_reserved_name(tmp_path):
-    from wafer.core.platform.file_operations import FileExecutor
-
-    src = tmp_path / "a.txt"
-    src.write_text("x", encoding="utf-8")
-
-    res = FileExecutor().rename(src, "CON.txt")
-    assert res.status == "error"
-    assert "reserved_name" in res.error
-    assert src.exists()
-
-
-def test_file_executor_rename_empty_name(tmp_path):
-    from wafer.core.platform.file_operations import FileExecutor
-
-    src = tmp_path / "a.txt"
-    src.write_text("x", encoding="utf-8")
-
-    res = FileExecutor().rename(src, "")
-    assert res.status == "error"
-    assert "empty" in res.error
-    assert src.exists()
-
-
-def test_file_executor_rename_destination_exists(tmp_path):
-    from wafer.core.platform.file_operations import FileExecutor
-
-    src = tmp_path / "a.txt"
-    src.write_text("a_content", encoding="utf-8")
-    dst = tmp_path / "b.txt"
-    dst.write_text("b_content", encoding="utf-8")
-
-    res = FileExecutor().rename(src, "b.txt")
-    assert res.status == "error"
-    assert "already exists" in res.error
-    assert src.exists()
-    assert dst.read_text(encoding="utf-8") == "b_content"
-
-
-def test_file_executor_rename_case_change(tmp_path):
-    from wafer.core.platform.file_operations import FileExecutor
+def test_execute_item_case_rename(tmp_path):
+    from wafer.core.platform.file_operations import FileExecutor, PasteDecision
 
     src = tmp_path / "hello.txt"
     src.write_text("content", encoding="utf-8")
 
-    res = FileExecutor().rename(src, "Hello.txt")
+    dst = tmp_path / "Hello.txt"
+    res = FileExecutor()._execute_item(src, dst, "cut", PasteDecision(mode="overwrite"))
     assert res.status == "ok"
     actual = [f for f in tmp_path.iterdir() if f.suffix == ".txt"]
     assert len(actual) == 1
     assert actual[0].read_text(encoding="utf-8") == "content"
+
+
+def test_execute_item_same_path_cut_noop(tmp_path):
+    from wafer.core.platform.file_operations import FileExecutor, PasteDecision
+
+    src = tmp_path / "a.txt"
+    src.write_text("x", encoding="utf-8")
+
+    res = FileExecutor()._execute_item(src, src, "cut", PasteDecision(mode="overwrite"))
+    assert res.status == "skipped"
+    assert src.exists()
+    assert src.read_text(encoding="utf-8") == "x"

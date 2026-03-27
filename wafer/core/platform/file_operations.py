@@ -213,32 +213,6 @@ class FileExecutor:
                 results.append(result)
         return results
 
-    def rename(self, path: Path, new_name: str) -> OperationResult:
-        issues = validate_filename(new_name)
-        if issues:
-            return OperationResult(
-                action="rename", src=str(path), dst="",
-                status="error", error=f"invalid filename: {', '.join(issues)}",
-            )
-        new_path = path.parent / new_name
-        try:
-            if path.resolve() == new_path.resolve():
-                path.rename(new_path)
-                return OperationResult(action="rename", src=str(path), dst=str(new_path), status="ok")
-        except OSError as e:
-            return OperationResult(action="rename", src=str(path), dst=str(new_path), status="error", error=repr(e))
-        if new_path.exists():
-            return OperationResult(
-                action="rename", src=str(path), dst=str(new_path),
-                status="error", error="destination already exists",
-            )
-        try:
-            path.rename(new_path)
-            return OperationResult(action="rename", src=str(path), dst=str(new_path), status="ok")
-        except OSError as e:
-            AppLogger.warning(f"rename failed: {path} -> {new_path}", exc=e)
-            return OperationResult(action="rename", src=str(path), dst=str(new_path), status="error", error=repr(e))
-
     def _execute_item(
         self,
         src: Path,
@@ -256,6 +230,12 @@ class FileExecutor:
 
         conflict = check_copy_conflict(src, final_dst)
         if conflict == "same_path":
+            if action == "cut" and str(src) != str(final_dst):
+                try:
+                    src.rename(final_dst)
+                    return OperationResult(action="move", src=str(src), dst=str(final_dst), status="ok")
+                except Exception as e:
+                    return OperationResult(action="move", src=str(src), dst=str(final_dst), status="error", error=repr(e))
             if decision.mode in ("overwrite", "merge"):
                 return OperationResult(action="skip", src=str(src), dst=str(final_dst), status="skipped")
             final_dst = Path(unique_path(final_dst.parent, final_dst.name))

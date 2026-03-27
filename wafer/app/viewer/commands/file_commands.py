@@ -10,9 +10,9 @@ from ....core.commands.bridge import Command, ActionKit
 from ....core.commands.command.require import require
 from ....core.qt.dialog import ConfirmDialog, ThumbnailConfirmDialog
 from ....core.platform.copy import ClipboardFileTransfer
-from ....core.platform.paste import paste_clipboard_files
-from ....core.platform.path_utils import unique_path, get_os_new_folder_name
-from ....core.platform.file_operations import FileExecutor
+from ....core.platform.paste import paste_clipboard_files, execute_paste_plans_with_ui
+from ....core.platform.path_utils import unique_path, get_os_new_folder_name, validate_filename
+from ....core.platform.file_operations import PastePlanItem
 from ....core.platform.folders import show_in_explorer as reveal_in_explorer
 from ....utils.logs import AppLogger
 from ....utils.notifier import Notifier
@@ -220,12 +220,34 @@ def rename_file(ctx):
     )
     if not new_name or new_name == old_name:
         return
-    result = FileExecutor().rename(Path(path), new_name)
-    if result.status == "ok":
-        Notifier.info(f'Renamed: {old_name} \u2192 {new_name}')
+    issues = validate_filename(new_name)
+    if issues:
+        Notifier.warning(f'Invalid filename: {", ".join(issues)}')
+        return
+    src = Path(path)
+    dst = src.parent / new_name
+    conflict = dst.exists() and not _is_same_file(src, dst)
+    plan = [PastePlanItem(
+        index=0, src=src, is_dir=False, action="cut",
+        dst_default=dst, conflict=conflict,
+        suggested_dst=Path(unique_path(dst.parent, new_name)) if conflict else None,
+    )]
+    results = execute_paste_plans_with_ui(plans=plan, overwrite_mode="ask", parent=parent)
+    if not results or results[0].status == "skipped":
+        return
+    if results[0].status == "ok":
+        final = Path(results[0].dst).name if results[0].dst else new_name
+        Notifier.info(f'Renamed: {old_name} \u2192 {final}')
     else:
-        AppLogger.warning(f'Rename failed: {path} ({result.error})')
-        Notifier.warning(f'Rename failed: {result.error}')
+        AppLogger.warning(f'Rename failed: {path} ({results[0].error})')
+        Notifier.warning(f'Rename failed: {results[0].error}')
+
+
+def _is_same_file(a: Path, b: Path) -> bool:
+    try:
+        return a.resolve() == b.resolve()
+    except OSError:
+        return False
 
 
 @require(items="GridItemModel", w="MainWindow")

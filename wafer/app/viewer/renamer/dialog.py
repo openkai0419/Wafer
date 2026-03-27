@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import dataclasses
+import collections
 import os
 from pathlib import Path
 from typing import Any
@@ -10,18 +10,18 @@ from PySide6.QtCore import Qt
 
 from ....builtins.rename_sources import ExtSource, NameSource
 from ....core.color.theme import ThemeManager
-from ....core.platform.file_operations import FileExecutor
+from ....core.platform.file_operations import PastePlanItem
+from ....core.platform.paste import execute_paste_plans_with_ui
 from ....core.qt.dispatcher import Dispatcher, CancelToken
 from ....core.qt.rate_limit import qt_throttle
 from ....core.qt.thread import utility_pool
 from ....utils.formatting import dpix, natural_key
 from ....utils.logs import AppLogger
-from ....utils.notifier import Notifier
-from ._engine import PostProcess, RenameColumn, RenameEngine, RenameResult
-from ._overlay import ThumbnailOverlay
-from ._popup import ColumnSettingsPopup
-from ._table import (
-    PreviewModel, SegmentModel, PreviewDelegate, SyncedView, _ColorSet,
+from .engine import PostProcess, RenameColumn, RenameEngine, RenameResult
+from .overlay import ThumbnailOverlay
+from .popup import ColumnSettingsPopup
+from .table import (
+    PreviewModel, SegmentModel, PreviewDelegate, SyncedView, ColorSet,
 )
 from ....plugin.rename.handler import rename_source_registry
 
@@ -64,11 +64,9 @@ def _fetch_metadata_sync(db_path, paths_str):
     return result
 
 
-_POST_FIELDS = frozenset(f.name for f in dataclasses.fields(PostProcess))
-
-
 class BatchRenameDialog(QtWidgets.QDialog):
     _ADD_COL_LABEL = '+'
+    THUMB_CACHE_LIMIT = 200
     _instance: BatchRenameDialog | None = None
     _saved_state: dict[str, Any] = {}
     _registered: bool = False
@@ -122,7 +120,6 @@ class BatchRenameDialog(QtWidgets.QDialog):
         self._init_cancel: CancelToken | None = None
         self._thumb_tokens: dict[int, CancelToken] = {}
         self._thumb_visible: set[int] = set()
-        self._rename_cancel: CancelToken | None = None
 
         self._paths = list(paths)
         self._keys = list(keys) if keys else [str(p).replace('\\', '/') for p in paths]
@@ -134,9 +131,11 @@ class BatchRenameDialog(QtWidgets.QDialog):
         self._columns: list[RenameColumn] = [RenameColumn(NameSource())]
         self._ext_column = RenameColumn(ExtSource())
         self._ensure_registered()
-        self._restore_columns_from_state()
+        self._source_defaults: dict[str, dict] = {}
+        self._restore_source_defaults()
         self._excluded: list[Path] = []
         self._results: list[RenameResult] = []
+        self._global_errors: list[str] = []
         self._popup: ColumnSettingsPopup | None = None
         self._syncing = False
         self._syncing_selection = False
@@ -144,7 +143,8 @@ class BatchRenameDialog(QtWidgets.QDialog):
         self._refresh_cancel: CancelToken | None = None
         self._init_done = False
         self._selected_row = -1
-        self._thumb_cache: dict[str, QtGui.QPixmap] = {}
+        self._thumb_cache: collections.OrderedDict[str, QtGui.QPixmap] = collections.OrderedDict()
+        self._sort_indicator: tuple[str, int, bool] | None = None
 
         p = ThemeManager.instance().palette
         self._p = p
@@ -166,15 +166,38 @@ class BatchRenameDialog(QtWidgets.QDialog):
         )
         root.addWidget(title)
 
-        row_h = dpix(20)
-        frame_ss = (
+        self._init_preview_table(root)
+        self._init_segment_table(root)
+        self._init_bottom_bar(root)
+
+    def _frame_stylesheet(self):
+        p = self._p
+        return (
             f"QFrame {{ background: {p.bg_primary}; "
             f"border: 1px solid {p.border_default}; "
             f"border-radius: {dpix(4)}px; }}"
         )
 
+    def _header_stylesheet(self, bg, fg, *, bold=False, border_right=False):
+        p = self._p
+        borders = f"border-bottom: 1px solid {p.border_default}; "
+        if border_right:
+            borders = f"border-right: 1px solid {p.border_subtle}; " + borders
+        weight = 'font-weight: bold; ' if bold else ''
+        return (
+            f"QHeaderView::section {{ background: {bg}; "
+            f"color: {fg}; border: none; {borders}"
+            f"font-size: {dpix(11)}px; {weight}"
+            f"padding: 0 {dpix(4)}px; }}"
+            f"QHeaderView::section:hover {{ background: {p.bg_hover}; }}"
+        )
+
+    def _init_preview_table(self, root):
+        p = self._p
+        row_h = dpix(20)
+
         preview_frame = QtWidgets.QFrame()
-        preview_frame.setStyleSheet(frame_ss)
+        preview_frame.setStyleSheet(self._frame_stylesheet())
         pf_lay = QtWidgets.QVBoxLayout(preview_frame)
         pf_lay.setContentsMargins(0, 0, 0, 0)
         pf_lay.setSpacing(0)
@@ -184,7 +207,7 @@ class BatchRenameDialog(QtWidgets.QDialog):
 
         self._preview_model = PreviewModel(self)
         self._seg_model = SegmentModel(self)
-        colors = _ColorSet(p, self._mono)
+        colors = ColorSet(p, self._mono)
         self._preview_model.set_colors(colors)
         self._seg_model.set_colors(colors)
         self._preview.setModel(self._preview_model)
@@ -207,13 +230,7 @@ class BatchRenameDialog(QtWidgets.QDialog):
         ph.setSectionsClickable(True)
         ph.setHighlightSections(False)
         ph.sectionClicked.connect(self._on_preview_sort)
-        ph.setStyleSheet(
-            f"QHeaderView::section {{ background: {p.bg_secondary}; "
-            f"color: {p.text_muted}; border: none; "
-            f"border-bottom: 1px solid {p.border_subtle}; "
-            f"font-size: {dpix(11)}px; padding: 0 {dpix(4)}px; }}"
-            f"QHeaderView::section:hover {{ background: {p.bg_hover}; }}"
-        )
+        ph.setStyleSheet(self._header_stylesheet(p.bg_secondary, p.text_muted))
         self._preview.setStyleSheet(
             f"QTableView {{ background: {p.bg_primary}; border: none; "
             f"color: {p.text_primary}; }}"
@@ -229,8 +246,12 @@ class BatchRenameDialog(QtWidgets.QDialog):
                                          parent=self._preview.viewport())
         self._preview.viewport().installEventFilter(self)
 
+    def _init_segment_table(self, root):
+        p = self._p
+        row_h = dpix(20)
+
         seg_frame = QtWidgets.QFrame()
-        seg_frame.setStyleSheet(frame_ss)
+        seg_frame.setStyleSheet(self._frame_stylesheet())
         sf_lay = QtWidgets.QVBoxLayout(seg_frame)
         sf_lay.setContentsMargins(0, 0, 0, 0)
         sf_lay.setSpacing(0)
@@ -252,15 +273,9 @@ class BatchRenameDialog(QtWidgets.QDialog):
         sh.setHighlightSections(False)
         sh.setMinimumSectionSize(dpix(16))
         sh.sectionClicked.connect(self._on_seg_header_click)
-        sh.setStyleSheet(
-            f"QHeaderView::section {{ background: {p.bg_elevated}; "
-            f"color: {p.text_primary}; border: none; "
-            f"border-right: 1px solid {p.border_subtle}; "
-            f"border-bottom: 1px solid {p.border_default}; "
-            f"font-size: {dpix(11)}px; font-weight: bold; "
-            f"padding: 0 {dpix(4)}px; }}"
-            f"QHeaderView::section:hover {{ background: {p.bg_hover}; }}"
-        )
+        sh.setStyleSheet(self._header_stylesheet(
+            p.bg_elevated, p.text_primary, bold=True, border_right=True,
+        ))
         self._seg_table.setStyleSheet(
             f"QTableView {{ background: {p.bg_primary}; "
             f"gridline-color: {p.border_subtle}; border: none; "
@@ -281,6 +296,9 @@ class BatchRenameDialog(QtWidgets.QDialog):
         self._seg_table.customContextMenuRequested.connect(self._on_row_context)
         self._preview.setContextMenuPolicy(Qt.CustomContextMenu)
         self._preview.customContextMenuRequested.connect(self._on_row_context_preview)
+
+    def _init_bottom_bar(self, root):
+        p = self._p
 
         bar = QtWidgets.QHBoxLayout()
         bar.setContentsMargins(0, dpix(2), 0, 0)
@@ -330,26 +348,23 @@ class BatchRenameDialog(QtWidgets.QDialog):
         bar.addWidget(cancel_btn)
         root.addLayout(bar)
 
-        self._resize_to_content()
+    @classmethod
+    def _on_destroyed(cls, *_args):
+        cls._instance = None
 
-    @staticmethod
-    def _on_destroyed():
-        BatchRenameDialog._instance = None
-
-    def _serialise_columns(self) -> dict[str, Any]:
-        columns = []
+    def _update_source_defaults(self):
         for col in self._columns:
             src_data = col.source.serialise()
             src_data.pop('overrides', None)
-            columns.append({
-                'source': src_data,
-                'post': dataclasses.asdict(col.post),
-                'enabled': col.enabled,
-            })
+            self._source_defaults[src_data.get('type', col.source.NAME)] = src_data
+        ext_data = self._ext_column.source.serialise()
+        ext_data.pop('overrides', None)
+        self._source_defaults[ext_data.get('type', self._ext_column.source.NAME)] = ext_data
+
+    def _serialise_columns(self) -> dict[str, Any]:
+        self._update_source_defaults()
         state: dict[str, Any] = {
-            'columns': columns,
-            'ext_post': dataclasses.asdict(self._ext_column.post),
-            'ext_enabled': self._ext_column.enabled,
+            'source_defaults': dict(self._source_defaults),
             'opacity': self._opacity_slider.value(),
         }
         geo = self.saveGeometry().toBase64().data()
@@ -357,26 +372,11 @@ class BatchRenameDialog(QtWidgets.QDialog):
             state['geometry'] = geo.decode('ascii')
         return state
 
-    def _restore_columns_from_state(self):
+    def _restore_source_defaults(self):
         state = self._saved_state
-        if not state or 'columns' not in state:
+        if not state:
             return
-        columns = []
-        for col_data in state.get('columns', []):
-            try:
-                source = rename_source_registry.deserialise(col_data['source'])
-                post_raw = col_data.get('post', {})
-                post = PostProcess(**{k: v for k, v in post_raw.items() if k in _POST_FIELDS})
-                columns.append(RenameColumn(source, post, col_data.get('enabled', True)))
-            except Exception as e:
-                AppLogger.warning(f'Failed to restore rename column: {e}', exc=e)
-        if columns:
-            self._columns = columns
-        ext_raw = state.get('ext_post', {})
-        if ext_raw:
-            self._ext_column.post = PostProcess(**{k: v for k, v in ext_raw.items() if k in _POST_FIELDS})
-        if 'ext_enabled' in state:
-            self._ext_column.enabled = state['ext_enabled']
+        self._source_defaults = dict(state.get('source_defaults', {}))
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -384,6 +384,8 @@ class BatchRenameDialog(QtWidgets.QDialog):
             self._init_done = True
             self._restore_ui_from_state()
             self._rebuild()
+            if 'geometry' not in self._saved_state:
+                self._resize_to_content()
             self._start_async_init()
 
     def _restore_ui_from_state(self):
@@ -458,20 +460,21 @@ class BatchRenameDialog(QtWidgets.QDialog):
         visible = self._visible_row_range()
         center = (visible.start + visible.stop) // 2
         entering_need_load.sort(key=lambda r: abs(r - center))
-        cancel = CancelToken()
-        rows_paths = [(r, self._paths[r]) for r in entering_need_load]
-        for r, _ in rows_paths:
+        rows_tokens = []
+        for r in entering_need_load:
             old = self._thumb_tokens.pop(r, None)
             if old:
                 old.cancel()
-            self._thumb_tokens[r] = cancel
+            token = CancelToken()
+            self._thumb_tokens[r] = token
+            rows_tokens.append((r, self._paths[r], token))
         thumb_size = QtCore.QSize(dpix(256), dpix(256))
 
         def task():
             from ....plugin import load_thumbnail
-            for r, p in rows_paths:
-                if cancel.is_cancelled():
-                    return
+            for r, p, tok in rows_tokens:
+                if tok.is_cancelled():
+                    continue
                 key = str(p)
                 if key in self._thumb_cache:
                     continue
@@ -479,16 +482,18 @@ class BatchRenameDialog(QtWidgets.QDialog):
                     img = load_thumbnail(key, thumb_size)
                 except Exception:
                     img = None
-                if cancel.is_cancelled():
-                    return
+                if tok.is_cancelled():
+                    continue
                 self._dispatcher.invoke(
-                    lambda k=key, im=img: cancel.is_cancelled() or self._on_thumbnail_loaded(k, im)
+                    lambda k=key, im=img, t=tok: t.is_cancelled() or self._on_thumbnail_loaded(k, im)
                 )
 
-        self._dispatcher.post(task, cancel=cancel)
+        self._dispatcher.post(task)
 
     def _on_thumbnail_loaded(self, key, img):
         self._thumb_cache[key] = QtGui.QPixmap.fromImage(img) if img and not img.isNull() else QtGui.QPixmap()
+        while len(self._thumb_cache) > self.THUMB_CACHE_LIMIT:
+            self._thumb_cache.popitem(last=False)
         self._overlay.update()
 
     def closeEvent(self, event):
@@ -500,8 +505,6 @@ class BatchRenameDialog(QtWidgets.QDialog):
         for token in self._thumb_tokens.values():
             token.cancel()
         self._thumb_tokens.clear()
-        if self._rename_cancel:
-            self._rename_cancel.cancel()
         self._close_popup()
         super().closeEvent(event)
 
@@ -511,9 +514,17 @@ class BatchRenameDialog(QtWidgets.QDialog):
             t += f'  ({len(self._excluded)} excluded)'
         return t
 
-    def _thumb_for_row(self, row):
+    @property
+    def selected_row(self) -> int:
+        return self._selected_row
+
+    def thumb_for_row(self, row):
         if 0 <= row < len(self._paths):
-            return self._thumb_cache.get(str(self._paths[row]))
+            key = str(self._paths[row])
+            pix = self._thumb_cache.get(key)
+            if pix is not None:
+                self._thumb_cache.move_to_end(key)
+            return pix
         return None
 
     def _on_preview_selection(self):
@@ -603,7 +614,7 @@ class BatchRenameDialog(QtWidgets.QDialog):
             self._ext_column.overrides[path_key] = value
         else:
             return
-        self._refresh()
+        self._refresh(auto_size=False)
 
     def _on_seg_dblclick(self, index):
         col = index.column()
@@ -622,15 +633,18 @@ class BatchRenameDialog(QtWidgets.QDialog):
         self._close_popup()
         self._seg_model.configure(
             self._columns,
+            self._ext_column,
             self._ADD_COL_LABEL,
             self._ext_column.source.DISPLAY,
         )
         self._refresh()
 
-    def _refresh(self, prepare=None):
+    def _refresh(self, prepare=None, auto_size=True):
         if self._refresh_cancel:
             self._refresh_cancel.cancel()
         self._rename_btn.setEnabled(False)
+        if not prepare:
+            self._sort_indicator = None
         cancel = CancelToken()
         self._refresh_cancel = cancel
         paths = list(self._paths)
@@ -643,42 +657,61 @@ class BatchRenameDialog(QtWidgets.QDialog):
 
         def task():
             nonlocal paths, keys
-            if cancel.is_cancelled():
-                return
-            if prepare:
-                paths, keys = prepare(paths, keys, results_snapshot)
-            if cancel.is_cancelled():
-                return
-            results = RenameEngine.preview(
-                paths, columns, ext_column, metadata,
-                keys=keys, initial_keys=initial_keys,
-            )
-            if cancel.is_cancelled():
-                return
-            conflicts = sum(1 for r in results if r.conflict)
-            errors = sum(1 for r in results if r.errors)
-            missing = sum(1 for r in results if r.missing)
-            self._dispatcher.invoke(
-                lambda: cancel.is_cancelled() or self._on_refresh_done(
-                    results, paths, keys, (conflicts, errors, missing),
+            try:
+                if cancel.is_cancelled():
+                    return
+                if prepare:
+                    paths, keys = prepare(paths, keys, results_snapshot)
+                if cancel.is_cancelled():
+                    return
+                results, global_errors = RenameEngine.preview(
+                    paths, columns, ext_column, metadata,
+                    keys=keys, initial_keys=initial_keys,
                 )
-            )
+                if cancel.is_cancelled():
+                    return
+                conflicts = sum(1 for r in results if r.conflict)
+                errors = sum(1 for r in results if r.errors)
+                missing = sum(1 for r in results if r.missing)
+                self._dispatcher.invoke(
+                    lambda: cancel.is_cancelled() or self._on_refresh_done(
+                        results, paths, keys,
+                        (conflicts, errors, missing, global_errors), auto_size,
+                    )
+                )
+            except Exception as e:
+                AppLogger.warning(f'Rename preview failed: {e}', exc=e)
+                self._dispatcher.invoke(
+                    lambda: cancel.is_cancelled() or self._rename_btn.setEnabled(True)
+                )
 
         self._dispatcher.post(task, cancel=cancel)
 
-    def _on_refresh_done(self, results, paths=None, keys=None, stats=None):
+    def _on_refresh_done(self, results, paths, keys, stats, auto_size=True):
         self._refreshing = True
-        if paths is not None:
-            self._paths = paths
-            self._keys = keys
+        self._paths = paths
+        self._keys = keys
         self._results = results
         self._preview_model.refresh(self._results)
         self._seg_model.refresh(self._results, self._paths)
-        self._auto_size_segments()
-        if stats:
-            self._apply_status(*stats)
+        if auto_size:
+            self._auto_size_segments()
+        self._apply_status(*stats)
+        self._apply_sort_indicator()
         self._update_visible_thumbnails()
         self._refreshing = False
+
+    def _apply_sort_indicator(self):
+        si = self._sort_indicator
+        if si and si[0] == 'preview':
+            self._preview_model.set_sort_indicator(si[1])
+            self._seg_model.set_sort_indicator(-1)
+        elif si and si[0] == 'segment':
+            self._preview_model.set_sort_indicator(-1)
+            self._seg_model.set_sort_indicator(si[1], si[2])
+        else:
+            self._preview_model.set_sort_indicator(-1)
+            self._seg_model.set_sort_indicator(-1)
 
     def _auto_size_segments(self):
         fm = QtGui.QFontMetrics(self._mono)
@@ -711,9 +744,10 @@ class BatchRenameDialog(QtWidgets.QDialog):
         h = min(max(2 * table_h + dpix(80), dpix(300)), dpix(900))
         self.resize(w, h)
 
-    def _apply_status(self, conflicts, errors, missing):
+    def _apply_status(self, conflicts, errors, missing, global_errors=None):
         p = self._p
-        issues = conflicts + errors + missing
+        self._global_errors = global_errors or []
+        issues = conflicts + errors + missing + len(self._global_errors)
         if issues:
             parts = []
             if conflicts:
@@ -722,6 +756,8 @@ class BatchRenameDialog(QtWidgets.QDialog):
                 parts.append(f'{errors} invalid name(s)')
             if missing:
                 parts.append(f'{missing} missing file(s)')
+            if self._global_errors:
+                parts.append(f'{len(self._global_errors)} regex error(s)')
             self._status.setText(f'\u26a0 {" / ".join(parts)}')
             self._status.setStyleSheet(
                 f"color: {p.warning}; font-size: {dpix(11)}px;"
@@ -740,6 +776,7 @@ class BatchRenameDialog(QtWidgets.QDialog):
         if not self._results:
             return
         col = section
+        self._sort_indicator = ('preview', section, True)
 
         def prepare(paths, keys, results):
             pairs = list(zip(paths, keys, results))
@@ -749,12 +786,13 @@ class BatchRenameDialog(QtWidgets.QDialog):
                 pairs.sort(key=lambda x: natural_key(x[2].new_name))
             return [p for p, _, _ in pairs], [k for _, k, _ in pairs]
 
-        self._refresh(prepare=prepare)
+        self._refresh(prepare=prepare, auto_size=False)
 
     def _sort_by_segment(self, section, ascending):
         if not self._results:
             return
         sec, asc = section, ascending
+        self._sort_indicator = ('segment', section, ascending)
 
         def prepare(paths, keys, results):
             pairs = list(zip(paths, keys, results))
@@ -766,7 +804,7 @@ class BatchRenameDialog(QtWidgets.QDialog):
             )
             return [p for p, _, _ in pairs], [k for _, k, _ in pairs]
 
-        self._refresh(prepare=prepare)
+        self._refresh(prepare=prepare, auto_size=False)
 
     def _on_seg_header_click(self, section):
         if section == self._add_section:
@@ -822,6 +860,7 @@ class BatchRenameDialog(QtWidgets.QDialog):
         popup.show()
 
     def _deferred_refresh(self):
+        self._update_source_defaults()
         QtCore.QTimer.singleShot(0, self._refresh)
 
     def _close_popup(self):
@@ -845,7 +884,11 @@ class BatchRenameDialog(QtWidgets.QDialog):
         menu.exec(gp)
 
     def _add_column(self, src_cls):
-        self._columns.append(RenameColumn(src_cls()))
+        source = src_cls()
+        defaults = self._source_defaults.get(source.NAME)
+        if defaults:
+            source._apply(defaults)
+        self._columns.append(RenameColumn(source))
         self._rebuild()
 
     def _remove_column(self, idx):
@@ -866,7 +909,7 @@ class BatchRenameDialog(QtWidgets.QDialog):
     def _resequence(self):
         self._initial_paths = list(self._paths)
         self._initial_keys = list(self._keys)
-        self._refresh()
+        self._refresh(auto_size=False)
 
     def _exclude_row(self, row):
         if 0 <= row < len(self._paths):
@@ -892,61 +935,128 @@ class BatchRenameDialog(QtWidgets.QDialog):
         menu.exec(gpos)
 
     def _execute(self):
-        if any(r.conflict or r.errors for r in self._results):
+        if self._global_errors or any(r.conflict or r.errors for r in self._results):
             return
         missing = [p for p, r in zip(self._paths, self._results) if not p.exists()]
         if missing:
-            self._refresh()
-            Notifier.warning(f'{len(missing)} file(s) no longer exist')
+            self._refresh(auto_size=False)
+            QtWidgets.QMessageBox.warning(
+                self, 'Rename', f'{len(missing)} file(s) no longer exist',
+            )
             return
         rename_map = self.get_rename_map()
         if not rename_map:
             return
-        msg = QtWidgets.QMessageBox(self)
-        msg.setWindowTitle('Confirm Rename')
-        msg.setText(f'Rename {len(rename_map)} file(s)?')
-        msg.setDetailedText(
-            '\n'.join(f'{Path(o).name} \u2192 {Path(n).name}' for o, n in rename_map.items())
+        if not self._confirm_rename(rename_map):
+            return
+        self._do_rename(rename_map)
+
+    def _confirm_rename(self, rename_map: dict[str, str]) -> bool:
+        dlg = QtWidgets.QDialog(self)
+        dlg.setWindowTitle('Confirm Rename')
+        dlg.setMinimumWidth(dpix(500))
+        layout = QtWidgets.QVBoxLayout(dlg)
+        label = QtWidgets.QLabel(f'Rename {len(rename_map)} file(s)?')
+        label.setStyleSheet(f'font-size: {dpix(13)}px; font-weight: bold;')
+        layout.addWidget(label)
+        table = QtWidgets.QTableWidget(len(rename_map), 2)
+        table.setHorizontalHeaderLabels(['Before', 'After'])
+        table.horizontalHeader().setStretchLastSection(True)
+        table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
+        table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        table.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        table.verticalHeader().setVisible(False)
+        for row, (old, new) in enumerate(rename_map.items()):
+            table.setItem(row, 0, QtWidgets.QTableWidgetItem(Path(old).name))
+            table.setItem(row, 1, QtWidgets.QTableWidgetItem(Path(new).name))
+        layout.addWidget(table)
+        btn_box = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel,
         )
-        msg.setStandardButtons(QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel)
-        msg.setDefaultButton(QtWidgets.QMessageBox.Ok)
-        if msg.exec() == QtWidgets.QMessageBox.Ok:
-            self._do_rename(rename_map)
+        btn_box.accepted.connect(dlg.accept)
+        btn_box.rejected.connect(dlg.reject)
+        layout.addWidget(btn_box)
+        return dlg.exec() == QtWidgets.QDialog.Accepted
 
     def _do_rename(self, rename_map: dict[str, str]):
-        self._rename_btn.setEnabled(False)
-        self._rename_btn.setText('Renaming...')
-        cancel = CancelToken()
-        self._rename_cancel = cancel
-        total = len(rename_map)
         items = list(rename_map.items())
-        stride = max(1, total // 50)
-
-        def task():
-            executor = FileExecutor()
-            failed = []
-            for i, (old, new) in enumerate(items, 1):
-                if cancel.is_cancelled():
-                    break
-                result = executor.rename(Path(old), Path(new).name)
-                if result.status != "ok":
-                    AppLogger.warning(f'Rename failed: {old} -> {new} ({result.error})')
-                    failed.append(Path(old).name)
-                if i % stride == 0 or i == total:
-                    self._dispatcher.invoke(
-                        lambda d=i: cancel.is_cancelled() or self._status.setText(f'Renaming... {d} / {total}')
-                    )
-            self._dispatcher.invoke(lambda: cancel.is_cancelled() or self._on_rename_complete(failed, total))
-
-        self._dispatcher.post(task, cancel=cancel)
-
-    def _on_rename_complete(self, failed, total):
-        self._rename_cancel = None
-        if failed:
-            Notifier.warning(f'Failed to rename {len(failed)} file(s): {", ".join(failed[:3])}')
+        plans = [
+            PastePlanItem(
+                index=i, src=Path(old), is_dir=False, action="cut",
+                dst_default=Path(new), conflict=False, suggested_dst=None,
+            )
+            for i, (old, new) in enumerate(items)
+        ]
+        results = execute_paste_plans_with_ui(
+            plans=plans, overwrite_mode="overwrite", parent=self,
+        )
+        succeeded: dict[str, str] = {}
+        failed: list[tuple[str, str]] = []
+        for (old, new), result in zip(items, results):
+            if result.status == "ok":
+                succeeded[old] = result.dst or new
+            elif result.status != "skipped":
+                AppLogger.warning(f'Rename failed: {old} -> {new} ({result.error})')
+                failed.append((Path(old).name, result.error or 'unknown error'))
+        self._apply_rename_results(succeeded)
+        total = len(succeeded) + len(failed)
+        if failed and succeeded:
+            text = f'Renamed {len(succeeded)}/{total} file(s). {len(failed)} failed.'
+        elif failed:
+            text = f'All {len(failed)} rename(s) failed.'
+        elif succeeded:
+            text = f'{len(succeeded)} file(s) renamed.'
         else:
-            Notifier.info(f'Renamed {total} file(s)')
-        self.close()
+            return
+        if failed:
+            QtWidgets.QMessageBox.warning(self, 'Rename Result', text)
+        else:
+            QtWidgets.QMessageBox.information(self, 'Rename Result', text)
+
+    def _apply_rename_results(self, succeeded: dict[str, str]):
+        if not succeeded:
+            return
+        for i, p in enumerate(self._paths):
+            sp = str(p)
+            if sp in succeeded:
+                new_path = Path(succeeded[sp])
+                self._paths[i] = new_path
+                self._keys[i] = str(new_path).replace('\\', '/')
+        for i, p in enumerate(self._initial_paths):
+            sp = str(p)
+            if sp in succeeded:
+                new_path = Path(succeeded[sp])
+                self._initial_paths[i] = new_path
+                self._initial_keys[i] = str(new_path).replace('\\', '/')
+        new_meta: dict[str, dict[str, str]] = {}
+        for key, meta in self._metadata.items():
+            matched = next((new for old, new in succeeded.items()
+                            if key == old or key == old.replace('\\', '/')), None)
+            if matched:
+                new_meta[matched.replace('\\', '/')] = meta
+            else:
+                new_meta[key] = meta
+        self._metadata = new_meta
+        self._thumb_cache.clear()
+        self._thumb_visible.clear()
+        self._title.setText(self._title_text())
+        self._status.setText(f'Renamed {len(succeeded)} file(s)')
+        self._reset_columns()
+        self._rebuild()
+
+    def _reset_columns(self):
+        name_src = NameSource()
+        name_defaults = self._source_defaults.get(name_src.NAME)
+        if name_defaults:
+            name_src._apply(name_defaults)
+        ext_src = ExtSource()
+        ext_defaults = self._source_defaults.get(ext_src.NAME)
+        if ext_defaults:
+            ext_src._apply(ext_defaults)
+        self._columns = [RenameColumn(name_src)]
+        self._ext_column = RenameColumn(ext_src)
+        self._excluded.clear()
+        self._sort_indicator = None
 
     def get_rename_map(self) -> dict[str, str]:
         return {

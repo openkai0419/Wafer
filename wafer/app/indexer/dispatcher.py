@@ -96,7 +96,10 @@ class CollectorDispatcher:
             self._dispatch_event.clear()
             if self._stop.is_set():
                 break
-            self._dispatch_pending()
+            try:
+                self._dispatch_pending()
+            except Exception as e:
+                AppLogger.error(f'[Dispatcher] _dispatch_pending failed: {e}', exc=e)
 
     @profiler.profile
     def _dispatch_pending(self):

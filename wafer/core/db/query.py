@@ -416,3 +416,27 @@ class FileSearchEngine:
 
     def get_all_metadata(self, path):
         return [self.get_file_record(path), self.get_tags_by_path(path), self.get_meta_info_by_path(path)]
+
+    @profiler.profile
+    def get_collection_status(self, path):
+        if not self._connect_if_needed():
+            return []
+        cur = self.conn.cursor()
+        norm_path = self._normalize_path(path)
+        rows = cur.execute(
+            """SELECT cs.collector, cs.status, cs.collected_at, s.modified
+            FROM files f
+            JOIN collection_status cs ON cs.source = f.source
+            JOIN sources s ON s.source = f.source
+            WHERE f.path = ?
+              AND cs.status IN ('ok', 'fail')""",
+            (norm_path,),
+        ).fetchall()
+        result = []
+        for r in rows:
+            status = r['status']
+            if status == 'ok' and (r['collected_at'] is None or r['modified'] is None or r['collected_at'] < r['modified']):
+                continue
+            result.append((r['collector'], status))
+        return result
+

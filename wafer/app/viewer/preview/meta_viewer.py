@@ -50,15 +50,17 @@ class MetaRowWidget(QtWidgets.QFrame):
         data: Mapping[str, Any],
         key_names: Mapping[str, str] | None = None,
         value_formatters: Mapping[str, Callable[[Any], str]] | None = None,
+        rich_text_keys: set[str] | None = None,
         compact: bool = False,
         parent: QtWidgets.QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._index = index
         self._data = dict(data)
-        self._keys = list(self._data.keys())  # 行ごとに自身のキー順
+        self._keys = list(self._data.keys())
         self._key_names = dict(key_names or {})
         self._value_formatters = dict(value_formatters or {})
+        self._rich_text_keys = rich_text_keys or set()
         self._compact = compact
         self._formatter_failed_keys = set()
 
@@ -219,7 +221,7 @@ class MetaRowWidget(QtWidgets.QFrame):
             val = self._stringify_preview(key, self._data.get(key))
             val_label = QtWidgets.QLabel(val, self)
             val_label.setWordWrap(True)
-            val_label.setTextFormat(QtCore.Qt.PlainText)
+            val_label.setTextFormat(QtCore.Qt.RichText if key in self._rich_text_keys else QtCore.Qt.PlainText)
             val_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
             val_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
 
@@ -251,6 +253,7 @@ class MetaListWidget(QtWidgets.QWidget):
         items: Iterable[Mapping[str, Any]] | None = None,
         key_names: Mapping[str, str] | None = None,
         value_formatters: Mapping[str, Callable[[Any], str]] | None = None,
+        rich_text_keys: set[str] | None = None,
         compact: bool = True,
         parent: QtWidgets.QWidget | None = None,
     ) -> None:
@@ -258,6 +261,7 @@ class MetaListWidget(QtWidgets.QWidget):
         self._items: list[dict] = []
         self._key_names = dict(key_names or {})
         self._value_formatters = dict(value_formatters or {})
+        self._rich_text_keys = rich_text_keys or set()
         self._compact = compact
 
         self.setObjectName("dictList")
@@ -280,6 +284,7 @@ class MetaListWidget(QtWidgets.QWidget):
     def sizeHint(self) -> QtCore.QSize:
         return QtCore.QSize(dpix(760), super().sizeHint().height())
 
+
     def set_data(self, items: Iterable[Mapping[str, Any]]) -> None:
         new_items = [dict(i) for i in items]
         if len(new_items) == len(self._items):
@@ -297,6 +302,7 @@ class MetaListWidget(QtWidgets.QWidget):
                 it,
                 key_names=self._key_names,
                 value_formatters=self._value_formatters,
+                rich_text_keys=self._rich_text_keys,
                 compact=self._compact,
                 parent=self,
             )
@@ -322,6 +328,7 @@ class MetaListWidget(QtWidgets.QWidget):
             self._items[-1],
             key_names=self._key_names,
             value_formatters=self._value_formatters,
+            rich_text_keys=self._rich_text_keys,
             compact=self._compact,
             parent=self,
         )

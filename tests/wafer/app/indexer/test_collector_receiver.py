@@ -80,7 +80,6 @@ def test_parse_batch_ok_status():
     assert len(data['image_entries']) == 1
     assert data['image_entries'][0][2] == 1.5
     meta_keys = [e[1] for e in data['meta_info_entries']]
-    assert 'collected' in meta_keys
     assert 'width' in meta_keys
     assert len(data['tag_entries']) == 1
     assert len(data['collector_status']) == 1
@@ -107,7 +106,6 @@ def test_parse_batch_skips_none_meta():
     data = _parse_batch(results)
     meta_keys = [e[1] for e in data['meta_info_entries']]
     assert 'width' in meta_keys
-    assert 'collected' in meta_keys
     assert 'empty' not in meta_keys
     tag_keys = [e[1] for e in data['tag_entries']]
     assert 'good' in tag_keys

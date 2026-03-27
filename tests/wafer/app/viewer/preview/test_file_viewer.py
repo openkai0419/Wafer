@@ -4,43 +4,54 @@ from wafer.app.viewer.preview.file_viewer import _format_meta, FileViewerWidget,
 from wafer.plugin.viewer.base import WidgetViewerPlugin, ImageViewerPlugin
 
 
+def _mock_engine(**overrides):
+    engine = MagicMock()
+    defaults = {
+        'get_all_metadata': (
+            {"path": "/a.png", "source": "/a.png", "name": "a.png", "aspect_ratio": None},
+            {},
+            {},
+        ),
+        'get_collection_status': [],
+    }
+    defaults.update(overrides)
+    engine.get_all_metadata.return_value = defaults['get_all_metadata']
+    engine.get_collection_status.return_value = defaults['get_collection_status']
+    return engine
+
+
 def test_compile():
     py_compile.compile('wafer/app/viewer/preview/file_viewer.py')
 
 
 def test_format_meta_source_same_as_path():
-    engine = MagicMock()
-    engine.get_all_metadata.return_value = (
-        {"path": "/a.png", "source": "/a.png", "name": "a.png", "aspect_ratio": None},
-        {},
-        {},
-    )
-    result = _format_meta(engine, "/a.png")
-    file_rec = result[0]
-    assert "source" not in file_rec
+    engine = _mock_engine()
+    meta_items = _format_meta(engine, "/a.png")
+    file_rec = meta_items[0]
+    assert "path" not in file_rec
+    assert file_rec["source"] == "/a.png"
 
 
 def test_format_meta_source_differs_from_path():
-    engine = MagicMock()
-    engine.get_all_metadata.return_value = (
+    engine = _mock_engine(get_all_metadata=(
         {"path": "/a.png", "source": "/other/a.png", "name": "a.png", "aspect_ratio": None},
         {},
         {},
-    )
-    result = _format_meta(engine, "/a.png")
-    file_rec = result[0]
+    ))
+    meta_items = _format_meta(engine, "/a.png")
+    file_rec = meta_items[0]
+    assert "path" not in file_rec
     assert file_rec["source"] == "/other/a.png"
 
 
 def test_format_meta_formats_size_and_timestamps():
-    engine = MagicMock()
-    engine.get_all_metadata.return_value = (
+    engine = _mock_engine(get_all_metadata=(
         {"path": "/a.png", "source": "/a.png", "name": "a.png", "aspect_ratio": None},
         {},
         {"created": "1700000000", "collected": "1700000000", "modified": "1700000000", "size": "2048"},
-    )
-    result = _format_meta(engine, "/a.png")
-    standard = result[1]
+    ))
+    meta_items = _format_meta(engine, "/a.png")
+    standard = meta_items[1]
     assert isinstance(standard["created"], str)
     assert isinstance(standard["collected"], str)
     assert isinstance(standard["modified"], str)
@@ -48,46 +59,61 @@ def test_format_meta_formats_size_and_timestamps():
 
 
 def test_format_meta_sorts_tags_and_meta():
-    engine = MagicMock()
-    engine.get_all_metadata.return_value = (
+    engine = _mock_engine(get_all_metadata=(
         {"path": "/a.png", "source": "/a.png", "name": "a.png", "aspect_ratio": None},
         {"z_tag": "1", "a_tag": "2"},
-        {"z_key": "x", "a_key": "y"},
-    )
-    result = _format_meta(engine, "/a.png")
-    tags = result[2]
-    standard = result[1]
+        {"name": "a.png", "size": "1024", "exif.width": "100"},
+    ))
+    meta_items = _format_meta(engine, "/a.png")
+    tags = meta_items[2]
+    standard = meta_items[1]
     assert list(tags.keys()) == ["a_tag", "z_tag"]
-    assert list(standard.keys()) == ["a_key", "z_key"]
+    assert "name" in standard
+    assert "size" in standard
 
 
 def test_format_meta_aspect_ratio():
-    engine = MagicMock()
-    engine.get_all_metadata.return_value = (
+    engine = _mock_engine(get_all_metadata=(
         {"path": "/a.png", "source": "/a.png", "name": "a.png", "aspect_ratio": 1.5},
         {},
         {},
-    )
-    result = _format_meta(engine, "/a.png")
-    file_rec = result[0]
+    ))
+    meta_items = _format_meta(engine, "/a.png")
+    file_rec = meta_items[0]
     assert isinstance(file_rec["aspect_ratio"], str)
 
 
 def test_format_meta_splits_prefixed_meta():
-    engine = MagicMock()
-    engine.get_all_metadata.return_value = (
+    engine = _mock_engine(get_all_metadata=(
         {"path": "/a.png", "source": "/a.png", "name": "a.png", "aspect_ratio": None},
         {},
         {"name": "a.png", "size": "1024", "exif.width": "100", "exif.height": "200"},
-    )
-    result = _format_meta(engine, "/a.png")
-    standard = result[1]
-    prefixed = result[3]
+    ))
+    meta_items = _format_meta(engine, "/a.png")
+    standard = meta_items[1]
+    prefixed = meta_items[3]
     assert "name" in standard
     assert "size" in standard
     assert "exif.width" not in standard
     assert "exif.width" in prefixed
     assert "exif.height" in prefixed
+
+
+def test_format_meta_embeds_collector_html():
+    engine = _mock_engine(get_collection_status=[('exif', 'ok'), ('animated', 'fail')])
+    meta_items = _format_meta(engine, "/a.png")
+    file_rec = meta_items[0]
+    assert 'collected by' in file_rec
+    assert '\u25cf' in file_rec['collected by']
+    assert 'animated' in file_rec['collected by']
+    assert 'exif' in file_rec['collected by']
+
+
+def test_format_meta_no_collectors_omits_key():
+    engine = _mock_engine(get_collection_status=[])
+    meta_items = _format_meta(engine, "/a.png")
+    file_rec = meta_items[0]
+    assert 'collected by' not in file_rec
 
 
 class _StubWidgetPlugin(WidgetViewerPlugin):

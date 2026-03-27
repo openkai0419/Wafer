@@ -101,12 +101,15 @@ class DirectoryScanner:
             for kind, data in batch:
                 if self._stop.is_set():
                     break
-                if kind == 'rescan':
-                    self._do_full_scan(data)
-                elif kind == 'update':
-                    self._do_update_files(data)
-                elif kind == 'backfill':
-                    self._do_backfill()
+                try:
+                    if kind == 'rescan':
+                        self._do_full_scan(data)
+                    elif kind == 'update':
+                        self._do_update_files(data)
+                    elif kind == 'backfill':
+                        self._do_backfill()
+                except Exception as e:
+                    AppLogger.error(f'[Scanner] request failed ({kind}): {e}', exc=e)
 
     def _is_excluded(self, path: str) -> bool:
         if not self._exclude_paths:
@@ -232,6 +235,7 @@ class DirectoryScanner:
                 meta_info_entries.append((p, 'size', str(fsize), float(fsize)))
                 meta_info_entries.append((p, 'modified', str(mtime), mtime))
                 meta_info_entries.append((p, 'created', str(ctime), ctime))
+                meta_info_entries.append((p, 'collected', str(now), now))
             self._scheduler.submit(Task.create(
                 'upsert_sources',
                 priority=TaskPriority.SCAN,

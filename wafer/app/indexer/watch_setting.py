@@ -48,5 +48,8 @@ class SettingWatcher(FileSystemEventHandler):
         self._observer.start()
 
     def stop(self):
-        self._observer.stop()
-        self._observer.join()
+        try:
+            self._observer.stop()
+            self._observer.join(timeout=5.0)
+        except Exception as e:
+            AppLogger.debug(f'SettingWatcher observer stop: {e}')

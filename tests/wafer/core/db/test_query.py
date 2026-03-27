@@ -684,8 +684,65 @@ class TestEngineLookupMethods:
         assert "rating" in tags
         assert "dpi" in meta
 
+    def test_get_collection_status_ok(self, populated_db):
+        db = FileDB(populated_db)
+        db.start()
+        path = "C:/photos/vacation/img_0000.jpg"
+        db.insert_pending_collection([path], ['exif'])
+        db.upsert_collection_results(
+            [], [], [],
+            [(path, 'exif', 'ok', time.time())]
+        )
+        db.close()
+        engine = FileSearchEngine(populated_db)
+        result = engine.get_collection_status(path)
+        assert len(result) == 1
+        assert result[0] == ('exif', 'ok')
 
-class TestEngineConnectionEdgeCases:
+    def test_get_collection_status_fail(self, populated_db):
+        db = FileDB(populated_db)
+        db.start()
+        path = "C:/photos/vacation/img_0000.jpg"
+        db.insert_pending_collection([path], ['exif'])
+        db.upsert_collection_results(
+            [], [], [],
+            [(path, 'exif', 'fail', time.time())]
+        )
+        db.close()
+        engine = FileSearchEngine(populated_db)
+        result = engine.get_collection_status(path)
+        assert len(result) == 1
+        assert result[0] == ('exif', 'fail')
+
+    def test_get_collection_status_pending_hidden(self, populated_db):
+        db = FileDB(populated_db)
+        db.start()
+        path = "C:/photos/vacation/img_0000.jpg"
+        db.insert_pending_collection([path], ['exif'])
+        db.close()
+        engine = FileSearchEngine(populated_db)
+        result = engine.get_collection_status(path)
+        assert result == []
+
+    def test_get_collection_status_stale_ok_hidden(self, populated_db):
+        db = FileDB(populated_db)
+        db.start()
+        path = "C:/photos/vacation/img_0000.jpg"
+        old_time = 1000.0
+        db.insert_pending_collection([path], ['exif'])
+        db.upsert_collection_results(
+            [], [], [],
+            [(path, 'exif', 'ok', old_time)]
+        )
+        db.close()
+        engine = FileSearchEngine(populated_db)
+        result = engine.get_collection_status(path)
+        assert result == []
+
+    def test_get_collection_status_nonexistent(self, populated_db):
+        engine = FileSearchEngine(populated_db)
+        result = engine.get_collection_status("C:/nonexistent/file.jpg")
+        assert result == []
 
     def test_nonexistent_db_path(self, tmp_path):
         engine = FileSearchEngine(str(tmp_path / "does_not_exist.db"))

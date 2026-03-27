@@ -65,3 +65,37 @@ def test_clear_dispatched_nonexistent_collector(tmp_path):
     db_path = tmp_path / 'test.db'
     dispatcher = CollectorDispatcher('testdb', db_path, scheduler, writer, progress, collectors=['exif'])
     dispatcher._clear_dispatched('nonexistent', ['a'])
+
+
+def test_dispatch_loop_survives_exception(tmp_path):
+    import threading
+    scheduler = MagicMock()
+    writer = MagicMock()
+    progress = MagicMock()
+    db_path = tmp_path / 'test.db'
+    dispatcher = CollectorDispatcher('testdb', db_path, scheduler, writer, progress, collectors=['exif'])
+    call_count = 0
+    original_dispatch = dispatcher._dispatch_pending
+
+    def failing_dispatch():
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise RuntimeError('simulated DB error')
+        original_dispatch()
+
+    dispatcher._dispatch_pending = failing_dispatch
+    dispatcher._stop = threading.Event()
+    dispatcher._dispatch_event = threading.Event()
+
+    thread = threading.Thread(target=dispatcher._dispatch_loop, daemon=True)
+    thread.start()
+    dispatcher._dispatch_event.set()
+    import time; time.sleep(0.3)
+    dispatcher._dispatch_event.set()
+    time.sleep(0.3)
+    dispatcher._stop.set()
+    dispatcher._dispatch_event.set()
+    thread.join(timeout=3.0)
+    assert not thread.is_alive()
+    assert call_count >= 2

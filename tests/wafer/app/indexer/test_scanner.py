@@ -167,3 +167,33 @@ def test_backfill_tasks_not_cancellable(tmp_path):
         task = call[0][0]
         assert task.cancel_token is None
     scanner.stop()
+
+
+def test_loop_survives_exception(tmp_path):
+    import time
+    scanner, scheduler, _, progress = _make_scanner(tmp_path)
+    scanner.start()
+
+    original_full_scan = scanner._do_full_scan
+    call_count = 0
+
+    def failing_scan(data):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise RuntimeError('simulated scan error')
+        original_full_scan(data)
+
+    scanner._do_full_scan = failing_scan
+    scan_dir = tmp_path / 'data'
+    scan_dir.mkdir()
+    (scan_dir / 'a.txt').write_text('x')
+
+    scanner.request_scan([str(scan_dir)])
+    time.sleep(0.5)
+    scanner.request_scan([str(scan_dir)])
+    time.sleep(0.5)
+
+    assert scanner._thread.is_alive()
+    assert call_count >= 2
+    scanner.stop()

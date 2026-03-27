@@ -24,9 +24,7 @@ _DEFAULT_WIDGET_NAME = '_default'
 
 def _format_meta(engine, path):
     file_rec, tags, meta_infos = engine.get_all_metadata(path)
-    source = file_rec.pop("source", None)
-    if source and source != file_rec.get("path"):
-        file_rec["source"] = source
+    file_rec.pop("path", None)
     if file_rec.get("aspect_ratio"):
         file_rec["aspect_ratio"] = format_aspect(file_rec["aspect_ratio"])
     standard = {}
@@ -43,9 +41,17 @@ def _format_meta(engine, path):
                 standard[k] = format_timestamp(float(raw)) if k != 'size' else format_size_detail(float(raw))
             except (ValueError, TypeError):
                 pass
-    standard = {k: standard[k] for k in natsorted(standard)}
+    _standard_order = ['name', 'path', 'file_hash', 'size', 'created', 'modified', 'collected']
+    standard = {k: standard[k] for k in _standard_order if k in standard}
     tags = {k: tags[k] for k in natsorted(tags)}
     prefixed = {k: prefixed[k] for k in natsorted(prefixed)}
+    collector_status = engine.get_collection_status(path)
+    if collector_status:
+        parts = []
+        for name, status in sorted(collector_status):
+            color = '#4caf50' if status == 'ok' else '#f44336'
+            parts.append(f'<span style="color:{color}">\u25cf</span> {name}')
+        file_rec['collected by'] = '&nbsp;&nbsp;'.join(parts)
     return [file_rec, standard, tags, prefixed]
 
 
@@ -86,7 +92,7 @@ class FileViewerWidget(QtWidgets.QSplitter):
 
         self.addWidget(self._stack)
 
-        self.meta_viewer = MetaListWidget()
+        self.meta_viewer = MetaListWidget(rich_text_keys={'collected by'})
 
         self.area = QtWidgets.QScrollArea(self)
         self.area.setWidgetResizable(True)

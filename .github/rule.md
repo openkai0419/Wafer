@@ -8,13 +8,6 @@
 - 「何が起きたか」ではなく「なぜそのアプローチを取るべきか」「どういう思考で問題を回避できるか」を書く
 - コードを読めば分かる事実や、特定の関数の戻り値のような細かい仕様はメモしない。次回も同じ状況になったときに再現・再検証すればよい
 
-■ テスト実行ルール
-- 実行コマンド: .venv/Scripts/python -m pytest
-- オプションはpyproject.tomlのaddoptsで固定済み（--tb=short含む）。コマンドラインで追加指定しない
-- 実行後 tests/test_summary.txt に結果サマリーが自動生成される。FAILED/ERRORの一覧と原因が全て含まれる
-- このファイルを1回読めば全失敗を把握できるため、結果確認のための追加テスト実行は不要
-- フロー: (1) pytest実行 → (2) test_summary.txt読む → (3) 修正 → (4) pytest再実行で検証。最小2回
-
 ■ 問題解決の原則
 - 推論やコード上の確認だけで原因を断定しない。実際に処理を実行し、値や挙動を実測してから特定する
 - 特に外部ライブラリやフレームワークのAPIは、ドキュメントや型定義と実際の挙動が異なることがある。想定通りに動くか必ず実測スクリプトで検証する
@@ -46,13 +39,13 @@
 - @require デコレータ（wafer.core.commands.command.require）でインスタンス注入。@require_v でctx.get()値注入。Ctxクラスは廃止
 - path/pathsのようなフォールバックロジックがあるctx値は補助関数（_ctx_path等）で関数内から直接呼ぶ。デコレータ化しない
 - CommandMeta.priorityフィールドで同一IDの上書き優先度を制御（高い方が勝つ、同値は後勝ち）
+- stored args解決とrequiredチェックはCommand.invoke()に集約。メニュー/キーバインドはctxを構築してinvoke()に委譲
 
 ■ メニュー/バインディング
 - ホットキー解決は_resolve_hotkeys_batchでバッチ取得。ループ内個別呼出禁止
 - CommandMenuRowのdpix値はクラスレベルキャッシュ(_px)で再利用
 - findChildはコスト高。保持済み属性参照を使う
 - actions以下のバインディング周りのクラス、コマンドを外部から使う場合は必ずbridgeを経由
-- コマンド実行の責任統一: stored args解決とrequiredチェックはCommand.invoke()に集約。メニュー/キーバインドはctxを構築してCommand.invoke()に委譲
 
 ■ GridView (QGraphicsView)
 - index_at_pos()はView座標を受取り、内部でmapToScene()変換
@@ -74,28 +67,24 @@
 - プラグインが読み込まれていなくてもアプリが落ちないこと（直接importしたファイル不在はエラーで可）
 
 ■ ビルトインとExtensionの二層構成
-- 全プラグイン基底クラスはPluginBase（wafer/plugin/registry.py）を継承する。PluginBaseはNAME, PRIORITY, configure(), post_install()を提供
-  - BasePlugin(PluginBase, ABC): Grid/Viewer/Collector用。EXTENSIONS, match(), can_handle()を追加
-  - BaseFilterPlugin(PluginBase, ABC), BaseSortPlugin(PluginBase, ABC): Query用
+- 全プラグイン基底クラスはPluginBase（wafer/plugin/registry.py）を継承する
+  - BasePlugin(PluginBase, ABC): Grid/Viewer/Collector用
+  - BaseFilterPlugin / BaseSortPlugin(PluginBase, ABC): Query用
   - BaseLayoutPlugin(PluginBase, ABC): Layout用
 - ビルトイン実装はwafer/builtins/に配置。extensionと同じプラグインインターフェースを使う
-- extensions/はPluginLoaderが外部ディレクトリから自動検出。wafer/builtins/はload_plugins()内でregister_all()により登録
-- ビルトインとextensionの唯一の違いはexe化時にwafer/builtins/は自動的に同梱される点。設計・インターフェースは同一
-- Grid/Viewerのフォールバックはビルトインプラグイン（EXTENSIONS=(), PRIORITY=-100）として登録。Resolverにフォールバックロジックをハードコードしない
-- Filter/Sort/Layoutのビルトイン実装もwafer/builtins/に配置（filters.py, sorts.py, layouts.py）
-- Layoutプラグインはlayout_registry（wafer/plugin/layout/handler.py）に登録。BaseLayoutPlugin.create_calculator()でcalculatorを生成。grid_commands.pyのレイアウトメニューはregistryから動的に構築される
-- コマンドはCommandMeta/ActionKit系で別体系のためbuiltinsに含めない。wafer/app/以下とextensions/に分散するのが正しい
+- ビルトインとextensionの唯一の違いはexe化時にwafer/builtins/が自動同梱される点。設計・インターフェースは同一
+- フォールバックはビルトインプラグイン（EXTENSIONS=(), PRIORITY=-100）として登録。Resolverにフォールバックロジックをハードコードしない
+- コマンドはCommandMeta/ActionKit系で別体系のためbuiltinsに含めない。wafer/app/以下とextensions/に分散
 
-■ 未登録コマンドへの安全なフォールバック
-- CommandRegistry.execute()は未登録コマンドでNone返却+warning。ValueErrorは投げない
-- CommandMenuBuilder.build_into()は未知コマンドIDをスキップ（warningログ）
-- バインディング実行時（mixins/ShortcutManager）は未登録コマンドをNotifier.warningでユーザー通知
-- bridge.pyのCommand.get_checked()は未登録コマンドでFalse返却。MenuSpec.exec()はbuild失敗でNone返却
+■ 未登録コマンドへのフォールバック
+- 未登録コマンドはValueErrorを投げず、warningログ+None返却で安全に処理する
+- メニュー構築は未知コマンドIDをスキップ。バインディング実行時はNotifier.warningでユーザー通知
+- bridge.pyのCommand.get_checked()は未登録コマンドでFalse返却
 
 ■ プラグインローダー規約
 - extensionsはwafer.plugin（公開API）、wafer.utils、wafer.coreを直接import可能。wafer.appへの依存は非推奨
-- wafer.plugin.__init__.pyがextension向け公開API。AppLoggerやprofilerは公開APIに含めない（extensionはwafer.utilsから直接import）
-- extension側のMenuGroupはPluginLoader._deferred_commandsに一時保持し、register_extension_commands()でMainWindow/viewer commandsの後に登録
+- wafer.plugin.__init__.pyがextension向け公開API
+- extension側のMenuGroupはプラグインロード時に一時保持され、viewer commands登録後に登録される
 - MenuGroup.PRIORITYでAllMenuのルート表示順を制御。昇順ソート。viewer標準は10刻み(10-110)、extensionは1000台を推奨
 - extension側のMenuGroupはGrid/View別に分離する（例: VideoGridCommands, 将来のVideoViewCommands）
 - frozen環境でのpip実行にはEmbeddedPython使用。pip._internal直呼出は禁止
@@ -113,66 +102,56 @@
 - セッション管理コマンドはSessionCommandsを廃止しWindowCommandsに統合
 - CommandParamにchoices_fn(callable value)とrequiredを追加。required未充足時はCommandOptionsDialogを自動表示
 
-■ テスト環境
-- tests/conftest.pyでload_plugins(skip_install=True)を呼んでextensionレジストリを初期化する
-- extensionのvendored numpy（.packages/numpy）がsys.modulesを汚染する。conftest.pyでプラグインロード後にnumpy関連モジュールをsys.modulesから除去すること
-- Qtウィジェットテストでスクロールバー表示等によるviewportリサイズを検証する場合はshow()を呼んでから検証する
-- IPCテストはtests/wafer/core/ipc/conftest.pyで_PORT_FILEをtmp_pathに隔離
-- GridViewを実インスタンス化するテスト（show()やprocessEvents()を使う場合）はCommandOptionStore.configure()をmodule-scoped fixtureで初期化する
-- SearchQuery.__post_init__はlist引数をtupleに変換する。テストでは比較もtupleで行う
-- テストの重複ファイル・重複メソッド名に注意。Pythonは同名メソッドを後勝ちで上書きし、pytestは1つしか収集しない
-- conftest.pyのpytest_sessionfinishフックでテスト結果を.temp/test_summary.txtに自動書き出し。テスト実行後はターミナル出力ではなくこのファイルを読んで結果を確認すること
-- pyproject.tomlのtimeout=30で各テスト30秒タイムアウト（pytest-timeout）。不要なプロセス残留を防止
-
-■ テスト実行のルール
-個別テスト実行とフルテスト実行で共通のルールを以下に定める。無駄な再実行を避け、1回の実行で確実に結果を得ること。
+■ テストルール
 
 ● 実行コマンド
 - venvを必ず使用: .venv\Scripts\python.exe -m pytest
 - 個別テスト: .venv\Scripts\python.exe -m pytest tests/path/to/test_file.py -x -q
 - フルテスト: .venv\Scripts\python.exe -m pytest tests/ -p no:cacheprovider -q
-- フルテスト実行時は必ず -p no:cacheprovider を付与する。前回のlastfailedキャッシュが残っていると--lfオプションなしでも挙動に影響することがある
+- オプションはpyproject.tomlのaddoptsで固定済み（--tb=short含む）。コマンドラインで追加指定しない
 - -q（quiet）を付けて出力量を抑える。-v は個別調査時のみ使う
 
-● 出力とパイプの禁止事項
-- フルテストの出力を Select-Object, Where-Object 等のPowerShellパイプで加工しない。パイプ処理はexit codeを変えるため、テスト成功でもexit code 1になり「失敗した」と誤判定する原因になる
-- 出力が長い場合でもパイプで切り取らず、そのまま実行する。結果の確認は .temp/test_summary.txt を読むことで行う
-
 ● 結果の確認方法
-- テスト実行後は .temp/test_summary.txt を読んで結果を確認する（ターミナル出力のパースは行わない）
-- summary にはtotal/passed/failed/skipped/error/duration/カテゴリ別集計/失敗ノードが記録されている
-- failed: 0 かつ error: 0 であれば成功。それ以外は失敗ノードを確認して対処する
+- 実行後 tests/test_summary.txt に結果サマリーが自動生成される。FAILED/ERRORの一覧と原因が全て含まれる
+- このファイルを1回読めば全失敗を把握できるため、結果確認のための追加テスト実行は不要
+- フロー: (1) pytest実行 → (2) tests/test_summary.txt読む → (3) 修正 → (4) pytest再実行で検証。最小2回
+- failed: 0 かつ error: 0 であれば成功
+
+● 出力の注意
+- フルテストの出力をSelect-Object, Where-Object等のPowerShellパイプで加工しない。パイプ処理はexit codeを変えるため誤判定の原因になる
+- 出力が長くてもパイプで切り取らず、そのまま実行する
 
 ● キャッシュ管理
-- .pytest_cache/v/cache/lastfailed に過去の失敗テストが蓄積される。テストファイルのリネームや削除後に古いエントリが残り、不整合の原因になる
-- フルテスト時は -p no:cacheprovider で回避する。個別テスト時はキャッシュの影響は軽微なので不要
+- フルテスト時は -p no:cacheprovider で前回のlastfailedキャッシュの影響を回避する
 - __pycache__ の手動削除は原則不要。テストファイルの大規模リネーム時のみ検討する
 
 ● タイムアウト
-- pyproject.toml で timeout=30（秒）、timeout_method="thread" が設定済み
-- 30秒を超えるテストは @pytest.mark.slow を付与し、通常実行では -m "not slow" で除外できるようにする
+- pyproject.toml で timeout=30（秒）設定済み
+- 30秒を超えるテストは @pytest.mark.slow を付与し、-m "not slow" で除外可能にする
 - テスト内で固定sleepを使わない。条件付きポーリング（タイムアウト付きwhileループやQtBot.waitUntil）を使う
 
-● ウィンドウ・リソースのクリーンアップ
-- conftest.py の _close_qt_widgets_after_test（各テスト後）と _cleanup_background_resources（セッション終了時）が自動でクリーンアップを行う
-- テストでQWidgetを生成した場合、テスト内で明示的にclose()やdeleteLater()を呼ぶ必要はない（fixtureが処理する）。ただしshow()したウィンドウが残る場合はテスト内でclose()を呼ぶこと
+● テスト環境
+- tests/conftest.pyでload_plugins(skip_install=True)を呼んでextensionレジストリを初期化する
+- extensionのvendored numpyがsys.modulesを汚染する。conftest.pyでプラグインロード後にnumpy関連モジュールを除去すること
+- Qtウィジェットテストでviewportリサイズを検証する場合はshow()を呼んでから検証する
+- IPCテストはconftest.pyで_PORT_FILEをtmp_pathに隔離
+- GridViewを実インスタンス化するテストはCommandOptionStore.configure()をmodule-scoped fixtureで初期化する
+- テストの重複ファイル・重複メソッド名に注意。Pythonは同名メソッドを後勝ちで上書きし、pytestは1つしか収集しない
 - QApplicationはpytest-qtが管理する。テスト内でQApplication()を直接生成しない
+- conftest.pyが各テスト後にQWidgetを自動クリーンアップする。ただしshow()したウィンドウが残る場合はテスト内でclose()を呼ぶこと
 
-■テストの二層構成と統合テストの思想
-テストはユニットテストと統合テストの二層で構成する。
-- ユニットテスト（tests/wafer/, tests/extensions/）: 個々のモジュールを単体で検証する。ソースのディレクトリ構成とファイル名を対応させる
-- 統合テスト（tests/ 直下）: 複数モジュールを跨ぐプロセス全体のフローを検証する。実際のアプリ動作に近い条件でテストする
+● 二層構成
+- ユニットテスト（tests/wafer/, tests/extensions/）: 個々のモジュールを単体で検証。ソースのディレクトリ構成とファイル名を対応させる
+- 統合テスト（tests/ 直下）: 複数モジュールを跨ぐプロセス全体のフローを検証。実際のアプリ動作に近い条件で
 
-統合テストの原則:
-1. 実ファイル・実DBで検証する。PILで生成した画像やダミーバイナリ、実際のSQLite DBを使い、モックで内部を置き換えない。プラグインレジストリもconftest.pyで初期化された実物を使う
-2. プロセス単位で切り出す。「インデックス→収集→検索」「スキャン→スケジューラ→書込」「ファイル監視→DB反映」のように、アプリの主要パイプラインごとにテストスイートを用意する
-3. 正常系だけでなく境界を検証する。未対応の拡張子（.zip, .mp3等）でクラッシュしないこと、プラグイン未登録の拡張子でNoneが返ること、空ファイルやリネーム・削除後の整合性など、エッジケースとフォールバック動作を必ず含める
-4. DBへの書込はソースの公開APIを直接使う。テスト用のラッパーやスタブ経由のDB操作は避け、FileDB.upsert_collection_resultsやFileIndexer.update_index等を直接呼ぶ
-5. 非同期パイプライン（スレッド、watchdog、SearchService等）はポーリング待機で検証する。固定sleepではなく条件付きタイムアウトで待つ
+● 統合テストの原則
+1. 実ファイル・実DBで検証する。モックで内部を置き換えない
+2. プロセス単位で切り出す。アプリの主要パイプラインごとにテストスイートを用意
+3. 正常系だけでなく境界を検証する。未対応拡張子、プラグイン未登録、空ファイル、リネーム・削除後の整合性
+4. DBへの書込はソースの公開APIを直接使う
+5. 非同期パイプラインは固定sleepではなく条件付きタイムアウトで待つ
 
-■ テスト用データセット (.sample/)
+● テスト用データセット (.sample/)
 - dataset_downloader.pyは目視デバッグ・ストレステスト用。自動テストは自前でPIL画像を生成する
 - 新しいextensionを追加したらdataset_downloader.pyにもそのファイル形式の生成/DLを追加する
-- 対応するextensionが存在しないファイル形式（audio, archive等）はdataset_downloaderに含めない
-- .sample/coco/ は手動DL専用ディレクトリ。statusコマンドで検出・表示するがmanifest管理はしない
-- Picsumの利用可能IDリストは_picsum_ids.jsonにキャッシュ。ユニークID優先で重複を最小化する
+- 対応するextensionが存在しないファイル形式はdataset_downloaderに含めない

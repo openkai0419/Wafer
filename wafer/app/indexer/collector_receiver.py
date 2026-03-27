@@ -114,7 +114,6 @@ def _parse_batch(results: list[dict[str, Any]]) -> dict[str, Any]:
         if ok:
             if aspect or (path != source):
                 image_entries.append((path, source, aspect))
-            meta_info_entries.append((path, 'collected', str(now), now))
             for k, v in meta_info.items():
                 if v is not None:
                     meta_info_entries.append((path, k, str(v), _try_float(v)))

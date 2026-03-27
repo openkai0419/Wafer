@@ -109,6 +109,117 @@ def test_format_meta_embeds_collector_html():
     assert 'exif' in file_rec['collected by']
 
 
+class TestAutoplayState:
+
+    def test_save_state_includes_autoplay(self, qtbot):
+        from wafer.app.viewer.preview.file_model import FileViewModel
+        model = FileViewModel()
+        w = FileViewerWidget(model)
+        qtbot.addWidget(w)
+        w._autoplay_interval = 5000
+        w._autoplay_loop = False
+        state = w._save_state()
+        assert state['autoplay_interval'] == 5000
+        assert state['autoplay_loop'] is False
+
+    def test_restore_state_sets_autoplay_fields(self, qtbot):
+        from wafer.app.viewer.preview.file_model import FileViewModel
+        model = FileViewModel()
+        w = FileViewerWidget(model)
+        qtbot.addWidget(w)
+        w._restore_state({
+            'autoplay_interval': 7000,
+            'autoplay_loop': True,
+        })
+        assert w._autoplay_interval == 7000
+        assert w._autoplay_loop is True
+
+    def test_start_stop_autoplay(self, qtbot):
+        from wafer.app.viewer.preview.file_model import FileViewModel
+        model = FileViewModel()
+        w = FileViewerWidget(model)
+        qtbot.addWidget(w)
+        w.start_autoplay(interval_ms=2000, loop=False)
+        assert w.autoplay_active is True
+        assert w._autoplay_interval == 2000
+        assert w._autoplay_loop is False
+        w.stop_autoplay()
+        assert w.autoplay_active is False
+
+    def test_toggle_autoplay(self, qtbot):
+        from wafer.app.viewer.preview.file_model import FileViewModel
+        model = FileViewModel()
+        w = FileViewerWidget(model)
+        qtbot.addWidget(w)
+        w.toggle_autoplay(interval_ms=4000)
+        assert w.autoplay_active is True
+        w.toggle_autoplay()
+        assert w.autoplay_active is False
+
+    def test_arm_autoplay_starts_timer_for_default_plugin(self, qtbot):
+        from wafer.app.viewer.preview.file_model import FileViewModel
+        model = FileViewModel()
+        w = FileViewerWidget(model)
+        qtbot.addWidget(w)
+        w._autoplay_active = True
+        w._autoplay_interval = 1000
+        w._current_plugin_name = _DEFAULT_WIDGET_NAME
+        w._arm_autoplay()
+        assert w._autoplay_timer.isActive()
+        assert not w._autoplay_held
+        w.stop_autoplay()
+
+    def test_arm_autoplay_holds_for_plugin_returning_true(self, qtbot):
+        from wafer.app.viewer.preview.file_model import FileViewModel
+        model = FileViewModel()
+        w = FileViewerWidget(model)
+        qtbot.addWidget(w)
+
+        class HoldPlugin(WidgetViewerPlugin):
+            NAME = '_test_hold'
+            EXTENSIONS = ('.test',)
+            PRIORITY = 1
+            def set_autoplay(self, advance):
+                self._advance = advance
+                return advance is not None
+
+        from wafer.plugin.viewer.handler import viewer_resolver
+        plugin = HoldPlugin()
+        viewer_resolver.registry._instances['_test_hold'] = plugin
+
+        w._autoplay_active = True
+        w._current_plugin_name = '_test_hold'
+        w._arm_autoplay()
+        assert w._autoplay_held is True
+        assert not w._autoplay_timer.isActive()
+
+        del viewer_resolver.registry._instances['_test_hold']
+        w.stop_autoplay()
+
+    def test_generation_guards_stale_advance(self, qtbot):
+        from wafer.app.viewer.preview.file_model import FileViewModel
+        model = FileViewModel()
+        model.set_items(["a", "b", "c"], None)
+        model.set_current_index(0)
+        w = FileViewerWidget(model)
+        qtbot.addWidget(w)
+        old_gen = w._autoplay_generation
+        w._autoplay_active = True
+        w._autoplay_generation += 1
+        w._on_plugin_advance(old_gen)
+        assert model.current_index() == 0
+        w.stop_autoplay()
+
+    def test_interval_min_clamp(self, qtbot):
+        from wafer.app.viewer.preview.file_model import FileViewModel
+        model = FileViewModel()
+        w = FileViewerWidget(model)
+        qtbot.addWidget(w)
+        w.start_autoplay(interval_ms=100)
+        assert w._autoplay_interval == 500
+        w.stop_autoplay()
+
+
 def test_format_meta_no_collectors_omits_key():
     engine = _mock_engine(get_collection_status=[])
     meta_items = _format_meta(engine, "/a.png")
@@ -209,7 +320,7 @@ def test_flush_renders_widget_plugin():
 
     call_order = []
     with patch('wafer.app.viewer.preview.file_viewer.viewer_resolver') as mock_resolver:
-        mock_resolver.render = lambda w, p: call_order.append('render')
+        mock_resolver.render = lambda p: call_order.append('render')
         mock_resolver.deactivate = MagicMock()
         mock_resolver.activate = MagicMock()
 
@@ -268,8 +379,7 @@ def test_switch_to_deactivates_previous_widget_plugin():
         viewer._switch_to = lambda name: FileViewerWidget._switch_to(viewer, name)
         viewer._switch_to(_DEFAULT_WIDGET_NAME)
 
-        mock_resolver.deactivate.assert_called_once_with(
-            'stub_widget', viewer._widget_map['stub_widget'])
+        mock_resolver.deactivate.assert_called_once_with('stub_widget')
 
     assert viewer._current_plugin_name == _DEFAULT_WIDGET_NAME
 
@@ -282,8 +392,7 @@ def test_switch_to_activates_new_widget_plugin():
         viewer._switch_to = lambda name: FileViewerWidget._switch_to(viewer, name)
         viewer._switch_to('stub_widget')
 
-        mock_resolver.activate.assert_called_once_with(
-            'stub_widget', viewer._widget_map['stub_widget'])
+        mock_resolver.activate.assert_called_once_with('stub_widget')
     viewer.image_viewer.clear.assert_called_once()
     assert viewer._current_plugin_name == 'stub_widget'
 
@@ -297,10 +406,8 @@ def test_switch_to_deactivates_and_activates_between_plugins():
         viewer._switch_to = lambda name: FileViewerWidget._switch_to(viewer, name)
         viewer._switch_to('other_plugin')
 
-        mock_resolver.deactivate.assert_called_once_with(
-            'stub_widget', viewer._widget_map['stub_widget'])
-        mock_resolver.activate.assert_called_once_with(
-            'other_plugin', viewer._widget_map['other_plugin'])
+        mock_resolver.deactivate.assert_called_once_with('stub_widget')
+        mock_resolver.activate.assert_called_once_with('other_plugin')
 
 
 def test_switch_to_default_does_not_activate():

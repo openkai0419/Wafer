@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from typing import Any
 from ..registry import BasePlugin
 
@@ -17,20 +18,26 @@ class ImageViewerPlugin(BaseViewerPlugin):
 class WidgetViewerPlugin(BaseViewerPlugin):
     WIDGET_CLASS = None
 
-    def render(self, widget, path):
+    def __init__(self):
+        self.widget = self.WIDGET_CLASS() if self.WIDGET_CLASS else None
+
+    def render(self, path):
         pass
 
-    def clear(self, widget):
+    def clear(self):
         pass
 
-    def activate(self, widget):
+    def activate(self):
         pass
 
-    def deactivate(self, widget):
+    def deactivate(self):
         pass
 
-    def save_state(self, widget) -> dict[str, Any]:
+    def set_autoplay(self, advance: Callable[[], None] | None) -> bool:
+        return False
+
+    def save_state(self) -> dict[str, Any]:
         return {}
 
-    def restore_state(self, widget, state: dict[str, Any]) -> None:
+    def restore_state(self, state: dict[str, Any]) -> None:
         pass

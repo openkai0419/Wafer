@@ -12,6 +12,7 @@ from ....core.qt.dispatcher import Dispatcher, CancelSlot
 from ....core.qt.pixmap import PixmapFactory
 from ....core.qt.thread import utility_pool
 from ....core.state import StateStore
+from ....core.commands.bridge import Command
 from .meta_viewer import MetaListWidget
 from .image_viewer import ImageDisplayWidget
 from .file_model import FileViewModel
@@ -57,6 +58,8 @@ def _format_meta(engine, path):
 
 class FileViewerWidget(QtWidgets.QSplitter):
 
+    _DEFAULT_AUTOPLAY_INTERVAL = 3000
+
     def __init__(self, model: FileViewModel, parent=None):
         super().__init__(QtCore.Qt.Vertical, parent)
         self.model = model
@@ -70,6 +73,14 @@ class FileViewerWidget(QtWidgets.QSplitter):
         self._target_plugin: str | None = None
         self._widget_map: dict[str, QtWidgets.QWidget] = {}
         self._current_plugin_name: str = _DEFAULT_WIDGET_NAME
+        self._autoplay_active = False
+        self._autoplay_interval = self._DEFAULT_AUTOPLAY_INTERVAL
+        self._autoplay_loop = True
+        self._autoplay_held = False
+        self._autoplay_generation = 0
+        self._autoplay_timer = QtCore.QTimer(self)
+        self._autoplay_timer.setSingleShot(True)
+        self._autoplay_timer.timeout.connect(self._on_autoplay_tick)
         self.setup_ui()
         self.model.pathChanged.connect(self._on_path_changed)
 
@@ -85,10 +96,9 @@ class FileViewerWidget(QtWidgets.QSplitter):
         self._stack.addWidget(self.image_viewer)
         self._widget_map[_DEFAULT_WIDGET_NAME] = self.image_viewer
 
-        for name, widget_cls in viewer_resolver.widget_classes().items():
-            widget = widget_cls(self._stack)
-            self._stack.addWidget(widget)
-            self._widget_map[name] = widget
+        for name, plugin in viewer_resolver.viewer_plugins().items():
+            self._stack.addWidget(plugin.widget)
+            self._widget_map[name] = plugin.widget
 
         self.addWidget(self._stack)
 
@@ -113,7 +123,8 @@ class FileViewerWidget(QtWidgets.QSplitter):
         if prev_name == _DEFAULT_WIDGET_NAME:
             self.image_viewer.clear()
         else:
-            viewer_resolver.deactivate(prev_name, self._widget_map[prev_name])
+            self._unbind_autoplay(prev_name)
+            viewer_resolver.deactivate(prev_name)
         widget = self._widget_map.get(plugin_name)
         if widget is None:
             plugin_name = _DEFAULT_WIDGET_NAME
@@ -121,7 +132,7 @@ class FileViewerWidget(QtWidgets.QSplitter):
         self._stack.setCurrentWidget(widget)
         self._current_plugin_name = plugin_name
         if plugin_name != _DEFAULT_WIDGET_NAME:
-            viewer_resolver.activate(plugin_name, widget)
+            viewer_resolver.activate(plugin_name)
 
     def _register_states(self):
         store = StateStore.instance()
@@ -132,14 +143,15 @@ class FileViewerWidget(QtWidgets.QSplitter):
             plugin = viewer_resolver.registry.instance(name)
             if plugin is None or not isinstance(plugin, _WidgetViewerPlugin):
                 continue
-            w = widget
             p = plugin
-            store.register(f'viewer_plugin.{name}', lambda p=p, w=w: p.save_state(w), lambda s, p=p, w=w: p.restore_state(w, s))
+            store.register(f'viewer_plugin.{name}', lambda p=p: p.save_state(), lambda s, p=p: p.restore_state(s))
 
     def _save_state(self):
         return {
             'fit_mode': 'contain' if self.image_viewer.is_contain_mode() else 'cover',
             'splitter_sizes': self.sizes(),
+            'autoplay_interval': self._autoplay_interval,
+            'autoplay_loop': self._autoplay_loop,
         }
 
     def _restore_state(self, state):
@@ -147,6 +159,10 @@ class FileViewerWidget(QtWidgets.QSplitter):
             self.image_viewer.set_contain_mode(state['fit_mode'] == 'contain')
         if 'splitter_sizes' in state:
             self.setSizes(state['splitter_sizes'])
+        if 'autoplay_interval' in state:
+            self._autoplay_interval = int(state['autoplay_interval'])
+        if 'autoplay_loop' in state:
+            self._autoplay_loop = bool(state['autoplay_loop'])
 
     def on_exit(self):
         pass
@@ -210,10 +226,11 @@ class FileViewerWidget(QtWidgets.QSplitter):
         if image is not None:
             self.image_viewer.set_image(image, path)
         elif target != _DEFAULT_WIDGET_NAME:
-            viewer_resolver.render(self._widget_map[target], path)
+            viewer_resolver.render(path)
         else:
             self.image_viewer.set_image(PixmapFactory.create_viewer_error_placeholder(), path)
         self.meta_viewer.set_data(meta)
+        self._arm_autoplay()
 
     def set_path(self, path: str | None):
         if not path:
@@ -242,3 +259,85 @@ class FileViewerWidget(QtWidgets.QSplitter):
             return
         self._pending_meta = result
         self._flush()
+
+    def _arm_autoplay(self):
+        if not self._autoplay_active:
+            return
+        self._autoplay_timer.stop()
+        self._autoplay_held = False
+        plugin = self._active_viewer_plugin()
+        if plugin is not None:
+            self._autoplay_generation += 1
+            gen = self._autoplay_generation
+            held = plugin.set_autoplay(lambda gen=gen: self._on_plugin_advance(gen))
+            if held:
+                self._autoplay_held = True
+                return
+        self._autoplay_timer.start(self._autoplay_interval)
+
+    def _unbind_autoplay(self, plugin_name: str):
+        if not self._autoplay_active:
+            return
+        plugin = viewer_resolver.registry.instance(plugin_name)
+        if isinstance(plugin, _WidgetViewerPlugin):
+            plugin.set_autoplay(None)
+        self._autoplay_held = False
+
+    def _on_plugin_advance(self, generation: int):
+        if generation != self._autoplay_generation:
+            return
+        if not self._autoplay_active:
+            return
+        self._do_advance()
+
+    def _on_autoplay_tick(self):
+        if not self._autoplay_active:
+            return
+        self._do_advance()
+
+    def _do_advance(self):
+        self._autoplay_timer.stop()
+        self._autoplay_generation += 1
+        self.model.move_current_next(step=1, loop=self._autoplay_loop)
+
+    def _active_viewer_plugin(self) -> _WidgetViewerPlugin | None:
+        name = self._current_plugin_name
+        if name == _DEFAULT_WIDGET_NAME:
+            return None
+        plugin = viewer_resolver.registry.instance(name)
+        if isinstance(plugin, _WidgetViewerPlugin):
+            return plugin
+        return None
+
+    def start_autoplay(self, interval_ms: int | None = None, loop: bool | None = None):
+        if interval_ms is not None:
+            self._autoplay_interval = max(500, int(interval_ms))
+        if loop is not None:
+            self._autoplay_loop = bool(loop)
+        self._autoplay_active = True
+        Command.set_checked('fv.toggle_slideshow', True)
+        self._arm_autoplay()
+
+    def stop_autoplay(self):
+        self._autoplay_active = False
+        self._autoplay_timer.stop()
+        self._autoplay_generation += 1
+        plugin = self._active_viewer_plugin()
+        if plugin is not None:
+            plugin.set_autoplay(None)
+        self._autoplay_held = False
+        Command.set_checked('fv.toggle_slideshow', False)
+
+    def toggle_autoplay(self, interval_ms: int | None = None, loop: bool | None = None):
+        if self._autoplay_active:
+            self.stop_autoplay()
+        else:
+            self.start_autoplay(interval_ms=interval_ms, loop=loop)
+
+    @property
+    def autoplay_active(self) -> bool:
+        return self._autoplay_active
+
+    @property
+    def autoplay_interval(self) -> int:
+        return self._autoplay_interval

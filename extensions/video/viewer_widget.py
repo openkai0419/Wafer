@@ -262,6 +262,7 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
         self._paused_by_background = False
         self._seek_dragging = False
         self._controls_visible = False
+        self._autoplay_advance = None
 
         self._player_area = QWidget(self)
         self._player_area.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
@@ -356,6 +357,7 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
 
     def clear(self):
         self._path = None
+        self._autoplay_advance = None
         self._stop_playback()
         self._pos_timer.stop()
         self._hide_controls()
@@ -365,6 +367,7 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
             self._pos_timer.start()
 
     def deactivate(self):
+        self._autoplay_advance = None
         self._stop_playback()
         self._pos_timer.stop()
         self._hide_controls()
@@ -458,6 +461,9 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
         self._pause_in_background = enabled
         Command.set_checked("vview.toggle_pause_in_background", self._pause_in_background)
 
+    def set_autoplay_advance(self, advance):
+        self._autoplay_advance = advance
+
     def _on_volume_changed(self, value):
         self._volume = value
         if self._muted and value > 0:
@@ -506,6 +512,15 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
             self._control_bar.seek_slider.setValue(int(pos / dur * 1000))
             self._control_bar.seek_slider.blockSignals(False)
         self._update_play_button()
+        if self._autoplay_advance and not self._looping:
+            try:
+                eof = self._player.eof_reached
+            except Exception:
+                eof = False
+            if eof:
+                cb = self._autoplay_advance
+                self._autoplay_advance = None
+                cb()
 
     def _show_controls(self):
         if not self._controls_visible:

@@ -26,6 +26,27 @@ def prev_file(ctx, model, step: int = 1, loop: bool = False):
     model.move_current_prev(step=int(step), loop=bool(loop))
 
 
+@require(fv="FileViewerWidget")
+def toggle_slideshow(ctx, fv, interval_ms: int = 3000, loop: bool = True):
+    fv.toggle_autoplay(
+        interval_ms=int(interval_ms),
+        loop=bool(loop),
+    )
+
+
+@require(fv="FileViewerWidget")
+def start_slideshow(ctx, fv, interval_ms: int = 3000, loop: bool = True):
+    fv.start_autoplay(
+        interval_ms=int(interval_ms),
+        loop=bool(loop),
+    )
+
+
+@require(fv="FileViewerWidget")
+def stop_slideshow(ctx, fv):
+    fv.stop_autoplay()
+
+
 class FileViewerCommands(ActionKit.MenuBase):
     NAME = "FileViewer"
     PRIORITY = 50
@@ -45,6 +66,33 @@ class FileViewerCommands(ActionKit.MenuBase):
                 display="Next File",
                 func=next_file,
                 params=[ActionKit.Param(name="step", value=1), ActionKit.Param(name="loop", value=False)],
+            ),
+            "-",
+            ActionKit.Command(
+                path="fv.toggle_slideshow",
+                display="Slideshow",
+                func=toggle_slideshow,
+                checkable=True,
+                params=[
+                    ActionKit.Param(name="interval_ms", value=3000, min_value=500, max_value=60000),
+                    ActionKit.Param(name="loop", value=True),
+                ],
+            ),
+            ActionKit.Command(
+                path="fv.start_slideshow",
+                display="Start Slideshow",
+                func=start_slideshow,
+                hidden=True,
+                params=[
+                    ActionKit.Param(name="interval_ms", value=3000, min_value=500, max_value=60000),
+                    ActionKit.Param(name="loop", value=True),
+                ],
+            ),
+            ActionKit.Command(
+                path="fv.stop_slideshow",
+                display="Stop Slideshow",
+                func=stop_slideshow,
+                hidden=True,
             ),
             "-",
         ]

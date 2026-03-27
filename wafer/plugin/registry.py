@@ -53,7 +53,7 @@ class PluginRegistry:
         else:
             self._plugins.append(plugin_cls)
         self._plugins.sort(key=lambda c: c.PRIORITY, reverse=True)
-        self._instances[plugin_cls.NAME] = plugin_cls()
+        self._instances.pop(plugin_cls.NAME, None)
         self._rebuild_ext_cache()
         self._chain_cache.clear()
 
@@ -102,7 +102,13 @@ class PluginRegistry:
         return None
 
     def instance(self, name: str) -> BasePlugin | None:
-        return self._instances.get(name)
+        inst = self._instances.get(name)
+        if inst is None:
+            cls = self.get(name)
+            if cls is not None:
+                inst = cls()
+                self._instances[name] = inst
+        return inst
 
     def all_classes(self) -> list[tuple[str, type[BasePlugin]]]:
         return [(p.NAME, p) for p in self._plugins]

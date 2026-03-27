@@ -1,4 +1,8 @@
-from wafer.app.viewer.commands.file_viewer import next_file, prev_file
+from unittest.mock import MagicMock
+
+from wafer.app.viewer.commands.file_viewer import (
+    next_file, prev_file, toggle_slideshow, start_slideshow, stop_slideshow,
+)
 from wafer.app.viewer.preview.file_model import FileViewModel
 
 
@@ -74,3 +78,38 @@ def test_file_viewer_step():
 
     prev_file(ctx, step=3)
     assert model.current_index() == 1
+
+
+class _SlideshowCtx:
+    def __init__(self, fv):
+        self._fv = fv
+
+    def get(self, key, default=None):
+        return default
+
+    def get_instance(self, name, default=None):
+        if name == "FileViewerWidget":
+            return self._fv
+        return default
+
+
+def test_toggle_slideshow_starts_autoplay():
+    fv = MagicMock()
+    fv.autoplay_active = False
+    ctx = _SlideshowCtx(fv)
+    toggle_slideshow(ctx, interval_ms=5000, loop=True)
+    fv.toggle_autoplay.assert_called_once_with(interval_ms=5000, loop=True)
+
+
+def test_start_slideshow_calls_start():
+    fv = MagicMock()
+    ctx = _SlideshowCtx(fv)
+    start_slideshow(ctx, interval_ms=2000, loop=False)
+    fv.start_autoplay.assert_called_once_with(interval_ms=2000, loop=False)
+
+
+def test_stop_slideshow_calls_stop():
+    fv = MagicMock()
+    ctx = _SlideshowCtx(fv)
+    stop_slideshow(ctx)
+    fv.stop_autoplay.assert_called_once()

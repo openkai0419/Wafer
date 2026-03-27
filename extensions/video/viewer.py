@@ -11,32 +11,36 @@ class VideoViewerPlugin(WidgetViewerPlugin):
     PRIORITY = 100
     WIDGET_CLASS = VideoViewerWidget
 
-    def render(self, widget, path):
-        widget.load(path)
+    def render(self, path):
+        self.widget.load(path)
 
-    def clear(self, widget):
-        widget.clear()
+    def clear(self):
+        self.widget.clear()
 
-    def activate(self, widget):
-        widget.activate()
+    def activate(self):
+        self.widget.activate()
 
-    def deactivate(self, widget):
-        widget.deactivate()
+    def deactivate(self):
+        self.widget.deactivate()
 
-    def save_state(self, widget):
+    def set_autoplay(self, advance):
+        self.widget.set_autoplay_advance(advance)
+        return advance is not None
+
+    def save_state(self):
         return {
-            'volume': widget._volume,
-            'muted': widget._muted,
-            'speed': widget._speed,
-            'fit_mode': widget._cover_mode,
-            'loop': widget._looping,
-            'pause_in_background': widget._pause_in_background,
+            'volume': self.widget._volume,
+            'muted': self.widget._muted,
+            'speed': self.widget._speed,
+            'fit_mode': self.widget._cover_mode,
+            'loop': self.widget._looping,
+            'pause_in_background': self.widget._pause_in_background,
         }
 
-    def restore_state(self, widget, state):
-        widget.set_volume(state.get('volume', DEFAULT_VOLUME))
-        widget.set_muted(state.get('muted', False))
-        widget.set_speed(state.get('speed', 1.0))
-        widget.set_cover_mode(state.get('fit_mode', False))
-        widget.set_looping(state.get('loop', False))
-        widget.set_pause_in_background(state.get('pause_in_background', False))
+    def restore_state(self, state):
+        self.widget.set_volume(state.get('volume', DEFAULT_VOLUME))
+        self.widget.set_muted(state.get('muted', False))
+        self.widget.set_speed(state.get('speed', 1.0))
+        self.widget.set_cover_mode(state.get('fit_mode', False))
+        self.widget.set_looping(state.get('loop', False))
+        self.widget.set_pause_in_background(state.get('pause_in_background', False))

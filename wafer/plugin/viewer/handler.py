@@ -19,12 +19,14 @@ class ViewerResolver:
     def is_widget_plugin(self, path: str) -> bool:
         return isinstance(self.registry.resolve_instance(path), WidgetViewerPlugin)
 
-    def widget_classes(self) -> dict[str, type]:
-        return {
-            p.NAME: p.WIDGET_CLASS
-            for p in self.registry.list_all()
-            if issubclass(p, WidgetViewerPlugin) and p.WIDGET_CLASS is not None
-        }
+    def viewer_plugins(self) -> dict[str, WidgetViewerPlugin]:
+        result = {}
+        for p in self.registry.list_all():
+            if issubclass(p, WidgetViewerPlugin) and p.WIDGET_CLASS is not None:
+                inst = self.registry.instance(p.NAME)
+                if isinstance(inst, WidgetViewerPlugin):
+                    result[p.NAME] = inst
+        return result
 
     def load_content(self, path: str) -> QtGui.QImage | None:
         for plugin_cls in self.registry.resolve_chain(path):
@@ -35,20 +37,20 @@ class ViewerResolver:
                     return result
         return None
 
-    def render(self, widget, path: str):
+    def render(self, path: str):
         instance = self.registry.resolve_instance(path)
         if isinstance(instance, WidgetViewerPlugin):
-            instance.render(widget, path)
+            instance.render(path)
 
-    def activate(self, name: str, widget):
+    def activate(self, name: str):
         instance = self.registry.instance(name)
         if isinstance(instance, WidgetViewerPlugin):
-            instance.activate(widget)
+            instance.activate()
 
-    def deactivate(self, name: str, widget):
+    def deactivate(self, name: str):
         instance = self.registry.instance(name)
         if isinstance(instance, WidgetViewerPlugin):
-            instance.deactivate(widget)
+            instance.deactivate()
 
 
 viewer_resolver = ViewerResolver()

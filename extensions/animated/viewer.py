@@ -13,22 +13,22 @@ class AnimatedViewerPlugin(WidgetViewerPlugin):
     def can_handle(cls, path: str) -> bool:
         return is_animated(path)
 
-    def render(self, widget, path):
-        widget.load(path)
+    def render(self, path):
+        self.widget.load(path)
 
-    def clear(self, widget):
-        widget.clear()
+    def clear(self):
+        self.widget.clear()
 
-    def activate(self, widget):
-        widget.activate()
+    def activate(self):
+        self.widget.activate()
 
-    def deactivate(self, widget):
-        widget.deactivate()
+    def deactivate(self):
+        self.widget.deactivate()
 
-    def save_state(self, widget):
+    def save_state(self):
         return {
-            'fit_mode': widget._cover_mode,
+            'fit_mode': self.widget._cover_mode,
         }
 
-    def restore_state(self, widget, state):
-        widget.set_cover_mode(state.get('fit_mode', False))
+    def restore_state(self, state):
+        self.widget.set_cover_mode(state.get('fit_mode', False))

@@ -25,6 +25,12 @@
 - video/volume, video/muted, tree/state等のセッションスコープ状態はINIから完全移行済み
 - VideoGridPlugin.restore_stateはWidget未生成時にMpvCellWidget._pending_grid_stateに保持し、_init_shared時に自動適用する（遅延復元）
 
+■ WidgetViewerPlugin と WidgetGridPlugin のwidget管理の違い
+- ViewerPlugin: 1プラグイン=1Widget。__init__でWIDGET_CLASS()から自動生成、self.widgetでアクセス。メソッドにwidget引数不要
+- GridPlugin: プール管理で複数Widget。メソッドにwidget引数が必要（どのWidgetか特定できないため）
+- PluginRegistry.register()はクラス登録のみ。instance()初回呼び出し時に遅延インスタンス化する
+- FileViewerWidget.setup_ui()でviewer_resolver.viewer_plugins()経由でインスタンス取得し、plugin.widgetをstackに追加
+
 ■ Dispatcher / Pipeline スレッドモデルの設計思想
 目的: アプリ全体のBG処理を「1つの経路」に統一し、独自ワーカークラスやスレッドプール乱立を防ぐ。
 

@@ -18,14 +18,9 @@ class SystemThumbnailPlugin(ImageGridPlugin):
     EXTENSIONS = ()
     PRIORITY = -100
 
-    _thumbnailer = None
-
-    @classmethod
-    def _get_thumbnailer(cls):
-        if cls._thumbnailer is None:
-            from ..core.platform.thumbnails import FileThumbnailer
-            cls._thumbnailer = FileThumbnailer()
-        return cls._thumbnailer
+    def __init__(self):
+        from ..core.platform.thumbnails import FileThumbnailer
+        self.thumbnailer = FileThumbnailer()
 
     @profiler.profile
     def load(self, path: str, size=None) -> QtGui.QImage | None:
@@ -34,7 +29,7 @@ class SystemThumbnailPlugin(ImageGridPlugin):
             thumb_size = grid_resolver.thumbnail_size
             if size is not None:
                 thumb_size = max(size.width(), size.height(), 256)
-            pil_img = self._get_thumbnailer().get_thumbnail(path, size=thumb_size)
+            pil_img = self.thumbnailer.get_thumbnail(path, size=thumb_size)
             if pil_img is None:
                 return None
             qimage = _pil_to_qimage(pil_img)

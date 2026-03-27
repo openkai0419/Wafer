@@ -53,10 +53,11 @@
 - scene.setSceneRect()でスクロール範囲を制御
 
 ■ プラグインインターフェース規約
-- WidgetViewerPlugin.render(widget, path)とWidgetGridPlugin.render(widget, path, size)で引数順を統一。操作対象のwidgetが先。どちらもメインスレッドで呼ばれる
-- WidgetViewerPlugin.clear(widget)とWidgetGridPlugin.release(widget)は異なるセマンティクス（clear=コンテンツリセット、release=リソース解放）のため名前は別
+- WidgetViewerPlugin.render(path)はwidget引数を取らない。__init__でWIDGET_CLASS()から自動生成されたself.widgetでアクセスする。メインスレッドで呼ばれる
+- WidgetGridPlugin.render(widget, path, size)はwidget引数を取る（プール管理で複数Widgetが存在するため）。メインスレッドで呼ばれる
+- WidgetViewerPlugin.clear()とWidgetGridPlugin.release(widget)は異なるセマンティクス（clear=コンテンツリセット、release=リソース解放）のため名前は別
 - BaseGridPlugin.release(widget)は画面外スクロール時にAdditionalWidgetPoolから呼ばれる。GPUリソース等重い資源はsuspend/resume方式。cleanup()は完全破壊のみ
-- Grid/ViewerのWIDGET_CLASSとload()は排他。Widget生成はシステム管理
+- Grid/ViewerのWIDGET_CLASSとload()は排他。ViewerPluginのWidget生成は__init__で自動、GridのWidget生成はシステム管理
 - Collectorはmeta_info+statusのみ返す。name/aspect/file_hashはPhase1で設定
 - PRIORITY大=高優先。EXTENSIONS=()は全ファイルマッチ
 - render(widget, path, size)は戻り値なし。フォールバックはresolve_chain内のcan_handle()で制御。BGワークが必要なプラグインはDispatcher.post()を自分で呼ぶ

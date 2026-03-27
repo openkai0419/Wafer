@@ -68,15 +68,16 @@ def test_is_widget_plugin_unknown():
     assert not viewer_resolver.is_widget_plugin('file.xyz')
 
 
-def test_widget_classes_includes_registered():
-    classes = viewer_resolver.widget_classes()
-    for name, cls in classes.items():
+def test_viewer_plugins_includes_registered():
+    plugins = viewer_resolver.viewer_plugins()
+    for name, inst in plugins.items():
         assert isinstance(name, str)
-        assert cls is not None
+        assert isinstance(inst, WidgetViewerPlugin)
+        assert inst.widget is not None
 
 
 def test_render_does_nothing_without_widget_plugin():
-    viewer_resolver.render(None, 'photo.jpg')
+    viewer_resolver.render('photo.jpg')
 
 
 def test_image_plugin_load_content_returns_image(tmp_path):
@@ -107,12 +108,28 @@ def test_widget_viewer_plugin_activate_default():
         EXTENSIONS = ('.stub',)
         PRIORITY = 1
     plugin = Stub()
-    from unittest.mock import MagicMock
-    w = MagicMock()
-    plugin.activate(w)
-    plugin.deactivate(w)
+    plugin.activate()
+    plugin.deactivate()
+
+
+def test_set_autoplay_default_returns_false():
+    class Stub(WidgetViewerPlugin):
+        NAME = 'stub_ap'
+        EXTENSIONS = ('.stub',)
+        PRIORITY = 1
+    plugin = Stub()
+    assert plugin.set_autoplay(lambda: None) is False
+
+
+def test_set_autoplay_none_returns_false():
+    class Stub(WidgetViewerPlugin):
+        NAME = 'stub_ap2'
+        EXTENSIONS = ('.stub',)
+        PRIORITY = 1
+    plugin = Stub()
+    assert plugin.set_autoplay(None) is False
 
 
 def test_activate_deactivate_via_resolver():
-    viewer_resolver.activate('__nonexistent__', None)
-    viewer_resolver.deactivate('__nonexistent__', None)
+    viewer_resolver.activate('__nonexistent__')
+    viewer_resolver.deactivate('__nonexistent__')

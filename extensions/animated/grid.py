@@ -11,6 +11,7 @@ class AnimatedGridPlugin(WidgetGridPlugin):
     NAME = 'animated'
     EXTENSIONS = ('.gif', '.apng', '.webp')
     PRIORITY = 200
+    DEFAULT_ENABLED = True
     WIDGET_CLASS = AnimatedCellWidget
     REQUIRE_THUMBNAIL = True
 

@@ -25,8 +25,8 @@ class CollectorsTab(QtWidgets.QWidget):
 
         outer = QtWidgets.QVBoxLayout(self)
         outer.setSpacing(dpix(8))
-        desc = QtWidgets.QLabel('Assign collectors to each database:')
-        desc.setStyleSheet(f'font-weight: bold; font-size: {dpix(12)}px;')
+        desc = QtWidgets.QLabel('Collector Assignment')
+        desc.setObjectName('section_header')
         outer.addWidget(desc)
         self._content = QtWidgets.QWidget()
         self._main_layout = QtWidgets.QVBoxLayout(self._content)
@@ -53,11 +53,22 @@ class CollectorsTab(QtWidgets.QWidget):
         grid = QtWidgets.QGridLayout(matrix_group)
         grid.setSpacing(dpix(4))
 
-        grid.addWidget(QtWidgets.QLabel('All'), 0, 1, QtCore.Qt.AlignCenter)
+        def _vsep():
+            sep = QtWidgets.QFrame()
+            sep.setFrameShape(QtWidgets.QFrame.VLine)
+            sep.setFrameShadow(QtWidgets.QFrame.Sunken)
+            return sep
+
+        total_rows = len(self._collector_names) + 1
+        for r in range(total_rows):
+            grid.addWidget(_vsep(), r, 1)
+            grid.addWidget(_vsep(), r, 3)
+
+        grid.addWidget(QtWidgets.QLabel('All'), 0, 2, QtCore.Qt.AlignCenter)
         for col_idx, db in enumerate(self._db_names):
             lbl = QtWidgets.QLabel(db)
             lbl.setAlignment(QtCore.Qt.AlignCenter)
-            grid.addWidget(lbl, 0, col_idx + 2)
+            grid.addWidget(lbl, 0, col_idx + 4)
 
         for row_idx, coll in enumerate(self._collector_names):
             lbl = QtWidgets.QLabel(coll)
@@ -67,14 +78,14 @@ class CollectorsTab(QtWidgets.QWidget):
             all_cb.setTristate(True)
             all_cb.clicked.connect(lambda checked, c=coll: self._on_all_toggled(c, checked))
             self._all_checks[coll] = all_cb
-            grid.addWidget(all_cb, row_idx + 1, 1, QtCore.Qt.AlignCenter)
+            grid.addWidget(all_cb, row_idx + 1, 2, QtCore.Qt.AlignCenter)
 
             for col_idx, db in enumerate(self._db_names):
                 cb = QtWidgets.QCheckBox()
                 cb.setChecked(coll in self._initial_state.get(db, set()))
                 cb.stateChanged.connect(lambda _s, c=coll: self._sync_all_check(c))
                 self._matrix[(coll, db)] = cb
-                grid.addWidget(cb, row_idx + 1, col_idx + 2, QtCore.Qt.AlignCenter)
+                grid.addWidget(cb, row_idx + 1, col_idx + 4, QtCore.Qt.AlignCenter)
 
             self._sync_all_check(coll)
 

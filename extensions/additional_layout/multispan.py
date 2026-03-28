@@ -268,6 +268,7 @@ class MultiSpanLayout(BaseLayoutPlugin):
     NAME = 'multiSpan'
     DISPLAY_NAME = 'MultiSpan Grid'
     PRIORITY = 86
+    DEFAULT_ENABLED = True
 
     @classmethod
     def create_calculator(cls, aspect_ratios, base_size, spacing,
@@ -282,6 +283,7 @@ class MultiSpanTilingLayout(BaseLayoutPlugin):
     NAME = 'multiSpanTiling'
     DISPLAY_NAME = 'MultiSpan Tiling'
     PRIORITY = 84
+    DEFAULT_ENABLED = True
 
     @classmethod
     def create_calculator(cls, aspect_ratios, base_size, spacing,

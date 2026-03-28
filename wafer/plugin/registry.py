@@ -6,7 +6,7 @@ from ..utils.profiling import profiler
 class PluginBase:
     NAME: str = ''
     PRIORITY: int = 0
-    DEFAULT_ENABLED: bool = True
+    DEFAULT_ENABLED: bool = False
 
     @classmethod
     def post_install(cls, plugin_dir: str, on_progress=None):

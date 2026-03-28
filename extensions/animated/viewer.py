@@ -8,6 +8,7 @@ class AnimatedViewerPlugin(WidgetViewerPlugin):
     EXTENSIONS = ('.gif', '.apng', '.webp')
     PRIORITY = 200
     WIDGET_CLASS = AnimatedViewerWidget
+    DEFAULT_ENABLED = True
 
     @classmethod
     def can_handle(cls, path: str) -> bool:

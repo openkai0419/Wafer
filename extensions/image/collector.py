@@ -7,6 +7,7 @@ class ExifCollectorPlugin(BaseCollectorPlugin):
     NAME = 'exif'
     EXTENSIONS = ('.jpg', '.jpeg', '.png', '.bmp', '.gif', '.webp')
     PRIORITY = 100
+    DEFAULT_ENABLED = True
 
     @staticmethod
     def _prefixed_meta(raw: dict) -> dict:

@@ -10,6 +10,7 @@ def toggle_fit_mode(ctx, vw):
 class AnimatedViewerCommands(MenuGroup):
     NAME = "Animated Viewer"
     PRIORITY = 1200
+    DEFAULT_ENABLED = True
 
     @classmethod
     def commands(cls):

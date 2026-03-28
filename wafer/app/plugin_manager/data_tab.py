@@ -22,8 +22,8 @@ class DataTab(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setSpacing(dpix(6))
 
-        label = QtWidgets.QLabel('Collected data per database:')
-        label.setStyleSheet(f'font-weight: bold; font-size: {dpix(12)}px;')
+        label = QtWidgets.QLabel('Collected Data')
+        label.setObjectName('section_header')
         layout.addWidget(label)
 
         self._table = QtWidgets.QTableWidget()
@@ -43,6 +43,7 @@ class DataTab(QtWidgets.QWidget):
         layout.addWidget(self._re_collect_cb)
 
         self._purge_btn = QtWidgets.QPushButton('Purge Selected')
+        self._purge_btn.setObjectName('purge_btn')
         self._purge_btn.setFixedWidth(dpix(140))
         self._purge_btn.clicked.connect(self._on_purge)
         layout.addWidget(self._purge_btn)

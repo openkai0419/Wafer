@@ -9,6 +9,7 @@ class ImageViewerPlugin(_ImageViewerPlugin):
     NAME = 'image'
     EXTENSIONS = ('.jpg', '.jpeg', '.png', '.bmp', '.gif', '.webp')
     PRIORITY = 100
+    DEFAULT_ENABLED = True
 
     def load_content(self, path: str) -> QtGui.QImage | None:
         return load_image(path)

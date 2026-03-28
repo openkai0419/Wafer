@@ -150,7 +150,7 @@ class PluginLoader:
             qualified = f'{registry_key}:{cls.NAME}'
             if self._enabled is not None and qualified not in self._enabled:
                 continue
-            if self._enabled is None and not getattr(cls, 'DEFAULT_ENABLED', True):
+            if self._enabled is None and not getattr(cls, 'DEFAULT_ENABLED', False):
                 continue
             if registry_key == 'command':
                 PluginLoader._deferred_commands.append(cls)

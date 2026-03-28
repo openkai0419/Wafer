@@ -9,6 +9,7 @@ class VideoViewerPlugin(WidgetViewerPlugin):
         '.wmv', '.flv', '.m4v', '.ts', '.mpg', '.mpeg',
     )
     PRIORITY = 100
+    DEFAULT_ENABLED = True
     WIDGET_CLASS = VideoViewerWidget
 
     def render(self, path):

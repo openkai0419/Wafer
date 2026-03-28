@@ -84,7 +84,8 @@ class DateRangeFilter(BaseFilterPlugin):
     NAME = 'date_range'
     DISPLAY_NAME = 'Date'
     PRIORITY = 85
-
+    DEFAULT_ENABLED = True
+    
     @classmethod
     def create_widget(cls, parent=None):
         from .widget import DateRangeWidget

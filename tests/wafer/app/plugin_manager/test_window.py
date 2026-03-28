@@ -55,7 +55,7 @@ class TestExtensionsTab:
         dispatcher = Dispatcher()
         from wafer.app.plugin_manager.extensions_tab import ExtensionsTab
         tab = ExtensionsTab({'grid:fake_p'}, dispatcher)
-        qtbot.waitUntil(lambda: len(tab._cards['my_ext']._checkboxes) > 0, timeout=3000)
+        qtbot.waitUntil(lambda: len(tab._cards['my_ext']._rows) > 0, timeout=3000)
         result = tab.collect_enabled()
         assert 'grid:fake_p' in result
 
@@ -76,8 +76,9 @@ class TestExtensionsTab:
         from wafer.app.plugin_manager.extensions_tab import ExtensionsTab
         tab = ExtensionsTab(set(), dispatcher)
         card = tab._cards['uninstalled']
-        assert not card._install_btn.isHidden()
-        assert len(card._checkboxes) == 0
+        assert card._status_btn.isEnabled()
+        assert card._status_btn.text() == 'Install'
+        assert len(card._rows) == 0
 
     def test_default_enabled_none_uses_attribute(self, qtbot, tmp_path, monkeypatch):
         ext_dir = tmp_path / 'extensions'
@@ -112,7 +113,7 @@ class TestExtensionsTab:
         dispatcher = Dispatcher()
         from wafer.app.plugin_manager.extensions_tab import ExtensionsTab
         tab = ExtensionsTab(None, dispatcher)
-        qtbot.waitUntil(lambda: len(tab._cards['ext1']._checkboxes) > 0, timeout=3000)
+        qtbot.waitUntil(lambda: len(tab._cards['ext1']._rows) > 0, timeout=3000)
 
         enabled = tab.collect_enabled()
         assert 'grid:enabled_p' in enabled
@@ -144,12 +145,12 @@ class TestExtensionsTab:
         dispatcher = Dispatcher()
         from wafer.app.plugin_manager.extensions_tab import ExtensionsTab
         tab = ExtensionsTab({'viewer:fp'}, dispatcher)
-        qtbot.waitUntil(lambda: len(tab._cards['ext1']._checkboxes) > 0, timeout=3000)
+        qtbot.waitUntil(lambda: len(tab._cards['ext1']._rows) > 0, timeout=3000)
 
         signals = []
         tab.enabled_changed.connect(lambda: signals.append(True))
-        cb, _ = tab._cards['ext1']._checkboxes[0]
-        cb.setChecked(False)
+        row, _ = tab._cards['ext1']._rows[0]
+        row.checkbox.setChecked(False)
         assert len(signals) >= 1
 
     def test_collect_enabled_plugins_by_type(self, qtbot, tmp_path, monkeypatch):
@@ -183,7 +184,7 @@ class TestExtensionsTab:
         dispatcher = Dispatcher()
         from wafer.app.plugin_manager.extensions_tab import ExtensionsTab
         tab = ExtensionsTab({'viewer:vp', 'grid:gp'}, dispatcher)
-        qtbot.waitUntil(lambda: len(tab._cards['ext1']._checkboxes) > 0, timeout=3000)
+        qtbot.waitUntil(lambda: len(tab._cards['ext1']._rows) > 0, timeout=3000)
 
         viewers = tab.collect_enabled_plugins('viewer')
         grids = tab.collect_enabled_plugins('grid')
@@ -520,6 +521,7 @@ class TestPluginManagerCommands:
         assert 'setting.plugin_manager' in paths
         assert 'setting.restart_tray' in paths
         assert 'setting.restart_viewer' in paths
+        assert 'setting.restart_all' in paths
 
     def test_restart_tray_calls_process(self, monkeypatch):
         calls = []
@@ -551,6 +553,27 @@ class TestPluginManagerCommands:
         restart_viewer(ctx)
         assert any('--viewer' in a[1] for a in calls)
         assert any('abc123' in a[1] for a in calls)
+        mock_w.close.assert_called_once()
+
+    def test_restart_all_calls_both(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(
+            'wafer.app.plugin_manager.commands.AppProcess',
+            type('', (), {
+                'terminate_cmd': staticmethod(lambda *a: calls.append(('terminate', a))),
+                'new_main': staticmethod(lambda *a: calls.append(('new_main', a))),
+            })(),
+        )
+        from wafer.app.plugin_manager.commands import restart_all
+        mock_w = MagicMock()
+        mock_w.session_id = 'sess1'
+        ctx = MagicMock()
+        ctx.get_instance.return_value = mock_w
+        restart_all(ctx)
+        assert ('terminate', ('--tray',)) in calls
+        assert ('new_main', ('--tray',)) in calls
+        assert any('--viewer' in a[1] for a in calls)
+        assert any('sess1' in a[1] for a in calls)
         mock_w.close.assert_called_once()
 
 
@@ -690,3 +713,88 @@ class TestCloseEventCancels:
         tab.cancel_pending()
         assert token.is_cancelled()
         assert tab._install_cancels == {}
+
+
+class TestPostInstallHook:
+
+    def test_post_install_called_after_install(self, qtbot, tmp_path, monkeypatch):
+        ext_dir = tmp_path / 'extensions'
+        (ext_dir / 'vid_ext').mkdir(parents=True)
+        (ext_dir / 'vid_ext' / '__init__.py').write_text('')
+        monkeypatch.setattr(
+            'wafer.app.plugin_manager.extensions_tab.get_plugin_dir',
+            lambda: str(ext_dir),
+        )
+        monkeypatch.setattr(
+            'wafer.app.plugin_manager.extensions_tab._needs_install',
+            lambda folder: True,
+        )
+
+        post_install_calls = []
+
+        class HookPlugin(BasePlugin):
+            NAME = 'hook_p'
+            EXTENSIONS = ('.h',)
+            PRIORITY = 1
+
+            @classmethod
+            def post_install(cls, plugin_dir, on_progress=None):
+                post_install_calls.append(plugin_dir)
+
+        monkeypatch.setattr(
+            'wafer.app.plugin_manager.extensions_tab.install_requirements',
+            lambda path: True,
+        )
+        monkeypatch.setattr(
+            'wafer.app.plugin_manager.extensions_tab.PluginLoader.discover_extension',
+            staticmethod(lambda folder: [('viewer', HookPlugin)]),
+        )
+        from wafer.core.qt.dispatcher import Dispatcher
+        dispatcher = Dispatcher()
+        from wafer.app.plugin_manager.extensions_tab import ExtensionsTab
+        tab = ExtensionsTab(set(), dispatcher)
+        qtbot.addWidget(tab)
+
+        card = tab._cards['vid_ext']
+        tab._install_extension(card)
+        qtbot.waitUntil(lambda: len(post_install_calls) > 0, timeout=5000)
+        assert post_install_calls[0] == card.folder_path
+
+    def test_post_install_not_called_when_absent(self, qtbot, tmp_path, monkeypatch):
+        ext_dir = tmp_path / 'extensions'
+        (ext_dir / 'plain_ext').mkdir(parents=True)
+        (ext_dir / 'plain_ext' / '__init__.py').write_text('')
+        monkeypatch.setattr(
+            'wafer.app.plugin_manager.extensions_tab.get_plugin_dir',
+            lambda: str(ext_dir),
+        )
+        monkeypatch.setattr(
+            'wafer.app.plugin_manager.extensions_tab._needs_install',
+            lambda folder: True,
+        )
+
+        class PlainPlugin(BasePlugin):
+            NAME = 'plain_p'
+            EXTENSIONS = ('.p',)
+            PRIORITY = 1
+
+        monkeypatch.setattr(
+            'wafer.app.plugin_manager.extensions_tab.install_requirements',
+            lambda path: True,
+        )
+        monkeypatch.setattr(
+            'wafer.app.plugin_manager.extensions_tab.PluginLoader.discover_extension',
+            staticmethod(lambda folder: [('grid', PlainPlugin)]),
+        )
+        from wafer.core.qt.dispatcher import Dispatcher
+        dispatcher = Dispatcher()
+        from wafer.app.plugin_manager.extensions_tab import ExtensionsTab
+        tab = ExtensionsTab(set(), dispatcher)
+        qtbot.addWidget(tab)
+
+        card = tab._cards['plain_ext']
+        tab._install_extension(card)
+        qtbot.waitUntil(
+            lambda: len(card._rows) > 0,
+            timeout=5000,
+        )

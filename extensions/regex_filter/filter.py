@@ -154,6 +154,7 @@ class RegexFilter(BaseFilterPlugin):
     NAME = 'regex'
     DISPLAY_NAME = 'Regex'
     PRIORITY = 95
+    DEFAULT_ENABLED = True
 
     @classmethod
     def create_widget(cls, parent=None):

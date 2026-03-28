@@ -18,38 +18,98 @@ _REGISTRY_LABELS = {
     'command': 'Command',
 }
 
+_TAG_COLORS = {
+    'viewer': '#81c784',
+    'grid': '#ce93d8',
+    'collector': '#f48fb1',
+    'command': '#ffb74d',
+    'layout': '#80cbc4',
+    'filter': '#4fc3f7',
+    'sort': '#90a4ae',
+    'rename_source': '#bcaaa4',
+}
 
-class _ExtensionCard(QtWidgets.QGroupBox):
+
+def _hex_to_rgba(hex_color: str, alpha: float) -> str:
+    r = int(hex_color[1:3], 16)
+    g = int(hex_color[3:5], 16)
+    b = int(hex_color[5:7], 16)
+    return f'rgba({r},{g},{b},{alpha})'
+
+
+class _PluginRow(QtWidgets.QWidget):
+
+    def __init__(self, registry_key: str, plugin_cls: type, checked: bool, parent=None):
+        super().__init__(parent)
+        self.checkbox = QtWidgets.QCheckBox()
+        self.checkbox.setChecked(checked)
+
+        tag_color = _TAG_COLORS.get(registry_key, '#90a4ae')
+        tag_text = _REGISTRY_LABELS.get(registry_key, registry_key)
+        tag = QtWidgets.QLabel(tag_text)
+        tag.setStyleSheet(
+            f'color: {tag_color}; '
+            f'background: {_hex_to_rgba(tag_color, 0.15)}; '
+            f'font-size: {dpix(11)}px; '
+            f'font-weight: bold; '
+            f'padding: {dpix(2)}px {dpix(6)}px; '
+            f'border-radius: {dpix(3)}px;'
+        )
+        tag.setMinimumWidth(dpix(68))
+        tag.setAlignment(QtCore.Qt.AlignCenter)
+
+        name_label = QtWidgets.QLabel(plugin_cls.NAME)
+
+        extensions = getattr(plugin_cls, 'EXTENSIONS', ())
+        ext_text = ', '.join(extensions) if extensions else ''
+        ext_label = QtWidgets.QLabel(ext_text)
+        ext_label.setStyleSheet(f'color: #888; font-size: {dpix(11)}px;')
+
+        row_layout = QtWidgets.QHBoxLayout(self)
+        row_layout.setContentsMargins(dpix(4), dpix(1), dpix(4), dpix(1))
+        row_layout.setSpacing(dpix(6))
+        row_layout.addWidget(tag)
+        row_layout.addWidget(self.checkbox)
+        row_layout.addWidget(name_label)
+        row_layout.addWidget(ext_label)
+        row_layout.addStretch()
+
+
+class _ExtensionCard(QtWidgets.QFrame):
 
     def __init__(self, folder_name: str, folder_path: str, parent=None):
         super().__init__(parent)
         self.folder_name = folder_name
         self.folder_path = folder_path
-        self.setTitle(folder_name)
-        self._checkboxes: list[tuple[QtWidgets.QCheckBox, str]] = []
+        self.setObjectName('extension_card')
+        self._rows: list[tuple[_PluginRow, str]] = []
         self._plugins: list[tuple[str, type]] = []
         self._plugin_area = QtWidgets.QVBoxLayout()
+        self._plugin_area.setSpacing(dpix(2))
 
-        self._badge = QtWidgets.QLabel()
-        self._badge.setFixedHeight(dpix(20))
+        self._name_label = QtWidgets.QLabel(folder_name)
+        self._name_label.setStyleSheet(f'font-weight: bold; font-size: {dpix(13)}px;')
 
-        self._install_btn = QtWidgets.QPushButton('Install')
-        self._install_btn.setFixedWidth(dpix(80))
-        self._install_btn.clicked.connect(self._on_install_clicked)
-        self._install_btn.hide()
+        self._status_btn = QtWidgets.QPushButton()
+        self._status_btn.setObjectName('status_btn')
+        self._status_btn.setFixedHeight(dpix(24))
+        self._status_btn.setMinimumWidth(dpix(120))
+        self._status_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        self._status_btn.clicked.connect(self._on_install_clicked)
 
         self._progress = QtWidgets.QProgressBar()
         self._progress.setRange(0, 0)
-        self._progress.setFixedHeight(dpix(14))
+        self._progress.setFixedHeight(dpix(4))
         self._progress.setTextVisible(False)
         self._progress.hide()
 
         header = QtWidgets.QHBoxLayout()
-        header.addWidget(self._badge)
+        header.addWidget(self._name_label)
         header.addStretch()
-        header.addWidget(self._install_btn)
+        header.addWidget(self._status_btn)
 
         layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(dpix(10), dpix(8), dpix(10), dpix(8))
         layout.setSpacing(dpix(4))
         layout.addLayout(header)
         layout.addWidget(self._progress)
@@ -64,65 +124,54 @@ class _ExtensionCard(QtWidgets.QGroupBox):
     def set_checkbox_changed_callback(self, cb):
         self._checkbox_changed_callback = cb
 
-    def _set_badge(self, text: str, color: str):
-        self._badge.setText(text)
-        self._badge.setStyleSheet(
-            f'color: {color}; font-weight: bold; font-size: {dpix(11)}px;'
+    def _apply_status(self, text: str, status: str, enabled: bool):
+        self._status_btn.setText(text)
+        self._status_btn.setEnabled(enabled)
+        self._status_btn.setProperty('status', status)
+        self._status_btn.style().unpolish(self._status_btn)
+        self._status_btn.style().polish(self._status_btn)
+        self._status_btn.setCursor(
+            QtCore.Qt.PointingHandCursor if enabled else QtCore.Qt.ArrowCursor
         )
 
     def set_installed(self):
         has_req = os.path.isfile(os.path.join(self.folder_path, 'requirements.txt'))
         if has_req:
-            self._set_badge('Ready', '#4caf50')
+            self._apply_status('Installed', 'installed', False)
         else:
-            self._set_badge('Ready', '#888')
-        self._install_btn.hide()
+            self._apply_status('No Dependencies', 'no_deps', False)
         self._progress.hide()
 
     def set_needs_install(self):
-        self._set_badge('Install Required', '#ff9800')
-        self._install_btn.show()
+        self._apply_status('Install', 'install', True)
         self._progress.hide()
         self._clear_plugin_area()
 
     def set_installing(self):
-        self._install_btn.hide()
-        self._set_badge('Installing...', '#2196f3')
+        self._apply_status('Installing…', 'installing', False)
         self._progress.show()
 
     def set_install_failed(self):
+        self._apply_status('Retry', 'failed', True)
         self._progress.hide()
-        self._set_badge('Failed', '#f44336')
-        self._install_btn.setText('Retry')
-        self._install_btn.show()
 
     def set_plugins(self, plugins: list[tuple[str, type]], enabled: set[str] | None):
         self._clear_plugin_area()
-        self._checkboxes.clear()
+        self._rows.clear()
         self._plugins = list(plugins)
         for registry_key, plugin_cls in plugins:
-            label_type = _REGISTRY_LABELS.get(registry_key, registry_key)
-            extensions = getattr(plugin_cls, 'EXTENSIONS', ())
-            ext_str = ', '.join(extensions) if extensions else ''
-            text = f'{label_type}: {plugin_cls.NAME} '
-            if ext_str:
-                text += f'  ({ext_str})'
             qualified = f'{registry_key}:{plugin_cls.NAME}'
-            cb = QtWidgets.QCheckBox(text)
             if enabled is not None:
-                cb.setChecked(qualified in enabled)
+                checked = qualified in enabled
             else:
-                cb.setChecked(getattr(plugin_cls, 'DEFAULT_ENABLED', True))
-            cb.stateChanged.connect(self._on_checkbox_changed)
-            self._checkboxes.append((cb, qualified))
-            self._plugin_area.addWidget(cb)
+                checked = getattr(plugin_cls, 'DEFAULT_ENABLED', False)
+            row = _PluginRow(registry_key, plugin_cls, checked)
+            row.checkbox.stateChanged.connect(self._on_checkbox_changed)
+            self._rows.append((row, qualified))
+            self._plugin_area.addWidget(row)
 
     def get_enabled_names(self) -> set[str]:
-        result = set()
-        for cb, name in self._checkboxes:
-            if cb.isChecked():
-                result.add(name)
-        return result
+        return {name for row, name in self._rows if row.checkbox.isChecked()}
 
     def get_enabled_plugins(self, registry_key: str) -> list[type]:
         enabled = self.get_enabled_names()
@@ -160,18 +209,19 @@ class ExtensionsTab(QtWidgets.QWidget):
 
         self._scroll = QtWidgets.QScrollArea()
         self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
         self._container = QtWidgets.QWidget()
         self._cards_layout = QtWidgets.QVBoxLayout(self._container)
-        self._cards_layout.setSpacing(dpix(6))
+        self._cards_layout.setSpacing(dpix(8))
         self._cards_layout.addStretch()
         self._scroll.setWidget(self._container)
 
         layout = QtWidgets.QVBoxLayout(self)
         p = dpix(2)
         layout.setContentsMargins(p, p, p, 0)
-        layout.setSpacing(dpix(4))
-        desc = QtWidgets.QLabel('Installed extensions:')
-        desc.setStyleSheet(f'font-weight: bold; font-size: {dpix(12)}px;')
+        layout.setSpacing(dpix(6))
+        desc = QtWidgets.QLabel('Extensions')
+        desc.setObjectName('section_header')
         layout.addWidget(desc)
         layout.addWidget(self._scroll, 1)
 
@@ -229,6 +279,11 @@ class ExtensionsTab(QtWidgets.QWidget):
                     return
                 if success:
                     plugins = PluginLoader.discover_extension(card.folder_path)
+                    for _key, cls in plugins:
+                        if hasattr(cls, 'post_install'):
+                            cls.post_install(card.folder_path)
+                        if cancel.is_cancelled():
+                            return
                     self._dispatcher.invoke(
                         lambda: self._on_install_complete(card, True, plugins)
                     )

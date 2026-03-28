@@ -26,6 +26,19 @@ def restart_viewer(ctx):
         w.close()
 
 
+def restart_all(ctx):
+    AppProcess.terminate_cmd('--tray')
+    AppProcess.new_main('--tray')
+    w = ctx.get_instance("MainWindow")
+    session_id = getattr(w, 'session_id', None)
+    args = ['--viewer']
+    if session_id:
+        args += ['--session', session_id]
+    AppProcess.new_main(*args)
+    if w:
+        w.close()
+
+
 class PluginManagerCommands(ActionKit.MenuBase):
     NAME = "Setting"
     PRIORITY = 75
@@ -38,6 +51,11 @@ class PluginManagerCommands(ActionKit.MenuBase):
                 path="setting.plugin_manager",
                 display="Plugin Manager",
                 func=open_plugin_manager,
+            ),
+            ActionKit.Command(
+                path="setting.restart_all",
+                display="Restart All",
+                func=restart_all,
             ),
             ActionKit.Command(
                 path="setting.restart_tray",

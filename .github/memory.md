@@ -151,7 +151,7 @@
 ■ プラグイン管理UI (Plugin Manager)
 - PluginManagerDialog: Extensions/Viewers/Collectors/Data の4タブ構成。singleton pattern。Node引数でIPC可
 - PluginSettings: viewer_plugins.iniでenabled/viewer_order/grid_orderを永続化。enabled_names()はNone(未設定)/set[str](設定済み)
-- PluginBase.DEFAULT_ENABLED: True(デフォルト)。enabled=Noneの時、Falseのプラグインはスキップ。UI初期チェックにも使用
+- PluginBase.DEFAULT_ENABLED: False(デフォルト)。enabled=Noneの時、Falseのプラグインはスキップ。UI初期チェックにも使用
 - ExtensionsTab.enabled_changed Signal → ViewersTab/CollectorsTab をリアルタイム同期
 - ViewersTab: list[type]を受け取りrefresh()可。PluginRegistryに依存しない
 - CollectorsTab: collector_namesを受け取りrefresh()可。collector_resolverは未指定時のフォールバック

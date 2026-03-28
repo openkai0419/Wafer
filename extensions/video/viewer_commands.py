@@ -60,6 +60,7 @@ def toggle_pause_in_background(ctx, vw):
 class VideoViewerCommands(MenuGroup):
     NAME = "Video Viewer"
     PRIORITY = 1100
+    DEFAULT_ENABLED = True
 
     @classmethod
     def commands(cls):

@@ -10,6 +10,7 @@ class VideoGridPlugin(WidgetGridPlugin):
         '.wmv', '.flv', '.m4v', '.ts', '.mpg', '.mpeg',
     )
     PRIORITY = 100
+    DEFAULT_ENABLED = True
     WIDGET_CLASS = MpvCellWidget
     REQUIRE_THUMBNAIL = True
 

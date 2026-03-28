@@ -19,8 +19,16 @@ class CollectorResult:
         return {k: v for k, v in asdict(self).items() if v is not None}
 
 
-class BaseCollectorPlugin(BasePlugin):
+class BaseCollector(BasePlugin):
 
     @abstractmethod
-    def process(self, path: str, file_info: tuple[float, int]) -> CollectorResult:
+    def process(self, path: str, file_info: tuple[float, int]) -> CollectorResult | list[CollectorResult]:
         ...
+
+
+class BaseCollectorPlugin(BaseCollector):
+    BATCH_SIZE: int = 1200
+
+
+class BaseSingletonCollector(BaseCollector):
+    BATCH_SIZE: int = 32

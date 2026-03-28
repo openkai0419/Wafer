@@ -36,7 +36,7 @@ def test_process_one_error_excludes_from_results():
         raise RuntimeError('simulated plugin error')
 
     worker._plugin.process = always_fail
-    worker._process_batch(['/nonexistent/test.jpg'], {'/nonexistent/test.jpg': [0.0, 0]})
+    worker._process_batch(['/nonexistent/test.jpg'], {'/nonexistent/test.jpg': [0.0, 0]}, 'test_db')
     assert worker._node.send_reliable.called
     payload = worker._node.send_reliable.call_args[0][1]
     results = payload['results']
@@ -63,10 +63,31 @@ def test_process_batch_partial_failure():
     worker._plugin.process = partial_fail
     paths = ['/test/a.jpg', '/test/b.jpg', '/test/c.jpg']
     file_info = {p: [0.0, 0] for p in paths}
-    worker._process_batch(paths, file_info)
+    worker._process_batch(paths, file_info, 'test_db')
 
     assert worker._node.send_reliable.called
     payload = worker._node.send_reliable.call_args[0][1]
     results = payload['results']
     assert len(results) == 2
     assert all(r['status'] is True for r in results)
+
+
+def test_process_batch_uses_db_from_argument():
+    from unittest.mock import MagicMock
+    from wafer.plugin.collector.base import CollectorResult
+    name = next(iter(collector_resolver.names()))
+    worker = CollectorWorker('test_db', name)
+    worker._node = MagicMock()
+
+    worker._plugin.process = lambda path, info: CollectorResult(source=path, status=True)
+    worker._process_batch(['/test/x.jpg'], {'/test/x.jpg': [0.0, 0]}, 'other_db')
+
+    call_kwargs = worker._node.send_reliable.call_args[1]
+    assert call_kwargs['db'] == 'other_db'
+
+
+def test_non_singleton_node_uses_db_name():
+    name = next(iter(collector_resolver.per_indexer_names()))
+    worker = CollectorWorker('mydb', name)
+    assert worker._singleton is False
+    assert worker._node.db == 'mydb'

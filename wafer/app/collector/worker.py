@@ -7,7 +7,7 @@ from ...utils.logs import AppLogger
 from ...utils.paths import normalize_path
 from ...core.ipc.node import Node
 from ...plugin.collector.handler import collector_resolver
-from ...plugin.collector.base import CollectorResult
+from ...plugin.collector.base import CollectorResult, BaseSingletonCollector
 
 _MAX_WORKERS = 4
 
@@ -20,7 +20,9 @@ class CollectorWorker:
         self._plugin = collector_resolver.registry.instance(plugin_name)
         if not self._plugin:
             raise ValueError(f'Unknown plugin: {plugin_name}')
-        self._node = Node(f'collector-{plugin_name}', db=db_name)
+        self._singleton = issubclass(collector_resolver.registry.get(plugin_name), BaseSingletonCollector)
+        node_db = '' if self._singleton else db_name
+        self._node = Node(f'collector-{plugin_name}', db=node_db)
         self._node.subscribe('collect.batch', self._handle_batch)
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=_MAX_WORKERS)
         self._stop = threading.Event()
@@ -48,14 +50,15 @@ class CollectorWorker:
         file_info_raw = payload.get('file_info', {})
         if not paths:
             return True
+        db = msg.db
         threading.Thread(
             target=self._process_batch,
-            args=(paths, file_info_raw),
+            args=(paths, file_info_raw, db),
             daemon=True,
         ).start()
         return True
 
-    def _process_batch(self, paths, file_info_raw):
+    def _process_batch(self, paths, file_info_raw, db):
         try:
             file_info = {p: tuple(v) for p, v in file_info_raw.items()}
 
@@ -75,9 +78,9 @@ class CollectorWorker:
                 'collect.result',
                 {'collector': self.plugin_name, 'results': results},
                 dst='indexer',
-                db=self.db_name,
+                db=db,
             )
-            AppLogger.info(f'[Collector] Sent {len(results)} results for db={self.db_name}')
+            AppLogger.info(f'[Collector] Sent {len(results)} results for db={db}')
         except Exception as e:
             AppLogger.error(f'[Collector] _process_batch failed: {e}', exc=e)
 
@@ -86,7 +89,11 @@ def run_collector(db_name: str, plugin_name: str, parent_pid: int | None = None)
     from ...utils.process_lock import SafeProcessLock
     from ...constants import APP_DATA_DIR_NAME
     from ...core.platform.process_checker import ParentProcessChecker
-    lock_name = f'{APP_DATA_DIR_NAME}_collector_{plugin_name}_{db_name}'
+    singleton = issubclass(collector_resolver.registry.get(plugin_name), BaseSingletonCollector)
+    if singleton:
+        lock_name = f'{APP_DATA_DIR_NAME}_collector_{plugin_name}'
+    else:
+        lock_name = f'{APP_DATA_DIR_NAME}_collector_{plugin_name}_{db_name}'
     try:
         with SafeProcessLock(lock_name, parent_pid=parent_pid):
             worker = CollectorWorker(db_name, plugin_name)

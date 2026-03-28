@@ -3,7 +3,7 @@ import pytest
 
 from wafer.plugin.collector.handler import collector_resolver
 from wafer.plugin.collector.base import CollectorResult
-from wafer.plugin.collector.base import BaseCollectorPlugin
+from wafer.plugin.collector.base import BaseCollector, BaseCollectorPlugin, BaseSingletonCollector
 
 
 def _get_exif_plugin():
@@ -98,10 +98,82 @@ def test_collector_result_to_dict_omits_none():
     r = CollectorResult(source='test.png', status=True, name='test.png', aspect=1.5)
     d = r.to_dict()
     assert d == {'source': 'test.png', 'status': True, 'name': 'test.png', 'aspect': 1.5}
-    assert 'path' not in d
-    assert 'file_hash' not in d
-    assert 'meta_info' not in d
-    assert 'tags' not in d
+
+
+def test_base_collector_is_abstract():
+    with pytest.raises(TypeError):
+        BaseCollector()
+
+
+def test_base_singleton_is_abstract():
+    with pytest.raises(TypeError):
+        BaseSingletonCollector()
+
+
+def test_base_collector_hierarchy():
+    assert issubclass(BaseCollectorPlugin, BaseCollector)
+    assert issubclass(BaseSingletonCollector, BaseCollector)
+
+
+def test_base_collector_defaults():
+    assert not issubclass(BaseCollectorPlugin, BaseSingletonCollector)
+    assert BaseCollectorPlugin.BATCH_SIZE == 1200
+    assert issubclass(BaseSingletonCollector, BaseCollector)
+    assert BaseSingletonCollector.BATCH_SIZE == 32
+
+
+def test_concrete_collector_plugin():
+    class MyCollector(BaseCollectorPlugin):
+        NAME = 'test_concrete'
+        EXTENSIONS = ('.test',)
+        def process(self, path, file_info):
+            return CollectorResult(source=path, status=True)
+
+    assert not issubclass(MyCollector, BaseSingletonCollector)
+    assert MyCollector.BATCH_SIZE == 1200
+    inst = MyCollector()
+    r = inst.process('file.test', (0.0, 0))
+    assert r.status is True
+
+
+def test_concrete_singleton_collector():
+    class MySingleton(BaseSingletonCollector):
+        NAME = 'test_singleton'
+        EXTENSIONS = ('.jpg', '.png')
+        BATCH_SIZE = 16
+        def process(self, path, file_info):
+            return CollectorResult(source=path, status=True)
+
+    assert issubclass(MySingleton, BaseSingletonCollector)
+    assert MySingleton.BATCH_SIZE == 16
+    inst = MySingleton()
+    r = inst.process('photo.jpg', (0.0, 0))
+    assert r.status is True
+
+
+def test_singleton_names_excludes_normal():
+    singleton_names = collector_resolver.singleton_names()
+    per_indexer_names = collector_resolver.per_indexer_names()
+    for name in singleton_names:
+        assert name not in per_indexer_names
+    for name in per_indexer_names:
+        assert name not in singleton_names
+    assert set(singleton_names + per_indexer_names) == set(collector_resolver.names())
+
+
+def test_batch_size_for_known_collector():
+    for name in collector_resolver.names():
+        bs = collector_resolver.batch_size(name)
+        assert bs > 0
+
+
+def test_batch_size_for_unknown_collector():
+    assert collector_resolver.batch_size('nonexistent') == 1200
+
+
+def test_exif_is_per_indexer():
+    assert 'exif' in collector_resolver.per_indexer_names()
+    assert 'exif' not in collector_resolver.singleton_names()
 
 
 def test_collector_result_to_dict_includes_false_status():

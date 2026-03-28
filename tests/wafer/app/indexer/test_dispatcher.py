@@ -1,7 +1,8 @@
 import py_compile
 from unittest.mock import MagicMock
 
-from wafer.app.indexer.dispatcher import CollectorDispatcher, _BATCH_SIZE, _DISPATCH_INTERVAL
+from wafer.app.indexer.dispatcher import CollectorDispatcher, _DISPATCH_INTERVAL
+from wafer.plugin.collector.handler import collector_resolver
 
 
 def test_compile():
@@ -9,7 +10,6 @@ def test_compile():
 
 
 def test_constants():
-    assert _BATCH_SIZE > 0
     assert _DISPATCH_INTERVAL > 0
 
 
@@ -99,3 +99,36 @@ def test_dispatch_loop_survives_exception(tmp_path):
     thread.join(timeout=3.0)
     assert not thread.is_alive()
     assert call_count >= 2
+
+
+def test_per_indexer_excludes_singletons(tmp_path):
+    scheduler = MagicMock()
+    writer = MagicMock()
+    progress = MagicMock()
+    db_path = tmp_path / 'test.db'
+    dispatcher = CollectorDispatcher('testdb', db_path, scheduler, writer, progress)
+    singleton_names = set(collector_resolver.singleton_names())
+    for name in dispatcher._per_indexer:
+        assert name not in singleton_names
+    for name in dispatcher._collectors:
+        if name not in singleton_names:
+            assert name in dispatcher._per_indexer
+
+
+def test_collectors_includes_all(tmp_path):
+    scheduler = MagicMock()
+    writer = MagicMock()
+    progress = MagicMock()
+    db_path = tmp_path / 'test.db'
+    dispatcher = CollectorDispatcher('testdb', db_path, scheduler, writer, progress)
+    assert set(dispatcher._collectors) == set(collector_resolver.names())
+
+
+def test_singleton_started_tracking(tmp_path):
+    CollectorDispatcher._singleton_started.clear()
+    scheduler = MagicMock()
+    writer = MagicMock()
+    progress = MagicMock()
+    db_path = tmp_path / 'test.db'
+    dispatcher = CollectorDispatcher('testdb', db_path, scheduler, writer, progress, collectors=['exif'])
+    assert 'exif' in dispatcher._per_indexer

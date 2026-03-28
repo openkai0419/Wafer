@@ -1,7 +1,7 @@
 from .registry import PluginBase, BasePlugin, PluginRegistry
 from .viewer.base import BaseViewerPlugin, ImageViewerPlugin, WidgetViewerPlugin
 from .grid.base import BaseGridPlugin, ImageGridPlugin, WidgetGridPlugin
-from .collector.base import BaseCollectorPlugin, CollectorResult
+from .collector.base import BaseCollector, BaseCollectorPlugin, BaseSingletonCollector, CollectorResult
 from .query.base import BaseFilterPlugin, BaseSortPlugin
 from .layout.base import BaseLayoutPlugin
 from .rename.base import BaseRenameSourcePlugin, SegmentInfo

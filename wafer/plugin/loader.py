@@ -9,7 +9,7 @@ from ..utils.logs import AppLogger
 from .registry import PluginRegistry
 from .viewer.base import BaseViewerPlugin
 from .grid.base import BaseGridPlugin
-from .collector.base import BaseCollectorPlugin
+from .collector.base import BaseCollector
 from .query.base import BaseFilterPlugin, BaseSortPlugin
 from .layout.base import BaseLayoutPlugin
 from .rename.base import BaseRenameSourcePlugin
@@ -19,7 +19,7 @@ from .installer import install_requirements as _install_requirements
 _REGISTRY_MAP = {
     BaseViewerPlugin: 'viewer',
     BaseGridPlugin: 'grid',
-    BaseCollectorPlugin: 'collector',
+    BaseCollector: 'collector',
     BaseFilterPlugin: 'filter',
     BaseSortPlugin: 'sort',
     BaseLayoutPlugin: 'layout',

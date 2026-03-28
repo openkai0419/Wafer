@@ -59,6 +59,8 @@
 - BaseGridPlugin.release(widget)は画面外スクロール時にAdditionalWidgetPoolから呼ばれる。GPUリソース等重い資源はsuspend/resume方式。cleanup()は完全破壊のみ
 - Grid/ViewerのWIDGET_CLASSとload()は排他。ViewerPluginのWidget生成は__init__で自動、GridのWidget生成はシステム管理
 - Collectorはmeta_info+statusのみ返す。name/aspect/file_hashはPhase1で設定
+- Collector基底はBaseCollector。BaseCollectorPlugin（per-indexer）とBaseSingletonCollector（全DB共有1プロセス）が継承。BATCH_SIZEはクラス変数で制御
+- Collectorの結果返送はmsg.dbベースでルーティング。self.db_nameではなく受信メッセージのdbを使用すること
 - PRIORITY大=高優先。EXTENSIONS=()は全ファイルマッチ
 - render(widget, path, size)は戻り値なし。フォールバックはresolve_chain内のcan_handle()で制御。BGワークが必要なプラグインはDispatcher.post()を自分で呼ぶ
 - BaseGridPlugin.select(widget, path) / deselect(widget)はGridResolverがGridView._on_selection_changed内の差分計算で呼び出す
@@ -69,7 +71,8 @@
 
 ■ ビルトインとExtensionの二層構成
 - 全プラグイン基底クラスはPluginBase（wafer/plugin/registry.py）を継承する
-  - BasePlugin(PluginBase, ABC): Grid/Viewer/Collector用
+  - BasePlugin(PluginBase, ABC): Grid/Viewer用
+  - BaseCollector(BasePlugin, ABC): Collector用（BaseCollectorPlugin / BaseSingletonCollectorが継承）
   - BaseFilterPlugin / BaseSortPlugin(PluginBase, ABC): Query用
   - BaseLayoutPlugin(PluginBase, ABC): Layout用
 - ビルトイン実装はwafer/builtins/に配置。extensionと同じプラグインインターフェースを使う

@@ -135,6 +135,8 @@
 - PluginLoaderのspec_from_file_locationでsubmodule_search_locations=[]を渡すと全サブモジュールがpackage扱いになり相対importが壊れる（別モジュールオブジェクトが生成される）。必ずNone(デフォルト)にすること
 - PluginRegistry.resolve()は_ext_cacheで拡張子→プラグインクラスをO(1)解決。register()時にキャッシュ再構築。EXTENSIONS=()のcatch-allプラグインはフォールバック走査
 - CollectorResultはdataclass。dict扱いにはto_dict()が必要
+- Collector基底階層: BaseCollector → BaseCollectorPlugin(per-indexer) / BaseSingletonCollector(全DB共有)。型判定はissubclass、BATCH_SIZEで送信量制御
+- Workerのresult返送はmsg.dbベースでルーティング統一。Singleton(db='')でもper-indexer(db=name)でも同一コードパスで動作する（ブローカーのdb_set空=全マッチの仕様を利用）
 - resolverはissubclass(cls,...)の代わりにisinstance(instance,...)を使用
 - meta_infoキー衝突回避はプラグイン開発者責任（プレフィックス推奨）
 - プラグインのvendor_dirはsys.path.append（標準ライブラリ優先）

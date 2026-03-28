@@ -74,7 +74,7 @@ class TestSmokeCollector:
                     captured['payload'] = payload
 
                 worker._node.send_reliable = _capture_send
-                worker._process_batch(paths, file_info)
+                worker._process_batch(paths, file_info, 'testdb')
 
                 assert captured.get('topic') == 'collect.result'
                 results = captured['payload']['results']

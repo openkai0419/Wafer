@@ -14,11 +14,13 @@ from .progress_notifier import ProgressAggregator
 from .scheduler import TaskScheduler
 from .task import Task, TaskPriority
 
-_BATCH_SIZE = 1200
 _DISPATCH_INTERVAL = 2.0
 
 
 class CollectorDispatcher:
+
+    _singleton_started: set[str] = set()
+    _singleton_lock = threading.Lock()
 
     def __init__(
         self,
@@ -35,6 +37,7 @@ class CollectorDispatcher:
         self._writer = writer
         self._progress = progress
         self._collectors = list(collectors or collector_resolver.names())
+        self._per_indexer = [c for c in self._collectors if c not in collector_resolver.singleton_names()]
         self._dispatched_paths: dict[str, set[str]] = {}
         self._dispatched_lock = threading.Lock()
         self._read_conn = None
@@ -77,18 +80,32 @@ class CollectorDispatcher:
 
     def _start_collector_processes(self):
         my_pid = str(os.getpid())
-        for plugin in self._collectors:
+        for plugin in self._per_indexer:
             AppProcess.new_main(
                 '--collector', self._db_name,
                 '--plugin', plugin,
                 '--parent-pid', my_pid,
             )
-        AppLogger.info(f'[Dispatcher] Started collectors: {self._collectors}')
+        singletons_launched = []
+        with CollectorDispatcher._singleton_lock:
+            for plugin in self._collectors:
+                if plugin in self._per_indexer:
+                    continue
+                if plugin not in CollectorDispatcher._singleton_started:
+                    AppProcess.new_main(
+                        '--collector', self._db_name,
+                        '--plugin', plugin,
+                        '--parent-pid', my_pid,
+                    )
+                    CollectorDispatcher._singleton_started.add(plugin)
+                    singletons_launched.append(plugin)
+        started = self._per_indexer + singletons_launched
+        AppLogger.info(f'[Dispatcher] Started collectors: {started}')
 
     def _terminate_collectors(self):
-        for plugin in self._collectors:
+        for plugin in self._per_indexer:
             AppProcess.terminate_cmd('--collector', self._db_name, '--plugin', plugin)
-        AppLogger.info(f'[Dispatcher] Terminated collectors for db={self._db_name}')
+        AppLogger.info(f'[Dispatcher] Terminated per-indexer collectors for db={self._db_name}')
 
     def _dispatch_loop(self):
         while not self._stop.is_set():
@@ -104,6 +121,7 @@ class CollectorDispatcher:
     @profiler.profile
     def _dispatch_pending(self):
         for collector in self._collectors:
+            batch_size = collector_resolver.batch_size(collector)
             cur = self._read_conn.cursor()
             cur.execute(
                 '''SELECT cs.source, s.modified, s.size
@@ -111,7 +129,7 @@ class CollectorDispatcher:
                 JOIN sources s ON s.source = cs.source
                 WHERE cs.collector = ? AND cs.status = 'pending'
                 LIMIT ?''',
-                (collector, _BATCH_SIZE),
+                (collector, batch_size),
             )
             pending = cur.fetchall()
             cur.close()

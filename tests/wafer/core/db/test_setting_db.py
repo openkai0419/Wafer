@@ -82,3 +82,24 @@ def test_sync_folders_is_atomic(tmp_path):
     assert normalize_path('C:/keep') in norm
     assert normalize_path('C:/new') in norm
     assert normalize_path('C:/remove') not in norm
+
+
+def test_enabled_collectors_default_none(setting_db):
+    assert setting_db.get_enabled_collectors() is None
+
+
+def test_enabled_collectors_roundtrip(setting_db):
+    setting_db.set_enabled_collectors(['exif', 'ai_tags'])
+    result = setting_db.get_enabled_collectors()
+    assert result == ['exif', 'ai_tags']
+
+
+def test_enabled_collectors_overwrite(setting_db):
+    setting_db.set_enabled_collectors(['exif'])
+    setting_db.set_enabled_collectors(['video_meta'])
+    assert setting_db.get_enabled_collectors() == ['video_meta']
+
+
+def test_enabled_collectors_invalid_type(setting_db):
+    setting_db.set_setting('enabled_collectors', 'not_a_list')
+    assert setting_db.get_enabled_collectors() is None

@@ -1,4 +1,16 @@
 {
+  "Plugin Manager": {
+    "en": "Plugin Manager"
+  },
+  "Plugins": {
+    "en": "Plugins"
+  },
+  "Restart Background Services": {
+    "en": "Restart Background Services"
+  },
+  "Restart Viewer": {
+    "en": "Restart Viewer"
+  },
   "Ignore this folder": {
     "en": "Ignore this folder"
   },

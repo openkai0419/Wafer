@@ -36,6 +36,7 @@ class IndexerProcess:
         self.zmq.subscribe('cleanup', lambda msg: self.cleanup() or True)
         self.zmq.subscribe('rescan', lambda msg: self.rescan() or True)
         self.zmq.subscribe('db.delete', lambda msg: self._on_delete_requested() or True)
+        self.zmq.subscribe('purge.collector', self._on_purge_collector)
         self.zmq.start()
         AppLogger.set_node(self.zmq, role='indexer')
 
@@ -54,7 +55,15 @@ class IndexerProcess:
         self._register_periodic_tasks()
         self.scheduler.start()
 
-        collectors = collector_resolver.summary()
+        all_collectors = collector_resolver.summary()
+        enabled = self.setting_db.get_enabled_collectors()
+        if enabled is not None:
+            enabled_set = set(enabled)
+            collectors = [(n, exts) for n, exts in all_collectors if n in enabled_set]
+            collector_names = [n for n in enabled if n in {c[0] for c in all_collectors}]
+        else:
+            collectors = all_collectors
+            collector_names = [n for n, _ in all_collectors]
         progress = ProgressAggregator(self.db_name, self.zmq)
         self._progress = progress
 
@@ -68,6 +77,7 @@ class IndexerProcess:
 
         self.dispatcher = CollectorDispatcher(
             self.db_name, db_path, self.scheduler, self.writer, progress,
+            collectors=collector_names,
         )
         self.dispatcher.start(self.zmq)
 
@@ -172,6 +182,29 @@ class IndexerProcess:
             priority=TaskPriority.SHUTDOWN,
             run=self.delete,
         ))
+
+    def _on_purge_collector(self, msg):
+        payload = msg.payload
+        if not isinstance(payload, dict):
+            AppLogger.warning(f'purge.collector: invalid payload: {type(payload)}')
+            return True
+        collector = payload.get('collector', '')
+        re_collect = payload.get('re_collect', False)
+        if not collector or not self.writer:
+            return True
+        AppLogger.info(f'[Indexer] Purge collector={collector}, re_collect={re_collect}')
+
+        self.scheduler.submit(Task.create(
+            'purge_meta_info',
+            priority=TaskPriority.MAINTENANCE,
+            run=lambda: self.writer.purge_collector(collector, re_collect=re_collect),
+            on_complete=lambda: self.zmq.send(
+                'purge.complete',
+                {'collector': collector, 'db': self.db_name},
+                dst='viewer',
+            ),
+        ))
+        return True
 
     def delete(self):
         AppLogger.info(f'indexer delete: {self.db_name}')

@@ -93,7 +93,7 @@ class TranslatorMixin:
             if hasattr(self, method_name):
                 getattr(translator.languageChanged, 'connect')(getattr(self, method_name))
             else:
-                AppLogger.warning(f'method {method_name} not defined in {self}')
+                AppLogger.info(f'method {method_name} not defined in {self}')
         return translator
 
     def set_translation_method(self, method_name):

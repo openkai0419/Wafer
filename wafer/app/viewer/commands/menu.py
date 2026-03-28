@@ -15,6 +15,7 @@ from . import (
     debug_commands,
     session_commands,
 )
+from ...plugin_manager import commands as plugin_manager_commands
 from .file_commands import FileCommands
 from .foldertree_commands import show_context_menu
 from .image_view import ImageViewCommands
@@ -33,6 +34,7 @@ _COMMAND_MODULES = [
     setting_commands,
     debug_commands,
     session_commands,
+    plugin_manager_commands,
 ]
 
 

@@ -7,12 +7,18 @@ import pytest
 
 from wafer.utils.logs import set_suppress_dialog
 from wafer.plugin.loader import load_plugins, PluginLoader
+from wafer.plugin.settings import PluginSettings
 
 set_suppress_dialog(True)
 
+_orig_enabled_names = PluginSettings.enabled_names
+PluginSettings.enabled_names = lambda self: None
+
 _pre_load_modules = set(sys.modules.keys())
-load_plugins(skip_install=True)
+load_plugins()
 PluginLoader.register_extension_commands()
+
+PluginSettings.enabled_names = _orig_enabled_names
 
 for mod_name in list(sys.modules.keys()):
     if mod_name not in _pre_load_modules and mod_name.split('.')[0] == 'numpy':

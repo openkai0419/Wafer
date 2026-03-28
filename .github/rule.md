@@ -135,7 +135,7 @@
 - テスト内で固定sleepを使わない。条件付きポーリング（タイムアウト付きwhileループやQtBot.waitUntil）を使う
 
 ● テスト環境
-- tests/conftest.pyでload_plugins(skip_install=True)を呼んでextensionレジストリを初期化する
+- tests/conftest.pyでload_plugins()を呼んでextensionレジストリを初期化する
 - extensionのvendored numpyがsys.modulesを汚染する。conftest.pyでプラグインロード後にnumpy関連モジュールを除去すること
 - Qtウィジェットテストでviewportリサイズを検証する場合はshow()を呼んでから検証する
 - IPCテストはconftest.pyで_PORT_FILEをtmp_pathに隔離

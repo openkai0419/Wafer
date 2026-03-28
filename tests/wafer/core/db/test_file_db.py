@@ -509,6 +509,99 @@ def test_concurrent_writes_no_error(tmp_path):
     db.close()
 
 
+def _setup_db_with_collected(tmp_path, collectors=('exif',)):
+    db = FileDB(tmp_path / 'test.db')
+    db.start()
+    db.initialize_database()
+    srcs = [('src0', 'h0', 100, 1.0), ('src1', 'h1', 200, 2.0)]
+    imgs = [('c:/a.jpg', 'src0', 1.5), ('c:/b.jpg', 'src1', 1.0)]
+    metas = [
+        ('c:/a.jpg', 'exif.width', '1920', 1920.0),
+        ('c:/a.jpg', 'exif.height', '1080', 1080.0),
+        ('c:/b.jpg', 'exif.width', '800', 800.0),
+        ('c:/a.jpg', 'basic.name', 'a.jpg', None),
+    ]
+    tags = [
+        ('h0', 'exif.camera', 'Canon', None),
+        ('h1', 'exif.camera', 'Nikon', None),
+        ('h0', 'ai.style', 'portrait', None),
+    ]
+    db.upsert_batches(srcs, imgs, metas, tags)
+    for coll in collectors:
+        db.insert_pending_collection(['src0', 'src1'], [coll])
+        db.mark_dispatched(['src0', 'src1'], coll)
+        db.conn.execute(
+            "UPDATE collection_status SET status='ok', collected_at=1.0 WHERE collector=?",
+            (coll,),
+        )
+        db.conn.commit()
+    return db
+
+
+def test_purge_collector_data_deletes_meta_and_tags(tmp_path):
+    db = _setup_db_with_collected(tmp_path)
+    meta_del, tags_del, cs_del = db.purge_collector_data('exif')
+    assert meta_del == 3
+    assert tags_del == 2
+    assert cs_del == 2
+    remaining_meta = db.read_conn.execute("SELECT key FROM meta_info").fetchall()
+    assert [r[0] for r in remaining_meta] == ['basic.name']
+    remaining_tags = db.read_conn.execute("SELECT key FROM tags").fetchall()
+    assert [r[0] for r in remaining_tags] == ['ai.style']
+    cs = db.read_conn.execute("SELECT * FROM collection_status WHERE collector='exif'").fetchall()
+    assert cs == []
+    db.close()
+
+
+def test_purge_collector_data_re_collect(tmp_path):
+    db = _setup_db_with_collected(tmp_path)
+    meta_del, tags_del, cs_affected = db.purge_collector_data('exif', re_collect=True)
+    assert meta_del == 3
+    assert tags_del == 2
+    assert cs_affected == 2
+    rows = db.read_conn.execute(
+        "SELECT status, collected_at FROM collection_status WHERE collector='exif'"
+    ).fetchall()
+    assert len(rows) == 2
+    for status, collected_at in rows:
+        assert status == 'pending'
+        assert collected_at is None
+    db.close()
+
+
+def test_purge_collector_data_no_match(tmp_path):
+    db = _setup_db_with_collected(tmp_path)
+    meta_del, tags_del, cs_del = db.purge_collector_data('nonexistent')
+    assert meta_del == 0
+    assert tags_del == 0
+    assert cs_del == 0
+    db.close()
+
+
+def test_collector_data_counts(tmp_path):
+    db = _setup_db_with_collected(tmp_path, collectors=('exif', 'ocr'))
+    counts = dict(db.collector_data_counts())
+    assert counts['exif'] == 2
+    assert counts['ocr'] == 2
+    db.close()
+
+
+def test_collector_data_counts_empty(tmp_path):
+    db = FileDB(tmp_path / 'test.db')
+    db.start()
+    db.initialize_database()
+    counts = db.collector_data_counts()
+    assert counts == []
+    db.close()
+
+
+def test_collector_data_counts_excludes_pending(tmp_path):
+    db = _setup_db_with_pending(tmp_path)
+    counts = db.collector_data_counts()
+    assert counts == []
+    db.close()
+
+
 def test_sql_constants_are_valid():
     conn = sqlite3.connect(':memory:')
     for _, _, sql in _TABLES:

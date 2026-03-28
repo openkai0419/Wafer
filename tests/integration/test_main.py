@@ -5,9 +5,9 @@ class TestDirectLaunchSessionRestore:
 
     @patch('main._entry_viewer')
     @patch('main.AppProcess')
-    @patch('main._load_plugins_with_splash')
+    @patch('main.load_plugins')
     @patch('main._create_app')
-    def test_no_restore_ids_passes_none(self, mock_create, mock_splash, mock_proc, mock_viewer):
+    def test_no_restore_ids_passes_none(self, mock_create, mock_load, mock_proc, mock_viewer):
         mock_app = MagicMock()
         mock_create.return_value = mock_app
         store = MagicMock()
@@ -27,9 +27,9 @@ class TestDirectLaunchSessionRestore:
 
     @patch('main._entry_viewer')
     @patch('main.AppProcess')
-    @patch('main._load_plugins_with_splash')
+    @patch('main.load_plugins')
     @patch('main._create_app')
-    def test_single_restore_id(self, mock_create, mock_splash, mock_proc, mock_viewer):
+    def test_single_restore_id(self, mock_create, mock_load, mock_proc, mock_viewer):
         mock_app = MagicMock()
         mock_create.return_value = mock_app
         store = MagicMock()
@@ -52,9 +52,9 @@ class TestDirectLaunchSessionRestore:
 
     @patch('main._entry_viewer')
     @patch('main.AppProcess')
-    @patch('main._load_plugins_with_splash')
+    @patch('main.load_plugins')
     @patch('main._create_app')
-    def test_multiple_restore_ids(self, mock_create, mock_splash, mock_proc, mock_viewer):
+    def test_multiple_restore_ids(self, mock_create, mock_load, mock_proc, mock_viewer):
         mock_app = MagicMock()
         mock_create.return_value = mock_app
         store = MagicMock()

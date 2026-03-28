@@ -143,10 +143,20 @@
 - frozen build時はbuild.batでextension依存を.packagesに事前インストール。ユーザー追加extension用にEmbeddedPythonが動的DLで対応
 - main.specからpipバンドルを削除済み。frozen buildにpipは不要（EmbeddedPythonが代替）
 - BasePlugin.post_install(plugin_dir, on_progress)はpipインストール後のフック。DLLダウンロード等に使う
-- BasePlugin.configure()は全プラグインロード後のフック。QSurfaceFormat等に使う。skip_install時も呼ばれる
+- BasePlugin.configure()は全プラグインロード後のフック。QSurfaceFormat等に使う
 - MemoryLimitedImageCacheはthreading.Lockでスレッドセーフ化済み
 - ViewerResolverはgrid_resolverへの依存をlazy import化。コンストラクタ引数での注入は廃止
 - ImageViewerPluginのload_contentはNone返却。ViewerResolverのフォールバック（grid_resolver.load）に委譲
+
+■ プラグイン管理UI (Plugin Manager)
+- PluginManagerDialog: Extensions/Viewers/Collectors/Data の4タブ構成。singleton pattern。Node引数でIPC可
+- PluginSettings: viewer_plugins.iniでenabled/viewer_order/grid_orderを永続化。enabled_names()はNone(未設定)/set[str](設定済み)
+- PluginBase.DEFAULT_ENABLED: True(デフォルト)。enabled=Noneの時、Falseのプラグインはスキップ。UI初期チェックにも使用
+- ExtensionsTab.enabled_changed Signal → ViewersTab/CollectorsTab をリアルタイム同期
+- ViewersTab: list[type]を受け取りrefresh()可。PluginRegistryに依存しない
+- CollectorsTab: collector_namesを受け取りrefresh()可。collector_resolverは未指定時のフォールバック
+- Save後にQMessageBoxで再起動確認ダイアログ表示
+- commands: setting.plugin_manager, setting.restart_tray, setting.restart_viewer (Settingメニュー配下)
 
 ■ DraftOverlayの注意
 - _changesと_deletedは明確に分離すること（pop/{}の暗黙ルールでバグ経験あり）
@@ -268,3 +278,13 @@ Widget初期化時のデフォルト状態と乖離するため、以下の同�
 - padding: themed_icon(padding=0.15)でアイコン領域の内側余白を比率指定（0.0-0.5）
 - アイコンはSVG/PNGファイルではなくQPainterPathで描画。解像度非依存
 - 新しいアイコン追加時は@_register('key')でicon_engine.pyに描画関数を追加
+
+■ プラグイン管理システム（Phase1〜3）
+- PluginSettings (wafer/plugin/settings.py): viewer_plugins.ini。enabled_names/viewer_order/grid_order
+- PluginLoader.load_plugins(): enabled_namesフィルタ適用。enabled=Noneなら全登録
+- PluginManagerDialog (wafer/app/plugin_manager/window.py): QDialog、3タブ構成（Extensions/Viewers/Collectors）、シングルトン
+- ExtensionsTab: フォルダスキャン→discover_extension()→チェックボックスで有効/無効
+- ViewersTab: ドラッグ並び替えリスト。Viewer/Grid優先度管理
+- CollectorsTab: DB×Collector マトリクス。各セルはSettingDB kv_store(enabled_collectors)に保存
+- main_indexer.py: start_watch()でsetting_db.get_enabled_collectors()を読み、空なら全有効。フィルタ結果をScanner/Dispatcherに渡す
+- _load_plugins_with_splash()は廃止済み。全エントリポイントでload_plugins()直接呼び出し

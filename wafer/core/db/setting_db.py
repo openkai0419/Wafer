@@ -163,3 +163,14 @@ class SettingDB:
             if not row:
                 return default
             return try_json_loads(row[0], default, on_error=lambda _e: AppLogger.warning(f'Failed to decode JSON for key: {key}'))
+
+    def get_enabled_collectors(self) -> list[str] | None:
+        val = self.get_setting('enabled_collectors')
+        if val is None:
+            return None
+        if not isinstance(val, list):
+            return None
+        return val
+
+    def set_enabled_collectors(self, names: list[str]):
+        self.set_setting('enabled_collectors', list(names))

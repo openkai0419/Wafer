@@ -529,3 +529,41 @@ class FileDB:
             AppLogger.warning(f'DATABASE CLEANUP FAILED: {e}', exc=e)
         else:
             AppLogger.info('DATABASE CLEANUP END')
+
+    def purge_collector_data(self, collector: str, *, re_collect: bool = False):
+        meta_deleted = 0
+        tags_deleted = 0
+        cs_affected = 0
+        escaped = collector.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+        pattern = f'{escaped}.%'
+        with self._write_lock, self.conn:
+            cur = self.conn.cursor()
+            try:
+                cur.execute("DELETE FROM meta_info WHERE key LIKE ? ESCAPE '\\'", (pattern,))
+                meta_deleted = cur.execute('SELECT changes()').fetchone()[0]
+                cur.execute("DELETE FROM tags WHERE key LIKE ? ESCAPE '\\'", (pattern,))
+                tags_deleted = cur.execute('SELECT changes()').fetchone()[0]
+                if re_collect:
+                    cur.execute(
+                        "UPDATE collection_status SET status = 'pending', collected_at = NULL WHERE collector = ?",
+                        (collector,),
+                    )
+                else:
+                    cur.execute('DELETE FROM collection_status WHERE collector = ?', (collector,))
+                cs_affected = cur.execute('SELECT changes()').fetchone()[0]
+            finally:
+                cur.close()
+        AppLogger.info(
+            f'[DB] Purged collector={collector}: meta={meta_deleted}, tags={tags_deleted}, cs={cs_affected}'
+        )
+        return meta_deleted, tags_deleted, cs_affected
+
+    def collector_data_counts(self) -> list[tuple[str, int]]:
+        cur = self.get_reader_cursor()
+        try:
+            cur.execute(
+                "SELECT collector, COUNT(*) FROM collection_status WHERE status = 'ok' GROUP BY collector"
+            )
+            return cur.fetchall()
+        finally:
+            cur.close()

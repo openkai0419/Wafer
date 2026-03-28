@@ -3,7 +3,6 @@ import importlib.util
 import inspect
 import os
 import sys
-from pathlib import Path
 
 from ..utils.logs import AppLogger
 from .registry import PluginRegistry
@@ -13,7 +12,6 @@ from .collector.base import BaseCollector
 from .query.base import BaseFilterPlugin, BaseSortPlugin
 from .layout.base import BaseLayoutPlugin
 from .rename.base import BaseRenameSourcePlugin
-from .installer import install_requirements as _install_requirements
 
 
 _REGISTRY_MAP = {
@@ -63,9 +61,15 @@ def _discover_plugins(module) -> list[tuple[str, type]]:
     return found
 
 
-def _discover_command_classes(module) -> list[type]:
-    from ..core.commands.command.menu import discover_command_classes
-    return discover_command_classes(module)
+def _discover_commands(module) -> list[tuple[str, type]]:
+    from ..core.commands.command.menu import MenuGroup, DragMenuGroup
+    found = []
+    for _, obj in inspect.getmembers(module, inspect.isclass):
+        if obj is MenuGroup or obj is DragMenuGroup:
+            continue
+        if issubclass(obj, (MenuGroup, DragMenuGroup)) and getattr(obj, 'NAME', ''):
+            found.append(('command', obj))
+    return found
 
 
 def _setup_dll_directory(folder: str):
@@ -82,10 +86,11 @@ class PluginLoader:
 
     _deferred_commands: list[type] = []
 
-    def __init__(self, plugin_dir: str, registries: dict[str, PluginRegistry], *, skip_install: bool = False):
+    def __init__(self, plugin_dir: str, registries: dict[str, PluginRegistry], *,
+                 enabled: set[str] | None = None):
         self._plugin_dir = plugin_dir
         self._registries = registries
-        self._skip_install = skip_install
+        self._enabled = enabled
 
     def load_all(self, on_progress=None) -> list[str]:
         if not os.path.isdir(self._plugin_dir):
@@ -124,11 +129,8 @@ class PluginLoader:
                         )
 
     def _load_one(self, name: str, folder: str, on_progress=None) -> int:
-        did_install = False
-        if not self._skip_install and _needs_install(folder):
-            if not _install_requirements(folder, on_progress):
-                return 0
-            did_install = True
+        if _needs_install(folder):
+            return 0
 
         vendor_dir = os.path.join(folder, _PACKAGES_DIR)
         if os.path.isdir(vendor_dir) and vendor_dir not in sys.path:
@@ -136,78 +138,29 @@ class PluginLoader:
 
         _setup_dll_directory(folder)
 
-        total, discovered = self._import_and_register(name, folder)
-
-        if did_install and discovered:
-            self._run_post_install(name, folder, discovered, on_progress)
-            _setup_dll_directory(folder)
+        total, _ = self._import_and_register(name, folder)
 
         return total
 
     def _import_and_register(self, name: str, folder: str) -> tuple[int, list[type]]:
-        pkg_name = f'_plugins_{name}'
-        if pkg_name not in sys.modules:
-            spec = importlib.util.spec_from_file_location(
-                pkg_name,
-                os.path.join(folder, '__init__.py') if os.path.isfile(os.path.join(folder, '__init__.py')) else folder,
-                submodule_search_locations=[folder],
-            )
-            if spec is None:
-                spec = importlib.machinery.ModuleSpec(pkg_name, None, is_package=True)
-                spec.submodule_search_locations = [folder]
-            mod = importlib.util.module_from_spec(spec)
-            mod.__path__ = [folder]
-            sys.modules[pkg_name] = mod
-            if spec.loader is not None:
-                spec.loader.exec_module(mod)
-
         total = 0
         discovered = []
-        for filename in sorted(os.listdir(folder)):
-            if not filename.endswith('.py') or filename.startswith('_'):
+        all_found = _import_extension(name, folder)
+        for registry_key, cls in all_found:
+            qualified = f'{registry_key}:{cls.NAME}'
+            if self._enabled is not None and qualified not in self._enabled:
                 continue
-            module_name = f'{pkg_name}.{filename[:-3]}'
-            if module_name in sys.modules:
+            if self._enabled is None and not getattr(cls, 'DEFAULT_ENABLED', True):
                 continue
-            filepath = os.path.join(folder, filename)
-            try:
-                sub_spec = importlib.util.spec_from_file_location(
-                    module_name, filepath,
-                )
-                sub_mod = importlib.util.module_from_spec(sub_spec)
-                sys.modules[module_name] = sub_mod
-                sub_spec.loader.exec_module(sub_mod)
-
-                for registry_key, plugin_cls in _discover_plugins(sub_mod):
-                    registry = self._registries.get(registry_key)
-                    if registry is not None:
-                        registry.register(plugin_cls)
-                        discovered.append(plugin_cls)
-                        total += 1
-                for cmd_cls in _discover_command_classes(sub_mod):
-                    PluginLoader._deferred_commands.append(cmd_cls)
-            except Exception as e:
-                AppLogger.warning(
-                    f'[PluginLoader] Failed to load module: {module_name} ({e})', exc=e
-                )
-
+            if registry_key == 'command':
+                PluginLoader._deferred_commands.append(cls)
+            else:
+                registry = self._registries.get(registry_key)
+                if registry is not None:
+                    registry.register(cls)
+                    discovered.append(cls)
+            total += 1
         return total, discovered
-
-    def _run_post_install(self, name, folder, classes, on_progress=None):
-        seen = set()
-        for plugin_cls in classes:
-            if id(plugin_cls) in seen:
-                continue
-            seen.add(id(plugin_cls))
-            fn = getattr(plugin_cls, 'post_install', None)
-            if fn is None:
-                continue
-            try:
-                fn(folder, on_progress)
-            except Exception as e:
-                AppLogger.warning(
-                    f'[PluginLoader] post_install failed for {plugin_cls.NAME}: {e}', exc=e
-                )
 
     @staticmethod
     def register_extension_commands():
@@ -220,20 +173,83 @@ class PluginLoader:
                 )
         PluginLoader._deferred_commands.clear()
 
+    @staticmethod
+    def discover_extension(folder: str) -> list[tuple[str, type]]:
+        name = os.path.basename(folder)
+        vendor_dir = os.path.join(folder, _PACKAGES_DIR)
+        if os.path.isdir(vendor_dir) and vendor_dir not in sys.path:
+            sys.path.insert(0, vendor_dir)
+        try:
+            return _import_extension(name, folder)
+        finally:
+            if vendor_dir in sys.path:
+                sys.path.remove(vendor_dir)
 
-def any_needs_install() -> bool:
-    plugin_dir = get_plugin_dir()
-    if not os.path.isdir(plugin_dir):
-        return False
-    for name in os.listdir(plugin_dir):
-        folder = os.path.join(plugin_dir, name)
-        if os.path.isdir(folder) and not name.startswith('.') and name != '__pycache__':
-            if _needs_install(folder):
-                return True
-    return False
+
+def _import_extension(name: str, folder: str) -> list[tuple[str, type]]:
+    pkg_name = f'_plugins_{name}'
+    if pkg_name not in sys.modules:
+        init_py = os.path.join(folder, '__init__.py')
+        spec = importlib.util.spec_from_file_location(
+            pkg_name,
+            init_py if os.path.isfile(init_py) else folder,
+            submodule_search_locations=[folder],
+        )
+        if spec is None:
+            spec = importlib.machinery.ModuleSpec(pkg_name, None, is_package=True)
+            spec.submodule_search_locations = [folder]
+        mod = importlib.util.module_from_spec(spec)
+        mod.__path__ = [folder]
+        sys.modules[pkg_name] = mod
+        if spec.loader is not None:
+            spec.loader.exec_module(mod)
+
+    found: list[tuple[str, type]] = []
+    for filename in sorted(os.listdir(folder)):
+        if not filename.endswith('.py') or filename.startswith('_'):
+            continue
+        module_name = f'{pkg_name}.{filename[:-3]}'
+        if module_name in sys.modules:
+            sub_mod = sys.modules[module_name]
+        else:
+            filepath = os.path.join(folder, filename)
+            try:
+                sub_spec = importlib.util.spec_from_file_location(module_name, filepath)
+                sub_mod = importlib.util.module_from_spec(sub_spec)
+                sys.modules[module_name] = sub_mod
+                sub_spec.loader.exec_module(sub_mod)
+            except Exception as e:
+                AppLogger.warning(f'[PluginLoader] Failed to import: {module_name} ({e})', exc=e)
+                continue
+        found.extend(_discover_plugins(sub_mod))
+        found.extend(_discover_commands(sub_mod))
+    return found
 
 
-def load_plugins(*, skip_install: bool = False, on_progress=None) -> list[str]:
+def _apply_priority_order(registry: PluginRegistry, order: list[str]):
+    if not order:
+        return
+    base = len(order) * 100
+    order_set = set()
+    for i, name in enumerate(order):
+        cls = registry.get(name)
+        if cls is not None:
+            cls.PRIORITY = base - i * 100
+            order_set.add(name)
+    unlisted = sorted(
+        [p for p in registry.list_all() if p.NAME not in order_set],
+        key=lambda c: c.PRIORITY, reverse=True,
+    )
+    floor = base - (len(order) - 1) * 100 - 100
+    for p in unlisted:
+        p.PRIORITY = floor
+        floor -= 100
+    registry._plugins.sort(key=lambda c: c.PRIORITY, reverse=True)
+    registry._rebuild_ext_cache()
+    registry._chain_cache.clear()
+
+
+def load_plugins(*, on_progress=None) -> list[str]:
     from .viewer.handler import viewer_resolver
     from .grid.handler import grid_resolver
     from .collector.handler import collector_resolver
@@ -251,5 +267,15 @@ def load_plugins(*, skip_install: bool = False, on_progress=None) -> list[str]:
     }
     from ..builtins import register_all
     register_all(registries)
-    loader = PluginLoader(get_plugin_dir(), registries, skip_install=skip_install)
-    return loader.load_all(on_progress=on_progress)
+
+    from .settings import PluginSettings
+    ps = PluginSettings()
+    enabled = ps.enabled_names()
+
+    loader = PluginLoader(get_plugin_dir(), registries, enabled=enabled)
+    result = loader.load_all(on_progress=on_progress)
+
+    _apply_priority_order(viewer_resolver.registry, ps.viewer_order())
+    _apply_priority_order(grid_resolver.registry, ps.grid_order())
+
+    return result

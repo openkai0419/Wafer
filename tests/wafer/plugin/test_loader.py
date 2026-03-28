@@ -2,10 +2,9 @@ import os
 import sys
 import pytest
 from pathlib import Path
-from unittest.mock import patch
 
 from wafer.plugin.registry import BasePlugin, PluginRegistry
-from wafer.plugin.loader import PluginLoader
+from wafer.plugin.loader import PluginLoader, _apply_priority_order
 
 
 @pytest.fixture
@@ -42,75 +41,16 @@ def _make_registries():
     }
 
 
-class TestPostInstallHook:
-
-    def test_post_install_called_on_fresh_install(self, plugin_env):
-        plugin_dir, stub_dir = plugin_env
-        req = os.path.join(stub_dir, 'requirements.txt')
-        with open(req, 'w') as f:
-            f.write('')
-
-        registries = _make_registries()
-        with patch('wafer.plugin.loader._install_requirements', return_value=True):
-            loader = PluginLoader(plugin_dir, registries)
-            loaded = loader.load_all()
-
-        assert 'stub_plugin' in loaded
-        plugin_cls = registries['grid'].get('stub_test')
-        assert plugin_cls is not None
-        assert plugin_cls._post_installed is True
-
-    def test_post_install_not_called_when_skip_install(self, plugin_env):
-        plugin_dir, stub_dir = plugin_env
-
-        registries = _make_registries()
-        loader = PluginLoader(plugin_dir, registries, skip_install=True)
-        loaded = loader.load_all()
-
-        assert 'stub_plugin' in loaded
-        plugin_cls = registries['grid'].get('stub_test')
-        assert plugin_cls is not None
-        assert plugin_cls._post_installed is False
-
-    def test_post_install_not_called_when_already_installed(self, plugin_env):
-        plugin_dir, stub_dir = plugin_env
-        pkg_dir = os.path.join(stub_dir, '.packages')
-        os.makedirs(pkg_dir)
-        stamp = os.path.join(pkg_dir, '.installed')
-        with open(stamp, 'w') as f:
-            f.write('')
-
-        registries = _make_registries()
-        loader = PluginLoader(plugin_dir, registries)
-        loaded = loader.load_all()
-
-        assert 'stub_plugin' in loaded
-        plugin_cls = registries['grid'].get('stub_test')
-        assert plugin_cls is not None
-        assert plugin_cls._post_installed is False
-
-
 class TestConfigureHook:
 
     def test_configure_called_after_load_all(self, plugin_env):
         plugin_dir, _ = plugin_env
 
         registries = _make_registries()
-        loader = PluginLoader(plugin_dir, registries, skip_install=True)
+        loader = PluginLoader(plugin_dir, registries)
         loaded = loader.load_all()
 
         assert 'stub_plugin' in loaded
-        plugin_cls = registries['grid'].get('stub_test')
-        assert plugin_cls is not None
-        assert plugin_cls._configured is True
-
-    def test_configure_called_even_with_skip_install(self, plugin_env):
-        plugin_dir, _ = plugin_env
-
-        registries = _make_registries()
-        loader = PluginLoader(plugin_dir, registries, skip_install=True)
-        loader.load_all()
-
         plugin_cls = registries['grid'].get('stub_test')
         assert plugin_cls is not None
         assert plugin_cls._configured is True
@@ -132,7 +72,7 @@ class TestConfigureHook:
         )
 
         registries = _make_registries()
-        loader = PluginLoader(str(plugin_dir), registries, skip_install=True)
+        loader = PluginLoader(str(plugin_dir), registries)
         loaded = loader.load_all()
         assert 'broken_plugin' in loaded
 
@@ -171,7 +111,7 @@ class TestDeferredCommandRegistration:
         )
         registries = _make_registries()
         PluginLoader._deferred_commands.clear()
-        loader = PluginLoader(str(plugin_dir), registries, skip_install=True)
+        loader = PluginLoader(str(plugin_dir), registries)
         loader.load_all()
         assert len(PluginLoader._deferred_commands) > 0
         from wafer.core.commands.command.core import CommandRegistry
@@ -197,7 +137,7 @@ class TestSubmoduleRelativeImport:
             'def get(): return value\n'
         )
         registries = _make_registries()
-        loader = PluginLoader(str(plugin_dir), registries, skip_install=True)
+        loader = PluginLoader(str(plugin_dir), registries)
         loader.load_all()
         mod = sys.modules.get('_plugins_rel_plugin.reader')
         assert mod is not None
@@ -233,3 +173,204 @@ class TestRunSubprocess:
         )
         with pytest.raises(RuntimeError, match="custom error msg"):
             _run_subprocess([sys.executable, str(script)])
+
+
+class TestNeedsInstallSkip:
+
+    def test_needs_install_returns_zero_when_missing_stamp(self, tmp_path):
+        plugin_dir = tmp_path / 'plugins'
+        ext_dir = plugin_dir / 'uninstalled_ext'
+        ext_dir.mkdir(parents=True)
+        (ext_dir / '__init__.py').write_text('')
+        (ext_dir / 'requirements.txt').write_text('some-package\n')
+        (ext_dir / 'grid.py').write_text(
+            'from wafer.plugin.grid.base import ImageGridPlugin\n'
+            'class NeedsGrid(ImageGridPlugin):\n'
+            '    NAME = "needs_ext"\n'
+            '    EXTENSIONS = (".nds",)\n'
+            '    PRIORITY = 1\n'
+            '    def load(self, path, size=None): return None\n'
+        )
+
+        registries = _make_registries()
+        loader = PluginLoader(str(plugin_dir), registries)
+        loaded = loader.load_all()
+        assert 'uninstalled_ext' not in loaded
+        assert registries['grid'].get('needs_ext') is None
+
+        for key in list(sys.modules):
+            if key.startswith('_plugins_uninstalled_ext'):
+                del sys.modules[key]
+
+
+class TestEnabledFilter:
+
+    def test_enabled_none_loads_all(self, plugin_env):
+        plugin_dir, _ = plugin_env
+        registries = _make_registries()
+        loader = PluginLoader(plugin_dir, registries, enabled=None)
+        loaded = loader.load_all()
+        assert 'stub_plugin' in loaded
+        assert registries['grid'].get('stub_test') is not None
+
+        for key in list(sys.modules):
+            if key.startswith('_plugins_stub_plugin'):
+                del sys.modules[key]
+
+    def test_enabled_includes_matching_name(self, plugin_env):
+        plugin_dir, _ = plugin_env
+        registries = _make_registries()
+        loader = PluginLoader(plugin_dir, registries, enabled={'grid:stub_test'})
+        loaded = loader.load_all()
+        assert 'stub_plugin' in loaded
+        assert registries['grid'].get('stub_test') is not None
+
+        for key in list(sys.modules):
+            if key.startswith('_plugins_stub_plugin'):
+                del sys.modules[key]
+
+    def test_enabled_excludes_non_matching_name(self, plugin_env):
+        plugin_dir, _ = plugin_env
+        registries = _make_registries()
+        loader = PluginLoader(plugin_dir, registries, enabled={'grid:other_plugin'})
+        loaded = loader.load_all()
+        assert 'stub_plugin' not in loaded
+        assert registries['grid'].get('stub_test') is None
+
+        for key in list(sys.modules):
+            if key.startswith('_plugins_stub_plugin'):
+                del sys.modules[key]
+
+
+class TestDiscoverExtension:
+
+    def test_discover_returns_registry_key_and_class(self, plugin_env):
+        _, stub_dir = plugin_env
+        result = PluginLoader.discover_extension(stub_dir)
+        assert len(result) >= 1
+        keys = [r[0] for r in result]
+        assert 'grid' in keys
+        names = [r[1].NAME for r in result]
+        assert 'stub_test' in names
+
+    def test_discover_does_not_register(self, plugin_env):
+        _, stub_dir = plugin_env
+        registries = _make_registries()
+        PluginLoader.discover_extension(stub_dir)
+        assert registries['grid'].get('stub_test') is None
+
+
+class TestApplyPriorityOrder:
+
+    def test_order_overrides_priority(self):
+        class PluginA(BasePlugin):
+            NAME = 'a'
+            PRIORITY = 10
+        class PluginB(BasePlugin):
+            NAME = 'b'
+            PRIORITY = 20
+        registry = PluginRegistry()
+        registry.register(PluginA)
+        registry.register(PluginB)
+        assert registry.list_all()[0].NAME == 'b'
+        _apply_priority_order(registry, ['a', 'b'])
+        assert registry.list_all()[0].NAME == 'a'
+
+    def test_empty_order_is_noop(self):
+        class PluginC(BasePlugin):
+            NAME = 'c'
+            PRIORITY = 50
+        registry = PluginRegistry()
+        registry.register(PluginC)
+        _apply_priority_order(registry, [])
+        assert registry.list_all()[0].NAME == 'c'
+        assert PluginC.PRIORITY == 50
+
+    def test_unknown_name_in_order_ignored(self):
+        class PluginD(BasePlugin):
+            NAME = 'd'
+            PRIORITY = 5
+        registry = PluginRegistry()
+        registry.register(PluginD)
+        _apply_priority_order(registry, ['nonexistent', 'd'])
+        assert registry.list_all()[0].NAME == 'd'
+
+    def test_unlisted_plugins_sorted_after_listed(self):
+        class PluginE(BasePlugin):
+            NAME = 'e'
+            PRIORITY = 10
+        class PluginF(BasePlugin):
+            NAME = 'f'
+            PRIORITY = 500
+        class PluginG(BasePlugin):
+            NAME = 'g'
+            PRIORITY = 1000
+        registry = PluginRegistry()
+        registry.register(PluginE)
+        registry.register(PluginF)
+        registry.register(PluginG)
+        _apply_priority_order(registry, ['e'])
+        names = [p.NAME for p in registry.list_all()]
+        assert names[0] == 'e'
+        assert names[1] == 'g'
+        assert names[2] == 'f'
+
+
+class TestDefaultEnabled:
+
+    def test_default_enabled_false_skipped_when_none(self, tmp_path):
+        plugin_dir = tmp_path / 'plugins'
+        stub_dir = plugin_dir / 'disabled_ext'
+        stub_dir.mkdir(parents=True)
+        (stub_dir / '__init__.py').write_text('')
+        (stub_dir / 'grid.py').write_text(
+            'from wafer.plugin.grid.base import ImageGridPlugin\n'
+            'class DisabledGridPlugin(ImageGridPlugin):\n'
+            '    NAME = "disabled_test"\n'
+            '    EXTENSIONS = (".dis",)\n'
+            '    PRIORITY = 10\n'
+            '    DEFAULT_ENABLED = False\n'
+            '    def load(self, path, size=None): return None\n'
+        )
+        registries = _make_registries()
+        loader = PluginLoader(str(plugin_dir), registries, enabled=None)
+        loader.load_all()
+        assert registries['grid'].get('disabled_test') is None
+
+        for key in list(sys.modules):
+            if key.startswith('_plugins_disabled_ext'):
+                del sys.modules[key]
+
+    def test_default_enabled_true_loaded_when_none(self, plugin_env):
+        plugin_dir, _ = plugin_env
+        registries = _make_registries()
+        loader = PluginLoader(plugin_dir, registries, enabled=None)
+        loader.load_all()
+        assert registries['grid'].get('stub_test') is not None
+
+        for key in list(sys.modules):
+            if key.startswith('_plugins_stub_plugin'):
+                del sys.modules[key]
+
+    def test_default_enabled_false_loaded_when_explicit_set(self, tmp_path):
+        plugin_dir = tmp_path / 'plugins'
+        stub_dir = plugin_dir / 'disabled_ext2'
+        stub_dir.mkdir(parents=True)
+        (stub_dir / '__init__.py').write_text('')
+        (stub_dir / 'grid.py').write_text(
+            'from wafer.plugin.grid.base import ImageGridPlugin\n'
+            'class DisabledGridPlugin2(ImageGridPlugin):\n'
+            '    NAME = "disabled_test2"\n'
+            '    EXTENSIONS = (".dis2",)\n'
+            '    PRIORITY = 10\n'
+            '    DEFAULT_ENABLED = False\n'
+            '    def load(self, path, size=None): return None\n'
+        )
+        registries = _make_registries()
+        loader = PluginLoader(str(plugin_dir), registries, enabled={'grid:disabled_test2'})
+        loader.load_all()
+        assert registries['grid'].get('disabled_test2') is not None
+
+        for key in list(sys.modules):
+            if key.startswith('_plugins_disabled_ext2'):
+                del sys.modules[key]

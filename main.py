@@ -34,18 +34,6 @@ def _create_app():
     app.setApplicationName(APP_NAME)
     return app
 
-def _load_plugins_with_splash(app):
-    from wafer.plugin.loader import any_needs_install
-    if any_needs_install():
-        from wafer.core.qt.splash import InstallSplash
-        splash = InstallSplash(APP_NAME, get_icon())
-        splash.show()
-        load_plugins(on_progress=app.processEvents)
-        splash.close()
-    else:
-        load_plugins()
-
-
 def _entry_viewer(app=None, session_id=None):
     from wafer.app.viewer.mainwindow import MainWindow
     from wafer.plugin.loader import PluginLoader
@@ -138,7 +126,7 @@ def main():
         constants.DEV_MODE = True
     if not any([args.tray, args.viewer, args.indexer, args.collector]):
         app = _create_app()
-        _load_plugins_with_splash(app)
+        load_plugins()
         AppProcess.new_main('--tray')
         from wafer.app.viewer.session import SessionStore
         restore_ids = SessionStore().get_restore_session_ids()
@@ -147,23 +135,23 @@ def main():
         _entry_viewer(app, session_id=restore_ids[0] if restore_ids else None)
         return
     if args.tray:
-        load_plugins(skip_install=True)
+        load_plugins()
         _entry_tray()
     elif args.indexer:
-        load_plugins(skip_install=True)
+        load_plugins()
         if isinstance(args.indexer, str):
             _entry_indexer(args.indexer, parent_pid=args.parent_pid)
         else:
             AppProcess.new_main('--tray')
     elif args.collector:
-        load_plugins(skip_install=True)
+        load_plugins()
         if isinstance(args.collector, str):
             _entry_collector(args.collector, args.plugin, parent_pid=args.parent_pid)
         else:
             AppLogger.warning('--collector requires a db name')
     elif args.viewer:
         app = _create_app()
-        _load_plugins_with_splash(app)
+        load_plugins()
         _entry_viewer(app, session_id=args.session)
 if __name__ == '__main__':
     main()

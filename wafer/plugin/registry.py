@@ -6,6 +6,7 @@ from ..utils.profiling import profiler
 class PluginBase:
     NAME: str = ''
     PRIORITY: int = 0
+    DEFAULT_ENABLED: bool = True
 
     @classmethod
     def post_install(cls, plugin_dir: str, on_progress=None):
@@ -84,7 +85,7 @@ class PluginRegistry:
 
     def resolve_instance(self, path: str) -> BasePlugin | None:
         cls = self.resolve(path)
-        return self._instances.get(cls.NAME) if cls else None
+        return self.instance(cls.NAME) if cls else None
 
     def resolve_all(self, path: str) -> list[type[BasePlugin]]:
         return [p for p in self._plugins if p.match(path) and p.can_handle(path)]

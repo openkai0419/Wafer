@@ -261,6 +261,35 @@ def batch_rename(ctx, items, w):
     BatchRenameDialog.open(file_paths, keys=paths_str, db_path=w.database_path, parent=w)
 
 
+def shell_context_menu(ctx):
+    if not sys.platform.startswith("win"):
+        return
+    paths = _ctx_paths(ctx)
+    if not paths:
+        return
+    from ....core.platform.shell_menu import show_shell_context_menu
+    widget = ctx.get("widget")
+    if widget is None:
+        widget = QtGui.QGuiApplication.focusWindow()
+    hwnd = int(widget.winId()) if widget and hasattr(widget, "winId") else 0
+    if not hwnd:
+        app_win = QtCore.QCoreApplication.instance()
+        if app_win:
+            for w in app_win.topLevelWidgets() if hasattr(app_win, 'topLevelWidgets') else []:
+                if w.isVisible():
+                    hwnd = int(w.winId())
+                    break
+    if not hwnd:
+        return
+    gp = ctx.get("global_pos")
+    if gp and hasattr(gp, "x"):
+        x, y = gp.x(), gp.y()
+    else:
+        cursor_pos = QtGui.QCursor.pos()
+        x, y = cursor_pos.x(), cursor_pos.y()
+    show_shell_context_menu(paths, hwnd, x, y)
+
+
 
 class FileCommands(ActionKit.MenuBase):
     NAME = "File"
@@ -331,4 +360,6 @@ class FileCommands(ActionKit.MenuBase):
             "-",
             ActionKit.Command(path="file.rename", display="Rename", func=rename_file),
             ActionKit.Command(path="file.batch_rename", display="Batch Rename", func=batch_rename),
+            "-",
+            ActionKit.Command(path="file.shell_context_menu", display="Shell Context Menu", func=shell_context_menu),
         ]

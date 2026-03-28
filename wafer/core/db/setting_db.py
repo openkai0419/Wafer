@@ -38,8 +38,8 @@ class SettingDB:
             if con.in_transaction:
                 try:
                     con.rollback()
-                except Exception:
-                    pass
+                except Exception as re:
+                    AppLogger.debug(f'rollback failed: {re}')
             AppLogger.error(f"SQLite error during DB operation: {e}", exc=e)
             raise
         finally:

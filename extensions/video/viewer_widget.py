@@ -384,8 +384,8 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
         if self._player:
             try:
                 self._player.command('stop')
-            except Exception:
-                pass
+            except Exception as e:
+                AppLogger.debug(f'mpv stop failed: {e}')
 
     def toggle_pause(self):
         if not self._player:
@@ -475,8 +475,8 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
             try:
                 if self._player.eof_reached:
                     self._playback_ended.emit()
-            except Exception:
-                pass
+            except Exception as e:
+                AppLogger.debug(f'mpv eof_reached check failed: {e}')
 
     def _on_mpv_time_pos(self, name, value):
         if not self._autoplay_advance or not self._looping:

@@ -36,6 +36,7 @@ class StateStore:
     def unregister(self, namespace: str):
         with self._lock:
             self._entries.pop(namespace, None)
+            self._pending.pop(namespace, None)
 
     def save_all(self) -> dict[str, Any]:
         with self._lock:

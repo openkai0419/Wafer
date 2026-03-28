@@ -1,11 +1,18 @@
+import threading
+
+
 class Signal:
 
     def __init__(self):
         self._callbacks = []
+        self._lock = threading.Lock()
 
     def connect(self, callback):
-        self._callbacks.append(callback)
+        with self._lock:
+            self._callbacks.append(callback)
 
     def emit(self, *args, **kwargs):
-        for callback in list(self._callbacks):
+        with self._lock:
+            snapshot = list(self._callbacks)
+        for callback in snapshot:
             callback(*args, **kwargs)

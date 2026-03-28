@@ -1,5 +1,6 @@
 import hashlib
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -176,12 +177,31 @@ class EmbeddedPython:
                     )
                 AppLogger.info('[Installer] SHA256 verified')
 
-            with zipfile.ZipFile(tmp, 'r') as zf:
-                for info in zf.infolist():
-                    norm = os.path.normpath(info.filename)
-                    if norm.startswith('..') or os.path.isabs(norm):
-                        raise ValueError(f'Path traversal detected in zip: {info.filename}')
-                zf.extractall(self._dir)
+            staging = tempfile.mkdtemp(dir=self._dir, prefix='.extract_')
+            try:
+                with zipfile.ZipFile(tmp, 'r') as zf:
+                    for info in zf.infolist():
+                        norm = os.path.normpath(info.filename)
+                        if norm.startswith('..') or os.path.isabs(norm):
+                            raise ValueError(f'Path traversal detected in zip: {info.filename}')
+                        if os.sep != '/':
+                            norm = norm.replace('/', os.sep)
+                        resolved = os.path.normpath(os.path.join(staging, norm))
+                        if not resolved.startswith(staging):
+                            raise ValueError(f'Path traversal detected in zip: {info.filename}')
+                    zf.extractall(staging)
+                for name in os.listdir(staging):
+                    src = os.path.join(staging, name)
+                    dst = os.path.join(self._dir, name)
+                    if os.path.isdir(src):
+                        if os.path.exists(dst):
+                            shutil.rmtree(dst)
+                        shutil.move(src, dst)
+                    else:
+                        shutil.move(src, dst)
+            finally:
+                if os.path.isdir(staging):
+                    shutil.rmtree(staging, ignore_errors=True)
             AppLogger.info('[Installer] Extraction complete')
         finally:
             if os.path.exists(tmp):

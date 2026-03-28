@@ -117,8 +117,8 @@ class OutboxStore:
     def close(self):
         try:
             self._conn.close()
-        except Exception:
-            pass
+        except Exception as e:
+            AppLogger.debug(f'OutboxStore.close failed: {e}')
 
     def delete_if_empty(self) -> bool:
         count = self._conn.execute('SELECT COUNT(*) FROM outbox').fetchone()[0]
@@ -140,8 +140,10 @@ def cleanup_empty_outbox_files():
         db_path = str(db_file)
         try:
             conn = _connect(db_path)
-            count = conn.execute('SELECT COUNT(*) FROM outbox').fetchone()[0]
-            conn.close()
+            try:
+                count = conn.execute('SELECT COUNT(*) FROM outbox').fetchone()[0]
+            finally:
+                conn.close()
         except Exception:
             _delete_db_files(db_path)
             continue
@@ -158,19 +160,21 @@ def scan_all_outbox(dst_filter: set[str] | None = None, db_filter: str | None = 
         db_path = str(db_file)
         try:
             conn = _connect(db_path)
-            rows = conn.execute(
-                'SELECT id, topic, payload, dst, db, created_at FROM outbox ORDER BY id',
-            ).fetchall()
-            for r in rows:
-                if dst_filter and r[3] not in dst_filter:
-                    continue
-                if db_filter is not None and r[4] != db_filter:
-                    continue
-                records.append(OutboxRecord(
-                    id=r[0], topic=r[1], payload=msgpack.unpackb(r[2], raw=False),
-                    dst=r[3], db=r[4], created_at=r[5], source_db=db_path,
-                ))
-            conn.close()
+            try:
+                rows = conn.execute(
+                    'SELECT id, topic, payload, dst, db, created_at FROM outbox ORDER BY id',
+                ).fetchall()
+                for r in rows:
+                    if dst_filter and r[3] not in dst_filter:
+                        continue
+                    if db_filter is not None and r[4] != db_filter:
+                        continue
+                    records.append(OutboxRecord(
+                        id=r[0], topic=r[1], payload=msgpack.unpackb(r[2], raw=False),
+                        dst=r[3], db=r[4], created_at=r[5], source_db=db_path,
+                    ))
+            finally:
+                conn.close()
         except Exception as e:
             AppLogger.warning(f'outbox scan failed: {db_path}', exc=e)
     return records
@@ -179,9 +183,11 @@ def scan_all_outbox(dst_filter: set[str] | None = None, db_filter: str | None = 
 def remove_outbox_from(db_path: str, record_id: int):
     try:
         conn = _connect(db_path)
-        conn.execute('DELETE FROM outbox WHERE id = ?', (record_id,))
-        conn.commit()
-        conn.close()
+        try:
+            conn.execute('DELETE FROM outbox WHERE id = ?', (record_id,))
+            conn.commit()
+        finally:
+            conn.close()
     except Exception as e:
         AppLogger.warning(f'outbox remove_from failed: {db_path} id={record_id}', exc=e)
 
@@ -191,8 +197,10 @@ def remove_outbox_batch_from(db_path: str, record_ids: list[int]):
         return
     try:
         conn = _connect(db_path)
-        conn.executemany('DELETE FROM outbox WHERE id = ?', [(rid,) for rid in record_ids])
-        conn.commit()
-        conn.close()
+        try:
+            conn.executemany('DELETE FROM outbox WHERE id = ?', [(rid,) for rid in record_ids])
+            conn.commit()
+        finally:
+            conn.close()
     except Exception as e:
         AppLogger.warning(f'outbox remove_batch_from failed: {db_path}', exc=e)

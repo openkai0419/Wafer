@@ -43,8 +43,11 @@ def _validate_url(url: str, allowed_hosts: tuple[str, ...]) -> str:
     parsed = urlparse(url)
     if parsed.scheme != 'https':
         raise ValueError(f'Insecure URL scheme: {parsed.scheme}')
-    if not any(parsed.hostname == h or (parsed.hostname and parsed.hostname.endswith('.' + h)) for h in allowed_hosts):
-        raise ValueError(f'Untrusted host: {parsed.hostname}')
+    hostname = parsed.hostname
+    if not hostname:
+        raise ValueError('URL has no hostname')
+    if not any(hostname == h or hostname.endswith('.' + h) for h in allowed_hosts):
+        raise ValueError(f'Untrusted host: {hostname}')
     return url
 
 
@@ -55,10 +58,16 @@ def _safe_download(url: str, dest: str, *, allowed_hosts: tuple[str, ...] | None
     try:
         urllib.request.urlretrieve(url, tmp_dest)
         shutil.move(tmp_dest, dest)
-    except BaseException:
+    except Exception:
         if os.path.isfile(tmp_dest):
             os.remove(tmp_dest)
         raise
+    finally:
+        if os.path.isfile(tmp_dest):
+            try:
+                os.remove(tmp_dest)
+            except OSError:
+                pass
 
 
 def _find_asset_url() -> str | None:

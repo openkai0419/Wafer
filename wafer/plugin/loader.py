@@ -72,7 +72,7 @@ def _setup_dll_directory(folder: str):
     lib_dir = os.path.join(folder, 'lib')
     if not os.path.isdir(lib_dir):
         return
-    if lib_dir not in os.environ.get('PATH', ''):
+    if lib_dir not in os.environ.get('PATH', '').split(os.pathsep):
         os.environ['PATH'] = lib_dir + os.pathsep + os.environ.get('PATH', '')
     if sys.platform == 'win32':
         os.add_dll_directory(lib_dir)

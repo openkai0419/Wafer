@@ -4,6 +4,7 @@ from PySide6 import QtCore, QtWidgets
 
 from ....core.commands.bridge import ActionKit, Menu
 from ....utils.paths import normalize_path
+from ....utils.logs import AppLogger
 from ....core.qt.dialog import ConfirmDialog
 
 def _ctx_tree(ctx):
@@ -107,8 +108,8 @@ def show_context_menu(ctx):
     if hasattr(tree, "folder_selected"):
         try:
             tree.folder_selected.emit()
-        except Exception:
-            pass
+        except Exception as e:
+            AppLogger.debug(f'folder_selected emit failed: {e}')
     items = []
     if exists:
         items.extend([

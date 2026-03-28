@@ -25,8 +25,8 @@ def _scan_children(path, excluded):
                 continue
             has_sub = _has_subfolders_bg(full, excluded)
             children.append((full, has_sub))
-    except Exception:
-        pass
+    except OSError as e:
+        AppLogger.debug(f'_scan_children failed for {path}: {e}')
     return children
 
 
@@ -67,7 +67,7 @@ def _has_subfolders_bg(path, excluded):
                     if normalize_path(entry.path) not in excluded:
                         return True
         return False
-    except Exception:
+    except OSError:
         return False
 
 
@@ -300,8 +300,8 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
         if p is not None and hasattr(p, "reload_tree"):
             try:
                 p.reload_tree()
-            except Exception:
-                pass
+            except Exception as e:
+                AppLogger.debug(f'_request_reload_tree failed: {e}')
 
     def mimeTypes(self):
         return [self._mime_type]

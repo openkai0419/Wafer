@@ -154,7 +154,7 @@ class AppLogger:
                 'text': text,
             }, dst='viewer', priority=2)
         except Exception:
-            pass
+            pass  # IPC forward is best-effort; logging here risks recursion
 
     @staticmethod
     def _format_with_exc(text: str, exc: BaseException | None) -> str:

@@ -84,7 +84,7 @@ def get_os_new_folder_name() -> str:
         buf = ctypes.create_unicode_buffer(256)
         if SHLoadIndirectString("@shell32.dll,-30396", buf, 256, None) == 0 and buf.value:
             return buf.value
-    except Exception:
+    except OSError:
         pass
     return "New Folder"
 

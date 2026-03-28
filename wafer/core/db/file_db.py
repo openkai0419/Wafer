@@ -175,8 +175,8 @@ class FileDB:
             conn = self.conn or self.read_conn
             cur = conn.execute(f'PRAGMA wal_checkpoint({mode})')
             cur.close()
-        except Exception:
-            AppLogger.debug(f'wal_checkpoint({mode}) failed')
+        except Exception as e:
+            AppLogger.debug(f'wal_checkpoint({mode}) failed: {e}')
 
     @profiler.profile
     def initialize_database(self):
@@ -290,10 +290,12 @@ class FileDB:
         result: dict[str, tuple[float, int]] = {}
         try:
             cur = self.get_reader_cursor()
-            cur.execute('SELECT source, modified, size FROM sources')
-            for source, mtime, size in cur.fetchall():
-                result[source] = (mtime, size)
-            cur.close()
+            try:
+                cur.execute('SELECT source, modified, size FROM sources')
+                for source, mtime, size in cur.fetchall():
+                    result[source] = (mtime, size)
+            finally:
+                cur.close()
         except Exception as e:
             AppLogger.warning(f'Failed to load previous data from DB: {e}', exc=e)
         return result
@@ -316,20 +318,22 @@ class FileDB:
             return
         with self._write_lock, self.conn:
             cur = self.conn.cursor()
-            cur.execute('PRAGMA foreign_keys=ON')
-            for old, new in pairs:
-                cur.execute('UPDATE sources SET source = ? WHERE source = ?', (new, old))
-                cur.execute('UPDATE files SET path = ? WHERE source = ?', (new, new))
-                name = os.path.basename(new)
-                cur.execute(
-                    "UPDATE meta_info SET value = ? WHERE path = ? AND key = 'path'",
-                    (new, new),
-                )
-                cur.execute(
-                    "UPDATE meta_info SET value = ? WHERE path = ? AND key = 'name'",
-                    (name, new),
-                )
-            cur.close()
+            try:
+                cur.execute('PRAGMA foreign_keys=ON')
+                for old, new in pairs:
+                    cur.execute('UPDATE sources SET source = ? WHERE source = ?', (new, old))
+                    cur.execute('UPDATE files SET path = ? WHERE source = ?', (new, new))
+                    name = os.path.basename(new)
+                    cur.execute(
+                        "UPDATE meta_info SET value = ? WHERE path = ? AND key = 'path'",
+                        (new, new),
+                    )
+                    cur.execute(
+                        "UPDATE meta_info SET value = ? WHERE path = ? AND key = 'name'",
+                        (name, new),
+                    )
+            finally:
+                cur.close()
 
     @staticmethod
     def _ensure_hash_indexes(cur, source_entries, tag_entries=()):
@@ -350,42 +354,48 @@ class FileDB:
     def upsert_batches(self, source_entries, image_entries, meta_info_entries, tag_entries):
         with self._write_lock, self.conn:
             cur = self.conn.cursor()
-            self._ensure_hash_indexes(cur, source_entries, tag_entries)
-            cur.executemany(_SQL_UPSERT_SOURCES, source_entries)
-            if image_entries:
-                cur.executemany(_SQL_UPSERT_FILES, image_entries)
-            if meta_info_entries:
-                cur.executemany(_SQL_UPSERT_META, meta_info_entries)
-            if tag_entries:
-                cur.executemany(_SQL_UPSERT_TAGS, tag_entries)
-            cur.close()
+            try:
+                self._ensure_hash_indexes(cur, source_entries, tag_entries)
+                cur.executemany(_SQL_UPSERT_SOURCES, source_entries)
+                if image_entries:
+                    cur.executemany(_SQL_UPSERT_FILES, image_entries)
+                if meta_info_entries:
+                    cur.executemany(_SQL_UPSERT_META, meta_info_entries)
+                if tag_entries:
+                    cur.executemany(_SQL_UPSERT_TAGS, tag_entries)
+            finally:
+                cur.close()
 
     @profiler.profile
     def upsert_basic_sources(self, source_entries, image_entries, meta_info_entries=()):
         with self._write_lock, self.conn:
             cur = self.conn.cursor()
-            self._ensure_hash_indexes(cur, source_entries)
-            cur.executemany(_SQL_UPSERT_SOURCES, source_entries)
-            if image_entries:
-                cur.executemany(_SQL_UPSERT_FILES_COALESCE, image_entries)
-            if meta_info_entries:
-                cur.executemany(_SQL_UPSERT_META, meta_info_entries)
-            cur.close()
+            try:
+                self._ensure_hash_indexes(cur, source_entries)
+                cur.executemany(_SQL_UPSERT_SOURCES, source_entries)
+                if image_entries:
+                    cur.executemany(_SQL_UPSERT_FILES_COALESCE, image_entries)
+                if meta_info_entries:
+                    cur.executemany(_SQL_UPSERT_META, meta_info_entries)
+            finally:
+                cur.close()
 
     @profiler.profile
     def upsert_collection_results(self, image_entries, meta_info_entries, tag_entries, collector_status_entries):
         with self._write_lock, self.conn:
             cur = self.conn.cursor()
-            if image_entries:
-                cur.executemany(_SQL_UPSERT_FILES_COALESCE, image_entries)
-            if meta_info_entries:
-                cur.executemany(_SQL_UPSERT_META, meta_info_entries)
-            self._ensure_hash_indexes(cur, [], tag_entries)
-            if tag_entries:
-                cur.executemany(_SQL_UPSERT_TAGS, tag_entries)
-            if collector_status_entries:
-                cur.executemany(_SQL_UPSERT_COLLECTION_STATUS, collector_status_entries)
-            cur.close()
+            try:
+                if image_entries:
+                    cur.executemany(_SQL_UPSERT_FILES_COALESCE, image_entries)
+                if meta_info_entries:
+                    cur.executemany(_SQL_UPSERT_META, meta_info_entries)
+                self._ensure_hash_indexes(cur, [], tag_entries)
+                if tag_entries:
+                    cur.executemany(_SQL_UPSERT_TAGS, tag_entries)
+                if collector_status_entries:
+                    cur.executemany(_SQL_UPSERT_COLLECTION_STATUS, collector_status_entries)
+            finally:
+                cur.close()
 
     @profiler.profile
     def insert_pending_collection(self, sources, collectors):
@@ -393,47 +403,51 @@ class FileDB:
             return
         with self._write_lock, self.conn:
             cur = self.conn.cursor()
-            entries = [(s, c, 'pending', None) for s in sources for c in collectors]
-            cur.executemany(
-                '''INSERT INTO collection_status (source, collector, status, collected_at)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(source, collector) DO UPDATE SET
-                    status       = 'pending',
-                    collected_at = NULL''',
-                entries,
-            )
-            cur.close()
+            try:
+                entries = [(s, c, 'pending', None) for s in sources for c in collectors]
+                cur.executemany(
+                    '''INSERT INTO collection_status (source, collector, status, collected_at)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(source, collector) DO UPDATE SET
+                        status       = 'pending',
+                        collected_at = NULL''',
+                    entries,
+                )
+            finally:
+                cur.close()
 
 
     @profiler.profile
     def get_sources_without_collector(self, collector):
         cur = self.get_reader_cursor()
-        cur.execute(
-            '''SELECT s.source FROM sources s
-            WHERE NOT EXISTS (
-                SELECT 1 FROM collection_status cs
-                WHERE cs.source = s.source AND cs.collector = ?
-            )''',
-            (collector,),
-        )
-        rows = [row[0] for row in cur.fetchall()]
-        cur.close()
-        return rows
+        try:
+            cur.execute(
+                '''SELECT s.source FROM sources s
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM collection_status cs
+                    WHERE cs.source = s.source AND cs.collector = ?
+                )''',
+                (collector,),
+            )
+            return [row[0] for row in cur.fetchall()]
+        finally:
+            cur.close()
 
     @profiler.profile
     def get_pending_sources(self, collector, limit=5000):
         cur = self.get_reader_cursor()
-        cur.execute(
-            '''SELECT cs.source, s.modified, s.size
-            FROM collection_status cs
-            JOIN sources s ON s.source = cs.source
-            WHERE cs.collector = ? AND cs.status = 'pending'
-            LIMIT ?''',
-            (collector, limit),
-        )
-        rows = cur.fetchall()
-        cur.close()
-        return rows
+        try:
+            cur.execute(
+                '''SELECT cs.source, s.modified, s.size
+                FROM collection_status cs
+                JOIN sources s ON s.source = cs.source
+                WHERE cs.collector = ? AND cs.status = 'pending'
+                LIMIT ?''',
+                (collector, limit),
+            )
+            return cur.fetchall()
+        finally:
+            cur.close()
 
     @profiler.profile
     def mark_dispatched(self, sources, collector):
@@ -441,33 +455,37 @@ class FileDB:
             return
         with self._write_lock, self.conn:
             cur = self.conn.cursor()
-            for i in range(0, len(sources), 900):
-                chunk = sources[i:i + 900]
-                cur.executemany(
-                    '''UPDATE collection_status SET status = 'dispatched'
-                    WHERE source = ? AND collector = ? AND status = 'pending' ''',
-                    [(s, collector) for s in chunk],
-                )
-            cur.close()
+            try:
+                for i in range(0, len(sources), 900):
+                    chunk = sources[i:i + 900]
+                    cur.executemany(
+                        '''UPDATE collection_status SET status = 'dispatched'
+                        WHERE source = ? AND collector = ? AND status = 'pending' ''',
+                        [(s, collector) for s in chunk],
+                    )
+            finally:
+                cur.close()
 
     @profiler.profile
     def reset_stale_dispatched(self, collectors=None):
         with self._write_lock, self.conn:
             cur = self.conn.cursor()
-            if collectors:
-                for c in collectors:
+            try:
+                if collectors:
+                    for c in collectors:
+                        cur.execute(
+                            '''UPDATE collection_status SET status = 'pending'
+                            WHERE collector = ? AND status = 'dispatched' ''',
+                            (c,),
+                        )
+                else:
                     cur.execute(
                         '''UPDATE collection_status SET status = 'pending'
-                        WHERE collector = ? AND status = 'dispatched' ''',
-                        (c,),
+                        WHERE status = 'dispatched' ''',
                     )
-            else:
-                cur.execute(
-                    '''UPDATE collection_status SET status = 'pending'
-                    WHERE status = 'dispatched' ''',
-                )
-            changed = cur.execute('SELECT changes()').fetchone()[0]
-            cur.close()
+                changed = cur.execute('SELECT changes()').fetchone()[0]
+            finally:
+                cur.close()
         if changed:
             AppLogger.info(f'[DB] Reset {changed} stale dispatched entries to pending')
         return changed
@@ -478,33 +496,35 @@ class FileDB:
         try:
             with self._write_lock:
                 cur = self.get_writer_cursor()
+                try:
+                    cur.execute('''
+                        DELETE FROM collection_status
+                        WHERE source NOT IN (SELECT source FROM sources)
+                    ''')
+                    cur.execute('''
+                        DELETE FROM meta_info
+                        WHERE path NOT IN (SELECT path FROM files)
+                    ''')
+                    cur.execute('''
+                        DELETE FROM tags
+                        WHERE file_hash NOT IN (SELECT file_hash FROM sources);
+                    ''')
+                    cur.execute('''
+                        DELETE FROM hash_index
+                        WHERE file_hash NOT IN (SELECT file_hash FROM sources)
+                        AND file_hash NOT IN (SELECT file_hash FROM tags);
+                    ''')
 
-                cur.execute('''
-                    DELETE FROM collection_status
-                    WHERE source NOT IN (SELECT source FROM sources)
-                ''')
-                cur.execute('''
-                    DELETE FROM meta_info
-                    WHERE path NOT IN (SELECT path FROM files)
-                ''')
-                cur.execute('''
-                    DELETE FROM tags
-                    WHERE file_hash NOT IN (SELECT file_hash FROM sources);
-                ''')
-                cur.execute('''
-                    DELETE FROM hash_index
-                    WHERE file_hash NOT IN (SELECT file_hash FROM sources)
-                    AND file_hash NOT IN (SELECT file_hash FROM tags);
-                ''')
+                    self.conn.commit()
 
-                self.conn.commit()
-
-                AppLogger.info('RUNNING VACUUM')
-                cur.execute('VACUUM')
-                AppLogger.info('RUNNING ANALYZE')
-                cur.execute('ANALYZE')
-                self.conn.commit()
-                self.try_checkpoint()
+                    AppLogger.info('RUNNING VACUUM')
+                    cur.execute('VACUUM')
+                    AppLogger.info('RUNNING ANALYZE')
+                    cur.execute('ANALYZE')
+                    self.conn.commit()
+                    self.try_checkpoint()
+                finally:
+                    cur.close()
         except Exception as e:
             AppLogger.warning(f'DATABASE CLEANUP FAILED: {e}', exc=e)
         else:

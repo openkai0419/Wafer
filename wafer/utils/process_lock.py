@@ -43,7 +43,10 @@ def file_lock(lock_path: str, timeout: float = _FILE_LOCK_TIMEOUT):
                 fcntl.flock(fd, fcntl.LOCK_UN)
         except Exception:
             pass
-        os.close(fd)
+        try:
+            os.close(fd)
+        except OSError:
+            pass
 
 class SafeProcessLock:
 

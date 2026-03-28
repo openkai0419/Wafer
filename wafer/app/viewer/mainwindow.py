@@ -228,7 +228,10 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
                         return True
                     fn(msg)
                     return True
-                except RuntimeError:
+                except RuntimeError as e:
+                    if 'wrapped C/C++ object' in str(e):
+                        return True
+                    AppLogger.warning(f'IPC handler RuntimeError: {e}', exc=e)
                     return True
             return handler
 

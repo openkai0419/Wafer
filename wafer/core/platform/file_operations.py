@@ -15,6 +15,15 @@ if TYPE_CHECKING:
     from .dragparser import ParsedItem
 
 
+def _rmtree_onerror(func, path, exc_info):
+    import stat
+    try:
+        os.chmod(path, stat.S_IWRITE)
+        func(path)
+    except OSError:
+        pass
+
+
 def _safe_remove(path: str | Path) -> None:
     p = Path(path)
     if not p.exists() and not p.is_symlink():
@@ -23,7 +32,7 @@ def _safe_remove(path: str | Path) -> None:
         p.unlink(missing_ok=True)
         return
     if p.is_dir():
-        shutil.rmtree(p)
+        shutil.rmtree(p, onerror=_rmtree_onerror)
 
 
 def _copy_file(src: Path, dst: Path, follow_symlinks: bool = True) -> Path:
@@ -71,7 +80,9 @@ def _save_remote_item(item: ParsedItem, target_path: str, *, move: bool = False)
 
     if isinstance(src_info, str) and is_http_url(src_info):
         try:
-            with requests.get(src_info, timeout=10, stream=True) as resp:
+            session = requests.Session()
+            session.max_redirects = 5
+            with session.get(src_info, timeout=10, stream=True) as resp:
                 if resp.status_code != 200:
                     raise ValueError(f"HTTP {resp.status_code}")
                 with open(target_path, "wb") as f:

@@ -36,19 +36,22 @@ def tune_socket(sock: zmq.Socket) -> None:
     for opt, val in ((zmq.SNDTIMEO, ZMQ_SNDTIMEO_MS), (zmq.RCVTIMEO, ZMQ_RCVTIMEO_MS)):
         try:
             sock.setsockopt(opt, val)
-        except Exception:
-            pass
+        except Exception as e:
+            from ...utils.logs import AppLogger
+            AppLogger.debug(f'tune_socket setsockopt failed: {e}')
 
 
 def close_socket(sock: zmq.Socket) -> None:
     try:
         sock.setsockopt(zmq.LINGER, 0)
-    except Exception:
-        pass
+    except Exception as e:
+        from ...utils.logs import AppLogger
+        AppLogger.debug(f'close_socket LINGER failed: {e}')
     try:
         sock.close()
-    except Exception:
-        pass
+    except Exception as e:
+        from ...utils.logs import AppLogger
+        AppLogger.debug(f'close_socket close failed: {e}')
 
 
 def try_put(q: Queue, item: Any) -> None:
@@ -109,5 +112,6 @@ def read_broker_port(timeout: float = 5.0) -> int | None:
 def remove_broker_port():
     try:
         _PORT_FILE.unlink(missing_ok=True)
-    except Exception:
-        pass
+    except Exception as e:
+        from ...utils.logs import AppLogger
+        AppLogger.debug(f'remove_broker_port failed: {e}')

@@ -140,13 +140,17 @@ def delete_files(ctx):
                     send2trash.send2trash(p)
                 except Exception as e:
                     AppLogger.warning(f'send2trash failed: {p}', exc=e)
-                    Notifier.info(f'send2trash failed: {p}')
                     if os.path.isfile(p):
                         os.remove(p)
+                    else:
+                        Notifier.warning(f'Failed to delete folder (send2trash unavailable): {os.path.basename(p)}')
     except ImportError:
         for p in norm_paths:
-            if os.path.exists(p) and os.path.isfile(p):
-                os.remove(p)
+            if os.path.exists(p):
+                if os.path.isfile(p):
+                    os.remove(p)
+                else:
+                    Notifier.warning(f'Cannot delete folder without send2trash: {os.path.basename(p)}')
 
 
 def paste_here(ctx, overwrite_mode: str = "skip"):

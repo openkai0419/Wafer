@@ -2,7 +2,10 @@ import py_compile
 import time
 from unittest.mock import MagicMock
 
-from wafer.app.indexer.collector_receiver import CollectorReceiver, _parse_batch, _BATCH_SIZE, _try_float
+from wafer.app.indexer.collector_receiver import (
+    CollectorReceiver, _parse_batch, _BATCH_SIZE, _FLUSH_DELAY,
+    _ResultBuffer, _merge_parsed, _try_float,
+)
 
 
 class _StubMsg:
@@ -35,14 +38,14 @@ def test_handle_result_invalid_payload():
     assert not scheduler.submit.called
 
 
-def test_handle_result_submits_tasks():
+def test_handle_result_submits_flush_task():
     receiver, scheduler, _, _ = _make_receiver()
     results = [{'source': f'p{i}', 'status': True} for i in range(5)]
     msg = _StubMsg({'collector': 'exif', 'results': results})
     receiver.handle_result(msg)
     assert scheduler.submit.called
     task = scheduler.submit.call_args[0][0]
-    assert task.name == 'upsert_results'
+    assert task.name == 'flush_collection_results'
 
 
 def test_handle_result_empty_results():
@@ -62,6 +65,105 @@ def test_handle_result_sets_collector_on_results():
     call_args = writer.upsert_results.call_args
     collector_status = call_args[0][3]
     assert any(c[1] == 'test_coll' for c in collector_status)
+
+
+def test_coalescing_multiple_batches():
+    receiver, scheduler, writer, progress = _make_receiver()
+    for i in range(5):
+        msg = _StubMsg({
+            'collector': 'exif',
+            'results': [{'source': f'p{i}_{j}', 'status': True} for j in range(10)],
+        })
+        receiver.handle_result(msg)
+    assert scheduler.submit.call_count == 1
+    task = scheduler.submit.call_args[0][0]
+    task.run()
+    assert writer.upsert_results.called
+    cs_args = writer.upsert_results.call_args[0][3]
+    assert len(cs_args) == 50
+    progress.increment.assert_called_once_with(50, 0)
+    progress.send_event.assert_called_once_with('update')
+
+
+def test_flush_reschedules_on_pending():
+    receiver, scheduler, writer, progress = _make_receiver()
+    msg = _StubMsg({'collector': 'exif', 'results': [{'source': 'a', 'status': True}]})
+    receiver.handle_result(msg)
+    original_task = scheduler.submit.call_args[0][0]
+
+    def add_during_flush():
+        writer.upsert_results.side_effect = None
+        msg2 = _StubMsg({'collector': 'exif', 'results': [{'source': 'b', 'status': True}]})
+        receiver.handle_result(msg2)
+
+    writer.upsert_results.side_effect = lambda *a: add_during_flush()
+    original_task.run()
+    assert scheduler.submit.call_count == 2
+    second_task = scheduler.submit.call_args_list[1][0][0]
+    assert second_task.name == 'flush_collection_results'
+
+
+def test_result_buffer_append_drain():
+    buf = _ResultBuffer()
+    parsed = {
+        'image_entries': [('p', 's', 1.0)],
+        'meta_info_entries': [],
+        'tag_entries': [],
+        'collector_status': [('s', 'exif', 'ok', 0.0)],
+    }
+    assert buf.append(parsed, 1) is True
+    assert buf.append(parsed, 1) is False
+    data, count = buf.drain()
+    assert count == 2
+    assert len(data['collector_status']) == 1
+
+
+def test_result_buffer_empty_drain():
+    buf = _ResultBuffer()
+    data, count = buf.drain()
+    assert data is None
+    assert count == 0
+
+
+def test_result_buffer_has_pending():
+    buf = _ResultBuffer()
+    assert buf.has_pending() is False
+    parsed = {
+        'image_entries': [],
+        'meta_info_entries': [],
+        'tag_entries': [],
+        'collector_status': [('s', 'c', 'ok', 0.0)],
+    }
+    buf.append(parsed, 1)
+    buf.drain()
+    assert buf.has_pending() is False
+    buf.append(parsed, 1)
+    with buf._lock:
+        buf._flush_scheduled = False
+    assert buf.has_pending() is True
+
+
+def test_merge_parsed_ok_overrides_fail():
+    entries = [
+        {
+            'image_entries': [],
+            'meta_info_entries': [],
+            'tag_entries': [],
+            'collector_status': [('src', 'exif', 'fail', 1.0)],
+        },
+        {
+            'image_entries': [],
+            'meta_info_entries': [],
+            'tag_entries': [],
+            'collector_status': [('src', 'exif', 'ok', 2.0)],
+        },
+    ]
+    merged = _merge_parsed(entries)
+    assert merged['collector_status'][0][2] == 'ok'
+
+
+def test_flush_delay_constant():
+    assert _FLUSH_DELAY > 0
 
 
 def test_parse_batch_ok_status():

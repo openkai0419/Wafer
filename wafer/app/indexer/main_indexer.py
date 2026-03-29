@@ -147,7 +147,7 @@ class IndexerProcess:
         ))
         self.scheduler.add_periodic_task(PeriodicTask(
             name='idle_progress_reset',
-            interval=60*20.0,
+            interval=60*1.0,
             idle_delay=30.0,
             once_per_idle=True,
             create_task=lambda: Task.create(

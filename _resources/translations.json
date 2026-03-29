@@ -1,34 +1,4 @@
 {
-  "Cancel": {
-    "en": "Cancel"
-  },
-  "Create": {
-    "en": "Create"
-  },
-  "Create New": {
-    "en": "Create New"
-  },
-  "Enter a name for the new table": {
-    "en": "Enter a name for the new table"
-  },
-  "Please enter text...": {
-    "en": "Please enter text..."
-  },
-  "Select folder": {
-    "en": "Select folder"
-  },
-  "Aa": {
-    "en": "Aa"
-  },
-  "Enter regex pattern...": {
-    "en": "Enter regex pattern..."
-  },
-  "Database Manager": {
-    "en": "Database Manager"
-  },
-  " Filter ": {
-    "en": " Filter "
-  },
   "AND": {
     "en": "AND"
   },
@@ -38,17 +8,11 @@
   "Add Folder": {
     "en": "Add Folder"
   },
-  "Add item": {
-    "en": "Add item"
-  },
   "Always on Top": {
     "en": "Always on Top"
   },
   "Animated Viewer": {
     "en": "Animated Viewer"
-  },
-  "Ascending": {
-    "en": "Ascending"
   },
   "Auto Execute on Change": {
     "en": "Auto Execute on Change"
@@ -122,6 +86,9 @@
   "Database": {
     "en": "Database"
   },
+  "Database Manager": {
+    "en": "Database Manager"
+  },
   "Debug": {
     "en": "Debug"
   },
@@ -133,12 +100,6 @@
   },
   "Delete Session": {
     "en": "Delete Session"
-  },
-  "Descending": {
-    "en": "Descending"
-  },
-  "Enter search terms...": {
-    "en": "Enter search terms..."
   },
   "File": {
     "en": "File"
@@ -332,9 +293,6 @@
   "Remove Database": {
     "en": "Remove Database"
   },
-  "Remove current item": {
-    "en": "Remove current item"
-  },
   "Rename": {
     "en": "Rename"
   },
@@ -461,14 +419,8 @@
   "Sort Order": {
     "en": "Sort Order"
   },
-  "Split by:": {
-    "en": "Split by:"
-  },
   "Text": {
     "en": "Text"
-  },
-  "Text Filter Options": {
-    "en": "Text Filter Options"
   },
   "Text Mode": {
     "en": "Text Mode"
@@ -536,19 +488,28 @@
   "И (↘)": {
     "en": "И (↘)"
   },
-  "Ignore this folder": {
-    "en": "Ignore this folder"
+  " Filter ": {
+    "en": " Filter "
   },
-  "Justified (Optimized)": {
-    "en": "Justified (Optimized)"
+  "Add item": {
+    "en": "Add item"
   },
-  "MultiSpan Tiling": {
-    "en": "MultiSpan Tiling"
+  "Ascending": {
+    "en": "Ascending"
   },
-  "Partition (Aspect)": {
-    "en": "Partition (Aspect)"
+  "Descending": {
+    "en": "Descending"
   },
-  "binding": {
-    "en": "binding"
+  "Enter search terms...": {
+    "en": "Enter search terms..."
+  },
+  "Remove current item": {
+    "en": "Remove current item"
+  },
+  "Split by:": {
+    "en": "Split by:"
+  },
+  "Text Filter Options": {
+    "en": "Text Filter Options"
   }
 }

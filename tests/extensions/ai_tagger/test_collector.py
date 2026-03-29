@@ -1,4 +1,5 @@
 import hashlib
+import time
 from collections import OrderedDict
 from unittest.mock import MagicMock, patch, PropertyMock
 
@@ -6,7 +7,7 @@ import pytest
 from PIL import Image
 
 from extensions.ai_tagger._downloader import KNOWN_MODELS, DEFAULT_MODEL
-from extensions.ai_tagger.collector import WD14TaggerCollector, _CACHE_MAX
+from extensions.ai_tagger.collector import WD14TaggerCollector, _CACHE_MAX, _ENGINE_IDLE_TIMEOUT
 
 
 class TestKnownModels:
@@ -248,3 +249,86 @@ class TestCacheEviction:
         WD14TaggerCollector._cache_put(collector._hash_cache, 'new_entry', tags)
         assert 'oldest' in collector._hash_cache
         assert 'key_0' not in collector._hash_cache
+
+
+class TestIdleTimeout:
+    def setup_method(self):
+        self.collector = WD14TaggerCollector()
+
+    def test_touch_sets_last_used(self):
+        assert self.collector._last_used == 0.0
+        self.collector._touch()
+        assert self.collector._last_used > 0.0
+
+    def test_touch_starts_timer(self):
+        assert self.collector._idle_timer is None
+        self.collector._touch()
+        assert self.collector._idle_timer is not None
+        assert self.collector._idle_timer.daemon is True
+        self.collector._idle_timer.cancel()
+
+    def test_touch_replaces_previous_timer(self):
+        self.collector._touch()
+        first_timer = self.collector._idle_timer
+        self.collector._touch()
+        second_timer = self.collector._idle_timer
+        assert first_timer is not second_timer
+        first_timer.cancel()
+        second_timer.cancel()
+
+    def test_check_idle_unloads_engine(self):
+        engine = MagicMock()
+        self.collector._engine = engine
+        self.collector._last_used = time.monotonic() - _ENGINE_IDLE_TIMEOUT - 1
+        self.collector._check_idle()
+        assert self.collector._engine is None
+
+    def test_check_idle_keeps_engine_when_recent(self):
+        engine = MagicMock()
+        self.collector._engine = engine
+        self.collector._last_used = time.monotonic()
+        self.collector._check_idle()
+        assert self.collector._engine is engine
+
+    def test_check_idle_noop_when_no_engine(self):
+        self.collector._last_used = time.monotonic() - _ENGINE_IDLE_TIMEOUT - 1
+        self.collector._check_idle()
+        assert self.collector._engine is None
+
+    def test_process_calls_touch(self):
+        thumb = Image.new('RGB', (10, 10), (0, 255, 0))
+        mock_result = {
+            'ratings': {'general': 0.85, 'sensitive': 0.10, 'questionable': 0.03, 'explicit': 0.02},
+            'general': {'1girl': 0.95},
+            'character': {},
+        }
+        self.collector._thumbnailer = MagicMock()
+        self.collector._thumbnailer.get_thumbnail.return_value = thumb
+        self.collector._engine = MagicMock()
+        self.collector._engine.input_height = 448
+        self.collector._engine.predict.return_value = mock_result
+
+        before = self.collector._last_used
+        self.collector.process('/test/file.jpg', (1000.0, 500, 'new_hash'))
+        assert self.collector._last_used > before
+        assert self.collector._idle_timer is not None
+        self.collector._idle_timer.cancel()
+
+    def test_engine_reloads_after_unload(self):
+        engine = MagicMock()
+        self.collector._engine = engine
+        self.collector._last_used = time.monotonic() - _ENGINE_IDLE_TIMEOUT - 1
+        self.collector._check_idle()
+        assert self.collector._engine is None
+
+        with patch('extensions.ai_tagger.collector.ensure_model') as mock_ensure, \
+             patch('extensions.ai_tagger.collector.WD14Inference') as MockInference:
+            mock_session = MagicMock()
+            mock_session.get_providers.return_value = ['CPUExecutionProvider']
+            mock_instance = MagicMock()
+            mock_instance.session = mock_session
+            MockInference.return_value = mock_instance
+            mock_ensure.return_value = '/fake/model'
+
+            self.collector._ensure_engine()
+            assert self.collector._engine is mock_instance

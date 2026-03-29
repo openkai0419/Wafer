@@ -1,4 +1,5 @@
 import hashlib
+import time
 import threading
 from collections import OrderedDict
 
@@ -11,7 +12,8 @@ from ._inference import WD14Inference
 
 GENERAL_THRESHOLD = 0.057
 CHARACTER_THRESHOLD = 0.8
-_CACHE_MAX = 50000
+_CACHE_MAX = 5000
+_ENGINE_IDLE_TIMEOUT = 120.0
 
 
 class WD14TaggerCollector(BaseSingletonCollector):
@@ -37,6 +39,8 @@ class WD14TaggerCollector(BaseSingletonCollector):
         self._thumbnailer = FileThumbnailer()
         self._hash_cache: OrderedDict[str, dict] = OrderedDict()
         self._pixel_cache: OrderedDict[str, dict] = OrderedDict()
+        self._last_used: float = 0.0
+        self._idle_timer: threading.Timer | None = None
 
     def _ensure_engine(self):
         if self._engine is not None:
@@ -49,6 +53,27 @@ class WD14TaggerCollector(BaseSingletonCollector):
             AppLogger.info(
                 f"WD14 engine loaded: {self._engine.session.get_providers()[0]}"
             )
+
+    def _touch(self):
+        self._last_used = time.monotonic()
+        if self._idle_timer is not None:
+            self._idle_timer.cancel()
+        t = threading.Timer(_ENGINE_IDLE_TIMEOUT, self._check_idle)
+        t.daemon = True
+        t.start()
+        self._idle_timer = t
+
+    def _check_idle(self):
+        elapsed = time.monotonic() - self._last_used
+        if elapsed < _ENGINE_IDLE_TIMEOUT:
+            return
+        with self._engine_lock:
+            if self._engine is None:
+                return
+            if time.monotonic() - self._last_used < _ENGINE_IDLE_TIMEOUT:
+                return
+            self._engine = None
+            AppLogger.info("WD14 engine unloaded (idle timeout)")
 
     @staticmethod
     def _cache_put(cache: OrderedDict, key: str, value: dict):
@@ -80,6 +105,7 @@ class WD14TaggerCollector(BaseSingletonCollector):
             )
 
         self._ensure_engine()
+        self._touch()
 
         thumb = self._thumbnailer.get_thumbnail(path, size=self._engine.input_height)
         if thumb is None:

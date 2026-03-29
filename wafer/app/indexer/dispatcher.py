@@ -124,7 +124,7 @@ class CollectorDispatcher:
             batch_size = collector_resolver.batch_size(collector)
             cur = self._read_conn.cursor()
             cur.execute(
-                '''SELECT cs.source, s.modified, s.size
+                '''SELECT cs.source, s.modified, s.size, s.file_hash
                 FROM collection_status cs
                 JOIN sources s ON s.source = cs.source
                 WHERE cs.collector = ? AND cs.status = 'pending'
@@ -141,7 +141,7 @@ class CollectorDispatcher:
             if not rows:
                 continue
             paths = [row[0] for row in rows]
-            file_info = {row[0]: (row[1], row[2]) for row in rows}
+            file_info = {row[0]: (row[1], row[2], row[3]) for row in rows}
             with self._dispatched_lock:
                 self._dispatched_paths.setdefault(collector, set()).update(paths)
             self._scheduler.submit(Task.create(

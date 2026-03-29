@@ -200,6 +200,62 @@ def test_try_float_preserves_existing_numeric():
     assert _try_float('3.14') == 3.14
 
 
+def test_parse_batch_tags_require_file_hash():
+    results = [{
+        'source': 'src',
+        'status': True,
+        'tags': {'wd14.tags': '1girl, blue_hair'},
+        'collector': 'wd14',
+    }]
+    data = _parse_batch(results)
+    assert len(data['tag_entries']) == 0
+
+
+def test_parse_batch_tags_with_file_hash():
+    results = [{
+        'source': 'src',
+        'status': True,
+        'file_hash': 'abc123',
+        'tags': {'wd14.tags': '1girl, blue_hair, smile'},
+        'collector': 'wd14',
+    }]
+    data = _parse_batch(results)
+    assert len(data['tag_entries']) == 1
+    te = data['tag_entries'][0]
+    assert te[0] == 'abc123'
+    assert te[1] == 'wd14.tags'
+    assert te[2] == '1girl, blue_hair, smile'
+    assert te[3] is None
+
+
+def test_parse_batch_mixed_meta_and_tags():
+    results = [{
+        'source': 'img.jpg',
+        'status': True,
+        'file_hash': 'hash1',
+        'meta_info': {'exif.camera': 'Canon'},
+        'tags': {'wd14.tags': 'landscape, sky'},
+        'collector': 'wd14',
+    }]
+    data = _parse_batch(results)
+    assert len(data['meta_info_entries']) == 1
+    assert len(data['tag_entries']) == 1
+    assert data['meta_info_entries'][0][1] == 'exif.camera'
+    assert data['tag_entries'][0][1] == 'wd14.tags'
+
+
+def test_parse_batch_failed_result_no_tags():
+    results = [{
+        'source': 'fail.jpg',
+        'status': False,
+        'file_hash': 'somehash',
+        'tags': {'wd14.tags': 'should_not_register'},
+        'collector': 'wd14',
+    }]
+    data = _parse_batch(results)
+    assert len(data['tag_entries']) == 0
+
+
 def test_parse_batch_exif_datetime_value_num():
     results = [{
         'source': 'img.jpg',

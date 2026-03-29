@@ -63,7 +63,7 @@
 - WidgetViewerPlugin.clear()とWidgetGridPlugin.release(widget)は異なるセマンティクス（clear=コンテンツリセット、release=リソース解放）のため名前は別
 - BaseGridPlugin.release(widget)は画面外スクロール時にAdditionalWidgetPoolから呼ばれる。GPUリソース等重い資源はsuspend/resume方式。cleanup()は完全破壊のみ
 - Grid/ViewerのWIDGET_CLASSとload()は排他。ViewerPluginのWidget生成は__init__で自動、GridのWidget生成はシステム管理
-- Collectorはmeta_info+statusのみ返す。name/aspect/file_hashはPhase1で設定
+- Collectorは基本的にはmeta_info+statusのみ返す。name/aspect/file_hashはPhase1で設定されているが、zip等の１つのソースから複数のファイルを戻すものはこれに限らない
 - Collector基底はBaseCollector。BaseCollectorPlugin（per-indexer）とBaseSingletonCollector（全DB共有1プロセス）が継承。BATCH_SIZEはクラス変数で制御
 - Collectorの結果返送はmsg.dbベースでルーティング。self.db_nameではなく受信メッセージのdbを使用すること
 - PRIORITY大=高優先。EXTENSIONS=()は全ファイルマッチ

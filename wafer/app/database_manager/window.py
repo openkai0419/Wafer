@@ -14,6 +14,10 @@ from ...core.qt.thread import utility_pool
 from ...core.qt.window import DialogLayoutStore
 
 
+def _hex_rgb(hex_color: str) -> str:
+    return f'{int(hex_color[1:3], 16)},{int(hex_color[3:5], 16)},{int(hex_color[5:7], 16)}'
+
+
 def _build_stylesheet() -> str:
     p = ThemeManager.instance().palette
     r = dpix(4)
@@ -29,13 +33,13 @@ def _build_stylesheet() -> str:
         QPushButton#add_btn:hover {{
             background: {p.bg_hover};
         }}
-        QPushButton#remove_btn {{
+        QPushButton#remove_btn, QPushButton#folder_add_btn {{
             background: {p.bg_secondary};
             border: 1px solid {p.border_default};
             border-radius: {r}px;
             padding: {dpix(2)}px {dpix(8)}px;
         }}
-        QPushButton#remove_btn:hover {{
+        QPushButton#remove_btn:hover, QPushButton#folder_add_btn:hover {{
             background: {p.bg_hover};
         }}
         QPushButton#save_btn {{
@@ -67,6 +71,18 @@ def _build_stylesheet() -> str:
             font-weight: bold;
         }}
         QPushButton#delete_db_btn:hover {{
+            background: {p.error};
+            color: {p.accent_text};
+        }}
+        QPushButton#purge_btn {{
+            background: rgba({_hex_rgb(p.error)}, 0.1);
+            color: {p.error};
+            border: 1px solid rgba({_hex_rgb(p.error)}, 0.3);
+            border-radius: {r}px;
+            padding: {dpix(4)}px {dpix(12)}px;
+            font-weight: bold;
+        }}
+        QPushButton#purge_btn:hover {{
             background: {p.error};
             color: {p.accent_text};
         }}
@@ -324,7 +340,7 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
         self._source_list = QtWidgets.QListWidget()
         add_src_btn = QtWidgets.QPushButton()
         add_src_btn.setIcon(themed_icon('plus'))
-        add_src_btn.setObjectName('add_btn')
+        add_src_btn.setObjectName('folder_add_btn')
         add_src_btn.setToolTip('Add Source Folder')
         add_src_btn.clicked.connect(self._add_source)
         rm_src_btn = QtWidgets.QPushButton()
@@ -346,7 +362,7 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
         self._ignore_list = QtWidgets.QListWidget()
         add_ign_btn = QtWidgets.QPushButton()
         add_ign_btn.setIcon(themed_icon('plus'))
-        add_ign_btn.setObjectName('add_btn')
+        add_ign_btn.setObjectName('folder_add_btn')
         add_ign_btn.setToolTip('Add Ignore Folder')
         add_ign_btn.clicked.connect(self._add_ignore)
         rm_ign_btn = QtWidgets.QPushButton()

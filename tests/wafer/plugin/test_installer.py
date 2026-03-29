@@ -13,6 +13,7 @@ from wafer.plugin.installer import (
     _download_file,
     _run_subprocess,
     install_requirements,
+    install_packages,
     _PACKAGES_DIR,
     _INSTALL_STAMP,
 )
@@ -245,3 +246,55 @@ class TestInstallRequirements:
             result = install_requirements(str(plugin_dir))
 
         assert result is False
+
+
+class TestInstallPackages:
+
+    def test_installs_to_vendor_dir(self, tmp_path):
+        plugin_dir = tmp_path / 'plugin'
+        plugin_dir.mkdir()
+
+        mock_ep = MagicMock()
+        mock_ep.ensure_ready.return_value = True
+        mock_ep.is_ready = True
+        mock_ep.exe_path = '/fake/python.exe'
+
+        with patch('wafer.plugin.installer.EmbeddedPython', return_value=mock_ep), \
+             patch('wafer.plugin.installer._run_subprocess') as mock_run:
+            result = install_packages(str(plugin_dir), ['onnxruntime-gpu'])
+
+        assert result is True
+        call_args = mock_run.call_args[0][0]
+        assert '--target' in call_args
+        vendor_idx = call_args.index('--target')
+        assert _PACKAGES_DIR in call_args[vendor_idx + 1]
+        assert 'onnxruntime-gpu' in call_args
+
+    def test_failure_returns_false(self, tmp_path):
+        plugin_dir = tmp_path / 'plugin'
+        plugin_dir.mkdir()
+
+        mock_ep = MagicMock()
+        mock_ep.ensure_ready.return_value = False
+
+        with patch('wafer.plugin.installer.EmbeddedPython', return_value=mock_ep):
+            result = install_packages(str(plugin_dir), ['pkg'])
+
+        assert result is False
+
+    def test_multiple_packages(self, tmp_path):
+        plugin_dir = tmp_path / 'plugin'
+        plugin_dir.mkdir()
+
+        mock_ep = MagicMock()
+        mock_ep.ensure_ready.return_value = True
+        mock_ep.is_ready = True
+        mock_ep.exe_path = '/fake/python.exe'
+
+        with patch('wafer.plugin.installer.EmbeddedPython', return_value=mock_ep), \
+             patch('wafer.plugin.installer._run_subprocess') as mock_run:
+            install_packages(str(plugin_dir), ['pkg1', 'pkg2'])
+
+        call_args = mock_run.call_args[0][0]
+        assert 'pkg1' in call_args
+        assert 'pkg2' in call_args

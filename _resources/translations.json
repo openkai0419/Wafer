@@ -1,4 +1,28 @@
 {
+  "Cancel": {
+    "en": "Cancel"
+  },
+  "Create": {
+    "en": "Create"
+  },
+  "Create New": {
+    "en": "Create New"
+  },
+  "Enter a name for the new table": {
+    "en": "Enter a name for the new table"
+  },
+  "Please enter text...": {
+    "en": "Please enter text..."
+  },
+  "Select folder": {
+    "en": "Select folder"
+  },
+  "Aa": {
+    "en": "Aa"
+  },
+  "Enter regex pattern...": {
+    "en": "Enter regex pattern..."
+  },
   "Database Manager": {
     "en": "Database Manager"
   },

@@ -7,6 +7,14 @@ from ...core.db.file_db import FileDB
 from ...core.qt.dispatcher import Dispatcher, CancelSlot
 
 
+class _NumericItem(QtWidgets.QTableWidgetItem):
+    def __lt__(self, other):
+        try:
+            return int(self.text().replace(',', '')) < int(other.text().replace(',', ''))
+        except (ValueError, AttributeError):
+            return super().__lt__(other)
+
+
 class DataTab(QtWidgets.QWidget):
 
     purge_requested = QtCore.Signal(list, bool)
@@ -16,7 +24,6 @@ class DataTab(QtWidgets.QWidget):
         self._dispatcher = dispatcher
         self._cancel = CancelSlot()
         self._rows: list[tuple[str, str, int, str]] = []
-        self._checkboxes: list[QtWidgets.QCheckBox] = []
         self.destroyed.connect(lambda: self._cancel.renew())
 
         layout = QtWidgets.QVBoxLayout(self)
@@ -29,7 +36,15 @@ class DataTab(QtWidgets.QWidget):
         self._table = QtWidgets.QTableWidget()
         self._table.setColumnCount(5)
         self._table.setHorizontalHeaderLabels(['Database', 'Collector', 'Collected', 'Status', ''])
-        self._table.horizontalHeader().setStretchLastSection(True)
+        header = self._table.horizontalHeader()
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
+        header.setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
+        header.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(4, QtWidgets.QHeaderView.Fixed)
+        self._table.setColumnWidth(4, dpix(30))
+        self._table.setSortingEnabled(True)
         self._table.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
         self._table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self._table.verticalHeader().setVisible(False)
@@ -48,7 +63,19 @@ class DataTab(QtWidgets.QWidget):
         self._purge_btn.clicked.connect(self._on_purge)
         layout.addWidget(self._purge_btn)
 
+        self._timer = QtCore.QTimer(self)
+        self._timer.setInterval(4000)
+        self._timer.timeout.connect(self._poll)
+
         self._load_async()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._timer.start()
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        self._timer.stop()
 
     def _load_async(self):
         cancel = self._cancel.renew()
@@ -83,34 +110,45 @@ class DataTab(QtWidgets.QWidget):
 
     def _apply_rows(self, rows: list[tuple[str, str, int, str]]):
         self._rows = rows
+        self._table.setSortingEnabled(False)
         self._table.setRowCount(len(rows))
-        self._checkboxes: list[QtWidgets.QCheckBox] = []
         for i, (db, coll, count, status) in enumerate(rows):
             self._table.setItem(i, 0, QtWidgets.QTableWidgetItem(db))
             self._table.setItem(i, 1, QtWidgets.QTableWidgetItem(coll))
-            self._table.setItem(i, 2, QtWidgets.QTableWidgetItem(f'{count:,}'))
+            item = _NumericItem(f'{count:,}')
+            item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+            self._table.setItem(i, 2, item)
             self._table.setItem(i, 3, QtWidgets.QTableWidgetItem(status))
             cb = QtWidgets.QCheckBox()
             cb.stateChanged.connect(self._update_selected_count)
-            self._checkboxes.append(cb)
             container = QtWidgets.QWidget()
             cb_layout = QtWidgets.QHBoxLayout(container)
             cb_layout.addWidget(cb)
             cb_layout.setAlignment(QtCore.Qt.AlignCenter)
             cb_layout.setContentsMargins(0, 0, 0, 0)
             self._table.setCellWidget(i, 4, container)
-        self._table.resizeColumnsToContents()
+        self._table.setSortingEnabled(True)
 
     def _update_selected_count(self):
-        count = sum(1 for cb in self._checkboxes if cb.isChecked())
+        count = 0
+        for i in range(self._table.rowCount()):
+            container = self._table.cellWidget(i, 4)
+            if container:
+                cb = container.findChild(QtWidgets.QCheckBox)
+                if cb and cb.isChecked():
+                    count += 1
         self._selected_label.setText(f'Selected: {count} items')
 
     def _on_purge(self):
-        selected = [
-            (self._rows[i][0], self._rows[i][1])
-            for i, cb in enumerate(self._checkboxes)
-            if cb.isChecked()
-        ]
+        selected = []
+        for i in range(self._table.rowCount()):
+            container = self._table.cellWidget(i, 4)
+            if not container:
+                continue
+            cb = container.findChild(QtWidgets.QCheckBox)
+            if cb and cb.isChecked():
+                selected.append((self._table.item(i, 0).text(),
+                                 self._table.item(i, 1).text()))
         if not selected:
             return
         re_collect = self._re_collect_cb.isChecked()
@@ -129,3 +167,52 @@ class DataTab(QtWidgets.QWidget):
 
     def refresh(self):
         self._load_async()
+
+    def _poll(self):
+        cancel = self._cancel.renew()
+        db_names = list_setting_db_names()
+
+        def task():
+            rows = []
+            for name in db_names:
+                if cancel.is_cancelled():
+                    return
+                db_path = data_db_path(name)
+                sdb = SettingDB(setting_db_path(name))
+                enabled = set(sdb.get_enabled_collectors() or [])
+                try:
+                    fdb = FileDB(db_path)
+                    fdb.start()
+                    counts = dict(fdb.collector_data_counts())
+                    fdb.close()
+                except Exception:
+                    counts = {}
+                all_collectors = set(counts.keys()) | enabled
+                for coll in sorted(all_collectors):
+                    count = counts.get(coll, 0)
+                    status = 'Active' if coll in enabled else 'Disabled'
+                    if count == 0 and coll not in enabled:
+                        status = '\u2014'
+                    rows.append((name, coll, count, status))
+            if not cancel.is_cancelled():
+                self._dispatcher.invoke(lambda r=rows: self._merge_rows(r))
+
+        self._dispatcher.post(task, priority=7, cancel=cancel)
+
+    def _merge_rows(self, rows: list[tuple[str, str, int, str]]):
+        old_set = {(r[0], r[1]) for r in self._rows}
+        new_set = {(r[0], r[1]) for r in rows}
+        if old_set != new_set:
+            self._apply_rows(rows)
+            return
+        old_data = {(r[0], r[1]): (r[2], r[3]) for r in self._rows}
+        new_data = {(db, coll): (count, status) for db, coll, count, status in rows}
+        for i in range(self._table.rowCount()):
+            key = (self._table.item(i, 0).text(), self._table.item(i, 1).text())
+            old_count, old_status = old_data[key]
+            new_count, new_status = new_data[key]
+            if old_count != new_count:
+                self._table.item(i, 2).setText(f'{new_count:,}')
+            if old_status != new_status:
+                self._table.item(i, 3).setText(new_status)
+        self._rows = rows

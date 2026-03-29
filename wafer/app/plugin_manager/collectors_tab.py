@@ -102,11 +102,14 @@ class CollectorsTab(QtWidgets.QWidget):
                 w.deleteLater()
 
     def refresh(self, collector_names: list[str]):
-        saved = self.get_per_db_collectors() if self._matrix else {}
+        if self._matrix:
+            saved = self.get_per_db_collectors()
+            known = set(self._collector_names)
+            for db in self._db_names:
+                prev = self._initial_state.get(db, set())
+                ui_state = set(saved.get(db, []))
+                self._initial_state[db] = ui_state | (prev - known)
         self._collector_names = list(collector_names)
-        for db in self._db_names:
-            if db in saved:
-                self._initial_state[db] = set(saved[db])
         self._build_matrix()
 
     def _on_all_toggled(self, collector: str, checked: bool):

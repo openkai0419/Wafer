@@ -264,3 +264,32 @@ def install_requirements(plugin_dir: str, on_progress=None) -> bool:
             f'[Installer] Failed for {os.path.basename(plugin_dir)}: {e}', exc=e
         )
         return False
+
+
+def install_packages(plugin_dir: str, packages: list[str], on_progress=None) -> bool:
+    vendor_dir = os.path.join(plugin_dir, _PACKAGES_DIR)
+    os.makedirs(vendor_dir, exist_ok=True)
+    try:
+        ep = EmbeddedPython()
+        if not ep.ensure_ready(on_progress):
+            return False
+        if not ep.is_ready:
+            raise RuntimeError('Embedded Python is not ready')
+        _run_subprocess(
+            [
+                ep.exe_path, '-m', 'pip',
+                'install', '--target', vendor_dir,
+                *packages,
+                '--quiet', '--disable-pip-version-check',
+                '--no-cache-dir',
+            ],
+            on_progress=on_progress,
+            timeout=600,
+        )
+        AppLogger.info(f'[Installer] Packages installed to {os.path.basename(plugin_dir)}: {packages}')
+        return True
+    except Exception as e:
+        AppLogger.warning(
+            f'[Installer] Package install failed for {os.path.basename(plugin_dir)}: {e}', exc=e
+        )
+        return False

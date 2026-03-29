@@ -98,6 +98,12 @@
 - QOpenGLWidgetはQGraphicsProxyWidgetでは動作しない → viewport子Widget方式を採用
 - WIDGET_CLASSを持つプラグインはviewport直接配置（AdditionalWidgetPool管理）
 - _sync_additional_widgets()でスクロール・レイアウト変更時にviewport座標へ同期。scrollbar.valueChangedに直接接続（throttle無し）
+
+■ extension の post_install でのパッケージインストール
+- post_install内で subprocess + sys.executable の直接pip呼び出しは禁止。frozen環境(exe化)ではsys.executableがアプリ本体のexeになるため失敗する
+- wafer.plugin.installer.install_packages(plugin_dir, packages) を使うこと。EmbeddedPythonを経由し、.packages/ にインストールされる
+- requirements.txt に書けないパッケージ（排他パッケージの選択等）を post_install でインストールする場面で使用する
+- モデルやDLLのダウンロード先にextension相対パス(__file__ベース)を使わない。frozen環境で一時ディレクトリを指すため永続化できない。resolve_data_path()でユーザーデータディレクトリに保存する
 - Widget判定は_setup_cellでは行わない。常にPixmapItemを作成し、プラグイン解決はGridPipeline BGタスク（_make_resolve_task）で実行。WidgetGridPluginが見つかった場合はinvoke_raw→_promote_to_widgetでメインスレッドに戻す。can_handleはBGで評価されるためメインスレッドを止めない
 - GridPipelineが全BGタスク（レイアウト計算・画像ロード・サムネイル取得）を一元管理。Dispatcher.post()でBGスレッド実行、Signal直接emit（AutoConnection→QueuedConnection）でメインスレッド帰還。_deliver_thumbnailのみinvoke()経由
 - Pipeline._load_image()がキャッシュチェック→ロード→エラー処理→キャッシュ保存→emit の共通処理を統合。_dispatch_resolve内のImagePluginとfallbackの両方で使う

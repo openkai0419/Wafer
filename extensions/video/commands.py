@@ -39,7 +39,7 @@ def toggle_pause_in_background(ctx, sm):
 
 
 class VideoGridCommands(MenuGroup):
-    NAME = "Video Grid"
+    NAME = "Video"
     PRIORITY = 1000
     DEFAULT_ENABLED = True
 

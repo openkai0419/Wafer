@@ -92,12 +92,13 @@ def list_bookmarks(ctx):
 
 
 class BookmarkCommands(ActionKit.MenuBase):
-    NAME = "Bookmark"
+    NAME = "Query"
     PRIORITY = 65
 
     @classmethod
     def commands(cls):
         return [
+            ":Bookmark",
             ActionKit.Command(
                 path="bm.save",
                 display="Save Bookmark",

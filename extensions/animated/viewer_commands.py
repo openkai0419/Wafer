@@ -8,7 +8,7 @@ def toggle_fit_mode(ctx, vw):
 
 
 class AnimatedViewerCommands(MenuGroup):
-    NAME = "Animated Viewer"
+    NAME = "FileViewer"
     PRIORITY = 1200
     DEFAULT_ENABLED = True
 

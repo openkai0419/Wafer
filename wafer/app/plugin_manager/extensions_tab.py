@@ -2,7 +2,7 @@ import os
 from PySide6 import QtWidgets, QtCore
 from ...utils.formatting import dpix
 from ...utils.logs import AppLogger
-from ...plugin.loader import get_plugin_dir, _needs_install, PluginLoader
+from ...plugin.loader import get_plugin_dir, _needs_install, PluginLoader, qualify_plugin_name
 from ...plugin.installer import install_requirements
 from ...core.qt.dispatcher import Dispatcher, CancelSlot
 
@@ -160,7 +160,7 @@ class _ExtensionCard(QtWidgets.QFrame):
         self._rows.clear()
         self._plugins = list(plugins)
         for registry_key, plugin_cls in plugins:
-            qualified = f'{registry_key}:{plugin_cls.NAME}'
+            qualified = qualify_plugin_name(registry_key, plugin_cls)
             if enabled is not None:
                 checked = qualified in enabled
             else:
@@ -177,7 +177,7 @@ class _ExtensionCard(QtWidgets.QFrame):
         enabled = self.get_enabled_names()
         return [
             cls for key, cls in self._plugins
-            if key == registry_key and f'{key}:{cls.NAME}' in enabled
+            if key == registry_key and qualify_plugin_name(key, cls) in enabled
         ]
 
     def _clear_plugin_area(self):

@@ -60,7 +60,7 @@ def _pan_end(ctx, gv):
     gv.setCursor(QtCore.Qt.CursorShape.ArrowCursor)
 
 class ImageViewCommands(ActionKit.MenuBase):
-    NAME = "ImageView"
+    NAME = "FileViewer"
     PRIORITY = 56
 
     @classmethod

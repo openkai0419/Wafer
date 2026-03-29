@@ -54,10 +54,10 @@ class TestExtensionsTab:
         from wafer.core.qt.dispatcher import Dispatcher
         dispatcher = Dispatcher()
         from wafer.app.plugin_manager.extensions_tab import ExtensionsTab
-        tab = ExtensionsTab({'grid:fake_p'}, dispatcher)
+        tab = ExtensionsTab({'grid:FakePlugin'}, dispatcher)
         qtbot.waitUntil(lambda: len(tab._cards['my_ext']._rows) > 0, timeout=3000)
         result = tab.collect_enabled()
-        assert 'grid:fake_p' in result
+        assert 'grid:FakePlugin' in result
 
     def test_needs_install_shows_button(self, qtbot, tmp_path, monkeypatch):
         ext_dir = tmp_path / 'extensions'
@@ -116,8 +116,8 @@ class TestExtensionsTab:
         qtbot.waitUntil(lambda: len(tab._cards['ext1']._rows) > 0, timeout=3000)
 
         enabled = tab.collect_enabled()
-        assert 'grid:enabled_p' in enabled
-        assert 'grid:disabled_p' not in enabled
+        assert 'grid:EnabledPlugin' in enabled
+        assert 'grid:DisabledPlugin' not in enabled
 
     def test_enabled_changed_signal(self, qtbot, tmp_path, monkeypatch):
         ext_dir = tmp_path / 'extensions'
@@ -144,7 +144,7 @@ class TestExtensionsTab:
         from wafer.core.qt.dispatcher import Dispatcher
         dispatcher = Dispatcher()
         from wafer.app.plugin_manager.extensions_tab import ExtensionsTab
-        tab = ExtensionsTab({'viewer:fp'}, dispatcher)
+        tab = ExtensionsTab({'viewer:FP'}, dispatcher)
         qtbot.waitUntil(lambda: len(tab._cards['ext1']._rows) > 0, timeout=3000)
 
         signals = []
@@ -183,7 +183,7 @@ class TestExtensionsTab:
         from wafer.core.qt.dispatcher import Dispatcher
         dispatcher = Dispatcher()
         from wafer.app.plugin_manager.extensions_tab import ExtensionsTab
-        tab = ExtensionsTab({'viewer:vp', 'grid:gp'}, dispatcher)
+        tab = ExtensionsTab({'viewer:ViewerP', 'grid:GridP'}, dispatcher)
         qtbot.waitUntil(lambda: len(tab._cards['ext1']._rows) > 0, timeout=3000)
 
         viewers = tab.collect_enabled_plugins('viewer')
@@ -357,6 +357,22 @@ class TestPluginManagerDialog:
         assert PluginManagerDialog._instance is dlg
         dlg.close()
         assert PluginManagerDialog._instance is None
+
+    def test_has_plugin_changes_detects_enabled_diff(self, qtbot, monkeypatch):
+        monkeypatch.setattr(
+            'wafer.app.plugin_manager.extensions_tab.get_plugin_dir',
+            lambda: '/nonexistent',
+        )
+        from wafer.app.plugin_manager.window import PluginManagerDialog
+        PluginManagerDialog._instance = None
+        dlg = PluginManagerDialog.open()
+        qtbot.addWidget(dlg)
+        dlg._initial_enabled = {'a', 'b'}
+        dlg._initial_orders = {'grid': ['a']}
+        assert not dlg._has_plugin_changes({'a', 'b'}, {'grid': ['a']})
+        assert dlg._has_plugin_changes({'a', 'b', 'c'}, {'grid': ['a']})
+        assert dlg._has_plugin_changes({'a', 'b'}, {'grid': ['b', 'a']})
+        dlg.close()
 
 
 class TestPluginManagerCommands:
@@ -542,6 +558,43 @@ class TestCollectorsTab:
         assert ('ai_tags', 'mydb') in tab._matrix
         assert tab._matrix[('exif', 'mydb')].isChecked()
 
+    def test_has_changes_false_when_unchanged(self, qtbot, tmp_path, monkeypatch):
+        db_path = str(tmp_path / 'hc.db')
+        from wafer.core.db.setting_db import SettingDB
+        SettingDB(db_path).set_enabled_collectors(['exif'])
+
+        monkeypatch.setattr(
+            'wafer.app.plugin_manager.collectors_tab.list_setting_db_names',
+            lambda: ['mydb'],
+        )
+        monkeypatch.setattr(
+            'wafer.app.plugin_manager.collectors_tab.setting_db_path',
+            lambda name: db_path,
+        )
+        from wafer.app.plugin_manager.collectors_tab import CollectorsTab
+        tab = CollectorsTab(collector_names=['exif'])
+        qtbot.addWidget(tab)
+        assert not tab.has_changes()
+
+    def test_has_changes_true_when_toggled(self, qtbot, tmp_path, monkeypatch):
+        db_path = str(tmp_path / 'hc2.db')
+        from wafer.core.db.setting_db import SettingDB
+        SettingDB(db_path).set_enabled_collectors(['exif'])
+
+        monkeypatch.setattr(
+            'wafer.app.plugin_manager.collectors_tab.list_setting_db_names',
+            lambda: ['mydb'],
+        )
+        monkeypatch.setattr(
+            'wafer.app.plugin_manager.collectors_tab.setting_db_path',
+            lambda name: db_path,
+        )
+        from wafer.app.plugin_manager.collectors_tab import CollectorsTab
+        tab = CollectorsTab(collector_names=['exif'])
+        qtbot.addWidget(tab)
+        tab._matrix[('exif', 'mydb')].setChecked(False)
+        assert tab.has_changes()
+
 
 class TestPluginManagerCommands:
 
@@ -589,7 +642,7 @@ class TestPluginManagerCommands:
         mock_store.get_active_session_ids.return_value = ['sess1', 'sess2']
         monkeypatch.setattr(
             'wafer.app.plugin_manager.commands.SessionStore',
-            lambda: mock_store,
+            type('', (), {'instance': staticmethod(lambda: mock_store)})
         )
         from wafer.app.plugin_manager.commands import restart_all
         mock_node = MagicMock()

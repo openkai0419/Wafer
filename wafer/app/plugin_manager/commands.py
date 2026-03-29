@@ -24,7 +24,7 @@ def restart_viewer(ctx):
 def restart_all(ctx):
     w = ctx.get_instance("MainWindow")
     node = getattr(w, '_node', None)
-    store = SessionStore().instance()
+    store = SessionStore.instance()
     active_ids = store.get_active_session_ids()
     own_sid = getattr(w, 'session_id', None)
 

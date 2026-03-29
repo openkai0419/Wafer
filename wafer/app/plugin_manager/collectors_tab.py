@@ -151,6 +151,13 @@ class CollectorsTab(QtWidgets.QWidget):
             sdb = SettingDB(setting_db_path(db))
             sdb.set_enabled_collectors(collectors)
 
+    def has_changes(self) -> bool:
+        per_db = self.get_per_db_collectors()
+        for db in self._db_names:
+            if set(per_db.get(db, [])) != self._initial_state.get(db, set()):
+                return True
+        return False
+
     def get_newly_disabled(self) -> list[tuple[str, str]]:
         disabled = []
         per_db = self.get_per_db_collectors()

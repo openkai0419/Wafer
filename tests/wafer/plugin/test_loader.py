@@ -223,7 +223,7 @@ class TestEnabledFilter:
     def test_enabled_includes_matching_name(self, plugin_env):
         plugin_dir, _ = plugin_env
         registries = _make_registries()
-        loader = PluginLoader(plugin_dir, registries, enabled={'grid:stub_test'})
+        loader = PluginLoader(plugin_dir, registries, enabled={'grid:StubGridPlugin'})
         loaded = loader.load_all()
         assert 'stub_plugin' in loaded
         assert registries['grid'].get('stub_test') is not None
@@ -384,7 +384,7 @@ class TestDefaultEnabled:
             '    def load(self, path, size=None): return None\n'
         )
         registries = _make_registries()
-        loader = PluginLoader(str(plugin_dir), registries, enabled={'grid:disabled_test2'})
+        loader = PluginLoader(str(plugin_dir), registries, enabled={'grid:DisabledGridPlugin2'})
         loader.load_all()
         assert registries['grid'].get('disabled_test2') is not None
 

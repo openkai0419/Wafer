@@ -5,7 +5,7 @@ from ...plugin.settings import PluginSettings
 from ...core.qt.dispatcher import Dispatcher
 from ...core.qt.thread import utility_pool
 from ...core.ipc.node import Node
-from ...core.commands.bridge import ActionKit
+from ...core.commands.bridge import ActionKit, Command
 
 
 def _hex_rgb(hex_color: str) -> str:
@@ -182,6 +182,9 @@ class PluginManagerDialog(QtWidgets.QDialog):
             for key in REGISTRY_KEYS
         }
         self._order_tab = OrderTab(registry_data, saved_orders)
+
+        self._initial_enabled = self._settings.enabled_names() or set()
+        self._initial_orders = dict(saved_orders)
         self._tabs.addTab(self._scrollable(self._order_tab), 'Order')
 
         from .data_tab import DataTab
@@ -219,11 +222,25 @@ class PluginManagerDialog(QtWidgets.QDialog):
         layout.addWidget(splitter, 1)
         layout.addLayout(btn_layout)
 
+    def _has_plugin_changes(self, enabled, orders):
+        if enabled != self._initial_enabled:
+            return True
+        if orders != self._initial_orders:
+            return True
+        return False
+
     def _on_save(self):
         if not self._collectors_tab.confirm_and_save():
             return
         enabled = self._ext_tab.collect_enabled()
         orders = self._order_tab.get_orders()
+        has_changes = (
+            self._has_plugin_changes(enabled, orders)
+            or self._collectors_tab.has_changes()
+        )
+        if not has_changes:
+            self.close()
+            return
         self._settings.set_enabled(enabled)
         for key, order in orders.items():
             self._settings.set_priority_order(key, order)
@@ -243,7 +260,7 @@ class PluginManagerDialog(QtWidgets.QDialog):
         msg.exec()
         self.close()
         if msg.clickedButton() == restart_btn:
-            ActionKit.Command.run("setting.restart_all")
+            Command.run("setting.restart_all")
 
     def _sync_tabs(self):
         from .viewers_tab import REGISTRY_KEYS

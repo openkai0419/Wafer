@@ -72,6 +72,10 @@ def _discover_commands(module) -> list[tuple[str, type]]:
     return found
 
 
+def qualify_plugin_name(registry_key: str, cls: type) -> str:
+    return f'{registry_key}:{cls.__name__}'
+
+
 def _setup_dll_directory(folder: str):
     lib_dir = os.path.join(folder, 'lib')
     if not os.path.isdir(lib_dir):
@@ -147,7 +151,7 @@ class PluginLoader:
         discovered = []
         all_found = _import_extension(name, folder)
         for registry_key, cls in all_found:
-            qualified = f'{registry_key}:{cls.NAME}'
+            qualified = qualify_plugin_name(registry_key, cls)
             if self._enabled is not None and qualified not in self._enabled:
                 continue
             if self._enabled is None and not getattr(cls, 'DEFAULT_ENABLED', False):

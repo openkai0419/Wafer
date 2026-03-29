@@ -1,25 +1,4 @@
 {
-  "Restart All": {
-    "en": "Restart All"
-  },
-  "Plugin Manager": {
-    "en": "Plugin Manager"
-  },
-  "Plugins": {
-    "en": "Plugins"
-  },
-  "Restart Background Services": {
-    "en": "Restart Background Services"
-  },
-  "Restart Viewer": {
-    "en": "Restart Viewer"
-  },
-  "Ignore this folder": {
-    "en": "Ignore this folder"
-  },
-  "Shell Context Menu": {
-    "en": "Shell Context Menu"
-  },
   " Filter ": {
     "en": " Filter "
   },
@@ -176,9 +155,6 @@
   "Justified": {
     "en": "Justified"
   },
-  "Justified (Optimized)": {
-    "en": "Justified (Optimized)"
-  },
   "Key Binding Window": {
     "en": "Key Binding Window"
   },
@@ -211,9 +187,6 @@
   },
   "MultiSpan Grid": {
     "en": "MultiSpan Grid"
-  },
-  "MultiSpan Tiling": {
-    "en": "MultiSpan Tiling"
   },
   "Mute": {
     "en": "Mute"
@@ -272,9 +245,6 @@
   "Parent Folder": {
     "en": "Parent Folder"
   },
-  "Partition (Aspect)": {
-    "en": "Partition (Aspect)"
-  },
   "Paste here": {
     "en": "Paste here"
   },
@@ -289,6 +259,12 @@
   },
   "Playback Speed": {
     "en": "Playback Speed"
+  },
+  "Plugin Manager": {
+    "en": "Plugin Manager"
+  },
+  "Plugins": {
+    "en": "Plugins"
   },
   "Prev Database": {
     "en": "Prev Database"
@@ -340,6 +316,15 @@
   },
   "Reset Scale": {
     "en": "Reset Scale"
+  },
+  "Restart All": {
+    "en": "Restart All"
+  },
+  "Restart Background Services": {
+    "en": "Restart Background Services"
+  },
+  "Restart Viewer": {
+    "en": "Restart Viewer"
   },
   "Restore Bookmark": {
     "en": "Restore Bookmark"
@@ -425,6 +410,9 @@
   "Settings": {
     "en": "Settings"
   },
+  "Shell Context Menu": {
+    "en": "Shell Context Menu"
+  },
   "Show Selected": {
     "en": "Show Selected"
   },
@@ -482,6 +470,9 @@
   "Top": {
     "en": "Top"
   },
+  "Video": {
+    "en": "Video"
+  },
   "Video Grid": {
     "en": "Video Grid"
   },
@@ -509,9 +500,6 @@
   "Zoom Out": {
     "en": "Zoom Out"
   },
-  "binding": {
-    "en": "binding"
-  },
   "debug": {
     "en": "debug"
   },
@@ -520,5 +508,20 @@
   },
   "И (↘)": {
     "en": "И (↘)"
+  },
+  "Ignore this folder": {
+    "en": "Ignore this folder"
+  },
+  "Justified (Optimized)": {
+    "en": "Justified (Optimized)"
+  },
+  "MultiSpan Tiling": {
+    "en": "MultiSpan Tiling"
+  },
+  "Partition (Aspect)": {
+    "en": "Partition (Aspect)"
+  },
+  "binding": {
+    "en": "binding"
   }
 }

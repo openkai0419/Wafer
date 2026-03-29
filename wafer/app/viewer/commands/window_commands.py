@@ -55,7 +55,7 @@ def _session_names():
 
 class WindowCommands(ActionKit.MenuBase):
     NAME = "Window"
-    PRIORITY = 70
+    PRIORITY = 75
 
     @classmethod
     def commands(cls):

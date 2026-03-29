@@ -1,5 +1,5 @@
 from .base import BaseLayoutPlugin
-from .handler import layout_registry, LayoutRegistry
+from .handler import layout_registry
 from .calc import (
     _BaseLayoutCalculator as BaseLayoutCalculator,
     LayoutData,

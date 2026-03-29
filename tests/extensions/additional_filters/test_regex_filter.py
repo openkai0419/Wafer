@@ -9,7 +9,7 @@ import pytest
 
 from wafer.core.db.db_utils import apply_read_pragmas, apply_write_pragmas
 
-from extensions.regex_filter.filter import (
+from extensions.additional_filters.regex_filter import (
     RegexFilter,
     _extract_literal_hints,
     _escape_like,

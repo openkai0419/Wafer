@@ -3,7 +3,8 @@ import pytest
 from PySide6 import QtWidgets
 
 from wafer.plugin.query.base import BaseFilterPlugin, BaseSortPlugin, KeyStore
-from wafer.plugin.query.handler import FilterRegistry, SortRegistry, filter_registry, sort_registry
+from wafer.plugin.query.handler import SortRegistry, filter_registry, sort_registry
+from wafer.plugin.registry import PluginRegistry
 from wafer.builtins.filters import (
     TextFilter, DirectoryFilter,
     _normalize_text_inputs, _match_clause, _escape_like,
@@ -168,16 +169,16 @@ class TestBaseSortPlugin:
 class TestFilterRegistry:
 
     def test_register_and_get(self):
-        reg = FilterRegistry()
+        reg = PluginRegistry()
         reg.register(TextFilter)
         assert reg.get('text') is TextFilter
 
     def test_get_missing(self):
-        reg = FilterRegistry()
+        reg = PluginRegistry()
         assert reg.get('nonexistent') is None
 
     def test_list_all_sorted_by_priority(self):
-        reg = FilterRegistry()
+        reg = PluginRegistry()
         reg.register(DirectoryFilter)
         reg.register(TextFilter)
         items = reg.list_all()
@@ -185,7 +186,7 @@ class TestFilterRegistry:
         assert items[1] is DirectoryFilter
 
     def test_override(self):
-        reg = FilterRegistry()
+        reg = PluginRegistry()
         reg.register(TextFilter)
 
         class TextFilterV2(BaseFilterPlugin):

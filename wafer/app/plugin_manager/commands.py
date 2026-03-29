@@ -41,7 +41,7 @@ def restart_all(ctx):
 
 class PluginManagerCommands(ActionKit.MenuBase):
     NAME = "Setting"
-    PRIORITY = 75
+    PRIORITY = 85
 
     @classmethod
     def commands(cls):

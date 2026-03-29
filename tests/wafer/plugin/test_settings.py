@@ -36,51 +36,45 @@ class TestPluginSettingsEnabledNames:
         assert ps.enabled_names() == {'video'}
 
 
-class TestPluginSettingsViewerOrder:
+class TestPluginSettingsPriorityOrder:
 
     def test_empty_when_no_file(self):
         ps = PluginSettings()
-        assert ps.viewer_order() == []
+        assert ps.priority_order('viewer') == []
 
     def test_roundtrip(self):
         ps = PluginSettings()
-        ps.set_viewer_order(['animated', 'video', 'image'])
-        assert ps.viewer_order() == ['animated', 'video', 'image']
+        ps.set_priority_order('viewer', ['animated', 'video', 'image'])
+        assert ps.priority_order('viewer') == ['animated', 'video', 'image']
 
     def test_preserves_order(self):
         ps = PluginSettings()
-        ps.set_viewer_order(['image', 'animated', 'video'])
-        assert ps.viewer_order() == ['image', 'animated', 'video']
+        ps.set_priority_order('viewer', ['image', 'animated', 'video'])
+        assert ps.priority_order('viewer') == ['image', 'animated', 'video']
 
-
-class TestPluginSettingsGridOrder:
-
-    def test_empty_when_no_file(self):
+    def test_different_keys_independent(self):
         ps = PluginSettings()
-        assert ps.grid_order() == []
+        ps.set_priority_order('viewer', ['image'])
+        ps.set_priority_order('grid', ['image', 'animated'])
+        assert ps.priority_order('viewer') == ['image']
+        assert ps.priority_order('grid') == ['image', 'animated']
 
-    def test_roundtrip(self):
+    def test_all_registry_keys(self):
         ps = PluginSettings()
-        ps.set_grid_order(['animated', 'image'])
-        assert ps.grid_order() == ['animated', 'image']
+        for key in ['viewer', 'grid', 'collector', 'filter', 'sort', 'layout', 'rename_source']:
+            ps.set_priority_order(key, [f'{key}_a', f'{key}_b'])
+            assert ps.priority_order(key) == [f'{key}_a', f'{key}_b']
 
-
-class TestPluginSettingsIndependence:
-
-    def test_settings_independent(self):
+    def test_backward_compat_reads_old_key(self, isolate_ini):
+        _write_ini_value('plugins/viewer_order', ['old_a', 'old_b'])
         ps = PluginSettings()
-        ps.set_enabled({'image', 'exif'})
-        ps.set_viewer_order(['image'])
-        ps.set_grid_order(['image', 'animated'])
-        assert ps.enabled_names() == {'image', 'exif'}
-        assert ps.viewer_order() == ['image']
-        assert ps.grid_order() == ['image', 'animated']
+        assert ps.priority_order('viewer') == ['old_a', 'old_b']
 
-    def test_separate_instances_share_file(self):
-        ps1 = PluginSettings()
-        ps1.set_enabled({'image'})
-        ps2 = PluginSettings()
-        assert ps2.enabled_names() == {'image'}
+    def test_new_key_takes_precedence_over_old(self, isolate_ini):
+        _write_ini_value('plugins/viewer_order', ['old_a'])
+        ps = PluginSettings()
+        ps.set_priority_order('viewer', ['new_a', 'new_b'])
+        assert ps.priority_order('viewer') == ['new_a', 'new_b']
 
 
 class TestIniLowLevel:

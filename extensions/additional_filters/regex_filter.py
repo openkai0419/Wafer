@@ -158,7 +158,7 @@ class RegexFilter(BaseFilterPlugin):
 
     @classmethod
     def create_widget(cls, parent=None):
-        from .widget import RegexFilterWidget
+        from .regex_widget import RegexFilterWidget
         return RegexFilterWidget(parent)
 
     @classmethod

@@ -131,9 +131,20 @@
 ■ プラグインシステムの設計決定経緯
 - 旧設計(source+plugins+API仮想モジュール)を廃止し、wafer/を実パッケージ化。旧方式は「制限された客」扱いだった
 - wafer.plugin.__init__.pyは「推奨入口」として残す。extensionが必要に応じてwafer.coreやwafer.utilsに直接入ることも許容
-- PluginRegistry.registerはNAME重複時に上書き（hotreload対応）
 - PluginLoaderのspec_from_file_locationでsubmodule_search_locations=[]を渡すと全サブモジュールがpackage扱いになり相対importが壊れる（別モジュールオブジェクトが生成される）。必ずNone(デフォルト)にすること
-- PluginRegistry.resolve()は_ext_cacheで拡張子→プラグインクラスをO(1)解決。register()時にキャッシュ再構築。EXTENSIONS=()のcatch-allプラグインはフォールバック走査
+
+● レジストリ統一設計 (dict-based)
+- PluginRegistry: dict-based汎用基底。_plugins: dict[str, type[PluginBase]]。register/get/list_all/names/set_order
+- FilePluginRegistry(PluginRegistry): resolve/cache/instanceが必要なviewer/grid/collector用サブクラス。_ext_cacheで拡張子→プラグインO(1)解決
+- FilterRegistry/LayoutRegistry: 廃止。filter_registry = PluginRegistry(), layout_registry = PluginRegistry()で直接宣言
+- SortRegistry(PluginRegistry): register()のMETA_KEY検証のみオーバーライド。RenameSourceRegistry(PluginRegistry): deserialise()のみ
+- register()はNAME重複時にPRIORITY比較。既存が高ければ拒否（旧仕様の無条件上書きから変更）
+
+● PRIORITY / ORDER の分離
+- PRIORITY: クラス属性。不変。register()時の同名衝突解決と、ORDER未設定時のデフォルトソートに使用
+- ORDER: set_order(list[str])で設定。INIの[priority]セクションから読み込み。PRIORITYクラス属性は絶対に変更しない
+- _sort_key: ORDER設定時→ORDER内は(1, len-index)、ORDER外は(0, PRIORITY)。reverse=Trueソートで ORDER内が先頭に来る
+- 旧_reassign_priorities()はPRIORITYクラス属性を上書きしていたため廃止。テスト間の状態汚染も解消
 - CollectorResultはdataclass。dict扱いにはto_dict()が必要
 - Collector基底階層: BaseCollector → BaseCollectorPlugin(per-indexer) / BaseSingletonCollector(全DB共有)。型判定はissubclass、BATCH_SIZEで送信量制御
 - Workerのresult返送はmsg.dbベースでルーティング統一。Singleton(db='')でもper-indexer(db=name)でも同一コードパスで動作する（ブローカーのdb_set空=全マッチの仕様を利用）
@@ -155,6 +166,7 @@
 - ExtensionsTab.enabled_changed Signal → ViewersTab/CollectorsTab をリアルタイム同期
 - ViewersTab: list[type]を受け取りrefresh()可。PluginRegistryに依存しない
 - CollectorsTab: collector_namesを受け取りrefresh()可。collector_resolverは未指定時のフォールバック
+- OrderTab: viewer/grid/filter/sort/layout/renameの各レジストリのORDERをUI操作。PriorityTabから改名。collectorは除外（ORDERの概念が不要なため）
 - Save後にQMessageBoxで再起動確認ダイアログ表示
 - commands: setting.plugin_manager, setting.restart_tray, setting.restart_viewer (Settingメニュー配下)
 

@@ -1,7 +1,6 @@
-from ....core.commands.bridge import ActionKit, Menu, Settings, UI
+from ....core.commands.bridge import ActionKit, Menu, Settings
 from ....core.commands.command.menu import discover_command_classes
 from ....utils.paths import resolve_data_path
-from ....core.platform.folders import show_in_explorer
 from . import (
     file_commands,
     foldertree_commands,
@@ -49,16 +48,8 @@ class AppMenuRegistrar(ActionKit.MenuBase):
             ActionKit.Command(path="menus/showimageviewmenu", display="Image View Menu", func=lambda ctx: Menu.exec_menu(ImageViewCommands.NAME, ctx)),
             ActionKit.Command(path="menus/showfilemenu", display="File View Menu", func=lambda ctx: Menu.exec_menu(FileCommands.NAME, ctx)),
             ActionKit.Command(path="menus/showfoldertreemenu", display="Folder Tree Menu", func=lambda ctx: show_context_menu(ctx)),
-            "binding/:Binding",
-            ActionKit.Command(path="binding/keybind", display="Key Binding Window", func=lambda ctx: UI.open_shortcut_binding_editor(parent=AppMenuRegistrar._get_parent(ctx))),
-            ActionKit.Command(path="binding/mousebind", display="Mouse Binding Window", func=lambda ctx: UI.open_mouse_binding_editor(parent=AppMenuRegistrar._get_parent(ctx))),
-            ActionKit.Command(path="binding/openbindingfolder", display="Open Binding Files in Explorer", func=lambda ctx: show_in_explorer(str(resolve_data_path("binding/")), show_first_if_folder=True)),
             ActionKit.Command(path="allmenu", display="AllMenu", func=lambda ctx: Menu.exec_all_roots(ctx)),
         ]
-
-    @staticmethod
-    def _get_parent(ctx):
-        return ctx.get("widget") or None
 
     @staticmethod
     def setup_menu():

@@ -59,20 +59,14 @@ class PluginSettings:
     def set_enabled(self, names: set[str]):
         _write_ini_value('plugins/enabled', sorted(names))
 
-    def viewer_order(self) -> list[str]:
-        val = _read_ini_value('plugins/viewer_order')
+    def priority_order(self, key: str) -> list[str]:
+        val = _read_ini_value(f'priority/{key}')
+        if isinstance(val, list):
+            return val
+        val = _read_ini_value(f'plugins/{key}_order')
         if isinstance(val, list):
             return val
         return []
 
-    def set_viewer_order(self, names: list[str]):
-        _write_ini_value('plugins/viewer_order', names)
-
-    def grid_order(self) -> list[str]:
-        val = _read_ini_value('plugins/grid_order')
-        if isinstance(val, list):
-            return val
-        return []
-
-    def set_grid_order(self, names: list[str]):
-        _write_ini_value('plugins/grid_order', names)
+    def set_priority_order(self, key: str, order: list[str]):
+        _write_ini_value(f'priority/{key}', order)

@@ -1,7 +1,9 @@
 from PySide6 import QtWidgets
 
-from ....core.commands.bridge import ActionKit
+from ....core.commands.bridge import ActionKit, UI
 from ....plugin.grid.handler import grid_resolver, VIEWER_THUMBNAIL_DEFAULT_SIZE
+from ....utils.paths import resolve_data_path
+from ....core.platform.folders import show_in_explorer
 from ..viewer_settings import app_settings
 
 _SETTING_KEY = 'viewer/thumbnail_default_size'
@@ -48,5 +50,28 @@ class SettingCommands(ActionKit.MenuBase):
                 path="setting.viewer_thumbnail_default_size",
                 display="Viewer Thumbnail Default Size",
                 func=set_viewer_thumbnail_default_size,
+            ),
+            "-",
+            ":Binding",
+            ActionKit.Command(
+                path="setting.keybind",
+                display="Key Binding Window",
+                func=lambda ctx: UI.open_shortcut_binding_editor(
+                    parent=ctx.get("widget") or None
+                ),
+            ),
+            ActionKit.Command(
+                path="setting.mousebind",
+                display="Mouse Binding Window",
+                func=lambda ctx: UI.open_mouse_binding_editor(
+                    parent=ctx.get("widget") or None
+                ),
+            ),
+            ActionKit.Command(
+                path="setting.openbindingfolder",
+                display="Open Binding Files in Explorer",
+                func=lambda ctx: show_in_explorer(
+                    str(resolve_data_path("binding/")), show_first_if_folder=True
+                ),
             ),
         ]

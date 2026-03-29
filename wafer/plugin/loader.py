@@ -226,29 +226,6 @@ def _import_extension(name: str, folder: str) -> list[tuple[str, type]]:
     return found
 
 
-def _apply_priority_order(registry: PluginRegistry, order: list[str]):
-    if not order:
-        return
-    base = len(order) * 100
-    order_set = set()
-    for i, name in enumerate(order):
-        cls = registry.get(name)
-        if cls is not None:
-            cls.PRIORITY = base - i * 100
-            order_set.add(name)
-    unlisted = sorted(
-        [p for p in registry.list_all() if p.NAME not in order_set],
-        key=lambda c: c.PRIORITY, reverse=True,
-    )
-    floor = base - (len(order) - 1) * 100 - 100
-    for p in unlisted:
-        p.PRIORITY = floor
-        floor -= 100
-    registry._plugins.sort(key=lambda c: c.PRIORITY, reverse=True)
-    registry._rebuild_ext_cache()
-    registry._chain_cache.clear()
-
-
 def load_plugins(*, on_progress=None) -> list[str]:
     from .viewer.handler import viewer_resolver
     from .grid.handler import grid_resolver
@@ -275,7 +252,9 @@ def load_plugins(*, on_progress=None) -> list[str]:
     loader = PluginLoader(get_plugin_dir(), registries, enabled=enabled)
     result = loader.load_all(on_progress=on_progress)
 
-    _apply_priority_order(viewer_resolver.registry, ps.viewer_order())
-    _apply_priority_order(grid_resolver.registry, ps.grid_order())
+    for key, registry in registries.items():
+        order = ps.priority_order(key)
+        if order:
+            registry.set_order(order)
 
     return result

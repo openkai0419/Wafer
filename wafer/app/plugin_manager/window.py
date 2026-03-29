@@ -171,14 +171,17 @@ class PluginManagerDialog(QtWidgets.QDialog):
         self._collectors_tab.purge_requested.connect(self._send_purge)
         self._tabs.addTab(self._scrollable(self._collectors_tab), 'Collectors')
 
-        from .viewers_tab import ViewersTab
-        self._viewers_tab = ViewersTab(
-            self._ext_tab.collect_enabled_plugins('viewer'),
-            self._ext_tab.collect_enabled_plugins('grid'),
-            self._settings.viewer_order(),
-            self._settings.grid_order(),
-        )
-        self._tabs.addTab(self._scrollable(self._viewers_tab), 'Viewers')
+        from .viewers_tab import OrderTab, REGISTRY_KEYS
+        registry_data = {
+            key: self._ext_tab.collect_enabled_plugins(key)
+            for key in REGISTRY_KEYS
+        }
+        saved_orders = {
+            key: self._settings.priority_order(key)
+            for key in REGISTRY_KEYS
+        }
+        self._order_tab = OrderTab(registry_data, saved_orders)
+        self._tabs.addTab(self._scrollable(self._order_tab), 'Order')
 
         from .data_tab import DataTab
         self._data_tab = DataTab(self._dispatcher)
@@ -219,14 +222,13 @@ class PluginManagerDialog(QtWidgets.QDialog):
         if not self._collectors_tab.confirm_and_save():
             return
         enabled = self._ext_tab.collect_enabled()
-        viewer_order = self._viewers_tab.get_viewer_order()
-        grid_order = self._viewers_tab.get_grid_order()
+        orders = self._order_tab.get_orders()
         self._settings.set_enabled(enabled)
-        self._settings.set_viewer_order(viewer_order)
-        self._settings.set_grid_order(grid_order)
+        for key, order in orders.items():
+            self._settings.set_priority_order(key, order)
         AppLogger.info(
             f'[PluginManager] Saved: enabled={sorted(enabled)}, '
-            f'viewer_order={viewer_order}, grid_order={grid_order}'
+            f'orders={orders}'
         )
         msg = QtWidgets.QMessageBox(
             QtWidgets.QMessageBox.Question,
@@ -253,10 +255,12 @@ class PluginManagerDialog(QtWidgets.QDialog):
                 main_window.close()
 
     def _sync_tabs(self):
-        self._viewers_tab.refresh(
-            self._ext_tab.collect_enabled_plugins('viewer'),
-            self._ext_tab.collect_enabled_plugins('grid'),
-        )
+        from .viewers_tab import REGISTRY_KEYS
+        registry_data = {
+            key: self._ext_tab.collect_enabled_plugins(key)
+            for key in REGISTRY_KEYS
+        }
+        self._order_tab.refresh(registry_data)
         collector_names = [cls.NAME for cls in self._ext_tab.collect_enabled_plugins('collector')]
         self._collectors_tab.refresh(collector_names)
 

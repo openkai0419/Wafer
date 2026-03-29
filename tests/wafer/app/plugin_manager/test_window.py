@@ -3,7 +3,7 @@ import sys
 import pytest
 from unittest.mock import MagicMock, patch
 
-from wafer.plugin.registry import BasePlugin, PluginRegistry
+from wafer.plugin.registry import BasePlugin
 
 
 class TestExtensionsTab:
@@ -194,10 +194,10 @@ class TestExtensionsTab:
         assert len(grids) == 1
 
 
-class TestViewersTab:
+class TestOrderTab:
 
     def test_populate_with_plugin_lists(self, qtbot):
-        from wafer.app.plugin_manager.viewers_tab import ViewersTab
+        from wafer.app.plugin_manager.viewers_tab import OrderTab
 
         class PlugA(BasePlugin):
             NAME = 'a'
@@ -209,15 +209,15 @@ class TestViewersTab:
             EXTENSIONS = ('.b',)
             PRIORITY = 20
 
-        tab = ViewersTab([PlugB, PlugA], [PlugA], [], [])
+        tab = OrderTab({'viewer': [PlugB, PlugA], 'grid': [PlugA]}, {})
         qtbot.addWidget(tab)
 
-        viewer_order = tab.get_viewer_order()
-        assert 'b' in viewer_order
-        assert 'a' in viewer_order
+        orders = tab.get_orders()
+        assert 'b' in orders['viewer']
+        assert 'a' in orders['viewer']
 
     def test_order_from_settings(self, qtbot):
-        from wafer.app.plugin_manager.viewers_tab import ViewersTab
+        from wafer.app.plugin_manager.viewers_tab import OrderTab
 
         class PlugX(BasePlugin):
             NAME = 'x'
@@ -229,13 +229,13 @@ class TestViewersTab:
             EXTENSIONS = ()
             PRIORITY = 5
 
-        tab = ViewersTab([PlugX, PlugY], [], ['y', 'x'], [])
+        tab = OrderTab({'viewer': [PlugX, PlugY]}, {'viewer': ['y', 'x']})
         qtbot.addWidget(tab)
 
-        assert tab.get_viewer_order() == ['y', 'x']
+        assert tab.get_orders()['viewer'] == ['y', 'x']
 
     def test_drag_reorder_returns_new_order(self, qtbot):
-        from wafer.app.plugin_manager.viewers_tab import ViewersTab
+        from wafer.app.plugin_manager.viewers_tab import OrderTab
 
         class P1(BasePlugin):
             NAME = 'first'
@@ -247,13 +247,13 @@ class TestViewersTab:
             EXTENSIONS = ()
             PRIORITY = 5
 
-        tab = ViewersTab([P1, P2], [], [], [])
+        tab = OrderTab({'viewer': [P1, P2]}, {})
         qtbot.addWidget(tab)
-        order = tab.get_viewer_order()
+        order = tab.get_orders()['viewer']
         assert len(order) == 2
 
     def test_negative_priority_sorts_after_ordered(self, qtbot):
-        from wafer.app.plugin_manager.viewers_tab import ViewersTab
+        from wafer.app.plugin_manager.viewers_tab import OrderTab
 
         class Builtin(BasePlugin):
             NAME = 'builtin'
@@ -265,14 +265,14 @@ class TestViewersTab:
             EXTENSIONS = ()
             PRIORITY = 10
 
-        tab = ViewersTab([Builtin, UserPlug], [], ['user'], [])
+        tab = OrderTab({'viewer': [Builtin, UserPlug]}, {'viewer': ['user']})
         qtbot.addWidget(tab)
-        order = tab.get_viewer_order()
+        order = tab.get_orders()['viewer']
         assert order[0] == 'user'
         assert order[1] == 'builtin'
 
     def test_refresh_updates_list(self, qtbot):
-        from wafer.app.plugin_manager.viewers_tab import ViewersTab
+        from wafer.app.plugin_manager.viewers_tab import OrderTab
 
         class PlugA(BasePlugin):
             NAME = 'a'
@@ -284,15 +284,46 @@ class TestViewersTab:
             EXTENSIONS = ('.b',)
             PRIORITY = 20
 
-        tab = ViewersTab([PlugA], [], [], [])
+        tab = OrderTab({'viewer': [PlugA]}, {})
         qtbot.addWidget(tab)
-        assert tab.get_viewer_order() == ['a']
+        assert tab.get_orders()['viewer'] == ['a']
 
-        tab.refresh([PlugB, PlugA], [])
-        viewer_order = tab.get_viewer_order()
+        tab.refresh({'viewer': [PlugB, PlugA]})
+        viewer_order = tab.get_orders()['viewer']
         assert 'a' in viewer_order
         assert 'b' in viewer_order
         assert len(viewer_order) == 2
+
+    def test_multiple_registry_types(self, qtbot):
+        from wafer.app.plugin_manager.viewers_tab import OrderTab
+
+        class ViewerP(BasePlugin):
+            NAME = 'vp'
+            EXTENSIONS = ('.v',)
+            PRIORITY = 10
+
+        class FilterP:
+            NAME = 'fp'
+            PRIORITY = 5
+
+        tab = OrderTab({'viewer': [ViewerP], 'filter': [FilterP]}, {})
+        qtbot.addWidget(tab)
+        orders = tab.get_orders()
+        assert orders['viewer'] == ['vp']
+        assert orders['filter'] == ['fp']
+
+    def test_empty_registry_skipped(self, qtbot):
+        from wafer.app.plugin_manager.viewers_tab import OrderTab
+
+        class PlugA(BasePlugin):
+            NAME = 'a'
+            EXTENSIONS = ()
+            PRIORITY = 10
+
+        tab = OrderTab({'viewer': [PlugA], 'filter': []}, {})
+        qtbot.addWidget(tab)
+        assert tab.get_orders()['viewer'] == ['a']
+        assert tab.get_orders()['filter'] == []
 
 
 class TestPluginManagerDialog:

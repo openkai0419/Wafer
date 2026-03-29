@@ -35,28 +35,63 @@ class BasePlugin(PluginBase, ABC):
 class PluginRegistry:
 
     def __init__(self):
-        self._plugins: list[type[BasePlugin]] = []
+        self._plugins: dict[str, type[PluginBase]] = {}
+        self._order: list[str] = []
+
+    def _sort_key(self, cls: type[PluginBase]):
+        if self._order:
+            try:
+                return (1, len(self._order) - self._order.index(cls.NAME))
+            except ValueError:
+                return (0, cls.PRIORITY)
+        return (0, cls.PRIORITY)
+
+    def register(self, plugin_cls: type[PluginBase]):
+        existing = self._plugins.get(plugin_cls.NAME)
+        if existing is not None and plugin_cls.PRIORITY < existing.PRIORITY:
+            return
+        self._plugins[plugin_cls.NAME] = plugin_cls
+
+    def set_order(self, order: list[str]):
+        self._order = list(order)
+
+    def get(self, name: str) -> type[PluginBase] | None:
+        return self._plugins.get(name)
+
+    def list_all(self) -> list[type[PluginBase]]:
+        return sorted(self._plugins.values(), key=self._sort_key, reverse=True)
+
+    def names(self) -> list[str]:
+        return [p.NAME for p in self.list_all()]
+
+
+class FilePluginRegistry(PluginRegistry):
+
+    def __init__(self):
+        super().__init__()
         self._instances: dict[str, BasePlugin] = {}
         self._ext_cache: dict[str, list[type[BasePlugin]]] = {}
         self._chain_cache: dict[str, list[type[BasePlugin]]] = {}
 
     def _rebuild_ext_cache(self):
         cache: dict[str, list[type[BasePlugin]]] = {}
-        for p in self._plugins:
+        for p in self.list_all():
             for ext in p.EXTENSIONS:
                 cache.setdefault(ext, []).append(p)
         self._ext_cache = cache
 
-    def register(self, plugin_cls: type[BasePlugin]):
-        existing = next((i for i, p in enumerate(self._plugins) if p.NAME == plugin_cls.NAME), None)
-        if existing is not None:
-            self._plugins[existing] = plugin_cls
-        else:
-            self._plugins.append(plugin_cls)
-        self._plugins.sort(key=lambda c: c.PRIORITY, reverse=True)
-        self._instances.pop(plugin_cls.NAME, None)
+    def _invalidate_caches(self):
         self._rebuild_ext_cache()
         self._chain_cache.clear()
+
+    def register(self, plugin_cls: type[BasePlugin]):
+        super().register(plugin_cls)
+        self._instances.pop(plugin_cls.NAME, None)
+        self._invalidate_caches()
+
+    def set_order(self, order: list[str]):
+        super().set_order(order)
+        self._invalidate_caches()
 
     @profiler.profile
     def resolve(self, path: str) -> type[BasePlugin] | None:
@@ -65,7 +100,7 @@ class PluginRegistry:
             for p in self._ext_cache.get(ext, []):
                 if p.can_handle(path):
                     return p
-        for p in self._plugins:
+        for p in self.list_all():
             if not p.EXTENSIONS and p.match(path) and p.can_handle(path):
                 return p
         return None
@@ -77,7 +112,7 @@ class PluginRegistry:
         if cached is not None:
             return cached
         candidates = list(self._ext_cache.get(ext, [])) if ext else []
-        for p in self._plugins:
+        for p in self.list_all():
             if not p.EXTENSIONS and p.match(path) and p not in candidates:
                 candidates.append(p)
         self._chain_cache[ext] = candidates
@@ -88,19 +123,7 @@ class PluginRegistry:
         return self.instance(cls.NAME) if cls else None
 
     def resolve_all(self, path: str) -> list[type[BasePlugin]]:
-        return [p for p in self._plugins if p.match(path) and p.can_handle(path)]
-
-    def list_all(self) -> list[type[BasePlugin]]:
-        return list(self._plugins)
-
-    def names(self) -> list[str]:
-        return [p.NAME for p in self._plugins]
-
-    def get(self, name: str) -> type[BasePlugin] | None:
-        for p in self._plugins:
-            if p.NAME == name:
-                return p
-        return None
+        return [p for p in self.list_all() if p.match(path) and p.can_handle(path)]
 
     def instance(self, name: str) -> BasePlugin | None:
         inst = self._instances.get(name)
@@ -112,7 +135,7 @@ class PluginRegistry:
         return inst
 
     def all_classes(self) -> list[tuple[str, type[BasePlugin]]]:
-        return [(p.NAME, p) for p in self._plugins]
+        return [(p.NAME, p) for p in self.list_all()]
 
     def summary(self) -> list[tuple[str, tuple[str, ...]]]:
-        return [(p.NAME, p.EXTENSIONS) for p in self._plugins]
+        return [(p.NAME, p.EXTENSIONS) for p in self.list_all()]

@@ -151,7 +151,7 @@ def test_load_thumbnail_api_returns_none_for_missing():
 
 
 def test_resolve_falls_through_when_can_handle_false():
-    from wafer.plugin.registry import PluginRegistry, BasePlugin
+    from wafer.plugin.registry import FilePluginRegistry, BasePlugin
     from wafer.plugin.grid.base import ImageGridPlugin as _ImageBase
 
     class Strict(_ImageBase):
@@ -174,14 +174,14 @@ def test_resolve_falls_through_when_can_handle_false():
         def load(self, path, size=None):
             return None
 
-    reg = PluginRegistry()
+    reg = FilePluginRegistry()
     reg.register(Strict)
     reg.register(Fallback)
     assert reg.resolve('file.test') is Fallback
 
 
 def test_resolve_returns_first_can_handle_true():
-    from wafer.plugin.registry import PluginRegistry, BasePlugin
+    from wafer.plugin.registry import FilePluginRegistry, BasePlugin
     from wafer.plugin.grid.base import ImageGridPlugin as _ImageBase
 
     class High(_ImageBase):
@@ -200,7 +200,7 @@ def test_resolve_returns_first_can_handle_true():
         def load(self, path, size=None):
             return None
 
-    reg = PluginRegistry()
+    reg = FilePluginRegistry()
     reg.register(High)
     reg.register(Low)
     assert reg.resolve('file.test') is High
@@ -401,7 +401,7 @@ def test_resolve_instance_unknown():
 
 
 def test_resolve_chain_returns_priority_sorted():
-    from wafer.plugin.registry import PluginRegistry
+    from wafer.plugin.registry import FilePluginRegistry
     from wafer.plugin.grid.base import ImageGridPlugin as _ImageBase
 
     class High(_ImageBase):
@@ -418,7 +418,7 @@ def test_resolve_chain_returns_priority_sorted():
         def load(self, path, size=None):
             return None
 
-    reg = PluginRegistry()
+    reg = FilePluginRegistry()
     reg.register(High)
     reg.register(Low)
     chain = reg.resolve_chain('file.test')
@@ -432,7 +432,7 @@ def test_resolve_chain_empty_for_unknown():
 
 
 def test_resolve_chain_uses_cache():
-    from wafer.plugin.registry import PluginRegistry
+    from wafer.plugin.registry import FilePluginRegistry
     from wafer.plugin.grid.base import ImageGridPlugin as _ImageBase
 
     class Stub(_ImageBase):
@@ -442,7 +442,7 @@ def test_resolve_chain_uses_cache():
         def load(self, path, size=None):
             return None
 
-    reg = PluginRegistry()
+    reg = FilePluginRegistry()
     reg.register(Stub)
     first = reg.resolve_chain('a.cachetest')
     second = reg.resolve_chain('b.cachetest')
@@ -450,7 +450,7 @@ def test_resolve_chain_uses_cache():
 
 
 def test_resolve_chain_cache_cleared_on_register():
-    from wafer.plugin.registry import PluginRegistry
+    from wafer.plugin.registry import FilePluginRegistry
     from wafer.plugin.grid.base import ImageGridPlugin as _ImageBase
 
     class A(_ImageBase):
@@ -467,7 +467,7 @@ def test_resolve_chain_cache_cleared_on_register():
         def load(self, path, size=None):
             return None
 
-    reg = PluginRegistry()
+    reg = FilePluginRegistry()
     reg.register(A)
     first = reg.resolve_chain('x.clr')
     assert first == [A]
@@ -486,7 +486,7 @@ def test_resolve_chain_includes_all_candidates():
 
 
 def test_all_classes_returns_name_cls_tuples():
-    from wafer.plugin.registry import PluginRegistry
+    from wafer.plugin.registry import FilePluginRegistry
     from wafer.plugin.grid.base import ImageGridPlugin as _ImageBase
 
     class P1(_ImageBase):
@@ -501,7 +501,7 @@ def test_all_classes_returns_name_cls_tuples():
         def load(self, path, size=None):
             return None
 
-    reg = PluginRegistry()
+    reg = FilePluginRegistry()
     reg.register(P1)
     reg.register(P2)
     result = reg.all_classes()
@@ -511,6 +511,6 @@ def test_all_classes_returns_name_cls_tuples():
 
 
 def test_all_classes_empty_registry():
-    from wafer.plugin.registry import PluginRegistry
-    reg = PluginRegistry()
+    from wafer.plugin.registry import FilePluginRegistry
+    reg = FilePluginRegistry()
     assert reg.all_classes() == []

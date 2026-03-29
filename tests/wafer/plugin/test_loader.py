@@ -3,8 +3,8 @@ import sys
 import pytest
 from pathlib import Path
 
-from wafer.plugin.registry import BasePlugin, PluginRegistry
-from wafer.plugin.loader import PluginLoader, _apply_priority_order
+from wafer.plugin.registry import BasePlugin, PluginRegistry, FilePluginRegistry
+from wafer.plugin.loader import PluginLoader
 
 
 @pytest.fixture
@@ -19,6 +19,7 @@ def plugin_env(tmp_path):
         '    NAME = "stub_test"\n'
         '    EXTENSIONS = (".stub",)\n'
         '    PRIORITY = 10\n'
+        '    DEFAULT_ENABLED = True\n'
         '    _post_installed = False\n'
         '    _configured = False\n'
         '    def load(self, path, size=None): return None\n'
@@ -35,9 +36,9 @@ def plugin_env(tmp_path):
 
 def _make_registries():
     return {
-        'viewer': PluginRegistry(),
-        'grid': PluginRegistry(),
-        'collector': PluginRegistry(),
+        'viewer': FilePluginRegistry(),
+        'grid': FilePluginRegistry(),
+        'collector': FilePluginRegistry(),
     }
 
 
@@ -66,6 +67,7 @@ class TestConfigureHook:
             '    NAME = "broken"\n'
             '    EXTENSIONS = (".brk",)\n'
             '    PRIORITY = 10\n'
+            '    DEFAULT_ENABLED = True\n'
             '    def load(self, path, size=None): return None\n'
             '    @classmethod\n'
             '    def configure(cls): raise RuntimeError("boom")\n'
@@ -105,6 +107,7 @@ class TestDeferredCommandRegistration:
             'from wafer.core.commands.command.core import CommandMeta\n'
             'class TestCmdGroup(MenuGroup):\n'
             '    NAME = "TestCmd"\n'
+            '    DEFAULT_ENABLED = True\n'
             '    @classmethod\n'
             '    def commands(cls):\n'
             '        return [CommandMeta(path="tcmd.noop", display="Noop", func=lambda ctx: None)]\n'
@@ -273,7 +276,7 @@ class TestApplyPriorityOrder:
         registry.register(PluginA)
         registry.register(PluginB)
         assert registry.list_all()[0].NAME == 'b'
-        _apply_priority_order(registry, ['a', 'b'])
+        registry.set_order(['a', 'b'])
         assert registry.list_all()[0].NAME == 'a'
 
     def test_empty_order_is_noop(self):
@@ -282,7 +285,7 @@ class TestApplyPriorityOrder:
             PRIORITY = 50
         registry = PluginRegistry()
         registry.register(PluginC)
-        _apply_priority_order(registry, [])
+        registry.set_order([])
         assert registry.list_all()[0].NAME == 'c'
         assert PluginC.PRIORITY == 50
 
@@ -292,7 +295,7 @@ class TestApplyPriorityOrder:
             PRIORITY = 5
         registry = PluginRegistry()
         registry.register(PluginD)
-        _apply_priority_order(registry, ['nonexistent', 'd'])
+        registry.set_order(['nonexistent', 'd'])
         assert registry.list_all()[0].NAME == 'd'
 
     def test_unlisted_plugins_sorted_after_listed(self):
@@ -309,11 +312,25 @@ class TestApplyPriorityOrder:
         registry.register(PluginE)
         registry.register(PluginF)
         registry.register(PluginG)
-        _apply_priority_order(registry, ['e'])
+        registry.set_order(['e'])
         names = [p.NAME for p in registry.list_all()]
         assert names[0] == 'e'
         assert names[1] == 'g'
         assert names[2] == 'f'
+
+    def test_priority_not_mutated(self):
+        class PluginH(BasePlugin):
+            NAME = 'h'
+            PRIORITY = 42
+        class PluginI(BasePlugin):
+            NAME = 'i'
+            PRIORITY = 99
+        registry = PluginRegistry()
+        registry.register(PluginH)
+        registry.register(PluginI)
+        registry.set_order(['h', 'i'])
+        assert PluginH.PRIORITY == 42
+        assert PluginI.PRIORITY == 99
 
 
 class TestDefaultEnabled:

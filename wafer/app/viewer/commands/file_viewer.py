@@ -49,7 +49,7 @@ def stop_slideshow(ctx, fv):
 
 class FileViewerCommands(ActionKit.MenuBase):
     NAME = "FileViewer"
-    PRIORITY = 50
+    PRIORITY = 55
 
     @classmethod
     def commands(cls):

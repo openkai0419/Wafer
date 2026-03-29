@@ -1,7 +1,7 @@
 from PySide6 import QtGui
 
 from ...utils.profiling import profiler
-from ..registry import PluginRegistry
+from ..registry import FilePluginRegistry
 from .base import BaseGridPlugin, ImageGridPlugin, WidgetGridPlugin
 
 VIEWER_THUMBNAIL_DEFAULT_SIZE = 512
@@ -10,7 +10,7 @@ VIEWER_THUMBNAIL_DEFAULT_SIZE = 512
 class GridResolver:
 
     def __init__(self):
-        self.registry = PluginRegistry()
+        self.registry = FilePluginRegistry()
         self.thumbnail_size = VIEWER_THUMBNAIL_DEFAULT_SIZE
 
     @profiler.profile
@@ -49,7 +49,7 @@ grid_resolver = GridResolver()
 
 class WidgetNotifier:
 
-    def __init__(self, registry: PluginRegistry):
+    def __init__(self, registry: FilePluginRegistry):
         self._registry = registry
         self._names: dict[int, str] = {}
 

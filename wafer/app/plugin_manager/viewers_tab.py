@@ -31,7 +31,7 @@ class _ReorderList(QtWidgets.QListWidget):
     def set_plugins(self, plugins: list[type]):
         self.clear()
         for cls in plugins:
-            ext_str = ', '.join(cls.EXTENSIONS) if cls.EXTENSIONS else ''
+            ext_str = ', '.join(cls.EXTENSIONS) if getattr(cls, 'EXTENSIONS', None) else ''
             text = f'\u2261  {cls.NAME}'
             if ext_str:
                 text += f'    {ext_str}'
@@ -46,44 +46,56 @@ class _ReorderList(QtWidgets.QListWidget):
         ]
 
 
-class ViewersTab(QtWidgets.QWidget):
+REGISTRY_KEYS = ['grid', 'viewer', 'filter', 'sort', 'layout', 'rename_source']
 
-    def __init__(self, viewer_plugins: list[type], grid_plugins: list[type],
-                 viewer_order: list[str], grid_order: list[str], parent=None):
+_PRIORITY_KEYS = frozenset({'grid', 'viewer'})
+
+REGISTRY_LABELS = {
+    'viewer': 'Viewer',
+    'grid': 'Grid',
+    'filter': 'Filter',
+    'sort': 'Sort',
+    'layout': 'Layout',
+    'rename_source': 'Rename Source',
+}
+
+
+class OrderTab(QtWidgets.QWidget):
+
+    def __init__(self, registry_data: dict[str, list[type]],
+                 saved_orders: dict[str, list[str]], parent=None):
         super().__init__(parent)
+        self._lists: dict[str, _ReorderList] = {}
+        self._labels: dict[str, QtWidgets.QLabel] = {}
+        self._saved_orders: dict[str, list[str]] = {k: list(v) for k, v in saved_orders.items()}
 
-        self._viewer_list = _ReorderList()
-        self._grid_list = _ReorderList()
-        self._saved_viewer_order = list(viewer_order)
-        self._saved_grid_order = list(grid_order)
+        self._main_layout = QtWidgets.QVBoxLayout(self)
+        self._main_layout.setSpacing(dpix(8))
 
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setSpacing(dpix(8))
+        desc = QtWidgets.QLabel('Drag to reorder \u00b7 higher = preferred')
+        desc.setStyleSheet(f'color: #888; font-size: {dpix(10)}px;')
+        self._main_layout.addWidget(desc)
 
-        viewer_label = QtWidgets.QLabel('Viewer Priority')
-        viewer_label.setObjectName('section_header')
-        viewer_desc = QtWidgets.QLabel('Drag to reorder \u00b7 higher = preferred')
-        viewer_desc.setStyleSheet(f'color: #888; font-size: {dpix(10)}px;')
-        layout.addWidget(viewer_label)
-        layout.addWidget(viewer_desc)
-        layout.addWidget(self._viewer_list, 1)
+        for key in REGISTRY_KEYS:
+            self._add_section(key)
+            plugins = registry_data.get(key, [])
+            if not plugins:
+                self._labels[key].hide()
+                self._lists[key].hide()
+                continue
+            order = saved_orders.get(key, [])
+            sorted_plugins = self._sorted_by_order(plugins, order)
+            self._lists[key].set_plugins(sorted_plugins)
 
-        grid_label = QtWidgets.QLabel('Grid Priority')
-        grid_label.setObjectName('section_header')
-        grid_desc = QtWidgets.QLabel('Drag to reorder \u00b7 higher = preferred')
-        grid_desc.setStyleSheet(f'color: #888; font-size: {dpix(10)}px;')
-        layout.addWidget(grid_label)
-        layout.addWidget(grid_desc)
-        layout.addWidget(self._grid_list, 1)
-
-        self._populate(viewer_plugins, grid_plugins, viewer_order, grid_order)
-
-    def _populate(self, viewer_plugins: list[type], grid_plugins: list[type],
-                  viewer_order: list[str], grid_order: list[str]):
-        viewer_sorted = self._sorted_by_order(viewer_plugins, viewer_order)
-        grid_sorted = self._sorted_by_order(grid_plugins, grid_order)
-        self._viewer_list.set_plugins(viewer_sorted)
-        self._grid_list.set_plugins(grid_sorted)
+    def _add_section(self, key: str):
+        suffix = 'Priority' if key in _PRIORITY_KEYS else 'Order'
+        label = QtWidgets.QLabel(f'{REGISTRY_LABELS.get(key, key)} {suffix}')
+        label.setObjectName('section_header')
+        self._labels[key] = label
+        self._main_layout.addWidget(label)
+        reorder_list = _ReorderList()
+        self._lists[key] = reorder_list
+        self._main_layout.addWidget(reorder_list, 1)
 
     def _sorted_by_order(self, plugins: list[type], order: list[str]) -> list[type]:
         if not order:
@@ -94,17 +106,22 @@ class ViewersTab(QtWidgets.QWidget):
             key=lambda c: (0, order_map[c.NAME]) if c.NAME in order_map else (1, -c.PRIORITY),
         )
 
-    def refresh(self, viewer_plugins: list[type], grid_plugins: list[type]):
-        incoming_viewers = {c.NAME for c in viewer_plugins}
-        incoming_grids = {c.NAME for c in grid_plugins}
-        current_viewer = self._viewer_list.get_order()
-        current_grid = self._grid_list.get_order()
-        viewer_order = current_viewer if set(current_viewer) == incoming_viewers else self._saved_viewer_order
-        grid_order = current_grid if set(current_grid) == incoming_grids else self._saved_grid_order
-        self._populate(viewer_plugins, grid_plugins, viewer_order, grid_order)
+    def refresh(self, registry_data: dict[str, list[type]]):
+        for key in REGISTRY_KEYS:
+            plugins = registry_data.get(key, [])
+            reorder_list = self._lists[key]
+            if not plugins:
+                reorder_list.clear()
+                reorder_list.hide()
+                self._labels[key].hide()
+                continue
+            reorder_list.show()
+            self._labels[key].show()
+            incoming = {c.NAME for c in plugins}
+            current = reorder_list.get_order()
+            order = current if set(current) == incoming else self._saved_orders.get(key, [])
+            sorted_plugins = self._sorted_by_order(plugins, order)
+            reorder_list.set_plugins(sorted_plugins)
 
-    def get_viewer_order(self) -> list[str]:
-        return self._viewer_list.get_order()
-
-    def get_grid_order(self) -> list[str]:
-        return self._grid_list.get_order()
+    def get_orders(self) -> dict[str, list[str]]:
+        return {key: lst.get_order() for key, lst in self._lists.items()}

@@ -1,6 +1,6 @@
 import pytest
 from wafer.plugin.layout.base import BaseLayoutPlugin
-from wafer.plugin.layout.handler import LayoutRegistry
+from wafer.plugin.registry import PluginRegistry
 
 
 class _DummyLayout(BaseLayoutPlugin):
@@ -26,18 +26,18 @@ class _HighPriorityLayout(BaseLayoutPlugin):
 
 
 def test_register_and_get():
-    reg = LayoutRegistry()
+    reg = PluginRegistry()
     reg.register(_DummyLayout)
     assert reg.get('dummy') is _DummyLayout
 
 
 def test_get_unknown_returns_none():
-    reg = LayoutRegistry()
+    reg = PluginRegistry()
     assert reg.get('nonexistent') is None
 
 
 def test_list_all_sorted_by_priority():
-    reg = LayoutRegistry()
+    reg = PluginRegistry()
     reg.register(_DummyLayout)
     reg.register(_HighPriorityLayout)
     layouts = reg.list_all()
@@ -46,7 +46,7 @@ def test_list_all_sorted_by_priority():
 
 
 def test_names():
-    reg = LayoutRegistry()
+    reg = PluginRegistry()
     reg.register(_DummyLayout)
     reg.register(_HighPriorityLayout)
     names = reg.names()
@@ -56,7 +56,7 @@ def test_names():
 
 
 def test_register_overwrites_same_name():
-    reg = LayoutRegistry()
+    reg = PluginRegistry()
     reg.register(_DummyLayout)
 
     class _DummyLayout2(BaseLayoutPlugin):

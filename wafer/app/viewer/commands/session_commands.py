@@ -93,7 +93,7 @@ def list_bookmarks(ctx):
 
 class BookmarkCommands(ActionKit.MenuBase):
     NAME = "Bookmark"
-    PRIORITY = 75
+    PRIORITY = 65
 
     @classmethod
     def commands(cls):

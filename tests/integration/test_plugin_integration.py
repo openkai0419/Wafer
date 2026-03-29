@@ -8,7 +8,7 @@ from PIL import Image
 from PySide6 import QtCore, QtGui
 
 from wafer.utils.paths import normalize_path
-from wafer.plugin.registry import PluginRegistry, BasePlugin
+from wafer.plugin.registry import FilePluginRegistry, BasePlugin
 from wafer.plugin.grid.handler import grid_resolver
 from wafer.plugin.grid.base import ImageGridPlugin, WidgetGridPlugin, BaseGridPlugin
 from wafer.plugin.collector.handler import collector_resolver
@@ -333,7 +333,7 @@ class TestIndexingWithVariousFileTypes:
 class TestPluginRegistryDynamics:
 
     def test_register_and_resolve(self):
-        registry = PluginRegistry()
+        registry = FilePluginRegistry()
 
         class TestPlugin(BasePlugin):
             NAME = '_test_dynamic'
@@ -345,7 +345,7 @@ class TestPluginRegistryDynamics:
         assert registry.resolve('file.other') is None
 
     def test_priority_ordering(self):
-        registry = PluginRegistry()
+        registry = FilePluginRegistry()
 
         class LowPriority(BasePlugin):
             NAME = '_low'
@@ -363,7 +363,7 @@ class TestPluginRegistryDynamics:
         assert resolved == HighPriority
 
     def test_name_overwrite(self):
-        registry = PluginRegistry()
+        registry = FilePluginRegistry()
 
         class PluginV1(BasePlugin):
             NAME = '_versioned'
@@ -381,7 +381,7 @@ class TestPluginRegistryDynamics:
         assert registry.resolve('file.ver') == PluginV2
 
     def test_catch_all_plugin(self):
-        registry = PluginRegistry()
+        registry = FilePluginRegistry()
 
         class CatchAll(BasePlugin):
             NAME = '_catchall'

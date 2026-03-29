@@ -1,13 +1,13 @@
 from PySide6 import QtGui
 
-from ..registry import PluginRegistry
+from ..registry import FilePluginRegistry
 from .base import BaseViewerPlugin, ImageViewerPlugin, WidgetViewerPlugin
 
 
 class ViewerResolver:
 
     def __init__(self):
-        self.registry = PluginRegistry()
+        self.registry = FilePluginRegistry()
 
     def create_default_widget(self, parent=None):
         from ...app.viewer.preview.image_viewer import ImageDisplayWidget

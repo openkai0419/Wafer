@@ -258,7 +258,13 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             lambda msg: (
                 _invoke('close_by_session_delete') if msg.payload == self.session_id else None,
                 True,
-            )[-1]        ).subscribe('dev.log', lambda msg: self._handle_remote_log(msg) or True
+            )[-1]
+        ).subscribe('session.restart',
+            lambda msg: (
+                _invoke('close_by_restart') if msg.payload == self.session_id else None,
+                True,
+            )[-1]
+        ).subscribe('dev.log', lambda msg: self._handle_remote_log(msg) or True
         ).subscribe('db.created',
             lambda msg: (_invoke('_on_db_created', QtCore.Q_ARG(str, str(msg.payload))), True)[-1]
         ).subscribe('db.deleted',
@@ -498,6 +504,16 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
     @QtCore.Slot()
     def close_by_session_delete(self):
         self._session_deleted = True
+        self.close()
+
+    @QtCore.Slot()
+    def close_by_restart(self):
+        self._save_session()
+        from ...core.platform.process import AppProcess
+        args = ['--viewer']
+        if self.session_id:
+            args += ['--session', self.session_id]
+        AppProcess.new_main(*args)
         self.close()
 
     @QtCore.Slot()

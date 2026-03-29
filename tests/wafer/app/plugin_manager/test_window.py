@@ -568,23 +568,13 @@ class TestPluginManagerCommands:
         assert ('terminate', ('--tray',)) in calls
         assert ('new_main', ('--tray',)) in calls
 
-    def test_restart_viewer_calls_process(self, monkeypatch):
-        calls = []
-        monkeypatch.setattr(
-            'wafer.app.plugin_manager.commands.AppProcess',
-            type('', (), {
-                'new_main': staticmethod(lambda *a: calls.append(('new_main', a))),
-            })(),
-        )
+    def test_restart_viewer_delegates_to_close_by_restart(self):
         from wafer.app.plugin_manager.commands import restart_viewer
         mock_w = MagicMock()
-        mock_w.session_id = 'abc123'
         ctx = MagicMock()
         ctx.get_instance.return_value = mock_w
         restart_viewer(ctx)
-        assert any('--viewer' in a[1] for a in calls)
-        assert any('abc123' in a[1] for a in calls)
-        mock_w.close.assert_called_once()
+        mock_w.close_by_restart.assert_called_once()
 
     def test_restart_all_calls_both(self, monkeypatch):
         calls = []
@@ -595,17 +585,25 @@ class TestPluginManagerCommands:
                 'new_main': staticmethod(lambda *a: calls.append(('new_main', a))),
             })(),
         )
+        mock_store = MagicMock()
+        mock_store.get_active_session_ids.return_value = ['sess1', 'sess2']
+        monkeypatch.setattr(
+            'wafer.app.plugin_manager.commands.SessionStore',
+            lambda: mock_store,
+        )
         from wafer.app.plugin_manager.commands import restart_all
+        mock_node = MagicMock()
         mock_w = MagicMock()
         mock_w.session_id = 'sess1'
+        mock_w._node = mock_node
         ctx = MagicMock()
         ctx.get_instance.return_value = mock_w
         restart_all(ctx)
         assert ('terminate', ('--tray',)) in calls
         assert ('new_main', ('--tray',)) in calls
-        assert any('--viewer' in a[1] for a in calls)
-        assert any('sess1' in a[1] for a in calls)
-        mock_w.close.assert_called_once()
+        mock_node.send.assert_called_once_with('session.restart', 'sess2', dst='viewer')
+        mock_w.close_by_restart.assert_called_once()
+        mock_store.set_restore_session_ids.assert_called_once_with(['sess1', 'sess2'])
 
 
 class TestDataTab:

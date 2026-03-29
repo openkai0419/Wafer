@@ -1,5 +1,6 @@
 from ...core.commands.bridge import ActionKit
 from ...core.platform.process import AppProcess
+from ...app.viewer.session import SessionStore
 
 
 def open_plugin_manager(ctx):
@@ -15,28 +16,30 @@ def restart_tray(ctx):
 
 
 def restart_viewer(ctx):
-    from PySide6 import QtWidgets
     w = ctx.get_instance("MainWindow")
-    session_id = getattr(w, 'session_id', None)
-    args = ['--viewer']
-    if session_id:
-        args += ['--session', session_id]
-    AppProcess.new_main(*args)
     if w:
-        w.close()
+        w.close_by_restart()
 
 
 def restart_all(ctx):
+    w = ctx.get_instance("MainWindow")
+    node = getattr(w, '_node', None)
+    store = SessionStore().instance()
+    active_ids = store.get_active_session_ids()
+    own_sid = getattr(w, 'session_id', None)
+
+    store.set_restore_session_ids(active_ids)
+
+    if node:
+        for sid in active_ids:
+            if sid != own_sid:
+                node.send('session.restart', sid, dst='viewer')
+
     AppProcess.terminate_cmd('--tray')
     AppProcess.new_main('--tray')
-    w = ctx.get_instance("MainWindow")
-    session_id = getattr(w, 'session_id', None)
-    args = ['--viewer']
-    if session_id:
-        args += ['--session', session_id]
-    AppProcess.new_main(*args)
+
     if w:
-        w.close()
+        w.close_by_restart()
 
 
 class PluginManagerCommands(ActionKit.MenuBase):

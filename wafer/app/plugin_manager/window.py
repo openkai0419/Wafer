@@ -5,6 +5,7 @@ from ...plugin.settings import PluginSettings
 from ...core.qt.dispatcher import Dispatcher
 from ...core.qt.thread import utility_pool
 from ...core.ipc.node import Node
+from ...core.commands.bridge import ActionKit
 
 
 def _hex_rgb(hex_color: str) -> str:
@@ -242,17 +243,7 @@ class PluginManagerDialog(QtWidgets.QDialog):
         msg.exec()
         self.close()
         if msg.clickedButton() == restart_btn:
-            from ...core.platform.process import AppProcess
-            AppProcess.terminate_cmd('--tray')
-            AppProcess.new_main('--tray')
-            main_window = self.parent()
-            session_id = getattr(main_window, 'session_id', None)
-            args = ['--viewer']
-            if session_id:
-                args += ['--session', session_id]
-            AppProcess.new_main(*args)
-            if main_window:
-                main_window.close()
+            ActionKit.Command.run("setting.restart_all")
 
     def _sync_tabs(self):
         from .viewers_tab import REGISTRY_KEYS

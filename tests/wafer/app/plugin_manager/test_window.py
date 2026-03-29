@@ -6,6 +6,20 @@ from unittest.mock import MagicMock, patch
 from wafer.plugin.registry import BasePlugin
 
 
+class _FakeLayoutStore:
+    def __init__(self, *a, **kw): pass
+    def save(self, *a, **kw): pass
+    def restore(self, *a, **kw): pass
+
+
+@pytest.fixture(autouse=True)
+def _isolate_layout_store(monkeypatch):
+    monkeypatch.setattr(
+        'wafer.app.plugin_manager.window.DialogLayoutStore',
+        _FakeLayoutStore,
+    )
+
+
 class TestExtensionsTab:
 
     def test_scan_finds_extension_folders(self, qtbot, tmp_path, monkeypatch):

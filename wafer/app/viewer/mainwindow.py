@@ -52,6 +52,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.setting_db = None
         self.window_state = WindowStateController(self)
         self._last_paths = None
+        self._folder_changed = False
         self._dispatcher = Dispatcher(utility_pool)
         self._db_reload_cancel: CancelToken | None = None
         self.search_service = SearchService(lambda: self.database_path, parent=self)
@@ -103,8 +104,8 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.search_service.reset_state()
         self._last_paths = None
         self.search_row_widget.invalidate_key_cache()
-        self.progress_bar.setProgress(int(0))
-        self.progress_bar.setMaximum(int(0))
+        self.progress_bar.setProgress(0)
+        self.progress_bar.setMaximum(0)
         self.refresh_db_selector()
         self._update_title()
         AppLogger.info(f'reload_database: {name}')
@@ -118,12 +119,16 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         db_path = setting_db_path(name)
 
         def task():
-            sdb = SettingDB(db_path)
-            roots = sdb.get_all_parent_folders()
-            excluded = sdb.get_all_ignore_folders()
-            if cancel.is_cancelled():
-                return
-            self._dispatcher.invoke(lambda: self._apply_db_reload(sdb, roots, excluded, cancel, on_complete))
+            try:
+                sdb = SettingDB(db_path)
+                roots = sdb.get_all_parent_folders()
+                excluded = sdb.get_all_ignore_folders()
+                if cancel.is_cancelled():
+                    return
+                self._dispatcher.invoke(lambda: self._apply_db_reload(sdb, roots, excluded, cancel, on_complete))
+            except Exception as e:
+                AppLogger.error(f'Failed to load database: {name}', exc=e)
+                self._dispatcher.invoke(lambda: self._on_db_reload_failed(name, e))
 
         self._dispatcher.post(task, priority=8, cancel=cancel)
 
@@ -141,6 +146,11 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
                 self.folder_view.get_selected_paths(),
             )
             QtCore.QTimer.singleShot(0, lambda: self.search(force=True))
+
+    def _on_db_reload_failed(self, name, exc):
+        self._db_reload_cancel = None
+        self._hide_loading()
+        Notifier.error(f'Failed to load database "{name}"')
 
     def _update_title(self):
         if self._session_entry and self._session_entry.name:
@@ -238,6 +248,13 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         def _invoke(slot, *args):
             QtCore.QMetaObject.invokeMethod(self, slot, QtCore.Qt.QueuedConnection, *args)
 
+        def _for_session(slot):
+            def handler(msg):
+                if msg.payload == self.session_id:
+                    _invoke(slot)
+                return True
+            return handler
+
         self._node = Node('viewer')
         self._node.session_id = self.session_id
         self._node.subscribe('update', _guarded(
@@ -250,26 +267,16 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             lambda msg: _invoke('reload_folderlist')
         )).subscribe('show_toggle', _guarded(
             lambda msg: _invoke('toggle_show', QtCore.Q_ARG(bool, bool(msg.payload)))
-        )).subscribe('session.focus',
-            lambda msg: (
-                _invoke('raise_window') if msg.payload == self.session_id else None,
-                True,
-            )[-1]        ).subscribe('session.close',
-            lambda msg: (
-                _invoke('close_by_session_delete') if msg.payload == self.session_id else None,
-                True,
-            )[-1]
-        ).subscribe('session.restart',
-            lambda msg: (
-                _invoke('close_by_restart') if msg.payload == self.session_id else None,
-                True,
-            )[-1]
-        ).subscribe('dev.log', lambda msg: self._handle_remote_log(msg) or True
-        ).subscribe('db.created',
-            lambda msg: (_invoke('_on_db_created', QtCore.Q_ARG(str, str(msg.payload))), True)[-1]
-        ).subscribe('db.deleted',
-            lambda msg: (_invoke('_on_db_deleted', QtCore.Q_ARG(str, str(msg.payload))), True)[-1]
-        )
+        )).subscribe('session.focus', _for_session('raise_window')
+        ).subscribe('session.close', _for_session('close_by_session_delete')
+        ).subscribe('session.restart', _for_session('close_by_restart')
+        ).subscribe('dev.log', _guarded(
+            lambda msg: self._handle_remote_log(msg)
+        )).subscribe('db.created', _guarded(
+            lambda msg: _invoke('_on_db_created', QtCore.Q_ARG(str, str(msg.payload)))
+        )).subscribe('db.deleted', _guarded(
+            lambda msg: _invoke('_on_db_deleted', QtCore.Q_ARG(str, str(msg.payload)))
+        ))
         self._node.start()
         AppLogger.set_node(self._node, role='viewer')
 
@@ -303,6 +310,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
                 IconButtonConfig('fullscreen', 'Full Screen', lambda: Command.invoke("win.toggle_fullscreen")),
             ],
         )
+        self._subfolder_btn = self.iconbar.right_buttons[0]
         self.database_combo = ComboBoxWithButtons()
         self.database_combo.textChanged.connect(self.reload_database)
         self.database_combo.addClicked.connect(lambda: Command.invoke("db.add_database"))
@@ -435,8 +443,11 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             if state['scroll_anchor'] in _SCROLL_ANCHOR_CMDS:
                 Command.set_action_group_current('grid_scroll_anchor', state['scroll_anchor'], save=False)
         if 'zoom' in state:
-            QtCore.QTimer.singleShot(500, lambda: setattr(
-                self.grid_view, '_zoom_restore_guard', False))
+            self.grid_view.layout_ready.connect(
+                self._clear_zoom_restore_guard, QtCore.Qt.SingleShotConnection)
+
+    def _clear_zoom_restore_guard(self):
+        self.grid_view._zoom_restore_guard = False
 
     def _sync_service_from_ui(self):
         dirs = self.folder_view.get_selected_paths()
@@ -470,7 +481,14 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
     @qt_debounce(1000)
     def reload_folderlist(self):
         AppLogger.debug('[RUNNING] reload_folderlist')
-        self.folder_view.reload_tree()
+        if self.setting_db:
+            state = self.folder_view.get_state()
+            roots = self.setting_db.get_all_parent_folders()
+            excluded = self.setting_db.get_all_ignore_folders()
+            self.folder_view.set_folders(roots, excluded)
+            self.folder_view.set_state(state)
+        else:
+            self.folder_view.reload_tree()
 
     def moveEvent(self, event):
         super().moveEvent(event)
@@ -495,8 +513,8 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.search_service.execute_if_auto()
 
     @QtCore.Slot(bool)
-    def toggle_show(self, state):
-        if self.isMinimized() or not self.isVisible():
+    def toggle_show(self, show):
+        if show:
             self.window_state.restore_or_activate()
         else:
             self.window_state.minimize()
@@ -532,10 +550,9 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
 
     def _on_search_params_changed(self, changed):
         if 'include_subfolders' in changed:
-            btn = self.iconbar.right_buttons[0]
-            btn.blockSignals(True)
-            btn.setChecked(changed['include_subfolders'])
-            btn.blockSignals(False)
+            self._subfolder_btn.blockSignals(True)
+            self._subfolder_btn.setChecked(changed['include_subfolders'])
+            self._subfolder_btn.blockSignals(False)
 
     def _show_loading(self):
         self.loading_indicator.start()
@@ -554,7 +571,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
     @QtCore.Slot(object, object, object)
     @profiler.profile
     def _on_search_finished(self, paths, sources, aspects):
-        keep_scroll = not getattr(self, '_folder_changed', False)
+        keep_scroll = not self._folder_changed
         self._folder_changed = False
         self.search_row_widget.run_folder_worker(self.database_path, self.folder_view.get_selected_paths())
         if paths == self._last_paths:
@@ -686,9 +703,6 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
                 self._node.stop()
         except Exception as e:
             AppLogger.debug(f'on_close node.stop failed: {e}')
-
-    def closeEvent(self, event):
-        return super().closeEvent(event)
 
     def _setup_dev_panel(self):
         if not DEV_MODE:

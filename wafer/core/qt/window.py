@@ -80,3 +80,31 @@ class WindowStateController:
             self._window.restoreGeometry(geo)
         if 'always_on_top' in state:
             self.set_always_on_top(state['always_on_top'])
+
+
+class DialogLayoutStore:
+
+    def __init__(self, dialog_key: str, ini_filename: str = 'dialog_layout.ini'):
+        from ...utils.paths import resolve_data_path
+        self._settings = QtCore.QSettings(
+            str(resolve_data_path(ini_filename)), QtCore.QSettings.IniFormat,
+        )
+        self._key = dialog_key
+
+    def save(self, dialog: QtWidgets.QDialog, **splitters: QtWidgets.QSplitter):
+        self._settings.setValue(f'{self._key}/geometry', dialog.saveGeometry())
+        for name, splitter in splitters.items():
+            self._settings.setValue(f'{self._key}/{name}', splitter.sizes())
+        self._settings.sync()
+
+    def restore(self, dialog: QtWidgets.QDialog, **splitters: QtWidgets.QSplitter):
+        geo = self._settings.value(f'{self._key}/geometry')
+        if geo:
+            dialog.restoreGeometry(geo)
+        for name, splitter in splitters.items():
+            raw = self._settings.value(f'{self._key}/{name}')
+            if raw and isinstance(raw, list):
+                try:
+                    splitter.setSizes([int(s) for s in raw])
+                except (ValueError, TypeError):
+                    pass

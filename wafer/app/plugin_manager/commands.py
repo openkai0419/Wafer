@@ -3,9 +3,18 @@ from ...core.platform.process import AppProcess
 from ...app.viewer.session import SessionStore
 
 
+def _resolve_node(ctx):
+    w = ctx.get_instance("MainWindow")
+    if w:
+        return w, getattr(w, '_node', None)
+    tray = ctx.get_instance("Tray")
+    if tray:
+        return None, getattr(tray, '_node', None)
+    return None, None
+
+
 def open_plugin_manager(ctx):
-    parent = ctx.get_instance("MainWindow")
-    node = getattr(parent, '_node', None)
+    parent, node = _resolve_node(ctx)
     from .window import PluginManagerDialog
     PluginManagerDialog.open(parent=parent, node=node)
 

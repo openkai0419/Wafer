@@ -19,6 +19,11 @@
 - QSizeデフォルト引数はNone→関数内でdpix()解決
 - 除外: QGraphicsScene内シーン座標、QPixmap内描画座標、0px、1px極小ボーダー
 
+■ アイコンとテーマカラー
+- ボタンアイコンは文字列('+', '−'等)で表現しない。必ずthemed_icon(key)を使用する
+- accentやerror等の差し色を除き、汎用的なUI色（背景、ボーダー、hover等）をハードコードしない。ThemeManager.instance().paletteの色ロールを使用する
+- dark/light分岐による色のハードコードは禁止。ThemePaletteが一元管理する
+
 ■ 例外処理
 - error()はログのみ。raiseは呼び出し側が明示的に行う
 - 元の例外型を保持（RuntimeErrorへの変換禁止）。raise from exc を使う

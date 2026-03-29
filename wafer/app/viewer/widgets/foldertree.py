@@ -855,9 +855,6 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
 
     @profiler.profile
     def reload_tree(self):
-        import traceback
-        caller = traceback.extract_stack(limit=3)[0]
-        AppLogger.debug(f'[FolderTree.reload_tree] called from {caller.filename}:{caller.lineno} {caller.name}')
         state = self.get_state()
         roots = [item.data(USER_ROLE_PATH) for item in iter_root_items(self.model_)]
         self.model_.clear()

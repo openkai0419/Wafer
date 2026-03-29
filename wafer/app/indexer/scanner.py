@@ -279,14 +279,19 @@ class DirectoryScanner:
             return
         token = self._current_token
         self._progress.increment(0, len(to_remove))
-        for i in range(0, len(to_remove), _CHUNK):
-            chunk = to_remove[i:i + _CHUNK]
+        chunks = [to_remove[i:i + _CHUNK] for i in range(0, len(to_remove), _CHUNK)]
+        last_idx = len(chunks) - 1
+        for idx, chunk in enumerate(chunks):
+            is_last = idx == last_idx
             self._scheduler.submit(Task.create(
                 'delete_sources',
                 priority=TaskPriority.SCAN,
                 run=lambda c=chunk: self._writer.delete_sources(c),
                 cancel_token=token,
-                on_complete=lambda n=len(chunk): self._progress.increment(n, 0),
+                on_complete=lambda n=len(chunk), last=is_last: (
+                    self._progress.increment(n, 0),
+                    self._progress.send_event('update') if last else None,
+                ),
             ))
         AppLogger.info(f'[Scanner] Submitted removal of {len(to_remove)} excluded entries')
 

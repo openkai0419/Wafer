@@ -6,6 +6,7 @@ from ...core.qt.dispatcher import Dispatcher
 from ...core.qt.thread import utility_pool
 from ...core.ipc.node import Node
 from ...core.commands.bridge import ActionKit, Command
+from ...core.qt.window import DialogLayoutStore
 
 
 def _hex_rgb(hex_color: str) -> str:
@@ -151,12 +152,13 @@ class PluginManagerDialog(QtWidgets.QDialog):
         self.setWindowTitle('Plugin Manager')
         self.setWindowFlags(self.windowFlags() | QtCore.Qt.Window)
         self.setAttribute(QtCore.Qt.WA_DeleteOnClose)
-        self.resize(dpix(1000), dpix(550))
+        self.resize(dpix(550), dpix(1000))
         self.setStyleSheet(_build_stylesheet())
 
         self._settings = PluginSettings()
         self._dispatcher = Dispatcher(utility_pool)
         self._node = node
+        self._layout_store = DialogLayoutStore('plugin_manager')
 
         from .extensions_tab import ExtensionsTab
         self._ext_tab = ExtensionsTab(
@@ -187,20 +189,15 @@ class PluginManagerDialog(QtWidgets.QDialog):
         self._initial_orders = dict(saved_orders)
         self._tabs.addTab(self._scrollable(self._order_tab), 'Order')
 
-        from .data_tab import DataTab
-        self._data_tab = DataTab(self._dispatcher)
-        self._data_tab.purge_requested.connect(self._send_purge)
-        self._tabs.addTab(self._scrollable(self._data_tab), 'Data')
-
         self._ext_tab.enabled_changed.connect(self._sync_tabs)
 
-        splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
-        splitter.addWidget(self._ext_tab)
-        splitter.addWidget(self._tabs)
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 1)
-        splitter.setChildrenCollapsible(False)
-        self._ext_tab.setMinimumHeight(dpix(120))
+        self._splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
+        self._splitter.addWidget(self._ext_tab)
+        self._splitter.addWidget(self._tabs)
+        self._splitter.setStretchFactor(0, 1)
+        self._splitter.setStretchFactor(1, 1)
+        self._splitter.setChildrenCollapsible(False)
+        self._ext_tab.setMinimumHeight(dpix(220))
         self._tabs.setMinimumHeight(dpix(120))
 
         save_btn = QtWidgets.QPushButton('Save')
@@ -219,8 +216,10 @@ class PluginManagerDialog(QtWidgets.QDialog):
         p = dpix(6)
         layout.setContentsMargins(p, p, p, p)
         layout.setSpacing(p)
-        layout.addWidget(splitter, 1)
+        layout.addWidget(self._splitter, 1)
         layout.addLayout(btn_layout)
+
+        self._layout_store.restore(self, splitter=self._splitter)
 
     def _has_plugin_changes(self, enabled, orders):
         if enabled != self._initial_enabled:
@@ -286,6 +285,7 @@ class PluginManagerDialog(QtWidgets.QDialog):
         AppLogger.info(f'[PluginManager] Sent purge for {len(pairs)} pairs')
 
     def closeEvent(self, event):
+        self._layout_store.save(self, splitter=self._splitter)
         self._ext_tab.cancel_pending()
         PluginManagerDialog._instance = None
         super().closeEvent(event)

@@ -86,6 +86,8 @@ class IndexerProcess:
         self.setting_watcher = SettingWatcher(self.setting_db)
         self.setting_watcher.parent_folders_changed.connect(self.folder_watcher.start)
         self.setting_watcher.ignore_folders_changed.connect(self.folder_watcher.set_ignore_paths)
+        self.setting_watcher.parent_folders_changed.connect(lambda _: progress.send_event('folderchanged'))
+        self.setting_watcher.ignore_folders_changed.connect(lambda _: progress.send_event('folderchanged'))
         self.setting_watcher.start()
 
         if is_new:

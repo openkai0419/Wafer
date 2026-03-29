@@ -95,6 +95,16 @@ def _debug_test2(ctx=None):
     AppLogger.info(AppProcess.get_by_args_subset('--indexer'))
 
 
+def open_plugin_manager_from_tray(ctx=None):
+    from ...app.plugin_manager.commands import open_plugin_manager
+    open_plugin_manager(ctx)
+
+
+def open_database_manager_from_tray(ctx=None):
+    from ...app.database_manager.commands import open_database_manager
+    open_database_manager(ctx)
+
+
 def quit_app(ctx=None):
     QtWidgets.QApplication.quit()
 
@@ -109,6 +119,9 @@ class TrayMenu(ActionKit.MenuBase):
             "-",
             ActionKit.Command(path="rescan_all", display="ReScan All", func=rescan_all),
             ActionKit.Command(path="cleanup_optimize", display="Cleanup and Optimize", func=cleanup_optimize),
+            "-",
+            ActionKit.Command(path="setting.database_manager", display="Database Manager", func=open_database_manager_from_tray),
+            ActionKit.Command(path="setting.plugin_manager", display="Plugin Manager", func=open_plugin_manager_from_tray),
         ]
         if DEV_MODE:
             items += [

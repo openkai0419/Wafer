@@ -64,11 +64,11 @@ class WindowCommands(ActionKit.MenuBase):
             ActionKit.Command(path="win.show_settings", display="Settings", func=show_settings),
             ActionKit.Command(path="win.toggle_fullscreen", display="Full Screen", func=toggle_fullscreen),
             ActionKit.Command(path="win.toggle_always_on_top", display="Always on Top", func=toggle_always_on_top, checkable=True),
-            ActionKit.Command(path="win.new_window", display="New Window", func=create_session),
-            ActionKit.Command(path="win.session_list", display="Session List", func=show_session_popup),
             ActionKit.Command(path="win.toggle_language", display="Toggle Language", func=toggle_language),
             "-",
             ":Session",
+            ActionKit.Command(path="win.new_window", display="New Window", func=create_session),
+            ActionKit.Command(path="win.session_list", display="Session List", func=show_session_popup),
             ActionKit.Command(
                 path="win.open_session", display="Open Session", func=open_session,
                 params=[ActionKit.Param(name="session", value=_session_names, required=True)],

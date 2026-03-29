@@ -386,16 +386,37 @@ class FileDB:
             cur = self.conn.cursor()
             try:
                 if image_entries:
-                    cur.executemany(_SQL_UPSERT_FILES_COALESCE, image_entries)
+                    try:
+                        cur.executemany(_SQL_UPSERT_FILES_COALESCE, image_entries)
+                    except sqlite3.IntegrityError:
+                        existing = self._existing_sources(cur)
+                        image_entries = [e for e in image_entries if e[1] in existing]
+                        collector_status_entries = [
+                            e for e in (collector_status_entries or []) if e[0] in existing
+                        ]
+                        if image_entries:
+                            cur.executemany(_SQL_UPSERT_FILES_COALESCE, image_entries)
                 if meta_info_entries:
                     cur.executemany(_SQL_UPSERT_META, meta_info_entries)
                 self._ensure_hash_indexes(cur, [], tag_entries)
                 if tag_entries:
                     cur.executemany(_SQL_UPSERT_TAGS, tag_entries)
                 if collector_status_entries:
-                    cur.executemany(_SQL_UPSERT_COLLECTION_STATUS, collector_status_entries)
+                    try:
+                        cur.executemany(_SQL_UPSERT_COLLECTION_STATUS, collector_status_entries)
+                    except sqlite3.IntegrityError:
+                        existing = self._existing_sources(cur)
+                        collector_status_entries = [
+                            e for e in collector_status_entries if e[0] in existing
+                        ]
+                        if collector_status_entries:
+                            cur.executemany(_SQL_UPSERT_COLLECTION_STATUS, collector_status_entries)
             finally:
                 cur.close()
+
+    def _existing_sources(self, cur):
+        cur.execute('SELECT source FROM sources')
+        return {row[0] for row in cur.fetchall()}
 
     @profiler.profile
     def insert_pending_collection(self, sources, collectors):

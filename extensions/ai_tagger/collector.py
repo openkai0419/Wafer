@@ -8,7 +8,6 @@ from wafer.plugin import BaseSingletonCollector, CollectorResult
 from wafer.utils.logs import AppLogger
 
 from ._downloader import ensure_model
-from ._inference import WD14Inference
 
 GENERAL_THRESHOLD = 0.057
 CHARACTER_THRESHOLD = 0.8
@@ -25,11 +24,8 @@ class WD14TaggerCollector(BaseSingletonCollector):
     @classmethod
     def post_install(cls, plugin_dir, on_progress=None):
         from wafer.plugin.installer import install_packages
-        try:
-            if not install_packages(plugin_dir, ['onnxruntime-gpu', 'nvidia-cudnn-cu12'], on_progress):
-                raise RuntimeError('GPU install failed')
-        except Exception:
-            AppLogger.info('onnxruntime-gpu unavailable, falling back to CPU')
+        if not install_packages(plugin_dir, ['onnxruntime-gpu'], on_progress):
+            AppLogger.warning('onnxruntime-gpu unavailable, falling back to CPU')
             install_packages(plugin_dir, ['onnxruntime'], on_progress)
         ensure_model()
 
@@ -48,6 +44,7 @@ class WD14TaggerCollector(BaseSingletonCollector):
         with self._engine_lock:
             if self._engine is not None:
                 return
+            from ._inference import WD14Inference
             model_dir = ensure_model()
             self._engine = WD14Inference(model_dir)
             AppLogger.info(

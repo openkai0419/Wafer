@@ -31,7 +31,7 @@ class TestExtensionsTab:
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab._needs_install',
+            'wafer.app.plugin_manager.extensions_tab.needs_setup',
             lambda folder: False,
         )
         from wafer.core.qt.dispatcher import Dispatcher
@@ -53,7 +53,7 @@ class TestExtensionsTab:
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab._needs_install',
+            'wafer.app.plugin_manager.extensions_tab.needs_setup',
             lambda folder: False,
         )
         class FakePlugin(BasePlugin):
@@ -73,7 +73,7 @@ class TestExtensionsTab:
         result = tab.collect_enabled()
         assert 'grid:FakePlugin' in result
 
-    def test_needs_install_shows_button(self, qtbot, tmp_path, monkeypatch):
+    def test_needs_setup_shows_button(self, qtbot, tmp_path, monkeypatch):
         ext_dir = tmp_path / 'extensions'
         (ext_dir / 'uninstalled').mkdir(parents=True)
         (ext_dir / 'uninstalled' / '__init__.py').write_text('')
@@ -82,7 +82,7 @@ class TestExtensionsTab:
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab._needs_install',
+            'wafer.app.plugin_manager.extensions_tab.needs_setup',
             lambda folder: True,
         )
         from wafer.core.qt.dispatcher import Dispatcher
@@ -103,7 +103,7 @@ class TestExtensionsTab:
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab._needs_install',
+            'wafer.app.plugin_manager.extensions_tab.needs_setup',
             lambda folder: False,
         )
 
@@ -142,7 +142,7 @@ class TestExtensionsTab:
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab._needs_install',
+            'wafer.app.plugin_manager.extensions_tab.needs_setup',
             lambda folder: False,
         )
 
@@ -176,7 +176,7 @@ class TestExtensionsTab:
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab._needs_install',
+            'wafer.app.plugin_manager.extensions_tab.needs_setup',
             lambda folder: False,
         )
 
@@ -206,6 +206,208 @@ class TestExtensionsTab:
         assert GridP in grids
         assert len(viewers) == 1
         assert len(grids) == 1
+
+    def test_install_checks_shared_first(self, qtbot, tmp_path, monkeypatch):
+        ext_dir = tmp_path / 'extensions'
+        (ext_dir / 'ext1').mkdir(parents=True)
+        (ext_dir / 'ext1' / '__init__.py').write_text('')
+        (ext_dir / 'ext1' / 'requirements.txt').write_text('some-pkg\n')
+        monkeypatch.setattr(
+            'wafer.app.plugin_manager.extensions_tab.get_plugin_dir',
+            lambda: str(ext_dir),
+        )
+        monkeypatch.setattr(
+            'wafer.app.plugin_manager.extensions_tab.needs_setup',
+            lambda folder: True,
+        )
+        from wafer.core.qt.dispatcher import Dispatcher
+        dispatcher = Dispatcher()
+        from wafer.app.plugin_manager.extensions_tab import ExtensionsTab
+        tab = ExtensionsTab(set(), dispatcher)
+
+        called = []
+
+        class DummyPlugin(BasePlugin):
+            NAME = 'dummy'
+            EXTENSIONS = ('.d',)
+            PRIORITY = 1
+
+        monkeypatch.setattr(
+            'wafer.app.plugin_manager.extensions_tab.install_extension',
+            lambda d, e, on_progress=None, is_cancelled=None: (
+                called.append('install_extension'),
+                (True, True, [('grid', DummyPlugin)]),
+            )[1],
+        )
+
+        card = tab._cards['ext1']
+        tab._install_extension(card)
+        qtbot.waitUntil(lambda: len(called) > 0, timeout=5000)
+        assert called == ['install_extension']
+
+    def test_install_skips_extension_on_shared_failure(self, qtbot, tmp_path, monkeypatch):
+        ext_dir = tmp_path / 'extensions'
+        (ext_dir / 'ext1').mkdir(parents=True)
+        (ext_dir / 'ext1' / '__init__.py').write_text('')
+        (ext_dir / 'ext1' / 'requirements.txt').write_text('some-pkg\n')
+        monkeypatch.setattr(
+            'wafer.app.plugin_manager.extensions_tab.get_plugin_dir',
+            lambda: str(ext_dir),
+        )
+        monkeypatch.setattr(
+            'wafer.app.plugin_manager.extensions_tab.needs_setup',
+            lambda folder: True,
+        )
+        from wafer.core.qt.dispatcher import Dispatcher
+        dispatcher = Dispatcher()
+        from wafer.app.plugin_manager.extensions_tab import ExtensionsTab
+        tab = ExtensionsTab(set(), dispatcher)
+
+        monkeypatch.setattr(
+            'wafer.app.plugin_manager.extensions_tab.install_extension',
+            lambda d, e, on_progress=None, is_cancelled=None: (False, False, []),
+        )
+
+        card = tab._cards['ext1']
+        tab._install_extension(card)
+        import time
+        time.sleep(1)
+        qtbot.wait(200)
+        assert len(card._rows) == 0
+
+    def test_post_install_failure_shows_retry(self, qtbot, tmp_path, monkeypatch):
+        ext_dir = tmp_path / 'extensions'
+        (ext_dir / 'ext1').mkdir(parents=True)
+        (ext_dir / 'ext1' / '__init__.py').write_text('')
+        (ext_dir / 'ext1' / 'requirements.txt').write_text('some-pkg\n')
+        monkeypatch.setattr(
+            'wafer.app.plugin_manager.extensions_tab.get_plugin_dir',
+            lambda: str(ext_dir),
+        )
+        monkeypatch.setattr(
+            'wafer.app.plugin_manager.extensions_tab.needs_setup',
+            lambda folder: True,
+        )
+
+        class FailPostPlugin(BasePlugin):
+            NAME = 'fail_post'
+            EXTENSIONS = ('.fp',)
+            PRIORITY = 1
+
+            @classmethod
+            def post_install(cls, plugin_dir, on_progress=None):
+                raise RuntimeError('download failed')
+
+        monkeypatch.setattr(
+            'wafer.app.plugin_manager.extensions_tab.install_extension',
+            lambda d, e, on_progress=None, is_cancelled=None: (
+                True, False, [('grid', FailPostPlugin)]
+            ),
+        )
+
+        from wafer.core.qt.dispatcher import Dispatcher
+        dispatcher = Dispatcher()
+        from wafer.app.plugin_manager.extensions_tab import ExtensionsTab
+        tab = ExtensionsTab(set(), dispatcher)
+        card = tab._cards['ext1']
+        tab._install_extension(card)
+
+        qtbot.waitUntil(lambda: card._status_btn.text() == 'Retry', timeout=5000)
+        assert card._status_btn.isEnabled()
+        assert len(card._rows) > 0
+
+    def test_post_install_success_writes_stamp(self, qtbot, tmp_path, monkeypatch):
+        ext_dir = tmp_path / 'extensions'
+        (ext_dir / 'ext1').mkdir(parents=True)
+        (ext_dir / 'ext1' / '__init__.py').write_text('')
+        (ext_dir / 'ext1' / 'requirements.txt').write_text('some-pkg\n')
+        monkeypatch.setattr(
+            'wafer.app.plugin_manager.extensions_tab.get_plugin_dir',
+            lambda: str(ext_dir),
+        )
+        monkeypatch.setattr(
+            'wafer.app.plugin_manager.extensions_tab.needs_setup',
+            lambda folder: True,
+        )
+
+        class OkPlugin(BasePlugin):
+            NAME = 'ok_p'
+            EXTENSIONS = ('.ok',)
+            PRIORITY = 1
+
+            @classmethod
+            def post_install(cls, plugin_dir, on_progress=None):
+                pass
+
+        monkeypatch.setattr(
+            'wafer.app.plugin_manager.extensions_tab.install_extension',
+            lambda d, e, on_progress=None, is_cancelled=None: (
+                True, True, [('grid', OkPlugin)]
+            ),
+        )
+
+        from wafer.core.qt.dispatcher import Dispatcher
+        dispatcher = Dispatcher()
+        from wafer.app.plugin_manager.extensions_tab import ExtensionsTab
+        tab = ExtensionsTab(set(), dispatcher)
+        card = tab._cards['ext1']
+        tab._install_extension(card)
+
+        qtbot.waitUntil(lambda: card._status_btn.text() == 'Installed', timeout=5000)
+
+    def test_needs_setup_true_shows_install(self, qtbot, tmp_path, monkeypatch):
+        ext_dir = tmp_path / 'extensions'
+        (ext_dir / 'ext1').mkdir(parents=True)
+        (ext_dir / 'ext1' / '__init__.py').write_text('')
+        monkeypatch.setattr(
+            'wafer.app.plugin_manager.extensions_tab.get_plugin_dir',
+            lambda: str(ext_dir),
+        )
+        monkeypatch.setattr(
+            'wafer.app.plugin_manager.extensions_tab.needs_setup',
+            lambda folder: True,
+        )
+
+        from wafer.core.qt.dispatcher import Dispatcher
+        dispatcher = Dispatcher()
+        from wafer.app.plugin_manager.extensions_tab import ExtensionsTab
+        tab = ExtensionsTab(set(), dispatcher)
+
+        card = tab._cards['ext1']
+        assert card._status_btn.text() == 'Install'
+        assert card._status_btn.isEnabled()
+
+    def test_discover_shows_installed_when_setup_complete(self, qtbot, tmp_path, monkeypatch):
+        ext_dir = tmp_path / 'extensions'
+        (ext_dir / 'ext1').mkdir(parents=True)
+        (ext_dir / 'ext1' / '__init__.py').write_text('')
+        monkeypatch.setattr(
+            'wafer.app.plugin_manager.extensions_tab.get_plugin_dir',
+            lambda: str(ext_dir),
+        )
+        monkeypatch.setattr(
+            'wafer.app.plugin_manager.extensions_tab.needs_setup',
+            lambda folder: False,
+        )
+
+        class NoPostPlugin(BasePlugin):
+            NAME = 'nop'
+            EXTENSIONS = ('.np',)
+            PRIORITY = 1
+
+        monkeypatch.setattr(
+            'wafer.app.plugin_manager.extensions_tab.PluginLoader.discover_extension',
+            staticmethod(lambda folder: [('grid', NoPostPlugin)]),
+        )
+
+        from wafer.core.qt.dispatcher import Dispatcher
+        dispatcher = Dispatcher()
+        from wafer.app.plugin_manager.extensions_tab import ExtensionsTab
+        tab = ExtensionsTab(set(), dispatcher)
+
+        qtbot.waitUntil(lambda: len(tab._cards['ext1']._rows) > 0, timeout=3000)
+        card = tab._cards['ext1']
+        assert card._status_btn.text() == 'No Dependencies'
 
 
 class TestOrderTab:
@@ -793,7 +995,7 @@ class TestCloseEventCancels:
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab._needs_install',
+            'wafer.app.plugin_manager.extensions_tab.needs_setup',
             lambda folder: False,
         )
         from wafer.core.qt.dispatcher import Dispatcher, CancelSlot
@@ -822,11 +1024,9 @@ class TestPostInstallHook:
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab._needs_install',
+            'wafer.app.plugin_manager.extensions_tab.needs_setup',
             lambda folder: True,
         )
-
-        post_install_calls = []
 
         class HookPlugin(BasePlugin):
             NAME = 'hook_p'
@@ -835,15 +1035,13 @@ class TestPostInstallHook:
 
             @classmethod
             def post_install(cls, plugin_dir, on_progress=None):
-                post_install_calls.append(plugin_dir)
+                pass
 
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.install_requirements',
-            lambda path: True,
-        )
-        monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.PluginLoader.discover_extension',
-            staticmethod(lambda folder: [('viewer', HookPlugin)]),
+            'wafer.app.plugin_manager.extensions_tab.install_extension',
+            lambda d, e, on_progress=None, is_cancelled=None: (
+                True, True, [('viewer', HookPlugin)]
+            ),
         )
         from wafer.core.qt.dispatcher import Dispatcher
         dispatcher = Dispatcher()
@@ -853,8 +1051,7 @@ class TestPostInstallHook:
 
         card = tab._cards['vid_ext']
         tab._install_extension(card)
-        qtbot.waitUntil(lambda: len(post_install_calls) > 0, timeout=5000)
-        assert post_install_calls[0] == card.folder_path
+        qtbot.waitUntil(lambda: len(card._rows) > 0, timeout=5000)
 
     def test_post_install_not_called_when_absent(self, qtbot, tmp_path, monkeypatch):
         ext_dir = tmp_path / 'extensions'
@@ -865,7 +1062,7 @@ class TestPostInstallHook:
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab._needs_install',
+            'wafer.app.plugin_manager.extensions_tab.needs_setup',
             lambda folder: True,
         )
 
@@ -875,12 +1072,10 @@ class TestPostInstallHook:
             PRIORITY = 1
 
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.install_requirements',
-            lambda path: True,
-        )
-        monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.PluginLoader.discover_extension',
-            staticmethod(lambda folder: [('grid', PlainPlugin)]),
+            'wafer.app.plugin_manager.extensions_tab.install_extension',
+            lambda d, e, on_progress=None, is_cancelled=None: (
+                True, True, [('grid', PlainPlugin)]
+            ),
         )
         from wafer.core.qt.dispatcher import Dispatcher
         dispatcher = Dispatcher()

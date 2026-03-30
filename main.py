@@ -1,8 +1,16 @@
 import argparse
+import io
 import os
 import signal
 import sys
 import threading
+
+if getattr(sys, 'frozen', False):
+    if sys.stdout is None:
+        sys.stdout = io.StringIO()
+    if sys.stderr is None:
+        sys.stderr = io.StringIO()
+
 from wafer.utils.paths import list_setting_db_names
 from wafer.utils.process_lock import SafeProcessLock
 from wafer.utils.logs import AppLogger

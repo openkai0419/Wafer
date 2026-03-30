@@ -15,7 +15,9 @@ from ..utils.logs import AppLogger
 
 _DIR_NAME = '_python'
 _PACKAGES_DIR = '.packages'
+_SHARED_DIR = '.shared_packages'
 _INSTALL_STAMP = '.installed'
+_POST_INSTALL_STAMP = '.post_installed'
 
 _PYTHON_VERSION = '3.10.9'
 _PTH_NAME = 'python310._pth'
@@ -79,11 +81,11 @@ def _download_file(url: str, dest: str, *, max_bytes: int = _MAX_DOWNLOAD_BYTES,
     return received
 
 
-def _run_subprocess(cmd: list[str], on_progress=None, timeout: int = 300):
+def _run_subprocess(cmd: list[str], on_progress=None, timeout: int = 300, env=None):
     kwargs = {}
     if sys.platform == 'win32':
         kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
-    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, **kwargs)
+    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, env=env, **kwargs)
     stderr_chunks: list[bytes] = []
 
     def _drain():
@@ -234,17 +236,35 @@ class EmbeddedPython:
         if not self.is_ready:
             raise RuntimeError('Embedded Python is not ready')
         os.makedirs(target_dir, exist_ok=True)
+        env = _pip_env(target_dir)
         _run_subprocess(
             [
                 self._exe, '-m', 'pip',
                 'install', '--target', target_dir,
+                '--upgrade',
                 '-r', req_file,
                 '--quiet', '--disable-pip-version-check',
                 '--no-cache-dir',
             ],
             on_progress=on_progress,
             timeout=600,
+            env=env,
         )
+
+
+def _pip_env(target_dir: str) -> dict[str, str] | None:
+    if sys.platform != 'win32':
+        return None
+    target_drive = os.path.splitdrive(os.path.abspath(target_dir))[0]
+    temp_drive = os.path.splitdrive(tempfile.gettempdir())[0]
+    if target_drive.upper() == temp_drive.upper():
+        return None
+    tmp = os.path.join(target_drive + os.sep, 'Temp', 'pip_work')
+    os.makedirs(tmp, exist_ok=True)
+    env = os.environ.copy()
+    env['TEMP'] = tmp
+    env['TMP'] = tmp
+    return env
 
 
 def install_requirements(plugin_dir: str, on_progress=None) -> bool:
@@ -275,16 +295,19 @@ def install_packages(plugin_dir: str, packages: list[str], on_progress=None) -> 
             return False
         if not ep.is_ready:
             raise RuntimeError('Embedded Python is not ready')
+        env = _pip_env(vendor_dir)
         _run_subprocess(
             [
                 ep.exe_path, '-m', 'pip',
                 'install', '--target', vendor_dir,
+                '--upgrade',
                 *packages,
                 '--quiet', '--disable-pip-version-check',
                 '--no-cache-dir',
             ],
             on_progress=on_progress,
             timeout=600,
+            env=env,
         )
         AppLogger.info(f'[Installer] Packages installed to {os.path.basename(plugin_dir)}: {packages}')
         return True
@@ -293,3 +316,130 @@ def install_packages(plugin_dir: str, packages: list[str], on_progress=None) -> 
             f'[Installer] Package install failed for {os.path.basename(plugin_dir)}: {e}', exc=e
         )
         return False
+
+
+def write_post_install_stamp(plugin_dir: str):
+    vendor_dir = os.path.join(plugin_dir, _PACKAGES_DIR)
+    os.makedirs(vendor_dir, exist_ok=True)
+    Path(vendor_dir, _POST_INSTALL_STAMP).touch()
+
+
+def needs_install(plugin_dir: str) -> bool:
+    req_file = os.path.join(plugin_dir, 'requirements.txt')
+    if not os.path.isfile(req_file):
+        return False
+    vendor_dir = os.path.join(plugin_dir, _PACKAGES_DIR)
+    stamp = os.path.join(vendor_dir, _INSTALL_STAMP)
+    if not os.path.isfile(stamp):
+        return True
+    return os.path.getmtime(req_file) > os.path.getmtime(stamp)
+
+
+def needs_post_install(plugin_dir: str) -> bool:
+    req_file = os.path.join(plugin_dir, 'requirements.txt')
+    if not os.path.isfile(req_file):
+        return False
+    vendor_dir = os.path.join(plugin_dir, _PACKAGES_DIR)
+    stamp = os.path.join(vendor_dir, _POST_INSTALL_STAMP)
+    return not os.path.isfile(stamp)
+
+
+def needs_setup(plugin_dir: str) -> bool:
+    return needs_install(plugin_dir) or needs_post_install(plugin_dir)
+
+
+def has_post_install_hooks(plugins: list[tuple[str, type]]) -> bool:
+    from .registry import PluginBase
+    return any(
+        hasattr(cls, 'post_install')
+        and cls.post_install.__func__ is not PluginBase.post_install.__func__
+        for _, cls in plugins
+    )
+
+
+def install_extension(
+    plugin_dir: str,
+    extensions_dir: str,
+    on_progress=None,
+    is_cancelled=None,
+) -> tuple[bool, bool, list[tuple[str, type]]]:
+    if needs_install(plugin_dir):
+        if shared_needs_install(extensions_dir):
+            if not install_shared_requirements(extensions_dir, on_progress):
+                return False, False, []
+        if is_cancelled and is_cancelled():
+            return False, False, []
+        if not install_requirements(plugin_dir, on_progress):
+            return False, False, []
+
+    if is_cancelled and is_cancelled():
+        return False, False, []
+
+    from .loader import PluginLoader
+    plugins = PluginLoader.discover_extension(plugin_dir)
+
+    vendor_dir = os.path.join(plugin_dir, _PACKAGES_DIR)
+    shared_dir = os.path.join(extensions_dir, _SHARED_DIR)
+    path_added = []
+    for d in (vendor_dir, shared_dir):
+        if os.path.isdir(d) and d not in sys.path:
+            sys.path.insert(0, d)
+            path_added.append(d)
+
+    post_install_ok = True
+    for _key, cls in plugins:
+        if has_post_install_hooks([(_key, cls)]):
+            try:
+                cls.post_install(plugin_dir)
+            except Exception as e:
+                AppLogger.warning(
+                    f'[Installer] post_install failed: {cls.__name__}', exc=e
+                )
+                post_install_ok = False
+                break
+        if is_cancelled and is_cancelled():
+            return False, False, []
+
+    for d in path_added:
+        if d in sys.path:
+            sys.path.remove(d)
+
+    if post_install_ok:
+        write_post_install_stamp(plugin_dir)
+
+    return True, post_install_ok, plugins
+
+
+def shared_needs_install(extensions_dir: str) -> bool:
+    req_file = os.path.join(extensions_dir, 'requirements.txt')
+    if not os.path.isfile(req_file):
+        return False
+    stamp = os.path.join(extensions_dir, _SHARED_DIR, _INSTALL_STAMP)
+    if not os.path.isfile(stamp):
+        return True
+    return os.path.getmtime(req_file) > os.path.getmtime(stamp)
+
+
+_shared_install_lock = threading.Lock()
+
+
+def install_shared_requirements(extensions_dir: str, on_progress=None) -> bool:
+    req_file = os.path.join(extensions_dir, 'requirements.txt')
+    if not os.path.isfile(req_file):
+        return True
+    with _shared_install_lock:
+        if not shared_needs_install(extensions_dir):
+            return True
+        vendor_dir = os.path.join(extensions_dir, _SHARED_DIR)
+        os.makedirs(vendor_dir, exist_ok=True)
+        try:
+            ep = EmbeddedPython()
+            if not ep.ensure_ready(on_progress):
+                return False
+            ep.pip_install(req_file, vendor_dir, on_progress)
+            Path(vendor_dir, _INSTALL_STAMP).touch()
+            AppLogger.info('[Installer] Shared dependencies installed')
+            return True
+        except Exception as e:
+            AppLogger.warning(f'[Installer] Shared install failed: {e}', exc=e)
+            return False

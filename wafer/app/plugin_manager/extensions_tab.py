@@ -2,8 +2,8 @@ import os
 from PySide6 import QtWidgets, QtCore
 from ...utils.formatting import dpix
 from ...utils.logs import AppLogger
-from ...plugin.loader import get_plugin_dir, _needs_install, PluginLoader, qualify_plugin_name
-from ...plugin.installer import install_requirements
+from ...plugin.loader import get_plugin_dir, PluginLoader, qualify_plugin_name
+from ...plugin.installer import needs_setup, install_extension
 from ...core.qt.dispatcher import Dispatcher, CancelSlot
 
 
@@ -241,7 +241,7 @@ class ExtensionsTab(QtWidgets.QWidget):
             self._cards[name] = card
             self._cards_layout.insertWidget(self._cards_layout.count() - 1, card)
 
-            if _needs_install(folder):
+            if needs_setup(folder):
                 card.set_needs_install()
             else:
                 card.set_installed()
@@ -274,23 +274,17 @@ class ExtensionsTab(QtWidgets.QWidget):
 
         def task():
             try:
-                success = install_requirements(card.folder_path)
+                extensions_dir = get_plugin_dir()
+                success, post_install_ok, plugins = install_extension(
+                    card.folder_path,
+                    extensions_dir,
+                    is_cancelled=cancel.is_cancelled,
+                )
                 if cancel.is_cancelled():
                     return
-                if success:
-                    plugins = PluginLoader.discover_extension(card.folder_path)
-                    for _key, cls in plugins:
-                        if hasattr(cls, 'post_install'):
-                            cls.post_install(card.folder_path)
-                        if cancel.is_cancelled():
-                            return
-                    self._dispatcher.invoke(
-                        lambda: self._on_install_complete(card, True, plugins)
-                    )
-                else:
-                    self._dispatcher.invoke(
-                        lambda: self._on_install_complete(card, False, [])
-                    )
+                self._dispatcher.invoke(
+                    lambda: self._on_install_complete(card, success, plugins, post_install_ok)
+                )
             except Exception as e:
                 AppLogger.warning(
                     f'[PluginManager] install failed: {card.folder_name}', exc=e
@@ -300,9 +294,12 @@ class ExtensionsTab(QtWidgets.QWidget):
 
         self._dispatcher.post(task, priority=3, cancel=cancel)
 
-    def _on_install_complete(self, card: _ExtensionCard, success: bool, plugins: list):
+    def _on_install_complete(self, card: _ExtensionCard, success: bool, plugins: list, post_install_ok: bool = True):
         if success:
-            card.set_installed()
+            if post_install_ok:
+                card.set_installed()
+            else:
+                card.set_install_failed()
             card.set_plugins(plugins, self._enabled)
             self.enabled_changed.emit()
         else:

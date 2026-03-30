@@ -6,6 +6,7 @@ venv/
 
 .temp/
 .packages/
+.shared_packages/
 .sample/
 .vscode/
 .prototypes/

@@ -1,7 +1,7 @@
+import os
 from pathlib import Path
 
 from wafer.utils.logs import AppLogger
-from wafer.utils.paths import resolve_data_path
 
 KNOWN_MODELS = {
     'wd-swinv2-tagger-v3': 'SmilingWolf/wd-swinv2-tagger-v3',
@@ -12,7 +12,8 @@ KNOWN_MODELS = {
 
 DEFAULT_MODEL = 'wd-swinv2-tagger-v3'
 
-_MODELS_DIR = resolve_data_path('ai_tagger/models')
+_LIB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'lib')
+_MODELS_DIR = os.path.join(_LIB_DIR, 'models')
 
 
 def ensure_model(model_key: str = DEFAULT_MODEL) -> Path:

@@ -146,4 +146,7 @@ class AppProcess:
     def new_main(*args, **popen_kwargs):
         cmd = AppProcess.base_command() + list(args)
         env = os.environ.copy()
+        popen_kwargs.setdefault('stdin', subprocess.DEVNULL)
+        popen_kwargs.setdefault('stdout', subprocess.DEVNULL)
+        popen_kwargs.setdefault('stderr', subprocess.DEVNULL)
         return subprocess.Popen(cmd, env=env, **popen_kwargs)

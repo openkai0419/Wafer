@@ -14,8 +14,18 @@ from wafer.plugin.installer import (
     _run_subprocess,
     install_requirements,
     install_packages,
+    shared_needs_install,
+    install_shared_requirements,
+    write_post_install_stamp,
+    needs_install,
+    needs_post_install,
+    needs_setup,
+    has_post_install_hooks,
+    install_extension,
     _PACKAGES_DIR,
+    _SHARED_DIR,
     _INSTALL_STAMP,
+    _POST_INSTALL_STAMP,
 )
 
 
@@ -298,3 +308,399 @@ class TestInstallPackages:
         call_args = mock_run.call_args[0][0]
         assert 'pkg1' in call_args
         assert 'pkg2' in call_args
+
+
+class TestSharedNeedsInstall:
+
+    def test_no_requirements_file(self, tmp_path):
+        assert shared_needs_install(str(tmp_path)) is False
+
+    def test_no_stamp(self, tmp_path):
+        (tmp_path / 'requirements.txt').write_text('numpy\n')
+        assert shared_needs_install(str(tmp_path)) is True
+
+    def test_stamp_older_than_requirements(self, tmp_path):
+        req = tmp_path / 'requirements.txt'
+        req.write_text('numpy\n')
+        shared = tmp_path / _SHARED_DIR
+        shared.mkdir()
+        stamp = shared / _INSTALL_STAMP
+        stamp.touch()
+        os.utime(str(stamp), (0, 0))
+        assert shared_needs_install(str(tmp_path)) is True
+
+    def test_stamp_newer_than_requirements(self, tmp_path):
+        req = tmp_path / 'requirements.txt'
+        req.write_text('numpy\n')
+        os.utime(str(req), (0, 0))
+        shared = tmp_path / _SHARED_DIR
+        shared.mkdir()
+        stamp = shared / _INSTALL_STAMP
+        stamp.touch()
+        assert shared_needs_install(str(tmp_path)) is False
+
+
+class TestInstallSharedRequirements:
+
+    def test_no_requirements_returns_true(self, tmp_path):
+        assert install_shared_requirements(str(tmp_path)) is True
+
+    def test_success_creates_stamp(self, tmp_path):
+        (tmp_path / 'requirements.txt').write_text('numpy\n')
+        mock_ep = MagicMock()
+        mock_ep.ensure_ready.return_value = True
+
+        with patch('wafer.plugin.installer.EmbeddedPython', return_value=mock_ep):
+            result = install_shared_requirements(str(tmp_path))
+
+        assert result is True
+        stamp = tmp_path / _SHARED_DIR / _INSTALL_STAMP
+        assert stamp.exists()
+        mock_ep.pip_install.assert_called_once()
+
+    def test_embedded_not_ready_returns_false(self, tmp_path):
+        (tmp_path / 'requirements.txt').write_text('numpy\n')
+        mock_ep = MagicMock()
+        mock_ep.ensure_ready.return_value = False
+
+        with patch('wafer.plugin.installer.EmbeddedPython', return_value=mock_ep):
+            result = install_shared_requirements(str(tmp_path))
+
+        assert result is False
+
+    def test_pip_failure_returns_false(self, tmp_path):
+        (tmp_path / 'requirements.txt').write_text('numpy\n')
+        mock_ep = MagicMock()
+        mock_ep.ensure_ready.return_value = True
+        mock_ep.pip_install.side_effect = RuntimeError('pip failed')
+
+        with patch('wafer.plugin.installer.EmbeddedPython', return_value=mock_ep):
+            result = install_shared_requirements(str(tmp_path))
+
+        assert result is False
+
+
+class TestWritePostInstallStamp:
+
+    def test_creates_stamp_file(self, tmp_path):
+        plugin_dir = tmp_path / 'plugin'
+        plugin_dir.mkdir()
+        write_post_install_stamp(str(plugin_dir))
+        stamp = plugin_dir / _PACKAGES_DIR / _POST_INSTALL_STAMP
+        assert stamp.exists()
+
+    def test_creates_packages_dir_if_missing(self, tmp_path):
+        plugin_dir = tmp_path / 'plugin'
+        plugin_dir.mkdir()
+        assert not (plugin_dir / _PACKAGES_DIR).exists()
+        write_post_install_stamp(str(plugin_dir))
+        assert (plugin_dir / _PACKAGES_DIR).is_dir()
+
+    def test_idempotent(self, tmp_path):
+        plugin_dir = tmp_path / 'plugin'
+        plugin_dir.mkdir()
+        write_post_install_stamp(str(plugin_dir))
+        write_post_install_stamp(str(plugin_dir))
+        stamp = plugin_dir / _PACKAGES_DIR / _POST_INSTALL_STAMP
+        assert stamp.exists()
+
+
+class TestNeedsInstall:
+
+    def test_no_requirements_returns_false(self, tmp_path):
+        plugin_dir = tmp_path / 'plugin'
+        plugin_dir.mkdir()
+        assert needs_install(str(plugin_dir)) is False
+
+    def test_no_stamp_returns_true(self, tmp_path):
+        plugin_dir = tmp_path / 'plugin'
+        plugin_dir.mkdir()
+        (plugin_dir / 'requirements.txt').write_text('some-package\n')
+        assert needs_install(str(plugin_dir)) is True
+
+    def test_stamp_newer_returns_false(self, tmp_path):
+        plugin_dir = tmp_path / 'plugin'
+        plugin_dir.mkdir()
+        req = plugin_dir / 'requirements.txt'
+        req.write_text('some-package\n')
+        os.utime(str(req), (0, 0))
+        vendor = plugin_dir / _PACKAGES_DIR
+        vendor.mkdir()
+        (vendor / _INSTALL_STAMP).touch()
+        assert needs_install(str(plugin_dir)) is False
+
+    def test_stamp_older_returns_true(self, tmp_path):
+        plugin_dir = tmp_path / 'plugin'
+        plugin_dir.mkdir()
+        (plugin_dir / 'requirements.txt').write_text('some-package\n')
+        vendor = plugin_dir / _PACKAGES_DIR
+        vendor.mkdir()
+        stamp = vendor / _INSTALL_STAMP
+        stamp.touch()
+        os.utime(str(stamp), (0, 0))
+        assert needs_install(str(plugin_dir)) is True
+
+
+class TestNeedsPostInstall:
+
+    def test_returns_true_when_no_stamp(self, tmp_path):
+        plugin_dir = tmp_path / 'plugin'
+        plugin_dir.mkdir()
+        (plugin_dir / 'requirements.txt').write_text('some-pkg\n')
+        assert needs_post_install(str(plugin_dir)) is True
+
+    def test_returns_false_when_stamp_exists(self, tmp_path):
+        plugin_dir = tmp_path / 'plugin'
+        vendor = plugin_dir / _PACKAGES_DIR
+        vendor.mkdir(parents=True)
+        (vendor / _POST_INSTALL_STAMP).touch()
+        assert needs_post_install(str(plugin_dir)) is False
+
+    def test_returns_false_when_no_requirements(self, tmp_path):
+        plugin_dir = tmp_path / 'plugin'
+        plugin_dir.mkdir()
+        assert needs_post_install(str(plugin_dir)) is False
+
+
+class TestNeedsSetup:
+
+    def test_true_when_pip_needed(self, tmp_path):
+        plugin_dir = tmp_path / 'plugin'
+        plugin_dir.mkdir()
+        (plugin_dir / 'requirements.txt').write_text('pkg\n')
+        assert needs_setup(str(plugin_dir)) is True
+
+    def test_true_when_post_install_needed(self, tmp_path):
+        plugin_dir = tmp_path / 'plugin'
+        vendor = plugin_dir / _PACKAGES_DIR
+        vendor.mkdir(parents=True)
+        (plugin_dir / 'requirements.txt').write_text('pkg\n')
+        (vendor / _INSTALL_STAMP).touch()
+        assert needs_setup(str(plugin_dir)) is True
+
+    def test_false_when_both_stamps_exist(self, tmp_path):
+        plugin_dir = tmp_path / 'plugin'
+        vendor = plugin_dir / _PACKAGES_DIR
+        vendor.mkdir(parents=True)
+        (plugin_dir / 'requirements.txt').write_text('pkg\n')
+        (vendor / _INSTALL_STAMP).touch()
+        (vendor / _POST_INSTALL_STAMP).touch()
+        assert needs_setup(str(plugin_dir)) is False
+
+    def test_false_when_no_requirements(self, tmp_path):
+        plugin_dir = tmp_path / 'plugin'
+        plugin_dir.mkdir()
+        assert needs_setup(str(plugin_dir)) is False
+
+
+class TestHasPostInstallHooks:
+
+    def test_returns_false_for_base_plugin(self):
+        from wafer.plugin.registry import PluginBase
+        assert has_post_install_hooks([('grid', PluginBase)]) is False
+
+    def test_returns_true_for_overridden_post_install(self):
+        from wafer.plugin.registry import PluginBase
+
+        class WithHook(PluginBase):
+            NAME = 'hooked'
+            EXTENSIONS = ('.h',)
+            PRIORITY = 1
+
+            @classmethod
+            def post_install(cls, plugin_dir, on_progress=None):
+                pass
+
+        assert has_post_install_hooks([('grid', WithHook)]) is True
+
+    def test_returns_false_when_all_inherit_default(self):
+        from wafer.plugin.registry import PluginBase
+
+        class Plain(PluginBase):
+            NAME = 'plain'
+            EXTENSIONS = ('.p',)
+            PRIORITY = 1
+
+        assert has_post_install_hooks([('grid', Plain)]) is False
+
+    def test_mixed_returns_true(self):
+        from wafer.plugin.registry import PluginBase
+
+        class Plain(PluginBase):
+            NAME = 'plain'
+            EXTENSIONS = ('.p',)
+            PRIORITY = 1
+
+        class WithHook(PluginBase):
+            NAME = 'hooked'
+            EXTENSIONS = ('.h',)
+            PRIORITY = 2
+
+            @classmethod
+            def post_install(cls, plugin_dir, on_progress=None):
+                pass
+
+        assert has_post_install_hooks([('a', Plain), ('b', WithHook)]) is True
+
+    def test_skips_classes_without_post_install(self):
+        class CommandGroup:
+            NAME = 'cmd'
+
+        assert has_post_install_hooks([('commands', CommandGroup)]) is False
+
+
+class TestInstallExtension:
+
+    def test_skips_when_no_install_needed(self, tmp_path):
+        plugin_dir = tmp_path / 'plugin'
+        plugin_dir.mkdir()
+        (plugin_dir / '__init__.py').write_text('')
+        ext_dir = tmp_path / 'extensions'
+        ext_dir.mkdir()
+
+        from wafer.plugin.registry import PluginBase
+
+        class SimplePlugin(PluginBase):
+            NAME = 'simple'
+            EXTENSIONS = ('.s',)
+            PRIORITY = 1
+
+        with patch('wafer.plugin.installer.needs_install', return_value=False), \
+             patch('wafer.plugin.loader.PluginLoader.discover_extension',
+                   return_value=[('grid', SimplePlugin)]):
+            ok, post_ok, plugins = install_extension(str(plugin_dir), str(ext_dir))
+
+        assert ok is True
+        assert post_ok is True
+        assert len(plugins) == 1
+
+    def test_shared_failure_returns_false(self, tmp_path):
+        plugin_dir = tmp_path / 'plugin'
+        plugin_dir.mkdir()
+        ext_dir = tmp_path / 'extensions'
+        ext_dir.mkdir()
+
+        with patch('wafer.plugin.installer.needs_install', return_value=True), \
+             patch('wafer.plugin.installer.shared_needs_install', return_value=True), \
+             patch('wafer.plugin.installer.install_shared_requirements', return_value=False):
+            ok, post_ok, plugins = install_extension(str(plugin_dir), str(ext_dir))
+
+        assert ok is False
+        assert plugins == []
+
+    def test_extension_install_failure_returns_false(self, tmp_path):
+        plugin_dir = tmp_path / 'plugin'
+        plugin_dir.mkdir()
+        ext_dir = tmp_path / 'extensions'
+        ext_dir.mkdir()
+
+        with patch('wafer.plugin.installer.needs_install', return_value=True), \
+             patch('wafer.plugin.installer.shared_needs_install', return_value=False), \
+             patch('wafer.plugin.installer.install_requirements', return_value=False):
+            ok, post_ok, plugins = install_extension(str(plugin_dir), str(ext_dir))
+
+        assert ok is False
+        assert plugins == []
+
+    def test_post_install_hook_called(self, tmp_path):
+        plugin_dir = tmp_path / 'plugin'
+        plugin_dir.mkdir()
+        ext_dir = tmp_path / 'extensions'
+        ext_dir.mkdir()
+
+        from wafer.plugin.registry import PluginBase
+
+        calls = []
+
+        class HookPlugin(PluginBase):
+            NAME = 'hooked'
+            EXTENSIONS = ('.h',)
+            PRIORITY = 1
+
+            @classmethod
+            def post_install(cls, plugin_dir, on_progress=None):
+                calls.append(plugin_dir)
+
+        with patch('wafer.plugin.installer.needs_install', return_value=False), \
+             patch('wafer.plugin.loader.PluginLoader.discover_extension',
+                   return_value=[('grid', HookPlugin)]):
+            ok, post_ok, plugins = install_extension(str(plugin_dir), str(ext_dir))
+
+        assert ok is True
+        assert post_ok is True
+        assert len(calls) == 1
+        assert calls[0] == str(plugin_dir)
+        stamp = plugin_dir / _PACKAGES_DIR / _POST_INSTALL_STAMP
+        assert stamp.exists()
+
+    def test_post_install_not_called_when_absent(self, tmp_path):
+        plugin_dir = tmp_path / 'plugin'
+        plugin_dir.mkdir()
+        ext_dir = tmp_path / 'extensions'
+        ext_dir.mkdir()
+
+        from wafer.plugin.registry import PluginBase
+
+        class PlainPlugin(PluginBase):
+            NAME = 'plain'
+            EXTENSIONS = ('.p',)
+            PRIORITY = 1
+
+        with patch('wafer.plugin.installer.needs_install', return_value=False), \
+             patch('wafer.plugin.loader.PluginLoader.discover_extension',
+                   return_value=[('grid', PlainPlugin)]):
+            ok, post_ok, plugins = install_extension(str(plugin_dir), str(ext_dir))
+
+        assert ok is True
+        assert post_ok is True
+        stamp = plugin_dir / _PACKAGES_DIR / _POST_INSTALL_STAMP
+        assert stamp.exists()
+
+    def test_post_install_failure_returns_false(self, tmp_path):
+        plugin_dir = tmp_path / 'plugin'
+        plugin_dir.mkdir()
+        ext_dir = tmp_path / 'extensions'
+        ext_dir.mkdir()
+
+        from wafer.plugin.registry import PluginBase
+
+        class FailHook(PluginBase):
+            NAME = 'fail'
+            EXTENSIONS = ('.f',)
+            PRIORITY = 1
+
+            @classmethod
+            def post_install(cls, plugin_dir, on_progress=None):
+                raise RuntimeError('boom')
+
+        with patch('wafer.plugin.installer.needs_install', return_value=False), \
+             patch('wafer.plugin.loader.PluginLoader.discover_extension',
+                   return_value=[('grid', FailHook)]):
+            ok, post_ok, plugins = install_extension(str(plugin_dir), str(ext_dir))
+
+        assert ok is True
+        assert post_ok is False
+        stamp = plugin_dir / _PACKAGES_DIR / _POST_INSTALL_STAMP
+        assert not stamp.exists()
+
+    def test_cancellation_during_install(self, tmp_path):
+        plugin_dir = tmp_path / 'plugin'
+        plugin_dir.mkdir()
+        ext_dir = tmp_path / 'extensions'
+        ext_dir.mkdir()
+
+        cancelled = False
+
+        def check():
+            return cancelled
+
+        with patch('wafer.plugin.installer.needs_install', return_value=True), \
+             patch('wafer.plugin.installer.shared_needs_install', return_value=False), \
+             patch('wafer.plugin.installer.install_requirements', return_value=True):
+            cancelled = True
+            ok, post_ok, plugins = install_extension(
+                str(plugin_dir), str(ext_dir), is_cancelled=check,
+            )
+
+        assert ok is False
+        assert plugins == []

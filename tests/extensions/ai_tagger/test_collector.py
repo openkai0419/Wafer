@@ -322,7 +322,7 @@ class TestIdleTimeout:
         assert self.collector._engine is None
 
         with patch('extensions.ai_tagger.collector.ensure_model') as mock_ensure, \
-             patch('extensions.ai_tagger.collector.WD14Inference') as MockInference:
+             patch('extensions.ai_tagger._inference.WD14Inference') as MockInference:
             mock_session = MagicMock()
             mock_session.get_providers.return_value = ['CPUExecutionProvider']
             mock_instance = MagicMock()

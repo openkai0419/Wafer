@@ -231,18 +231,17 @@ class TestToggleShow:
             win.window_state = MagicMock()
             return win
 
-    def test_visible_window_gets_minimized(self):
+    def test_show_true_restores_window(self):
         win = self._make_win()
         win.toggle_show(True)
-        win.window_state.minimize.assert_called_once()
-        win.window_state.restore_or_activate.assert_not_called()
-
-    def test_minimized_window_gets_restored(self):
-        win = self._make_win()
-        win.isMinimized.return_value = True
-        win.toggle_show(False)
         win.window_state.restore_or_activate.assert_called_once()
         win.window_state.minimize.assert_not_called()
+
+    def test_show_false_minimizes_window(self):
+        win = self._make_win()
+        win.toggle_show(False)
+        win.window_state.minimize.assert_called_once()
+        win.window_state.restore_or_activate.assert_not_called()
 
     def test_hidden_window_gets_shown(self):
         win = self._make_win()
@@ -251,11 +250,11 @@ class TestToggleShow:
         win.window_state.restore_or_activate.assert_called_once()
         win.window_state.minimize.assert_not_called()
 
-    def test_ignores_state_arg(self):
+    def test_respects_show_arg(self):
         win = self._make_win()
         win.toggle_show(True)
-        win.window_state.minimize.assert_called_once()
-        win.window_state.minimize.reset_mock()
+        win.window_state.restore_or_activate.assert_called_once()
+        win.window_state.restore_or_activate.reset_mock()
         win.toggle_show(False)
         win.window_state.minimize.assert_called_once()
 

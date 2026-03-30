@@ -27,30 +27,29 @@ class TestViewerThumbnailDefaultSize:
         grid_resolver.thumbnail_size = 2048
         thumbnailer = MagicMock()
         thumbnailer.get_thumbnail.return_value = None
-        orig = SystemThumbnailPlugin._thumbnailer
-        SystemThumbnailPlugin._thumbnailer = thumbnailer
+        instance = grid_resolver.registry.instance('system_thumbnail')
+        orig = instance.thumbnailer
+        instance.thumbnailer = thumbnailer
         try:
-            instance = grid_resolver.registry.instance('system_thumbnail')
             instance.load('dummy.xyz', size=None)
             thumbnailer.get_thumbnail.assert_called_once_with('dummy.xyz', size=2048)
         finally:
-            SystemThumbnailPlugin._thumbnailer = orig
+            instance.thumbnailer = orig
 
     def test_fallback_uses_explicit_size_when_provided(self):
         from PySide6 import QtCore
-        from wafer.builtins.grid import SystemThumbnailPlugin
         grid_resolver.thumbnail_size = 2048
         thumbnailer = MagicMock()
         thumbnailer.get_thumbnail.return_value = None
-        orig = SystemThumbnailPlugin._thumbnailer
-        SystemThumbnailPlugin._thumbnailer = thumbnailer
+        instance = grid_resolver.registry.instance('system_thumbnail')
+        orig = instance.thumbnailer
+        instance.thumbnailer = thumbnailer
         try:
-            instance = grid_resolver.registry.instance('system_thumbnail')
             size = QtCore.QSize(400, 300)
             instance.load('dummy.xyz', size=size)
             thumbnailer.get_thumbnail.assert_called_once_with('dummy.xyz', size=400)
         finally:
-            SystemThumbnailPlugin._thumbnailer = orig
+            instance.thumbnailer = orig
 
     def test_restore_from_setting(self):
         with patch('wafer.app.viewer.commands.setting_commands.app_settings') as mock_setting:

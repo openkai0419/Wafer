@@ -137,7 +137,7 @@ class TestTogglePauseInBackground:
 class TestVideoViewerCommandsMeta:
     def test_name(self):
         from extensions.video.viewer_commands import VideoViewerCommands
-        assert VideoViewerCommands.NAME == "Video Viewer"
+        assert VideoViewerCommands.NAME == "Video"
 
     def test_priority_in_extension_range(self):
         from extensions.video.viewer_commands import VideoViewerCommands

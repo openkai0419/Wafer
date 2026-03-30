@@ -444,7 +444,7 @@ class TestFilterInheritance:
         assert container._collect_inherited_params() == {}
 
     def test_cross_filter_inheritance_keys(self, qapp):
-        from extensions.regex_filter.filter import RegexFilter
+        from extensions.additional_filters.regex_filter import RegexFilter
         container = SearchContainer()
         container._key_store.set_data([('path', 10), ('prompt', 5)])
         primary = container._rows[0].get_param_widget()

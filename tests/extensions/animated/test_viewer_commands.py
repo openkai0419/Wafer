@@ -39,7 +39,7 @@ class TestAnimatedViewerCommands:
 
     def test_name(self):
         from extensions.animated.viewer_commands import AnimatedViewerCommands
-        assert AnimatedViewerCommands.NAME == "Animated Viewer"
+        assert AnimatedViewerCommands.NAME == "FileViewer"
 
     def test_priority(self):
         from extensions.animated.viewer_commands import AnimatedViewerCommands

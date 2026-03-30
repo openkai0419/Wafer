@@ -9,9 +9,7 @@
 
 ■ テストすればするほどメモリリーク？
 ■ FIlterを選んだ時にフォルだを変更した後フィルタがないとリセットされる問題
-■ Zip対応
-■ ViewerのリストとGridのリストを分離する。ViewerリストもったままGrid検索できるように
-Link/Set/Directory
+■ READMEとSettingメニュー
 
 ■ AI画像認識（モデル指定可能）WD14, BLIP
 ■ タグ削除をコマンド化してモデル編集画面から実行できるようにしたい
@@ -20,6 +18,10 @@ Link/Set/Directory
 
 ■ レイアウト変える機能、切り替え機能
 ■ RENAMERとかプラグイン設定とかも、ポップアップでもいいけど組み込みにもできるようにしてもいいかも。
+
+■ Zip対応
+■ ViewerのリストとGridのリストを分離する。ViewerリストもったままGrid検索できるように
+Link/Set/Directory
 
 ■ テキスト全検索機能（.py, .txt）
 

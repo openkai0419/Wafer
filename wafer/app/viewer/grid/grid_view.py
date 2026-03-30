@@ -571,12 +571,6 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
 
     @profiler.profile
     def _on_layout_ready(self, layout):
-        import threading as _th
-        t = _th.current_thread()
-        if t is not _th.main_thread():
-            AppLogger.error(f'[FATAL-THREAD] _on_layout_ready called from WORKER thread={t.name}! This causes crash.')
-        else:
-            AppLogger.debug(f'[DEBUG-THREAD] _on_layout_ready on MainThread, rects_len={len(layout)}')
         was_scrolling = self.is_scrolling()
         self.rects = layout
         n = len(layout)

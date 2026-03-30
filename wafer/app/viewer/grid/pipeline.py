@@ -1,4 +1,3 @@
-import threading as _threading
 from typing import Callable, Optional
 
 from PySide6 import QtCore, QtGui
@@ -72,9 +71,7 @@ class GridPipeline(QtCore.QObject):
                 return
             layout = calc._result
             if layout is not None:
-                t = _threading.current_thread()
-                AppLogger.debug(f'[DEBUG-THREAD] layout_ready.emit from thread={t.name} (main={_threading.main_thread().name})')
-                self.layout_ready.emit(layout)
+                self._utility_dispatcher.invoke(lambda l=layout: self.layout_ready.emit(l))
 
         self._utility_dispatcher.post(task, priority=7, cancel=cancel)
 
@@ -154,7 +151,7 @@ class GridPipeline(QtCore.QObject):
         if cached is None:
             cached = self._cache.get_if_sufficient(path, size)
         if cached is not None:
-            self._image_ready.emit(index, path, cached)
+            self._render_dispatcher.invoke(lambda: self._image_ready.emit(index, path, cached))
             return
         image = load_fn(path, size)
         if cancel.is_cancelled():
@@ -162,10 +159,7 @@ class GridPipeline(QtCore.QObject):
         if image is None or (isinstance(image, QtGui.QImage) and image.isNull()):
             image = _get_error_image(size)
         self._cache[path] = image
-        t = _threading.current_thread()
-        if t is not _threading.main_thread():
-            AppLogger.debug(f'[DEBUG-THREAD] _image_ready.emit from WORKER thread={t.name}')
-        self._image_ready.emit(index, path, image)
+        self._render_dispatcher.invoke(lambda i=index, p=path, img=image: self._image_ready.emit(i, p, img))
 
     def _dispatch_thumbnail(self, index, path, size, plugin, cancel):
         def task():
@@ -197,9 +191,6 @@ class GridPipeline(QtCore.QObject):
 
     @QtCore.Slot(int, str, object)
     def _on_image_ready(self, index, path, image):
-        t = _threading.current_thread()
-        if t is not _threading.main_thread():
-            AppLogger.error(f'[FATAL-THREAD] _on_image_ready called from WORKER thread={t.name}! This causes crash.')
         if index not in self._active:
             return
         widget = self._widget_lookup(index)

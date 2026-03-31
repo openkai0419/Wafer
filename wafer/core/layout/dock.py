@@ -32,8 +32,8 @@ class PanelDockWidget(QtWidgets.QDockWidget):
 class FloatingWindow(QtWidgets.QWidget):
     closed = QtCore.Signal(str)
 
-    def __init__(self, name: str, title: str, widget: QtWidgets.QWidget):
-        super().__init__(None, QtCore.Qt.Window | QtCore.Qt.WindowCloseButtonHint)
+    def __init__(self, name: str, title: str, widget: QtWidgets.QWidget, parent: QtWidgets.QWidget | None = None):
+        super().__init__(parent, QtCore.Qt.Window | QtCore.Qt.WindowCloseButtonHint)
         self.panel_name = name
         self.setWindowTitle(title)
         layout = QtWidgets.QVBoxLayout(self)
@@ -76,8 +76,9 @@ def apply_floating(
     title: str,
     widget: QtWidgets.QWidget,
     state: FloatingState | None = None,
+    parent: QtWidgets.QWidget | None = None,
 ) -> FloatingWindow:
-    win = FloatingWindow(name, title, widget)
+    win = FloatingWindow(name, title, widget, parent)
     if state:
         win.setGeometry(state.x, state.y, state.width, state.height)
     else:

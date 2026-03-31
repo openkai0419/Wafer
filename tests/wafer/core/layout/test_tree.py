@@ -238,3 +238,31 @@ class TestFlatten:
         assert isinstance(result, SplitNode)
         names = [c.panel_name for c in result.children]
         assert names == ["a", "b", "c", "d"]
+
+    def test_flatten_empty_sizes(self):
+        node = SplitNode(
+            Orientation.HORIZONTAL,
+            [LeafNode("a"), SplitNode(
+                Orientation.HORIZONTAL,
+                [LeafNode("b"), LeafNode("c")],
+                sizes=[],
+            )],
+            sizes=[],
+        )
+        result = flatten(node)
+        assert isinstance(result, SplitNode)
+        names = [c.panel_name for c in result.children]
+        assert set(names) == {"a", "b", "c"}
+        assert len(result.sizes) == 3
+
+    def test_flatten_partial_sizes(self):
+        node = SplitNode(
+            Orientation.HORIZONTAL,
+            [LeafNode("a"), LeafNode("b"), LeafNode("c")],
+            sizes=[100],
+        )
+        result = flatten(node)
+        assert isinstance(result, SplitNode)
+        assert len(result.children) == 3
+        assert len(result.sizes) == 3
+        assert result.sizes[0] == 100

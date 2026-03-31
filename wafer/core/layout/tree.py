@@ -154,11 +154,13 @@ def flatten(node: SplitNode | LeafNode | None) -> SplitNode | LeafNode | None:
         return node
     new_children: list[LeafNode | SplitNode] = []
     new_sizes: list[int] = []
-    for child, size in zip(node.children, node.sizes):
+    for i, child in enumerate(node.children):
+        size = node.sizes[i] if i < len(node.sizes) else 1
         child = flatten(child)
         if isinstance(child, SplitNode) and child.orientation == node.orientation:
             child_total = sum(child.sizes) if child.sizes else 1
-            for gc, gs in zip(child.children, child.sizes):
+            child_sizes = child.sizes if child.sizes else [1] * len(child.children)
+            for gc, gs in zip(child.children, child_sizes):
                 new_children.append(gc)
                 new_sizes.append(int(size * gs / child_total) if child_total else size)
         else:

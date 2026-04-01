@@ -25,6 +25,18 @@
 - video/volume, video/muted, tree/state等のセッションスコープ状態はINIから完全移行済み
 - VideoGridPlugin.restore_stateはWidget未生成時にMpvCellWidget._pending_grid_stateに保持し、_init_shared時に自動適用する（遅延復元）
 
+■ レイアウト管理の設計判断
+- register(name, factory): factoryはCallable[[], QWidget]。登録時はDormant、Widgetは未生成。_ensure_widget()で初回アクセス時に遅延生成
+- デフォルトレイアウトは_resources/panel_layout/default.jsonに定義。restore_state()で初期配置を適用する設計
+- パネル状態は4つ: Docked(tree.root内), Floating(tree.floating内), Collapsed(tree.collapsed内,Lock専用,size=0), Dormant(_panelsにのみ存在,ツリー外)
+- Toggle: Lock専用。Editモードで呼ばれたらLockに自動切替。Docked↔Collapsed, Floating→Dormant, Dormant→Floating(再生成)
+- Close(×): Dormant化(情報は_panelsに保持)。ReCreate可能
+- Float/Dock: D&Dのみ。public APIのfloat_panel/dock_panelは廃止
+- collapsed: LayoutTreeのset[str]フィールド。splitter構築後に_apply_collapse_stateでsize=0に設定
+- Dormant: ツリーに存在しないがPanelEntryは保持。last_floatingに位置を記憶し、再生成時に復元
+- save_state: collapsed含む。Dormantパネルはツリーに存在しないため自然に保存されない
+- restore_state: ツリーにない登録済みパネルはDormantとして扱う（以前はfloatingに強制追加していた）
+
 ■ WidgetViewerPlugin と WidgetGridPlugin のwidget管理の違い
 - ViewerPlugin: 1プラグイン=1Widget。__init__でWIDGET_CLASS()から自動生成、self.widgetでアクセス。メソッドにwidget引数不要
 - GridPlugin: プール管理で複数Widget。メソッドにwidget引数が必要（どのWidgetか特定できないため）

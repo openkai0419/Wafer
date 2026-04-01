@@ -3,6 +3,7 @@ from __future__ import annotations
 from PySide6 import QtCore, QtWidgets
 
 from .tree import FloatingState, LeafNode, Orientation, SplitNode
+from .dock import capture_floating_state
 
 
 def infer_tree(
@@ -16,8 +17,7 @@ def infer_tree(
         if not dock.isVisible():
             continue
         if dock.isFloating():
-            geo = dock.geometry()
-            floating[name] = FloatingState(geo.x(), geo.y(), geo.width(), geo.height())
+            floating[name] = capture_floating_state(dock)
         else:
             geo = dock.geometry()
             docked.append((name, geo))

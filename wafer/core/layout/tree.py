@@ -8,6 +8,10 @@ class Orientation(Enum):
     HORIZONTAL = auto()
     VERTICAL = auto()
 
+    def to_qt(self):
+        from PySide6 import QtCore
+        return QtCore.Qt.Horizontal if self == Orientation.HORIZONTAL else QtCore.Qt.Vertical
+
 
 @dataclass
 class LeafNode:
@@ -42,7 +46,7 @@ class FloatingState:
 class LayoutTree:
     root: SplitNode | LeafNode | None = None
     floating: dict[str, FloatingState] = field(default_factory=dict)
-    hidden: set[str] = field(default_factory=set)
+    collapsed: set[str] = field(default_factory=set)
 
     def docked_names(self) -> list[str]:
         if self.root is None:
@@ -61,7 +65,7 @@ class LayoutTree:
                 k: {'x': v.x, 'y': v.y, 'width': v.width, 'height': v.height}
                 for k, v in self.floating.items()
             },
-            'hidden': list(self.hidden),
+            'collapsed': sorted(self.collapsed),
         }
 
     @classmethod
@@ -70,8 +74,8 @@ class LayoutTree:
         floating = {}
         for k, v in data.get('floating', {}).items():
             floating[k] = FloatingState(v['x'], v['y'], v['width'], v['height'])
-        hidden = set(data.get('hidden', []))
-        return cls(root=root, floating=floating, hidden=hidden)
+        collapsed = set(data.get('collapsed', []))
+        return cls(root=root, floating=floating, collapsed=collapsed)
 
 
 def _node_to_dict(node) -> dict | None:

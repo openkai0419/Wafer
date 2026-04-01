@@ -1,0 +1,16 @@
+{
+    "mode": "locked",
+    "tree": {
+        "root": {
+            "type": "split",
+            "orientation": "horizontal",
+            "children": [
+                {"type": "leaf", "panel": "Folder Tree"},
+                {"type": "leaf", "panel": "Grid View"},
+                {"type": "leaf", "panel": "File Viewer"}
+            ],
+            "sizes": [200, 600, 400]
+        },
+        "floating": {}
+    }
+}

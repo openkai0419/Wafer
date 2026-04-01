@@ -3,7 +3,7 @@ import pytest
 from PySide6 import QtCore, QtWidgets
 
 from wafer.core.layout.manager import LayoutManager, MODE_EDIT, MODE_LOCKED, PanelEntry
-from wafer.core.layout.tree import FloatingState, LayoutTree, LeafNode, Orientation, SplitNode
+from wafer.core.layout.tree import FloatingState, LayoutTree, LeafNode, Orientation, SplitNode, insert_panel
 
 
 def _make_panel(name: str) -> QtWidgets.QWidget:
@@ -11,6 +11,24 @@ def _make_panel(name: str) -> QtWidgets.QWidget:
     w.setMinimumSize(50, 50)
     w.setObjectName(f"panel_{name}")
     return w
+
+
+_DEFAULT_STATE = {
+    'mode': MODE_LOCKED,
+    'tree': {
+        'root': {
+            'type': 'split',
+            'orientation': 'horizontal',
+            'children': [
+                {'type': 'leaf', 'panel': 'folder'},
+                {'type': 'leaf', 'panel': 'grid'},
+                {'type': 'leaf', 'panel': 'viewer'},
+            ],
+            'sizes': [200, 400, 400],
+        },
+        'floating': {},
+    },
+}
 
 
 @pytest.fixture
@@ -23,18 +41,25 @@ def layout_env(qtbot):
 
     mgr = LayoutManager(win)
     panels = {}
-    for name, area in [
-        ("folder", QtCore.Qt.LeftDockWidgetArea),
-        ("grid", QtCore.Qt.LeftDockWidgetArea),
-        ("viewer", QtCore.Qt.RightDockWidgetArea),
-    ]:
+    for name in ["folder", "grid", "viewer"]:
         w = _make_panel(name)
         panels[name] = w
-        mgr.register(name, w, name.title(), floating=False, default_area=area)
+        mgr.register(name, lambda w=w: w)
 
-    mgr.set_mode(MODE_LOCKED)
+    mgr.restore_state(_DEFAULT_STATE)
     QtWidgets.QApplication.processEvents()
     return mgr, win, panels
+
+
+def _register_floating(mgr, name, widget):
+    mgr.register(name, lambda w=widget: w)
+    mgr.toggle_panel(name)
+
+
+def _register_docked(mgr, name, widget):
+    mgr.register(name, lambda w=widget: w)
+    mgr._tree.root = insert_panel(mgr._tree.root, name)
+    mgr._rebuild()
 
 
 def _process(count=5):
@@ -89,7 +114,6 @@ class TestPanelPreservation:
 
         for name in panels:
             assert name in mgr.panel_names()
-            assert mgr.is_panel_visible(name)
 
     def test_docked_names_stable_after_roundtrip(self, layout_env):
         mgr, win, panels = layout_env
@@ -103,34 +127,35 @@ class TestPanelPreservation:
         assert set(mgr._tree.docked_names()) == initial_docked
 
 
-class TestFloatingWindowTracking:
-    def test_float_in_locked_mode_creates_window(self, layout_env):
+class TestFloatingTracking:
+    def test_register_floating_creates_window_in_locked(self, layout_env):
         mgr, win, panels = layout_env
-        mgr.float_panel("viewer")
+        w = _make_panel("dyn")
+        _register_floating(mgr, "dyn", w)
         _process()
 
-        entry = mgr._panels["viewer"]
+        entry = mgr._panels["dyn"]
         assert entry.floating_window is not None
-        assert "viewer" in mgr._tree.floating
-        assert "viewer" not in set(mgr._tree.docked_names())
+        assert "dyn" in mgr._tree.floating
 
     def test_floating_survives_lock_to_edit(self, layout_env):
         mgr, win, panels = layout_env
-        mgr.float_panel("viewer")
+        w = _make_panel("dyn")
+        _register_floating(mgr, "dyn", w)
         _process()
 
         mgr.set_mode(MODE_EDIT)
         _process()
 
-        entry = mgr._panels["viewer"]
-        assert mgr.is_panel_visible("viewer")
+        entry = mgr._panels["dyn"]
+        assert mgr.is_panel_visible("dyn")
         assert entry.dock_widget is not None
         assert entry.dock_widget.isFloating()
-        assert "viewer" in mgr._tree.floating
 
     def test_floating_survives_lock_edit_lock(self, layout_env):
         mgr, win, panels = layout_env
-        mgr.float_panel("viewer")
+        w = _make_panel("dyn")
+        _register_floating(mgr, "dyn", w)
         _process()
 
         mgr.set_mode(MODE_EDIT)
@@ -138,49 +163,42 @@ class TestFloatingWindowTracking:
         mgr.set_mode(MODE_LOCKED)
         _process()
 
-        entry = mgr._panels["viewer"]
-        assert mgr.is_panel_visible("viewer")
+        entry = mgr._panels["dyn"]
+        assert mgr.is_panel_visible("dyn")
         assert entry.floating_window is not None
-        assert "viewer" in mgr._tree.floating
+        assert "dyn" in mgr._tree.floating
 
     def test_floating_survives_many_toggles(self, layout_env):
         mgr, win, panels = layout_env
-        mgr.float_panel("viewer")
+        w = _make_panel("dyn")
+        _register_floating(mgr, "dyn", w)
         _process()
 
         for _ in range(6):
             mgr.toggle_mode()
             _process()
 
-        assert mgr.is_panel_visible("viewer")
-        assert "viewer" in mgr._tree.floating
+        assert mgr.is_panel_visible("dyn")
+        assert "dyn" in mgr._tree.floating
 
-    def test_dock_back_removes_from_floating(self, layout_env):
+    def test_dock_float_changed_tracks_floating(self, layout_env):
         mgr, win, panels = layout_env
-        mgr.float_panel("viewer")
-        _process()
-        mgr.dock_panel("viewer")
-        _process()
-
-        assert "viewer" not in mgr._tree.floating
-        assert "viewer" in set(mgr._tree.docked_names())
-
-    def test_floating_not_hidden_after_mode_switch(self, layout_env):
-        mgr, win, panels = layout_env
-        mgr.float_panel("viewer")
-        _process()
-
         mgr.set_mode(MODE_EDIT)
         _process()
 
-        assert "viewer" not in mgr._tree.hidden
+        entry = mgr._panels["viewer"]
+        assert entry.dock_widget is not None
+        entry.dock_widget.setFloating(True)
+        _process()
+
+        assert "viewer" in mgr._tree.floating
 
 
 class TestDynamicPanels:
     def test_dynamic_panel_registers_floating(self, layout_env):
         mgr, win, panels = layout_env
         w = _make_panel("dynamic_1")
-        mgr.register("dynamic_1", w, "Dynamic 1", floating=True)
+        _register_floating(mgr, "dynamic_1", w)
         _process()
 
         assert "dynamic_1" in mgr.panel_names()
@@ -189,7 +207,7 @@ class TestDynamicPanels:
     def test_dynamic_panel_survives_mode_switch(self, layout_env):
         mgr, win, panels = layout_env
         w = _make_panel("dynamic_1")
-        mgr.register("dynamic_1", w, "Dynamic 1", floating=True)
+        _register_floating(mgr, "dynamic_1", w)
         _process()
 
         mgr.set_mode(MODE_EDIT)
@@ -200,43 +218,24 @@ class TestDynamicPanels:
         assert mgr.is_panel_visible("dynamic_1")
         assert "dynamic_1" in mgr._tree.floating
 
-    def test_dynamic_docked_then_mode_switch(self, layout_env):
-        mgr, win, panels = layout_env
-        w = _make_panel("dynamic_1")
-        mgr.register("dynamic_1", w, "Dynamic 1", floating=True)
-        _process()
-
-        mgr.dock_panel("dynamic_1")
-        _process()
-
-        assert "dynamic_1" in set(mgr._tree.docked_names())
-        assert "dynamic_1" not in mgr._tree.floating
-
-        mgr.set_mode(MODE_EDIT)
-        _process()
-
-        assert mgr.is_panel_visible("dynamic_1")
-        entry = mgr._panels["dynamic_1"]
-        assert entry.dock_widget is not None
-
     def test_dynamic_panel_in_edit_mode(self, layout_env):
         mgr, win, panels = layout_env
         mgr.set_mode(MODE_EDIT)
         _process()
 
         w = _make_panel("dynamic_1")
-        mgr.register("dynamic_1", w, "Dynamic 1", floating=True)
+        _register_floating(mgr, "dynamic_1", w)
         _process()
 
         assert mgr.is_panel_visible("dynamic_1")
         entry = mgr._panels["dynamic_1"]
         assert entry.dock_widget is not None
-        assert entry.dock_widget.isFloating()
+        assert mgr.mode == MODE_EDIT
 
     def test_unregister_removes_panel(self, layout_env):
         mgr, win, panels = layout_env
         w = _make_panel("dynamic_1")
-        mgr.register("dynamic_1", w, "Dynamic 1", floating=True)
+        _register_floating(mgr, "dynamic_1", w)
         _process()
 
         mgr.unregister("dynamic_1")
@@ -246,39 +245,23 @@ class TestDynamicPanels:
         assert "dynamic_1" not in mgr._tree.floating
 
 
-class TestTogglePanel:
-    def test_toggle_hides_in_locked(self, layout_env):
+class TestToggleCollapse:
+    def test_toggle_collapses_docked_panel(self, layout_env):
         mgr, win, panels = layout_env
-        mgr.toggle_panel("viewer")
-        _process()
-
-        assert not mgr.is_panel_visible("viewer")
-        assert "viewer" in mgr._tree.hidden
-
-    def test_toggle_restores_in_locked(self, layout_env):
-        mgr, win, panels = layout_env
-        mgr.toggle_panel("viewer")
-        _process()
-        mgr.toggle_panel("viewer")
-        _process()
+        _process(10)
 
         assert mgr.is_panel_visible("viewer")
-        assert "viewer" not in mgr._tree.hidden
-
-    def test_toggle_hides_in_edit(self, layout_env):
-        mgr, win, panels = layout_env
-        mgr.set_mode(MODE_EDIT)
-        _process()
-
         mgr.toggle_panel("viewer")
         _process()
 
         assert not mgr.is_panel_visible("viewer")
+        assert mgr.is_panel_collapsed("viewer")
+        assert "viewer" in mgr._tree.collapsed
+        assert "viewer" in set(mgr._tree.docked_names())
 
-    def test_toggle_restores_in_edit(self, layout_env):
+    def test_toggle_expands_collapsed_panel(self, layout_env):
         mgr, win, panels = layout_env
-        mgr.set_mode(MODE_EDIT)
-        _process()
+        _process(10)
 
         mgr.toggle_panel("viewer")
         _process()
@@ -286,6 +269,253 @@ class TestTogglePanel:
         _process()
 
         assert mgr.is_panel_visible("viewer")
+        assert not mgr.is_panel_collapsed("viewer")
+        assert "viewer" not in mgr._tree.collapsed
+
+    def test_collapsed_panel_has_zero_size(self, layout_env):
+        mgr, win, panels = layout_env
+        _process(10)
+
+        mgr.toggle_panel("viewer")
+        _process(10)
+
+        widget = panels["viewer"]
+        parent = widget.parent()
+        if isinstance(parent, QtWidgets.QSplitter):
+            idx = parent.indexOf(widget)
+            sizes = parent.sizes()
+            assert sizes[idx] == 0
+
+    def test_collapsed_survives_mode_roundtrip(self, layout_env):
+        mgr, win, panels = layout_env
+        _process(10)
+
+        mgr.toggle_panel("viewer")
+        _process()
+        assert mgr.is_panel_collapsed("viewer")
+
+        mgr.set_mode(MODE_EDIT)
+        _process()
+        mgr.set_mode(MODE_LOCKED)
+        _process()
+
+        assert mgr.is_panel_collapsed("viewer")
+
+    def test_multiple_panels_collapsed(self, layout_env):
+        mgr, win, panels = layout_env
+        _process(10)
+
+        mgr.toggle_panel("folder")
+        mgr.toggle_panel("viewer")
+        _process()
+
+        assert mgr.is_panel_collapsed("folder")
+        assert mgr.is_panel_collapsed("viewer")
+        assert mgr.is_panel_visible("grid")
+
+
+class TestToggleEditMode:
+    def test_toggle_docked_in_edit_makes_dormant(self, layout_env):
+        mgr, win, panels = layout_env
+        mgr.set_mode(MODE_EDIT)
+        _process()
+
+        mgr.toggle_panel("viewer")
+        _process()
+
+        assert mgr.mode == MODE_EDIT
+        assert "viewer" in mgr.dormant_panels()
+
+    def test_toggle_dormant_in_edit_shows_floating(self, layout_env):
+        mgr, win, panels = layout_env
+        mgr.set_mode(MODE_EDIT)
+        _process()
+
+        mgr.toggle_panel("viewer")
+        _process()
+        assert "viewer" in mgr.dormant_panels()
+
+        mgr.toggle_panel("viewer")
+        _process()
+
+        assert mgr.mode == MODE_EDIT
+        assert mgr.is_panel_visible("viewer")
+        entry = mgr._panels["viewer"]
+        assert entry.dock_widget is not None
+
+
+class TestToggleFloating:
+    def test_toggle_floating_makes_dormant(self, layout_env):
+        mgr, win, panels = layout_env
+        w = _make_panel("dyn")
+        _register_floating(mgr, "dyn", w)
+        _process()
+
+        mgr.toggle_panel("dyn")
+        _process()
+
+        assert not mgr.is_panel_visible("dyn")
+        assert "dyn" in mgr.dormant_panels()
+        entry = mgr._panels["dyn"]
+        assert entry.floating_window is None
+
+    def test_toggle_floating_preserves_position(self, layout_env):
+        mgr, win, panels = layout_env
+        w = _make_panel("dyn")
+        _register_floating(mgr, "dyn", w)
+        _process()
+
+        entry = mgr._panels["dyn"]
+        assert entry.floating_window is not None
+
+        mgr.toggle_panel("dyn")
+        _process()
+
+        assert entry.last_floating is not None
+
+    def test_toggle_floating_shows_and_hides(self, layout_env):
+        mgr, win, panels = layout_env
+        w = _make_panel("dyn")
+        _register_floating(mgr, "dyn", w)
+        _process()
+
+        for _ in range(3):
+            mgr.toggle_panel("dyn")
+            _process()
+            assert not mgr.is_panel_visible("dyn")
+            mgr.toggle_panel("dyn")
+            _process()
+            assert mgr.is_panel_visible("dyn")
+
+
+class TestToggleDormant:
+    def test_toggle_restores_dormant_as_floating(self, layout_env):
+        mgr, win, panels = layout_env
+        w = _make_panel("dyn")
+        _register_floating(mgr, "dyn", w)
+        _process()
+
+        mgr.toggle_panel("dyn")
+        _process()
+        assert "dyn" in mgr.dormant_panels()
+
+        mgr.toggle_panel("dyn")
+        _process()
+
+        assert mgr.is_panel_visible("dyn")
+        entry = mgr._panels["dyn"]
+        assert entry.floating_window is not None
+
+    def test_toggle_dormant_uses_last_floating_position(self, layout_env):
+        mgr, win, panels = layout_env
+        w = _make_panel("dyn")
+        _register_floating(mgr, "dyn", w)
+        _process()
+
+        mgr.toggle_panel("dyn")
+        _process()
+
+        entry = mgr._panels["dyn"]
+        saved_fs = entry.last_floating
+        assert saved_fs is not None
+
+        mgr.toggle_panel("dyn")
+        _process()
+
+        assert "dyn" in mgr._tree.floating
+        fs = mgr._tree.floating["dyn"]
+        assert fs.x == saved_fs.x
+        assert fs.y == saved_fs.y
+
+    def test_toggle_unknown_panel_is_noop(self, layout_env):
+        mgr, win, panels = layout_env
+        mgr.toggle_panel("nonexistent")
+
+    def test_cascade_positioning_offsets_windows(self, layout_env):
+        mgr, win, panels = layout_env
+        _process()
+
+        mgr.register("dyn_a", lambda: _make_panel("dyn_a"))
+        mgr.register("dyn_b", lambda: _make_panel("dyn_b"))
+
+        mgr.toggle_panel("dyn_a")
+        _process()
+        mgr.toggle_panel("dyn_b")
+        _process()
+
+        fs_a = mgr._tree.floating["dyn_a"]
+        fs_b = mgr._tree.floating["dyn_b"]
+        assert fs_a.x != fs_b.x or fs_a.y != fs_b.y
+
+
+class TestDormantPanels:
+    def test_dormant_panels_initially_empty(self, layout_env):
+        mgr, win, panels = layout_env
+        assert mgr.dormant_panels() == []
+
+    def test_dock_close_makes_dormant(self, layout_env):
+        mgr, win, panels = layout_env
+        mgr.set_mode(MODE_EDIT)
+        _process()
+
+        entry = mgr._panels["viewer"]
+        assert entry.dock_widget is not None
+        entry.dock_widget.close()
+        _process()
+
+        assert "viewer" in mgr.dormant_panels()
+        assert "viewer" not in set(mgr._tree.docked_names())
+        assert "viewer" not in mgr._tree.floating
+
+    def test_dock_close_preserves_last_floating(self, layout_env):
+        mgr, win, panels = layout_env
+        mgr.set_mode(MODE_EDIT)
+        _process()
+
+        entry = mgr._panels["viewer"]
+        entry.dock_widget.close()
+        _process()
+
+        assert entry.last_floating is not None
+
+    def test_floating_close_makes_dormant(self, layout_env):
+        mgr, win, panels = layout_env
+        w = _make_panel("dyn")
+        _register_floating(mgr, "dyn", w)
+        _process()
+
+        entry = mgr._panels["dyn"]
+        entry.floating_window.close()
+        _process()
+
+        assert "dyn" in mgr.dormant_panels()
+        assert entry.last_floating is not None
+
+    def test_dormant_panel_stays_registered(self, layout_env):
+        mgr, win, panels = layout_env
+        mgr.set_mode(MODE_EDIT)
+        _process()
+
+        mgr._panels["viewer"].dock_widget.close()
+        _process()
+
+        assert "viewer" in mgr.panel_names()
+        assert "viewer" in mgr.dormant_panels()
+
+    def test_toggle_restores_closed_panel(self, layout_env):
+        mgr, win, panels = layout_env
+        mgr.set_mode(MODE_EDIT)
+        _process()
+
+        mgr._panels["viewer"].dock_widget.close()
+        _process()
+        assert "viewer" in mgr.dormant_panels()
+
+        mgr.toggle_panel("viewer")
+        _process()
+
+        assert mgr.is_panel_visible("viewer")
+        assert "viewer" not in mgr.dormant_panels()
 
 
 class TestSizeStability:
@@ -339,19 +569,18 @@ class TestSaveRestore:
 
     def test_restore_preserves_panels(self, layout_env):
         mgr, win, panels = layout_env
-        mgr.float_panel("viewer")
         _process()
 
         state = mgr.save_state()
 
-        mgr.dock_panel("viewer")
+        mgr.toggle_panel("viewer")
         _process()
 
         mgr.restore_state(state)
         _process()
 
         assert mgr.mode == MODE_LOCKED
-        assert "viewer" in mgr._tree.floating
+        assert "viewer" in set(mgr._tree.docked_names())
 
     def test_restore_in_edit_mode(self, layout_env):
         mgr, win, panels = layout_env
@@ -371,9 +600,62 @@ class TestSaveRestore:
         for name in panels:
             assert mgr.is_panel_visible(name)
 
+    def test_save_restore_collapsed(self, layout_env):
+        mgr, win, panels = layout_env
+        _process(10)
+
+        mgr.toggle_panel("viewer")
+        _process()
+        assert mgr.is_panel_collapsed("viewer")
+
+        state = mgr.save_state()
+        mgr.toggle_panel("viewer")
+        _process()
+        assert not mgr.is_panel_collapsed("viewer")
+
+        mgr.restore_state(state)
+        _process()
+
+        assert mgr.is_panel_collapsed("viewer")
+
+    def test_save_restore_dormant_stays_dormant(self, layout_env):
+        mgr, win, panels = layout_env
+        mgr.set_mode(MODE_EDIT)
+        _process()
+        mgr._panels["viewer"].dock_widget.close()
+        _process()
+
+        state = mgr.save_state()
+        assert "viewer" in state.get('dormant', {})
+
+        mgr.restore_state(state)
+        _process()
+
+        assert "viewer" in mgr.dormant_panels()
+        assert "viewer" not in mgr._tree.floating
+
+    def test_save_add_close_restore_new_panel_stays_dormant(self, layout_env):
+        mgr, win, panels = layout_env
+        state = mgr.save_state()
+
+        w = _make_panel("new_panel")
+        _register_floating(mgr, "new_panel", w)
+        _process()
+        mgr._panels["new_panel"].floating_window.close()
+        _process()
+        assert "new_panel" in mgr.dormant_panels()
+
+        mgr.restore_state(state)
+        _process()
+
+        assert "new_panel" in mgr.dormant_panels()
+        assert "new_panel" not in mgr._tree.floating
+        entry = mgr._panels["new_panel"]
+        assert entry.dock_widget is None
+        assert entry.floating_window is None
+
     def test_save_restore_roundtrip_tree(self, layout_env):
         mgr, win, panels = layout_env
-        mgr.float_panel("viewer")
         mgr.toggle_panel("folder")
         _process()
 
@@ -381,8 +663,7 @@ class TestSaveRestore:
         tree_dict = state['tree']
 
         restored_tree = LayoutTree.from_dict(tree_dict)
-        assert "viewer" in restored_tree.floating
-        assert "folder" in restored_tree.hidden
+        assert "folder" in restored_tree.collapsed
 
 
 class TestDockOptions:
@@ -418,18 +699,19 @@ class TestEditModeDockBehavior:
             entry = mgr._panels[name]
             assert entry.dock_widget is None
 
-    def test_edit_mode_floating_is_dock_widget(self, layout_env):
+    def test_edit_mode_dd_float_creates_floating_dock(self, layout_env):
         mgr, win, panels = layout_env
         mgr.set_mode(MODE_EDIT)
         _process()
 
-        mgr.float_panel("viewer")
+        entry = mgr._panels["viewer"]
+        entry.dock_widget.setFloating(True)
         _process()
 
-        entry = mgr._panels["viewer"]
         assert entry.dock_widget is not None
         assert entry.dock_widget.isFloating()
         assert entry.floating_window is None
+        assert "viewer" in mgr._tree.floating
 
 
 class TestDockPositionSync:
@@ -500,16 +782,18 @@ class TestDockPositionSync:
 class TestFloatingWindowZOrder:
     def test_floating_window_has_parent(self, layout_env):
         mgr, win, panels = layout_env
-        mgr.float_panel("viewer")
+        w = _make_panel("dyn")
+        _register_floating(mgr, "dyn", w)
         _process()
 
-        entry = mgr._panels["viewer"]
+        entry = mgr._panels["dyn"]
         assert entry.floating_window is not None
         assert entry.floating_window.parent() is win
 
     def test_floating_window_stays_on_top_after_mode_switch(self, layout_env):
         mgr, win, panels = layout_env
-        mgr.float_panel("viewer")
+        w = _make_panel("dyn")
+        _register_floating(mgr, "dyn", w)
         _process()
 
         mgr.set_mode(MODE_EDIT)
@@ -517,14 +801,14 @@ class TestFloatingWindowZOrder:
         mgr.set_mode(MODE_LOCKED)
         _process()
 
-        entry = mgr._panels["viewer"]
+        entry = mgr._panels["dyn"]
         assert entry.floating_window is not None
         assert entry.floating_window.parent() is win
 
     def test_register_as_floating_has_parent(self, layout_env):
         mgr, win, panels = layout_env
         w = _make_panel("dynamic_1")
-        mgr.register("dynamic_1", w, "Dynamic 1", floating=True)
+        _register_floating(mgr, "dynamic_1", w)
         _process()
 
         entry = mgr._panels["dynamic_1"]
@@ -532,104 +816,12 @@ class TestFloatingWindowZOrder:
         assert entry.floating_window.parent() is win
 
 
-class TestToggleFloatingPanel:
-    def test_toggle_floating_hides_and_shows(self, layout_env):
-        mgr, win, panels = layout_env
-        mgr.float_panel("viewer")
-        _process()
-
-        entry = mgr._panels["viewer"]
-        assert entry.floating_window is not None
-        assert entry.floating_window.isVisible()
-
-        mgr.toggle_panel("viewer")
-        _process()
-        assert not mgr.is_panel_visible("viewer")
-        assert entry.floating_window is not None
-        assert not entry.floating_window.isVisible()
-
-        mgr.toggle_panel("viewer")
-        _process()
-        assert mgr.is_panel_visible("viewer")
-        assert entry.floating_window is not None
-        assert entry.floating_window.isVisible()
-
-
-class TestBug1EditModeToggleUnhide:
-    def test_toggle_unhide_creates_dock_in_edit(self, layout_env):
-        mgr, win, panels = layout_env
-        mgr.toggle_panel("viewer")
-        _process()
-        mgr.set_mode(MODE_EDIT)
-        _process()
-
-        entry = mgr._panels["viewer"]
-        assert entry.dock_widget is None
-
-        mgr.toggle_panel("viewer")
-        _process()
-
-        assert mgr.is_panel_visible("viewer")
-        assert entry.dock_widget is not None
-
-    def test_unhidden_dock_contains_correct_widget(self, layout_env):
-        mgr, win, panels = layout_env
-        mgr.toggle_panel("viewer")
-        _process()
-        mgr.set_mode(MODE_EDIT)
-        _process()
-
-        mgr.toggle_panel("viewer")
-        _process()
-
-        entry = mgr._panels["viewer"]
-        assert entry.dock_widget.widget() is panels["viewer"]
-
-
-class TestBug2HiddenPanelSizes:
-    def test_hidden_panel_preserves_tree_structure(self, layout_env):
-        mgr, win, panels = layout_env
-        _process(10)
-
-        mgr._sync_tree_from_current()
-        root = mgr._tree.root
-        assert isinstance(root, SplitNode)
-        initial_child_count = len(root.children)
-
-        mgr.toggle_panel("grid")
-        _process(10)
-
-        mgr._sync_tree_from_current()
-        root = mgr._tree.root
-        assert isinstance(root, SplitNode)
-        assert len(root.children) == initial_child_count
-        assert len(root.sizes) == len(root.children)
-
-    def test_hidden_panel_sizes_after_roundtrip(self, layout_env):
-        mgr, win, panels = layout_env
-        _process(10)
-
-        mgr.toggle_panel("grid")
-        _process(10)
-
-        mgr.set_mode(MODE_EDIT)
-        _process(10)
-        mgr.set_mode(MODE_LOCKED)
-        _process(10)
-
-        mgr.toggle_panel("grid")
-        _process(10)
-
-        assert mgr.is_panel_visible("grid")
-        assert mgr._root_splitter is not None
-
-
-class TestBug5WidgetRecovery:
+class TestWidgetRecovery:
     def test_unregister_floating_widget_survives(self, layout_env):
         import shiboken6
         mgr, win, panels = layout_env
         w = _make_panel("dyn")
-        mgr.register("dyn", w, "Dynamic", floating=True)
+        _register_floating(mgr, "dyn", w)
         _process()
 
         mgr.unregister("dyn")
@@ -641,7 +833,7 @@ class TestBug5WidgetRecovery:
         import shiboken6
         mgr, win, panels = layout_env
         w = _make_panel("dyn")
-        mgr.register("dyn", w, "Dynamic", floating=False)
+        _register_docked(mgr, "dyn", w)
         _process()
 
         mgr.unregister("dyn")
@@ -650,38 +842,38 @@ class TestBug5WidgetRecovery:
         assert shiboken6.isValid(w)
 
 
-class TestBug6DoubleRegister:
+class TestDoubleRegister:
     def test_double_register_replaces_old(self, layout_env):
         mgr, win, panels = layout_env
         w1 = _make_panel("dyn")
-        mgr.register("dyn", w1, "Dynamic 1", floating=True)
+        _register_floating(mgr, "dyn", w1)
         _process()
 
         w2 = _make_panel("dyn")
-        mgr.register("dyn", w2, "Dynamic 2", floating=True)
+        mgr.register("dyn", lambda: w2)
         _process()
 
         entry = mgr._panels["dyn"]
-        assert entry.widget is w2
-        assert entry.floating_window is not None
+        assert entry.factory() is w2
 
     def test_double_register_no_old_floating_leak(self, layout_env):
         mgr, win, panels = layout_env
         w1 = _make_panel("dyn")
-        mgr.register("dyn", w1, "Dynamic 1", floating=True)
+        _register_floating(mgr, "dyn", w1)
         _process()
 
         old_window = mgr._panels["dyn"].floating_window
 
         w2 = _make_panel("dyn")
-        mgr.register("dyn", w2, "Dynamic 2", floating=True)
+        mgr.register("dyn", lambda: w2)
         _process()
 
         new_entry = mgr._panels["dyn"]
-        assert new_entry.floating_window is not old_window
+        assert new_entry.floating_window is None
+        assert old_window is not None
 
 
-class TestBug8RestoreGhostEntries:
+class TestRestoreGhostEntries:
     def test_restore_filters_unregistered_docked(self, layout_env):
         mgr, win, panels = layout_env
 
@@ -700,7 +892,6 @@ class TestBug8RestoreGhostEntries:
                     'sizes': [100, 200, 300, 400],
                 },
                 'floating': {},
-                'hidden': [],
             },
         }
 
@@ -728,7 +919,6 @@ class TestBug8RestoreGhostEntries:
                 'floating': {
                     'ghost_float': {'x': 0, 'y': 0, 'width': 100, 'height': 100},
                 },
-                'hidden': ['ghost_hidden'],
             },
         }
 
@@ -736,113 +926,180 @@ class TestBug8RestoreGhostEntries:
         _process()
 
         assert "ghost_float" not in mgr._tree.floating
-        assert "ghost_hidden" not in mgr._tree.hidden
 
-
-class TestBug9RebuildEditMode:
-    def test_dock_panel_in_edit_mode(self, layout_env):
+    def test_restore_filters_unregistered_collapsed(self, layout_env):
         mgr, win, panels = layout_env
-        mgr.set_mode(MODE_EDIT)
+
+        state_dict = {
+            'mode': MODE_LOCKED,
+            'tree': {
+                'root': {
+                    'type': 'split',
+                    'orientation': 'horizontal',
+                    'children': [
+                        {'type': 'leaf', 'panel': 'folder'},
+                        {'type': 'leaf', 'panel': 'grid'},
+                        {'type': 'leaf', 'panel': 'viewer'},
+                    ],
+                    'sizes': [100, 200, 300],
+                },
+                'floating': {},
+                'collapsed': ['ghost_panel', 'viewer'],
+            },
+        }
+
+        mgr.restore_state(state_dict)
         _process()
 
-        mgr.float_panel("viewer")
-        _process()
+        assert "ghost_panel" not in mgr._tree.collapsed
+        assert "viewer" in mgr._tree.collapsed
 
-        mgr.dock_panel("viewer")
-        _process()
 
-        assert "viewer" in set(mgr._tree.docked_names())
-        assert "viewer" not in mgr._tree.floating
-        entry = mgr._panels["viewer"]
-        assert entry.dock_widget is not None
-
+class TestEditModeRebuild:
     def test_register_docked_in_edit_mode(self, layout_env):
         mgr, win, panels = layout_env
         mgr.set_mode(MODE_EDIT)
         _process()
 
         w = _make_panel("dyn")
-        mgr.register("dyn", w, "Dynamic", floating=False)
+        _register_docked(mgr, "dyn", w)
         _process()
 
         entry = mgr._panels["dyn"]
         assert entry.dock_widget is not None
         assert "dyn" in set(mgr._tree.docked_names())
 
-    def test_toggle_floating_multiple_times(self, layout_env):
-        mgr, win, panels = layout_env
-        mgr.float_panel("viewer")
-        _process()
 
-        for _ in range(5):
-            mgr.toggle_panel("viewer")
-            _process()
-            assert not mgr.is_panel_visible("viewer")
-            mgr.toggle_panel("viewer")
-            _process()
-            assert mgr.is_panel_visible("viewer")
-
-        entry = mgr._panels["viewer"]
-        assert entry.floating_window is not None
-        assert entry.floating_window.isVisible()
-
-
-class TestRestoreUntrackedPanels:
-    def test_locked_mode_untracked_panel_shown_as_floating(self, layout_env):
+class TestRestoreDormantPanels:
+    def test_extra_docked_panel_becomes_dormant_on_restore(self, layout_env):
         mgr, win, panels = layout_env
         state = mgr.save_state()
         _process()
 
         w = _make_panel("extra")
-        mgr.register("extra", w, "Extra", floating=True)
+        _register_docked(mgr, "extra", w)
         _process()
 
         mgr.restore_state(state)
         _process()
 
-        entry = mgr._panels["extra"]
-        assert entry.floating_window is not None
-        assert entry.floating_window.isVisible()
-        assert "extra" in mgr._tree.floating
+        assert "extra" in mgr.dormant_panels()
+        assert "extra" not in mgr._tree.floating
 
-    def test_edit_mode_untracked_panel_shown_as_floating(self, layout_env):
+    def test_extra_visible_floating_panel_stays_floating_on_restore(self, layout_env):
+        mgr, win, panels = layout_env
+        state = mgr.save_state()
+        _process()
+
+        w = _make_panel("extra")
+        _register_floating(mgr, "extra", w)
+        _process()
+
+        mgr.restore_state(state)
+        _process()
+
+        assert "extra" in mgr._tree.floating
+        assert "extra" not in mgr.dormant_panels()
+
+    def test_extra_collapsed_panel_becomes_dormant_on_restore(self, layout_env):
+        mgr, win, panels = layout_env
+
+        w = _make_panel("extra")
+        _register_docked(mgr, "extra", w)
+        _process()
+        mgr.toggle_panel("extra")
+        _process()
+        assert mgr.is_panel_collapsed("extra")
+
+        state_without_extra = {
+            'mode': MODE_LOCKED,
+            'tree': {
+                'root': {
+                    'type': 'split',
+                    'orientation': 'horizontal',
+                    'children': [
+                        {'type': 'leaf', 'panel': 'folder'},
+                        {'type': 'leaf', 'panel': 'grid'},
+                        {'type': 'leaf', 'panel': 'viewer'},
+                    ],
+                    'sizes': [100, 200, 300],
+                },
+                'floating': {},
+                'collapsed': [],
+            },
+        }
+
+        mgr.restore_state(state_without_extra)
+        _process()
+
+        assert "extra" in mgr.dormant_panels()
+        assert "extra" not in mgr._tree.floating
+        assert not mgr.is_panel_collapsed("extra")
+
+    def test_extra_dormant_panel_stays_dormant_on_restore(self, layout_env):
+        mgr, win, panels = layout_env
+        _process()
+
+        w = _make_panel("extra")
+        _register_floating(mgr, "extra", w)
+        _process()
+
+        mgr.toggle_panel("extra")
+        _process()
+        assert "extra" in mgr.dormant_panels()
+
+        state_without_extra = {
+            'mode': MODE_LOCKED,
+            'tree': {
+                'root': {
+                    'type': 'split',
+                    'orientation': 'horizontal',
+                    'children': [
+                        {'type': 'leaf', 'panel': 'folder'},
+                        {'type': 'leaf', 'panel': 'grid'},
+                        {'type': 'leaf', 'panel': 'viewer'},
+                    ],
+                    'sizes': [100, 200, 300],
+                },
+                'floating': {},
+                'collapsed': [],
+            },
+        }
+
+        mgr.restore_state(state_without_extra)
+        _process()
+
+        assert "extra" in mgr.dormant_panels()
+        assert "extra" not in mgr._tree.floating
+
+    def test_extra_visible_docked_panel_becomes_floating_in_edit_mode_restore(self, layout_env):
         mgr, win, panels = layout_env
         mgr.set_mode(MODE_EDIT)
         _process()
         state = mgr.save_state()
-        mgr.set_mode(MODE_LOCKED)
-        _process()
 
         w = _make_panel("extra")
-        mgr.register("extra", w, "Extra", floating=True)
+        _register_docked(mgr, "extra", w)
         _process()
 
         mgr.restore_state(state)
         _process()
 
-        entry = mgr._panels["extra"]
-        assert entry.dock_widget is not None
-        assert entry.dock_widget.isFloating()
         assert "extra" in mgr._tree.floating
+        assert "extra" not in mgr.dormant_panels()
 
-    def test_locked_mode_multiple_untracked(self, layout_env):
+    def test_extra_unshown_panel_stays_dormant_on_restore(self, layout_env):
         mgr, win, panels = layout_env
         state = mgr.save_state()
         _process()
 
-        for i in range(3):
-            w = _make_panel(f"dyn_{i}")
-            mgr.register(f"dyn_{i}", w, f"Dyn {i}", floating=True)
-        _process()
+        mgr.register("extra", lambda: _make_panel("extra"))
 
         mgr.restore_state(state)
         _process()
 
-        for i in range(3):
-            name = f"dyn_{i}"
-            entry = mgr._panels[name]
-            assert entry.floating_window is not None
-            assert name in mgr._tree.floating
+        assert "extra" in mgr.dormant_panels()
+        assert "extra" not in mgr._tree.floating
 
     def test_mode_changed_emitted_on_restore(self, layout_env, qtbot):
         mgr, win, panels = layout_env
@@ -874,3 +1131,18 @@ class TestRestoreUntrackedPanels:
         _process()
 
         assert signal_fired == []
+
+
+class TestUnregisterCollapsed:
+    def test_unregister_collapsed_cleans_up(self, layout_env):
+        mgr, win, panels = layout_env
+        mgr.toggle_panel("viewer")
+        _process()
+
+        assert mgr.is_panel_collapsed("viewer")
+
+        mgr.unregister("viewer")
+        _process()
+
+        assert "viewer" not in mgr._tree.collapsed
+        assert "viewer" not in mgr.panel_names()

@@ -64,7 +64,7 @@ class TestSerialization:
         restored = LayoutTree.from_dict(tree.to_dict())
         assert restored.root is None
         assert restored.floating == {}
-        assert restored.hidden == set()
+        assert restored.collapsed == set()
 
     def test_roundtrip_complex(self):
         tree = LayoutTree(
@@ -81,7 +81,7 @@ class TestSerialization:
                 sizes=[400, 500],
             ),
             floating={"d": FloatingState(10, 20, 300, 400)},
-            hidden={"e"},
+            collapsed={"b"},
         )
         restored = LayoutTree.from_dict(tree.to_dict())
         assert isinstance(restored.root, SplitNode)
@@ -94,7 +94,7 @@ class TestSerialization:
         assert "d" in restored.floating
         fs = restored.floating["d"]
         assert (fs.x, fs.y, fs.width, fs.height) == (10, 20, 300, 400)
-        assert restored.hidden == {"e"}
+        assert restored.collapsed == {"b"}
 
 
 class TestRemovePanel:

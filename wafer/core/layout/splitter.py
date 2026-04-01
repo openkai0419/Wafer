@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from PySide6 import QtCore, QtWidgets
+from PySide6 import QtWidgets
 
-from .tree import LeafNode, Orientation, SplitNode
+from .tree import LeafNode, SplitNode
 
 
 def build_splitter(
@@ -17,12 +17,7 @@ def build_splitter(
             w.show()
         return w
 
-    qt_orient = (
-        QtCore.Qt.Horizontal
-        if node.orientation == Orientation.HORIZONTAL
-        else QtCore.Qt.Vertical
-    )
-    splitter = QtWidgets.QSplitter(qt_orient, parent)
+    splitter = QtWidgets.QSplitter(node.orientation.to_qt(), parent)
     splitter.setChildrenCollapsible(True)
     splitter.setHandleWidth(6)
 
@@ -40,39 +35,19 @@ def build_splitter(
     return splitter
 
 
-def _subtree_all_hidden(
-    node: SplitNode | LeafNode,
-    hidden: set[str],
-) -> bool:
-    if isinstance(node, LeafNode):
-        return node.panel_name in hidden
-    return all(_subtree_all_hidden(c, hidden) for c in node.children)
-
-
 def snapshot_sizes(
     node: SplitNode | LeafNode,
     splitter_stack: list[QtWidgets.QSplitter],
     index: list[int],
-    hidden: set[str] | frozenset[str] = frozenset(),
 ) -> None:
     if isinstance(node, LeafNode):
         return
     if index[0] < len(splitter_stack):
         s = splitter_stack[index[0]]
-        splitter_sizes = s.sizes()
-        new_sizes: list[int] = []
-        si = 0
-        for i, child in enumerate(node.children):
-            if _subtree_all_hidden(child, hidden):
-                new_sizes.append(node.sizes[i] if i < len(node.sizes) else 0)
-            else:
-                new_sizes.append(splitter_sizes[si] if si < len(splitter_sizes) else 0)
-                si += 1
-        node.sizes = new_sizes
+        node.sizes = list(s.sizes())
         index[0] += 1
     for child in node.children:
-        if not _subtree_all_hidden(child, hidden):
-            snapshot_sizes(child, splitter_stack, index, hidden)
+        snapshot_sizes(child, splitter_stack, index)
 
 
 def collect_splitters(widget: QtWidgets.QWidget) -> list[QtWidgets.QSplitter]:

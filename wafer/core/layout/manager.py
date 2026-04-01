@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from PySide6 import QtCore, QtWidgets
@@ -31,11 +32,14 @@ MODE_LOCKED = "locked"
 @dataclass
 class PanelEntry:
     name: str
-    widget: QtWidgets.QWidget
-    title: str
-    default_area: QtCore.Qt.DockWidgetArea = QtCore.Qt.LeftDockWidgetArea
+    factory: Callable[[], QtWidgets.QWidget]
+    widget: QtWidgets.QWidget | None = None
     dock_widget: PanelDockWidget | None = None
     floating_window: FloatingWindow | None = None
+    last_floating: FloatingState | None = None
+
+    def has_visible_presence(self) -> bool:
+        return self.floating_window is not None or self.dock_widget is not None
 
 
 class LayoutManager(QtCore.QObject):
@@ -61,29 +65,18 @@ class LayoutManager(QtCore.QObject):
     def register(
         self,
         name: str,
-        widget: QtWidgets.QWidget,
-        title: str,
-        *,
-        floating: bool = True,
-        default_area: QtCore.Qt.DockWidgetArea = QtCore.Qt.LeftDockWidgetArea,
+        factory: Callable[[], QtWidgets.QWidget],
     ) -> PanelEntry:
         if name in self._panels:
             self.unregister(name)
-        entry = PanelEntry(
-            name=name,
-            widget=widget,
-            title=title,
-            default_area=default_area,
-        )
+        entry = PanelEntry(name=name, factory=factory)
         self._panels[name] = entry
-
-        if floating:
-            existing = self._tree.floating.get(name)
-            self._make_floating(entry, existing)
-        else:
-            self._tree.root = insert_panel(self._tree.root, name)
-            self._rebuild()
         return entry
+
+    def _ensure_widget(self, entry: PanelEntry) -> QtWidgets.QWidget:
+        if entry.widget is None:
+            entry.widget = entry.factory()
+        return entry.widget
 
     def unregister(self, name: str):
         entry = self._panels.pop(name, None)
@@ -92,7 +85,7 @@ class LayoutManager(QtCore.QObject):
         self._cleanup_entry(entry)
         self._tree.root = remove_panel(self._tree.root, name)
         self._tree.floating.pop(name, None)
-        self._tree.hidden.discard(name)
+        self._tree.collapsed.discard(name)
         self._rebuild()
 
     def set_mode(self, mode: str):
@@ -113,71 +106,62 @@ class LayoutManager(QtCore.QObject):
         if entry is None:
             return
 
-        if name in self._tree.hidden:
-            self._tree.hidden.discard(name)
-            if entry.floating_window:
-                entry.floating_window.show()
-            elif name in self._tree.floating:
-                self._make_floating(entry, self._tree.floating[name])
-            elif self._mode == MODE_EDIT:
-                if entry.dock_widget:
-                    entry.dock_widget.show()
-                else:
-                    self._create_managed_dock(entry)
-            else:
+        if name not in self._tree.all_names():
+            fs = entry.last_floating or self._next_floating_position()
+            self._tree.floating[name] = fs
+            self._make_floating(entry, fs)
+            return
+
+        if name in self._tree.floating:
+            entry.last_floating = capture_floating_state(
+                entry.floating_window or entry.dock_widget
+            )
+            self._cleanup_entry(entry)
+            self._tree.floating.pop(name, None)
+            return
+
+        if self._mode == MODE_LOCKED:
+            if name in self._tree.collapsed:
+                self._tree.collapsed.discard(name)
                 self._rebuild()
+            else:
+                self._sync_tree_from_current()
+                self._tree.collapsed.add(name)
+                self._apply_collapse_state()
         else:
-            self._tree.hidden.add(name)
-            if entry.floating_window:
-                entry.floating_window.hide()
-            elif self._mode == MODE_EDIT and entry.dock_widget:
-                entry.dock_widget.hide()
-            else:
-                self._rebuild()
-
-    def float_panel(self, name: str):
-        entry = self._panels.get(name)
-        if entry is None:
-            return
-        if self._is_floating(entry):
-            return
-
-        geo = entry.widget.geometry()
-        global_pos = entry.widget.mapToGlobal(QtCore.QPoint(0, 0))
-        fs = FloatingState(global_pos.x(), global_pos.y(), geo.width(), geo.height())
-
-        if name in self._tree.docked_names():
-            self._detach_from_dock_or_splitter(entry)
+            self._sync_tree_from_current()
+            self._cleanup_entry(entry)
             self._tree.root = remove_panel(self._tree.root, name)
-
-        self._tree.floating[name] = fs
-        self._make_floating(entry, fs)
-        self._rebuild()
-
-    def dock_panel(self, name: str):
-        entry = self._panels.get(name)
-        if entry is None:
-            return
-        if not self._is_floating(entry):
-            return
-
-        self._take_back_from_floating(entry)
-        self._tree.floating.pop(name, None)
-        self._tree.root = insert_panel(self._tree.root, name)
-        self._rebuild()
+            self._rebuild()
 
     def is_panel_visible(self, name: str) -> bool:
-        return name not in self._tree.hidden
+        return name in self._tree.all_names() and name not in self._tree.collapsed
+
+    def is_panel_collapsed(self, name: str) -> bool:
+        return name in self._tree.collapsed
 
     def panel_names(self) -> list[str]:
         return list(self._panels.keys())
 
+    def dormant_panels(self) -> list[str]:
+        active = self._tree.all_names()
+        return [n for n in self._panels if n not in active]
+
     def save_state(self) -> dict:
         self._sync_tree_from_current()
-        return {
+        result = {
             'mode': self._mode,
             'tree': self._tree.to_dict(),
         }
+        dormant = {}
+        active = self._tree.all_names()
+        for name, entry in self._panels.items():
+            if name not in active:
+                fs = entry.last_floating
+                dormant[name] = {'x': fs.x, 'y': fs.y, 'width': fs.width, 'height': fs.height} if fs else None
+        if dormant:
+            result['dormant'] = dormant
+        return result
 
     def restore_state(self, state: dict):
         old_mode = self._mode
@@ -187,25 +171,39 @@ class LayoutManager(QtCore.QObject):
             self._tree = LayoutTree.from_dict(tree_data)
 
         registered = set(self._panels.keys())
+        saved_names = self._tree.all_names()
+        saved_dormant = set(state.get('dormant', {}).keys())
+
         for name in set(self._tree.docked_names()) - registered:
             self._tree.root = remove_panel(self._tree.root, name)
         for name in set(self._tree.floating.keys()) - registered:
             del self._tree.floating[name]
-        self._tree.hidden &= registered
+        self._tree.collapsed &= registered & set(self._tree.docked_names())
+
+        for name, fs_dict in state.get('dormant', {}).items():
+            entry = self._panels.get(name)
+            if entry and fs_dict:
+                entry.last_floating = FloatingState(**fs_dict)
+
+        extra_floating: dict[str, FloatingState] = {}
+        for name in registered - saved_names - saved_dormant:
+            entry = self._panels[name]
+            if entry.has_visible_presence():
+                source = entry.floating_window or entry.dock_widget
+                fs = capture_floating_state(source)
+                entry.last_floating = fs
+                extra_floating[name] = fs
+        self._tree.floating.update(extra_floating)
 
         for entry in self._panels.values():
             self._cleanup_entry(entry)
-            entry.widget.setParent(None)
+            if entry.widget:
+                entry.widget.setParent(None)
         if self._root_splitter:
             self._root_splitter.setParent(None)
             self._root_splitter.deleteLater()
             self._root_splitter = None
         self._remove_central_placeholder()
-
-        known = set(self._tree.docked_names()) | set(self._tree.floating.keys()) | self._tree.hidden
-        for name in self._panels:
-            if name not in known:
-                self._tree.floating[name] = FloatingState(100, 100, 400, 300)
 
         target_mode = state.get('mode', MODE_LOCKED)
         self._mode = target_mode
@@ -215,7 +213,7 @@ class LayoutManager(QtCore.QObject):
             self._build_locked_layout()
             for name, fs in self._tree.floating.items():
                 entry = self._panels.get(name)
-                if entry and not self._is_floating(entry) and name not in self._tree.hidden:
+                if entry and not self._is_floating(entry):
                     self._show_as_independent_window(entry, fs)
 
         if old_mode != target_mode:
@@ -230,11 +228,7 @@ class LayoutManager(QtCore.QObject):
                 floating_states[name] = capture_floating_state(entry.floating_window)
                 self._take_back_from_floating(entry)
 
-        if self._root_splitter:
-            self._detach_all_from_splitter()
-            self._root_splitter.setParent(None)
-            self._root_splitter.deleteLater()
-            self._root_splitter = None
+        self._teardown_splitter()
 
         self._build_edit_layout(floating_states)
 
@@ -251,27 +245,23 @@ class LayoutManager(QtCore.QObject):
 
         for name, entry in self._panels.items():
             if entry.dock_widget:
-                self._disconnect_dock_signals(entry.dock_widget)
-                entry.dock_widget.setWidget(None)
-                entry.widget.setParent(None)
-                entry.dock_widget.setParent(None)
-                entry.dock_widget.deleteLater()
-                entry.dock_widget = None
+                self._destroy_dock(entry)
 
         self._remove_central_placeholder()
         self._build_locked_layout()
 
         for name, fs in floating_states.items():
             entry = self._panels.get(name)
-            if entry and not self._is_floating(entry) and name not in self._tree.hidden:
+            if entry and not self._is_floating(entry):
                 self._show_as_independent_window(entry, fs)
 
     def _build_edit_layout(self, floating_overrides: dict[str, FloatingState] | None = None):
         self._ensure_central_placeholder()
         floating_names = set(self._tree.floating.keys())
 
-        for name, entry in self._panels.items():
-            if name in self._tree.hidden:
+        for name in list(self._tree.all_names()):
+            entry = self._panels.get(name)
+            if not entry:
                 continue
             dock = self._create_managed_dock(entry)
             if name in floating_names:
@@ -288,11 +278,9 @@ class LayoutManager(QtCore.QObject):
 
         visible_widgets = {}
         for name in self._tree.docked_names():
-            if name in self._tree.hidden:
-                continue
             entry = self._panels.get(name)
             if entry:
-                visible_widgets[name] = entry.widget
+                visible_widgets[name] = self._ensure_widget(entry)
 
         splitter = build_splitter(self._tree.root, visible_widgets)
         if isinstance(splitter, QtWidgets.QSplitter):
@@ -304,19 +292,14 @@ class LayoutManager(QtCore.QObject):
         else:
             return
         self._window.setCentralWidget(self._root_splitter)
+        self._apply_collapse_state()
 
     def _rebuild(self):
         if self._mode == MODE_LOCKED:
-            if self._root_splitter:
-                self._detach_all_from_splitter()
-                self._root_splitter.setParent(None)
-                self._root_splitter.deleteLater()
-                self._root_splitter = None
+            self._teardown_splitter()
             self._build_locked_layout()
         elif self._mode == MODE_EDIT:
             for name in self._tree.docked_names():
-                if name in self._tree.hidden:
-                    continue
                 entry = self._panels.get(name)
                 if entry and not entry.dock_widget:
                     self._create_managed_dock(entry)
@@ -326,11 +309,11 @@ class LayoutManager(QtCore.QObject):
         if self._mode == MODE_LOCKED and self._root_splitter:
             splitters = collect_splitters(self._root_splitter)
             if self._tree.root and isinstance(self._tree.root, SplitNode):
-                snapshot_sizes(self._tree.root, splitters, [0], self._tree.hidden)
+                snapshot_sizes(self._tree.root, splitters, [0])
         elif self._mode == MODE_EDIT:
             docked_docks: dict[str, PanelDockWidget] = {}
             for name, entry in self._panels.items():
-                if entry.dock_widget and not entry.dock_widget.isFloating() and name not in self._tree.hidden:
+                if entry.dock_widget and not entry.dock_widget.isFloating():
                     docked_docks[name] = entry.dock_widget
             if docked_docks:
                 inferred_root, _ = infer_tree(docked_docks, self._window)
@@ -343,30 +326,22 @@ class LayoutManager(QtCore.QObject):
             if entry.floating_window:
                 self._tree.floating[name] = capture_floating_state(entry.floating_window)
             elif entry.dock_widget and entry.dock_widget.isFloating():
-                geo = entry.dock_widget.geometry()
-                self._tree.floating[name] = FloatingState(
-                    geo.x(), geo.y(), geo.width(), geo.height(),
-                )
+                self._tree.floating[name] = capture_floating_state(entry.dock_widget)
 
     def _arrange_docks_from_tree(self):
         if self._tree.root is None:
             return
         self._split_node_recursive(self._tree.root)
 
-        for name, entry in self._panels.items():
-            if entry.dock_widget and name not in self._tree.hidden:
+        for name in self._tree.docked_names():
+            entry = self._panels.get(name)
+            if entry and entry.dock_widget:
                 if not entry.dock_widget.isVisible() and not entry.dock_widget.isFloating():
                     entry.dock_widget.show()
 
     def _split_node_recursive(self, node: SplitNode | LeafNode):
         if isinstance(node, LeafNode):
             return
-
-        qt_orient = (
-            QtCore.Qt.Horizontal
-            if node.orientation == Orientation.HORIZONTAL
-            else QtCore.Qt.Vertical
-        )
 
         child_docks: list[PanelDockWidget] = []
         child_sizes: list[int] = []
@@ -378,11 +353,11 @@ class LayoutManager(QtCore.QObject):
                 child_sizes.append(max(size, 1))
 
         for i in range(1, len(child_docks)):
-            self._window.splitDockWidget(child_docks[i - 1], child_docks[i], qt_orient)
+            self._window.splitDockWidget(child_docks[i - 1], child_docks[i], node.orientation.to_qt())
 
         if len(child_docks) > 1 and child_sizes:
             QtWidgets.QApplication.processEvents()
-            self._window.resizeDocks(child_docks, child_sizes, qt_orient)
+            self._window.resizeDocks(child_docks, child_sizes, node.orientation.to_qt())
 
         for child in node.children:
             if isinstance(child, SplitNode):
@@ -390,8 +365,6 @@ class LayoutManager(QtCore.QObject):
 
     def _first_visible_dock(self, node: SplitNode | LeafNode) -> PanelDockWidget | None:
         if isinstance(node, LeafNode):
-            if node.panel_name in self._tree.hidden:
-                return None
             if node.panel_name in self._tree.floating:
                 return None
             entry = self._panels.get(node.panel_name)
@@ -405,8 +378,9 @@ class LayoutManager(QtCore.QObject):
         return None
 
     def _create_managed_dock(self, entry: PanelEntry) -> PanelDockWidget:
+        widget = self._ensure_widget(entry)
         dock = create_dock(
-            entry.name, entry.title, entry.widget, self._window, entry.default_area,
+            entry.name, widget, self._window, QtCore.Qt.LeftDockWidgetArea,
         )
         dock.closed.connect(self._on_dock_closed)
         dock.topLevelChanged.connect(
@@ -469,6 +443,17 @@ class LayoutManager(QtCore.QObject):
             return True
         return False
 
+    _CASCADE_OFFSET = 30
+    _CASCADE_MAX_STEPS = 10
+
+    def _next_floating_position(self) -> FloatingState:
+        geo = self._window.geometry()
+        n = len(self._tree.floating)
+        step = n % self._CASCADE_MAX_STEPS
+        cx = geo.x() + geo.width() // 2 - 200 + step * self._CASCADE_OFFSET
+        cy = geo.y() + geo.height() // 2 - 150 + step * self._CASCADE_OFFSET
+        return FloatingState(cx, cy, 400, 300)
+
     def _make_floating(self, entry: PanelEntry, state: FloatingState | None = None):
         if self._is_floating(entry):
             return
@@ -491,30 +476,17 @@ class LayoutManager(QtCore.QObject):
         dock.setFloating(True)
         if state:
             dock.setGeometry(state.x, state.y, state.width, state.height)
-        if entry.name in self._tree.hidden:
-            dock.hide()
-
     def _show_as_independent_window(self, entry: PanelEntry, state: FloatingState | None = None):
         if entry.floating_window:
             return
 
         if entry.dock_widget:
-            self._disconnect_dock_signals(entry.dock_widget)
-            entry.dock_widget.setWidget(None)
-            entry.widget.setParent(None)
-            entry.dock_widget.setParent(None)
-            entry.dock_widget.deleteLater()
-            entry.dock_widget = None
+            self._destroy_dock(entry)
 
-        win = apply_floating(entry.name, entry.title, entry.widget, state, self._window)
+        win = apply_floating(entry.name, self._ensure_widget(entry), state, self._window)
         win.closed.connect(self._on_floating_closed)
         entry.floating_window = win
-        self._tree.floating[entry.name] = state or FloatingState(
-            win.x(), win.y(), win.width(), win.height(),
-        )
-
-        if entry.name in self._tree.hidden:
-            win.hide()
+        self._tree.floating[entry.name] = state or capture_floating_state(win)
 
     def _take_back_from_floating(self, entry: PanelEntry):
         if entry.floating_window:
@@ -528,27 +500,60 @@ class LayoutManager(QtCore.QObject):
             if w:
                 entry.widget = w
         elif entry.dock_widget and entry.dock_widget.isFloating():
-            geo = entry.dock_widget.geometry()
-            self._tree.floating[entry.name] = FloatingState(
-                geo.x(), geo.y(), geo.width(), geo.height(),
-            )
+            self._tree.floating[entry.name] = capture_floating_state(entry.dock_widget)
             entry.dock_widget.setFloating(False)
 
-    def _detach_from_dock_or_splitter(self, entry: PanelEntry):
-        if entry.dock_widget:
-            self._disconnect_dock_signals(entry.dock_widget)
-            entry.dock_widget.setWidget(None)
+    def _destroy_dock(self, entry: PanelEntry, *, remove_from_window: bool = False):
+        dock = entry.dock_widget
+        if dock is None:
+            return
+        entry.dock_widget = None
+        self._disconnect_dock_signals(dock)
+        dock.setWidget(None)
+        if entry.widget:
             entry.widget.setParent(None)
-            self._window.removeDockWidget(entry.dock_widget)
-            entry.dock_widget.deleteLater()
-            entry.dock_widget = None
+        if remove_from_window:
+            self._window.removeDockWidget(dock)
         else:
-            entry.widget.setParent(None)
+            dock.setParent(None)
+        dock.deleteLater()
 
-    def _detach_all_from_splitter(self):
-        for name, entry in self._panels.items():
-            if entry.floating_window is None and entry.dock_widget is None:
+    def _teardown_splitter(self):
+        if not self._root_splitter:
+            return
+        for entry in self._panels.values():
+            if entry.floating_window is None and entry.dock_widget is None and entry.widget is not None:
                 entry.widget.setParent(None)
+        self._root_splitter.setParent(None)
+        self._root_splitter.deleteLater()
+        self._root_splitter = None
+
+    def _apply_collapse_state(self):
+        if not self._root_splitter or not self._tree.collapsed:
+            return
+        collapsed_widgets = {
+            entry.widget
+            for name in self._tree.collapsed
+            if (entry := self._panels.get(name)) and name in self._tree.docked_names()
+        }
+        if collapsed_widgets:
+            self._collapse_in_splitter(self._root_splitter, collapsed_widgets)
+
+    def _collapse_in_splitter(
+        self, splitter: QtWidgets.QSplitter, collapsed_widgets: set[QtWidgets.QWidget],
+    ):
+        sizes = splitter.sizes()
+        changed = False
+        for i in range(splitter.count()):
+            child = splitter.widget(i)
+            if isinstance(child, QtWidgets.QSplitter):
+                self._collapse_in_splitter(child, collapsed_widgets)
+            elif child in collapsed_widgets:
+                sizes[i] = 0
+                splitter.setCollapsible(i, True)
+                changed = True
+        if changed:
+            splitter.setSizes(sizes)
 
     def _cleanup_entry(self, entry: PanelEntry):
         if entry.floating_window:
@@ -558,13 +563,7 @@ class LayoutManager(QtCore.QObject):
             win.close()
             win.deleteLater()
         if entry.dock_widget:
-            dock = entry.dock_widget
-            entry.dock_widget = None
-            self._disconnect_dock_signals(dock)
-            dock.setWidget(None)
-            entry.widget.setParent(None)
-            self._window.removeDockWidget(dock)
-            dock.deleteLater()
+            self._destroy_dock(entry, remove_from_window=True)
 
     def _ensure_central_placeholder(self):
         if self._central_placeholder is None:
@@ -579,16 +578,20 @@ class LayoutManager(QtCore.QObject):
             self._central_placeholder = None
 
     def _on_dock_closed(self, name: str):
-        self._tree.hidden.add(name)
+        entry = self._panels.get(name)
+        if entry:
+            if entry.dock_widget:
+                entry.last_floating = capture_floating_state(entry.dock_widget)
+            self._destroy_dock(entry, remove_from_window=True)
+        self._tree.root = remove_panel(self._tree.root, name)
+        self._tree.floating.pop(name, None)
+        self._tree.collapsed.discard(name)
 
     def _on_dock_float_changed(self, name: str, floating: bool):
         if floating:
             entry = self._panels.get(name)
             if entry and entry.dock_widget:
-                geo = entry.dock_widget.geometry()
-                self._tree.floating[name] = FloatingState(
-                    geo.x(), geo.y(), geo.width(), geo.height(),
-                )
+                self._tree.floating[name] = capture_floating_state(entry.dock_widget)
         else:
             self._tree.floating.pop(name, None)
 
@@ -596,5 +599,7 @@ class LayoutManager(QtCore.QObject):
         entry = self._panels.get(name)
         if not entry or not entry.floating_window:
             return
-        self._tree.floating[name] = capture_floating_state(entry.floating_window)
-        self._tree.hidden.add(name)
+        entry.last_floating = capture_floating_state(entry.floating_window)
+        self._cleanup_entry(entry)
+        self._tree.root = remove_panel(self._tree.root, name)
+        self._tree.floating.pop(name, None)

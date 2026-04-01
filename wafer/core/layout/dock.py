@@ -8,8 +8,8 @@ from .tree import FloatingState
 class PanelDockWidget(QtWidgets.QDockWidget):
     closed = QtCore.Signal(str)
 
-    def __init__(self, name: str, title: str, parent: QtWidgets.QMainWindow | None = None):
-        super().__init__(title, parent)
+    def __init__(self, name: str, parent: QtWidgets.QMainWindow | None = None):
+        super().__init__(name, parent)
         self.panel_name = name
         self.setObjectName(f"panel_dock_{name}")
         self.setFeatures(
@@ -32,10 +32,10 @@ class PanelDockWidget(QtWidgets.QDockWidget):
 class FloatingWindow(QtWidgets.QWidget):
     closed = QtCore.Signal(str)
 
-    def __init__(self, name: str, title: str, widget: QtWidgets.QWidget, parent: QtWidgets.QWidget | None = None):
+    def __init__(self, name: str, widget: QtWidgets.QWidget, parent: QtWidgets.QWidget | None = None):
         super().__init__(parent, QtCore.Qt.Window | QtCore.Qt.WindowCloseButtonHint)
         self.panel_name = name
-        self.setWindowTitle(title)
+        self.setWindowTitle(name)
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         widget.setParent(self)
@@ -59,12 +59,11 @@ class FloatingWindow(QtWidgets.QWidget):
 
 def create_dock(
     name: str,
-    title: str,
     widget: QtWidgets.QWidget,
     window: QtWidgets.QMainWindow,
     area: QtCore.Qt.DockWidgetArea = QtCore.Qt.LeftDockWidgetArea,
 ) -> PanelDockWidget:
-    dock = PanelDockWidget(name, title, window)
+    dock = PanelDockWidget(name, window)
     widget.setParent(dock)
     dock.setWidget(widget)
     window.addDockWidget(area, dock)
@@ -73,12 +72,11 @@ def create_dock(
 
 def apply_floating(
     name: str,
-    title: str,
     widget: QtWidgets.QWidget,
     state: FloatingState | None = None,
     parent: QtWidgets.QWidget | None = None,
 ) -> FloatingWindow:
-    win = FloatingWindow(name, title, widget, parent)
+    win = FloatingWindow(name, widget, parent)
     if state:
         win.setGeometry(state.x, state.y, state.width, state.height)
     else:
@@ -87,6 +85,6 @@ def apply_floating(
     return win
 
 
-def capture_floating_state(win: FloatingWindow) -> FloatingState:
-    geo = win.geometry()
+def capture_floating_state(widget: QtWidgets.QWidget) -> FloatingState:
+    geo = widget.geometry()
     return FloatingState(geo.x(), geo.y(), geo.width(), geo.height())

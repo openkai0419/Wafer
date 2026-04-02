@@ -426,14 +426,27 @@ class FileDB:
             cur = self.conn.cursor()
             try:
                 entries = [(s, c, 'pending', None) for s in sources for c in collectors]
-                cur.executemany(
-                    '''INSERT INTO collection_status (source, collector, status, collected_at)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(source, collector) DO UPDATE SET
-                        status       = 'pending',
-                        collected_at = NULL''',
-                    entries,
-                )
+                try:
+                    cur.executemany(
+                        '''INSERT INTO collection_status (source, collector, status, collected_at)
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT(source, collector) DO UPDATE SET
+                            status       = 'pending',
+                            collected_at = NULL''',
+                        entries,
+                    )
+                except sqlite3.IntegrityError:
+                    existing = self._existing_sources(cur)
+                    entries = [e for e in entries if e[0] in existing]
+                    if entries:
+                        cur.executemany(
+                            '''INSERT INTO collection_status (source, collector, status, collected_at)
+                            VALUES (?, ?, ?, ?)
+                            ON CONFLICT(source, collector) DO UPDATE SET
+                                status       = 'pending',
+                                collected_at = NULL''',
+                            entries,
+                        )
             finally:
                 cur.close()
 

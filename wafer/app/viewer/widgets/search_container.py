@@ -125,6 +125,8 @@ class SearchContainer(QtWidgets.QWidget, TranslatorMixin):
         self._tools_host = None
         self._build_ui()
         self._add_row(TextFilter, emit=False)
+        self.setSizePolicy(
+            QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Maximum)
 
     def update_translation(self):
         for action in self._order_group.actions():

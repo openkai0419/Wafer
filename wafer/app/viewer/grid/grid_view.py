@@ -123,7 +123,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self._zoom_restore_guard = False
         self.min_height = int(self.screen_width / 30)
         self.max_height = int(self.screen_width)
-        self.setMinimumWidth(self.min_height)
+        self.setMinimumSize(self.min_height, self.min_height)
         self.spacing = dpix(4)
         self.orientation = 0
         self._hz = self.orientation <= 1

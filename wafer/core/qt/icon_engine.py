@@ -357,3 +357,35 @@ def _draw_sort(p: QPainter, r: QRectF, color: QColor):
     p.drawLine(QPointF(cx, top), QPointF(cx, bot))
     p.drawLine(QPointF(cx, bot), QPointF(cx - head, bot - head))
     p.drawLine(QPointF(cx, bot), QPointF(cx + head, bot - head))
+
+
+@_register('menu', padding=0.15)
+def _draw_menu(p: QPainter, r: QRectF, color: QColor):
+    lw = max(1.5, min(r.width(), r.height()) * 0.11)
+    pen = QPen(color, lw)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    p.setPen(pen)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    cy = r.center().y()
+    gap = r.height() * 0.25
+    mx = r.left() + r.width() * 0.1
+    mx2 = r.right() - r.width() * 0.1
+    p.drawLine(QPointF(mx, cy - gap), QPointF(mx2, cy - gap))
+    p.drawLine(QPointF(mx, cy), QPointF(mx2, cy))
+    p.drawLine(QPointF(mx, cy + gap), QPointF(mx2, cy + gap))
+
+
+@_register('layout_edit', padding=0.12)
+def _draw_layout_edit(p: QPainter, r: QRectF, color: QColor):
+    lw = max(1.5, min(r.width(), r.height()) * 0.10)
+    pen = QPen(color, lw)
+    pen.setCapStyle(Qt.PenCapStyle.SquareCap)
+    p.setPen(pen)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    m = lw / 2
+    ir = r.adjusted(m, m, -m, -m)
+    p.drawRect(ir)
+    vx = ir.left() + ir.width() * 0.35
+    p.drawLine(QPointF(vx, ir.top()), QPointF(vx, ir.bottom()))
+    hy = ir.top() + ir.height() * 0.5
+    p.drawLine(QPointF(vx, hy), QPointF(ir.right(), hy))

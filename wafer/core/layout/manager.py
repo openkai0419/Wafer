@@ -22,6 +22,7 @@ from .tree import (
     SplitNode,
     flatten,
     insert_panel,
+    reinsert_from_blueprint,
     remove_panel,
 )
 
@@ -33,6 +34,7 @@ MODE_LOCKED = "locked"
 class PanelEntry:
     name: str
     factory: Callable[[], QtWidgets.QWidget]
+    closable: bool = True
     widget: QtWidgets.QWidget | None = None
     dock_widget: PanelDockWidget | None = None
     floating_window: FloatingWindow | None = None
@@ -52,7 +54,10 @@ class LayoutManager(QtCore.QObject):
         self._mode = MODE_LOCKED
         self._tree = LayoutTree()
         self._root_splitter: QtWidgets.QSplitter | None = None
+        self._central_container: QtWidgets.QWidget | None = None
         self._central_placeholder: QtWidgets.QWidget | None = None
+        self._pending_state: dict | None = None
+        self._margin = 0
         self._window.setDockOptions(
             QtWidgets.QMainWindow.AnimatedDocks
             | QtWidgets.QMainWindow.AllowNestedDocks
@@ -62,15 +67,23 @@ class LayoutManager(QtCore.QObject):
     def mode(self) -> str:
         return self._mode
 
+    def set_margin(self, margin: int):
+        self._margin = margin
+
     def register(
         self,
         name: str,
         factory: Callable[[], QtWidgets.QWidget],
+        *,
+        closable: bool = True,
     ) -> PanelEntry:
         if name in self._panels:
             self.unregister(name)
-        entry = PanelEntry(name=name, factory=factory)
+        entry = PanelEntry(name=name, factory=factory, closable=closable)
         self._panels[name] = entry
+        self._register_toggle_command(name)
+        if self._pending_state is not None:
+            self._apply_pending_for(name, entry)
         return entry
 
     def _ensure_widget(self, entry: PanelEntry) -> QtWidgets.QWidget:
@@ -82,6 +95,7 @@ class LayoutManager(QtCore.QObject):
         entry = self._panels.pop(name, None)
         if entry is None:
             return
+        self._unregister_toggle_command(name)
         self._cleanup_entry(entry)
         self._tree.root = remove_panel(self._tree.root, name)
         self._tree.floating.pop(name, None)
@@ -113,6 +127,8 @@ class LayoutManager(QtCore.QObject):
             return
 
         if name in self._tree.floating:
+            if not entry.closable:
+                return
             entry.last_floating = capture_floating_state(
                 entry.floating_window or entry.dock_widget
             )
@@ -125,10 +141,14 @@ class LayoutManager(QtCore.QObject):
                 self._tree.collapsed.discard(name)
                 self._rebuild()
             else:
+                if not entry.closable:
+                    return
                 self._sync_tree_from_current()
                 self._tree.collapsed.add(name)
                 self._apply_collapse_state()
         else:
+            if not entry.closable:
+                return
             self._sync_tree_from_current()
             self._cleanup_entry(entry)
             self._tree.root = remove_panel(self._tree.root, name)
@@ -164,6 +184,7 @@ class LayoutManager(QtCore.QObject):
         return result
 
     def restore_state(self, state: dict):
+        self._pending_state = state
         old_mode = self._mode
 
         tree_data = state.get('tree')
@@ -203,6 +224,7 @@ class LayoutManager(QtCore.QObject):
             self._root_splitter.setParent(None)
             self._root_splitter.deleteLater()
             self._root_splitter = None
+        self._central_container = None
         self._remove_central_placeholder()
 
         target_mode = state.get('mode', MODE_LOCKED)
@@ -291,7 +313,7 @@ class LayoutManager(QtCore.QObject):
             self._root_splitter.addWidget(splitter)
         else:
             return
-        self._window.setCentralWidget(self._root_splitter)
+        self._set_central(self._root_splitter)
         self._apply_collapse_state()
 
     def _rebuild(self):
@@ -381,6 +403,7 @@ class LayoutManager(QtCore.QObject):
         widget = self._ensure_widget(entry)
         dock = create_dock(
             entry.name, widget, self._window, QtCore.Qt.LeftDockWidgetArea,
+            closable=entry.closable,
         )
         dock.closed.connect(self._on_dock_closed)
         dock.topLevelChanged.connect(
@@ -527,6 +550,7 @@ class LayoutManager(QtCore.QObject):
         self._root_splitter.setParent(None)
         self._root_splitter.deleteLater()
         self._root_splitter = None
+        self._central_container = None
 
     def _apply_collapse_state(self):
         if not self._root_splitter or not self._tree.collapsed:
@@ -577,8 +601,27 @@ class LayoutManager(QtCore.QObject):
             self._central_placeholder.deleteLater()
             self._central_placeholder = None
 
+    def _set_central(self, widget: QtWidgets.QWidget):
+        self._central_container = None
+        if self._margin > 0:
+            container = QtWidgets.QWidget()
+            layout = QtWidgets.QVBoxLayout(container)
+            m = self._margin
+            layout.setContentsMargins(m, m, m, m)
+            layout.setSpacing(0)
+            widget.setParent(container)
+            layout.addWidget(widget)
+            self._central_container = container
+            self._window.setCentralWidget(container)
+        else:
+            self._window.setCentralWidget(widget)
+
     def _on_dock_closed(self, name: str):
         entry = self._panels.get(name)
+        if entry and not entry.closable:
+            if entry.dock_widget:
+                entry.dock_widget.show()
+            return
         if entry:
             if entry.dock_widget:
                 entry.last_floating = capture_floating_state(entry.dock_widget)
@@ -599,7 +642,76 @@ class LayoutManager(QtCore.QObject):
         entry = self._panels.get(name)
         if not entry or not entry.floating_window:
             return
+        if not entry.closable:
+            return
         entry.last_floating = capture_floating_state(entry.floating_window)
         self._cleanup_entry(entry)
         self._tree.root = remove_panel(self._tree.root, name)
         self._tree.floating.pop(name, None)
+
+    @staticmethod
+    def _command_id(panel_name: str) -> str:
+        slug = panel_name.lower().replace(" ", "_")
+        return f"panel.toggle_{slug}"
+
+    def _register_toggle_command(self, name: str):
+        from ..commands.bridge import Command as BridgeCommand
+        from ..commands.command.core import CommandMeta
+
+        cmd_id = self._command_id(name)
+        mgr = self
+
+        def _toggle(ctx, _name=name):
+            mgr.toggle_panel(_name)
+
+        BridgeCommand.register_commands([
+            CommandMeta(
+                path=cmd_id,
+                id=cmd_id,
+                display=f"Toggle {name}",
+                func=_toggle,
+            ),
+        ])
+
+    def _unregister_toggle_command(self, name: str):
+        from ..commands.command.core import CommandRegistry
+
+        cmd_id = self._command_id(name)
+        registry = CommandRegistry.instance()
+        registry._commands.pop(cmd_id, None)
+
+
+
+    def _apply_pending_for(self, name: str, entry: PanelEntry):
+        state = self._pending_state
+        if state is None:
+            return
+
+        tree_data = state.get('tree', {})
+        original_tree = LayoutTree.from_dict(tree_data)
+        dormant_data = state.get('dormant', {})
+
+        if name in original_tree.floating:
+            fs = original_tree.floating[name]
+            self._tree.floating[name] = fs
+            if self._mode == MODE_EDIT:
+                self._make_floating_dock(entry, fs)
+            else:
+                self._show_as_independent_window(entry, fs)
+            return
+
+        if name in dormant_data:
+            fs_dict = dormant_data[name]
+            if fs_dict:
+                entry.last_floating = FloatingState(**fs_dict)
+            return
+
+        if name in set(original_tree.docked_names()):
+            saved_root = original_tree.root
+            self._tree.root = reinsert_from_blueprint(
+                self._tree.root, saved_root, name
+            )
+            if name in original_tree.collapsed:
+                self._tree.collapsed.add(name)
+            self._rebuild()
+            return

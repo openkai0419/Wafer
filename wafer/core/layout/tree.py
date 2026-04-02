@@ -173,3 +173,131 @@ def flatten(node: SplitNode | LeafNode | None) -> SplitNode | LeafNode | None:
     if len(new_children) == 1:
         return new_children[0]
     return SplitNode(orientation=node.orientation, children=new_children, sizes=new_sizes)
+
+
+def _find_parent_context(
+    node: SplitNode | LeafNode | None, name: str,
+) -> tuple[SplitNode, int] | None:
+    if node is None or isinstance(node, LeafNode):
+        return None
+    for i, child in enumerate(node.children):
+        if isinstance(child, LeafNode) and child.panel_name == name:
+            return (node, i)
+        result = _find_parent_context(child, name)
+        if result is not None:
+            return result
+    return None
+
+
+def _collect_names(node: SplitNode | LeafNode | None) -> set[str]:
+    if node is None:
+        return set()
+    if isinstance(node, LeafNode):
+        return {node.panel_name}
+    result: set[str] = set()
+    for c in node.children:
+        result |= _collect_names(c)
+    return result
+
+
+def reinsert_from_blueprint(
+    current: SplitNode | LeafNode | None,
+    blueprint: SplitNode | LeafNode | None,
+    name: str,
+) -> SplitNode | LeafNode:
+    leaf = LeafNode(name)
+    if blueprint is None:
+        return insert_panel(current, name)
+
+    ctx = _find_parent_context(blueprint, name)
+    if ctx is None:
+        return insert_panel(current, name)
+
+    parent_node, idx = ctx
+    bp_size = parent_node.sizes[idx] if idx < len(parent_node.sizes) else 200
+
+    existing = _collect_names(current)
+    sibling_names = []
+    for i, child in enumerate(parent_node.children):
+        if i != idx:
+            if isinstance(child, LeafNode):
+                sibling_names.append((i, child.panel_name))
+            else:
+                for pn in child.panel_names():
+                    sibling_names.append((i, pn))
+
+    anchor: str | None = None
+    anchor_after = True
+    best_before: tuple[int, str] | None = None
+    best_after_item: tuple[int, str] | None = None
+    for si, sn in sibling_names:
+        if sn not in existing:
+            continue
+        if si < idx:
+            best_before = (si, sn)
+        elif best_after_item is None:
+            best_after_item = (si, sn)
+
+    if best_before is not None:
+        anchor = best_before[1]
+        anchor_after = True
+    elif best_after_item is not None:
+        anchor = best_after_item[1]
+        anchor_after = False
+
+    if current is None:
+        return leaf
+
+    if anchor is None:
+        return insert_panel(current, name, parent_node.orientation)
+
+    return _insert_near(current, leaf, anchor, anchor_after, parent_node.orientation, bp_size)
+
+
+def _insert_near(
+    node: SplitNode | LeafNode | None,
+    leaf: LeafNode,
+    anchor: str,
+    after: bool,
+    orientation: Orientation,
+    size: int,
+) -> SplitNode | LeafNode:
+    if node is None:
+        return leaf
+
+    if isinstance(node, LeafNode):
+        if node.panel_name == anchor:
+            children = [node, leaf] if after else [leaf, node]
+            sizes = [200, size] if after else [size, 200]
+            return SplitNode(orientation=orientation, children=children, sizes=sizes)
+        return node
+
+    for i, child in enumerate(node.children):
+        if isinstance(child, LeafNode) and child.panel_name == anchor:
+            if node.orientation == orientation:
+                new_children = list(node.children)
+                new_sizes = list(node.sizes)
+                insert_idx = i + 1 if after else i
+                new_children.insert(insert_idx, leaf)
+                new_sizes.insert(insert_idx, size)
+                return SplitNode(orientation=node.orientation, children=new_children, sizes=new_sizes)
+            else:
+                children = [child, leaf] if after else [leaf, child]
+                child_size = node.sizes[i] if i < len(node.sizes) else 200
+                sizes = [child_size, size] if after else [size, child_size]
+                wrapper = SplitNode(orientation=orientation, children=children, sizes=sizes)
+                new_node_children = list(node.children)
+                new_node_children[i] = wrapper
+                return SplitNode(orientation=node.orientation, children=new_node_children, sizes=list(node.sizes))
+        if isinstance(child, SplitNode) and anchor in _collect_names(child):
+            if node.orientation == orientation:
+                new_children = list(node.children)
+                new_sizes = list(node.sizes)
+                insert_idx = i + 1 if after else i
+                new_children.insert(insert_idx, leaf)
+                new_sizes.insert(insert_idx, size)
+                return SplitNode(orientation=node.orientation, children=new_children, sizes=new_sizes)
+            new_child = _insert_near(child, leaf, anchor, after, orientation, size)
+            new_children = list(node.children)
+            new_children[i] = new_child
+            return SplitNode(orientation=node.orientation, children=new_children, sizes=list(node.sizes))

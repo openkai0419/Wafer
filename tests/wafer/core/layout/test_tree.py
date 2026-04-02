@@ -6,6 +6,7 @@ from wafer.core.layout.tree import (
     SplitNode,
     flatten,
     insert_panel,
+    reinsert_from_blueprint,
     remove_panel,
 )
 
@@ -266,3 +267,78 @@ class TestFlatten:
         assert len(result.children) == 3
         assert len(result.sizes) == 3
         assert result.sizes[0] == 100
+
+
+class TestReinsertFromBlueprint:
+    @staticmethod
+    def _five_panel_tree():
+        return SplitNode(
+            Orientation.HORIZONTAL,
+            [
+                SplitNode(
+                    Orientation.VERTICAL,
+                    [LeafNode("Toolbar"), LeafNode("Folder Tree")],
+                    sizes=[80, 500],
+                ),
+                SplitNode(
+                    Orientation.VERTICAL,
+                    [LeafNode("Search"), LeafNode("Grid View")],
+                    sizes=[40, 540],
+                ),
+                LeafNode("File Viewer"),
+            ],
+            sizes=[200, 600, 400],
+        )
+
+    def test_reinsert_sibling_same_level(self):
+        blueprint = self._five_panel_tree()
+        current = remove_panel(blueprint, "Grid View")
+        result = reinsert_from_blueprint(current, blueprint, "Grid View")
+        names = result.panel_names()
+        assert "Grid View" in names
+        assert names.index("Search") < names.index("Grid View")
+
+    def test_reinsert_root_level_leaf(self):
+        blueprint = self._five_panel_tree()
+        current = remove_panel(blueprint, "File Viewer")
+        result = reinsert_from_blueprint(current, blueprint, "File Viewer")
+        names = result.panel_names()
+        assert "File Viewer" in names
+        assert names.index("Grid View") < names.index("File Viewer")
+
+    def test_reinsert_preserves_orientation(self):
+        blueprint = self._five_panel_tree()
+        current = remove_panel(blueprint, "Grid View")
+        result = reinsert_from_blueprint(current, blueprint, "Grid View")
+        for c in result.children if isinstance(result, SplitNode) else []:
+            if isinstance(c, SplitNode):
+                search_names = c.panel_names()
+                if "Search" in search_names and "Grid View" in search_names:
+                    assert c.orientation == Orientation.VERTICAL
+
+    def test_reinsert_into_none(self):
+        blueprint = SplitNode(
+            Orientation.HORIZONTAL,
+            [LeafNode("A"), LeafNode("B")],
+            sizes=[100, 200],
+        )
+        result = reinsert_from_blueprint(None, blueprint, "A")
+        assert isinstance(result, LeafNode)
+        assert result.panel_name == "A"
+
+    def test_reinsert_no_blueprint(self):
+        current = LeafNode("A")
+        result = reinsert_from_blueprint(current, None, "B")
+        names = result.panel_names() if isinstance(result, SplitNode) else [result.panel_name]
+        assert "B" in names
+
+    def test_reinsert_after_multiple_removes(self):
+        blueprint = self._five_panel_tree()
+        current = remove_panel(blueprint, "Grid View")
+        current = remove_panel(current, "File Viewer")
+        current = reinsert_from_blueprint(current, blueprint, "Grid View")
+        current = reinsert_from_blueprint(current, blueprint, "File Viewer")
+        names = current.panel_names()
+        assert names.index("Toolbar") < names.index("Folder Tree")
+        assert names.index("Search") < names.index("Grid View")
+        assert names.index("Grid View") < names.index("File Viewer")

@@ -5,8 +5,24 @@
             "type": "split",
             "orientation": "horizontal",
             "children": [
-                {"type": "leaf", "panel": "Folder Tree"},
-                {"type": "leaf", "panel": "Grid View"},
+                {
+                    "type": "split",
+                    "orientation": "vertical",
+                    "children": [
+                        {"type": "leaf", "panel": "Toolbar"},
+                        {"type": "leaf", "panel": "Folder Tree"}
+                    ],
+                    "sizes": [80, 500]
+                },
+                {
+                    "type": "split",
+                    "orientation": "vertical",
+                    "children": [
+                        {"type": "leaf", "panel": "Search"},
+                        {"type": "leaf", "panel": "Grid View"}
+                    ],
+                    "sizes": [40, 540]
+                },
                 {"type": "leaf", "panel": "File Viewer"}
             ],
             "sizes": [200, 600, 400]

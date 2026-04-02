@@ -1146,3 +1146,260 @@ class TestUnregisterCollapsed:
 
         assert "viewer" not in mgr._tree.collapsed
         assert "viewer" not in mgr.panel_names()
+
+
+class TestClosableOption:
+    def test_register_non_closable(self, layout_env):
+        mgr, win, panels = layout_env
+        w = _make_panel("toolbar")
+        mgr.register("toolbar", lambda: w, closable=False)
+        entry = mgr._panels["toolbar"]
+        assert entry.closable is False
+
+    def test_register_default_closable(self, layout_env):
+        mgr, win, panels = layout_env
+        entry = mgr._panels["folder"]
+        assert entry.closable is True
+
+    def test_non_closable_toggle_from_visible_is_noop(self, layout_env):
+        mgr, win, panels = layout_env
+        w = _make_panel("toolbar")
+        mgr.register("toolbar", lambda: w, closable=False)
+        mgr._tree.root = insert_panel(mgr._tree.root, "toolbar")
+        mgr._rebuild()
+        _process()
+
+        assert mgr.is_panel_visible("toolbar")
+        mgr.toggle_panel("toolbar")
+        _process()
+        assert mgr.is_panel_visible("toolbar")
+
+    def test_non_closable_toggle_from_dormant_shows_panel(self, layout_env):
+        mgr, win, panels = layout_env
+        w = _make_panel("toolbar")
+        mgr.register("toolbar", lambda: w, closable=False)
+        _process()
+
+        assert "toolbar" in mgr.dormant_panels()
+        mgr.toggle_panel("toolbar")
+        _process()
+        assert "toolbar" in mgr._tree.floating
+
+    def test_non_closable_dock_close_event_blocked(self, layout_env):
+        mgr, win, panels = layout_env
+        w = _make_panel("toolbar")
+        mgr.register("toolbar", lambda: w, closable=False)
+        mgr._tree.root = insert_panel(mgr._tree.root, "toolbar")
+        mgr._rebuild()
+        _process()
+
+        mgr.set_mode(MODE_EDIT)
+        _process()
+
+        entry = mgr._panels["toolbar"]
+        assert entry.dock_widget is not None
+        features = entry.dock_widget.features()
+        assert not (features & QtWidgets.QDockWidget.DockWidgetClosable)
+
+    def test_non_closable_floating_close_blocked(self, layout_env):
+        mgr, win, panels = layout_env
+        w = _make_panel("toolbar")
+        mgr.register("toolbar", lambda: w, closable=False)
+        mgr.toggle_panel("toolbar")
+        _process()
+
+        assert "toolbar" in mgr._tree.floating
+        mgr.toggle_panel("toolbar")
+        _process()
+        assert "toolbar" in mgr._tree.floating
+
+    def test_closable_panel_can_be_toggled_off(self, layout_env):
+        mgr, win, panels = layout_env
+        assert mgr.is_panel_visible("folder")
+        mgr.toggle_panel("folder")
+        _process()
+        assert mgr.is_panel_collapsed("folder")
+
+
+class TestDynamicToggleCommands:
+    def test_register_creates_toggle_command(self, layout_env):
+        mgr, win, panels = layout_env
+        from wafer.core.commands.command.core import CommandRegistry
+        reg = CommandRegistry.instance()
+        assert reg.has_command("panel.toggle_folder")
+        assert reg.has_command("panel.toggle_grid")
+        assert reg.has_command("panel.toggle_viewer")
+
+    def test_unregister_removes_toggle_command(self, layout_env):
+        mgr, win, panels = layout_env
+        from wafer.core.commands.command.core import CommandRegistry
+        reg = CommandRegistry.instance()
+        assert reg.has_command("panel.toggle_viewer")
+        mgr.unregister("viewer")
+        _process()
+        assert not reg.has_command("panel.toggle_viewer")
+
+    def test_toggle_command_id_slugifies_spaces(self, layout_env):
+        mgr, win, panels = layout_env
+        w = _make_panel("File Viewer")
+        mgr.register("File Viewer", lambda: w)
+        from wafer.core.commands.command.core import CommandRegistry
+        reg = CommandRegistry.instance()
+        assert reg.has_command("panel.toggle_file_viewer")
+
+    def test_command_id_generation(self, layout_env):
+        mgr, win, panels = layout_env
+        assert mgr._command_id("Folder Tree") == "panel.toggle_folder_tree"
+        assert mgr._command_id("Grid View") == "panel.toggle_grid_view"
+        assert mgr._command_id("Search") == "panel.toggle_search"
+
+
+class TestDeferredRestore:
+    @pytest.fixture()
+    def five_panel_state(self):
+        return {
+            "mode": "locked",
+            "tree": {
+                "root": {
+                    "type": "split",
+                    "orientation": "horizontal",
+                    "sizes": [200, 600, 400],
+                    "children": [
+                        {
+                            "type": "split",
+                            "orientation": "vertical",
+                            "sizes": [80, 500],
+                            "children": [
+                                {"type": "leaf", "panel": "Toolbar"},
+                                {"type": "leaf", "panel": "Folder Tree"},
+                            ],
+                        },
+                        {
+                            "type": "split",
+                            "orientation": "vertical",
+                            "sizes": [40, 540],
+                            "children": [
+                                {"type": "leaf", "panel": "Search"},
+                                {"type": "leaf", "panel": "Grid View"},
+                            ],
+                        },
+                        {"type": "leaf", "panel": "File Viewer"},
+                    ],
+                },
+                "floating": {},
+                "collapsed": [],
+            },
+        }
+
+    def test_late_register_docked_panel_appears(self, qapp, five_panel_state):
+        win = QtWidgets.QMainWindow()
+        win.show()
+        mgr = LayoutManager(win)
+        mgr.register("Toolbar", lambda: _make_panel("Toolbar"), closable=False)
+        mgr.register("Folder Tree", lambda: _make_panel("Folder Tree"))
+        mgr.register("Search", lambda: _make_panel("Search"))
+        mgr.restore_state(five_panel_state)
+        qapp.processEvents()
+
+        assert "Grid View" not in mgr._tree.all_names()
+
+        mgr.register("Grid View", lambda: _make_panel("Grid View"))
+        qapp.processEvents()
+
+        assert "Grid View" in mgr._tree.docked_names()
+        assert mgr._panels["Grid View"].widget is not None
+
+    def test_late_register_preserves_tree_order(self, qapp, five_panel_state):
+        win = QtWidgets.QMainWindow()
+        win.show()
+        mgr = LayoutManager(win)
+        mgr.register("Toolbar", lambda: _make_panel("Toolbar"), closable=False)
+        mgr.register("Folder Tree", lambda: _make_panel("Folder Tree"))
+        mgr.register("Search", lambda: _make_panel("Search"))
+        mgr.restore_state(five_panel_state)
+        qapp.processEvents()
+
+        mgr.register("Grid View", lambda: _make_panel("Grid View"))
+        mgr.register("File Viewer", lambda: _make_panel("File Viewer"))
+        qapp.processEvents()
+
+        names = mgr._tree.docked_names()
+        assert names.index("Search") < names.index("Grid View")
+        assert names.index("Grid View") < names.index("File Viewer")
+        assert names.index("Toolbar") < names.index("Folder Tree")
+
+    def test_late_register_floating_panel(self, qapp):
+        state = {
+            "mode": "locked",
+            "tree": {
+                "root": {"type": "leaf", "panel": "A"},
+                "floating": {"B": {"x": 100, "y": 200, "width": 300, "height": 250}},
+                "collapsed": [],
+            },
+        }
+        win = QtWidgets.QMainWindow()
+        win.show()
+        mgr = LayoutManager(win)
+        mgr.register("A", lambda: _make_panel("A"))
+        mgr.restore_state(state)
+        qapp.processEvents()
+
+        mgr.register("B", lambda: _make_panel("B"))
+        qapp.processEvents()
+
+        assert mgr._panels["B"].floating_window is not None
+        geo = mgr._panels["B"].floating_window.geometry()
+        assert geo.x() == 100
+        assert geo.y() == 200
+
+    def test_late_register_dormant_panel(self, qapp):
+        state = {
+            "mode": "locked",
+            "tree": {
+                "root": {"type": "leaf", "panel": "A"},
+                "floating": {},
+                "collapsed": [],
+            },
+            "dormant": {"B": {"x": 50, "y": 60, "width": 200, "height": 150}},
+        }
+        win = QtWidgets.QMainWindow()
+        win.show()
+        mgr = LayoutManager(win)
+        mgr.register("A", lambda: _make_panel("A"))
+        mgr.restore_state(state)
+        qapp.processEvents()
+
+        mgr.register("B", lambda: _make_panel("B"))
+        qapp.processEvents()
+
+        entry = mgr._panels["B"]
+        assert entry.floating_window is None
+        assert entry.dock_widget is None
+        assert entry.last_floating is not None
+        assert entry.last_floating.x == 50
+
+    def test_late_register_collapsed_panel(self, qapp, five_panel_state):
+        five_panel_state["tree"]["collapsed"] = ["Grid View"]
+        win = QtWidgets.QMainWindow()
+        win.show()
+        mgr = LayoutManager(win)
+        mgr.register("Toolbar", lambda: _make_panel("Toolbar"), closable=False)
+        mgr.register("Folder Tree", lambda: _make_panel("Folder Tree"))
+        mgr.register("Search", lambda: _make_panel("Search"))
+        mgr.register("File Viewer", lambda: _make_panel("File Viewer"))
+        mgr.restore_state(five_panel_state)
+        qapp.processEvents()
+
+        mgr.register("Grid View", lambda: _make_panel("Grid View"))
+        qapp.processEvents()
+
+        assert "Grid View" in mgr._tree.docked_names()
+        assert "Grid View" in mgr._tree.collapsed
+
+    def test_no_pending_without_restore(self, qapp):
+        win = QtWidgets.QMainWindow()
+        win.show()
+        mgr = LayoutManager(win)
+        mgr.register("A", lambda: _make_panel("A"))
+        assert mgr._pending_state is None
+        assert "A" not in mgr._tree.all_names()

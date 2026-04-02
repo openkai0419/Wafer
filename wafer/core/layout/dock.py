@@ -8,15 +8,17 @@ from .tree import FloatingState
 class PanelDockWidget(QtWidgets.QDockWidget):
     closed = QtCore.Signal(str)
 
-    def __init__(self, name: str, parent: QtWidgets.QMainWindow | None = None):
+    def __init__(self, name: str, parent: QtWidgets.QMainWindow | None = None, *, closable: bool = True):
         super().__init__(name, parent)
         self.panel_name = name
         self.setObjectName(f"panel_dock_{name}")
-        self.setFeatures(
+        features = (
             QtWidgets.QDockWidget.DockWidgetMovable
             | QtWidgets.QDockWidget.DockWidgetFloatable
-            | QtWidgets.QDockWidget.DockWidgetClosable
         )
+        if closable:
+            features |= QtWidgets.QDockWidget.DockWidgetClosable
+        self.setFeatures(features)
         self.setAllowedAreas(
             QtCore.Qt.LeftDockWidgetArea
             | QtCore.Qt.RightDockWidgetArea
@@ -33,7 +35,13 @@ class FloatingWindow(QtWidgets.QWidget):
     closed = QtCore.Signal(str)
 
     def __init__(self, name: str, widget: QtWidgets.QWidget, parent: QtWidgets.QWidget | None = None):
-        super().__init__(parent, QtCore.Qt.Window | QtCore.Qt.WindowCloseButtonHint)
+        super().__init__(
+            parent,
+            QtCore.Qt.Window
+            | QtCore.Qt.WindowCloseButtonHint
+            | QtCore.Qt.WindowMinimizeButtonHint
+            | QtCore.Qt.WindowMaximizeButtonHint,
+        )
         self.panel_name = name
         self.setWindowTitle(name)
         layout = QtWidgets.QVBoxLayout(self)
@@ -62,8 +70,10 @@ def create_dock(
     widget: QtWidgets.QWidget,
     window: QtWidgets.QMainWindow,
     area: QtCore.Qt.DockWidgetArea = QtCore.Qt.LeftDockWidgetArea,
+    *,
+    closable: bool = True,
 ) -> PanelDockWidget:
-    dock = PanelDockWidget(name, window)
+    dock = PanelDockWidget(name, window, closable=closable)
     widget.setParent(dock)
     dock.setWidget(widget)
     window.addDockWidget(area, dock)

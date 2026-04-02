@@ -65,27 +65,20 @@ class _LogTab(QtWidgets.QPlainTextEdit):
             self.ensureCursorVisible()
 
 
-class DevLogPanel(QtWidgets.QDockWidget):
+class DevLogPanel(QtWidgets.QWidget):
 
     _instance: DevLogPanel | None = None
 
     def __init__(self, parent=None):
-        super().__init__('DevLog', parent)
+        super().__init__(parent)
         DevLogPanel._instance = self
-        self.setAllowedAreas(QtCore.Qt.BottomDockWidgetArea | QtCore.Qt.TopDockWidgetArea)
-        self.setFeatures(
-            QtWidgets.QDockWidget.DockWidgetClosable
-            | QtWidgets.QDockWidget.DockWidgetMovable
-            | QtWidgets.QDockWidget.DockWidgetFloatable
-        )
         self._entries: list[dict] = []
         self._src_tabs: dict[str, _LogTab] = {}
         self._known_dbs: set[str] = set()
         self._build_ui()
 
     def _build_ui(self):
-        container = QtWidgets.QWidget()
-        layout = QtWidgets.QVBoxLayout(container)
+        layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
@@ -122,8 +115,6 @@ class DevLogPanel(QtWidgets.QDockWidget):
         self._all_tab = _LogTab()
         self._tab_widget.addTab(self._all_tab, 'All')
         layout.addWidget(self._tab_widget)
-
-        self.setWidget(container)
 
     def append_log(self, level: str, text: str, src: str = '', db: str = ''):
         src = src or f'viewer-{os.getpid()}'

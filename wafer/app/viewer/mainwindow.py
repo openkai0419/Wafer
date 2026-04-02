@@ -1,4 +1,5 @@
 from PySide6 import QtCore, QtWidgets
+from pathlib import Path
 from ...utils.paths import data_db_path, setting_db_path, list_setting_db_names
 from ...utils.formatting import dpix
 from ...core.color.theme import ThemeManager
@@ -27,6 +28,7 @@ from .commands.menu import AppMenuRegistrar
 from .search import SearchService
 from .session import QueryState, UIState, SessionEntry, SessionStore
 from ...core.commands.bridge import UI, Command
+from ...core.layout.manager import LayoutManager
 from ...core.state import StateStore
 from ...core.qt.window import WindowStateController
 from ...core.qt.dispatcher import Dispatcher, CancelToken
@@ -62,9 +64,9 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         UI.register_instance("SearchService", self.search_service)
         self.t.set_locale(app_settings.get('window/language', 'en'))
         UI.register_instance("MainWindow", self)
+        self._closed = False
         self.setup_ui()
         self._show_loading()
-        QtWidgets.QApplication.instance().aboutToQuit.connect(self.on_close)
         self._acquire_session_async(session_id)
 
     def _acquire_session_async(self, requested_id):
@@ -282,22 +284,17 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
 
     @profiler.profile
     def setup_ui(self):
-        self.splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
-        self.setCentralWidget(self.splitter)
+        self._layout_manager = LayoutManager(self)
+        self._layout_manager.set_margin(dpix(2))
 
         self.folder_view = LazyFolderTreeView()
         self.folder_view.folder_selected.connect(self.on_folder_selected)
-
-        left_panel = QtWidgets.QWidget()
-        self.left_layout = QtWidgets.QVBoxLayout(left_panel)
-        self.left_layout.setContentsMargins(dpix(4), dpix(4), dpix(0), dpix(6))
-        self.left_layout.setSpacing(0)
-        self.splitter.addWidget(left_panel)
 
         self.iconbar = IconButtonBar(
             left_buttons=[
                 IconButtonConfig('gear', 'Settings', lambda: Command.invoke("win.show_settings")),
                 IconButtonConfig('folder_plus', 'Add Folder', lambda: Command.invoke("ft.add_folder")),
+                IconButtonConfig('menu', 'All Menu', lambda: Command.invoke("allmenu")),
             ],
             right_buttons=[
                 IconButtonConfig(
@@ -307,10 +304,18 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
                     checkable=True,
                     checked=self.search_service.get('include_subfolders', True),
                 ),
+                IconButtonConfig(
+                    'layout_edit',
+                    'Edit Layout',
+                    lambda checked: Command.invoke("win.toggle_layout_mode"),
+                    checkable=True,
+                ),
                 IconButtonConfig('fullscreen', 'Full Screen', lambda: Command.invoke("win.toggle_fullscreen")),
             ],
         )
         self._subfolder_btn = self.iconbar.right_buttons[0]
+        self._layout_edit_btn = self.iconbar.right_buttons[1]
+        self._layout_manager.mode_changed.connect(self._on_layout_mode_changed)
         self.database_combo = ComboBoxWithButtons()
         self.database_combo.textChanged.connect(self.reload_database)
         self.database_combo.addClicked.connect(lambda: Command.invoke("db.add_database"))
@@ -318,20 +323,9 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
 
         self.progress_bar = ThinProgressBar()
         self._session_button = self._create_session_button()
-        self.left_layout.addWidget(self._session_button)
-        self.left_layout.addWidget(self.progress_bar)
-        self.left_layout.addWidget(self.iconbar)
-        self.left_layout.addWidget(self.folder_view)
-        self.left_layout.addSpacing(dpix(3))
-        self.left_layout.addWidget(self.database_combo)
 
-        mid_panel = QtWidgets.QWidget()
-        self.mid_layout = QtWidgets.QVBoxLayout(mid_panel)
-        self.mid_layout.setContentsMargins(dpix(4), dpix(4), dpix(4), dpix(4))
-        self.mid_layout.setSpacing(dpix(6))
         self.search_row_widget = SearchContainer()
         self.search_row_widget.filter_changed.connect(self._on_search_setting_changed)
-        self.mid_layout.addWidget(self.search_row_widget)
 
         self.grid_items = GridItemModel(self)
         self.grid_view = GridView(self, self.grid_items)
@@ -339,27 +333,21 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.grid_view.horizontalScrollBar().setSingleStep(25)
         self.grid_view.base_height_changed.connect(self._on_zoom_changed)
 
-        self.mid_layout.addWidget(self.grid_view)
-        self.splitter.addWidget(mid_panel)
-
-        right_panel = QtWidgets.QWidget()
-        self.right_layout = QtWidgets.QVBoxLayout(right_panel)
-        self.right_layout.setContentsMargins(dpix(0), dpix(12), dpix(8), dpix(8))
-        self.right_layout.setSpacing(0)
-
         self.file_model = FileViewModel(dbpath_getter=lambda: self.database_path, parent=self)
         self.file_viewer = FileViewerWidget(self.file_model, self)
         UI.register_instance("FileViewerWidget", self.file_viewer)
         UI.register_instance("FileViewModel", self.file_model)
         UI.register_instance("GridItemModel", self.grid_items)
-        
-        self.right_layout.addWidget(self.file_viewer)
 
-        self.splitter.addWidget(right_panel)
+        self._layout_manager.register("Toolbar", self._create_toolbar_panel, closable=False)
+        self._layout_manager.register("Folder Tree", self._create_folder_panel)
+        self._layout_manager.register("Search", lambda: self.search_row_widget)
+        self._layout_manager.register("Grid View", lambda: self.grid_view)
+        self._layout_manager.register("File Viewer", lambda: self.file_viewer)
 
-        self.splitter.setStretchFactor(0, 1)
-        self.splitter.setStretchFactor(1, 1)
-        self.splitter.setStretchFactor(2, 1)
+        default_layout = self._load_default_layout()
+        self._layout_manager.restore_state(default_layout)
+
         self.overlay_stack = OverlayStack(self.grid_view)
         UI.register_instance("OverlayStack", self.overlay_stack)
         Notifier.on_info.connect(lambda t: self.overlay_stack.push(t, "info"))
@@ -373,6 +361,36 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self._setup_dev_panel()
         self._sync_service_from_ui()
         self._sync_default_checked_states()
+
+    def _create_toolbar_panel(self):
+        panel = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(panel)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(self._session_button)
+        layout.addWidget(self.progress_bar)
+        layout.addWidget(self.iconbar)
+        panel.setSizePolicy(
+            QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Maximum)
+        return panel
+
+    def _create_folder_panel(self):
+        panel = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(panel)
+        layout.setContentsMargins(dpix(0), dpix(0), dpix(0), dpix(0))
+        layout.setSpacing(0)
+        layout.addWidget(self.folder_view)
+        layout.addSpacing(dpix(3))
+        layout.addWidget(self.database_combo)
+        return panel
+
+    def _load_default_layout(self):
+        import json
+        layout_path = Path(__file__).resolve().parents[3] / '_resources' / 'panel_layout' / 'default.json'
+        if layout_path.exists():
+            with open(layout_path, encoding='utf-8') as f:
+                return json.load(f)
+        return {'mode': 'locked', 'tree': {'root': None, 'floating': {}}}
 
     def _sync_default_checked_states(self):
         Command.set_checked('win.toggle_always_on_top',
@@ -389,9 +407,17 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         Command.set_action_group_current(
             'grid_scroll_anchor', _SCROLL_ANCHOR_CMDS[1], save=False)
 
+    def _on_layout_mode_changed(self, mode):
+        from ...core.layout.manager import MODE_EDIT
+        is_edit = mode == MODE_EDIT
+        self._layout_edit_btn.blockSignals(True)
+        self._layout_edit_btn.setChecked(is_edit)
+        self._layout_edit_btn.blockSignals(False)
+        Command.set_checked("win.toggle_layout_mode", is_edit)
+
     def _register_component_states(self):
         store = StateStore.instance()
-        store.register('main_splitter', self._save_splitter, self._restore_splitter)
+        store.register('layout', self._save_layout, self._restore_layout)
         store.register('grid', self._save_grid, self._restore_grid)
         self._register_grid_plugin_states(store)
 
@@ -408,13 +434,11 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
                     lambda s, p=p: p.restore_state(s),
                 )
 
-    def _save_splitter(self):
-        return {'sizes': self.splitter.sizes()}
+    def _save_layout(self):
+        return self._layout_manager.save_state()
 
-    def _restore_splitter(self, state):
-        sizes = state.get('sizes')
-        if sizes:
-            self.splitter.setSizes(sizes)
+    def _restore_layout(self, state):
+        self._layout_manager.restore_state(state)
 
     def _save_grid(self):
         from .commands.grid_commands import _SCROLL_ANCHOR_CMDS
@@ -688,7 +712,14 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self._session_store.save_session(entry)
         self._session_entry = entry
 
+    def closeEvent(self, event):
+        self.on_close()
+        super().closeEvent(event)
+
     def on_close(self):
+        if self._closed:
+            return
+        self._closed = True
         try:
             self._save_session()
             if self.database_name:
@@ -708,8 +739,8 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         if not DEV_MODE:
             return
         from .widgets.dev_log_panel import DevLogPanel
-        self._dev_panel = DevLogPanel(self)
-        self.addDockWidget(QtCore.Qt.BottomDockWidgetArea, self._dev_panel)
+        self._dev_panel = DevLogPanel()
+        self._layout_manager.register("DevLog", lambda: self._dev_panel)
 
     @QtCore.Slot(str, str, str, str)
     def _on_dev_log(self, level: str, text: str, src: str, db: str):

@@ -26,7 +26,9 @@
 - VideoGridPlugin.restore_stateはWidget未生成時にMpvCellWidget._pending_grid_stateに保持し、_init_shared時に自動適用する（遅延復元）
 
 ■ レイアウト管理の設計判断
-- register(name, factory): factoryはCallable[[], QWidget]。登録時はDormant、Widgetは未生成。_ensure_widget()で初回アクセス時に遅延生成
+- register(name, factory, closable=True): factoryはCallable[[], QWidget]。登録時はDormant、Widgetは未生成。_ensure_widget()で初回アクセス時に遅延生成
+- closable=Falseのパネルはtoggle/close/dockの×ボタンで非表示にできない。操作不能状態の防止用
+- register()時に自動的にpanel.toggle_{slug}コマンドが登録される。unregister()時に自動削除。slugはname.lower().replace(" ","_")
 - デフォルトレイアウトは_resources/panel_layout/default.jsonに定義。restore_state()で初期配置を適用する設計
 - パネル状態は4つ: Docked(tree.root内), Floating(tree.floating内), Collapsed(tree.collapsed内,Lock専用,size=0), Dormant(_panelsにのみ存在,ツリー外)
 - Toggle: Lock専用。Editモードで呼ばれたらLockに自動切替。Docked↔Collapsed, Floating→Dormant, Dormant→Floating(再生成)
@@ -36,6 +38,8 @@
 - Dormant: ツリーに存在しないがPanelEntryは保持。last_floatingに位置を記憶し、再生成時に復元
 - save_state: collapsed含む。Dormantパネルはツリーに存在しないため自然に保存されない
 - restore_state: ツリーにない登録済みパネルはDormantとして扱う（以前はfloatingに強制追加していた）
+- MainWindowはLayoutManagerでパネル管理。StateStoreキーは'layout'（旧'main_splitter'は廃止）
+- パネル構成: Toolbar(closable=False), Folder Tree, Search, Grid View, File Viewer の5パネル
 
 ■ WidgetViewerPlugin と WidgetGridPlugin のwidget管理の違い
 - ViewerPlugin: 1プラグイン=1Widget。__init__でWIDGET_CLASS()から自動生成、self.widgetでアクセス。メソッドにwidget引数不要

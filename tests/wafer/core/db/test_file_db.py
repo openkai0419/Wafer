@@ -651,3 +651,21 @@ def test_backup_and_recreate_corrupt_db(tmp_path):
     assert db.conn is not None
     assert db.backup_path.exists()
     db.close()
+
+
+def test_insert_pending_collection_skips_missing_sources(tmp_path):
+    db = FileDB(tmp_path / 'test.db')
+    db.start()
+    db.initialize_database()
+    db.upsert_basic_sources(
+        [('src1', 'hash1', 100, 1.0)],
+        [('c:/a.jpg', 'src1', None)],
+    )
+    db.insert_pending_collection(['src1', 'nonexistent_src'], ['exif'])
+    rows = db.read_conn.execute(
+        "SELECT source FROM collection_status WHERE collector='exif'"
+    ).fetchall()
+    sources = {r[0] for r in rows}
+    assert sources == {'src1'}
+    assert 'nonexistent_src' not in sources
+    db.close()

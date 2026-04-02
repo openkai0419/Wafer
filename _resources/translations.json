@@ -1,4 +1,37 @@
 {
+  "Toggle DevLog": {
+    "en": "Toggle DevLog"
+  },
+  "Apply": {
+    "en": "Apply"
+  },
+  "Cancel": {
+    "en": "Cancel"
+  },
+  "Folder Settings": {
+    "en": "Folder Settings"
+  },
+  "Remove from view": {
+    "en": "Remove from view"
+  },
+  "Edit Layout": {
+    "en": "Edit Layout"
+  },
+  "Panels": {
+    "en": "Panels"
+  },
+  "Toggle File Viewer": {
+    "en": "Toggle File Viewer"
+  },
+  "Toggle Folder Tree": {
+    "en": "Toggle Folder Tree"
+  },
+  "Toggle Grid View": {
+    "en": "Toggle Grid View"
+  },
+  "Toggle Search": {
+    "en": "Toggle Search"
+  },
   "Autoplay on Scroll": {
     "en": "Autoplay on Scroll"
   },

@@ -432,7 +432,7 @@ class TestDatabaseDetailWidget:
 class TestDatabaseManagerCommands:
 
     def test_resolve_node_from_mainwindow(self):
-        from wafer.app.database_manager.commands import _resolve_node
+        from wafer.builtins.commands.app import _resolve_node
         mock_ctx = MagicMock()
         mock_w = MagicMock()
         mock_w._node = MagicMock()
@@ -442,7 +442,7 @@ class TestDatabaseManagerCommands:
         assert node is mock_w._node
 
     def test_resolve_node_from_tray(self):
-        from wafer.app.database_manager.commands import _resolve_node
+        from wafer.builtins.commands.app import _resolve_node
         mock_ctx = MagicMock()
         mock_tray = MagicMock()
         mock_tray._node = MagicMock()
@@ -452,7 +452,7 @@ class TestDatabaseManagerCommands:
         assert node is mock_tray._node
 
     def test_resolve_node_none(self):
-        from wafer.app.database_manager.commands import _resolve_node
+        from wafer.builtins.commands.app import _resolve_node
         mock_ctx = MagicMock()
         mock_ctx.get_instance = lambda name: None
         parent, node = _resolve_node(mock_ctx)

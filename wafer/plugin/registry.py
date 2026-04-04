@@ -118,13 +118,6 @@ class FilePluginRegistry(PluginRegistry):
         self._chain_cache[ext] = candidates
         return candidates
 
-    def resolve_instance(self, path: str) -> BasePlugin | None:
-        cls = self.resolve(path)
-        return self.instance(cls.NAME) if cls else None
-
-    def resolve_all(self, path: str) -> list[type[BasePlugin]]:
-        return [p for p in self.list_all() if p.match(path) and p.can_handle(path)]
-
     def instance(self, name: str) -> BasePlugin | None:
         inst = self._instances.get(name)
         if inst is None:
@@ -134,8 +127,50 @@ class FilePluginRegistry(PluginRegistry):
                 self._instances[name] = inst
         return inst
 
+    def resolve_instance(self, path: str) -> BasePlugin | None:
+        cls = self.resolve(path)
+        return self.instance(cls.NAME) if cls else None
+
+    def resolve_all(self, path: str) -> list[type[BasePlugin]]:
+        return [p for p in self.list_all() if p.match(path) and p.can_handle(path)]
+
     def all_classes(self) -> list[tuple[str, type[BasePlugin]]]:
         return [(p.NAME, p) for p in self.list_all()]
 
     def summary(self) -> list[tuple[str, tuple[str, ...]]]:
         return [(p.NAME, p.EXTENSIONS) for p in self.list_all()]
+
+
+class CommandGroupRegistry:
+
+    def __init__(self):
+        self._pending: list[type] = []
+        self._activated: list[type] = []
+        self._order: list[str] = []
+
+    def register(self, cls):
+        self._pending.append(cls)
+
+    def activate(self, scope: str):
+        from ..utils.logs import AppLogger
+        for cls in self._pending:
+            cls_scope = getattr(cls, 'SCOPE', 'viewer')
+            if cls_scope != '*' and cls_scope != scope:
+                continue
+            try:
+                cls.register()
+                self._activated.append(cls)
+            except Exception as e:
+                AppLogger.warning(
+                    f'[CommandGroupRegistry] Failed to register: {getattr(cls, "__name__", str(cls))} ({e})', exc=e
+                )
+        self._pending.clear()
+
+    def set_order(self, order: list[str]):
+        self._order = list(order)
+
+    def list_all(self) -> list[type]:
+        return list(self._pending) + list(self._activated)
+
+    def names(self) -> list[str]:
+        return [getattr(cls, 'NAME', '') for cls in self.list_all()]

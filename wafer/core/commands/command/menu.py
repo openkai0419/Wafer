@@ -100,6 +100,7 @@ def normalize_command_meta(base_parts: list[str], meta: CommandMeta) -> CommandM
 class MenuGroup:
     NAME: str = ''
     PRIORITY: int = 0
+    SCOPE: str = 'viewer'
     _flags: dict[type, bool] = {}
     _items: dict[type, list[str]] = {}
     _cmd_paths: dict[type, dict[str, str]] = {}
@@ -146,6 +147,7 @@ class MenuGroup:
             if cid in cmd_paths and cmd_paths[cid] != path:
                 raise ValueError(f"Duplicate command id in {t.__name__}: {cid}")
             cmd_paths[cid] = path
+        own_ids = set(cmd_paths.keys())
         for s in items:
             if not isinstance(s, str) or not s or is_section_token(s) or is_sep_token(s):
                 continue
@@ -156,6 +158,8 @@ class MenuGroup:
             if cid in cmd_paths:
                 if cmd_paths[cid] != s:
                     raise ValueError(f"Duplicate command id in {t.__name__}: {cid}")
+                continue
+            if cid not in own_ids:
                 continue
             cmd_paths[cid] = s
         if defs:

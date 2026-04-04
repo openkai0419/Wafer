@@ -12,6 +12,8 @@ def register_all(registries):
         NameSource, FixedSource, SequentialSource,
         MetaSource, DateSource, RandomSource, ExtSource,
     )
+    from .commands.tray import TrayMenu
+    from .commands.app import PluginManagerCommands, DatabaseManagerCommands
 
     registries['grid'].register(SystemThumbnailPlugin)
     registries['viewer'].register(DefaultViewerPlugin)
@@ -27,3 +29,5 @@ def register_all(registries):
     for cls in [NameSource, FixedSource, SequentialSource,
                 MetaSource, DateSource, RandomSource, ExtSource]:
         registries['rename_source'].register(cls)
+    for cls in [TrayMenu, PluginManagerCommands, DatabaseManagerCommands]:
+        registries['command'].register(cls)

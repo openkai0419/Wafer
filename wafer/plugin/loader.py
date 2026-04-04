@@ -6,7 +6,7 @@ import sys
 
 from ..utils.logs import AppLogger
 from .installer import _PACKAGES_DIR, _SHARED_DIR, _INSTALL_STAMP, needs_setup
-from .registry import PluginRegistry
+from .registry import PluginRegistry, CommandGroupRegistry
 from .viewer.base import BaseViewerPlugin
 from .grid.base import BaseGridPlugin
 from .collector.base import BaseCollector
@@ -15,15 +15,29 @@ from .layout.base import BaseLayoutPlugin
 from .rename.base import BaseRenameSourcePlugin
 
 
-_REGISTRY_MAP = {
-    BaseViewerPlugin: 'viewer',
-    BaseGridPlugin: 'grid',
-    BaseCollector: 'collector',
-    BaseFilterPlugin: 'filter',
-    BaseSortPlugin: 'sort',
-    BaseLayoutPlugin: 'layout',
-    BaseRenameSourcePlugin: 'rename_source',
-}
+def _build_registry_map():
+    from ..core.commands.command.menu import MenuGroup, DragMenuGroup
+    return {
+        BaseViewerPlugin: 'viewer',
+        BaseGridPlugin: 'grid',
+        BaseCollector: 'collector',
+        BaseFilterPlugin: 'filter',
+        BaseSortPlugin: 'sort',
+        BaseLayoutPlugin: 'layout',
+        BaseRenameSourcePlugin: 'rename_source',
+        MenuGroup: 'command',
+        DragMenuGroup: 'command',
+    }
+
+
+_REGISTRY_MAP: dict | None = None
+
+
+def _get_registry_map():
+    global _REGISTRY_MAP
+    if _REGISTRY_MAP is None:
+        _REGISTRY_MAP = _build_registry_map()
+    return _REGISTRY_MAP
 
 
 def get_plugin_dir() -> str:
@@ -36,24 +50,14 @@ def get_plugin_dir() -> str:
 
 
 def _discover_plugins(module) -> list[tuple[str, type]]:
+    registry_map = _get_registry_map()
     found = []
     for _, obj in inspect.getmembers(module, inspect.isclass):
         if not getattr(obj, 'NAME', ''):
             continue
-        for base_cls, registry_key in _REGISTRY_MAP.items():
+        for base_cls, registry_key in registry_map.items():
             if issubclass(obj, base_cls) and obj is not base_cls:
                 found.append((registry_key, obj))
-    return found
-
-
-def _discover_commands(module) -> list[tuple[str, type]]:
-    from ..core.commands.command.menu import MenuGroup, DragMenuGroup
-    found = []
-    for _, obj in inspect.getmembers(module, inspect.isclass):
-        if obj is MenuGroup or obj is DragMenuGroup:
-            continue
-        if issubclass(obj, (MenuGroup, DragMenuGroup)) and getattr(obj, 'NAME', ''):
-            found.append(('command', obj))
     return found
 
 
@@ -72,8 +76,6 @@ def _setup_dll_directory(folder: str):
 
 
 class PluginLoader:
-
-    _deferred_commands: list[type] = []
 
     def __init__(self, plugin_dir: str, registries: dict[str, PluginRegistry], *,
                  enabled: set[str] | None = None):
@@ -144,26 +146,13 @@ class PluginLoader:
                 continue
             if self._enabled is None and not getattr(cls, 'DEFAULT_ENABLED', False):
                 continue
-            if registry_key == 'command':
-                PluginLoader._deferred_commands.append(cls)
-            else:
-                registry = self._registries.get(registry_key)
-                if registry is not None:
-                    registry.register(cls)
+            registry = self._registries.get(registry_key)
+            if registry is not None:
+                registry.register(cls)
+                if not isinstance(registry, CommandGroupRegistry):
                     discovered.append(cls)
             total += 1
         return total, discovered
-
-    @staticmethod
-    def register_extension_commands():
-        for cmd_cls in PluginLoader._deferred_commands:
-            try:
-                cmd_cls.register()
-            except Exception as e:
-                AppLogger.warning(
-                    f'[PluginLoader] Failed to register command: {cmd_cls.__name__} ({e})', exc=e
-                )
-        PluginLoader._deferred_commands.clear()
 
     @staticmethod
     def discover_extension(folder: str) -> list[tuple[str, type]]:
@@ -220,17 +209,18 @@ def _import_extension(name: str, folder: str) -> list[tuple[str, type]]:
                 AppLogger.warning(f'[PluginLoader] Failed to import: {module_name} ({e})', exc=e)
                 continue
         found.extend(_discover_plugins(sub_mod))
-        found.extend(_discover_commands(sub_mod))
     return found
 
 
 def load_plugins(*, on_progress=None) -> list[str]:
+    global _command_registry_ref
     from .viewer.handler import viewer_resolver
     from .grid.handler import grid_resolver
     from .collector.handler import collector_resolver
     from .query.handler import filter_registry, sort_registry
     from .layout.handler import layout_registry
     from .rename.handler import rename_source_registry
+    command_registry = CommandGroupRegistry()
     registries = {
         'viewer': viewer_resolver.registry,
         'grid': grid_resolver.registry,
@@ -239,6 +229,7 @@ def load_plugins(*, on_progress=None) -> list[str]:
         'sort': sort_registry,
         'layout': layout_registry,
         'rename_source': rename_source_registry,
+        'command': command_registry,
     }
     from ..builtins import register_all
     register_all(registries)
@@ -255,4 +246,14 @@ def load_plugins(*, on_progress=None) -> list[str]:
         if order:
             registry.set_order(order)
 
+    _command_registry_ref = command_registry
     return result
+
+
+_command_registry_ref: CommandGroupRegistry | None = None
+
+
+def get_command_registry() -> CommandGroupRegistry:
+    if _command_registry_ref is None:
+        raise RuntimeError('load_plugins() must be called before get_command_registry()')
+    return _command_registry_ref

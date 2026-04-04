@@ -44,8 +44,8 @@ def _create_app():
 
 def _entry_viewer(app=None, session_id=None):
     from wafer.app.viewer.mainwindow import MainWindow
-    from wafer.plugin.loader import PluginLoader
-    PluginLoader.register_extension_commands()
+    from wafer.plugin.loader import get_command_registry
+    get_command_registry().activate('viewer')
     profiler.start()
     if app is None:
         app = _create_app()
@@ -144,6 +144,8 @@ def main():
         return
     if args.tray:
         load_plugins()
+        from wafer.plugin.loader import get_command_registry
+        get_command_registry().activate('tray')
         _entry_tray()
     elif args.indexer:
         load_plugins()

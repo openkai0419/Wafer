@@ -6,7 +6,7 @@ import time
 import pytest
 
 from wafer.utils.logs import set_suppress_dialog
-from wafer.plugin.loader import load_plugins, PluginLoader
+from wafer.plugin.loader import load_plugins, get_command_registry
 from wafer.plugin.settings import PluginSettings
 
 set_suppress_dialog(True)
@@ -16,7 +16,7 @@ PluginSettings.enabled_names = lambda self: None
 
 _pre_load_modules = set(sys.modules.keys())
 load_plugins()
-PluginLoader.register_extension_commands()
+get_command_registry().activate('viewer')
 
 PluginSettings.enabled_names = _orig_enabled_names
 

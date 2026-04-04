@@ -9,7 +9,6 @@ from ...core.ipc.broker import Broker
 from ...core.ipc.node import Node
 from .tray_commands import TrayMenu
 
-TrayMenu.register()
 
 class TrayApp(QtWidgets.QSystemTrayIcon, TranslatorMixin):
 

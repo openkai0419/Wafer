@@ -113,15 +113,17 @@ class TestDeferredCommandRegistration:
             '    def commands(cls):\n'
             '        return [CommandMeta(path="tcmd.noop", display="Noop", func=lambda ctx: None)]\n'
         )
+        from wafer.plugin.registry import CommandGroupRegistry
+        cmd_registry = CommandGroupRegistry()
         registries = _make_registries()
-        PluginLoader._deferred_commands.clear()
+        registries['command'] = cmd_registry
         loader = PluginLoader(str(plugin_dir), registries)
         loader.load_all()
-        assert len(PluginLoader._deferred_commands) > 0
+        assert len(cmd_registry.list_all()) > 0
         from wafer.core.commands.command.core import CommandRegistry
         reg = CommandRegistry.instance()
         assert not reg.has_command('tcmd.noop')
-        PluginLoader.register_extension_commands()
+        cmd_registry.activate('viewer')
         assert reg.has_command('tcmd.noop')
         for key in list(sys.modules):
             if key.startswith('_plugins_cmd_plugin'):

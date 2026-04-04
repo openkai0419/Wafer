@@ -594,7 +594,7 @@ class TestPluginManagerDialog:
 class TestPluginManagerCommands:
 
     def test_command_class_exists(self):
-        from wafer.app.plugin_manager.commands import PluginManagerCommands
+        from wafer.builtins.commands.app import PluginManagerCommands
         cmds = PluginManagerCommands.commands()
         assert len(cmds) >= 1
         paths = [c.path for c in cmds if hasattr(c, 'path')]
@@ -815,7 +815,7 @@ class TestCollectorsTab:
 class TestPluginManagerCommands:
 
     def test_all_commands_registered(self):
-        from wafer.app.plugin_manager.commands import PluginManagerCommands
+        from wafer.builtins.commands.app import PluginManagerCommands
         cmds = PluginManagerCommands.commands()
         paths = [c.path for c in cmds if hasattr(c, 'path')]
         assert 'setting.plugin_manager' in paths
@@ -826,19 +826,19 @@ class TestPluginManagerCommands:
     def test_restart_tray_calls_process(self, monkeypatch):
         calls = []
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.commands.AppProcess',
+            'wafer.builtins.commands.app.AppProcess',
             type('', (), {
                 'terminate_cmd': staticmethod(lambda *a: calls.append(('terminate', a))),
                 'new_main': staticmethod(lambda *a: calls.append(('new_main', a))),
             })(),
         )
-        from wafer.app.plugin_manager.commands import restart_tray
+        from wafer.builtins.commands.app import restart_tray
         restart_tray(MagicMock())
         assert ('terminate', ('--tray',)) in calls
         assert ('new_main', ('--tray',)) in calls
 
     def test_restart_viewer_delegates_to_close_by_restart(self):
-        from wafer.app.plugin_manager.commands import restart_viewer
+        from wafer.builtins.commands.app import restart_viewer
         mock_w = MagicMock()
         ctx = MagicMock()
         ctx.get_instance.return_value = mock_w
@@ -848,7 +848,7 @@ class TestPluginManagerCommands:
     def test_restart_all_calls_both(self, monkeypatch):
         calls = []
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.commands.AppProcess',
+            'wafer.builtins.commands.app.AppProcess',
             type('', (), {
                 'terminate_cmd': staticmethod(lambda *a: calls.append(('terminate', a))),
                 'new_main': staticmethod(lambda *a: calls.append(('new_main', a))),
@@ -857,10 +857,10 @@ class TestPluginManagerCommands:
         mock_store = MagicMock()
         mock_store.get_active_session_ids.return_value = ['sess1', 'sess2']
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.commands.SessionStore',
+            'wafer.builtins.commands.app.SessionStore',
             type('', (), {'instance': staticmethod(lambda: mock_store)})
         )
-        from wafer.app.plugin_manager.commands import restart_all
+        from wafer.builtins.commands.app import restart_all
         mock_node = MagicMock()
         mock_w = MagicMock()
         mock_w.session_id = 'sess1'

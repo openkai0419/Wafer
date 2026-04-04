@@ -124,7 +124,10 @@ class MenuMaker:
         cid = parts[-1] if parts else str(token)
         canon = hub.get_path_by_command_id(cid)
         if not canon:
-            raise ValueError(f"Unknown command id: {cid}")
+            if CommandRegistry.instance().has_command(cid):
+                canon = str(token)
+            else:
+                raise ValueError(f"Unknown command id: {cid}")
         return _ResolvedItem(token=str(token), kind="cmd", command_id=cid, canonical_path=str(canon))
 
     @staticmethod

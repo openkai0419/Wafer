@@ -83,7 +83,9 @@
 - ビルトイン実装はwafer/builtins/に配置。extensionと同じプラグインインターフェースを使う
 - ビルトインとextensionの唯一の違いはexe化時にwafer/builtins/が自動同梱される点。設計・インターフェースは同一
 - フォールバックはビルトインプラグイン（EXTENSIONS=(), PRIORITY=-100）として登録。Resolverにフォールバックロジックをハードコードしない
-- コマンドはCommandMeta/ActionKit系で別体系のためbuiltinsに含めない。wafer/app/以下とextensions/に分散
+- 共通コマンド（Tray/Viewer共用、Settings系等）はwafer/builtins/commands/に配置。MenuGroup.SCOPEで有効プロセスを制御（"viewer"/"tray"/"*"）
+- Viewer固有コマンドはwafer/app/viewer/commands/、extension固有コマンドはextensions/に配置
+- CommandGroupRegistryがMenuGroupの遅延登録とスコープフィルタリングを担う。activate(scope)で該当スコープのみ登録
 
 ■ 未登録コマンドへのフォールバック
 - 未登録コマンドはValueErrorを投げず、warningログ+None返却で安全に処理する
@@ -93,7 +95,7 @@
 ■ プラグインローダー規約
 - extensionsはwafer.plugin（公開API）、wafer.utils、wafer.coreを直接import可能。wafer.appへの依存は非推奨
 - wafer.plugin.__init__.pyがextension向け公開API
-- extension側のMenuGroupはプラグインロード時に一時保持され、viewer commands登録後に登録される
+- extension側のMenuGroupはCommandGroupRegistry に登録され、activate(scope) で該当スコープのみ一括登録される
 - MenuGroup.PRIORITYでAllMenuのルート表示順を制御。昇順ソート。viewer標準は10刻み(10-110)、extensionは1000台を推奨
 - extension側のMenuGroupはGrid/View別に分離する（例: VideoGridCommands, 将来のVideoViewCommands）
 - frozen環境でのpip実行にはEmbeddedPython使用。pip._internal直呼出は禁止

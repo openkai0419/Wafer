@@ -3,7 +3,7 @@ from PySide6.QtGui import QImage, QPainter, QCursor
 from PySide6.QtWidgets import QWidget, QApplication
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from collections import OrderedDict
-from wafer.plugin import qt_debounce_manager
+from wafer.core.qt.rate_limit import qt_debounce_manager
 from wafer.utils.logs import AppLogger
 from wafer.utils.profiling import profiler
 

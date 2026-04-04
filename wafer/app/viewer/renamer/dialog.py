@@ -471,7 +471,7 @@ class BatchRenameDialog(QtWidgets.QDialog):
         thumb_size = QtCore.QSize(dpix(256), dpix(256))
 
         def task():
-            from ....plugin import load_thumbnail
+            from ....plugin.grid.handler import load_thumbnail
             for r, p, tok in rows_tokens:
                 if tok.is_cancelled():
                     continue

@@ -47,6 +47,10 @@ class GridResolver:
 grid_resolver = GridResolver()
 
 
+def load_thumbnail(path: str, size=None):
+    return grid_resolver.load(path, size)
+
+
 class WidgetNotifier:
 
     def __init__(self, registry: FilePluginRegistry):

@@ -135,7 +135,7 @@ def test_require_thumbnail_default_false():
 
 
 def test_load_thumbnail_api(tmp_path):
-    from wafer.plugin import load_thumbnail
+    from wafer.plugin.grid.handler import load_thumbnail
     img_path = tmp_path / 'test.png'
     Image.new('RGB', (100, 100)).save(str(img_path))
     from PySide6 import QtCore
@@ -145,7 +145,7 @@ def test_load_thumbnail_api(tmp_path):
 
 
 def test_load_thumbnail_api_returns_none_for_missing():
-    from wafer.plugin import load_thumbnail
+    from wafer.plugin.grid.handler import load_thumbnail
     result = load_thumbnail('/nonexistent/file.xyz')
     assert result is None
 

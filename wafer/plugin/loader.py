@@ -231,7 +231,7 @@ def load_plugins(*, on_progress=None) -> list[str]:
         'rename_source': rename_source_registry,
         'command': command_registry,
     }
-    from ..builtins import register_all
+    from ..builtins.registration import register_all
     register_all(registries)
 
     from .settings import PluginSettings

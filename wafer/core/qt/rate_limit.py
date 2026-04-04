@@ -30,7 +30,7 @@ class QtDebounceManager(QObject):
         if timer is not None:
             timer.stop()
             timer.deleteLater()
-_qt_debounce_manager = QtDebounceManager()
+qt_debounce_manager = QtDebounceManager()
 
 def qt_debounce(delay_ms):
 
@@ -43,7 +43,7 @@ def qt_debounce(delay_ms):
                 obj = args[0]
                 if hasattr(obj, '__dict__'):
                     key = (id(func), id(obj))
-            _qt_debounce_manager.debounce(key, delay_ms, func, *args, **kwargs)
+            qt_debounce_manager.debounce(key, delay_ms, func, *args, **kwargs)
         return wrapper
     return decorator
 

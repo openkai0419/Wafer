@@ -34,6 +34,7 @@
 - Toggle: Lock専用。Editモードで呼ばれたらLockに自動切替。Docked↔Collapsed, Floating→Dormant, Dormant→Floating(再生成)
 - Close(×): Dormant化(情報は_panelsに保持)。ReCreate可能
 - Float/Dock: D&Dのみ。public APIのfloat_panel/dock_panelは廃止
+- Widgetの移動時にsetParent(None)を経由するとQGraphicsView(MinimalViewportUpdate)のbacking storeが破棄され白画面になる。完全破棄以外でsetParent(None)は禁止。移動はsetParent(new_parent)で直接新親に渡す（"Build-first, Swap atomically"パターン）
 - collapsed: LayoutTreeのset[str]フィールド。splitter構築後に_apply_collapse_stateでsize=0に設定
 - Dormant: ツリーに存在しないがPanelEntryは保持。last_floatingに位置を記憶し、再生成時に復元
 - save_state: collapsed含む。Dormantパネルはツリーに存在しないため自然に保存されない

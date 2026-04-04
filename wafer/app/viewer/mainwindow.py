@@ -285,7 +285,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
     @profiler.profile
     def setup_ui(self):
         self._layout_manager = LayoutManager(self)
-        self._layout_manager.set_margin(dpix(2))
+        self._layout_manager.set_margin(dpix(5))
 
         self.folder_view = LazyFolderTreeView()
         self.folder_view.folder_selected.connect(self.on_folder_selected)
@@ -377,7 +377,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
     def _create_folder_panel(self):
         panel = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(panel)
-        layout.setContentsMargins(dpix(0), dpix(0), dpix(0), dpix(0))
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         layout.addWidget(self.folder_view)
         layout.addSpacing(dpix(3))

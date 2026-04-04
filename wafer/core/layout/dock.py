@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from PySide6 import QtCore, QtWidgets
 
+from ...utils.formatting import dpix
 from .tree import FloatingState
 
 
@@ -45,7 +46,8 @@ class FloatingWindow(QtWidgets.QWidget):
         self.panel_name = name
         self.setWindowTitle(name)
         layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        m = dpix(5)
+        layout.setContentsMargins(m, m, m, m)
         widget.setParent(self)
         layout.addWidget(widget)
 

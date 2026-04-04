@@ -22,6 +22,7 @@ from .tree import (
     SplitNode,
     flatten,
     insert_panel,
+    normalize_sizes,
     reinsert_from_blueprint,
     remove_panel,
 )
@@ -138,23 +139,26 @@ class LayoutManager(QtCore.QObject):
             self._tree.floating.pop(name, None)
             return
 
-        if self._mode == MODE_LOCKED:
-            if name in self._tree.collapsed:
-                self._tree.collapsed.discard(name)
-                self._rebuild()
-            else:
-                if not entry.closable:
-                    return
-                self._sync_tree_from_current()
-                self._tree.collapsed.add(name)
-                self._apply_collapse_state()
+        if self._mode != MODE_LOCKED:
+            self.set_mode(MODE_LOCKED)
+
+        w = entry.widget
+        effectively_hidden = (
+            name in self._tree.collapsed
+            or w is None
+            or w.width() <= 0
+            or w.height() <= 0
+        )
+        if effectively_hidden:
+            self._tree.collapsed.discard(name)
+            normalize_sizes(self._tree.root, self._tree.collapsed)
+            self._apply_tree_sizes()
         else:
             if not entry.closable:
                 return
             self._sync_tree_from_current()
-            self._cleanup_entry(entry)
-            self._tree.root = remove_panel(self._tree.root, name)
-            self._rebuild()
+            self._tree.collapsed.add(name)
+            self._apply_collapse_state()
 
     def is_panel_visible(self, name: str) -> bool:
         return name in self._tree.all_names() and name not in self._tree.collapsed
@@ -642,6 +646,29 @@ class LayoutManager(QtCore.QObject):
                 changed = True
         if changed:
             splitter.setSizes(sizes)
+
+    def _apply_tree_sizes(self):
+        if not self._root_splitter or not self._tree.root:
+            return
+        if isinstance(self._tree.root, SplitNode):
+            self._sync_node_to_splitter(self._tree.root, self._root_splitter)
+
+    def _sync_node_to_splitter(
+        self, node: SplitNode, splitter: QtWidgets.QSplitter,
+    ):
+        child_idx = 0
+        for child in node.children:
+            if child_idx >= splitter.count():
+                break
+            w = splitter.widget(child_idx)
+            if isinstance(child, SplitNode) and isinstance(w, QtWidgets.QSplitter):
+                self._sync_node_to_splitter(child, w)
+            elif isinstance(child, LeafNode) and child.panel_name not in self._tree.collapsed:
+                if not w.isVisible():
+                    w.show()
+            child_idx += 1
+        if node.sizes and len(node.sizes) == splitter.count():
+            splitter.setSizes(node.sizes)
 
     def _cleanup_entry(self, entry: PanelEntry):
         if entry.floating_window:

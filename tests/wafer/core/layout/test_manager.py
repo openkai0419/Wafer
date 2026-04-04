@@ -315,7 +315,7 @@ class TestToggleCollapse:
 
 
 class TestToggleEditMode:
-    def test_toggle_docked_in_edit_makes_dormant(self, layout_env):
+    def test_toggle_in_edit_switches_to_locked(self, layout_env):
         mgr, win, panels = layout_env
         mgr.set_mode(MODE_EDIT)
         _process()
@@ -323,25 +323,23 @@ class TestToggleEditMode:
         mgr.toggle_panel("viewer")
         _process()
 
-        assert mgr.mode == MODE_EDIT
-        assert "viewer" in mgr.dormant_panels()
+        assert mgr.mode == MODE_LOCKED
+        assert mgr.is_panel_collapsed("viewer")
 
-    def test_toggle_dormant_in_edit_shows_floating(self, layout_env):
+    def test_toggle_collapsed_in_edit_switches_to_locked_and_expands(self, layout_env):
         mgr, win, panels = layout_env
+        mgr.toggle_panel("viewer")
+        _process()
+        assert mgr.is_panel_collapsed("viewer")
+
         mgr.set_mode(MODE_EDIT)
         _process()
 
         mgr.toggle_panel("viewer")
         _process()
-        assert "viewer" in mgr.dormant_panels()
 
-        mgr.toggle_panel("viewer")
-        _process()
-
-        assert mgr.mode == MODE_EDIT
+        assert mgr.mode == MODE_LOCKED
         assert mgr.is_panel_visible("viewer")
-        entry = mgr._panels["viewer"]
-        assert entry.dock_widget is not None
 
 
 class TestToggleFloating:

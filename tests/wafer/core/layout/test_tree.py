@@ -6,6 +6,7 @@ from wafer.core.layout.tree import (
     SplitNode,
     flatten,
     insert_panel,
+    normalize_sizes,
     reinsert_from_blueprint,
     remove_panel,
 )
@@ -342,3 +343,107 @@ class TestReinsertFromBlueprint:
         assert names.index("Toolbar") < names.index("Folder Tree")
         assert names.index("Search") < names.index("Grid View")
         assert names.index("Grid View") < names.index("File Viewer")
+
+
+class TestNormalizeSizes:
+    @staticmethod
+    def _default_tree():
+        return SplitNode(
+            Orientation.HORIZONTAL,
+            [
+                SplitNode(
+                    Orientation.VERTICAL,
+                    [LeafNode("Toolbar"), LeafNode("Folder Tree")],
+                    sizes=[80, 500],
+                ),
+                SplitNode(
+                    Orientation.VERTICAL,
+                    [LeafNode("Search"), LeafNode("Grid View")],
+                    sizes=[40, 540],
+                ),
+                LeafNode("File Viewer"),
+            ],
+            sizes=[200, 600, 400],
+        )
+
+    def test_no_collapsed_noop(self):
+        tree = self._default_tree()
+        result = normalize_sizes(tree, set())
+        assert result is True
+        assert tree.sizes == [200, 600, 400]
+
+    def test_single_leaf_collapsed_keeps_zero(self):
+        node = SplitNode(
+            Orientation.HORIZONTAL,
+            [LeafNode("A"), LeafNode("B")],
+            sizes=[300, 200],
+        )
+        assert normalize_sizes(node, {"A", "B"}) is False
+
+    def test_expand_restores_zero_size(self):
+        node = SplitNode(
+            Orientation.HORIZONTAL,
+            [LeafNode("A"), LeafNode("B")],
+            sizes=[0, 200],
+        )
+        result = normalize_sizes(node, set())
+        assert result is True
+        assert node.sizes[0] > 0
+        assert node.sizes[1] == 200
+
+    def test_nested_all_collapsed_then_expand_one(self):
+        tree = self._default_tree()
+        tree.children[1].sizes = [0, 0]
+        tree.sizes = [200, 0, 400]
+        collapsed = {"Grid View"}
+        result = normalize_sizes(tree, collapsed)
+        assert result is True
+        assert tree.children[1].sizes[0] > 0
+        assert tree.sizes[1] > 0
+
+    def test_deeply_nested_ancestor_restore(self):
+        deep = SplitNode(
+            Orientation.HORIZONTAL,
+            [
+                SplitNode(
+                    Orientation.VERTICAL,
+                    [
+                        SplitNode(
+                            Orientation.HORIZONTAL,
+                            [LeafNode("A"), LeafNode("B")],
+                            sizes=[0, 0],
+                        ),
+                        LeafNode("C"),
+                    ],
+                    sizes=[0, 300],
+                ),
+                LeafNode("D"),
+            ],
+            sizes=[0, 500],
+        )
+        collapsed = {"A", "C"}
+        result = normalize_sizes(deep, collapsed)
+        assert result is True
+        inner = deep.children[0].children[0]
+        assert inner.sizes[1] > 0
+        assert deep.children[0].sizes[0] > 0
+        assert deep.sizes[0] > 0
+
+    def test_none_node(self):
+        assert normalize_sizes(None, set()) is False
+
+    def test_visible_leaf(self):
+        assert normalize_sizes(LeafNode("A"), set()) is True
+
+    def test_collapsed_leaf(self):
+        assert normalize_sizes(LeafNode("A"), {"A"}) is False
+
+    def test_parent_collapsed_child_not(self):
+        tree = self._default_tree()
+        tree.children[1].sizes = [0, 0]
+        tree.sizes = [200, 0, 400]
+        collapsed = {"Search"}
+        result = normalize_sizes(tree, collapsed)
+        assert result is True
+        assert tree.children[1].sizes[1] > 0
+        assert tree.sizes[1] > 0

@@ -200,6 +200,29 @@ def _collect_names(node: SplitNode | LeafNode | None) -> set[str]:
     return result
 
 
+DEFAULT_RESTORE_SIZE = 200
+
+
+def normalize_sizes(
+    node: SplitNode | LeafNode | None, collapsed: set[str],
+) -> bool:
+    if node is None:
+        return False
+    if isinstance(node, LeafNode):
+        return node.panel_name not in collapsed
+
+    has_visible = False
+    non_zero_sizes = [s for s in node.sizes if s > 0]
+    fallback = (sum(non_zero_sizes) // len(non_zero_sizes)) if non_zero_sizes else DEFAULT_RESTORE_SIZE
+
+    for i, child in enumerate(node.children):
+        child_visible = normalize_sizes(child, collapsed)
+        if child_visible and i < len(node.sizes) and node.sizes[i] <= 0:
+            node.sizes[i] = fallback
+        has_visible = has_visible or child_visible
+    return has_visible
+
+
 def reinsert_from_blueprint(
     current: SplitNode | LeafNode | None,
     blueprint: SplitNode | LeafNode | None,

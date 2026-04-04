@@ -1,6 +1,7 @@
 from PySide6 import QtWidgets, QtCore
 from ...utils.formatting import dpix
 from ...utils.logs import AppLogger
+from ...utils.notifier import Notifier
 from ...utils.paths import (
     list_setting_db_names, setting_db_path, data_db_path,
 )
@@ -11,7 +12,7 @@ from ...core.qt.dialog import ConfirmDialog, InputDialog
 from ...core.qt.dispatcher import Dispatcher
 from ...core.qt.icon_engine import themed_icon
 from ...core.qt.thread import utility_pool
-from ...core.qt.window import DialogLayoutStore
+from ...plugin.panel.base import BasePanelPlugin
 
 
 def _hex_rgb(hex_color: str) -> str:
@@ -109,30 +110,12 @@ def _build_stylesheet() -> str:
     """
 
 
-class DatabaseManagerDialog(QtWidgets.QDialog):
-    _instance = None
+class DatabaseManagerWidget(QtWidgets.QWidget):
 
-    @classmethod
-    def open(cls, parent=None, node=None):
-        if cls._instance is not None:
-            cls._instance.raise_()
-            cls._instance.activateWindow()
-            return cls._instance
-        dlg = cls(parent=parent, node=node)
-        cls._instance = dlg
-        dlg.show()
-        return dlg
-
-    def __init__(self, parent=None, node=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle('Database Manager')
-        self.setWindowFlags(self.windowFlags() | QtCore.Qt.Window)
-        self.setAttribute(QtCore.Qt.WA_DeleteOnClose)
-        self.resize(dpix(500), dpix(700))
         self.setStyleSheet(_build_stylesheet())
 
-        self._node = node
-        self._layout_store = DialogLayoutStore('database_manager')
         self._dispatcher = Dispatcher(utility_pool)
         self._initial_paths: dict[str, tuple[list[str], list[str]]] = {}
 
@@ -188,15 +171,15 @@ class DatabaseManagerDialog(QtWidgets.QDialog):
 
         save_btn = QtWidgets.QPushButton('Save')
         save_btn.setObjectName('save_btn')
-        cancel_btn = QtWidgets.QPushButton('Cancel')
-        cancel_btn.setObjectName('cancel_btn')
+        revert_btn = QtWidgets.QPushButton('Revert')
+        revert_btn.setObjectName('cancel_btn')
         save_btn.clicked.connect(self._on_save)
-        cancel_btn.clicked.connect(self.close)
+        revert_btn.clicked.connect(self._on_revert)
 
         btn_layout = QtWidgets.QHBoxLayout()
         btn_layout.addStretch()
         btn_layout.addWidget(save_btn)
-        btn_layout.addWidget(cancel_btn)
+        btn_layout.addWidget(revert_btn)
 
         layout = QtWidgets.QVBoxLayout(self)
         p = dpix(6)
@@ -207,7 +190,6 @@ class DatabaseManagerDialog(QtWidgets.QDialog):
 
         self._refresh_db_list()
         self._snapshot_all()
-        self._layout_store.restore(self, splitter=self._splitter)
 
     def _snapshot_all(self):
         self._initial_paths.clear()
@@ -275,8 +257,10 @@ class DatabaseManagerDialog(QtWidgets.QDialog):
         )
         if ret != 'Delete':
             return
-        if self._node:
-            self._node.send_reliable('db.delete', db_name, dst='indexer', db=db_name)
+        from ...core.commands.binding.instance_registry import InstanceRegistry
+        node = InstanceRegistry.instance().resolve_node()
+        if node:
+            node.send_reliable('db.delete', db_name, dst='indexer', db=db_name)
         else:
             import os
             for path in (data_db_path(db_name), setting_db_path(db_name)):
@@ -295,31 +279,42 @@ class DatabaseManagerDialog(QtWidgets.QDialog):
 
     def _on_save(self):
         if not self.has_changes():
-            self.close()
+            Notifier.info('No changes to save')
             return
         changed = self._detail_widget.commit(self._initial_paths)
         AppLogger.info(f'[DatabaseManager] Saved path changes for: {sorted(changed)}')
-        if self._node and changed:
-            self._node.send_coalesced('rescan')
-        self.close()
+        from ...core.commands.binding.instance_registry import InstanceRegistry
+        node = InstanceRegistry.instance().resolve_node()
+        if node and changed:
+            node.send_coalesced('rescan')
+        self._snapshot_all()
+        self._detail_widget.reset(self._initial_paths)
+        current = self._db_list.currentItem()
+        if current:
+            self._detail_widget.load(current.text())
+        Notifier.info(f'Database settings saved ({len(changed)} changed)')
+
+    def _on_revert(self):
+        self._detail_widget.reset(self._initial_paths)
+        current = self._db_list.currentItem()
+        if current:
+            self._detail_widget.load(current.text())
+        Notifier.info('Changes reverted')
 
     def _send_purge(self, pairs: list[tuple[str, str]], re_collect: bool):
-        if not self._node:
+        from ...core.commands.binding.instance_registry import InstanceRegistry
+        node = InstanceRegistry.instance().resolve_node()
+        if not node:
             AppLogger.warning('[DatabaseManager] No IPC node available for purge')
             return
         for db, collector in pairs:
-            self._node.send_reliable(
+            node.send_reliable(
                 'purge.collector',
                 {'collector': collector, 're_collect': re_collect},
                 dst='indexer',
                 db=db,
             )
         AppLogger.info(f'[DatabaseManager] Sent purge for {len(pairs)} pairs')
-
-    def closeEvent(self, event):
-        self._layout_store.save(self, splitter=self._splitter)
-        DatabaseManagerDialog._instance = None
-        super().closeEvent(event)
 
     @staticmethod
     def _scrollable(widget: QtWidgets.QWidget) -> QtWidgets.QScrollArea:
@@ -434,6 +429,15 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
             changed.append(name)
         return changed
 
+    def revert(self, initial_paths: dict[str, tuple[list[str], list[str]]]):
+        self._buffers.clear()
+        for name, (sources, ignores) in initial_paths.items():
+            self._buffers[name] = (list(sources), list(ignores))
+
+    def reset(self, initial_paths: dict[str, tuple[list[str], list[str]]]):
+        self._db_name = None
+        self.revert(initial_paths)
+
     def _add_source(self):
         if not self._db_name:
             return
@@ -469,3 +473,13 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
         current = self._ignore_list.currentItem()
         if current:
             self._ignore_list.takeItem(self._ignore_list.row(current))
+
+
+class DatabaseManagerPlugin(BasePanelPlugin):
+    NAME = "database_manager"
+    DISPLAY_NAME = "Database Manager"
+    CLOSABLE = True
+    PRIORITY = 0
+
+    def create_widget(self):
+        return DatabaseManagerWidget()

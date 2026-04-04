@@ -6,20 +6,6 @@ from unittest.mock import MagicMock, patch
 from wafer.plugin.registry import BasePlugin
 
 
-class _FakeLayoutStore:
-    def __init__(self, *a, **kw): pass
-    def save(self, *a, **kw): pass
-    def restore(self, *a, **kw): pass
-
-
-@pytest.fixture(autouse=True)
-def _isolate_layout_store(monkeypatch):
-    monkeypatch.setattr(
-        'wafer.app.plugin_manager.window.DialogLayoutStore',
-        _FakeLayoutStore,
-    )
-
-
 class TestExtensionsTab:
 
     def test_scan_finds_extension_folders(self, qtbot, tmp_path, monkeypatch):
@@ -27,20 +13,20 @@ class TestExtensionsTab:
         (ext_dir / 'test_ext').mkdir(parents=True)
         (ext_dir / 'test_ext' / '__init__.py').write_text('')
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.get_plugin_dir',
+            'wafer.builtins.plugin_manager.extensions_tab.get_plugin_dir',
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.needs_setup',
+            'wafer.builtins.plugin_manager.extensions_tab.needs_setup',
             lambda folder: False,
         )
         from wafer.core.qt.dispatcher import Dispatcher
         dispatcher = Dispatcher()
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.PluginLoader.discover_extension',
+            'wafer.builtins.plugin_manager.extensions_tab.PluginLoader.discover_extension',
             staticmethod(lambda folder: []),
         )
-        from wafer.app.plugin_manager.extensions_tab import ExtensionsTab
+        from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
         tab = ExtensionsTab(set(), dispatcher)
         assert 'test_ext' in tab._cards
 
@@ -49,11 +35,11 @@ class TestExtensionsTab:
         (ext_dir / 'my_ext').mkdir(parents=True)
         (ext_dir / 'my_ext' / '__init__.py').write_text('')
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.get_plugin_dir',
+            'wafer.builtins.plugin_manager.extensions_tab.get_plugin_dir',
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.needs_setup',
+            'wafer.builtins.plugin_manager.extensions_tab.needs_setup',
             lambda folder: False,
         )
         class FakePlugin(BasePlugin):
@@ -62,12 +48,12 @@ class TestExtensionsTab:
             PRIORITY = 1
 
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.PluginLoader.discover_extension',
+            'wafer.builtins.plugin_manager.extensions_tab.PluginLoader.discover_extension',
             staticmethod(lambda folder: [('grid', FakePlugin)]),
         )
         from wafer.core.qt.dispatcher import Dispatcher
         dispatcher = Dispatcher()
-        from wafer.app.plugin_manager.extensions_tab import ExtensionsTab
+        from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
         tab = ExtensionsTab({'grid:FakePlugin'}, dispatcher)
         qtbot.waitUntil(lambda: len(tab._cards['my_ext']._rows) > 0, timeout=3000)
         result = tab.collect_enabled()
@@ -78,16 +64,16 @@ class TestExtensionsTab:
         (ext_dir / 'uninstalled').mkdir(parents=True)
         (ext_dir / 'uninstalled' / '__init__.py').write_text('')
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.get_plugin_dir',
+            'wafer.builtins.plugin_manager.extensions_tab.get_plugin_dir',
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.needs_setup',
+            'wafer.builtins.plugin_manager.extensions_tab.needs_setup',
             lambda folder: True,
         )
         from wafer.core.qt.dispatcher import Dispatcher
         dispatcher = Dispatcher()
-        from wafer.app.plugin_manager.extensions_tab import ExtensionsTab
+        from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
         tab = ExtensionsTab(set(), dispatcher)
         card = tab._cards['uninstalled']
         assert card._status_btn.isEnabled()
@@ -99,11 +85,11 @@ class TestExtensionsTab:
         (ext_dir / 'ext1').mkdir(parents=True)
         (ext_dir / 'ext1' / '__init__.py').write_text('')
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.get_plugin_dir',
+            'wafer.builtins.plugin_manager.extensions_tab.get_plugin_dir',
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.needs_setup',
+            'wafer.builtins.plugin_manager.extensions_tab.needs_setup',
             lambda folder: False,
         )
 
@@ -120,12 +106,12 @@ class TestExtensionsTab:
             DEFAULT_ENABLED = False
 
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.PluginLoader.discover_extension',
+            'wafer.builtins.plugin_manager.extensions_tab.PluginLoader.discover_extension',
             staticmethod(lambda folder: [('grid', EnabledPlugin), ('grid', DisabledPlugin)]),
         )
         from wafer.core.qt.dispatcher import Dispatcher
         dispatcher = Dispatcher()
-        from wafer.app.plugin_manager.extensions_tab import ExtensionsTab
+        from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
         tab = ExtensionsTab(None, dispatcher)
         qtbot.waitUntil(lambda: len(tab._cards['ext1']._rows) > 0, timeout=3000)
 
@@ -138,11 +124,11 @@ class TestExtensionsTab:
         (ext_dir / 'ext1').mkdir(parents=True)
         (ext_dir / 'ext1' / '__init__.py').write_text('')
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.get_plugin_dir',
+            'wafer.builtins.plugin_manager.extensions_tab.get_plugin_dir',
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.needs_setup',
+            'wafer.builtins.plugin_manager.extensions_tab.needs_setup',
             lambda folder: False,
         )
 
@@ -152,12 +138,12 @@ class TestExtensionsTab:
             PRIORITY = 1
 
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.PluginLoader.discover_extension',
+            'wafer.builtins.plugin_manager.extensions_tab.PluginLoader.discover_extension',
             staticmethod(lambda folder: [('viewer', FP)]),
         )
         from wafer.core.qt.dispatcher import Dispatcher
         dispatcher = Dispatcher()
-        from wafer.app.plugin_manager.extensions_tab import ExtensionsTab
+        from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
         tab = ExtensionsTab({'viewer:FP'}, dispatcher)
         qtbot.waitUntil(lambda: len(tab._cards['ext1']._rows) > 0, timeout=3000)
 
@@ -172,11 +158,11 @@ class TestExtensionsTab:
         (ext_dir / 'ext1').mkdir(parents=True)
         (ext_dir / 'ext1' / '__init__.py').write_text('')
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.get_plugin_dir',
+            'wafer.builtins.plugin_manager.extensions_tab.get_plugin_dir',
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.needs_setup',
+            'wafer.builtins.plugin_manager.extensions_tab.needs_setup',
             lambda folder: False,
         )
 
@@ -191,12 +177,12 @@ class TestExtensionsTab:
             PRIORITY = 2
 
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.PluginLoader.discover_extension',
+            'wafer.builtins.plugin_manager.extensions_tab.PluginLoader.discover_extension',
             staticmethod(lambda folder: [('viewer', ViewerP), ('grid', GridP)]),
         )
         from wafer.core.qt.dispatcher import Dispatcher
         dispatcher = Dispatcher()
-        from wafer.app.plugin_manager.extensions_tab import ExtensionsTab
+        from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
         tab = ExtensionsTab({'viewer:ViewerP', 'grid:GridP'}, dispatcher)
         qtbot.waitUntil(lambda: len(tab._cards['ext1']._rows) > 0, timeout=3000)
 
@@ -213,16 +199,16 @@ class TestExtensionsTab:
         (ext_dir / 'ext1' / '__init__.py').write_text('')
         (ext_dir / 'ext1' / 'requirements.txt').write_text('some-pkg\n')
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.get_plugin_dir',
+            'wafer.builtins.plugin_manager.extensions_tab.get_plugin_dir',
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.needs_setup',
+            'wafer.builtins.plugin_manager.extensions_tab.needs_setup',
             lambda folder: True,
         )
         from wafer.core.qt.dispatcher import Dispatcher
         dispatcher = Dispatcher()
-        from wafer.app.plugin_manager.extensions_tab import ExtensionsTab
+        from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
         tab = ExtensionsTab(set(), dispatcher)
 
         called = []
@@ -233,7 +219,7 @@ class TestExtensionsTab:
             PRIORITY = 1
 
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.install_extension',
+            'wafer.builtins.plugin_manager.extensions_tab.install_extension',
             lambda d, e, on_progress=None, is_cancelled=None: (
                 called.append('install_extension'),
                 (True, True, [('grid', DummyPlugin)]),
@@ -251,20 +237,20 @@ class TestExtensionsTab:
         (ext_dir / 'ext1' / '__init__.py').write_text('')
         (ext_dir / 'ext1' / 'requirements.txt').write_text('some-pkg\n')
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.get_plugin_dir',
+            'wafer.builtins.plugin_manager.extensions_tab.get_plugin_dir',
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.needs_setup',
+            'wafer.builtins.plugin_manager.extensions_tab.needs_setup',
             lambda folder: True,
         )
         from wafer.core.qt.dispatcher import Dispatcher
         dispatcher = Dispatcher()
-        from wafer.app.plugin_manager.extensions_tab import ExtensionsTab
+        from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
         tab = ExtensionsTab(set(), dispatcher)
 
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.install_extension',
+            'wafer.builtins.plugin_manager.extensions_tab.install_extension',
             lambda d, e, on_progress=None, is_cancelled=None: (False, False, []),
         )
 
@@ -281,11 +267,11 @@ class TestExtensionsTab:
         (ext_dir / 'ext1' / '__init__.py').write_text('')
         (ext_dir / 'ext1' / 'requirements.txt').write_text('some-pkg\n')
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.get_plugin_dir',
+            'wafer.builtins.plugin_manager.extensions_tab.get_plugin_dir',
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.needs_setup',
+            'wafer.builtins.plugin_manager.extensions_tab.needs_setup',
             lambda folder: True,
         )
 
@@ -299,7 +285,7 @@ class TestExtensionsTab:
                 raise RuntimeError('download failed')
 
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.install_extension',
+            'wafer.builtins.plugin_manager.extensions_tab.install_extension',
             lambda d, e, on_progress=None, is_cancelled=None: (
                 True, False, [('grid', FailPostPlugin)]
             ),
@@ -307,7 +293,7 @@ class TestExtensionsTab:
 
         from wafer.core.qt.dispatcher import Dispatcher
         dispatcher = Dispatcher()
-        from wafer.app.plugin_manager.extensions_tab import ExtensionsTab
+        from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
         tab = ExtensionsTab(set(), dispatcher)
         card = tab._cards['ext1']
         tab._install_extension(card)
@@ -322,11 +308,11 @@ class TestExtensionsTab:
         (ext_dir / 'ext1' / '__init__.py').write_text('')
         (ext_dir / 'ext1' / 'requirements.txt').write_text('some-pkg\n')
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.get_plugin_dir',
+            'wafer.builtins.plugin_manager.extensions_tab.get_plugin_dir',
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.needs_setup',
+            'wafer.builtins.plugin_manager.extensions_tab.needs_setup',
             lambda folder: True,
         )
 
@@ -340,7 +326,7 @@ class TestExtensionsTab:
                 pass
 
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.install_extension',
+            'wafer.builtins.plugin_manager.extensions_tab.install_extension',
             lambda d, e, on_progress=None, is_cancelled=None: (
                 True, True, [('grid', OkPlugin)]
             ),
@@ -348,7 +334,7 @@ class TestExtensionsTab:
 
         from wafer.core.qt.dispatcher import Dispatcher
         dispatcher = Dispatcher()
-        from wafer.app.plugin_manager.extensions_tab import ExtensionsTab
+        from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
         tab = ExtensionsTab(set(), dispatcher)
         card = tab._cards['ext1']
         tab._install_extension(card)
@@ -360,17 +346,17 @@ class TestExtensionsTab:
         (ext_dir / 'ext1').mkdir(parents=True)
         (ext_dir / 'ext1' / '__init__.py').write_text('')
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.get_plugin_dir',
+            'wafer.builtins.plugin_manager.extensions_tab.get_plugin_dir',
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.needs_setup',
+            'wafer.builtins.plugin_manager.extensions_tab.needs_setup',
             lambda folder: True,
         )
 
         from wafer.core.qt.dispatcher import Dispatcher
         dispatcher = Dispatcher()
-        from wafer.app.plugin_manager.extensions_tab import ExtensionsTab
+        from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
         tab = ExtensionsTab(set(), dispatcher)
 
         card = tab._cards['ext1']
@@ -382,11 +368,11 @@ class TestExtensionsTab:
         (ext_dir / 'ext1').mkdir(parents=True)
         (ext_dir / 'ext1' / '__init__.py').write_text('')
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.get_plugin_dir',
+            'wafer.builtins.plugin_manager.extensions_tab.get_plugin_dir',
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.needs_setup',
+            'wafer.builtins.plugin_manager.extensions_tab.needs_setup',
             lambda folder: False,
         )
 
@@ -396,13 +382,13 @@ class TestExtensionsTab:
             PRIORITY = 1
 
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.PluginLoader.discover_extension',
+            'wafer.builtins.plugin_manager.extensions_tab.PluginLoader.discover_extension',
             staticmethod(lambda folder: [('grid', NoPostPlugin)]),
         )
 
         from wafer.core.qt.dispatcher import Dispatcher
         dispatcher = Dispatcher()
-        from wafer.app.plugin_manager.extensions_tab import ExtensionsTab
+        from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
         tab = ExtensionsTab(set(), dispatcher)
 
         qtbot.waitUntil(lambda: len(tab._cards['ext1']._rows) > 0, timeout=3000)
@@ -413,7 +399,7 @@ class TestExtensionsTab:
 class TestOrderTab:
 
     def test_populate_with_plugin_lists(self, qtbot):
-        from wafer.app.plugin_manager.viewers_tab import OrderTab
+        from wafer.builtins.plugin_manager.viewers_tab import OrderTab
 
         class PlugA(BasePlugin):
             NAME = 'a'
@@ -433,7 +419,7 @@ class TestOrderTab:
         assert 'a' in orders['viewer']
 
     def test_order_from_settings(self, qtbot):
-        from wafer.app.plugin_manager.viewers_tab import OrderTab
+        from wafer.builtins.plugin_manager.viewers_tab import OrderTab
 
         class PlugX(BasePlugin):
             NAME = 'x'
@@ -451,7 +437,7 @@ class TestOrderTab:
         assert tab.get_orders()['viewer'] == ['y', 'x']
 
     def test_drag_reorder_returns_new_order(self, qtbot):
-        from wafer.app.plugin_manager.viewers_tab import OrderTab
+        from wafer.builtins.plugin_manager.viewers_tab import OrderTab
 
         class P1(BasePlugin):
             NAME = 'first'
@@ -469,7 +455,7 @@ class TestOrderTab:
         assert len(order) == 2
 
     def test_negative_priority_sorts_after_ordered(self, qtbot):
-        from wafer.app.plugin_manager.viewers_tab import OrderTab
+        from wafer.builtins.plugin_manager.viewers_tab import OrderTab
 
         class Builtin(BasePlugin):
             NAME = 'builtin'
@@ -488,7 +474,7 @@ class TestOrderTab:
         assert order[1] == 'builtin'
 
     def test_refresh_updates_list(self, qtbot):
-        from wafer.app.plugin_manager.viewers_tab import OrderTab
+        from wafer.builtins.plugin_manager.viewers_tab import OrderTab
 
         class PlugA(BasePlugin):
             NAME = 'a'
@@ -511,7 +497,7 @@ class TestOrderTab:
         assert len(viewer_order) == 2
 
     def test_multiple_registry_types(self, qtbot):
-        from wafer.app.plugin_manager.viewers_tab import OrderTab
+        from wafer.builtins.plugin_manager.viewers_tab import OrderTab
 
         class ViewerP(BasePlugin):
             NAME = 'vp'
@@ -529,7 +515,7 @@ class TestOrderTab:
         assert orders['filter'] == ['fp']
 
     def test_empty_registry_skipped(self, qtbot):
-        from wafer.app.plugin_manager.viewers_tab import OrderTab
+        from wafer.builtins.plugin_manager.viewers_tab import OrderTab
 
         class PlugA(BasePlugin):
             NAME = 'a'
@@ -542,7 +528,7 @@ class TestOrderTab:
         assert tab.get_orders()['filter'] == []
 
     def test_refresh_updates_builtin_command_names(self, qtbot):
-        from wafer.app.plugin_manager.viewers_tab import OrderTab
+        from wafer.builtins.plugin_manager.viewers_tab import OrderTab
         from wafer.core.commands.command.menu import MenuGroup
 
         class BuiltinCmd(MenuGroup):
@@ -573,53 +559,52 @@ class TestOrderTab:
         assert tab.get_orders()['command'] == ['Video']
 
 
-class TestPluginManagerDialog:
-
-    def test_singleton_pattern(self, qtbot, monkeypatch):
-        monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.get_plugin_dir',
-            lambda: '/nonexistent',
-        )
-        from wafer.app.plugin_manager.window import PluginManagerDialog
-        PluginManagerDialog._instance = None
-
-        dlg1 = PluginManagerDialog.open()
-        qtbot.addWidget(dlg1)
-        dlg2 = PluginManagerDialog.open()
-        assert dlg1 is dlg2
-
-        dlg1.close()
-        assert PluginManagerDialog._instance is None
-
-    def test_close_clears_instance(self, qtbot, monkeypatch):
-        monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.get_plugin_dir',
-            lambda: '/nonexistent',
-        )
-        from wafer.app.plugin_manager.window import PluginManagerDialog
-        PluginManagerDialog._instance = None
-
-        dlg = PluginManagerDialog.open()
-        qtbot.addWidget(dlg)
-        assert PluginManagerDialog._instance is dlg
-        dlg.close()
-        assert PluginManagerDialog._instance is None
+class TestPluginManagerWidget:
 
     def test_has_plugin_changes_detects_enabled_diff(self, qtbot, monkeypatch):
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.get_plugin_dir',
+            'wafer.builtins.plugin_manager.extensions_tab.get_plugin_dir',
             lambda: '/nonexistent',
         )
-        from wafer.app.plugin_manager.window import PluginManagerDialog
-        PluginManagerDialog._instance = None
-        dlg = PluginManagerDialog.open()
+        from wafer.builtins.plugin_manager.widget import PluginManagerWidget
+        dlg = PluginManagerWidget()
         qtbot.addWidget(dlg)
         dlg._initial_enabled = {'a', 'b'}
         dlg._initial_orders = {'grid': ['a']}
         assert not dlg._has_plugin_changes({'a', 'b'}, {'grid': ['a']})
         assert dlg._has_plugin_changes({'a', 'b', 'c'}, {'grid': ['a']})
         assert dlg._has_plugin_changes({'a', 'b'}, {'grid': ['b', 'a']})
-        dlg.close()
+
+    def test_send_purge_dispatches_to_node(self, qtbot, monkeypatch):
+        monkeypatch.setattr(
+            'wafer.builtins.plugin_manager.extensions_tab.get_plugin_dir',
+            lambda: '/nonexistent',
+        )
+        from wafer.builtins.plugin_manager.widget import PluginManagerWidget
+        mock_node = MagicMock()
+        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+        monkeypatch.setattr(InstanceRegistry.instance(), 'resolve_node', lambda: mock_node)
+        dlg = PluginManagerWidget()
+        qtbot.addWidget(dlg)
+        dlg._send_purge([('db1', 'exif')], True)
+        mock_node.send_reliable.assert_called_once_with(
+            'purge.collector',
+            {'collector': 'exif', 're_collect': True},
+            dst='indexer',
+            db='db1',
+        )
+
+    def test_send_purge_no_node_warns(self, qtbot, monkeypatch):
+        monkeypatch.setattr(
+            'wafer.builtins.plugin_manager.extensions_tab.get_plugin_dir',
+            lambda: '/nonexistent',
+        )
+        from wafer.builtins.plugin_manager.widget import PluginManagerWidget
+        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+        monkeypatch.setattr(InstanceRegistry.instance(), 'resolve_node', lambda: None)
+        dlg = PluginManagerWidget()
+        qtbot.addWidget(dlg)
+        dlg._send_purge([('db1', 'exif')], False)
 
 
 class TestPluginManagerCommands:
@@ -630,220 +615,6 @@ class TestPluginManagerCommands:
         assert len(cmds) >= 1
         paths = [c.path for c in cmds if hasattr(c, 'path')]
         assert 'setting.plugin_manager' in paths
-
-
-class TestCollectorsTab:
-
-    def test_empty_when_no_collectors(self, qtbot, monkeypatch):
-        monkeypatch.setattr(
-            'wafer.app.plugin_manager.collectors_tab.list_setting_db_names',
-            lambda: [],
-        )
-        from wafer.app.plugin_manager.collectors_tab import CollectorsTab
-        tab = CollectorsTab(collector_names=[])
-        qtbot.addWidget(tab)
-        assert tab._matrix == {}
-
-    def test_matrix_populated(self, qtbot, tmp_path, monkeypatch):
-        db_path = str(tmp_path / 'test.db')
-        from wafer.core.db.setting_db import SettingDB
-        sdb = SettingDB(db_path)
-        sdb.set_enabled_collectors(['exif'])
-
-        monkeypatch.setattr(
-            'wafer.app.plugin_manager.collectors_tab.list_setting_db_names',
-            lambda: ['test'],
-        )
-        monkeypatch.setattr(
-            'wafer.app.plugin_manager.collectors_tab.setting_db_path',
-            lambda name: db_path,
-        )
-        from wafer.app.plugin_manager.collectors_tab import CollectorsTab
-        tab = CollectorsTab(collector_names=['exif', 'ai_tags'])
-        qtbot.addWidget(tab)
-
-        assert tab._matrix[('exif', 'test')].isChecked()
-        assert not tab._matrix[('ai_tags', 'test')].isChecked()
-
-    def test_all_toggle_sets_all_dbs(self, qtbot, tmp_path, monkeypatch):
-        db1 = str(tmp_path / 'db1.db')
-        db2 = str(tmp_path / 'db2.db')
-        from wafer.core.db.setting_db import SettingDB
-        SettingDB(db1).set_enabled_collectors([])
-        SettingDB(db2).set_enabled_collectors([])
-
-        db_map = {'one': db1, 'two': db2}
-        monkeypatch.setattr(
-            'wafer.app.plugin_manager.collectors_tab.list_setting_db_names',
-            lambda: ['one', 'two'],
-        )
-        monkeypatch.setattr(
-            'wafer.app.plugin_manager.collectors_tab.setting_db_path',
-            lambda name: db_map[name],
-        )
-        from wafer.app.plugin_manager.collectors_tab import CollectorsTab
-        tab = CollectorsTab(collector_names=['exif'])
-        qtbot.addWidget(tab)
-
-        assert not tab._matrix[('exif', 'one')].isChecked()
-        assert not tab._matrix[('exif', 'two')].isChecked()
-
-        tab._on_all_toggled('exif', True)
-
-        assert tab._matrix[('exif', 'one')].isChecked()
-        assert tab._matrix[('exif', 'two')].isChecked()
-
-    def test_save_to_dbs(self, qtbot, tmp_path, monkeypatch):
-        db_path = str(tmp_path / 'save_test.db')
-        from wafer.core.db.setting_db import SettingDB
-        SettingDB(db_path).set_enabled_collectors([])
-
-        monkeypatch.setattr(
-            'wafer.app.plugin_manager.collectors_tab.list_setting_db_names',
-            lambda: ['mydb'],
-        )
-        monkeypatch.setattr(
-            'wafer.app.plugin_manager.collectors_tab.setting_db_path',
-            lambda name: db_path,
-        )
-        from wafer.app.plugin_manager.collectors_tab import CollectorsTab
-        tab = CollectorsTab(collector_names=['exif', 'ai_tags'])
-        qtbot.addWidget(tab)
-
-        tab._matrix[('exif', 'mydb')].setChecked(True)
-        tab._matrix[('ai_tags', 'mydb')].setChecked(False)
-        tab.save_to_dbs()
-
-        sdb = SettingDB(db_path)
-        assert sdb.get_enabled_collectors() == ['exif']
-
-    def test_get_per_db_collectors(self, qtbot, tmp_path, monkeypatch):
-        db_path = str(tmp_path / 'per_db.db')
-        from wafer.core.db.setting_db import SettingDB
-        SettingDB(db_path).set_enabled_collectors(['exif'])
-
-        monkeypatch.setattr(
-            'wafer.app.plugin_manager.collectors_tab.list_setting_db_names',
-            lambda: ['testdb'],
-        )
-        monkeypatch.setattr(
-            'wafer.app.plugin_manager.collectors_tab.setting_db_path',
-            lambda name: db_path,
-        )
-        from wafer.app.plugin_manager.collectors_tab import CollectorsTab
-        tab = CollectorsTab(collector_names=['exif', 'ai_tags'])
-        qtbot.addWidget(tab)
-
-        result = tab.get_per_db_collectors()
-        assert result == {'testdb': ['exif']}
-
-    def test_get_newly_disabled(self, qtbot, tmp_path, monkeypatch):
-        db_path = str(tmp_path / 'nd.db')
-        from wafer.core.db.setting_db import SettingDB
-        SettingDB(db_path).set_enabled_collectors(['exif', 'ai_tags'])
-
-        monkeypatch.setattr(
-            'wafer.app.plugin_manager.collectors_tab.list_setting_db_names',
-            lambda: ['mydb'],
-        )
-        monkeypatch.setattr(
-            'wafer.app.plugin_manager.collectors_tab.setting_db_path',
-            lambda name: db_path,
-        )
-        from wafer.app.plugin_manager.collectors_tab import CollectorsTab
-        tab = CollectorsTab(collector_names=['exif', 'ai_tags'])
-        qtbot.addWidget(tab)
-
-        tab._matrix[('ai_tags', 'mydb')].setChecked(False)
-        disabled = tab.get_newly_disabled()
-        assert ('mydb', 'ai_tags') in disabled
-        assert len(disabled) == 1
-
-    def test_get_newly_disabled_no_changes(self, qtbot, tmp_path, monkeypatch):
-        db_path = str(tmp_path / 'nc.db')
-        from wafer.core.db.setting_db import SettingDB
-        SettingDB(db_path).set_enabled_collectors(['exif'])
-
-        monkeypatch.setattr(
-            'wafer.app.plugin_manager.collectors_tab.list_setting_db_names',
-            lambda: ['db1'],
-        )
-        monkeypatch.setattr(
-            'wafer.app.plugin_manager.collectors_tab.setting_db_path',
-            lambda name: db_path,
-        )
-        from wafer.app.plugin_manager.collectors_tab import CollectorsTab
-        tab = CollectorsTab(collector_names=['exif'])
-        qtbot.addWidget(tab)
-
-        disabled = tab.get_newly_disabled()
-        assert disabled == []
-
-    def test_refresh_updates_matrix(self, qtbot, tmp_path, monkeypatch):
-        db_path = str(tmp_path / 'refresh.db')
-        from wafer.core.db.setting_db import SettingDB
-        SettingDB(db_path).set_enabled_collectors(['exif'])
-
-        monkeypatch.setattr(
-            'wafer.app.plugin_manager.collectors_tab.list_setting_db_names',
-            lambda: ['mydb'],
-        )
-        monkeypatch.setattr(
-            'wafer.app.plugin_manager.collectors_tab.setting_db_path',
-            lambda name: db_path,
-        )
-        from wafer.app.plugin_manager.collectors_tab import CollectorsTab
-        tab = CollectorsTab(collector_names=['exif'])
-        qtbot.addWidget(tab)
-
-        assert ('exif', 'mydb') in tab._matrix
-        assert ('ai_tags', 'mydb') not in tab._matrix
-
-        tab.refresh(['exif', 'ai_tags'])
-
-        assert ('exif', 'mydb') in tab._matrix
-        assert ('ai_tags', 'mydb') in tab._matrix
-        assert tab._matrix[('exif', 'mydb')].isChecked()
-
-    def test_has_changes_false_when_unchanged(self, qtbot, tmp_path, monkeypatch):
-        db_path = str(tmp_path / 'hc.db')
-        from wafer.core.db.setting_db import SettingDB
-        SettingDB(db_path).set_enabled_collectors(['exif'])
-
-        monkeypatch.setattr(
-            'wafer.app.plugin_manager.collectors_tab.list_setting_db_names',
-            lambda: ['mydb'],
-        )
-        monkeypatch.setattr(
-            'wafer.app.plugin_manager.collectors_tab.setting_db_path',
-            lambda name: db_path,
-        )
-        from wafer.app.plugin_manager.collectors_tab import CollectorsTab
-        tab = CollectorsTab(collector_names=['exif'])
-        qtbot.addWidget(tab)
-        assert not tab.has_changes()
-
-    def test_has_changes_true_when_toggled(self, qtbot, tmp_path, monkeypatch):
-        db_path = str(tmp_path / 'hc2.db')
-        from wafer.core.db.setting_db import SettingDB
-        SettingDB(db_path).set_enabled_collectors(['exif'])
-
-        monkeypatch.setattr(
-            'wafer.app.plugin_manager.collectors_tab.list_setting_db_names',
-            lambda: ['mydb'],
-        )
-        monkeypatch.setattr(
-            'wafer.app.plugin_manager.collectors_tab.setting_db_path',
-            lambda name: db_path,
-        )
-        from wafer.app.plugin_manager.collectors_tab import CollectorsTab
-        tab = CollectorsTab(collector_names=['exif'])
-        qtbot.addWidget(tab)
-        tab._matrix[('exif', 'mydb')].setChecked(False)
-        assert tab.has_changes()
-
-
-class TestPluginManagerCommands:
 
     def test_all_commands_registered(self):
         from wafer.builtins.commands.app import PluginManagerCommands
@@ -906,16 +677,227 @@ class TestPluginManagerCommands:
         mock_store.set_restore_session_ids.assert_called_once_with(['sess1', 'sess2'])
 
 
+class TestCollectorsTab:
+
+    def test_empty_when_no_collectors(self, qtbot, monkeypatch):
+        monkeypatch.setattr(
+            'wafer.builtins.plugin_manager.collectors_tab.list_setting_db_names',
+            lambda: [],
+        )
+        from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
+        tab = CollectorsTab(collector_names=[])
+        qtbot.addWidget(tab)
+        assert tab._matrix == {}
+
+    def test_matrix_populated(self, qtbot, tmp_path, monkeypatch):
+        db_path = str(tmp_path / 'test.db')
+        from wafer.core.db.setting_db import SettingDB
+        sdb = SettingDB(db_path)
+        sdb.set_enabled_collectors(['exif'])
+
+        monkeypatch.setattr(
+            'wafer.builtins.plugin_manager.collectors_tab.list_setting_db_names',
+            lambda: ['test'],
+        )
+        monkeypatch.setattr(
+            'wafer.builtins.plugin_manager.collectors_tab.setting_db_path',
+            lambda name: db_path,
+        )
+        from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
+        tab = CollectorsTab(collector_names=['exif', 'ai_tags'])
+        qtbot.addWidget(tab)
+
+        assert tab._matrix[('exif', 'test')].isChecked()
+        assert not tab._matrix[('ai_tags', 'test')].isChecked()
+
+    def test_all_toggle_sets_all_dbs(self, qtbot, tmp_path, monkeypatch):
+        db1 = str(tmp_path / 'db1.db')
+        db2 = str(tmp_path / 'db2.db')
+        from wafer.core.db.setting_db import SettingDB
+        SettingDB(db1).set_enabled_collectors([])
+        SettingDB(db2).set_enabled_collectors([])
+
+        db_map = {'one': db1, 'two': db2}
+        monkeypatch.setattr(
+            'wafer.builtins.plugin_manager.collectors_tab.list_setting_db_names',
+            lambda: ['one', 'two'],
+        )
+        monkeypatch.setattr(
+            'wafer.builtins.plugin_manager.collectors_tab.setting_db_path',
+            lambda name: db_map[name],
+        )
+        from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
+        tab = CollectorsTab(collector_names=['exif'])
+        qtbot.addWidget(tab)
+
+        assert not tab._matrix[('exif', 'one')].isChecked()
+        assert not tab._matrix[('exif', 'two')].isChecked()
+
+        tab._on_all_toggled('exif', True)
+
+        assert tab._matrix[('exif', 'one')].isChecked()
+        assert tab._matrix[('exif', 'two')].isChecked()
+
+    def test_save_to_dbs(self, qtbot, tmp_path, monkeypatch):
+        db_path = str(tmp_path / 'save_test.db')
+        from wafer.core.db.setting_db import SettingDB
+        SettingDB(db_path).set_enabled_collectors([])
+
+        monkeypatch.setattr(
+            'wafer.builtins.plugin_manager.collectors_tab.list_setting_db_names',
+            lambda: ['mydb'],
+        )
+        monkeypatch.setattr(
+            'wafer.builtins.plugin_manager.collectors_tab.setting_db_path',
+            lambda name: db_path,
+        )
+        from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
+        tab = CollectorsTab(collector_names=['exif', 'ai_tags'])
+        qtbot.addWidget(tab)
+
+        tab._matrix[('exif', 'mydb')].setChecked(True)
+        tab._matrix[('ai_tags', 'mydb')].setChecked(False)
+        tab.save_to_dbs()
+
+        sdb = SettingDB(db_path)
+        assert sdb.get_enabled_collectors() == ['exif']
+
+    def test_get_per_db_collectors(self, qtbot, tmp_path, monkeypatch):
+        db_path = str(tmp_path / 'per_db.db')
+        from wafer.core.db.setting_db import SettingDB
+        SettingDB(db_path).set_enabled_collectors(['exif'])
+
+        monkeypatch.setattr(
+            'wafer.builtins.plugin_manager.collectors_tab.list_setting_db_names',
+            lambda: ['testdb'],
+        )
+        monkeypatch.setattr(
+            'wafer.builtins.plugin_manager.collectors_tab.setting_db_path',
+            lambda name: db_path,
+        )
+        from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
+        tab = CollectorsTab(collector_names=['exif', 'ai_tags'])
+        qtbot.addWidget(tab)
+
+        result = tab.get_per_db_collectors()
+        assert result == {'testdb': ['exif']}
+
+    def test_get_newly_disabled(self, qtbot, tmp_path, monkeypatch):
+        db_path = str(tmp_path / 'nd.db')
+        from wafer.core.db.setting_db import SettingDB
+        SettingDB(db_path).set_enabled_collectors(['exif', 'ai_tags'])
+
+        monkeypatch.setattr(
+            'wafer.builtins.plugin_manager.collectors_tab.list_setting_db_names',
+            lambda: ['mydb'],
+        )
+        monkeypatch.setattr(
+            'wafer.builtins.plugin_manager.collectors_tab.setting_db_path',
+            lambda name: db_path,
+        )
+        from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
+        tab = CollectorsTab(collector_names=['exif', 'ai_tags'])
+        qtbot.addWidget(tab)
+
+        tab._matrix[('ai_tags', 'mydb')].setChecked(False)
+        disabled = tab.get_newly_disabled()
+        assert ('mydb', 'ai_tags') in disabled
+        assert len(disabled) == 1
+
+    def test_get_newly_disabled_no_changes(self, qtbot, tmp_path, monkeypatch):
+        db_path = str(tmp_path / 'nc.db')
+        from wafer.core.db.setting_db import SettingDB
+        SettingDB(db_path).set_enabled_collectors(['exif'])
+
+        monkeypatch.setattr(
+            'wafer.builtins.plugin_manager.collectors_tab.list_setting_db_names',
+            lambda: ['db1'],
+        )
+        monkeypatch.setattr(
+            'wafer.builtins.plugin_manager.collectors_tab.setting_db_path',
+            lambda name: db_path,
+        )
+        from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
+        tab = CollectorsTab(collector_names=['exif'])
+        qtbot.addWidget(tab)
+
+        disabled = tab.get_newly_disabled()
+        assert disabled == []
+
+    def test_refresh_updates_matrix(self, qtbot, tmp_path, monkeypatch):
+        db_path = str(tmp_path / 'refresh.db')
+        from wafer.core.db.setting_db import SettingDB
+        SettingDB(db_path).set_enabled_collectors(['exif'])
+
+        monkeypatch.setattr(
+            'wafer.builtins.plugin_manager.collectors_tab.list_setting_db_names',
+            lambda: ['mydb'],
+        )
+        monkeypatch.setattr(
+            'wafer.builtins.plugin_manager.collectors_tab.setting_db_path',
+            lambda name: db_path,
+        )
+        from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
+        tab = CollectorsTab(collector_names=['exif'])
+        qtbot.addWidget(tab)
+
+        assert ('exif', 'mydb') in tab._matrix
+        assert ('ai_tags', 'mydb') not in tab._matrix
+
+        tab.refresh(['exif', 'ai_tags'])
+
+        assert ('exif', 'mydb') in tab._matrix
+        assert ('ai_tags', 'mydb') in tab._matrix
+        assert tab._matrix[('exif', 'mydb')].isChecked()
+
+    def test_has_changes_false_when_unchanged(self, qtbot, tmp_path, monkeypatch):
+        db_path = str(tmp_path / 'hc.db')
+        from wafer.core.db.setting_db import SettingDB
+        SettingDB(db_path).set_enabled_collectors(['exif'])
+
+        monkeypatch.setattr(
+            'wafer.builtins.plugin_manager.collectors_tab.list_setting_db_names',
+            lambda: ['mydb'],
+        )
+        monkeypatch.setattr(
+            'wafer.builtins.plugin_manager.collectors_tab.setting_db_path',
+            lambda name: db_path,
+        )
+        from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
+        tab = CollectorsTab(collector_names=['exif'])
+        qtbot.addWidget(tab)
+        assert not tab.has_changes()
+
+    def test_has_changes_true_when_toggled(self, qtbot, tmp_path, monkeypatch):
+        db_path = str(tmp_path / 'hc2.db')
+        from wafer.core.db.setting_db import SettingDB
+        SettingDB(db_path).set_enabled_collectors(['exif'])
+
+        monkeypatch.setattr(
+            'wafer.builtins.plugin_manager.collectors_tab.list_setting_db_names',
+            lambda: ['mydb'],
+        )
+        monkeypatch.setattr(
+            'wafer.builtins.plugin_manager.collectors_tab.setting_db_path',
+            lambda name: db_path,
+        )
+        from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
+        tab = CollectorsTab(collector_names=['exif'])
+        qtbot.addWidget(tab)
+        tab._matrix[('exif', 'mydb')].setChecked(False)
+        assert tab.has_changes()
+
+
 class TestDataTab:
 
     def test_empty_state(self, qtbot, monkeypatch):
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.data_tab.list_setting_db_names',
+            'wafer.builtins.plugin_manager.data_tab.list_setting_db_names',
             lambda: [],
         )
         from wafer.core.qt.dispatcher import Dispatcher
         dispatcher = Dispatcher()
-        from wafer.app.plugin_manager.data_tab import DataTab
+        from wafer.builtins.plugin_manager.data_tab import DataTab
         tab = DataTab(dispatcher)
         qtbot.addWidget(tab)
         qtbot.waitUntil(lambda: tab._table.rowCount() == 0, timeout=3000)
@@ -944,21 +926,21 @@ class TestDataTab:
         fdb.close()
 
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.data_tab.list_setting_db_names',
+            'wafer.builtins.plugin_manager.data_tab.list_setting_db_names',
             lambda: ['testdb'],
         )
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.data_tab.setting_db_path',
+            'wafer.builtins.plugin_manager.data_tab.setting_db_path',
             lambda name: sdb_path,
         )
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.data_tab.data_db_path',
+            'wafer.builtins.plugin_manager.data_tab.data_db_path',
             lambda name: fdb_path,
         )
 
         from wafer.core.qt.dispatcher import Dispatcher
         dispatcher = Dispatcher()
-        from wafer.app.plugin_manager.data_tab import DataTab
+        from wafer.builtins.plugin_manager.data_tab import DataTab
         tab = DataTab(dispatcher)
         qtbot.addWidget(tab)
         qtbot.waitUntil(lambda: tab._table.rowCount() > 0, timeout=5000)
@@ -968,53 +950,6 @@ class TestDataTab:
         assert tab._table.item(0, 3).text() == 'Active'
 
 
-class TestWindowWithNode:
-
-    def test_dialog_stores_node(self, qtbot, monkeypatch):
-        monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.get_plugin_dir',
-            lambda: '/nonexistent',
-        )
-        from wafer.app.plugin_manager.window import PluginManagerDialog
-        PluginManagerDialog._instance = None
-        mock_node = MagicMock()
-        dlg = PluginManagerDialog.open(node=mock_node)
-        qtbot.addWidget(dlg)
-        assert dlg._node is mock_node
-        dlg.close()
-
-    def test_send_purge_dispatches_to_node(self, qtbot, monkeypatch):
-        monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.get_plugin_dir',
-            lambda: '/nonexistent',
-        )
-        from wafer.app.plugin_manager.window import PluginManagerDialog
-        PluginManagerDialog._instance = None
-        mock_node = MagicMock()
-        dlg = PluginManagerDialog.open(node=mock_node)
-        qtbot.addWidget(dlg)
-        dlg._send_purge([('db1', 'exif')], True)
-        mock_node.send_reliable.assert_called_once_with(
-            'purge.collector',
-            {'collector': 'exif', 're_collect': True},
-            dst='indexer',
-            db='db1',
-        )
-        dlg.close()
-
-    def test_send_purge_no_node_warns(self, qtbot, monkeypatch):
-        monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.get_plugin_dir',
-            lambda: '/nonexistent',
-        )
-        from wafer.app.plugin_manager.window import PluginManagerDialog
-        PluginManagerDialog._instance = None
-        dlg = PluginManagerDialog.open(node=None)
-        qtbot.addWidget(dlg)
-        dlg._send_purge([('db1', 'exif')], False)
-        dlg.close()
-
-
 class TestCloseEventCancels:
 
     def test_close_cancels_pending_installs(self, qtbot, tmp_path, monkeypatch):
@@ -1022,16 +957,16 @@ class TestCloseEventCancels:
         (ext_dir / 'pending_ext').mkdir(parents=True)
         (ext_dir / 'pending_ext' / '__init__.py').write_text('')
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.get_plugin_dir',
+            'wafer.builtins.plugin_manager.extensions_tab.get_plugin_dir',
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.needs_setup',
+            'wafer.builtins.plugin_manager.extensions_tab.needs_setup',
             lambda folder: False,
         )
         from wafer.core.qt.dispatcher import Dispatcher, CancelSlot
         dispatcher = Dispatcher()
-        from wafer.app.plugin_manager.extensions_tab import ExtensionsTab
+        from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
         tab = ExtensionsTab(set(), dispatcher)
 
         slot = CancelSlot()
@@ -1051,11 +986,11 @@ class TestPostInstallHook:
         (ext_dir / 'vid_ext').mkdir(parents=True)
         (ext_dir / 'vid_ext' / '__init__.py').write_text('')
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.get_plugin_dir',
+            'wafer.builtins.plugin_manager.extensions_tab.get_plugin_dir',
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.needs_setup',
+            'wafer.builtins.plugin_manager.extensions_tab.needs_setup',
             lambda folder: True,
         )
 
@@ -1069,14 +1004,14 @@ class TestPostInstallHook:
                 pass
 
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.install_extension',
+            'wafer.builtins.plugin_manager.extensions_tab.install_extension',
             lambda d, e, on_progress=None, is_cancelled=None: (
                 True, True, [('viewer', HookPlugin)]
             ),
         )
         from wafer.core.qt.dispatcher import Dispatcher
         dispatcher = Dispatcher()
-        from wafer.app.plugin_manager.extensions_tab import ExtensionsTab
+        from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
         tab = ExtensionsTab(set(), dispatcher)
         qtbot.addWidget(tab)
 
@@ -1089,11 +1024,11 @@ class TestPostInstallHook:
         (ext_dir / 'plain_ext').mkdir(parents=True)
         (ext_dir / 'plain_ext' / '__init__.py').write_text('')
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.get_plugin_dir',
+            'wafer.builtins.plugin_manager.extensions_tab.get_plugin_dir',
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.needs_setup',
+            'wafer.builtins.plugin_manager.extensions_tab.needs_setup',
             lambda folder: True,
         )
 
@@ -1103,14 +1038,14 @@ class TestPostInstallHook:
             PRIORITY = 1
 
         monkeypatch.setattr(
-            'wafer.app.plugin_manager.extensions_tab.install_extension',
+            'wafer.builtins.plugin_manager.extensions_tab.install_extension',
             lambda d, e, on_progress=None, is_cancelled=None: (
                 True, True, [('grid', PlainPlugin)]
             ),
         )
         from wafer.core.qt.dispatcher import Dispatcher
         dispatcher = Dispatcher()
-        from wafer.app.plugin_manager.extensions_tab import ExtensionsTab
+        from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
         tab = ExtensionsTab(set(), dispatcher)
         qtbot.addWidget(tab)
 

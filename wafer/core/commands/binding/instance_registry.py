@@ -115,3 +115,12 @@ class InstanceRegistry:
     def get_one(self, name: str) -> Any:
         xs = self.get_all(name)
         return xs[0] if xs else None
+
+    def resolve_node(self):
+        for name in ("MainWindow", "Tray"):
+            inst = self.get_one(name)
+            if inst is not None:
+                node = getattr(inst, '_node', None)
+                if node is not None:
+                    return node
+        return None

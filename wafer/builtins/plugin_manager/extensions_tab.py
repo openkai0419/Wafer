@@ -324,3 +324,11 @@ class ExtensionsTab(QtWidgets.QWidget):
         for slot in self._install_cancels.values():
             slot.renew()
         self._install_cancels.clear()
+
+    def revert(self, enabled_names: set[str]):
+        self._enabled = set(enabled_names)
+        for card in self._cards.values():
+            for row, qualified in card._rows:
+                row.checkbox.blockSignals(True)
+                row.checkbox.setChecked(qualified in self._enabled)
+                row.checkbox.blockSignals(False)

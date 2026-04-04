@@ -1,12 +1,13 @@
 from PySide6 import QtWidgets, QtCore
-from ...utils.formatting import dpix, is_dark_theme
+from ...utils.formatting import dpix
 from ...utils.logs import AppLogger
+from ...utils.notifier import Notifier
 from ...plugin.settings import PluginSettings
+from ...plugin.panel.base import BasePanelPlugin
+from ...core.color.theme import ThemeManager
 from ...core.qt.dispatcher import Dispatcher
 from ...core.qt.thread import utility_pool
-from ...core.ipc.node import Node
-from ...core.commands.bridge import ActionKit, Command
-from ...core.qt.window import DialogLayoutStore
+from ...core.commands.bridge import Command
 
 
 def _hex_rgb(hex_color: str) -> str:
@@ -14,54 +15,32 @@ def _hex_rgb(hex_color: str) -> str:
 
 
 def _build_stylesheet() -> str:
-    dark = is_dark_theme()
-    if dark:
-        card_bg = '#2a2a2a'
-        card_border = '#3a3a3a'
-        accent = '#4fc3f7'
-        accent_hover = '#29b6f6'
-        success = '#66bb6a'
-        error = '#ef5350'
-        disabled_text = '#666'
-        btn_bg = '#353535'
-        btn_border = '#444'
-        btn_hover = '#404040'
-    else:
-        card_bg = '#f5f5f5'
-        card_border = '#e0e0e0'
-        accent = '#1976d2'
-        accent_hover = '#1565c0'
-        success = '#43a047'
-        error = '#e53935'
-        disabled_text = '#aaa'
-        btn_bg = '#f0f0f0'
-        btn_border = '#ccc'
-        btn_hover = '#e0e0e0'
+    p = ThemeManager.instance().palette
     r = dpix(4)
     return f"""
         QPushButton#save_btn {{
-            background: {accent};
-            color: white;
+            background: {p.accent};
+            color: {p.accent_text};
             border: none;
             border-radius: {r}px;
             padding: {dpix(5)}px {dpix(20)}px;
             font-weight: bold;
         }}
         QPushButton#save_btn:hover {{
-            background: {accent_hover};
+            background: {p.bg_hover};
         }}
         QPushButton#cancel_btn {{
-            background: {btn_bg};
-            border: 1px solid {btn_border};
+            background: {p.bg_secondary};
+            border: 1px solid {p.border_default};
             border-radius: {r}px;
             padding: {dpix(5)}px {dpix(20)}px;
         }}
         QPushButton#cancel_btn:hover {{
-            background: {btn_hover};
+            background: {p.bg_hover};
         }}
         QFrame#extension_card {{
-            background: {card_bg};
-            border: 1px solid {card_border};
+            background: {p.bg_secondary};
+            border: 1px solid {p.border_default};
             border-radius: {dpix(6)}px;
         }}
         QLabel#section_header {{
@@ -75,52 +54,52 @@ def _build_stylesheet() -> str:
             padding: {dpix(2)}px {dpix(10)}px;
         }}
         QPushButton#status_btn[status="installed"] {{
-            background: rgba({_hex_rgb(success)}, 0.12);
-            color: {success};
-            border: 1px solid rgba({_hex_rgb(success)}, 0.3);
+            background: rgba({_hex_rgb(p.success)}, 0.12);
+            color: {p.success};
+            border: 1px solid rgba({_hex_rgb(p.success)}, 0.3);
         }}
         QPushButton#status_btn[status="no_deps"] {{
             background: transparent;
-            color: {disabled_text};
-            border: 1px solid {card_border};
+            color: {p.text_muted};
+            border: 1px solid {p.border_default};
         }}
         QPushButton#status_btn[status="install"] {{
-            background: {accent};
-            color: white;
+            background: {p.accent};
+            color: {p.accent_text};
             border: none;
         }}
         QPushButton#status_btn[status="install"]:hover {{
-            background: {accent_hover};
+            background: {p.bg_hover};
         }}
         QPushButton#status_btn[status="installing"] {{
             background: transparent;
-            color: {accent};
-            border: 1px solid {accent};
+            color: {p.accent};
+            border: 1px solid {p.accent};
         }}
         QPushButton#status_btn[status="failed"] {{
-            background: rgba({_hex_rgb(error)}, 0.12);
-            color: {error};
-            border: 1px solid rgba({_hex_rgb(error)}, 0.3);
+            background: rgba({_hex_rgb(p.error)}, 0.12);
+            color: {p.error};
+            border: 1px solid rgba({_hex_rgb(p.error)}, 0.3);
         }}
         QPushButton#status_btn[status="failed"]:hover {{
-            background: {error};
-            color: white;
+            background: {p.error};
+            color: {p.accent_text};
         }}
         QPushButton#purge_btn {{
-            background: rgba({_hex_rgb(error)}, 0.1);
-            color: {error};
-            border: 1px solid rgba({_hex_rgb(error)}, 0.3);
+            background: rgba({_hex_rgb(p.error)}, 0.1);
+            color: {p.error};
+            border: 1px solid rgba({_hex_rgb(p.error)}, 0.3);
             border-radius: {r}px;
             padding: {dpix(4)}px {dpix(12)}px;
             font-weight: bold;
         }}
         QPushButton#purge_btn:hover {{
-            background: {error};
-            color: white;
+            background: {p.error};
+            color: {p.accent_text};
         }}
         QGroupBox {{
             font-weight: bold;
-            border: 1px solid {card_border};
+            border: 1px solid {p.border_default};
             border-radius: {dpix(6)}px;
             margin-top: {dpix(12)}px;
             padding-top: {dpix(12)}px;
@@ -133,32 +112,14 @@ def _build_stylesheet() -> str:
     """
 
 
-class PluginManagerDialog(QtWidgets.QDialog):
-    _instance = None
+class PluginManagerWidget(QtWidgets.QWidget):
 
-    @classmethod
-    def open(cls, parent=None, node=None):
-        if cls._instance is not None:
-            cls._instance.raise_()
-            cls._instance.activateWindow()
-            return cls._instance
-        dlg = cls(parent=parent, node=node)
-        cls._instance = dlg
-        dlg.show()
-        return dlg
-
-    def __init__(self, parent=None, node=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle('Plugin Manager')
-        self.setWindowFlags(self.windowFlags() | QtCore.Qt.Window)
-        self.setAttribute(QtCore.Qt.WA_DeleteOnClose)
-        self.resize(dpix(550), dpix(1000))
         self.setStyleSheet(_build_stylesheet())
 
         self._settings = PluginSettings()
         self._dispatcher = Dispatcher(utility_pool)
-        self._node = node
-        self._layout_store = DialogLayoutStore('plugin_manager')
 
         from .extensions_tab import ExtensionsTab
         self._ext_tab = ExtensionsTab(
@@ -203,15 +164,15 @@ class PluginManagerDialog(QtWidgets.QDialog):
 
         save_btn = QtWidgets.QPushButton('Save')
         save_btn.setObjectName('save_btn')
-        cancel_btn = QtWidgets.QPushButton('Cancel')
-        cancel_btn.setObjectName('cancel_btn')
+        revert_btn = QtWidgets.QPushButton('Revert')
+        revert_btn.setObjectName('cancel_btn')
         save_btn.clicked.connect(self._on_save)
-        cancel_btn.clicked.connect(self.close)
+        revert_btn.clicked.connect(self._on_revert)
 
         btn_layout = QtWidgets.QHBoxLayout()
         btn_layout.addStretch()
         btn_layout.addWidget(save_btn)
-        btn_layout.addWidget(cancel_btn)
+        btn_layout.addWidget(revert_btn)
 
         layout = QtWidgets.QVBoxLayout(self)
         p = dpix(6)
@@ -219,8 +180,6 @@ class PluginManagerDialog(QtWidgets.QDialog):
         layout.setSpacing(p)
         layout.addWidget(self._splitter, 1)
         layout.addLayout(btn_layout)
-
-        self._layout_store.restore(self, splitter=self._splitter)
 
     def _has_plugin_changes(self, enabled, orders):
         if enabled != self._initial_enabled:
@@ -239,7 +198,7 @@ class PluginManagerDialog(QtWidgets.QDialog):
             or self._collectors_tab.has_changes()
         )
         if not has_changes:
-            self.close()
+            Notifier.info('No changes to save')
             return
         self._settings.set_enabled(enabled)
         for key, order in orders.items():
@@ -248,6 +207,8 @@ class PluginManagerDialog(QtWidgets.QDialog):
             f'[PluginManager] Saved: enabled={sorted(enabled)}, '
             f'orders={orders}'
         )
+        self._initial_enabled = set(enabled)
+        self._initial_orders = dict(orders)
         msg = QtWidgets.QMessageBox(
             QtWidgets.QMessageBox.Question,
             'Restart Required',
@@ -258,9 +219,13 @@ class PluginManagerDialog(QtWidgets.QDialog):
         msg.addButton('Not Now', QtWidgets.QMessageBox.RejectRole)
         msg.setDefaultButton(restart_btn)
         msg.exec()
-        self.close()
         if msg.clickedButton() == restart_btn:
             Command.run("setting.restart_all")
+
+    def _on_revert(self):
+        self._ext_tab.revert(self._initial_enabled)
+        self._sync_tabs()
+        Notifier.info('Changes reverted')
 
     @staticmethod
     def _compute_builtin_command_names(registry_data: dict) -> set[str]:
@@ -285,11 +250,13 @@ class PluginManagerDialog(QtWidgets.QDialog):
         self._collectors_tab.refresh(collector_names)
 
     def _send_purge(self, pairs: list[tuple[str, str]], re_collect: bool):
-        if not self._node:
+        from ...core.commands.binding.instance_registry import InstanceRegistry
+        node = InstanceRegistry.instance().resolve_node()
+        if not node:
             AppLogger.warning('[PluginManager] No IPC node available for purge')
             return
         for db, collector in pairs:
-            self._node.send_reliable(
+            node.send_reliable(
                 'purge.collector',
                 {'collector': collector, 're_collect': re_collect},
                 dst='indexer',
@@ -298,9 +265,7 @@ class PluginManagerDialog(QtWidgets.QDialog):
         AppLogger.info(f'[PluginManager] Sent purge for {len(pairs)} pairs')
 
     def closeEvent(self, event):
-        self._layout_store.save(self, splitter=self._splitter)
         self._ext_tab.cancel_pending()
-        PluginManagerDialog._instance = None
         super().closeEvent(event)
 
     def add_tab(self, widget, title: str):
@@ -313,3 +278,13 @@ class PluginManagerDialog(QtWidgets.QDialog):
         scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
         scroll.setWidget(widget)
         return scroll
+
+
+class PluginManagerPlugin(BasePanelPlugin):
+    NAME = "plugin_manager"
+    DISPLAY_NAME = "Plugin Manager"
+    CLOSABLE = True
+    PRIORITY = 0
+
+    def create_widget(self):
+        return PluginManagerWidget()

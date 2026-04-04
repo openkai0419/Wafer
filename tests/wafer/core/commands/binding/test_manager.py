@@ -92,9 +92,47 @@ def test_ctx_filters_deleted_widget(qtbot):
     assert ctx.get_instances("gone") == []
 
 
-def test_register_applies_current_key_bindings(qtbot):
-    BindingManager._instance = None
+def test_resolve_node_from_mainwindow(qtbot):
     InstanceRegistry._instance = None
+    reg = InstanceRegistry.instance()
+    mock_w = _W()
+    mock_w._node = object()
+    qtbot.addWidget(mock_w)
+    reg.register("MainWindow", mock_w)
+    assert reg.resolve_node() is mock_w._node
+
+
+def test_resolve_node_from_tray(qtbot):
+    InstanceRegistry._instance = None
+    reg = InstanceRegistry.instance()
+    mock_tray = _W()
+    mock_tray._node = object()
+    qtbot.addWidget(mock_tray)
+    reg.register("Tray", mock_tray)
+    assert reg.resolve_node() is mock_tray._node
+
+
+def test_resolve_node_none():
+    InstanceRegistry._instance = None
+    reg = InstanceRegistry.instance()
+    assert reg.resolve_node() is None
+
+
+def test_resolve_node_prefers_mainwindow(qtbot):
+    InstanceRegistry._instance = None
+    reg = InstanceRegistry.instance()
+    mock_w = _W()
+    mock_w._node = object()
+    mock_tray = _W()
+    mock_tray._node = object()
+    qtbot.addWidget(mock_w)
+    qtbot.addWidget(mock_tray)
+    reg.register("MainWindow", mock_w)
+    reg.register("Tray", mock_tray)
+    assert reg.resolve_node() is mock_w._node
+
+
+def test_register_applies_current_key_bindings(qtbot):
     store = KeyBindingStore.instance()
     try:
         seq = Key("Control", "A")

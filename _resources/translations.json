@@ -1,4 +1,10 @@
 {
+  "Toggle Database Manager": {
+    "en": "Toggle Database Manager"
+  },
+  "Toggle Plugin Manager": {
+    "en": "Toggle Plugin Manager"
+  },
   "Panel": {
     "en": "Panel"
   },

@@ -4,69 +4,34 @@ from unittest.mock import MagicMock, patch
 
 from PySide6 import QtWidgets
 from wafer.core.db.setting_db import SettingDB
-from wafer.utils.paths import setting_db_path
-
-
-class _FakeLayoutStore:
-    def __init__(self, *a, **kw): pass
-    def save(self, *a, **kw): pass
-    def restore(self, *a, **kw): pass
 
 
 @pytest.fixture(autouse=True)
-def _isolate_dialog(tmp_path, monkeypatch):
+def _isolate_widget(monkeypatch):
     monkeypatch.setattr(
-        'wafer.app.database_manager.window.DialogLayoutStore',
-        _FakeLayoutStore,
-    )
-    monkeypatch.setattr(
-        'wafer.app.plugin_manager.data_tab.list_setting_db_names',
+        'wafer.builtins.plugin_manager.data_tab.list_setting_db_names',
         lambda: [],
     )
 
 
-class TestDatabaseManagerDialog:
-
-    def test_singleton_open(self, qtbot, tmp_path, monkeypatch):
-        monkeypatch.setattr(
-            'wafer.app.database_manager.window.list_setting_db_names',
-            lambda: ['test_db'],
-        )
-        monkeypatch.setattr(
-            'wafer.app.database_manager.window.setting_db_path',
-            lambda name: str(tmp_path / f'{name}.db'),
-        )
-        from wafer.app.database_manager.window import DatabaseManagerDialog
-        DatabaseManagerDialog._instance = None
-
-        dlg = DatabaseManagerDialog.open()
-        qtbot.addWidget(dlg)
-        assert DatabaseManagerDialog._instance is dlg
-
-        dlg2 = DatabaseManagerDialog.open()
-        assert dlg2 is dlg
-
-        dlg.close()
-        assert DatabaseManagerDialog._instance is None
+class TestDatabaseManagerWidget:
 
     def test_db_list_populated(self, qtbot, tmp_path, monkeypatch):
         names = ['alpha', 'beta', 'gamma']
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.list_setting_db_names',
+            'wafer.builtins.database_manager.widget.list_setting_db_names',
             lambda: list(names),
         )
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.setting_db_path',
+            'wafer.builtins.database_manager.widget.setting_db_path',
             lambda name: str(tmp_path / f'{name}.db'),
         )
-        from wafer.app.database_manager.window import DatabaseManagerDialog
-        DatabaseManagerDialog._instance = None
+        from wafer.builtins.database_manager.widget import DatabaseManagerWidget
 
-        dlg = DatabaseManagerDialog()
+        dlg = DatabaseManagerWidget()
         qtbot.addWidget(dlg)
         items = [dlg._db_list.item(i).text() for i in range(dlg._db_list.count())]
         assert items == names
-        dlg.close()
 
     def test_select_db_loads_detail(self, qtbot, tmp_path, monkeypatch):
         sdb_path = str(tmp_path / 'mydb.db')
@@ -75,72 +40,69 @@ class TestDatabaseManagerDialog:
         sdb.add_ignore_folder('/src/photos/.cache')
 
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.list_setting_db_names',
+            'wafer.builtins.database_manager.widget.list_setting_db_names',
             lambda: ['mydb'],
         )
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.setting_db_path',
+            'wafer.builtins.database_manager.widget.setting_db_path',
             lambda name: sdb_path,
         )
-        from wafer.app.database_manager.window import DatabaseManagerDialog
-        DatabaseManagerDialog._instance = None
+        from wafer.builtins.database_manager.widget import DatabaseManagerWidget
 
-        dlg = DatabaseManagerDialog()
+        dlg = DatabaseManagerWidget()
         qtbot.addWidget(dlg)
         dlg._db_list.setCurrentRow(0)
 
         detail = dlg._detail_widget
         assert detail._source_list.count() == 1
         assert detail._ignore_list.count() == 1
-        dlg.close()
 
     def test_add_database(self, qtbot, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.list_setting_db_names',
+            'wafer.builtins.database_manager.widget.list_setting_db_names',
             lambda: ['existing'],
         )
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.setting_db_path',
+            'wafer.builtins.database_manager.widget.setting_db_path',
             lambda name: str(tmp_path / f'{name}.db'),
         )
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.InputDialog.get_text',
+            'wafer.builtins.database_manager.widget.InputDialog.get_text',
             staticmethod(lambda *a, **kw: 'new_db'),
         )
         mock_new_main = MagicMock()
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.AppProcess.new_main',
+            'wafer.builtins.database_manager.widget.AppProcess.new_main',
             mock_new_main,
         )
-        from wafer.app.database_manager.window import DatabaseManagerDialog
-        DatabaseManagerDialog._instance = None
+        from wafer.builtins.database_manager.widget import DatabaseManagerWidget
 
-        dlg = DatabaseManagerDialog()
+        dlg = DatabaseManagerWidget()
         qtbot.addWidget(dlg)
 
         dlg._add_database()
 
         mock_new_main.assert_called_once_with('--indexer', 'new_db')
-        dlg.close()
 
     def test_delete_database_with_node(self, qtbot, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.list_setting_db_names',
+            'wafer.builtins.database_manager.widget.list_setting_db_names',
             lambda: ['keep', 'del_me'],
         )
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.setting_db_path',
+            'wafer.builtins.database_manager.widget.setting_db_path',
             lambda name: str(tmp_path / f'{name}.db'),
         )
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.ConfirmDialog.ask',
+            'wafer.builtins.database_manager.widget.ConfirmDialog.ask',
             staticmethod(lambda *a, **kw: 'Delete'),
         )
         mock_node = MagicMock()
-        from wafer.app.database_manager.window import DatabaseManagerDialog
-        DatabaseManagerDialog._instance = None
+        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+        monkeypatch.setattr(InstanceRegistry.instance(), 'resolve_node', lambda: mock_node)
+        from wafer.builtins.database_manager.widget import DatabaseManagerWidget
 
-        dlg = DatabaseManagerDialog(node=mock_node)
+        dlg = DatabaseManagerWidget()
         qtbot.addWidget(dlg)
         dlg._db_list.setCurrentRow(1)
         dlg._delete_database()
@@ -148,7 +110,6 @@ class TestDatabaseManagerDialog:
         mock_node.send_reliable.assert_called_once_with(
             'db.delete', 'del_me', dst='indexer', db='del_me',
         )
-        dlg.close()
 
     def test_delete_database_no_node_removes_files(self, qtbot, tmp_path, monkeypatch):
         data_dir = tmp_path / 'data'
@@ -167,25 +128,26 @@ class TestDatabaseManagerDialog:
             return ['keep', 'del_me']
 
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.list_setting_db_names',
+            'wafer.builtins.database_manager.widget.list_setting_db_names',
             fake_names,
         )
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.data_db_path',
+            'wafer.builtins.database_manager.widget.data_db_path',
             lambda name: str(data_dir / f'{name}.db'),
         )
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.setting_db_path',
+            'wafer.builtins.database_manager.widget.setting_db_path',
             lambda name: str(dirs_dir / f'{name}.db'),
         )
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.ConfirmDialog.ask',
+            'wafer.builtins.database_manager.widget.ConfirmDialog.ask',
             staticmethod(lambda *a, **kw: 'Delete'),
         )
-        from wafer.app.database_manager.window import DatabaseManagerDialog
-        DatabaseManagerDialog._instance = None
+        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+        monkeypatch.setattr(InstanceRegistry.instance(), 'resolve_node', lambda: None)
+        from wafer.builtins.database_manager.widget import DatabaseManagerWidget
 
-        dlg = DatabaseManagerDialog(node=None)
+        dlg = DatabaseManagerWidget()
         qtbot.addWidget(dlg)
         dlg._db_list.setCurrentRow(1)
         deleted[0] = True
@@ -193,21 +155,20 @@ class TestDatabaseManagerDialog:
 
         assert not db_file.exists()
         assert not setting_file.exists()
-        dlg.close()
 
 
 class TestDatabaseDetailWidget:
 
     def test_add_source_folder(self, qtbot, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.setting_db_path',
+            'wafer.builtins.database_manager.widget.setting_db_path',
             lambda name: str(tmp_path / f'{name}.db'),
         )
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.QtWidgets.QFileDialog.getExistingDirectory',
+            'wafer.builtins.database_manager.widget.QtWidgets.QFileDialog.getExistingDirectory',
             staticmethod(lambda *a, **kw: str(tmp_path / 'photos')),
         )
-        from wafer.app.database_manager.window import _DatabaseDetailWidget
+        from wafer.builtins.database_manager.widget import _DatabaseDetailWidget
         widget = _DatabaseDetailWidget()
         qtbot.addWidget(widget)
         widget.load('test')
@@ -218,15 +179,15 @@ class TestDatabaseDetailWidget:
 
     def test_add_source_no_duplicate(self, qtbot, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.setting_db_path',
+            'wafer.builtins.database_manager.widget.setting_db_path',
             lambda name: str(tmp_path / f'{name}.db'),
         )
         folder = str(tmp_path / 'photos')
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.QtWidgets.QFileDialog.getExistingDirectory',
+            'wafer.builtins.database_manager.widget.QtWidgets.QFileDialog.getExistingDirectory',
             staticmethod(lambda *a, **kw: folder),
         )
-        from wafer.app.database_manager.window import _DatabaseDetailWidget
+        from wafer.builtins.database_manager.widget import _DatabaseDetailWidget
         widget = _DatabaseDetailWidget()
         qtbot.addWidget(widget)
         widget.load('test')
@@ -242,10 +203,10 @@ class TestDatabaseDetailWidget:
         sdb.add_parent_folder(folder)
 
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.setting_db_path',
+            'wafer.builtins.database_manager.widget.setting_db_path',
             lambda name: sdb_path,
         )
-        from wafer.app.database_manager.window import _DatabaseDetailWidget
+        from wafer.builtins.database_manager.widget import _DatabaseDetailWidget
         widget = _DatabaseDetailWidget()
         qtbot.addWidget(widget)
         widget.load('test')
@@ -258,14 +219,14 @@ class TestDatabaseDetailWidget:
 
     def test_add_ignore_folder(self, qtbot, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.setting_db_path',
+            'wafer.builtins.database_manager.widget.setting_db_path',
             lambda name: str(tmp_path / f'{name}.db'),
         )
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.QtWidgets.QFileDialog.getExistingDirectory',
+            'wafer.builtins.database_manager.widget.QtWidgets.QFileDialog.getExistingDirectory',
             staticmethod(lambda *a, **kw: str(tmp_path / 'cache')),
         )
-        from wafer.app.database_manager.window import _DatabaseDetailWidget
+        from wafer.builtins.database_manager.widget import _DatabaseDetailWidget
         widget = _DatabaseDetailWidget()
         qtbot.addWidget(widget)
         widget.load('test')
@@ -281,10 +242,10 @@ class TestDatabaseDetailWidget:
         sdb.add_ignore_folder(folder)
 
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.setting_db_path',
+            'wafer.builtins.database_manager.widget.setting_db_path',
             lambda name: sdb_path,
         )
-        from wafer.app.database_manager.window import _DatabaseDetailWidget
+        from wafer.builtins.database_manager.widget import _DatabaseDetailWidget
         widget = _DatabaseDetailWidget()
         qtbot.addWidget(widget)
         widget.load('test')
@@ -303,10 +264,10 @@ class TestDatabaseDetailWidget:
         sdb.add_ignore_folder('/src/a/.tmp')
 
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.setting_db_path',
+            'wafer.builtins.database_manager.widget.setting_db_path',
             lambda name: sdb_path,
         )
-        from wafer.app.database_manager.window import _DatabaseDetailWidget
+        from wafer.builtins.database_manager.widget import _DatabaseDetailWidget
         widget = _DatabaseDetailWidget()
         qtbot.addWidget(widget)
         widget.load('full')
@@ -323,10 +284,10 @@ class TestDatabaseDetailWidget:
         sdb.add_ignore_folder(ign)
 
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.setting_db_path',
+            'wafer.builtins.database_manager.widget.setting_db_path',
             lambda name: sdb_path,
         )
-        from wafer.app.database_manager.window import _DatabaseDetailWidget
+        from wafer.builtins.database_manager.widget import _DatabaseDetailWidget
         widget = _DatabaseDetailWidget()
         qtbot.addWidget(widget)
         widget.load('test')
@@ -341,14 +302,14 @@ class TestDatabaseDetailWidget:
         sdb.add_parent_folder(src)
 
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.setting_db_path',
+            'wafer.builtins.database_manager.widget.setting_db_path',
             lambda name: sdb_path,
         )
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.QtWidgets.QFileDialog.getExistingDirectory',
+            'wafer.builtins.database_manager.widget.QtWidgets.QFileDialog.getExistingDirectory',
             staticmethod(lambda *a, **kw: '/src/b'),
         )
-        from wafer.app.database_manager.window import _DatabaseDetailWidget
+        from wafer.builtins.database_manager.widget import _DatabaseDetailWidget
         widget = _DatabaseDetailWidget()
         qtbot.addWidget(widget)
         widget.load('test')
@@ -363,14 +324,14 @@ class TestDatabaseDetailWidget:
         new_folder = str(tmp_path / 'new_folder')
 
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.setting_db_path',
+            'wafer.builtins.database_manager.widget.setting_db_path',
             lambda name: sdb_path,
         )
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.QtWidgets.QFileDialog.getExistingDirectory',
+            'wafer.builtins.database_manager.widget.QtWidgets.QFileDialog.getExistingDirectory',
             staticmethod(lambda *a, **kw: new_folder),
         )
-        from wafer.app.database_manager.window import _DatabaseDetailWidget
+        from wafer.builtins.database_manager.widget import _DatabaseDetailWidget
         widget = _DatabaseDetailWidget()
         qtbot.addWidget(widget)
         widget.load('test')
@@ -388,10 +349,10 @@ class TestDatabaseDetailWidget:
         sdb.add_parent_folder(src)
 
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.setting_db_path',
+            'wafer.builtins.database_manager.widget.setting_db_path',
             lambda name: sdb_path,
         )
-        from wafer.app.database_manager.window import _DatabaseDetailWidget
+        from wafer.builtins.database_manager.widget import _DatabaseDetailWidget
         widget = _DatabaseDetailWidget()
         qtbot.addWidget(widget)
         widget.load('test')
@@ -407,14 +368,14 @@ class TestDatabaseDetailWidget:
         SettingDB(sdb_path_b)
 
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.setting_db_path',
+            'wafer.builtins.database_manager.widget.setting_db_path',
             lambda name: str(tmp_path / f'{name}.db'),
         )
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.QtWidgets.QFileDialog.getExistingDirectory',
+            'wafer.builtins.database_manager.widget.QtWidgets.QFileDialog.getExistingDirectory',
             staticmethod(lambda *a, **kw: '/added/path'),
         )
-        from wafer.app.database_manager.window import _DatabaseDetailWidget
+        from wafer.builtins.database_manager.widget import _DatabaseDetailWidget
         widget = _DatabaseDetailWidget()
         qtbot.addWidget(widget)
 
@@ -428,36 +389,84 @@ class TestDatabaseDetailWidget:
         widget.load('db_a')
         assert widget._source_list.count() == 1
 
+    def test_revert_restores_buffers(self, qtbot, tmp_path, monkeypatch):
+        sdb_path = str(tmp_path / 'test.db')
+        SettingDB(sdb_path)
+
+        monkeypatch.setattr(
+            'wafer.builtins.database_manager.widget.setting_db_path',
+            lambda name: sdb_path,
+        )
+        monkeypatch.setattr(
+            'wafer.builtins.database_manager.widget.QtWidgets.QFileDialog.getExistingDirectory',
+            staticmethod(lambda *a, **kw: '/added'),
+        )
+        from wafer.builtins.database_manager.widget import _DatabaseDetailWidget
+        widget = _DatabaseDetailWidget()
+        qtbot.addWidget(widget)
+        widget.load('test')
+        widget._add_source()
+
+        initial = {'test': ([], [])}
+        widget.revert(initial)
+        assert widget._buffers['test'] == ([], [])
+
 
 class TestDatabaseManagerCommands:
 
-    def test_resolve_node_from_mainwindow(self):
-        from wafer.builtins.commands.app import _resolve_node
+    def test_toggle_or_standalone_with_mainwindow(self):
+        from wafer.builtins.commands.app import _toggle_or_standalone
         mock_ctx = MagicMock()
         mock_w = MagicMock()
-        mock_w._node = MagicMock()
         mock_ctx.get_instance = lambda name: mock_w if name == "MainWindow" else None
-        parent, node = _resolve_node(mock_ctx)
-        assert parent is mock_w
-        assert node is mock_w._node
+        _toggle_or_standalone(mock_ctx, "Database Manager", lambda: None, "test")
+        mock_w._layout_manager.toggle_panel.assert_called_once_with("Database Manager")
 
-    def test_resolve_node_from_tray(self):
-        from wafer.builtins.commands.app import _resolve_node
-        mock_ctx = MagicMock()
-        mock_tray = MagicMock()
-        mock_tray._node = MagicMock()
-        mock_ctx.get_instance = lambda name: mock_tray if name == "Tray" else None
-        parent, node = _resolve_node(mock_ctx)
-        assert parent is None
-        assert node is mock_tray._node
+    def test_toggle_or_standalone_without_mainwindow(self, qtbot, monkeypatch):
+        from PySide6 import QtCore
+        from wafer.builtins.commands.app import _toggle_or_standalone, _standalone_dialogs
 
-    def test_resolve_node_none(self):
-        from wafer.builtins.commands.app import _resolve_node
+        class _FakeStore:
+            def __init__(self, *a, **kw): pass
+            def save(self, *a, **kw): pass
+            def restore(self, *a, **kw): pass
+
+        monkeypatch.setattr(
+            'wafer.builtins.commands.app.DialogLayoutStore',
+            _FakeStore,
+        )
         mock_ctx = MagicMock()
         mock_ctx.get_instance = lambda name: None
-        parent, node = _resolve_node(mock_ctx)
-        assert parent is None
-        assert node is None
+        widget = QtWidgets.QWidget()
+        _toggle_or_standalone(mock_ctx, "Test Panel", lambda: widget, "test_toggle")
+        assert "test_toggle" in _standalone_dialogs
+        dlg = _standalone_dialogs["test_toggle"]
+        dlg.setAttribute(QtCore.Qt.WA_DeleteOnClose, False)
+        qtbot.addWidget(dlg)
+
+    def test_open_standalone_reuses_existing(self, qtbot, monkeypatch):
+        from PySide6 import QtCore
+        from wafer.builtins.commands.app import _open_standalone, _standalone_dialogs
+
+        class _FakeStore:
+            def __init__(self, *a, **kw): pass
+            def save(self, *a, **kw): pass
+            def restore(self, *a, **kw): pass
+
+        monkeypatch.setattr(
+            'wafer.builtins.commands.app.DialogLayoutStore',
+            _FakeStore,
+        )
+        _standalone_dialogs.clear()
+        w1 = QtWidgets.QWidget()
+        _open_standalone(lambda: w1, "Title", "reuse_key")
+        dlg1 = _standalone_dialogs.get("reuse_key")
+        assert dlg1 is not None
+        dlg1.setAttribute(QtCore.Qt.WA_DeleteOnClose, False)
+        qtbot.addWidget(dlg1)
+
+        _open_standalone(lambda: QtWidgets.QWidget(), "Title", "reuse_key")
+        assert _standalone_dialogs["reuse_key"] is dlg1
 
 
 class TestDatabaseManagerSaveCancel:
@@ -468,68 +477,63 @@ class TestDatabaseManagerSaveCancel:
         sdb.add_parent_folder('/src/a')
 
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.list_setting_db_names',
+            'wafer.builtins.database_manager.widget.list_setting_db_names',
             lambda: ['test_db'],
         )
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.setting_db_path',
+            'wafer.builtins.database_manager.widget.setting_db_path',
             lambda name: sdb_path,
         )
-        from wafer.app.database_manager.window import DatabaseManagerDialog
-        DatabaseManagerDialog._instance = None
-        dlg = DatabaseManagerDialog()
+        from wafer.builtins.database_manager.widget import DatabaseManagerWidget
+        dlg = DatabaseManagerWidget()
         qtbot.addWidget(dlg)
         dlg._db_list.setCurrentRow(0)
 
         assert not dlg.has_changes()
-        dlg.close()
 
     def test_has_changes_true_after_add(self, qtbot, tmp_path, monkeypatch):
         sdb_path = str(tmp_path / 'test_db.db')
         SettingDB(sdb_path)
 
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.list_setting_db_names',
+            'wafer.builtins.database_manager.widget.list_setting_db_names',
             lambda: ['test_db'],
         )
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.setting_db_path',
+            'wafer.builtins.database_manager.widget.setting_db_path',
             lambda name: sdb_path,
         )
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.QtWidgets.QFileDialog.getExistingDirectory',
+            'wafer.builtins.database_manager.widget.QtWidgets.QFileDialog.getExistingDirectory',
             staticmethod(lambda *a, **kw: '/new/folder'),
         )
-        from wafer.app.database_manager.window import DatabaseManagerDialog
-        DatabaseManagerDialog._instance = None
-        dlg = DatabaseManagerDialog()
+        from wafer.builtins.database_manager.widget import DatabaseManagerWidget
+        dlg = DatabaseManagerWidget()
         qtbot.addWidget(dlg)
         dlg._db_list.setCurrentRow(0)
         dlg._detail_widget._add_source()
 
         assert dlg.has_changes()
-        dlg.close()
 
-    def test_on_save_commits_and_closes(self, qtbot, tmp_path, monkeypatch):
+    def test_on_save_commits_without_closing(self, qtbot, tmp_path, monkeypatch):
         sdb_path = str(tmp_path / 'test_db.db')
         SettingDB(sdb_path)
         save_folder = str(tmp_path / 'save_folder')
 
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.list_setting_db_names',
+            'wafer.builtins.database_manager.widget.list_setting_db_names',
             lambda: ['test_db'],
         )
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.setting_db_path',
+            'wafer.builtins.database_manager.widget.setting_db_path',
             lambda name: sdb_path,
         )
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.QtWidgets.QFileDialog.getExistingDirectory',
+            'wafer.builtins.database_manager.widget.QtWidgets.QFileDialog.getExistingDirectory',
             staticmethod(lambda *a, **kw: save_folder),
         )
-        from wafer.app.database_manager.window import DatabaseManagerDialog
-        DatabaseManagerDialog._instance = None
-        dlg = DatabaseManagerDialog()
+        from wafer.builtins.database_manager.widget import DatabaseManagerWidget
+        dlg = DatabaseManagerWidget()
         qtbot.addWidget(dlg)
         dlg._db_list.setCurrentRow(0)
         dlg._detail_widget._add_source()
@@ -538,27 +542,57 @@ class TestDatabaseManagerSaveCancel:
 
         sdb = SettingDB(sdb_path)
         assert len(sdb.get_all_parent_folders()) == 1
+        assert not dlg.has_changes()
 
-    def test_cancel_does_not_write(self, qtbot, tmp_path, monkeypatch):
+    def test_on_revert_restores_state(self, qtbot, tmp_path, monkeypatch):
+        sdb_path = str(tmp_path / 'test_db.db')
+        SettingDB(sdb_path)
+        revert_folder = str(tmp_path / 'revert_folder')
+
+        monkeypatch.setattr(
+            'wafer.builtins.database_manager.widget.list_setting_db_names',
+            lambda: ['test_db'],
+        )
+        monkeypatch.setattr(
+            'wafer.builtins.database_manager.widget.setting_db_path',
+            lambda name: sdb_path,
+        )
+        monkeypatch.setattr(
+            'wafer.builtins.database_manager.widget.QtWidgets.QFileDialog.getExistingDirectory',
+            staticmethod(lambda *a, **kw: revert_folder),
+        )
+        from wafer.builtins.database_manager.widget import DatabaseManagerWidget
+        dlg = DatabaseManagerWidget()
+        qtbot.addWidget(dlg)
+        dlg._db_list.setCurrentRow(0)
+        dlg._detail_widget._add_source()
+        assert dlg.has_changes()
+
+        dlg._on_revert()
+        assert not dlg.has_changes()
+
+        sdb = SettingDB(sdb_path)
+        assert sdb.get_all_parent_folders() == []
+
+    def test_close_does_not_write(self, qtbot, tmp_path, monkeypatch):
         sdb_path = str(tmp_path / 'test_db.db')
         SettingDB(sdb_path)
         cancel_folder = str(tmp_path / 'cancel_folder')
 
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.list_setting_db_names',
+            'wafer.builtins.database_manager.widget.list_setting_db_names',
             lambda: ['test_db'],
         )
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.setting_db_path',
+            'wafer.builtins.database_manager.widget.setting_db_path',
             lambda name: sdb_path,
         )
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.QtWidgets.QFileDialog.getExistingDirectory',
+            'wafer.builtins.database_manager.widget.QtWidgets.QFileDialog.getExistingDirectory',
             staticmethod(lambda *a, **kw: cancel_folder),
         )
-        from wafer.app.database_manager.window import DatabaseManagerDialog
-        DatabaseManagerDialog._instance = None
-        dlg = DatabaseManagerDialog()
+        from wafer.builtins.database_manager.widget import DatabaseManagerWidget
+        dlg = DatabaseManagerWidget()
         qtbot.addWidget(dlg)
         dlg._db_list.setCurrentRow(0)
         dlg._detail_widget._add_source()
@@ -570,22 +604,21 @@ class TestDatabaseManagerSaveCancel:
 
     def test_save_buttons_exist(self, qtbot, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.list_setting_db_names',
+            'wafer.builtins.database_manager.widget.list_setting_db_names',
             lambda: ['test_db'],
         )
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.setting_db_path',
+            'wafer.builtins.database_manager.widget.setting_db_path',
             lambda name: str(tmp_path / f'{name}.db'),
         )
-        from wafer.app.database_manager.window import DatabaseManagerDialog
-        DatabaseManagerDialog._instance = None
-        dlg = DatabaseManagerDialog()
+        from wafer.builtins.database_manager.widget import DatabaseManagerWidget
+        dlg = DatabaseManagerWidget()
         qtbot.addWidget(dlg)
         save_btn = dlg.findChild(QtWidgets.QPushButton, 'save_btn')
-        cancel_btn = dlg.findChild(QtWidgets.QPushButton, 'cancel_btn')
+        revert_btn = dlg.findChild(QtWidgets.QPushButton, 'cancel_btn')
         assert save_btn is not None
-        assert cancel_btn is not None
-        dlg.close()
+        assert revert_btn is not None
+        assert revert_btn.text() == 'Revert'
 
     def test_save_sends_rescan(self, qtbot, tmp_path, monkeypatch):
         sdb_path = str(tmp_path / 'test_db.db')
@@ -593,21 +626,22 @@ class TestDatabaseManagerSaveCancel:
         folder = str(tmp_path / 'rescan_folder')
 
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.list_setting_db_names',
+            'wafer.builtins.database_manager.widget.list_setting_db_names',
             lambda: ['test_db'],
         )
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.setting_db_path',
+            'wafer.builtins.database_manager.widget.setting_db_path',
             lambda name: sdb_path,
         )
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.QtWidgets.QFileDialog.getExistingDirectory',
+            'wafer.builtins.database_manager.widget.QtWidgets.QFileDialog.getExistingDirectory',
             staticmethod(lambda *a, **kw: folder),
         )
         mock_node = MagicMock()
-        from wafer.app.database_manager.window import DatabaseManagerDialog
-        DatabaseManagerDialog._instance = None
-        dlg = DatabaseManagerDialog(node=mock_node)
+        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+        monkeypatch.setattr(InstanceRegistry.instance(), 'resolve_node', lambda: mock_node)
+        from wafer.builtins.database_manager.widget import DatabaseManagerWidget
+        dlg = DatabaseManagerWidget()
         qtbot.addWidget(dlg)
         dlg._db_list.setCurrentRow(0)
         dlg._detail_widget._add_source()
@@ -622,20 +656,21 @@ class TestDatabaseManagerSaveCancel:
         folder = str(tmp_path / 'no_node_folder')
 
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.list_setting_db_names',
+            'wafer.builtins.database_manager.widget.list_setting_db_names',
             lambda: ['test_db'],
         )
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.setting_db_path',
+            'wafer.builtins.database_manager.widget.setting_db_path',
             lambda name: sdb_path,
         )
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.QtWidgets.QFileDialog.getExistingDirectory',
+            'wafer.builtins.database_manager.widget.QtWidgets.QFileDialog.getExistingDirectory',
             staticmethod(lambda *a, **kw: folder),
         )
-        from wafer.app.database_manager.window import DatabaseManagerDialog
-        DatabaseManagerDialog._instance = None
-        dlg = DatabaseManagerDialog(node=None)
+        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+        monkeypatch.setattr(InstanceRegistry.instance(), 'resolve_node', lambda: None)
+        from wafer.builtins.database_manager.widget import DatabaseManagerWidget
+        dlg = DatabaseManagerWidget()
         qtbot.addWidget(dlg)
         dlg._db_list.setCurrentRow(0)
         dlg._detail_widget._add_source()
@@ -650,35 +685,34 @@ class TestDatabaseManagerTabs:
 
     def test_tabs_exist(self, qtbot, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.list_setting_db_names',
+            'wafer.builtins.database_manager.widget.list_setting_db_names',
             lambda: ['test_db'],
         )
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.setting_db_path',
+            'wafer.builtins.database_manager.widget.setting_db_path',
             lambda name: str(tmp_path / f'{name}.db'),
         )
-        from wafer.app.database_manager.window import DatabaseManagerDialog
-        DatabaseManagerDialog._instance = None
-        dlg = DatabaseManagerDialog()
+        from wafer.builtins.database_manager.widget import DatabaseManagerWidget
+        dlg = DatabaseManagerWidget()
         qtbot.addWidget(dlg)
         assert dlg._tabs.count() == 2
         assert dlg._tabs.tabText(0) == 'Paths'
         assert dlg._tabs.tabText(1) == 'Data'
-        dlg.close()
 
     def test_send_purge(self, qtbot, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.list_setting_db_names',
+            'wafer.builtins.database_manager.widget.list_setting_db_names',
             lambda: ['db1'],
         )
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.setting_db_path',
+            'wafer.builtins.database_manager.widget.setting_db_path',
             lambda name: str(tmp_path / f'{name}.db'),
         )
         mock_node = MagicMock()
-        from wafer.app.database_manager.window import DatabaseManagerDialog
-        DatabaseManagerDialog._instance = None
-        dlg = DatabaseManagerDialog(node=mock_node)
+        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+        monkeypatch.setattr(InstanceRegistry.instance(), 'resolve_node', lambda: mock_node)
+        from wafer.builtins.database_manager.widget import DatabaseManagerWidget
+        dlg = DatabaseManagerWidget()
         qtbot.addWidget(dlg)
 
         dlg._send_purge([('db1', 'exif')], True)
@@ -687,25 +721,22 @@ class TestDatabaseManagerTabs:
             {'collector': 'exif', 're_collect': True},
             dst='indexer', db='db1',
         )
-        dlg.close()
 
     def test_paths_tab_uses_scroll_area(self, qtbot, tmp_path, monkeypatch):
         from PySide6 import QtWidgets
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.list_setting_db_names',
+            'wafer.builtins.database_manager.widget.list_setting_db_names',
             lambda: ['test_db'],
         )
         monkeypatch.setattr(
-            'wafer.app.database_manager.window.setting_db_path',
+            'wafer.builtins.database_manager.widget.setting_db_path',
             lambda name: str(tmp_path / f'{name}.db'),
         )
-        from wafer.app.database_manager.window import DatabaseManagerDialog
-        DatabaseManagerDialog._instance = None
-        dlg = DatabaseManagerDialog()
+        from wafer.builtins.database_manager.widget import DatabaseManagerWidget
+        dlg = DatabaseManagerWidget()
         qtbot.addWidget(dlg)
         paths_widget = dlg._tabs.widget(0)
         assert isinstance(paths_widget, QtWidgets.QScrollArea)
-        dlg.close()
 
 
 class TestDialogLayoutStore:

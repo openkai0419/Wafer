@@ -34,6 +34,7 @@ class PanelCommands(ActionKit.MenuBase):
         ]
         for name in cls._CORE_PANELS:
             items.append(LayoutManager._command_id(name))
+        items.append("-")
         for plugin_cls in panel_registry.list_all():
             name = plugin_cls.DISPLAY_NAME or plugin_cls.NAME
             items.append(LayoutManager._command_id(name))

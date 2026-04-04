@@ -27,11 +27,11 @@ def _patch_paths(tmp_path):
         db_names[:] = list(config.keys())
 
     patcher_names = patch(
-        'wafer.app.plugin_manager.collectors_tab.list_setting_db_names',
+        'wafer.builtins.plugin_manager.collectors_tab.list_setting_db_names',
         side_effect=lambda: list(db_names),
     )
     patcher_path = patch(
-        'wafer.app.plugin_manager.collectors_tab.setting_db_path',
+        'wafer.builtins.plugin_manager.collectors_tab.setting_db_path',
         side_effect=lambda n: paths[n],
     )
     with patcher_names, patcher_path:
@@ -44,7 +44,7 @@ class TestCollectorsTab:
         setup, paths = _patch_paths
         setup({'db1': ['exif', 'wd14']})
 
-        from wafer.app.plugin_manager.collectors_tab import CollectorsTab
+        from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
         tab = CollectorsTab(collector_names=['exif', 'wd14'])
         qtbot.addWidget(tab)
 
@@ -62,7 +62,7 @@ class TestCollectorsTab:
             'lora': ['wd14', 'exif'],
         })
 
-        from wafer.app.plugin_manager.collectors_tab import CollectorsTab
+        from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
         tab = CollectorsTab(collector_names=[])
         qtbot.addWidget(tab)
 
@@ -83,7 +83,7 @@ class TestCollectorsTab:
         setup, _ = _patch_paths
         setup({'db1': ['exif']})
 
-        from wafer.app.plugin_manager.collectors_tab import CollectorsTab
+        from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
         tab = CollectorsTab(collector_names=['exif', 'wd14'])
         qtbot.addWidget(tab)
 
@@ -97,7 +97,7 @@ class TestCollectorsTab:
         setup, paths = _patch_paths
         setup({'fresh': []})
 
-        from wafer.app.plugin_manager.collectors_tab import CollectorsTab
+        from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
         tab = CollectorsTab(collector_names=['exif'])
         qtbot.addWidget(tab)
 
@@ -107,7 +107,7 @@ class TestCollectorsTab:
         setup, _ = _patch_paths
         setup({'db1': ['exif']})
 
-        from wafer.app.plugin_manager.collectors_tab import CollectorsTab
+        from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
         tab = CollectorsTab(collector_names=['exif', 'wd14'])
         qtbot.addWidget(tab)
 
@@ -119,7 +119,7 @@ class TestCollectorsTab:
         setup, _ = _patch_paths
         setup({'db1': ['exif', 'wd14']})
 
-        from wafer.app.plugin_manager.collectors_tab import CollectorsTab
+        from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
         tab = CollectorsTab(collector_names=['exif', 'wd14'])
         qtbot.addWidget(tab)
 

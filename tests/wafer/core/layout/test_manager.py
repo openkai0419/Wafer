@@ -1159,7 +1159,7 @@ class TestClosableOption:
         entry = mgr._panels["folder"]
         assert entry.closable is True
 
-    def test_non_closable_toggle_from_visible_is_noop(self, layout_env):
+    def test_non_closable_toggle_from_visible_collapses(self, layout_env):
         mgr, win, panels = layout_env
         w = _make_panel("toolbar")
         mgr.register("toolbar", lambda: w, closable=False)
@@ -1168,6 +1168,10 @@ class TestClosableOption:
         _process()
 
         assert mgr.is_panel_visible("toolbar")
+        mgr.toggle_panel("toolbar")
+        _process()
+        assert mgr.is_panel_collapsed("toolbar")
+
         mgr.toggle_panel("toolbar")
         _process()
         assert mgr.is_panel_visible("toolbar")

@@ -154,8 +154,6 @@ class LayoutManager(QtCore.QObject):
             normalize_sizes(self._tree.root, self._tree.collapsed)
             self._apply_tree_sizes()
         else:
-            if not entry.closable:
-                return
             self._sync_tree_from_current()
             self._tree.collapsed.add(name)
             self._apply_collapse_state()
@@ -638,12 +636,12 @@ class LayoutManager(QtCore.QObject):
         changed = False
         for i in range(splitter.count()):
             child = splitter.widget(i)
-            if isinstance(child, QtWidgets.QSplitter):
-                self._collapse_in_splitter(child, collapsed_widgets)
-            elif child in collapsed_widgets:
+            if child in collapsed_widgets:
                 sizes[i] = 0
                 splitter.setCollapsible(i, True)
                 changed = True
+            elif isinstance(child, QtWidgets.QSplitter):
+                self._collapse_in_splitter(child, collapsed_widgets)
         if changed:
             splitter.setSizes(sizes)
 

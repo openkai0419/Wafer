@@ -48,21 +48,10 @@ class FloatingWindow(QtWidgets.QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         widget.setParent(self)
         layout.addWidget(widget)
-        widget.show()
 
     def closeEvent(self, event):
         self.closed.emit(self.panel_name)
         event.accept()
-
-    def take_widget(self) -> QtWidgets.QWidget | None:
-        layout = self.layout()
-        if layout and layout.count() > 0:
-            item = layout.takeAt(0)
-            w = item.widget()
-            if w:
-                w.setParent(None)
-                return w
-        return None
 
 
 def create_dock(

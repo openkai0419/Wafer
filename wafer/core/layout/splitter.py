@@ -14,7 +14,6 @@ def build_splitter(
         w = widgets.get(node.panel_name)
         if w is not None:
             w.setParent(parent)
-            w.show()
         return w
 
     splitter = QtWidgets.QSplitter(node.orientation.to_qt(), parent)

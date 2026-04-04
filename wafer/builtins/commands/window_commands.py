@@ -53,16 +53,6 @@ def _session_names():
     return _ss_store().list_session_names()
 
 
-def toggle_layout_mode(ctx):
-    w = _win(ctx)
-    if not w:
-        return
-    mgr = w._layout_manager
-    mgr.toggle_mode()
-    from ...core.layout.manager import MODE_EDIT
-    Command.set_checked("win.toggle_layout_mode", mgr.mode == MODE_EDIT)
-
-
 class WindowCommands(ActionKit.MenuBase):
     NAME = "Window"
     PRIORITY = 75
@@ -75,14 +65,6 @@ class WindowCommands(ActionKit.MenuBase):
             ActionKit.Command(path="win.toggle_fullscreen", display="Full Screen", func=toggle_fullscreen),
             ActionKit.Command(path="win.toggle_always_on_top", display="Always on Top", func=toggle_always_on_top, checkable=True),
             ActionKit.Command(path="win.toggle_language", display="Toggle Language", func=toggle_language),
-            "-",
-            ":Panels",
-            ActionKit.Command(path="win.toggle_layout_mode", display="Edit Layout", func=toggle_layout_mode, checkable=True),
-            "panel.toggle_folder_tree",
-            "panel.toggle_search",
-            "panel.toggle_grid_view",
-            "panel.toggle_file_viewer",
-            "panel.toggle_devlog",
             "-",
             ":Session",
             ActionKit.Command(path="win.new_window", display="New Window", func=create_session),

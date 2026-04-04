@@ -344,6 +344,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self._layout_manager.register("Search", lambda: self.search_row_widget)
         self._layout_manager.register("Grid View", lambda: self.grid_view)
         self._layout_manager.register("File Viewer", lambda: self.file_viewer)
+        self._register_panel_plugins()
 
         default_layout = self._load_default_layout()
         self._layout_manager.restore_state(default_layout)
@@ -358,7 +359,6 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.grid_view.layout_started.connect(self._on_layout_started)
         self.grid_view.layout_ready.connect(self._hide_loading)
         self._register_component_states()
-        self._setup_dev_panel()
         self._sync_service_from_ui()
         self._sync_default_checked_states()
 
@@ -735,20 +735,25 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         except Exception as e:
             AppLogger.debug(f'on_close node.stop failed: {e}')
 
-    def _setup_dev_panel(self):
-        if not DEV_MODE:
-            return
-        from .widgets.dev_log_panel import DevLogPanel
-        self._dev_panel = DevLogPanel()
-        self._layout_manager.register("DevLog", lambda: self._dev_panel)
+    def _register_panel_plugins(self):
+        from ...plugin.panel.handler import panel_registry
+        for cls in panel_registry.list_all():
+            plugin = cls()
+            name = plugin.DISPLAY_NAME or plugin.NAME
+            self._layout_manager.register(
+                name, plugin.create_widget, closable=plugin.CLOSABLE,
+            )
 
     @QtCore.Slot(str, str, str, str)
     def _on_dev_log(self, level: str, text: str, src: str, db: str):
-        if hasattr(self, '_dev_panel'):
-            self._dev_panel.append_log(level, text, src=src, db=db)
+        from ...builtins.devlog import DevLogPanel
+        panel = DevLogPanel.instance()
+        if panel is not None:
+            panel.append_log(level, text, src=src, db=db)
 
     def _handle_remote_log(self, msg):
-        if not hasattr(self, '_dev_panel'):
+        from ...builtins.devlog import DevLogPanel
+        if DevLogPanel.instance() is None:
             return
         p = msg.payload
         if not isinstance(p, dict):

@@ -1,23 +1,27 @@
 import py_compile
 
-from unittest.mock import MagicMock
-
 import pytest
+from PySide6 import QtWidgets
 
-
-def test_compile():
-    py_compile.compile('wafer/app/viewer/widgets/dev_log_panel.py')
+from wafer.builtins.devlog import DevLogPanel, DevLogPanelPlugin
+from wafer.plugin.panel.base import BasePanelPlugin
+from wafer.plugin.registry import PluginBase
 
 
 @pytest.fixture
 def panel(qtbot):
-    from wafer.app.viewer.widgets.dev_log_panel import DevLogPanel
     p = DevLogPanel()
     qtbot.addWidget(p)
-    return p
+    yield p
+    DevLogPanel._instance = None
+
+
+def test_compile():
+    py_compile.compile('wafer/builtins/devlog.py')
 
 
 class TestDevLogPanel:
+
     def test_append_log_adds_entry(self, panel):
         panel.append_log('info', 'test message', src='viewer-123')
         assert len(panel._entries) == 1
@@ -35,7 +39,7 @@ class TestDevLogPanel:
         panel.append_log('info', 'from indexer', src='indexer-200')
         assert 'viewer-100' in panel._src_tabs
         assert 'indexer-200' in panel._src_tabs
-        assert panel._tab_widget.count() == 3  # All + 2 src tabs
+        assert panel._tab_widget.count() == 3
 
     def test_src_tab_isolation(self, panel):
         panel.append_log('info', 'from viewer', src='viewer-100')
@@ -53,7 +57,6 @@ class TestDevLogPanel:
         panel.append_log('warning', 'warn msg', src='v-1')
         panel.append_log('error', 'error msg', src='v-1')
         assert len(panel._entries) == 4
-
         panel._level_combo.setCurrentText('WARNING')
         text = panel._all_tab.toPlainText()
         assert 'debug msg' not in text
@@ -64,8 +67,7 @@ class TestDevLogPanel:
     def test_db_filter(self, panel):
         panel.append_log('info', 'db1 msg', src='v-1', db='mydb')
         panel.append_log('info', 'db2 msg', src='v-1', db='otherdb')
-        assert panel._db_combo.count() == 3  # ALL + mydb + otherdb
-
+        assert panel._db_combo.count() == 3
         panel._db_combo.setCurrentText('mydb')
         text = panel._all_tab.toPlainText()
         assert 'db1 msg' in text
@@ -78,5 +80,27 @@ class TestDevLogPanel:
         assert panel._all_tab.toPlainText() == ''
 
     def test_instance(self, panel):
-        from wafer.app.viewer.widgets.dev_log_panel import DevLogPanel
         assert DevLogPanel.instance() is panel
+
+
+class TestDevLogPanelPlugin:
+
+    def test_inherits_base_panel_plugin(self):
+        assert issubclass(DevLogPanelPlugin, BasePanelPlugin)
+
+    def test_attributes(self):
+        assert DevLogPanelPlugin.NAME == "devlog"
+        assert DevLogPanelPlugin.DISPLAY_NAME == "DevLog"
+        assert DevLogPanelPlugin.CLOSABLE is True
+
+    def test_create_widget_returns_devlog_panel(self, qtbot):
+        plugin = DevLogPanelPlugin()
+        widget = plugin.create_widget()
+        qtbot.addWidget(widget)
+        assert isinstance(widget, DevLogPanel)
+        DevLogPanel._instance = None
+
+    def test_registered_in_panel_registry(self):
+        from wafer.plugin.panel.handler import panel_registry
+        cls = panel_registry.get("devlog")
+        assert cls is DevLogPanelPlugin

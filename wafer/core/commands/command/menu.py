@@ -253,7 +253,9 @@ class MenuHub:
                 self._all_paths[k] = v
         if items is not None:
             self._menu_items[menu_cls] = list(items)
-            self._index_folder_blocks(items)
+            self._folder_blocks.clear()
+            for stored_items in self._menu_items.values():
+                self._index_folder_blocks(stored_items)
         self._rebuild_folder_caches()
 
     def get_path_by_command_id(self, command_id: str) -> str:

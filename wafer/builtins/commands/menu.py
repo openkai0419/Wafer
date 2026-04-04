@@ -13,6 +13,7 @@ from . import (
     setting_commands,
     debug_commands,
     session_commands,
+    panel_commands,
 )
 from .file_commands import FileCommands
 from .foldertree_commands import show_context_menu
@@ -32,6 +33,7 @@ _COMMAND_MODULES = [
     setting_commands,
     debug_commands,
     session_commands,
+    panel_commands,
 ]
 
 

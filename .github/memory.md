@@ -103,6 +103,15 @@
 - appear/disappear/select/deselect/release はメインスレッドで直接呼ばれる（WidgetNotifier経由）
 - WidgetNotifier.bind(index, plugin_name) は名前登録のみ。renderは呼ばない（Pipelineの責任）
 
+■ パネルプラグインの設計
+- BasePanelPlugin(PluginBase, ABC)はPluginBase直系。BasePlugin(EXTENSIONS付き)は継承しない（パネルはファイル拡張子で解決しない）
+- PanelRegistryはPluginRegistryを使用（FilePluginRegistryは不要）。モジュールレベルシングルトンとしてwafer.plugin.panel.handler.panel_registryに公開
+- PluginLoaderの_REGISTRY_MAPにBasePanelPlugin: 'panel'を追加。_discover_plugins()で自動検出される
+- MainWindow.setup_ui()がコアパネル登録後にPanelRegistryを走査し、LayoutManagerに橋渡しする
+- パネルWidget生成はLayoutManagerの遅延呼び出し（_ensure_widget）で実行。その時点でInstanceRegistryにサービス登録済みなので依存解決可能
+- _CORE_PANELSのハードコードは暫定。将来的にコアパネルもBasePanelPlugin化する予定
+- 将来のコアパネルbuiltins移行時も同じ仕組み。サービスはwafer/app/に残し、パネルWidgetはbuiltins/panels/に移す。パネルからサービスへのアクセスはInstanceRegistry経由（import不要）
+
 ■ SQLite の罠
 - VIEWはマテリアライズされない。ウィンドウ関数入りVIEWをクエリ条件に使うと極端に遅い
 - kv_all/kv_metaビューは削除済み。メタデータ取得はmeta_info→tagsの2クエリで行い、同一キーはtagsが勝つ（tags-wins）

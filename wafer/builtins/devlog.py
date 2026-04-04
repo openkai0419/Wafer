@@ -3,9 +3,12 @@ from __future__ import annotations
 import os
 from datetime import datetime
 
-from PySide6 import QtCore, QtGui, QtWidgets
+from PySide6 import QtGui, QtWidgets
 
-from ....utils.formatting import dpix
+from ..constants import DEV_MODE
+from ..plugin.panel.base import BasePanelPlugin
+from ..utils.formatting import dpix
+
 MAX_LOG_LINES = 2000
 
 LEVEL_COLORS = {
@@ -178,3 +181,20 @@ class DevLogPanel(QtWidgets.QWidget):
     @classmethod
     def instance(cls) -> DevLogPanel | None:
         return cls._instance
+
+
+class DevLogPanelPlugin(BasePanelPlugin):
+    NAME = "devlog"
+    DISPLAY_NAME = "DevLog"
+    PRIORITY = 0
+    DEFAULT_ENABLED = DEV_MODE
+
+    def create_widget(self):
+        from ..utils.logs import AppLogger
+        panel = DevLogPanel()
+        AppLogger.on_debug.connect(lambda t: panel.append_log('debug', t))
+        AppLogger.on_info.connect(lambda t: panel.append_log('info', t))
+        AppLogger.on_warning.connect(lambda t: panel.append_log('warning', t))
+        AppLogger.on_error.connect(lambda t: panel.append_log('error', t))
+        AppLogger.on_critical.connect(lambda t: panel.append_log('critical', t))
+        return panel

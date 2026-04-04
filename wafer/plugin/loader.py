@@ -12,6 +12,7 @@ from .grid.base import BaseGridPlugin
 from .collector.base import BaseCollector
 from .query.base import BaseFilterPlugin, BaseSortPlugin
 from .layout.base import BaseLayoutPlugin
+from .panel.base import BasePanelPlugin
 from .rename.base import BaseRenameSourcePlugin
 
 
@@ -24,6 +25,7 @@ def _build_registry_map():
         BaseFilterPlugin: 'filter',
         BaseSortPlugin: 'sort',
         BaseLayoutPlugin: 'layout',
+        BasePanelPlugin: 'panel',
         BaseRenameSourcePlugin: 'rename_source',
         MenuGroup: 'command',
     }
@@ -215,6 +217,7 @@ def load_plugins(*, on_progress=None) -> list[str]:
     from .collector.handler import collector_resolver
     from .query.handler import filter_registry, sort_registry
     from .layout.handler import layout_registry
+    from .panel.handler import panel_registry
     from .rename.handler import rename_source_registry
     command_registry = CommandGroupRegistry()
     registries = {
@@ -224,6 +227,7 @@ def load_plugins(*, on_progress=None) -> list[str]:
         'filter': filter_registry,
         'sort': sort_registry,
         'layout': layout_registry,
+        'panel': panel_registry,
         'rename_source': rename_source_registry,
         'command': command_registry,
     }

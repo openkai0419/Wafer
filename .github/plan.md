@@ -11,7 +11,7 @@
 ■ RENAMERとかプラグイン設定とかも、ポップアップでもいいけど組み込みにもできるようにしてもいいかも。
 ■ GridViewをWindow化すると白くなる＆mpv再生できない問題
 Centralにする？
-■ プラグイン化対応したい。登録もcommandのように
+■ 
 
 ■ Dispatcherを用意する。nai, ComfiUI
 

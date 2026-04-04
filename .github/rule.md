@@ -10,6 +10,9 @@
 
 ■ 問題解決の原則
 - 推論やコード上の確認だけで原因を断定しない。実際に処理を実行し、値や挙動を実測してから特定する
+
+■ ファイル操作
+- ファイルの移動・リネームは必ず git mv を使い、Git履歴の追跡を維持すること
 - 特に外部ライブラリやフレームワークのAPIは、ドキュメントや型定義と実際の挙動が異なることがある。想定通りに動くか必ず実測スクリプトで検証する
 - 「コードを読んで正しそう」は根拠にならない。再現できない問題ほど、一時ログやデバッグスクリプトで事実を確かめることが最優先
 
@@ -73,6 +76,9 @@
 - 汎用的な機能をプラグイン専用のインターフェースで提供しない。wafer側でも使う仕組みはwafer側に汎用的に定義し、プラグイン基底クラスはそれを利用する形にする
 - コマンドはctx経由で取得し、UIがコマンド状態を参照する時はコマンド不在を考慮する
 - プラグインが読み込まれていなくてもアプリが落ちないこと（直接importしたファイル不在はエラーで可）
+- BasePanelPlugin.create_widget()はLayoutManagerの遅延呼び出しで実行される。依存サービスはInstanceRegistry経由で取得する（import依存を持たない）
+- パネルプラグインのトグルコマンド(panel.toggle_{slug})はLayoutManager.register()で自動生成される。プラグイン側で明示登録しない
+- extensionパネルのメニュー表示は、extension側のMenuGroupで「panel.toggle_{slug}」を文字列参照する
 
 ■ ビルトインとExtensionの二層構成
 - 全プラグイン基底クラスはPluginBase（wafer/plugin/registry.py）を継承する
@@ -80,12 +86,14 @@
   - BaseCollector(BasePlugin, ABC): Collector用（BaseCollectorPlugin / BaseSingletonCollectorが継承）
   - BaseFilterPlugin / BaseSortPlugin(PluginBase, ABC): Query用
   - BaseLayoutPlugin(PluginBase, ABC): Layout用
+  - BasePanelPlugin(PluginBase, ABC): Panel用。create_widget()でWidget生成
   - MenuGroup(PluginBase): コマンドグループ用。DragMenuGroup(MenuGroup)はDrag/Drop専用サブクラス
 - 全レジストリはRegistryBase（wafer/plugin/registry.py）を継承する
-  - PluginRegistry(RegistryBase): NAME一意のdict管理（Grid/Viewer/Collector/Filter/Sort/Layout/Rename用）
+  - PluginRegistry(RegistryBase): NAME一意のdict管理（Grid/Viewer/Collector/Filter/Sort/Layout/Panel/Rename用）
   - FilePluginRegistry(PluginRegistry): ファイル拡張子ベースの解決機能を追加
   - CommandGroupRegistry(RegistryBase): 重複排除set管理（コマンドグループ用）。activate(scope)はPRIORITY昇順で登録（後勝ちで上書き）。set_order()はMenuHub.set_menu_order()に転送
 - ビルトイン実装はwafer/builtins/に配置。extensionと同じプラグインインターフェースを使う
+- ビルトインのプラグインコード（ウィジェット、ロジック含む）はwafer/builtins/内に実体を置くこと。wafer/app/等の既存コードをimportするだけの薄いラッパーは禁止。builtinsに移行するなら関連コード自体をbuiltinsに移動する
 - ビルトインとextensionの唯一の違いはexe化時にwafer/builtins/が自動同梱される点。設計・インターフェースは同一
 - フォールバックはビルトインプラグイン（EXTENSIONS=(), PRIORITY=-100）として登録。Resolverにフォールバックロジックをハードコードしない
 - 共通コマンド（Tray/Viewer共用、Settings系等）はwafer/builtins/commands/に配置。MenuGroup.SCOPEで有効プロセスを制御（"viewer"/"tray"/"*"）

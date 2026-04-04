@@ -541,6 +541,37 @@ class TestOrderTab:
         assert tab.get_orders()['viewer'] == ['a']
         assert tab.get_orders()['filter'] == []
 
+    def test_refresh_updates_builtin_command_names(self, qtbot):
+        from wafer.app.plugin_manager.viewers_tab import OrderTab
+        from wafer.core.commands.command.menu import MenuGroup
+
+        class BuiltinCmd(MenuGroup):
+            NAME = 'FileViewer'
+            PRIORITY = 0
+            @classmethod
+            def commands(cls):
+                return []
+
+        class ExtCmd(MenuGroup):
+            NAME = 'Video'
+            PRIORITY = 1000
+            @classmethod
+            def commands(cls):
+                return []
+
+        tab = OrderTab(
+            {'command': [ExtCmd]}, {},
+            builtin_command_names={'FileViewer', 'Video'},
+        )
+        qtbot.addWidget(tab)
+        assert tab.get_orders()['command'] == []
+
+        tab.refresh(
+            {'command': [ExtCmd]},
+            builtin_command_names={'FileViewer'},
+        )
+        assert tab.get_orders()['command'] == ['Video']
+
 
 class TestPluginManagerDialog:
 

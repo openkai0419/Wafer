@@ -46,7 +46,7 @@ class _ReorderList(QtWidgets.QListWidget):
         ]
 
 
-REGISTRY_KEYS = ['grid', 'viewer', 'filter', 'sort', 'layout', 'rename_source']
+REGISTRY_KEYS = ['grid', 'viewer', 'filter', 'sort', 'layout', 'rename_source', 'command']
 
 _PRIORITY_KEYS = frozenset({'grid', 'viewer'})
 
@@ -57,14 +57,33 @@ REGISTRY_LABELS = {
     'sort': 'Sort',
     'layout': 'Layout',
     'rename_source': 'Rename Source',
+    'command': 'Command',
 }
 
 
 class OrderTab(QtWidgets.QWidget):
 
+    @staticmethod
+    def _dedup_by_name(plugins: list[type]) -> list[type]:
+        seen: dict[str, type] = {}
+        for cls in plugins:
+            name = cls.NAME
+            if name not in seen or cls.PRIORITY > seen[name].PRIORITY:
+                seen[name] = cls
+        return list(seen.values())
+
+    def _prepare_plugins(self, key: str, plugins: list[type]) -> list[type]:
+        if key == 'command':
+            deduped = self._dedup_by_name(plugins)
+            return [c for c in deduped if c.NAME not in self._builtin_command_names]
+        return plugins
+
     def __init__(self, registry_data: dict[str, list[type]],
-                 saved_orders: dict[str, list[str]], parent=None):
+                 saved_orders: dict[str, list[str]],
+                 builtin_command_names: set[str] | None = None,
+                 parent=None):
         super().__init__(parent)
+        self._builtin_command_names = builtin_command_names or set()
         self._lists: dict[str, _ReorderList] = {}
         self._labels: dict[str, QtWidgets.QLabel] = {}
         self._saved_orders: dict[str, list[str]] = {k: list(v) for k, v in saved_orders.items()}
@@ -78,7 +97,7 @@ class OrderTab(QtWidgets.QWidget):
 
         for key in REGISTRY_KEYS:
             self._add_section(key)
-            plugins = registry_data.get(key, [])
+            plugins = self._prepare_plugins(key, registry_data.get(key, []))
             if not plugins:
                 self._labels[key].hide()
                 self._lists[key].hide()
@@ -106,9 +125,12 @@ class OrderTab(QtWidgets.QWidget):
             key=lambda c: (0, order_map[c.NAME]) if c.NAME in order_map else (1, -c.PRIORITY),
         )
 
-    def refresh(self, registry_data: dict[str, list[type]]):
+    def refresh(self, registry_data: dict[str, list[type]],
+                builtin_command_names: set[str] | None = None):
+        if builtin_command_names is not None:
+            self._builtin_command_names = builtin_command_names
         for key in REGISTRY_KEYS:
-            plugins = registry_data.get(key, [])
+            plugins = self._prepare_plugins(key, registry_data.get(key, []))
             reorder_list = self._lists[key]
             if not plugins:
                 reorder_list.clear()

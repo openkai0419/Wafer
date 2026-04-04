@@ -6,7 +6,7 @@ import sys
 
 from ..utils.logs import AppLogger
 from .installer import _PACKAGES_DIR, _SHARED_DIR, _INSTALL_STAMP, needs_setup
-from .registry import PluginRegistry, CommandGroupRegistry
+from .registry import RegistryBase, CommandGroupRegistry
 from .viewer.base import BaseViewerPlugin
 from .grid.base import BaseGridPlugin
 from .collector.base import BaseCollector
@@ -16,7 +16,7 @@ from .rename.base import BaseRenameSourcePlugin
 
 
 def _build_registry_map():
-    from ..core.commands.command.menu import MenuGroup, DragMenuGroup
+    from ..core.commands.command.menu import MenuGroup
     return {
         BaseViewerPlugin: 'viewer',
         BaseGridPlugin: 'grid',
@@ -26,7 +26,6 @@ def _build_registry_map():
         BaseLayoutPlugin: 'layout',
         BaseRenameSourcePlugin: 'rename_source',
         MenuGroup: 'command',
-        DragMenuGroup: 'command',
     }
 
 
@@ -77,7 +76,7 @@ def _setup_dll_directory(folder: str):
 
 class PluginLoader:
 
-    def __init__(self, plugin_dir: str, registries: dict[str, PluginRegistry], *,
+    def __init__(self, plugin_dir: str, registries: dict[str, RegistryBase], *,
                  enabled: set[str] | None = None):
         self._plugin_dir = plugin_dir
         self._registries = registries
@@ -132,13 +131,12 @@ class PluginLoader:
 
         _setup_dll_directory(folder)
 
-        total, _ = self._import_and_register(name, folder)
+        total = self._import_and_register(name, folder)
 
         return total
 
-    def _import_and_register(self, name: str, folder: str) -> tuple[int, list[type]]:
+    def _import_and_register(self, name: str, folder: str) -> int:
         total = 0
-        discovered = []
         all_found = _import_extension(name, folder)
         for registry_key, cls in all_found:
             qualified = qualify_plugin_name(registry_key, cls)
@@ -149,10 +147,8 @@ class PluginLoader:
             registry = self._registries.get(registry_key)
             if registry is not None:
                 registry.register(cls)
-                if not isinstance(registry, CommandGroupRegistry):
-                    discovered.append(cls)
             total += 1
-        return total, discovered
+        return total
 
     @staticmethod
     def discover_extension(folder: str) -> list[tuple[str, type]]:

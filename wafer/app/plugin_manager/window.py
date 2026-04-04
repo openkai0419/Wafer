@@ -183,7 +183,8 @@ class PluginManagerDialog(QtWidgets.QDialog):
             key: self._settings.priority_order(key)
             for key in REGISTRY_KEYS
         }
-        self._order_tab = OrderTab(registry_data, saved_orders)
+        builtin_command_names = self._compute_builtin_command_names(registry_data)
+        self._order_tab = OrderTab(registry_data, saved_orders, builtin_command_names)
 
         self._initial_enabled = self._settings.enabled_names() or set()
         self._initial_orders = dict(saved_orders)
@@ -261,13 +262,25 @@ class PluginManagerDialog(QtWidgets.QDialog):
         if msg.clickedButton() == restart_btn:
             Command.run("setting.restart_all")
 
+    @staticmethod
+    def _compute_builtin_command_names(registry_data: dict) -> set[str]:
+        from ...plugin.loader import get_command_registry
+        ext_cmd_classes = set(registry_data.get('command', []))
+        return {
+            cls.NAME for cls in get_command_registry().list_all()
+            if cls not in ext_cmd_classes and cls.NAME
+        }
+
     def _sync_tabs(self):
         from .viewers_tab import REGISTRY_KEYS
         registry_data = {
             key: self._ext_tab.collect_enabled_plugins(key)
             for key in REGISTRY_KEYS
         }
-        self._order_tab.refresh(registry_data)
+        self._order_tab.refresh(
+            registry_data,
+            self._compute_builtin_command_names(registry_data),
+        )
         collector_names = [cls.NAME for cls in self._ext_tab.collect_enabled_plugins('collector')]
         self._collectors_tab.refresh(collector_names)
 

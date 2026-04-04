@@ -100,6 +100,7 @@ class TestAllRootsPriority:
             dict(hub._all_paths), dict(hub._by_menu),
             dict(hub._menu_items), dict(hub._folder_blocks),
             set(hub._folder_set), dict(hub._folder_prefix_map),
+            list(hub._menu_order),
         )
         hub._all_paths.clear()
         hub._by_menu.clear()
@@ -107,8 +108,9 @@ class TestAllRootsPriority:
         hub._folder_blocks.clear()
         hub._folder_set.clear()
         hub._folder_prefix_map.clear()
+        hub._menu_order = []
         yield
-        hub._all_paths, hub._by_menu, hub._menu_items, hub._folder_blocks, hub._folder_set, hub._folder_prefix_map = saved
+        hub._all_paths, hub._by_menu, hub._menu_items, hub._folder_blocks, hub._folder_set, hub._folder_prefix_map, hub._menu_order = saved
 
     @staticmethod
     def _make_group(name, priority, items, cmd_paths):
@@ -154,6 +156,43 @@ class TestAllRootsPriority:
         maker = MenuMaker()
         plan = maker.all_roots()
         assert _unique_roots_from_tokens(plan.resolve_tokens()) == ["Core", "Ext"]
+
+    def test_menu_order_overrides_priority(self):
+        hub = MenuHub.instance()
+        groups = [
+            self._make_group("Ext", 1000, ["Ext/x.cmd"], {"x.cmd": "Ext/x.cmd"}),
+            self._make_group("Core", 10, ["Core/c.cmd"], {"c.cmd": "Core/c.cmd"}),
+        ]
+        self._register(hub, groups)
+        hub.set_menu_order(["Ext", "Core"])
+        maker = MenuMaker()
+        plan = maker.all_roots()
+        assert _unique_roots_from_tokens(plan.resolve_tokens()) == ["Ext", "Core"]
+
+    def test_ordered_items_placed_after_unordered(self):
+        hub = MenuHub.instance()
+        groups = [
+            self._make_group("ExtA", 1000, ["ExtA/a.cmd"], {"a.cmd": "ExtA/a.cmd"}),
+            self._make_group("Core", 10, ["Core/c.cmd"], {"c.cmd": "Core/c.cmd"}),
+            self._make_group("ExtB", 2000, ["ExtB/b.cmd"], {"b.cmd": "ExtB/b.cmd"}),
+        ]
+        self._register(hub, groups)
+        hub.set_menu_order(["ExtB", "ExtA"])
+        maker = MenuMaker()
+        plan = maker.all_roots()
+        assert _unique_roots_from_tokens(plan.resolve_tokens()) == ["Core", "ExtB", "ExtA"]
+
+    def test_same_name_uses_min_priority(self):
+        hub = MenuHub.instance()
+        groups = [
+            self._make_group("View", 55, ["View/a.cmd"], {"a.cmd": "View/a.cmd"}),
+            self._make_group("View", 1200, ["View/b.cmd"], {"b.cmd": "View/b.cmd"}),
+            self._make_group("Other", 100, ["Other/o.cmd"], {"o.cmd": "Other/o.cmd"}),
+        ]
+        self._register(hub, groups)
+        maker = MenuMaker()
+        plan = maker.all_roots()
+        assert _unique_roots_from_tokens(plan.resolve_tokens()) == ["View", "Other"]
 
     def test_default_priority_is_zero(self):
         import wafer.core.commands.command.menu as _m

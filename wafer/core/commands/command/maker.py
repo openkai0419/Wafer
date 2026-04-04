@@ -235,9 +235,14 @@ class MenuMaker:
                 if len(parts) < 2:
                     continue
                 r = parts[0]
-                if r not in root_priority:
+                if r not in root_priority or priority < root_priority[r]:
                     root_priority[r] = priority
         if not root_priority:
             raise ValueError("No top-level menus registered")
-        roots = sorted(root_priority, key=lambda r: root_priority[r])
+        menu_order = self._hub._menu_order
+        if menu_order:
+            order_map = {name: i for i, name in enumerate(menu_order)}
+            roots = sorted(root_priority, key=lambda r: (1, order_map[r]) if r in order_map else (0, root_priority[r]))
+        else:
+            roots = sorted(root_priority, key=lambda r: root_priority[r])
         return self.menu(roots)

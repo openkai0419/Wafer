@@ -22,6 +22,8 @@ def _configure_command_store(tmp_path_factory):
     CommandOptionStore._initialized = False
     CommandOptionStore._default_path = None
     CommandOptionStore.configure(tmp_path_factory.mktemp('smoke_tray') / 'cmd.json')
+    from wafer.plugin.loader import get_command_registry
+    get_command_registry().activate('tray')
     yield
     CommandOptionStore._instance, CommandOptionStore._initialized, CommandOptionStore._default_path = prev
 

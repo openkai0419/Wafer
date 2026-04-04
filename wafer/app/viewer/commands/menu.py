@@ -56,9 +56,12 @@ class AppMenuRegistrar(ActionKit.MenuBase):
             key_bindings=str(resolve_data_path("binding/key_bindings.json")),
             command_options=str(resolve_data_path("binding/command_options.json")),
         )
+        from wafer.plugin.loader import get_command_registry
+        registry = get_command_registry()
         for cls in discover_command_classes(*_COMMAND_MODULES):
-            cls.register()
-        AppMenuRegistrar.register()
+            registry.register(cls)
+        registry.register(AppMenuRegistrar)
+        registry.activate('viewer')
         _restore_thumbnail_size()
         Settings.activate()
 

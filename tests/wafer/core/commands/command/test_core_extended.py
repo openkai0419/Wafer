@@ -320,10 +320,6 @@ class TestCommandMetaValidation:
         meta = CommandMeta(id="test.nopts")
         assert meta.has_options is False
 
-    def test_default_priority_zero(self):
-        meta = CommandMeta(id="test.pri")
-        assert meta.priority == 0
-
 
 class TestCommandRegistryCategories:
     def test_get_all_categories(self):

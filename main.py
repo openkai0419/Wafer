@@ -44,8 +44,6 @@ def _create_app():
 
 def _entry_viewer(app=None, session_id=None):
     from wafer.app.viewer.mainwindow import MainWindow
-    from wafer.plugin.loader import get_command_registry
-    get_command_registry().activate('viewer')
     profiler.start()
     if app is None:
         app = _create_app()

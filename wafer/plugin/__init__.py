@@ -1,4 +1,4 @@
-from .registry import PluginBase, BasePlugin, PluginRegistry, FilePluginRegistry
+from .registry import PluginBase, BasePlugin, RegistryBase, PluginRegistry, FilePluginRegistry
 from .viewer.base import BaseViewerPlugin, ImageViewerPlugin, WidgetViewerPlugin
 from .grid.base import BaseGridPlugin, ImageGridPlugin, WidgetGridPlugin
 from .collector.base import BaseCollector, BaseCollectorPlugin, BaseSingletonCollector, CollectorResult

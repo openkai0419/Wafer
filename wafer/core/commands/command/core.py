@@ -73,7 +73,6 @@ class CommandMeta:
     default_checked: bool = False
     action_group: str = ""
     category: str = ""
-    priority: int = 0
     target_widgets: list[str] = field(default_factory=list)
     func: Callable[..., Any] | None = None
     drag_callbacks: dict[str, Callable[..., Any]] | None = None
@@ -124,12 +123,7 @@ class CommandRegistry:
         cid = meta.id
         existing = self._commands.get(cid)
         if existing is not None:
-            old_priority = existing.meta.priority if existing.meta else 0
-            new_priority = meta.priority
-            if new_priority < old_priority:
-                AppLogger.debug(f"Command '{cid}' not overridden (priority {new_priority} < {old_priority})")
-                return
-            AppLogger.info(f"Command '{cid}' overridden (priority {old_priority} -> {new_priority})")
+            AppLogger.info(f"Command '{cid}' overridden by {command_class.__name__}")
         self._commands[cid] = command_class
 
     @profiler.profile

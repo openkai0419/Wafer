@@ -26,32 +26,8 @@ class TestCommandRegistryMissingCommand:
             assert "nonexistent_cmd" in mock_log.warning.call_args[0][0]
 
 
-class TestCommandRegistryPriority:
-    def test_register_same_id_higher_priority_overrides(self, clean_registry):
-        meta_low = CommandMeta(id="test.cmd", display="Low", priority=10, func=lambda ctx: "low")
-        meta_high = CommandMeta(id="test.cmd", display="High", priority=20, func=lambda ctx: "high")
-        clean_registry.register(create_command_from_meta(meta_low))
-        clean_registry.register(create_command_from_meta(meta_high))
-        cmd_cls = clean_registry.get_command("test.cmd")
-        assert cmd_cls.meta.display == "High"
-
-    def test_register_same_id_lower_priority_ignored(self, clean_registry):
-        meta_high = CommandMeta(id="test.cmd", display="High", priority=20, func=lambda ctx: "high")
-        meta_low = CommandMeta(id="test.cmd", display="Low", priority=10, func=lambda ctx: "low")
-        clean_registry.register(create_command_from_meta(meta_high))
-        clean_registry.register(create_command_from_meta(meta_low))
-        cmd_cls = clean_registry.get_command("test.cmd")
-        assert cmd_cls.meta.display == "High"
-
-    def test_register_same_id_equal_priority_overrides(self, clean_registry):
-        meta_a = CommandMeta(id="test.cmd", display="A", priority=10, func=lambda ctx: "a")
-        meta_b = CommandMeta(id="test.cmd", display="B", priority=10, func=lambda ctx: "b")
-        clean_registry.register(create_command_from_meta(meta_a))
-        clean_registry.register(create_command_from_meta(meta_b))
-        cmd_cls = clean_registry.get_command("test.cmd")
-        assert cmd_cls.meta.display == "B"
-
-    def test_register_same_id_default_priority_overrides(self, clean_registry):
+class TestCommandRegistryOverride:
+    def test_register_same_id_last_wins(self, clean_registry):
         meta_a = CommandMeta(id="test.cmd", display="A", func=lambda ctx: "a")
         meta_b = CommandMeta(id="test.cmd", display="B", func=lambda ctx: "b")
         clean_registry.register(create_command_from_meta(meta_a))
@@ -59,12 +35,10 @@ class TestCommandRegistryPriority:
         cmd_cls = clean_registry.get_command("test.cmd")
         assert cmd_cls.meta.display == "B"
 
-
-class TestCommandMetaPriority:
-    def test_default_priority_is_zero(self):
-        meta = CommandMeta(id="x", display="x")
-        assert meta.priority == 0
-
-    def test_priority_set_explicitly(self):
-        meta = CommandMeta(id="x", display="x", priority=50)
-        assert meta.priority == 50
+    def test_register_same_id_first_registration_overwritten(self, clean_registry):
+        meta_a = CommandMeta(id="test.cmd", display="First", func=lambda ctx: "first")
+        meta_b = CommandMeta(id="test.cmd", display="Second", func=lambda ctx: "second")
+        clean_registry.register(create_command_from_meta(meta_a))
+        clean_registry.register(create_command_from_meta(meta_b))
+        cmd_cls = clean_registry.get_command("test.cmd")
+        assert cmd_cls.meta.display == "Second"

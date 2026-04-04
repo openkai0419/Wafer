@@ -4,6 +4,7 @@ from typing import Any, Callable, Sequence
 from ....utils.profiling import profiler
 from .core import register_command_defs, CommandMeta
 from ....utils.logs import AppLogger
+from ....plugin.registry import PluginBase
 
 MENU_SEPARATOR = "-"
 MENU_SECTION_PREFIX = ":"
@@ -97,9 +98,7 @@ def normalize_command_meta(base_parts: list[str], meta: CommandMeta) -> CommandM
     return meta
 
 
-class MenuGroup:
-    NAME: str = ''
-    PRIORITY: int = 0
+class MenuGroup(PluginBase):
     SCOPE: str = 'viewer'
     _flags: dict[type, bool] = {}
     _items: dict[type, list[str]] = {}
@@ -147,7 +146,6 @@ class MenuGroup:
             if cid in cmd_paths and cmd_paths[cid] != path:
                 raise ValueError(f"Duplicate command id in {t.__name__}: {cid}")
             cmd_paths[cid] = path
-        own_ids = set(cmd_paths.keys())
         for s in items:
             if not isinstance(s, str) or not s or is_section_token(s) or is_sep_token(s):
                 continue
@@ -158,8 +156,6 @@ class MenuGroup:
             if cid in cmd_paths:
                 if cmd_paths[cid] != s:
                     raise ValueError(f"Duplicate command id in {t.__name__}: {cid}")
-                continue
-            if cid not in own_ids:
                 continue
             cmd_paths[cid] = s
         if defs:
@@ -175,20 +171,7 @@ class MenuGroup:
         self._flags[t] = True
 
 
-class DragMenuGroup:
-    NAME: str = ''
-    _flags: dict[type, bool] = {}
-
-    def __init__(self):
-        self._ensure_registered()
-
-    @classmethod
-    def register(cls) -> None:
-        cls()
-
-    @classmethod
-    def commands(cls) -> list:
-        return []
+class DragMenuGroup(MenuGroup):
 
     @profiler.profile
     def _ensure_registered(self):
@@ -250,16 +233,23 @@ class MenuHub:
             inst._folder_blocks = {}
             inst._folder_set = set()
             inst._folder_prefix_map = {}
+            inst._menu_order = []
             cls._instance = inst
         return cls._instance
+
+    def set_menu_order(self, order: list[str]):
+        self._menu_order = list(order)
     
     @profiler.profile
     def register_paths(self, menu_cls: type, cmd_paths: dict[str, str], items: list[str] | None = None):
         if cmd_paths:
             self._by_menu[menu_cls] = dict(cmd_paths)
             for k, v in cmd_paths.items():
-                if k in self._all_paths and self._all_paths[k] != v:
-                    raise ValueError(f"Command id already registered: {k}")
+                existing = self._all_paths.get(k)
+                if existing is not None:
+                    if existing != v:
+                        AppLogger.warning(f"Command '{k}' path conflict: '{existing}' vs '{v}', keeping existing")
+                        continue
                 self._all_paths[k] = v
         if items is not None:
             self._menu_items[menu_cls] = list(items)

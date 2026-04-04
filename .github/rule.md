@@ -89,7 +89,7 @@
 - ビルトインとextensionの唯一の違いはexe化時にwafer/builtins/が自動同梱される点。設計・インターフェースは同一
 - フォールバックはビルトインプラグイン（EXTENSIONS=(), PRIORITY=-100）として登録。Resolverにフォールバックロジックをハードコードしない
 - 共通コマンド（Tray/Viewer共用、Settings系等）はwafer/builtins/commands/に配置。MenuGroup.SCOPEで有効プロセスを制御（"viewer"/"tray"/"*"）
-- Viewer固有コマンドはwafer/app/viewer/commands/、extension固有コマンドはextensions/に配置
+- Viewer固有コマンドもwafer/builtins/commands/に配置（ビルトインコマンドは全てここに集約）。extension固有コマンドはextensions/に配置
 - 全コマンドグループ（App/Builtin/Extension）は必ずCommandGroupRegistryに登録し、activate(scope)で一括登録する。cls.register()の直接呼び出しは禁止
 - CommandGroupRegistryはactivate()を1回だけ受理する（二重呼び出し防止）。viewerはsetup_menu()内、trayはmain.pyから呼ぶ
 

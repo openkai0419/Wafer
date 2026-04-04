@@ -1,5 +1,6 @@
 from unittest.mock import patch
-from wafer.app.viewer.search import SearchService, _DEFAULTS, SORT_CHOICES
+from wafer.app.viewer.search import SearchService, _DEFAULTS
+from wafer.plugin.query.handler import sort_registry
 from wafer.core.qt.dispatcher import CancelToken
 from wafer.builtins.filters import TextFilter, DirectoryFilter
 
@@ -17,7 +18,7 @@ def test_initial_params():
 
 def test_get_param():
     svc = _make_service()
-    assert svc.get("sort_by") in SORT_CHOICES
+    assert svc.get("sort_by") in [s.NAME for s in sort_registry.list_all()]
     assert svc.get("nonexistent", "fallback") == "fallback"
 
 

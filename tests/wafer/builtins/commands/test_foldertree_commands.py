@@ -5,7 +5,7 @@ from PySide6 import QtWidgets
 from wafer.core.commands.bridge import Menu
 from wafer.core.commands.command.core import CommandRegistry
 from wafer.utils.paths import normalize_path
-from wafer.app.viewer.commands.foldertree_commands import (
+from wafer.builtins.commands.foldertree_commands import (
     FolderTreeCommands,
     _ctx_normalized_path,
     _ctx_dir_path,
@@ -115,7 +115,7 @@ def test_remove_from_view_nonexistent_root(tmp_path, qtbot, monkeypatch):
     tree = _FakeTree(roots={missing})
     qtbot.addWidget(tree)
     monkeypatch.setattr(
-        "wafer.app.viewer.commands.foldertree_commands.ConfirmDialog.ask",
+        "wafer.builtins.commands.foldertree_commands.ConfirmDialog.ask",
         staticmethod(lambda *a, **kw: "Remove"),
     )
     ctx = _FakeCtx(path=str(tmp_path / "gone"), widget=tree)
@@ -130,7 +130,7 @@ def test_ignore_folder_nonexistent(tmp_path, qtbot, monkeypatch):
     tree = _FakeTree(roots={existing_root})
     qtbot.addWidget(tree)
     monkeypatch.setattr(
-        "wafer.app.viewer.commands.foldertree_commands.ConfirmDialog.ask",
+        "wafer.builtins.commands.foldertree_commands.ConfirmDialog.ask",
         staticmethod(lambda *a, **kw: "Ignore"),
     )
     ctx = _FakeCtx(path=str(tmp_path / "sub" / "gone"), widget=tree)

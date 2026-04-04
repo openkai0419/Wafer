@@ -3,12 +3,12 @@ from pathlib import Path
 
 from PySide6 import QtCore, QtGui
 
-from ....core.commands.bridge import ActionKit, Command
-from ....core.commands.command.state import ActionGroupStateManager
-from ....utils.formatting import dpix
-from ....core.platform.dragparser import MimeDataParser
-from ....core.platform.paste import drop_files_with_ui
-from ....core.qt.pixmap import PixmapFactory
+from ...core.commands.bridge import ActionKit, Command
+from ...core.commands.command.state import ActionGroupStateManager
+from ...utils.formatting import dpix
+from ...core.platform.dragparser import MimeDataParser
+from ...core.platform.paste import drop_files_with_ui
+from ...core.qt.pixmap import PixmapFactory
 
 INTERNAL_MIME_TYPE = b"application/x-gridview-internal" + f"{os.getpid()}".encode()
 
@@ -23,7 +23,7 @@ _SCROLL_ANCHOR_CMDS = ('grid.scroll_anchor_top', 'grid.scroll_anchor_center')
 
 
 def _get_layout_modes():
-    from ....plugin.layout.handler import layout_registry
+    from ...plugin.layout.handler import layout_registry
     layouts = layout_registry.list_all()
     if not layouts:
         return [], {}, {}, {}, {}
@@ -319,7 +319,7 @@ class GridViewCommands(ActionKit.MenuBase):
 
     @classmethod
     def _layout_commands(cls):
-        from ....plugin.layout.handler import layout_registry
+        from ...plugin.layout.handler import layout_registry
         cmds = []
         for layout_cls in layout_registry.list_all():
             name = layout_cls.NAME
@@ -452,7 +452,7 @@ class GridViewDragCommands(ActionKit.DragMenuBase):
             drag.setPixmap(pixmap)
             drag.setHotSpot(pixmap.rect().topLeft())
         def _run_drag():
-            from ....core.commands.binding.mouse.manager import MouseStateManager
+            from ...core.commands.binding.mouse.manager import MouseStateManager
             try:
                 drag.exec(QtCore.Qt.CopyAction | QtCore.Qt.MoveAction)
             finally:

@@ -6,16 +6,16 @@ from typing import List
 
 from PySide6 import QtCore, QtGui
 
-from ....core.commands.bridge import Command, ActionKit
-from ....core.commands.command.require import require
-from ....core.qt.dialog import ConfirmDialog, ThumbnailConfirmDialog
-from ....core.platform.copy import ClipboardFileTransfer
-from ....core.platform.paste import paste_clipboard_files, execute_paste_plans_with_ui
-from ....core.platform.path_utils import unique_path, get_os_new_folder_name, validate_filename
-from ....core.platform.file_operations import PastePlanItem
-from ....core.platform.folders import show_in_explorer as reveal_in_explorer
-from ....utils.logs import AppLogger
-from ....utils.notifier import Notifier
+from ...core.commands.bridge import Command, ActionKit
+from ...core.commands.command.require import require
+from ...core.qt.dialog import ConfirmDialog, ThumbnailConfirmDialog
+from ...core.platform.copy import ClipboardFileTransfer
+from ...core.platform.paste import paste_clipboard_files, execute_paste_plans_with_ui
+from ...core.platform.path_utils import unique_path, get_os_new_folder_name, validate_filename
+from ...core.platform.file_operations import PastePlanItem
+from ...core.platform.folders import show_in_explorer as reveal_in_explorer
+from ...utils.logs import AppLogger
+from ...utils.notifier import Notifier
 
 
 def _ctx_paths(ctx) -> List[str]:
@@ -213,7 +213,7 @@ def rename_file(ctx):
     path = _ctx_path(ctx)
     if not path or not os.path.isfile(path):
         return
-    from ....core.qt.dialog import InputDialog
+    from ...core.qt.dialog import InputDialog
     parent = ctx.get_instance("FileViewerWidget") or ctx.get_instance("GridView")
     old_name = os.path.basename(path)
     new_name = InputDialog.get_text(
@@ -261,7 +261,7 @@ def batch_rename(ctx, items, w):
         Notifier.info('No files selected')
         return
     file_paths = [Path(p) for p in paths_str]
-    from ..renamer import BatchRenameDialog
+    from wafer.app.viewer.renamer import BatchRenameDialog
     BatchRenameDialog.open(file_paths, keys=paths_str, db_path=w.database_path, parent=w)
 
 
@@ -271,7 +271,7 @@ def shell_context_menu(ctx):
     paths = _ctx_paths(ctx)
     if not paths:
         return
-    from ....core.platform.shell_menu import show_shell_context_menu
+    from ...core.platform.shell_menu import show_shell_context_menu
     widget = ctx.get("widget")
     if widget is None:
         widget = QtGui.QGuiApplication.focusWindow()

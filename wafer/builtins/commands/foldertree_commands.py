@@ -2,10 +2,10 @@ import os
 
 from PySide6 import QtCore, QtWidgets
 
-from ....core.commands.bridge import ActionKit, Menu
-from ....utils.paths import normalize_path
-from ....utils.logs import AppLogger
-from ....core.qt.dialog import ConfirmDialog
+from ...core.commands.bridge import ActionKit, Menu
+from ...utils.paths import normalize_path
+from ...utils.logs import AppLogger
+from ...core.qt.dialog import ConfirmDialog
 
 def _ctx_tree(ctx):
     w = ctx.get("widget") if hasattr(ctx, "get") else None

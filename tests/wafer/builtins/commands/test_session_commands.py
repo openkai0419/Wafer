@@ -1,6 +1,6 @@
 import py_compile
 
-from wafer.app.viewer.session import (
+from wafer.core.session import (
     QueryState,
     UIState,
     BookmarkEntry,
@@ -11,17 +11,17 @@ from wafer.app.viewer.session import (
 
 
 def test_compile():
-    py_compile.compile('wafer/app/viewer/commands/session_commands.py')
+    py_compile.compile('wafer/builtins/commands/session_commands.py')
 
 
 class TestBookmarkCommands:
 
     def test_command_class_registers(self):
-        from wafer.app.viewer.commands.session_commands import BookmarkCommands
+        from wafer.builtins.commands.session_commands import BookmarkCommands
         BookmarkCommands.register()
 
     def test_bm_store_lazy_init(self):
-        from wafer.app.viewer.commands.session_commands import _bm_store
+        from wafer.builtins.commands.session_commands import _bm_store
         store = _bm_store()
         assert isinstance(store, BookmarkStore)
 
@@ -39,7 +39,7 @@ class TestBookmarkCommands:
 class TestSessionCommands:
 
     def test_window_commands_include_session(self):
-        from wafer.app.viewer.commands.window_commands import WindowCommands
+        from wafer.builtins.commands.window_commands import WindowCommands
         cmds = WindowCommands.commands()
         paths = [c.path for c in cmds if hasattr(c, 'path')]
         assert 'win.new_window' in paths
@@ -48,7 +48,7 @@ class TestSessionCommands:
         assert 'win.delete_session' in paths
 
     def test_ss_store_lazy_init(self):
-        from wafer.app.viewer.commands.session_commands import _ss_store
+        from wafer.builtins.commands.session_commands import _ss_store
         store = _ss_store()
         assert isinstance(store, SessionStore)
 
@@ -77,14 +77,14 @@ class TestSessionCommands:
         store.save_session(SessionEntry(session_id='s1'))
         store.set_active_session_ids(['s1'])
         monkeypatch.setattr(SessionStore, '_instance', store)
-        from wafer.app.viewer.commands import session_commands
+        from wafer.builtins.commands import session_commands
         alive = session_commands._get_alive_session_ids()
         assert 's1' in alive
 
     def test_resolve_session_by_sid(self, tmp_path):
         store = SessionStore(path=str(tmp_path / 'sessions.json'))
         sid = store.create_session('Work')
-        from wafer.app.viewer.commands.session_commands import _resolve_session
+        from wafer.builtins.commands.session_commands import _resolve_session
         entry = _resolve_session(store, sid=sid)
         assert entry is not None
         assert entry.name == 'Work'
@@ -92,14 +92,14 @@ class TestSessionCommands:
     def test_resolve_session_by_name(self, tmp_path):
         store = SessionStore(path=str(tmp_path / 'sessions.json'))
         store.create_session('Work')
-        from wafer.app.viewer.commands.session_commands import _resolve_session
+        from wafer.builtins.commands.session_commands import _resolve_session
         entry = _resolve_session(store, session='Work')
         assert entry is not None
         assert entry.name == 'Work'
 
     def test_resolve_session_empty_returns_none(self, tmp_path):
         store = SessionStore(path=str(tmp_path / 'sessions.json'))
-        from wafer.app.viewer.commands.session_commands import _resolve_session
+        from wafer.builtins.commands.session_commands import _resolve_session
         assert _resolve_session(store) is None
 
     def test_list_session_names(self, tmp_path):
@@ -132,13 +132,13 @@ class TestSessionCommands:
         assert store.rename_session(sid, 'Same')
 
     def test_ss_store_returns_singleton(self, monkeypatch):
-        from wafer.app.viewer.commands.session_commands import _ss_store
+        from wafer.builtins.commands.session_commands import _ss_store
         a = _ss_store()
         b = _ss_store()
         assert a is b
 
     def test_bm_store_returns_singleton(self, monkeypatch):
-        from wafer.app.viewer.commands.session_commands import _bm_store
+        from wafer.builtins.commands.session_commands import _bm_store
         a = _bm_store()
         b = _bm_store()
         assert a is b

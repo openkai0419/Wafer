@@ -1,9 +1,9 @@
-from ....core.commands.bridge import ActionKit
-from ....core.commands.command.require import require
-from ....utils.paths import list_setting_db_names
-from ....utils.logs import AppLogger
-from ....core.platform.process import AppProcess
-from ....core.qt.dialog import ConfirmDialog, InputDialog
+from ...core.commands.bridge import ActionKit
+from ...core.commands.command.require import require
+from ...utils.paths import list_setting_db_names
+from ...utils.logs import AppLogger
+from ...core.platform.process import AppProcess
+from ...core.qt.dialog import ConfirmDialog, InputDialog
 
 
 @require(w="MainWindow")

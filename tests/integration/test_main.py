@@ -17,7 +17,7 @@ class TestDirectLaunchSessionRestore:
             mock_args.return_value = MagicMock(
                 tray=False, viewer=False, indexer=None, collector=None,
                 dev=False, session=None)
-            with patch('wafer.app.viewer.session.SessionStore', return_value=store):
+            with patch('wafer.core.session.SessionStore', return_value=store):
                 from main import main
                 main()
 
@@ -39,7 +39,7 @@ class TestDirectLaunchSessionRestore:
             mock_args.return_value = MagicMock(
                 tray=False, viewer=False, indexer=None, collector=None,
                 dev=False, session=None)
-            with patch('wafer.app.viewer.session.SessionStore', return_value=store):
+            with patch('wafer.core.session.SessionStore', return_value=store):
                 from main import main
                 main()
 
@@ -64,7 +64,7 @@ class TestDirectLaunchSessionRestore:
             mock_args.return_value = MagicMock(
                 tray=False, viewer=False, indexer=None, collector=None,
                 dev=False, session=None)
-            with patch('wafer.app.viewer.session.SessionStore', return_value=store):
+            with patch('wafer.core.session.SessionStore', return_value=store):
                 from main import main
                 main()
 

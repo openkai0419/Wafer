@@ -1,10 +1,10 @@
 from PySide6 import QtCore
 
-from ....core.commands.bridge import Command, ActionKit
-from ....core.setting.folder_settings import FolderSettings
-from ....core.setting.setting_window import SettingsWindow
-from ....core.platform.process import AppProcess
-from ..viewer_settings import app_settings
+from ...core.commands.bridge import Command, ActionKit
+from ...core.setting.folder_settings import FolderSettings
+from ...core.setting.setting_window import SettingsWindow
+from ...core.platform.process import AppProcess
+from ...core.setting.app_settings import app_settings
 from .session_commands import (
     show_session_popup, create_session,
     open_session, rename_session, delete_session, color_session,
@@ -59,7 +59,7 @@ def toggle_layout_mode(ctx):
         return
     mgr = w._layout_manager
     mgr.toggle_mode()
-    from ....core.layout.manager import MODE_EDIT
+    from ...core.layout.manager import MODE_EDIT
     Command.set_checked("win.toggle_layout_mode", mgr.mode == MODE_EDIT)
 
 

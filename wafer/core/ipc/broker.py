@@ -345,7 +345,7 @@ class Broker:
     def _get_session_store(self):
         if self._session_store_factory:
             return self._session_store_factory()
-        from ...app.viewer.session import SessionStore
+        from ..session import SessionStore
         return SessionStore.instance()
 
     def active_viewer_session_ids(self) -> list[str]:

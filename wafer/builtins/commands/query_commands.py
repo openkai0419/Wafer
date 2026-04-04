@@ -1,6 +1,6 @@
-from ....core.commands.bridge import ActionKit, Command
-from ....core.commands.command.state import ActionGroupStateManager
-from ..search import SORT_CHOICES
+from ...core.commands.bridge import ActionKit, Command
+from ...core.commands.command.state import ActionGroupStateManager
+from ...plugin.query.handler import sort_registry
 
 
 GROUP_SORT = "qry_sort"
@@ -8,7 +8,13 @@ GROUP_MODE = "qry_mode"
 GROUP_KEYWORD = "qry_keyword"
 GROUP_ORDER = "qry_order"
 
-_SORT_MAP = {f"qry.sort_{k}": k for k in SORT_CHOICES}
+
+def _sort_choices():
+    return [s.NAME for s in sort_registry.list_all()]
+
+
+def _sort_map():
+    return {f"qry.sort_{k}": k for k in _sort_choices()}
 _MODE_MAP = {"qry.mode_glob": "GLOB", "qry.mode_like": "LIKE"}
 _KEYWORD_MAP = {"qry.keyword_and": "AND", "qry.keyword_or": "OR"}
 _ORDER_MAP = {"qry.order_asc": True, "qry.order_desc": False}
@@ -24,7 +30,7 @@ def _service(ctx):
 
 
 _GROUP_CONFIG = {
-    GROUP_SORT:    {"search_key": "sort_by",      "map": _SORT_MAP,    "ui_method": "set_sort_by"},
+    GROUP_SORT:    {"search_key": "sort_by",      "map": _sort_map,    "ui_method": "set_sort_by"},
     GROUP_MODE:    {"search_key": "query_mode",   "map": _MODE_MAP,    "ui_method": "set_query_mode"},
     GROUP_KEYWORD: {"search_key": "keyword_mode", "map": _KEYWORD_MAP, "ui_method": "set_keyword_mode"},
     GROUP_ORDER:   {"search_key": "ascending",    "map": _ORDER_MAP,   "ui_method": "set_ascending"},
@@ -74,7 +80,8 @@ def _cycle_group(ctx, group):
     if not new_cmd:
         return
     cfg = _GROUP_CONFIG[group]
-    value = cfg["map"].get(new_cmd)
+    m = cfg["map"]() if callable(cfg["map"]) else cfg["map"]
+    value = m.get(new_cmd)
     if value is None:
         return
     svc = _service(ctx)
@@ -88,12 +95,13 @@ def _cycle_group(ctx, group):
 
 
 def cycle_sort(ctx, reverse=False, **kwargs):
-    enabled = [k for k in SORT_CHOICES if kwargs.get(k, True)]
+    choices = _sort_choices()
+    enabled = [k for k in choices if kwargs.get(k, True)]
     if not enabled:
         return
     sm = ActionGroupStateManager.instance()
     current = sm.get_current(GROUP_SORT)
-    current_key = _SORT_MAP.get(current)
+    current_key = _sort_map().get(current)
     step = -1 if reverse else 1
     try:
         idx = enabled.index(current_key)
@@ -166,7 +174,7 @@ def sync_groups_from_args(args):
     sm = ActionGroupStateManager.instance()
     sort_by = args.get('sort_by', 'path')
     sort_cmd = f"qry.sort_{sort_by}"
-    if sort_cmd in _SORT_MAP:
+    if sort_cmd in _sort_map():
         sm.set_current(GROUP_SORT, sort_cmd, save=False)
     query_mode = args.get('query_mode', 'GLOB')
     for cmd_id, mode in _MODE_MAP.items():
@@ -221,13 +229,13 @@ class QueryCommands(ActionKit.MenuBase):
                 path=f"Sort By/qry.sort_{k}", display=_SORT_DISPLAY[k],
                 func=_make_sort_func(k), checkable=True,
                 default_checked=(k == "path"), action_group=GROUP_SORT,
-            ) for k in SORT_CHOICES],
+            ) for k in _sort_choices()],
             "Sort Order/:Sort Order",
             ActionKit.Command(path="Sort Order/qry.order_asc", display="Ascending", func=_make_order_func("qry.order_asc", True), checkable=True, action_group=GROUP_ORDER),
             ActionKit.Command(path="Sort Order/qry.order_desc", display="Descending", func=_make_order_func("qry.order_desc", False), checkable=True, default_checked=True, action_group=GROUP_ORDER),
             ActionKit.Command(
                 path="qry.cycle_sort", display="Cycle Sort By", func=cycle_sort,
-                params=[ActionKit.Param(name=k, value=True) for k in SORT_CHOICES] + [ActionKit.Param(name="reverse", value=False)],
+                params=[ActionKit.Param(name=k, value=True) for k in _sort_choices()] + [ActionKit.Param(name="reverse", value=False)],
             ),
             ActionKit.Command(path="qry.cycle_order", display="Toggle Sort Order", func=cycle_order),
             "-",

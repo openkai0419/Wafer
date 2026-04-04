@@ -134,7 +134,7 @@ def main():
         app = _create_app()
         load_plugins()
         AppProcess.new_main('--tray')
-        from wafer.app.viewer.session import SessionStore
+        from wafer.core.session import SessionStore
         restore_ids = SessionStore().get_restore_session_ids()
         for sid in restore_ids[1:]:
             AppProcess.new_main('--viewer', '--session', sid)

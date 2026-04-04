@@ -1,4 +1,4 @@
-from wafer.app.viewer.session import (
+from wafer.core.session import (
     QueryState, UIState, SessionEntry, BookmarkEntry,
     SessionStore, BookmarkStore,
 )

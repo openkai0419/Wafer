@@ -412,7 +412,7 @@ class TestReconnection:
 class TestSessionTracking:
 
     def _make_broker(self, tmp_path, session_ids=()):
-        from wafer.app.viewer.session import SessionStore, SessionEntry
+        from wafer.core.session import SessionStore, SessionEntry
         store_path = str(tmp_path / 'sessions.json')
         store = SessionStore(path=store_path)
         for sid in session_ids:

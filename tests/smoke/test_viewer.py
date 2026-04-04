@@ -136,7 +136,7 @@ class TestSmokeViewer:
     def test_mainwindow_boots_and_searches(self, smoke_env, qtbot, tmp_path):
         db_path, setting_db_path, img_dir = smoke_env
 
-        from wafer.app.viewer.session import SessionStore
+        from wafer.core.session import SessionStore
         prev_instance = SessionStore._instance
         store = SessionStore(path=str(tmp_path / 'sessions.json'))
         SessionStore._instance = store
@@ -200,7 +200,7 @@ class TestSmokeViewer:
         with FileIndexer(db_path, collectors=collectors) as idx:
             idx.initialize()
 
-        from wafer.app.viewer.session import SessionStore
+        from wafer.core.session import SessionStore
         prev_instance = SessionStore._instance
         store = SessionStore(path=str(tmp_path / 'sessions.json'))
         SessionStore._instance = store

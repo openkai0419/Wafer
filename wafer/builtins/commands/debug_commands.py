@@ -1,8 +1,8 @@
-from ....core.commands.bridge import ActionKit
-from ....constants import DEV_MODE
+from ...core.commands.bridge import ActionKit
+from ...constants import DEV_MODE
 
 def toggle_dev_log(ctx):
-    from ..widgets.dev_log_panel import DevLogPanel
+    from wafer.app.viewer.widgets.dev_log_panel import DevLogPanel
     panel = DevLogPanel.instance()
     if panel is None:
         return

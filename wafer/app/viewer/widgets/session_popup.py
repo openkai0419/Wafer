@@ -2,7 +2,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from ....utils.formatting import dpix
 from ....core.color.theme import ThemeManager
 from ....core.lang.manager import TranslatorMixin
-from ..session import SESSION_COLORS
+from ....core.session import SESSION_COLORS
 
 
 class ColorDot(QtWidgets.QWidget):

@@ -8,10 +8,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from ...constants import DEFAULT_SESSION_NAME
-from ...utils.json_io import read_json_file, write_json_file
-from ...utils.paths import resolve_data_path
-from ...utils.process_lock import file_lock
+from ..constants import DEFAULT_SESSION_NAME
+from ..utils.json_io import read_json_file, write_json_file
+from ..utils.paths import resolve_data_path
+from ..utils.process_lock import file_lock
 
 _STORE_FILENAME = 'sessions.json'
 _BOOKMARK_DIR = 'bookmarks'

@@ -17,7 +17,7 @@ from .meta_viewer import MetaListWidget
 from .image_viewer import ImageDisplayWidget
 from .file_model import FileViewModel
 from ..grid.cachemanager import MemoryLimitedImageCache, fullsize_key
-from ..viewer_settings import app_settings
+from ....core.setting.app_settings import app_settings
 
 
 _DEFAULT_WIDGET_NAME = '_default'

@@ -20,11 +20,11 @@ class TestUpdateTitle:
             return win
 
     def _named_entry(self, name='Work'):
-        from wafer.app.viewer.session import SessionEntry
+        from wafer.core.session import SessionEntry
         return SessionEntry(session_id='abc123', name=name)
 
     def _unnamed_entry(self):
-        from wafer.app.viewer.session import SessionEntry
+        from wafer.core.session import SessionEntry
         return SessionEntry(session_id='s1', name='')
 
     def test_named_session_shows_name(self):
@@ -183,21 +183,21 @@ class TestSyncSessionButton:
             return win
 
     def test_named_session_shows_name_on_button(self):
-        from wafer.app.viewer.session import SessionEntry
+        from wafer.core.session import SessionEntry
         entry = SessionEntry(session_id='s1', name='Work')
         win = self._make_win(session_entry=entry)
         win._sync_session_button()
         win._session_button.setText.assert_called_with('\u25BC Work')
 
     def test_unnamed_session_shows_window(self):
-        from wafer.app.viewer.session import SessionEntry
+        from wafer.core.session import SessionEntry
         entry = SessionEntry(session_id='s1', name='')
         win = self._make_win(session_entry=entry)
         win._sync_session_button()
         win._session_button.setText.assert_called_with('\u25BC Window')
 
     def test_colored_session_sets_stylesheet(self):
-        from wafer.app.viewer.session import SessionEntry
+        from wafer.core.session import SessionEntry
         entry = SessionEntry(session_id='s1', name='Work', color='#4A90D9')
         win = self._make_win(session_entry=entry)
         win._sync_session_button()
@@ -205,7 +205,7 @@ class TestSyncSessionButton:
         assert '#4A90D9' in call_args
 
     def test_no_color_default_stylesheet(self):
-        from wafer.app.viewer.session import SessionEntry
+        from wafer.core.session import SessionEntry
         entry = SessionEntry(session_id='s1', name='Work')
         win = self._make_win(session_entry=entry)
         win._sync_session_button()
@@ -213,7 +213,7 @@ class TestSyncSessionButton:
         assert '#4A90D9' not in call_args
 
     def test_update_title_calls_sync(self):
-        from wafer.app.viewer.session import SessionEntry
+        from wafer.core.session import SessionEntry
         entry = SessionEntry(session_id='s1', name='Test')
         win = self._make_win(session_entry=entry)
         win._update_title()

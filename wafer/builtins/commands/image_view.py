@@ -1,7 +1,7 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from ....core.commands.bridge import ActionKit
-from ....core.commands.command.require import require
+from ...core.commands.bridge import ActionKit
+from ...core.commands.command.require import require
 
 
 def _zoom(gv, *, base: float, steps: int, pos=None):

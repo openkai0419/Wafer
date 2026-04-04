@@ -14,11 +14,6 @@ from ...builtins.filters import TextFilter, DirectoryFilter
 from ...builtins.sorts import NaturalPathSort
 
 
-def _build_sort_choices():
-    return [s.NAME for s in sort_registry.list_all()]
-
-SORT_CHOICES = _build_sort_choices()
-
 _DEFAULTS = {
     "keywords": "",
     "query_mode": "GLOB",

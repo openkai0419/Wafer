@@ -37,7 +37,7 @@ class TestColorPalette:
         assert sig.args[0].startswith('#')
 
     def test_clear_button(self, qtbot):
-        from wafer.app.viewer.session import SESSION_COLORS
+        from wafer.core.session import SESSION_COLORS
         palette = ColorPalette()
         qtbot.addWidget(palette)
         clear_btn = palette.layout().itemAt(len(SESSION_COLORS)).widget()

@@ -1,6 +1,6 @@
-from ....core.commands.bridge import ActionKit, Menu, Settings
-from ....core.commands.command.menu import discover_command_classes
-from ....utils.paths import resolve_data_path
+from ...core.commands.bridge import ActionKit, Menu, Settings
+from ...core.commands.command.menu import discover_command_classes
+from ...utils.paths import resolve_data_path
 from . import (
     file_commands,
     foldertree_commands,

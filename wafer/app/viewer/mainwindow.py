@@ -15,7 +15,7 @@ from .grid.grid_view import GridView
 from .grid.items import GridItemModel
 from .preview.file_model import FileViewModel
 from .preview.file_viewer import FileViewerWidget
-from .viewer_settings import app_settings
+from ...core.setting.app_settings import app_settings
 from .widgets.button_bar import IconButtonBar, IconButtonConfig
 from .widgets.foldertree import LazyFolderTreeView
 from .widgets.loading_overlay import OverlayLoadingIndicator
@@ -24,9 +24,9 @@ from .widgets.progress_bar import ThinProgressBar
 from .widgets.search_container import SearchContainer
 from .widgets.combo_with_buttons import ComboBoxWithButtons
 
-from .commands.menu import AppMenuRegistrar
+from ...builtins.commands.menu import AppMenuRegistrar
 from .search import SearchService
-from .session import QueryState, UIState, SessionEntry, SessionStore
+from ...core.session import QueryState, UIState, SessionEntry, SessionStore
 from ...core.commands.bridge import UI, Command
 from ...core.layout.manager import LayoutManager
 from ...core.state import StateStore
@@ -399,7 +399,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
                             self.search_service.get('include_subfolders', True))
         Command.set_checked('qry.toggle_auto_execute',
                             self.search_service.get('auto_execute', True))
-        from .commands.grid_commands import sync_grid_groups_from_settings, _SCROLL_ANCHOR_CMDS
+        from ...builtins.commands.grid_commands import sync_grid_groups_from_settings, _SCROLL_ANCHOR_CMDS
         sync_grid_groups_from_settings({
             'orientation': self.grid_view.orientation,
             'layout_mode': self.grid_view.layout_mode,
@@ -441,7 +441,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self._layout_manager.restore_state(state)
 
     def _save_grid(self):
-        from .commands.grid_commands import _SCROLL_ANCHOR_CMDS
+        from ...builtins.commands.grid_commands import _SCROLL_ANCHOR_CMDS
         return {
             'zoom': self.grid_view.base_height,
             'orientation': self.grid_view.orientation,
@@ -458,12 +458,12 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             self.grid_view.set_orientation(state['orientation'])
         if 'layout_mode' in state:
             self.grid_view.set_layout_mode(state['layout_mode'])
-        from .commands.grid_commands import sync_grid_groups_from_settings
+        from ...builtins.commands.grid_commands import sync_grid_groups_from_settings
         sync_grid_groups_from_settings(state)
         if state.get('scroll_index') is not None:
             self.grid_view.set_pending_scroll_index(state['scroll_index'])
         if 'scroll_anchor' in state:
-            from .commands.grid_commands import _SCROLL_ANCHOR_CMDS
+            from ...builtins.commands.grid_commands import _SCROLL_ANCHOR_CMDS
             if state['scroll_anchor'] in _SCROLL_ANCHOR_CMDS:
                 Command.set_action_group_current('grid_scroll_anchor', state['scroll_anchor'], save=False)
         if 'zoom' in state:
@@ -494,7 +494,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             'keyword_mode': values.get('keyword_mode', 'AND'),
             'keyword_separator': values.get('keyword_separator', ','),
         })
-        from .commands.query_commands import sync_groups_from_args
+        from ...builtins.commands.query_commands import sync_groups_from_args
         sync_groups_from_args(self.search_service.params)
 
     def _on_search_setting_changed(self):
@@ -631,7 +631,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             return
         if query.search_params:
             self.search_service.set_params(query.search_params)
-            from .commands.query_commands import sync_groups_from_args
+            from ...builtins.commands.query_commands import sync_groups_from_args
             sync_groups_from_args(query.search_params)
             Command.set_checked('qry.toggle_include_subfolders', query.search_params.get('include_subfolders', True))
             Command.set_checked('qry.toggle_auto_execute', query.search_params.get('auto_execute', True))

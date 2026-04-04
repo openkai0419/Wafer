@@ -9,7 +9,7 @@ from ...core.platform.process import AppProcess
 from ...core.ipc.message import Message
 from ...core.qt.dialog import InputDialog
 from ...utils.notifier import Notifier
-from ...app.viewer.session import SessionStore
+from ...core.session import SessionStore
 
 
 def _tray_send(ctx, topic: str, payload=None):

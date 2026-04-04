@@ -1,6 +1,6 @@
 from ...core.commands.bridge import ActionKit
 from ...core.platform.process import AppProcess
-from ...app.viewer.session import SessionStore
+from ...core.session import SessionStore
 
 
 def _resolve_node(ctx):

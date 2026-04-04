@@ -1,13 +1,13 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from ....core.commands.bridge import ActionKit
-from ....core.commands.command.require import require
-from ....core.color.theme import ThemeManager
-from ....core.qt.dialog import InputDialog
-from ....core.platform.process import AppProcess
-from ....utils.logs import AppLogger
-from ....utils.notifier import Notifier
-from ..session import BookmarkEntry, BookmarkStore, SessionStore
+from ...core.commands.bridge import ActionKit
+from ...core.commands.command.require import require
+from ...core.color.theme import ThemeManager
+from ...core.qt.dialog import InputDialog
+from ...core.platform.process import AppProcess
+from ...utils.logs import AppLogger
+from ...utils.notifier import Notifier
+from ...core.session import BookmarkEntry, BookmarkStore, SessionStore
 
 
 def _bm_store():
@@ -135,7 +135,7 @@ def show_session_popup(ctx, w):
     if existing and existing.isVisible():
         existing.close()
         return
-    from ..widgets.session_popup import SessionPopup
+    from wafer.app.viewer.widgets.session_popup import SessionPopup
     store = _ss_store()
     named = store.list_sessions()
     alive = _get_alive_session_ids()
@@ -271,7 +271,7 @@ def color_session(ctx, w, session: str = '', sid: str = '', popup=None):
     entry = _resolve_session(store, session, sid)
     if not entry:
         return
-    from ..widgets.session_popup import ColorPalette
+    from wafer.app.viewer.widgets.session_popup import ColorPalette
     palette = ColorPalette(current=entry.color, parent=w)
     palette.setWindowFlags(QtCore.Qt.Popup | QtCore.Qt.FramelessWindowHint)
     palette.setAttribute(QtCore.Qt.WA_TranslucentBackground)

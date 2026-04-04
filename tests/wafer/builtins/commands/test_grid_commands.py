@@ -1,6 +1,6 @@
 import pytest
 
-from wafer.app.viewer.commands.grid_commands import (
+from wafer.builtins.commands.grid_commands import (
     ORIENTATION_CHOICES,
     _CMD_IDS,
     _CMD_TO_CHOICE,
@@ -145,7 +145,7 @@ class TestLoadStateValidation:
 
 class TestToggleAutoscrollCommand:
     def test_command_has_speed_param(self):
-        from wafer.app.viewer.commands.grid_commands import GridViewCommands
+        from wafer.builtins.commands.grid_commands import GridViewCommands
         cmds = GridViewCommands.commands()
         autoscroll_cmd = None
         for c in cmds:
@@ -157,7 +157,7 @@ class TestToggleAutoscrollCommand:
         assert "speed" in param_names
 
     def test_speed_param_has_range(self):
-        from wafer.app.viewer.commands.grid_commands import GridViewCommands
+        from wafer.builtins.commands.grid_commands import GridViewCommands
         cmds = GridViewCommands.commands()
         for c in cmds:
             if hasattr(c, 'path') and c.path == 'grid.toggle_autoscroll':
@@ -169,7 +169,7 @@ class TestToggleAutoscrollCommand:
 
     def test_toggle_autoscroll_passes_speed(self):
         from unittest.mock import MagicMock, PropertyMock
-        from wafer.app.viewer.commands.grid_commands import GridViewCommands
+        from wafer.builtins.commands.grid_commands import GridViewCommands
 
         ctx = MagicMock()
         view = MagicMock()
@@ -186,7 +186,7 @@ class TestToggleAutoscrollCommand:
 
     def test_toggle_autoscroll_stops_when_scrolling(self):
         from unittest.mock import MagicMock, PropertyMock
-        from wafer.app.viewer.commands.grid_commands import GridViewCommands
+        from wafer.builtins.commands.grid_commands import GridViewCommands
 
         ctx = MagicMock()
         view = MagicMock()

@@ -2,7 +2,7 @@ import json
 import os
 import pytest
 
-from wafer.app.viewer.session import (
+from wafer.core.session import (
     QueryState,
     UIState,
     BookmarkEntry,

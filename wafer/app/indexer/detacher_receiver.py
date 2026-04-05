@@ -14,20 +14,26 @@ from .task import Task, TaskPriority
 
 
 def trigger_detacher_pending(
-    written_keys: set[str],
-    sources: list[str],
+    source_keys: dict[str, set[str]],
     writer: DatabaseWriter,
     request_dispatch=None,
 ):
-    if not written_keys or not sources:
+    if not source_keys:
         return
-    matched = detacher_resolver.detachers_for_keys(written_keys)
+    all_keys = set().union(*source_keys.values())
+    matched = detacher_resolver.detachers_for_keys(all_keys)
     if not matched:
         return
+    dispatched = False
     for name in matched:
+        trigger = set(detacher_resolver.trigger_keys(name))
+        filtered = [s for s, keys in source_keys.items() if keys & trigger]
+        if not filtered:
+            continue
         status_name = detacher_resolver.status_name(name)
-        writer.insert_pending(sources, [status_name])
-    if request_dispatch:
+        writer.insert_pending(filtered, [status_name])
+        dispatched = True
+    if dispatched and request_dispatch:
         request_dispatch()
 
 
@@ -119,13 +125,20 @@ class DetacherReceiver:
         self._progress.send_event('update')
         AppLogger.info(f'[DetacherReceiver] Flushed {count} results')
 
-        written_keys = {entry[1] for entry in data['meta_info_entries']}
-        written_keys.update(entry[1] for entry in data['tag_entries'])
-        sources = list({entry[0] for entry in data['collector_status']})
-        trigger_detacher_pending(written_keys, sources, self._writer, self._request_dispatch)
+        source_keys = _build_source_keys(data)
+        trigger_detacher_pending(source_keys, self._writer, self._request_dispatch)
 
         if self._buffer.has_pending():
             self._schedule_flush()
+
+
+def _build_source_keys(data: dict[str, Any]) -> dict[str, set[str]]:
+    source_keys: dict[str, set[str]] = {}
+    for entry in data['meta_info_entries']:
+        source_keys.setdefault(entry[0], set()).add(entry[1])
+    for entry in data.get('tag_entries', ()):
+        source_keys.setdefault(entry[0], set()).add(entry[1])
+    return source_keys
 
 
 def _parse_batch(results: list[dict[str, Any]]) -> dict[str, Any]:

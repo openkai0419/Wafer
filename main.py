@@ -5,6 +5,8 @@ import signal
 import sys
 import threading
 
+import setproctitle
+
 if getattr(sys, 'frozen', False):
     if sys.stdout is None:
         sys.stdout = io.StringIO()
@@ -43,6 +45,7 @@ def _create_app():
     return app
 
 def _entry_viewer(app=None, session_id=None):
+    setproctitle.setproctitle(f'{APP_NAME}')
     from wafer.app.viewer.mainwindow import MainWindow
     profiler.start()
     if app is None:
@@ -53,6 +56,7 @@ def _entry_viewer(app=None, session_id=None):
 
 def _entry_tray():
     try:
+        setproctitle.setproctitle(f'{APP_NAME}-tray')
         profiler.set_enabled(False)
         from PySide6 import QtWidgets
         from wafer.app.tray.main_tray import TrayApp
@@ -80,6 +84,7 @@ def _entry_tray():
 
 def _entry_indexer(name, parent_pid=None):
     try:
+        setproctitle.setproctitle(f'{APP_NAME}-indexer-{name}')
         profiler.set_enabled(False)
         with SafeProcessLock(f'{APP_DATA_DIR_NAME}_{name}', parent_pid=parent_pid):
             AppLogger.info(f'indexer start: {name}')
@@ -110,6 +115,7 @@ def _entry_indexer(name, parent_pid=None):
 
 def _entry_collector(name, plugin, parent_pid=None):
     try:
+        setproctitle.setproctitle(f'{APP_NAME}-collector-{plugin}')
         profiler.set_enabled(False)
         from wafer.app.collector.worker import run_collector as _run
         _run(name, plugin, parent_pid=parent_pid)
@@ -118,6 +124,7 @@ def _entry_collector(name, plugin, parent_pid=None):
 
 def _entry_detacher(name, plugin, parent_pid=None):
     try:
+        setproctitle.setproctitle(f'{APP_NAME}-detacher-{plugin}')
         profiler.set_enabled(False)
         from wafer.app.detacher.worker import run_detacher as _run
         _run(name, plugin, parent_pid=parent_pid)

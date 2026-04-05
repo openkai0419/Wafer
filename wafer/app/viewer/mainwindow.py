@@ -385,7 +385,8 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
 
     def _load_default_layout(self):
         import json
-        layout_path = Path(__file__).resolve().parents[3] / '_resources' / 'panel_layout' / 'default.json'
+        from ...utils.paths import get_resource_path
+        layout_path = get_resource_path() / 'panel_layout' / 'default.json'
         if layout_path.exists():
             with open(layout_path, encoding='utf-8') as f:
                 return json.load(f)

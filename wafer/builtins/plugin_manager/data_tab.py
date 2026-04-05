@@ -150,8 +150,7 @@ class DataTab(QtWidgets.QWidget):
         self._table.setRowCount(len(rows))
         for i, (db, prefix, meta, tags, plugin_type, status, purgeable) in enumerate(rows):
             self._table.setItem(i, _COL_DB, QtWidgets.QTableWidgetItem(db))
-            prefix_text = prefix if prefix else '(no prefix)'
-            self._table.setItem(i, _COL_PREFIX, QtWidgets.QTableWidgetItem(prefix_text))
+            self._table.setItem(i, _COL_PREFIX, QtWidgets.QTableWidgetItem(prefix))
 
             meta_item = _NumericItem(f'{meta:,}')
             meta_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
@@ -164,16 +163,15 @@ class DataTab(QtWidgets.QWidget):
             self._table.setItem(i, _COL_PLUGIN, QtWidgets.QTableWidgetItem(plugin_type))
             self._table.setItem(i, _COL_STATUS, QtWidgets.QTableWidgetItem(status))
 
-            cb = QtWidgets.QCheckBox()
-            if not purgeable:
-                cb.setEnabled(False)
-            cb.stateChanged.connect(self._update_selected_count)
-            container = QtWidgets.QWidget()
-            cb_layout = QtWidgets.QHBoxLayout(container)
-            cb_layout.addWidget(cb)
-            cb_layout.setAlignment(QtCore.Qt.AlignCenter)
-            cb_layout.setContentsMargins(0, 0, 0, 0)
-            self._table.setCellWidget(i, _COL_CHECK, container)
+            if purgeable:
+                cb = QtWidgets.QCheckBox()
+                cb.stateChanged.connect(self._update_selected_count)
+                container = QtWidgets.QWidget()
+                cb_layout = QtWidgets.QHBoxLayout(container)
+                cb_layout.addWidget(cb)
+                cb_layout.setAlignment(QtCore.Qt.AlignCenter)
+                cb_layout.setContentsMargins(0, 0, 0, 0)
+                self._table.setCellWidget(i, _COL_CHECK, container)
         self._table.setSortingEnabled(True)
 
     def _update_selected_count(self):
@@ -196,7 +194,7 @@ class DataTab(QtWidgets.QWidget):
             if cb and cb.isChecked():
                 db = self._table.item(i, _COL_DB).text()
                 prefix = self._table.item(i, _COL_PREFIX).text()
-                if prefix == '(no prefix)':
+                if not prefix:
                     continue
                 selected.append((db, prefix))
         if not selected:
@@ -239,8 +237,7 @@ class DataTab(QtWidgets.QWidget):
         new_data = {(r[0], r[1]): r[2:] for r in rows}
         for i in range(self._table.rowCount()):
             db = self._table.item(i, _COL_DB).text()
-            prefix_text = self._table.item(i, _COL_PREFIX).text()
-            prefix = '' if prefix_text == '(no prefix)' else prefix_text
+            prefix = self._table.item(i, _COL_PREFIX).text()
             key = (db, prefix)
             old = old_data.get(key)
             new = new_data.get(key)

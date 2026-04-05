@@ -21,6 +21,13 @@ for %%F in (!REQ_FILES!) do (
     echo.
 )
 
+for /f "usebackq delims=" %%P in (`python scripts\extract_dynamic_deps.py`) do (
+    echo --- dynamic deps: %%P ---
+    python -m pip_audit -r "%%P" --no-deps -f columns
+    if errorlevel 1 set ERRFLAG=1
+    echo.
+)
+
 if !ERRFLAG!==1 (
     echo.
     echo Vulnerabilities found. Press Enter to close.

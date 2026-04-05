@@ -1,14 +1,10 @@
-import importlib
 import inspect
-import os
-import sys
 
 
 def register_all(registries):
     from ..plugin.loader import _get_registry_map
     registry_map = _get_registry_map()
-    builtins_dir = os.path.dirname(os.path.abspath(__file__))
-    for mod in _import_builtin_modules(builtins_dir):
+    for mod in _import_builtin_modules():
         for registry_key, cls in _discover_builtins(mod, registry_map):
             registry = registries.get(registry_key)
             if registry is not None:
@@ -28,35 +24,30 @@ def _discover_builtins(module, registry_map) -> list[tuple[str, type]]:
     return found
 
 
-def _import_builtin_modules(builtins_dir: str):
-    pkg_name = __package__
-    modules = []
-    for filename in sorted(os.listdir(builtins_dir)):
-        if filename.startswith('_') or filename == 'registration.py':
-            continue
-        filepath = os.path.join(builtins_dir, filename)
-        if filename.endswith('.py'):
-            mod_name = f'{pkg_name}.{filename[:-3]}'
-            mod = _safe_import(mod_name)
-            if mod:
-                modules.append(mod)
-        elif os.path.isdir(filepath) and os.path.isfile(os.path.join(filepath, '__init__.py')):
-            sub_pkg = f'{pkg_name}.{filename}'
-            _safe_import(sub_pkg)
-            for sub in sorted(os.listdir(filepath)):
-                if sub.startswith('_') or not sub.endswith('.py'):
-                    continue
-                mod_name = f'{sub_pkg}.{sub[:-3]}'
-                mod = _safe_import(mod_name)
-                if mod:
-                    modules.append(mod)
-    return modules
-
-
-def _safe_import(mod_name: str):
-    if mod_name in sys.modules:
-        return sys.modules[mod_name]
-    try:
-        return importlib.import_module(mod_name)
-    except Exception:
-        return None
+def _import_builtin_modules():
+    from . import devlog, filters, grid, layouts, rename_sources, sorts, viewer
+    from .batch_renamer import (
+        engine as _br_engine, overlay as _br_overlay, popup as _br_popup,
+        table as _br_table, widget as _br_widget,
+    )
+    from .commands import (
+        app as _cmd_app, database_commands, debug_commands, file_commands,
+        file_viewer, foldertree_commands, grid_commands, image_view, menu,
+        panel_commands, query_commands, session_commands, setting_commands,
+        tray, window_commands,
+    )
+    from .database_manager import widget as _dm_widget
+    from .plugin_manager import (
+        collectors_tab, data_tab, extensions_tab, viewers_tab,
+        widget as _pm_widget,
+    )
+    return [
+        devlog, filters, grid, layouts, rename_sources, sorts, viewer,
+        _br_engine, _br_overlay, _br_popup, _br_table, _br_widget,
+        _cmd_app, database_commands, debug_commands, file_commands,
+        file_viewer, foldertree_commands, grid_commands, image_view, menu,
+        panel_commands, query_commands, session_commands, setting_commands,
+        tray, window_commands,
+        _dm_widget,
+        collectors_tab, data_tab, extensions_tab, viewers_tab, _pm_widget,
+    ]

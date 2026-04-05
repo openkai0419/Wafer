@@ -48,6 +48,11 @@ class WD14Inference:
             f"input_name: {self.input_name}, output_name: {self.output_name}"
         )
 
+        active = self.session.get_providers()
+        gpu_providers = ('CUDAExecutionProvider', 'ROCmExecutionProvider', 'CoreMLExecutionProvider')
+        if not any(p in active for p in gpu_providers):
+            AppLogger.warning(f"WD14 running on CPU only ({active}). Inference will be significantly slower")
+
         with open(tags_path, 'r', encoding='utf-8') as f:
             reader = csv.DictReader(f)
             self.tag_names = []

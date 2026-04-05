@@ -13,7 +13,7 @@ if exist "%DST%" (
     for %%f in ("%DST%\*") do del /q "%%f"
 )
 
-set COMMON_XD=/XD __pycache__ .pytest_cache .prototypes
+set COMMON_XD=/XD __pycache__ .pytest_cache .prototypes .packages .shared_packages .venv venv env build dist .eggs
 set COMMON_XF=/XF *.pyc *.pyo *.pyd *.db *.db-shm *.db-wal *.ini *.-workspace
 
 if not exist "%DST%" mkdir "%DST%"

@@ -102,11 +102,9 @@ class CollectorReceiver:
         self._progress.send_event('update')
         AppLogger.info(f'[Receiver] Flushed {count} results')
         if self._detacher_writer:
-            from .detacher_receiver import trigger_detacher_pending
-            written_keys = {entry[1] for entry in data['meta_info_entries']}
-            written_keys.update(entry[1] for entry in data['tag_entries'])
-            sources = list({entry[0] for entry in data['collector_status']})
-            trigger_detacher_pending(written_keys, sources, self._detacher_writer, self._detacher_request_dispatch)
+            from .detacher_receiver import trigger_detacher_pending, _build_source_keys
+            source_keys = _build_source_keys(data)
+            trigger_detacher_pending(source_keys, self._detacher_writer, self._detacher_request_dispatch)
         if self._buffer.has_pending():
             self._schedule_flush()
 

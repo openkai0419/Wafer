@@ -16,10 +16,10 @@ class BindingManager:
     _instance: "BindingManager" | None = None
 
     def __init__(self, file_path: str | None = None, key_file_path: str | None = None):
-        base = Path(__file__).resolve().parent.parent
-        self._file = Path(file_path) if file_path else (base / "mouse_bindings.json")
+        from .presets import get_mouse_preset_path, get_key_preset_path
+        self._file = Path(file_path) if file_path else Path(get_mouse_preset_path())
         self._store = MouseBindingStore.instance()
-        self._key_file = Path(key_file_path) if key_file_path else (base / "key_bindings.json")
+        self._key_file = Path(key_file_path) if key_file_path else Path(get_key_preset_path())
         self._key_store = KeyBindingStore.instance()
         self._widgets: "WeakSet[QtWidgets.QWidget]" = WeakSet()
 

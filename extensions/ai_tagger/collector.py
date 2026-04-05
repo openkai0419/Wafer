@@ -24,9 +24,9 @@ class WD14TaggerCollector(BaseSingletonCollector):
     @classmethod
     def post_install(cls, plugin_dir, on_progress=None):
         from wafer.plugin.installer import install_packages
-        if not install_packages(plugin_dir, ['onnxruntime-gpu'], on_progress):
+        if not install_packages(plugin_dir, ['onnxruntime-gpu==1.23.2'], on_progress):
             AppLogger.warning('onnxruntime-gpu unavailable, falling back to CPU')
-            install_packages(plugin_dir, ['onnxruntime'], on_progress)
+            install_packages(plugin_dir, ['onnxruntime==1.23.2'], on_progress)
         ensure_model()
 
     def __init__(self):

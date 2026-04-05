@@ -23,6 +23,7 @@
 
 ■ Dispatcherを用意する。nai, webui, ComfiUI
 ■ 手動タグ作成/修正/登録機能
+■ coreのファイル配置をガッツリ整理したい
 
 ■ Zip対応
 ■ ViewerのリストとGridのリストを分離する。ViewerリストもったままGrid検索できるように

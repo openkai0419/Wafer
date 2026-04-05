@@ -27,7 +27,48 @@ class WD14TaggerCollector(BaseSingletonCollector):
         if not install_packages(plugin_dir, ['onnxruntime-gpu==1.23.2'], on_progress):
             AppLogger.warning('onnxruntime-gpu unavailable, falling back to CPU')
             install_packages(plugin_dir, ['onnxruntime==1.23.2'], on_progress)
+        else:
+            install_packages(
+                plugin_dir, ['nvidia-cudnn-cu12==9.5.1.17'],
+                on_progress, no_deps=True,
+            )
         ensure_model()
+        cls._verify_gpu_provider()
+
+    @staticmethod
+    def _verify_gpu_provider():
+        try:
+            from ._inference import _preload_cuda_libs
+            import onnxruntime as ort
+            _preload_cuda_libs()
+            available = ort.get_available_providers()
+            gpu_providers = ('CUDAExecutionProvider', 'ROCmExecutionProvider', 'CoreMLExecutionProvider')
+            if not any(p in available for p in gpu_providers):
+                AppLogger.warning(
+                    f"WD14 onnxruntime installed but no GPU provider found: {available}. "
+                    "Check CUDA/cuDNN installation"
+                )
+                return
+            providers = [p for p in available if p != 'TensorrtExecutionProvider']
+            try:
+                opts = ort.SessionOptions()
+                opts.log_severity_level = 3
+                test_session = ort.InferenceSession(
+                    str(ensure_model() / 'model.onnx'), providers=providers, sess_options=opts
+                )
+                active = test_session.get_providers()
+                del test_session
+            except Exception:
+                active = []
+            if any(p in active for p in gpu_providers):
+                AppLogger.info(f"WD14 GPU verified: {active}")
+            else:
+                AppLogger.warning(
+                    f"WD14 GPU provider listed ({available}) but session fell back to CPU ({active}). "
+                    "CUDA/cuDNN DLLs may be missing"
+                )
+        except ImportError:
+            AppLogger.warning("WD14 onnxruntime not importable after install")
 
     def __init__(self):
         self._engine: WD14Inference | None = None

@@ -286,7 +286,7 @@ def install_requirements(plugin_dir: str, on_progress=None) -> bool:
         return False
 
 
-def install_packages(plugin_dir: str, packages: list[str], on_progress=None) -> bool:
+def install_packages(plugin_dir: str, packages: list[str], on_progress=None, no_deps: bool = False) -> bool:
     vendor_dir = os.path.join(plugin_dir, _PACKAGES_DIR)
     os.makedirs(vendor_dir, exist_ok=True)
     try:
@@ -296,15 +296,18 @@ def install_packages(plugin_dir: str, packages: list[str], on_progress=None) -> 
         if not ep.is_ready:
             raise RuntimeError('Embedded Python is not ready')
         env = _pip_env(vendor_dir)
+        cmd = [
+            ep.exe_path, '-m', 'pip',
+            'install', '--target', vendor_dir,
+            '--upgrade',
+            *packages,
+            '--quiet', '--disable-pip-version-check',
+            '--no-cache-dir',
+        ]
+        if no_deps:
+            cmd.append('--no-deps')
         _run_subprocess(
-            [
-                ep.exe_path, '-m', 'pip',
-                'install', '--target', vendor_dir,
-                '--upgrade',
-                *packages,
-                '--quiet', '--disable-pip-version-check',
-                '--no-cache-dir',
-            ],
+            cmd,
             on_progress=on_progress,
             timeout=600,
             env=env,

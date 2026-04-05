@@ -10,24 +10,23 @@ from PIL import Image
 from wafer.utils.logs import AppLogger
 
 
-def _add_nvidia_dll_paths():
-    if sys.platform != 'win32' or not hasattr(os, 'add_dll_directory'):
+def _preload_cuda_libs():
+    if sys.platform != 'win32':
         return
     try:
-        nvidia_dir = Path(ort.__file__).parent.parent / 'nvidia'
-        if not nvidia_dir.exists():
-            return
-        for bin_dir in nvidia_dir.rglob('bin'):
-            if bin_dir.is_dir():
-                bin_str = str(bin_dir)
-                if bin_str not in os.environ.get('PATH', ''):
-                    os.environ['PATH'] = bin_str + os.pathsep + os.environ.get('PATH', '')
-                os.add_dll_directory(bin_str)
+        ort.preload_dlls(cuda=True, cudnn=True, msvc=True)
     except Exception as e:
-        AppLogger.debug(f'_add_nvidia_dll_paths failed: {e}')
+        AppLogger.debug(f'_preload_cuda_libs failed: {e}')
+    cuda_path = os.environ.get('CUDA_PATH', '')
+    if cuda_path:
+        cuda_bin = Path(cuda_path) / 'bin'
+        if cuda_bin.is_dir() and hasattr(os, 'add_dll_directory'):
+            os.add_dll_directory(str(cuda_bin))
+            if str(cuda_bin) not in os.environ.get('PATH', ''):
+                os.environ['PATH'] = str(cuda_bin) + os.pathsep + os.environ.get('PATH', '')
 
 
-_add_nvidia_dll_paths()
+_preload_cuda_libs()
 
 
 class WD14Inference:

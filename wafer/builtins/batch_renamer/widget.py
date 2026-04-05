@@ -66,6 +66,23 @@ def _fetch_metadata_sync(db_path, paths_str):
     return result
 
 
+def _fill_fs_timestamps(paths, keys, metadata):
+    _TS_KEYS = ('modified', 'created')
+    for path, key in zip(paths, keys):
+        entry = metadata.get(key)
+        if entry and all(k in entry for k in _TS_KEYS):
+            continue
+        try:
+            st = os.stat(path)
+        except OSError:
+            continue
+        d = metadata.setdefault(key, {})
+        if 'modified' not in d:
+            d['modified'] = str(st.st_mtime)
+        if 'created' not in d:
+            d['created'] = str(st.st_ctime)
+
+
 class BatchRenameWidget(QtWidgets.QWidget):
     _ADD_COL_LABEL = '+'
     THUMB_CACHE_LIMIT = 200
@@ -168,11 +185,45 @@ class BatchRenameWidget(QtWidgets.QWidget):
         self._stack.addWidget(self._rename_page)
         self._stack.setCurrentWidget(self._empty_page)
 
+        self.setAcceptDrops(True)
+
+    def dragEnterEvent(self, event: QtGui.QDragEnterEvent):
+        mime = event.mimeData()
+        if mime and mime.hasUrls():
+            for url in mime.urls():
+                if url.isLocalFile():
+                    event.acceptProposedAction()
+                    return
+        super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event: QtGui.QDragMoveEvent):
+        event.acceptProposedAction()
+
+    def dropEvent(self, event: QtGui.QDropEvent):
+        mime = event.mimeData()
+        if not mime or not mime.hasUrls():
+            return
+        paths = []
+        for url in mime.urls():
+            if url.isLocalFile():
+                p = Path(url.toLocalFile())
+                if p.is_file():
+                    paths.append(p)
+        if not paths:
+            return
+        event.acceptProposedAction()
+        win = self.window()
+        db_path = getattr(win, 'database_path', None)
+        if not self._paths or self._db_path != db_path:
+            self.set_files(paths, db_path=db_path)
+        else:
+            self.add_files(paths)
+
     def _build_empty_page(self, p):
         page = QtWidgets.QWidget()
         lay = QtWidgets.QVBoxLayout(page)
         lay.setAlignment(Qt.AlignCenter)
-        msg = QtWidgets.QLabel('Select files and run Batch Renamer')
+        msg = QtWidgets.QLabel('Select files and run Batch Renamer\nor drop files here')
         msg.setStyleSheet(
             f"color: {p.text_muted}; font-size: {dpix(13)}px;"
         )
@@ -476,6 +527,9 @@ class BatchRenameWidget(QtWidgets.QWidget):
             if cancel.is_cancelled():
                 return
             metadata = _fetch_metadata_sync(db_path, keys) if db_path else {}
+            if cancel.is_cancelled():
+                return
+            _fill_fs_timestamps(paths, keys, metadata)
             if cancel.is_cancelled():
                 return
             self._dispatcher.invoke(
@@ -1028,7 +1082,6 @@ class BatchRenameWidget(QtWidgets.QWidget):
             "path": paths[0],
             "paths": paths,
         })
-        AppLogger.debug(f'[_show_row_menu] {self._paths[rows[0]].name}/ {len(rows)}')
         if len(rows) == 1:
             remove_display = f'Remove "{self._paths[rows[0]].name}"'
         else:

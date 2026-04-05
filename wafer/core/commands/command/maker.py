@@ -22,7 +22,13 @@ class MenuPlan:
         self.has_inline = has_inline
 
     def resolve_tokens(self) -> list[str]:
-        return [x.token for x in self._items]
+        out = []
+        for x in self._items:
+            if x.kind == "unfound":
+                out.append(f"__unfound__:{x.command_id}")
+            else:
+                out.append(x.token)
+        return out
 
     def hide(self, targets: Iterable[str]) -> "MenuPlan":
         ts = [str(t).strip().strip("/") for t in list(targets or []) if str(t).strip()]
@@ -129,7 +135,7 @@ class MenuMaker:
             if CommandRegistry.instance().has_command(cid):
                 canon = str(token)
             else:
-                raise ValueError(f"Unknown command id: {cid}")
+                return _ResolvedItem(token=str(token), kind="unfound", command_id=cid, canonical_path="")
         return _ResolvedItem(token=str(token), kind="cmd", command_id=cid, canonical_path=str(canon))
 
     @staticmethod
@@ -156,7 +162,7 @@ class MenuMaker:
                 return [MenuMaker._item_to_resolved(hub, n) for n in names]
             cid = split_menu_path(s)[-1]
             if not hub.get_path_by_command_id(cid):
-                raise ValueError(f"Unknown command path or folder: {s}")
+                return [_ResolvedItem(token=s, kind="unfound", command_id=cid, canonical_path="")]
             return [MenuMaker._item_to_resolved(hub, s)]
         canon = hub.get_path_by_command_id(s)
         if canon:
@@ -170,7 +176,7 @@ class MenuMaker:
         if hub.has_folder(s):
             names = hub.collect_items_by_folder(s, rebase_to=s)
             return [MenuMaker._item_to_resolved(hub, n) for n in names]
-        raise ValueError(f"Unknown command or folder id: {s}")
+        return [_ResolvedItem(token=s, kind="unfound", command_id=s, canonical_path="")]
 
     @staticmethod
     def _flatten_for_use(hub: MenuHub, token: str, base: str) -> str:

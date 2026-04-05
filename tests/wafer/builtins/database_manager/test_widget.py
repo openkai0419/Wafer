@@ -618,7 +618,7 @@ class TestDatabaseManagerSaveCancel:
         revert_btn = dlg.findChild(QtWidgets.QPushButton, 'cancel_btn')
         assert save_btn is not None
         assert revert_btn is not None
-        assert revert_btn.text() == 'Revert'
+        assert revert_btn.text() == 'Cancel'
 
     def test_save_sends_rescan(self, qtbot, tmp_path, monkeypatch):
         sdb_path = str(tmp_path / 'test_db.db')

@@ -94,11 +94,16 @@ class TestDevLogPanelPlugin:
         assert DevLogPanelPlugin.CLOSABLE is True
 
     def test_create_widget_returns_devlog_panel(self, qtbot):
+        from wafer.utils.logs import AppLogger
+        signals = [AppLogger.on_debug, AppLogger.on_info, AppLogger.on_warning, AppLogger.on_error, AppLogger.on_critical]
+        saved = [list(s._callbacks) for s in signals]
         plugin = DevLogPanelPlugin()
         widget = plugin.create_widget()
         qtbot.addWidget(widget)
         assert isinstance(widget, DevLogPanel)
         DevLogPanel._instance = None
+        for s, cb in zip(signals, saved):
+            s._callbacks = cb
 
     def test_registered_in_panel_registry(self):
         from wafer.plugin.panel.handler import panel_registry

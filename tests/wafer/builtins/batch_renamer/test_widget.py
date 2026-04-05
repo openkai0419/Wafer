@@ -9,6 +9,7 @@ from PySide6.QtCore import Qt
 from wafer.builtins.batch_renamer.widget import (
     BatchRenameWidget,
     _fetch_metadata_sync,
+    _fill_fs_timestamps,
 )
 from wafer.builtins.batch_renamer.engine import (
     PostProcess,
@@ -136,6 +137,45 @@ class TestFetchMetadataSync:
 
     def test_missing_db(self):
         assert _fetch_metadata_sync('/nonexistent/db.sqlite', ['a.jpg']) == {}
+
+
+class TestFillFsTimestamps:
+
+    def test_fills_missing_timestamps(self, tmp_path):
+        f = tmp_path / 'a.txt'
+        f.write_text('hello')
+        st = os.stat(f)
+        metadata: dict[str, dict[str, str]] = {}
+        key = str(f).replace('\\', '/')
+        _fill_fs_timestamps([f], [key], metadata)
+        assert key in metadata
+        assert float(metadata[key]['modified']) == pytest.approx(st.st_mtime, abs=1)
+        assert float(metadata[key]['created']) == pytest.approx(st.st_ctime, abs=1)
+
+    def test_skips_when_both_present(self, tmp_path):
+        f = tmp_path / 'b.txt'
+        f.write_text('hello')
+        key = str(f).replace('\\', '/')
+        metadata = {key: {'modified': '1000', 'created': '2000'}}
+        _fill_fs_timestamps([f], [key], metadata)
+        assert metadata[key]['modified'] == '1000'
+        assert metadata[key]['created'] == '2000'
+
+    def test_fills_only_missing_keys(self, tmp_path):
+        f = tmp_path / 'c.txt'
+        f.write_text('hello')
+        st = os.stat(f)
+        key = str(f).replace('\\', '/')
+        metadata = {key: {'modified': '1000'}}
+        _fill_fs_timestamps([f], [key], metadata)
+        assert metadata[key]['modified'] == '1000'
+        assert float(metadata[key]['created']) == pytest.approx(st.st_ctime, abs=1)
+
+    def test_skips_nonexistent_file(self):
+        key = 'Z:/no/such/file.txt'
+        metadata: dict[str, dict[str, str]] = {}
+        _fill_fs_timestamps([Path(key)], [key], metadata)
+        assert metadata == {}
 
 
 
@@ -1455,3 +1495,149 @@ class TestContextMenu:
         assert captured_seed is not None
         assert len(captured_seed.extras["paths"]) == 1
         assert captured_seed.extras["path"] == str(files_1[0])
+
+
+def _make_mime(urls):
+    mime = QtCore.QMimeData()
+    mime.setUrls([QtCore.QUrl.fromLocalFile(str(u)) for u in urls])
+    return mime
+
+
+def _make_drop_event(mime, pos=None):
+    if pos is None:
+        pos = QtCore.QPointF(10, 10)
+    ev = QtGui.QDropEvent(
+        pos,
+        Qt.CopyAction | Qt.MoveAction,
+        mime,
+        Qt.LeftButton,
+        Qt.NoModifier,
+    )
+    return ev
+
+
+def _make_drag_enter_event(mime, pos=None):
+    if pos is None:
+        pos = QtCore.QPoint(10, 10)
+    return QtGui.QDragEnterEvent(
+        pos,
+        Qt.CopyAction | Qt.MoveAction,
+        mime,
+        Qt.LeftButton,
+        Qt.NoModifier,
+    )
+
+
+class TestDropFiles:
+
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    def test_drag_enter_accepts_local_files(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        mime = _make_mime(tmp_files)
+        event = _make_drag_enter_event(mime)
+        dlg.dragEnterEvent(event)
+        assert event.isAccepted()
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    def test_drag_enter_rejects_no_urls(self, mock_init, qtbot):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        mime = QtCore.QMimeData()
+        mime.setText("hello")
+        event = _make_drag_enter_event(mime)
+        dlg.dragEnterEvent(event)
+        assert not event.isAccepted()
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    def test_drop_sets_files_when_empty(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        assert dlg._paths == []
+        mime = _make_mime(tmp_files)
+        event = _make_drop_event(mime)
+        dlg.dropEvent(event)
+        assert len(dlg._paths) == 3
+        assert dlg._stack.currentWidget() == dlg._rename_page
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    def test_drop_adds_files_to_existing(self, mock_init, qtbot, tmp_path):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        first = [tmp_path / 'a.jpg']
+        first[0].write_bytes(b'\x00')
+        dlg.set_files(first)
+        assert len(dlg._paths) == 1
+
+        extra = [tmp_path / 'b.jpg', tmp_path / 'c.jpg']
+        for f in extra:
+            f.write_bytes(b'\x00')
+        mime = _make_mime(extra)
+        event = _make_drop_event(mime)
+        dlg.dropEvent(event)
+        assert len(dlg._paths) == 3
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    def test_drop_deduplicates(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files[:2])
+        assert len(dlg._paths) == 2
+        mime = _make_mime(tmp_files)
+        event = _make_drop_event(mime)
+        dlg.dropEvent(event)
+        assert len(dlg._paths) == 3
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    def test_drop_ignores_directories(self, mock_init, qtbot, tmp_path):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        sub = tmp_path / "subdir"
+        sub.mkdir()
+        mime = _make_mime([sub])
+        event = _make_drop_event(mime)
+        dlg.dropEvent(event)
+        assert dlg._paths == []
+        dlg.close()
+
+
+class TestStandaloneLaunch:
+
+    def test_open_batch_renamer_toggles_panel_with_mainwindow(self):
+        from wafer.builtins.commands.app import open_batch_renamer
+        mock_ctx = MagicMock()
+        mock_w = MagicMock()
+        mock_ctx.get_instance = lambda name: mock_w if name == "MainWindow" else None
+        open_batch_renamer(mock_ctx)
+        mock_w._layout_manager.toggle_panel.assert_called_once_with("Batch Renamer")
+
+    def test_open_batch_renamer_standalone_without_mainwindow(self, qtbot, monkeypatch):
+        from wafer.builtins.commands.app import open_batch_renamer, _standalone_dialogs
+
+        class _FakeStore:
+            def __init__(self, *a, **kw): pass
+            def save(self, *a, **kw): pass
+            def restore(self, *a, **kw): pass
+
+        monkeypatch.setattr(
+            'wafer.builtins.commands.app.DialogLayoutStore',
+            _FakeStore,
+        )
+        _standalone_dialogs.pop("batch_renamer", None)
+        mock_ctx = MagicMock()
+        mock_ctx.get_instance = lambda name: None
+        with patch.object(BatchRenameWidget, '_start_async_init'):
+            open_batch_renamer(mock_ctx)
+        assert "batch_renamer" in _standalone_dialogs
+        dlg = _standalone_dialogs["batch_renamer"]
+        dlg.setAttribute(QtCore.Qt.WA_DeleteOnClose, False)
+        qtbot.addWidget(dlg)
+
+    def test_command_registered_with_star_scope(self):
+        from wafer.builtins.commands.app import BatchRenamerCommands
+        assert BatchRenamerCommands.SCOPE == "*"

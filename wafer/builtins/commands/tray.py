@@ -108,14 +108,18 @@ class TrayMenu(ActionKit.MenuBase):
     @classmethod
     def commands(cls):
         items = [
-            ActionKit.Command(path="show_window", display="Show Window", func=show_window),
-            ActionKit.Command(path="open_new_window", display="New Window", func=open_new_window),
+            ":Wafer",
+            ActionKit.Command(path="show_window", display="Show Viewer", func=show_window),
+            ActionKit.Command(path="open_new_window", display="New Viewer", func=open_new_window),
             "-",
+            ":Database",
             ActionKit.Command(path="rescan_all", display="ReScan All", func=rescan_all),
             ActionKit.Command(path="cleanup_optimize", display="Cleanup and Optimize", func=cleanup_optimize),
             "-",
+            ":Popups",
             "setting.database_manager",
             "setting.plugin_manager",
+            "setting.batch_renamer",
         ]
         if DEV_MODE:
             items += [

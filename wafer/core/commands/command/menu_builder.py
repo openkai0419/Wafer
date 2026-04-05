@@ -135,6 +135,11 @@ class CommandMenuBuilder(TranslatorMixin):
         self._active_seed_ctx = seed_ctx
         checkable_tracker: list[tuple] = []
         for name in command_names:
+            if name.startswith("__unfound__:"):
+                unfound_id = name[len("__unfound__:"):]
+                act = menu.addAction(f"- Unenabled {unfound_id}")
+                act.setEnabled(False)
+                continue
             if is_sep_token(name):
                 parts = sep_path(str(name))
                 if not parts:

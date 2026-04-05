@@ -6,18 +6,27 @@ from wafer.core.commands.command.maker import MenuMaker, MenuHub
 from wafer.core.commands.command.menu import is_sep_token, is_section_token
 
 
-def test_build_menu_ignores_unknown_item(qtbot):
+def test_build_menu_shows_unfound_for_unknown_item(qtbot):
     w = QtWidgets.QWidget()
     qtbot.addWidget(w)
-    result = Menu.session(w).menu(["__unknown_command_or_folder__"])
-    assert result is None
+    spec = Menu.session(w).menu(["__unknown_command_or_folder__"])
+    assert spec is not None
+    menu_widget = spec.build()
+    actions = menu_widget.actions()
+    assert len(actions) == 1
+    assert not actions[0].isEnabled()
+    assert actions[0].text() == "- Unenabled __unknown_command_or_folder__"
 
 
 def test_build_menu_does_not_expand_string_to_chars(qtbot):
     w = QtWidgets.QWidget()
     qtbot.addWidget(w)
-    result = Menu.session(w).menu("menu")
-    assert result is None
+    spec = Menu.session(w).menu("menu")
+    assert spec is not None
+    menu_widget = spec.build()
+    actions = menu_widget.actions()
+    assert len(actions) == 1
+    assert "menu" in actions[0].text()
 
 
 class TestRebaseToken:

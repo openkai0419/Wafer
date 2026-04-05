@@ -169,6 +169,37 @@ class TestAllRootsPriority:
         plan = maker.all_roots()
         assert _unique_roots_from_tokens(plan.resolve_tokens()) == ["Ext", "Core"]
 
+
+def test_unfound_command_returns_unfound_token():
+    _register_dummy_menu()
+    maker = MenuMaker()
+    plan = maker.menu(["t.file.open", "no.such.cmd", "t.file.run"])
+    tokens = plan.resolve_tokens()
+    assert tokens[0] == "t.file.open"
+    assert tokens[1] == "__unfound__:no.such.cmd"
+    assert tokens[2] == "t.file.run"
+
+
+def test_unfound_path_command_returns_unfound_token():
+    _register_dummy_menu()
+    maker = MenuMaker()
+    plan = maker.menu(["some/folder/no.exist"])
+    tokens = plan.resolve_tokens()
+    assert len(tokens) == 1
+    assert tokens[0] == "__unfound__:no.exist"
+
+
+def test_unfound_does_not_break_other_items():
+    _register_dummy_menu()
+    maker = MenuMaker()
+    plan = maker.menu([":Section", "t.file.open", "missing.cmd", "-", "t.file.run"])
+    tokens = plan.resolve_tokens()
+    assert ":Section" in tokens
+    assert "t.file.open" in tokens
+    assert "__unfound__:missing.cmd" in tokens
+    assert "-" in tokens
+    assert "t.file.run" in tokens
+
     def test_ordered_items_placed_after_unordered(self):
         hub = MenuHub.instance()
         groups = [

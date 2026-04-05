@@ -338,6 +338,7 @@ def shell_context_menu(ctx):
 
 class FileCommands(ActionKit.MenuBase):
     NAME = "File"
+    SCOPE = "*"
     PRIORITY = 10
 
     @classmethod
@@ -396,7 +397,16 @@ class FileCommands(ActionKit.MenuBase):
                 ],
                 func=make_new_folder_here,
             ),
-            "-",
+        ]
+
+
+class FileViewerCommands(ActionKit.MenuBase):
+    NAME = "File"
+    PRIORITY = 10
+
+    @classmethod
+    def commands(cls):
+        return [
             ":Wafer",
             ActionKit.Command(path="file.show_file", display="Show at FileViewer", func=show_file),
             ActionKit.Command(path="file.select_path", display="Select at FolderTree", func=select_path),

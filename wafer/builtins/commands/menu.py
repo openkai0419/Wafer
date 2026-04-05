@@ -1,40 +1,9 @@
 from ...core.commands.bridge import ActionKit, Menu, Settings
-from ...core.commands.command.menu import discover_command_classes
 from ...utils.paths import resolve_data_path
-from . import (
-    file_commands,
-    foldertree_commands,
-    image_view,
-    file_viewer,
-    grid_commands,
-    window_commands,
-    query_commands,
-    database_commands,
-    setting_commands,
-    debug_commands,
-    session_commands,
-    panel_commands,
-)
 from .file_commands import FileCommands
 from .foldertree_commands import show_context_menu
 from .image_view import ImageViewCommands
 from .setting_commands import _restore_thumbnail_size
-
-
-_COMMAND_MODULES = [
-    file_commands,
-    query_commands,
-    foldertree_commands,
-    grid_commands,
-    file_viewer,
-    image_view,
-    window_commands,
-    database_commands,
-    setting_commands,
-    debug_commands,
-    session_commands,
-    panel_commands,
-]
 
 
 class AppMenuRegistrar(ActionKit.MenuBase):
@@ -60,9 +29,6 @@ class AppMenuRegistrar(ActionKit.MenuBase):
         )
         from wafer.plugin.loader import get_command_registry
         registry = get_command_registry()
-        for cls in discover_command_classes(*_COMMAND_MODULES):
-            registry.register(cls)
-        registry.register(AppMenuRegistrar)
         registry.activate('viewer')
         _restore_thumbnail_size()
         Settings.activate()

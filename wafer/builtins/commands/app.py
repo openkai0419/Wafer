@@ -64,6 +64,15 @@ def open_database_manager(ctx):
     )
 
 
+def open_batch_renamer(ctx):
+    from ..batch_renamer.widget import BatchRenameWidget
+    _toggle_or_standalone(
+        ctx, "Batch Renamer",
+        BatchRenameWidget, "batch_renamer",
+        size=(dpix(600), dpix(800)),
+    )
+
+
 def restart_tray(ctx):
     AppProcess.terminate_cmd('--tray')
     AppProcess.new_main('--tray')
@@ -141,5 +150,22 @@ class DatabaseManagerCommands(ActionKit.MenuBase):
                 path="setting.database_manager",
                 display="Database Manager",
                 func=open_database_manager,
+            ),
+        ]
+
+
+class BatchRenamerCommands(ActionKit.MenuBase):
+    NAME = "Setting"
+    PRIORITY = 85
+    SCOPE = "*"
+
+    @classmethod
+    def commands(cls):
+        return [
+            ":Tools",
+            ActionKit.Command(
+                path="setting.batch_renamer",
+                display="Batch Renamer",
+                func=open_batch_renamer,
             ),
         ]

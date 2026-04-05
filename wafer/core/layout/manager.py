@@ -161,11 +161,21 @@ class LayoutManager(QtCore.QObject):
     def is_panel_visible(self, name: str) -> bool:
         return name in self._tree.all_names() and name not in self._tree.collapsed
 
+    def ensure_panel_visible(self, name: str):
+        if not self.is_panel_visible(name):
+            self.toggle_panel(name)
+
     def is_panel_collapsed(self, name: str) -> bool:
         return name in self._tree.collapsed
 
     def panel_names(self) -> list[str]:
         return list(self._panels.keys())
+
+    def panel_widget(self, name: str) -> QtWidgets.QWidget | None:
+        entry = self._panels.get(name)
+        if entry is None:
+            return None
+        return self._ensure_widget(entry)
 
     def dormant_panels(self) -> list[str]:
         active = self._tree.all_names()

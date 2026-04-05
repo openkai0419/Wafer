@@ -8,22 +8,23 @@ from typing import Any
 from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
 
-from ....builtins.rename_sources import ExtSource, NameSource
-from ....core.color.theme import ThemeManager
-from ....core.platform.file_operations import PastePlanItem
-from ....core.platform.paste import execute_paste_plans_with_ui
-from ....core.qt.dispatcher import Dispatcher, CancelToken
-from ....core.qt.rate_limit import qt_throttle
-from ....core.qt.thread import utility_pool
-from ....utils.formatting import dpix, natural_key
-from ....utils.logs import AppLogger
+from ..rename_sources import ExtSource, NameSource
+from ...core.color.theme import ThemeManager
+from ...core.platform.file_operations import PastePlanItem
+from ...core.platform.paste import execute_paste_plans_with_ui
+from ...core.qt.dispatcher import Dispatcher, CancelToken
+from ...core.qt.rate_limit import qt_throttle
+from ...core.qt.thread import utility_pool
+from ...utils.formatting import dpix, natural_key
+from ...utils.logs import AppLogger
 from .engine import PostProcess, RenameColumn, RenameEngine, RenameResult
 from .overlay import ThumbnailOverlay
 from .popup import ColumnSettingsPopup
 from .table import (
     PreviewModel, SegmentModel, PreviewDelegate, SyncedView, ColorSet,
 )
-from ....plugin.rename.handler import rename_source_registry
+from ...plugin.rename.handler import rename_source_registry
+from ...plugin.panel.base import BasePanelPlugin
 
 
 _SQL_CHUNK_SIZE = 4000
@@ -64,35 +65,18 @@ def _fetch_metadata_sync(db_path, paths_str):
     return result
 
 
-class BatchRenameDialog(QtWidgets.QDialog):
+class BatchRenameWidget(QtWidgets.QWidget):
     _ADD_COL_LABEL = '+'
     THUMB_CACHE_LIMIT = 200
-    _instance: BatchRenameDialog | None = None
     _saved_state: dict[str, Any] = {}
     _registered: bool = False
-
-    @classmethod
-    def open(
-        cls,
-        paths: list[Path],
-        keys: list[str] | None = None,
-        db_path: Any = None,
-        parent: QtWidgets.QWidget | None = None,
-    ) -> BatchRenameDialog:
-        if cls._instance is not None:
-            cls._instance.close()
-            cls._instance = None
-        dlg = cls(paths, keys=keys, db_path=db_path, parent=parent)
-        cls._instance = dlg
-        dlg.show()
-        return dlg
 
     @classmethod
     def _ensure_registered(cls):
         if cls._registered:
             return
         cls._registered = True
-        from ....core.state import StateStore
+        from ...core.state import StateStore
         StateStore.instance().register(
             'batch_rename',
             lambda: dict(cls._saved_state),
@@ -103,29 +87,19 @@ class BatchRenameDialog(QtWidgets.QDialog):
     def _on_state_restore(cls, state: dict):
         cls._saved_state = state
 
-    def __init__(
-        self,
-        paths: list[Path],
-        keys: list[str] | None = None,
-        db_path: Any = None,
-        parent=None,
-    ):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle('Batch Rename')
-        self.setWindowFlags(self.windowFlags() | Qt.Tool)
-        self.setAttribute(Qt.WA_DeleteOnClose)
-        self.destroyed.connect(self._on_destroyed)
 
         self._dispatcher = Dispatcher(pool=utility_pool)
         self._init_cancel: CancelToken | None = None
         self._thumb_tokens: dict[int, CancelToken] = {}
         self._thumb_visible: set[int] = set()
 
-        self._paths = list(paths)
-        self._keys = list(keys) if keys else [str(p).replace('\\', '/') for p in paths]
-        self._initial_keys = list(self._keys)
-        self._initial_paths = list(paths)
-        self._db_path = db_path
+        self._paths: list[Path] = []
+        self._keys: list[str] = []
+        self._initial_keys: list[str] = []
+        self._initial_paths: list[Path] = []
+        self._db_path: Any = None
         self._metadata: dict[str, dict[str, str]] = {}
 
         self._columns: list[RenameColumn] = [RenameColumn(NameSource())]
@@ -141,7 +115,6 @@ class BatchRenameDialog(QtWidgets.QDialog):
         self._syncing_selection = False
         self._refreshing = False
         self._refresh_cancel: CancelToken | None = None
-        self._init_done = False
         self._selected_row = -1
         self._thumb_cache: collections.OrderedDict[str, QtGui.QPixmap] = collections.OrderedDict()
         self._sort_indicator: tuple[str, int, bool] | None = None
@@ -153,22 +126,117 @@ class BatchRenameDialog(QtWidgets.QDialog):
         self._mono.setStyleHint(QtGui.QFont.Monospace)
         self._mono.setPixelSize(dpix(12))
 
-        self.setStyleSheet(f"QDialog {{ background: {p.bg_primary}; }}")
-
         root = QtWidgets.QVBoxLayout(self)
-        root.setContentsMargins(dpix(8), dpix(8), dpix(8), dpix(8))
-        root.setSpacing(dpix(6))
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        self._stack = QtWidgets.QStackedWidget()
+        root.addWidget(self._stack)
+
+        self._empty_page = self._build_empty_page(p)
+        self._stack.addWidget(self._empty_page)
+
+        self._rename_page = QtWidgets.QWidget()
+        self._rename_page.setStyleSheet(f"background: {p.bg_primary};")
+        rename_lay = QtWidgets.QVBoxLayout(self._rename_page)
+        rename_lay.setContentsMargins(dpix(8), dpix(8), dpix(8), dpix(8))
+        rename_lay.setSpacing(dpix(6))
 
         title = QtWidgets.QLabel(self._title_text())
         self._title = title
         title.setStyleSheet(
             f"color: {p.text_primary}; font-size: {dpix(13)}px; font-weight: bold;"
         )
-        root.addWidget(title)
+        rename_lay.addWidget(title)
 
-        self._init_preview_table(root)
-        self._init_segment_table(root)
-        self._init_bottom_bar(root)
+        self._init_preview_table(rename_lay)
+        self._init_segment_table(rename_lay)
+        self._init_bottom_bar(rename_lay)
+
+        self._stack.addWidget(self._rename_page)
+        self._stack.setCurrentWidget(self._empty_page)
+
+    def _build_empty_page(self, p):
+        page = QtWidgets.QWidget()
+        lay = QtWidgets.QVBoxLayout(page)
+        lay.setAlignment(Qt.AlignCenter)
+        msg = QtWidgets.QLabel('Select files and run Batch Rename')
+        msg.setStyleSheet(
+            f"color: {p.text_muted}; font-size: {dpix(13)}px;"
+        )
+        msg.setAlignment(Qt.AlignCenter)
+        lay.addWidget(msg)
+        return page
+
+    def set_files(self, paths: list[Path], keys: list[str] | None = None,
+                  db_path: Any = None):
+        self._cancel_all_pending()
+        self._db_path = db_path
+        self._paths = list(paths)
+        self._keys = list(keys) if keys else [
+            str(p).replace('\\', '/') for p in paths
+        ]
+        self._initial_keys = list(self._keys)
+        self._initial_paths = list(self._paths)
+        self._metadata = {}
+        self._excluded.clear()
+        self._thumb_cache.clear()
+        self._thumb_visible.clear()
+        self._reset_columns()
+        self._title.setText(self._title_text())
+        self._stack.setCurrentWidget(self._rename_page)
+        self._rebuild()
+        self._start_async_init()
+
+    def add_files(self, paths: list[Path], keys: list[str] | None = None):
+        if not self._paths:
+            self.set_files(paths, keys, self._db_path)
+            return
+        existing = {str(p) for p in self._paths}
+        new_paths = [p for p in paths if str(p) not in existing]
+        if not new_paths:
+            return
+        if keys:
+            path_to_key = dict(zip(paths, keys))
+            new_keys = [path_to_key.get(p, str(p).replace('\\', '/'))
+                        for p in new_paths]
+        else:
+            new_keys = [str(p).replace('\\', '/') for p in new_paths]
+        self._paths.extend(new_paths)
+        self._keys.extend(new_keys)
+        self._initial_paths = list(self._paths)
+        self._initial_keys = list(self._keys)
+        self._title.setText(self._title_text())
+        self._rebuild()
+        self._start_async_init()
+
+    def reset(self):
+        self._cancel_all_pending()
+        self._paths.clear()
+        self._keys.clear()
+        self._initial_paths.clear()
+        self._initial_keys.clear()
+        self._db_path = None
+        self._metadata.clear()
+        self._excluded.clear()
+        self._results.clear()
+        self._global_errors.clear()
+        self._thumb_cache.clear()
+        self._thumb_visible.clear()
+        self._reset_columns()
+        self._close_popup()
+        self._stack.setCurrentWidget(self._empty_page)
+
+    def _cancel_all_pending(self):
+        if self._init_cancel:
+            self._init_cancel.cancel()
+            self._init_cancel = None
+        if self._refresh_cancel:
+            self._refresh_cancel.cancel()
+            self._refresh_cancel = None
+        for token in self._thumb_tokens.values():
+            token.cancel()
+        self._thumb_tokens.clear()
 
     def _frame_stylesheet(self):
         p = self._p
@@ -337,20 +405,7 @@ class BatchRenameDialog(QtWidgets.QDialog):
         self._rename_btn.clicked.connect(self._execute)
         bar.addWidget(self._rename_btn)
 
-        cancel_btn = QtWidgets.QPushButton('Cancel')
-        cancel_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {p.text_secondary}; "
-            f"border: 1px solid {p.border_default}; border-radius: {dpix(4)}px; "
-            f"padding: {dpix(5)}px {dpix(12)}px; font-size: {dpix(12)}px; }}"
-            f"QPushButton:hover {{ background: {p.bg_hover}; }}"
-        )
-        cancel_btn.clicked.connect(self.close)
-        bar.addWidget(cancel_btn)
         root.addLayout(bar)
-
-    @classmethod
-    def _on_destroyed(cls, *_args):
-        cls._instance = None
 
     def _update_source_defaults(self):
         for col in self._columns:
@@ -363,14 +418,10 @@ class BatchRenameDialog(QtWidgets.QDialog):
 
     def _serialise_columns(self) -> dict[str, Any]:
         self._update_source_defaults()
-        state: dict[str, Any] = {
+        return {
             'source_defaults': dict(self._source_defaults),
             'opacity': self._opacity_slider.value(),
         }
-        geo = self.saveGeometry().toBase64().data()
-        if geo:
-            state['geometry'] = geo.decode('ascii')
-        return state
 
     def _restore_source_defaults(self):
         state = self._saved_state
@@ -378,25 +429,12 @@ class BatchRenameDialog(QtWidgets.QDialog):
             return
         self._source_defaults = dict(state.get('source_defaults', {}))
 
-    def showEvent(self, event):
-        super().showEvent(event)
-        if not self._init_done:
-            self._init_done = True
-            self._restore_ui_from_state()
-            self._rebuild()
-            if 'geometry' not in self._saved_state:
-                self._resize_to_content()
-            self._start_async_init()
-
     def _restore_ui_from_state(self):
         state = self._saved_state
         if not state:
             return
         if 'opacity' in state:
             self._opacity_slider.setValue(state['opacity'])
-        geo = state.get('geometry')
-        if geo:
-            self.restoreGeometry(QtCore.QByteArray.fromBase64(geo.encode('ascii')))
 
     def _start_async_init(self):
         cancel = CancelToken()
@@ -471,7 +509,7 @@ class BatchRenameDialog(QtWidgets.QDialog):
         thumb_size = QtCore.QSize(dpix(256), dpix(256))
 
         def task():
-            from ....plugin.grid.handler import load_thumbnail
+            from ...plugin.grid.handler import load_thumbnail
             for r, p, tok in rows_tokens:
                 if tok.is_cancelled():
                     continue
@@ -496,17 +534,10 @@ class BatchRenameDialog(QtWidgets.QDialog):
             self._thumb_cache.popitem(last=False)
         self._overlay.update()
 
-    def closeEvent(self, event):
-        BatchRenameDialog._saved_state = self._serialise_columns()
-        if self._init_cancel:
-            self._init_cancel.cancel()
-        if self._refresh_cancel:
-            self._refresh_cancel.cancel()
-        for token in self._thumb_tokens.values():
-            token.cancel()
-        self._thumb_tokens.clear()
-        self._close_popup()
-        super().closeEvent(event)
+    def hideEvent(self, event):
+        self._cancel_all_pending()
+        BatchRenameWidget._saved_state = self._serialise_columns()
+        super().hideEvent(event)
 
     def _title_text(self):
         t = f'Batch Rename \u2014 {len(self._paths)} files'
@@ -731,18 +762,6 @@ class BatchRenameDialog(QtWidgets.QDialog):
                 if text:
                     max_w = max(max_w, fm.horizontalAdvance(text))
             self._seg_table.setColumnWidth(col, max(max_w + dpix(14), dpix(28)))
-
-    def _resize_to_content(self):
-        row_h = dpix(20)
-        n = min(len(self._paths), 18)
-        table_h = n * row_h + dpix(26)
-        seg_w = sum(
-            self._seg_table.columnWidth(c)
-            for c in range(self._seg_model.columnCount())
-        )
-        w = min(max(seg_w + dpix(350), dpix(550)), dpix(1400))
-        h = min(max(2 * table_h + dpix(80), dpix(300)), dpix(900))
-        self.resize(w, h)
 
     def _apply_status(self, conflicts, errors, missing, global_errors=None):
         p = self._p
@@ -1041,18 +1060,19 @@ class BatchRenameDialog(QtWidgets.QDialog):
         self._thumb_visible.clear()
         self._title.setText(self._title_text())
         self._status.setText(f'Renamed {len(succeeded)} file(s)')
-        self._reset_columns()
+        self._reset_columns(preserve_ext=True)
         self._rebuild()
 
-    def _reset_columns(self):
+    def _reset_columns(self, preserve_ext=False):
         name_src = NameSource()
         name_defaults = self._source_defaults.get(name_src.NAME)
         if name_defaults:
             name_src._apply(name_defaults)
         ext_src = ExtSource()
-        ext_defaults = self._source_defaults.get(ext_src.NAME)
-        if ext_defaults:
-            ext_src._apply(ext_defaults)
+        if preserve_ext:
+            ext_defaults = self._source_defaults.get(ext_src.NAME)
+            if ext_defaults:
+                ext_src._apply(ext_defaults)
         self._columns = [RenameColumn(name_src)]
         self._ext_column = RenameColumn(ext_src)
         self._excluded.clear()
@@ -1064,3 +1084,14 @@ class BatchRenameDialog(QtWidgets.QDialog):
             for p, r in zip(self._paths, self._results)
             if p.name != r.new_name
         }
+
+
+class BatchRenamerPlugin(BasePanelPlugin):
+    NAME = "batch_renamer"
+    DISPLAY_NAME = "Batch Rename"
+    PRIORITY = 0
+
+    def create_widget(self):
+        widget = BatchRenameWidget()
+        widget._restore_ui_from_state()
+        return widget

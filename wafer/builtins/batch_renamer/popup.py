@@ -3,12 +3,12 @@ from __future__ import annotations
 from PySide6 import QtCore, QtWidgets
 from PySide6.QtCore import Qt, Signal
 
-from ....plugin.rename.base import (
+from ...plugin.rename.base import (
     DropdownButton, ToggleButton,
     style_input, style_dropdown, style_action, style_toggle, style_spinbox,
 )
-from ....utils.formatting import dpix
-from ....core.color.theme import ThemeManager
+from ...utils.formatting import dpix
+from ...core.color.theme import ThemeManager
 from .engine import RenameColumn
 
 

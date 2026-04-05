@@ -6,8 +6,8 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
 
 from wafer.plugin.rename.base import DropdownButton, ToggleButton, RenameConfigWidget
-from wafer.app.viewer.renamer.popup import ColumnSettingsPopup, ClickOutsideFilter
-from wafer.app.viewer.renamer.engine import RenameColumn, PostProcess
+from wafer.builtins.batch_renamer.popup import ColumnSettingsPopup, ClickOutsideFilter
+from wafer.builtins.batch_renamer.engine import RenameColumn, PostProcess
 from wafer.builtins.rename_sources import (
     NameSource, FixedSource, MetaSource, ExtSource,
     SequentialSource, DateSource, RandomSource,
@@ -185,7 +185,7 @@ class TestColumnSettingsPopup:
 
     def test_no_isinstance_in_popup(self):
         import inspect
-        from wafer.app.viewer.renamer import popup
+        from wafer.builtins.batch_renamer import popup
         source_text = inspect.getsource(popup)
         assert 'isinstance' not in source_text
         assert 'hasattr' not in source_text

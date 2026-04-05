@@ -27,7 +27,7 @@ from .widgets.combo_with_buttons import ComboBoxWithButtons
 from ...builtins.commands.menu import AppMenuRegistrar
 from .search import SearchService
 from ...core.session import QueryState, UIState, SessionEntry, SessionStore
-from ...core.commands.bridge import UI, Command
+from ...core.commands.bridge import UI, Command, Menu
 from ...core.layout.manager import LayoutManager
 from ...core.state import StateStore
 from ...core.qt.window import WindowStateController
@@ -292,11 +292,17 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
 
         self.iconbar = IconButtonBar(
             left_buttons=[
-                IconButtonConfig('gear', 'Settings', lambda: Command.invoke("win.show_settings")),
-                IconButtonConfig('folder_plus', 'Add Folder', lambda: Command.invoke("ft.add_folder")),
-                IconButtonConfig('menu', 'All Menu', lambda: Command.invoke("allmenu")),
+                IconButtonConfig('menu', 'All Menu', lambda: Menu.session(self).all_roots().exec()),
+                IconButtonConfig('gear', 'Settings', lambda: Menu.session(self).from_folder("Setting").exec()),
+                IconButtonConfig(
+                    'layout_edit',
+                    'Edit Layout',
+                    lambda: Menu.session(self).from_folder("Panel").exec(),
+                ),
+                IconButtonConfig('fullscreen', 'Full Screen', lambda: Command.invoke("win.toggle_fullscreen")),
             ],
             right_buttons=[
+                IconButtonConfig('folder_plus', 'Add Folder', lambda: Command.invoke("ft.add_folder")),
                 IconButtonConfig(
                     'subfolder',
                     'Include Subfolders',
@@ -304,13 +310,6 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
                     checkable=True,
                     checked=self.search_service.get('include_subfolders', True),
                 ),
-                IconButtonConfig(
-                    'layout_edit',
-                    'Edit Layout',
-                    lambda checked: Command.invoke("win.toggle_layout_mode"),
-                    checkable=True,
-                ),
-                IconButtonConfig('fullscreen', 'Full Screen', lambda: Command.invoke("win.toggle_fullscreen")),
             ],
         )
         self._subfolder_btn = self.iconbar.right_buttons[0]

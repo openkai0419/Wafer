@@ -6,13 +6,13 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
 
 if TYPE_CHECKING:
-    from .dialog import BatchRenameDialog
+    from .widget import BatchRenameWidget
 
 
 class ThumbnailOverlay(QtWidgets.QWidget):
 
     def __init__(
-        self, dialog: BatchRenameDialog, table: QtWidgets.QTableView, parent=None,
+        self, dialog: BatchRenameWidget, table: QtWidgets.QTableView, parent=None,
     ):
         super().__init__(parent)
         self._dlg = dialog

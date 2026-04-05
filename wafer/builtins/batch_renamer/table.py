@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
 
-from ....utils.formatting import dpix
+from ...utils.formatting import dpix
 
 if TYPE_CHECKING:
     from .engine import RenameResult, RenameColumn

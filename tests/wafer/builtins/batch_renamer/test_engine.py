@@ -4,7 +4,7 @@ from pathlib import Path
 from wafer.builtins.rename_sources import (
     NameSource, FixedSource, SequentialSource, ExtSource,
 )
-from wafer.app.viewer.renamer.engine import (
+from wafer.builtins.batch_renamer.engine import (
     PostProcess, RenameColumn, RenameResult, RenameEngine,
 )
 

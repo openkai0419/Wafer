@@ -16,15 +16,6 @@ def _win(ctx):
     return ctx.get_instance("MainWindow")
 
 
-def show_settings(ctx):
-    w = _win(ctx)
-    if not w:
-        return
-    window = SettingsWindow(w)
-    window.add_tab(FolderSettings())
-    window.show()
-
-
 def toggle_fullscreen(ctx):
     w = _win(ctx)
     if not w:
@@ -61,7 +52,6 @@ class WindowCommands(ActionKit.MenuBase):
     def commands(cls):
         return [
             ":Window",
-            ActionKit.Command(path="win.show_settings", display="Settings", func=show_settings),
             ActionKit.Command(path="win.toggle_fullscreen", display="Full Screen", func=toggle_fullscreen),
             ActionKit.Command(path="win.toggle_always_on_top", display="Always on Top", func=toggle_always_on_top, checkable=True),
             ActionKit.Command(path="win.toggle_language", display="Toggle Language", func=toggle_language),

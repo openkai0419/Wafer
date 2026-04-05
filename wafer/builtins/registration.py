@@ -17,6 +17,7 @@ def register_all(registries):
     from .devlog import DevLogPanelPlugin
     from .database_manager.widget import DatabaseManagerPlugin
     from .plugin_manager.widget import PluginManagerPlugin
+    from .batch_renamer.widget import BatchRenamerPlugin
 
     registries['grid'].register(SystemThumbnailPlugin)
     registries['viewer'].register(DefaultViewerPlugin)
@@ -34,5 +35,6 @@ def register_all(registries):
         registries['rename_source'].register(cls)
     for cls in [TrayMenu, PluginManagerCommands, DatabaseManagerCommands]:
         registries['command'].register(cls)
-    for cls in [DevLogPanelPlugin, DatabaseManagerPlugin, PluginManagerPlugin]:
+    for cls in [DevLogPanelPlugin, DatabaseManagerPlugin, PluginManagerPlugin,
+                 BatchRenamerPlugin]:
         registries['panel'].register(cls)

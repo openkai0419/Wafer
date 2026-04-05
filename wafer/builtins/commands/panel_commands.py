@@ -26,7 +26,7 @@ class PanelCommands(ActionKit.MenuBase):
             ":Panel",
             ActionKit.Command(
                 path="win.toggle_layout_mode",
-                display="Edit Layout",
+                display="★Edit Mode",
                 func=toggle_layout_mode,
                 checkable=True,
             ),

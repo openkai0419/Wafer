@@ -6,11 +6,11 @@ import pytest
 from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
 
-from wafer.app.viewer.renamer.dialog import (
-    BatchRenameDialog,
+from wafer.builtins.batch_renamer.widget import (
+    BatchRenameWidget,
     _fetch_metadata_sync,
 )
-from wafer.app.viewer.renamer.engine import (
+from wafer.builtins.batch_renamer.engine import (
     PostProcess,
     RenameResult,
     RenameEngine,
@@ -27,21 +27,19 @@ from wafer.core.state import StateStore
 
 
 @pytest.fixture(autouse=True)
-def _reset_singleton():
-    BatchRenameDialog._instance = None
-    BatchRenameDialog._saved_state = {}
-    BatchRenameDialog._registered = False
+def _reset_state():
+    BatchRenameWidget._saved_state = {}
+    BatchRenameWidget._registered = False
     yield
-    BatchRenameDialog._instance = None
-    BatchRenameDialog._saved_state = {}
-    BatchRenameDialog._registered = False
+    BatchRenameWidget._saved_state = {}
+    BatchRenameWidget._registered = False
     StateStore._instance = None
 
 
 @pytest.fixture(autouse=True)
 def _suppress_msgbox():
-    with patch('wafer.app.viewer.renamer.dialog.QtWidgets.QMessageBox.information'), \
-         patch('wafer.app.viewer.renamer.dialog.QtWidgets.QMessageBox.warning'):
+    with patch('wafer.builtins.batch_renamer.widget.QtWidgets.QMessageBox.information'), \
+         patch('wafer.builtins.batch_renamer.widget.QtWidgets.QMessageBox.warning'):
         yield
 
 
@@ -66,53 +64,13 @@ class TestRenameResultMissing:
         assert r.missing is True
 
 
-class TestSingleton:
+class TestWidgetInit:
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
-    def test_open_creates_instance(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog.open(tmp_files)
-        assert BatchRenameDialog._instance is dlg
-        assert dlg.isVisible()
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
-        qtbot.addWidget(dlg)
-        dlg.close()
-
-    @patch.object(BatchRenameDialog, '_start_async_init')
-    def test_open_replaces_existing(self, mock_init, qtbot, tmp_files, tmp_path):
-        dlg1 = BatchRenameDialog.open(tmp_files)
-        dlg1.setAttribute(Qt.WA_DeleteOnClose, False)
-        qtbot.addWidget(dlg1)
-        other = [tmp_path / 'x.jpg']
-        other[0].write_bytes(b'\x00')
-        dlg2 = BatchRenameDialog.open(other)
-        dlg2.setAttribute(Qt.WA_DeleteOnClose, False)
-        qtbot.addWidget(dlg2)
-        assert dlg2 is not dlg1
-        assert BatchRenameDialog._instance is dlg2
-        assert len(dlg2._paths) == 1
-        dlg2.close()
-
-    @patch.object(BatchRenameDialog, '_start_async_init')
-    def test_close_clears_singleton(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog.open(tmp_files)
-        dlg.close()
-        qtbot.waitUntil(lambda: BatchRenameDialog._instance is None, timeout=1000)
-
-    @patch.object(BatchRenameDialog, '_start_async_init')
-    def test_modeless_window_flags(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog.open(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
-        qtbot.addWidget(dlg)
-        assert dlg.windowFlags() & Qt.Tool
-        dlg.close()
-
-
-class TestDialogInit:
-
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_tables_visible_on_init(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         assert not dlg._preview_frame.isHidden()
         assert not dlg._seg_frame.isHidden()
@@ -120,10 +78,11 @@ class TestDialogInit:
         qtbot.waitUntil(lambda: dlg._preview_model.rowCount() == 3, timeout=5000)
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_data_ready_refreshes_preview(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         dlg._on_data_ready({})
         qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
@@ -132,10 +91,11 @@ class TestDialogInit:
 
 class TestFileExistenceCheck:
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_refresh_no_missing_without_os_check(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         tmp_files[1].unlink()
         dlg._rebuild()
@@ -146,11 +106,12 @@ class TestFileExistenceCheck:
 
 class TestExecuteChecksExistence:
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
-    @patch('wafer.app.viewer.renamer.dialog.QtWidgets.QMessageBox.warning')
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    @patch('wafer.builtins.batch_renamer.widget.QtWidgets.QMessageBox.warning')
     def test_execute_recheck_missing(self, mock_warn, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         results, _ = RenameEngine.preview(
             tmp_files,
@@ -180,10 +141,11 @@ class TestFetchMetadataSync:
 
 class TestSerialiseColumns:
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_serialise_has_source_defaults(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         state = dlg._serialise_columns()
         assert 'source_defaults' in state
@@ -192,10 +154,11 @@ class TestSerialiseColumns:
         assert 'columns' not in state
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_serialise_captures_source_settings(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         dlg._columns.append(RenameColumn(SequentialSource(start=5, padding=4)))
         state = dlg._serialise_columns()
@@ -203,10 +166,11 @@ class TestSerialiseColumns:
         assert state['source_defaults']['seq']['padding'] == 4
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_overrides_stripped_from_fixed(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         fixed = FixedSource(text='hello')
         fixed.overrides = {'a.jpg': 'custom'}
@@ -215,10 +179,11 @@ class TestSerialiseColumns:
         assert 'overrides' not in state['source_defaults']['fixed']
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_post_process_not_serialised(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         dlg._columns[0].post.prefix = 'X_'
         dlg._ext_column.post.case_mode = 'lower'
@@ -230,27 +195,29 @@ class TestSerialiseColumns:
 
 class TestColumnRestore:
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_always_starts_with_name_column(self, mock_init, qtbot, tmp_files):
-        BatchRenameDialog._saved_state = {
+        BatchRenameWidget._saved_state = {
             'source_defaults': {
                 'seq': {'type': 'seq', 'start': 10, 'step': 2, 'padding': 5},
             },
         }
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         assert len(dlg._columns) == 1
         assert isinstance(dlg._columns[0].source, NameSource)
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_post_process_always_clean(self, mock_init, qtbot, tmp_files):
-        BatchRenameDialog._saved_state = {
+        BatchRenameWidget._saved_state = {
             'source_defaults': {'name': {'type': 'name'}},
         }
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         assert dlg._columns[0].post.prefix == ''
         assert dlg._columns[0].post.suffix == ''
@@ -258,15 +225,16 @@ class TestColumnRestore:
         assert dlg._ext_column.post.prefix == ''
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_source_defaults_applied_on_add_column(self, mock_init, qtbot, tmp_files):
-        BatchRenameDialog._saved_state = {
+        BatchRenameWidget._saved_state = {
             'source_defaults': {
                 'seq': {'type': 'seq', 'start': 10, 'step': 2, 'padding': 5},
             },
         }
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         dlg._add_column(SequentialSource)
         seq_col = dlg._columns[-1]
@@ -277,11 +245,12 @@ class TestColumnRestore:
         assert seq_col.post.prefix == ''
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_add_column_without_defaults_uses_source_default(self, mock_init, qtbot, tmp_files):
-        BatchRenameDialog._saved_state = {}
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        BatchRenameWidget._saved_state = {}
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         dlg._add_column(SequentialSource)
         seq_col = dlg._columns[-1]
@@ -289,42 +258,46 @@ class TestColumnRestore:
         assert seq_col.source.padding == 3
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_empty_state_uses_defaults(self, mock_init, qtbot, tmp_files):
-        BatchRenameDialog._saved_state = {}
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        BatchRenameWidget._saved_state = {}
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         assert len(dlg._columns) == 1
         assert isinstance(dlg._columns[0].source, NameSource)
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
-    def test_close_saves_source_defaults(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    def test_hide_saves_source_defaults(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)
+        dlg.show()
+        dlg.set_files(tmp_files)
         dlg._columns.append(RenameColumn(FixedSource(text='test')))
-        dlg.close()
-        state = BatchRenameDialog._saved_state
+        dlg.hide()
+        state = BatchRenameWidget._saved_state
         assert 'source_defaults' in state
         assert state['source_defaults']['fixed']['text'] == 'test'
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
-    def test_close_always_saves_state(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    def test_hide_always_saves_state(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)
-        dlg.close()
-        assert 'source_defaults' in BatchRenameDialog._saved_state
+        dlg.show()
+        dlg.set_files(tmp_files)
+        dlg.hide()
+        assert 'source_defaults' in BatchRenameWidget._saved_state
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_ext_column_always_reset(self, mock_init, qtbot, tmp_files):
-        BatchRenameDialog._saved_state = {
+        BatchRenameWidget._saved_state = {
             'source_defaults': {'ext': {'type': 'ext', 'mode': 'custom', 'custom': 'webp'}},
         }
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         assert dlg._ext_column.source.mode == 'keep'
         assert dlg._ext_column.enabled is True
@@ -333,28 +306,29 @@ class TestColumnRestore:
 
 class TestStateStoreIntegration:
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_registers_with_state_store(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         store = StateStore.instance()
         assert 'batch_rename' in store._entries
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_state_store_save_returns_saved_state(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)
-        dlg._init_done = True
-        dlg.close()
+        dlg.show()
+        dlg.set_files(tmp_files)
+        dlg.hide()
         store = StateStore.instance()
         all_states = store.save_all()
         assert 'batch_rename' in all_states
         assert 'source_defaults' in all_states['batch_rename']
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_state_store_deferred_restore(self, mock_init, qtbot, tmp_files):
         store = StateStore.instance()
         store.restore_all({
@@ -364,8 +338,9 @@ class TestStateStoreIntegration:
                 },
             }
         })
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         assert len(dlg._columns) == 1
         assert isinstance(dlg._columns[0].source, NameSource)
@@ -387,11 +362,12 @@ def _err_result(src='', error='error'):
 
 class TestRenameExecution:
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
-    @patch('wafer.app.viewer.renamer.dialog.execute_paste_plans_with_ui')
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    @patch('wafer.builtins.batch_renamer.widget.execute_paste_plans_with_ui')
     def test_rename_calls_execute_plans(self, mock_execute, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
 
         new_a = tmp_files[0].parent / 'x.jpg'
@@ -407,11 +383,12 @@ class TestRenameExecution:
         assert not plans[0].conflict
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
-    @patch('wafer.app.viewer.renamer.dialog.execute_paste_plans_with_ui')
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    @patch('wafer.builtins.batch_renamer.widget.execute_paste_plans_with_ui')
     def test_rename_multiple_files(self, mock_execute, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
 
         new_a = tmp_files[0].parent / 'x.jpg'
@@ -434,12 +411,13 @@ class TestRenameExecution:
         assert len(plans) == 3
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
-    @patch('wafer.app.viewer.renamer.dialog.QtWidgets.QMessageBox.warning')
-    @patch('wafer.app.viewer.renamer.dialog.execute_paste_plans_with_ui')
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    @patch('wafer.builtins.batch_renamer.widget.QtWidgets.QMessageBox.warning')
+    @patch('wafer.builtins.batch_renamer.widget.execute_paste_plans_with_ui')
     def test_failed_rename_shows_error_detail(self, mock_execute, mock_warn, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
 
         mock_execute.return_value = [_err_result(tmp_files[0], 'permission denied')]
@@ -451,11 +429,12 @@ class TestRenameExecution:
         assert 'failed' in msg
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
-    @patch('wafer.app.viewer.renamer.dialog.execute_paste_plans_with_ui')
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    @patch('wafer.builtins.batch_renamer.widget.execute_paste_plans_with_ui')
     def test_overwrite_mode_is_overwrite(self, mock_execute, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
 
         mock_execute.return_value = [_ok_result(tmp_files[0], tmp_files[0].parent / 'x.jpg')]
@@ -467,24 +446,14 @@ class TestRenameExecution:
         dlg.close()
 
 
-class TestCloseProtection:
-
-    @patch.object(BatchRenameDialog, '_start_async_init')
-    def test_close_always_allowed(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
-        qtbot.addWidget(dlg)
-        dlg.close()
-        assert not dlg.isVisible()
-
-
 class TestRenameStaysOpen:
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
-    @patch('wafer.app.viewer.renamer.dialog.execute_paste_plans_with_ui')
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    @patch('wafer.builtins.batch_renamer.widget.execute_paste_plans_with_ui')
     def test_dialog_stays_open_after_rename(self, mock_execute, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         dlg.show()
 
@@ -496,11 +465,12 @@ class TestRenameStaysOpen:
         assert dlg.isVisible()
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
-    @patch('wafer.app.viewer.renamer.dialog.execute_paste_plans_with_ui')
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    @patch('wafer.builtins.batch_renamer.widget.execute_paste_plans_with_ui')
     def test_paths_updated_after_rename(self, mock_execute, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
 
         new_a = tmp_files[0].parent / 'x.jpg'
@@ -514,11 +484,12 @@ class TestRenameStaysOpen:
         assert dlg._paths[2] == tmp_files[2]
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
-    @patch('wafer.app.viewer.renamer.dialog.execute_paste_plans_with_ui')
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    @patch('wafer.builtins.batch_renamer.widget.execute_paste_plans_with_ui')
     def test_keys_updated_after_rename(self, mock_execute, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
 
         new_a = tmp_files[0].parent / 'x.jpg'
@@ -531,11 +502,12 @@ class TestRenameStaysOpen:
         assert dlg._initial_keys[0] == str(new_a).replace('\\', '/')
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
-    @patch('wafer.app.viewer.renamer.dialog.execute_paste_plans_with_ui')
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    @patch('wafer.builtins.batch_renamer.widget.execute_paste_plans_with_ui')
     def test_initial_paths_updated_after_rename(self, mock_execute, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
 
         new_a = tmp_files[0].parent / 'x.jpg'
@@ -547,11 +519,12 @@ class TestRenameStaysOpen:
         assert dlg._initial_paths[0] == new_a
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
-    @patch('wafer.app.viewer.renamer.dialog.execute_paste_plans_with_ui')
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    @patch('wafer.builtins.batch_renamer.widget.execute_paste_plans_with_ui')
     def test_metadata_keys_remapped(self, mock_execute, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
 
         old_key = str(tmp_files[0]).replace('\\', '/')
@@ -569,11 +542,12 @@ class TestRenameStaysOpen:
         assert dlg._metadata[new_key] == {'tag': 'val'}
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
-    @patch('wafer.app.viewer.renamer.dialog.execute_paste_plans_with_ui')
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    @patch('wafer.builtins.batch_renamer.widget.execute_paste_plans_with_ui')
     def test_thumb_cache_cleared(self, mock_execute, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
 
         dlg._thumb_cache['fake'] = MagicMock()
@@ -588,11 +562,12 @@ class TestRenameStaysOpen:
         assert len(dlg._thumb_visible) == 0
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
-    @patch('wafer.app.viewer.renamer.dialog.execute_paste_plans_with_ui')
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    @patch('wafer.builtins.batch_renamer.widget.execute_paste_plans_with_ui')
     def test_failed_files_keep_old_path(self, mock_execute, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
 
         new_a = tmp_files[0].parent / 'x.jpg'
@@ -612,11 +587,12 @@ class TestRenameStaysOpen:
         assert dlg._paths[1] == tmp_files[1]
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
-    @patch('wafer.app.viewer.renamer.dialog.execute_paste_plans_with_ui')
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    @patch('wafer.builtins.batch_renamer.widget.execute_paste_plans_with_ui')
     def test_rebuild_called_after_rename(self, mock_execute, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
 
         mock_execute.return_value = [_ok_result(tmp_files[0], tmp_files[0].parent / 'x.jpg')]
@@ -627,11 +603,12 @@ class TestRenameStaysOpen:
             mock_rebuild.assert_called_once()
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
-    @patch('wafer.app.viewer.renamer.dialog.execute_paste_plans_with_ui')
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    @patch('wafer.builtins.batch_renamer.widget.execute_paste_plans_with_ui')
     def test_status_shows_result(self, mock_execute, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
 
         mock_execute.return_value = [_ok_result(tmp_files[0], tmp_files[0].parent / 'x.jpg')]
@@ -642,11 +619,12 @@ class TestRenameStaysOpen:
         assert 'Renamed 1 file(s)' in dlg._status.text()
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
-    @patch('wafer.app.viewer.renamer.dialog.execute_paste_plans_with_ui')
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    @patch('wafer.builtins.batch_renamer.widget.execute_paste_plans_with_ui')
     def test_columns_reset_after_rename(self, mock_execute, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
 
         dlg._columns.append(RenameColumn(FixedSource()))
@@ -663,12 +641,13 @@ class TestRenameStaysOpen:
         assert dlg._sort_indicator is None
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
-    @patch('wafer.app.viewer.renamer.dialog.execute_paste_plans_with_ui')
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    @patch('wafer.builtins.batch_renamer.widget.execute_paste_plans_with_ui')
     def test_reset_preserves_source_defaults(self, mock_execute, mock_init, qtbot, tmp_files):
         from wafer.builtins.rename_sources import RandomSource
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
 
         rand_src = RandomSource(chars='hex', length=12)
@@ -687,12 +666,13 @@ class TestRenameStaysOpen:
         assert dlg._ext_column.source.mode == 'lower'
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
-    @patch('wafer.app.viewer.renamer.dialog.QtWidgets.QMessageBox.information')
-    @patch('wafer.app.viewer.renamer.dialog.execute_paste_plans_with_ui')
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    @patch('wafer.builtins.batch_renamer.widget.QtWidgets.QMessageBox.information')
+    @patch('wafer.builtins.batch_renamer.widget.execute_paste_plans_with_ui')
     def test_msgbox_shown_on_success(self, mock_execute, mock_msgbox, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
 
         mock_execute.return_value = [_ok_result(tmp_files[0], tmp_files[0].parent / 'x.jpg')]
@@ -704,12 +684,13 @@ class TestRenameStaysOpen:
         assert '1 file(s) renamed' in mock_msgbox.call_args[0][2]
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
-    @patch('wafer.app.viewer.renamer.dialog.QtWidgets.QMessageBox.warning')
-    @patch('wafer.app.viewer.renamer.dialog.execute_paste_plans_with_ui')
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    @patch('wafer.builtins.batch_renamer.widget.QtWidgets.QMessageBox.warning')
+    @patch('wafer.builtins.batch_renamer.widget.execute_paste_plans_with_ui')
     def test_msgbox_shown_on_all_failed(self, mock_execute, mock_msgbox, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
 
         mock_execute.return_value = [_err_result(tmp_files[0], 'denied')]
@@ -720,11 +701,12 @@ class TestRenameStaysOpen:
         assert 'failed' in mock_msgbox.call_args[0][2]
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
-    @patch('wafer.app.viewer.renamer.dialog.execute_paste_plans_with_ui')
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    @patch('wafer.builtins.batch_renamer.widget.execute_paste_plans_with_ui')
     def test_all_failed_keeps_old_paths(self, mock_execute, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
 
         mock_execute.return_value = [_err_result(tmp_files[0], 'denied')]
@@ -734,11 +716,12 @@ class TestRenameStaysOpen:
         assert dlg._paths[0] == tmp_files[0]
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
-    @patch('wafer.app.viewer.renamer.dialog.execute_paste_plans_with_ui')
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    @patch('wafer.builtins.batch_renamer.widget.execute_paste_plans_with_ui')
     def test_rename_button_text_unchanged(self, mock_execute, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
 
         mock_execute.return_value = [_ok_result(tmp_files[0], tmp_files[0].parent / 'x.jpg')]
@@ -752,20 +735,19 @@ class TestRenameStaysOpen:
 
 class TestProgressiveThumbnailLoading:
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
-    def test_showEvent_triggers_thumb_update(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    def test_set_files_triggers_thumb_update(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)
         with patch.object(dlg, '_update_visible_thumbnails') as mock_thumb:
-            dlg._init_done = False
-            dlg.showEvent(QtGui.QShowEvent())
+            dlg.set_files(tmp_files)
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_thumbnail_loaded_updates_cache(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         key = str(tmp_files[0])
         img = QtGui.QImage(10, 10, QtGui.QImage.Format_RGB32)
@@ -774,10 +756,11 @@ class TestProgressiveThumbnailLoading:
         assert not dlg._thumb_cache[key].isNull()
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_thumbnail_null_image_stores_empty_pixmap(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         key = str(tmp_files[0])
         dlg._on_thumbnail_loaded(key, None)
@@ -785,10 +768,11 @@ class TestProgressiveThumbnailLoading:
         assert dlg._thumb_cache[key].isNull()
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_thumbnail_loaded_after_row_excluded(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         excluded_key = str(tmp_files[1])
         dlg._exclude_row(1)
@@ -798,11 +782,12 @@ class TestProgressiveThumbnailLoading:
         assert len(dlg._paths) == 2
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_close_cancels_thumbnail_loading(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)
+        dlg.show()
+        dlg.set_files(tmp_files)
         token = CancelToken()
         dlg._thumb_tokens[0] = token
         assert not token.is_cancelled()
@@ -812,10 +797,11 @@ class TestProgressiveThumbnailLoading:
 
 class TestSegTableSelectionSync:
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_seg_click_updates_selected_row(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         dlg._rebuild()
         qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
@@ -823,10 +809,11 @@ class TestSegTableSelectionSync:
         assert dlg._selected_row == 1
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_seg_selection_syncs_preview(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         dlg._rebuild()
         qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
@@ -835,10 +822,11 @@ class TestSegTableSelectionSync:
         assert preview_rows and preview_rows[0].row() == 2
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_preview_selection_syncs_seg(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         dlg._rebuild()
         qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
@@ -850,10 +838,11 @@ class TestSegTableSelectionSync:
 
 class TestStatusClickNavigation:
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_scroll_to_next_issue_no_issues(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         dlg._rebuild()
         qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
@@ -861,10 +850,11 @@ class TestStatusClickNavigation:
         assert dlg._selected_row in (-1, 0, 1, 2)
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_scroll_to_next_issue_finds_conflict(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         results = [
             RenameResult(original='a.jpg', segments=['a', '.jpg'], new_name='a.jpg'),
@@ -877,10 +867,11 @@ class TestStatusClickNavigation:
         assert dlg._selected_row == 1
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_scroll_wraps_around(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         results = [
             RenameResult(original='a.jpg', segments=['a', '.jpg'], new_name='a.jpg', conflict=True),
@@ -896,29 +887,32 @@ class TestStatusClickNavigation:
 
 class TestOpacitySlider:
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_slider_exists(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         assert hasattr(dlg, '_opacity_slider')
         assert dlg._opacity_slider.value() == 20
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_slider_changes_overlay_opacity(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         dlg._opacity_slider.setValue(50)
         assert abs(dlg._overlay._row_opacity - 0.5) < 0.01
         assert abs(dlg._overlay._sel_opacity - 0.5) < 0.01
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_slider_zero_opacity(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         dlg._opacity_slider.setValue(0)
         assert dlg._overlay._row_opacity == 0.0
@@ -927,10 +921,11 @@ class TestOpacitySlider:
 
 class TestAllColumnsEditable:
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_name_column_editable(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         dlg._rebuild()
         qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
@@ -939,10 +934,11 @@ class TestAllColumnsEditable:
         assert flags & Qt.ItemIsEditable
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_ext_column_editable(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         dlg._rebuild()
         qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
@@ -952,10 +948,11 @@ class TestAllColumnsEditable:
         assert flags & Qt.ItemIsEditable
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_add_column_not_editable(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         dlg._rebuild()
         qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
@@ -965,10 +962,11 @@ class TestAllColumnsEditable:
         assert not (flags & Qt.ItemIsEditable)
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_edit_name_column_stores_override(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         dlg._rebuild()
         qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
@@ -980,10 +978,11 @@ class TestAllColumnsEditable:
             assert dlg._columns[0].overrides[path_key] == 'custom_name'
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_edit_ext_column_stores_override(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         dlg._rebuild()
         qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
@@ -1030,7 +1029,7 @@ def _make_segment(path: Path):
 class TestSortIndicator:
 
     def test_preview_model_sort_indicator(self):
-        from wafer.app.viewer.renamer.table import PreviewModel
+        from wafer.builtins.batch_renamer.table import PreviewModel
         model = PreviewModel()
         assert model.headerData(0, Qt.Horizontal) == 'Original'
         assert model.headerData(1, Qt.Horizontal) == 'Result'
@@ -1045,7 +1044,7 @@ class TestSortIndicator:
         assert model.headerData(1, Qt.Horizontal) == 'Result'
 
     def test_segment_model_sort_indicator(self):
-        from wafer.app.viewer.renamer.table import SegmentModel
+        from wafer.builtins.batch_renamer.table import SegmentModel
         model = SegmentModel()
         name_col = RenameColumn(NameSource())
         ext_col = RenameColumn(ExtSource())
@@ -1061,7 +1060,7 @@ class TestSortIndicator:
         assert '\u25bc' not in model.headerData(0, Qt.Horizontal)
 
     def test_segment_model_configure_clears_sort(self):
-        from wafer.app.viewer.renamer.table import SegmentModel
+        from wafer.builtins.batch_renamer.table import SegmentModel
         model = SegmentModel()
         name_col = RenameColumn(NameSource())
         ext_col = RenameColumn(ExtSource())
@@ -1072,7 +1071,7 @@ class TestSortIndicator:
         assert '\u25b2' not in model.headerData(0, Qt.Horizontal)
 
     def test_segment_ext_header_no_arrow(self):
-        from wafer.app.viewer.renamer.table import SegmentModel
+        from wafer.builtins.batch_renamer.table import SegmentModel
         model = SegmentModel()
         name_col = RenameColumn(NameSource())
         ext_col = RenameColumn(ExtSource())
@@ -1081,10 +1080,11 @@ class TestSortIndicator:
         assert '\u25bc' not in ext_header
         assert '\u25b2' not in ext_header
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_dialog_sort_indicator_on_preview_sort(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         dlg._results = [
             RenameResult(original=p.name, segments=[p.stem, p.suffix], new_name=p.name)
@@ -1096,10 +1096,11 @@ class TestSortIndicator:
         assert dlg._sort_indicator == ('preview', 1, True)
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_dialog_sort_indicator_on_segment_sort(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         dlg._results = [
             RenameResult(original=p.name, segments=[p.stem, p.suffix], new_name=p.name)
@@ -1111,10 +1112,11 @@ class TestSortIndicator:
         assert dlg._sort_indicator == ('segment', 0, False)
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_refresh_without_prepare_clears_sort(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         dlg._sort_indicator = ('preview', 0, True)
         dlg._refresh()
@@ -1124,19 +1126,21 @@ class TestSortIndicator:
 
 class TestThumbCacheLRU:
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_cache_is_ordered_dict(self, mock_init, qtbot, tmp_files):
         import collections
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         assert isinstance(dlg._thumb_cache, collections.OrderedDict)
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_cache_evicts_beyond_limit(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         dlg.THUMB_CACHE_LIMIT = 5
         img = QtGui.QImage(4, 4, QtGui.QImage.Format_RGB32)
@@ -1147,10 +1151,11 @@ class TestThumbCacheLRU:
         assert 'key_9' in dlg._thumb_cache
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_thumb_for_row_refreshes_lru(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         dlg.THUMB_CACHE_LIMIT = 3
         img = QtGui.QImage(4, 4, QtGui.QImage.Format_RGB32)
@@ -1163,10 +1168,11 @@ class TestThumbCacheLRU:
         assert keys[-1] == first_key
         dlg.close()
 
-    @patch.object(BatchRenameDialog, '_start_async_init')
+    @patch.object(BatchRenameWidget, '_start_async_init')
     def test_cache_limit_default(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameDialog(tmp_files)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         assert dlg.THUMB_CACHE_LIMIT == 200
         dlg.close()

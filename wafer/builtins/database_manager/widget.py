@@ -171,7 +171,7 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
 
         save_btn = QtWidgets.QPushButton('Save')
         save_btn.setObjectName('save_btn')
-        revert_btn = QtWidgets.QPushButton('Revert')
+        revert_btn = QtWidgets.QPushButton('Cancel')
         revert_btn.setObjectName('cancel_btn')
         save_btn.clicked.connect(self._on_save)
         revert_btn.clicked.connect(self._on_revert)

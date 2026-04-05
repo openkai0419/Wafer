@@ -3,7 +3,7 @@ from pathlib import PureWindowsPath as FakePath
 
 import pytest
 
-from wafer.app.viewer.renamer.engine import PostProcess, RenameColumn, RenameEngine
+from wafer.builtins.batch_renamer.engine import PostProcess, RenameColumn, RenameEngine
 from wafer.builtins.rename_sources import NameSource, ExtSource
 
 pytestmark = pytest.mark.benchmark

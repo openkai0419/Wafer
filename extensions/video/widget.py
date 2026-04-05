@@ -244,7 +244,7 @@ class PlaybackSlotManager:
         self._max_appeared = max_appeared
         self.volume = DEFAULT_VOLUME
         self.hover_autoplay = True
-        self.appear_autoplay = True
+        self.appear_autoplay = False
         self.select_autoplay = True
         self.pause_in_background = False
         self._paused_by_background = False

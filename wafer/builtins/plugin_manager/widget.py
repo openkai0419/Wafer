@@ -130,7 +130,7 @@ class PluginManagerWidget(QtWidgets.QWidget):
         self._tabs = QtWidgets.QTabWidget()
 
         from .collectors_tab import CollectorsTab
-        collector_names = [cls.NAME for cls in self._ext_tab.collect_enabled_plugins('collector')]
+        collector_names = self._collect_worker_names()
         self._collectors_tab = CollectorsTab(collector_names)
         self._collectors_tab.purge_requested.connect(self._send_purge)
         self._tabs.addTab(self._scrollable(self._collectors_tab), 'Collectors')
@@ -246,8 +246,12 @@ class PluginManagerWidget(QtWidgets.QWidget):
             registry_data,
             self._compute_builtin_command_names(registry_data),
         )
-        collector_names = [cls.NAME for cls in self._ext_tab.collect_enabled_plugins('collector')]
-        self._collectors_tab.refresh(collector_names)
+        self._collectors_tab.refresh(self._collect_worker_names())
+
+    def _collect_worker_names(self) -> list[str]:
+        names = [cls.NAME for cls in self._ext_tab.collect_enabled_plugins('collector')]
+        names += [cls.NAME for cls in self._ext_tab.collect_enabled_plugins('detacher')]
+        return names
 
     def _send_purge(self, pairs: list[tuple[str, str]], re_collect: bool):
         from ...core.commands.binding.instance_registry import InstanceRegistry

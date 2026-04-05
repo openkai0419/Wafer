@@ -11,6 +11,7 @@ from .viewer.base import BaseViewerPlugin
 from .grid.base import BaseGridPlugin
 from .collector.base import BaseCollector
 from .query.base import BaseFilterPlugin, BaseSortPlugin
+from .detacher.base import BaseDetacher
 from .layout.base import BaseLayoutPlugin
 from .panel.base import BasePanelPlugin
 from .rename.base import BaseRenameSourcePlugin
@@ -22,6 +23,7 @@ def _build_registry_map():
         BaseViewerPlugin: 'viewer',
         BaseGridPlugin: 'grid',
         BaseCollector: 'collector',
+        BaseDetacher: 'detacher',
         BaseFilterPlugin: 'filter',
         BaseSortPlugin: 'sort',
         BaseLayoutPlugin: 'layout',
@@ -215,6 +217,7 @@ def load_plugins(*, on_progress=None) -> list[str]:
     from .viewer.handler import viewer_resolver
     from .grid.handler import grid_resolver
     from .collector.handler import collector_resolver
+    from .detacher.handler import detacher_resolver
     from .query.handler import filter_registry, sort_registry
     from .layout.handler import layout_registry
     from .panel.handler import panel_registry
@@ -224,6 +227,7 @@ def load_plugins(*, on_progress=None) -> list[str]:
         'viewer': viewer_resolver.registry,
         'grid': grid_resolver.registry,
         'collector': collector_resolver.registry,
+        'detacher': detacher_resolver.registry,
         'filter': filter_registry,
         'sort': sort_registry,
         'layout': layout_registry,

@@ -9,10 +9,6 @@ class ExifCollectorPlugin(BaseCollectorPlugin):
     PRIORITY = 100
     DEFAULT_ENABLED = True
 
-    @staticmethod
-    def _prefixed_meta(raw: dict) -> dict:
-        return {f'exif.{k}': v for k, v in raw.items() if v is not None}
-
     def process(self, path: str, file_info: tuple):
         from PIL import Image
         from .exif_parser import ExifParser
@@ -25,7 +21,7 @@ class ExifCollectorPlugin(BaseCollectorPlugin):
                 source=path,
                 status=True,
                 aspect=res['aspect'] or None,
-                meta_info=self._prefixed_meta({**res['exif'], **res['info_items']}),
+                meta_info={k: v for k, v in {**res['exif'], **res['info_items']}.items() if v is not None},
             )
         except Exception as e:
             AppLogger.debug(f'ExifCollectorPlugin failed: {path} ({e})')

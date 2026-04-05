@@ -116,6 +116,14 @@ def _entry_collector(name, plugin, parent_pid=None):
     except FileExistsError:
         AppLogger.info(f"Collector '{plugin}' for '{name}' is already running.")
 
+def _entry_detacher(name, plugin, parent_pid=None):
+    try:
+        profiler.set_enabled(False)
+        from wafer.app.detacher.worker import run_detacher as _run
+        _run(name, plugin, parent_pid=parent_pid)
+    except FileExistsError:
+        AppLogger.info(f"Detacher '{plugin}' for '{name}' is already running.")
+
 def main():
     parser = argparse.ArgumentParser(description='Script with three run modes')
     group = parser.add_mutually_exclusive_group()
@@ -123,14 +131,15 @@ def main():
     group.add_argument('--viewer', action='store_true', help='run new viewer')
     group.add_argument('--indexer', nargs='?', const=True, help='run indexer for each settings. make new with optional string')
     group.add_argument('--collector', nargs='?', const=True, help='run collector process')
-    parser.add_argument('--plugin', type=str, default='image', help='collector plugin name')
+    group.add_argument('--detacher', nargs='?', const=True, help='run detacher process')
+    parser.add_argument('--plugin', type=str, default='image', help='collector/detacher plugin name')
     parser.add_argument('--parent-pid', type=int, default=None)
     parser.add_argument('--session', type=str, default=None, help='session ID for viewer')
     parser.add_argument('--dev', action='store_true', help='enable developer mode')
     args = parser.parse_args()
     if args.dev:
         constants.DEV_MODE = True
-    if not any([args.tray, args.viewer, args.indexer, args.collector]):
+    if not any([args.tray, args.viewer, args.indexer, args.collector, args.detacher]):
         app = _create_app()
         load_plugins()
         AppProcess.new_main('--tray')
@@ -157,6 +166,12 @@ def main():
             _entry_collector(args.collector, args.plugin, parent_pid=args.parent_pid)
         else:
             AppLogger.warning('--collector requires a db name')
+    elif args.detacher:
+        load_plugins()
+        if isinstance(args.detacher, str):
+            _entry_detacher(args.detacher, args.plugin, parent_pid=args.parent_pid)
+        else:
+            AppLogger.warning('--detacher requires a db name')
     elif args.viewer:
         app = _create_app()
         load_plugins()

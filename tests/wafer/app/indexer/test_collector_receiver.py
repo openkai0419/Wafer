@@ -3,8 +3,10 @@ import time
 from unittest.mock import MagicMock
 
 from wafer.app.indexer.collector_receiver import (
-    CollectorReceiver, _parse_batch, _BATCH_SIZE, _FLUSH_DELAY,
-    _ResultBuffer, _merge_parsed, _try_float,
+    CollectorReceiver, _parse_batch, _merge_parsed,
+)
+from wafer.app.indexer._parse_utils import (
+    BATCH_SIZE, FLUSH_DELAY, ResultBuffer, try_float,
 )
 
 
@@ -104,7 +106,7 @@ def test_flush_reschedules_on_pending():
 
 
 def test_result_buffer_append_drain():
-    buf = _ResultBuffer()
+    buf = ResultBuffer(_merge_parsed)
     parsed = {
         'image_entries': [('p', 's', 1.0)],
         'meta_info_entries': [],
@@ -119,14 +121,14 @@ def test_result_buffer_append_drain():
 
 
 def test_result_buffer_empty_drain():
-    buf = _ResultBuffer()
+    buf = ResultBuffer(_merge_parsed)
     data, count = buf.drain()
     assert data is None
     assert count == 0
 
 
 def test_result_buffer_has_pending():
-    buf = _ResultBuffer()
+    buf = ResultBuffer(_merge_parsed)
     assert buf.has_pending() is False
     parsed = {
         'image_entries': [],
@@ -163,7 +165,7 @@ def test_merge_parsed_ok_overrides_fail():
 
 
 def test_flush_delay_constant():
-    assert _FLUSH_DELAY > 0
+    assert FLUSH_DELAY > 0
 
 
 def test_parse_batch_ok_status():
@@ -182,7 +184,7 @@ def test_parse_batch_ok_status():
     assert len(data['image_entries']) == 1
     assert data['image_entries'][0][2] == 1.5
     meta_keys = [e[1] for e in data['meta_info_entries']]
-    assert 'width' in meta_keys
+    assert 'exif.width' in meta_keys
     assert len(data['tag_entries']) == 1
     assert len(data['collector_status']) == 1
 
@@ -207,11 +209,11 @@ def test_parse_batch_skips_none_meta():
     }]
     data = _parse_batch(results)
     meta_keys = [e[1] for e in data['meta_info_entries']]
-    assert 'width' in meta_keys
-    assert 'empty' not in meta_keys
+    assert 'exif.width' in meta_keys
+    assert 'exif.empty' not in meta_keys
     tag_keys = [e[1] for e in data['tag_entries']]
-    assert 'good' in tag_keys
-    assert 'bad' not in tag_keys
+    assert 'exif.good' in tag_keys
+    assert 'exif.bad' not in tag_keys
 
 
 def test_parse_batch_multi_path():
@@ -233,31 +235,31 @@ def test_parse_batch_ok_overrides_fail():
 
 
 def test_batch_size_positive():
-    assert _BATCH_SIZE > 0
+    assert BATCH_SIZE > 0
 
 
 def test_try_float_none():
-    assert _try_float(None) is None
+    assert try_float(None) is None
 
 
 def test_try_float_int():
-    assert _try_float(42) == 42.0
+    assert try_float(42) == 42.0
 
 
 def test_try_float_float():
-    assert _try_float(3.14) == 3.14
+    assert try_float(3.14) == 3.14
 
 
 def test_try_float_numeric_string():
-    assert _try_float('123.456') == 123.456
+    assert try_float('123.456') == 123.456
 
 
 def test_try_float_non_numeric_string():
-    assert _try_float('hello') is None
+    assert try_float('hello') is None
 
 
 def test_try_float_exif_datetime():
-    result = _try_float('2024:01:15 10:30:45')
+    result = try_float('2024:01:15 10:30:45')
     assert isinstance(result, float)
     assert result > 0
     from datetime import datetime, timezone
@@ -266,7 +268,7 @@ def test_try_float_exif_datetime():
 
 
 def test_try_float_iso_datetime():
-    result = _try_float('2024-01-15 10:30:45')
+    result = try_float('2024-01-15 10:30:45')
     assert isinstance(result, float)
     from datetime import datetime, timezone
     expected = datetime(2024, 1, 15, 10, 30, 45, tzinfo=timezone.utc).timestamp()
@@ -274,7 +276,7 @@ def test_try_float_iso_datetime():
 
 
 def test_try_float_date_only_colon():
-    result = _try_float('2024:06:01')
+    result = try_float('2024:06:01')
     assert isinstance(result, float)
     from datetime import datetime, timezone
     expected = datetime(2024, 6, 1, tzinfo=timezone.utc).timestamp()
@@ -282,7 +284,7 @@ def test_try_float_date_only_colon():
 
 
 def test_try_float_date_only_hyphen():
-    result = _try_float('2024-06-01')
+    result = try_float('2024-06-01')
     assert isinstance(result, float)
     from datetime import datetime, timezone
     expected = datetime(2024, 6, 1, tzinfo=timezone.utc).timestamp()
@@ -290,23 +292,23 @@ def test_try_float_date_only_hyphen():
 
 
 def test_try_float_invalid_date():
-    assert _try_float('not-a-date') is None
+    assert try_float('not-a-date') is None
 
 
 def test_try_float_empty_string():
-    assert _try_float('') is None
+    assert try_float('') is None
 
 
 def test_try_float_preserves_existing_numeric():
-    assert _try_float('100') == 100.0
-    assert _try_float('3.14') == 3.14
+    assert try_float('100') == 100.0
+    assert try_float('3.14') == 3.14
 
 
 def test_parse_batch_tags_require_file_hash():
     results = [{
         'source': 'src',
         'status': True,
-        'tags': {'wd14.tags': '1girl, blue_hair'},
+        'tags': {'tags': '1girl, blue_hair'},
         'collector': 'wd14',
     }]
     data = _parse_batch(results)
@@ -318,7 +320,7 @@ def test_parse_batch_tags_with_file_hash():
         'source': 'src',
         'status': True,
         'file_hash': 'abc123',
-        'tags': {'wd14.tags': '1girl, blue_hair, smile'},
+        'tags': {'tags': '1girl, blue_hair, smile'},
         'collector': 'wd14',
     }]
     data = _parse_batch(results)
@@ -335,14 +337,14 @@ def test_parse_batch_mixed_meta_and_tags():
         'source': 'img.jpg',
         'status': True,
         'file_hash': 'hash1',
-        'meta_info': {'exif.camera': 'Canon'},
-        'tags': {'wd14.tags': 'landscape, sky'},
+        'meta_info': {'camera': 'Canon'},
+        'tags': {'tags': 'landscape, sky'},
         'collector': 'wd14',
     }]
     data = _parse_batch(results)
     assert len(data['meta_info_entries']) == 1
     assert len(data['tag_entries']) == 1
-    assert data['meta_info_entries'][0][1] == 'exif.camera'
+    assert data['meta_info_entries'][0][1] == 'wd14.camera'
     assert data['tag_entries'][0][1] == 'wd14.tags'
 
 
@@ -351,7 +353,7 @@ def test_parse_batch_failed_result_no_tags():
         'source': 'fail.jpg',
         'status': False,
         'file_hash': 'somehash',
-        'tags': {'wd14.tags': 'should_not_register'},
+        'tags': {'tags': 'should_not_register'},
         'collector': 'wd14',
     }]
     data = _parse_batch(results)
@@ -362,7 +364,7 @@ def test_parse_batch_exif_datetime_value_num():
     results = [{
         'source': 'img.jpg',
         'file_hash': 'h1',
-        'meta_info': {'exif.DateTimeOriginal': '2024:01:15 10:30:45'},
+        'meta_info': {'DateTimeOriginal': '2024:01:15 10:30:45'},
         'status': True,
         'collector': 'exif',
     }]

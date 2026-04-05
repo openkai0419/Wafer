@@ -601,3 +601,110 @@ class FileDB:
             return cur.fetchall()
         finally:
             cur.close()
+
+    def prefix_data_summary(self) -> list[tuple[str, int, int]]:
+        cur = self.get_reader_cursor()
+        try:
+            cur.execute("""
+                SELECT prefix, SUM(meta_count), SUM(tag_count) FROM (
+                    SELECT
+                        CASE WHEN INSTR(key, '.') > 0
+                             THEN SUBSTR(key, 1, INSTR(key, '.') - 1)
+                             ELSE '' END AS prefix,
+                        COUNT(*) AS meta_count,
+                        0 AS tag_count
+                    FROM meta_info GROUP BY prefix
+                    UNION ALL
+                    SELECT
+                        CASE WHEN INSTR(key, '.') > 0
+                             THEN SUBSTR(key, 1, INSTR(key, '.') - 1)
+                             ELSE '' END AS prefix,
+                        0 AS meta_count,
+                        COUNT(*) AS tag_count
+                    FROM tags GROUP BY prefix
+                ) GROUP BY prefix ORDER BY prefix
+            """)
+            return cur.fetchall()
+        finally:
+            cur.close()
+
+    def delete_meta_and_tags_by_keys(self, delete_entries: list[tuple[str, str | None, list[str]]]):
+        if not delete_entries:
+            return
+        with self._write_lock, self.conn:
+            cur = self.conn.cursor()
+            try:
+                for path, file_hash, keys in delete_entries:
+                    if not keys:
+                        continue
+                    placeholders = ','.join(['?'] * len(keys))
+                    cur.execute(
+                        f'DELETE FROM meta_info WHERE path = ? AND key IN ({placeholders})',
+                        [path] + keys,
+                    )
+                    if file_hash:
+                        cur.execute(
+                            f'DELETE FROM tags WHERE file_hash = ? AND key IN ({placeholders})',
+                            [file_hash] + keys,
+                        )
+            finally:
+                cur.close()
+
+    def find_sources_with_trigger_keys(self, trigger_keys: tuple[str, ...], detacher_status_name: str) -> list[str]:
+        if not trigger_keys:
+            return []
+        cur = self.get_reader_cursor()
+        try:
+            placeholders = ','.join(['?'] * len(trigger_keys))
+            cur.execute(
+                f'''SELECT DISTINCT mi.path FROM meta_info mi
+                WHERE mi.key IN ({placeholders})
+                AND mi.path NOT IN (
+                    SELECT cs.source FROM collection_status cs
+                    WHERE cs.collector = ?
+                )
+                UNION
+                SELECT DISTINCT i.path FROM tags t
+                JOIN sources s ON s.file_hash = t.file_hash
+                JOIN files i ON i.source = s.source
+                WHERE t.key IN ({placeholders})
+                AND i.path NOT IN (
+                    SELECT cs.source FROM collection_status cs
+                    WHERE cs.collector = ?
+                )''',
+                list(trigger_keys) + [detacher_status_name] + list(trigger_keys) + [detacher_status_name],
+            )
+            return [row[0] for row in cur.fetchall()]
+        finally:
+            cur.close()
+
+    def get_trigger_metadata(self, sources: list[str], trigger_keys: tuple[str, ...]) -> dict[str, dict[str, str]]:
+        if not sources or not trigger_keys:
+            return {}
+        result: dict[str, dict[str, str]] = {}
+        key_ph = ','.join(['?'] * len(trigger_keys))
+        cur = self.get_reader_cursor()
+        try:
+            chunk_size = 900
+            key_list = list(trigger_keys)
+            for i in range(0, len(sources), chunk_size):
+                chunk = sources[i:i + chunk_size]
+                src_ph = ','.join(['?'] * len(chunk))
+                cur.execute(
+                    f'SELECT path, key, value FROM meta_info WHERE path IN ({src_ph}) AND key IN ({key_ph})',
+                    chunk + key_list,
+                )
+                for path, key, value in cur.fetchall():
+                    result.setdefault(path, {})[key] = value
+                cur.execute(
+                    f'''SELECT i.path, t.key, t.value FROM tags t
+                    JOIN sources s ON s.file_hash = t.file_hash
+                    JOIN files i ON i.source = s.source
+                    WHERE i.path IN ({src_ph}) AND t.key IN ({key_ph})''',
+                    chunk + key_list,
+                )
+                for path, key, value in cur.fetchall():
+                    result.setdefault(path, {})[key] = value
+        finally:
+            cur.close()
+        return result

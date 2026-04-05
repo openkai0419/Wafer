@@ -602,6 +602,38 @@ def test_collector_data_counts_excludes_pending(tmp_path):
     db.close()
 
 
+def test_prefix_data_summary(tmp_path):
+    db = _setup_db_with_collected(tmp_path)
+    rows = db.prefix_data_summary()
+    data = {r[0]: (r[1], r[2]) for r in rows}
+    assert data['exif'] == (3, 2)
+    assert data['basic'] == (1, 0)
+    assert data['ai'] == (0, 1)
+    db.close()
+
+
+def test_prefix_data_summary_empty(tmp_path):
+    db = FileDB(tmp_path / 'test.db')
+    db.start()
+    db.initialize_database()
+    assert db.prefix_data_summary() == []
+    db.close()
+
+
+def test_prefix_data_summary_unprefixed(tmp_path):
+    db = FileDB(tmp_path / 'test.db')
+    db.start()
+    db.initialize_database()
+    srcs = [('src0', 'h0', 100, 1.0)]
+    imgs = [('src0', 'src0', 1.0)]
+    metas = [('src0', 'raw_key', 'val', None)]
+    db.upsert_batches(srcs, imgs, metas, [])
+    rows = db.prefix_data_summary()
+    data = {r[0]: (r[1], r[2]) for r in rows}
+    assert data[''] == (1, 0)
+    db.close()
+
+
 def test_sql_constants_are_valid():
     conn = sqlite3.connect(':memory:')
     for _, _, sql in _TABLES:
@@ -668,4 +700,109 @@ def test_insert_pending_collection_skips_missing_sources(tmp_path):
     sources = {r[0] for r in rows}
     assert sources == {'src1'}
     assert 'nonexistent_src' not in sources
+    db.close()
+
+
+def _setup_db_for_detacher(tmp_path):
+    db = FileDB(tmp_path / 'test.db')
+    db.start()
+    db.initialize_database()
+    db.upsert_basic_sources(
+        [('src1', 'hash1', 100, 1.0), ('src2', 'hash2', 200, 2.0)],
+        [('src1', 'src1', 1.0), ('src2', 'src2', 1.5)],
+        [('src1', 'exif.parameters', 'steps:20', None), ('src1', 'exif.other', 'val', None),
+         ('src2', 'exif.parameters', 'steps:30', None)],
+    )
+    db.upsert_collection_results([], [], [('hash1', 'wd14.general', 'cat', None)], [])
+    return db
+
+
+def test_delete_meta_and_tags_by_keys(tmp_path):
+    db = _setup_db_for_detacher(tmp_path)
+    db.delete_meta_and_tags_by_keys([
+        ('src1', 'hash1', ['exif.parameters', 'wd14.general']),
+    ])
+    cur = db.get_reader_cursor()
+    cur.execute("SELECT key FROM meta_info WHERE path='src1'")
+    meta_keys = {r[0] for r in cur.fetchall()}
+    assert 'exif.parameters' not in meta_keys
+    assert 'exif.other' in meta_keys
+    cur.execute("SELECT key FROM tags WHERE file_hash='hash1'")
+    tag_keys = {r[0] for r in cur.fetchall()}
+    assert 'wd14.general' not in tag_keys
+    cur.close()
+    db.close()
+
+
+def test_delete_meta_and_tags_by_keys_no_hash(tmp_path):
+    db = _setup_db_for_detacher(tmp_path)
+    db.delete_meta_and_tags_by_keys([
+        ('src1', None, ['exif.parameters']),
+    ])
+    cur = db.get_reader_cursor()
+    cur.execute("SELECT key FROM meta_info WHERE path='src1'")
+    meta_keys = {r[0] for r in cur.fetchall()}
+    assert 'exif.parameters' not in meta_keys
+    cur.execute("SELECT key FROM tags WHERE file_hash='hash1'")
+    tag_keys = {r[0] for r in cur.fetchall()}
+    assert 'wd14.general' in tag_keys
+    cur.close()
+    db.close()
+
+
+def test_delete_meta_and_tags_by_keys_empty(tmp_path):
+    db = _setup_db_for_detacher(tmp_path)
+    db.delete_meta_and_tags_by_keys([])
+    cur = db.get_reader_cursor()
+    cur.execute("SELECT COUNT(*) FROM meta_info WHERE path='src1'")
+    assert cur.fetchone()[0] == 2
+    cur.close()
+    db.close()
+
+
+def test_find_sources_with_trigger_keys(tmp_path):
+    db = _setup_db_for_detacher(tmp_path)
+    sources = db.find_sources_with_trigger_keys(('exif.parameters',), 'sd_meta')
+    assert set(sources) == {'src1', 'src2'}
+    db.close()
+
+
+def test_find_sources_with_trigger_keys_excludes_processed(tmp_path):
+    db = _setup_db_for_detacher(tmp_path)
+    db.insert_pending_collection(['src1'], ['sd_meta'])
+    db.upsert_collection_results([], [], [], [('src1', 'sd_meta', 'ok', 1.0)])
+    sources = db.find_sources_with_trigger_keys(('exif.parameters',), 'sd_meta')
+    assert 'src1' not in sources
+    assert 'src2' in sources
+    db.close()
+
+
+def test_find_sources_with_trigger_keys_from_tags(tmp_path):
+    db = _setup_db_for_detacher(tmp_path)
+    sources = db.find_sources_with_trigger_keys(('wd14.general',), 'tag_proc')
+    assert 'src1' in sources
+    db.close()
+
+
+def test_get_trigger_metadata(tmp_path):
+    db = _setup_db_for_detacher(tmp_path)
+    meta = db.get_trigger_metadata(['src1', 'src2'], ('exif.parameters',))
+    assert meta['src1'] == {'exif.parameters': 'steps:20'}
+    assert meta['src2'] == {'exif.parameters': 'steps:30'}
+    db.close()
+
+
+def test_get_trigger_metadata_includes_tags(tmp_path):
+    db = _setup_db_for_detacher(tmp_path)
+    meta = db.get_trigger_metadata(['src1'], ('wd14.general',))
+    assert meta['src1'] == {'wd14.general': 'cat'}
+    db.close()
+
+
+def test_get_trigger_metadata_empty(tmp_path):
+    db = _setup_db_for_detacher(tmp_path)
+    meta = db.get_trigger_metadata([], ('exif.parameters',))
+    assert meta == {}
+    meta = db.get_trigger_metadata(['src1'], ())
+    assert meta == {}
     db.close()

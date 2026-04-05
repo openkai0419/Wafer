@@ -48,6 +48,13 @@
 - PluginRegistry.register()はクラス登録のみ。instance()初回呼び出し時に遅延インスタンス化する
 - FileViewerWidget.setup_ui()でviewer_resolver.viewer_plugins()経由でインスタンス取得し、plugin.widgetをstackに追加
 
+■ Collector/Detacherのプレフィックス設計
+- Collector/Detacherはmeta_info/tagsのキーをNAMEプレフィックスなしで返す。_parse_batch()が自動的に{NAME}.を付与してDBに書き込む
+- NAMEはCollector/Detacher横断でグローバル一意でなければならない。collection_statusテーブルを共有する
+- detacher:プレフィックスは廃止済み。DetacherResolver.status_name()はnameをそのまま返す
+- purge_collector_data()は{NAME}.%のLIKEパターンでmeta_info/tagsを削除する。NAMEとプレフィックスの一致が前提
+- TRIGGER_KEYSやdelete_keysは既にDB上にある完全修飾キー（例: exif.Comment）を指定する
+
 ■ Dispatcher / Pipeline スレッドモデルの設計思想
 目的: アプリ全体のBG処理を「1つの経路」に統一し、独自ワーカークラスやスレッドプール乱立を防ぐ。
 

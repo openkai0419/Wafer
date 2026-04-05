@@ -32,47 +32,47 @@ class TestBuildTags:
 
     def test_rating_top_one(self):
         tags = WD14TaggerCollector._build_tags(self.result)
-        assert tags['wd14.rating'] == 'general'
+        assert tags['rating'] == 'general'
 
     def test_general_comma_separated(self):
         tags = WD14TaggerCollector._build_tags(self.result)
-        assert '1girl' in tags['wd14.general']
-        assert 'blue_hair' in tags['wd14.general']
-        assert 'smile' in tags['wd14.general']
+        assert '1girl' in tags['tags']
+        assert 'blue_hair' in tags['tags']
+        assert 'smile' in tags['tags']
 
     def test_character_comma_separated(self):
         tags = WD14TaggerCollector._build_tags(self.result)
-        assert tags['wd14.character'] == 'hatsune_miku'
+        assert tags['character'] == 'hatsune_miku'
 
     def test_empty_character(self):
         self.result['character'] = {}
         tags = WD14TaggerCollector._build_tags(self.result)
-        assert 'wd14.character' not in tags
+        assert 'character' not in tags
 
     def test_empty_general(self):
         self.result['general'] = {}
         tags = WD14TaggerCollector._build_tags(self.result)
-        assert 'wd14.general' not in tags
+        assert 'general' not in tags
 
     def test_multiple_characters(self):
         self.result['character'] = {'hatsune_miku': 0.90, 'kagamine_rin': 0.85}
         tags = WD14TaggerCollector._build_tags(self.result)
-        assert 'hatsune_miku' in tags['wd14.character']
-        assert 'kagamine_rin' in tags['wd14.character']
+        assert 'hatsune_miku' in tags['character']
+        assert 'kagamine_rin' in tags['character']
 
     def test_sensitive_rating(self):
         self.result['ratings'] = {'sensitive': 0.90, 'general': 0.05, 'questionable': 0.03, 'explicit': 0.02}
         tags = WD14TaggerCollector._build_tags(self.result)
-        assert tags['wd14.rating'] == 'sensitive'
+        assert tags['rating'] == 'sensitive'
 
 
 class TestTwoLevelCache:
     def setup_method(self):
         self.collector = WD14TaggerCollector()
         self.tags = {
-            'wd14.rating': 'general',
-            'wd14.character': '',
-            'wd14.general': '1girl, smile',
+            'rating': 'general',
+            'character': '',
+            'general': '1girl, smile',
         }
 
     def test_l1_hash_cache_hit(self):
@@ -131,8 +131,8 @@ class TestTwoLevelCache:
 
         result = self.collector.process('/test/file.jpg', (1000.0, 500, 'new_hash'))
         assert result.status is True
-        assert result.tags['wd14.rating'] == 'general'
-        assert result.tags['wd14.general'] == '1girl'
+        assert result.tags['rating'] == 'general'
+        assert result.tags['tags'] == '1girl'
         self.collector._engine.predict.assert_called_once()
 
     def test_cache_populated_after_inference(self):
@@ -224,7 +224,7 @@ class TestCollectorClassAttributes:
 class TestCacheEviction:
     def test_hash_cache_evicts_oldest(self):
         collector = WD14TaggerCollector()
-        tags = {'wd14.rating': 'general'}
+        tags = {'rating': 'general'}
         for i in range(_CACHE_MAX + 10):
             WD14TaggerCollector._cache_put(collector._hash_cache, f'key_{i}', tags)
         assert len(collector._hash_cache) == _CACHE_MAX
@@ -233,7 +233,7 @@ class TestCacheEviction:
 
     def test_pixel_cache_evicts_oldest(self):
         collector = WD14TaggerCollector()
-        tags = {'wd14.rating': 'general'}
+        tags = {'rating': 'general'}
         for i in range(_CACHE_MAX + 5):
             WD14TaggerCollector._cache_put(collector._pixel_cache, f'px_{i}', tags)
         assert len(collector._pixel_cache) == _CACHE_MAX
@@ -241,7 +241,7 @@ class TestCacheEviction:
 
     def test_cache_hit_moves_to_end(self):
         collector = WD14TaggerCollector()
-        tags = {'wd14.rating': 'general'}
+        tags = {'rating': 'general'}
         collector._hash_cache['oldest'] = tags
         for i in range(_CACHE_MAX - 1):
             WD14TaggerCollector._cache_put(collector._hash_cache, f'key_{i}', tags)

@@ -67,6 +67,8 @@
 - BaseGridPlugin.release(widget)は画面外スクロール時にAdditionalWidgetPoolから呼ばれる。GPUリソース等重い資源はsuspend/resume方式。cleanup()は完全破壊のみ
 - Grid/ViewerのWIDGET_CLASSとload()は排他。ViewerPluginのWidget生成は__init__で自動、GridのWidget生成はシステム管理
 - Collectorは基本的にはmeta_info+statusのみ返す。name/aspect/file_hashはPhase1で設定されているが、zip等の１つのソースから複数のファイルを戻すものはこれに限らない
+- Collector/Detacherのmeta_info/tagsキーはNAMEプレフィックスなしで返す。_parse_batch()が{NAME}.を自動付与する。NAMEとDBプレフィックスは必ず一致する
+- NAMEはCollector/Detacher横断でグローバル一意。collection_statusテーブルを共有する
 - Collector基底はBaseCollector。BaseCollectorPlugin（per-indexer）とBaseSingletonCollector（全DB共有1プロセス）が継承。BATCH_SIZEはクラス変数で制御
 - Collectorの結果返送はmsg.dbベースでルーティング。self.db_nameではなく受信メッセージのdbを使用すること
 - PRIORITY大=高優先。EXTENSIONS=()は全ファイルマッチ

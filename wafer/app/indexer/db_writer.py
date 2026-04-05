@@ -71,5 +71,14 @@ class DatabaseWriter:
         return result
 
     @profiler.profile
+    def upsert_detacher_results(self, meta_info_entries, tag_entries, collector_status_entries, delete_entries=()):
+        self._db.upsert_collection_results(
+            [], meta_info_entries, tag_entries, collector_status_entries,
+        )
+        if delete_entries:
+            self._db.delete_meta_and_tags_by_keys(delete_entries)
+        self._db.try_checkpoint('PASSIVE')
+
+    @profiler.profile
     def checkpoint(self, mode: str = 'PASSIVE'):
         self._db.try_checkpoint(mode)

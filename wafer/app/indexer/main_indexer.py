@@ -6,9 +6,12 @@ from ...utils.logs import AppLogger
 from ...core.db.db_utils import remove_orphan_databases, delete_database_files
 from ...core.db.setting_db import SettingDB
 from ...plugin.collector.handler import collector_resolver
+from ...plugin.detacher.handler import detacher_resolver
 from ...core.ipc.node import Node
 from .collector_receiver import CollectorReceiver
 from .db_writer import DatabaseWriter
+from .detacher_dispatcher import DetacherDispatcher
+from .detacher_receiver import DetacherReceiver
 from .dispatcher import CollectorDispatcher
 from .progress_notifier import ProgressAggregator
 from .scanner import DirectoryScanner
@@ -31,6 +34,8 @@ class IndexerProcess:
         self.setting_watcher = None
         self.dispatcher = None
         self.receiver = None
+        self.detacher_dispatcher = None
+        self.detacher_receiver = None
         self._progress = None
         self.zmq = Node('indexer', db=name, consumer=True)
         self.zmq.subscribe('cleanup', lambda msg: self.cleanup() or True)
@@ -70,7 +75,6 @@ class IndexerProcess:
         self.scanner = DirectoryScanner(db_path, self.scheduler, self.writer, progress, collectors)
         self.scanner.set_exclude_paths(self.setting_db.get_all_ignore_folders())
         self.scanner.start()
-        self.scanner.backfill_pending()
 
         self.receiver = CollectorReceiver(self.scheduler, self.writer, progress)
         self.zmq.subscribe('collect.result', self.receiver.handle_result)
@@ -80,6 +84,37 @@ class IndexerProcess:
             collectors=collector_names,
         )
         self.dispatcher.start(self.zmq)
+
+        all_detachers = detacher_resolver.names()
+        if enabled is not None:
+            all_known = {c[0] for c in all_collectors} | set(enabled)
+            detacher_names = [
+                n for n in all_detachers
+                if n in enabled_set
+                or (n not in all_known
+                    and getattr(detacher_resolver.registry.get(n), 'DEFAULT_ENABLED', False))
+            ]
+        else:
+            detacher_names = all_detachers
+        if detacher_names:
+            self.detacher_receiver = DetacherReceiver(self.scheduler, self.writer, progress)
+            self.zmq.subscribe('detach.result', self.detacher_receiver.handle_result)
+            self.detacher_dispatcher = DetacherDispatcher(
+                self.db_name, db_path, self.scheduler, self.writer, progress,
+                detachers=detacher_names,
+            )
+            self.detacher_dispatcher.start(self.zmq)
+            self.detacher_receiver.set_request_dispatch(self.detacher_dispatcher.request_dispatch)
+            self.receiver.set_detacher_dispatch(
+                self.detacher_dispatcher.request_dispatch,
+                self.writer,
+            )
+            self.scanner.set_detachers([
+                (detacher_resolver.status_name(n), detacher_resolver.trigger_keys(n))
+                for n in detacher_names
+            ])
+
+        self.scanner.backfill_pending()
 
         self.folder_watcher = FolderWatcher(self.scheduler, self.writer, self.scanner, progress)
         self.folder_watcher.start(self.setting_db.get_all_parent_folders())
@@ -226,6 +261,8 @@ class IndexerProcess:
         self._stop_zmq()
 
     def _stop_components(self):
+        if self.detacher_dispatcher:
+            self.detacher_dispatcher.stop()
         if self.dispatcher:
             self.dispatcher.stop()
         if self.folder_watcher:

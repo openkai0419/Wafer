@@ -78,7 +78,7 @@ def test_exif_plugin_process_success(tmp_path):
     assert result.aspect is not None
     if result.meta_info:
         for key in result.meta_info:
-            assert key.startswith('exif.'), f'meta_info key missing prefix: {key}'
+            assert '.' not in key, f'meta_info key should not have prefix: {key}'
 
 
 def test_exif_plugin_process_failure():

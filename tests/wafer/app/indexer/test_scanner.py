@@ -197,3 +197,103 @@ def test_loop_survives_exception(tmp_path):
     assert scanner._thread.is_alive()
     assert call_count >= 2
     scanner.stop()
+
+
+def test_set_detachers(tmp_path):
+    scanner, *_ = _make_scanner(tmp_path)
+    detachers = [('nai', ('exif.comment',))]
+    scanner.set_detachers(detachers)
+    assert scanner._detachers == detachers
+
+
+def test_backfill_detachers_inserts_pending(tmp_path):
+    from wafer.core.db.file_db import FileDB
+    db_path = tmp_path / 'test.db'
+    db = FileDB(db_path)
+    db.start()
+    db.initialize_database()
+    db.conn.execute("INSERT INTO hash_index (file_hash) VALUES ('h1')")
+    db.conn.execute(
+        "INSERT INTO sources (source, file_hash, size, modified) VALUES ('/a.jpg', 'h1', 100, 1.0)"
+    )
+    db.conn.execute(
+        "INSERT INTO files (path, source, aspect_ratio) VALUES ('/a.jpg', '/a.jpg', 1.0)"
+    )
+    db.conn.execute(
+        "INSERT INTO meta_info (path, key, value) VALUES ('/a.jpg', 'exif.comment', '{}')"
+    )
+    db.conn.commit()
+
+    scheduler = MagicMock()
+    writer = MagicMock()
+    writer.db = db
+    progress = MagicMock()
+    scanner = DirectoryScanner(db_path, scheduler, writer, progress, [])
+    scanner.set_detachers([('nai', ('exif.comment',))])
+    scanner.start()
+    scanner._do_backfill()
+    found_pending = False
+    for call in scheduler.submit.call_args_list:
+        task = call[0][0]
+        if task.name == 'insert_pending':
+            found_pending = True
+    assert found_pending
+    scanner.stop()
+    db.close()
+
+
+def test_backfill_detachers_skips_existing_status(tmp_path):
+    from wafer.core.db.file_db import FileDB
+    db_path = tmp_path / 'test.db'
+    db = FileDB(db_path)
+    db.start()
+    db.initialize_database()
+    db.conn.execute("INSERT INTO hash_index (file_hash) VALUES ('h1')")
+    db.conn.execute(
+        "INSERT INTO sources (source, file_hash, size, modified) VALUES ('/a.jpg', 'h1', 100, 1.0)"
+    )
+    db.conn.execute(
+        "INSERT INTO files (path, source, aspect_ratio) VALUES ('/a.jpg', '/a.jpg', 1.0)"
+    )
+    db.conn.execute(
+        "INSERT INTO meta_info (path, key, value) VALUES ('/a.jpg', 'exif.comment', '{}')"
+    )
+    db.conn.execute(
+        "INSERT INTO collection_status (source, collector, status, collected_at) "
+        "VALUES ('/a.jpg', 'nai', 'ok', 1.0)"
+    )
+    db.conn.commit()
+
+    scheduler = MagicMock()
+    writer = MagicMock()
+    writer.db = db
+    progress = MagicMock()
+    scanner = DirectoryScanner(db_path, scheduler, writer, progress, [])
+    scanner.set_detachers([('nai', ('exif.comment',))])
+    scanner.start()
+    scanner._do_backfill()
+    found_pending = False
+    for call in scheduler.submit.call_args_list:
+        task = call[0][0]
+        if task.name == 'insert_pending':
+            found_pending = True
+    assert not found_pending
+    scanner.stop()
+    db.close()
+
+
+def test_backfill_detachers_empty_trigger_keys(tmp_path):
+    scanner, scheduler, *_ = _make_scanner(tmp_path)
+    scanner.set_detachers([('empty', ())])
+    scanner.start()
+    scanner._do_backfill()
+    assert not scheduler.submit.called
+    scanner.stop()
+
+
+def test_backfill_detachers_no_detachers(tmp_path):
+    scanner, scheduler, *_ = _make_scanner(tmp_path)
+    scanner.start()
+    scanner._do_backfill()
+    assert not scheduler.submit.called
+    scanner.stop()

@@ -1,10 +1,20 @@
 from PySide6 import QtWidgets, QtCore
 from ...utils.formatting import dpix
-from ...utils.logs import AppLogger
 from ...utils.paths import list_setting_db_names, data_db_path, setting_db_path
 from ...core.db.setting_db import SettingDB
 from ...core.db.file_db import FileDB
 from ...core.qt.dispatcher import Dispatcher, CancelSlot
+
+
+_COL_DB = 0
+_COL_PREFIX = 1
+_COL_META = 2
+_COL_TAGS = 3
+_COL_PLUGIN = 4
+_COL_STATUS = 5
+_COL_CHECK = 6
+_COLUMN_COUNT = 7
+_HEADERS = ['Database', 'Prefix', 'Meta', 'Tags', 'Plugin', 'Status', '']
 
 
 class _NumericItem(QtWidgets.QTableWidgetItem):
@@ -15,6 +25,50 @@ class _NumericItem(QtWidgets.QTableWidgetItem):
             return super().__lt__(other)
 
 
+def _resolve_plugin_info(prefix: str) -> tuple[str, str]:
+    from ...plugin.collector.handler import collector_resolver
+    from ...plugin.detacher.handler import detacher_resolver
+    if collector_resolver.registry.get(prefix):
+        return 'Collector', prefix
+    if detacher_resolver.registry.get(prefix):
+        return 'Detacher', prefix
+    return '', ''
+
+
+def _build_rows(db_names: list[str], cancel) -> list[tuple[str, str, int, int, str, str, bool]]:
+    rows: list[tuple[str, str, int, int, str, str, bool]] = []
+    for name in db_names:
+        if cancel.is_cancelled():
+            return []
+        sdb = SettingDB(setting_db_path(name))
+        enabled = set(sdb.get_enabled_collectors() or [])
+        try:
+            fdb = FileDB(data_db_path(name))
+            fdb.start()
+            prefix_data = fdb.prefix_data_summary()
+            fdb.close()
+        except Exception:
+            prefix_data = []
+        seen_prefixes: set[str] = set()
+        for prefix, meta_count, tag_count in prefix_data:
+            seen_prefixes.add(prefix)
+            plugin_type, _ = _resolve_plugin_info(prefix)
+            if prefix and prefix in enabled:
+                status = 'Active'
+            elif prefix and plugin_type:
+                status = 'Disabled'
+            else:
+                status = ''
+            purgeable = bool(prefix)
+            rows.append((name, prefix, meta_count, tag_count, plugin_type, status, purgeable))
+        for en in sorted(enabled - seen_prefixes):
+            plugin_type, _ = _resolve_plugin_info(en)
+            if not plugin_type:
+                continue
+            rows.append((name, en, 0, 0, plugin_type, 'Active', True))
+    return rows
+
+
 class DataTab(QtWidgets.QWidget):
 
     purge_requested = QtCore.Signal(list, bool)
@@ -23,7 +77,7 @@ class DataTab(QtWidgets.QWidget):
         super().__init__(parent)
         self._dispatcher = dispatcher
         self._cancel = CancelSlot()
-        self._rows: list[tuple[str, str, int, str]] = []
+        self._rows: list[tuple[str, str, int, int, str, str, bool]] = []
         self.destroyed.connect(lambda: self._cancel.renew())
 
         layout = QtWidgets.QVBoxLayout(self)
@@ -34,16 +88,18 @@ class DataTab(QtWidgets.QWidget):
         layout.addWidget(label)
 
         self._table = QtWidgets.QTableWidget()
-        self._table.setColumnCount(5)
-        self._table.setHorizontalHeaderLabels(['Database', 'Collector', 'Collected', 'Status', ''])
+        self._table.setColumnCount(_COLUMN_COUNT)
+        self._table.setHorizontalHeaderLabels(_HEADERS)
         header = self._table.horizontalHeader()
         header.setStretchLastSection(False)
-        header.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
-        header.setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
-        header.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(4, QtWidgets.QHeaderView.Fixed)
-        self._table.setColumnWidth(4, dpix(30))
+        header.setSectionResizeMode(_COL_DB, QtWidgets.QHeaderView.Stretch)
+        header.setSectionResizeMode(_COL_PREFIX, QtWidgets.QHeaderView.Stretch)
+        header.setSectionResizeMode(_COL_META, QtWidgets.QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(_COL_TAGS, QtWidgets.QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(_COL_PLUGIN, QtWidgets.QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(_COL_STATUS, QtWidgets.QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(_COL_CHECK, QtWidgets.QHeaderView.Fixed)
+        self._table.setColumnWidth(_COL_CHECK, dpix(30))
         self._table.setSortingEnabled(True)
         self._table.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
         self._table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
@@ -82,57 +138,48 @@ class DataTab(QtWidgets.QWidget):
         db_names = list_setting_db_names()
 
         def task():
-            rows = []
-            for name in db_names:
-                if cancel.is_cancelled():
-                    return
-                db_path = data_db_path(name)
-                sdb = SettingDB(setting_db_path(name))
-                enabled = set(sdb.get_enabled_collectors() or [])
-                try:
-                    fdb = FileDB(db_path)
-                    fdb.start()
-                    counts = dict(fdb.collector_data_counts())
-                    fdb.close()
-                except Exception:
-                    counts = {}
-                all_collectors = set(counts.keys()) | enabled
-                for coll in sorted(all_collectors):
-                    count = counts.get(coll, 0)
-                    status = 'Active' if coll in enabled else 'Disabled'
-                    if count == 0 and coll not in enabled:
-                        status = '\u2014'
-                    rows.append((name, coll, count, status))
-            if not cancel.is_cancelled():
+            rows = _build_rows(db_names, cancel)
+            if rows is not None and not cancel.is_cancelled():
                 self._dispatcher.invoke(lambda: self._apply_rows(rows))
 
         self._dispatcher.post(task, priority=5, cancel=cancel)
 
-    def _apply_rows(self, rows: list[tuple[str, str, int, str]]):
+    def _apply_rows(self, rows: list[tuple[str, str, int, int, str, str, bool]]):
         self._rows = rows
         self._table.setSortingEnabled(False)
         self._table.setRowCount(len(rows))
-        for i, (db, coll, count, status) in enumerate(rows):
-            self._table.setItem(i, 0, QtWidgets.QTableWidgetItem(db))
-            self._table.setItem(i, 1, QtWidgets.QTableWidgetItem(coll))
-            item = _NumericItem(f'{count:,}')
-            item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-            self._table.setItem(i, 2, item)
-            self._table.setItem(i, 3, QtWidgets.QTableWidgetItem(status))
+        for i, (db, prefix, meta, tags, plugin_type, status, purgeable) in enumerate(rows):
+            self._table.setItem(i, _COL_DB, QtWidgets.QTableWidgetItem(db))
+            prefix_text = prefix if prefix else '(no prefix)'
+            self._table.setItem(i, _COL_PREFIX, QtWidgets.QTableWidgetItem(prefix_text))
+
+            meta_item = _NumericItem(f'{meta:,}')
+            meta_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+            self._table.setItem(i, _COL_META, meta_item)
+
+            tags_item = _NumericItem(f'{tags:,}')
+            tags_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+            self._table.setItem(i, _COL_TAGS, tags_item)
+
+            self._table.setItem(i, _COL_PLUGIN, QtWidgets.QTableWidgetItem(plugin_type))
+            self._table.setItem(i, _COL_STATUS, QtWidgets.QTableWidgetItem(status))
+
             cb = QtWidgets.QCheckBox()
+            if not purgeable:
+                cb.setEnabled(False)
             cb.stateChanged.connect(self._update_selected_count)
             container = QtWidgets.QWidget()
             cb_layout = QtWidgets.QHBoxLayout(container)
             cb_layout.addWidget(cb)
             cb_layout.setAlignment(QtCore.Qt.AlignCenter)
             cb_layout.setContentsMargins(0, 0, 0, 0)
-            self._table.setCellWidget(i, 4, container)
+            self._table.setCellWidget(i, _COL_CHECK, container)
         self._table.setSortingEnabled(True)
 
     def _update_selected_count(self):
         count = 0
         for i in range(self._table.rowCount()):
-            container = self._table.cellWidget(i, 4)
+            container = self._table.cellWidget(i, _COL_CHECK)
             if container:
                 cb = container.findChild(QtWidgets.QCheckBox)
                 if cb and cb.isChecked():
@@ -142,19 +189,22 @@ class DataTab(QtWidgets.QWidget):
     def _on_purge(self):
         selected = []
         for i in range(self._table.rowCount()):
-            container = self._table.cellWidget(i, 4)
+            container = self._table.cellWidget(i, _COL_CHECK)
             if not container:
                 continue
             cb = container.findChild(QtWidgets.QCheckBox)
             if cb and cb.isChecked():
-                selected.append((self._table.item(i, 0).text(),
-                                 self._table.item(i, 1).text()))
+                db = self._table.item(i, _COL_DB).text()
+                prefix = self._table.item(i, _COL_PREFIX).text()
+                if prefix == '(no prefix)':
+                    continue
+                selected.append((db, prefix))
         if not selected:
             return
         re_collect = self._re_collect_cb.isChecked()
-        msg = f'Purge {len(selected)} collector(s)?\n\n'
-        for db, coll in selected:
-            msg += f'  {coll} on {db}\n'
+        msg = f'Purge {len(selected)} prefix(es)?\n\n'
+        for db, prefix in selected:
+            msg += f'  {prefix} on {db}\n'
         if re_collect:
             msg += '\nFiles will be marked for re-collection.'
         result = QtWidgets.QMessageBox.question(
@@ -173,46 +223,35 @@ class DataTab(QtWidgets.QWidget):
         db_names = list_setting_db_names()
 
         def task():
-            rows = []
-            for name in db_names:
-                if cancel.is_cancelled():
-                    return
-                db_path = data_db_path(name)
-                sdb = SettingDB(setting_db_path(name))
-                enabled = set(sdb.get_enabled_collectors() or [])
-                try:
-                    fdb = FileDB(db_path)
-                    fdb.start()
-                    counts = dict(fdb.collector_data_counts())
-                    fdb.close()
-                except Exception:
-                    counts = {}
-                all_collectors = set(counts.keys()) | enabled
-                for coll in sorted(all_collectors):
-                    count = counts.get(coll, 0)
-                    status = 'Active' if coll in enabled else 'Disabled'
-                    if count == 0 and coll not in enabled:
-                        status = '\u2014'
-                    rows.append((name, coll, count, status))
-            if not cancel.is_cancelled():
+            rows = _build_rows(db_names, cancel)
+            if rows is not None and not cancel.is_cancelled():
                 self._dispatcher.invoke(lambda r=rows: self._merge_rows(r))
 
         self._dispatcher.post(task, priority=7, cancel=cancel)
 
-    def _merge_rows(self, rows: list[tuple[str, str, int, str]]):
+    def _merge_rows(self, rows: list[tuple[str, str, int, int, str, str, bool]]):
         old_set = {(r[0], r[1]) for r in self._rows}
         new_set = {(r[0], r[1]) for r in rows}
         if old_set != new_set:
             self._apply_rows(rows)
             return
-        old_data = {(r[0], r[1]): (r[2], r[3]) for r in self._rows}
-        new_data = {(db, coll): (count, status) for db, coll, count, status in rows}
+        old_data = {(r[0], r[1]): r[2:] for r in self._rows}
+        new_data = {(r[0], r[1]): r[2:] for r in rows}
         for i in range(self._table.rowCount()):
-            key = (self._table.item(i, 0).text(), self._table.item(i, 1).text())
-            old_count, old_status = old_data[key]
-            new_count, new_status = new_data[key]
-            if old_count != new_count:
-                self._table.item(i, 2).setText(f'{new_count:,}')
-            if old_status != new_status:
-                self._table.item(i, 3).setText(new_status)
+            db = self._table.item(i, _COL_DB).text()
+            prefix_text = self._table.item(i, _COL_PREFIX).text()
+            prefix = '' if prefix_text == '(no prefix)' else prefix_text
+            key = (db, prefix)
+            old = old_data.get(key)
+            new = new_data.get(key)
+            if old is None or new is None:
+                continue
+            if old[0] != new[0]:
+                self._table.item(i, _COL_META).setText(f'{new[0]:,}')
+            if old[1] != new[1]:
+                self._table.item(i, _COL_TAGS).setText(f'{new[1]:,}')
+            if old[2] != new[2]:
+                self._table.item(i, _COL_PLUGIN).setText(new[2])
+            if old[3] != new[3]:
+                self._table.item(i, _COL_STATUS).setText(new[3])
         self._rows = rows

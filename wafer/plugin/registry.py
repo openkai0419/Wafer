@@ -55,6 +55,7 @@ class PluginRegistry(RegistryBase):
     def __init__(self):
         super().__init__()
         self._plugins: dict[str, type[PluginBase]] = {}
+        self._instances: dict[str, PluginBase] = {}
 
     def _sort_key(self, cls: type[PluginBase]):
         if self._order:
@@ -69,6 +70,7 @@ class PluginRegistry(RegistryBase):
         if existing is not None and plugin_cls.PRIORITY < existing.PRIORITY:
             return
         self._plugins[plugin_cls.NAME] = plugin_cls
+        self._instances.pop(plugin_cls.NAME, None)
 
     def get(self, name: str) -> type[PluginBase] | None:
         return self._plugins.get(name)
@@ -76,12 +78,20 @@ class PluginRegistry(RegistryBase):
     def list_all(self) -> list[type[PluginBase]]:
         return sorted(self._plugins.values(), key=self._sort_key, reverse=True)
 
+    def instance(self, name: str) -> PluginBase | None:
+        inst = self._instances.get(name)
+        if inst is None:
+            cls = self.get(name)
+            if cls is not None:
+                inst = cls()
+                self._instances[name] = inst
+        return inst
+
 
 class FilePluginRegistry(PluginRegistry):
 
     def __init__(self):
         super().__init__()
-        self._instances: dict[str, BasePlugin] = {}
         self._ext_cache: dict[str, list[type[BasePlugin]]] = {}
         self._chain_cache: dict[str, list[type[BasePlugin]]] = {}
 
@@ -98,7 +108,6 @@ class FilePluginRegistry(PluginRegistry):
 
     def register(self, plugin_cls: type[BasePlugin]):
         super().register(plugin_cls)
-        self._instances.pop(plugin_cls.NAME, None)
         self._invalidate_caches()
 
     def set_order(self, order: list[str]):
@@ -129,15 +138,6 @@ class FilePluginRegistry(PluginRegistry):
                 candidates.append(p)
         self._chain_cache[ext] = candidates
         return candidates
-
-    def instance(self, name: str) -> BasePlugin | None:
-        inst = self._instances.get(name)
-        if inst is None:
-            cls = self.get(name)
-            if cls is not None:
-                inst = cls()
-                self._instances[name] = inst
-        return inst
 
     def resolve_instance(self, path: str) -> BasePlugin | None:
         cls = self.resolve(path)

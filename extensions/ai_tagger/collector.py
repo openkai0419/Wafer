@@ -84,12 +84,12 @@ class WD14TaggerCollector(BaseSingletonCollector):
         top_rating = max(ratings, key=ratings.get)
 
         tags = {
-            'wd14.rating': top_rating,
+            'rating': top_rating,
         }
         if result['character']:
-            tags['wd14.character'] = ', '.join(result['character'].keys())
+            tags['character'] = ', '.join(result['character'].keys())
         if result['general']:
-            tags['wd14.general'] = ', '.join(result['general'].keys())
+            tags['tags'] = ', '.join(result['general'].keys())
         return tags
 
     def process(self, path: str, file_info: tuple) -> CollectorResult:

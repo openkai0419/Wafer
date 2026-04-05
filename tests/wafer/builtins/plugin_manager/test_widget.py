@@ -918,11 +918,12 @@ class TestDataTab:
             [('src0', 'h0', 100, 1.0)],
             [('c:/a.jpg', 'src0', 1.5)],
         )
-        fdb.insert_pending_collection(['src0'], ['exif'])
-        fdb.conn.execute(
-            "UPDATE collection_status SET status='ok', collected_at=1.0 WHERE collector='exif'"
+        fdb.upsert_collection_results(
+            [],
+            [('c:/a.jpg', 'exif.width', '1920', 1920)],
+            [],
+            [],
         )
-        fdb.conn.commit()
         fdb.close()
 
         monkeypatch.setattr(
@@ -937,6 +938,10 @@ class TestDataTab:
             'wafer.builtins.plugin_manager.data_tab.data_db_path',
             lambda name: fdb_path,
         )
+        monkeypatch.setattr(
+            'wafer.builtins.plugin_manager.data_tab._resolve_plugin_info',
+            lambda prefix: ('Collector', prefix) if prefix == 'exif' else ('', ''),
+        )
 
         from wafer.core.qt.dispatcher import Dispatcher
         dispatcher = Dispatcher()
@@ -947,7 +952,8 @@ class TestDataTab:
         assert tab._table.rowCount() >= 1
         assert tab._table.item(0, 1).text() == 'exif'
         assert tab._table.item(0, 2).text() == '1'
-        assert tab._table.item(0, 3).text() == 'Active'
+        assert tab._table.item(0, 3).text() == '0'
+        assert tab._table.item(0, 5).text() == 'Active'
 
 
 class TestCloseEventCancels:

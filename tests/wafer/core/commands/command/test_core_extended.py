@@ -437,3 +437,193 @@ class TestValidateCommandArgsEdgeCases:
         p = CommandParam(name="mode", value=lambda: ["a", "b"])
         meta = CommandMeta(id="test.dyn", params=[p])
         validate_command_args(meta, {"mode": "c"})
+
+    def test_extra_args_raises(self):
+        meta = CommandMeta(id="test.extra", params=[CommandParam(name="a", value=1)])
+        with pytest.raises(ValueError, match="Unknown args"):
+            validate_command_args(meta, {"a": 1, "bogus": 2})
+
+    def test_require_all_missing_raises(self):
+        meta = CommandMeta(id="test.reqall", params=[
+            CommandParam(name="a", value=1),
+            CommandParam(name="b", value=2),
+        ])
+        with pytest.raises(ValueError, match="Missing args"):
+            validate_command_args(meta, {"a": 5}, require_all=True)
+
+    def test_require_all_ok(self):
+        meta = CommandMeta(id="test.reqall_ok", params=[
+            CommandParam(name="a", value=1),
+            CommandParam(name="b", value=2),
+        ])
+        validate_command_args(meta, {"a": 5, "b": 10}, require_all=True)
+
+    def test_type_mismatch_raises(self):
+        meta = CommandMeta(id="test.type", params=[CommandParam(name="step", value=1)])
+        with pytest.raises(TypeError, match="expected int"):
+            validate_command_args(meta, {"step": "wrong"})
+
+    def test_int_to_float_allowed(self):
+        meta = CommandMeta(id="test.i2f", params=[CommandParam(name="val", value=1.0)])
+        validate_command_args(meta, {"val": 5})
+
+    def test_static_choices_violation_raises(self):
+        meta = CommandMeta(id="test.ch", params=[CommandParam(name="mode", value=["a", "b"])])
+        with pytest.raises(ValueError, match="not in"):
+            validate_command_args(meta, {"mode": "c"})
+
+    def test_min_value_violation_raises(self):
+        meta = CommandMeta(id="test.min", params=[CommandParam(name="x", value=50, min_value=10, max_value=100)])
+        with pytest.raises(ValueError, match="< min"):
+            validate_command_args(meta, {"x": 5})
+
+    def test_max_value_violation_raises(self):
+        meta = CommandMeta(id="test.max", params=[CommandParam(name="x", value=50, min_value=10, max_value=100)])
+        with pytest.raises(ValueError, match="> max"):
+            validate_command_args(meta, {"x": 200})
+
+
+class TestCommandRegistryExecute:
+    def test_execute_success(self):
+        reg = CommandRegistry.instance()
+        results = []
+        meta = CommandMeta(id="test.exec_ok", display="OK", func=lambda ctx: results.append("run"))
+        reg.register(create_command_from_meta(meta))
+        ctx = CommandContext.build()
+        reg.execute("test.exec_ok", ctx=ctx)
+        assert results == ["run"]
+
+    def test_execute_not_found_returns_none(self):
+        reg = CommandRegistry.instance()
+        ctx = CommandContext.build()
+        result = reg.execute("nonexistent.cmd", ctx=ctx)
+        assert result is None
+
+    def test_execute_no_ctx_raises(self):
+        reg = CommandRegistry.instance()
+        meta = CommandMeta(id="test.exec_noctx", display="NoCTX", func=lambda ctx: None)
+        reg.register(create_command_from_meta(meta))
+        with pytest.raises(ValueError, match="ctx is required"):
+            reg.execute("test.exec_noctx")
+
+    def test_execute_ctx_from_kwargs(self):
+        reg = CommandRegistry.instance()
+        results = []
+        meta = CommandMeta(id="test.exec_kwctx", display="KWCTX", func=lambda ctx: results.append("via_kw"))
+        reg.register(create_command_from_meta(meta))
+        ctx = CommandContext.build()
+        reg.execute("test.exec_kwctx", ctx=ctx)
+        assert results == ["via_kw"]
+
+    def test_execute_drag_without_event_raises(self):
+        reg = CommandRegistry.instance()
+        meta = CommandMeta(
+            id="test.exec_drag", display="Drag", category="drag",
+            drag_callbacks={"start": lambda ctx: None},
+        )
+        reg.register(create_command_from_meta(meta))
+        ctx = CommandContext.build()
+        ctx.event = None
+        with pytest.raises(ValueError, match="requires event"):
+            reg.execute("test.exec_drag", ctx=ctx)
+
+    def test_execute_drop_without_event_raises(self):
+        reg = CommandRegistry.instance()
+        meta = CommandMeta(
+            id="test.exec_drop", display="Drop", category="drop",
+            drop_callbacks={"drop": lambda ctx: None},
+        )
+        reg.register(create_command_from_meta(meta))
+        ctx = CommandContext.build()
+        ctx.event = None
+        with pytest.raises(ValueError, match="requires event"):
+            reg.execute("test.exec_drop", ctx=ctx)
+
+
+class TestCommandRegistryAccessors:
+    def test_get_command_existing(self):
+        reg = CommandRegistry.instance()
+        meta = CommandMeta(id="test.accessor1", display="A1", func=lambda ctx: None)
+        cls = create_command_from_meta(meta)
+        reg.register(cls)
+        assert reg.get_command("test.accessor1") is cls
+
+    def test_get_command_missing(self):
+        reg = CommandRegistry.instance()
+        assert reg.get_command("nonexistent.accessor") is None
+
+    def test_get_all_commands_returns_copy(self):
+        reg = CommandRegistry.instance()
+        all_cmds = reg.get_all_commands()
+        all_cmds["injected"] = None
+        assert "injected" not in reg._commands
+
+
+class TestConvenienceFunctions:
+    def test_register_and_resolve_drop_accept(self):
+        from wafer.core.commands.command.core import register_drop_accept, resolve_drop_accept
+        a = lambda event: True
+        register_drop_accept("TestWidget", a)
+        result = resolve_drop_accept("TestWidget")
+        assert a in result
+
+    def test_resolve_drop_accept_empty(self):
+        from wafer.core.commands.command.core import resolve_drop_accept
+        result = resolve_drop_accept("EmptyWidget")
+        assert len(result) == 0
+
+
+class TestCommandBaseDispatch:
+    def test_dispatch_with_meta(self):
+        results = []
+        meta = CommandMeta(id="test.disp", params=[CommandParam(name="step", value=1)])
+
+        class TestCmd(CommandBase):
+            pass
+        TestCmd.meta = meta
+
+        def _execute(self, **kwargs):
+            results.append(kwargs.get("step"))
+            return kwargs.get("step")
+        TestCmd.execute = _execute
+
+        cmd = TestCmd()
+        ctx = MagicMock()
+        result = cmd.dispatch(step=5, ctx=ctx)
+        assert results == [5]
+        assert result == 5
+        assert cmd._last_kwargs["step"] == 5
+
+    def test_dispatch_without_meta(self):
+        class TestCmd(CommandBase):
+            meta = None
+            def execute(self, **kwargs):
+                return kwargs.get("val")
+        cmd = TestCmd()
+        result = cmd.dispatch(val=42)
+        assert result == 42
+        assert cmd._last_kwargs == {"val": 42}
+
+
+class TestCommandRegistryRegister:
+    def test_register_without_id_raises(self):
+        class BadCmd(CommandBase):
+            meta = CommandMeta(id="")
+        with pytest.raises(ValueError, match="Command id is required"):
+            CommandRegistry.instance().register(BadCmd)
+
+    def test_register_without_meta_raises(self):
+        class BadCmd(CommandBase):
+            meta = None
+        with pytest.raises(ValueError, match="Command id is required"):
+            CommandRegistry.instance().register(BadCmd)
+
+    def test_override_replaces_command(self):
+        reg = CommandRegistry.instance()
+        m1 = CommandMeta(id="test.override", display="V1", func=lambda ctx: "v1")
+        m2 = CommandMeta(id="test.override", display="V2", func=lambda ctx: "v2")
+        cls1 = create_command_from_meta(m1)
+        cls2 = create_command_from_meta(m2)
+        reg.register(cls1)
+        reg.register(cls2)
+        assert reg.get_command("test.override") is cls2

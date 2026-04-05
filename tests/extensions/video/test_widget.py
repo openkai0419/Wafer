@@ -182,7 +182,7 @@ class TestMpvCellWidget:
         w = MpvCellWidget()
         synced = {c.args[0]: c.args[1] for c in mock_cmd.call_args_list}
         assert synced.get('vgrid.toggle_hover_autoplay') is True
-        assert synced.get('vgrid.toggle_appear_autoplay') is True
+        assert synced.get('vgrid.toggle_appear_autoplay') is False
         assert synced.get('vgrid.toggle_select_autoplay') is True
         assert synced.get('vgrid.toggle_pause_in_background') is False
         w.cleanup()
@@ -304,6 +304,7 @@ class TestMpvCellWidget:
         w = MpvCellWidget(parent)
         w._path = '/test.mp4'
         w.setGeometry(0, 0, 200, 150)
+        MpvCellWidget._slot_manager.appear_autoplay = True
         w.on_appeared()
         assert MpvCellWidget._slot_manager.is_appeared(w)
         QtWidgets.QApplication.instance().processEvents()
@@ -316,6 +317,7 @@ class TestMpvCellWidget:
         w = MpvCellWidget(parent)
         w._path = '/test.mp4'
         w.setGeometry(0, 0, 200, 150)
+        MpvCellWidget._slot_manager.appear_autoplay = True
         w.on_appeared()
         QtWidgets.QApplication.instance().processEvents()
         w.on_disappeared()
@@ -328,6 +330,7 @@ class TestMpvCellWidget:
         w = MpvCellWidget(parent)
         w._path = '/test.mp4'
         w.setGeometry(0, 0, 200, 150)
+        MpvCellWidget._slot_manager.appear_autoplay = True
         w.on_appeared()
         QtWidgets.QApplication.instance().processEvents()
         w.on_selected()

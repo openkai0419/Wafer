@@ -161,11 +161,6 @@ class GridViewCommands(ActionKit.MenuBase):
         GridViewCommands._show_index(ctx, idx)
 
     @staticmethod
-    def show_selected(ctx):
-        items = GridViewCommands.get_items(ctx)
-        GridViewCommands._show_index(ctx, items.last_selected_index())
-
-    @staticmethod
     def select_all(ctx):
         items = GridViewCommands.get_items(ctx)
         n = items.count()
@@ -376,7 +371,7 @@ class GridViewCommands(ActionKit.MenuBase):
             "-",
             ":Viewer",
             ActionKit.Command(path="grid.show_at_pos", display="Show at Pos", func=cls.show_at_pos),
-            ActionKit.Command(path="grid.show_selected", display="Show Selected", func=cls.show_selected),
+            "file.show_file",
             "-",
             ":Scroll",
             ActionKit.Command(path="grid.scroll_up", display="Scroll Up", func=cls.wheel_scroll_up, params=[ActionKit.Param(name="multiplier", value=1.5)]),

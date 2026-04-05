@@ -1,4 +1,55 @@
 {
+  "Add": {
+    "en": "Add"
+  },
+  "BatchRenamer": {
+    "en": "BatchRenamer"
+  },
+  "Copy FileName(s)": {
+    "en": "Copy FileName(s)"
+  },
+  "Copy Paths(s)": {
+    "en": "Copy Paths(s)"
+  },
+  "Remove": {
+    "en": "Remove"
+  },
+  "Remove 5 file(s)": {
+    "en": "Remove 5 file(s)"
+  },
+  "Scroll at GridView": {
+    "en": "Scroll at GridView"
+  },
+  "Select at FolderTree": {
+    "en": "Select at FolderTree"
+  },
+  "Set": {
+    "en": "Set"
+  },
+  "Show at FileViewer": {
+    "en": "Show at FileViewer"
+  },
+  "Wafer": {
+    "en": "Wafer"
+  },
+  "Batch Renamer (Replace)": {
+    "en": "Batch Renamer (Replace)"
+  },
+  "Batch Renamer": {
+    "en": "Batch Renamer"
+  },
+  "Batch Renamer (Add)": {
+    "en": "Batch Renamer (Add)"
+  },
+  "Batch Renamer (Remove)": {
+    "en": "Batch Renamer (Remove)"
+  },
+  "Toggle Batch Renamer": {
+    "en": "Toggle Batch Renamer"
+  },
+  "★Edit Mode": {
+    "en": "★Edit Mode"
+  },
   "Batch Rename (Add)": {
     "en": "Batch Rename (Add)"
   },

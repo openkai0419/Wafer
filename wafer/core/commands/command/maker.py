@@ -16,9 +16,10 @@ class _ResolvedItem:
 
 
 class MenuPlan:
-    def __init__(self, hub: MenuHub, items: list[_ResolvedItem]):
+    def __init__(self, hub: MenuHub, items: list[_ResolvedItem], *, has_inline: bool = False):
         self._hub = hub
         self._items = list(items)
+        self.has_inline = has_inline
 
     def resolve_tokens(self) -> list[str]:
         return [x.token for x in self._items]
@@ -36,17 +37,17 @@ class MenuPlan:
                 items = [x for x in items if not (x.kind == "cmd" and x.command_id == t)]
             if len(items) == before:
                 raise ValueError(f"hide target not found: {t}")
-        return MenuPlan(self._hub, items)
+        return MenuPlan(self._hub, items, has_inline=self.has_inline)
 
     def add(self, items: Any) -> "MenuPlan":
-        extra = self._resolve_items(items)
-        return MenuPlan(self._hub, list(self._items) + extra)
+        extra, extra_inline = self._resolve_items(items)
+        return MenuPlan(self._hub, list(self._items) + extra, has_inline=self.has_inline or extra_inline)
 
     def insert(self, target: str, items: Any) -> "MenuPlan":
         t = str(target or "").strip().strip("/")
         if not t:
             raise ValueError("insert target is required")
-        extra = self._resolve_items(items)
+        extra, extra_inline = self._resolve_items(items)
         out = list(self._items)
         idxs = self._find_target_indexes(t)
         if not idxs:
@@ -56,7 +57,7 @@ class MenuPlan:
             at = i + 1 + shift
             out[at:at] = list(extra)
             shift += len(extra)
-        return MenuPlan(self._hub, out)
+        return MenuPlan(self._hub, out, has_inline=self.has_inline or extra_inline)
 
     def _find_target_indexes(self, t: str) -> list[int]:
         if "/" in t:
@@ -71,15 +72,17 @@ class MenuPlan:
             return canon_matches
         return [i for i, x in enumerate(self._items) if x.kind == "cmd" and x.command_id == t]
 
-    def _resolve_items(self, raw_items: Any) -> list[_ResolvedItem]:
+    def _resolve_items(self, raw_items: Any) -> tuple[list[_ResolvedItem], bool]:
         out: list[_ResolvedItem] = []
+        has_inline = False
         for entry in MenuMaker._normalize_menu_items(raw_items):
             if isinstance(entry, CommandMeta):
                 out.append(MenuMaker._meta_to_resolved(entry))
+                has_inline = True
                 continue
             for it in MenuMaker._resolve_one(self._hub, str(entry)):
                 out.append(it)
-        return out
+        return out, has_inline
 
 
 class MenuMaker:
@@ -110,8 +113,7 @@ class MenuMaker:
     @staticmethod
     def _meta_to_resolved(meta: CommandMeta) -> _ResolvedItem:
         m = normalize_command_meta([], meta)
-        if not CommandRegistry.instance().has_command(str(m.id)):
-            register_command_defs([m])
+        register_command_defs([m])
         return _ResolvedItem(token=str(m.path), kind="cmd", command_id=str(m.id), canonical_path=str(m.path))
 
     @staticmethod
@@ -194,12 +196,14 @@ class MenuMaker:
 
     def menu(self, items: Any) -> MenuPlan:
         resolved: list[_ResolvedItem] = []
+        has_inline = False
         for it in self._normalize_menu_items(items):
             if isinstance(it, CommandMeta):
                 resolved.append(self._meta_to_resolved(it))
+                has_inline = True
                 continue
             resolved.extend(self._resolve_one(self._hub, str(it)))
-        return MenuPlan(self._hub, resolved)
+        return MenuPlan(self._hub, resolved, has_inline=has_inline)
 
     def from_folder(self, folder: str) -> MenuPlan:
         s = (str(folder or "")).strip("/")

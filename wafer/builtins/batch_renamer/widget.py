@@ -25,6 +25,7 @@ from .table import (
 )
 from ...plugin.rename.handler import rename_source_registry
 from ...plugin.panel.base import BasePanelPlugin
+from ...core.commands.bridge import ActionKit, Context, Menu
 
 
 _SQL_CHUNK_SIZE = 4000
@@ -69,6 +70,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
     _ADD_COL_LABEL = '+'
     THUMB_CACHE_LIMIT = 200
     _saved_state: dict[str, Any] = {}
+    _instance_ref: BatchRenameWidget | None = None
     _registered: bool = False
 
     @classmethod
@@ -79,9 +81,19 @@ class BatchRenameWidget(QtWidgets.QWidget):
         from ...core.state import StateStore
         StateStore.instance().register(
             'batch_rename',
-            lambda: dict(cls._saved_state),
+            cls._save_state,
             cls._on_state_restore,
         )
+
+    @classmethod
+    def _save_state(cls) -> dict:
+        inst = cls._instance_ref
+        if inst is not None:
+            try:
+                cls._saved_state = inst._serialise_columns()
+            except RuntimeError:
+                pass
+        return dict(cls._saved_state)
 
     @classmethod
     def _on_state_restore(cls, state: dict):
@@ -89,6 +101,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        BatchRenameWidget._instance_ref = self
 
         self._dispatcher = Dispatcher(pool=utility_pool)
         self._init_cancel: CancelToken | None = None
@@ -107,7 +120,6 @@ class BatchRenameWidget(QtWidgets.QWidget):
         self._ensure_registered()
         self._source_defaults: dict[str, dict] = {}
         self._restore_source_defaults()
-        self._excluded: list[Path] = []
         self._results: list[RenameResult] = []
         self._global_errors: list[str] = []
         self._popup: ColumnSettingsPopup | None = None
@@ -160,7 +172,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
         page = QtWidgets.QWidget()
         lay = QtWidgets.QVBoxLayout(page)
         lay.setAlignment(Qt.AlignCenter)
-        msg = QtWidgets.QLabel('Select files and run Batch Rename')
+        msg = QtWidgets.QLabel('Select files and run Batch Renamer')
         msg.setStyleSheet(
             f"color: {p.text_muted}; font-size: {dpix(13)}px;"
         )
@@ -179,7 +191,6 @@ class BatchRenameWidget(QtWidgets.QWidget):
         self._initial_keys = list(self._keys)
         self._initial_paths = list(self._paths)
         self._metadata = {}
-        self._excluded.clear()
         self._thumb_cache.clear()
         self._thumb_visible.clear()
         self._reset_columns()
@@ -218,7 +229,6 @@ class BatchRenameWidget(QtWidgets.QWidget):
         self._initial_keys.clear()
         self._db_path = None
         self._metadata.clear()
-        self._excluded.clear()
         self._results.clear()
         self._global_errors.clear()
         self._thumb_cache.clear()
@@ -284,7 +294,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
         self._preview.setFont(self._mono)
         self._preview.setShowGrid(False)
         self._preview.verticalHeader().setVisible(False)
-        self._preview.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self._preview.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         self._preview.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._preview.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self._preview.setFocusPolicy(Qt.StrongFocus)
@@ -327,7 +337,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
         self._seg_table.setFont(self._mono)
         self._seg_table.setShowGrid(True)
         self._seg_table.verticalHeader().setVisible(False)
-        self._seg_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self._seg_table.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         self._seg_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._seg_table.setEditTriggers(QtWidgets.QAbstractItemView.DoubleClicked)
         self._seg_table.setFocusPolicy(Qt.ClickFocus)
@@ -368,6 +378,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
     def _init_bottom_bar(self, root):
         p = self._p
 
+        spacing_size = 12
         bar = QtWidgets.QHBoxLayout()
         bar.setContentsMargins(0, dpix(2), 0, 0)
 
@@ -375,24 +386,39 @@ class BatchRenameWidget(QtWidgets.QWidget):
         self._status.setStyleSheet(f"color: {p.text_muted}; font-size: {dpix(11)}px;")
         self._status.installEventFilter(self)
         bar.addWidget(self._status)
-        bar.addStretch()
+        bar.addSpacing(dpix(spacing_size))
 
-        opacity_slider = QtWidgets.QSlider(Qt.Horizontal)
-        opacity_slider.setRange(0, 100)
-        opacity_slider.setValue(20)
-        opacity_slider.setMinimumWidth(dpix(200))
-        opacity_slider.setToolTip('Thumbnail opacity')
-        opacity_slider.setStyleSheet(
+        slider_ss = (
             f"QSlider::groove:horizontal {{ background: {p.bg_hover}; "
             f"height: {dpix(4)}px; border-radius: {dpix(2)}px; }}"
             f"QSlider::handle:horizontal {{ background: {p.text_muted}; "
             f"width: {dpix(10)}px; margin: -{dpix(3)}px 0; "
             f"border-radius: {dpix(5)}px; }}"
         )
-        opacity_slider.valueChanged.connect(self._on_opacity_changed)
-        self._opacity_slider = opacity_slider
-        bar.addWidget(opacity_slider)
-        bar.addStretch()
+
+        row_slider = QtWidgets.QSlider(Qt.Horizontal)
+        row_slider.setRange(0, 100)
+        row_slider.setValue(20)
+        row_slider.setMinimumWidth(dpix(40))
+        row_slider.setToolTip('Row thumbnail opacity')
+        row_slider.setStyleSheet(slider_ss)
+        row_slider.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        row_slider.valueChanged.connect(self._on_row_opacity_changed)
+        self._row_opacity_slider = row_slider
+        bar.addWidget(row_slider)
+        bar.addSpacing(dpix(spacing_size))
+
+        sel_slider = QtWidgets.QSlider(Qt.Horizontal)
+        sel_slider.setRange(0, 100)
+        sel_slider.setValue(20)
+        sel_slider.setMinimumWidth(dpix(40))
+        sel_slider.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        sel_slider.setToolTip('Selected thumbnail opacity')
+        sel_slider.setStyleSheet(slider_ss)
+        sel_slider.valueChanged.connect(self._on_sel_opacity_changed)
+        self._sel_opacity_slider = sel_slider
+        bar.addWidget(sel_slider)
+        bar.addSpacing(dpix(spacing_size))
 
         self._rename_btn = QtWidgets.QPushButton('Rename')
         self._rename_btn.setStyleSheet(
@@ -420,7 +446,8 @@ class BatchRenameWidget(QtWidgets.QWidget):
         self._update_source_defaults()
         return {
             'source_defaults': dict(self._source_defaults),
-            'opacity': self._opacity_slider.value(),
+            'row_opacity': self._row_opacity_slider.value(),
+            'sel_opacity': self._sel_opacity_slider.value(),
         }
 
     def _restore_source_defaults(self):
@@ -433,8 +460,10 @@ class BatchRenameWidget(QtWidgets.QWidget):
         state = self._saved_state
         if not state:
             return
-        if 'opacity' in state:
-            self._opacity_slider.setValue(state['opacity'])
+        if 'row_opacity' in state:
+            self._row_opacity_slider.setValue(state['row_opacity'])
+        if 'sel_opacity' in state:
+            self._sel_opacity_slider.setValue(state['sel_opacity'])
 
     def _start_async_init(self):
         cancel = CancelToken()
@@ -540,10 +569,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
         super().hideEvent(event)
 
     def _title_text(self):
-        t = f'Batch Rename \u2014 {len(self._paths)} files'
-        if self._excluded:
-            t += f'  ({len(self._excluded)} excluded)'
-        return t
+        return f'Batch Renamer \u2014 {len(self._paths)} files'
 
     @property
     def selected_row(self) -> int:
@@ -558,14 +584,25 @@ class BatchRenameWidget(QtWidgets.QWidget):
             return pix
         return None
 
-    def _on_preview_selection(self):
+    def _on_preview_selection(self, selected=None, _deselected=None):
         if self._syncing_selection:
             return
-        rows = self._preview.selectionModel().selectedRows()
-        self._selected_row = rows[0].row() if rows else -1
         self._syncing_selection = True
-        if rows:
-            self._seg_table.selectRow(rows[0].row())
+        rows = self._preview.selectionModel().selectedRows()
+        if selected and selected.indexes():
+            self._selected_row = selected.indexes()[-1].row()
+        elif rows:
+            self._selected_row = rows[-1].row()
+        else:
+            self._selected_row = -1
+        selection = QtCore.QItemSelection()
+        for idx in rows:
+            mi = self._seg_model.index(idx.row(), 0)
+            selection.select(mi, mi)
+        self._seg_table.selectionModel().select(
+            selection,
+            QtCore.QItemSelectionModel.ClearAndSelect | QtCore.QItemSelectionModel.Rows,
+        )
         self._syncing_selection = False
         self._overlay.update()
 
@@ -598,16 +635,29 @@ class BatchRenameWidget(QtWidgets.QWidget):
             self._overlay.update()
             self._update_visible_thumbnails()
 
-    def _on_seg_selection(self):
+    def _on_seg_selection(self, selected=None, _deselected=None):
         if self._syncing_selection:
             return
+        self._syncing_selection = True
         rows = self._seg_table.selectionModel().selectedRows()
         if not rows:
+            self._selected_row = -1
+            self._preview.selectionModel().clearSelection()
+            self._syncing_selection = False
+            self._overlay.update()
             return
-        row = rows[0].row()
-        self._selected_row = row
-        self._syncing_selection = True
-        self._preview.selectRow(row)
+        if selected and selected.indexes():
+            self._selected_row = selected.indexes()[-1].row()
+        else:
+            self._selected_row = rows[-1].row()
+        selection = QtCore.QItemSelection()
+        for idx in rows:
+            mi = self._preview_model.index(idx.row(), 0)
+            selection.select(mi, mi)
+        self._preview.selectionModel().select(
+            selection,
+            QtCore.QItemSelectionModel.ClearAndSelect | QtCore.QItemSelectionModel.Rows,
+        )
         self._syncing_selection = False
         self._overlay.update()
 
@@ -625,8 +675,11 @@ class BatchRenameWidget(QtWidgets.QWidget):
         self._preview.selectRow(target)
         self._seg_table.selectRow(target)
 
-    def _on_opacity_changed(self, value):
-        self._overlay.set_opacity(value / 100.0)
+    def _on_row_opacity_changed(self, value):
+        self._overlay.set_row_opacity(value / 100.0)
+
+    def _on_sel_opacity_changed(self, value):
+        self._overlay.set_sel_opacity(value / 100.0)
 
     def _on_seg_data_changed(self, top_left, bottom_right, roles):
         if self._refreshing:
@@ -783,8 +836,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
             )
             self._status.setCursor(Qt.PointingHandCursor)
         else:
-            ex = f' ({len(self._excluded)} excluded)' if self._excluded else ''
-            self._status.setText(f'\u2713 {len(self._results)} files ready{ex}')
+            self._status.setText(f'\u2713 {len(self._results)} files ready')
             self._status.setStyleSheet(
                 f"color: {p.success}; font-size: {dpix(11)}px;"
             )
@@ -930,28 +982,77 @@ class BatchRenameWidget(QtWidgets.QWidget):
         self._initial_keys = list(self._keys)
         self._refresh(auto_size=False)
 
-    def _exclude_row(self, row):
-        if 0 <= row < len(self._paths):
-            self._excluded.append(self._paths.pop(row))
-            self._keys.pop(row)
-            self._rebuild()
-            self._title.setText(self._title_text())
+    def _exclude_rows(self, rows):
+        for row in sorted(rows, reverse=True):
+            if 0 <= row < len(self._paths):
+                self._paths.pop(row)
+                self._keys.pop(row)
+        if not self._paths:
+            self.reset()
+            return
+        self._rebuild()
+        self._title.setText(self._title_text())
+
+    def remove_files(self, paths: list[Path]):
+        remove_set = {str(p) for p in paths}
+        indices = [i for i, p in enumerate(self._paths) if str(p) in remove_set]
+        if not indices:
+            return
+        self._exclude_rows(indices)
 
     def _on_row_context(self, pos):
         row = self._seg_table.indexAt(pos).row()
-        self._show_row_menu(row, self._seg_table.viewport().mapToGlobal(pos))
+        if row < 0:
+            return
+        selected = {idx.row() for idx in self._seg_table.selectionModel().selectedRows()}
+        if row not in selected:
+            self._seg_table.selectRow(row)
+        self._show_row_menu(self._seg_table, self._seg_table.viewport().mapToGlobal(pos))
 
     def _on_row_context_preview(self, pos):
         row = self._preview.indexAt(pos).row()
-        self._show_row_menu(row, self._preview.viewport().mapToGlobal(pos))
-
-    def _show_row_menu(self, row, gpos):
-        if row < 0 or row >= len(self._paths):
+        if row < 0:
             return
-        menu = QtWidgets.QMenu(self)
-        act = menu.addAction(f'Exclude "{self._paths[row].name}"')
-        act.triggered.connect(lambda: self._exclude_row(row))
-        menu.exec(gpos)
+        selected = {idx.row() for idx in self._preview.selectionModel().selectedRows()}
+        if row not in selected:
+            self._preview.selectRow(row)
+        self._show_row_menu(self._preview, self._preview.viewport().mapToGlobal(pos))
+
+    def _show_row_menu(self, table, gpos):
+        rows = sorted(idx.row() for idx in table.selectionModel().selectedRows())
+        rows = [r for r in rows if 0 <= r < len(self._paths)]
+        if not rows:
+            return
+        paths = [str(self._paths[r]) for r in rows]
+        seed = Context.create_context(self, "*", source="menu", extras={
+            "path": paths[0],
+            "paths": paths,
+        })
+        AppLogger.debug(f'[_show_row_menu] {self._paths[rows[0]].name}/ {len(rows)}')
+        if len(rows) == 1:
+            remove_display = f'Remove "{self._paths[rows[0]].name}"'
+        else:
+            remove_display = f'Remove {len(rows)} file(s)'
+        frozen_rows = list(rows)
+        items = [
+            ":BatchRenamer",
+            ActionKit.Command(
+                path="inline.renamer.remove",
+                display=remove_display,
+                func=lambda ctx: self._exclude_rows(frozen_rows),
+            ),
+            "-",
+            ":Path",
+            "file.open",
+            "file.show_explorer",
+            "file.shell_context_menu",
+            "-",
+            "file.show_file",
+            "file.select_path",
+            "file.scroll_to_file",
+
+        ]
+        Menu.session(self, seed_ctx=seed, pos=gpos).menu(items).exec()
 
     def _execute(self):
         if self._global_errors or any(r.conflict or r.errors for r in self._results):
@@ -1075,7 +1176,6 @@ class BatchRenameWidget(QtWidgets.QWidget):
                 ext_src._apply(ext_defaults)
         self._columns = [RenameColumn(name_src)]
         self._ext_column = RenameColumn(ext_src)
-        self._excluded.clear()
         self._sort_indicator = None
 
     def get_rename_map(self) -> dict[str, str]:
@@ -1088,7 +1188,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
 
 class BatchRenamerPlugin(BasePanelPlugin):
     NAME = "batch_renamer"
-    DISPLAY_NAME = "Batch Rename"
+    DISPLAY_NAME = "Batch Renamer"
     PRIORITY = 0
 
     def create_widget(self):

@@ -99,6 +99,7 @@ class FileViewerWidget(QtWidgets.QSplitter):
         for name, plugin in viewer_resolver.viewer_plugins().items():
             self._stack.addWidget(plugin.widget)
             self._widget_map[name] = plugin.widget
+        self._stack.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
 
         self.addWidget(self._stack)
 

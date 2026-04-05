@@ -282,6 +282,13 @@ class SyncedView(QtWidgets.QTableView):
     def set_forward_target(self, target):
         self._fwd = target
 
+    def mousePressEvent(self, event):
+        if event.button() == QtCore.Qt.RightButton:
+            idx = self.indexAt(event.position().toPoint())
+            if idx.isValid() and self.selectionModel().isRowSelected(idx.row()):
+                return
+        super().mousePressEvent(event)
+
     def wheelEvent(self, event):
         if self._fwd:
             sb = self._fwd.verticalScrollBar()

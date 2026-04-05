@@ -123,7 +123,7 @@ class CommandRegistry:
         cid = meta.id
         existing = self._commands.get(cid)
         if existing is not None:
-            AppLogger.info(f"Command '{cid}' overridden by {command_class.__name__}")
+            AppLogger.debug(f"Command '{cid}' overridden by {command_class.__name__}")
         self._commands[cid] = command_class
 
     @profiler.profile

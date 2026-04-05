@@ -23,8 +23,11 @@ class ThumbnailOverlay(QtWidgets.QWidget):
         self.setAttribute(Qt.WA_NoSystemBackground)
         self.setAutoFillBackground(False)
 
-    def set_opacity(self, value: float):
+    def set_row_opacity(self, value: float):
         self._row_opacity = value
+        self.update()
+
+    def set_sel_opacity(self, value: float):
         self._sel_opacity = value
         self.update()
 

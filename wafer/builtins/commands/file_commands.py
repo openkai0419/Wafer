@@ -49,24 +49,24 @@ def show_in_explorer(ctx, show_first_if_folder: bool = False):
 
 
 def copy_path(ctx):
-    path = _ctx_path(ctx)
-    if not path:
-        return
-    QtGui.QGuiApplication.clipboard().setText(str(path))
-
-
-def copy_filename(ctx):
-    path = _ctx_path(ctx)
-    if not path:
-        return
-    QtGui.QGuiApplication.clipboard().setText(str(os.path.basename(path)))
-
-
-def copy_path_list(ctx):
     paths = _ctx_paths(ctx)
     if not paths:
         return
-    QtGui.QGuiApplication.clipboard().setText(json.dumps(paths, ensure_ascii=False))
+    if len(paths) == 1:
+        QtGui.QGuiApplication.clipboard().setText(paths[0])
+    else:
+        QtGui.QGuiApplication.clipboard().setText(json.dumps(paths, ensure_ascii=False))
+
+
+def copy_filename(ctx):
+    paths = _ctx_paths(ctx)
+    if not paths:
+        return
+    if len(paths) == 1:
+        QtGui.QGuiApplication.clipboard().setText(os.path.basename(paths[0]))
+    else:
+        names = [os.path.basename(p) for p in paths]
+        QtGui.QGuiApplication.clipboard().setText(json.dumps(names, ensure_ascii=False))
 
 
 def copy_files(ctx):
@@ -256,7 +256,7 @@ def _is_same_file(a: Path, b: Path) -> bool:
 
 def _batch_rename_widget(w):
     from wafer.builtins.batch_renamer import BatchRenameWidget
-    panel = w._layout_manager.panel_widget("Batch Rename")
+    panel = w._layout_manager.panel_widget("Batch Renamer")
     if isinstance(panel, BatchRenameWidget):
         return panel
     return None
@@ -273,7 +273,7 @@ def batch_rename(ctx, items, w):
     if widget is None:
         return
     widget.set_files(file_paths, keys=paths_str, db_path=w.database_path)
-    w._layout_manager.ensure_panel_visible("Batch Rename")
+    w._layout_manager.ensure_panel_visible("Batch Renamer")
 
 
 @require(items="GridItemModel", w="MainWindow")
@@ -290,7 +290,20 @@ def batch_rename_add(ctx, items, w):
         widget.set_files(file_paths, keys=paths_str, db_path=w.database_path)
     else:
         widget.add_files(file_paths, keys=paths_str)
-    w._layout_manager.ensure_panel_visible("Batch Rename")
+    w._layout_manager.ensure_panel_visible("Batch Renamer")
+
+
+@require(items="GridItemModel", w="MainWindow")
+def batch_rename_remove(ctx, items, w):
+    paths_str = items.selected_paths()
+    if not paths_str:
+        Notifier.info('No files selected')
+        return
+    file_paths = [Path(p) for p in paths_str]
+    widget = _batch_rename_widget(w)
+    if widget is None:
+        return
+    widget.remove_files(file_paths)
 
 
 def shell_context_menu(ctx):
@@ -346,19 +359,12 @@ class FileCommands(ActionKit.MenuBase):
             ),
             ActionKit.Command(path="file.shell_context_menu", display="Shell Context Menu", func=shell_context_menu),
             "-",
-            ActionKit.Command(path="file.copy_path", display="Copy Path", func=copy_path),
-            ActionKit.Command(
-                path="file.copy_path_list",
-                display="Copy Paths",
-                func=copy_path_list,
-            ),
-            ActionKit.Command(path="file.copy_filename", display="Copy FileName", func=copy_filename),
-            "-",
-            ActionKit.Command(path="file.select_path", display="Select Folder", func=select_path),
-            ActionKit.Command(path="file.scroll_to_file", display="Scroll To File", func=scroll_to_file),
+            ActionKit.Command(path="file.copy_path", display="Copy Paths(s)", func=copy_path),
+            ActionKit.Command(path="file.copy_filename", display="Copy FileName(s)", func=copy_filename),
             "-",
             ActionKit.Command(path="file.copy", display="Copy", func=copy_files),
             ActionKit.Command(path="file.cut", display="Cut", func=cut_files),
+            ActionKit.Command(path="file.rename", display="Rename", func=rename_file),
             ActionKit.Command(
                 path="file.delete",
                 display="Delete",
@@ -391,7 +397,12 @@ class FileCommands(ActionKit.MenuBase):
                 func=make_new_folder_here,
             ),
             "-",
-            ActionKit.Command(path="file.rename", display="Rename", func=rename_file),
-            ActionKit.Command(path="file.batch_rename", display="Batch Rename", func=batch_rename),
-            ActionKit.Command(path="file.batch_rename_add", display="Batch Rename (Add)", func=batch_rename_add),
+            ":Wafer",
+            ActionKit.Command(path="file.show_file", display="Show at FileViewer", func=show_file),
+            ActionKit.Command(path="file.select_path", display="Select at FolderTree", func=select_path),
+            ActionKit.Command(path="file.scroll_to_file", display="Scroll at GridView", func=scroll_to_file),
+            "-",
+            ActionKit.Command(path="Batch Renamer/file.batch_rename_add", display="Add", func=batch_rename_add),
+            ActionKit.Command(path="Batch Renamer/file.batch_rename", display="Set", func=batch_rename),
+            ActionKit.Command(path="Batch Renamer/file.batch_rename_remove", display="Remove", func=batch_rename_remove),
         ]

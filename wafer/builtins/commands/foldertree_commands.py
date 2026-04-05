@@ -118,7 +118,6 @@ def show_context_menu(ctx):
             "file.shell_context_menu",
             "-",
             "file.copy_path",
-            "file.copy_path_list",
             "-",
             "file.select_path",
             "-",

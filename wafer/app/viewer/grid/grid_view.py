@@ -99,6 +99,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self.setViewportUpdateMode(QtWidgets.QGraphicsView.MinimalViewportUpdate)
         self.setOptimizationFlags(QtWidgets.QGraphicsView.DontAdjustForAntialiasing)
         self.setRenderHints(QtGui.QPainter.Antialiasing | QtGui.QPainter.SmoothPixmapTransform)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
 
         self.root = root
         self.items = items or GridItemModel(self)

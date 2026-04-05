@@ -30,9 +30,11 @@ from wafer.core.state import StateStore
 def _reset_state():
     BatchRenameWidget._saved_state = {}
     BatchRenameWidget._registered = False
+    BatchRenameWidget._instance_ref = None
     yield
     BatchRenameWidget._saved_state = {}
     BatchRenameWidget._registered = False
+    BatchRenameWidget._instance_ref = None
     StateStore._instance = None
 
 
@@ -775,7 +777,7 @@ class TestProgressiveThumbnailLoading:
         dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         excluded_key = str(tmp_files[1])
-        dlg._exclude_row(1)
+        dlg._exclude_rows([1])
         img = QtGui.QImage(10, 10, QtGui.QImage.Format_RGB32)
         dlg._on_thumbnail_loaded(excluded_key, img)
         assert excluded_key in dlg._thumb_cache
@@ -888,24 +890,37 @@ class TestStatusClickNavigation:
 class TestOpacitySlider:
 
     @patch.object(BatchRenameWidget, '_start_async_init')
-    def test_slider_exists(self, mock_init, qtbot, tmp_files):
+    def test_row_slider_exists(self, mock_init, qtbot, tmp_files):
         dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)
         dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
-        assert hasattr(dlg, '_opacity_slider')
-        assert dlg._opacity_slider.value() == 20
+        assert hasattr(dlg, '_row_opacity_slider')
+        assert hasattr(dlg, '_sel_opacity_slider')
+        assert dlg._row_opacity_slider.value() == 20
+        assert dlg._sel_opacity_slider.value() == 20
         dlg.close()
 
     @patch.object(BatchRenameWidget, '_start_async_init')
-    def test_slider_changes_overlay_opacity(self, mock_init, qtbot, tmp_files):
+    def test_row_slider_changes_row_opacity(self, mock_init, qtbot, tmp_files):
         dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)
         dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
-        dlg._opacity_slider.setValue(50)
+        dlg._row_opacity_slider.setValue(50)
         assert abs(dlg._overlay._row_opacity - 0.5) < 0.01
-        assert abs(dlg._overlay._sel_opacity - 0.5) < 0.01
+        assert abs(dlg._overlay._sel_opacity - 0.2) < 0.01
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    def test_sel_slider_changes_sel_opacity(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        qtbot.addWidget(dlg)
+        dlg._sel_opacity_slider.setValue(70)
+        assert abs(dlg._overlay._sel_opacity - 0.7) < 0.01
+        assert abs(dlg._overlay._row_opacity - 0.2) < 0.01
         dlg.close()
 
     @patch.object(BatchRenameWidget, '_start_async_init')
@@ -914,8 +929,40 @@ class TestOpacitySlider:
         qtbot.addWidget(dlg)
         dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
-        dlg._opacity_slider.setValue(0)
+        dlg._row_opacity_slider.setValue(0)
         assert dlg._overlay._row_opacity == 0.0
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    def test_exclude_rows_batch(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        qtbot.addWidget(dlg)
+        dlg._exclude_rows([0, 2])
+        assert len(dlg._paths) == 1
+        assert dlg._paths[0] == tmp_files[1]
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    def test_remove_files(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        qtbot.addWidget(dlg)
+        dlg.remove_files([tmp_files[0], tmp_files[2]])
+        assert len(dlg._paths) == 1
+        assert dlg._paths[0] == tmp_files[1]
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    def test_remove_files_all_resets(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        qtbot.addWidget(dlg)
+        dlg.remove_files(tmp_files)
+        assert len(dlg._paths) == 0
         dlg.close()
 
 
@@ -1176,3 +1223,235 @@ class TestThumbCacheLRU:
         qtbot.addWidget(dlg)
         assert dlg.THUMB_CACHE_LIMIT == 200
         dlg.close()
+
+
+class TestContextMenu:
+
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    def test_show_row_menu_builds_command_menu(self, mock_init, qtbot, tmp_files):
+        from wafer.core.commands.bridge import Menu
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        qtbot.addWidget(dlg)
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: dlg._preview_model.rowCount() == 3, timeout=5000)
+        dlg._seg_table.selectRow(0)
+
+        built_menu = None
+
+        class FakeSpec:
+            def __init__(self, items):
+                self._items = items
+            def exec(self, *a, **kw):
+                nonlocal built_menu
+                built_menu = self._items
+
+        class FakeSession:
+            def __init__(self, *a, **kw):
+                pass
+            def menu(self, items):
+                return FakeSpec(items)
+
+        with patch.object(Menu, 'session', staticmethod(lambda *a, **kw: FakeSession(*a, **kw))):
+            gpos = dlg._seg_table.viewport().mapToGlobal(QtCore.QPoint(10, 10))
+            dlg._show_row_menu(dlg._seg_table, gpos)
+
+        assert built_menu is not None
+        str_items = [i for i in built_menu if isinstance(i, str)]
+        assert "file.open" in str_items
+        assert "file.show_explorer" in str_items
+        assert "file.show_file" in str_items
+        assert "file.select_path" in str_items
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    def test_context_menu_passes_selected_paths(self, mock_init, qtbot, tmp_files):
+        from wafer.core.commands.bridge import Menu
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        qtbot.addWidget(dlg)
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: dlg._preview_model.rowCount() == 3, timeout=5000)
+        dlg._seg_table.selectRow(1)
+
+        captured_seed = None
+
+        class FakeSpec:
+            def exec(self, *a, **kw):
+                pass
+
+        class FakeSession:
+            def __init__(self, *a, **kw):
+                nonlocal captured_seed
+                captured_seed = kw.get('seed_ctx')
+            def menu(self, items):
+                return FakeSpec()
+
+        with patch.object(Menu, 'session', staticmethod(lambda *a, **kw: FakeSession(*a, **kw))):
+            gpos = dlg._seg_table.viewport().mapToGlobal(QtCore.QPoint(10, 10))
+            dlg._show_row_menu(dlg._seg_table, gpos)
+
+        assert captured_seed is not None
+        assert captured_seed.extras["path"] == str(tmp_files[1])
+        assert captured_seed.extras["paths"] == [str(tmp_files[1])]
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    def test_context_menu_multiple_selection(self, mock_init, qtbot, tmp_files):
+        from wafer.core.commands.bridge import Menu
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        qtbot.addWidget(dlg)
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: dlg._preview_model.rowCount() == 3, timeout=5000)
+        sel = dlg._seg_table.selectionModel()
+        sel.select(
+            dlg._seg_model.index(0, 0),
+            QtCore.QItemSelectionModel.Select | QtCore.QItemSelectionModel.Rows,
+        )
+        sel.select(
+            dlg._seg_model.index(2, 0),
+            QtCore.QItemSelectionModel.Select | QtCore.QItemSelectionModel.Rows,
+        )
+
+        captured_seed = None
+
+        class FakeSpec:
+            def exec(self, *a, **kw):
+                pass
+
+        class FakeSession:
+            def __init__(self, *a, **kw):
+                nonlocal captured_seed
+                captured_seed = kw.get('seed_ctx')
+            def menu(self, items):
+                return FakeSpec()
+
+        with patch.object(Menu, 'session', staticmethod(lambda *a, **kw: FakeSession(*a, **kw))):
+            gpos = dlg._seg_table.viewport().mapToGlobal(QtCore.QPoint(10, 10))
+            dlg._show_row_menu(dlg._seg_table, gpos)
+
+        assert captured_seed is not None
+        assert len(captured_seed.extras["paths"]) == 2
+        assert str(tmp_files[0]) in captured_seed.extras["paths"]
+        assert str(tmp_files[2]) in captured_seed.extras["paths"]
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    def test_context_menu_has_remove_action(self, mock_init, qtbot, tmp_files):
+        from wafer.core.commands.bridge import Menu, ActionKit
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        qtbot.addWidget(dlg)
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: dlg._preview_model.rowCount() == 3, timeout=5000)
+        dlg._seg_table.selectRow(0)
+
+        built_menu = None
+
+        class FakeSpec:
+            def __init__(self, items):
+                self._items = items
+            def exec(self, *a, **kw):
+                nonlocal built_menu
+                built_menu = self._items
+
+        class FakeSession:
+            def __init__(self, *a, **kw):
+                pass
+            def menu(self, items):
+                return FakeSpec(items)
+
+        with patch.object(Menu, 'session', staticmethod(lambda *a, **kw: FakeSession(*a, **kw))):
+            gpos = dlg._seg_table.viewport().mapToGlobal(QtCore.QPoint(10, 10))
+            dlg._show_row_menu(dlg._seg_table, gpos)
+
+        assert built_menu is not None
+        inline_cmds = [i for i in built_menu if hasattr(i, 'path') and 'remove' in i.path]
+        assert len(inline_cmds) == 1
+        assert 'Remove' in inline_cmds[0].display
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    def test_right_click_preserves_multi_selection(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: dlg._preview_model.rowCount() == 3, timeout=5000)
+        sel = dlg._seg_table.selectionModel()
+        for r in range(3):
+            sel.select(
+                dlg._seg_model.index(r, 0),
+                QtCore.QItemSelectionModel.Select | QtCore.QItemSelectionModel.Rows,
+            )
+        assert len(sel.selectedRows()) == 3
+
+        pos = dlg._seg_table.visualRect(dlg._seg_model.index(1, 0)).center()
+        event = QtGui.QMouseEvent(
+            QtCore.QEvent.Type.MouseButtonPress,
+            QtCore.QPointF(pos),
+            QtCore.QPointF(pos),
+            Qt.RightButton,
+            Qt.RightButton,
+            Qt.NoModifier,
+        )
+        dlg._seg_table.mousePressEvent(event)
+
+        assert len(sel.selectedRows()) == 3
+
+    @patch.object(BatchRenameWidget, '_start_async_init')
+    def test_set_files_resets_selection_count_in_menu(self, mock_init, qtbot, tmp_path):
+        from wafer.core.commands.bridge import Menu
+        files_4 = []
+        for name in ['a.jpg', 'b.jpg', 'c.jpg', 'd.jpg']:
+            f = tmp_path / name
+            f.write_bytes(b'\x00' * 16)
+            files_4.append(f)
+
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(files_4)
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: dlg._seg_model.rowCount() == 4, timeout=5000)
+
+        sel = dlg._seg_table.selectionModel()
+        for r in range(4):
+            sel.select(
+                dlg._seg_model.index(r, 0),
+                QtCore.QItemSelectionModel.Select | QtCore.QItemSelectionModel.Rows,
+            )
+        assert len(sel.selectedRows()) == 4
+
+        files_1 = [tmp_path / 'only.jpg']
+        files_1[0].write_bytes(b'\x00' * 16)
+        dlg.set_files(files_1)
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: dlg._seg_model.rowCount() == 1, timeout=5000)
+
+        dlg._seg_table.selectRow(0)
+
+        captured_seed = None
+
+        class FakeSpec:
+            def exec(self, *a, **kw):
+                pass
+
+        class FakeSession:
+            def __init__(self, *a, **kw):
+                nonlocal captured_seed
+                captured_seed = kw.get('seed_ctx')
+            def menu(self, items):
+                return FakeSpec()
+
+        with patch.object(Menu, 'session', staticmethod(lambda *a, **kw: FakeSession(*a, **kw))):
+            gpos = dlg._seg_table.viewport().mapToGlobal(QtCore.QPoint(10, 10))
+            dlg._show_row_menu(dlg._seg_table, gpos)
+
+        assert captured_seed is not None
+        assert len(captured_seed.extras["paths"]) == 1
+        assert captured_seed.extras["path"] == str(files_1[0])

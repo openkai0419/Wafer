@@ -15,6 +15,7 @@ from .grid.grid_view import GridView
 from .grid.items import GridItemModel
 from .preview.file_model import FileViewModel
 from .preview.file_viewer import FileViewerController
+from .preview.file_list_provider import FileListProvider
 from .preview.content_viewer import ContentViewerWidget
 from .preview.meta_panel import MetaViewerWidget
 from ...core.setting.app_settings import app_settings
@@ -338,7 +339,10 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.content_viewer = ContentViewerWidget()
         self.meta_viewer_widget = MetaViewerWidget()
         self.file_viewer = FileViewerController(self.file_model, self.content_viewer, self.meta_viewer_widget, self)
+        self.file_list_provider = FileListProvider(self.file_model, self.grid_items, self)
+        self.file_list_provider.set_search_service(self.search_service)
         UI.register_instance("FileViewerController", self.file_viewer)
+        UI.register_instance("FileListProvider", self.file_list_provider)
         UI.register_instance("ContentViewerWidget", self.content_viewer)
         UI.register_instance("FileViewModel", self.file_model)
         UI.register_instance("GridItemModel", self.grid_items)
@@ -609,7 +613,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             return
         self._last_paths = paths
         self.grid_view.set_paths(paths, sources, aspects, keep_scroll=keep_scroll)
-        self.file_model.set_items(paths, sources)
+        self.file_list_provider.on_search_results(paths, sources)
 
     def capture_query_state(self) -> QueryState:
         params = self.search_service.params

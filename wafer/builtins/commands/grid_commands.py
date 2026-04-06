@@ -73,6 +73,10 @@ class GridViewCommands(ActionKit.MenuBase):
         return ctx.get_instance("FileViewerController")
 
     @staticmethod
+    def get_file_list_provider(ctx):
+        return ctx.get_instance("FileListProvider")
+
+    @staticmethod
     def _resolve_index(ctx, index: int | None) -> tuple[int, str] | None:
         if index is None:
             return None
@@ -89,7 +93,7 @@ class GridViewCommands(ActionKit.MenuBase):
         if resolved is None:
             return
         _, path = resolved
-        GridViewCommands.get_file_viewer(ctx).set_path(path)
+        GridViewCommands.get_file_list_provider(ctx).on_file_set(path)
 
     @staticmethod
     def _scroll_to_index(ctx, index: int | None):

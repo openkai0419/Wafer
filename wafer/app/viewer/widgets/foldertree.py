@@ -891,6 +891,10 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         else:
             super().dragEnterEvent(event)
 
+    def dropEvent(self, event):
+        super().dropEvent(event)
+        event.setDropAction(QtCore.Qt.DropAction.IgnoreAction)
+
     def eventFilter(self, source, event):
         if not isinstance(event, QtCore.QEvent):
             return False

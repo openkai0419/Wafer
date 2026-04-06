@@ -192,12 +192,14 @@ class BatchRenameWidget(QtWidgets.QWidget):
         if mime and mime.hasUrls():
             for url in mime.urls():
                 if url.isLocalFile():
-                    event.acceptProposedAction()
+                    event.setDropAction(Qt.DropAction.CopyAction)
+                    event.accept()
                     return
         super().dragEnterEvent(event)
 
     def dragMoveEvent(self, event: QtGui.QDragMoveEvent):
-        event.acceptProposedAction()
+        event.setDropAction(Qt.DropAction.CopyAction)
+        event.accept()
 
     def dropEvent(self, event: QtGui.QDropEvent):
         mime = event.mimeData()
@@ -211,7 +213,8 @@ class BatchRenameWidget(QtWidgets.QWidget):
                     paths.append(p)
         if not paths:
             return
-        event.acceptProposedAction()
+        event.setDropAction(Qt.DropAction.IgnoreAction)
+        event.accept()
         win = self.window()
         db_path = getattr(win, 'database_path', None)
         if not self._paths or self._db_path != db_path:

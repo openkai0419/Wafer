@@ -190,12 +190,12 @@ def scroll_to_file(ctx, items, view):
     view.scroll_to_index(idx, animated=True)
 
 
-@require(shower="FileViewerController")
-def show_file(ctx, shower):
+@require(provider="FileListProvider")
+def show_file(ctx, provider):
     path = _ctx_path(ctx)
     if not path:
         return
-    shower.set_path(path)
+    provider.on_file_set(path)
 
 
 def make_new_folder_here(ctx, folder_name: str | None = None) -> str | None:
@@ -262,9 +262,9 @@ def _batch_rename_widget(w):
     return None
 
 
-@require(items="GridItemModel", w="MainWindow")
-def batch_rename(ctx, items, w):
-    paths_str = items.selected_paths()
+@require(w="MainWindow")
+def batch_rename(ctx, w):
+    paths_str = _ctx_paths(ctx)
     if not paths_str:
         Notifier.info('No files selected')
         return
@@ -276,9 +276,9 @@ def batch_rename(ctx, items, w):
     w._layout_manager.ensure_panel_visible("Batch Renamer")
 
 
-@require(items="GridItemModel", w="MainWindow")
-def batch_rename_add(ctx, items, w):
-    paths_str = items.selected_paths()
+@require(w="MainWindow")
+def batch_rename_add(ctx, w):
+    paths_str = _ctx_paths(ctx)
     if not paths_str:
         Notifier.info('No files selected')
         return
@@ -293,9 +293,9 @@ def batch_rename_add(ctx, items, w):
     w._layout_manager.ensure_panel_visible("Batch Renamer")
 
 
-@require(items="GridItemModel", w="MainWindow")
-def batch_rename_remove(ctx, items, w):
-    paths_str = items.selected_paths()
+@require(w="MainWindow")
+def batch_rename_remove(ctx, w):
+    paths_str = _ctx_paths(ctx)
     if not paths_str:
         Notifier.info('No files selected')
         return

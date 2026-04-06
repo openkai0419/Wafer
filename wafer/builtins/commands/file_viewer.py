@@ -1,5 +1,9 @@
-from ...core.commands.bridge import ActionKit
+from ...core.commands.bridge import ActionKit, Command
 from ...core.commands.command.require import require
+from ...app.viewer.preview.file_list_provider import ListMode
+
+
+GROUP_LIST_MODE = "fv_list_mode"
 
 
 def _ensure_current_initialized(model) -> bool:
@@ -45,6 +49,24 @@ def start_slideshow(ctx, fv, interval: float = 3.0, loop: bool = True):
 @require(fv="FileViewerController")
 def stop_slideshow(ctx, fv):
     fv.stop_autoplay()
+
+
+@require(provider="FileListProvider")
+def set_list_sync(ctx, provider):
+    provider.set_mode(ListMode.SYNC)
+    Command.set_action_group_current(GROUP_LIST_MODE, 'fv.list_sync', save=False)
+
+
+@require(provider="FileListProvider")
+def set_list_fix(ctx, provider):
+    provider.set_mode(ListMode.FIX)
+    Command.set_action_group_current(GROUP_LIST_MODE, 'fv.list_fix', save=False)
+
+
+@require(provider="FileListProvider")
+def set_list_dir(ctx, provider):
+    provider.set_mode(ListMode.DIR)
+    Command.set_action_group_current(GROUP_LIST_MODE, 'fv.list_dir', save=False)
 
 
 class FileViewerCommands(ActionKit.MenuBase):
@@ -93,6 +115,30 @@ class FileViewerCommands(ActionKit.MenuBase):
                 display="Stop Slideshow",
                 func=stop_slideshow,
                 hidden=True,
+            ),
+            "-",
+            ":List Mode",
+            ActionKit.Command(
+                path="List Mode/fv.list_sync",
+                display="Sync",
+                func=set_list_sync,
+                checkable=True,
+                default_checked=True,
+                action_group=GROUP_LIST_MODE,
+            ),
+            ActionKit.Command(
+                path="List Mode/fv.list_fix",
+                display="Fixed",
+                func=set_list_fix,
+                checkable=True,
+                action_group=GROUP_LIST_MODE,
+            ),
+            ActionKit.Command(
+                path="List Mode/fv.list_dir",
+                display="Directory",
+                func=set_list_dir,
+                checkable=True,
+                action_group=GROUP_LIST_MODE,
             ),
             "-",
         ]

@@ -264,6 +264,26 @@ class GridViewCommands(ActionKit.MenuBase):
             scroll.start_auto_scroll(adjusted, base_speed)
 
     @staticmethod
+    def autoscroll_speed_up(ctx, step: int = 10):
+        view = GridViewCommands.get_view(ctx)
+        scroll = getattr(view, "parent_scroll", None)
+        if scroll is None or not scroll.is_scrolling():
+            return
+        new_base = scroll._autoscroll_base_speed + int(step)
+        adjusted = view.get_adjusted_scroll_speed(new_base)
+        scroll.start_auto_scroll(adjusted, new_base)
+
+    @staticmethod
+    def autoscroll_speed_down(ctx, step: int = 10):
+        view = GridViewCommands.get_view(ctx)
+        scroll = getattr(view, "parent_scroll", None)
+        if scroll is None or not scroll.is_scrolling():
+            return
+        new_base = max(1, scroll._autoscroll_base_speed - int(step))
+        adjusted = view.get_adjusted_scroll_speed(new_base)
+        scroll.start_auto_scroll(adjusted, new_base)
+
+    @staticmethod
     def move_to_next_row(ctx):
         view = GridViewCommands.get_view(ctx)
         view.scroll_to_next_row(animated=True)
@@ -401,6 +421,8 @@ class GridViewCommands(ActionKit.MenuBase):
             ActionKit.Command(path="grid.scale_reset", display="Reset Scale", func=cls.scale_reset),
             "-",
             ActionKit.Command(path="grid.toggle_autoscroll", display="AutoScroll", func=cls.toggle_autoscroll, params=[ActionKit.Param(name="speed", value=50, min_value=1, max_value=500)]),
+            ActionKit.Command(path="grid.autoscroll_speed_up", display="AutoScroll Speed Up", func=cls.autoscroll_speed_up, params=[ActionKit.Param(name="step", value=10, min_value=1, max_value=100)]),
+            ActionKit.Command(path="grid.autoscroll_speed_down", display="AutoScroll Speed Down", func=cls.autoscroll_speed_down, params=[ActionKit.Param(name="step", value=10, min_value=1, max_value=100)]),
             "-",
         ]
 

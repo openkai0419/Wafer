@@ -3,8 +3,13 @@ from wafer.core.commands.bridge import Command
 
 
 @require(sm="VideoSlotManager")
-def set_volume(ctx, sm, volume: int = 40):
-    sm.set_volume(volume)
+def volume_up(ctx, sm, step: int = 5):
+    sm.set_volume(sm.volume + int(step))
+
+
+@require(sm="VideoSlotManager")
+def volume_down(ctx, sm, step: int = 5):
+    sm.set_volume(sm.volume - int(step))
 
 
 @require(sm="VideoSlotManager")
@@ -48,10 +53,16 @@ class VideoGridCommands(MenuGroup):
         return [
             ":Video Grid",
             CommandMeta(
-                path="vgrid.set_volume",
-                display="Preview Volume",
-                func=set_volume,
-                params=[CommandParam(name="volume", value=40, min_value=0, max_value=100)],
+                path="vgrid.volume_up",
+                display="Preview Volume Up",
+                func=volume_up,
+                params=[CommandParam(name="step", value=5, min_value=1, max_value=50)],
+            ),
+            CommandMeta(
+                path="vgrid.volume_down",
+                display="Preview Volume Down",
+                func=volume_down,
+                params=[CommandParam(name="step", value=5, min_value=1, max_value=50)],
             ),
             CommandMeta(
                 path="vgrid.set_max_playback_slots",

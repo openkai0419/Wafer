@@ -74,13 +74,40 @@ class TestFrameBackStep:
         vw.frame_back_step.assert_called_once()
 
 
-class TestSetVolume:
-    def test_calls_set_volume(self):
-        from extensions.video.viewer_commands import set_volume
+class TestVolumeUp:
+    def test_calls_set_volume_with_increase(self):
+        from extensions.video.viewer_commands import volume_up
         vw = MagicMock()
+        vw._volume = 50
         ctx = _make_ctx(vw)
-        set_volume(ctx, volume=75)
-        vw.set_volume.assert_called_once_with(75)
+        volume_up(ctx, step=5)
+        vw.set_volume.assert_called_once_with(55)
+
+    def test_custom_step(self):
+        from extensions.video.viewer_commands import volume_up
+        vw = MagicMock()
+        vw._volume = 80
+        ctx = _make_ctx(vw)
+        volume_up(ctx, step=10)
+        vw.set_volume.assert_called_once_with(90)
+
+
+class TestVolumeDown:
+    def test_calls_set_volume_with_decrease(self):
+        from extensions.video.viewer_commands import volume_down
+        vw = MagicMock()
+        vw._volume = 50
+        ctx = _make_ctx(vw)
+        volume_down(ctx, step=5)
+        vw.set_volume.assert_called_once_with(45)
+
+    def test_custom_step(self):
+        from extensions.video.viewer_commands import volume_down
+        vw = MagicMock()
+        vw._volume = 10
+        ctx = _make_ctx(vw)
+        volume_down(ctx, step=15)
+        vw.set_volume.assert_called_once_with(-5)
 
 
 class TestToggleMute:
@@ -99,6 +126,26 @@ class TestToggleFitMode:
         ctx = _make_ctx(vw)
         toggle_fit_mode(ctx)
         vw.toggle_fit_mode.assert_called_once()
+
+
+class TestSpeedUp:
+    def test_calls_set_speed_with_increase(self):
+        from extensions.video.viewer_commands import speed_up
+        vw = MagicMock()
+        vw._speed = 1.0
+        ctx = _make_ctx(vw)
+        speed_up(ctx, step=0.25)
+        vw.set_speed.assert_called_once_with(1.25)
+
+
+class TestSpeedDown:
+    def test_calls_set_speed_with_decrease(self):
+        from extensions.video.viewer_commands import speed_down
+        vw = MagicMock()
+        vw._speed = 1.0
+        ctx = _make_ctx(vw)
+        speed_down(ctx, step=0.25)
+        vw.set_speed.assert_called_once_with(0.75)
 
 
 class TestSetSpeed:

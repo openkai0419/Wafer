@@ -28,8 +28,13 @@ def frame_back_step(ctx, vw):
 
 
 @require(vw="VideoViewerWidget")
-def set_volume(ctx, vw, volume: int = 100):
-    vw.set_volume(int(volume))
+def volume_up(ctx, vw, step: int = 5):
+    vw.set_volume(vw._volume + int(step))
+
+
+@require(vw="VideoViewerWidget")
+def volume_down(ctx, vw, step: int = 5):
+    vw.set_volume(vw._volume - int(step))
 
 
 @require(vw="VideoViewerWidget")
@@ -40,6 +45,16 @@ def toggle_mute(ctx, vw):
 @require(vw="VideoViewerWidget")
 def toggle_fit_mode(ctx, vw):
     vw.toggle_fit_mode()
+
+
+@require(vw="VideoViewerWidget")
+def speed_up(ctx, vw, step: float = 0.25):
+    vw.set_speed(vw._speed + float(step))
+
+
+@require(vw="VideoViewerWidget")
+def speed_down(ctx, vw, step: float = 0.25):
+    vw.set_speed(vw._speed - float(step))
 
 
 @require(vw="VideoViewerWidget")
@@ -96,10 +111,16 @@ class VideoViewerCommands(MenuGroup):
             ),
             "-",
             CommandMeta(
-                path="vview.set_volume",
-                display="Volume",
-                func=set_volume,
-                params=[CommandParam(name="volume", value=50, min_value=0, max_value=100)],
+                path="vview.volume_up",
+                display="Volume Up",
+                func=volume_up,
+                params=[CommandParam(name="step", value=5, min_value=1, max_value=50)],
+            ),
+            CommandMeta(
+                path="vview.volume_down",
+                display="Volume Down",
+                func=volume_down,
+                params=[CommandParam(name="step", value=5, min_value=1, max_value=50)],
             ),
             CommandMeta(
                 path="vview.toggle_mute",
@@ -115,8 +136,20 @@ class VideoViewerCommands(MenuGroup):
                 checkable=True,
             ),
             CommandMeta(
+                path="vview.speed_up",
+                display="Speed Up",
+                func=speed_up,
+                params=[CommandParam(name="step", value=0.25)],
+            ),
+            CommandMeta(
+                path="vview.speed_down",
+                display="Speed Down",
+                func=speed_down,
+                params=[CommandParam(name="step", value=0.25)],
+            ),
+            CommandMeta(
                 path="vview.set_speed",
-                display="Playback Speed",
+                display="Set Speed",
                 func=set_speed,
                 params=[CommandParam(name="speed", value=1.0)],
             ),

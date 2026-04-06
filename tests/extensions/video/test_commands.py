@@ -37,25 +37,42 @@ def _make_ctx(sm=None):
     return ctx
 
 
-class TestSetVolume:
-    def test_set_volume_calls_slot_manager(self):
-        from extensions.video.commands import set_volume
+class TestVolumeUp:
+    def test_volume_up_calls_slot_manager(self):
+        from extensions.video.commands import volume_up
         sm = MagicMock()
+        sm.volume = 40
         ctx = _make_ctx(sm)
-        set_volume(ctx, volume=75)
-        sm.set_volume.assert_called_once_with(75)
+        volume_up(ctx, step=5)
+        sm.set_volume.assert_called_once_with(45)
 
-    def test_set_volume_noop_without_instance(self):
-        from extensions.video.commands import set_volume
+    def test_volume_up_noop_without_instance(self):
+        from extensions.video.commands import volume_up
         ctx = _make_ctx(None)
-        set_volume(ctx, volume=50)
+        volume_up(ctx, step=5)
 
-    def test_set_volume_uses_ctx_get_instance(self):
-        from extensions.video.commands import set_volume
+    def test_volume_up_uses_ctx_get_instance(self):
+        from extensions.video.commands import volume_up
         sm = MagicMock()
+        sm.volume = 40
         ctx = _make_ctx(sm)
-        set_volume(ctx, volume=60)
+        volume_up(ctx, step=5)
         ctx.get_instance.assert_called_once_with("VideoSlotManager")
+
+
+class TestVolumeDown:
+    def test_volume_down_calls_slot_manager(self):
+        from extensions.video.commands import volume_down
+        sm = MagicMock()
+        sm.volume = 40
+        ctx = _make_ctx(sm)
+        volume_down(ctx, step=5)
+        sm.set_volume.assert_called_once_with(35)
+
+    def test_volume_down_noop_without_instance(self):
+        from extensions.video.commands import volume_down
+        ctx = _make_ctx(None)
+        volume_down(ctx, step=5)
 
 
 class TestSetMaxPlaybackSlots:
@@ -390,7 +407,8 @@ class TestVideoGridCommandsMenuGroup:
         from wafer.core.commands.command.core import CommandMeta
         cmds = VideoGridCommands.commands()
         paths = [c.path for c in cmds if isinstance(c, CommandMeta)]
-        assert "vgrid.set_volume" in paths
+        assert "vgrid.volume_up" in paths
+        assert "vgrid.volume_down" in paths
         assert "vgrid.set_max_playback_slots" in paths
         assert "vgrid.toggle_hover_autoplay" in paths
         assert "vgrid.toggle_appear_autoplay" in paths
@@ -426,17 +444,17 @@ def mock_slot_manager():
 
 
 class TestRegistryExecution:
-    def test_set_volume_via_registry(self, video_registry, mock_slot_manager):
+    def test_volume_up_via_registry(self, video_registry, mock_slot_manager):
         from wafer.core.commands.command.context import CommandContext
         ctx = CommandContext.create(None, "*", source="menu")
-        video_registry.execute("vgrid.set_volume", ctx=ctx, volume=75)
-        mock_slot_manager.set_volume.assert_called_once_with(75)
+        video_registry.execute("vgrid.volume_up", ctx=ctx, step=10)
+        mock_slot_manager.set_volume.assert_called_once_with(50)
 
-    def test_set_volume_default_via_registry(self, video_registry, mock_slot_manager):
+    def test_volume_down_via_registry(self, video_registry, mock_slot_manager):
         from wafer.core.commands.command.context import CommandContext
         ctx = CommandContext.create(None, "*", source="menu")
-        video_registry.execute("vgrid.set_volume", ctx=ctx)
-        mock_slot_manager.set_volume.assert_called_once_with(40)
+        video_registry.execute("vgrid.volume_down", ctx=ctx, step=10)
+        mock_slot_manager.set_volume.assert_called_once_with(30)
 
     def test_set_max_slots_via_registry(self, video_registry, mock_slot_manager):
         from wafer.core.commands.command.context import CommandContext
@@ -469,7 +487,8 @@ class TestRegistryExecution:
         assert mock_slot_manager.select_autoplay is False
 
     def test_registered_command_ids(self, video_registry):
-        assert video_registry.has_command("vgrid.set_volume")
+        assert video_registry.has_command("vgrid.volume_up")
+        assert video_registry.has_command("vgrid.volume_down")
         assert video_registry.has_command("vgrid.set_max_playback_slots")
         assert video_registry.has_command("vgrid.toggle_hover_autoplay")
         assert video_registry.has_command("vgrid.toggle_appear_autoplay")

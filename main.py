@@ -17,6 +17,7 @@ from wafer.utils.paths import list_setting_db_names
 from wafer.utils.process_lock import SafeProcessLock
 from wafer.utils.logs import AppLogger
 from wafer.utils.profiling import profiler
+from wafer import __version__
 from wafer.constants import APP_DATA_DIR_NAME, APP_ID, APP_NAME, DEFAULT_DB_NAME
 from wafer.app.indexer.main_indexer import IndexerProcess
 from wafer.plugin.loader import load_plugins
@@ -42,6 +43,7 @@ def _create_app():
     from PySide6 import QtWidgets
     app = QtWidgets.QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
+    app.setApplicationVersion(__version__)
     return app
 
 def _entry_viewer(app=None, session_id=None):

@@ -4,6 +4,10 @@ venv/
 .pytest_cache/
 .log/
 
+# Internal development notes
+.github/
+AGENTS.md
+
 .temp/
 .packages/
 .shared_packages/

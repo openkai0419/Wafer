@@ -1,3 +1,9 @@
+[project]
+name = "wafer"
+version = "0.1.0"
+description = "Extensible local file viewer with plugin-based format support"
+requires-python = ">=3.10"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

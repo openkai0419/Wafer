@@ -1,9 +1,11 @@
-from PySide6 import QtWidgets, QtCore
+from PySide6 import QtWidgets, QtCore, QtGui
 from ...core.commands.bridge import ActionKit
 from ...core.platform.process import AppProcess
 from ...core.session import SessionStore
 from ...core.qt.window import DialogLayoutStore
 from ...utils.formatting import dpix
+from ...utils.paths import get_resource_path
+from ..._version import __version__
 
 
 _standalone_dialogs: dict[str, QtWidgets.QDialog] = {}
@@ -82,6 +84,29 @@ def restart_viewer(ctx):
     w = ctx.get_instance("MainWindow")
     if w:
         w.close_by_restart()
+
+
+def show_about(ctx):
+    import sys
+    from PySide6 import __version__ as qt_version
+    w = ctx.get_instance("MainWindow")
+    parent = w if w else None
+    lines = [
+        '<h2>Wafer</h2>',
+        f'<p>Version: <b>{__version__}</b></p>',
+        f'<p>Python: {sys.version.split()[0]}<br>'
+        f'Qt: {QtCore.qVersion()}<br>'
+        f'PySide6: {qt_version}</p>',
+    ]
+    msg = QtWidgets.QMessageBox(parent)
+    msg.setWindowTitle('About Wafer')
+    msg.setTextFormat(QtCore.Qt.RichText)
+    msg.setText(''.join(lines))
+    msg.setStandardButtons(QtWidgets.QMessageBox.Ok)
+    icon = QtGui.QIcon(str(get_resource_path() / 'icon.ico'))
+    if not icon.isNull():
+        msg.setIconPixmap(icon.pixmap(dpix(64), dpix(64)))
+    msg.exec()
 
 
 def restart_all(ctx):
@@ -167,5 +192,22 @@ class BatchRenamerCommands(ActionKit.MenuBase):
                 path="setting.batch_renamer",
                 display="Batch Renamer",
                 func=open_batch_renamer,
+            ),
+        ]
+
+
+class AboutCommands(ActionKit.MenuBase):
+    NAME = "Setting"
+    PRIORITY = 85
+    SCOPE = "*"
+
+    @classmethod
+    def commands(cls):
+        return [
+            ":Help",
+            ActionKit.Command(
+                path="setting.about",
+                display="About Wafer",
+                func=show_about,
             ),
         ]

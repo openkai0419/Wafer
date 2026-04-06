@@ -63,10 +63,9 @@ def _entry_tray():
         from PySide6 import QtWidgets
         from wafer.app.tray.main_tray import TrayApp
 
-        procs = AppProcess.get_by_args_subset('--indexer')
-        AppProcess.terminate_and_wait(procs)
-
         with SafeProcessLock(f'{APP_DATA_DIR_NAME}_tray'):
+            procs = AppProcess.get_by_args_subset('--indexer')
+            AppProcess.terminate_and_wait(procs)
             AppLogger.info('TRAY RUNNING')
 
             names = list_setting_db_names() or [DEFAULT_DB_NAME]

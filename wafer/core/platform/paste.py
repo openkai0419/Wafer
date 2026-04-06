@@ -10,6 +10,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from ...utils.logs import AppLogger
 from ...utils.notifier import Notifier
+from ...utils.paths import safe_exists, safe_is_dir
 from .path_utils import unique_path
 from .file_operations import (
     CutCopy,
@@ -112,7 +113,7 @@ class ClipboardFilePaster:
             for url in md.urls():
                 if url.isLocalFile():
                     p = Path(url.toLocalFile())
-                    if p.exists():
+                    if safe_exists(p):
                         paths.append(p)
         if not paths and md.hasFormat("text/uri-list"):
             try:
@@ -141,13 +142,14 @@ class ClipboardFilePaster:
         plan: List[PastePlanItem] = []
         for i, src in enumerate(paths):
             dst_default = dest_dir / src.name
-            conflict = dst_default.exists()
+            conflict = safe_exists(dst_default)
             suggested = Path(unique_path(dest_dir, src.name)) if conflict else None
+            is_dir = safe_is_dir(src)
             plan.append(
                 PastePlanItem(
                     index=i,
                     src=src,
-                    is_dir=src.is_dir(),
+                    is_dir=is_dir,
                     action=action,
                     dst_default=dst_default,
                     conflict=conflict,

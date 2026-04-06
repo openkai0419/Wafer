@@ -17,6 +17,7 @@ from ...core.qt.rate_limit import qt_throttle
 from ...core.qt.thread import utility_pool
 from ...utils.formatting import dpix, natural_key
 from ...utils.logs import AppLogger
+from ...utils.paths import safe_is_file
 from .engine import PostProcess, RenameColumn, RenameEngine, RenameResult
 from .overlay import ThumbnailOverlay
 from .popup import ColumnSettingsPopup
@@ -209,11 +210,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
         for url in mime.urls():
             if url.isLocalFile():
                 p = Path(url.toLocalFile())
-                try:
-                    is_file = p.is_file()
-                except OSError:
-                    continue
-                if is_file:
+                if safe_is_file(p):
                     paths.append(p)
         if not paths:
             return

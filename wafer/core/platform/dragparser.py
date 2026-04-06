@@ -5,7 +5,7 @@ import re
 from PySide6.QtCore import QMimeData
 from PySide6.QtGui import QImage
 
-from ...utils.paths import normalize_path
+from ...utils.paths import normalize_path, safe_exists, safe_getsize
 from .path_utils import is_http_url, sanitize_filename
 
 
@@ -18,7 +18,7 @@ class ParsedItem:
         self.size = size
 
     def is_local_file(self):
-        return not self.is_binary and isinstance(self.source, str) and os.path.exists(self.source)
+        return not self.is_binary and isinstance(self.source, str) and safe_exists(self.source)
 
 
 class MimeDataParser:
@@ -88,9 +88,9 @@ class MimeDataParser:
             for url in mime.urls():
                 if url.isLocalFile():
                     src_path = normalize_path(url.toLocalFile())
-                    if os.path.exists(src_path):
+                    if safe_exists(src_path):
                         fname = os.path.basename(src_path)
-                        fsize = os.path.getsize(src_path)
+                        fsize = safe_getsize(src_path)
                         items.append(ParsedItem(source=src_path, name=fname, is_binary=False, size=fsize))
                 else:
                     url_str = url.toString()

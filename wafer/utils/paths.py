@@ -12,6 +12,34 @@ def normalize_path(p):
         path = str(Path(p).absolute())
     return path.replace('\\', '/')
 
+
+def safe_exists(p) -> bool:
+    try:
+        return os.path.exists(p)
+    except OSError:
+        return False
+
+
+def safe_is_file(p) -> bool:
+    try:
+        return os.path.isfile(p)
+    except OSError:
+        return False
+
+
+def safe_is_dir(p) -> bool:
+    try:
+        return os.path.isdir(p)
+    except OSError:
+        return False
+
+
+def safe_getsize(p) -> int | None:
+    try:
+        return os.path.getsize(p)
+    except OSError:
+        return None
+
 def natural_sort(files):
     return natsorted(files, alg=ns.LOCALE | ns.IGNORECASE)
 

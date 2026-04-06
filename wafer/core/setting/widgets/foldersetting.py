@@ -3,6 +3,7 @@ import sys
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtWidgets import QApplication, QFileDialog, QListWidget, QMenu, QMessageBox, QPushButton, QStackedLayout, QVBoxLayout, QWidget
 from ....utils.formatting import dpix
+from ....utils.paths import safe_exists
 from ...lang.manager import TranslatorMixin
 
 class FolderListWidget(QWidget, TranslatorMixin):
@@ -57,7 +58,7 @@ class FolderListWidget(QWidget, TranslatorMixin):
     def _add_folder_path(self, path):
         normalized_path = os.path.normpath(path)
         existing_paths = set(self.get_folder_list())
-        if os.path.exists(normalized_path) and normalized_path not in existing_paths:
+        if safe_exists(normalized_path) and normalized_path not in existing_paths:
             self.folder_list.addItem(normalized_path)
             self.sort_folder_list()
 
@@ -67,7 +68,7 @@ class FolderListWidget(QWidget, TranslatorMixin):
         if new_path:
             normalized_new_path = os.path.normpath(new_path)
             existing_paths = set(self.get_folder_list()) - {old_path}
-            if os.path.exists(normalized_new_path) and normalized_new_path not in existing_paths:
+            if safe_exists(normalized_new_path) and normalized_new_path not in existing_paths:
                 item.setText(normalized_new_path)
                 self.sort_folder_list()
 

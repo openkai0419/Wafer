@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Dict, List, Literal, Optional, Tuple
 import requests
 
 from ...utils.logs import AppLogger
+from ...utils.paths import safe_exists, safe_is_dir
 from .path_utils import check_copy_conflict, is_http_url, sanitize_filename, unique_path, validate_filename
 
 if TYPE_CHECKING:
@@ -332,17 +333,17 @@ def build_drop_plans(parsed_items: list[ParsedItem], dst_dir: str, op: str) -> L
         if not name:
             continue
         dst_default = os.path.join(dst_dir, name)
-        conflict = os.path.exists(dst_default)
+        conflict = safe_exists(dst_default)
         if getattr(item, "is_local_file", lambda: False)():
             src_abs = os.path.abspath(str(getattr(item, "source", "") or ""))
-            if not src_abs or not os.path.exists(src_abs):
+            if not src_abs or not safe_exists(src_abs):
                 continue
             plans.append(
                 DropPlanItem(
                     index=len(plans),
                     src=Path(src_abs),
                     name=name,
-                    is_dir=os.path.isdir(src_abs),
+                    is_dir=safe_is_dir(src_abs),
                     action=("cut" if op == "move" else "copy"),
                     dst_default=Path(dst_default),
                     conflict=conflict,
@@ -373,7 +374,7 @@ class FileSaver:
             src = Path(str(getattr(item, "source", "")))
             dst = Path(target_path)
             action: Literal["copy", "cut"] = "cut" if move else "copy"
-            plan = PastePlanItem(index=0, src=src, is_dir=src.is_dir(), action=action, dst_default=dst, conflict=dst.exists(), suggested_dst=None)
+            plan = PastePlanItem(index=0, src=src, is_dir=safe_is_dir(src), action=action, dst_default=dst, conflict=safe_exists(dst), suggested_dst=None)
             results = FileExecutor().execute_plans([plan], {0: PasteDecision(mode="overwrite")})
             return results[0] if results else OperationResult(action="unknown", src=str(src), dst="", status="error")
         return _save_remote_item(item, target_path, move=move)

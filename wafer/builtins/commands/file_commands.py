@@ -97,7 +97,7 @@ def _count_files_in_path(path: str) -> int:
 def _confirm_delete(ctx, paths) -> bool:
     parent = ctx.get("widget") if hasattr(ctx, "get") else None
     if parent is None and hasattr(ctx, "get_instance"):
-        parent = ctx.get_instance("FileViewerWidget") or ctx.get_instance("GridView") or ctx.get_instance("FolderTree")
+        parent = ctx.get_instance("ContentViewerWidget") or ctx.get_instance("GridView") or ctx.get_instance("FolderTree")
     title = "Delete"
     head = "Are you sure to delete"
 
@@ -159,7 +159,7 @@ def paste_here(ctx, overwrite_mode: str = "skip"):
         return
     a = os.path.abspath(path)
     d = a if os.path.isdir(a) else os.path.dirname(a)
-    parent = ctx.get_instance("FileViewerWidget") or ctx.get_instance("GridView") or ctx.get_instance("FolderTree")
+    parent = ctx.get_instance("ContentViewerWidget") or ctx.get_instance("GridView") or ctx.get_instance("FolderTree")
     paste_clipboard_files(d, overwrite_mode=overwrite_mode, parent=parent)
 
 def _get_directory_from_path(path):
@@ -190,7 +190,7 @@ def scroll_to_file(ctx, items, view):
     view.scroll_to_index(idx, animated=True)
 
 
-@require(shower="FileViewerWidget")
+@require(shower="FileViewerController")
 def show_file(ctx, shower):
     path = _ctx_path(ctx)
     if not path:
@@ -214,7 +214,7 @@ def rename_file(ctx):
     if not path or not os.path.isfile(path):
         return
     from ...core.qt.dialog import InputDialog
-    parent = ctx.get_instance("FileViewerWidget") or ctx.get_instance("GridView")
+    parent = ctx.get_instance("ContentViewerWidget") or ctx.get_instance("GridView")
     old_name = os.path.basename(path)
     new_name = InputDialog.get_text(
         f'Rename: {old_name}',

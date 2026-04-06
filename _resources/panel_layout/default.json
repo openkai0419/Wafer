@@ -23,7 +23,15 @@
                     ],
                     "sizes": [40, 540]
                 },
-                {"type": "leaf", "panel": "File Viewer"}
+                {
+                    "type": "split",
+                    "orientation": "vertical",
+                    "children": [
+                        {"type": "leaf", "panel": "Content Viewer"},
+                        {"type": "leaf", "panel": "Meta Viewer"}
+                    ],
+                    "sizes": [400, 200]
+                }
             ],
             "sizes": [200, 600, 400]
         },

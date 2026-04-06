@@ -40,13 +40,13 @@
 - save_state: collapsed含む。Dormantパネルはツリーに存在しないため自然に保存されない
 - restore_state: ツリーにない登録済みパネルはDormantとして扱う（以前はfloatingに強制追加していた）
 - MainWindowはLayoutManagerでパネル管理。StateStoreキーは'layout'（旧'main_splitter'は廃止）
-- パネル構成: Toolbar(closable=False), Folder Tree, Search, Grid View, File Viewer の5パネル
+- パネル構成: Toolbar(closable=False), Folder Tree, Search, Grid View, Content Viewer, Meta Viewer の6パネル
 
 ■ WidgetViewerPlugin と WidgetGridPlugin のwidget管理の違い
 - ViewerPlugin: 1プラグイン=1Widget。__init__でWIDGET_CLASS()から自動生成、self.widgetでアクセス。メソッドにwidget引数不要
 - GridPlugin: プール管理で複数Widget。メソッドにwidget引数が必要（どのWidgetか特定できないため）
 - PluginRegistry.register()はクラス登録のみ。instance()初回呼び出し時に遅延インスタンス化する
-- FileViewerWidget.setup_ui()でviewer_resolver.viewer_plugins()経由でインスタンス取得し、plugin.widgetをstackに追加
+- ContentViewerWidget初期化時にviewer_resolver.viewer_plugins()経由でインスタンス取得し、plugin.widgetをstackに追加
 
 ■ Collector/Detacherのプレフィックス設計
 - Collector/Detacherはmeta_info/tagsのキーをNAMEプレフィックスなしで返す。_parse_batch()が自動的に{NAME}.を付与してDBに書き込む
@@ -81,7 +81,7 @@
   WidgetGridPlugin: BGでplugin解決→invokeでメインに戻し_promote_to_widget→plugin.render(widget, path, size)をメインスレッドで呼ぶ。
 
 ● コンポーネント別の利用パターン
-1. 単発タスク（SearchService, FileViewerWidget, QueryOptions）:
+1. 単発タスク（SearchService, FileViewerController, QueryOptions）:
    CancelToken1つ保持 → 新リクエストで前回キャンセル → post(task) → invoke(結果反映)
    Dispatcher直接利用。
 

@@ -14,7 +14,9 @@ from ...core.ipc.node import Node
 from .grid.grid_view import GridView
 from .grid.items import GridItemModel
 from .preview.file_model import FileViewModel
-from .preview.file_viewer import FileViewerWidget
+from .preview.file_viewer import FileViewerController
+from .preview.content_viewer import ContentViewerWidget
+from .preview.meta_panel import MetaViewerWidget
 from ...core.setting.app_settings import app_settings
 from .widgets.button_bar import IconButtonBar, IconButtonConfig
 from .widgets.foldertree import LazyFolderTreeView
@@ -333,8 +335,11 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.grid_view.base_height_changed.connect(self._on_zoom_changed)
 
         self.file_model = FileViewModel(dbpath_getter=lambda: self.database_path, parent=self)
-        self.file_viewer = FileViewerWidget(self.file_model, self)
-        UI.register_instance("FileViewerWidget", self.file_viewer)
+        self.content_viewer = ContentViewerWidget()
+        self.meta_viewer_widget = MetaViewerWidget()
+        self.file_viewer = FileViewerController(self.file_model, self.content_viewer, self.meta_viewer_widget, self)
+        UI.register_instance("FileViewerController", self.file_viewer)
+        UI.register_instance("ContentViewerWidget", self.content_viewer)
         UI.register_instance("FileViewModel", self.file_model)
         UI.register_instance("GridItemModel", self.grid_items)
 
@@ -342,7 +347,8 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self._layout_manager.register("Folder Tree", self._create_folder_panel)
         self._layout_manager.register("Search", lambda: self.search_row_widget)
         self._layout_manager.register("Grid View", lambda: self.grid_view)
-        self._layout_manager.register("File Viewer", lambda: self.file_viewer)
+        self._layout_manager.register("Content Viewer", lambda: self.content_viewer)
+        self._layout_manager.register("Meta Viewer", lambda: self.meta_viewer_widget)
         self._register_panel_plugins()
 
         default_layout = self._load_default_layout()

@@ -1,6 +1,7 @@
 import py_compile
 from unittest.mock import MagicMock, patch, PropertyMock
-from wafer.app.viewer.preview.file_viewer import _format_meta, FileViewerWidget, _DEFAULT_WIDGET_NAME
+from wafer.app.viewer.preview.file_viewer import _format_meta, FileViewerController, _DEFAULT_WIDGET_NAME
+from wafer.app.viewer.preview.content_viewer import ContentViewerWidget
 from wafer.plugin.viewer.base import WidgetViewerPlugin, ImageViewerPlugin
 
 
@@ -111,11 +112,19 @@ def test_format_meta_embeds_collector_html():
 
 class TestAutoplayState:
 
-    def test_save_state_includes_autoplay(self, qtbot):
+    def _make_controller(self, qtbot):
         from wafer.app.viewer.preview.file_model import FileViewModel
+        from wafer.app.viewer.preview.meta_panel import MetaViewerWidget
         model = FileViewModel()
-        w = FileViewerWidget(model)
-        qtbot.addWidget(w)
+        cv = ContentViewerWidget()
+        mv = MetaViewerWidget()
+        qtbot.addWidget(cv)
+        qtbot.addWidget(mv)
+        w = FileViewerController(model, cv, mv)
+        return w, model
+
+    def test_save_state_includes_autoplay(self, qtbot):
+        w, _ = self._make_controller(qtbot)
         w._autoplay_interval = 5000
         w._autoplay_loop = False
         state = w._save_state()
@@ -124,10 +133,7 @@ class TestAutoplayState:
         assert 'autoplay_active' not in state
 
     def test_restore_state_sets_autoplay_fields(self, qtbot):
-        from wafer.app.viewer.preview.file_model import FileViewModel
-        model = FileViewModel()
-        w = FileViewerWidget(model)
-        qtbot.addWidget(w)
+        w, _ = self._make_controller(qtbot)
         w._restore_state({
             'autoplay_interval': 7000,
             'autoplay_loop': True,
@@ -137,19 +143,13 @@ class TestAutoplayState:
         assert w._autoplay_active is False
 
     def test_restore_state_resets_slideshow_checkbox(self, qtbot):
-        from wafer.app.viewer.preview.file_model import FileViewModel
-        model = FileViewModel()
-        w = FileViewerWidget(model)
-        qtbot.addWidget(w)
+        w, _ = self._make_controller(qtbot)
         with patch('wafer.app.viewer.preview.file_viewer.Command') as mock_cmd:
             w._restore_state({'autoplay_interval': 3000})
             mock_cmd.set_checked.assert_called_with('fv.toggle_slideshow', False)
 
     def test_start_stop_autoplay(self, qtbot):
-        from wafer.app.viewer.preview.file_model import FileViewModel
-        model = FileViewModel()
-        w = FileViewerWidget(model)
-        qtbot.addWidget(w)
+        w, _ = self._make_controller(qtbot)
         w.start_autoplay(interval_ms=2000, loop=False)
         assert w.autoplay_active is True
         assert w._autoplay_interval == 2000
@@ -158,33 +158,24 @@ class TestAutoplayState:
         assert w.autoplay_active is False
 
     def test_toggle_autoplay(self, qtbot):
-        from wafer.app.viewer.preview.file_model import FileViewModel
-        model = FileViewModel()
-        w = FileViewerWidget(model)
-        qtbot.addWidget(w)
+        w, _ = self._make_controller(qtbot)
         w.toggle_autoplay(interval_ms=4000)
         assert w.autoplay_active is True
         w.toggle_autoplay()
         assert w.autoplay_active is False
 
     def test_arm_autoplay_starts_timer_for_default_plugin(self, qtbot):
-        from wafer.app.viewer.preview.file_model import FileViewModel
-        model = FileViewModel()
-        w = FileViewerWidget(model)
-        qtbot.addWidget(w)
+        w, _ = self._make_controller(qtbot)
         w._autoplay_active = True
         w._autoplay_interval = 1000
-        w._current_plugin_name = _DEFAULT_WIDGET_NAME
+        w.content_viewer._current_plugin_name = _DEFAULT_WIDGET_NAME
         w._arm_autoplay()
         assert w._autoplay_timer.isActive()
         assert not w._autoplay_held
         w.stop_autoplay()
 
     def test_arm_autoplay_holds_for_plugin_returning_true(self, qtbot):
-        from wafer.app.viewer.preview.file_model import FileViewModel
-        model = FileViewModel()
-        w = FileViewerWidget(model)
-        qtbot.addWidget(w)
+        w, _ = self._make_controller(qtbot)
 
         class HoldPlugin(WidgetViewerPlugin):
             NAME = '_test_hold'
@@ -199,7 +190,7 @@ class TestAutoplayState:
         viewer_resolver.registry._instances['_test_hold'] = plugin
 
         w._autoplay_active = True
-        w._current_plugin_name = '_test_hold'
+        w.content_viewer._current_plugin_name = '_test_hold'
         w._arm_autoplay()
         assert w._autoplay_held is True
         assert not w._autoplay_timer.isActive()
@@ -209,11 +200,15 @@ class TestAutoplayState:
 
     def test_generation_guards_stale_advance(self, qtbot):
         from wafer.app.viewer.preview.file_model import FileViewModel
+        from wafer.app.viewer.preview.meta_panel import MetaViewerWidget
         model = FileViewModel()
         model.set_items(["a", "b", "c"], None)
         model.set_current_index(0)
-        w = FileViewerWidget(model)
-        qtbot.addWidget(w)
+        cv = ContentViewerWidget()
+        mv = MetaViewerWidget()
+        qtbot.addWidget(cv)
+        qtbot.addWidget(mv)
+        w = FileViewerController(model, cv, mv)
         old_gen = w._autoplay_generation
         w._autoplay_active = True
         w._autoplay_generation += 1
@@ -222,10 +217,7 @@ class TestAutoplayState:
         w.stop_autoplay()
 
     def test_interval_min_clamp(self, qtbot):
-        from wafer.app.viewer.preview.file_model import FileViewModel
-        model = FileViewModel()
-        w = FileViewerWidget(model)
-        qtbot.addWidget(w)
+        w, _ = self._make_controller(qtbot)
         w.start_autoplay(interval_ms=100)
         assert w._autoplay_interval == 500
         w.stop_autoplay()
@@ -246,27 +238,35 @@ class _StubWidgetPlugin(WidgetViewerPlugin):
 
 
 def _make_viewer_stub():
-    viewer = MagicMock(spec=FileViewerWidget)
+    content_viewer = MagicMock(spec=ContentViewerWidget)
+    default_widget = MagicMock()
+    content_viewer.image_viewer = default_widget
+    content_viewer._current_plugin_name = _DEFAULT_WIDGET_NAME
+    content_viewer._stack = MagicMock()
+    content_viewer._widget_map = {
+        _DEFAULT_WIDGET_NAME: default_widget,
+        'stub_widget': MagicMock(),
+    }
+
+    def switch_to(name):
+        content_viewer._current_plugin_name = name
+    content_viewer.switch_to = switch_to
+
+    meta_viewer = MagicMock()
+
+    viewer = MagicMock(spec=FileViewerController)
     viewer._pending_meta = None
     viewer._pending_content = None
     viewer._loading_path = None
     viewer._target_plugin = None
-    viewer._current_plugin_name = _DEFAULT_WIDGET_NAME
-
-    stub_widget = MagicMock()
-    default_widget = MagicMock()
+    viewer.content_viewer = content_viewer
+    viewer.meta_viewer = meta_viewer
     viewer.image_viewer = default_widget
-    viewer.meta_viewer = MagicMock()
-    viewer._stack = MagicMock()
-    viewer._widget_map = {
-        _DEFAULT_WIDGET_NAME: default_widget,
-        'stub_widget': stub_widget,
-    }
 
-    viewer._flush = lambda: FileViewerWidget._flush(viewer)
-    viewer._switch_to = lambda name: FileViewerWidget._switch_to(viewer, name)
-    viewer._on_path_changed = lambda path: FileViewerWidget._on_path_changed(viewer, path)
-    viewer._load_content = lambda path: FileViewerWidget._load_content(viewer, path)
+    viewer._flush = lambda: FileViewerController._flush(viewer)
+    viewer._switch_to = lambda name: FileViewerController._switch_to(viewer, name)
+    viewer._on_path_changed = lambda path: FileViewerController._on_path_changed(viewer, path)
+    viewer._load_content = lambda path: FileViewerController._load_content(viewer, path)
     viewer._update_meta = MagicMock()
     return viewer
 
@@ -298,7 +298,7 @@ def test_flush_shows_image_for_default():
 
     viewer._flush()
 
-    assert viewer._current_plugin_name == _DEFAULT_WIDGET_NAME
+    assert viewer.content_viewer._current_plugin_name == _DEFAULT_WIDGET_NAME
     viewer.image_viewer.set_image.assert_called_once_with(img, '/a.png')
     viewer.image_viewer.clear.assert_not_called()
     viewer.meta_viewer.set_data.assert_called_once()
@@ -315,7 +315,7 @@ def test_flush_shows_error_image_when_content_none_for_default():
     with patch('wafer.app.viewer.preview.file_viewer.PixmapFactory') as mock_factory:
         mock_error_img = MagicMock()
         mock_factory.create_viewer_error_placeholder.return_value = mock_error_img
-        viewer._flush = lambda: FileViewerWidget._flush(viewer)
+        viewer._flush = lambda: FileViewerController._flush(viewer)
         viewer._flush()
 
     viewer.image_viewer.set_image.assert_called_once_with(mock_error_img, '/a.zip')
@@ -337,14 +337,15 @@ def test_flush_renders_widget_plugin():
 
         def tracking_switch(name):
             call_order.append('switch')
-            FileViewerWidget._switch_to(viewer, name)
-        viewer._switch_to = tracking_switch
-        viewer._flush = lambda: FileViewerWidget._flush(viewer)
+            viewer.content_viewer._current_plugin_name = name
+        viewer.content_viewer.switch_to = tracking_switch
+        viewer._switch_to = lambda name: FileViewerController._switch_to(viewer, name)
+        viewer._flush = lambda: FileViewerController._flush(viewer)
 
         viewer._flush()
 
     assert call_order == ['switch', 'render']
-    assert viewer._current_plugin_name == 'stub_widget'
+    assert viewer.content_viewer._current_plugin_name == 'stub_widget'
 
 
 def test_on_path_changed_dispatches_both_pipelines():
@@ -373,48 +374,54 @@ def test_on_path_changed_widget_sets_target():
     viewer.model = MagicMock()
     viewer.model.dbpath = None
 
-    initial_plugin = viewer._current_plugin_name
+    initial_plugin = viewer.content_viewer._current_plugin_name
     with patch('wafer.app.viewer.preview.file_viewer.viewer_resolver') as mock_resolver:
         mock_resolver.resolve.return_value = _StubWidgetPlugin
         viewer._on_path_changed('/test.mp4')
 
-    assert viewer._current_plugin_name == initial_plugin
+    assert viewer.content_viewer._current_plugin_name == initial_plugin
     assert viewer._target_plugin == 'stub_widget'
 
 
 def test_switch_to_deactivates_previous_widget_plugin():
     viewer = _make_viewer_stub()
-    viewer._current_plugin_name = 'stub_widget'
+    viewer.content_viewer._current_plugin_name = 'stub_widget'
 
-    with patch('wafer.app.viewer.preview.file_viewer.viewer_resolver') as mock_resolver:
-        viewer._switch_to = lambda name: FileViewerWidget._switch_to(viewer, name)
+    with patch('wafer.app.viewer.preview.content_viewer.viewer_resolver') as mock_resolver:
+        from wafer.app.viewer.preview.content_viewer import ContentViewerWidget
+        viewer.content_viewer.switch_to = lambda name: ContentViewerWidget.switch_to(viewer.content_viewer, name)
+        viewer._switch_to = lambda name: FileViewerController._switch_to(viewer, name)
         viewer._switch_to(_DEFAULT_WIDGET_NAME)
 
         mock_resolver.deactivate.assert_called_once_with('stub_widget')
 
-    assert viewer._current_plugin_name == _DEFAULT_WIDGET_NAME
+    assert viewer.content_viewer._current_plugin_name == _DEFAULT_WIDGET_NAME
 
 
 def test_switch_to_activates_new_widget_plugin():
     viewer = _make_viewer_stub()
-    viewer._current_plugin_name = _DEFAULT_WIDGET_NAME
+    viewer.content_viewer._current_plugin_name = _DEFAULT_WIDGET_NAME
 
-    with patch('wafer.app.viewer.preview.file_viewer.viewer_resolver') as mock_resolver:
-        viewer._switch_to = lambda name: FileViewerWidget._switch_to(viewer, name)
+    with patch('wafer.app.viewer.preview.content_viewer.viewer_resolver') as mock_resolver:
+        from wafer.app.viewer.preview.content_viewer import ContentViewerWidget
+        viewer.content_viewer.switch_to = lambda name: ContentViewerWidget.switch_to(viewer.content_viewer, name)
+        viewer._switch_to = lambda name: FileViewerController._switch_to(viewer, name)
         viewer._switch_to('stub_widget')
 
         mock_resolver.activate.assert_called_once_with('stub_widget')
     viewer.image_viewer.clear.assert_called_once()
-    assert viewer._current_plugin_name == 'stub_widget'
+    assert viewer.content_viewer._current_plugin_name == 'stub_widget'
 
 
 def test_switch_to_deactivates_and_activates_between_plugins():
     viewer = _make_viewer_stub()
-    viewer._widget_map['other_plugin'] = MagicMock()
-    viewer._current_plugin_name = 'stub_widget'
+    viewer.content_viewer._widget_map['other_plugin'] = MagicMock()
+    viewer.content_viewer._current_plugin_name = 'stub_widget'
 
-    with patch('wafer.app.viewer.preview.file_viewer.viewer_resolver') as mock_resolver:
-        viewer._switch_to = lambda name: FileViewerWidget._switch_to(viewer, name)
+    with patch('wafer.app.viewer.preview.content_viewer.viewer_resolver') as mock_resolver:
+        from wafer.app.viewer.preview.content_viewer import ContentViewerWidget
+        viewer.content_viewer.switch_to = lambda name: ContentViewerWidget.switch_to(viewer.content_viewer, name)
+        viewer._switch_to = lambda name: FileViewerController._switch_to(viewer, name)
         viewer._switch_to('other_plugin')
 
         mock_resolver.deactivate.assert_called_once_with('stub_widget')
@@ -423,10 +430,12 @@ def test_switch_to_deactivates_and_activates_between_plugins():
 
 def test_switch_to_default_does_not_activate():
     viewer = _make_viewer_stub()
-    viewer._current_plugin_name = 'stub_widget'
+    viewer.content_viewer._current_plugin_name = 'stub_widget'
 
-    with patch('wafer.app.viewer.preview.file_viewer.viewer_resolver') as mock_resolver:
-        viewer._switch_to = lambda name: FileViewerWidget._switch_to(viewer, name)
+    with patch('wafer.app.viewer.preview.content_viewer.viewer_resolver') as mock_resolver:
+        from wafer.app.viewer.preview.content_viewer import ContentViewerWidget
+        viewer.content_viewer.switch_to = lambda name: ContentViewerWidget.switch_to(viewer.content_viewer, name)
+        viewer._switch_to = lambda name: FileViewerController._switch_to(viewer, name)
         viewer._switch_to(_DEFAULT_WIDGET_NAME)
 
         mock_resolver.activate.assert_not_called()

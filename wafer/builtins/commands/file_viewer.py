@@ -26,7 +26,7 @@ def prev_file(ctx, model, step: int = 1, loop: bool = False):
     model.move_current_prev(step=int(step), loop=bool(loop))
 
 
-@require(fv="FileViewerWidget")
+@require(fv="FileViewerController")
 def toggle_slideshow(ctx, fv, interval: float = 3.0, loop: bool = True):
     fv.toggle_autoplay(
         interval_ms=int(float(interval) * 1000),
@@ -34,7 +34,7 @@ def toggle_slideshow(ctx, fv, interval: float = 3.0, loop: bool = True):
     )
 
 
-@require(fv="FileViewerWidget")
+@require(fv="FileViewerController")
 def start_slideshow(ctx, fv, interval: float = 3.0, loop: bool = True):
     fv.start_autoplay(
         interval_ms=int(float(interval) * 1000),
@@ -42,7 +42,7 @@ def start_slideshow(ctx, fv, interval: float = 3.0, loop: bool = True):
     )
 
 
-@require(fv="FileViewerWidget")
+@require(fv="FileViewerController")
 def stop_slideshow(ctx, fv):
     fv.stop_autoplay()
 

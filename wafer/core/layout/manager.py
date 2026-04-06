@@ -273,6 +273,7 @@ class LayoutManager(QtCore.QObject):
             self._window.removeDockWidget(dock)
             dock.setParent(None)
             dock.deleteLater()
+        self._rescue_orphaned_widgets(old_container, old_splitter, *old_floating)
         if old_container:
             old_container.setParent(None)
             old_container.deleteLater()
@@ -299,6 +300,7 @@ class LayoutManager(QtCore.QObject):
                 if entry.floating_window:
                     self._discard_floating_shell(entry)
 
+            self._rescue_orphaned_widgets(old_container, old_splitter)
             if old_container:
                 old_container.setParent(None)
                 old_container.deleteLater()
@@ -391,6 +393,7 @@ class LayoutManager(QtCore.QObject):
             self._window.setUpdatesEnabled(False)
             try:
                 self._build_locked_layout()
+                self._rescue_orphaned_widgets(old_container, old_splitter)
                 if old_container:
                     old_container.setParent(None)
                     old_container.deleteLater()
@@ -596,6 +599,8 @@ class LayoutManager(QtCore.QObject):
         if not win:
             return
         entry.floating_window = None
+        if entry.widget and win.isAncestorOf(entry.widget):
+            entry.widget.setParent(None)
         try:
             win.closed.disconnect()
         except RuntimeError:
@@ -627,6 +632,15 @@ class LayoutManager(QtCore.QObject):
         self._window.removeDockWidget(dock)
         dock.setParent(None)
         dock.deleteLater()
+
+    def _rescue_orphaned_widgets(self, *condemned: QtWidgets.QWidget | None):
+        targets = [c for c in condemned if c is not None]
+        if not targets:
+            return
+        for entry in self._panels.values():
+            w = entry.widget
+            if w is not None and any(c.isAncestorOf(w) for c in targets):
+                w.setParent(None)
 
     def _apply_collapse_state(self):
         if not self._root_splitter or not self._tree.collapsed:

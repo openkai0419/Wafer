@@ -19,7 +19,7 @@ class WD14TaggerCollector(BaseSingletonCollector):
     NAME = 'wd14'
     EXTENSIONS = ()
     PRIORITY = 50
-    BATCH_SIZE = 32
+    BATCH_SIZE = 150
 
     @classmethod
     def post_install(cls, plugin_dir, on_progress=None):

@@ -88,7 +88,7 @@ class _SlideshowCtx:
         return default
 
     def get_instance(self, name, default=None):
-        if name == "FileViewerWidget":
+        if name == "FileViewerController":
             return self._fv
         return default
 

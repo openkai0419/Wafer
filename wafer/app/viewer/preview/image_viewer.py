@@ -30,7 +30,7 @@ class ZoomPanImageView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self.init_command_binding("ImageView", enable_drops=True)
 
     def extend_context(self, ctx, cmd, event=None, key=None, source=None):
-        vw = ctx.get_instance("FileViewerWidget")
+        vw = ctx.get_instance("FileViewerController")
         p = getattr(vw, "path", None) if vw is not None else None
         return {"path": p, "paths": [p] if p else []}
 

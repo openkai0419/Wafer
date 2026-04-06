@@ -145,29 +145,21 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
         db_group_layout.addLayout(db_btn_layout)
 
         self._detail_stack = QtWidgets.QStackedWidget()
-        self._empty_label = QtWidgets.QLabel('Select a database above')
+        self._empty_label = QtWidgets.QLabel('Select a database')
         self._empty_label.setAlignment(QtCore.Qt.AlignCenter)
         self._detail_stack.addWidget(self._empty_label)
 
         self._detail_widget = _DatabaseDetailWidget()
         self._detail_stack.addWidget(self._detail_widget)
 
-        from ..plugin_manager.data_tab import DataTab
-        self._data_tab = DataTab(self._dispatcher)
-        self._data_tab.purge_requested.connect(self._send_purge)
-
-        self._tabs = QtWidgets.QTabWidget()
-        self._tabs.addTab(self._scrollable(self._detail_stack), 'Paths')
-        self._tabs.addTab(self._scrollable(self._data_tab), 'Data')
-
-        self._splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
-        self._splitter.addWidget(db_group)
-        self._splitter.addWidget(self._tabs)
-        self._splitter.setStretchFactor(0, 1)
-        self._splitter.setStretchFactor(1, 2)
-        self._splitter.setChildrenCollapsible(False)
+        splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
+        splitter.addWidget(db_group)
+        splitter.addWidget(self._detail_stack)
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 2)
+        splitter.setChildrenCollapsible(False)
         db_group.setMinimumHeight(dpix(100))
-        self._tabs.setMinimumHeight(dpix(200))
+        self._detail_stack.setMinimumHeight(dpix(120))
 
         save_btn = QtWidgets.QPushButton('Save')
         save_btn.setObjectName('save_btn')
@@ -181,12 +173,26 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
         btn_layout.addWidget(save_btn)
         btn_layout.addWidget(revert_btn)
 
+        paths_container = QtWidgets.QWidget()
+        paths_layout = QtWidgets.QVBoxLayout(paths_container)
+        paths_layout.setContentsMargins(0, 0, 0, 0)
+        paths_layout.setSpacing(dpix(6))
+        paths_layout.addWidget(splitter, 1)
+        paths_layout.addLayout(btn_layout)
+
+        from ..plugin_manager.data_tab import DataTab
+        self._data_tab = DataTab(self._dispatcher)
+        self._data_tab.purge_requested.connect(self._send_purge)
+
+        self._tabs = QtWidgets.QTabWidget()
+        self._tabs.addTab(self._scrollable(paths_container), 'Paths')
+        self._tabs.addTab(self._scrollable(self._data_tab), 'Data')
+
         layout = QtWidgets.QVBoxLayout(self)
         p = dpix(6)
         layout.setContentsMargins(p, p, p, p)
         layout.setSpacing(p)
-        layout.addWidget(self._splitter, 1)
-        layout.addLayout(btn_layout)
+        layout.addWidget(self._tabs, 1)
 
         self._refresh_db_list()
         self._snapshot_all()

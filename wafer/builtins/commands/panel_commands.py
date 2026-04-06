@@ -17,7 +17,7 @@ class PanelCommands(ActionKit.MenuBase):
     NAME = "Panel"
     PRIORITY = 76
 
-    _CORE_PANELS = ["Toolbar", "Folder Tree", "Search", "Grid View", "File Viewer"]
+    _CORE_PANELS = ["Toolbar", "Folder Tree", "Search", "Grid View", "Content Viewer", "Meta Viewer"]
 
     @classmethod
     def commands(cls):

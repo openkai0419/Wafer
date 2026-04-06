@@ -1,8 +1,9 @@
-from PySide6 import QtCore, QtGui, QtWidgets
+from __future__ import annotations
+
+from PySide6 import QtCore, QtWidgets
 from natsort import natsorted
 
-from ....utils.formatting import dpix, format_aspect, format_size_detail, format_timestamp
-from ....core.qt.rate_limit import qt_debounce, qt_throttle
+from ....utils.formatting import format_aspect, format_size_detail, format_timestamp
 from ....utils.profiling import profiler
 from ....utils.logs import AppLogger
 from ....core.db.query import FileSearchEngine
@@ -13,14 +14,11 @@ from ....core.qt.pixmap import PixmapFactory
 from ....core.qt.thread import utility_pool
 from ....core.state import StateStore
 from ....core.commands.bridge import Command
-from .meta_viewer import MetaListWidget
-from .image_viewer import ImageDisplayWidget
 from .file_model import FileViewModel
+from .content_viewer import ContentViewerWidget, _DEFAULT_WIDGET_NAME
+from .meta_panel import MetaViewerWidget
 from ..grid.cachemanager import MemoryLimitedImageCache, fullsize_key
 from ....core.setting.app_settings import app_settings
-
-
-_DEFAULT_WIDGET_NAME = '_default'
 
 
 def _format_meta(engine, path):
@@ -56,13 +54,15 @@ def _format_meta(engine, path):
     return [file_rec, standard, tags, prefixed]
 
 
-class FileViewerWidget(QtWidgets.QSplitter):
+class FileViewerController(QtCore.QObject):
 
     _DEFAULT_AUTOPLAY_INTERVAL = 3000
 
-    def __init__(self, model: FileViewModel, parent=None):
-        super().__init__(QtCore.Qt.Vertical, parent)
+    def __init__(self, model: FileViewModel, content_viewer: ContentViewerWidget, meta_viewer: MetaViewerWidget, parent=None):
+        super().__init__(parent)
         self.model = model
+        self.content_viewer = content_viewer
+        self.meta_viewer = meta_viewer
         self.image_cache = MemoryLimitedImageCache(app_settings.get('window/cache_size', 500))
         self._dispatcher = Dispatcher(utility_pool)
         self._content_cancel = CancelSlot()
@@ -71,8 +71,6 @@ class FileViewerWidget(QtWidgets.QSplitter):
         self._pending_content = None
         self._loading_path = None
         self._target_plugin: str | None = None
-        self._widget_map: dict[str, QtWidgets.QWidget] = {}
-        self._current_plugin_name: str = _DEFAULT_WIDGET_NAME
         self._autoplay_active = False
         self._autoplay_interval = self._DEFAULT_AUTOPLAY_INTERVAL
         self._autoplay_loop = True
@@ -81,68 +79,28 @@ class FileViewerWidget(QtWidgets.QSplitter):
         self._autoplay_timer = QtCore.QTimer(self)
         self._autoplay_timer.setSingleShot(True)
         self._autoplay_timer.timeout.connect(self._on_autoplay_tick)
-        self.setup_ui()
+        self._register_states()
         self.model.pathChanged.connect(self._on_path_changed)
+
+    @property
+    def image_viewer(self):
+        return self.content_viewer.image_viewer
 
     @property
     def path(self) -> str | None:
         return self.model.path()
 
-    def setup_ui(self):
-        self._stack = QtWidgets.QStackedWidget(self)
-        self._stack.setMinimumSize(dpix(200), dpix(200))
-
-        self.image_viewer = ImageDisplayWidget()
-        self._stack.addWidget(self.image_viewer)
-        self._widget_map[_DEFAULT_WIDGET_NAME] = self.image_viewer
-
-        for name, plugin in viewer_resolver.viewer_plugins().items():
-            self._stack.addWidget(plugin.widget)
-            self._widget_map[name] = plugin.widget
-        self._stack.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-
-        self.addWidget(self._stack)
-
-        self.meta_viewer = MetaListWidget(rich_text_keys={'collected by'})
-
-        self.area = QtWidgets.QScrollArea(self)
-        self.area.setWidgetResizable(True)
-        self.area.setFrameShape(QtWidgets.QFrame.NoFrame)
-        self.area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
-        self.area.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
-        self.area.setWidget(self.meta_viewer)
-        self.addWidget(self.area)
-        self.setSizes([10, 800])
-
-        self._register_states()
-        QtWidgets.QApplication.instance().aboutToQuit.connect(self.on_exit)
-
     def _switch_to(self, plugin_name: str):
-        if plugin_name == self._current_plugin_name:
-            return
-        prev_name = self._current_plugin_name
-        if prev_name == _DEFAULT_WIDGET_NAME:
-            self.image_viewer.clear()
-        else:
-            self._unbind_autoplay(prev_name)
-            viewer_resolver.deactivate(prev_name)
-        widget = self._widget_map.get(plugin_name)
-        if widget is None:
-            plugin_name = _DEFAULT_WIDGET_NAME
-            widget = self.image_viewer
-        self._stack.setCurrentWidget(widget)
-        self._current_plugin_name = plugin_name
-        if plugin_name != _DEFAULT_WIDGET_NAME:
-            viewer_resolver.activate(plugin_name)
+        old_name = self.content_viewer._current_plugin_name
+        if old_name != _DEFAULT_WIDGET_NAME and old_name != plugin_name:
+            self._unbind_autoplay(old_name)
+        self.content_viewer.switch_to(plugin_name)
 
     def _register_states(self):
         store = StateStore.instance()
         store.register('file_viewer', self._save_state, self._restore_state)
-        for name, widget in self._widget_map.items():
-            if name == _DEFAULT_WIDGET_NAME:
-                continue
-            plugin = viewer_resolver.registry.instance(name)
-            if plugin is None or not isinstance(plugin, _WidgetViewerPlugin):
+        for name, plugin in viewer_resolver.viewer_plugins().items():
+            if not isinstance(plugin, _WidgetViewerPlugin):
                 continue
             p = plugin
             store.register(f'viewer_plugin.{name}', lambda p=p: p.save_state(), lambda s, p=p: p.restore_state(s))
@@ -150,7 +108,6 @@ class FileViewerWidget(QtWidgets.QSplitter):
     def _save_state(self):
         return {
             'fit_mode': 'contain' if self.image_viewer.is_contain_mode() else 'cover',
-            'splitter_sizes': self.sizes(),
             'autoplay_interval': self._autoplay_interval,
             'autoplay_loop': self._autoplay_loop,
         }
@@ -158,16 +115,11 @@ class FileViewerWidget(QtWidgets.QSplitter):
     def _restore_state(self, state):
         if 'fit_mode' in state:
             self.image_viewer.set_contain_mode(state['fit_mode'] == 'contain')
-        if 'splitter_sizes' in state:
-            self.setSizes(state['splitter_sizes'])
         if 'autoplay_interval' in state:
             self._autoplay_interval = int(state['autoplay_interval'])
         if 'autoplay_loop' in state:
             self._autoplay_loop = bool(state['autoplay_loop'])
         Command.set_checked('fv.toggle_slideshow', False)
-
-    def on_exit(self):
-        pass
 
     def _on_path_changed(self, path):
         if not path:
@@ -303,7 +255,7 @@ class FileViewerWidget(QtWidgets.QSplitter):
         self.model.move_current_next(step=1, loop=self._autoplay_loop)
 
     def _active_viewer_plugin(self) -> _WidgetViewerPlugin | None:
-        name = self._current_plugin_name
+        name = self.content_viewer._current_plugin_name
         if name == _DEFAULT_WIDGET_NAME:
             return None
         plugin = viewer_resolver.registry.instance(name)

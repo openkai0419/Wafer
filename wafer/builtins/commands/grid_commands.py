@@ -70,7 +70,7 @@ class GridViewCommands(ActionKit.MenuBase):
 
     @staticmethod
     def get_file_viewer(ctx):
-        return ctx.get_instance("FileViewerWidget")
+        return ctx.get_instance("FileViewerController")
 
     @staticmethod
     def _resolve_index(ctx, index: int | None) -> tuple[int, str] | None:

@@ -738,7 +738,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
                 cached = self.image_cache.get(path)
                 if cached is not None:
                     item.set_image(cached, path)
-                self._pipeline.schedule_render(i, path, content_size)
+            self._pipeline.schedule_render(i, path, content_size)
         elif self.widgets[i].geometry() != rect:
             self.widgets[i].setGeometry(rect)
 

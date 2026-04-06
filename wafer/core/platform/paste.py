@@ -157,6 +157,14 @@ class ClipboardFilePaster:
         return plan
 
 
+def _confirm_action(message: str, parent: object | None) -> bool:
+    pw = parent if isinstance(parent, QtWidgets.QWidget) else QtWidgets.QApplication.activeWindow()
+    return QtWidgets.QMessageBox.question(
+        pw, "Confirm", message,
+        QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+    ) == QtWidgets.QMessageBox.Yes
+
+
 def _resolve_conflicts_with_ui(
     plans: List[PastePlanItem] | List[DropPlanItem],
     *,
@@ -301,8 +309,11 @@ def execute_paste_plans_with_ui(
     overwrite_mode: str = "ask",
     parent: object | None = None,
     folder_message: str = "Folder with the same name already exists. Proceed?",
+    confirm_message: str | None = None,
 ) -> List[OperationResult]:
     if not plans:
+        return []
+    if confirm_message and not _confirm_action(confirm_message, parent):
         return []
     op = "move" if plans[0].action == "cut" else "copy"
     try:
@@ -322,6 +333,7 @@ def drop_files_with_ui(
     overwrite_mode: str = "ask",
     parent: object | None = None,
     folder_message: str = "Folder with the same name already exists. Proceed?",
+    confirm_message: str | None = None,
 ) -> List[OperationResult]:
     if op not in ("copy", "move"):
         raise ValueError(f"Invalid op: {op}")
@@ -329,6 +341,8 @@ def drop_files_with_ui(
         raise ValueError(f"Invalid overwrite_mode: {overwrite_mode}")
     plans = build_drop_plans(parsed_items, destination_dir, op)
     if not plans:
+        return []
+    if confirm_message and not _confirm_action(confirm_message, parent):
         return []
     try:
         decisions = _resolve_conflicts_with_ui(

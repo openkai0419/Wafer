@@ -30,6 +30,7 @@
 ■ Zip対応
 ■ ViewerのリストとGridのリストを分離する。ViewerリストもったままGrid検索できるように
 Link/Set/Directory
+- DBにないもの、あるけどGridにないもの、の管理をちゃんとする
 
 ■ Dispatcherを用意する。nai, webui, ComfiUI
 ■ naiのdispatch対象を指定するUIがほしい

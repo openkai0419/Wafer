@@ -1,4 +1,46 @@
 {
+  "AutoScroll Speed Down": {
+    "en": "AutoScroll Speed Down"
+  },
+  "AutoScroll Speed Up": {
+    "en": "AutoScroll Speed Up"
+  },
+  "Directory": {
+    "en": "Directory"
+  },
+  "Fixed": {
+    "en": "Fixed"
+  },
+  "List Mode": {
+    "en": "List Mode"
+  },
+  "Preview Volume Down": {
+    "en": "Preview Volume Down"
+  },
+  "Preview Volume Up": {
+    "en": "Preview Volume Up"
+  },
+  "Remove \"111.mp4\"": {
+    "en": "Remove \"111.mp4\""
+  },
+  "Set Speed": {
+    "en": "Set Speed"
+  },
+  "Speed Down": {
+    "en": "Speed Down"
+  },
+  "Speed Up": {
+    "en": "Speed Up"
+  },
+  "Sync": {
+    "en": "Sync"
+  },
+  "Volume Down": {
+    "en": "Volume Down"
+  },
+  "Volume Up": {
+    "en": "Volume Up"
+  },
   "Toggle Content Viewer": {
     "en": "Toggle Content Viewer"
   },

@@ -10,7 +10,7 @@ from ....core.qt.thread import utility_pool
 from ....core.commands.bridge import ActionKit, UI, Context
 from ....core.platform.dragparser import MimeDataParser
 from ....core.platform.file_operations import PastePlanItem
-from ....core.platform.path_utils import check_copy_conflict, unique_path
+from ....core.platform.path_utils import unique_path
 from ....core.platform.paste import execute_paste_plans_with_ui, drop_files_with_ui
 
 
@@ -335,38 +335,10 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
         target_path = parent_item.data(USER_ROLE_PATH)
         if not target_path or target_path in self.excluded:
             return False
-        target_norm = normalize_path(target_path)
-        if not os.path.isdir(target_norm):
+        if not os.path.isdir(normalize_path(target_path)):
             return False
-
         if data.hasFormat(self._mime_type):
-            if action != QtCore.Qt.MoveAction:
-                return False
-            try:
-                src_paths = bytes(data.data(self._mime_type)).decode('utf-8').split('\n')
-            except Exception:
-                return False
-            for src in src_paths:
-                src_norm = normalize_path(src)
-                if src_norm == target_norm:
-                    return False
-                if target_norm.startswith(src_norm + os.sep):
-                    return False
-            return True
-
-        urls = list(getattr(data, "urls", lambda: [])() or [])
-        if not urls:
-            return False
-        for url in urls:
-            if not url.isLocalFile():
-                continue
-            src = url.toLocalFile()
-            if not src or not os.path.exists(src):
-                continue
-            dst = normalize_path(os.path.join(target_norm, os.path.basename(src)))
-            c = check_copy_conflict(src, dst)
-            if c in ("same_path", "subpath"):
-                return False
+            return action == QtCore.Qt.MoveAction
         return True
 
     @profiler.profile
@@ -385,6 +357,8 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
             return False
 
         dest_dir = normalize_path(target_path)
+        parent_w = self.parent() or QtWidgets.QApplication.activeWindow()
+        dest_name = os.path.basename(dest_dir) or dest_dir
 
         if data.hasFormat(self._mime_type):
             if action != QtCore.Qt.MoveAction:
@@ -394,55 +368,23 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
             except Exception:
                 return False
             src_paths = [p for p in src_paths if p]
-            valid_srcs = []
-            for src in src_paths:
-                src_norm = normalize_path(src)
-                if src_norm == dest_dir:
-                    continue
-                if dest_dir.startswith(src_norm + os.sep):
-                    continue
-                src_parent = normalize_path(os.path.dirname(src_norm))
-                if src_parent == dest_dir:
-                    continue
-                if self._is_valid_item(self.find_item_by_path(src)):
-                    valid_srcs.append(src)
-            if not valid_srcs:
+            if not src_paths:
                 return False
 
             plans = []
-            for i, src in enumerate(valid_srcs):
+            for i, src in enumerate(src_paths):
                 name = os.path.basename(src)
                 dst_default = Path(dest_dir) / name
                 conflict = dst_default.exists()
                 suggested = Path(unique_path(dest_dir, name)) if conflict else None
-                plans.append(PastePlanItem(index=i, src=Path(src), is_dir=True, action="cut", dst_default=dst_default, conflict=conflict, suggested_dst=suggested))
+                plans.append(PastePlanItem(
+                    index=i, src=Path(src), is_dir=True, action="cut",
+                    dst_default=dst_default, conflict=conflict, suggested_dst=suggested,
+                ))
 
-            parent_w = self.parent() or QtWidgets.QApplication.activeWindow()
-            res = execute_paste_plans_with_ui(plans=plans, overwrite_mode="ask", parent=parent_w)
-            if not res:
-                return False
-
-            for r in res:
-                if r.status != "ok":
-                    continue
-                src = r.src
-                dst = r.dst
-                if not src or not dst:
-                    continue
-                src_item = self.find_item_by_path(src)
-                if not self._is_valid_item(src_item):
-                    continue
-                src_parent_item = src_item.parent() or self.invisibleRootItem()
-                taken = src_parent_item.takeRow(src_item.row())
-                if not taken:
-                    continue
-                if not parent_item.hasChildren() or (parent_item.rowCount() == 1 and not parent_item.child(0).data(USER_ROLE_PATH)):
-                    parent_item.removeRows(0, parent_item.rowCount())
-                parent_item.appendRow(taken)
-                moved_item = parent_item.child(parent_item.rowCount() - 1)
-                self._update_item_path_recursive(moved_item, normalize_path(src), normalize_path(dst))
-
-            self.sort(0, QtCore.Qt.AscendingOrder)
+            confirm = f'Move {len(src_paths)} folder(s) to "{dest_name}"?'
+            execute_paste_plans_with_ui(plans=plans, overwrite_mode="ask", parent=parent_w, confirm_message=confirm)
+            self._request_reload_tree()
             return True
 
         parser = MimeDataParser()
@@ -454,9 +396,9 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
             return False
 
         op = "move" if action == QtCore.Qt.MoveAction else "copy"
-        parent_w = self.parent() or QtWidgets.QApplication.activeWindow()
-        drop_files_with_ui(src_items, dest_dir, op, overwrite_mode="ask", parent=parent_w)
-
+        label = 'Move' if op == 'move' else 'Copy'
+        confirm = f'{label} {len(src_items)} item(s) to "{dest_name}"?'
+        drop_files_with_ui(src_items, dest_dir, op, overwrite_mode="ask", parent=parent_w, confirm_message=confirm)
         self._request_reload_tree()
         return True
 

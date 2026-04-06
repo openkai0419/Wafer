@@ -209,7 +209,11 @@ class BatchRenameWidget(QtWidgets.QWidget):
         for url in mime.urls():
             if url.isLocalFile():
                 p = Path(url.toLocalFile())
-                if p.is_file():
+                try:
+                    is_file = p.is_file()
+                except OSError:
+                    continue
+                if is_file:
                     paths.append(p)
         if not paths:
             return

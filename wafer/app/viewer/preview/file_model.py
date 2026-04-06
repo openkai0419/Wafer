@@ -92,10 +92,11 @@ class FileViewModel(QtCore.QObject):
         if idx is not None:
             self._current_index = idx
         else:
-            self.paths.append(path)
-            self.sources.append("")
-            self._path_to_index[path] = len(self.paths) - 1
-            self._current_index = len(self.paths) - 1
+            insert_pos = (self._current_index + 1) if self._current_index is not None else len(self.paths)
+            self.paths.insert(insert_pos, path)
+            self.sources.insert(insert_pos, "")
+            self._rebuild_index()
+            self._current_index = insert_pos
         self.currentIndexChanged.emit(self._current_index)
         if path != old_path:
             self.pathChanged.emit(path)

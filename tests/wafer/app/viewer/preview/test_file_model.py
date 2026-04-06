@@ -219,3 +219,42 @@ def test_set_path_same_value_no_signal(model):
     model.pathChanged.connect(lambda p: signals.append(p))
     model.set_path("a")
     assert len(signals) == 0
+
+
+def test_set_path_inserts_after_current(model):
+    model.set_items(["a", "b", "c"], None)
+    model.set_current_index(1)
+    assert model.path() == "b"
+    model.set_path("z")
+    assert model.paths == ["a", "b", "z", "c"]
+    assert model.current_index() == 2
+    assert model.path() == "z"
+
+
+def test_set_path_inserts_after_current_at_end(model):
+    model.set_items(["a", "b"], None)
+    model.set_current_index(1)
+    model.set_path("z")
+    assert model.paths == ["a", "b", "z"]
+    assert model.current_index() == 2
+
+
+def test_set_path_inserts_after_current_at_start(model):
+    model.set_items(["a", "b"], None)
+    model.set_current_index(0)
+    model.set_path("z")
+    assert model.paths == ["a", "z", "b"]
+    assert model.current_index() == 1
+
+
+def test_set_path_insert_preserves_navigation(model):
+    model.set_items(["a", "b", "c"], None)
+    model.set_current_index(1)
+    model.set_path("z")
+    assert model.path() == "z"
+    model.move_current_next()
+    assert model.path() == "c"
+    model.move_current_prev()
+    assert model.path() == "z"
+    model.move_current_prev()
+    assert model.path() == "b"

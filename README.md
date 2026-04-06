@@ -123,3 +123,15 @@ Application data is stored via `platformdirs` (`AppData/Local` on Windows).
 ## OS Support
 
 Currently Windows only. Other OS contributions are welcome.
+
+## License
+
+The core foundation (`wafer/`) and most extensions are licensed under the [Apache License 2.0](LICENSE).
+
+Extensions with different licenses have their own `LICENSE` file in their directory. If an extension does not include a `LICENSE` file, the root Apache-2.0 license applies.
+
+| Component | License |
+|---|---|
+| `wafer/` (core) | Apache-2.0 |
+| `extensions/video/` | AGPL-3.0 (due to python-mpv dependency) |
+| All other extensions | Apache-2.0 |

@@ -11,6 +11,32 @@ VERSION_FILE = ROOT / 'wafer' / '_version.py'
 SPEC_FILE = ROOT / 'main.spec'
 DIST_NAME = 'Wafer'
 
+RUNTIME_PACKAGES = {
+    'blake3', 'comtypes', 'msgpack', 'natsort', 'pillow', 'platformdirs',
+    'psutil', 'PySide6', 'pywin32', 'setproctitle', 'pyzmq', 'requests',
+    'Send2Trash', 'shiboken6', 'watchdog',
+    'PySide6-Addons', 'PySide6-Essentials',
+    'certifi', 'charset-normalizer', 'idna', 'urllib3',
+}
+
+
+def generate_third_party_notices(output: Path):
+    try:
+        result = subprocess.run(
+            [sys.executable, '-m', 'piplicenses',
+             '--format=plain-vertical',
+             '--with-license-file', '--no-license-path',
+             '--packages', *sorted(RUNTIME_PACKAGES)],
+            capture_output=True, text=True, cwd=ROOT,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            output.write_text(result.stdout, encoding='utf-8')
+            print(f'Generated: {output.name}')
+        else:
+            print(f'Warning: pip-licenses failed, skipping THIRD-PARTY-NOTICES')
+    except FileNotFoundError:
+        print('Warning: pip-licenses not installed, skipping THIRD-PARTY-NOTICES')
+
 
 def get_git_version() -> str | None:
     try:
@@ -85,6 +111,13 @@ def build():
             ROOT / 'extensions', dist_dir / 'extensions',
             exclude_dirs={'.packages', '.shared_packages', 'lib'},
         )
+
+        for name in ('LICENSE', 'README.md', 'CHANGELOG.md'):
+            src = ROOT / name
+            if src.exists():
+                shutil.copy2(src, dist_dir / name)
+
+        generate_third_party_notices(dist_dir / 'THIRD-PARTY-NOTICES.txt')
 
         print(f'\nBuild succeeded: {dist_dir / "main.exe"}  (v{version})')
     finally:

@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 COPY_FILES = [
     '.gitignore',
+    'LICENSE',
     'main.py',
     'main.bat',
     'main.spec',

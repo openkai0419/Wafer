@@ -134,6 +134,7 @@ def _entry_detacher(name, plugin, parent_pid=None):
 
 def main():
     parser = argparse.ArgumentParser(description='Script with three run modes')
+    parser.add_argument('--version', action='version', version=f'Wafer {__version__}')
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--tray', action='store_true', help='run tray process (background manager)')
     group.add_argument('--viewer', action='store_true', help='run new viewer')

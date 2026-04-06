@@ -91,7 +91,7 @@ class PluginLoader:
             return []
         shared_dir = os.path.join(self._plugin_dir, _SHARED_DIR)
         if os.path.isdir(shared_dir) and shared_dir not in sys.path:
-            sys.path.append(shared_dir)
+            sys.path.insert(0, shared_dir)
         loaded = []
         for name in sorted(os.listdir(self._plugin_dir)):
             folder = os.path.join(self._plugin_dir, name)
@@ -131,7 +131,7 @@ class PluginLoader:
 
         vendor_dir = os.path.join(folder, _PACKAGES_DIR)
         if os.path.isdir(vendor_dir) and vendor_dir not in sys.path:
-            sys.path.append(vendor_dir)
+            sys.path.insert(0, vendor_dir)
 
         _setup_dll_directory(folder)
 

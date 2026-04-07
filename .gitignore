@@ -1,0 +1,37 @@
+venv/
+.venv/
+.env/
+.pytest_cache/
+.log/
+.ruff_cache/
+
+# Internal development notes
+.github/*
+!.github/workflows/
+AGENTS.md
+
+.temp/
+.packages/
+.shared_packages/
+.sample/
+.vscode/
+.prototypes/
+tests/.prototypes/
+tests/test_summary.txt
+
+# Extension native libraries (user-provided)
+extensions/*/lib/
+
+# Build artifacts
+build/
+dist/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+*.db
+*.db-shm
+*.db-wal
+*.ini
+*.-workspace

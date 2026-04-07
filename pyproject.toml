@@ -1,0 +1,68 @@
+[project]
+name = "wafer"
+version = "0.1.0"
+description = "Extensible local file viewer with plugin-based format support"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "tests-unit"]
+pythonpath = ["."]
+addopts = "--import-mode=importlib -p pytestqt -m 'not benchmark and not slow' --tb=short"
+timeout = 30
+timeout_method = "thread"
+qt_default_raising = true
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "benchmark: performance benchmarks (deselect with '-m \"not benchmark\"')",
+    "unstable: tests that may crash the process (e.g. native mpv). skipped unless --run-unstable is given",
+]
+
+[tool.pyright]
+pythonVersion = "3.10"
+pythonPlatform = "Windows"
+include = ["wafer"]
+typeCheckingMode = "off"
+reportMissingModuleSource = false
+reportMissingImports = "error"
+reportMissingTypeStubs = false
+
+[tool.ruff]
+target-version = "py310"
+line-length = 200
+
+[tool.ruff.lint]
+select = [
+    "F",     # pyflakes (unused imports, undefined names, etc.)
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "UP",    # pyupgrade (modernize syntax)
+    "B",     # flake8-bugbear (common bug patterns)
+    "SIM",   # flake8-simplify
+    "RUF",   # ruff-specific rules
+]
+ignore = [
+    "E501",   # line-too-long (line-length handles hard limit, style is flexible)
+    "E731",   # lambda-assignment (short lambdas are intentional)
+    "E741",   # ambiguous-variable-name (l, O, I — common in math/image code)
+    "B008",   # function-call-in-default-argument (Qt defaults like QSize() are safe)
+    "B010",   # setattr-with-constant (used intentionally in dynamic plugin code)
+    "B905",   # zip-without-explicit-strict (strict not needed in most cases)
+    "SIM102", # collapsible-if (nested ifs can be clearer)
+    "SIM105", # suppressible-exception (explicit try/except preferred)
+    "SIM108", # use-ternary-operator (readability preference)
+    "RUF003", # ambiguous-unicode-character-comment (Japanese text)
+    "RUF005", # collection-literal-concatenation (style preference)
+    "RUF012", # mutable-class-variable (too noisy for Qt widget classes)
+    "UP007",  # non-pep604-annotation (X | Y syntax — keep Optional for compatibility)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["F401", "F811", "F841", "E402", "E712", "B", "SIM", "UP", "RUF015", "RUF043", "RUF059"]
+"tests-unit/**" = ["F401", "F811", "F841", "E402", "E712", "B", "SIM", "UP", "RUF015", "RUF043", "RUF059"]
+"scripts/**" = ["F841"]
+"extensions/**" = ["F401"]
+".prototypes/**" = ["F", "E", "W", "UP", "B", "SIM", "RUF"]
+"wafer/__init__.py" = ["F401"]
+"wafer/plugin/__init__.py" = ["F401"]
+"wafer/plugin/layout/__init__.py" = ["F401"]
+"wafer/builtins/batch_renamer/__init__.py" = ["F401"]

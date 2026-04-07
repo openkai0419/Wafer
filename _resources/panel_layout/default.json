@@ -1,0 +1,40 @@
+{
+    "mode": "locked",
+    "tree": {
+        "root": {
+            "type": "split",
+            "orientation": "horizontal",
+            "children": [
+                {
+                    "type": "split",
+                    "orientation": "vertical",
+                    "children": [
+                        {"type": "leaf", "panel": "Toolbar"},
+                        {"type": "leaf", "panel": "Folder Tree"}
+                    ],
+                    "sizes": [80, 500]
+                },
+                {
+                    "type": "split",
+                    "orientation": "vertical",
+                    "children": [
+                        {"type": "leaf", "panel": "Search"},
+                        {"type": "leaf", "panel": "Grid View"}
+                    ],
+                    "sizes": [40, 540]
+                },
+                {
+                    "type": "split",
+                    "orientation": "vertical",
+                    "children": [
+                        {"type": "leaf", "panel": "Content Viewer"},
+                        {"type": "leaf", "panel": "Meta Viewer"}
+                    ],
+                    "sizes": [400, 200]
+                }
+            ],
+            "sizes": [200, 600, 400]
+        },
+        "floating": {}
+    }
+}

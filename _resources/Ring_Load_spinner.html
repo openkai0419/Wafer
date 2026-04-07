@@ -1,0 +1,60 @@
+<div class="spinner-overlay">
+  <div class="spinner-background">
+    <svg class="spinner-svg" width="80" height="80" viewBox="0 0 80 80">
+      <circle
+        class="spinner-circle"
+        cx="40"
+        cy="40"
+        r="32"
+        stroke="#dfdfdf"
+        stroke-width="8"
+        stroke-linecap="round"
+        stroke-dasharray="90 200"
+        fill="none"
+      />
+    </svg>
+  </div>
+</div>
+
+<style>
+/* 画面全体の中央に配置 */
+.spinner-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: auto;          /* 中央配置で使っていた100vwは不要 */
+  height: auto;         /* 同上 */
+  display: block;       /* flex → block に変更 */
+  background: none;
+  z-index: 9999;
+  padding: 1px;        /* 画面端から少し内側に配置 */
+}
+
+
+/* 半透明角丸ボックス */
+.spinner-background {
+  background-color: rgba(60, 60, 60, 0.6); /* 半透明グレー */
+  border-radius: 15px;
+  padding: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* SVGスピナー */
+.spinner-svg {
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
+}
+
+/* 回転する円弧の線端を丸く */
+.spinner-circle {
+  stroke-linecap: round;
+}
+  
+@keyframes spin {
+  0%   { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+</style>

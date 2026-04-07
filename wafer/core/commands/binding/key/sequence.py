@@ -1,0 +1,119 @@
+from __future__ import annotations
+
+from typing import Any
+
+
+class KeySequence:
+    def __init__(self, keys):
+        if isinstance(keys, KeySequence):
+            self._keys = keys._keys
+            return
+        if not isinstance(keys, (tuple, list)):
+            raise TypeError("KeySequence keys must be list|tuple|KeySequence")
+        norm = [str(k).strip() for k in list(keys)]
+        norm = [k for k in norm if k]
+        self._keys = tuple(norm[:2])
+        if not self._keys:
+            raise ValueError("KeySequence requires at least one key")
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> KeySequence:
+        modifier = data.get("modifier", "")
+        key = data.get("key", "")
+        if not key:
+            raise ValueError("Key is required in dictionary")
+        if modifier:
+            return cls([modifier, key])
+        return cls([key])
+
+    def to_dict(self) -> dict[str, str]:
+        if len(self._keys) == 1:
+            return {"key": self._keys[0]}
+        return {"modifier": self._keys[0], "key": self._keys[1]}
+
+    def to_tuple(self) -> tuple[str, ...]:
+        return self._keys
+
+    @property
+    def modifier(self) -> str | None:
+        return self._keys[0] if len(self._keys) > 1 else None
+
+    @property
+    def key(self) -> str:
+        return self._keys[-1]
+
+    def __str__(self) -> str:
+        if len(self._keys) == 1:
+            return self._keys[0]
+        return f"{self._keys[0]}+{self._keys[1]}"
+
+    def __repr__(self) -> str:
+        return f"KeySequence({self._keys})"
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, KeySequence):
+            return self._keys == other._keys
+        return False
+
+    def __lt__(self, other) -> bool:
+        if not isinstance(other, KeySequence):
+            return NotImplemented
+        return self._keys < other._keys
+
+    def __hash__(self) -> int:
+        return hash(self._keys)
+
+
+class Key(KeySequence):
+    def __init__(self, *keys):
+        if len(keys) == 1:
+            one = keys[0]
+            if isinstance(one, str):
+                super().__init__([one])
+                return
+            super().__init__(one)
+            return
+        super().__init__(list(keys))
+
+
+class KeySpecCatalog:
+    def __init__(self):
+        self.modifiers = ["Control", "Shift", "Alt", "Meta"]
+        self.special = ["Space", "Tab", "Return", "Enter", "Escape", "Backspace"]
+        self.arrows = {"Left": 0, "Right": 1, "Up": 2, "Down": 3}
+        self.nav = ["Home", "End", "PageUp", "PageDown", "Insert", "Delete"]
+
+    def modifier_priority(self, name: str) -> int:
+        return self.modifiers.index(name) if name in self.modifiers else 9
+
+    def sort_modifiers(self, mods: list[str], exclude: tuple[str, ...] = ()) -> list[str]:
+        xs = [m for m in mods if m not in exclude]
+        xs.sort(key=lambda x: (self.modifier_priority(x), x))
+        return xs
+
+    def key_sort_tuple(self, k: str) -> tuple[int, object, str]:
+        if not k:
+            return (9, "", "")
+        if k in self.modifiers:
+            return (0, self.modifier_priority(k), k)
+        if k in self.special:
+            return (1, self.special.index(k), k)
+        if k in self.arrows:
+            return (3, self.arrows[k], k)
+        if k in self.nav:
+            return (3, 10 + self.nav.index(k), k)
+        if k.startswith("F") and k[1:].isdigit():
+            try:
+                return (2, int(k[1:]), k)
+            except ValueError:
+                return (2, 9999, k)
+        if len(k) == 1 and ("0" <= k <= "9"):
+            return (4, int(k), k)
+        if len(k) == 1 and ("A" <= k <= "Z"):
+            return (5, k, k)
+        return (2, k, k)
+
+    def sort_main_keys(self, keys: list[str], exclude: tuple[str, ...] = ()) -> list[str]:
+        xs = [k for k in keys if k not in exclude]
+        xs.sort(key=lambda k: self.key_sort_tuple(k))
+        return xs

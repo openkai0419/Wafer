@@ -1,0 +1,137 @@
+import json
+import time
+
+import pytest
+
+from wafer.core.ipc.broker import Broker
+from wafer.plugin.detacher.handler import detacher_resolver
+from extensions.text_generation.detacher import NovelAiImageDetacher
+
+
+@pytest.fixture(autouse=True)
+def _register_detacher():
+    detacher_resolver.registry.register(NovelAiImageDetacher)
+    yield
+
+
+def _poll_until(predicate, timeout=5.0):
+    deadline = time.monotonic() + timeout
+    while not predicate() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    return predicate()
+
+
+class TestSmokeDetacher:
+    def test_worker_registers_with_broker(self):
+        broker = Broker()
+        broker.start()
+        try:
+            from wafer.app.detacher.worker import DetacherWorker
+
+            worker = DetacherWorker("testdb", "novelai")
+            worker.start()
+            try:
+                assert worker._node.wait_registered(timeout=5.0)
+                assert _poll_until(lambda: any("detacher" in role for role in broker.peer_counts()))
+            finally:
+                worker.stop()
+        finally:
+            broker.stop()
+
+    def test_worker_processes_batch(self):
+        broker = Broker()
+        broker.start()
+        try:
+            from wafer.app.detacher.worker import DetacherWorker
+
+            worker = DetacherWorker("testdb", "novelai")
+            worker.start()
+            try:
+                assert worker._node.wait_registered(timeout=5.0)
+
+                captured = {}
+                orig_send_reliable = worker._node.send_reliable
+
+                def _capture_send(topic, payload=None, **kw):
+                    captured["topic"] = topic
+                    captured["payload"] = payload
+
+                worker._node.send_reliable = _capture_send
+
+                comment_data = json.dumps({"prompt": "a cat", "steps": 20})
+                paths = ["/fake/img1.png", "/fake/img2.png"]
+                file_info = {p: (1.0, 100, "hash123") for p in paths}
+                metadata = {p: {"exif.Comment": comment_data} for p in paths}
+
+                worker._process_batch(paths, file_info, metadata, "testdb")
+
+                assert captured.get("topic") == "detach.result"
+                results = captured["payload"]["results"]
+                assert len(results) == 2
+                for r in results:
+                    assert r.get("status") is True or r.get("status") == 1
+                    assert r.get("source") is not None
+                    assert "prompt" in r.get("meta_info", {})
+                    assert r["meta_info"]["prompt"] == "a cat"
+            finally:
+                worker._node.send_reliable = orig_send_reliable
+                worker.stop()
+        finally:
+            broker.stop()
+
+    def test_worker_handles_invalid_json(self):
+        broker = Broker()
+        broker.start()
+        try:
+            from wafer.app.detacher.worker import DetacherWorker
+
+            worker = DetacherWorker("testdb", "novelai")
+            worker.start()
+            try:
+                assert worker._node.wait_registered(timeout=5.0)
+
+                captured = {}
+                orig_send_reliable = worker._node.send_reliable
+
+                def _capture_send(topic, payload=None, **kw):
+                    captured["topic"] = topic
+                    captured["payload"] = payload
+
+                worker._node.send_reliable = _capture_send
+
+                paths = ["/fake/img.png"]
+                file_info = {"/fake/img.png": (1.0, 100, "hash456")}
+                metadata = {"/fake/img.png": {"exif.Comment": "not valid json"}}
+
+                worker._process_batch(paths, file_info, metadata, "testdb")
+
+                assert captured.get("topic") == "detach.result"
+                results = captured["payload"]["results"]
+                assert len(results) == 1
+                assert results[0].get("status") is False or results[0].get("status") == 0
+            finally:
+                worker._node.send_reliable = orig_send_reliable
+                worker.stop()
+        finally:
+            broker.stop()
+
+    def test_plugin_processes_directly(self):
+        plugin = detacher_resolver.registry.instance("novelai")
+        assert plugin is not None
+
+        data = json.dumps({"seed": 42, "model": "nai-v3"})
+        result = plugin.process("/fake/image.png", (1.0, 100), {"exif.Comment": data})
+
+        assert result.status is True
+        assert result.meta_info == {"seed": "42", "model": "nai-v3"}
+        assert result.delete_keys == ["exif.Comment", "exif.Description"]
+
+    def test_plugin_fail_on_non_json(self):
+        plugin = detacher_resolver.registry.instance("novelai")
+        result = plugin.process("/fake/image.png", (1.0, 100), {"exif.Comment": "plain text"})
+        assert result.status is False
+
+    def test_plugin_fail_on_missing_key(self):
+        plugin = detacher_resolver.registry.instance("novelai")
+        result = plugin.process("/fake/image.png", (1.0, 100), {})
+        assert result is None

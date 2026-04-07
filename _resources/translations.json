@@ -1,0 +1,749 @@
+{
+  "Content Viewer": {
+    "en": "Content Viewer"
+  },
+  "DevLog": {
+    "en": "DevLog"
+  },
+  "Edit Mode (might have visual issues)": {
+    "en": "Edit Mode (might have visual issues)"
+  },
+  "Folder Tree": {
+    "en": "Folder Tree"
+  },
+  "Grid View": {
+    "en": "Grid View"
+  },
+  "Meta Viewer": {
+    "en": "Meta Viewer"
+  },
+  "Toolbar": {
+    "en": "Toolbar"
+  },
+  "README": {
+    "en": "README"
+  },
+  "Edit": {
+    "en": "Edit"
+  },
+  "Edit Mode ★": {
+    "en": "Edit Mode ★"
+  },
+  "Create": {
+    "en": "Create"
+  },
+  "Create New": {
+    "en": "Create New"
+  },
+  "Enter a name for the new table": {
+    "en": "Enter a name for the new table"
+  },
+  "Please enter text...": {
+    "en": "Please enter text..."
+  },
+  "Help": {
+    "en": "Help"
+  },
+  "About Wafer": {
+    "en": "About Wafer"
+  },
+  "AutoScroll Speed Down": {
+    "en": "AutoScroll Speed Down"
+  },
+  "AutoScroll Speed Up": {
+    "en": "AutoScroll Speed Up"
+  },
+  "Directory": {
+    "en": "Directory"
+  },
+  "Fixed": {
+    "en": "Fixed"
+  },
+  "List Mode": {
+    "en": "List Mode"
+  },
+  "Preview Volume Down": {
+    "en": "Preview Volume Down"
+  },
+  "Preview Volume Up": {
+    "en": "Preview Volume Up"
+  },
+  "Remove \"111.mp4\"": {
+    "en": "Remove \"111.mp4\""
+  },
+  "Set Speed": {
+    "en": "Set Speed"
+  },
+  "Speed Down": {
+    "en": "Speed Down"
+  },
+  "Speed Up": {
+    "en": "Speed Up"
+  },
+  "Sync": {
+    "en": "Sync"
+  },
+  "Volume Down": {
+    "en": "Volume Down"
+  },
+  "Volume Up": {
+    "en": "Volume Up"
+  },
+  "Toggle Content Viewer": {
+    "en": "Toggle Content Viewer"
+  },
+  "Toggle Meta Viewer": {
+    "en": "Toggle Meta Viewer"
+  },
+  "Tools": {
+    "en": "Tools"
+  },
+  "Add": {
+    "en": "Add"
+  },
+  "BatchRenamer": {
+    "en": "BatchRenamer"
+  },
+  "Copy FileName(s)": {
+    "en": "Copy FileName(s)"
+  },
+  "Copy Paths(s)": {
+    "en": "Copy Paths(s)"
+  },
+  "Remove": {
+    "en": "Remove"
+  },
+  "Remove 5 file(s)": {
+    "en": "Remove 5 file(s)"
+  },
+  "Scroll at GridView": {
+    "en": "Scroll at GridView"
+  },
+  "Select at FolderTree": {
+    "en": "Select at FolderTree"
+  },
+  "Set": {
+    "en": "Set"
+  },
+  "Show at FileViewer": {
+    "en": "Show at FileViewer"
+  },
+  "Wafer": {
+    "en": "Wafer"
+  },
+  "Batch Renamer (Replace)": {
+    "en": "Batch Renamer (Replace)"
+  },
+  "Batch Renamer": {
+    "en": "Batch Renamer"
+  },
+  "Batch Renamer (Add)": {
+    "en": "Batch Renamer (Add)"
+  },
+  "Batch Renamer (Remove)": {
+    "en": "Batch Renamer (Remove)"
+  },
+  "Toggle Batch Renamer": {
+    "en": "Toggle Batch Renamer"
+  },
+  "★Edit Mode": {
+    "en": "★Edit Mode"
+  },
+  "Batch Rename (Add)": {
+    "en": "Batch Rename (Add)"
+  },
+  "Toggle Batch Rename": {
+    "en": "Toggle Batch Rename"
+  },
+  "Toggle Database Manager": {
+    "en": "Toggle Database Manager"
+  },
+  "Toggle Plugin Manager": {
+    "en": "Toggle Plugin Manager"
+  },
+  "Panel": {
+    "en": "Panel"
+  },
+  "Toggle Toolbar": {
+    "en": "Toggle Toolbar"
+  },
+  "N (ↁE": {
+    "en": "N (ↁE"
+  },
+  "S (ↁE": {
+    "en": "S (ↁE"
+  },
+  "Z (ↁE": {
+    "en": "Z (ↁE"
+  },
+  "ЁE(ↁE": {
+    "en": "ЁE(ↁE"
+  },
+  "MultiSpan Tiling": {
+    "en": "MultiSpan Tiling"
+  },
+  "Toggle DevLog": {
+    "en": "Toggle DevLog"
+  },
+  "Apply": {
+    "en": "Apply"
+  },
+  "Cancel": {
+    "en": "Cancel"
+  },
+  "Folder Settings": {
+    "en": "Folder Settings"
+  },
+  "Remove from view": {
+    "en": "Remove from view"
+  },
+  "Edit Layout": {
+    "en": "Edit Layout"
+  },
+  "Panels": {
+    "en": "Panels"
+  },
+  "Toggle File Viewer": {
+    "en": "Toggle File Viewer"
+  },
+  "Toggle Folder Tree": {
+    "en": "Toggle Folder Tree"
+  },
+  "Toggle Grid View": {
+    "en": "Toggle Grid View"
+  },
+  "Toggle Search": {
+    "en": "Toggle Search"
+  },
+  "Autoplay on Scroll": {
+    "en": "Autoplay on Scroll"
+  },
+  "Ignore this folder": {
+    "en": "Ignore this folder"
+  },
+  "Select folder": {
+    "en": "Select folder"
+  },
+  "Aa": {
+    "en": "Aa"
+  },
+  "Enter regex pattern...": {
+    "en": "Enter regex pattern..."
+  },
+  "Partition (Aspect)": {
+    "en": "Partition (Aspect)"
+  },
+  "AND": {
+    "en": "AND"
+  },
+  "Add Database": {
+    "en": "Add Database"
+  },
+  "Add Folder": {
+    "en": "Add Folder"
+  },
+  "Always on Top": {
+    "en": "Always on Top"
+  },
+  "Animated Viewer": {
+    "en": "Animated Viewer"
+  },
+  "Auto Execute on Change": {
+    "en": "Auto Execute on Change"
+  },
+  "AutoScroll": {
+    "en": "AutoScroll"
+  },
+  "Autoplay": {
+    "en": "Autoplay"
+  },
+  "Autoplay on Appear": {
+    "en": "Autoplay on Appear"
+  },
+  "Autoplay on Hover": {
+    "en": "Autoplay on Hover"
+  },
+  "Autoplay on Select": {
+    "en": "Autoplay on Select"
+  },
+  "Batch Rename": {
+    "en": "Batch Rename"
+  },
+  "Binding": {
+    "en": "Binding"
+  },
+  "Bookmark": {
+    "en": "Bookmark"
+  },
+  "Center": {
+    "en": "Center"
+  },
+  "Child Folder": {
+    "en": "Child Folder"
+  },
+  "Clear Selection": {
+    "en": "Clear Selection"
+  },
+  "Click Select": {
+    "en": "Click Select"
+  },
+  "Collected": {
+    "en": "Collected"
+  },
+  "Contain/Cover": {
+    "en": "Contain/Cover"
+  },
+  "Copy": {
+    "en": "Copy"
+  },
+  "Copy FileName": {
+    "en": "Copy FileName"
+  },
+  "Copy Path": {
+    "en": "Copy Path"
+  },
+  "Copy Paths": {
+    "en": "Copy Paths"
+  },
+  "Created": {
+    "en": "Created"
+  },
+  "Cut": {
+    "en": "Cut"
+  },
+  "Cycle Orientation": {
+    "en": "Cycle Orientation"
+  },
+  "Cycle Sort By": {
+    "en": "Cycle Sort By"
+  },
+  "Database": {
+    "en": "Database"
+  },
+  "Database Manager": {
+    "en": "Database Manager"
+  },
+  "Debug": {
+    "en": "Debug"
+  },
+  "Delete": {
+    "en": "Delete"
+  },
+  "Delete Bookmark": {
+    "en": "Delete Bookmark"
+  },
+  "Delete Session": {
+    "en": "Delete Session"
+  },
+  "File": {
+    "en": "File"
+  },
+  "File View Menu": {
+    "en": "File View Menu"
+  },
+  "FileViewer": {
+    "en": "FileViewer"
+  },
+  "Fit In View": {
+    "en": "Fit In View"
+  },
+  "Folder Tree Menu": {
+    "en": "Folder Tree Menu"
+  },
+  "FolderTree": {
+    "en": "FolderTree"
+  },
+  "Full Screen": {
+    "en": "Full Screen"
+  },
+  "GLOB": {
+    "en": "GLOB"
+  },
+  "GridView": {
+    "en": "GridView"
+  },
+  "Image View Menu": {
+    "en": "Image View Menu"
+  },
+  "ImageView": {
+    "en": "ImageView"
+  },
+  "Include Subfolders": {
+    "en": "Include Subfolders"
+  },
+  "Join Mode": {
+    "en": "Join Mode"
+  },
+  "Justified": {
+    "en": "Justified"
+  },
+  "Key Binding Window": {
+    "en": "Key Binding Window"
+  },
+  "LIKE": {
+    "en": "LIKE"
+  },
+  "Layout": {
+    "en": "Layout"
+  },
+  "List Bookmarks": {
+    "en": "List Bookmarks"
+  },
+  "Loop": {
+    "en": "Loop"
+  },
+  "Masonry": {
+    "en": "Masonry"
+  },
+  "Max Playback Slots": {
+    "en": "Max Playback Slots"
+  },
+  "Menus": {
+    "en": "Menus"
+  },
+  "Modified": {
+    "en": "Modified"
+  },
+  "Mouse Binding Window": {
+    "en": "Mouse Binding Window"
+  },
+  "MultiSpan Grid": {
+    "en": "MultiSpan Grid"
+  },
+  "Mute": {
+    "en": "Mute"
+  },
+  "N (↙)": {
+    "en": "N (↙)"
+  },
+  "Name": {
+    "en": "Name"
+  },
+  "Navigate (Filesystem DFS)": {
+    "en": "Navigate (Filesystem DFS)"
+  },
+  "Navigate (Hierarchy)": {
+    "en": "Navigate (Hierarchy)"
+  },
+  "Navigate (Visible Tree)": {
+    "en": "Navigate (Visible Tree)"
+  },
+  "New Folder here": {
+    "en": "New Folder here"
+  },
+  "New Window": {
+    "en": "New Window"
+  },
+  "Next Database": {
+    "en": "Next Database"
+  },
+  "Next File": {
+    "en": "Next File"
+  },
+  "Next Folder (DFS)": {
+    "en": "Next Folder (DFS)"
+  },
+  "Next Folder (Visible)": {
+    "en": "Next Folder (Visible)"
+  },
+  "Next Frame": {
+    "en": "Next Frame"
+  },
+  "Next Row": {
+    "en": "Next Row"
+  },
+  "OR": {
+    "en": "OR"
+  },
+  "Open Binding Files in Explorer": {
+    "en": "Open Binding Files in Explorer"
+  },
+  "Open File": {
+    "en": "Open File"
+  },
+  "Open Session": {
+    "en": "Open Session"
+  },
+  "Parent Folder": {
+    "en": "Parent Folder"
+  },
+  "Paste here": {
+    "en": "Paste here"
+  },
+  "Path": {
+    "en": "Path"
+  },
+  "Pause in Background": {
+    "en": "Pause in Background"
+  },
+  "Play/Pause": {
+    "en": "Play/Pause"
+  },
+  "Playback Speed": {
+    "en": "Playback Speed"
+  },
+  "Plugin Manager": {
+    "en": "Plugin Manager"
+  },
+  "Plugins": {
+    "en": "Plugins"
+  },
+  "Prev Database": {
+    "en": "Prev Database"
+  },
+  "Prev File": {
+    "en": "Prev File"
+  },
+  "Prev Folder (DFS)": {
+    "en": "Prev Folder (DFS)"
+  },
+  "Prev Folder (Visible)": {
+    "en": "Prev Folder (Visible)"
+  },
+  "Prev Row": {
+    "en": "Prev Row"
+  },
+  "Preview Volume": {
+    "en": "Preview Volume"
+  },
+  "Previous Frame": {
+    "en": "Previous Frame"
+  },
+  "Print Ctx": {
+    "en": "Print Ctx"
+  },
+  "Query": {
+    "en": "Query"
+  },
+  "Random": {
+    "en": "Random"
+  },
+  "Range Select": {
+    "en": "Range Select"
+  },
+  "Reload Tree": {
+    "en": "Reload Tree"
+  },
+  "Remove Database": {
+    "en": "Remove Database"
+  },
+  "Rename": {
+    "en": "Rename"
+  },
+  "Rename Session": {
+    "en": "Rename Session"
+  },
+  "Reset Scale": {
+    "en": "Reset Scale"
+  },
+  "Restart All": {
+    "en": "Restart All"
+  },
+  "Restart Background Services": {
+    "en": "Restart Background Services"
+  },
+  "Restart Viewer": {
+    "en": "Restart Viewer"
+  },
+  "Restore Bookmark": {
+    "en": "Restore Bookmark"
+  },
+  "Reveal in Explorer": {
+    "en": "Reveal in Explorer"
+  },
+  "S (↙)": {
+    "en": "S (↙)"
+  },
+  "Save Bookmark": {
+    "en": "Save Bookmark"
+  },
+  "Scale": {
+    "en": "Scale"
+  },
+  "Scale Down": {
+    "en": "Scale Down"
+  },
+  "Scale Up": {
+    "en": "Scale Up"
+  },
+  "Scroll": {
+    "en": "Scroll"
+  },
+  "Scroll Anchor": {
+    "en": "Scroll Anchor"
+  },
+  "Scroll Down": {
+    "en": "Scroll Down"
+  },
+  "Scroll To File": {
+    "en": "Scroll To File"
+  },
+  "Scroll Up": {
+    "en": "Scroll Up"
+  },
+  "Search": {
+    "en": "Search"
+  },
+  "Search Options": {
+    "en": "Search Options"
+  },
+  "Seek Backward": {
+    "en": "Seek Backward"
+  },
+  "Seek Forward": {
+    "en": "Seek Forward"
+  },
+  "Select All": {
+    "en": "Select All"
+  },
+  "Select Folder": {
+    "en": "Select Folder"
+  },
+  "Selection": {
+    "en": "Selection"
+  },
+  "Session": {
+    "en": "Session"
+  },
+  "Session Color": {
+    "en": "Session Color"
+  },
+  "Session List": {
+    "en": "Session List"
+  },
+  "Set Database": {
+    "en": "Set Database"
+  },
+  "Set Keyword Delimiter to": {
+    "en": "Set Keyword Delimiter to"
+  },
+  "Set Scale": {
+    "en": "Set Scale"
+  },
+  "Set Search Text to": {
+    "en": "Set Search Text to"
+  },
+  "Setting": {
+    "en": "Setting"
+  },
+  "Settings": {
+    "en": "Settings"
+  },
+  "Shell Context Menu": {
+    "en": "Shell Context Menu"
+  },
+  "Show Selected": {
+    "en": "Show Selected"
+  },
+  "Show at Pos": {
+    "en": "Show at Pos"
+  },
+  "Size": {
+    "en": "Size"
+  },
+  "Slideshow": {
+    "en": "Slideshow"
+  },
+  "Sort": {
+    "en": "Sort"
+  },
+  "Sort By": {
+    "en": "Sort By"
+  },
+  "Sort Order": {
+    "en": "Sort Order"
+  },
+  "Text": {
+    "en": "Text"
+  },
+  "Text Mode": {
+    "en": "Text Mode"
+  },
+  "Toggle Fit Mode": {
+    "en": "Toggle Fit Mode"
+  },
+  "Toggle Join Mode": {
+    "en": "Toggle Join Mode"
+  },
+  "Toggle Language": {
+    "en": "Toggle Language"
+  },
+  "Toggle Log Panel": {
+    "en": "Toggle Log Panel"
+  },
+  "Toggle Query Mode": {
+    "en": "Toggle Query Mode"
+  },
+  "Toggle Select": {
+    "en": "Toggle Select"
+  },
+  "Toggle Sort Order": {
+    "en": "Toggle Sort Order"
+  },
+  "Top": {
+    "en": "Top"
+  },
+  "Video": {
+    "en": "Video"
+  },
+  "Video Grid": {
+    "en": "Video Grid"
+  },
+  "Video Viewer": {
+    "en": "Video Viewer"
+  },
+  "Viewer": {
+    "en": "Viewer"
+  },
+  "Viewer Thumbnail Default Size": {
+    "en": "Viewer Thumbnail Default Size"
+  },
+  "Volume": {
+    "en": "Volume"
+  },
+  "Window": {
+    "en": "Window"
+  },
+  "Z (↘)": {
+    "en": "Z (↘)"
+  },
+  "Zoom In": {
+    "en": "Zoom In"
+  },
+  "Zoom Out": {
+    "en": "Zoom Out"
+  },
+  "debug": {
+    "en": "debug"
+  },
+  "menus": {
+    "en": "menus"
+  },
+  "И (↘)": {
+    "en": "И (↘)"
+  },
+  " Filter ": {
+    "en": " Filter "
+  },
+  "Add item": {
+    "en": "Add item"
+  },
+  "Ascending": {
+    "en": "Ascending"
+  },
+  "Descending": {
+    "en": "Descending"
+  },
+  "Enter search terms...": {
+    "en": "Enter search terms..."
+  },
+  "Remove current item": {
+    "en": "Remove current item"
+  },
+  "Split by:": {
+    "en": "Split by:"
+  },
+  "Text Filter Options": {
+    "en": "Text Filter Options"
+  }
+}

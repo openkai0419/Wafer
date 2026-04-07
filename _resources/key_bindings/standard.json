@@ -1,0 +1,12 @@
+{
+  "items": [
+    {
+      "key": {"key": "H"},
+      "scopes": {"*": {"id": "mousebind", "args": {}}}
+    },
+    {
+      "key": {"key": "W"},
+      "scopes": {"*": {"id": "keybind", "args": {}}}
+    }
+  ]
+}

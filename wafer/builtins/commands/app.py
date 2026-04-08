@@ -1,4 +1,4 @@
-﻿import os
+import os
 from PySide6 import QtWidgets, QtCore, QtGui
 from ...core.commands.bridge import ActionKit
 from ...core.platform.process import AppProcess

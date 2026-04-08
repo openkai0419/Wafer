@@ -12,7 +12,7 @@ def _setup_db(tmp_path, files=None, meta=None, tags=None):
     db.initialize_database()
 
     cur = db.conn.cursor()
-    for path, source, fhash, size, modified, aspect in (files or []):
+    for path, source, fhash, size, modified, aspect in files or []:
         cur.execute("INSERT OR IGNORE INTO hash_index (file_hash) VALUES (?)", (fhash,))
         cur.execute(
             "INSERT OR REPLACE INTO sources (source, file_hash, size, modified) VALUES (?,?,?,?)",
@@ -22,12 +22,12 @@ def _setup_db(tmp_path, files=None, meta=None, tags=None):
             "INSERT OR REPLACE INTO files (path, source, aspect_ratio) VALUES (?,?,?)",
             (path, source, aspect),
         )
-    for path, key, value in (meta or []):
+    for path, key, value in meta or []:
         cur.execute(
             "INSERT OR REPLACE INTO meta_info (path, key, value, value_num) VALUES (?,?,?,NULL)",
             (path, key, value),
         )
-    for fhash, key, value in (tags or []):
+    for fhash, key, value in tags or []:
         cur.execute(
             "INSERT OR REPLACE INTO tags (file_hash, key, value, value_num) VALUES (?,?,?,NULL)",
             (fhash, key, value),
@@ -131,9 +131,7 @@ class TestFileSearchEngineSmoke:
             ],
         )
         engine = FileSearchEngine(db_path)
-        paths, _, _ = engine.search(
-            SearchQuery(keys="exif.Comment", keywords=("cute", "-dog"))
-        )
+        paths, _, _ = engine.search(SearchQuery(keys="exif.Comment", keywords=("cute", "-dog")))
         assert len(paths) == 1
         assert "cat" in paths[0]
 
@@ -155,7 +153,5 @@ class TestFileSearchEngineSmoke:
             ],
         )
         engine = FileSearchEngine(db_path)
-        paths, _, _ = engine.search(
-            SearchQuery(keys="path", keywords="sun*", query_mode="GLOB")
-        )
+        paths, _, _ = engine.search(SearchQuery(keys="path", keywords="sun*", query_mode="GLOB"))
         assert len(paths) == 2

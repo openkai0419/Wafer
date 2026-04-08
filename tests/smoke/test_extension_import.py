@@ -8,13 +8,7 @@ from wafer.plugin.registry import PluginBase
 
 
 EXTENSIONS_DIR = get_plugin_dir()
-EXTENSION_FOLDERS = sorted(
-    name
-    for name in os.listdir(EXTENSIONS_DIR)
-    if os.path.isdir(os.path.join(EXTENSIONS_DIR, name))
-    and not name.startswith(".")
-    and name != "__pycache__"
-)
+EXTENSION_FOLDERS = sorted(name for name in os.listdir(EXTENSIONS_DIR) if os.path.isdir(os.path.join(EXTENSIONS_DIR, name)) and not name.startswith(".") and name != "__pycache__")
 
 
 class TestExtensionDiscovery:

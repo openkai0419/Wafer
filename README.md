@@ -1,15 +1,12 @@
-<div align="center" markdown="1">
+<div align="center">
 # Wafer
 
 ![Wafer Screenshot](_docs/wafer_screenshot.png)
-
-Wafer is an extensible & flexible local file viewer with background metadata collection.
 </div>
 
-### 
-Core feature is based on PySide, Sqlite, and Zmq.
-
-Currently only supports on Windows. Other OS contributions are welcome.
+Wafer is an extensible & flexible local file viewer with background metadata collection.
+Core feature based on PySide, Sqlite, and Zmq.
+Only supports on Windows currently. Other OS contributions are welcome.
 
 ## Get Started
 
@@ -34,9 +31,7 @@ python main.py --dev
 # 3. Run tests
 python -m pytest tests/
 ```
-
-
-## Extensions
+## Design
 
 Wafer has a principle 
 **"one foundation, many extensions"**.
@@ -53,6 +48,9 @@ The core design goals are:
 The ideal form of this project is an ecosystem where multiple developers freely build file format support on top of a shared `wafer/` foundation.
 
 Extensions are placed as folders under `extensions/`. `PluginLoader` (`wafer/plugin/loader.py`) auto-discovers and registers them at startup.
+
+## Currently Supporting Extensions
+
 
 ### How It Works
 

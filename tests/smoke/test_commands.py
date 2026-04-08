@@ -301,12 +301,17 @@ class TestCheckableCommands:
 
     def test_action_group_exclusivity(self, cmd_registry, menu_hub, qtbot):
         cmd_a = _make_command(
-            "radio_a", display="Radio A",
-            checkable=True, action_group="radio_group", default_checked=True,
+            "radio_a",
+            display="Radio A",
+            checkable=True,
+            action_group="radio_group",
+            default_checked=True,
         )
         cmd_b = _make_command(
-            "radio_b", display="Radio B",
-            checkable=True, action_group="radio_group",
+            "radio_b",
+            display="Radio B",
+            checkable=True,
+            action_group="radio_group",
         )
         cmd_registry.register(cmd_a)
         cmd_registry.register(cmd_b)
@@ -353,21 +358,23 @@ class TestPanelToggleCommands:
             mgr = LayoutManager(window)
             mgr.register("PanelA", lambda: QtWidgets.QLabel("A"))
             mgr.register("PanelB", lambda: QtWidgets.QLabel("B"))
-            mgr.restore_state({
-                "mode": "locked",
-                "tree": {
-                    "root": {
-                        "type": "split",
-                        "orientation": "horizontal",
-                        "children": [
-                            {"type": "leaf", "panel": "PanelA"},
-                            {"type": "leaf", "panel": "PanelB"},
-                        ],
-                        "sizes": [400, 400],
+            mgr.restore_state(
+                {
+                    "mode": "locked",
+                    "tree": {
+                        "root": {
+                            "type": "split",
+                            "orientation": "horizontal",
+                            "children": [
+                                {"type": "leaf", "panel": "PanelA"},
+                                {"type": "leaf", "panel": "PanelB"},
+                            ],
+                            "sizes": [400, 400],
+                        },
+                        "floating": {},
                     },
-                    "floating": {},
-                },
-            })
+                }
+            )
             window.show()
             _process_events()
 

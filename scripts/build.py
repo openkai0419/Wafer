@@ -140,7 +140,7 @@ def build():
 
         generate_third_party_notices(dist_dir / "THIRD-PARTY-NOTICES.txt")
 
-        print(f"\nBuild succeeded: {dist_dir / 'main.exe'}  (v{version})")
+        print(f"\nBuild succeeded: {dist_dir / f'{DIST_NAME}.exe'}  (v{version})")
     finally:
         VERSION_FILE.write_text(original, encoding="utf-8")
 

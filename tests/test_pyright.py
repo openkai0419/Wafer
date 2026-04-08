@@ -4,6 +4,7 @@ import sys
 
 import pytest
 
+
 def test_pyright_no_errors():
     result = subprocess.run(
         [sys.executable, "-m", "pyright", "wafer/", "--outputjson"],

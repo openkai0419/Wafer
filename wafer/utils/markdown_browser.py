@@ -1,4 +1,3 @@
-﻿import os
 import re
 from pathlib import Path
 import markdown as _md
@@ -35,19 +34,13 @@ def _preprocess_html_blocks(text: str) -> str:
         if "markdown=" in attrs:
             return m.group(0)
         return f'{tag_open}{attrs} markdown="1"{close}'
+
     return _HTML_BLOCK_TAGS.sub(_add_md_attr, text)
 
 
 def _build_full_html(body_html: str, dark: bool) -> str:
     css = _load_github_css(dark)
-    return (
-        '<!DOCTYPE html><html><head><meta charset="utf-8">'
-        f"<style>{css}</style>"
-        "</head>"
-        f'<body class="markdown-body" style="padding:16px 32px;">'
-        f"{body_html}"
-        "</body></html>"
-    )
+    return f'<!DOCTYPE html><html><head><meta charset="utf-8"><style>{css}</style></head><body class="markdown-body" style="padding:16px 32px;">{body_html}</body></html>'
 
 
 class _ExternalLinkPage(QWebEnginePage):
@@ -95,7 +88,7 @@ class MarkdownBrowser(QtWidgets.QWidget):
             if self._allowed_dir is None:
                 self._allowed_dir = p.parent
             self._base_url = QtCore.QUrl.fromLocalFile(str(p.parent) + "/")
-            with open(p, "r", encoding="utf-8") as f:
+            with open(p, encoding="utf-8") as f:
                 self.set_markdown(f.read())
             return True
         except Exception as e:
@@ -103,17 +96,13 @@ class MarkdownBrowser(QtWidgets.QWidget):
             self._source_md = ""
             self._rendered_html = "(Failed to load file)"
             dark = ThemeManager.instance().is_dark
-            self._view.setHtml(
-                _build_full_html("<p>(Failed to load file)</p>", dark)
-            )
+            self._view.setHtml(_build_full_html("<p>(Failed to load file)</p>", dark))
             return False
 
     def set_markdown(self, text: str):
         self._source_md = text
         preprocessed = _preprocess_html_blocks(text)
-        body = _md.markdown(
-            preprocessed, extensions=_MD_EXTENSIONS, tab_length=_MD_TAB_LENGTH
-        )
+        body = _md.markdown(preprocessed, extensions=_MD_EXTENSIONS, tab_length=_MD_TAB_LENGTH)
         self._rendered_html = body
         dark = ThemeManager.instance().is_dark
         self._view.setHtml(_build_full_html(body, dark), self._base_url)

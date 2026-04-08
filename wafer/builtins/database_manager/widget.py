@@ -202,12 +202,8 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
         self._refresh_db_list()
         self._snapshot_all()
 
-        StateStore.instance().register(
-            "database_manager", self._save_ui_state, self._restore_ui_state
-        )
-        self.destroyed.connect(
-            lambda: StateStore.instance().unregister("database_manager")
-        )
+        StateStore.instance().register("database_manager", self._save_ui_state, self._restore_ui_state)
+        self.destroyed.connect(lambda: StateStore.instance().unregister("database_manager"))
 
     def _save_ui_state(self) -> dict:
         state = {}

@@ -64,26 +64,30 @@ class TestCollectorExceptionMarksFailure:
         _create_test_image(img_dir / "test.jpg")
         norm = normalize_path(str(img_dir / "test.jpg"))
 
-        results = [{
-            "source": norm,
-            "path": norm,
-            "status": False,
-            "collector": "_test_faulty",
-            "meta_info": {},
-        }]
+        results = [
+            {
+                "source": norm,
+                "path": norm,
+                "status": False,
+                "collector": "_test_faulty",
+                "meta_info": {},
+            }
+        ]
         parsed = _parse_batch(results)
         assert len(parsed["collector_status"]) == 1
         assert parsed["collector_status"][0][2] == "fail"
         assert parsed["meta_info_entries"] == []
 
     def test_failed_status_does_not_store_meta(self):
-        results = [{
-            "source": "/fake/img.jpg",
-            "path": "/fake/img.jpg",
-            "status": False,
-            "collector": "broken",
-            "meta_info": {"width": "100", "height": "50"},
-        }]
+        results = [
+            {
+                "source": "/fake/img.jpg",
+                "path": "/fake/img.jpg",
+                "status": False,
+                "collector": "broken",
+                "meta_info": {"width": "100", "height": "50"},
+            }
+        ]
         parsed = _parse_batch(results)
         assert parsed["meta_info_entries"] == []
         assert len(parsed["collector_status"]) == 1
@@ -151,12 +155,14 @@ class TestFailedCollectorWrittenToDB:
             idx.update_index(str(img_dir))
             norm = normalize_path(str(img_dir / "fail.jpg"))
 
-            results = [{
-                "source": norm,
-                "path": norm,
-                "status": False,
-                "collector": "exif",
-            }]
+            results = [
+                {
+                    "source": norm,
+                    "path": norm,
+                    "status": False,
+                    "collector": "exif",
+                }
+            ]
             _write_results(idx.db, results)
 
             row = idx.db.read_conn.execute(
@@ -182,18 +188,20 @@ class TestFailedCollectorWrittenToDB:
             fail_results = [{"source": norm, "path": norm, "status": False, "collector": "exif"}]
             _write_results(idx.db, fail_results)
 
-            row = idx.db.read_conn.execute(
-                "SELECT status FROM collection_status WHERE source=? AND collector='exif'", (norm,)
-            ).fetchone()
+            row = idx.db.read_conn.execute("SELECT status FROM collection_status WHERE source=? AND collector='exif'", (norm,)).fetchone()
             assert row[0] == "fail"
 
-            ok_results = [{
-                "source": norm, "path": norm, "status": True, "collector": "exif",
-                "aspect": 2.0, "meta_info": {"width": "400"},
-            }]
+            ok_results = [
+                {
+                    "source": norm,
+                    "path": norm,
+                    "status": True,
+                    "collector": "exif",
+                    "aspect": 2.0,
+                    "meta_info": {"width": "400"},
+                }
+            ]
             _write_results(idx.db, ok_results)
 
-            row2 = idx.db.read_conn.execute(
-                "SELECT status FROM collection_status WHERE source=? AND collector='exif'", (norm,)
-            ).fetchone()
+            row2 = idx.db.read_conn.execute("SELECT status FROM collection_status WHERE source=? AND collector='exif'", (norm,)).fetchone()
             assert row2[0] == "ok"

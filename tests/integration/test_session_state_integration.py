@@ -70,10 +70,12 @@ class TestSessionAndStateStoreCombined:
         session_store = SessionStore(str(tmp_path / "sessions.json"))
         sid = session_store.create_session("Deferred")
         entry = session_store.get_session(sid)
-        entry.ui = UIState(component_states={
-            "panel_a": {"width": 250},
-            "panel_b": {"height": 100},
-        })
+        entry.ui = UIState(
+            component_states={
+                "panel_a": {"width": 250},
+                "panel_b": {"height": 100},
+            }
+        )
         session_store.save_session(entry)
 
         loaded = session_store.get_session(sid)
@@ -140,9 +142,11 @@ class TestMultiSessionStateIsolation:
             database_name="db_a",
             search_params={"keywords": "alpha"},
         )
-        entry_a.ui = UIState(component_states={
-            "grid": {"base_height": 200, "scroll_index": 5},
-        })
+        entry_a.ui = UIState(
+            component_states={
+                "grid": {"base_height": 200, "scroll_index": 5},
+            }
+        )
         store.save_session(entry_a)
 
         entry_b = store.get_session(sid_b)
@@ -150,9 +154,11 @@ class TestMultiSessionStateIsolation:
             database_name="db_b",
             search_params={"keywords": "beta"},
         )
-        entry_b.ui = UIState(component_states={
-            "grid": {"base_height": 300, "scroll_index": 99},
-        })
+        entry_b.ui = UIState(
+            component_states={
+                "grid": {"base_height": 300, "scroll_index": 99},
+            }
+        )
         store.save_session(entry_b)
 
         loaded_a = store.get_session(sid_a)

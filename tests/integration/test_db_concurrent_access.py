@@ -154,15 +154,12 @@ class TestMultipleReadersNoCrash:
         def reader(sort_by):
             try:
                 engine = FileSearchEngine(str(db_path))
-                paths, _, _ = engine.search(
-                    SearchQuery(sort_by=sort_by, require_keys=False)
-                )
+                paths, _, _ = engine.search(SearchQuery(sort_by=sort_by, require_keys=False))
                 counts.append(len(paths))
             except Exception as e:
                 errors.append(e)
 
-        sorts = ["name", "modified", "size", "name", "created",
-                 "name", "modified", "size", "name", "created"]
+        sorts = ["name", "modified", "size", "name", "created", "name", "modified", "size", "name", "created"]
         threads = [threading.Thread(target=reader, args=(s,)) for s in sorts]
         for t in threads:
             t.start()
@@ -202,8 +199,6 @@ class TestDBConsistencyAfterConcurrentWrites:
 
         db = FileDB(db_path)
         db.start()
-        ok_count = db.read_conn.execute(
-            "SELECT COUNT(*) FROM collection_status WHERE collector='exif' AND status='ok'"
-        ).fetchone()[0]
+        ok_count = db.read_conn.execute("SELECT COUNT(*) FROM collection_status WHERE collector='exif' AND status='ok'").fetchone()[0]
         db.close()
         assert ok_count == 10

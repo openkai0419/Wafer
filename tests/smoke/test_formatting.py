@@ -34,7 +34,7 @@ class TestFormatSize:
         assert format_size(1024 * 1024) == "1.0 MB"
 
     def test_gigabytes(self):
-        assert format_size(1024 ** 3) == "1.0 GB"
+        assert format_size(1024**3) == "1.0 GB"
 
     def test_none_returns_none(self):
         assert format_size(None) is None

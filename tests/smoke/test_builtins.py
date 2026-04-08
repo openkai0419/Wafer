@@ -53,22 +53,16 @@ class TestBuiltinNAMEUniqueness:
                 if registry_key == "command":
                     continue
                 bucket = seen.setdefault(registry_key, {})
-                assert cls.NAME not in bucket, (
-                    f"Duplicate NAME '{cls.NAME}' in registry '{registry_key}': "
-                    f"{bucket[cls.NAME]} vs {cls.__name__}"
-                )
+                assert cls.NAME not in bucket, f"Duplicate NAME '{cls.NAME}' in registry '{registry_key}': {bucket[cls.NAME]} vs {cls.__name__}"
                 bucket[cls.NAME] = cls.__name__
 
     def test_valid_registry_keys(self):
-        valid_keys = {"viewer", "grid", "collector", "detacher", "filter", "sort",
-                      "layout", "panel", "rename_source", "command"}
+        valid_keys = {"viewer", "grid", "collector", "detacher", "filter", "sort", "layout", "panel", "rename_source", "command"}
         registry_map = _get_registry_map()
         modules = _import_builtin_modules()
         for mod in modules:
             for registry_key, cls in _discover_builtins(mod, registry_map):
-                assert registry_key in valid_keys, (
-                    f"{cls.__name__} has invalid registry_key: {registry_key}"
-                )
+                assert registry_key in valid_keys, f"{cls.__name__} has invalid registry_key: {registry_key}"
 
 
 class TestBuiltinExpectedPlugins:

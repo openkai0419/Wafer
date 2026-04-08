@@ -18,6 +18,7 @@ def _create_nai_image(path, prompt="a cat", model="nai-v3", seed=42):
     img = Image.new("RGB", (200, 100), color=(128, 200, 64))
     comment = json.dumps({"prompt": prompt, "model": model, "seed": seed, "steps": 28})
     from PIL.PngImagePlugin import PngInfo
+
     info = PngInfo()
     info.add_text("Comment", comment)
     img.save(str(path), format="PNG", pnginfo=info)
@@ -52,13 +53,15 @@ def _write_collector_results(db, results):
 
 class TestDetacherResultsParsedCorrectly:
     def test_detacher_meta_keys_have_prefix(self):
-        results = [{
-            "source": "/test/img.png",
-            "path": "/test/img.png",
-            "status": True,
-            "detacher": "novelai",
-            "meta_info": {"prompt": "a cat", "model": "nai-v3"},
-        }]
+        results = [
+            {
+                "source": "/test/img.png",
+                "path": "/test/img.png",
+                "status": True,
+                "detacher": "novelai",
+                "meta_info": {"prompt": "a cat", "model": "nai-v3"},
+            }
+        ]
         parsed = _parse_detacher_batch(results)
         keys = [e[1] for e in parsed["meta_info_entries"]]
         assert all(k.startswith("novelai.") for k in keys)
@@ -66,26 +69,30 @@ class TestDetacherResultsParsedCorrectly:
         assert "novelai.model" in keys
 
     def test_detacher_fail_no_meta(self):
-        results = [{
-            "source": "/test/bad.png",
-            "status": False,
-            "detacher": "novelai",
-            "meta_info": {"prompt": "ignored"},
-        }]
+        results = [
+            {
+                "source": "/test/bad.png",
+                "status": False,
+                "detacher": "novelai",
+                "meta_info": {"prompt": "ignored"},
+            }
+        ]
         parsed = _parse_detacher_batch(results)
         assert parsed["meta_info_entries"] == []
         assert len(parsed["collector_status"]) == 1
         assert parsed["collector_status"][0][2] == "fail"
 
     def test_detacher_delete_keys_captured(self):
-        results = [{
-            "source": "/test/img.png",
-            "path": "/test/img.png",
-            "status": True,
-            "detacher": "novelai",
-            "meta_info": {"prompt": "a cat"},
-            "delete_keys": ["exif.Comment", "exif.Description"],
-        }]
+        results = [
+            {
+                "source": "/test/img.png",
+                "path": "/test/img.png",
+                "status": True,
+                "detacher": "novelai",
+                "meta_info": {"prompt": "a cat"},
+                "delete_keys": ["exif.Comment", "exif.Description"],
+            }
+        ]
         parsed = _parse_detacher_batch(results)
         assert len(parsed["delete_entries"]) == 1
         assert parsed["delete_entries"][0][2] == ["exif.Comment", "exif.Description"]
@@ -108,26 +115,24 @@ class TestDetacherToDBPipeline:
             _write_collector_results(idx.db, collector_results)
 
             norm = normalize_path(str(img_dir / "nai_test.png"))
-            comment_rows = idx.db.read_conn.execute(
-                "SELECT value FROM meta_info WHERE path=? AND key='exif.Comment'", (norm,)
-            ).fetchall()
+            comment_rows = idx.db.read_conn.execute("SELECT value FROM meta_info WHERE path=? AND key='exif.Comment'", (norm,)).fetchall()
 
             if not comment_rows:
                 return
 
             comment_json = comment_rows[0][0]
-            file_hash = idx.db.read_conn.execute(
-                "SELECT file_hash FROM sources WHERE source=?", (norm,)
-            ).fetchone()
+            file_hash = idx.db.read_conn.execute("SELECT file_hash FROM sources WHERE source=?", (norm,)).fetchone()
 
-            detacher_results = [{
-                "source": norm,
-                "path": norm,
-                "status": True,
-                "detacher": "novelai",
-                "file_hash": file_hash[0] if file_hash else None,
-                "meta_info": {"prompt": "sunset over ocean", "seed": "100", "model": "nai-v3"},
-            }]
+            detacher_results = [
+                {
+                    "source": norm,
+                    "path": norm,
+                    "status": True,
+                    "detacher": "novelai",
+                    "file_hash": file_hash[0] if file_hash else None,
+                    "meta_info": {"prompt": "sunset over ocean", "seed": "100", "model": "nai-v3"},
+                }
+            ]
             parsed = _parse_detacher_batch(detacher_results)
             idx.db.upsert_collection_results(
                 [],
@@ -136,9 +141,7 @@ class TestDetacherToDBPipeline:
                 parsed["collector_status"],
             )
 
-            meta = idx.db.read_conn.execute(
-                "SELECT key, value FROM meta_info WHERE path=? AND key LIKE 'novelai.%'", (norm,)
-            ).fetchall()
+            meta = idx.db.read_conn.execute("SELECT key, value FROM meta_info WHERE path=? AND key LIKE 'novelai.%'", (norm,)).fetchall()
             meta_dict = {k: v for k, v in meta}
             assert "novelai.prompt" in meta_dict
             assert meta_dict["novelai.prompt"] == "sunset over ocean"
@@ -161,13 +164,15 @@ class TestDetacherToDBPipeline:
 
             norm = normalize_path(str(img_dir / "art.png"))
 
-            detacher_results = [{
-                "source": norm,
-                "path": norm,
-                "status": True,
-                "detacher": "novelai",
-                "meta_info": {"prompt": "fantasy landscape", "steps": "28"},
-            }]
+            detacher_results = [
+                {
+                    "source": norm,
+                    "path": norm,
+                    "status": True,
+                    "detacher": "novelai",
+                    "meta_info": {"prompt": "fantasy landscape", "steps": "28"},
+                }
+            ]
             parsed = _parse_detacher_batch(detacher_results)
             idx.db.upsert_collection_results(
                 [],
@@ -177,8 +182,6 @@ class TestDetacherToDBPipeline:
             )
 
         engine = FileSearchEngine(str(db_path))
-        result_paths, _, _ = engine.search(
-            SearchQuery(keys=("novelai.prompt",), keywords="fantasy", require_keys=True)
-        )
+        result_paths, _, _ = engine.search(SearchQuery(keys=("novelai.prompt",), keywords="fantasy", require_keys=True))
         assert len(result_paths) == 1
         assert result_paths[0] == norm

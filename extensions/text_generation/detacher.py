@@ -3,7 +3,8 @@ import json
 from wafer.plugin import BaseSingletonDetacher, DetacherResult
 from wafer.utils.logs import AppLogger
 
-using_keywords = ["noise_schedule", "prompt", "steps", "uc", "sampler", "seed"]
+using_keywords = ["noise_schedule", "prompt", "steps", "uc", "sampler", "seed", "cfg", "model"]
+
 
 class NovelAiImageDetacher(BaseSingletonDetacher):
     NAME = "novelai"

@@ -146,9 +146,7 @@ class TestCollectorToSearch:
             for r in results:
                 assert r["status"] is True
 
-            rows = idx.db.read_conn.execute(
-                "SELECT COUNT(*) FROM collection_status WHERE collector='exif' AND status='ok'"
-            ).fetchone()
+            rows = idx.db.read_conn.execute("SELECT COUNT(*) FROM collection_status WHERE collector='exif' AND status='ok'").fetchone()
             assert rows[0] == 3
 
         engine = FileSearchEngine(str(db_path))

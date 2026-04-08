@@ -1,7 +1,7 @@
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QDialog, QHBoxLayout, QPushButton, QTabWidget, QVBoxLayout
-from ...utils.formatting import dpix
-from ..lang.manager import TranslatorMixin
+from wafer.utils.formatting import dpix
+from wafer.core.lang.manager import TranslatorMixin
 
 
 class SettingsWindow(QDialog, TranslatorMixin):

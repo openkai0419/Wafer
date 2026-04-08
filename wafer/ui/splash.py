@@ -1,7 +1,7 @@
 from PySide6 import QtWidgets, QtCore, QtGui
 
-from ...utils.formatting import dpix
-from ..color.theme import ThemeManager
+from ..utils.formatting import dpix
+from ..core.color.theme import ThemeManager
 
 
 class InstallSplash(QtWidgets.QWidget):

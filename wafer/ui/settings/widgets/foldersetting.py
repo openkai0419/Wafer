@@ -1,9 +1,9 @@
 import os
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFileDialog, QListWidget, QMenu, QMessageBox, QPushButton, QStackedLayout, QVBoxLayout, QWidget
-from ....utils.formatting import dpix
-from ....utils.paths import safe_exists
-from ...lang.manager import TranslatorMixin
+from wafer.utils.formatting import dpix
+from wafer.utils.paths import safe_exists
+from wafer.core.lang.manager import TranslatorMixin
 
 
 class FolderListWidget(QWidget, TranslatorMixin):

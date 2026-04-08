@@ -2,7 +2,7 @@ import py_compile
 
 
 def test_file_conflict_dialog_parse_choice():
-    from wafer.core.qt.dialog import FileConflictDialog
+    from wafer.ui.dialogs import FileConflictDialog
 
     assert FileConflictDialog.parse_choice(None) is None
     assert FileConflictDialog.parse_choice("") is None

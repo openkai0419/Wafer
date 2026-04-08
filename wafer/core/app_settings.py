@@ -2,8 +2,8 @@ import atexit
 import json
 import weakref
 from PySide6 import QtCore
-from ...utils.paths import resolve_data_path
-from ...utils.helpers import try_invoke, try_cast, try_json_loads
+from ..utils.paths import resolve_data_path
+from ..utils.helpers import try_invoke, try_cast, try_json_loads
 
 
 class AsyncSaver(QtCore.QObject):

@@ -752,8 +752,8 @@ class LayoutManager(QtCore.QObject):
         return f"panel.toggle_{slug}"
 
     def _register_toggle_command(self, name: str):
-        from ..commands.bridge import Command as BridgeCommand
-        from ..commands.command.core import CommandMeta
+        from ...core.commands.bridge import Command as BridgeCommand
+        from ...core.commands.command.core import CommandMeta
 
         cmd_id = self._command_id(name)
         mgr = self
@@ -773,7 +773,7 @@ class LayoutManager(QtCore.QObject):
         )
 
     def _unregister_toggle_command(self, name: str):
-        from ..commands.command.core import CommandRegistry
+        from ...core.commands.command.core import CommandRegistry
 
         cmd_id = self._command_id(name)
         registry = CommandRegistry.instance()

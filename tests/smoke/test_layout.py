@@ -3,8 +3,8 @@ import time
 import pytest
 from PySide6 import QtCore, QtWidgets
 
-from wafer.core.layout.manager import LayoutManager, MODE_EDIT, MODE_LOCKED, PanelEntry
-from wafer.core.layout.tree import (
+from wafer.ui.layout.manager import LayoutManager, MODE_EDIT, MODE_LOCKED, PanelEntry
+from wafer.ui.layout.tree import (
     FloatingState,
     LayoutTree,
     LeafNode,

@@ -1,5 +1,5 @@
 from .base_setting import SettingsTabBase
-from ..lang.manager import TranslatorMixin
+from wafer.core.lang.manager import TranslatorMixin
 
 
 class FolderSettings(SettingsTabBase, TranslatorMixin):

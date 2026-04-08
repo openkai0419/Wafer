@@ -7,7 +7,7 @@ from ...utils.logs import AppLogger
 from ...constants import DEV_MODE
 from ...core.platform.process import AppProcess
 from ...core.ipc.message import Message
-from ...core.qt.dialog import InputDialog
+from ...ui.dialogs import InputDialog
 from ...utils.notifier import Notifier
 from ...core.session import SessionStore
 

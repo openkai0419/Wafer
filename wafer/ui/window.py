@@ -83,7 +83,7 @@ class WindowStateController:
 
 class DialogLayoutStore:
     def __init__(self, dialog_key: str, ini_filename: str = "dialog_layout.ini"):
-        from ...utils.paths import resolve_data_path
+        from ..utils.paths import resolve_data_path
 
         self._settings = QtCore.QSettings(
             str(resolve_data_path(ini_filename)),

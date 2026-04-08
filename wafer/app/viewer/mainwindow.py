@@ -17,7 +17,7 @@ from .preview.file_viewer import FileViewerController
 from .preview.file_list_provider import FileListProvider
 from .preview.content_viewer import ContentViewerWidget
 from .preview.meta_panel import MetaViewerWidget
-from ...core.setting.app_settings import app_settings
+from ...core.app_settings import app_settings
 from .widgets.button_bar import IconButtonBar, IconButtonConfig
 from .widgets.foldertree import LazyFolderTreeView
 from .widgets.loading_overlay import OverlayLoadingIndicator
@@ -30,9 +30,9 @@ from ...builtins.commands.menu import AppMenuRegistrar
 from .search import SearchService
 from ...core.session import QueryState, UIState, SessionEntry, SessionStore
 from ...core.commands.bridge import UI, Command, Menu
-from ...core.layout.manager import LayoutManager
+from ...ui.layout.manager import LayoutManager
 from ...core.state import StateStore
-from ...core.qt.window import WindowStateController
+from ...ui.window import WindowStateController
 from ...core.qt.dispatcher import Dispatcher, CancelToken
 from ...core.qt.thread import utility_pool
 
@@ -408,7 +408,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         Command.set_action_group_current("grid_scroll_anchor", _SCROLL_ANCHOR_CMDS[1], save=False)
 
     def _on_layout_mode_changed(self, mode):
-        from ...core.layout.manager import MODE_EDIT
+        from ...ui.layout.manager import MODE_EDIT
 
         is_edit = mode == MODE_EDIT
         self._layout_edit_btn.blockSignals(True)

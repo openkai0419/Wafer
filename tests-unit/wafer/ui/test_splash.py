@@ -4,7 +4,7 @@ import pytest
 from PySide6 import QtWidgets, QtCore
 
 from wafer.utils.formatting import dpix
-from wafer.core.qt.splash import InstallSplash
+from wafer.ui.splash import InstallSplash
 
 
 @pytest.fixture

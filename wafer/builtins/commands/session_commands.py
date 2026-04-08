@@ -3,7 +3,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from ...core.commands.bridge import ActionKit
 from ...core.commands.command.require import require
 from ...core.color.theme import ThemeManager
-from ...core.qt.dialog import InputDialog
+from ...ui.dialogs import InputDialog
 from ...core.platform.process import AppProcess
 from ...utils.logs import AppLogger
 from ...utils.notifier import Notifier

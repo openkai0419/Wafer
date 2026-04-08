@@ -7,7 +7,7 @@ from PySide6 import QtCore, QtGui
 
 from ...core.commands.bridge import ActionKit
 from ...core.commands.command.require import require
-from ...core.qt.dialog import ThumbnailConfirmDialog
+from ...ui.dialogs import ThumbnailConfirmDialog
 from ...core.platform.copy import ClipboardFileTransfer
 from ...core.platform.paste import paste_clipboard_files, execute_paste_plans_with_ui
 from ...core.platform.path_utils import unique_path, get_os_new_folder_name, validate_filename
@@ -215,7 +215,7 @@ def rename_file(ctx):
     path = _ctx_path(ctx)
     if not path or not os.path.isfile(path):
         return
-    from ...core.qt.dialog import InputDialog
+    from ...ui.dialogs import InputDialog
 
     parent = ctx.get_instance("ContentViewerWidget") or ctx.get_instance("GridView")
     old_name = os.path.basename(path)

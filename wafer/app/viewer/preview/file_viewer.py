@@ -16,7 +16,7 @@ from .file_model import FileViewModel
 from .content_viewer import ContentViewerWidget, _DEFAULT_WIDGET_NAME
 from .meta_panel import MetaViewerWidget
 from ..grid.cachemanager import MemoryLimitedImageCache, fullsize_key
-from ....core.setting.app_settings import app_settings
+from ....core.app_settings import app_settings
 
 
 def _format_meta(engine, path):

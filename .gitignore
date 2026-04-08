@@ -4,23 +4,23 @@ venv/
 .pytest_cache/
 .log/
 .ruff_cache/
+.temp/
+.packages/
+.shared_packages/
+
+# Extension native libraries (user-provided)
+extensions/*/lib/
 
 # Internal development notes
 .github/*
 !.github/workflows/
 AGENTS.md
-
-.temp/
-.packages/
-.shared_packages/
-.sample/
-.vscode/
 .prototypes/
 tests/.prototypes/
 tests/test_summary.txt
+.vscode/
+.sample/
 
-# Extension native libraries (user-provided)
-extensions/*/lib/
 
 # Build artifacts
 build/

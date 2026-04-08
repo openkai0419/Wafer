@@ -277,7 +277,7 @@ def test_no_conflict_plans_get_overwrite_decision(tmp_path):
 
 
 def test_resolve_paste_plans_with_ui_empty():
-    from wafer.core.qt.file_conflict_resolver import resolve_paste_plans_with_ui
+    from wafer.ui.file_conflict_resolver import resolve_paste_plans_with_ui
 
     result = resolve_paste_plans_with_ui(plans=[], overwrite_mode="ask", parent=None)
     assert result == {}

@@ -4,7 +4,7 @@ from ...core.commands.bridge import ActionKit, UI
 from ...plugin.grid.handler import grid_resolver, VIEWER_THUMBNAIL_DEFAULT_SIZE
 from ...utils.paths import resolve_data_path
 from ...core.platform.folders import show_in_explorer
-from ...core.setting.app_settings import app_settings
+from ...core.app_settings import app_settings
 
 _SETTING_KEY = "viewer/thumbnail_default_size"
 

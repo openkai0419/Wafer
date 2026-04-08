@@ -1,5 +1,5 @@
 from ...core.commands.bridge import ActionKit
-from ...core.layout.manager import LayoutManager
+from ...ui.layout.manager import LayoutManager
 
 
 def toggle_layout_mode(ctx):
@@ -10,7 +10,7 @@ def toggle_layout_mode(ctx):
         return
     mgr = w._layout_manager
     mgr.toggle_mode()
-    from ...core.layout.manager import MODE_EDIT
+    from ...ui.layout.manager import MODE_EDIT
 
     Command.set_checked("win.toggle_layout_mode", mgr.mode == MODE_EDIT)
 

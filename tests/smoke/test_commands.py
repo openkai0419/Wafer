@@ -10,7 +10,7 @@ from wafer.core.commands.command.menu import MenuGroup, MenuHub
 from wafer.core.commands.command.menu_builder import CommandMenuBuilder
 from wafer.core.commands.command.maker import MenuMaker
 from wafer.core.commands.command.state import CommandOptionStore
-from wafer.core.layout.manager import LayoutManager
+from wafer.ui.layout.manager import LayoutManager
 
 
 def _process_events(ms=50):

@@ -4,7 +4,7 @@ from ....utils.formatting import dpix
 from ....utils.profiling import profiler
 from ....core.qt.rate_limit import qt_debounce, qt_throttle
 from ....core.qt.dispatcher import Dispatcher
-from ....core.setting.app_settings import app_settings
+from ....core.app_settings import app_settings
 from ....plugin.grid.handler import grid_resolver, WidgetNotifier
 from ....plugin.grid.base import WidgetGridPlugin as _WidgetGridPlugin
 from .cachemanager import MemoryLimitedImageCache, GraphicsItemPool, AdditionalWidgetPool

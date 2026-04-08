@@ -1,5 +1,5 @@
 from ...core.commands.bridge import Command, ActionKit
-from ...core.setting.app_settings import app_settings
+from ...core.app_settings import app_settings
 from .session_commands import (
     show_session_popup,
     create_session,

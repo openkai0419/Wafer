@@ -3,7 +3,7 @@ from PySide6 import QtWidgets, QtCore, QtGui
 from ...core.commands.bridge import ActionKit
 from ...core.platform.process import AppProcess
 from ...core.session import SessionStore
-from ...core.qt.window import DialogLayoutStore
+from ...ui.window import DialogLayoutStore
 from ...utils.formatting import dpix
 from ...utils.paths import get_resource_path, get_app_root_dir
 from ..._version import __version__

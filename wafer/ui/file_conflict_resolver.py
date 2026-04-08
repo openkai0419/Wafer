@@ -3,15 +3,15 @@ from __future__ import annotations
 from pathlib import Path
 from collections.abc import Iterable
 
-from ...utils.paths import normalize_path
-from ..platform.file_operations import (
+from ..utils.paths import normalize_path
+from ..core.platform.file_operations import (
     MergeConflictItem,
     PasteCancelledError,
     PasteDecision,
     scan_merge_conflicts,
 )
-from ..platform.path_utils import check_copy_conflict
-from .dialog import FileConflictDialog, FolderConflictDialog, SingleFileConflictDialog
+from ..core.platform.path_utils import check_copy_conflict
+from .dialogs import FileConflictDialog, FolderConflictDialog, SingleFileConflictDialog
 
 
 class ConflictResolver:

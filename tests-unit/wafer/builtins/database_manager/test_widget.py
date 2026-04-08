@@ -829,7 +829,7 @@ class TestDialogLayoutStore:
             "wafer.utils.paths.resolve_data_path",
             lambda name: tmp_path / name,
         )
-        from wafer.core.qt.window import DialogLayoutStore
+        from wafer.ui.window import DialogLayoutStore
 
         store = DialogLayoutStore("test_dialog")
 
@@ -851,7 +851,7 @@ class TestDialogLayoutStore:
             "wafer.utils.paths.resolve_data_path",
             lambda name: tmp_path / name,
         )
-        from wafer.core.qt.window import DialogLayoutStore
+        from wafer.ui.window import DialogLayoutStore
 
         store = DialogLayoutStore("test_splitter")
 

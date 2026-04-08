@@ -78,7 +78,7 @@ def _cleanup_background_resources():
     except Exception:
         pass
     try:
-        from wafer.core.setting.app_settings import app_settings
+        from wafer.core.app_settings import app_settings
 
         app_settings.close()
     except Exception:

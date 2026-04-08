@@ -10,7 +10,7 @@ from ...utils.paths import (
 from ...core.color.theme import ThemeManager
 from ...core.db.setting_db import SettingDB
 from ...core.platform.process import AppProcess
-from ...core.qt.dialog import ConfirmDialog, InputDialog
+from ...ui.dialogs import ConfirmDialog, InputDialog
 from ...core.qt.dispatcher import Dispatcher
 from ...core.qt.icon_engine import themed_icon
 from ...core.qt.thread import utility_pool

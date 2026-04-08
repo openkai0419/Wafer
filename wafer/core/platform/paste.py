@@ -184,7 +184,7 @@ def _resolve_conflicts_with_ui(
     if overwrite_mode not in ("ask", "overwrite", "skip", "rename"):
         raise ValueError(f"Invalid overwrite_mode: {overwrite_mode}")
 
-    from ..qt.file_conflict_resolver import resolve_paste_plans_with_ui
+    from ...ui.file_conflict_resolver import resolve_paste_plans_with_ui
 
     return resolve_paste_plans_with_ui(
         plans=plans,

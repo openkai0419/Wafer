@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, PropertyMock, patch
 import pytest
 from PySide6 import QtCore, QtWidgets
 
-from wafer.core.qt.window import WindowSnapshot, WindowStateController
+from wafer.ui.window import WindowSnapshot, WindowStateController
 
 WS = QtCore.Qt.WindowState
 

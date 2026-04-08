@@ -1,4 +1,4 @@
-from wafer.core.layout.tree import (
+from wafer.ui.layout.tree import (
     FloatingState,
     LayoutTree,
     LeafNode,

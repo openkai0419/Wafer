@@ -2,11 +2,11 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QCheckBox, QDialog, QFileIconProvider, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy, QStyle, QVBoxLayout
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtCore import QFileInfo
-from ...utils.formatting import dpix
-from ...utils.logs import AppLogger
-from ..platform.thumbnails import FileThumbnailer
+from ..utils.formatting import dpix
+from ..utils.logs import AppLogger
+from ..core.platform.thumbnails import FileThumbnailer
 import os
-from ..lang.manager import TranslatorMixin
+from ..core.lang.manager import TranslatorMixin
 
 
 def _pil_to_qpixmap(img) -> QPixmap:

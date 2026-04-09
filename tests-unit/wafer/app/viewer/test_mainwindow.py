@@ -168,17 +168,28 @@ class TestOnDbContentUpdated:
             win.folder_view = MagicMock()
             win.folder_view.get_selected_paths.return_value = []
             win.database_path = "test.db"
+            win.database_name = "testdb"
             return win
 
     def test_invalidates_key_cache(self):
         win = self._make_win()
-        win._on_db_content_updated()
+        win._on_db_content_updated("testdb")
         win.search_row_widget.invalidate_key_cache.assert_called_once()
 
     def test_triggers_force_search(self):
         win = self._make_win()
-        win._on_db_content_updated()
+        win._on_db_content_updated("testdb")
         win.search_service.execute.assert_called_once_with(force=True)
+
+    def test_ignores_other_db(self):
+        win = self._make_win()
+        win._on_db_content_updated("other_db")
+        win.search_row_widget.invalidate_key_cache.assert_not_called()
+
+    def test_empty_db_passes_through(self):
+        win = self._make_win()
+        win._on_db_content_updated("")
+        win.search_row_widget.invalidate_key_cache.assert_called_once()
 
 
 class TestSyncSessionButton:
@@ -247,34 +258,41 @@ class TestToggleShow:
             win.isMinimized = MagicMock(return_value=False)
             win.isVisible = MagicMock(return_value=True)
             win.window_state = MagicMock()
+            win.database_name = "testdb"
             return win
 
     def test_show_true_restores_window(self):
         win = self._make_win()
-        win.toggle_show(True)
+        win.toggle_show("testdb", True)
         win.window_state.restore_or_activate.assert_called_once()
         win.window_state.minimize.assert_not_called()
 
     def test_show_false_minimizes_window(self):
         win = self._make_win()
-        win.toggle_show(False)
+        win.toggle_show("testdb", False)
         win.window_state.minimize.assert_called_once()
         win.window_state.restore_or_activate.assert_not_called()
 
     def test_hidden_window_gets_shown(self):
         win = self._make_win()
         win.isVisible.return_value = False
-        win.toggle_show(True)
+        win.toggle_show("testdb", True)
         win.window_state.restore_or_activate.assert_called_once()
         win.window_state.minimize.assert_not_called()
 
     def test_respects_show_arg(self):
         win = self._make_win()
-        win.toggle_show(True)
+        win.toggle_show("testdb", True)
         win.window_state.restore_or_activate.assert_called_once()
         win.window_state.restore_or_activate.reset_mock()
-        win.toggle_show(False)
+        win.toggle_show("testdb", False)
         win.window_state.minimize.assert_called_once()
+
+    def test_ignores_other_db(self):
+        win = self._make_win()
+        win.toggle_show("other_db", True)
+        win.window_state.restore_or_activate.assert_not_called()
+        win.window_state.minimize.assert_not_called()
 
 
 class TestRaiseWindow:

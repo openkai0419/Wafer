@@ -620,6 +620,20 @@ class FileDB:
         AppLogger.info(f"[DB] Purged keys ({len(keys)}): meta={meta_deleted}, tags={tags_deleted}")
         return meta_deleted, tags_deleted
 
+    def reset_collector_status(self, collector: str) -> int:
+        with self._write_lock, self.conn:
+            cur = self.conn.cursor()
+            try:
+                cur.execute(
+                    "UPDATE collection_status SET status = 'pending', collected_at = NULL WHERE collector = ?",
+                    (collector,),
+                )
+                affected = cur.execute("SELECT changes()").fetchone()[0]
+            finally:
+                cur.close()
+        AppLogger.info(f"[DB] Reset collector status: collector={collector}, affected={affected}")
+        return affected
+
     def collector_data_counts(self) -> list[tuple[str, int]]:
         cur = self.get_reader_cursor()
         try:

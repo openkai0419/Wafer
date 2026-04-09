@@ -267,14 +267,17 @@ class IndexerProcess:
         keys = payload.get("keys", [])
         re_collect = payload.get("re_collect", False)
         collector = payload.get("collector", "")
-        if not keys or not self.writer:
+        if not self.writer:
+            return True
+        if not keys and not (re_collect and collector):
             return True
         AppLogger.info(f"[Indexer] Purge keys={len(keys)}, collector={collector}, re_collect={re_collect}")
 
         def _run():
-            self.writer.purge_keys(keys)
+            if keys:
+                self.writer.purge_keys(keys)
             if re_collect and collector:
-                self.writer.purge_collector(collector, re_collect=True)
+                self.writer.reset_collector_status(collector)
 
         self.scheduler.submit(
             Task.create(

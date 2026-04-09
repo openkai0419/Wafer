@@ -609,6 +609,31 @@ def test_purge_keys_no_match(tmp_path):
     db.close()
 
 
+def test_reset_collector_status(tmp_path):
+    db = _setup_db_with_collected(tmp_path)
+    meta_before = db.read_conn.execute("SELECT COUNT(*) FROM meta_info").fetchone()[0]
+    tags_before = db.read_conn.execute("SELECT COUNT(*) FROM tags").fetchone()[0]
+    affected = db.reset_collector_status("exif")
+    assert affected == 2
+    rows = db.read_conn.execute("SELECT status, collected_at FROM collection_status WHERE collector='exif'").fetchall()
+    assert len(rows) == 2
+    for status, collected_at in rows:
+        assert status == "pending"
+        assert collected_at is None
+    meta_after = db.read_conn.execute("SELECT COUNT(*) FROM meta_info").fetchone()[0]
+    tags_after = db.read_conn.execute("SELECT COUNT(*) FROM tags").fetchone()[0]
+    assert meta_after == meta_before
+    assert tags_after == tags_before
+    db.close()
+
+
+def test_reset_collector_status_no_match(tmp_path):
+    db = _setup_db_with_collected(tmp_path)
+    affected = db.reset_collector_status("nonexistent")
+    assert affected == 0
+    db.close()
+
+
 def test_collector_data_counts(tmp_path):
     db = _setup_db_with_collected(tmp_path, collectors=("exif", "ocr"))
     counts = dict(db.collector_data_counts())

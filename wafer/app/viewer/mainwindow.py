@@ -10,6 +10,7 @@ from ...core.db.setting_db import SettingDB
 from ...core.lang.manager import TranslatorMixin
 from ...core.qt.rate_limit import qt_debounce
 from ...core.ipc.node import Node
+from .ipc_bridge import ViewerIpcBridge
 from .grid.grid_view import GridView
 from .grid.items import GridItemModel
 from .preview.file_model import FileViewModel
@@ -216,6 +217,9 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.database_combo.setCurrentText(self.database_name)
         AppLogger.debug("refresh_db_selector")
 
+    def _is_my_db(self, db: str) -> bool:
+        return not db or db == self.database_name
+
     @QtCore.Slot(str)
     def _on_db_created(self, name: str):
         if self.database_combo.combo.findText(name) < 0:
@@ -227,54 +231,37 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         if self.database_name == name:
             self.reload_database(self.database_combo.currentText())
 
-    @QtCore.Slot(int)
-    def update_progress_value(self, value):
-        self.progress_bar.setProgress(int(value))
+    @QtCore.Slot(str, int)
+    def update_progress_value(self, db, value):
+        if self._is_my_db(db):
+            self.progress_bar.setProgress(int(value))
 
-    @QtCore.Slot(int)
-    def update_progress_maximum(self, value):
-        self.progress_bar.setMaximum(int(value))
+    @QtCore.Slot(str, int)
+    def update_progress_maximum(self, db, value):
+        if self._is_my_db(db):
+            self.progress_bar.setMaximum(int(value))
 
     def start_ipc_listener(self):
-        def _guarded(fn):
-            def handler(msg):
-                try:
-                    if msg.db and msg.db != self.database_name:
-                        return True
-                    fn(msg)
-                    return True
-                except RuntimeError as e:
-                    if "wrapped C/C++ object" in str(e):
-                        return True
-                    AppLogger.warning(f"IPC handler RuntimeError: {e}", exc=e)
-                    return True
+        node = Node("viewer")
+        node.session_id = self.session_id
+        self._bridge = ViewerIpcBridge(node, parent=self)
+        self._node = node
 
-            return handler
+        b = self._bridge
+        b.db_content_updated.connect(self._on_db_content_updated)
+        b.folder_changed.connect(self._on_folder_changed_ipc)
+        b.progress_updated.connect(self.update_progress_value)
+        b.progress_maximum.connect(self.update_progress_maximum)
+        b.show_toggled.connect(self.toggle_show)
+        b.session_focused.connect(self._on_session_focused)
+        b.session_closed.connect(self._on_session_closed)
+        b.session_restarted.connect(self._on_session_restarted)
+        b.db_created.connect(self._on_db_created)
+        b.db_deleted.connect(self._on_db_deleted)
+        b.remote_log_received.connect(self._on_dev_log)
 
-        def _invoke(slot, *args):
-            QtCore.QMetaObject.invokeMethod(self, slot, QtCore.Qt.QueuedConnection, *args)
-
-        def _for_session(slot):
-            def handler(msg):
-                if msg.payload == self.session_id:
-                    _invoke(slot)
-                return True
-
-            return handler
-
-        self._node = Node("viewer")
-        self._node.session_id = self.session_id
-        self._node.subscribe("update", _guarded(lambda msg: _invoke("_on_db_content_updated"))).subscribe(
-            "progress", _guarded(lambda msg: _invoke("update_progress_value", QtCore.Q_ARG(int, int(msg.payload))))
-        ).subscribe("maximum", _guarded(lambda msg: _invoke("update_progress_maximum", QtCore.Q_ARG(int, int(msg.payload))))).subscribe(
-            "folderchanged", _guarded(lambda msg: _invoke("reload_folderlist"))
-        ).subscribe("show_toggle", _guarded(lambda msg: _invoke("toggle_show", QtCore.Q_ARG(bool, bool(msg.payload))))).subscribe("session.focus", _for_session("raise_window")).subscribe(
-            "session.close", _for_session("close_by_session_delete")
-        ).subscribe("session.restart", _for_session("close_by_restart")).subscribe("dev.log", _guarded(lambda msg: self._handle_remote_log(msg))).subscribe(
-            "db.created", _guarded(lambda msg: _invoke("_on_db_created", QtCore.Q_ARG(str, str(msg.payload))))
-        ).subscribe("db.deleted", _guarded(lambda msg: _invoke("_on_db_deleted", QtCore.Q_ARG(str, str(msg.payload)))))
-        self._node.start()
-        AppLogger.set_node(self._node, role="viewer")
+        b.start()
+        UI.register_instance("ViewerIpcBridge", b)
 
     @profiler.profile
     def setup_ui(self):
@@ -545,8 +532,10 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self._update_title()
         self.search_service.execute_if_auto()
 
-    @QtCore.Slot(bool)
-    def toggle_show(self, show):
+    @QtCore.Slot(str, bool)
+    def toggle_show(self, db, show):
+        if not self._is_my_db(db):
+            return
         if show:
             self.window_state.restore_or_activate()
         else:
@@ -577,10 +566,33 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self._sync_service_from_ui()
         self.search_service.execute(force=force)
 
-    @QtCore.Slot()
-    def _on_db_content_updated(self):
+    @QtCore.Slot(str)
+    def _on_db_content_updated(self, db: str):
+        if not self._is_my_db(db):
+            return
         self.search_row_widget.invalidate_key_cache()
         self.search(force=True)
+
+    @QtCore.Slot(str)
+    def _on_folder_changed_ipc(self, db: str):
+        if not self._is_my_db(db):
+            return
+        self.reload_folderlist()
+
+    @QtCore.Slot(str)
+    def _on_session_focused(self, session_id: str):
+        if session_id == self.session_id:
+            self.raise_window()
+
+    @QtCore.Slot(str)
+    def _on_session_closed(self, session_id: str):
+        if session_id == self.session_id:
+            self.close_by_session_delete()
+
+    @QtCore.Slot(str)
+    def _on_session_restarted(self, session_id: str):
+        if session_id == self.session_id:
+            self.close_by_restart()
 
     def _on_search_params_changed(self, changed):
         if "include_subfolders" in changed:
@@ -743,11 +755,11 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         except Exception as e:
             AppLogger.warning(f"on_close failed: {e}", exc=e)
         try:
-            if hasattr(self, "_node"):
+            if hasattr(self, "_bridge"):
                 AppLogger.info("on_close [STOPPING]")
-                self._node.stop()
+                self._bridge.stop()
         except Exception as e:
-            AppLogger.debug(f"on_close node.stop failed: {e}")
+            AppLogger.debug(f"on_close bridge.stop failed: {e}")
 
     def _register_panel_plugins(self):
         from ...plugin.panel.handler import panel_registry
@@ -769,20 +781,4 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         if panel is not None:
             panel.append_log(level, text, src=src, db=db)
 
-    def _handle_remote_log(self, msg):
-        from ...builtins.devlog import DevLogPanel
 
-        if DevLogPanel.instance() is None:
-            return
-        p = msg.payload
-        if not isinstance(p, dict):
-            return
-        QtCore.QMetaObject.invokeMethod(
-            self,
-            "_on_dev_log",
-            QtCore.Qt.QueuedConnection,
-            QtCore.Q_ARG(str, p.get("level", "info")),
-            QtCore.Q_ARG(str, p.get("text", "")),
-            QtCore.Q_ARG(str, msg.source),
-            QtCore.Q_ARG(str, msg.db or ""),
-        )

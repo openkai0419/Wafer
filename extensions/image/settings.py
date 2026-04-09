@@ -54,3 +54,37 @@ def write_filter_config(mode: str, keys: set[str]):
         cp.remove_option(_SECTION, "blacklist")
     with open(path, "w", encoding="utf-8") as f:
         cp.write(f)
+
+
+_SORT_MODE_KEY = "sort_mode"
+_SORT_ASC_KEY = "sort_ascending"
+
+SORT_NAME = 0
+SORT_COUNT = 1
+
+
+def read_sort_config() -> tuple[int, bool]:
+    path = _ini_path()
+    if not os.path.isfile(path):
+        return SORT_COUNT, False
+    cp = ConfigParser()
+    cp.read(path, encoding="utf-8")
+    raw_mode = cp.get(_SECTION, _SORT_MODE_KEY, fallback="count")
+    mode = SORT_NAME if raw_mode == "name" else SORT_COUNT
+    raw_asc = cp.get(_SECTION, _SORT_ASC_KEY, fallback="false")
+    ascending = raw_asc.lower() == "true"
+    return mode, ascending
+
+
+def write_sort_config(mode: int, ascending: bool):
+    path = _ini_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    cp = ConfigParser()
+    if os.path.isfile(path):
+        cp.read(path, encoding="utf-8")
+    if not cp.has_section(_SECTION):
+        cp.add_section(_SECTION)
+    cp.set(_SECTION, _SORT_MODE_KEY, "name" if mode == SORT_NAME else "count")
+    cp.set(_SECTION, _SORT_ASC_KEY, "true" if ascending else "false")
+    with open(path, "w", encoding="utf-8") as f:
+        cp.write(f)

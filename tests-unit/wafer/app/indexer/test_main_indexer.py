@@ -193,3 +193,96 @@ class TestPeriodicTaskConfig:
         tasks = {call.args[0].name: call.args[0] for call in proc.scheduler.add_periodic_task.call_args_list}
         task = tasks["idle_rescan"].create_task()
         assert task.priority == TaskPriority.RETRY
+
+
+class TestOnPurgeKeys:
+    @patch("wafer.app.indexer.main_indexer.Node")
+    def test_returns_true_without_writer(self, mock_node_cls):
+        mock_node_cls.return_value = MagicMock()
+        proc = IndexerProcess("test")
+        proc.writer = None
+        msg = MagicMock()
+        msg.payload = {"keys": ["exif.width"], "collector": "exif", "re_collect": True}
+        assert proc._on_purge_keys(msg) is True
+
+    @patch("wafer.app.indexer.main_indexer.Node")
+    def test_returns_true_when_no_keys_no_recollect(self, mock_node_cls):
+        mock_node_cls.return_value = MagicMock()
+        proc = IndexerProcess("test")
+        proc.writer = MagicMock()
+        proc.scheduler = MagicMock()
+        msg = MagicMock()
+        msg.payload = {"keys": [], "collector": "", "re_collect": False}
+        assert proc._on_purge_keys(msg) is True
+        proc.scheduler.submit.assert_not_called()
+
+    @patch("wafer.app.indexer.main_indexer.Node")
+    def test_submits_task_with_keys_and_recollect(self, mock_node_cls):
+        mock_node_cls.return_value = MagicMock()
+        proc = IndexerProcess("test")
+        proc.writer = MagicMock()
+        proc.scheduler = MagicMock()
+        msg = MagicMock()
+        msg.payload = {"keys": ["exif.width"], "collector": "exif", "re_collect": True}
+        proc._on_purge_keys(msg)
+        proc.scheduler.submit.assert_called_once()
+        task = proc.scheduler.submit.call_args[0][0]
+        assert task.name == "purge_keys"
+        assert task.priority == TaskPriority.USER_REQUEST
+        task.run()
+        proc.writer.purge_keys.assert_called_once_with(["exif.width"])
+        proc.writer.reset_collector_status.assert_called_once_with("exif")
+
+    @patch("wafer.app.indexer.main_indexer.Node")
+    def test_submits_task_with_keys_only(self, mock_node_cls):
+        mock_node_cls.return_value = MagicMock()
+        proc = IndexerProcess("test")
+        proc.writer = MagicMock()
+        proc.scheduler = MagicMock()
+        msg = MagicMock()
+        msg.payload = {"keys": ["exif.width"], "collector": "exif", "re_collect": False}
+        proc._on_purge_keys(msg)
+        task = proc.scheduler.submit.call_args[0][0]
+        task.run()
+        proc.writer.purge_keys.assert_called_once_with(["exif.width"])
+        proc.writer.reset_collector_status.assert_not_called()
+
+    @patch("wafer.app.indexer.main_indexer.Node")
+    def test_submits_task_with_recollect_only(self, mock_node_cls):
+        mock_node_cls.return_value = MagicMock()
+        proc = IndexerProcess("test")
+        proc.writer = MagicMock()
+        proc.scheduler = MagicMock()
+        msg = MagicMock()
+        msg.payload = {"keys": [], "collector": "exif", "re_collect": True}
+        proc._on_purge_keys(msg)
+        task = proc.scheduler.submit.call_args[0][0]
+        task.run()
+        proc.writer.purge_keys.assert_not_called()
+        proc.writer.reset_collector_status.assert_called_once_with("exif")
+
+    @patch("wafer.app.indexer.main_indexer.Node")
+    def test_sends_purge_complete(self, mock_node_cls):
+        node = MagicMock()
+        mock_node_cls.return_value = node
+        proc = IndexerProcess("test")
+        proc.writer = MagicMock()
+        proc.scheduler = MagicMock()
+        msg = MagicMock()
+        msg.payload = {"keys": ["exif.width"], "collector": "exif", "re_collect": False}
+        proc._on_purge_keys(msg)
+        task = proc.scheduler.submit.call_args[0][0]
+        task.on_complete()
+        node.send.assert_called_with(
+            "purge.complete",
+            {"collector": "exif", "keys": ["exif.width"], "db": "test"},
+            dst="viewer",
+        )
+
+    @patch("wafer.app.indexer.main_indexer.Node")
+    def test_invalid_payload_returns_true(self, mock_node_cls):
+        mock_node_cls.return_value = MagicMock()
+        proc = IndexerProcess("test")
+        msg = MagicMock()
+        msg.payload = "not_a_dict"
+        assert proc._on_purge_keys(msg) is True

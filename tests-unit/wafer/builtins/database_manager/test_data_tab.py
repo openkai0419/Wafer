@@ -53,7 +53,8 @@ def _make_tab(qtbot, sync_dispatcher, rows=None):
         rows = []
     with patch(f"{MODULE}.list_setting_db_names", return_value=["db1"]), \
          patch(f"{MODULE}._build_rows", return_value=rows), \
-         patch(f"{MODULE}.themed_icon", return_value=QtWidgets.QApplication.style().standardIcon(QtWidgets.QStyle.SP_BrowserReload)):
+         patch(f"{MODULE}.themed_icon", return_value=QtWidgets.QApplication.style().standardIcon(QtWidgets.QStyle.SP_BrowserReload)), \
+         patch("wafer.app.viewer.ipc_bridge.ViewerIpcBridge.instance", return_value=None):
         from wafer.builtins.database_manager.data_tab import DataTab
         tab = DataTab(sync_dispatcher)
         qtbot.addWidget(tab)
@@ -123,40 +124,23 @@ class TestOnLoaded:
         tab = _make_tab(qtbot, sync_dispatcher, [])
         assert tab._initial_loaded is True
 
-    def test_timer_not_started_when_hidden(self, qtbot, sync_dispatcher):
-        tab = _make_tab(qtbot, sync_dispatcher, [])
-        assert not tab._timer.isActive()
-
 
 class TestShowHideEvent:
-    def test_show_starts_timer_after_initial_load(self, qtbot, sync_dispatcher):
+    def test_show_with_dirty_flag_triggers_poll(self, qtbot, sync_dispatcher):
         tab = _make_tab(qtbot, sync_dispatcher, SAMPLE_ROWS)
-        assert tab._initial_loaded is True
-        tab.show()
-        assert tab._timer.isActive()
-
-    def test_show_does_not_start_timer_before_initial_load(self, qtbot, sync_dispatcher):
-        with patch(f"{MODULE}.list_setting_db_names", return_value=[]), \
-             patch(f"{MODULE}._build_rows", return_value=[]), \
-             patch(f"{MODULE}.themed_icon", return_value=QtWidgets.QApplication.style().standardIcon(QtWidgets.QStyle.SP_BrowserReload)):
-            from wafer.builtins.database_manager.data_tab import DataTab
-
-            class _NeverLoadDispatcher(_SyncDispatcher):
-                def post(self, fn, priority=5, cancel=None):
-                    pass
-
-            tab = DataTab(_NeverLoadDispatcher())
-            qtbot.addWidget(tab)
-            assert tab._initial_loaded is False
+        tab._dirty = True
+        new_rows = [("db1", "exif", 999, 999, "Collector", "Active", True)]
+        with patch(f"{MODULE}.list_setting_db_names", return_value=["db1"]), \
+             patch(f"{MODULE}._build_rows", return_value=new_rows):
             tab.show()
-            assert not tab._timer.isActive()
+        assert tab._dirty is False
 
-    def test_hide_stops_timer(self, qtbot, sync_dispatcher):
+    def test_show_without_dirty_does_not_poll(self, qtbot, sync_dispatcher):
         tab = _make_tab(qtbot, sync_dispatcher, SAMPLE_ROWS)
+        tab._dirty = False
+        assert tab._collector_table.table.rowCount() == 3
         tab.show()
-        assert tab._timer.isActive()
-        tab.hide()
-        assert not tab._timer.isActive()
+        assert tab._collector_table.table.rowCount() == 3
 
 
 class TestRefresh:
@@ -271,22 +255,22 @@ class TestRefreshCancelsPoll:
             tab.refresh()
         assert poll_token.is_cancelled()
 
-    def test_refresh_stops_timer(self, qtbot, sync_dispatcher):
+    def test_refresh_stops_debounce_timer(self, qtbot, sync_dispatcher):
         tab = _make_tab(qtbot, sync_dispatcher, SAMPLE_ROWS)
-        tab.show()
-        assert tab._timer.isActive()
+        tab._debounce_timer.start()
+        assert tab._debounce_timer.isActive()
         with patch(f"{MODULE}.list_setting_db_names", return_value=["db1"]), \
              patch(f"{MODULE}._build_rows", return_value=SAMPLE_ROWS):
             tab.refresh()
-        assert tab._timer.isActive()
+        assert not tab._debounce_timer.isActive()
 
-    def test_refresh_restarts_timer_after_load(self, qtbot, sync_dispatcher):
+    def test_refresh_reloads_data_after_debounce(self, qtbot, sync_dispatcher):
         tab = _make_tab(qtbot, sync_dispatcher, SAMPLE_ROWS)
-        tab.show()
+        new_rows = [("db1", "exif", 999, 999, "Collector", "Active", True)]
         with patch(f"{MODULE}.list_setting_db_names", return_value=["db1"]), \
-             patch(f"{MODULE}._build_rows", return_value=SAMPLE_ROWS):
+             patch(f"{MODULE}._build_rows", return_value=new_rows):
             tab.refresh()
-        assert tab._timer.isActive()
+        assert tab._collector_table.table.item(0, 2).text() == "999"
 
 
 class TestSplitRows:

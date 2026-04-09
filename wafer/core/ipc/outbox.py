@@ -39,6 +39,8 @@ def _delete_db_files(db_path: str):
             os.remove(db_path + suffix)
         except FileNotFoundError:
             pass
+        except PermissionError:
+            AppLogger.debug(f"outbox file busy, skipping: {db_path}{suffix}")
         except Exception as e:
             AppLogger.warning(f"outbox file delete failed: {db_path}{suffix}", exc=e)
 
@@ -146,7 +148,10 @@ def cleanup_empty_outbox_files():
         try:
             conn = _connect(db_path)
             try:
-                count = conn.execute("SELECT COUNT(*) FROM outbox").fetchone()[0]
+                tables = conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='outbox'"
+                ).fetchone()
+                count = conn.execute("SELECT COUNT(*) FROM outbox").fetchone()[0] if tables else 0
             finally:
                 conn.close()
         except Exception:

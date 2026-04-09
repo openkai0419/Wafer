@@ -274,20 +274,40 @@ class DataTab(QtWidgets.QWidget):
         self._purge_btn.clicked.connect(self._on_purge)
         layout.addWidget(self._purge_btn)
 
-        self._timer = QtCore.QTimer(self)
-        self._timer.setInterval(4000)
-        self._timer.timeout.connect(self._poll)
+        self._dirty = False
+        self._debounce_timer = QtCore.QTimer(self)
+        self._debounce_timer.setSingleShot(True)
+        self._debounce_timer.setInterval(500)
+        self._debounce_timer.timeout.connect(self._on_debounced_update)
+        self._connect_bridge()
 
         self._load_async(priority=5)
 
+    def _connect_bridge(self):
+        from ...app.viewer.ipc_bridge import ViewerIpcBridge
+
+        bridge = ViewerIpcBridge.instance()
+        if bridge:
+            bridge.db_content_updated.connect(self._on_db_updated)
+
+    def _on_db_updated(self, db: str):
+        if self.isVisible():
+            self._debounce_timer.start()
+        else:
+            self._dirty = True
+
+    def _on_debounced_update(self):
+        self._poll()
+
     def showEvent(self, event):
         super().showEvent(event)
-        if self._initial_loaded:
-            self._timer.start()
+        if self._dirty and self._initial_loaded:
+            self._dirty = False
+            self._poll()
 
     def hideEvent(self, event):
         super().hideEvent(event)
-        self._timer.stop()
+        self._debounce_timer.stop()
 
     def _set_loading(self, loading: bool):
         self._refresh_btn.setEnabled(not loading)
@@ -314,8 +334,6 @@ class DataTab(QtWidgets.QWidget):
         self._apply_rows(rows)
         if not self._initial_loaded:
             self._initial_loaded = True
-        if self.isVisible():
-            self._timer.start()
         if log:
             AppLogger.info(f"[DataTab] Refresh complete ({len(rows)} rows)")
 
@@ -351,7 +369,7 @@ class DataTab(QtWidgets.QWidget):
 
     def refresh(self):
         self._poll_cancel.cancel()
-        self._timer.stop()
+        self._debounce_timer.stop()
         self._load_async(log=True)
 
     def _poll(self):

@@ -15,10 +15,8 @@ from wafer.utils.notifier import Notifier
 from wafer.utils.paths import list_setting_db_names, data_db_path
 from wafer.core.db.db_utils import apply_read_pragmas
 from wafer.core.qt.dispatcher import Dispatcher, CancelSlot
-from .settings import MODE_BLACKLIST, MODE_WHITELIST
-
-_SORT_NAME = 0
-_SORT_COUNT = 1
+from .settings import MODE_BLACKLIST, MODE_WHITELIST, SORT_NAME, SORT_COUNT
+from .settings import read_sort_config, write_sort_config
 
 _CHECK_COL = 0
 _KEY_COL = 1
@@ -49,8 +47,8 @@ class ExifSettingsWidget(QtWidgets.QWidget):
         self._saved_keys = set(self._filter_keys)
 
         self._mode_combo = QtWidgets.QComboBox()
-        self._mode_combo.addItem("Blacklist (Block selected)", MODE_BLACKLIST)
-        self._mode_combo.addItem("Whitelist (Use selected only)", MODE_WHITELIST)
+        self._mode_combo.addItem("Blacklist (block selected)", MODE_BLACKLIST)
+        self._mode_combo.addItem("Whitelist (use selected only)", MODE_WHITELIST)
         self._mode_combo.setCurrentIndex(0 if self._filter_mode == MODE_BLACKLIST else 1)
         self._mode_combo.currentIndexChanged.connect(self._on_mode_changed)
 
@@ -69,11 +67,11 @@ class ExifSettingsWidget(QtWidgets.QWidget):
         bottom_layout.addWidget(self._mode_combo)
         bottom_layout.addStretch()
 
-        save_btn = QtWidgets.QPushButton("Save && Recollect")
+        save_btn = QtWidgets.QPushButton("Save && Recollect (All DBs)")
         save_btn.clicked.connect(self._on_save)
         bottom_layout.addWidget(save_btn)
 
-        reset_btn = QtWidgets.QPushButton("Reset")
+        reset_btn = QtWidgets.QPushButton("Cancel")
         reset_btn.clicked.connect(self._on_reset)
         bottom_layout.addWidget(reset_btn)
 
@@ -82,6 +80,36 @@ class ExifSettingsWidget(QtWidgets.QWidget):
         layout.setSpacing(dpix(6))
         layout.addWidget(tabs, 1)
         layout.addLayout(bottom_layout)
+
+        self._dirty = False
+        self._debounce_timer = QtCore.QTimer(self)
+        self._debounce_timer.setSingleShot(True)
+        self._debounce_timer.setInterval(500)
+        self._debounce_timer.timeout.connect(self._refresh_key_browser)
+        self._connect_bridge()
+
+    def _connect_bridge(self):
+        from wafer.app.viewer.ipc_bridge import ViewerIpcBridge
+
+        bridge = ViewerIpcBridge.instance()
+        if bridge:
+            bridge.db_content_updated.connect(self._on_db_updated)
+
+    def _on_db_updated(self, db: str):
+        if self.isVisible():
+            self._debounce_timer.start()
+        else:
+            self._dirty = True
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self._dirty:
+            self._dirty = False
+            self._refresh_key_browser()
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        self._debounce_timer.stop()
 
     @QtCore.Slot()
     def _refresh_key_browser(self):
@@ -125,10 +153,13 @@ class ExifSettingsWidget(QtWidgets.QWidget):
         self._saved_mode = self._filter_mode
         self._saved_keys = set(self._filter_keys)
 
-        if do_purge:
+        if do_purge or do_recollect:
             db_names = list_setting_db_names()
             if db_names:
-                self._send_purge_collector(db_names, "exif", re_collect=do_recollect)
+                purge_keys = self._compute_purge_keys() if do_purge else []
+                self._send_purge_keys(
+                    db_names, purge_keys, "exif", re_collect=do_recollect,
+                )
 
         if do_purge:
             action = "saved + purge & recollect" if do_recollect else "saved + purge"
@@ -137,31 +168,28 @@ class ExifSettingsWidget(QtWidgets.QWidget):
         Notifier.info(f"EXIF filter {action} ({self._filter_mode}, {len(self._filter_keys)} keys)")
 
     def _on_reset(self):
-        self._filter_mode = MODE_BLACKLIST
-        self._filter_keys = set()
-        from .settings import write_filter_config
-
-        write_filter_config(self._filter_mode, self._filter_keys)
-        BaseCollector.notify_to("exif")
+        self._filter_mode = self._saved_mode
+        self._filter_keys = set(self._saved_keys)
 
         self._mode_combo.blockSignals(True)
-        self._mode_combo.setCurrentIndex(0)
+        self._mode_combo.setCurrentIndex(0 if self._filter_mode == MODE_BLACKLIST else 1)
         self._mode_combo.blockSignals(False)
 
         self._key_browser.set_filter(self._filter_mode, self._filter_keys)
         self._sample_preview.set_filter(self._filter_mode, self._filter_keys)
 
-        self._saved_mode = self._filter_mode
-        self._saved_keys = set()
+        Notifier.info("EXIF filter settings reverted")
 
-        db_names = list_setting_db_names()
-        if db_names:
-            self._send_purge_collector(db_names, "exif", re_collect=True)
-
-        Notifier.info("EXIF filter reset to defaults")
+    def _compute_purge_keys(self) -> list[str]:
+        if self._filter_mode == MODE_BLACKLIST:
+            return [f"exif.{k}" for k in self._filter_keys]
+        all_keys = {k for k, _ in _query_all_exif_keys_merged()}
+        return [f"exif.{k}" for k in (all_keys - self._filter_keys)]
 
     @staticmethod
-    def _send_purge_collector(db_names: list[str], collector: str, *, re_collect: bool):
+    def _send_purge_keys(
+        db_names: list[str], keys: list[str], collector: str, *, re_collect: bool,
+    ):
         from wafer.core.commands.binding.instance_registry import InstanceRegistry
 
         node = InstanceRegistry.instance().resolve_node()
@@ -170,8 +198,8 @@ class ExifSettingsWidget(QtWidgets.QWidget):
             return
         for db in db_names:
             node.send_reliable(
-                "purge.collector",
-                {"collector": collector, "re_collect": re_collect},
+                "purge.keys",
+                {"keys": keys, "collector": collector, "re_collect": re_collect},
                 dst="indexer",
                 db=db,
             )
@@ -191,25 +219,13 @@ class _KeyBrowserTab(QtWidgets.QWidget):
         self._filter_keys = set(filter_keys)
         self._dispatcher = dispatcher
         self._cancel = cancel
-        self._sort_mode = _SORT_NAME
+        self._sort_mode, self._sort_ascending = read_sort_config()
 
-        self._db_combo = QtWidgets.QComboBox()
-        self._db_combo.currentTextChanged.connect(self._load_keys)
-        self._sort_combo = QtWidgets.QComboBox()
-        self._sort_combo.addItems(["Name", "Count"])
-        self._sort_combo.currentIndexChanged.connect(self._on_sort_changed)
-
-        check_all_btn = QtWidgets.QPushButton("Check All")
-        check_all_btn.clicked.connect(self._on_check_all)
+        self._check_all_btn = QtWidgets.QPushButton("Check All")
+        self._check_all_btn.clicked.connect(self._on_check_all)
 
         top_row = QtWidgets.QHBoxLayout()
-        top_row.addWidget(check_all_btn)
-        top_row.addSpacing(dpix(8))
-        top_row.addWidget(QtWidgets.QLabel("Database:"))
-        top_row.addWidget(self._db_combo, 1)
-        top_row.addSpacing(dpix(8))
-        top_row.addWidget(QtWidgets.QLabel("Sort:"))
-        top_row.addWidget(self._sort_combo)
+        top_row.addWidget(self._check_all_btn)
 
         self._search = QtWidgets.QLineEdit()
         self._search.setPlaceholderText("Filter keys...")
@@ -220,20 +236,26 @@ class _KeyBrowserTab(QtWidgets.QWidget):
         self._tree.setRootIsDecorated(True)
         self._tree.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         self._tree.itemClicked.connect(self._on_item_clicked)
-        self._tree.header().setStretchLastSection(False)
-        self._tree.header().setSectionResizeMode(_CHECK_COL, QtWidgets.QHeaderView.ResizeToContents)
-        self._tree.header().setSectionResizeMode(_KEY_COL, QtWidgets.QHeaderView.Stretch)
-        self._tree.header().setSectionResizeMode(_COUNT_COL, QtWidgets.QHeaderView.ResizeToContents)
+        h = self._tree.header()
+        h.setStretchLastSection(False)
+        h.setSectionResizeMode(_CHECK_COL, QtWidgets.QHeaderView.ResizeToContents)
+        h.setSectionResizeMode(_KEY_COL, QtWidgets.QHeaderView.Stretch)
+        h.setSectionResizeMode(_COUNT_COL, QtWidgets.QHeaderView.ResizeToContents)
+        h.setSectionsClickable(True)
+        h.sectionClicked.connect(self._on_header_sort)
+        self._pre_click_selection: list[QtWidgets.QTreeWidgetItem] = []
+        self._tree.viewport().installEventFilter(self)
 
         self._sample_header = QtWidgets.QLabel()
         self._sample_header.setWordWrap(True)
         self._sample_header.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
         self._sample_header.setVisible(False)
         self._sample_table = QtWidgets.QTableWidget()
-        self._sample_table.setColumnCount(2)
-        self._sample_table.setHorizontalHeaderLabels(["File", "Value"])
+        self._sample_table.setColumnCount(3)
+        self._sample_table.setHorizontalHeaderLabels(["DB", "File", "Value"])
         self._sample_table.horizontalHeader().setStretchLastSection(True)
-        self._sample_table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.Interactive)
+        self._sample_table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
+        self._sample_table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.Interactive)
         self._sample_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self._sample_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._sample_table.verticalHeader().setVisible(False)
@@ -272,60 +294,95 @@ class _KeyBrowserTab(QtWidgets.QWidget):
         layout.addWidget(self._splitter, 1)
 
         self._key_data: list[tuple[str, int]] = []
-        self._populate_dbs()
+        self._load_keys()
+
+    def eventFilter(self, obj, event):
+        if (
+            hasattr(self, "_tree")
+            and obj is self._tree.viewport()
+            and event.type() == QtCore.QEvent.MouseButtonPress
+        ):
+            self._pre_click_selection = list(self._tree.selectedItems())
+        return super().eventFilter(obj, event)
 
     def _check_header(self) -> str:
-        return "Use" if self._filter_mode == MODE_BLACKLIST else "Block"
+        return "Block" if self._filter_mode == MODE_BLACKLIST else "Use"
 
     def _on_check_all(self):
-        self._filter_keys.clear()
+        all_keys = self.all_known_keys()
+        if all_keys and self._filter_keys >= all_keys:
+            self._filter_keys.clear()
+        else:
+            self._filter_keys = set(all_keys)
+        self._update_check_all_label()
         self._build_tree()
 
-    def _on_sort_changed(self, index: int):
-        self._sort_mode = index
-        self._build_tree()
+    def _update_check_all_label(self):
+        all_keys = self.all_known_keys()
+        all_checked = all_keys and self._filter_keys >= all_keys
+        self._check_all_btn.setText("Uncheck All" if all_checked else "Check All")
 
-    def _populate_dbs(self):
-        self._db_combo.blockSignals(True)
-        self._db_combo.clear()
-        for name in list_setting_db_names():
-            self._db_combo.addItem(name)
-        self._db_combo.blockSignals(False)
-        if self._db_combo.count() > 0:
-            self._load_keys(self._db_combo.currentText())
+    def _on_header_sort(self, section: int):
+        if section == _CHECK_COL:
+            return
+        new_mode = SORT_NAME if section == _KEY_COL else SORT_COUNT
+        if new_mode == self._sort_mode:
+            self._sort_ascending = not self._sort_ascending
+        else:
+            self._sort_mode = new_mode
+            self._sort_ascending = new_mode == SORT_NAME
+        write_sort_config(self._sort_mode, self._sort_ascending)
+        self._build_tree()
 
     def refresh(self):
-        if self._db_combo.currentText():
-            self._load_keys(self._db_combo.currentText())
+        self._load_keys()
 
-    def _load_keys(self, db_name: str):
-        if not db_name:
-            return
+    def _load_keys(self):
         cancel = self._cancel.renew()
 
         def _bg():
             if cancel.is_cancelled():
                 return []
-            return _query_all_exif_keys(db_name)
+            return _query_all_exif_keys_merged()
 
         def _done(result):
             if cancel.is_cancelled():
                 return
             self._key_data = result
+            self._update_check_all_label()
             self._build_tree()
 
         self._dispatcher.post(lambda: self._dispatcher.invoke(partial(_done, _bg())))
 
     def _sorted_entries(self, entries: list[tuple]) -> list[tuple]:
-        if self._sort_mode == _SORT_COUNT:
-            return sorted(entries, key=lambda e: e[1], reverse=True)
-        return sorted(entries, key=lambda e: e[0].lower())
+        if self._sort_mode == SORT_COUNT:
+            return sorted(entries, key=lambda e: e[1], reverse=not self._sort_ascending)
+        return sorted(entries, key=lambda e: e[0].lower(), reverse=not self._sort_ascending)
 
     def _build_tree(self):
+        scrollbar = self._tree.verticalScrollBar()
+        scroll_pos = scrollbar.value() if scrollbar else 0
+        selected_keys = set()
+        for item in self._tree.selectedItems():
+            key = item.data(_KEY_COL, QtCore.Qt.UserRole)
+            if key:
+                selected_keys.add(key)
+            elif item.childCount() > 0:
+                selected_keys.add(item.text(_KEY_COL))
         self._tree.clear()
-        self._tree.setHeaderLabels([self._check_header(), "Key", "Count"])
+        key_label = "Key"
+        count_label = "Count"
+        if self._sort_mode == SORT_NAME:
+            key_label += " \u25b2" if self._sort_ascending else " \u25bc"
+        else:
+            count_label += " \u25b2" if self._sort_ascending else " \u25bc"
+        self._tree.setHeaderLabels([self._check_header(), key_label, count_label])
+        db_keys = {k for k, _ in self._key_data}
+        merged = list(self._key_data)
+        for fk in sorted(self._filter_keys - db_keys):
+            merged.append((fk, 0))
         groups: dict[str, list[tuple[str, int, str]]] = {}
-        for key, freq in self._key_data:
+        for key, freq in merged:
             parts = key.split("/", 1)
             group = parts[0] + "/" if len(parts) > 1 else ""
             leaf = parts[1] if len(parts) > 1 else parts[0]
@@ -337,8 +394,8 @@ class _KeyBrowserTab(QtWidgets.QWidget):
             self._tree.addTopLevelItem(item)
 
         group_order = sorted(groups.keys())
-        if self._sort_mode == _SORT_COUNT:
-            group_order = sorted(groups.keys(), key=lambda g: sum(f for _, f, _ in groups[g]), reverse=True)
+        if self._sort_mode == SORT_COUNT:
+            group_order = sorted(groups.keys(), key=lambda g: sum(f for _, f, _ in groups[g]), reverse=not self._sort_ascending)
 
         for group_name in group_order:
             entries = groups[group_name]
@@ -346,11 +403,11 @@ class _KeyBrowserTab(QtWidgets.QWidget):
             group_item.setFlags(group_item.flags() | QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsAutoTristate)
             total_freq = sum(f for _, f, _ in entries)
             group_item.setText(_COUNT_COL, f"{total_freq:,}")
-            all_out = all(fk not in self._filter_keys for _, _, fk in entries)
             all_in = all(fk in self._filter_keys for _, _, fk in entries)
-            if all_out:
+            all_out = all(fk not in self._filter_keys for _, _, fk in entries)
+            if all_in:
                 group_item.setCheckState(_CHECK_COL, QtCore.Qt.Checked)
-            elif all_in:
+            elif all_out:
                 group_item.setCheckState(_CHECK_COL, QtCore.Qt.Unchecked)
             else:
                 group_item.setCheckState(_CHECK_COL, QtCore.Qt.PartiallyChecked)
@@ -361,13 +418,34 @@ class _KeyBrowserTab(QtWidgets.QWidget):
 
         self._tree.expandAll()
         self._apply_filter(self._search.text())
+        self._restore_selection(selected_keys)
+        if scroll_pos:
+            self._tree.verticalScrollBar().setValue(scroll_pos)
+
+    def _restore_selection(self, selected_keys: set[str]):
+        if not selected_keys:
+            return
+        self._tree.blockSignals(True)
+        for i in range(self._tree.topLevelItemCount()):
+            top = self._tree.topLevelItem(i)
+            key = top.data(_KEY_COL, QtCore.Qt.UserRole)
+            if key and key in selected_keys:
+                top.setSelected(True)
+            elif not key and top.text(_KEY_COL) in selected_keys:
+                top.setSelected(True)
+            for j in range(top.childCount()):
+                child = top.child(j)
+                ckey = child.data(_KEY_COL, QtCore.Qt.UserRole)
+                if ckey and ckey in selected_keys:
+                    child.setSelected(True)
+        self._tree.blockSignals(False)
 
     def _make_leaf_item(self, label: str, freq: int, full_key: str) -> QtWidgets.QTreeWidgetItem:
         item = QtWidgets.QTreeWidgetItem(["", label, f"{freq:,}"])
         item.setData(_KEY_COL, QtCore.Qt.UserRole, full_key)
         item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
         in_keys = full_key in self._filter_keys
-        item.setCheckState(_CHECK_COL, QtCore.Qt.Unchecked if in_keys else QtCore.Qt.Checked)
+        item.setCheckState(_CHECK_COL, QtCore.Qt.Checked if in_keys else QtCore.Qt.Unchecked)
         return item
 
     def _apply_filter(self, text: str):
@@ -388,21 +466,38 @@ class _KeyBrowserTab(QtWidgets.QWidget):
                         any_visible = True
                 top.setHidden(not any_visible)
 
+    def _sync_selected_checks(self, clicked: QtWidgets.QTreeWidgetItem):
+        pre_selection = self._pre_click_selection
+        if clicked not in pre_selection or len(pre_selection) < 2:
+            return
+        new_state = clicked.checkState(_CHECK_COL)
+        self._tree.blockSignals(True)
+        for item in pre_selection:
+            if item is clicked:
+                continue
+            key = item.data(_KEY_COL, QtCore.Qt.UserRole)
+            if key:
+                item.setCheckState(_CHECK_COL, new_state)
+            elif item.childCount() > 0:
+                item.setCheckState(_CHECK_COL, new_state)
+        self._tree.blockSignals(False)
+
     def _on_item_clicked(self, item: QtWidgets.QTreeWidgetItem, column: int):
+        if column == _CHECK_COL:
+            self._sync_selected_checks(item)
+            self._filter_keys = self.collect_filter_keys()
+            self._update_check_all_label()
         full_key = item.data(_KEY_COL, QtCore.Qt.UserRole)
         if not full_key:
-            return
-        db_name = self._db_combo.currentText()
-        if not db_name:
             return
         cancel = self._cancel.renew()
 
         def _bg():
             if cancel.is_cancelled():
                 return []
-            return _query_sample_values(db_name, f"exif.{full_key}")
+            return _query_sample_values_all(f"exif.{full_key}")
 
-        def _done(samples: list[tuple[str, str]]):
+        def _done(samples: list[tuple[str, str, str]]):
             if cancel.is_cancelled():
                 return
             freq = 0
@@ -414,10 +509,11 @@ class _KeyBrowserTab(QtWidgets.QWidget):
                 f"<b>Key:</b> exif.{full_key} &nbsp; <b>Affected:</b> {freq:,} files"
             )
             self._sample_table.setRowCount(len(samples))
-            for row, (file_path, value) in enumerate(samples):
-                self._sample_table.setItem(row, 0, QtWidgets.QTableWidgetItem(os.path.basename(file_path)))
+            for row, (db, file_path, value) in enumerate(samples):
+                self._sample_table.setItem(row, 0, QtWidgets.QTableWidgetItem(db))
+                self._sample_table.setItem(row, 1, QtWidgets.QTableWidgetItem(os.path.basename(file_path)))
                 val_str = str(value) if value is not None else ""
-                self._sample_table.setItem(row, 1, QtWidgets.QTableWidgetItem(val_str[:300]))
+                self._sample_table.setItem(row, 2, QtWidgets.QTableWidgetItem(val_str[:300]))
             self._placeholder.setVisible(False)
             self._sample_header.setVisible(True)
             self._sample_table.setVisible(True)
@@ -429,29 +525,31 @@ class _KeyBrowserTab(QtWidgets.QWidget):
         for i in range(self._tree.topLevelItemCount()):
             top = self._tree.topLevelItem(i)
             if top.childCount() == 0:
-                if top.checkState(_CHECK_COL) == QtCore.Qt.Unchecked:
+                if top.checkState(_CHECK_COL) == QtCore.Qt.Checked:
                     key = top.data(_KEY_COL, QtCore.Qt.UserRole)
                     if key:
                         result.add(key)
             else:
                 for j in range(top.childCount()):
                     child = top.child(j)
-                    if child.checkState(_CHECK_COL) == QtCore.Qt.Unchecked:
+                    if child.checkState(_CHECK_COL) == QtCore.Qt.Checked:
                         key = child.data(_KEY_COL, QtCore.Qt.UserRole)
                         if key:
                             result.add(key)
         return result
 
     def all_known_keys(self) -> set[str]:
-        return {k for k, _ in self._key_data}
+        return {k for k, _ in self._key_data} | self._filter_keys
 
     def set_filter(self, mode: str, keys: set[str]):
         self._filter_mode = mode
         self._filter_keys = set(keys)
+        self._update_check_all_label()
         self._build_tree()
 
     def set_filter_keys(self, keys: set[str]):
         self._filter_keys = set(keys)
+        self._update_check_all_label()
         self._build_tree()
 
 
@@ -506,7 +604,7 @@ class _SamplePreviewTab(QtWidgets.QWidget):
         layout.addWidget(content_splitter, 1)
 
     def _check_header(self) -> str:
-        return "Use" if self._filter_mode == MODE_BLACKLIST else "Block"
+        return "Block" if self._filter_mode == MODE_BLACKLIST else "Use"
 
     def dragEnterEvent(self, event: QtGui.QDragEnterEvent):
         if event.mimeData().hasUrls():
@@ -586,7 +684,7 @@ class _SamplePreviewTab(QtWidgets.QWidget):
                 blocked = not in_keys
             check_item = QtWidgets.QTableWidgetItem()
             check_item.setFlags(check_item.flags() | QtCore.Qt.ItemIsUserCheckable)
-            check_item.setCheckState(QtCore.Qt.Unchecked if in_keys else QtCore.Qt.Checked)
+            check_item.setCheckState(QtCore.Qt.Checked if in_keys else QtCore.Qt.Unchecked)
             check_item.setData(QtCore.Qt.UserRole, key)
             key_item = QtWidgets.QTableWidgetItem(key)
             val_str = str(value) if value is not None else ""
@@ -613,9 +711,9 @@ class _SamplePreviewTab(QtWidgets.QWidget):
             return
         checked = check_item.checkState() == QtCore.Qt.Checked
         if checked:
-            self._filter_keys.discard(key)
-        else:
             self._filter_keys.add(key)
+        else:
+            self._filter_keys.discard(key)
         self._rebuild_table()
         self._update_drop_label()
         self.filter_keys_changed.emit(set(self._filter_keys))
@@ -641,7 +739,10 @@ class _SaveConfirmDialog(QtWidgets.QDialog):
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setSpacing(dpix(8))
-        layout.addWidget(QtWidgets.QLabel("Filter settings have been modified."))
+        layout.addWidget(QtWidgets.QLabel(
+            "Filter settings have been modified.\n"
+            "This will apply to all databases."
+        ))
 
         self._purge_cb = QtWidgets.QCheckBox("Purge existing EXIF data")
         self._purge_cb.setChecked(True)
@@ -668,43 +769,52 @@ class _SaveConfirmDialog(QtWidgets.QDialog):
         return self._purge_cb.isChecked() and self._recollect_cb.isChecked()
 
 
-def _query_all_exif_keys(db_name: str) -> list[tuple[str, int]]:
-    db_path = data_db_path(db_name)
-    uri = Path(db_path).resolve().as_uri() + "?mode=ro"
-    conn = None
-    try:
-        conn = sqlite3.connect(uri, timeout=1.0, uri=True, check_same_thread=False)
-        apply_read_pragmas(conn)
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            "SELECT SUBSTR(key, 6) AS short_key, COUNT(*) AS freq "
-            "FROM meta_info WHERE key LIKE 'exif.%' "
-            "GROUP BY short_key ORDER BY short_key"
-        ).fetchall()
-        return [(row["short_key"], row["freq"]) for row in rows]
-    except Exception as e:
-        AppLogger.warning(f"[ExifSettings] Failed to query keys for {db_name}: {e}", exc=e)
-        return []
-    finally:
-        if conn:
-            conn.close()
+def _query_all_exif_keys_merged() -> list[tuple[str, int]]:
+    merged: dict[str, int] = {}
+    for db_name in list_setting_db_names():
+        db_path = data_db_path(db_name)
+        uri = Path(db_path).resolve().as_uri() + "?mode=ro"
+        conn = None
+        try:
+            conn = sqlite3.connect(uri, timeout=1.0, uri=True, check_same_thread=False)
+            apply_read_pragmas(conn)
+            rows = conn.execute(
+                "SELECT SUBSTR(key, 6) AS short_key, COUNT(*) AS freq "
+                "FROM meta_info WHERE key LIKE 'exif.%' "
+                "GROUP BY short_key"
+            ).fetchall()
+            for row in rows:
+                merged[row[0]] = merged.get(row[0], 0) + row[1]
+        except Exception as e:
+            AppLogger.warning(f"[ExifSettings] Failed to query keys for {db_name}: {e}", exc=e)
+        finally:
+            if conn:
+                conn.close()
+    return sorted(merged.items(), key=lambda x: x[0])
 
 
-def _query_sample_values(db_name: str, key: str, limit: int = 10) -> list[tuple[str, str]]:
-    db_path = data_db_path(db_name)
-    uri = Path(db_path).resolve().as_uri() + "?mode=ro"
-    conn = None
-    try:
-        conn = sqlite3.connect(uri, timeout=1.0, uri=True, check_same_thread=False)
-        apply_read_pragmas(conn)
-        rows = conn.execute(
-            "SELECT path, value FROM meta_info WHERE key = ? LIMIT ?",
-            (key, limit),
-        ).fetchall()
-        return [(row[0], row[1]) for row in rows]
-    except Exception as e:
-        AppLogger.warning(f"[ExifSettings] Sample query failed for {key}: {e}", exc=e)
-        return []
-    finally:
-        if conn:
-            conn.close()
+def _query_sample_values_all(key: str, limit: int = 10) -> list[tuple[str, str, str]]:
+    results: list[tuple[str, str, str]] = []
+    remaining = limit
+    for db_name in list_setting_db_names():
+        if remaining <= 0:
+            break
+        db_path = data_db_path(db_name)
+        uri = Path(db_path).resolve().as_uri() + "?mode=ro"
+        conn = None
+        try:
+            conn = sqlite3.connect(uri, timeout=1.0, uri=True, check_same_thread=False)
+            apply_read_pragmas(conn)
+            rows = conn.execute(
+                "SELECT path, value FROM meta_info WHERE key = ? LIMIT ?",
+                (key, remaining),
+            ).fetchall()
+            for row in rows:
+                results.append((db_name, row[0], row[1]))
+            remaining -= len(rows)
+        except Exception as e:
+            AppLogger.warning(f"[ExifSettings] Sample query failed for {key} in {db_name}: {e}", exc=e)
+        finally:
+            if conn:
+                conn.close()
+    return results

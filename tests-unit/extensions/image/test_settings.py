@@ -6,8 +6,12 @@ import extensions.image.settings as _settings
 from extensions.image.settings import (
     read_filter_config,
     write_filter_config,
+    read_sort_config,
+    write_sort_config,
     MODE_BLACKLIST,
     MODE_WHITELIST,
+    SORT_NAME,
+    SORT_COUNT,
 )
 
 
@@ -107,3 +111,59 @@ class TestWriteFilterConfig:
         mode, keys = read_filter_config()
         assert mode == MODE_BLACKLIST
         assert keys == set()
+
+
+class TestReadSortConfig:
+    def test_returns_default_when_no_file(self):
+        mode, ascending = read_sort_config()
+        assert mode == SORT_COUNT
+        assert ascending is False
+
+    def test_reads_saved_name_ascending(self):
+        write_sort_config(SORT_NAME, True)
+        mode, ascending = read_sort_config()
+        assert mode == SORT_NAME
+        assert ascending is True
+
+    def test_reads_saved_count_descending(self):
+        write_sort_config(SORT_COUNT, False)
+        mode, ascending = read_sort_config()
+        assert mode == SORT_COUNT
+        assert ascending is False
+
+    def test_unknown_mode_defaults_to_count(self):
+        path = _settings._ini_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            f.write("[exif]\nsort_mode = unknown\n")
+        mode, ascending = read_sort_config()
+        assert mode == SORT_COUNT
+        assert ascending is False
+
+
+class TestWriteSortConfig:
+    def test_creates_ini_file(self):
+        write_sort_config(SORT_NAME, True)
+        path = _settings._ini_path()
+        assert os.path.isfile(path)
+        cp = ConfigParser()
+        cp.read(path, encoding="utf-8")
+        assert cp.get("exif", "sort_mode") == "name"
+        assert cp.get("exif", "sort_ascending") == "true"
+
+    def test_preserves_filter_config(self):
+        write_filter_config(MODE_WHITELIST, {"Make", "Model"})
+        write_sort_config(SORT_COUNT, False)
+        mode, keys = read_filter_config()
+        assert mode == MODE_WHITELIST
+        assert keys == {"Make", "Model"}
+
+    def test_roundtrip(self):
+        write_sort_config(SORT_NAME, False)
+        mode, ascending = read_sort_config()
+        assert mode == SORT_NAME
+        assert ascending is False
+        write_sort_config(SORT_COUNT, True)
+        mode, ascending = read_sort_config()
+        assert mode == SORT_COUNT
+        assert ascending is True

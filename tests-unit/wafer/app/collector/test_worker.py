@@ -185,3 +185,24 @@ def test_file_hash_compat_with_old_file_info():
     payload = worker._node.send_reliable.call_args[0][1]
     result = payload["results"][0]
     assert "file_hash" not in result
+
+
+def test_on_notify_calls_plugin():
+    from unittest.mock import MagicMock
+
+    name = next(iter(collector_resolver.names()))
+    worker = CollectorWorker("test_db", name)
+    worker._node = MagicMock()
+    worker._plugin.on_notify = MagicMock()
+
+    mock_msg = MagicMock()
+    result = worker._on_notify(mock_msg)
+
+    worker._plugin.on_notify.assert_called_once()
+    assert result is True
+
+
+def test_notify_subscribed():
+    name = next(iter(collector_resolver.names()))
+    worker = CollectorWorker("test_db", name)
+    assert "plugin.notify" in worker._node._handlers

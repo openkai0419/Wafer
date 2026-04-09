@@ -72,6 +72,12 @@ class DatabaseWriter:
         return result
 
     @profiler.profile
+    def purge_keys(self, keys: list[str]) -> tuple[int, int]:
+        result = self._db.purge_keys(keys)
+        self._db.try_checkpoint("PASSIVE")
+        return result
+
+    @profiler.profile
     def upsert_detacher_results(self, meta_info_entries, tag_entries, collector_status_entries, delete_entries=()):
         self._db.upsert_collection_results(
             [],

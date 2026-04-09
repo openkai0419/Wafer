@@ -34,6 +34,14 @@ class TestIndexerProcessInit:
         topics = [call.args[0] for call in node.subscribe.call_args_list]
         assert "db.delete" in topics
 
+    @patch("wafer.app.indexer.main_indexer.Node")
+    def test_subscribes_to_purge_keys(self, mock_node_cls):
+        node = MagicMock()
+        mock_node_cls.return_value = node
+        IndexerProcess("test")
+        topics = [call.args[0] for call in node.subscribe.call_args_list]
+        assert "purge.keys" in topics
+
 
 class TestOnDeleteRequested:
     @patch("wafer.app.indexer.main_indexer.Node")

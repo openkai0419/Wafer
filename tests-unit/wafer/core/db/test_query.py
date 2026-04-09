@@ -323,6 +323,41 @@ class TestFileSearchEngineListKeys:
         assert shared[0][1] == 1
 
 
+class TestFileSearchEngineSampleValues:
+    def test_sample_values(self, populated_db):
+        engine = FileSearchEngine(populated_db)
+        values = engine.sample_values("dpi")
+        assert len(values) > 0
+        assert all(isinstance(v, str) for v in values)
+
+    def test_sample_values_limit(self, populated_db):
+        engine = FileSearchEngine(populated_db)
+        values = engine.sample_values("dpi", limit=2)
+        assert len(values) <= 2
+
+    def test_sample_values_nonexistent_key(self, populated_db):
+        engine = FileSearchEngine(populated_db)
+        values = engine.sample_values("nonexistent_key_xyz")
+        assert values == []
+
+    def test_sample_values_distinct(self, db_path):
+        db = FileDB(db_path)
+        db.start()
+        db.initialize_database()
+        sources = [("s1", "h1", 100, 1.0), ("s2", "h2", 200, 2.0)]
+        images = [("c:/a.jpg", "s1", 1.0), ("c:/b.jpg", "s2", 1.0)]
+        metas = [
+            ("c:/a.jpg", "test.key", "same_value", None),
+            ("c:/b.jpg", "test.key", "same_value", None),
+        ]
+        db.upsert_batches(sources, images, metas, [])
+        db.conn.commit()
+        db.close()
+        engine = FileSearchEngine(db_path)
+        values = engine.sample_values("test.key")
+        assert values == ["same_value"]
+
+
 class TestFileSearchEngineCombined:
     def test_get_combined_union(self, populated_db):
         engine = FileSearchEngine(populated_db)

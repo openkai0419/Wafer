@@ -600,6 +600,26 @@ class FileDB:
         AppLogger.info(f"[DB] Purged collector={collector}: meta={meta_deleted}, tags={tags_deleted}, cs={cs_affected}")
         return meta_deleted, tags_deleted, cs_affected
 
+    def purge_keys(self, keys: list[str]) -> tuple[int, int]:
+        if not keys:
+            return 0, 0
+        meta_deleted = 0
+        tags_deleted = 0
+        with self._write_lock, self.conn:
+            cur = self.conn.cursor()
+            try:
+                for i in range(0, len(keys), 900):
+                    chunk = keys[i : i + 900]
+                    placeholders = ",".join(["?"] * len(chunk))
+                    cur.execute(f"DELETE FROM meta_info WHERE key IN ({placeholders})", chunk)
+                    meta_deleted += cur.execute("SELECT changes()").fetchone()[0]
+                    cur.execute(f"DELETE FROM tags WHERE key IN ({placeholders})", chunk)
+                    tags_deleted += cur.execute("SELECT changes()").fetchone()[0]
+            finally:
+                cur.close()
+        AppLogger.info(f"[DB] Purged keys ({len(keys)}): meta={meta_deleted}, tags={tags_deleted}")
+        return meta_deleted, tags_deleted
+
     def collector_data_counts(self) -> list[tuple[str, int]]:
         cur = self.get_reader_cursor()
         try:

@@ -333,6 +333,17 @@ class FileSearchEngine:
         return [(row["key"], row["freq"]) for row in rows]
 
     @profiler.profile
+    def sample_values(self, key: str, limit: int = 10) -> list[str]:
+        if not self._connect_if_needed():
+            return []
+        cur = self.conn.cursor()
+        rows = cur.execute(
+            "SELECT DISTINCT value FROM meta_info WHERE key = ? LIMIT ?",
+            (key, limit),
+        ).fetchall()
+        return [row["value"] for row in rows]
+
+    @profiler.profile
     def _explain_query_plan(self, sql, params):
         try:
             cur = self.conn.cursor()

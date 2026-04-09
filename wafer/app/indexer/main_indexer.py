@@ -41,6 +41,7 @@ class IndexerProcess:
         self.zmq.subscribe("rescan", lambda msg: self.rescan() or True)
         self.zmq.subscribe("db.delete", lambda msg: self._on_delete_requested() or True)
         self.zmq.subscribe("purge.collector", self._on_purge_collector)
+        self.zmq.subscribe("purge.keys", self._on_purge_keys)
         self.zmq.start()
         AppLogger.set_node(self.zmq, role="indexer")
 
@@ -252,6 +253,37 @@ class IndexerProcess:
                 on_complete=lambda: self.zmq.send(
                     "purge.complete",
                     {"collector": collector, "db": self.db_name},
+                    dst="viewer",
+                ),
+            )
+        )
+        return True
+
+    def _on_purge_keys(self, msg):
+        payload = msg.payload
+        if not isinstance(payload, dict):
+            AppLogger.warning(f"purge.keys: invalid payload: {type(payload)}")
+            return True
+        keys = payload.get("keys", [])
+        re_collect = payload.get("re_collect", False)
+        collector = payload.get("collector", "")
+        if not keys or not self.writer:
+            return True
+        AppLogger.info(f"[Indexer] Purge keys={len(keys)}, collector={collector}, re_collect={re_collect}")
+
+        def _run():
+            self.writer.purge_keys(keys)
+            if re_collect and collector:
+                self.writer.purge_collector(collector, re_collect=True)
+
+        self.scheduler.submit(
+            Task.create(
+                "purge_keys",
+                priority=TaskPriority.USER_REQUEST,
+                run=_run,
+                on_complete=lambda: self.zmq.send(
+                    "purge.complete",
+                    {"collector": collector, "keys": keys, "db": self.db_name},
                     dst="viewer",
                 ),
             )

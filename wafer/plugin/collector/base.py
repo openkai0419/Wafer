@@ -23,6 +23,17 @@ class BaseCollector(BasePlugin):
     @abstractmethod
     def process(self, path: str, file_info: tuple[float, int]) -> CollectorResult | list[CollectorResult]: ...
 
+    def on_notify(self) -> None:
+        pass
+
+    @staticmethod
+    def notify_to(name: str) -> None:
+        from ...core.commands.binding.instance_registry import InstanceRegistry
+
+        node = InstanceRegistry.instance().resolve_node()
+        if node:
+            node.send("plugin.notify", dst=f"collector-{name}")
+
 
 class BaseCollectorPlugin(BaseCollector):
     BATCH_SIZE: int = 1200

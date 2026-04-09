@@ -571,6 +571,44 @@ def test_purge_collector_data_no_match(tmp_path):
     db.close()
 
 
+def test_purge_keys_deletes_specific_keys(tmp_path):
+    db = _setup_db_with_collected(tmp_path)
+    meta_del, tags_del = db.purge_keys(["exif.width"])
+    assert meta_del == 2
+    assert tags_del == 0
+    remaining = db.read_conn.execute("SELECT key FROM meta_info WHERE key = 'exif.width'").fetchall()
+    assert remaining == []
+    kept = db.read_conn.execute("SELECT key FROM meta_info WHERE key = 'exif.height'").fetchall()
+    assert len(kept) == 1
+    db.close()
+
+
+def test_purge_keys_deletes_from_tags(tmp_path):
+    db = _setup_db_with_collected(tmp_path)
+    meta_del, tags_del = db.purge_keys(["exif.camera"])
+    assert meta_del == 0
+    assert tags_del == 2
+    remaining = db.read_conn.execute("SELECT key FROM tags WHERE key = 'exif.camera'").fetchall()
+    assert remaining == []
+    db.close()
+
+
+def test_purge_keys_empty_list(tmp_path):
+    db = _setup_db_with_collected(tmp_path)
+    meta_del, tags_del = db.purge_keys([])
+    assert meta_del == 0
+    assert tags_del == 0
+    db.close()
+
+
+def test_purge_keys_no_match(tmp_path):
+    db = _setup_db_with_collected(tmp_path)
+    meta_del, tags_del = db.purge_keys(["nonexistent.key"])
+    assert meta_del == 0
+    assert tags_del == 0
+    db.close()
+
+
 def test_collector_data_counts(tmp_path):
     db = _setup_db_with_collected(tmp_path, collectors=("exif", "ocr"))
     counts = dict(db.collector_data_counts())

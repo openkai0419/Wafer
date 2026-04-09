@@ -418,9 +418,9 @@ class FileViewerCommands(ActionKit.MenuBase):
     def commands(cls):
         return [
             ":Wafer",
-            ActionKit.Command(path="file.show_file", display="Show at FileViewer", func=show_file),
-            ActionKit.Command(path="file.select_path", display="Select at FolderTree", func=select_path),
-            ActionKit.Command(path="file.scroll_to_file", display="Scroll at GridView", func=scroll_to_file),
+            ActionKit.Command(path="file.select_path", display="Select FolderTree", func=select_path),
+            ActionKit.Command(path="file.scroll_to_file", display="Scroll to GridView", func=scroll_to_file),
+            ActionKit.Command(path="file.show_file", display="Show at ContentViewer", func=show_file),
             "-",
             ActionKit.Command(path="Batch Renamer/file.batch_rename_add", display="Add", func=batch_rename_add),
             ActionKit.Command(path="Batch Renamer/file.batch_rename", display="Set", func=batch_rename),

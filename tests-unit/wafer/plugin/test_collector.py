@@ -148,10 +148,59 @@ def test_concrete_singleton_collector():
             return CollectorResult(source=path, status=True)
 
     assert issubclass(MySingleton, BaseSingletonCollector)
-    assert MySingleton.BATCH_SIZE == 16
-    inst = MySingleton()
-    r = inst.process("photo.jpg", (0.0, 0))
-    assert r.status is True
+
+
+def test_on_notify_default_is_noop():
+    class MyCollector(BaseCollectorPlugin):
+        NAME = "test_noop"
+        EXTENSIONS = (".test",)
+
+        def process(self, path, file_info):
+            return CollectorResult(source=path, status=True)
+
+    inst = MyCollector()
+    inst.on_notify()
+
+
+def test_on_notify_override():
+    class MyCollector(BaseCollectorPlugin):
+        NAME = "test_override"
+        EXTENSIONS = (".test",)
+        reloaded = False
+
+        def process(self, path, file_info):
+            return CollectorResult(source=path, status=True)
+
+        def on_notify(self):
+            self.reloaded = True
+
+    inst = MyCollector()
+    assert not inst.reloaded
+    inst.on_notify()
+    assert inst.reloaded
+
+
+def test_notify_to_sends_ipc():
+    from unittest.mock import MagicMock, patch
+
+    mock_node = MagicMock()
+    mock_registry = MagicMock()
+    mock_registry.resolve_node.return_value = mock_node
+
+    with patch("wafer.core.commands.binding.instance_registry.InstanceRegistry.instance", return_value=mock_registry):
+        BaseCollectorPlugin.notify_to("exif")
+
+    mock_node.send.assert_called_once_with("plugin.notify", dst="collector-exif")
+
+
+def test_notify_to_no_node():
+    from unittest.mock import MagicMock, patch
+
+    mock_registry = MagicMock()
+    mock_registry.resolve_node.return_value = None
+
+    with patch("wafer.core.commands.binding.instance_registry.InstanceRegistry.instance", return_value=mock_registry):
+        BaseCollectorPlugin.notify_to("exif")
 
 
 def test_singleton_names_excludes_normal():

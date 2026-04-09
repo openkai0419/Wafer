@@ -23,6 +23,7 @@ class DetacherWorker:
         node_db = "" if self._singleton else db_name
         self._node = Node(f"detacher-{plugin_name}", db=node_db)
         self._node.subscribe("detach.batch", self._handle_batch)
+        self._node.subscribe("plugin.notify", self._on_notify)
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=_MAX_WORKERS)
         self._stop = threading.Event()
 
@@ -39,6 +40,11 @@ class DetacherWorker:
 
     def wait(self):
         self._stop.wait()
+
+    def _on_notify(self, msg) -> bool:
+        self._plugin.on_notify()
+        AppLogger.info(f"[Detacher] Notified: {self.plugin_name}")
+        return True
 
     def _handle_batch(self, msg) -> bool:
         payload = msg.payload

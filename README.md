@@ -8,7 +8,7 @@ Wafer is an extensible & flexible local file viewer with background metadata col
 Core feature based on PySide, Sqlite, and Zmq.
 Only supports on Windows currently. Other OS contributions are welcome.
 
-## Get Started
+## Installation
 
 ### in packaged
 

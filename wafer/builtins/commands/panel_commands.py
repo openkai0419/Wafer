@@ -36,8 +36,10 @@ class PanelCommands(ActionKit.MenuBase):
             ),
             "-",
         ]
+        items.append(":Core")
         for name in cls._CORE_PANELS:
             items.append(LayoutManager._command_id(name))
+        items.append("-")
 
         builtins = []
         plugins = []
@@ -50,9 +52,11 @@ class PanelCommands(ActionKit.MenuBase):
                 plugins.append(cmd_id)
 
         if builtins:
-            items.append("-")
+            items.append(":Builtin")
             items.extend(builtins)
-        if plugins:
             items.append("-")
+        if plugins:
+            items.append(":Plugin")
             items.extend(plugins)
+            items.append("-")
         return items

@@ -16,7 +16,7 @@ def _make_plan(index, src, dst, is_dir=False, conflict=True, action="copy", sugg
 
 
 def test_file_apply_all_overwrite(monkeypatch, tmp_path):
-    from wafer.core.qt import file_conflict_resolver as r
+    from wafer.ui import file_conflict_resolver as r
 
     calls = {"n": 0}
 
@@ -49,7 +49,7 @@ def test_file_apply_all_overwrite(monkeypatch, tmp_path):
 
 
 def test_file_apply_all_skip(monkeypatch, tmp_path):
-    from wafer.core.qt import file_conflict_resolver as r
+    from wafer.ui import file_conflict_resolver as r
 
     calls = {"n": 0}
 
@@ -84,7 +84,7 @@ def test_file_apply_all_skip(monkeypatch, tmp_path):
 def test_cancel_raises_paste_cancelled_error(monkeypatch, tmp_path):
     import pytest
     from wafer.core.platform.file_operations import PasteCancelledError
-    from wafer.core.qt import file_conflict_resolver as r
+    from wafer.ui import file_conflict_resolver as r
 
     def ask(*args, **kwargs):
         return ("キャンセル", False)
@@ -105,7 +105,7 @@ def test_cancel_raises_paste_cancelled_error(monkeypatch, tmp_path):
 
 
 def test_folder_conflict_merge_then_file_conflicts(monkeypatch, tmp_path):
-    from wafer.core.qt import file_conflict_resolver as r
+    from wafer.ui import file_conflict_resolver as r
 
     folder_calls = {"n": 0}
     file_calls = {"n": 0}
@@ -146,7 +146,7 @@ def test_folder_conflict_merge_then_file_conflicts(monkeypatch, tmp_path):
 
 
 def test_same_path_apply_all_skip(monkeypatch, tmp_path):
-    from wafer.core.qt import file_conflict_resolver as r
+    from wafer.ui import file_conflict_resolver as r
 
     calls = {"n": 0}
 
@@ -173,7 +173,7 @@ def test_same_path_apply_all_skip(monkeypatch, tmp_path):
 
 
 def test_same_path_apply_all_rename(monkeypatch, tmp_path):
-    from wafer.core.qt import file_conflict_resolver as r
+    from wafer.ui import file_conflict_resolver as r
 
     calls = {"n": 0}
 
@@ -202,7 +202,7 @@ def test_same_path_apply_all_rename(monkeypatch, tmp_path):
 def test_same_path_cancel_raises(monkeypatch, tmp_path):
     import pytest
     from wafer.core.platform.file_operations import PasteCancelledError
-    from wafer.core.qt import file_conflict_resolver as r
+    from wafer.ui import file_conflict_resolver as r
 
     def ask(*args, **kwargs):
         return ("キャンセル", False)
@@ -220,7 +220,7 @@ def test_same_path_cancel_raises(monkeypatch, tmp_path):
 
 
 def test_same_path_overwrite_mode_forces_skip(tmp_path):
-    from wafer.core.qt import file_conflict_resolver as r
+    from wafer.ui import file_conflict_resolver as r
 
     p = tmp_path / "a.txt"
     p.write_text("x", encoding="utf-8")
@@ -233,7 +233,7 @@ def test_same_path_overwrite_mode_forces_skip(tmp_path):
 
 
 def test_same_path_rename_mode_forces_rename(tmp_path):
-    from wafer.core.qt import file_conflict_resolver as r
+    from wafer.ui import file_conflict_resolver as r
 
     p = tmp_path / "a.txt"
     p.write_text("x", encoding="utf-8")
@@ -246,7 +246,7 @@ def test_same_path_rename_mode_forces_rename(tmp_path):
 
 
 def test_overwrite_mode_forces_decision(tmp_path):
-    from wafer.core.qt import file_conflict_resolver as r
+    from wafer.ui import file_conflict_resolver as r
 
     src = tmp_path / "a.txt"
     src.write_text("x", encoding="utf-8")
@@ -262,7 +262,7 @@ def test_overwrite_mode_forces_decision(tmp_path):
 
 
 def test_no_conflict_plans_get_overwrite_decision(tmp_path):
-    from wafer.core.qt import file_conflict_resolver as r
+    from wafer.ui import file_conflict_resolver as r
 
     src = tmp_path / "a.txt"
     src.write_text("x", encoding="utf-8")

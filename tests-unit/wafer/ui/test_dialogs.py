@@ -12,4 +12,4 @@ def test_file_conflict_dialog_parse_choice():
 
 
 def test_compile():
-    py_compile.compile("wafer/core/qt/dialog.py")
+    py_compile.compile("wafer/ui/dialogs.py")

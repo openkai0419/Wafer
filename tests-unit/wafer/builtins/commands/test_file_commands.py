@@ -37,7 +37,10 @@ class _Ctx:
 def test_delete_files_cancel_does_not_delete(tmp_path, monkeypatch):
     p = tmp_path / "a.txt"
     p.write_text("x", encoding="utf-8")
-    monkeypatch.setattr(file_commands.ThumbnailConfirmDialog, "ask", lambda *a, **k: "Cancel")
+    monkeypatch.setattr(
+        file_commands.ThumbnailConfirmDialog, "exec",
+        lambda self: setattr(self, "result_text", "Cancel"),
+    )
     file_commands.delete_files(_Ctx(path=str(p)))
     assert p.exists()
 
@@ -45,7 +48,10 @@ def test_delete_files_cancel_does_not_delete(tmp_path, monkeypatch):
 def test_delete_files_send2trash_failure_falls_back(tmp_path, monkeypatch):
     p = tmp_path / "a.txt"
     p.write_text("x", encoding="utf-8")
-    monkeypatch.setattr(file_commands.ThumbnailConfirmDialog, "ask", lambda *a, **k: "Delete")
+    monkeypatch.setattr(
+        file_commands.ThumbnailConfirmDialog, "exec",
+        lambda self: setattr(self, "result_text", "Delete"),
+    )
     dummy = SimpleNamespace(send2trash=lambda *_a, **_k: (_ for _ in ()).throw(OSError("boom")))
     monkeypatch.setitem(sys.modules, "send2trash", dummy)
     file_commands.delete_files(_Ctx(path=str(p)))
@@ -81,7 +87,7 @@ def test_make_new_folder_here_with_file_path(tmp_path):
 def test_rename_file_success(tmp_path, monkeypatch):
     f = tmp_path / "old.txt"
     f.write_text("hi", encoding="utf-8")
-    from wafer.core.qt import dialog as _dlg_mod
+    from wafer.ui import dialogs as _dlg_mod
 
     monkeypatch.setattr(
         _dlg_mod.InputDialog,
@@ -96,7 +102,7 @@ def test_rename_file_success(tmp_path, monkeypatch):
 def test_rename_file_cancel(tmp_path, monkeypatch):
     f = tmp_path / "old.txt"
     f.write_text("hi", encoding="utf-8")
-    from wafer.core.qt import dialog as _dlg_mod
+    from wafer.ui import dialogs as _dlg_mod
 
     monkeypatch.setattr(
         _dlg_mod.InputDialog,
@@ -110,7 +116,7 @@ def test_rename_file_cancel(tmp_path, monkeypatch):
 def test_rename_file_same_name(tmp_path, monkeypatch):
     f = tmp_path / "old.txt"
     f.write_text("hi", encoding="utf-8")
-    from wafer.core.qt import dialog as _dlg_mod
+    from wafer.ui import dialogs as _dlg_mod
 
     monkeypatch.setattr(
         _dlg_mod.InputDialog,
@@ -125,7 +131,7 @@ def test_rename_file_conflict(tmp_path, monkeypatch):
     f = tmp_path / "old.txt"
     f.write_text("hi", encoding="utf-8")
     (tmp_path / "taken.txt").write_text("x", encoding="utf-8")
-    from wafer.core.qt import dialog as _dlg_mod
+    from wafer.ui import dialogs as _dlg_mod
 
     monkeypatch.setattr(
         _dlg_mod.InputDialog,
@@ -146,7 +152,7 @@ def test_rename_file_conflict(tmp_path, monkeypatch):
 def test_rename_file_invalid_name(tmp_path, monkeypatch):
     f = tmp_path / "old.txt"
     f.write_text("hi", encoding="utf-8")
-    from wafer.core.qt import dialog as _dlg_mod
+    from wafer.ui import dialogs as _dlg_mod
 
     monkeypatch.setattr(
         _dlg_mod.InputDialog,

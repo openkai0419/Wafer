@@ -148,9 +148,7 @@ def cleanup_empty_outbox_files():
         try:
             conn = _connect(db_path)
             try:
-                tables = conn.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table' AND name='outbox'"
-                ).fetchone()
+                tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='outbox'").fetchone()
                 count = conn.execute("SELECT COUNT(*) FROM outbox").fetchone()[0] if tables else 0
             finally:
                 conn.close()

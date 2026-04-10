@@ -10,9 +10,9 @@ def test_compile():
 
 def test_task_priority_ordering():
     assert TaskPriority.SHUTDOWN < TaskPriority.REALTIME
-    assert TaskPriority.REALTIME < TaskPriority.SCAN
-    assert TaskPriority.SCAN < TaskPriority.USER_REQUEST
-    assert TaskPriority.USER_REQUEST < TaskPriority.COLLECTION
+    assert TaskPriority.REALTIME < TaskPriority.USER_REQUEST
+    assert TaskPriority.USER_REQUEST < TaskPriority.SCAN
+    assert TaskPriority.SCAN < TaskPriority.COLLECTION
     assert TaskPriority.COLLECTION < TaskPriority.DISPATCH
     assert TaskPriority.DISPATCH < TaskPriority.RETRY
     assert TaskPriority.RETRY < TaskPriority.MAINTENANCE

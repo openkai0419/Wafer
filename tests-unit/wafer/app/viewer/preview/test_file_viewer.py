@@ -379,11 +379,22 @@ def test_on_path_changed_dispatches_both_pipelines():
 
 def test_on_path_changed_widget_sets_target():
     viewer = _make_viewer_stub()
-    viewer._dispatcher = MagicMock()
+
+    class _SyncDispatcher:
+        def post(self, task, cancel=None, priority=None):
+            task()
+        def invoke(self, callback):
+            callback()
+
+    viewer._dispatcher = _SyncDispatcher()
     viewer._meta_cancel = MagicMock()
+    cancel_token = MagicMock()
+    cancel_token.is_cancelled.return_value = False
     viewer._content_cancel = MagicMock()
+    viewer._content_cancel.renew.return_value = cancel_token
     viewer.model = MagicMock()
     viewer.model.dbpath = None
+    viewer._on_resolve_widget = lambda cancel, path, plugin_cls: FileViewerController._on_resolve_widget(viewer, cancel, path, plugin_cls)
 
     initial_plugin = viewer.content_viewer._current_plugin_name
     with patch("wafer.app.viewer.preview.file_viewer.viewer_resolver") as mock_resolver:

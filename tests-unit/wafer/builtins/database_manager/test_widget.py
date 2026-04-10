@@ -158,8 +158,7 @@ class TestDatabaseManagerWidget:
         deleted[0] = True
         dlg._delete_database()
 
-        assert not db_file.exists()
-        assert not setting_file.exists()
+        qtbot.waitUntil(lambda: not db_file.exists() and not setting_file.exists(), timeout=3000)
 
 
 class TestDatabaseDetailWidget:

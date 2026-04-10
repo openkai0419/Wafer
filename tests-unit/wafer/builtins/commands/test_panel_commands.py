@@ -42,20 +42,21 @@ class TestPanelCommandsCategories:
             items = PanelCommands.commands()
 
         separators = [i for i, x in enumerate(items) if x == "-"]
-        assert len(separators) == 3
+        assert len(separators) == 4
 
         core_start = separators[0] + 1
-        builtin_sep = separators[1]
-        plugin_sep = separators[2]
+        core_sep = separators[1]
+        builtin_sep = separators[2]
+        plugin_sep = separators[3]
 
-        core_ids = items[core_start:builtin_sep]
+        core_ids = items[core_start:core_sep]
         for name in PanelCommands._CORE_PANELS:
             assert LayoutManager._command_id(name) in core_ids
 
-        builtin_ids = items[builtin_sep + 1:plugin_sep]
+        builtin_ids = items[core_sep + 1:builtin_sep]
         assert LayoutManager._command_id("Builtin Test") in builtin_ids
 
-        plugin_ids = items[plugin_sep + 1:]
+        plugin_ids = items[builtin_sep + 1:plugin_sep]
         assert LayoutManager._command_id("Plugin Test") in plugin_ids
         assert LayoutManager._command_id("Plugin Test 2") in plugin_ids
 
@@ -68,7 +69,7 @@ class TestPanelCommandsCategories:
             items = PanelCommands.commands()
 
         separators = [i for i, x in enumerate(items) if x == "-"]
-        assert len(separators) == 2
+        assert len(separators) == 3
 
     def test_commands_no_plugin_no_extra_separator(self):
         from wafer.plugin.registry import PluginRegistry
@@ -79,7 +80,7 @@ class TestPanelCommandsCategories:
             items = PanelCommands.commands()
 
         separators = [i for i, x in enumerate(items) if x == "-"]
-        assert len(separators) == 2
+        assert len(separators) == 3
 
     def test_commands_empty_registry_only_core(self):
         from wafer.plugin.registry import PluginRegistry
@@ -89,4 +90,4 @@ class TestPanelCommandsCategories:
             items = PanelCommands.commands()
 
         separators = [i for i, x in enumerate(items) if x == "-"]
-        assert len(separators) == 1
+        assert len(separators) == 2

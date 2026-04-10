@@ -96,9 +96,7 @@ class FileViewerCommands(ActionKit.MenuBase):
                 display="Slideshow",
                 func=toggle_slideshow,
                 checkable=True,
-                checked_resolver=lambda: getattr(
-                    InstanceRegistry.instance().get_one("FileViewerController"), "autoplay_active", False
-                ),
+                checked_resolver=lambda: getattr(InstanceRegistry.instance().get_one("FileViewerController"), "autoplay_active", False),
                 params=[
                     ActionKit.Param(name="interval", value=3.0, min_value=0.5, max_value=60.0),
                     ActionKit.Param(name="loop", value=True),

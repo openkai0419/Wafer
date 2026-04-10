@@ -126,23 +126,23 @@ class FileViewerController(QtCore.QObject):
         self._load_content(path)
 
     def _load_content(self, path):
-        plugin_cls = viewer_resolver.resolve(path)
-        if plugin_cls is not None and issubclass(plugin_cls, _WidgetViewerPlugin):
-            self._target_plugin = plugin_cls.NAME
-            self._pending_content = (path, None)
-            self._flush()
-            return
-
-        self._target_plugin = _DEFAULT_WIDGET_NAME
-        key = fullsize_key(path)
-        image = self.image_cache.get(key)
-        if image is not None and not image.isNull():
-            self._pending_content = (path, image)
-            self._flush()
-            return
         cancel = self._content_cancel.renew()
+        self._target_plugin = _DEFAULT_WIDGET_NAME
 
-        def task():
+        def resolve_task():
+            if cancel.is_cancelled():
+                return
+            plugin_cls = viewer_resolver.resolve(path)
+            if cancel.is_cancelled():
+                return
+            if plugin_cls is not None and issubclass(plugin_cls, _WidgetViewerPlugin):
+                self._dispatcher.invoke(lambda: self._on_resolve_widget(cancel, path, plugin_cls))
+                return
+            key = fullsize_key(path)
+            image = self.image_cache.get(key)
+            if image is not None and not image.isNull():
+                self._dispatcher.invoke(lambda: self._on_resolve_cached(cancel, path, image))
+                return
             image = viewer_resolver.load_content(path)
             if cancel.is_cancelled():
                 return
@@ -152,7 +152,21 @@ class FileViewerController(QtCore.QObject):
                 image = None
             self._dispatcher.invoke(lambda: self._on_content_ready(cancel, path, image))
 
-        self._dispatcher.post(task, cancel=cancel)
+        self._dispatcher.post(resolve_task, cancel=cancel)
+
+    def _on_resolve_widget(self, cancel, path, plugin_cls):
+        if cancel.is_cancelled() or path != self._loading_path:
+            return
+        self._target_plugin = plugin_cls.NAME
+        self._pending_content = (path, None)
+        self._flush()
+
+    def _on_resolve_cached(self, cancel, path, image):
+        if cancel.is_cancelled() or path != self._loading_path:
+            return
+        self._target_plugin = _DEFAULT_WIDGET_NAME
+        self._pending_content = (path, image)
+        self._flush()
 
     def _on_content_ready(self, cancel, path, image):
         if cancel.is_cancelled():

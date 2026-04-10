@@ -16,7 +16,7 @@ def app():
 
 
 def test_compile():
-    py_compile.compile("wafer/core/qt/splash.py")
+    py_compile.compile("wafer/ui/splash.py")
 
 
 def test_creates_borderless_window(app):

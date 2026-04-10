@@ -773,5 +773,3 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         panel = DevLogPanel.instance()
         if panel is not None:
             panel.append_log(level, text, src=src, db=db)
-
-

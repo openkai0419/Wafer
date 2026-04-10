@@ -26,6 +26,7 @@ _COUNT_COL = 2
 class ExifSettingsPanelPlugin(BasePanelPlugin):
     NAME = "exif_settings"
     DISPLAY_NAME = "EXIF Settings"
+    DEFAULT_ENABLED = True
     CLOSABLE = True
     PRIORITY = 50
 
@@ -34,7 +35,6 @@ class ExifSettingsPanelPlugin(BasePanelPlugin):
 
 
 class ExifSettingsWidget(QtWidgets.QWidget):
-
     def __init__(self, parent=None):
         super().__init__(parent)
         self._dispatcher = Dispatcher()
@@ -53,10 +53,8 @@ class ExifSettingsWidget(QtWidgets.QWidget):
         self._mode_combo.currentIndexChanged.connect(self._on_mode_changed)
 
         tabs = QtWidgets.QTabWidget()
-        self._key_browser = _KeyBrowserTab(
-            self._filter_mode, self._filter_keys, self._dispatcher, self._cancel
-        )
-        self._sample_preview = _SamplePreviewTab(self._filter_mode, self._filter_keys)
+        self._key_browser = _KeyBrowserTab(self._filter_mode, self._filter_keys, self._dispatcher, self._cancel)
+        self._sample_preview = _SamplePreviewTab(self._filter_mode, self._filter_keys, self._dispatcher, self._cancel)
         tabs.addTab(self._sample_preview, "Sample Preview")
         tabs.addTab(self._key_browser, "Key Browser")
 
@@ -158,7 +156,10 @@ class ExifSettingsWidget(QtWidgets.QWidget):
             if db_names:
                 purge_keys = self._compute_purge_keys() if do_purge else []
                 self._send_purge_keys(
-                    db_names, purge_keys, "exif", re_collect=do_recollect,
+                    db_names,
+                    purge_keys,
+                    "exif",
+                    re_collect=do_recollect,
                 )
 
         if do_purge:
@@ -188,7 +189,11 @@ class ExifSettingsWidget(QtWidgets.QWidget):
 
     @staticmethod
     def _send_purge_keys(
-        db_names: list[str], keys: list[str], collector: str, *, re_collect: bool,
+        db_names: list[str],
+        keys: list[str],
+        collector: str,
+        *,
+        re_collect: bool,
     ):
         from wafer.core.commands.binding.instance_registry import InstanceRegistry
 
@@ -297,11 +302,7 @@ class _KeyBrowserTab(QtWidgets.QWidget):
         self._load_keys()
 
     def eventFilter(self, obj, event):
-        if (
-            hasattr(self, "_tree")
-            and obj is self._tree.viewport()
-            and event.type() == QtCore.QEvent.MouseButtonPress
-        ):
+        if hasattr(self, "_tree") and obj is self._tree.viewport() and event.type() == QtCore.QEvent.MouseButtonPress:
             self._pre_click_selection = list(self._tree.selectedItems())
         return super().eventFilter(obj, event)
 
@@ -429,9 +430,7 @@ class _KeyBrowserTab(QtWidgets.QWidget):
         for i in range(self._tree.topLevelItemCount()):
             top = self._tree.topLevelItem(i)
             key = top.data(_KEY_COL, QtCore.Qt.UserRole)
-            if key and key in selected_keys:
-                top.setSelected(True)
-            elif not key and top.text(_KEY_COL) in selected_keys:
+            if (key and key in selected_keys) or (not key and top.text(_KEY_COL) in selected_keys):
                 top.setSelected(True)
             for j in range(top.childCount()):
                 child = top.child(j)
@@ -476,9 +475,7 @@ class _KeyBrowserTab(QtWidgets.QWidget):
             if item is clicked:
                 continue
             key = item.data(_KEY_COL, QtCore.Qt.UserRole)
-            if key:
-                item.setCheckState(_CHECK_COL, new_state)
-            elif item.childCount() > 0:
+            if key or item.childCount() > 0:
                 item.setCheckState(_CHECK_COL, new_state)
         self._tree.blockSignals(False)
 
@@ -505,9 +502,7 @@ class _KeyBrowserTab(QtWidgets.QWidget):
                 if k == full_key:
                     freq = f
                     break
-            self._sample_header.setText(
-                f"<b>Key:</b> exif.{full_key} &nbsp; <b>Affected:</b> {freq:,} files"
-            )
+            self._sample_header.setText(f"<b>Key:</b> exif.{full_key} &nbsp; <b>Affected:</b> {freq:,} files")
             self._sample_table.setRowCount(len(samples))
             for row, (db, file_path, value) in enumerate(samples):
                 self._sample_table.setItem(row, 0, QtWidgets.QTableWidgetItem(db))
@@ -556,20 +551,20 @@ class _KeyBrowserTab(QtWidgets.QWidget):
 class _SamplePreviewTab(QtWidgets.QWidget):
     filter_keys_changed = QtCore.Signal(set)
 
-    def __init__(self, filter_mode: str, filter_keys: set[str], parent=None):
+    def __init__(self, filter_mode: str, filter_keys: set[str], dispatcher: Dispatcher, cancel: CancelSlot, parent=None):
         super().__init__(parent)
         self._filter_mode = filter_mode
         self._filter_keys = set(filter_keys)
         self._meta: dict[str, str] = {}
         self._current_path: str | None = None
+        self._dispatcher = dispatcher
+        self._cancel = cancel
         self.setAcceptDrops(True)
 
         self._drop_label = QtWidgets.QLabel("Drop an image file here to preview EXIF tags")
         self._drop_label.setAlignment(QtCore.Qt.AlignCenter)
         self._drop_label.setMinimumHeight(dpix(60))
-        self._drop_label.setStyleSheet(
-            f"border: {dpix(2)}px dashed palette(mid); border-radius: {dpix(6)}px; padding: {dpix(12)}px;"
-        )
+        self._drop_label.setStyleSheet(f"border: {dpix(2)}px dashed palette(mid); border-radius: {dpix(6)}px; padding: {dpix(12)}px;")
 
         self._thumb = QtWidgets.QLabel()
         self._thumb.setAlignment(QtCore.Qt.AlignCenter)
@@ -623,33 +618,51 @@ class _SamplePreviewTab(QtWidgets.QWidget):
             self._preview_file(path)
 
     def _preview_file(self, path: str):
-        try:
-            from .exif_parser import ExifParser
+        cancel = self._cancel.renew()
 
-            result = ExifParser.parse_file(path)
-        except Exception as e:
-            AppLogger.warning(f"[ExifSettings] Preview failed: {e}", exc=e)
-            Notifier.warning(f"Preview failed: {e}")
+        def task():
+            if cancel.is_cancelled():
+                return
+            try:
+                from .exif_parser import ExifParser
+
+                result = ExifParser.parse_file(path)
+            except Exception as e:
+                AppLogger.warning(f"[ExifSettings] Preview failed: {e}", exc=e)
+                self._dispatcher.invoke(lambda: Notifier.warning(f"Preview failed: {e}"))
+                return
+            if cancel.is_cancelled():
+                return
+            meta = {}
+            if result.get("exif"):
+                meta.update(result["exif"])
+            if result.get("info_items"):
+                meta.update(result["info_items"])
+            pixmap = QtGui.QImage(path)
+            if not pixmap.isNull():
+                scaled = pixmap.scaled(
+                    dpix(240),
+                    dpix(240),
+                    QtCore.Qt.KeepAspectRatio,
+                    QtCore.Qt.SmoothTransformation,
+                )
+            else:
+                scaled = None
+            if cancel.is_cancelled():
+                return
+            self._dispatcher.invoke(lambda: self._apply_preview(path, meta, scaled, cancel))
+
+        self._dispatcher.post(task)
+
+    def _apply_preview(self, path: str, meta: dict, scaled_image, cancel):
+        if cancel.is_cancelled():
             return
-
         self._current_path = path
-        self._meta = {}
-        if result.get("exif"):
-            self._meta.update(result["exif"])
-        if result.get("info_items"):
-            self._meta.update(result["info_items"])
-
-        pixmap = QtGui.QPixmap(path)
-        if not pixmap.isNull():
-            scaled = pixmap.scaled(
-                dpix(240), dpix(240),
-                QtCore.Qt.KeepAspectRatio,
-                QtCore.Qt.SmoothTransformation,
-            )
-            self._thumb.setPixmap(scaled)
+        self._meta = meta
+        if scaled_image is not None:
+            self._thumb.setPixmap(QtGui.QPixmap.fromImage(scaled_image))
         else:
             self._thumb.clear()
-
         self._rebuild_table()
         self._content_splitter.setVisible(True)
         self._update_drop_label()
@@ -661,10 +674,7 @@ class _SamplePreviewTab(QtWidgets.QWidget):
 
     def _update_drop_label(self):
         if self._current_path:
-            self._drop_label.setText(
-                f"Previewing: {Path(self._current_path).name} "
-                f"({len(self._meta)} keys, {self._blocked_count()} blocked)"
-            )
+            self._drop_label.setText(f"Previewing: {Path(self._current_path).name} ({len(self._meta)} keys, {self._blocked_count()} blocked)")
 
     def _rebuild_table(self):
         from wafer.core.color.theme import ThemeManager
@@ -739,10 +749,7 @@ class _SaveConfirmDialog(QtWidgets.QDialog):
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setSpacing(dpix(8))
-        layout.addWidget(QtWidgets.QLabel(
-            "Filter settings have been modified.\n"
-            "This will apply to all databases."
-        ))
+        layout.addWidget(QtWidgets.QLabel("Filter settings have been modified.\nThis will apply to all databases."))
 
         self._purge_cb = QtWidgets.QCheckBox("Purge existing EXIF data")
         self._purge_cb.setChecked(True)
@@ -778,11 +785,7 @@ def _query_all_exif_keys_merged() -> list[tuple[str, int]]:
         try:
             conn = sqlite3.connect(uri, timeout=1.0, uri=True, check_same_thread=False)
             apply_read_pragmas(conn)
-            rows = conn.execute(
-                "SELECT SUBSTR(key, 6) AS short_key, COUNT(*) AS freq "
-                "FROM meta_info WHERE key LIKE 'exif.%' "
-                "GROUP BY short_key"
-            ).fetchall()
+            rows = conn.execute("SELECT SUBSTR(key, 6) AS short_key, COUNT(*) AS freq FROM meta_info WHERE key LIKE 'exif.%' GROUP BY short_key").fetchall()
             for row in rows:
                 merged[row[0]] = merged.get(row[0], 0) + row[1]
         except Exception as e:

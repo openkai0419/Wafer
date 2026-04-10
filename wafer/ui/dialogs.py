@@ -5,16 +5,25 @@ from PySide6.QtCore import QFileInfo
 from ..utils.formatting import dpix
 from ..utils.logs import AppLogger
 from ..core.platform.thumbnails import FileThumbnailer
+from ..core.qt.dispatcher import Dispatcher
+from ..core.qt.thread import SimpleThreadPool
 import os
 from ..core.lang.manager import TranslatorMixin
 
+_thumb_pool = SimpleThreadPool("dialog_thumb")
+_thumb_dispatcher = Dispatcher(_thumb_pool)
 
-def _pil_to_qpixmap(img) -> QPixmap:
+
+def _pil_to_qimage(img) -> QImage:
     if img.mode != "RGBA":
         img = img.convert("RGBA")
     data = img.tobytes("raw", "BGRA")
     qimage = QImage(data, img.width, img.height, img.width * 4, QImage.Format_ARGB32)
-    return QPixmap.fromImage(qimage.copy())
+    return qimage.copy()
+
+
+def _pil_to_qpixmap(img) -> QPixmap:
+    return QPixmap.fromImage(_pil_to_qimage(img))
 
 
 def _split_path(path: str, fallback_name: str = ""):
@@ -28,30 +37,31 @@ def _split_path(path: str, fallback_name: str = ""):
     return d, n
 
 
-def _limit_pixmap_size(pix: QPixmap, size: int) -> QPixmap:
-    w = int(getattr(pix, "width", lambda: 0)() or 0)
-    h = int(getattr(pix, "height", lambda: 0)() or 0)
-    if w <= 0 or h <= 0:
-        return pix
-    if w <= size and h <= size:
-        return pix
-    return pix.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-
-
-def _pixmap_for_source(path: str, data, size: int) -> QPixmap:
+def _image_for_source(path: str, data, size: int) -> QImage | None:
     if isinstance(data, (bytes, bytearray)) and data:
-        pix = QPixmap()
-        if pix.loadFromData(bytes(data)):
-            return _limit_pixmap_size(pix, size)
+        img = QImage()
+        if img.loadFromData(bytes(data)):
+            w, h = img.width(), img.height()
+            if w > size or h > size:
+                img = img.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            return img
     p = str(path or "")
     if p and os.path.exists(p):
         try:
             pil_img = FileThumbnailer().get_thumbnail(p, size=size)
             if pil_img is not None:
-                return _pil_to_qpixmap(pil_img)
+                return _pil_to_qimage(pil_img)
         except Exception as e:
             AppLogger.warning(f"Thumbnail generation failed: {p}", exc=e)
+    return None
+
+
+def _pixmap_for_source(path: str, data, size: int) -> QPixmap:
+    img = _image_for_source(path, data, size)
+    if img is not None and not img.isNull():
+        return QPixmap.fromImage(img)
     prov = QFileIconProvider()
+    p = str(path or "")
     ico = prov.icon(QFileInfo(p)) if p else prov.icon(QFileIconProvider.File)
     return ico.pixmap(size, size)
 
@@ -135,7 +145,8 @@ class ThumbnailConfirmDialog(BaseDialog):
             thumb = QLabel()
             thumb.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
             thumb.setScaledContents(False)
-            _set_thumb(thumb, p, None, size)
+            thumb.setFixedSize(size, size)
+            self._load_thumb_async(thumb, p, size)
             _, name = _split_path(p, "")
             label = QLabel(name)
             label.setAlignment(Qt.AlignHCenter)
@@ -147,6 +158,25 @@ class ThumbnailConfirmDialog(BaseDialog):
         self.content_layout.addStretch(1)
         self.content_layout.addLayout(row)
         self.content_layout.addStretch(1)
+
+    @staticmethod
+    def _load_thumb_async(label: QLabel, path: str, size: int):
+        def task():
+            img = _image_for_source(path, None, size)
+            _thumb_dispatcher.invoke(lambda: _apply_thumb(label, img, path, size))
+
+        def _apply_thumb(lbl: QLabel, img: QImage | None, p: str, sz: int):
+            if img is not None and not img.isNull():
+                pix = QPixmap.fromImage(img)
+            else:
+                prov = QFileIconProvider()
+                ico = prov.icon(QFileInfo(p)) if p else prov.icon(QFileIconProvider.File)
+                pix = ico.pixmap(sz, sz)
+            lbl.setPixmap(pix)
+            if not pix.isNull():
+                lbl.setFixedSize(pix.size())
+
+        _thumb_dispatcher.post(task)
 
     @staticmethod
     def ask(message, *, paths=None, title="Confirm", buttons=("OK", "Cancel"), parent=None):

@@ -17,7 +17,7 @@ class TestExtensionCardMdFiles:
     def test_no_md_files(self, qtbot, tmp_path, dispatcher):
         folder = tmp_path / "ext_no_md"
         folder.mkdir()
-        card = _ExtensionCard("ext_no_md", str(folder), dispatcher)
+        card = _ExtensionCard("ext_no_md", str(folder), dispatcher, md_files=[])
         qtbot.addWidget(card)
         assert card._md_entries == []
 
@@ -26,7 +26,7 @@ class TestExtensionCardMdFiles:
         folder.mkdir()
         (folder / "README.md").write_text("# Hello", encoding="utf-8")
         (folder / "CHANGELOG.md").write_text("# Changes", encoding="utf-8")
-        card = _ExtensionCard("ext_with_md", str(folder), dispatcher)
+        card = _ExtensionCard("ext_with_md", str(folder), dispatcher, md_files=["CHANGELOG.md", "README.md"])
         qtbot.addWidget(card)
         assert len(card._md_entries) == 2
         paths = [entry[2] for entry in card._md_entries]
@@ -39,7 +39,7 @@ class TestExtensionCardMdFiles:
         (folder / ".hidden.md").write_text("# Hidden", encoding="utf-8")
         (folder / "_private.md").write_text("# Private", encoding="utf-8")
         (folder / "README.md").write_text("# Visible", encoding="utf-8")
-        card = _ExtensionCard("ext_hidden", str(folder), dispatcher)
+        card = _ExtensionCard("ext_hidden", str(folder), dispatcher, md_files=["README.md"])
         qtbot.addWidget(card)
         assert len(card._md_entries) == 1
 
@@ -47,7 +47,7 @@ class TestExtensionCardMdFiles:
         folder = tmp_path / "ext_toggle"
         folder.mkdir()
         (folder / "README.md").write_text("# Test", encoding="utf-8")
-        card = _ExtensionCard("ext_toggle", str(folder), dispatcher)
+        card = _ExtensionCard("ext_toggle", str(folder), dispatcher, md_files=["README.md"])
         qtbot.addWidget(card)
         card.show()
 
@@ -66,7 +66,7 @@ class TestExtensionCardMdFiles:
         folder = tmp_path / "ext_async"
         folder.mkdir()
         (folder / "README.md").write_text("# Async Test\n\nContent", encoding="utf-8")
-        card = _ExtensionCard("ext_async", str(folder), dispatcher)
+        card = _ExtensionCard("ext_async", str(folder), dispatcher, md_files=["README.md"])
         qtbot.addWidget(card)
         card.show()
 
@@ -85,7 +85,7 @@ class TestExtensionCardMdFiles:
         folder = tmp_path / "ext_once"
         folder.mkdir()
         (folder / "README.md").write_text("# First", encoding="utf-8")
-        card = _ExtensionCard("ext_once", str(folder), dispatcher)
+        card = _ExtensionCard("ext_once", str(folder), dispatcher, md_files=["README.md"])
         qtbot.addWidget(card)
         card.show()
 

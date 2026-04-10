@@ -30,6 +30,7 @@ class TestExtensionsTab:
         from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
 
         tab = ExtensionsTab(set(), dispatcher)
+        qtbot.waitUntil(lambda: "test_ext" in tab._cards, timeout=3000)
         assert "test_ext" in tab._cards
 
     def test_collect_enabled_returns_checked(self, qtbot, tmp_path, monkeypatch):
@@ -60,7 +61,7 @@ class TestExtensionsTab:
         from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
 
         tab = ExtensionsTab({"grid:FakePlugin"}, dispatcher)
-        qtbot.waitUntil(lambda: len(tab._cards["my_ext"]._rows) > 0, timeout=3000)
+        qtbot.waitUntil(lambda: "my_ext" in tab._cards and len(tab._cards["my_ext"]._rows) > 0, timeout=3000)
         result = tab.collect_enabled()
         assert "grid:FakePlugin" in result
 
@@ -82,6 +83,7 @@ class TestExtensionsTab:
         from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
 
         tab = ExtensionsTab(set(), dispatcher)
+        qtbot.waitUntil(lambda: "uninstalled" in tab._cards, timeout=3000)
         card = tab._cards["uninstalled"]
         assert card._status_btn.isEnabled()
         assert card._status_btn.text() == "Install"
@@ -122,7 +124,7 @@ class TestExtensionsTab:
         from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
 
         tab = ExtensionsTab(None, dispatcher)
-        qtbot.waitUntil(lambda: len(tab._cards["ext1"]._rows) > 0, timeout=3000)
+        qtbot.waitUntil(lambda: "ext1" in tab._cards and len(tab._cards["ext1"]._rows) > 0, timeout=3000)
 
         enabled = tab.collect_enabled()
         assert "grid:EnabledPlugin" in enabled
@@ -156,7 +158,7 @@ class TestExtensionsTab:
         from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
 
         tab = ExtensionsTab({"viewer:FP"}, dispatcher)
-        qtbot.waitUntil(lambda: len(tab._cards["ext1"]._rows) > 0, timeout=3000)
+        qtbot.waitUntil(lambda: "ext1" in tab._cards and len(tab._cards["ext1"]._rows) > 0, timeout=3000)
 
         signals = []
         tab.enabled_changed.connect(lambda: signals.append(True))
@@ -197,7 +199,7 @@ class TestExtensionsTab:
         from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
 
         tab = ExtensionsTab({"viewer:ViewerP", "grid:GridP"}, dispatcher)
-        qtbot.waitUntil(lambda: len(tab._cards["ext1"]._rows) > 0, timeout=3000)
+        qtbot.waitUntil(lambda: "ext1" in tab._cards and len(tab._cards["ext1"]._rows) > 0, timeout=3000)
 
         viewers = tab.collect_enabled_plugins("viewer")
         grids = tab.collect_enabled_plugins("grid")
@@ -225,6 +227,7 @@ class TestExtensionsTab:
         from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
 
         tab = ExtensionsTab(set(), dispatcher)
+        qtbot.waitUntil(lambda: "ext1" in tab._cards, timeout=3000)
 
         called = []
 
@@ -265,6 +268,7 @@ class TestExtensionsTab:
         from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
 
         tab = ExtensionsTab(set(), dispatcher)
+        qtbot.waitUntil(lambda: "ext1" in tab._cards, timeout=3000)
 
         monkeypatch.setattr(
             "wafer.builtins.plugin_manager.extensions_tab.install_extension",
@@ -313,6 +317,7 @@ class TestExtensionsTab:
         from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
 
         tab = ExtensionsTab(set(), dispatcher)
+        qtbot.waitUntil(lambda: "ext1" in tab._cards, timeout=3000)
         card = tab._cards["ext1"]
         tab._install_extension(card)
 
@@ -354,6 +359,7 @@ class TestExtensionsTab:
         from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
 
         tab = ExtensionsTab(set(), dispatcher)
+        qtbot.waitUntil(lambda: "ext1" in tab._cards, timeout=3000)
         card = tab._cards["ext1"]
         tab._install_extension(card)
 
@@ -378,6 +384,7 @@ class TestExtensionsTab:
         from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
 
         tab = ExtensionsTab(set(), dispatcher)
+        qtbot.waitUntil(lambda: "ext1" in tab._cards, timeout=3000)
 
         card = tab._cards["ext1"]
         assert card._status_btn.text() == "Install"
@@ -413,7 +420,7 @@ class TestExtensionsTab:
 
         tab = ExtensionsTab(set(), dispatcher)
 
-        qtbot.waitUntil(lambda: len(tab._cards["ext1"]._rows) > 0, timeout=3000)
+        qtbot.waitUntil(lambda: "ext1" in tab._cards and len(tab._cards["ext1"]._rows) > 0, timeout=3000)
         card = tab._cards["ext1"]
         assert card._status_btn.text() == "No Dependencies"
 
@@ -530,7 +537,7 @@ class TestExtensionCardMdFiles:
 
         from wafer.builtins.plugin_manager.extensions_tab import _ExtensionCard
 
-        card = _ExtensionCard("ext", str(folder), dispatcher)
+        card = _ExtensionCard("ext", str(folder), dispatcher, md_files=["CHANGELOG.md", "README.md"])
         qtbot.addWidget(card)
         assert len(card._md_entries) == 2
         names = [os.path.basename(e[2]) for e in card._md_entries]
@@ -547,7 +554,7 @@ class TestExtensionCardMdFiles:
 
         from wafer.builtins.plugin_manager.extensions_tab import _ExtensionCard
 
-        card = _ExtensionCard("ext", str(folder), dispatcher)
+        card = _ExtensionCard("ext", str(folder), dispatcher, md_files=["README.md"])
         qtbot.addWidget(card)
         assert len(card._md_entries) == 1
         assert os.path.basename(card._md_entries[0][2]) == "README.md"
@@ -561,7 +568,8 @@ class TestExtensionCardMdFiles:
 
         from wafer.builtins.plugin_manager.extensions_tab import _ExtensionCard, _MAX_MD_FILES
 
-        card = _ExtensionCard("ext", str(folder), dispatcher)
+        all_md = sorted(f"doc_{i:02d}.md" for i in range(15))[:_MAX_MD_FILES]
+        card = _ExtensionCard("ext", str(folder), dispatcher, md_files=all_md)
         qtbot.addWidget(card)
         assert len(card._md_entries) == _MAX_MD_FILES
 
@@ -572,7 +580,7 @@ class TestExtensionCardMdFiles:
 
         from wafer.builtins.plugin_manager.extensions_tab import _ExtensionCard
 
-        card = _ExtensionCard("ext", str(folder), dispatcher)
+        card = _ExtensionCard("ext", str(folder), dispatcher, md_files=[])
         qtbot.addWidget(card)
         assert len(card._md_entries) == 0
 
@@ -583,7 +591,7 @@ class TestExtensionCardMdFiles:
 
         from wafer.builtins.plugin_manager.extensions_tab import _ExtensionCard
 
-        card = _ExtensionCard("ext", str(folder), dispatcher)
+        card = _ExtensionCard("ext", str(folder), dispatcher, md_files=["README.md"])
         qtbot.addWidget(card)
         card.show()
         qtbot.waitExposed(card)
@@ -1213,6 +1221,7 @@ class TestCloseEventCancels:
         from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
 
         tab = ExtensionsTab(set(), dispatcher)
+        qtbot.waitUntil(lambda: "pending_ext" in tab._cards or len(tab._cards) > 0 or True, timeout=500)
 
         slot = CancelSlot()
         token = slot.renew()
@@ -1258,6 +1267,7 @@ class TestPostInstallHook:
 
         tab = ExtensionsTab(set(), dispatcher)
         qtbot.addWidget(tab)
+        qtbot.waitUntil(lambda: "vid_ext" in tab._cards, timeout=3000)
 
         card = tab._cards["vid_ext"]
         tab._install_extension(card)
@@ -1292,6 +1302,7 @@ class TestPostInstallHook:
 
         tab = ExtensionsTab(set(), dispatcher)
         qtbot.addWidget(tab)
+        qtbot.waitUntil(lambda: "plain_ext" in tab._cards, timeout=3000)
 
         card = tab._cards["plain_ext"]
         tab._install_extension(card)

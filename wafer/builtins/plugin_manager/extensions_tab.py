@@ -82,6 +82,7 @@ class _PluginRow(QtWidgets.QWidget):
             btn.setCursor(QtCore.Qt.PointingHandCursor)
             btn.clicked.connect(lambda _=None, n=display: self._toggle_panel(n))
             from ...plugin.panel.handler import panel_registry
+
             registered = panel_registry.get(plugin_cls.NAME) is not None
             btn.setEnabled(registered)
             if not registered:
@@ -92,12 +93,13 @@ class _PluginRow(QtWidgets.QWidget):
     @staticmethod
     def _toggle_panel(panel_name: str):
         from ...core.commands.bridge import Command
+
         slug = panel_name.lower().replace(" ", "_")
         Command.run(f"panel.toggle_{slug}")
 
 
 class _ExtensionCard(QtWidgets.QFrame):
-    def __init__(self, folder_name: str, folder_path: str, dispatcher: Dispatcher, parent=None):
+    def __init__(self, folder_name: str, folder_path: str, dispatcher: Dispatcher, md_files: list[str], parent=None):
         super().__init__(parent)
         self.folder_name = folder_name
         self.folder_path = folder_path
@@ -137,16 +139,10 @@ class _ExtensionCard(QtWidgets.QFrame):
         layout.addLayout(self._plugin_area)
 
         self._md_entries: list[tuple[QtWidgets.QLabel, MarkdownBrowser, str, bool]] = []
-        md_files = sorted(
-            f for f in os.listdir(folder_path)
-            if f.lower().endswith(".md") and not f.startswith((".", "_"))
-        )[:_MAX_MD_FILES]
         if md_files:
             accent = ThemeManager.instance().palette.accent
             for md_name in md_files:
                 md_path = os.path.join(folder_path, md_name)
-                if not os.path.isfile(md_path):
-                    continue
                 toggle = QtWidgets.QLabel(f"\u25b6 {md_name}")
                 toggle.setCursor(QtCore.Qt.PointingHandCursor)
                 toggle.setStyleSheet(f"color: {accent}; font-size: {dpix(11)}px; padding: {dpix(2)}px 0;")
@@ -176,9 +172,8 @@ class _ExtensionCard(QtWidgets.QFrame):
         self._status_btn.style().polish(self._status_btn)
         self._status_btn.setCursor(QtCore.Qt.PointingHandCursor if enabled else QtCore.Qt.ArrowCursor)
 
-    def set_installed(self):
-        has_req = os.path.isfile(os.path.join(self.folder_path, "requirements.txt"))
-        if has_req:
+    def set_installed(self, has_requirements: bool = True):
+        if has_requirements:
             self._apply_status("Installed", "installed", False)
         else:
             self._apply_status("No Dependencies", "no_deps", False)
@@ -248,9 +243,7 @@ class _ExtensionCard(QtWidgets.QFrame):
                     text = f.read()
                 body_html = render_to_html(text)
                 base_url = QtCore.QUrl.fromLocalFile(str(p.parent) + "/")
-                self._dispatcher.invoke(
-                    lambda: browser.apply_loaded(text, body_html, base_url, p.parent)
-                )
+                self._dispatcher.invoke(lambda: browser.apply_loaded(text, body_html, base_url, p.parent))
             except Exception as e:
                 AppLogger.warning(f"Failed to load markdown async: {md_path}", exc=e)
 
@@ -297,23 +290,43 @@ class ExtensionsTab(QtWidgets.QWidget):
 
     def _scan_extensions(self):
         plugin_dir = get_plugin_dir()
-        if not os.path.isdir(plugin_dir):
-            return
-        for name in sorted(os.listdir(plugin_dir)):
-            folder = os.path.join(plugin_dir, name)
-            if not os.path.isdir(folder) or name.startswith(".") or name == "__pycache__":
-                continue
-            card = _ExtensionCard(name, folder, self._dispatcher)
-            card.set_install_callback(self._install_extension)
-            card.set_checkbox_changed_callback(self._on_plugin_toggled)
-            self._cards[name] = card
-            self._cards_layout.insertWidget(self._cards_layout.count() - 1, card)
 
-            if needs_setup(folder):
-                card.set_needs_install()
-            else:
-                card.set_installed()
-                self._discover_async(card)
+        def scan_task():
+            if not os.path.isdir(plugin_dir):
+                return []
+            results = []
+            for name in sorted(os.listdir(plugin_dir)):
+                folder = os.path.join(plugin_dir, name)
+                if not os.path.isdir(folder) or name.startswith(".") or name == "__pycache__":
+                    continue
+                md_files = sorted(
+                    f for f in os.listdir(folder)
+                    if f.lower().endswith(".md") and not f.startswith((".", "_")) and os.path.isfile(os.path.join(folder, f))
+                )[:_MAX_MD_FILES]
+                need_install = needs_setup(folder)
+                has_req = os.path.isfile(os.path.join(folder, "requirements.txt"))
+                results.append((name, folder, md_files, need_install, has_req))
+            return results
+
+        def on_scan_complete(results):
+            for name, folder, md_files, need_install, has_req in results:
+                card = _ExtensionCard(name, folder, self._dispatcher, md_files)
+                card.set_install_callback(self._install_extension)
+                card.set_checkbox_changed_callback(self._on_plugin_toggled)
+                self._cards[name] = card
+                self._cards_layout.insertWidget(self._cards_layout.count() - 1, card)
+
+                if need_install:
+                    card.set_needs_install()
+                else:
+                    card.set_installed(has_req)
+                    self._discover_async(card)
+
+        def task():
+            results = scan_task()
+            self._dispatcher.invoke(lambda: on_scan_complete(results))
+
+        self._dispatcher.post(task, priority=5)
 
     def _discover_async(self, card: _ExtensionCard):
         folder = card.folder_path

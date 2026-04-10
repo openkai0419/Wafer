@@ -296,19 +296,29 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
         node = InstanceRegistry.instance().resolve_node()
         if node:
             node.send_reliable("db.delete", db_name, dst="indexer", db=db_name)
+            self._initial_paths.pop(db_name, None)
+            AppLogger.info(f"[DatabaseManager] Deleted database: {db_name}")
+            self._refresh_db_list()
         else:
-            import os
+            def _remove_db_files():
+                import os
 
-            for path in (data_db_path(db_name), setting_db_path(db_name)):
-                if os.path.isfile(path):
-                    os.remove(path)
-                for suffix in ("-wal", "-shm"):
-                    wal = path + suffix
-                    if os.path.isfile(wal):
-                        os.remove(wal)
-        self._initial_paths.pop(db_name, None)
-        AppLogger.info(f"[DatabaseManager] Deleted database: {db_name}")
-        self._refresh_db_list()
+                for path in (data_db_path(db_name), setting_db_path(db_name)):
+                    if os.path.isfile(path):
+                        os.remove(path)
+                    for suffix in ("-wal", "-shm"):
+                        wal = path + suffix
+                        if os.path.isfile(wal):
+                            os.remove(wal)
+
+                def _on_done():
+                    self._initial_paths.pop(db_name, None)
+                    AppLogger.info(f"[DatabaseManager] Deleted database: {db_name}")
+                    self._refresh_db_list()
+
+                self._dispatcher.invoke(_on_done)
+
+            self._dispatcher.post(_remove_db_files)
 
     def has_changes(self) -> bool:
         return self._detail_widget.has_changes(self._initial_paths)

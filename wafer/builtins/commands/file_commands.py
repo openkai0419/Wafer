@@ -15,6 +15,11 @@ from ...core.platform.file_operations import PastePlanItem
 from ...core.platform.folders import show_in_explorer as reveal_in_explorer
 from ...utils.logs import AppLogger
 from ...utils.notifier import Notifier
+from ...core.qt.dispatcher import Dispatcher
+from ...core.qt.thread import SimpleThreadPool
+
+_file_cmd_pool = SimpleThreadPool("file_cmd")
+_file_cmd_dispatcher = Dispatcher(_file_cmd_pool)
 
 
 def _ctx_paths(ctx) -> list[str]:
@@ -100,27 +105,36 @@ def _confirm_delete(ctx, paths) -> bool:
     title = "Delete"
     head = "Are you sure to delete"
 
-    total_files = 0
-    dir_count = 0
-    for p in paths:
-        if os.path.isdir(p):
-            dir_count += 1
-            total_files += _count_files_in_path(p)
-        elif os.path.isfile(p):
-            total_files += 1
+    dir_count = sum(1 for p in paths if os.path.isdir(p))
+    file_count = sum(1 for p in paths if os.path.isfile(p))
 
     shown = "\n".join(paths[:5])
     more = f"\n+{len(paths) - 5} more" if len(paths) > 5 else ""
-    if len(paths) == 1:
-        i = "item"
-    else:
-        i = "items"
+    i = "item" if len(paths) == 1 else "items"
     if dir_count > 0:
-        msg = f"{head} {len(paths)} {i} ({total_files} files) ?\n{shown}{more}"
+        msg = f"{head} {len(paths)} {i} (counting...) ?\n{shown}{more}"
     else:
         msg = f"{head} {len(paths)} {i} ?\n{shown}{more}"
     thumbs = [p for p in paths if p][:4]
-    return ThumbnailConfirmDialog.ask(msg, title=title, buttons=("Delete", "Cancel"), parent=parent, paths=thumbs) == "Delete"
+    dialog = ThumbnailConfirmDialog(msg, paths=thumbs, title=title, buttons=("Delete", "Cancel"), parent=parent)
+
+    if dir_count > 0:
+        def count_task():
+            total = file_count
+            for p in paths:
+                if os.path.isdir(p):
+                    total += _count_files_in_path(p)
+            updated = f"{head} {len(paths)} {i} ({total} files) ?\n{shown}{more}"
+            _file_cmd_dispatcher.invoke(lambda: _update_if_open(updated))
+
+        def _update_if_open(text):
+            if dialog.result_text is None:
+                dialog.message_label.setText(text)
+
+        _file_cmd_dispatcher.post(count_task)
+
+    dialog.exec()
+    return dialog.result_text == "Delete"
 
 
 def delete_files(ctx):

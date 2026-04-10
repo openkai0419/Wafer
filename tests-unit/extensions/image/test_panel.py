@@ -30,9 +30,10 @@ def _make_key_browser(qapp, mode, filter_keys, key_data=None):
 
 def _make_sample_preview(qapp, mode, filter_keys):
     from extensions.image.panel import _SamplePreviewTab
+    from wafer.core.qt.dispatcher import Dispatcher, CancelSlot
 
     with patch(f"{MODULE}.dpix", side_effect=lambda x: x):
-        tab = _SamplePreviewTab(mode, filter_keys)
+        tab = _SamplePreviewTab(mode, filter_keys, Dispatcher(), CancelSlot())
     return tab
 
 

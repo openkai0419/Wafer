@@ -71,12 +71,15 @@ Application data is stored via `platformdirs` (`AppData/Local` on Windows).
 
 ## License
 
-The core foundation (`wafer/`) and most extensions are licensed under the [Apache License 2.0](LICENSE).
+This project is licensed under the [Apache License 2.0](LICENSE).
 
-Extensions with different licenses have their own `LICENSE` file in their directory. If an extension does not include a `LICENSE` file, the root Apache-2.0 license applies.
+**Our intent:**
+Wafer's foundation (`wafer/`) is designed to be a shared core that benefits every extension and every user. While the Apache-2.0 license grants full freedom to use, modify, and redistribute, we kindly ask that improvements to the core be contributed back upstream so the entire ecosystem can grow together.
+
+Extensions (`extensions/`) are yours to create, modify, and license however you wish. Each extension may include its own `LICENSE` file to specify different terms. If an extension does not include one, the root Apache-2.0 license applies.
 
 | Component | License |
 |---|---|
 | `wafer/` (core) | Apache-2.0 |
 | `extensions/video/` | AGPL-3.0 (due to python-mpv dependency) |
-| All other extensions | Apache-2.0 |
+| All other extensions | Apache-2.0 (unless specified by their own `LICENSE`) |

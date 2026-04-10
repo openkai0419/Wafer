@@ -48,13 +48,13 @@ def _create_app():
     app.setApplicationVersion(__version__)
     return app
 
-def _entry_viewer(app=None, session_id=None):
+def _entry_viewer(app=None, profile_id=None):
     setproctitle.setproctitle(f'{APP_NAME}')
     from wafer.app.viewer.mainwindow import MainWindow
     profiler.start()
     if app is None:
         app = _create_app()
-    window = MainWindow(get_icon(), session_id=session_id)
+    window = MainWindow(get_icon(), profile_id=profile_id)
     window.show()
     sys.exit(app.exec())
 
@@ -145,17 +145,17 @@ def main():
     group.add_argument('--detacher', nargs='?', const=True, help='run detacher process')
     parser.add_argument('--plugin', type=str, default='image', help='collector/detacher plugin name')
     parser.add_argument('--parent-pid', type=int, default=None)
-    parser.add_argument('--session', type=str, default=None, help='session ID for viewer')
+    parser.add_argument('--profile', type=str, default=None, help='profile ID for viewer')
     args = parser.parse_args()
     if not any([args.tray, args.viewer, args.indexer, args.collector, args.detacher]):
         app = _create_app()
         load_plugins()
         AppProcess.new_main('--tray')
-        from wafer.core.session import SessionStore
-        restore_ids = SessionStore().get_restore_session_ids()
-        for sid in restore_ids[1:]:
-            AppProcess.new_main('--viewer', '--session', sid)
-        _entry_viewer(app, session_id=restore_ids[0] if restore_ids else None)
+        from wafer.core.profile import ProfileStore
+        restore_ids = ProfileStore().get_restore_profile_ids()
+        for pid in restore_ids[1:]:
+            AppProcess.new_main('--viewer', '--profile', pid)
+        _entry_viewer(app, profile_id=restore_ids[0] if restore_ids else None)
         return
     if args.tray:
         load_plugins()
@@ -183,6 +183,6 @@ def main():
     elif args.viewer:
         app = _create_app()
         load_plugins()
-        _entry_viewer(app, session_id=args.session)
+        _entry_viewer(app, profile_id=args.profile)
 if __name__ == '__main__':
     main()

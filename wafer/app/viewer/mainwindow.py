@@ -5,7 +5,7 @@ from ...core.color.theme import ThemeManager
 from ...utils.profiling import profiler
 from ...utils.logs import AppLogger
 from ...utils.notifier import Notifier
-from ...constants import APP_NAME, DEFAULT_DB_NAME, DEFAULT_SESSION_NAME
+from ...constants import APP_NAME, DEFAULT_DB_NAME, DEFAULT_PROFILE_NAME
 from ...core.db.setting_db import SettingDB
 from ...core.lang.manager import TranslatorMixin
 from ...core.qt.rate_limit import qt_debounce
@@ -29,7 +29,7 @@ from .widgets.combo_with_buttons import ComboBoxWithButtons
 
 from ...builtins.commands.menu import AppMenuRegistrar
 from .search import SearchService
-from ...core.session import QueryState, UIState, SessionEntry, SessionStore
+from ...core.profile import QueryState, UIState, ProfileEntry, ProfileStore
 from ...core.commands.bridge import UI, Command, Menu
 from ...ui.layout.manager import LayoutManager
 from ...core.state import StateStore
@@ -41,13 +41,13 @@ AppMenuRegistrar.setup_menu()
 
 
 class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
-    def __init__(self, icon=None, parent=None, session_id=None):
+    def __init__(self, icon=None, parent=None, profile_id=None):
         super().__init__(parent=parent)
-        self._session_store = SessionStore.instance()
-        self.session_id = None
-        self._session_entry = None
-        self._session_deleted = False
-        self._session_ready = False
+        self._profile_store = ProfileStore.instance()
+        self.profile_id = None
+        self._profile_entry = None
+        self._profile_deleted = False
+        self._profile_ready = False
         if icon:
             self.setWindowIcon(icon)
         self.setWindowTitle(APP_NAME)
@@ -70,26 +70,26 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self._closed = False
         self.setup_ui()
         self._show_loading()
-        self._acquire_session_async(session_id)
+        self._acquire_profile_async(profile_id)
 
-    def _acquire_session_async(self, requested_id):
-        store = self._session_store
+    def _acquire_profile_async(self, requested_id):
+        store = self._profile_store
 
         def task():
-            sid, entry = store.acquire_or_create(requested_id)
-            self._dispatcher.invoke(lambda: self._on_session_acquired(sid, entry))
+            pid, entry = store.acquire_or_create(requested_id)
+            self._dispatcher.invoke(lambda: self._on_profile_acquired(pid, entry))
 
         self._dispatcher.post(task, priority=9)
 
-    def _on_session_acquired(self, sid, entry):
-        self.session_id = sid
-        self._session_entry = entry
-        self._session_ready = True
-        AppLogger.info(f"New Window Running : {APP_NAME} (session={self.session_id})")
+    def _on_profile_acquired(self, pid, entry):
+        self.profile_id = pid
+        self._profile_entry = entry
+        self._profile_ready = True
+        AppLogger.info(f"New Window Running : {APP_NAME} (profile={self.profile_id})")
         self.start_ipc_listener()
         self._update_title()
         if entry:
-            self._restore_from_session(entry)
+            self._restore_from_profile(entry)
         else:
             self.reload_database(self.get_last_used_db_name())
 
@@ -159,8 +159,8 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         Notifier.error(f'Failed to load database "{name}"')
 
     def _update_title(self):
-        if self._session_entry and self._session_entry.name:
-            label = self._session_entry.name
+        if self._profile_entry and self._profile_entry.name:
+            label = self._profile_entry.name
         else:
             dirs = self.folder_view.get_selected_paths()
             if dirs:
@@ -168,20 +168,20 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             else:
                 label = self.database_name or ""
         self.setWindowTitle(f"{label}" if label else APP_NAME)
-        if hasattr(self, "_session_button"):
-            self._sync_session_button()
+        if hasattr(self, "_profile_button"):
+            self._sync_profile_button()
 
-    def _create_session_button(self):
+    def _create_profile_button(self):
         btn = QtWidgets.QPushButton()
         btn.setCursor(QtCore.Qt.PointingHandCursor)
         btn.setFixedHeight(dpix(24))
-        btn.clicked.connect(lambda: Command.invoke("win.session_list"))
-        self._sync_session_button(btn)
+        btn.clicked.connect(lambda: Command.invoke("win.profile_list"))
+        self._sync_profile_button(btn)
         return btn
 
-    def _sync_session_button(self, btn=None):
-        btn = btn or self._session_button
-        entry = self._session_entry
+    def _sync_profile_button(self, btn=None):
+        btn = btn or self._profile_button
+        entry = self._profile_entry
         label = f"\u25bc {entry.name}" if entry and entry.name else "\u25bc Window"
         btn.setText(label)
         color = entry.color if entry and entry.color else ""
@@ -243,7 +243,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
 
     def start_ipc_listener(self):
         node = Node("viewer")
-        node.session_id = self.session_id
+        node.session_id = self.profile_id
         self._bridge = ViewerIpcBridge(node, parent=self)
         self._node = node
 
@@ -253,9 +253,8 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         b.progress_updated.connect(self.update_progress_value)
         b.progress_maximum.connect(self.update_progress_maximum)
         b.show_toggled.connect(self.toggle_show)
-        b.session_focused.connect(self._on_session_focused)
-        b.session_closed.connect(self._on_session_closed)
-        b.session_restarted.connect(self._on_session_restarted)
+        b.profile_closed.connect(self._on_profile_closed)
+        b.profile_restarted.connect(self._on_profile_restarted)
         b.db_created.connect(self._on_db_created)
         b.db_deleted.connect(self._on_db_deleted)
         b.remote_log_received.connect(self._on_dev_log)
@@ -302,7 +301,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.database_combo.removeClicked.connect(lambda: Command.invoke("db.remove_database"))
 
         self.progress_bar = ThinProgressBar()
-        self._session_button = self._create_session_button()
+        self._profile_button = self._create_profile_button()
 
         self.search_row_widget = SearchContainer()
         self.search_row_widget.filter_changed.connect(self._on_search_setting_changed)
@@ -354,7 +353,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         layout = QtWidgets.QVBoxLayout(panel)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        layout.addWidget(self._session_button)
+        layout.addWidget(self._profile_button)
         layout.addWidget(self.progress_bar)
         layout.addWidget(self.iconbar)
         panel.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Maximum)
@@ -537,19 +536,35 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         else:
             self.window_state.minimize()
 
+    def switch_profile(self, new_profile_id: str):
+        if new_profile_id == self.profile_id:
+            return
+        self._save_profile()
+        store = self._profile_store
+        entry = store.get_profile(new_profile_id)
+        if not entry:
+            return
+        self.profile_id = new_profile_id
+        self._profile_entry = entry
+        node = getattr(self, "_node", None)
+        if node:
+            node.re_register(new_profile_id)
+        self._update_title()
+        self._restore_from_profile(entry, skip_window_state=True)
+
     @QtCore.Slot()
-    def close_by_session_delete(self):
-        self._session_deleted = True
+    def close_by_profile_delete(self):
+        self._profile_deleted = True
         self.close()
 
     @QtCore.Slot()
     def close_by_restart(self):
-        self._save_session()
+        self._save_profile()
         from ...core.platform.process import AppProcess
 
         args = ["--viewer"]
-        if self.session_id:
-            args += ["--session", self.session_id]
+        if self.profile_id:
+            args += ["--profile", self.profile_id]
         AppProcess.new_main(*args)
         self.close()
 
@@ -576,18 +591,13 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.reload_folderlist()
 
     @QtCore.Slot(str)
-    def _on_session_focused(self, session_id: str):
-        if session_id == self.session_id:
-            self.raise_window()
+    def _on_profile_closed(self, profile_id: str):
+        if profile_id == self.profile_id:
+            self.close_by_profile_delete()
 
     @QtCore.Slot(str)
-    def _on_session_closed(self, session_id: str):
-        if session_id == self.session_id:
-            self.close_by_session_delete()
-
-    @QtCore.Slot(str)
-    def _on_session_restarted(self, session_id: str):
-        if session_id == self.session_id:
+    def _on_profile_restarted(self, profile_id: str):
+        if profile_id == self.profile_id:
             self.close_by_restart()
 
     def _on_search_params_changed(self, changed):
@@ -706,7 +716,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         if ui.component_states:
             StateStore.instance().restore_all(ui.component_states)
 
-    def _restore_from_session(self, entry: SessionEntry):
+    def _restore_from_profile(self, entry: ProfileEntry, skip_window_state=False):
         if entry.query_snapshot:
             db_name = entry.query_snapshot.database_name or self.get_last_used_db_name()
         else:
@@ -718,18 +728,21 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             else:
                 QtCore.QTimer.singleShot(0, lambda: self.search(force=True))
             if entry.ui:
-                self.restore_ui_state(entry.ui)
+                if skip_window_state:
+                    self.restore_ui_state(UIState(component_states=entry.ui.component_states))
+                else:
+                    self.restore_ui_state(entry.ui)
 
         self.reload_database(db_name, on_complete=on_db_ready)
 
-    def _save_session(self):
-        if self._session_deleted or not self._session_ready:
+    def _save_profile(self):
+        if self._profile_deleted or not self._profile_ready:
             return
-        entry = self._session_entry or SessionEntry(session_id=self.session_id, name=DEFAULT_SESSION_NAME)
+        entry = self._profile_entry or ProfileEntry(profile_id=self.profile_id, name=DEFAULT_PROFILE_NAME)
         entry.ui = self.capture_ui_state()
         entry.query_snapshot = self.capture_query_state()
-        self._session_store.save_session(entry)
-        self._session_entry = entry
+        self._profile_store.save_profile(entry)
+        self._profile_entry = entry
 
     def closeEvent(self, event):
         self.on_close()
@@ -740,7 +753,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             return
         self._closed = True
         try:
-            self._save_session()
+            self._save_profile()
             if self.database_name:
                 app_settings.save_immediate("window/tablename", self.database_name)
             app_settings.commit()

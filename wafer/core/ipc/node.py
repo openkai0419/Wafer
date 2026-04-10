@@ -222,6 +222,18 @@ class Node:
         except Exception as e:
             AppLogger.debug(f"send_to_broker failed ({topic}): {e}")
 
+    def re_register(self, session_id: str):
+        self.session_id = session_id
+        self._registered.clear()
+        self._send_to_broker(
+            "mgmt.register",
+            {
+                "role": self.role,
+                "db": self.db,
+                "session_id": self.session_id,
+            },
+        )
+
     def _heartbeat_tick(self):
         self._ensure_connection()
         if self._registered.is_set():

@@ -2,21 +2,21 @@ import json
 import os
 import pytest
 
-from wafer.core.session import (
+from wafer.core.profile import (
     QueryState,
     UIState,
     BookmarkEntry,
-    SessionEntry,
-    SessionStore,
+    ProfileEntry,
+    ProfileStore,
     BookmarkStore,
-    SESSION_COLORS,
+    PROFILE_COLORS,
 )
-from wafer.constants import DEFAULT_SESSION_NAME
+from wafer.constants import DEFAULT_PROFILE_NAME
 
 
 @pytest.fixture
 def tmp_store(tmp_path):
-    return SessionStore(path=str(tmp_path / "sessions.json"))
+    return ProfileStore(path=str(tmp_path / "profiles.json"))
 
 
 @pytest.fixture
@@ -95,10 +95,10 @@ class TestBookmarkEntry:
         assert isinstance(b, BookmarkEntry)
 
 
-class TestSessionEntry:
+class TestProfileEntry:
     def test_defaults(self):
-        e = SessionEntry()
-        assert len(e.session_id) == 12
+        e = ProfileEntry()
+        assert len(e.profile_id) == 12
         assert e.name == ""
         assert e.color == ""
         assert isinstance(e.ui, UIState)
@@ -108,201 +108,201 @@ class TestSessionEntry:
     def test_roundtrip_with_snapshot(self):
         ui = UIState(component_states={"main_splitter": {"sizes": [10, 80, 10]}, "grid": {"scroll_index": 5}})
         qs = QueryState(database_name="db1", search_params={"sort_by": "name"})
-        e = SessionEntry(session_id="s1", name="Work", color="#4A90D9", ui=ui, query_snapshot=qs)
-        restored = SessionEntry.from_dict(e.to_dict())
-        assert restored.session_id == "s1"
+        e = ProfileEntry(profile_id="s1", name="Work", color="#4A90D9", ui=ui, query_snapshot=qs)
+        restored = ProfileEntry.from_dict(e.to_dict())
+        assert restored.profile_id == "s1"
         assert restored.name == "Work"
         assert restored.color == "#4A90D9"
         assert restored.ui.component_states["main_splitter"]["sizes"] == [10, 80, 10]
         assert restored.query_snapshot.database_name == "db1"
 
     def test_roundtrip_with_bookmark_ref(self):
-        e = SessionEntry(session_id="s2", bookmark_id="bm001")
-        restored = SessionEntry.from_dict(e.to_dict())
+        e = ProfileEntry(profile_id="s2", bookmark_id="bm001")
+        restored = ProfileEntry.from_dict(e.to_dict())
         assert restored.bookmark_id == "bm001"
         assert restored.query_snapshot is None
 
     def test_roundtrip_without_snapshot(self):
-        e = SessionEntry(session_id="s3", name="NoQuery")
+        e = ProfileEntry(profile_id="s3", name="NoQuery")
         d = e.to_dict()
         assert "query_snapshot" not in d
-        restored = SessionEntry.from_dict(d)
+        restored = ProfileEntry.from_dict(d)
         assert restored.query_snapshot is None
 
     def test_from_dict_handles_non_dict(self):
-        assert isinstance(SessionEntry.from_dict("invalid"), SessionEntry)
+        assert isinstance(ProfileEntry.from_dict("invalid"), ProfileEntry)
 
     def test_from_dict_ignores_legacy_anonymous_field(self):
-        restored = SessionEntry.from_dict({"session_id": "old", "anonymous": True})
-        assert restored.session_id == "old"
+        restored = ProfileEntry.from_dict({"session_id": "old", "anonymous": True})
+        assert restored.profile_id == "old"
 
 
-class TestSessionStoreSession:
+class TestProfileStoreSession:
     def test_empty_store(self, tmp_store):
-        assert tmp_store.list_sessions() == []
-        assert tmp_store.get_session("nonexistent") is None
+        assert tmp_store.list_profiles() == []
+        assert tmp_store.get_profile("nonexistent") is None
 
     def test_save_and_get(self, tmp_store):
         ui = UIState(component_states={"grid": {"scroll_index": 5}})
         qs = QueryState(database_name="mydb")
-        entry = SessionEntry(session_id="s1", name="Main", ui=ui, query_snapshot=qs)
-        tmp_store.save_session(entry)
+        entry = ProfileEntry(profile_id="s1", name="Main", ui=ui, query_snapshot=qs)
+        tmp_store.save_profile(entry)
 
-        loaded = tmp_store.get_session("s1")
+        loaded = tmp_store.get_profile("s1")
         assert loaded is not None
         assert loaded.name == "Main"
         assert loaded.ui.component_states["grid"]["scroll_index"] == 5
         assert loaded.query_snapshot.database_name == "mydb"
 
     def test_save_updates_timestamp(self, tmp_store):
-        entry = SessionEntry(session_id="s1", name="A", updated_at="old")
-        tmp_store.save_session(entry)
-        loaded = tmp_store.get_session("s1")
+        entry = ProfileEntry(profile_id="s1", name="A", updated_at="old")
+        tmp_store.save_profile(entry)
+        loaded = tmp_store.get_profile("s1")
         assert loaded.updated_at != "old"
 
     def test_list_sessions(self, tmp_store):
-        tmp_store.save_session(SessionEntry(session_id="a", name="First"))
-        tmp_store.save_session(SessionEntry(session_id="b", name="Second"))
-        sessions = tmp_store.list_sessions()
+        tmp_store.save_profile(ProfileEntry(profile_id="a", name="First"))
+        tmp_store.save_profile(ProfileEntry(profile_id="b", name="Second"))
+        sessions = tmp_store.list_profiles()
         assert len(sessions) == 2
         names = {s.name for s in sessions}
         assert names == {"First", "Second"}
 
     def test_delete_session(self, tmp_store):
-        tmp_store.save_session(SessionEntry(session_id="del1", name="ToDelete"))
-        assert tmp_store.delete_session("del1")
-        assert tmp_store.get_session("del1") is None
-        assert not tmp_store.delete_session("del1")
+        tmp_store.save_profile(ProfileEntry(profile_id="del1", name="ToDelete"))
+        assert tmp_store.delete_profile("del1")
+        assert tmp_store.get_profile("del1") is None
+        assert not tmp_store.delete_profile("del1")
 
     def test_delete_removes_from_active(self, tmp_store):
-        tmp_store.save_session(SessionEntry(session_id="x"))
-        tmp_store.set_active_session_ids(["x", "y"])
-        tmp_store.delete_session("x")
-        assert "x" not in tmp_store.get_active_session_ids()
+        tmp_store.save_profile(ProfileEntry(profile_id="x"))
+        tmp_store.set_active_profile_ids(["x", "y"])
+        tmp_store.delete_profile("x")
+        assert "x" not in tmp_store.get_active_profile_ids()
 
     def test_delete_removes_from_restore(self, tmp_store):
-        tmp_store.save_session(SessionEntry(session_id="r1"))
-        tmp_store.save_session(SessionEntry(session_id="r2"))
-        tmp_store.set_restore_session_ids(["r1", "r2"])
-        tmp_store.delete_session("r1")
-        assert tmp_store.get_restore_session_ids() == ["r2"]
+        tmp_store.save_profile(ProfileEntry(profile_id="r1"))
+        tmp_store.save_profile(ProfileEntry(profile_id="r2"))
+        tmp_store.set_restore_profile_ids(["r1", "r2"])
+        tmp_store.delete_profile("r1")
+        assert tmp_store.get_restore_profile_ids() == ["r2"]
 
     def test_overwrite_session(self, tmp_store):
-        entry = SessionEntry(session_id="s1", name="Old")
-        tmp_store.save_session(entry)
+        entry = ProfileEntry(profile_id="s1", name="Old")
+        tmp_store.save_profile(entry)
         entry.name = "New"
         entry.ui.component_states = {"main_splitter": {"sizes": [1, 2, 3]}}
-        tmp_store.save_session(entry)
+        tmp_store.save_profile(entry)
 
-        loaded = tmp_store.get_session("s1")
+        loaded = tmp_store.get_profile("s1")
         assert loaded.name == "New"
         assert loaded.ui.component_states["main_splitter"]["sizes"] == [1, 2, 3]
-        assert len(tmp_store.list_sessions()) == 1
+        assert len(tmp_store.list_profiles()) == 1
 
 
-class TestSessionStoreActiveIds:
+class TestProfileStoreActiveIds:
     def test_default_empty(self, tmp_store):
-        assert tmp_store.get_active_session_ids() == []
+        assert tmp_store.get_active_profile_ids() == []
 
     def test_set_and_get(self, tmp_store):
-        tmp_store.set_active_session_ids(["a", "b", "c"])
-        assert tmp_store.get_active_session_ids() == ["a", "b", "c"]
+        tmp_store.set_active_profile_ids(["a", "b", "c"])
+        assert tmp_store.get_active_profile_ids() == ["a", "b", "c"]
 
     def test_replace(self, tmp_store):
-        tmp_store.set_active_session_ids(["a"])
-        tmp_store.set_active_session_ids(["b", "c"])
-        assert tmp_store.get_active_session_ids() == ["b", "c"]
+        tmp_store.set_active_profile_ids(["a"])
+        tmp_store.set_active_profile_ids(["b", "c"])
+        assert tmp_store.get_active_profile_ids() == ["b", "c"]
 
 
-class TestSessionStoreRestoreIds:
+class TestProfileStoreRestoreIds:
     def test_default_empty(self, tmp_store):
-        assert tmp_store.get_restore_session_ids() == []
+        assert tmp_store.get_restore_profile_ids() == []
 
     def test_set_and_get(self, tmp_store):
-        tmp_store.save_session(SessionEntry(session_id="s1", name="S1"))
-        tmp_store.save_session(SessionEntry(session_id="Work", name="Work"))
-        tmp_store.set_restore_session_ids(["s1", "Work"])
-        assert tmp_store.get_restore_session_ids() == ["s1", "Work"]
+        tmp_store.save_profile(ProfileEntry(profile_id="s1", name="S1"))
+        tmp_store.save_profile(ProfileEntry(profile_id="Work", name="Work"))
+        tmp_store.set_restore_profile_ids(["s1", "Work"])
+        assert tmp_store.get_restore_profile_ids() == ["s1", "Work"]
 
     def test_replace(self, tmp_store):
-        tmp_store.save_session(SessionEntry(session_id="a"))
-        tmp_store.save_session(SessionEntry(session_id="b"))
-        tmp_store.save_session(SessionEntry(session_id="c"))
-        tmp_store.set_restore_session_ids(["a"])
-        tmp_store.set_restore_session_ids(["b", "c"])
-        assert tmp_store.get_restore_session_ids() == ["b", "c"]
+        tmp_store.save_profile(ProfileEntry(profile_id="a"))
+        tmp_store.save_profile(ProfileEntry(profile_id="b"))
+        tmp_store.save_profile(ProfileEntry(profile_id="c"))
+        tmp_store.set_restore_profile_ids(["a"])
+        tmp_store.set_restore_profile_ids(["b", "c"])
+        assert tmp_store.get_restore_profile_ids() == ["b", "c"]
 
     def test_independent_from_active(self, tmp_store):
-        tmp_store.save_session(SessionEntry(session_id="x"))
-        tmp_store.save_session(SessionEntry(session_id="y"))
-        tmp_store.set_active_session_ids(["x"])
-        tmp_store.set_restore_session_ids(["y"])
-        assert tmp_store.get_active_session_ids() == ["x"]
-        assert tmp_store.get_restore_session_ids() == ["y"]
+        tmp_store.save_profile(ProfileEntry(profile_id="x"))
+        tmp_store.save_profile(ProfileEntry(profile_id="y"))
+        tmp_store.set_active_profile_ids(["x"])
+        tmp_store.set_restore_profile_ids(["y"])
+        assert tmp_store.get_active_profile_ids() == ["x"]
+        assert tmp_store.get_restore_profile_ids() == ["y"]
 
     def test_filters_missing_sessions(self, tmp_store):
-        tmp_store.save_session(SessionEntry(session_id="s1", name="S1"))
-        tmp_store.set_restore_session_ids(["s1", "deleted"])
-        assert tmp_store.get_restore_session_ids() == ["s1"]
+        tmp_store.save_profile(ProfileEntry(profile_id="s1", name="S1"))
+        tmp_store.set_restore_profile_ids(["s1", "deleted"])
+        assert tmp_store.get_restore_profile_ids() == ["s1"]
 
     def test_all_missing_returns_empty(self, tmp_store):
-        tmp_store.set_restore_session_ids(["gone-1", "gone-2"])
-        assert tmp_store.get_restore_session_ids() == []
+        tmp_store.set_restore_profile_ids(["gone-1", "gone-2"])
+        assert tmp_store.get_restore_profile_ids() == []
 
 
 class TestNextDefaultName:
     def test_first_default(self, tmp_store):
-        assert tmp_store.next_default_name() == f"{DEFAULT_SESSION_NAME}1"
+        assert tmp_store.next_default_name() == f"{DEFAULT_PROFILE_NAME}1"
 
     def test_second_default(self, tmp_store):
-        tmp_store.create_session(f"{DEFAULT_SESSION_NAME}1")
-        assert tmp_store.next_default_name() == f"{DEFAULT_SESSION_NAME}2"
+        tmp_store.create_profile(f"{DEFAULT_PROFILE_NAME}1")
+        assert tmp_store.next_default_name() == f"{DEFAULT_PROFILE_NAME}2"
 
     def test_fills_gap(self, tmp_store):
-        tmp_store.create_session(f"{DEFAULT_SESSION_NAME}1")
-        tmp_store.create_session(f"{DEFAULT_SESSION_NAME}2")
-        tmp_store.create_session(f"{DEFAULT_SESSION_NAME}4")
-        assert tmp_store.next_default_name() == f"{DEFAULT_SESSION_NAME}3"
+        tmp_store.create_profile(f"{DEFAULT_PROFILE_NAME}1")
+        tmp_store.create_profile(f"{DEFAULT_PROFILE_NAME}2")
+        tmp_store.create_profile(f"{DEFAULT_PROFILE_NAME}4")
+        assert tmp_store.next_default_name() == f"{DEFAULT_PROFILE_NAME}3"
 
     def test_next_after_all_used(self, tmp_store):
-        tmp_store.create_session(f"{DEFAULT_SESSION_NAME}1")
-        tmp_store.create_session(f"{DEFAULT_SESSION_NAME}2")
-        tmp_store.create_session(f"{DEFAULT_SESSION_NAME}3")
-        assert tmp_store.next_default_name() == f"{DEFAULT_SESSION_NAME}4"
+        tmp_store.create_profile(f"{DEFAULT_PROFILE_NAME}1")
+        tmp_store.create_profile(f"{DEFAULT_PROFILE_NAME}2")
+        tmp_store.create_profile(f"{DEFAULT_PROFILE_NAME}3")
+        assert tmp_store.next_default_name() == f"{DEFAULT_PROFILE_NAME}4"
 
 
-class TestFindInactiveSession:
+class TestFindInactiveProfile:
     def test_empty_store_returns_none(self, tmp_store):
-        assert tmp_store.find_inactive_session_id() is None
+        assert tmp_store.find_inactive_profile_id() is None
 
     def test_all_active_returns_none(self, tmp_store):
-        tmp_store.save_session(SessionEntry(session_id="s1", name="A"))
-        tmp_store.set_active_session_ids(["s1"])
-        assert tmp_store.find_inactive_session_id() is None
+        tmp_store.save_profile(ProfileEntry(profile_id="s1", name="A"))
+        tmp_store.set_active_profile_ids(["s1"])
+        assert tmp_store.find_inactive_profile_id() is None
 
     def test_returns_inactive(self, tmp_store):
-        tmp_store.save_session(SessionEntry(session_id="s1", name="A"))
-        tmp_store.save_session(SessionEntry(session_id="s2", name="B"))
-        tmp_store.set_active_session_ids(["s1"])
-        assert tmp_store.find_inactive_session_id() == "s2"
+        tmp_store.save_profile(ProfileEntry(profile_id="s1", name="A"))
+        tmp_store.save_profile(ProfileEntry(profile_id="s2", name="B"))
+        tmp_store.set_active_profile_ids(["s1"])
+        assert tmp_store.find_inactive_profile_id() == "s2"
 
     def test_none_active_returns_first(self, tmp_store):
-        tmp_store.save_session(SessionEntry(session_id="s1", name="A"))
-        assert tmp_store.find_inactive_session_id() == "s1"
+        tmp_store.save_profile(ProfileEntry(profile_id="s1", name="A"))
+        assert tmp_store.find_inactive_profile_id() == "s1"
 
 
-class TestSessionStoreFileIntegrity:
+class TestProfileStoreFileIntegrity:
     def test_corrupted_file_returns_defaults(self, tmp_path):
-        path = str(tmp_path / "sessions.json")
+        path = str(tmp_path / "profiles.json")
         with open(path, "w") as f:
             f.write("not valid json")
-        store = SessionStore(path=path)
-        assert store.list_sessions() == []
+        store = ProfileStore(path=path)
+        assert store.list_profiles() == []
 
     def test_file_created_on_first_save(self, tmp_path):
-        path = str(tmp_path / "new" / "sessions.json")
-        store = SessionStore(path=path)
-        store.save_session(SessionEntry(session_id="first", name="First"))
+        path = str(tmp_path / "new" / "profiles.json")
+        store = ProfileStore(path=path)
+        store.save_profile(ProfileEntry(profile_id="first", name="First"))
         assert os.path.exists(path)
 
 
@@ -375,253 +375,239 @@ class TestBookmarkStore:
         assert p.name == "abc123def456.json"
 
 
-class TestCreateSession:
+class TestCreateProfile:
     def test_creates_with_name(self, tmp_store):
-        sid = tmp_store.create_session("Work")
-        entry = tmp_store.get_session(sid)
+        sid = tmp_store.create_profile("Work")
+        entry = tmp_store.get_profile(sid)
         assert entry is not None
         assert entry.name == "Work"
 
     def test_returns_unique_ids(self, tmp_store):
-        sid1 = tmp_store.create_session("A")
-        sid2 = tmp_store.create_session("B")
+        sid1 = tmp_store.create_profile("A")
+        sid2 = tmp_store.create_profile("B")
         assert sid1 != sid2
 
     def test_appears_in_list_sessions(self, tmp_store):
-        tmp_store.create_session("Visible")
-        assert any(e.name == "Visible" for e in tmp_store.list_sessions())
+        tmp_store.create_profile("Visible")
+        assert any(e.name == "Visible" for e in tmp_store.list_profiles())
 
     def test_create_with_color(self, tmp_store):
-        sid = tmp_store.create_session("WithColor", color="#1ABC9C")
-        entry = tmp_store.get_session(sid)
+        sid = tmp_store.create_profile("WithColor", color="#1ABC9C")
+        entry = tmp_store.get_profile(sid)
         assert entry.color == "#1ABC9C"
 
     def test_duplicate_name_returns_none(self, tmp_store):
-        tmp_store.create_session("Dup")
-        assert tmp_store.create_session("Dup") is None
+        tmp_store.create_profile("Dup")
+        assert tmp_store.create_profile("Dup") is None
 
     def test_duplicate_name_does_not_add_session(self, tmp_store):
-        tmp_store.create_session("Only")
-        tmp_store.create_session("Only")
-        assert len(tmp_store.list_sessions()) == 1
+        tmp_store.create_profile("Only")
+        tmp_store.create_profile("Only")
+        assert len(tmp_store.list_profiles()) == 1
 
     def test_different_names_allowed(self, tmp_store):
-        assert tmp_store.create_session("Alpha") is not None
-        assert tmp_store.create_session("Beta") is not None
-        assert len(tmp_store.list_sessions()) == 2
+        assert tmp_store.create_profile("Alpha") is not None
+        assert tmp_store.create_profile("Beta") is not None
+        assert len(tmp_store.list_profiles()) == 2
 
 
-class TestRenameSession:
+class TestRenameProfile:
     def test_rename(self, tmp_store):
-        sid = tmp_store.create_session("Old")
-        assert tmp_store.rename_session(sid, "New")
-        assert tmp_store.get_session(sid).name == "New"
+        sid = tmp_store.create_profile("Old")
+        assert tmp_store.rename_profile(sid, "New")
+        assert tmp_store.get_profile(sid).name == "New"
 
     def test_rename_updates_timestamp(self, tmp_store):
-        sid = tmp_store.create_session("X")
-        old_ts = tmp_store.get_session(sid).updated_at
+        sid = tmp_store.create_profile("X")
+        old_ts = tmp_store.get_profile(sid).updated_at
         import time
 
         time.sleep(0.01)
-        tmp_store.rename_session(sid, "Y")
-        assert tmp_store.get_session(sid).updated_at >= old_ts
+        tmp_store.rename_profile(sid, "Y")
+        assert tmp_store.get_profile(sid).updated_at >= old_ts
 
     def test_rename_nonexistent_returns_false(self, tmp_store):
-        assert tmp_store.rename_session("no-such-id", "Name") is False
+        assert tmp_store.rename_profile("no-such-id", "Name") is False
 
     def test_rename_duplicate_returns_false(self, tmp_store):
-        tmp_store.create_session("Taken")
-        sid = tmp_store.create_session("Mine")
-        assert tmp_store.rename_session(sid, "Taken") is False
-        assert tmp_store.get_session(sid).name == "Mine"
+        tmp_store.create_profile("Taken")
+        sid = tmp_store.create_profile("Mine")
+        assert tmp_store.rename_profile(sid, "Taken") is False
+        assert tmp_store.get_profile(sid).name == "Mine"
 
     def test_rename_to_own_name_succeeds(self, tmp_store):
-        sid = tmp_store.create_session("Same")
-        assert tmp_store.rename_session(sid, "Same") is True
+        sid = tmp_store.create_profile("Same")
+        assert tmp_store.rename_profile(sid, "Same") is True
 
 
-class TestSessionColors:
+class TestProfileColors:
     def test_session_colors_defined(self):
-        assert len(SESSION_COLORS) >= 4
-        for c in SESSION_COLORS:
+        assert len(PROFILE_COLORS) >= 4
+        for c in PROFILE_COLORS:
             assert c.startswith("#")
 
     def test_color_roundtrip(self):
-        e = SessionEntry(session_id="c1", color="#D94A4A")
-        restored = SessionEntry.from_dict(e.to_dict())
+        e = ProfileEntry(profile_id="c1", color="#D94A4A")
+        restored = ProfileEntry.from_dict(e.to_dict())
         assert restored.color == "#D94A4A"
 
     def test_color_empty_by_default(self):
-        e = SessionEntry()
+        e = ProfileEntry()
         assert e.color == ""
 
     def test_from_dict_missing_color_defaults_empty(self):
-        restored = SessionEntry.from_dict({"session_id": "old"})
+        restored = ProfileEntry.from_dict({"session_id": "old"})
         assert restored.color == ""
 
 
-class TestSetSessionColor:
+class TestSetProfileColor:
     def test_set_color(self, tmp_store):
-        sid = tmp_store.create_session("Colored")
-        assert tmp_store.set_session_color(sid, "#4A90D9")
-        assert tmp_store.get_session(sid).color == "#4A90D9"
+        sid = tmp_store.create_profile("Colored")
+        assert tmp_store.set_profile_color(sid, "#4A90D9")
+        assert tmp_store.get_profile(sid).color == "#4A90D9"
 
     def test_clear_color(self, tmp_store):
-        sid = tmp_store.create_session("Cls", color="#D94A4A")
-        assert tmp_store.set_session_color(sid, "")
-        assert tmp_store.get_session(sid).color == ""
+        sid = tmp_store.create_profile("Cls", color="#D94A4A")
+        assert tmp_store.set_profile_color(sid, "")
+        assert tmp_store.get_profile(sid).color == ""
 
     def test_nonexistent_returns_false(self, tmp_store):
-        assert tmp_store.set_session_color("no-such", "#000") is False
+        assert tmp_store.set_profile_color("no-such", "#000") is False
 
 
-class TestClaimSession:
-    def test_claim_new_returns_true(self, tmp_store):
-        assert tmp_store.claim_session("s1") is True
-        assert "s1" in tmp_store.get_active_session_ids()
-
-    def test_claim_already_active_returns_false(self, tmp_store):
-        tmp_store.set_active_session_ids(["s1"])
-        assert tmp_store.claim_session("s1") is False
-
-    def test_claim_twice_returns_false_second_time(self, tmp_store):
-        assert tmp_store.claim_session("s1") is True
-        assert tmp_store.claim_session("s1") is False
-
-    def test_claim_different_ids(self, tmp_store):
-        assert tmp_store.claim_session("s1") is True
-        assert tmp_store.claim_session("s2") is True
-        active = tmp_store.get_active_session_ids()
-        assert "s1" in active
-        assert "s2" in active
-
-
-class TestHasSessionName:
+class TestHasProfileName:
     def test_empty_store(self, tmp_store):
-        assert tmp_store.has_session_name("any") is False
+        assert tmp_store.has_profile_name("any") is False
 
     def test_existing_name(self, tmp_store):
-        tmp_store.create_session("Exists")
-        assert tmp_store.has_session_name("Exists") is True
+        tmp_store.create_profile("Exists")
+        assert tmp_store.has_profile_name("Exists") is True
 
     def test_missing_name(self, tmp_store):
-        tmp_store.create_session("Other")
-        assert tmp_store.has_session_name("Missing") is False
+        tmp_store.create_profile("Other")
+        assert tmp_store.has_profile_name("Missing") is False
 
 
-class TestFindSessionByName:
+class TestFindProfileByName:
     def test_empty_store(self, tmp_store):
-        assert tmp_store.find_session_by_name("any") is None
+        assert tmp_store.find_profile_by_name("any") is None
 
     def test_found(self, tmp_store):
-        sid = tmp_store.create_session("Target")
-        found = tmp_store.find_session_by_name("Target")
+        sid = tmp_store.create_profile("Target")
+        found = tmp_store.find_profile_by_name("Target")
         assert found is not None
-        assert found.session_id == sid
+        assert found.profile_id == sid
 
     def test_not_found(self, tmp_store):
-        tmp_store.create_session("Other")
-        assert tmp_store.find_session_by_name("Missing") is None
+        tmp_store.create_profile("Other")
+        assert tmp_store.find_profile_by_name("Missing") is None
 
 
-class TestCreateSessionWithUniqueName:
+class TestCreateProfileWithUniqueName:
     def test_no_conflict(self, tmp_store):
-        sid = tmp_store.create_session_with_unique_name("Fresh")
-        entry = tmp_store.get_session(sid)
+        sid = tmp_store.create_profile_with_unique_name("Fresh")
+        entry = tmp_store.get_profile(sid)
         assert entry.name == "Fresh"
 
     def test_conflict_appends_suffix(self, tmp_store):
-        tmp_store.create_session("Dup")
-        sid = tmp_store.create_session_with_unique_name("Dup")
-        entry = tmp_store.get_session(sid)
+        tmp_store.create_profile("Dup")
+        sid = tmp_store.create_profile_with_unique_name("Dup")
+        entry = tmp_store.get_profile(sid)
         assert entry.name == "Dup (1)"
 
     def test_conflict_increments_suffix(self, tmp_store):
-        tmp_store.create_session("Dup")
-        tmp_store.create_session_with_unique_name("Dup")
-        sid = tmp_store.create_session_with_unique_name("Dup")
-        entry = tmp_store.get_session(sid)
+        tmp_store.create_profile("Dup")
+        tmp_store.create_profile_with_unique_name("Dup")
+        sid = tmp_store.create_profile_with_unique_name("Dup")
+        entry = tmp_store.get_profile(sid)
         assert entry.name == "Dup (2)"
 
     def test_with_color(self, tmp_store):
-        sid = tmp_store.create_session_with_unique_name("Colored", color="#FF0000")
-        assert tmp_store.get_session(sid).color == "#FF0000"
+        sid = tmp_store.create_profile_with_unique_name("Colored", color="#FF0000")
+        assert tmp_store.get_profile(sid).color == "#FF0000"
 
     def test_empty_base_name_uses_default(self, tmp_store):
-        sid = tmp_store.create_session_with_unique_name()
-        entry = tmp_store.get_session(sid)
-        assert entry.name == f"{DEFAULT_SESSION_NAME}1"
+        sid = tmp_store.create_profile_with_unique_name()
+        entry = tmp_store.get_profile(sid)
+        assert entry.name == f"{DEFAULT_PROFILE_NAME}1"
+
+    def test_empty_base_name_conflict_appends_suffix(self, tmp_store):
+        default = f"{DEFAULT_PROFILE_NAME}1"
+        tmp_store.create_profile(default)
+        sid = tmp_store.create_profile_with_unique_name()
+        entry = tmp_store.get_profile(sid)
+        assert entry.name == f"{default} (1)"
 
 
 class TestAcquireOrCreate:
     def test_with_existing_session_id(self, tmp_store):
-        tmp_store.save_session(SessionEntry(session_id="s1", name="Existing"))
-        sid, entry = tmp_store.acquire_or_create(session_id="s1")
+        tmp_store.save_profile(ProfileEntry(profile_id="s1", name="Existing"))
+        sid, entry = tmp_store.acquire_or_create(profile_id="s1")
         assert sid == "s1"
         assert entry.name == "Existing"
-        assert "s1" in tmp_store.get_active_session_ids()
+        assert "s1" in tmp_store.get_active_profile_ids()
 
     def test_claims_inactive_when_no_id(self, tmp_store):
-        tmp_store.save_session(SessionEntry(session_id="s1", name="A"))
+        tmp_store.save_profile(ProfileEntry(profile_id="s1", name="A"))
         sid, entry = tmp_store.acquire_or_create()
         assert sid == "s1"
-        assert "s1" in tmp_store.get_active_session_ids()
+        assert "s1" in tmp_store.get_active_profile_ids()
 
     def test_creates_new_when_all_active(self, tmp_store):
-        tmp_store.save_session(SessionEntry(session_id="s1", name="A"))
-        tmp_store.set_active_session_ids(["s1"])
+        tmp_store.save_profile(ProfileEntry(profile_id="s1", name="A"))
+        tmp_store.set_active_profile_ids(["s1"])
         sid, entry = tmp_store.acquire_or_create()
         assert sid != "s1"
-        assert entry.name == f"{DEFAULT_SESSION_NAME}1"
-        assert sid in tmp_store.get_active_session_ids()
+        assert entry.name == f"{DEFAULT_PROFILE_NAME}1"
+        assert sid in tmp_store.get_active_profile_ids()
 
     def test_creates_default_name_on_empty_store(self, tmp_store):
         sid, entry = tmp_store.acquire_or_create()
-        assert entry.name == DEFAULT_SESSION_NAME
-        assert sid in tmp_store.get_active_session_ids()
-        assert tmp_store.get_session(sid) is not None
+        assert entry.name == DEFAULT_PROFILE_NAME
+        assert sid in tmp_store.get_active_profile_ids()
+        assert tmp_store.get_profile(sid) is not None
 
     def test_does_not_double_claim(self, tmp_store):
-        tmp_store.save_session(SessionEntry(session_id="s1", name="A"))
-        tmp_store.set_active_session_ids(["s1"])
-        tmp_store.acquire_or_create(session_id="s1")
-        active = tmp_store.get_active_session_ids()
+        tmp_store.save_profile(ProfileEntry(profile_id="s1", name="A"))
+        tmp_store.set_active_profile_ids(["s1"])
+        tmp_store.acquire_or_create(profile_id="s1")
+        active = tmp_store.get_active_profile_ids()
         assert active.count("s1") == 1
 
     def test_single_file_operation(self, tmp_store):
         sid, entry = tmp_store.acquire_or_create()
-        loaded = tmp_store.get_session(sid)
+        loaded = tmp_store.get_profile(sid)
         assert loaded is not None
         assert loaded.name == entry.name
 
     def test_many_collisions(self, tmp_store):
-        tmp_store.create_session("X")
+        tmp_store.create_profile("X")
         for i in range(1, 6):
-            tmp_store.create_session(f"X ({i})")
-        sid = tmp_store.create_session_with_unique_name("X")
-        assert tmp_store.get_session(sid).name == "X (6)"
+            tmp_store.create_profile(f"X ({i})")
+        sid = tmp_store.create_profile_with_unique_name("X")
+        assert tmp_store.get_profile(sid).name == "X (6)"
 
 
-class TestSessionStoreInstance:
+class TestProfileStoreInstance:
     def test_singleton(self):
-        old = SessionStore._instance
+        old = ProfileStore._instance
         try:
-            SessionStore._instance = None
-            a = SessionStore.instance()
-            b = SessionStore.instance()
+            ProfileStore._instance = None
+            a = ProfileStore.instance()
+            b = ProfileStore.instance()
             assert a is b
         finally:
-            SessionStore._instance = old
+            ProfileStore._instance = old
 
     def test_separate_from_constructor(self):
-        old = SessionStore._instance
+        old = ProfileStore._instance
         try:
-            SessionStore._instance = None
-            inst = SessionStore.instance()
-            fresh = SessionStore()
+            ProfileStore._instance = None
+            inst = ProfileStore.instance()
+            fresh = ProfileStore()
             assert fresh is not inst
         finally:
-            SessionStore._instance = old
+            ProfileStore._instance = old
 
 
 class TestBookmarkStoreInstance:

@@ -1,9 +1,9 @@
-from wafer.core.session import (
+from wafer.core.profile import (
     QueryState,
     UIState,
-    SessionEntry,
+    ProfileEntry,
     BookmarkEntry,
-    SessionStore,
+    ProfileStore,
     BookmarkStore,
 )
 
@@ -79,12 +79,12 @@ class TestUIStateRoundtrip:
         assert restored.component_states["main_splitter"]["sizes"] == [200, 800]
 
 
-class TestSessionEntryRoundtrip:
+class TestProfileEntryRoundtrip:
     def test_minimal_entry(self):
-        entry = SessionEntry(session_id="abc123", name="Test Session")
-        restored = SessionEntry.from_dict(entry.to_dict())
-        assert restored.session_id == "abc123"
-        assert restored.name == "Test Session"
+        entry = ProfileEntry(profile_id="abc123", name="Test Profile")
+        restored = ProfileEntry.from_dict(entry.to_dict())
+        assert restored.profile_id == "abc123"
+        assert restored.name == "Test Profile"
         assert restored.query_snapshot is None
 
     def test_full_entry_with_query_snapshot(self):
@@ -100,8 +100,8 @@ class TestSessionEntryRoundtrip:
                 "grid": {"base_height": 180, "scroll_index": 10},
             },
         )
-        entry = SessionEntry(
-            session_id="sess001",
+        entry = ProfileEntry(
+            profile_id="sess001",
             name="My Session",
             color="#4A90D9",
             ui=ui,
@@ -109,8 +109,8 @@ class TestSessionEntryRoundtrip:
             query_snapshot=qs,
         )
         d = entry.to_dict()
-        restored = SessionEntry.from_dict(d)
-        assert restored.session_id == "sess001"
+        restored = ProfileEntry.from_dict(d)
+        assert restored.profile_id == "sess001"
         assert restored.name == "My Session"
         assert restored.color == "#4A90D9"
         assert restored.bookmark_id == "bm001"
@@ -126,11 +126,11 @@ class TestSessionEntryRoundtrip:
             "name": "test",
             "ui": {},
         }
-        restored = SessionEntry.from_dict(d)
+        restored = ProfileEntry.from_dict(d)
         assert restored.query_snapshot is None
 
     def test_invalid_data_returns_default(self):
-        restored = SessionEntry.from_dict("not a dict")
+        restored = ProfileEntry.from_dict("not a dict")
         assert restored.name == ""
 
 
@@ -153,13 +153,13 @@ class TestBookmarkRoundtrip:
         assert restored.query.search_params["keywords"] == "landscape"
 
 
-class TestSessionStoreRoundtrip:
+class TestProfileStoreRoundtrip:
     def test_create_save_and_load(self, tmp_path):
-        store = SessionStore(str(tmp_path / "sessions.json"))
-        sid = store.create_session("Session A", "#4A90D9")
+        store = ProfileStore(str(tmp_path / "profiles.json"))
+        sid = store.create_profile("Session A", "#4A90D9")
         assert sid is not None
 
-        entry = store.get_session(sid)
+        entry = store.get_profile(sid)
         assert entry.name == "Session A"
         assert entry.color == "#4A90D9"
 
@@ -174,9 +174,9 @@ class TestSessionStoreRoundtrip:
                 "grid": {"scroll_index": 5},
             }
         )
-        store.save_session(entry)
+        store.save_profile(entry)
 
-        loaded = store.get_session(sid)
+        loaded = store.get_profile(sid)
         assert loaded.query_snapshot is not None
         assert loaded.query_snapshot.database_name == "test.db"
         assert loaded.query_snapshot.search_params["keywords"] == "sunset"
@@ -184,27 +184,27 @@ class TestSessionStoreRoundtrip:
         assert loaded.ui.component_states["grid"]["scroll_index"] == 5
 
     def test_multiple_sessions_isolation(self, tmp_path):
-        store = SessionStore(str(tmp_path / "sessions.json"))
-        sid_a = store.create_session("Session A")
-        sid_b = store.create_session("Session B")
+        store = ProfileStore(str(tmp_path / "profiles.json"))
+        sid_a = store.create_profile("Session A")
+        sid_b = store.create_profile("Session B")
         assert sid_a != sid_b
 
-        entry_a = store.get_session(sid_a)
+        entry_a = store.get_profile(sid_a)
         entry_a.query_snapshot = QueryState(search_params={"keywords": "alpha"})
-        store.save_session(entry_a)
+        store.save_profile(entry_a)
 
-        entry_b = store.get_session(sid_b)
+        entry_b = store.get_profile(sid_b)
         entry_b.query_snapshot = QueryState(search_params={"keywords": "beta"})
-        store.save_session(entry_b)
+        store.save_profile(entry_b)
 
-        a = store.get_session(sid_a)
-        b = store.get_session(sid_b)
+        a = store.get_profile(sid_a)
+        b = store.get_profile(sid_b)
         assert a.query_snapshot.search_params["keywords"] == "alpha"
         assert b.query_snapshot.search_params["keywords"] == "beta"
 
     def test_session_with_all_search_params(self, tmp_path):
-        store = SessionStore(str(tmp_path / "sessions.json"))
-        sid = store.create_session("Full Params")
+        store = ProfileStore(str(tmp_path / "profiles.json"))
+        sid = store.create_profile("Full Params")
 
         full_params = {
             "keywords": "sunset,ocean",
@@ -216,7 +216,7 @@ class TestSessionStoreRoundtrip:
             "include_subfolders": False,
             "auto_execute": True,
         }
-        entry = store.get_session(sid)
+        entry = store.get_profile(sid)
         entry.query_snapshot = QueryState(
             database_name="full_test.db",
             search_params=full_params,
@@ -229,58 +229,56 @@ class TestSessionStoreRoundtrip:
                 "grid": {"base_height": 250, "spacing": 8, "scroll_index": 99},
             },
         )
-        store.save_session(entry)
+        store.save_profile(entry)
 
-        restored = store.get_session(sid)
+        restored = store.get_profile(sid)
         assert restored.query_snapshot.search_params == full_params
         assert restored.query_snapshot.folder_state["expanded"] == ["/a", "/b"]
         assert restored.ui.component_states["grid"]["base_height"] == 250
 
     def test_delete_session_removes_data(self, tmp_path):
-        store = SessionStore(str(tmp_path / "sessions.json"))
-        sid = store.create_session("Temporary")
-        assert store.get_session(sid) is not None
+        store = ProfileStore(str(tmp_path / "profiles.json"))
+        sid = store.create_profile("Temporary")
+        assert store.get_profile(sid) is not None
 
-        store.delete_session(sid)
-        assert store.get_session(sid) is None
+        store.delete_profile(sid)
+        assert store.get_profile(sid) is None
 
-    def test_active_session_tracking(self, tmp_path):
-        store = SessionStore(str(tmp_path / "sessions.json"))
-        sid = store.create_session("Active Test")
+    def test_active_profile_tracking(self, tmp_path):
+        store = ProfileStore(str(tmp_path / "profiles.json"))
+        sid = store.create_profile("Active Test")
 
-        assert store.claim_session(sid) is True
-        assert sid in store.get_active_session_ids()
-
-        assert store.claim_session(sid) is False
+        store.set_active_profile_ids([sid])
+        assert sid in store.get_active_profile_ids()
 
     def test_restore_session_ids(self, tmp_path):
-        store = SessionStore(str(tmp_path / "sessions.json"))
-        sid1 = store.create_session("S1")
-        sid2 = store.create_session("S2")
+        store = ProfileStore(str(tmp_path / "profiles.json"))
+        sid1 = store.create_profile("S1")
+        sid2 = store.create_profile("S2")
 
-        store.set_restore_session_ids([sid1, sid2])
-        restored = store.get_restore_session_ids()
+        store.set_restore_profile_ids([sid1, sid2])
+        restored = store.get_restore_profile_ids()
         assert sid1 in restored
         assert sid2 in restored
 
-    def test_find_inactive_session(self, tmp_path):
-        store = SessionStore(str(tmp_path / "sessions.json"))
-        sid = store.create_session("Inactive")
-        assert store.find_inactive_session_id() == sid
+    def test_find_inactive_profile(self, tmp_path):
+        store = ProfileStore(str(tmp_path / "profiles.json"))
+        sid = store.create_profile("Inactive")
+        assert store.find_inactive_profile_id() == sid
 
-        store.claim_session(sid)
-        assert store.find_inactive_session_id() is None
+        store.set_active_profile_ids([sid])
+        assert store.find_inactive_profile_id() is None
 
     def test_session_rename(self, tmp_path):
-        store = SessionStore(str(tmp_path / "sessions.json"))
-        sid = store.create_session("Original")
-        assert store.rename_session(sid, "Renamed") is True
-        assert store.get_session(sid).name == "Renamed"
+        store = ProfileStore(str(tmp_path / "profiles.json"))
+        sid = store.create_profile("Original")
+        assert store.rename_profile(sid, "Renamed") is True
+        assert store.get_profile(sid).name == "Renamed"
 
     def test_duplicate_name_rejected(self, tmp_path):
-        store = SessionStore(str(tmp_path / "sessions.json"))
-        store.create_session("Taken")
-        assert store.create_session("Taken") is None
+        store = ProfileStore(str(tmp_path / "profiles.json"))
+        store.create_profile("Taken")
+        assert store.create_profile("Taken") is None
 
 
 class TestBookmarkStoreRoundtrip:

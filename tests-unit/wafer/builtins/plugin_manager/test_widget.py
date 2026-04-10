@@ -884,22 +884,22 @@ class TestPluginManagerCommands:
             )(),
         )
         mock_store = MagicMock()
-        mock_store.get_active_session_ids.return_value = ["sess1", "sess2"]
-        monkeypatch.setattr("wafer.builtins.commands.app.SessionStore", type("", (), {"instance": staticmethod(lambda: mock_store)}))
+        mock_store.get_active_profile_ids.return_value = ["sess1", "sess2"]
+        monkeypatch.setattr("wafer.builtins.commands.app.ProfileStore", type("", (), {"instance": staticmethod(lambda: mock_store)}))
         from wafer.builtins.commands.app import restart_all
 
         mock_node = MagicMock()
         mock_w = MagicMock()
-        mock_w.session_id = "sess1"
+        mock_w.profile_id = "sess1"
         mock_w._node = mock_node
         ctx = MagicMock()
         ctx.get_instance.return_value = mock_w
         restart_all(ctx)
         assert ("terminate", ("--tray",)) in calls
         assert ("new_main", ("--tray",)) in calls
-        mock_node.send.assert_called_once_with("session.restart", "sess2", dst="viewer")
+        mock_node.send.assert_called_once_with("profile.restart", "sess2", dst="viewer")
         mock_w.close_by_restart.assert_called_once()
-        mock_store.set_restore_session_ids.assert_called_once_with(["sess1", "sess2"])
+        mock_store.set_restore_profile_ids.assert_called_once_with(["sess1", "sess2"])
 
 
 class TestCollectorsTab:

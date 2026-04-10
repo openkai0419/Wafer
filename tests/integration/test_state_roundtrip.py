@@ -84,7 +84,7 @@ class TestStateStoreMultiComponentRoundtrip:
 
 class TestStateStoreWithSessionData:
     def test_session_like_save_restore(self):
-        from wafer.core.session import QueryState, UIState
+        from wafer.core.profile import QueryState, UIState
 
         qs = QueryState(database_name="main.db", search_params={"keywords": "test"})
         ui = UIState(window_state={"geometry": "geo"}, component_states={"grid": {"h": 200}})

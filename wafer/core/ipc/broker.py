@@ -101,7 +101,7 @@ class Broker:
         self._viewer_ids: dict[bytes, int] = {}
         self._restore_debounce: threading.Timer | None = None
         self._restore_debounce_sec: float = 1.0
-        self._session_store_factory: Any = None
+        self._profile_store_factory: Any = None
 
         self._io_thread = threading.Thread(target=self._io_loop, daemon=True)
         self._prune_thread = threading.Thread(target=self._reaper_loop, daemon=True)
@@ -135,6 +135,7 @@ class Broker:
     def _register_peer(self, ident: bytes, role: str, db_set: set[str], node_id: str, session_id: str = "") -> int | None:
         with self._lock:
             old = self._peers.get(ident)
+            old_session_id = old.session_id if old else ""
             if old:
                 self._by_role.get(old.role, set()).discard(ident)
                 self._by_node_id.pop(old.node_id, None)
@@ -155,7 +156,10 @@ class Broker:
                         vid += 1
                     self._viewer_ids[ident] = vid
                     viewer_id = vid
-                self._on_viewer_connected(session_id)
+                if old_session_id and old_session_id != session_id:
+                    self._sync_active_profiles()
+                else:
+                    self._on_viewer_connected(session_id)
             AppLogger.info(f"peer added: {node_id} role={role} db={db_set} session={session_id}")
             return viewer_id
 
@@ -342,17 +346,17 @@ class Broker:
                 self._unregister_peer(ident)
             self._stop.wait(1)
 
-    def set_session_store_factory(self, factory):
-        self._session_store_factory = factory
+    def set_profile_store_factory(self, factory):
+        self._profile_store_factory = factory
 
-    def _get_session_store(self):
-        if self._session_store_factory:
-            return self._session_store_factory()
-        from ..session import SessionStore
+    def _get_profile_store(self):
+        if self._profile_store_factory:
+            return self._profile_store_factory()
+        from ..profile import ProfileStore
 
-        return SessionStore.instance()
+        return ProfileStore.instance()
 
-    def active_viewer_session_ids(self) -> list[str]:
+    def active_viewer_profile_ids(self) -> list[str]:
         with self._lock:
             viewer_idents = self._by_role.get("viewer", set())
             return [self._peers[i].session_id for i in viewer_idents if i in self._peers and self._peers[i].session_id]
@@ -361,15 +365,15 @@ class Broker:
         if not session_id:
             return
         try:
-            store = self._get_session_store()
-            restore = store.get_restore_session_ids()
+            store = self._get_profile_store()
+            restore = store.get_restore_profile_ids()
             if session_id not in restore:
                 restore.append(session_id)
-                store.set_restore_session_ids(restore)
-            active = store.get_active_session_ids()
+                store.set_restore_profile_ids(restore)
+            active = store.get_active_profile_ids()
             if session_id not in active:
                 active.append(session_id)
-                store.set_active_session_ids(active)
+                store.set_active_profile_ids(active)
         except Exception as e:
             AppLogger.warning(f"_on_viewer_connected failed: {e}", exc=e)
 
@@ -386,10 +390,19 @@ class Broker:
 
     def _debounce_fire(self):
         try:
-            active = self.active_viewer_session_ids()
-            store = self._get_session_store()
-            store.set_active_session_ids(active)
+            active = self.active_viewer_profile_ids()
+            store = self._get_profile_store()
+            store.set_active_profile_ids(active)
             if active:
-                store.set_restore_session_ids(list(active))
+                store.set_restore_profile_ids(list(active))
         except Exception as e:
             AppLogger.warning(f"_debounce_fire failed: {e}", exc=e)
+
+    def _sync_active_profiles(self):
+        try:
+            active = self.active_viewer_profile_ids()
+            store = self._get_profile_store()
+            store.set_active_profile_ids(active)
+            store.set_restore_profile_ids(list(active))
+        except Exception as e:
+            AppLogger.warning(f"_sync_active_profiles failed: {e}", exc=e)

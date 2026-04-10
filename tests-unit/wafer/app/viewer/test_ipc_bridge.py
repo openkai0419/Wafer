@@ -34,8 +34,8 @@ class TestSubscription:
         topics = {call.args[0] for call in mock_node.subscribe.call_args_list}
         expected = {
             "update", "folderchanged", "progress", "maximum",
-            "show_toggle", "session.focus", "session.close",
-            "session.restart", "db.created", "db.deleted", "dev.log",
+            "show_toggle", "profile.close",
+            "profile.restart", "db.created", "db.deleted", "dev.log",
         }
         assert topics == expected
 
@@ -86,22 +86,16 @@ class TestSignalEmission:
         bridge._emit_show_toggled("db1", True)
         assert received == [("db1", True)]
 
-    def test_session_focused(self, qtbot, bridge):
-        received = []
-        bridge.session_focused.connect(received.append)
-        bridge._emit_session_focused("sess1")
-        assert received == ["sess1"]
-
     def test_session_closed(self, qtbot, bridge):
         received = []
-        bridge.session_closed.connect(received.append)
-        bridge._emit_session_closed("sess1")
+        bridge.profile_closed.connect(received.append)
+        bridge._emit_profile_closed("sess1")
         assert received == ["sess1"]
 
     def test_session_restarted(self, qtbot, bridge):
         received = []
-        bridge.session_restarted.connect(received.append)
-        bridge._emit_session_restarted("sess1")
+        bridge.profile_restarted.connect(received.append)
+        bridge._emit_profile_restarted("sess1")
         assert received == ["sess1"]
 
     def test_db_created(self, qtbot, bridge):
@@ -147,11 +141,6 @@ class TestIpcHandlers:
     def test_on_show_toggle(self, bridge):
         msg = _FakeMsg(topic="show_toggle", payload=True, db="db1")
         result = bridge._on_show_toggle(msg)
-        assert result is True
-
-    def test_on_session_focus(self, bridge):
-        msg = _FakeMsg(topic="session.focus", payload="s1")
-        result = bridge._on_session_focus(msg)
         assert result is True
 
     def test_on_db_created(self, bridge):

@@ -2,14 +2,15 @@ from ...core.commands.bridge import ActionKit
 from ...core.commands.binding.instance_registry import InstanceRegistry
 from ...core.app_settings import app_settings
 from ...utils.notifier import Notifier
-from .session_commands import (
-    show_session_popup,
-    create_session,
-    open_session,
-    rename_session,
-    delete_session,
-    color_session,
-    _ss_store,
+from .profile_commands import (
+    show_profile_popup,
+    create_profile,
+    new_window,
+    open_profile,
+    open_profile_in_new_window,
+    rename_profile,
+    delete_profile,
+    _pf_store,
 )
 
 
@@ -45,8 +46,8 @@ def _is_always_on_top():
     return w.window_state.is_always_on_top if w else False
 
 
-def _session_names():
-    return _ss_store().list_session_names()
+def _profile_names():
+    return _pf_store().list_profile_names()
 
 
 class WindowCommands(ActionKit.MenuBase):
@@ -61,31 +62,32 @@ class WindowCommands(ActionKit.MenuBase):
             ActionKit.Command(path="win.toggle_always_on_top", display="Always on Top", func=toggle_always_on_top, checkable=True, checked_resolver=_is_always_on_top),
             ActionKit.Command(path="win.toggle_language", display="Toggle Language", func=toggle_language),
             "-",
-            ":Session",
-            ActionKit.Command(path="win.new_window", display="New Window", func=create_session),
-            ActionKit.Command(path="win.session_list", display="Session List", func=show_session_popup),
+            ":Profile",
+            ActionKit.Command(path="win.new_profile", display="New Profile", func=create_profile),
+            ActionKit.Command(path="win.new_window", display="New Window", func=new_window),
+            ActionKit.Command(path="win.profile_list", display="Profile List", func=show_profile_popup),
             ActionKit.Command(
-                path="win.open_session",
-                display="Open Session",
-                func=open_session,
-                params=[ActionKit.Param(name="session", value=_session_names, required=True)],
+                path="win.open_profile",
+                display="Open Profile",
+                func=open_profile,
+                params=[ActionKit.Param(name="profile", value=_profile_names, required=True)],
             ),
             ActionKit.Command(
-                path="win.rename_session",
-                display="Rename Session",
-                func=rename_session,
-                params=[ActionKit.Param(name="session", value=_session_names, required=True)],
+                path="win.open_profile_in_new_window",
+                display="Open Profile in New Window",
+                func=open_profile_in_new_window,
+                params=[ActionKit.Param(name="profile", value=_profile_names, required=True)],
             ),
             ActionKit.Command(
-                path="win.delete_session",
-                display="Delete Session",
-                func=delete_session,
-                params=[ActionKit.Param(name="session", value=_session_names, required=True)],
+                path="win.rename_profile",
+                display="Rename Profile",
+                func=rename_profile,
+                params=[ActionKit.Param(name="profile", value=_profile_names, required=True)],
             ),
             ActionKit.Command(
-                path="win.session_color",
-                display="Session Color",
-                func=color_session,
-                params=[ActionKit.Param(name="session", value=_session_names, required=True)],
+                path="win.delete_profile",
+                display="Delete Profile",
+                func=delete_profile,
+                params=[ActionKit.Param(name="profile", value=_profile_names, required=True)],
             ),
         ]

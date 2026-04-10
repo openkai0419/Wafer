@@ -8,15 +8,16 @@ from pathlib import Path
 from typing import Any
 from collections.abc import Callable
 
-from ..constants import DEFAULT_SESSION_NAME
+from ..constants import DEFAULT_PROFILE_NAME
 from ..utils.json_io import read_json_file, write_json_file
 from ..utils.paths import resolve_data_path
 from ..utils.process_lock import file_lock
 
-_STORE_FILENAME = "sessions.json"
+_STORE_FILENAME = "profiles.json"
+_LEGACY_STORE_FILENAME = "sessions.json"
 _BOOKMARK_DIR = "bookmarks"
 
-SESSION_COLORS = [
+PROFILE_COLORS = [
     "#4A90D9",
     "#D94A4A",
     "#4AD97A",
@@ -107,8 +108,8 @@ class BookmarkEntry:
 
 
 @dataclass
-class SessionEntry:
-    session_id: str = field(default_factory=_new_id)
+class ProfileEntry:
+    profile_id: str = field(default_factory=_new_id)
     name: str = ""
     color: str = ""
     ui: UIState = field(default_factory=UIState)
@@ -119,7 +120,7 @@ class SessionEntry:
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
-            "session_id": self.session_id,
+            "profile_id": self.profile_id,
             "name": self.name,
             "color": self.color,
             "ui": self.ui.to_dict(),
@@ -132,14 +133,15 @@ class SessionEntry:
         return d
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> SessionEntry:
+    def from_dict(cls, data: dict[str, Any]) -> ProfileEntry:
         if not isinstance(data, dict):
             return cls()
         ui = UIState.from_dict(data.get("ui", {}))
         qs_raw = data.get("query_snapshot")
         qs = QueryState.from_dict(qs_raw) if isinstance(qs_raw, dict) else None
+        pid = data.get("profile_id") or data.get("session_id", _new_id())
         return cls(
-            session_id=data.get("session_id", _new_id()),
+            profile_id=pid,
             name=data.get("name", ""),
             color=data.get("color", ""),
             ui=ui,
@@ -150,24 +152,40 @@ class SessionEntry:
         )
 
 
-class SessionStore:
-    _instance: SessionStore | None = None
+class ProfileStore:
+    _instance: ProfileStore | None = None
 
     @classmethod
-    def instance(cls) -> SessionStore:
+    def instance(cls) -> ProfileStore:
         if cls._instance is None:
             cls._instance = cls()
         return cls._instance
 
     def __init__(self, path: str | None = None):
-        self._path = path or resolve_data_path(_STORE_FILENAME)
+        if path:
+            self._path = path
+        else:
+            self._path = resolve_data_path(_STORE_FILENAME)
+            self._migrate_legacy()
         self._lock_path = self._path + ".lock"
+
+    def _migrate_legacy(self):
+        legacy = resolve_data_path(_LEGACY_STORE_FILENAME)
+        if Path(legacy).is_file() and not Path(self._path).is_file():
+            import shutil
+            shutil.move(legacy, self._path)
 
     def _load_raw(self) -> dict[str, Any]:
         data = read_json_file(self._path, default=None)
         if isinstance(data, dict):
+            if "sessions" in data and "profiles" not in data:
+                data["profiles"] = data.pop("sessions")
+            if "active_session_ids" in data and "active_profile_ids" not in data:
+                data["active_profile_ids"] = data.pop("active_session_ids")
+            if "restore_session_ids" in data and "restore_profile_ids" not in data:
+                data["restore_profile_ids"] = data.pop("restore_session_ids")
             return data
-        return {"sessions": {}, "active_session_ids": [], "restore_session_ids": []}
+        return {"profiles": {}, "active_profile_ids": [], "restore_profile_ids": []}
 
     def _save_raw(self, data: dict[str, Any]) -> None:
         write_json_file(self._path, data)
@@ -179,192 +197,182 @@ class SessionStore:
             self._save_raw(raw)
             return result
 
-    def list_sessions(self) -> list[SessionEntry]:
+    def list_profiles(self) -> list[ProfileEntry]:
         raw = self._load_raw()
-        sessions = raw.get("sessions", {})
-        return [SessionEntry.from_dict(v) for v in sessions.values()]
+        profiles = raw.get("profiles", {})
+        return [ProfileEntry.from_dict(v) for v in profiles.values()]
 
-    def get_session(self, session_id: str) -> SessionEntry | None:
+    def get_profile(self, profile_id: str) -> ProfileEntry | None:
         raw = self._load_raw()
-        entry = raw.get("sessions", {}).get(session_id)
+        entry = raw.get("profiles", {}).get(profile_id)
         if entry is None:
             return None
-        return SessionEntry.from_dict(entry)
+        return ProfileEntry.from_dict(entry)
 
-    def save_session(self, entry: SessionEntry) -> None:
+    def save_profile(self, entry: ProfileEntry) -> None:
         entry.updated_at = _now_iso()
 
         def _update(raw):
-            raw.setdefault("sessions", {})[entry.session_id] = entry.to_dict()
+            raw.setdefault("profiles", {})[entry.profile_id] = entry.to_dict()
 
         self._locked_update(_update)
 
-    def delete_session(self, session_id: str) -> bool:
+    def delete_profile(self, profile_id: str) -> bool:
         def _update(raw):
-            sessions = raw.get("sessions", {})
-            if session_id not in sessions:
+            profiles = raw.get("profiles", {})
+            if profile_id not in profiles:
                 return False
-            del sessions[session_id]
-            active = raw.get("active_session_ids", [])
-            if session_id in active:
-                active.remove(session_id)
-            restore = raw.get("restore_session_ids", [])
-            if session_id in restore:
-                restore.remove(session_id)
+            del profiles[profile_id]
+            active = raw.get("active_profile_ids", [])
+            if profile_id in active:
+                active.remove(profile_id)
+            restore = raw.get("restore_profile_ids", [])
+            if profile_id in restore:
+                restore.remove(profile_id)
             return True
 
         return self._locked_update(_update)
 
-    def get_active_session_ids(self) -> list[str]:
+    def get_active_profile_ids(self) -> list[str]:
         raw = self._load_raw()
-        return list(raw.get("active_session_ids", []))
+        return list(raw.get("active_profile_ids", []))
 
-    def set_active_session_ids(self, ids: list[str]) -> None:
+    def set_active_profile_ids(self, ids: list[str]) -> None:
         def _update(raw):
-            raw["active_session_ids"] = list(ids)
+            raw["active_profile_ids"] = list(ids)
 
         self._locked_update(_update)
 
-    def get_restore_session_ids(self) -> list[str]:
+    def get_restore_profile_ids(self) -> list[str]:
         raw = self._load_raw()
-        ids = raw.get("restore_session_ids", [])
-        sessions = raw.get("sessions", {})
-        return [sid for sid in ids if sid in sessions]
+        ids = raw.get("restore_profile_ids", [])
+        profiles = raw.get("profiles", {})
+        return [pid for pid in ids if pid in profiles]
 
-    def set_restore_session_ids(self, ids: list[str]) -> None:
+    def set_restore_profile_ids(self, ids: list[str]) -> None:
         def _update(raw):
-            raw["restore_session_ids"] = list(ids)
+            raw["restore_profile_ids"] = list(ids)
 
         self._locked_update(_update)
 
-    def claim_session(self, session_id: str) -> bool:
-        def _update(raw):
-            active = raw.setdefault("active_session_ids", [])
-            if session_id in active:
-                return False
-            active.append(session_id)
-            return True
+    def has_profile_name(self, name: str) -> bool:
+        return any(e.name == name for e in self.list_profiles())
 
-        return self._locked_update(_update)
-
-    def has_session_name(self, name: str) -> bool:
-        return any(e.name == name for e in self.list_sessions())
-
-    def find_session_by_name(self, name: str) -> SessionEntry | None:
-        for e in self.list_sessions():
+    def find_profile_by_name(self, name: str) -> ProfileEntry | None:
+        for e in self.list_profiles():
             if e.name == name:
                 return e
         return None
 
-    def create_session(self, name: str, color: str = "") -> str | None:
+    def create_profile(self, name: str, color: str = "") -> str | None:
         def _update(raw):
-            sessions = raw.setdefault("sessions", {})
-            for v in sessions.values():
+            profiles = raw.setdefault("profiles", {})
+            for v in profiles.values():
                 if v.get("name") == name:
                     return None
-            sid = _new_id()
-            entry = SessionEntry(session_id=sid, name=name, color=color)
+            pid = _new_id()
+            entry = ProfileEntry(profile_id=pid, name=name, color=color)
             entry.updated_at = _now_iso()
-            sessions[sid] = entry.to_dict()
-            return sid
+            profiles[pid] = entry.to_dict()
+            return pid
 
         return self._locked_update(_update)
 
-    def create_session_with_unique_name(self, base_name: str = "", color: str = "") -> str:
+    def create_profile_with_unique_name(self, base_name: str = "", color: str = "") -> str:
         def _update(raw):
-            sessions = raw.setdefault("sessions", {})
-            existing = {v.get("name") for v in sessions.values()}
-            name = base_name or f"{DEFAULT_SESSION_NAME}1"
+            profiles = raw.setdefault("profiles", {})
+            existing = {v.get("name") for v in profiles.values()}
+            name = base_name or f"{DEFAULT_PROFILE_NAME}1"
             if name in existing:
                 n = 1
-                while f"{base_name} ({n})" in existing:
+                while f"{name} ({n})" in existing:
                     n += 1
-                name = f"{base_name} ({n})"
-            sid = _new_id()
-            entry = SessionEntry(session_id=sid, name=name, color=color)
+                name = f"{name} ({n})"
+            pid = _new_id()
+            entry = ProfileEntry(profile_id=pid, name=name, color=color)
             entry.updated_at = _now_iso()
-            sessions[sid] = entry.to_dict()
-            return sid
+            profiles[pid] = entry.to_dict()
+            return pid
 
         return self._locked_update(_update)
 
     def next_default_name(self) -> str:
-        existing_names = {e.name for e in self.list_sessions()}
+        existing_names = {e.name for e in self.list_profiles()}
         n = 1
-        while f"{DEFAULT_SESSION_NAME}{n}" in existing_names:
+        while f"{DEFAULT_PROFILE_NAME}{n}" in existing_names:
             n += 1
-        return f"{DEFAULT_SESSION_NAME}{n}"
+        return f"{DEFAULT_PROFILE_NAME}{n}"
 
-    def find_inactive_session_id(self) -> str | None:
+    def find_inactive_profile_id(self) -> str | None:
         raw = self._load_raw()
-        active = set(raw.get("active_session_ids", []))
-        for sid in raw.get("sessions", {}):
-            if sid not in active:
-                return sid
+        active = set(raw.get("active_profile_ids", []))
+        for pid in raw.get("profiles", {}):
+            if pid not in active:
+                return pid
         return None
 
-    def acquire_or_create(self, session_id: str | None = None, default_name: str = DEFAULT_SESSION_NAME) -> tuple[str, SessionEntry]:
+    def acquire_or_create(self, profile_id: str | None = None, default_name: str = DEFAULT_PROFILE_NAME) -> tuple[str, ProfileEntry]:
         def _update(raw):
-            sessions = raw.setdefault("sessions", {})
-            active = raw.setdefault("active_session_ids", [])
+            profiles = raw.setdefault("profiles", {})
+            active = raw.setdefault("active_profile_ids", [])
             active_set = set(active)
-            if session_id and session_id in sessions:
-                sid = session_id
+            if profile_id and profile_id in profiles:
+                pid = profile_id
             else:
-                sid = None
-                for s in sessions:
-                    if s not in active_set:
-                        sid = s
+                pid = None
+                for p in profiles:
+                    if p not in active_set:
+                        pid = p
                         break
-                if sid is None:
-                    existing_names = {v.get("name") for v in sessions.values()}
-                    if not sessions:
+                if pid is None:
+                    existing_names = {v.get("name") for v in profiles.values()}
+                    if not profiles:
                         name = default_name
                     else:
                         n = 1
                         while f"{default_name}{n}" in existing_names:
                             n += 1
                         name = f"{default_name}{n}"
-                    sid = _new_id()
-                    entry = SessionEntry(session_id=sid, name=name)
+                    pid = _new_id()
+                    entry = ProfileEntry(profile_id=pid, name=name)
                     entry.updated_at = _now_iso()
-                    sessions[sid] = entry.to_dict()
-            if sid not in active_set:
-                active.append(sid)
-            return sid, SessionEntry.from_dict(sessions[sid])
+                    profiles[pid] = entry.to_dict()
+            if pid not in active_set:
+                active.append(pid)
+            return pid, ProfileEntry.from_dict(profiles[pid])
 
         return self._locked_update(_update)
 
-    def list_session_names(self) -> list[str]:
-        return [e.name for e in self.list_sessions()]
+    def list_profile_names(self) -> list[str]:
+        return [e.name for e in self.list_profiles()]
 
-    def set_session_color(self, session_id: str, color: str) -> bool:
+    def set_profile_color(self, profile_id: str, color: str) -> bool:
         def _update(raw):
-            sessions = raw.get("sessions", {})
-            data = sessions.get(session_id)
+            profiles = raw.get("profiles", {})
+            data = profiles.get(profile_id)
             if data is None:
                 return False
-            entry = SessionEntry.from_dict(data)
+            entry = ProfileEntry.from_dict(data)
             entry.color = color
             entry.updated_at = _now_iso()
-            sessions[session_id] = entry.to_dict()
+            profiles[profile_id] = entry.to_dict()
             return True
 
         return self._locked_update(_update)
 
-    def rename_session(self, session_id: str, new_name: str) -> bool:
+    def rename_profile(self, profile_id: str, new_name: str) -> bool:
         def _update(raw):
-            sessions = raw.get("sessions", {})
-            data = sessions.get(session_id)
+            profiles = raw.get("profiles", {})
+            data = profiles.get(profile_id)
             if data is None:
                 return False
-            for sid, v in sessions.items():
-                if sid != session_id and v.get("name") == new_name:
+            for pid, v in profiles.items():
+                if pid != profile_id and v.get("name") == new_name:
                     return False
-            entry = SessionEntry.from_dict(data)
+            entry = ProfileEntry.from_dict(data)
             entry.name = new_name
             entry.updated_at = _now_iso()
-            sessions[session_id] = entry.to_dict()
+            profiles[profile_id] = entry.to_dict()
             return True
 
         return self._locked_update(_update)

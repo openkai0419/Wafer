@@ -1,21 +1,20 @@
-from PySide6 import QtCore, QtGui, QtWidgets
+from PySide6 import QtCore, QtWidgets
 
 from ...core.commands.bridge import ActionKit
 from ...core.commands.command.require import require
-from ...core.color.theme import ThemeManager
 from ...ui.dialogs import InputDialog
 from ...core.platform.process import AppProcess
 from ...utils.logs import AppLogger
 from ...utils.notifier import Notifier
-from ...core.session import BookmarkEntry, BookmarkStore, SessionStore
+from ...core.profile import BookmarkEntry, BookmarkStore, ProfileStore
 
 
 def _bm_store():
     return BookmarkStore.instance()
 
 
-def _ss_store():
-    return SessionStore.instance()
+def _pf_store():
+    return ProfileStore.instance()
 
 
 @require(w="MainWindow")
@@ -125,30 +124,30 @@ class BookmarkCommands(ActionKit.MenuBase):
         ]
 
 
-def _get_alive_session_ids() -> list[str]:
-    return _ss_store().get_active_session_ids()
+def _get_alive_profile_ids() -> list[str]:
+    return _pf_store().get_active_profile_ids()
 
 
 @require(w="MainWindow")
-def show_session_popup(ctx, w):
-    existing = getattr(w, "_session_popup", None)
+def show_profile_popup(ctx, w):
+    existing = getattr(w, "_profile_popup", None)
     if existing and existing.isVisible():
         existing.close()
         return
-    from wafer.app.viewer.widgets.session_popup import SessionPopup
+    from wafer.app.viewer.widgets.profile_popup import ProfilePopup
 
-    store = _ss_store()
-    named = store.list_sessions()
-    alive = _get_alive_session_ids()
-    popup = SessionPopup(parent=w)
-    w._session_popup = popup
-    popup.populate(named, alive, current_session_id=w.session_id)
-    popup.session_create.connect(lambda: create_session(ctx))
-    popup.session_open.connect(lambda sid: open_session(ctx, sid=sid))
-    popup.session_rename.connect(lambda sid: rename_session(ctx, sid=sid))
-    popup.session_delete.connect(lambda sid: delete_session(ctx, sid=sid))
-    popup.session_color.connect(lambda sid: color_session(ctx, sid=sid, popup=popup))
-    btn = getattr(w, "_session_button", None)
+    store = _pf_store()
+    named = store.list_profiles()
+    popup = ProfilePopup(parent=w)
+    w._profile_popup = popup
+    popup.populate(named, current_profile_id=w.profile_id)
+    popup.profile_create.connect(lambda: create_profile(ctx))
+    popup.profile_open.connect(lambda pid: open_profile(ctx, pid=pid))
+    popup.profile_open_new_window.connect(lambda pid: open_profile_in_new_window(ctx, pid=pid))
+    popup.profile_rename.connect(lambda pid: rename_profile(ctx, pid=pid))
+    popup.profile_delete.connect(lambda pid: delete_profile(ctx, pid=pid))
+    popup.profile_color_changed.connect(lambda pid, color: _apply_profile_color(w, pid, color))
+    btn = getattr(w, "_profile_button", None)
     if btn:
         popup.show_below(btn)
     else:
@@ -156,12 +155,12 @@ def show_session_popup(ctx, w):
 
 
 @require(w="MainWindow")
-def create_session(ctx, w):
-    store = _ss_store()
+def create_profile(ctx, w):
+    store = _pf_store()
     default_name = store.next_default_name()
     name = InputDialog.get_text(
-        "Session name:",
-        title="New Window",
+        "Profile name:",
+        title="New Profile",
         buttons=("Create", "Cancel"),
         parent=w,
         default=default_name,
@@ -169,58 +168,70 @@ def create_session(ctx, w):
     if not name or not name.strip():
         return
     name = name.strip()
-    sid = store.create_session(name)
-    if sid is None:
-        existing = store.find_session_by_name(name)
-        if existing:
-            open_session(ctx, sid=existing.session_id)
+    pid = store.create_profile(name)
+    if pid is None:
+        Notifier.warning(f"Profile name already exists: {name}")
         return
-    entry = store.get_session(sid)
+    entry = store.get_profile(pid)
     entry.query_snapshot = w.capture_query_state()
     ui = w.capture_ui_state()
     ui.window_state = {}
     entry.ui = ui
-    store.save_session(entry)
-    AppLogger.info(f"Session created: {name} ({sid})")
-    Notifier.info(f"Session created: {name}")
-    AppProcess.new_main("--viewer", "--session", sid)
+    store.save_profile(entry)
+    AppLogger.info(f"Profile created: {name} ({pid})")
+    Notifier.info(f"Profile created: {name}")
+    w.switch_profile(pid)
 
 
-def _resolve_session(store, session: str = "", sid: str = ""):
-    if sid:
-        return store.get_session(sid)
-    if session:
-        return store.find_session_by_name(session)
+def new_window(ctx):
+    store = _pf_store()
+    profiles = store.list_profiles()
+    if profiles:
+        pid = profiles[0].profile_id
+    else:
+        pid = store.create_profile_with_unique_name(store.next_default_name())
+    AppProcess.new_main("--viewer", "--profile", pid)
+    AppLogger.info(f"new_window: profile={pid}")
+
+
+def _resolve_profile(store, profile: str = "", pid: str = ""):
+    if pid:
+        return store.get_profile(pid)
+    if profile:
+        return store.find_profile_by_name(profile)
     return None
 
 
 @require(w="MainWindow")
-def open_session(ctx, w, session: str = "", sid: str = ""):
-    store = _ss_store()
-    entry = _resolve_session(store, session, sid)
+def open_profile(ctx, w, profile: str = "", pid: str = ""):
+    store = _pf_store()
+    entry = _resolve_profile(store, profile, pid)
     if not entry:
         return
-    if entry.session_id == w.session_id:
+    if entry.profile_id == w.profile_id:
         return
-    if not store.claim_session(entry.session_id):
-        node = getattr(w, "_node", None)
-        if node:
-            node.send("session.focus", entry.session_id, dst="viewer")
-    else:
-        AppProcess.new_main("--viewer", "--session", entry.session_id)
-        Notifier.info("Session opened")
-    AppLogger.info(f"open_session: {entry.session_id}")
+    w.switch_profile(entry.profile_id)
 
 
 @require(w="MainWindow")
-def rename_session(ctx, w, session: str = "", sid: str = ""):
-    store = _ss_store()
-    entry = _resolve_session(store, session, sid)
+def open_profile_in_new_window(ctx, w, profile: str = "", pid: str = ""):
+    store = _pf_store()
+    entry = _resolve_profile(store, profile, pid)
+    if not entry:
+        return
+    AppProcess.new_main("--viewer", "--profile", entry.profile_id)
+    AppLogger.info(f"open_profile_in_new_window: {entry.profile_id}")
+
+
+@require(w="MainWindow")
+def rename_profile(ctx, w, profile: str = "", pid: str = ""):
+    store = _pf_store()
+    entry = _resolve_profile(store, profile, pid)
     if not entry:
         return
     name = InputDialog.get_text(
         "New name:",
-        title="Rename Session",
+        title="Rename Profile",
         buttons=("Rename", "Cancel"),
         parent=w,
         default=entry.name,
@@ -230,69 +241,47 @@ def rename_session(ctx, w, session: str = "", sid: str = ""):
     name = name.strip()
     if name == entry.name:
         return
-    if not store.rename_session(entry.session_id, name):
-        Notifier.warning(f"Session name already exists: {name}")
+    if not store.rename_profile(entry.profile_id, name):
+        Notifier.warning(f"Profile name already exists: {name}")
         return
-    Notifier.info(f"Session renamed: {name}")
-    AppLogger.info(f"Session renamed: {entry.session_id} -> {name}")
-    if w.session_id == entry.session_id:
-        w._session_entry.name = name
+    Notifier.info(f"Profile renamed: {name}")
+    AppLogger.info(f"Profile renamed: {entry.profile_id} -> {name}")
+    if w.profile_id == entry.profile_id:
+        w._profile_entry.name = name
         w._update_title()
 
 
 @require(w="MainWindow")
-def delete_session(ctx, w, session: str = "", sid: str = ""):
-    store = _ss_store()
-    entry = _resolve_session(store, session, sid)
+def delete_profile(ctx, w, profile: str = "", pid: str = ""):
+    store = _pf_store()
+    entry = _resolve_profile(store, profile, pid)
     if not entry:
         return
     result = QtWidgets.QMessageBox.question(
         w,
-        "Delete Session",
-        f'Delete session "{entry.name}"?',
+        "Delete Profile",
+        f'Delete profile "{entry.name}"?',
         QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
     )
     if result != QtWidgets.QMessageBox.Yes:
         return
-    is_own = entry.session_id == w.session_id
-    if store.delete_session(entry.session_id):
-        Notifier.info(f"Session deleted: {entry.name}")
-        AppLogger.info(f"Session deleted: {entry.session_id}")
+    is_own = entry.profile_id == w.profile_id
+    if store.delete_profile(entry.profile_id):
+        Notifier.info(f"Profile deleted: {entry.name}")
+        AppLogger.info(f"Profile deleted: {entry.profile_id}")
         if is_own:
-            w._session_deleted = True
+            w._profile_deleted = True
             w.close()
         else:
             node = getattr(w, "_node", None)
             if node:
-                node.send("session.close", entry.session_id, dst="viewer")
+                node.send("profile.close", entry.profile_id, dst="viewer")
 
 
-@require(w="MainWindow")
-def color_session(ctx, w, session: str = "", sid: str = "", popup=None):
-    store = _ss_store()
-    entry = _resolve_session(store, session, sid)
-    if not entry:
-        return
-    from wafer.app.viewer.widgets.session_popup import ColorPalette
-
-    palette = ColorPalette(current=entry.color, parent=w)
-    palette.setWindowFlags(QtCore.Qt.Popup | QtCore.Qt.FramelessWindowHint)
-    palette.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-    _p = ThemeManager.instance().palette
-    palette.setStyleSheet(f"background: {_p.bg_elevated}; border: 1px solid {_p.border_default}; border-radius: 4px;")
-
-    _sid = entry.session_id
-
-    def _apply(color):
-        palette.close()
-        if popup:
-            popup.close()
-        store.set_session_color(_sid, color)
-        if w.session_id == _sid:
-            w._session_entry.color = color
-            w._update_title()
-        AppLogger.info(f"Session color set: {_sid} -> {color}")
-
-    palette.color_selected.connect(_apply)
-    palette.move(QtGui.QCursor.pos())
-    palette.show()
+def _apply_profile_color(w, pid, color):
+    store = _pf_store()
+    store.set_profile_color(pid, color)
+    if w.profile_id == pid:
+        w._profile_entry.color = color
+        w._update_title()
+    AppLogger.info(f"Profile color set: {pid} -> {color}")

@@ -2,24 +2,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from ....utils.formatting import dpix
 from ....core.color.theme import ThemeManager
 from ....core.lang.manager import TranslatorMixin
-from ....core.session import SESSION_COLORS
-
-
-class ColorDot(QtWidgets.QWidget):
-    def __init__(self, color: str, size: int = 10, parent=None):
-        super().__init__(parent)
-        self._color = color
-        self._size = dpix(size)
-        self.setFixedSize(self._size, self._size)
-
-    def paintEvent(self, event):
-        if not self._color:
-            return
-        p = QtGui.QPainter(self)
-        p.setRenderHint(QtGui.QPainter.Antialiasing)
-        p.setBrush(QtGui.QColor(self._color))
-        p.setPen(QtCore.Qt.NoPen)
-        p.drawEllipse(0, 0, self._size, self._size)
+from ....core.profile import PROFILE_COLORS
 
 
 class ColorPalette(QtWidgets.QWidget):
@@ -31,7 +14,7 @@ class ColorPalette(QtWidgets.QWidget):
         layout.setContentsMargins(dpix(4), dpix(4), dpix(4), dpix(4))
         layout.setSpacing(dpix(4))
         p = ThemeManager.instance().palette
-        for c in SESSION_COLORS:
+        for c in PROFILE_COLORS:
             btn = QtWidgets.QPushButton()
             btn.setFixedSize(dpix(20), dpix(20))
             border = f"{dpix(2)}px solid {p.text_primary}" if c == current else f"{dpix(2)}px solid transparent"
@@ -52,10 +35,44 @@ class ColorPalette(QtWidgets.QWidget):
         layout.addWidget(btn_none)
 
 
-class SessionItemWidget(QtWidgets.QWidget):
+class ClickableColorDot(QtWidgets.QWidget):
+    clicked = QtCore.Signal()
+
+    def __init__(self, color: str, size: int = 12, parent=None):
+        super().__init__(parent)
+        self._color = color
+        self._size = dpix(size)
+        self.setFixedSize(self._size, self._size)
+        self.setCursor(QtCore.Qt.PointingHandCursor)
+        self.setToolTip("Color")
+
+    def set_color(self, color: str):
+        self._color = color
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        if self._color:
+            painter.setBrush(QtGui.QColor(self._color))
+            painter.setPen(QtCore.Qt.NoPen)
+        else:
+            p = ThemeManager.instance().palette
+            painter.setBrush(QtCore.Qt.NoBrush)
+            painter.setPen(QtGui.QPen(QtGui.QColor(p.text_muted), 1.5))
+        painter.drawEllipse(1, 1, self._size - 2, self._size - 2)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == QtCore.Qt.LeftButton:
+            self.clicked.emit()
+        super().mouseReleaseEvent(event)
+
+
+class ProfileItemWidget(QtWidgets.QWidget):
     rename_requested = QtCore.Signal(str)
     delete_requested = QtCore.Signal(str)
     open_requested = QtCore.Signal(str)
+    open_new_window_requested = QtCore.Signal(str)
     color_requested = QtCore.Signal(str)
 
     @staticmethod
@@ -66,9 +83,9 @@ class SessionItemWidget(QtWidgets.QWidget):
     def _press_bg():
         return ThemeManager.instance().palette.bg_pressed
 
-    def __init__(self, session_id: str, name: str, color: str = "", alive: bool = False, current: bool = False, parent=None):
+    def __init__(self, profile_id: str, name: str, color: str = "", current: bool = False, parent=None):
         super().__init__(parent)
-        self.session_id = session_id
+        self.profile_id = profile_id
         self.setCursor(QtCore.Qt.PointingHandCursor)
         self.setAttribute(QtCore.Qt.WA_StyledBackground)
         self._radius = dpix(4)
@@ -76,37 +93,34 @@ class SessionItemWidget(QtWidgets.QWidget):
 
         layout = QtWidgets.QHBoxLayout(self)
         layout.setContentsMargins(dpix(8), dpix(3), dpix(4), dpix(3))
-        layout.setSpacing(dpix(4))
+        layout.setSpacing(dpix(6))
 
         p = ThemeManager.instance().palette
 
-        if alive:
-            dot = QtWidgets.QLabel("\u25cf")
-            dot.setStyleSheet(f"color: {p.success}; font-size: {dpix(10)}px; background: transparent;")
-            dot.setToolTip("Running")
-            layout.addWidget(dot)
+        self.color_dot = ClickableColorDot(color, size=12)
+        self.color_dot.clicked.connect(lambda: self.color_requested.emit(self.profile_id))
+        layout.addWidget(self.color_dot)
 
-        display = f"{name}" if current else name
-        self._label = QtWidgets.QLabel(display)
+        self._label = QtWidgets.QLabel(name)
         self._label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
         label_color = p.text_accent if current else p.text_primary
         self._label.setStyleSheet(f"color: {label_color}; font-size: {dpix(13)}px; background: transparent;")
         layout.addWidget(self._label)
 
-        btn_color = QtWidgets.QPushButton("\u25cf")
-        btn_color.setFixedSize(dpix(22), dpix(22))
-        btn_color.setToolTip("Color")
-        btn_color.setCursor(QtCore.Qt.PointingHandCursor)
-        btn_color.setStyleSheet(self._color_btn_style(color, p))
-        btn_color.clicked.connect(lambda: self.color_requested.emit(self.session_id))
-        layout.addWidget(btn_color)
+        btn_open_new = QtWidgets.QPushButton("\u2750")
+        btn_open_new.setFixedSize(dpix(22), dpix(22))
+        btn_open_new.setToolTip("Open in new window")
+        btn_open_new.setCursor(QtCore.Qt.PointingHandCursor)
+        btn_open_new.setStyleSheet(self._btn_style())
+        btn_open_new.clicked.connect(lambda: self.open_new_window_requested.emit(self.profile_id))
+        layout.addWidget(btn_open_new)
 
         btn_rename = QtWidgets.QPushButton("\u270e")
         btn_rename.setFixedSize(dpix(22), dpix(22))
         btn_rename.setToolTip("Rename")
         btn_rename.setCursor(QtCore.Qt.PointingHandCursor)
         btn_rename.setStyleSheet(self._btn_style())
-        btn_rename.clicked.connect(lambda: self.rename_requested.emit(self.session_id))
+        btn_rename.clicked.connect(lambda: self.rename_requested.emit(self.profile_id))
         layout.addWidget(btn_rename)
 
         btn_delete = QtWidgets.QPushButton("\u2715")
@@ -114,7 +128,7 @@ class SessionItemWidget(QtWidgets.QWidget):
         btn_delete.setToolTip("Delete")
         btn_delete.setCursor(QtCore.Qt.PointingHandCursor)
         btn_delete.setStyleSheet(self._btn_style())
-        btn_delete.clicked.connect(lambda: self.delete_requested.emit(self.session_id))
+        btn_delete.clicked.connect(lambda: self.delete_requested.emit(self.profile_id))
         layout.addWidget(btn_delete)
 
     def enterEvent(self, event):
@@ -133,7 +147,7 @@ class SessionItemWidget(QtWidgets.QWidget):
     def mouseReleaseEvent(self, event):
         if event.button() == QtCore.Qt.LeftButton:
             self.setStyleSheet(f"background: {self._hover_bg()}; border-radius: {self._radius}px;")
-            self.open_requested.emit(self.session_id)
+            self.open_requested.emit(self.profile_id)
         super().mouseReleaseEvent(event)
 
     @staticmethod
@@ -145,22 +159,14 @@ class SessionItemWidget(QtWidgets.QWidget):
             f"QPushButton:hover {{ color: {p.text_primary}; background: {p.bg_hover}; border-radius: {dpix(3)}px; }}"
         )
 
-    @staticmethod
-    def _color_btn_style(color: str, p):
-        fs = dpix(13)
-        text_color = color if color else p.text_secondary
-        return (
-            f"QPushButton {{ background: transparent; color: {text_color}; border: none; font-size: {fs}px; }}"
-            f"QPushButton:hover {{ color: {text_color}; background: {p.bg_hover}; border-radius: {dpix(3)}px; }}"
-        )
 
-
-class SessionPopup(QtWidgets.QFrame, TranslatorMixin):
-    session_create = QtCore.Signal()
-    session_open = QtCore.Signal(str)
-    session_rename = QtCore.Signal(str)
-    session_delete = QtCore.Signal(str)
-    session_color = QtCore.Signal(str)
+class ProfilePopup(QtWidgets.QFrame, TranslatorMixin):
+    profile_create = QtCore.Signal()
+    profile_open = QtCore.Signal(str)
+    profile_open_new_window = QtCore.Signal(str)
+    profile_rename = QtCore.Signal(str)
+    profile_delete = QtCore.Signal(str)
+    profile_color_changed = QtCore.Signal(str, str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -172,56 +178,58 @@ class SessionPopup(QtWidgets.QFrame, TranslatorMixin):
         self._outer.setContentsMargins(0, 0, 0, 0)
 
         self._container = QtWidgets.QWidget()
-        self._container.setObjectName("session_popup_container")
+        self._container.setObjectName("profile_popup_container")
         p = ThemeManager.instance().palette
-        self._container.setStyleSheet(f"#session_popup_container {{  background: {p.bg_elevated};  border: 1px solid {p.border_default};  border-radius: 6px;}}")
+        self._container.setStyleSheet(f"#profile_popup_container {{  background: {p.bg_elevated};  border: 1px solid {p.border_default};  border-radius: 6px;}}")
         self._outer.addWidget(self._container)
 
         self._layout = QtWidgets.QVBoxLayout(self._container)
         self._layout.setContentsMargins(dpix(4), dpix(6), dpix(4), dpix(6))
         self._layout.setSpacing(0)
 
-        btn_new = QtWidgets.QPushButton(f"+ {self.t.tr('New Window')}")
-        btn_new.setCursor(QtCore.Qt.PointingHandCursor)
-        btn_new.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {p.text_accent}; border: none;"
-            f"  font-size: {dpix(13)}px; padding: {dpix(6)}px {dpix(8)}px; text-align: left; }}"
-            f"QPushButton:hover {{ background: {p.bg_hover}; border-radius: {dpix(4)}px; }}"
-            f"QPushButton:pressed {{ background: {p.bg_pressed}; border-radius: {dpix(4)}px; }}"
-        )
-        btn_new.clicked.connect(self._on_create)
-        self._layout.addWidget(btn_new)
+        self._list_layout = QtWidgets.QVBoxLayout()
+        self._list_layout.setSpacing(0)
+        self._layout.addLayout(self._list_layout)
 
         sep = QtWidgets.QFrame()
         sep.setFrameShape(QtWidgets.QFrame.HLine)
         sep.setStyleSheet(f"color: {p.border_subtle};")
         self._layout.addWidget(sep)
 
-        self._list_layout = QtWidgets.QVBoxLayout()
-        self._list_layout.setSpacing(0)
-        self._layout.addLayout(self._list_layout)
+        action_style = (
+            f"QPushButton {{ background: transparent; color: {p.text_accent}; border: none;"
+            f"  font-size: {dpix(13)}px; padding: {dpix(6)}px {dpix(8)}px; text-align: left; }}"
+            f"QPushButton:hover {{ background: {p.bg_hover}; border-radius: {dpix(4)}px; }}"
+            f"QPushButton:pressed {{ background: {p.bg_pressed}; border-radius: {dpix(4)}px; }}"
+        )
 
-    def populate(self, sessions, alive_session_ids=None, current_session_id=None):
-        alive = set(alive_session_ids or [])
+        btn_new_profile = QtWidgets.QPushButton(f"+ {self.t.tr('New Profile')}")
+        btn_new_profile.setCursor(QtCore.Qt.PointingHandCursor)
+        btn_new_profile.setStyleSheet(action_style)
+        btn_new_profile.clicked.connect(self._on_create)
+        self._layout.addWidget(btn_new_profile)
+
+    def populate(self, profiles, current_profile_id=None):
+        self._active_palette = None
         while self._list_layout.count():
             item = self._list_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
-        for entry in sessions:
-            row = SessionItemWidget(
-                entry.session_id,
+        for entry in profiles:
+            row = ProfileItemWidget(
+                entry.profile_id,
                 entry.name,
                 color=entry.color,
-                alive=entry.session_id in alive,
-                current=entry.session_id == current_session_id,
+                current=entry.profile_id == current_profile_id,
             )
             row.open_requested.connect(self._on_open)
-            row.rename_requested.connect(self.session_rename.emit)
-            row.delete_requested.connect(self.session_delete.emit)
-            row.color_requested.connect(self.session_color.emit)
+            row.open_new_window_requested.connect(self._on_open_new_window)
+            row.rename_requested.connect(self.profile_rename.emit)
+            row.delete_requested.connect(self.profile_delete.emit)
+            row.color_requested.connect(self._on_color_requested)
             self._list_layout.addWidget(row)
-        if not sessions:
-            empty = QtWidgets.QLabel(self.t.tr("No saved sessions"))
+        if not profiles:
+            empty = QtWidgets.QLabel(self.t.tr("No saved profiles"))
             p = ThemeManager.instance().palette
             empty.setStyleSheet(f"color: {p.text_muted}; font-size: {dpix(12)}px; padding: {dpix(8)}px;")
             empty.setAlignment(QtCore.Qt.AlignCenter)
@@ -234,8 +242,40 @@ class SessionPopup(QtWidgets.QFrame, TranslatorMixin):
 
     def _on_create(self):
         self.close()
-        self.session_create.emit()
+        self.profile_create.emit()
 
-    def _on_open(self, sid):
+    def _on_open(self, pid):
         self.close()
-        self.session_open.emit(sid)
+        self.profile_open.emit(pid)
+
+    def _on_open_new_window(self, pid):
+        self.close()
+        self.profile_open_new_window.emit(pid)
+
+    def _on_color_requested(self, pid):
+        row = self._find_row(pid)
+        if not row:
+            return
+        if self._active_palette:
+            self._active_palette.deleteLater()
+            self._active_palette = None
+            return
+        idx = self._list_layout.indexOf(row)
+        palette = ColorPalette(current=row.color_dot._color, parent=self)
+        self._active_palette = palette
+
+        def _apply(color):
+            palette.deleteLater()
+            self._active_palette = None
+            row.color_dot.set_color(color)
+            self.profile_color_changed.emit(pid, color)
+
+        palette.color_selected.connect(_apply)
+        self._list_layout.insertWidget(idx + 1, palette)
+
+    def _find_row(self, pid):
+        for i in range(self._list_layout.count()):
+            w = self._list_layout.itemAt(i).widget()
+            if isinstance(w, ProfileItemWidget) and w.profile_id == pid:
+                return w
+        return None

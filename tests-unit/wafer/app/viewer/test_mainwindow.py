@@ -7,12 +7,12 @@ def test_compile():
 
 
 class TestUpdateTitle:
-    def _make_win(self, session_entry=None, db_name="default", selected_paths=None):
+    def _make_win(self, profile_entry=None, db_name="default", selected_paths=None):
         with patch("wafer.app.viewer.mainwindow.MainWindow.__init__", lambda self, *a, **kw: None):
             from wafer.app.viewer.mainwindow import MainWindow
 
             win = MainWindow.__new__(MainWindow)
-            win._session_entry = session_entry
+            win._profile_entry = profile_entry
             win.database_name = db_name
             win.folder_view = MagicMock()
             win.folder_view.get_selected_paths.return_value = selected_paths or []
@@ -20,47 +20,47 @@ class TestUpdateTitle:
             return win
 
     def _named_entry(self, name="Work"):
-        from wafer.core.session import SessionEntry
+        from wafer.core.profile import ProfileEntry
 
-        return SessionEntry(session_id="abc123", name=name)
+        return ProfileEntry(profile_id="abc123", name=name)
 
     def _unnamed_entry(self):
-        from wafer.core.session import SessionEntry
+        from wafer.core.profile import ProfileEntry
 
-        return SessionEntry(session_id="s1", name="")
+        return ProfileEntry(profile_id="s1", name="")
 
-    def test_named_session_shows_name(self):
+    def test_named_profile_shows_name(self):
         from wafer.app.viewer.mainwindow import APP_NAME
 
-        win = self._make_win(session_entry=self._named_entry("Work"), db_name="mydb", selected_paths=["/a/photos"])
+        win = self._make_win(profile_entry=self._named_entry("Work"), db_name="mydb", selected_paths=["/a/photos"])
         win._update_title()
         win.setWindowTitle.assert_called_once_with("Work")
 
     def test_unnamed_with_folders_shows_folder_names(self):
         from wafer.app.viewer.mainwindow import APP_NAME
 
-        win = self._make_win(session_entry=self._unnamed_entry(), selected_paths=["/home/user/photos", "/mnt/data/images"])
+        win = self._make_win(profile_entry=self._unnamed_entry(), selected_paths=["/home/user/photos", "/mnt/data/images"])
         win._update_title()
         win.setWindowTitle.assert_called_once_with("photos, images")
 
     def test_unnamed_no_folders_shows_db_name(self):
         from wafer.app.viewer.mainwindow import APP_NAME
 
-        win = self._make_win(session_entry=self._unnamed_entry(), db_name="mydb", selected_paths=[])
+        win = self._make_win(profile_entry=self._unnamed_entry(), db_name="mydb", selected_paths=[])
         win._update_title()
         win.setWindowTitle.assert_called_once_with("mydb")
 
     def test_unnamed_no_folders_no_db_shows_app_name(self):
         from wafer.app.viewer.mainwindow import APP_NAME
 
-        win = self._make_win(session_entry=self._unnamed_entry(), db_name="", selected_paths=[])
+        win = self._make_win(profile_entry=self._unnamed_entry(), db_name="", selected_paths=[])
         win._update_title()
         win.setWindowTitle.assert_called_once_with(APP_NAME)
 
-    def test_no_session_entry_shows_folder_names(self):
+    def test_no_profile_entry_shows_folder_names(self):
         from wafer.app.viewer.mainwindow import APP_NAME
 
-        win = self._make_win(session_entry=None, selected_paths=["/data/pics"])
+        win = self._make_win(profile_entry=None, selected_paths=["/data/pics"])
         win._update_title()
         win.setWindowTitle.assert_called_once_with("pics")
 
@@ -192,61 +192,61 @@ class TestOnDbContentUpdated:
         win.search_row_widget.invalidate_key_cache.assert_called_once()
 
 
-class TestSyncSessionButton:
-    def _make_win(self, session_entry=None):
+class TestSyncProfileButton:
+    def _make_win(self, profile_entry=None):
         with patch("wafer.app.viewer.mainwindow.MainWindow.__init__", lambda self, *a, **kw: None):
             from wafer.app.viewer.mainwindow import MainWindow
 
             win = MainWindow.__new__(MainWindow)
-            win._session_entry = session_entry
+            win._profile_entry = profile_entry
             win.database_name = "default"
             win.folder_view = MagicMock()
             win.folder_view.get_selected_paths.return_value = []
             win.setWindowTitle = MagicMock()
-            win._session_button = MagicMock()
+            win._profile_button = MagicMock()
             return win
 
-    def test_named_session_shows_name_on_button(self):
-        from wafer.core.session import SessionEntry
+    def test_named_profile_shows_name_on_button(self):
+        from wafer.core.profile import ProfileEntry
 
-        entry = SessionEntry(session_id="s1", name="Work")
-        win = self._make_win(session_entry=entry)
-        win._sync_session_button()
-        win._session_button.setText.assert_called_with("\u25bc Work")
+        entry = ProfileEntry(profile_id="s1", name="Work")
+        win = self._make_win(profile_entry=entry)
+        win._sync_profile_button()
+        win._profile_button.setText.assert_called_with("\u25bc Work")
 
     def test_unnamed_session_shows_window(self):
-        from wafer.core.session import SessionEntry
+        from wafer.core.profile import ProfileEntry
 
-        entry = SessionEntry(session_id="s1", name="")
-        win = self._make_win(session_entry=entry)
-        win._sync_session_button()
-        win._session_button.setText.assert_called_with("\u25bc Window")
+        entry = ProfileEntry(profile_id="s1", name="")
+        win = self._make_win(profile_entry=entry)
+        win._sync_profile_button()
+        win._profile_button.setText.assert_called_with("\u25bc Window")
 
-    def test_colored_session_sets_stylesheet(self):
-        from wafer.core.session import SessionEntry
+    def test_colored_profile_sets_stylesheet(self):
+        from wafer.core.profile import ProfileEntry
 
-        entry = SessionEntry(session_id="s1", name="Work", color="#4A90D9")
-        win = self._make_win(session_entry=entry)
-        win._sync_session_button()
-        call_args = win._session_button.setStyleSheet.call_args[0][0]
+        entry = ProfileEntry(profile_id="s1", name="Work", color="#4A90D9")
+        win = self._make_win(profile_entry=entry)
+        win._sync_profile_button()
+        call_args = win._profile_button.setStyleSheet.call_args[0][0]
         assert "#4A90D9" in call_args
 
     def test_no_color_default_stylesheet(self):
-        from wafer.core.session import SessionEntry
+        from wafer.core.profile import ProfileEntry
 
-        entry = SessionEntry(session_id="s1", name="Work")
-        win = self._make_win(session_entry=entry)
-        win._sync_session_button()
-        call_args = win._session_button.setStyleSheet.call_args[0][0]
+        entry = ProfileEntry(profile_id="s1", name="Work")
+        win = self._make_win(profile_entry=entry)
+        win._sync_profile_button()
+        call_args = win._profile_button.setStyleSheet.call_args[0][0]
         assert "#4A90D9" not in call_args
 
     def test_update_title_calls_sync(self):
-        from wafer.core.session import SessionEntry
+        from wafer.core.profile import ProfileEntry
 
-        entry = SessionEntry(session_id="s1", name="Test")
-        win = self._make_win(session_entry=entry)
+        entry = ProfileEntry(profile_id="s1", name="Test")
+        win = self._make_win(profile_entry=entry)
         win._update_title()
-        win._session_button.setText.assert_called()
+        win._profile_button.setText.assert_called()
 
 
 class TestToggleShow:
@@ -308,3 +308,128 @@ class TestRaiseWindow:
         win = self._make_win()
         win.raise_window()
         win.window_state.restore_or_activate.assert_called_once()
+
+
+class TestSwitchProfile:
+    def _make_win(self, profile_id="p1", profile_name="Old"):
+        with patch("wafer.app.viewer.mainwindow.MainWindow.__init__", lambda self, *a, **kw: None):
+            from wafer.app.viewer.mainwindow import MainWindow
+            from wafer.core.profile import ProfileEntry, ProfileStore
+
+            win = MainWindow.__new__(MainWindow)
+            win.profile_id = profile_id
+            win._profile_entry = ProfileEntry(profile_id=profile_id, name=profile_name)
+            win._profile_ready = True
+            win._profile_deleted = False
+            win._profile_store = MagicMock(spec=ProfileStore)
+            win._node = MagicMock()
+            win.setWindowTitle = MagicMock()
+            win._profile_button = MagicMock()
+            win.folder_view = MagicMock()
+            win.folder_view.get_selected_paths.return_value = []
+            win.database_name = "default"
+            win.database_path = "test.db"
+            win.search_service = MagicMock()
+            win.search_service.params = {}
+            win.search_service.get.return_value = True
+            win.search_row_widget = MagicMock()
+            win.search_row_widget.get_sort.return_value = ("path", True)
+            win.search_row_widget.get_values.return_value = {}
+            win._last_paths = None
+            win._folder_changed = False
+            win._db_reload_cancel = None
+            win.progress_bar = MagicMock()
+            win.loading_indicator = MagicMock()
+            win.overlay_stack = MagicMock()
+            win.grid_view = MagicMock()
+            win._dispatcher = MagicMock()
+            win.window_state = MagicMock()
+            return win
+
+    def test_noop_when_same_profile(self):
+        win = self._make_win(profile_id="p1")
+        win._profile_store.get_profile = MagicMock()
+        win.switch_profile("p1")
+        win._profile_store.get_profile.assert_not_called()
+
+    def test_saves_old_and_restores_new(self):
+        from wafer.core.profile import ProfileEntry
+
+        new_entry = ProfileEntry(profile_id="p2", name="New")
+        win = self._make_win(profile_id="p1")
+        win._profile_store.get_profile.return_value = new_entry
+        win._profile_store.save_profile = MagicMock()
+        win.switch_profile("p2")
+        win._profile_store.save_profile.assert_called_once()
+        assert win.profile_id == "p2"
+        assert win._profile_entry is new_entry
+        win.setWindowTitle.assert_called()
+
+    def test_re_registers_node(self):
+        from wafer.core.profile import ProfileEntry
+
+        new_entry = ProfileEntry(profile_id="p2", name="New")
+        win = self._make_win(profile_id="p1")
+        win._profile_store.get_profile.return_value = new_entry
+        win.switch_profile("p2")
+        win._node.re_register.assert_called_once_with("p2")
+
+    def test_noop_when_profile_not_found(self):
+        win = self._make_win(profile_id="p1")
+        win._profile_store.get_profile.return_value = None
+        win.switch_profile("p_missing")
+        assert win.profile_id == "p1"
+
+
+class TestRestoreFromProfileSkipWindow:
+    def _make_win(self):
+        with patch("wafer.app.viewer.mainwindow.MainWindow.__init__", lambda self, *a, **kw: None):
+            from wafer.app.viewer.mainwindow import MainWindow
+
+            win = MainWindow.__new__(MainWindow)
+            win.database_name = "default"
+            win.database_path = "test.db"
+            win.search_service = MagicMock()
+            win.search_service.params = {}
+            win.search_service.get.return_value = True
+            win.search_row_widget = MagicMock()
+            win.search_row_widget.get_sort.return_value = ("path", True)
+            win.search_row_widget.get_values.return_value = {}
+            win._last_paths = None
+            win._folder_changed = False
+            win._db_reload_cancel = None
+            win.progress_bar = MagicMock()
+            win.loading_indicator = MagicMock()
+            win.overlay_stack = MagicMock()
+            win.grid_view = MagicMock()
+            win.folder_view = MagicMock()
+            win.folder_view.get_selected_paths.return_value = []
+            win.window_state = MagicMock()
+            win.restore_ui_state = MagicMock()
+            win.restore_query_state = MagicMock()
+            win.reload_database = MagicMock(side_effect=lambda name, on_complete=None: on_complete() if on_complete else None)
+            return win
+
+    def test_skip_window_state_true(self):
+        from wafer.core.profile import ProfileEntry, UIState
+
+        entry = ProfileEntry(
+            profile_id="p1",
+            name="Test",
+            ui=UIState(window_state={"geometry": "abc"}, component_states={"grid": {"zoom": 100}}),
+        )
+        win = self._make_win()
+        win._restore_from_profile(entry, skip_window_state=True)
+        call_args = win.restore_ui_state.call_args[0][0]
+        assert call_args.window_state is None or call_args.window_state == {}
+        assert call_args.component_states == {"grid": {"zoom": 100}}
+
+    def test_skip_window_state_false(self):
+        from wafer.core.profile import ProfileEntry, UIState
+
+        ui = UIState(window_state={"geometry": "abc"}, component_states={"grid": {"zoom": 100}})
+        entry = ProfileEntry(profile_id="p1", name="Test", ui=ui)
+        win = self._make_win()
+        win._restore_from_profile(entry, skip_window_state=False)
+        call_args = win.restore_ui_state.call_args[0][0]
+        assert call_args.window_state == {"geometry": "abc"}

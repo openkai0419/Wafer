@@ -2,7 +2,7 @@ import os
 from PySide6 import QtWidgets, QtCore, QtGui
 from ...core.commands.bridge import ActionKit
 from ...core.platform.process import AppProcess
-from ...core.session import SessionStore
+from ...core.profile import ProfileStore
 from ...ui.window import DialogLayoutStore
 from ...utils.formatting import dpix
 from ...utils.paths import get_resource_path, get_app_root_dir
@@ -137,16 +137,16 @@ def show_readme(ctx):
 def restart_all(ctx):
     w = ctx.get_instance("MainWindow")
     node = getattr(w, "_node", None)
-    store = SessionStore.instance()
-    active_ids = store.get_active_session_ids()
-    own_sid = getattr(w, "session_id", None)
+    store = ProfileStore.instance()
+    active_ids = store.get_active_profile_ids()
+    own_pid = getattr(w, "profile_id", None)
 
-    store.set_restore_session_ids(active_ids)
+    store.set_restore_profile_ids(active_ids)
 
     if node:
-        for sid in active_ids:
-            if sid != own_sid:
-                node.send("session.restart", sid, dst="viewer")
+        for pid in active_ids:
+            if pid != own_pid:
+                node.send("profile.restart", pid, dst="viewer")
 
     AppProcess.terminate_cmd("--tray")
     AppProcess.new_main("--tray")

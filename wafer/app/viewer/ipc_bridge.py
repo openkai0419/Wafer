@@ -14,9 +14,8 @@ class ViewerIpcBridge(QtCore.QObject):
     progress_updated = QtCore.Signal(str, int)
     progress_maximum = QtCore.Signal(str, int)
     show_toggled = QtCore.Signal(str, bool)
-    session_focused = QtCore.Signal(str)
-    session_closed = QtCore.Signal(str)
-    session_restarted = QtCore.Signal(str)
+    profile_closed = QtCore.Signal(str)
+    profile_restarted = QtCore.Signal(str)
     db_created = QtCore.Signal(str)
     db_deleted = QtCore.Signal(str)
     remote_log_received = QtCore.Signal(str, str, str, str)
@@ -51,9 +50,8 @@ class ViewerIpcBridge(QtCore.QObject):
         n.subscribe("progress", self._on_progress)
         n.subscribe("maximum", self._on_maximum)
         n.subscribe("show_toggle", self._on_show_toggle)
-        n.subscribe("session.focus", self._on_session_focus)
-        n.subscribe("session.close", self._on_session_close)
-        n.subscribe("session.restart", self._on_session_restart)
+        n.subscribe("profile.close", self._on_profile_close)
+        n.subscribe("profile.restart", self._on_profile_restart)
         n.subscribe("db.created", self._on_db_created)
         n.subscribe("db.deleted", self._on_db_deleted)
         n.subscribe("dev.log", self._on_dev_log)
@@ -98,14 +96,11 @@ class ViewerIpcBridge(QtCore.QObject):
             QtCore.Q_ARG(bool, bool(msg.payload)),
         )
 
-    def _on_session_focus(self, msg):
-        return self._invoke("_emit_session_focused", QtCore.Q_ARG(str, str(msg.payload)))
+    def _on_profile_close(self, msg):
+        return self._invoke("_emit_profile_closed", QtCore.Q_ARG(str, str(msg.payload)))
 
-    def _on_session_close(self, msg):
-        return self._invoke("_emit_session_closed", QtCore.Q_ARG(str, str(msg.payload)))
-
-    def _on_session_restart(self, msg):
-        return self._invoke("_emit_session_restarted", QtCore.Q_ARG(str, str(msg.payload)))
+    def _on_profile_restart(self, msg):
+        return self._invoke("_emit_profile_restarted", QtCore.Q_ARG(str, str(msg.payload)))
 
     def _on_db_created(self, msg):
         return self._invoke("_emit_db_created", QtCore.Q_ARG(str, str(msg.payload)))
@@ -146,16 +141,12 @@ class ViewerIpcBridge(QtCore.QObject):
         self.show_toggled.emit(db, show)
 
     @QtCore.Slot(str)
-    def _emit_session_focused(self, session_id: str):
-        self.session_focused.emit(session_id)
+    def _emit_profile_closed(self, profile_id: str):
+        self.profile_closed.emit(profile_id)
 
     @QtCore.Slot(str)
-    def _emit_session_closed(self, session_id: str):
-        self.session_closed.emit(session_id)
-
-    @QtCore.Slot(str)
-    def _emit_session_restarted(self, session_id: str):
-        self.session_restarted.emit(session_id)
+    def _emit_profile_restarted(self, profile_id: str):
+        self.profile_restarted.emit(profile_id)
 
     @QtCore.Slot(str)
     def _emit_db_created(self, name: str):

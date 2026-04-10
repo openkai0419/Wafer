@@ -9,7 +9,7 @@ from ...core.platform.process import AppProcess
 from ...core.ipc.message import Message
 from ...ui.dialogs import InputDialog
 from ...utils.notifier import Notifier
-from ...core.session import SessionStore
+from ...core.profile import ProfileStore
 
 
 def _tray_send(ctx, topic: str, payload=None):
@@ -37,29 +37,29 @@ def show_window(ctx=None):
     tray = ctx.get_instance("Tray")
     c = get_viewer_count(ctx)
     if c < 1:
-        store = SessionStore.instance()
-        restore_ids = store.get_restore_session_ids()
+        store = ProfileStore.instance()
+        restore_ids = store.get_restore_profile_ids()
         if restore_ids:
             AppLogger.info(f"restoring {len(restore_ids)} viewer(s): {restore_ids}")
-            for sid in restore_ids:
-                AppProcess.new_main("--viewer", "--session", sid)
+            for pid in restore_ids:
+                AppProcess.new_main("--viewer", "--profile", pid)
         else:
-            inactive = store.find_inactive_session_id()
+            inactive = store.find_inactive_profile_id()
             if inactive:
-                AppProcess.new_main("--viewer", "--session", inactive)
+                AppProcess.new_main("--viewer", "--profile", inactive)
             else:
-                sid = store.create_session_with_unique_name(store.next_default_name())
-                AppProcess.new_main("--viewer", "--session", sid)
+                pid = store.create_profile_with_unique_name(store.next_default_name())
+                AppProcess.new_main("--viewer", "--profile", pid)
         return
     tray.show_state = not bool(getattr(tray, "show_state", False))
     send_show_toggle(ctx, tray.show_state)
 
 
 def open_new_window(ctx=None):
-    store = SessionStore.instance()
+    store = ProfileStore.instance()
     default_name = store.next_default_name()
     name = InputDialog.get_text(
-        "Session name:",
+        "Profile name:",
         title="New Window",
         buttons=("Create", "Cancel"),
         default=default_name,
@@ -67,17 +67,14 @@ def open_new_window(ctx=None):
     if not name or not name.strip():
         return
     name = name.strip()
-    sid = store.create_session(name)
-    if sid is None:
-        existing = store.find_session_by_name(name)
+    pid = store.create_profile(name)
+    if pid is None:
+        existing = store.find_profile_by_name(name)
         if existing:
-            if existing.session_id in store.get_active_session_ids():
-                Notifier.warning(f"Session already open: {name}")
-            else:
-                AppProcess.new_main("--viewer", "--session", existing.session_id)
+            AppProcess.new_main("--viewer", "--profile", existing.profile_id)
         return
-    AppLogger.info(f"launching new viewer: {sid}")
-    AppProcess.new_main("--viewer", "--session", sid)
+    AppLogger.info(f"launching new viewer: {pid}")
+    AppProcess.new_main("--viewer", "--profile", pid)
 
 
 def rescan_all(ctx=None):

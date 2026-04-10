@@ -97,6 +97,23 @@ def _build_stylesheet() -> str:
             background: {p.error};
             color: {p.accent_text};
         }}
+        QPushButton#open_panel_btn {{
+            background: {p.accent};
+            color: {p.accent_text};
+            border: none;
+            border-radius: {r}px;
+            padding: {dpix(2)}px {dpix(10)}px;
+            font-size: {dpix(10)}px;
+            font-weight: bold;
+        }}
+        QPushButton#open_panel_btn:hover {{
+            background: {p.bg_hover};
+        }}
+        QPushButton#open_panel_btn:disabled {{
+            background: {p.bg_secondary};
+            color: {p.text_muted};
+            border: 1px solid {p.border_default};
+        }}
         QGroupBox {{
             font-weight: bold;
             border: 1px solid {p.border_default};

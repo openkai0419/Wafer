@@ -1,4 +1,16 @@
 {
+  "Builtin": {
+    "en": "Builtin",
+    "ja": ""
+  },
+  "Core": {
+    "en": "Core",
+    "ja": ""
+  },
+  "Plugin": {
+    "en": "Plugin",
+    "ja": ""
+  },
   "EXIF Settings": {
     "en": "EXIF Settings"
   },

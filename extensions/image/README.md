@@ -1,20 +1,13 @@
 ## Image Extension
 
-
-Supports viewing and collecting common image formats.
-
+Core extension for static image browsing with EXIF metadata extraction.
 
 ### Supported Formats
-- JPEG (.jpg, .jpeg)
-- PNG (.png)
-- WebP (.webp)
-- BMP (.bmp)
-- GIF (.gif) — static only
+JPEG, PNG, WebP, BMP, GIF (static only)
 
 ### Features
-- **Grid View**: Thumbnail display for prefer size
-- **Content Viewer**: Full-size image display with zoom and pan
-- **EXIF Parser**: Extracts metadata (camera, resolution, GPS, etc.)
+- **Grid View** — Thumbnail display
+- **Content Viewer** — Full-size display with zoom and pan
+- **EXIF Parser** — Extracts camera, resolution, GPS and other metadata
 
-### Notes
-This is the core extension for image browsing. For animated GIF/WebP/APNG support, see the `animated` extension.
+For animated GIF/WebP/APNG support, see the `animated` extension.

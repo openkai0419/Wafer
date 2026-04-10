@@ -77,6 +77,7 @@ class _PluginRow(QtWidgets.QWidget):
         if registry_key == "panel":
             display = getattr(plugin_cls, "DISPLAY_NAME", "") or plugin_cls.NAME
             btn = QtWidgets.QPushButton("Open")
+            btn.setObjectName("open_panel_btn")
             btn.setToolTip(f"Open {display}")
             btn.setFixedHeight(dpix(22))
             btn.setCursor(QtCore.Qt.PointingHandCursor)

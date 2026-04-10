@@ -1,5 +1,6 @@
 from ...core.commands.bridge import Command, ActionKit
 from ...core.app_settings import app_settings
+from ...utils.notifier import Notifier
 from .session_commands import (
     show_session_popup,
     create_session,
@@ -27,8 +28,8 @@ def toggle_language(ctx):
     if not w:
         return
     new_locale = "ja" if w.t.current_locale == "en" else "en"
-    w.t.set_locale(new_locale)
     app_settings.save_immediate("window/language", new_locale)
+    Notifier.info(f"Language set to '{new_locale}'. Restart to apply.")
 
 
 def toggle_always_on_top(ctx):

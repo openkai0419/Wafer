@@ -1,10 +1,12 @@
 import pytest
 from pathlib import Path
+from PySide6 import QtCore
 from PySide6.QtWebEngineCore import QWebEngineSettings
 from wafer.utils.markdown_browser import (
     MarkdownBrowser,
     _ExternalLinkPage,
     _preprocess_html_blocks,
+    render_to_html,
 )
 
 
@@ -152,3 +154,46 @@ class TestMarkdownBrowser:
         qtbot.addWidget(browser)
         browser.cleanup()
         browser.cleanup()
+
+
+class TestRenderToHtml:
+    def test_heading(self):
+        assert "<h1>Hello</h1>" in render_to_html("# Hello")
+
+    def test_table(self):
+        md = "| A | B |\n|---|---|\n| 1 | 2 |\n"
+        html = render_to_html(md)
+        assert "<table>" in html
+        assert "<th>A</th>" in html
+
+    def test_fenced_code(self):
+        md = "```python\nprint('x')\n```\n"
+        assert "<code" in render_to_html(md)
+
+    def test_html_block_preprocessed(self):
+        md = '<div align="center">\n\n**bold**\n\n</div>\n'
+        assert "<strong>bold</strong>" in render_to_html(md)
+
+
+class TestApplyLoaded:
+    def test_apply_loaded_sets_content(self, qtbot, tmp_path):
+        browser = MarkdownBrowser()
+        qtbot.addWidget(browser)
+        body = render_to_html("# Pre-rendered")
+        base_url = QtCore.QUrl.fromLocalFile(str(tmp_path) + "/")
+        browser.apply_loaded("# Pre-rendered", body, base_url, tmp_path)
+        assert "<h1>Pre-rendered</h1>" in browser.rendered_html()
+        assert "# Pre-rendered" in browser.source_markdown()
+        assert browser._allowed_dir == tmp_path
+        assert browser._base_url == base_url
+
+    def test_apply_loaded_preserves_existing_allowed_dir(self, qtbot, tmp_path):
+        browser = MarkdownBrowser()
+        qtbot.addWidget(browser)
+        first_dir = tmp_path / "first"
+        first_dir.mkdir()
+        browser._allowed_dir = first_dir
+        body = render_to_html("# Test")
+        base_url = QtCore.QUrl.fromLocalFile(str(tmp_path) + "/")
+        browser.apply_loaded("# Test", body, base_url, tmp_path)
+        assert browser._allowed_dir == first_dir

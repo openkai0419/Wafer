@@ -1,12 +1,15 @@
 import os
+from pathlib import Path
 from PySide6 import QtWidgets, QtCore
 from ...utils.formatting import dpix
 from ...utils.logs import AppLogger
-from ...utils.markdown_browser import MarkdownBrowser
+from ...utils.markdown_browser import MarkdownBrowser, render_to_html
 from ...core.color.theme import ThemeManager
 from ...plugin.loader import get_plugin_dir, PluginLoader, qualify_plugin_name
 from ...plugin.installer import needs_setup, install_extension
 from ...core.qt.dispatcher import Dispatcher, CancelSlot
+
+_MAX_MD_FILES = 10
 
 
 _REGISTRY_LABELS = {
@@ -18,6 +21,7 @@ _REGISTRY_LABELS = {
     "layout": "Layout",
     "rename_source": "Rename",
     "command": "Command",
+    "panel": "Panel",
 }
 
 _TAG_COLORS = {
@@ -29,6 +33,7 @@ _TAG_COLORS = {
     "filter": "#4fc3f7",
     "sort": "#90a4ae",
     "rename_source": "#bcaaa4",
+    "panel": "#fff176",
 }
 
 
@@ -44,6 +49,7 @@ class _PluginRow(QtWidgets.QWidget):
         super().__init__(parent)
         self.checkbox = QtWidgets.QCheckBox()
         self.checkbox.setChecked(checked)
+        self.panel_btn = None
 
         tag_color = _TAG_COLORS.get(registry_key, "#90a4ae")
         tag_text = _REGISTRY_LABELS.get(registry_key, registry_key)
@@ -68,12 +74,34 @@ class _PluginRow(QtWidgets.QWidget):
         row_layout.addWidget(ext_label)
         row_layout.addStretch()
 
+        if registry_key == "panel":
+            display = getattr(plugin_cls, "DISPLAY_NAME", "") or plugin_cls.NAME
+            btn = QtWidgets.QPushButton("Open")
+            btn.setToolTip(f"Open {display}")
+            btn.setFixedHeight(dpix(22))
+            btn.setCursor(QtCore.Qt.PointingHandCursor)
+            btn.clicked.connect(lambda _=None, n=display: self._toggle_panel(n))
+            from ...plugin.panel.handler import panel_registry
+            registered = panel_registry.get(plugin_cls.NAME) is not None
+            btn.setEnabled(registered)
+            if not registered:
+                btn.setCursor(QtCore.Qt.ArrowCursor)
+            row_layout.addWidget(btn)
+            self.panel_btn = btn
+
+    @staticmethod
+    def _toggle_panel(panel_name: str):
+        from ...core.commands.bridge import Command
+        slug = panel_name.lower().replace(" ", "_")
+        Command.run(f"panel.toggle_{slug}")
+
 
 class _ExtensionCard(QtWidgets.QFrame):
-    def __init__(self, folder_name: str, folder_path: str, parent=None):
+    def __init__(self, folder_name: str, folder_path: str, dispatcher: Dispatcher, parent=None):
         super().__init__(parent)
         self.folder_name = folder_name
         self.folder_path = folder_path
+        self._dispatcher = dispatcher
         self.setObjectName("extension_card")
         self._rows: list[tuple[_PluginRow, str]] = []
         self._plugins: list[tuple[str, type]] = []
@@ -108,23 +136,28 @@ class _ExtensionCard(QtWidgets.QFrame):
         layout.addWidget(self._progress)
         layout.addLayout(self._plugin_area)
 
-        self._readme_toggle = None
-        self._readme_browser = None
-        readme_path = os.path.join(folder_path, "README.md")
-        if os.path.isfile(readme_path):
-            self._readme_path = readme_path
+        self._md_entries: list[tuple[QtWidgets.QLabel, MarkdownBrowser, str, bool]] = []
+        md_files = sorted(
+            f for f in os.listdir(folder_path)
+            if f.lower().endswith(".md") and not f.startswith((".", "_"))
+        )[:_MAX_MD_FILES]
+        if md_files:
             accent = ThemeManager.instance().palette.accent
-            self._readme_toggle = QtWidgets.QLabel("▶ README")
-            self._readme_toggle.setCursor(QtCore.Qt.PointingHandCursor)
-            self._readme_toggle.setStyleSheet(f"color: {accent}; font-size: {dpix(11)}px; padding: {dpix(2)}px 0;")
-            self._readme_toggle.mousePressEvent = lambda _: self._toggle_readme()
-            self._readme_browser = MarkdownBrowser()
-            self._readme_browser.setMinimumHeight(dpix(200))
-            self._readme_browser.setMaximumHeight(dpix(600))
-            self._readme_browser.hide()
-            self._readme_loaded = False
-            layout.addWidget(self._readme_toggle)
-            layout.addWidget(self._readme_browser)
+            for md_name in md_files:
+                md_path = os.path.join(folder_path, md_name)
+                if not os.path.isfile(md_path):
+                    continue
+                toggle = QtWidgets.QLabel(f"\u25b6 {md_name}")
+                toggle.setCursor(QtCore.Qt.PointingHandCursor)
+                toggle.setStyleSheet(f"color: {accent}; font-size: {dpix(11)}px; padding: {dpix(2)}px 0;")
+                browser = MarkdownBrowser()
+                browser.setMinimumHeight(dpix(200))
+                browser.setMaximumHeight(dpix(600))
+                browser.hide()
+                toggle.mousePressEvent = lambda _, p=md_path, t=toggle, b=browser: self._toggle_md(p, t, b)
+                self._md_entries.append((toggle, browser, md_path, False))
+                layout.addWidget(toggle)
+                layout.addWidget(browser)
 
         self._install_callback = None
         self._checkbox_changed_callback = None
@@ -193,19 +226,35 @@ class _ExtensionCard(QtWidgets.QFrame):
             if w:
                 w.deleteLater()
 
-    def _toggle_readme(self):
-        if self._readme_browser is None:
-            return
-        visible = self._readme_browser.isVisible()
-        if visible:
-            self._readme_browser.hide()
-            self._readme_toggle.setText("\u25b6 README")
+    def _toggle_md(self, md_path: str, toggle: QtWidgets.QLabel, browser: MarkdownBrowser):
+        md_name = os.path.basename(md_path)
+        if browser.isVisible():
+            browser.hide()
+            toggle.setText(f"\u25b6 {md_name}")
         else:
-            if not self._readme_loaded:
-                self._readme_browser.load_file(self._readme_path)
-                self._readme_loaded = True
-            self._readme_browser.show()
-            self._readme_toggle.setText("\u25bc README")
+            for i, (t, b, p, loaded) in enumerate(self._md_entries):
+                if p == md_path and not loaded:
+                    self._md_entries[i] = (t, b, p, True)
+                    self._load_md_async(md_path, browser)
+                    break
+            browser.show()
+            toggle.setText(f"\u25bc {md_name}")
+
+    def _load_md_async(self, md_path: str, browser: MarkdownBrowser):
+        def task():
+            try:
+                p = Path(md_path).resolve()
+                with open(p, encoding="utf-8") as f:
+                    text = f.read()
+                body_html = render_to_html(text)
+                base_url = QtCore.QUrl.fromLocalFile(str(p.parent) + "/")
+                self._dispatcher.invoke(
+                    lambda: browser.apply_loaded(text, body_html, base_url, p.parent)
+                )
+            except Exception as e:
+                AppLogger.warning(f"Failed to load markdown async: {md_path}", exc=e)
+
+        self._dispatcher.post(task, priority=5)
 
     def _on_install_clicked(self):
         if self._install_callback:
@@ -254,7 +303,7 @@ class ExtensionsTab(QtWidgets.QWidget):
             folder = os.path.join(plugin_dir, name)
             if not os.path.isdir(folder) or name.startswith(".") or name == "__pycache__":
                 continue
-            card = _ExtensionCard(name, folder)
+            card = _ExtensionCard(name, folder, self._dispatcher)
             card.set_install_callback(self._install_extension)
             card.set_checkbox_changed_callback(self._on_plugin_toggled)
             self._cards[name] = card

@@ -65,9 +65,6 @@ class CheckableCombo(QtWidgets.QToolButton, TranslatorMixin):
             a.setChecked(a.data() in keys)
             a.blockSignals(False)
 
-    def update_translation(self):
-        self._update_label()
-
 
 class TextFilterWidget(QtWidgets.QWidget, TranslatorMixin):
     changed = QtCore.Signal()
@@ -75,9 +72,6 @@ class TextFilterWidget(QtWidgets.QWidget, TranslatorMixin):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._build_ui()
-
-    def update_translation(self):
-        self.search_bar.setPlaceholderText(self.t.tr("Enter search terms..."))
 
     def _build_ui(self):
         layout = QtWidgets.QHBoxLayout(self)
@@ -157,9 +151,6 @@ class _TextFilterPopup(QtWidgets.QDialog, TranslatorMixin):
         self.setWindowFlags(self.windowFlags() | QtCore.Qt.Tool)
         self._build_ui()
         self._set_defaults()
-
-    def update_translation(self):
-        self.setWindowTitle(self.t.tr("Text Filter Options"))
 
     def _build_ui(self):
         layout = QtWidgets.QVBoxLayout(self)

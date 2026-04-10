@@ -267,9 +267,6 @@ class DateRangeWidget(QtWidgets.QWidget, TranslatorMixin):
         super().__init__(parent)
         self._build_ui()
 
-    def update_translation(self):
-        pass
-
     def _build_ui(self):
         layout = QtWidgets.QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)

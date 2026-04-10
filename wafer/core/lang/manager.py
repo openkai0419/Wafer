@@ -1,4 +1,3 @@
-from PySide6 import QtCore
 from ...utils.paths import get_resource_path
 from ...utils.logs import AppLogger
 from ...utils.json_io import read_json_file, write_json_file
@@ -17,11 +16,8 @@ def get_translator():
     return _t_instance
 
 
-class TranslationManager(QtCore.QObject):
-    languageChanged = QtCore.Signal()
-
+class TranslationManager:
     def __init__(self, json_path, default_locale="en"):
-        super().__init__()
         self.current_locale = default_locale
         self.json_path = json_path
         self.translations = {}
@@ -55,9 +51,7 @@ class TranslationManager(QtCore.QObject):
             return template
 
     def set_locale(self, locale):
-        if locale != self.current_locale:
-            self.current_locale = locale
-            self.languageChanged.emit()
+        self.current_locale = locale
 
     def dump_missing_keys(self, output_path=None, languages=None):
         if languages is None:
@@ -85,22 +79,9 @@ class TranslationManager(QtCore.QObject):
 
 
 class TranslatorMixin:
-    _default_update_method_name = "update_translation"
-
     @property
     def t(self):
-        translator = get_translator()
-        if not hasattr(self, "_translator_connected"):
-            self._translator_connected = True
-            method_name = getattr(self, "_translation_method_name", self._default_update_method_name)
-            if hasattr(self, method_name):
-                translator.languageChanged.connect(getattr(self, method_name))
-            else:
-                AppLogger.info(f"method {method_name} not defined in {self}")
-        return translator
-
-    def set_translation_method(self, method_name):
-        self._translation_method_name = method_name
+        return get_translator()
 
 
 init_translator(get_resource_path() / "translations.json")

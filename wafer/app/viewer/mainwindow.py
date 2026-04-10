@@ -280,7 +280,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
                     "Edit Layout",
                     lambda: Menu.session(self).from_folder("Panels").exec(),
                 ),
-                IconButtonConfig("fullscreen", "Full Screen", lambda: Command.invoke("win.toggle_fullscreen")),
+                IconButtonConfig("window", "Window", lambda: Menu.session(self).from_folder("Window").exec()),
             ],
             right_buttons=[
                 IconButtonConfig("folder_plus", "Add Folder", lambda: Command.invoke("ft.add_folder")),

@@ -57,8 +57,8 @@ class ExifSettingsWidget(QtWidgets.QWidget):
             self._filter_mode, self._filter_keys, self._dispatcher, self._cancel
         )
         self._sample_preview = _SamplePreviewTab(self._filter_mode, self._filter_keys)
-        tabs.addTab(self._key_browser, "Key Browser")
         tabs.addTab(self._sample_preview, "Sample Preview")
+        tabs.addTab(self._key_browser, "Key Browser")
 
         self._sample_preview.filter_keys_changed.connect(self._on_preview_keys_changed)
 

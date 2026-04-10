@@ -14,10 +14,6 @@ class RegexFilterWidget(QtWidgets.QWidget, TranslatorMixin):
         super().__init__(parent)
         self._build_ui()
 
-    def update_translation(self):
-        self.regex_input.setPlaceholderText(self.t.tr("Enter regex pattern..."))
-        self.case_button.setText(self.t.tr("Aa"))
-
     def _build_ui(self):
         layout = QtWidgets.QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)

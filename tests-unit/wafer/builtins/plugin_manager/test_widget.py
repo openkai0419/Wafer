@@ -3,7 +3,8 @@ import sys
 import pytest
 from unittest.mock import MagicMock, patch
 
-from wafer.plugin.registry import BasePlugin
+from wafer.plugin.registry import BasePlugin, PluginBase
+from wafer.plugin.panel.base import BasePanelPlugin
 
 
 class TestExtensionsTab:
@@ -415,6 +416,187 @@ class TestExtensionsTab:
         qtbot.waitUntil(lambda: len(tab._cards["ext1"]._rows) > 0, timeout=3000)
         card = tab._cards["ext1"]
         assert card._status_btn.text() == "No Dependencies"
+
+
+class TestPluginRowPanelButton:
+    def test_panel_row_has_open_button(self, qtbot):
+        from wafer.builtins.plugin_manager.extensions_tab import _PluginRow
+
+        class FakePanel(PluginBase):
+            NAME = "test_panel"
+            DISPLAY_NAME = "Test Panel"
+            PRIORITY = 1
+
+        row = _PluginRow("panel", FakePanel, True)
+        qtbot.addWidget(row)
+        assert row.panel_btn is not None
+        assert row.panel_btn.toolTip() == "Open Test Panel"
+
+    def test_non_panel_row_has_no_button(self, qtbot):
+        from wafer.builtins.plugin_manager.extensions_tab import _PluginRow
+
+        class FakeGrid(BasePlugin):
+            NAME = "test_grid"
+            EXTENSIONS = (".g",)
+            PRIORITY = 1
+
+        row = _PluginRow("grid", FakeGrid, True)
+        qtbot.addWidget(row)
+        assert row.panel_btn is None
+
+    def test_panel_row_uses_name_when_no_display_name(self, qtbot):
+        from wafer.builtins.plugin_manager.extensions_tab import _PluginRow
+
+        class NoDisplayPanel(PluginBase):
+            NAME = "bare_panel"
+            DISPLAY_NAME = ""
+            PRIORITY = 1
+
+        row = _PluginRow("panel", NoDisplayPanel, True)
+        qtbot.addWidget(row)
+        assert row.panel_btn.toolTip() == "Open bare_panel"
+
+    def test_panel_button_calls_toggle(self, qtbot, monkeypatch):
+        from wafer.builtins.plugin_manager.extensions_tab import _PluginRow
+        from wafer.plugin.panel.handler import panel_registry
+
+        class FakePanel(PluginBase):
+            NAME = "tp"
+            DISPLAY_NAME = "My Panel"
+            PRIORITY = 1
+
+        panel_registry.register(FakePanel)
+        try:
+            row = _PluginRow("panel", FakePanel, True)
+            qtbot.addWidget(row)
+            assert row.panel_btn.isEnabled()
+
+            toggled = []
+            monkeypatch.setattr(
+                "wafer.builtins.plugin_manager.extensions_tab._PluginRow._toggle_panel",
+                staticmethod(lambda n: toggled.append(n)),
+            )
+            row.panel_btn.click()
+            assert toggled == ["My Panel"]
+        finally:
+            panel_registry._plugins.pop("tp", None)
+
+    def test_panel_button_disabled_when_not_registered(self, qtbot):
+        from wafer.builtins.plugin_manager.extensions_tab import _PluginRow
+
+        class UnloadedPanel(PluginBase):
+            NAME = "__unloaded_test_panel__"
+            DISPLAY_NAME = "Unloaded"
+            PRIORITY = 1
+
+        row = _PluginRow("panel", UnloadedPanel, True)
+        qtbot.addWidget(row)
+        assert row.panel_btn is not None
+        assert not row.panel_btn.isEnabled()
+
+    def test_panel_button_enabled_when_registered(self, qtbot):
+        from wafer.builtins.plugin_manager.extensions_tab import _PluginRow
+        from wafer.plugin.panel.handler import panel_registry
+
+        class LoadedPanel(PluginBase):
+            NAME = "__loaded_test_panel__"
+            DISPLAY_NAME = "Loaded"
+            PRIORITY = 1
+
+        panel_registry.register(LoadedPanel)
+        try:
+            row = _PluginRow("panel", LoadedPanel, True)
+            qtbot.addWidget(row)
+            assert row.panel_btn.isEnabled()
+        finally:
+            panel_registry._plugins.pop("__loaded_test_panel__", None)
+
+
+class TestExtensionCardMdFiles:
+    @pytest.fixture()
+    def dispatcher(self):
+        from wafer.core.qt.dispatcher import Dispatcher
+        from wafer.core.qt.thread import SimpleThreadPool
+
+        pool = SimpleThreadPool("test")
+        return Dispatcher(pool)
+
+    def test_detects_multiple_md_files(self, qtbot, tmp_path, dispatcher):
+        folder = tmp_path / "ext"
+        folder.mkdir()
+        (folder / "__init__.py").write_text("")
+        (folder / "README.md").write_text("# Hello")
+        (folder / "CHANGELOG.md").write_text("# Changes")
+
+        from wafer.builtins.plugin_manager.extensions_tab import _ExtensionCard
+
+        card = _ExtensionCard("ext", str(folder), dispatcher)
+        qtbot.addWidget(card)
+        assert len(card._md_entries) == 2
+        names = [os.path.basename(e[2]) for e in card._md_entries]
+        assert "CHANGELOG.md" in names
+        assert "README.md" in names
+
+    def test_ignores_hidden_and_underscore_md(self, qtbot, tmp_path, dispatcher):
+        folder = tmp_path / "ext"
+        folder.mkdir()
+        (folder / "__init__.py").write_text("")
+        (folder / "README.md").write_text("# ok")
+        (folder / ".hidden.md").write_text("# hidden")
+        (folder / "_private.md").write_text("# private")
+
+        from wafer.builtins.plugin_manager.extensions_tab import _ExtensionCard
+
+        card = _ExtensionCard("ext", str(folder), dispatcher)
+        qtbot.addWidget(card)
+        assert len(card._md_entries) == 1
+        assert os.path.basename(card._md_entries[0][2]) == "README.md"
+
+    def test_max_md_limit(self, qtbot, tmp_path, dispatcher):
+        folder = tmp_path / "ext"
+        folder.mkdir()
+        (folder / "__init__.py").write_text("")
+        for i in range(15):
+            (folder / f"doc_{i:02d}.md").write_text(f"# Doc {i}")
+
+        from wafer.builtins.plugin_manager.extensions_tab import _ExtensionCard, _MAX_MD_FILES
+
+        card = _ExtensionCard("ext", str(folder), dispatcher)
+        qtbot.addWidget(card)
+        assert len(card._md_entries) == _MAX_MD_FILES
+
+    def test_no_md_files_no_entries(self, qtbot, tmp_path, dispatcher):
+        folder = tmp_path / "ext"
+        folder.mkdir()
+        (folder / "__init__.py").write_text("")
+
+        from wafer.builtins.plugin_manager.extensions_tab import _ExtensionCard
+
+        card = _ExtensionCard("ext", str(folder), dispatcher)
+        qtbot.addWidget(card)
+        assert len(card._md_entries) == 0
+
+    def test_toggle_md_shows_and_hides(self, qtbot, tmp_path, dispatcher):
+        folder = tmp_path / "ext"
+        folder.mkdir()
+        (folder / "README.md").write_text("# Hello")
+
+        from wafer.builtins.plugin_manager.extensions_tab import _ExtensionCard
+
+        card = _ExtensionCard("ext", str(folder), dispatcher)
+        qtbot.addWidget(card)
+        card.show()
+        qtbot.waitExposed(card)
+        toggle, browser, md_path, _ = card._md_entries[0]
+
+        assert not browser.isVisible()
+        card._toggle_md(md_path, toggle, browser)
+        assert browser.isVisible()
+        assert "\u25bc" in toggle.text()
+
+        card._toggle_md(md_path, toggle, browser)
+        assert not browser.isVisible()
+        assert "\u25b6" in toggle.text()
 
 
 class TestOrderTab:

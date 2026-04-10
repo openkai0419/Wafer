@@ -222,6 +222,21 @@ def _draw_fullscreen(p: QPainter, r: QRectF, color: QColor):
     p.drawLine(QPointF(ir.right(), ir.bottom()), QPointF(ir.right(), ir.bottom() - arm))
 
 
+@_register("window", padding=0.1)
+def _draw_window(p: QPainter, r: QRectF, color: QColor):
+    lw = max(1.5, min(r.width(), r.height()) * 0.10)
+    pen = QPen(color, lw)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    p.setPen(pen)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    m = lw / 2
+    ir = r.adjusted(m, m, -m, -m)
+    title_h = ir.height() * 0.28
+    p.drawRect(ir)
+    p.drawLine(QPointF(ir.left(), ir.top() + title_h), QPointF(ir.right(), ir.top() + title_h))
+
+
 @_register("plus", padding=0.14)
 def _draw_plus(p: QPainter, r: QRectF, color: QColor):
     p.setPen(Qt.PenStyle.NoPen)
@@ -354,15 +369,18 @@ def _draw_sort(p: QPainter, r: QRectF, color: QColor):
     pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
     p.setPen(pen)
     p.setBrush(Qt.BrushStyle.NoBrush)
-    cx = r.center().x()
-    head = min(r.width(), r.height()) * 0.22
-    top = r.top() + r.height() * 0.10
-    bot = r.bottom() - r.height() * 0.10
-    p.drawLine(QPointF(cx, top), QPointF(cx - head, top + head))
-    p.drawLine(QPointF(cx, top), QPointF(cx + head, top + head))
-    p.drawLine(QPointF(cx, top), QPointF(cx, bot))
-    p.drawLine(QPointF(cx, bot), QPointF(cx - head, bot - head))
-    p.drawLine(QPointF(cx, bot), QPointF(cx + head, bot - head))
+    gap = min(r.width(), r.height()) * 0.20
+    head = min(r.width(), r.height()) * 0.16
+    top = r.top() + r.height() * 0.16
+    bot = r.bottom() - r.height() * 0.16
+    lx = r.center().x() - gap
+    rx = r.center().x() + gap
+    p.drawLine(QPointF(lx, bot), QPointF(lx, top))
+    p.drawLine(QPointF(lx, top), QPointF(lx - head, top + head))
+    p.drawLine(QPointF(lx, top), QPointF(lx + head, top + head))
+    p.drawLine(QPointF(rx, top), QPointF(rx, bot))
+    p.drawLine(QPointF(rx, bot), QPointF(rx - head, bot - head))
+    p.drawLine(QPointF(rx, bot), QPointF(rx + head, bot - head))
 
 
 @_register("menu", padding=0.15)

@@ -1,5 +1,9 @@
 from wafer.plugin import MenuGroup, CommandMeta, CommandParam, require, require_v
-from wafer.core.commands.bridge import Command
+from wafer.core.commands.binding.instance_registry import InstanceRegistry
+
+
+def _sm():
+    return InstanceRegistry.instance().get_one("VideoSlotManager")
 
 
 @require(sm="VideoSlotManager")
@@ -20,7 +24,6 @@ def set_max_playback_slots(ctx, sm, max_slots: int = 3):
 @require(sm="VideoSlotManager")
 def toggle_hover_autoplay(ctx, sm):
     sm.hover_autoplay = not sm.hover_autoplay
-    Command.set_checked("vgrid.toggle_hover_autoplay", sm.hover_autoplay)
     if not sm.hover_autoplay:
         sm.deactivate_hover()
 
@@ -28,19 +31,16 @@ def toggle_hover_autoplay(ctx, sm):
 @require(sm="VideoSlotManager")
 def toggle_appear_autoplay(ctx, sm):
     sm.appear_autoplay = not sm.appear_autoplay
-    Command.set_checked("vgrid.toggle_appear_autoplay", sm.appear_autoplay)
 
 
 @require(sm="VideoSlotManager")
 def toggle_select_autoplay(ctx, sm):
     sm.select_autoplay = not sm.select_autoplay
-    Command.set_checked("vgrid.toggle_select_autoplay", sm.select_autoplay)
 
 
 @require(sm="VideoSlotManager")
 def toggle_pause_in_background(ctx, sm):
     sm.pause_in_background = not sm.pause_in_background
-    Command.set_checked("vgrid.toggle_pause_in_background", sm.pause_in_background)
 
 
 class VideoGridCommands(MenuGroup):
@@ -78,6 +78,7 @@ class VideoGridCommands(MenuGroup):
                 func=toggle_select_autoplay,
                 checkable=True,
                 default_checked=True,
+                checked_resolver=lambda: getattr(_sm(), "select_autoplay", True),
             ),
             CommandMeta(
                 path="vgrid.toggle_hover_autoplay",
@@ -85,6 +86,7 @@ class VideoGridCommands(MenuGroup):
                 func=toggle_hover_autoplay,
                 checkable=True,
                 default_checked=True,
+                checked_resolver=lambda: getattr(_sm(), "hover_autoplay", True),
             ),
             CommandMeta(
                 path="vgrid.toggle_appear_autoplay",
@@ -92,6 +94,7 @@ class VideoGridCommands(MenuGroup):
                 func=toggle_appear_autoplay,
                 checkable=True,
                 default_checked=False,
+                checked_resolver=lambda: getattr(_sm(), "appear_autoplay", False),
             ),
             "-",
             CommandMeta(
@@ -99,5 +102,6 @@ class VideoGridCommands(MenuGroup):
                 display="Pause in Background",
                 func=toggle_pause_in_background,
                 checkable=True,
+                checked_resolver=lambda: getattr(_sm(), "pause_in_background", False),
             ),
         ]

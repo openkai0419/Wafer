@@ -28,7 +28,7 @@ class AnimatedViewerPlugin(WidgetViewerPlugin):
 
     def save_state(self):
         return {
-            "fit_mode": self.widget._cover_mode,
+            "fit_mode": self.widget.cover_mode,
         }
 
     def restore_state(self, state):

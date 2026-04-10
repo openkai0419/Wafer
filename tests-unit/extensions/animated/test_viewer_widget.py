@@ -14,29 +14,29 @@ class TestAnimatedViewerWidgetInit:
         assert w._delays == []
         assert w._frame_index == 0
         assert w._playing is False
-        assert w._cover_mode is False
+        assert w.cover_mode is False
 
     def test_set_cover_mode(self, qtbot):
         from extensions.animated.viewer_widget import AnimatedViewerWidget
 
         w = AnimatedViewerWidget()
         qtbot.addWidget(w)
-        assert w._cover_mode is False
+        assert w.cover_mode is False
         w.set_cover_mode(True)
-        assert w._cover_mode is True
+        assert w.cover_mode is True
         w.set_cover_mode(False)
-        assert w._cover_mode is False
+        assert w.cover_mode is False
 
     def test_toggle_fit_mode(self, qtbot):
         from extensions.animated.viewer_widget import AnimatedViewerWidget
 
         w = AnimatedViewerWidget()
         qtbot.addWidget(w)
-        assert w._cover_mode is False
+        assert w.cover_mode is False
         w.toggle_fit_mode()
-        assert w._cover_mode is True
+        assert w.cover_mode is True
         w.toggle_fit_mode()
-        assert w._cover_mode is False
+        assert w.cover_mode is False
 
     def test_has_command_mixin(self):
         from extensions.animated.viewer_widget import AnimatedViewerWidget

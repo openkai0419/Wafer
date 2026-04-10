@@ -11,7 +11,6 @@ from ....core.qt.dispatcher import Dispatcher, CancelSlot
 from ....core.qt.pixmap import PixmapFactory
 from ....core.qt.thread import utility_pool
 from ....core.state import StateStore
-from ....core.commands.bridge import Command
 from .file_model import FileViewModel
 from .content_viewer import ContentViewerWidget, _DEFAULT_WIDGET_NAME
 from .meta_panel import MetaViewerWidget
@@ -116,7 +115,6 @@ class FileViewerController(QtCore.QObject):
             self._autoplay_interval = int(state["autoplay_interval"])
         if "autoplay_loop" in state:
             self._autoplay_loop = bool(state["autoplay_loop"])
-        Command.set_checked("fv.toggle_slideshow", False)
 
     def _on_path_changed(self, path):
         if not path:
@@ -266,7 +264,6 @@ class FileViewerController(QtCore.QObject):
         if loop is not None:
             self._autoplay_loop = bool(loop)
         self._autoplay_active = True
-        Command.set_checked("fv.toggle_slideshow", True)
         self._arm_autoplay()
 
     def stop_autoplay(self):
@@ -277,7 +274,6 @@ class FileViewerController(QtCore.QObject):
         if plugin is not None:
             plugin.set_autoplay(None)
         self._autoplay_held = False
-        Command.set_checked("fv.toggle_slideshow", False)
 
     def toggle_autoplay(self, interval_ms: int | None = None, loop: bool | None = None):
         if self._autoplay_active:

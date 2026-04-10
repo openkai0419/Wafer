@@ -106,8 +106,7 @@ class TestToggleHoverAutoplay:
         sm = MagicMock()
         sm.hover_autoplay = True
         ctx = _make_ctx(sm)
-        with patch("extensions.video.commands.Command"):
-            toggle_hover_autoplay(ctx)
+        toggle_hover_autoplay(ctx)
         assert sm.hover_autoplay is False
 
     def test_toggle_hover_on(self):
@@ -116,8 +115,7 @@ class TestToggleHoverAutoplay:
         sm = MagicMock()
         sm.hover_autoplay = False
         ctx = _make_ctx(sm)
-        with patch("extensions.video.commands.Command"):
-            toggle_hover_autoplay(ctx)
+        toggle_hover_autoplay(ctx)
         assert sm.hover_autoplay is True
 
     def test_toggle_hover_off_deactivates_hover(self):
@@ -126,8 +124,7 @@ class TestToggleHoverAutoplay:
         sm = MagicMock()
         sm.hover_autoplay = True
         ctx = _make_ctx(sm)
-        with patch("extensions.video.commands.Command"):
-            toggle_hover_autoplay(ctx)
+        toggle_hover_autoplay(ctx)
         sm.deactivate_hover.assert_called_once()
 
     def test_toggle_hover_on_does_not_deactivate(self):
@@ -136,27 +133,14 @@ class TestToggleHoverAutoplay:
         sm = MagicMock()
         sm.hover_autoplay = False
         ctx = _make_ctx(sm)
-        with patch("extensions.video.commands.Command"):
-            toggle_hover_autoplay(ctx)
+        toggle_hover_autoplay(ctx)
         sm.deactivate_hover.assert_not_called()
-
-    def test_set_checked_uses_vgrid_path(self):
-        from extensions.video.commands import toggle_hover_autoplay
-
-        sm = MagicMock()
-        sm.hover_autoplay = True
-        ctx = _make_ctx(sm)
-        with patch("extensions.video.commands.Command") as cmd:
-            toggle_hover_autoplay(ctx)
-            cmd.set_checked.assert_called_once_with("vgrid.toggle_hover_autoplay", False)
 
     def test_noop_without_instance(self):
         from extensions.video.commands import toggle_hover_autoplay
 
         ctx = _make_ctx(None)
-        with patch("extensions.video.commands.Command") as cmd:
-            toggle_hover_autoplay(ctx)
-            cmd.set_checked.assert_not_called()
+        toggle_hover_autoplay(ctx)
 
 
 class TestToggleAppearAutoplay:
@@ -166,8 +150,7 @@ class TestToggleAppearAutoplay:
         sm = MagicMock()
         sm.appear_autoplay = True
         ctx = _make_ctx(sm)
-        with patch("extensions.video.commands.Command"):
-            toggle_appear_autoplay(ctx)
+        toggle_appear_autoplay(ctx)
         assert sm.appear_autoplay is False
 
     def test_toggle_appear_on(self):
@@ -176,17 +159,14 @@ class TestToggleAppearAutoplay:
         sm = MagicMock()
         sm.appear_autoplay = False
         ctx = _make_ctx(sm)
-        with patch("extensions.video.commands.Command"):
-            toggle_appear_autoplay(ctx)
+        toggle_appear_autoplay(ctx)
         assert sm.appear_autoplay is True
 
     def test_noop_without_instance(self):
         from extensions.video.commands import toggle_appear_autoplay
 
         ctx = _make_ctx(None)
-        with patch("extensions.video.commands.Command") as cmd:
-            toggle_appear_autoplay(ctx)
-            cmd.set_checked.assert_not_called()
+        toggle_appear_autoplay(ctx)
 
 
 class TestHoverAutoplayFlag:
@@ -242,8 +222,7 @@ class TestToggleSelectAutoplay:
         sm = MagicMock()
         sm.select_autoplay = True
         ctx = _make_ctx(sm)
-        with patch("extensions.video.commands.Command"):
-            toggle_select_autoplay(ctx)
+        toggle_select_autoplay(ctx)
         assert sm.select_autoplay is False
 
     def test_toggle_select_on(self):
@@ -252,27 +231,14 @@ class TestToggleSelectAutoplay:
         sm = MagicMock()
         sm.select_autoplay = False
         ctx = _make_ctx(sm)
-        with patch("extensions.video.commands.Command"):
-            toggle_select_autoplay(ctx)
+        toggle_select_autoplay(ctx)
         assert sm.select_autoplay is True
-
-    def test_set_checked_uses_vgrid_path(self):
-        from extensions.video.commands import toggle_select_autoplay
-
-        sm = MagicMock()
-        sm.select_autoplay = True
-        ctx = _make_ctx(sm)
-        with patch("extensions.video.commands.Command") as cmd:
-            toggle_select_autoplay(ctx)
-            cmd.set_checked.assert_called_once_with("vgrid.toggle_select_autoplay", False)
 
     def test_noop_without_instance(self):
         from extensions.video.commands import toggle_select_autoplay
 
         ctx = _make_ctx(None)
-        with patch("extensions.video.commands.Command") as cmd:
-            toggle_select_autoplay(ctx)
-            cmd.set_checked.assert_not_called()
+        toggle_select_autoplay(ctx)
 
 
 class TestSelectAutoplayFlag:
@@ -304,8 +270,7 @@ class TestTogglePauseInBackground:
         sm = MagicMock()
         sm.pause_in_background = False
         ctx = _make_ctx(sm)
-        with patch("extensions.video.commands.Command"):
-            toggle_pause_in_background(ctx)
+        toggle_pause_in_background(ctx)
         assert sm.pause_in_background is True
 
     def test_toggle_pause_in_background_off(self):
@@ -314,27 +279,14 @@ class TestTogglePauseInBackground:
         sm = MagicMock()
         sm.pause_in_background = True
         ctx = _make_ctx(sm)
-        with patch("extensions.video.commands.Command"):
-            toggle_pause_in_background(ctx)
+        toggle_pause_in_background(ctx)
         assert sm.pause_in_background is False
-
-    def test_set_checked_uses_vgrid_path(self):
-        from extensions.video.commands import toggle_pause_in_background
-
-        sm = MagicMock()
-        sm.pause_in_background = False
-        ctx = _make_ctx(sm)
-        with patch("extensions.video.commands.Command") as cmd:
-            toggle_pause_in_background(ctx)
-            cmd.set_checked.assert_called_once_with("vgrid.toggle_pause_in_background", True)
 
     def test_noop_without_instance(self):
         from extensions.video.commands import toggle_pause_in_background
 
         ctx = _make_ctx(None)
-        with patch("extensions.video.commands.Command") as cmd:
-            toggle_pause_in_background(ctx)
-            cmd.set_checked.assert_not_called()
+        toggle_pause_in_background(ctx)
 
 
 class TestSlotManagerSetVolume:
@@ -516,8 +468,7 @@ class TestRegistryExecution:
 
         assert mock_slot_manager.hover_autoplay is True
         ctx = CommandContext.create(None, "*", source="menu")
-        with patch("extensions.video.commands.Command"):
-            video_registry.execute("vgrid.toggle_hover_autoplay", ctx=ctx)
+        video_registry.execute("vgrid.toggle_hover_autoplay", ctx=ctx)
         assert mock_slot_manager.hover_autoplay is False
 
     def test_toggle_appear_via_registry(self, video_registry, mock_slot_manager):
@@ -525,8 +476,7 @@ class TestRegistryExecution:
 
         assert mock_slot_manager.appear_autoplay is True
         ctx = CommandContext.create(None, "*", source="menu")
-        with patch("extensions.video.commands.Command"):
-            video_registry.execute("vgrid.toggle_appear_autoplay", ctx=ctx)
+        video_registry.execute("vgrid.toggle_appear_autoplay", ctx=ctx)
         assert mock_slot_manager.appear_autoplay is False
 
     def test_toggle_select_via_registry(self, video_registry, mock_slot_manager):
@@ -534,8 +484,7 @@ class TestRegistryExecution:
 
         assert mock_slot_manager.select_autoplay is True
         ctx = CommandContext.create(None, "*", source="menu")
-        with patch("extensions.video.commands.Command"):
-            video_registry.execute("vgrid.toggle_select_autoplay", ctx=ctx)
+        video_registry.execute("vgrid.toggle_select_autoplay", ctx=ctx)
         assert mock_slot_manager.select_autoplay is False
 
     def test_registered_command_ids(self, video_registry):

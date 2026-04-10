@@ -1,18 +1,18 @@
 from ...core.commands.bridge import ActionKit
-from ...ui.layout.manager import LayoutManager
+from ...core.commands.binding.instance_registry import InstanceRegistry
+from ...ui.layout.manager import LayoutManager, MODE_EDIT
+
+
+def _is_layout_edit():
+    w = InstanceRegistry.instance().get_one("MainWindow")
+    return w._layout_manager._mode == MODE_EDIT if w else False
 
 
 def toggle_layout_mode(ctx):
-    from ...core.commands.bridge import Command
-
     w = ctx.get_instance("MainWindow")
     if not w:
         return
-    mgr = w._layout_manager
-    mgr.toggle_mode()
-    from ...ui.layout.manager import MODE_EDIT
-
-    Command.set_checked("win.toggle_layout_mode", mgr.mode == MODE_EDIT)
+    w._layout_manager.toggle_mode()
 
 
 class PanelCommands(ActionKit.MenuBase):
@@ -32,6 +32,7 @@ class PanelCommands(ActionKit.MenuBase):
                 display="Edit Mode (might have visual issues)",
                 func=toggle_layout_mode,
                 checkable=True,
+                checked_resolver=_is_layout_edit,
             ),
             "-",
         ]

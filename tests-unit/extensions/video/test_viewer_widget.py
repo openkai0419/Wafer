@@ -17,14 +17,6 @@ def _patch_mpv_viewer(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _patch_command(monkeypatch):
-    monkeypatch.setattr(
-        "extensions.video.viewer_widget.Command",
-        MagicMock(),
-    )
-
-
-@pytest.fixture(autouse=True)
 def _patch_binding(monkeypatch):
     monkeypatch.setattr(
         "extensions.video.viewer_widget.ActionKit.UIMixin.init_command_binding",
@@ -56,24 +48,10 @@ class TestVideoViewerWidgetInit:
         assert w._path is None
         assert w._player is None
         assert w._volume == DEFAULT_VOLUME
-        assert w._muted is False
-        assert w._cover_mode is False
-        assert w._looping is False
-        assert w._pause_in_background is False
-        w.cleanup()
-
-    def test_init_syncs_default_checked_states(self, qtbot, _patch_command):
-        from extensions.video.viewer_widget import VideoViewerWidget, Command
-
-        Command.reset_mock()
-        w = VideoViewerWidget()
-        calls = Command.set_checked.call_args_list
-        synced = {c.args[0]: c.args[1] for c in calls}
-        assert synced["vview.toggle_mute"] is False
-        assert synced["vview.toggle_fit_mode"] is False
-        assert synced["vview.toggle_loop"] is False
-        assert synced["vview.toggle_loop"] is False
-        assert synced["vview.toggle_pause_in_background"] is False
+        assert w.muted is False
+        assert w.cover_mode is False
+        assert w.looping is False
+        assert w.pause_in_background is False
         w.cleanup()
 
 
@@ -192,19 +170,19 @@ class TestVideoViewerWidgetControls:
     def test_toggle_mute(self, qtbot, _patch_mpv_viewer):
         w, player = self._make_widget(qtbot, _patch_mpv_viewer)
         w.toggle_mute()
-        assert w._muted is True
+        assert w.muted is True
         assert player.mute is True
         w.toggle_mute()
-        assert w._muted is False
+        assert w.muted is False
         assert player.mute is False
         w.cleanup()
 
     def test_volume_change_unmutes(self, qtbot, _patch_mpv_viewer):
         w, player = self._make_widget(qtbot, _patch_mpv_viewer)
         w.toggle_mute()
-        assert w._muted is True
+        assert w.muted is True
         w._on_volume_changed(50)
-        assert w._muted is False
+        assert w.muted is False
         assert player.mute is False
         assert w._volume == 50
         w.cleanup()
@@ -226,27 +204,27 @@ class TestVideoViewerWidgetControls:
 
     def test_toggle_fit_mode(self, qtbot, _patch_mpv_viewer):
         w, player = self._make_widget(qtbot, _patch_mpv_viewer)
-        assert w._cover_mode is False
+        assert w.cover_mode is False
         w.toggle_fit_mode()
-        assert w._cover_mode is True
+        assert w.cover_mode is True
         assert player.__setitem__.call_args_list[-1] == (("panscan", 1.0),)
         w.cleanup()
 
     def test_toggle_loop(self, qtbot, _patch_mpv_viewer):
         w, player = self._make_widget(qtbot, _patch_mpv_viewer)
-        assert w._looping is False
+        assert w.looping is False
         w.toggle_loop()
-        assert w._looping is True
+        assert w.looping is True
         assert player.__setitem__.call_args_list[-1] == (("loop-file", "inf"),)
         w.cleanup()
 
     def test_toggle_pause_in_background(self, qtbot, _patch_mpv_viewer):
         w, player = self._make_widget(qtbot, _patch_mpv_viewer)
-        assert w._pause_in_background is False
+        assert w.pause_in_background is False
         w.toggle_pause_in_background()
-        assert w._pause_in_background is True
+        assert w.pause_in_background is True
         w.toggle_pause_in_background()
-        assert w._pause_in_background is False
+        assert w.pause_in_background is False
         w.cleanup()
 
     def test_background_pauses_when_enabled(self, qtbot, _patch_mpv_viewer):
@@ -260,7 +238,7 @@ class TestVideoViewerWidgetControls:
 
     def test_background_does_not_pause_when_disabled(self, qtbot, _patch_mpv_viewer):
         w, player = self._make_widget(qtbot, _patch_mpv_viewer)
-        assert w._pause_in_background is False
+        assert w.pause_in_background is False
         player.pause = False
         w._on_app_state_changed(QtCore.Qt.ApplicationState.ApplicationInactive)
         assert player.pause is False
@@ -472,7 +450,7 @@ class TestVideoViewerWidgetDefaultState:
         from extensions.video.viewer_widget import VideoViewerWidget
 
         w = VideoViewerWidget()
-        assert w._muted is False
+        assert w.muted is False
         w.cleanup()
 
 
@@ -554,7 +532,7 @@ class TestAutoplayObserver:
         w, player = self._make_widget(qtbot, _patch_mpv_viewer)
         called = []
         w._autoplay_advance = lambda: called.append(True)
-        w._looping = False
+        w.looping = False
         w._on_mpv_eof("eof-reached", True)
         from PySide6.QtWidgets import QApplication
 
@@ -567,7 +545,7 @@ class TestAutoplayObserver:
         w, player = self._make_widget(qtbot, _patch_mpv_viewer)
         called = []
         w._autoplay_advance = lambda: called.append(True)
-        w._looping = True
+        w.looping = True
         w._on_mpv_eof("eof-reached", True)
         from PySide6.QtWidgets import QApplication
 
@@ -579,7 +557,7 @@ class TestAutoplayObserver:
     def test_eof_observer_ignored_when_no_advance(self, qtbot, _patch_mpv_viewer):
         w, player = self._make_widget(qtbot, _patch_mpv_viewer)
         w._autoplay_advance = None
-        w._looping = False
+        w.looping = False
         w._on_mpv_eof("eof-reached", True)
         from PySide6.QtWidgets import QApplication
 
@@ -590,7 +568,7 @@ class TestAutoplayObserver:
         w, player = self._make_widget(qtbot, _patch_mpv_viewer)
         called = []
         w._autoplay_advance = lambda: called.append(True)
-        w._looping = False
+        w.looping = False
         w._on_mpv_eof("eof-reached", False)
         from PySide6.QtWidgets import QApplication
 
@@ -602,7 +580,7 @@ class TestAutoplayObserver:
         w, player = self._make_widget(qtbot, _patch_mpv_viewer)
         called = []
         w._autoplay_advance = lambda: called.append(True)
-        w._looping = True
+        w.looping = True
         player.duration = 10.0
         w._prev_time_pos = 9.0
         w._on_mpv_time_pos("time-pos", 0.5)
@@ -617,7 +595,7 @@ class TestAutoplayObserver:
         w, player = self._make_widget(qtbot, _patch_mpv_viewer)
         called = []
         w._autoplay_advance = lambda: called.append(True)
-        w._looping = True
+        w.looping = True
         player.duration = 10.0
         w._prev_time_pos = 3.0
         w._on_mpv_time_pos("time-pos", 4.0)
@@ -632,7 +610,7 @@ class TestAutoplayObserver:
         w, player = self._make_widget(qtbot, _patch_mpv_viewer)
         called = []
         w._autoplay_advance = lambda: called.append(True)
-        w._looping = False
+        w.looping = False
         w._prev_time_pos = 9.0
         w._on_mpv_time_pos("time-pos", 0.5)
         from PySide6.QtWidgets import QApplication
@@ -675,7 +653,7 @@ class TestAutoplayObserver:
     def test_set_autoplay_advance_fires_immediately_on_eof(self, qtbot, _patch_mpv_viewer):
         w, player = self._make_widget(qtbot, _patch_mpv_viewer)
         player.eof_reached = True
-        w._looping = False
+        w.looping = False
         called = []
         w.set_autoplay_advance(lambda: called.append(True))
         from PySide6.QtWidgets import QApplication
@@ -688,7 +666,7 @@ class TestAutoplayObserver:
     def test_set_autoplay_advance_no_fire_when_not_eof(self, qtbot, _patch_mpv_viewer):
         w, player = self._make_widget(qtbot, _patch_mpv_viewer)
         player.eof_reached = False
-        w._looping = False
+        w.looping = False
         called = []
         w.set_autoplay_advance(lambda: called.append(True))
         from PySide6.QtWidgets import QApplication
@@ -701,7 +679,7 @@ class TestAutoplayObserver:
     def test_set_autoplay_advance_no_fire_when_looping(self, qtbot, _patch_mpv_viewer):
         w, player = self._make_widget(qtbot, _patch_mpv_viewer)
         player.eof_reached = True
-        w._looping = True
+        w.looping = True
         called = []
         w.set_autoplay_advance(lambda: called.append(True))
         from PySide6.QtWidgets import QApplication

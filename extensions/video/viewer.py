@@ -40,11 +40,11 @@ class VideoViewerPlugin(WidgetViewerPlugin):
     def save_state(self):
         return {
             "volume": self.widget._volume,
-            "muted": self.widget._muted,
+            "muted": self.widget.muted,
             "speed": self.widget._speed,
-            "fit_mode": self.widget._cover_mode,
-            "loop": self.widget._looping,
-            "pause_in_background": self.widget._pause_in_background,
+            "fit_mode": self.widget.cover_mode,
+            "loop": self.widget.looping,
+            "pause_in_background": self.widget.pause_in_background,
         }
 
     def restore_state(self, state):

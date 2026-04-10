@@ -1,4 +1,5 @@
-from ...core.commands.bridge import Command, ActionKit
+from ...core.commands.bridge import ActionKit
+from ...core.commands.binding.instance_registry import InstanceRegistry
 from ...core.app_settings import app_settings
 from ...utils.notifier import Notifier
 from .session_commands import (
@@ -37,7 +38,11 @@ def toggle_always_on_top(ctx):
     if not w:
         return
     w.window_state.set_always_on_top(not w.window_state.is_always_on_top)
-    Command.set_checked("win.toggle_always_on_top", w.window_state.is_always_on_top)
+
+
+def _is_always_on_top():
+    w = InstanceRegistry.instance().get_one("MainWindow")
+    return w.window_state.is_always_on_top if w else False
 
 
 def _session_names():
@@ -53,7 +58,7 @@ class WindowCommands(ActionKit.MenuBase):
         return [
             ":Window",
             ActionKit.Command(path="win.toggle_fullscreen", display="Full Screen", func=toggle_fullscreen),
-            ActionKit.Command(path="win.toggle_always_on_top", display="Always on Top", func=toggle_always_on_top, checkable=True),
+            ActionKit.Command(path="win.toggle_always_on_top", display="Always on Top", func=toggle_always_on_top, checkable=True, checked_resolver=_is_always_on_top),
             ActionKit.Command(path="win.toggle_language", display="Toggle Language", func=toggle_language),
             "-",
             ":Session",

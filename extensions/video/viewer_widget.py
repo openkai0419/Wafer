@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
 )
 from wafer.utils.formatting import dpix
 from wafer.utils.logs import AppLogger
-from wafer.core.commands.bridge import ActionKit, UI, Command
+from wafer.core.commands.bridge import ActionKit, UI
 from wafer.core.color.theme import ThemeManager
 from wafer.core.qt.icon_engine import icon_draw
 
@@ -256,11 +256,11 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
         self._path = None
         self._player = None
         self._volume = DEFAULT_VOLUME
-        self._muted = False
+        self.muted = False
         self._speed = 1.0
-        self._cover_mode = False
-        self._looping = False
-        self._pause_in_background = False
+        self.cover_mode = False
+        self.looping = False
+        self.pause_in_background = False
         self._paused_by_background = False
         self._seek_dragging = False
         self._controls_visible = False
@@ -308,10 +308,6 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
 
         self.init_command_binding("VideoView")
         UI.register_instance("VideoViewerWidget", self)
-        Command.set_checked("vview.toggle_mute", self._muted)
-        Command.set_checked("vview.toggle_fit_mode", self._cover_mode)
-        Command.set_checked("vview.toggle_loop", self._looping)
-        Command.set_checked("vview.toggle_pause_in_background", self._pause_in_background)
 
         self._playback_ended.connect(self._fire_autoplay_advance)
 
@@ -343,10 +339,10 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
                 input_vo_keyboard="no",
             )
             self._player.volume = self._volume
-            self._player.mute = self._muted
+            self._player.mute = self.muted
             self._player.speed = self._speed
-            self._player["panscan"] = 1.0 if self._cover_mode else 0.0
-            self._player["loop-file"] = "inf" if self._looping else "no"
+            self._player["panscan"] = 1.0 if self.cover_mode else 0.0
+            self._player["loop-file"] = "inf" if self.looping else "no"
             self._player.observe_property("time-pos", self._on_mpv_time_pos)
             self._player.observe_property("eof-reached", self._on_mpv_eof)
         except Exception as e:
@@ -420,18 +416,16 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
         self._update_volume_icon()
 
     def toggle_mute(self):
-        self._muted = not self._muted
+        self.muted = not self.muted
         if self._player:
-            self._player.mute = self._muted
+            self._player.mute = self.muted
         self._update_volume_icon()
-        Command.set_checked("vview.toggle_mute", self._muted)
 
     def set_muted(self, muted: bool):
-        self._muted = muted
+        self.muted = muted
         if self._player:
-            self._player.mute = self._muted
+            self._player.mute = self.muted
         self._update_volume_icon()
-        Command.set_checked("vview.toggle_mute", self._muted)
 
     def set_speed(self, speed):
         self._speed = max(0.25, min(3.0, float(speed)))
@@ -439,40 +433,34 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
             self._player.speed = self._speed
 
     def toggle_fit_mode(self):
-        self._cover_mode = not self._cover_mode
+        self.cover_mode = not self.cover_mode
         if self._player:
-            self._player["panscan"] = 1.0 if self._cover_mode else 0.0
-        Command.set_checked("vview.toggle_fit_mode", self._cover_mode)
+            self._player["panscan"] = 1.0 if self.cover_mode else 0.0
 
     def set_cover_mode(self, cover: bool):
-        self._cover_mode = cover
+        self.cover_mode = cover
         if self._player:
-            self._player["panscan"] = 1.0 if self._cover_mode else 0.0
-        Command.set_checked("vview.toggle_fit_mode", self._cover_mode)
+            self._player["panscan"] = 1.0 if self.cover_mode else 0.0
 
     def toggle_loop(self):
-        self._looping = not self._looping
+        self.looping = not self.looping
         if self._player:
-            self._player["loop-file"] = "inf" if self._looping else "no"
-        Command.set_checked("vview.toggle_loop", self._looping)
+            self._player["loop-file"] = "inf" if self.looping else "no"
 
     def set_looping(self, looping: bool):
-        self._looping = looping
+        self.looping = looping
         if self._player:
-            self._player["loop-file"] = "inf" if self._looping else "no"
-        Command.set_checked("vview.toggle_loop", self._looping)
+            self._player["loop-file"] = "inf" if self.looping else "no"
 
     def toggle_pause_in_background(self):
-        self._pause_in_background = not self._pause_in_background
-        Command.set_checked("vview.toggle_pause_in_background", self._pause_in_background)
+        self.pause_in_background = not self.pause_in_background
 
     def set_pause_in_background(self, enabled: bool):
-        self._pause_in_background = enabled
-        Command.set_checked("vview.toggle_pause_in_background", self._pause_in_background)
+        self.pause_in_background = enabled
 
     def set_autoplay_advance(self, advance):
         self._autoplay_advance = advance
-        if advance is not None and self._player and not self._looping:
+        if advance is not None and self._player and not self.looping:
             try:
                 if self._player.eof_reached:
                     self._playback_ended.emit()
@@ -480,7 +468,7 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
                 AppLogger.debug(f"mpv eof_reached check failed: {e}")
 
     def _on_mpv_time_pos(self, name, value):
-        if not self._autoplay_advance or not self._looping:
+        if not self._autoplay_advance or not self.looping:
             self._prev_time_pos = value
             return
         if value is not None and self._prev_time_pos is not None:
@@ -496,7 +484,7 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
         self._prev_time_pos = value
 
     def _on_mpv_eof(self, name, value):
-        if value and self._autoplay_advance and not self._looping:
+        if value and self._autoplay_advance and not self.looping:
             self._playback_ended.emit()
 
     def _fire_autoplay_advance(self):
@@ -507,11 +495,10 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
 
     def _on_volume_changed(self, value):
         self._volume = value
-        if self._muted and value > 0:
-            self._muted = False
+        if self.muted and value > 0:
+            self.muted = False
             if self._player:
                 self._player.mute = False
-            Command.set_checked("vview.toggle_mute", False)
         if self._player:
             self._player.volume = value
         self._update_volume_icon()
@@ -536,7 +523,7 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
         self._control_bar.btn_play.set_icon_key("play" if paused else "pause")
 
     def _update_volume_icon(self):
-        self._control_bar.btn_volume.set_icon_key("muted" if self._muted else "volume")
+        self._control_bar.btn_volume.set_icon_key("muted" if self.muted else "volume")
 
     def _update_position(self):
         if not self._player:
@@ -609,7 +596,7 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
 
     def _on_app_state_changed(self, state):
         if state != Qt.ApplicationState.ApplicationActive:
-            if self._pause_in_background and self._player and not self._player.pause:
+            if self.pause_in_background and self._player and not self._player.pause:
                 self._paused_by_background = True
                 self._player.pause = True
                 self._update_play_button()

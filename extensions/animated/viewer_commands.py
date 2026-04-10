@@ -1,5 +1,9 @@
 from wafer.plugin import MenuGroup, CommandMeta, require
-from wafer.core.commands.bridge import Command
+from wafer.core.commands.binding.instance_registry import InstanceRegistry
+
+
+def _avw():
+    return InstanceRegistry.instance().get_one("AnimatedViewerWidget")
 
 
 @require(vw="AnimatedViewerWidget")
@@ -21,5 +25,6 @@ class AnimatedViewerCommands(MenuGroup):
                 display="Contain/Cover",
                 func=toggle_fit_mode,
                 checkable=True,
+                checked_resolver=lambda: getattr(_avw(), "cover_mode", False),
             ),
         ]

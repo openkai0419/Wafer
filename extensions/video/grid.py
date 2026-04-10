@@ -87,15 +87,9 @@ class VideoGridPlugin(WidgetGridPlugin):
 
     @staticmethod
     def _apply_state(sm, state):
-        from wafer.core.commands.bridge import Command
-
         sm.set_volume(state.get("volume", DEFAULT_VOLUME))
         sm.set_max_selected(state.get("max_selected", 3))
         sm.hover_autoplay = state.get("hover_autoplay", True)
         sm.appear_autoplay = state.get("appear_autoplay", True)
         sm.select_autoplay = state.get("select_autoplay", True)
         sm.pause_in_background = state.get("pause_in_background", False)
-        Command.set_checked("vgrid.toggle_hover_autoplay", sm.hover_autoplay)
-        Command.set_checked("vgrid.toggle_appear_autoplay", sm.appear_autoplay)
-        Command.set_checked("vgrid.toggle_select_autoplay", sm.select_autoplay)
-        Command.set_checked("vgrid.toggle_pause_in_background", sm.pause_in_background)

@@ -1,6 +1,6 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from wafer.core.commands.bridge import ActionKit, UI, Command
+from wafer.core.commands.bridge import ActionKit, UI
 from wafer.core.qt.dispatcher import Dispatcher, CancelSlot
 from wafer.core.qt.thread import utility_pool
 from ._common import decode_frames, get_viewer_driver, _viewer_cache
@@ -16,14 +16,13 @@ class AnimatedViewerWidget(QtWidgets.QWidget, ActionKit.UIMixin):
         self._frame_index = 0
         self._accumulated = 0
         self._playing = False
-        self._cover_mode = False
+        self.cover_mode = False
         self._scaled_pixmap: QtGui.QPixmap | None = None
         self._scaled_key: tuple = ()
         self._cancel = CancelSlot()
         self._dispatcher = Dispatcher(utility_pool)
         self.init_command_binding("AnimatedView")
         UI.register_instance("AnimatedViewerWidget", self)
-        Command.set_checked("aview.toggle_fit_mode", self._cover_mode)
 
     def extend_context(self, ctx, cmd, event=None, key=None, source=None):
         return {"path": self._path, "paths": [self._path] if self._path else []}
@@ -107,14 +106,13 @@ class AnimatedViewerWidget(QtWidgets.QWidget, ActionKit.UIMixin):
         self.stop()
 
     def set_cover_mode(self, cover: bool):
-        self._cover_mode = cover
+        self.cover_mode = cover
         self._scaled_pixmap = None
         self._scaled_key = ()
-        Command.set_checked("aview.toggle_fit_mode", self._cover_mode)
         self.update()
 
     def toggle_fit_mode(self):
-        self.set_cover_mode(not self._cover_mode)
+        self.set_cover_mode(not self.cover_mode)
 
     def advance(self, delta_ms: int):
         if not self._frames or not self._delays:
@@ -138,10 +136,10 @@ class AnimatedViewerWidget(QtWidgets.QWidget, ActionKit.UIMixin):
         ww, wh = self.width(), self.height()
         if pw <= 0 or ph <= 0 or ww <= 0 or wh <= 0:
             return
-        key = (id(pixmap), ww, wh, self._cover_mode)
+        key = (id(pixmap), ww, wh, self.cover_mode)
         if key != self._scaled_key:
             sx, sy = ww / pw, wh / ph
-            scale = max(sx, sy) if self._cover_mode else min(sx, sy)
+            scale = max(sx, sy) if self.cover_mode else min(sx, sy)
             dw, dh = int(pw * scale), int(ph * scale)
             self._scaled_pixmap = pixmap.scaled(dw, dh, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
             self._scaled_key = key
@@ -149,6 +147,6 @@ class AnimatedViewerWidget(QtWidgets.QWidget, ActionKit.UIMixin):
         painter = QtGui.QPainter(self)
         x = (ww - scaled.width()) // 2
         y = (wh - scaled.height()) // 2
-        if self._cover_mode:
+        if self.cover_mode:
             painter.setClipRect(0, 0, ww, wh)
         painter.drawPixmap(x, y, scaled)

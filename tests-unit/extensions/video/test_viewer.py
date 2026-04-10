@@ -64,11 +64,11 @@ class TestVideoViewerPluginState:
         plugin = VideoViewerPlugin()
         plugin.widget = MagicMock()
         plugin.widget._volume = 75
-        plugin.widget._muted = True
+        plugin.widget.muted = True
         plugin.widget._speed = 1.5
-        plugin.widget._cover_mode = True
-        plugin.widget._looping = False
-        plugin.widget._pause_in_background = False
+        plugin.widget.cover_mode = True
+        plugin.widget.looping = False
+        plugin.widget.pause_in_background = False
         state = plugin.save_state()
         assert state == {
             "volume": 75,

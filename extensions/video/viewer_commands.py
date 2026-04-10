@@ -1,5 +1,9 @@
 from wafer.plugin import MenuGroup, CommandMeta, CommandParam, require
-from wafer.core.commands.bridge import Command
+from wafer.core.commands.binding.instance_registry import InstanceRegistry
+
+
+def _vw():
+    return InstanceRegistry.instance().get_one("VideoViewerWidget")
 
 
 @require(vw="VideoViewerWidget")
@@ -127,6 +131,7 @@ class VideoViewerCommands(MenuGroup):
                 display="Mute",
                 func=toggle_mute,
                 checkable=True,
+                checked_resolver=lambda: getattr(_vw(), "muted", False),
             ),
             "-",
             CommandMeta(
@@ -134,6 +139,7 @@ class VideoViewerCommands(MenuGroup):
                 display="Contain/Cover",
                 func=toggle_fit_mode,
                 checkable=True,
+                checked_resolver=lambda: getattr(_vw(), "cover_mode", False),
             ),
             CommandMeta(
                 path="vview.speed_up",
@@ -158,6 +164,7 @@ class VideoViewerCommands(MenuGroup):
                 display="Loop",
                 func=toggle_loop,
                 checkable=True,
+                checked_resolver=lambda: getattr(_vw(), "looping", False),
             ),
             "-",
             CommandMeta(
@@ -165,5 +172,6 @@ class VideoViewerCommands(MenuGroup):
                 display="Pause in Background",
                 func=toggle_pause_in_background,
                 checkable=True,
+                checked_resolver=lambda: getattr(_vw(), "pause_in_background", False),
             ),
         ]

@@ -1,5 +1,6 @@
-from ...core.commands.bridge import ActionKit, Command
+from ...core.commands.bridge import ActionKit
 from ...core.commands.command.state import ActionGroupStateManager
+from ...core.commands.binding.instance_registry import InstanceRegistry
 from ...plugin.query.handler import sort_registry
 
 
@@ -164,7 +165,6 @@ def toggle_include_subfolders(ctx):
         return
     current = svc.get("include_subfolders", True)
     svc.set_param("include_subfolders", not current)
-    Command.set_checked("qry.toggle_include_subfolders", not current)
     svc.execute_if_auto()
 
 
@@ -174,7 +174,10 @@ def toggle_auto_execute(ctx):
         return
     current = svc.get("auto_execute", True)
     svc.set_param("auto_execute", not current)
-    Command.set_checked("qry.toggle_auto_execute", not current)
+
+
+def _svc():
+    return InstanceRegistry.instance().get_one("SearchService")
 
 
 def sync_groups_from_args(args):
@@ -225,10 +228,24 @@ class QueryCommands(ActionKit.MenuBase):
                 func=search,
                 params=[ActionKit.Param(name="force", value=True)],
             ),
-            ActionKit.Command(path="qry.toggle_auto_execute", display="Auto Execute on Change", func=toggle_auto_execute, checkable=True, default_checked=True),
+            ActionKit.Command(
+                path="qry.toggle_auto_execute",
+                display="Auto Execute on Change",
+                func=toggle_auto_execute,
+                checkable=True,
+                default_checked=True,
+                checked_resolver=lambda: _svc().get("auto_execute", True) if _svc() else True,
+            ),
             "-",
             ":Search Options",
-            ActionKit.Command(path="qry.toggle_include_subfolders", display="Include Subfolders", func=toggle_include_subfolders, checkable=True, default_checked=True),
+            ActionKit.Command(
+                path="qry.toggle_include_subfolders",
+                display="Include Subfolders",
+                func=toggle_include_subfolders,
+                checkable=True,
+                default_checked=True,
+                checked_resolver=lambda: _svc().get("include_subfolders", True) if _svc() else True,
+            ),
             ActionKit.Command(
                 path="qry.set_search_text",
                 display="Set Search Text to",

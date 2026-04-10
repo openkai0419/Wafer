@@ -192,35 +192,6 @@ class TestMpvCellWidget:
         assert isinstance(MpvCellWidget._slot_manager, PlaybackSlotManager)
         w.cleanup()
 
-    def test_init_shared_syncs_default_checked_without_pending(self, qtbot, monkeypatch):
-        from extensions.video.widget import MpvCellWidget
-        from unittest.mock import MagicMock
-
-        mock_cmd = MagicMock()
-        monkeypatch.setattr("wafer.core.commands.bridge.Command.set_checked", mock_cmd)
-        MpvCellWidget._pending_grid_state = None
-        w = MpvCellWidget()
-        synced = {c.args[0]: c.args[1] for c in mock_cmd.call_args_list}
-        assert synced.get("vgrid.toggle_hover_autoplay") is True
-        assert synced.get("vgrid.toggle_appear_autoplay") is False
-        assert synced.get("vgrid.toggle_select_autoplay") is True
-        assert synced.get("vgrid.toggle_pause_in_background") is False
-        w.cleanup()
-
-    def test_init_shared_skips_default_sync_when_pending(self, qtbot, monkeypatch):
-        from extensions.video.widget import MpvCellWidget
-        from unittest.mock import MagicMock
-
-        mock_cmd = MagicMock()
-        monkeypatch.setattr("wafer.core.commands.bridge.Command.set_checked", mock_cmd)
-        MpvCellWidget._pending_grid_state = {"hover_autoplay": False, "appear_autoplay": False, "select_autoplay": False, "volume": 50}
-        w = MpvCellWidget()
-        synced = {c.args[0]: c.args[1] for c in mock_cmd.call_args_list}
-        assert synced.get("vgrid.toggle_hover_autoplay") is False
-        assert synced.get("vgrid.toggle_appear_autoplay") is False
-        assert synced.get("vgrid.toggle_select_autoplay") is False
-        w.cleanup()
-
     def test_load_sets_path(self, qtbot):
         from extensions.video.widget import MpvCellWidget
 

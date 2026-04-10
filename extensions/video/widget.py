@@ -586,13 +586,6 @@ class MpvCellWidget(QWidget):
 
             VideoGridPlugin._apply_state(cls._slot_manager, cls._pending_grid_state)
             cls._pending_grid_state = None
-        else:
-            from wafer.core.commands.bridge import Command
-
-            Command.set_checked("vgrid.toggle_hover_autoplay", cls._slot_manager.hover_autoplay)
-            Command.set_checked("vgrid.toggle_appear_autoplay", cls._slot_manager.appear_autoplay)
-            Command.set_checked("vgrid.toggle_select_autoplay", cls._slot_manager.select_autoplay)
-            Command.set_checked("vgrid.toggle_pause_in_background", cls._slot_manager.pause_in_background)
 
     @classmethod
     def _on_overlay_leave(cls, cell):

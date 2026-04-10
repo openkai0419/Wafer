@@ -381,9 +381,6 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         return {"mode": "locked", "tree": {"root": None, "floating": {}}}
 
     def _sync_default_checked_states(self):
-        Command.set_checked("win.toggle_always_on_top", self.window_state.is_always_on_top)
-        Command.set_checked("qry.toggle_include_subfolders", self.search_service.get("include_subfolders", True))
-        Command.set_checked("qry.toggle_auto_execute", self.search_service.get("auto_execute", True))
         from ...builtins.commands.grid_commands import sync_grid_groups_from_settings, _SCROLL_ANCHOR_CMDS
 
         sync_grid_groups_from_settings(
@@ -401,7 +398,6 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self._layout_edit_btn.blockSignals(True)
         self._layout_edit_btn.setChecked(is_edit)
         self._layout_edit_btn.blockSignals(False)
-        Command.set_checked("win.toggle_layout_mode", is_edit)
 
     def _register_component_states(self):
         store = StateStore.instance()
@@ -657,8 +653,6 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             from ...builtins.commands.query_commands import sync_groups_from_args
 
             sync_groups_from_args(query.search_params)
-            Command.set_checked("qry.toggle_include_subfolders", query.search_params.get("include_subfolders", True))
-            Command.set_checked("qry.toggle_auto_execute", query.search_params.get("auto_execute", True))
             filter_rows = query.search_params.get("filter_rows")
             if filter_rows:
                 self.search_row_widget.restore_state(
@@ -707,7 +701,6 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         if ui.window_state:
             try:
                 self.window_state.restore_full_state(ui.window_state)
-                Command.set_checked("win.toggle_always_on_top", self.window_state.is_always_on_top)
             except Exception as e:
                 AppLogger.warning(f"restore_ui_state window_state failed: {e}", exc=e)
         if ui.component_states:

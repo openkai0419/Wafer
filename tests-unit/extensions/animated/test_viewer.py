@@ -90,7 +90,7 @@ class TestAnimatedViewerPluginState:
 
         plugin = AnimatedViewerPlugin()
         plugin.widget = MagicMock()
-        plugin.widget._cover_mode = True
+        plugin.widget.cover_mode = True
         state = plugin.save_state()
         assert state == {"fit_mode": True}
 

@@ -11,8 +11,8 @@ from ...ui.dialogs import ThumbnailConfirmDialog
 from ...core.platform.copy import ClipboardFileTransfer
 from ...core.platform.paste import paste_clipboard_files, execute_paste_plans_with_ui
 from ...core.platform.path_utils import unique_path, get_os_new_folder_name, validate_filename
-from ...core.platform.file_operations import PastePlanItem
-from ...core.platform.folders import show_in_explorer as reveal_in_explorer
+from ...core.platform.file_operations import PastePlanItem, delete_to_trash
+from ...core.platform.folders import show_in_explorer as reveal_in_explorer, open_file as platform_open_file, make_directory
 from ...utils.logs import AppLogger
 from ...utils.notifier import Notifier
 from ...core.qt.dispatcher import Dispatcher
@@ -42,7 +42,7 @@ def open_file(ctx):
     path = _ctx_path(ctx)
     if not path:
         return
-    QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(path))
+    platform_open_file(path)
 
 
 def show_in_explorer(ctx, show_first_if_folder: bool = False):
@@ -143,28 +143,11 @@ def delete_files(ctx):
         return
     if not _confirm_delete(ctx, paths):
         return
-    norm_paths = [os.path.normpath(os.path.abspath(p)) for p in paths if p]
-    AppLogger.info(f"Deleting {len(norm_paths)} files")
-    try:
-        import send2trash
-
-        for p in norm_paths:
-            if os.path.exists(p):
-                try:
-                    send2trash.send2trash(p)
-                except Exception as e:
-                    AppLogger.warning(f"send2trash failed: {p}", exc=e)
-                    if os.path.isfile(p):
-                        os.remove(p)
-                    else:
-                        Notifier.warning(f"Failed to delete folder (send2trash unavailable): {os.path.basename(p)}")
-    except ImportError:
-        for p in norm_paths:
-            if os.path.exists(p):
-                if os.path.isfile(p):
-                    os.remove(p)
-                else:
-                    Notifier.warning(f"Cannot delete folder without send2trash: {os.path.basename(p)}")
+    results = delete_to_trash(paths)
+    for r in results:
+        if r.status == "error":
+            AppLogger.warning(f"Delete failed: {r.src} ({r.error})")
+            Notifier.warning(f"Delete failed: {os.path.basename(r.src)}")
 
 
 def paste_here(ctx, overwrite_mode: str = "skip"):
@@ -221,7 +204,7 @@ def make_new_folder_here(ctx, folder_name: str | None = None) -> str | None:
     parent_dir = _get_directory_from_path(path)
     name = folder_name or get_os_new_folder_name()
     new_folder = unique_path(parent_dir, name)
-    os.makedirs(new_folder, exist_ok=True)
+    make_directory(new_folder)
     return new_folder
 
 

@@ -98,6 +98,93 @@ def test_file_executor_copy_dir_subpath_is_skipped(tmp_path):
     assert res and res[0].status == "skipped"
 
 
+def test_delete_to_trash_with_send2trash(tmp_path, monkeypatch):
+    from wafer.core.platform.file_operations import delete_to_trash
+
+    a = tmp_path / "a.txt"
+    a.write_text("x", encoding="utf-8")
+    b = tmp_path / "b.txt"
+    b.write_text("y", encoding="utf-8")
+
+    trashed: list[str] = []
+    import types
+
+    fake = types.SimpleNamespace(send2trash=lambda p: trashed.append(p))
+    monkeypatch.setitem(__import__("sys").modules, "send2trash", fake)
+    results = delete_to_trash([str(a), str(b)])
+    assert len(results) == 2
+    assert all(r.status == "ok" for r in results)
+    assert len(trashed) == 2
+
+
+def test_delete_to_trash_send2trash_fallback(tmp_path, monkeypatch):
+    from wafer.core.platform.file_operations import delete_to_trash
+
+    f = tmp_path / "a.txt"
+    f.write_text("x", encoding="utf-8")
+    import types
+
+    fake = types.SimpleNamespace(
+        send2trash=lambda *_a, **_k: (_ for _ in ()).throw(OSError("boom"))
+    )
+    monkeypatch.setitem(__import__("sys").modules, "send2trash", fake)
+    results = delete_to_trash([str(f)])
+    assert results[0].status == "ok"
+    assert not f.exists()
+
+
+def test_delete_to_trash_folder_fallback_fails(tmp_path, monkeypatch):
+    from wafer.core.platform.file_operations import delete_to_trash
+
+    d = tmp_path / "folder"
+    d.mkdir()
+    (d / "child.txt").write_text("x", encoding="utf-8")
+    import types
+
+    fake = types.SimpleNamespace(
+        send2trash=lambda *_a, **_k: (_ for _ in ()).throw(OSError("boom"))
+    )
+    monkeypatch.setitem(__import__("sys").modules, "send2trash", fake)
+    results = delete_to_trash([str(d)])
+    assert results[0].status == "error"
+    assert d.exists()
+
+
+def test_delete_to_trash_no_send2trash_file(tmp_path, monkeypatch):
+    from wafer.core.platform.file_operations import delete_to_trash
+
+    f = tmp_path / "a.txt"
+    f.write_text("x", encoding="utf-8")
+    monkeypatch.setitem(__import__("sys").modules, "send2trash", None)
+    monkeypatch.delitem(__import__("sys").modules, "send2trash")
+    import builtins
+
+    _real_import = builtins.__import__
+
+    def _no_s2t(name, *a, **k):
+        if name == "send2trash":
+            raise ImportError("no send2trash")
+        return _real_import(name, *a, **k)
+
+    monkeypatch.setattr(builtins, "__import__", _no_s2t)
+    results = delete_to_trash([str(f)])
+    assert results[0].status == "ok"
+    assert not f.exists()
+
+
+def test_delete_to_trash_missing_file(tmp_path):
+    from wafer.core.platform.file_operations import delete_to_trash
+
+    results = delete_to_trash([str(tmp_path / "nonexistent.txt")])
+    assert results[0].status == "skipped"
+
+
+def test_delete_to_trash_empty_list():
+    from wafer.core.platform.file_operations import delete_to_trash
+
+    assert delete_to_trash([]) == []
+
+
 def test_file_executor_copy_dir_rename_on_conflict(tmp_path):
     from wafer.core.platform.file_operations import FileExecutor, PasteDecision, PastePlanItem
     from wafer.core.platform.path_utils import unique_path

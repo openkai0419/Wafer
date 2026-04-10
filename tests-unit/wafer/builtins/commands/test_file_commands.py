@@ -58,6 +58,24 @@ def test_delete_files_send2trash_failure_falls_back(tmp_path, monkeypatch):
     assert not p.exists()
 
 
+def test_delete_files_calls_delete_to_trash(tmp_path, monkeypatch):
+    p = tmp_path / "a.txt"
+    p.write_text("x", encoding="utf-8")
+    monkeypatch.setattr(
+        file_commands.ThumbnailConfirmDialog, "exec",
+        lambda self: setattr(self, "result_text", "Delete"),
+    )
+    from wafer.core.platform.file_operations import OperationResult
+
+    called_with: list = []
+    monkeypatch.setattr(
+        file_commands, "delete_to_trash",
+        lambda paths: (called_with.extend(paths), [OperationResult(action="delete", src=str(p), dst="", status="ok")])[1],
+    )
+    file_commands.delete_files(_Ctx(path=str(p)))
+    assert str(p) in called_with
+
+
 def test_show_in_explorer_ignores_missing_path():
     file_commands.show_in_explorer(_Ctx(path="Z:/__missing__"))
 

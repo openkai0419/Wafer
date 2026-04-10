@@ -383,6 +383,42 @@ class FileSaver:
         return _save_remote_item(item, target_path, move=move)
 
 
+def delete_to_trash(paths: list[str | Path]) -> list[OperationResult]:
+    norm = [os.path.normpath(os.path.abspath(str(p))) for p in paths if p]
+    if not norm:
+        return []
+    AppLogger.info(f"Deleting {len(norm)} files")
+    results: list[OperationResult] = []
+    try:
+        import send2trash as _s2t
+
+        for p in norm:
+            if not os.path.exists(p):
+                results.append(OperationResult(action="delete", src=p, dst="", status="skipped"))
+                continue
+            try:
+                _s2t.send2trash(p)
+                results.append(OperationResult(action="delete", src=p, dst="", status="ok"))
+            except Exception as e:
+                AppLogger.warning(f"send2trash failed: {p}", exc=e)
+                if os.path.isfile(p):
+                    os.remove(p)
+                    results.append(OperationResult(action="delete", src=p, dst="", status="ok"))
+                else:
+                    results.append(OperationResult(action="delete", src=p, dst="", status="error", error=f"send2trash failed for folder: {p}"))
+    except ImportError:
+        for p in norm:
+            if not os.path.exists(p):
+                results.append(OperationResult(action="delete", src=p, dst="", status="skipped"))
+                continue
+            if os.path.isfile(p):
+                os.remove(p)
+                results.append(OperationResult(action="delete", src=p, dst="", status="ok"))
+            else:
+                results.append(OperationResult(action="delete", src=p, dst="", status="error", error=f"Cannot delete folder without send2trash: {p}"))
+    return results
+
+
 PasteExecutor = FileExecutor
 safe_remove = _safe_remove
 save_remote_item = _save_remote_item

@@ -131,3 +131,16 @@ def first_file(path: str) -> str | None:
 
 def first_entry(path: str) -> str | None:
     return _first_scandir(path)
+
+
+def open_file(path: str) -> None:
+    if not path:
+        return
+    from PySide6 import QtCore, QtGui
+
+    QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(path))
+
+
+def make_directory(path: str) -> str:
+    os.makedirs(path, exist_ok=True)
+    return path

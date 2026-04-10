@@ -188,6 +188,7 @@ class DevLogPanelPlugin(BasePanelPlugin):
     DISPLAY_NAME = "DevLog"
     PRIORITY = 0
     DEFAULT_ENABLED = DEV_MODE
+    SOURCE = "Builtin"
 
     def create_widget(self):
         from ..utils.logs import AppLogger

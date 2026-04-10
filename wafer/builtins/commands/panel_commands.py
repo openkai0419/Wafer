@@ -37,8 +37,21 @@ class PanelCommands(ActionKit.MenuBase):
         ]
         for name in cls._CORE_PANELS:
             items.append(LayoutManager._command_id(name))
-        items.append("-")
+
+        builtins = []
+        plugins = []
         for plugin_cls in panel_registry.list_all():
             name = plugin_cls.DISPLAY_NAME or plugin_cls.NAME
-            items.append(LayoutManager._command_id(name))
+            cmd_id = LayoutManager._command_id(name)
+            if getattr(plugin_cls, "SOURCE", "Plugin") == "Builtin":
+                builtins.append(cmd_id)
+            else:
+                plugins.append(cmd_id)
+
+        if builtins:
+            items.append("-")
+            items.extend(builtins)
+        if plugins:
+            items.append("-")
+            items.extend(plugins)
         return items

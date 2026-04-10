@@ -1231,6 +1231,7 @@ class BatchRenamerPlugin(BasePanelPlugin):
     NAME = "batch_renamer"
     DISPLAY_NAME = "Batch Renamer"
     PRIORITY = 0
+    SOURCE = "Builtin"
 
     def create_widget(self):
         widget = BatchRenameWidget()

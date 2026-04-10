@@ -76,6 +76,7 @@ class CommandMeta:
     drag_callbacks: dict[str, Callable[..., Any]] | None = None
     drop_callbacks: dict[str, Callable[..., Any]] | None = None
     drop_acceptor: Callable[..., bool] | None = None
+    checked_resolver: Callable[[], bool] | None = None
 
     def __post_init__(self):
         if self.hotkey:

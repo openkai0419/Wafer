@@ -768,6 +768,8 @@ class LayoutManager(QtCore.QObject):
                     id=cmd_id,
                     display=f"{name}",
                     func=_toggle,
+                    checkable=True,
+                    checked_resolver=lambda _name=name: _name in mgr._tree.all_names(),
                 ),
             ]
         )

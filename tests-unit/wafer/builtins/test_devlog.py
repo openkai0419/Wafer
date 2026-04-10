@@ -90,6 +90,7 @@ class TestDevLogPanelPlugin:
         assert DevLogPanelPlugin.NAME == "devlog"
         assert DevLogPanelPlugin.DISPLAY_NAME == "DevLog"
         assert DevLogPanelPlugin.CLOSABLE is True
+        assert DevLogPanelPlugin.SOURCE == "Builtin"
 
     def test_create_widget_returns_devlog_panel(self, qtbot):
         from wafer.utils.logs import AppLogger

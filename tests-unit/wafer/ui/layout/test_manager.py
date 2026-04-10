@@ -1410,3 +1410,79 @@ class TestDeferredRestore:
         mgr.register("A", lambda: _make_panel("A"))
         assert mgr._pending_state is None
         assert "A" not in mgr._tree.all_names()
+
+
+class TestToggleCommandCheckable:
+    def test_register_creates_checkable_command(self, layout_env):
+        from wafer.core.commands.command.core import CommandRegistry
+        mgr, win, panels = layout_env
+        cmd_id = LayoutManager._command_id("folder")
+        registry = CommandRegistry.instance()
+        cmd_cls = registry.get_command(cmd_id)
+        assert cmd_cls is not None
+        assert cmd_cls.meta.checkable is True
+
+    def test_resolver_returns_true_for_docked_panel(self, layout_env):
+        from wafer.core.commands.command.core import CommandRegistry
+        mgr, win, panels = layout_env
+        cmd_id = LayoutManager._command_id("folder")
+        cmd_cls = CommandRegistry.instance().get_command(cmd_id)
+        assert cmd_cls.meta.checked_resolver is not None
+        assert cmd_cls.meta.checked_resolver() is True
+
+    def test_resolver_returns_true_for_collapsed_panel(self, layout_env):
+        from wafer.core.commands.command.core import CommandRegistry
+        mgr, win, panels = layout_env
+        _process(10)
+        mgr.toggle_panel("viewer")
+        _process()
+        assert mgr.is_panel_collapsed("viewer")
+
+        cmd_id = LayoutManager._command_id("viewer")
+        cmd_cls = CommandRegistry.instance().get_command(cmd_id)
+        assert cmd_cls.meta.checked_resolver() is True
+
+    def test_resolver_returns_true_for_floating_panel(self, layout_env):
+        from wafer.core.commands.command.core import CommandRegistry
+        mgr, win, panels = layout_env
+        w = _make_panel("dyn")
+        _register_floating(mgr, "dyn", w)
+        _process()
+
+        cmd_id = LayoutManager._command_id("dyn")
+        cmd_cls = CommandRegistry.instance().get_command(cmd_id)
+        assert cmd_cls.meta.checked_resolver() is True
+
+    def test_resolver_returns_false_for_dormant_panel(self, layout_env):
+        from wafer.core.commands.command.core import CommandRegistry
+        mgr, win, panels = layout_env
+        w = _make_panel("dyn")
+        _register_floating(mgr, "dyn", w)
+        _process()
+
+        mgr.toggle_panel("dyn")
+        _process()
+        assert "dyn" in mgr.dormant_panels()
+
+        cmd_id = LayoutManager._command_id("dyn")
+        cmd_cls = CommandRegistry.instance().get_command(cmd_id)
+        assert cmd_cls.meta.checked_resolver() is False
+
+    def test_resolver_tracks_state_changes_dynamically(self, layout_env):
+        from wafer.core.commands.command.core import CommandRegistry
+        mgr, win, panels = layout_env
+        w = _make_panel("dyn")
+        _register_floating(mgr, "dyn", w)
+        _process()
+
+        cmd_id = LayoutManager._command_id("dyn")
+        cmd_cls = CommandRegistry.instance().get_command(cmd_id)
+        assert cmd_cls.meta.checked_resolver() is True
+
+        mgr.toggle_panel("dyn")
+        _process()
+        assert cmd_cls.meta.checked_resolver() is False
+
+        mgr.toggle_panel("dyn")
+        _process()
+        assert cmd_cls.meta.checked_resolver() is True

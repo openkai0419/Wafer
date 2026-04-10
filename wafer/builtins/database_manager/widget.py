@@ -523,6 +523,7 @@ class DatabaseManagerPlugin(BasePanelPlugin):
     DISPLAY_NAME = "Database Manager"
     CLOSABLE = True
     PRIORITY = 0
+    SOURCE = "Builtin"
 
     def create_widget(self):
         return DatabaseManagerWidget()

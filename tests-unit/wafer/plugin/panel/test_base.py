@@ -42,6 +42,7 @@ class TestBasePanelPlugin:
         assert BasePanelPlugin.DISPLAY_NAME == ""
         assert BasePanelPlugin.CLOSABLE is True
         assert BasePanelPlugin.PRIORITY == 0
+        assert BasePanelPlugin.SOURCE == "Plugin"
 
     def test_concrete_panel_attributes(self):
         assert DummyPanel.NAME == "dummy"
@@ -56,6 +57,17 @@ class TestBasePanelPlugin:
 
     def test_closable_override(self):
         assert UnclosablePanel.CLOSABLE is False
+
+    def test_source_default_is_plugin(self):
+        assert DummyPanel.SOURCE == "Plugin"
+
+    def test_source_override(self):
+        class BuiltinPanel(BasePanelPlugin):
+            NAME = "builtin_test"
+            SOURCE = "Builtin"
+            def create_widget(self):
+                return QtWidgets.QWidget()
+        assert BuiltinPanel.SOURCE == "Builtin"
 
 
 class TestPanelRegistry:

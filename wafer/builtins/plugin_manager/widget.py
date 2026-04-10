@@ -275,6 +275,7 @@ class PluginManagerPlugin(BasePanelPlugin):
     DISPLAY_NAME = "Plugin Manager"
     CLOSABLE = True
     PRIORITY = 0
+    SOURCE = "Builtin"
 
     def create_widget(self):
         return PluginManagerWidget()

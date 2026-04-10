@@ -351,6 +351,8 @@ class CommandMenuBuilder(TranslatorMixin):
 
     @profiler.profile
     def _get_checked(self, name: str, meta: CommandMeta) -> bool:
+        if meta.checked_resolver is not None:
+            return meta.checked_resolver()
         stored = CommandOptionStore.instance().get(name)
         args = getattr(stored, "args", None)
         if isinstance(args, dict) and "checked" in args:
@@ -373,6 +375,9 @@ class CommandMenuBuilder(TranslatorMixin):
         self.set_checked(name, state)
 
     def set_checked(self, name: str, state: bool):
+        cmd = self.registry.get_command(name)
+        if cmd and cmd.meta.checked_resolver is not None:
+            return
         self._check_states[name] = state
         store = CommandOptionStore.instance()
         cur = store.get(name)

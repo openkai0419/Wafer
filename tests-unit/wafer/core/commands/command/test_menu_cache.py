@@ -482,3 +482,67 @@ class TestSetCheckedAPI:
         builder.refresh_check_states(menu)
         assert wa.isChecked() is True
         assert builder._check_states[cmd_id] is True
+
+
+class TestCheckedResolver:
+    def test_resolver_takes_priority_over_store(self, qtbot):
+        cmd_id = _make_id("res1")
+        state = {"active": True}
+        meta = CommandMeta(
+            id=cmd_id,
+            display="Res1",
+            checkable=True,
+            default_checked=False,
+            checked_resolver=lambda: state["active"],
+            func=lambda ctx: None,
+        )
+        register_command_defs([meta])
+        w = QtWidgets.QWidget()
+        qtbot.addWidget(w)
+        builder = CommandMenuBuilder.instance()
+        menu = builder.build(w, [cmd_id])
+        tracker = menu.property("__checkable_tracker__")
+        wa = tracker[0][0]
+        assert wa.isChecked() is True
+
+        state["active"] = False
+        builder.refresh_check_states(menu)
+        assert wa.isChecked() is False
+
+    def test_resolver_ignores_set_checked(self, qtbot):
+        cmd_id = _make_id("res2")
+        meta = CommandMeta(
+            id=cmd_id,
+            display="Res2",
+            checkable=True,
+            default_checked=False,
+            checked_resolver=lambda: False,
+            func=lambda ctx: None,
+        )
+        register_command_defs([meta])
+        w = QtWidgets.QWidget()
+        qtbot.addWidget(w)
+        builder = CommandMenuBuilder.instance()
+        builder.set_checked(cmd_id, True)
+        menu = builder.build(w, [cmd_id])
+        tracker = menu.property("__checkable_tracker__")
+        wa = tracker[0][0]
+        assert wa.isChecked() is False
+
+    def test_no_resolver_falls_back_to_default(self, qtbot):
+        cmd_id = _make_id("res3")
+        meta = CommandMeta(
+            id=cmd_id,
+            display="Res3",
+            checkable=True,
+            default_checked=True,
+            func=lambda ctx: None,
+        )
+        register_command_defs([meta])
+        w = QtWidgets.QWidget()
+        qtbot.addWidget(w)
+        builder = CommandMenuBuilder.instance()
+        menu = builder.build(w, [cmd_id])
+        tracker = menu.property("__checkable_tracker__")
+        wa = tracker[0][0]
+        assert wa.isChecked() is True

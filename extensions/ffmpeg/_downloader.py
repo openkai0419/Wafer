@@ -1,25 +1,28 @@
-import json
 import os
-import re
 import shutil
 import subprocess
-import sys
 import tempfile
 import urllib.request
 
 _LIB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib")
-_DLL_NAME = "libmpv-2.dll"
-_DLL_PATH = os.path.join(_LIB_DIR, _DLL_NAME)
+_FFPROBE_NAME = "ffprobe.exe"
+_FFMPEG_NAME = "ffmpeg.exe"
+_FFPROBE_PATH = os.path.join(_LIB_DIR, _FFPROBE_NAME)
+_FFMPEG_PATH = os.path.join(_LIB_DIR, _FFMPEG_NAME)
 
-_GITHUB_LATEST_API = "https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest"
-_ASSET_PATTERN = re.compile(r"^mpv-dev-x86_64-\d{8}-git-[0-9a-f]+\.7z$")
-_ALLOWED_HOSTS = ("github.com", "objects.githubusercontent.com")
-_MAX_API_RESPONSE = 1024 * 1024
+_FFMPEG_VERSION = "8.1"
+_ARCHIVE_URL = f"https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-{_FFMPEG_VERSION}-essentials_build.7z"
+_ALLOWED_HOSTS = ("www.gyan.dev",)
 
 _7ZR_URL = "https://www.7-zip.org/a/7zr.exe"
 _7ZR_PATH = os.path.join(_LIB_DIR, "7zr.exe")
 
-_MANUAL_HINT = "Download libmpv-2.dll from https://sourceforge.net/projects/mpv-player-windows/files/libmpv/ and place it in plugins/video/lib/"
+_BINARIES = (_FFPROBE_NAME, _FFMPEG_NAME)
+
+_MANUAL_HINT = (
+    f"Download ffmpeg essentials from https://www.gyan.dev/ffmpeg/builds/ "
+    f"and place ffprobe.exe + ffmpeg.exe in extensions/ffmpeg/lib/"
+)
 
 
 def _log(msg, *, level="info", exc=None):
@@ -64,24 +67,6 @@ def _safe_download(url: str, dest: str, *, allowed_hosts: tuple[str, ...] | None
                 pass
 
 
-def _find_asset_url() -> str | None:
-    req = urllib.request.Request(
-        _GITHUB_LATEST_API,
-        headers={"Accept": "application/vnd.github+json", "User-Agent": "wafer-video-plugin"},
-    )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        body = resp.read(_MAX_API_RESPONSE + 1)
-        if len(body) > _MAX_API_RESPONSE:
-            raise RuntimeError("GitHub API response too large")
-        data = json.loads(body)
-    for asset in data.get("assets", []):
-        if _ASSET_PATTERN.match(asset["name"]):
-            url = asset["browser_download_url"]
-            _validate_url(url, _ALLOWED_HOSTS)
-            return url
-    return None
-
-
 def _find_7z_exe() -> str | None:
     if shutil.which("7z"):
         return "7z"
@@ -97,7 +82,7 @@ def _find_7z_exe() -> str | None:
 def _ensure_7zr() -> str:
     if os.path.isfile(_7ZR_PATH):
         return _7ZR_PATH
-    _log(f"[video] Downloading 7zr.exe from {_7ZR_URL}")
+    _log(f"[ffmpeg] Downloading 7zr.exe from {_7ZR_URL}")
     os.makedirs(_LIB_DIR, exist_ok=True)
     _safe_download(_7ZR_URL, _7ZR_PATH)
     return _7ZR_PATH
@@ -105,15 +90,15 @@ def _ensure_7zr() -> str:
 
 def _run_7z(exe: str, archive_path: str):
     os.makedirs(_LIB_DIR, exist_ok=True)
-    result = subprocess.run(
-        [exe, "e", archive_path, f"-o{_LIB_DIR}", _DLL_NAME, "-r", "-y"],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"7z extraction failed (rc={result.returncode}): {result.stderr.strip()}")
-    if not os.path.isfile(_DLL_PATH):
-        raise FileNotFoundError(f"{_DLL_NAME} not found after 7z extraction")
+    for name in _BINARIES:
+        result = subprocess.run(
+            [exe, "e", archive_path, f"-o{_LIB_DIR}", name, "-r", "-y"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"7z extraction failed for {name} (rc={result.returncode}): {result.stderr.strip()}")
+    _verify_binaries()
 
 
 def _validate_archive_path(name: str, base_dir: str):
@@ -122,7 +107,7 @@ def _validate_archive_path(name: str, base_dir: str):
         raise ValueError(f"Path traversal detected: {name}")
 
 
-def _extract_dll_py7zr(archive_path: str):
+def _extract_py7zr(archive_path: str):
     import py7zr
 
     os.makedirs(_LIB_DIR, exist_ok=True)
@@ -130,65 +115,74 @@ def _extract_dll_py7zr(archive_path: str):
         all_names = z.getnames()
         for name in all_names:
             _validate_archive_path(name, _LIB_DIR)
-        targets = [n for n in all_names if os.path.basename(n) == _DLL_NAME]
+        targets = [n for n in all_names if os.path.basename(n) in _BINARIES]
         if not targets:
-            raise FileNotFoundError(f"{_DLL_NAME} not found in archive")
+            raise FileNotFoundError(f"ffprobe/ffmpeg not found in archive")
         z.extract(_LIB_DIR, targets)
 
     for t in targets:
         extracted = os.path.join(_LIB_DIR, t)
-        final = _DLL_PATH
+        final = os.path.join(_LIB_DIR, os.path.basename(t))
         if os.path.normpath(extracted) != os.path.normpath(final):
             shutil.move(extracted, final)
-            parent = os.path.dirname(extracted)
-            while os.path.normpath(parent) != os.path.normpath(_LIB_DIR):
-                try:
-                    os.rmdir(parent)
-                except OSError:
-                    break
-                parent = os.path.dirname(parent)
-        break
+    _cleanup_subdirs()
 
 
-def _extract_dll(archive_path: str):
+def _cleanup_subdirs():
+    for entry in os.listdir(_LIB_DIR):
+        full = os.path.join(_LIB_DIR, entry)
+        if os.path.isdir(full):
+            try:
+                shutil.rmtree(full)
+            except OSError:
+                pass
+
+
+def _extract(archive_path: str):
     try:
-        _extract_dll_py7zr(archive_path)
+        _extract_py7zr(archive_path)
         return
     except Exception as e:
-        _log(f"[video] py7zr failed ({type(e).__name__}: {e}), trying external 7z", level="debug")
+        _log(f"[ffmpeg] py7zr failed ({type(e).__name__}: {e}), trying external 7z", level="debug")
     exe = _find_7z_exe()
     if exe is None:
         exe = _ensure_7zr()
     _run_7z(exe, archive_path)
 
 
-def _setup_dll_path():
-    path_dirs = os.environ.get("PATH", "").split(os.pathsep)
-    if _LIB_DIR not in path_dirs:
-        os.environ["PATH"] = _LIB_DIR + os.pathsep + os.environ.get("PATH", "")
-    if sys.platform == "win32" and hasattr(os, "add_dll_directory"):
-        os.add_dll_directory(_LIB_DIR)
+def _verify_binaries():
+    missing = [n for n in _BINARIES if not os.path.isfile(os.path.join(_LIB_DIR, n))]
+    if missing:
+        raise FileNotFoundError(f"Missing after extraction: {', '.join(missing)}")
 
 
-def ensure_mpv_dll():
-    if os.path.isfile(_DLL_PATH):
-        _setup_dll_path()
+def get_ffprobe_path() -> str | None:
+    if os.path.isfile(_FFPROBE_PATH):
+        return _FFPROBE_PATH
+    return None
+
+
+def get_ffmpeg_path() -> str | None:
+    if os.path.isfile(_FFMPEG_PATH):
+        return _FFMPEG_PATH
+    return None
+
+
+def ensure_ffmpeg():
+    if os.path.isfile(_FFPROBE_PATH) and os.path.isfile(_FFMPEG_PATH):
         return True
     tmp = tempfile.mkdtemp()
     try:
-        url = _find_asset_url()
-        if url is None:
-            raise RuntimeError(f"mpv-dev asset not found. {_MANUAL_HINT}")
-        _log(f"[video] Downloading mpv DLL: {url}")
-        archive = os.path.join(tmp, "mpv-dev.7z")
-        _safe_download(url, archive, allowed_hosts=_ALLOWED_HOSTS)
-        _extract_dll(archive)
-        _setup_dll_path()
-        _log("[video] mpv DLL installed successfully")
+        _log(f"[ffmpeg] Downloading ffmpeg essentials: {_ARCHIVE_URL}")
+        archive = os.path.join(tmp, "ffmpeg-essentials.7z")
+        _safe_download(_ARCHIVE_URL, archive, allowed_hosts=_ALLOWED_HOSTS)
+        _extract(archive)
+        _verify_binaries()
+        _log("[ffmpeg] ffprobe + ffmpeg installed successfully")
         return True
     except Exception as e:
         raise RuntimeError(
-            f"Failed to acquire mpv DLL: {e}. {_MANUAL_HINT}"
+            f"Failed to acquire ffmpeg: {e}. {_MANUAL_HINT}"
         ) from e
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

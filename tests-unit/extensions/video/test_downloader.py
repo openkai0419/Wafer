@@ -502,7 +502,7 @@ class TestEnsureMpvDll:
             mock_download.assert_called_once()
             mock_extract.assert_called_once()
 
-    def test_returns_false_when_no_asset_found(self, tmp_path):
+    def test_raises_when_no_asset_found(self, tmp_path):
         import extensions.video._downloader as dl
 
         lib_dir = str(tmp_path / "lib")
@@ -510,9 +510,10 @@ class TestEnsureMpvDll:
         dl._DLL_PATH = os.path.join(lib_dir, "libmpv-2.dll")
 
         with patch.object(dl, "_find_asset_url", return_value=None):
-            assert dl.ensure_mpv_dll() is False
+            with pytest.raises(RuntimeError, match="mpv-dev asset not found"):
+                dl.ensure_mpv_dll()
 
-    def test_returns_false_on_network_error(self, tmp_path):
+    def test_raises_on_network_error(self, tmp_path):
         import extensions.video._downloader as dl
 
         lib_dir = str(tmp_path / "lib")
@@ -520,9 +521,10 @@ class TestEnsureMpvDll:
         dl._DLL_PATH = os.path.join(lib_dir, "libmpv-2.dll")
 
         with patch.object(dl, "_find_asset_url", side_effect=urllib.error.URLError("timeout")):
-            assert dl.ensure_mpv_dll() is False
+            with pytest.raises(RuntimeError, match="Failed to acquire mpv DLL"):
+                dl.ensure_mpv_dll()
 
-    def test_returns_false_on_extraction_error(self, tmp_path):
+    def test_raises_on_extraction_error(self, tmp_path):
         import extensions.video._downloader as dl
 
         lib_dir = str(tmp_path / "lib")
@@ -534,4 +536,5 @@ class TestEnsureMpvDll:
             patch.object(dl, "_safe_download"),
             patch.object(dl, "_extract_dll", side_effect=FileNotFoundError("no dll")),
         ):
-            assert dl.ensure_mpv_dll() is False
+            with pytest.raises(RuntimeError, match="Failed to acquire mpv DLL"):
+                dl.ensure_mpv_dll()

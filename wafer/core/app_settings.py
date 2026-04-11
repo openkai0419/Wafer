@@ -75,6 +75,10 @@ class SettingManager(QtCore.QObject):
         if value is None:
             return default
         if value_type is not None:
+            if isinstance(value, str) and value_type in (list, dict):
+                v = try_json_loads(value, None)
+                if isinstance(v, value_type):
+                    return v
             return try_cast(value_type, value, default)
         if isinstance(value, str):
             v = try_json_loads(value, None)

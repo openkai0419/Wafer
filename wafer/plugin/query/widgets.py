@@ -5,6 +5,374 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from ...utils.formatting import dpix, display_prefixed_key
 from ...core.lang.manager import TranslatorMixin
 from ...core.qt.icon_engine import themed_icon
+from ...core.color.theme import ThemeManager
+from ...core.app_settings import app_settings
+
+_SETTINGS_KEY = "filters/active_keys"
+
+
+def _split_prefix(key: str) -> tuple[str, str]:
+    dot = key.find(".")
+    if dot > 0:
+        return key[:dot], key[dot + 1 :]
+    return "", key
+
+
+class _ActiveKeyItem(QtWidgets.QWidget):
+    toggled = QtCore.Signal()
+    remove_clicked = QtCore.Signal(str)
+
+    def __init__(self, key: str, count: int | None = None, parent=None):
+        super().__init__(parent)
+        self.key = key
+        self._checked = False
+        self.setCursor(QtCore.Qt.PointingHandCursor)
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(dpix(6), dpix(2), dpix(2), dpix(2))
+        layout.setSpacing(dpix(4))
+
+        self._check_icon = QtWidgets.QLabel()
+        self._check_icon.setFixedWidth(dpix(14))
+        layout.addWidget(self._check_icon)
+
+        label_text = display_prefixed_key(key)
+        if count is not None:
+            label_text += f" ({count})"
+        self.label = QtWidgets.QLabel(label_text)
+        layout.addWidget(self.label, 1)
+
+        self.remove_btn = QtWidgets.QToolButton()
+        self.remove_btn.setIcon(themed_icon("cross"))
+        self.remove_btn.setFixedSize(dpix(16), dpix(16))
+        self.remove_btn.setAutoRaise(True)
+        self.remove_btn.clicked.connect(lambda: self.remove_clicked.emit(self.key))
+        layout.addWidget(self.remove_btn)
+
+        self._apply_visual()
+
+    def _apply_visual(self):
+        p = ThemeManager.instance().palette
+        if self._checked:
+            self._check_icon.setPixmap(
+                themed_icon("check").pixmap(QtCore.QSize(dpix(12), dpix(12)))
+            )
+            self.label.setStyleSheet(f"color: {p.text_primary};")
+        else:
+            self._check_icon.setPixmap(QtGui.QPixmap())
+            self.label.setStyleSheet(f"color: {p.text_muted};")
+
+    def mousePressEvent(self, event):
+        if event.button() == QtCore.Qt.LeftButton:
+            child = self.childAt(event.pos())
+            if child is self.remove_btn:
+                super().mousePressEvent(event)
+                return
+            self._checked = not self._checked
+            self._apply_visual()
+            self.toggled.emit()
+        else:
+            super().mousePressEvent(event)
+
+    @property
+    def checked(self) -> bool:
+        return self._checked
+
+    def set_checked(self, value: bool):
+        if self._checked != value:
+            self._checked = value
+            self._apply_visual()
+
+    def update_count(self, count: int | None):
+        label_text = display_prefixed_key(self.key)
+        if count is not None:
+            label_text += f" ({count})"
+        self.label.setText(label_text)
+
+
+_CATALOG_KEY_ROLE = QtCore.Qt.UserRole + 1
+_CATALOG_COUNT_ROLE = QtCore.Qt.UserRole + 2
+
+
+class _KeySelectorPopup(QtWidgets.QFrame):
+    _instance = None
+    active_keys_changed = QtCore.Signal(set)
+    check_toggled = QtCore.Signal()
+
+    @classmethod
+    def instance(cls):
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+
+    def __init__(self, parent=None):
+        super().__init__(parent, QtCore.Qt.Popup | QtCore.Qt.FramelessWindowHint)
+        self._catalog_data: list[tuple[str, int]] = []
+        self._active_items: dict[str, _ActiveKeyItem] = {}
+        self._suppress_signals = False
+        self._current_combo = None
+        self._build_ui()
+        self._apply_theme()
+
+    def _build_ui(self):
+        root = QtWidgets.QVBoxLayout(self)
+        root.setContentsMargins(dpix(6), dpix(6), dpix(6), dpix(6))
+        root.setSpacing(dpix(4))
+
+        splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
+        splitter.setChildrenCollapsible(False)
+
+        self._active_group = QtWidgets.QGroupBox(
+            QtCore.QCoreApplication.translate("_KeySelectorPopup", "Filter")
+        )
+        active_layout = QtWidgets.QVBoxLayout(self._active_group)
+        active_layout.setContentsMargins(dpix(4), dpix(2), dpix(4), dpix(4))
+        active_layout.setSpacing(0)
+
+        self._active_scroll = QtWidgets.QScrollArea()
+        self._active_scroll.setWidgetResizable(True)
+        self._active_scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self._active_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+
+        self._active_list_widget = QtWidgets.QWidget()
+        self._active_list_layout = QtWidgets.QVBoxLayout(self._active_list_widget)
+        self._active_list_layout.setContentsMargins(0, 0, 0, 0)
+        self._active_list_layout.setSpacing(0)
+        self._active_list_layout.addStretch()
+        self._active_scroll.setWidget(self._active_list_widget)
+        active_layout.addWidget(self._active_scroll, 1)
+
+        catalog_container = QtWidgets.QWidget()
+        catalog_layout = QtWidgets.QVBoxLayout(catalog_container)
+        catalog_layout.setContentsMargins(0, 0, 0, 0)
+        catalog_layout.setSpacing(dpix(2))
+
+        self._search_input = QtWidgets.QLineEdit()
+        self._search_input.setPlaceholderText("Search keys...")
+        self._search_input.setClearButtonEnabled(True)
+        self._search_input.textChanged.connect(self._apply_filter)
+        catalog_layout.addWidget(self._search_input)
+
+        self._catalog_tree = QtWidgets.QTreeWidget()
+        self._catalog_tree.setHeaderHidden(True)
+        self._catalog_tree.setRootIsDecorated(True)
+        self._catalog_tree.setIndentation(dpix(16))
+        self._catalog_tree.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        self._catalog_tree.setFocusPolicy(QtCore.Qt.NoFocus)
+        self._catalog_tree.itemClicked.connect(self._on_catalog_clicked)
+        catalog_layout.addWidget(self._catalog_tree, 1)
+
+        splitter.addWidget(self._active_group)
+        splitter.addWidget(catalog_container)
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 3)
+        root.addWidget(splitter, 1)
+
+    def _apply_theme(self):
+        p = ThemeManager.instance().palette
+        self.setStyleSheet(
+            f"_KeySelectorPopup {{"
+            f"  background: {p.bg_primary};"
+            f"  border: {dpix(1)}px solid {p.border_default};"
+            f"  border-radius: {dpix(4)}px;"
+            f"}}"
+        )
+        self._active_group.setStyleSheet(
+            f"QGroupBox {{"
+            f"  border: {dpix(1)}px solid {p.border_subtle};"
+            f"  border-radius: {dpix(4)}px;"
+            f"  margin-top: {dpix(10)}px;"
+            f"  padding-top: {dpix(8)}px;"
+            f"}}"
+            f"QGroupBox::title {{"
+            f"  subcontrol-origin: margin;"
+            f"  left: {dpix(8)}px;"
+            f"  padding: 0 {dpix(4)}px;"
+            f"  color: {p.text_secondary};"
+            f"}}"
+        )
+        self._catalog_tree.setStyleSheet(
+            f"QTreeWidget {{ background: {p.bg_secondary}; }}"
+        )
+
+    def active_key_set(self) -> set[str]:
+        return set(self._active_items.keys())
+
+    def catalog_data(self) -> list[tuple[str, int]]:
+        return list(self._catalog_data)
+
+    def set_catalog(self, datas: list[tuple[str, int]]):
+        self._catalog_data = list(datas)
+        count_map = dict(datas)
+        for key, item in self._active_items.items():
+            item.update_count(count_map.get(key))
+        self._rebuild_catalog_tree()
+
+    def _rebuild_catalog_tree(self):
+        expanded = self._save_expansion_state()
+        self._catalog_tree.clear()
+        groups: dict[str, list[tuple[str, str, int]]] = {}
+        for key, count in self._catalog_data:
+            prefix, suffix = _split_prefix(key)
+            groups.setdefault(prefix, []).append((key, suffix, count))
+
+        active_keys = set(self._active_items.keys())
+
+        general_items = groups.pop("", [])
+        if general_items:
+            self._add_group_items(None, general_items, active_keys)
+
+        for prefix in sorted(groups.keys()):
+            items = groups[prefix]
+            group_node = QtWidgets.QTreeWidgetItem(self._catalog_tree, [f"{prefix}  ({len(items)})"])
+            group_node.setFlags(QtCore.Qt.ItemIsEnabled)
+            font = group_node.font(0)
+            font.setBold(True)
+            group_node.setFont(0, font)
+            self._add_group_items(group_node, items, active_keys)
+            group_node.setExpanded(prefix in expanded)
+
+        self._apply_filter(self._search_input.text())
+
+    def _save_expansion_state(self) -> set[str]:
+        expanded = set()
+        root = self._catalog_tree.invisibleRootItem()
+        for i in range(root.childCount()):
+            node = root.child(i)
+            if node.isExpanded() and node.data(0, _CATALOG_KEY_ROLE) is None:
+                text = node.text(0)
+                prefix = text.split("  (")[0] if "  (" in text else text
+                expanded.add(prefix)
+        return expanded
+
+    def _add_group_items(self, parent_node, items: list[tuple[str, str, int]], active_keys: set[str]):
+        p = ThemeManager.instance().palette
+        for key, suffix, count in items:
+            label = f"{suffix} ({count})" if parent_node is not None else f"{display_prefixed_key(key)} ({count})"
+            if parent_node is not None:
+                item = QtWidgets.QTreeWidgetItem(parent_node, [label])
+            else:
+                item = QtWidgets.QTreeWidgetItem(self._catalog_tree, [label])
+            item.setData(0, _CATALOG_KEY_ROLE, key)
+            item.setData(0, _CATALOG_COUNT_ROLE, count)
+            item.setFlags(QtCore.Qt.ItemIsEnabled)
+            if key in active_keys:
+                item.setForeground(0, QtGui.QColor(p.text_muted))
+
+    def _on_catalog_clicked(self, item: QtWidgets.QTreeWidgetItem, column: int):
+        key = item.data(0, _CATALOG_KEY_ROLE)
+        if key is None:
+            return
+        if key in self._active_items:
+            self._remove_active_key(key)
+            self._rebuild_catalog_tree()
+            self._notify_active_keys_changed({key})
+        else:
+            count = item.data(0, _CATALOG_COUNT_ROLE)
+            self._add_active_key(key, count)
+            self._rebuild_catalog_tree()
+            self._notify_active_keys_changed(set())
+
+    def add_key_if_missing(self, key: str, count: int | None = None):
+        if key in self._active_items:
+            return False
+        self._add_active_key(key, count)
+        self._rebuild_catalog_tree()
+        return True
+
+    def ensure_active_keys(self, keys: list[str]):
+        count_map = dict(self._catalog_data)
+        added = False
+        for key in keys:
+            if key not in self._active_items:
+                self._add_active_key(key, count_map.get(key))
+                added = True
+        if added:
+            self._rebuild_catalog_tree()
+
+    def _add_active_key(self, key: str, count: int | None = None):
+        if key in self._active_items:
+            return
+        widget = _ActiveKeyItem(key, count)
+        widget.toggled.connect(self._on_check_toggled)
+        widget.remove_clicked.connect(self._on_remove_key)
+        insert_idx = self._active_list_layout.count() - 1
+        self._active_list_layout.insertWidget(insert_idx, widget)
+        self._active_items[key] = widget
+
+    def _on_remove_key(self, key: str):
+        self._remove_active_key(key)
+        self._rebuild_catalog_tree()
+        self._notify_active_keys_changed({key})
+
+    def _remove_active_key(self, key: str):
+        widget = self._active_items.pop(key, None)
+        if widget:
+            self._active_list_layout.removeWidget(widget)
+            widget.setParent(None)
+            widget.deleteLater()
+
+    def _on_check_toggled(self):
+        if not self._suppress_signals:
+            self.check_toggled.emit()
+
+    def _notify_active_keys_changed(self, removed_keys: set[str]):
+        self._persist_active_keys()
+        if not self._suppress_signals:
+            self.active_keys_changed.emit(removed_keys)
+
+    def _persist_active_keys(self):
+        keys = list(self._active_items.keys())
+        app_settings.set(_SETTINGS_KEY, keys)
+        app_settings.commit()
+
+    def _apply_filter(self, text: str):
+        text = text.strip().lower()
+        root = self._catalog_tree.invisibleRootItem()
+        for i in range(root.childCount()):
+            top_item = root.child(i)
+            key = top_item.data(0, _CATALOG_KEY_ROLE)
+            if key is not None:
+                visible = not text or text in key.lower()
+                top_item.setHidden(not visible)
+            else:
+                any_child_visible = False
+                for j in range(top_item.childCount()):
+                    child = top_item.child(j)
+                    child_key = child.data(0, _CATALOG_KEY_ROLE) or ""
+                    child_visible = not text or text in child_key.lower()
+                    child.setHidden(not child_visible)
+                    if child_visible:
+                        any_child_visible = True
+                top_item.setHidden(not any_child_visible)
+                if any_child_visible and text:
+                    top_item.setExpanded(True)
+
+    def open_for(self, combo):
+        self._current_combo = combo
+        checked = set(combo._checked_keys)
+        self._suppress_signals = True
+        for key, item in self._active_items.items():
+            item.set_checked(key in checked)
+        self._suppress_signals = False
+        pos = combo.mapToGlobal(QtCore.QPoint(0, combo.height()))
+        self.move(pos)
+        self.show()
+
+    def sync_checks_for(self, combo):
+        if self._current_combo is combo and self.isVisible():
+            checked = set(combo._checked_keys)
+            self._suppress_signals = True
+            for key, item in self._active_items.items():
+                item.set_checked(key in checked)
+            self._suppress_signals = False
+
+    def sizeHint(self):
+        return QtCore.QSize(dpix(320), dpix(420))
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._search_input.setFocus()
+        self._search_input.clear()
 
 
 class CheckableCombo(QtWidgets.QToolButton, TranslatorMixin):
@@ -12,58 +380,73 @@ class CheckableCombo(QtWidgets.QToolButton, TranslatorMixin):
 
     def __init__(self, items=None, parent=None):
         super().__init__(parent)
-        self.setPopupMode(QtWidgets.QToolButton.InstantPopup)
-        self.menu = QtWidgets.QMenu(self)
-        self.actions: list[QtGui.QAction] = []
         self.default_key = "path"
-        self.previous_key = [self.default_key]
+        self._checked_keys: list[str] = [self.default_key]
+        self._popup = _KeySelectorPopup.instance()
+        self._popup.active_keys_changed.connect(self._on_active_keys_changed)
+        self._popup.check_toggled.connect(self._on_check_toggled)
         self._update_label()
+        self.clicked.connect(self._toggle_popup)
         if items:
-            for name, data in items:
-                self.add_item(name, data)
-        self.setMenu(self.menu)
+            self._popup.set_catalog(items)
+            self._popup.ensure_active_keys([self.default_key])
 
     def _update_label(self):
         self.setText(self.t.tr(" Filter "))
 
-    def add_item(self, label, data):
-        action = QtGui.QAction(label, self)
-        action.setData(data)
-        action.setCheckable(True)
-        if data in self.previous_key:
-            action.setChecked(True)
-        action.toggled.connect(self._on_key_changed)
-        self.menu.addAction(action)
-        self.actions.append(action)
+    def _toggle_popup(self):
+        if self._popup.isVisible() and self._popup._current_combo is self:
+            self._popup.hide()
+        else:
+            self._popup.open_for(self)
 
     @QtCore.Slot(list)
     def remake(self, datas):
-        self.setUpdatesEnabled(False)
-        self.menu.clear()
-        self.actions.clear()
-        for key, count in datas:
-            self.add_item(f"{display_prefixed_key(key)} ({count})", key)
-        if not self.checked_items():
-            for a in self.actions:
-                if a.data() == self.default_key:
-                    a.setChecked(True)
-                    break
-        self.setUpdatesEnabled(True)
+        self._popup.set_catalog(datas)
+        saved = app_settings.get(_SETTINGS_KEY, None, list)
+        if saved:
+            saved = [k for k in saved if isinstance(k, str) and len(k) > 1]
+        needed = list(dict.fromkeys(
+            (saved or []) + self._checked_keys + [self.default_key]
+        ))
+        self._popup.ensure_active_keys(needed)
+        active = self._popup.active_key_set()
+        valid = [k for k in self._checked_keys if k in active]
+        if not valid and self.default_key in active:
+            valid = [self.default_key]
+        self._checked_keys = valid
         self.action_changed.emit()
 
-    def _on_key_changed(self):
-        self.previous_key = self.checked_items()
+    def _on_check_toggled(self):
+        if self._popup._current_combo is not self:
+            return
+        self._checked_keys = [
+            key for key, item in self._popup._active_items.items() if item.checked
+        ]
         self.action_changed.emit()
 
-    def checked_items(self):
-        return [a.data() for a in self.actions if a.isChecked()]
+    def _on_active_keys_changed(self, removed_keys: set[str]):
+        if not removed_keys:
+            return
+        before = len(self._checked_keys)
+        self._checked_keys = [k for k in self._checked_keys if k not in removed_keys]
+        if len(self._checked_keys) != before:
+            self.action_changed.emit()
 
-    def set_checked(self, keys: list):
-        self.previous_key = keys
-        for a in self.actions:
-            a.blockSignals(True)
-            a.setChecked(a.data() in keys)
-            a.blockSignals(False)
+    def checked_items(self) -> list[str]:
+        active = self._popup.active_key_set()
+        return [k for k in self._checked_keys if k in active]
+
+    def set_checked(self, keys: list[str]):
+        self._checked_keys = list(keys)
+        count_map = dict(self._popup.catalog_data())
+        for key in keys:
+            self._popup.add_key_if_missing(key, count_map.get(key))
+        self._popup.sync_checks_for(self)
+
+    @property
+    def active_keys(self) -> list[str]:
+        return list(self._popup._active_items.keys())
 
 
 class TextFilterWidget(QtWidgets.QWidget, TranslatorMixin):
@@ -113,7 +496,7 @@ class TextFilterWidget(QtWidgets.QWidget, TranslatorMixin):
 
     def read_params(self) -> dict:
         settings = self._option_popup.get_settings()
-        if self.keys_combo.actions:
+        if self.keys_combo.active_keys:
             keys = self.keys_combo.checked_items()
         else:
             keys = None

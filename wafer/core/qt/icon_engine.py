@@ -348,6 +348,23 @@ def _draw_cross(p: QPainter, r: QRectF, color: QColor):
     p.drawLine(QPointF(r.right() - m, r.top() + m), QPointF(r.left() + m, r.bottom() - m))
 
 
+@_register("check", padding=0.18)
+def _draw_check(p: QPainter, r: QRectF, color: QColor):
+    lw = max(1.5, min(r.width(), r.height()) * 0.18)
+    pen = QPen(color, lw)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    p.setPen(pen)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    x0, y0 = r.left(), r.top()
+    w, h = r.width(), r.height()
+    path = QPainterPath()
+    path.moveTo(QPointF(x0 + w * 0.15, y0 + h * 0.50))
+    path.lineTo(QPointF(x0 + w * 0.40, y0 + h * 0.78))
+    path.lineTo(QPointF(x0 + w * 0.85, y0 + h * 0.22))
+    p.drawPath(path)
+
+
 @_register("chevron_down", padding=0.15)
 def _draw_chevron_down(p: QPainter, r: QRectF, color: QColor):
     p.setPen(Qt.PenStyle.NoPen)

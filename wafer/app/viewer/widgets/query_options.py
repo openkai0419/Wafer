@@ -7,54 +7,7 @@ from ....core.lang.manager import TranslatorMixin
 from ....core.qt.dispatcher import Dispatcher, CancelSlot
 from ....core.qt.thread import utility_pool
 from ....builtins.filters import DirectoryFilter
-
-
-class CheckableCombo(QtWidgets.QToolButton, TranslatorMixin):
-    action_changed = QtCore.Signal()
-
-    def __init__(self, items=None, parent=None):
-        super().__init__(parent)
-        self.setText(self.t.tr(" Filter "))
-        self.setPopupMode(QtWidgets.QToolButton.InstantPopup)
-        self.menu = QtWidgets.QMenu(self)
-        self.actions = []
-        self.default_key = "path"
-        self.previous_key = [self.default_key]
-        if items:
-            for name, data in items:
-                self.add_item(name, data)
-        self.setMenu(self.menu)
-
-    def add_item(self, label, data):
-        action = QtGui.QAction(label, self)
-        action.setData(data)
-        action.setCheckable(True)
-        if data in self.previous_key:
-            action.setChecked(True)
-        action.toggled.connect(self.on_key_changed)
-        self.menu.addAction(action)
-        self.actions.append(action)
-
-    @QtCore.Slot(list)
-    def remake(self, datas):
-        self.setUpdatesEnabled(False)
-        self.menu.clear()
-        self.actions.clear()
-        for key, count in datas:
-            self.add_item(f"{display_prefixed_key(key)} ({count})", key)
-        if not self.checked_items():
-            for a in self.actions:
-                if a.data() == self.default_key:
-                    a.setChecked(True)
-                    break
-        self.setUpdatesEnabled(True)
-
-    def on_key_changed(self):
-        self.previous_key = self.checked_items()
-        self.action_changed.emit()
-
-    def checked_items(self):
-        return [a.data() for a in self.actions if a.isChecked()]
+from ....plugin.query.widgets import CheckableCombo
 
 
 class SearchOptionPopup(QtWidgets.QDialog, TranslatorMixin):

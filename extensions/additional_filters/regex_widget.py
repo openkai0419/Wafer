@@ -37,7 +37,7 @@ class RegexFilterWidget(QtWidgets.QWidget, TranslatorMixin):
         layout.addWidget(self.regex_input, 1)
 
     def read_params(self) -> dict:
-        if self.keys_combo.actions:
+        if self.keys_combo.active_keys:
             keys = self.keys_combo.checked_items()
         else:
             keys = None

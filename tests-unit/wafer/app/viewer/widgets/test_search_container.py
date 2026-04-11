@@ -5,6 +5,7 @@ from PySide6 import QtWidgets
 
 from wafer.builtins.filters import TextFilter, DirectoryFilter
 from wafer.plugin.query.base import KeyStore
+from wafer.plugin.query.widgets import _KeySelectorPopup
 from wafer.app.viewer.widgets.search_container import SearchContainer, FilterRow
 
 
@@ -14,6 +15,16 @@ def qapp():
     if app is None:
         app = QtWidgets.QApplication([])
     return app
+
+
+@pytest.fixture(autouse=True)
+def _reset_popup():
+    _KeySelectorPopup._instance = None
+    from wafer.core.app_settings import app_settings
+    app_settings.settings.remove("filters/active_keys")
+    yield
+    _KeySelectorPopup._instance = None
+    app_settings.settings.remove("filters/active_keys")
 
 
 class TestFilterRow:
@@ -316,28 +327,26 @@ class TestUpdateKeyCombos:
         container = SearchContainer()
         container._key_store.set_data([("path", 10), ("prompt", 5), ("artist", 3)])
         w = container._rows[0].get_param_widget()
-        items = [a.data() for a in w.keys_combo.actions]
-        assert "path" in items
+        assert "path" in w.keys_combo.active_keys
 
     def test_filepath_default_checked(self, qapp):
         container = SearchContainer()
         container._key_store.set_data([("path", 10), ("prompt", 5)])
         w = container._rows[0].get_param_widget()
-        fp_action = next(a for a in w.keys_combo.actions if a.data() == "path")
-        assert fp_action.isChecked()
+        assert "path" in w.keys_combo.checked_items()
 
-    def test_counts_passed_through(self, qapp):
+    def test_counts_in_catalog(self, qapp):
         container = SearchContainer()
         container._key_store.set_data([("path", 10), ("prompt", 5)])
         w = container._rows[0].get_param_widget()
-        fp_action = next(a for a in w.keys_combo.actions if a.data() == "path")
-        assert "(10)" in fp_action.text()
+        catalog = dict(w.keys_combo._popup.catalog_data())
+        assert catalog["path"] == 10
 
-    def test_empty_results_no_actions(self, qapp):
+    def test_empty_results_keeps_default_key(self, qapp):
         container = SearchContainer()
         container._key_store.set_data([])
         w = container._rows[0].get_param_widget()
-        assert len(w.keys_combo.actions) == 0
+        assert w.keys_combo.active_keys == ["path"]
 
     def test_all_rows_receive_data(self, qapp):
         container = SearchContainer()
@@ -345,18 +354,18 @@ class TestUpdateKeyCombos:
         container._key_store.set_data([("path", 10), ("prompt", 5)])
         for row in container._rows:
             w = row.get_param_widget()
-            items = [a.data() for a in w.keys_combo.actions]
-            assert "path" in items
-            assert "prompt" in items
+            assert "path" in w.keys_combo.active_keys
+            catalog_keys = [k for k, _ in w.keys_combo._popup.catalog_data()]
+            assert "prompt" in catalog_keys
 
     def test_new_row_receives_existing_data(self, qapp):
         container = SearchContainer()
         container._key_store.set_data([("path", 20), ("artist", 8)])
         container._add_row(TextFilter)
         w = container._rows[1].get_param_widget()
-        items = [a.data() for a in w.keys_combo.actions]
-        assert "path" in items
-        assert "artist" in items
+        assert "path" in w.keys_combo.active_keys
+        catalog_keys = [k for k, _ in w.keys_combo._popup.catalog_data()]
+        assert "artist" in catalog_keys
 
     def test_restored_rows_receive_existing_data(self, qapp):
         container = SearchContainer()
@@ -372,8 +381,7 @@ class TestUpdateKeyCombos:
         container.restore_state(state)
         for row in container._rows:
             w = row.get_param_widget()
-            items = [a.data() for a in w.keys_combo.actions]
-            assert "path" in items
+            assert "path" in w.keys_combo.active_keys
 
 
 class TestInvalidateKeyCache:
@@ -444,9 +452,7 @@ class TestFilterInheritance:
         container = SearchContainer()
         container._key_store.set_data([("path", 10), ("prompt", 5)])
         primary = container._rows[0].get_param_widget()
-        primary.write_params({"keys": ["prompt"]})
-        primary.keys_combo.previous_key = ["prompt"]
-        primary.keys_combo.remake(container._key_store.data)
+        primary.keys_combo.set_checked(["prompt"])
         container._add_row(RegexFilter)
         second = container._rows[1].get_param_widget()
         params = second.read_params()

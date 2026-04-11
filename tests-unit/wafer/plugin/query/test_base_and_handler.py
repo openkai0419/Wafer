@@ -4,6 +4,7 @@ from PySide6 import QtWidgets
 
 from wafer.plugin.query.base import BaseFilterPlugin, BaseSortPlugin, KeyStore
 from wafer.plugin.query.handler import SortRegistry, filter_registry, sort_registry
+from wafer.plugin.query.widgets import _KeySelectorPopup
 from wafer.plugin.registry import PluginRegistry
 from wafer.builtins.filters import (
     TextFilter,
@@ -82,6 +83,16 @@ def qapp():
     return app
 
 
+@pytest.fixture(autouse=True)
+def _reset_popup():
+    _KeySelectorPopup._instance = None
+    from wafer.core.app_settings import app_settings
+    app_settings.settings.remove("filters/active_keys")
+    yield
+    _KeySelectorPopup._instance = None
+    app_settings.settings.remove("filters/active_keys")
+
+
 class TestKeyStore:
     def test_initial_data_empty(self, qapp):
         store = KeyStore()
@@ -142,19 +153,20 @@ class TestTextFilterBindKeyStore:
         store.set_data([("path", 10), ("prompt", 5)])
         widget = TextFilter.create_widget()
         TextFilter.bind_key_store(widget, store)
-        items = [a.data() for a in widget.keys_combo.actions]
-        assert "path" in items
-        assert "prompt" in items
+        assert "path" in widget.keys_combo.active_keys
+        assert "path" in widget.keys_combo.checked_items()
+        catalog_keys = [k for k, _ in widget.keys_combo._popup.catalog_data()]
+        assert "prompt" in catalog_keys
 
     def test_bind_receives_future_updates(self, qapp):
         store = KeyStore()
         widget = TextFilter.create_widget()
         TextFilter.bind_key_store(widget, store)
-        assert len(widget.keys_combo.actions) == 0
+
         store.set_data([("path", 20), ("artist", 8)])
-        items = [a.data() for a in widget.keys_combo.actions]
-        assert "path" in items
-        assert "artist" in items
+        assert "path" in widget.keys_combo.active_keys
+        catalog_keys = [k for k, _ in widget.keys_combo._popup.catalog_data()]
+        assert "artist" in catalog_keys
 
 
 class TestBaseSortPlugin:

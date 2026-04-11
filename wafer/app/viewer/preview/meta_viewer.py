@@ -2,17 +2,16 @@ from __future__ import annotations
 
 import json
 from typing import Any
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Mapping
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from ....utils.formatting import dpix, display_prefixed_key
 from ....utils.logs import AppLogger
 
-# ---- 追加：巨大値対策のしきい値 ----
-MAX_INLINE_CHARS = 4000  # ラベルにそのまま載せる最大文字数
-MAX_INLINE_SEQ_ITEMS = 50  # 配列/集合のプレビュー最大要素数
-MAX_INLINE_MAP_PAIRS = 50  # マップのプレビュー最大ペア数
+MAX_INLINE_CHARS = 4000
+MAX_INLINE_SEQ_ITEMS = 50
+MAX_INLINE_MAP_PAIRS = 50
 
 
 def _truncate_text(s: str, limit: int = MAX_INLINE_CHARS) -> str:
@@ -39,6 +38,97 @@ def _preview_mapping(mp: Mapping[str, Any]) -> str:
             break
         parts.append(f"{k}: {v!r}")
     return "{ " + ", ".join(parts) + " }"
+
+
+class CollapsibleSection(QtWidgets.QWidget):
+    toggled = QtCore.Signal(str, bool)
+
+    def __init__(self, title: str, key: str, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._key = key
+        self._expanded = True
+
+        self._header = QtWidgets.QPushButton(self)
+        self._header.setCheckable(True)
+        self._header.setChecked(True)
+        self._header.setObjectName("collapsibleHeader")
+        self._header.setStyleSheet(
+            f"""
+            QPushButton#collapsibleHeader {{
+                background: palette(base);
+                border: 1px solid palette(mid);
+                border-radius: {dpix(8)}px;
+                padding: {dpix(6)}px {dpix(12)}px;
+                text-align: left;
+                font-weight: 600;
+                font-size: {dpix(13)}px;
+            }}
+            QPushButton#collapsibleHeader:hover {{
+                background: palette(midlight);
+            }}
+            """
+        )
+        self._header.clicked.connect(self._on_toggle)
+        self._update_header_text(title, 0)
+
+        self._content_area = QtWidgets.QWidget(self)
+        self._content_layout = QtWidgets.QVBoxLayout(self._content_area)
+        self._content_layout.setContentsMargins(0, 0, 0, 0)
+        self._content_layout.setSpacing(0)
+        self._content_widget: QtWidgets.QWidget | None = None
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(dpix(4))
+        layout.addWidget(self._header)
+        layout.addWidget(self._content_area)
+
+        self._title_base = title
+
+    @property
+    def key(self) -> str:
+        return self._key
+
+    @property
+    def expanded(self) -> bool:
+        return self._expanded
+
+    def set_expanded(self, expanded: bool):
+        self._expanded = expanded
+        self._header.setChecked(expanded)
+        self._content_area.setVisible(expanded)
+
+    def set_content_widget(self, widget: QtWidgets.QWidget):
+        if self._content_widget is not None:
+            self._content_layout.removeWidget(self._content_widget)
+            self._content_widget.setParent(None)
+            self._content_widget.deleteLater()
+        self._content_widget = widget
+        self._content_layout.addWidget(widget)
+        widget.setVisible(self._expanded)
+
+    def content_widget(self) -> QtWidgets.QWidget | None:
+        return self._content_widget
+
+    def update_title_count(self, count: int):
+        self._update_header_text(self._title_base, count)
+
+    def _update_header_text(self, title: str, count: int):
+        arrow = "▼" if self._expanded else "▶"
+        suffix = f"  ({count})" if count > 0 else ""
+        self._header.setText(f"{arrow}  {title}{suffix}")
+
+    def _on_toggle(self):
+        self._expanded = self._header.isChecked()
+        self._content_area.setVisible(self._expanded)
+        self._update_header_text(self._title_base, self._count_from_content())
+        self.toggled.emit(self._key, self._expanded)
+
+    def _count_from_content(self) -> int:
+        w = self._content_widget
+        if isinstance(w, MetaRowWidget):
+            return len(w._keys)
+        return 0
 
 
 class MetaRowWidget(QtWidgets.QFrame):
@@ -235,101 +325,3 @@ class MetaRowWidget(QtWidgets.QFrame):
             self._data = dict(data)
             self._keys = new_keys
             self._build()
-
-
-class MetaListWidget(QtWidgets.QWidget):
-    rowActivated = QtCore.Signal(int, dict)
-
-    def __init__(
-        self,
-        items: Iterable[Mapping[str, Any]] | None = None,
-        key_names: Mapping[str, str] | None = None,
-        value_formatters: Mapping[str, Callable[[Any], str]] | None = None,
-        rich_text_keys: set[str] | None = None,
-        compact: bool = True,
-        parent: QtWidgets.QWidget | None = None,
-    ) -> None:
-        super().__init__(parent)
-        self._items: list[dict] = []
-        self._key_names = dict(key_names or {})
-        self._value_formatters = dict(value_formatters or {})
-        self._rich_text_keys = rich_text_keys or set()
-        self._compact = compact
-
-        self.setObjectName("dictList")
-        self.setStyleSheet(
-            """
-            QWidget#dictList {
-                background: transparent;
-            }
-            """
-        )
-
-        self._layout = QtWidgets.QVBoxLayout(self)
-        self._layout.setContentsMargins(0, dpix(5), dpix(4), dpix(5))
-        self._layout.setSpacing(dpix(10) if compact else dpix(14))
-        self._layout.addStretch(1)
-
-        if items is not None:
-            self.set_data(items)
-
-    def sizeHint(self) -> QtCore.QSize:
-        return QtCore.QSize(dpix(760), super().sizeHint().height())
-
-    def set_data(self, items: Iterable[Mapping[str, Any]]) -> None:
-        new_items = [dict(i) for i in items]
-        if len(new_items) == len(self._items):
-            for idx, it in enumerate(new_items):
-                self._items[idx] = it
-                w = self._layout.itemAt(idx).widget()
-                if isinstance(w, MetaRowWidget):
-                    w.update_data(it)
-            return
-        self.clear()
-        self._items = new_items
-        for idx, it in enumerate(self._items):
-            row = MetaRowWidget(
-                idx,
-                it,
-                key_names=self._key_names,
-                value_formatters=self._value_formatters,
-                rich_text_keys=self._rich_text_keys,
-                compact=self._compact,
-                parent=self,
-            )
-            row.rowActivated.connect(self.rowActivated.emit)
-            self._layout.insertWidget(self._layout.count() - 1, row)
-
-    def clear(self) -> None:
-        for i in reversed(range(self._layout.count())):
-            item = self._layout.itemAt(i)
-            w = item.widget()
-            if w is not None:
-                w.setParent(None)
-                w.deleteLater()
-        if self._layout.count() == 0:
-            self._layout.addStretch(1)
-        self._items.clear()
-
-    def add_item(self, item: Mapping[str, Any]) -> None:
-        idx = len(self._items)
-        self._items.append(dict(item))
-        row = MetaRowWidget(
-            idx,
-            self._items[-1],
-            key_names=self._key_names,
-            value_formatters=self._value_formatters,
-            rich_text_keys=self._rich_text_keys,
-            compact=self._compact,
-            parent=self,
-        )
-        row.rowActivated.connect(self.rowActivated.emit)
-        self._layout.insertWidget(self._layout.count() - 1, row)
-
-    def update_item(self, index: int, item: Mapping[str, Any]) -> None:
-        if index < 0 or index >= len(self._items):
-            return
-        self._items[index] = dict(item)
-        w = self._layout.itemAt(index).widget()  # type: ignore[assignment]
-        if isinstance(w, MetaRowWidget):
-            w.update_data(self._items[index])

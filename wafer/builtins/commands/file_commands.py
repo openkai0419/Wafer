@@ -119,6 +119,7 @@ def _confirm_delete(ctx, paths) -> bool:
     dialog = ThumbnailConfirmDialog(msg, paths=thumbs, title=title, buttons=("Delete", "Cancel"), parent=parent)
 
     if dir_count > 0:
+
         def count_task():
             total = file_count
             for p in paths:

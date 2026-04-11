@@ -14,6 +14,7 @@ from .query.base import BaseFilterPlugin, BaseSortPlugin
 from .detacher.base import BaseDetacher
 from .layout.base import BaseLayoutPlugin
 from .panel.base import BasePanelPlugin
+from .meta_panel.base import BaseMetaPanelPlugin
 from .rename.base import BaseRenameSourcePlugin
 
 
@@ -29,6 +30,7 @@ def _build_registry_map():
         BaseSortPlugin: "sort",
         BaseLayoutPlugin: "layout",
         BasePanelPlugin: "panel",
+        BaseMetaPanelPlugin: "meta_panel",
         BaseRenameSourcePlugin: "rename_source",
         MenuGroup: "command",
     }
@@ -217,6 +219,7 @@ def load_plugins(*, on_progress=None) -> list[str]:
     from .query.handler import filter_registry, sort_registry
     from .layout.handler import layout_registry
     from .panel.handler import panel_registry
+    from .meta_panel.handler import meta_panel_registry
     from .rename.handler import rename_source_registry
 
     command_registry = CommandGroupRegistry()
@@ -229,6 +232,7 @@ def load_plugins(*, on_progress=None) -> list[str]:
         "sort": sort_registry,
         "layout": layout_registry,
         "panel": panel_registry,
+        "meta_panel": meta_panel_registry,
         "rename_source": rename_source_registry,
         "command": command_registry,
     }

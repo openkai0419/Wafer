@@ -300,6 +300,7 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
             AppLogger.info(f"[DatabaseManager] Deleted database: {db_name}")
             self._refresh_db_list()
         else:
+
             def _remove_db_files():
                 import os
 

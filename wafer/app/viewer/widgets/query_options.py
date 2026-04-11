@@ -1,5 +1,4 @@
-from PySide6 import QtCore, QtGui, QtWidgets
-from ....utils.formatting import display_prefixed_key
+from PySide6 import QtCore, QtWidgets
 from ....utils.profiling import profiler
 from ....core.db.query import FileSearchEngine
 from ....plugin.query.composer import SearchComposer

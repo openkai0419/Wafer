@@ -187,8 +187,6 @@ def ensure_mpv_dll():
         _log("[video] mpv DLL installed successfully")
         return True
     except Exception as e:
-        raise RuntimeError(
-            f"Failed to acquire mpv DLL: {e}. {_MANUAL_HINT}"
-        ) from e
+        raise RuntimeError(f"Failed to acquire mpv DLL: {e}. {_MANUAL_HINT}") from e
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

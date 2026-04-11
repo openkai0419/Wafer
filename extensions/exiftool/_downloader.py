@@ -16,10 +16,7 @@ _ALLOWED_HOSTS = ("exiftool.org", "sourceforge.net")
 _VERSION_PATTERN = re.compile(r"^\d+\.\d+$")
 _MAX_VERSION_RESPONSE = 64
 
-_MANUAL_HINT = (
-    "Download ExifTool from https://exiftool.org/ "
-    "and place exiftool.exe + exiftool_files/ in extensions/exiftool/lib/"
-)
+_MANUAL_HINT = "Download ExifTool from https://exiftool.org/ and place exiftool.exe + exiftool_files/ in extensions/exiftool/lib/"
 
 
 def _log(msg, *, level="info", exc=None):
@@ -121,9 +118,7 @@ def ensure_exiftool():
     if platform.system() != "Windows":
         if shutil.which("exiftool"):
             return True
-        raise RuntimeError(
-            "Auto-download is Windows-only. Install exiftool via package manager."
-        )
+        raise RuntimeError("Auto-download is Windows-only. Install exiftool via package manager.")
     tmp = tempfile.mkdtemp()
     try:
         version = _fetch_latest_version()
@@ -137,8 +132,6 @@ def ensure_exiftool():
         _log("[exiftool] ExifTool installed successfully")
         return True
     except Exception as e:
-        raise RuntimeError(
-            f"Failed to acquire ExifTool: {e}. {_MANUAL_HINT}"
-        ) from e
+        raise RuntimeError(f"Failed to acquire ExifTool: {e}. {_MANUAL_HINT}") from e
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

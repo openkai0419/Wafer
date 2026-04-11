@@ -38,14 +38,14 @@ def _preprocess_html_blocks(text: str) -> str:
     return _HTML_BLOCK_TAGS.sub(_add_md_attr, text)
 
 
-def render_to_html(text: str) -> str:
-    preprocessed = _preprocess_html_blocks(text)
-    return _md.markdown(preprocessed, extensions=_MD_EXTENSIONS, tab_length=_MD_TAB_LENGTH)
-
-
 def _build_full_html(body_html: str, dark: bool) -> str:
     css = _load_github_css(dark)
     return f'<!DOCTYPE html><html><head><meta charset="utf-8"><style>{css}</style></head><body class="markdown-body" style="padding:16px 32px;">{body_html}</body></html>'
+
+
+def render_to_html(text: str) -> str:
+    preprocessed = _preprocess_html_blocks(text)
+    return _md.markdown(preprocessed, extensions=_MD_EXTENSIONS, tab_length=_MD_TAB_LENGTH)
 
 
 class _ExternalLinkPage(QWebEnginePage):
@@ -106,20 +106,11 @@ class MarkdownBrowser(QtWidgets.QWidget):
 
     def set_markdown(self, text: str):
         self._source_md = text
-        body = render_to_html(text)
-        self._apply_body(body)
-
-    def apply_loaded(self, source_md: str, body_html: str, base_url: QtCore.QUrl, allowed_dir: Path):
-        self._source_md = source_md
-        if self._allowed_dir is None:
-            self._allowed_dir = allowed_dir
-        self._base_url = base_url
-        self._apply_body(body_html)
-
-    def _apply_body(self, body_html: str):
-        self._rendered_html = body_html
+        preprocessed = _preprocess_html_blocks(text)
+        body = _md.markdown(preprocessed, extensions=_MD_EXTENSIONS, tab_length=_MD_TAB_LENGTH)
+        self._rendered_html = body
         dark = ThemeManager.instance().is_dark
-        self._view.setHtml(_build_full_html(body_html, dark), self._base_url)
+        self._view.setHtml(_build_full_html(body, dark), self._base_url)
 
     def source_markdown(self) -> str:
         return self._source_md

@@ -19,10 +19,7 @@ _7ZR_PATH = os.path.join(_LIB_DIR, "7zr.exe")
 
 _BINARIES = (_FFPROBE_NAME, _FFMPEG_NAME)
 
-_MANUAL_HINT = (
-    f"Download ffmpeg essentials from https://www.gyan.dev/ffmpeg/builds/ "
-    f"and place ffprobe.exe + ffmpeg.exe in extensions/ffmpeg/lib/"
-)
+_MANUAL_HINT = "Download ffmpeg essentials from https://www.gyan.dev/ffmpeg/builds/ and place ffprobe.exe + ffmpeg.exe in extensions/ffmpeg/lib/"
 
 
 def _log(msg, *, level="info", exc=None):
@@ -117,7 +114,7 @@ def _extract_py7zr(archive_path: str):
             _validate_archive_path(name, _LIB_DIR)
         targets = [n for n in all_names if os.path.basename(n) in _BINARIES]
         if not targets:
-            raise FileNotFoundError(f"ffprobe/ffmpeg not found in archive")
+            raise FileNotFoundError("ffprobe/ffmpeg not found in archive")
         z.extract(_LIB_DIR, targets)
 
     for t in targets:
@@ -181,8 +178,6 @@ def ensure_ffmpeg():
         _log("[ffmpeg] ffprobe + ffmpeg installed successfully")
         return True
     except Exception as e:
-        raise RuntimeError(
-            f"Failed to acquire ffmpeg: {e}. {_MANUAL_HINT}"
-        ) from e
+        raise RuntimeError(f"Failed to acquire ffmpeg: {e}. {_MANUAL_HINT}") from e
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

@@ -5,6 +5,7 @@ from .detacher.base import BaseDetacherPlugin, BaseSingletonDetacher, DetacherRe
 from .query.base import BaseFilterPlugin, BaseSortPlugin
 from .layout.base import BaseLayoutPlugin
 from .panel.base import BasePanelPlugin
+from .meta_panel.base import BaseMetaPanelPlugin
 from .rename.base import BaseRenameSourcePlugin, SegmentInfo
 from ..core.commands.bridge import ActionKit
 from ..core.commands.command.require import require, require_v

@@ -300,10 +300,7 @@ class ExtensionsTab(QtWidgets.QWidget):
                 folder = os.path.join(plugin_dir, name)
                 if not os.path.isdir(folder) or name.startswith(".") or name == "__pycache__":
                     continue
-                md_files = sorted(
-                    f for f in os.listdir(folder)
-                    if f.lower().endswith(".md") and not f.startswith((".", "_")) and os.path.isfile(os.path.join(folder, f))
-                )[:_MAX_MD_FILES]
+                md_files = sorted(f for f in os.listdir(folder) if f.lower().endswith(".md") and not f.startswith((".", "_")) and os.path.isfile(os.path.join(folder, f)))[:_MAX_MD_FILES]
                 need_install = needs_setup(folder)
                 has_req = os.path.isfile(os.path.join(folder, "requirements.txt"))
                 results.append((name, folder, md_files, need_install, has_req))

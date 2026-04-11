@@ -24,10 +24,12 @@ def _format_meta(engine, path):
     if file_rec.get("aspect_ratio"):
         file_rec["aspect_ratio"] = format_aspect(file_rec["aspect_ratio"])
     standard = {}
-    prefixed = {}
+    prefix_groups: dict[str, dict] = {}
     for k, v in meta_infos.items():
-        if "." in k:
-            prefixed[k] = v
+        dot = k.find(".")
+        if dot > 0:
+            prefix = k[:dot]
+            prefix_groups.setdefault(prefix, {})[k[dot + 1 :]] = v
         else:
             standard[k] = v
     for k in ("created", "collected", "modified", "size"):
@@ -40,7 +42,9 @@ def _format_meta(engine, path):
     _standard_order = ["name", "path", "file_hash", "size", "created", "modified", "collected"]
     standard = {k: standard[k] for k in _standard_order if k in standard}
     tags = {k: tags[k] for k in natsorted(tags)}
-    prefixed = {k: prefixed[k] for k in natsorted(prefixed)}
+    for prefix in prefix_groups:
+        d = prefix_groups[prefix]
+        prefix_groups[prefix] = {k: d[k] for k in natsorted(d)}
     collector_status = engine.get_collection_status(path)
     if collector_status:
         parts = []
@@ -48,7 +52,7 @@ def _format_meta(engine, path):
             color = "#4caf50" if status == "ok" else "#f44336"
             parts.append(f'<span style="color:{color}">\u25cf</span> {name}')
         file_rec["collected by"] = "&nbsp;&nbsp;".join(parts)
-    return [file_rec, standard, tags, prefixed]
+    return {"source": file_rec, "file": standard, "tag": tags, "prefixed": prefix_groups}
 
 
 class FileViewerController(QtCore.QObject):

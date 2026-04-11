@@ -8,7 +8,6 @@ from ...constants import DEV_MODE
 from ...core.platform.process import AppProcess
 from ...core.ipc.message import Message
 from ...ui.dialogs import InputDialog
-from ...utils.notifier import Notifier
 from ...core.profile import ProfileStore
 
 

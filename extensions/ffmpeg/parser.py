@@ -27,8 +27,10 @@ def probe(path: str, ffprobe_path: str) -> dict | None:
         result = subprocess.run(
             [
                 ffprobe_path,
-                "-v", "quiet",
-                "-print_format", "json",
+                "-v",
+                "quiet",
+                "-print_format",
+                "json",
                 "-show_format",
                 "-show_streams",
                 path,

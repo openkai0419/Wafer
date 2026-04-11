@@ -5,10 +5,30 @@ from wafer.utils.logs import AppLogger
 class ExifToolCollectorPlugin(BaseCollectorPlugin):
     NAME = "exiftool"
     EXTENSIONS = (
-        ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".tiff", ".tif",
-        ".heic", ".heif", ".avif", ".jxl",
-        ".cr2", ".cr3", ".nef", ".arw", ".orf", ".rw2", ".dng", ".raf", ".pef", ".srw",
-        ".psd", ".ico",
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".bmp",
+        ".gif",
+        ".webp",
+        ".tiff",
+        ".tif",
+        ".heic",
+        ".heif",
+        ".avif",
+        ".jxl",
+        ".cr2",
+        ".cr3",
+        ".nef",
+        ".arw",
+        ".orf",
+        ".rw2",
+        ".dng",
+        ".raf",
+        ".pef",
+        ".srw",
+        ".psd",
+        ".ico",
     )
     PRIORITY = 100
     DEFAULT_ENABLED = True

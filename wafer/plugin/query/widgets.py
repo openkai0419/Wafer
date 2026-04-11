@@ -53,9 +53,7 @@ class _ActiveKeyItem(QtWidgets.QWidget):
     def _apply_visual(self):
         p = ThemeManager.instance().palette
         if self._checked:
-            self._check_icon.setPixmap(
-                themed_icon("check").pixmap(QtCore.QSize(dpix(12), dpix(12)))
-            )
+            self._check_icon.setPixmap(themed_icon("check").pixmap(QtCore.QSize(dpix(12), dpix(12))))
             self.label.setStyleSheet(f"color: {p.text_primary};")
         else:
             self._check_icon.setPixmap(QtGui.QPixmap())
@@ -121,9 +119,7 @@ class _KeySelectorPopup(QtWidgets.QFrame):
         splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
         splitter.setChildrenCollapsible(False)
 
-        self._active_group = QtWidgets.QGroupBox(
-            QtCore.QCoreApplication.translate("_KeySelectorPopup", "Filter")
-        )
+        self._active_group = QtWidgets.QGroupBox(QtCore.QCoreApplication.translate("_KeySelectorPopup", "Filter"))
         active_layout = QtWidgets.QVBoxLayout(self._active_group)
         active_layout.setContentsMargins(dpix(4), dpix(2), dpix(4), dpix(4))
         active_layout.setSpacing(0)
@@ -169,13 +165,7 @@ class _KeySelectorPopup(QtWidgets.QFrame):
 
     def _apply_theme(self):
         p = ThemeManager.instance().palette
-        self.setStyleSheet(
-            f"_KeySelectorPopup {{"
-            f"  background: {p.bg_primary};"
-            f"  border: {dpix(1)}px solid {p.border_default};"
-            f"  border-radius: {dpix(4)}px;"
-            f"}}"
-        )
+        self.setStyleSheet(f"_KeySelectorPopup {{  background: {p.bg_primary};  border: {dpix(1)}px solid {p.border_default};  border-radius: {dpix(4)}px;}}")
         self._active_group.setStyleSheet(
             f"QGroupBox {{"
             f"  border: {dpix(1)}px solid {p.border_subtle};"
@@ -190,9 +180,7 @@ class _KeySelectorPopup(QtWidgets.QFrame):
             f"  color: {p.text_secondary};"
             f"}}"
         )
-        self._catalog_tree.setStyleSheet(
-            f"QTreeWidget {{ background: {p.bg_secondary}; }}"
-        )
+        self._catalog_tree.setStyleSheet(f"QTreeWidget {{ background: {p.bg_secondary}; }}")
 
     def active_key_set(self) -> set[str]:
         return set(self._active_items.keys())
@@ -406,9 +394,7 @@ class CheckableCombo(QtWidgets.QToolButton, TranslatorMixin):
         saved = app_settings.get(_SETTINGS_KEY, None, list)
         if saved:
             saved = [k for k in saved if isinstance(k, str) and len(k) > 1]
-        needed = list(dict.fromkeys(
-            (saved or []) + self._checked_keys + [self.default_key]
-        ))
+        needed = list(dict.fromkeys((saved or []) + self._checked_keys + [self.default_key]))
         self._popup.ensure_active_keys(needed)
         active = self._popup.active_key_set()
         valid = [k for k in self._checked_keys if k in active]
@@ -420,9 +406,7 @@ class CheckableCombo(QtWidgets.QToolButton, TranslatorMixin):
     def _on_check_toggled(self):
         if self._popup._current_combo is not self:
             return
-        self._checked_keys = [
-            key for key, item in self._popup._active_items.items() if item.checked
-        ]
+        self._checked_keys = [key for key, item in self._popup._active_items.items() if item.checked]
         self.action_changed.emit()
 
     def _on_active_keys_changed(self, removed_keys: set[str]):

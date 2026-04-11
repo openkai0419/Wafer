@@ -652,7 +652,8 @@ class _SamplePreviewTab(QtWidgets.QWidget):
                 meta, _ = flatten(data)
             except Exception as e:
                 AppLogger.warning(f"[ExifToolSettings] Preview failed: {e}", exc=e)
-                self._dispatcher.invoke(lambda: Notifier.warning(f"Preview failed: {e}"))
+                msg = str(e)
+                self._dispatcher.invoke(lambda: Notifier.warning(f"Preview failed: {msg}"))
                 return
             if cancel.is_cancelled():
                 return

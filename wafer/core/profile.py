@@ -173,6 +173,7 @@ class ProfileStore:
         legacy = resolve_data_path(_LEGACY_STORE_FILENAME)
         if Path(legacy).is_file() and not Path(self._path).is_file():
             import shutil
+
             shutil.move(legacy, self._path)
 
     def _load_raw(self) -> dict[str, Any]:

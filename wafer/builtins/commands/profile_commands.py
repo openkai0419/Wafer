@@ -1,4 +1,4 @@
-from PySide6 import QtCore, QtWidgets
+from PySide6 import QtWidgets
 
 from ...core.commands.bridge import ActionKit
 from ...core.commands.command.require import require

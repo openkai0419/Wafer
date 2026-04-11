@@ -5,8 +5,23 @@ from wafer.utils.logs import AppLogger
 class FfmpegCollectorPlugin(BaseCollectorPlugin):
     NAME = "ffmpeg"
     EXTENSIONS = (
-        ".mp4", ".mkv", ".webm", ".avi", ".mov", ".wmv", ".flv", ".ts", ".m4v",
-        ".mp3", ".flac", ".wav", ".ogg", ".m4a", ".aac", ".wma", ".opus",
+        ".mp4",
+        ".mkv",
+        ".webm",
+        ".avi",
+        ".mov",
+        ".wmv",
+        ".flv",
+        ".ts",
+        ".m4v",
+        ".mp3",
+        ".flac",
+        ".wav",
+        ".ogg",
+        ".m4a",
+        ".aac",
+        ".wma",
+        ".opus",
     )
     PRIORITY = 100
     DEFAULT_ENABLED = True

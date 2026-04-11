@@ -118,6 +118,21 @@ class TestApplyRows:
         container = tab._collector_table.table.cellWidget(0, 5)
         assert container is None
 
+    def test_reapply_clears_checkbox_on_non_purgeable_row(self, qtbot, sync_dispatcher):
+        rows_with_prefix = [
+            ("db1", "exif", 100, 50, "Collector", "Active", True),
+        ]
+        tab = _make_tab(qtbot, sync_dispatcher, rows_with_prefix)
+        assert tab._collector_table.table.cellWidget(0, 5) is not None
+
+        from wafer.builtins.database_manager.data_tab import _split_rows
+        rows_without_prefix = [
+            ("db1", "", 100, 50, "", "", False),
+        ]
+        c_rows, _ = _split_rows(rows_without_prefix)
+        tab._collector_table.apply_rows(c_rows)
+        assert tab._collector_table.table.cellWidget(0, 5) is None
+
 
 class TestOnLoaded:
     def test_sets_initial_loaded(self, qtbot, sync_dispatcher):

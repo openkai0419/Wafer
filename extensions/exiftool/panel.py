@@ -59,6 +59,7 @@ class ExifSettingsWidget(QtWidgets.QWidget):
         tabs.addTab(self._key_browser, "Key Browser")
 
         self._sample_preview.filter_keys_changed.connect(self._on_preview_keys_changed)
+        self._key_browser.filter_keys_changed.connect(self._on_browser_keys_changed)
 
         bottom_layout = QtWidgets.QHBoxLayout()
         bottom_layout.addWidget(QtWidgets.QLabel("Filter Mode:"))
@@ -127,6 +128,10 @@ class ExifSettingsWidget(QtWidgets.QWidget):
     def _on_preview_keys_changed(self, new_keys: set):
         self._filter_keys = new_keys
         self._key_browser.set_filter_keys(new_keys)
+
+    def _on_browser_keys_changed(self, new_keys: set):
+        self._filter_keys = new_keys
+        self._sample_preview.set_filter_keys(new_keys)
 
     def _on_save(self):
         current_keys = self._key_browser.collect_filter_keys()
@@ -211,6 +216,8 @@ class ExifSettingsWidget(QtWidgets.QWidget):
 
 
 class _KeyBrowserTab(QtWidgets.QWidget):
+    filter_keys_changed = QtCore.Signal(set)
+
     def __init__(
         self,
         filter_mode: str,
@@ -317,6 +324,7 @@ class _KeyBrowserTab(QtWidgets.QWidget):
             self._filter_keys = set(all_keys)
         self._update_check_all_label()
         self._build_tree()
+        self.filter_keys_changed.emit(set(self._filter_keys))
 
     def _update_check_all_label(self):
         all_keys = self.all_known_keys()
@@ -484,6 +492,7 @@ class _KeyBrowserTab(QtWidgets.QWidget):
             self._sync_selected_checks(item)
             self._filter_keys = self.collect_filter_keys()
             self._update_check_all_label()
+            self.filter_keys_changed.emit(set(self._filter_keys))
         full_key = item.data(_KEY_COL, QtCore.Qt.UserRole)
         if not full_key:
             return

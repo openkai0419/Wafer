@@ -134,6 +134,73 @@ class TestUpdateCheckAllLabel:
         assert tab._check_all_btn.text() == "Check All"
 
 
+class TestKeyBrowserFilterKeysChangedSignal:
+    def test_check_all_emits_signal(self, qapp):
+        key_data = [("a", 1), ("b", 2)]
+        tab = _make_key_browser(qapp, MODE_BLACKLIST, set(), key_data=key_data)
+        received = []
+        tab.filter_keys_changed.connect(lambda keys: received.append(keys))
+        tab._on_check_all()
+        assert len(received) == 1
+        assert received[0] == {"a", "b"}
+
+    def test_uncheck_all_emits_signal(self, qapp):
+        key_data = [("a", 1), ("b", 2)]
+        tab = _make_key_browser(qapp, MODE_BLACKLIST, {"a", "b"}, key_data=key_data)
+        received = []
+        tab.filter_keys_changed.connect(lambda keys: received.append(keys))
+        tab._on_check_all()
+        assert len(received) == 1
+        assert received[0] == set()
+
+    def test_item_click_check_emits_signal(self, qapp):
+        key_data = [("a", 1), ("b", 2)]
+        tab = _make_key_browser(qapp, MODE_BLACKLIST, set(), key_data=key_data)
+        tab._build_tree()
+        item_a = _find_leaf_by_key(tab._tree, "a")
+        tab._pre_click_selection = [item_a]
+        item_a.setCheckState(0, QtCore.Qt.Checked)
+        received = []
+        tab.filter_keys_changed.connect(lambda keys: received.append(keys))
+        tab._on_item_clicked(item_a, 0)
+        assert len(received) == 1
+        assert "a" in received[0]
+
+    def test_item_click_non_check_column_no_signal(self, qapp):
+        key_data = [("a", 1)]
+        tab = _make_key_browser(qapp, MODE_BLACKLIST, set(), key_data=key_data)
+        tab._build_tree()
+        item_a = _find_leaf_by_key(tab._tree, "a")
+        received = []
+        tab.filter_keys_changed.connect(lambda keys: received.append(keys))
+        tab._cancel.renew()
+        tab._on_item_clicked(item_a, 1)
+        assert len(received) == 0
+
+
+class TestBrowserToPreviewPropagation:
+    def test_check_all_propagates_to_sample_preview(self, qapp):
+        widget = _make_exiftool_settings_widget(qapp)
+        kb = widget._key_browser
+        sp = widget._sample_preview
+        kb._key_data = [("a", 1), ("b", 2)]
+        sp._meta = {"a": "v1", "b": "v2"}
+        sp._filter_keys = set()
+        kb._on_check_all()
+        assert sp._filter_keys == {"a", "b"}
+
+    def test_uncheck_all_propagates_to_sample_preview(self, qapp):
+        widget = _make_exiftool_settings_widget(qapp)
+        kb = widget._key_browser
+        sp = widget._sample_preview
+        kb._key_data = [("a", 1), ("b", 2)]
+        kb._filter_keys = {"a", "b"}
+        sp._meta = {"a": "v1", "b": "v2"}
+        sp._filter_keys = {"a", "b"}
+        kb._on_check_all()
+        assert sp._filter_keys == set()
+
+
 class TestSamplePreviewCellChanged:
     def test_check_adds_to_filter_keys(self, qapp):
         tab = _make_sample_preview(qapp, MODE_BLACKLIST, set())

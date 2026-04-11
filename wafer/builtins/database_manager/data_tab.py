@@ -168,6 +168,8 @@ class _PrefixTable(QtWidgets.QGroupBox):
                 cb_layout.setAlignment(QtCore.Qt.AlignCenter)
                 cb_layout.setContentsMargins(0, 0, 0, 0)
                 self.table.setCellWidget(i, _COL_CHECK, container)
+            else:
+                self.table.removeCellWidget(i, _COL_CHECK)
         self.table.setSortingEnabled(True)
 
     def merge_rows(self, rows: list[_DisplayRow]):

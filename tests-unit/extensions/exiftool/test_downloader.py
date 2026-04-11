@@ -3,15 +3,21 @@ import pytest
 from extensions.exiftool._downloader import (
     _validate_url,
     _validate_archive_path,
+    _fetch_latest_version,
     get_exiftool_path,
     _EXIFTOOL_PATH,
+    _VERSION_PATTERN,
 )
 
 
 class TestValidateUrl:
-    def test_valid_https(self):
+    def test_valid_https_sourceforge(self):
         url = "https://sourceforge.net/projects/exiftool/files/test.zip/download"
-        assert _validate_url(url, ("sourceforge.net",)) == url
+        assert _validate_url(url, ("exiftool.org", "sourceforge.net")) == url
+
+    def test_valid_https_exiftool_org(self):
+        url = "https://exiftool.org/ver.txt"
+        assert _validate_url(url, ("exiftool.org", "sourceforge.net")) == url
 
     def test_http_rejected(self):
         with pytest.raises(ValueError, match="Insecure URL scheme"):
@@ -47,6 +53,48 @@ class TestValidateArchivePath:
 
 
 
+class TestFetchLatestVersion:
+    def test_valid_version(self, monkeypatch):
+        import io
+        import urllib.request
+
+        def fake_urlopen(req, **kw):
+            return io.BytesIO(b"13.55\n")
+
+        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        assert _fetch_latest_version() == "13.55"
+
+    def test_rejects_invalid_format(self, monkeypatch):
+        import io
+        import urllib.request
+
+        def fake_urlopen(req, **kw):
+            return io.BytesIO(b"<html>hack</html>")
+
+        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        with pytest.raises(RuntimeError, match="Unexpected version format"):
+            _fetch_latest_version()
+
+    def test_rejects_oversized_response(self, monkeypatch):
+        import io
+        import urllib.request
+
+        def fake_urlopen(req, **kw):
+            return io.BytesIO(b"x" * 100)
+
+        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        with pytest.raises(RuntimeError, match="too large"):
+            _fetch_latest_version()
+
+    @pytest.mark.parametrize("ver", ["13.55", "12.0", "99.99"])
+    def test_version_pattern_valid(self, ver):
+        assert _VERSION_PATTERN.match(ver)
+
+    @pytest.mark.parametrize("ver", ["13", "13.55.1", "abc", "13.55beta", ""])
+    def test_version_pattern_invalid(self, ver):
+        assert not _VERSION_PATTERN.match(ver)
+
+
 class TestEnsureExiftool:
     def test_raises_on_download_failure(self, monkeypatch, tmp_path):
         monkeypatch.setattr(
@@ -54,6 +102,10 @@ class TestEnsureExiftool:
             os.path.join(str(tmp_path), "nonexistent", "exiftool.exe"),
         )
         monkeypatch.setattr("extensions.exiftool._downloader.platform.system", lambda: "Windows")
+        monkeypatch.setattr(
+            "extensions.exiftool._downloader._fetch_latest_version",
+            lambda: "13.55",
+        )
         monkeypatch.setattr(
             "extensions.exiftool._downloader._safe_download",
             lambda *a, **kw: (_ for _ in ()).throw(ConnectionError("network error")),

@@ -24,8 +24,8 @@ _COUNT_COL = 2
 
 
 class ExifSettingsPanelPlugin(BasePanelPlugin):
-    NAME = "exif_settings"
-    DISPLAY_NAME = "EXIF Settings"
+    NAME = "exiftool_settings"
+    DISPLAY_NAME = "ExifTool Settings"
     DEFAULT_ENABLED = True
     CLOSABLE = True
     PRIORITY = 50
@@ -145,7 +145,7 @@ class ExifSettingsWidget(QtWidgets.QWidget):
         from .settings import write_filter_config
 
         write_filter_config(self._filter_mode, self._filter_keys)
-        BaseCollector.notify_to("exif")
+        BaseCollector.notify_to("exiftool")
         self._sample_preview.set_filter_keys(self._filter_keys)
 
         self._saved_mode = self._filter_mode
@@ -158,7 +158,7 @@ class ExifSettingsWidget(QtWidgets.QWidget):
                 self._send_purge_keys(
                     db_names,
                     purge_keys,
-                    "exif",
+                    "exiftool",
                     re_collect=do_recollect,
                 )
 
@@ -166,7 +166,7 @@ class ExifSettingsWidget(QtWidgets.QWidget):
             action = "saved + purge & recollect" if do_recollect else "saved + purge"
         else:
             action = "saved"
-        Notifier.info(f"EXIF filter {action} ({self._filter_mode}, {len(self._filter_keys)} keys)")
+        Notifier.info(f"ExifTool filter {action} ({self._filter_mode}, {len(self._filter_keys)} keys)")
 
     def _on_reset(self):
         self._filter_mode = self._saved_mode
@@ -179,13 +179,13 @@ class ExifSettingsWidget(QtWidgets.QWidget):
         self._key_browser.set_filter(self._filter_mode, self._filter_keys)
         self._sample_preview.set_filter(self._filter_mode, self._filter_keys)
 
-        Notifier.info("EXIF filter settings reverted")
+        Notifier.info("ExifTool filter settings reverted")
 
     def _compute_purge_keys(self) -> list[str]:
         if self._filter_mode == MODE_BLACKLIST:
-            return [f"exif.{k}" for k in self._filter_keys]
-        all_keys = {k for k, _ in _query_all_exif_keys_merged()}
-        return [f"exif.{k}" for k in (all_keys - self._filter_keys)]
+            return [f"exiftool.{k}" for k in self._filter_keys]
+        all_keys = {k for k, _ in _query_all_keys_merged()}
+        return [f"exiftool.{k}" for k in (all_keys - self._filter_keys)]
 
     @staticmethod
     def _send_purge_keys(
@@ -199,7 +199,7 @@ class ExifSettingsWidget(QtWidgets.QWidget):
 
         node = InstanceRegistry.instance().resolve_node()
         if not node:
-            AppLogger.warning("[ExifSettings] No IPC node available")
+            AppLogger.warning("[ExifToolSettings] No IPC node available")
             return
         for db in db_names:
             node.send_reliable(
@@ -344,7 +344,7 @@ class _KeyBrowserTab(QtWidgets.QWidget):
         def _bg():
             if cancel.is_cancelled():
                 return []
-            return _query_all_exif_keys_merged()
+            return _query_all_keys_merged()
 
         def _done(result):
             if cancel.is_cancelled():
@@ -492,7 +492,7 @@ class _KeyBrowserTab(QtWidgets.QWidget):
         def _bg():
             if cancel.is_cancelled():
                 return []
-            return _query_sample_values_all(f"exif.{full_key}")
+            return _query_sample_values_all(f"exiftool.{full_key}")
 
         def _done(samples: list[tuple[str, str, str]]):
             if cancel.is_cancelled():
@@ -502,7 +502,7 @@ class _KeyBrowserTab(QtWidgets.QWidget):
                 if k == full_key:
                     freq = f
                     break
-            self._sample_header.setText(f"<b>Key:</b> exif.{full_key} &nbsp; <b>Affected:</b> {freq:,} files")
+            self._sample_header.setText(f"<b>Key:</b> exiftool.{full_key} &nbsp; <b>Affected:</b> {freq:,} files")
             self._sample_table.setRowCount(len(samples))
             for row, (db, file_path, value) in enumerate(samples):
                 self._sample_table.setItem(row, 0, QtWidgets.QTableWidgetItem(db))
@@ -561,7 +561,7 @@ class _SamplePreviewTab(QtWidgets.QWidget):
         self._cancel = cancel
         self.setAcceptDrops(True)
 
-        self._drop_label = QtWidgets.QLabel("Drop an image file here to preview EXIF tags")
+        self._drop_label = QtWidgets.QLabel("Drop a file here to preview ExifTool tags")
         self._drop_label.setAlignment(QtCore.Qt.AlignCenter)
         self._drop_label.setMinimumHeight(dpix(60))
         self._drop_label.setStyleSheet(f"border: {dpix(2)}px dashed palette(mid); border-radius: {dpix(6)}px; padding: {dpix(12)}px;")
@@ -624,20 +624,29 @@ class _SamplePreviewTab(QtWidgets.QWidget):
             if cancel.is_cancelled():
                 return
             try:
-                from .exif_parser import ExifParser
+                from .parser import ExifToolProcess, flatten
+                from ._downloader import get_exiftool_path
 
-                result = ExifParser.parse_file(path)
+                exe = get_exiftool_path()
+                if exe is None:
+                    self._dispatcher.invoke(lambda: Notifier.warning("ExifTool not found"))
+                    return
+                proc = ExifToolProcess(exe)
+                proc.start()
+                try:
+                    data = proc.query(path)
+                finally:
+                    proc.stop()
+                if data is None:
+                    self._dispatcher.invoke(lambda: Notifier.warning("ExifTool returned no data"))
+                    return
+                meta, _ = flatten(data)
             except Exception as e:
-                AppLogger.warning(f"[ExifSettings] Preview failed: {e}", exc=e)
+                AppLogger.warning(f"[ExifToolSettings] Preview failed: {e}", exc=e)
                 self._dispatcher.invoke(lambda: Notifier.warning(f"Preview failed: {e}"))
                 return
             if cancel.is_cancelled():
                 return
-            meta = {}
-            if result.get("exif"):
-                meta.update(result["exif"])
-            if result.get("info_items"):
-                meta.update(result["info_items"])
             pixmap = QtGui.QImage(path)
             if not pixmap.isNull():
                 scaled = pixmap.scaled(
@@ -745,13 +754,13 @@ class _SamplePreviewTab(QtWidgets.QWidget):
 class _SaveConfirmDialog(QtWidgets.QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Save EXIF Filter Settings")
+        self.setWindowTitle("Save ExifTool Filter Settings")
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setSpacing(dpix(8))
         layout.addWidget(QtWidgets.QLabel("Filter settings have been modified.\nThis will apply to all databases."))
 
-        self._purge_cb = QtWidgets.QCheckBox("Purge existing EXIF data")
+        self._purge_cb = QtWidgets.QCheckBox("Purge existing ExifTool data")
         self._purge_cb.setChecked(True)
         self._recollect_cb = QtWidgets.QCheckBox("Recollect after purge")
         self._recollect_cb.setChecked(True)
@@ -776,7 +785,7 @@ class _SaveConfirmDialog(QtWidgets.QDialog):
         return self._purge_cb.isChecked() and self._recollect_cb.isChecked()
 
 
-def _query_all_exif_keys_merged() -> list[tuple[str, int]]:
+def _query_all_keys_merged() -> list[tuple[str, int]]:
     merged: dict[str, int] = {}
     for db_name in list_setting_db_names():
         db_path = data_db_path(db_name)
@@ -785,11 +794,11 @@ def _query_all_exif_keys_merged() -> list[tuple[str, int]]:
         try:
             conn = sqlite3.connect(uri, timeout=1.0, uri=True, check_same_thread=False)
             apply_read_pragmas(conn)
-            rows = conn.execute("SELECT SUBSTR(key, 6) AS short_key, COUNT(*) AS freq FROM meta_info WHERE key LIKE 'exif.%' GROUP BY short_key").fetchall()
+            rows = conn.execute("SELECT SUBSTR(key, 10) AS short_key, COUNT(*) AS freq FROM meta_info WHERE key LIKE 'exiftool.%' GROUP BY short_key").fetchall()
             for row in rows:
                 merged[row[0]] = merged.get(row[0], 0) + row[1]
         except Exception as e:
-            AppLogger.warning(f"[ExifSettings] Failed to query keys for {db_name}: {e}", exc=e)
+            AppLogger.warning(f"[ExifToolSettings] Failed to query keys for {db_name}: {e}", exc=e)
         finally:
             if conn:
                 conn.close()
@@ -816,7 +825,7 @@ def _query_sample_values_all(key: str, limit: int = 10) -> list[tuple[str, str, 
                 results.append((db_name, row[0], row[1]))
             remaining -= len(rows)
         except Exception as e:
-            AppLogger.warning(f"[ExifSettings] Sample query failed for {key} in {db_name}: {e}", exc=e)
+            AppLogger.warning(f"[ExifToolSettings] Sample query failed for {key} in {db_name}: {e}", exc=e)
         finally:
             if conn:
                 conn.close()

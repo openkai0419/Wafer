@@ -1,5 +1,6 @@
 import os
 import platform
+import re
 import shutil
 import tempfile
 import urllib.request
@@ -9,9 +10,11 @@ _LIB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib")
 _EXIFTOOL_EXE = "exiftool.exe"
 _EXIFTOOL_PATH = os.path.join(_LIB_DIR, _EXIFTOOL_EXE)
 
-_EXIFTOOL_VERSION = "13.25"
-_ARCHIVE_URL = f"https://sourceforge.net/projects/exiftool/files/exiftool-{_EXIFTOOL_VERSION}_64.zip/download"
-_ALLOWED_HOSTS = ("sourceforge.net",)
+_VERSION_URL = "https://exiftool.org/ver.txt"
+_ARCHIVE_URL_TEMPLATE = "https://sourceforge.net/projects/exiftool/files/exiftool-{version}_64.zip/download"
+_ALLOWED_HOSTS = ("exiftool.org", "sourceforge.net")
+_VERSION_PATTERN = re.compile(r"^\d+\.\d+$")
+_MAX_VERSION_RESPONSE = 64
 
 _MANUAL_HINT = (
     "Download ExifTool from https://exiftool.org/ "
@@ -74,6 +77,13 @@ def _extract(archive_path: str):
         for info in zf.infolist():
             _validate_archive_path(info.filename, _LIB_DIR)
         zf.extractall(_LIB_DIR)
+    entries = os.listdir(_LIB_DIR)
+    if len(entries) == 1:
+        nested = os.path.join(_LIB_DIR, entries[0])
+        if os.path.isdir(nested):
+            for item in os.listdir(nested):
+                shutil.move(os.path.join(nested, item), os.path.join(_LIB_DIR, item))
+            os.rmdir(nested)
     for name in os.listdir(_LIB_DIR):
         lower = name.lower()
         if lower.startswith("exiftool") and lower.endswith(".exe") and name != _EXIFTOOL_EXE:
@@ -90,6 +100,21 @@ def get_exiftool_path() -> str | None:
     return None
 
 
+def _fetch_latest_version() -> str:
+    req = urllib.request.Request(
+        _VERSION_URL,
+        headers={"User-Agent": "wafer-exiftool-plugin"},
+    )
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        body = resp.read(_MAX_VERSION_RESPONSE + 1)
+        if len(body) > _MAX_VERSION_RESPONSE:
+            raise RuntimeError("ver.txt response too large")
+    version = body.decode("ascii", errors="replace").strip()
+    if not _VERSION_PATTERN.match(version):
+        raise RuntimeError(f"Unexpected version format: {version!r}")
+    return version
+
+
 def ensure_exiftool():
     if os.path.isfile(_EXIFTOOL_PATH):
         return True
@@ -101,9 +126,11 @@ def ensure_exiftool():
         )
     tmp = tempfile.mkdtemp()
     try:
-        _log(f"[exiftool] Downloading ExifTool: {_ARCHIVE_URL}")
+        version = _fetch_latest_version()
+        archive_url = _ARCHIVE_URL_TEMPLATE.format(version=version)
+        _log(f"[exiftool] Downloading ExifTool v{version}: {archive_url}")
         archive = os.path.join(tmp, "exiftool.zip")
-        _safe_download(_ARCHIVE_URL, archive, allowed_hosts=_ALLOWED_HOSTS)
+        _safe_download(archive_url, archive, allowed_hosts=_ALLOWED_HOSTS)
         _extract(archive)
         if not os.path.isfile(_EXIFTOOL_PATH):
             raise FileNotFoundError(f"{_EXIFTOOL_EXE} not found after extraction")

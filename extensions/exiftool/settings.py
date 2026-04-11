@@ -3,7 +3,7 @@ import os
 from configparser import ConfigParser
 
 _INI_FILENAME = "viewer_plugins.ini"
-_SECTION = "exif"
+_SECTION = "exiftool"
 _MODE_KEY = "filter_mode"
 _KEYS_KEY = "filter_keys"
 

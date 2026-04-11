@@ -18,11 +18,11 @@ Plugin-based extensions add support for any file format. Currently Windows only 
 
 ## Installation
 
-### in packaged
+### from zip
 
 Coming soon.
 
-### in local python
+### at local python
 
 #### Requirements
 

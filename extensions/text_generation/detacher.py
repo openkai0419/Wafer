@@ -10,10 +10,10 @@ class NovelAiImageDetacher(BaseSingletonDetacher):
     NAME = "novelai"
     PRIORITY = 100
     DEFAULT_ENABLED = False
-    TRIGGER_KEYS = ("exif.Comment",)
+    TRIGGER_KEYS = ("exiftool.PNG:Comment",)
 
     def process(self, path: str, file_info: tuple, metadata: dict) -> DetacherResult:
-        raw = metadata.get("exif.Comment")
+        raw = metadata.get("exiftool.PNG:Comment")
         if raw is None:
             return None
         try:
@@ -25,4 +25,4 @@ class NovelAiImageDetacher(BaseSingletonDetacher):
             AppLogger.debug(f"NovelAiImageDetacher JSON was not dict: {raw}")
             return DetacherResult(source=path, status=False)
         meta_info = {k: str(v) for k, v in parsed.items() if k in using_keywords}
-        return DetacherResult(source=path, status=True, meta_info=meta_info, delete_keys=["exif.Comment", "exif.Description"])
+        return DetacherResult(source=path, status=True, meta_info=meta_info, delete_keys=["exiftool.PNG:Comment", "exiftool.PNG:Description"])

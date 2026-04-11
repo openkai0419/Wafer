@@ -80,20 +80,20 @@ class TestIsDateKey:
         assert is_date_key("collected") is True
 
     def test_exif_datetime(self):
-        assert is_date_key("exif.DateTimeOriginal") is True
-        assert is_date_key("exif.DateTime") is True
-        assert is_date_key("exif.DateTimeDigitized") is True
+        assert is_date_key("exiftool.DateTimeOriginal") is True
+        assert is_date_key("exiftool.DateTime") is True
+        assert is_date_key("exiftool.DateTimeDigitized") is True
 
     def test_gps_date(self):
-        assert is_date_key("exif.GPSDateStamp") is True
-        assert is_date_key("exif.GPSTimeStamp") is True
+        assert is_date_key("exiftool.GPSDateStamp") is True
+        assert is_date_key("exiftool.GPSTimeStamp") is True
 
     def test_non_date_keys(self):
         assert is_date_key("size") is False
         assert is_date_key("name") is False
         assert is_date_key("path") is False
-        assert is_date_key("exif.LensMake") is False
-        assert is_date_key("exif.Model") is False
+        assert is_date_key("exiftool.LensMake") is False
+        assert is_date_key("exiftool.Model") is False
 
 
 class TestDateStrToEpoch:
@@ -337,14 +337,14 @@ class TestQueryExecution:
         t2 = datetime(2023, 1, 1, 10, 0, 0, tzinfo=timezone.utc).timestamp()
         files = ["photo1.jpg", "photo2.jpg"]
         meta = [
-            ("photo1.jpg", "exif.DateTimeOriginal", "2024:06:15 10:00:00", t1),
-            ("photo2.jpg", "exif.DateTimeOriginal", "2023:01:01 10:00:00", t2),
+            ("photo1.jpg", "exiftool.DateTimeOriginal", "2024:06:15 10:00:00", t1),
+            ("photo2.jpg", "exiftool.DateTimeOriginal", "2023:01:01 10:00:00", t2),
         ]
         db = _setup_db(tmp_path, files=files, meta_num=meta)
         result = _query(
             db,
             {
-                "target_key": "exif.DateTimeOriginal",
+                "target_key": "exiftool.DateTimeOriginal",
                 "mode": "range",
                 "range_from": "2024/01/01",
                 "range_to": "2024/12/31",
@@ -355,12 +355,12 @@ class TestQueryExecution:
 
     def test_null_value_num_excluded(self, tmp_path):
         files = ["a.png"]
-        meta = [("a.png", "exif.LensMake", "Canon", None)]
+        meta = [("a.png", "exiftool.LensMake", "Canon", None)]
         db = _setup_db(tmp_path, files=files, meta_num=meta)
         result = _query(
             db,
             {
-                "target_key": "exif.LensMake",
+                "target_key": "exiftool.LensMake",
                 "mode": "preset",
                 "preset_value": 7,
                 "preset_unit": "days",

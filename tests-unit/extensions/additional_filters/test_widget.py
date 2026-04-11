@@ -298,10 +298,10 @@ class TestDateRangeWidget:
             ("modified", 100),
             ("created", 80),
             ("collected", 50),
-            ("exif.DateTimeOriginal", 60),
+            ("exiftool.DateTimeOriginal", 60),
             ("size", 100),
             ("name", 100),
-            ("exif.LensMake", 40),
+            ("exiftool.LensMake", 40),
         ]
         w._on_key_store_updated(data)
         all_items = []

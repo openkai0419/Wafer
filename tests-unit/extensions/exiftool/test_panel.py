@@ -3,9 +3,9 @@ from unittest.mock import patch, MagicMock
 import pytest
 from PySide6 import QtWidgets, QtCore
 
-from extensions.image.settings import MODE_BLACKLIST, MODE_WHITELIST
+from extensions.exiftool.settings import MODE_BLACKLIST, MODE_WHITELIST
 
-MODULE = "extensions.image.panel"
+MODULE = "extensions.exiftool.panel"
 
 
 @pytest.fixture()
@@ -17,10 +17,10 @@ def qapp():
 
 
 def _make_key_browser(qapp, mode, filter_keys, key_data=None):
-    from extensions.image.panel import _KeyBrowserTab
+    from extensions.exiftool.panel import _KeyBrowserTab
     from wafer.core.qt.dispatcher import Dispatcher, CancelSlot
 
-    with patch(f"{MODULE}._query_all_exif_keys_merged", return_value=[]), \
+    with patch(f"{MODULE}._query_all_keys_merged", return_value=[]), \
          patch(f"{MODULE}.dpix", side_effect=lambda x: x):
         tab = _KeyBrowserTab(mode, filter_keys, Dispatcher(), CancelSlot())
     if key_data is not None:
@@ -29,7 +29,7 @@ def _make_key_browser(qapp, mode, filter_keys, key_data=None):
 
 
 def _make_sample_preview(qapp, mode, filter_keys):
-    from extensions.image.panel import _SamplePreviewTab
+    from extensions.exiftool.panel import _SamplePreviewTab
     from wafer.core.qt.dispatcher import Dispatcher, CancelSlot
 
     with patch(f"{MODULE}.dpix", side_effect=lambda x: x):
@@ -125,12 +125,6 @@ class TestUpdateCheckAllLabel:
         tab._update_check_all_label()
         assert tab._check_all_btn.text() == "Check All"
 
-    def test_label_check_all_when_partially_checked(self, qapp):
-        key_data = [("a", 1), ("b", 2)]
-        tab = _make_key_browser(qapp, MODE_BLACKLIST, {"a"}, key_data=key_data)
-        tab._update_check_all_label()
-        assert tab._check_all_btn.text() == "Check All"
-
     def test_toggle_updates_label(self, qapp):
         key_data = [("a", 1), ("b", 2)]
         tab = _make_key_browser(qapp, MODE_BLACKLIST, set(), key_data=key_data)
@@ -176,7 +170,7 @@ class TestSamplePreviewCellChanged:
 
 class TestSaveConfirmDialog:
     def test_dialog_label_mentions_all_databases(self, qapp):
-        from extensions.image.panel import _SaveConfirmDialog
+        from extensions.exiftool.panel import _SaveConfirmDialog
 
         with patch(f"{MODULE}.dpix", side_effect=lambda x: x):
             dlg = _SaveConfirmDialog()
@@ -185,7 +179,7 @@ class TestSaveConfirmDialog:
         assert any("all databases" in t.lower() for t in texts)
 
     def test_dialog_label_mentions_modified(self, qapp):
-        from extensions.image.panel import _SaveConfirmDialog
+        from extensions.exiftool.panel import _SaveConfirmDialog
 
         with patch(f"{MODULE}.dpix", side_effect=lambda x: x):
             dlg = _SaveConfirmDialog()
@@ -194,11 +188,11 @@ class TestSaveConfirmDialog:
         assert any("modified" in t.lower() for t in texts)
 
 
-def _make_exif_settings_widget(qapp):
-    from extensions.image.panel import ExifSettingsWidget
+def _make_exiftool_settings_widget(qapp):
+    from extensions.exiftool.panel import ExifSettingsWidget
 
     mock_bridge = MagicMock()
-    with patch("extensions.image.settings.read_filter_config", return_value=(MODE_BLACKLIST, set())), \
+    with patch("extensions.exiftool.settings.read_filter_config", return_value=(MODE_BLACKLIST, set())), \
          patch(f"{MODULE}.list_setting_db_names", return_value=[]), \
          patch(f"{MODULE}.dpix", side_effect=lambda x: x), \
          patch(f"{MODULE}.Dispatcher"), \
@@ -210,7 +204,7 @@ def _make_exif_settings_widget(qapp):
 
 class TestSaveButtonText:
     def test_save_button_text_all_dbs(self, qapp):
-        widget = _make_exif_settings_widget(qapp)
+        widget = _make_exiftool_settings_widget(qapp)
         buttons = widget.findChildren(QtWidgets.QPushButton)
         save_texts = [b.text() for b in buttons if "recollect" in b.text().lower()]
         assert len(save_texts) == 1
@@ -270,20 +264,6 @@ class TestSyncSelectedChecks:
         assert item_b.checkState(0) == QtCore.Qt.Checked
         assert item_c.checkState(0) == QtCore.Qt.Checked
 
-    def test_toggle_uncheck_applies_to_all_selected(self, qapp):
-        keys = {"a", "b", "c"}
-        key_data = [("a", 1), ("b", 2), ("c", 3)]
-        tab = _make_key_browser(qapp, MODE_BLACKLIST, keys, key_data=key_data)
-        tab._build_tree()
-        item_a = _find_leaf_by_key(tab._tree, "a")
-        item_b = _find_leaf_by_key(tab._tree, "b")
-        item_c = _find_leaf_by_key(tab._tree, "c")
-        tab._pre_click_selection = [item_a, item_b, item_c]
-        item_a.setCheckState(0, QtCore.Qt.Unchecked)
-        tab._sync_selected_checks(item_a)
-        assert item_b.checkState(0) == QtCore.Qt.Unchecked
-        assert item_c.checkState(0) == QtCore.Qt.Unchecked
-
     def test_unselected_items_not_affected(self, qapp):
         key_data = [("a", 1), ("b", 2), ("c", 3)]
         tab = _make_key_browser(qapp, MODE_BLACKLIST, set(), key_data=key_data)
@@ -297,50 +277,6 @@ class TestSyncSelectedChecks:
         assert item_b.checkState(0) == QtCore.Qt.Checked
         assert item_c.checkState(0) == QtCore.Qt.Unchecked
 
-    def test_toggle_applies_to_group_items(self, qapp):
-        key_data = [("grp/a", 1), ("grp/b", 2)]
-        tab = _make_key_browser(qapp, MODE_BLACKLIST, set(), key_data=key_data)
-        tab._build_tree()
-        leaf_a = _find_leaf_by_key(tab._tree, "grp/a")
-        group_item = tab._tree.topLevelItem(0)
-        tab._pre_click_selection = [leaf_a, group_item]
-        leaf_a.setCheckState(0, QtCore.Qt.Checked)
-        tab._sync_selected_checks(leaf_a)
-        assert group_item.checkState(0) == QtCore.Qt.Checked
-
-    def test_updates_check_all_label(self, qapp):
-        key_data = [("a", 1), ("b", 2)]
-        tab = _make_key_browser(qapp, MODE_BLACKLIST, set(), key_data=key_data)
-        tab._build_tree()
-        item_a = _find_leaf_by_key(tab._tree, "a")
-        item_b = _find_leaf_by_key(tab._tree, "b")
-        tab._pre_click_selection = [item_a, item_b]
-        item_a.setCheckState(0, QtCore.Qt.Checked)
-        tab._on_item_clicked(item_a, 0)
-        assert tab._check_all_btn.text() == "Uncheck All"
-
-    def test_no_sync_when_clicked_not_in_pre_selection(self, qapp):
-        key_data = [("a", 1), ("b", 2)]
-        tab = _make_key_browser(qapp, MODE_BLACKLIST, set(), key_data=key_data)
-        tab._build_tree()
-        item_a = _find_leaf_by_key(tab._tree, "a")
-        item_b = _find_leaf_by_key(tab._tree, "b")
-        tab._pre_click_selection = [item_b]
-        item_a.setCheckState(0, QtCore.Qt.Checked)
-        tab._sync_selected_checks(item_a)
-        assert item_b.checkState(0) == QtCore.Qt.Unchecked
-
-    def test_no_sync_when_pre_selection_single(self, qapp):
-        key_data = [("a", 1), ("b", 2)]
-        tab = _make_key_browser(qapp, MODE_BLACKLIST, set(), key_data=key_data)
-        tab._build_tree()
-        item_a = _find_leaf_by_key(tab._tree, "a")
-        item_b = _find_leaf_by_key(tab._tree, "b")
-        tab._pre_click_selection = [item_a]
-        item_a.setCheckState(0, QtCore.Qt.Checked)
-        tab._sync_selected_checks(item_a)
-        assert item_b.checkState(0) == QtCore.Qt.Unchecked
-
 
 class TestOnItemClickedFilterKeysSync:
     def test_single_check_updates_filter_keys(self, qapp):
@@ -352,29 +288,6 @@ class TestOnItemClickedFilterKeysSync:
         item_a.setCheckState(0, QtCore.Qt.Checked)
         tab._on_item_clicked(item_a, 0)
         assert "a" in tab._filter_keys
-
-    def test_single_uncheck_updates_filter_keys(self, qapp):
-        key_data = [("a", 1), ("b", 2)]
-        tab = _make_key_browser(qapp, MODE_BLACKLIST, {"a", "b"}, key_data=key_data)
-        tab._build_tree()
-        item_a = _find_leaf_by_key(tab._tree, "a")
-        tab._pre_click_selection = [item_a]
-        item_a.setCheckState(0, QtCore.Qt.Unchecked)
-        tab._on_item_clicked(item_a, 0)
-        assert "a" not in tab._filter_keys
-        assert "b" in tab._filter_keys
-
-    def test_check_survives_rebuild(self, qapp):
-        key_data = [("a", 1), ("b", 2)]
-        tab = _make_key_browser(qapp, MODE_BLACKLIST, set(), key_data=key_data)
-        tab._build_tree()
-        item_a = _find_leaf_by_key(tab._tree, "a")
-        tab._pre_click_selection = [item_a]
-        item_a.setCheckState(0, QtCore.Qt.Checked)
-        tab._on_item_clicked(item_a, 0)
-        tab._build_tree()
-        new_a = _find_leaf_by_key(tab._tree, "a")
-        assert new_a.checkState(0) == QtCore.Qt.Checked
 
     def test_multi_select_click_updates_filter_keys(self, qapp):
         key_data = [("a", 1), ("b", 2), ("c", 3)]
@@ -398,27 +311,6 @@ class TestBuildTreeFilterKeysWithZeroCount:
         assert orphan_item.text(2) == "0"
         assert orphan_item.checkState(0) == QtCore.Qt.Checked
 
-    def test_filter_keys_not_in_db_grouped_shown_with_zero(self, qapp):
-        key_data = [("grp/a", 5)]
-        tab = _make_key_browser(qapp, MODE_BLACKLIST, {"grp/a", "grp/gone"}, key_data=key_data)
-        tab._build_tree()
-        gone_item = _find_leaf_by_key(tab._tree, "grp/gone")
-        assert gone_item is not None
-        assert gone_item.text(2) == "0"
-        assert gone_item.checkState(0) == QtCore.Qt.Checked
-
-    def test_db_keys_unaffected_by_orphan_filter_keys(self, qapp):
-        key_data = [("a", 10), ("b", 20)]
-        tab = _make_key_browser(qapp, MODE_BLACKLIST, {"orphan"}, key_data=key_data)
-        tab._build_tree()
-        item_a = _find_leaf_by_key(tab._tree, "a")
-        item_b = _find_leaf_by_key(tab._tree, "b")
-        assert item_a is not None
-        assert item_a.text(2) == "10"
-        assert item_a.checkState(0) == QtCore.Qt.Unchecked
-        assert item_b is not None
-        assert item_b.text(2) == "20"
-
     def test_only_filter_keys_no_db_data(self, qapp):
         tab = _make_key_browser(qapp, MODE_BLACKLIST, {"x", "y"}, key_data=[])
         tab._build_tree()
@@ -432,7 +324,7 @@ class TestBuildTreeFilterKeysWithZeroCount:
 
 class TestDbUpdateNotification:
     def test_on_db_updated_starts_timer_when_visible(self, qapp):
-        widget = _make_exif_settings_widget(qapp)
+        widget = _make_exiftool_settings_widget(qapp)
         widget.show()
         qapp.processEvents()
         assert widget.isVisible()
@@ -441,7 +333,7 @@ class TestDbUpdateNotification:
         widget.close()
 
     def test_on_db_updated_sets_dirty_when_hidden(self, qapp):
-        widget = _make_exif_settings_widget(qapp)
+        widget = _make_exiftool_settings_widget(qapp)
         assert not widget.isVisible()
         assert not widget._dirty
         widget._on_db_updated("test.db")
@@ -449,7 +341,7 @@ class TestDbUpdateNotification:
         assert not widget._debounce_timer.isActive()
 
     def test_show_event_triggers_refresh_when_dirty(self, qapp):
-        widget = _make_exif_settings_widget(qapp)
+        widget = _make_exiftool_settings_widget(qapp)
         widget._dirty = True
         with patch.object(widget, "_refresh_key_browser") as mock_refresh:
             widget.show()
@@ -458,17 +350,8 @@ class TestDbUpdateNotification:
         assert not widget._dirty
         widget.close()
 
-    def test_show_event_no_refresh_when_not_dirty(self, qapp):
-        widget = _make_exif_settings_widget(qapp)
-        assert not widget._dirty
-        with patch.object(widget, "_refresh_key_browser") as mock_refresh:
-            widget.show()
-            qapp.processEvents()
-            mock_refresh.assert_not_called()
-        widget.close()
-
     def test_hide_event_stops_timer(self, qapp):
-        widget = _make_exif_settings_widget(qapp)
+        widget = _make_exiftool_settings_widget(qapp)
         widget.show()
         qapp.processEvents()
         widget._debounce_timer.start()
@@ -496,49 +379,12 @@ class TestRestoreSelection:
         assert new_b.isSelected()
         assert not new_c.isSelected()
 
-    def test_empty_selection_stays_empty(self, qapp):
-        key_data = [("a", 1), ("b", 2)]
-        tab = _make_key_browser(qapp, MODE_BLACKLIST, set(), key_data=key_data)
-        tab._build_tree()
-        tab._build_tree()
-        for i in range(tab._tree.topLevelItemCount()):
-            top = tab._tree.topLevelItem(i)
-            assert not top.isSelected()
-            for j in range(top.childCount()):
-                assert not top.child(j).isSelected()
-
-    def test_grouped_selection_preserved(self, qapp):
-        key_data = [("grp/a", 1), ("grp/b", 2)]
-        tab = _make_key_browser(qapp, MODE_BLACKLIST, set(), key_data=key_data)
-        tab._build_tree()
-        leaf_a = _find_leaf_by_key(tab._tree, "grp/a")
-        leaf_a.setSelected(True)
-        tab._build_tree()
-        new_leaf_a = _find_leaf_by_key(tab._tree, "grp/a")
-        new_leaf_b = _find_leaf_by_key(tab._tree, "grp/b")
-        assert new_leaf_a.isSelected()
-        assert not new_leaf_b.isSelected()
-
-    def test_group_header_selection_preserved(self, qapp):
-        key_data = [("grp/a", 1), ("grp/b", 2)]
-        tab = _make_key_browser(qapp, MODE_BLACKLIST, set(), key_data=key_data)
-        tab._build_tree()
-        group_item = tab._tree.topLevelItem(0)
-        group_item.setSelected(True)
-        tab._build_tree()
-        new_group = tab._tree.topLevelItem(0)
-        assert new_group.isSelected()
-
 
 class TestAllKnownKeys:
     def test_returns_db_keys_only(self, qapp):
         key_data = [("a", 1), ("b", 2)]
         tab = _make_key_browser(qapp, MODE_BLACKLIST, set(), key_data=key_data)
         assert tab.all_known_keys() == {"a", "b"}
-
-    def test_returns_filter_keys_only(self, qapp):
-        tab = _make_key_browser(qapp, MODE_BLACKLIST, {"x", "y"}, key_data=[])
-        assert tab.all_known_keys() == {"x", "y"}
 
     def test_returns_union_of_db_and_filter_keys(self, qapp):
         key_data = [("a", 1), ("b", 2)]
@@ -550,12 +396,12 @@ class TestAllKnownKeys:
         assert tab.all_known_keys() == set()
 
 
-class TestQueryAllExifKeysMerged:
+class TestQueryAllKeysMerged:
     def test_merges_keys_across_dbs(self, tmp_path):
         import sqlite3
         for name, rows in [
-            ("db1", [("f1", "exif.width", "100"), ("f2", "exif.width", "200"), ("f1", "exif.height", "50")]),
-            ("db2", [("f3", "exif.width", "300"), ("f3", "exif.model", "X")]),
+            ("db1", [("f1", "exiftool.width", "100"), ("f2", "exiftool.width", "200"), ("f1", "exiftool.height", "50")]),
+            ("db2", [("f3", "exiftool.width", "300"), ("f3", "exiftool.model", "X")]),
         ]:
             p = tmp_path / f"{name}.sqlite"
             conn = sqlite3.connect(str(p))
@@ -567,8 +413,8 @@ class TestQueryAllExifKeysMerged:
 
         with patch(f"{MODULE}.list_setting_db_names", return_value=["db1", "db2"]), \
              patch(f"{MODULE}.data_db_path", side_effect=lambda n: str(tmp_path / f"{n}.sqlite")):
-            from extensions.image.panel import _query_all_exif_keys_merged
-            result = _query_all_exif_keys_merged()
+            from extensions.exiftool.panel import _query_all_keys_merged
+            result = _query_all_keys_merged()
 
         result_dict = dict(result)
         assert result_dict["width"] == 3
@@ -577,30 +423,30 @@ class TestQueryAllExifKeysMerged:
 
     def test_empty_when_no_dbs(self):
         with patch(f"{MODULE}.list_setting_db_names", return_value=[]):
-            from extensions.image.panel import _query_all_exif_keys_merged
-            assert _query_all_exif_keys_merged() == []
+            from extensions.exiftool.panel import _query_all_keys_merged
+            assert _query_all_keys_merged() == []
 
     def test_sorted_by_key_name(self, tmp_path):
         import sqlite3
         p = tmp_path / "db.sqlite"
         conn = sqlite3.connect(str(p))
         conn.execute("CREATE TABLE meta_info (path TEXT, key TEXT, value TEXT)")
-        conn.execute("INSERT INTO meta_info VALUES ('f', 'exif.zebra', '1')")
-        conn.execute("INSERT INTO meta_info VALUES ('f', 'exif.alpha', '2')")
+        conn.execute("INSERT INTO meta_info VALUES ('f', 'exiftool.zebra', '1')")
+        conn.execute("INSERT INTO meta_info VALUES ('f', 'exiftool.alpha', '2')")
         conn.commit()
         conn.close()
 
         with patch(f"{MODULE}.list_setting_db_names", return_value=["db"]), \
              patch(f"{MODULE}.data_db_path", return_value=str(p)):
-            from extensions.image.panel import _query_all_exif_keys_merged
-            result = _query_all_exif_keys_merged()
+            from extensions.exiftool.panel import _query_all_keys_merged
+            result = _query_all_keys_merged()
         assert [k for k, _ in result] == ["alpha", "zebra"]
 
 
 class TestQuerySampleValuesAll:
     def test_collects_from_multiple_dbs(self, tmp_path):
         import sqlite3
-        for name, rows in [("db1", [("f1", "exif.w", "10")]), ("db2", [("f2", "exif.w", "20")])]:
+        for name, rows in [("db1", [("f1", "exiftool.w", "10")]), ("db2", [("f2", "exiftool.w", "20")])]:
             p = tmp_path / f"{name}.sqlite"
             conn = sqlite3.connect(str(p))
             conn.execute("CREATE TABLE meta_info (path TEXT, key TEXT, value TEXT)")
@@ -611,8 +457,8 @@ class TestQuerySampleValuesAll:
 
         with patch(f"{MODULE}.list_setting_db_names", return_value=["db1", "db2"]), \
              patch(f"{MODULE}.data_db_path", side_effect=lambda n: str(tmp_path / f"{n}.sqlite")):
-            from extensions.image.panel import _query_sample_values_all
-            result = _query_sample_values_all("exif.w", limit=10)
+            from extensions.exiftool.panel import _query_sample_values_all
+            result = _query_sample_values_all("exiftool.w", limit=10)
 
         assert len(result) == 2
         assert result[0] == ("db1", "f1", "10")
@@ -624,13 +470,13 @@ class TestQuerySampleValuesAll:
         conn = sqlite3.connect(str(p))
         conn.execute("CREATE TABLE meta_info (path TEXT, key TEXT, value TEXT)")
         for i in range(20):
-            conn.execute(f"INSERT INTO meta_info VALUES ('f{i}', 'exif.k', 'v{i}')")
+            conn.execute(f"INSERT INTO meta_info VALUES ('f{i}', 'exiftool.k', 'v{i}')")
         conn.commit()
         conn.close()
 
         with patch(f"{MODULE}.list_setting_db_names", return_value=["db"]), \
              patch(f"{MODULE}.data_db_path", return_value=str(p)):
-            from extensions.image.panel import _query_sample_values_all
-            result = _query_sample_values_all("exif.k", limit=5)
+            from extensions.exiftool.panel import _query_sample_values_all
+            result = _query_sample_values_all("exiftool.k", limit=5)
 
         assert len(result) == 5

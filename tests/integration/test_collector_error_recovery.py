@@ -112,7 +112,7 @@ class TestOtherCollectorUnaffected:
                 "source": norm,
                 "path": norm,
                 "status": True,
-                "collector": "exif",
+                "collector": "exiftool",
                 "aspect": 1.5,
                 "meta_info": {"width": "300", "height": "200"},
             },
@@ -121,7 +121,7 @@ class TestOtherCollectorUnaffected:
 
         statuses = {cs[1]: cs[2] for cs in parsed["collector_status"]}
         assert statuses["faulty_plugin"] == "fail"
-        assert statuses["exif"] == "ok"
+        assert statuses["exiftool"] == "ok"
 
         meta_keys = [e[1] for e in parsed["meta_info_entries"]]
         assert all(k.startswith("exif.") for k in meta_keys)
@@ -129,9 +129,9 @@ class TestOtherCollectorUnaffected:
 
     def test_mixed_batch_partial_failure(self):
         results = [
-            {"source": "/a.jpg", "path": "/a.jpg", "status": True, "collector": "exif", "meta_info": {"w": "10"}},
-            {"source": "/b.jpg", "path": "/b.jpg", "status": False, "collector": "exif"},
-            {"source": "/c.jpg", "path": "/c.jpg", "status": True, "collector": "exif", "meta_info": {"w": "30"}},
+            {"source": "/a.jpg", "path": "/a.jpg", "status": True, "collector": "exiftool", "meta_info": {"w": "10"}},
+            {"source": "/b.jpg", "path": "/b.jpg", "status": False, "collector": "exiftool"},
+            {"source": "/c.jpg", "path": "/c.jpg", "status": True, "collector": "exiftool", "meta_info": {"w": "30"}},
         ]
         parsed = _parse_batch(results)
         ok_statuses = [cs for cs in parsed["collector_status"] if cs[2] == "ok"]
@@ -160,13 +160,13 @@ class TestFailedCollectorWrittenToDB:
                     "source": norm,
                     "path": norm,
                     "status": False,
-                    "collector": "exif",
+                    "collector": "exiftool",
                 }
             ]
             _write_results(idx.db, results)
 
             row = idx.db.read_conn.execute(
-                "SELECT status FROM collection_status WHERE source=? AND collector='exif'",
+                "SELECT status FROM collection_status WHERE source=? AND collector='exiftool'",
                 (norm,),
             ).fetchone()
             assert row is not None
@@ -185,10 +185,10 @@ class TestFailedCollectorWrittenToDB:
             idx.update_index(str(img_dir))
             norm = normalize_path(str(img_dir / "recover.jpg"))
 
-            fail_results = [{"source": norm, "path": norm, "status": False, "collector": "exif"}]
+            fail_results = [{"source": norm, "path": norm, "status": False, "collector": "exiftool"}]
             _write_results(idx.db, fail_results)
 
-            row = idx.db.read_conn.execute("SELECT status FROM collection_status WHERE source=? AND collector='exif'", (norm,)).fetchone()
+            row = idx.db.read_conn.execute("SELECT status FROM collection_status WHERE source=? AND collector='exiftool'", (norm,)).fetchone()
             assert row[0] == "fail"
 
             ok_results = [
@@ -196,12 +196,12 @@ class TestFailedCollectorWrittenToDB:
                     "source": norm,
                     "path": norm,
                     "status": True,
-                    "collector": "exif",
+                    "collector": "exiftool",
                     "aspect": 2.0,
                     "meta_info": {"width": "400"},
                 }
             ]
             _write_results(idx.db, ok_results)
 
-            row2 = idx.db.read_conn.execute("SELECT status FROM collection_status WHERE source=? AND collector='exif'", (norm,)).fetchone()
+            row2 = idx.db.read_conn.execute("SELECT status FROM collection_status WHERE source=? AND collector='exiftool'", (norm,)).fetchone()
             assert row2[0] == "ok"

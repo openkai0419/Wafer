@@ -22,7 +22,7 @@ def _run_collector(db, collector_name):
     paths = [row[0] for row in pending]
     file_info_map = {row[0]: (row[1], row[2]) for row in pending}
     db.mark_dispatched(paths, collector_name)
-    plugin = collector_resolver.registry.get("exif")()
+    plugin = collector_resolver.registry.get("exiftool")()
     results = []
     for p in paths:
         info = file_info_map.get(p, (0.0, 0))
@@ -89,7 +89,7 @@ class TestSearchDuringIndexing:
             idx.initialize()
             idx.update_index(str(img_dir))
 
-            results = _run_collector(idx.db, "exif")
+            results = _run_collector(idx.db, "exiftool")
 
         write_done = threading.Event()
         search_results = []
@@ -145,7 +145,7 @@ class TestMultipleReadersNoCrash:
         with FileIndexer(db_path, collectors=collectors) as idx:
             idx.initialize()
             idx.update_index(str(img_dir))
-            results = _run_collector(idx.db, "exif")
+            results = _run_collector(idx.db, "exiftool")
             _write_results(idx.db, results)
 
         errors = []
@@ -189,7 +189,7 @@ class TestDBConsistencyAfterConcurrentWrites:
             idx.initialize()
             idx.update_index([str(img_dir_a), str(img_dir_b)])
 
-            results = _run_collector(idx.db, "exif")
+            results = _run_collector(idx.db, "exiftool")
             assert len(results) == 10
             _write_results(idx.db, results)
 
@@ -199,6 +199,6 @@ class TestDBConsistencyAfterConcurrentWrites:
 
         db = FileDB(db_path)
         db.start()
-        ok_count = db.read_conn.execute("SELECT COUNT(*) FROM collection_status WHERE collector='exif' AND status='ok'").fetchone()[0]
+        ok_count = db.read_conn.execute("SELECT COUNT(*) FROM collection_status WHERE collector='exiftool' AND status='ok'").fetchone()[0]
         db.close()
         assert ok_count == 10

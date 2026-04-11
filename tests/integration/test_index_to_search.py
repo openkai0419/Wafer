@@ -48,7 +48,7 @@ def _write_results_to_db(db, results):
 
 
 def _get_exif_plugin():
-    return collector_resolver.registry.get("exif")
+    return collector_resolver.registry.get("exiftool")
 
 
 def _build_populated_db(tmp_path, images):
@@ -68,7 +68,7 @@ def _build_populated_db(tmp_path, images):
         idx.update_index(str(img_dir))
 
         plugin = _get_exif_plugin()()
-        results = _run_collector_for_pending(idx.db, plugin, "exif")
+        results = _run_collector_for_pending(idx.db, plugin, "exiftool")
         _write_results_to_db(idx.db, results)
 
     return db_path, img_dir, created_paths
@@ -127,7 +127,7 @@ class TestIndexToSearch:
             idx.update_index(str(img_dir))
 
             plugin = _get_exif_plugin()()
-            results = _run_collector_for_pending(idx.db, plugin, "exif")
+            results = _run_collector_for_pending(idx.db, plugin, "exiftool")
             _write_results_to_db(idx.db, results)
 
         engine = FileSearchEngine(str(db_path))
@@ -251,7 +251,7 @@ class TestIndexToSearch:
             idx.initialize()
             idx.update_index(str(img_dir))
             plugin = _get_exif_plugin()()
-            results = _run_collector_for_pending(idx.db, plugin, "exif")
+            results = _run_collector_for_pending(idx.db, plugin, "exiftool")
             _write_results_to_db(idx.db, results)
 
         engine = FileSearchEngine(str(db_path))
@@ -267,7 +267,7 @@ class TestIndexToSearch:
             idx.update_index(str(img_dir))
 
             plugin = _get_exif_plugin()()
-            results = _run_collector_for_pending(idx.db, plugin, "exif")
+            results = _run_collector_for_pending(idx.db, plugin, "exiftool")
             _write_results_to_db(idx.db, results)
 
         engine2 = FileSearchEngine(str(db_path))

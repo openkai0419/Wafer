@@ -27,7 +27,7 @@ class TestSmokeCollector:
         try:
             from wafer.app.collector.worker import CollectorWorker
 
-            worker = CollectorWorker("testdb", "exif")
+            worker = CollectorWorker("testdb", "exiftool")
             worker.start()
             try:
                 assert worker._node.wait_registered(timeout=5.0)
@@ -57,7 +57,7 @@ class TestSmokeCollector:
         try:
             from wafer.app.collector.worker import CollectorWorker
 
-            worker = CollectorWorker("testdb", "exif")
+            worker = CollectorWorker("testdb", "exiftool")
             worker.start()
             try:
                 assert worker._node.wait_registered(timeout=5.0)
@@ -92,7 +92,7 @@ class TestSmokeCollector:
         st = os.stat(norm_path)
         info = (st.st_mtime, st.st_size)
 
-        plugin = collector_resolver.registry.get("exif")()
+        plugin = collector_resolver.registry.get("exiftool")()
         result = plugin.process(norm_path, info)
 
         assert result.status is True

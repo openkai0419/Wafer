@@ -92,24 +92,29 @@ def _entry_indexer(name, parent_pid=None):
         with SafeProcessLock(f'{APP_DATA_DIR_NAME}_{name}', parent_pid=parent_pid):
             AppLogger.info(f'indexer start: {name}')
             stop_event = threading.Event()
-            indexer = IndexerProcess(name, stop_event=stop_event)
+            indexer = IndexerProcess(name, stop_event=stop_event, tray_pid=parent_pid)
             indexer.start_watch()
+            shutdown_once = threading.Event()
 
             def shutdown():
+                if shutdown_once.is_set():
+                    return
+                shutdown_once.set()
                 AppLogger.info('[Indexer] Shutting down...')
                 indexer.stop()
                 stop_event.set()
 
-            signal.signal(signal.SIGINT, lambda s, f: shutdown())
-            signal.signal(signal.SIGTERM, lambda s, f: shutdown())
+            signal.signal(signal.SIGINT, lambda s, f: stop_event.set() or shutdown_once.set())
+            signal.signal(signal.SIGTERM, lambda s, f: stop_event.set() or shutdown_once.set())
 
             checker = None
             if parent_pid is not None:
-                checker = ParentProcessChecker(parent_pid, on_orphan=shutdown)
+                checker = ParentProcessChecker(parent_pid, on_orphan=lambda: stop_event.set() or shutdown_once.set())
                 checker.start()
 
             AppLogger.info('[Indexer] Running. Press Ctrl+C to exit.')
             stop_event.wait()
+            shutdown()
 
             if checker:
                 checker.stop()

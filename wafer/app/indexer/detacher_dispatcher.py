@@ -21,6 +21,11 @@ class DetacherDispatcher:
     _singleton_started: set[str] = set()
     _singleton_lock = threading.Lock()
 
+    @classmethod
+    def reset_singleton_state(cls):
+        with cls._singleton_lock:
+            cls._singleton_started.clear()
+
     def __init__(
         self,
         db_name: str,
@@ -29,6 +34,7 @@ class DetacherDispatcher:
         writer: DatabaseWriter,
         progress: ProgressAggregator,
         detachers=None,
+        tray_pid=None,
     ):
         self._db_name = db_name
         self._db_path = Path(db_path)
@@ -37,6 +43,7 @@ class DetacherDispatcher:
         self._progress = progress
         self._detachers = list(detachers or detacher_resolver.names())
         self._per_indexer = [d for d in self._detachers if d not in detacher_resolver.singleton_names()]
+        self._tray_pid = tray_pid
         self._dispatched_paths: dict[str, set[str]] = {}
         self._dispatched_lock = threading.Lock()
         self._read_conn = None
@@ -85,6 +92,7 @@ class DetacherDispatcher:
 
     def _start_detacher_processes(self):
         my_pid = str(os.getpid())
+        singleton_parent = str(self._tray_pid) if self._tray_pid else my_pid
         for plugin in self._per_indexer:
             AppProcess.new_main(
                 "--detacher",
@@ -106,7 +114,7 @@ class DetacherDispatcher:
                         "--plugin",
                         plugin,
                         "--parent-pid",
-                        my_pid,
+                        singleton_parent,
                     )
                     DetacherDispatcher._singleton_started.add(plugin)
                     singletons_launched.append(plugin)

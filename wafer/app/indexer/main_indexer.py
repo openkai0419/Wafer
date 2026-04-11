@@ -22,9 +22,10 @@ from .watch_setting import SettingWatcher
 
 
 class IndexerProcess:
-    def __init__(self, name, stop_event=None):
+    def __init__(self, name, stop_event=None, tray_pid=None):
         self.db_name = name
         self._stop_event = stop_event
+        self._tray_pid = tray_pid
         self.setting_db = None
         self.scheduler = None
         self.writer = None
@@ -86,6 +87,7 @@ class IndexerProcess:
             self.writer,
             progress,
             collectors=collector_names,
+            tray_pid=self._tray_pid,
         )
         self.dispatcher.start(self.zmq)
 
@@ -105,6 +107,7 @@ class IndexerProcess:
                 self.writer,
                 progress,
                 detachers=detacher_names,
+                tray_pid=self._tray_pid,
             )
             self.detacher_dispatcher.start(self.zmq)
             self.detacher_receiver.set_request_dispatch(self.detacher_dispatcher.request_dispatch)

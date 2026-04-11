@@ -1,6 +1,6 @@
 import py_compile
 
-from wafer.app.collector.worker import CollectorWorker, _MAX_WORKERS
+from wafer.app.collector.worker import CollectorWorker, _MAX_WORKERS, _TASK_TIMEOUT, _SHUTDOWN_WAIT
 from wafer.plugin.collector.handler import collector_resolver
 
 
@@ -206,3 +206,38 @@ def test_notify_subscribed():
     name = next(iter(collector_resolver.names()))
     worker = CollectorWorker("test_db", name)
     assert "plugin.notify" in worker._node._handlers
+
+
+def test_constants():
+    assert _TASK_TIMEOUT > 0
+    assert _SHUTDOWN_WAIT > 0
+
+
+def test_handle_batch_rejects_when_stopped():
+    from unittest.mock import MagicMock
+    from wafer.core.ipc.message import Message
+
+    name = next(iter(collector_resolver.names()))
+    worker = CollectorWorker("test_db", name)
+    worker._node = MagicMock()
+    worker._stop.set()
+    msg = Message.build(
+        "collect.batch",
+        {"paths": ["/test/a.jpg"], "file_info": {}},
+        src="test",
+        dst="collector",
+        db="test_db",
+    )
+    result = worker._handle_batch(msg)
+    assert result is True
+
+
+def test_shutdown_cancel_futures():
+    from unittest.mock import MagicMock
+
+    name = next(iter(collector_resolver.names()))
+    worker = CollectorWorker("test_db", name)
+    worker._node = MagicMock()
+    worker._node.stop = MagicMock()
+    worker.stop()
+    assert worker._stop.is_set()

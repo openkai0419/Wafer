@@ -9,6 +9,8 @@ from ...plugin.collector.handler import collector_resolver
 from ...plugin.collector.base import CollectorResult, BaseSingletonCollector
 
 _MAX_WORKERS = 4
+_TASK_TIMEOUT = 120
+_SHUTDOWN_WAIT = 5
 
 
 class CollectorWorker:
@@ -33,7 +35,7 @@ class CollectorWorker:
 
     def stop(self):
         self._stop.set()
-        self._executor.shutdown(wait=False)
+        self._executor.shutdown(wait=True, cancel_futures=True)
         self._node.stop()
         AppLogger.info(f"CollectorWorker stopped: plugin={self.plugin_name}")
 
@@ -46,6 +48,8 @@ class CollectorWorker:
         return True
 
     def _handle_batch(self, msg) -> bool:
+        if self._stop.is_set():
+            return True
         payload = msg.payload
         if not isinstance(payload, dict):
             AppLogger.warning(f"collect.batch: invalid payload type: {type(payload)}")
@@ -82,7 +86,14 @@ class CollectorWorker:
                     AppLogger.warning(f"[Collector] process failed: {p}: {e}", exc=e)
                     return []
 
-            nested = list(self._executor.map(process_one, paths))
+            futures = {self._executor.submit(process_one, p): p for p in paths}
+            nested = []
+            for fut in concurrent.futures.as_completed(futures, timeout=_TASK_TIMEOUT):
+                try:
+                    nested.append(fut.result())
+                except Exception as e:
+                    AppLogger.warning(f"[Collector] future failed: {futures[fut]}: {e}", exc=e)
+                    nested.append([])
             results = [item for items in nested for item in items]
             self._node.send_reliable(
                 "collect.result",
@@ -109,21 +120,26 @@ def run_collector(db_name: str, plugin_name: str, parent_pid: int | None = None)
         with SafeProcessLock(lock_name, parent_pid=parent_pid):
             worker = CollectorWorker(db_name, plugin_name)
             worker.start()
+            shutdown_once = threading.Event()
 
             def shutdown():
+                if shutdown_once.is_set():
+                    return
+                shutdown_once.set()
                 AppLogger.info("[Collector] Shutting down...")
                 worker.stop()
 
-            signal.signal(signal.SIGINT, lambda s, f: shutdown())
-            signal.signal(signal.SIGTERM, lambda s, f: shutdown())
+            signal.signal(signal.SIGINT, lambda s, f: worker._stop.set())
+            signal.signal(signal.SIGTERM, lambda s, f: worker._stop.set())
 
             checker = None
             if parent_pid is not None:
-                checker = ParentProcessChecker(parent_pid, on_orphan=shutdown)
+                checker = ParentProcessChecker(parent_pid, on_orphan=lambda: worker._stop.set())
                 checker.start()
 
             AppLogger.info("[Collector] Running.")
             worker.wait()
+            shutdown()
 
             if checker:
                 checker.stop()

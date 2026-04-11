@@ -21,6 +21,11 @@ class CollectorDispatcher:
     _singleton_started: set[str] = set()
     _singleton_lock = threading.Lock()
 
+    @classmethod
+    def reset_singleton_state(cls):
+        with cls._singleton_lock:
+            cls._singleton_started.clear()
+
     def __init__(
         self,
         db_name: str,
@@ -29,6 +34,7 @@ class CollectorDispatcher:
         writer: DatabaseWriter,
         progress: ProgressAggregator,
         collectors=None,
+        tray_pid=None,
     ):
         self._db_name = db_name
         self._db_path = Path(db_path)
@@ -37,6 +43,7 @@ class CollectorDispatcher:
         self._progress = progress
         self._collectors = list(collectors or collector_resolver.names())
         self._per_indexer = [c for c in self._collectors if c not in collector_resolver.singleton_names()]
+        self._tray_pid = tray_pid
         self._dispatched_paths: dict[str, set[str]] = {}
         self._dispatched_lock = threading.Lock()
         self._read_conn = None
@@ -84,6 +91,7 @@ class CollectorDispatcher:
 
     def _start_collector_processes(self):
         my_pid = str(os.getpid())
+        singleton_parent = str(self._tray_pid) if self._tray_pid else my_pid
         for plugin in self._per_indexer:
             AppProcess.new_main(
                 "--collector",
@@ -105,7 +113,7 @@ class CollectorDispatcher:
                         "--plugin",
                         plugin,
                         "--parent-pid",
-                        my_pid,
+                        singleton_parent,
                     )
                     CollectorDispatcher._singleton_started.add(plugin)
                     singletons_launched.append(plugin)

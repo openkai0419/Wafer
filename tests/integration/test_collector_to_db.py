@@ -19,7 +19,7 @@ def _create_test_image(path, width=200, height=100, fmt="JPEG"):
 
 
 def _get_exif_plugin():
-    return collector_resolver.registry.get("exif")
+    return collector_resolver.registry.get("exiftool")
 
 
 def _file_info(path):
@@ -69,7 +69,7 @@ class TestCollectorPrefixAutoApply:
             idx.update_index(str(img_dir))
 
             plugin_cls = _get_exif_plugin()
-            results = _run_collector(idx.db, plugin_cls, "exif")
+            results = _run_collector(idx.db, plugin_cls, "exiftool")
             assert len(results) == 1
 
             parsed = _parse_batch(results)
@@ -90,11 +90,11 @@ class TestCollectorPrefixAutoApply:
 
             norm = normalize_path(str(img_dir / "alpha.jpg"))
             plugin_cls = _get_exif_plugin()
-            results = _run_collector(idx.db, plugin_cls, "exif")
+            results = _run_collector(idx.db, plugin_cls, "exiftool")
             _write_results(idx.db, results)
 
             row = idx.db.read_conn.execute(
-                "SELECT status FROM collection_status WHERE source=? AND collector='exif'",
+                "SELECT status FROM collection_status WHERE source=? AND collector='exiftool'",
                 (norm,),
             ).fetchone()
             assert row is not None
@@ -115,7 +115,7 @@ class TestCollectorToSearch:
             idx.update_index(str(img_dir))
 
             plugin_cls = _get_exif_plugin()
-            results = _run_collector(idx.db, plugin_cls, "exif")
+            results = _run_collector(idx.db, plugin_cls, "exiftool")
             _write_results(idx.db, results)
 
         engine = FileSearchEngine(str(db_path))
@@ -139,14 +139,14 @@ class TestCollectorToSearch:
             idx.update_index(str(img_dir))
 
             plugin_cls = _get_exif_plugin()
-            results = _run_collector(idx.db, plugin_cls, "exif")
+            results = _run_collector(idx.db, plugin_cls, "exiftool")
             assert len(results) == 3
             _write_results(idx.db, results)
 
             for r in results:
                 assert r["status"] is True
 
-            rows = idx.db.read_conn.execute("SELECT COUNT(*) FROM collection_status WHERE collector='exif' AND status='ok'").fetchone()
+            rows = idx.db.read_conn.execute("SELECT COUNT(*) FROM collection_status WHERE collector='exiftool' AND status='ok'").fetchone()
             assert rows[0] == 3
 
         engine = FileSearchEngine(str(db_path))
@@ -205,7 +205,7 @@ class TestParseBatchPrefixLogic:
             {
                 "source": "test/bad.jpg",
                 "status": False,
-                "collector": "exif",
+                "collector": "exiftool",
                 "meta_info": {"width": "100"},
             }
         ]

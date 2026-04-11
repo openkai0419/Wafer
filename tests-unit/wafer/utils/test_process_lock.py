@@ -157,3 +157,10 @@ class TestFileLock:
             pass
         with file_lock(lock_path):
             pass
+
+
+def test_acquire_timeout_constant():
+    from wafer.utils.process_lock import _ACQUIRE_TIMEOUT
+
+    assert _ACQUIRE_TIMEOUT > 0
+    assert _ACQUIRE_TIMEOUT <= 120

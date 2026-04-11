@@ -118,6 +118,30 @@ def test_per_indexer_excludes_singletons(tmp_path):
             assert name in dispatcher._per_indexer
 
 
+def test_reset_singleton_state():
+    CollectorDispatcher._singleton_started.add("test_plugin_a")
+    CollectorDispatcher._singleton_started.add("test_plugin_b")
+    CollectorDispatcher.reset_singleton_state()
+    assert len(CollectorDispatcher._singleton_started) == 0
+
+
+def test_tray_pid_stored(tmp_path):
+    scheduler = MagicMock()
+    writer = MagicMock()
+    progress = MagicMock()
+    db_path = tmp_path / "test.db"
+    dispatcher = CollectorDispatcher("testdb", db_path, scheduler, writer, progress, tray_pid=12345)
+    assert dispatcher._tray_pid == 12345
+
+
+def test_tray_pid_defaults_none(tmp_path):
+    scheduler = MagicMock()
+    writer = MagicMock()
+    progress = MagicMock()
+    db_path = tmp_path / "test.db"
+    dispatcher = CollectorDispatcher("testdb", db_path, scheduler, writer, progress)
+    assert dispatcher._tray_pid is None
+
 def test_collectors_includes_all(tmp_path):
     scheduler = MagicMock()
     writer = MagicMock()

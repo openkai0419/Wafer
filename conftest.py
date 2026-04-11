@@ -60,6 +60,22 @@ def _close_qt_widgets_after_test():
 def _cleanup_background_resources():
     yield
     try:
+        from wafer.app.indexer.dispatcher import CollectorDispatcher
+        from wafer.app.indexer.detacher_dispatcher import DetacherDispatcher
+
+        CollectorDispatcher.reset_singleton_state()
+        DetacherDispatcher.reset_singleton_state()
+    except Exception:
+        pass
+    try:
+        from wafer.core.platform.process import AppProcess
+
+        children = AppProcess.children(recursive=True)
+        if children:
+            AppProcess.terminate_and_wait(children, timeout=3, kill_timeout=2)
+    except Exception:
+        pass
+    try:
         from PySide6 import QtWidgets
         import shiboken6
 
@@ -85,7 +101,7 @@ def _cleanup_background_resources():
         pass
 
 
-_SUMMARY_PATH = os.path.join(os.path.dirname(__file__), "tests", "test_summary.txt")
+_SUMMARY_PATH = os.environ.get("WAFER_TEST_SUMMARY_PATH", os.path.join(os.path.dirname(__file__), "tests", "test_summary.txt"))
 _test_start_time = 0.0
 _test_counts = {"passed": 0, "failed": 0, "skipped": 0, "error": 0}
 _category_counts: dict[str, dict[str, int]] = {}

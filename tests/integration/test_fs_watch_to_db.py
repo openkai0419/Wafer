@@ -80,6 +80,7 @@ class TestFsWatchToDb:
             watcher.stop()
             scanner.stop()
             scheduler.stop()
+            writer.close()
 
     def test_file_deletion_detected(self, tmp_path):
         img_dir = tmp_path / "watched"
@@ -107,6 +108,7 @@ class TestFsWatchToDb:
             watcher.stop()
             scanner.stop()
             scheduler.stop()
+            writer.close()
 
     def test_file_rename_tracked(self, tmp_path):
         img_dir = tmp_path / "watched"
@@ -145,6 +147,7 @@ class TestFsWatchToDb:
             watcher.stop()
             scanner.stop()
             scheduler.stop()
+            writer.close()
 
     def test_file_modification_triggers_reindex(self, tmp_path):
         img_dir = tmp_path / "watched"
@@ -178,6 +181,7 @@ class TestFsWatchToDb:
             watcher.stop()
             scanner.stop()
             scheduler.stop()
+            writer.close()
 
     def test_rescan_recovers_full_state(self, tmp_path):
         img_dir = tmp_path / "watched"
@@ -201,3 +205,4 @@ class TestFsWatchToDb:
             watcher.stop()
             scanner.stop()
             scheduler.stop()
+            writer.close()

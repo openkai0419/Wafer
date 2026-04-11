@@ -112,6 +112,15 @@ class MarkdownBrowser(QtWidgets.QWidget):
         dark = ThemeManager.instance().is_dark
         self._view.setHtml(_build_full_html(body, dark), self._base_url)
 
+    def apply_loaded(self, text: str, body_html: str, base_url: QtCore.QUrl, allowed_dir: Path):
+        self._source_md = text
+        self._rendered_html = body_html
+        self._base_url = base_url
+        if self._allowed_dir is None:
+            self._allowed_dir = allowed_dir
+        dark = ThemeManager.instance().is_dark
+        self._view.setHtml(_build_full_html(body_html, dark), self._base_url)
+
     def source_markdown(self) -> str:
         return self._source_md
 

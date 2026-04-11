@@ -11,6 +11,7 @@ from ..utils.paths import resolve_data_path
 
 _FILE_LOCK_TIMEOUT = 5.0
 _FILE_LOCK_RETRY = 0.02
+_ACQUIRE_TIMEOUT = 30.0
 
 
 @contextlib.contextmanager
@@ -151,6 +152,7 @@ class SafeProcessLock:
         return data
 
     def acquire(self):
+        deadline = time.monotonic() + _ACQUIRE_TIMEOUT
         while True:
             try:
                 fd = os.open(self.lock_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
@@ -159,6 +161,9 @@ class SafeProcessLock:
                 self.acquired = True
                 return True
             except FileExistsError:
+                if time.monotonic() >= deadline:
+                    AppLogger.warning(f"SafeProcessLock.acquire timeout: {self.lock_file}")
+                    return False
                 try:
                     info = self._load_lock_info()
                     if info is None:

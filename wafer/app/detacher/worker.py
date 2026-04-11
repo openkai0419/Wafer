@@ -9,6 +9,8 @@ from ...plugin.detacher.handler import detacher_resolver
 from ...plugin.detacher.base import DetacherResult, BaseSingletonDetacher
 
 _MAX_WORKERS = 4
+_TASK_TIMEOUT = 120
+_SHUTDOWN_WAIT = 5
 
 
 class DetacherWorker:
@@ -34,7 +36,7 @@ class DetacherWorker:
 
     def stop(self):
         self._stop.set()
-        self._executor.shutdown(wait=False)
+        self._executor.shutdown(wait=True, cancel_futures=True)
         self._node.stop()
         AppLogger.info(f"DetacherWorker stopped: plugin={self.plugin_name}")
 
@@ -47,6 +49,8 @@ class DetacherWorker:
         return True
 
     def _handle_batch(self, msg) -> bool:
+        if self._stop.is_set():
+            return True
         payload = msg.payload
         if not isinstance(payload, dict):
             AppLogger.warning(f"detach.batch: invalid payload type: {type(payload)}")
@@ -79,7 +83,14 @@ class DetacherWorker:
                     AppLogger.warning(f"[Detacher] process failed: {p}: {e}", exc=e)
                     return {}
 
-            results_raw = list(self._executor.map(process_one, paths))
+            futures = {self._executor.submit(process_one, p): p for p in paths}
+            results_raw = []
+            for fut in concurrent.futures.as_completed(futures, timeout=_TASK_TIMEOUT):
+                try:
+                    results_raw.append(fut.result())
+                except Exception as e:
+                    AppLogger.warning(f"[Detacher] future failed: {futures[fut]}: {e}", exc=e)
+                    results_raw.append({})
             results = [r for r in results_raw if r]
             if not results:
                 return
@@ -108,21 +119,26 @@ def run_detacher(db_name: str, plugin_name: str, parent_pid: int | None = None):
         with SafeProcessLock(lock_name, parent_pid=parent_pid):
             worker = DetacherWorker(db_name, plugin_name)
             worker.start()
+            shutdown_once = threading.Event()
 
             def shutdown():
+                if shutdown_once.is_set():
+                    return
+                shutdown_once.set()
                 AppLogger.info("[Detacher] Shutting down...")
                 worker.stop()
 
-            signal.signal(signal.SIGINT, lambda s, f: shutdown())
-            signal.signal(signal.SIGTERM, lambda s, f: shutdown())
+            signal.signal(signal.SIGINT, lambda s, f: worker._stop.set())
+            signal.signal(signal.SIGTERM, lambda s, f: worker._stop.set())
 
             checker = None
             if parent_pid is not None:
-                checker = ParentProcessChecker(parent_pid, on_orphan=shutdown)
+                checker = ParentProcessChecker(parent_pid, on_orphan=lambda: worker._stop.set())
                 checker.start()
 
             AppLogger.info("[Detacher] Running.")
             worker.wait()
+            shutdown()
 
             if checker:
                 checker.stop()

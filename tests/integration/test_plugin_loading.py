@@ -80,7 +80,7 @@ class TestViewerRegistryState:
 
 class TestCollectorRegistryState:
     def test_exif_collector_registered(self):
-        assert "exif" in collector_resolver.names()
+        assert "exiftool" in collector_resolver.names()
 
     def test_ai_tagger_not_registered_by_default(self):
         assert "wd14" not in collector_resolver.names()
@@ -252,7 +252,7 @@ class TestPluginLoaderFreshLoad:
         loader.load_all()
         assert "image" in registries["grid"].names()
         assert "image" not in registries["viewer"].names()
-        assert "exif" not in registries["collector"].names()
+        assert "exiftool" not in registries["collector"].names()
 
     def test_alphabetical_load_order(self):
         registries = self._make_fresh_registries()

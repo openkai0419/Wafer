@@ -43,17 +43,17 @@ def _build_populated_db(tmp_path, images):
         idx.initialize()
         idx.update_index(str(img_dir))
 
-        plugin = collector_resolver.registry.get("exif")()
-        pending = idx.db.get_pending_sources("exif")
+        plugin = collector_resolver.registry.get("exiftool")()
+        pending = idx.db.get_pending_sources("exiftool")
         if pending:
             paths = [row[0] for row in pending]
             file_info_map = {row[0]: (row[1], row[2]) for row in pending}
-            idx.db.mark_dispatched(paths, "exif")
+            idx.db.mark_dispatched(paths, "exiftool")
             results = []
             for p in paths:
                 info = file_info_map.get(p, (0.0, 0))
                 r = plugin.process(p, info).to_dict()
-                r["collector"] = "exif"
+                r["collector"] = "exiftool"
                 results.append(r)
             _write_results_to_db(idx.db, results)
 

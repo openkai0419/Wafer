@@ -7,7 +7,7 @@ from wafer.plugin.collector.base import BaseCollector, BaseCollectorPlugin, Base
 
 
 def _get_exif_plugin():
-    return collector_resolver.registry.get("exif")
+    return collector_resolver.registry.get("exiftool")
 
 
 def test_compile_base():
@@ -25,7 +25,7 @@ def test_base_is_abstract():
 
 def test_exif_plugin_registered():
     names = collector_resolver.names()
-    assert "exif" in names
+    assert "exiftool" in names
 
 
 def test_exif_plugin_priority():
@@ -41,23 +41,23 @@ def test_exif_plugin_match():
 
 def test_get_collector_names():
     names = collector_resolver.names()
-    assert "exif" in names
+    assert "exiftool" in names
 
 
 def test_get_collector_summary():
     info = collector_resolver.summary()
     assert len(info) >= 1
     name, exts = info[0]
-    assert name == "exif"
+    assert name == "exiftool"
     assert ".jpg" in exts
 
 
 def test_collectors_for_path_image():
-    assert "exif" in collector_resolver.collectors_for_path("photo.jpg")
+    assert "exiftool" in collector_resolver.collectors_for_path("photo.jpg")
 
 
 def test_collectors_for_path_non_image():
-    assert "exif" not in collector_resolver.collectors_for_path("doc.txt")
+    assert "exiftool" not in collector_resolver.collectors_for_path("doc.txt")
 
 
 def test_exif_plugin_process_success(tmp_path):
@@ -91,7 +91,7 @@ def test_exif_plugin_process_failure():
 
 def test_registry_get_by_name():
     ExifCollectorPlugin = _get_exif_plugin()
-    assert collector_resolver.registry.get("exif") is ExifCollectorPlugin
+    assert collector_resolver.registry.get("exiftool") is ExifCollectorPlugin
     assert collector_resolver.registry.get("nonexistent") is None
 
 
@@ -188,7 +188,7 @@ def test_notify_to_sends_ipc():
     mock_registry.resolve_node.return_value = mock_node
 
     with patch("wafer.core.commands.binding.instance_registry.InstanceRegistry.instance", return_value=mock_registry):
-        BaseCollectorPlugin.notify_to("exif")
+        BaseCollectorPlugin.notify_to("exiftool")
 
     mock_node.send.assert_called_once_with("plugin.notify", dst="collector-exif")
 
@@ -200,7 +200,7 @@ def test_notify_to_no_node():
     mock_registry.resolve_node.return_value = None
 
     with patch("wafer.core.commands.binding.instance_registry.InstanceRegistry.instance", return_value=mock_registry):
-        BaseCollectorPlugin.notify_to("exif")
+        BaseCollectorPlugin.notify_to("exiftool")
 
 
 def test_singleton_names_excludes_normal():
@@ -224,8 +224,8 @@ def test_batch_size_for_unknown_collector():
 
 
 def test_exif_is_per_indexer():
-    assert "exif" in collector_resolver.per_indexer_names()
-    assert "exif" not in collector_resolver.singleton_names()
+    assert "exiftool" in collector_resolver.per_indexer_names()
+    assert "exiftool" not in collector_resolver.singleton_names()
 
 
 def test_collector_result_to_dict_includes_false_status():

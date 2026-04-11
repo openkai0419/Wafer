@@ -61,7 +61,7 @@ class TestSmokeDetacher:
                 comment_data = json.dumps({"prompt": "a cat", "steps": 20})
                 paths = ["/fake/img1.png", "/fake/img2.png"]
                 file_info = {p: (1.0, 100, "hash123") for p in paths}
-                metadata = {p: {"exif.Comment": comment_data} for p in paths}
+                metadata = {p: {"exiftool.PNG:Comment": comment_data} for p in paths}
 
                 worker._process_batch(paths, file_info, metadata, "testdb")
 
@@ -101,7 +101,7 @@ class TestSmokeDetacher:
 
                 paths = ["/fake/img.png"]
                 file_info = {"/fake/img.png": (1.0, 100, "hash456")}
-                metadata = {"/fake/img.png": {"exif.Comment": "not valid json"}}
+                metadata = {"/fake/img.png": {"exiftool.PNG:Comment": "not valid json"}}
 
                 worker._process_batch(paths, file_info, metadata, "testdb")
 
@@ -120,15 +120,15 @@ class TestSmokeDetacher:
         assert plugin is not None
 
         data = json.dumps({"seed": 42, "model": "nai-v3"})
-        result = plugin.process("/fake/image.png", (1.0, 100), {"exif.Comment": data})
+        result = plugin.process("/fake/image.png", (1.0, 100), {"exiftool.PNG:Comment": data})
 
         assert result.status is True
         assert result.meta_info == {"seed": "42", "model": "nai-v3"}
-        assert result.delete_keys == ["exif.Comment", "exif.Description"]
+        assert result.delete_keys == ["exiftool.PNG:Comment", "exiftool.PNG:Description"]
 
     def test_plugin_fail_on_non_json(self):
         plugin = detacher_resolver.registry.instance("novelai")
-        result = plugin.process("/fake/image.png", (1.0, 100), {"exif.Comment": "plain text"})
+        result = plugin.process("/fake/image.png", (1.0, 100), {"exiftool.PNG:Comment": "plain text"})
         assert result.status is False
 
     def test_plugin_fail_on_missing_key(self):

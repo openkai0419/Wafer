@@ -25,18 +25,18 @@ def _create_nai_image(path, prompt="a cat", model="nai-v3", seed=42):
 
 
 def _run_exif_collector(db):
-    pending = db.get_pending_sources("exif")
+    pending = db.get_pending_sources("exiftool")
     if not pending:
         return []
     paths = [row[0] for row in pending]
     file_info_map = {row[0]: (row[1], row[2]) for row in pending}
-    db.mark_dispatched(paths, "exif")
-    plugin = collector_resolver.registry.get("exif")()
+    db.mark_dispatched(paths, "exiftool")
+    plugin = collector_resolver.registry.get("exiftool")()
     results = []
     for p in paths:
         info = file_info_map.get(p, (0.0, 0))
         r = plugin.process(p, info).to_dict()
-        r["collector"] = "exif"
+        r["collector"] = "exiftool"
         results.append(r)
     return results
 

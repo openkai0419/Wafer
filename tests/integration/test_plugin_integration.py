@@ -102,23 +102,23 @@ class TestGridPluginResolution:
 class TestCollectorPluginResolution:
     def test_exif_collector_registered(self):
         names = collector_resolver.names()
-        assert "exif" in names
+        assert "exiftool" in names
 
     def test_jpg_triggers_exif_collector(self):
         collectors = collector_resolver.collectors_for_path("photo.jpg")
-        assert "exif" in collectors
+        assert "exiftool" in collectors
 
     def test_png_triggers_exif_collector(self):
         collectors = collector_resolver.collectors_for_path("icon.png")
-        assert "exif" in collectors
+        assert "exiftool" in collectors
 
     def test_txt_no_exif_collector(self):
         collectors = collector_resolver.collectors_for_path("readme.txt")
-        assert "exif" not in collectors
+        assert "exiftool" not in collectors
 
     def test_unknown_no_collector(self):
         collectors = collector_resolver.collectors_for_path("data.xyz123")
-        assert len(collectors) == 0 or "exif" not in collectors
+        assert len(collectors) == 0 or "exiftool" not in collectors
 
 
 class TestCollectorProcessExecution:
@@ -126,7 +126,7 @@ class TestCollectorProcessExecution:
         path = tmp_path / "real.jpg"
         _create_test_image(path, 200, 100)
         norm = normalize_path(str(path))
-        plugin = collector_resolver.registry.get("exif")()
+        plugin = collector_resolver.registry.get("exiftool")()
         result = plugin.process(norm, (os.stat(str(path)).st_mtime, os.path.getsize(str(path)), 0.0))
         assert result.status is True
         assert result.source == norm
@@ -136,7 +136,7 @@ class TestCollectorProcessExecution:
         path = tmp_path / "real.png"
         _create_png(path, 64, 64)
         norm = normalize_path(str(path))
-        plugin = collector_resolver.registry.get("exif")()
+        plugin = collector_resolver.registry.get("exiftool")()
         result = plugin.process(norm, (os.stat(str(path)).st_mtime, os.path.getsize(str(path)), 0.0))
         assert result.status is True
         assert result.aspect == 1.0
@@ -145,7 +145,7 @@ class TestCollectorProcessExecution:
         path = tmp_path / "real.bmp"
         _create_bmp(path, 300, 100)
         norm = normalize_path(str(path))
-        plugin = collector_resolver.registry.get("exif")()
+        plugin = collector_resolver.registry.get("exiftool")()
         result = plugin.process(norm, (os.stat(str(path)).st_mtime, os.path.getsize(str(path)), 0.0))
         assert result.status is True
         assert result.aspect == 3.0
@@ -154,7 +154,7 @@ class TestCollectorProcessExecution:
         path = tmp_path / "real.webp"
         _create_webp(path, 200, 200)
         norm = normalize_path(str(path))
-        plugin = collector_resolver.registry.get("exif")()
+        plugin = collector_resolver.registry.get("exiftool")()
         result = plugin.process(norm, (os.stat(str(path)).st_mtime, os.path.getsize(str(path)), 0.0))
         assert result.status is True
         assert result.aspect == 1.0
@@ -317,7 +317,7 @@ class TestIndexingWithVariousFileTypes:
             all_sources = idx.db.read_conn.execute("SELECT source FROM sources").fetchall()
             assert len(all_sources) == 10
 
-            pending = idx.db.get_pending_sources("exif")
+            pending = idx.db.get_pending_sources("exiftool")
             pending_paths = {row[0] for row in pending}
             for img_name in ["photo.jpg", "icon.png", "bitmap.bmp", "web.webp", "anim.gif"]:
                 norm = normalize_path(str(mixed_dir / img_name))

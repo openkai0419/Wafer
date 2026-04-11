@@ -44,3 +44,33 @@ def test_on_notify_calls_plugin():
 
     worker._plugin.on_notify.assert_called_once()
     assert result is True
+
+
+def test_handle_batch_rejects_when_stopped():
+    from wafer.core.ipc.message import Message
+
+    worker = _make_worker()
+    worker._stop.set()
+    msg = Message.build(
+        "detach.batch",
+        {"paths": ["/test/a.jpg"], "file_info": {}, "metadata": {}},
+        src="test",
+        dst="detacher",
+        db="test_db",
+    )
+    result = worker._handle_batch(msg)
+    assert result is True
+
+
+def test_shutdown_cancel_futures():
+    worker = _make_worker()
+    worker._node.stop = MagicMock()
+    worker.stop()
+    assert worker._stop.is_set()
+
+
+def test_constants():
+    from wafer.app.detacher.worker import _TASK_TIMEOUT, _SHUTDOWN_WAIT
+
+    assert _TASK_TIMEOUT > 0
+    assert _SHUTDOWN_WAIT > 0

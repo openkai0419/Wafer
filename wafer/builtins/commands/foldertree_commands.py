@@ -3,6 +3,7 @@ import os
 from PySide6 import QtCore, QtWidgets
 
 from ...core.commands.bridge import ActionKit, Menu
+from ...core.lang.manager import t
 from ...utils.paths import normalize_path
 from ...utils.logs import AppLogger
 from ...ui.dialogs import ConfirmDialog
@@ -163,7 +164,7 @@ def add_folder(ctx):
     w = ctx.get_instance("MainWindow")
     if not w:
         return
-    folder_path = QtWidgets.QFileDialog.getExistingDirectory(w, w.t.tr("Select folder"))
+    folder_path = QtWidgets.QFileDialog.getExistingDirectory(w, t.tr("Select folder"))
     if folder_path:
         w.setting_db.add_parent_folder(folder_path)
         w.folder_view.add_root(folder_path)

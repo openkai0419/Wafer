@@ -111,3 +111,32 @@ def test_section_titles_are_lowercase(qtbot):
         card = w._sections[key]
         assert isinstance(card, CollapsibleCard)
         assert key in card.title()
+
+
+def test_clear_hides_sections_and_shows_placeholder(qtbot):
+    w = MetaViewerWidget()
+    qtbot.addWidget(w)
+    w.set_data(_sample_meta())
+    assert w._placeholder.isHidden()
+    for sec in w._sections.values():
+        assert not sec.isHidden()
+    w.clear()
+    assert not w._placeholder.isHidden()
+    for sec in w._sections.values():
+        assert sec.isHidden()
+
+
+def test_set_data_after_clear_hides_placeholder(qtbot):
+    w = MetaViewerWidget()
+    qtbot.addWidget(w)
+    w.set_data(_sample_meta())
+    w.clear()
+    assert not w._placeholder.isHidden()
+    w.set_data(_sample_meta())
+    assert w._placeholder.isHidden()
+
+
+def test_placeholder_visible_on_init(qtbot):
+    w = MetaViewerWidget()
+    qtbot.addWidget(w)
+    assert not w._placeholder.isHidden()

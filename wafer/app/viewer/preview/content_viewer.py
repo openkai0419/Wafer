@@ -1,11 +1,14 @@
-from PySide6 import QtWidgets
+from PySide6 import QtCore, QtWidgets
 
 from ....utils.formatting import dpix
+from ....core.color.theme import ThemeManager
+from ....core.lang.manager import t
 from ....plugin.viewer.handler import viewer_resolver
 from .image_viewer import ImageDisplayWidget
 
 
 _DEFAULT_WIDGET_NAME = "_default"
+_PLACEHOLDER_PAGE = "_placeholder"
 
 
 class ContentViewerWidget(QtWidgets.QWidget):
@@ -13,6 +16,12 @@ class ContentViewerWidget(QtWidgets.QWidget):
         super().__init__(parent)
         self._stack = QtWidgets.QStackedWidget(self)
         self._stack.setMinimumSize(dpix(200), dpix(200))
+
+        self._placeholder = QtWidgets.QLabel()
+        self._placeholder.setAlignment(QtCore.Qt.AlignCenter)
+        self._placeholder.setWordWrap(True)
+        self._update_placeholder_style()
+        self._stack.addWidget(self._placeholder)
 
         self.image_viewer = ImageDisplayWidget()
         self._stack.addWidget(self.image_viewer)
@@ -27,7 +36,24 @@ class ContentViewerWidget(QtWidgets.QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self._stack)
 
-        self._current_plugin_name: str = _DEFAULT_WIDGET_NAME
+        self._current_plugin_name: str = _PLACEHOLDER_PAGE
+        self._stack.setCurrentWidget(self._placeholder)
+
+        ThemeManager.instance().on_theme_changed.connect(lambda _: self._update_placeholder_style())
+
+    def _update_placeholder_style(self):
+        p = ThemeManager.instance().palette
+        fs = dpix(14)
+        self._placeholder.setText(t("No file selected"))
+        self._placeholder.setStyleSheet(f"QLabel {{ color: {p.text_muted}; font-size: {fs}px; }}")
+
+    def clear(self):
+        if self._current_plugin_name == _DEFAULT_WIDGET_NAME:
+            self.image_viewer.clear()
+        elif self._current_plugin_name != _PLACEHOLDER_PAGE:
+            viewer_resolver.deactivate(self._current_plugin_name)
+        self._stack.setCurrentWidget(self._placeholder)
+        self._current_plugin_name = _PLACEHOLDER_PAGE
 
     def switch_to(self, plugin_name: str):
         if plugin_name == self._current_plugin_name:
@@ -35,7 +61,7 @@ class ContentViewerWidget(QtWidgets.QWidget):
         prev_name = self._current_plugin_name
         if prev_name == _DEFAULT_WIDGET_NAME:
             self.image_viewer.clear()
-        else:
+        elif prev_name != _PLACEHOLDER_PAGE:
             viewer_resolver.deactivate(prev_name)
         widget = self._widget_map.get(plugin_name)
         if widget is None:

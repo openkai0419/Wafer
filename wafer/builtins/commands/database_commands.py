@@ -1,5 +1,6 @@
 from ...core.commands.bridge import ActionKit
 from ...core.commands.command.require import require
+from ...core.lang.manager import t
 from ...utils.paths import list_setting_db_names
 from ...utils.logs import AppLogger
 from ...core.platform.process import AppProcess
@@ -41,9 +42,9 @@ def set_database(ctx, w, name: str = ""):
 @require(w="MainWindow")
 def add_database(ctx, w):
     text = InputDialog.get_text(
-        w.t.tr("Enter a name for the new table"),
-        title=w.t.tr("Create New"),
-        buttons=(w.t.tr("Create"), w.t.tr("Cancel")),
+        t.tr("Enter a name for the new table"),
+        title=t.tr("Create New"),
+        buttons=(t.tr("Create"), t.tr("Cancel")),
         parent=w,
     )
     if text is None:
@@ -63,12 +64,12 @@ def remove_database(ctx, w):
     if w.database_combo.count() <= 1:
         return
     ret = ConfirmDialog.ask(
-        w.t.tr_format("Delete table? : {dbname}", dbname=w.database_name),
-        title=w.t.tr("Delete"),
-        buttons=(w.t.tr("Delete"), w.t.tr("Cancel")),
+        t.tr_format("Delete table? : {dbname}", dbname=w.database_name),
+        title=t.tr("Delete"),
+        buttons=(t.tr("Delete"), t.tr("Cancel")),
         parent=w,
     )
-    if ret == w.t.tr("Delete"):
+    if ret == t.tr("Delete"):
         db_name = w.database_name
         w._node.send_reliable("db.delete", db_name, dst="indexer", db=db_name)
         w.database_combo.removeItem(db_name)

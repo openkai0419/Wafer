@@ -1,4 +1,20 @@
 {
+  "Delete table? : {dbname}": {
+    "en": "Delete table? : {dbname}",
+    "ja": ""
+  },
+  "No file selected": {
+    "en": "No file selected",
+    "ja": ""
+  },
+  "No metadata": {
+    "en": "No metadata",
+    "ja": ""
+  },
+  "add folders from here": {
+    "en": "add folders from here",
+    "ja": ""
+  },
   "Auto Scroll": {
     "en": "Auto Scroll",
     "ja": ""

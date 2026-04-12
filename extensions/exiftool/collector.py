@@ -1,5 +1,10 @@
+import time
+import threading
+
 from wafer.plugin import BaseCollectorPlugin, CollectorResult
 from wafer.utils.logs import AppLogger
+
+_IDLE_TIMEOUT = 120.0
 
 
 class ExifToolCollectorPlugin(BaseCollectorPlugin):
@@ -42,38 +47,71 @@ class ExifToolCollectorPlugin(BaseCollectorPlugin):
     def __init__(self):
         super().__init__()
         self._process = None
+        self._process_lock = threading.Lock()
         self._exe_path: str | None = None
+        self._last_used: float = 0.0
+        self._idle_timer: threading.Timer | None = None
         self._filter_mode: str = "blacklist"
         self._filter_keys: set[str] = set()
         self._load_filter()
 
     def on_notify(self) -> None:
-        if self._process:
-            self._process.stop()
-            self._process = None
+        if self._idle_timer is not None:
+            self._idle_timer.cancel()
+            self._idle_timer = None
+        with self._process_lock:
+            if self._process:
+                self._process.stop()
+                self._process = None
         self._exe_path = None
         self._load_filter()
         AppLogger.info(f"[ExifToolCollector] Reloaded: mode={self._filter_mode}, {len(self._filter_keys)} keys")
+
+    def _touch(self):
+        self._last_used = time.monotonic()
+        if self._idle_timer is not None:
+            self._idle_timer.cancel()
+        t = threading.Timer(_IDLE_TIMEOUT, self._check_idle)
+        t.daemon = True
+        t.start()
+        self._idle_timer = t
+
+    def _check_idle(self):
+        elapsed = time.monotonic() - self._last_used
+        if elapsed < _IDLE_TIMEOUT:
+            return
+        with self._process_lock:
+            if self._process is None:
+                return
+            if time.monotonic() - self._last_used < _IDLE_TIMEOUT:
+                return
+            self._process.stop()
+            self._process = None
+            AppLogger.info("[ExifToolCollector] Process stopped (idle timeout)")
 
     def _ensure_process(self):
         from .parser import ExifToolProcess
 
         if self._process and self._process.alive:
             return self._process
-        if self._exe_path is None:
-            from ._downloader import get_exiftool_path
+        with self._process_lock:
+            if self._process and self._process.alive:
+                return self._process
+            if self._exe_path is None:
+                from ._downloader import get_exiftool_path
 
-            self._exe_path = get_exiftool_path()
-        if self._exe_path is None:
-            return None
-        self._process = ExifToolProcess(self._exe_path)
-        self._process.start()
-        return self._process
+                self._exe_path = get_exiftool_path()
+            if self._exe_path is None:
+                return None
+            self._process = ExifToolProcess(self._exe_path)
+            self._process.start()
+            return self._process
 
     def process(self, path: str, file_info: tuple) -> CollectorResult:
         proc = self._ensure_process()
         if proc is None:
             return CollectorResult(source=path, status=False)
+        self._touch()
 
         data = proc.query(path)
         if data is None:
@@ -109,5 +147,7 @@ class ExifToolCollectorPlugin(BaseCollectorPlugin):
             self._filter_keys = set()
 
     def __del__(self):
+        if self._idle_timer is not None:
+            self._idle_timer.cancel()
         if self._process:
             self._process.stop()

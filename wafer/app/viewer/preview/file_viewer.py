@@ -122,6 +122,13 @@ class FileViewerController(QtCore.QObject):
 
     def _on_path_changed(self, path):
         if not path:
+            self._content_cancel.renew()
+            self._meta_cancel.renew()
+            self._loading_path = None
+            self._pending_meta = None
+            self._pending_content = None
+            self.content_viewer.clear()
+            self.meta_viewer.clear()
             return
         self._loading_path = path
         self._pending_meta = None

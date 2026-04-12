@@ -512,7 +512,7 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
             return
         try:
             dur = self._player.duration
-        except (RuntimeError, AttributeError):
+        except (RuntimeError, AttributeError, SystemError):
             return
         if dur:
             target = self._control_bar.seek_slider.value() / 1000.0 * dur
@@ -531,7 +531,7 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
         try:
             pos = self._player.time_pos
             dur = self._player.duration
-        except (RuntimeError, AttributeError):
+        except (RuntimeError, AttributeError, SystemError):
             return
         self._control_bar.time_label.setText(f"{_format_time(pos)} / {_format_time(dur)}")
         if not self._seek_dragging and pos is not None and dur:
@@ -595,21 +595,27 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
         self._hide_controls()
 
     def _on_app_state_changed(self, state):
-        if state != Qt.ApplicationState.ApplicationActive:
-            if self.pause_in_background and self._player and not self._player.pause:
-                self._paused_by_background = True
-                self._player.pause = True
-                self._update_play_button()
-        else:
-            if self._paused_by_background and self._player and self._path:
-                self._paused_by_background = False
-                self._player.pause = False
-                self._update_play_button()
+        if not self._player:
+            return
+        try:
+            if state != Qt.ApplicationState.ApplicationActive:
+                if self.pause_in_background and not self._player.pause:
+                    self._paused_by_background = True
+                    self._player.pause = True
+                    self._update_play_button()
+            else:
+                if self._paused_by_background and self._path:
+                    self._paused_by_background = False
+                    self._player.pause = False
+                    self._update_play_button()
+        except SystemError:
+            return
 
     def cleanup(self):
         self._pos_timer.stop()
         self._hide_timer.stop()
         self._control_bar.volume_popup.hide()
-        if self._player:
-            self._player.terminate()
-            self._player = None
+        player = self._player
+        self._player = None
+        if player:
+            player.terminate()

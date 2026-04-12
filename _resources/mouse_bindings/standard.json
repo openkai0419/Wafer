@@ -6,7 +6,10 @@
     },
     {
       "key": {"button": "LEFT", "click": "SINGLE", "held": [], "modifiers": []},
-      "scopes": {"GridView": {"id": "grid.click_select_at_pos", "args": {}}}
+      "scopes": {
+        "GridView": {"id": "grid.click_select_at_pos", "args": {}},
+        "VideoView": {"id": "vview.toggle_pause", "args": {}}
+      }
     },
     {
       "key": {"button": "LEFT", "click": "SINGLE", "held": [], "modifiers": ["CTRL"]},
@@ -32,28 +35,34 @@
       "key": {"button": "X1", "click": "SINGLE", "held": [], "modifiers": []},
       "scopes": {
         "ImageView": {"id": "fv.prev_file", "args": {}},
-        "GridView": {"id": "grid.move_to_prev_row", "args": {}}
+        "GridView": {"id": "grid.move_to_prev_row", "args": {}},
+        "VideoView": {"id": "fv.prev_file", "args": {}},
+        "AnimatedView": {"id": "fv.prev_file", "args": {}}
       }
     },
     {
       "key": {"button": "X2", "click": "SINGLE", "held": [], "modifiers": []},
       "scopes": {
         "ImageView": {"id": "fv.next_file", "args": {}},
-        "GridView": {"id": "grid.move_to_next_row", "args": {}}
+        "GridView": {"id": "grid.move_to_next_row", "args": {}},
+        "VideoView": {"id": "fv.next_file", "args": {}},
+        "AnimatedView": {"id": "fv.next_file", "args": {}}
       }
     },
     {
       "key": {"button": "NONE", "click": "WHEEL_UP", "held": [], "modifiers": []},
       "scopes": {
         "ImageView": {"id": "imgv.zoom_in", "args": {}},
-        "GridView": {"id": "grid.scroll_up", "args": {"multiplier": 4}}
+        "GridView": {"id": "grid.scroll_up", "args": {"multiplier": 4}},
+        "VideoView": {"id": "vview.volume_up", "args": {}}
       }
     },
     {
       "key": {"button": "NONE", "click": "WHEEL_DOWN", "held": [], "modifiers": []},
       "scopes": {
         "ImageView": {"id": "imgv.zoom_out", "args": {}},
-        "GridView": {"id": "grid.scroll_down", "args": {"multiplier": 4}}
+        "GridView": {"id": "grid.scroll_down", "args": {"multiplier": 4}},
+        "VideoView": {"id": "vview.volume_down", "args": {}}
       }
     },
     {
@@ -84,7 +93,8 @@
       "key": {"button": "LEFT", "click": "DOUBLE", "held": [], "modifiers": []},
       "scopes": {
         "GridView": {"id": "grid.show_at_pos", "args": {}},
-        "ImageView": {"id": "imgv.toggle_fit_mode", "args": {}}
+        "ImageView": {"id": "file.open", "args": {}},
+        "AnimatedView": {"id": "file.open", "args": {}}
       }
     },
     {
@@ -101,6 +111,18 @@
     {
       "key": {"button": "NONE", "click": "DROP", "held": [], "modifiers": ["SHIFT"]},
       "scopes": {"GridView": {"id": "grid.drop_files_move", "args": {"on_conflict": "ask"}}}
+    },
+    {
+      "key": {"button": "LEFT", "click": "SINGLE", "held": ["RIGHT"], "modifiers": []},
+      "scopes": {
+        "AnimatedView": {"id": "aview.toggle_fit_mode", "args": {}},
+        "ImageView": {"id": "imgv.toggle_fit_mode", "args": {}},
+        "VideoView": {"id": "vview.toggle_fit_mode", "args": {}}
+      }
+    },
+    {
+      "key": {"button": "LEFT", "click": "DOUBLE", "held": ["RIGHT"], "modifiers": []},
+      "scopes": {"GridView": {"id": "file.open", "args": {}}}
     }
   ]
 }

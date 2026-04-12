@@ -8,6 +8,8 @@ from PySide6 import QtCore, QtWidgets
 from ....utils.formatting import dpix
 from ....utils.logs import AppLogger
 from ....core.state import StateStore
+from ....core.color.theme import ThemeManager
+from ....core.lang.manager import t
 from .meta_viewer import MetaRowWidget, CollapsibleCard
 
 _FIXED_SECTION_KEYS = ("source", "file", "tag")
@@ -26,6 +28,12 @@ class MetaViewerWidget(QtWidgets.QWidget):
         self._layout = QtWidgets.QVBoxLayout(self._inner)
         self._layout.setContentsMargins(0, dpix(5), dpix(4), dpix(5))
         self._layout.setSpacing(dpix(4))
+
+        self._placeholder = QtWidgets.QLabel()
+        self._placeholder.setAlignment(QtCore.Qt.AlignCenter)
+        self._update_placeholder_style()
+        self._layout.addWidget(self._placeholder)
+
         self._layout.addStretch(1)
 
         self._area = QtWidgets.QScrollArea(self)
@@ -42,10 +50,26 @@ class MetaViewerWidget(QtWidgets.QWidget):
         store = StateStore.instance()
         store.register("meta_viewer_collapse", self._save_collapse_state, self._restore_collapse_state)
 
+        ThemeManager.instance().on_theme_changed.connect(lambda _: self._update_placeholder_style())
+
+    def _update_placeholder_style(self):
+        p = ThemeManager.instance().palette
+        fs = dpix(13)
+        self._placeholder.setText(t("No metadata"))
+        self._placeholder.setStyleSheet(f"QLabel {{ color: {p.text_muted}; font-size: {fs}px; }}")
+
+    def clear(self):
+        for sec in self._sections.values():
+            sec.hide()
+        self._placeholder.show()
+
     def sizeHint(self) -> QtCore.QSize:
         return QtCore.QSize(dpix(760), super().sizeHint().height())
 
     def set_data(self, meta: dict[str, Any]):
+        self._placeholder.hide()
+        for sec in self._sections.values():
+            sec.show()
         prefixed: dict[str, dict] = meta.get("prefixed", {})
         section_order = list(_FIXED_SECTION_KEYS) + sorted(prefixed.keys())
 

@@ -5,8 +5,24 @@
       "scopes": {"*": {"id": "mousebind", "args": {}}}
     },
     {
-      "key": {"key": "W"},
-      "scopes": {"*": {"id": "keybind", "args": {}}}
+      "key": {"key": "A"},
+      "scopes": {"GridView": {"id": "grid.select_all", "args": {}}}
+    },
+    {
+      "key": {"key": "Down"},
+      "scopes": {"*": {"id": "fv.next_file", "args": {}}}
+    },
+    {
+      "key": {"key": "Del"},
+      "scopes": {"*": {"id": "file.delete", "args": {}}}
+    },
+    {
+      "key": {"modifier": "Control", "key": "A"},
+      "scopes": {"*": {"id": "grid.select_all", "args": {}}}
+    },
+    {
+      "key": {"key": "Up"},
+      "scopes": {"*": {"id": "fv.prev_file", "args": {}}}
     }
   ]
 }

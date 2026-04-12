@@ -1,6 +1,7 @@
 from ...core.commands.bridge import ActionKit
 from ...core.commands.binding.instance_registry import InstanceRegistry
 from ...core.app_settings import app_settings
+from ...core.lang.manager import t
 from ...utils.notifier import Notifier
 from .profile_commands import (
     show_profile_popup,
@@ -29,7 +30,7 @@ def toggle_language(ctx):
     w = _win(ctx)
     if not w:
         return
-    new_locale = "ja" if w.t.current_locale == "en" else "en"
+    new_locale = "ja" if t.current_locale == "en" else "en"
     app_settings.save_immediate("window/language", new_locale)
     Notifier.info(f"Language set to '{new_locale}'. Restart to apply.")
 

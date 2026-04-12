@@ -239,6 +239,31 @@ def test_format_meta_no_collectors_omits_key():
     assert "collected by" not in file_rec
 
 
+class TestPathChangedClear:
+    def _make_controller(self, qtbot):
+        from wafer.app.viewer.preview.file_model import FileViewModel
+        from wafer.app.viewer.preview.meta_panel import MetaViewerWidget
+
+        model = FileViewModel()
+        cv = ContentViewerWidget()
+        mv = MetaViewerWidget()
+        qtbot.addWidget(cv)
+        qtbot.addWidget(mv)
+        w = FileViewerController(model, cv, mv)
+        return w, model, cv, mv
+
+    def test_path_none_clears_viewers(self, qtbot):
+        w, model, cv, mv = self._make_controller(qtbot)
+        from wafer.app.viewer.preview.content_viewer import _PLACEHOLDER_PAGE
+
+        w._on_path_changed(None)
+        assert cv._current_plugin_name == _PLACEHOLDER_PAGE
+        assert not mv._placeholder.isHidden()
+        assert w._loading_path is None
+        assert w._pending_meta is None
+        assert w._pending_content is None
+
+
 class _StubWidgetPlugin(WidgetViewerPlugin):
     NAME = "stub_widget"
     EXTENSIONS = (".mp4",)

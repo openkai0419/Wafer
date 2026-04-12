@@ -1,6 +1,8 @@
 from unittest.mock import MagicMock, patch
+import time
+import threading
 import pytest
-from extensions.exiftool.collector import ExifToolCollectorPlugin
+from extensions.exiftool.collector import ExifToolCollectorPlugin, _IDLE_TIMEOUT
 
 
 class TestExifToolCollector:
@@ -71,10 +73,14 @@ class TestExifToolCollector:
         plugin = ExifToolCollectorPlugin()
         mock_proc = MagicMock()
         plugin._process = mock_proc
+        mock_timer = MagicMock()
+        plugin._idle_timer = mock_timer
         plugin.on_notify()
         mock_proc.stop.assert_called_once()
         assert plugin._process is None
         assert plugin._exe_path is None
+        mock_timer.cancel.assert_called_once()
+        assert plugin._idle_timer is None
 
     def test_blacklist_filter_excludes_keys(self):
         plugin = ExifToolCollectorPlugin()
@@ -136,3 +142,89 @@ class TestExifToolCollector:
         plugin = ExifToolCollectorPlugin()
         assert plugin._filter_mode == "whitelist"
         assert plugin._filter_keys == {"IFD0:Model"}
+
+
+class TestExifToolCooldown:
+    def test_touch_starts_idle_timer(self):
+        plugin = ExifToolCollectorPlugin()
+        assert plugin._idle_timer is None
+        plugin._touch()
+        assert plugin._idle_timer is not None
+        assert plugin._idle_timer.is_alive()
+        plugin._idle_timer.cancel()
+
+    def test_touch_resets_last_used(self):
+        plugin = ExifToolCollectorPlugin()
+        assert plugin._last_used == 0.0
+        plugin._touch()
+        assert plugin._last_used > 0.0
+        plugin._idle_timer.cancel()
+
+    def test_touch_replaces_previous_timer(self):
+        plugin = ExifToolCollectorPlugin()
+        plugin._touch()
+        first_timer = plugin._idle_timer
+        plugin._touch()
+        second_timer = plugin._idle_timer
+        assert first_timer is not second_timer
+        assert not first_timer.is_alive()
+        assert second_timer.is_alive()
+        second_timer.cancel()
+
+    def test_check_idle_stops_process_when_expired(self):
+        plugin = ExifToolCollectorPlugin()
+        mock_proc = MagicMock()
+        plugin._process = mock_proc
+        plugin._last_used = time.monotonic() - _IDLE_TIMEOUT - 1
+        plugin._check_idle()
+        mock_proc.stop.assert_called_once()
+        assert plugin._process is None
+
+    def test_check_idle_keeps_process_when_recent(self):
+        plugin = ExifToolCollectorPlugin()
+        mock_proc = MagicMock()
+        plugin._process = mock_proc
+        plugin._last_used = time.monotonic()
+        plugin._check_idle()
+        mock_proc.stop.assert_not_called()
+        assert plugin._process is mock_proc
+
+    def test_check_idle_noop_when_no_process(self):
+        plugin = ExifToolCollectorPlugin()
+        plugin._last_used = time.monotonic() - _IDLE_TIMEOUT - 1
+        plugin._check_idle()
+        assert plugin._process is None
+
+    def test_process_calls_touch(self):
+        plugin = ExifToolCollectorPlugin()
+        mock_proc = MagicMock()
+        mock_proc.alive = True
+        mock_proc.query.return_value = {
+            "SourceFile": "test.jpg",
+            "File:ImageWidth": 100,
+            "File:ImageHeight": 100,
+        }
+        plugin._process = mock_proc
+        assert plugin._last_used == 0.0
+        plugin.process("test.jpg", (1000.0, 500))
+        assert plugin._last_used > 0.0
+        assert plugin._idle_timer is not None
+        plugin._idle_timer.cancel()
+
+    def test_restart_after_idle_shutdown(self):
+        plugin = ExifToolCollectorPlugin()
+        mock_proc = MagicMock()
+        plugin._process = mock_proc
+        plugin._last_used = time.monotonic() - _IDLE_TIMEOUT - 1
+        plugin._check_idle()
+        assert plugin._process is None
+        mock_proc.stop.assert_called_once()
+
+        new_proc = MagicMock()
+        new_proc.alive = True
+        with patch("extensions.exiftool.parser.ExifToolProcess", return_value=new_proc):
+            plugin._exe_path = "/fake/exiftool"
+            result = plugin._ensure_process()
+        assert result is new_proc
+        assert plugin._process is new_proc
+        new_proc.start.assert_called_once()

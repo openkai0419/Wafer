@@ -55,6 +55,7 @@ ALL_KEYS = [
     "folder_plus",
     "subfolder",
     "fullscreen",
+    "window",
     "plus",
     "minus",
     "play",
@@ -62,11 +63,13 @@ ALL_KEYS = [
     "volume",
     "muted",
     "cross",
+    "check",
     "chevron_down",
     "chevron_right",
     "sort",
     "menu",
     "layout_edit",
+    "refresh",
 ]
 
 

@@ -98,7 +98,7 @@ if exist "%ROOT%\__pycache__" (
     set "REPO_TARGETS=!REPO_TARGETS! "%ROOT%\__pycache__""
     echo   [repo] __pycache__
 )
-for %%S in (wafer extensions tests tests-unit scripts) do (
+for %%S in (wafer tests tests-unit scripts) do (
     if exist "%ROOT%\%%S" (
         call :scan_pycache "%ROOT%\%%S"
     )
@@ -119,11 +119,15 @@ goto :eof
 
 :scan_pycache
 for /d /r %1 %%D in (__pycache__) do (
-    set "REL=%%D"
-    set "REL=!REL:%ROOT%\=!"
-    set /a REPO_COUNT+=1
-    set "REPO_TARGETS=!REPO_TARGETS! "%%D""
-    echo   [repo] !REL!
+    set "_skip=0"
+    for %%P in ("%%~dpD.") do if /i "%%~nxP"=="__pycache__" set "_skip=1"
+    if !_skip!==0 (
+        set "REL=%%D"
+        set "REL=!REL:%ROOT%\=!"
+        set /a REPO_COUNT+=1
+        set "REPO_TARGETS=!REPO_TARGETS! "%%D""
+        echo   [repo] !REL!
+    )
 )
 goto :eof
 

@@ -27,6 +27,7 @@ from .widgets.overlay_stack import OverlayStack
 from .widgets.progress_bar import ThinProgressBar
 from .widgets.search_container import SearchContainer
 from .widgets.combo_with_buttons import ComboBoxWithButtons
+from .widgets.callout_overlay import CalloutOverlay
 
 from ...builtins.commands.menu import AppMenuRegistrar
 from .search import SearchService
@@ -69,6 +70,7 @@ class MainWindow(QtWidgets.QMainWindow):
         t.set_locale(app_settings.get("window/language", "en"))
         UI.register_instance("MainWindow", self)
         self._closed = False
+        self._folder_callout: CalloutOverlay | None = None
         self.setup_ui()
         self._show_loading()
         self._acquire_profile_async(profile_id)
@@ -93,6 +95,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._restore_from_profile(entry)
         else:
             self.reload_database(self.get_last_used_db_name())
+        self._check_first_run_plugin_panel()
 
     @profiler.profile
     def get_last_used_db_name(self):
@@ -153,11 +156,39 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.folder_view.get_selected_paths(),
             )
             QtCore.QTimer.singleShot(0, lambda: self.search(force=True))
+        self._check_folder_callout(roots)
 
     def _on_db_reload_failed(self, name, exc):
         self._db_reload_cancel = None
         self._hide_loading()
         Notifier.error(f'Failed to load database "{name}"')
+
+    def _check_first_run_plugin_panel(self):
+        import os
+        from ...plugin.settings import _ini_path
+
+        if not os.path.isfile(_ini_path()):
+            QtCore.QTimer.singleShot(0, lambda: self._layout_manager.toggle_panel("Plugin Manager"))
+
+    def _check_folder_callout(self, roots):
+        if roots:
+            self._dismiss_folder_callout()
+            return
+        if self._folder_callout is not None:
+            return
+        add_btn = self.iconbar.right_buttons[0]
+        callout = CalloutOverlay(add_btn, t("add folders from here"))
+        callout.dismissed.connect(self._on_folder_callout_dismissed)
+        add_btn.pressed.connect(self._dismiss_folder_callout)
+        self._folder_callout = callout
+        QtCore.QTimer.singleShot(300, callout.show)
+
+    def _dismiss_folder_callout(self):
+        if self._folder_callout is not None:
+            self._folder_callout.dismiss()
+
+    def _on_folder_callout_dismissed(self):
+        self._folder_callout = None
 
     def _update_title(self):
         if self._profile_entry and self._profile_entry.name:
@@ -507,6 +538,8 @@ class MainWindow(QtWidgets.QMainWindow):
             excluded = self.setting_db.get_all_ignore_folders()
             self.folder_view.set_folders(roots, excluded)
             self.folder_view.set_state(state)
+            if roots:
+                self._dismiss_folder_callout()
         else:
             self.folder_view.reload_tree()
 
@@ -757,6 +790,9 @@ class MainWindow(QtWidgets.QMainWindow):
         if self._closed:
             return
         self._closed = True
+        if self._folder_callout:
+            self._folder_callout.close()
+            self._folder_callout = None
         try:
             self._save_profile()
             if self.database_name:

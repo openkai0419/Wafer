@@ -7,6 +7,8 @@ set "USERDATA=%LOCALAPPDATA%\Wafer"
 set "DRY_RUN=0"
 set "YES=0"
 set "MODE="
+set "REPO_COUNT=0"
+set "UD_EXISTS=0"
 
 :parse_args
 if "%~1"=="" goto :check_mode
@@ -28,20 +30,20 @@ if "%MODE%"=="all" goto :run_all
 goto :usage
 
 :interactive
-echo.
+echo(
 echo   Wafer Cleanup
 echo   =============
-echo.
+echo(
 echo   [1] Clean repository artifacts
 echo       (extensions/lib, .packages, __pycache__, build, dist, .temp, etc.)
-echo.
+echo(
 echo   [2] Clean user data
 echo       (%USERDATA%)
-echo.
+echo(
 echo   [3] Clean all (repository + user data)
-echo.
+echo(
 echo   [0] Cancel
-echo.
+echo(
 set /p "CHOICE=  Select [0-3]: "
 if "%CHOICE%"=="1" goto :run_repo
 if "%CHOICE%"=="2" goto :run_userdata
@@ -51,63 +53,56 @@ echo Invalid choice.
 goto :interactive
 
 :run_all
-call :do_repo
-call :do_userdata
-goto :confirm_and_execute
+call :scan_repo
+call :scan_userdata
+goto :confirm
 
 :run_repo
-call :do_repo
-goto :confirm_and_execute
+call :scan_repo
+goto :confirm
 
 :run_userdata
-call :do_userdata
-goto :confirm_and_execute
+call :scan_userdata
+goto :confirm
 
-:do_repo
-set "REPO_TARGETS="
+:scan_repo
 set "REPO_COUNT=0"
 
 for /d %%D in ("%ROOT%\extensions\*") do (
     if exist "%%D\lib" (
         set /a REPO_COUNT+=1
-        set "REPO_TARGETS=!REPO_TARGETS! "%%D\lib""
         echo   [repo] %%~nxD\lib
     )
     if exist "%%D\.packages" (
         set /a REPO_COUNT+=1
-        set "REPO_TARGETS=!REPO_TARGETS! "%%D\.packages""
         echo   [repo] %%~nxD\.packages
     )
 )
 if exist "%ROOT%\extensions\.shared_packages" (
     set /a REPO_COUNT+=1
-    set "REPO_TARGETS=!REPO_TARGETS! "%ROOT%\extensions\.shared_packages""
     echo   [repo] extensions\.shared_packages
 )
 
 for %%D in (build dist .temp .pytest_cache .ruff_cache) do (
     if exist "%ROOT%\%%D" (
         set /a REPO_COUNT+=1
-        set "REPO_TARGETS=!REPO_TARGETS! "%ROOT%\%%D""
         echo   [repo] %%D
     )
 )
 
 if exist "%ROOT%\__pycache__" (
     set /a REPO_COUNT+=1
-    set "REPO_TARGETS=!REPO_TARGETS! "%ROOT%\__pycache__""
     echo   [repo] __pycache__
 )
 for %%S in (wafer tests tests-unit scripts) do (
     if exist "%ROOT%\%%S" (
-        call :scan_pycache "%ROOT%\%%S"
+        call :count_pycache "%ROOT%\%%S"
     )
 )
 
 for %%P in (*.db *.db-shm *.db-wal *.ini) do (
     if exist "%ROOT%\%%P" (
         set /a REPO_COUNT+=1
-        set "REPO_TARGETS=!REPO_TARGETS! "%ROOT%\%%P""
         echo   [repo] %%P
     )
 )
@@ -117,7 +112,7 @@ if %REPO_COUNT%==0 (
 )
 goto :eof
 
-:scan_pycache
+:count_pycache
 for /d /r %1 %%D in (__pycache__) do (
     set "_skip=0"
     for %%P in ("%%~dpD.") do if /i "%%~nxP"=="__pycache__" set "_skip=1"
@@ -125,13 +120,12 @@ for /d /r %1 %%D in (__pycache__) do (
         set "REL=%%D"
         set "REL=!REL:%ROOT%\=!"
         set /a REPO_COUNT+=1
-        set "REPO_TARGETS=!REPO_TARGETS! "%%D""
         echo   [repo] !REL!
     )
 )
 goto :eof
 
-:do_userdata
+:scan_userdata
 set "UD_EXISTS=0"
 if exist "%USERDATA%" (
     set "UD_EXISTS=1"
@@ -141,13 +135,14 @@ if exist "%USERDATA%" (
 )
 goto :eof
 
-:confirm_and_execute
-echo.
+:confirm
+echo(
 
+set "HAS_TARGETS=0"
 if %REPO_COUNT% gtr 0 set "HAS_TARGETS=1"
 if %UD_EXISTS%==1 set "HAS_TARGETS=1"
 
-if not defined HAS_TARGETS (
+if %HAS_TARGETS%==0 (
     echo   Nothing to clean.
     goto :done
 )
@@ -166,19 +161,11 @@ if /i not "%CONFIRM%"=="y" (
 )
 
 :execute
-echo.
+echo(
 
 if %REPO_COUNT% gtr 0 (
-    for %%T in (%REPO_TARGETS%) do (
-        if exist %%T (
-            if exist %%T\* (
-                rd /s /q %%T 2>nul
-            ) else (
-                del /q %%T 2>nul
-            )
-        )
-    )
-    echo   [repo] Removed %REPO_COUNT% item(s).
+    call :delete_repo
+    echo   [repo] Removed !REPO_COUNT! item(s^).
 )
 
 if %UD_EXISTS%==1 (
@@ -186,24 +173,60 @@ if %UD_EXISTS%==1 (
     echo   [userdata] Removed: %USERDATA%
 )
 
-echo.
+echo(
 echo   Done.
 goto :done
 
+:delete_repo
+for /d %%D in ("%ROOT%\extensions\*") do (
+    if exist "%%D\lib" call :rm "%%D\lib"
+    if exist "%%D\.packages" call :rm "%%D\.packages"
+)
+if exist "%ROOT%\extensions\.shared_packages" call :rm "%ROOT%\extensions\.shared_packages"
+
+for %%D in (build dist .temp .pytest_cache .ruff_cache) do (
+    if exist "%ROOT%\%%D" call :rm "%ROOT%\%%D"
+)
+
+if exist "%ROOT%\__pycache__" call :rm "%ROOT%\__pycache__"
+for %%S in (wafer tests tests-unit scripts) do (
+    if exist "%ROOT%\%%S" call :rm_pycache "%ROOT%\%%S"
+)
+
+for %%P in (*.db *.db-shm *.db-wal *.ini) do (
+    if exist "%ROOT%\%%P" del /q "%ROOT%\%%P" 2>nul
+)
+goto :eof
+
+:rm_pycache
+for /d /r %1 %%D in (__pycache__) do (
+    set "_skip=0"
+    for %%P in ("%%~dpD.") do if /i "%%~nxP"=="__pycache__" set "_skip=1"
+    if !_skip!==0 (
+        if exist "%%D" rd /s /q "%%D" 2>nul
+    )
+)
+goto :eof
+
+:rm
+if exist %1 rd /s /q %1 2>nul
+if exist %1 del /q %1 2>nul
+goto :eof
+
 :usage
-echo.
+echo(
 echo   Usage: cleanup.bat [options]
-echo.
+echo(
 echo   Options:
 echo     --repo       Remove repository artifacts
 echo     --userdata   Remove user data (%LOCALAPPDATA%\Wafer)
 echo     --all        Remove both
 echo     --dry-run    Show targets without deleting
 echo     --yes, -y    Skip confirmation prompt
-echo.
+echo(
 echo   No arguments: interactive menu
-echo.
+echo(
 
 :done
-if %YES%==0 pause
+pause
 endlocal

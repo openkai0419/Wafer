@@ -118,7 +118,5 @@ def copy_clean(dst: Path):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print(f"Usage: python {Path(__file__).name} <destination>")
-        sys.exit(1)
-    copy_clean(Path(sys.argv[1]))
+    dst = Path(sys.argv[1]) if len(sys.argv) >= 2 else ROOT.parent / "Wafer_New"
+    copy_clean(dst)

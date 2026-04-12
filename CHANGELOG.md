@@ -6,6 +6,6 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
-## [0.1.0]
+## [v0.5.1]
 ### Added
 - Initial version management

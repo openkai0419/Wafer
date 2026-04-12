@@ -179,7 +179,7 @@ class EmbeddedPython:
                     raise ValueError(f"SHA256 mismatch: expected {expected_hash}, got {actual}")
                 AppLogger.info("[Installer] SHA256 verified")
 
-            staging = tempfile.mkdtemp(dir=self._dir, prefix=".extract_")
+            staging = os.path.normpath(tempfile.mkdtemp(dir=self._dir, prefix=".extract_"))
             try:
                 with zipfile.ZipFile(tmp, "r") as zf:
                     for info in zf.infolist():
@@ -189,7 +189,7 @@ class EmbeddedPython:
                         if os.sep != "/":
                             norm = norm.replace("/", os.sep)
                         resolved = os.path.normpath(os.path.join(staging, norm))
-                        if not resolved.startswith(staging):
+                        if not resolved.startswith(staging + os.sep) and resolved != staging:
                             raise ValueError(f"Path traversal detected in zip: {info.filename}")
                     zf.extractall(staging)
                 for name in os.listdir(staging):

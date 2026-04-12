@@ -105,7 +105,7 @@ def test_exec_cleanup():
     wf._exec("cleanup")
     assert scheduler.submit.called
     task = scheduler.submit.call_args[0][0]
-    assert task.name == "purge_orphans"
+    assert task.name == "delete_orphans"
 
 
 class TestExtractStable:

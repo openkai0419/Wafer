@@ -535,7 +535,7 @@ class FileDB:
         return changed
 
     @profiler.profile
-    def purge_orphan_records(self):
+    def delete_orphan_records(self):
         AppLogger.info("CLEANING UP DATABASE")
         try:
             with self._write_lock:
@@ -574,7 +574,7 @@ class FileDB:
         else:
             AppLogger.info("DATABASE CLEANUP END")
 
-    def purge_collector_data(self, collector: str, *, re_collect: bool = False):
+    def delete_collector_data(self, collector: str, *, re_collect: bool = False):
         meta_deleted = 0
         tags_deleted = 0
         cs_affected = 0
@@ -597,10 +597,10 @@ class FileDB:
                 cs_affected = cur.execute("SELECT changes()").fetchone()[0]
             finally:
                 cur.close()
-        AppLogger.info(f"[DB] Purged collector={collector}: meta={meta_deleted}, tags={tags_deleted}, cs={cs_affected}")
+        AppLogger.info(f"[DB] Deleted collector={collector}: meta={meta_deleted}, tags={tags_deleted}, cs={cs_affected}")
         return meta_deleted, tags_deleted, cs_affected
 
-    def purge_keys(self, keys: list[str]) -> tuple[int, int]:
+    def delete_keys(self, keys: list[str]) -> tuple[int, int]:
         if not keys:
             return 0, 0
         meta_deleted = 0
@@ -617,7 +617,7 @@ class FileDB:
                     tags_deleted += cur.execute("SELECT changes()").fetchone()[0]
             finally:
                 cur.close()
-        AppLogger.info(f"[DB] Purged keys ({len(keys)}): meta={meta_deleted}, tags={tags_deleted}")
+        AppLogger.info(f"[DB] Deleted keys ({len(keys)}): meta={meta_deleted}, tags={tags_deleted}")
         return meta_deleted, tags_deleted
 
     def reset_collector_status(self, collector: str) -> int:

@@ -92,8 +92,8 @@ def _build_rows(db_names: list[str], cancel) -> list[tuple[str, str, int, int, s
                 status = "Disabled"
             else:
                 status = ""
-            purgeable = bool(prefix)
-            rows.append((name, prefix, meta_count, tag_count, plugin_type, status, purgeable))
+            deletable = bool(prefix)
+            rows.append((name, prefix, meta_count, tag_count, plugin_type, status, deletable))
         for en in sorted(enabled - seen_prefixes):
             plugin_type, _ = _resolve_plugin_info(en)
             if not plugin_type:
@@ -108,8 +108,8 @@ _DisplayRow = tuple[str, str, int, int, str, bool]
 def _split_rows(rows: list[tuple[str, str, int, int, str, str, bool]]) -> tuple[list[_DisplayRow], list[_DisplayRow]]:
     collectors: list[_DisplayRow] = []
     detachers: list[_DisplayRow] = []
-    for db, prefix, meta, tags, plugin_type, status, purgeable in rows:
-        display: _DisplayRow = (db, prefix, meta, tags, status, purgeable)
+    for db, prefix, meta, tags, plugin_type, status, deletable in rows:
+        display: _DisplayRow = (db, prefix, meta, tags, status, deletable)
         if plugin_type == "Detacher":
             detachers.append(display)
         else:
@@ -146,7 +146,7 @@ class _PrefixTable(QtWidgets.QGroupBox):
         self.rows = rows
         self.table.setSortingEnabled(False)
         self.table.setRowCount(len(rows))
-        for i, (db, prefix, meta, tags, status, purgeable) in enumerate(rows):
+        for i, (db, prefix, meta, tags, status, deletable) in enumerate(rows):
             self.table.setItem(i, _COL_DB, QtWidgets.QTableWidgetItem(db))
             self.table.setItem(i, _COL_PREFIX, QtWidgets.QTableWidgetItem(prefix))
 
@@ -160,7 +160,7 @@ class _PrefixTable(QtWidgets.QGroupBox):
 
             self.table.setItem(i, _COL_STATUS, QtWidgets.QTableWidgetItem(status))
 
-            if purgeable:
+            if deletable:
                 cb = QtWidgets.QCheckBox()
                 cb.stateChanged.connect(lambda _: self.selection_changed.emit())
                 container = QtWidgets.QWidget()
@@ -223,7 +223,7 @@ class _PrefixTable(QtWidgets.QGroupBox):
 
 
 class DataTab(QtWidgets.QWidget):
-    purge_requested = QtCore.Signal(list, bool)
+    delete_requested = QtCore.Signal(list, bool)
 
     def __init__(self, dispatcher: Dispatcher, parent=None):
         super().__init__(parent)
@@ -267,15 +267,15 @@ class DataTab(QtWidgets.QWidget):
         self._selected_label = QtWidgets.QLabel(t("Selected: 0 items"))
         layout.addWidget(self._selected_label)
 
-        self._re_collect_cb = QtWidgets.QCheckBox(t("Re-collect after purge (mark as pending)"))
+        self._re_collect_cb = QtWidgets.QCheckBox(t("Re-collect after deletion (mark as pending)"))
         self._re_collect_cb.setChecked(True)
         layout.addWidget(self._re_collect_cb)
 
-        self._purge_btn = QtWidgets.QPushButton(t("Purge Selected"))
-        self._purge_btn.setObjectName("purge_btn")
-        self._purge_btn.setFixedWidth(dpix(140))
-        self._purge_btn.clicked.connect(self._on_purge)
-        layout.addWidget(self._purge_btn)
+        self._delete_btn = QtWidgets.QPushButton(t("Delete Selected Data"))
+        self._delete_btn.setObjectName("delete_btn")
+        self._delete_btn.setFixedWidth(dpix(180))
+        self._delete_btn.clicked.connect(self._on_delete)
+        layout.addWidget(self._delete_btn)
 
         self._dirty = False
         self._debounce_timer = QtCore.QTimer(self)
@@ -350,25 +350,25 @@ class DataTab(QtWidgets.QWidget):
         count = self._collector_table.checked_count() + self._detacher_table.checked_count()
         self._selected_label.setText(t("Selected: {count} items", count=count))
 
-    def _on_purge(self):
+    def _on_delete(self):
         selected = self._collector_table.get_checked() + self._detacher_table.get_checked()
         if not selected:
             return
         re_collect = self._re_collect_cb.isChecked()
-        msg = t("Purge {count} prefix(es)?\n\n", count=len(selected))
+        msg = t("Delete data for {count} prefix(es)?\n\n", count=len(selected))
         for db, prefix in selected:
             msg += f"  {prefix} on {db}\n"
         if re_collect:
             msg += "\n" + t("Files will be marked for re-collection.")
         result = QtWidgets.QMessageBox.question(
             self,
-            t("Confirm Purge"),
+            t("Confirm Deletion"),
             msg,
             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
         )
         if result != QtWidgets.QMessageBox.Yes:
             return
-        self.purge_requested.emit(selected, re_collect)
+        self.delete_requested.emit(selected, re_collect)
 
     def refresh(self):
         self._poll_cancel.cancel()

@@ -59,12 +59,12 @@
     "en": "Plugin settings have been saved.\nRestart is required.",
     "ja": ""
   },
-  "Purge Selected": {
-    "en": "Purge Selected",
+  "Delete Selected Data": {
+    "en": "Delete Selected Data",
     "ja": ""
   },
-  "Re-collect after purge (mark as pending)": {
-    "en": "Re-collect after purge (mark as pending)",
+  "Re-collect after deletion (mark as pending)": {
+    "en": "Re-collect after deletion (mark as pending)",
     "ja": ""
   },
   "Refresh": {

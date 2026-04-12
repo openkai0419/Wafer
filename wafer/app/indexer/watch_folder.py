@@ -301,9 +301,9 @@ class FolderWatcher:
             self._progress.increment(0, 1)
             self._scheduler.submit(
                 Task.create(
-                    "purge_orphans",
+                    "delete_orphans",
                     priority=TaskPriority.MAINTENANCE,
-                    run=lambda: self._writer.purge_orphans(),
+                    run=lambda: self._writer.delete_orphans(),
                     on_complete=lambda: (
                         self._progress.increment(1, 0),
                         self._progress.send_event("update"),

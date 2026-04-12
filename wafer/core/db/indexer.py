@@ -324,6 +324,6 @@ class FileIndexer:
             AppLogger.info(f'[Backfill] Added {len(sources)} pending entries for "{name}"')
 
     @profiler.profile
-    def purge_orphan_records(self):
-        self.db.purge_orphan_records()
+    def delete_orphan_records(self):
+        self.db.delete_orphan_records()
         self.emit_update()

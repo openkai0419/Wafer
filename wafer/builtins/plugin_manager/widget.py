@@ -86,7 +86,7 @@ def _build_stylesheet() -> str:
             background: {p.error};
             color: {p.accent_text};
         }}
-        QPushButton#purge_btn {{
+        QPushButton#delete_btn {{
             background: rgba({_hex_rgb(p.error)}, 0.1);
             color: {p.error};
             border: 1px solid rgba({_hex_rgb(p.error)}, 0.3);
@@ -94,7 +94,7 @@ def _build_stylesheet() -> str:
             padding: {dpix(4)}px {dpix(12)}px;
             font-weight: bold;
         }}
-        QPushButton#purge_btn:hover {{
+        QPushButton#delete_btn:hover {{
             background: {p.error};
             color: {p.accent_text};
         }}
@@ -151,7 +151,7 @@ class PluginManagerWidget(QtWidgets.QWidget):
 
         collector_names, detacher_names = self._collect_worker_names()
         self._collectors_tab = CollectorsTab(collector_names, detacher_names)
-        self._collectors_tab.purge_requested.connect(self._send_purge)
+        self._collectors_tab.delete_requested.connect(self._send_delete)
         self._tabs.addTab(self._scrollable(self._collectors_tab), "Collectors")
 
         from .viewers_tab import OrderTab, REGISTRY_KEYS
@@ -256,21 +256,21 @@ class PluginManagerWidget(QtWidgets.QWidget):
         detachers = [cls.NAME for cls in self._ext_tab.collect_enabled_plugins("detacher")]
         return collectors, detachers
 
-    def _send_purge(self, pairs: list[tuple[str, str]], re_collect: bool):
+    def _send_delete(self, pairs: list[tuple[str, str]], re_collect: bool):
         from ...core.commands.binding.instance_registry import InstanceRegistry
 
         node = InstanceRegistry.instance().resolve_node()
         if not node:
-            AppLogger.warning("[PluginManager] No IPC node available for purge")
+            AppLogger.warning("[PluginManager] No IPC node available for delete")
             return
         for db, collector in pairs:
             node.send_reliable(
-                "purge.collector",
+                "delete.collector",
                 {"collector": collector, "re_collect": re_collect},
                 dst="indexer",
                 db=db,
             )
-        AppLogger.info(f"[PluginManager] Sent purge for {len(pairs)} pairs")
+        AppLogger.info(f"[PluginManager] Sent delete for {len(pairs)} pairs")
 
     def closeEvent(self, event):
         self._ext_tab.cancel_pending()

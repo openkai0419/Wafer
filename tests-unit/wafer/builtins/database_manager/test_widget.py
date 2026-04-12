@@ -829,7 +829,7 @@ class TestDatabaseManagerTabs:
         assert dlg._tabs.tabText(0) == "Paths"
         assert dlg._tabs.tabText(1) == "Data"
 
-    def test_send_purge(self, qtbot, tmp_path, monkeypatch):
+    def test_send_delete(self, qtbot, tmp_path, monkeypatch):
         monkeypatch.setattr(
             "wafer.builtins.database_manager.widget.list_setting_db_names",
             lambda: ["db1"],
@@ -847,9 +847,9 @@ class TestDatabaseManagerTabs:
         dlg = DatabaseManagerWidget()
         qtbot.addWidget(dlg)
 
-        dlg._send_purge([("db1", "exif")], True)
+        dlg._send_delete([("db1", "exif")], True)
         mock_node.send_reliable.assert_called_once_with(
-            "purge.collector",
+            "delete.collector",
             {"collector": "exif", "re_collect": True},
             dst="indexer",
             db="db1",

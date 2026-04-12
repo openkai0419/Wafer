@@ -19,7 +19,7 @@ class _ClickableLabel(QtWidgets.QLabel):
 
 
 class CollectorsTab(QtWidgets.QWidget):
-    purge_requested = QtCore.Signal(list, bool)
+    delete_requested = QtCore.Signal(list, bool)
 
     def __init__(self, collector_names: list[str] | None = None, detacher_names: list[str] | None = None, parent=None):
         super().__init__(parent)
@@ -232,10 +232,10 @@ class CollectorsTab(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(dlg)
         layout.addWidget(QtWidgets.QLabel(t("The following plugins will be disabled:")))
 
-        purge_checks: list[tuple[QtWidgets.QCheckBox, str, str]] = []
+        delete_checks: list[tuple[QtWidgets.QCheckBox, str, str]] = []
         for db, name in disabled:
             cb = QtWidgets.QCheckBox(f"Delete data: {name} on {db}")
-            purge_checks.append((cb, db, name))
+            delete_checks.append((cb, db, name))
             layout.addWidget(cb)
 
         layout.addWidget(QtWidgets.QLabel(t("Unchecked items keep their data.\n(re-enable later to use again without re-collecting)")))
@@ -253,9 +253,9 @@ class CollectorsTab(QtWidgets.QWidget):
         if dlg.exec() != QtWidgets.QDialog.Accepted:
             return False
 
-        to_purge = [(db, name) for cb, db, name in purge_checks if cb.isChecked()]
+        to_delete = [(db, name) for cb, db, name in delete_checks if cb.isChecked()]
         self.save_to_dbs()
         self.save_defaults()
-        if to_purge:
-            self.purge_requested.emit(to_purge, False)
+        if to_delete:
+            self.delete_requested.emit(to_delete, False)
         return True

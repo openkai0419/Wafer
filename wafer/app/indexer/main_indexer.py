@@ -41,8 +41,8 @@ class IndexerProcess:
         self.zmq.subscribe("cleanup", lambda msg: self.cleanup() or True)
         self.zmq.subscribe("rescan", lambda msg: self.rescan() or True)
         self.zmq.subscribe("db.delete", lambda msg: self._on_delete_requested() or True)
-        self.zmq.subscribe("purge.collector", self._on_purge_collector)
-        self.zmq.subscribe("purge.keys", self._on_purge_keys)
+        self.zmq.subscribe("delete.collector", self._on_delete_collector)
+        self.zmq.subscribe("delete.keys", self._on_delete_keys)
         self.zmq.start()
         AppLogger.set_node(self.zmq, role="indexer")
 
@@ -191,7 +191,7 @@ class IndexerProcess:
                 create_task=lambda: Task.create(
                     "cleanup_optimize",
                     priority=TaskPriority.MAINTENANCE,
-                    run=lambda: self.writer.purge_orphans(),
+                    run=lambda: self.writer.delete_orphans(),
                 ),
             )
         )
@@ -239,24 +239,24 @@ class IndexerProcess:
             )
         )
 
-    def _on_purge_collector(self, msg):
+    def _on_delete_collector(self, msg):
         payload = msg.payload
         if not isinstance(payload, dict):
-            AppLogger.warning(f"purge.collector: invalid payload: {type(payload)}")
+            AppLogger.warning(f"delete.collector: invalid payload: {type(payload)}")
             return True
         collector = payload.get("collector", "")
         re_collect = payload.get("re_collect", False)
         if not collector or not self.writer:
             return True
-        AppLogger.info(f"[Indexer] Purge collector={collector}, re_collect={re_collect}")
+        AppLogger.info(f"[Indexer] Delete collector={collector}, re_collect={re_collect}")
 
         self.scheduler.submit(
             Task.create(
-                "purge_meta_info",
+                "delete_collector_data",
                 priority=TaskPriority.USER_REQUEST,
-                run=lambda: self.writer.purge_collector(collector, re_collect=re_collect),
+                run=lambda: self.writer.delete_collector(collector, re_collect=re_collect),
                 on_complete=lambda: self.zmq.send(
-                    "purge.complete",
+                    "delete.complete",
                     {"collector": collector, "db": self.db_name},
                     dst="viewer",
                 ),
@@ -264,10 +264,10 @@ class IndexerProcess:
         )
         return True
 
-    def _on_purge_keys(self, msg):
+    def _on_delete_keys(self, msg):
         payload = msg.payload
         if not isinstance(payload, dict):
-            AppLogger.warning(f"purge.keys: invalid payload: {type(payload)}")
+            AppLogger.warning(f"delete.keys: invalid payload: {type(payload)}")
             return True
         keys = payload.get("keys", [])
         re_collect = payload.get("re_collect", False)
@@ -276,21 +276,21 @@ class IndexerProcess:
             return True
         if not keys and not (re_collect and collector):
             return True
-        AppLogger.info(f"[Indexer] Purge keys={len(keys)}, collector={collector}, re_collect={re_collect}")
+        AppLogger.info(f"[Indexer] Delete keys={len(keys)}, collector={collector}, re_collect={re_collect}")
 
         def _run():
             if keys:
-                self.writer.purge_keys(keys)
+                self.writer.delete_keys(keys)
             if re_collect and collector:
                 self.writer.reset_collector_status(collector)
 
         self.scheduler.submit(
             Task.create(
-                "purge_keys",
+                "delete_keys",
                 priority=TaskPriority.USER_REQUEST,
                 run=_run,
                 on_complete=lambda: self.zmq.send(
-                    "purge.complete",
+                    "delete.complete",
                     {"collector": collector, "keys": keys, "db": self.db_name},
                     dst="viewer",
                 ),

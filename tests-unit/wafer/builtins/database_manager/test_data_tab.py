@@ -105,20 +105,20 @@ class TestApplyRows:
         assert t.item(0, 3).text() == "10"
         assert t.item(0, 4).text() == "Active"
 
-    def test_purgeable_row_has_checkbox(self, qtbot, sync_dispatcher):
+    def test_deletable_row_has_checkbox(self, qtbot, sync_dispatcher):
         tab = _make_tab(qtbot, sync_dispatcher, SAMPLE_ROWS)
         container = tab._collector_table.table.cellWidget(0, 5)
         assert container is not None
         cb = container.findChild(QtWidgets.QCheckBox)
         assert cb is not None
 
-    def test_non_purgeable_row_has_no_checkbox(self, qtbot, sync_dispatcher):
+    def test_non_deletable_row_has_no_checkbox(self, qtbot, sync_dispatcher):
         rows = [("db1", "test", 10, 5, "", "", False)]
         tab = _make_tab(qtbot, sync_dispatcher, rows)
         container = tab._collector_table.table.cellWidget(0, 5)
         assert container is None
 
-    def test_reapply_clears_checkbox_on_non_purgeable_row(self, qtbot, sync_dispatcher):
+    def test_reapply_clears_checkbox_on_non_deletable_row(self, qtbot, sync_dispatcher):
         rows_with_prefix = [
             ("db1", "exif", 100, 50, "Collector", "Active", True),
         ]

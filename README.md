@@ -18,11 +18,16 @@ Plugin-based extensions add support for any file format. Currently Windows only 
 
 ## Installation
 
-### from zip
+### Download (Recommended)
 
-Coming soon.
+1. Go to [Releases](https://github.com/openkai0419/private_rep/releases/latest)
+2. Download `Wafer-vX.X.X.zip`
+3. Extract the zip to any folder
+4. Run `Wafer.exe`
 
-### at local python
+To uninstall, delete the extracted folder and run `cleanup.bat --userdata` to remove app data from `%LOCALAPPDATA%\Wafer`.
+
+### From Source
 
 #### Requirements
 

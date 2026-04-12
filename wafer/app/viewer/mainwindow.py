@@ -406,6 +406,8 @@ class MainWindow(QtWidgets.QMainWindow):
         store.register("layout", self._save_layout, self._restore_layout)
         store.register("grid", self._save_grid, self._restore_grid)
         self._register_grid_plugin_states(store)
+        self._register_panel_plugin_states(store)
+        self._register_meta_panel_plugin_states(store)
 
     def _register_grid_plugin_states(self, store):
         from ...plugin.grid.base import WidgetGridPlugin as _WGP
@@ -770,11 +772,41 @@ class MainWindow(QtWidgets.QMainWindow):
         except Exception as e:
             AppLogger.debug(f"on_close bridge.stop failed: {e}")
 
+    def _register_panel_plugin_states(self, store):
+        from ...plugin.panel.base import BasePanelPlugin
+        from ...plugin.panel.handler import panel_registry
+
+        for cls in panel_registry.list_all():
+            inst = panel_registry.instance(cls.NAME)
+            if inst is not None and isinstance(inst, BasePanelPlugin):
+                p = inst
+                store.register(
+                    f"panel_plugin.{cls.NAME}",
+                    lambda p=p: p.save_state(),
+                    lambda s, p=p: p.restore_state(s),
+                )
+
+    def _register_meta_panel_plugin_states(self, store):
+        from ...plugin.meta_panel.base import BaseMetaPanelPlugin
+        from ...plugin.meta_panel.handler import meta_panel_registry
+
+        for cls in meta_panel_registry.list_all():
+            inst = meta_panel_registry.instance(cls.NAME)
+            if inst is not None and isinstance(inst, BaseMetaPanelPlugin):
+                p = inst
+                store.register(
+                    f"meta_panel_plugin.{cls.NAME}",
+                    lambda p=p: p.save_state(),
+                    lambda s, p=p: p.restore_state(s),
+                )
+
     def _register_panel_plugins(self):
         from ...plugin.panel.handler import panel_registry
 
         for cls in panel_registry.list_all():
-            plugin = cls()
+            plugin = panel_registry.instance(cls.NAME)
+            if plugin is None:
+                continue
             name = plugin.DISPLAY_NAME or plugin.NAME
             self._layout_manager.register(
                 name,

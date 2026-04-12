@@ -1009,3 +1009,35 @@ class TestSplitters:
         qtbot.addWidget(dlg)
         assert isinstance(dlg._data_tab.splitter, QtWidgets.QSplitter)
         assert dlg._data_tab.splitter.count() == 2
+
+
+class TestDatabaseManagerPluginState:
+    def test_plugin_save_state_empty_without_widget(self):
+        from wafer.builtins.database_manager.widget import DatabaseManagerPlugin
+
+        plugin = DatabaseManagerPlugin()
+        assert plugin.save_state() == {}
+
+    def test_plugin_restore_then_save_returns_cached(self):
+        from wafer.builtins.database_manager.widget import DatabaseManagerPlugin
+
+        plugin = DatabaseManagerPlugin()
+        plugin.restore_state({"paths_splitter": [200, 400]})
+        assert plugin.save_state() == {"paths_splitter": [200, 400]}
+
+    def test_plugin_creates_widget_and_applies_state(self, qtbot, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "wafer.builtins.database_manager.widget.list_setting_db_names",
+            lambda: ["test_db"],
+        )
+        monkeypatch.setattr(
+            "wafer.builtins.database_manager.widget.setting_db_path",
+            lambda name: str(tmp_path / f"{name}.db"),
+        )
+        from wafer.builtins.database_manager.widget import DatabaseManagerPlugin
+
+        plugin = DatabaseManagerPlugin()
+        plugin.restore_state({"paths_splitter": [200, 400]})
+        widget = plugin.create_widget()
+        qtbot.addWidget(widget)
+        assert plugin._widget_ref is widget

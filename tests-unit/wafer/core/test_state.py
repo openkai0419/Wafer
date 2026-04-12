@@ -192,3 +192,49 @@ class TestStateStore:
         t2.join(timeout=2)
         assert received.get("a") == {"v": 1}
         assert received.get("b") == {"v": 2}
+
+    def test_panel_plugin_auto_registration_pattern(self):
+        store = StateStore.instance()
+
+        class FakePlugin:
+            def __init__(self):
+                self._value = 0
+            def save_state(self):
+                return {"value": self._value}
+            def restore_state(self, state):
+                self._value = state.get("value", 0)
+
+        plugin = FakePlugin()
+        store.register(
+            "panel_plugin.fake",
+            lambda p=plugin: p.save_state(),
+            lambda s, p=plugin: p.restore_state(s),
+        )
+
+        plugin._value = 99
+        saved = store.save_all()
+        assert saved == {"panel_plugin.fake": {"value": 99}}
+
+        plugin._value = 0
+        store.restore_all(saved)
+        assert plugin._value == 99
+
+    def test_panel_plugin_deferred_restore(self):
+        store = StateStore.instance()
+        store.restore_all({"panel_plugin.late": {"volume": 50}})
+
+        class FakePlugin:
+            def __init__(self):
+                self._state = {}
+            def save_state(self):
+                return dict(self._state)
+            def restore_state(self, state):
+                self._state = state
+
+        plugin = FakePlugin()
+        store.register(
+            "panel_plugin.late",
+            lambda p=plugin: p.save_state(),
+            lambda s, p=plugin: p.restore_state(s),
+        )
+        assert plugin._state == {"volume": 50}

@@ -91,34 +91,6 @@ class BatchRenameWidget(QtWidgets.QWidget):
     THUMB_CACHE_LIMIT = 200
     _saved_state: dict[str, Any] = {}
     _instance_ref: BatchRenameWidget | None = None
-    _registered: bool = False
-
-    @classmethod
-    def _ensure_registered(cls):
-        if cls._registered:
-            return
-        cls._registered = True
-        from ...core.state import StateStore
-
-        StateStore.instance().register(
-            "batch_rename",
-            cls._save_state,
-            cls._on_state_restore,
-        )
-
-    @classmethod
-    def _save_state(cls) -> dict:
-        inst = cls._instance_ref
-        if inst is not None:
-            try:
-                cls._saved_state = inst._serialise_columns()
-            except RuntimeError:
-                pass
-        return dict(cls._saved_state)
-
-    @classmethod
-    def _on_state_restore(cls, state: dict):
-        cls._saved_state = state
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -138,7 +110,6 @@ class BatchRenameWidget(QtWidgets.QWidget):
 
         self._columns: list[RenameColumn] = [RenameColumn(NameSource())]
         self._ext_column = RenameColumn(ExtSource())
-        self._ensure_registered()
         self._source_defaults: dict[str, dict] = {}
         self._restore_source_defaults()
         self._results: list[RenameResult] = []
@@ -1233,6 +1204,18 @@ class BatchRenamerPlugin(BasePanelPlugin):
     DISPLAY_NAME = "Batch Renamer"
     PRIORITY = 0
     SOURCE = "Builtin"
+
+    def save_state(self):
+        inst = BatchRenameWidget._instance_ref
+        if inst is not None:
+            try:
+                BatchRenameWidget._saved_state = inst._serialise_columns()
+            except RuntimeError:
+                pass
+        return dict(BatchRenameWidget._saved_state)
+
+    def restore_state(self, state):
+        BatchRenameWidget._saved_state = state
 
     def create_widget(self):
         widget = BatchRenameWidget()

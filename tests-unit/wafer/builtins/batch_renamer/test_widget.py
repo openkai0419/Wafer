@@ -23,20 +23,17 @@ from wafer.builtins.rename_sources import (
     FixedSource,
     SequentialSource,
 )
+from wafer.builtins.batch_renamer.widget import BatchRenamerPlugin
 from wafer.core.qt.dispatcher import CancelToken
-from wafer.core.state import StateStore
 
 
 @pytest.fixture(autouse=True)
 def _reset_state():
     BatchRenameWidget._saved_state = {}
-    BatchRenameWidget._registered = False
     BatchRenameWidget._instance_ref = None
     yield
     BatchRenameWidget._saved_state = {}
-    BatchRenameWidget._registered = False
     BatchRenameWidget._instance_ref = None
-    StateStore._instance = None
 
 
 @pytest.fixture(autouse=True)
@@ -334,50 +331,47 @@ class TestColumnRestore:
         dlg.close()
 
 
-class TestStateStoreIntegration:
+class TestPluginStateIntegration:
     @patch.object(BatchRenameWidget, "_start_async_init")
-    def test_registers_with_state_store(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameWidget()
-        qtbot.addWidget(dlg)
-        dlg.set_files(tmp_files)
-        qtbot.addWidget(dlg)
-        store = StateStore.instance()
-        assert "batch_rename" in store._entries
-        dlg.close()
+    def test_plugin_save_state_delegates_to_widget(self, mock_init, qtbot, tmp_files):
+        plugin = BatchRenamerPlugin()
+        widget = plugin.create_widget()
+        qtbot.addWidget(widget)
+        widget.set_files(tmp_files)
+        widget.show()
+        widget.hide()
+        state = plugin.save_state()
+        assert "source_defaults" in state
+        widget.close()
+
+    def test_plugin_restore_state_sets_widget_saved_state(self):
+        plugin = BatchRenamerPlugin()
+        plugin.restore_state({"source_defaults": {"seq": {"type": "seq", "start": 7}}})
+        assert BatchRenameWidget._saved_state == {"source_defaults": {"seq": {"type": "seq", "start": 7}}}
 
     @patch.object(BatchRenameWidget, "_start_async_init")
-    def test_state_store_save_returns_saved_state(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameWidget()
-        qtbot.addWidget(dlg)
-        dlg.show()
-        dlg.set_files(tmp_files)
-        dlg.hide()
-        store = StateStore.instance()
-        all_states = store.save_all()
-        assert "batch_rename" in all_states
-        assert "source_defaults" in all_states["batch_rename"]
-
-    @patch.object(BatchRenameWidget, "_start_async_init")
-    def test_state_store_deferred_restore(self, mock_init, qtbot, tmp_files):
-        store = StateStore.instance()
-        store.restore_all(
+    def test_plugin_restore_then_create_widget(self, mock_init, qtbot, tmp_files):
+        plugin = BatchRenamerPlugin()
+        plugin.restore_state(
             {
-                "batch_rename": {
-                    "source_defaults": {
-                        "seq": {"type": "seq", "start": 7, "step": 1, "padding": 4},
-                    },
-                }
+                "source_defaults": {
+                    "seq": {"type": "seq", "start": 7, "step": 1, "padding": 4},
+                },
             }
         )
-        dlg = BatchRenameWidget()
-        qtbot.addWidget(dlg)
-        dlg.set_files(tmp_files)
-        qtbot.addWidget(dlg)
-        assert len(dlg._columns) == 1
-        assert isinstance(dlg._columns[0].source, NameSource)
-        dlg._add_column(SequentialSource)
-        assert dlg._columns[-1].source.start == 7
-        dlg.close()
+        widget = plugin.create_widget()
+        qtbot.addWidget(widget)
+        widget.set_files(tmp_files)
+        assert len(widget._columns) == 1
+        assert isinstance(widget._columns[0].source, NameSource)
+        widget._add_column(SequentialSource)
+        assert widget._columns[-1].source.start == 7
+        widget.close()
+
+    def test_plugin_save_state_returns_cached_when_no_widget(self):
+        plugin = BatchRenamerPlugin()
+        plugin.restore_state({"row_opacity": 50})
+        assert plugin.save_state() == {"row_opacity": 50}
 
 
 from wafer.core.platform.file_operations import OperationResult

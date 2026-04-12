@@ -15,7 +15,6 @@ from ...ui.dialogs import ConfirmDialog, InputDialog
 from ...core.qt.dispatcher import Dispatcher
 from ...core.qt.icon_engine import themed_icon
 from ...core.qt.thread import utility_pool
-from ...core.state import StateStore
 from ...plugin.panel.base import BasePanelPlugin
 
 
@@ -202,9 +201,6 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
 
         self._refresh_db_list()
         self._snapshot_all()
-
-        StateStore.instance().register("database_manager", self._save_ui_state, self._restore_ui_state)
-        self.destroyed.connect(lambda: StateStore.instance().unregister("database_manager"))
 
     def _save_ui_state(self) -> dict:
         state = {}
@@ -537,5 +533,32 @@ class DatabaseManagerPlugin(BasePanelPlugin):
     PRIORITY = 0
     SOURCE = "Builtin"
 
+    def __init__(self):
+        self._widget_ref: DatabaseManagerWidget | None = None
+        self._cached_state: dict = {}
+
+    def save_state(self):
+        w = self._widget_ref
+        if w is not None:
+            try:
+                return w._save_ui_state()
+            except RuntimeError:
+                pass
+        return dict(self._cached_state)
+
+    def restore_state(self, state):
+        self._cached_state = state
+        w = self._widget_ref
+        if w is not None:
+            try:
+                w._restore_ui_state(state)
+            except RuntimeError:
+                pass
+
     def create_widget(self):
-        return DatabaseManagerWidget()
+        w = DatabaseManagerWidget()
+        self._widget_ref = w
+        w.destroyed.connect(lambda: setattr(self, "_widget_ref", None))
+        if self._cached_state:
+            w._restore_ui_state(self._cached_state)
+        return w

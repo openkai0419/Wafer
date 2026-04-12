@@ -52,5 +52,5 @@ class VideoViewerPlugin(WidgetViewerPlugin):
         self.widget.set_muted(state.get("muted", False))
         self.widget.set_speed(state.get("speed", 1.0))
         self.widget.set_cover_mode(state.get("fit_mode", False))
-        self.widget.set_looping(state.get("loop", False))
+        self.widget.set_looping(state.get("loop", True))
         self.widget.set_pause_in_background(state.get("pause_in_background", False))

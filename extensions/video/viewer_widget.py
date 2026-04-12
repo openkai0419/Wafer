@@ -259,7 +259,7 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
         self.muted = False
         self._speed = 1.0
         self.cover_mode = False
-        self.looping = False
+        self.looping = True
         self.pause_in_background = False
         self._paused_by_background = False
         self._seek_dragging = False

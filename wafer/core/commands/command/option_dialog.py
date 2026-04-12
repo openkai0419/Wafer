@@ -3,12 +3,12 @@ from typing import Any
 from collections.abc import Callable
 from decimal import Decimal
 from PySide6 import QtWidgets
-from ...lang.manager import TranslatorMixin
+from ...lang.manager import t
 from ....utils.logs import AppLogger
 from .state import CommandOptionStore
 
 
-class CommandOptionsDialog(QtWidgets.QDialog, TranslatorMixin):
+class CommandOptionsDialog(QtWidgets.QDialog):
     def __init__(self, command_class: type, parent=None, execute_callback: Callable[[dict[str, Any]], None] | None = None, binding_mode: bool = False):
         super().__init__(parent)
         self.command_class = command_class
@@ -22,31 +22,31 @@ class CommandOptionsDialog(QtWidgets.QDialog, TranslatorMixin):
         self._setup_ui()
 
     def _setup_ui(self):
-        self.setWindowTitle(self.t.tr(self.command_class.meta.display) + " " + self.t.tr("Options"))
+        self.setWindowTitle(t(self.command_class.meta.display) + " " + t("Options"))
         layout = QtWidgets.QVBoxLayout(self)
         form = QtWidgets.QFormLayout()
         for param in self.command_class.meta.params:
-            label = QtWidgets.QLabel(self.t.tr(param.description or param.name))
+            label = QtWidgets.QLabel(t(param.description or param.name))
             widget = self._create_widget(param)
             self.widgets[param.name] = widget
             form.addRow(label, widget)
         layout.addLayout(form)
         row = QtWidgets.QHBoxLayout()
-        btn_default = QtWidgets.QPushButton(self.t.tr("Reset"), self)
+        btn_default = QtWidgets.QPushButton(t("Reset"), self)
         btn_default.clicked.connect(self._on_reset_defaults)
         row.addWidget(btn_default)
         row.addStretch(1)
         if self._binding_mode:
-            btn_save = QtWidgets.QPushButton(self.t.tr("Apply"), self)
-            btn_cancel = QtWidgets.QPushButton(self.t.tr("Cancel"), self)
+            btn_save = QtWidgets.QPushButton(t("Apply"), self)
+            btn_cancel = QtWidgets.QPushButton(t("Cancel"), self)
             btn_save.clicked.connect(self._on_save)
             btn_cancel.clicked.connect(self.reject)
             row.addWidget(btn_save)
             row.addWidget(btn_cancel)
         else:
-            btn_execute = QtWidgets.QPushButton(self.t.tr("Execute"), self)
-            btn_save = QtWidgets.QPushButton(self.t.tr("Save"), self)
-            btn_cancel = QtWidgets.QPushButton(self.t.tr("Cancel"), self)
+            btn_execute = QtWidgets.QPushButton(t("Execute"), self)
+            btn_save = QtWidgets.QPushButton(t("Save"), self)
+            btn_cancel = QtWidgets.QPushButton(t("Cancel"), self)
             btn_execute.clicked.connect(self._on_execute)
             btn_save.clicked.connect(self._on_save)
             btn_cancel.clicked.connect(self.reject)

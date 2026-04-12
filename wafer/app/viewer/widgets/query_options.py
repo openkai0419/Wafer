@@ -2,20 +2,20 @@ from PySide6 import QtCore, QtWidgets
 from ....utils.profiling import profiler
 from ....core.db.query import FileSearchEngine
 from ....plugin.query.composer import SearchComposer
-from ....core.lang.manager import TranslatorMixin
+from ....core.lang.manager import t
 from ....core.qt.dispatcher import Dispatcher, CancelSlot
 from ....core.qt.thread import utility_pool
 from ....builtins.filters import DirectoryFilter
 from ....plugin.query.widgets import CheckableCombo
 
 
-class SearchOptionPopup(QtWidgets.QDialog, TranslatorMixin):
+class SearchOptionPopup(QtWidgets.QDialog):
     settingchanged = QtCore.Signal()
 
     def __init__(self, pos_parent, parent=None):
         super().__init__(parent)
         self.pos_parent = pos_parent
-        self.setWindowTitle(self.t.tr("Search Options"))
+        self.setWindowTitle(t("Search Options"))
         self.setWindowFlags(self.windowFlags() | QtCore.Qt.Tool)
         self.setLayout(QtWidgets.QVBoxLayout())
         self.build_ui()
@@ -42,27 +42,27 @@ class SearchOptionPopup(QtWidgets.QDialog, TranslatorMixin):
         hlayout3 = QtWidgets.QHBoxLayout()
         self.delimiter_input = QtWidgets.QLineEdit()
         self.delimiter_input.textChanged.connect(lambda: self.settingchanged.emit())
-        hlayout3.addWidget(QtWidgets.QLabel(self.t.tr("Split by:")))
+        hlayout3.addWidget(QtWidgets.QLabel(t("Split by:")))
         hlayout3.addWidget(self.delimiter_input)
         layout.addLayout(hlayout3)
-        layout.addWidget(QtWidgets.QLabel(self.t.tr("Sort:")))
+        layout.addWidget(QtWidgets.QLabel(t("Sort:")))
         self.sort_by_combo = QtWidgets.QComboBox()
         self.sort_display_map = {
-            "path": self.t.tr("Path"),
-            "name": self.t.tr("Name"),
-            "created": self.t.tr("Created"),
-            "modified": self.t.tr("Modified"),
-            "collected": self.t.tr("Collected"),
-            "size": self.t.tr("File Size"),
-            "random": self.t.tr("Random"),
+            "path": t("Path"),
+            "name": t("Name"),
+            "created": t("Created"),
+            "modified": t("Modified"),
+            "collected": t("Collected"),
+            "size": t("File Size"),
+            "random": t("Random"),
         }
         for key, label in self.sort_display_map.items():
             self.sort_by_combo.addItem(label, userData=key)
         self.sort_by_combo.currentIndexChanged.connect(lambda: self.settingchanged.emit())
         layout.addWidget(self.sort_by_combo)
         self.order_group = QtWidgets.QButtonGroup(self)
-        self.asc_radio = QtWidgets.QRadioButton(self.t.tr("Ascending"))
-        self.desc_radio = QtWidgets.QRadioButton(self.t.tr("Descending"))
+        self.asc_radio = QtWidgets.QRadioButton(t("Ascending"))
+        self.desc_radio = QtWidgets.QRadioButton(t("Descending"))
         self.order_group.addButton(self.asc_radio)
         self.order_group.addButton(self.desc_radio)
         self.asc_radio.toggled.connect(lambda: self.settingchanged.emit())
@@ -124,7 +124,7 @@ class SearchOptionPopup(QtWidgets.QDialog, TranslatorMixin):
         self.delimiter_input.setText(text)
 
 
-class SearchOptionsBar(QtWidgets.QWidget, TranslatorMixin):
+class SearchOptionsBar(QtWidgets.QWidget):
     settingchanged = QtCore.Signal()
     _UNSET = object()
 
@@ -141,9 +141,9 @@ class SearchOptionsBar(QtWidgets.QWidget, TranslatorMixin):
         self.layout.setSpacing(0)
         self.setLayout(self.layout)
         self.search_bar = QtWidgets.QLineEdit()
-        self.search_bar.setPlaceholderText(self.t.tr("Enter search terms..."))
+        self.search_bar.setPlaceholderText(t("Enter search terms..."))
         self.search_bar.textChanged.connect(lambda: self.settingchanged.emit())
-        self.option_button = QtWidgets.QPushButton(self.t.tr(" Options ▼ "))
+        self.option_button = QtWidgets.QPushButton(t(" Options ▼ "))
         self.option_button.clicked.connect(self.toggle_option_popup)
         self.keys_combo = CheckableCombo()
         self.keys_combo.action_changed.connect(lambda: self.settingchanged.emit())

@@ -3,7 +3,7 @@ from __future__ import annotations
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from wafer.utils.formatting import dpix, display_prefixed_key
-from wafer.core.lang.manager import TranslatorMixin
+from wafer.core.lang.manager import t
 from wafer.core.qt.icon_engine import themed_icon
 from wafer.core.color.theme import ThemeManager
 
@@ -35,9 +35,9 @@ class _CalendarPopup(QtWidgets.QFrame):
 
         btn_row = QtWidgets.QHBoxLayout()
         btn_row.setContentsMargins(dpix(4), dpix(2), dpix(4), dpix(4))
-        self._today_btn = QtWidgets.QPushButton("Today")
+        self._today_btn = QtWidgets.QPushButton(t("Today"))
         self._today_btn.clicked.connect(self._on_today)
-        self._clear_btn = QtWidgets.QPushButton("Clear")
+        self._clear_btn = QtWidgets.QPushButton(t("Clear"))
         self._clear_btn.clicked.connect(self._on_clear)
         btn_row.addWidget(self._today_btn)
         btn_row.addStretch()
@@ -177,7 +177,7 @@ class _DateInput(QtWidgets.QWidget):
     def _refresh_display(self):
         self._line.blockSignals(True)
         if self._state == _TODAY:
-            self._line.setText("Today")
+            self._line.setText(t("Today"))
         elif self._state == "date" and self._date is not None:
             self._line.setText(self._date.toString(_DATE_FORMAT))
         else:
@@ -227,11 +227,11 @@ class _SectionCombo(QtWidgets.QComboBox):
         self._section_rows.clear()
 
         if date_keys:
-            self._add_section_header("Date keys")
+            self._add_section_header(t("Date keys"))
             for key, freq in date_keys:
                 self.addItem(f"{display_prefixed_key(key)} ({freq})", key)
         if other_keys:
-            self._add_section_header("All keys")
+            self._add_section_header(t("All keys"))
             for key, freq in other_keys:
                 self.addItem(f"{display_prefixed_key(key)} ({freq})", key)
 
@@ -260,7 +260,7 @@ class _SectionCombo(QtWidgets.QComboBox):
         item.setFont(font)
 
 
-class DateRangeWidget(QtWidgets.QWidget, TranslatorMixin):
+class DateRangeWidget(QtWidgets.QWidget):
     changed = QtCore.Signal()
 
     def __init__(self, parent=None):
@@ -277,8 +277,8 @@ class DateRangeWidget(QtWidgets.QWidget, TranslatorMixin):
         self.target_combo.currentIndexChanged.connect(lambda: self.changed.emit())
 
         self.mode_combo = QtWidgets.QComboBox()
-        self.mode_combo.addItem("Last", "preset")
-        self.mode_combo.addItem("Between", "range")
+        self.mode_combo.addItem(t("Last"), "preset")
+        self.mode_combo.addItem(t("Between"), "range")
         self.mode_combo.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents)
         self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
 
@@ -289,13 +289,13 @@ class DateRangeWidget(QtWidgets.QWidget, TranslatorMixin):
         self.preset_value.valueChanged.connect(lambda: self.changed.emit())
 
         self.preset_unit = QtWidgets.QComboBox()
-        for label, data in [("hours", "hours"), ("days", "days"), ("weeks", "weeks"), ("months", "months"), ("years", "years")]:
+        for label, data in [(t("hours"), "hours"), (t("days"), "days"), (t("weeks"), "weeks"), (t("months"), "months"), (t("years"), "years")]:
             self.preset_unit.addItem(label, data)
         self.preset_unit.setCurrentIndex(1)
         self.preset_unit.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents)
         self.preset_unit.currentIndexChanged.connect(lambda: self.changed.emit())
 
-        self.preset_from_label = QtWidgets.QLabel("from")
+        self.preset_from_label = QtWidgets.QLabel(t("from"))
         self.preset_ref = _DateInput()
         self.preset_ref.set_today()
         self.preset_ref.value_changed.connect(self.changed)
@@ -304,7 +304,7 @@ class DateRangeWidget(QtWidgets.QWidget, TranslatorMixin):
         self.date_from.set_today()
         self.date_from.value_changed.connect(self.changed)
 
-        self.range_sep = QtWidgets.QLabel("to")
+        self.range_sep = QtWidgets.QLabel(t("to"))
 
         self.date_to = _DateInput()
         self.date_to.set_empty()

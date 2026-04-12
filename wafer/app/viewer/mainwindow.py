@@ -7,7 +7,8 @@ from ...utils.logs import AppLogger
 from ...utils.notifier import Notifier
 from ...constants import APP_NAME, DEFAULT_DB_NAME, DEFAULT_PROFILE_NAME
 from ...core.db.setting_db import SettingDB
-from ...core.lang.manager import TranslatorMixin
+from wafer.core.lang.manager import t
+
 from ...core.qt.rate_limit import qt_debounce
 from ...core.ipc.node import Node
 from .ipc_bridge import ViewerIpcBridge
@@ -40,7 +41,7 @@ from ...core.qt.thread import utility_pool
 AppMenuRegistrar.setup_menu()
 
 
-class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
+class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, icon=None, parent=None, profile_id=None):
         super().__init__(parent=parent)
         self._profile_store = ProfileStore.instance()
@@ -65,7 +66,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
         self.search_service.search_finished.connect(self._on_search_finished)
         self.search_service.params_changed.connect(self._on_search_params_changed)
         UI.register_instance("SearchService", self.search_service)
-        self.t.set_locale(app_settings.get("window/language", "en"))
+        t.set_locale(app_settings.get("window/language", "en"))
         UI.register_instance("MainWindow", self)
         self._closed = False
         self.setup_ui()
@@ -210,6 +211,8 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
 
     @qt_debounce(200)
     def refresh_db_selector(self):
+        if not hasattr(self, "database_combo"):
+            return
         names = list_setting_db_names()
         if not names:
             names = ["default"]
@@ -757,7 +760,7 @@ class MainWindow(QtWidgets.QMainWindow, TranslatorMixin):
             if self.database_name:
                 app_settings.save_immediate("window/tablename", self.database_name)
             app_settings.commit()
-            self.t.dump_missing_keys()
+            t.dump_missing_keys()
         except Exception as e:
             AppLogger.warning(f"on_close failed: {e}", exc=e)
         try:

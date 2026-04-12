@@ -6,6 +6,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
+from wafer.plugin import installer
 from wafer.plugin.installer import (
     EmbeddedPython,
     _validate_url,
@@ -220,8 +221,9 @@ class TestEmbeddedPython:
 
         ep = EmbeddedPython(str(d))
         with patch("wafer.plugin.installer._download_file"):
-            with patch("wafer.plugin.installer._run_subprocess"):
-                ep._setup_pip()
+            with patch("wafer.plugin.installer._sha256_file", return_value=installer._GET_PIP_SHA256):
+                with patch("wafer.plugin.installer._run_subprocess"):
+                    ep._setup_pip()
 
         text = pth.read_text("utf-8")
         assert "#import site" not in text

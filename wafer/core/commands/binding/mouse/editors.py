@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from PySide6 import QtCore, QtGui, QtWidgets
 from .....utils.formatting import dpix
+from .....core.lang.manager import t
 from .types import MouseActionKey, ClickType, MouseButton, ModifierKey
 from ...command.maker import MenuMaker
 from ...command.menu_builder import MenuBuilder
@@ -22,7 +23,7 @@ class MouseQualifier:
 class MouseBindingEditor(BindingEditorBase):
     def __init__(self, widgets: list[WidgetRef], parent=None):
         super().__init__(widgets, MouseBindingStore.instance(), parent)
-        self.setWindowTitle("Mouse Bindings")
+        self.setWindowTitle(t("Mouse Bindings"))
         self.resize(dpix(640), dpix(480))
         self._setup()
         self._load_actions()
@@ -35,7 +36,7 @@ class MouseBindingEditor(BindingEditorBase):
         left_layout = QtWidgets.QVBoxLayout(left_container)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(dpix(4))
-        label_actions = QtWidgets.QLabel(self.t.tr("Mouse Actions:"), left_container)
+        label_actions = QtWidgets.QLabel(t("Mouse Actions:"), left_container)
         self.list_actions = QtWidgets.QListWidget(left_container)
         self.list_actions.setAlternatingRowColors(True)
         self.list_actions.currentRowChanged.connect(lambda _: self._reload_sections())
@@ -60,7 +61,7 @@ class MouseBindingEditor(BindingEditorBase):
         self.panel_layout.addWidget(self.sections_container, 1)
         footer = QtWidgets.QHBoxLayout()
         footer.addStretch(1)
-        self.btn_reset_action = QtWidgets.QPushButton(self.t.tr("Reset to Defaults"), self.panel)
+        self.btn_reset_action = QtWidgets.QPushButton(t("Reset to Defaults"), self.panel)
         self.btn_reset_action.setCursor(QtCore.Qt.PointingHandCursor)
         self.btn_reset_action.clicked.connect(self._reset_current_action)
         footer.addWidget(self.btn_reset_action, 0)
@@ -219,26 +220,26 @@ class MouseSection(ScopedPayloadSectionBase):
     def set_action(self, button: MouseButton, click: ClickType):
         self.button = button
         self.click = click
-        t = self._title()
+        title = self._title()
         self.setTitle("")
-        self.set_header_button_text(t)
+        self.set_header_button_text(title)
 
     def _title(self) -> str:
         if self.qualifier.kind == "none":
-            return self.t.tr("★ No Modifier")
+            return t("★ No Modifier")
         if self.qualifier.kind == "mouse":
             b = self.qualifier.value
             if isinstance(b, MouseButton):
-                return self.t("{button} +", button=b.name)
+                return t("{button} +", button=b.name)
             return "(invalid)"
         if self.qualifier.kind == "modifier":
             m = self.qualifier.value
             if m == ModifierKey.SHIFT:
-                return self.t.tr("Shift +")
+                return t("Shift +")
             if m == ModifierKey.CTRL:
-                return self.t.tr("Ctrl +")
+                return t("Ctrl +")
             if m == ModifierKey.ALT:
-                return self.t.tr("Alt +")
+                return t("Alt +")
             return "(invalid)"
         return "(invalid)"
 
@@ -277,7 +278,7 @@ class MouseSection(ScopedPayloadSectionBase):
         builder = MenuBuilder(maker, self)
 
         def _prep(m: QtWidgets.QMenu, sc=scope, cat=category):
-            act_none = QtGui.QAction(self.t.tr("None (Unset)"), m)
+            act_none = QtGui.QAction(t("None (Unset)"), m)
             act_none.triggered.connect(lambda _, s=sc: self._on_select(s, None))
             first = m.actions()[0] if m.actions() else None
             if first:
@@ -287,7 +288,7 @@ class MouseSection(ScopedPayloadSectionBase):
                 m.addAction(act_none)
             if not names:
                 m.addSeparator()
-                act_empty = m.addAction(self.t("(No {cat} commands)", cat=cat))
+                act_empty = m.addAction(t("(No {cat} commands)", cat=cat))
                 act_empty.setEnabled(False)
 
         builder.popup_names(

@@ -14,6 +14,7 @@ from ...plugin.rename.base import (
 )
 from ...utils.formatting import dpix
 from ...core.color.theme import ThemeManager
+from ...core.lang.manager import t
 from .engine import RenameColumn
 
 
@@ -121,7 +122,7 @@ class ColumnSettingsPopup(QtWidgets.QFrame):
 
         if not is_ext:
             self._sep(lay, p)
-            rm = QtWidgets.QPushButton("Remove column")
+            rm = QtWidgets.QPushButton(t("Remove column"))
             rm.setStyleSheet(
                 f"QPushButton {{ color: {p.error}; background: transparent; "
                 f"border: none; font-size: {dpix(11)}px; padding: {dpix(3)}px; }}"
@@ -194,10 +195,10 @@ class ColumnSettingsPopup(QtWidgets.QFrame):
         rl.setContentsMargins(0, 0, 0, 0)
         rl.setSpacing(dpix(2))
         find_e = QtWidgets.QLineEdit(post.find)
-        find_e.setPlaceholderText("Find")
+        find_e.setPlaceholderText(t("Find"))
         find_e.setStyleSheet(si)
         repl_e = QtWidgets.QLineEdit(post.replace)
-        repl_e.setPlaceholderText("Replace")
+        repl_e.setPlaceholderText(t("Replace"))
         repl_e.setStyleSheet(si)
         rx = QtWidgets.QCheckBox("Regex")
         rx.setChecked(post.find_regex)
@@ -244,10 +245,10 @@ class ColumnSettingsPopup(QtWidgets.QFrame):
         il = QtWidgets.QHBoxLayout(iw)
         il.setContentsMargins(0, 0, 0, 0)
         pe = QtWidgets.QLineEdit(post.prefix)
-        pe.setPlaceholderText("prefix")
+        pe.setPlaceholderText(t("prefix"))
         pe.setStyleSheet(si)
         se = QtWidgets.QLineEdit(post.suffix)
-        se.setPlaceholderText("suffix")
+        se.setPlaceholderText(t("suffix"))
         se.setStyleSheet(si)
         il.addWidget(pe)
         il.addWidget(se)

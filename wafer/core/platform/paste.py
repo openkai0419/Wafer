@@ -11,6 +11,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from ...utils.logs import AppLogger
 from ...utils.notifier import Notifier
+from ...core.lang.manager import t
 from ...utils.paths import safe_exists, safe_is_dir
 from .path_utils import unique_path
 from .file_operations import (
@@ -165,7 +166,7 @@ def _confirm_action(message: str, parent: object | None) -> bool:
     return (
         QtWidgets.QMessageBox.question(
             pw,
-            "Confirm",
+            t("Confirm"),
             message,
             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
         )
@@ -210,7 +211,7 @@ def _run_with_progress(
     token = CancelToken()
     results: list[OperationResult] = []
 
-    dialog = QtWidgets.QProgressDialog(label, "Cancel", 0, total, parent)
+    dialog = QtWidgets.QProgressDialog(label, t("Cancel"), 0, total, parent)
     dialog.setWindowModality(QtCore.Qt.WindowModal)
     dialog.setMinimumDuration(0)
     dialog.setAutoReset(False)
@@ -241,9 +242,9 @@ def _run_with_progress(
 
     ok_count = sum(1 for r in results if r.status == "ok")
     if token.is_cancelled():
-        Notifier.info(f"Operation cancelled ({ok_count} completed)")
+        Notifier.info(t("Operation cancelled ({count} completed)", count=ok_count))
     elif ok_count:
-        Notifier.info(f"{ok_count} file(s) processed")
+        Notifier.info(t("{count} file(s) processed", count=ok_count))
     return results
 
 
@@ -254,7 +255,7 @@ def _execute_paste_items(
     op: str,
 ) -> list[OperationResult]:
     executor = FileExecutor()
-    label = "Moving files..." if op == "move" else "Copying files..."
+    label = t("Moving files...") if op == "move" else t("Copying files...")
 
     def step(i: int) -> OperationResult:
         item = plans[i]
@@ -272,7 +273,7 @@ def _execute_drop_items(
 ) -> list[OperationResult]:
     executor = FileExecutor()
     action: Literal["copy", "cut"] = "cut" if op == "move" else "copy"
-    label = "Moving files..." if op == "move" else "Copying files..."
+    label = t("Moving files...") if op == "move" else t("Copying files...")
 
     def step(i: int) -> OperationResult:
         plan = plans[i]

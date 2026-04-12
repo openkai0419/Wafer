@@ -3,11 +3,11 @@ from __future__ import annotations
 from PySide6 import QtCore, QtWidgets
 
 from wafer.utils.formatting import dpix
-from wafer.core.lang.manager import TranslatorMixin
+from wafer.core.lang.manager import t
 from wafer.plugin.query.widgets import CheckableCombo
 
 
-class RegexFilterWidget(QtWidgets.QWidget, TranslatorMixin):
+class RegexFilterWidget(QtWidgets.QWidget):
     changed = QtCore.Signal()
 
     def __init__(self, parent=None):
@@ -23,11 +23,11 @@ class RegexFilterWidget(QtWidgets.QWidget, TranslatorMixin):
         self.keys_combo.action_changed.connect(self.changed)
 
         self.regex_input = QtWidgets.QLineEdit()
-        self.regex_input.setPlaceholderText(self.t.tr("Enter regex pattern..."))
+        self.regex_input.setPlaceholderText(t("Enter regex pattern..."))
         self.regex_input.textChanged.connect(self.changed)
 
         self.case_button = QtWidgets.QToolButton()
-        self.case_button.setText(self.t.tr("Aa"))
+        self.case_button.setText(t("Aa"))
         self.case_button.setCheckable(True)
         self.case_button.setFixedSize(dpix(28), dpix(24))
         self.case_button.toggled.connect(lambda: self.changed.emit())

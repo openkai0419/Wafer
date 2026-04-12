@@ -12,6 +12,8 @@ from extensions.text_generation.detacher import NovelAiImageDetacher
 def _register_detacher():
     detacher_resolver.registry.register(NovelAiImageDetacher)
     yield
+    detacher_resolver.registry._plugins.pop(NovelAiImageDetacher.NAME, None)
+    detacher_resolver.registry._instances.pop(NovelAiImageDetacher.NAME, None)
 
 
 def _poll_until(predicate, timeout=5.0):

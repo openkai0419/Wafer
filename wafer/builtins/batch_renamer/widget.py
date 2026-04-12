@@ -30,6 +30,7 @@ from .table import (
 )
 from ...plugin.rename.handler import rename_source_registry
 from ...plugin.panel.base import BasePanelPlugin
+from ...core.lang.manager import t
 from ...core.commands.bridge import ActionKit, Context, Menu
 
 
@@ -227,7 +228,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
         page = QtWidgets.QWidget()
         lay = QtWidgets.QVBoxLayout(page)
         lay.setAlignment(Qt.AlignCenter)
-        msg = QtWidgets.QLabel("Select files and run Batch Renamer\nor drop files here")
+        msg = QtWidgets.QLabel(t("Select files and run Batch Renamer\nor drop files here"))
         msg.setStyleSheet(f"color: {p.text_muted}; font-size: {dpix(13)}px;")
         msg.setAlignment(Qt.AlignCenter)
         lay.addWidget(msg)
@@ -445,7 +446,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
         row_slider.setRange(0, 100)
         row_slider.setValue(20)
         row_slider.setMinimumWidth(dpix(40))
-        row_slider.setToolTip("Row thumbnail opacity")
+        row_slider.setToolTip(t("Row thumbnail opacity"))
         row_slider.setStyleSheet(slider_ss)
         row_slider.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
         row_slider.valueChanged.connect(self._on_row_opacity_changed)
@@ -458,14 +459,14 @@ class BatchRenameWidget(QtWidgets.QWidget):
         sel_slider.setValue(20)
         sel_slider.setMinimumWidth(dpix(40))
         sel_slider.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
-        sel_slider.setToolTip("Selected thumbnail opacity")
+        sel_slider.setToolTip(t("Selected thumbnail opacity"))
         sel_slider.setStyleSheet(slider_ss)
         sel_slider.valueChanged.connect(self._on_sel_opacity_changed)
         self._sel_opacity_slider = sel_slider
         bar.addWidget(sel_slider)
         bar.addSpacing(dpix(spacing_size))
 
-        self._rename_btn = QtWidgets.QPushButton("Rename")
+        self._rename_btn = QtWidgets.QPushButton(t("Rename"))
         self._rename_btn.setStyleSheet(
             f"QPushButton {{ background: {p.accent}; color: {p.accent_text}; "
             f"border: none; border-radius: {dpix(4)}px; "

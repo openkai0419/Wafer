@@ -12,7 +12,7 @@ from ..command.maker import MenuMaker
 from ..command.menu_builder import MenuBuilder
 from .common import WidgetRef
 from .store_base import BindingStoreBase, resolve_for_widget
-from ...lang.manager import TranslatorMixin, get_translator
+from ...lang.manager import t
 
 K = TypeVar("K")
 
@@ -90,7 +90,7 @@ def popup_command_picker(
     builder = MenuBuilder(maker, parent)
 
     def _prep(m: QtWidgets.QMenu, sc=scope):
-        act_none = QtGui.QAction(get_translator().tr("None (Unset)"), m)
+        act_none = QtGui.QAction(t("None (Unset)"), m)
         act_none.triggered.connect(lambda _, s=sc: on_select(s, None))
         first = m.actions()[0] if m.actions() else None
         if first:
@@ -108,7 +108,7 @@ def popup_command_picker(
     )
 
 
-class BindingEditorBase(TranslatorMixin, QtWidgets.QDialog):
+class BindingEditorBase(QtWidgets.QDialog):
     def __init__(self, widgets: list[WidgetRef], store: BindingStoreBase, parent=None):
         super().__init__(parent)
         self.widgets = widgets
@@ -136,7 +136,7 @@ class BindingEditorBase(TranslatorMixin, QtWidgets.QDialog):
         self._draft.replace_all(self._store._seed_data())
 
 
-class ScopedPayloadSectionBase(TranslatorMixin, QtWidgets.QGroupBox):
+class ScopedPayloadSectionBase(QtWidgets.QGroupBox):
     def __init__(
         self,
         parent: QtWidgets.QWidget,
@@ -155,7 +155,7 @@ class ScopedPayloadSectionBase(TranslatorMixin, QtWidgets.QGroupBox):
         self.btn_global.clicked.connect(lambda: self._pick_cmd("*"))
         header.addWidget(self.btn_global, 0)
         self.btn_overrides = QtWidgets.QToolButton(self)
-        self.btn_overrides.setText(self.t.tr("Override"))
+        self.btn_overrides.setText(t("Override"))
         self.btn_overrides.setPopupMode(QtWidgets.QToolButton.InstantPopup)
         self.ov_menu = QtWidgets.QMenu(self.btn_overrides)
         self.ov_menu.aboutToShow.connect(self._refresh_overrides_menu)
@@ -239,7 +239,7 @@ class ScopedPayloadSectionBase(TranslatorMixin, QtWidgets.QGroupBox):
         self.ov_menu.clear()
         remaining = [w.name for w in self.widgets if w.name not in self.override_edits]
         if not remaining:
-            act = self.ov_menu.addAction(self.t.tr("No more widgets"))
+            act = self.ov_menu.addAction(t("No more widgets"))
             act.setEnabled(False)
             self.btn_overrides.setEnabled(False)
             return

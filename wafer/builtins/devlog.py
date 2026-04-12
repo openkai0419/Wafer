@@ -8,6 +8,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from ..constants import DEV_MODE
 from ..plugin.panel.base import BasePanelPlugin
 from ..utils.formatting import dpix
+from ..core.lang.manager import t
 
 MAX_LOG_LINES = 2000
 
@@ -92,22 +93,22 @@ class DevLogPanel(QtWidgets.QWidget):
         self._level_combo.addItems(["ALL", "DEBUG", "INFO", "WARNING", "ERROR"])
         self._level_combo.setCurrentText("DEBUG")
         self._level_combo.currentTextChanged.connect(self._rebuild_all_tabs)
-        toolbar.addWidget(QtWidgets.QLabel("Level:"))
+        toolbar.addWidget(QtWidgets.QLabel(t("Level:")))
         toolbar.addWidget(self._level_combo)
 
         self._db_combo = QtWidgets.QComboBox()
         self._db_combo.addItem("ALL")
         self._db_combo.currentTextChanged.connect(self._rebuild_all_tabs)
-        toolbar.addWidget(QtWidgets.QLabel("DB:"))
+        toolbar.addWidget(QtWidgets.QLabel(t("DB:")))
         toolbar.addWidget(self._db_combo)
 
         toolbar.addStretch()
 
-        self._auto_scroll = QtWidgets.QCheckBox("Auto Scroll")
+        self._auto_scroll = QtWidgets.QCheckBox(t("Auto Scroll"))
         self._auto_scroll.setChecked(True)
         toolbar.addWidget(self._auto_scroll)
 
-        clear_btn = QtWidgets.QPushButton("Clear")
+        clear_btn = QtWidgets.QPushButton(t("Clear"))
         clear_btn.clicked.connect(self._clear)
         toolbar.addWidget(clear_btn)
 
@@ -116,7 +117,7 @@ class DevLogPanel(QtWidgets.QWidget):
         self._tab_widget = QtWidgets.QTabWidget()
         self._tab_widget.setTabsClosable(False)
         self._all_tab = _LogTab()
-        self._tab_widget.addTab(self._all_tab, "All")
+        self._tab_widget.addTab(self._all_tab, t("All"))
         layout.addWidget(self._tab_widget)
 
     def append_log(self, level: str, text: str, src: str = "", db: str = ""):

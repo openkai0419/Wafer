@@ -8,7 +8,7 @@ from ..core.platform.thumbnails import FileThumbnailer
 from ..core.qt.dispatcher import Dispatcher
 from ..core.qt.thread import SimpleThreadPool
 import os
-from ..core.lang.manager import TranslatorMixin
+from ..core.lang.manager import t
 
 _thumb_pool = SimpleThreadPool("dialog_thumb")
 _thumb_dispatcher = Dispatcher(_thumb_pool)
@@ -185,7 +185,7 @@ class ThumbnailConfirmDialog(BaseDialog):
         return dialog.result_text
 
 
-class InputDialog(BaseDialog, TranslatorMixin):
+class InputDialog(BaseDialog):
     def __init__(self, message, title="Input", buttons=("OK", "Cancel"), parent=None, default=""):
         super().__init__(message, title, buttons, parent=parent)
         self.input_edit = QLineEdit()
@@ -193,7 +193,7 @@ class InputDialog(BaseDialog, TranslatorMixin):
             self.input_edit.setText(default)
             self.input_edit.selectAll()
         else:
-            self.input_edit.setPlaceholderText(self.t.tr("Please enter text..."))
+            self.input_edit.setPlaceholderText(t("Please enter text..."))
         self.content_layout.addWidget(self.input_edit)
 
     @staticmethod
@@ -400,7 +400,7 @@ class SingleFileConflictDialog(BaseDialog):
 
         col = QVBoxLayout()
         col.addStretch(1)
-        col.addWidget(QLabel("移動対象" if op == "move" else "コピー対象"), alignment=Qt.AlignHCenter)
+        col.addWidget(QLabel(t("Move Target") if op == "move" else t("Copy Target")), alignment=Qt.AlignHCenter)
         col.addWidget(self.thumb, alignment=Qt.AlignHCenter)
         col.addStretch(1)
         col.addWidget(self.dir_label)

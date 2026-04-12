@@ -5,6 +5,7 @@ from ...utils.formatting import dpix
 from ...utils.logs import AppLogger
 from ...utils.markdown_browser import MarkdownBrowser, render_to_html
 from ...core.color.theme import ThemeManager
+from ...core.lang.manager import t
 from ...plugin.loader import get_plugin_dir, PluginLoader, qualify_plugin_name
 from ...plugin.installer import needs_setup, install_extension
 from ...core.qt.dispatcher import Dispatcher, CancelSlot
@@ -76,7 +77,7 @@ class _PluginRow(QtWidgets.QWidget):
 
         if registry_key == "panel":
             display = getattr(plugin_cls, "DISPLAY_NAME", "") or plugin_cls.NAME
-            btn = QtWidgets.QPushButton("Open")
+            btn = QtWidgets.QPushButton(t("Open"))
             btn.setObjectName("open_panel_btn")
             btn.setToolTip(f"Open {display}")
             btn.setFixedHeight(dpix(22))

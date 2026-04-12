@@ -7,6 +7,7 @@ from ...ui.window import DialogLayoutStore
 from ...utils.formatting import dpix
 from ...utils.paths import get_resource_path, get_app_root_dir
 from ..._version import __version__
+from ...core.lang.manager import t
 
 
 _standalone_dialogs: dict[str, QtWidgets.QDialog] = {}
@@ -109,7 +110,7 @@ def show_about(ctx):
         f"<p>Python: {sys.version.split()[0]}<br>Qt: {QtCore.qVersion()}<br>PySide6: {qt_version}</p>",
     ]
     msg = QtWidgets.QMessageBox(parent)
-    msg.setWindowTitle("About Wafer")
+    msg.setWindowTitle(t("About Wafer"))
     msg.setTextFormat(QtCore.Qt.RichText)
     msg.setText("".join(lines))
     msg.setStandardButtons(QtWidgets.QMessageBox.Ok)

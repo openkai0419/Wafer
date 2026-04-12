@@ -1,7 +1,7 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 from ....utils.formatting import dpix
 from ....core.color.theme import ThemeManager
-from ....core.lang.manager import TranslatorMixin
+from ....core.lang.manager import t
 from ....core.profile import PROFILE_COLORS
 
 
@@ -24,7 +24,7 @@ class ColorPalette(QtWidgets.QWidget):
             layout.addWidget(btn)
         btn_none = QtWidgets.QPushButton("\u2715")
         btn_none.setFixedSize(dpix(20), dpix(20))
-        btn_none.setToolTip("No color")
+        btn_none.setToolTip(t("No color"))
         btn_none.setStyleSheet(
             f"QPushButton {{ background: transparent; color: {p.text_muted}; border: {dpix(1)}px solid {p.border_default};"
             f"  border-radius: {dpix(10)}px; font-size: {dpix(10)}px; }}"
@@ -44,7 +44,7 @@ class ClickableColorDot(QtWidgets.QWidget):
         self._size = dpix(size)
         self.setFixedSize(self._size, self._size)
         self.setCursor(QtCore.Qt.PointingHandCursor)
-        self.setToolTip("Color")
+        self.setToolTip(t("Color"))
 
     def set_color(self, color: str):
         self._color = color
@@ -109,7 +109,7 @@ class ProfileItemWidget(QtWidgets.QWidget):
 
         btn_open_new = QtWidgets.QPushButton("\u2750")
         btn_open_new.setFixedSize(dpix(22), dpix(22))
-        btn_open_new.setToolTip("Open in new window")
+        btn_open_new.setToolTip(t("Open in new window"))
         btn_open_new.setCursor(QtCore.Qt.PointingHandCursor)
         btn_open_new.setStyleSheet(self._btn_style())
         btn_open_new.clicked.connect(lambda: self.open_new_window_requested.emit(self.profile_id))
@@ -117,7 +117,7 @@ class ProfileItemWidget(QtWidgets.QWidget):
 
         btn_rename = QtWidgets.QPushButton("\u270e")
         btn_rename.setFixedSize(dpix(22), dpix(22))
-        btn_rename.setToolTip("Rename")
+        btn_rename.setToolTip(t("Rename"))
         btn_rename.setCursor(QtCore.Qt.PointingHandCursor)
         btn_rename.setStyleSheet(self._btn_style())
         btn_rename.clicked.connect(lambda: self.rename_requested.emit(self.profile_id))
@@ -125,7 +125,7 @@ class ProfileItemWidget(QtWidgets.QWidget):
 
         btn_delete = QtWidgets.QPushButton("\u2715")
         btn_delete.setFixedSize(dpix(22), dpix(22))
-        btn_delete.setToolTip("Delete")
+        btn_delete.setToolTip(t("Delete"))
         btn_delete.setCursor(QtCore.Qt.PointingHandCursor)
         btn_delete.setStyleSheet(self._btn_style())
         btn_delete.clicked.connect(lambda: self.delete_requested.emit(self.profile_id))
@@ -160,7 +160,7 @@ class ProfileItemWidget(QtWidgets.QWidget):
         )
 
 
-class ProfilePopup(QtWidgets.QFrame, TranslatorMixin):
+class ProfilePopup(QtWidgets.QFrame):
     profile_create = QtCore.Signal()
     profile_open = QtCore.Signal(str)
     profile_open_new_window = QtCore.Signal(str)
@@ -203,7 +203,7 @@ class ProfilePopup(QtWidgets.QFrame, TranslatorMixin):
             f"QPushButton:pressed {{ background: {p.bg_pressed}; border-radius: {dpix(4)}px; }}"
         )
 
-        btn_new_profile = QtWidgets.QPushButton(f"+ {self.t.tr('New Profile')}")
+        btn_new_profile = QtWidgets.QPushButton(f"+ {t('New Profile')}")
         btn_new_profile.setCursor(QtCore.Qt.PointingHandCursor)
         btn_new_profile.setStyleSheet(action_style)
         btn_new_profile.clicked.connect(self._on_create)
@@ -229,7 +229,7 @@ class ProfilePopup(QtWidgets.QFrame, TranslatorMixin):
             row.color_requested.connect(self._on_color_requested)
             self._list_layout.addWidget(row)
         if not profiles:
-            empty = QtWidgets.QLabel(self.t.tr("No saved profiles"))
+            empty = QtWidgets.QLabel(t("No saved profiles"))
             p = ThemeManager.instance().palette
             empty.setStyleSheet(f"color: {p.text_muted}; font-size: {dpix(12)}px; padding: {dpix(8)}px;")
             empty.setAlignment(QtCore.Qt.AlignCenter)

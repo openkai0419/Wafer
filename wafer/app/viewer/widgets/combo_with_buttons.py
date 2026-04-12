@@ -1,11 +1,11 @@
 from PySide6.QtCore import QSignalBlocker, QSize, Qt, Signal
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QPushButton, QWidget
-from ....core.lang.manager import TranslatorMixin
+from ....core.lang.manager import t
 from ....core.qt.icon_engine import themed_icon
 from ....core.color.theme import ThemeManager
 
 
-class ComboBoxWithButtons(QWidget, TranslatorMixin):
+class ComboBoxWithButtons(QWidget):
     addClicked = Signal()
     removeClicked = Signal()
     textChanged = Signal(str)
@@ -18,8 +18,8 @@ class ComboBoxWithButtons(QWidget, TranslatorMixin):
         self.button_remove = QPushButton()
         self.button_remove.setIcon(themed_icon("minus"))
         self.combo.currentIndexChanged.connect(self.on_changed)
-        self.button_add.setToolTip(self.t.tr("Add item"))
-        self.button_remove.setToolTip(self.t.tr("Remove current item"))
+        self.button_add.setToolTip(t("Add item"))
+        self.button_remove.setToolTip(t("Remove current item"))
         self._current_text = None
         layout = QHBoxLayout()
         layout.addWidget(self.button_add)

@@ -6,7 +6,7 @@ from ....utils.formatting import dpix
 from ....utils.profiling import profiler
 from ....core.db.query import FileSearchEngine
 from ....plugin.query.composer import SearchComposer
-from ....core.lang.manager import TranslatorMixin
+from ....core.lang.manager import t
 from ....core.qt.dispatcher import Dispatcher, CancelSlot
 from ....core.qt.icon_engine import themed_icon
 from ....core.qt.thread import utility_pool
@@ -108,7 +108,7 @@ class FilterRow(QtWidgets.QWidget):
         return self._param_widget
 
 
-class SearchContainer(QtWidgets.QWidget, TranslatorMixin):
+class SearchContainer(QtWidgets.QWidget):
     filter_changed = QtCore.Signal()
 
     def __init__(self, parent=None):
@@ -167,11 +167,11 @@ class SearchContainer(QtWidgets.QWidget, TranslatorMixin):
 
         self._order_group = QtGui.QActionGroup(menu)
         self._order_group.setExclusive(True)
-        asc_action = menu.addAction(self.t.tr("Ascending"))
+        asc_action = menu.addAction(t("Ascending"))
         asc_action.setData(True)
         asc_action.setCheckable(True)
         self._order_group.addAction(asc_action)
-        desc_action = menu.addAction(self.t.tr("Descending"))
+        desc_action = menu.addAction(t("Descending"))
         desc_action.setData(False)
         desc_action.setCheckable(True)
         desc_action.setChecked(True)

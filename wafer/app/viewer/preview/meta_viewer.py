@@ -8,6 +8,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from ....utils.formatting import dpix, display_prefixed_key
 from ....utils.logs import AppLogger
+from ....core.lang.manager import t
 
 MAX_INLINE_CHARS = 4000
 MAX_INLINE_SEQ_ITEMS = 50
@@ -185,10 +186,10 @@ class MetaRowWidget(QtWidgets.QFrame):
 
     def _show_menu(self, pos: QtCore.QPoint) -> None:
         menu = QtWidgets.QMenu(self)
-        act_copy_json = menu.addAction("Copy row as JSON (full)")
-        act_copy_text_preview = menu.addAction("Copy preview text")
-        act_copy_value = menu.addAction("Copy single value…")
-        act_view_value = menu.addAction("Open value viewer…")
+        act_copy_json = menu.addAction(t("Copy row as JSON (full)"))
+        act_copy_text_preview = menu.addAction(t("Copy preview text"))
+        act_copy_value = menu.addAction(t("Copy single value\u2026"))
+        act_view_value = menu.addAction(t("Open value viewer\u2026"))
         chosen = menu.exec(self.mapToGlobal(pos))
         if chosen is act_copy_json:
             # 大きくてもユーザー操作時のみ。ここはブロックが起きても許容しやすい
@@ -203,20 +204,20 @@ class MetaRowWidget(QtWidgets.QFrame):
     # ---- helpers for menu ----
     def _copy_single_value_dialog(self) -> None:
         # キー選択 → 値全文コピー（巨大でもOK：ユーザー明示操作）
-        key, ok = QtWidgets.QInputDialog.getItem(self, "Copy single value", "Key:", self._keys, 0, False)
+        key, ok = QtWidgets.QInputDialog.getItem(self, t("Copy single value"), t("Key:"), self._keys, 0, False)
         if not ok or not key:
             return
         QtWidgets.QApplication.clipboard().setText(self._stringify_full(self._data.get(key)))
 
     def _open_value_viewer_dialog(self) -> None:
         # キー選択 → QPlainTextEdit で全文表示
-        key, ok = QtWidgets.QInputDialog.getItem(self, "Open value viewer", "Key:", self._keys, 0, False)
+        key, ok = QtWidgets.QInputDialog.getItem(self, t("Open value viewer"), t("Key:"), self._keys, 0, False)
         if not ok or not key:
             return
         text = self._stringify_full(self._data.get(key))
 
         dlg = QtWidgets.QDialog(self)
-        dlg.setWindowTitle(f"Value viewer - {key}")
+        dlg.setWindowTitle(t("Value viewer - {key}", key=key))
         dlg.resize(dpix(900), dpix(600))
         lay = QtWidgets.QVBoxLayout(dlg)
         edit = QtWidgets.QPlainTextEdit(dlg)

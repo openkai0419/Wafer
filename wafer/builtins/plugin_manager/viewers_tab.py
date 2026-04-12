@@ -1,5 +1,6 @@
 from PySide6 import QtWidgets, QtCore
 from ...utils.formatting import dpix
+from ...core.lang.manager import t
 
 
 class _ReorderList(QtWidgets.QListWidget):
@@ -83,7 +84,7 @@ class OrderTab(QtWidgets.QWidget):
         self._main_layout = QtWidgets.QVBoxLayout(self)
         self._main_layout.setSpacing(dpix(8))
 
-        desc = QtWidgets.QLabel("Drag to reorder \u00b7 higher = preferred")
+        desc = QtWidgets.QLabel(t("Drag to reorder \u00b7 higher = preferred"))
         desc.setStyleSheet(f"color: #888; font-size: {dpix(10)}px;")
         self._main_layout.addWidget(desc)
 

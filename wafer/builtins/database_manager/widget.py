@@ -8,6 +8,7 @@ from ...utils.paths import (
     data_db_path,
 )
 from ...core.color.theme import ThemeManager
+from ...core.lang.manager import t
 from ...core.db.setting_db import SettingDB
 from ...core.platform.process import AppProcess
 from ...ui.dialogs import ConfirmDialog, InputDialog
@@ -128,13 +129,13 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
         add_db_btn = QtWidgets.QPushButton()
         add_db_btn.setIcon(themed_icon("plus"))
         add_db_btn.setObjectName("add_btn")
-        add_db_btn.setToolTip("Add Database")
+        add_db_btn.setToolTip(t("Add Database"))
         add_db_btn.clicked.connect(self._add_database)
 
         del_db_btn = QtWidgets.QPushButton()
         del_db_btn.setIcon(themed_icon("minus"))
         del_db_btn.setObjectName("delete_db_btn")
-        del_db_btn.setToolTip("Delete Database")
+        del_db_btn.setToolTip(t("Delete Database"))
         del_db_btn.clicked.connect(self._delete_database)
 
         db_btn_layout = QtWidgets.QHBoxLayout()
@@ -142,13 +143,13 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
         db_btn_layout.addWidget(add_db_btn)
         db_btn_layout.addWidget(del_db_btn)
 
-        db_group = QtWidgets.QGroupBox("Databases")
+        db_group = QtWidgets.QGroupBox(t("Databases"))
         db_group_layout = QtWidgets.QVBoxLayout(db_group)
         db_group_layout.addWidget(self._db_list)
         db_group_layout.addLayout(db_btn_layout)
 
         self._detail_stack = QtWidgets.QStackedWidget()
-        self._empty_label = QtWidgets.QLabel("Select a database")
+        self._empty_label = QtWidgets.QLabel(t("Select a database"))
         self._empty_label.setAlignment(QtCore.Qt.AlignCenter)
         self._detail_stack.addWidget(self._empty_label)
 
@@ -165,9 +166,9 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
         self._detail_stack.setMinimumHeight(dpix(260))
         self._paths_splitter = splitter
 
-        save_btn = QtWidgets.QPushButton("Save")
+        save_btn = QtWidgets.QPushButton(t("Save"))
         save_btn.setObjectName("save_btn")
-        revert_btn = QtWidgets.QPushButton("Cancel")
+        revert_btn = QtWidgets.QPushButton(t("Cancel"))
         revert_btn.setObjectName("cancel_btn")
         save_btn.clicked.connect(self._on_save)
         revert_btn.clicked.connect(self._on_revert)
@@ -190,8 +191,8 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
         self._data_tab.purge_requested.connect(self._send_purge)
 
         self._tabs = QtWidgets.QTabWidget()
-        self._tabs.addTab(self._scrollable(paths_container), "Paths")
-        self._tabs.addTab(self._scrollable(self._data_tab), "Data")
+        self._tabs.addTab(self._scrollable(paths_container), t("Paths"))
+        self._tabs.addTab(self._scrollable(self._data_tab), t("Data"))
 
         layout = QtWidgets.QVBoxLayout(self)
         p = dpix(6)
@@ -258,9 +259,9 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
 
     def _add_database(self):
         text = InputDialog.get_text(
-            "Enter a name for the new database:",
-            title="Create Database",
-            buttons=("Create", "Cancel"),
+            t("Enter a name for the new database:"),
+            title=t("Create Database"),
+            buttons=(t("Create"), t("Cancel")),
             parent=self,
         )
         if not text or not text.strip():
@@ -285,8 +286,8 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
             return
         ret = ConfirmDialog.ask(
             f'Delete database "{db_name}"?\nThis cannot be undone.',
-            title="Delete Database",
-            buttons=("Delete", "Cancel"),
+            title=t("Delete Database"),
+            buttons=(t("Delete"), t("Cancel")),
             parent=self,
         )
         if ret != "Delete":
@@ -326,7 +327,7 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
 
     def _on_save(self):
         if not self.has_changes():
-            Notifier.info("No changes to save")
+            Notifier.info(t("No changes to save"))
             return
         changed = self._detail_widget.commit(self._initial_paths)
         AppLogger.info(f"[DatabaseManager] Saved path changes for: {sorted(changed)}")
@@ -347,7 +348,7 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
         current = self._db_list.currentItem()
         if current:
             self._detail_widget.load(current.text())
-        Notifier.info("Changes reverted")
+        Notifier.info(t("Changes reverted"))
 
     def _send_purge(self, pairs: list[tuple[str, str]], re_collect: bool):
         from ...core.commands.binding.instance_registry import InstanceRegistry
@@ -385,12 +386,12 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
         add_src_btn = QtWidgets.QPushButton()
         add_src_btn.setIcon(themed_icon("plus"))
         add_src_btn.setObjectName("folder_add_btn")
-        add_src_btn.setToolTip("Add Source Folder")
+        add_src_btn.setToolTip(t("Add Source Folder"))
         add_src_btn.clicked.connect(self._add_source)
         rm_src_btn = QtWidgets.QPushButton()
         rm_src_btn.setIcon(themed_icon("minus"))
         rm_src_btn.setObjectName("remove_btn")
-        rm_src_btn.setToolTip("Remove Selected")
+        rm_src_btn.setToolTip(t("Remove Selected"))
         rm_src_btn.clicked.connect(self._remove_source)
 
         src_btn_layout = QtWidgets.QHBoxLayout()
@@ -398,7 +399,7 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
         src_btn_layout.addWidget(add_src_btn)
         src_btn_layout.addWidget(rm_src_btn)
 
-        src_group = QtWidgets.QGroupBox("Source Folders")
+        src_group = QtWidgets.QGroupBox(t("Source Folders"))
         src_layout = QtWidgets.QVBoxLayout(src_group)
         src_layout.addWidget(self._source_list)
         src_layout.addLayout(src_btn_layout)
@@ -408,12 +409,12 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
         add_ign_btn = QtWidgets.QPushButton()
         add_ign_btn.setIcon(themed_icon("plus"))
         add_ign_btn.setObjectName("folder_add_btn")
-        add_ign_btn.setToolTip("Add Ignore Folder")
+        add_ign_btn.setToolTip(t("Add Ignore Folder"))
         add_ign_btn.clicked.connect(self._add_ignore)
         rm_ign_btn = QtWidgets.QPushButton()
         rm_ign_btn.setIcon(themed_icon("minus"))
         rm_ign_btn.setObjectName("remove_btn")
-        rm_ign_btn.setToolTip("Remove Selected")
+        rm_ign_btn.setToolTip(t("Remove Selected"))
         rm_ign_btn.clicked.connect(self._remove_ignore)
 
         ign_btn_layout = QtWidgets.QHBoxLayout()
@@ -421,7 +422,7 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
         ign_btn_layout.addWidget(add_ign_btn)
         ign_btn_layout.addWidget(rm_ign_btn)
 
-        ign_group = QtWidgets.QGroupBox("Ignored Folders")
+        ign_group = QtWidgets.QGroupBox(t("Ignored Folders"))
         ign_layout = QtWidgets.QVBoxLayout(ign_group)
         ign_layout.addWidget(self._ignore_list)
         ign_layout.addLayout(ign_btn_layout)

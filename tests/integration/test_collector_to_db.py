@@ -74,7 +74,7 @@ class TestCollectorPrefixAutoApply:
 
             parsed = _parse_batch(results)
             for path, key, value, value_num in parsed["meta_info_entries"]:
-                assert key.startswith("exif."), f"Meta key '{key}' missing 'exif.' prefix"
+                assert key.startswith("exiftool."), f"Meta key '{key}' missing 'exiftool.' prefix"
 
     def test_collector_status_recorded(self, tmp_path):
         img_dir = tmp_path / "photos"

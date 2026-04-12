@@ -78,11 +78,6 @@ class TranslationManager:
         AppLogger.info(msg)
 
 
-class TranslatorMixin:
-    @property
-    def t(self):
-        return get_translator()
-
-
 init_translator(get_resource_path() / "translations.json")
 translator = get_translator()
+t = translator

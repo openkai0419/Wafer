@@ -16,6 +16,7 @@ from ..plugin.rename.base import (
     style_spinbox,
 )
 from ..utils.formatting import dpix
+from ..core.lang.manager import t
 from ..core.color.theme import ThemeManager
 
 
@@ -53,7 +54,7 @@ class FixedSource(BaseRenameSourcePlugin):
         lay.setContentsMargins(0, 0, 0, 0)
         p = ThemeManager.instance().palette
         ed = QtWidgets.QLineEdit(self.text, w)
-        ed.setPlaceholderText("text")
+        ed.setPlaceholderText(t("text"))
         ed.setStyleSheet(style_input(p))
         ed.textChanged.connect(lambda t: (setattr(self, "text", t), w.changed.emit()))
         lay.addWidget(ed)
@@ -198,7 +199,7 @@ class DateSource(BaseRenameSourcePlugin):
         sb.value_changed.connect(lambda v: (setattr(self, "source", v), w.changed.emit()))
         lay.addWidget(sb)
         fe = QtWidgets.QLineEdit(self.fmt, w)
-        fe.setPlaceholderText("format e.g. %Y%m%d")
+        fe.setPlaceholderText(t("format e.g. %Y%m%d"))
         fe.setStyleSheet(style_input(p))
         fe.textChanged.connect(lambda t: (setattr(self, "fmt", t), w.changed.emit()))
         lay.addWidget(fe)
@@ -307,7 +308,7 @@ class ExtSource(BaseRenameSourcePlugin):
         mb.value_changed.connect(lambda v: (setattr(self, "mode", v), w.changed.emit()))
         lay.addWidget(mb)
         ce = QtWidgets.QLineEdit(self.custom, w)
-        ce.setPlaceholderText("ext (no dot)")
+        ce.setPlaceholderText(t("ext (no dot)"))
         ce.setStyleSheet(style_input(p))
         ce.textChanged.connect(lambda t: (setattr(self, "custom", t), w.changed.emit()))
         lay.addWidget(ce)

@@ -12,6 +12,7 @@ from wafer.plugin.collector.base import BaseCollector
 from wafer.utils.formatting import dpix
 from wafer.utils.logs import AppLogger
 from wafer.utils.notifier import Notifier
+from wafer.core.lang.manager import t
 from wafer.utils.paths import list_setting_db_names, data_db_path
 from wafer.core.db.db_utils import apply_read_pragmas
 from wafer.core.qt.dispatcher import Dispatcher, CancelSlot
@@ -47,30 +48,30 @@ class ExifSettingsWidget(QtWidgets.QWidget):
         self._saved_keys = set(self._filter_keys)
 
         self._mode_combo = QtWidgets.QComboBox()
-        self._mode_combo.addItem("Blacklist (block selected)", MODE_BLACKLIST)
-        self._mode_combo.addItem("Whitelist (use selected only)", MODE_WHITELIST)
+        self._mode_combo.addItem(t("Blacklist (block selected)"), MODE_BLACKLIST)
+        self._mode_combo.addItem(t("Whitelist (use selected only)"), MODE_WHITELIST)
         self._mode_combo.setCurrentIndex(0 if self._filter_mode == MODE_BLACKLIST else 1)
         self._mode_combo.currentIndexChanged.connect(self._on_mode_changed)
 
         tabs = QtWidgets.QTabWidget()
         self._key_browser = _KeyBrowserTab(self._filter_mode, self._filter_keys, self._dispatcher, self._cancel)
         self._sample_preview = _SamplePreviewTab(self._filter_mode, self._filter_keys, self._dispatcher, self._cancel)
-        tabs.addTab(self._sample_preview, "Sample Preview")
-        tabs.addTab(self._key_browser, "Key Browser")
+        tabs.addTab(self._sample_preview, t("Sample Preview"))
+        tabs.addTab(self._key_browser, t("Key Browser"))
 
         self._sample_preview.filter_keys_changed.connect(self._on_preview_keys_changed)
         self._key_browser.filter_keys_changed.connect(self._on_browser_keys_changed)
 
         bottom_layout = QtWidgets.QHBoxLayout()
-        bottom_layout.addWidget(QtWidgets.QLabel("Filter Mode:"))
+        bottom_layout.addWidget(QtWidgets.QLabel(t("Filter Mode:")))
         bottom_layout.addWidget(self._mode_combo)
         bottom_layout.addStretch()
 
-        save_btn = QtWidgets.QPushButton("Save && Recollect (All DBs)")
+        save_btn = QtWidgets.QPushButton(t("Save && Recollect (All DBs)"))
         save_btn.clicked.connect(self._on_save)
         bottom_layout.addWidget(save_btn)
 
-        reset_btn = QtWidgets.QPushButton("Cancel")
+        reset_btn = QtWidgets.QPushButton(t("Cancel"))
         reset_btn.clicked.connect(self._on_reset)
         bottom_layout.addWidget(reset_btn)
 
@@ -233,18 +234,18 @@ class _KeyBrowserTab(QtWidgets.QWidget):
         self._cancel = cancel
         self._sort_mode, self._sort_ascending = read_sort_config()
 
-        self._check_all_btn = QtWidgets.QPushButton("Check All")
+        self._check_all_btn = QtWidgets.QPushButton(t("Check All"))
         self._check_all_btn.clicked.connect(self._on_check_all)
 
         top_row = QtWidgets.QHBoxLayout()
         top_row.addWidget(self._check_all_btn)
 
         self._search = QtWidgets.QLineEdit()
-        self._search.setPlaceholderText("Filter keys...")
+        self._search.setPlaceholderText(t("Filter keys..."))
         self._search.textChanged.connect(self._apply_filter)
 
         self._tree = QtWidgets.QTreeWidget()
-        self._tree.setHeaderLabels([self._check_header(), "Key", "Count"])
+        self._tree.setHeaderLabels([self._check_header(), t("Key"), t("Count")])
         self._tree.setRootIsDecorated(True)
         self._tree.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         self._tree.itemClicked.connect(self._on_item_clicked)
@@ -273,7 +274,7 @@ class _KeyBrowserTab(QtWidgets.QWidget):
         self._sample_table.verticalHeader().setVisible(False)
         self._sample_table.setVisible(False)
 
-        self._placeholder = QtWidgets.QLabel("Click a key to see sample values")
+        self._placeholder = QtWidgets.QLabel(t("Click a key to see sample values"))
         self._placeholder.setAlignment(QtCore.Qt.AlignCenter)
         self._placeholder.setStyleSheet(f"color: palette(mid); padding: {dpix(20)}px;")
 
@@ -314,7 +315,7 @@ class _KeyBrowserTab(QtWidgets.QWidget):
         return super().eventFilter(obj, event)
 
     def _check_header(self) -> str:
-        return "Block" if self._filter_mode == MODE_BLACKLIST else "Use"
+        return t("Block") if self._filter_mode == MODE_BLACKLIST else t("Use")
 
     def _on_check_all(self):
         all_keys = self.all_known_keys()
@@ -329,7 +330,7 @@ class _KeyBrowserTab(QtWidgets.QWidget):
     def _update_check_all_label(self):
         all_keys = self.all_known_keys()
         all_checked = all_keys and self._filter_keys >= all_keys
-        self._check_all_btn.setText("Uncheck All" if all_checked else "Check All")
+        self._check_all_btn.setText(t("Uncheck All") if all_checked else t("Check All"))
 
     def _on_header_sort(self, section: int):
         if section == _CHECK_COL:
@@ -570,7 +571,7 @@ class _SamplePreviewTab(QtWidgets.QWidget):
         self._cancel = cancel
         self.setAcceptDrops(True)
 
-        self._drop_label = QtWidgets.QLabel("Drop a file here to preview ExifTool tags")
+        self._drop_label = QtWidgets.QLabel(t("Drop a file here to preview ExifTool tags"))
         self._drop_label.setAlignment(QtCore.Qt.AlignCenter)
         self._drop_label.setMinimumHeight(dpix(60))
         self._drop_label.setStyleSheet(f"border: {dpix(2)}px dashed palette(mid); border-radius: {dpix(6)}px; padding: {dpix(12)}px;")
@@ -608,7 +609,7 @@ class _SamplePreviewTab(QtWidgets.QWidget):
         layout.addWidget(content_splitter, 1)
 
     def _check_header(self) -> str:
-        return "Block" if self._filter_mode == MODE_BLACKLIST else "Use"
+        return t("Block") if self._filter_mode == MODE_BLACKLIST else t("Use")
 
     def dragEnterEvent(self, event: QtGui.QDragEnterEvent):
         if event.mimeData().hasUrls():
@@ -702,7 +703,7 @@ class _SamplePreviewTab(QtWidgets.QWidget):
         muted_fg = QtGui.QColor(palette.text_muted)
 
         self._table.blockSignals(True)
-        self._table.setHorizontalHeaderLabels([self._check_header(), "Key", "Value"])
+        self._table.setHorizontalHeaderLabels([self._check_header(), t("Key"), t("Value")])
         self._table.setRowCount(0)
         self._table.setRowCount(len(self._meta))
         for row, (key, value) in enumerate(sorted(self._meta.items())):
@@ -764,15 +765,15 @@ class _SamplePreviewTab(QtWidgets.QWidget):
 class _SaveConfirmDialog(QtWidgets.QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Save ExifTool Filter Settings")
+        self.setWindowTitle(t("Save ExifTool Filter Settings"))
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setSpacing(dpix(8))
-        layout.addWidget(QtWidgets.QLabel("Filter settings have been modified.\nThis will apply to all databases."))
+        layout.addWidget(QtWidgets.QLabel(t("Filter settings have been modified.\nThis will apply to all databases.")))
 
-        self._purge_cb = QtWidgets.QCheckBox("Purge existing ExifTool data")
+        self._purge_cb = QtWidgets.QCheckBox(t("Purge existing ExifTool data"))
         self._purge_cb.setChecked(True)
-        self._recollect_cb = QtWidgets.QCheckBox("Recollect after purge")
+        self._recollect_cb = QtWidgets.QCheckBox(t("Recollect after purge"))
         self._recollect_cb.setChecked(True)
         self._purge_cb.toggled.connect(self._recollect_cb.setEnabled)
         layout.addWidget(self._purge_cb)
@@ -780,8 +781,8 @@ class _SaveConfirmDialog(QtWidgets.QDialog):
 
         btn_layout = QtWidgets.QHBoxLayout()
         btn_layout.addStretch()
-        save_btn = QtWidgets.QPushButton("Save")
-        cancel_btn = QtWidgets.QPushButton("Cancel")
+        save_btn = QtWidgets.QPushButton(t("Save"))
+        cancel_btn = QtWidgets.QPushButton(t("Cancel"))
         save_btn.clicked.connect(self.accept)
         cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(save_btn)

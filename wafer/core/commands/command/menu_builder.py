@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import Any
 from collections.abc import Callable
 from PySide6 import QtCore, QtGui, QtWidgets
-from ...lang.manager import TranslatorMixin
+from ...lang.manager import t
 from ....utils.profiling import profiler
 from .core import CommandMeta, CommandRegistry, COMMAND_MENU_MARKER
 from .context import CommandContext
@@ -55,7 +55,7 @@ class StickyMenu(QtWidgets.QMenu):
         super().hideEvent(event)
 
 
-class CommandMenuBuilder(TranslatorMixin):
+class CommandMenuBuilder:
     _instance: CommandMenuBuilder | None = None
     _initialized: bool = False
 
@@ -121,11 +121,11 @@ class CommandMenuBuilder(TranslatorMixin):
         display_map: dict[str, str] | None,
     ):
         if display_map and command_id in display_map:
-            disp = display_map.get(command_id) or self.t.tr(meta.display)
+            disp = display_map.get(command_id) or t(meta.display)
             dparts = split_menu_path(disp)
             if len(dparts) > 1:
                 target_menu = self._get_or_create_submenu_chain(root_menu, cache, dparts[:-1], parent)
-            text_override = dparts[-1] if dparts else self.t.tr(meta.display)
+            text_override = dparts[-1] if dparts else t(meta.display)
             return target_menu, text_override
         return target_menu, None
 
@@ -174,7 +174,7 @@ class CommandMenuBuilder(TranslatorMixin):
                     continue
                 text = parts[-1]
                 target_menu = menu if len(parts) == 1 else self._get_or_create_submenu_chain(menu, menus_cache, parts[:-1], parent)
-                target_menu.addAction(self._create_section_action(parent, self.t.tr(text) or text))
+                target_menu.addAction(self._create_section_action(parent, t(text) or text))
                 continue
             path_parts = split_menu_path(name)
             command_id = path_parts[-1] if len(path_parts) > 1 else name
@@ -264,7 +264,7 @@ class CommandMenuBuilder(TranslatorMixin):
         hotkey_map: dict[str, str] | None = None,
         checkable_tracker: list[tuple] | None = None,
     ):
-        text = text_override or self.t.tr(meta.display)
+        text = text_override or t(meta.display)
         widget_action = QtWidgets.QWidgetAction(parent)
         widget_action.setData(name)
         hotkey = (hotkey_map or {}).get(name, "")
@@ -549,7 +549,7 @@ class CommandMenuBuilder(TranslatorMixin):
             if cur_path in cache:
                 current = cache[cur_path]
                 continue
-            m = StickyMenu(self.t.tr(part) or part, parent)
+            m = StickyMenu(t(part) or part, parent)
             current.addMenu(m)
             cache[cur_path] = m
             self._install_hotkey_alignment(m)

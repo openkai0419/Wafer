@@ -2,6 +2,7 @@ from PySide6 import QtWidgets, QtCore
 from ...utils.formatting import dpix
 from ...utils.paths import list_setting_db_names, setting_db_path
 from ...core.db.setting_db import SettingDB
+from ...core.lang.manager import t
 
 
 class CollectorsTab(QtWidgets.QWidget):
@@ -30,7 +31,7 @@ class CollectorsTab(QtWidgets.QWidget):
 
         outer = QtWidgets.QVBoxLayout(self)
         outer.setSpacing(dpix(8))
-        desc = QtWidgets.QLabel("Per-Database Assignment")
+        desc = QtWidgets.QLabel(t("Per-Database Assignment"))
         desc.setObjectName("section_header")
         outer.addWidget(desc)
         self._content = QtWidgets.QWidget()
@@ -49,12 +50,12 @@ class CollectorsTab(QtWidgets.QWidget):
         self._clear_matrix()
 
         if not self._all_names:
-            self._main_layout.addWidget(QtWidgets.QLabel("No collector or detacher plugins loaded."))
+            self._main_layout.addWidget(QtWidgets.QLabel(t("No collector or detacher plugins loaded.")))
             self._main_layout.addStretch()
             return
 
         if not self._db_names:
-            self._main_layout.addWidget(QtWidgets.QLabel("No databases found."))
+            self._main_layout.addWidget(QtWidgets.QLabel(t("No databases found.")))
             self._main_layout.addStretch()
             return
 
@@ -80,7 +81,7 @@ class CollectorsTab(QtWidgets.QWidget):
             grid.addWidget(_vsep(), r, 1)
             grid.addWidget(_vsep(), r, 3)
 
-        grid.addWidget(QtWidgets.QLabel("All"), 0, 2, QtCore.Qt.AlignCenter)
+        grid.addWidget(QtWidgets.QLabel(t("All")), 0, 2, QtCore.Qt.AlignCenter)
         for col_idx, db in enumerate(self._db_names):
             lbl = QtWidgets.QLabel(db)
             lbl.setAlignment(QtCore.Qt.AlignCenter)
@@ -191,9 +192,9 @@ class CollectorsTab(QtWidgets.QWidget):
             return True
 
         dlg = QtWidgets.QDialog(self)
-        dlg.setWindowTitle("Confirm Disable")
+        dlg.setWindowTitle(t("Confirm Disable"))
         layout = QtWidgets.QVBoxLayout(dlg)
-        layout.addWidget(QtWidgets.QLabel("The following plugins will be disabled:"))
+        layout.addWidget(QtWidgets.QLabel(t("The following plugins will be disabled:")))
 
         purge_checks: list[tuple[QtWidgets.QCheckBox, str, str]] = []
         for db, name in disabled:
@@ -201,12 +202,12 @@ class CollectorsTab(QtWidgets.QWidget):
             purge_checks.append((cb, db, name))
             layout.addWidget(cb)
 
-        layout.addWidget(QtWidgets.QLabel("Unchecked items keep their data.\n(re-enable later to use again without re-collecting)"))
+        layout.addWidget(QtWidgets.QLabel(t("Unchecked items keep their data.\n(re-enable later to use again without re-collecting)")))
 
         btn_layout = QtWidgets.QHBoxLayout()
         btn_layout.addStretch()
-        confirm_btn = QtWidgets.QPushButton("Confirm")
-        cancel_btn = QtWidgets.QPushButton("Cancel")
+        confirm_btn = QtWidgets.QPushButton(t("Confirm"))
+        cancel_btn = QtWidgets.QPushButton(t("Cancel"))
         confirm_btn.clicked.connect(dlg.accept)
         cancel_btn.clicked.connect(dlg.reject)
         btn_layout.addWidget(confirm_btn)

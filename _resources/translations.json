@@ -1,4 +1,56 @@
 {
+  "All": {
+    "en": "All",
+    "ja": ""
+  },
+  "Drag to reorder · higher = preferred": {
+    "en": "Drag to reorder · higher = preferred",
+    "ja": ""
+  },
+  "Filter": {
+    "en": "Filter",
+    "ja": ""
+  },
+  "MetaInfo": {
+    "en": "MetaInfo",
+    "ja": ""
+  },
+  "No collector or detacher plugins loaded.": {
+    "en": "No collector or detacher plugins loaded.",
+    "ja": ""
+  },
+  "Open": {
+    "en": "Open",
+    "ja": ""
+  },
+  "Order": {
+    "en": "Order",
+    "ja": ""
+  },
+  "Per-Database Assignment": {
+    "en": "Per-Database Assignment",
+    "ja": ""
+  },
+  "Prefix": {
+    "en": "Prefix",
+    "ja": ""
+  },
+  "Search keys...": {
+    "en": "Search keys...",
+    "ja": ""
+  },
+  "Status": {
+    "en": "Status",
+    "ja": ""
+  },
+  "Tags": {
+    "en": "Tags",
+    "ja": ""
+  },
+  "max_slots": {
+    "en": "max_slots",
+    "ja": ""
+  },
   "Execute": {
     "en": "Execute",
     "ja": ""

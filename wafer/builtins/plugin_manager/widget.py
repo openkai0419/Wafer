@@ -8,6 +8,7 @@ from ...core.color.theme import ThemeManager
 from ...core.qt.dispatcher import Dispatcher
 from ...core.qt.thread import utility_pool
 from ...core.commands.bridge import Command
+from ...core.lang.manager import t
 
 
 def _hex_rgb(hex_color: str) -> str:
@@ -162,7 +163,7 @@ class PluginManagerWidget(QtWidgets.QWidget):
 
         self._initial_enabled = self._settings.enabled_names() or set()
         self._initial_orders = dict(saved_orders)
-        self._tabs.addTab(self._scrollable(self._order_tab), "Order")
+        self._tabs.addTab(self._scrollable(self._order_tab), t("Order"))
 
         self._ext_tab.enabled_changed.connect(self._sync_tabs)
 
@@ -175,9 +176,9 @@ class PluginManagerWidget(QtWidgets.QWidget):
         self._ext_tab.setMinimumHeight(dpix(220))
         self._tabs.setMinimumHeight(dpix(120))
 
-        save_btn = QtWidgets.QPushButton("Save")
+        save_btn = QtWidgets.QPushButton(t("Save"))
         save_btn.setObjectName("save_btn")
-        revert_btn = QtWidgets.QPushButton("Cancel")
+        revert_btn = QtWidgets.QPushButton(t("Cancel"))
         revert_btn.setObjectName("cancel_btn")
         save_btn.clicked.connect(self._on_save)
         revert_btn.clicked.connect(self._on_revert)
@@ -206,7 +207,7 @@ class PluginManagerWidget(QtWidgets.QWidget):
         orders = self._order_tab.get_orders()
         has_changes = self._has_plugin_changes(enabled, orders) or self._collectors_tab.has_changes()
         if not has_changes:
-            Notifier.info("No changes to save")
+            Notifier.info(t("No changes to save"))
             return
         self._settings.set_enabled(enabled)
         for key, order in orders.items():
@@ -216,12 +217,12 @@ class PluginManagerWidget(QtWidgets.QWidget):
         self._initial_orders = dict(orders)
         msg = QtWidgets.QMessageBox(
             QtWidgets.QMessageBox.Question,
-            "Restart Required",
-            "Plugin settings have been saved.\nRestart is required.",
+            t("Restart Required"),
+            t("Plugin settings have been saved.\nRestart is required."),
             parent=self,
         )
-        restart_btn = msg.addButton("Restart", QtWidgets.QMessageBox.AcceptRole)
-        msg.addButton("Not Now", QtWidgets.QMessageBox.RejectRole)
+        restart_btn = msg.addButton(t("Restart"), QtWidgets.QMessageBox.AcceptRole)
+        msg.addButton(t("Not Now"), QtWidgets.QMessageBox.RejectRole)
         msg.setDefaultButton(restart_btn)
         msg.exec()
         if msg.clickedButton() == restart_btn:

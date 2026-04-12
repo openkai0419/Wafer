@@ -9,6 +9,7 @@ from ...utils.paths import list_setting_db_names, data_db_path, setting_db_path
 from ...core.db.setting_db import SettingDB
 from ...core.db.db_utils import apply_read_pragmas
 from ...core.qt.dispatcher import Dispatcher, CancelSlot
+from ...core.lang.manager import t
 
 
 _COL_DB = 0
@@ -18,7 +19,7 @@ _COL_TAGS = 3
 _COL_STATUS = 4
 _COL_CHECK = 5
 _COLUMN_COUNT = 6
-_HEADERS = ["Database", "Prefix", "MetaInfo", "Tags", "Status", ""]
+_HEADERS = [t("Database"), t("Prefix"), t("MetaInfo"), t("Tags"), t("Status"), ""]
 
 
 class _NumericItem(QtWidgets.QTableWidgetItem):
@@ -237,22 +238,22 @@ class DataTab(QtWidgets.QWidget):
         layout.setSpacing(dpix(6))
 
         header_row = QtWidgets.QHBoxLayout()
-        label = QtWidgets.QLabel("Collected Data")
+        label = QtWidgets.QLabel(t("Collected Data"))
         label.setObjectName("section_header")
         header_row.addWidget(label)
         header_row.addStretch()
         self._refresh_btn = QtWidgets.QPushButton()
         self._refresh_btn.setIcon(themed_icon("refresh"))
         self._refresh_btn.setFixedSize(dpix(24), dpix(24))
-        self._refresh_btn.setToolTip("Refresh")
+        self._refresh_btn.setToolTip(t("Refresh"))
         self._refresh_btn.clicked.connect(self.refresh)
         header_row.addWidget(self._refresh_btn)
         layout.addLayout(header_row)
 
-        self._collector_table = _PrefixTable("Collectors")
+        self._collector_table = _PrefixTable(t("Collectors"))
         self._collector_table.selection_changed.connect(self._update_selected_count)
 
-        self._detacher_table = _PrefixTable("Detachers")
+        self._detacher_table = _PrefixTable(t("Detachers"))
         self._detacher_table.selection_changed.connect(self._update_selected_count)
 
         self.splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
@@ -263,14 +264,14 @@ class DataTab(QtWidgets.QWidget):
         self.splitter.setChildrenCollapsible(False)
         layout.addWidget(self.splitter, 1)
 
-        self._selected_label = QtWidgets.QLabel("Selected: 0 items")
+        self._selected_label = QtWidgets.QLabel(t("Selected: 0 items"))
         layout.addWidget(self._selected_label)
 
-        self._re_collect_cb = QtWidgets.QCheckBox("Re-collect after purge (mark as pending)")
+        self._re_collect_cb = QtWidgets.QCheckBox(t("Re-collect after purge (mark as pending)"))
         self._re_collect_cb.setChecked(True)
         layout.addWidget(self._re_collect_cb)
 
-        self._purge_btn = QtWidgets.QPushButton("Purge Selected")
+        self._purge_btn = QtWidgets.QPushButton(t("Purge Selected"))
         self._purge_btn.setObjectName("purge_btn")
         self._purge_btn.setFixedWidth(dpix(140))
         self._purge_btn.clicked.connect(self._on_purge)
@@ -313,7 +314,7 @@ class DataTab(QtWidgets.QWidget):
 
     def _set_loading(self, loading: bool):
         self._refresh_btn.setEnabled(not loading)
-        self._refresh_btn.setToolTip("Loading..." if loading else "Refresh")
+        self._refresh_btn.setToolTip(t("Loading...") if loading else t("Refresh"))
 
     def _load_async(self, priority: int = 9, log: bool = False):
         self._set_loading(True)
@@ -347,21 +348,21 @@ class DataTab(QtWidgets.QWidget):
 
     def _update_selected_count(self):
         count = self._collector_table.checked_count() + self._detacher_table.checked_count()
-        self._selected_label.setText(f"Selected: {count} items")
+        self._selected_label.setText(t("Selected: {count} items", count=count))
 
     def _on_purge(self):
         selected = self._collector_table.get_checked() + self._detacher_table.get_checked()
         if not selected:
             return
         re_collect = self._re_collect_cb.isChecked()
-        msg = f"Purge {len(selected)} prefix(es)?\n\n"
+        msg = t("Purge {count} prefix(es)?\n\n", count=len(selected))
         for db, prefix in selected:
             msg += f"  {prefix} on {db}\n"
         if re_collect:
-            msg += "\nFiles will be marked for re-collection."
+            msg += "\n" + t("Files will be marked for re-collection.")
         result = QtWidgets.QMessageBox.question(
             self,
-            "Confirm Purge",
+            t("Confirm Purge"),
             msg,
             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
         )

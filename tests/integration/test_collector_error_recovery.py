@@ -124,7 +124,7 @@ class TestOtherCollectorUnaffected:
         assert statuses["exiftool"] == "ok"
 
         meta_keys = [e[1] for e in parsed["meta_info_entries"]]
-        assert all(k.startswith("exif.") for k in meta_keys)
+        assert all(k.startswith("exiftool.") for k in meta_keys)
         assert not any(k.startswith("faulty_plugin.") for k in meta_keys)
 
     def test_mixed_batch_partial_failure(self):

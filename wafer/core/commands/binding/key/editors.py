@@ -8,7 +8,7 @@ from .store import KeyBindingStore
 from .shortcutmanager import ShortcutManager
 from .sequence import KeySequence, KeySpecCatalog
 from ..editors_common import BindingEditorBase, ScopedPayloadSectionBase, DraftOverlay, clear_layout, popup_command_picker
-from ....lang.manager import get_translator
+from ....lang.manager import t
 
 
 class _SelectableList(QtWidgets.QListWidget):
@@ -33,7 +33,7 @@ class KeyBindingEditor(BindingEditorBase):
             commands = None
         super().__init__(widgets, KeyBindingStore.instance(), parent)
         self._commands = list(commands or [])
-        self.setWindowTitle("Key Bindings")
+        self.setWindowTitle(t("Key Bindings"))
         self.resize(dpix(600), dpix(480))
         self._cat = KeySpecCatalog()
         self._mod_keys: list[str] = []
@@ -51,22 +51,22 @@ class KeyBindingEditor(BindingEditorBase):
         col_mod = QtWidgets.QVBoxLayout()
         col_main = QtWidgets.QVBoxLayout()
         col_list = QtWidgets.QVBoxLayout()
-        col_mod.addWidget(QtWidgets.QLabel(self.t.tr("Modifier Key")), 0)
+        col_mod.addWidget(QtWidgets.QLabel(t("Modifier Key")), 0)
         self.list_mods = _SelectableList(self)
         self.list_mods.currentItemChanged.connect(lambda: self._refresh_shortcuts())
         col_mod.addWidget(self.list_mods, 1)
-        col_main.addWidget(QtWidgets.QLabel(self.t.tr("Main Key")), 0)
+        col_main.addWidget(QtWidgets.QLabel(t("Main Key")), 0)
         self.list_main = _SelectableList(self)
         self.list_main.currentItemChanged.connect(lambda: self._refresh_shortcuts())
         col_main.addWidget(self.list_main, 1)
         btns = QtWidgets.QHBoxLayout()
-        self.btn_add_binding = QtWidgets.QPushButton(self.t.tr("Add New"), self)
+        self.btn_add_binding = QtWidgets.QPushButton(t("Add New"), self)
         self.btn_add_binding.clicked.connect(self._add_binding)
         btns.addWidget(self.btn_add_binding, 0)
-        self.btn_search = QtWidgets.QPushButton(self.t.tr("Search Command"), self)
+        self.btn_search = QtWidgets.QPushButton(t("Search Command"), self)
         self.btn_search.clicked.connect(self._search)
         btns.addWidget(self.btn_search, 0)
-        self.btn_reset_all = QtWidgets.QPushButton(self.t.tr("Reset to Defaults"), self)
+        self.btn_reset_all = QtWidgets.QPushButton(t("Reset to Defaults"), self)
         self.btn_reset_all.clicked.connect(self._reset_all_defaults)
         btns.addWidget(self.btn_reset_all, 0)
         btns.addStretch(1)
@@ -90,7 +90,7 @@ class KeyBindingEditor(BindingEditorBase):
         l.addWidget(bb, 0)
 
     def _load_existing(self):
-        self._mod_keys = [self.t.tr("(None)")]
+        self._mod_keys = [t("(None)")]
         self._main_keys = []
         merged = self._merged_data()
         seqs: list[KeySequence] = []
@@ -98,7 +98,7 @@ class KeyBindingEditor(BindingEditorBase):
             if DraftOverlay.has_any_payload(scopes):
                 seqs.append(seq)
         for seq in seqs:
-            mod = seq.modifier or self.t.tr("(None)")
+            mod = seq.modifier or t("(None)")
             key = seq.key
             if mod and mod not in self._mod_keys:
                 self._mod_keys.append(mod)
@@ -107,26 +107,26 @@ class KeyBindingEditor(BindingEditorBase):
 
     def _refresh_lists(self):
         self.list_mods.clear()
-        ordered_mods = [self.t.tr("(All)"), self.t.tr("(None)")] + self._sort_modifiers(self._mod_keys)
+        ordered_mods = [t("(All)"), t("(None)")] + self._sort_modifiers(self._mod_keys)
         items_mod = []
         seen = set()
         for k in ordered_mods:
             if k in seen:
                 continue
             seen.add(k)
-            if k in self._mod_keys or k in (self.t.tr("(All)"), self.t.tr("(None)")):
+            if k in self._mod_keys or k in (t("(All)"), t("(None)")):
                 items_mod.append(k)
         for k in items_mod:
             self.list_mods.addItem(k)
         self.list_main.clear()
-        ordered_main = [self.t.tr("(All)")] + self._sort_main_keys(self._main_keys)
+        ordered_main = [t("(All)")] + self._sort_main_keys(self._main_keys)
         items_main = []
         seen2 = set()
         for k in ordered_main:
             if k in seen2:
                 continue
             seen2.add(k)
-            if k in self._main_keys or k == self.t.tr("(All)"):
+            if k in self._main_keys or k == t("(All)"):
                 items_main.append(k)
         for k in items_main:
             self.list_main.addItem(k)
@@ -143,7 +143,7 @@ class KeyBindingEditor(BindingEditorBase):
         self._refresh_shortcuts()
 
     def _split_seq(self, seq: KeySequence) -> tuple[str, str]:
-        mod = seq.modifier or self.t.tr("(None)")
+        mod = seq.modifier or t("(None)")
         key = seq.key
         return (mod, key)
 
@@ -184,13 +184,13 @@ class KeyBindingEditor(BindingEditorBase):
         return self._cat.modifier_priority(name)
 
     def _sort_modifiers(self, mods: list[str]) -> list[str]:
-        return self._cat.sort_modifiers(mods, exclude=(self.t.tr("(All)"), self.t.tr("(None)")))
+        return self._cat.sort_modifiers(mods, exclude=(t("(All)"), t("(None)")))
 
     def _key_sort_tuple(self, k: str) -> tuple:
         return self._cat.key_sort_tuple(k)
 
     def _sort_main_keys(self, keys: list[str]) -> list[str]:
-        return self._cat.sort_main_keys(keys, exclude=(self.t.tr("(All)"),))
+        return self._cat.sort_main_keys(keys, exclude=(t("(All)"),))
 
     def _add_binding(self):
         d = _TwoKeyCaptureDialog(self)
@@ -241,9 +241,9 @@ class KeyBindingEditor(BindingEditorBase):
         clear_layout(self.section_layout, self, "KeyBindingEditor rebuild")
         sel_mod = self.list_mods.currentItem().text() if self.list_mods.currentRow() >= 0 else None
         sel_main = self.list_main.currentItem().text() if self.list_main.currentRow() >= 0 else None
-        if sel_mod == self.t.tr("(All)"):
+        if sel_mod == t("(All)"):
             sel_mod = None
-        if sel_main == self.t.tr("(All)"):
+        if sel_main == t("(All)"):
             sel_main = None
         merged = self._merged_data()
         seqs: list[KeySequence] = []
@@ -302,22 +302,22 @@ class KeyBindingEditor(BindingEditorBase):
 class _TwoKeyCaptureDialog(QtWidgets.QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        _t = get_translator()
-        self.setWindowTitle(_t.tr("Key Input"))
+        
+        self.setWindowTitle(t("Key Input"))
         self._mgr = ShortcutManager()
         self._pressed_keys: list[tuple[int, str]] = []
         self._final_keys: list[str] = []
         self._press_snapshot: list[tuple[int, str]] = []
         l = QtWidgets.QVBoxLayout(self)
-        self.lbl = QtWidgets.QLabel(_t.tr("Press up to 2 keys"), self)
+        self.lbl = QtWidgets.QLabel(t("Press up to 2 keys"), self)
         l.addWidget(self.lbl)
         row = QtWidgets.QHBoxLayout()
         self.e1 = QtWidgets.QLineEdit(self)
         self.e1.setReadOnly(True)
-        self.e1.setPlaceholderText(_t.tr("First Key"))
+        self.e1.setPlaceholderText(t("First Key"))
         self.e2 = QtWidgets.QLineEdit(self)
         self.e2.setReadOnly(True)
-        self.e2.setPlaceholderText(_t.tr("Second Key"))
+        self.e2.setPlaceholderText(t("Second Key"))
         row.addWidget(self.e1)
         row.addWidget(self.e2)
         l.addLayout(row)
@@ -416,19 +416,19 @@ class _TwoKeyCaptureDialog(QtWidgets.QDialog):
 
 class _KeySequenceSection(ScopedPayloadSectionBase):
     def __init__(self, parent: QtWidgets.QWidget, widgets: list[WidgetRef], sequence: KeySequence, scopes: dict[str, CommandPayload], on_update, on_remove, on_reassign):
-        _t = get_translator()
-        super().__init__(parent, widgets, header_button_text=_t.tr("Command"))
+        
+        super().__init__(parent, widgets, header_button_text=t("Command"))
         self.sequence = sequence
         self.on_update = on_update
         self.on_remove = on_remove
         self.on_reassign = on_reassign
         self.setTitle(str(self.sequence))
-        btn_assign = QtWidgets.QPushButton(self.t.tr("Reassign"), self)
+        btn_assign = QtWidgets.QPushButton(t("Reassign"), self)
         btn_assign.setCursor(QtCore.Qt.PointingHandCursor)
         btn_assign.clicked.connect(self._assign)
         self.header.insertWidget(2, btn_assign, 0)
         rem = QtWidgets.QToolButton(self)
-        rem.setText(self.t.tr("Delete"))
+        rem.setText(t("Delete"))
         rem.clicked.connect(lambda: self.on_remove(self.sequence))
         self.header.insertWidget(3, rem, 0)
         self.load_from_scopes(scopes)

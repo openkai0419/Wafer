@@ -1,15 +1,15 @@
-import os
+﻿import os
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFileDialog, QListWidget, QMenu, QMessageBox, QPushButton, QStackedLayout, QVBoxLayout, QWidget
 from wafer.utils.formatting import dpix
 from wafer.utils.paths import safe_exists
-from wafer.core.lang.manager import TranslatorMixin
+from wafer.core.lang.manager import t
 
 
-class FolderListWidget(QWidget, TranslatorMixin):
+class FolderListWidget(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle(self.t.tr("Folder List Manager"))
+        self.setWindowTitle(t("Folder List Manager"))
         self.resize(dpix(400), dpix(300))
         self.folder_list = QListWidget()
         self.folder_list.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -18,7 +18,7 @@ class FolderListWidget(QWidget, TranslatorMixin):
         self.folder_list.setAlternatingRowColors(True)
         self.add_button = QPushButton("+")
         self.add_button.setFixedSize(dpix(25), dpix(25))
-        self.add_button.setToolTip(self.t.tr("Add folder"))
+        self.add_button.setToolTip(t("Add folder"))
         self.overlay_layout = QVBoxLayout()
         self.overlay_layout.addWidget(self.folder_list)
         self.overlay_layout.setContentsMargins(0, 0, 0, 0)
@@ -39,18 +39,18 @@ class FolderListWidget(QWidget, TranslatorMixin):
         item = self.folder_list.itemAt(position)
         if item:
             menu = QMenu(self)
-            delete_action = menu.addAction(self.t.tr("Delete"))
+            delete_action = menu.addAction(t("Delete"))
             action = menu.exec(self.folder_list.mapToGlobal(position))
             if action == delete_action:
                 self.confirm_and_remove_item(item)
 
     def confirm_and_remove_item(self, item):
-        reply = QMessageBox.question(self, self.t.tr("Confirm"), self.t.tr_format("Remove selected folder?\n\n{path}", path=item.text()), QMessageBox.Yes | QMessageBox.No)
+        reply = QMessageBox.question(self, t("Confirm"), t("Remove selected folder?\n\n{path}", path=item.text()), QMessageBox.Yes | QMessageBox.No)
         if reply == QMessageBox.Yes:
             self.folder_list.takeItem(self.folder_list.row(item))
 
     def add_folder(self):
-        folder_path = QFileDialog.getExistingDirectory(self, self.t.tr("Select folder"))
+        folder_path = QFileDialog.getExistingDirectory(self, t("Select folder"))
         if folder_path:
             self._add_folder_path(folder_path)
 
@@ -63,7 +63,7 @@ class FolderListWidget(QWidget, TranslatorMixin):
 
     def replace_folder(self, item):
         old_path = item.text()
-        new_path = QFileDialog.getExistingDirectory(self, self.t.tr("Select folder again"), old_path)
+        new_path = QFileDialog.getExistingDirectory(self, t("Select folder again"), old_path)
         if new_path:
             normalized_new_path = os.path.normpath(new_path)
             existing_paths = set(self.get_folder_list()) - {old_path}

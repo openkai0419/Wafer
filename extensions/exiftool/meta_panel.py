@@ -6,6 +6,7 @@ from PySide6 import QtCore, QtWidgets
 
 from wafer.plugin import BaseMetaPanelPlugin
 from wafer.utils.formatting import dpix
+from wafer.core.lang.manager import t
 
 
 class ExifToolMetaPanelPlugin(BaseMetaPanelPlugin):
@@ -34,7 +35,7 @@ class _ExifToolMetaWidget(QtWidgets.QWidget):
         self._filtered_keys: list[str] = []
 
         self._search = QtWidgets.QLineEdit(self)
-        self._search.setPlaceholderText("Search key or value…")
+        self._search.setPlaceholderText(t("Search key or value…"))
         self._search.setClearButtonEnabled(True)
         self._search.textChanged.connect(self._apply_filter)
 
@@ -106,6 +107,7 @@ class _ExifToolMetaWidget(QtWidgets.QWidget):
             if len(val) > 4000:
                 val = val[:4000] + f"\n… ({len(val):,} chars total)"
             val_label = QtWidgets.QLabel(val, self._grid_container)
+            val_label.setTextFormat(QtCore.Qt.PlainText)
             val_label.setWordWrap(True)
             val_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
             val_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)

@@ -3,7 +3,7 @@ from __future__ import annotations
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from ...utils.formatting import dpix, display_prefixed_key
-from ...core.lang.manager import TranslatorMixin
+from ...core.lang.manager import t
 from ...core.qt.icon_engine import themed_icon
 from ...core.color.theme import ThemeManager
 from ...core.app_settings import app_settings
@@ -119,7 +119,7 @@ class _KeySelectorPopup(QtWidgets.QFrame):
         splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
         splitter.setChildrenCollapsible(False)
 
-        self._active_group = QtWidgets.QGroupBox(QtCore.QCoreApplication.translate("_KeySelectorPopup", "Filter"))
+        self._active_group = QtWidgets.QGroupBox(t("Filter"))
         active_layout = QtWidgets.QVBoxLayout(self._active_group)
         active_layout.setContentsMargins(dpix(4), dpix(2), dpix(4), dpix(4))
         active_layout.setSpacing(0)
@@ -143,7 +143,7 @@ class _KeySelectorPopup(QtWidgets.QFrame):
         catalog_layout.setSpacing(dpix(2))
 
         self._search_input = QtWidgets.QLineEdit()
-        self._search_input.setPlaceholderText("Search keys...")
+        self._search_input.setPlaceholderText(t("Search keys..."))
         self._search_input.setClearButtonEnabled(True)
         self._search_input.textChanged.connect(self._apply_filter)
         catalog_layout.addWidget(self._search_input)
@@ -363,7 +363,7 @@ class _KeySelectorPopup(QtWidgets.QFrame):
         self._search_input.clear()
 
 
-class CheckableCombo(QtWidgets.QToolButton, TranslatorMixin):
+class CheckableCombo(QtWidgets.QToolButton):
     action_changed = QtCore.Signal()
 
     def __init__(self, items=None, parent=None):
@@ -380,7 +380,7 @@ class CheckableCombo(QtWidgets.QToolButton, TranslatorMixin):
             self._popup.ensure_active_keys([self.default_key])
 
     def _update_label(self):
-        self.setText(self.t.tr(" Filter "))
+        self.setText(t(" Filter "))
 
     def _toggle_popup(self):
         if self._popup.isVisible() and self._popup._current_combo is self:
@@ -433,7 +433,7 @@ class CheckableCombo(QtWidgets.QToolButton, TranslatorMixin):
         return list(self._popup._active_items.keys())
 
 
-class TextFilterWidget(QtWidgets.QWidget, TranslatorMixin):
+class TextFilterWidget(QtWidgets.QWidget):
     changed = QtCore.Signal()
 
     def __init__(self, parent=None):
@@ -454,7 +454,7 @@ class TextFilterWidget(QtWidgets.QWidget, TranslatorMixin):
         self.keys_combo.action_changed.connect(self.changed)
 
         self.search_bar = QtWidgets.QLineEdit()
-        self.search_bar.setPlaceholderText(self.t.tr("Enter search terms..."))
+        self.search_bar.setPlaceholderText(t("Enter search terms..."))
         self.search_bar.textChanged.connect(self.changed)
 
         layout.addWidget(self.keys_combo)
@@ -508,13 +508,13 @@ class TextFilterWidget(QtWidgets.QWidget, TranslatorMixin):
             self._position_popup()
 
 
-class _TextFilterPopup(QtWidgets.QDialog, TranslatorMixin):
+class _TextFilterPopup(QtWidgets.QDialog):
     changed = QtCore.Signal()
 
     def __init__(self, pos_parent, parent=None):
         super().__init__(parent)
         self.pos_parent = pos_parent
-        self.setWindowTitle(self.t.tr("Text Filter Options"))
+        self.setWindowTitle(t("Text Filter Options"))
         self.setWindowFlags(self.windowFlags() | QtCore.Qt.Tool)
         self._build_ui()
         self._set_defaults()
@@ -543,7 +543,7 @@ class _TextFilterPopup(QtWidgets.QDialog, TranslatorMixin):
         sep_layout = QtWidgets.QHBoxLayout()
         self.delimiter_input = QtWidgets.QLineEdit()
         self.delimiter_input.textChanged.connect(lambda: self.changed.emit())
-        sep_layout.addWidget(QtWidgets.QLabel(self.t.tr("Split by:")))
+        sep_layout.addWidget(QtWidgets.QLabel(t("Split by:")))
         sep_layout.addWidget(self.delimiter_input)
         layout.addLayout(sep_layout)
 

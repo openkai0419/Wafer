@@ -33,6 +33,9 @@ _ALLOWED_HOSTS = frozenset({"www.python.org", "bootstrap.pypa.io"})
 _MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024
 _SUBPROCESS_POLL_INTERVAL = 0.05
 
+_GET_PIP_URL = "https://bootstrap.pypa.io/get-pip.py"
+_GET_PIP_SHA256 = "feba1c697df45be1b539b40d93c102c9ee9dde1d966303323b830b06f3fbca3c"
+
 
 def _platform_key() -> str | None:
     if sys.platform != "win32":
@@ -217,7 +220,14 @@ class EmbeddedPython:
         try:
             os.close(fd)
             AppLogger.info("[Installer] Downloading get-pip.py...")
-            _download_file("https://bootstrap.pypa.io/get-pip.py", get_pip, on_progress=on_progress)
+            _download_file(_GET_PIP_URL, get_pip, on_progress=on_progress)
+            actual = _sha256_file(get_pip)
+            if actual != _GET_PIP_SHA256:
+                raise ValueError(
+                    f"get-pip.py SHA256 mismatch: expected {_GET_PIP_SHA256}, got {actual}. "
+                    "Update _GET_PIP_SHA256 in installer.py if bootstrap.pypa.io has been updated."
+                )
+            AppLogger.info("[Installer] get-pip.py SHA256 verified")
             AppLogger.info("[Installer] Running get-pip.py...")
             _run_subprocess(
                 [self._exe, get_pip, "--no-warn-script-location"],

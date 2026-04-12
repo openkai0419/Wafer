@@ -1,22 +1,22 @@
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QDialog, QHBoxLayout, QPushButton, QTabWidget, QVBoxLayout
 from wafer.utils.formatting import dpix
-from wafer.core.lang.manager import TranslatorMixin
+from wafer.core.lang.manager import t
 
 
-class SettingsWindow(QDialog, TranslatorMixin):
+class SettingsWindow(QDialog):
     settings_applied = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(self.t.tr("Settings"))
+        self.setWindowTitle(t("Settings"))
         self.setModal(False)
         self.resize(dpix(500), dpix(400))
         self.tabs = QTabWidget()
         self.tab_widgets = []
-        self.ok_button = QPushButton("OK")
-        self.cancel_button = QPushButton(self.t.tr("Cancel"))
-        self.apply_button = QPushButton(self.t.tr("Apply"))
+        self.ok_button = QPushButton(t("OK"))
+        self.cancel_button = QPushButton(t("Cancel"))
+        self.apply_button = QPushButton(t("Apply"))
         self.ok_button.clicked.connect(self.on_ok_clicked)
         self.cancel_button.clicked.connect(self.on_cancel_clicked)
         self.apply_button.clicked.connect(self.on_apply_clicked)

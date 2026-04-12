@@ -190,7 +190,7 @@ def test_notify_to_sends_ipc():
     with patch("wafer.core.commands.binding.instance_registry.InstanceRegistry.instance", return_value=mock_registry):
         BaseCollectorPlugin.notify_to("exiftool")
 
-    mock_node.send.assert_called_once_with("plugin.notify", dst="collector-exif")
+    mock_node.send.assert_called_once_with("plugin.notify", dst="collector-exiftool")
 
 
 def test_notify_to_no_node():

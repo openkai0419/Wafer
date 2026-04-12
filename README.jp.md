@@ -17,11 +17,11 @@
 
 Wafer は **PySide6**・**SQLite**・**ZMQ** を元にした大量管理向けのローカルファイルビューアーです。
 プラグイン方式の extension をベースにする事によって高い拡張性を持ち、バックグラウンドプロセスでファイルを収集・DB化し、大量のファイルを高速に検索・閲覧する事を目標としています。
-現在の対応は Windows のみ。
+対応OS: Windows
 
 ## インストール
 
-### zip から
+### Zip (python環境の無い人)
 
 1. [Releases](https://github.com/openkai0419/private_rep/releases/latest) ページから
 2. `Wafer-vX.X.X.zip` をダウンロード
@@ -30,7 +30,7 @@ Wafer は **PySide6**・**SQLite**・**ZMQ** を元にした大量管理向け�
 
 アンインストールの再は `cleanup.bat` で `%LOCALAPPDATA%\Wafer` のアプリデータを削除した後、本体をフォルダごと削除してください。
 
-### ソースから
+### ソースから (python環境のある人)
 
 #### 要件
 

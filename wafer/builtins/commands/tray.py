@@ -97,34 +97,47 @@ def quit_app(ctx=None):
     QtWidgets.QApplication.quit()
 
 
-class TrayMenu(ActionKit.MenuBase):
-    NAME = "Tray"
+class TrayViewerCommands(ActionKit.MenuBase):
+    NAME = "Viewer"
     SCOPE = "tray"
+    PRIORITY = 70
 
     @classmethod
     def commands(cls):
-        items = [
-            ":Wafer",
-            ActionKit.Command(path="show_window", display="Show Viewer", func=show_window),
-            ActionKit.Command(path="open_new_window", display="New Viewer", func=open_new_window),
-            "-",
-            ":Database",
-            ActionKit.Command(path="rescan_all", display="ReScan All", func=rescan_all),
-            ActionKit.Command(path="cleanup_optimize", display="Cleanup and Optimize", func=cleanup_optimize),
-            "-",
-            ":Popups",
-            "setting.database_manager",
-            "setting.plugin_manager",
-            "setting.batch_renamer",
+        return [
+            ActionKit.Command(path="tray.show_window", display="Show Viewer", func=show_window),
+            ActionKit.Command(path="tray.open_new_window", display="New Viewer", func=open_new_window),
         ]
+
+
+class TrayDatabaseCommands(ActionKit.MenuBase):
+    NAME = "Database"
+    SCOPE = "tray"
+    PRIORITY = 72
+
+    @classmethod
+    def commands(cls):
+        return [
+            ActionKit.Command(path="tray.rescan_all", display="ReScan All", func=rescan_all),
+            ActionKit.Command(path="tray.cleanup_optimize", display="Cleanup and Optimize", func=cleanup_optimize),
+        ]
+
+
+class TraySystemCommands(ActionKit.MenuBase):
+    NAME = "Tray"
+    SCOPE = "tray"
+    PRIORITY = 100
+
+    @classmethod
+    def commands(cls):
+        items = []
         if DEV_MODE:
             items += [
+                ActionKit.Command(path="tray.debug_test", display="Debug Test", func=_debug_test),
+                ActionKit.Command(path="tray.debug_test2", display="Debug Test2", func=_debug_test2),
                 "-",
-                ActionKit.Command(path="debug_test", display="Debug Test", func=_debug_test),
-                ActionKit.Command(path="debug_test2", display="Debug Test2", func=_debug_test2),
             ]
         items += [
-            "-",
-            ActionKit.Command(path="quit", display="Quit", func=quit_app),
+            ActionKit.Command(path="tray.quit", display="Quit", func=quit_app),
         ]
         return items

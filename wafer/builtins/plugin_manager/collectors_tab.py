@@ -175,6 +175,16 @@ class CollectorsTab(QtWidgets.QWidget):
                 prev = self._initial_state.get(db, set())
                 ui_state = set(saved.get(db, []))
                 self._initial_state[db] = ui_state | (prev - known)
+
+        if self._default_checks:
+            self._initial_defaults = set(self.get_default_collectors())
+        else:
+            self._initial_defaults = self._load_defaults()
+
+        self._collector_names = list(collector_names)
+        self._detacher_names = list(detacher_names)
+        self._initial_defaults &= set(self._all_names)
+
         self._db_names = list_setting_db_names()
         for db in self._db_names:
             if db not in self._initial_state:
@@ -184,8 +194,6 @@ class CollectorsTab(QtWidgets.QWidget):
                     self._initial_state[db] = set(enabled)
                 else:
                     self._initial_state[db] = set(self._initial_defaults)
-        self._collector_names = list(collector_names)
-        self._detacher_names = list(detacher_names)
         self._build_ui()
 
     def get_per_db_collectors(self) -> dict[str, list[str]]:

@@ -1,8 +1,6 @@
 import os
 from PySide6 import QtWidgets, QtCore, QtGui
 from ...core.commands.bridge import ActionKit
-from ...core.platform.process import AppProcess
-from ...core.profile import ProfileStore
 from ...ui.window import DialogLayoutStore
 from ...utils.formatting import dpix
 from ...utils.paths import get_resource_path, get_app_root_dir
@@ -87,17 +85,6 @@ def open_batch_renamer(ctx):
     )
 
 
-def restart_tray(ctx):
-    AppProcess.terminate_cmd("--tray")
-    AppProcess.new_main("--tray")
-
-
-def restart_viewer(ctx):
-    w = ctx.get_instance("MainWindow")
-    if w:
-        w.close_by_restart()
-
-
 def show_about(ctx):
     import sys
     from PySide6 import __version__ as qt_version
@@ -135,27 +122,6 @@ def show_readme(ctx):
     _open_standalone(factory, "README.md", "readme_viewer", size=(dpix(700), dpix(800)))
 
 
-def restart_all(ctx):
-    w = ctx.get_instance("MainWindow")
-    node = getattr(w, "_node", None)
-    store = ProfileStore.instance()
-    active_ids = store.get_active_profile_ids()
-    own_pid = getattr(w, "profile_id", None)
-
-    store.set_restore_profile_ids(active_ids)
-
-    if node:
-        for pid in active_ids:
-            if pid != own_pid:
-                node.send("profile.restart", pid, dst="viewer")
-
-    AppProcess.terminate_cmd("--tray")
-    AppProcess.new_main("--tray")
-
-    if w:
-        w.close_by_restart()
-
-
 class PluginManagerCommands(ActionKit.MenuBase):
     NAME = "Setting"
     PRIORITY = 85
@@ -169,21 +135,6 @@ class PluginManagerCommands(ActionKit.MenuBase):
                 path="setting.plugin_manager",
                 display="Plugin Manager",
                 func=open_plugin_manager,
-            ),
-            ActionKit.Command(
-                path="setting.restart_all",
-                display="Restart All",
-                func=restart_all,
-            ),
-            ActionKit.Command(
-                path="setting.restart_tray",
-                display="Restart Background Services",
-                func=restart_tray,
-            ),
-            ActionKit.Command(
-                path="setting.restart_viewer",
-                display="Restart Viewer",
-                func=restart_viewer,
             ),
         ]
 
@@ -223,21 +174,20 @@ class BatchRenamerCommands(ActionKit.MenuBase):
 
 
 class AboutCommands(ActionKit.MenuBase):
-    NAME = "Setting"
-    PRIORITY = 85
+    NAME = "Help"
+    PRIORITY = 95
     SCOPE = "*"
 
     @classmethod
     def commands(cls):
         return [
-            ":Help",
             ActionKit.Command(
-                path="setting.readme",
+                path="help.readme",
                 display="README.md",
                 func=show_readme,
             ),
             ActionKit.Command(
-                path="setting.about",
+                path="help.about",
                 display="Version Info",
                 func=show_about,
             ),

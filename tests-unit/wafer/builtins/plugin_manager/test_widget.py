@@ -838,14 +838,22 @@ class TestPluginManagerCommands:
         cmds = PluginManagerCommands.commands()
         paths = [c.path for c in cmds if hasattr(c, "path")]
         assert "setting.plugin_manager" in paths
-        assert "setting.restart_tray" in paths
-        assert "setting.restart_viewer" in paths
-        assert "setting.restart_all" in paths
+
+
+class TestWindowRestartCommands:
+    def test_restart_commands_registered(self):
+        from wafer.builtins.commands.window_commands import WindowRestartCommands
+
+        cmds = WindowRestartCommands.commands()
+        paths = [c.path for c in cmds if hasattr(c, "path")]
+        assert "win.restart_all" in paths
+        assert "win.restart_tray" in paths
+        assert "win.restart_viewer" in paths
 
     def test_restart_tray_calls_process(self, monkeypatch):
         calls = []
         monkeypatch.setattr(
-            "wafer.builtins.commands.app.AppProcess",
+            "wafer.builtins.commands.window_commands.AppProcess",
             type(
                 "",
                 (),
@@ -855,14 +863,14 @@ class TestPluginManagerCommands:
                 },
             )(),
         )
-        from wafer.builtins.commands.app import restart_tray
+        from wafer.builtins.commands.window_commands import restart_tray
 
         restart_tray(MagicMock())
         assert ("terminate", ("--tray",)) in calls
         assert ("new_main", ("--tray",)) in calls
 
     def test_restart_viewer_delegates_to_close_by_restart(self):
-        from wafer.builtins.commands.app import restart_viewer
+        from wafer.builtins.commands.window_commands import restart_viewer
 
         mock_w = MagicMock()
         ctx = MagicMock()
@@ -873,7 +881,7 @@ class TestPluginManagerCommands:
     def test_restart_all_calls_both(self, monkeypatch):
         calls = []
         monkeypatch.setattr(
-            "wafer.builtins.commands.app.AppProcess",
+            "wafer.builtins.commands.window_commands.AppProcess",
             type(
                 "",
                 (),
@@ -885,8 +893,8 @@ class TestPluginManagerCommands:
         )
         mock_store = MagicMock()
         mock_store.get_active_profile_ids.return_value = ["sess1", "sess2"]
-        monkeypatch.setattr("wafer.builtins.commands.app.ProfileStore", type("", (), {"instance": staticmethod(lambda: mock_store)}))
-        from wafer.builtins.commands.app import restart_all
+        monkeypatch.setattr("wafer.builtins.commands.window_commands.ProfileStore", type("", (), {"instance": staticmethod(lambda: mock_store)}))
+        from wafer.builtins.commands.window_commands import restart_all
 
         mock_node = MagicMock()
         mock_w = MagicMock()

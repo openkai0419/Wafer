@@ -226,7 +226,7 @@ class PluginManagerWidget(QtWidgets.QWidget):
         msg.setDefaultButton(restart_btn)
         msg.exec()
         if msg.clickedButton() == restart_btn:
-            Command.run("setting.restart_all")
+            Command.run("win.restart_all")
 
     def _on_revert(self):
         self._ext_tab.revert(self._initial_enabled)

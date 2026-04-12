@@ -1,5 +1,7 @@
 from ...core.commands.bridge import ActionKit
 from ...core.commands.binding.instance_registry import InstanceRegistry
+from ...core.platform.process import AppProcess
+from ...core.profile import ProfileStore
 from ...core.app_settings import app_settings
 from ...core.lang.manager import t
 from ...utils.notifier import Notifier
@@ -47,6 +49,38 @@ def _is_always_on_top():
     return w.window_state.is_always_on_top if w else False
 
 
+def restart_tray(ctx):
+    AppProcess.terminate_cmd("--tray")
+    AppProcess.new_main("--tray")
+
+
+def restart_viewer(ctx):
+    w = _win(ctx)
+    if w:
+        w.close_by_restart()
+
+
+def restart_all(ctx):
+    w = _win(ctx)
+    node = getattr(w, "_node", None)
+    store = ProfileStore.instance()
+    active_ids = store.get_active_profile_ids()
+    own_pid = getattr(w, "profile_id", None)
+
+    store.set_restore_profile_ids(active_ids)
+
+    if node:
+        for pid in active_ids:
+            if pid != own_pid:
+                node.send("profile.restart", pid, dst="viewer")
+
+    AppProcess.terminate_cmd("--tray")
+    AppProcess.new_main("--tray")
+
+    if w:
+        w.close_by_restart()
+
+
 def _profile_names():
     return _pf_store().list_profile_names()
 
@@ -91,4 +125,19 @@ class WindowCommands(ActionKit.MenuBase):
                 func=delete_profile,
                 params=[ActionKit.Param(name="profile", value=_profile_names, required=True)],
             ),
+        ]
+
+
+class WindowRestartCommands(ActionKit.MenuBase):
+    NAME = "Window"
+    PRIORITY = 76
+    SCOPE = "*"
+
+    @classmethod
+    def commands(cls):
+        return [
+            ":Restart",
+            ActionKit.Command(path="win.restart_all", display="Restart All", func=restart_all),
+            ActionKit.Command(path="win.restart_tray", display="Restart Background Services", func=restart_tray),
+            ActionKit.Command(path="win.restart_viewer", display="Restart Viewer", func=restart_viewer),
         ]

@@ -1,4 +1,6 @@
-from PySide6 import QtWidgets, QtCore
+import os
+
+from PySide6 import QtWidgets, QtCore, QtGui
 from ...utils.formatting import dpix
 from ...utils.logs import AppLogger
 from ...utils.notifier import Notifier
@@ -265,6 +267,7 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
         text = text.strip()
         if text in list_setting_db_names():
             return
+        self._seed_default_collectors(text)
         AppProcess.new_main("--indexer", text)
         self._refresh_db_list()
         self._initial_paths[text] = ([], [])
@@ -272,6 +275,14 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
         if items:
             self._db_list.setCurrentItem(items[0])
         AppLogger.info(f"[DatabaseManager] Created database: {text}")
+
+    @staticmethod
+    def _seed_default_collectors(db_name: str):
+        from ...plugin.settings import PluginSettings
+
+        defaults = PluginSettings().resolve_default_collectors()
+        sdb = SettingDB(setting_db_path(db_name))
+        sdb.set_enabled_collectors(defaults)
 
     def _delete_database(self):
         current = self._db_list.currentItem()
@@ -379,6 +390,8 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
 
         self._source_list = QtWidgets.QListWidget()
         self._source_list.setMinimumHeight(dpix(50))
+        self._source_list.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        self._source_list.installEventFilter(self)
         add_src_btn = QtWidgets.QPushButton()
         add_src_btn.setIcon(themed_icon("plus"))
         add_src_btn.setObjectName("folder_add_btn")
@@ -402,6 +415,8 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
 
         self._ignore_list = QtWidgets.QListWidget()
         self._ignore_list.setMinimumHeight(dpix(50))
+        self._ignore_list.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        self._ignore_list.installEventFilter(self)
         add_ign_btn = QtWidgets.QPushButton()
         add_ign_btn.setIcon(themed_icon("plus"))
         add_ign_btn.setObjectName("folder_add_btn")
@@ -503,9 +518,8 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
             self._source_list.addItem(folder)
 
     def _remove_source(self):
-        current = self._source_list.currentItem()
-        if current:
-            self._source_list.takeItem(self._source_list.row(current))
+        for item in self._source_list.selectedItems():
+            self._source_list.takeItem(self._source_list.row(item))
 
     def _add_ignore(self):
         if not self._db_name:
@@ -521,9 +535,40 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
             self._ignore_list.addItem(folder)
 
     def _remove_ignore(self):
-        current = self._ignore_list.currentItem()
-        if current:
-            self._ignore_list.takeItem(self._ignore_list.row(current))
+        for item in self._ignore_list.selectedItems():
+            self._ignore_list.takeItem(self._ignore_list.row(item))
+
+    def eventFilter(self, obj, event):
+        if event.type() != QtCore.QEvent.KeyPress:
+            return super().eventFilter(obj, event)
+        if obj not in (self._source_list, self._ignore_list):
+            return super().eventFilter(obj, event)
+        if event.matches(QtGui.QKeySequence.Paste):
+            self._paste_paths(obj)
+            return True
+        if event.matches(QtGui.QKeySequence.Copy):
+            self._copy_paths(obj)
+            return True
+        return super().eventFilter(obj, event)
+
+    def _paste_paths(self, list_widget: QtWidgets.QListWidget):
+        clipboard = QtWidgets.QApplication.clipboard()
+        text = clipboard.text()
+        if not text:
+            return
+        existing = {list_widget.item(i).text() for i in range(list_widget.count())}
+        for line in text.replace(";", "\n").splitlines():
+            path = line.strip()
+            if not path or path in existing:
+                continue
+            if os.path.isdir(path):
+                list_widget.addItem(path)
+                existing.add(path)
+
+    def _copy_paths(self, list_widget: QtWidgets.QListWidget):
+        selected = [item.text() for item in list_widget.selectedItems()]
+        if selected:
+            QtWidgets.QApplication.clipboard().setText("\n".join(selected))
 
 
 class DatabaseManagerPlugin(BasePanelPlugin):

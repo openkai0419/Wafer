@@ -69,3 +69,30 @@ class PluginSettings:
 
     def set_priority_order(self, key: str, order: list[str]):
         _write_ini_value(f"priority/{key}", order)
+
+    def default_enabled_collectors(self) -> list[str] | None:
+        val = _read_ini_value("collectors/default_enabled")
+        if isinstance(val, list):
+            return val
+        return None
+
+    def set_default_enabled_collectors(self, names: list[str]):
+        _write_ini_value("collectors/default_enabled", sorted(names))
+
+    def resolve_default_collectors(self) -> list[str]:
+        saved = self.default_enabled_collectors()
+        if saved is not None:
+            return saved
+        from .collector.handler import collector_resolver
+        from .detacher.handler import detacher_resolver
+
+        defaults = []
+        for name in collector_resolver.names():
+            cls = collector_resolver.registry.get(name)
+            if getattr(cls, "DEFAULT_ENABLED", False):
+                defaults.append(name)
+        for name in detacher_resolver.names():
+            cls = detacher_resolver.registry.get(name)
+            if getattr(cls, "DEFAULT_ENABLED", False):
+                defaults.append(name)
+        return defaults

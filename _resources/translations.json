@@ -1,4 +1,100 @@
 {
+  "Add Ignore Folder": {
+    "en": "Add Ignore Folder",
+    "ja": ""
+  },
+  "Add Source Folder": {
+    "en": "Add Source Folder",
+    "ja": ""
+  },
+  "Click to toggle all databases": {
+    "en": "Click to toggle all databases",
+    "ja": ""
+  },
+  "Collected Data": {
+    "en": "Collected Data",
+    "ja": ""
+  },
+  "Collectors": {
+    "en": "Collectors",
+    "ja": ""
+  },
+  "Data": {
+    "en": "Data",
+    "ja": ""
+  },
+  "Databases": {
+    "en": "Databases",
+    "ja": ""
+  },
+  "Default for New Databases": {
+    "en": "Default for New Databases",
+    "ja": ""
+  },
+  "Delete Database": {
+    "en": "Delete Database",
+    "ja": ""
+  },
+  "Detachers": {
+    "en": "Detachers",
+    "ja": ""
+  },
+  "Ignored Folders": {
+    "en": "Ignored Folders",
+    "ja": ""
+  },
+  "Loading...": {
+    "en": "Loading...",
+    "ja": ""
+  },
+  "Not Now": {
+    "en": "Not Now",
+    "ja": ""
+  },
+  "Paths": {
+    "en": "Paths",
+    "ja": ""
+  },
+  "Plugin settings have been saved.\nRestart is required.": {
+    "en": "Plugin settings have been saved.\nRestart is required.",
+    "ja": ""
+  },
+  "Purge Selected": {
+    "en": "Purge Selected",
+    "ja": ""
+  },
+  "Re-collect after purge (mark as pending)": {
+    "en": "Re-collect after purge (mark as pending)",
+    "ja": ""
+  },
+  "Refresh": {
+    "en": "Refresh",
+    "ja": ""
+  },
+  "Remove Selected": {
+    "en": "Remove Selected",
+    "ja": ""
+  },
+  "Restart": {
+    "en": "Restart",
+    "ja": ""
+  },
+  "Restart Required": {
+    "en": "Restart Required",
+    "ja": ""
+  },
+  "Select a database": {
+    "en": "Select a database",
+    "ja": ""
+  },
+  "Selected: 0 items": {
+    "en": "Selected: 0 items",
+    "ja": ""
+  },
+  "Source Folders": {
+    "en": "Source Folders",
+    "ja": ""
+  },
   "Delete table? : {dbname}": {
     "en": "Delete table? : {dbname}",
     "ja": ""

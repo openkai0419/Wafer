@@ -68,8 +68,10 @@ class IndexerProcess:
             collectors = [(n, exts) for n, exts in all_collectors if n in enabled_set]
             collector_names = [n for n in enabled if n in {c[0] for c in all_collectors}]
         else:
-            collectors = all_collectors
-            collector_names = [n for n, _ in all_collectors]
+            from ...plugin.settings import PluginSettings
+            default_set = set(PluginSettings().resolve_default_collectors())
+            collectors = [(n, exts) for n, exts in all_collectors if n in default_set]
+            collector_names = [n for n, _ in collectors]
         progress = ProgressAggregator(self.db_name, self.zmq)
         self._progress = progress
 
@@ -96,7 +98,7 @@ class IndexerProcess:
             all_known = {c[0] for c in all_collectors} | set(enabled)
             detacher_names = [n for n in all_detachers if n in enabled_set or (n not in all_known and getattr(detacher_resolver.registry.get(n), "DEFAULT_ENABLED", False))]
         else:
-            detacher_names = all_detachers
+            detacher_names = [n for n in all_detachers if n in default_set]
         if detacher_names:
             self.detacher_receiver = DetacherReceiver(self.scheduler, self.writer, progress)
             self.zmq.subscribe("detach.result", self.detacher_receiver.handle_result)

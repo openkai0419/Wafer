@@ -8,6 +8,7 @@ from wafer.utils.paths import normalize_path
 from wafer.builtins.commands.foldertree_commands import (
     FolderTreeCommands,
     _ctx_normalized_path,
+    _ctx_normalized_paths,
     _ctx_dir_path,
     remove_from_view,
     ignore_folder,
@@ -32,13 +33,16 @@ def test_foldertree_commands_register_paths(qtbot):
 
 
 class _FakeCtx:
-    def __init__(self, path=None, widget=None):
+    def __init__(self, path=None, paths=None, widget=None):
         self._path = path
+        self._paths = paths
         self._widget = widget
 
     def get(self, key):
         if key == "path":
             return self._path
+        if key == "paths":
+            return self._paths
         if key == "widget":
             return self._widget
         return None
@@ -137,3 +141,62 @@ def test_ignore_folder_nonexistent(tmp_path, qtbot, monkeypatch):
     ignore_folder(ctx)
     assert missing in tree._added_excluded
     assert missing in tree._root.setting_db.ignored
+
+
+def test_ignore_folder_multiple_paths(tmp_path, qtbot, monkeypatch):
+    root_path = normalize_path(str(tmp_path))
+    sub_a = normalize_path(str(tmp_path / "a"))
+    sub_b = normalize_path(str(tmp_path / "b"))
+    tree = _FakeTree(roots={root_path})
+    qtbot.addWidget(tree)
+    monkeypatch.setattr(
+        "wafer.builtins.commands.foldertree_commands.ConfirmDialog.ask",
+        staticmethod(lambda *a, **kw: "Ignore"),
+    )
+    ctx = _FakeCtx(
+        path=str(tmp_path / "a"),
+        paths=[str(tmp_path / "a"), str(tmp_path / "b")],
+        widget=tree,
+    )
+    ignore_folder(ctx)
+    assert sub_a in tree._added_excluded
+    assert sub_b in tree._added_excluded
+    assert sub_a in tree._root.setting_db.ignored
+    assert sub_b in tree._root.setting_db.ignored
+
+
+def test_ignore_folder_multiple_skips_roots(tmp_path, qtbot, monkeypatch):
+    root_path = normalize_path(str(tmp_path))
+    sub_a = normalize_path(str(tmp_path / "a"))
+    tree = _FakeTree(roots={root_path})
+    qtbot.addWidget(tree)
+    monkeypatch.setattr(
+        "wafer.builtins.commands.foldertree_commands.ConfirmDialog.ask",
+        staticmethod(lambda *a, **kw: "Ignore"),
+    )
+    ctx = _FakeCtx(
+        path=str(tmp_path),
+        paths=[str(tmp_path), str(tmp_path / "a")],
+        widget=tree,
+    )
+    ignore_folder(ctx)
+    assert root_path not in tree._added_excluded
+    assert sub_a in tree._added_excluded
+
+
+def test_ctx_normalized_paths_from_paths(tmp_path):
+    p1 = str(tmp_path / "a")
+    p2 = str(tmp_path / "b")
+    ctx = _FakeCtx(paths=[p1, p2])
+    result = _ctx_normalized_paths(ctx)
+    assert len(result) == 2
+    assert normalize_path(os.path.abspath(p1)) in result
+    assert normalize_path(os.path.abspath(p2)) in result
+
+
+def test_ctx_normalized_paths_fallback_to_single(tmp_path):
+    p = str(tmp_path / "single")
+    ctx = _FakeCtx(path=p)
+    result = _ctx_normalized_paths(ctx)
+    assert len(result) == 1
+    assert normalize_path(os.path.abspath(p)) == result[0]

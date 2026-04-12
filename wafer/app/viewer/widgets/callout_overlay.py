@@ -16,6 +16,7 @@ class CalloutOverlay(QtWidgets.QWidget):
         self._text = text
         self._opacity = 1.0
         self._fade_anim: QtCore.QPropertyAnimation | None = None
+        self._suspended = False
         self._last_anchor = QtCore.QPoint()
         self.setWindowFlags(QtCore.Qt.Tool | QtCore.Qt.FramelessWindowHint | QtCore.Qt.WindowTransparentForInput | QtCore.Qt.WindowStaysOnTopHint)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
@@ -82,9 +83,41 @@ class CalloutOverlay(QtWidgets.QWidget):
 
     opacity_prop = QtCore.Property(float, _get_opacity, _set_opacity)
 
+    def suspend(self):
+        if self._suspended or not self.isVisible():
+            return
+        self._suspended = True
+        self._track_timer.stop()
+        self._stop_fade()
+        self._fade_anim = QtCore.QPropertyAnimation(self, b"opacity_prop", self)
+        self._fade_anim.setDuration(_FADE_DURATION_MS)
+        self._fade_anim.setStartValue(self._opacity)
+        self._fade_anim.setEndValue(0.0)
+        self._fade_anim.setEasingCurve(QtCore.QEasingCurve.OutCubic)
+        self._fade_anim.finished.connect(lambda: super(CalloutOverlay, self).hide())
+        self._fade_anim.start()
+
+    def resume(self):
+        if not self._suspended:
+            return
+        self._suspended = False
+        self._reposition()
+        self.setWindowOpacity(0.0)
+        super().show()
+        self._track_timer.start()
+        self._stop_fade()
+        self._fade_anim = QtCore.QPropertyAnimation(self, b"opacity_prop", self)
+        self._fade_anim.setDuration(_FADE_DURATION_MS)
+        self._fade_anim.setStartValue(0.0)
+        self._fade_anim.setEndValue(1.0)
+        self._fade_anim.setEasingCurve(QtCore.QEasingCurve.OutCubic)
+        self._fade_anim.start()
+
     def dismiss(self):
         self._track_timer.stop()
-        if self._fade_anim and self._fade_anim.state() == QtCore.QAbstractAnimation.Running:
+        self._stop_fade()
+        if self._suspended:
+            self._on_fade_done()
             return
         self._fade_anim = QtCore.QPropertyAnimation(self, b"opacity_prop", self)
         self._fade_anim.setDuration(_FADE_DURATION_MS)
@@ -93,6 +126,10 @@ class CalloutOverlay(QtWidgets.QWidget):
         self._fade_anim.setEasingCurve(QtCore.QEasingCurve.OutCubic)
         self._fade_anim.finished.connect(self._on_fade_done)
         self._fade_anim.start()
+
+    def _stop_fade(self):
+        if self._fade_anim and self._fade_anim.state() == QtCore.QAbstractAnimation.Running:
+            self._fade_anim.stop()
 
     def _on_fade_done(self):
         self.dismissed.emit()

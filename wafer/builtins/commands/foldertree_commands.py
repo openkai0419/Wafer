@@ -74,30 +74,45 @@ def remove_from_view(ctx):
     root.setting_db.remove_parent_folder(path)
 
 
+def _ctx_normalized_paths(ctx) -> list[str]:
+    raw = ctx.get("paths") if hasattr(ctx, "get") else None
+    if not raw:
+        single = _ctx_normalized_path(ctx)
+        return [single] if single else []
+    return [normalize_path(os.path.abspath(str(p))) for p in raw if p]
+
+
 def ignore_folder(ctx):
     tree = _ctx_tree(ctx)
     if tree is None:
         return
-    path = _ctx_normalized_path(ctx)
-    if not path:
+    paths = _ctx_normalized_paths(ctx)
+    if not paths:
         return
     root = _ctx_root(tree)
     if root is None or not hasattr(root, "setting_db"):
         raise RuntimeError("root widget not found")
-    if hasattr(tree, "roots") and path in tree.roots:
+    roots = getattr(tree, "roots", set())
+    targets = [p for p in dict.fromkeys(paths) if p not in roots]
+    if not targets:
         return
+    if len(targets) == 1:
+        message = f"Are you sure to Ignore this folder?  (This does not delete folders)\n  {targets[0]}"
+    else:
+        listing = "\n  ".join(targets)
+        message = f"Are you sure to Ignore these folders?  (This does not delete folders)\n  {listing}"
     result = ConfirmDialog.ask(
-        f"Are you sure to Ignore this folder?  (This does not delete folders)\n  {path}",
+        message,
         title="Confirm",
         buttons=("Ignore", "Cancel"),
         parent=tree,
     )
     if result != "Ignore":
         return
-    p = normalize_path(str(path))
-    if hasattr(tree, "add_excluded"):
-        tree.add_excluded(p)
-    root.setting_db.add_ignore_folder(p)
+    for p in targets:
+        if hasattr(tree, "add_excluded"):
+            tree.add_excluded(p)
+        root.setting_db.add_ignore_folder(p)
 
 
 def show_context_menu(ctx):

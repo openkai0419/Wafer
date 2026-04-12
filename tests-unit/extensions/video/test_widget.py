@@ -910,6 +910,72 @@ class TestPlaybackSlotManager:
         manager._on_app_state_changed(Qt.ApplicationState.ApplicationActive)
         assert manager._paused_by_background is False
 
+    def test_cooldown_releases_pool_and_players(self, manager, parent):
+        player = MagicMock()
+        manager._player_pool.append(player)
+        pool_overlay = manager._pool[0] if manager._pool else None
+        if pool_overlay:
+            pool_overlay.cleanup = MagicMock()
+        manager._cooldown()
+        assert len(manager._pool) == 0
+        assert len(manager._player_pool) == 0
+        assert manager._cooled_down is True
+        player.terminate.assert_called_once()
+        if pool_overlay:
+            pool_overlay.cleanup.assert_called_once()
+
+    def test_cooldown_skipped_when_active_overlays(self, manager, parent):
+        cell = self._make_cell(parent)
+        manager.activate_select(cell, "/a.mp4")
+        player = MagicMock()
+        manager._player_pool.append(player)
+        manager._check_idle()
+        assert manager._cooled_down is False
+        player.terminate.assert_not_called()
+        cell.cleanup()
+
+    def test_ensure_warm_after_cooldown(self, manager, parent):
+        manager._cooldown()
+        assert manager._cooled_down is True
+        manager._ensure_warm()
+        assert manager._cooled_down is False
+
+    def test_acquire_rewarms_after_cooldown(self, manager, parent):
+        manager._cooldown()
+        assert manager._cooled_down is True
+        overlay = manager._acquire()
+        assert overlay is not None
+        assert manager._cooled_down is False
+
+    def test_touch_resets_timer(self, manager, parent):
+        import time as _time
+
+        manager._touch()
+        first_timer = manager._idle_timer
+        assert first_timer is not None
+        assert first_timer.is_alive()
+        _time.sleep(0.01)
+        manager._touch()
+        assert manager._idle_timer is not first_timer
+        assert not first_timer.is_alive()
+        assert manager._idle_timer.is_alive()
+
+    def test_cleanup_cancels_idle_timer(self, manager, parent):
+        manager._touch()
+        timer = manager._idle_timer
+        manager.cleanup()
+        assert timer.finished.is_set()
+        assert manager._idle_timer is None
+
+    def test_check_idle_with_recent_activity_noop(self, manager, parent, monkeypatch):
+        import time as _time
+
+        manager._last_activity = _time.monotonic()
+        pool_before = list(manager._pool)
+        manager._check_idle()
+        assert manager._cooled_down is False
+        assert manager._pool == pool_before
+
 
 class TestThumbnailRunner:
     pass

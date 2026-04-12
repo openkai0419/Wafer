@@ -1,3 +1,6 @@
+import threading
+import time
+
 from PySide6.QtCore import Qt, Slot, Signal, QObject, QRect, QTimer
 from PySide6.QtGui import QImage, QPainter, QCursor
 from PySide6.QtWidgets import QWidget, QApplication
@@ -235,6 +238,9 @@ class MpvGLOverlay(QOpenGLWidget):
             self.player = None
 
 
+_IDLE_TIMEOUT = 60.0
+
+
 class PlaybackSlotManager:
     HOVER_DEBOUNCE_MS = 150
     PLAYER_POOL_TARGET = 2
@@ -264,6 +270,9 @@ class PlaybackSlotManager:
         self._pending_hover_path = None
         self._appear_queue: list[tuple] = []
         self._appear_flushing = False
+        self._last_activity: float = 0.0
+        self._idle_timer: threading.Timer | None = None
+        self._cooled_down = False
         self._debounce_key = f"PlaybackSlotManager.hover.{id(self)}"
         if self._mpv_available:
             from wafer.core.qt.dispatcher import Dispatcher, CancelToken
@@ -346,10 +355,52 @@ class PlaybackSlotManager:
                 return True
         return any(v is overlay for v in self._appeared.values())
 
+    def _touch(self):
+        self._last_activity = time.monotonic()
+        if self._idle_timer is not None:
+            self._idle_timer.cancel()
+        t = threading.Timer(_IDLE_TIMEOUT, self._check_idle)
+        t.daemon = True
+        t.start()
+        self._idle_timer = t
+
+    def _check_idle(self):
+        if time.monotonic() - self._last_activity < _IDLE_TIMEOUT:
+            return
+        if any(True for _ in self._iter_active_overlays()):
+            self._touch()
+            return
+        self._cooldown()
+
+    def _cooldown(self):
+        if self._warm_cancel:
+            self._warm_cancel.cancel()
+        for overlay in self._pool:
+            overlay.cleanup()
+        self._pool.clear()
+        for player in self._player_pool:
+            player.terminate()
+        self._player_pool.clear()
+        self._warming_count = 0
+        self._cooled_down = True
+        AppLogger.info("PlaybackSlotManager cooled down (idle timeout)")
+
+    def _ensure_warm(self):
+        if not self._cooled_down:
+            return
+        self._cooled_down = False
+        from wafer.core.qt.dispatcher import CancelToken
+
+        self._warm_cancel = CancelToken()
+        self._warm_players()
+        AppLogger.info("PlaybackSlotManager rewarmed")
+
     @profiler.profile
     def _acquire(self) -> MpvGLOverlay | None:
         if not self._mpv_available:
             return None
+        self._touch()
+        self._ensure_warm()
         while self._pool:
             overlay = self._pool.pop()
             if not self._is_in_use(overlay):
@@ -543,6 +594,9 @@ class PlaybackSlotManager:
 
     @profiler.profile
     def cleanup(self):
+        if self._idle_timer is not None:
+            self._idle_timer.cancel()
+            self._idle_timer = None
         if self._warm_cancel:
             self._warm_cancel.cancel()
         self._cancel_pending()

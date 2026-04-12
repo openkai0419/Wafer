@@ -267,22 +267,26 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
         text = text.strip()
         if text in list_setting_db_names():
             return
-        self._seed_default_collectors(text)
-        AppProcess.new_main("--indexer", text)
-        self._refresh_db_list()
-        self._initial_paths[text] = ([], [])
-        items = self._db_list.findItems(text, QtCore.Qt.MatchExactly)
-        if items:
-            self._db_list.setCurrentItem(items[0])
-        AppLogger.info(f"[DatabaseManager] Created database: {text}")
 
-    @staticmethod
-    def _seed_default_collectors(db_name: str):
-        from ...plugin.settings import PluginSettings
+        def _seed_and_start():
+            from ...plugin.settings import PluginSettings
 
-        defaults = PluginSettings().resolve_default_collectors()
-        sdb = SettingDB(setting_db_path(db_name))
-        sdb.set_enabled_collectors(defaults)
+            defaults = PluginSettings().resolve_default_collectors()
+            sdb = SettingDB(setting_db_path(text))
+            sdb.set_enabled_collectors(defaults)
+            AppProcess.new_main("--indexer", text)
+
+            def _on_done():
+                self._refresh_db_list()
+                self._initial_paths[text] = ([], [])
+                items = self._db_list.findItems(text, QtCore.Qt.MatchExactly)
+                if items:
+                    self._db_list.setCurrentItem(items[0])
+                AppLogger.info(f"[DatabaseManager] Created database: {text}")
+
+            self._dispatcher.invoke(_on_done)
+
+        self._dispatcher.post(_seed_and_start)
 
     def _delete_database(self):
         current = self._db_list.currentItem()

@@ -7,7 +7,6 @@ from ...core.commands.bridge import Command, Context, Menu, UI
 from ...core.qt.rate_limit import qt_debounce
 from ...core.ipc.broker import Broker
 from ...core.ipc.node import Node
-from ...builtins.commands.tray import TrayMenu
 
 
 class TrayApp(QtWidgets.QSystemTrayIcon):
@@ -28,7 +27,19 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         QtWidgets.QApplication.instance().aboutToQuit.connect(self.on_quit)
 
     def _build_menu(self):
-        return Menu.session(None, seed_ctx=self._ctx()).from_folder(TrayMenu.NAME).build()
+        items = [
+            ":Wafer",
+            "tray.rescan_all",
+            "-",
+            "Viewer",
+            "Database",
+            "Window",
+            "Setting",
+            "Help",
+            "-",
+            "Tray",
+        ]
+        return Menu.session(None, seed_ctx=self._ctx()).menu(items).build()
 
     def _ctx(self):
         return Context.create_context(None, "Tray", source="tray", extras={"tray": self})
@@ -40,7 +51,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
 
     @qt_debounce(10)
     def _on_trigger(self):
-        Command.run("show_window")
+        Command.run("tray.show_window")
 
     def on_quit(self):
         AppLogger.info("tray shutting down")

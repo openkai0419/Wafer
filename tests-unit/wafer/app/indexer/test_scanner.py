@@ -204,14 +204,14 @@ def test_loop_survives_exception(tmp_path):
     scanner.stop()
 
 
-def test_set_detachers(tmp_path):
+def test_set_parsers(tmp_path):
     scanner, *_ = _make_scanner(tmp_path)
-    detachers = [("nai", ("exif.comment",))]
-    scanner.set_detachers(detachers)
-    assert scanner._detachers == detachers
+    parsers = [("nai", ("exif.comment",))]
+    scanner.set_parsers(parsers)
+    assert scanner._parsers == parsers
 
 
-def test_backfill_detachers_inserts_pending(tmp_path):
+def test_backfill_parsers_inserts_pending(tmp_path):
     from wafer.core.db.file_db import FileDB
 
     db_path = tmp_path / "test.db"
@@ -229,7 +229,7 @@ def test_backfill_detachers_inserts_pending(tmp_path):
     writer.db = db
     progress = MagicMock()
     scanner = DirectoryScanner(db_path, scheduler, writer, progress, [])
-    scanner.set_detachers([("nai", ("exif.comment",))])
+    scanner.set_parsers([("nai", ("exif.comment",))])
     scanner.start()
     scanner._do_backfill()
     found_pending = False
@@ -242,7 +242,7 @@ def test_backfill_detachers_inserts_pending(tmp_path):
     db.close()
 
 
-def test_backfill_detachers_skips_existing_status(tmp_path):
+def test_backfill_parsers_skips_existing_status(tmp_path):
     from wafer.core.db.file_db import FileDB
 
     db_path = tmp_path / "test.db"
@@ -261,7 +261,7 @@ def test_backfill_detachers_skips_existing_status(tmp_path):
     writer.db = db
     progress = MagicMock()
     scanner = DirectoryScanner(db_path, scheduler, writer, progress, [])
-    scanner.set_detachers([("nai", ("exif.comment",))])
+    scanner.set_parsers([("nai", ("exif.comment",))])
     scanner.start()
     scanner._do_backfill()
     found_pending = False
@@ -274,16 +274,16 @@ def test_backfill_detachers_skips_existing_status(tmp_path):
     db.close()
 
 
-def test_backfill_detachers_empty_trigger_keys(tmp_path):
+def test_backfill_parsers_empty_trigger_keys(tmp_path):
     scanner, scheduler, *_ = _make_scanner(tmp_path)
-    scanner.set_detachers([("empty", ())])
+    scanner.set_parsers([("empty", ())])
     scanner.start()
     scanner._do_backfill()
     assert not scheduler.submit.called
     scanner.stop()
 
 
-def test_backfill_detachers_no_detachers(tmp_path):
+def test_backfill_parsers_no_parsers(tmp_path):
     scanner, scheduler, *_ = _make_scanner(tmp_path)
     scanner.start()
     scanner._do_backfill()

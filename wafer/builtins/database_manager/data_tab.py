@@ -32,12 +32,12 @@ class _NumericItem(QtWidgets.QTableWidgetItem):
 
 def _resolve_plugin_info(prefix: str) -> tuple[str, str]:
     from ...plugin.collector.handler import collector_resolver
-    from ...plugin.detacher.handler import detacher_resolver
+    from ...plugin.parser.handler import parser_resolver
 
     if collector_resolver.registry.get(prefix):
         return "Collector", prefix
-    if detacher_resolver.registry.get(prefix):
-        return "Detacher", prefix
+    if parser_resolver.registry.get(prefix):
+        return "Parser", prefix
     return "", ""
 
 
@@ -107,14 +107,14 @@ _DisplayRow = tuple[str, str, int, int, str, bool]
 
 def _split_rows(rows: list[tuple[str, str, int, int, str, str, bool]]) -> tuple[list[_DisplayRow], list[_DisplayRow]]:
     collectors: list[_DisplayRow] = []
-    detachers: list[_DisplayRow] = []
+    parsers: list[_DisplayRow] = []
     for db, prefix, meta, tags, plugin_type, status, deletable in rows:
         display: _DisplayRow = (db, prefix, meta, tags, status, deletable)
-        if plugin_type == "Detacher":
-            detachers.append(display)
+        if plugin_type == "Parser":
+            parsers.append(display)
         else:
             collectors.append(display)
-    return collectors, detachers
+    return collectors, parsers
 
 
 class _PrefixTable(QtWidgets.QGroupBox):
@@ -253,12 +253,12 @@ class DataTab(QtWidgets.QWidget):
         self._collector_table = _PrefixTable(t("Collectors"))
         self._collector_table.selection_changed.connect(self._update_selected_count)
 
-        self._detacher_table = _PrefixTable(t("Detachers"))
-        self._detacher_table.selection_changed.connect(self._update_selected_count)
+        self._parser_table = _PrefixTable(t("Parsers"))
+        self._parser_table.selection_changed.connect(self._update_selected_count)
 
         self.splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
         self.splitter.addWidget(self._collector_table)
-        self.splitter.addWidget(self._detacher_table)
+        self.splitter.addWidget(self._parser_table)
         self.splitter.setStretchFactor(0, 1)
         self.splitter.setStretchFactor(1, 1)
         self.splitter.setChildrenCollapsible(False)
@@ -344,14 +344,14 @@ class DataTab(QtWidgets.QWidget):
         self._raw_rows = rows
         c_rows, d_rows = _split_rows(rows)
         self._collector_table.apply_rows(c_rows)
-        self._detacher_table.apply_rows(d_rows)
+        self._parser_table.apply_rows(d_rows)
 
     def _update_selected_count(self):
-        count = self._collector_table.checked_count() + self._detacher_table.checked_count()
+        count = self._collector_table.checked_count() + self._parser_table.checked_count()
         self._selected_label.setText(t("Selected: {count} items", count=count))
 
     def _on_delete(self):
-        selected = self._collector_table.get_checked() + self._detacher_table.get_checked()
+        selected = self._collector_table.get_checked() + self._parser_table.get_checked()
         if not selected:
             return
         re_collect = self._re_collect_cb.isChecked()
@@ -390,4 +390,4 @@ class DataTab(QtWidgets.QWidget):
         self._raw_rows = rows
         c_rows, d_rows = _split_rows(rows)
         self._collector_table.merge_rows(c_rows)
-        self._detacher_table.merge_rows(d_rows)
+        self._parser_table.merge_rows(d_rows)

@@ -1,4 +1,4 @@
-import os
+﻿import os
 import tempfile
 import pytest
 from unittest.mock import patch
@@ -46,7 +46,7 @@ class TestCollectorsTab:
 
         from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
 
-        tab = CollectorsTab(collector_names=["exif", "wd14"], detacher_names=[])
+        tab = CollectorsTab(collector_names=["exif", "wd14"], parser_names=[])
         qtbot.addWidget(tab)
 
         assert tab._matrix[("exif", "db1")].isChecked()
@@ -67,7 +67,7 @@ class TestCollectorsTab:
 
         from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
 
-        tab = CollectorsTab(collector_names=[], detacher_names=[])
+        tab = CollectorsTab(collector_names=[], parser_names=[])
         qtbot.addWidget(tab)
 
         tab.refresh(["wd14"], [])
@@ -89,7 +89,7 @@ class TestCollectorsTab:
 
         from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
 
-        tab = CollectorsTab(collector_names=["exif", "wd14"], detacher_names=[])
+        tab = CollectorsTab(collector_names=["exif", "wd14"], parser_names=[])
         qtbot.addWidget(tab)
 
         tab._matrix[("wd14", "db1")].setChecked(True)
@@ -104,7 +104,7 @@ class TestCollectorsTab:
 
         from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
 
-        tab = CollectorsTab(collector_names=["exif"], detacher_names=[])
+        tab = CollectorsTab(collector_names=["exif"], parser_names=[])
         qtbot.addWidget(tab)
 
         assert not tab._matrix[("exif", "fresh")].isChecked()
@@ -115,7 +115,7 @@ class TestCollectorsTab:
 
         from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
 
-        tab = CollectorsTab(collector_names=["exif", "wd14"], detacher_names=[])
+        tab = CollectorsTab(collector_names=["exif", "wd14"], parser_names=[])
         qtbot.addWidget(tab)
 
         assert not tab.has_changes()
@@ -128,20 +128,20 @@ class TestCollectorsTab:
 
         from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
 
-        tab = CollectorsTab(collector_names=["exif", "wd14"], detacher_names=[])
+        tab = CollectorsTab(collector_names=["exif", "wd14"], parser_names=[])
         qtbot.addWidget(tab)
 
         tab._matrix[("wd14", "db1")].setChecked(False)
         disabled = tab.get_newly_disabled()
         assert ("db1", "wd14") in disabled
 
-    def test_separate_collector_detacher_groups(self, qtbot, _patch_paths):
+    def test_separate_collector_parser_groups(self, qtbot, _patch_paths):
         setup, _ = _patch_paths
         setup({"db1": ["exif", "nai"]})
 
         from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
 
-        tab = CollectorsTab(collector_names=["exif"], detacher_names=["nai"])
+        tab = CollectorsTab(collector_names=["exif"], parser_names=["nai"])
         qtbot.addWidget(tab)
 
         assert tab._matrix[("exif", "db1")].isChecked()
@@ -150,13 +150,13 @@ class TestCollectorsTab:
         per_db = tab.get_per_db_collectors()
         assert set(per_db["db1"]) == {"exif", "nai"}
 
-    def test_detacher_only(self, qtbot, _patch_paths):
+    def test_parser_only(self, qtbot, _patch_paths):
         setup, _ = _patch_paths
         setup({"db1": ["nai"]})
 
         from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
 
-        tab = CollectorsTab(collector_names=[], detacher_names=["nai"])
+        tab = CollectorsTab(collector_names=[], parser_names=["nai"])
         qtbot.addWidget(tab)
 
         assert tab._matrix[("nai", "db1")].isChecked()
@@ -169,7 +169,7 @@ class TestCollectorsTab:
         from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
 
         with patch.object(CollectorsTab, "_load_defaults", return_value={"exif"}):
-            tab = CollectorsTab(collector_names=["exif", "wd14"], detacher_names=[])
+            tab = CollectorsTab(collector_names=["exif", "wd14"], parser_names=[])
         qtbot.addWidget(tab)
 
         assert tab._matrix[("exif", "fresh")].isChecked()
@@ -182,7 +182,7 @@ class TestCollectorsTab:
         from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
 
         with patch.object(CollectorsTab, "_load_defaults", return_value={"exif"}):
-            tab = CollectorsTab(collector_names=["exif", "wd14"], detacher_names=[])
+            tab = CollectorsTab(collector_names=["exif", "wd14"], parser_names=[])
         qtbot.addWidget(tab)
 
         assert not tab.has_changes()
@@ -194,7 +194,7 @@ class TestCollectorsTab:
         from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
 
         with patch.object(CollectorsTab, "_load_defaults", return_value={"exif"}):
-            tab = CollectorsTab(collector_names=["exif", "wd14"], detacher_names=[])
+            tab = CollectorsTab(collector_names=["exif", "wd14"], parser_names=[])
         qtbot.addWidget(tab)
 
         assert tab._default_checks["exif"].isChecked()
@@ -207,7 +207,7 @@ class TestCollectorsTab:
         from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
 
         with patch.object(CollectorsTab, "_load_defaults", return_value={"exif"}):
-            tab = CollectorsTab(collector_names=["exif", "wd14"], detacher_names=[])
+            tab = CollectorsTab(collector_names=["exif", "wd14"], parser_names=[])
         qtbot.addWidget(tab)
 
         assert not tab.has_changes()
@@ -221,7 +221,7 @@ class TestCollectorsTab:
         from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
 
         with patch.object(CollectorsTab, "_load_defaults", return_value={"exif", "wd14"}):
-            tab = CollectorsTab(collector_names=["exif", "wd14"], detacher_names=[])
+            tab = CollectorsTab(collector_names=["exif", "wd14"], parser_names=[])
         qtbot.addWidget(tab)
 
         assert set(tab.get_default_collectors()) == {"exif", "wd14"}
@@ -235,7 +235,7 @@ class TestCollectorsTab:
         from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
 
         with patch.object(CollectorsTab, "_load_defaults", return_value={"exif"}):
-            tab = CollectorsTab(collector_names=["exif"], detacher_names=[])
+            tab = CollectorsTab(collector_names=["exif"], parser_names=[])
         qtbot.addWidget(tab)
 
         assert not tab._matrix[("exif", "db1")].isChecked()
@@ -246,7 +246,7 @@ class TestCollectorsTab:
 
         from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
 
-        tab = CollectorsTab(collector_names=["exif"], detacher_names=[])
+        tab = CollectorsTab(collector_names=["exif"], parser_names=[])
         qtbot.addWidget(tab)
 
         assert tab._matrix[("exif", "db1")].isChecked()
@@ -267,8 +267,45 @@ class TestCollectorsTab:
         from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
 
         with patch.object(CollectorsTab, "_load_defaults", return_value={"exif"}):
-            tab = CollectorsTab(collector_names=["exif"], detacher_names=[])
+            tab = CollectorsTab(collector_names=["exif"], parser_names=[])
         qtbot.addWidget(tab)
 
         assert tab._default_checks["exif"].isChecked()
         assert not tab._matrix
+
+    def test_refresh_restores_defaults_after_async_init(self, qtbot, _patch_paths):
+        setup, _ = _patch_paths
+        setup({"db1": ["exif"]})
+
+        from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
+
+        with patch.object(CollectorsTab, "_load_defaults", return_value={"exif", "wd14"}):
+            tab = CollectorsTab(collector_names=[], parser_names=[])
+        qtbot.addWidget(tab)
+
+        assert tab._initial_defaults == set()
+
+        with patch.object(CollectorsTab, "_load_defaults", return_value={"exif", "wd14"}):
+            tab.refresh(["exif", "wd14"], [])
+
+        assert tab._default_checks["exif"].isChecked()
+        assert tab._default_checks["wd14"].isChecked()
+
+    def test_refresh_preserves_default_checkbox_changes(self, qtbot, _patch_paths):
+        setup, _ = _patch_paths
+        setup({"db1": ["exif"]})
+
+        from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
+
+        with patch.object(CollectorsTab, "_load_defaults", return_value={"exif"}):
+            tab = CollectorsTab(collector_names=["exif", "wd14"], parser_names=[])
+        qtbot.addWidget(tab)
+
+        assert tab._default_checks["exif"].isChecked()
+        assert not tab._default_checks["wd14"].isChecked()
+
+        tab._default_checks["wd14"].setChecked(True)
+        tab.refresh(["exif", "wd14"], [])
+
+        assert tab._default_checks["exif"].isChecked()
+        assert tab._default_checks["wd14"].isChecked()

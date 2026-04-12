@@ -84,15 +84,15 @@ class PluginSettings:
         if saved is not None:
             return saved
         from .collector.handler import collector_resolver
-        from .detacher.handler import detacher_resolver
+        from .parser.handler import parser_resolver
 
         defaults = []
         for name in collector_resolver.names():
             cls = collector_resolver.registry.get(name)
             if getattr(cls, "DEFAULT_ENABLED", False):
                 defaults.append(name)
-        for name in detacher_resolver.names():
-            cls = detacher_resolver.registry.get(name)
+        for name in parser_resolver.names():
+            cls = parser_resolver.registry.get(name)
             if getattr(cls, "DEFAULT_ENABLED", False):
                 defaults.append(name)
         return defaults

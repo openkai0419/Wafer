@@ -5,7 +5,7 @@ from ..registry import BasePlugin
 
 
 @dataclass
-class DetacherResult:
+class ParserResult:
     source: str
     status: bool
     meta_info: dict | None = None
@@ -16,11 +16,11 @@ class DetacherResult:
         return {k: v for k, v in asdict(self).items() if v is not None}
 
 
-class BaseDetacher(BasePlugin):
+class BaseParser(BasePlugin):
     TRIGGER_KEYS: tuple[str, ...] = ()
 
     @abstractmethod
-    def process(self, path: str, file_info: tuple, metadata: dict) -> DetacherResult: ...
+    def process(self, path: str, file_info: tuple, metadata: dict) -> ParserResult: ...
 
     def on_notify(self) -> None:
         pass
@@ -31,12 +31,12 @@ class BaseDetacher(BasePlugin):
 
         node = InstanceRegistry.instance().resolve_node()
         if node:
-            node.send("plugin.notify", dst=f"detacher-{name}")
+            node.send("plugin.notify", dst=f"parser-{name}")
 
 
-class BaseDetacherPlugin(BaseDetacher):
+class BaseParserPlugin(BaseParser):
     BATCH_SIZE: int = 1200
 
 
-class BaseSingletonDetacher(BaseDetacher):
+class BaseSingletonParser(BaseParser):
     BATCH_SIZE: int = 300

@@ -149,8 +149,8 @@ class PluginManagerWidget(QtWidgets.QWidget):
 
         from .collectors_tab import CollectorsTab
 
-        collector_names, detacher_names = self._collect_worker_names()
-        self._collectors_tab = CollectorsTab(collector_names, detacher_names)
+        collector_names, parser_names = self._collect_worker_names()
+        self._collectors_tab = CollectorsTab(collector_names, parser_names)
         self._collectors_tab.delete_requested.connect(self._send_delete)
         self._tabs.addTab(self._scrollable(self._collectors_tab), "Collectors")
 
@@ -226,7 +226,7 @@ class PluginManagerWidget(QtWidgets.QWidget):
         msg.setDefaultButton(restart_btn)
         msg.exec()
         if msg.clickedButton() == restart_btn:
-            Command.run("setting.restart_all")
+            Command.run("win.restart_all")
 
     def _on_revert(self):
         self._ext_tab.revert(self._initial_enabled)
@@ -253,8 +253,8 @@ class PluginManagerWidget(QtWidgets.QWidget):
 
     def _collect_worker_names(self) -> tuple[list[str], list[str]]:
         collectors = [cls.NAME for cls in self._ext_tab.collect_enabled_plugins("collector")]
-        detachers = [cls.NAME for cls in self._ext_tab.collect_enabled_plugins("detacher")]
-        return collectors, detachers
+        parsers = [cls.NAME for cls in self._ext_tab.collect_enabled_plugins("parser")]
+        return collectors, parsers
 
     def _send_delete(self, pairs: list[tuple[str, str]], re_collect: bool):
         from ...core.commands.binding.instance_registry import InstanceRegistry
@@ -271,6 +271,11 @@ class PluginManagerWidget(QtWidgets.QWidget):
                 db=db,
             )
         AppLogger.info(f"[PluginManager] Sent delete for {len(pairs)} pairs")
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        c_names, d_names = self._collect_worker_names()
+        self._collectors_tab.refresh(c_names, d_names)
 
     def closeEvent(self, event):
         self._ext_tab.cancel_pending()

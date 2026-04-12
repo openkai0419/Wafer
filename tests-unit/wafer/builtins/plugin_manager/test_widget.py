@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 import pytest
 from unittest.mock import MagicMock, patch
@@ -838,14 +838,22 @@ class TestPluginManagerCommands:
         cmds = PluginManagerCommands.commands()
         paths = [c.path for c in cmds if hasattr(c, "path")]
         assert "setting.plugin_manager" in paths
-        assert "setting.restart_tray" in paths
-        assert "setting.restart_viewer" in paths
-        assert "setting.restart_all" in paths
+
+
+class TestWindowRestartCommands:
+    def test_restart_commands_registered(self):
+        from wafer.builtins.commands.window_commands import WindowRestartCommands
+
+        cmds = WindowRestartCommands.commands()
+        paths = [c.path for c in cmds if hasattr(c, "path")]
+        assert "win.restart_all" in paths
+        assert "win.restart_tray" in paths
+        assert "win.restart_viewer" in paths
 
     def test_restart_tray_calls_process(self, monkeypatch):
         calls = []
         monkeypatch.setattr(
-            "wafer.builtins.commands.app.AppProcess",
+            "wafer.builtins.commands.window_commands.AppProcess",
             type(
                 "",
                 (),
@@ -855,14 +863,14 @@ class TestPluginManagerCommands:
                 },
             )(),
         )
-        from wafer.builtins.commands.app import restart_tray
+        from wafer.builtins.commands.window_commands import restart_tray
 
         restart_tray(MagicMock())
         assert ("terminate", ("--tray",)) in calls
         assert ("new_main", ("--tray",)) in calls
 
     def test_restart_viewer_delegates_to_close_by_restart(self):
-        from wafer.builtins.commands.app import restart_viewer
+        from wafer.builtins.commands.window_commands import restart_viewer
 
         mock_w = MagicMock()
         ctx = MagicMock()
@@ -873,7 +881,7 @@ class TestPluginManagerCommands:
     def test_restart_all_calls_both(self, monkeypatch):
         calls = []
         monkeypatch.setattr(
-            "wafer.builtins.commands.app.AppProcess",
+            "wafer.builtins.commands.window_commands.AppProcess",
             type(
                 "",
                 (),
@@ -885,8 +893,8 @@ class TestPluginManagerCommands:
         )
         mock_store = MagicMock()
         mock_store.get_active_profile_ids.return_value = ["sess1", "sess2"]
-        monkeypatch.setattr("wafer.builtins.commands.app.ProfileStore", type("", (), {"instance": staticmethod(lambda: mock_store)}))
-        from wafer.builtins.commands.app import restart_all
+        monkeypatch.setattr("wafer.builtins.commands.window_commands.ProfileStore", type("", (), {"instance": staticmethod(lambda: mock_store)}))
+        from wafer.builtins.commands.window_commands import restart_all
 
         mock_node = MagicMock()
         mock_w = MagicMock()
@@ -910,7 +918,7 @@ class TestCollectorsTab:
         )
         from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
 
-        tab = CollectorsTab(collector_names=[], detacher_names=[])
+        tab = CollectorsTab(collector_names=[], parser_names=[])
         qtbot.addWidget(tab)
         assert tab._matrix == {}
 
@@ -931,7 +939,7 @@ class TestCollectorsTab:
         )
         from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
 
-        tab = CollectorsTab(collector_names=["exif", "ai_tags"], detacher_names=[])
+        tab = CollectorsTab(collector_names=["exif", "ai_tags"], parser_names=[])
         qtbot.addWidget(tab)
 
         assert tab._matrix[("exif", "test")].isChecked()
@@ -956,13 +964,13 @@ class TestCollectorsTab:
         )
         from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
 
-        tab = CollectorsTab(collector_names=["exif"], detacher_names=[])
+        tab = CollectorsTab(collector_names=["exif"], parser_names=[])
         qtbot.addWidget(tab)
 
         assert not tab._matrix[("exif", "one")].isChecked()
         assert not tab._matrix[("exif", "two")].isChecked()
 
-        tab._on_all_toggled("exif", True)
+        tab._toggle_all("exif")
 
         assert tab._matrix[("exif", "one")].isChecked()
         assert tab._matrix[("exif", "two")].isChecked()
@@ -983,7 +991,7 @@ class TestCollectorsTab:
         )
         from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
 
-        tab = CollectorsTab(collector_names=["exif", "ai_tags"], detacher_names=[])
+        tab = CollectorsTab(collector_names=["exif", "ai_tags"], parser_names=[])
         qtbot.addWidget(tab)
 
         tab._matrix[("exif", "mydb")].setChecked(True)
@@ -1009,7 +1017,7 @@ class TestCollectorsTab:
         )
         from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
 
-        tab = CollectorsTab(collector_names=["exif", "ai_tags"], detacher_names=[])
+        tab = CollectorsTab(collector_names=["exif", "ai_tags"], parser_names=[])
         qtbot.addWidget(tab)
 
         result = tab.get_per_db_collectors()
@@ -1031,7 +1039,7 @@ class TestCollectorsTab:
         )
         from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
 
-        tab = CollectorsTab(collector_names=["exif", "ai_tags"], detacher_names=[])
+        tab = CollectorsTab(collector_names=["exif", "ai_tags"], parser_names=[])
         qtbot.addWidget(tab)
 
         tab._matrix[("ai_tags", "mydb")].setChecked(False)
@@ -1055,7 +1063,7 @@ class TestCollectorsTab:
         )
         from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
 
-        tab = CollectorsTab(collector_names=["exif"], detacher_names=[])
+        tab = CollectorsTab(collector_names=["exif"], parser_names=[])
         qtbot.addWidget(tab)
 
         disabled = tab.get_newly_disabled()
@@ -1077,7 +1085,7 @@ class TestCollectorsTab:
         )
         from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
 
-        tab = CollectorsTab(collector_names=["exif"], detacher_names=[])
+        tab = CollectorsTab(collector_names=["exif"], parser_names=[])
         qtbot.addWidget(tab)
 
         assert ("exif", "mydb") in tab._matrix
@@ -1105,7 +1113,7 @@ class TestCollectorsTab:
         )
         from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
 
-        tab = CollectorsTab(collector_names=["exif"], detacher_names=[])
+        tab = CollectorsTab(collector_names=["exif"], parser_names=[])
         qtbot.addWidget(tab)
         assert not tab.has_changes()
 
@@ -1125,7 +1133,7 @@ class TestCollectorsTab:
         )
         from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
 
-        tab = CollectorsTab(collector_names=["exif"], detacher_names=[])
+        tab = CollectorsTab(collector_names=["exif"], parser_names=[])
         qtbot.addWidget(tab)
         tab._matrix[("exif", "mydb")].setChecked(False)
         assert tab.has_changes()

@@ -6,12 +6,12 @@ from ...utils.logs import AppLogger
 from ...core.db.db_utils import remove_orphan_databases, delete_database_files
 from ...core.db.setting_db import SettingDB
 from ...plugin.collector.handler import collector_resolver
-from ...plugin.detacher.handler import detacher_resolver
+from ...plugin.parser.handler import parser_resolver
 from ...core.ipc.node import Node
 from .collector_receiver import CollectorReceiver
 from .db_writer import DatabaseWriter
-from .detacher_dispatcher import DetacherDispatcher
-from .detacher_receiver import DetacherReceiver
+from .parser_dispatcher import ParserDispatcher
+from .parser_receiver import ParserReceiver
 from .dispatcher import CollectorDispatcher
 from .progress_notifier import ProgressAggregator
 from .scanner import DirectoryScanner
@@ -34,8 +34,8 @@ class IndexerProcess:
         self.setting_watcher = None
         self.dispatcher = None
         self.receiver = None
-        self.detacher_dispatcher = None
-        self.detacher_receiver = None
+        self.parser_dispatcher = None
+        self.parser_receiver = None
         self._progress = None
         self.zmq = Node("indexer", db=name, consumer=True)
         self.zmq.subscribe("cleanup", lambda msg: self.cleanup() or True)
@@ -93,31 +93,31 @@ class IndexerProcess:
         )
         self.dispatcher.start(self.zmq)
 
-        all_detachers = detacher_resolver.names()
+        all_parsers = parser_resolver.names()
         if enabled is not None:
             all_known = {c[0] for c in all_collectors} | set(enabled)
-            detacher_names = [n for n in all_detachers if n in enabled_set or (n not in all_known and getattr(detacher_resolver.registry.get(n), "DEFAULT_ENABLED", False))]
+            parser_names = [n for n in all_parsers if n in enabled_set or (n not in all_known and getattr(parser_resolver.registry.get(n), "DEFAULT_ENABLED", False))]
         else:
-            detacher_names = [n for n in all_detachers if n in default_set]
-        if detacher_names:
-            self.detacher_receiver = DetacherReceiver(self.scheduler, self.writer, progress)
-            self.zmq.subscribe("detach.result", self.detacher_receiver.handle_result)
-            self.detacher_dispatcher = DetacherDispatcher(
+            parser_names = [n for n in all_parsers if n in default_set]
+        if parser_names:
+            self.parser_receiver = ParserReceiver(self.scheduler, self.writer, progress)
+            self.zmq.subscribe("parse.result", self.parser_receiver.handle_result)
+            self.parser_dispatcher = ParserDispatcher(
                 self.db_name,
                 db_path,
                 self.scheduler,
                 self.writer,
                 progress,
-                detachers=detacher_names,
+                parsers=parser_names,
                 tray_pid=self._tray_pid,
             )
-            self.detacher_dispatcher.start(self.zmq)
-            self.detacher_receiver.set_request_dispatch(self.detacher_dispatcher.request_dispatch)
-            self.receiver.set_detacher_dispatch(
-                self.detacher_dispatcher.request_dispatch,
+            self.parser_dispatcher.start(self.zmq)
+            self.parser_receiver.set_request_dispatch(self.parser_dispatcher.request_dispatch)
+            self.receiver.set_parser_dispatch(
+                self.parser_dispatcher.request_dispatch,
                 self.writer,
             )
-            self.scanner.set_detachers([(detacher_resolver.status_name(n), detacher_resolver.trigger_keys(n)) for n in detacher_names])
+            self.scanner.set_parsers([(parser_resolver.status_name(n), parser_resolver.trigger_keys(n)) for n in parser_names])
 
         self.scanner.backfill_pending()
 
@@ -316,8 +316,8 @@ class IndexerProcess:
         self._stop_zmq()
 
     def _stop_components(self):
-        if self.detacher_dispatcher:
-            self.detacher_dispatcher.stop()
+        if self.parser_dispatcher:
+            self.parser_dispatcher.stop()
         if self.dispatcher:
             self.dispatcher.stop()
         if self.folder_watcher:

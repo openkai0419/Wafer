@@ -111,7 +111,7 @@ class TestVideoViewerPluginState:
         plugin.widget.set_muted.assert_called_once_with(False)
         plugin.widget.set_speed.assert_called_once_with(1.0)
         plugin.widget.set_cover_mode.assert_called_once_with(False)
-        plugin.widget.set_looping.assert_called_once_with(False)
+        plugin.widget.set_looping.assert_called_once_with(True)
         plugin.widget.set_pause_in_background.assert_called_once_with(False)
 
     def test_restore_state_idempotent(self):

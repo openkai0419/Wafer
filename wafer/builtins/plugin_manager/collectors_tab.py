@@ -21,18 +21,18 @@ class _ClickableLabel(QtWidgets.QLabel):
 class CollectorsTab(QtWidgets.QWidget):
     delete_requested = QtCore.Signal(list, bool)
 
-    def __init__(self, collector_names: list[str] | None = None, detacher_names: list[str] | None = None, parent=None):
+    def __init__(self, collector_names: list[str] | None = None, parser_names: list[str] | None = None, parent=None):
         super().__init__(parent)
         if collector_names is None:
             from ...plugin.collector.handler import collector_resolver
 
             collector_names = list(collector_resolver.names())
-        if detacher_names is None:
-            from ...plugin.detacher.handler import detacher_resolver
+        if parser_names is None:
+            from ...plugin.parser.handler import parser_resolver
 
-            detacher_names = list(detacher_resolver.names())
+            parser_names = list(parser_resolver.names())
         self._collector_names: list[str] = list(collector_names)
-        self._detacher_names: list[str] = list(detacher_names)
+        self._parser_names: list[str] = list(parser_names)
         self._db_names: list[str] = list_setting_db_names()
         self._default_checks: dict[str, QtWidgets.QCheckBox] = {}
         self._matrix: dict[tuple[str, str], QtWidgets.QCheckBox] = {}
@@ -64,13 +64,13 @@ class CollectorsTab(QtWidgets.QWidget):
 
     @property
     def _all_names(self) -> list[str]:
-        return self._collector_names + self._detacher_names
+        return self._collector_names + self._parser_names
 
     def _build_ui(self):
         self._clear_ui()
 
         if not self._all_names:
-            self._main_layout.addWidget(QtWidgets.QLabel(t("No collector or detacher plugins loaded.")))
+            self._main_layout.addWidget(QtWidgets.QLabel(t("No collector or parser plugins loaded.")))
             self._main_layout.addStretch()
             return
 
@@ -82,8 +82,8 @@ class CollectorsTab(QtWidgets.QWidget):
             self._main_layout.addWidget(header)
             if self._collector_names:
                 self._main_layout.addWidget(self._build_db_group("Collectors", self._collector_names))
-            if self._detacher_names:
-                self._main_layout.addWidget(self._build_db_group("Detachers", self._detacher_names))
+            if self._parser_names:
+                self._main_layout.addWidget(self._build_db_group("Parsers", self._parser_names))
         else:
             self._main_layout.addWidget(QtWidgets.QLabel(t("No databases found.")))
 
@@ -95,8 +95,8 @@ class CollectorsTab(QtWidgets.QWidget):
         layout.setSpacing(dpix(4))
         if self._collector_names:
             layout.addLayout(self._build_defaults_row("Collectors", self._collector_names))
-        if self._detacher_names:
-            layout.addLayout(self._build_defaults_row("Detachers", self._detacher_names))
+        if self._parser_names:
+            layout.addLayout(self._build_defaults_row("Parsers", self._parser_names))
         return group
 
     def _build_defaults_row(self, label: str, names: list[str]) -> QtWidgets.QHBoxLayout:
@@ -167,7 +167,7 @@ class CollectorsTab(QtWidgets.QWidget):
             if w:
                 w.deleteLater()
 
-    def refresh(self, collector_names: list[str], detacher_names: list[str]):
+    def refresh(self, collector_names: list[str], parser_names: list[str]):
         if self._matrix:
             saved = self.get_per_db_collectors()
             known = set(self._all_names)
@@ -175,8 +175,25 @@ class CollectorsTab(QtWidgets.QWidget):
                 prev = self._initial_state.get(db, set())
                 ui_state = set(saved.get(db, []))
                 self._initial_state[db] = ui_state | (prev - known)
+
+        if self._default_checks:
+            self._initial_defaults = set(self.get_default_collectors())
+        else:
+            self._initial_defaults = self._load_defaults()
+
         self._collector_names = list(collector_names)
-        self._detacher_names = list(detacher_names)
+        self._parser_names = list(parser_names)
+        self._initial_defaults &= set(self._all_names)
+
+        self._db_names = list_setting_db_names()
+        for db in self._db_names:
+            if db not in self._initial_state:
+                sdb = SettingDB(setting_db_path(db))
+                enabled = sdb.get_enabled_collectors()
+                if enabled is not None:
+                    self._initial_state[db] = set(enabled)
+                else:
+                    self._initial_state[db] = set(self._initial_defaults)
         self._build_ui()
 
     def get_per_db_collectors(self) -> dict[str, list[str]]:

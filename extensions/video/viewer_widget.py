@@ -22,7 +22,7 @@ _VOLUME_POPUP_HIDE_MS = 400
 
 
 def _format_time(seconds):
-    if seconds is None or seconds < 0:
+    if not isinstance(seconds, (int, float)) or seconds < 0:
         return "00:00"
     total = int(seconds)
     m, s = divmod(total, 60)

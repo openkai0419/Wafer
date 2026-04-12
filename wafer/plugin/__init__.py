@@ -1,7 +1,7 @@
 from .viewer.base import BaseViewerPlugin, ImageViewerPlugin, WidgetViewerPlugin
 from .grid.base import BaseGridPlugin, ImageGridPlugin, WidgetGridPlugin
 from .collector.base import BaseCollectorPlugin, BaseSingletonCollector, CollectorResult
-from .detacher.base import BaseDetacherPlugin, BaseSingletonDetacher, DetacherResult
+from .parser.base import BaseParserPlugin, BaseSingletonParser, ParserResult
 from .query.base import BaseFilterPlugin, BaseSortPlugin
 from .layout.base import BaseLayoutPlugin
 from .panel.base import BasePanelPlugin

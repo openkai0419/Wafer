@@ -9,9 +9,9 @@ from wafer.core.db.file_db import FileDB
 from wafer.core.db.indexer import FileIndexer
 from wafer.core.db.query import FileSearchEngine, SearchQuery
 from wafer.plugin.collector.handler import collector_resolver
-from wafer.plugin.detacher.handler import detacher_resolver
+from wafer.plugin.parser.handler import parser_resolver
 from wafer.app.indexer.collector_receiver import _parse_batch as _parse_collector_batch
-from wafer.app.indexer.detacher_receiver import _parse_batch as _parse_detacher_batch
+from wafer.app.indexer.parser_receiver import _parse_batch as _parse_parser_batch
 
 
 def _create_nai_image(path, prompt="a cat", model="nai-v3", seed=42):
@@ -51,55 +51,55 @@ def _write_collector_results(db, results):
     )
 
 
-class TestDetacherResultsParsedCorrectly:
-    def test_detacher_meta_keys_have_prefix(self):
+class TestParserResultsParsedCorrectly:
+    def test_parser_meta_keys_have_prefix(self):
         results = [
             {
                 "source": "/test/img.png",
                 "path": "/test/img.png",
                 "status": True,
-                "detacher": "novelai",
+                "parser": "novelai",
                 "meta_info": {"prompt": "a cat", "model": "nai-v3"},
             }
         ]
-        parsed = _parse_detacher_batch(results)
+        parsed = _parse_parser_batch(results)
         keys = [e[1] for e in parsed["meta_info_entries"]]
         assert all(k.startswith("novelai.") for k in keys)
         assert "novelai.prompt" in keys
         assert "novelai.model" in keys
 
-    def test_detacher_fail_no_meta(self):
+    def test_parser_fail_no_meta(self):
         results = [
             {
                 "source": "/test/bad.png",
                 "status": False,
-                "detacher": "novelai",
+                "parser": "novelai",
                 "meta_info": {"prompt": "ignored"},
             }
         ]
-        parsed = _parse_detacher_batch(results)
+        parsed = _parse_parser_batch(results)
         assert parsed["meta_info_entries"] == []
         assert len(parsed["collector_status"]) == 1
         assert parsed["collector_status"][0][2] == "fail"
 
-    def test_detacher_delete_keys_captured(self):
+    def test_parser_delete_keys_captured(self):
         results = [
             {
                 "source": "/test/img.png",
                 "path": "/test/img.png",
                 "status": True,
-                "detacher": "novelai",
+                "parser": "novelai",
                 "meta_info": {"prompt": "a cat"},
                 "delete_keys": ["exif.Comment", "exif.Description"],
             }
         ]
-        parsed = _parse_detacher_batch(results)
+        parsed = _parse_parser_batch(results)
         assert len(parsed["delete_entries"]) == 1
         assert parsed["delete_entries"][0][2] == ["exif.Comment", "exif.Description"]
 
 
-class TestDetacherToDBPipeline:
-    def test_detacher_meta_stored_in_db(self, tmp_path):
+class TestParserToDBPipeline:
+    def test_parser_meta_stored_in_db(self, tmp_path):
         img_dir = tmp_path / "photos"
         img_dir.mkdir()
         _create_nai_image(img_dir / "nai_test.png", prompt="sunset over ocean", seed=100)
@@ -123,17 +123,17 @@ class TestDetacherToDBPipeline:
             comment_json = comment_rows[0][0]
             file_hash = idx.db.read_conn.execute("SELECT file_hash FROM sources WHERE source=?", (norm,)).fetchone()
 
-            detacher_results = [
+            parser_results = [
                 {
                     "source": norm,
                     "path": norm,
                     "status": True,
-                    "detacher": "novelai",
+                    "parser": "novelai",
                     "file_hash": file_hash[0] if file_hash else None,
                     "meta_info": {"prompt": "sunset over ocean", "seed": "100", "model": "nai-v3"},
                 }
             ]
-            parsed = _parse_detacher_batch(detacher_results)
+            parsed = _parse_parser_batch(parser_results)
             idx.db.upsert_collection_results(
                 [],
                 parsed["meta_info_entries"],
@@ -147,7 +147,7 @@ class TestDetacherToDBPipeline:
             assert meta_dict["novelai.prompt"] == "sunset over ocean"
             assert "novelai.seed" in meta_dict
 
-    def test_detacher_results_searchable(self, tmp_path):
+    def test_parser_results_searchable(self, tmp_path):
         img_dir = tmp_path / "photos"
         img_dir.mkdir()
         _create_nai_image(img_dir / "art.png", prompt="fantasy landscape")
@@ -164,16 +164,16 @@ class TestDetacherToDBPipeline:
 
             norm = normalize_path(str(img_dir / "art.png"))
 
-            detacher_results = [
+            parser_results = [
                 {
                     "source": norm,
                     "path": norm,
                     "status": True,
-                    "detacher": "novelai",
+                    "parser": "novelai",
                     "meta_info": {"prompt": "fantasy landscape", "steps": "28"},
                 }
             ]
-            parsed = _parse_detacher_batch(detacher_results)
+            parsed = _parse_parser_batch(parser_results)
             idx.db.upsert_collection_results(
                 [],
                 parsed["meta_info_entries"],

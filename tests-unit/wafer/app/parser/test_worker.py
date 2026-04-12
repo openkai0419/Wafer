@@ -1,37 +1,37 @@
 import py_compile
 from unittest.mock import MagicMock, patch
 
-from wafer.plugin.detacher.handler import detacher_resolver
+from wafer.plugin.parser.handler import parser_resolver
 
 
 def test_compile():
-    py_compile.compile("wafer/app/detacher/worker.py")
+    py_compile.compile("wafer/app/parser/worker.py")
 
 
 def _make_worker():
-    from wafer.app.detacher.worker import DetacherWorker
+    from wafer.app.parser.worker import ParserWorker
 
-    names = detacher_resolver.names()
+    names = parser_resolver.names()
     if not names:
         import pytest
 
-        pytest.skip("No detacher plugins registered")
+        pytest.skip("No parser plugins registered")
     name = next(iter(names))
-    worker = DetacherWorker("test_db", name)
+    worker = ParserWorker("test_db", name)
     worker._node = MagicMock()
     return worker
 
 
 def test_notify_subscribed():
-    from wafer.app.detacher.worker import DetacherWorker
+    from wafer.app.parser.worker import ParserWorker
 
-    names = detacher_resolver.names()
+    names = parser_resolver.names()
     if not names:
         import pytest
 
-        pytest.skip("No detacher plugins registered")
+        pytest.skip("No parser plugins registered")
     name = next(iter(names))
-    worker = DetacherWorker("test_db", name)
+    worker = ParserWorker("test_db", name)
     assert "plugin.notify" in worker._node._handlers
 
 
@@ -52,10 +52,10 @@ def test_handle_batch_rejects_when_stopped():
     worker = _make_worker()
     worker._stop.set()
     msg = Message.build(
-        "detach.batch",
+        "parse.batch",
         {"paths": ["/test/a.jpg"], "file_info": {}, "metadata": {}},
         src="test",
-        dst="detacher",
+        dst="parser",
         db="test_db",
     )
     result = worker._handle_batch(msg)
@@ -70,7 +70,7 @@ def test_shutdown_cancel_futures():
 
 
 def test_constants():
-    from wafer.app.detacher.worker import _TASK_TIMEOUT, _SHUTDOWN_WAIT
+    from wafer.app.parser.worker import _TASK_TIMEOUT, _SHUTDOWN_WAIT
 
     assert _TASK_TIMEOUT > 0
     assert _SHUTDOWN_WAIT > 0

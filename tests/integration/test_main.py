@@ -1,4 +1,4 @@
-from unittest.mock import patch, MagicMock, call
+﻿from unittest.mock import patch, MagicMock, call
 
 
 class TestDirectLaunchProfileRestore:
@@ -13,7 +13,7 @@ class TestDirectLaunchProfileRestore:
         store.get_restore_profile_ids.return_value = []
 
         with patch("main.argparse.ArgumentParser.parse_args") as mock_args:
-            mock_args.return_value = MagicMock(tray=False, viewer=False, indexer=None, collector=None, detacher=None, dev=False, profile=None)
+            mock_args.return_value = MagicMock(tray=False, viewer=False, indexer=None, collector=None, parser=None, dev=False, profile=None)
             with patch("wafer.core.profile.ProfileStore", return_value=store):
                 from main import main
 
@@ -34,7 +34,7 @@ class TestDirectLaunchProfileRestore:
         store.get_restore_profile_ids.return_value = ["s1"]
 
         with patch("main.argparse.ArgumentParser.parse_args") as mock_args:
-            mock_args.return_value = MagicMock(tray=False, viewer=False, indexer=None, collector=None, detacher=None, dev=False, profile=None)
+            mock_args.return_value = MagicMock(tray=False, viewer=False, indexer=None, collector=None, parser=None, dev=False, profile=None)
             with patch("wafer.core.profile.ProfileStore", return_value=store):
                 from main import main
 
@@ -55,7 +55,7 @@ class TestDirectLaunchProfileRestore:
         store.get_restore_profile_ids.return_value = ["s1", "s2", "Work"]
 
         with patch("main.argparse.ArgumentParser.parse_args") as mock_args:
-            mock_args.return_value = MagicMock(tray=False, viewer=False, indexer=None, collector=None, detacher=None, dev=False, profile=None)
+            mock_args.return_value = MagicMock(tray=False, viewer=False, indexer=None, collector=None, parser=None, dev=False, profile=None)
             with patch("wafer.core.profile.ProfileStore", return_value=store):
                 from main import main
 

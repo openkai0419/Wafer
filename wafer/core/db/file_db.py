@@ -690,7 +690,7 @@ class FileDB:
             finally:
                 cur.close()
 
-    def find_sources_with_trigger_keys(self, trigger_keys: tuple[str, ...], detacher_status_name: str) -> list[str]:
+    def find_sources_with_trigger_keys(self, trigger_keys: tuple[str, ...], parser_status_name: str) -> list[str]:
         if not trigger_keys:
             return []
         cur = self.get_reader_cursor()
@@ -712,7 +712,7 @@ class FileDB:
                     SELECT cs.source FROM collection_status cs
                     WHERE cs.collector = ?
                 )""",
-                list(trigger_keys) + [detacher_status_name] + list(trigger_keys) + [detacher_status_name],
+                list(trigger_keys) + [parser_status_name] + list(trigger_keys) + [parser_status_name],
             )
             return [row[0] for row in cur.fetchall()]
         finally:

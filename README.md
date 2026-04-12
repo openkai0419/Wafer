@@ -5,11 +5,11 @@
 ![Wafer Screenshot](_docs/wafer_screenshot.png)
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB.svg)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB.svg)](https://www.python.org/)
 ![Platform](https://img.shields.io/badge/Platform-Windows-0078D6.svg)
-![Release](https://img.shields.io/github/v/release/openkai0419/Wafer?style=flat-square)
-![Release Date](https://img.shields.io/github/release-date/openkai0419/Wafer?style=flat-square)
-![Downloads](https://img.shields.io/github/downloads/openkai0419/Wafer/total?style=flat-square)
+[![Release](https://img.shields.io/github/v/release/openkai0419/Wafer?style=flat-square)](https://github.com/openkai0419/Wafer/releases/latest)
+[![Release Date](https://img.shields.io/github/release-date/openkai0419/Wafer?style=flat-square)](https://github.com/openkai0419/Wafer/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/openkai0419/Wafer/total?style=flat-square)](https://github.com/openkai0419/Wafer/releases)
 
 [日本語はこちら](README.jp.md)
 
@@ -23,7 +23,7 @@ Plugin-based extensions add support for any file format. Currently Windows only 
 
 ### From zip 
 
-1. Go to [Releases](https://github.com/openkai0419/private_rep/releases/latest)
+1. Go to [Releases](https://github.com/openkai0419/Wafer/releases/latest)
 2. Download `Wafer-vX.X.X.zip`
 3. Extract the zip to any folder (prefer SSD)
 4. Run `Wafer.exe`

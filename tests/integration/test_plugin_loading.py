@@ -18,7 +18,7 @@ from wafer.plugin.registry import (
 from wafer.plugin.grid.handler import grid_resolver
 from wafer.plugin.viewer.handler import viewer_resolver
 from wafer.plugin.collector.handler import collector_resolver
-from wafer.plugin.detacher.handler import detacher_resolver
+from wafer.plugin.parser.handler import parser_resolver
 from wafer.plugin.query.handler import filter_registry, sort_registry
 from wafer.plugin.layout.handler import layout_registry
 from wafer.plugin.panel.handler import panel_registry
@@ -86,9 +86,9 @@ class TestCollectorRegistryState:
         assert "wd14" not in collector_resolver.names()
 
 
-class TestDetacherRegistryState:
+class TestParserRegistryState:
     def test_novelai_not_registered_by_default(self):
-        assert "novelai" not in detacher_resolver.names()
+        assert "novelai" not in parser_resolver.names()
 
 
 class TestFilterRegistryState:
@@ -213,7 +213,7 @@ class TestPluginLoaderFreshLoad:
             "viewer": FilePluginRegistry(),
             "grid": FilePluginRegistry(),
             "collector": PluginRegistry(),
-            "detacher": PluginRegistry(),
+            "parser": PluginRegistry(),
             "filter": PluginRegistry(),
             "sort": PluginRegistry(),
             "layout": PluginRegistry(),
@@ -235,7 +235,7 @@ class TestPluginLoaderFreshLoad:
         loader = PluginLoader(EXTENSIONS_DIR, registries, enabled=None)
         loader.load_all()
         assert "wd14" not in registries["collector"].names()
-        assert "novelai" not in registries["detacher"].names()
+        assert "novelai" not in registries["parser"].names()
 
     def test_enabled_set_restricts_loading(self):
         registries = self._make_fresh_registries()

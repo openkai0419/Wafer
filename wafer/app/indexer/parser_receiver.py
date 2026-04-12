@@ -5,7 +5,7 @@ from typing import Any
 
 from ...utils.logs import AppLogger
 from ...utils.profiling import profiler
-from ...plugin.detacher.handler import detacher_resolver
+from ...plugin.parser.handler import parser_resolver
 from ._parse_utils import BATCH_SIZE, FLUSH_DELAY, ResultBuffer, try_float
 from .db_writer import DatabaseWriter
 from .progress_notifier import ProgressAggregator
@@ -13,7 +13,7 @@ from .scheduler import TaskScheduler
 from .task import Task, TaskPriority
 
 
-def trigger_detacher_pending(
+def trigger_parser_pending(
     source_keys: dict[str, set[str]],
     writer: DatabaseWriter,
     request_dispatch=None,
@@ -21,16 +21,16 @@ def trigger_detacher_pending(
     if not source_keys:
         return
     all_keys = set().union(*source_keys.values())
-    matched = detacher_resolver.detachers_for_keys(all_keys)
+    matched = parser_resolver.parsers_for_keys(all_keys)
     if not matched:
         return
     dispatched = False
     for name in matched:
-        trigger = set(detacher_resolver.trigger_keys(name))
+        trigger = set(parser_resolver.trigger_keys(name))
         filtered = [s for s, keys in source_keys.items() if keys & trigger]
         if not filtered:
             continue
-        status_name = detacher_resolver.status_name(name)
+        status_name = parser_resolver.status_name(name)
         writer.insert_pending(filtered, [status_name])
         dispatched = True
     if dispatched and request_dispatch:
@@ -44,10 +44,10 @@ def _write_batched(writer: DatabaseWriter, data: dict[str, Any]):
     delete = data["delete_entries"]
     total = max(len(cs), len(meta), len(tags))
     if total <= BATCH_SIZE:
-        writer.upsert_detacher_results(meta, tags, cs, delete)
+        writer.upsert_parser_results(meta, tags, cs, delete)
         return
     for i in range(0, total, BATCH_SIZE):
-        writer.upsert_detacher_results(
+        writer.upsert_parser_results(
             meta[i : i + BATCH_SIZE],
             tags[i : i + BATCH_SIZE],
             cs[i : i + BATCH_SIZE],
@@ -77,7 +77,7 @@ def _merge_parsed(entries: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-class DetacherReceiver:
+class ParserReceiver:
     def __init__(self, scheduler: TaskScheduler, writer: DatabaseWriter, progress: ProgressAggregator):
         self._scheduler = scheduler
         self._writer = writer
@@ -91,13 +91,13 @@ class DetacherReceiver:
     def handle_result(self, msg) -> bool:
         payload = msg.payload
         if not isinstance(payload, dict):
-            AppLogger.warning(f"detach.result: invalid payload type: {type(payload)}")
+            AppLogger.warning(f"parse.result: invalid payload type: {type(payload)}")
             return True
-        detacher = payload.get("detacher", "")
+        parser = payload.get("parser", "")
         results = payload.get("results", [])
         if results:
             for r in results:
-                r.setdefault("detacher", detacher)
+                r.setdefault("parser", parser)
             parsed = _parse_batch(results)
             need_submit = self._buffer.append(parsed, len(results))
             if need_submit:
@@ -107,7 +107,7 @@ class DetacherReceiver:
     def _schedule_flush(self):
         self._scheduler.submit(
             Task.create(
-                "flush_detacher_results",
+                "flush_parser_results",
                 priority=TaskPriority.COLLECTION,
                 run=self._flush,
             )
@@ -124,10 +124,10 @@ class DetacherReceiver:
         _write_batched(self._writer, data)
         self._progress.increment(count, 0)
         self._progress.send_event("update")
-        AppLogger.info(f"[DetacherReceiver] Flushed {count} results")
+        AppLogger.info(f"[ParserReceiver] Flushed {count} results")
 
         source_keys = _build_source_keys(data)
-        trigger_detacher_pending(source_keys, self._writer, self._request_dispatch)
+        trigger_parser_pending(source_keys, self._writer, self._request_dispatch)
 
         if self._buffer.has_pending():
             self._schedule_flush()
@@ -157,17 +157,17 @@ def _parse_batch(results: list[dict[str, Any]]) -> dict[str, Any]:
         tags = r.get("tags", {})
         delete_keys = r.get("delete_keys")
         status = r.get("status")
-        detacher = r.get("detacher", "")
+        parser = r.get("parser", "")
 
         ok = bool(status)
         s_status = "ok" if ok else "fail"
-        cs_key = (source, detacher)
+        cs_key = (source, parser)
         prev_cs = collector_status_map.get(cs_key)
         if prev_cs is None or s_status == "ok":
-            collector_status_map[cs_key] = (source, detacher, s_status, now)
+            collector_status_map[cs_key] = (source, parser, s_status, now)
 
         if ok:
-            prefix = f"{detacher}." if detacher else ""
+            prefix = f"{parser}." if parser else ""
             for k, v in meta_info.items():
                 if v is not None:
                     meta_info_entries.append((path, f"{prefix}{k}", str(v), try_float(v)))

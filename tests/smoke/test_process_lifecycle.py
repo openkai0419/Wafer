@@ -157,20 +157,20 @@ class TestCollectorWorkerLifecycle:
             broker.stop()
 
 
-class TestDetacherWorkerLifecycle:
+class TestParserWorkerLifecycle:
     def test_worker_starts_and_stops_cleanly(self):
         from wafer.core.ipc.broker import Broker
-        from wafer.app.detacher.worker import DetacherWorker
-        from wafer.plugin.detacher.handler import detacher_resolver
+        from wafer.app.parser.worker import ParserWorker
+        from wafer.plugin.parser.handler import parser_resolver
 
-        names = detacher_resolver.names()
+        names = parser_resolver.names()
         if not names:
-            pytest.skip("No detacher plugins available")
+            pytest.skip("No parser plugins available")
 
         broker = Broker()
         broker.start()
         try:
-            worker = DetacherWorker("testdb", names[0])
+            worker = ParserWorker("testdb", names[0])
             worker.start()
             try:
                 assert worker._node.wait_registered(timeout=5.0)
@@ -184,16 +184,16 @@ class TestDetacherWorkerLifecycle:
 class TestDispatcherSingletonState:
     def test_reset_singleton_state(self):
         from wafer.app.indexer.dispatcher import CollectorDispatcher
-        from wafer.app.indexer.detacher_dispatcher import DetacherDispatcher
+        from wafer.app.indexer.parser_dispatcher import ParserDispatcher
 
         CollectorDispatcher._singleton_started.add("test_plugin")
-        DetacherDispatcher._singleton_started.add("test_detacher")
+        ParserDispatcher._singleton_started.add("test_parser")
 
         CollectorDispatcher.reset_singleton_state()
-        DetacherDispatcher.reset_singleton_state()
+        ParserDispatcher.reset_singleton_state()
 
         assert len(CollectorDispatcher._singleton_started) == 0
-        assert len(DetacherDispatcher._singleton_started) == 0
+        assert len(ParserDispatcher._singleton_started) == 0
 
 
 class TestTerminateAndWait:

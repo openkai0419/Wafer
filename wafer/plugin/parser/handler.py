@@ -1,8 +1,8 @@
 from ..registry import PluginRegistry
-from .base import BaseSingletonDetacher
+from .base import BaseSingletonParser
 
 
-class DetacherResolver:
+class ParserResolver:
     def __init__(self):
         self.registry = PluginRegistry()
 
@@ -13,10 +13,10 @@ class DetacherResolver:
         return self.registry.summary()
 
     def singleton_names(self) -> list[str]:
-        return [p.NAME for p in self.registry.list_all() if issubclass(p, BaseSingletonDetacher)]
+        return [p.NAME for p in self.registry.list_all() if issubclass(p, BaseSingletonParser)]
 
     def per_indexer_names(self) -> list[str]:
-        return [p.NAME for p in self.registry.list_all() if not issubclass(p, BaseSingletonDetacher)]
+        return [p.NAME for p in self.registry.list_all() if not issubclass(p, BaseSingletonParser)]
 
     def batch_size(self, name: str) -> int:
         cls = self.registry.get(name)
@@ -26,7 +26,7 @@ class DetacherResolver:
         cls = self.registry.get(name)
         return getattr(cls, "TRIGGER_KEYS", ()) if cls else ()
 
-    def detachers_for_keys(self, keys: set[str]) -> list[str]:
+    def parsers_for_keys(self, keys: set[str]) -> list[str]:
         result = []
         for cls in self.registry.list_all():
             tk = getattr(cls, "TRIGGER_KEYS", ())
@@ -38,4 +38,4 @@ class DetacherResolver:
         return name
 
 
-detacher_resolver = DetacherResolver()
+parser_resolver = ParserResolver()

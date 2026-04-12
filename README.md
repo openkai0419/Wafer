@@ -18,7 +18,7 @@ Plugin-based extensions add support for any file format. Currently Windows only 
 
 ## Installation
 
-### Download (Recommended)
+### From zip 
 
 1. Go to [Releases](https://github.com/openkai0419/private_rep/releases/latest)
 2. Download `Wafer-vX.X.X.zip`

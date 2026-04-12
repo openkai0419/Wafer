@@ -9,21 +9,26 @@ ROOT = Path(__file__).resolve().parent.parent
 COPY_FILES = [
     ".gitignore",
     "LICENSE",
+    "NOTICE",
     "main.py",
     "main.bat",
     "main.spec",
     "pyproject.toml",
+    "conftest.py",
     "requirements.txt",
     "requirements-dev.txt",
     "setup.bat",
+    "cleanup.bat",
     "CHANGELOG.md",
     "README.md",
+    "README.jp.md",
 ]
 
 COPY_DIRS: dict[str, set[str]] = {
     "wafer": set(),
     "extensions": {"lib"},
     "tests": set(),
+    "tests-unit": set(),
     "_resources": set(),
     "_docs": set(),
     "scripts": set(),
@@ -78,7 +83,24 @@ def copy_tree(src: Path, dst: Path, extra_exclude: set[str]):
         shutil.copy2(item, target)
 
 
+def _is_overlapping(a: Path, b: Path) -> bool:
+    try:
+        a.resolve().relative_to(b.resolve())
+        return True
+    except ValueError:
+        pass
+    try:
+        b.resolve().relative_to(a.resolve())
+        return True
+    except ValueError:
+        return False
+
+
 def copy_clean(dst: Path):
+    dst = dst.resolve()
+    if _is_overlapping(dst, ROOT):
+        print(f"Error: destination '{dst}' overlaps with source '{ROOT}'")
+        sys.exit(1)
     print(f"Exporting to {dst} ...")
     clean_dst(dst)
 

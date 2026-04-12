@@ -272,6 +272,11 @@ class PluginManagerWidget(QtWidgets.QWidget):
             )
         AppLogger.info(f"[PluginManager] Sent delete for {len(pairs)} pairs")
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        c_names, d_names = self._collect_worker_names()
+        self._collectors_tab.refresh(c_names, d_names)
+
     def closeEvent(self, event):
         self._ext_tab.cancel_pending()
         super().closeEvent(event)

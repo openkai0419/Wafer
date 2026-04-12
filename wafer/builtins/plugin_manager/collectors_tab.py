@@ -175,6 +175,15 @@ class CollectorsTab(QtWidgets.QWidget):
                 prev = self._initial_state.get(db, set())
                 ui_state = set(saved.get(db, []))
                 self._initial_state[db] = ui_state | (prev - known)
+        self._db_names = list_setting_db_names()
+        for db in self._db_names:
+            if db not in self._initial_state:
+                sdb = SettingDB(setting_db_path(db))
+                enabled = sdb.get_enabled_collectors()
+                if enabled is not None:
+                    self._initial_state[db] = set(enabled)
+                else:
+                    self._initial_state[db] = set(self._initial_defaults)
         self._collector_names = list(collector_names)
         self._detacher_names = list(detacher_names)
         self._build_ui()

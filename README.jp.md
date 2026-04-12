@@ -5,11 +5,11 @@
 ![Wafer Screenshot](_docs/wafer_screenshot.png)
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB.svg)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB.svg)](https://www.python.org/)
 ![Platform](https://img.shields.io/badge/Platform-Windows-0078D6.svg)
-![Release](https://img.shields.io/github/v/release/openkai0419/Wafer?style=flat-square)
-![Release Date](https://img.shields.io/github/release-date/openkai0419/Wafer?style=flat-square)
-![Downloads](https://img.shields.io/github/downloads/openkai0419/Wafer/total?style=flat-square)
+[![Release](https://img.shields.io/github/v/release/openkai0419/Wafer?style=flat-square)](https://github.com/openkai0419/Wafer/releases/latest)
+[![Release Date](https://img.shields.io/github/release-date/openkai0419/Wafer?style=flat-square)](https://github.com/openkai0419/Wafer/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/openkai0419/Wafer/total?style=flat-square)](https://github.com/openkai0419/Wafer/releases)
 
 [English](README.md)
 
@@ -23,7 +23,7 @@ Wafer は **PySide6**・**SQLite**・**ZMQ** を元にした大量管理向け�
 
 ### Zip (python環境の無い人)
 
-1. [Releases](https://github.com/openkai0419/private_rep/releases/latest) ページから
+1. [Releases](https://github.com/openkai0419/Wafer/releases/latest) ページから
 2. `Wafer-vX.X.X.zip` をダウンロード
 3. 任意のフォルダに展開（SSD 推奨）
 4. `Wafer.exe` を実行

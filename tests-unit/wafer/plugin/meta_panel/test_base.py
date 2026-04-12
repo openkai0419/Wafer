@@ -6,17 +6,16 @@ from wafer.plugin.meta_panel.handler import meta_panel_registry
 class _StubMetaPanel(BaseMetaPanelPlugin):
     NAME = "test_meta_panel"
     PREFIX = "test_prefix"
-    DISPLAY_NAME = "Test"
     DEFAULT_ENABLED = True
     PRIORITY = 10
 
     def __init__(self):
-        self._widget = None
+        self._card = None
         self._last_data = None
 
-    def create_widget(self, parent=None):
-        self._widget = QtWidgets.QLabel("stub", parent)
-        return self._widget
+    def create_card(self, parent=None):
+        self._card = QtWidgets.QFrame(parent)
+        return self._card
 
     def update_data(self, data):
         self._last_data = data
@@ -25,8 +24,8 @@ class _StubMetaPanel(BaseMetaPanelPlugin):
 def test_meta_panel_plugin_interface():
     plugin = _StubMetaPanel()
     assert plugin.PREFIX == "test_prefix"
-    w = plugin.create_widget()
-    assert isinstance(w, QtWidgets.QLabel)
+    card = plugin.create_card()
+    assert isinstance(card, QtWidgets.QWidget)
     plugin.update_data({"key": "value"})
     assert plugin._last_data == {"key": "value"}
 

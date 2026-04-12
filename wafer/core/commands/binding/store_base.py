@@ -149,7 +149,7 @@ class BindingStoreBase(Generic[K]):
                 continue
             try:
                 key = self.key_type.from_dict(key_obj)
-            except Exception:
+            except (ValueError, TypeError, KeyError, AttributeError):
                 continue
             dst: dict[str, CommandPayload | None] = {}
             for sc, obj in scopes.items():
@@ -158,7 +158,7 @@ class BindingStoreBase(Generic[K]):
                     continue
                 try:
                     dst[str(sc)] = CommandPayload.from_any(obj)
-                except Exception:
+                except (ValueError, TypeError, KeyError, AttributeError):
                     continue
             if dst:
                 nm[key] = dst

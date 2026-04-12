@@ -219,7 +219,7 @@ class CommandMenuBuilder:
     def _align_hotkeys_in_menu(self, menu: QtWidgets.QMenu) -> None:
         try:
             rows = menu.findChildren(CommandMenuRow)
-        except Exception:
+        except (RuntimeError, AttributeError):
             return
         if not rows:
             return
@@ -227,7 +227,7 @@ class CommandMenuBuilder:
         for r in rows:
             try:
                 r.ensure_initialized()
-            except Exception:
+            except (RuntimeError, AttributeError):
                 continue
             lbl = getattr(r, "_hotkey_label", None)
             if isinstance(lbl, QtWidgets.QLabel) and lbl.text().strip():
@@ -245,7 +245,7 @@ class CommandMenuBuilder:
             for lbl in labels:
                 lbl.setFixedWidth(maxw)
             menu.adjustSize()
-        except Exception:
+        except (RuntimeError, AttributeError):
             return
 
     @profiler.profile
@@ -320,7 +320,7 @@ class CommandMenuBuilder:
         try:
             from ..binding.manager import BindingManager
             from ..binding.key.shortcutmanager import ShortcutManager
-        except Exception:
+        except (ImportError, RuntimeError):
             return {}
         if parent is None:
             return {}

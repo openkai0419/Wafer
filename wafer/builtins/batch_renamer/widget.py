@@ -592,7 +592,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
                     continue
                 try:
                     img = load_thumbnail(key, thumb_size)
-                except Exception:
+                except (OSError, RuntimeError):
                     img = None
                 if tok.is_cancelled():
                     continue

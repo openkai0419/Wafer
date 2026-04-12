@@ -6,12 +6,11 @@ from wafer.plugin.query.base import BaseFilterPlugin, BaseSortPlugin, KeyStore
 from wafer.plugin.query.handler import SortRegistry, filter_registry, sort_registry
 from wafer.plugin.query.widgets import _KeySelectorPopup
 from wafer.plugin.registry import PluginRegistry
+from wafer.core.db.db_utils import build_like_condition, escape_like
 from wafer.builtins.filters import (
     TextFilter,
     DirectoryFilter,
     _normalize_text_inputs,
-    _match_clause,
-    _escape_like,
 )
 from wafer.builtins.sorts import (
     NaturalPathSort,
@@ -329,50 +328,50 @@ class TestNormalizeTextInputs:
 
 class TestMatchClause:
     def test_like_mode(self):
-        clause, vals = _match_clause("path", ["cat"], "AND", "LIKE")
+        clause, vals = build_like_condition("path", ["cat"], "AND", "LIKE")
         assert "LIKE" in clause
         assert vals == ["%cat%"]
 
     def test_glob_mode(self):
-        clause, vals = _match_clause("path", ["cat"], "AND", "GLOB")
+        clause, vals = build_like_condition("path", ["cat"], "AND", "GLOB")
         assert "GLOB" in clause
         assert vals == ["*cat*"]
 
     def test_multiple_keywords_and(self):
-        clause, vals = _match_clause("path", ["a", "b"], "AND", "LIKE")
+        clause, vals = build_like_condition("path", ["a", "b"], "AND", "LIKE")
         assert " AND " in clause
         assert len(vals) == 2
 
     def test_multiple_keywords_or(self):
-        clause, vals = _match_clause("path", ["a", "b"], "OR", "LIKE")
+        clause, vals = build_like_condition("path", ["a", "b"], "OR", "LIKE")
         assert " OR " in clause
 
     def test_empty(self):
-        clause, vals = _match_clause("path", [], "AND", "LIKE")
+        clause, vals = build_like_condition("path", [], "AND", "LIKE")
         assert clause == ""
         assert vals == []
 
     def test_like_escape_percent(self):
-        clause, vals = _match_clause("path", ["100%"], "AND", "LIKE")
+        clause, vals = build_like_condition("path", ["100%"], "AND", "LIKE")
         assert "\\%" in vals[0]
 
     def test_like_escape_underscore(self):
-        clause, vals = _match_clause("path", ["a_b"], "AND", "LIKE")
+        clause, vals = build_like_condition("path", ["a_b"], "AND", "LIKE")
         assert "\\_" in vals[0]
 
 
 class TestEscapeLike:
     def test_percent(self):
-        assert _escape_like("100%") == "100\\%"
+        assert escape_like("100%") == "100\\%"
 
     def test_underscore(self):
-        assert _escape_like("a_b") == "a\\_b"
+        assert escape_like("a_b") == "a\\_b"
 
     def test_backslash(self):
-        assert _escape_like("a\\b") == "a\\\\b"
+        assert escape_like("a\\b") == "a\\\\b"
 
     def test_combined(self):
-        assert _escape_like("100%_\\") == "100\\%\\_\\\\"
+        assert escape_like("100%_\\") == "100\\%\\_\\\\"
 
 
 class TestNaturalKey:

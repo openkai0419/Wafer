@@ -107,7 +107,7 @@ def read_broker_port(timeout: float = 5.0) -> int | None:
         try:
             data = json.loads(_PORT_FILE.read_text())
             return int(data["port"])
-        except Exception:
+        except (FileNotFoundError, json.JSONDecodeError, KeyError, ValueError):
             if time.time() > end:
                 return None
             time.sleep(0.1)

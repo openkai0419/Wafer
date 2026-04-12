@@ -182,10 +182,7 @@ class GridViewCommands(ActionKit.MenuBase):
         if scroll is None or not hasattr(scroll, "_primary_bar"):
             return
         if hasattr(scroll, "stop_auto_scroll") and callable(scroll.stop_auto_scroll):
-            try:
-                scroll.stop_auto_scroll()
-            except Exception:
-                pass
+            scroll.stop_auto_scroll()
         bar = scroll._primary_bar()
         steps = int(ctx.get("wheel_steps") or 1)
         step = int(getattr(bar, "singleStep", lambda: 25)() or 25)

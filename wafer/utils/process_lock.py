@@ -46,7 +46,7 @@ def file_lock(lock_path: str, timeout: float = _FILE_LOCK_TIMEOUT):
                 import fcntl
 
                 fcntl.flock(fd, fcntl.LOCK_UN)
-        except Exception:
+        except (ImportError, OSError):
             pass
         try:
             os.close(fd)

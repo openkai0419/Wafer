@@ -43,6 +43,7 @@ class Node:
         self._current_port: int = 0
         self._last_recv: float = 0.0
         self._last_connect_time: float = 0.0
+        self._timing_lock = threading.Lock()
 
         self._out_q: Queue = Queue(maxsize=NODE_QUEUE_MAX)
         self._sentinel = object()
@@ -175,15 +176,15 @@ class Node:
         tune_socket(sock)
         try:
             sock.setsockopt(zmq.IMMEDIATE, 1)
-        except Exception:
+        except (zmq.ZMQError, AttributeError):
             pass
         try:
             sock.setsockopt(zmq.TCP_NODELAY, 1)
-        except Exception:
+        except (zmq.ZMQError, AttributeError):
             pass
         try:
             sock.setsockopt(zmq.RECONNECT_IVL_MAX, 1000)
-        except Exception:
+        except (zmq.ZMQError, AttributeError):
             pass
         sock.setsockopt(zmq.IDENTITY, self.node_id.encode("utf-8"))
         return sock
@@ -194,14 +195,16 @@ class Node:
         self._dealer = self._create_socket()
         self._dealer.connect(f"tcp://127.0.0.1:{port}")
         self._current_port = port
-        self._last_recv = time.monotonic()
-        self._last_connect_time = time.monotonic()
+        with self._timing_lock:
+            self._last_recv = time.monotonic()
+            self._last_connect_time = time.monotonic()
         self._registered.clear()
 
     def _ensure_connection(self):
         if self._registered.is_set():
-            if time.monotonic() - self._last_recv < NODE_TIMEOUT:
-                return
+            with self._timing_lock:
+                if time.monotonic() - self._last_recv < NODE_TIMEOUT:
+                    return
             AppLogger.warning(f"broker timeout (port={self._current_port}), attempting reconnect")
             self._registered.clear()
 
@@ -211,9 +214,12 @@ class Node:
         if new_port != self._current_port:
             AppLogger.info(f"broker port changed: {self._current_port} -> {new_port}")
             self._connect(new_port)
-        elif time.monotonic() - self._last_connect_time > RECONNECT_FORCE_INTERVAL:
-            AppLogger.info(f"forcing reconnect on same port {new_port}")
-            self._connect(new_port)
+        else:
+            with self._timing_lock:
+                should_reconnect = time.monotonic() - self._last_connect_time > RECONNECT_FORCE_INTERVAL
+            if should_reconnect:
+                AppLogger.info(f"forcing reconnect on same port {new_port}")
+                self._connect(new_port)
 
     def _send_to_broker(self, topic: str, payload: Any = None):
         msg = Message.build(topic, payload, src=self.node_id, dst="broker")
@@ -301,7 +307,8 @@ class Node:
                         break
                     msg = Message.from_frames([bytes(f) for f in frames])
                     if msg:
-                        self._last_recv = time.monotonic()
+                        with self._timing_lock:
+                            self._last_recv = time.monotonic()
                         self._handle_received(msg)
                     did_work = True
 

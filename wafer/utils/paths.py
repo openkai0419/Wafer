@@ -9,7 +9,7 @@ from ..constants import APP_DATA_DIR_NAME
 def normalize_path(p):
     try:
         path = str(Path(p).resolve(strict=False))
-    except Exception:
+    except (OSError, ValueError):
         path = str(Path(p).absolute())
     return path.replace("\\", "/")
 

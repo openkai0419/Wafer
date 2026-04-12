@@ -18,6 +18,7 @@ class FileIndexer:
     def __init__(self, db_path, collectors=None):
         self.db = FileDB(db_path)
         self.exclude_paths = set()
+        self._exclude_lock = threading.Lock()
         self._progress_callback = None
         self._update_callback = None
         self._collectors = collectors or []
@@ -84,18 +85,21 @@ class FileIndexer:
     @profiler.profile
     def set_exclude_paths(self, paths, run=False):
         sorted_paths = sorted(normalize_path(p) for p in paths)
-        self.exclude_paths = sorted_paths
-        AppLogger.info(f"[ExcludePaths] {len(self.exclude_paths)} paths set.")
+        with self._exclude_lock:
+            self.exclude_paths = sorted_paths
+        AppLogger.info(f"[ExcludePaths] {len(sorted_paths)} paths set.")
         if run:
             self.remove_excluded_from_db()
 
     @profiler.profile
     def is_path_excluded(self, path):
-        if not self.exclude_paths:
+        with self._exclude_lock:
+            exclude = self.exclude_paths
+        if not exclude:
             return False
-        idx = bisect.bisect_right(self.exclude_paths, path)
+        idx = bisect.bisect_right(exclude, path)
         if idx > 0:
-            candidate = self.exclude_paths[idx - 1]
+            candidate = exclude[idx - 1]
             if path == candidate or path.startswith(candidate + "/"):
                 return True
         return False

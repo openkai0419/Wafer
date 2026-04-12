@@ -63,6 +63,7 @@ ALL_KEYS = [
     "muted",
     "cross",
     "chevron_down",
+    "chevron_right",
     "sort",
     "menu",
     "layout_edit",

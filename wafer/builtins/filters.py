@@ -2,24 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ..core.db.db_utils import build_like_condition, escape_like
 from ..plugin.query.base import BaseFilterPlugin
 from ..utils.profiling import profiler
-
-
-def _escape_like(s):
-    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-
-
-def _match_clause(field, keywords, op, query_mode):
-    if not keywords:
-        return "", []
-    if query_mode.upper() == "GLOB":
-        clauses = [f"{field} GLOB ?" for _ in keywords]
-        values = [f"*{kw}*" for kw in keywords]
-    else:
-        clauses = [f"{field} LIKE ? ESCAPE '\\'" for _ in keywords]
-        values = [f"%{_escape_like(kw)}%" for kw in keywords]
-    return f" {op} ".join(clauses), values
 
 
 def _normalize_text_inputs(params):
@@ -45,7 +30,7 @@ def _kv_part(from_clause, key_col, val_col, path_expr, other_keys, include_kw, k
         conds.append(f"{key_col} IN ({','.join('?' for _ in other_keys)})")
         params.extend(other_keys)
     if include_kw:
-        c, v = _match_clause(val_col, include_kw, keyword_mode, query_mode)
+        c, v = build_like_condition(val_col, include_kw, keyword_mode, query_mode)
         conds.append(f"({c})")
         params.extend(v)
     w = f"WHERE {' AND '.join(conds)}" if conds else ""
@@ -145,7 +130,7 @@ class TextFilter(BaseFilterPlugin):
         if keys:
             conds.append(f'em."key" IN ({",".join("?" for _ in keys)})')
             p.extend(keys)
-        c, v = _match_clause('em."value"', exclude_kw, "OR", query_mode)
+        c, v = build_like_condition('em."value"', exclude_kw, "OR", query_mode)
         conds.append(f"({c})")
         p.extend(v)
         parts.append(f"SELECT em.path FROM meta_info AS em WHERE {' AND '.join(conds)}")
@@ -154,7 +139,7 @@ class TextFilter(BaseFilterPlugin):
         if keys:
             conds2.append(f'et."key" IN ({",".join("?" for _ in keys)})')
             p2.extend(keys)
-        c2, v2 = _match_clause('et."value"', exclude_kw, "OR", query_mode)
+        c2, v2 = build_like_condition('et."value"', exclude_kw, "OR", query_mode)
         conds2.append(f"({c2})")
         p2.extend(v2)
         parts.append(f"SELECT ei.path FROM tags AS et JOIN sources AS es ON es.file_hash = et.file_hash JOIN files AS ei ON ei.source = es.source WHERE {' AND '.join(conds2)}")
@@ -182,7 +167,7 @@ class DirectoryFilter(BaseFilterPlugin):
                 continue
             nd = normalize_path(str(Path(d).resolve()))
             prefix = (nd + "/") if nd else ""
-            esc_p = _escape_like(prefix)
+            esc_p = escape_like(prefix)
             if not include_subfolders:
                 clauses.append("(path LIKE ? ESCAPE '\\' AND path NOT LIKE ? ESCAPE '\\')")
                 bind.extend([f"{esc_p}%", f"{esc_p}%/%"])

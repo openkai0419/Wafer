@@ -84,7 +84,7 @@ def _decode_apng(path: str, size: QtCore.QSize | None, is_stale) -> tuple[list[Q
 
     try:
         pil_img = Image.open(path)
-    except Exception:
+    except (OSError, SyntaxError):
         return [], []
     if not getattr(pil_img, "is_animated", False):
         return [], []

@@ -61,7 +61,7 @@ class ExifToolProcess:
             proc.stdin.write("-stay_open\nFalse\n")
             proc.stdin.flush()
             proc.wait(timeout=5)
-        except Exception:
+        except (BrokenPipeError, OSError, subprocess.TimeoutExpired):
             try:
                 proc.kill()
             except OSError:
@@ -122,7 +122,7 @@ class ExifToolProcess:
     def __del__(self):
         try:
             self.stop()
-        except Exception:
+        except (OSError, RuntimeError):
             pass
 
 

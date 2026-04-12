@@ -6,20 +6,17 @@ from typing import Any
 from PySide6 import QtCore, QtWidgets
 
 from ....utils.formatting import dpix
+from ....utils.logs import AppLogger
 from ....core.state import StateStore
-from .meta_viewer import MetaRowWidget, CollapsibleSection
+from .meta_viewer import MetaRowWidget, CollapsibleCard
 
-_FIXED_SECTIONS = [
-    ("source", "Source"),
-    ("file", "File"),
-    ("tag", "Tag"),
-]
+_FIXED_SECTION_KEYS = ("source", "file", "tag")
 
 
 class MetaViewerWidget(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._sections: dict[str, CollapsibleSection] = {}
+        self._sections: dict[str, CollapsibleCard | QtWidgets.QWidget] = {}
         self._collapse_state: dict[str, bool] = {}
         self._meta_panel_plugins: dict[str, Any] | None = None
 
@@ -28,7 +25,7 @@ class MetaViewerWidget(QtWidgets.QWidget):
         self._inner.setStyleSheet("QWidget#metaViewerInner { background: transparent; }")
         self._layout = QtWidgets.QVBoxLayout(self._inner)
         self._layout.setContentsMargins(0, dpix(5), dpix(4), dpix(5))
-        self._layout.setSpacing(dpix(8))
+        self._layout.setSpacing(dpix(4))
         self._layout.addStretch(1)
 
         self._area = QtWidgets.QScrollArea(self)
@@ -50,7 +47,7 @@ class MetaViewerWidget(QtWidgets.QWidget):
 
     def set_data(self, meta: dict[str, Any]):
         prefixed: dict[str, dict] = meta.get("prefixed", {})
-        section_order = [key for key, _ in _FIXED_SECTIONS] + sorted(prefixed.keys())
+        section_order = list(_FIXED_SECTION_KEYS) + sorted(prefixed.keys())
 
         existing_keys = list(self._sections.keys())
         if existing_keys == section_order:
@@ -71,7 +68,8 @@ class MetaViewerWidget(QtWidgets.QWidget):
                 if inst is not None:
                     plugins[inst.PREFIX] = inst
             self._meta_panel_plugins = plugins
-        except Exception:
+        except Exception as e:
+            AppLogger.warning(f"Meta panel plugin load failed: {e}", exc=e)
             self._meta_panel_plugins = {}
         return self._meta_panel_plugins
 
@@ -83,75 +81,59 @@ class MetaViewerWidget(QtWidgets.QWidget):
         self._sections.clear()
 
         plugins = self._resolve_meta_panel_plugins()
-
         rich_text_keys = {"collected by"}
 
         for key in section_order:
-            title = self._section_title(key)
-            section = CollapsibleSection(title, key, parent=self._inner)
-
             data = self._data_for_key(meta, prefixed, key)
-            content = self._create_content_widget(key, data, plugins, rich_text_keys, section)
-            section.set_content_widget(content)
-            section.update_title_count(len(data) if isinstance(data, Mapping) else 0)
+
+            if key in plugins:
+                card = plugins[key].create_card(self._inner)
+                plugins[key].update_data(data)
+            else:
+                card = CollapsibleCard(key, key, parent=self._inner)
+                content = MetaRowWidget(
+                    0,
+                    data,
+                    rich_text_keys=rich_text_keys if key == "source" else None,
+                    compact=True,
+                    parent=card,
+                )
+                card.set_content_widget(content)
+                card.update_title_count(len(data) if isinstance(data, Mapping) else 0)
 
             expanded = self._collapse_state.get(key, True)
-            section.set_expanded(expanded)
-            section.toggled.connect(self._on_section_toggled)
+            if isinstance(card, CollapsibleCard):
+                card.set_expanded(expanded)
+                card.toggled_card.connect(self._on_section_toggled)
 
-            self._sections[key] = section
-            self._layout.insertWidget(self._layout.count() - 1, section)
+            self._sections[key] = card
+            self._layout.insertWidget(self._layout.count() - 1, card)
 
     def _update_existing(self, meta: dict, prefixed: dict[str, dict]):
         rich_text_keys = {"collected by"}
         plugins = self._resolve_meta_panel_plugins()
 
-        for key, section in self._sections.items():
+        for key, card in self._sections.items():
             data = self._data_for_key(meta, prefixed, key)
-            content = section.content_widget()
 
             if key in plugins:
                 plugins[key].update_data(data)
-            elif isinstance(content, MetaRowWidget):
-                content.update_data(data)
-            else:
-                new_content = self._create_content_widget(key, data, plugins, rich_text_keys, section)
-                section.set_content_widget(new_content)
-
-            section.update_title_count(len(data) if isinstance(data, Mapping) else 0)
-
-    def _create_content_widget(
-        self,
-        key: str,
-        data: dict,
-        plugins: dict[str, Any],
-        rich_text_keys: set[str],
-        parent: QtWidgets.QWidget,
-    ) -> QtWidgets.QWidget:
-        if key in plugins:
-            plugin = plugins[key]
-            widget = plugin.create_widget(parent)
-            plugin.update_data(data)
-            return widget
-
-        return MetaRowWidget(
-            0,
-            data,
-            rich_text_keys=rich_text_keys if key == "source" else None,
-            compact=True,
-            parent=parent,
-        )
+            elif isinstance(card, CollapsibleCard):
+                content = card.content_widget()
+                if isinstance(content, MetaRowWidget):
+                    content.update_data(data)
+                else:
+                    new_content = MetaRowWidget(
+                        0, data, rich_text_keys=rich_text_keys if key == "source" else None,
+                        compact=True, parent=card,
+                    )
+                    card.set_content_widget(new_content)
+                card.update_title_count(len(data) if isinstance(data, Mapping) else 0)
 
     def _data_for_key(self, meta: dict, prefixed: dict[str, dict], key: str) -> dict:
-        if key in ("source", "file", "tag"):
+        if key in _FIXED_SECTION_KEYS:
             return meta.get(key, {})
         return prefixed.get(key, {})
-
-    def _section_title(self, key: str) -> str:
-        for k, title in _FIXED_SECTIONS:
-            if k == key:
-                return title
-        return key.capitalize()
 
     def _on_section_toggled(self, key: str, expanded: bool):
         self._collapse_state[key] = expanded
@@ -162,6 +144,7 @@ class MetaViewerWidget(QtWidgets.QWidget):
     def _restore_collapse_state(self, state: dict[str, Any]):
         collapsed = state.get("collapsed", {})
         self._collapse_state = {k: v for k, v in collapsed.items()}
-        for key, section in self._sections.items():
-            expanded = self._collapse_state.get(key, True)
-            section.set_expanded(expanded)
+        for key, card in self._sections.items():
+            if isinstance(card, CollapsibleCard):
+                expanded = self._collapse_state.get(key, True)
+                card.set_expanded(expanded)

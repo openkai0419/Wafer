@@ -144,7 +144,7 @@ class CommandOptionsDialog(QtWidgets.QDialog):
             return 1.0, 0
         try:
             d = Decimal(str(round(x, 12))).normalize()
-        except Exception:
+        except (decimal.InvalidOperation, ValueError):
             return 0.1, 1
         exp = d.as_tuple().exponent
         decimals = max(0, -int(exp))

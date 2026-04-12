@@ -84,6 +84,22 @@ def delete_database_files(dbname, retries=10, delay=1.0, force=False):
     return False
 
 
+def escape_like(s: str) -> str:
+    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def build_like_condition(field: str, keywords: list[str] | tuple[str, ...], op: str, query_mode: str = "LIKE") -> tuple[str, list[str]]:
+    if not keywords:
+        return "", []
+    if query_mode.upper() == "GLOB":
+        clauses = [f"{field} GLOB ?" for _ in keywords]
+        values = [f"*{kw}*" for kw in keywords]
+    else:
+        clauses = [f"{field} LIKE ? ESCAPE '\\'" for _ in keywords]
+        values = [f"%{escape_like(kw)}%" for kw in keywords]
+    return f" {op} ".join(clauses), values
+
+
 def remove_orphan_databases():
     AppLogger.info("CLEAN DATABASES")
     settings = set(list_setting_db_names())

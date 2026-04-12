@@ -1,6 +1,7 @@
 from unittest.mock import patch, MagicMock
-from wafer.app.viewer.preview.meta_panel import MetaViewerWidget, _FIXED_SECTIONS
-from wafer.app.viewer.preview.meta_viewer import CollapsibleSection, MetaRowWidget
+from PySide6 import QtWidgets
+from wafer.app.viewer.preview.meta_panel import MetaViewerWidget, _FIXED_SECTION_KEYS
+from wafer.app.viewer.preview.meta_viewer import CollapsibleCard, MetaRowWidget
 
 
 def _sample_meta():
@@ -31,16 +32,19 @@ def test_sections_default_expanded(qtbot):
     w = MetaViewerWidget()
     qtbot.addWidget(w)
     w.set_data(_sample_meta())
-    for sec in w._sections.values():
-        assert sec.expanded is True
+    for card in w._sections.values():
+        if isinstance(card, CollapsibleCard):
+            assert card.expanded is True
 
 
 def test_collapse_state_persists(qtbot):
     w = MetaViewerWidget()
     qtbot.addWidget(w)
     w.set_data(_sample_meta())
-    w._sections["tag"].set_expanded(False)
-    w._on_section_toggled("tag", False)
+    card = w._sections["tag"]
+    if isinstance(card, CollapsibleCard):
+        card.set_expanded(False)
+        w._on_section_toggled("tag", False)
     state = w._save_collapse_state()
     assert "tag" in state["collapsed"]
     assert state["collapsed"]["tag"] is False
@@ -51,9 +55,13 @@ def test_restore_collapse_state(qtbot):
     qtbot.addWidget(w)
     w.set_data(_sample_meta())
     w._restore_collapse_state({"collapsed": {"tag": False, "exiftool": False}})
-    assert w._sections["tag"].expanded is False
-    assert w._sections["exiftool"].expanded is False
-    assert w._sections["source"].expanded is True
+    for key in ("tag", "exiftool"):
+        card = w._sections[key]
+        if isinstance(card, CollapsibleCard):
+            assert card.expanded is False
+    source_card = w._sections["source"]
+    if isinstance(source_card, CollapsibleCard):
+        assert source_card.expanded is True
 
 
 def test_update_reuses_existing_sections(qtbot):
@@ -62,8 +70,8 @@ def test_update_reuses_existing_sections(qtbot):
     w.set_data(_sample_meta())
     first_sections = dict(w._sections)
     w.set_data(_sample_meta())
-    for key, sec in w._sections.items():
-        assert sec is first_sections[key]
+    for key, card in w._sections.items():
+        assert card is first_sections[key]
 
 
 def test_sections_order(qtbot):
@@ -83,10 +91,23 @@ def test_empty_prefixed(qtbot):
     assert len(w._sections) == 3
 
 
-def test_section_content_is_meta_row_widget(qtbot):
+def test_builtin_section_is_collapsible_card(qtbot):
     w = MetaViewerWidget()
     qtbot.addWidget(w)
     meta = {"source": {"name": "a"}, "file": {}, "tag": {}, "prefixed": {"unknown_prefix": {"k": "v"}}}
     w.set_data(meta)
     for key in ("source", "file", "tag", "unknown_prefix"):
-        assert isinstance(w._sections[key].content_widget(), MetaRowWidget)
+        card = w._sections[key]
+        assert isinstance(card, CollapsibleCard)
+        assert isinstance(card.content_widget(), MetaRowWidget)
+
+
+def test_section_titles_are_lowercase(qtbot):
+    w = MetaViewerWidget()
+    qtbot.addWidget(w)
+    meta = {"source": {"name": "a"}, "file": {}, "tag": {}, "prefixed": {"my_plugin": {"k": "v"}}}
+    w.set_data(meta)
+    for key in ("source", "file", "tag", "my_plugin"):
+        card = w._sections[key]
+        assert isinstance(card, CollapsibleCard)
+        assert key in card.title()

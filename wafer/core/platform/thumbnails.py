@@ -64,7 +64,7 @@ def _get_dimensions_from_property_store(abs_path: str) -> tuple[int, int] | None
             h = store.GetValue(h_key).GetValue()
             if w and h and isinstance(w, int) and isinstance(h, int):
                 return (w, h)
-        except Exception:
+        except (AttributeError, TypeError):
             continue
     return None
 

@@ -31,7 +31,7 @@ def to_int(v: Any, default: int = 0) -> int:
         return int(s) if s.isdigit() else int(default)
     try:
         return int(v)
-    except Exception:
+    except (TypeError, ValueError):
         return int(default)
 
 

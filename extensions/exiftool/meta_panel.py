@@ -5,6 +5,7 @@ from typing import Any
 from PySide6 import QtCore, QtWidgets
 
 from wafer.plugin import BaseMetaPanelPlugin
+from wafer.app.viewer.preview.meta_viewer import CollapsibleCard
 from wafer.utils.formatting import dpix
 from wafer.core.lang.manager import t
 
@@ -12,20 +13,24 @@ from wafer.core.lang.manager import t
 class ExifToolMetaPanelPlugin(BaseMetaPanelPlugin):
     NAME = "exiftool_meta_panel"
     PREFIX = "exiftool"
-    DISPLAY_NAME = "ExifTool"
     DEFAULT_ENABLED = True
     PRIORITY = 50
 
     def __init__(self):
+        self._card: CollapsibleCard | None = None
         self._widget: _ExifToolMetaWidget | None = None
 
-    def create_widget(self, parent: QtWidgets.QWidget | None = None) -> QtWidgets.QWidget:
-        self._widget = _ExifToolMetaWidget(parent)
-        return self._widget
+    def create_card(self, parent: QtWidgets.QWidget | None = None) -> QtWidgets.QWidget:
+        self._card = CollapsibleCard(self.PREFIX, self.PREFIX, parent)
+        self._widget = _ExifToolMetaWidget(self._card)
+        self._card.set_content_widget(self._widget)
+        return self._card
 
     def update_data(self, data: dict) -> None:
         if self._widget is not None:
             self._widget.set_data(data)
+        if self._card is not None:
+            self._card.update_title_count(len(data))
 
 
 class _ExifToolMetaWidget(QtWidgets.QWidget):
@@ -43,11 +48,6 @@ class _ExifToolMetaWidget(QtWidgets.QWidget):
         self._grid_container.setObjectName("exifMetaGrid")
         self._grid_container.setStyleSheet(
             f"""
-            QWidget#exifMetaGrid {{
-                background: palette(base);
-                border: 1px solid palette(mid);
-                border-radius: {dpix(12)}px;
-            }}
             QLabel[keyRole="true"] {{
                 font-weight: 600;
             }}

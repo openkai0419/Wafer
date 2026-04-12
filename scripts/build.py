@@ -133,7 +133,7 @@ def build():
             exclude_dirs={".packages", ".shared_packages", "lib"},
         )
 
-        for name in ("LICENSE", "README.md", "CHANGELOG.md"):
+        for name in ("LICENSE", "README.md", "CHANGELOG.md", "cleanup.bat"):
             src = ROOT / name
             if src.exists():
                 shutil.copy2(src, dist_dir / name)

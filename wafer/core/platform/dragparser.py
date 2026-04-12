@@ -66,7 +66,7 @@ class MimeDataParser:
                     if url is not None and url.isLocalFile() and url.toLocalFile():
                         has_local_url = True
                         break
-            except Exception:
+            except (RuntimeError, AttributeError):
                 has_local_url = False
         if platform.system() == "Windows" and not has_local_url:
             fmt = next((f for f in mime.formats() if f.startswith("application/x-qt-windows-mime") and "FileGroupDescriptor" in f), None)
@@ -129,7 +129,7 @@ class MimeDataParser:
                         filename = decoded
                         offset += size
                         break
-                except Exception:
+                except (UnicodeDecodeError, LookupError):
                     continue
             if not filename:
                 raise ValueError(f"Failed to extract filename at index {i}")

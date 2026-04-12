@@ -2,12 +2,9 @@ from __future__ import annotations
 
 import re
 
+from wafer.core.db.db_utils import escape_like
 from wafer.plugin import BaseFilterPlugin
 from wafer.utils.profiling import profiler
-
-
-def _escape_like(s):
-    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _extract_literal_hints(pattern):
@@ -146,7 +143,7 @@ def _build_like_conditions(field, hints):
     params = []
     for h in hints:
         clauses.append(f"{field} LIKE ? ESCAPE '\\'")
-        params.append(f"%{_escape_like(h)}%")
+        params.append(f"%{escape_like(h)}%")
     return clauses, params
 
 

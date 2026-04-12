@@ -9,10 +9,9 @@ from ..registry import PluginBase
 
 class BaseMetaPanelPlugin(PluginBase, ABC):
     PREFIX: str = ""
-    DISPLAY_NAME: str = ""
 
     @abstractmethod
-    def create_widget(self, parent: QtWidgets.QWidget | None = None) -> QtWidgets.QWidget: ...
+    def create_card(self, parent: QtWidgets.QWidget | None = None) -> QtWidgets.QWidget: ...
 
     @abstractmethod
     def update_data(self, data: dict) -> None: ...

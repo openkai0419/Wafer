@@ -6,7 +6,7 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
-from .db_utils import apply_read_pragmas
+from .db_utils import apply_read_pragmas, build_like_condition, escape_like
 from ...utils.paths import normalize_path
 from ...utils.profiling import profiler
 from ...utils.logs import AppLogger
@@ -45,19 +45,7 @@ class SearchQuery:
         return keys, include, exclude
 
     def _match_clause(self, field, keywords, op):
-        if not keywords:
-            return "", []
-        if self.query_mode.upper() == "GLOB":
-            clauses = [f"{field} GLOB ?" for _ in keywords]
-            values = [f"*{kw}*" for kw in keywords]
-        else:
-
-            def esc(s):
-                return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-
-            clauses = [f"{field} LIKE ? ESCAPE '\\'" for _ in keywords]
-            values = [f"%{esc(kw)}%" for kw in keywords]
-        return f" {op} ".join(clauses), values
+        return build_like_condition(field, keywords, op, self.query_mode)
 
     def _dir_clause(self, path_field, normalize_path_func):
         if not self.directories:
@@ -68,7 +56,7 @@ class SearchQuery:
                 continue
             nd = normalize_path_func(str(Path(d).resolve()))
             prefix = (nd + "/") if nd else ""
-            esc_p = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            esc_p = escape_like(prefix)
             if not self.include_subfolders:
                 clauses.append(f"({path_field} LIKE ? ESCAPE '\\' AND {path_field} NOT LIKE ? ESCAPE '\\')")
                 params.extend([f"{esc_p}%", f"{esc_p}%/%"])

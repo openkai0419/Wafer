@@ -378,6 +378,19 @@ def _draw_chevron_down(p: QPainter, r: QRectF, color: QColor):
     p.drawPath(path)
 
 
+@_register("chevron_right", padding=0.15)
+def _draw_chevron_right(p: QPainter, r: QRectF, color: QColor):
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(color)
+    ox = r.width() * 0.15
+    path = QPainterPath()
+    path.moveTo(QPointF(r.left() + ox, r.top()))
+    path.lineTo(QPointF(r.left() + ox, r.bottom()))
+    path.lineTo(QPointF(r.right() - ox, r.center().y()))
+    path.closeSubpath()
+    p.drawPath(path)
+
+
 @_register("sort", padding=0.09)
 def _draw_sort(p: QPainter, r: QRectF, color: QColor):
     lw = max(1.5, min(r.width(), r.height()) * 0.10)

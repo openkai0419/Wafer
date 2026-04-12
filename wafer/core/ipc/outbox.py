@@ -152,7 +152,7 @@ def cleanup_empty_outbox_files():
                 count = conn.execute("SELECT COUNT(*) FROM outbox").fetchone()[0] if tables else 0
             finally:
                 conn.close()
-        except Exception:
+        except sqlite3.DatabaseError:
             _delete_db_files(db_path)
             continue
         if count == 0:

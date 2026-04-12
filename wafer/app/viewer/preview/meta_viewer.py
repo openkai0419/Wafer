@@ -9,6 +9,8 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from ....utils.formatting import dpix, display_prefixed_key
 from ....utils.logs import AppLogger
 from ....core.lang.manager import t
+from ....core.qt.icon_engine import icon_draw
+from ....core.color.theme import ThemeManager
 
 MAX_INLINE_CHARS = 4000
 MAX_INLINE_SEQ_ITEMS = 50
@@ -41,50 +43,33 @@ def _preview_mapping(mp: Mapping[str, Any]) -> str:
     return "{ " + ", ".join(parts) + " }"
 
 
-class CollapsibleSection(QtWidgets.QWidget):
-    toggled = QtCore.Signal(str, bool)
+_TITLE_HEIGHT = 16
+_ICON_SIZE = 8
+_CARD_PADDING = 6
+
+
+class CollapsibleCard(QtWidgets.QFrame):
+    toggled_card = QtCore.Signal(str, bool)
 
     def __init__(self, title: str, key: str, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
         self._key = key
         self._expanded = True
+        self._title_base = title
+        self._title_display = title
 
-        self._header = QtWidgets.QPushButton(self)
-        self._header.setCheckable(True)
-        self._header.setChecked(True)
-        self._header.setObjectName("collapsibleHeader")
-        self._header.setStyleSheet(
-            f"""
-            QPushButton#collapsibleHeader {{
-                background: palette(base);
-                border: 1px solid palette(mid);
-                border-radius: {dpix(8)}px;
-                padding: {dpix(6)}px {dpix(12)}px;
-                text-align: left;
-                font-weight: 600;
-                font-size: {dpix(13)}px;
-            }}
-            QPushButton#collapsibleHeader:hover {{
-                background: palette(midlight);
-            }}
-            """
-        )
-        self._header.clicked.connect(self._on_toggle)
-        self._update_header_text(title, 0)
+        self.setObjectName("collapsibleCard")
+        self.setFrameShape(QtWidgets.QFrame.NoFrame)
+        self._apply_stylesheet()
+        self.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
 
-        self._content_area = QtWidgets.QWidget(self)
-        self._content_layout = QtWidgets.QVBoxLayout(self._content_area)
-        self._content_layout.setContentsMargins(0, 0, 0, 0)
+        th = dpix(_TITLE_HEIGHT)
+        pad = dpix(_CARD_PADDING)
+
+        self._content_layout = QtWidgets.QVBoxLayout(self)
+        self._content_layout.setContentsMargins(pad, th + pad, pad, pad)
         self._content_layout.setSpacing(0)
         self._content_widget: QtWidgets.QWidget | None = None
-
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(dpix(4))
-        layout.addWidget(self._header)
-        layout.addWidget(self._content_area)
-
-        self._title_base = title
 
     @property
     def key(self) -> str:
@@ -95,9 +80,10 @@ class CollapsibleSection(QtWidgets.QWidget):
         return self._expanded
 
     def set_expanded(self, expanded: bool):
+        if self._expanded == expanded:
+            return
         self._expanded = expanded
-        self._header.setChecked(expanded)
-        self._content_area.setVisible(expanded)
+        self._sync_content_visibility()
 
     def set_content_widget(self, widget: QtWidgets.QWidget):
         if self._content_widget is not None:
@@ -106,30 +92,85 @@ class CollapsibleSection(QtWidgets.QWidget):
             self._content_widget.deleteLater()
         self._content_widget = widget
         self._content_layout.addWidget(widget)
-        widget.setVisible(self._expanded)
+        self._sync_content_visibility()
 
     def content_widget(self) -> QtWidgets.QWidget | None:
         return self._content_widget
 
     def update_title_count(self, count: int):
-        self._update_header_text(self._title_base, count)
-
-    def _update_header_text(self, title: str, count: int):
-        arrow = "▼" if self._expanded else "▶"
         suffix = f"  ({count})" if count > 0 else ""
-        self._header.setText(f"{arrow}  {title}{suffix}")
+        self._title_display = f"{self._title_base}{suffix}"
+        self.update()
 
-    def _on_toggle(self):
-        self._expanded = self._header.isChecked()
-        self._content_area.setVisible(self._expanded)
-        self._update_header_text(self._title_base, self._count_from_content())
-        self.toggled.emit(self._key, self._expanded)
+    def title(self) -> str:
+        return self._title_display
 
-    def _count_from_content(self) -> int:
-        w = self._content_widget
-        if isinstance(w, MetaRowWidget):
-            return len(w._keys)
-        return 0
+    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
+        th = dpix(_TITLE_HEIGHT)
+        if event.position().y() <= th:
+            self._expanded = not self._expanded
+            self._sync_content_visibility()
+            self.toggled_card.emit(self._key, self._expanded)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+
+        palette = ThemeManager.instance().palette
+        color = QtGui.QColor(palette.text_primary)
+
+        th = dpix(_TITLE_HEIGHT)
+        pad = dpix(_CARD_PADDING)
+        isz = dpix(_ICON_SIZE)
+
+        icon_y = (th - isz) / 2
+        icon_rect = QtCore.QRectF(pad, icon_y, isz, isz)
+        icon_key = "chevron_down" if self._expanded else "chevron_right"
+        icon_draw(icon_key, painter, icon_rect, color)
+
+        font = painter.font()
+        font.setPixelSize(dpix(11))
+        painter.setFont(font)
+        painter.setPen(color)
+        text_x = pad + isz + dpix(4)
+        text_rect = QtCore.QRectF(text_x, 0, self.width() - text_x - pad, th)
+        painter.drawText(text_rect, QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft, self._title_display)
+
+        if self._expanded:
+            line_color = QtGui.QColor(palette.text_primary)
+            line_color.setAlpha(40)
+            painter.setPen(QtGui.QPen(line_color, 1))
+            painter.drawLine(QtCore.QPointF(pad, th), QtCore.QPointF(self.width() - pad, th))
+
+        painter.end()
+
+    def _sync_content_visibility(self):
+        th = dpix(_TITLE_HEIGHT)
+        pad = dpix(_CARD_PADDING)
+        if self._expanded:
+            self._content_layout.setContentsMargins(pad, th + pad, pad, pad)
+        else:
+            self._content_layout.setContentsMargins(0, th, 0, 0)
+        if self._content_widget is not None:
+            self._content_widget.setVisible(self._expanded)
+        self._apply_stylesheet()
+        self.update()
+
+    def _apply_stylesheet(self):
+        r = dpix(6)
+        self.setStyleSheet(
+            f"""
+            QFrame#collapsibleCard {{
+                background: palette(base);
+                border: 1px solid palette(mid);
+                border-radius: {r}px;
+            }}
+            """
+        )
 
 
 class MetaRowWidget(QtWidgets.QFrame):
@@ -159,11 +200,6 @@ class MetaRowWidget(QtWidgets.QFrame):
         self.setFrameShape(QtWidgets.QFrame.NoFrame)
         self.setStyleSheet(
             f"""
-            QFrame#dictRow {{
-                background: palette(base);
-                border: 1px solid palette(mid);
-                border-radius: {dpix(12)}px;
-            }}
             QLabel[keyRole="true"] {{
                 font-weight: 600;
             }}
@@ -171,7 +207,7 @@ class MetaRowWidget(QtWidgets.QFrame):
         )
 
         self._grid = QtWidgets.QGridLayout(self)
-        self._grid.setContentsMargins(dpix(12), dpix(12), dpix(12), dpix(12))
+        self._grid.setContentsMargins(dpix(8), dpix(4), dpix(8), dpix(8))
         self._grid.setHorizontalSpacing(dpix(12))
         self._grid.setVerticalSpacing(dpix(6) if compact else dpix(8))
         self._build()
@@ -276,12 +312,12 @@ class MetaRowWidget(QtWidgets.QFrame):
         if isinstance(value, Mapping):
             try:
                 return json.dumps(value, ensure_ascii=False, indent=2)
-            except Exception:
+            except (TypeError, ValueError):
                 return str(value)
         if isinstance(value, (list, tuple, set)):
             try:
                 return json.dumps(list(value), ensure_ascii=False, indent=2)
-            except Exception:
+            except (TypeError, ValueError):
                 return str(value)
         if isinstance(value, (QtCore.QDate, QtCore.QDateTime, QtCore.QTime)):
             return str(value.toString(QtCore.Qt.ISODate))

@@ -18,7 +18,7 @@ def load_image(path: str, size: QtCore.QSize | None = None) -> QtGui.QImage | No
 
         try:
             data = np.fromfile(path, dtype=np.uint8)
-        except Exception:
+        except (OSError, MemoryError):
             with open(path, "rb") as f:
                 data = np.frombuffer(f.read(), dtype=np.uint8)
         flags = _imread_flags_for_size(ext, size, data)

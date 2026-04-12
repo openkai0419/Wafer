@@ -28,7 +28,7 @@ def _log(msg, *, level="info", exc=None):
             fn(msg, exc=exc)
         else:
             fn(msg)
-    except Exception:
+    except (ImportError, AttributeError):
         pass
 
 

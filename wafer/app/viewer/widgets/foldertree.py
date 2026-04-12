@@ -371,7 +371,7 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
                 return False
             try:
                 src_paths = data.data(self._mime_type).data().decode("utf-8").split("\n")
-            except Exception:
+            except (UnicodeDecodeError, AttributeError):
                 return False
             src_paths = [p for p in src_paths if p]
             if not src_paths:
@@ -656,7 +656,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
     def set_state(self, states):
         try:
             expanded, selected = states
-        except Exception:
+        except (ValueError, TypeError):
             return
         AppLogger.debug(f"[FolderTree.set_state] restoring expanded={len(expanded)} selected={len(selected)}")
         selmodel = self.selectionModel()
@@ -681,7 +681,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
     def set_state_async(self, states, on_complete=None):
         try:
             expanded, selected = states
-        except Exception:
+        except (ValueError, TypeError):
             if on_complete:
                 on_complete()
             return

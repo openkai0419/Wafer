@@ -12,7 +12,7 @@ def _zero_point() -> Any:
         from PySide6 import QtCore
 
         return QtCore.QPoint()
-    except Exception:
+    except (ImportError, RuntimeError):
         return (0, 0)
 
 
@@ -238,7 +238,7 @@ class CommandContext:
                     cache.pop(k, None)
                 else:
                     return list(xs)
-            except Exception:
+            except (ImportError, RuntimeError):
                 return list(xs)
         try:
             from ..binding.instance_registry import InstanceRegistry

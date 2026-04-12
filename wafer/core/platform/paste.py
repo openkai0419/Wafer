@@ -66,7 +66,7 @@ class ClipboardFilePaster:
                     if p.exists():
                         paths.append(p)
             return (action, paths) if paths else None
-        except Exception:
+        except (OSError, RuntimeError, UnicodeDecodeError):
             return None
 
     def _parse_uri_list_text(self, text: str) -> list[Path]:

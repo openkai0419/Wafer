@@ -76,7 +76,7 @@ class Broker:
         tune_socket(self._router)
         try:
             self._router.setsockopt(zmq.ROUTER_MANDATORY, 1)
-        except Exception:
+        except (zmq.ZMQError, AttributeError):
             pass
 
         bind_port = port or DEFAULT_PORT

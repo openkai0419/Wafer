@@ -16,7 +16,7 @@ def get_version() -> str:
             stderr=subprocess.DEVNULL,
             text=True,
         ).strip()
-    except Exception:
+    except (FileNotFoundError, subprocess.CalledProcessError, OSError):
         return FALLBACK_VERSION
     if out.startswith("v"):
         out = out[1:]

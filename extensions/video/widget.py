@@ -325,7 +325,7 @@ class PlaybackSlotManager:
     def _bg_create_player(self):
         try:
             player = MpvGLOverlay._create_player()
-        except Exception:
+        except (OSError, RuntimeError):
             player = None
         self._dispatcher.invoke(lambda p=player: self._on_player_warmed(p))
 

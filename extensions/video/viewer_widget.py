@@ -474,7 +474,7 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
         if value is not None and self._prev_time_pos is not None:
             try:
                 dur = self._player.duration
-            except Exception:
+            except (RuntimeError, AttributeError):
                 self._prev_time_pos = value
                 return
             if dur and self._prev_time_pos > dur * 0.8 and value < dur * 0.2:
@@ -512,7 +512,7 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
             return
         try:
             dur = self._player.duration
-        except Exception:
+        except (RuntimeError, AttributeError):
             return
         if dur:
             target = self._control_bar.seek_slider.value() / 1000.0 * dur
@@ -531,7 +531,7 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
         try:
             pos = self._player.time_pos
             dur = self._player.duration
-        except Exception:
+        except (RuntimeError, AttributeError):
             return
         self._control_bar.time_label.setText(f"{_format_time(pos)} / {_format_time(dur)}")
         if not self._seek_dragging and pos is not None and dur:

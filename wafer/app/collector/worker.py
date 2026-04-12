@@ -1,4 +1,5 @@
 import concurrent.futures
+import queue
 import signal
 import threading
 
@@ -9,7 +10,8 @@ from ...plugin.collector.handler import collector_resolver
 from ...plugin.collector.base import CollectorResult, BaseSingletonCollector
 
 _MAX_WORKERS = 4
-_TASK_TIMEOUT = 120
+_CHUNK_TIMEOUT = 120
+_CHUNK_SIZE = 50
 _SHUTDOWN_WAIT = 5
 
 
@@ -27,14 +29,18 @@ class CollectorWorker:
         self._node.subscribe("plugin.notify", self._on_notify)
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=_MAX_WORKERS)
         self._stop = threading.Event()
+        self._batch_queue: queue.Queue = queue.Queue()
+        self._batch_thread = threading.Thread(target=self._batch_loop, daemon=True)
 
     def start(self):
         self._node.start()
+        self._batch_thread.start()
         AppLogger.set_node(self._node, role=f"collector-{self.plugin_name}")
         AppLogger.info(f"CollectorWorker started: plugin={self.plugin_name} db={self.db_name}")
 
     def stop(self):
         self._stop.set()
+        self._batch_queue.put(None)
         self._executor.shutdown(wait=True, cancel_futures=True)
         self._node.stop()
         AppLogger.info(f"CollectorWorker stopped: plugin={self.plugin_name}")
@@ -58,13 +64,19 @@ class CollectorWorker:
         file_info_raw = payload.get("file_info", {})
         if not paths:
             return True
-        db = msg.db
-        threading.Thread(
-            target=self._process_batch,
-            args=(paths, file_info_raw, db),
-            daemon=True,
-        ).start()
+        self._batch_queue.put((paths, file_info_raw, msg.db))
         return True
+
+    def _batch_loop(self):
+        while not self._stop.is_set():
+            try:
+                item = self._batch_queue.get(timeout=1.0)
+            except queue.Empty:
+                continue
+            if item is None:
+                break
+            paths, file_info_raw, db = item
+            self._process_batch(paths, file_info_raw, db)
 
     def _process_batch(self, paths, file_info_raw, db):
         try:
@@ -86,22 +98,31 @@ class CollectorWorker:
                     AppLogger.warning(f"[Collector] process failed: {p}: {e}", exc=e)
                     return []
 
-            futures = {self._executor.submit(process_one, p): p for p in paths}
-            nested = []
-            for fut in concurrent.futures.as_completed(futures, timeout=_TASK_TIMEOUT):
-                try:
-                    nested.append(fut.result())
-                except Exception as e:
-                    AppLogger.warning(f"[Collector] future failed: {futures[fut]}: {e}", exc=e)
-                    nested.append([])
-            results = [item for items in nested for item in items]
+            all_results = []
+            for i in range(0, len(paths), _CHUNK_SIZE):
+                if self._stop.is_set():
+                    break
+                chunk = paths[i : i + _CHUNK_SIZE]
+                futures = {self._executor.submit(process_one, p): p for p in chunk}
+                done, not_done = concurrent.futures.wait(futures, timeout=_CHUNK_TIMEOUT)
+                for fut in done:
+                    try:
+                        all_results.extend(fut.result())
+                    except Exception as e:
+                        AppLogger.warning(f"[Collector] future failed: {futures[fut]}: {e}", exc=e)
+                if not_done:
+                    AppLogger.warning(
+                        f"[Collector] chunk timeout: {len(not_done)}/{len(chunk)} unfinished"
+                    )
+                    for fut in not_done:
+                        fut.cancel()
             self._node.send_reliable(
                 "collect.result",
-                {"collector": self.plugin_name, "results": results},
+                {"collector": self.plugin_name, "results": all_results},
                 dst="indexer",
                 db=db,
             )
-            AppLogger.info(f"[Collector] Sent {len(results)} results for db={db}")
+            AppLogger.info(f"[Collector] Sent {len(all_results)} results for db={db}")
         except Exception as e:
             AppLogger.error(f"[Collector] _process_batch failed: {e}", exc=e)
 

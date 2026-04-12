@@ -67,6 +67,8 @@ def get_resource_path():
     if not p.is_dir():
         cwd_p = Path.cwd() / "_resources"
         if cwd_p.is_dir():
+            from .logs import AppLogger
+            AppLogger.warning(f"_resources not found at {p}, falling back to cwd: {cwd_p}")
             return cwd_p
     return p
 

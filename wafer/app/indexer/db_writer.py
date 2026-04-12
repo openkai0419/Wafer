@@ -62,18 +62,18 @@ class DatabaseWriter:
         self._db.reset_stale_dispatched(collectors)
 
     @profiler.profile
-    def purge_orphans(self):
-        self._db.purge_orphan_records()
+    def delete_orphans(self):
+        self._db.delete_orphan_records()
 
     @profiler.profile
-    def purge_collector(self, collector: str, *, re_collect: bool = False):
-        result = self._db.purge_collector_data(collector, re_collect=re_collect)
+    def delete_collector(self, collector: str, *, re_collect: bool = False):
+        result = self._db.delete_collector_data(collector, re_collect=re_collect)
         self._db.try_checkpoint("PASSIVE")
         return result
 
     @profiler.profile
-    def purge_keys(self, keys: list[str]) -> tuple[int, int]:
-        result = self._db.purge_keys(keys)
+    def delete_keys(self, keys: list[str]) -> tuple[int, int]:
+        result = self._db.delete_keys(keys)
         self._db.try_checkpoint("PASSIVE")
         return result
 

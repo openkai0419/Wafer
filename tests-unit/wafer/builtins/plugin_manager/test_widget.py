@@ -788,7 +788,7 @@ class TestPluginManagerWidget:
         assert dlg._has_plugin_changes({"a", "b", "c"}, {"grid": ["a"]})
         assert dlg._has_plugin_changes({"a", "b"}, {"grid": ["b", "a"]})
 
-    def test_send_purge_dispatches_to_node(self, qtbot, monkeypatch):
+    def test_send_delete_dispatches_to_node(self, qtbot, monkeypatch):
         monkeypatch.setattr(
             "wafer.builtins.plugin_manager.extensions_tab.get_plugin_dir",
             lambda: "/nonexistent",
@@ -801,15 +801,15 @@ class TestPluginManagerWidget:
         monkeypatch.setattr(InstanceRegistry.instance(), "resolve_node", lambda: mock_node)
         dlg = PluginManagerWidget()
         qtbot.addWidget(dlg)
-        dlg._send_purge([("db1", "exif")], True)
+        dlg._send_delete([("db1", "exif")], True)
         mock_node.send_reliable.assert_called_once_with(
-            "purge.collector",
+            "delete.collector",
             {"collector": "exif", "re_collect": True},
             dst="indexer",
             db="db1",
         )
 
-    def test_send_purge_no_node_warns(self, qtbot, monkeypatch):
+    def test_send_delete_no_node_warns(self, qtbot, monkeypatch):
         monkeypatch.setattr(
             "wafer.builtins.plugin_manager.extensions_tab.get_plugin_dir",
             lambda: "/nonexistent",
@@ -820,7 +820,7 @@ class TestPluginManagerWidget:
         monkeypatch.setattr(InstanceRegistry.instance(), "resolve_node", lambda: None)
         dlg = PluginManagerWidget()
         qtbot.addWidget(dlg)
-        dlg._send_purge([("db1", "exif")], False)
+        dlg._send_delete([("db1", "exif")], False)
 
 
 class TestPluginManagerCommands:

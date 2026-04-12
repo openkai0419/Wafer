@@ -29,7 +29,8 @@ import wafer.constants as constants
 
 def get_icon():
     from PySide6 import QtGui
-    icon = QtGui.QIcon('_resources/icon.ico')
+    from wafer.utils.paths import get_resource_path
+    icon = QtGui.QIcon(str(get_resource_path() / 'icon.ico'))
     if icon.isNull():
         icon = QtGui.QIcon()
     return icon

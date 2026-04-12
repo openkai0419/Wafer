@@ -7,9 +7,137 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB.svg)
 ![Platform](https://img.shields.io/badge/Platform-Windows-0078D6.svg)
+![Release](https://img.shields.io/github/v/release/openkai0419/Wafer?style=flat-square)
+![Release Date](https://img.shields.io/github/release-date/openkai0419/Wafer?style=flat-square)
+![Downloads](https://img.shields.io/github/downloads/openkai0419/Wafer/total?style=flat-square)
 
 [English](README.md)
 
 </div>
 
-準備中です…
+Wafer は **PySide6**・**SQLite**・**ZMQ** を元にした大量管理向けのローカルファイルビューアーです。
+プラグイン方式の extension をベースにする事によって高い拡張性を持ち、バックグラウンドプロセスでファイルを収集・DB化し、大量のファイルを高速に検索・閲覧する事を目標としています。
+現在の対応は Windows のみ。
+
+## インストール
+
+### zip から
+
+1. [Releases](https://github.com/openkai0419/private_rep/releases/latest) ページから
+2. `Wafer-vX.X.X.zip` をダウンロード
+3. 任意のフォルダに展開（SSD 推奨）
+4. `Wafer.exe` を実行
+
+アンインストールの再は `cleanup.bat` で `%LOCALAPPDATA%\Wafer` のアプリデータを削除した後、本体をフォルダごと削除してください。
+
+### ソースから
+
+#### 要件
+
+- Python 3.10+
+- Windows（現時点唯一の開発環境）
+
+#### セットアップ
+
+```bash
+git clone https://github.com/openkai0419/Wafer.git
+cd Wafer
+
+# venv 作成と依存関係のインストール
+setup.bat
+
+# アプリ実行
+python main.py
+
+# テスト実行（レイヤー別ランナー: unit → smoke → benchmark）
+scripts\test.bat
+
+# または pytest を直接実行（pyproject.toml の設定が適用されます）
+.venv\Scripts\python.exe -m pytest
+```
+
+## 設計
+
+Wafer は **「共通基盤＋拡張プラグイン」** を基礎デザインとしています。
+
+- **`wafer/`** は共通基盤 — ファイルの収集、DB化、検索、描画に必要なインフラを提供します。特定のファイル形式には依存しません。
+- **`extensions/`** はフォルダ単位の独立した拡張 — 画像、動画、音声等の具体的なファイル形式への対応を実装します。
+
+設計の3原則:
+
+1. **基盤は共有、拡張は自由** 基盤は共通の土台。拡張は誰でも追加・変更可能。
+2. **拡張こそが本体** extension は `wafer` の内部パッケージを直接 import して利用可能。API 越しの間接アクセスに制限されません。
+3. **拡張同士は独立** 各拡張は `wafer/` という共通言語のみを通じて基盤と対話します。
+
+extension は `extensions/` フォルダに配置するだけで `PluginLoader` が自動検出・登録します。
+
+## 対応 Extension 一覧
+
+#### ビューア / グリッド
+
+| Extension | 対応形式 | 説明 |
+|---|---|---|
+| **image** | jpg, png, bmp, gif, webp | 静止画グリッド表示・ビューア（ズーム/パン） |
+| **animated** | gif, apng, webp（アニメーション） | フレーム単位のアニメーション再生 |
+| **video** | mp4, mkv, webm, avi, mov 等 | mpv による動画再生（OpenGL レンダリング） |
+
+#### メタデータ / コレクション
+
+| Extension | 対応形式 | 説明 |
+|---|---|---|
+| **exiftool** | jpg, png, webp, tiff, heic, avif, jxl, raw, psd 等 | ExifTool による汎用メタデータ抽出 |
+| **ffmpeg** | mp4, mkv, webm, mp3, flac, wav 等 | ffprobe による動画/音声メタデータ抽出 |
+| **ai_tagger** | *（画像）* | WD14 モデルによる自動タグ付け（ONNX, GPU 対応） |
+| **text_generation** | *（EXIF 付き画像）* | NovelAI 生成パラメータの抽出（デフォルト無効） |
+
+#### UI
+
+| Extension | 説明 |
+|---|---|
+| **additional_filters** | 日付範囲・正規表現クエリフィルタ |
+| **additional_layout** | マルチスパン・均等配置・有機パーティション等のグリッドレイアウト |
+
+### 仕組み
+
+1. extension フォルダに `requirements.txt` がある場合、依存パッケージを `.packages/` に自動インストール
+2. `.packages/` を `sys.path` に追加
+3. `lib/` を DLL 検索パスに追加
+4. `*.py` を import し、基底クラスの継承によりプラグインを自動検出
+5. exe ビルドでは組み込み Python 環境経由で pip を実行
+
+### Extension の実装例
+
+`wafer.plugin` から基底クラスを import して利用してください。※基盤は現状安定していないため、外部プラグインはアップデートで壊れる可能性があります。ご承知ください。
+
+```python
+from wafer.plugin import BaseCollectorPlugin, CollectorResult
+
+class MyCollector(BaseCollectorPlugin):
+    NAME = "my_ext"
+    EXTENSIONS = (".custom",)
+
+    def collect(self, path: str) -> CollectorResult:
+        return CollectorResult(meta_info={"key": "value"})
+```
+
+## データファイル
+
+アプリケーションデータは `platformdirs` 経由（Windows では `AppData/Local`）に保存されます。
+`_resources/` には UI アセットやバインディングプリセットが含まれており、置き換えによるカスタマイズが可能です。
+
+## ライセンス
+
+このプロジェクトは [Apache License 2.0](LICENSE) の下で公開されています。
+
+**意図:**
+Wafer の基盤（`wafer/`）は、すべての extension とユーザーに恩恵をもたらす共有コアです。Apache-2.0 ライセンスは自由な利用・改変・再配布を許可していますが、基盤への改善はアップストリームへ貢献いただけると嬉しいです。
+
+extension（`extensions/`）は自由に作成・改変・ライセンス設定が可能です。各 extension は独自の `LICENSE` ファイルで異なる条件を指定できます。指定がない場合はルートの Apache-2.0 が適用されます。
+
+| コンポーネント | ライセンス | 理由 |
+|---|---|---|
+| `wafer/`（コア） | Apache-2.0 | — |
+| `extensions/video/` | GPL-2.0+ | libmpv / python-mpv（GPL-2.0+ デフォルトビルド） |
+| `extensions/exiftool/` | GPL-3.0 | ExifTool バイナリ（GPL-3.0） |
+| `extensions/ffmpeg/` | GPL-3.0+ | FFmpeg/FFprobe バイナリ（`--enable-gpl --enable-version3`） |
+| その他の extension | Apache-2.0 | 独自 LICENSE がない場合 |

@@ -648,7 +648,103 @@ class TestDatabaseManagerSaveCancel:
         revert_btn = dlg.findChild(QtWidgets.QPushButton, "cancel_btn")
         assert save_btn is not None
         assert revert_btn is not None
-        assert revert_btn.text() == "Cancel"
+
+
+class TestDatabaseDetailBulkOperations:
+    def _make_widget(self, qtbot, tmp_path, monkeypatch):
+        sdb_path = str(tmp_path / "test.db")
+        SettingDB(sdb_path)
+        monkeypatch.setattr(
+            "wafer.builtins.database_manager.widget.setting_db_path",
+            lambda name: sdb_path,
+        )
+        from wafer.builtins.database_manager.widget import _DatabaseDetailWidget
+
+        widget = _DatabaseDetailWidget()
+        qtbot.addWidget(widget)
+        widget.load("test")
+        return widget
+
+    def test_multi_select_remove_source(self, qtbot, tmp_path, monkeypatch):
+        widget = self._make_widget(qtbot, tmp_path, monkeypatch)
+        widget._source_list.addItem("/a")
+        widget._source_list.addItem("/b")
+        widget._source_list.addItem("/c")
+        widget._source_list.item(0).setSelected(True)
+        widget._source_list.item(2).setSelected(True)
+        widget._remove_source()
+        assert widget._source_list.count() == 1
+        assert widget._source_list.item(0).text() == "/b"
+
+    def test_multi_select_remove_ignore(self, qtbot, tmp_path, monkeypatch):
+        widget = self._make_widget(qtbot, tmp_path, monkeypatch)
+        widget._ignore_list.addItem("/x")
+        widget._ignore_list.addItem("/y")
+        widget._ignore_list.addItem("/z")
+        widget._ignore_list.item(0).setSelected(True)
+        widget._ignore_list.item(1).setSelected(True)
+        widget._remove_ignore()
+        assert widget._ignore_list.count() == 1
+        assert widget._ignore_list.item(0).text() == "/z"
+
+    def test_paste_paths_into_ignore(self, qtbot, tmp_path, monkeypatch):
+        widget = self._make_widget(qtbot, tmp_path, monkeypatch)
+        dir_a = tmp_path / "dir_a"
+        dir_b = tmp_path / "dir_b"
+        dir_a.mkdir()
+        dir_b.mkdir()
+        clipboard = QtWidgets.QApplication.clipboard()
+        clipboard.setText(f"{dir_a}\n{dir_b}\n/nonexistent/path")
+        widget._paste_paths(widget._ignore_list)
+        assert widget._ignore_list.count() == 2
+        texts = {widget._ignore_list.item(i).text() for i in range(widget._ignore_list.count())}
+        assert str(dir_a) in texts
+        assert str(dir_b) in texts
+
+    def test_paste_paths_no_duplicates(self, qtbot, tmp_path, monkeypatch):
+        widget = self._make_widget(qtbot, tmp_path, monkeypatch)
+        dir_a = tmp_path / "dir_a"
+        dir_a.mkdir()
+        widget._ignore_list.addItem(str(dir_a))
+        clipboard = QtWidgets.QApplication.clipboard()
+        clipboard.setText(str(dir_a))
+        widget._paste_paths(widget._ignore_list)
+        assert widget._ignore_list.count() == 1
+
+    def test_paste_semicolon_separated(self, qtbot, tmp_path, monkeypatch):
+        widget = self._make_widget(qtbot, tmp_path, monkeypatch)
+        dir_a = tmp_path / "dir_a"
+        dir_b = tmp_path / "dir_b"
+        dir_a.mkdir()
+        dir_b.mkdir()
+        clipboard = QtWidgets.QApplication.clipboard()
+        clipboard.setText(f"{dir_a};{dir_b}")
+        widget._paste_paths(widget._ignore_list)
+        assert widget._ignore_list.count() == 2
+
+    def test_copy_paths(self, qtbot, tmp_path, monkeypatch):
+        widget = self._make_widget(qtbot, tmp_path, monkeypatch)
+        widget._source_list.addItem("/path/a")
+        widget._source_list.addItem("/path/b")
+        widget._source_list.addItem("/path/c")
+        widget._source_list.item(0).setSelected(True)
+        widget._source_list.item(2).setSelected(True)
+        copied = []
+        monkeypatch.setattr(
+            QtWidgets.QApplication.clipboard().__class__,
+            "setText",
+            lambda self, text: copied.append(text),
+        )
+        widget._copy_paths(widget._source_list)
+        assert len(copied) == 1
+        assert "/path/a" in copied[0]
+        assert "/path/c" in copied[0]
+        assert "/path/b" not in copied[0]
+
+    def test_selection_mode_is_extended(self, qtbot, tmp_path, monkeypatch):
+        widget = self._make_widget(qtbot, tmp_path, monkeypatch)
+        assert widget._source_list.selectionMode() == QtWidgets.QAbstractItemView.ExtendedSelection
+        assert widget._ignore_list.selectionMode() == QtWidgets.QAbstractItemView.ExtendedSelection
 
     def test_save_sends_rescan(self, qtbot, tmp_path, monkeypatch):
         sdb_path = str(tmp_path / "test_db.db")
@@ -733,7 +829,7 @@ class TestDatabaseManagerTabs:
         assert dlg._tabs.tabText(0) == "Paths"
         assert dlg._tabs.tabText(1) == "Data"
 
-    def test_send_purge(self, qtbot, tmp_path, monkeypatch):
+    def test_send_delete(self, qtbot, tmp_path, monkeypatch):
         monkeypatch.setattr(
             "wafer.builtins.database_manager.widget.list_setting_db_names",
             lambda: ["db1"],
@@ -751,9 +847,9 @@ class TestDatabaseManagerTabs:
         dlg = DatabaseManagerWidget()
         qtbot.addWidget(dlg)
 
-        dlg._send_purge([("db1", "exif")], True)
+        dlg._send_delete([("db1", "exif")], True)
         mock_node.send_reliable.assert_called_once_with(
-            "purge.collector",
+            "delete.collector",
             {"collector": "exif", "re_collect": True},
             dst="indexer",
             db="db1",

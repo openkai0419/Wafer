@@ -90,3 +90,75 @@ def test_reposition_skips_when_anchor_unchanged(qtbot):
     pos2 = overlay.pos()
     assert pos1 == pos2
     overlay.close()
+
+
+def test_suspend_hides_and_resume_shows(qtbot):
+    target = QtWidgets.QPushButton("Test")
+    target.show()
+    qtbot.addWidget(target)
+
+    from wafer.app.viewer.widgets.callout_overlay import CalloutOverlay
+
+    overlay = CalloutOverlay(target, "Test")
+    overlay.show()
+    qtbot.waitUntil(lambda: overlay._fade_anim is None or overlay._fade_anim.state() != QtCore.QAbstractAnimation.Running, timeout=2000)
+
+    overlay.suspend()
+    assert overlay._suspended
+    assert not overlay._track_timer.isActive()
+    qtbot.waitUntil(lambda: not overlay.isVisible(), timeout=2000)
+
+    overlay.resume()
+    assert not overlay._suspended
+    assert overlay.isVisible()
+    assert overlay._track_timer.isActive()
+    overlay.close()
+
+
+def test_suspend_noop_when_already_suspended(qtbot):
+    target = QtWidgets.QPushButton("Test")
+    target.show()
+    qtbot.addWidget(target)
+
+    from wafer.app.viewer.widgets.callout_overlay import CalloutOverlay
+
+    overlay = CalloutOverlay(target, "Test")
+    overlay.show()
+    qtbot.waitUntil(lambda: overlay._fade_anim is None or overlay._fade_anim.state() != QtCore.QAbstractAnimation.Running, timeout=2000)
+
+    overlay.suspend()
+    qtbot.waitUntil(lambda: not overlay.isVisible(), timeout=2000)
+    overlay.suspend()
+    assert overlay._suspended
+    overlay.close()
+
+
+def test_resume_noop_when_not_suspended(qtbot):
+    target = QtWidgets.QPushButton("Test")
+    target.show()
+    qtbot.addWidget(target)
+
+    from wafer.app.viewer.widgets.callout_overlay import CalloutOverlay
+
+    overlay = CalloutOverlay(target, "Test")
+    overlay.show()
+    overlay.resume()
+    assert not overlay._suspended
+    overlay.close()
+
+
+def test_dismiss_while_suspended(qtbot):
+    target = QtWidgets.QPushButton("Test")
+    target.show()
+    qtbot.addWidget(target)
+
+    from wafer.app.viewer.widgets.callout_overlay import CalloutOverlay
+
+    overlay = CalloutOverlay(target, "Test")
+    overlay.show()
+    qtbot.waitUntil(lambda: overlay._fade_anim is None or overlay._fade_anim.state() != QtCore.QAbstractAnimation.Running, timeout=2000)
+
+    overlay.suspend()
+    qtbot.waitUntil(lambda: not overlay.isVisible(), timeout=2000)
+    with qtbot.waitSignal(overlay.dismissed, timeout=2000):
+        overlay.dismiss()

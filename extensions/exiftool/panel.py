@@ -67,7 +67,7 @@ class ExifSettingsWidget(QtWidgets.QWidget):
         bottom_layout.addWidget(self._mode_combo)
         bottom_layout.addStretch()
 
-        save_btn = QtWidgets.QPushButton(t("Save && Recollect (All DBs)"))
+        save_btn = QtWidgets.QPushButton(t("Save && Delete Data (All DBs)"))
         save_btn.clicked.connect(self._on_save)
         bottom_layout.addWidget(save_btn)
 
@@ -138,13 +138,13 @@ class ExifSettingsWidget(QtWidgets.QWidget):
         current_keys = self._key_browser.collect_filter_keys()
         has_changes = self._filter_mode != self._saved_mode or current_keys != self._saved_keys
 
-        do_purge = False
+        do_delete = False
         do_recollect = False
         if has_changes:
             dlg = _SaveConfirmDialog(parent=self)
             if dlg.exec() != QtWidgets.QDialog.Accepted:
                 return
-            do_purge = dlg.purge()
+            do_delete = dlg.delete_data()
             do_recollect = dlg.recollect()
 
         self._filter_keys = current_keys
@@ -157,19 +157,19 @@ class ExifSettingsWidget(QtWidgets.QWidget):
         self._saved_mode = self._filter_mode
         self._saved_keys = set(self._filter_keys)
 
-        if do_purge or do_recollect:
+        if do_delete or do_recollect:
             db_names = list_setting_db_names()
             if db_names:
-                purge_keys = self._compute_purge_keys() if do_purge else []
-                self._send_purge_keys(
+                delete_keys = self._compute_delete_keys() if do_delete else []
+                self._send_delete_keys(
                     db_names,
-                    purge_keys,
+                    delete_keys,
                     "exiftool",
                     re_collect=do_recollect,
                 )
 
-        if do_purge:
-            action = "saved + purge & recollect" if do_recollect else "saved + purge"
+        if do_delete:
+            action = "saved + delete & recollect" if do_recollect else "saved + delete"
         else:
             action = "saved"
         Notifier.info(f"ExifTool filter {action} ({self._filter_mode}, {len(self._filter_keys)} keys)")
@@ -187,14 +187,14 @@ class ExifSettingsWidget(QtWidgets.QWidget):
 
         Notifier.info("ExifTool filter settings reverted")
 
-    def _compute_purge_keys(self) -> list[str]:
+    def _compute_delete_keys(self) -> list[str]:
         if self._filter_mode == MODE_BLACKLIST:
             return [f"exiftool.{k}" for k in self._filter_keys]
         all_keys = {k for k, _ in _query_all_keys_merged()}
         return [f"exiftool.{k}" for k in (all_keys - self._filter_keys)]
 
     @staticmethod
-    def _send_purge_keys(
+    def _send_delete_keys(
         db_names: list[str],
         keys: list[str],
         collector: str,
@@ -209,7 +209,7 @@ class ExifSettingsWidget(QtWidgets.QWidget):
             return
         for db in db_names:
             node.send_reliable(
-                "purge.keys",
+                "delete.keys",
                 {"keys": keys, "collector": collector, "re_collect": re_collect},
                 dst="indexer",
                 db=db,
@@ -249,6 +249,7 @@ class _KeyBrowserTab(QtWidgets.QWidget):
         self._tree.setRootIsDecorated(True)
         self._tree.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         self._tree.itemClicked.connect(self._on_item_clicked)
+        self._tree.currentItemChanged.connect(self._on_current_changed)
         h = self._tree.header()
         h.setStretchLastSection(False)
         h.setSectionResizeMode(_CHECK_COL, QtWidgets.QHeaderView.ResizeToContents)
@@ -494,6 +495,13 @@ class _KeyBrowserTab(QtWidgets.QWidget):
             self._filter_keys = self.collect_filter_keys()
             self._update_check_all_label()
             self.filter_keys_changed.emit(set(self._filter_keys))
+        self._show_key_preview(item)
+
+    def _on_current_changed(self, current: QtWidgets.QTreeWidgetItem, _previous: QtWidgets.QTreeWidgetItem):
+        if current is not None:
+            self._show_key_preview(current)
+
+    def _show_key_preview(self, item: QtWidgets.QTreeWidgetItem):
         full_key = item.data(_KEY_COL, QtCore.Qt.UserRole)
         if not full_key:
             return
@@ -771,12 +779,12 @@ class _SaveConfirmDialog(QtWidgets.QDialog):
         layout.setSpacing(dpix(8))
         layout.addWidget(QtWidgets.QLabel(t("Filter settings have been modified.\nThis will apply to all databases.")))
 
-        self._purge_cb = QtWidgets.QCheckBox(t("Purge existing ExifTool data"))
-        self._purge_cb.setChecked(True)
-        self._recollect_cb = QtWidgets.QCheckBox(t("Recollect after purge"))
+        self._delete_cb = QtWidgets.QCheckBox(t("Delete existing ExifTool data"))
+        self._delete_cb.setChecked(True)
+        self._recollect_cb = QtWidgets.QCheckBox(t("Re-collect after deletion"))
         self._recollect_cb.setChecked(True)
-        self._purge_cb.toggled.connect(self._recollect_cb.setEnabled)
-        layout.addWidget(self._purge_cb)
+        self._delete_cb.toggled.connect(self._recollect_cb.setEnabled)
+        layout.addWidget(self._delete_cb)
         layout.addWidget(self._recollect_cb)
 
         btn_layout = QtWidgets.QHBoxLayout()
@@ -789,11 +797,11 @@ class _SaveConfirmDialog(QtWidgets.QDialog):
         btn_layout.addWidget(cancel_btn)
         layout.addLayout(btn_layout)
 
-    def purge(self) -> bool:
-        return self._purge_cb.isChecked()
+    def delete_data(self) -> bool:
+        return self._delete_cb.isChecked()
 
     def recollect(self) -> bool:
-        return self._purge_cb.isChecked() and self._recollect_cb.isChecked()
+        return self._delete_cb.isChecked() and self._recollect_cb.isChecked()
 
 
 def _query_all_keys_merged() -> list[tuple[str, int]]:

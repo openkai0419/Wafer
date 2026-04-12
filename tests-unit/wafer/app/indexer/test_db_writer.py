@@ -131,8 +131,8 @@ def test_upsert_collection_results(writer):
     cur.close()
 
 
-def test_purge_orphans(writer):
-    writer.purge_orphans()
+def test_delete_orphans(writer):
+    writer.delete_orphans()
 
 
 def test_checkpoint(writer):

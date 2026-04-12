@@ -7,8 +7,11 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB.svg)
 ![Platform](https://img.shields.io/badge/Platform-Windows-0078D6.svg)
+![Release](https://img.shields.io/github/v/release/openkai0419/Wafer?style=flat-square)
+![Release Date](https://img.shields.io/github/release-date/openkai0419/Wafer?style=flat-square)
+![Downloads](https://img.shields.io/github/downloads/openkai0419/Wafer/total?style=flat-square)
 
-[日本語](README.jp.md)
+[日本語はこちら](README.jp.md)
 
 </div>
 
@@ -22,10 +25,10 @@ Plugin-based extensions add support for any file format. Currently Windows only 
 
 1. Go to [Releases](https://github.com/openkai0419/private_rep/releases/latest)
 2. Download `Wafer-vX.X.X.zip`
-3. Extract the zip to any folder
+3. Extract the zip to any folder (prefer SSD)
 4. Run `Wafer.exe`
 
-To uninstall, delete the extracted folder and run `cleanup.bat --userdata` to remove app data from `%LOCALAPPDATA%\Wafer`.
+To uninstall, run `cleanup.bat` to remove app data from `%LOCALAPPDATA%\Wafer`, and delete the extracted files.
 
 ### From Source
 
@@ -46,8 +49,11 @@ setup.bat
 # Run the app
 python main.py
 
-# Run tests
-.venv\Scripts\python.exe -m pytest -p no:cacheprovider -q
+# Run tests (layered runner: unit → smoke → benchmark)
+scripts\test.bat
+
+# Or run pytest directly (uses pyproject.toml defaults)
+.venv\Scripts\python.exe -m pytest
 ```
 
 ## Design
@@ -69,15 +75,29 @@ Extensions are placed as folders under `extensions/`. `PluginLoader` auto-discov
 
 ## Currently Supporting Extensions
 
+#### Viewer / Grid
+
 | Extension | Formats | Description |
 |---|---|---|
-| **image** | jpg, png, bmp, gif, webp | Image grid/viewer with EXIF metadata collection |
-| **animated** | gif, apng, webp | Animated image playback in grid and viewer |
-| **video** | mp4, mkv, webm, avi, mov, etc. | Video playback via mpv |
-| **ai_tagger** | *(all images)* | WD14 model-based automatic tagging |
-| **text_generation** | *(all images)* | NovelAI prompt metadata extraction |
-| **additional_filters** | — | Regex and date-range query filters |
-| **additional_layout** | — | Multi-span, justified, and organic partition grid layouts |
+| **image** | jpg, png, bmp, gif, webp | Static image grid and viewer with zoom/pan |
+| **animated** | gif, apng, webp (animated) | Frame-by-frame animated playback in grid and viewer |
+| **video** | mp4, mkv, webm, avi, mov, etc. | Video playback via mpv with OpenGL rendering |
+
+#### Metadata / Collection
+
+| Extension | Formats | Description |
+|---|---|---|
+| **exiftool** | jpg, png, webp, tiff, heic, avif, jxl, raw, psd, etc. | Universal EXIF/IPTC/XMP metadata extraction via ExifTool |
+| **ffmpeg** | mp4, mkv, webm, mp3, flac, wav, etc. | Video/audio metadata extraction via ffprobe |
+| **ai_tagger** | *(images)* | WD14 model-based automatic tagging (ONNX, GPU accelerated) |
+| **text_generation** | *(images with EXIF)* | NovelAI generation parameter extraction |
+
+#### UI
+
+| Extension | Description |
+|---|---|
+| **additional_filters** | Date-range and regex query filters |
+| **additional_layout** | Multi-span, justified, and organic partition grid layouts |
 
 ### How It Works
 
@@ -89,7 +109,7 @@ Extensions are placed as folders under `extensions/`. `PluginLoader` auto-discov
 
 ### Extension Examples
 
-Extensions import base classes from `wafer.plugin`:
+Extensions import base classes from `wafer.plugin`. Note that the foundation is not yet stable, so external plugins may break on updates.
 
 ```python
 from wafer.plugin import BaseCollectorPlugin, CollectorResult
@@ -116,8 +136,10 @@ Wafer's foundation (`wafer/`) is designed to be a shared core that benefits ever
 
 Extensions (`extensions/`) are yours to create, modify, and license however you wish. Each extension may include its own `LICENSE` file to specify different terms. If an extension does not include one, the root Apache-2.0 license applies.
 
-| Component | License |
-|---|---|
-| `wafer/` (core) | Apache-2.0 |
-| `extensions/video/` | AGPL-3.0 (due to python-mpv dependency) |
-| All other extensions | Apache-2.0 (unless specified by their own `LICENSE`) |
+| Component | License | Reason |
+|---|---|---|
+| `wafer/` (core) | Apache-2.0 | — |
+| `extensions/video/` | GPL-2.0+ | libmpv / python-mpv (GPL-2.0+ default build) |
+| `extensions/exiftool/` | GPL-3.0 | ExifTool binary (GPL-3.0) |
+| `extensions/ffmpeg/` | GPL-3.0+ | FFmpeg/FFprobe binary (`--enable-gpl --enable-version3`) |
+| All other extensions | Apache-2.0 | Unless specified by their own `LICENSE` |

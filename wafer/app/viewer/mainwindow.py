@@ -50,6 +50,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._profile_entry = None
         self._profile_deleted = False
         self._profile_ready = False
+        self._folder_callout: CalloutOverlay | None = None
         if icon:
             self.setWindowIcon(icon)
         self.setWindowTitle(APP_NAME)
@@ -70,7 +71,6 @@ class MainWindow(QtWidgets.QMainWindow):
         t.set_locale(app_settings.get("window/language", "en"))
         UI.register_instance("MainWindow", self)
         self._closed = False
-        self._folder_callout: CalloutOverlay | None = None
         self.setup_ui()
         self._show_loading()
         self._acquire_profile_async(profile_id)
@@ -181,7 +181,15 @@ class MainWindow(QtWidgets.QMainWindow):
         callout.dismissed.connect(self._on_folder_callout_dismissed)
         add_btn.pressed.connect(self._dismiss_folder_callout)
         self._folder_callout = callout
-        QtCore.QTimer.singleShot(300, callout.show)
+        QtCore.QTimer.singleShot(300, self._show_folder_callout)
+
+    def _show_folder_callout(self):
+        if self._folder_callout is None:
+            return
+        if self.setting_db and self.setting_db.get_all_parent_folders():
+            self._dismiss_folder_callout()
+            return
+        self._folder_callout.show()
 
     def _dismiss_folder_callout(self):
         if self._folder_callout is not None:
@@ -542,6 +550,20 @@ class MainWindow(QtWidgets.QMainWindow):
                 self._dismiss_folder_callout()
         else:
             self.folder_view.reload_tree()
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        callout = getattr(self, "_folder_callout", None)
+        if callout is None:
+            return
+        etype = event.type()
+        if etype == QtCore.QEvent.ActivationChange:
+            if self.isActiveWindow():
+                callout.resume()
+            else:
+                callout.suspend()
+        elif etype == QtCore.QEvent.WindowStateChange and self.isMinimized():
+            callout.suspend()
 
     def moveEvent(self, event):
         super().moveEvent(event)

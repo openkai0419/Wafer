@@ -65,3 +65,19 @@ class TestPluginSettings:
 
         ps = PluginSettings()
         assert ps.priority_order("grid") == []
+
+    def test_default_enabled_collectors_roundtrip(self, tmp_path, monkeypatch):
+        ini_path = str(tmp_path / "defaults.ini")
+        monkeypatch.setattr("wafer.plugin.settings._ini_path", lambda: ini_path)
+
+        ps = PluginSettings()
+        ps.set_default_enabled_collectors(["exif", "ffmpeg"])
+        result = ps.default_enabled_collectors()
+        assert result == ["exif", "ffmpeg"]
+
+    def test_default_enabled_collectors_missing(self, tmp_path, monkeypatch):
+        ini_path = str(tmp_path / "empty.ini")
+        monkeypatch.setattr("wafer.plugin.settings._ini_path", lambda: ini_path)
+
+        ps = PluginSettings()
+        assert ps.default_enabled_collectors() is None

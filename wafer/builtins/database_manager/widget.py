@@ -1,4 +1,6 @@
-from PySide6 import QtWidgets, QtCore
+import os
+
+from PySide6 import QtWidgets, QtCore, QtGui
 from ...utils.formatting import dpix
 from ...utils.logs import AppLogger
 from ...utils.notifier import Notifier
@@ -78,7 +80,7 @@ def _build_stylesheet() -> str:
             background: {p.error};
             color: {p.accent_text};
         }}
-        QPushButton#purge_btn {{
+        QPushButton#delete_btn {{
             background: rgba({_hex_rgb(p.error)}, 0.1);
             color: {p.error};
             border: 1px solid rgba({_hex_rgb(p.error)}, 0.3);
@@ -86,7 +88,7 @@ def _build_stylesheet() -> str:
             padding: {dpix(4)}px {dpix(12)}px;
             font-weight: bold;
         }}
-        QPushButton#purge_btn:hover {{
+        QPushButton#delete_btn:hover {{
             background: {p.error};
             color: {p.accent_text};
         }}
@@ -187,7 +189,7 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
         from .data_tab import DataTab
 
         self._data_tab = DataTab(self._dispatcher)
-        self._data_tab.purge_requested.connect(self._send_purge)
+        self._data_tab.delete_requested.connect(self._send_delete)
 
         self._tabs = QtWidgets.QTabWidget()
         self._tabs.addTab(self._scrollable(paths_container), t("Paths"))
@@ -265,13 +267,26 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
         text = text.strip()
         if text in list_setting_db_names():
             return
-        AppProcess.new_main("--indexer", text)
-        self._refresh_db_list()
-        self._initial_paths[text] = ([], [])
-        items = self._db_list.findItems(text, QtCore.Qt.MatchExactly)
-        if items:
-            self._db_list.setCurrentItem(items[0])
-        AppLogger.info(f"[DatabaseManager] Created database: {text}")
+
+        def _seed_and_start():
+            from ...plugin.settings import PluginSettings
+
+            defaults = PluginSettings().resolve_default_collectors()
+            sdb = SettingDB(setting_db_path(text))
+            sdb.set_enabled_collectors(defaults)
+            AppProcess.new_main("--indexer", text)
+
+            def _on_done():
+                self._refresh_db_list()
+                self._initial_paths[text] = ([], [])
+                items = self._db_list.findItems(text, QtCore.Qt.MatchExactly)
+                if items:
+                    self._db_list.setCurrentItem(items[0])
+                AppLogger.info(f"[DatabaseManager] Created database: {text}")
+
+            self._dispatcher.invoke(_on_done)
+
+        self._dispatcher.post(_seed_and_start)
 
     def _delete_database(self):
         current = self._db_list.currentItem()
@@ -346,21 +361,21 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
             self._detail_widget.load(current.text())
         Notifier.info(t("Changes reverted"))
 
-    def _send_purge(self, pairs: list[tuple[str, str]], re_collect: bool):
+    def _send_delete(self, pairs: list[tuple[str, str]], re_collect: bool):
         from ...core.commands.binding.instance_registry import InstanceRegistry
 
         node = InstanceRegistry.instance().resolve_node()
         if not node:
-            AppLogger.warning("[DatabaseManager] No IPC node available for purge")
+            AppLogger.warning("[DatabaseManager] No IPC node available for delete")
             return
         for db, collector in pairs:
             node.send_reliable(
-                "purge.collector",
+                "delete.collector",
                 {"collector": collector, "re_collect": re_collect},
                 dst="indexer",
                 db=db,
             )
-        AppLogger.info(f"[DatabaseManager] Sent purge for {len(pairs)} pairs")
+        AppLogger.info(f"[DatabaseManager] Sent delete for {len(pairs)} pairs")
 
     @staticmethod
     def _scrollable(widget: QtWidgets.QWidget) -> QtWidgets.QScrollArea:
@@ -379,6 +394,8 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
 
         self._source_list = QtWidgets.QListWidget()
         self._source_list.setMinimumHeight(dpix(50))
+        self._source_list.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        self._source_list.installEventFilter(self)
         add_src_btn = QtWidgets.QPushButton()
         add_src_btn.setIcon(themed_icon("plus"))
         add_src_btn.setObjectName("folder_add_btn")
@@ -402,6 +419,8 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
 
         self._ignore_list = QtWidgets.QListWidget()
         self._ignore_list.setMinimumHeight(dpix(50))
+        self._ignore_list.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        self._ignore_list.installEventFilter(self)
         add_ign_btn = QtWidgets.QPushButton()
         add_ign_btn.setIcon(themed_icon("plus"))
         add_ign_btn.setObjectName("folder_add_btn")
@@ -503,9 +522,8 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
             self._source_list.addItem(folder)
 
     def _remove_source(self):
-        current = self._source_list.currentItem()
-        if current:
-            self._source_list.takeItem(self._source_list.row(current))
+        for item in self._source_list.selectedItems():
+            self._source_list.takeItem(self._source_list.row(item))
 
     def _add_ignore(self):
         if not self._db_name:
@@ -521,9 +539,40 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
             self._ignore_list.addItem(folder)
 
     def _remove_ignore(self):
-        current = self._ignore_list.currentItem()
-        if current:
-            self._ignore_list.takeItem(self._ignore_list.row(current))
+        for item in self._ignore_list.selectedItems():
+            self._ignore_list.takeItem(self._ignore_list.row(item))
+
+    def eventFilter(self, obj, event):
+        if event.type() != QtCore.QEvent.KeyPress:
+            return super().eventFilter(obj, event)
+        if obj not in (self._source_list, self._ignore_list):
+            return super().eventFilter(obj, event)
+        if event.matches(QtGui.QKeySequence.Paste):
+            self._paste_paths(obj)
+            return True
+        if event.matches(QtGui.QKeySequence.Copy):
+            self._copy_paths(obj)
+            return True
+        return super().eventFilter(obj, event)
+
+    def _paste_paths(self, list_widget: QtWidgets.QListWidget):
+        clipboard = QtWidgets.QApplication.clipboard()
+        text = clipboard.text()
+        if not text:
+            return
+        existing = {list_widget.item(i).text() for i in range(list_widget.count())}
+        for line in text.replace(";", "\n").splitlines():
+            path = line.strip()
+            if not path or path in existing:
+                continue
+            if os.path.isdir(path):
+                list_widget.addItem(path)
+                existing.add(path)
+
+    def _copy_paths(self, list_widget: QtWidgets.QListWidget):
+        selected = [item.text() for item in list_widget.selectedItems()]
+        if selected:
+            QtWidgets.QApplication.clipboard().setText("\n".join(selected))
 
 
 class DatabaseManagerPlugin(BasePanelPlugin):

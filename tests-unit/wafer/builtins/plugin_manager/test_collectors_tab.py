@@ -6,13 +6,14 @@ from unittest.mock import patch
 from wafer.core.db.setting_db import SettingDB
 
 
-def _make_dbs(tmp_path, config: dict[str, list[str]]):
+def _make_dbs(tmp_path, config: dict[str, list[str] | None]):
     paths = {}
     for name, collectors in config.items():
         p = str(tmp_path / f"{name}.db")
         paths[name] = p
         sdb = SettingDB(p)
-        sdb.set_enabled_collectors(collectors)
+        if collectors is not None:
+            sdb.set_enabled_collectors(collectors)
     return paths
 
 
@@ -21,7 +22,7 @@ def _patch_paths(tmp_path):
     paths = {}
     db_names = []
 
-    def setup(config: dict[str, list[str]]):
+    def setup(config: dict[str, list[str] | None]):
         paths.clear()
         paths.update(_make_dbs(tmp_path, config))
         db_names[:] = list(config.keys())
@@ -160,3 +161,114 @@ class TestCollectorsTab:
 
         assert tab._matrix[("nai", "db1")].isChecked()
         assert tab.get_per_db_collectors() == {"db1": ["nai"]}
+
+    def test_none_db_uses_defaults(self, qtbot, _patch_paths):
+        setup, _ = _patch_paths
+        setup({"fresh": None})
+
+        from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
+
+        with patch.object(CollectorsTab, "_load_defaults", return_value={"exif"}):
+            tab = CollectorsTab(collector_names=["exif", "wd14"], detacher_names=[])
+        qtbot.addWidget(tab)
+
+        assert tab._matrix[("exif", "fresh")].isChecked()
+        assert not tab._matrix[("wd14", "fresh")].isChecked()
+
+    def test_none_db_has_no_changes_without_edit(self, qtbot, _patch_paths):
+        setup, _ = _patch_paths
+        setup({"fresh": None})
+
+        from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
+
+        with patch.object(CollectorsTab, "_load_defaults", return_value={"exif"}):
+            tab = CollectorsTab(collector_names=["exif", "wd14"], detacher_names=[])
+        qtbot.addWidget(tab)
+
+        assert not tab.has_changes()
+
+    def test_default_section_initial_state(self, qtbot, _patch_paths):
+        setup, _ = _patch_paths
+        setup({"db1": ["exif"]})
+
+        from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
+
+        with patch.object(CollectorsTab, "_load_defaults", return_value={"exif"}):
+            tab = CollectorsTab(collector_names=["exif", "wd14"], detacher_names=[])
+        qtbot.addWidget(tab)
+
+        assert tab._default_checks["exif"].isChecked()
+        assert not tab._default_checks["wd14"].isChecked()
+
+    def test_default_section_change_detected(self, qtbot, _patch_paths):
+        setup, _ = _patch_paths
+        setup({"db1": ["exif"]})
+
+        from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
+
+        with patch.object(CollectorsTab, "_load_defaults", return_value={"exif"}):
+            tab = CollectorsTab(collector_names=["exif", "wd14"], detacher_names=[])
+        qtbot.addWidget(tab)
+
+        assert not tab.has_changes()
+        tab._default_checks["wd14"].setChecked(True)
+        assert tab.has_changes()
+
+    def test_get_default_collectors(self, qtbot, _patch_paths):
+        setup, _ = _patch_paths
+        setup({"db1": ["exif"]})
+
+        from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
+
+        with patch.object(CollectorsTab, "_load_defaults", return_value={"exif", "wd14"}):
+            tab = CollectorsTab(collector_names=["exif", "wd14"], detacher_names=[])
+        qtbot.addWidget(tab)
+
+        assert set(tab.get_default_collectors()) == {"exif", "wd14"}
+        tab._default_checks["wd14"].setChecked(False)
+        assert tab.get_default_collectors() == ["exif"]
+
+    def test_explicit_empty_not_uses_defaults(self, qtbot, _patch_paths):
+        setup, _ = _patch_paths
+        setup({"db1": []})
+
+        from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
+
+        with patch.object(CollectorsTab, "_load_defaults", return_value={"exif"}):
+            tab = CollectorsTab(collector_names=["exif"], detacher_names=[])
+        qtbot.addWidget(tab)
+
+        assert not tab._matrix[("exif", "db1")].isChecked()
+
+    def test_toggle_all_via_name_click(self, qtbot, _patch_paths):
+        setup, _ = _patch_paths
+        setup({"db1": ["exif"], "db2": []})
+
+        from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
+
+        tab = CollectorsTab(collector_names=["exif"], detacher_names=[])
+        qtbot.addWidget(tab)
+
+        assert tab._matrix[("exif", "db1")].isChecked()
+        assert not tab._matrix[("exif", "db2")].isChecked()
+
+        tab._toggle_all("exif")
+        assert tab._matrix[("exif", "db1")].isChecked()
+        assert tab._matrix[("exif", "db2")].isChecked()
+
+        tab._toggle_all("exif")
+        assert not tab._matrix[("exif", "db1")].isChecked()
+        assert not tab._matrix[("exif", "db2")].isChecked()
+
+    def test_no_db_shows_defaults_only(self, qtbot, _patch_paths):
+        setup, _ = _patch_paths
+        setup({})
+
+        from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
+
+        with patch.object(CollectorsTab, "_load_defaults", return_value={"exif"}):
+            tab = CollectorsTab(collector_names=["exif"], detacher_names=[])
+        qtbot.addWidget(tab)
+
+        assert tab._default_checks["exif"].isChecked()
+        assert not tab._matrix

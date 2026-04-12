@@ -4,7 +4,18 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
-## [v0.5.7] - 2026-04-12
+## [v0.5.8]
+### Changed
+- Tray menu reorganized into logical groups: Viewer, Database, Window, Tray
+- Restart commands moved from Settings to Window menu group
+- Help (README, About) separated into its own menu group
+- Renamed "Detacher" to "Parser" across all UI, commands, and plugin API
+
+### Fixed
+- Plugin Manager collectors tab now refreshes on open and correctly preserves default/per-DB state
+- README release links updated to correct repository URL
+
+## [v0.5.7]
 ### Added
 - `PluginSettings.default_enabled_collectors` / `resolve_default_collectors`: new DB creation now seeds enabled collectors from global defaults
 - Multi-select ignore in FolderTree (`ignore_folder` accepts multiple paths, batch confirmation dialog)

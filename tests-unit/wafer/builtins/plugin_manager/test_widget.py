@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 import pytest
 from unittest.mock import MagicMock, patch
@@ -918,7 +918,7 @@ class TestCollectorsTab:
         )
         from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
 
-        tab = CollectorsTab(collector_names=[], detacher_names=[])
+        tab = CollectorsTab(collector_names=[], parser_names=[])
         qtbot.addWidget(tab)
         assert tab._matrix == {}
 
@@ -939,7 +939,7 @@ class TestCollectorsTab:
         )
         from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
 
-        tab = CollectorsTab(collector_names=["exif", "ai_tags"], detacher_names=[])
+        tab = CollectorsTab(collector_names=["exif", "ai_tags"], parser_names=[])
         qtbot.addWidget(tab)
 
         assert tab._matrix[("exif", "test")].isChecked()
@@ -964,13 +964,13 @@ class TestCollectorsTab:
         )
         from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
 
-        tab = CollectorsTab(collector_names=["exif"], detacher_names=[])
+        tab = CollectorsTab(collector_names=["exif"], parser_names=[])
         qtbot.addWidget(tab)
 
         assert not tab._matrix[("exif", "one")].isChecked()
         assert not tab._matrix[("exif", "two")].isChecked()
 
-        tab._on_all_toggled("exif", True)
+        tab._toggle_all("exif")
 
         assert tab._matrix[("exif", "one")].isChecked()
         assert tab._matrix[("exif", "two")].isChecked()
@@ -991,7 +991,7 @@ class TestCollectorsTab:
         )
         from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
 
-        tab = CollectorsTab(collector_names=["exif", "ai_tags"], detacher_names=[])
+        tab = CollectorsTab(collector_names=["exif", "ai_tags"], parser_names=[])
         qtbot.addWidget(tab)
 
         tab._matrix[("exif", "mydb")].setChecked(True)
@@ -1017,7 +1017,7 @@ class TestCollectorsTab:
         )
         from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
 
-        tab = CollectorsTab(collector_names=["exif", "ai_tags"], detacher_names=[])
+        tab = CollectorsTab(collector_names=["exif", "ai_tags"], parser_names=[])
         qtbot.addWidget(tab)
 
         result = tab.get_per_db_collectors()
@@ -1039,7 +1039,7 @@ class TestCollectorsTab:
         )
         from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
 
-        tab = CollectorsTab(collector_names=["exif", "ai_tags"], detacher_names=[])
+        tab = CollectorsTab(collector_names=["exif", "ai_tags"], parser_names=[])
         qtbot.addWidget(tab)
 
         tab._matrix[("ai_tags", "mydb")].setChecked(False)
@@ -1063,7 +1063,7 @@ class TestCollectorsTab:
         )
         from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
 
-        tab = CollectorsTab(collector_names=["exif"], detacher_names=[])
+        tab = CollectorsTab(collector_names=["exif"], parser_names=[])
         qtbot.addWidget(tab)
 
         disabled = tab.get_newly_disabled()
@@ -1085,7 +1085,7 @@ class TestCollectorsTab:
         )
         from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
 
-        tab = CollectorsTab(collector_names=["exif"], detacher_names=[])
+        tab = CollectorsTab(collector_names=["exif"], parser_names=[])
         qtbot.addWidget(tab)
 
         assert ("exif", "mydb") in tab._matrix
@@ -1113,7 +1113,7 @@ class TestCollectorsTab:
         )
         from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
 
-        tab = CollectorsTab(collector_names=["exif"], detacher_names=[])
+        tab = CollectorsTab(collector_names=["exif"], parser_names=[])
         qtbot.addWidget(tab)
         assert not tab.has_changes()
 
@@ -1133,7 +1133,7 @@ class TestCollectorsTab:
         )
         from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
 
-        tab = CollectorsTab(collector_names=["exif"], detacher_names=[])
+        tab = CollectorsTab(collector_names=["exif"], parser_names=[])
         qtbot.addWidget(tab)
         tab._matrix[("exif", "mydb")].setChecked(False)
         assert tab.has_changes()

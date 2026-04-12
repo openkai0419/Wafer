@@ -74,6 +74,10 @@ class TestDatabaseManagerWidget:
             "wafer.builtins.database_manager.widget.AppProcess.new_main",
             mock_new_main,
         )
+        monkeypatch.setattr(
+            "wafer.core.qt.dispatcher.Dispatcher.post",
+            lambda self, fn, **kw: fn(),
+        )
         from wafer.builtins.database_manager.widget import DatabaseManagerWidget
 
         dlg = DatabaseManagerWidget()

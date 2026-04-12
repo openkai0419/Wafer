@@ -58,12 +58,12 @@ class CollectorReceiver:
         self._writer = writer
         self._progress = progress
         self._buffer = ResultBuffer(_merge_parsed)
-        self._detacher_request_dispatch = None
-        self._detacher_writer = None
+        self._parser_request_dispatch = None
+        self._parser_writer = None
 
-    def set_detacher_dispatch(self, request_dispatch, writer):
-        self._detacher_request_dispatch = request_dispatch
-        self._detacher_writer = writer
+    def set_parser_dispatch(self, request_dispatch, writer):
+        self._parser_request_dispatch = request_dispatch
+        self._parser_writer = writer
 
     def handle_result(self, msg) -> bool:
         payload = msg.payload
@@ -102,11 +102,11 @@ class CollectorReceiver:
         self._progress.increment(count, 0)
         self._progress.send_event("update")
         AppLogger.info(f"[Receiver] Flushed {count} results")
-        if self._detacher_writer:
-            from .detacher_receiver import trigger_detacher_pending, _build_source_keys
+        if self._parser_writer:
+            from .parser_receiver import trigger_parser_pending, _build_source_keys
 
             source_keys = _build_source_keys(data)
-            trigger_detacher_pending(source_keys, self._detacher_writer, self._detacher_request_dispatch)
+            trigger_parser_pending(source_keys, self._parser_writer, self._parser_request_dispatch)
         if self._buffer.has_pending():
             self._schedule_flush()
 

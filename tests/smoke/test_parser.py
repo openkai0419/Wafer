@@ -4,16 +4,16 @@ import time
 import pytest
 
 from wafer.core.ipc.broker import Broker
-from wafer.plugin.detacher.handler import detacher_resolver
-from extensions.text_generation.detacher import NovelAiImageDetacher
+from wafer.plugin.parser.handler import parser_resolver
+from extensions.text_generation.parser import NovelAiImageParser
 
 
 @pytest.fixture(autouse=True)
-def _register_detacher():
-    detacher_resolver.registry.register(NovelAiImageDetacher)
+def _register_parser():
+    parser_resolver.registry.register(NovelAiImageParser)
     yield
-    detacher_resolver.registry._plugins.pop(NovelAiImageDetacher.NAME, None)
-    detacher_resolver.registry._instances.pop(NovelAiImageDetacher.NAME, None)
+    parser_resolver.registry._plugins.pop(NovelAiImageParser.NAME, None)
+    parser_resolver.registry._instances.pop(NovelAiImageParser.NAME, None)
 
 
 def _poll_until(predicate, timeout=5.0):
@@ -23,18 +23,18 @@ def _poll_until(predicate, timeout=5.0):
     return predicate()
 
 
-class TestSmokeDetacher:
+class TestSmokeParser:
     def test_worker_registers_with_broker(self):
         broker = Broker()
         broker.start()
         try:
-            from wafer.app.detacher.worker import DetacherWorker
+            from wafer.app.parser.worker import ParserWorker
 
-            worker = DetacherWorker("testdb", "novelai")
+            worker = ParserWorker("testdb", "novelai")
             worker.start()
             try:
                 assert worker._node.wait_registered(timeout=5.0)
-                assert _poll_until(lambda: any("detacher" in role for role in broker.peer_counts()))
+                assert _poll_until(lambda: any("parser" in role for role in broker.peer_counts()))
             finally:
                 worker.stop()
         finally:
@@ -44,9 +44,9 @@ class TestSmokeDetacher:
         broker = Broker()
         broker.start()
         try:
-            from wafer.app.detacher.worker import DetacherWorker
+            from wafer.app.parser.worker import ParserWorker
 
-            worker = DetacherWorker("testdb", "novelai")
+            worker = ParserWorker("testdb", "novelai")
             worker.start()
             try:
                 assert worker._node.wait_registered(timeout=5.0)
@@ -67,7 +67,7 @@ class TestSmokeDetacher:
 
                 worker._process_batch(paths, file_info, metadata, "testdb")
 
-                assert captured.get("topic") == "detach.result"
+                assert captured.get("topic") == "parse.result"
                 results = captured["payload"]["results"]
                 assert len(results) == 2
                 for r in results:
@@ -85,9 +85,9 @@ class TestSmokeDetacher:
         broker = Broker()
         broker.start()
         try:
-            from wafer.app.detacher.worker import DetacherWorker
+            from wafer.app.parser.worker import ParserWorker
 
-            worker = DetacherWorker("testdb", "novelai")
+            worker = ParserWorker("testdb", "novelai")
             worker.start()
             try:
                 assert worker._node.wait_registered(timeout=5.0)
@@ -107,7 +107,7 @@ class TestSmokeDetacher:
 
                 worker._process_batch(paths, file_info, metadata, "testdb")
 
-                assert captured.get("topic") == "detach.result"
+                assert captured.get("topic") == "parse.result"
                 results = captured["payload"]["results"]
                 assert len(results) == 1
                 assert results[0].get("status") is False or results[0].get("status") == 0
@@ -118,7 +118,7 @@ class TestSmokeDetacher:
             broker.stop()
 
     def test_plugin_processes_directly(self):
-        plugin = detacher_resolver.registry.instance("novelai")
+        plugin = parser_resolver.registry.instance("novelai")
         assert plugin is not None
 
         data = json.dumps({"seed": 42, "model": "nai-v3"})
@@ -129,11 +129,11 @@ class TestSmokeDetacher:
         assert result.delete_keys == ["exiftool.PNG:Comment", "exiftool.PNG:Description"]
 
     def test_plugin_fail_on_non_json(self):
-        plugin = detacher_resolver.registry.instance("novelai")
+        plugin = parser_resolver.registry.instance("novelai")
         result = plugin.process("/fake/image.png", (1.0, 100), {"exiftool.PNG:Comment": "plain text"})
         assert result.status is False
 
     def test_plugin_fail_on_missing_key(self):
-        plugin = detacher_resolver.registry.instance("novelai")
+        plugin = parser_resolver.registry.instance("novelai")
         result = plugin.process("/fake/image.png", (1.0, 100), {})
         assert result is None

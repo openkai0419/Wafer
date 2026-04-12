@@ -46,7 +46,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ### Added
 - **ExifTool extension** (`extensions/exiftool/`): new collector, parser, settings panel, meta panel, and auto-downloader for ExifTool binary
 - **FFmpeg extension** (`extensions/ffmpeg/`): new collector, parser, and auto-downloader for FFmpeg binary
-- **ComfyUI detacher** (`extensions/text_generation/comfyui_detacher.py`): workflow metadata extraction for ComfyUI-generated images
+- **ComfyUI parser** (`extensions/text_generation/comfyui_parser.py`): workflow metadata extraction for ComfyUI-generated images
 - **MetaPanel plugin system** (`wafer/plugin/meta_panel/`): new plugin type for extensible metadata display panels
 - **Profile system** (`wafer/core/profile.py`): replaced Session with Profile — `ProfileEntry`, `ProfileStore`, `QueryState`, `UIState` as dataclasses with JSON persistence
 - **ViewerIpcBridge** (`wafer/app/viewer/ipc_bridge.py`): centralized Qt signal bridge for all IPC messages (db updates, progress, folder changes, etc.)
@@ -87,11 +87,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ## [v0.5.1] - 2026-04-06
 - Initial public release
 - Core viewer: grid view, image/video preview, file viewer
-- Plugin architecture: collector, detacher, grid, layout, query, rename, viewer, panel plugin types with auto-discovery via `PluginLoader`
+- Plugin architecture: collector, parser, grid, layout, query, rename, viewer, panel plugin types with auto-discovery via `PluginLoader`
 - Database system: SQLite-based file metadata DB with setting DB, indexer process, scanner, watch folder
 - IPC system: ZMQ-based multi-process communication (Node, Outbox, Transport)
 - Command system: key/mouse binding, command registry, options dialog
 - UI: MainWindow, FolderTree, search container, progress bar, profile popup, loading overlay
-- Extensions: image, animated (GIF/APNG), video (mpv-based), ai_tagger (WD14), additional_filters (regex), additional_layout (justified/organic/multispan), text_generation (prompt detacher)
+- Extensions: image, animated (GIF/APNG), video (mpv-based), ai_tagger (WD14), additional_filters (regex), additional_layout (justified/organic/multispan), text_generation (prompt parser)
 - Batch renamer with preview and conflict resolution
 - App settings, theme system, translation (i18n) support

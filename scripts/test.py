@@ -2,16 +2,19 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 import tempfile
 import time
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 VENV_PYTHON = ROOT / ".venv" / "Scripts" / "python.exe"
 SUMMARY_PATH = ROOT / "tests" / "test_summary.txt"
+LOG_DIR = ROOT / ".temp" / "test_logs"
 
 LAYERS: dict[str, dict] = {
     "unit": {
@@ -34,6 +37,9 @@ LAYERS: dict[str, dict] = {
 
 DEFAULT_LAYERS = ["unit", "smoke"]
 
+_TRACEBACK_SEP = re.compile(r"^_{10,}$")
+_TRACEBACK_HEAD = re.compile(r"^Traceback \(most recent call last\):")
+
 
 @dataclass
 class LayerResult:
@@ -55,6 +61,8 @@ def parse_summary(path: Path) -> dict:
     if not path.exists():
         return result
     text = path.read_text(encoding="utf-8")
+    if not text.strip():
+        return result
     result["raw"] = text
     section = None
     for line in text.splitlines():
@@ -74,8 +82,12 @@ def parse_summary(path: Path) -> dict:
         elif stripped == "--- ERROR ---":
             section = "error"
         elif section == "failed" and stripped:
+            if line.startswith("    "):
+                continue
             result["failed"].append(stripped)
         elif section == "error" and stripped:
+            if line.startswith("    "):
+                continue
             result["errors"].append(stripped)
         elif section == "category" and stripped:
             parts = stripped.split(":", 1)
@@ -84,12 +96,82 @@ def parse_summary(path: Path) -> dict:
     return result
 
 
+def _dedup_stderr(stderr: str, max_unique: int = 5) -> str:
+    blocks: list[str] = []
+    current: list[str] = []
+    in_block = False
+
+    for line in stderr.splitlines():
+        if _TRACEBACK_SEP.match(line):
+            if in_block and current:
+                blocks.append("\n".join(current))
+                current = []
+            in_block = not in_block
+            continue
+        if _TRACEBACK_HEAD.match(line):
+            if current:
+                blocks.append("\n".join(current))
+            current = [line]
+            in_block = True
+            continue
+        if in_block:
+            current.append(line)
+        else:
+            if current:
+                blocks.append("\n".join(current))
+                current = []
+
+    if current:
+        blocks.append("\n".join(current))
+
+    counts: Counter[str] = Counter()
+    seen_order: list[str] = []
+    for b in blocks:
+        key = b.strip()
+        if key not in counts:
+            seen_order.append(key)
+        counts[key] += 1
+
+    lines: list[str] = []
+    for key in seen_order[:max_unique]:
+        c = counts[key]
+        if c > 1:
+            lines.append(f"[repeated {c}x]\n{key}")
+        else:
+            lines.append(key)
+
+    omitted = len(seen_order) - max_unique
+    if omitted > 0:
+        lines.append(f"  ... and {omitted} more unique stderr blocks omitted")
+
+    return "\n".join(lines)
+
+
+def _print_progress(stdout: str):
+    for line in stdout.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith(("FAILED", "ERROR", "===")):
+            print(line)
+        elif all(c in ".FEsxX \t" for c in stripped.split("[")[0].rstrip()):
+            print(line)
+        elif "passed" in stripped or "failed" in stripped or "error" in stripped:
+            print(line)
+
+
 def run_layer(name: str, cfg: dict, extra_pytest_args: list[str] | None = None) -> LayerResult:
     result = LayerResult(name=name, label=cfg["label"])
     temp_dir = ROOT / ".temp"
     temp_dir.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, dir=temp_dir) as tmp:
-        summary_path = Path(tmp.name)
+
+    summary_path = temp_dir / f"_summary_{name}_{os.getpid()}.txt"
+    if summary_path.exists():
+        summary_path.unlink()
+
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    log_stdout = LOG_DIR / f"{name}_stdout.log"
+    log_stderr = LOG_DIR / f"{name}_stderr.log"
 
     env = os.environ.copy()
     env["WAFER_TEST_SUMMARY_PATH"] = str(summary_path)
@@ -121,13 +203,35 @@ def run_layer(name: str, cfg: dict, extra_pytest_args: list[str] | None = None) 
             cwd=ROOT,
             env=env,
             timeout=600,
-            capture_output=False,
+            capture_output=True,
+            text=True,
+            errors="replace",
         )
         result.exit_code = proc.returncode
-    except subprocess.TimeoutExpired:
+
+        log_stdout.write_text(proc.stdout, encoding="utf-8")
+        log_stderr.write_text(proc.stderr, encoding="utf-8")
+
+        _print_progress(proc.stdout)
+
+        if proc.stderr.strip():
+            deduped = _dedup_stderr(proc.stderr)
+            if deduped.strip():
+                print(f"\n  --- stderr (deduped, full: {log_stderr.name}) ---")
+                for line in deduped.splitlines()[:30]:
+                    print(f"  {line}")
+                if deduped.count("\n") > 30:
+                    print(f"  ... truncated (see {log_stderr})")
+                print()
+
+    except subprocess.TimeoutExpired as e:
         print(f"\n  !! {name} TIMED OUT (600s limit) !!")
         result.exit_code = -1
         result.crashed = True
+        if e.stdout:
+            log_stdout.write_text(e.stdout if isinstance(e.stdout, str) else e.stdout.decode("utf-8", errors="replace"), encoding="utf-8")
+        if e.stderr:
+            log_stderr.write_text(e.stderr if isinstance(e.stderr, str) else e.stderr.decode("utf-8", errors="replace"), encoding="utf-8")
     except Exception as exc:
         print(f"\n  !! {name} LAUNCH FAILED: {exc} !!")
         result.exit_code = -1
@@ -135,14 +239,18 @@ def run_layer(name: str, cfg: dict, extra_pytest_args: list[str] | None = None) 
     finally:
         result.duration = time.time() - t0
 
-        if summary_path.exists():
+        if summary_path.exists() and summary_path.stat().st_size > 0:
             parsed = parse_summary(summary_path)
             result.counts = parsed.get("counts", result.counts)
             result.categories = parsed.get("categories", {})
             result.failed_nodes = parsed.get("failed", [])
             result.error_nodes = parsed.get("errors", [])
             result.summary_text = parsed.get("raw", "")
-        elif result.exit_code != 0:
+        elif result.exit_code and result.exit_code != 0:
+            result.crashed = True
+
+        total = sum(result.counts.values())
+        if result.exit_code and result.exit_code != 0 and total == 0 and not result.crashed:
             result.crashed = True
 
         try:
@@ -256,6 +364,23 @@ def print_final_report(results: list[LayerResult], total_elapsed: float):
     if total_fail == 0:
         print(f"\n  \033[92mAll {total_counts['passed']} tests passed.\033[0m")
     else:
+        all_failed = []
+        all_errors = []
+        for r in results:
+            all_failed.extend(r.failed_nodes)
+            all_errors.extend(r.error_nodes)
+        if all_failed:
+            print(f"\n  --- FAILED ({len(all_failed)}) ---")
+            for node in all_failed:
+                print(f"  \033[91m  {node}\033[0m")
+        if all_errors:
+            print(f"\n  --- ERROR ({len(all_errors)}) ---")
+            for node in all_errors:
+                print(f"  \033[91m  {node}\033[0m")
+        if crashed:
+            for name in crashed:
+                log = LOG_DIR / f"{name}_stdout.log"
+                print(f"\n  Raw log: {log}")
         print(f"\n  \033[91m{total_fail} issue(s). See tests/test_summary.txt\033[0m")
     print()
 

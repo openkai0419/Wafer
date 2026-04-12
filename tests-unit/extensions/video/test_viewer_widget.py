@@ -50,7 +50,7 @@ class TestVideoViewerWidgetInit:
         assert w._volume == DEFAULT_VOLUME
         assert w.muted is False
         assert w.cover_mode is False
-        assert w.looping is False
+        assert w.looping is True
         assert w.pause_in_background is False
         w.cleanup()
 
@@ -212,10 +212,10 @@ class TestVideoViewerWidgetControls:
 
     def test_toggle_loop(self, qtbot, _patch_mpv_viewer):
         w, player = self._make_widget(qtbot, _patch_mpv_viewer)
-        assert w.looping is False
-        w.toggle_loop()
         assert w.looping is True
-        assert player.__setitem__.call_args_list[-1] == (("loop-file", "inf"),)
+        w.toggle_loop()
+        assert w.looping is False
+        assert player.__setitem__.call_args_list[-1] == (("loop-file", "no"),)
         w.cleanup()
 
     def test_toggle_pause_in_background(self, qtbot, _patch_mpv_viewer):

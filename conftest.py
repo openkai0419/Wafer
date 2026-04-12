@@ -1,3 +1,4 @@
+import atexit
 import json
 import os
 import sys
@@ -76,10 +77,10 @@ def _cleanup_background_resources():
     yield
     try:
         from wafer.app.indexer.dispatcher import CollectorDispatcher
-        from wafer.app.indexer.detacher_dispatcher import DetacherDispatcher
+        from wafer.app.indexer.parser_dispatcher import ParserDispatcher
 
         CollectorDispatcher.reset_singleton_state()
-        DetacherDispatcher.reset_singleton_state()
+        ParserDispatcher.reset_singleton_state()
     except Exception:
         pass
     try:
@@ -124,6 +125,7 @@ _failed_nodes: list[str] = []
 _failed_messages: dict[str, str] = {}
 _error_nodes: list[str] = []
 _error_messages: dict[str, str] = {}
+_summary_written = False
 
 
 def _category_of(nodeid: str) -> str:
@@ -151,6 +153,7 @@ def pytest_collection_modifyitems(config, items):
 def pytest_configure(config):
     global _test_start_time, _test_counts, _category_counts
     global _failed_nodes, _failed_messages, _error_nodes, _error_messages
+    global _summary_written
     _test_start_time = time.time()
     _test_counts = {"passed": 0, "failed": 0, "skipped": 0, "error": 0}
     _category_counts = {}
@@ -158,6 +161,8 @@ def pytest_configure(config):
     _failed_messages = {}
     _error_nodes = []
     _error_messages = {}
+    _summary_written = False
+    atexit.register(_write_summary_atexit)
 
 
 def pytest_runtest_logreport(report):
@@ -181,49 +186,64 @@ def pytest_runtest_logreport(report):
         _error_messages[report.nodeid] = report.longreprtext.split("\n")[-1][:200] if report.longreprtext else ""
 
 
-def pytest_sessionfinish(session, exitstatus):
+def _write_summary(exitstatus=None):
+    global _summary_written
     elapsed = time.time() - _test_start_time
     total = sum(_test_counts.values())
     minutes, seconds = divmod(elapsed, 60)
 
-    os.makedirs(os.path.dirname(_SUMMARY_PATH), exist_ok=True)
-    with open(_SUMMARY_PATH, "w", encoding="utf-8") as f:
-        f.write(f"total: {total}\n")
-        f.write(f"passed: {_test_counts['passed']}\n")
-        f.write(f"failed: {_test_counts['failed']}\n")
-        f.write(f"skipped: {_test_counts['skipped']}\n")
-        f.write(f"error: {_test_counts['error']}\n")
-        f.write(f"exitstatus: {exitstatus}\n")
-        f.write(f"duration: {int(minutes)}m {seconds:.1f}s\n")
-        if _category_counts:
-            f.write("\n--- BY CATEGORY ---\n")
-            for cat in sorted(_category_counts):
-                c = _category_counts[cat]
-                cat_total = sum(c.values())
-                parts = [f"{cat_total} total"]
-                if c["passed"]:
-                    parts.append(f"{c['passed']} passed")
-                if c["failed"]:
-                    parts.append(f"{c['failed']} failed")
-                if c["skipped"]:
-                    parts.append(f"{c['skipped']} skipped")
-                if c["error"]:
-                    parts.append(f"{c['error']} error")
-                f.write(f"  {cat}: {', '.join(parts)}\n")
-        if _failed_nodes:
-            f.write("\n--- FAILED ---\n")
-            for node in _failed_nodes:
-                msg = _failed_messages.get(node, "")
-                f.write(f"  {node}\n")
-                if msg:
-                    f.write(f"    {msg}\n")
-        if _error_nodes:
-            f.write("\n--- ERROR ---\n")
-            for node in _error_nodes:
-                msg = _error_messages.get(node, "")
-                f.write(f"  {node}\n")
-                if msg:
-                    f.write(f"    {msg}\n")
+    try:
+        os.makedirs(os.path.dirname(_SUMMARY_PATH), exist_ok=True)
+        with open(_SUMMARY_PATH, "w", encoding="utf-8") as f:
+            f.write(f"total: {total}\n")
+            f.write(f"passed: {_test_counts['passed']}\n")
+            f.write(f"failed: {_test_counts['failed']}\n")
+            f.write(f"skipped: {_test_counts['skipped']}\n")
+            f.write(f"error: {_test_counts['error']}\n")
+            f.write(f"exitstatus: {exitstatus if exitstatus is not None else 'unknown'}\n")
+            f.write(f"duration: {int(minutes)}m {seconds:.1f}s\n")
+            if _category_counts:
+                f.write("\n--- BY CATEGORY ---\n")
+                for cat in sorted(_category_counts):
+                    c = _category_counts[cat]
+                    cat_total = sum(c.values())
+                    parts = [f"{cat_total} total"]
+                    if c["passed"]:
+                        parts.append(f"{c['passed']} passed")
+                    if c["failed"]:
+                        parts.append(f"{c['failed']} failed")
+                    if c["skipped"]:
+                        parts.append(f"{c['skipped']} skipped")
+                    if c["error"]:
+                        parts.append(f"{c['error']} error")
+                    f.write(f"  {cat}: {', '.join(parts)}\n")
+            if _failed_nodes:
+                f.write("\n--- FAILED ---\n")
+                for node in _failed_nodes:
+                    msg = _failed_messages.get(node, "")
+                    f.write(f"  {node}\n")
+                    if msg:
+                        f.write(f"    {msg}\n")
+            if _error_nodes:
+                f.write("\n--- ERROR ---\n")
+                for node in _error_nodes:
+                    msg = _error_messages.get(node, "")
+                    f.write(f"  {node}\n")
+                    if msg:
+                        f.write(f"    {msg}\n")
+        if exitstatus != "running":
+            _summary_written = True
+    except Exception:
+        pass
+
+
+def _write_summary_atexit():
+    if not _summary_written:
+        _write_summary(exitstatus="crashed")
+
+
+def pytest_sessionfinish(session, exitstatus):
+    _write_summary(exitstatus=exitstatus)
 
 
 from pathlib import Path

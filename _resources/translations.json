@@ -43,8 +43,8 @@
     "en": "Delete Database",
     "ja": ""
   },
-  "Detachers": {
-    "en": "Detachers",
+  "Parsers": {
+    "en": "Parsers",
     "ja": ""
   },
   "Ignored Folders": {
@@ -163,8 +163,8 @@
     "en": "MetaInfo",
     "ja": ""
   },
-  "No collector or detacher plugins loaded.": {
-    "en": "No collector or detacher plugins loaded.",
+  "No collector or parser plugins loaded.": {
+    "en": "No collector or parser plugins loaded.",
     "ja": ""
   },
   "Open": {

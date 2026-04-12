@@ -3,61 +3,61 @@ from unittest.mock import MagicMock, call
 
 import pytest
 
-from wafer.app.indexer.detacher_receiver import (
-    trigger_detacher_pending,
+from wafer.app.indexer.parser_receiver import (
+    trigger_parser_pending,
     _build_source_keys,
 )
-from wafer.plugin.detacher.handler import detacher_resolver
-from wafer.plugin.detacher.base import BaseDetacher, DetacherResult
+from wafer.plugin.parser.handler import parser_resolver
+from wafer.plugin.parser.base import BaseParser, ParserResult
 
 
-class _FakeDetacherA(BaseDetacher):
+class _FakeParserA(BaseParser):
     NAME = "_test_det_a"
     PRIORITY = 10
     TRIGGER_KEYS = ("exif.Comment",)
 
     def process(self, path, file_info, metadata):
-        return DetacherResult(source=path, status=True)
+        return ParserResult(source=path, status=True)
 
 
-class _FakeDetacherB(BaseDetacher):
+class _FakeParserB(BaseParser):
     NAME = "_test_det_b"
     PRIORITY = 10
     TRIGGER_KEYS = ("wd14.general",)
 
     def process(self, path, file_info, metadata):
-        return DetacherResult(source=path, status=True)
+        return ParserResult(source=path, status=True)
 
 
 @pytest.fixture(autouse=True)
 def _register():
-    prev_plugins = dict(detacher_resolver.registry._plugins)
-    prev_instances = dict(detacher_resolver.registry._instances)
-    detacher_resolver.registry._plugins.clear()
-    detacher_resolver.registry._instances.clear()
-    detacher_resolver.registry.register(_FakeDetacherA)
-    detacher_resolver.registry.register(_FakeDetacherB)
+    prev_plugins = dict(parser_resolver.registry._plugins)
+    prev_instances = dict(parser_resolver.registry._instances)
+    parser_resolver.registry._plugins.clear()
+    parser_resolver.registry._instances.clear()
+    parser_resolver.registry.register(_FakeParserA)
+    parser_resolver.registry.register(_FakeParserB)
     yield
-    detacher_resolver.registry._plugins.clear()
-    detacher_resolver.registry._instances.clear()
-    detacher_resolver.registry._plugins.update(prev_plugins)
-    detacher_resolver.registry._instances.update(prev_instances)
+    parser_resolver.registry._plugins.clear()
+    parser_resolver.registry._instances.clear()
+    parser_resolver.registry._plugins.update(prev_plugins)
+    parser_resolver.registry._instances.update(prev_instances)
 
 
 def test_compile():
-    py_compile.compile("wafer/app/indexer/detacher_receiver.py")
+    py_compile.compile("wafer/app/indexer/parser_receiver.py")
 
 
 def test_trigger_empty_source_keys():
     writer = MagicMock()
-    trigger_detacher_pending({}, writer)
+    trigger_parser_pending({}, writer)
     writer.insert_pending.assert_not_called()
 
 
 def test_trigger_no_matching_keys():
     writer = MagicMock()
     source_keys = {"/a.png": {"exif.Width", "exif.Height"}}
-    trigger_detacher_pending(source_keys, writer)
+    trigger_parser_pending(source_keys, writer)
     writer.insert_pending.assert_not_called()
 
 
@@ -68,21 +68,21 @@ def test_trigger_filters_sources_by_key():
         "/b.png": {"exif.Width"},
         "/c.png": {"exif.Comment"},
     }
-    trigger_detacher_pending(source_keys, writer)
+    trigger_parser_pending(source_keys, writer)
     args = writer.insert_pending.call_args[0]
     sources = sorted(args[0])
     assert sources == ["/a.png", "/c.png"]
     assert args[1] == ["_test_det_a"]
 
 
-def test_trigger_multiple_detachers():
+def test_trigger_multiple_parsers():
     writer = MagicMock()
     source_keys = {
         "/a.png": {"exif.Comment"},
         "/b.png": {"wd14.general"},
         "/c.png": {"exif.Comment", "wd14.general"},
     }
-    trigger_detacher_pending(source_keys, writer)
+    trigger_parser_pending(source_keys, writer)
     assert writer.insert_pending.call_count == 2
     calls = writer.insert_pending.call_args_list
     det_a_call = [c for c in calls if c[0][1] == ["_test_det_a"]][0]
@@ -95,7 +95,7 @@ def test_trigger_calls_request_dispatch():
     writer = MagicMock()
     dispatch = MagicMock()
     source_keys = {"/a.png": {"exif.Comment"}}
-    trigger_detacher_pending(source_keys, writer, request_dispatch=dispatch)
+    trigger_parser_pending(source_keys, writer, request_dispatch=dispatch)
     dispatch.assert_called_once()
 
 
@@ -103,7 +103,7 @@ def test_trigger_no_dispatch_when_no_match():
     writer = MagicMock()
     dispatch = MagicMock()
     source_keys = {"/a.png": {"unrelated.key"}}
-    trigger_detacher_pending(source_keys, writer, request_dispatch=dispatch)
+    trigger_parser_pending(source_keys, writer, request_dispatch=dispatch)
     dispatch.assert_not_called()
 
 

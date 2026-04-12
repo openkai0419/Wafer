@@ -245,10 +245,9 @@ class PlaybackSlotManager:
     HOVER_DEBOUNCE_MS = 150
     PLAYER_POOL_TARGET = 2
 
-    def __init__(self, parent, max_selected=3, max_appeared=6):
+    def __init__(self, parent, max_selected=3):
         self._parent = parent
         self._max_selected = max_selected
-        self._max_appeared = max_appeared
         self.volume = DEFAULT_VOLUME
         self.hover_autoplay = True
         self.appear_autoplay = False
@@ -303,6 +302,10 @@ class PlaybackSlotManager:
         while len(self._selected) > self._max_selected:
             _, evicted = self._selected.popitem(last=False)
             self._release_overlay(evicted)
+        while len(self._appeared) > self._max_selected:
+            _, evicted = self._appeared.popitem(last=False)
+            if evicted is not None:
+                self._release_overlay(evicted)
 
     def _on_app_state_changed(self, state):
         if state != Qt.ApplicationState.ApplicationActive:
@@ -570,7 +573,7 @@ class PlaybackSlotManager:
             if overlay is None:
                 return
             overlay.activate(path, owner=cell)
-        while len(self._appeared) >= self._max_appeared:
+        while len(self._appeared) >= self._max_selected:
             _, evicted = self._appeared.popitem(last=False)
             if evicted is not None:
                 self._release_overlay(evicted)

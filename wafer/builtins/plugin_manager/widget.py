@@ -149,8 +149,8 @@ class PluginManagerWidget(QtWidgets.QWidget):
 
         from .collectors_tab import CollectorsTab
 
-        collector_names, detacher_names = self._collect_worker_names()
-        self._collectors_tab = CollectorsTab(collector_names, detacher_names)
+        collector_names, parser_names = self._collect_worker_names()
+        self._collectors_tab = CollectorsTab(collector_names, parser_names)
         self._collectors_tab.delete_requested.connect(self._send_delete)
         self._tabs.addTab(self._scrollable(self._collectors_tab), "Collectors")
 
@@ -253,8 +253,8 @@ class PluginManagerWidget(QtWidgets.QWidget):
 
     def _collect_worker_names(self) -> tuple[list[str], list[str]]:
         collectors = [cls.NAME for cls in self._ext_tab.collect_enabled_plugins("collector")]
-        detachers = [cls.NAME for cls in self._ext_tab.collect_enabled_plugins("detacher")]
-        return collectors, detachers
+        parsers = [cls.NAME for cls in self._ext_tab.collect_enabled_plugins("parser")]
+        return collectors, parsers
 
     def _send_delete(self, pairs: list[tuple[str, str]], re_collect: bool):
         from ...core.commands.binding.instance_registry import InstanceRegistry

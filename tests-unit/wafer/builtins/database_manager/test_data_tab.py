@@ -18,7 +18,7 @@ SAMPLE_ROWS = [
 
 MIXED_ROWS = [
     ("db1", "exif", 100, 50, "Collector", "Active", True),
-    ("db1", "nai", 30, 10, "Detacher", "Active", True),
+    ("db1", "nai", 30, 10, "Parser", "Active", True),
     ("db2", "exif", 300, 120, "Collector", "Active", True),
 ]
 
@@ -65,19 +65,19 @@ class TestDataTabInit:
     def test_creates_with_empty_rows(self, qtbot, sync_dispatcher):
         tab = _make_tab(qtbot, sync_dispatcher, [])
         assert tab._collector_table.table.rowCount() == 0
-        assert tab._detacher_table.table.rowCount() == 0
+        assert tab._parser_table.table.rowCount() == 0
         assert tab._initial_loaded is True
 
     def test_creates_with_sample_rows(self, qtbot, sync_dispatcher):
         tab = _make_tab(qtbot, sync_dispatcher, SAMPLE_ROWS)
         assert tab._collector_table.table.rowCount() == 3
-        assert tab._detacher_table.table.rowCount() == 0
+        assert tab._parser_table.table.rowCount() == 0
         assert tab._initial_loaded is True
 
     def test_creates_with_mixed_rows(self, qtbot, sync_dispatcher):
         tab = _make_tab(qtbot, sync_dispatcher, MIXED_ROWS)
         assert tab._collector_table.table.rowCount() == 2
-        assert tab._detacher_table.table.rowCount() == 1
+        assert tab._parser_table.table.rowCount() == 1
 
     def test_has_two_cancel_slots(self, qtbot, sync_dispatcher):
         tab = _make_tab(qtbot, sync_dispatcher, [])
@@ -96,9 +96,9 @@ class TestApplyRows:
         assert t.item(0, 3).text() == "50"
         assert t.item(0, 4).text() == "Active"
 
-    def test_populates_detacher_table(self, qtbot, sync_dispatcher):
+    def test_populates_parser_table(self, qtbot, sync_dispatcher):
         tab = _make_tab(qtbot, sync_dispatcher, MIXED_ROWS)
-        t = tab._detacher_table.table
+        t = tab._parser_table.table
         assert t.item(0, 0).text() == "db1"
         assert t.item(0, 1).text() == "nai"
         assert t.item(0, 2).text() == "30"
@@ -197,22 +197,22 @@ class TestMergeRows:
         tab = _make_tab(qtbot, sync_dispatcher, SAMPLE_ROWS)
         changed = [
             ("db1", "exif", 100, 50, "Collector", "Active", True),
-            ("db1", "new_prefix", 10, 5, "Detacher", "Active", True),
+            ("db1", "new_prefix", 10, 5, "Parser", "Active", True),
         ]
         tab._merge_rows(changed)
         assert tab._collector_table.table.rowCount() == 1
-        assert tab._detacher_table.table.rowCount() == 1
+        assert tab._parser_table.table.rowCount() == 1
 
     def test_merge_mixed_rows(self, qtbot, sync_dispatcher):
         tab = _make_tab(qtbot, sync_dispatcher, MIXED_ROWS)
         updated = [
             ("db1", "exif", 200, 70, "Collector", "Active", True),
-            ("db1", "nai", 50, 20, "Detacher", "Active", True),
+            ("db1", "nai", 50, 20, "Parser", "Active", True),
             ("db2", "exif", 400, 150, "Collector", "Active", True),
         ]
         tab._merge_rows(updated)
         assert tab._collector_table.table.item(0, 2).text() == "200"
-        assert tab._detacher_table.table.item(0, 2).text() == "50"
+        assert tab._parser_table.table.item(0, 2).text() == "50"
 
 
 class TestSelectedCount:
@@ -227,7 +227,7 @@ class TestSelectedCount:
         tab = _make_tab(qtbot, sync_dispatcher, MIXED_ROWS)
         c_container = tab._collector_table.table.cellWidget(0, 5)
         c_container.findChild(QtWidgets.QCheckBox).setChecked(True)
-        d_container = tab._detacher_table.table.cellWidget(0, 5)
+        d_container = tab._parser_table.table.cellWidget(0, 5)
         d_container.findChild(QtWidgets.QCheckBox).setChecked(True)
         assert "2" in tab._selected_label.text()
 

@@ -1,4 +1,4 @@
-import py_compile
+﻿import py_compile
 import sqlite3
 import threading
 
@@ -757,7 +757,7 @@ def test_insert_pending_collection_skips_missing_sources(tmp_path):
     db.close()
 
 
-def _setup_db_for_detacher(tmp_path):
+def _setup_db_for_parser(tmp_path):
     db = FileDB(tmp_path / "test.db")
     db.start()
     db.initialize_database()
@@ -771,7 +771,7 @@ def _setup_db_for_detacher(tmp_path):
 
 
 def test_delete_meta_and_tags_by_keys(tmp_path):
-    db = _setup_db_for_detacher(tmp_path)
+    db = _setup_db_for_parser(tmp_path)
     db.delete_meta_and_tags_by_keys(
         [
             ("src1", "hash1", ["exif.parameters", "wd14.general"]),
@@ -790,7 +790,7 @@ def test_delete_meta_and_tags_by_keys(tmp_path):
 
 
 def test_delete_meta_and_tags_by_keys_no_hash(tmp_path):
-    db = _setup_db_for_detacher(tmp_path)
+    db = _setup_db_for_parser(tmp_path)
     db.delete_meta_and_tags_by_keys(
         [
             ("src1", None, ["exif.parameters"]),
@@ -808,7 +808,7 @@ def test_delete_meta_and_tags_by_keys_no_hash(tmp_path):
 
 
 def test_delete_meta_and_tags_by_keys_empty(tmp_path):
-    db = _setup_db_for_detacher(tmp_path)
+    db = _setup_db_for_parser(tmp_path)
     db.delete_meta_and_tags_by_keys([])
     cur = db.get_reader_cursor()
     cur.execute("SELECT COUNT(*) FROM meta_info WHERE path='src1'")
@@ -818,14 +818,14 @@ def test_delete_meta_and_tags_by_keys_empty(tmp_path):
 
 
 def test_find_sources_with_trigger_keys(tmp_path):
-    db = _setup_db_for_detacher(tmp_path)
+    db = _setup_db_for_parser(tmp_path)
     sources = db.find_sources_with_trigger_keys(("exif.parameters",), "sd_meta")
     assert set(sources) == {"src1", "src2"}
     db.close()
 
 
 def test_find_sources_with_trigger_keys_excludes_processed(tmp_path):
-    db = _setup_db_for_detacher(tmp_path)
+    db = _setup_db_for_parser(tmp_path)
     db.insert_pending_collection(["src1"], ["sd_meta"])
     db.upsert_collection_results([], [], [], [("src1", "sd_meta", "ok", 1.0)])
     sources = db.find_sources_with_trigger_keys(("exif.parameters",), "sd_meta")
@@ -835,14 +835,14 @@ def test_find_sources_with_trigger_keys_excludes_processed(tmp_path):
 
 
 def test_find_sources_with_trigger_keys_from_tags(tmp_path):
-    db = _setup_db_for_detacher(tmp_path)
+    db = _setup_db_for_parser(tmp_path)
     sources = db.find_sources_with_trigger_keys(("wd14.general",), "tag_proc")
     assert "src1" in sources
     db.close()
 
 
 def test_get_trigger_metadata(tmp_path):
-    db = _setup_db_for_detacher(tmp_path)
+    db = _setup_db_for_parser(tmp_path)
     meta = db.get_trigger_metadata(["src1", "src2"], ("exif.parameters",))
     assert meta["src1"] == {"exif.parameters": "steps:20"}
     assert meta["src2"] == {"exif.parameters": "steps:30"}
@@ -850,14 +850,14 @@ def test_get_trigger_metadata(tmp_path):
 
 
 def test_get_trigger_metadata_includes_tags(tmp_path):
-    db = _setup_db_for_detacher(tmp_path)
+    db = _setup_db_for_parser(tmp_path)
     meta = db.get_trigger_metadata(["src1"], ("wd14.general",))
     assert meta["src1"] == {"wd14.general": "cat"}
     db.close()
 
 
 def test_get_trigger_metadata_empty(tmp_path):
-    db = _setup_db_for_detacher(tmp_path)
+    db = _setup_db_for_parser(tmp_path)
     meta = db.get_trigger_metadata([], ("exif.parameters",))
     assert meta == {}
     meta = db.get_trigger_metadata(["src1"], ())

@@ -1,41 +1,41 @@
 import pytest
-from wafer.plugin.detacher.base import BaseDetacherPlugin, BaseSingletonDetacher, DetacherResult
-from wafer.plugin.detacher.handler import DetacherResolver
+from wafer.plugin.parser.base import BaseParserPlugin, BaseSingletonParser, ParserResult
+from wafer.plugin.parser.handler import ParserResolver
 
 
-class FakeDetacherA(BaseDetacherPlugin):
+class FakeParserA(BaseParserPlugin):
     NAME = "fake_a"
     TRIGGER_KEYS = ("exif.parameters", "exif.Comment")
     DEFAULT_ENABLED = True
 
     def process(self, path, file_info, metadata):
-        return DetacherResult(source=path, status=True)
+        return ParserResult(source=path, status=True)
 
 
-class FakeDetacherB(BaseSingletonDetacher):
+class FakeParserB(BaseSingletonParser):
     NAME = "fake_b"
     TRIGGER_KEYS = ("sd.prompt",)
     DEFAULT_ENABLED = True
 
     def process(self, path, file_info, metadata):
-        return DetacherResult(source=path, status=True)
+        return ParserResult(source=path, status=True)
 
 
-class FakeDetacherC(BaseDetacherPlugin):
+class FakeParserC(BaseParserPlugin):
     NAME = "fake_c"
     TRIGGER_KEYS = ("other.key",)
     DEFAULT_ENABLED = True
 
     def process(self, path, file_info, metadata):
-        return DetacherResult(source=path, status=True)
+        return ParserResult(source=path, status=True)
 
 
 @pytest.fixture
 def resolver():
-    r = DetacherResolver()
-    r.registry.register(FakeDetacherA)
-    r.registry.register(FakeDetacherB)
-    r.registry.register(FakeDetacherC)
+    r = ParserResolver()
+    r.registry.register(FakeParserA)
+    r.registry.register(FakeParserB)
+    r.registry.register(FakeParserC)
     return r
 
 
@@ -68,26 +68,26 @@ def test_trigger_keys(resolver):
     assert resolver.trigger_keys("fake_b") == ("sd.prompt",)
 
 
-def test_detachers_for_keys_single(resolver):
-    matched = resolver.detachers_for_keys({"exif.parameters"})
+def test_parsers_for_keys_single(resolver):
+    matched = resolver.parsers_for_keys({"exif.parameters"})
     assert "fake_a" in matched
     assert "fake_b" not in matched
 
 
-def test_detachers_for_keys_multiple(resolver):
-    matched = resolver.detachers_for_keys({"exif.parameters", "sd.prompt"})
+def test_parsers_for_keys_multiple(resolver):
+    matched = resolver.parsers_for_keys({"exif.parameters", "sd.prompt"})
     assert "fake_a" in matched
     assert "fake_b" in matched
     assert "fake_c" not in matched
 
 
-def test_detachers_for_keys_no_match(resolver):
-    matched = resolver.detachers_for_keys({"unknown.key"})
+def test_parsers_for_keys_no_match(resolver):
+    matched = resolver.parsers_for_keys({"unknown.key"})
     assert matched == []
 
 
-def test_detachers_for_keys_empty(resolver):
-    matched = resolver.detachers_for_keys(set())
+def test_parsers_for_keys_empty(resolver):
+    matched = resolver.parsers_for_keys(set())
     assert matched == []
 
 

@@ -68,7 +68,7 @@ class VideoGridCommands(MenuGroup):
                 path="vgrid.set_max_playback_slots",
                 display="Max Playback Slots",
                 func=set_max_playback_slots,
-                params=[CommandParam(name="max_slots", value=3, min_value=1, max_value=10)],
+                params=[CommandParam(name="max_slots", value=3, min_value=1, max_value=50)],
             ),
             "-",
             ":Autoplay",

@@ -5,47 +5,47 @@ import threading
 from ...utils.logs import AppLogger
 from ...utils.paths import normalize_path
 from ...core.ipc.node import Node
-from ...plugin.detacher.handler import detacher_resolver
-from ...plugin.detacher.base import DetacherResult, BaseSingletonDetacher
+from ...plugin.parser.handler import parser_resolver
+from ...plugin.parser.base import ParserResult, BaseSingletonParser
 
 _MAX_WORKERS = 4
 _TASK_TIMEOUT = 120
 _SHUTDOWN_WAIT = 5
 
 
-class DetacherWorker:
+class ParserWorker:
     def __init__(self, db_name: str, plugin_name: str):
         self.db_name = db_name
         self.plugin_name = plugin_name
-        self._status_name = detacher_resolver.status_name(plugin_name)
-        self._plugin = detacher_resolver.registry.instance(plugin_name)
+        self._status_name = parser_resolver.status_name(plugin_name)
+        self._plugin = parser_resolver.registry.instance(plugin_name)
         if not self._plugin:
-            raise ValueError(f"Unknown detacher plugin: {plugin_name}")
-        self._singleton = issubclass(detacher_resolver.registry.get(plugin_name), BaseSingletonDetacher)
+            raise ValueError(f"Unknown parser plugin: {plugin_name}")
+        self._singleton = issubclass(parser_resolver.registry.get(plugin_name), BaseSingletonParser)
         node_db = "" if self._singleton else db_name
-        self._node = Node(f"detacher-{plugin_name}", db=node_db)
-        self._node.subscribe("detach.batch", self._handle_batch)
+        self._node = Node(f"parser-{plugin_name}", db=node_db)
+        self._node.subscribe("parse.batch", self._handle_batch)
         self._node.subscribe("plugin.notify", self._on_notify)
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=_MAX_WORKERS)
         self._stop = threading.Event()
 
     def start(self):
         self._node.start()
-        AppLogger.set_node(self._node, role=f"detacher-{self.plugin_name}")
-        AppLogger.info(f"DetacherWorker started: plugin={self.plugin_name} db={self.db_name}")
+        AppLogger.set_node(self._node, role=f"parser-{self.plugin_name}")
+        AppLogger.info(f"ParserWorker started: plugin={self.plugin_name} db={self.db_name}")
 
     def stop(self):
         self._stop.set()
         self._executor.shutdown(wait=True, cancel_futures=True)
         self._node.stop()
-        AppLogger.info(f"DetacherWorker stopped: plugin={self.plugin_name}")
+        AppLogger.info(f"ParserWorker stopped: plugin={self.plugin_name}")
 
     def wait(self):
         self._stop.wait()
 
     def _on_notify(self, msg) -> bool:
         self._plugin.on_notify()
-        AppLogger.info(f"[Detacher] Notified: {self.plugin_name}")
+        AppLogger.info(f"[Parser] Notified: {self.plugin_name}")
         return True
 
     def _handle_batch(self, msg) -> bool:
@@ -53,7 +53,7 @@ class DetacherWorker:
             return True
         payload = msg.payload
         if not isinstance(payload, dict):
-            AppLogger.warning(f"detach.batch: invalid payload type: {type(payload)}")
+            AppLogger.warning(f"parse.batch: invalid payload type: {type(payload)}")
             return True
         paths = payload.get("paths", [])
         file_info_raw = payload.get("file_info", {})
@@ -77,10 +77,10 @@ class DetacherWorker:
                     info = file_info.get(p, (0.0, 0))
                     meta = metadata.get(p, {})
                     result = self._plugin.process(normalize_path(p), info, meta)
-                    d = result.to_dict() if isinstance(result, DetacherResult) else result
+                    d = result.to_dict() if isinstance(result, ParserResult) else result
                     return d
                 except Exception as e:
-                    AppLogger.warning(f"[Detacher] process failed: {p}: {e}", exc=e)
+                    AppLogger.warning(f"[Parser] process failed: {p}: {e}", exc=e)
                     return {}
 
             futures = {self._executor.submit(process_one, p): p for p in paths}
@@ -89,35 +89,35 @@ class DetacherWorker:
                 try:
                     results_raw.append(fut.result())
                 except Exception as e:
-                    AppLogger.warning(f"[Detacher] future failed: {futures[fut]}: {e}", exc=e)
+                    AppLogger.warning(f"[Parser] future failed: {futures[fut]}: {e}", exc=e)
                     results_raw.append({})
             results = [r for r in results_raw if r]
             if not results:
                 return
             self._node.send_reliable(
-                "detach.result",
-                {"detacher": self._status_name, "results": results},
+                "parse.result",
+                {"parser": self._status_name, "results": results},
                 dst="indexer",
                 db=db,
             )
-            AppLogger.info(f"[Detacher] Sent {len(results)} results for db={db}")
+            AppLogger.info(f"[Parser] Sent {len(results)} results for db={db}")
         except Exception as e:
-            AppLogger.error(f"[Detacher] _process_batch failed: {e}", exc=e)
+            AppLogger.error(f"[Parser] _process_batch failed: {e}", exc=e)
 
 
-def run_detacher(db_name: str, plugin_name: str, parent_pid: int | None = None):
+def run_parser(db_name: str, plugin_name: str, parent_pid: int | None = None):
     from ...utils.process_lock import SafeProcessLock
     from ...constants import APP_DATA_DIR_NAME
     from ...core.platform.process_checker import ParentProcessChecker
 
-    singleton = issubclass(detacher_resolver.registry.get(plugin_name), BaseSingletonDetacher)
+    singleton = issubclass(parser_resolver.registry.get(plugin_name), BaseSingletonParser)
     if singleton:
-        lock_name = f"{APP_DATA_DIR_NAME}_detacher_{plugin_name}"
+        lock_name = f"{APP_DATA_DIR_NAME}_parser_{plugin_name}"
     else:
-        lock_name = f"{APP_DATA_DIR_NAME}_detacher_{plugin_name}_{db_name}"
+        lock_name = f"{APP_DATA_DIR_NAME}_parser_{plugin_name}_{db_name}"
     try:
         with SafeProcessLock(lock_name, parent_pid=parent_pid):
-            worker = DetacherWorker(db_name, plugin_name)
+            worker = ParserWorker(db_name, plugin_name)
             worker.start()
             shutdown_once = threading.Event()
 
@@ -125,7 +125,7 @@ def run_detacher(db_name: str, plugin_name: str, parent_pid: int | None = None):
                 if shutdown_once.is_set():
                     return
                 shutdown_once.set()
-                AppLogger.info("[Detacher] Shutting down...")
+                AppLogger.info("[Parser] Shutting down...")
                 worker.stop()
 
             signal.signal(signal.SIGINT, lambda s, f: worker._stop.set())
@@ -136,11 +136,11 @@ def run_detacher(db_name: str, plugin_name: str, parent_pid: int | None = None):
                 checker = ParentProcessChecker(parent_pid, on_orphan=lambda: worker._stop.set())
                 checker.start()
 
-            AppLogger.info("[Detacher] Running.")
+            AppLogger.info("[Parser] Running.")
             worker.wait()
             shutdown()
 
             if checker:
                 checker.stop()
     except FileExistsError:
-        AppLogger.info(f"Detacher '{plugin_name}' for '{db_name}' is already running.")
+        AppLogger.info(f"Parser '{plugin_name}' for '{db_name}' is already running.")

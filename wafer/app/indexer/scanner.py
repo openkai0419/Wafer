@@ -34,7 +34,7 @@ class DirectoryScanner:
         self._writer = writer
         self._progress = progress
         self._collectors = collectors or []
-        self._detachers: list[tuple[str, tuple[str, ...]]] = []
+        self._parsers: list[tuple[str, tuple[str, ...]]] = []
         self._exclude_paths: list[str] = []
         self._read_conn = None
         self._stop = threading.Event()
@@ -82,8 +82,8 @@ class DirectoryScanner:
         AppLogger.info(f"[Scanner] Exclude paths set: {len(sorted_paths)}")
         self._submit_remove_excluded()
 
-    def set_detachers(self, detachers: list[tuple[str, tuple[str, ...]]]):
-        self._detachers = detachers
+    def set_parsers(self, parsers: list[tuple[str, tuple[str, ...]]]):
+        self._parsers = parsers
 
     def backfill_pending(self):
         with self._request_lock:
@@ -335,12 +335,12 @@ class DirectoryScanner:
                     )
                 AppLogger.info(f'[Scanner] Backfill: {len(sources)} pending for "{name}"')
             cur.close()
-        self._do_backfill_detachers()
+        self._do_backfill_parsers()
 
-    def _do_backfill_detachers(self):
-        if not self._detachers:
+    def _do_backfill_parsers(self):
+        if not self._parsers:
             return
-        for status_name, trigger_keys in self._detachers:
+        for status_name, trigger_keys in self._parsers:
             if not trigger_keys:
                 continue
             sources = self._writer.db.find_sources_with_trigger_keys(trigger_keys, status_name)
@@ -355,7 +355,7 @@ class DirectoryScanner:
                         run=lambda c=chunk, sn=status_name: self._writer.insert_pending(c, [sn]),
                     )
                 )
-            AppLogger.info(f'[Scanner] Backfill detacher: {len(sources)} pending for "{status_name}"')
+            AppLogger.info(f'[Scanner] Backfill parser: {len(sources)} pending for "{status_name}"')
 
     def _load_existing_sources(self) -> dict[str, tuple[float, int]]:
         result: dict[str, tuple[float, int]] = {}

@@ -14,10 +14,11 @@ def test_create_widget_and_update(qtbot):
     plugin = ExifToolMetaPanelPlugin()
     parent = QtWidgets.QWidget()
     qtbot.addWidget(parent)
-    w = plugin.create_widget(parent)
-    assert isinstance(w, _ExifToolMetaWidget)
+    w = plugin.create_card(parent)
+    assert plugin._widget is not None
+    assert isinstance(plugin._widget, _ExifToolMetaWidget)
     plugin.update_data({"width": "100", "height": "200"})
-    assert w._data == {"width": "100", "height": "200"}
+    assert plugin._widget._data == {"width": "100", "height": "200"}
 
 
 def test_filter_by_key(qtbot):

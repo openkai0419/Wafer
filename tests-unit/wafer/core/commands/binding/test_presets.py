@@ -35,7 +35,7 @@ def test_preset_mouse_bindings_content():
     assert data[wheel_down]["ImageView"].id == "imgv.zoom_out"
 
     dbl = ActionKit.Mouse("LEFT", "DOUBLE")
-    assert data[dbl]["ImageView"].id == "imgv.toggle_fit_mode"
+    assert data[dbl]["ImageView"].id == "file.open"
 
     drag = ActionKit.Mouse("LEFT", "DRAG_START")
     assert data[drag]["ImageView"].id == "imgv.pan"

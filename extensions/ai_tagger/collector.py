@@ -63,7 +63,7 @@ class WD14TaggerCollector(BaseSingletonCollector):
                 test_session = ort.InferenceSession(str(ensure_model() / "model.onnx"), providers=providers, sess_options=opts)
                 active = test_session.get_providers()
                 del test_session
-            except (RuntimeError, OSError) as e:
+            except (RuntimeError, OSError):
                 active = []
             if any(p in active for p in gpu_providers):
                 AppLogger.info(f"WD14 GPU verified: {active}")

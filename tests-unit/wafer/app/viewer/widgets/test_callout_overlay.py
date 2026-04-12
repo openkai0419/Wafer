@@ -30,6 +30,7 @@ def test_dismiss_emits_signal(qtbot):
     overlay = CalloutOverlay(target, "Test callout")
     overlay.show()
     assert overlay.isVisible()
+    qtbot.waitUntil(lambda: overlay._fade_anim is None or overlay._fade_anim.state() != QtCore.QAbstractAnimation.Running, timeout=2000)
     with qtbot.waitSignal(overlay.dismissed, timeout=2000):
         overlay.dismiss()
     assert not overlay._track_timer.isActive()

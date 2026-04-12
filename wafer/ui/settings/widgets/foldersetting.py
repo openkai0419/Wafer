@@ -1,4 +1,4 @@
-﻿import os
+import os
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFileDialog, QListWidget, QMenu, QMessageBox, QPushButton, QStackedLayout, QVBoxLayout, QWidget
 from wafer.utils.formatting import dpix

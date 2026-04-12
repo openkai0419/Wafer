@@ -148,8 +148,11 @@ class MetaViewerWidget(QtWidgets.QWidget):
                     content.update_data(data)
                 else:
                     new_content = MetaRowWidget(
-                        0, data, rich_text_keys=rich_text_keys if key == "source" else None,
-                        compact=True, parent=card,
+                        0,
+                        data,
+                        rich_text_keys=rich_text_keys if key == "source" else None,
+                        compact=True,
+                        parent=card,
                     )
                     card.set_content_widget(new_content)
                 card.update_title_count(len(data) if isinstance(data, Mapping) else 0)

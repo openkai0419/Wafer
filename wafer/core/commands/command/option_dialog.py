@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Any
 from collections.abc import Callable
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from PySide6 import QtWidgets
 from ...lang.manager import t
 from ....utils.logs import AppLogger
@@ -144,7 +144,7 @@ class CommandOptionsDialog(QtWidgets.QDialog):
             return 1.0, 0
         try:
             d = Decimal(str(round(x, 12))).normalize()
-        except (decimal.InvalidOperation, ValueError):
+        except (InvalidOperation, ValueError):
             return 0.1, 1
         exp = d.as_tuple().exponent
         decimals = max(0, -int(exp))

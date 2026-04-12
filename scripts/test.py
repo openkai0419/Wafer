@@ -86,16 +86,21 @@ def parse_summary(path: Path) -> dict:
 
 def run_layer(name: str, cfg: dict, extra_pytest_args: list[str] | None = None) -> LayerResult:
     result = LayerResult(name=name, label=cfg["label"])
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, dir=ROOT / "tests") as tmp:
+    temp_dir = ROOT / ".temp"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, dir=temp_dir) as tmp:
         summary_path = Path(tmp.name)
 
     env = os.environ.copy()
     env["WAFER_TEST_SUMMARY_PATH"] = str(summary_path)
 
     cmd = [
-        str(VENV_PYTHON), "-m", "pytest",
+        str(VENV_PYTHON),
+        "-m",
+        "pytest",
         *cfg["paths"],
-        "-p", "no:cacheprovider",
+        "-p",
+        "no:cacheprovider",
         "-q",
         f"--maxfail={cfg['maxfail']}",
     ]
@@ -127,23 +132,23 @@ def run_layer(name: str, cfg: dict, extra_pytest_args: list[str] | None = None) 
         print(f"\n  !! {name} LAUNCH FAILED: {exc} !!")
         result.exit_code = -1
         result.crashed = True
+    finally:
+        result.duration = time.time() - t0
 
-    result.duration = time.time() - t0
+        if summary_path.exists():
+            parsed = parse_summary(summary_path)
+            result.counts = parsed.get("counts", result.counts)
+            result.categories = parsed.get("categories", {})
+            result.failed_nodes = parsed.get("failed", [])
+            result.error_nodes = parsed.get("errors", [])
+            result.summary_text = parsed.get("raw", "")
+        elif result.exit_code != 0:
+            result.crashed = True
 
-    if summary_path.exists():
-        parsed = parse_summary(summary_path)
-        result.counts = parsed.get("counts", result.counts)
-        result.categories = parsed.get("categories", {})
-        result.failed_nodes = parsed.get("failed", [])
-        result.error_nodes = parsed.get("errors", [])
-        result.summary_text = parsed.get("raw", "")
         try:
-            summary_path.unlink()
+            summary_path.unlink(missing_ok=True)
         except OSError:
             pass
-    else:
-        if result.exit_code != 0:
-            result.crashed = True
 
     return result
 
@@ -190,7 +195,7 @@ def write_combined_summary(results: list[LayerResult], total_elapsed: float):
             m, s = divmod(r.duration, 60)
             status = "CRASH" if r.crashed else ("FAIL" if r.counts.get("failed", 0) or r.counts.get("error", 0) else "OK")
             c = r.counts
-            f.write(f"  {r.label}: {status} ({c.get('passed',0)} passed, {c.get('failed',0)} failed, {c.get('error',0)} error) [{int(m)}m {s:.1f}s]\n")
+            f.write(f"  {r.label}: {status} ({c.get('passed', 0)} passed, {c.get('failed', 0)} failed, {c.get('error', 0)} error) [{int(m)}m {s:.1f}s]\n")
 
         if all_categories:
             f.write("\n--- BY CATEGORY ---\n")
@@ -242,7 +247,7 @@ def print_final_report(results: list[LayerResult], total_elapsed: float):
             status = "\033[91mFAIL\033[0m"
         else:
             status = "\033[92mOK\033[0m"
-        print(f"  {r.label}: {status}  ({c.get('passed',0)} passed, {c.get('failed',0)} failed, {c.get('error',0)} error) [{int(rm)}m {rs:.1f}s]")
+        print(f"  {r.label}: {status}  ({c.get('passed', 0)} passed, {c.get('failed', 0)} failed, {c.get('error', 0)} error) [{int(rm)}m {rs:.1f}s]")
 
     if crashed:
         print(f"\n  \033[91m!! CRASHED: {', '.join(crashed)}\033[0m")
@@ -300,10 +305,7 @@ def main():
     write_combined_summary(results, total_elapsed)
     print_final_report(results, total_elapsed)
 
-    has_failure = any(
-        (not r.skipped and (r.crashed or r.counts.get("failed", 0) or r.counts.get("error", 0)))
-        for r in results
-    )
+    has_failure = any((not r.skipped and (r.crashed or r.counts.get("failed", 0) or r.counts.get("error", 0))) for r in results)
     sys.exit(1 if has_failure else 0)
 
 

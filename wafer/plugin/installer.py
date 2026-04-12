@@ -223,10 +223,7 @@ class EmbeddedPython:
             _download_file(_GET_PIP_URL, get_pip, on_progress=on_progress)
             actual = _sha256_file(get_pip)
             if actual != _GET_PIP_SHA256:
-                raise ValueError(
-                    f"get-pip.py SHA256 mismatch: expected {_GET_PIP_SHA256}, got {actual}. "
-                    "Update _GET_PIP_SHA256 in installer.py if bootstrap.pypa.io has been updated."
-                )
+                raise ValueError(f"get-pip.py SHA256 mismatch: expected {_GET_PIP_SHA256}, got {actual}. Update _GET_PIP_SHA256 in installer.py if bootstrap.pypa.io has been updated.")
             AppLogger.info("[Installer] get-pip.py SHA256 verified")
             AppLogger.info("[Installer] Running get-pip.py...")
             _run_subprocess(

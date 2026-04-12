@@ -6,6 +6,7 @@ from ....core.color.theme import ThemeManager
 _TRACK_INTERVAL_MS = 100
 _FADE_DURATION_MS = 500
 
+
 class CalloutOverlay(QtWidgets.QWidget):
     dismissed = QtCore.Signal()
 
@@ -16,12 +17,7 @@ class CalloutOverlay(QtWidgets.QWidget):
         self._opacity = 1.0
         self._fade_anim: QtCore.QPropertyAnimation | None = None
         self._last_anchor = QtCore.QPoint()
-        self.setWindowFlags(
-            QtCore.Qt.Tool
-            | QtCore.Qt.FramelessWindowHint
-            | QtCore.Qt.WindowTransparentForInput
-            | QtCore.Qt.WindowStaysOnTopHint
-        )
+        self.setWindowFlags(QtCore.Qt.Tool | QtCore.Qt.FramelessWindowHint | QtCore.Qt.WindowTransparentForInput | QtCore.Qt.WindowStaysOnTopHint)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
         self.setAttribute(QtCore.Qt.WA_ShowWithoutActivating)
         self.setAttribute(QtCore.Qt.WA_DeleteOnClose)
@@ -40,9 +36,7 @@ class CalloutOverlay(QtWidgets.QWidget):
 
     def _update_size(self):
         fm = QtGui.QFontMetrics(self._font)
-        text_rect = fm.boundingRect(
-            0, 0, 9999, 9999, QtCore.Qt.AlignLeft, self._text
-        )
+        text_rect = fm.boundingRect(0, 0, 9999, 9999, QtCore.Qt.AlignLeft, self._text)
         tw = text_rect.width() + dpix(8)
         th = text_rect.height() + dpix(4)
         total_w = self._arrow_margin + tw
@@ -70,9 +64,7 @@ class CalloutOverlay(QtWidgets.QWidget):
             if not self._target.isVisible():
                 self.hide()
                 return
-            anchor = self._target.mapToGlobal(
-                QtCore.QPoint(self._target.width(), self._target.height())
-            )
+            anchor = self._target.mapToGlobal(QtCore.QPoint(self._target.width(), self._target.height()))
         except RuntimeError:
             self.close()
             return
@@ -120,7 +112,6 @@ class CalloutOverlay(QtWidgets.QWidget):
         p.end()
 
     def _draw_curved_arrow(self, p: QtGui.QPainter, fg: QtGui.QColor, outline: QtGui.QColor):
-        w = self.width()
         h = self.height()
         am = self._arrow_margin
 

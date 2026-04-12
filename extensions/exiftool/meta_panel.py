@@ -47,10 +47,10 @@ class _ExifToolMetaWidget(QtWidgets.QWidget):
         self._grid_container = QtWidgets.QWidget(self)
         self._grid_container.setObjectName("exifMetaGrid")
         self._grid_container.setStyleSheet(
-            f"""
-            QLabel[keyRole="true"] {{
+            """
+            QLabel[keyRole="true"] {
                 font-weight: 600;
-            }}
+            }
             """
         )
         self._grid = QtWidgets.QGridLayout(self._grid_container)

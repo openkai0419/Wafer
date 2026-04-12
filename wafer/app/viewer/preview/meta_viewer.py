@@ -199,10 +199,10 @@ class MetaRowWidget(QtWidgets.QFrame):
         self.setObjectName("dictRow")
         self.setFrameShape(QtWidgets.QFrame.NoFrame)
         self.setStyleSheet(
-            f"""
-            QLabel[keyRole="true"] {{
+            """
+            QLabel[keyRole="true"] {
                 font-weight: 600;
-            }}
+            }
             """
         )
 

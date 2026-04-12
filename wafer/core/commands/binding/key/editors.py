@@ -302,7 +302,7 @@ class KeyBindingEditor(BindingEditorBase):
 class _TwoKeyCaptureDialog(QtWidgets.QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        
+
         self.setWindowTitle(t("Key Input"))
         self._mgr = ShortcutManager()
         self._pressed_keys: list[tuple[int, str]] = []
@@ -416,7 +416,7 @@ class _TwoKeyCaptureDialog(QtWidgets.QDialog):
 
 class _KeySequenceSection(ScopedPayloadSectionBase):
     def __init__(self, parent: QtWidgets.QWidget, widgets: list[WidgetRef], sequence: KeySequence, scopes: dict[str, CommandPayload], on_update, on_remove, on_reassign):
-        
+
         super().__init__(parent, widgets, header_button_text=t("Command"))
         self.sequence = sequence
         self.on_update = on_update

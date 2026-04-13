@@ -261,7 +261,7 @@ class TestPostInstall:
             BlipCaptionerCollector.post_install("/fake/dir")
             transformers_calls = [
                 c for c in mock_install.call_args_list
-                if "transformers" in c[0][1]
+                if any("transformers" in p for p in c[0][1])
             ]
             assert len(transformers_calls) == 1
 

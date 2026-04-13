@@ -81,6 +81,7 @@ class MpvGLOverlay(QOpenGLWidget):
     def __init__(self, parent=None, player=None):
         super().__init__(parent)
         self._ctx = None
+        self._ctx_lock = threading.Lock()
         self._frame_ready = False
         self._playback_ready = False
         self._path = None
@@ -102,20 +103,21 @@ class MpvGLOverlay(QOpenGLWidget):
     def initializeGL(self):
         if self.player is None:
             return
-        if self._ctx is not None:
-            self._ctx.update_cb = None
-            self._ctx.free()
-            self._ctx = None
-        try:
-            self._ctx = self._mpv.MpvRenderContext(
-                self.player,
-                "opengl",
-                opengl_init_params={"get_proc_address": self._proc_addr_cb},
-            )
-            self._ctx.update_cb = self._on_mpv_frame
-        except Exception as e:
-            AppLogger.error(f"MpvRenderContext creation failed: {e}", exc=e)
-            self._ctx = None
+        with self._ctx_lock:
+            if self._ctx is not None:
+                self._ctx.update_cb = None
+                self._ctx.free()
+                self._ctx = None
+            try:
+                self._ctx = self._mpv.MpvRenderContext(
+                    self.player,
+                    "opengl",
+                    opengl_init_params={"get_proc_address": self._proc_addr_cb},
+                )
+                self._ctx.update_cb = self._on_mpv_frame
+            except Exception as e:
+                AppLogger.error(f"MpvRenderContext creation failed: {e}", exc=e)
+                self._ctx = None
 
     def _on_mpv_event(self, event):
         if event.event_id.value == _MPV_EVENT_PLAYBACK_RESTART:
@@ -168,7 +170,8 @@ class MpvGLOverlay(QOpenGLWidget):
 
     @profiler.profile
     def paintGL(self):
-        if self._ctx is None:
+        ctx = self._ctx
+        if ctx is None:
             return
         if self._awaiting_first_frame:
             self._clear_gl()
@@ -178,10 +181,19 @@ class MpvGLOverlay(QOpenGLWidget):
         w = int(self.width() * ratio)
         h = int(self.height() * ratio)
         fbo = self.defaultFramebufferObject()
-        self._ctx.render(
-            opengl_fbo={"w": w, "h": h, "fbo": fbo},
-            flip_y=True,
-        )
+        if not self._ctx_lock.acquire(blocking=False):
+            self.update()
+            return
+        try:
+            if self._ctx is not None:
+                self._ctx.render(
+                    opengl_fbo={"w": w, "h": h, "fbo": fbo},
+                    flip_y=True,
+                )
+        except Exception as e:
+            AppLogger.warning(f"mpv render failed: {e}", exc=e)
+        finally:
+            self._ctx_lock.release()
 
     def leaveEvent(self, event):
         super().leaveEvent(event)
@@ -228,10 +240,11 @@ class MpvGLOverlay(QOpenGLWidget):
     @profiler.profile
     def cleanup(self):
         self._play_generation += 1
-        if self._ctx:
-            self._ctx.update_cb = None
-            self._ctx.free()
-            self._ctx = None
+        with self._ctx_lock:
+            if self._ctx:
+                self._ctx.update_cb = None
+                self._ctx.free()
+                self._ctx = None
         if self.player:
             self.player.unregister_event_callback(self._on_mpv_event)
             self.player.terminate()

@@ -295,7 +295,8 @@ class Node:
 
             try:
                 events = dict(poller.poll(poll_ms))
-            except zmq.ZMQError:
+            except zmq.ZMQError as e:
+                AppLogger.warning(f"node _io_loop poll error, exiting: {e}")
                 break
             did_work = False
 

@@ -27,19 +27,24 @@ from wafer.plugin.installer import (
     _SHARED_DIR,
     _INSTALL_STAMP,
     _POST_INSTALL_STAMP,
+    _VERSION_STAMP,
+    _PYTHON_VERSION,
+    _write_install_stamp,
+    _stamp_version_matches,
+    _purge_vendor_if_version_changed,
 )
 
 
 class TestValidateUrl:
     def test_https_python_org_allowed(self):
-        _validate_url("https://www.python.org/ftp/python/3.10.9/python-3.10.9-embed-amd64.zip")
+        _validate_url("https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip")
 
     def test_https_bootstrap_pypa_allowed(self):
         _validate_url("https://bootstrap.pypa.io/get-pip.py")
 
     def test_http_rejected(self):
         with pytest.raises(ValueError, match="HTTPS"):
-            _validate_url("http://www.python.org/ftp/python/3.10.9/test.zip")
+            _validate_url("http://www.python.org/ftp/python/3.11.9/test.zip")
 
     def test_untrusted_host_rejected(self):
         with pytest.raises(ValueError, match="Untrusted"):
@@ -112,8 +117,30 @@ class TestEmbeddedPython:
         scripts = d / "Scripts"
         scripts.mkdir()
         (scripts / "pip.exe").write_bytes(b"")
+        (d / _VERSION_STAMP).write_text(_PYTHON_VERSION, "utf-8")
         ep = EmbeddedPython(str(d))
         assert ep.is_ready
+
+    def test_not_ready_without_version_stamp(self, tmp_path):
+        d = tmp_path / "_python"
+        d.mkdir()
+        (d / "python.exe").write_bytes(b"")
+        scripts = d / "Scripts"
+        scripts.mkdir()
+        (scripts / "pip.exe").write_bytes(b"")
+        ep = EmbeddedPython(str(d))
+        assert not ep.is_ready
+
+    def test_not_ready_with_wrong_version(self, tmp_path):
+        d = tmp_path / "_python"
+        d.mkdir()
+        (d / "python.exe").write_bytes(b"")
+        scripts = d / "Scripts"
+        scripts.mkdir()
+        (scripts / "pip.exe").write_bytes(b"")
+        (d / _VERSION_STAMP).write_text("3.10.9", "utf-8")
+        ep = EmbeddedPython(str(d))
+        assert not ep.is_ready
 
     def test_ensure_ready_returns_true_when_already_ready(self, tmp_path):
         d = tmp_path / "_python"
@@ -122,6 +149,7 @@ class TestEmbeddedPython:
         scripts = d / "Scripts"
         scripts.mkdir()
         (scripts / "pip.exe").write_bytes(b"")
+        (d / _VERSION_STAMP).write_text(_PYTHON_VERSION, "utf-8")
         ep = EmbeddedPython(str(d))
         assert ep.ensure_ready() is True
 
@@ -137,12 +165,12 @@ class TestEmbeddedPython:
         zip_content_dir = tmp_path / "content"
         zip_content_dir.mkdir()
         (zip_content_dir / "python.exe").write_bytes(b"fake-exe")
-        (zip_content_dir / "python310._pth").write_text("python310.zip\n.\n#import site\n", encoding="utf-8")
+        (zip_content_dir / "python311._pth").write_text("python311.zip\n.\n#import site\n", encoding="utf-8")
 
         zip_path = tmp_path / "test.zip"
         with zipfile.ZipFile(str(zip_path), "w") as zf:
             zf.write(str(zip_content_dir / "python.exe"), "python.exe")
-            zf.write(str(zip_content_dir / "python310._pth"), "python310._pth")
+            zf.write(str(zip_content_dir / "python311._pth"), "python311._pth")
 
         expected_hash = _sha256_file(str(zip_path))
 
@@ -157,7 +185,7 @@ class TestEmbeddedPython:
 
             mock_dl.side_effect = fake_download
             ep._download_and_extract(
-                "https://www.python.org/ftp/python/3.10.9/test.zip",
+                "https://www.python.org/ftp/python/3.11.9/test.zip",
                 expected_hash,
             )
 
@@ -184,7 +212,7 @@ class TestEmbeddedPython:
             mock_dl.side_effect = fake_download
             with pytest.raises(ValueError, match="SHA256 mismatch"):
                 ep._download_and_extract(
-                    "https://www.python.org/ftp/python/3.10.9/test.zip",
+                    "https://www.python.org/ftp/python/3.11.9/test.zip",
                     "deadbeef" * 8,
                 )
 
@@ -208,15 +236,15 @@ class TestEmbeddedPython:
             mock_dl.side_effect = fake_download
             with pytest.raises(ValueError, match="Path traversal"):
                 ep._download_and_extract(
-                    "https://www.python.org/ftp/python/3.10.9/test.zip",
+                    "https://www.python.org/ftp/python/3.11.9/test.zip",
                     "",
                 )
 
     def test_setup_pip_uncomments_site(self, tmp_path):
         d = tmp_path / "_python"
         d.mkdir()
-        pth = d / "python310._pth"
-        pth.write_text("python310.zip\n.\n#import site\n", encoding="utf-8")
+        pth = d / "python311._pth"
+        pth.write_text("python311.zip\n.\n#import site\n", encoding="utf-8")
         (d / "python.exe").write_bytes(b"")
 
         ep = EmbeddedPython(str(d))
@@ -310,6 +338,37 @@ class TestInstallPackages:
         assert "pkg1" in call_args
         assert "pkg2" in call_args
 
+    def test_extra_args_appended(self, tmp_path):
+        plugin_dir = tmp_path / "plugin"
+        plugin_dir.mkdir()
+
+        mock_ep = MagicMock()
+        mock_ep.ensure_ready.return_value = True
+        mock_ep.is_ready = True
+        mock_ep.exe_path = "/fake/python.exe"
+
+        with patch("wafer.plugin.installer.EmbeddedPython", return_value=mock_ep), patch("wafer.plugin.installer._run_subprocess") as mock_run:
+            install_packages(str(plugin_dir), ["torch"], extra_args=["--index-url", "https://example.com/whl"])
+
+        call_args = mock_run.call_args[0][0]
+        assert "--index-url" in call_args
+        assert "https://example.com/whl" in call_args
+
+    def test_extra_args_none_no_effect(self, tmp_path):
+        plugin_dir = tmp_path / "plugin"
+        plugin_dir.mkdir()
+
+        mock_ep = MagicMock()
+        mock_ep.ensure_ready.return_value = True
+        mock_ep.is_ready = True
+        mock_ep.exe_path = "/fake/python.exe"
+
+        with patch("wafer.plugin.installer.EmbeddedPython", return_value=mock_ep), patch("wafer.plugin.installer._run_subprocess") as mock_run:
+            install_packages(str(plugin_dir), ["pkg"])
+
+        call_args = mock_run.call_args[0][0]
+        assert "--index-url" not in call_args
+
 
 class TestSharedNeedsInstall:
     def test_no_requirements_file(self, tmp_path):
@@ -325,8 +384,18 @@ class TestSharedNeedsInstall:
         shared = tmp_path / _SHARED_DIR
         shared.mkdir()
         stamp = shared / _INSTALL_STAMP
-        stamp.touch()
+        _write_install_stamp(str(stamp))
         os.utime(str(stamp), (0, 0))
+        assert shared_needs_install(str(tmp_path)) is True
+
+    def test_version_mismatch_returns_true(self, tmp_path):
+        req = tmp_path / "requirements.txt"
+        req.write_text("numpy\n")
+        os.utime(str(req), (0, 0))
+        shared = tmp_path / _SHARED_DIR
+        shared.mkdir()
+        stamp = shared / _INSTALL_STAMP
+        stamp.write_text("3.10.9", "utf-8")
         assert shared_needs_install(str(tmp_path)) is True
 
     def test_stamp_newer_than_requirements(self, tmp_path):
@@ -335,9 +404,77 @@ class TestSharedNeedsInstall:
         os.utime(str(req), (0, 0))
         shared = tmp_path / _SHARED_DIR
         shared.mkdir()
-        stamp = shared / _INSTALL_STAMP
-        stamp.touch()
+        _write_install_stamp(str(shared / _INSTALL_STAMP))
         assert shared_needs_install(str(tmp_path)) is False
+
+
+class TestStampVersionMatches:
+    def test_correct_version(self, tmp_path):
+        stamp = tmp_path / "stamp"
+        stamp.write_text(_PYTHON_VERSION, "utf-8")
+        assert _stamp_version_matches(str(stamp)) is True
+
+    def test_wrong_version(self, tmp_path):
+        stamp = tmp_path / "stamp"
+        stamp.write_text("3.10.9", "utf-8")
+        assert _stamp_version_matches(str(stamp)) is False
+
+    def test_empty_stamp(self, tmp_path):
+        stamp = tmp_path / "stamp"
+        stamp.write_text("", "utf-8")
+        assert _stamp_version_matches(str(stamp)) is False
+
+    def test_missing_file(self, tmp_path):
+        assert _stamp_version_matches(str(tmp_path / "nonexistent")) is False
+
+    def test_legacy_stamp_touch_only(self, tmp_path):
+        stamp = tmp_path / "stamp"
+        stamp.touch()
+        assert _stamp_version_matches(str(stamp)) is False
+
+
+class TestPurgeVendorIfVersionChanged:
+    def test_purges_on_version_mismatch(self, tmp_path):
+        vendor = tmp_path / _PACKAGES_DIR
+        vendor.mkdir()
+        (vendor / _INSTALL_STAMP).write_text("3.10.9", "utf-8")
+        (vendor / "numpy").mkdir()
+        (vendor / "numpy" / "fake.pyd").write_bytes(b"old")
+
+        _purge_vendor_if_version_changed(str(vendor))
+        assert not vendor.exists()
+
+    def test_keeps_on_matching_version(self, tmp_path):
+        vendor = tmp_path / _PACKAGES_DIR
+        vendor.mkdir()
+        _write_install_stamp(str(vendor / _INSTALL_STAMP))
+        (vendor / "numpy").mkdir()
+
+        _purge_vendor_if_version_changed(str(vendor))
+        assert vendor.exists()
+        assert (vendor / "numpy").exists()
+
+    def test_noop_when_no_stamp(self, tmp_path):
+        vendor = tmp_path / _PACKAGES_DIR
+        vendor.mkdir()
+        (vendor / "something").mkdir()
+
+        _purge_vendor_if_version_changed(str(vendor))
+        assert vendor.exists()
+
+    def test_noop_when_dir_missing(self, tmp_path):
+        vendor = tmp_path / _PACKAGES_DIR
+        _purge_vendor_if_version_changed(str(vendor))
+        assert not vendor.exists()
+
+    def test_legacy_empty_stamp_triggers_purge(self, tmp_path):
+        vendor = tmp_path / _PACKAGES_DIR
+        vendor.mkdir()
+        (vendor / _INSTALL_STAMP).touch()
+        (vendor / "stale.pyd").write_bytes(b"old")
+
+        _purge_vendor_if_version_changed(str(vendor))
+        assert not vendor.exists()
 
 
 class TestInstallSharedRequirements:
@@ -423,7 +560,7 @@ class TestNeedsInstall:
         os.utime(str(req), (0, 0))
         vendor = plugin_dir / _PACKAGES_DIR
         vendor.mkdir()
-        (vendor / _INSTALL_STAMP).touch()
+        _write_install_stamp(str(vendor / _INSTALL_STAMP))
         assert needs_install(str(plugin_dir)) is False
 
     def test_stamp_older_returns_true(self, tmp_path):
@@ -433,8 +570,20 @@ class TestNeedsInstall:
         vendor = plugin_dir / _PACKAGES_DIR
         vendor.mkdir()
         stamp = vendor / _INSTALL_STAMP
-        stamp.touch()
+        _write_install_stamp(str(stamp))
         os.utime(str(stamp), (0, 0))
+        assert needs_install(str(plugin_dir)) is True
+
+    def test_version_mismatch_returns_true(self, tmp_path):
+        plugin_dir = tmp_path / "plugin"
+        plugin_dir.mkdir()
+        req = plugin_dir / "requirements.txt"
+        req.write_text("some-package\n")
+        os.utime(str(req), (0, 0))
+        vendor = plugin_dir / _PACKAGES_DIR
+        vendor.mkdir()
+        stamp = vendor / _INSTALL_STAMP
+        stamp.write_text("3.10.9", "utf-8")
         assert needs_install(str(plugin_dir)) is True
 
 
@@ -470,7 +619,7 @@ class TestNeedsSetup:
         vendor = plugin_dir / _PACKAGES_DIR
         vendor.mkdir(parents=True)
         (plugin_dir / "requirements.txt").write_text("pkg\n")
-        (vendor / _INSTALL_STAMP).touch()
+        _write_install_stamp(str(vendor / _INSTALL_STAMP))
         assert needs_setup(str(plugin_dir)) is True
 
     def test_false_when_both_stamps_exist(self, tmp_path):
@@ -478,7 +627,7 @@ class TestNeedsSetup:
         vendor = plugin_dir / _PACKAGES_DIR
         vendor.mkdir(parents=True)
         (plugin_dir / "requirements.txt").write_text("pkg\n")
-        (vendor / _INSTALL_STAMP).touch()
+        _write_install_stamp(str(vendor / _INSTALL_STAMP))
         (vendor / _POST_INSTALL_STAMP).touch()
         assert needs_setup(str(plugin_dir)) is False
 

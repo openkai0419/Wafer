@@ -19,13 +19,13 @@ _SHARED_DIR = ".shared_packages"
 _INSTALL_STAMP = ".installed"
 _POST_INSTALL_STAMP = ".post_installed"
 
-_PYTHON_VERSION = "3.10.9"
-_PTH_NAME = "python310._pth"
+_PYTHON_VERSION = "3.11.9"
+_PTH_NAME = "python311._pth"
 
 _EMBED_DEFS = {
     "win_amd64": {
         "url": f"https://www.python.org/ftp/python/{_PYTHON_VERSION}/python-{_PYTHON_VERSION}-embed-amd64.zip",
-        "sha256": "8712433e84811fb8fcf877beabe12f86cb843c94bb1cac62c43e2d717a87b2ad",
+        "sha256": "009d6bf7e3b2ddca3d784fa09f90fe54336d5b60f0e0f305c37f400bf83cfd3b",
     },
 }
 
@@ -35,6 +35,21 @@ _SUBPROCESS_POLL_INTERVAL = 0.05
 
 _GET_PIP_URL = "https://bootstrap.pypa.io/get-pip.py"
 _GET_PIP_SHA256 = "feba1c697df45be1b539b40d93c102c9ee9dde1d966303323b830b06f3fbca3c"
+_VERSION_STAMP = ".python_version"
+
+_ensure_ready_lock = threading.Lock()
+_dir_locks: dict[str, threading.Lock] = {}
+_dir_locks_guard = threading.Lock()
+
+
+def _get_dir_lock(path: str) -> threading.Lock:
+    key = os.path.normcase(os.path.abspath(path))
+    with _dir_locks_guard:
+        lock = _dir_locks.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _dir_locks[key] = lock
+        return lock
 
 
 def _platform_key() -> str | None:
@@ -142,28 +157,53 @@ class EmbeddedPython:
 
     @property
     def is_ready(self) -> bool:
-        return self.is_available and self.has_pip
+        return self.is_available and self.has_pip and self._version_matches()
+
+    def _version_matches(self) -> bool:
+        stamp = os.path.join(self._dir, _VERSION_STAMP)
+        if not os.path.isfile(stamp):
+            return False
+        try:
+            return Path(stamp).read_text("utf-8").strip() == _PYTHON_VERSION
+        except OSError:
+            return False
+
+    def _write_version_stamp(self):
+        Path(self._dir, _VERSION_STAMP).write_text(_PYTHON_VERSION, "utf-8")
+
+    def _purge(self):
+        if os.path.isdir(self._dir):
+            AppLogger.info(f"[Installer] Removing outdated embedded Python at {self._dir}")
+            shutil.rmtree(self._dir, ignore_errors=True)
 
     def ensure_ready(self, on_progress=None) -> bool:
         if self.is_ready:
             return True
-        key = _platform_key()
-        if key is None:
-            AppLogger.warning("[Installer] Unsupported platform for embedded Python")
-            return False
-        defn = _EMBED_DEFS.get(key)
-        if defn is None:
-            AppLogger.warning(f"[Installer] No embedded Python package for platform: {key}")
-            return False
-        try:
-            if not self.is_available:
-                self._download_and_extract(defn["url"], defn["sha256"], on_progress)
-            if not self.has_pip:
-                self._setup_pip(on_progress)
-            return self.is_ready
-        except Exception as e:
-            AppLogger.error(f"[Installer] Setup failed: {e}", exc=e)
-            return False
+        with _ensure_ready_lock:
+            if self.is_ready:
+                return True
+            key = _platform_key()
+            if key is None:
+                AppLogger.warning("[Installer] Unsupported platform for embedded Python")
+                return False
+            defn = _EMBED_DEFS.get(key)
+            if defn is None:
+                AppLogger.warning(f"[Installer] No embedded Python package for platform: {key}")
+                return False
+            try:
+                if self.is_available and not self._version_matches():
+                    AppLogger.warning(f"[Installer] Embedded Python version mismatch, expected {_PYTHON_VERSION}")
+                    self._purge()
+                if not self.is_available:
+                    self._download_and_extract(defn["url"], defn["sha256"], on_progress)
+                if not self.has_pip:
+                    self._setup_pip(on_progress)
+                if self.is_available and self.has_pip:
+                    self._write_version_stamp()
+                return self.is_ready
+            except Exception as e:
+                AppLogger.error(f"[Installer] Setup failed: {e}", exc=e)
+                return False
 
     def _download_and_extract(self, url: str, expected_hash: str, on_progress=None):
         os.makedirs(self._dir, exist_ok=True)
@@ -277,65 +317,94 @@ def _pip_env(target_dir: str) -> dict[str, str] | None:
     return env
 
 
+def _purge_vendor_if_version_changed(vendor_dir: str):
+    stamp = os.path.join(vendor_dir, _INSTALL_STAMP)
+    if os.path.isdir(vendor_dir) and os.path.isfile(stamp) and not _stamp_version_matches(stamp):
+        AppLogger.info(f"[Installer] Python version changed, purging {vendor_dir}")
+        shutil.rmtree(vendor_dir, ignore_errors=True)
+
+
 def install_requirements(plugin_dir: str, on_progress=None) -> bool:
     vendor_dir = os.path.join(plugin_dir, _PACKAGES_DIR)
     req_file = os.path.join(plugin_dir, "requirements.txt")
-    os.makedirs(vendor_dir, exist_ok=True)
-    try:
-        ep = EmbeddedPython()
-        if not ep.ensure_ready(on_progress):
+    with _get_dir_lock(vendor_dir):
+        _purge_vendor_if_version_changed(vendor_dir)
+        os.makedirs(vendor_dir, exist_ok=True)
+        try:
+            ep = EmbeddedPython()
+            if not ep.ensure_ready(on_progress):
+                return False
+            ep.pip_install(req_file, vendor_dir, on_progress)
+            _write_install_stamp(os.path.join(vendor_dir, _INSTALL_STAMP))
+            AppLogger.info(f"[Installer] Dependencies installed: {os.path.basename(plugin_dir)}")
+            return True
+        except Exception as e:
+            AppLogger.warning(f"[Installer] Failed for {os.path.basename(plugin_dir)}: {e}", exc=e)
             return False
-        ep.pip_install(req_file, vendor_dir, on_progress)
-        Path(vendor_dir, _INSTALL_STAMP).touch()
-        AppLogger.info(f"[Installer] Dependencies installed: {os.path.basename(plugin_dir)}")
-        return True
-    except Exception as e:
-        AppLogger.warning(f"[Installer] Failed for {os.path.basename(plugin_dir)}: {e}", exc=e)
-        return False
 
 
-def install_packages(plugin_dir: str, packages: list[str], on_progress=None, no_deps: bool = False) -> bool:
+def install_packages(
+    plugin_dir: str,
+    packages: list[str],
+    on_progress=None,
+    no_deps: bool = False,
+    extra_args: list[str] | None = None,
+) -> bool:
     vendor_dir = os.path.join(plugin_dir, _PACKAGES_DIR)
-    os.makedirs(vendor_dir, exist_ok=True)
-    try:
-        ep = EmbeddedPython()
-        if not ep.ensure_ready(on_progress):
+    with _get_dir_lock(vendor_dir):
+        os.makedirs(vendor_dir, exist_ok=True)
+        try:
+            ep = EmbeddedPython()
+            if not ep.ensure_ready(on_progress):
+                return False
+            if not ep.is_ready:
+                raise RuntimeError("Embedded Python is not ready")
+            env = _pip_env(vendor_dir)
+            cmd = [
+                ep.exe_path,
+                "-m",
+                "pip",
+                "install",
+                "--target",
+                vendor_dir,
+                "--upgrade",
+                *packages,
+                "--quiet",
+                "--disable-pip-version-check",
+                "--no-cache-dir",
+            ]
+            if no_deps:
+                cmd.append("--no-deps")
+            if extra_args:
+                cmd.extend(extra_args)
+            _run_subprocess(
+                cmd,
+                on_progress=on_progress,
+                timeout=600,
+                env=env,
+            )
+            AppLogger.info(f"[Installer] Packages installed to {os.path.basename(plugin_dir)}: {packages}")
+            return True
+        except Exception as e:
+            AppLogger.warning(f"[Installer] Package install failed for {os.path.basename(plugin_dir)}: {e}", exc=e)
             return False
-        if not ep.is_ready:
-            raise RuntimeError("Embedded Python is not ready")
-        env = _pip_env(vendor_dir)
-        cmd = [
-            ep.exe_path,
-            "-m",
-            "pip",
-            "install",
-            "--target",
-            vendor_dir,
-            "--upgrade",
-            *packages,
-            "--quiet",
-            "--disable-pip-version-check",
-            "--no-cache-dir",
-        ]
-        if no_deps:
-            cmd.append("--no-deps")
-        _run_subprocess(
-            cmd,
-            on_progress=on_progress,
-            timeout=600,
-            env=env,
-        )
-        AppLogger.info(f"[Installer] Packages installed to {os.path.basename(plugin_dir)}: {packages}")
-        return True
-    except Exception as e:
-        AppLogger.warning(f"[Installer] Package install failed for {os.path.basename(plugin_dir)}: {e}", exc=e)
-        return False
 
 
 def write_post_install_stamp(plugin_dir: str):
     vendor_dir = os.path.join(plugin_dir, _PACKAGES_DIR)
     os.makedirs(vendor_dir, exist_ok=True)
     Path(vendor_dir, _POST_INSTALL_STAMP).touch()
+
+
+def _write_install_stamp(stamp_path: str):
+    Path(stamp_path).write_text(_PYTHON_VERSION, "utf-8")
+
+
+def _stamp_version_matches(stamp_path: str) -> bool:
+    try:
+        return Path(stamp_path).read_text("utf-8").strip() == _PYTHON_VERSION
+    except (OSError, ValueError):
+        return False
 
 
 def needs_install(plugin_dir: str) -> bool:
@@ -345,6 +414,8 @@ def needs_install(plugin_dir: str) -> bool:
     vendor_dir = os.path.join(plugin_dir, _PACKAGES_DIR)
     stamp = os.path.join(vendor_dir, _INSTALL_STAMP)
     if not os.path.isfile(stamp):
+        return True
+    if not _stamp_version_matches(stamp):
         return True
     return os.path.getmtime(req_file) > os.path.getmtime(stamp)
 
@@ -427,6 +498,8 @@ def shared_needs_install(extensions_dir: str) -> bool:
     stamp = os.path.join(extensions_dir, _SHARED_DIR, _INSTALL_STAMP)
     if not os.path.isfile(stamp):
         return True
+    if not _stamp_version_matches(stamp):
+        return True
     return os.path.getmtime(req_file) > os.path.getmtime(stamp)
 
 
@@ -441,13 +514,14 @@ def install_shared_requirements(extensions_dir: str, on_progress=None) -> bool:
         if not shared_needs_install(extensions_dir):
             return True
         vendor_dir = os.path.join(extensions_dir, _SHARED_DIR)
+        _purge_vendor_if_version_changed(vendor_dir)
         os.makedirs(vendor_dir, exist_ok=True)
         try:
             ep = EmbeddedPython()
             if not ep.ensure_ready(on_progress):
                 return False
             ep.pip_install(req_file, vendor_dir, on_progress)
-            Path(vendor_dir, _INSTALL_STAMP).touch()
+            _write_install_stamp(os.path.join(vendor_dir, _INSTALL_STAMP))
             AppLogger.info("[Installer] Shared dependencies installed")
             return True
         except Exception as e:

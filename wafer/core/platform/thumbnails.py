@@ -2,17 +2,23 @@
 import io
 import os
 import sys
+import threading
 from PIL import Image
 
 from ...utils.logs import AppLogger
 
 _IShellItemImageFactory = None
 _shell_argtypes_set = False
+_shell_init_lock = threading.Lock()
 
 
 def _get_shell_item_factory_class():
     global _IShellItemImageFactory, _shell_argtypes_set
-    if _IShellItemImageFactory is None:
+    if _IShellItemImageFactory is not None:
+        return _IShellItemImageFactory
+    with _shell_init_lock:
+        if _IShellItemImageFactory is not None:
+            return _IShellItemImageFactory
         from ctypes import POINTER, c_long, c_void_p, c_wchar_p, windll
         from ctypes.wintypes import HANDLE, SIZE, UINT
         from comtypes import COMMETHOD, GUID, IUnknown
@@ -32,6 +38,20 @@ def _get_shell_item_factory_class():
             _shell_argtypes_set = True
 
     return _IShellItemImageFactory
+
+
+def _release_com(ptr):
+    try:
+        if ptr and hasattr(ptr, "Release"):
+            ptr.Release()
+    except Exception:
+        pass
+    try:
+        from ctypes import addressof, memset, sizeof
+
+        memset(addressof(ptr), 0, sizeof(type(ptr)))
+    except Exception:
+        pass
 
 
 _GPS_BESTEFFORT = 0x40
@@ -98,6 +118,7 @@ def _get_thumbnail_aspect_ratio(abs_path: str, size: int = 96) -> float | None:
         finally:
             gdi32.DeleteObject(c_void_p(int(hbitmap)))
     finally:
+        _release_com(factory)
         del factory
 
 
@@ -220,6 +241,7 @@ class FileThumbnailer:
             finally:
                 gdi32.DeleteObject(c_void_p(int(hbitmap)))
         finally:
+            _release_com(factory)
             del factory
 
     def _get_thumbnail_mac(self, file_path, size):

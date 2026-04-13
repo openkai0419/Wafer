@@ -2,8 +2,7 @@
 setlocal
 set ERRFLAG=0
 
-rem python version 3.10
-python -m venv .venv
+py -3.11 -m venv .venv
 call .venv\Scripts\activate.bat
 pip install -r requirements-dev.txt || set ERRFLAG=1
 

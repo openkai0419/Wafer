@@ -69,6 +69,7 @@ class IndexerProcess:
             collector_names = [n for n in enabled if n in {c[0] for c in all_collectors}]
         else:
             from ...plugin.settings import PluginSettings
+
             default_set = set(PluginSettings().resolve_default_collectors())
             collectors = [(n, exts) for n, exts in all_collectors if n in default_set]
             collector_names = [n for n, _ in collectors]

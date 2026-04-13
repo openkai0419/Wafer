@@ -20,6 +20,7 @@ tests/.prototypes/
 tests/test_summary.txt
 .vscode/
 .sample/
+code.bat
 
 
 # Build artifacts

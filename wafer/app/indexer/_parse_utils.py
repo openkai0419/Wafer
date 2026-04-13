@@ -4,6 +4,7 @@ import threading
 import time
 from typing import Any
 from collections.abc import Callable
+from datetime import UTC
 
 BATCH_SIZE = 900
 FLUSH_DELAY = 4.0
@@ -17,12 +18,12 @@ _DATETIME_FORMATS = (
 
 
 def try_parse_datetime(s: str):
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     for fmt in _DATETIME_FORMATS:
         try:
             dt = datetime.strptime(s.strip(), fmt)
-            return dt.replace(tzinfo=timezone.utc).timestamp()
+            return dt.replace(tzinfo=UTC).timestamp()
         except ValueError:
             continue
     return None

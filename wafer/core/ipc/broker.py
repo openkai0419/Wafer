@@ -293,7 +293,8 @@ class Broker:
         while not self._stop.is_set():
             try:
                 events = dict(poller.poll(poll_ms))
-            except zmq.ZMQError:
+            except zmq.ZMQError as e:
+                AppLogger.warning(f"broker _io_loop poll error, exiting: {e}")
                 break
             did_work = False
 

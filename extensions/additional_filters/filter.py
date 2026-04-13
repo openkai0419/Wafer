@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from calendar import monthrange
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 
 from wafer.plugin import BaseFilterPlugin
 from wafer.utils.profiling import profiler
@@ -29,7 +29,7 @@ def _resolve_date_value(val: str, end_of_day: bool = False) -> float | None:
     if not val:
         return None
     if val == _TODAY:
-        dt = datetime.now(tz=timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        dt = datetime.now(tz=UTC).replace(hour=0, minute=0, second=0, microsecond=0)
         if end_of_day:
             dt = dt.replace(hour=23, minute=59, second=59)
         return dt.timestamp()
@@ -39,7 +39,7 @@ def _resolve_date_value(val: str, end_of_day: bool = False) -> float | None:
 def _preset_to_epoch(value: float, unit: str, ref_time: float | None = None) -> float:
     base = ref_time if ref_time is not None else time.time()
     if unit == "months":
-        dt = datetime.fromtimestamp(base, tz=timezone.utc)
+        dt = datetime.fromtimestamp(base, tz=UTC)
         months_back = int(value)
         y = dt.year
         m = dt.month - months_back
@@ -47,14 +47,14 @@ def _preset_to_epoch(value: float, unit: str, ref_time: float | None = None) -> 
             m += 12
             y -= 1
         d = min(dt.day, monthrange(y, m)[1])
-        start = datetime(y, m, d, dt.hour, dt.minute, dt.second, tzinfo=timezone.utc)
+        start = datetime(y, m, d, dt.hour, dt.minute, dt.second, tzinfo=UTC)
         return start.timestamp()
     if unit == "years":
-        dt = datetime.fromtimestamp(base, tz=timezone.utc)
+        dt = datetime.fromtimestamp(base, tz=UTC)
         y = dt.year - int(value)
         m = dt.month
         d = min(dt.day, monthrange(y, m)[1])
-        start = datetime(y, m, d, dt.hour, dt.minute, dt.second, tzinfo=timezone.utc)
+        start = datetime(y, m, d, dt.hour, dt.minute, dt.second, tzinfo=UTC)
         return start.timestamp()
     secs = _UNIT_SECONDS.get(unit, 86400)
     return base - value * secs
@@ -65,7 +65,7 @@ def _date_str_to_epoch(date_str: str, end_of_day: bool = False) -> float | None:
         return None
     try:
         dt = datetime.strptime(date_str.strip(), "%Y/%m/%d")
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
         if end_of_day:
             dt = dt.replace(hour=23, minute=59, second=59)
         return dt.timestamp()

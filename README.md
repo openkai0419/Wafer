@@ -5,7 +5,7 @@
 ![Wafer Screenshot](_docs/wafer_screenshot.png)
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB.svg)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB.svg)](https://www.python.org/)
 ![Platform](https://img.shields.io/badge/Platform-Windows-0078D6.svg)
 [![Release](https://img.shields.io/github/v/release/openkai0419/Wafer?style=flat-square)](https://github.com/openkai0419/Wafer/releases/latest)
 [![Release Date](https://img.shields.io/github/release-date/openkai0419/Wafer?style=flat-square)](https://github.com/openkai0419/Wafer/releases/latest)
@@ -34,7 +34,7 @@ To uninstall, run `cleanup.bat` to remove app data from `%LOCALAPPDATA%\Wafer`, 
 
 #### Requirements
 
-- Python 3.10+
+- Python 3.11+
 - Windows (currently the only tested OS)
 
 #### Setup

@@ -252,7 +252,7 @@ def _initialize():
     _logger = _LoggerFactory.get()
     sys.excepthook = _create_exception_hook()
     threading.excepthook = _create_threading_exception_hook()
-    _cleanup_old_logs(keep_latest=0)
+    _cleanup_old_logs(keep_latest=5)
     _initialized = True
 
 

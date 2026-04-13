@@ -15,15 +15,10 @@ set_suppress_dialog(True)
 _orig_enabled_names = PluginSettings.enabled_names
 PluginSettings.enabled_names = lambda self: None
 
-_pre_load_modules = set(sys.modules.keys())
 load_plugins()
 get_command_registry().activate("viewer")
 
 PluginSettings.enabled_names = _orig_enabled_names
-
-for mod_name in list(sys.modules.keys()):
-    if mod_name not in _pre_load_modules and mod_name.split(".")[0] == "numpy":
-        del sys.modules[mod_name]
 
 
 def _drain_pool(pool, timeout_ms=3000, poll_ms=100):

@@ -291,6 +291,27 @@ class TestCollectorsTab:
         assert tab._default_checks["exif"].isChecked()
         assert tab._default_checks["wd14"].isChecked()
 
+    def test_incremental_refresh_preserves_defaults(self, qtbot, _patch_paths):
+        setup, _ = _patch_paths
+        setup({"db1": ["exif"]})
+
+        from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
+
+        with patch.object(CollectorsTab, "_load_defaults", return_value={"exif", "wd14"}):
+            tab = CollectorsTab(collector_names=[], parser_names=[])
+        qtbot.addWidget(tab)
+
+        with patch.object(CollectorsTab, "_load_defaults", return_value={"exif", "wd14"}):
+            tab.refresh(["exif"], [])
+
+        assert tab._default_checks["exif"].isChecked()
+
+        with patch.object(CollectorsTab, "_load_defaults", return_value={"exif", "wd14"}):
+            tab.refresh(["exif", "wd14"], [])
+
+        assert tab._default_checks["exif"].isChecked()
+        assert tab._default_checks["wd14"].isChecked()
+
     def test_refresh_preserves_default_checkbox_changes(self, qtbot, _patch_paths):
         setup, _ = _patch_paths
         setup({"db1": ["exif"]})

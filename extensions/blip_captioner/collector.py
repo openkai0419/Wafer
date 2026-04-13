@@ -32,18 +32,20 @@ class BlipCaptionerCollector(BaseSingletonCollector):
     def post_install(cls, plugin_dir, on_progress=None):
         from wafer.plugin.installer import install_packages
 
+        _torch_pkgs = ["torch>=2.4.0", "torchvision>=0.19.0"]
+
         gpu_ok = False
         if sys.platform == "win32":
             gpu_ok = install_packages(
                 plugin_dir,
-                ["torch==2.11.0", "torchvision==0.26.0"],
+                _torch_pkgs,
                 on_progress,
                 extra_args=["--index-url", _TORCH_CUDA_INDEX],
             )
         else:
             gpu_ok = install_packages(
                 plugin_dir,
-                ["torch==2.11.0", "torchvision==0.26.0"],
+                _torch_pkgs,
                 on_progress,
             )
 
@@ -51,7 +53,7 @@ class BlipCaptionerCollector(BaseSingletonCollector):
             AppLogger.warning("BLIP: CUDA torch unavailable, falling back to CPU torch")
             install_packages(
                 plugin_dir,
-                ["torch==2.11.0", "torchvision==0.26.0"],
+                _torch_pkgs,
                 on_progress,
                 extra_args=["--index-url", "https://download.pytorch.org/whl/cpu"],
             )

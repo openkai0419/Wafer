@@ -40,6 +40,22 @@ _VERSION_STAMP = ".python_version"
 _ensure_ready_lock = threading.Lock()
 _dir_locks: dict[str, threading.Lock] = {}
 _dir_locks_guard = threading.Lock()
+_stdlib_ensured = False
+
+
+def ensure_frozen_stdlib():
+    global _stdlib_ensured
+    if _stdlib_ensured or not getattr(sys, "frozen", False):
+        return
+    _stdlib_ensured = True
+    ep = EmbeddedPython()
+    if not ep.is_available:
+        return
+    major_minor = "".join(_PYTHON_VERSION.split(".")[:2])
+    stdlib_zip = os.path.join(ep._dir, f"python{major_minor}.zip")
+    if os.path.isfile(stdlib_zip) and stdlib_zip not in sys.path:
+        sys.path.append(stdlib_zip)
+        AppLogger.info(f"[Installer] Added embedded stdlib to sys.path: {stdlib_zip}")
 
 
 def _get_dir_lock(path: str) -> threading.Lock:
@@ -349,6 +365,7 @@ def install_packages(
     on_progress=None,
     no_deps: bool = False,
     extra_args: list[str] | None = None,
+    timeout: int = 1800,
 ) -> bool:
     vendor_dir = os.path.join(plugin_dir, _PACKAGES_DIR)
     with _get_dir_lock(vendor_dir):
@@ -380,7 +397,7 @@ def install_packages(
             _run_subprocess(
                 cmd,
                 on_progress=on_progress,
-                timeout=600,
+                timeout=timeout,
                 env=env,
             )
             AppLogger.info(f"[Installer] Packages installed to {os.path.basename(plugin_dir)}: {packages}")
@@ -464,6 +481,7 @@ def install_extension(
     vendor_dir = os.path.join(plugin_dir, _PACKAGES_DIR)
     shared_dir = os.path.join(extensions_dir, _SHARED_DIR)
     path_added = []
+    ensure_frozen_stdlib()
     for d in (vendor_dir, shared_dir):
         if os.path.isdir(d) and d not in sys.path:
             sys.path.insert(0, d)

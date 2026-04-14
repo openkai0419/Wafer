@@ -34,6 +34,8 @@ class BlipCaptionerCollector(BaseSingletonCollector):
 
         _torch_pkgs = ["torch>=2.4.0", "torchvision>=0.19.0"]
 
+        _torch_timeout = 5400
+
         gpu_ok = False
         if sys.platform == "win32":
             gpu_ok = install_packages(
@@ -41,12 +43,14 @@ class BlipCaptionerCollector(BaseSingletonCollector):
                 _torch_pkgs,
                 on_progress,
                 extra_args=["--index-url", _TORCH_CUDA_INDEX],
+                timeout=_torch_timeout,
             )
         else:
             gpu_ok = install_packages(
                 plugin_dir,
                 _torch_pkgs,
                 on_progress,
+                timeout=_torch_timeout,
             )
 
         if not gpu_ok:
@@ -56,6 +60,7 @@ class BlipCaptionerCollector(BaseSingletonCollector):
                 _torch_pkgs,
                 on_progress,
                 extra_args=["--index-url", "https://download.pytorch.org/whl/cpu"],
+                timeout=_torch_timeout,
             )
 
         install_packages(plugin_dir, ["transformers==4.57.6", "safetensors==0.7.0"], on_progress)

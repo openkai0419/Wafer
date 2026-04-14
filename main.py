@@ -23,9 +23,11 @@ from wafer.utils.logs import AppLogger
 
 
 def _setup_faulthandler():
-    log_dir = resolve_data_path(".log")
-    os.makedirs(log_dir, exist_ok=True)
-    crash_path = os.path.join(log_dir, f"crash_{os.getpid()}.log")
+    if not os.environ.get('WAFER_FAULTHANDLER'):
+        return
+    crash_dir = resolve_data_path(".crashlog")
+    os.makedirs(crash_dir, exist_ok=True)
+    crash_path = os.path.join(crash_dir, f"crash_{os.getpid()}.log")
     try:
         crash_file = open(crash_path, "w", encoding="utf-8")
         faulthandler.enable(file=crash_file)

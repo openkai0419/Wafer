@@ -170,8 +170,7 @@ class MpvGLOverlay(QOpenGLWidget):
 
     @profiler.profile
     def paintGL(self):
-        ctx = self._ctx
-        if ctx is None:
+        if self._ctx is None:
             return
         if self._awaiting_first_frame:
             self._clear_gl()

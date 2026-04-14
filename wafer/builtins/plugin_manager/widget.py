@@ -152,7 +152,8 @@ class PluginManagerWidget(QtWidgets.QWidget):
         collector_names, parser_names = self._collect_worker_names()
         self._collectors_tab = CollectorsTab(collector_names, parser_names)
         self._collectors_tab.delete_requested.connect(self._send_delete)
-        self._tabs.addTab(self._scrollable(self._collectors_tab), "Collectors")
+        self._collectors_scroll = self._scrollable(self._collectors_tab)
+        self._tabs.addTab(self._collectors_scroll, "Collectors")
 
         from .viewers_tab import OrderTab, REGISTRY_KEYS
 
@@ -163,9 +164,12 @@ class PluginManagerWidget(QtWidgets.QWidget):
 
         self._initial_enabled = self._settings.enabled_names() or set()
         self._initial_orders = dict(saved_orders)
-        self._tabs.addTab(self._scrollable(self._order_tab), t("Order"))
+        self._order_scroll = self._scrollable(self._order_tab)
+        self._tabs.addTab(self._order_scroll, t("Order"))
+        self._collectors_dirty = False
 
         self._ext_tab.enabled_changed.connect(self._sync_tabs)
+        self._connect_bridge()
 
         self._splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
         self._splitter.addWidget(self._ext_tab)
@@ -244,12 +248,12 @@ class PluginManagerWidget(QtWidgets.QWidget):
         from .viewers_tab import REGISTRY_KEYS
 
         registry_data = {key: self._ext_tab.collect_enabled_plugins(key) for key in REGISTRY_KEYS}
-        self._order_tab.refresh(
+        self._refresh_with_scroll(self._order_scroll, lambda: self._order_tab.refresh(
             registry_data,
             self._compute_builtin_command_names(registry_data),
-        )
+        ))
         c_names, d_names = self._collect_worker_names()
-        self._collectors_tab.refresh(c_names, d_names)
+        self._refresh_with_scroll(self._collectors_scroll, lambda: self._collectors_tab.refresh(c_names, d_names))
 
     def _collect_worker_names(self) -> tuple[list[str], list[str]]:
         collectors = [cls.NAME for cls in self._ext_tab.collect_enabled_plugins("collector")]
@@ -272,10 +276,29 @@ class PluginManagerWidget(QtWidgets.QWidget):
             )
         AppLogger.info(f"[PluginManager] Sent delete for {len(pairs)} pairs")
 
+    @staticmethod
+    def _refresh_with_scroll(scroll_area: QtWidgets.QScrollArea, refresh_fn):
+        vbar = scroll_area.verticalScrollBar()
+        pos = vbar.value()
+        refresh_fn()
+        QtCore.QTimer.singleShot(0, lambda: vbar.setValue(pos))
+
     def showEvent(self, event):
         super().showEvent(event)
-        c_names, d_names = self._collect_worker_names()
-        self._collectors_tab.refresh(c_names, d_names)
+        if self._collectors_dirty:
+            self._collectors_dirty = False
+            c_names, d_names = self._collect_worker_names()
+            self._refresh_with_scroll(self._collectors_scroll, lambda: self._collectors_tab.refresh(c_names, d_names))
+
+    def _connect_bridge(self):
+        from ...app.viewer.ipc_bridge import ViewerIpcBridge
+
+        bridge = ViewerIpcBridge.instance()
+        if bridge:
+            bridge.db_content_updated.connect(self._on_db_updated)
+
+    def _on_db_updated(self, db: str):
+        self._collectors_dirty = True
 
     def closeEvent(self, event):
         self._ext_tab.cancel_pending()

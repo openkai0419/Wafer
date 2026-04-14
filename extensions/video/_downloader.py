@@ -1,6 +1,4 @@
-import json
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -11,10 +9,10 @@ _LIB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib")
 _DLL_NAME = "libmpv-2.dll"
 _DLL_PATH = os.path.join(_LIB_DIR, _DLL_NAME)
 
-_GITHUB_LATEST_API = "https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest"
-_ASSET_PATTERN = re.compile(r"^mpv-dev-x86_64-\d{8}-git-[0-9a-f]+\.7z$")
+_PINNED_TAG = "20260307"
+_PINNED_ASSET = "mpv-dev-x86_64-20260307-git-f9190e5.7z"
+_PINNED_URL = f"https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/{_PINNED_TAG}/{_PINNED_ASSET}"
 _ALLOWED_HOSTS = ("github.com", "objects.githubusercontent.com")
-_MAX_API_RESPONSE = 1024 * 1024
 
 _7ZR_URL = "https://www.7-zip.org/a/7zr.exe"
 _7ZR_PATH = os.path.join(_LIB_DIR, "7zr.exe")
@@ -64,22 +62,8 @@ def _safe_download(url: str, dest: str, *, allowed_hosts: tuple[str, ...] | None
                 pass
 
 
-def _find_asset_url() -> str | None:
-    req = urllib.request.Request(
-        _GITHUB_LATEST_API,
-        headers={"Accept": "application/vnd.github+json", "User-Agent": "wafer-video-plugin"},
-    )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        body = resp.read(_MAX_API_RESPONSE + 1)
-        if len(body) > _MAX_API_RESPONSE:
-            raise RuntimeError("GitHub API response too large")
-        data = json.loads(body)
-    for asset in data.get("assets", []):
-        if _ASSET_PATTERN.match(asset["name"]):
-            url = asset["browser_download_url"]
-            _validate_url(url, _ALLOWED_HOSTS)
-            return url
-    return None
+def _find_asset_url() -> str:
+    return _PINNED_URL
 
 
 def _find_7z_exe() -> str | None:

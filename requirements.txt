@@ -3,7 +3,7 @@ comtypes==1.4.11
 markdown>=3.7
 msgpack==1.1.0
 natsort==8.4.0
-pillow==12.1.1
+pillow==12.2.0
 platformdirs==4.3.8
 psutil==7.0.0
 PySide6==6.9.1

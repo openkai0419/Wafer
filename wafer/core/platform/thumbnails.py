@@ -40,20 +40,6 @@ def _get_shell_item_factory_class():
     return _IShellItemImageFactory
 
 
-def _release_com(ptr):
-    try:
-        if ptr and hasattr(ptr, "Release"):
-            ptr.Release()
-    except Exception:
-        pass
-    try:
-        from ctypes import addressof, memset, sizeof
-
-        memset(addressof(ptr), 0, sizeof(type(ptr)))
-    except Exception:
-        pass
-
-
 _GPS_BESTEFFORT = 0x40
 _DIMENSION_KEYS = None
 
@@ -118,7 +104,6 @@ def _get_thumbnail_aspect_ratio(abs_path: str, size: int = 96) -> float | None:
         finally:
             gdi32.DeleteObject(c_void_p(int(hbitmap)))
     finally:
-        _release_com(factory)
         del factory
 
 
@@ -241,7 +226,6 @@ class FileThumbnailer:
             finally:
                 gdi32.DeleteObject(c_void_p(int(hbitmap)))
         finally:
-            _release_com(factory)
             del factory
 
     def _get_thumbnail_mac(self, file_path, size):

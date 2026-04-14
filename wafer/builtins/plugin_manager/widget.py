@@ -248,10 +248,13 @@ class PluginManagerWidget(QtWidgets.QWidget):
         from .viewers_tab import REGISTRY_KEYS
 
         registry_data = {key: self._ext_tab.collect_enabled_plugins(key) for key in REGISTRY_KEYS}
-        self._refresh_with_scroll(self._order_scroll, lambda: self._order_tab.refresh(
-            registry_data,
-            self._compute_builtin_command_names(registry_data),
-        ))
+        self._refresh_with_scroll(
+            self._order_scroll,
+            lambda: self._order_tab.refresh(
+                registry_data,
+                self._compute_builtin_command_names(registry_data),
+            ),
+        )
         c_names, d_names = self._collect_worker_names()
         self._refresh_with_scroll(self._collectors_scroll, lambda: self._collectors_tab.refresh(c_names, d_names))
 

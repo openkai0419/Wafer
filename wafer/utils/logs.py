@@ -53,10 +53,10 @@ def _cleanup_old_logs(log_dir=_LOG_PATH, keep_latest=10):
                     os.remove(f)
                     deleted += 1
                 except Exception as e:
-                    print(f"Failed to delete {f}: {e}")
+                    AppLogger.warning(f"Failed to delete {f}: {e}")
         return deleted
     except Exception as e:
-        print(f"_cleanup_old_logs failed: {e}", file=sys.stderr)
+        AppLogger.warning(f"_cleanup_old_logs failed: {e}")
         return 0
 
 
@@ -81,7 +81,7 @@ def _cleanup_crash_logs(crash_dir=_CRASH_LOG_PATH, keep_latest=20):
                     os.remove(f)
                     deleted += 1
                 except Exception as e:
-                    print(f"Failed to delete {f}: {e}")
+                    AppLogger.warning(f"Failed to delete {f}: {e}")
                 continue
         non_empty = [f for f in log_files if os.path.exists(f) and os.path.getsize(f) > 0]
         for f in non_empty[keep_latest:]:
@@ -92,10 +92,10 @@ def _cleanup_crash_logs(crash_dir=_CRASH_LOG_PATH, keep_latest=20):
                 os.remove(f)
                 deleted += 1
             except Exception as e:
-                print(f"Failed to delete {f}: {e}")
+                AppLogger.warning(f"Failed to delete {f}: {e}")
         return deleted
     except Exception as e:
-        print(f"_cleanup_crash_logs failed: {e}", file=sys.stderr)
+        AppLogger.warning(f"_cleanup_crash_logs failed: {e}")
         return 0
 
 

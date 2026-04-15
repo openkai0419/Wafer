@@ -69,8 +69,8 @@ class WD14TaggerCollector(BaseSingletonCollector):
                 AppLogger.info(f"WD14 GPU verified: {active}")
             else:
                 AppLogger.warning(f"WD14 GPU provider listed ({available}) but session fell back to CPU ({active}). CUDA/cuDNN DLLs may be missing")
-        except ImportError:
-            AppLogger.warning("WD14 onnxruntime not importable after install")
+        except ImportError as err:
+            raise RuntimeError("WD14 onnxruntime not importable after install") from err
 
     def __init__(self):
         self._engine: WD14Inference | None = None

@@ -76,6 +76,9 @@ EXPECTED_PLUGINS = {
     "ai_tagger": {
         ("collector", "WD14TaggerCollector"),
     },
+    "blip_captioner": {
+        ("collector", "BlipCaptionerCollector"),
+    },
     "exiftool": {
         ("collector", "ExifToolCollectorPlugin"),
         ("meta_panel", "ExifToolMetaPanelPlugin"),

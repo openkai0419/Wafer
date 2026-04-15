@@ -111,7 +111,10 @@ class TestFrameCache:
         def writer(start):
             try:
                 for i in range(50):
-                    cache.put(f"{start}_{i}.gif", [MagicMock()], [100])
+                    mock_pm = MagicMock()
+                    mock_pm.width.return_value = 100
+                    mock_pm.height.return_value = 100
+                    cache.put(f"{start}_{i}.gif", [mock_pm], [100])
             except Exception as e:
                 errors.append(e)
 

@@ -5,7 +5,7 @@
 ![Wafer Screenshot](_docs/wafer_screenshot.png)
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB.svg)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB.svg)](https://www.python.org/)
 ![Platform](https://img.shields.io/badge/Platform-Windows-0078D6.svg)
 [![Release](https://img.shields.io/github/v/release/openkai0419/Wafer?style=flat-square)](https://github.com/openkai0419/Wafer/releases/latest)
 [![Release Date](https://img.shields.io/github/release-date/openkai0419/Wafer?style=flat-square)](https://github.com/openkai0419/Wafer/releases/latest)
@@ -28,13 +28,15 @@ Wafer は **PySide6**・**SQLite**・**ZMQ** を元にした大量管理向け�
 3. 任意のフォルダに展開（SSD 推奨）
 4. `Wafer.exe` を実行
 
-アンインストールの再は `cleanup.bat` で `%LOCALAPPDATA%\Wafer` のアプリデータを削除した後、本体をフォルダごと削除してください。
+Python 同梱のため、別途 Python のインストールは不要です。
+
+アンインストールの際は `cleanup.bat` で `%LOCALAPPDATA%\Wafer` のアプリデータを削除した後、本体をフォルダごと削除してください。
 
 ### ソースから (python環境のある人)
 
 #### 要件
 
-- Python 3.10+
+- Python 3.11+
 - Windows（現時点唯一の開発環境）
 
 #### セットアップ
@@ -99,11 +101,10 @@ extension は `extensions/` フォルダに配置するだけで `PluginLoader` 
 
 ### 仕組み
 
-1. extension フォルダに `requirements.txt` がある場合、依存パッケージを `.packages/` に自動インストール
+1. extension フォルダに `requirements.txt` がある場合、依存パッケージを `extensions/.packages/` に自動インストール
 2. `.packages/` を `sys.path` に追加
 3. `lib/` を DLL 検索パスに追加
 4. `*.py` を import し、基底クラスの継承によりプラグインを自動検出
-5. exe ビルドでは組み込み Python 環境経由で pip を実行
 
 ### Extension の実装例
 

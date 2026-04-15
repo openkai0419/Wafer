@@ -2,17 +2,23 @@
 import io
 import os
 import sys
+import threading
 from PIL import Image
 
 from ...utils.logs import AppLogger
 
 _IShellItemImageFactory = None
 _shell_argtypes_set = False
+_shell_init_lock = threading.Lock()
 
 
 def _get_shell_item_factory_class():
     global _IShellItemImageFactory, _shell_argtypes_set
-    if _IShellItemImageFactory is None:
+    if _IShellItemImageFactory is not None:
+        return _IShellItemImageFactory
+    with _shell_init_lock:
+        if _IShellItemImageFactory is not None:
+            return _IShellItemImageFactory
         from ctypes import POINTER, c_long, c_void_p, c_wchar_p, windll
         from ctypes.wintypes import HANDLE, SIZE, UINT
         from comtypes import COMMETHOD, GUID, IUnknown

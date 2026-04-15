@@ -257,3 +257,101 @@ class TestLoggerFactory:
             assert _LoggerFactory._log_id == str(pid)
             _LoggerFactory.get("indexer")
             assert _LoggerFactory._file_handler.baseFilename.endswith(f"indexer_{pid}.log")
+
+
+class TestCleanupCrashLogs:
+    def test_empty_crash_files_deleted(self, tmp_path):
+        import time
+        from wafer.utils.logs import _cleanup_crash_logs
+
+        for i in range(3):
+            p = tmp_path / f"crash_{99990 + i}.log"
+            p.write_text("")
+            time.sleep(0.01)
+        with patch("wafer.utils.logs._is_pid_active", return_value=False):
+            deleted = _cleanup_crash_logs(crash_dir=str(tmp_path), keep_latest=20)
+        assert deleted == 3
+        assert list(tmp_path.glob("crash_*.log")) == []
+
+    def test_non_empty_crash_files_kept_within_limit(self, tmp_path):
+        import time
+        from wafer.utils.logs import _cleanup_crash_logs
+
+        for i in range(3):
+            p = tmp_path / f"crash_{99990 + i}.log"
+            p.write_text(f"segfault trace {i}")
+            time.sleep(0.01)
+        with patch("wafer.utils.logs._is_pid_active", return_value=False):
+            deleted = _cleanup_crash_logs(crash_dir=str(tmp_path), keep_latest=20)
+        assert deleted == 0
+        assert len(list(tmp_path.glob("crash_*.log"))) == 3
+
+    def test_non_empty_crash_files_trimmed_by_limit(self, tmp_path):
+        import time
+        from wafer.utils.logs import _cleanup_crash_logs
+
+        for i in range(5):
+            p = tmp_path / f"crash_{99990 + i}.log"
+            p.write_text(f"segfault trace {i}")
+            time.sleep(0.01)
+        with patch("wafer.utils.logs._is_pid_active", return_value=False):
+            deleted = _cleanup_crash_logs(crash_dir=str(tmp_path), keep_latest=2)
+        assert deleted == 3
+        remaining = sorted(tmp_path.glob("crash_*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
+        assert len(remaining) == 2
+        assert "99994" in remaining[0].name
+        assert "99993" in remaining[1].name
+
+    def test_mixed_empty_and_non_empty(self, tmp_path):
+        import time
+        from wafer.utils.logs import _cleanup_crash_logs
+
+        (tmp_path / "crash_10001.log").write_text("")
+        time.sleep(0.01)
+        (tmp_path / "crash_10002.log").write_text("real crash")
+        time.sleep(0.01)
+        (tmp_path / "crash_10003.log").write_text("")
+        with patch("wafer.utils.logs._is_pid_active", return_value=False):
+            deleted = _cleanup_crash_logs(crash_dir=str(tmp_path), keep_latest=20)
+        assert deleted == 2
+        remaining = list(tmp_path.glob("crash_*.log"))
+        assert len(remaining) == 1
+        assert "10002" in remaining[0].name
+
+    def test_active_pid_empty_crash_not_deleted(self, tmp_path):
+        from wafer.utils.logs import _cleanup_crash_logs
+
+        (tmp_path / "crash_12345.log").write_text("")
+
+        def mock_active(pid):
+            return pid == 12345
+
+        with patch("wafer.utils.logs._is_pid_active", side_effect=mock_active):
+            deleted = _cleanup_crash_logs(crash_dir=str(tmp_path), keep_latest=20)
+        assert deleted == 0
+        assert (tmp_path / "crash_12345.log").exists()
+
+    def test_active_pid_non_empty_over_limit_not_deleted(self, tmp_path):
+        import time
+        from wafer.utils.logs import _cleanup_crash_logs
+
+        for i in range(3):
+            p = tmp_path / f"crash_{99990 + i}.log"
+            p.write_text(f"crash data {i}")
+            time.sleep(0.01)
+
+        def mock_active(pid):
+            return pid == 99990
+
+        with patch("wafer.utils.logs._is_pid_active", side_effect=mock_active):
+            deleted = _cleanup_crash_logs(crash_dir=str(tmp_path), keep_latest=1)
+        assert deleted == 1
+        remaining_names = {p.name for p in tmp_path.glob("crash_*.log")}
+        assert "crash_99990.log" in remaining_names
+        assert "crash_99992.log" in remaining_names
+
+    def test_empty_directory(self, tmp_path):
+        from wafer.utils.logs import _cleanup_crash_logs
+
+        deleted = _cleanup_crash_logs(crash_dir=str(tmp_path), keep_latest=20)
+        assert deleted == 0

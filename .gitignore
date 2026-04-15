@@ -6,7 +6,9 @@ venv/
 .ruff_cache/
 .temp/
 .packages/
-.shared_packages/
+.pending/
+.pip_staging/
+.tmp_merged_req.txt
 
 # Extension native libraries (user-provided)
 extensions/*/lib/
@@ -20,6 +22,7 @@ tests/.prototypes/
 tests/test_summary.txt
 .vscode/
 .sample/
+code.bat
 
 
 # Build artifacts

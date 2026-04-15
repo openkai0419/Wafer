@@ -1,4 +1,68 @@
 {
+  "No color": {
+    "en": "No color",
+    "ja": ""
+  },
+  "Row thumbnail opacity": {
+    "en": "Row thumbnail opacity",
+    "ja": ""
+  },
+  "Select files and run Batch Renamer\nor drop files here": {
+    "en": "Select files and run Batch Renamer\nor drop files here",
+    "ja": ""
+  },
+  "Selected thumbnail opacity": {
+    "en": "Selected thumbnail opacity",
+    "ja": ""
+  },
+  "Confirm": {
+    "en": "Confirm",
+    "ja": ""
+  },
+  "Confirm Disable": {
+    "en": "Confirm Disable",
+    "ja": ""
+  },
+  "The following plugins will be disabled:": {
+    "en": "The following plugins will be disabled:",
+    "ja": ""
+  },
+  "Unchecked items keep their data.\n(re-enable later to use again without re-collecting)": {
+    "en": "Unchecked items keep their data.\n(re-enable later to use again without re-collecting)",
+    "ja": ""
+  },
+  "Copy preview text": {
+    "en": "Copy preview text",
+    "ja": ""
+  },
+  "Copy row as JSON (full)": {
+    "en": "Copy row as JSON (full)",
+    "ja": ""
+  },
+  "Copy single value": {
+    "en": "Copy single value",
+    "ja": ""
+  },
+  "Copy single value…": {
+    "en": "Copy single value…",
+    "ja": ""
+  },
+  "Copying files...": {
+    "en": "Copying files...",
+    "ja": ""
+  },
+  "Key:": {
+    "en": "Key:",
+    "ja": ""
+  },
+  "Open value viewer…": {
+    "en": "Open value viewer…",
+    "ja": ""
+  },
+  "{count} file(s) processed": {
+    "en": "{count} file(s) processed",
+    "ja": ""
+  },
   "Changes reverted": {
     "en": "Changes reverted",
     "ja": ""

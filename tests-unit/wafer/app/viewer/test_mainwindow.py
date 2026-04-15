@@ -433,3 +433,105 @@ class TestRestoreFromProfileSkipWindow:
         win._restore_from_profile(entry, skip_window_state=False)
         call_args = win.restore_ui_state.call_args[0][0]
         assert call_args.window_state == {"geometry": "abc"}
+
+
+class TestCloseByRestart:
+    def _make_win(self):
+        with patch("wafer.app.viewer.mainwindow.MainWindow.__init__", lambda self, *a, **kw: None):
+            from wafer.app.viewer.mainwindow import MainWindow
+
+            win = MainWindow.__new__(MainWindow)
+            win.profile_id = "test_profile"
+            win._save_profile = MagicMock()
+            win.close = MagicMock()
+            return win
+
+    def test_starts_new_viewer_and_closes(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(
+            "wafer.core.platform.process.AppProcess.new_main",
+            staticmethod(lambda *a: calls.append(("new_main", a))),
+        )
+        win = self._make_win()
+        win.close_by_restart()
+        assert ("new_main", ("--viewer", "--profile", "test_profile")) in calls
+        win._save_profile.assert_called_once()
+        win.close.assert_called_once()
+
+    def test_no_tray_restart(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(
+            "wafer.core.platform.process.AppProcess.terminate_cmd",
+            staticmethod(lambda *a: calls.append(("terminate", a))),
+        )
+        monkeypatch.setattr(
+            "wafer.core.platform.process.AppProcess.new_main",
+            staticmethod(lambda *a: calls.append(("new_main", a))),
+        )
+        win = self._make_win()
+        win.close_by_restart()
+        assert ("terminate", ("--tray",)) not in calls
+
+
+class TestOnClosePending:
+    def _make_win(self):
+        with patch("wafer.app.viewer.mainwindow.MainWindow.__init__", lambda self, *a, **kw: None):
+            from wafer.app.viewer.mainwindow import MainWindow
+
+            win = MainWindow.__new__(MainWindow)
+            win._closed = False
+            win._folder_callout = None
+            win._profile_deleted = False
+            win._profile_ready = True
+            win._profile_entry = None
+            win._profile_store = MagicMock()
+            win.profile_id = "test"
+            win.database_name = None
+            win.capture_ui_state = MagicMock(return_value=MagicMock())
+            win.capture_query_state = MagicMock(return_value=MagicMock())
+            return win
+
+    def test_on_close_restarts_tray_when_pending(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(
+            "wafer.core.platform.process.AppProcess.terminate_cmd",
+            staticmethod(lambda *a: calls.append(("terminate", a))),
+        )
+        monkeypatch.setattr(
+            "wafer.core.platform.process.AppProcess.new_main",
+            staticmethod(lambda *a: calls.append(("new_main", a))),
+        )
+        cleared = []
+        monkeypatch.setattr("wafer.plugin.settings.PluginSettings.is_restart_pending", lambda self: True)
+        monkeypatch.setattr("wafer.plugin.settings.PluginSettings.clear_restart_pending", lambda self: cleared.append(True))
+        monkeypatch.setattr("wafer.app.viewer.mainwindow.app_settings", MagicMock())
+        monkeypatch.setattr("wafer.app.viewer.mainwindow.t", MagicMock())
+        mock_node = MagicMock()
+        mock_store = MagicMock()
+        mock_store.get_active_profile_ids.return_value = ["test", "other"]
+        monkeypatch.setattr("wafer.core.profile.ProfileStore.instance", staticmethod(lambda: mock_store))
+        win = self._make_win()
+        win._node = mock_node
+        win.on_close()
+        assert ("terminate", ("--tray",)) in calls
+        assert ("new_main", ("--tray",)) in calls
+        assert cleared == [True]
+        mock_node.send.assert_called_once_with("profile.restart", "other", dst="viewer")
+        mock_store.set_restore_profile_ids.assert_called_once_with(["other"])
+
+    def test_on_close_skips_tray_when_not_pending(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(
+            "wafer.core.platform.process.AppProcess.terminate_cmd",
+            staticmethod(lambda *a: calls.append(("terminate", a))),
+        )
+        monkeypatch.setattr(
+            "wafer.core.platform.process.AppProcess.new_main",
+            staticmethod(lambda *a: calls.append(("new_main", a))),
+        )
+        monkeypatch.setattr("wafer.plugin.settings.PluginSettings.is_restart_pending", lambda self: False)
+        monkeypatch.setattr("wafer.app.viewer.mainwindow.app_settings", MagicMock())
+        monkeypatch.setattr("wafer.app.viewer.mainwindow.t", MagicMock())
+        win = self._make_win()
+        win.on_close()
+        assert ("terminate", ("--tray",)) not in calls

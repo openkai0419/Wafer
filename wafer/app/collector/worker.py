@@ -111,9 +111,7 @@ class CollectorWorker:
                     except Exception as e:
                         AppLogger.warning(f"[Collector] future failed: {futures[fut]}: {e}", exc=e)
                 if not_done:
-                    AppLogger.warning(
-                        f"[Collector] chunk timeout: {len(not_done)}/{len(chunk)} unfinished"
-                    )
+                    AppLogger.warning(f"[Collector] chunk timeout: {len(not_done)}/{len(chunk)} unfinished")
                     for fut in not_done:
                         fut.cancel()
             self._node.send_reliable(

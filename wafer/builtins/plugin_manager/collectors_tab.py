@@ -148,11 +148,7 @@ class CollectorsTab(QtWidgets.QWidget):
         return group
 
     def _toggle_all(self, name: str):
-        any_unchecked = any(
-            not self._matrix[(name, db)].isChecked()
-            for db in self._db_names
-            if (name, db) in self._matrix
-        )
+        any_unchecked = any(not self._matrix[(name, db)].isChecked() for db in self._db_names if (name, db) in self._matrix)
         for db in self._db_names:
             cb = self._matrix.get((name, db))
             if cb:
@@ -177,7 +173,10 @@ class CollectorsTab(QtWidgets.QWidget):
                 self._initial_state[db] = ui_state | (prev - known)
 
         if self._default_checks:
-            self._initial_defaults = set(self.get_default_collectors())
+            ui_defaults = set(self.get_default_collectors())
+            old_known = set(self._all_names)
+            saved = self._load_defaults()
+            self._initial_defaults = ui_defaults | (saved - old_known)
         else:
             self._initial_defaults = self._load_defaults()
 

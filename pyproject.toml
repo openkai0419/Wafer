@@ -2,7 +2,7 @@
 name = "wafer"
 version = "0.1.0"
 description = "Extensible local file viewer with plugin-based format support"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "tests-unit"]
@@ -18,7 +18,7 @@ markers = [
 ]
 
 [tool.pyright]
-pythonVersion = "3.10"
+pythonVersion = "3.11"
 pythonPlatform = "Windows"
 include = ["wafer"]
 typeCheckingMode = "off"
@@ -27,7 +27,7 @@ reportMissingImports = "error"
 reportMissingTypeStubs = false
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py311"
 line-length = 200
 
 [tool.ruff.lint]

@@ -1,10 +1,9 @@
-import json
 import os
 import subprocess
 import sys
 import urllib.error
 import pytest
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 
 @pytest.fixture(autouse=True)
@@ -18,15 +17,6 @@ def _isolate_env(monkeypatch, tmp_path):
     saved_path = os.environ.get("PATH", "")
     yield
     os.environ["PATH"] = saved_path
-
-
-FAKE_RELEASE = {
-    "assets": [
-        {"name": "mpv-dev-x86_64-20250201-git-abc1234.7z", "browser_download_url": "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20250201/mpv.7z"},
-        {"name": "mpv-dev-x86_64-v3-20250201-git-abc1234.7z", "browser_download_url": "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20250201/mpv-v3.7z"},
-        {"name": "mpv-x86_64-20250201-git-abc1234.7z", "browser_download_url": "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20250201/player.7z"},
-    ]
-}
 
 
 class TestValidateUrl:
@@ -119,65 +109,23 @@ class TestValidateArchivePath:
 
 
 class TestFindAssetUrl:
-    def test_finds_non_v3_dev_asset(self):
+    def test_returns_pinned_url(self):
+        from extensions.video._downloader import _find_asset_url, _PINNED_URL
+
+        url = _find_asset_url()
+        assert url == _PINNED_URL
+
+    def test_pinned_url_is_trusted(self):
+        from extensions.video._downloader import _find_asset_url, _validate_url, _ALLOWED_HOSTS
+
+        url = _find_asset_url()
+        assert _validate_url(url, _ALLOWED_HOSTS) == url
+
+    def test_pinned_url_is_https(self):
         from extensions.video._downloader import _find_asset_url
 
-        resp = MagicMock()
-        resp.read.return_value = json.dumps(FAKE_RELEASE).encode()
-        resp.__enter__ = MagicMock(return_value=resp)
-        resp.__exit__ = MagicMock(return_value=False)
-
-        with patch("urllib.request.urlopen", return_value=resp):
-            url = _find_asset_url()
-
-        assert "mpv.7z" in url
-        assert url.startswith("https://github.com/")
-
-    def test_returns_none_when_no_match(self):
-        from extensions.video._downloader import _find_asset_url
-
-        release = {"assets": [{"name": "unrelated.zip", "browser_download_url": "https://github.com/other"}]}
-        resp = MagicMock()
-        resp.read.return_value = json.dumps(release).encode()
-        resp.__enter__ = MagicMock(return_value=resp)
-        resp.__exit__ = MagicMock(return_value=False)
-
-        with patch("urllib.request.urlopen", return_value=resp):
-            url = _find_asset_url()
-
-        assert url is None
-
-    def test_rejects_untrusted_download_url(self):
-        from extensions.video._downloader import _find_asset_url
-
-        release = {
-            "assets": [
-                {
-                    "name": "mpv-dev-x86_64-20250201-git-abc1234.7z",
-                    "browser_download_url": "https://evil.com/mpv.7z",
-                }
-            ]
-        }
-        resp = MagicMock()
-        resp.read.return_value = json.dumps(release).encode()
-        resp.__enter__ = MagicMock(return_value=resp)
-        resp.__exit__ = MagicMock(return_value=False)
-
-        with patch("urllib.request.urlopen", return_value=resp):
-            with pytest.raises(ValueError, match="Untrusted host"):
-                _find_asset_url()
-
-    def test_rejects_oversized_response(self):
-        from extensions.video._downloader import _find_asset_url, _MAX_API_RESPONSE
-
-        resp = MagicMock()
-        resp.read.return_value = b"x" * (_MAX_API_RESPONSE + 2)
-        resp.__enter__ = MagicMock(return_value=resp)
-        resp.__exit__ = MagicMock(return_value=False)
-
-        with patch("urllib.request.urlopen", return_value=resp):
-            with pytest.raises(RuntimeError, match="too large"):
-                _find_asset_url()
+        url = _find_asset_url()
+        assert url.startswith("https://")
 
 
 class TestExtractDll:

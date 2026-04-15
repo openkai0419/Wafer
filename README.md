@@ -5,7 +5,7 @@
 ![Wafer Screenshot](_docs/wafer_screenshot.png)
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB.svg)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB.svg)](https://www.python.org/)
 ![Platform](https://img.shields.io/badge/Platform-Windows-0078D6.svg)
 [![Release](https://img.shields.io/github/v/release/openkai0419/Wafer?style=flat-square)](https://github.com/openkai0419/Wafer/releases/latest)
 [![Release Date](https://img.shields.io/github/release-date/openkai0419/Wafer?style=flat-square)](https://github.com/openkai0419/Wafer/releases/latest)
@@ -28,13 +28,15 @@ Plugin-based extensions add support for any file format. Currently Windows only 
 3. Extract the zip to any folder (prefer SSD)
 4. Run `Wafer.exe`
 
+A bundled Python environment is included — no separate Python installation is required.
+
 To uninstall, run `cleanup.bat` to remove app data from `%LOCALAPPDATA%\Wafer`, and delete the extracted files.
 
 ### From Source
 
 #### Requirements
 
-- Python 3.10+
+- Python 3.11+
 - Windows (currently the only tested OS)
 
 #### Setup
@@ -101,11 +103,10 @@ Extensions are placed as folders under `extensions/`. `PluginLoader` auto-discov
 
 ### How It Works
 
-1. If `requirements.txt` exists and dependencies are not installed (or outdated), they are auto-installed to `.packages/` via pip
+1. If `requirements.txt` exists and dependencies are not installed (or outdated), they are auto-installed to `extensions/.packages/` via pip
 2. `.packages/` is added to `sys.path`
 3. `lib/` is added to DLL search paths
 4. All `*.py` files are imported and plugin classes are auto-discovered by inheritance
-5. In frozen (exe) builds, pip is invoked via an embedded Python environment
 
 ### Extension Examples
 

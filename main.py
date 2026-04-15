@@ -1,4 +1,6 @@
 import argparse
+import atexit
+import faulthandler
 import io
 import os
 import signal
@@ -9,15 +11,34 @@ os.environ.setdefault('QSG_RHI_BACKEND', 'opengl')
 
 import setproctitle
 
-if getattr(sys, 'frozen', False):
-    if sys.stdout is None:
-        sys.stdout = io.StringIO()
-    if sys.stderr is None:
-        sys.stderr = io.StringIO()
+if sys.stdout is None:
+    sys.stdout = io.StringIO()
+if sys.stderr is None:
+    sys.stderr = io.StringIO()
 
-from wafer.utils.paths import list_setting_db_names
+from wafer.utils.paths import list_setting_db_names, resolve_data_path
 from wafer.utils.process_lock import SafeProcessLock
 from wafer.utils.logs import AppLogger
+
+
+def _setup_faulthandler():
+    # WARNING: faulthandler conflicts with LuaJIT SEH (0xe24c4a02) in libmpv-2.dll.
+    # Enabling this WILL cause process crashes when video playback is active.
+    # Only enable via WAFER_FAULTHANDLER=1 for debugging non-mpv fatal crashes.
+    # Root fix: rebuild libmpv with -Dlua=disabled (see jaseg/python-mpv#305).
+    if not os.environ.get('WAFER_FAULTHANDLER'):
+        return
+    crash_dir = resolve_data_path(".crashlog")
+    os.makedirs(crash_dir, exist_ok=True)
+    crash_path = os.path.join(crash_dir, f"crash_{os.getpid()}.log")
+    try:
+        crash_file = open(crash_path, "w", encoding="utf-8")
+        faulthandler.enable(file=crash_file)
+    except Exception:
+        faulthandler.enable()
+
+
+_setup_faulthandler()
 from wafer.utils.profiling import profiler
 from wafer import __version__
 from wafer.constants import APP_DATA_DIR_NAME, APP_ID, APP_NAME, DEFAULT_DB_NAME
@@ -191,4 +212,12 @@ def main():
         load_plugins()
         _entry_viewer(app, profile_id=args.profile)
 if __name__ == '__main__':
-    main()
+    atexit.register(lambda: AppLogger.info(f'process exit (pid={os.getpid()})'))
+    try:
+        main()
+    except SystemExit:
+        raise
+    except BaseException:
+        import traceback
+        AppLogger.error(f'fatal crash in main():\n{traceback.format_exc()}')
+        raise

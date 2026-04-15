@@ -16,6 +16,7 @@ from .paths import resolve_data_path
 from .signal import Signal
 
 _LOG_PATH = resolve_data_path(".log")
+_CRASH_LOG_PATH = resolve_data_path(".crashlog")
 _logger = None
 _initialized = False
 _role = ""
@@ -52,10 +53,49 @@ def _cleanup_old_logs(log_dir=_LOG_PATH, keep_latest=10):
                     os.remove(f)
                     deleted += 1
                 except Exception as e:
-                    print(f"Failed to delete {f}: {e}")
+                    AppLogger.warning(f"Failed to delete {f}: {e}")
         return deleted
     except Exception as e:
-        print(f"_cleanup_old_logs failed: {e}", file=sys.stderr)
+        AppLogger.warning(f"_cleanup_old_logs failed: {e}")
+        return 0
+
+
+def _cleanup_crash_logs(crash_dir=_CRASH_LOG_PATH, keep_latest=20):
+    try:
+        log_files = sorted(
+            glob.glob(os.path.join(crash_dir, "crash_*.log")),
+            key=os.path.getmtime,
+            reverse=True,
+        )
+        deleted = 0
+        for f in log_files:
+            try:
+                size = os.path.getsize(f)
+            except OSError:
+                continue
+            if size == 0:
+                match = re.search(r"crash_(\d+)\.log$", os.path.basename(f))
+                if match and _is_pid_active(int(match.group(1))):
+                    continue
+                try:
+                    os.remove(f)
+                    deleted += 1
+                except Exception as e:
+                    AppLogger.warning(f"Failed to delete {f}: {e}")
+                continue
+        non_empty = [f for f in log_files if os.path.exists(f) and os.path.getsize(f) > 0]
+        for f in non_empty[keep_latest:]:
+            match = re.search(r"crash_(\d+)\.log$", os.path.basename(f))
+            if match and _is_pid_active(int(match.group(1))):
+                continue
+            try:
+                os.remove(f)
+                deleted += 1
+            except Exception as e:
+                AppLogger.warning(f"Failed to delete {f}: {e}")
+        return deleted
+    except Exception as e:
+        AppLogger.warning(f"_cleanup_crash_logs failed: {e}")
         return 0
 
 
@@ -252,7 +292,8 @@ def _initialize():
     _logger = _LoggerFactory.get()
     sys.excepthook = _create_exception_hook()
     threading.excepthook = _create_threading_exception_hook()
-    _cleanup_old_logs(keep_latest=0)
+    _cleanup_old_logs(keep_latest=5)
+    _cleanup_crash_logs(keep_latest=20)
     _initialized = True
 
 

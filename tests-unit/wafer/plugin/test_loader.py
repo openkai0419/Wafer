@@ -5,7 +5,7 @@ from pathlib import Path
 
 from wafer.plugin.registry import BasePlugin, PluginRegistry, FilePluginRegistry
 from wafer.plugin.loader import PluginLoader
-from wafer.plugin.installer import _PACKAGES_DIR, _INSTALL_STAMP, _POST_INSTALL_STAMP, needs_post_install, needs_setup
+from wafer.plugin.installer import _PACKAGES_DIR, _STAMPS_DIR, needs_post_install, needs_setup
 
 
 @pytest.fixture
@@ -253,22 +253,27 @@ class TestDiscoverExtension:
 
 class TestNeedsPostInstall:
     def test_returns_true_when_no_stamp(self, tmp_path):
-        plugin_dir = tmp_path / "plugin"
-        plugin_dir.mkdir()
-        (plugin_dir / "requirements.txt").write_text("some-pkg\n")
-        assert needs_post_install(str(plugin_dir)) is True
+        ext_dir = tmp_path / "extensions"
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
+        (plugin / "requirements.txt").write_text("some-pkg\n")
+        assert needs_post_install(str(plugin)) is True
 
     def test_returns_false_when_stamp_exists(self, tmp_path):
-        plugin_dir = tmp_path / "plugin"
-        vendor = plugin_dir / _PACKAGES_DIR
-        vendor.mkdir(parents=True)
-        (vendor / _POST_INSTALL_STAMP).touch()
-        assert needs_post_install(str(plugin_dir)) is False
+        ext_dir = tmp_path / "extensions"
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
+        (plugin / "requirements.txt").write_text("some-pkg\n")
+        stamps = ext_dir / _PACKAGES_DIR / _STAMPS_DIR
+        stamps.mkdir(parents=True)
+        (stamps / "plugin.post_installed").touch()
+        assert needs_post_install(str(plugin)) is False
 
     def test_returns_false_when_no_requirements(self, tmp_path):
-        plugin_dir = tmp_path / "plugin"
-        plugin_dir.mkdir()
-        assert needs_post_install(str(plugin_dir)) is False
+        ext_dir = tmp_path / "extensions"
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
+        assert needs_post_install(str(plugin)) is False
 
 
 class TestApplyPriorityOrder:
@@ -333,21 +338,21 @@ class TestApplyPriorityOrder:
         assert names[2] == "f"
 
 
-class TestSharedPackagesDir:
-    def test_load_all_adds_shared_dir_to_sys_path(self, tmp_path):
+class TestPackagesDir:
+    def test_load_all_adds_packages_dir_to_sys_path(self, tmp_path):
         plugin_dir = tmp_path / "plugins"
         plugin_dir.mkdir()
-        shared = plugin_dir / ".shared_packages"
-        shared.mkdir()
-        (shared / "dummy.txt").write_text("")
+        packages = plugin_dir / _PACKAGES_DIR
+        packages.mkdir()
+        (packages / "dummy.txt").write_text("")
 
         registries = _make_registries()
         loader = PluginLoader(str(plugin_dir), registries)
         loader.load_all()
-        assert str(shared) in sys.path
-        sys.path.remove(str(shared))
+        assert str(packages) in sys.path
+        sys.path.remove(str(packages))
 
-    def test_load_all_skips_shared_dir_when_missing(self, tmp_path):
+    def test_load_all_skips_packages_dir_when_missing(self, tmp_path):
         plugin_dir = tmp_path / "plugins"
         plugin_dir.mkdir()
 
@@ -355,22 +360,22 @@ class TestSharedPackagesDir:
         loader = PluginLoader(str(plugin_dir), registries)
         before = list(sys.path)
         loader.load_all()
-        shared_path = str(plugin_dir / ".shared_packages")
-        assert shared_path not in sys.path
+        packages_path = str(plugin_dir / _PACKAGES_DIR)
+        assert packages_path not in sys.path
         sys.path[:] = before
 
-    def test_discover_extension_adds_and_removes_shared_dir(self, tmp_path):
+    def test_discover_extension_adds_and_removes_packages_dir(self, tmp_path):
         plugin_dir = tmp_path / "plugins"
         ext_dir = plugin_dir / "test_ext"
         ext_dir.mkdir(parents=True)
         (ext_dir / "__init__.py").write_text("")
-        shared = plugin_dir / ".shared_packages"
-        shared.mkdir()
+        packages = plugin_dir / _PACKAGES_DIR
+        packages.mkdir()
 
-        shared_str = str(shared)
-        assert shared_str not in sys.path
+        packages_str = str(packages)
+        assert packages_str not in sys.path
         PluginLoader.discover_extension(str(ext_dir))
-        assert shared_str not in sys.path
+        assert packages_str not in sys.path
 
         for key in list(sys.modules):
             if key.startswith("_plugins_test_ext"):

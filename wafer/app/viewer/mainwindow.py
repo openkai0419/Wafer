@@ -617,6 +617,26 @@ class MainWindow(QtWidgets.QMainWindow):
         self._profile_deleted = True
         self.close()
 
+    def _perform_system_restart(self, include_self=False):
+        from ...core.platform.process import AppProcess
+
+        node = getattr(self, "_node", None)
+        if node:
+            from ...core.profile import ProfileStore
+
+            store = ProfileStore.instance()
+            active_ids = store.get_active_profile_ids()
+            own_pid = self.profile_id
+            restore_ids = active_ids if include_self else [pid for pid in active_ids if pid != own_pid]
+            if restore_ids:
+                store.set_restore_profile_ids(restore_ids)
+            for pid in active_ids:
+                if pid != own_pid:
+                    node.send("profile.restart", pid, dst="viewer")
+
+        AppProcess.terminate_cmd("--tray")
+        AppProcess.new_main("--tray")
+
     @QtCore.Slot()
     def close_by_restart(self):
         self._save_profile()
@@ -823,6 +843,15 @@ class MainWindow(QtWidgets.QMainWindow):
             t.dump_missing_keys()
         except Exception as e:
             AppLogger.warning(f"on_close failed: {e}", exc=e)
+        try:
+            from ...plugin.settings import PluginSettings
+
+            ps = PluginSettings()
+            if ps.is_restart_pending():
+                ps.clear_restart_pending()
+                self._perform_system_restart()
+        except Exception as e:
+            AppLogger.warning(f"on_close restart_tray failed: {e}", exc=e)
         try:
             if hasattr(self, "_bridge"):
                 AppLogger.info("on_close [STOPPING]")

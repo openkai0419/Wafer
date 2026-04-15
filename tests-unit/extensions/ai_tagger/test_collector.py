@@ -320,12 +320,14 @@ class TestIdleTimeout:
         self.collector._check_idle()
         assert self.collector._engine is None
 
-        with patch("extensions.ai_tagger.collector.ensure_model") as mock_ensure, patch("extensions.ai_tagger._inference.WD14Inference") as MockInference:
-            mock_session = MagicMock()
-            mock_session.get_providers.return_value = ["CPUExecutionProvider"]
-            mock_instance = MagicMock()
-            mock_instance.session = mock_session
-            MockInference.return_value = mock_instance
+        mock_inference_mod = MagicMock()
+        mock_session = MagicMock()
+        mock_session.get_providers.return_value = ["CPUExecutionProvider"]
+        mock_instance = MagicMock()
+        mock_instance.session = mock_session
+        mock_inference_mod.WD14Inference.return_value = mock_instance
+
+        with patch("extensions.ai_tagger.collector.ensure_model") as mock_ensure, patch.dict("sys.modules", {"extensions.ai_tagger._inference": mock_inference_mod}):
             mock_ensure.return_value = "/fake/model"
 
             self.collector._ensure_engine()

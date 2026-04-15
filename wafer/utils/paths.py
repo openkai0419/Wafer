@@ -68,6 +68,7 @@ def get_resource_path():
         cwd_p = Path.cwd() / "_resources"
         if cwd_p.is_dir():
             from .logs import AppLogger
+
             AppLogger.warning(f"_resources not found at {p}, falling back to cwd: {cwd_p}")
             return cwd_p
     return p
@@ -78,14 +79,11 @@ def stem(path):
 
 
 def get_app_root_dir():
-    if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent
+    main_module = sys.modules.get("__main__")
+    if hasattr(main_module, "__file__"):
+        return Path(main_module.__file__).resolve().parent
     else:
-        main_module = sys.modules.get("__main__")
-        if hasattr(main_module, "__file__"):
-            return Path(main_module.__file__).resolve().parent
-        else:
-            return Path.cwd()
+        return Path.cwd()
 
 
 def _resolve_app_path(relative_path, base_dir):

@@ -3,6 +3,8 @@ from ...utils.formatting import dpix
 from ...utils.logs import AppLogger
 from ...utils.notifier import Notifier
 from ...plugin.settings import PluginSettings
+from ...plugin.installer import has_pending_packages
+from ...plugin.loader import get_plugin_dir
 from ...plugin.panel.base import BasePanelPlugin
 from ...core.color.theme import ThemeManager
 from ...core.qt.dispatcher import Dispatcher
@@ -59,7 +61,7 @@ def _build_stylesheet() -> str:
             color: {p.success};
             border: 1px solid rgba({_hex_rgb(p.success)}, 0.3);
         }}
-        QPushButton#status_btn[status="no_deps"] {{
+        QPushButton#status_btn[status="deferred"] {{
             background: transparent;
             color: {p.text_muted};
             border: 1px solid {p.border_default};
@@ -70,6 +72,14 @@ def _build_stylesheet() -> str:
             border: none;
         }}
         QPushButton#status_btn[status="install"]:hover {{
+            background: {p.bg_hover};
+        }}
+        QPushButton#status_btn[status="setup"] {{
+            background: {p.accent};
+            color: {p.accent_text};
+            border: none;
+        }}
+        QPushButton#status_btn[status="setup"]:hover {{
             background: {p.bg_hover};
         }}
         QPushButton#status_btn[status="installing"] {{
@@ -152,7 +162,8 @@ class PluginManagerWidget(QtWidgets.QWidget):
         collector_names, parser_names = self._collect_worker_names()
         self._collectors_tab = CollectorsTab(collector_names, parser_names)
         self._collectors_tab.delete_requested.connect(self._send_delete)
-        self._tabs.addTab(self._scrollable(self._collectors_tab), "Collectors")
+        self._collectors_scroll = self._scrollable(self._collectors_tab)
+        self._tabs.addTab(self._collectors_scroll, "Collectors")
 
         from .viewers_tab import OrderTab, REGISTRY_KEYS
 
@@ -163,9 +174,12 @@ class PluginManagerWidget(QtWidgets.QWidget):
 
         self._initial_enabled = self._settings.enabled_names() or set()
         self._initial_orders = dict(saved_orders)
-        self._tabs.addTab(self._scrollable(self._order_tab), t("Order"))
+        self._order_scroll = self._scrollable(self._order_tab)
+        self._tabs.addTab(self._order_scroll, t("Order"))
+        self._collectors_dirty = False
 
         self._ext_tab.enabled_changed.connect(self._sync_tabs)
+        self._connect_bridge()
 
         self._splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
         self._splitter.addWidget(self._ext_tab)
@@ -206,19 +220,26 @@ class PluginManagerWidget(QtWidgets.QWidget):
         enabled = self._ext_tab.collect_enabled()
         orders = self._order_tab.get_orders()
         has_changes = self._has_plugin_changes(enabled, orders) or self._collectors_tab.has_changes()
-        if not has_changes:
+        pending = has_pending_packages(get_plugin_dir())
+        if not has_changes and not pending:
             Notifier.info(t("No changes to save"))
             return
-        self._settings.set_enabled(enabled)
-        for key, order in orders.items():
-            self._settings.set_priority_order(key, order)
-        AppLogger.info(f"[PluginManager] Saved: enabled={sorted(enabled)}, orders={orders}")
-        self._initial_enabled = set(enabled)
-        self._initial_orders = dict(orders)
+        self._settings.set_restart_pending(True)
+        if has_changes:
+            self._settings.set_enabled(enabled)
+            for key, order in orders.items():
+                self._settings.set_priority_order(key, order)
+            AppLogger.info(f"[PluginManager] Saved: enabled={sorted(enabled)}, orders={orders}")
+            self._initial_enabled = set(enabled)
+            self._initial_orders = dict(orders)
+        if has_changes:
+            body = t("Plugin settings have been saved.\nRestart is required.")
+        else:
+            body = t("Pending updates will be applied on restart.")
         msg = QtWidgets.QMessageBox(
             QtWidgets.QMessageBox.Question,
             t("Restart Required"),
-            t("Plugin settings have been saved.\nRestart is required."),
+            body,
             parent=self,
         )
         restart_btn = msg.addButton(t("Restart"), QtWidgets.QMessageBox.AcceptRole)
@@ -244,12 +265,15 @@ class PluginManagerWidget(QtWidgets.QWidget):
         from .viewers_tab import REGISTRY_KEYS
 
         registry_data = {key: self._ext_tab.collect_enabled_plugins(key) for key in REGISTRY_KEYS}
-        self._order_tab.refresh(
-            registry_data,
-            self._compute_builtin_command_names(registry_data),
+        self._refresh_with_scroll(
+            self._order_scroll,
+            lambda: self._order_tab.refresh(
+                registry_data,
+                self._compute_builtin_command_names(registry_data),
+            ),
         )
         c_names, d_names = self._collect_worker_names()
-        self._collectors_tab.refresh(c_names, d_names)
+        self._refresh_with_scroll(self._collectors_scroll, lambda: self._collectors_tab.refresh(c_names, d_names))
 
     def _collect_worker_names(self) -> tuple[list[str], list[str]]:
         collectors = [cls.NAME for cls in self._ext_tab.collect_enabled_plugins("collector")]
@@ -272,10 +296,29 @@ class PluginManagerWidget(QtWidgets.QWidget):
             )
         AppLogger.info(f"[PluginManager] Sent delete for {len(pairs)} pairs")
 
+    @staticmethod
+    def _refresh_with_scroll(scroll_area: QtWidgets.QScrollArea, refresh_fn):
+        vbar = scroll_area.verticalScrollBar()
+        pos = vbar.value()
+        refresh_fn()
+        QtCore.QTimer.singleShot(0, lambda: vbar.setValue(pos))
+
     def showEvent(self, event):
         super().showEvent(event)
-        c_names, d_names = self._collect_worker_names()
-        self._collectors_tab.refresh(c_names, d_names)
+        if self._collectors_dirty:
+            self._collectors_dirty = False
+            c_names, d_names = self._collect_worker_names()
+            self._refresh_with_scroll(self._collectors_scroll, lambda: self._collectors_tab.refresh(c_names, d_names))
+
+    def _connect_bridge(self):
+        from ...app.viewer.ipc_bridge import ViewerIpcBridge
+
+        bridge = ViewerIpcBridge.instance()
+        if bridge:
+            bridge.db_content_updated.connect(self._on_db_updated)
+
+    def _on_db_updated(self, db: str):
+        self._collectors_dirty = True
 
     def closeEvent(self, event):
         self._ext_tab.cancel_pending()

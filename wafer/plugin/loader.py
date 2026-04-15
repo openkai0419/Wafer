@@ -5,7 +5,7 @@ import os
 import sys
 
 from ..utils.logs import AppLogger
-from .installer import _PACKAGES_DIR, _SHARED_DIR, needs_setup
+from .installer import _PACKAGES_DIR, apply_pending_packages, needs_setup
 from .registry import RegistryBase, CommandGroupRegistry
 from .viewer.base import BaseViewerPlugin
 from .grid.base import BaseGridPlugin
@@ -47,11 +47,7 @@ def _get_registry_map():
 
 
 def get_plugin_dir() -> str:
-    if getattr(sys, "frozen", False):
-        base = os.path.dirname(sys.executable)
-    else:
-        base = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    return os.path.join(base, "extensions")
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "extensions")
 
 
 def _discover_plugins(module) -> list[tuple[str, type]]:
@@ -89,9 +85,10 @@ class PluginLoader:
     def load_all(self, on_progress=None) -> list[str]:
         if not os.path.isdir(self._plugin_dir):
             return []
-        shared_dir = os.path.join(self._plugin_dir, _SHARED_DIR)
-        if os.path.isdir(shared_dir) and shared_dir not in sys.path:
-            sys.path.insert(0, shared_dir)
+        apply_pending_packages(self._plugin_dir)
+        packages_dir = os.path.join(self._plugin_dir, _PACKAGES_DIR)
+        if os.path.isdir(packages_dir) and packages_dir not in sys.path:
+            sys.path.insert(0, packages_dir)
         loaded = []
         for name in sorted(os.listdir(self._plugin_dir)):
             folder = os.path.join(self._plugin_dir, name)
@@ -127,10 +124,6 @@ class PluginLoader:
         if needs_setup(folder):
             return 0
 
-        vendor_dir = os.path.join(folder, _PACKAGES_DIR)
-        if os.path.isdir(vendor_dir) and vendor_dir not in sys.path:
-            sys.path.insert(0, vendor_dir)
-
         _setup_dll_directory(folder)
 
         total = self._import_and_register(name, folder)
@@ -156,19 +149,16 @@ class PluginLoader:
     def discover_extension(folder: str) -> list[tuple[str, type]]:
         name = os.path.basename(folder)
         extensions_dir = os.path.dirname(folder)
-        shared_dir = os.path.join(extensions_dir, _SHARED_DIR)
-        vendor_dir = os.path.join(folder, _PACKAGES_DIR)
-        added = []
-        for d in (vendor_dir, shared_dir):
-            if os.path.isdir(d) and d not in sys.path:
-                sys.path.insert(0, d)
-                added.append(d)
+        packages_dir = os.path.join(extensions_dir, _PACKAGES_DIR)
+        added = False
+        if os.path.isdir(packages_dir) and packages_dir not in sys.path:
+            sys.path.insert(0, packages_dir)
+            added = True
         try:
             return _import_extension(name, folder)
         finally:
-            for d in added:
-                if d in sys.path:
-                    sys.path.remove(d)
+            if added and packages_dir in sys.path:
+                sys.path.remove(packages_dir)
 
 
 def _import_extension(name: str, folder: str) -> list[tuple[str, type]]:

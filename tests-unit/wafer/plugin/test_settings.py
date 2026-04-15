@@ -75,6 +75,29 @@ class TestPluginSettingsPriorityOrder:
         assert ps.priority_order("viewer") == ["new_a", "new_b"]
 
 
+class TestRestartPending:
+    def test_false_when_no_file(self):
+        ps = PluginSettings()
+        assert ps.is_restart_pending() is False
+
+    def test_set_and_read(self):
+        ps = PluginSettings()
+        ps.set_restart_pending(True)
+        assert ps.is_restart_pending() is True
+
+    def test_clear(self):
+        ps = PluginSettings()
+        ps.set_restart_pending(True)
+        ps.clear_restart_pending()
+        assert ps.is_restart_pending() is False
+
+    def test_set_false_explicitly(self):
+        ps = PluginSettings()
+        ps.set_restart_pending(True)
+        ps.set_restart_pending(False)
+        assert ps.is_restart_pending() is False
+
+
 class TestIniLowLevel:
     def test_read_missing_key(self):
         assert _read_ini_value("nonexistent/key") is None

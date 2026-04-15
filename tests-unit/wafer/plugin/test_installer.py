@@ -1,7 +1,7 @@
-import hashlib
 import os
+import platform
+import shutil
 import sys
-import zipfile
 import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
@@ -9,14 +9,26 @@ from unittest.mock import patch, MagicMock
 from wafer.plugin import installer
 from wafer.plugin.installer import (
     EmbeddedPython,
-    _validate_url,
-    _sha256_file,
-    _download_file,
     _run_subprocess,
+    _python_version,
+    _merge_requirements,
+    _normalize_pkg_name,
+    _parse_version_tuple,
+    _collect_installed_extensions,
+    _ensure_python_version,
+    _packages_dir,
+    _pending_dir,
+    _stamps_dir,
+    _extensions_dir_from_plugin,
+    _stamp_path,
+    _has_locked_files,
+    _is_locked,
+    _merge_or_defer,
+    _merge_dir,
+    apply_pending_packages,
+    has_pending_packages,
     install_requirements,
     install_packages,
-    shared_needs_install,
-    install_shared_requirements,
     write_post_install_stamp,
     needs_install,
     needs_post_install,
@@ -24,44 +36,12 @@ from wafer.plugin.installer import (
     has_post_install_hooks,
     install_extension,
     _PACKAGES_DIR,
-    _SHARED_DIR,
-    _INSTALL_STAMP,
-    _POST_INSTALL_STAMP,
+    _STAMPS_DIR,
+    _PENDING_DIR,
+    _PYTHON_VERSION_STAMP,
+    _write_install_stamp,
+    _stamp_version_matches,
 )
-
-
-class TestValidateUrl:
-    def test_https_python_org_allowed(self):
-        _validate_url("https://www.python.org/ftp/python/3.10.9/python-3.10.9-embed-amd64.zip")
-
-    def test_https_bootstrap_pypa_allowed(self):
-        _validate_url("https://bootstrap.pypa.io/get-pip.py")
-
-    def test_http_rejected(self):
-        with pytest.raises(ValueError, match="HTTPS"):
-            _validate_url("http://www.python.org/ftp/python/3.10.9/test.zip")
-
-    def test_untrusted_host_rejected(self):
-        with pytest.raises(ValueError, match="Untrusted"):
-            _validate_url("https://evil.example.com/python.zip")
-
-    def test_ftp_scheme_rejected(self):
-        with pytest.raises(ValueError, match="HTTPS"):
-            _validate_url("ftp://www.python.org/test.zip")
-
-
-class TestSha256File:
-    def test_computes_correct_hash(self, tmp_path):
-        f = tmp_path / "test.bin"
-        f.write_bytes(b"hello world")
-        expected = hashlib.sha256(b"hello world").hexdigest()
-        assert _sha256_file(str(f)) == expected
-
-    def test_empty_file(self, tmp_path):
-        f = tmp_path / "empty.bin"
-        f.write_bytes(b"")
-        expected = hashlib.sha256(b"").hexdigest()
-        assert _sha256_file(str(f)) == expected
 
 
 class TestRunSubprocess:
@@ -90,402 +70,507 @@ class TestRunSubprocess:
         assert len(calls) > 0
 
 
+class TestPythonVersion:
+    def test_returns_current_version(self):
+        assert _python_version() == platform.python_version()
+
+
 class TestEmbeddedPython:
-    def test_not_available_when_empty(self, tmp_path):
-        ep = EmbeddedPython(str(tmp_path / "_python"))
-        assert not ep.is_available
-        assert not ep.has_pip
-        assert not ep.is_ready
+    def test_uses_sys_executable(self):
+        ep = EmbeddedPython()
+        assert ep.exe_path == sys.executable
 
-    def test_available_when_exe_exists(self, tmp_path):
-        d = tmp_path / "_python"
-        d.mkdir()
-        (d / "python.exe").write_bytes(b"")
-        ep = EmbeddedPython(str(d))
-        assert ep.is_available
-        assert not ep.has_pip
+    def test_is_ready(self):
+        ep = EmbeddedPython()
+        assert ep.is_ready is True
 
-    def test_ready_when_exe_and_pip_exist(self, tmp_path):
-        d = tmp_path / "_python"
-        d.mkdir()
-        (d / "python.exe").write_bytes(b"")
-        scripts = d / "Scripts"
-        scripts.mkdir()
-        (scripts / "pip.exe").write_bytes(b"")
-        ep = EmbeddedPython(str(d))
-        assert ep.is_ready
 
-    def test_ensure_ready_returns_true_when_already_ready(self, tmp_path):
-        d = tmp_path / "_python"
-        d.mkdir()
-        (d / "python.exe").write_bytes(b"")
-        scripts = d / "Scripts"
-        scripts.mkdir()
-        (scripts / "pip.exe").write_bytes(b"")
-        ep = EmbeddedPython(str(d))
-        assert ep.ensure_ready() is True
+class TestNormalizePkgName:
+    def test_lowercase(self):
+        assert _normalize_pkg_name("Numpy") == "numpy"
 
-    def test_ensure_ready_unsupported_platform(self, tmp_path):
-        ep = EmbeddedPython(str(tmp_path / "_python"))
-        with patch("wafer.plugin.installer._platform_key", return_value=None):
-            assert ep.ensure_ready() is False
+    def test_underscore_to_dash(self):
+        assert _normalize_pkg_name("opencv_python") == "opencv-python"
 
-    def test_download_and_extract(self, tmp_path):
-        d = tmp_path / "_python"
-        d.mkdir()
+    def test_dots_to_dash(self):
+        assert _normalize_pkg_name("a.b.c") == "a-b-c"
 
-        zip_content_dir = tmp_path / "content"
-        zip_content_dir.mkdir()
-        (zip_content_dir / "python.exe").write_bytes(b"fake-exe")
-        (zip_content_dir / "python310._pth").write_text("python310.zip\n.\n#import site\n", encoding="utf-8")
+    def test_multiple_separators(self):
+        assert _normalize_pkg_name("My__Pkg-Name") == "my-pkg-name"
 
-        zip_path = tmp_path / "test.zip"
-        with zipfile.ZipFile(str(zip_path), "w") as zf:
-            zf.write(str(zip_content_dir / "python.exe"), "python.exe")
-            zf.write(str(zip_content_dir / "python310._pth"), "python310._pth")
 
-        expected_hash = _sha256_file(str(zip_path))
+class TestParseVersionTuple:
+    def test_simple(self):
+        assert _parse_version_tuple("1.2.3") == (1, 2, 3)
 
-        ep = EmbeddedPython(str(d))
-        with patch("wafer.plugin.installer._download_file") as mock_dl:
+    def test_two_part(self):
+        assert _parse_version_tuple("2.0") == (2, 0)
 
-            def fake_download(url, dest, **kw):
-                import shutil
+    def test_four_part(self):
+        assert _parse_version_tuple("4.13.0.92") == (4, 13, 0, 92)
 
-                shutil.copy2(str(zip_path), dest)
-                return os.path.getsize(dest)
 
-            mock_dl.side_effect = fake_download
-            ep._download_and_extract(
-                "https://www.python.org/ftp/python/3.10.9/test.zip",
-                expected_hash,
-            )
+class TestMergeRequirements:
+    def test_no_files(self):
+        assert _merge_requirements([]) == []
 
-        assert (d / "python.exe").exists()
-        assert (d / "python.exe").read_bytes() == b"fake-exe"
+    def test_single_file(self, tmp_path):
+        req = tmp_path / "r.txt"
+        req.write_text("numpy==2.2.6\npillow==12.2.0\n")
+        result = _merge_requirements([str(req)])
+        assert len(result) == 2
+        assert "numpy==2.2.6" in result
+        assert "pillow==12.2.0" in result
 
-    def test_download_hash_mismatch_raises(self, tmp_path):
-        d = tmp_path / "_python"
-        d.mkdir()
+    def test_dedup_same_version(self, tmp_path):
+        r1 = tmp_path / "a.txt"
+        r1.write_text("numpy==2.2.6\n")
+        r2 = tmp_path / "b.txt"
+        r2.write_text("numpy==2.2.6\n")
+        result = _merge_requirements([str(r1), str(r2)])
+        assert len(result) == 1
+        assert "numpy==2.2.6" in result
 
-        zip_path = tmp_path / "test.zip"
-        with zipfile.ZipFile(str(zip_path), "w") as zf:
-            zf.writestr("python.exe", b"fake")
+    def test_higher_version_wins(self, tmp_path):
+        r1 = tmp_path / "a.txt"
+        r1.write_text("py7zr==1.1.0\n")
+        r2 = tmp_path / "b.txt"
+        r2.write_text("py7zr==1.2.0\n")
+        result = _merge_requirements([str(r1), str(r2)])
+        assert len(result) == 1
+        assert "py7zr==1.2.0" in result
 
-        ep = EmbeddedPython(str(d))
-        with patch("wafer.plugin.installer._download_file") as mock_dl:
+    def test_four_part_version_comparison(self, tmp_path):
+        r1 = tmp_path / "a.txt"
+        r1.write_text("opencv-python==4.12.0.86\n")
+        r2 = tmp_path / "b.txt"
+        r2.write_text("opencv-python==4.13.0.92\n")
+        result = _merge_requirements([str(r1), str(r2)])
+        assert "opencv-python==4.13.0.92" in result
 
-            def fake_download(url, dest, **kw):
-                import shutil
+    def test_name_normalization(self, tmp_path):
+        r1 = tmp_path / "a.txt"
+        r1.write_text("opencv_python==4.12.0.86\n")
+        r2 = tmp_path / "b.txt"
+        r2.write_text("opencv-python==4.13.0.92\n")
+        result = _merge_requirements([str(r1), str(r2)])
+        assert len(result) == 1
 
-                shutil.copy2(str(zip_path), dest)
-                return os.path.getsize(dest)
+    def test_skips_comments_and_blanks(self, tmp_path):
+        req = tmp_path / "r.txt"
+        req.write_text("# comment\n\nnumpy==2.2.6\n")
+        result = _merge_requirements([str(req)])
+        assert result == ["numpy==2.2.6"]
 
-            mock_dl.side_effect = fake_download
-            with pytest.raises(ValueError, match="SHA256 mismatch"):
-                ep._download_and_extract(
-                    "https://www.python.org/ftp/python/3.10.9/test.zip",
-                    "deadbeef" * 8,
-                )
+    def test_missing_file_ignored(self, tmp_path):
+        r1 = tmp_path / "a.txt"
+        r1.write_text("numpy==2.2.6\n")
+        result = _merge_requirements([str(r1), str(tmp_path / "nonexistent.txt")])
+        assert result == ["numpy==2.2.6"]
 
-    def test_path_traversal_rejected(self, tmp_path):
-        d = tmp_path / "_python"
-        d.mkdir()
+    def test_unpinned_requirement(self, tmp_path):
+        req = tmp_path / "r.txt"
+        req.write_text("requests>=2.0\n")
+        result = _merge_requirements([str(req)])
+        assert result == ["requests>=2.0"]
 
-        zip_path = tmp_path / "evil.zip"
-        with zipfile.ZipFile(str(zip_path), "w") as zf:
-            zf.writestr("../escape.txt", "pwned")
+    def test_multiple_extensions_full_merge(self, tmp_path):
+        r1 = tmp_path / "image.txt"
+        r1.write_text("numpy==2.2.6\npillow==12.2.0\nopencv-python==4.13.0.92\n")
+        r2 = tmp_path / "video.txt"
+        r2.write_text("py7zr==1.1.0\npython-mpv==1.0.8\n")
+        r3 = tmp_path / "ffmpeg.txt"
+        r3.write_text("py7zr==1.1.0\n")
+        r4 = tmp_path / "ai.txt"
+        r4.write_text("numpy==2.2.6\npillow==12.2.0\nhuggingface_hub==1.10.1\n")
+        result = _merge_requirements([str(r1), str(r2), str(r3), str(r4)])
+        assert len(result) == 6
 
-        ep = EmbeddedPython(str(d))
-        with patch("wafer.plugin.installer._download_file") as mock_dl:
 
-            def fake_download(url, dest, **kw):
-                import shutil
+class TestCollectInstalledExtensions:
+    def test_empty_dir(self, tmp_path):
+        assert _collect_installed_extensions(str(tmp_path)) == []
 
-                shutil.copy2(str(zip_path), dest)
-                return os.path.getsize(dest)
+    def test_no_stamps_dir(self, tmp_path):
+        (tmp_path / _PACKAGES_DIR).mkdir()
+        assert _collect_installed_extensions(str(tmp_path)) == []
 
-            mock_dl.side_effect = fake_download
-            with pytest.raises(ValueError, match="Path traversal"):
-                ep._download_and_extract(
-                    "https://www.python.org/ftp/python/3.10.9/test.zip",
-                    "",
-                )
+    def test_collects_stamped_extensions(self, tmp_path):
+        stamps = tmp_path / _PACKAGES_DIR / _STAMPS_DIR
+        stamps.mkdir(parents=True)
+        (stamps / "image.installed").write_text("3.11.9")
+        (stamps / "video.installed").write_text("3.11.9")
+        img_dir = tmp_path / "image"
+        img_dir.mkdir()
+        (img_dir / "requirements.txt").write_text("numpy\n")
+        vid_dir = tmp_path / "video"
+        vid_dir.mkdir()
+        (vid_dir / "requirements.txt").write_text("mpv\n")
 
-    def test_setup_pip_uncomments_site(self, tmp_path):
-        d = tmp_path / "_python"
-        d.mkdir()
-        pth = d / "python310._pth"
-        pth.write_text("python310.zip\n.\n#import site\n", encoding="utf-8")
-        (d / "python.exe").write_bytes(b"")
+        result = _collect_installed_extensions(str(tmp_path))
+        basenames = sorted(os.path.basename(os.path.dirname(r)) for r in result)
+        assert basenames == ["image", "video"]
 
-        ep = EmbeddedPython(str(d))
-        with patch("wafer.plugin.installer._download_file"):
-            with patch("wafer.plugin.installer._sha256_file", return_value=installer._GET_PIP_SHA256):
-                with patch("wafer.plugin.installer._run_subprocess"):
-                    ep._setup_pip()
+    def test_skips_stamped_without_requirements(self, tmp_path):
+        stamps = tmp_path / _PACKAGES_DIR / _STAMPS_DIR
+        stamps.mkdir(parents=True)
+        (stamps / "exiftool.installed").write_text("3.11.9")
+        ext = tmp_path / "exiftool"
+        ext.mkdir()
+        assert _collect_installed_extensions(str(tmp_path)) == []
 
-        text = pth.read_text("utf-8")
-        assert "#import site" not in text
-        assert "import site" in text
+
+class TestEnsurePythonVersion:
+    def test_creates_version_stamp(self, tmp_path):
+        _ensure_python_version(str(tmp_path))
+        ver_file = tmp_path / _PACKAGES_DIR / _STAMPS_DIR / _PYTHON_VERSION_STAMP
+        assert ver_file.exists()
+        assert ver_file.read_text("utf-8").strip() == _python_version()
+
+    def test_noop_when_version_matches(self, tmp_path):
+        stamps = tmp_path / _PACKAGES_DIR / _STAMPS_DIR
+        stamps.mkdir(parents=True)
+        _write_install_stamp(str(stamps / _PYTHON_VERSION_STAMP))
+        pkg = tmp_path / _PACKAGES_DIR / "numpy"
+        pkg.mkdir()
+
+        _ensure_python_version(str(tmp_path))
+        assert pkg.exists()
+
+    def test_purges_on_version_mismatch(self, tmp_path):
+        stamps = tmp_path / _PACKAGES_DIR / _STAMPS_DIR
+        stamps.mkdir(parents=True)
+        (stamps / _PYTHON_VERSION_STAMP).write_text("3.10.9", "utf-8")
+        pkg = tmp_path / _PACKAGES_DIR / "numpy"
+        pkg.mkdir()
+
+        _ensure_python_version(str(tmp_path))
+        assert not pkg.exists()
+        new_ver = tmp_path / _PACKAGES_DIR / _STAMPS_DIR / _PYTHON_VERSION_STAMP
+        assert new_ver.exists()
+        assert new_ver.read_text("utf-8").strip() == _python_version()
+
+
+class TestPathHelpers:
+    def test_packages_dir(self, tmp_path):
+        assert _packages_dir(str(tmp_path)) == os.path.join(str(tmp_path), _PACKAGES_DIR)
+
+    def test_stamps_dir(self, tmp_path):
+        expected = os.path.join(str(tmp_path), _PACKAGES_DIR, _STAMPS_DIR)
+        assert _stamps_dir(str(tmp_path)) == expected
+
+    def test_extensions_dir_from_plugin(self, tmp_path):
+        plugin = tmp_path / "image"
+        plugin.mkdir()
+        assert _extensions_dir_from_plugin(str(plugin)) == str(tmp_path)
+
+    def test_stamp_path(self, tmp_path):
+        plugin = tmp_path / "image"
+        plugin.mkdir()
+        result = _stamp_path(str(plugin), ".installed")
+        expected = os.path.join(str(tmp_path), _PACKAGES_DIR, _STAMPS_DIR, "image.installed")
+        assert result == expected
 
 
 class TestInstallRequirements:
-    def test_uses_embedded_python(self, tmp_path):
-        plugin_dir = tmp_path / "plugin"
-        plugin_dir.mkdir()
-        (plugin_dir / "requirements.txt").write_text("requests\n")
+    def test_uses_merged_requirements(self, tmp_path):
+        ext_dir = tmp_path / "extensions"
+        plugin = ext_dir / "image"
+        plugin.mkdir(parents=True)
+        (plugin / "requirements.txt").write_text("numpy==2.2.6\n")
 
         mock_ep = MagicMock()
-        mock_ep.ensure_ready.return_value = True
+        mock_ep.pip_install.return_value = True
 
         with patch("wafer.plugin.installer.EmbeddedPython", return_value=mock_ep):
-            result = install_requirements(str(plugin_dir))
+            success, deferred = install_requirements(str(plugin), str(ext_dir))
 
-        assert result is True
-        mock_ep.ensure_ready.assert_called_once()
+        assert success is True
+        assert deferred is False
         mock_ep.pip_install.assert_called_once()
-        stamp = plugin_dir / _PACKAGES_DIR / _INSTALL_STAMP
+        call_args = mock_ep.pip_install.call_args[0]
+        assert _PACKAGES_DIR in call_args[1]
+        stamp = ext_dir / _PACKAGES_DIR / _STAMPS_DIR / "image.installed"
         assert stamp.exists()
 
-    def test_failure_returns_false(self, tmp_path):
-        plugin_dir = tmp_path / "plugin"
-        plugin_dir.mkdir()
-        (plugin_dir / "requirements.txt").write_text("requests\n")
+    def test_deferred_returns_true_with_deferred_flag(self, tmp_path):
+        ext_dir = tmp_path / "extensions"
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
+        (plugin / "requirements.txt").write_text("requests\n")
 
         mock_ep = MagicMock()
-        mock_ep.ensure_ready.return_value = False
+        mock_ep.pip_install.return_value = False
 
         with patch("wafer.plugin.installer.EmbeddedPython", return_value=mock_ep):
-            result = install_requirements(str(plugin_dir))
+            success, deferred = install_requirements(str(plugin), str(ext_dir))
 
-        assert result is False
+        assert success is True
+        assert deferred is True
+
+    def test_failure_returns_false(self, tmp_path):
+        ext_dir = tmp_path / "extensions"
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
+        (plugin / "requirements.txt").write_text("requests\n")
+
+        mock_ep = MagicMock()
+        mock_ep.pip_install.side_effect = RuntimeError("pip failed")
+
+        with patch("wafer.plugin.installer.EmbeddedPython", return_value=mock_ep):
+            success, deferred = install_requirements(str(plugin), str(ext_dir))
+
+        assert success is False
+        assert deferred is False
+
+    def test_empty_merge_still_writes_stamp(self, tmp_path):
+        ext_dir = tmp_path / "extensions"
+        plugin = ext_dir / "empty"
+        plugin.mkdir(parents=True)
+        (plugin / "requirements.txt").write_text("# no deps\n")
+
+        success, deferred = install_requirements(str(plugin), str(ext_dir))
+
+        assert success is True
+        assert deferred is False
+        stamp = ext_dir / _PACKAGES_DIR / _STAMPS_DIR / "empty.installed"
+        assert stamp.exists()
 
 
 class TestInstallPackages:
-    def test_installs_to_vendor_dir(self, tmp_path):
-        plugin_dir = tmp_path / "plugin"
-        plugin_dir.mkdir()
+    def test_installs_to_shared_dir(self, tmp_path):
+        ext_dir = tmp_path / "extensions"
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
 
         mock_ep = MagicMock()
-        mock_ep.ensure_ready.return_value = True
-        mock_ep.is_ready = True
         mock_ep.exe_path = "/fake/python.exe"
 
-        with patch("wafer.plugin.installer.EmbeddedPython", return_value=mock_ep), patch("wafer.plugin.installer._run_subprocess") as mock_run:
-            result = install_packages(str(plugin_dir), ["onnxruntime-gpu"])
+        with patch("wafer.plugin.installer.EmbeddedPython", return_value=mock_ep), patch("wafer.plugin.installer._run_subprocess") as mock_run, patch("wafer.plugin.installer._merge_or_defer", return_value=True) as mock_merge:
+            result = install_packages(str(plugin), ["onnxruntime-gpu"])
 
         assert result is True
         call_args = mock_run.call_args[0][0]
         assert "--target" in call_args
-        vendor_idx = call_args.index("--target")
-        assert _PACKAGES_DIR in call_args[vendor_idx + 1]
         assert "onnxruntime-gpu" in call_args
+        mock_merge.assert_called_once()
 
     def test_failure_returns_false(self, tmp_path):
-        plugin_dir = tmp_path / "plugin"
-        plugin_dir.mkdir()
+        ext_dir = tmp_path / "extensions"
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
 
-        mock_ep = MagicMock()
-        mock_ep.ensure_ready.return_value = False
-
-        with patch("wafer.plugin.installer.EmbeddedPython", return_value=mock_ep):
-            result = install_packages(str(plugin_dir), ["pkg"])
+        with patch("wafer.plugin.installer._run_subprocess", side_effect=RuntimeError("pip failed")):
+            result = install_packages(str(plugin), ["pkg"])
 
         assert result is False
 
     def test_multiple_packages(self, tmp_path):
-        plugin_dir = tmp_path / "plugin"
-        plugin_dir.mkdir()
+        ext_dir = tmp_path / "extensions"
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
 
         mock_ep = MagicMock()
-        mock_ep.ensure_ready.return_value = True
-        mock_ep.is_ready = True
         mock_ep.exe_path = "/fake/python.exe"
 
         with patch("wafer.plugin.installer.EmbeddedPython", return_value=mock_ep), patch("wafer.plugin.installer._run_subprocess") as mock_run:
-            install_packages(str(plugin_dir), ["pkg1", "pkg2"])
+            install_packages(str(plugin), ["pkg1", "pkg2"])
 
         call_args = mock_run.call_args[0][0]
         assert "pkg1" in call_args
         assert "pkg2" in call_args
 
+    def test_extra_args_appended(self, tmp_path):
+        ext_dir = tmp_path / "extensions"
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
 
-class TestSharedNeedsInstall:
-    def test_no_requirements_file(self, tmp_path):
-        assert shared_needs_install(str(tmp_path)) is False
+        mock_ep = MagicMock()
+        mock_ep.exe_path = "/fake/python.exe"
 
-    def test_no_stamp(self, tmp_path):
-        (tmp_path / "requirements.txt").write_text("numpy\n")
-        assert shared_needs_install(str(tmp_path)) is True
+        with patch("wafer.plugin.installer.EmbeddedPython", return_value=mock_ep), patch("wafer.plugin.installer._run_subprocess") as mock_run:
+            install_packages(str(plugin), ["torch"], extra_args=["--index-url", "https://example.com/whl"])
 
-    def test_stamp_older_than_requirements(self, tmp_path):
-        req = tmp_path / "requirements.txt"
-        req.write_text("numpy\n")
-        shared = tmp_path / _SHARED_DIR
-        shared.mkdir()
-        stamp = shared / _INSTALL_STAMP
+        call_args = mock_run.call_args[0][0]
+        assert "--index-url" in call_args
+        assert "https://example.com/whl" in call_args
+
+    def test_extra_args_none_no_effect(self, tmp_path):
+        ext_dir = tmp_path / "extensions"
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
+
+        mock_ep = MagicMock()
+        mock_ep.exe_path = "/fake/python.exe"
+
+        with patch("wafer.plugin.installer.EmbeddedPython", return_value=mock_ep), patch("wafer.plugin.installer._run_subprocess") as mock_run:
+            install_packages(str(plugin), ["pkg"])
+
+        call_args = mock_run.call_args[0][0]
+        assert "--index-url" not in call_args
+
+
+class TestStampVersionMatches:
+    def test_correct_version(self, tmp_path):
+        stamp = tmp_path / "stamp"
+        stamp.write_text(_python_version(), "utf-8")
+        assert _stamp_version_matches(str(stamp)) is True
+
+    def test_wrong_version(self, tmp_path):
+        stamp = tmp_path / "stamp"
+        stamp.write_text("3.10.9", "utf-8")
+        assert _stamp_version_matches(str(stamp)) is False
+
+    def test_empty_stamp(self, tmp_path):
+        stamp = tmp_path / "stamp"
+        stamp.write_text("", "utf-8")
+        assert _stamp_version_matches(str(stamp)) is False
+
+    def test_missing_file(self, tmp_path):
+        assert _stamp_version_matches(str(tmp_path / "nonexistent")) is False
+
+    def test_legacy_stamp_touch_only(self, tmp_path):
+        stamp = tmp_path / "stamp"
         stamp.touch()
-        os.utime(str(stamp), (0, 0))
-        assert shared_needs_install(str(tmp_path)) is True
-
-    def test_stamp_newer_than_requirements(self, tmp_path):
-        req = tmp_path / "requirements.txt"
-        req.write_text("numpy\n")
-        os.utime(str(req), (0, 0))
-        shared = tmp_path / _SHARED_DIR
-        shared.mkdir()
-        stamp = shared / _INSTALL_STAMP
-        stamp.touch()
-        assert shared_needs_install(str(tmp_path)) is False
-
-
-class TestInstallSharedRequirements:
-    def test_no_requirements_returns_true(self, tmp_path):
-        assert install_shared_requirements(str(tmp_path)) is True
-
-    def test_success_creates_stamp(self, tmp_path):
-        (tmp_path / "requirements.txt").write_text("numpy\n")
-        mock_ep = MagicMock()
-        mock_ep.ensure_ready.return_value = True
-
-        with patch("wafer.plugin.installer.EmbeddedPython", return_value=mock_ep):
-            result = install_shared_requirements(str(tmp_path))
-
-        assert result is True
-        stamp = tmp_path / _SHARED_DIR / _INSTALL_STAMP
-        assert stamp.exists()
-        mock_ep.pip_install.assert_called_once()
-
-    def test_embedded_not_ready_returns_false(self, tmp_path):
-        (tmp_path / "requirements.txt").write_text("numpy\n")
-        mock_ep = MagicMock()
-        mock_ep.ensure_ready.return_value = False
-
-        with patch("wafer.plugin.installer.EmbeddedPython", return_value=mock_ep):
-            result = install_shared_requirements(str(tmp_path))
-
-        assert result is False
-
-    def test_pip_failure_returns_false(self, tmp_path):
-        (tmp_path / "requirements.txt").write_text("numpy\n")
-        mock_ep = MagicMock()
-        mock_ep.ensure_ready.return_value = True
-        mock_ep.pip_install.side_effect = RuntimeError("pip failed")
-
-        with patch("wafer.plugin.installer.EmbeddedPython", return_value=mock_ep):
-            result = install_shared_requirements(str(tmp_path))
-
-        assert result is False
+        assert _stamp_version_matches(str(stamp)) is False
 
 
 class TestWritePostInstallStamp:
     def test_creates_stamp_file(self, tmp_path):
-        plugin_dir = tmp_path / "plugin"
-        plugin_dir.mkdir()
-        write_post_install_stamp(str(plugin_dir))
-        stamp = plugin_dir / _PACKAGES_DIR / _POST_INSTALL_STAMP
+        ext_dir = tmp_path / "extensions"
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
+        write_post_install_stamp(str(plugin))
+        stamp = ext_dir / _PACKAGES_DIR / _STAMPS_DIR / "plugin.post_installed"
         assert stamp.exists()
 
-    def test_creates_packages_dir_if_missing(self, tmp_path):
-        plugin_dir = tmp_path / "plugin"
-        plugin_dir.mkdir()
-        assert not (plugin_dir / _PACKAGES_DIR).exists()
-        write_post_install_stamp(str(plugin_dir))
-        assert (plugin_dir / _PACKAGES_DIR).is_dir()
-
     def test_idempotent(self, tmp_path):
-        plugin_dir = tmp_path / "plugin"
-        plugin_dir.mkdir()
-        write_post_install_stamp(str(plugin_dir))
-        write_post_install_stamp(str(plugin_dir))
-        stamp = plugin_dir / _PACKAGES_DIR / _POST_INSTALL_STAMP
+        ext_dir = tmp_path / "extensions"
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
+        write_post_install_stamp(str(plugin))
+        write_post_install_stamp(str(plugin))
+        stamp = ext_dir / _PACKAGES_DIR / _STAMPS_DIR / "plugin.post_installed"
         assert stamp.exists()
 
 
 class TestNeedsInstall:
     def test_no_requirements_returns_false(self, tmp_path):
-        plugin_dir = tmp_path / "plugin"
-        plugin_dir.mkdir()
-        assert needs_install(str(plugin_dir)) is False
+        ext_dir = tmp_path / "extensions"
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
+        assert needs_install(str(plugin)) is False
 
     def test_no_stamp_returns_true(self, tmp_path):
-        plugin_dir = tmp_path / "plugin"
-        plugin_dir.mkdir()
-        (plugin_dir / "requirements.txt").write_text("some-package\n")
-        assert needs_install(str(plugin_dir)) is True
+        ext_dir = tmp_path / "extensions"
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
+        (plugin / "requirements.txt").write_text("some-package\n")
+        assert needs_install(str(plugin)) is True
 
     def test_stamp_newer_returns_false(self, tmp_path):
-        plugin_dir = tmp_path / "plugin"
-        plugin_dir.mkdir()
-        req = plugin_dir / "requirements.txt"
+        ext_dir = tmp_path / "extensions"
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
+        req = plugin / "requirements.txt"
         req.write_text("some-package\n")
         os.utime(str(req), (0, 0))
-        vendor = plugin_dir / _PACKAGES_DIR
-        vendor.mkdir()
-        (vendor / _INSTALL_STAMP).touch()
-        assert needs_install(str(plugin_dir)) is False
+        stamps = ext_dir / _PACKAGES_DIR / _STAMPS_DIR
+        stamps.mkdir(parents=True)
+        _write_install_stamp(str(stamps / _PYTHON_VERSION_STAMP))
+        _write_install_stamp(str(stamps / "plugin.installed"))
+        assert needs_install(str(plugin)) is False
 
     def test_stamp_older_returns_true(self, tmp_path):
-        plugin_dir = tmp_path / "plugin"
-        plugin_dir.mkdir()
-        (plugin_dir / "requirements.txt").write_text("some-package\n")
-        vendor = plugin_dir / _PACKAGES_DIR
-        vendor.mkdir()
-        stamp = vendor / _INSTALL_STAMP
-        stamp.touch()
+        ext_dir = tmp_path / "extensions"
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
+        (plugin / "requirements.txt").write_text("some-package\n")
+        stamps = ext_dir / _PACKAGES_DIR / _STAMPS_DIR
+        stamps.mkdir(parents=True)
+        _write_install_stamp(str(stamps / _PYTHON_VERSION_STAMP))
+        stamp = stamps / "plugin.installed"
+        _write_install_stamp(str(stamp))
         os.utime(str(stamp), (0, 0))
-        assert needs_install(str(plugin_dir)) is True
+        assert needs_install(str(plugin)) is True
+
+    def test_version_mismatch_returns_true(self, tmp_path):
+        ext_dir = tmp_path / "extensions"
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
+        req = plugin / "requirements.txt"
+        req.write_text("some-package\n")
+        os.utime(str(req), (0, 0))
+        stamps = ext_dir / _PACKAGES_DIR / _STAMPS_DIR
+        stamps.mkdir(parents=True)
+        (stamps / _PYTHON_VERSION_STAMP).write_text("3.10.9", "utf-8")
+        _write_install_stamp(str(stamps / "plugin.installed"))
+        assert needs_install(str(plugin)) is True
 
 
 class TestNeedsPostInstall:
     def test_returns_true_when_no_stamp(self, tmp_path):
-        plugin_dir = tmp_path / "plugin"
-        plugin_dir.mkdir()
-        (plugin_dir / "requirements.txt").write_text("some-pkg\n")
-        assert needs_post_install(str(plugin_dir)) is True
+        ext_dir = tmp_path / "extensions"
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
+        (plugin / "requirements.txt").write_text("some-pkg\n")
+        assert needs_post_install(str(plugin)) is True
 
     def test_returns_false_when_stamp_exists(self, tmp_path):
-        plugin_dir = tmp_path / "plugin"
-        vendor = plugin_dir / _PACKAGES_DIR
-        vendor.mkdir(parents=True)
-        (vendor / _POST_INSTALL_STAMP).touch()
-        assert needs_post_install(str(plugin_dir)) is False
+        ext_dir = tmp_path / "extensions"
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
+        (plugin / "requirements.txt").write_text("some-pkg\n")
+        stamps = ext_dir / _PACKAGES_DIR / _STAMPS_DIR
+        stamps.mkdir(parents=True)
+        (stamps / "plugin.post_installed").touch()
+        assert needs_post_install(str(plugin)) is False
 
     def test_returns_false_when_no_requirements(self, tmp_path):
-        plugin_dir = tmp_path / "plugin"
-        plugin_dir.mkdir()
-        assert needs_post_install(str(plugin_dir)) is False
+        ext_dir = tmp_path / "extensions"
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
+        assert needs_post_install(str(plugin)) is False
 
 
 class TestNeedsSetup:
     def test_true_when_pip_needed(self, tmp_path):
-        plugin_dir = tmp_path / "plugin"
-        plugin_dir.mkdir()
-        (plugin_dir / "requirements.txt").write_text("pkg\n")
-        assert needs_setup(str(plugin_dir)) is True
+        ext_dir = tmp_path / "extensions"
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
+        (plugin / "requirements.txt").write_text("pkg\n")
+        assert needs_setup(str(plugin)) is True
 
     def test_true_when_post_install_needed(self, tmp_path):
-        plugin_dir = tmp_path / "plugin"
-        vendor = plugin_dir / _PACKAGES_DIR
-        vendor.mkdir(parents=True)
-        (plugin_dir / "requirements.txt").write_text("pkg\n")
-        (vendor / _INSTALL_STAMP).touch()
-        assert needs_setup(str(plugin_dir)) is True
+        ext_dir = tmp_path / "extensions"
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
+        (plugin / "requirements.txt").write_text("pkg\n")
+        os.utime(str(plugin / "requirements.txt"), (0, 0))
+        stamps = ext_dir / _PACKAGES_DIR / _STAMPS_DIR
+        stamps.mkdir(parents=True)
+        _write_install_stamp(str(stamps / _PYTHON_VERSION_STAMP))
+        _write_install_stamp(str(stamps / "plugin.installed"))
+        assert needs_setup(str(plugin)) is True
 
     def test_false_when_both_stamps_exist(self, tmp_path):
-        plugin_dir = tmp_path / "plugin"
-        vendor = plugin_dir / _PACKAGES_DIR
-        vendor.mkdir(parents=True)
-        (plugin_dir / "requirements.txt").write_text("pkg\n")
-        (vendor / _INSTALL_STAMP).touch()
-        (vendor / _POST_INSTALL_STAMP).touch()
-        assert needs_setup(str(plugin_dir)) is False
+        ext_dir = tmp_path / "extensions"
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
+        (plugin / "requirements.txt").write_text("pkg\n")
+        os.utime(str(plugin / "requirements.txt"), (0, 0))
+        stamps = ext_dir / _PACKAGES_DIR / _STAMPS_DIR
+        stamps.mkdir(parents=True)
+        _write_install_stamp(str(stamps / _PYTHON_VERSION_STAMP))
+        _write_install_stamp(str(stamps / "plugin.installed"))
+        (stamps / "plugin.post_installed").touch()
+        assert needs_setup(str(plugin)) is False
 
     def test_false_when_no_requirements(self, tmp_path):
-        plugin_dir = tmp_path / "plugin"
-        plugin_dir.mkdir()
-        assert needs_setup(str(plugin_dir)) is False
+        ext_dir = tmp_path / "extensions"
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
+        assert needs_setup(str(plugin)) is False
 
 
 class TestHasPostInstallHooks:
@@ -546,11 +631,10 @@ class TestHasPostInstallHooks:
 
 class TestInstallExtension:
     def test_skips_when_no_install_needed(self, tmp_path):
-        plugin_dir = tmp_path / "plugin"
-        plugin_dir.mkdir()
-        (plugin_dir / "__init__.py").write_text("")
         ext_dir = tmp_path / "extensions"
-        ext_dir.mkdir()
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
+        (plugin / "__init__.py").write_text("")
 
         from wafer.plugin.registry import PluginBase
 
@@ -560,49 +644,30 @@ class TestInstallExtension:
             PRIORITY = 1
 
         with patch("wafer.plugin.installer.needs_install", return_value=False), patch("wafer.plugin.loader.PluginLoader.discover_extension", return_value=[("grid", SimplePlugin)]):
-            ok, post_ok, plugins = install_extension(str(plugin_dir), str(ext_dir))
+            ok, post_ok, plugins = install_extension(str(plugin), str(ext_dir))
 
         assert ok is True
         assert post_ok is True
         assert len(plugins) == 1
 
-    def test_shared_failure_returns_false(self, tmp_path):
-        plugin_dir = tmp_path / "plugin"
-        plugin_dir.mkdir()
+    def test_install_failure_returns_false(self, tmp_path):
         ext_dir = tmp_path / "extensions"
-        ext_dir.mkdir()
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
 
         with (
             patch("wafer.plugin.installer.needs_install", return_value=True),
-            patch("wafer.plugin.installer.shared_needs_install", return_value=True),
-            patch("wafer.plugin.installer.install_shared_requirements", return_value=False),
+            patch("wafer.plugin.installer.install_requirements", return_value=(False, False)),
         ):
-            ok, post_ok, plugins = install_extension(str(plugin_dir), str(ext_dir))
-
-        assert ok is False
-        assert plugins == []
-
-    def test_extension_install_failure_returns_false(self, tmp_path):
-        plugin_dir = tmp_path / "plugin"
-        plugin_dir.mkdir()
-        ext_dir = tmp_path / "extensions"
-        ext_dir.mkdir()
-
-        with (
-            patch("wafer.plugin.installer.needs_install", return_value=True),
-            patch("wafer.plugin.installer.shared_needs_install", return_value=False),
-            patch("wafer.plugin.installer.install_requirements", return_value=False),
-        ):
-            ok, post_ok, plugins = install_extension(str(plugin_dir), str(ext_dir))
+            ok, post_ok, plugins = install_extension(str(plugin), str(ext_dir))
 
         assert ok is False
         assert plugins == []
 
     def test_post_install_hook_called(self, tmp_path):
-        plugin_dir = tmp_path / "plugin"
-        plugin_dir.mkdir()
         ext_dir = tmp_path / "extensions"
-        ext_dir.mkdir()
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
 
         from wafer.plugin.registry import PluginBase
 
@@ -618,20 +683,19 @@ class TestInstallExtension:
                 calls.append(plugin_dir)
 
         with patch("wafer.plugin.installer.needs_install", return_value=False), patch("wafer.plugin.loader.PluginLoader.discover_extension", return_value=[("grid", HookPlugin)]):
-            ok, post_ok, plugins = install_extension(str(plugin_dir), str(ext_dir))
+            ok, post_ok, plugins = install_extension(str(plugin), str(ext_dir))
 
         assert ok is True
         assert post_ok is True
         assert len(calls) == 1
-        assert calls[0] == str(plugin_dir)
-        stamp = plugin_dir / _PACKAGES_DIR / _POST_INSTALL_STAMP
+        assert calls[0] == str(plugin)
+        stamp = ext_dir / _PACKAGES_DIR / _STAMPS_DIR / "plugin.post_installed"
         assert stamp.exists()
 
     def test_post_install_not_called_when_absent(self, tmp_path):
-        plugin_dir = tmp_path / "plugin"
-        plugin_dir.mkdir()
         ext_dir = tmp_path / "extensions"
-        ext_dir.mkdir()
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
 
         from wafer.plugin.registry import PluginBase
 
@@ -641,18 +705,17 @@ class TestInstallExtension:
             PRIORITY = 1
 
         with patch("wafer.plugin.installer.needs_install", return_value=False), patch("wafer.plugin.loader.PluginLoader.discover_extension", return_value=[("grid", PlainPlugin)]):
-            ok, post_ok, plugins = install_extension(str(plugin_dir), str(ext_dir))
+            ok, post_ok, plugins = install_extension(str(plugin), str(ext_dir))
 
         assert ok is True
         assert post_ok is True
-        stamp = plugin_dir / _PACKAGES_DIR / _POST_INSTALL_STAMP
+        stamp = ext_dir / _PACKAGES_DIR / _STAMPS_DIR / "plugin.post_installed"
         assert stamp.exists()
 
     def test_post_install_failure_returns_false(self, tmp_path):
-        plugin_dir = tmp_path / "plugin"
-        plugin_dir.mkdir()
         ext_dir = tmp_path / "extensions"
-        ext_dir.mkdir()
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
 
         from wafer.plugin.registry import PluginBase
 
@@ -666,18 +729,17 @@ class TestInstallExtension:
                 raise RuntimeError("boom")
 
         with patch("wafer.plugin.installer.needs_install", return_value=False), patch("wafer.plugin.loader.PluginLoader.discover_extension", return_value=[("grid", FailHook)]):
-            ok, post_ok, plugins = install_extension(str(plugin_dir), str(ext_dir))
+            ok, post_ok, plugins = install_extension(str(plugin), str(ext_dir))
 
         assert ok is True
         assert post_ok is False
-        stamp = plugin_dir / _PACKAGES_DIR / _POST_INSTALL_STAMP
+        stamp = ext_dir / _PACKAGES_DIR / _STAMPS_DIR / "plugin.post_installed"
         assert not stamp.exists()
 
     def test_cancellation_during_install(self, tmp_path):
-        plugin_dir = tmp_path / "plugin"
-        plugin_dir.mkdir()
         ext_dir = tmp_path / "extensions"
-        ext_dir.mkdir()
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
 
         cancelled = False
 
@@ -686,15 +748,284 @@ class TestInstallExtension:
 
         with (
             patch("wafer.plugin.installer.needs_install", return_value=True),
-            patch("wafer.plugin.installer.shared_needs_install", return_value=False),
-            patch("wafer.plugin.installer.install_requirements", return_value=True),
+            patch("wafer.plugin.installer.install_requirements", return_value=(True, False)),
         ):
             cancelled = True
             ok, post_ok, plugins = install_extension(
-                str(plugin_dir),
+                str(plugin),
                 str(ext_dir),
                 is_cancelled=check,
             )
 
         assert ok is False
         assert plugins == []
+
+    def test_deferred_install_continues_discover_and_post_install(self, tmp_path):
+        ext_dir = tmp_path / "extensions"
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
+
+        from wafer.plugin.registry import PluginBase
+
+        class DeferredPlugin(PluginBase):
+            NAME = "deferred"
+            EXTENSIONS = (".d",)
+            PRIORITY = 1
+
+        with (
+            patch("wafer.plugin.installer.needs_install", return_value=True),
+            patch("wafer.plugin.installer.install_requirements", return_value=(True, True)),
+            patch("wafer.plugin.loader.PluginLoader.discover_extension", return_value=[("grid", DeferredPlugin)]),
+        ):
+            ok, post_ok, plugins = install_extension(str(plugin), str(ext_dir))
+
+        assert ok is True
+        assert post_ok is True
+        assert len(plugins) == 1
+        assert plugins[0][1] is DeferredPlugin
+
+
+class TestHasLockedFiles:
+    def test_no_locked_files(self, tmp_path):
+        src = tmp_path / "src"
+        dst = tmp_path / "dst"
+        src.mkdir()
+        dst.mkdir()
+        (src / "a.txt").write_text("new")
+        (dst / "a.txt").write_text("old")
+        assert _has_locked_files(str(src), str(dst)) is False
+
+    def test_no_dst_dir(self, tmp_path):
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "a.txt").write_text("new")
+        assert _has_locked_files(str(src), str(tmp_path / "nope")) is False
+
+    def test_new_file_not_locked(self, tmp_path):
+        src = tmp_path / "src"
+        dst = tmp_path / "dst"
+        src.mkdir()
+        dst.mkdir()
+        (src / "new.txt").write_text("data")
+        assert _has_locked_files(str(src), str(dst)) is False
+
+    def test_nested_dir_check(self, tmp_path):
+        src = tmp_path / "src" / "sub"
+        dst = tmp_path / "dst" / "sub"
+        src.mkdir(parents=True)
+        dst.mkdir(parents=True)
+        (src / "a.txt").write_text("new")
+        (dst / "a.txt").write_text("old")
+        assert _has_locked_files(str(tmp_path / "src"), str(tmp_path / "dst")) is False
+
+
+class TestMergeOrDefer:
+    def test_merge_when_no_locks(self, tmp_path):
+        staging = tmp_path / "staging"
+        target = tmp_path / "ext" / _PACKAGES_DIR
+        ext_dir = tmp_path / "ext"
+        staging.mkdir()
+        target.mkdir(parents=True)
+        (staging / "lib.py").write_text("content")
+
+        result = _merge_or_defer(str(staging), str(target), str(ext_dir))
+        assert result is True
+        assert (target / "lib.py").read_text() == "content"
+        assert not (ext_dir / _PENDING_DIR).exists()
+
+    def test_defer_when_locked(self, tmp_path):
+        staging = tmp_path / "staging"
+        target = tmp_path / "ext" / _PACKAGES_DIR
+        ext_dir = tmp_path / "ext"
+        staging.mkdir()
+        target.mkdir(parents=True)
+        (staging / "lib.pyd").write_text("new")
+        locked_file = target / "lib.pyd"
+        locked_file.write_text("old")
+
+        with patch("wafer.plugin.installer._is_locked", return_value=True):
+            result = _merge_or_defer(str(staging), str(target), str(ext_dir))
+
+        assert result is False
+        pending = ext_dir / _PENDING_DIR
+        assert pending.exists()
+        assert (pending / "lib.pyd").read_text() == "new"
+        assert locked_file.read_text() == "old"
+
+    def test_defer_merges_into_existing_pending(self, tmp_path):
+        staging = tmp_path / "staging"
+        target = tmp_path / "ext" / _PACKAGES_DIR
+        ext_dir = tmp_path / "ext"
+        pending = ext_dir / _PENDING_DIR
+        staging.mkdir()
+        target.mkdir(parents=True)
+        pending.mkdir(parents=True)
+        (pending / "old_pkg.py").write_text("previous")
+        (staging / "new_pkg.py").write_text("new")
+        (target / "new_pkg.py").write_text("existing")
+
+        with patch("wafer.plugin.installer._is_locked", return_value=True):
+            result = _merge_or_defer(str(staging), str(target), str(ext_dir))
+
+        assert result is False
+        assert (pending / "old_pkg.py").read_text() == "previous"
+        assert (pending / "new_pkg.py").read_text() == "new"
+
+    def test_partial_merge_unlocked_copied_locked_deferred(self, tmp_path):
+        staging = tmp_path / "staging"
+        target = tmp_path / "ext" / _PACKAGES_DIR
+        ext_dir = tmp_path / "ext"
+        staging.mkdir()
+        target.mkdir(parents=True)
+        (staging / "ok.py").write_text("new_ok")
+        (staging / "locked.pyd").write_text("new_locked")
+        (target / "ok.py").write_text("old_ok")
+        (target / "locked.pyd").write_text("old_locked")
+
+        def fake_locked(path):
+            return "locked.pyd" in path
+
+        with patch("wafer.plugin.installer._is_locked", side_effect=fake_locked):
+            result = _merge_or_defer(str(staging), str(target), str(ext_dir))
+
+        assert result is False
+        assert (target / "ok.py").read_text() == "new_ok"
+        assert (target / "locked.pyd").read_text() == "old_locked"
+        pending = ext_dir / _PENDING_DIR
+        assert (pending / "locked.pyd").read_text() == "new_locked"
+        assert not (pending / "ok.py").exists()
+
+    def test_partial_merge_subdir_locked(self, tmp_path):
+        staging = tmp_path / "staging"
+        target = tmp_path / "ext" / _PACKAGES_DIR
+        ext_dir = tmp_path / "ext"
+        sub_staging = staging / "subpkg"
+        sub_target = target / "subpkg"
+        sub_staging.mkdir(parents=True)
+        sub_target.mkdir(parents=True)
+        (staging / "root.py").write_text("root_new")
+        (sub_staging / "mod.pyd").write_text("sub_new")
+        (sub_target / "mod.pyd").write_text("sub_old")
+
+        with patch("wafer.plugin.installer._has_locked_files", return_value=True):
+            result = _merge_or_defer(str(staging), str(target), str(ext_dir))
+
+        assert result is False
+        assert (target / "root.py").read_text() == "root_new"
+        pending = ext_dir / _PENDING_DIR / "subpkg"
+        assert (pending / "mod.pyd").read_text() == "sub_new"
+        assert (sub_target / "mod.pyd").read_text() == "sub_old"
+
+
+class TestApplyPendingPackages:
+    def test_applies_pending_to_packages(self, tmp_path):
+        ext_dir = tmp_path / "extensions"
+        pending = ext_dir / _PENDING_DIR
+        target = ext_dir / _PACKAGES_DIR
+        pending.mkdir(parents=True)
+        target.mkdir(parents=True)
+        (pending / "new_lib.py").write_text("updated")
+        (target / "old_lib.py").write_text("existing")
+
+        result = apply_pending_packages(str(ext_dir))
+
+        assert result is True
+        assert (target / "new_lib.py").read_text() == "updated"
+        assert (target / "old_lib.py").read_text() == "existing"
+        assert not pending.exists()
+
+    def test_no_pending_returns_false(self, tmp_path):
+        result = apply_pending_packages(str(tmp_path))
+        assert result is False
+
+    def test_overwrites_existing_files(self, tmp_path):
+        ext_dir = tmp_path / "extensions"
+        pending = ext_dir / _PENDING_DIR
+        target = ext_dir / _PACKAGES_DIR
+        pending.mkdir(parents=True)
+        target.mkdir(parents=True)
+        (pending / "lib.py").write_text("v2")
+        (target / "lib.py").write_text("v1")
+
+        result = apply_pending_packages(str(ext_dir))
+
+        assert result is True
+        assert (target / "lib.py").read_text() == "v2"
+
+    def test_partial_apply_keeps_failed_in_pending(self, tmp_path):
+        ext_dir = tmp_path / "extensions"
+        pending = ext_dir / _PENDING_DIR
+        target = ext_dir / _PACKAGES_DIR
+        pending.mkdir(parents=True)
+        target.mkdir(parents=True)
+        (pending / "ok.py").write_text("new_ok")
+        (pending / "locked.pyd").write_text("new_locked")
+
+        orig_copy2 = shutil.copy2
+
+        def failing_copy2(src, dst, *args, **kwargs):
+            if "locked.pyd" in str(dst):
+                raise PermissionError("locked")
+            return orig_copy2(src, dst, *args, **kwargs)
+
+        with patch("wafer.plugin.installer.shutil.copy2", side_effect=failing_copy2):
+            result = apply_pending_packages(str(ext_dir))
+
+        assert result is True
+        assert (target / "ok.py").read_text() == "new_ok"
+        assert not (target / "locked.pyd").exists()
+        assert (pending / "locked.pyd").exists()
+        assert not (pending / "ok.py").exists()
+
+
+class TestHasPendingPackages:
+    def test_no_pending_dir(self, tmp_path):
+        assert has_pending_packages(str(tmp_path)) is False
+
+    def test_empty_pending_dir(self, tmp_path):
+        (tmp_path / _PENDING_DIR).mkdir()
+        assert has_pending_packages(str(tmp_path)) is False
+
+    def test_pending_with_files(self, tmp_path):
+        pending = tmp_path / _PENDING_DIR
+        pending.mkdir()
+        (pending / "pkg.py").write_text("data")
+        assert has_pending_packages(str(tmp_path)) is True
+
+
+class TestMergeDir:
+    def test_basic_copy(self, tmp_path):
+        src = tmp_path / "src"
+        dst = tmp_path / "dst"
+        src.mkdir()
+        dst.mkdir()
+        (src / "a.txt").write_text("hello")
+        _merge_dir(str(src), str(dst))
+        assert (dst / "a.txt").read_text() == "hello"
+
+    def test_overwrite_existing(self, tmp_path):
+        src = tmp_path / "src"
+        dst = tmp_path / "dst"
+        src.mkdir()
+        dst.mkdir()
+        (src / "a.txt").write_text("new")
+        (dst / "a.txt").write_text("old")
+        _merge_dir(str(src), str(dst))
+        assert (dst / "a.txt").read_text() == "new"
+
+    def test_nested_dirs(self, tmp_path):
+        src = tmp_path / "src" / "sub"
+        dst = tmp_path / "dst"
+        src.mkdir(parents=True)
+        dst.mkdir()
+        (src / "f.txt").write_text("nested")
+        _merge_dir(str(tmp_path / "src"), str(dst))
+        assert (dst / "sub" / "f.txt").read_text() == "nested"
+
+    def test_creates_dst_if_missing(self, tmp_path):
+        src = tmp_path / "src"
+        dst = tmp_path / "dst"
+        src.mkdir()
+        (src / "a.txt").write_text("data")
+        _merge_dir(str(src), str(dst))
+        assert (dst / "a.txt").read_text() == "data"

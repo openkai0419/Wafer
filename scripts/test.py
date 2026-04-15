@@ -5,7 +5,6 @@ import os
 import re
 import subprocess
 import sys
-import tempfile
 import time
 from collections import Counter
 from dataclasses import dataclass, field
@@ -152,11 +151,7 @@ def _print_progress(stdout: str):
         stripped = line.strip()
         if not stripped:
             continue
-        if stripped.startswith(("FAILED", "ERROR", "===")):
-            print(line)
-        elif all(c in ".FEsxX \t" for c in stripped.split("[")[0].rstrip()):
-            print(line)
-        elif "passed" in stripped or "failed" in stripped or "error" in stripped:
+        if stripped.startswith(("FAILED", "ERROR", "===")) or all(c in ".FEsxX \t" for c in stripped.split("[")[0].rstrip()) or "passed" in stripped or "failed" in stripped or "error" in stripped:
             print(line)
 
 

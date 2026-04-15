@@ -35,15 +35,15 @@ jobs:
 
       - name: Verify build output
         run: |
-          @('dist/Wafer/Wafer.exe', 'dist/Wafer/LICENSE', 'dist/Wafer/extensions', 'dist/Wafer/_resources') | ForEach-Object {
+          @('dist/Wafer/python/wafer-python.exe', 'dist/Wafer/main.py', 'dist/Wafer/Wafer.exe', 'dist/Wafer/LICENSE', 'dist/Wafer/extensions', 'dist/Wafer/_resources') | ForEach-Object {
             if (-not (Test-Path $_)) { throw "Missing: $_" }
           }
 
-      - name: Smoke test exe
+      - name: Smoke test
         run: |
-          $proc = Start-Process -FilePath dist/Wafer/Wafer.exe -ArgumentList "--version" -PassThru -NoNewWindow
-          if (-not $proc.WaitForExit(30000)) { $proc.Kill(); throw "exe timed out" }
-          if ($proc.ExitCode -ne 0) { throw "exe exited with code $($proc.ExitCode)" }
+          $proc = Start-Process -FilePath dist/Wafer/python/wafer-python.exe -ArgumentList "main.py","--version" -WorkingDirectory dist/Wafer -PassThru -NoNewWindow
+          if (-not $proc.WaitForExit(30000)) { $proc.Kill(); throw "timed out" }
+          if ($proc.ExitCode -ne 0) { throw "exited with code $($proc.ExitCode)" }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

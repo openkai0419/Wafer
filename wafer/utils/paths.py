@@ -79,14 +79,11 @@ def stem(path):
 
 
 def get_app_root_dir():
-    if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent
+    main_module = sys.modules.get("__main__")
+    if hasattr(main_module, "__file__"):
+        return Path(main_module.__file__).resolve().parent
     else:
-        main_module = sys.modules.get("__main__")
-        if hasattr(main_module, "__file__"):
-            return Path(main_module.__file__).resolve().parent
-        else:
-            return Path.cwd()
+        return Path.cwd()
 
 
 def _resolve_app_path(relative_path, base_dir):

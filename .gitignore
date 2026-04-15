@@ -6,7 +6,6 @@ venv/
 .ruff_cache/
 .temp/
 .packages/
-.shared_packages/
 
 # Extension native libraries (user-provided)
 extensions/*/lib/

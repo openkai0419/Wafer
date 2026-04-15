@@ -78,9 +78,9 @@ for /d %%D in ("%ROOT%\extensions\*") do (
         echo   [repo] %%~nxD\.packages
     )
 )
-if exist "%ROOT%\extensions\.shared_packages" (
+if exist "%ROOT%\extensions\.packages" (
     set /a REPO_COUNT+=1
-    echo   [repo] extensions\.shared_packages
+    echo   [repo] extensions\.packages
 )
 
 for %%D in (build dist .temp .pytest_cache .ruff_cache) do (
@@ -179,22 +179,42 @@ goto :done
 
 :delete_repo
 for /d %%D in ("%ROOT%\extensions\*") do (
-    if exist "%%D\lib" call :rm "%%D\lib"
-    if exist "%%D\.packages" call :rm "%%D\.packages"
+    if exist "%%D\lib" (
+        call :rm "%%D\lib"
+        echo     removed %%~nxD\lib
+    )
+    if exist "%%D\.packages" (
+        call :rm "%%D\.packages"
+        echo     removed %%~nxD\.packages
+    )
 )
-if exist "%ROOT%\extensions\.shared_packages" call :rm "%ROOT%\extensions\.shared_packages"
+if exist "%ROOT%\extensions\.packages" (
+    call :rm "%ROOT%\extensions\.packages"
+    echo     removed extensions\.packages
+)
 
 for %%D in (build dist .temp .pytest_cache .ruff_cache) do (
-    if exist "%ROOT%\%%D" call :rm "%ROOT%\%%D"
+    if exist "%ROOT%\%%D" (
+        call :rm "%ROOT%\%%D"
+        echo     removed %%D
+    )
 )
 
-if exist "%ROOT%\__pycache__" call :rm "%ROOT%\__pycache__"
+if exist "%ROOT%\__pycache__" (
+    call :rm "%ROOT%\__pycache__"
+    echo     removed __pycache__
+)
+set "_PC_COUNT=0"
 for %%S in (wafer tests tests-unit scripts) do (
     if exist "%ROOT%\%%S" call :rm_pycache "%ROOT%\%%S"
 )
+if !_PC_COUNT! gtr 0 echo     removed !_PC_COUNT! __pycache__ dirs
 
 for %%P in (*.db *.db-shm *.db-wal *.ini) do (
-    if exist "%ROOT%\%%P" del /q "%ROOT%\%%P" 2>nul
+    if exist "%ROOT%\%%P" (
+        del /q "%ROOT%\%%P" 2>nul
+        echo     removed %%P
+    )
 )
 goto :eof
 
@@ -203,7 +223,10 @@ for /d /r %1 %%D in (__pycache__) do (
     set "_skip=0"
     for %%P in ("%%~dpD.") do if /i "%%~nxP"=="__pycache__" set "_skip=1"
     if !_skip!==0 (
-        if exist "%%D" rd /s /q "%%D" 2>nul
+        if exist "%%D" (
+            rd /s /q "%%D" 2>nul
+            set /a _PC_COUNT+=1
+        )
     )
 )
 goto :eof

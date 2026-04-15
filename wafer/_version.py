@@ -2,14 +2,11 @@ from __future__ import annotations
 
 import re
 import subprocess
-import sys
 
 FALLBACK_VERSION = "0.1.0"
 
 
 def get_version() -> str:
-    if getattr(sys, "frozen", False):
-        return FALLBACK_VERSION
     try:
         out = subprocess.check_output(
             ["git", "describe", "--tags", "--always"],

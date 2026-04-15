@@ -28,7 +28,9 @@ Wafer は **PySide6**・**SQLite**・**ZMQ** を元にした大量管理向け�
 3. 任意のフォルダに展開（SSD 推奨）
 4. `Wafer.exe` を実行
 
-アンインストールの再は `cleanup.bat` で `%LOCALAPPDATA%\Wafer` のアプリデータを削除した後、本体をフォルダごと削除してください。
+Python 同梱のため、別途 Python のインストールは不要です。
+
+アンインストールの際は `cleanup.bat` で `%LOCALAPPDATA%\Wafer` のアプリデータを削除した後、本体をフォルダごと削除してください。
 
 ### ソースから (python環境のある人)
 
@@ -99,11 +101,10 @@ extension は `extensions/` フォルダに配置するだけで `PluginLoader` 
 
 ### 仕組み
 
-1. extension フォルダに `requirements.txt` がある場合、依存パッケージを `.packages/` に自動インストール
+1. extension フォルダに `requirements.txt` がある場合、依存パッケージを `extensions/.packages/` に自動インストール
 2. `.packages/` を `sys.path` に追加
 3. `lib/` を DLL 検索パスに追加
 4. `*.py` を import し、基底クラスの継承によりプラグインを自動検出
-5. exe ビルドでは組み込み Python 環境経由で pip を実行
 
 ### Extension の実装例
 

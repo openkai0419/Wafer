@@ -137,11 +137,8 @@ class AppProcess:
 
     @staticmethod
     def base_command():
-        if getattr(sys, "frozen", False):
-            return [sys.executable]
-        else:
-            main_path = os.path.abspath(sys.argv[0])
-            return [sys.executable, main_path]
+        main_path = os.path.abspath(sys.argv[0])
+        return [sys.executable, main_path]
 
     @staticmethod
     def new_main(*args, **popen_kwargs):

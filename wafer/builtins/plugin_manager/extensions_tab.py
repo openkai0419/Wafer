@@ -341,7 +341,7 @@ class ExtensionsTab(QtWidgets.QWidget):
         self._dispatcher.post(task, priority=5)
 
     def _on_discover_complete(self, card: _ExtensionCard, plugins: list[tuple[str, type]]):
-        self._with_scroll_preserved(lambda: card.set_plugins(plugins, self._enabled))
+        card.set_plugins(plugins, self._enabled)
         self.enabled_changed.emit()
 
     def _install_extension(self, card: _ExtensionCard):
@@ -376,7 +376,7 @@ class ExtensionsTab(QtWidgets.QWidget):
                 card.set_installed()
             else:
                 card.set_install_failed()
-            self._with_scroll_preserved(lambda: card.set_plugins(plugins, self._enabled))
+            card.set_plugins(plugins, self._enabled)
             self.enabled_changed.emit()
         else:
             card.set_install_failed()
@@ -395,12 +395,6 @@ class ExtensionsTab(QtWidgets.QWidget):
         for card in self._cards.values():
             result.extend(card.get_enabled_plugins(registry_key))
         return result
-
-    def _with_scroll_preserved(self, fn):
-        vbar = self._scroll.verticalScrollBar()
-        pos = vbar.value()
-        fn()
-        QtCore.QTimer.singleShot(0, lambda: vbar.setValue(pos))
 
     def cancel_pending(self):
         for slot in self._install_cancels.values():

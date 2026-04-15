@@ -11,11 +11,10 @@ os.environ.setdefault('QSG_RHI_BACKEND', 'opengl')
 
 import setproctitle
 
-if getattr(sys, 'frozen', False):
-    if sys.stdout is None:
-        sys.stdout = io.StringIO()
-    if sys.stderr is None:
-        sys.stderr = io.StringIO()
+if sys.stdout is None:
+    sys.stdout = io.StringIO()
+if sys.stderr is None:
+    sys.stderr = io.StringIO()
 
 from wafer.utils.paths import list_setting_db_names, resolve_data_path
 from wafer.utils.process_lock import SafeProcessLock

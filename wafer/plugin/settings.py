@@ -79,6 +79,15 @@ class PluginSettings:
     def set_default_enabled_collectors(self, names: list[str]):
         _write_ini_value("collectors/default_enabled", sorted(names))
 
+    def is_restart_pending(self) -> bool:
+        return str(_read_ini_value("plugins/restart_pending", False)).lower() == "true"
+
+    def set_restart_pending(self, value: bool):
+        _write_ini_value("plugins/restart_pending", value)
+
+    def clear_restart_pending(self):
+        self.set_restart_pending(False)
+
     def resolve_default_collectors(self) -> list[str]:
         saved = self.default_enabled_collectors()
         if saved is not None:

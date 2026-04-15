@@ -7,7 +7,7 @@ from ...utils.markdown_browser import MarkdownBrowser, render_to_html
 from ...core.color.theme import ThemeManager
 from ...core.lang.manager import t
 from ...plugin.loader import get_plugin_dir, PluginLoader, qualify_plugin_name
-from ...plugin.installer import needs_setup, install_extension
+from ...plugin.installer import needs_install, needs_post_install, install_extension
 from ...core.qt.dispatcher import Dispatcher, CancelSlot
 
 _MAX_MD_FILES = 10
@@ -186,12 +186,20 @@ class _ExtensionCard(QtWidgets.QFrame):
         self._progress.hide()
         self._clear_plugin_area()
 
+    def set_needs_setup(self):
+        self._apply_status("Setup", "setup", True)
+        self._progress.hide()
+
     def set_installing(self):
         self._apply_status("Installing…", "installing", False)
         self._progress.show()
 
     def set_install_failed(self):
         self._apply_status("Retry", "failed", True)
+        self._progress.hide()
+
+    def set_deferred(self):
+        self._apply_status(t("Restart Required"), "deferred", False)
         self._progress.hide()
 
     def set_plugins(self, plugins: list[tuple[str, type]], enabled: set[str] | None):
@@ -302,21 +310,25 @@ class ExtensionsTab(QtWidgets.QWidget):
                 if not os.path.isdir(folder) or name.startswith(".") or name == "__pycache__":
                     continue
                 md_files = sorted(f for f in os.listdir(folder) if f.lower().endswith(".md") and not f.startswith((".", "_")) and os.path.isfile(os.path.join(folder, f)))[:_MAX_MD_FILES]
-                need_install = needs_setup(folder)
+                pip_needed = needs_install(folder)
+                post_needed = needs_post_install(folder)
                 has_req = os.path.isfile(os.path.join(folder, "requirements.txt"))
-                results.append((name, folder, md_files, need_install, has_req))
+                results.append((name, folder, md_files, pip_needed, post_needed, has_req))
             return results
 
         def on_scan_complete(results):
-            for name, folder, md_files, need_install, has_req in results:
+            for name, folder, md_files, pip_needed, post_needed, has_req in results:
                 card = _ExtensionCard(name, folder, self._dispatcher, md_files)
                 card.set_install_callback(self._install_extension)
                 card.set_checkbox_changed_callback(self._on_plugin_toggled)
                 self._cards[name] = card
                 self._cards_layout.insertWidget(self._cards_layout.count() - 1, card)
 
-                if need_install:
+                if pip_needed:
                     card.set_needs_install()
+                elif post_needed:
+                    card.set_needs_setup()
+                    self._discover_async(card)
                 else:
                     card.set_installed(has_req)
                     self._discover_async(card)
@@ -373,7 +385,7 @@ class ExtensionsTab(QtWidgets.QWidget):
     def _on_install_complete(self, card: _ExtensionCard, success: bool, plugins: list, post_install_ok: bool = True):
         if success:
             if post_install_ok:
-                card.set_installed()
+                card.set_deferred()
             else:
                 card.set_install_failed()
             card.set_plugins(plugins, self._enabled)

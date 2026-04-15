@@ -5,7 +5,7 @@ import os
 import sys
 
 from ..utils.logs import AppLogger
-from .installer import _PACKAGES_DIR, needs_setup
+from .installer import _PACKAGES_DIR, apply_pending_packages, needs_setup
 from .registry import RegistryBase, CommandGroupRegistry
 from .viewer.base import BaseViewerPlugin
 from .grid.base import BaseGridPlugin
@@ -85,6 +85,7 @@ class PluginLoader:
     def load_all(self, on_progress=None) -> list[str]:
         if not os.path.isdir(self._plugin_dir):
             return []
+        apply_pending_packages(self._plugin_dir)
         packages_dir = os.path.join(self._plugin_dir, _PACKAGES_DIR)
         if os.path.isdir(packages_dir) and packages_dir not in sys.path:
             sys.path.insert(0, packages_dir)

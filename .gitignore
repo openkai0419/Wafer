@@ -6,6 +6,9 @@ venv/
 .ruff_cache/
 .temp/
 .packages/
+.pending/
+.pip_staging/
+.tmp_merged_req.txt
 
 # Extension native libraries (user-provided)
 extensions/*/lib/

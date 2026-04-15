@@ -1,4 +1,20 @@
 {
+  "No color": {
+    "en": "No color",
+    "ja": ""
+  },
+  "Row thumbnail opacity": {
+    "en": "Row thumbnail opacity",
+    "ja": ""
+  },
+  "Select files and run Batch Renamer\nor drop files here": {
+    "en": "Select files and run Batch Renamer\nor drop files here",
+    "ja": ""
+  },
+  "Selected thumbnail opacity": {
+    "en": "Selected thumbnail opacity",
+    "ja": ""
+  },
   "Confirm": {
     "en": "Confirm",
     "ja": ""

@@ -3,6 +3,8 @@ from ...utils.formatting import dpix
 from ...utils.logs import AppLogger
 from ...utils.notifier import Notifier
 from ...plugin.settings import PluginSettings
+from ...plugin.installer import has_pending_packages
+from ...plugin.loader import get_plugin_dir
 from ...plugin.panel.base import BasePanelPlugin
 from ...core.color.theme import ThemeManager
 from ...core.qt.dispatcher import Dispatcher
@@ -59,7 +61,7 @@ def _build_stylesheet() -> str:
             color: {p.success};
             border: 1px solid rgba({_hex_rgb(p.success)}, 0.3);
         }}
-        QPushButton#status_btn[status="no_deps"] {{
+        QPushButton#status_btn[status="deferred"] {{
             background: transparent;
             color: {p.text_muted};
             border: 1px solid {p.border_default};
@@ -70,6 +72,14 @@ def _build_stylesheet() -> str:
             border: none;
         }}
         QPushButton#status_btn[status="install"]:hover {{
+            background: {p.bg_hover};
+        }}
+        QPushButton#status_btn[status="setup"] {{
+            background: {p.accent};
+            color: {p.accent_text};
+            border: none;
+        }}
+        QPushButton#status_btn[status="setup"]:hover {{
             background: {p.bg_hover};
         }}
         QPushButton#status_btn[status="installing"] {{
@@ -210,19 +220,26 @@ class PluginManagerWidget(QtWidgets.QWidget):
         enabled = self._ext_tab.collect_enabled()
         orders = self._order_tab.get_orders()
         has_changes = self._has_plugin_changes(enabled, orders) or self._collectors_tab.has_changes()
-        if not has_changes:
+        pending = has_pending_packages(get_plugin_dir())
+        if not has_changes and not pending:
             Notifier.info(t("No changes to save"))
             return
-        self._settings.set_enabled(enabled)
-        for key, order in orders.items():
-            self._settings.set_priority_order(key, order)
-        AppLogger.info(f"[PluginManager] Saved: enabled={sorted(enabled)}, orders={orders}")
-        self._initial_enabled = set(enabled)
-        self._initial_orders = dict(orders)
+        self._settings.set_restart_pending(True)
+        if has_changes:
+            self._settings.set_enabled(enabled)
+            for key, order in orders.items():
+                self._settings.set_priority_order(key, order)
+            AppLogger.info(f"[PluginManager] Saved: enabled={sorted(enabled)}, orders={orders}")
+            self._initial_enabled = set(enabled)
+            self._initial_orders = dict(orders)
+        if has_changes:
+            body = t("Plugin settings have been saved.\nRestart is required.")
+        else:
+            body = t("Pending updates will be applied on restart.")
         msg = QtWidgets.QMessageBox(
             QtWidgets.QMessageBox.Question,
             t("Restart Required"),
-            t("Plugin settings have been saved.\nRestart is required."),
+            body,
             parent=self,
         )
         restart_btn = msg.addButton(t("Restart"), QtWidgets.QMessageBox.AcceptRole)

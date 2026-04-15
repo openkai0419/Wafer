@@ -62,23 +62,19 @@ def restart_viewer(ctx):
 
 def restart_all(ctx):
     w = _win(ctx)
-    node = getattr(w, "_node", None)
-    store = ProfileStore.instance()
-    active_ids = store.get_active_profile_ids()
-    own_pid = getattr(w, "profile_id", None)
 
-    store.set_restore_profile_ids(active_ids)
+    from ...plugin.settings import PluginSettings
 
-    if node:
-        for pid in active_ids:
-            if pid != own_pid:
-                node.send("profile.restart", pid, dst="viewer")
-
-    AppProcess.terminate_cmd("--tray")
-    AppProcess.new_main("--tray")
+    PluginSettings().clear_restart_pending()
 
     if w:
+        w._perform_system_restart(include_self=True)
         w.close_by_restart()
+    else:
+        store = ProfileStore.instance()
+        store.set_restore_profile_ids(store.get_active_profile_ids())
+        AppProcess.terminate_cmd("--tray")
+        AppProcess.new_main("--tray")
 
 
 def _profile_names():

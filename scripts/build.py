@@ -249,6 +249,7 @@ def create_launchers(dist_dir: Path, version: str):
     icon_arg = f"/win32icon:{ICON_FILE}" if ICON_FILE.is_file() else ""
     for cs_name, exe_name, target in [
         ("Wafer.cs", "Wafer.exe", "/target:winexe"),
+        ("WaferConsole.cs", "WaferConsole.exe", "/target:exe"),
     ]:
         cs_path = LAUNCHER_DIR / cs_name
         exe_path = dist_dir / exe_name

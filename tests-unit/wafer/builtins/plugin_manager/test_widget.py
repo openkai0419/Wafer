@@ -1,4 +1,4 @@
-﻿import os
+import os
 import sys
 import pytest
 from unittest.mock import MagicMock, patch
@@ -17,7 +17,11 @@ class TestExtensionsTab:
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            "wafer.builtins.plugin_manager.extensions_tab.needs_setup",
+            "wafer.builtins.plugin_manager.extensions_tab.needs_install",
+            lambda folder: False,
+        )
+        monkeypatch.setattr(
+            "wafer.builtins.plugin_manager.extensions_tab.needs_post_install",
             lambda folder: False,
         )
         from wafer.core.qt.dispatcher import Dispatcher
@@ -42,7 +46,11 @@ class TestExtensionsTab:
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            "wafer.builtins.plugin_manager.extensions_tab.needs_setup",
+            "wafer.builtins.plugin_manager.extensions_tab.needs_install",
+            lambda folder: False,
+        )
+        monkeypatch.setattr(
+            "wafer.builtins.plugin_manager.extensions_tab.needs_post_install",
             lambda folder: False,
         )
 
@@ -74,7 +82,11 @@ class TestExtensionsTab:
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            "wafer.builtins.plugin_manager.extensions_tab.needs_setup",
+            "wafer.builtins.plugin_manager.extensions_tab.needs_install",
+            lambda folder: True,
+        )
+        monkeypatch.setattr(
+            "wafer.builtins.plugin_manager.extensions_tab.needs_post_install",
             lambda folder: True,
         )
         from wafer.core.qt.dispatcher import Dispatcher
@@ -98,7 +110,11 @@ class TestExtensionsTab:
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            "wafer.builtins.plugin_manager.extensions_tab.needs_setup",
+            "wafer.builtins.plugin_manager.extensions_tab.needs_install",
+            lambda folder: False,
+        )
+        monkeypatch.setattr(
+            "wafer.builtins.plugin_manager.extensions_tab.needs_post_install",
             lambda folder: False,
         )
 
@@ -139,7 +155,11 @@ class TestExtensionsTab:
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            "wafer.builtins.plugin_manager.extensions_tab.needs_setup",
+            "wafer.builtins.plugin_manager.extensions_tab.needs_install",
+            lambda folder: False,
+        )
+        monkeypatch.setattr(
+            "wafer.builtins.plugin_manager.extensions_tab.needs_post_install",
             lambda folder: False,
         )
 
@@ -175,7 +195,11 @@ class TestExtensionsTab:
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            "wafer.builtins.plugin_manager.extensions_tab.needs_setup",
+            "wafer.builtins.plugin_manager.extensions_tab.needs_install",
+            lambda folder: False,
+        )
+        monkeypatch.setattr(
+            "wafer.builtins.plugin_manager.extensions_tab.needs_post_install",
             lambda folder: False,
         )
 
@@ -218,7 +242,11 @@ class TestExtensionsTab:
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            "wafer.builtins.plugin_manager.extensions_tab.needs_setup",
+            "wafer.builtins.plugin_manager.extensions_tab.needs_install",
+            lambda folder: True,
+        )
+        monkeypatch.setattr(
+            "wafer.builtins.plugin_manager.extensions_tab.needs_post_install",
             lambda folder: True,
         )
         from wafer.core.qt.dispatcher import Dispatcher
@@ -259,7 +287,11 @@ class TestExtensionsTab:
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            "wafer.builtins.plugin_manager.extensions_tab.needs_setup",
+            "wafer.builtins.plugin_manager.extensions_tab.needs_install",
+            lambda folder: True,
+        )
+        monkeypatch.setattr(
+            "wafer.builtins.plugin_manager.extensions_tab.needs_post_install",
             lambda folder: True,
         )
         from wafer.core.qt.dispatcher import Dispatcher
@@ -293,7 +325,11 @@ class TestExtensionsTab:
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            "wafer.builtins.plugin_manager.extensions_tab.needs_setup",
+            "wafer.builtins.plugin_manager.extensions_tab.needs_install",
+            lambda folder: True,
+        )
+        monkeypatch.setattr(
+            "wafer.builtins.plugin_manager.extensions_tab.needs_post_install",
             lambda folder: True,
         )
 
@@ -335,7 +371,11 @@ class TestExtensionsTab:
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            "wafer.builtins.plugin_manager.extensions_tab.needs_setup",
+            "wafer.builtins.plugin_manager.extensions_tab.needs_install",
+            lambda folder: True,
+        )
+        monkeypatch.setattr(
+            "wafer.builtins.plugin_manager.extensions_tab.needs_post_install",
             lambda folder: True,
         )
 
@@ -363,7 +403,7 @@ class TestExtensionsTab:
         card = tab._cards["ext1"]
         tab._install_extension(card)
 
-        qtbot.waitUntil(lambda: card._status_btn.text() == "Installed", timeout=5000)
+        qtbot.waitUntil(lambda: card._status_btn.text() == "Restart Required", timeout=5000)
 
     def test_needs_setup_true_shows_install(self, qtbot, tmp_path, monkeypatch):
         ext_dir = tmp_path / "extensions"
@@ -374,7 +414,11 @@ class TestExtensionsTab:
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            "wafer.builtins.plugin_manager.extensions_tab.needs_setup",
+            "wafer.builtins.plugin_manager.extensions_tab.needs_install",
+            lambda folder: True,
+        )
+        monkeypatch.setattr(
+            "wafer.builtins.plugin_manager.extensions_tab.needs_post_install",
             lambda folder: True,
         )
 
@@ -399,7 +443,11 @@ class TestExtensionsTab:
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            "wafer.builtins.plugin_manager.extensions_tab.needs_setup",
+            "wafer.builtins.plugin_manager.extensions_tab.needs_install",
+            lambda folder: False,
+        )
+        monkeypatch.setattr(
+            "wafer.builtins.plugin_manager.extensions_tab.needs_post_install",
             lambda folder: False,
         )
 
@@ -879,35 +927,21 @@ class TestWindowRestartCommands:
         mock_w.close_by_restart.assert_called_once()
 
     def test_restart_all_calls_both(self, monkeypatch):
-        calls = []
-        monkeypatch.setattr(
-            "wafer.builtins.commands.window_commands.AppProcess",
-            type(
-                "",
-                (),
-                {
-                    "terminate_cmd": staticmethod(lambda *a: calls.append(("terminate", a))),
-                    "new_main": staticmethod(lambda *a: calls.append(("new_main", a))),
-                },
-            )(),
-        )
         mock_store = MagicMock()
         mock_store.get_active_profile_ids.return_value = ["sess1", "sess2"]
         monkeypatch.setattr("wafer.builtins.commands.window_commands.ProfileStore", type("", (), {"instance": staticmethod(lambda: mock_store)}))
+        mock_ps = MagicMock()
+        monkeypatch.setattr("wafer.plugin.settings.PluginSettings.clear_restart_pending", mock_ps.clear_restart_pending)
         from wafer.builtins.commands.window_commands import restart_all
 
-        mock_node = MagicMock()
         mock_w = MagicMock()
         mock_w.profile_id = "sess1"
-        mock_w._node = mock_node
         ctx = MagicMock()
         ctx.get_instance.return_value = mock_w
         restart_all(ctx)
-        assert ("terminate", ("--tray",)) in calls
-        assert ("new_main", ("--tray",)) in calls
-        mock_node.send.assert_called_once_with("profile.restart", "sess2", dst="viewer")
+        mock_w._perform_system_restart.assert_called_once_with(include_self=True)
         mock_w.close_by_restart.assert_called_once()
-        mock_store.set_restore_profile_ids.assert_called_once_with(["sess1", "sess2"])
+        mock_ps.clear_restart_pending.assert_called_once()
 
 
 class TestCollectorsTab:
@@ -1220,7 +1254,11 @@ class TestCloseEventCancels:
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            "wafer.builtins.plugin_manager.extensions_tab.needs_setup",
+            "wafer.builtins.plugin_manager.extensions_tab.needs_install",
+            lambda folder: False,
+        )
+        monkeypatch.setattr(
+            "wafer.builtins.plugin_manager.extensions_tab.needs_post_install",
             lambda folder: False,
         )
         from wafer.core.qt.dispatcher import Dispatcher, CancelSlot
@@ -1251,7 +1289,11 @@ class TestPostInstallHook:
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            "wafer.builtins.plugin_manager.extensions_tab.needs_setup",
+            "wafer.builtins.plugin_manager.extensions_tab.needs_install",
+            lambda folder: True,
+        )
+        monkeypatch.setattr(
+            "wafer.builtins.plugin_manager.extensions_tab.needs_post_install",
             lambda folder: True,
         )
 
@@ -1290,7 +1332,11 @@ class TestPostInstallHook:
             lambda: str(ext_dir),
         )
         monkeypatch.setattr(
-            "wafer.builtins.plugin_manager.extensions_tab.needs_setup",
+            "wafer.builtins.plugin_manager.extensions_tab.needs_install",
+            lambda folder: True,
+        )
+        monkeypatch.setattr(
+            "wafer.builtins.plugin_manager.extensions_tab.needs_post_install",
             lambda folder: True,
         )
 

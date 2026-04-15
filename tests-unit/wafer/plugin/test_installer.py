@@ -1,5 +1,6 @@
 import os
 import platform
+import shutil
 import sys
 import pytest
 from pathlib import Path
@@ -16,9 +17,16 @@ from wafer.plugin.installer import (
     _collect_installed_extensions,
     _ensure_python_version,
     _packages_dir,
+    _pending_dir,
     _stamps_dir,
     _extensions_dir_from_plugin,
     _stamp_path,
+    _has_locked_files,
+    _is_locked,
+    _merge_or_defer,
+    _merge_dir,
+    apply_pending_packages,
+    has_pending_packages,
     install_requirements,
     install_packages,
     write_post_install_stamp,
@@ -29,6 +37,7 @@ from wafer.plugin.installer import (
     install_extension,
     _PACKAGES_DIR,
     _STAMPS_DIR,
+    _PENDING_DIR,
     _PYTHON_VERSION_STAMP,
     _write_install_stamp,
     _stamp_version_matches,
@@ -271,16 +280,33 @@ class TestInstallRequirements:
         (plugin / "requirements.txt").write_text("numpy==2.2.6\n")
 
         mock_ep = MagicMock()
+        mock_ep.pip_install.return_value = True
 
         with patch("wafer.plugin.installer.EmbeddedPython", return_value=mock_ep):
-            result = install_requirements(str(plugin), str(ext_dir))
+            success, deferred = install_requirements(str(plugin), str(ext_dir))
 
-        assert result is True
+        assert success is True
+        assert deferred is False
         mock_ep.pip_install.assert_called_once()
         call_args = mock_ep.pip_install.call_args[0]
         assert _PACKAGES_DIR in call_args[1]
         stamp = ext_dir / _PACKAGES_DIR / _STAMPS_DIR / "image.installed"
         assert stamp.exists()
+
+    def test_deferred_returns_true_with_deferred_flag(self, tmp_path):
+        ext_dir = tmp_path / "extensions"
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
+        (plugin / "requirements.txt").write_text("requests\n")
+
+        mock_ep = MagicMock()
+        mock_ep.pip_install.return_value = False
+
+        with patch("wafer.plugin.installer.EmbeddedPython", return_value=mock_ep):
+            success, deferred = install_requirements(str(plugin), str(ext_dir))
+
+        assert success is True
+        assert deferred is True
 
     def test_failure_returns_false(self, tmp_path):
         ext_dir = tmp_path / "extensions"
@@ -292,9 +318,10 @@ class TestInstallRequirements:
         mock_ep.pip_install.side_effect = RuntimeError("pip failed")
 
         with patch("wafer.plugin.installer.EmbeddedPython", return_value=mock_ep):
-            result = install_requirements(str(plugin), str(ext_dir))
+            success, deferred = install_requirements(str(plugin), str(ext_dir))
 
-        assert result is False
+        assert success is False
+        assert deferred is False
 
     def test_empty_merge_still_writes_stamp(self, tmp_path):
         ext_dir = tmp_path / "extensions"
@@ -302,9 +329,10 @@ class TestInstallRequirements:
         plugin.mkdir(parents=True)
         (plugin / "requirements.txt").write_text("# no deps\n")
 
-        result = install_requirements(str(plugin), str(ext_dir))
+        success, deferred = install_requirements(str(plugin), str(ext_dir))
 
-        assert result is True
+        assert success is True
+        assert deferred is False
         stamp = ext_dir / _PACKAGES_DIR / _STAMPS_DIR / "empty.installed"
         assert stamp.exists()
 
@@ -318,7 +346,7 @@ class TestInstallPackages:
         mock_ep = MagicMock()
         mock_ep.exe_path = "/fake/python.exe"
 
-        with patch("wafer.plugin.installer.EmbeddedPython", return_value=mock_ep), patch("wafer.plugin.installer._run_subprocess") as mock_run, patch("wafer.plugin.installer._merge_dir") as mock_merge:
+        with patch("wafer.plugin.installer.EmbeddedPython", return_value=mock_ep), patch("wafer.plugin.installer._run_subprocess") as mock_run, patch("wafer.plugin.installer._merge_or_defer", return_value=True) as mock_merge:
             result = install_packages(str(plugin), ["onnxruntime-gpu"])
 
         assert result is True
@@ -326,8 +354,6 @@ class TestInstallPackages:
         assert "--target" in call_args
         assert "onnxruntime-gpu" in call_args
         mock_merge.assert_called_once()
-        _, merge_dst = mock_merge.call_args[0]
-        assert merge_dst == str(ext_dir / _PACKAGES_DIR)
 
     def test_failure_returns_false(self, tmp_path):
         ext_dir = tmp_path / "extensions"
@@ -631,7 +657,7 @@ class TestInstallExtension:
 
         with (
             patch("wafer.plugin.installer.needs_install", return_value=True),
-            patch("wafer.plugin.installer.install_requirements", return_value=False),
+            patch("wafer.plugin.installer.install_requirements", return_value=(False, False)),
         ):
             ok, post_ok, plugins = install_extension(str(plugin), str(ext_dir))
 
@@ -722,7 +748,7 @@ class TestInstallExtension:
 
         with (
             patch("wafer.plugin.installer.needs_install", return_value=True),
-            patch("wafer.plugin.installer.install_requirements", return_value=True),
+            patch("wafer.plugin.installer.install_requirements", return_value=(True, False)),
         ):
             cancelled = True
             ok, post_ok, plugins = install_extension(
@@ -733,3 +759,273 @@ class TestInstallExtension:
 
         assert ok is False
         assert plugins == []
+
+    def test_deferred_install_continues_discover_and_post_install(self, tmp_path):
+        ext_dir = tmp_path / "extensions"
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
+
+        from wafer.plugin.registry import PluginBase
+
+        class DeferredPlugin(PluginBase):
+            NAME = "deferred"
+            EXTENSIONS = (".d",)
+            PRIORITY = 1
+
+        with (
+            patch("wafer.plugin.installer.needs_install", return_value=True),
+            patch("wafer.plugin.installer.install_requirements", return_value=(True, True)),
+            patch("wafer.plugin.loader.PluginLoader.discover_extension", return_value=[("grid", DeferredPlugin)]),
+        ):
+            ok, post_ok, plugins = install_extension(str(plugin), str(ext_dir))
+
+        assert ok is True
+        assert post_ok is True
+        assert len(plugins) == 1
+        assert plugins[0][1] is DeferredPlugin
+
+
+class TestHasLockedFiles:
+    def test_no_locked_files(self, tmp_path):
+        src = tmp_path / "src"
+        dst = tmp_path / "dst"
+        src.mkdir()
+        dst.mkdir()
+        (src / "a.txt").write_text("new")
+        (dst / "a.txt").write_text("old")
+        assert _has_locked_files(str(src), str(dst)) is False
+
+    def test_no_dst_dir(self, tmp_path):
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "a.txt").write_text("new")
+        assert _has_locked_files(str(src), str(tmp_path / "nope")) is False
+
+    def test_new_file_not_locked(self, tmp_path):
+        src = tmp_path / "src"
+        dst = tmp_path / "dst"
+        src.mkdir()
+        dst.mkdir()
+        (src / "new.txt").write_text("data")
+        assert _has_locked_files(str(src), str(dst)) is False
+
+    def test_nested_dir_check(self, tmp_path):
+        src = tmp_path / "src" / "sub"
+        dst = tmp_path / "dst" / "sub"
+        src.mkdir(parents=True)
+        dst.mkdir(parents=True)
+        (src / "a.txt").write_text("new")
+        (dst / "a.txt").write_text("old")
+        assert _has_locked_files(str(tmp_path / "src"), str(tmp_path / "dst")) is False
+
+
+class TestMergeOrDefer:
+    def test_merge_when_no_locks(self, tmp_path):
+        staging = tmp_path / "staging"
+        target = tmp_path / "ext" / _PACKAGES_DIR
+        ext_dir = tmp_path / "ext"
+        staging.mkdir()
+        target.mkdir(parents=True)
+        (staging / "lib.py").write_text("content")
+
+        result = _merge_or_defer(str(staging), str(target), str(ext_dir))
+        assert result is True
+        assert (target / "lib.py").read_text() == "content"
+        assert not (ext_dir / _PENDING_DIR).exists()
+
+    def test_defer_when_locked(self, tmp_path):
+        staging = tmp_path / "staging"
+        target = tmp_path / "ext" / _PACKAGES_DIR
+        ext_dir = tmp_path / "ext"
+        staging.mkdir()
+        target.mkdir(parents=True)
+        (staging / "lib.pyd").write_text("new")
+        locked_file = target / "lib.pyd"
+        locked_file.write_text("old")
+
+        with patch("wafer.plugin.installer._is_locked", return_value=True):
+            result = _merge_or_defer(str(staging), str(target), str(ext_dir))
+
+        assert result is False
+        pending = ext_dir / _PENDING_DIR
+        assert pending.exists()
+        assert (pending / "lib.pyd").read_text() == "new"
+        assert locked_file.read_text() == "old"
+
+    def test_defer_merges_into_existing_pending(self, tmp_path):
+        staging = tmp_path / "staging"
+        target = tmp_path / "ext" / _PACKAGES_DIR
+        ext_dir = tmp_path / "ext"
+        pending = ext_dir / _PENDING_DIR
+        staging.mkdir()
+        target.mkdir(parents=True)
+        pending.mkdir(parents=True)
+        (pending / "old_pkg.py").write_text("previous")
+        (staging / "new_pkg.py").write_text("new")
+        (target / "new_pkg.py").write_text("existing")
+
+        with patch("wafer.plugin.installer._is_locked", return_value=True):
+            result = _merge_or_defer(str(staging), str(target), str(ext_dir))
+
+        assert result is False
+        assert (pending / "old_pkg.py").read_text() == "previous"
+        assert (pending / "new_pkg.py").read_text() == "new"
+
+    def test_partial_merge_unlocked_copied_locked_deferred(self, tmp_path):
+        staging = tmp_path / "staging"
+        target = tmp_path / "ext" / _PACKAGES_DIR
+        ext_dir = tmp_path / "ext"
+        staging.mkdir()
+        target.mkdir(parents=True)
+        (staging / "ok.py").write_text("new_ok")
+        (staging / "locked.pyd").write_text("new_locked")
+        (target / "ok.py").write_text("old_ok")
+        (target / "locked.pyd").write_text("old_locked")
+
+        def fake_locked(path):
+            return "locked.pyd" in path
+
+        with patch("wafer.plugin.installer._is_locked", side_effect=fake_locked):
+            result = _merge_or_defer(str(staging), str(target), str(ext_dir))
+
+        assert result is False
+        assert (target / "ok.py").read_text() == "new_ok"
+        assert (target / "locked.pyd").read_text() == "old_locked"
+        pending = ext_dir / _PENDING_DIR
+        assert (pending / "locked.pyd").read_text() == "new_locked"
+        assert not (pending / "ok.py").exists()
+
+    def test_partial_merge_subdir_locked(self, tmp_path):
+        staging = tmp_path / "staging"
+        target = tmp_path / "ext" / _PACKAGES_DIR
+        ext_dir = tmp_path / "ext"
+        sub_staging = staging / "subpkg"
+        sub_target = target / "subpkg"
+        sub_staging.mkdir(parents=True)
+        sub_target.mkdir(parents=True)
+        (staging / "root.py").write_text("root_new")
+        (sub_staging / "mod.pyd").write_text("sub_new")
+        (sub_target / "mod.pyd").write_text("sub_old")
+
+        with patch("wafer.plugin.installer._has_locked_files", return_value=True):
+            result = _merge_or_defer(str(staging), str(target), str(ext_dir))
+
+        assert result is False
+        assert (target / "root.py").read_text() == "root_new"
+        pending = ext_dir / _PENDING_DIR / "subpkg"
+        assert (pending / "mod.pyd").read_text() == "sub_new"
+        assert (sub_target / "mod.pyd").read_text() == "sub_old"
+
+
+class TestApplyPendingPackages:
+    def test_applies_pending_to_packages(self, tmp_path):
+        ext_dir = tmp_path / "extensions"
+        pending = ext_dir / _PENDING_DIR
+        target = ext_dir / _PACKAGES_DIR
+        pending.mkdir(parents=True)
+        target.mkdir(parents=True)
+        (pending / "new_lib.py").write_text("updated")
+        (target / "old_lib.py").write_text("existing")
+
+        result = apply_pending_packages(str(ext_dir))
+
+        assert result is True
+        assert (target / "new_lib.py").read_text() == "updated"
+        assert (target / "old_lib.py").read_text() == "existing"
+        assert not pending.exists()
+
+    def test_no_pending_returns_false(self, tmp_path):
+        result = apply_pending_packages(str(tmp_path))
+        assert result is False
+
+    def test_overwrites_existing_files(self, tmp_path):
+        ext_dir = tmp_path / "extensions"
+        pending = ext_dir / _PENDING_DIR
+        target = ext_dir / _PACKAGES_DIR
+        pending.mkdir(parents=True)
+        target.mkdir(parents=True)
+        (pending / "lib.py").write_text("v2")
+        (target / "lib.py").write_text("v1")
+
+        result = apply_pending_packages(str(ext_dir))
+
+        assert result is True
+        assert (target / "lib.py").read_text() == "v2"
+
+    def test_partial_apply_keeps_failed_in_pending(self, tmp_path):
+        ext_dir = tmp_path / "extensions"
+        pending = ext_dir / _PENDING_DIR
+        target = ext_dir / _PACKAGES_DIR
+        pending.mkdir(parents=True)
+        target.mkdir(parents=True)
+        (pending / "ok.py").write_text("new_ok")
+        (pending / "locked.pyd").write_text("new_locked")
+
+        orig_copy2 = shutil.copy2
+
+        def failing_copy2(src, dst, *args, **kwargs):
+            if "locked.pyd" in str(dst):
+                raise PermissionError("locked")
+            return orig_copy2(src, dst, *args, **kwargs)
+
+        with patch("wafer.plugin.installer.shutil.copy2", side_effect=failing_copy2):
+            result = apply_pending_packages(str(ext_dir))
+
+        assert result is True
+        assert (target / "ok.py").read_text() == "new_ok"
+        assert not (target / "locked.pyd").exists()
+        assert (pending / "locked.pyd").exists()
+        assert not (pending / "ok.py").exists()
+
+
+class TestHasPendingPackages:
+    def test_no_pending_dir(self, tmp_path):
+        assert has_pending_packages(str(tmp_path)) is False
+
+    def test_empty_pending_dir(self, tmp_path):
+        (tmp_path / _PENDING_DIR).mkdir()
+        assert has_pending_packages(str(tmp_path)) is False
+
+    def test_pending_with_files(self, tmp_path):
+        pending = tmp_path / _PENDING_DIR
+        pending.mkdir()
+        (pending / "pkg.py").write_text("data")
+        assert has_pending_packages(str(tmp_path)) is True
+
+
+class TestMergeDir:
+    def test_basic_copy(self, tmp_path):
+        src = tmp_path / "src"
+        dst = tmp_path / "dst"
+        src.mkdir()
+        dst.mkdir()
+        (src / "a.txt").write_text("hello")
+        _merge_dir(str(src), str(dst))
+        assert (dst / "a.txt").read_text() == "hello"
+
+    def test_overwrite_existing(self, tmp_path):
+        src = tmp_path / "src"
+        dst = tmp_path / "dst"
+        src.mkdir()
+        dst.mkdir()
+        (src / "a.txt").write_text("new")
+        (dst / "a.txt").write_text("old")
+        _merge_dir(str(src), str(dst))
+        assert (dst / "a.txt").read_text() == "new"
+
+    def test_nested_dirs(self, tmp_path):
+        src = tmp_path / "src" / "sub"
+        dst = tmp_path / "dst"
+        src.mkdir(parents=True)
+        dst.mkdir()
+        (src / "f.txt").write_text("nested")
+        _merge_dir(str(tmp_path / "src"), str(dst))
+        assert (dst / "sub" / "f.txt").read_text() == "nested"
+
+    def test_creates_dst_if_missing(self, tmp_path):
+        src = tmp_path / "src"
+        dst = tmp_path / "dst"
+        src.mkdir()
+        (src / "a.txt").write_text("data")
+        _merge_dir(str(src), str(dst))
+        assert (dst / "a.txt").read_text() == "data"

@@ -4,15 +4,66 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
-## [v0.5.8]
+## [v0.6.0]
+### Added
+- **Portable build system**: replaced PyInstaller with Python-bundling approach — `scripts/build.py` now downloads embeddable Python 3.11, installs pip and runtime deps, copies source, and compiles C# launcher executables
+- `scripts/launcher/Wafer.cs` and `WaferConsole.cs`: C# launchers for windowed and console mode
+- `main.bat` now pauses on non-zero exit code
+- Extension `requirements.txt` files now explicitly pin shared dependencies (`pillow`, `numpy`) per-extension
+
 ### Changed
-- Tray menu reorganized into logical groups: Viewer, Database, Window, Tray
-- Restart commands moved from Settings to Window menu group
-- Help (README, About) separated into its own menu group
-- Renamed "Detacher" to "Parser" across all UI, commands, and plugin API
+- **Plugin installer rewritten**: removed embedded Python download/setup; now uses host `sys.executable` directly. Per-extension `.packages/` dirs replaced with single shared `extensions/.packages/` with `_merge_requirements()` for version conflict resolution (highest pinned version wins). Install stamps moved to `.stamps/` subdirectory
+- `get_app_root_dir()`, `AppProcess.base_command()`, `get_version()`, and `get_plugin_dir()` no longer use `sys.frozen` check — simplified for portable (non-PyInstaller) build
+- `main.py` stdout/stderr `StringIO` fallback now applies unconditionally (not only when frozen)
+- Plugin loader: shared packages loaded from `extensions/.packages/` instead of per-extension vendor dirs; per-extension `.packages/` no longer added to `sys.path`
+- `cleanup.bat` updated with improved logging and adapted for new `.packages` directory structure
+- `BlipCaptionerCollector.post_install` now passes explicit timeout for torch downloads
+
+### Removed
+- `main.spec` (PyInstaller spec file)
+- `extensions/requirements.txt` (shared deps moved into individual extension requirements)
+- `pyinstaller` and `pyinstaller-hooks-contrib` from `requirements-dev.txt`
+- `sys.frozen` checks removed from `wafer/_version.py`, `wafer/utils/paths.py`, `wafer/core/platform/process.py`, `wafer/plugin/loader.py`
+
+## [v0.5.9]
+### Added
+- **BLIP Captioner extension** (`extensions/blip_captioner/`): singleton collector for generating image captions using Salesforce BLIP model, with GPU/CPU fallback, idle engine unloading, hash/pixel caching, and auto-download via HuggingFace Hub
+- `faulthandler` crash logging: opt-in via `WAFER_FAULTHANDLER=1` env var, writes crash logs to `.crashlog/` directory
+- Crash log cleanup (`_cleanup_crash_logs`) in `AppLogger` initialization — removes empty and rotates old crash logs
+- `atexit` handler and `BaseException` catch in `main.py` for process exit logging and fatal crash reporting
+- Version stamp mechanism in `EmbeddedPython` to detect Python version mismatches and auto-purge outdated embedded runtimes
+- Thread-safe directory-level locking (`_get_dir_lock`) in plugin installer for concurrent install safety
+- `PluginManagerWidget` connects to `ViewerIpcBridge.db_content_updated` to mark collectors tab dirty and refresh on next show
+- `PluginManagerWidget` now preserves scroll position when refreshing Collectors and Order tabs
+
+### Changed
+- Renamed "Detacher" to "Parser" across all internal code, modules, IPC topics, and CLI args (`wafer/plugin/detacher/` → `wafer/plugin/parser/`, `wafer/app/detacher/` → `wafer/app/parser/`, `--detacher` → `--parser`, `detach.result` → `parse.result`, `BaseDetacherPlugin` → `BaseParserPlugin`, etc.)
+- Embedded Python version upgraded from 3.10.9 to 3.11.9
+- Minimum Python version raised to 3.11 (`pyproject.toml`, `setup.bat`, pyright, ruff target)
+- `datetime.timezone.utc` replaced with `datetime.UTC` across codebase (Python 3.11+ constant)
+- `EmbeddedPython.ensure_ready()` now runs under a global lock for thread safety
+- `AppLogger` log retention changed from 0 to 5 latest logs; cleanup errors now use `AppLogger.warning()` instead of `print()`
+- `install_requirements` purges vendor dir when Python version changes
+- IPC `Broker` poll loop now logs `ZMQError` as warning instead of silently ignoring
+- Runtime and dev dependency versions bumped (blake3, comtypes, msgpack, pillow, platformdirs, psutil, pyzmq, requests, setproctitle, pyright, pytest, ruff, etc.)
+
+### Removed
+- `wafer/plugin/detacher/` package (replaced by `wafer/plugin/parser/`)
+- `wafer/app/detacher/` package (replaced by `wafer/app/parser/`)
+- `wafer/app/indexer/detacher_dispatcher.py` and `detacher_receiver.py` (replaced by `parser_dispatcher.py` and `parser_receiver.py`)
+
+## [v0.5.8]
+### Added
+- `WindowRestartCommands` menu group: restart commands (`win.restart_all`, `win.restart_tray`, `win.restart_viewer`) registered under Window menu
+
+### Changed
+- Tray menu reorganized into logical groups: Viewer, Database, Window, Tray (separate `TrayViewerCommands`, `TrayDatabaseCommands`, `TraySystemCommands` classes)
+- Restart commands moved from Settings (`app.py`) to Window menu group (`window_commands.py`)
+- Help (README, About) separated into its own `Help` menu group (was part of `Setting`)
+- Tray command paths prefixed with `tray.` namespace (e.g., `show_window` → `tray.show_window`)
 
 ### Fixed
-- Plugin Manager collectors tab now refreshes on open and correctly preserves default/per-DB state
+- Plugin Manager collectors tab now refreshes on open and correctly preserves default/per-DB state across rebuilds
 - README release links updated to correct repository URL
 
 ## [v0.5.7]

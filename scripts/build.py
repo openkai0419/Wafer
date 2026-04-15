@@ -10,6 +10,7 @@ import tempfile
 import urllib.request
 import zipfile
 from pathlib import Path
+from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parent.parent
 VERSION_FILE = ROOT / "wafer" / "_version.py"
@@ -76,9 +77,19 @@ def sha256_file(path: str) -> str:
     return h.hexdigest()
 
 
+_ALLOWED_HOSTS = frozenset({"www.python.org", "bootstrap.pypa.io"})
+
+
 def download_file(url: str, dest: str):
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        raise ValueError(f"Only HTTPS URLs allowed: {url}")
+    if parsed.hostname not in _ALLOWED_HOSTS:
+        raise ValueError(f"Untrusted host: {parsed.hostname}")
     print(f"  Downloading {url}")
     urllib.request.urlretrieve(url, dest)
+    if os.path.getsize(dest) == 0:
+        raise ValueError(f"Empty download: {url}")
 
 
 def get_git_version() -> str | None:
@@ -238,7 +249,6 @@ def create_launchers(dist_dir: Path, version: str):
     icon_arg = f"/win32icon:{ICON_FILE}" if ICON_FILE.is_file() else ""
     for cs_name, exe_name, target in [
         ("Wafer.cs", "Wafer.exe", "/target:winexe"),
-        ("WaferConsole.cs", "WaferConsole.exe", "/target:exe"),
     ]:
         cs_path = LAUNCHER_DIR / cs_name
         exe_path = dist_dir / exe_name

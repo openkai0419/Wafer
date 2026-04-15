@@ -236,9 +236,7 @@ def install_requirements(plugin_dir: str, extensions_dir: str, on_progress=None)
         if not merged:
             _write_install_stamp(_stamp_path(plugin_dir, ".installed"))
             return True
-        staging_dir = os.path.join(extensions_dir, _PIP_STAGING)
-        os.makedirs(staging_dir, exist_ok=True)
-        tmp_req = os.path.join(staging_dir, "requirements.txt")
+        tmp_req = os.path.join(extensions_dir, ".tmp_merged_req.txt")
         try:
             Path(tmp_req).write_text("\n".join(merged) + "\n", "utf-8")
             ep = EmbeddedPython()
@@ -250,7 +248,10 @@ def install_requirements(plugin_dir: str, extensions_dir: str, on_progress=None)
             AppLogger.warning(f"[Installer] Failed for {os.path.basename(plugin_dir)}: {e}", exc=e)
             return False
         finally:
-            shutil.rmtree(staging_dir, ignore_errors=True)
+            try:
+                os.remove(tmp_req)
+            except OSError:
+                pass
 
 
 def install_packages(

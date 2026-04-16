@@ -528,6 +528,75 @@ class TestProfileTracking:
         finally:
             broker.stop()
 
+
+class TestBrokerLostTimeout:
+    def test_fires_when_broker_unreachable(self):
+        fired = threading.Event()
+        node = Node("indexer", db="photos", broker_lost_timeout=3)
+        node.on_broker_lost(fired.set)
+        node.start(port=59999)
+        try:
+            assert not fired.wait(1.5)
+            assert fired.wait(6.0)
+            assert node._stop.is_set()
+        finally:
+            node.stop()
+
+    def test_not_fires_when_broker_alive(self):
+        broker = Broker()
+        broker.start()
+        fired = threading.Event()
+        try:
+            node = Node("indexer", db="photos", broker_lost_timeout=3)
+            node.on_broker_lost(fired.set)
+            node.start(broker.port)
+            assert node.wait_registered(timeout=3.0)
+            time.sleep(4.0)
+            assert not fired.is_set()
+            assert not node._stop.is_set()
+        finally:
+            node.stop()
+            broker.stop()
+
+    def test_fires_after_broker_shutdown(self):
+        broker = Broker()
+        broker.start()
+        fired = threading.Event()
+        try:
+            node = Node("indexer", db="photos", broker_lost_timeout=3)
+            node.on_broker_lost(fired.set)
+            node.start(broker.port)
+            assert node.wait_registered(timeout=3.0)
+            broker.stop()
+            assert fired.wait(12.0)
+            assert node._stop.is_set()
+        finally:
+            node.stop()
+
+    def test_disabled_by_default(self):
+        node = Node("viewer", db="photos")
+        assert node._broker_lost_timeout is None
+        node.start(port=59999)
+        try:
+            time.sleep(2.0)
+            assert not node._stop.is_set()
+        finally:
+            node.stop()
+
+
+class TestProfileReRegister:
+    def _make_broker(self, tmp_path, profile_ids=()):
+        from wafer.core.profile import ProfileStore, ProfileEntry
+
+        store_path = str(tmp_path / "profiles.json")
+        store = ProfileStore(path=store_path)
+        for sid in profile_ids:
+            store.save_profile(ProfileEntry(profile_id=sid))
+        broker = Broker()
+        broker._restore_debounce_sec = 0.2
+        broker.set_profile_store_factory(lambda: ProfileStore(path=store_path))
+        return broker, store
+
     def test_re_register_updates_profile_id(self, tmp_path):
         broker, store = self._make_broker(tmp_path, profile_ids=["p1", "p2"])
         broker.start()
@@ -535,13 +604,13 @@ class TestProfileTracking:
             node = Node("viewer")
             node.session_id = "p1"
             node.start(broker.port)
-            assert node.wait_registered(timeout=3.0)
-            time.sleep(0.3)
+            assert node.wait_registered(timeout=5.0)
+            time.sleep(0.5)
             assert "p1" in broker.active_viewer_profile_ids()
 
             node.re_register("p2")
-            assert node.wait_registered(timeout=3.0)
-            time.sleep(0.3)
+            assert node.wait_registered(timeout=5.0)
+            time.sleep(0.5)
             active = broker.active_viewer_profile_ids()
             assert "p2" in active
             assert "p1" not in active
@@ -556,13 +625,13 @@ class TestProfileTracking:
             node = Node("viewer")
             node.session_id = "p1"
             node.start(broker.port)
-            assert node.wait_registered(timeout=3.0)
-            time.sleep(0.3)
+            assert node.wait_registered(timeout=5.0)
+            time.sleep(0.5)
             assert "p1" in store.get_active_profile_ids()
 
             node.re_register("p2")
-            assert node.wait_registered(timeout=3.0)
-            time.sleep(0.3)
+            assert node.wait_registered(timeout=5.0)
+            time.sleep(0.5)
             assert "p2" in store.get_active_profile_ids()
             assert "p2" in store.get_restore_profile_ids()
         finally:

@@ -562,13 +562,13 @@ class TestComposerListAllKeys:
 
 class TestDirectoryFilterGlobalScope:
     def test_directory_scope_is_global(self):
-        assert DirectoryFilter.SCOPE == "global"
+        assert DirectoryFilter.QUERY_SCOPE == "global"
 
     def test_text_scope_is_row(self):
-        assert TextFilter.SCOPE == "row"
+        assert TextFilter.QUERY_SCOPE == "row"
 
     def test_base_scope_default(self):
-        assert BaseFilterPlugin.SCOPE == "row"
+        assert BaseFilterPlugin.QUERY_SCOPE == "row"
 
     def test_and_works_without_directory(self, engine, composer):
         entries = [

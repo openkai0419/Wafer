@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from ._inference import BlipInference
 
 from ._downloader import ensure_model
+from .settings import blip_config
 
 _CACHE_MAX = 5000
 _ENGINE_IDLE_TIMEOUT = 120.0
@@ -29,7 +30,7 @@ class BlipCaptionerCollector(BaseSingletonCollector):
     DEFAULT_ENABLED = False
 
     @classmethod
-    def post_install(cls, plugin_dir, on_progress=None):
+    def post_install(cls, plugin_dir, on_progress=None, is_cancelled=None):
         from wafer.plugin.installer import install_packages
 
         _torch_pkgs = ["torch>=2.4.0", "torchvision>=0.19.0"]
@@ -44,14 +45,23 @@ class BlipCaptionerCollector(BaseSingletonCollector):
                 on_progress,
                 extra_args=["--index-url", _TORCH_CUDA_INDEX],
                 timeout=_torch_timeout,
+                is_cancelled=is_cancelled,
             )
+            if gpu_ok:
+                gpu_ok = cls._verify_device()
         else:
             gpu_ok = install_packages(
                 plugin_dir,
                 _torch_pkgs,
                 on_progress,
                 timeout=_torch_timeout,
+                is_cancelled=is_cancelled,
             )
+            if gpu_ok:
+                gpu_ok = cls._verify_device()
+
+        if is_cancelled and is_cancelled():
+            return
 
         if not gpu_ok:
             AppLogger.warning("BLIP: CUDA torch unavailable, falling back to CPU torch")
@@ -61,23 +71,34 @@ class BlipCaptionerCollector(BaseSingletonCollector):
                 on_progress,
                 extra_args=["--index-url", "https://download.pytorch.org/whl/cpu"],
                 timeout=_torch_timeout,
+                is_cancelled=is_cancelled,
             )
+            cls._verify_device()
 
-        install_packages(plugin_dir, ["transformers==4.57.6", "safetensors==0.7.0"], on_progress)
+        if is_cancelled and is_cancelled():
+            return
+
+        install_packages(plugin_dir, ["transformers==4.57.6", "safetensors==0.7.0"], on_progress, is_cancelled=is_cancelled)
+
+        if is_cancelled and is_cancelled():
+            return
+
         ensure_model()
-        cls._verify_device()
 
     @staticmethod
-    def _verify_device():
+    def _verify_device() -> bool:
         try:
             import torch
 
             if torch.cuda.is_available():
                 AppLogger.info(f"BLIP GPU verified: {torch.cuda.get_device_name(0)}")
+                return True
             else:
                 AppLogger.warning("BLIP: CUDA not available. Inference will run on CPU and be significantly slower")
-        except ImportError as err:
-            raise RuntimeError("BLIP: torch not importable after install") from err
+                return False
+        except (ImportError, OSError) as err:
+            AppLogger.warning(f"BLIP: torch import/load failed, falling back to CPU: {err}")
+            return False
 
     def __init__(self):
         self._engine: BlipInference | None = None
@@ -87,6 +108,7 @@ class BlipCaptionerCollector(BaseSingletonCollector):
         self._pixel_cache: OrderedDict[str, str] = OrderedDict()
         self._last_used: float = 0.0
         self._idle_timer: threading.Timer | None = None
+        self._settings = blip_config.load()
 
     def _ensure_engine(self):
         if self._engine is not None:
@@ -112,12 +134,15 @@ class BlipCaptionerCollector(BaseSingletonCollector):
         elapsed = time.monotonic() - self._last_used
         if elapsed < _ENGINE_IDLE_TIMEOUT:
             return
+        unloaded = False
         with self._engine_lock:
             if self._engine is None:
                 return
             if time.monotonic() - self._last_used < _ENGINE_IDLE_TIMEOUT:
                 return
             self._engine = None
+            unloaded = True
+        if unloaded:
             AppLogger.info("BLIP engine unloaded (idle timeout)")
 
     @staticmethod
@@ -125,6 +150,50 @@ class BlipCaptionerCollector(BaseSingletonCollector):
         cache[key] = value
         if len(cache) > _CACHE_MAX:
             cache.popitem(last=False)
+
+    def on_notify(self, payload=None) -> None:
+        self._settings = blip_config.load()
+        AppLogger.info(f"BLIP settings reloaded: {self._settings}")
+
+    def on_request(self, action, payload, msg):
+        if action == "blip.preview":
+            return self._handle_preview(payload)
+        if action == "blip.device_info":
+            return self._get_device_info()
+        return None
+
+    def _handle_preview(self, payload):
+        path = payload.get("path", "")
+        settings = payload.get("settings", {})
+        if not path:
+            return {"error": "no_path"}
+        self._ensure_engine()
+        self._touch()
+        thumb = self._thumbnailer.get_thumbnail(path, size=384)
+        if thumb is None:
+            return {"error": "thumbnail_failed"}
+        try:
+            caption = self._engine.predict(
+                thumb,
+                min_length=settings.get("min_length", self._settings.get("min_length", 5)),
+                max_length=settings.get("max_length", self._settings.get("max_length", 50)),
+                num_beams=settings.get("num_beams", self._settings.get("num_beams", 3)),
+            )
+        except Exception as e:
+            AppLogger.warning(f"BLIP preview failed: {path}", exc=e)
+            return {"error": str(e)}
+        return {"caption": caption, "path": path}
+
+    @staticmethod
+    def _get_device_info():
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                return {"device": "cuda", "device_name": torch.cuda.get_device_name(0)}
+            return {"device": "cpu", "device_name": "CPU"}
+        except ImportError:
+            return {"device": "unknown", "device_name": "torch not available"}
 
     def process(self, path: str, file_info: tuple) -> CollectorResult:
         file_hash = file_info[2] if len(file_info) >= 3 else None
@@ -153,7 +222,12 @@ class BlipCaptionerCollector(BaseSingletonCollector):
             return CollectorResult(source=path, status=True, meta_info={"caption": caption})
 
         try:
-            caption = self._engine.predict(thumb)
+            caption = self._engine.predict(
+                thumb,
+                min_length=self._settings.get("min_length", 5),
+                max_length=self._settings.get("max_length", 50),
+                num_beams=self._settings.get("num_beams", 3),
+            )
         except Exception as e:
             AppLogger.warning(f"BLIP inference failed: {path}", exc=e)
             return CollectorResult(source=path, status=False)

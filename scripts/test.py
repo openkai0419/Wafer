@@ -32,6 +32,13 @@ LAYERS: dict[str, dict] = {
         "maxfail": 5,
         "extra_args": ["-m", "benchmark"],
     },
+    "setup": {
+        "paths": ["tests/smoke/test_extension_install.py", "tests/smoke/test_extension_verify.py"],
+        "label": "Layer 4: Extension Setup",
+        "maxfail": 5,
+        "extra_args": ["-m", "setup", "--run-setup"],
+        "timeout": 7800,
+    },
 }
 
 DEFAULT_LAYERS = ["unit", "smoke"]
@@ -192,12 +199,13 @@ def run_layer(name: str, cfg: dict, extra_pytest_args: list[str] | None = None) 
     print(f"{'=' * 60}\n")
 
     t0 = time.time()
+    layer_timeout = cfg.get("timeout", 600)
     try:
         proc = subprocess.run(
             cmd,
             cwd=ROOT,
             env=env,
-            timeout=600,
+            timeout=layer_timeout,
             capture_output=True,
             text=True,
             errors="replace",
@@ -220,7 +228,7 @@ def run_layer(name: str, cfg: dict, extra_pytest_args: list[str] | None = None) 
                 print()
 
     except subprocess.TimeoutExpired as e:
-        print(f"\n  !! {name} TIMED OUT (600s limit) !!")
+        print(f"\n  !! {name} TIMED OUT ({layer_timeout}s limit) !!")
         result.exit_code = -1
         result.crashed = True
         if e.stdout:

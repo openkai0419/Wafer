@@ -28,19 +28,24 @@ class WD14TaggerCollector(BaseSingletonCollector):
     BATCH_SIZE = 150
 
     @classmethod
-    def post_install(cls, plugin_dir, on_progress=None):
+    def post_install(cls, plugin_dir, on_progress=None, is_cancelled=None):
         from wafer.plugin.installer import install_packages
 
-        if not install_packages(plugin_dir, ["onnxruntime-gpu==1.23.2"], on_progress):
+        if not install_packages(plugin_dir, ["onnxruntime-gpu==1.23.2"], on_progress, is_cancelled=is_cancelled):
             AppLogger.warning("onnxruntime-gpu unavailable, falling back to CPU")
-            install_packages(plugin_dir, ["onnxruntime==1.23.2"], on_progress)
+            install_packages(plugin_dir, ["onnxruntime==1.23.2"], on_progress, is_cancelled=is_cancelled)
         else:
             install_packages(
                 plugin_dir,
                 ["nvidia-cudnn-cu12==9.5.1.17"],
                 on_progress,
                 no_deps=True,
+                is_cancelled=is_cancelled,
             )
+
+        if is_cancelled and is_cancelled():
+            return
+
         ensure_model()
         cls._verify_gpu_provider()
 
@@ -106,12 +111,15 @@ class WD14TaggerCollector(BaseSingletonCollector):
         elapsed = time.monotonic() - self._last_used
         if elapsed < _ENGINE_IDLE_TIMEOUT:
             return
+        unloaded = False
         with self._engine_lock:
             if self._engine is None:
                 return
             if time.monotonic() - self._last_used < _ENGINE_IDLE_TIMEOUT:
                 return
             self._engine = None
+            unloaded = True
+        if unloaded:
             AppLogger.info("WD14 engine unloaded (idle timeout)")
 
     @staticmethod

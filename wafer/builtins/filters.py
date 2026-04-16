@@ -152,7 +152,7 @@ class TextFilter(BaseFilterPlugin):
 class DirectoryFilter(BaseFilterPlugin):
     NAME = "directory"
     PRIORITY = 90
-    SCOPE = "global"
+    QUERY_SCOPE = "global"
 
     @classmethod
     @profiler.profile

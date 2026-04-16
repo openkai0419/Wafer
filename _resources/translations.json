@@ -1,4 +1,83 @@
 {
+  "Retry": {
+    "en": "Retry",
+    "ja": ""
+  },
+  "Install": {
+    "en": "Install",
+    "ja": ""
+  },
+  "Installing…": {
+    "en": "Installing…",
+    "ja": ""
+  },
+  "Setting up…": {
+    "en": "Setting up…",
+    "ja": ""
+  },
+  "Installed": {
+    "en": "Installed",
+    "ja": ""
+  },
+  "No Dependencies": {
+    "en": "No Dependencies",
+    "ja": ""
+  },
+  "Setup": {
+    "en": "Setup",
+    "ja": ""
+  },
+  "Preview": {
+    "en": "Preview",
+    "ja": ""
+  },
+  "Drop a file here or click Preview": {
+    "en": "Drop a file here or click Preview",
+    "ja": ""
+  },
+  "Settings": {
+    "en": "Settings"
+  },
+  "Min Length:": {
+    "en": "Min Length:",
+    "ja": ""
+  },
+  "Max Length:": {
+    "en": "Max Length:",
+    "ja": ""
+  },
+  "Num Beams:": {
+    "en": "Num Beams:",
+    "ja": ""
+  },
+  "Device Info": {
+    "en": "Device Info",
+    "ja": ""
+  },
+  "Requesting...": {
+    "en": "Requesting...",
+    "ja": ""
+  },
+  "Reset Defaults": {
+    "en": "Reset Defaults",
+    "ja": ""
+  },
+  "Save && Re-collect": {
+    "en": "Save && Re-collect",
+    "ja": ""
+  },
+  "(no preview)": {
+    "en": "(no preview)",
+    "ja": ""
+  },
+  "Click Preview to generate caption": {
+    "en": "Click Preview to generate caption",
+    "ja": ""
+  },
+  "Generating caption...": {
+    "en": "Generating caption...",
+    "ja": ""
+  },
   "No color": {
     "en": "No color",
     "ja": ""
@@ -153,6 +232,22 @@
   },
   "Restart Required": {
     "en": "Restart Required",
+    "ja": ""
+  },
+  "Viewer Restart Required": {
+    "en": "Viewer Restart Required",
+    "ja": ""
+  },
+  "Background Restart Required": {
+    "en": "Background Restart Required",
+    "ja": ""
+  },
+  "Plugin settings have been saved.\nViewer restart is required.": {
+    "en": "Plugin settings have been saved.\nViewer restart is required.",
+    "ja": ""
+  },
+  "Plugin settings have been saved.\nBackground services restart is required.": {
+    "en": "Plugin settings have been saved.\nBackground services restart is required.",
     "ja": ""
   },
   "Select a database": {
@@ -974,9 +1069,6 @@
   },
   "Setting": {
     "en": "Setting"
-  },
-  "Settings": {
-    "en": "Settings"
   },
   "Shell Context Menu": {
     "en": "Shell Context Menu"

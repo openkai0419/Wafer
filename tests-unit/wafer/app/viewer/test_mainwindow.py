@@ -502,8 +502,9 @@ class TestOnClosePending:
             staticmethod(lambda *a: calls.append(("new_main", a))),
         )
         cleared = []
-        monkeypatch.setattr("wafer.plugin.settings.PluginSettings.is_restart_pending", lambda self: True)
-        monkeypatch.setattr("wafer.plugin.settings.PluginSettings.clear_restart_pending", lambda self: cleared.append(True))
+        from wafer.plugin.installer import RestartScope
+        monkeypatch.setattr("wafer.plugin.settings.PluginSettings.needs_restart", lambda self, d: RestartScope.ALL)
+        monkeypatch.setattr("wafer.plugin.settings.PluginSettings.clear_restart_scope", lambda self: cleared.append(True))
         monkeypatch.setattr("wafer.app.viewer.mainwindow.app_settings", MagicMock())
         monkeypatch.setattr("wafer.app.viewer.mainwindow.t", MagicMock())
         mock_node = MagicMock()
@@ -529,9 +530,38 @@ class TestOnClosePending:
             "wafer.core.platform.process.AppProcess.new_main",
             staticmethod(lambda *a: calls.append(("new_main", a))),
         )
-        monkeypatch.setattr("wafer.plugin.settings.PluginSettings.is_restart_pending", lambda self: False)
+        from wafer.plugin.installer import RestartScope
+        monkeypatch.setattr("wafer.plugin.settings.PluginSettings.needs_restart", lambda self, d: RestartScope.NONE)
         monkeypatch.setattr("wafer.app.viewer.mainwindow.app_settings", MagicMock())
         monkeypatch.setattr("wafer.app.viewer.mainwindow.t", MagicMock())
         win = self._make_win()
         win.on_close()
         assert ("terminate", ("--tray",)) not in calls
+
+    def test_on_close_viewer_only_does_not_restart_tray(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(
+            "wafer.core.platform.process.AppProcess.terminate_cmd",
+            staticmethod(lambda *a: calls.append(("terminate", a))),
+        )
+        monkeypatch.setattr(
+            "wafer.core.platform.process.AppProcess.new_main",
+            staticmethod(lambda *a: calls.append(("new_main", a))),
+        )
+        cleared = []
+        from wafer.plugin.installer import RestartScope
+        monkeypatch.setattr("wafer.plugin.settings.PluginSettings.needs_restart", lambda self, d: RestartScope.VIEWER)
+        monkeypatch.setattr("wafer.plugin.settings.PluginSettings.clear_restart_scope", lambda self: cleared.append(True))
+        monkeypatch.setattr("wafer.app.viewer.mainwindow.app_settings", MagicMock())
+        monkeypatch.setattr("wafer.app.viewer.mainwindow.t", MagicMock())
+        mock_node = MagicMock()
+        mock_store = MagicMock()
+        mock_store.get_active_profile_ids.return_value = ["test", "other"]
+        monkeypatch.setattr("wafer.core.profile.ProfileStore.instance", staticmethod(lambda: mock_store))
+        win = self._make_win()
+        win._node = mock_node
+        win.on_close()
+        assert ("terminate", ("--tray",)) not in calls
+        assert ("new_main", ("--tray",)) not in calls
+        assert cleared == [True]
+        mock_node.send.assert_called_once_with("profile.restart", "other", dst="viewer")

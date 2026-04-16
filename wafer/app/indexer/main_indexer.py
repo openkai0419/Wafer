@@ -8,6 +8,7 @@ from ...core.db.setting_db import SettingDB
 from ...plugin.collector.handler import collector_resolver
 from ...plugin.parser.handler import parser_resolver
 from ...core.ipc.node import Node
+from ...core.ipc.transport import BROKER_LOST_TIMEOUT
 from .collector_receiver import CollectorReceiver
 from .db_writer import DatabaseWriter
 from .parser_dispatcher import ParserDispatcher
@@ -37,7 +38,7 @@ class IndexerProcess:
         self.parser_dispatcher = None
         self.parser_receiver = None
         self._progress = None
-        self.zmq = Node("indexer", db=name, consumer=True)
+        self.zmq = Node("indexer", db=name, consumer=True, broker_lost_timeout=BROKER_LOST_TIMEOUT)
         self.zmq.subscribe("cleanup", lambda msg: self.cleanup() or True)
         self.zmq.subscribe("rescan", lambda msg: self.rescan() or True)
         self.zmq.subscribe("db.delete", lambda msg: self._on_delete_requested() or True)

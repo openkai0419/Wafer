@@ -23,10 +23,10 @@ class BlipInference:
 
         AppLogger.info(f"BLIP engine loaded: device={self.device}, dtype={self.dtype}")
 
-    def predict(self, image: Image.Image) -> str:
+    def predict(self, image: Image.Image, *, min_length: int = 5, max_length: int = 50, num_beams: int = 3) -> str:
         image = image.convert("RGB")
         inputs = self.processor(images=image, return_tensors="pt").to(self.device, self.dtype)
         with torch.inference_mode():
-            output_ids = self.model.generate(**inputs, max_length=50, num_beams=3)
+            output_ids = self.model.generate(**inputs, min_length=min_length, max_length=max_length, num_beams=num_beams)
         caption = self.processor.decode(output_ids[0], skip_special_tokens=True)
         return caption.strip()

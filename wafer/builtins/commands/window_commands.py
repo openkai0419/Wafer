@@ -65,7 +65,7 @@ def restart_all(ctx):
 
     from ...plugin.settings import PluginSettings
 
-    PluginSettings().clear_restart_pending()
+    PluginSettings().clear_restart_scope()
 
     if w:
         w._perform_system_restart(include_self=True)

@@ -637,6 +637,18 @@ class MainWindow(QtWidgets.QMainWindow):
         AppProcess.terminate_cmd("--tray")
         AppProcess.new_main("--tray")
 
+    def _restart_other_viewers(self):
+        node = getattr(self, "_node", None)
+        if not node:
+            return
+        from ...core.profile import ProfileStore
+
+        store = ProfileStore.instance()
+        active_ids = store.get_active_profile_ids()
+        for pid in active_ids:
+            if pid != self.profile_id:
+                node.send("profile.restart", pid, dst="viewer")
+
     @QtCore.Slot()
     def close_by_restart(self):
         self._save_profile()
@@ -845,13 +857,19 @@ class MainWindow(QtWidgets.QMainWindow):
             AppLogger.warning(f"on_close failed: {e}", exc=e)
         try:
             from ...plugin.settings import PluginSettings
+            from ...plugin.installer import RestartScope
+            from ...plugin.loader import get_plugin_dir
 
             ps = PluginSettings()
-            if ps.is_restart_pending():
-                ps.clear_restart_pending()
-                self._perform_system_restart()
+            scope = ps.needs_restart(get_plugin_dir())
+            if scope != RestartScope.NONE:
+                ps.clear_restart_scope()
+                if RestartScope.TRAY in scope:
+                    self._perform_system_restart()
+                elif RestartScope.VIEWER in scope:
+                    self._restart_other_viewers()
         except Exception as e:
-            AppLogger.warning(f"on_close restart_tray failed: {e}", exc=e)
+            AppLogger.warning(f"on_close restart failed: {e}", exc=e)
         try:
             if hasattr(self, "_bridge"):
                 AppLogger.info("on_close [STOPPING]")

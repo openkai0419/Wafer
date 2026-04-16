@@ -18,7 +18,7 @@ class SearchComposer:
         for filter_cls, params, op in filter_entries:
             sql, bind = filter_cls.build_path_query(params, engine._normalize_path)
             if sql is not None:
-                if filter_cls.SCOPE == "global":
+                if filter_cls.QUERY_SCOPE == "global":
                     global_queries.append((sql, bind))
                 else:
                     row_queries.append((sql, bind, op))
@@ -57,7 +57,7 @@ class SearchComposer:
         for filter_cls, params, op in filter_entries:
             sql, bind = filter_cls.build_path_query(params, engine._normalize_path)
             if sql is not None:
-                if filter_cls.SCOPE == "global":
+                if filter_cls.QUERY_SCOPE == "global":
                     global_queries.append((sql, bind))
                 else:
                     row_queries.append((sql, bind, op))

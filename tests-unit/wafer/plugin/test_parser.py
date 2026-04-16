@@ -77,7 +77,7 @@ def test_on_notify_override():
         def process(self, path, file_info, metadata):
             return ParserResult(source=path, status=True)
 
-        def on_notify(self):
+        def on_notify(self, payload=None):
             self.reloaded = True
 
     inst = MyParser()
@@ -96,7 +96,7 @@ def test_notify_to_sends_ipc():
     with patch("wafer.core.commands.binding.instance_registry.InstanceRegistry.instance", return_value=mock_registry):
         BaseParserPlugin.notify_to("novelai")
 
-    mock_node.send.assert_called_once_with("plugin.notify", dst="parser-novelai")
+    mock_node.send.assert_called_once_with("plugin.notify", None, dst="parser-novelai")
 
 
 def test_notify_to_no_node():

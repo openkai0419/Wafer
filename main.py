@@ -133,6 +133,7 @@ def _entry_indexer(name, parent_pid=None):
             if parent_pid is not None:
                 checker = ParentProcessChecker(parent_pid, on_orphan=lambda: stop_event.set() or shutdown_once.set())
                 checker.start()
+            indexer.zmq.on_broker_lost(lambda: stop_event.set() or shutdown_once.set())
 
             AppLogger.info('[Indexer] Running. Press Ctrl+C to exit.')
             stop_event.wait()

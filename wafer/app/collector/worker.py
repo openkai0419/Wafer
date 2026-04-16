@@ -6,6 +6,7 @@ import threading
 from ...utils.logs import AppLogger
 from ...utils.paths import normalize_path
 from ...core.ipc.node import Node
+from ...core.ipc.transport import BROKER_LOST_TIMEOUT
 from ...plugin.collector.handler import collector_resolver
 from ...plugin.collector.base import CollectorResult, BaseSingletonCollector
 
@@ -24,9 +25,10 @@ class CollectorWorker:
             raise ValueError(f"Unknown plugin: {plugin_name}")
         self._singleton = issubclass(collector_resolver.registry.get(plugin_name), BaseSingletonCollector)
         node_db = "" if self._singleton else db_name
-        self._node = Node(f"collector-{plugin_name}", db=node_db)
+        self._node = Node(f"collector-{plugin_name}", db=node_db, broker_lost_timeout=BROKER_LOST_TIMEOUT)
         self._node.subscribe("collect.batch", self._handle_batch)
         self._node.subscribe("plugin.notify", self._on_notify)
+        self._node.subscribe("service.request", self._on_service_request)
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=_MAX_WORKERS)
         self._stop = threading.Event()
         self._batch_queue: queue.Queue = queue.Queue()
@@ -49,8 +51,19 @@ class CollectorWorker:
         self._stop.wait()
 
     def _on_notify(self, msg) -> bool:
-        self._plugin.on_notify()
+        self._plugin.on_notify(msg.payload if isinstance(msg.payload, dict) else None)
         AppLogger.info(f"[Collector] Notified: {self.plugin_name}")
+        return True
+
+    def _on_service_request(self, msg) -> bool:
+        action = msg.payload.get("action", "") if isinstance(msg.payload, dict) else ""
+        payload = msg.payload if isinstance(msg.payload, dict) else {}
+        try:
+            result = self._plugin.on_request(action, payload, msg)
+        except Exception as e:
+            AppLogger.warning(f"[Collector] on_request failed: {action}", exc=e)
+            result = {"error": str(e)}
+        self._node.enqueue(msg.reply(result))
         return True
 
     def _handle_batch(self, msg) -> bool:
@@ -155,6 +168,7 @@ def run_collector(db_name: str, plugin_name: str, parent_pid: int | None = None)
             if parent_pid is not None:
                 checker = ParentProcessChecker(parent_pid, on_orphan=lambda: worker._stop.set())
                 checker.start()
+            worker._node.on_broker_lost(lambda: worker._stop.set())
 
             AppLogger.info("[Collector] Running.")
             worker.wait()

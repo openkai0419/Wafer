@@ -47,7 +47,7 @@ def _get_registry_map():
 
 
 def get_plugin_dir() -> str:
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "extensions")
+    return os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "extensions"))
 
 
 def _discover_plugins(module) -> list[tuple[str, type]]:

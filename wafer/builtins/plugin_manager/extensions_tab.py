@@ -44,10 +44,6 @@ _CARD_STATUS_CONFIG: dict[CardStatus, tuple[str, str, bool]] = {
     CardStatus.FAILED: ("Retry", "failed", True),
     CardStatus.RESTART_REQUIRED: ("Restart Required", "deferred", False),
 }
-_RESTART_SCOPE_LABELS: dict[RestartScope, str] = {
-    RestartScope.VIEWER: "Viewer Restart Required",
-    RestartScope.TRAY: "Background Restart Required",
-}
 _REGISTRY_LABELS = {
     "viewer": "Viewer",
     "grid": "Grid",
@@ -223,10 +219,12 @@ class _ExtensionCard(QtWidgets.QFrame):
 
     def set_status(self, status: CardStatus, restart_scope: RestartScope = RestartScope.NONE):
         cfg = _CARD_STATUS_CONFIG[status]
-        if status == CardStatus.RESTART_REQUIRED and restart_scope in _RESTART_SCOPE_LABELS:
-            text = t(_RESTART_SCOPE_LABELS[restart_scope])
-        else:
-            text = t(cfg[0])
+        text = t(cfg[0])
+        if status == CardStatus.RESTART_REQUIRED:
+            if restart_scope == RestartScope.VIEWER:
+                text = t("Viewer Restart Required")
+            elif restart_scope == RestartScope.TRAY:
+                text = t("Background Restart Required")
         self._apply_status(text, cfg[1], cfg[2])
         installing = status in (CardStatus.INSTALLING, CardStatus.POST_INSTALLING)
         cancelling = status == CardStatus.CANCELLING
@@ -319,6 +317,7 @@ class _ExtensionCard(QtWidgets.QFrame):
 
 class ExtensionsTab(QtWidgets.QWidget):
     enabled_changed = QtCore.Signal()
+    installing_changed = QtCore.Signal(bool)
 
     def __init__(self, enabled_names: set[str] | None, dispatcher: Dispatcher, parent=None):
         super().__init__(parent)
@@ -326,6 +325,7 @@ class ExtensionsTab(QtWidgets.QWidget):
         self._dispatcher = dispatcher
         self._install_cancels: dict[str, CancelSlot] = {}
         self._cards: dict[str, _ExtensionCard] = {}
+        self._installing_count = 0
 
         self._scroll = QtWidgets.QScrollArea()
         self._scroll.setWidgetResizable(True)
@@ -406,6 +406,9 @@ class ExtensionsTab(QtWidgets.QWidget):
 
     def _install_extension(self, card: _ExtensionCard):
         card.set_status(CardStatus.INSTALLING)
+        self._installing_count += 1
+        if self._installing_count == 1:
+            self.installing_changed.emit(True)
         slot = self._install_cancels.get(card.folder_name)
         if slot is None:
             slot = CancelSlot()
@@ -428,8 +431,8 @@ class ExtensionsTab(QtWidgets.QWidget):
                 self._dispatcher.invoke(lambda: self._on_install_complete(card, result))
             except Exception as e:
                 AppLogger.warning(f"[PluginManager] install failed: {card.folder_name}", exc=e)
-                if not cancel.is_cancelled():
-                    self._dispatcher.invoke(lambda: self._on_install_complete(card, InstallResult()))
+                result = InstallResult(cancelled=cancel.is_cancelled())
+                self._dispatcher.invoke(lambda: self._on_install_complete(card, result))
 
         self._dispatcher.post(task, priority=3, cancel=cancel)
 
@@ -440,6 +443,9 @@ class ExtensionsTab(QtWidgets.QWidget):
             slot.cancel()
 
     def _on_install_complete(self, card: _ExtensionCard, result: InstallResult):
+        self._installing_count = max(0, self._installing_count - 1)
+        if self._installing_count == 0:
+            self.installing_changed.emit(False)
         if result.cancelled:
             state = resolve_install_state(card.folder_path)
             state_to_card = {

@@ -36,7 +36,7 @@ class TestCollectorClassAttributes:
         assert BlipCaptionerCollector.DEFAULT_ENABLED is False
 
     def test_batch_size(self):
-        assert BlipCaptionerCollector.BATCH_SIZE == 100
+        assert BlipCaptionerCollector.BATCH_SIZE == 150
 
 
 class TestTwoLevelCache:
@@ -252,12 +252,12 @@ class TestIdleTimeout:
 
 class TestPostInstall:
     def test_post_install_calls_ensure_model(self):
-        with patch("wafer.plugin.installer.install_packages", return_value=True), patch("extensions.blip_captioner.collector.ensure_model") as mock_model, patch.object(BlipCaptionerCollector, "_verify_device"):
+        with patch("wafer.plugin.installer.install_packages", return_value=(True, False)), patch("extensions.blip_captioner.collector.ensure_model") as mock_model:
             BlipCaptionerCollector.post_install("/fake/dir")
             mock_model.assert_called_once()
 
     def test_post_install_installs_transformers(self):
-        with patch("extensions.blip_captioner.collector.ensure_model"), patch("wafer.plugin.installer.install_packages", return_value=True) as mock_install, patch.object(BlipCaptionerCollector, "_verify_device"):
+        with patch("extensions.blip_captioner.collector.ensure_model"), patch("wafer.plugin.installer.install_packages", return_value=(True, False)) as mock_install:
             BlipCaptionerCollector.post_install("/fake/dir")
             transformers_calls = [
                 c for c in mock_install.call_args_list
@@ -268,7 +268,7 @@ class TestPostInstall:
     @patch("extensions.blip_captioner.collector.sys")
     def test_post_install_tries_cuda_torch_on_windows(self, mock_sys):
         mock_sys.platform = "win32"
-        with patch("extensions.blip_captioner.collector.ensure_model"), patch("wafer.plugin.installer.install_packages", return_value=True) as mock_install, patch.object(BlipCaptionerCollector, "_verify_device"):
+        with patch("extensions.blip_captioner.collector.ensure_model"), patch("wafer.plugin.installer.install_packages", return_value=(True, False)) as mock_install:
             BlipCaptionerCollector.post_install("/fake/dir")
             first_call = mock_install.call_args_list[0]
             assert any("torch" in p for p in first_call[0][1])
@@ -276,38 +276,29 @@ class TestPostInstall:
             assert "--index-url" in extra
 
     @patch("extensions.blip_captioner.collector.sys")
-    def test_post_install_falls_back_to_cpu(self, mock_sys):
+    def test_post_install_retries_default_on_pip_failure(self, mock_sys):
         mock_sys.platform = "win32"
         call_count = [0]
 
         def side_effect(plugin_dir, packages, on_progress=None, **kwargs):
             call_count[0] += 1
             if call_count[0] == 1:
-                return False
-            return True
+                return (False, False)
+            return (True, False)
 
-        with patch("extensions.blip_captioner.collector.ensure_model"), patch("wafer.plugin.installer.install_packages", side_effect=side_effect) as mock_install, patch.object(BlipCaptionerCollector, "_verify_device"):
+        with patch("extensions.blip_captioner.collector.ensure_model"), patch("wafer.plugin.installer.install_packages", side_effect=side_effect) as mock_install:
             BlipCaptionerCollector.post_install("/fake/dir")
-            cpu_call = mock_install.call_args_list[1]
-            extra = cpu_call[1].get("extra_args") or []
-            assert "cpu" in " ".join(extra)
+            second_call = mock_install.call_args_list[1]
+            assert any("torch" in p for p in second_call[0][1])
+            assert second_call[1].get("extra_args") is None
 
-
-class TestVerifyDevice:
-    def test_verify_gpu_available(self):
-        with patch("extensions.blip_captioner.collector.BlipCaptionerCollector._verify_device.__wrapped__", create=True):
-            pass
-
-        mock_torch = MagicMock()
-        mock_torch.cuda.is_available.return_value = True
-        mock_torch.cuda.get_device_name.return_value = "NVIDIA GeForce RTX 3080"
-
-        with patch.dict("sys.modules", {"torch": mock_torch}):
-            BlipCaptionerCollector._verify_device()
-
-    def test_verify_cpu_only(self):
-        mock_torch = MagicMock()
-        mock_torch.cuda.is_available.return_value = False
-
-        with patch.dict("sys.modules", {"torch": mock_torch}):
-            BlipCaptionerCollector._verify_device()
+    @patch("extensions.blip_captioner.collector.sys")
+    def test_post_install_no_retry_on_deferred(self, mock_sys):
+        mock_sys.platform = "win32"
+        with patch("extensions.blip_captioner.collector.ensure_model"), patch("wafer.plugin.installer.install_packages", return_value=(True, True)) as mock_install:
+            BlipCaptionerCollector.post_install("/fake/dir")
+            torch_calls = [
+                c for c in mock_install.call_args_list
+                if any("torch" in p for p in c[0][1])
+            ]
+            assert len(torch_calls) == 1

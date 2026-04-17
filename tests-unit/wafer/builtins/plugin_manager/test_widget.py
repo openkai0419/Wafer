@@ -995,7 +995,7 @@ class TestPluginManagerWidget:
         dlg = PluginManagerWidget()
         qtbot.addWidget(dlg)
         assert not dlg._restart_label.isHidden()
-        assert dlg._restart_label.text() == "Restart Required"
+        assert dlg._restart_label.text() == "Both Restart Required"
 
 
 class TestPluginManagerCommands:

@@ -26,7 +26,7 @@ class BlipCaptionerCollector(BaseSingletonCollector):
     NAME = "blip"
     EXTENSIONS = ()
     PRIORITY = 50
-    BATCH_SIZE = 100
+    BATCH_SIZE = 150
     DEFAULT_ENABLED = False
 
     @classmethod
@@ -34,71 +34,41 @@ class BlipCaptionerCollector(BaseSingletonCollector):
         from wafer.plugin.installer import install_packages
 
         _torch_pkgs = ["torch>=2.4.0", "torchvision>=0.19.0"]
-
         _torch_timeout = 5400
 
-        gpu_ok = False
-        if sys.platform == "win32":
-            gpu_ok = install_packages(
-                plugin_dir,
-                _torch_pkgs,
-                on_progress,
-                extra_args=["--index-url", _TORCH_CUDA_INDEX],
-                timeout=_torch_timeout,
-                is_cancelled=is_cancelled,
-            )
-            if gpu_ok:
-                gpu_ok = cls._verify_device()
-        else:
-            gpu_ok = install_packages(
-                plugin_dir,
-                _torch_pkgs,
-                on_progress,
-                timeout=_torch_timeout,
-                is_cancelled=is_cancelled,
-            )
-            if gpu_ok:
-                gpu_ok = cls._verify_device()
+        model_error: list[Exception] = []
+        model_thread = threading.Thread(target=cls._download_model, args=(model_error,), daemon=True)
+        model_thread.start()
 
-        if is_cancelled and is_cancelled():
-            return
-
-        if not gpu_ok:
-            AppLogger.warning("BLIP: CUDA torch unavailable, falling back to CPU torch")
-            install_packages(
-                plugin_dir,
-                _torch_pkgs,
-                on_progress,
-                extra_args=["--index-url", "https://download.pytorch.org/whl/cpu"],
-                timeout=_torch_timeout,
-                is_cancelled=is_cancelled,
-            )
-            cls._verify_device()
+        extra = ["--index-url", _TORCH_CUDA_INDEX] if sys.platform == "win32" else None
+        success, _ = install_packages(
+            plugin_dir,
+            _torch_pkgs,
+            on_progress,
+            extra_args=extra,
+            timeout=_torch_timeout,
+            is_cancelled=is_cancelled,
+        )
+        if not success:
+            AppLogger.warning("BLIP: CUDA torch install failed, trying default torch")
+            install_packages(plugin_dir, _torch_pkgs, on_progress, timeout=_torch_timeout, is_cancelled=is_cancelled)
 
         if is_cancelled and is_cancelled():
             return
 
         install_packages(plugin_dir, ["transformers==4.57.6", "safetensors==0.7.0"], on_progress, is_cancelled=is_cancelled)
 
-        if is_cancelled and is_cancelled():
-            return
-
-        ensure_model()
+        model_thread.join()
+        if model_error:
+            raise model_error[0]
 
     @staticmethod
-    def _verify_device() -> bool:
+    def _download_model(errors: list[Exception]):
         try:
-            import torch
-
-            if torch.cuda.is_available():
-                AppLogger.info(f"BLIP GPU verified: {torch.cuda.get_device_name(0)}")
-                return True
-            else:
-                AppLogger.warning("BLIP: CUDA not available. Inference will run on CPU and be significantly slower")
-                return False
-        except (ImportError, OSError) as err:
-            AppLogger.warning(f"BLIP: torch import/load failed, falling back to CPU: {err}")
-            return False
+            ensure_model()
+        except Exception as e:
+            AppLogger.warning(f"BLIP model download failed: {e}", exc=e)
+            errors.append(e)
 
     def __init__(self):
         self._engine: BlipInference | None = None

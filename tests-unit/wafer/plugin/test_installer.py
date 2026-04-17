@@ -28,7 +28,6 @@ from wafer.plugin.installer import (
     _stamps_dir,
     _extensions_dir_from_plugin,
     _stamp_path,
-    _has_locked_files,
     _is_locked,
     _merge_or_defer,
     _merge_dir,
@@ -369,11 +368,24 @@ class TestInstallPackages:
         with patch("wafer.plugin.installer.EmbeddedPython", return_value=mock_ep), patch("wafer.plugin.installer._run_subprocess") as mock_run, patch("wafer.plugin.installer._merge_or_defer", return_value=True) as mock_merge:
             result = install_packages(str(plugin), ["onnxruntime-gpu"])
 
-        assert result is True
+        assert result == (True, False)
         call_args = mock_run.call_args[0][0]
         assert "--target" in call_args
         assert "onnxruntime-gpu" in call_args
         mock_merge.assert_called_once()
+
+    def test_deferred_returns_success_with_deferred(self, tmp_path):
+        ext_dir = tmp_path / "extensions"
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
+
+        mock_ep = MagicMock()
+        mock_ep.exe_path = "/fake/python.exe"
+
+        with patch("wafer.plugin.installer.EmbeddedPython", return_value=mock_ep), patch("wafer.plugin.installer._run_subprocess"), patch("wafer.plugin.installer._merge_or_defer", return_value=False):
+            result = install_packages(str(plugin), ["pkg"])
+
+        assert result == (True, True)
 
     def test_failure_returns_false(self, tmp_path):
         ext_dir = tmp_path / "extensions"
@@ -383,7 +395,7 @@ class TestInstallPackages:
         with patch("wafer.plugin.installer._run_subprocess", side_effect=RuntimeError("pip failed")):
             result = install_packages(str(plugin), ["pkg"])
 
-        assert result is False
+        assert result == (False, False)
 
     def test_multiple_packages(self, tmp_path):
         ext_dir = tmp_path / "extensions"
@@ -831,38 +843,16 @@ class TestInstallExtension:
         assert result.plugins[0][1] is DeferredPlugin
 
 
-class TestHasLockedFiles:
-    def test_no_locked_files(self, tmp_path):
-        src = tmp_path / "src"
-        dst = tmp_path / "dst"
-        src.mkdir()
-        dst.mkdir()
-        (src / "a.txt").write_text("new")
-        (dst / "a.txt").write_text("old")
-        assert _has_locked_files(str(src), str(dst)) is False
-
-    def test_no_dst_dir(self, tmp_path):
-        src = tmp_path / "src"
-        src.mkdir()
-        (src / "a.txt").write_text("new")
-        assert _has_locked_files(str(src), str(tmp_path / "nope")) is False
+class TestIsLocked:
+    def test_unlocked_file(self, tmp_path):
+        f = tmp_path / "a.txt"
+        f.write_text("data")
+        assert _is_locked(str(f)) is False
 
     def test_new_file_not_locked(self, tmp_path):
-        src = tmp_path / "src"
-        dst = tmp_path / "dst"
-        src.mkdir()
-        dst.mkdir()
-        (src / "new.txt").write_text("data")
-        assert _has_locked_files(str(src), str(dst)) is False
-
-    def test_nested_dir_check(self, tmp_path):
-        src = tmp_path / "src" / "sub"
-        dst = tmp_path / "dst" / "sub"
-        src.mkdir(parents=True)
-        dst.mkdir(parents=True)
-        (src / "a.txt").write_text("new")
-        (dst / "a.txt").write_text("old")
-        assert _has_locked_files(str(tmp_path / "src"), str(tmp_path / "dst")) is False
+        f = tmp_path / "a.txt"
+        f.write_text("data")
+        assert _is_locked(str(f)) is False
 
 
 class TestMergeOrDefer:
@@ -941,7 +931,7 @@ class TestMergeOrDefer:
         assert (pending / "locked.pyd").read_text() == "new_locked"
         assert not (pending / "ok.py").exists()
 
-    def test_partial_merge_subdir_locked(self, tmp_path):
+    def test_partial_merge_subdir_locked_file(self, tmp_path):
         staging = tmp_path / "staging"
         target = tmp_path / "ext" / _PACKAGES_DIR
         ext_dir = tmp_path / "ext"
@@ -950,17 +940,25 @@ class TestMergeOrDefer:
         sub_staging.mkdir(parents=True)
         sub_target.mkdir(parents=True)
         (staging / "root.py").write_text("root_new")
+        (sub_staging / "ok.py").write_text("sub_ok_new")
         (sub_staging / "mod.pyd").write_text("sub_new")
+        (sub_target / "ok.py").write_text("sub_ok_old")
         (sub_target / "mod.pyd").write_text("sub_old")
 
-        with patch("wafer.plugin.installer._has_locked_files", return_value=True):
-            result = _merge_or_defer(str(staging), str(target), str(ext_dir))
+        def fake_locked(path):
+            return "mod.pyd" in path
+
+        with patch("wafer.plugin.installer._is_locked", side_effect=fake_locked):
+            with patch("wafer.plugin.installer._remove_stale_packages"):
+                result = _merge_or_defer(str(staging), str(target), str(ext_dir))
 
         assert result is False
         assert (target / "root.py").read_text() == "root_new"
+        assert (sub_target / "ok.py").read_text() == "sub_ok_new"
+        assert (sub_target / "mod.pyd").read_text() == "sub_old"
         pending = ext_dir / _PENDING_DIR / "subpkg"
         assert (pending / "mod.pyd").read_text() == "sub_new"
-        assert (sub_target / "mod.pyd").read_text() == "sub_old"
+        assert not (pending / "ok.py").exists()
 
 
 class TestApplyPendingPackages:
@@ -1014,7 +1012,10 @@ class TestApplyPendingPackages:
                 raise PermissionError("locked")
             return orig_copy2(src, dst, *args, **kwargs)
 
-        with patch("wafer.plugin.installer.shutil.copy2", side_effect=failing_copy2):
+        with (
+            patch("wafer.plugin.installer.shutil.copy2", side_effect=failing_copy2),
+            patch("wafer.plugin.installer._PENDING_TIMEOUT", 0),
+        ):
             result = apply_pending_packages(str(ext_dir))
 
         assert result is True
@@ -1022,6 +1023,57 @@ class TestApplyPendingPackages:
         assert not (target / "locked.pyd").exists()
         assert (pending / "locked.pyd").exists()
         assert not (pending / "ok.py").exists()
+
+    def test_retry_succeeds_when_lock_released(self, tmp_path):
+        ext_dir = tmp_path / "extensions"
+        pending = ext_dir / _PENDING_DIR
+        target = ext_dir / _PACKAGES_DIR
+        pending.mkdir(parents=True)
+        target.mkdir(parents=True)
+        (pending / "lib.pyd").write_text("new_content")
+        (target / "lib.pyd").write_text("old_content")
+
+        call_count = 0
+        orig_copy2 = shutil.copy2
+
+        def copy_fails_then_succeeds(src, dst, *args, **kwargs):
+            nonlocal call_count
+            if "lib.pyd" in str(dst):
+                call_count += 1
+                if call_count <= 2:
+                    raise PermissionError("locked")
+            return orig_copy2(src, dst, *args, **kwargs)
+
+        with patch("wafer.plugin.installer.shutil.copy2", side_effect=copy_fails_then_succeeds):
+            result = apply_pending_packages(str(ext_dir))
+
+        assert result is True
+        assert (target / "lib.pyd").read_text() == "new_content"
+        assert not pending.exists()
+        assert call_count == 3
+
+    def test_merge_dir_locked_files_detected_as_failure(self, tmp_path):
+        ext_dir = tmp_path / "extensions"
+        pending = ext_dir / _PENDING_DIR
+        target = ext_dir / _PACKAGES_DIR
+        pkg_pending = pending / "numpy"
+        pkg_target = target / "numpy"
+        pkg_pending.mkdir(parents=True)
+        pkg_target.mkdir(parents=True)
+        (pkg_pending / "ok.py").write_text("new")
+        (pkg_pending / "locked.pyd").write_text("new_pyd")
+        (pkg_target / "locked.pyd").write_text("old_pyd")
+
+        with (
+            patch("wafer.plugin.installer._is_locked", lambda p: "locked.pyd" in p),
+            patch("wafer.plugin.installer._PENDING_TIMEOUT", 0),
+        ):
+            result = apply_pending_packages(str(ext_dir))
+
+        assert not result
+        assert (pkg_target / "ok.py").read_text() == "new"
+        assert (pkg_target / "locked.pyd").read_text() == "old_pyd"
+        assert (pkg_pending / "locked.pyd").exists()
 
 
 class TestHasPendingPackages:
@@ -1075,6 +1127,45 @@ class TestMergeDir:
         (src / "a.txt").write_text("data")
         _merge_dir(str(src), str(dst))
         assert (dst / "a.txt").read_text() == "data"
+
+    def test_locked_file_deferred_to_pending(self, tmp_path):
+        src = tmp_path / "src"
+        dst = tmp_path / "dst"
+        pending = tmp_path / "pending"
+        src.mkdir()
+        dst.mkdir()
+        (src / "ok.py").write_text("new_ok")
+        (src / "locked.pyd").write_text("new_locked")
+        (dst / "ok.py").write_text("old_ok")
+        (dst / "locked.pyd").write_text("old_locked")
+
+        def fake_locked(path):
+            return "locked.pyd" in path
+
+        with patch("wafer.plugin.installer._is_locked", side_effect=fake_locked):
+            has_deferred = _merge_dir(str(src), str(dst), str(pending))
+
+        assert has_deferred is True
+        assert (dst / "ok.py").read_text() == "new_ok"
+        assert (dst / "locked.pyd").read_text() == "old_locked"
+        assert (pending / "locked.pyd").read_text() == "new_locked"
+
+    def test_no_pending_dst_skips_deferred_copy(self, tmp_path):
+        src = tmp_path / "src"
+        dst = tmp_path / "dst"
+        src.mkdir()
+        dst.mkdir()
+        (src / "locked.pyd").write_text("new")
+        (dst / "locked.pyd").write_text("old")
+
+        def fake_locked(path):
+            return "locked.pyd" in path
+
+        with patch("wafer.plugin.installer._is_locked", side_effect=fake_locked):
+            has_deferred = _merge_dir(str(src), str(dst))
+
+        assert has_deferred is True
+        assert (dst / "locked.pyd").read_text() == "old"
 
 
 class TestRestartScope:
@@ -1252,13 +1343,22 @@ class TestRemoveStalePackages:
         (staging / "torch" / "new.py").write_text("new")
         torch_dir = target / "torch"
         torch_dir.mkdir()
-        (torch_dir / "old.py").write_text("old")
+        (torch_dir / "locked.pyd").write_text("old")
 
-        with patch("wafer.plugin.installer._has_locked_files", return_value=True):
+        orig_rmtree = shutil.rmtree
+
+        def fail_rmtree(path, ignore_errors=False, **kw):
+            if "torch" in str(path) and str(path).startswith(str(target)):
+                if ignore_errors:
+                    return
+                raise PermissionError("locked")
+            return orig_rmtree(path, ignore_errors=ignore_errors, **kw)
+
+        with patch("wafer.plugin.installer.shutil.rmtree", side_effect=fail_rmtree):
             _remove_stale_packages(str(staging), str(target))
 
         assert torch_dir.exists()
-        assert (torch_dir / "old.py").exists()
+        assert (torch_dir / "locked.pyd").exists()
 
     def test_noop_when_no_target(self, tmp_path):
         staging = tmp_path / "staging"

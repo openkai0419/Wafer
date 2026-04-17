@@ -31,8 +31,13 @@ class WD14TaggerCollector(BaseSingletonCollector):
     def post_install(cls, plugin_dir, on_progress=None, is_cancelled=None):
         from wafer.plugin.installer import install_packages
 
-        if not install_packages(plugin_dir, ["onnxruntime-gpu==1.23.2"], on_progress, is_cancelled=is_cancelled):
-            AppLogger.warning("onnxruntime-gpu unavailable, falling back to CPU")
+        model_error: list[Exception] = []
+        model_thread = threading.Thread(target=cls._download_model, args=(model_error,), daemon=True)
+        model_thread.start()
+
+        success, _ = install_packages(plugin_dir, ["onnxruntime-gpu==1.23.2"], on_progress, is_cancelled=is_cancelled)
+        if not success:
+            AppLogger.warning("onnxruntime-gpu install failed, falling back to CPU-only onnxruntime")
             install_packages(plugin_dir, ["onnxruntime==1.23.2"], on_progress, is_cancelled=is_cancelled)
         else:
             install_packages(
@@ -43,39 +48,17 @@ class WD14TaggerCollector(BaseSingletonCollector):
                 is_cancelled=is_cancelled,
             )
 
-        if is_cancelled and is_cancelled():
-            return
-
-        ensure_model()
-        cls._verify_gpu_provider()
+        model_thread.join()
+        if model_error:
+            raise model_error[0]
 
     @staticmethod
-    def _verify_gpu_provider():
+    def _download_model(errors: list[Exception]):
         try:
-            from ._inference import _preload_cuda_libs
-            import onnxruntime as ort
-
-            _preload_cuda_libs()
-            available = ort.get_available_providers()
-            gpu_providers = ("CUDAExecutionProvider", "ROCmExecutionProvider", "CoreMLExecutionProvider")
-            if not any(p in available for p in gpu_providers):
-                AppLogger.warning(f"WD14 onnxruntime installed but no GPU provider found: {available}. Check CUDA/cuDNN installation")
-                return
-            providers = [p for p in available if p != "TensorrtExecutionProvider"]
-            try:
-                opts = ort.SessionOptions()
-                opts.log_severity_level = 3
-                test_session = ort.InferenceSession(str(ensure_model() / "model.onnx"), providers=providers, sess_options=opts)
-                active = test_session.get_providers()
-                del test_session
-            except (RuntimeError, OSError):
-                active = []
-            if any(p in active for p in gpu_providers):
-                AppLogger.info(f"WD14 GPU verified: {active}")
-            else:
-                AppLogger.warning(f"WD14 GPU provider listed ({available}) but session fell back to CPU ({active}). CUDA/cuDNN DLLs may be missing")
-        except ImportError as err:
-            raise RuntimeError("WD14 onnxruntime not importable after install") from err
+            ensure_model()
+        except Exception as e:
+            AppLogger.warning(f"WD14 model download failed: {e}", exc=e)
+            errors.append(e)
 
     def __init__(self):
         self._engine: WD14Inference | None = None

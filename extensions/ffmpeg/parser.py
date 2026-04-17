@@ -36,11 +36,16 @@ def probe(path: str, ffprobe_path: str) -> dict | None:
                 path,
             ],
             capture_output=True,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=30,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         if result.returncode != 0:
+            AppLogger.debug(f"[ffmpeg] ffprobe returned {result.returncode} for {path}: {result.stderr}")
+            return None
+        if not result.stdout:
+            AppLogger.debug(f"[ffmpeg] ffprobe returned empty stdout for {path}")
             return None
         return json.loads(result.stdout)
     except Exception as e:

@@ -62,9 +62,9 @@ def _build_stylesheet() -> str:
             border: 1px solid rgba({_hex_rgb(p.success)}, 0.3);
         }}
         QPushButton#status_btn[status="deferred"] {{
-            background: rgba({_hex_rgb(p.error)}, 0.12);
-            color: {p.error};
-            border: 1px solid rgba({_hex_rgb(p.error)}, 0.3);
+            background: rgba({_hex_rgb(p.warning)}, 0.12);
+            color: {p.warning};
+            border: 1px solid rgba({_hex_rgb(p.warning)}, 0.3);
         }}
         QPushButton#status_btn[status="install"] {{
             background: {p.accent};
@@ -96,12 +96,12 @@ def _build_stylesheet() -> str:
             font-size: {dpix(10)}px;
             border-radius: {r}px;
             padding: {dpix(2)}px {dpix(10)}px;
-            background: transparent;
-            color: {p.text_muted};
-            border: 1px solid {p.border_default};
+            background: rgba({_hex_rgb(p.warning)}, 0.15);
+            color: {p.warning};
+            border: 1px solid rgba({_hex_rgb(p.warning)}, 0.4);
         }}
         QPushButton#install_cancel_btn:hover {{
-            background: {p.bg_hover};
+            background: rgba({_hex_rgb(p.warning)}, 0.3);
         }}
         QPushButton#install_cancel_btn:disabled {{
             color: {p.text_muted};
@@ -129,21 +129,21 @@ def _build_stylesheet() -> str:
             color: {p.accent_text};
         }}
         QPushButton#open_panel_btn {{
-            background: {p.accent};
-            color: {p.accent_text};
-            border: none;
+            background: rgba({_hex_rgb(p.success)}, 0.15);
+            color: {p.success};
+            border: 1px solid rgba({_hex_rgb(p.success)}, 0.4);
             border-radius: {r}px;
             padding: {dpix(2)}px {dpix(10)}px;
             font-size: {dpix(10)}px;
             font-weight: bold;
         }}
         QPushButton#open_panel_btn:hover {{
-            background: {p.bg_hover};
+            background: rgba({_hex_rgb(p.success)}, 0.3);
         }}
         QPushButton#open_panel_btn:disabled {{
             background: {p.bg_secondary};
             color: {p.text_muted};
-            border: 1px solid {p.border_default};
+            border: none;
         }}
         QGroupBox {{
             font-weight: bold;
@@ -158,13 +158,18 @@ def _build_stylesheet() -> str:
             padding: 0 {dpix(5)}px;
         }}
         QLabel#restart_label {{
-            color: {p.accent};
-            background: rgba({_hex_rgb(p.accent)}, 0.1);
-            border: 1px solid rgba({_hex_rgb(p.accent)}, 0.3);
+            color: {p.warning};
+            background: rgba({_hex_rgb(p.warning)}, 0.1);
+            border: 1px solid rgba({_hex_rgb(p.warning)}, 0.3);
             border-radius: {r}px;
             font-weight: bold;
             font-size: {dpix(11)}px;
             padding: {dpix(3)}px {dpix(10)}px;
+        }}
+        QLabel#install_warning {{
+            color: {p.warning};
+            font-size: {dpix(11)}px;
+            font-weight: bold;
         }}
     """
 
@@ -230,8 +235,14 @@ class PluginManagerWidget(QtWidgets.QWidget):
         self._restart_label.setObjectName("restart_label")
         self._restart_label.hide()
 
+        self._install_warning = QtWidgets.QLabel("\u203b " + t("Don't close while installing"))
+        self._install_warning.setObjectName("install_warning")
+        self._install_warning.hide()
+        self._ext_tab.installing_changed.connect(self._install_warning.setVisible)
+
         btn_layout = QtWidgets.QHBoxLayout()
         btn_layout.addWidget(self._restart_label)
+        btn_layout.addWidget(self._install_warning)
         btn_layout.addStretch()
         btn_layout.addWidget(save_btn)
         btn_layout.addWidget(revert_btn)
@@ -255,7 +266,7 @@ class PluginManagerWidget(QtWidgets.QWidget):
         elif scope == RestartScope.TRAY:
             text = t("Background Restart Required")
         else:
-            text = t("Restart Required")
+            text = t("Both Restart Required")
         self._restart_label.setText(text)
         self._restart_label.show()
 

@@ -42,19 +42,9 @@ if _vendored_in_path:
 PluginSettings.enabled_names = _orig_enabled_names
 
 
-def _drain_pool(pool, timeout_ms=3000, poll_ms=100):
+def _drain_pool(pool, timeout_ms=1000):
     pool.clear()
-    deadline = time.monotonic() + timeout_ms / 1000.0
-    while pool.activeThreadCount() > 0 and time.monotonic() < deadline:
-        try:
-            from PySide6 import QtWidgets
-            app = QtWidgets.QApplication.instance()
-            if app is not None:
-                app.processEvents()
-        except Exception:
-            pass
-        if pool.waitForDone(poll_ms):
-            break
+    pool.waitForDone(timeout_ms)
 
 
 @pytest.fixture(autouse=True)

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import threading
-
 from PySide6 import QtWidgets, QtCore, QtGui
 
 from wafer.plugin import BasePanelPlugin
@@ -11,6 +9,7 @@ from wafer.utils.logs import AppLogger
 from wafer.utils.notifier import Notifier
 from wafer.utils.paths import list_setting_db_names
 from wafer.core.lang.manager import t
+from wafer.core.qt.dispatcher import Dispatcher
 from .settings import blip_config
 
 _DST = "collector-blip"
@@ -35,6 +34,7 @@ class BlipSettingsWidget(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._settings = blip_config.load()
+        self._dispatcher = Dispatcher()
         self._preview_result.connect(self._on_preview_result)
         self._device_result.connect(self._on_device_result)
 
@@ -162,11 +162,7 @@ class BlipSettingsWidget(QtWidgets.QWidget):
         self._caption_label.setText(t("Generating caption..."))
         path = self._current_path
         settings = self._current_settings()
-        threading.Thread(
-            target=self._do_preview_request,
-            args=(path, settings),
-            daemon=True,
-        ).start()
+        self._dispatcher.post(lambda: self._do_preview_request(path, settings))
 
     def _do_preview_request(self, path: str, settings: dict):
         from wafer.core.commands.binding.instance_registry import InstanceRegistry
@@ -201,7 +197,7 @@ class BlipSettingsWidget(QtWidgets.QWidget):
 
     def _request_device_info(self):
         self._device_label.setText("Requesting...")
-        threading.Thread(target=self._do_device_request, daemon=True).start()
+        self._dispatcher.post(self._do_device_request)
 
     def _do_device_request(self):
         from wafer.core.commands.binding.instance_registry import InstanceRegistry

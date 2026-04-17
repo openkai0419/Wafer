@@ -24,23 +24,24 @@ class PluginConfig:
         self._cache: dict[str, Any] = {}
 
     def load(self) -> dict[str, Any]:
-        path = _ini_path()
-        result = dict(self._defaults)
-        if not os.path.isfile(path):
+        with ini_lock:
+            path = _ini_path()
+            result = dict(self._defaults)
+            if not os.path.isfile(path):
+                self._cache = dict(result)
+                return dict(result)
+            cp = ConfigParser()
+            cp.read(path, encoding="utf-8")
+            if not cp.has_section(self._section):
+                self._cache = dict(result)
+                return dict(result)
+            for key, default in self._defaults.items():
+                raw = cp.get(self._section, key, fallback=None)
+                if raw is None:
+                    continue
+                result[key] = _cast(raw, default)
             self._cache = dict(result)
             return dict(result)
-        cp = ConfigParser()
-        cp.read(path, encoding="utf-8")
-        if not cp.has_section(self._section):
-            self._cache = dict(result)
-            return dict(result)
-        for key, default in self._defaults.items():
-            raw = cp.get(self._section, key, fallback=None)
-            if raw is None:
-                continue
-            result[key] = _cast(raw, default)
-        self._cache = dict(result)
-        return dict(result)
 
     def get(self, key: str) -> Any:
         if not self._cache:

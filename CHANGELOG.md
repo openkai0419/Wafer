@@ -4,6 +4,44 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.6.1]
+### Added
+- **`PluginConfig`** (`wafer/plugin/config.py`): INI-based per-plugin configuration system with typed load/save, section-scoped caching, thread-safe writes via shared `ini_lock`, and `save_and_notify()` for IPC propagation to running collectors
+- **BLIP Settings panel** (`extensions/blip_captioner/panel.py`): `BlipSettingsPanelPlugin` with live preview via drag-and-drop, adjustable inference parameters (`min_length`, `max_length`, `num_beams`), device info display, and "Save & Re-collect" triggering IPC data deletion and re-collection
+- **`blip_config`** (`extensions/blip_captioner/settings.py`): BLIP-specific `PluginConfig` instance with default inference parameters
+- **Installation cancellation support**: `InstallerCancelled` exception and `is_cancelled` callback threaded through `_run_subprocess()`, `install_requirements()`, `install_packages()`, `install_extension()`, and all `post_install()` methods; cancel button added to Plugin Manager extension cards
+- **`InstallResult` dataclass** and **`InstallState` enum** (`wafer/plugin/installer.py`): structured return types for install operations replacing bare tuples
+- **`RestartScope` flag enum** (`wafer/plugin/installer.py`): granular restart scope tracking (`VIEWER`, `TRAY`, `ALL`) with `restart_scope_of()` and `restart_scope_from_plugins()` helpers
+- **Deferred package installation**: locked files during install are staged in `.pending/` and applied on next startup via `apply_pending_packages()`; stale dist-info cleanup via `_remove_stale_packages()`
+- **Broker-lost detection** (`wafer/core/ipc/node.py`): `Node.on_broker_lost()` callback with configurable timeout; `BROKER_LOST_TIMEOUT` (20s) constant in `transport.py`; collector, parser, and indexer processes auto-shutdown when broker becomes unreachable
+- **`Node.enqueue()`** method for sending pre-built `Message` objects directly
+- **IPC request/reply for collectors**: `BaseCollector.on_request()` virtual method; `CollectorWorker` handles `service.request` topic and routes replies via `msg.reply()`
+- **Restart scope tracking in Plugin Manager**: `PluginSettings.restart_scope()` / `merge_restart_scope()` / `needs_restart()` methods; restart label in UI shows differentiated messages per scope (viewer / tray / both)
+- `MainWindow._perform_system_restart()` and `_restart_other_viewers()` for coordinated restart on close when pending plugin changes exist
+- DLL directory registration for `.libs` subdirectories in shared packages (`_setup_packages_dll_directories` in `loader.py`) for Windows native library resolution
+- `setup` pytest marker for extension install smoke tests (`pyproject.toml`)
+
+### Changed
+- `BaseCollector.on_notify()` and `BaseParser.on_notify()` now accept optional `payload: dict | None` parameter; `notify_to()` forwards optional payload via IPC
+- `PluginBase.post_install()` signature extended with `is_cancelled` parameter across all base classes and all extensions (`ai_tagger`, `blip_captioner`, `exiftool`, `ffmpeg`, `video`)
+- `install_requirements()` and `install_packages()` return `tuple[bool, bool]` (success, deferred) instead of `bool`; `install_extension()` returns `InstallResult` dataclass instead of `tuple[bool, bool, list]`
+- `_run_subprocess()` default timeout changed from 300s to 0 (no limit); supports `is_cancelled` callback for cooperative cancellation
+- **`BaseFilterPlugin.SCOPE` renamed to `QUERY_SCOPE`** to avoid collision with the new `PluginBase.SCOPE` attribute (`"viewer"` default; `BaseCollector`/`BaseParser` override to `"tray"`)
+- `PluginSettings._write_ini_value()` uses shared `ini_lock` from `config.py` for thread safety
+- `BlipInference.predict()` accepts configurable `min_length`, `max_length`, `num_beams` keyword arguments (previously hardcoded)
+- `BlipCaptionerCollector` and `WD14TaggerCollector` `post_install()` now parallelizes model download with package installation via background thread; post-install GPU/device verification removed
+- Idle engine unload logging in `WD14TaggerCollector` and `BlipCaptionerCollector` moved outside the lock
+- `PluginLoader.load_all()` calls `apply_pending_packages()` at startup; `get_plugin_dir()` returns normalized path
+- `restart_all` command delegates to `MainWindow._perform_system_restart()` and clears restart scope
+- Extensions tab uses `CardStatus` enum and `resolve_install_state()` for unified status management with installing / cancelling / deferred / restart-required states
+- Plugin Manager save flow computes per-change `RestartScope` (enabled plugins → scope from plugin classes, order → viewer, collectors → tray) and shows differentiated restart messages
+- `ffmpeg/parser.py` uses `encoding="utf-8", errors="replace"` instead of `text=True`; added debug logging for ffprobe failures
+- `scripts/build.py`: download URLs restricted to HTTPS from allowed hosts only; empty download validation added; `.pip_staging` excluded from build output
+- `WaferConsole.cs`: proper argument escaping via `EscapeArg()`; `Process` wrapped in `using` block
+
+### Fixed
+- `DirectoryFilter.SCOPE` renamed to `QUERY_SCOPE` to match the base class rename (was referencing the old attribute name)
+
 ## [v0.6.0]
 ### Added
 - **Portable build system**: replaced PyInstaller with Python-bundling approach — `scripts/build.py` now downloads embeddable Python 3.11, installs pip and runtime deps, copies source, and compiles C# launcher executables

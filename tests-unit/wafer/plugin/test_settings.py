@@ -2,6 +2,7 @@ import os
 import json
 import pytest
 from wafer.plugin.settings import PluginSettings, _ini_path, _write_ini_value, _read_ini_value
+from wafer.plugin.installer import RestartScope
 import wafer.plugin.settings as settings_mod
 
 
@@ -96,6 +97,77 @@ class TestRestartPending:
         ps.set_restart_pending(True)
         ps.set_restart_pending(False)
         assert ps.is_restart_pending() is False
+
+
+class TestRestartScope:
+    def test_none_when_no_file(self):
+        ps = PluginSettings()
+        assert ps.restart_scope() == RestartScope.NONE
+
+    def test_set_viewer(self):
+        ps = PluginSettings()
+        ps.set_restart_scope(RestartScope.VIEWER)
+        assert ps.restart_scope() == RestartScope.VIEWER
+
+    def test_set_tray(self):
+        ps = PluginSettings()
+        ps.set_restart_scope(RestartScope.TRAY)
+        assert ps.restart_scope() == RestartScope.TRAY
+
+    def test_set_all(self):
+        ps = PluginSettings()
+        ps.set_restart_scope(RestartScope.ALL)
+        scope = ps.restart_scope()
+        assert RestartScope.VIEWER in scope
+        assert RestartScope.TRAY in scope
+
+    def test_merge_viewer_then_tray(self):
+        ps = PluginSettings()
+        ps.merge_restart_scope(RestartScope.VIEWER)
+        assert ps.restart_scope() == RestartScope.VIEWER
+        ps.merge_restart_scope(RestartScope.TRAY)
+        scope = ps.restart_scope()
+        assert RestartScope.VIEWER in scope
+        assert RestartScope.TRAY in scope
+
+    def test_clear_scope(self):
+        ps = PluginSettings()
+        ps.set_restart_scope(RestartScope.ALL)
+        ps.clear_restart_scope()
+        assert ps.restart_scope() == RestartScope.NONE
+
+    def test_backward_compat_old_restart_pending(self, isolate_ini):
+        _write_ini_value("plugins/restart_pending", True)
+        ps = PluginSettings()
+        scope = ps.restart_scope()
+        assert RestartScope.VIEWER in scope
+        assert RestartScope.TRAY in scope
+
+    def test_needs_restart_with_pending_packages(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "wafer.plugin.settings.has_pending_packages", lambda d: True
+        )
+        ps = PluginSettings()
+        scope = ps.needs_restart(str(tmp_path))
+        assert RestartScope.VIEWER in scope
+        assert RestartScope.TRAY in scope
+
+    def test_needs_restart_no_pending_no_scope(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "wafer.plugin.settings.has_pending_packages", lambda d: False
+        )
+        ps = PluginSettings()
+        assert ps.needs_restart(str(tmp_path)) == RestartScope.NONE
+
+    def test_needs_restart_viewer_scope_only(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "wafer.plugin.settings.has_pending_packages", lambda d: False
+        )
+        ps = PluginSettings()
+        ps.set_restart_scope(RestartScope.VIEWER)
+        scope = ps.needs_restart(str(tmp_path))
+        assert scope == RestartScope.VIEWER
+        assert RestartScope.TRAY not in scope
 
 
 class TestIniLowLevel:

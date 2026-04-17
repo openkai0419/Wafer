@@ -1,3 +1,4 @@
+import importlib
 import os
 import platform
 import re
@@ -6,9 +7,54 @@ import subprocess
 import sys
 import threading
 import time
+from dataclasses import dataclass, field
+from enum import Enum, Flag, auto
 from pathlib import Path
+from collections.abc import Iterable
 
 from ..utils.logs import AppLogger
+
+
+class RestartScope(Flag):
+    NONE = 0
+    VIEWER = auto()
+    TRAY = auto()
+    ALL = VIEWER | TRAY
+
+
+_SCOPE_TO_RESTART = {"tray": RestartScope.TRAY, "*": RestartScope.ALL}
+
+
+def restart_scope_of(cls: type) -> RestartScope:
+    return _SCOPE_TO_RESTART.get(getattr(cls, "SCOPE", "viewer"), RestartScope.VIEWER)
+
+
+def restart_scope_from_plugins(plugins: Iterable[type]) -> RestartScope:
+    scope = RestartScope.NONE
+    for cls in plugins:
+        scope |= restart_scope_of(cls)
+    return scope
+
+
+class InstallState(Enum):
+    NO_DEPS = "no_deps"
+    NOT_INSTALLED = "not_installed"
+    NEEDS_POST_INSTALL = "needs_post_install"
+    INSTALLED = "installed"
+
+
+class InstallerCancelled(Exception):
+    pass
+
+
+@dataclass
+class InstallResult:
+    success: bool = False
+    deferred: bool = False
+    post_install_ok: bool = True
+    cancelled: bool = False
+    plugins: list[tuple[str, type]] = field(default_factory=list)
+
 
 _PACKAGES_DIR = ".packages"
 _STAMPS_DIR = ".stamps"
@@ -47,7 +93,7 @@ def _stamp_path(plugin_dir: str, suffix: str) -> str:
     return os.path.join(_stamps_dir(ext_dir), f"{name}{suffix}")
 
 
-def _run_subprocess(cmd: list[str], on_progress=None, timeout: int = 300, env=None):
+def _run_subprocess(cmd: list[str], on_progress=None, timeout: int = 0, is_cancelled=None, env=None):
     kwargs = {}
     if sys.platform == "win32":
         kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
@@ -63,10 +109,13 @@ def _run_subprocess(cmd: list[str], on_progress=None, timeout: int = 300, env=No
 
     t = threading.Thread(target=_drain, daemon=True)
     t.start()
-    deadline = time.monotonic() + timeout
+    deadline = (time.monotonic() + timeout) if timeout > 0 else None
     try:
         while proc.poll() is None:
-            if time.monotonic() > deadline:
+            if is_cancelled and is_cancelled():
+                proc.kill()
+                raise InstallerCancelled("Installation cancelled by user")
+            if deadline and time.monotonic() > deadline:
                 proc.kill()
                 raise TimeoutError(f"Command timed out after {timeout}s")
             if on_progress:
@@ -93,7 +142,7 @@ class EmbeddedPython:
     def is_ready(self) -> bool:
         return os.path.isfile(self._exe)
 
-    def pip_install(self, req_file: str, target_dir: str, extensions_dir: str, on_progress=None) -> bool:
+    def pip_install(self, req_file: str, target_dir: str, extensions_dir: str, on_progress=None, is_cancelled=None, context: str = "") -> bool:
         os.makedirs(target_dir, exist_ok=True)
         staging = os.path.join(os.path.dirname(target_dir), _PIP_STAGING)
         _reset_staging(staging)
@@ -113,9 +162,9 @@ class EmbeddedPython:
                     "--no-cache-dir",
                 ],
                 on_progress=on_progress,
-                timeout=600,
+                is_cancelled=is_cancelled,
             )
-            return _merge_or_defer(staging, target_dir, extensions_dir)
+            return _merge_or_defer(staging, target_dir, extensions_dir, context=context)
         finally:
             if os.path.isdir(staging):
                 shutil.rmtree(staging, ignore_errors=True)
@@ -127,34 +176,26 @@ def _reset_staging(path: str):
     os.makedirs(path, exist_ok=True)
 
 
-def _merge_dir(src: str, dst: str):
+def _merge_dir(src: str, dst: str, pending_dst: str | None = None) -> bool:
     os.makedirs(dst, exist_ok=True)
+    has_deferred = False
     for entry in os.scandir(src):
         dst_path = os.path.join(dst, entry.name)
         if entry.is_dir(follow_symlinks=False):
             if os.path.isdir(dst_path):
-                _merge_dir(entry.path, dst_path)
+                sub_pending = os.path.join(pending_dst, entry.name) if pending_dst else None
+                if _merge_dir(entry.path, dst_path, sub_pending):
+                    has_deferred = True
             else:
                 shutil.copytree(entry.path, dst_path, dirs_exist_ok=True)
+        elif os.path.isfile(dst_path) and _is_locked(dst_path):
+            if pending_dst:
+                os.makedirs(pending_dst, exist_ok=True)
+                shutil.copy2(entry.path, os.path.join(pending_dst, entry.name))
+            has_deferred = True
         else:
             shutil.copy2(entry.path, dst_path)
-
-
-def _has_locked_files(src: str, dst: str) -> bool:
-    if not os.path.isdir(dst):
-        return False
-    for entry in os.scandir(src):
-        dst_path = os.path.join(dst, entry.name)
-        if entry.is_dir(follow_symlinks=False):
-            if _has_locked_files(entry.path, dst_path):
-                return True
-        elif os.path.isfile(dst_path):
-            try:
-                with open(dst_path, "a+b"):
-                    pass
-            except PermissionError:
-                return True
-    return False
+    return has_deferred
 
 
 def _is_locked(path: str) -> bool:
@@ -165,20 +206,49 @@ def _is_locked(path: str) -> bool:
         return True
 
 
-def _merge_or_defer(staging: str, target: str, extensions_dir: str) -> bool:
+_DIST_INFO_RE = re.compile(r"^(.+?)(-\d[^-]*)\.dist-info$")
+
+
+def _dist_info_base_name(dirname: str) -> str | None:
+    m = _DIST_INFO_RE.match(dirname)
+    return _normalize_pkg_name(m.group(1)) if m else None
+
+
+def _remove_stale_packages(staging: str, target: str):
+    if not os.path.isdir(target):
+        return
+    incoming_names: set[str] = set()
+    incoming_bases: set[str] = set()
+    for entry in os.scandir(staging):
+        incoming_names.add(entry.name)
+        base = _dist_info_base_name(entry.name)
+        if base:
+            incoming_bases.add(base)
+        else:
+            incoming_bases.add(_normalize_pkg_name(entry.name))
+    for entry in os.scandir(target):
+        if entry.name.startswith("."):
+            continue
+        base = _dist_info_base_name(entry.name)
+        if base is not None:
+            if base in incoming_bases and entry.name not in incoming_names:
+                shutil.rmtree(entry.path, ignore_errors=True) if entry.is_dir() else os.remove(entry.path)
+        elif entry.name in incoming_names:
+            if entry.is_dir(follow_symlinks=False):
+                shutil.rmtree(entry.path, ignore_errors=True)
+
+
+def _merge_or_defer(staging: str, target: str, extensions_dir: str, context: str = "") -> bool:
+    _remove_stale_packages(staging, target)
     has_deferred = False
     pending = _pending_dir(extensions_dir)
     for entry in os.scandir(staging):
         dst_path = os.path.join(target, entry.name)
         if entry.is_dir(follow_symlinks=False):
-            if _has_locked_files(entry.path, dst_path):
-                pending_dst = os.path.join(pending, entry.name)
-                os.makedirs(pending_dst, exist_ok=True)
-                _merge_dir(entry.path, pending_dst)
+            pending_dst = os.path.join(pending, entry.name)
+            os.makedirs(dst_path, exist_ok=True)
+            if _merge_dir(entry.path, dst_path, pending_dst):
                 has_deferred = True
-            else:
-                os.makedirs(dst_path, exist_ok=True)
-                _merge_dir(entry.path, dst_path)
         elif os.path.isfile(dst_path) and _is_locked(dst_path):
             os.makedirs(pending, exist_ok=True)
             shutil.copy2(entry.path, os.path.join(pending, entry.name))
@@ -186,9 +256,17 @@ def _merge_or_defer(staging: str, target: str, extensions_dir: str) -> bool:
         else:
             os.makedirs(target, exist_ok=True)
             shutil.copy2(entry.path, dst_path)
+    importlib.invalidate_caches()
     if has_deferred:
-        AppLogger.info("[Installer] Locked files detected, partial updates deferred to next restart")
+        msg = "[Installer] Locked files detected, partial updates deferred to next restart"
+        if context:
+            msg += f": {context}"
+        AppLogger.info(msg)
     return not has_deferred
+
+
+_PENDING_TIMEOUT = 15.0
+_PENDING_INTERVAL = 0.5
 
 
 def apply_pending_packages(extensions_dir: str) -> bool:
@@ -196,25 +274,38 @@ def apply_pending_packages(extensions_dir: str) -> bool:
     if not os.path.isdir(pending):
         return False
     target = _packages_dir(extensions_dir)
+    deadline = time.monotonic() + _PENDING_TIMEOUT
     applied = 0
     failed_names: set[str] = set()
-    with os.scandir(pending) as entries:
-        for entry in entries:
-            dst_path = os.path.join(target, entry.name)
-            try:
-                if entry.is_dir(follow_symlinks=False):
-                    os.makedirs(dst_path, exist_ok=True)
-                    _merge_dir(entry.path, dst_path)
-                else:
-                    os.makedirs(target, exist_ok=True)
-                    shutil.copy2(entry.path, dst_path)
-                applied += 1
-            except PermissionError:
-                AppLogger.warning(f"[Installer] Still locked, skipping pending: {entry.name}")
-                failed_names.add(entry.name)
-            except Exception as e:
-                AppLogger.warning(f"[Installer] Failed to apply pending: {entry.name}", exc=e)
-                failed_names.add(entry.name)
+
+    while True:
+        applied = 0
+        failed_names = set()
+        with os.scandir(pending) as entries:
+            for entry in entries:
+                dst_path = os.path.join(target, entry.name)
+                try:
+                    if entry.is_dir(follow_symlinks=False):
+                        os.makedirs(dst_path, exist_ok=True)
+                        if _merge_dir(entry.path, dst_path):
+                            failed_names.add(entry.name)
+                            continue
+                    else:
+                        os.makedirs(target, exist_ok=True)
+                        shutil.copy2(entry.path, dst_path)
+                    applied += 1
+                except PermissionError:
+                    failed_names.add(entry.name)
+                except Exception as e:
+                    AppLogger.warning(f"[Installer] Failed to apply pending: {entry.name}", exc=e)
+                    failed_names.add(entry.name)
+        if not failed_names or time.monotonic() >= deadline:
+            break
+        AppLogger.info(f"[Installer] Waiting for previous process to release file locks ({len(failed_names)} entries locked)...")
+        time.sleep(_PENDING_INTERVAL)
+
+    if failed_names:
+        AppLogger.warning(f"[Installer] Could not apply {len(failed_names)} pending entries (files still locked): {', '.join(sorted(failed_names))}")
     if not failed_names:
         shutil.rmtree(pending, ignore_errors=True)
     else:
@@ -229,6 +320,7 @@ def apply_pending_packages(extensions_dir: str) -> bool:
             except OSError:
                 pass
     if applied > 0:
+        importlib.invalidate_caches()
         AppLogger.info(f"[Installer] Pending package updates applied ({applied} entries)")
     return applied > 0
 
@@ -322,7 +414,7 @@ def _ensure_python_version(extensions_dir: str):
     _write_install_stamp(ver_file)
 
 
-def install_requirements(plugin_dir: str, extensions_dir: str, on_progress=None) -> tuple[bool, bool]:
+def install_requirements(plugin_dir: str, extensions_dir: str, on_progress=None, is_cancelled=None) -> tuple[bool, bool]:
     pkg_dir = _packages_dir(extensions_dir)
     req_file = os.path.join(plugin_dir, "requirements.txt")
     with _packages_lock:
@@ -337,7 +429,7 @@ def install_requirements(plugin_dir: str, extensions_dir: str, on_progress=None)
         try:
             Path(tmp_req).write_text("\n".join(merged) + "\n", "utf-8")
             ep = EmbeddedPython()
-            merged_immediately = ep.pip_install(tmp_req, pkg_dir, extensions_dir, on_progress)
+            merged_immediately = ep.pip_install(tmp_req, pkg_dir, extensions_dir, on_progress, is_cancelled=is_cancelled, context=os.path.basename(plugin_dir))
             _write_install_stamp(_stamp_path(plugin_dir, ".installed"))
             deferred = not merged_immediately
             if deferred:
@@ -361,8 +453,9 @@ def install_packages(
     on_progress=None,
     no_deps: bool = False,
     extra_args: list[str] | None = None,
-    timeout: int = 1800,
-) -> bool:
+    timeout: int = 0,
+    is_cancelled=None,
+) -> tuple[bool, bool]:
     extensions_dir = _extensions_dir_from_plugin(plugin_dir)
     pkg_dir = _packages_dir(extensions_dir)
     with _packages_lock:
@@ -391,16 +484,17 @@ def install_packages(
                 cmd,
                 on_progress=on_progress,
                 timeout=timeout,
+                is_cancelled=is_cancelled,
             )
-            merged = _merge_or_defer(staging, pkg_dir, extensions_dir)
+            merged = _merge_or_defer(staging, pkg_dir, extensions_dir, context=os.path.basename(plugin_dir))
             if merged:
                 AppLogger.info(f"[Installer] Packages installed to {os.path.basename(plugin_dir)}: {packages}")
             else:
                 AppLogger.info(f"[Installer] Packages deferred to {os.path.basename(plugin_dir)}: {packages}")
-            return merged
+            return True, not merged
         except Exception as e:
             AppLogger.warning(f"[Installer] Package install failed for {os.path.basename(plugin_dir)}: {e}", exc=e)
-            return False
+            return False, False
         finally:
             if os.path.isdir(staging):
                 shutil.rmtree(staging, ignore_errors=True)
@@ -450,6 +544,17 @@ def needs_setup(plugin_dir: str) -> bool:
     return needs_install(plugin_dir) or needs_post_install(plugin_dir)
 
 
+def resolve_install_state(plugin_dir: str) -> InstallState:
+    req_file = os.path.join(plugin_dir, "requirements.txt")
+    if not os.path.isfile(req_file):
+        return InstallState.NO_DEPS
+    if needs_install(plugin_dir):
+        return InstallState.NOT_INSTALLED
+    if needs_post_install(plugin_dir):
+        return InstallState.NEEDS_POST_INSTALL
+    return InstallState.INSTALLED
+
+
 def has_post_install_hooks(plugins: list[tuple[str, type]]) -> bool:
     from .registry import PluginBase
 
@@ -461,16 +566,27 @@ def install_extension(
     extensions_dir: str,
     on_progress=None,
     is_cancelled=None,
-) -> tuple[bool, bool, list[tuple[str, type]]]:
+    on_phase=None,
+) -> InstallResult:
+    result = InstallResult()
     if needs_install(plugin_dir):
         if is_cancelled and is_cancelled():
-            return False, False, []
-        success, _deferred = install_requirements(plugin_dir, extensions_dir, on_progress)
+            result.cancelled = True
+            return result
+        if on_phase:
+            on_phase("installing")
+        try:
+            success, deferred = install_requirements(plugin_dir, extensions_dir, on_progress, is_cancelled=is_cancelled)
+        except InstallerCancelled:
+            result.cancelled = True
+            return result
         if not success:
-            return False, False, []
+            return result
+        result.deferred = deferred
 
     if is_cancelled and is_cancelled():
-        return False, False, []
+        result.cancelled = True
+        return result
 
     from .loader import PluginLoader
 
@@ -483,16 +599,29 @@ def install_extension(
         path_added.append(pkg_dir)
 
     post_install_ok = True
+    has_hooks = has_post_install_hooks(plugins)
+    if has_hooks and on_phase:
+        on_phase("post_installing")
     for _key, cls in plugins:
         if has_post_install_hooks([(_key, cls)]):
             try:
-                cls.post_install(plugin_dir)
+                cls.post_install(plugin_dir, on_progress=on_progress, is_cancelled=is_cancelled)
+            except InstallerCancelled:
+                result.cancelled = True
+                for d in path_added:
+                    if d in sys.path:
+                        sys.path.remove(d)
+                return result
             except Exception as e:
                 AppLogger.warning(f"[Installer] post_install failed: {cls.__name__}", exc=e)
                 post_install_ok = False
                 break
         if is_cancelled and is_cancelled():
-            return False, False, []
+            result.cancelled = True
+            for d in path_added:
+                if d in sys.path:
+                    sys.path.remove(d)
+            return result
 
     for d in path_added:
         if d in sys.path:
@@ -501,4 +630,7 @@ def install_extension(
     if post_install_ok:
         write_post_install_stamp(plugin_dir)
 
-    return True, post_install_ok, plugins
+    result.success = True
+    result.post_install_ok = post_install_ok
+    result.plugins = plugins
+    return result

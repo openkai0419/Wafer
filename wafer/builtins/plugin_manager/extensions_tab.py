@@ -1,4 +1,5 @@
 import os
+from enum import Enum
 from pathlib import Path
 from PySide6 import QtWidgets, QtCore
 from ...utils.formatting import dpix
@@ -7,12 +8,42 @@ from ...utils.markdown_browser import MarkdownBrowser, render_to_html
 from ...core.color.theme import ThemeManager
 from ...core.lang.manager import t
 from ...plugin.loader import get_plugin_dir, PluginLoader, qualify_plugin_name
-from ...plugin.installer import needs_install, needs_post_install, install_extension
+from ...plugin.installer import (
+    InstallResult,
+    InstallState,
+    RestartScope,
+    install_extension,
+    resolve_install_state,
+    restart_scope_from_plugins,
+)
 from ...core.qt.dispatcher import Dispatcher, CancelSlot
 
 _MAX_MD_FILES = 10
 
 
+class CardStatus(Enum):
+    NO_DEPS = "no_deps"
+    NOT_INSTALLED = "not_installed"
+    NEEDS_SETUP = "needs_setup"
+    INSTALLING = "installing"
+    POST_INSTALLING = "post_installing"
+    CANCELLING = "cancelling"
+    INSTALLED = "installed"
+    FAILED = "failed"
+    RESTART_REQUIRED = "restart_required"
+
+
+_CARD_STATUS_CONFIG: dict[CardStatus, tuple[str, str, bool]] = {
+    CardStatus.NO_DEPS: ("No Dependencies", "no_deps", False),
+    CardStatus.NOT_INSTALLED: ("Install", "install", True),
+    CardStatus.NEEDS_SETUP: ("Setup", "setup", True),
+    CardStatus.INSTALLING: ("Installing\u2026", "installing", False),
+    CardStatus.POST_INSTALLING: ("Setting up\u2026", "installing", False),
+    CardStatus.CANCELLING: ("Cancelling\u2026", "cancelling", False),
+    CardStatus.INSTALLED: ("Installed", "installed", False),
+    CardStatus.FAILED: ("Retry", "failed", True),
+    CardStatus.RESTART_REQUIRED: ("Restart Required", "deferred", False),
+}
 _REGISTRY_LABELS = {
     "viewer": "Viewer",
     "grid": "Grid",
@@ -122,6 +153,13 @@ class _ExtensionCard(QtWidgets.QFrame):
         self._status_btn.setCursor(QtCore.Qt.PointingHandCursor)
         self._status_btn.clicked.connect(self._on_install_clicked)
 
+        self._install_cancel_btn = QtWidgets.QPushButton(t("Cancel"))
+        self._install_cancel_btn.setObjectName("install_cancel_btn")
+        self._install_cancel_btn.setFixedHeight(dpix(24))
+        self._install_cancel_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        self._install_cancel_btn.clicked.connect(self._on_cancel_clicked)
+        self._install_cancel_btn.hide()
+
         self._progress = QtWidgets.QProgressBar()
         self._progress.setRange(0, 0)
         self._progress.setFixedHeight(dpix(4))
@@ -131,6 +169,7 @@ class _ExtensionCard(QtWidgets.QFrame):
         header = QtWidgets.QHBoxLayout()
         header.addWidget(self._name_label)
         header.addStretch()
+        header.addWidget(self._install_cancel_btn)
         header.addWidget(self._status_btn)
 
         layout = QtWidgets.QVBoxLayout(self)
@@ -158,10 +197,14 @@ class _ExtensionCard(QtWidgets.QFrame):
                 layout.addWidget(browser)
 
         self._install_callback = None
+        self._cancel_callback = None
         self._checkbox_changed_callback = None
 
     def set_install_callback(self, cb):
         self._install_callback = cb
+
+    def set_cancel_callback(self, cb):
+        self._cancel_callback = cb
 
     def set_checkbox_changed_callback(self, cb):
         self._checkbox_changed_callback = cb
@@ -174,33 +217,33 @@ class _ExtensionCard(QtWidgets.QFrame):
         self._status_btn.style().polish(self._status_btn)
         self._status_btn.setCursor(QtCore.Qt.PointingHandCursor if enabled else QtCore.Qt.ArrowCursor)
 
-    def set_installed(self, has_requirements: bool = True):
-        if has_requirements:
-            self._apply_status("Installed", "installed", False)
+    def set_status(self, status: CardStatus, restart_scope: RestartScope = RestartScope.NONE):
+        cfg = _CARD_STATUS_CONFIG[status]
+        text = t(cfg[0])
+        if status == CardStatus.RESTART_REQUIRED:
+            if restart_scope == RestartScope.VIEWER:
+                text = t("Viewer Restart Required")
+            elif restart_scope == RestartScope.TRAY:
+                text = t("Background Restart Required")
+        self._apply_status(text, cfg[1], cfg[2])
+        installing = status in (CardStatus.INSTALLING, CardStatus.POST_INSTALLING)
+        cancelling = status == CardStatus.CANCELLING
+        if installing or cancelling:
+            self._progress.show()
         else:
-            self._apply_status("No Dependencies", "no_deps", False)
-        self._progress.hide()
-
-    def set_needs_install(self):
-        self._apply_status("Install", "install", True)
-        self._progress.hide()
-        self._clear_plugin_area()
-
-    def set_needs_setup(self):
-        self._apply_status("Setup", "setup", True)
-        self._progress.hide()
-
-    def set_installing(self):
-        self._apply_status("Installing…", "installing", False)
-        self._progress.show()
-
-    def set_install_failed(self):
-        self._apply_status("Retry", "failed", True)
-        self._progress.hide()
-
-    def set_deferred(self):
-        self._apply_status(t("Restart Required"), "deferred", False)
-        self._progress.hide()
+            self._progress.hide()
+        if installing:
+            self._install_cancel_btn.setEnabled(True)
+            self._install_cancel_btn.setText(t("Cancel"))
+            self._install_cancel_btn.show()
+        elif cancelling:
+            self._install_cancel_btn.setEnabled(False)
+            self._install_cancel_btn.setText(t("Cancelling\u2026"))
+            self._install_cancel_btn.show()
+        else:
+            self._install_cancel_btn.hide()
+        if status == CardStatus.NOT_INSTALLED:
+            self._clear_plugin_area()
 
     def set_plugins(self, plugins: list[tuple[str, type]], enabled: set[str] | None):
         self._clear_plugin_area()
@@ -263,6 +306,10 @@ class _ExtensionCard(QtWidgets.QFrame):
         if self._install_callback:
             self._install_callback(self)
 
+    def _on_cancel_clicked(self):
+        if self._cancel_callback:
+            self._cancel_callback(self)
+
     def _on_checkbox_changed(self):
         if self._checkbox_changed_callback:
             self._checkbox_changed_callback()
@@ -270,6 +317,7 @@ class _ExtensionCard(QtWidgets.QFrame):
 
 class ExtensionsTab(QtWidgets.QWidget):
     enabled_changed = QtCore.Signal()
+    installing_changed = QtCore.Signal(bool)
 
     def __init__(self, enabled_names: set[str] | None, dispatcher: Dispatcher, parent=None):
         super().__init__(parent)
@@ -277,6 +325,7 @@ class ExtensionsTab(QtWidgets.QWidget):
         self._dispatcher = dispatcher
         self._install_cancels: dict[str, CancelSlot] = {}
         self._cards: dict[str, _ExtensionCard] = {}
+        self._installing_count = 0
 
         self._scroll = QtWidgets.QScrollArea()
         self._scroll.setWidgetResizable(True)
@@ -310,27 +359,26 @@ class ExtensionsTab(QtWidgets.QWidget):
                 if not os.path.isdir(folder) or name.startswith(".") or name == "__pycache__":
                     continue
                 md_files = sorted(f for f in os.listdir(folder) if f.lower().endswith(".md") and not f.startswith((".", "_")) and os.path.isfile(os.path.join(folder, f)))[:_MAX_MD_FILES]
-                pip_needed = needs_install(folder)
-                post_needed = needs_post_install(folder)
-                has_req = os.path.isfile(os.path.join(folder, "requirements.txt"))
-                results.append((name, folder, md_files, pip_needed, post_needed, has_req))
+                state = resolve_install_state(folder)
+                results.append((name, folder, md_files, state))
             return results
 
         def on_scan_complete(results):
-            for name, folder, md_files, pip_needed, post_needed, has_req in results:
+            state_to_card = {
+                InstallState.NO_DEPS: CardStatus.NO_DEPS,
+                InstallState.NOT_INSTALLED: CardStatus.NOT_INSTALLED,
+                InstallState.NEEDS_POST_INSTALL: CardStatus.NEEDS_SETUP,
+                InstallState.INSTALLED: CardStatus.INSTALLED,
+            }
+            for name, folder, md_files, state in results:
                 card = _ExtensionCard(name, folder, self._dispatcher, md_files)
                 card.set_install_callback(self._install_extension)
+                card.set_cancel_callback(self._cancel_extension)
                 card.set_checkbox_changed_callback(self._on_plugin_toggled)
                 self._cards[name] = card
                 self._cards_layout.insertWidget(self._cards_layout.count() - 1, card)
-
-                if pip_needed:
-                    card.set_needs_install()
-                elif post_needed:
-                    card.set_needs_setup()
-                    self._discover_async(card)
-                else:
-                    card.set_installed(has_req)
+                card.set_status(state_to_card[state])
+                if state not in (InstallState.NOT_INSTALLED,):
                     self._discover_async(card)
 
         def task():
@@ -357,7 +405,10 @@ class ExtensionsTab(QtWidgets.QWidget):
         self.enabled_changed.emit()
 
     def _install_extension(self, card: _ExtensionCard):
-        card.set_installing()
+        card.set_status(CardStatus.INSTALLING)
+        self._installing_count += 1
+        if self._installing_count == 1:
+            self.installing_changed.emit(True)
         slot = self._install_cancels.get(card.folder_name)
         if slot is None:
             slot = CancelSlot()
@@ -365,33 +416,56 @@ class ExtensionsTab(QtWidgets.QWidget):
         cancel = slot.renew()
 
         def task():
+            def _on_phase(phase: str):
+                if phase == "post_installing":
+                    self._dispatcher.invoke(lambda: card.set_status(CardStatus.POST_INSTALLING))
+
             try:
                 extensions_dir = get_plugin_dir()
-                success, post_install_ok, plugins = install_extension(
+                result = install_extension(
                     card.folder_path,
                     extensions_dir,
                     is_cancelled=cancel.is_cancelled,
+                    on_phase=_on_phase,
                 )
-                if cancel.is_cancelled():
-                    return
-                self._dispatcher.invoke(lambda: self._on_install_complete(card, success, plugins, post_install_ok))
+                self._dispatcher.invoke(lambda: self._on_install_complete(card, result))
             except Exception as e:
                 AppLogger.warning(f"[PluginManager] install failed: {card.folder_name}", exc=e)
-                if not cancel.is_cancelled():
-                    self._dispatcher.invoke(lambda: self._on_install_complete(card, False, []))
+                result = InstallResult(cancelled=cancel.is_cancelled())
+                self._dispatcher.invoke(lambda: self._on_install_complete(card, result))
 
         self._dispatcher.post(task, priority=3, cancel=cancel)
 
-    def _on_install_complete(self, card: _ExtensionCard, success: bool, plugins: list, post_install_ok: bool = True):
-        if success:
-            if post_install_ok:
-                card.set_deferred()
+    def _cancel_extension(self, card: _ExtensionCard):
+        slot = self._install_cancels.get(card.folder_name)
+        if slot is not None:
+            card.set_status(CardStatus.CANCELLING)
+            slot.cancel()
+
+    def _on_install_complete(self, card: _ExtensionCard, result: InstallResult):
+        self._installing_count = max(0, self._installing_count - 1)
+        if self._installing_count == 0:
+            self.installing_changed.emit(False)
+        if result.cancelled:
+            state = resolve_install_state(card.folder_path)
+            state_to_card = {
+                InstallState.NO_DEPS: CardStatus.NO_DEPS,
+                InstallState.NOT_INSTALLED: CardStatus.NOT_INSTALLED,
+                InstallState.NEEDS_POST_INSTALL: CardStatus.NEEDS_SETUP,
+                InstallState.INSTALLED: CardStatus.INSTALLED,
+            }
+            card.set_status(state_to_card.get(state, CardStatus.NOT_INSTALLED))
+            return
+        if result.success:
+            if result.post_install_ok:
+                scope = restart_scope_from_plugins(cls for _, cls in result.plugins)
+                card.set_status(CardStatus.RESTART_REQUIRED, scope)
             else:
-                card.set_install_failed()
-            card.set_plugins(plugins, self._enabled)
+                card.set_status(CardStatus.FAILED)
+            card.set_plugins(result.plugins, self._enabled)
             self.enabled_changed.emit()
         else:
-            card.set_install_failed()
+            card.set_status(CardStatus.FAILED)
 
     def _on_plugin_toggled(self):
         self.enabled_changed.emit()

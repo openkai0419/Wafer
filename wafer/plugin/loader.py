@@ -47,7 +47,7 @@ def _get_registry_map():
 
 
 def get_plugin_dir() -> str:
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "extensions")
+    return os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "extensions"))
 
 
 def _discover_plugins(module) -> list[tuple[str, type]]:
@@ -76,6 +76,16 @@ def _setup_dll_directory(folder: str):
         os.add_dll_directory(lib_dir)
 
 
+def _setup_packages_dll_directories(packages_dir: str):
+    if sys.platform != "win32" or not os.path.isdir(packages_dir):
+        return
+    for entry in os.scandir(packages_dir):
+        if entry.is_dir(follow_symlinks=False) and entry.name.endswith(".libs"):
+            if entry.path not in os.environ.get("PATH", "").split(os.pathsep):
+                os.environ["PATH"] = entry.path + os.pathsep + os.environ.get("PATH", "")
+            os.add_dll_directory(entry.path)
+
+
 class PluginLoader:
     def __init__(self, plugin_dir: str, registries: dict[str, RegistryBase], *, enabled: set[str] | None = None):
         self._plugin_dir = plugin_dir
@@ -89,6 +99,7 @@ class PluginLoader:
         packages_dir = os.path.join(self._plugin_dir, _PACKAGES_DIR)
         if os.path.isdir(packages_dir) and packages_dir not in sys.path:
             sys.path.insert(0, packages_dir)
+        _setup_packages_dll_directories(packages_dir)
         loaded = []
         for name in sorted(os.listdir(self._plugin_dir)):
             folder = os.path.join(self._plugin_dir, name)

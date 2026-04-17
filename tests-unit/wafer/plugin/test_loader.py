@@ -276,6 +276,42 @@ class TestNeedsPostInstall:
         assert needs_post_install(str(plugin)) is False
 
 
+class TestSetupPackagesDllDirectories:
+    def test_registers_libs_dirs_on_windows(self, tmp_path, monkeypatch):
+        from wafer.plugin.loader import _setup_packages_dll_directories
+
+        packages = tmp_path / ".packages"
+        packages.mkdir()
+        (packages / "numpy.libs").mkdir()
+        (packages / "torch").mkdir()
+        (packages / "regular_pkg").mkdir()
+
+        monkeypatch.setattr(sys, "platform", "win32")
+        added = []
+        monkeypatch.setattr(os, "add_dll_directory", lambda p: added.append(p))
+
+        _setup_packages_dll_directories(str(packages))
+
+        assert len(added) == 1
+        assert added[0] == str(packages / "numpy.libs")
+
+    def test_noop_on_non_windows(self, tmp_path, monkeypatch):
+        from wafer.plugin.loader import _setup_packages_dll_directories
+
+        packages = tmp_path / ".packages"
+        packages.mkdir()
+        (packages / "numpy.libs").mkdir()
+
+        monkeypatch.setattr(sys, "platform", "linux")
+        _setup_packages_dll_directories(str(packages))
+
+    def test_noop_when_no_dir(self, tmp_path, monkeypatch):
+        from wafer.plugin.loader import _setup_packages_dll_directories
+
+        monkeypatch.setattr(sys, "platform", "win32")
+        _setup_packages_dll_directories(str(tmp_path / "nonexistent"))
+
+
 class TestApplyPriorityOrder:
     def test_order_overrides_priority(self):
         class PluginA(BasePlugin):

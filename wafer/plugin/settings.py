@@ -3,6 +3,8 @@ import os
 from configparser import ConfigParser
 from ..utils.paths import resolve_data_path
 from ..utils.helpers import try_json_loads
+from .config import ini_lock
+from .installer import RestartScope, has_pending_packages
 
 
 _INI_FILENAME = "viewer_plugins.ini"
@@ -30,22 +32,23 @@ def _read_ini_value(key: str, default=None):
 
 
 def _write_ini_value(key: str, value):
-    path = _ini_path()
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    cp = ConfigParser()
-    if os.path.isfile(path):
-        cp.read(path, encoding="utf-8")
-    section, _, option = key.partition("/")
-    if not option:
-        section, option = "General", section
-    if not cp.has_section(section):
-        cp.add_section(section)
-    if isinstance(value, (dict, list, tuple)):
-        cp.set(section, option, json.dumps(value, ensure_ascii=False))
-    else:
-        cp.set(section, option, str(value))
-    with open(path, "w", encoding="utf-8") as f:
-        cp.write(f)
+    with ini_lock:
+        path = _ini_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        cp = ConfigParser()
+        if os.path.isfile(path):
+            cp.read(path, encoding="utf-8")
+        section, _, option = key.partition("/")
+        if not option:
+            section, option = "General", section
+        if not cp.has_section(section):
+            cp.add_section(section)
+        if isinstance(value, (dict, list, tuple)):
+            cp.set(section, option, json.dumps(value, ensure_ascii=False))
+        else:
+            cp.set(section, option, str(value))
+        with open(path, "w", encoding="utf-8") as f:
+            cp.write(f)
 
 
 class PluginSettings:
@@ -79,14 +82,51 @@ class PluginSettings:
     def set_default_enabled_collectors(self, names: list[str]):
         _write_ini_value("collectors/default_enabled", sorted(names))
 
+    def restart_scope(self) -> RestartScope:
+        val = _read_ini_value("plugins/restart_scope")
+        if isinstance(val, list):
+            scope = RestartScope.NONE
+            for s in val:
+                if s == "viewer":
+                    scope |= RestartScope.VIEWER
+                elif s == "tray":
+                    scope |= RestartScope.TRAY
+            return scope
+        if str(_read_ini_value("plugins/restart_pending", False)).lower() == "true":
+            return RestartScope.ALL
+        return RestartScope.NONE
+
+    def set_restart_scope(self, scope: RestartScope):
+        parts: list[str] = []
+        if RestartScope.VIEWER in scope:
+            parts.append("viewer")
+        if RestartScope.TRAY in scope:
+            parts.append("tray")
+        _write_ini_value("plugins/restart_scope", parts)
+
+    def merge_restart_scope(self, scope: RestartScope):
+        self.set_restart_scope(self.restart_scope() | scope)
+
+    def clear_restart_scope(self):
+        self.set_restart_scope(RestartScope.NONE)
+
     def is_restart_pending(self) -> bool:
-        return str(_read_ini_value("plugins/restart_pending", False)).lower() == "true"
+        return self.restart_scope() != RestartScope.NONE
 
     def set_restart_pending(self, value: bool):
-        _write_ini_value("plugins/restart_pending", value)
+        if value:
+            self.merge_restart_scope(RestartScope.ALL)
+        else:
+            self.clear_restart_scope()
 
     def clear_restart_pending(self):
-        self.set_restart_pending(False)
+        self.clear_restart_scope()
+
+    def needs_restart(self, extensions_dir: str) -> RestartScope:
+        scope = self.restart_scope()
+        if has_pending_packages(extensions_dir):
+            scope |= RestartScope.ALL
+        return scope
 
     def resolve_default_collectors(self) -> list[str]:
         saved = self.default_enabled_collectors()

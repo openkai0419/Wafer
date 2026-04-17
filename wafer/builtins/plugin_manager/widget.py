@@ -3,8 +3,8 @@ from ...utils.formatting import dpix
 from ...utils.logs import AppLogger
 from ...utils.notifier import Notifier
 from ...plugin.settings import PluginSettings
-from ...plugin.installer import has_pending_packages
-from ...plugin.loader import get_plugin_dir
+from ...plugin.installer import RestartScope, has_pending_packages, restart_scope_from_plugins
+from ...plugin.loader import get_plugin_dir, qualify_plugin_name
 from ...plugin.panel.base import BasePanelPlugin
 from ...core.color.theme import ThemeManager
 from ...core.qt.dispatcher import Dispatcher
@@ -62,9 +62,9 @@ def _build_stylesheet() -> str:
             border: 1px solid rgba({_hex_rgb(p.success)}, 0.3);
         }}
         QPushButton#status_btn[status="deferred"] {{
-            background: transparent;
-            color: {p.text_muted};
-            border: 1px solid {p.border_default};
+            background: rgba({_hex_rgb(p.warning)}, 0.12);
+            color: {p.warning};
+            border: 1px solid rgba({_hex_rgb(p.warning)}, 0.3);
         }}
         QPushButton#status_btn[status="install"] {{
             background: {p.accent};
@@ -86,6 +86,26 @@ def _build_stylesheet() -> str:
             background: transparent;
             color: {p.accent};
             border: 1px solid {p.accent};
+        }}
+        QPushButton#status_btn[status="cancelling"] {{
+            background: transparent;
+            color: {p.text_muted};
+            border: 1px solid {p.border_default};
+        }}
+        QPushButton#install_cancel_btn {{
+            font-size: {dpix(10)}px;
+            border-radius: {r}px;
+            padding: {dpix(2)}px {dpix(10)}px;
+            background: rgba({_hex_rgb(p.warning)}, 0.15);
+            color: {p.warning};
+            border: 1px solid rgba({_hex_rgb(p.warning)}, 0.4);
+        }}
+        QPushButton#install_cancel_btn:hover {{
+            background: rgba({_hex_rgb(p.warning)}, 0.3);
+        }}
+        QPushButton#install_cancel_btn:disabled {{
+            color: {p.text_muted};
+            border: 1px solid {p.border_default};
         }}
         QPushButton#status_btn[status="failed"] {{
             background: rgba({_hex_rgb(p.error)}, 0.12);
@@ -109,21 +129,21 @@ def _build_stylesheet() -> str:
             color: {p.accent_text};
         }}
         QPushButton#open_panel_btn {{
-            background: {p.accent};
-            color: {p.accent_text};
-            border: none;
+            background: rgba({_hex_rgb(p.success)}, 0.15);
+            color: {p.success};
+            border: 1px solid rgba({_hex_rgb(p.success)}, 0.4);
             border-radius: {r}px;
             padding: {dpix(2)}px {dpix(10)}px;
             font-size: {dpix(10)}px;
             font-weight: bold;
         }}
         QPushButton#open_panel_btn:hover {{
-            background: {p.bg_hover};
+            background: rgba({_hex_rgb(p.success)}, 0.3);
         }}
         QPushButton#open_panel_btn:disabled {{
             background: {p.bg_secondary};
             color: {p.text_muted};
-            border: 1px solid {p.border_default};
+            border: none;
         }}
         QGroupBox {{
             font-weight: bold;
@@ -136,6 +156,20 @@ def _build_stylesheet() -> str:
             subcontrol-origin: margin;
             left: {dpix(10)}px;
             padding: 0 {dpix(5)}px;
+        }}
+        QLabel#restart_label {{
+            color: {p.warning};
+            background: rgba({_hex_rgb(p.warning)}, 0.1);
+            border: 1px solid rgba({_hex_rgb(p.warning)}, 0.3);
+            border-radius: {r}px;
+            font-weight: bold;
+            font-size: {dpix(11)}px;
+            padding: {dpix(3)}px {dpix(10)}px;
+        }}
+        QLabel#install_warning {{
+            color: {p.warning};
+            font-size: {dpix(11)}px;
+            font-weight: bold;
         }}
     """
 
@@ -197,7 +231,18 @@ class PluginManagerWidget(QtWidgets.QWidget):
         save_btn.clicked.connect(self._on_save)
         revert_btn.clicked.connect(self._on_revert)
 
+        self._restart_label = QtWidgets.QLabel()
+        self._restart_label.setObjectName("restart_label")
+        self._restart_label.hide()
+
+        self._install_warning = QtWidgets.QLabel("\u203b " + t("Don't close while installing"))
+        self._install_warning.setObjectName("install_warning")
+        self._install_warning.hide()
+        self._ext_tab.installing_changed.connect(self._install_warning.setVisible)
+
         btn_layout = QtWidgets.QHBoxLayout()
+        btn_layout.addWidget(self._restart_label)
+        btn_layout.addWidget(self._install_warning)
         btn_layout.addStretch()
         btn_layout.addWidget(save_btn)
         btn_layout.addWidget(revert_btn)
@@ -208,6 +253,22 @@ class PluginManagerWidget(QtWidgets.QWidget):
         layout.setSpacing(p)
         layout.addWidget(self._splitter, 1)
         layout.addLayout(btn_layout)
+
+        self._update_restart_label()
+
+    def _update_restart_label(self):
+        scope = self._settings.needs_restart(get_plugin_dir())
+        if scope == RestartScope.NONE:
+            self._restart_label.hide()
+            return
+        if scope == RestartScope.VIEWER:
+            text = t("Viewer Restart Required")
+        elif scope == RestartScope.TRAY:
+            text = t("Background Restart Required")
+        else:
+            text = t("Both Restart Required")
+        self._restart_label.setText(text)
+        self._restart_label.show()
 
     def _has_plugin_changes(self, enabled, orders):
         if enabled != self._initial_enabled:
@@ -220,11 +281,29 @@ class PluginManagerWidget(QtWidgets.QWidget):
         enabled = self._ext_tab.collect_enabled()
         orders = self._order_tab.get_orders()
         has_changes = self._has_plugin_changes(enabled, orders) or self._collectors_tab.has_changes()
-        pending = has_pending_packages(get_plugin_dir())
+        extensions_dir = get_plugin_dir()
+        pending = has_pending_packages(extensions_dir)
         if not has_changes and not pending:
             Notifier.info(t("No changes to save"))
             return
-        self._settings.set_restart_pending(True)
+
+        scope = RestartScope.NONE
+        if enabled != self._initial_enabled:
+            changed_names = enabled.symmetric_difference(self._initial_enabled)
+            qn_to_cls: dict[str, type] = {}
+            for card in self._ext_tab._cards.values():
+                for key, cls in card._plugins:
+                    qn_to_cls[qualify_plugin_name(key, cls)] = cls
+            changed_classes = [qn_to_cls[qn] for qn in changed_names if qn in qn_to_cls]
+            scope |= restart_scope_from_plugins(changed_classes) if changed_classes else RestartScope.VIEWER
+        if orders != self._initial_orders:
+            scope |= RestartScope.VIEWER
+        if self._collectors_tab.has_changes():
+            scope |= RestartScope.TRAY
+        if pending:
+            scope |= RestartScope.ALL
+
+        self._settings.merge_restart_scope(scope)
         if has_changes:
             self._settings.set_enabled(enabled)
             for key, order in orders.items():
@@ -232,8 +311,14 @@ class PluginManagerWidget(QtWidgets.QWidget):
             AppLogger.info(f"[PluginManager] Saved: enabled={sorted(enabled)}, orders={orders}")
             self._initial_enabled = set(enabled)
             self._initial_orders = dict(orders)
+        self._update_restart_label()
         if has_changes:
-            body = t("Plugin settings have been saved.\nRestart is required.")
+            if RestartScope.TRAY in scope and RestartScope.VIEWER in scope:
+                body = t("Plugin settings have been saved.\nRestart is required.")
+            elif RestartScope.TRAY in scope:
+                body = t("Plugin settings have been saved.\nBackground services restart is required.")
+            else:
+                body = t("Plugin settings have been saved.\nViewer restart is required.")
         else:
             body = t("Pending updates will be applied on restart.")
         msg = QtWidgets.QMessageBox(

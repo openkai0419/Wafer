@@ -5,6 +5,7 @@ import threading
 from ...utils.logs import AppLogger
 from ...utils.paths import normalize_path
 from ...core.ipc.node import Node
+from ...core.ipc.transport import BROKER_LOST_TIMEOUT
 from ...plugin.parser.handler import parser_resolver
 from ...plugin.parser.base import ParserResult, BaseSingletonParser
 
@@ -23,7 +24,7 @@ class ParserWorker:
             raise ValueError(f"Unknown parser plugin: {plugin_name}")
         self._singleton = issubclass(parser_resolver.registry.get(plugin_name), BaseSingletonParser)
         node_db = "" if self._singleton else db_name
-        self._node = Node(f"parser-{plugin_name}", db=node_db)
+        self._node = Node(f"parser-{plugin_name}", db=node_db, broker_lost_timeout=BROKER_LOST_TIMEOUT)
         self._node.subscribe("parse.batch", self._handle_batch)
         self._node.subscribe("plugin.notify", self._on_notify)
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=_MAX_WORKERS)
@@ -44,7 +45,7 @@ class ParserWorker:
         self._stop.wait()
 
     def _on_notify(self, msg) -> bool:
-        self._plugin.on_notify()
+        self._plugin.on_notify(msg.payload if isinstance(msg.payload, dict) else None)
         AppLogger.info(f"[Parser] Notified: {self.plugin_name}")
         return True
 
@@ -135,6 +136,7 @@ def run_parser(db_name: str, plugin_name: str, parent_pid: int | None = None):
             if parent_pid is not None:
                 checker = ParentProcessChecker(parent_pid, on_orphan=lambda: worker._stop.set())
                 checker.start()
+            worker._node.on_broker_lost(lambda: worker._stop.set())
 
             AppLogger.info("[Parser] Running.")
             worker.wait()

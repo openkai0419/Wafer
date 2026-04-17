@@ -39,7 +39,7 @@ class ExifToolCollectorPlugin(BaseCollectorPlugin):
     DEFAULT_ENABLED = True
 
     @classmethod
-    def post_install(cls, plugin_dir, on_progress=None):
+    def post_install(cls, plugin_dir, on_progress=None, is_cancelled=None):
         from ._downloader import ensure_exiftool
 
         ensure_exiftool()
@@ -55,7 +55,7 @@ class ExifToolCollectorPlugin(BaseCollectorPlugin):
         self._filter_keys: set[str] = set()
         self._load_filter()
 
-    def on_notify(self) -> None:
+    def on_notify(self, payload=None) -> None:
         if self._idle_timer is not None:
             self._idle_timer.cancel()
             self._idle_timer = None

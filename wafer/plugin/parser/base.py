@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 from abc import abstractmethod
 from dataclasses import dataclass, asdict
+from typing import Any
 
 from ..registry import BasePlugin
 
@@ -17,21 +20,22 @@ class ParserResult:
 
 
 class BaseParser(BasePlugin):
+    SCOPE: str = "tray"
     TRIGGER_KEYS: tuple[str, ...] = ()
 
     @abstractmethod
     def process(self, path: str, file_info: tuple, metadata: dict) -> ParserResult: ...
 
-    def on_notify(self) -> None:
+    def on_notify(self, payload: dict | None = None) -> None:
         pass
 
     @staticmethod
-    def notify_to(name: str) -> None:
+    def notify_to(name: str, payload: Any = None) -> None:
         from ...core.commands.binding.instance_registry import InstanceRegistry
 
         node = InstanceRegistry.instance().resolve_node()
         if node:
-            node.send("plugin.notify", dst=f"parser-{name}")
+            node.send("plugin.notify", payload, dst=f"parser-{name}")
 
 
 class BaseParserPlugin(BaseParser):

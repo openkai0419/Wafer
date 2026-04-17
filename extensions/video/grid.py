@@ -24,7 +24,7 @@ class VideoGridPlugin(WidgetGridPlugin):
     REQUIRE_THUMBNAIL = True
 
     @classmethod
-    def post_install(cls, plugin_dir, on_progress=None):
+    def post_install(cls, plugin_dir, on_progress=None, is_cancelled=None):
         from ._downloader import ensure_mpv_dll
 
         ensure_mpv_dll()

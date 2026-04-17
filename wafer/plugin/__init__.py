@@ -5,6 +5,7 @@ from .parser.base import BaseParserPlugin, BaseSingletonParser, ParserResult
 from .query.base import BaseFilterPlugin, BaseSortPlugin
 from .layout.base import BaseLayoutPlugin
 from .panel.base import BasePanelPlugin
+from .config import PluginConfig
 from .meta_panel.base import BaseMetaPanelPlugin
 from .rename.base import BaseRenameSourcePlugin, SegmentInfo
 from ..core.commands.bridge import ActionKit

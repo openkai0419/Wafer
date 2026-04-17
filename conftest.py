@@ -18,22 +18,33 @@ PluginSettings.enabled_names = lambda self: None
 load_plugins()
 get_command_registry().activate("viewer")
 
+_vendored_packages = os.path.join("extensions", ".packages")
+_vendored_abs = os.path.normpath(os.path.abspath(_vendored_packages))
+_vendored_in_path = [p for p in sys.path if os.path.normpath(os.path.abspath(p)) == _vendored_abs]
+if _vendored_in_path:
+    _vendored_mods = [
+        k for k, m in sys.modules.items()
+        if m is not None and getattr(m, "__file__", None) and
+        os.path.normpath(os.path.abspath(m.__file__)).startswith(_vendored_abs + os.sep)
+    ]
+    for _p in _vendored_in_path:
+        sys.path.remove(_p)
+    for _k in _vendored_mods:
+        del sys.modules[_k]
+    for _pkg in {_k.split(".")[0] for _k in _vendored_mods}:
+        try:
+            __import__(_pkg)
+        except ImportError:
+            pass
+    for _p in _vendored_in_path:
+        sys.path.insert(0, _p)
+
 PluginSettings.enabled_names = _orig_enabled_names
 
 
-def _drain_pool(pool, timeout_ms=3000, poll_ms=100):
+def _drain_pool(pool, timeout_ms=1000):
     pool.clear()
-    deadline = time.monotonic() + timeout_ms / 1000.0
-    while pool.activeThreadCount() > 0 and time.monotonic() < deadline:
-        try:
-            from PySide6 import QtWidgets
-            app = QtWidgets.QApplication.instance()
-            if app is not None:
-                app.processEvents()
-        except Exception:
-            pass
-        if pool.waitForDone(poll_ms):
-            break
+    pool.waitForDone(timeout_ms)
 
 
 @pytest.fixture(autouse=True)
@@ -134,15 +145,21 @@ def _category_of(nodeid: str) -> str:
 
 def pytest_addoption(parser):
     parser.addoption("--run-unstable", action="store_true", default=False, help="Run tests marked as unstable (may crash the process)")
+    parser.addoption("--run-setup", action="store_true", default=False, help="Run extension install/setup smoke tests")
+    parser.addoption("--allow-cpu-fallback", action="store_true", default=False, help="Allow GPU tests to pass with CPU fallback (skip GPU assertions)")
 
 
 def pytest_collection_modifyitems(config, items):
-    if config.getoption("--run-unstable"):
-        return
-    skip = pytest.mark.skip(reason="needs --run-unstable option to run")
-    for item in items:
-        if "unstable" in item.keywords:
-            item.add_marker(skip)
+    if not config.getoption("--run-unstable"):
+        skip_unstable = pytest.mark.skip(reason="needs --run-unstable option to run")
+        for item in items:
+            if "unstable" in item.keywords:
+                item.add_marker(skip_unstable)
+    if not config.getoption("--run-setup"):
+        skip_setup = pytest.mark.skip(reason="needs --run-setup option to run")
+        for item in items:
+            if "setup" in item.keywords:
+                item.add_marker(skip_setup)
 
 
 def pytest_configure(config):

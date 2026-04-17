@@ -167,17 +167,20 @@ def test_on_notify_override():
         NAME = "test_override"
         EXTENSIONS = (".test",)
         reloaded = False
+        last_payload = None
 
         def process(self, path, file_info):
             return CollectorResult(source=path, status=True)
 
-        def on_notify(self):
+        def on_notify(self, payload=None):
             self.reloaded = True
+            self.last_payload = payload
 
     inst = MyCollector()
     assert not inst.reloaded
-    inst.on_notify()
+    inst.on_notify({"key": "value"})
     assert inst.reloaded
+    assert inst.last_payload == {"key": "value"}
 
 
 def test_notify_to_sends_ipc():
@@ -190,7 +193,20 @@ def test_notify_to_sends_ipc():
     with patch("wafer.core.commands.binding.instance_registry.InstanceRegistry.instance", return_value=mock_registry):
         BaseCollectorPlugin.notify_to("exiftool")
 
-    mock_node.send.assert_called_once_with("plugin.notify", dst="collector-exiftool")
+    mock_node.send.assert_called_once_with("plugin.notify", None, dst="collector-exiftool")
+
+
+def test_notify_to_with_payload():
+    from unittest.mock import MagicMock, patch
+
+    mock_node = MagicMock()
+    mock_registry = MagicMock()
+    mock_registry.resolve_node.return_value = mock_node
+
+    with patch("wafer.core.commands.binding.instance_registry.InstanceRegistry.instance", return_value=mock_registry):
+        BaseCollectorPlugin.notify_to("blip", payload={"min_length": 10})
+
+    mock_node.send.assert_called_once_with("plugin.notify", {"min_length": 10}, dst="collector-blip")
 
 
 def test_notify_to_no_node():
@@ -211,6 +227,37 @@ def test_singleton_names_excludes_normal():
     for name in per_indexer_names:
         assert name not in singleton_names
     assert set(singleton_names + per_indexer_names) == set(collector_resolver.names())
+
+
+def test_on_request_default_returns_none():
+    class MyCollector(BaseCollectorPlugin):
+        NAME = "test_request"
+        EXTENSIONS = (".test",)
+
+        def process(self, path, file_info):
+            return CollectorResult(source=path, status=True)
+
+    inst = MyCollector()
+    assert inst.on_request("some.action", {}, None) is None
+
+
+def test_on_request_override():
+    class MyCollector(BaseCollectorPlugin):
+        NAME = "test_request_override"
+        EXTENSIONS = (".test",)
+
+        def process(self, path, file_info):
+            return CollectorResult(source=path, status=True)
+
+        def on_request(self, action, payload, msg):
+            if action == "echo":
+                return {"echo": payload.get("data")}
+            return None
+
+    inst = MyCollector()
+    result = inst.on_request("echo", {"data": "hello"}, None)
+    assert result == {"echo": "hello"}
+    assert inst.on_request("unknown", {}, None) is None
 
 
 def test_batch_size_for_known_collector():

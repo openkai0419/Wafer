@@ -30,7 +30,7 @@ from .outbox import OutboxStore, scan_all_outbox, remove_outbox_batch_from, clea
 
 
 class Node:
-    def __init__(self, role: str, db: str | list[str] = "", *, consumer: bool = False):
+    def __init__(self, role: str, db: str | list[str] = "", *, consumer: bool = False, broker_lost_timeout: float | None = None):
         self.role = role
         self.db = db
         self.node_id = f"{role}-{os.getpid()}"
@@ -52,6 +52,9 @@ class Node:
         self._stop = threading.Event()
         self._io_thread: threading.Thread | None = None
         self._registered = threading.Event()
+        self._broker_lost_timeout = broker_lost_timeout
+        self._unregistered_since: float | None = None
+        self._broker_lost_callback: Callable[[], None] | None = None
         self._outbox: OutboxStore | None = None
         self._outbox_event = threading.Event()
         self._outbox_thread: threading.Thread | None = None
@@ -77,7 +80,14 @@ class Node:
         self._handlers.pop(topic, None)
         return self
 
+    def on_broker_lost(self, callback: Callable[[], None], timeout: float | None = None):
+        self._broker_lost_callback = callback
+        if timeout is not None:
+            self._broker_lost_timeout = timeout
+
     def start(self, port: int | None = None):
+        if self._broker_lost_timeout is not None:
+            self._unregistered_since = time.monotonic()
         target_port = port if port is not None else (read_broker_port() or DEFAULT_PORT)
         self._connect(target_port)
         self._io_thread = threading.Thread(target=self._io_loop, daemon=True)
@@ -102,6 +112,9 @@ class Node:
 
     def send(self, topic: str, payload: Any = None, *, dst: str = "ALL", db: str = "", priority: int = Priority.MID):
         msg = Message.build(topic, payload, src=self.node_id, dst=dst, db=db or self.default_db, priority=priority)
+        try_put(self._out_q, msg.to_frames())
+
+    def enqueue(self, msg: Message):
         try_put(self._out_q, msg.to_frames())
 
     def send_coalesced(self, topic: str, payload: Any = None, *, dst: str = "ALL", db: str = ""):
@@ -267,6 +280,7 @@ class Node:
             if isinstance(msg.payload, dict):
                 self._viewer_id = msg.payload.get("viewer_id")
             self._registered.set()
+            self._unregistered_since = None
             AppLogger.info(f"registered as {self.node_id}, viewer_id={self._viewer_id}")
             return
 
@@ -275,6 +289,26 @@ class Node:
             return
 
         self._call_handler(msg)
+
+    def _check_broker_lost(self, now: float) -> bool:
+        if self._broker_lost_timeout is None:
+            return False
+        if self._registered.is_set():
+            self._unregistered_since = None
+            return False
+        if self._unregistered_since is None:
+            self._unregistered_since = now
+            return False
+        if now - self._unregistered_since <= self._broker_lost_timeout:
+            return False
+        AppLogger.warning(f"broker unreachable for {self._broker_lost_timeout}s, shutting down node {self.node_id}")
+        self._stop.set()
+        if self._broker_lost_callback:
+            try:
+                self._broker_lost_callback()
+            except Exception as e:
+                AppLogger.warning("broker_lost callback failed", exc=e)
+        return True
 
     def _io_loop(self):
         poller = zmq.Poller()
@@ -292,6 +326,8 @@ class Node:
                     poller = zmq.Poller()
                     registered_dealer = self._dealer
                     poller.register(registered_dealer, zmq.POLLIN)
+                if self._check_broker_lost(now):
+                    break
 
             try:
                 events = dict(poller.poll(poll_ms))

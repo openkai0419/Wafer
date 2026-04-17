@@ -9,6 +9,13 @@ from unittest.mock import patch, MagicMock
 from wafer.plugin import installer
 from wafer.plugin.installer import (
     EmbeddedPython,
+    RestartScope,
+    InstallState,
+    InstallResult,
+    InstallerCancelled,
+    restart_scope_of,
+    restart_scope_from_plugins,
+    resolve_install_state,
     _run_subprocess,
     _python_version,
     _merge_requirements,
@@ -21,10 +28,11 @@ from wafer.plugin.installer import (
     _stamps_dir,
     _extensions_dir_from_plugin,
     _stamp_path,
-    _has_locked_files,
     _is_locked,
     _merge_or_defer,
     _merge_dir,
+    _dist_info_base_name,
+    _remove_stale_packages,
     apply_pending_packages,
     has_pending_packages,
     install_requirements,
@@ -68,6 +76,17 @@ class TestRunSubprocess:
         calls = []
         _run_subprocess([sys.executable, str(script)], on_progress=lambda: calls.append(1))
         assert len(calls) > 0
+
+    def test_cancel_kills_process(self, tmp_path):
+        script = tmp_path / "hang.py"
+        script.write_text("import time; time.sleep(60)")
+        with pytest.raises(InstallerCancelled):
+            _run_subprocess([sys.executable, str(script)], is_cancelled=lambda: True)
+
+    def test_no_timeout_by_default(self, tmp_path):
+        script = tmp_path / "fast.py"
+        script.write_text("import sys; sys.exit(0)")
+        _run_subprocess([sys.executable, str(script)])
 
 
 class TestPythonVersion:
@@ -349,11 +368,24 @@ class TestInstallPackages:
         with patch("wafer.plugin.installer.EmbeddedPython", return_value=mock_ep), patch("wafer.plugin.installer._run_subprocess") as mock_run, patch("wafer.plugin.installer._merge_or_defer", return_value=True) as mock_merge:
             result = install_packages(str(plugin), ["onnxruntime-gpu"])
 
-        assert result is True
+        assert result == (True, False)
         call_args = mock_run.call_args[0][0]
         assert "--target" in call_args
         assert "onnxruntime-gpu" in call_args
         mock_merge.assert_called_once()
+
+    def test_deferred_returns_success_with_deferred(self, tmp_path):
+        ext_dir = tmp_path / "extensions"
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
+
+        mock_ep = MagicMock()
+        mock_ep.exe_path = "/fake/python.exe"
+
+        with patch("wafer.plugin.installer.EmbeddedPython", return_value=mock_ep), patch("wafer.plugin.installer._run_subprocess"), patch("wafer.plugin.installer._merge_or_defer", return_value=False):
+            result = install_packages(str(plugin), ["pkg"])
+
+        assert result == (True, True)
 
     def test_failure_returns_false(self, tmp_path):
         ext_dir = tmp_path / "extensions"
@@ -363,7 +395,7 @@ class TestInstallPackages:
         with patch("wafer.plugin.installer._run_subprocess", side_effect=RuntimeError("pip failed")):
             result = install_packages(str(plugin), ["pkg"])
 
-        assert result is False
+        assert result == (False, False)
 
     def test_multiple_packages(self, tmp_path):
         ext_dir = tmp_path / "extensions"
@@ -588,7 +620,7 @@ class TestHasPostInstallHooks:
             PRIORITY = 1
 
             @classmethod
-            def post_install(cls, plugin_dir, on_progress=None):
+            def post_install(cls, plugin_dir, on_progress=None, is_cancelled=None):
                 pass
 
         assert has_post_install_hooks([("grid", WithHook)]) is True
@@ -617,7 +649,7 @@ class TestHasPostInstallHooks:
             PRIORITY = 2
 
             @classmethod
-            def post_install(cls, plugin_dir, on_progress=None):
+            def post_install(cls, plugin_dir, on_progress=None, is_cancelled=None):
                 pass
 
         assert has_post_install_hooks([("a", Plain), ("b", WithHook)]) is True
@@ -644,11 +676,11 @@ class TestInstallExtension:
             PRIORITY = 1
 
         with patch("wafer.plugin.installer.needs_install", return_value=False), patch("wafer.plugin.loader.PluginLoader.discover_extension", return_value=[("grid", SimplePlugin)]):
-            ok, post_ok, plugins = install_extension(str(plugin), str(ext_dir))
+            result = install_extension(str(plugin), str(ext_dir))
 
-        assert ok is True
-        assert post_ok is True
-        assert len(plugins) == 1
+        assert result.success is True
+        assert result.post_install_ok is True
+        assert len(result.plugins) == 1
 
     def test_install_failure_returns_false(self, tmp_path):
         ext_dir = tmp_path / "extensions"
@@ -659,10 +691,10 @@ class TestInstallExtension:
             patch("wafer.plugin.installer.needs_install", return_value=True),
             patch("wafer.plugin.installer.install_requirements", return_value=(False, False)),
         ):
-            ok, post_ok, plugins = install_extension(str(plugin), str(ext_dir))
+            result = install_extension(str(plugin), str(ext_dir))
 
-        assert ok is False
-        assert plugins == []
+        assert result.success is False
+        assert result.plugins == []
 
     def test_post_install_hook_called(self, tmp_path):
         ext_dir = tmp_path / "extensions"
@@ -679,14 +711,14 @@ class TestInstallExtension:
             PRIORITY = 1
 
             @classmethod
-            def post_install(cls, plugin_dir, on_progress=None):
+            def post_install(cls, plugin_dir, on_progress=None, is_cancelled=None):
                 calls.append(plugin_dir)
 
         with patch("wafer.plugin.installer.needs_install", return_value=False), patch("wafer.plugin.loader.PluginLoader.discover_extension", return_value=[("grid", HookPlugin)]):
-            ok, post_ok, plugins = install_extension(str(plugin), str(ext_dir))
+            result = install_extension(str(plugin), str(ext_dir))
 
-        assert ok is True
-        assert post_ok is True
+        assert result.success is True
+        assert result.post_install_ok is True
         assert len(calls) == 1
         assert calls[0] == str(plugin)
         stamp = ext_dir / _PACKAGES_DIR / _STAMPS_DIR / "plugin.post_installed"
@@ -705,10 +737,10 @@ class TestInstallExtension:
             PRIORITY = 1
 
         with patch("wafer.plugin.installer.needs_install", return_value=False), patch("wafer.plugin.loader.PluginLoader.discover_extension", return_value=[("grid", PlainPlugin)]):
-            ok, post_ok, plugins = install_extension(str(plugin), str(ext_dir))
+            result = install_extension(str(plugin), str(ext_dir))
 
-        assert ok is True
-        assert post_ok is True
+        assert result.success is True
+        assert result.post_install_ok is True
         stamp = ext_dir / _PACKAGES_DIR / _STAMPS_DIR / "plugin.post_installed"
         assert stamp.exists()
 
@@ -725,14 +757,14 @@ class TestInstallExtension:
             PRIORITY = 1
 
             @classmethod
-            def post_install(cls, plugin_dir, on_progress=None):
+            def post_install(cls, plugin_dir, on_progress=None, is_cancelled=None):
                 raise RuntimeError("boom")
 
         with patch("wafer.plugin.installer.needs_install", return_value=False), patch("wafer.plugin.loader.PluginLoader.discover_extension", return_value=[("grid", FailHook)]):
-            ok, post_ok, plugins = install_extension(str(plugin), str(ext_dir))
+            result = install_extension(str(plugin), str(ext_dir))
 
-        assert ok is True
-        assert post_ok is False
+        assert result.success is True
+        assert result.post_install_ok is False
         stamp = ext_dir / _PACKAGES_DIR / _STAMPS_DIR / "plugin.post_installed"
         assert not stamp.exists()
 
@@ -751,14 +783,39 @@ class TestInstallExtension:
             patch("wafer.plugin.installer.install_requirements", return_value=(True, False)),
         ):
             cancelled = True
-            ok, post_ok, plugins = install_extension(
+            result = install_extension(
                 str(plugin),
                 str(ext_dir),
                 is_cancelled=check,
             )
 
-        assert ok is False
-        assert plugins == []
+        assert result.success is False
+        assert result.cancelled is True
+        assert result.plugins == []
+
+    def test_cancellation_during_post_install(self, tmp_path):
+        ext_dir = tmp_path / "extensions"
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
+
+        from wafer.plugin.registry import PluginBase
+
+        class CancelHook(PluginBase):
+            NAME = "cancel_hook"
+            EXTENSIONS = (".c",)
+            PRIORITY = 1
+
+            @classmethod
+            def post_install(cls, plugin_dir, on_progress=None, is_cancelled=None):
+                raise InstallerCancelled("cancelled")
+
+        with patch("wafer.plugin.installer.needs_install", return_value=False), patch("wafer.plugin.loader.PluginLoader.discover_extension", return_value=[("grid", CancelHook)]):
+            result = install_extension(str(plugin), str(ext_dir), is_cancelled=lambda: True)
+
+        assert result.success is False
+        assert result.cancelled is True
+        stamp = ext_dir / _PACKAGES_DIR / _STAMPS_DIR / "plugin.post_installed"
+        assert not stamp.exists()
 
     def test_deferred_install_continues_discover_and_post_install(self, tmp_path):
         ext_dir = tmp_path / "extensions"
@@ -777,46 +834,25 @@ class TestInstallExtension:
             patch("wafer.plugin.installer.install_requirements", return_value=(True, True)),
             patch("wafer.plugin.loader.PluginLoader.discover_extension", return_value=[("grid", DeferredPlugin)]),
         ):
-            ok, post_ok, plugins = install_extension(str(plugin), str(ext_dir))
+            result = install_extension(str(plugin), str(ext_dir))
 
-        assert ok is True
-        assert post_ok is True
-        assert len(plugins) == 1
-        assert plugins[0][1] is DeferredPlugin
+        assert result.success is True
+        assert result.post_install_ok is True
+        assert result.deferred is True
+        assert len(result.plugins) == 1
+        assert result.plugins[0][1] is DeferredPlugin
 
 
-class TestHasLockedFiles:
-    def test_no_locked_files(self, tmp_path):
-        src = tmp_path / "src"
-        dst = tmp_path / "dst"
-        src.mkdir()
-        dst.mkdir()
-        (src / "a.txt").write_text("new")
-        (dst / "a.txt").write_text("old")
-        assert _has_locked_files(str(src), str(dst)) is False
-
-    def test_no_dst_dir(self, tmp_path):
-        src = tmp_path / "src"
-        src.mkdir()
-        (src / "a.txt").write_text("new")
-        assert _has_locked_files(str(src), str(tmp_path / "nope")) is False
+class TestIsLocked:
+    def test_unlocked_file(self, tmp_path):
+        f = tmp_path / "a.txt"
+        f.write_text("data")
+        assert _is_locked(str(f)) is False
 
     def test_new_file_not_locked(self, tmp_path):
-        src = tmp_path / "src"
-        dst = tmp_path / "dst"
-        src.mkdir()
-        dst.mkdir()
-        (src / "new.txt").write_text("data")
-        assert _has_locked_files(str(src), str(dst)) is False
-
-    def test_nested_dir_check(self, tmp_path):
-        src = tmp_path / "src" / "sub"
-        dst = tmp_path / "dst" / "sub"
-        src.mkdir(parents=True)
-        dst.mkdir(parents=True)
-        (src / "a.txt").write_text("new")
-        (dst / "a.txt").write_text("old")
-        assert _has_locked_files(str(tmp_path / "src"), str(tmp_path / "dst")) is False
+        f = tmp_path / "a.txt"
+        f.write_text("data")
+        assert _is_locked(str(f)) is False
 
 
 class TestMergeOrDefer:
@@ -895,7 +931,7 @@ class TestMergeOrDefer:
         assert (pending / "locked.pyd").read_text() == "new_locked"
         assert not (pending / "ok.py").exists()
 
-    def test_partial_merge_subdir_locked(self, tmp_path):
+    def test_partial_merge_subdir_locked_file(self, tmp_path):
         staging = tmp_path / "staging"
         target = tmp_path / "ext" / _PACKAGES_DIR
         ext_dir = tmp_path / "ext"
@@ -904,17 +940,25 @@ class TestMergeOrDefer:
         sub_staging.mkdir(parents=True)
         sub_target.mkdir(parents=True)
         (staging / "root.py").write_text("root_new")
+        (sub_staging / "ok.py").write_text("sub_ok_new")
         (sub_staging / "mod.pyd").write_text("sub_new")
+        (sub_target / "ok.py").write_text("sub_ok_old")
         (sub_target / "mod.pyd").write_text("sub_old")
 
-        with patch("wafer.plugin.installer._has_locked_files", return_value=True):
-            result = _merge_or_defer(str(staging), str(target), str(ext_dir))
+        def fake_locked(path):
+            return "mod.pyd" in path
+
+        with patch("wafer.plugin.installer._is_locked", side_effect=fake_locked):
+            with patch("wafer.plugin.installer._remove_stale_packages"):
+                result = _merge_or_defer(str(staging), str(target), str(ext_dir))
 
         assert result is False
         assert (target / "root.py").read_text() == "root_new"
+        assert (sub_target / "ok.py").read_text() == "sub_ok_new"
+        assert (sub_target / "mod.pyd").read_text() == "sub_old"
         pending = ext_dir / _PENDING_DIR / "subpkg"
         assert (pending / "mod.pyd").read_text() == "sub_new"
-        assert (sub_target / "mod.pyd").read_text() == "sub_old"
+        assert not (pending / "ok.py").exists()
 
 
 class TestApplyPendingPackages:
@@ -968,7 +1012,10 @@ class TestApplyPendingPackages:
                 raise PermissionError("locked")
             return orig_copy2(src, dst, *args, **kwargs)
 
-        with patch("wafer.plugin.installer.shutil.copy2", side_effect=failing_copy2):
+        with (
+            patch("wafer.plugin.installer.shutil.copy2", side_effect=failing_copy2),
+            patch("wafer.plugin.installer._PENDING_TIMEOUT", 0),
+        ):
             result = apply_pending_packages(str(ext_dir))
 
         assert result is True
@@ -976,6 +1023,57 @@ class TestApplyPendingPackages:
         assert not (target / "locked.pyd").exists()
         assert (pending / "locked.pyd").exists()
         assert not (pending / "ok.py").exists()
+
+    def test_retry_succeeds_when_lock_released(self, tmp_path):
+        ext_dir = tmp_path / "extensions"
+        pending = ext_dir / _PENDING_DIR
+        target = ext_dir / _PACKAGES_DIR
+        pending.mkdir(parents=True)
+        target.mkdir(parents=True)
+        (pending / "lib.pyd").write_text("new_content")
+        (target / "lib.pyd").write_text("old_content")
+
+        call_count = 0
+        orig_copy2 = shutil.copy2
+
+        def copy_fails_then_succeeds(src, dst, *args, **kwargs):
+            nonlocal call_count
+            if "lib.pyd" in str(dst):
+                call_count += 1
+                if call_count <= 2:
+                    raise PermissionError("locked")
+            return orig_copy2(src, dst, *args, **kwargs)
+
+        with patch("wafer.plugin.installer.shutil.copy2", side_effect=copy_fails_then_succeeds):
+            result = apply_pending_packages(str(ext_dir))
+
+        assert result is True
+        assert (target / "lib.pyd").read_text() == "new_content"
+        assert not pending.exists()
+        assert call_count == 3
+
+    def test_merge_dir_locked_files_detected_as_failure(self, tmp_path):
+        ext_dir = tmp_path / "extensions"
+        pending = ext_dir / _PENDING_DIR
+        target = ext_dir / _PACKAGES_DIR
+        pkg_pending = pending / "numpy"
+        pkg_target = target / "numpy"
+        pkg_pending.mkdir(parents=True)
+        pkg_target.mkdir(parents=True)
+        (pkg_pending / "ok.py").write_text("new")
+        (pkg_pending / "locked.pyd").write_text("new_pyd")
+        (pkg_target / "locked.pyd").write_text("old_pyd")
+
+        with (
+            patch("wafer.plugin.installer._is_locked", lambda p: "locked.pyd" in p),
+            patch("wafer.plugin.installer._PENDING_TIMEOUT", 0),
+        ):
+            result = apply_pending_packages(str(ext_dir))
+
+        assert not result
+        assert (pkg_target / "ok.py").read_text() == "new"
+        assert (pkg_target / "locked.pyd").read_text() == "old_pyd"
+        assert (pkg_pending / "locked.pyd").exists()
 
 
 class TestHasPendingPackages:
@@ -1029,3 +1127,287 @@ class TestMergeDir:
         (src / "a.txt").write_text("data")
         _merge_dir(str(src), str(dst))
         assert (dst / "a.txt").read_text() == "data"
+
+    def test_locked_file_deferred_to_pending(self, tmp_path):
+        src = tmp_path / "src"
+        dst = tmp_path / "dst"
+        pending = tmp_path / "pending"
+        src.mkdir()
+        dst.mkdir()
+        (src / "ok.py").write_text("new_ok")
+        (src / "locked.pyd").write_text("new_locked")
+        (dst / "ok.py").write_text("old_ok")
+        (dst / "locked.pyd").write_text("old_locked")
+
+        def fake_locked(path):
+            return "locked.pyd" in path
+
+        with patch("wafer.plugin.installer._is_locked", side_effect=fake_locked):
+            has_deferred = _merge_dir(str(src), str(dst), str(pending))
+
+        assert has_deferred is True
+        assert (dst / "ok.py").read_text() == "new_ok"
+        assert (dst / "locked.pyd").read_text() == "old_locked"
+        assert (pending / "locked.pyd").read_text() == "new_locked"
+
+    def test_no_pending_dst_skips_deferred_copy(self, tmp_path):
+        src = tmp_path / "src"
+        dst = tmp_path / "dst"
+        src.mkdir()
+        dst.mkdir()
+        (src / "locked.pyd").write_text("new")
+        (dst / "locked.pyd").write_text("old")
+
+        def fake_locked(path):
+            return "locked.pyd" in path
+
+        with patch("wafer.plugin.installer._is_locked", side_effect=fake_locked):
+            has_deferred = _merge_dir(str(src), str(dst))
+
+        assert has_deferred is True
+        assert (dst / "locked.pyd").read_text() == "old"
+
+
+class TestRestartScope:
+    def test_none_is_zero(self):
+        assert RestartScope.NONE == RestartScope(0)
+
+    def test_all_contains_viewer_and_tray(self):
+        assert RestartScope.VIEWER in RestartScope.ALL
+        assert RestartScope.TRAY in RestartScope.ALL
+
+    def test_merge_viewer_tray_equals_all(self):
+        assert (RestartScope.VIEWER | RestartScope.TRAY) == RestartScope.ALL
+
+    def test_none_or_viewer(self):
+        assert (RestartScope.NONE | RestartScope.VIEWER) == RestartScope.VIEWER
+
+
+class TestRestartScopeOf:
+    def test_viewer_scope(self):
+        class ViewerPlugin:
+            SCOPE = "viewer"
+        assert restart_scope_of(ViewerPlugin) == RestartScope.VIEWER
+
+    def test_tray_scope(self):
+        class TrayPlugin:
+            SCOPE = "tray"
+        assert restart_scope_of(TrayPlugin) == RestartScope.TRAY
+
+    def test_star_scope(self):
+        class AllPlugin:
+            SCOPE = "*"
+        assert restart_scope_of(AllPlugin) == RestartScope.ALL
+
+    def test_no_scope_defaults_to_viewer(self):
+        class NoScopePlugin:
+            pass
+        assert restart_scope_of(NoScopePlugin) == RestartScope.VIEWER
+
+
+class TestRestartScopeFromPlugins:
+    def test_empty(self):
+        assert restart_scope_from_plugins([]) == RestartScope.NONE
+
+    def test_mixed(self):
+        class V:
+            SCOPE = "viewer"
+        class T:
+            SCOPE = "tray"
+        scope = restart_scope_from_plugins([V, T])
+        assert scope == RestartScope.ALL
+
+    def test_single_tray(self):
+        class T:
+            SCOPE = "tray"
+        assert restart_scope_from_plugins([T]) == RestartScope.TRAY
+
+
+class TestInstallState:
+    def test_values(self):
+        assert InstallState.NO_DEPS.value == "no_deps"
+        assert InstallState.NOT_INSTALLED.value == "not_installed"
+        assert InstallState.NEEDS_POST_INSTALL.value == "needs_post_install"
+        assert InstallState.INSTALLED.value == "installed"
+
+
+class TestInstallResult:
+    def test_defaults(self):
+        r = InstallResult()
+        assert r.success is False
+        assert r.deferred is False
+        assert r.post_install_ok is True
+        assert r.plugins == []
+
+
+class TestResolveInstallState:
+    def test_no_requirements_file(self, tmp_path):
+        assert resolve_install_state(str(tmp_path)) == InstallState.NO_DEPS
+
+    def test_needs_install(self, tmp_path, monkeypatch):
+        (tmp_path / "requirements.txt").write_text("numpy==2.2.6\n")
+        monkeypatch.setattr(installer, "needs_install", lambda d: True)
+        assert resolve_install_state(str(tmp_path)) == InstallState.NOT_INSTALLED
+
+    def test_needs_post_install(self, tmp_path, monkeypatch):
+        (tmp_path / "requirements.txt").write_text("numpy==2.2.6\n")
+        monkeypatch.setattr(installer, "needs_install", lambda d: False)
+        monkeypatch.setattr(installer, "needs_post_install", lambda d: True)
+        assert resolve_install_state(str(tmp_path)) == InstallState.NEEDS_POST_INSTALL
+
+    def test_fully_installed(self, tmp_path, monkeypatch):
+        (tmp_path / "requirements.txt").write_text("numpy==2.2.6\n")
+        monkeypatch.setattr(installer, "needs_install", lambda d: False)
+        monkeypatch.setattr(installer, "needs_post_install", lambda d: False)
+        assert resolve_install_state(str(tmp_path)) == InstallState.INSTALLED
+
+
+class TestDistInfoBaseName:
+    def test_simple_package(self):
+        assert _dist_info_base_name("torch-2.6.0+cu124.dist-info") == "torch"
+
+    def test_cpu_variant(self):
+        assert _dist_info_base_name("torch-2.11.0+cpu.dist-info") == "torch"
+
+    def test_multi_dash_name(self):
+        assert _dist_info_base_name("opencv-python-4.13.0.92.dist-info") == "opencv-python"
+
+    def test_underscore_normalized(self):
+        assert _dist_info_base_name("huggingface_hub-1.10.1.dist-info") == "huggingface-hub"
+
+    def test_non_dist_info_returns_none(self):
+        assert _dist_info_base_name("torch") is None
+        assert _dist_info_base_name("numpy.libs") is None
+
+    def test_no_version_returns_none(self):
+        assert _dist_info_base_name("torch.dist-info") is None
+
+
+class TestRemoveStalePackages:
+    def test_removes_old_dist_info(self, tmp_path):
+        staging = tmp_path / "staging"
+        target = tmp_path / "target"
+        staging.mkdir()
+        target.mkdir()
+        (staging / "torch").mkdir()
+        (staging / "torch-2.11.0+cpu.dist-info").mkdir()
+        old_dist = target / "torch-2.6.0+cu124.dist-info"
+        old_dist.mkdir()
+        (old_dist / "METADATA").write_text("old")
+        (target / "torch").mkdir()
+        (target / "torch" / "old.dll").write_text("old dll")
+
+        _remove_stale_packages(str(staging), str(target))
+
+        assert not old_dist.exists()
+        assert not (target / "torch").exists()
+
+    def test_preserves_unrelated_packages(self, tmp_path):
+        staging = tmp_path / "staging"
+        target = tmp_path / "target"
+        staging.mkdir()
+        target.mkdir()
+        (staging / "torch").mkdir()
+        (staging / "torch-2.11.0+cpu.dist-info").mkdir()
+        numpy_dir = target / "numpy"
+        numpy_dir.mkdir()
+        (numpy_dir / "core.py").write_text("data")
+        numpy_dist = target / "numpy-2.2.6.dist-info"
+        numpy_dist.mkdir()
+
+        _remove_stale_packages(str(staging), str(target))
+
+        assert numpy_dir.exists()
+        assert numpy_dist.exists()
+
+    def test_skips_hidden_dirs(self, tmp_path):
+        staging = tmp_path / "staging"
+        target = tmp_path / "target"
+        staging.mkdir()
+        target.mkdir()
+        (staging / "torch").mkdir()
+        stamps = target / ".stamps"
+        stamps.mkdir()
+        (stamps / "data").write_text("keep")
+
+        _remove_stale_packages(str(staging), str(target))
+
+        assert stamps.exists()
+
+    def test_skips_locked_dirs(self, tmp_path):
+        staging = tmp_path / "staging"
+        target = tmp_path / "target"
+        staging.mkdir()
+        target.mkdir()
+        (staging / "torch").mkdir()
+        (staging / "torch" / "new.py").write_text("new")
+        torch_dir = target / "torch"
+        torch_dir.mkdir()
+        (torch_dir / "locked.pyd").write_text("old")
+
+        orig_rmtree = shutil.rmtree
+
+        def fail_rmtree(path, ignore_errors=False, **kw):
+            if "torch" in str(path) and str(path).startswith(str(target)):
+                if ignore_errors:
+                    return
+                raise PermissionError("locked")
+            return orig_rmtree(path, ignore_errors=ignore_errors, **kw)
+
+        with patch("wafer.plugin.installer.shutil.rmtree", side_effect=fail_rmtree):
+            _remove_stale_packages(str(staging), str(target))
+
+        assert torch_dir.exists()
+        assert (torch_dir / "locked.pyd").exists()
+
+    def test_noop_when_no_target(self, tmp_path):
+        staging = tmp_path / "staging"
+        staging.mkdir()
+        (staging / "torch").mkdir()
+        _remove_stale_packages(str(staging), str(tmp_path / "nonexistent"))
+
+    def test_multiple_old_dist_infos_removed(self, tmp_path):
+        staging = tmp_path / "staging"
+        target = tmp_path / "target"
+        staging.mkdir()
+        target.mkdir()
+        (staging / "torch-2.11.0+cpu.dist-info").mkdir()
+        old1 = target / "torch-2.6.0+cu124.dist-info"
+        old2 = target / "torch-2.5.0+cu121.dist-info"
+        old1.mkdir()
+        old2.mkdir()
+
+        _remove_stale_packages(str(staging), str(target))
+
+        assert not old1.exists()
+        assert not old2.exists()
+
+
+class TestMergeOrDeferCleansMerge:
+    def test_old_dist_info_removed_on_merge(self, tmp_path):
+        staging = tmp_path / "staging"
+        ext_dir = tmp_path / "ext"
+        target = ext_dir / _PACKAGES_DIR
+        staging.mkdir()
+        target.mkdir(parents=True)
+
+        (staging / "torch").mkdir()
+        (staging / "torch" / "__init__.py").write_text("new")
+        (staging / "torch-2.11.0+cpu.dist-info").mkdir()
+        (staging / "torch-2.11.0+cpu.dist-info" / "RECORD").write_text("new")
+
+        old_torch = target / "torch"
+        old_torch.mkdir()
+        (old_torch / "__init__.py").write_text("old")
+        (old_torch / "cuda_stuff.dll").write_text("old cuda")
+        old_dist = target / "torch-2.6.0+cu124.dist-info"
+        old_dist.mkdir()
+        (old_dist / "RECORD").write_text("old")
+
+        result = _merge_or_defer(str(staging), str(target), str(ext_dir))
+
+        assert result is True
+        assert not old_dist.exists()
+        assert (target / "torch-2.11.0+cpu.dist-info" / "RECORD").read_text() == "new"
+        assert (target / "torch" / "__init__.py").read_text() == "new"
+        assert not (target / "torch" / "cuda_stuff.dll").exists()

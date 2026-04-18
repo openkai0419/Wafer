@@ -1,4 +1,24 @@
 {
+  "BLIP Settings": {
+    "en": "BLIP Settings",
+    "ja": ""
+  },
+  "Confirm Deletion": {
+    "en": "Confirm Deletion",
+    "ja": ""
+  },
+  "Delete data for {count} prefix(es)?\n\n": {
+    "en": "Delete data for {count} prefix(es)?\n\n",
+    "ja": ""
+  },
+  "Files will be marked for re-collection.": {
+    "en": "Files will be marked for re-collection.",
+    "ja": ""
+  },
+  "Selected: {count} items": {
+    "en": "Selected: {count} items",
+    "ja": ""
+  },
   "Both Restart Required": {
     "en": "Both Restart Required",
     "ja": ""

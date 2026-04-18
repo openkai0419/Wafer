@@ -591,8 +591,8 @@ class DatabaseManagerPlugin(BasePanelPlugin):
         if w is not None:
             try:
                 return w._save_ui_state()
-            except RuntimeError:
-                pass
+            except RuntimeError as e:
+                AppLogger.warning("[DatabaseManager] save_state failed", exc=e)
         return dict(self._cached_state)
 
     def restore_state(self, state):
@@ -601,8 +601,8 @@ class DatabaseManagerPlugin(BasePanelPlugin):
         if w is not None:
             try:
                 w._restore_ui_state(state)
-            except RuntimeError:
-                pass
+            except RuntimeError as e:
+                AppLogger.warning("[DatabaseManager] restore_state failed", exc=e)
 
     def create_widget(self):
         w = DatabaseManagerWidget()

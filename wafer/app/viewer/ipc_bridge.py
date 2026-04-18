@@ -59,8 +59,8 @@ class ViewerIpcBridge(QtCore.QObject):
     def _invoke(self, slot: str, *args):
         try:
             QtCore.QMetaObject.invokeMethod(self, slot, QtCore.Qt.QueuedConnection, *args)
-        except RuntimeError:
-            pass
+        except RuntimeError as e:
+            AppLogger.warning(f"[IPC] invokeMethod failed for slot '{slot}'", exc=e)
         return True
 
     def _on_update(self, msg):
@@ -76,7 +76,8 @@ class ViewerIpcBridge(QtCore.QObject):
                 QtCore.Q_ARG(str, msg.db or ""),
                 QtCore.Q_ARG(int, int(msg.payload)),
             )
-        except (ValueError, TypeError):
+        except (ValueError, TypeError) as e:
+            AppLogger.debug(f"[IPC] invalid progress payload: {msg.payload!r}", exc=e)
             return True
 
     def _on_maximum(self, msg):
@@ -86,7 +87,8 @@ class ViewerIpcBridge(QtCore.QObject):
                 QtCore.Q_ARG(str, msg.db or ""),
                 QtCore.Q_ARG(int, int(msg.payload)),
             )
-        except (ValueError, TypeError):
+        except (ValueError, TypeError) as e:
+            AppLogger.debug(f"[IPC] invalid maximum payload: {msg.payload!r}", exc=e)
             return True
 
     def _on_show_toggle(self, msg):

@@ -8,6 +8,7 @@ from PIL import Image
 
 from extensions.ai_tagger._downloader import KNOWN_MODELS, DEFAULT_MODEL
 from extensions.ai_tagger.collector import WD14TaggerCollector, _CACHE_MAX, _ENGINE_IDLE_TIMEOUT
+from extensions.ai_tagger.settings import parse_blacklist
 from extensions.ai_tagger.settings import wd14_config
 
 
@@ -32,19 +33,65 @@ class TestBuildTags:
             "character": {"hatsune_miku": 0.90},
         }
 
-    def test_rating_top_one(self):
+    # --- rating_mode="top" (default) ---
+
+    def test_top_mode_rating_key(self):
         tags = self.collector._build_tags(self.result)
         assert tags["rating"] == "general"
 
-    def test_rating_score_present(self):
+    def test_top_mode_rating_score(self):
         tags = self.collector._build_tags(self.result)
         assert tags["rating_score"] == "0.85"
+
+    def test_top_mode_sensitive_rating(self):
+        self.result["ratings"] = {"sensitive": 0.90, "general": 0.05, "questionable": 0.03, "explicit": 0.02}
+        tags = self.collector._build_tags(self.result)
+        assert tags["rating"] == "sensitive"
+
+    # --- rating_mode="all" ---
+
+    def test_all_mode_individual_keys(self):
+        tags = self.collector._build_tags(self.result, settings={"rating_mode": "all", "enable_character": True, "enable_tags": True})
+        assert tags["rating_general"] == "0.85"
+        assert tags["rating_sensitive"] == "0.1"
+        assert tags["rating_questionable"] == "0.03"
+        assert tags["rating_explicit"] == "0.02"
+        assert "rating" not in tags
+        assert "rating_score" not in tags
+
+    # --- rating_mode="none" (enable_rating=False) ---
+
+    def test_none_mode_no_rating(self):
+        tags = self.collector._build_tags(self.result, settings={"enable_rating": False, "rating_mode": "top", "enable_character": True, "enable_tags": True})
+        assert "rating" not in tags
+        assert "rating_score" not in tags
+        assert "rating_general" not in tags
+
+    # --- rating_mode="name" ---
+
+    def test_name_mode_rating_key_only(self):
+        tags = self.collector._build_tags(self.result, settings={"enable_rating": True, "rating_mode": "name", "enable_character": True, "enable_tags": True})
+        assert tags["rating"] == "general"
+        assert "rating_score" not in tags
+
+    # --- general tags ---
 
     def test_general_comma_separated(self):
         tags = self.collector._build_tags(self.result)
         assert "1girl" in tags["tags"]
         assert "blue_hair" in tags["tags"]
         assert "smile" in tags["tags"]
+
+    def test_empty_general(self):
+        self.result["general"] = {}
+        tags = self.collector._build_tags(self.result)
+        assert "tags" not in tags
+
+    def test_disable_tags(self):
+        tags = self.collector._build_tags(self.result, settings={"rating_mode": "top", "enable_character": True, "enable_tags": False})
+        assert "tags" not in tags
+
+    # --- character tags ---
 
     def test_character_comma_separated(self):
         tags = self.collector._build_tags(self.result)
@@ -55,51 +102,55 @@ class TestBuildTags:
         tags = self.collector._build_tags(self.result)
         assert "character" not in tags
 
-    def test_empty_general(self):
-        self.result["general"] = {}
-        tags = self.collector._build_tags(self.result)
-        assert "tags" not in tags
-
     def test_multiple_characters(self):
         self.result["character"] = {"hatsune_miku": 0.90, "kagamine_rin": 0.85}
         tags = self.collector._build_tags(self.result)
         assert "hatsune_miku" in tags["character"]
         assert "kagamine_rin" in tags["character"]
 
-    def test_sensitive_rating(self):
-        self.result["ratings"] = {"sensitive": 0.90, "general": 0.05, "questionable": 0.03, "explicit": 0.02}
-        tags = self.collector._build_tags(self.result)
-        assert tags["rating"] == "sensitive"
-
-    def test_disable_rating(self):
-        tags = self.collector._build_tags(self.result, settings={"enable_rating": False, "enable_rating_score": True, "enable_character": True, "enable_tags": True})
-        assert "rating" not in tags
-        assert "rating_score" in tags
-
-    def test_disable_rating_score(self):
-        tags = self.collector._build_tags(self.result, settings={"enable_rating": True, "enable_rating_score": False, "enable_character": True, "enable_tags": True})
-        assert "rating" in tags
-        assert "rating_score" not in tags
-
     def test_disable_character(self):
-        tags = self.collector._build_tags(self.result, settings={"enable_rating": True, "enable_rating_score": True, "enable_character": False, "enable_tags": True})
+        tags = self.collector._build_tags(self.result, settings={"rating_mode": "top", "enable_character": False, "enable_tags": True})
         assert "character" not in tags
 
-    def test_disable_tags(self):
-        tags = self.collector._build_tags(self.result, settings={"enable_rating": True, "enable_rating_score": True, "enable_character": True, "enable_tags": False})
+    # --- blacklist ---
+
+    def test_blacklist_removes_tags(self):
+        tags = self.collector._build_tags(self.result, settings={"rating_mode": "top", "enable_character": True, "enable_tags": True, "tag_blacklist": "1girl, smile"})
+        assert "1girl" not in tags["tags"]
+        assert "smile" not in tags["tags"]
+        assert "blue_hair" in tags["tags"]
+
+    def test_blacklist_all_general_no_tags_key(self):
+        tags = self.collector._build_tags(self.result, settings={"rating_mode": "top", "enable_character": True, "enable_tags": True, "tag_blacklist": "1girl, blue_hair, smile"})
         assert "tags" not in tags
 
-    def test_disable_all(self):
-        tags = self.collector._build_tags(self.result, settings={"enable_rating": False, "enable_rating_score": False, "enable_character": False, "enable_tags": False})
-        assert tags == {}
+    def test_blacklist_empty_string(self):
+        tags = self.collector._build_tags(self.result, settings={"rating_mode": "top", "enable_character": True, "enable_tags": True, "tag_blacklist": ""})
+        assert "1girl" in tags["tags"]
+
+    # --- uses instance settings ---
 
     def test_uses_instance_settings_by_default(self):
-        self.collector._settings = {"enable_rating": False, "enable_rating_score": False, "enable_character": True, "enable_tags": True}
+        self.collector._settings = {"enable_rating": False, "rating_mode": "top", "enable_character": True, "enable_tags": True, "tag_blacklist": ""}
         tags = self.collector._build_tags(self.result)
         assert "rating" not in tags
         assert "rating_score" not in tags
         assert "character" in tags
         assert "tags" in tags
+
+
+class TestParseBlacklist:
+    def test_empty_string(self):
+        assert parse_blacklist("") == []
+
+    def test_single_tag(self):
+        assert parse_blacklist("1boy") == ["1boy"]
+
+    def test_multiple_tags(self):
+        assert parse_blacklist("1boy, cat, simple_background") == ["1boy", "cat", "simple_background"]
+
+    def test_whitespace_handling(self):
+        assert parse_blacklist("  1boy , cat ,  ") == ["1boy", "cat"]
 
 
 class TestTwoLevelCache:
@@ -437,8 +488,8 @@ class TestOnRequest:
                 {"path": "/test.jpg", "settings": {"general_threshold": 0.05, "character_threshold": 0.5}},
                 None,
             )
-        assert result["rating"] == "general"
-        assert result["rating_score"] == "0.85"
+        assert "ratings" in result
+        assert result["ratings"]["general"] == 0.85
         assert "general" in result
         assert "character" in result
         assert result["path"] == "/test.jpg"
@@ -449,7 +500,7 @@ class TestSettingsIntegration:
         collector = WD14TaggerCollector()
         assert "general_threshold" in collector._settings
         assert "character_threshold" in collector._settings
-        assert "enable_rating" in collector._settings
+        assert "rating_mode" in collector._settings
 
     def test_process_uses_settings_thresholds(self):
         collector = WD14TaggerCollector()

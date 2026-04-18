@@ -166,9 +166,13 @@ class TestExtensionAttributes:
                 assert cls.DEFAULT_ENABLED is True, f"{cls.__name__} in {ext_name} should be DEFAULT_ENABLED=True"
 
     def test_ai_tagger_default_disabled(self):
+        from wafer.plugin import BasePanelPlugin
+
         folder = os.path.join(EXTENSIONS_DIR, "ai_tagger")
         found = _import_extension("ai_tagger", folder)
         for _, cls in found:
+            if issubclass(cls, BasePanelPlugin):
+                continue
             assert not getattr(cls, "DEFAULT_ENABLED", False), f"{cls.__name__} should be disabled by default"
 
     def test_text_generation_default_disabled(self):

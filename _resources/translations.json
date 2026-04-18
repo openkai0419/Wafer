@@ -1,4 +1,136 @@
 {
+  "Output": {
+    "en": "Output",
+    "ja": ""
+  },
+  "Raw": {
+    "en": "Raw",
+    "ja": ""
+  },
+  "Drop a file here for preview": {
+    "en": "Drop a file here for preview",
+    "ja": ""
+  },
+  "All individual  →  rating_general, ...": {
+    "en": "All individual  →  rating_general, ...",
+    "ja": ""
+  },
+  "Top + score  →  rating, rating_score": {
+    "en": "Top + score  →  rating, rating_score",
+    "ja": ""
+  },
+  "Top name only  →  rating": {
+    "en": "Top name only  →  rating",
+    "ja": ""
+  },
+  "Character": {
+    "en": "Character",
+    "ja": ""
+  },
+  "Click tags in Raw preview to toggle": {
+    "en": "Click tags in Raw preview to toggle",
+    "ja": ""
+  },
+  "Enable": {
+    "en": "Enable",
+    "ja": ""
+  },
+  "General": {
+    "en": "General",
+    "ja": ""
+  },
+  "Rating": {
+    "en": "Rating",
+    "ja": ""
+  },
+  "Threshold:": {
+    "en": "Threshold:",
+    "ja": ""
+  },
+  "(no tags)": {
+    "en": "(no tags)",
+    "ja": ""
+  },
+  "All ratings (individual)  →  rating_general, rating_sensitive, ...": {
+    "en": "All ratings (individual)  →  rating_general, rating_sensitive, ...",
+    "ja": ""
+  },
+  "Clear All": {
+    "en": "Clear All",
+    "ja": ""
+  },
+  "Click tags in Raw preview to add": {
+    "en": "Click tags in Raw preview to add",
+    "ja": ""
+  },
+  "Device: {device}  ({name})\nModel: wd-swinv2-tagger-v3 (SmilingWolf)": {
+    "en": "Device: {device}  ({name})\nModel: wd-swinv2-tagger-v3 (SmilingWolf)",
+    "ja": ""
+  },
+  "Filtered Output": {
+    "en": "Filtered Output",
+    "ja": ""
+  },
+  "None (no rating output)": {
+    "en": "None (no rating output)",
+    "ja": ""
+  },
+  "Rating Format": {
+    "en": "Rating Format",
+    "ja": ""
+  },
+  "Raw Output": {
+    "en": "Raw Output",
+    "ja": ""
+  },
+  "Tag Blacklist": {
+    "en": "Tag Blacklist",
+    "ja": ""
+  },
+  "Top rating only  →  rating, rating_score": {
+    "en": "Top rating only  →  rating, rating_score",
+    "ja": ""
+  },
+  "Character Tags": {
+    "en": "Character Tags",
+    "ja": ""
+  },
+  "Character Threshold:": {
+    "en": "Character Threshold:",
+    "ja": ""
+  },
+  "General Tags": {
+    "en": "General Tags",
+    "ja": ""
+  },
+  "General Threshold:": {
+    "en": "General Threshold:",
+    "ja": ""
+  },
+  "Generating tags...": {
+    "en": "Generating tags...",
+    "ja": ""
+  },
+  "Rating (top rating name)": {
+    "en": "Rating (top rating name)",
+    "ja": ""
+  },
+  "Rating Score (confidence)": {
+    "en": "Rating Score (confidence)",
+    "ja": ""
+  },
+  "Tag Output": {
+    "en": "Tag Output",
+    "ja": ""
+  },
+  "Thresholds": {
+    "en": "Thresholds",
+    "ja": ""
+  },
+  "WD14 Tagger Settings": {
+    "en": "WD14 Tagger Settings",
+    "ja": ""
+  },
   "Save settings and re-collect all databases?": {
     "en": "Save settings and re-collect all databases?",
     "ja": ""

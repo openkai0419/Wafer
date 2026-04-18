@@ -32,7 +32,7 @@ class TestViewerThumbnailDefaultSize:
         orig = instance._thumbnailer
         instance._thumbnailer = thumbnailer
         try:
-            instance.load("dummy.xyz", size=2048)
+            instance.load_pil("dummy.xyz", size=2048)
             thumbnailer.get_thumbnail.assert_called_once_with("dummy.xyz", size=2048)
         finally:
             instance._thumbnailer = orig
@@ -47,7 +47,7 @@ class TestViewerThumbnailDefaultSize:
         orig = instance._thumbnailer
         instance._thumbnailer = thumbnailer
         try:
-            instance.load("dummy.xyz", size=400)
+            instance.load_pil("dummy.xyz", size=400)
             thumbnailer.get_thumbnail.assert_called_once_with("dummy.xyz", size=400)
         finally:
             instance._thumbnailer = orig

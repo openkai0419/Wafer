@@ -1,7 +1,13 @@
-import numpy as np
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from PIL import Image
 
 from ..registry import BasePlugin
+
+if TYPE_CHECKING:
+    import numpy as np
 
 
 class BaseImageLoader(BasePlugin):

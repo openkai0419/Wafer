@@ -44,7 +44,8 @@ class BlipSettingsWidget(QtWidgets.QWidget):
         self._thumb_label = QtWidgets.QLabel()
         self._thumb_label.setMinimumSize(dpix(64), dpix(64))
         self._thumb_label.setSizePolicy(
-            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding,
+            QtWidgets.QSizePolicy.Expanding,
+            QtWidgets.QSizePolicy.Expanding,
         )
         self._thumb_label.setAlignment(QtCore.Qt.AlignCenter)
         self._thumb_label.setStyleSheet(f"border: 1px solid palette(mid); border-radius: {dpix(4)}px;")
@@ -154,7 +155,9 @@ class BlipSettingsWidget(QtWidgets.QWidget):
             return
         label_size = self._thumb_label.size()
         scaled = self._original_pixmap.scaled(
-            label_size, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation,
+            label_size,
+            QtCore.Qt.KeepAspectRatio,
+            QtCore.Qt.SmoothTransformation,
         )
         self._thumb_label.setPixmap(scaled)
 
@@ -271,9 +274,7 @@ class BlipSettingsWidget(QtWidgets.QWidget):
             action = "saved + delete & recollect" if do_recollect else "saved + delete"
         else:
             action = "saved"
-        Notifier.info(
-            f"BLIP settings {action} (min={values['min_length']}, max={values['max_length']}, beams={values['num_beams']})"
-        )
+        Notifier.info(f"BLIP settings {action} (min={values['min_length']}, max={values['max_length']}, beams={values['num_beams']})")
 
     def _on_reset(self):
         self._min_spin.setValue(5)
@@ -287,9 +288,7 @@ class BlipSettingsWidget(QtWidgets.QWidget):
         Notifier.info(t("BLIP settings reverted"))
 
     @staticmethod
-    def _send_delete_and_recollect(
-        db_names: list[str], *, delete: bool, re_collect: bool
-    ):
+    def _send_delete_and_recollect(db_names: list[str], *, delete: bool, re_collect: bool):
         from wafer.core.commands.binding.instance_registry import InstanceRegistry
 
         node = InstanceRegistry.instance().resolve_node()
@@ -313,11 +312,7 @@ class _BlipSaveConfirmDialog(QtWidgets.QDialog):
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setSpacing(dpix(8))
-        layout.addWidget(
-            QtWidgets.QLabel(
-                t("Settings have been modified.\nThis will apply to all databases.")
-            )
-        )
+        layout.addWidget(QtWidgets.QLabel(t("Settings have been modified.\nThis will apply to all databases.")))
 
         self._delete_cb = QtWidgets.QCheckBox(t("Delete existing BLIP data"))
         self._delete_cb.setChecked(True)

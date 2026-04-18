@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from ._inference import WD14Inference
 
 from ._downloader import ensure_model
-from .settings import wd14_config
+from .settings import parse_blacklist, wd14_config
 
 _CACHE_MAX = 5000
 _ENGINE_IDLE_TIMEOUT = 120.0
@@ -113,22 +113,35 @@ class WD14TaggerCollector(BaseSingletonCollector):
     def _build_tags(self, result: dict, settings: dict | None = None) -> dict:
         s = settings or self._settings
         ratings = result["ratings"]
-        top_rating = max(ratings, key=ratings.get)
+        blacklist = set(parse_blacklist(s.get("tag_blacklist", ""))) if s.get("enable_blacklist", True) else set()
 
         tags = {}
         if s.get("enable_rating", True):
-            tags["rating"] = top_rating
-        if s.get("enable_rating_score", True):
-            tags["rating_score"] = str(round(ratings[top_rating], 4))
+            mode = s.get("rating_mode", "top")
+            if mode == "name":
+                top_rating = max(ratings, key=ratings.get)
+                tags["rating"] = top_rating
+            elif mode == "top":
+                top_rating = max(ratings, key=ratings.get)
+                tags["rating"] = top_rating
+                tags["rating_score"] = str(round(ratings[top_rating], 4))
+            elif mode == "all":
+                for name, score in ratings.items():
+                    tags[f"rating_{name}"] = str(round(score, 4))
+
         if s.get("enable_character", True) and result["character"]:
             tags["character"] = ", ".join(result["character"].keys())
         if s.get("enable_tags", True) and result["general"]:
-            tags["tags"] = ", ".join(result["general"].keys())
+            filtered = [k for k in result["general"] if k not in blacklist]
+            if filtered:
+                tags["tags"] = ", ".join(filtered)
         return tags
 
     def on_notify(self, payload=None) -> None:
         self._settings = wd14_config.load()
-        AppLogger.info(f"WD14 settings reloaded: {self._settings}")
+        self._hash_cache.clear()
+        self._pixel_cache.clear()
+        AppLogger.info(f"WD14 settings reloaded (caches cleared): {self._settings}")
 
     def on_request(self, action, payload, msg):
         if action == "wd14.preview":
@@ -147,19 +160,19 @@ class WD14TaggerCollector(BaseSingletonCollector):
         thumb = image_loader_resolver.load_pil(path, size=self._engine.input_height)
         if thumb is None:
             return {"error": "thumbnail_failed"}
+        general_th = settings.get("general_threshold", self._settings.get("general_threshold", 0.057))
+        character_th = settings.get("character_threshold", self._settings.get("character_threshold", 0.8))
         try:
             result = self._engine.predict(
                 thumb,
-                general_threshold=settings.get("general_threshold", self._settings.get("general_threshold", 0.057)),
-                character_threshold=settings.get("character_threshold", self._settings.get("character_threshold", 0.8)),
+                general_threshold=general_th,
+                character_threshold=character_th,
             )
         except Exception as e:
             AppLogger.warning(f"WD14 preview failed: {path}", exc=e)
             return {"error": str(e)}
-        top_rating = max(result["ratings"], key=result["ratings"].get)
         return {
-            "rating": top_rating,
-            "rating_score": str(round(result["ratings"][top_rating], 4)),
+            "ratings": result["ratings"],
             "character": result["character"],
             "general": result["general"],
             "path": path,

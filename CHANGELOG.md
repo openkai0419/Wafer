@@ -4,6 +4,53 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.6.2]
+### Added
+- **ImageLoader plugin type** (`wafer/plugin/imageloader/`): new `BaseImageLoader` base class, `ImageLoaderResolver` with `load()` / `load_pil()` resolution chain, and `image_loader_resolver` singleton — decouples raw image loading from grid rendering so collectors and other subsystems can load images without depending on Qt
+- **`ImageFileLoader`** (`extensions/image/loader.py`): `BaseImageLoader` implementation using OpenCV with PIL fallback, replaces the former `ImageGridPlugin` for image loading; returns `np.ndarray` / `PIL.Image` instead of `QImage`
+- **`SystemImageLoader`** (`wafer/builtins/imageloader.py`): fallback `BaseImageLoader` using `FileThumbnailer`, replaces `SystemThumbnailPlugin` (former `ImageGridPlugin` in `wafer/builtins/grid.py`)
+- **WD14 Tagger Settings panel** (`extensions/ai_tagger/panel.py`): `WD14SettingsPanelPlugin` with drag-and-drop live preview, configurable thresholds (`general_threshold`, `character_threshold`), rating mode selection (top/name/all), character and tag output toggles, tag blacklist, device info display, and save with optional delete & re-collect confirmation dialog
+- **`wd14_config`** (`extensions/ai_tagger/settings.py`): WD14-specific `PluginConfig` instance with default inference parameters and `parse_blacklist()` helper
+- **`numpy_to_qimage()` and `pil_to_qimage()`** (`wafer/core/qt/image.py`): centralized numpy/PIL-to-QImage conversion utilities supporting Grayscale8, RGB888, RGBA8888 formats with buffer pinning
+- **`CHUNK_TIMEOUT` class variable** on `BaseCollectorPlugin` and `BaseSingletonCollector` (`wafer/plugin/collector/base.py`): per-collector configurable chunk processing timeout (default 120s); `CollectorResolver.chunk_timeout()` accessor added
+- **`_DeleteConfirmDialog`** (`wafer/builtins/database_manager/data_tab.py`): dedicated confirmation dialog for data deletion with re-collect checkbox, replacing inline `QMessageBox`
+- **`_BlipSaveConfirmDialog`** (`extensions/blip_captioner/panel.py`): save confirmation dialog with separate delete/re-collect checkboxes
+- **`_ContainImageLabel`** (`extensions/exiftool/panel.py`): auto-scaling image label widget that maintains aspect ratio on resize
+- **Loading indicator** in ExifTool key browser tab via `OverlayLoadingIndicator`
+- `WD14TaggerCollector.on_request()` handling `wd14.preview` and `wd14.device_info` actions for live settings panel preview
+- `WD14TaggerCollector.on_notify()` reloads settings from `wd14_config` and clears caches
+
+### Changed
+- **Grid thumbnail pipeline refactored**: `GridResolver` now merges widget plugins and image loaders into a unified `resolve_merged_chain()` sorted by priority; `GridResolver.load()` delegates to `image_loader_resolver` instead of iterating `ImageGridPlugin` instances; `GridPipeline` uses merged chain for resolve dispatch
+- **Collectors use `image_loader_resolver`**: `WD14TaggerCollector` and `BlipCaptionerCollector` load thumbnails via `image_loader_resolver.load_pil()` instead of `FileThumbnailer` directly
+- `WD14TaggerCollector._build_tags()` now respects configurable settings: rating mode (top/name/all), enable/disable flags for rating/character/tags, and tag blacklist filtering
+- `WD14TaggerCollector.process()` reads thresholds from `wd14_config` settings instead of hardcoded constants
+- `PluginConfig.load()` now acquires `ini_lock` for the entire read operation (was previously unlocked)
+- `BlipCaptionerCollector.CHUNK_TIMEOUT` set to 360s (heavy model inference)
+- `DevLogPanel` renamed to `LogPanel`, `DevLogPanelPlugin` renamed to `LogPanelPlugin` with NAME `"log"` and DISPLAY_NAME `"Log"` (`wafer/builtins/devlog.py` → `wafer/builtins/log_panel.py`); `DEFAULT_ENABLED` changed from `DEV_MODE` to `False`
+- `ImageGridPlugin` base class removed from `wafer/plugin/grid/base.py`; removed from `wafer/plugin/__init__.py` public API; `BaseImageLoader` added to public API
+- BLIP Settings panel: preview auto-triggers on drop, resizable thumbnail, `Dispatcher.post()` replaces raw `threading.Thread`, save flow shows confirmation dialog with separate delete/re-collect options, added "Revert" button
+- ExifTool Settings panel: "Save & Delete Data" button renamed to "Save", "Cancel" button renamed to "Revert", save skips when no changes detected, sample preview thumbnail uses `_ContainImageLabel` for responsive scaling
+- Database Manager: "Cancel" button renamed to "Revert"; data deletion re-collect checkbox moved from inline to `_DeleteConfirmDialog`
+- Plugin Manager: "Cancel" button renamed to "Revert"; `open_panel_btn` color changed from `success` to `accent` theme color
+- `AppLogger._forward()` now forwards all log levels to remote (removed `DEV_MODE` gate and `_ALWAYS_FORWARD` filter)
+- `FunctionProfiler` summary output downgraded from `info` to `debug` level
+- IPC `try_put()` accepts optional `label` parameter for improved queue eviction diagnostics; all call sites updated with descriptive labels
+- IPC `Broker` simplified ZMQError logging (removed `EHOSTUNREACH` filter)
+- `Outbox.scan_all_outbox()` checks for `outbox` table existence before querying (prevents crash on empty/new DBs)
+- Duplicate `_pil_to_qimage()` in `wafer/ui/dialogs.py` replaced with shared `pil_to_qimage()` from `wafer/core/qt/image.py`
+- `_setup_faulthandler()` in `main.py` accepts `force` parameter
+- Silent `except` blocks replaced with logged warnings in `BatchRenamerPlugin.save_state()`, `DatabaseManagerPlugin.save_state()`/`restore_state()`, `file_operations.py` `_rmtree_onerror()`/cut cleanup, and `installer.py` `apply_pending_packages()`
+- `CollectorWorker` reads `CHUNK_TIMEOUT` from collector class via `collector_resolver.chunk_timeout()` instead of using a hardcoded constant
+
+### Removed
+- `wafer/builtins/grid.py` (`SystemThumbnailPlugin` — replaced by `SystemImageLoader` in `wafer/builtins/imageloader.py`)
+- `extensions/image/grid.py` (`ImageGridPlugin` — image loading moved to `ImageFileLoader` in `extensions/image/loader.py`)
+- `ImageGridPlugin` abstract base class from `wafer/plugin/grid/base.py`
+- `GridResolver.resolve_chain()`, `resolve_instance()`, `resolve_image_instance()` methods (replaced by `resolve_merged_chain()`)
+- Hardcoded `GENERAL_THRESHOLD` / `CHARACTER_THRESHOLD` constants from `extensions/ai_tagger/collector.py` (replaced by `wd14_config` settings)
+- `_CHUNK_TIMEOUT` constant from `wafer/app/collector/worker.py` (replaced by per-collector `CHUNK_TIMEOUT` class variable)
+
 ## [v0.6.1]
 ### Added
 - **`PluginConfig`** (`wafer/plugin/config.py`): INI-based per-plugin configuration system with typed load/save, section-scoped caching, thread-safe writes via shared `ini_lock`, and `save_and_notify()` for IPC propagation to running collectors

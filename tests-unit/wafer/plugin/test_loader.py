@@ -15,8 +15,8 @@ def plugin_env(tmp_path):
     stub_dir.mkdir(parents=True)
     (stub_dir / "__init__.py").write_text("")
     (stub_dir / "grid.py").write_text(
-        "from wafer.plugin.grid.base import ImageGridPlugin\n"
-        "class StubGridPlugin(ImageGridPlugin):\n"
+        "from wafer.plugin.grid.base import BaseGridPlugin\n"
+        "class StubGridPlugin(BaseGridPlugin):\n"
         '    NAME = "stub_test"\n'
         '    EXTENSIONS = (".stub",)\n'
         "    PRIORITY = 10\n"
@@ -62,8 +62,8 @@ class TestConfigureHook:
         broken_dir.mkdir(parents=True)
         (broken_dir / "__init__.py").write_text("")
         (broken_dir / "grid.py").write_text(
-            "from wafer.plugin.grid.base import ImageGridPlugin\n"
-            "class BrokenConfigure(ImageGridPlugin):\n"
+            "from wafer.plugin.grid.base import BaseGridPlugin\n"
+            "class BrokenConfigure(BaseGridPlugin):\n"
             '    NAME = "broken"\n'
             '    EXTENSIONS = (".brk",)\n'
             "    PRIORITY = 10\n"
@@ -177,8 +177,8 @@ class TestNeedsSetupSkip:
         (ext_dir / "__init__.py").write_text("")
         (ext_dir / "requirements.txt").write_text("some-package\n")
         (ext_dir / "grid.py").write_text(
-            "from wafer.plugin.grid.base import ImageGridPlugin\n"
-            "class NeedsGrid(ImageGridPlugin):\n"
+            "from wafer.plugin.grid.base import BaseGridPlugin\n"
+            "class NeedsGrid(BaseGridPlugin):\n"
             '    NAME = "needs_ext"\n'
             '    EXTENSIONS = (".nds",)\n'
             "    PRIORITY = 1\n"
@@ -441,8 +441,8 @@ class TestDefaultEnabled:
         stub_dir.mkdir(parents=True)
         (stub_dir / "__init__.py").write_text("")
         (stub_dir / "grid.py").write_text(
-            "from wafer.plugin.grid.base import ImageGridPlugin\n"
-            "class DisabledGridPlugin(ImageGridPlugin):\n"
+            "from wafer.plugin.grid.base import BaseGridPlugin\n"
+            "class DisabledGridPlugin(BaseGridPlugin):\n"
             '    NAME = "disabled_test"\n'
             '    EXTENSIONS = (".dis",)\n'
             "    PRIORITY = 10\n"
@@ -475,8 +475,8 @@ class TestDefaultEnabled:
         stub_dir.mkdir(parents=True)
         (stub_dir / "__init__.py").write_text("")
         (stub_dir / "grid.py").write_text(
-            "from wafer.plugin.grid.base import ImageGridPlugin\n"
-            "class DisabledGridPlugin2(ImageGridPlugin):\n"
+            "from wafer.plugin.grid.base import BaseGridPlugin\n"
+            "class DisabledGridPlugin2(BaseGridPlugin):\n"
             '    NAME = "disabled_test2"\n'
             '    EXTENSIONS = (".dis2",)\n'
             "    PRIORITY = 10\n"

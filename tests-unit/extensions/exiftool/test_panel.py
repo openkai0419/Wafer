@@ -18,11 +18,12 @@ def qapp():
 
 def _make_key_browser(qapp, mode, filter_keys, key_data=None):
     from extensions.exiftool.panel import _KeyBrowserTab
-    from wafer.core.qt.dispatcher import Dispatcher, CancelSlot
+    from wafer.core.qt.dispatcher import CancelSlot
 
+    mock_dispatcher = MagicMock()
     with patch(f"{MODULE}._query_all_keys_merged", return_value=[]), \
          patch(f"{MODULE}.dpix", side_effect=lambda x: x):
-        tab = _KeyBrowserTab(mode, filter_keys, Dispatcher(), CancelSlot())
+        tab = _KeyBrowserTab(mode, filter_keys, mock_dispatcher, CancelSlot())
     if key_data is not None:
         tab._key_data = key_data
     return tab
@@ -30,10 +31,11 @@ def _make_key_browser(qapp, mode, filter_keys, key_data=None):
 
 def _make_sample_preview(qapp, mode, filter_keys):
     from extensions.exiftool.panel import _SamplePreviewTab
-    from wafer.core.qt.dispatcher import Dispatcher, CancelSlot
+    from wafer.core.qt.dispatcher import CancelSlot
 
+    mock_dispatcher = MagicMock()
     with patch(f"{MODULE}.dpix", side_effect=lambda x: x):
-        tab = _SamplePreviewTab(mode, filter_keys, Dispatcher(), CancelSlot())
+        tab = _SamplePreviewTab(mode, filter_keys, mock_dispatcher, CancelSlot())
     return tab
 
 

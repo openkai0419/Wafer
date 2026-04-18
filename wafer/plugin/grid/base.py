@@ -1,4 +1,4 @@
-from abc import ABC, abstractmethod
+from abc import ABC
 from typing import Any
 from PySide6 import QtCore
 from ..registry import BasePlugin
@@ -21,11 +21,6 @@ def _get_error_image(size):
 
 class BaseGridPlugin(BasePlugin, ABC):
     pass
-
-
-class ImageGridPlugin(BaseGridPlugin):
-    @abstractmethod
-    def load(self, path: str, size=None): ...
 
 
 class WidgetGridPlugin(BaseGridPlugin):

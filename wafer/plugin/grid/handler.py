@@ -1,10 +1,14 @@
-from PySide6 import QtGui
+from PySide6 import QtCore, QtGui
 
+from ...core.qt.image import numpy_to_qimage
 from ...utils.profiling import profiler
 from ..registry import FilePluginRegistry
-from .base import BaseGridPlugin, ImageGridPlugin, WidgetGridPlugin
+from .base import BaseGridPlugin, WidgetGridPlugin
 
 VIEWER_THUMBNAIL_DEFAULT_SIZE = 512
+
+WIDGET = "widget"
+IMAGE = "image"
 
 
 class GridResolver:
@@ -16,31 +20,30 @@ class GridResolver:
     def resolve(self, path: str) -> type[BaseGridPlugin] | None:
         return self.registry.resolve(path)
 
-    def resolve_chain(self, path: str) -> list[type[BaseGridPlugin]]:
-        return self.registry.resolve_chain(path)
+    def resolve_merged_chain(self, path: str) -> list[tuple[type, str]]:
+        from ..imageloader.handler import image_loader_resolver
 
-    def resolve_instance(self, path: str) -> BaseGridPlugin | None:
-        return self.registry.resolve_instance(path)
-
-    def resolve_image_instance(self, path: str) -> ImageGridPlugin | None:
-        for cls in self.registry.resolve_chain(path):
-            inst = self.registry.instance(cls.NAME)
-            if isinstance(inst, ImageGridPlugin):
-                return inst
-        return None
+        widget_chain = self.registry.resolve_chain(path)
+        loader_chain = image_loader_resolver.registry.resolve_chain(path)
+        merged = [(cls, WIDGET) for cls in widget_chain] + [(cls, IMAGE) for cls in loader_chain]
+        merged.sort(key=lambda x: (x[0].PRIORITY, x[1] == WIDGET), reverse=True)
+        return merged
 
     def is_widget_plugin(self, path: str) -> bool:
         return isinstance(self.registry.resolve_instance(path), WidgetGridPlugin)
 
     @profiler.profile
-    def load(self, path: str, size=None) -> QtGui.QImage | None:
-        for plugin_cls in self.registry.resolve_chain(path):
-            instance = self.registry.instance(plugin_cls.NAME)
-            if isinstance(instance, ImageGridPlugin):
-                result = instance.load(path, size)
-                if result is not None:
-                    return result
-        return None
+    def load(self, path: str, size: QtCore.QSize | None = None) -> QtGui.QImage | None:
+        from ..imageloader.handler import image_loader_resolver
+
+        int_size = max(size.width(), size.height()) if size is not None else self.thumbnail_size
+        arr = image_loader_resolver.load(path, int_size)
+        if arr is None:
+            return None
+        qimage = numpy_to_qimage(arr)
+        if size is not None:
+            qimage = qimage.scaled(size, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+        return qimage
 
 
 grid_resolver = GridResolver()

@@ -3,10 +3,97 @@ import struct
 
 import cv2
 import numpy as np
+from PIL import Image
 from PySide6 import QtCore, QtGui
 
+from wafer.plugin import BaseImageLoader
 from wafer.utils.logs import AppLogger
 from wafer.utils.profiling import profiler
+
+
+class ImageFileLoader(BaseImageLoader):
+    NAME = "image"
+    EXTENSIONS = (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp")
+    PRIORITY = 100
+    DEFAULT_ENABLED = True
+    SCOPE = "*"
+
+    @profiler.profile
+    def load(self, path: str, size: int | None = None) -> np.ndarray | None:
+        ext = os.path.splitext(path)[-1].lower()
+        try:
+            try:
+                data = np.fromfile(path, dtype=np.uint8)
+            except (OSError, MemoryError):
+                with open(path, "rb") as f:
+                    data = np.frombuffer(f.read(), dtype=np.uint8)
+            flags = _imread_flags_for_size(ext, size, data)
+            arr = cv2.imdecode(data, flags)
+
+            if arr is None or _classify_opencv_array(arr, ext) != "opencv":
+                result = _pil_read_numpy(path, size)
+                if result is None:
+                    AppLogger.debug(f"[image/loader] cv2+PIL both returned None: {path} (cv2_arr={'None' if arr is None else f'{arr.shape}/{arr.dtype}'}, data_len={len(data)})")
+                return result
+
+            if size is not None:
+                h, w = arr.shape[:2]
+                scale = max(size / w, size / h)
+                if abs(scale - 1.0) > 0.01:
+                    new_w = max(1, round(w * scale))
+                    new_h = max(1, round(h * scale))
+                    interp = cv2.INTER_AREA if scale < 1.0 else cv2.INTER_LANCZOS4
+                    arr = cv2.resize(arr, (new_w, new_h), interpolation=interp)
+
+            return _bgr_to_standard(arr)
+
+        except Exception as e:
+            try:
+                result = _pil_read_numpy(path, size)
+                if result is not None:
+                    return result
+            except Exception as pe:
+                AppLogger.warning(f"[image/loader] PIL fallback failed: {path} ({pe})")
+            AppLogger.warning(f"[image/loader] Failed to load image: {path} ({e})")
+            return None
+
+
+def _pil_read_numpy(path: str, size: int | None = None) -> np.ndarray | None:
+    try:
+        img = Image.open(path)
+        img.load()
+    except Exception:
+        return None
+    if size is not None:
+        w, h = img.size
+        if w > 0 and h > 0:
+            scale = max(size / w, size / h)
+            new_w = max(1, round(w * scale))
+            new_h = max(1, round(h * scale))
+            img = img.resize((new_w, new_h), Image.LANCZOS)
+    if img.mode not in ("RGB", "RGBA", "L"):
+        img = img.convert("RGB")
+    return np.array(img)
+
+
+def _bgr_to_standard(arr) -> np.ndarray:
+    if arr.dtype == np.uint16:
+        arr = (arr >> 8).astype(np.uint8)
+
+    if arr.ndim == 2:
+        return arr
+
+    if arr.ndim == 3:
+        _h, _w, c = arr.shape
+        if c == 2:
+            g, a = cv2.split(arr)
+            return np.dstack([cv2.cvtColor(g, cv2.COLOR_GRAY2RGB), a])
+        if c == 3:
+            return cv2.cvtColor(arr, cv2.COLOR_BGR2RGB)
+        if c == 4:
+            return cv2.cvtColor(arr, cv2.COLOR_BGRA2RGBA)
+
+    raise ValueError("Unsupported image dimensions/channels")
 
 
 @profiler.profile
@@ -136,11 +223,14 @@ def _jpeg_dimensions(data):
 def _imread_flags_for_size(ext, size, data=None):
     if size is None:
         return cv2.IMREAD_UNCHANGED
+    if isinstance(size, int):
+        tw = th = size
+    else:
+        tw, th = size.width(), size.height()
     if ext in (".jpg", ".jpeg"):
         dims = _jpeg_dimensions(data) if data is not None else None
         if dims is not None:
             ow, oh = dims
-            tw, th = size.width(), size.height()
             if ow // 8 >= tw and oh // 8 >= th:
                 return cv2.IMREAD_REDUCED_COLOR_8
             if ow // 4 >= tw and oh // 4 >= th:

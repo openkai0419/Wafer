@@ -4,6 +4,7 @@ from PySide6 import QtWidgets, QtCore, QtGui
 
 from wafer.plugin import BasePanelPlugin
 from wafer.plugin.collector.base import BaseCollector
+from wafer.plugin.grid.handler import load_thumbnail
 from wafer.utils.formatting import dpix
 from wafer.utils.logs import AppLogger
 from wafer.utils.notifier import Notifier
@@ -135,14 +136,9 @@ class BlipSettingsWidget(QtWidgets.QWidget):
     def _set_preview_path(self, path: str):
         self._current_path = path
         self._preview_btn.setEnabled(True)
-        pixmap = QtGui.QPixmap(path)
-        if not pixmap.isNull():
-            scaled = pixmap.scaled(
-                self._thumb_label.size(),
-                QtCore.Qt.KeepAspectRatio,
-                QtCore.Qt.SmoothTransformation,
-            )
-            self._thumb_label.setPixmap(scaled)
+        qimage = load_thumbnail(path, self._thumb_label.size())
+        if qimage is not None and not qimage.isNull():
+            self._thumb_label.setPixmap(QtGui.QPixmap.fromImage(qimage))
         else:
             self._thumb_label.setText(t("(no preview)"))
         self._caption_label.setText(t("Click Preview to generate caption"))

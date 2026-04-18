@@ -21,12 +21,12 @@ from wafer.utils.process_lock import SafeProcessLock
 from wafer.utils.logs import AppLogger
 
 
-def _setup_faulthandler():
+def _setup_faulthandler(force=False):
     # WARNING: faulthandler conflicts with LuaJIT SEH (0xe24c4a02) in libmpv-2.dll.
     # Enabling this WILL cause process crashes when video playback is active.
     # Only enable via WAFER_FAULTHANDLER=1 for debugging non-mpv fatal crashes.
     # Root fix: rebuild libmpv with -Dlua=disabled (see jaseg/python-mpv#305).
-    if not os.environ.get('WAFER_FAULTHANDLER'):
+    if not os.environ.get('WAFER_FAULTHANDLER') and not force:
         return
     crash_dir = resolve_data_path(".crashlog")
     os.makedirs(crash_dir, exist_ok=True)

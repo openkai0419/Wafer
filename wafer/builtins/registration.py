@@ -26,7 +26,7 @@ def _discover_builtins(module, registry_map) -> list[tuple[str, type]]:
 
 
 def _import_builtin_modules():
-    from . import devlog, filters, grid, layouts, rename_sources, sorts, viewer
+    from . import devlog, filters, imageloader, layouts, rename_sources, sorts, viewer
     from .batch_renamer import (
         engine as _br_engine,
         overlay as _br_overlay,
@@ -62,7 +62,7 @@ def _import_builtin_modules():
     return [
         devlog,
         filters,
-        grid,
+        imageloader,
         layouts,
         rename_sources,
         sorts,

@@ -9,6 +9,7 @@ from PySide6 import QtWidgets, QtCore, QtGui
 
 from wafer.plugin import BasePanelPlugin
 from wafer.plugin.collector.base import BaseCollector
+from wafer.plugin.grid.handler import load_thumbnail
 from wafer.utils.formatting import dpix
 from wafer.utils.logs import AppLogger
 from wafer.utils.notifier import Notifier
@@ -666,16 +667,9 @@ class _SamplePreviewTab(QtWidgets.QWidget):
                 return
             if cancel.is_cancelled():
                 return
-            pixmap = QtGui.QImage(path)
-            if not pixmap.isNull():
-                scaled = pixmap.scaled(
-                    dpix(240),
-                    dpix(240),
-                    QtCore.Qt.KeepAspectRatio,
-                    QtCore.Qt.SmoothTransformation,
-                )
-            else:
-                scaled = None
+            size = QtCore.QSize(dpix(240), dpix(240))
+            qimage = load_thumbnail(path, size)
+            scaled = qimage if qimage is not None and not qimage.isNull() else None
             if cancel.is_cancelled():
                 return
             self._dispatcher.invoke(lambda: self._apply_preview(path, meta, scaled, cancel))

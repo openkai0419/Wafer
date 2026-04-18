@@ -11,7 +11,6 @@ from ...plugin.collector.handler import collector_resolver
 from ...plugin.collector.base import CollectorResult, BaseSingletonCollector
 
 _MAX_WORKERS = 4
-_CHUNK_TIMEOUT = 120
 _CHUNK_SIZE = 50
 _SHUTDOWN_WAIT = 5
 
@@ -29,6 +28,7 @@ class CollectorWorker:
         self._node.subscribe("collect.batch", self._handle_batch)
         self._node.subscribe("plugin.notify", self._on_notify)
         self._node.subscribe("service.request", self._on_service_request)
+        self._chunk_timeout = collector_resolver.chunk_timeout(plugin_name)
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=_MAX_WORKERS)
         self._stop = threading.Event()
         self._batch_queue: queue.Queue = queue.Queue()
@@ -117,7 +117,7 @@ class CollectorWorker:
                     break
                 chunk = paths[i : i + _CHUNK_SIZE]
                 futures = {self._executor.submit(process_one, p): p for p in chunk}
-                done, not_done = concurrent.futures.wait(futures, timeout=_CHUNK_TIMEOUT)
+                done, not_done = concurrent.futures.wait(futures, timeout=self._chunk_timeout)
                 for fut in done:
                     try:
                         all_results.extend(fut.result())

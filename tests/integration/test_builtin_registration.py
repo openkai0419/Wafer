@@ -7,18 +7,19 @@ from wafer.plugin.query.handler import filter_registry, sort_registry
 from wafer.plugin.layout.handler import layout_registry
 from wafer.plugin.panel.handler import panel_registry
 from wafer.plugin.rename.handler import rename_source_registry
+from wafer.plugin.imageloader.handler import image_loader_resolver
 
 
-class TestBuiltinGridRegistration:
+class TestBuiltinImageLoaderRegistration:
     def test_system_thumbnail_registered(self):
-        assert "system_thumbnail" in grid_resolver.registry.names()
+        assert "system_thumbnail" in image_loader_resolver.registry.names()
 
     def test_system_thumbnail_is_fallback(self):
-        all_plugins = grid_resolver.registry.list_all()
+        all_plugins = image_loader_resolver.registry.list_all()
         assert all_plugins[-1].NAME == "system_thumbnail"
 
     def test_system_thumbnail_matches_any_extension(self):
-        cls = grid_resolver.registry.get("system_thumbnail")
+        cls = image_loader_resolver.registry.get("system_thumbnail")
         assert cls.EXTENSIONS == () or cls.match("test.xyz")
 
 
@@ -85,13 +86,13 @@ class TestBuiltinRenameSourceRegistration:
 
 class TestResolveChainWithBuiltins:
     def test_unknown_ext_falls_to_system_thumbnail(self):
-        chain = grid_resolver.resolve_chain("test.xyz_unknown")
-        names = [p.NAME for p in chain]
+        chain = grid_resolver.resolve_merged_chain("test.xyz_unknown")
+        names = [p.NAME for p, kind in chain]
         assert "system_thumbnail" in names
 
     def test_jpg_resolves_image_and_fallback(self):
-        chain = grid_resolver.resolve_chain("test.jpg")
-        names = [p.NAME for p in chain]
+        chain = grid_resolver.resolve_merged_chain("test.jpg")
+        names = [p.NAME for p, kind in chain]
         assert "image" in names
         assert "system_thumbnail" in names
         assert names.index("image") < names.index("system_thumbnail")

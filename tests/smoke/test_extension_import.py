@@ -41,7 +41,7 @@ class TestExtensionDiscovery:
 
     @pytest.mark.parametrize("ext_name", EXTENSION_FOLDERS)
     def test_discovered_plugins_have_valid_registry_key(self, ext_name):
-        valid_keys = {"viewer", "grid", "collector", "parser", "filter", "sort", "layout", "panel", "meta_panel", "rename_source", "command"}
+        valid_keys = {"viewer", "grid", "collector", "parser", "filter", "sort", "layout", "panel", "meta_panel", "rename_source", "imageloader", "command"}
         folder = os.path.join(EXTENSIONS_DIR, ext_name)
         found = _import_extension(ext_name, folder)
         for registry_key, cls in found:
@@ -59,7 +59,7 @@ class TestExtensionDiscovery:
 
 EXPECTED_PLUGINS = {
     "image": {
-        ("grid", "ImageGridPlugin"),
+        ("imageloader", "ImageFileLoader"),
         ("viewer", "ImageViewerPlugin"),
     },
     "video": {
@@ -120,23 +120,23 @@ class TestExpectedPluginDiscovery:
 
 
 class TestExtensionAttributes:
-    def test_image_grid_priority(self):
+    def test_image_loader_priority(self):
         folder = os.path.join(EXTENSIONS_DIR, "image")
         found = {cls.__name__: cls for _, cls in _import_extension("image", folder)}
-        assert found["ImageGridPlugin"].PRIORITY == 100
+        assert found["ImageFileLoader"].PRIORITY == 100
 
     def test_animated_higher_priority_than_image(self):
         image_folder = os.path.join(EXTENSIONS_DIR, "image")
         animated_folder = os.path.join(EXTENSIONS_DIR, "animated")
         image_found = {cls.__name__: cls for _, cls in _import_extension("image", image_folder)}
         animated_found = {cls.__name__: cls for _, cls in _import_extension("animated", animated_folder)}
-        assert animated_found["AnimatedGridPlugin"].PRIORITY > image_found["ImageGridPlugin"].PRIORITY
+        assert animated_found["AnimatedGridPlugin"].PRIORITY > image_found["ImageFileLoader"].PRIORITY
         assert animated_found["AnimatedViewerPlugin"].PRIORITY > image_found["ImageViewerPlugin"].PRIORITY
 
     def test_image_extensions_tuple(self):
         folder = os.path.join(EXTENSIONS_DIR, "image")
         found = {cls.__name__: cls for _, cls in _import_extension("image", folder)}
-        exts = found["ImageGridPlugin"].EXTENSIONS
+        exts = found["ImageFileLoader"].EXTENSIONS
         assert ".jpg" in exts
         assert ".jpeg" in exts
         assert ".png" in exts
@@ -154,7 +154,7 @@ class TestExtensionAttributes:
         animated_folder = os.path.join(EXTENSIONS_DIR, "animated")
         image_cls = {cls.__name__: cls for _, cls in _import_extension("image", image_folder)}
         animated_cls = {cls.__name__: cls for _, cls in _import_extension("animated", animated_folder)}
-        overlap = set(image_cls["ImageGridPlugin"].EXTENSIONS) & set(animated_cls["AnimatedGridPlugin"].EXTENSIONS)
+        overlap = set(image_cls["ImageFileLoader"].EXTENSIONS) & set(animated_cls["AnimatedGridPlugin"].EXTENSIONS)
         assert ".gif" in overlap
         assert ".webp" in overlap
 

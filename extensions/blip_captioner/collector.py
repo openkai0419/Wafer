@@ -7,8 +7,8 @@ import threading
 from collections import OrderedDict
 from typing import TYPE_CHECKING
 
-from wafer.core.platform.thumbnails import FileThumbnailer
 from wafer.plugin import BaseSingletonCollector, CollectorResult
+from wafer.plugin.imageloader.handler import image_loader_resolver
 from wafer.utils.logs import AppLogger
 
 if TYPE_CHECKING:
@@ -27,6 +27,7 @@ class BlipCaptionerCollector(BaseSingletonCollector):
     EXTENSIONS = ()
     PRIORITY = 50
     BATCH_SIZE = 150
+    CHUNK_TIMEOUT = 360.0
     DEFAULT_ENABLED = False
 
     @classmethod
@@ -73,7 +74,6 @@ class BlipCaptionerCollector(BaseSingletonCollector):
     def __init__(self):
         self._engine: BlipInference | None = None
         self._engine_lock = threading.Lock()
-        self._thumbnailer = FileThumbnailer()
         self._hash_cache: OrderedDict[str, str] = OrderedDict()
         self._pixel_cache: OrderedDict[str, str] = OrderedDict()
         self._last_used: float = 0.0
@@ -139,7 +139,7 @@ class BlipCaptionerCollector(BaseSingletonCollector):
             return {"error": "no_path"}
         self._ensure_engine()
         self._touch()
-        thumb = self._thumbnailer.get_thumbnail(path, size=384)
+        thumb = image_loader_resolver.load_pil(path, size=384)
         if thumb is None:
             return {"error": "thumbnail_failed"}
         try:
@@ -179,7 +179,7 @@ class BlipCaptionerCollector(BaseSingletonCollector):
         self._ensure_engine()
         self._touch()
 
-        thumb = self._thumbnailer.get_thumbnail(path, size=384)
+        thumb = image_loader_resolver.load_pil(path, size=384)
         if thumb is None:
             return CollectorResult(source=path, status=False)
 

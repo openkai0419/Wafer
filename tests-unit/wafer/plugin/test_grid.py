@@ -1,14 +1,17 @@
+import numpy as np
 import py_compile
 import pytest
 from unittest.mock import MagicMock
 from PIL import Image
 
 from wafer.plugin.grid.handler import grid_resolver
-from wafer.plugin.grid.base import BaseGridPlugin, ImageGridPlugin, WidgetGridPlugin
+from wafer.plugin.grid.base import BaseGridPlugin, WidgetGridPlugin
+from wafer.plugin.imageloader.handler import image_loader_resolver
+from wafer.plugin.imageloader.base import BaseImageLoader
 
 
-def _get_image_plugin():
-    return grid_resolver.registry.get("image")
+def _get_image_loader():
+    return image_loader_resolver.registry.get("image")
 
 
 def test_compile_base():
@@ -19,45 +22,37 @@ def test_compile_handler():
     py_compile.compile("wafer/plugin/grid/handler.py")
 
 
-def test_image_grid_plugin_is_abstract():
-    with pytest.raises(TypeError):
-        ImageGridPlugin()
+def test_image_loader_registered():
+    assert "image" in image_loader_resolver.registry.names()
 
 
-def test_image_plugin_registered():
-    assert "image" in grid_resolver.registry.names()
+def test_resolve_jpg_imageloader():
+    loader_cls = _get_image_loader()
+    assert image_loader_resolver.registry.resolve("photo.jpg") is loader_cls
 
 
-def test_resolve_jpg():
-    ImageGridPlugin = _get_image_plugin()
-    assert grid_resolver.registry.resolve("photo.jpg") is ImageGridPlugin
+def test_resolve_unknown_extension_imageloader():
+    from wafer.builtins.imageloader import SystemImageLoader
+
+    assert image_loader_resolver.registry.resolve("file.xyz") is SystemImageLoader
 
 
-def test_resolve_unknown_extension():
-    from wafer.builtins.grid import SystemThumbnailPlugin
-
-    assert grid_resolver.registry.resolve("file.xyz") is SystemThumbnailPlugin
-
-
-def test_image_plugin_load(tmp_path):
+def test_image_loader_load(tmp_path):
     img_path = tmp_path / "test.png"
     Image.new("RGB", (100, 200)).save(str(img_path))
-    from PySide6 import QtCore
-
-    size = QtCore.QSize(50, 50)
-    plugin = _get_image_plugin()()
-    result = plugin.load(str(img_path), size)
+    plugin = _get_image_loader()()
+    result = plugin.load(str(img_path), size=50)
     assert result is not None
-    assert not result.isNull()
+    assert isinstance(result, np.ndarray)
 
 
-def test_image_plugin_load_no_size(tmp_path):
+def test_image_loader_load_no_size(tmp_path):
     img_path = tmp_path / "test.png"
     Image.new("RGB", (100, 200)).save(str(img_path))
-    plugin = _get_image_plugin()()
+    plugin = _get_image_loader()()
     result = plugin.load(str(img_path))
     assert result is not None
-    assert not result.isNull()
+    assert isinstance(result, np.ndarray)
 
 
 def test_grid_load_function(tmp_path):
@@ -75,31 +70,32 @@ def test_grid_load_fallback_for_unknown_extension(tmp_path):
     assert result is not None
 
 
-def test_image_plugin_load_nonexistent():
-    plugin = _get_image_plugin()()
+def test_image_loader_load_nonexistent():
+    plugin = _get_image_loader()()
     result = plugin.load("nonexistent.png")
     assert result is None
 
 
-def test_image_plugin_is_image_grid_plugin():
-    assert issubclass(_get_image_plugin(), ImageGridPlugin)
-    assert not issubclass(_get_image_plugin(), WidgetGridPlugin)
+def test_image_loader_is_base_image_loader():
+    assert issubclass(_get_image_loader(), BaseImageLoader)
+    assert not issubclass(_get_image_loader(), WidgetGridPlugin)
 
 
 def test_is_widget_plugin_image():
     assert not grid_resolver.is_widget_plugin("photo.jpg")
 
 
-def test_resolve_instance_returns_plugin():
-    instance = grid_resolver.resolve_instance("photo.jpg")
-    assert isinstance(instance, ImageGridPlugin)
+def test_imageloader_resolve_instance():
+    instance = image_loader_resolver.registry.resolve_instance("photo.jpg")
+    assert instance is not None
+    assert isinstance(instance, BaseImageLoader)
 
 
-def test_resolve_instance_unknown_returns_system_thumbnail():
-    from wafer.builtins.grid import SystemThumbnailPlugin
+def test_imageloader_resolve_instance_unknown():
+    from wafer.builtins.imageloader import SystemImageLoader
 
-    instance = grid_resolver.resolve_instance("file.xyz")
-    assert isinstance(instance, SystemThumbnailPlugin)
+    instance = image_loader_resolver.registry.resolve_instance("file.xyz")
+    assert isinstance(instance, SystemImageLoader)
 
 
 def test_is_widget_plugin_unknown():
@@ -161,10 +157,9 @@ def test_load_thumbnail_api_returns_none_for_missing():
 
 
 def test_resolve_falls_through_when_can_handle_false():
-    from wafer.plugin.registry import FilePluginRegistry, BasePlugin
-    from wafer.plugin.grid.base import ImageGridPlugin as _ImageBase
+    from wafer.plugin.registry import FilePluginRegistry
 
-    class Strict(_ImageBase):
+    class Strict(BaseGridPlugin):
         NAME = "strict"
         EXTENSIONS = (".test",)
         PRIORITY = 200
@@ -173,16 +168,10 @@ def test_resolve_falls_through_when_can_handle_false():
         def can_handle(cls, path):
             return False
 
-        def load(self, path, size=None):
-            return None
-
-    class Fallback(_ImageBase):
+    class Fallback(BaseGridPlugin):
         NAME = "fallback"
         EXTENSIONS = (".test",)
         PRIORITY = 100
-
-        def load(self, path, size=None):
-            return None
 
     reg = FilePluginRegistry()
     reg.register(Strict)
@@ -191,24 +180,17 @@ def test_resolve_falls_through_when_can_handle_false():
 
 
 def test_resolve_returns_first_can_handle_true():
-    from wafer.plugin.registry import FilePluginRegistry, BasePlugin
-    from wafer.plugin.grid.base import ImageGridPlugin as _ImageBase
+    from wafer.plugin.registry import FilePluginRegistry
 
-    class High(_ImageBase):
+    class High(BaseGridPlugin):
         NAME = "hi"
         EXTENSIONS = (".test",)
         PRIORITY = 200
 
-        def load(self, path, size=None):
-            return None
-
-    class Low(_ImageBase):
+    class Low(BaseGridPlugin):
         NAME = "lo"
         EXTENSIONS = (".test",)
         PRIORITY = 100
-
-        def load(self, path, size=None):
-            return None
 
     reg = FilePluginRegistry()
     reg.register(High)
@@ -216,14 +198,14 @@ def test_resolve_returns_first_can_handle_true():
     assert reg.resolve("file.test") is High
 
 
-def test_resolve_static_png_to_image(tmp_path):
+def test_resolve_static_png_to_imageloader(tmp_path):
     from PIL import Image as PILImage
 
     png_path = tmp_path / "static.png"
     PILImage.new("RGB", (10, 10)).save(str(png_path))
-    plugin = grid_resolver.resolve(str(png_path))
-    assert plugin is not None
-    assert plugin.NAME in ("animated", "image")
+    plugin_cls = image_loader_resolver.resolve(str(png_path))
+    assert plugin_cls is not None
+    assert plugin_cls.NAME == "image"
 
 
 def test_resolve_animated_gif_to_animated(tmp_path):
@@ -237,13 +219,9 @@ def test_resolve_animated_gif_to_animated(tmp_path):
     assert plugin.NAME == "animated"
 
 
-def test_resolve_chain_fallback_static_gif_to_image(tmp_path):
-    from PIL import Image as PILImage
-
-    gif_path = tmp_path / "static.gif"
-    PILImage.new("RGB", (10, 10)).save(str(gif_path))
-    chain = grid_resolver.resolve_chain(str(gif_path))
-    names = [p.NAME for p in chain]
+def test_merged_chain_gif_includes_animated_and_image():
+    chain = grid_resolver.resolve_merged_chain("test.gif")
+    names = [cls.NAME for cls, kind in chain]
     assert "animated" in names
     assert "image" in names
 
@@ -406,44 +384,37 @@ class TestWidgetNotifier:
         plugin.on_thumb_loaded.assert_not_called()
 
 
-def test_registry_instance_cached():
-    instance = grid_resolver.registry.instance("image")
+def test_imageloader_instance_cached():
+    instance = image_loader_resolver.registry.instance("image")
     assert instance is not None
-    assert instance is grid_resolver.registry.instance("image")
-    assert isinstance(instance, ImageGridPlugin)
+    assert instance is image_loader_resolver.registry.instance("image")
+    assert isinstance(instance, BaseImageLoader)
 
 
-def test_resolve_instance():
-    instance = grid_resolver.registry.resolve_instance("photo.jpg")
+def test_imageloader_resolve_instance_by_path():
+    instance = image_loader_resolver.registry.resolve_instance("photo.jpg")
     assert instance is not None
-    assert isinstance(instance, ImageGridPlugin)
+    assert isinstance(instance, BaseImageLoader)
 
 
-def test_resolve_instance_unknown():
-    from wafer.builtins.grid import SystemThumbnailPlugin
+def test_imageloader_resolve_instance_unknown():
+    from wafer.builtins.imageloader import SystemImageLoader
 
-    assert isinstance(grid_resolver.registry.resolve_instance("file.xyz"), SystemThumbnailPlugin)
+    assert isinstance(image_loader_resolver.registry.resolve_instance("file.xyz"), SystemImageLoader)
 
 
 def test_resolve_chain_returns_priority_sorted():
     from wafer.plugin.registry import FilePluginRegistry
-    from wafer.plugin.grid.base import ImageGridPlugin as _ImageBase
 
-    class High(_ImageBase):
+    class High(BaseGridPlugin):
         NAME = "hi"
         EXTENSIONS = (".test",)
         PRIORITY = 200
 
-        def load(self, path, size=None):
-            return None
-
-    class Low(_ImageBase):
+    class Low(BaseGridPlugin):
         NAME = "lo"
         EXTENSIONS = (".test",)
         PRIORITY = 100
-
-        def load(self, path, size=None):
-            return None
 
     reg = FilePluginRegistry()
     reg.register(High)
@@ -452,24 +423,20 @@ def test_resolve_chain_returns_priority_sorted():
     assert chain == [High, Low]
 
 
-def test_resolve_chain_empty_for_unknown():
-    from wafer.builtins.grid import SystemThumbnailPlugin
+def test_imageloader_chain_for_unknown():
+    from wafer.builtins.imageloader import SystemImageLoader
 
-    chain = grid_resolver.registry.resolve_chain("file.xyz")
-    assert chain == [SystemThumbnailPlugin]
+    chain = image_loader_resolver.registry.resolve_chain("file.xyz")
+    assert chain == [SystemImageLoader]
 
 
 def test_resolve_chain_uses_cache():
     from wafer.plugin.registry import FilePluginRegistry
-    from wafer.plugin.grid.base import ImageGridPlugin as _ImageBase
 
-    class Stub(_ImageBase):
+    class Stub(BaseGridPlugin):
         NAME = "stub_cache"
         EXTENSIONS = (".cachetest",)
         PRIORITY = 100
-
-        def load(self, path, size=None):
-            return None
 
     reg = FilePluginRegistry()
     reg.register(Stub)
@@ -480,23 +447,16 @@ def test_resolve_chain_uses_cache():
 
 def test_resolve_chain_cache_cleared_on_register():
     from wafer.plugin.registry import FilePluginRegistry
-    from wafer.plugin.grid.base import ImageGridPlugin as _ImageBase
 
-    class A(_ImageBase):
+    class A(BaseGridPlugin):
         NAME = "a_clear"
         EXTENSIONS = (".clr",)
         PRIORITY = 100
 
-        def load(self, path, size=None):
-            return None
-
-    class B(_ImageBase):
+    class B(BaseGridPlugin):
         NAME = "b_clear"
         EXTENSIONS = (".clr",)
         PRIORITY = 200
-
-        def load(self, path, size=None):
-            return None
 
     reg = FilePluginRegistry()
     reg.register(A)
@@ -508,9 +468,9 @@ def test_resolve_chain_cache_cleared_on_register():
     assert first is not second
 
 
-def test_resolve_chain_includes_all_candidates():
-    chain = grid_resolver.registry.resolve_chain("test.gif")
-    names = [p.NAME for p in chain]
+def test_merged_chain_includes_all_candidates():
+    chain = grid_resolver.resolve_merged_chain("test.gif")
+    names = [cls.NAME for cls, kind in chain]
     assert "animated" in names
     assert "image" in names
     assert names.index("animated") < names.index("image")
@@ -518,21 +478,14 @@ def test_resolve_chain_includes_all_candidates():
 
 def test_all_classes_returns_name_cls_tuples():
     from wafer.plugin.registry import FilePluginRegistry
-    from wafer.plugin.grid.base import ImageGridPlugin as _ImageBase
 
-    class P1(_ImageBase):
+    class P1(BaseGridPlugin):
         NAME = "p1"
         EXTENSIONS = (".p1",)
 
-        def load(self, path, size=None):
-            return None
-
-    class P2(_ImageBase):
+    class P2(BaseGridPlugin):
         NAME = "p2"
         EXTENSIONS = (".p2",)
-
-        def load(self, path, size=None):
-            return None
 
     reg = FilePluginRegistry()
     reg.register(P1)

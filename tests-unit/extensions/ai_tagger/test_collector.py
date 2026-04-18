@@ -83,21 +83,21 @@ class TestTwoLevelCache:
 
     def test_l1_cache_skips_thumbnail(self):
         self.collector._hash_cache["abc123"] = self.tags
-        self.collector._thumbnailer = MagicMock()
-        self.collector.process("/test/file.jpg", (1000.0, 500, "abc123"))
-        self.collector._thumbnailer.get_thumbnail.assert_not_called()
+        with patch("extensions.ai_tagger.collector.image_loader_resolver") as mock_resolver:
+            self.collector.process("/test/file.jpg", (1000.0, 500, "abc123"))
+            mock_resolver.load_pil.assert_not_called()
 
     def test_l2_pixel_cache_hit(self):
         thumb = Image.new("RGB", (10, 10), (255, 0, 0))
         pixel_hash = hashlib.sha256(thumb.tobytes(), usedforsecurity=False).hexdigest()[:16]
         self.collector._pixel_cache[pixel_hash] = self.tags
 
-        self.collector._thumbnailer = MagicMock()
-        self.collector._thumbnailer.get_thumbnail.return_value = thumb
         self.collector._engine = MagicMock()
         self.collector._engine.input_height = 448
 
-        result = self.collector.process("/test/file.jpg", (1000.0, 500, "xyz789"))
+        with patch("extensions.ai_tagger.collector.image_loader_resolver") as mock_resolver:
+            mock_resolver.load_pil.return_value = thumb
+            result = self.collector.process("/test/file.jpg", (1000.0, 500, "xyz789"))
         assert result.status is True
         assert result.tags == self.tags
         assert self.collector._hash_cache["xyz789"] == self.tags
@@ -107,12 +107,12 @@ class TestTwoLevelCache:
         pixel_hash = hashlib.sha256(thumb.tobytes(), usedforsecurity=False).hexdigest()[:16]
         self.collector._pixel_cache[pixel_hash] = self.tags
 
-        self.collector._thumbnailer = MagicMock()
-        self.collector._thumbnailer.get_thumbnail.return_value = thumb
         self.collector._engine = MagicMock()
         self.collector._engine.input_height = 448
 
-        self.collector.process("/test/file.jpg", (1000.0, 500, "xyz789"))
+        with patch("extensions.ai_tagger.collector.image_loader_resolver") as mock_resolver:
+            mock_resolver.load_pil.return_value = thumb
+            self.collector.process("/test/file.jpg", (1000.0, 500, "xyz789"))
         self.collector._engine.predict.assert_not_called()
 
     def test_cache_miss_runs_inference(self):
@@ -123,13 +123,13 @@ class TestTwoLevelCache:
             "character": {},
         }
 
-        self.collector._thumbnailer = MagicMock()
-        self.collector._thumbnailer.get_thumbnail.return_value = thumb
         self.collector._engine = MagicMock()
         self.collector._engine.input_height = 448
         self.collector._engine.predict.return_value = mock_result
 
-        result = self.collector.process("/test/file.jpg", (1000.0, 500, "new_hash"))
+        with patch("extensions.ai_tagger.collector.image_loader_resolver") as mock_resolver:
+            mock_resolver.load_pil.return_value = thumb
+            result = self.collector.process("/test/file.jpg", (1000.0, 500, "new_hash"))
         assert result.status is True
         assert result.tags["rating"] == "general"
         assert result.tags["tags"] == "1girl"
@@ -144,35 +144,35 @@ class TestTwoLevelCache:
             "character": {},
         }
 
-        self.collector._thumbnailer = MagicMock()
-        self.collector._thumbnailer.get_thumbnail.return_value = thumb
         self.collector._engine = MagicMock()
         self.collector._engine.input_height = 448
         self.collector._engine.predict.return_value = mock_result
 
-        self.collector.process("/test/file.jpg", (1000.0, 500, "hash_a"))
+        with patch("extensions.ai_tagger.collector.image_loader_resolver") as mock_resolver:
+            mock_resolver.load_pil.return_value = thumb
+            self.collector.process("/test/file.jpg", (1000.0, 500, "hash_a"))
         assert "hash_a" in self.collector._hash_cache
         assert pixel_hash in self.collector._pixel_cache
 
     def test_thumbnail_none_returns_failure(self):
-        self.collector._thumbnailer = MagicMock()
-        self.collector._thumbnailer.get_thumbnail.return_value = None
         self.collector._engine = MagicMock()
         self.collector._engine.input_height = 448
 
-        result = self.collector.process("/test/file.jpg", (1000.0, 500, "some_hash"))
+        with patch("extensions.ai_tagger.collector.image_loader_resolver") as mock_resolver:
+            mock_resolver.load_pil.return_value = None
+            result = self.collector.process("/test/file.jpg", (1000.0, 500, "some_hash"))
         assert result.status is False
 
     def test_inference_error_returns_failure(self):
         thumb = Image.new("RGB", (10, 10), (128, 128, 128))
 
-        self.collector._thumbnailer = MagicMock()
-        self.collector._thumbnailer.get_thumbnail.return_value = thumb
         self.collector._engine = MagicMock()
         self.collector._engine.input_height = 448
         self.collector._engine.predict.side_effect = RuntimeError("ONNX error")
 
-        result = self.collector.process("/test/file.jpg", (1000.0, 500, "err_hash"))
+        with patch("extensions.ai_tagger.collector.image_loader_resolver") as mock_resolver:
+            mock_resolver.load_pil.return_value = thumb
+            result = self.collector.process("/test/file.jpg", (1000.0, 500, "err_hash"))
         assert result.status is False
 
 
@@ -310,14 +310,14 @@ class TestIdleTimeout:
             "general": {"1girl": 0.95},
             "character": {},
         }
-        self.collector._thumbnailer = MagicMock()
-        self.collector._thumbnailer.get_thumbnail.return_value = thumb
         self.collector._engine = MagicMock()
         self.collector._engine.input_height = 448
         self.collector._engine.predict.return_value = mock_result
 
         before = self.collector._last_used
-        self.collector.process("/test/file.jpg", (1000.0, 500, "new_hash"))
+        with patch("extensions.ai_tagger.collector.image_loader_resolver") as mock_resolver:
+            mock_resolver.load_pil.return_value = thumb
+            self.collector.process("/test/file.jpg", (1000.0, 500, "new_hash"))
         assert self.collector._last_used > before
         assert self.collector._idle_timer is not None
         self.collector._idle_timer.cancel()

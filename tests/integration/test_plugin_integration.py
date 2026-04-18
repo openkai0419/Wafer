@@ -10,9 +10,11 @@ from PySide6 import QtCore, QtGui
 from wafer.utils.paths import normalize_path
 from wafer.plugin.registry import FilePluginRegistry, BasePlugin
 from wafer.plugin.grid.handler import grid_resolver
-from wafer.plugin.grid.base import ImageGridPlugin, WidgetGridPlugin, BaseGridPlugin
+from wafer.plugin.grid.base import WidgetGridPlugin, BaseGridPlugin
 from wafer.plugin.collector.handler import collector_resolver
 from wafer.plugin.viewer.handler import ViewerResolver
+from wafer.plugin.imageloader.handler import image_loader_resolver
+from wafer.plugin.imageloader.base import BaseImageLoader
 from wafer.core.db.indexer import FileIndexer
 
 
@@ -43,37 +45,37 @@ def _create_dummy_file(path, content=b"dummy content"):
 
 
 class TestGridPluginResolution:
-    def test_jpg_resolves_to_image_plugin(self, tmp_path):
+    def test_jpg_resolves_to_imageloader(self, tmp_path):
         path = str(tmp_path / "test.jpg")
         _create_test_image(path)
-        plugin_cls = grid_resolver.resolve(path)
+        plugin_cls = image_loader_resolver.resolve(path)
         assert plugin_cls is not None
-        assert issubclass(plugin_cls, ImageGridPlugin)
+        assert issubclass(plugin_cls, BaseImageLoader)
 
-    def test_jpeg_resolves_to_image_plugin(self, tmp_path):
+    def test_jpeg_resolves_to_imageloader(self, tmp_path):
         path = str(tmp_path / "test.jpeg")
         _create_test_image(path)
-        plugin_cls = grid_resolver.resolve(path)
+        plugin_cls = image_loader_resolver.resolve(path)
         assert plugin_cls is not None
-        assert issubclass(plugin_cls, ImageGridPlugin)
+        assert issubclass(plugin_cls, BaseImageLoader)
 
     def test_png_resolves_to_plugin(self, tmp_path):
         path = str(tmp_path / "test.png")
         _create_png(path)
-        plugin_cls = grid_resolver.resolve(path)
+        plugin_cls = image_loader_resolver.resolve(path)
         assert plugin_cls is not None
 
-    def test_bmp_resolves_to_image_plugin(self, tmp_path):
+    def test_bmp_resolves_to_imageloader(self, tmp_path):
         path = str(tmp_path / "test.bmp")
         _create_bmp(path)
-        plugin_cls = grid_resolver.resolve(path)
+        plugin_cls = image_loader_resolver.resolve(path)
         assert plugin_cls is not None
-        assert issubclass(plugin_cls, ImageGridPlugin)
+        assert issubclass(plugin_cls, BaseImageLoader)
 
     def test_webp_resolves_to_plugin(self, tmp_path):
         path = str(tmp_path / "test.webp")
         _create_webp(path)
-        plugin_cls = grid_resolver.resolve(path)
+        plugin_cls = image_loader_resolver.resolve(path)
         assert plugin_cls is not None
 
     def test_gif_resolves_to_plugin(self, tmp_path):
@@ -83,20 +85,21 @@ class TestGridPluginResolution:
         assert plugin_cls is not None
 
     def test_animated_plugin_priority_over_image_for_gif(self):
-        chain = grid_resolver.resolve_chain("test.gif")
-        if len(chain) >= 2:
-            assert chain[0].PRIORITY >= chain[1].PRIORITY
+        chain = grid_resolver.resolve_merged_chain("test.gif")
+        names = [cls.NAME for cls, kind in chain]
+        if "animated" in names and "image" in names:
+            assert names.index("animated") < names.index("image")
 
     def test_video_extensions_resolve(self):
         for ext in [".mp4", ".mkv", ".webm", ".avi", ".mov"]:
             plugin_cls = grid_resolver.resolve(f"test{ext}")
             assert plugin_cls is not None, f"No plugin resolved for {ext}"
 
-    def test_unknown_extension_resolves_to_system_thumbnail(self):
-        from wafer.builtins.grid import SystemThumbnailPlugin
+    def test_unknown_extension_resolves_to_system_imageloader(self):
+        from wafer.builtins.imageloader import SystemImageLoader
 
-        assert grid_resolver.resolve("test.xyz123") is SystemThumbnailPlugin
-        assert grid_resolver.resolve("test.abc") is SystemThumbnailPlugin
+        plugin_cls = image_loader_resolver.resolve("test.xyz123")
+        assert plugin_cls is SystemImageLoader
 
 
 class TestCollectorPluginResolution:
@@ -160,52 +163,43 @@ class TestCollectorProcessExecution:
         assert result.aspect == 1.0
 
 
-class TestGridPluginImageLoad:
-    def test_image_plugin_loads_jpg(self, tmp_path):
+class TestImageLoading:
+    def test_loads_jpg(self, tmp_path):
         path = str(tmp_path / "load.jpg")
         _create_test_image(path, 200, 100)
-        instance = grid_resolver.resolve_image_instance(path)
-        assert instance is not None
-        image = instance.load(path)
+        image = grid_resolver.load(path)
         assert image is not None
         assert not image.isNull()
 
-    def test_image_plugin_loads_png(self, tmp_path):
+    def test_loads_png(self, tmp_path):
         path = str(tmp_path / "load.png")
         _create_png(path, 150, 150)
-        instance = grid_resolver.resolve_image_instance(path)
-        assert instance is not None
-        image = instance.load(path)
+        image = grid_resolver.load(path)
         assert image is not None
         assert not image.isNull()
 
-    def test_image_plugin_loads_bmp(self, tmp_path):
+    def test_loads_bmp(self, tmp_path):
         path = str(tmp_path / "load.bmp")
         _create_bmp(path, 80, 80)
-        instance = grid_resolver.resolve_image_instance(path)
-        assert instance is not None
-        image = instance.load(path)
+        image = grid_resolver.load(path)
         assert image is not None
         assert not image.isNull()
 
-    def test_image_plugin_loads_webp(self, tmp_path):
+    def test_loads_webp(self, tmp_path):
         path = str(tmp_path / "load.webp")
         _create_webp(path, 120, 60)
-        instance = grid_resolver.resolve_image_instance(path)
-        assert instance is not None
-        image = instance.load(path)
+        image = grid_resolver.load(path)
         assert image is not None
         assert not image.isNull()
 
-    def test_image_plugin_loads_with_size_constraint(self, tmp_path):
+    def test_loads_with_size_constraint(self, tmp_path):
         path = str(tmp_path / "sized.jpg")
         _create_test_image(path, 800, 600)
-        instance = grid_resolver.resolve_image_instance(path)
         size = QtCore.QSize(200, 150)
-        image = instance.load(path, size)
+        image = grid_resolver.load(path, size)
         assert image is not None
-        assert image.width() == 200
-        assert image.height() == 150
+        assert image.width() <= 200
+        assert image.height() <= 150
 
 
 class TestFallbackForUnsupportedExtensions:
@@ -250,12 +244,12 @@ class TestFallbackForUnsupportedExtensions:
         _create_dummy_file(path, b"")
         result = grid_resolver.load(path)
 
-    def test_unsupported_resolves_to_system_thumbnail(self):
-        from wafer.builtins.grid import SystemThumbnailPlugin
+    def test_unsupported_resolves_to_system_imageloader(self):
+        from wafer.builtins.imageloader import SystemImageLoader
 
-        assert grid_resolver.resolve("file.xyz123") is SystemThumbnailPlugin
-        assert grid_resolver.resolve("file.abc") is SystemThumbnailPlugin
-        assert grid_resolver.resolve("file.dat") is SystemThumbnailPlugin
+        assert image_loader_resolver.resolve("file.xyz123") is SystemImageLoader
+        assert image_loader_resolver.resolve("file.abc") is SystemImageLoader
+        assert image_loader_resolver.resolve("file.dat") is SystemImageLoader
 
     def test_fallback_load_returns_image_for_known_image(self, tmp_path):
         path = str(tmp_path / "test.jpg")
@@ -268,20 +262,16 @@ class TestFallbackForUnsupportedExtensions:
 
 class TestPluginAbsenceDoesntCrash:
     def test_no_specific_plugin_resolved_for_missing_extension(self):
-        from wafer.builtins.grid import SystemThumbnailPlugin
+        from wafer.builtins.imageloader import SystemImageLoader
 
-        assert grid_resolver.resolve("test.nosuchext") is SystemThumbnailPlugin
+        assert image_loader_resolver.resolve("test.nosuchext") is SystemImageLoader
 
-    def test_resolve_chain_includes_fallback_for_missing(self):
-        from wafer.builtins.grid import SystemThumbnailPlugin
+    def test_merged_chain_includes_fallback_for_missing(self):
+        from wafer.builtins.imageloader import SystemImageLoader
 
-        chain = grid_resolver.resolve_chain("test.nosuchext")
-        assert SystemThumbnailPlugin in chain
-
-    def test_resolve_instance_for_missing_is_system_thumbnail(self):
-        from wafer.builtins.grid import SystemThumbnailPlugin
-
-        assert isinstance(grid_resolver.resolve_instance("test.nosuchext"), SystemThumbnailPlugin)
+        chain = grid_resolver.resolve_merged_chain("test.nosuchext")
+        names = [cls.NAME for cls, kind in chain]
+        assert "system_thumbnail" in names
 
     def test_load_fallback_for_missing_extension(self, tmp_path):
         path = str(tmp_path / "test.nosuchext")

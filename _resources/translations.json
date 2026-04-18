@@ -1,4 +1,52 @@
 {
+  "(All)": {
+    "en": "(All)",
+    "ja": ""
+  },
+  "(None)": {
+    "en": "(None)",
+    "ja": ""
+  },
+  "Add New": {
+    "en": "Add New",
+    "ja": ""
+  },
+  "Command": {
+    "en": "Command",
+    "ja": ""
+  },
+  "Console": {
+    "en": "Console",
+    "ja": ""
+  },
+  "Key Bindings": {
+    "en": "Key Bindings",
+    "ja": ""
+  },
+  "Main Key": {
+    "en": "Main Key",
+    "ja": ""
+  },
+  "Modifier Key": {
+    "en": "Modifier Key",
+    "ja": ""
+  },
+  "Override": {
+    "en": "Override",
+    "ja": ""
+  },
+  "Reassign": {
+    "en": "Reassign",
+    "ja": ""
+  },
+  "Reset to Defaults": {
+    "en": "Reset to Defaults",
+    "ja": ""
+  },
+  "Search Command": {
+    "en": "Search Command",
+    "ja": ""
+  },
   "Uncheck All": {
     "en": "Uncheck All",
     "ja": ""
@@ -558,8 +606,8 @@
   "Content Viewer": {
     "en": "Content Viewer"
   },
-  "DevLog": {
-    "en": "DevLog"
+  "Log": {
+    "en": "Log"
   },
   "Edit Mode (might have visual issues)": {
     "en": "Edit Mode (might have visual issues)"
@@ -738,8 +786,8 @@
   "MultiSpan Tiling": {
     "en": "MultiSpan Tiling"
   },
-  "Toggle DevLog": {
-    "en": "Toggle DevLog"
+  "Toggle Log": {
+    "en": "Toggle Log"
   },
   "Apply": {
     "en": "Apply"

@@ -3,24 +3,24 @@ import py_compile
 import pytest
 from PySide6 import QtWidgets
 
-from wafer.builtins.devlog import DevLogPanel, DevLogPanelPlugin
+from wafer.builtins.log_panel import LogPanel, LogPanelPlugin
 from wafer.plugin.panel.base import BasePanelPlugin
 from wafer.plugin.registry import PluginBase
 
 
 @pytest.fixture
 def panel(qtbot):
-    p = DevLogPanel()
+    p = LogPanel()
     qtbot.addWidget(p)
     yield p
-    DevLogPanel._instance = None
+    LogPanel._instance = None
 
 
 def test_compile():
-    py_compile.compile("wafer/builtins/devlog.py")
+    py_compile.compile("wafer/builtins/log_panel.py")
 
 
-class TestDevLogPanel:
+class TestLogPanel:
     def test_append_log_adds_entry(self, panel):
         panel.append_log("info", "test message", src="viewer-123")
         assert len(panel._entries) == 1
@@ -38,7 +38,7 @@ class TestDevLogPanel:
         panel.append_log("info", "from indexer", src="indexer-200")
         assert "viewer-100" in panel._src_tabs
         assert "indexer-200" in panel._src_tabs
-        assert panel._tab_widget.count() == 3
+        assert panel._tab_widget.count() == 3  # All + 2 src tabs
 
     def test_src_tab_isolation(self, panel):
         panel.append_log("info", "from viewer", src="viewer-100")
@@ -79,34 +79,35 @@ class TestDevLogPanel:
         assert panel._all_tab.toPlainText() == ""
 
     def test_instance(self, panel):
-        assert DevLogPanel.instance() is panel
+        assert LogPanel.instance() is panel
 
 
-class TestDevLogPanelPlugin:
+class TestLogPanelPlugin:
     def test_inherits_base_panel_plugin(self):
-        assert issubclass(DevLogPanelPlugin, BasePanelPlugin)
+        assert issubclass(LogPanelPlugin, BasePanelPlugin)
 
     def test_attributes(self):
-        assert DevLogPanelPlugin.NAME == "devlog"
-        assert DevLogPanelPlugin.DISPLAY_NAME == "DevLog"
-        assert DevLogPanelPlugin.CLOSABLE is True
-        assert DevLogPanelPlugin.SOURCE == "Builtin"
+        assert LogPanelPlugin.NAME == "log"
+        assert LogPanelPlugin.DISPLAY_NAME == "Log"
+        assert LogPanelPlugin.CLOSABLE is True
+        assert LogPanelPlugin.SOURCE == "Builtin"
+        assert LogPanelPlugin.DEFAULT_ENABLED is False
 
-    def test_create_widget_returns_devlog_panel(self, qtbot):
+    def test_create_widget_returns_log_panel(self, qtbot):
         from wafer.utils.logs import AppLogger
 
         signals = [AppLogger.on_debug, AppLogger.on_info, AppLogger.on_warning, AppLogger.on_error, AppLogger.on_critical]
         saved = [list(s._callbacks) for s in signals]
-        plugin = DevLogPanelPlugin()
+        plugin = LogPanelPlugin()
         widget = plugin.create_widget()
         qtbot.addWidget(widget)
-        assert isinstance(widget, DevLogPanel)
-        DevLogPanel._instance = None
+        assert isinstance(widget, LogPanel)
+        LogPanel._instance = None
         for s, cb in zip(signals, saved):
             s._callbacks = cb
 
     def test_registered_in_panel_registry(self):
         from wafer.plugin.panel.handler import panel_registry
 
-        cls = panel_registry.get("devlog")
-        assert cls is DevLogPanelPlugin
+        cls = panel_registry.get("log")
+        assert cls is LogPanelPlugin

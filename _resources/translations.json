@@ -1,4 +1,88 @@
 {
+  "Uncheck All": {
+    "en": "Uncheck All",
+    "ja": ""
+  },
+  "Drop a file here": {
+    "en": "Drop a file here",
+    "ja": ""
+  },
+  "Re Preview": {
+    "en": "Re Preview",
+    "ja": ""
+  },
+  "Blacklist (block selected)": {
+    "en": "Blacklist (block selected)",
+    "ja": ""
+  },
+  "Block": {
+    "en": "Block",
+    "ja": ""
+  },
+  "Check All": {
+    "en": "Check All",
+    "ja": ""
+  },
+  "Click a key to see sample values": {
+    "en": "Click a key to see sample values",
+    "ja": ""
+  },
+  "Count": {
+    "en": "Count",
+    "ja": ""
+  },
+  "Delete existing ExifTool data": {
+    "en": "Delete existing ExifTool data",
+    "ja": ""
+  },
+  "Drop a file here to preview ExifTool tags": {
+    "en": "Drop a file here to preview ExifTool tags",
+    "ja": ""
+  },
+  "Filter Mode:": {
+    "en": "Filter Mode:",
+    "ja": ""
+  },
+  "Filter keys...": {
+    "en": "Filter keys...",
+    "ja": ""
+  },
+  "Filter settings have been modified.\nThis will apply to all databases.": {
+    "en": "Filter settings have been modified.\nThis will apply to all databases.",
+    "ja": ""
+  },
+  "Key": {
+    "en": "Key",
+    "ja": ""
+  },
+  "Key Browser": {
+    "en": "Key Browser",
+    "ja": ""
+  },
+  "Re-collect after deletion": {
+    "en": "Re-collect after deletion",
+    "ja": ""
+  },
+  "Sample Preview": {
+    "en": "Sample Preview",
+    "ja": ""
+  },
+  "Save && Delete Data (All DBs)": {
+    "en": "Save && Delete Data (All DBs)",
+    "ja": ""
+  },
+  "Save ExifTool Filter Settings": {
+    "en": "Save ExifTool Filter Settings",
+    "ja": ""
+  },
+  "Value": {
+    "en": "Value",
+    "ja": ""
+  },
+  "Whitelist (use selected only)": {
+    "en": "Whitelist (use selected only)",
+    "ja": ""
+  },
   "BLIP Settings": {
     "en": "BLIP Settings",
     "ja": ""

@@ -4,7 +4,6 @@ from PySide6 import QtWidgets, QtCore, QtGui
 
 from wafer.plugin import BasePanelPlugin
 from wafer.plugin.collector.base import BaseCollector
-from wafer.plugin.grid.handler import load_thumbnail
 from wafer.utils.formatting import dpix
 from wafer.utils.logs import AppLogger
 from wafer.utils.notifier import Notifier
@@ -39,31 +38,31 @@ class BlipSettingsWidget(QtWidgets.QWidget):
         self._preview_result.connect(self._on_preview_result)
         self._device_result.connect(self._on_device_result)
 
+        self._original_pixmap: QtGui.QPixmap | None = None
+
         preview_group = QtWidgets.QGroupBox(t("Preview"))
         self._thumb_label = QtWidgets.QLabel()
-        self._thumb_label.setFixedSize(dpix(128), dpix(128))
+        self._thumb_label.setMinimumSize(dpix(64), dpix(64))
+        self._thumb_label.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding,
+        )
         self._thumb_label.setAlignment(QtCore.Qt.AlignCenter)
         self._thumb_label.setStyleSheet(f"border: 1px solid palette(mid); border-radius: {dpix(4)}px;")
 
-        self._caption_label = QtWidgets.QLabel(t("Drop a file here or click Preview"))
+        self._caption_label = QtWidgets.QLabel(t("Drop a file here"))
         self._caption_label.setWordWrap(True)
         self._caption_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
         self._caption_label.setMinimumHeight(dpix(40))
 
-        self._preview_btn = QtWidgets.QPushButton(t("Preview"))
+        self._preview_btn = QtWidgets.QPushButton(t("Re Preview"))
         self._preview_btn.clicked.connect(self._on_preview_clicked)
         self._preview_btn.setEnabled(False)
 
-        preview_top = QtWidgets.QHBoxLayout()
-        preview_top.addWidget(self._thumb_label)
-        pv_right = QtWidgets.QVBoxLayout()
-        pv_right.addWidget(self._caption_label, 1)
-        pv_right.addWidget(self._preview_btn)
-        preview_top.addLayout(pv_right, 1)
-
         preview_layout = QtWidgets.QVBoxLayout(preview_group)
         preview_layout.setContentsMargins(dpix(6), dpix(6), dpix(6), dpix(6))
-        preview_layout.addLayout(preview_top)
+        preview_layout.addWidget(self._thumb_label, 1)
+        preview_layout.addWidget(self._caption_label)
+        preview_layout.addWidget(self._preview_btn)
 
         settings_group = QtWidgets.QGroupBox(t("Settings"))
         form = QtWidgets.QFormLayout(settings_group)
@@ -105,16 +104,16 @@ class BlipSettingsWidget(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(dpix(8), dpix(8), dpix(8), dpix(8))
         layout.setSpacing(dpix(6))
-        layout.addWidget(preview_group)
+        layout.addWidget(preview_group, 1)
         layout.addWidget(settings_group)
         layout.addWidget(device_group)
-        layout.addStretch()
         layout.addLayout(btn_layout)
 
         self.setAcceptDrops(True)
         self._current_path: str = ""
         self._requesting = False
         self._device_fetched = False
+        self._device_ok = False
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -136,12 +135,27 @@ class BlipSettingsWidget(QtWidgets.QWidget):
     def _set_preview_path(self, path: str):
         self._current_path = path
         self._preview_btn.setEnabled(True)
-        qimage = load_thumbnail(path, self._thumb_label.size())
-        if qimage is not None and not qimage.isNull():
-            self._thumb_label.setPixmap(QtGui.QPixmap.fromImage(qimage))
+        pixmap = QtGui.QPixmap(path)
+        if not pixmap.isNull():
+            self._original_pixmap = pixmap
+            self._update_thumb()
         else:
+            self._original_pixmap = None
             self._thumb_label.setText(t("(no preview)"))
-        self._caption_label.setText(t("Click Preview to generate caption"))
+        self._on_preview_clicked()
+
+    def _update_thumb(self):
+        if self._original_pixmap is None:
+            return
+        label_size = self._thumb_label.size()
+        scaled = self._original_pixmap.scaled(
+            label_size, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation,
+        )
+        self._thumb_label.setPixmap(scaled)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_thumb()
 
     def _current_settings(self) -> dict:
         return {
@@ -190,6 +204,8 @@ class BlipSettingsWidget(QtWidgets.QWidget):
             return
         caption = result.get("caption", "")
         self._caption_label.setText(caption if caption else "(empty caption)")
+        if not self._device_ok:
+            self._request_device_info()
 
     def _request_device_info(self):
         self._device_label.setText("Requesting...")
@@ -219,9 +235,19 @@ class BlipSettingsWidget(QtWidgets.QWidget):
     def _on_device_result(self, result: dict):
         device = result.get("device", "unknown")
         name = result.get("device_name", "")
+        self._device_ok = device != "unknown"
         self._device_label.setText(f"Device: {device.upper()}  ({name})\nModel: blip-large (Salesforce)")
 
     def _on_save(self):
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            t("Confirm"),
+            t("Save settings and re-collect all databases?"),
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
+        )
+        if reply != QtWidgets.QMessageBox.Yes:
+            return
         values = self._current_settings()
         blip_config.save_and_notify("blip", **values)
         self._settings = values

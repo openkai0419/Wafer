@@ -9,7 +9,6 @@ from PySide6 import QtWidgets, QtCore, QtGui
 
 from wafer.plugin import BasePanelPlugin
 from wafer.plugin.collector.base import BaseCollector
-from wafer.plugin.grid.handler import load_thumbnail
 from wafer.utils.formatting import dpix
 from wafer.utils.logs import AppLogger
 from wafer.utils.notifier import Notifier
@@ -17,6 +16,7 @@ from wafer.core.lang.manager import t
 from wafer.utils.paths import list_setting_db_names, data_db_path
 from wafer.core.db.db_utils import apply_read_pragmas
 from wafer.core.qt.dispatcher import Dispatcher, CancelSlot
+from wafer.app.viewer.widgets.loading_overlay import OverlayLoadingIndicator
 from .settings import MODE_BLACKLIST, MODE_WHITELIST, SORT_NAME, SORT_COUNT
 from .settings import read_sort_config, write_sort_config
 
@@ -302,6 +302,8 @@ class _KeyBrowserTab(QtWidgets.QWidget):
         self._splitter.setStretchFactor(0, 6)
         self._splitter.setStretchFactor(1, 4)
 
+        self._loading = OverlayLoadingIndicator(self._tree.viewport())
+
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(dpix(4))
@@ -349,8 +351,14 @@ class _KeyBrowserTab(QtWidgets.QWidget):
     def refresh(self):
         self._load_keys()
 
+    def _position_loading(self):
+        m = dpix(6)
+        self._loading.move(m, m)
+
     def _load_keys(self):
         cancel = self._cancel.renew()
+        self._position_loading()
+        self._loading.start()
 
         def _bg():
             if cancel.is_cancelled():
@@ -360,6 +368,7 @@ class _KeyBrowserTab(QtWidgets.QWidget):
         def _done(result):
             if cancel.is_cancelled():
                 return
+            self._loading.stop()
             self._key_data = result
             self._update_check_all_label()
             self._build_tree()
@@ -567,6 +576,30 @@ class _KeyBrowserTab(QtWidgets.QWidget):
         self._build_tree()
 
 
+class _ContainImageLabel(QtWidgets.QLabel):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAlignment(QtCore.Qt.AlignCenter)
+        self._source: QtGui.QPixmap | None = None
+
+    def set_source(self, pixmap: QtGui.QPixmap):
+        self._source = pixmap
+        self._update_scaled()
+
+    def clear(self):
+        self._source = None
+        super().clear()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_scaled()
+
+    def _update_scaled(self):
+        if self._source is None or self._source.isNull():
+            return
+        self.setPixmap(self._source.scaled(self.size(), QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation))
+
+
 class _SamplePreviewTab(QtWidgets.QWidget):
     filter_keys_changed = QtCore.Signal(set)
 
@@ -585,11 +618,9 @@ class _SamplePreviewTab(QtWidgets.QWidget):
         self._drop_label.setMinimumHeight(dpix(60))
         self._drop_label.setStyleSheet(f"border: {dpix(2)}px dashed palette(mid); border-radius: {dpix(6)}px; padding: {dpix(12)}px;")
 
-        self._thumb = QtWidgets.QLabel()
-        self._thumb.setAlignment(QtCore.Qt.AlignCenter)
-        self._thumb.setFixedWidth(dpix(240))
-        self._thumb.setMinimumHeight(dpix(160))
-        self._thumb.setScaledContents(False)
+        self._thumb = _ContainImageLabel()
+        self._thumb.setMinimumWidth(dpix(160))
+        self._thumb.setMinimumHeight(dpix(120))
 
         self._table = QtWidgets.QTableWidget()
         self._table.setColumnCount(3)
@@ -667,22 +698,21 @@ class _SamplePreviewTab(QtWidgets.QWidget):
                 return
             if cancel.is_cancelled():
                 return
-            size = QtCore.QSize(dpix(240), dpix(240))
-            qimage = load_thumbnail(path, size)
-            scaled = qimage if qimage is not None and not qimage.isNull() else None
+            qimage = QtGui.QImage(path)
+            pixmap = QtGui.QPixmap.fromImage(qimage) if qimage is not None and not qimage.isNull() else None
             if cancel.is_cancelled():
                 return
-            self._dispatcher.invoke(lambda: self._apply_preview(path, meta, scaled, cancel))
+            self._dispatcher.invoke(lambda: self._apply_preview(path, meta, pixmap, cancel))
 
         self._dispatcher.post(task)
 
-    def _apply_preview(self, path: str, meta: dict, scaled_image, cancel):
+    def _apply_preview(self, path: str, meta: dict, pixmap: QtGui.QPixmap | None, cancel):
         if cancel.is_cancelled():
             return
         self._current_path = path
         self._meta = meta
-        if scaled_image is not None:
-            self._thumb.setPixmap(QtGui.QPixmap.fromImage(scaled_image))
+        if pixmap is not None:
+            self._thumb.set_source(pixmap)
         else:
             self._thumb.clear()
         self._rebuild_table()

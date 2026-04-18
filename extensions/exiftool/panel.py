@@ -68,11 +68,11 @@ class ExifSettingsWidget(QtWidgets.QWidget):
         bottom_layout.addWidget(self._mode_combo)
         bottom_layout.addStretch()
 
-        save_btn = QtWidgets.QPushButton(t("Save && Delete Data (All DBs)"))
+        save_btn = QtWidgets.QPushButton(t("Save"))
         save_btn.clicked.connect(self._on_save)
         bottom_layout.addWidget(save_btn)
 
-        reset_btn = QtWidgets.QPushButton(t("Cancel"))
+        reset_btn = QtWidgets.QPushButton(t("Revert"))
         reset_btn.clicked.connect(self._on_reset)
         bottom_layout.addWidget(reset_btn)
 
@@ -137,16 +137,14 @@ class ExifSettingsWidget(QtWidgets.QWidget):
 
     def _on_save(self):
         current_keys = self._key_browser.collect_filter_keys()
-        has_changes = self._filter_mode != self._saved_mode or current_keys != self._saved_keys
+        if self._filter_mode == self._saved_mode and current_keys == self._saved_keys:
+            return
 
-        do_delete = False
-        do_recollect = False
-        if has_changes:
-            dlg = _SaveConfirmDialog(parent=self)
-            if dlg.exec() != QtWidgets.QDialog.Accepted:
-                return
-            do_delete = dlg.delete_data()
-            do_recollect = dlg.recollect()
+        dlg = _SaveConfirmDialog(parent=self)
+        if dlg.exec() != QtWidgets.QDialog.Accepted:
+            return
+        do_delete = dlg.delete_data()
+        do_recollect = dlg.recollect()
 
         self._filter_keys = current_keys
         from .settings import write_filter_config

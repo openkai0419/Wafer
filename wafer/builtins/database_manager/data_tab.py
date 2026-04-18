@@ -267,10 +267,6 @@ class DataTab(QtWidgets.QWidget):
         self._selected_label = QtWidgets.QLabel(t("Selected: 0 items"))
         layout.addWidget(self._selected_label)
 
-        self._re_collect_cb = QtWidgets.QCheckBox(t("Re-collect after deletion (mark as pending)"))
-        self._re_collect_cb.setChecked(True)
-        layout.addWidget(self._re_collect_cb)
-
         self._delete_btn = QtWidgets.QPushButton(t("Delete Selected Data"))
         self._delete_btn.setObjectName("delete_btn")
         self._delete_btn.setFixedWidth(dpix(180))
@@ -354,21 +350,10 @@ class DataTab(QtWidgets.QWidget):
         selected = self._collector_table.get_checked() + self._parser_table.get_checked()
         if not selected:
             return
-        re_collect = self._re_collect_cb.isChecked()
-        msg = t("Delete data for {count} prefix(es)?\n\n", count=len(selected))
-        for db, prefix in selected:
-            msg += f"  {prefix} on {db}\n"
-        if re_collect:
-            msg += "\n" + t("Files will be marked for re-collection.")
-        result = QtWidgets.QMessageBox.question(
-            self,
-            t("Confirm Deletion"),
-            msg,
-            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-        )
-        if result != QtWidgets.QMessageBox.Yes:
+        dlg = _DeleteConfirmDialog(selected, parent=self)
+        if dlg.exec() != QtWidgets.QDialog.Accepted:
             return
-        self.delete_requested.emit(selected, re_collect)
+        self.delete_requested.emit(selected, dlg.recollect())
 
     def refresh(self):
         self._poll_cancel.cancel()
@@ -391,3 +376,34 @@ class DataTab(QtWidgets.QWidget):
         c_rows, d_rows = _split_rows(rows)
         self._collector_table.merge_rows(c_rows)
         self._parser_table.merge_rows(d_rows)
+
+
+class _DeleteConfirmDialog(QtWidgets.QDialog):
+    def __init__(self, selected: list[tuple[str, str]], parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(t("Delete Collected Data"))
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setSpacing(dpix(8))
+
+        msg = t("Delete data for {count} prefix(es)?\n\n", count=len(selected))
+        for db, prefix in selected:
+            msg += f"  {prefix} on {db}\n"
+        layout.addWidget(QtWidgets.QLabel(msg))
+
+        self._recollect_cb = QtWidgets.QCheckBox(t("Re-collect after deletion"))
+        self._recollect_cb.setChecked(True)
+        layout.addWidget(self._recollect_cb)
+
+        btn_layout = QtWidgets.QHBoxLayout()
+        btn_layout.addStretch()
+        delete_btn = QtWidgets.QPushButton(t("Delete"))
+        cancel_btn = QtWidgets.QPushButton(t("Cancel"))
+        delete_btn.clicked.connect(self.accept)
+        cancel_btn.clicked.connect(self.reject)
+        btn_layout.addWidget(delete_btn)
+        btn_layout.addWidget(cancel_btn)
+        layout.addLayout(btn_layout)
+
+    def recollect(self) -> bool:
+        return self._recollect_cb.isChecked()

@@ -275,9 +275,8 @@ class TestSaveButtonText:
     def test_save_button_text_all_dbs(self, qapp):
         widget = _make_exiftool_settings_widget(qapp)
         buttons = widget.findChildren(QtWidgets.QPushButton)
-        save_texts = [b.text() for b in buttons if "delete data" in b.text().lower()]
+        save_texts = [b.text() for b in buttons if b.text() == "Save"]
         assert len(save_texts) == 1
-        assert "All DBs" in save_texts[0]
 
 
 class TestGroupedKeysCheckState:

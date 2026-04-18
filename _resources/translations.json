@@ -1,4 +1,8 @@
 {
+  "Save settings and re-collect all databases?": {
+    "en": "Save settings and re-collect all databases?",
+    "ja": ""
+  },
   "(All)": {
     "en": "(All)",
     "ja": ""
@@ -115,10 +119,6 @@
     "en": "Sample Preview",
     "ja": ""
   },
-  "Save && Delete Data (All DBs)": {
-    "en": "Save && Delete Data (All DBs)",
-    "ja": ""
-  },
   "Save ExifTool Filter Settings": {
     "en": "Save ExifTool Filter Settings",
     "ja": ""
@@ -222,8 +222,28 @@
     "en": "Reset Defaults",
     "ja": ""
   },
-  "Save && Re-collect": {
-    "en": "Save && Re-collect",
+  "Revert": {
+    "en": "Revert",
+    "ja": ""
+  },
+  "Save BLIP Settings": {
+    "en": "Save BLIP Settings",
+    "ja": ""
+  },
+  "Settings have been modified.\nThis will apply to all databases.": {
+    "en": "Settings have been modified.\nThis will apply to all databases.",
+    "ja": ""
+  },
+  "Delete existing BLIP data": {
+    "en": "Delete existing BLIP data",
+    "ja": ""
+  },
+  "BLIP settings reverted": {
+    "en": "BLIP settings reverted",
+    "ja": ""
+  },
+  "Delete Collected Data": {
+    "en": "Delete Collected Data",
     "ja": ""
   },
   "(no preview)": {
@@ -372,10 +392,6 @@
   },
   "Delete Selected Data": {
     "en": "Delete Selected Data",
-    "ja": ""
-  },
-  "Re-collect after deletion (mark as pending)": {
-    "en": "Re-collect after deletion (mark as pending)",
     "ja": ""
   },
   "Refresh": {

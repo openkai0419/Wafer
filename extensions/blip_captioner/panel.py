@@ -97,9 +97,13 @@ class BlipSettingsWidget(QtWidgets.QWidget):
         reset_btn.clicked.connect(self._on_reset)
         btn_layout.addWidget(reset_btn)
 
-        save_btn = QtWidgets.QPushButton(t("Save && Re-collect"))
+        save_btn = QtWidgets.QPushButton(t("Save"))
         save_btn.clicked.connect(self._on_save)
         btn_layout.addWidget(save_btn)
+
+        revert_btn = QtWidgets.QPushButton(t("Revert"))
+        revert_btn.clicked.connect(self._on_revert)
+        btn_layout.addWidget(revert_btn)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(dpix(8), dpix(8), dpix(8), dpix(8))
@@ -114,6 +118,7 @@ class BlipSettingsWidget(QtWidgets.QWidget):
         self._requesting = False
         self._device_fetched = False
         self._device_ok = False
+        self._saved_settings = dict(self._settings)
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -239,42 +244,101 @@ class BlipSettingsWidget(QtWidgets.QWidget):
         self._device_label.setText(f"Device: {device.upper()}  ({name})\nModel: blip-large (Salesforce)")
 
     def _on_save(self):
-        reply = QtWidgets.QMessageBox.question(
-            self,
-            t("Confirm"),
-            t("Save settings and re-collect all databases?"),
-            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-            QtWidgets.QMessageBox.No,
-        )
-        if reply != QtWidgets.QMessageBox.Yes:
-            return
         values = self._current_settings()
+        if values == self._saved_settings:
+            return
+
+        dlg = _BlipSaveConfirmDialog(parent=self)
+        if dlg.exec() != QtWidgets.QDialog.Accepted:
+            return
+        do_delete = dlg.delete_data()
+        do_recollect = dlg.recollect()
+
         blip_config.save_and_notify("blip", **values)
         self._settings = values
+        self._saved_settings = dict(values)
 
-        db_names = list_setting_db_names()
-        if db_names:
-            self._send_delete_and_recollect(db_names)
+        if do_delete or do_recollect:
+            db_names = list_setting_db_names()
+            if db_names:
+                self._send_delete_and_recollect(
+                    db_names,
+                    delete=do_delete,
+                    re_collect=do_recollect,
+                )
 
-        Notifier.info(f"BLIP settings saved (min={values['min_length']}, max={values['max_length']}, beams={values['num_beams']})")
+        if do_delete:
+            action = "saved + delete & recollect" if do_recollect else "saved + delete"
+        else:
+            action = "saved"
+        Notifier.info(
+            f"BLIP settings {action} (min={values['min_length']}, max={values['max_length']}, beams={values['num_beams']})"
+        )
 
     def _on_reset(self):
         self._min_spin.setValue(5)
         self._max_spin.setValue(50)
         self._beams_spin.setValue(3)
 
+    def _on_revert(self):
+        self._min_spin.setValue(self._saved_settings.get("min_length", 5))
+        self._max_spin.setValue(self._saved_settings.get("max_length", 50))
+        self._beams_spin.setValue(self._saved_settings.get("num_beams", 3))
+        Notifier.info(t("BLIP settings reverted"))
+
     @staticmethod
-    def _send_delete_and_recollect(db_names: list[str]):
+    def _send_delete_and_recollect(
+        db_names: list[str], *, delete: bool, re_collect: bool
+    ):
         from wafer.core.commands.binding.instance_registry import InstanceRegistry
 
         node = InstanceRegistry.instance().resolve_node()
         if not node:
             AppLogger.warning("[BlipSettings] No IPC node available")
             return
+        keys = ["blip.caption"] if delete else []
         for db in db_names:
             node.send_reliable(
                 "delete.keys",
-                {"keys": ["blip.caption"], "collector": "blip", "re_collect": True},
+                {"keys": keys, "collector": "blip", "re_collect": re_collect},
                 dst="indexer",
                 db=db,
             )
+
+
+class _BlipSaveConfirmDialog(QtWidgets.QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(t("Save BLIP Settings"))
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setSpacing(dpix(8))
+        layout.addWidget(
+            QtWidgets.QLabel(
+                t("Settings have been modified.\nThis will apply to all databases.")
+            )
+        )
+
+        self._delete_cb = QtWidgets.QCheckBox(t("Delete existing BLIP data"))
+        self._delete_cb.setChecked(True)
+        self._recollect_cb = QtWidgets.QCheckBox(t("Re-collect after deletion"))
+        self._recollect_cb.setChecked(True)
+        self._delete_cb.toggled.connect(self._recollect_cb.setEnabled)
+        layout.addWidget(self._delete_cb)
+        layout.addWidget(self._recollect_cb)
+
+        btn_layout = QtWidgets.QHBoxLayout()
+        btn_layout.addStretch()
+        save_btn = QtWidgets.QPushButton(t("Save"))
+        cancel_btn = QtWidgets.QPushButton(t("Cancel"))
+        save_btn.clicked.connect(self.accept)
+        cancel_btn.clicked.connect(self.reject)
+        btn_layout.addWidget(save_btn)
+        btn_layout.addWidget(cancel_btn)
+        layout.addLayout(btn_layout)
+
+    def delete_data(self) -> bool:
+        return self._delete_cb.isChecked()
+
+    def recollect(self) -> bool:
+        return self._delete_cb.isChecked() and self._recollect_cb.isChecked()

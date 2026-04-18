@@ -148,6 +148,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             self.image_cache,
             self._widget_lookup,
             self._promote_to_widget,
+            self._appear_widget,
         )
         self._pipeline.layout_ready.connect(self._on_layout_ready)
 
@@ -583,6 +584,11 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             return widget
         return self.widgets.get(index)
 
+    def _appear_widget(self, index):
+        widget = self._additional_widgets.get(index)
+        if widget is not None and widget.isVisible():
+            self._notifier.appear(index, widget)
+
     @profiler.profile
     def _on_layout_ready(self, layout):
         was_scrolling = self.is_scrolling()
@@ -790,7 +796,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             self.pixmap_item_pool.release(self.widgets.pop(index))
         self._notifier.bind(index, plugin_name)
         self._additional_widgets[index] = widget
-        self._sync_additional_widget(index)
+        self._sync_additional_widget(index, suppress_appear=True)
         if index in self.items.selected_indices():
             self._notifier.select(index, widget)
         path = self.items.paths[index]
@@ -802,7 +808,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         vp.setUpdatesEnabled(True)
 
     @profiler.profile
-    def _sync_additional_widget(self, index, vp_rect=None):
+    def _sync_additional_widget(self, index, vp_rect=None, suppress_appear=False):
         widget = self._additional_widgets.get(index)
         if widget is None:
             return
@@ -836,7 +842,8 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
                 widget.setGeometry(mapped)
         if not was_visible:
             widget.show()
-            self._notifier.appear(index, widget)
+            if not suppress_appear:
+                self._notifier.appear(index, widget)
 
     @profiler.profile
     def _sync_additional_widgets(self):

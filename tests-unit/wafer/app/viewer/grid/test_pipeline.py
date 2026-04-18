@@ -7,6 +7,8 @@ from wafer.core.qt.dispatcher import Dispatcher, CancelToken
 from wafer.app.viewer.grid.pipeline import GridPipeline
 from wafer.plugin.layout.calc import LayoutData
 
+_noop_appear = lambda i: None
+
 
 @pytest.fixture()
 def qapp():
@@ -58,7 +60,7 @@ class TestGridPipelineLayout:
     def test_layout_emits_result(self, dispatcher):
         result = {}
         cache = FakeCache()
-        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: None, lambda i, n: None)
+        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: None, lambda i, n: None, _noop_appear)
         pipeline.layout_ready.connect(lambda layout: result.update({"layout": layout}))
 
         aspects = [1.5, 1.0, 0.8, 1.2, 1.0]
@@ -73,7 +75,7 @@ class TestGridPipelineLayout:
     def test_layout_cancel_previous(self, dispatcher):
         result = {"count": 0}
         cache = FakeCache()
-        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: None, lambda i, n: None)
+        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: None, lambda i, n: None, _noop_appear)
         pipeline.layout_ready.connect(lambda layout: result.update({"count": result["count"] + 1}))
 
         aspects = [1.0] * 20
@@ -87,7 +89,7 @@ class TestGridPipelineLayout:
     def test_layout_masonry_mode(self, dispatcher):
         result = {}
         cache = FakeCache()
-        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: None, lambda i, n: None)
+        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: None, lambda i, n: None, _noop_appear)
         pipeline.layout_ready.connect(lambda layout: result.update({"layout": layout}))
 
         aspects = [1.0, 0.5, 1.5, 0.8]
@@ -100,7 +102,7 @@ class TestGridPipelineLayout:
     def test_layout_empty_aspects(self, dispatcher):
         result = {}
         cache = FakeCache()
-        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: None, lambda i, n: None)
+        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: None, lambda i, n: None, _noop_appear)
         pipeline.layout_ready.connect(lambda layout: result.update({"layout": layout}))
 
         pipeline.request_layout([], 100, 4, 800, 600)
@@ -111,7 +113,7 @@ class TestGridPipelineLayout:
 class TestGridPipelineCancel:
     def test_cancel_all(self, dispatcher):
         cache = FakeCache()
-        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: None, lambda i, n: None)
+        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: None, lambda i, n: None, _noop_appear)
 
         pipeline._active[0] = CancelToken()
         pipeline._active[1] = CancelToken()
@@ -123,7 +125,7 @@ class TestGridPipelineCancel:
 
     def test_cancel_index(self, dispatcher):
         cache = FakeCache()
-        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: None, lambda i, n: None)
+        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: None, lambda i, n: None, _noop_appear)
 
         token = CancelToken()
         pipeline._active[5] = token
@@ -133,12 +135,12 @@ class TestGridPipelineCancel:
 
     def test_cancel_nonexistent_index(self, dispatcher):
         cache = FakeCache()
-        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: None, lambda i, n: None)
+        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: None, lambda i, n: None, _noop_appear)
         pipeline.cancel_index(999)
 
     def test_cancel_all_clears_layout_cancel(self, dispatcher):
         cache = FakeCache()
-        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: None, lambda i, n: None)
+        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: None, lambda i, n: None, _noop_appear)
         token = pipeline._layout_cancel.renew()
 
         pipeline.cancel_all()
@@ -148,7 +150,7 @@ class TestGridPipelineCancel:
 class TestScheduleRender:
     def test_schedule_render_cancels_existing(self, dispatcher):
         cache = FakeCache()
-        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: None, lambda i, n: None)
+        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: None, lambda i, n: None, _noop_appear)
 
         old_token = CancelToken()
         pipeline._active[0] = old_token
@@ -172,7 +174,7 @@ class TestScheduleRender:
 
     def test_schedule_render_no_plugin_uses_deferred_resolve(self, dispatcher):
         cache = FakeCache()
-        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: None, lambda i, n: None)
+        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: None, lambda i, n: None, _noop_appear)
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
@@ -196,7 +198,7 @@ class TestGridPipelineIntegration:
     def test_layout_then_cancel_all(self, dispatcher):
         result = {}
         cache = FakeCache()
-        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: None, lambda i, n: None)
+        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: None, lambda i, n: None, _noop_appear)
         pipeline.layout_ready.connect(lambda layout: result.update({"layout": layout}))
 
         aspects = [1.0] * 10
@@ -237,6 +239,7 @@ class TestDispatchThumbnail:
             cache,
             lambda i: widget,
             lambda i, n: None,
+            _noop_appear,
         )
         pipeline._active[0] = CancelToken()
 
@@ -291,6 +294,7 @@ class TestDispatchThumbnail:
             cache,
             lambda i: widget,
             lambda i, n: None,
+            _noop_appear,
         )
 
         loaded = {}

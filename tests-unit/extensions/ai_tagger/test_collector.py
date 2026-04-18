@@ -8,6 +8,7 @@ from PIL import Image
 
 from extensions.ai_tagger._downloader import KNOWN_MODELS, DEFAULT_MODEL
 from extensions.ai_tagger.collector import WD14TaggerCollector, _CACHE_MAX, _ENGINE_IDLE_TIMEOUT
+from extensions.ai_tagger.settings import wd14_config
 
 
 class TestKnownModels:
@@ -24,6 +25,7 @@ class TestKnownModels:
 
 class TestBuildTags:
     def setup_method(self):
+        self.collector = WD14TaggerCollector()
         self.result = {
             "ratings": {"general": 0.85, "sensitive": 0.10, "questionable": 0.03, "explicit": 0.02},
             "general": {"1girl": 0.95, "blue_hair": 0.80, "smile": 0.70},
@@ -31,39 +33,73 @@ class TestBuildTags:
         }
 
     def test_rating_top_one(self):
-        tags = WD14TaggerCollector._build_tags(self.result)
+        tags = self.collector._build_tags(self.result)
         assert tags["rating"] == "general"
 
+    def test_rating_score_present(self):
+        tags = self.collector._build_tags(self.result)
+        assert tags["rating_score"] == "0.85"
+
     def test_general_comma_separated(self):
-        tags = WD14TaggerCollector._build_tags(self.result)
+        tags = self.collector._build_tags(self.result)
         assert "1girl" in tags["tags"]
         assert "blue_hair" in tags["tags"]
         assert "smile" in tags["tags"]
 
     def test_character_comma_separated(self):
-        tags = WD14TaggerCollector._build_tags(self.result)
+        tags = self.collector._build_tags(self.result)
         assert tags["character"] == "hatsune_miku"
 
     def test_empty_character(self):
         self.result["character"] = {}
-        tags = WD14TaggerCollector._build_tags(self.result)
+        tags = self.collector._build_tags(self.result)
         assert "character" not in tags
 
     def test_empty_general(self):
         self.result["general"] = {}
-        tags = WD14TaggerCollector._build_tags(self.result)
-        assert "general" not in tags
+        tags = self.collector._build_tags(self.result)
+        assert "tags" not in tags
 
     def test_multiple_characters(self):
         self.result["character"] = {"hatsune_miku": 0.90, "kagamine_rin": 0.85}
-        tags = WD14TaggerCollector._build_tags(self.result)
+        tags = self.collector._build_tags(self.result)
         assert "hatsune_miku" in tags["character"]
         assert "kagamine_rin" in tags["character"]
 
     def test_sensitive_rating(self):
         self.result["ratings"] = {"sensitive": 0.90, "general": 0.05, "questionable": 0.03, "explicit": 0.02}
-        tags = WD14TaggerCollector._build_tags(self.result)
+        tags = self.collector._build_tags(self.result)
         assert tags["rating"] == "sensitive"
+
+    def test_disable_rating(self):
+        tags = self.collector._build_tags(self.result, settings={"enable_rating": False, "enable_rating_score": True, "enable_character": True, "enable_tags": True})
+        assert "rating" not in tags
+        assert "rating_score" in tags
+
+    def test_disable_rating_score(self):
+        tags = self.collector._build_tags(self.result, settings={"enable_rating": True, "enable_rating_score": False, "enable_character": True, "enable_tags": True})
+        assert "rating" in tags
+        assert "rating_score" not in tags
+
+    def test_disable_character(self):
+        tags = self.collector._build_tags(self.result, settings={"enable_rating": True, "enable_rating_score": True, "enable_character": False, "enable_tags": True})
+        assert "character" not in tags
+
+    def test_disable_tags(self):
+        tags = self.collector._build_tags(self.result, settings={"enable_rating": True, "enable_rating_score": True, "enable_character": True, "enable_tags": False})
+        assert "tags" not in tags
+
+    def test_disable_all(self):
+        tags = self.collector._build_tags(self.result, settings={"enable_rating": False, "enable_rating_score": False, "enable_character": False, "enable_tags": False})
+        assert tags == {}
+
+    def test_uses_instance_settings_by_default(self):
+        self.collector._settings = {"enable_rating": False, "enable_rating_score": False, "enable_character": True, "enable_tags": True}
+        tags = self.collector._build_tags(self.result)
+        assert "rating" not in tags
+        assert "rating_score" not in tags
+        assert "character" in tags
+        assert "tags" in tags
 
 
 class TestTwoLevelCache:
@@ -341,3 +377,96 @@ class TestIdleTimeout:
 
             self.collector._ensure_engine()
             assert self.collector._engine is mock_instance
+
+
+class TestOnNotify:
+    def setup_method(self):
+        self.collector = WD14TaggerCollector()
+
+    def test_on_notify_reloads_settings(self):
+        original = dict(self.collector._settings)
+        with patch.object(wd14_config, "load", return_value={**original, "general_threshold": 0.1}):
+            self.collector.on_notify()
+        assert self.collector._settings["general_threshold"] == 0.1
+
+    def test_on_notify_without_payload(self):
+        with patch.object(wd14_config, "load", return_value=self.collector._settings):
+            self.collector.on_notify(None)
+
+
+class TestOnRequest:
+    def setup_method(self):
+        self.collector = WD14TaggerCollector()
+
+    def test_unknown_action_returns_none(self):
+        assert self.collector.on_request("unknown.action", {}, None) is None
+
+    def test_device_info_action(self):
+        result = self.collector.on_request("wd14.device_info", {}, None)
+        assert "device" in result
+        assert "device_name" in result
+
+    def test_preview_no_path_returns_error(self):
+        result = self.collector.on_request("wd14.preview", {"path": ""}, None)
+        assert result["error"] == "no_path"
+
+    def test_preview_thumbnail_failed(self):
+        self.collector._engine = MagicMock()
+        self.collector._engine.input_height = 448
+
+        with patch("extensions.ai_tagger.collector.image_loader_resolver") as mock_resolver:
+            mock_resolver.load_pil.return_value = None
+            result = self.collector.on_request("wd14.preview", {"path": "/test.jpg", "settings": {}}, None)
+        assert result["error"] == "thumbnail_failed"
+
+    def test_preview_success(self):
+        thumb = Image.new("RGB", (10, 10), (255, 0, 0))
+        mock_result = {
+            "ratings": {"general": 0.85, "sensitive": 0.10},
+            "general": {"1girl": 0.95},
+            "character": {"hatsune_miku": 0.90},
+        }
+        self.collector._engine = MagicMock()
+        self.collector._engine.input_height = 448
+        self.collector._engine.predict.return_value = mock_result
+
+        with patch("extensions.ai_tagger.collector.image_loader_resolver") as mock_resolver:
+            mock_resolver.load_pil.return_value = thumb
+            result = self.collector.on_request(
+                "wd14.preview",
+                {"path": "/test.jpg", "settings": {"general_threshold": 0.05, "character_threshold": 0.5}},
+                None,
+            )
+        assert result["rating"] == "general"
+        assert result["rating_score"] == "0.85"
+        assert "general" in result
+        assert "character" in result
+        assert result["path"] == "/test.jpg"
+
+
+class TestSettingsIntegration:
+    def test_default_settings_loaded(self):
+        collector = WD14TaggerCollector()
+        assert "general_threshold" in collector._settings
+        assert "character_threshold" in collector._settings
+        assert "enable_rating" in collector._settings
+
+    def test_process_uses_settings_thresholds(self):
+        collector = WD14TaggerCollector()
+        collector._settings["general_threshold"] = 0.1
+        collector._settings["character_threshold"] = 0.9
+
+        thumb = Image.new("RGB", (10, 10), (0, 255, 0))
+        mock_result = {
+            "ratings": {"general": 0.85},
+            "general": {"1girl": 0.95},
+            "character": {},
+        }
+        collector._engine = MagicMock()
+        collector._engine.input_height = 448
+        collector._engine.predict.return_value = mock_result
+
+        with patch("extensions.ai_tagger.collector.image_loader_resolver") as mock_resolver:
+            mock_resolver.load_pil.return_value = thumb
+            collector.process("/test/file.jpg", (1000.0, 500, "hash_x"))
+        collector._engine.predict.assert_called_once_with(thumb, general_threshold=0.1, character_threshold=0.9)

@@ -14,9 +14,8 @@ if TYPE_CHECKING:
     from ._inference import WD14Inference
 
 from ._downloader import ensure_model
+from .settings import wd14_config
 
-GENERAL_THRESHOLD = 0.057
-CHARACTER_THRESHOLD = 0.8
 _CACHE_MAX = 5000
 _ENGINE_IDLE_TIMEOUT = 120.0
 
@@ -67,6 +66,7 @@ class WD14TaggerCollector(BaseSingletonCollector):
         self._pixel_cache: OrderedDict[str, dict] = OrderedDict()
         self._last_used: float = 0.0
         self._idle_timer: threading.Timer | None = None
+        self._settings = wd14_config.load()
 
     def _ensure_engine(self):
         if self._engine is not None:
@@ -110,19 +110,74 @@ class WD14TaggerCollector(BaseSingletonCollector):
         if len(cache) > _CACHE_MAX:
             cache.popitem(last=False)
 
-    @staticmethod
-    def _build_tags(result: dict) -> dict:
+    def _build_tags(self, result: dict, settings: dict | None = None) -> dict:
+        s = settings or self._settings
         ratings = result["ratings"]
         top_rating = max(ratings, key=ratings.get)
 
-        tags = {
-            "rating": top_rating,
-        }
-        if result["character"]:
+        tags = {}
+        if s.get("enable_rating", True):
+            tags["rating"] = top_rating
+        if s.get("enable_rating_score", True):
+            tags["rating_score"] = str(round(ratings[top_rating], 4))
+        if s.get("enable_character", True) and result["character"]:
             tags["character"] = ", ".join(result["character"].keys())
-        if result["general"]:
+        if s.get("enable_tags", True) and result["general"]:
             tags["tags"] = ", ".join(result["general"].keys())
         return tags
+
+    def on_notify(self, payload=None) -> None:
+        self._settings = wd14_config.load()
+        AppLogger.info(f"WD14 settings reloaded: {self._settings}")
+
+    def on_request(self, action, payload, msg):
+        if action == "wd14.preview":
+            return self._handle_preview(payload)
+        if action == "wd14.device_info":
+            return self._get_device_info()
+        return None
+
+    def _handle_preview(self, payload):
+        path = payload.get("path", "")
+        settings = payload.get("settings", {})
+        if not path:
+            return {"error": "no_path"}
+        self._ensure_engine()
+        self._touch()
+        thumb = image_loader_resolver.load_pil(path, size=self._engine.input_height)
+        if thumb is None:
+            return {"error": "thumbnail_failed"}
+        try:
+            result = self._engine.predict(
+                thumb,
+                general_threshold=settings.get("general_threshold", self._settings.get("general_threshold", 0.057)),
+                character_threshold=settings.get("character_threshold", self._settings.get("character_threshold", 0.8)),
+            )
+        except Exception as e:
+            AppLogger.warning(f"WD14 preview failed: {path}", exc=e)
+            return {"error": str(e)}
+        top_rating = max(result["ratings"], key=result["ratings"].get)
+        return {
+            "rating": top_rating,
+            "rating_score": str(round(result["ratings"][top_rating], 4)),
+            "character": result["character"],
+            "general": result["general"],
+            "path": path,
+        }
+
+    @staticmethod
+    def _get_device_info():
+        try:
+            import onnxruntime as ort
+
+            providers = ort.get_available_providers()
+            gpu_providers = ("CUDAExecutionProvider", "ROCmExecutionProvider", "CoreMLExecutionProvider")
+            for p in gpu_providers:
+                if p in providers:
+                    return {"device": p.replace("ExecutionProvider", ""), "device_name": p}
+            return {"device": "CPU", "device_name": "CPUExecutionProvider"}
+        except ImportError:
+            return {"device": "unknown", "device_name": "onnxruntime not available"}
 
     def process(self, path: str, file_info: tuple) -> CollectorResult:
         file_hash = file_info[2] if len(file_info) >= 3 else None
@@ -150,8 +205,10 @@ class WD14TaggerCollector(BaseSingletonCollector):
                 self._cache_put(self._hash_cache, file_hash, tags)
             return CollectorResult(source=path, status=True, tags=tags)
 
+        general_th = self._settings.get("general_threshold", 0.057)
+        character_th = self._settings.get("character_threshold", 0.8)
         try:
-            result = self._engine.predict(thumb, general_threshold=GENERAL_THRESHOLD, character_threshold=CHARACTER_THRESHOLD)
+            result = self._engine.predict(thumb, general_threshold=general_th, character_threshold=character_th)
         except Exception as e:
             AppLogger.warning(f"WD14 inference failed: {path}", exc=e)
             return CollectorResult(source=path, status=False)

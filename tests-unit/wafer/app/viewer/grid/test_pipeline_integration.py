@@ -7,7 +7,8 @@ from unittest.mock import MagicMock
 
 from wafer.core.qt.dispatcher import Dispatcher, CancelToken
 from wafer.app.viewer.grid.pipeline import GridPipeline
-from wafer.plugin.grid.base import ImageGridPlugin, WidgetGridPlugin
+from wafer.plugin.grid.base import WidgetGridPlugin
+from wafer.plugin.grid.handler import WIDGET, IMAGE
 
 
 @pytest.fixture()
@@ -62,15 +63,14 @@ def _make_image(w=100, h=100):
     return img
 
 
-class _StubImagePlugin(ImageGridPlugin):
+class _StubImagePlugin:
     NAME = "stub_image"
     EXTENSIONS = (".png", ".jpg")
     PRIORITY = 0
 
-    def load(self, path, size=None):
-        if size:
-            return _make_image(size.width(), size.height())
-        return _make_image()
+    @classmethod
+    def can_handle(cls, path):
+        return True
 
 
 class _StubWidgetPlugin(WidgetGridPlugin):
@@ -88,20 +88,21 @@ class _StubWidgetPlugin(WidgetGridPlugin):
         widget.set_thumb(image)
 
 
-class _SlowImagePlugin(ImageGridPlugin):
+class _SlowImagePlugin:
     NAME = "slow_image"
     EXTENSIONS = (".slow",)
     PRIORITY = 0
 
-    def load(self, path, size=None):
-        time.sleep(0.3)
-        return _make_image()
+    @classmethod
+    def can_handle(cls, path):
+        return True
 
 
 def _fake_resolver(plugin=None, load_fn=None):
     _cls = type(plugin) if plugin else None
     _inst = plugin
     _load = load_fn if load_fn is not None else (lambda p, s=None: _make_image())
+    _kind = WIDGET if isinstance(plugin, WidgetGridPlugin) else IMAGE
 
     class _Registry:
         def instance(self, name):
@@ -110,8 +111,8 @@ def _fake_resolver(plugin=None, load_fn=None):
     class _Resolver:
         registry = _Registry()
 
-        def resolve_chain(self, path):
-            return [_cls] if _cls else []
+        def resolve_merged_chain(self, path):
+            return [(_cls, _kind)] if _cls else []
 
         def load(self, path, size=None):
             return _load(path, size)
@@ -240,9 +241,13 @@ class TestPipelineWidgetRecycle:
 
         deliver_event = threading.Event()
 
-        class _BlockingPlugin(ImageGridPlugin):
+        class _BlockingPlugin:
             NAME = "blocking"
             EXTENSIONS = (".blk",)
+
+            @classmethod
+            def can_handle(cls, path):
+                return True
 
             def load(self, path, size=None):
                 deliver_event.wait(timeout=2)
@@ -351,9 +356,13 @@ class TestPipelineCancelAllDuringRender:
 
         barrier = threading.Event()
 
-        class _WaitPlugin(ImageGridPlugin):
+        class _WaitPlugin:
             NAME = "wait"
             EXTENSIONS = (".wait",)
+
+            @classmethod
+            def can_handle(cls, path):
+                return True
 
             def load(self, path, size=None):
                 barrier.wait(timeout=2)
@@ -505,9 +514,13 @@ class TestPipelineFullsizeKeyOptimization:
 
         load_called = {"count": 0}
 
-        class _TrackingPlugin(ImageGridPlugin):
+        class _TrackingPlugin:
             NAME = "tracking"
             EXTENSIONS = (".png",)
+
+            @classmethod
+            def can_handle(cls, path):
+                return True
 
             def load(self, path, size=None):
                 load_called["count"] += 1
@@ -605,9 +618,13 @@ class TestPipelineErrorPlaceholder:
         widget = MagicMock()
         widgets[0] = widget
 
-        class _FailPlugin(ImageGridPlugin):
+        class _FailPlugin:
             NAME = "fail"
             EXTENSIONS = (".png",)
+
+            @classmethod
+            def can_handle(cls, path):
+                return True
 
             def load(self, path, size=None):
                 return None
@@ -632,9 +649,13 @@ class TestPipelineErrorPlaceholder:
         widget = MagicMock()
         widgets[0] = widget
 
-        class _FailPlugin(ImageGridPlugin):
+        class _FailPlugin:
             NAME = "fail2"
             EXTENSIONS = (".fail",)
+
+            @classmethod
+            def can_handle(cls, path):
+                return True
 
             def load(self, path, size=None):
                 return None

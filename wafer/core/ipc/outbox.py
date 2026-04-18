@@ -169,6 +169,8 @@ def scan_all_outbox(dst_filter: set[str] | None = None, db_filter: str | None = 
         try:
             conn = _connect(db_path)
             try:
+                if not conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='outbox'").fetchone():
+                    continue
                 rows = conn.execute(
                     "SELECT id, topic, payload, dst, db, created_at FROM outbox ORDER BY id",
                 ).fetchall()

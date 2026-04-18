@@ -129,16 +129,16 @@ def _build_stylesheet() -> str:
             color: {p.accent_text};
         }}
         QPushButton#open_panel_btn {{
-            background: rgba({_hex_rgb(p.success)}, 0.15);
-            color: {p.success};
-            border: 1px solid rgba({_hex_rgb(p.success)}, 0.4);
+            background: rgba({_hex_rgb(p.accent)}, 0.15);
+            color: {p.accent};
+            border: 1px solid rgba({_hex_rgb(p.accent)}, 0.4);
             border-radius: {r}px;
             padding: {dpix(2)}px {dpix(10)}px;
             font-size: {dpix(10)}px;
             font-weight: bold;
         }}
         QPushButton#open_panel_btn:hover {{
-            background: rgba({_hex_rgb(p.success)}, 0.3);
+            background: rgba({_hex_rgb(p.accent)}, 0.3);
         }}
         QPushButton#open_panel_btn:disabled {{
             background: {p.bg_secondary};
@@ -226,7 +226,7 @@ class PluginManagerWidget(QtWidgets.QWidget):
 
         save_btn = QtWidgets.QPushButton(t("Save"))
         save_btn.setObjectName("save_btn")
-        revert_btn = QtWidgets.QPushButton(t("Cancel"))
+        revert_btn = QtWidgets.QPushButton(t("Revert"))
         revert_btn.setObjectName("cancel_btn")
         save_btn.clicked.connect(self._on_save)
         revert_btn.clicked.connect(self._on_revert)

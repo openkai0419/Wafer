@@ -1,5 +1,5 @@
 from .viewer.base import BaseViewerPlugin, ImageViewerPlugin, WidgetViewerPlugin
-from .grid.base import BaseGridPlugin, ImageGridPlugin, WidgetGridPlugin
+from .grid.base import BaseGridPlugin, WidgetGridPlugin
 from .collector.base import BaseCollectorPlugin, BaseSingletonCollector, CollectorResult
 from .parser.base import BaseParserPlugin, BaseSingletonParser, ParserResult
 from .query.base import BaseFilterPlugin, BaseSortPlugin
@@ -8,6 +8,7 @@ from .panel.base import BasePanelPlugin
 from .config import PluginConfig
 from .meta_panel.base import BaseMetaPanelPlugin
 from .rename.base import BaseRenameSourcePlugin, SegmentInfo
+from .imageloader.base import BaseImageLoader
 from ..core.commands.bridge import ActionKit
 from ..core.commands.command.require import require, require_v
 

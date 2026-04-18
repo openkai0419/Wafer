@@ -1,8 +1,9 @@
+import numpy as np
 import pytest
 from PySide6 import QtCore, QtGui
 from PIL import Image
 
-from wafer.builtins.grid import SystemThumbnailPlugin
+from wafer.builtins.imageloader import SystemImageLoader
 from wafer.builtins.viewer import DefaultViewerPlugin
 from wafer.builtins.filters import TextFilter, DirectoryFilter
 from wafer.builtins.sorts import (
@@ -17,55 +18,53 @@ from wafer.builtins.sorts import (
 from wafer.plugin.grid.handler import grid_resolver
 from wafer.plugin.viewer.handler import viewer_resolver
 from wafer.plugin.query.handler import filter_registry, sort_registry
-from wafer.plugin.grid.base import ImageGridPlugin
+from wafer.plugin.imageloader.base import BaseImageLoader
+from wafer.plugin.imageloader.handler import image_loader_resolver
 from wafer.plugin.viewer.base import ImageViewerPlugin
 from wafer.plugin.query.base import BaseFilterPlugin, BaseSortPlugin
 
 
-class TestSystemThumbnailPlugin:
-    def test_is_image_grid_plugin(self):
-        assert issubclass(SystemThumbnailPlugin, ImageGridPlugin)
+class TestSystemImageLoader:
+    def test_is_base_image_loader(self):
+        assert issubclass(SystemImageLoader, BaseImageLoader)
 
     def test_catch_all_extensions(self):
-        assert SystemThumbnailPlugin.EXTENSIONS == ()
+        assert SystemImageLoader.EXTENSIONS == ()
 
     def test_negative_priority(self):
-        assert SystemThumbnailPlugin.PRIORITY == -100
+        assert SystemImageLoader.PRIORITY == -100
 
-    def test_registered_in_grid_registry(self):
-        assert grid_resolver.registry.instance("system_thumbnail") is not None
+    def test_registered_in_imageloader_registry(self):
+        assert image_loader_resolver.registry.instance("system_thumbnail") is not None
 
-    def test_load_nonexistent_returns_none(self):
-        plugin = SystemThumbnailPlugin()
-        result = plugin.load("/nonexistent/path.xyz")
+    def test_load_pil_nonexistent_returns_none(self):
+        plugin = SystemImageLoader()
+        result = plugin.load_pil("/nonexistent/path.xyz")
         assert result is None
 
-    def test_load_real_image(self, tmp_path):
+    def test_load_pil_real_image(self, tmp_path):
         img_path = tmp_path / "test.png"
         Image.new("RGB", (100, 100)).save(str(img_path))
-        plugin = SystemThumbnailPlugin()
-        result = plugin.load(str(img_path))
+        plugin = SystemImageLoader()
+        result = plugin.load_pil(str(img_path))
         if result is not None:
-            assert isinstance(result, QtGui.QImage)
-            assert not result.isNull()
+            assert isinstance(result, Image.Image)
 
-    def test_load_with_size(self, tmp_path):
+    def test_load_pil_with_size(self, tmp_path):
         img_path = tmp_path / "test.png"
         Image.new("RGB", (200, 200)).save(str(img_path))
-        plugin = SystemThumbnailPlugin()
-        size = QtCore.QSize(64, 64)
-        result = plugin.load(str(img_path), size)
+        plugin = SystemImageLoader()
+        result = plugin.load_pil(str(img_path), size=64)
         if result is not None:
-            assert result.width() <= 64
-            assert result.height() <= 64
+            assert isinstance(result, Image.Image)
 
     def test_chain_includes_system_thumbnail_for_jpg(self):
-        chain = grid_resolver.resolve_chain("photo.jpg")
-        assert SystemThumbnailPlugin in chain
+        chain = image_loader_resolver.resolve_chain("photo.jpg")
+        assert SystemImageLoader in chain
 
     def test_chain_system_thumbnail_is_last_for_jpg(self):
-        chain = grid_resolver.resolve_chain("photo.jpg")
-        assert chain[-1] is SystemThumbnailPlugin
+        chain = image_loader_resolver.resolve_chain("photo.jpg")
+        assert chain[-1] is SystemImageLoader
 
 
 class TestDefaultViewerPlugin:
@@ -132,7 +131,7 @@ class TestBuiltinSorts:
 
 class TestRegisterAll:
     def test_builtins_loaded_via_load_plugins(self):
-        assert grid_resolver.registry.instance("system_thumbnail") is not None
+        assert image_loader_resolver.registry.instance("system_thumbnail") is not None
         assert viewer_resolver.registry.instance("default_viewer") is not None
         assert filter_registry.get("text") is not None
         assert sort_registry.get("path") is not None

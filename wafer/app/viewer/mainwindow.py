@@ -921,8 +921,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
     @QtCore.Slot(str, str, str, str)
     def _on_dev_log(self, level: str, text: str, src: str, db: str):
-        from ...builtins.devlog import DevLogPanel
+        from ...builtins.log_panel import LogPanel
 
-        panel = DevLogPanel.instance()
+        panel = LogPanel.instance()
         if panel is not None:
             panel.append_log(level, text, src=src, db=db)

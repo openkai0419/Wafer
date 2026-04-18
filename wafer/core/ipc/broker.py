@@ -116,7 +116,7 @@ class Broker:
         AppLogger.info("Broker stopping")
         self._cancel_restore_debounce()
         self._stop.set()
-        try_put(self._direct_q, self._sentinel)
+        try_put(self._direct_q, self._sentinel, "broker.stop")
         self._io_thread.join(timeout=2.0)
         self._prune_thread.join(timeout=2.0)
         close_socket(self._router)
@@ -126,7 +126,7 @@ class Broker:
         targets = self._resolve_targets(msg, sender_ident=None)
         frames = msg.to_frames()
         for ident in targets:
-            try_put(self._direct_q, (ident, frames))
+            try_put(self._direct_q, (ident, frames), f"broker.dispatch:{msg.topic}")
 
     def peer_counts(self) -> dict[str, int]:
         with self._lock:
@@ -222,7 +222,7 @@ class Broker:
             if viewer_id is not None:
                 reply_payload["viewer_id"] = viewer_id
             reply = msg.reply(reply_payload, topic="mgmt.registered")
-            try_put(self._direct_q, (ident, reply.to_frames()))
+            try_put(self._direct_q, (ident, reply.to_frames()), "broker.registered")
             AppLogger.info(f"registered: {node_id} role={role} db={db_set}")
             return
 
@@ -235,17 +235,17 @@ class Broker:
                 known = ident in self._peers
             if not known:
                 reply = msg.reply(None, topic="mgmt.not_registered")
-                try_put(self._direct_q, (ident, reply.to_frames()))
+                try_put(self._direct_q, (ident, reply.to_frames()), "broker.not_registered")
                 return
             self._refresh_peer(ident)
             pong = msg.reply(None, topic="mgmt.pong")
-            try_put(self._direct_q, (ident, pong.to_frames()))
+            try_put(self._direct_q, (ident, pong.to_frames()), "broker.pong")
             return
 
         if topic == "mgmt.get_count":
             counts = self.peer_counts()
             reply = msg.reply(counts, topic="mgmt.count_reply")
-            try_put(self._direct_q, (ident, reply.to_frames()))
+            try_put(self._direct_q, (ident, reply.to_frames()), "broker.count_reply")
             return
 
         exclude = ident if topic != "dev.log" else None
@@ -257,7 +257,7 @@ class Broker:
 
         if msg.request_id:
             for t in targets:
-                try_put(self._direct_q, (t, frames))
+                try_put(self._direct_q, (t, frames), f"broker.request:{topic}")
             return
 
         if msg.coalesce:
@@ -265,13 +265,13 @@ class Broker:
             self._broadcast_q.put(key, (targets, frames))
         elif msg.priority == Priority.HIGH:
             for t in targets:
-                try_put(self._high_q, (t, frames))
+                try_put(self._high_q, (t, frames), f"broker.high:{topic}")
         elif msg.priority == Priority.LOW:
             for t in targets:
-                try_put(self._low_q, (t, frames))
+                try_put(self._low_q, (t, frames), f"broker.low:{topic}")
         else:
             for t in targets:
-                try_put(self._mid_q, (t, frames))
+                try_put(self._mid_q, (t, frames), f"broker.mid:{topic}")
 
     def _deliver_batch(self, items, did_work):
         for ident, frames in items:
@@ -329,8 +329,7 @@ class Broker:
                     except zmq.Again:
                         pass
                     except zmq.ZMQError as e:
-                        if e.errno != zmq.EHOSTUNREACH:
-                            AppLogger.debug(f"broker: bcast error {e}")
+                        AppLogger.debug(f"broker: bcast error {e}")
 
             low_items, _ = drain_queue(self._low_q, self._sentinel)
             did_work = self._deliver_batch(low_items, did_work)

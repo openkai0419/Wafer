@@ -1210,8 +1210,8 @@ class BatchRenamerPlugin(BasePanelPlugin):
         if inst is not None:
             try:
                 BatchRenameWidget._saved_state = inst._serialise_columns()
-            except RuntimeError:
-                pass
+            except RuntimeError as e:
+                AppLogger.warning("[BatchRenamer] save_state failed", exc=e)
         return dict(BatchRenameWidget._saved_state)
 
     def restore_state(self, state):

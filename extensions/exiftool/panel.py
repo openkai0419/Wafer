@@ -16,6 +16,7 @@ from wafer.core.lang.manager import t
 from wafer.utils.paths import list_setting_db_names, data_db_path
 from wafer.core.db.db_utils import apply_read_pragmas
 from wafer.core.qt.dispatcher import Dispatcher, CancelSlot
+from wafer.app.viewer.widgets.loading_overlay import OverlayLoadingIndicator
 from .settings import MODE_BLACKLIST, MODE_WHITELIST, SORT_NAME, SORT_COUNT
 from .settings import read_sort_config, write_sort_config
 
@@ -67,11 +68,11 @@ class ExifSettingsWidget(QtWidgets.QWidget):
         bottom_layout.addWidget(self._mode_combo)
         bottom_layout.addStretch()
 
-        save_btn = QtWidgets.QPushButton(t("Save && Delete Data (All DBs)"))
+        save_btn = QtWidgets.QPushButton(t("Save"))
         save_btn.clicked.connect(self._on_save)
         bottom_layout.addWidget(save_btn)
 
-        reset_btn = QtWidgets.QPushButton(t("Cancel"))
+        reset_btn = QtWidgets.QPushButton(t("Revert"))
         reset_btn.clicked.connect(self._on_reset)
         bottom_layout.addWidget(reset_btn)
 
@@ -136,16 +137,14 @@ class ExifSettingsWidget(QtWidgets.QWidget):
 
     def _on_save(self):
         current_keys = self._key_browser.collect_filter_keys()
-        has_changes = self._filter_mode != self._saved_mode or current_keys != self._saved_keys
+        if self._filter_mode == self._saved_mode and current_keys == self._saved_keys:
+            return
 
-        do_delete = False
-        do_recollect = False
-        if has_changes:
-            dlg = _SaveConfirmDialog(parent=self)
-            if dlg.exec() != QtWidgets.QDialog.Accepted:
-                return
-            do_delete = dlg.delete_data()
-            do_recollect = dlg.recollect()
+        dlg = _SaveConfirmDialog(parent=self)
+        if dlg.exec() != QtWidgets.QDialog.Accepted:
+            return
+        do_delete = dlg.delete_data()
+        do_recollect = dlg.recollect()
 
         self._filter_keys = current_keys
         from .settings import write_filter_config
@@ -301,6 +300,8 @@ class _KeyBrowserTab(QtWidgets.QWidget):
         self._splitter.setStretchFactor(0, 6)
         self._splitter.setStretchFactor(1, 4)
 
+        self._loading = OverlayLoadingIndicator(self._tree.viewport())
+
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(dpix(4))
@@ -348,8 +349,14 @@ class _KeyBrowserTab(QtWidgets.QWidget):
     def refresh(self):
         self._load_keys()
 
+    def _position_loading(self):
+        m = dpix(6)
+        self._loading.move(m, m)
+
     def _load_keys(self):
         cancel = self._cancel.renew()
+        self._position_loading()
+        self._loading.start()
 
         def _bg():
             if cancel.is_cancelled():
@@ -359,6 +366,7 @@ class _KeyBrowserTab(QtWidgets.QWidget):
         def _done(result):
             if cancel.is_cancelled():
                 return
+            self._loading.stop()
             self._key_data = result
             self._update_check_all_label()
             self._build_tree()
@@ -566,6 +574,30 @@ class _KeyBrowserTab(QtWidgets.QWidget):
         self._build_tree()
 
 
+class _ContainImageLabel(QtWidgets.QLabel):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAlignment(QtCore.Qt.AlignCenter)
+        self._source: QtGui.QPixmap | None = None
+
+    def set_source(self, pixmap: QtGui.QPixmap):
+        self._source = pixmap
+        self._update_scaled()
+
+    def clear(self):
+        self._source = None
+        super().clear()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_scaled()
+
+    def _update_scaled(self):
+        if self._source is None or self._source.isNull():
+            return
+        self.setPixmap(self._source.scaled(self.size(), QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation))
+
+
 class _SamplePreviewTab(QtWidgets.QWidget):
     filter_keys_changed = QtCore.Signal(set)
 
@@ -584,11 +616,9 @@ class _SamplePreviewTab(QtWidgets.QWidget):
         self._drop_label.setMinimumHeight(dpix(60))
         self._drop_label.setStyleSheet(f"border: {dpix(2)}px dashed palette(mid); border-radius: {dpix(6)}px; padding: {dpix(12)}px;")
 
-        self._thumb = QtWidgets.QLabel()
-        self._thumb.setAlignment(QtCore.Qt.AlignCenter)
-        self._thumb.setFixedWidth(dpix(240))
-        self._thumb.setMinimumHeight(dpix(160))
-        self._thumb.setScaledContents(False)
+        self._thumb = _ContainImageLabel()
+        self._thumb.setMinimumWidth(dpix(160))
+        self._thumb.setMinimumHeight(dpix(120))
 
         self._table = QtWidgets.QTableWidget()
         self._table.setColumnCount(3)
@@ -666,29 +696,21 @@ class _SamplePreviewTab(QtWidgets.QWidget):
                 return
             if cancel.is_cancelled():
                 return
-            pixmap = QtGui.QImage(path)
-            if not pixmap.isNull():
-                scaled = pixmap.scaled(
-                    dpix(240),
-                    dpix(240),
-                    QtCore.Qt.KeepAspectRatio,
-                    QtCore.Qt.SmoothTransformation,
-                )
-            else:
-                scaled = None
+            qimage = QtGui.QImage(path)
+            pixmap = QtGui.QPixmap.fromImage(qimage) if qimage is not None and not qimage.isNull() else None
             if cancel.is_cancelled():
                 return
-            self._dispatcher.invoke(lambda: self._apply_preview(path, meta, scaled, cancel))
+            self._dispatcher.invoke(lambda: self._apply_preview(path, meta, pixmap, cancel))
 
         self._dispatcher.post(task)
 
-    def _apply_preview(self, path: str, meta: dict, scaled_image, cancel):
+    def _apply_preview(self, path: str, meta: dict, pixmap: QtGui.QPixmap | None, cancel):
         if cancel.is_cancelled():
             return
         self._current_path = path
         self._meta = meta
-        if scaled_image is not None:
-            self._thumb.setPixmap(QtGui.QPixmap.fromImage(scaled_image))
+        if pixmap is not None:
+            self._thumb.set_source(pixmap)
         else:
             self._thumb.clear()
         self._rebuild_table()

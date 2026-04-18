@@ -16,6 +16,7 @@ from .layout.base import BaseLayoutPlugin
 from .panel.base import BasePanelPlugin
 from .meta_panel.base import BaseMetaPanelPlugin
 from .rename.base import BaseRenameSourcePlugin
+from .imageloader.base import BaseImageLoader
 
 
 def _build_registry_map():
@@ -32,6 +33,7 @@ def _build_registry_map():
         BasePanelPlugin: "panel",
         BaseMetaPanelPlugin: "meta_panel",
         BaseRenameSourcePlugin: "rename_source",
+        BaseImageLoader: "imageloader",
         MenuGroup: "command",
     }
 
@@ -222,6 +224,7 @@ def load_plugins(*, on_progress=None) -> list[str]:
     from .panel.handler import panel_registry
     from .meta_panel.handler import meta_panel_registry
     from .rename.handler import rename_source_registry
+    from .imageloader.handler import image_loader_resolver
 
     command_registry = CommandGroupRegistry()
     registries = {
@@ -235,6 +238,7 @@ def load_plugins(*, on_progress=None) -> list[str]:
         "panel": panel_registry,
         "meta_panel": meta_panel_registry,
         "rename_source": rename_source_registry,
+        "imageloader": image_loader_resolver.registry,
         "command": command_registry,
     }
     from ..builtins.registration import register_all

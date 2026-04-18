@@ -181,14 +181,8 @@ class AppLogger:
         if role:
             AppLogger.set_role(role)
 
-    _ALWAYS_FORWARD = frozenset(("warning", "error", "critical"))
-
     @staticmethod
     def _forward(level: str, text: str):
-        from ..constants import DEV_MODE
-
-        if not DEV_MODE and level not in AppLogger._ALWAYS_FORWARD:
-            return
         node = AppLogger._node
         if node is None:
             return

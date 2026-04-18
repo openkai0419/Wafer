@@ -106,28 +106,7 @@ class TestAppLogger:
         AppLogger.set_node(None)
         AppLogger.info("no forward")
 
-    @patch("wafer.constants.DEV_MODE", False)
-    def test_forward_only_warning_and_error_in_non_dev(self):
-        node = MagicMock()
-        AppLogger.set_node(node, role="r")
-        AppLogger.debug("d")
-        AppLogger.info("i")
-        AppLogger.warning("w")
-        AppLogger.error("e")
-        assert node.send.call_count == 2
-        levels = [c[0][1]["level"] for c in node.send.call_args_list]
-        assert levels == ["warning", "error"]
-
-    @patch("wafer.constants.DEV_MODE", False)
-    def test_forward_skips_debug_and_info_in_non_dev(self):
-        node = MagicMock()
-        AppLogger.set_node(node, role="r")
-        AppLogger.debug("d")
-        AppLogger.info("i")
-        node.send.assert_not_called()
-
-    @patch("wafer.constants.DEV_MODE", True)
-    def test_forward_all_levels_in_dev_mode(self):
+    def test_forward_all_levels_always(self):
         node = MagicMock()
         AppLogger.set_node(node, role="r")
         AppLogger.debug("d")

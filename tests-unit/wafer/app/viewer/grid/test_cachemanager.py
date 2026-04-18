@@ -439,20 +439,17 @@ def test_additional_pool_warm_up(qtbot):
     assert isinstance(pool._pools["test_dummy"][0], _DummyWidget)
 
 
-def test_additional_pool_warm_up_skips_image_plugins(qtbot):
+def test_additional_pool_warm_up_skips_non_widget_plugins(qtbot):
     from unittest.mock import MagicMock
-    from wafer.plugin.grid.base import ImageGridPlugin
+    from wafer.plugin.grid.base import BaseGridPlugin
 
-    class _ImageLikePlugin(ImageGridPlugin):
-        NAME = "image"
+    class _NonWidgetPlugin(BaseGridPlugin):
+        NAME = "non_widget"
         EXTENSIONS = (".jpg",)
         PRIORITY = 50
 
-        def load(self, path, size=None):
-            return None
-
     resolver = MagicMock()
-    resolver.registry.list_all.return_value = [_ImageLikePlugin]
+    resolver.registry.list_all.return_value = [_NonWidgetPlugin]
     pool = AdditionalWidgetPool(resolver)
     parent = QtWidgets.QWidget()
     pool.warm_up(parent)

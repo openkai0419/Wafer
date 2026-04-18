@@ -22,8 +22,8 @@ def _rmtree_onerror(func, path, exc_info):
     try:
         os.chmod(path, stat.S_IWRITE)
         func(path)
-    except OSError:
-        pass
+    except OSError as e:
+        AppLogger.warning(f"rmtree fallback failed: {path} ({e})")
 
 
 def _safe_remove(path: str | Path) -> None:
@@ -325,8 +325,8 @@ class FileExecutor:
         if action == "cut":
             try:
                 src.rmdir()
-            except OSError:
-                pass
+            except OSError as e:
+                AppLogger.debug(f"cut: source dir not removed: {src} ({e})")
 
 
 def build_drop_plans(parsed_items: list[ParsedItem], dst_dir: str, op: str) -> list[DropPlanItem]:

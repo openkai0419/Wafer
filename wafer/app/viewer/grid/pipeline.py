@@ -4,7 +4,7 @@ from PySide6 import QtCore, QtGui
 
 from ....utils.logs import AppLogger
 from ....core.qt.dispatcher import Dispatcher, CancelToken, CancelSlot
-from ....plugin.grid.handler import grid_resolver
+from ....plugin.grid.handler import grid_resolver, WIDGET
 from ....plugin.grid.base import (
     WidgetGridPlugin as _WidgetGridPlugin,
     _get_error_image,
@@ -87,7 +87,7 @@ class GridPipeline(QtCore.QObject):
             if isinstance(plugin, _WidgetGridPlugin):
                 self._dispatch_widget_render(index, path, size, plugin, cancel)
             else:
-                self._dispatch_image_load(index, path, size, plugin, cancel)
+                self._dispatch_image_load(index, path, size, cancel)
         else:
             self._dispatch_resolve(index, path, size, cancel)
 
@@ -95,21 +95,18 @@ class GridPipeline(QtCore.QObject):
         def task():
             if cancel.is_cancelled():
                 return
-            plugin = None
-            for plugin_cls in grid_resolver.resolve_chain(path):
+            for plugin_cls, kind in grid_resolver.resolve_merged_chain(path):
                 if not plugin_cls.can_handle(path):
                     continue
-                plugin = grid_resolver.registry.instance(plugin_cls.NAME)
-                break
-            if cancel.is_cancelled():
-                return
-            if plugin is None:
-                self._load_image(index, path, size, grid_resolver.load, cancel)
-                return
-            if isinstance(plugin, _WidgetGridPlugin):
-                self._thumb_dispatcher.invoke(lambda: self._on_resolve_widget(index, path, size, plugin, cancel))
-            else:
-                self._load_image(index, path, size, plugin.load, cancel)
+                if kind == WIDGET:
+                    plugin = grid_resolver.registry.instance(plugin_cls.NAME)
+                    if plugin is not None:
+                        self._thumb_dispatcher.invoke(lambda p=plugin: self._on_resolve_widget(index, path, size, p, cancel))
+                        return
+                else:
+                    self._load_image(index, path, size, grid_resolver.load, cancel)
+                    return
+            self._load_image(index, path, size, grid_resolver.load, cancel)
 
         self._render_dispatcher.post(task, priority=100, cancel=cancel)
 
@@ -130,7 +127,7 @@ class GridPipeline(QtCore.QObject):
         if plugin.REQUIRE_THUMBNAIL:
             self._dispatch_thumbnail(index, path, size, plugin, cancel)
 
-    def _dispatch_image_load(self, index, path, size, plugin, cancel):
+    def _dispatch_image_load(self, index, path, size, cancel):
         fkey = fullsize_key(path)
         cached = self._cache.get_if_sufficient(fkey, size)
         if cached is None:
@@ -141,8 +138,8 @@ class GridPipeline(QtCore.QObject):
                 widget.set_image(cached, path)
             return
         self._render_dispatcher.post(
-            lambda: self._load_image(index, path, size, plugin.load, cancel),
-            priority=plugin.PRIORITY,
+            lambda: self._load_image(index, path, size, grid_resolver.load, cancel),
+            priority=100,
             cancel=cancel,
         )
 

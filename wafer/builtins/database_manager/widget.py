@@ -169,7 +169,7 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
 
         save_btn = QtWidgets.QPushButton(t("Save"))
         save_btn.setObjectName("save_btn")
-        revert_btn = QtWidgets.QPushButton(t("Cancel"))
+        revert_btn = QtWidgets.QPushButton(t("Revert"))
         revert_btn.setObjectName("cancel_btn")
         save_btn.clicked.connect(self._on_save)
         revert_btn.clicked.connect(self._on_revert)
@@ -591,8 +591,8 @@ class DatabaseManagerPlugin(BasePanelPlugin):
         if w is not None:
             try:
                 return w._save_ui_state()
-            except RuntimeError:
-                pass
+            except RuntimeError as e:
+                AppLogger.warning("[DatabaseManager] save_state failed", exc=e)
         return dict(self._cached_state)
 
     def restore_state(self, state):
@@ -601,8 +601,8 @@ class DatabaseManagerPlugin(BasePanelPlugin):
         if w is not None:
             try:
                 w._restore_ui_state(state)
-            except RuntimeError:
-                pass
+            except RuntimeError as e:
+                AppLogger.warning("[DatabaseManager] restore_state failed", exc=e)
 
     def create_widget(self):
         w = DatabaseManagerWidget()

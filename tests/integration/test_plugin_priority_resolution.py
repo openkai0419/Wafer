@@ -1,51 +1,53 @@
 from wafer.plugin.registry import FilePluginRegistry, BasePlugin
-from wafer.plugin.grid.handler import grid_resolver
+from wafer.plugin.grid.handler import grid_resolver, WIDGET, IMAGE
 from wafer.plugin.viewer.handler import viewer_resolver
 from wafer.plugin.collector.handler import collector_resolver
 
 
 class TestGridPriorityResolution:
     def test_animated_resolves_before_image_for_gif(self):
-        chain = grid_resolver.resolve_chain("test.gif")
-        names = [p.NAME for p in chain]
+        chain = grid_resolver.resolve_merged_chain("test.gif")
+        names = [p.NAME for p, kind in chain]
         if "animated" in names and "image" in names:
             assert names.index("animated") < names.index("image")
 
     def test_animated_resolves_before_image_for_webp(self):
-        chain = grid_resolver.resolve_chain("test.webp")
-        names = [p.NAME for p in chain]
+        chain = grid_resolver.resolve_merged_chain("test.webp")
+        names = [p.NAME for p, kind in chain]
         if "animated" in names and "image" in names:
             assert names.index("animated") < names.index("image")
 
     def test_image_resolves_before_system_thumbnail(self):
-        chain = grid_resolver.resolve_chain("test.jpg")
-        names = [p.NAME for p in chain]
+        chain = grid_resolver.resolve_merged_chain("test.jpg")
+        names = [p.NAME for p, kind in chain]
         assert names.index("image") < names.index("system_thumbnail")
 
     def test_system_thumbnail_always_last(self):
         for ext in [".jpg", ".png", ".gif", ".webp", ".mp4", ".xyz"]:
-            chain = grid_resolver.resolve_chain(f"test{ext}")
+            chain = grid_resolver.resolve_merged_chain(f"test{ext}")
             if chain:
-                assert chain[-1].NAME == "system_thumbnail"
+                assert chain[-1][0].NAME == "system_thumbnail"
 
     def test_video_resolves_for_mp4(self):
-        chain = grid_resolver.resolve_chain("test.mp4")
-        names = [p.NAME for p in chain]
+        chain = grid_resolver.resolve_merged_chain("test.mp4")
+        names = [p.NAME for p, kind in chain]
         assert "video" in names
 
     def test_video_does_not_resolve_for_jpg(self):
-        chain = grid_resolver.resolve_chain("test.jpg")
-        names = [p.NAME for p in chain]
+        chain = grid_resolver.resolve_merged_chain("test.jpg")
+        names = [p.NAME for p, kind in chain]
         assert "video" not in names
 
     def test_highest_priority_wins_in_resolve(self):
         resolved = grid_resolver.resolve("test.jpg")
-        chain = grid_resolver.resolve_chain("test.jpg")
-        assert resolved == chain[0]
+        chain = grid_resolver.resolve_merged_chain("test.jpg")
+        widget_chain = [p for p, kind in chain if kind == WIDGET]
+        if widget_chain:
+            assert resolved == widget_chain[0]
 
     def test_unknown_extension_only_system_thumbnail(self):
-        chain = grid_resolver.resolve_chain("test.xyz_unknown_ext")
-        non_fallback = [p for p in chain if p.EXTENSIONS != ()]
+        chain = grid_resolver.resolve_merged_chain("test.xyz_unknown_ext")
+        non_fallback = [p for p, kind in chain if p.EXTENSIONS != ()]
         assert len(non_fallback) == 0
 
 

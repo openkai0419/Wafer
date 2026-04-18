@@ -317,8 +317,8 @@ def apply_pending_packages(extensions_dir: str) -> bool:
                     shutil.rmtree(entry.path, ignore_errors=True)
                 else:
                     os.remove(entry.path)
-            except OSError:
-                pass
+            except OSError as e:
+                AppLogger.warning(f"[Installer] Failed to remove pending entry: {entry.path}", exc=e)
     if applied > 0:
         importlib.invalidate_caches()
         AppLogger.info(f"[Installer] Pending package updates applied ({applied} entries)")

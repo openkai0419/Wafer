@@ -697,8 +697,11 @@ class TestDatabaseDetailBulkOperations:
         dir_b = tmp_path / "dir_b"
         dir_a.mkdir()
         dir_b.mkdir()
-        clipboard = QtWidgets.QApplication.clipboard()
-        clipboard.setText(f"{dir_a}\n{dir_b}\n/nonexistent/path")
+        monkeypatch.setattr(
+            QtWidgets.QApplication.clipboard().__class__,
+            "text",
+            lambda self: f"{dir_a}\n{dir_b}\n/nonexistent/path",
+        )
         widget._paste_paths(widget._ignore_list)
         assert widget._ignore_list.count() == 2
         texts = {widget._ignore_list.item(i).text() for i in range(widget._ignore_list.count())}
@@ -710,8 +713,11 @@ class TestDatabaseDetailBulkOperations:
         dir_a = tmp_path / "dir_a"
         dir_a.mkdir()
         widget._ignore_list.addItem(str(dir_a))
-        clipboard = QtWidgets.QApplication.clipboard()
-        clipboard.setText(str(dir_a))
+        monkeypatch.setattr(
+            QtWidgets.QApplication.clipboard().__class__,
+            "text",
+            lambda self: str(dir_a),
+        )
         widget._paste_paths(widget._ignore_list)
         assert widget._ignore_list.count() == 1
 
@@ -721,8 +727,11 @@ class TestDatabaseDetailBulkOperations:
         dir_b = tmp_path / "dir_b"
         dir_a.mkdir()
         dir_b.mkdir()
-        clipboard = QtWidgets.QApplication.clipboard()
-        clipboard.setText(f"{dir_a};{dir_b}")
+        monkeypatch.setattr(
+            QtWidgets.QApplication.clipboard().__class__,
+            "text",
+            lambda self: f"{dir_a};{dir_b}",
+        )
         widget._paste_paths(widget._ignore_list)
         assert widget._ignore_list.count() == 2
 

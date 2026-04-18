@@ -5,7 +5,6 @@ from datetime import datetime
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from ..constants import DEV_MODE
 from ..plugin.panel.base import BasePanelPlugin
 from ..utils.formatting import dpix
 from ..core.lang.manager import t
@@ -68,13 +67,13 @@ class _LogTab(QtWidgets.QPlainTextEdit):
             self.ensureCursorVisible()
 
 
-class DevLogPanel(QtWidgets.QWidget):
-    _instance: DevLogPanel | None = None
+class LogPanel(QtWidgets.QWidget):
+    _instance: LogPanel | None = None
     _log_signal = QtCore.Signal(str, str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        DevLogPanel._instance = self
+        LogPanel._instance = self
         self._log_signal.connect(self._on_log_signal)
         self._entries: list[dict] = []
         self._src_tabs: dict[str, _LogTab] = {}
@@ -180,21 +179,21 @@ class DevLogPanel(QtWidgets.QWidget):
         self.append_log(level, text)
 
     @classmethod
-    def instance(cls) -> DevLogPanel | None:
+    def instance(cls) -> LogPanel | None:
         return cls._instance
 
 
-class DevLogPanelPlugin(BasePanelPlugin):
-    NAME = "devlog"
-    DISPLAY_NAME = "DevLog"
+class LogPanelPlugin(BasePanelPlugin):
+    NAME = "log"
+    DISPLAY_NAME = "Log"
     PRIORITY = 0
-    DEFAULT_ENABLED = DEV_MODE
+    DEFAULT_ENABLED = False
     SOURCE = "Builtin"
 
     def create_widget(self):
         from ..utils.logs import AppLogger
 
-        panel = DevLogPanel()
+        panel = LogPanel()
         AppLogger.on_debug.connect(lambda t: panel._log_signal.emit("debug", t))
         AppLogger.on_info.connect(lambda t: panel._log_signal.emit("info", t))
         AppLogger.on_warning.connect(lambda t: panel._log_signal.emit("warning", t))

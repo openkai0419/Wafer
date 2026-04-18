@@ -23,33 +23,36 @@ from wafer.plugin.query.handler import filter_registry, sort_registry
 from wafer.plugin.layout.handler import layout_registry
 from wafer.plugin.panel.handler import panel_registry
 from wafer.plugin.rename.handler import rename_source_registry
+from wafer.plugin.imageloader.handler import image_loader_resolver
 
 
 EXTENSIONS_DIR = get_plugin_dir()
 
 
 class TestGridRegistryState:
-    def test_image_plugin_registered(self):
-        assert "image" in grid_resolver.registry.names()
-
     def test_animated_plugin_registered(self):
         assert "animated" in grid_resolver.registry.names()
 
     def test_video_plugin_registered(self):
         assert "video" in grid_resolver.registry.names()
 
-    def test_system_thumbnail_fallback_registered(self):
-        assert "system_thumbnail" in grid_resolver.registry.names()
 
-    def test_animated_before_image_in_priority(self):
-        all_plugins = grid_resolver.registry.list_all()
+class TestImageLoaderRegistryState:
+    def test_image_loader_registered(self):
+        assert "image" in image_loader_resolver.registry.names()
+
+    def test_system_thumbnail_fallback_registered(self):
+        assert "system_thumbnail" in image_loader_resolver.registry.names()
+
+    def test_image_before_system_in_priority(self):
+        all_plugins = image_loader_resolver.registry.list_all()
         names_in_order = [p.NAME for p in all_plugins]
-        animated_idx = names_in_order.index("animated")
         image_idx = names_in_order.index("image")
-        assert animated_idx < image_idx
+        sys_idx = names_in_order.index("system_thumbnail")
+        assert image_idx < sys_idx
 
     def test_system_thumbnail_last_in_priority(self):
-        all_plugins = grid_resolver.registry.list_all()
+        all_plugins = image_loader_resolver.registry.list_all()
         assert all_plugins[-1].NAME == "system_thumbnail"
 
 
@@ -163,39 +166,35 @@ class TestRenameSourceRegistryState:
 
 
 class TestResolutionChainOrder:
-    def test_gif_resolution_chain_animated_first(self):
-        chain = grid_resolver.resolve_chain("test.gif")
-        names = [p.NAME for p in chain]
+    def test_gif_merged_chain_animated_first(self):
+        chain = grid_resolver.resolve_merged_chain("test.gif")
+        names = [cls.NAME for cls, kind in chain]
         assert "animated" in names
         assert "image" in names
-        animated_idx = names.index("animated")
-        image_idx = names.index("image")
-        assert animated_idx < image_idx
+        assert names.index("animated") < names.index("image")
 
-    def test_webp_resolution_chain_animated_first(self):
-        chain = grid_resolver.resolve_chain("test.webp")
-        names = [p.NAME for p in chain]
+    def test_webp_merged_chain_animated_first(self):
+        chain = grid_resolver.resolve_merged_chain("test.webp")
+        names = [cls.NAME for cls, kind in chain]
         assert "animated" in names
         assert "image" in names
-        animated_idx = names.index("animated")
-        image_idx = names.index("image")
-        assert animated_idx < image_idx
+        assert names.index("animated") < names.index("image")
 
-    def test_jpg_resolution_chain_no_animated(self):
-        chain = grid_resolver.resolve_chain("test.jpg")
-        names = [p.NAME for p in chain]
+    def test_jpg_merged_chain_no_animated(self):
+        chain = grid_resolver.resolve_merged_chain("test.jpg")
+        names = [cls.NAME for cls, kind in chain]
         assert "image" in names
         assert "animated" not in names
 
-    def test_mp4_resolution_chain_video_only(self):
-        chain = grid_resolver.resolve_chain("test.mp4")
-        names = [p.NAME for p in chain]
+    def test_mp4_merged_chain_video_present(self):
+        chain = grid_resolver.resolve_merged_chain("test.mp4")
+        names = [cls.NAME for cls, kind in chain]
         assert "video" in names
         assert "image" not in names
 
-    def test_unknown_resolves_to_fallback_only(self):
-        chain = grid_resolver.resolve_chain("test.xyz_unknown")
-        names = [p.NAME for p in chain]
+    def test_unknown_merged_chain_fallback_only(self):
+        chain = grid_resolver.resolve_merged_chain("test.xyz_unknown")
+        names = [cls.NAME for cls, kind in chain]
         assert "system_thumbnail" in names
         assert len(names) == 1
 
@@ -219,6 +218,7 @@ class TestPluginLoaderFreshLoad:
             "layout": PluginRegistry(),
             "panel": PluginRegistry(),
             "rename_source": PluginRegistry(),
+            "imageloader": FilePluginRegistry(),
             "command": CommandGroupRegistry(),
         }
 
@@ -239,18 +239,15 @@ class TestPluginLoaderFreshLoad:
 
     def test_enabled_set_restricts_loading(self):
         registries = self._make_fresh_registries()
-        enabled = {
-            qualify_plugin_name("grid", type("ImageGridPlugin", (), {"NAME": "image"})),
-        }
         folder = os.path.join(EXTENSIONS_DIR, "image")
         found = _import_extension("image", folder)
         real_enabled = set()
         for rk, cls in found:
-            if cls.__name__ == "ImageGridPlugin":
+            if cls.__name__ == "ImageFileLoader":
                 real_enabled.add(qualify_plugin_name(rk, cls))
         loader = PluginLoader(EXTENSIONS_DIR, registries, enabled=real_enabled)
         loader.load_all()
-        assert "image" in registries["grid"].names()
+        assert "image" in registries["imageloader"].names()
         assert "image" not in registries["viewer"].names()
         assert "exiftool" not in registries["collector"].names()
 
@@ -316,13 +313,13 @@ class TestPluginPriorityOverride:
 
 class TestBuiltinsBeforeExtensions:
     def test_fallback_plugins_present_with_lowest_priority(self):
-        grid_all = grid_resolver.registry.list_all()
+        loader_all = image_loader_resolver.registry.list_all()
         viewer_all = viewer_resolver.registry.list_all()
-        assert grid_all[-1].PRIORITY == -100
+        assert loader_all[-1].PRIORITY == -100
         assert viewer_all[-1].PRIORITY == -100
 
     def test_builtins_not_overridden_by_extensions(self):
-        assert grid_resolver.registry.get("system_thumbnail") is not None
+        assert image_loader_resolver.registry.get("system_thumbnail") is not None
         assert viewer_resolver.registry.get("default_viewer") is not None
-        assert grid_resolver.registry.get("system_thumbnail").PRIORITY == -100
+        assert image_loader_resolver.registry.get("system_thumbnail").PRIORITY == -100
         assert viewer_resolver.registry.get("default_viewer").PRIORITY == -100

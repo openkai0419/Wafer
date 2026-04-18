@@ -1,4 +1,288 @@
 {
+  "Output": {
+    "en": "Output",
+    "ja": ""
+  },
+  "Raw": {
+    "en": "Raw",
+    "ja": ""
+  },
+  "Drop a file here for preview": {
+    "en": "Drop a file here for preview",
+    "ja": ""
+  },
+  "All individual  →  rating_general, ...": {
+    "en": "All individual  →  rating_general, ...",
+    "ja": ""
+  },
+  "Top + score  →  rating, rating_score": {
+    "en": "Top + score  →  rating, rating_score",
+    "ja": ""
+  },
+  "Top name only  →  rating": {
+    "en": "Top name only  →  rating",
+    "ja": ""
+  },
+  "Character": {
+    "en": "Character",
+    "ja": ""
+  },
+  "Click tags in Raw preview to toggle": {
+    "en": "Click tags in Raw preview to toggle",
+    "ja": ""
+  },
+  "Enable": {
+    "en": "Enable",
+    "ja": ""
+  },
+  "General": {
+    "en": "General",
+    "ja": ""
+  },
+  "Rating": {
+    "en": "Rating",
+    "ja": ""
+  },
+  "Threshold:": {
+    "en": "Threshold:",
+    "ja": ""
+  },
+  "(no tags)": {
+    "en": "(no tags)",
+    "ja": ""
+  },
+  "All ratings (individual)  →  rating_general, rating_sensitive, ...": {
+    "en": "All ratings (individual)  →  rating_general, rating_sensitive, ...",
+    "ja": ""
+  },
+  "Clear All": {
+    "en": "Clear All",
+    "ja": ""
+  },
+  "Click tags in Raw preview to add": {
+    "en": "Click tags in Raw preview to add",
+    "ja": ""
+  },
+  "Device: {device}  ({name})\nModel: wd-swinv2-tagger-v3 (SmilingWolf)": {
+    "en": "Device: {device}  ({name})\nModel: wd-swinv2-tagger-v3 (SmilingWolf)",
+    "ja": ""
+  },
+  "Filtered Output": {
+    "en": "Filtered Output",
+    "ja": ""
+  },
+  "None (no rating output)": {
+    "en": "None (no rating output)",
+    "ja": ""
+  },
+  "Rating Format": {
+    "en": "Rating Format",
+    "ja": ""
+  },
+  "Raw Output": {
+    "en": "Raw Output",
+    "ja": ""
+  },
+  "Tag Blacklist": {
+    "en": "Tag Blacklist",
+    "ja": ""
+  },
+  "Top rating only  →  rating, rating_score": {
+    "en": "Top rating only  →  rating, rating_score",
+    "ja": ""
+  },
+  "Character Tags": {
+    "en": "Character Tags",
+    "ja": ""
+  },
+  "Character Threshold:": {
+    "en": "Character Threshold:",
+    "ja": ""
+  },
+  "General Tags": {
+    "en": "General Tags",
+    "ja": ""
+  },
+  "General Threshold:": {
+    "en": "General Threshold:",
+    "ja": ""
+  },
+  "Generating tags...": {
+    "en": "Generating tags...",
+    "ja": ""
+  },
+  "Rating (top rating name)": {
+    "en": "Rating (top rating name)",
+    "ja": ""
+  },
+  "Rating Score (confidence)": {
+    "en": "Rating Score (confidence)",
+    "ja": ""
+  },
+  "Tag Output": {
+    "en": "Tag Output",
+    "ja": ""
+  },
+  "Thresholds": {
+    "en": "Thresholds",
+    "ja": ""
+  },
+  "WD14 Tagger Settings": {
+    "en": "WD14 Tagger Settings",
+    "ja": ""
+  },
+  "Save settings and re-collect all databases?": {
+    "en": "Save settings and re-collect all databases?",
+    "ja": ""
+  },
+  "(All)": {
+    "en": "(All)",
+    "ja": ""
+  },
+  "(None)": {
+    "en": "(None)",
+    "ja": ""
+  },
+  "Add New": {
+    "en": "Add New",
+    "ja": ""
+  },
+  "Command": {
+    "en": "Command",
+    "ja": ""
+  },
+  "Console": {
+    "en": "Console",
+    "ja": ""
+  },
+  "Key Bindings": {
+    "en": "Key Bindings",
+    "ja": ""
+  },
+  "Main Key": {
+    "en": "Main Key",
+    "ja": ""
+  },
+  "Modifier Key": {
+    "en": "Modifier Key",
+    "ja": ""
+  },
+  "Override": {
+    "en": "Override",
+    "ja": ""
+  },
+  "Reassign": {
+    "en": "Reassign",
+    "ja": ""
+  },
+  "Reset to Defaults": {
+    "en": "Reset to Defaults",
+    "ja": ""
+  },
+  "Search Command": {
+    "en": "Search Command",
+    "ja": ""
+  },
+  "Uncheck All": {
+    "en": "Uncheck All",
+    "ja": ""
+  },
+  "Drop a file here": {
+    "en": "Drop a file here",
+    "ja": ""
+  },
+  "Re Preview": {
+    "en": "Re Preview",
+    "ja": ""
+  },
+  "Blacklist (block selected)": {
+    "en": "Blacklist (block selected)",
+    "ja": ""
+  },
+  "Block": {
+    "en": "Block",
+    "ja": ""
+  },
+  "Check All": {
+    "en": "Check All",
+    "ja": ""
+  },
+  "Click a key to see sample values": {
+    "en": "Click a key to see sample values",
+    "ja": ""
+  },
+  "Count": {
+    "en": "Count",
+    "ja": ""
+  },
+  "Delete existing ExifTool data": {
+    "en": "Delete existing ExifTool data",
+    "ja": ""
+  },
+  "Drop a file here to preview ExifTool tags": {
+    "en": "Drop a file here to preview ExifTool tags",
+    "ja": ""
+  },
+  "Filter Mode:": {
+    "en": "Filter Mode:",
+    "ja": ""
+  },
+  "Filter keys...": {
+    "en": "Filter keys...",
+    "ja": ""
+  },
+  "Filter settings have been modified.\nThis will apply to all databases.": {
+    "en": "Filter settings have been modified.\nThis will apply to all databases.",
+    "ja": ""
+  },
+  "Key": {
+    "en": "Key",
+    "ja": ""
+  },
+  "Key Browser": {
+    "en": "Key Browser",
+    "ja": ""
+  },
+  "Re-collect after deletion": {
+    "en": "Re-collect after deletion",
+    "ja": ""
+  },
+  "Sample Preview": {
+    "en": "Sample Preview",
+    "ja": ""
+  },
+  "Save ExifTool Filter Settings": {
+    "en": "Save ExifTool Filter Settings",
+    "ja": ""
+  },
+  "Value": {
+    "en": "Value",
+    "ja": ""
+  },
+  "Whitelist (use selected only)": {
+    "en": "Whitelist (use selected only)",
+    "ja": ""
+  },
+  "BLIP Settings": {
+    "en": "BLIP Settings",
+    "ja": ""
+  },
+  "Confirm Deletion": {
+    "en": "Confirm Deletion",
+    "ja": ""
+  },
+  "Delete data for {count} prefix(es)?\n\n": {
+    "en": "Delete data for {count} prefix(es)?\n\n",
+    "ja": ""
+  },
+  "Files will be marked for re-collection.": {
+    "en": "Files will be marked for re-collection.",
+    "ja": ""
+  },
+  "Selected: {count} items": {
+    "en": "Selected: {count} items",
+    "ja": ""
+  },
   "Both Restart Required": {
     "en": "Both Restart Required",
     "ja": ""
@@ -70,8 +354,28 @@
     "en": "Reset Defaults",
     "ja": ""
   },
-  "Save && Re-collect": {
-    "en": "Save && Re-collect",
+  "Revert": {
+    "en": "Revert",
+    "ja": ""
+  },
+  "Save BLIP Settings": {
+    "en": "Save BLIP Settings",
+    "ja": ""
+  },
+  "Settings have been modified.\nThis will apply to all databases.": {
+    "en": "Settings have been modified.\nThis will apply to all databases.",
+    "ja": ""
+  },
+  "Delete existing BLIP data": {
+    "en": "Delete existing BLIP data",
+    "ja": ""
+  },
+  "BLIP settings reverted": {
+    "en": "BLIP settings reverted",
+    "ja": ""
+  },
+  "Delete Collected Data": {
+    "en": "Delete Collected Data",
     "ja": ""
   },
   "(no preview)": {
@@ -220,10 +524,6 @@
   },
   "Delete Selected Data": {
     "en": "Delete Selected Data",
-    "ja": ""
-  },
-  "Re-collect after deletion (mark as pending)": {
-    "en": "Re-collect after deletion (mark as pending)",
     "ja": ""
   },
   "Refresh": {
@@ -454,8 +754,8 @@
   "Content Viewer": {
     "en": "Content Viewer"
   },
-  "DevLog": {
-    "en": "DevLog"
+  "Log": {
+    "en": "Log"
   },
   "Edit Mode (might have visual issues)": {
     "en": "Edit Mode (might have visual issues)"
@@ -634,8 +934,8 @@
   "MultiSpan Tiling": {
     "en": "MultiSpan Tiling"
   },
-  "Toggle DevLog": {
-    "en": "Toggle DevLog"
+  "Toggle Log": {
+    "en": "Toggle Log"
   },
   "Apply": {
     "en": "Apply"

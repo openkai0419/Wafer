@@ -23,35 +23,34 @@ class TestViewerThumbnailDefaultSize:
         assert grid_resolver.thumbnail_size == self._original
 
     def test_fallback_uses_thumbnail_size_when_no_size(self):
-        from wafer.builtins.grid import SystemThumbnailPlugin
+        from wafer.plugin.imageloader.handler import image_loader_resolver
 
         grid_resolver.thumbnail_size = 2048
         thumbnailer = MagicMock()
         thumbnailer.get_thumbnail.return_value = None
-        instance = grid_resolver.registry.instance("system_thumbnail")
-        orig = instance.thumbnailer
-        instance.thumbnailer = thumbnailer
+        instance = image_loader_resolver.registry.instance("system_thumbnail")
+        orig = instance._thumbnailer
+        instance._thumbnailer = thumbnailer
         try:
-            instance.load("dummy.xyz", size=None)
+            instance.load_pil("dummy.xyz", size=2048)
             thumbnailer.get_thumbnail.assert_called_once_with("dummy.xyz", size=2048)
         finally:
-            instance.thumbnailer = orig
+            instance._thumbnailer = orig
 
     def test_fallback_uses_explicit_size_when_provided(self):
-        from PySide6 import QtCore
+        from wafer.plugin.imageloader.handler import image_loader_resolver
 
         grid_resolver.thumbnail_size = 2048
         thumbnailer = MagicMock()
         thumbnailer.get_thumbnail.return_value = None
-        instance = grid_resolver.registry.instance("system_thumbnail")
-        orig = instance.thumbnailer
-        instance.thumbnailer = thumbnailer
+        instance = image_loader_resolver.registry.instance("system_thumbnail")
+        orig = instance._thumbnailer
+        instance._thumbnailer = thumbnailer
         try:
-            size = QtCore.QSize(400, 300)
-            instance.load("dummy.xyz", size=size)
+            instance.load_pil("dummy.xyz", size=400)
             thumbnailer.get_thumbnail.assert_called_once_with("dummy.xyz", size=400)
         finally:
-            instance.thumbnailer = orig
+            instance._thumbnailer = orig
 
     def test_restore_from_setting(self):
         with patch("wafer.builtins.commands.setting_commands.app_settings") as mock_setting:

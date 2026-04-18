@@ -4,6 +4,7 @@ from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtCore import QFileInfo
 from ..utils.formatting import dpix
 from ..utils.logs import AppLogger
+from ..core.qt.image import pil_to_qimage
 from ..core.platform.thumbnails import FileThumbnailer
 from ..core.qt.dispatcher import Dispatcher
 from ..core.qt.thread import SimpleThreadPool
@@ -14,16 +15,8 @@ _thumb_pool = SimpleThreadPool("dialog_thumb")
 _thumb_dispatcher = Dispatcher(_thumb_pool)
 
 
-def _pil_to_qimage(img) -> QImage:
-    if img.mode != "RGBA":
-        img = img.convert("RGBA")
-    data = img.tobytes("raw", "BGRA")
-    qimage = QImage(data, img.width, img.height, img.width * 4, QImage.Format_ARGB32)
-    return qimage.copy()
-
-
 def _pil_to_qpixmap(img) -> QPixmap:
-    return QPixmap.fromImage(_pil_to_qimage(img))
+    return QPixmap.fromImage(pil_to_qimage(img))
 
 
 def _split_path(path: str, fallback_name: str = ""):
@@ -50,7 +43,7 @@ def _image_for_source(path: str, data, size: int) -> QImage | None:
         try:
             pil_img = FileThumbnailer().get_thumbnail(p, size=size)
             if pil_img is not None:
-                return _pil_to_qimage(pil_img)
+                return pil_to_qimage(pil_img)
         except Exception as e:
             AppLogger.warning(f"Thumbnail generation failed: {p}", exc=e)
     return None

@@ -98,7 +98,7 @@ class Node:
     def stop(self):
         self._stop.set()
         self._outbox_event.set()
-        try_put(self._out_q, self._sentinel)
+        try_put(self._out_q, self._sentinel, "node.stop")
         if self._io_thread:
             self._io_thread.join(timeout=2.0)
         if self._outbox_thread:
@@ -112,14 +112,14 @@ class Node:
 
     def send(self, topic: str, payload: Any = None, *, dst: str = "ALL", db: str = "", priority: int = Priority.MID):
         msg = Message.build(topic, payload, src=self.node_id, dst=dst, db=db or self.default_db, priority=priority)
-        try_put(self._out_q, msg.to_frames())
+        try_put(self._out_q, msg.to_frames(), f"node.send:{topic}")
 
     def enqueue(self, msg: Message):
-        try_put(self._out_q, msg.to_frames())
+        try_put(self._out_q, msg.to_frames(), f"node.enqueue:{msg.topic}")
 
     def send_coalesced(self, topic: str, payload: Any = None, *, dst: str = "ALL", db: str = ""):
         msg = Message.build(topic, payload, src=self.node_id, dst=dst, db=db or self.default_db, coalesce=True)
-        try_put(self._out_q, msg.to_frames())
+        try_put(self._out_q, msg.to_frames(), f"node.coalesced:{topic}")
 
     def send_reliable(self, topic: str, payload: Any = None, *, dst: str, db: str = ""):
         if self._outbox is None:
@@ -134,7 +134,7 @@ class Node:
             self._pending[rid] = (topic, q)
         try:
             msg = Message.build(topic, payload, src=self.node_id, dst=dst, db=db or self.default_db, rid=rid)
-            try_put(self._out_q, msg.to_frames())
+            try_put(self._out_q, msg.to_frames(), f"node.request:{topic}")
             try:
                 return q.get(timeout=timeout)
             except Empty:
@@ -273,7 +273,7 @@ class Node:
                 pending = self._pending.get(msg.request_id)
             if pending:
                 _, q = pending
-                try_put(q, msg)
+                try_put(q, msg, f"node.reply:{msg.topic}")
                 return
 
         if msg.topic == "mgmt.registered":
@@ -356,7 +356,7 @@ class Node:
                     did_work = True
                 except zmq.Again:
                     for remaining in batch[i:]:
-                        try_put(self._out_q, remaining)
+                        try_put(self._out_q, remaining, "node.resend")
                     break
                 except Exception as e:
                     AppLogger.debug(f"node send error: {e}")

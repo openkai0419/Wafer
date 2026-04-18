@@ -52,20 +52,20 @@ class TestTwoLevelCache:
 
     def test_l1_cache_skips_thumbnail(self):
         self.collector._hash_cache["abc123"] = self.caption
-        self.collector._thumbnailer = MagicMock()
-        self.collector.process("/test/file.jpg", (1000.0, 500, "abc123"))
-        self.collector._thumbnailer.get_thumbnail.assert_not_called()
+        with patch("extensions.blip_captioner.collector.image_loader_resolver") as mock_resolver:
+            self.collector.process("/test/file.jpg", (1000.0, 500, "abc123"))
+            mock_resolver.load_pil.assert_not_called()
 
     def test_l2_pixel_cache_hit(self):
         thumb = Image.new("RGB", (10, 10), (255, 0, 0))
         pixel_hash = hashlib.sha256(thumb.tobytes(), usedforsecurity=False).hexdigest()[:16]
         self.collector._pixel_cache[pixel_hash] = self.caption
 
-        self.collector._thumbnailer = MagicMock()
-        self.collector._thumbnailer.get_thumbnail.return_value = thumb
         self.collector._engine = MagicMock()
 
-        result = self.collector.process("/test/file.jpg", (1000.0, 500, "xyz789"))
+        with patch("extensions.blip_captioner.collector.image_loader_resolver") as mock_resolver:
+            mock_resolver.load_pil.return_value = thumb
+            result = self.collector.process("/test/file.jpg", (1000.0, 500, "xyz789"))
         assert result.status is True
         assert result.meta_info == {"caption": self.caption}
         assert self.collector._hash_cache["xyz789"] == self.caption
@@ -75,22 +75,22 @@ class TestTwoLevelCache:
         pixel_hash = hashlib.sha256(thumb.tobytes(), usedforsecurity=False).hexdigest()[:16]
         self.collector._pixel_cache[pixel_hash] = self.caption
 
-        self.collector._thumbnailer = MagicMock()
-        self.collector._thumbnailer.get_thumbnail.return_value = thumb
         self.collector._engine = MagicMock()
 
-        self.collector.process("/test/file.jpg", (1000.0, 500, "xyz789"))
+        with patch("extensions.blip_captioner.collector.image_loader_resolver") as mock_resolver:
+            mock_resolver.load_pil.return_value = thumb
+            self.collector.process("/test/file.jpg", (1000.0, 500, "xyz789"))
         self.collector._engine.predict.assert_not_called()
 
     def test_cache_miss_runs_inference(self):
         thumb = Image.new("RGB", (10, 10), (0, 255, 0))
 
-        self.collector._thumbnailer = MagicMock()
-        self.collector._thumbnailer.get_thumbnail.return_value = thumb
         self.collector._engine = MagicMock()
         self.collector._engine.predict.return_value = self.caption
 
-        result = self.collector.process("/test/file.jpg", (1000.0, 500, "new_hash"))
+        with patch("extensions.blip_captioner.collector.image_loader_resolver") as mock_resolver:
+            mock_resolver.load_pil.return_value = thumb
+            result = self.collector.process("/test/file.jpg", (1000.0, 500, "new_hash"))
         assert result.status is True
         assert result.meta_info == {"caption": self.caption}
         self.collector._engine.predict.assert_called_once()
@@ -99,45 +99,45 @@ class TestTwoLevelCache:
         thumb = Image.new("RGB", (10, 10), (0, 0, 255))
         pixel_hash = hashlib.sha256(thumb.tobytes(), usedforsecurity=False).hexdigest()[:16]
 
-        self.collector._thumbnailer = MagicMock()
-        self.collector._thumbnailer.get_thumbnail.return_value = thumb
         self.collector._engine = MagicMock()
         self.collector._engine.predict.return_value = self.caption
 
-        self.collector.process("/test/file.jpg", (1000.0, 500, "hash_a"))
+        with patch("extensions.blip_captioner.collector.image_loader_resolver") as mock_resolver:
+            mock_resolver.load_pil.return_value = thumb
+            self.collector.process("/test/file.jpg", (1000.0, 500, "hash_a"))
         assert "hash_a" in self.collector._hash_cache
         assert pixel_hash in self.collector._pixel_cache
         assert self.collector._hash_cache["hash_a"] == self.caption
         assert self.collector._pixel_cache[pixel_hash] == self.caption
 
     def test_thumbnail_none_returns_failure(self):
-        self.collector._thumbnailer = MagicMock()
-        self.collector._thumbnailer.get_thumbnail.return_value = None
         self.collector._engine = MagicMock()
 
-        result = self.collector.process("/test/file.jpg", (1000.0, 500, "some_hash"))
+        with patch("extensions.blip_captioner.collector.image_loader_resolver") as mock_resolver:
+            mock_resolver.load_pil.return_value = None
+            result = self.collector.process("/test/file.jpg", (1000.0, 500, "some_hash"))
         assert result.status is False
 
     def test_inference_error_returns_failure(self):
         thumb = Image.new("RGB", (10, 10), (128, 128, 128))
 
-        self.collector._thumbnailer = MagicMock()
-        self.collector._thumbnailer.get_thumbnail.return_value = thumb
         self.collector._engine = MagicMock()
         self.collector._engine.predict.side_effect = RuntimeError("Model error")
 
-        result = self.collector.process("/test/file.jpg", (1000.0, 500, "err_hash"))
+        with patch("extensions.blip_captioner.collector.image_loader_resolver") as mock_resolver:
+            mock_resolver.load_pil.return_value = thumb
+            result = self.collector.process("/test/file.jpg", (1000.0, 500, "err_hash"))
         assert result.status is False
 
     def test_no_file_hash_still_works(self):
         thumb = Image.new("RGB", (10, 10), (0, 128, 0))
 
-        self.collector._thumbnailer = MagicMock()
-        self.collector._thumbnailer.get_thumbnail.return_value = thumb
         self.collector._engine = MagicMock()
         self.collector._engine.predict.return_value = self.caption
 
-        result = self.collector.process("/test/file.jpg", (1000.0, 500))
+        with patch("extensions.blip_captioner.collector.image_loader_resolver") as mock_resolver:
+            mock_resolver.load_pil.return_value = thumb
+            result = self.collector.process("/test/file.jpg", (1000.0, 500))
         assert result.status is True
         assert result.meta_info == {"caption": self.caption}
         assert len(self.collector._hash_cache) == 0
@@ -222,13 +222,13 @@ class TestIdleTimeout:
 
     def test_process_calls_touch(self):
         thumb = Image.new("RGB", (10, 10), (0, 255, 0))
-        self.collector._thumbnailer = MagicMock()
-        self.collector._thumbnailer.get_thumbnail.return_value = thumb
         self.collector._engine = MagicMock()
         self.collector._engine.predict.return_value = "caption"
 
         before = self.collector._last_used
-        self.collector.process("/test/file.jpg", (1000.0, 500, "new_hash"))
+        with patch("extensions.blip_captioner.collector.image_loader_resolver") as mock_resolver:
+            mock_resolver.load_pil.return_value = thumb
+            self.collector.process("/test/file.jpg", (1000.0, 500, "new_hash"))
         assert self.collector._last_used > before
         assert self.collector._idle_timer is not None
         self.collector._idle_timer.cancel()

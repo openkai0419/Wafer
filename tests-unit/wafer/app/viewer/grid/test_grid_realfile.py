@@ -10,8 +10,8 @@ from unittest.mock import MagicMock
 
 from wafer.app.viewer.grid.grid_view import GridView
 from wafer.app.viewer.grid.items import GridItemModel
-from wafer.plugin.grid.handler import grid_resolver
-from wafer.plugin.grid.base import ImageGridPlugin, WidgetGridPlugin
+from wafer.plugin.grid.handler import grid_resolver, WIDGET, IMAGE
+from wafer.plugin.grid.base import WidgetGridPlugin
 
 
 @pytest.fixture(autouse=True, scope="module")
@@ -258,26 +258,17 @@ class TestSetPathsReplace:
 
 
 class TestPluginResolution:
-    def test_resolve_chain_gif_has_animated_first(self, media_dir):
+    def test_resolve_merged_chain_gif_has_widget_first(self, media_dir):
         path = str(media_dir / "anim1.gif")
-        chain = grid_resolver.resolve_chain(path)
+        chain = grid_resolver.resolve_merged_chain(path)
         assert len(chain) >= 2
-        assert issubclass(chain[0], WidgetGridPlugin)
+        cls, kind = chain[0]
+        assert kind == WIDGET
+        assert issubclass(cls, WidgetGridPlugin)
 
-    def test_resolve_chain_png_has_image_first(self, media_dir):
+    def test_resolve_merged_chain_png_has_image_loader(self, media_dir):
         path = str(media_dir / "photo1.png")
-        chain = grid_resolver.resolve_chain(path)
+        chain = grid_resolver.resolve_merged_chain(path)
         assert len(chain) >= 1
-        found_image = False
-        for cls in chain:
-            if issubclass(cls, ImageGridPlugin) and not issubclass(cls, WidgetGridPlugin):
-                found_image = True
-                break
+        found_image = any(kind == IMAGE for _, kind in chain)
         assert found_image
-
-    def test_resolve_image_instance_for_gif(self, media_dir):
-        path = str(media_dir / "anim1.gif")
-        inst = grid_resolver.resolve_image_instance(path)
-        assert inst is not None
-        assert isinstance(inst, ImageGridPlugin)
-        assert not isinstance(inst, WidgetGridPlugin)

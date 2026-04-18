@@ -1,6 +1,6 @@
 import py_compile
 
-from wafer.app.collector.worker import CollectorWorker, _MAX_WORKERS, _CHUNK_TIMEOUT, _CHUNK_SIZE, _SHUTDOWN_WAIT
+from wafer.app.collector.worker import CollectorWorker, _MAX_WORKERS, _CHUNK_SIZE, _SHUTDOWN_WAIT
 from wafer.plugin.collector.handler import collector_resolver
 
 
@@ -209,7 +209,6 @@ def test_notify_subscribed():
 
 
 def test_constants():
-    assert _CHUNK_TIMEOUT > 0
     assert _CHUNK_SIZE > 0
     assert _SHUTDOWN_WAIT > 0
 

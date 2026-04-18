@@ -58,7 +58,7 @@ def close_socket(sock: zmq.Socket) -> None:
         AppLogger.debug(f"close_socket close failed: {e}")
 
 
-def try_put(q: Queue, item: Any) -> None:
+def try_put(q: Queue, item: Any, label: str = "") -> None:
     try:
         q.put_nowait(item)
     except Full:
@@ -70,7 +70,7 @@ def try_put(q: Queue, item: Any) -> None:
             return
         from ...utils.logs import AppLogger
 
-        AppLogger.debug("zmq queue eviction")
+        AppLogger.debug(f"zmq queue eviction: {label} (size={q.maxsize})")
 
 
 def drain_queue(q: Queue, sentinel: object) -> tuple[list[Any], bool]:

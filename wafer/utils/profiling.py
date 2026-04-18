@@ -82,9 +82,9 @@ class FunctionProfiler:
             summary.append((name, self_time, count, self_time / total_self_time))
         summary.sort(key=lambda x: -x[3])
         summary = summary[:5]
-        AppLogger.info("[Profiler] Function self-time breakdown:")
+        AppLogger.debug("[Profiler] Function self-time breakdown:")
         for name, self_time, count, ratio in summary:
-            AppLogger.info(f"  {name:<30} : {self_time:.3f}s ({ratio:.1%}) - {count} calls")
+            AppLogger.debug(f"  {name:<30} : {self_time:.3f}s ({ratio:.1%}) - {count} calls")
 
     def stop(self):
         self._stop_event.set()

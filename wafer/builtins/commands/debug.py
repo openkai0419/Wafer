@@ -4,7 +4,7 @@ from ...constants import DEV_MODE
 
 class DebugCommands(ActionKit.MenuBase):
     NAME = "Debug"
-    PRIORITY = 80
+    PRIORITY = 85
 
     @classmethod
     def commands(cls):

@@ -1596,7 +1596,7 @@ class TestDropFiles:
 
 class TestStandaloneLaunch:
     def test_open_batch_renamer_toggles_panel_with_mainwindow(self):
-        from wafer.builtins.commands.app import open_batch_renamer
+        from wafer.builtins.commands.tools import open_batch_renamer
 
         mock_ctx = MagicMock()
         mock_w = MagicMock()
@@ -1605,7 +1605,7 @@ class TestStandaloneLaunch:
         mock_w._layout_manager.toggle_panel.assert_called_once_with("Batch Renamer")
 
     def test_open_batch_renamer_standalone_without_mainwindow(self, qtbot, monkeypatch):
-        from wafer.builtins.commands.app import open_batch_renamer, _standalone_dialogs
+        from wafer.builtins.commands.tools import open_batch_renamer, _standalone_dialogs
 
         class _FakeStore:
             def __init__(self, *a, **kw):
@@ -1618,7 +1618,7 @@ class TestStandaloneLaunch:
                 pass
 
         monkeypatch.setattr(
-            "wafer.builtins.commands.app.DialogLayoutStore",
+            "wafer.builtins.commands.tools.DialogLayoutStore",
             _FakeStore,
         )
         _standalone_dialogs.pop("batch_renamer", None)
@@ -1632,6 +1632,6 @@ class TestStandaloneLaunch:
         qtbot.addWidget(dlg)
 
     def test_command_registered_with_star_scope(self):
-        from wafer.builtins.commands.app import BatchRenamerCommands
+        from wafer.builtins.commands.tools import ToolCommands
 
-        assert BatchRenamerCommands.SCOPE == "*"
+        assert ToolCommands.SCOPE == "*"

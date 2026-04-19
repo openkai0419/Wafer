@@ -408,7 +408,7 @@ class FileCommands(ActionKit.MenuBase):
         ]
 
 
-class FileViewerCommands(ActionKit.MenuBase):
+class FileNavigationCommands(ActionKit.MenuBase):
     NAME = "File"
     PRIORITY = 10
 

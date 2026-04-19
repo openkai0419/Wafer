@@ -52,10 +52,7 @@ def build_value_html(text: str, query: str, ctx=None) -> str:
     if len(text) <= SHORT_VALUE_LIMIT:
         return highlight_html(text, query, ctx)
     palette = ThemeManager.instance().palette
-    chars_info = (
-        f'<span style="color:{palette.text_accent};">'
-        f"({original_len:,} chars total)</span>"
-    )
+    chars_info = f'<span style="color:{palette.text_accent};">({original_len:,} chars total)</span>'
     if not query:
         return html.escape(text[:SHORT_VALUE_LIMIT]).replace("\n", "<br>") + f" … {chars_info}"
     if ctx is None:
@@ -81,10 +78,7 @@ def build_value_html(text: str, query: str, ctx=None) -> str:
         else:
             ranges.append([s, e])
     visible = ranges[:MAX_VISIBLE_SNIPPETS]
-    visible_count = sum(
-        1 for m in matches
-        if any(s <= m.start() < e for s, e in visible)
-    )
+    visible_count = sum(1 for m in matches if any(s <= m.start() < e for s, e in visible))
     remaining = n - visible_count
     parts = []
     for s, e in visible:
@@ -95,10 +89,7 @@ def build_value_html(text: str, query: str, ctx=None) -> str:
     result = "<br>".join(parts)
     footer = chars_info
     if remaining > 0:
-        footer = (
-            f'<span style="color:{palette.text_accent};">'
-            f"+{remaining} more found</span> / {chars_info}"
-        )
+        footer = f'<span style="color:{palette.text_accent};">+{remaining} more found</span> / {chars_info}'
     result += f"<br>{footer}"
     return result
 
@@ -211,7 +202,7 @@ class SearchableMetaWidget(QtWidgets.QWidget):
         self._data: dict[str, Any] = {}
         self._filtered_keys: list[str] = []
         self._search_index: dict[str, str] | None = None
-        self._dispatcher = Dispatcher(utility_pool)
+        self._dispatcher = Dispatcher(utility_pool, parent=self)
         self._index_cancel = CancelSlot()
 
         self._debounce_timer = QtCore.QTimer(self)
@@ -235,19 +226,11 @@ class SearchableMetaWidget(QtWidgets.QWidget):
         self._list_view.setModel(self._model)
         self._list_view.setItemDelegate(self._delegate)
         self._list_view.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
-        self._list_view.setHorizontalScrollBarPolicy(
-            QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-        )
-        self._list_view.setVerticalScrollBarPolicy(
-            QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-        )
-        self._list_view.setSelectionMode(
-            QtWidgets.QAbstractItemView.SelectionMode.NoSelection
-        )
+        self._list_view.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._list_view.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._list_view.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.NoSelection)
         self._list_view.setResizeMode(QtWidgets.QListView.ResizeMode.Adjust)
-        self._list_view.setSizeAdjustPolicy(
-            QtWidgets.QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents
-        )
+        self._list_view.setSizeAdjustPolicy(QtWidgets.QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents)
         self._list_view.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Preferred,
             QtWidgets.QSizePolicy.Policy.Preferred,
@@ -311,15 +294,9 @@ class SearchableMetaWidget(QtWidgets.QWidget):
         if not query:
             self._filtered_keys = list(self._data.keys())
         elif self._search_index is not None:
-            self._filtered_keys = [
-                k for k in self._data
-                if query in k.lower() or query in self._search_index.get(k, "")
-            ]
+            self._filtered_keys = [k for k in self._data if query in k.lower() or query in self._search_index.get(k, "")]
         else:
-            self._filtered_keys = [
-                k for k, v in self._data.items()
-                if query in k.lower() or query in str(v).lower()
-            ]
+            self._filtered_keys = [k for k, v in self._data.items() if query in k.lower() or query in str(v).lower()]
         self._update_view()
 
     def _update_view(self):

@@ -49,11 +49,11 @@ def test_menuplan_insert_by_path_targets_single_token_match():
     assert plan.resolve_tokens() == ["file/t.file.open", "t.file.run", "t.file.open"]
 
 
-def test_menuplan_hide_not_found_is_error():
+def test_menuplan_hide_not_found_is_warning():
     _register_dummy_menu()
     maker = MenuMaker()
-    with pytest.raises(ValueError):
-        maker.menu(["t.file.open"]).hide(["t.file.missing"])
+    plan = maker.menu(["t.file.open"]).hide(["t.file.missing"])
+    assert plan.resolve_tokens() == ["t.file.open"]
 
 
 def test_menuplan_insert_not_found_is_error():

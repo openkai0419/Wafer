@@ -94,6 +94,7 @@ class WD14SettingsWidget(QtWidgets.QWidget):
         self._hsplitter.splitterMoved.connect(lambda *_: self._update_thumb())
 
         from wafer.core.color.theme import ThemeManager
+
         muted = ThemeManager.instance().palette.text_muted
 
         left_container = QtWidgets.QWidget()
@@ -105,9 +106,7 @@ class WD14SettingsWidget(QtWidgets.QWidget):
         self._thumb_label.setMinimumSize(dpix(64), dpix(64))
         self._thumb_label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
         self._thumb_label.setAlignment(QtCore.Qt.AlignCenter)
-        self._thumb_label.setStyleSheet(
-            f"border: 1px solid palette(mid); border-radius: {dpix(4)}px; color: {muted};"
-        )
+        self._thumb_label.setStyleSheet(f"border: 1px solid palette(mid); border-radius: {dpix(4)}px; color: {muted};")
         left_layout.addWidget(self._thumb_label, 1)
 
         self._preview_btn = QtWidgets.QPushButton(t("Re Preview"))
@@ -160,10 +159,7 @@ class WD14SettingsWidget(QtWidgets.QWidget):
 
         settings_frame = QtWidgets.QFrame()
         settings_frame.setObjectName("settings_frame")
-        settings_frame.setStyleSheet(
-            f"QFrame#settings_frame {{ background: {ThemeManager.instance().palette.bg_secondary};"
-            f" border: 1px solid palette(mid); border-radius: {dpix(4)}px; }}"
-        )
+        settings_frame.setStyleSheet(f"QFrame#settings_frame {{ background: {ThemeManager.instance().palette.bg_secondary}; border: 1px solid palette(mid); border-radius: {dpix(4)}px; }}")
         bottom_layout = QtWidgets.QVBoxLayout(settings_frame)
         bottom_layout.setContentsMargins(dpix(6), dpix(6), dpix(6), dpix(6))
         bottom_layout.setSpacing(dpix(6))
@@ -294,7 +290,7 @@ class WD14SettingsWidget(QtWidgets.QWidget):
     @staticmethod
     def _format_kv(key: str, value_html: str) -> str:
         return (
-            f'<tr>'
+            f"<tr>"
             f'<td style="vertical-align:top; padding-right:{dpix(8)}px; padding-bottom:{dpix(4)}px; white-space:nowrap;">'
             f"<b>{key}</b></td>"
             f'<td style="vertical-align:top; padding-bottom:{dpix(4)}px;">{value_html}</td>'
@@ -372,15 +368,9 @@ class WD14SettingsWidget(QtWidgets.QWidget):
             for k, v in general.items():
                 escaped = html.escape(k)
                 if k in blackset:
-                    items.append(
-                        f'<a href="bl:{escaped}" style="color:gray; text-decoration:line-through">'
-                        f"{escaped}({v:.3f})</a>"
-                    )
+                    items.append(f'<a href="bl:{escaped}" style="color:gray; text-decoration:line-through">{escaped}({v:.3f})</a>')
                 else:
-                    items.append(
-                        f'<a href="bl:{escaped}" style="text-decoration:none">'
-                        f"{escaped}({v:.3f})</a>"
-                    )
+                    items.append(f'<a href="bl:{escaped}" style="text-decoration:none">{escaped}({v:.3f})</a>')
             parts.append(self._format_kv("Tags", ", ".join(items)))
 
         self._raw_label.setText(self._wrap_kv_table(parts) if parts else t("(no tags)"))
@@ -476,7 +466,9 @@ class WD14SettingsWidget(QtWidgets.QWidget):
             return
         label_size = self._thumb_label.size()
         scaled = self._original_pixmap.scaled(
-            label_size, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation,
+            label_size,
+            QtCore.Qt.KeepAspectRatio,
+            QtCore.Qt.SmoothTransformation,
         )
         self._thumb_label.setPixmap(scaled)
 
@@ -579,11 +571,7 @@ class WD14SettingsWidget(QtWidgets.QWidget):
         device = result.get("device", "unknown")
         name = result.get("device_name", "")
         self._device_ok = device != "unknown"
-        self._device_label.setText(
-            t("Device: {device}  ({name})\nModel: wd-swinv2-tagger-v3 (SmilingWolf)").format(
-                device=device.upper(), name=name
-            )
-        )
+        self._device_label.setText(t("Device: {device}  ({name})\nModel: wd-swinv2-tagger-v3 (SmilingWolf)").format(device=device.upper(), name=name))
 
     # ── Save / Reset / Revert ──
 
@@ -612,7 +600,9 @@ class WD14SettingsWidget(QtWidgets.QWidget):
             db_names = list_setting_db_names()
             if db_names:
                 self._send_delete_and_recollect(
-                    db_names, delete=do_delete, re_collect=do_recollect,
+                    db_names,
+                    delete=do_delete,
+                    re_collect=do_recollect,
                 )
 
         if do_delete:
@@ -724,10 +714,7 @@ class _TagChip(QtWidgets.QFrame):
         super().__init__(parent)
         self._tag = tag
         self.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.setStyleSheet(
-            f"_TagChip {{ border: 1px solid palette(mid); border-radius: {dpix(8)}px;"
-            f" padding: {dpix(1)}px {dpix(4)}px; }}"
-        )
+        self.setStyleSheet(f"_TagChip {{ border: 1px solid palette(mid); border-radius: {dpix(8)}px; padding: {dpix(1)}px {dpix(4)}px; }}")
         lay = QtWidgets.QHBoxLayout(self)
         lay.setContentsMargins(dpix(4), dpix(1), dpix(2), dpix(1))
         lay.setSpacing(dpix(2))

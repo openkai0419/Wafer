@@ -122,9 +122,9 @@ def show_readme(ctx):
     _open_standalone(factory, "README.md", "readme_viewer", size=(dpix(700), dpix(800)))
 
 
-class DatabaseManagerCommands(ActionKit.MenuBase):
+class ToolCommands(ActionKit.MenuBase):
     NAME = "Setting"
-    PRIORITY = 97
+    PRIORITY = 95
     SCOPE = "*"
 
     @classmethod
@@ -150,9 +150,9 @@ class DatabaseManagerCommands(ActionKit.MenuBase):
         ]
 
 
-class AboutCommands(ActionKit.MenuBase):
-    NAME = "Help"
-    PRIORITY = 95
+class HelpCommands(ActionKit.MenuBase):
+    NAME = "Setting"
+    PRIORITY = 97
     SCOPE = "*"
 
     @classmethod

@@ -6,6 +6,7 @@ from collections.abc import Iterable
 
 from .core import CommandMeta, CommandRegistry, register_command_defs
 from .menu import MenuHub, MENU_SEPARATOR, MENU_SECTION_PREFIX, is_section_token, is_sep_token, split_menu_path, normalize_command_meta
+from ....utils.logs import AppLogger
 
 
 @dataclass(frozen=True)
@@ -41,9 +42,10 @@ class MenuPlan:
             if "/" in t:
                 items = [x for x in items if not (x.kind == "cmd" and (x.token.strip("/") == t or x.canonical_path.strip("/") == t))]
             else:
-                items = [x for x in items if not (x.kind == "cmd" and x.command_id == t)]
+                prefix = t + "/"
+                items = [x for x in items if not (x.command_id == t or x.token.startswith(prefix) or x.canonical_path.startswith(prefix))]
             if len(items) == before:
-                raise ValueError(f"hide target not found: {t}")
+                AppLogger.warning(f"[MenuPlan.hide] target not found, skipped: {t}")
         return MenuPlan(self._hub, items, has_inline=self.has_inline)
 
     def add(self, items: Any) -> MenuPlan:

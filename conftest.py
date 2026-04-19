@@ -51,10 +51,19 @@ def _drain_pool(pool, timeout_ms=1000):
 def _close_qt_widgets_after_test():
     yield
     try:
-        from wafer.core.qt.thread import grid_thumb_pool, grid_render_pool
+        from wafer.core.qt.thread import grid_thumb_pool, grid_render_pool, utility_pool
 
         _drain_pool(grid_thumb_pool.pool)
         _drain_pool(grid_render_pool.pool)
+        _drain_pool(utility_pool.pool)
+    except Exception:
+        pass
+    try:
+        from PySide6 import QtWidgets
+
+        app = QtWidgets.QApplication.instance()
+        if app is not None:
+            app.processEvents()
     except Exception:
         pass
     try:
@@ -98,6 +107,14 @@ def _cleanup_background_resources():
     except Exception:
         pass
     try:
+        from wafer.core.qt.thread import grid_thumb_pool, grid_render_pool, utility_pool
+
+        _drain_pool(grid_thumb_pool.pool)
+        _drain_pool(grid_render_pool.pool)
+        _drain_pool(utility_pool.pool)
+    except Exception:
+        pass
+    try:
         from PySide6 import QtWidgets
         import shiboken6
 
@@ -106,6 +123,8 @@ def _cleanup_background_resources():
             for w in app.topLevelWidgets():
                 if shiboken6.isValid(w):
                     w.hide()
+                    w.deleteLater()
+            app.processEvents()
             app.processEvents()
     except Exception:
         pass

@@ -25,6 +25,8 @@ class TestKnownModels:
 
 
 class TestBuildTags:
+    TOP_SETTINGS = {"enable_rating": True, "rating_mode": "top", "enable_character": True, "enable_tags": True}
+
     def setup_method(self):
         self.collector = WD14TaggerCollector()
         self.result = {
@@ -36,16 +38,16 @@ class TestBuildTags:
     # --- rating_mode="top" (default) ---
 
     def test_top_mode_rating_key(self):
-        tags = self.collector._build_tags(self.result)
+        tags = self.collector._build_tags(self.result, settings=self.TOP_SETTINGS)
         assert tags["rating"] == "general"
 
     def test_top_mode_rating_score(self):
-        tags = self.collector._build_tags(self.result)
+        tags = self.collector._build_tags(self.result, settings=self.TOP_SETTINGS)
         assert tags["rating_score"] == "0.85"
 
     def test_top_mode_sensitive_rating(self):
         self.result["ratings"] = {"sensitive": 0.90, "general": 0.05, "questionable": 0.03, "explicit": 0.02}
-        tags = self.collector._build_tags(self.result)
+        tags = self.collector._build_tags(self.result, settings=self.TOP_SETTINGS)
         assert tags["rating"] == "sensitive"
 
     # --- rating_mode="all" ---
@@ -77,14 +79,14 @@ class TestBuildTags:
     # --- general tags ---
 
     def test_general_comma_separated(self):
-        tags = self.collector._build_tags(self.result)
+        tags = self.collector._build_tags(self.result, settings=self.TOP_SETTINGS)
         assert "1girl" in tags["tags"]
         assert "blue_hair" in tags["tags"]
         assert "smile" in tags["tags"]
 
     def test_empty_general(self):
         self.result["general"] = {}
-        tags = self.collector._build_tags(self.result)
+        tags = self.collector._build_tags(self.result, settings=self.TOP_SETTINGS)
         assert "tags" not in tags
 
     def test_disable_tags(self):
@@ -94,17 +96,17 @@ class TestBuildTags:
     # --- character tags ---
 
     def test_character_comma_separated(self):
-        tags = self.collector._build_tags(self.result)
+        tags = self.collector._build_tags(self.result, settings=self.TOP_SETTINGS)
         assert tags["character"] == "hatsune_miku"
 
     def test_empty_character(self):
         self.result["character"] = {}
-        tags = self.collector._build_tags(self.result)
+        tags = self.collector._build_tags(self.result, settings=self.TOP_SETTINGS)
         assert "character" not in tags
 
     def test_multiple_characters(self):
         self.result["character"] = {"hatsune_miku": 0.90, "kagamine_rin": 0.85}
-        tags = self.collector._build_tags(self.result)
+        tags = self.collector._build_tags(self.result, settings=self.TOP_SETTINGS)
         assert "hatsune_miku" in tags["character"]
         assert "kagamine_rin" in tags["character"]
 

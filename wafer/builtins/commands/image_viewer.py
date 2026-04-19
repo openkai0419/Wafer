@@ -62,7 +62,7 @@ def _pan_end(ctx, gv):
 
 class ImageViewCommands(ActionKit.MenuBase):
     NAME = "FileViewer"
-    PRIORITY = 56
+    PRIORITY = 52
 
     @classmethod
     def commands(cls):

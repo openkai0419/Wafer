@@ -27,19 +27,11 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         QtWidgets.QApplication.instance().aboutToQuit.connect(self.on_quit)
 
     def _build_menu(self):
-        items = [
-            ":Wafer",
-            "tray.rescan_all",
-            "-",
-            "Viewer",
-            "Database",
-            "Window",
-            "Setting",
-            "Help",
-            "-",
-            "Tray",
-        ]
-        return Menu.session(None, seed_ctx=self._ctx()).menu(items).build()
+        session = Menu.session(None, seed_ctx=self._ctx())
+        spec = session.all_roots()
+        if spec is None:
+            return QtWidgets.QMenu()
+        return spec.hide(["File"]).build()
 
     def _ctx(self):
         return Context.create_context(None, "Tray", source="tray", extras={"tray": self})

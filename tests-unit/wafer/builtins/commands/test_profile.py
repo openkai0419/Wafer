@@ -11,17 +11,17 @@ from wafer.core.profile import (
 
 
 def test_compile():
-    py_compile.compile("wafer/builtins/commands/profile_commands.py")
+    py_compile.compile("wafer/builtins/commands/profile.py")
 
 
 class TestBookmarkCommands:
     def test_command_class_registers(self):
-        from wafer.builtins.commands.profile_commands import BookmarkCommands
+        from wafer.builtins.commands.profile import BookmarkCommands
 
         BookmarkCommands.register()
 
     def test_bm_store_lazy_init(self):
-        from wafer.builtins.commands.profile_commands import _bm_store
+        from wafer.builtins.commands.profile import _bm_store
 
         store = _bm_store()
         assert isinstance(store, BookmarkStore)
@@ -38,20 +38,19 @@ class TestBookmarkCommands:
 
 
 class TestProfileCommands:
-    def test_window_commands_include_session(self):
-        from wafer.builtins.commands.window_commands import WindowCommands
+    def test_profile_commands_include_session(self):
+        from wafer.builtins.commands.window import ProfileCommands
 
-        cmds = WindowCommands.commands()
+        cmds = ProfileCommands.commands()
         paths = [c.path for c in cmds if hasattr(c, "path")]
         assert "win.new_profile" in paths
-        assert "win.new_window" in paths
         assert "win.open_profile" in paths
         assert "win.rename_profile" in paths
         assert "win.delete_profile" in paths
         assert "win.profile_color" not in paths
 
     def test_pf_store_lazy_init(self):
-        from wafer.builtins.commands.profile_commands import _pf_store
+        from wafer.builtins.commands.profile import _pf_store
 
         store = _pf_store()
         assert isinstance(store, ProfileStore)
@@ -81,15 +80,15 @@ class TestProfileCommands:
         store.save_profile(ProfileEntry(profile_id="s1"))
         store.set_active_profile_ids(["s1"])
         monkeypatch.setattr(ProfileStore, "_instance", store)
-        from wafer.builtins.commands import profile_commands
+        from wafer.builtins.commands import profile
 
-        alive = profile_commands._get_alive_profile_ids()
+        alive = profile._get_alive_profile_ids()
         assert "s1" in alive
 
     def test_resolve_profile_by_pid(self, tmp_path):
         store = ProfileStore(path=str(tmp_path / "profiles.json"))
         pid = store.create_profile("Work")
-        from wafer.builtins.commands.profile_commands import _resolve_profile
+        from wafer.builtins.commands.profile import _resolve_profile
 
         entry = _resolve_profile(store, pid=pid)
         assert entry is not None
@@ -98,7 +97,7 @@ class TestProfileCommands:
     def test_resolve_profile_by_name(self, tmp_path):
         store = ProfileStore(path=str(tmp_path / "profiles.json"))
         store.create_profile("Work")
-        from wafer.builtins.commands.profile_commands import _resolve_profile
+        from wafer.builtins.commands.profile import _resolve_profile
 
         entry = _resolve_profile(store, profile="Work")
         assert entry is not None
@@ -106,7 +105,7 @@ class TestProfileCommands:
 
     def test_resolve_profile_empty_returns_none(self, tmp_path):
         store = ProfileStore(path=str(tmp_path / "profiles.json"))
-        from wafer.builtins.commands.profile_commands import _resolve_profile
+        from wafer.builtins.commands.profile import _resolve_profile
 
         assert _resolve_profile(store) is None
 
@@ -140,14 +139,14 @@ class TestProfileCommands:
         assert store.rename_profile(sid, "Same")
 
     def test_pf_store_returns_singleton(self, monkeypatch):
-        from wafer.builtins.commands.profile_commands import _pf_store
+        from wafer.builtins.commands.profile import _pf_store
 
         a = _pf_store()
         b = _pf_store()
         assert a is b
 
     def test_bm_store_returns_singleton(self, monkeypatch):
-        from wafer.builtins.commands.profile_commands import _bm_store
+        from wafer.builtins.commands.profile import _bm_store
 
         a = _bm_store()
         b = _bm_store()

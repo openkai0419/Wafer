@@ -1,9 +1,9 @@
 from ...core.commands.bridge import ActionKit, Menu, Settings
 from ...utils.paths import resolve_data_path
-from .file_commands import FileCommands
-from .foldertree_commands import show_context_menu
-from .image_view import ImageViewCommands
-from .setting_commands import _restore_thumbnail_size
+from .file import FileCommands
+from .foldertree import show_context_menu
+from .image_viewer import ImageViewCommands
+from .setting import _restore_thumbnail_size
 
 
 class AppMenuRegistrar(ActionKit.MenuBase):

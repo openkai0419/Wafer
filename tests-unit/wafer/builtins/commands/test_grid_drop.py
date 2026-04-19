@@ -1,7 +1,7 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from wafer.core.commands.command.context import CommandContext
-from wafer.builtins.commands.grid_commands import GridViewDropCommands
+from wafer.builtins.commands.grid import GridViewDropCommands
 
 
 def _drag_enter_event(mime: QtCore.QMimeData) -> QtGui.QDragEnterEvent:

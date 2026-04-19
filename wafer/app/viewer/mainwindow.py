@@ -422,7 +422,7 @@ class MainWindow(QtWidgets.QMainWindow):
         return {"mode": "locked", "tree": {"root": None, "floating": {}}}
 
     def _sync_default_checked_states(self):
-        from ...builtins.commands.grid_commands import sync_grid_groups_from_settings, _SCROLL_ANCHOR_CMDS
+        from ...builtins.commands.grid import sync_grid_groups_from_settings, _SCROLL_ANCHOR_CMDS
 
         sync_grid_groups_from_settings(
             {
@@ -469,7 +469,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._layout_manager.restore_state(state)
 
     def _save_grid(self):
-        from ...builtins.commands.grid_commands import _SCROLL_ANCHOR_CMDS
+        from ...builtins.commands.grid import _SCROLL_ANCHOR_CMDS
 
         return {
             "zoom": self.grid_view.base_height,
@@ -487,13 +487,13 @@ class MainWindow(QtWidgets.QMainWindow):
             self.grid_view.set_orientation(state["orientation"])
         if "layout_mode" in state:
             self.grid_view.set_layout_mode(state["layout_mode"])
-        from ...builtins.commands.grid_commands import sync_grid_groups_from_settings
+        from ...builtins.commands.grid import sync_grid_groups_from_settings
 
         sync_grid_groups_from_settings(state)
         if state.get("scroll_index") is not None:
             self.grid_view.set_pending_scroll_index(state["scroll_index"])
         if "scroll_anchor" in state:
-            from ...builtins.commands.grid_commands import _SCROLL_ANCHOR_CMDS
+            from ...builtins.commands.grid import _SCROLL_ANCHOR_CMDS
 
             if state["scroll_anchor"] in _SCROLL_ANCHOR_CMDS:
                 Command.set_action_group_current("grid_scroll_anchor", state["scroll_anchor"], save=False)
@@ -528,7 +528,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 "keyword_separator": values.get("keyword_separator", ","),
             }
         )
-        from ...builtins.commands.query_commands import sync_groups_from_args
+        from ...builtins.commands.query import sync_groups_from_args
 
         sync_groups_from_args(self.search_service.params)
 
@@ -752,7 +752,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         if query.search_params:
             self.search_service.set_params(query.search_params)
-            from ...builtins.commands.query_commands import sync_groups_from_args
+            from ...builtins.commands.query import sync_groups_from_args
 
             sync_groups_from_args(query.search_params)
             filter_rows = query.search_params.get("filter_rows")

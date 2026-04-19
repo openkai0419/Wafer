@@ -91,8 +91,8 @@ def list_bookmarks(ctx):
 
 
 class BookmarkCommands(ActionKit.MenuBase):
-    NAME = "Query"
-    PRIORITY = 65
+    NAME = "Workspace"
+    PRIORITY = 74
 
     @classmethod
     def commands(cls):

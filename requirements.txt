@@ -3,6 +3,7 @@ comtypes==1.4.16
 markdown>=3.7
 msgpack==1.1.2
 natsort==8.4.0
+numpy==2.2.6
 pillow==12.2.0
 platformdirs==4.9.6
 psutil==7.2.2

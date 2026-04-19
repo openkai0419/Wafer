@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.6.3]
+### Added
+- **`SearchableMetaWidget`** (`wafer/ui/panel/searchable_meta_widget.py`): reusable metadata display widget with live search, keyword highlighting, long-value snippet extraction, and DPI-aware layout — replaces per-extension inline meta widgets
+- **`wafer/ui/panel/` package**: new top-level UI panel module; `meta_viewer.py` (`CollapsibleCard`, `MetaRowWidget`) moved from `wafer/app/viewer/preview/` to `wafer/ui/panel/` for shared use by extensions
+- **FFmpeg MetaPanel** (`extensions/ffmpeg/meta_panel.py`): `FFmpegMetaPanelPlugin` using `SearchableMetaWidget` for ffmpeg metadata display
+- **`_ElidingLabel`** (`wafer/builtins/plugin_manager/extensions_tab.py`): auto-eliding label widget with tooltip for long extension lists in Plugin Manager rows
+- **`MenuPlan.all_roots()`**: tray menu now auto-discovers all registered menu groups via `Menu.session().all_roots()` instead of hardcoded item list
+- **`MenuPlan.hide()` supports prefix matching**: `hide(["File"])` now removes entire menu groups by name prefix, with non-fatal warning on missing targets (was `ValueError`)
+
+### Changed
+- **Builtin command files renamed** for consistency: `file_commands.py` → `file.py`, `grid_commands.py` → `grid.py`, `database_commands.py` → `database.py`, `debug_commands.py` → `debug.py`, `panel_commands.py` → `panel.py`, `profile_commands.py` → `profile.py`, `query_commands.py` → `query.py`, `setting_commands.py` → `setting.py`, `window_commands.py` → `window.py`, `foldertree_commands.py` → `foldertree.py`, `file_viewer.py` → `content_viewer.py`, `image_view.py` → `image_viewer.py`, `app.py` → `tools.py`
+- **Profile and Window commands consolidated**: `ProfileCommands`, `WindowPanelCommands`, `WindowRestartCommands` merged into `window.py`; `ToolCommands` and `HelpCommands` moved from `app.py` to `tools.py`; `SettingCommands` separated into its own file `setting.py`
+- **Tray `open_new_window` removed** from `TrayViewerCommands`; `tray.show_window` display changed to "Show/Hide Viewer"; `TrayDatabaseCommands` adds `:Database` section header
+- **Tray menu built dynamically**: `TrayApp._build_menu()` uses `Menu.session().all_roots().hide(["File"]).build()` instead of a hardcoded menu item list
+- **ExifTool MetaPanel refactored**: inline `_ExifToolMetaWidget` (grid-based key/value display with search) replaced by shared `SearchableMetaWidget`
+- **`Dispatcher` lifecycle safety**: `_execute` slot moved to `_DispatchSignals` QObject; `invoke()` checks `shiboken6.isValid()` before emitting to prevent use-after-delete crashes; constructor accepts optional `parent` for QObject ownership
+- **Grid `on_appear` timing improved**: `_promote_to_widget` now suppresses immediate `appear` notification; `GridPipeline` calls a dedicated `appear_fn` callback after widget render completes, ensuring plugins receive `on_appear` only after content is rendered
+- Video `vgrid.toggle_appear_autoplay` display renamed from "Autoplay on Scroll" to "Autoplay on Appear"
+- Video `PlaybackSlotManager.set_volume()` now propagates volume to `_appeared` overlays (was missing)
+- `wafer/builtins/registration.py` updated for all command module renames
+
+### Removed
+- `wafer/app/viewer/preview/meta_viewer.py` (moved to `wafer/ui/panel/meta_viewer.py`)
+- `_ExifToolMetaWidget` class from `extensions/exiftool/meta_panel.py` (replaced by `SearchableMetaWidget`)
+- `tray.open_new_window` command (new window functionality available via `win.new_window`)
+
 ## [v0.6.2]
 ### Added
 - **ImageLoader plugin type** (`wafer/plugin/imageloader/`): new `BaseImageLoader` base class, `ImageLoaderResolver` with `load()` / `load_pil()` resolution chain, and `image_loader_resolver` singleton — decouples raw image loading from grid rendering so collectors and other subsystems can load images without depending on Qt

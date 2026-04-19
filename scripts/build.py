@@ -30,6 +30,7 @@ RUNTIME_PACKAGES = {
     "markdown",
     "msgpack",
     "natsort",
+    "numpy",
     "pillow",
     "platformdirs",
     "psutil",

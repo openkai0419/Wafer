@@ -1,6 +1,6 @@
 import pytest
 from PySide6 import QtCore, QtGui, QtWidgets
-from wafer.app.viewer.preview.meta_viewer import MetaRowWidget, CollapsibleCard
+from wafer.ui.panel.meta_viewer import MetaRowWidget, CollapsibleCard
 from wafer.utils.formatting import dpix
 
 

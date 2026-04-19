@@ -76,6 +76,24 @@ def _hex_to_rgba(hex_color: str, alpha: float) -> str:
     return f"rgba({r},{g},{b},{alpha})"
 
 
+class _ElidingLabel(QtWidgets.QLabel):
+    def __init__(self, text: str, parent=None):
+        super().__init__(parent)
+        self._full_text = text
+        self.setToolTip(text)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        elided = self.fontMetrics().elidedText(self._full_text, QtCore.Qt.ElideRight, self.width())
+        super().setText(elided)
+
+    def minimumSizeHint(self):
+        hint = super().minimumSizeHint()
+        hint.setWidth(dpix(40))
+        return hint
+
+
 class _PluginRow(QtWidgets.QWidget):
     def __init__(self, registry_key: str, plugin_cls: type, checked: bool, parent=None):
         super().__init__(parent)
@@ -94,7 +112,7 @@ class _PluginRow(QtWidgets.QWidget):
 
         extensions = getattr(plugin_cls, "EXTENSIONS", ())
         ext_text = ", ".join(extensions) if extensions else ""
-        ext_label = QtWidgets.QLabel(ext_text)
+        ext_label = _ElidingLabel(ext_text)
         ext_label.setStyleSheet(f"color: #888; font-size: {dpix(11)}px;")
 
         row_layout = QtWidgets.QHBoxLayout(self)
@@ -104,7 +122,6 @@ class _PluginRow(QtWidgets.QWidget):
         row_layout.addWidget(self.checkbox)
         row_layout.addWidget(name_label)
         row_layout.addWidget(ext_label)
-        row_layout.addStretch()
 
         if registry_key == "panel":
             display = getattr(plugin_cls, "DISPLAY_NAME", "") or plugin_cls.NAME

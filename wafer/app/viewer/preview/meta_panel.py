@@ -10,7 +10,7 @@ from ....utils.logs import AppLogger
 from ....core.state import StateStore
 from ....core.color.theme import ThemeManager
 from ....core.lang.manager import t
-from .meta_viewer import MetaRowWidget, CollapsibleCard
+from ....ui.panel.meta_viewer import MetaRowWidget, CollapsibleCard
 
 _FIXED_SECTION_KEYS = ("source", "file", "tag")
 

@@ -8,17 +8,6 @@ from wafer.ui.panel.searchable_meta_widget import (
     SNIPPET_BUDGET,
     SAFETY_CHAR_LIMIT,
 )
-from wafer.core.qt.thread import utility_pool
-
-
-@pytest.fixture(autouse=True)
-def _drain_utility_pool_after_test():
-    yield
-    utility_pool.pool.waitForDone(2000)
-    app = QtWidgets.QApplication.instance()
-    if app:
-        app.processEvents()
-        app.processEvents()
 
 
 def test_set_data_populates_grid(qtbot):
@@ -168,7 +157,8 @@ def test_search_index_none_before_async_build(qtbot):
     w = SearchableMetaWidget()
     qtbot.addWidget(w)
     w.set_data({"a": "1"})
-    assert w._search_index is None or isinstance(w._search_index, dict)
+    assert w._search_index is None or isinstance(w._search_index, dict)
+
 
 
 def test_search_index_built_after_async(qtbot):
@@ -178,7 +168,8 @@ def test_search_index_built_after_async(qtbot):
     qtbot.waitUntil(lambda: w._search_index is not None, timeout=5000)
     assert "width" in w._search_index
     assert w._search_index["width"] == "100"
-    assert w._search_index["height"] == "200"
+    assert w._search_index["height"] == "200"
+
 
 
 def test_filter_uses_index_when_available(qtbot):
@@ -187,7 +178,8 @@ def test_filter_uses_index_when_available(qtbot):
     w.set_data({"width": "100", "height": "200", "model": "Canon"})
     qtbot.waitUntil(lambda: w._search_index is not None, timeout=5000)
     w._apply_filter("canon")
-    assert w._filtered_keys == ["model"]
+    assert w._filtered_keys == ["model"]
+
 
 
 def test_filter_works_without_index(qtbot):
@@ -206,7 +198,8 @@ def test_set_data_cancels_previous_index_build(qtbot):
     w.set_data({"new": "data"})
     qtbot.waitUntil(lambda: w._search_index is not None, timeout=5000)
     assert "new" in w._search_index
-    assert "old" not in w._search_index
+    assert "old" not in w._search_index
+
 
 
 def test_debounce_attribute_exists(qtbot):

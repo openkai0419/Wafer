@@ -6,28 +6,36 @@ from PySide6.QtCore import QObject, QTimer, Slot
 class QtDebounceManager(QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._timers = {}
+        self._timers: dict[object, QTimer] = {}
+        self._callbacks: dict[object, tuple] = {}
 
     def debounce(self, key, delay_ms, callback, *args, **kwargs):
         if key in self._timers:
             self._timers[key].stop()
             self._timers[key].deleteLater()
-            self._timers.pop(key, None)
+            del self._timers[key]
+        self._callbacks[key] = (callback, args, kwargs)
         timer = QTimer(self)
         timer.setSingleShot(True)
-
-        @Slot()
-        def on_timeout():
-            callback(*args, **kwargs)
-            timer.deleteLater()
-            self._timers.pop(key, None)
-
-        timer.timeout.connect(on_timeout)
+        timer.setProperty("_debounce_key", key)
+        timer.timeout.connect(self._on_timer_fired)
         timer.start(delay_ms)
         self._timers[key] = timer
 
+    @Slot()
+    def _on_timer_fired(self):
+        timer = self.sender()
+        key = timer.property("_debounce_key")
+        self._timers.pop(key, None)
+        entry = self._callbacks.pop(key, None)
+        timer.deleteLater()
+        if entry:
+            cb, args, kwargs = entry
+            cb(*args, **kwargs)
+
     def cancel(self, key):
         timer = self._timers.pop(key, None)
+        self._callbacks.pop(key, None)
         if timer is not None:
             timer.stop()
             timer.deleteLater()

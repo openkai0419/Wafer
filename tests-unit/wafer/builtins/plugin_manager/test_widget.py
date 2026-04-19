@@ -998,26 +998,26 @@ class TestPluginManagerWidget:
         assert dlg._restart_label.text() == "Both Restart Required"
 
 
-class TestPluginManagerCommands:
+class TestToolCommands:
     def test_command_class_exists(self):
-        from wafer.builtins.commands.app import PluginManagerCommands
+        from wafer.builtins.commands.tools import ToolCommands
 
-        cmds = PluginManagerCommands.commands()
+        cmds = ToolCommands.commands()
         assert len(cmds) >= 1
         paths = [c.path for c in cmds if hasattr(c, "path")]
         assert "setting.plugin_manager" in paths
 
     def test_all_commands_registered(self):
-        from wafer.builtins.commands.app import PluginManagerCommands
+        from wafer.builtins.commands.tools import ToolCommands
 
-        cmds = PluginManagerCommands.commands()
+        cmds = ToolCommands.commands()
         paths = [c.path for c in cmds if hasattr(c, "path")]
         assert "setting.plugin_manager" in paths
 
 
 class TestWindowRestartCommands:
     def test_restart_commands_registered(self):
-        from wafer.builtins.commands.window_commands import WindowRestartCommands
+        from wafer.builtins.commands.window import WindowRestartCommands
 
         cmds = WindowRestartCommands.commands()
         paths = [c.path for c in cmds if hasattr(c, "path")]
@@ -1028,7 +1028,7 @@ class TestWindowRestartCommands:
     def test_restart_tray_calls_process(self, monkeypatch):
         calls = []
         monkeypatch.setattr(
-            "wafer.builtins.commands.window_commands.AppProcess",
+            "wafer.builtins.commands.window.AppProcess",
             type(
                 "",
                 (),
@@ -1038,14 +1038,14 @@ class TestWindowRestartCommands:
                 },
             )(),
         )
-        from wafer.builtins.commands.window_commands import restart_tray
+        from wafer.builtins.commands.window import restart_tray
 
         restart_tray(MagicMock())
         assert ("terminate", ("--tray",)) in calls
         assert ("new_main", ("--tray",)) in calls
 
     def test_restart_viewer_delegates_to_close_by_restart(self):
-        from wafer.builtins.commands.window_commands import restart_viewer
+        from wafer.builtins.commands.window import restart_viewer
 
         mock_w = MagicMock()
         ctx = MagicMock()
@@ -1056,10 +1056,10 @@ class TestWindowRestartCommands:
     def test_restart_all_calls_both(self, monkeypatch):
         mock_store = MagicMock()
         mock_store.get_active_profile_ids.return_value = ["sess1", "sess2"]
-        monkeypatch.setattr("wafer.builtins.commands.window_commands.ProfileStore", type("", (), {"instance": staticmethod(lambda: mock_store)}))
+        monkeypatch.setattr("wafer.builtins.commands.window.ProfileStore", type("", (), {"instance": staticmethod(lambda: mock_store)}))
         mock_ps = MagicMock()
         monkeypatch.setattr("wafer.plugin.settings.PluginSettings.clear_restart_scope", mock_ps.clear_restart_scope)
-        from wafer.builtins.commands.window_commands import restart_all
+        from wafer.builtins.commands.window import restart_all
 
         mock_w = MagicMock()
         mock_w.profile_id = "sess1"

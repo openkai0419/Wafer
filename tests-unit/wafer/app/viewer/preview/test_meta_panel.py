@@ -1,7 +1,7 @@
 from unittest.mock import patch, MagicMock
 from PySide6 import QtWidgets
 from wafer.app.viewer.preview.meta_panel import MetaViewerWidget, _FIXED_SECTION_KEYS
-from wafer.app.viewer.preview.meta_viewer import CollapsibleCard, MetaRowWidget
+from wafer.ui.panel.meta_viewer import CollapsibleCard, MetaRowWidget
 
 
 def _sample_meta():

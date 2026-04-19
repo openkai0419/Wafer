@@ -29,6 +29,8 @@ class TestFfmpegCollectorPlugin:
         assert FfmpegCollectorPlugin.NAME == "ffmpeg"
         assert ".mp4" in FfmpegCollectorPlugin.EXTENSIONS
         assert ".mkv" in FfmpegCollectorPlugin.EXTENSIONS
+        assert ".mpg" in FfmpegCollectorPlugin.EXTENSIONS
+        assert ".mpeg" in FfmpegCollectorPlugin.EXTENSIONS
         assert ".mp3" in FfmpegCollectorPlugin.EXTENSIONS
         assert ".flac" in FfmpegCollectorPlugin.EXTENSIONS
 

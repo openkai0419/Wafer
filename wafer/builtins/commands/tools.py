@@ -122,48 +122,25 @@ def show_readme(ctx):
     _open_standalone(factory, "README.md", "readme_viewer", size=(dpix(700), dpix(800)))
 
 
-class PluginManagerCommands(ActionKit.MenuBase):
+class ToolCommands(ActionKit.MenuBase):
     NAME = "Setting"
-    PRIORITY = 85
+    PRIORITY = 95
     SCOPE = "*"
 
     @classmethod
     def commands(cls):
         return [
-            ":Plugins",
+            ":Manager",
             ActionKit.Command(
                 path="setting.plugin_manager",
                 display="Plugin Manager",
                 func=open_plugin_manager,
             ),
-        ]
-
-
-class DatabaseManagerCommands(ActionKit.MenuBase):
-    NAME = "Setting"
-    PRIORITY = 85
-    SCOPE = "*"
-
-    @classmethod
-    def commands(cls):
-        return [
-            ":Database",
             ActionKit.Command(
                 path="setting.database_manager",
                 display="Database Manager",
                 func=open_database_manager,
             ),
-        ]
-
-
-class BatchRenamerCommands(ActionKit.MenuBase):
-    NAME = "Setting"
-    PRIORITY = 85
-    SCOPE = "*"
-
-    @classmethod
-    def commands(cls):
-        return [
             ":Tools",
             ActionKit.Command(
                 path="setting.batch_renamer",
@@ -173,14 +150,15 @@ class BatchRenamerCommands(ActionKit.MenuBase):
         ]
 
 
-class AboutCommands(ActionKit.MenuBase):
-    NAME = "Help"
-    PRIORITY = 95
+class HelpCommands(ActionKit.MenuBase):
+    NAME = "Setting"
+    PRIORITY = 97
     SCOPE = "*"
 
     @classmethod
     def commands(cls):
         return [
+            ":Help",
             ActionKit.Command(
                 path="help.readme",
                 display="README.md",

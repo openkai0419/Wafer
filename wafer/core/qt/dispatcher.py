@@ -40,6 +40,13 @@ class CancelSlot:
 class _DispatchSignals(QtCore.QObject):
     _to_main = QtCore.Signal(object)
 
+    @QtCore.Slot(object)
+    def _execute(self, fn: Callable):
+        try:
+            fn()
+        except Exception as e:
+            AppLogger.warning(f"[Dispatcher.invoke] callback failed: {e}", exc=e)
+
 
 class _PostRunnable(QtCore.QRunnable):
     __slots__ = ("_cancel", "_fn")
@@ -60,9 +67,9 @@ class _PostRunnable(QtCore.QRunnable):
 
 
 class Dispatcher:
-    def __init__(self, pool=None):
-        self._signals = _DispatchSignals()
-        self._signals._to_main.connect(self._execute, QtCore.Qt.QueuedConnection)
+    def __init__(self, pool=None, parent: QtCore.QObject | None = None):
+        self._signals = _DispatchSignals(parent)
+        self._signals._to_main.connect(self._signals._execute, QtCore.Qt.QueuedConnection)
         if pool is None:
             from .thread import grid_thumb_pool
 
@@ -73,11 +80,7 @@ class Dispatcher:
         self._pool.submit(_PostRunnable(fn, cancel), priority)
 
     def invoke(self, fn: Callable):
-        self._signals._to_main.emit(fn)
+        import shiboken6
 
-    @QtCore.Slot(object)
-    def _execute(self, fn: Callable):
-        try:
-            fn()
-        except Exception as e:
-            AppLogger.warning(f"[Dispatcher.invoke] callback failed: {e}", exc=e)
+        if shiboken6.isValid(self._signals):
+            self._signals._to_main.emit(fn)

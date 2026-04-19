@@ -14,6 +14,8 @@ class FfmpegCollectorPlugin(BaseCollectorPlugin):
         ".flv",
         ".ts",
         ".m4v",
+        ".mpg",
+        ".mpeg",
         ".mp3",
         ".flac",
         ".wav",

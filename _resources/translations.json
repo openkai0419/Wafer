@@ -1,4 +1,32 @@
 {
+  "Workspace": {
+    "en": "Workspace",
+    "ja": ""
+  },
+  "Bookmarks": {
+    "en": "Bookmarks",
+    "ja": ""
+  },
+  "Restart Tray": {
+    "en": "Restart Tray",
+    "ja": ""
+  },
+  "Process": {
+    "en": "Process",
+    "ja": ""
+  },
+  "Manager": {
+    "en": "Manager",
+    "ja": ""
+  },
+  "Delete existing WD14 data": {
+    "en": "Delete existing WD14 data",
+    "ja": ""
+  },
+  "Save WD14 Settings": {
+    "en": "Save WD14 Settings",
+    "ja": ""
+  },
   "Output": {
     "en": "Output",
     "ja": ""

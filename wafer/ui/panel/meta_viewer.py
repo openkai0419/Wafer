@@ -6,11 +6,11 @@ from collections.abc import Callable, Mapping
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from ....utils.formatting import dpix, display_prefixed_key
-from ....utils.logs import AppLogger
-from ....core.lang.manager import t
-from ....core.qt.icon_engine import icon_draw
-from ....core.color.theme import ThemeManager
+from ...utils.formatting import dpix, display_prefixed_key
+from ...utils.logs import AppLogger
+from ...core.lang.manager import t
+from ...core.qt.icon_engine import icon_draw
+from ...core.color.theme import ThemeManager
 
 MAX_INLINE_CHARS = 4000
 MAX_INLINE_SEQ_ITEMS = 50
@@ -216,7 +216,6 @@ class MetaRowWidget(QtWidgets.QFrame):
         self.customContextMenuRequested.connect(self._show_menu)
         self.mouseDoubleClickEvent = self._emit_activated  # type: ignore[assignment]
 
-    # ---- UI events ----
     def _emit_activated(self, event: QtGui.QMouseEvent) -> None:
         self.rowActivated.emit(self._index, self._data)
 
@@ -228,7 +227,6 @@ class MetaRowWidget(QtWidgets.QFrame):
         act_view_value = menu.addAction(t("Open value viewer\u2026"))
         chosen = menu.exec(self.mapToGlobal(pos))
         if chosen is act_copy_json:
-            # 大きくてもユーザー操作時のみ。ここはブロックが起きても許容しやすい
             QtWidgets.QApplication.clipboard().setText(json.dumps(self._data, ensure_ascii=False, indent=2))
         elif chosen is act_copy_text_preview:
             QtWidgets.QApplication.clipboard().setText(self._to_plain_text(preview=True))
@@ -237,16 +235,13 @@ class MetaRowWidget(QtWidgets.QFrame):
         elif chosen is act_view_value:
             self._open_value_viewer_dialog()
 
-    # ---- helpers for menu ----
     def _copy_single_value_dialog(self) -> None:
-        # キー選択 → 値全文コピー（巨大でもOK：ユーザー明示操作）
         key, ok = QtWidgets.QInputDialog.getItem(self, t("Copy single value"), t("Key:"), self._keys, 0, False)
         if not ok or not key:
             return
         QtWidgets.QApplication.clipboard().setText(self._stringify_full(self._data.get(key)))
 
     def _open_value_viewer_dialog(self) -> None:
-        # キー選択 → QPlainTextEdit で全文表示
         key, ok = QtWidgets.QInputDialog.getItem(self, t("Open value viewer"), t("Key:"), self._keys, 0, False)
         if not ok or not key:
             return
@@ -258,14 +253,13 @@ class MetaRowWidget(QtWidgets.QFrame):
         lay = QtWidgets.QVBoxLayout(dlg)
         edit = QtWidgets.QPlainTextEdit(dlg)
         edit.setReadOnly(True)
-        edit.setPlainText(text)  # ✔ プレーンテキスト。大でも比較的軽い
+        edit.setPlainText(text)
         lay.addWidget(edit)
         btns = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Close, parent=dlg)
         btns.rejected.connect(dlg.reject)
         lay.addWidget(btns)
         dlg.exec()
 
-    # ---- render helpers ----
     def _to_plain_text(self, preview: bool) -> str:
         parts = []
         for k in self._keys:
@@ -282,7 +276,6 @@ class MetaRowWidget(QtWidgets.QFrame):
         return display_prefixed_key(key)
 
     def _stringify_preview(self, key: str, value: Any) -> str:
-        # フォーマッタはプレビューにも適用。ただし戻り値が巨大なら切る
         if key in self._value_formatters:
             try:
                 s = str(self._value_formatters[key](value))
@@ -299,14 +292,12 @@ class MetaRowWidget(QtWidgets.QFrame):
         if isinstance(value, (list, tuple, set)):
             return _preview_sequence(value)
         if isinstance(value, Mapping):
-            # フルJSONは重いので、軽い概要だけ
             return _preview_mapping(value)
         if isinstance(value, (QtCore.QDate, QtCore.QDateTime, QtCore.QTime)):
             return str(value.toString(QtCore.Qt.ISODate))
         return _truncate_text(str(value))
 
     def _stringify_full(self, value: Any) -> str:
-        # フル版（ユーザーが明示操作した時のみ使う）
         if value is None:
             return "—"
         if isinstance(value, Mapping):

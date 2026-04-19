@@ -34,6 +34,7 @@ class ExifToolCollectorPlugin(BaseCollectorPlugin):
         ".srw",
         ".psd",
         ".ico",
+        ".apng",
     )
     PRIORITY = 100
     DEFAULT_ENABLED = True

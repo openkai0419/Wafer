@@ -25,6 +25,7 @@ class GridPipeline(QtCore.QObject):
         cache,
         widget_lookup: Callable[[int], object | None],
         promote_fn: Callable[[int, str], None],
+        appear_fn: Callable[[int], None],
         parent=None,
     ):
         super().__init__(parent)
@@ -34,6 +35,7 @@ class GridPipeline(QtCore.QObject):
         self._cache = cache
         self._widget_lookup = widget_lookup
         self._promote_fn = promote_fn
+        self._appear_fn = appear_fn
         self._active: dict[int, CancelToken] = {}
         self._layout_cancel = CancelSlot()
         self._image_ready.connect(self._on_image_ready)
@@ -117,6 +119,7 @@ class GridPipeline(QtCore.QObject):
         widget = self._widget_lookup(index)
         if widget is not None:
             plugin.render(widget, path, size)
+        self._appear_fn(index)
         if plugin.REQUIRE_THUMBNAIL:
             self._dispatch_thumbnail(index, path, size, plugin, cancel)
 

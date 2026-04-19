@@ -308,6 +308,8 @@ class PlaybackSlotManager:
             self._hover_overlay.set_volume(self.volume)
         for overlay in self._selected.values():
             overlay.set_volume(self.volume)
+        for overlay in self._appeared.values():
+            overlay.set_volume(self.volume)
 
     def set_max_selected(self, count: int):
         self._max_selected = max(1, count)

@@ -7,9 +7,9 @@ from wafer.ui.panel.meta_viewer import CollapsibleCard
 from wafer.ui.panel.searchable_meta_widget import SearchableMetaWidget
 
 
-class ExifToolMetaPanelPlugin(BaseMetaPanelPlugin):
-    NAME = "exiftool_meta_panel"
-    PREFIX = "exiftool"
+class FFmpegMetaPanelPlugin(BaseMetaPanelPlugin):
+    NAME = "ffmpeg_meta_panel"
+    PREFIX = "ffmpeg"
     DEFAULT_ENABLED = True
     PRIORITY = 50
 

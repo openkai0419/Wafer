@@ -17,7 +17,7 @@ def toggle_layout_mode(ctx):
 
 class PanelCommands(ActionKit.MenuBase):
     NAME = "Panels"
-    PRIORITY = 76
+    PRIORITY = 60
 
     _CORE_PANELS = ["Toolbar", "Folder Tree", "Search", "Grid View", "Content Viewer", "Meta Viewer"]
 

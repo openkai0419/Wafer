@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import patch
 from PySide6 import QtWidgets
 
-from wafer.builtins.commands.panel_commands import PanelCommands
+from wafer.builtins.commands.panel import PanelCommands
 from wafer.plugin.panel.base import BasePanelPlugin
 from wafer.ui.layout.manager import LayoutManager
 

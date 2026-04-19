@@ -5,7 +5,7 @@ from PySide6 import QtWidgets
 from wafer.core.commands.bridge import Menu
 from wafer.core.commands.command.core import CommandRegistry
 from wafer.utils.paths import normalize_path
-from wafer.builtins.commands.foldertree_commands import (
+from wafer.builtins.commands.foldertree import (
     FolderTreeCommands,
     _ctx_normalized_path,
     _ctx_normalized_paths,
@@ -119,7 +119,7 @@ def test_remove_from_view_nonexistent_root(tmp_path, qtbot, monkeypatch):
     tree = _FakeTree(roots={missing})
     qtbot.addWidget(tree)
     monkeypatch.setattr(
-        "wafer.builtins.commands.foldertree_commands.ConfirmDialog.ask",
+        "wafer.builtins.commands.foldertree.ConfirmDialog.ask",
         staticmethod(lambda *a, **kw: "Remove"),
     )
     ctx = _FakeCtx(path=str(tmp_path / "gone"), widget=tree)
@@ -134,7 +134,7 @@ def test_ignore_folder_nonexistent(tmp_path, qtbot, monkeypatch):
     tree = _FakeTree(roots={existing_root})
     qtbot.addWidget(tree)
     monkeypatch.setattr(
-        "wafer.builtins.commands.foldertree_commands.ConfirmDialog.ask",
+        "wafer.builtins.commands.foldertree.ConfirmDialog.ask",
         staticmethod(lambda *a, **kw: "Ignore"),
     )
     ctx = _FakeCtx(path=str(tmp_path / "sub" / "gone"), widget=tree)
@@ -150,7 +150,7 @@ def test_ignore_folder_multiple_paths(tmp_path, qtbot, monkeypatch):
     tree = _FakeTree(roots={root_path})
     qtbot.addWidget(tree)
     monkeypatch.setattr(
-        "wafer.builtins.commands.foldertree_commands.ConfirmDialog.ask",
+        "wafer.builtins.commands.foldertree.ConfirmDialog.ask",
         staticmethod(lambda *a, **kw: "Ignore"),
     )
     ctx = _FakeCtx(
@@ -171,7 +171,7 @@ def test_ignore_folder_multiple_skips_roots(tmp_path, qtbot, monkeypatch):
     tree = _FakeTree(roots={root_path})
     qtbot.addWidget(tree)
     monkeypatch.setattr(
-        "wafer.builtins.commands.foldertree_commands.ConfirmDialog.ask",
+        "wafer.builtins.commands.foldertree.ConfirmDialog.ask",
         staticmethod(lambda *a, **kw: "Ignore"),
     )
     ctx = _FakeCtx(

@@ -7,7 +7,6 @@ from ...utils.logs import AppLogger
 from ...constants import DEV_MODE
 from ...core.platform.process import AppProcess
 from ...core.ipc.message import Message
-from ...ui.dialogs import InputDialog
 from ...core.profile import ProfileStore
 
 
@@ -54,28 +53,6 @@ def show_window(ctx=None):
     send_show_toggle(ctx, tray.show_state)
 
 
-def open_new_window(ctx=None):
-    store = ProfileStore.instance()
-    default_name = store.next_default_name()
-    name = InputDialog.get_text(
-        "Profile name:",
-        title="New Window",
-        buttons=("Create", "Cancel"),
-        default=default_name,
-    )
-    if not name or not name.strip():
-        return
-    name = name.strip()
-    pid = store.create_profile(name)
-    if pid is None:
-        existing = store.find_profile_by_name(name)
-        if existing:
-            AppProcess.new_main("--viewer", "--profile", existing.profile_id)
-        return
-    AppLogger.info(f"launching new viewer: {pid}")
-    AppProcess.new_main("--viewer", "--profile", pid)
-
-
 def rescan_all(ctx=None):
     _tray_send(ctx, "rescan")
 
@@ -105,8 +82,7 @@ class TrayViewerCommands(ActionKit.MenuBase):
     @classmethod
     def commands(cls):
         return [
-            ActionKit.Command(path="tray.show_window", display="Show Viewer", func=show_window),
-            ActionKit.Command(path="tray.open_new_window", display="New Viewer", func=open_new_window),
+            ActionKit.Command(path="tray.show_window", display="Show/Hide Viewer", func=show_window),
         ]
 
 
@@ -118,6 +94,7 @@ class TrayDatabaseCommands(ActionKit.MenuBase):
     @classmethod
     def commands(cls):
         return [
+            ":Database",
             ActionKit.Command(path="tray.rescan_all", display="ReScan All", func=rescan_all),
             ActionKit.Command(path="tray.cleanup_optimize", display="Cleanup and Optimize", func=cleanup_optimize),
         ]

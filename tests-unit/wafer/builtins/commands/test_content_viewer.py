@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock
 
-from wafer.builtins.commands.file_viewer import (
+from wafer.builtins.commands.content_viewer import (
     next_file,
     prev_file,
     toggle_slideshow,

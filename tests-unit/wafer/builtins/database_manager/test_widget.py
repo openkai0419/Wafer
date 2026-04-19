@@ -433,7 +433,7 @@ class TestDatabaseDetailWidget:
 
 class TestDatabaseManagerCommands:
     def test_toggle_or_standalone_with_mainwindow(self):
-        from wafer.builtins.commands.app import _toggle_or_standalone
+        from wafer.builtins.commands.tools import _toggle_or_standalone
 
         mock_ctx = MagicMock()
         mock_w = MagicMock()
@@ -443,7 +443,7 @@ class TestDatabaseManagerCommands:
 
     def test_toggle_or_standalone_without_mainwindow(self, qtbot, monkeypatch):
         from PySide6 import QtCore
-        from wafer.builtins.commands.app import _toggle_or_standalone, _standalone_dialogs
+        from wafer.builtins.commands.tools import _toggle_or_standalone, _standalone_dialogs
 
         class _FakeStore:
             def __init__(self, *a, **kw):
@@ -456,7 +456,7 @@ class TestDatabaseManagerCommands:
                 pass
 
         monkeypatch.setattr(
-            "wafer.builtins.commands.app.DialogLayoutStore",
+            "wafer.builtins.commands.tools.DialogLayoutStore",
             _FakeStore,
         )
         mock_ctx = MagicMock()
@@ -470,7 +470,7 @@ class TestDatabaseManagerCommands:
 
     def test_open_standalone_reuses_existing(self, qtbot, monkeypatch):
         from PySide6 import QtCore
-        from wafer.builtins.commands.app import _open_standalone, _standalone_dialogs
+        from wafer.builtins.commands.tools import _open_standalone, _standalone_dialogs
 
         class _FakeStore:
             def __init__(self, *a, **kw):
@@ -483,7 +483,7 @@ class TestDatabaseManagerCommands:
                 pass
 
         monkeypatch.setattr(
-            "wafer.builtins.commands.app.DialogLayoutStore",
+            "wafer.builtins.commands.tools.DialogLayoutStore",
             _FakeStore,
         )
         _standalone_dialogs.clear()

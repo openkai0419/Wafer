@@ -2,10 +2,7 @@ from ...core.commands.bridge import ActionKit
 from ...core.commands.binding.instance_registry import InstanceRegistry
 from ...core.platform.process import AppProcess
 from ...core.profile import ProfileStore
-from ...core.app_settings import app_settings
-from ...core.lang.manager import t
-from ...utils.notifier import Notifier
-from .profile_commands import (
+from .profile import (
     show_profile_popup,
     create_profile,
     new_window,
@@ -26,15 +23,6 @@ def toggle_fullscreen(ctx):
     if not w:
         return
     w.window_state.toggle_fullscreen()
-
-
-def toggle_language(ctx):
-    w = _win(ctx)
-    if not w:
-        return
-    new_locale = "ja" if t.current_locale == "en" else "en"
-    app_settings.save_immediate("window/language", new_locale)
-    Notifier.info(f"Language set to '{new_locale}'. Restart to apply.")
 
 
 def toggle_always_on_top(ctx):
@@ -81,21 +69,15 @@ def _profile_names():
     return _pf_store().list_profile_names()
 
 
-class WindowCommands(ActionKit.MenuBase):
-    NAME = "Window"
-    PRIORITY = 75
+class ProfileCommands(ActionKit.MenuBase):
+    NAME = "Workspace"
+    PRIORITY = 70
 
     @classmethod
     def commands(cls):
         return [
-            ":Window",
-            ActionKit.Command(path="win.toggle_fullscreen", display="Full Screen", func=toggle_fullscreen),
-            ActionKit.Command(path="win.toggle_always_on_top", display="Always on Top", func=toggle_always_on_top, checkable=True, checked_resolver=_is_always_on_top),
-            ActionKit.Command(path="win.toggle_language", display="Toggle Language", func=toggle_language),
-            "-",
             ":Profile",
             ActionKit.Command(path="win.new_profile", display="New Profile", func=create_profile),
-            ActionKit.Command(path="win.new_window", display="New Window", func=new_window),
             ActionKit.Command(path="win.profile_list", display="Profile List", func=show_profile_popup),
             ActionKit.Command(
                 path="win.open_profile",
@@ -124,16 +106,32 @@ class WindowCommands(ActionKit.MenuBase):
         ]
 
 
+class WindowPanelCommands(ActionKit.MenuBase):
+    NAME = "Window"
+    PRIORITY = 80
+
+    @classmethod
+    def commands(cls):
+        return [
+            ":Window",
+            ActionKit.Command(path="win.toggle_fullscreen", display="Full Screen", func=toggle_fullscreen),
+            ActionKit.Command(path="win.toggle_always_on_top", display="Always on Top", func=toggle_always_on_top, checkable=True, checked_resolver=_is_always_on_top),
+        ]
+
+
 class WindowRestartCommands(ActionKit.MenuBase):
     NAME = "Window"
-    PRIORITY = 76
+    PRIORITY = 82
     SCOPE = "*"
 
     @classmethod
     def commands(cls):
         return [
+            ":Process",
+            ActionKit.Command(path="win.new_window", display="New Window", func=new_window),
+            "-",
             ":Restart",
             ActionKit.Command(path="win.restart_all", display="Restart All", func=restart_all),
-            ActionKit.Command(path="win.restart_tray", display="Restart Background Services", func=restart_tray),
+            ActionKit.Command(path="win.restart_tray", display="Restart Tray", func=restart_tray),
             ActionKit.Command(path="win.restart_viewer", display="Restart Viewer", func=restart_viewer),
         ]

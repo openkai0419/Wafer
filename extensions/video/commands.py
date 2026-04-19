@@ -90,7 +90,7 @@ class VideoGridCommands(MenuGroup):
             ),
             CommandMeta(
                 path="vgrid.toggle_appear_autoplay",
-                display="Autoplay on Scroll",
+                display="Autoplay on Appear",
                 func=toggle_appear_autoplay,
                 checkable=True,
                 default_checked=False,

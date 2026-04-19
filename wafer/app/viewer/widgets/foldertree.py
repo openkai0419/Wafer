@@ -564,12 +564,12 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         return "FolderTree"
 
     def show_context_menu(self, position):
-        from wafer.builtins.commands import foldertree_commands
+        from wafer.builtins.commands import foldertree
 
         gp = self.viewport().mapToGlobal(position)
         ctx = Context.create_menu_context(self, "FolderTree", pos=position, global_pos=gp)
         ctx.extras.update(self.extend_context(ctx, None, source="menu") or {})
-        foldertree_commands.show_context_menu(ctx)
+        foldertree.show_context_menu(ctx)
 
     def extend_context(self, ctx, cmd, event=None, key=None, source=None):
         pos = ctx.get("pos") if hasattr(ctx, "get") else None

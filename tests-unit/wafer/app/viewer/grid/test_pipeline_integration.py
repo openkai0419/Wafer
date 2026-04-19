@@ -10,6 +10,8 @@ from wafer.app.viewer.grid.pipeline import GridPipeline
 from wafer.plugin.grid.base import WidgetGridPlugin
 from wafer.plugin.grid.handler import WIDGET, IMAGE
 
+_noop_appear = lambda i: None
+
 
 @pytest.fixture()
 def qapp():
@@ -124,7 +126,7 @@ class TestPipelineRenderImageFlow:
     def test_image_render_delivers_to_widget(self, dispatcher):
         widgets = {}
         cache = _FakeCache()
-        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None)
+        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None, _noop_appear)
 
         widget = MagicMock()
         widgets[0] = widget
@@ -145,7 +147,7 @@ class TestPipelineRenderImageFlow:
     def test_image_render_uses_sufficient_cache(self, dispatcher):
         widgets = {}
         cache = _FakeCache()
-        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None)
+        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None, _noop_appear)
 
         widget = MagicMock()
         widgets[0] = widget
@@ -165,7 +167,7 @@ class TestPipelineRenderImageFlow:
     def test_image_render_reloads_when_cache_undersized(self, dispatcher):
         widgets = {}
         cache = _FakeCache()
-        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None)
+        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None, _noop_appear)
 
         widget = MagicMock()
         widgets[0] = widget
@@ -190,7 +192,7 @@ class TestPipelineCancelDuringRender:
     def test_cancel_before_invoke_skips_widget(self, dispatcher):
         widgets = {}
         cache = _FakeCache()
-        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None)
+        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None, _noop_appear)
 
         widget = MagicMock()
         widgets[0] = widget
@@ -210,7 +212,7 @@ class TestPipelineCancelDuringRender:
     def test_reschedule_cancels_previous(self, dispatcher):
         widgets = {}
         cache = _FakeCache()
-        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None)
+        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None, _noop_appear)
 
         widget = MagicMock()
         widgets[0] = widget
@@ -234,7 +236,7 @@ class TestPipelineWidgetRecycle:
     def test_recycle_prevents_delivery(self, dispatcher):
         widgets = {}
         cache = _FakeCache()
-        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None)
+        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None, _noop_appear)
 
         widget = MagicMock()
         widgets[0] = widget
@@ -272,7 +274,7 @@ class TestPipelineWidgetPluginThumbnail:
     def test_widget_plugin_render_then_thumbnail(self, dispatcher):
         widgets = {}
         cache = _FakeCache()
-        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None)
+        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None, _noop_appear)
 
         widget = MagicMock()
         widgets[0] = widget
@@ -294,7 +296,7 @@ class TestPipelineWidgetPluginThumbnail:
         cache = _FakeCache()
         cached_thumb = _make_image(300, 300)
         cache["/vid.mp4"] = cached_thumb
-        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None)
+        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None, _noop_appear)
 
         widget = MagicMock()
         widgets[0] = widget
@@ -320,7 +322,7 @@ class TestPipelineLayoutToRenderFlow:
     def test_layout_ready_to_schedule_render(self, dispatcher):
         widgets = {}
         cache = _FakeCache()
-        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None)
+        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None, _noop_appear)
 
         layout_received = {}
 
@@ -352,7 +354,7 @@ class TestPipelineCancelAllDuringRender:
     def test_cancel_all_stops_active_renders(self, dispatcher):
         widgets = {}
         cache = _FakeCache()
-        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None)
+        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None, _noop_appear)
 
         barrier = threading.Event()
 
@@ -392,7 +394,7 @@ class TestPipelineFallbackRender:
     def test_fallback_delivers_image_for_unknown_file(self, dispatcher):
         widgets = {}
         cache = _FakeCache()
-        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None)
+        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None, _noop_appear)
 
         widget = MagicMock()
         widgets[0] = widget
@@ -412,7 +414,7 @@ class TestPipelineFallbackRender:
     def test_fallback_shows_error_placeholder_when_load_returns_none(self, dispatcher):
         widgets = {}
         cache = _FakeCache()
-        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None)
+        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None, _noop_appear)
 
         widget = MagicMock()
         widgets[0] = widget
@@ -431,7 +433,7 @@ class TestPipelineFallbackRender:
     def test_fallback_uses_sufficient_cache(self, dispatcher):
         widgets = {}
         cache = _FakeCache()
-        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None)
+        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None, _noop_appear)
 
         widget = MagicMock()
         widgets[0] = widget
@@ -456,7 +458,7 @@ class TestPipelineFallbackRender:
     def test_fallback_reloads_when_cache_undersized(self, dispatcher):
         widgets = {}
         cache = _FakeCache()
-        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None)
+        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None, _noop_appear)
 
         widget = MagicMock()
         widgets[0] = widget
@@ -476,7 +478,7 @@ class TestPipelineFallbackRender:
     def test_fallback_cancellable(self, dispatcher):
         widgets = {}
         cache = _FakeCache()
-        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None)
+        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None, _noop_appear)
 
         widget = MagicMock()
         widgets[0] = widget
@@ -505,7 +507,7 @@ class TestPipelineFullsizeKeyOptimization:
 
         widgets = {}
         cache = _FakeCache()
-        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None)
+        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None, _noop_appear)
 
         widget = MagicMock()
         widgets[0] = widget
@@ -541,7 +543,7 @@ class TestPipelineFullsizeKeyOptimization:
 
         widgets = {}
         cache = _FakeCache()
-        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None)
+        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None, _noop_appear)
 
         widget = MagicMock()
         widgets[0] = widget
@@ -563,7 +565,7 @@ class TestPipelineFullsizeKeyOptimization:
 
         widgets = {}
         cache = _FakeCache()
-        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None)
+        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None, _noop_appear)
 
         widget = MagicMock()
         widgets[0] = widget
@@ -584,7 +586,7 @@ class TestPipelineFullsizeKeyOptimization:
 
         widgets = {}
         cache = _FakeCache()
-        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None)
+        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None, _noop_appear)
 
         widget = MagicMock()
         widgets[0] = widget
@@ -613,7 +615,7 @@ class TestPipelineErrorPlaceholder:
     def test_image_plugin_shows_error_on_load_failure(self, dispatcher):
         widgets = {}
         cache = _FakeCache()
-        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None)
+        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None, _noop_appear)
 
         widget = MagicMock()
         widgets[0] = widget
@@ -644,7 +646,7 @@ class TestPipelineErrorPlaceholder:
     def test_error_placeholder_is_cached_and_reused(self, dispatcher):
         widgets = {}
         cache = _FakeCache()
-        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None)
+        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None, _noop_appear)
 
         widget = MagicMock()
         widgets[0] = widget
@@ -677,3 +679,72 @@ class TestPipelineErrorPlaceholder:
         _process_events_until(lambda: widget.set_image.called)
         second_img = widget.set_image.call_args[0][0]
         assert second_img is first_img
+
+
+class TestAppearAfterRender:
+    def test_appear_called_after_render_on_resolve(self, dispatcher):
+        call_order = []
+        widgets = {}
+        cache = _FakeCache()
+
+        class _TrackPlugin(WidgetGridPlugin):
+            NAME = "track"
+            EXTENSIONS = (".mp4",)
+            WIDGET_CLASS = MagicMock
+            REQUIRE_THUMBNAIL = False
+            PRIORITY = 5
+
+            def render(self, widget, path, size):
+                widget._path = path
+                call_order.append("render")
+
+        def appear_fn(index):
+            call_order.append("appear")
+
+        plugin = _TrackPlugin()
+        pipeline = GridPipeline(
+            dispatcher, dispatcher, dispatcher, cache,
+            lambda i: widgets.get(i), lambda i, n: None, appear_fn,
+        )
+
+        widget = MagicMock()
+        widget._path = None
+        widgets[0] = widget
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("wafer.app.viewer.grid.pipeline.grid_resolver", _fake_resolver(plugin))
+            pipeline.schedule_render(0, "/test.mp4", QtCore.QSize(200, 200))
+            _process_events_until(lambda: len(call_order) >= 2)
+
+        assert call_order == ["render", "appear"]
+
+    def test_dispatch_widget_render_does_not_call_appear(self, dispatcher):
+        call_order = []
+        widgets = {}
+        cache = _FakeCache()
+
+        class _TrackPlugin2(WidgetGridPlugin):
+            NAME = "track2"
+            EXTENSIONS = (".mp4",)
+            WIDGET_CLASS = MagicMock
+            REQUIRE_THUMBNAIL = False
+            PRIORITY = 5
+
+            def render(self, widget, path, size):
+                call_order.append("render")
+
+        def appear_fn(index):
+            call_order.append("appear")
+
+        plugin = _TrackPlugin2()
+        pipeline = GridPipeline(
+            dispatcher, dispatcher, dispatcher, cache,
+            lambda i: widgets.get(i), lambda i, n: None, appear_fn,
+        )
+
+        widget = MagicMock()
+        widgets[0] = widget
+
+        pipeline.schedule_render(0, "/test.mp4", QtCore.QSize(200, 200), plugin)
+        _process_events_until(lambda: len(call_order) >= 1, timeout_ms=3000)
+        assert call_order == ["render"]

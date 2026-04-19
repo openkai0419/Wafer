@@ -26,6 +26,16 @@ class TestExifToolCollector:
     def test_no_match_video(self):
         plugin = ExifToolCollectorPlugin()
         assert plugin.match("video.mp4") is False
+        assert plugin.match("video.mkv") is False
+        assert plugin.match("audio.mp3") is False
+
+    def test_match_apng(self):
+        plugin = ExifToolCollectorPlugin()
+        assert plugin.match("anim.apng") is True
+
+    def test_no_match_unknown(self):
+        plugin = ExifToolCollectorPlugin()
+        assert plugin.match("file.xyz") is False
 
     def test_post_install_calls_ensure(self):
         with patch("extensions.exiftool._downloader.ensure_exiftool") as mock_ensure:
@@ -47,6 +57,35 @@ class TestExifToolCollector:
         assert result.status is True
         assert result.meta_info["IFD0:Make"] == "Canon"
         assert result.aspect == pytest.approx(4000 / 3000)
+
+    def test_process_video_returns_meta(self):
+        plugin = ExifToolCollectorPlugin()
+        mock_proc = MagicMock()
+        mock_proc.alive = True
+        mock_proc.query.return_value = {
+            "SourceFile": "test.mp4",
+            "File:ImageWidth": 1920,
+            "File:ImageHeight": 1080,
+            "QuickTime:Make": "Apple",
+        }
+        plugin._process = mock_proc
+        result = plugin.process("test.mp4", (1000.0, 500))
+        assert result.status is True
+        assert result.meta_info["QuickTime:Make"] == "Apple"
+        assert result.aspect == pytest.approx(1920 / 1080)
+
+    def test_process_audio_returns_meta(self):
+        plugin = ExifToolCollectorPlugin()
+        mock_proc = MagicMock()
+        mock_proc.alive = True
+        mock_proc.query.return_value = {
+            "SourceFile": "test.mp3",
+            "ID3:Artist": "Test",
+        }
+        plugin._process = mock_proc
+        result = plugin.process("test.mp3", (1000.0, 500))
+        assert result.status is True
+        assert result.aspect is None
 
     def test_process_query_returns_none(self):
         plugin = ExifToolCollectorPlugin()

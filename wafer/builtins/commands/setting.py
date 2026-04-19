@@ -5,6 +5,8 @@ from ...plugin.grid.handler import grid_resolver, VIEWER_THUMBNAIL_DEFAULT_SIZE
 from ...utils.paths import resolve_data_path
 from ...core.platform.folders import show_in_explorer
 from ...core.app_settings import app_settings
+from ...utils.notifier import Notifier
+from ...core.lang.manager import t
 
 _SETTING_KEY = "viewer/thumbnail_default_size"
 
@@ -41,6 +43,15 @@ def set_viewer_thumbnail_default_size(ctx):
     app_settings.save_immediate(_SETTING_KEY, size)
 
 
+def toggle_language(ctx):
+    w = ctx.get_instance("MainWindow")
+    if not w:
+        return
+    new_locale = "ja" if t.current_locale == "en" else "en"
+    app_settings.save_immediate("window/language", new_locale)
+    Notifier.info(f"Language set to '{new_locale}'. Restart to apply.")
+
+
 class SettingCommands(ActionKit.MenuBase):
     NAME = "Setting"
     PRIORITY = 90
@@ -54,6 +65,7 @@ class SettingCommands(ActionKit.MenuBase):
                 display="Viewer Thumbnail Default Size",
                 func=set_viewer_thumbnail_default_size,
             ),
+            ActionKit.Command(path="setting.toggle_language", display="Toggle Language", func=toggle_language),
             "-",
             ":Binding",
             ActionKit.Command(

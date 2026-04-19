@@ -72,7 +72,7 @@ def set_list_dir(ctx, provider):
 
 class FileViewerCommands(ActionKit.MenuBase):
     NAME = "FileViewer"
-    PRIORITY = 55
+    PRIORITY = 50
 
     @classmethod
     def commands(cls):

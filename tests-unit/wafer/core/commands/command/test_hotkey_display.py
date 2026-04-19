@@ -6,7 +6,7 @@ from wafer.core.commands.command.payload import CommandPayload
 from wafer.core.commands.binding.key.sequence import KeySequence
 from wafer.core.commands.binding.mixins import CommandBindingMixin
 from wafer.core.commands.bridge import Menu
-from wafer.builtins.commands.file_commands import FileCommands
+from wafer.builtins.commands.file import FileCommands
 
 
 class _BindWidget(QtWidgets.QWidget, CommandBindingMixin):

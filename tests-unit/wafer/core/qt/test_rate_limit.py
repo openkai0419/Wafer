@@ -1,3 +1,4 @@
+import gc
 import time
 import pytest
 from unittest.mock import MagicMock
@@ -18,7 +19,18 @@ def _flush_events(ms=100, step=10):
 class TestQtDebounceManager:
     @pytest.fixture
     def manager(self, qtbot):
-        return QtDebounceManager()
+        m = QtDebounceManager()
+        yield m
+        for timer in list(m._timers.values()):
+            timer.stop()
+            timer.timeout.disconnect()
+        m._timers.clear()
+        app = QtWidgets.QApplication.instance()
+        if app:
+            app.processEvents()
+        gc.collect()
+        if app:
+            app.processEvents()
 
     def test_debounce_fires_after_delay(self, manager, qtbot):
         cb = MagicMock()

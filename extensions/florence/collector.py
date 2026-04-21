@@ -11,47 +11,62 @@ from wafer.plugin.imageloader.handler import image_loader_resolver
 from wafer.utils.logs import AppLogger
 
 if TYPE_CHECKING:
-    from ._inference import WD14Inference
+    from ._inference import FlorenceInference
 
 from ._downloader import ensure_model
-from .settings import parse_blacklist, wd14_config
+from .settings import TAG_MAP, enabled_tasks, florence_config
 
 _CACHE_MAX = 5000
-_ENGINE_IDLE_TIMEOUT = 30.0
+_ENGINE_IDLE_TIMEOUT = 120.0
 
 
-class WD14TaggerCollector(BaseSingletonCollector):
-    NAME = "wd14"
+class FlorenceCollector(BaseSingletonCollector):
+    NAME = "florence"
     EXTENSIONS = ()
     PRIORITY = 50
     BATCH_SIZE = 150
+    CHUNK_TIMEOUT = 360.0
+    DEFAULT_ENABLED = False
 
     @classmethod
     def post_install(cls, plugin_dir, on_progress=None, is_cancelled=None, on_log=None):
         if on_progress:
-            on_progress(phase="Downloading WD14 model…")
+            on_progress(phase="Downloading Florence-2 model…")
         ensure_model()
 
     def __init__(self):
-        self._engine: WD14Inference | None = None
+        self._engine: FlorenceInference | None = None
         self._engine_lock = threading.Lock()
+        self._loaded_variant: str | None = None
+        self._engine_failed: bool = False
         self._hash_cache: OrderedDict[str, dict] = OrderedDict()
         self._pixel_cache: OrderedDict[str, dict] = OrderedDict()
         self._last_used: float = 0.0
         self._idle_timer: threading.Timer | None = None
-        self._settings = wd14_config.load()
+        self._settings = florence_config.load()
 
     def _ensure_engine(self):
-        if self._engine is not None:
+        variant = self._settings.get("model_variant", "base")
+        if self._engine is not None and self._loaded_variant == variant:
             return
         with self._engine_lock:
-            if self._engine is not None:
+            if self._engine_failed:
+                raise RuntimeError("Florence-2 engine initialization previously failed")
+            if self._engine is not None and self._loaded_variant == variant:
                 return
-            from ._inference import WD14Inference
+            if self._engine is not None:
+                self._engine = None
+                AppLogger.info(f"Florence-2 engine unloaded for variant switch: {self._loaded_variant} -> {variant}")
+            from ._inference import FlorenceInference
 
-            model_dir = ensure_model()
-            self._engine = WD14Inference(model_dir)
-            AppLogger.info(f"WD14 engine loaded: {self._engine.session.get_providers()[0]}")
+            try:
+                model_dir = ensure_model(variant)
+                self._engine = FlorenceInference(model_dir)
+                self._loaded_variant = variant
+            except Exception as exc:
+                self._engine_failed = True
+                AppLogger.error(f"Florence-2 engine initialization failed: {exc}")
+                raise
 
     def _touch(self):
         self._last_used = time.monotonic()
@@ -73,9 +88,10 @@ class WD14TaggerCollector(BaseSingletonCollector):
             if time.monotonic() - self._last_used < _ENGINE_IDLE_TIMEOUT:
                 return
             self._engine = None
+            self._loaded_variant = None
             unloaded = True
         if unloaded:
-            AppLogger.info("WD14 engine unloaded (idle timeout)")
+            AppLogger.info("Florence-2 engine unloaded (idle timeout)")
 
     @staticmethod
     def _cache_put(cache: OrderedDict, key: str, value: dict):
@@ -83,43 +99,37 @@ class WD14TaggerCollector(BaseSingletonCollector):
         if len(cache) > _CACHE_MAX:
             cache.popitem(last=False)
 
-    def _build_tags(self, result: dict, settings: dict | None = None) -> dict:
+    def _run_tasks(self, image, settings: dict | None = None) -> dict:
+        engine = self._engine
+        if engine is None:
+            raise RuntimeError("Florence-2 engine is not loaded")
         s = settings or self._settings
-        ratings = result["ratings"]
-        blacklist = set(parse_blacklist(s.get("tag_blacklist", ""))) if s.get("enable_blacklist", True) else set()
-
+        tasks = enabled_tasks(s)
+        max_new_tokens = s.get("max_new_tokens", 1024)
+        num_beams = s.get("num_beams", 3)
         tags = {}
-        if s.get("enable_rating", True):
-            mode = s.get("rating_mode", "top")
-            if mode == "name":
-                top_rating = max(ratings, key=ratings.get)
-                tags["rating"] = top_rating
-            elif mode == "top":
-                top_rating = max(ratings, key=ratings.get)
-                tags["rating"] = top_rating
-                tags["rating_score"] = str(round(ratings[top_rating], 4))
-            elif mode == "all":
-                for name, score in ratings.items():
-                    tags[f"rating_{name}"] = str(round(score, 4))
-
-        if s.get("enable_character", True) and result["character"]:
-            tags["character"] = ", ".join(result["character"].keys())
-        if s.get("enable_tags", True) and result["general"]:
-            filtered = [k for k in result["general"] if k not in blacklist]
-            if filtered:
-                tags["tags"] = ", ".join(filtered)
+        for task in tasks:
+            result = engine.predict(image, task, max_new_tokens=max_new_tokens, num_beams=num_beams)
+            tags[TAG_MAP[task]] = result
         return tags
 
     def on_notify(self, payload=None) -> None:
-        self._settings = wd14_config.load()
+        old_variant = self._settings.get("model_variant")
+        self._settings = florence_config.load()
+        new_variant = self._settings.get("model_variant")
         self._hash_cache.clear()
         self._pixel_cache.clear()
-        AppLogger.info(f"WD14 settings reloaded (caches cleared): {self._settings}")
+        if old_variant != new_variant:
+            with self._engine_lock:
+                self._engine = None
+                self._loaded_variant = None
+            AppLogger.info(f"Florence-2 engine unloaded for variant switch: {old_variant} -> {new_variant}")
+        AppLogger.info(f"Florence-2 settings reloaded (caches cleared): {self._settings}")
 
     def on_request(self, action, payload, msg):
-        if action == "wd14.preview":
+        if action == "florence.preview":
             return self._handle_preview(payload)
-        if action == "wd14.device_info":
+        if action == "florence.device_info":
             return self._get_device_info()
         return None
 
@@ -130,40 +140,26 @@ class WD14TaggerCollector(BaseSingletonCollector):
             return {"error": "no_path"}
         self._ensure_engine()
         self._touch()
-        thumb = image_loader_resolver.load_pil(path, size=self._engine.input_height)
+        thumb = image_loader_resolver.load_pil(path, size=384)
         if thumb is None:
             return {"error": "thumbnail_failed"}
-        general_th = settings.get("general_threshold", self._settings.get("general_threshold", 0.057))
-        character_th = settings.get("character_threshold", self._settings.get("character_threshold", 0.8))
         try:
-            result = self._engine.predict(
-                thumb,
-                general_threshold=general_th,
-                character_threshold=character_th,
-            )
+            tags = self._run_tasks(thumb, settings)
         except Exception as e:
-            AppLogger.warning(f"WD14 preview failed: {path}", exc=e)
+            AppLogger.warning(f"Florence-2 preview failed: {path}", exc=e)
             return {"error": str(e)}
-        return {
-            "ratings": result["ratings"],
-            "character": result["character"],
-            "general": result["general"],
-            "path": path,
-        }
+        return {"tags": tags, "path": path}
 
     @staticmethod
     def _get_device_info():
         try:
-            import onnxruntime as ort
+            import torch
 
-            providers = ort.get_available_providers()
-            gpu_providers = ("CUDAExecutionProvider", "ROCmExecutionProvider", "CoreMLExecutionProvider")
-            for p in gpu_providers:
-                if p in providers:
-                    return {"device": p.replace("ExecutionProvider", ""), "device_name": p}
-            return {"device": "CPU", "device_name": "CPUExecutionProvider"}
+            if torch.cuda.is_available():
+                return {"device": "cuda", "device_name": torch.cuda.get_device_name(0)}
+            return {"device": "cpu", "device_name": "CPU"}
         except ImportError:
-            return {"device": "unknown", "device_name": "onnxruntime not available"}
+            return {"device": "unknown", "device_name": "torch not available"}
 
     def process(self, path: str, file_info: tuple) -> CollectorResult:
         file_hash = file_info[2] if len(file_info) >= 3 else None
@@ -179,7 +175,7 @@ class WD14TaggerCollector(BaseSingletonCollector):
         self._ensure_engine()
         self._touch()
 
-        thumb = image_loader_resolver.load_pil(path, size=self._engine.input_height)
+        thumb = image_loader_resolver.load_pil(path, size=384)
         if thumb is None:
             return CollectorResult(source=path, status=False)
 
@@ -191,15 +187,12 @@ class WD14TaggerCollector(BaseSingletonCollector):
                 self._cache_put(self._hash_cache, file_hash, tags)
             return CollectorResult(source=path, status=True, tags=tags)
 
-        general_th = self._settings.get("general_threshold", 0.057)
-        character_th = self._settings.get("character_threshold", 0.8)
         try:
-            result = self._engine.predict(thumb, general_threshold=general_th, character_threshold=character_th)
+            tags = self._run_tasks(thumb)
         except Exception as e:
-            AppLogger.warning(f"WD14 inference failed: {path}", exc=e)
+            AppLogger.warning(f"Florence-2 inference failed: {path}", exc=e)
             return CollectorResult(source=path, status=False)
 
-        tags = self._build_tags(result)
         self._cache_put(self._pixel_cache, pixel_hash, tags)
         if file_hash:
             self._cache_put(self._hash_cache, file_hash, tags)

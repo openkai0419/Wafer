@@ -217,6 +217,16 @@ class TestScannerSchedulerPipeline:
         time.sleep(0.3)
 
         executed_ops = []
+        barrier = threading.Event()
+
+        scheduler.submit(
+            Task.create(
+                "blocker",
+                priority=TaskPriority.SCAN,
+                run=lambda: barrier.wait(5.0),
+            )
+        )
+        time.sleep(0.1)
 
         for _ in range(3):
             scheduler.submit(
@@ -230,12 +240,13 @@ class TestScannerSchedulerPipeline:
         scheduler.submit(
             Task.create(
                 "noop_high",
-                priority=TaskPriority.REALTIME,
+                priority=TaskPriority.SCAN,
                 run=lambda: executed_ops.append("high"),
                 on_complete=done.set,
             )
         )
 
+        barrier.set()
         done.wait(timeout=5.0)
         time.sleep(1.0)
         scheduler.stop()

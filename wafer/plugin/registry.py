@@ -10,7 +10,7 @@ class PluginBase:
     DEFAULT_ENABLED: bool = False
 
     @classmethod
-    def post_install(cls, plugin_dir: str, on_progress=None, is_cancelled=None):
+    def post_install(cls, plugin_dir: str, on_progress=None, is_cancelled=None, on_log=None):
         pass
 
     @classmethod

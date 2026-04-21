@@ -43,7 +43,8 @@ from wafer.utils.profiling import profiler
 from wafer import __version__
 from wafer.constants import APP_DATA_DIR_NAME, APP_ID, APP_NAME, DEFAULT_DB_NAME
 from wafer.app.indexer.main_indexer import IndexerProcess
-from wafer.plugin.loader import load_plugins
+from wafer.plugin.loader import load_plugins, get_plugin_dir
+from wafer.plugin.startup_install import run_pending_installs
 from wafer.core.platform.process import AppProcess
 from wafer.core.platform.process_checker import ParentProcessChecker
 import wafer.constants as constants
@@ -61,6 +62,11 @@ def set_app_user_model_id(app_id):
         import ctypes
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
 set_app_user_model_id(APP_ID)
+
+
+def _bootstrap_plugins():
+    run_pending_installs(get_plugin_dir())
+    load_plugins()
 
 
 def _create_app():
@@ -177,7 +183,7 @@ def main():
     args = parser.parse_args()
     if not any([args.tray, args.viewer, args.indexer, args.collector, args.parser]):
         app = _create_app()
-        load_plugins()
+        _bootstrap_plugins()
         AppProcess.new_main('--tray')
         from wafer.core.profile import ProfileStore
         restore_ids = ProfileStore().get_restore_profile_ids()
@@ -186,7 +192,7 @@ def main():
         _entry_viewer(app, profile_id=restore_ids[0] if restore_ids else None)
         return
     if args.tray:
-        load_plugins()
+        _bootstrap_plugins()
         from wafer.plugin.loader import get_command_registry
         get_command_registry().activate('tray')
         _entry_tray()
@@ -210,7 +216,7 @@ def main():
             AppLogger.warning('--parser requires a db name')
     elif args.viewer:
         app = _create_app()
-        load_plugins()
+        _bootstrap_plugins()
         _entry_viewer(app, profile_id=args.profile)
 if __name__ == '__main__':
     atexit.register(lambda: AppLogger.info(f'process exit (pid={os.getpid()})'))

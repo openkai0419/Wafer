@@ -21,10 +21,11 @@ class _StubMetaPanel(BaseMetaPanelPlugin):
         self._last_data = data
 
 
-def test_meta_panel_plugin_interface():
+def test_meta_panel_plugin_interface(qtbot):
     plugin = _StubMetaPanel()
     assert plugin.PREFIX == "test_prefix"
     card = plugin.create_card()
+    qtbot.addWidget(card)
     assert isinstance(card, QtWidgets.QWidget)
     plugin.update_data({"key": "value"})
     assert plugin._last_data == {"key": "value"}

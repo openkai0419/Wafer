@@ -4,7 +4,8 @@ from configparser import ConfigParser
 from ..utils.paths import resolve_data_path
 from ..utils.helpers import try_json_loads
 from .config import ini_lock
-from .installer import RestartScope, has_pending_packages
+from .installer import RestartScope
+from . import installer_queue
 
 
 _INI_FILENAME = "viewer_plugins.ini"
@@ -110,21 +111,9 @@ class PluginSettings:
     def clear_restart_scope(self):
         self.set_restart_scope(RestartScope.NONE)
 
-    def is_restart_pending(self) -> bool:
-        return self.restart_scope() != RestartScope.NONE
-
-    def set_restart_pending(self, value: bool):
-        if value:
-            self.merge_restart_scope(RestartScope.ALL)
-        else:
-            self.clear_restart_scope()
-
-    def clear_restart_pending(self):
-        self.clear_restart_scope()
-
     def needs_restart(self, extensions_dir: str) -> RestartScope:
         scope = self.restart_scope()
-        if has_pending_packages(extensions_dir):
+        if installer_queue.has_pending_queue(extensions_dir):
             scope |= RestartScope.ALL
         return scope
 

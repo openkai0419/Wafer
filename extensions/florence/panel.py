@@ -10,30 +10,31 @@ from wafer.utils.notifier import Notifier
 from wafer.utils.paths import list_setting_db_names
 from wafer.core.lang.manager import t
 from wafer.core.qt.dispatcher import Dispatcher
-from .settings import blip_config
+from .settings import TAG_MAP, florence_config
 
-_DST = "collector-blip"
+_DST = "collector-florence"
 _REQUEST_TIMEOUT = 60.0
+_DELETE_KEYS = [f"florence.{tag}" for tag in TAG_MAP.values()]
 
 
-class BlipSettingsPanelPlugin(BasePanelPlugin):
-    NAME = "blip_settings"
-    DISPLAY_NAME = "BLIP Settings"
+class FlorenceSettingsPanelPlugin(BasePanelPlugin):
+    NAME = "florence_settings"
+    DISPLAY_NAME = "Florence-2 Settings"
     DEFAULT_ENABLED = True
     CLOSABLE = True
     PRIORITY = 50
 
     def create_widget(self) -> QtWidgets.QWidget:
-        return BlipSettingsWidget()
+        return FlorenceSettingsWidget()
 
 
-class BlipSettingsWidget(QtWidgets.QWidget):
+class FlorenceSettingsWidget(QtWidgets.QWidget):
     _preview_result = QtCore.Signal(dict)
     _device_result = QtCore.Signal(dict)
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._settings = blip_config.load()
+        self._settings = florence_config.load()
         self._dispatcher = Dispatcher()
         self._preview_result.connect(self._on_preview_result)
         self._device_result.connect(self._on_device_result)
@@ -50,10 +51,10 @@ class BlipSettingsWidget(QtWidgets.QWidget):
         self._thumb_label.setAlignment(QtCore.Qt.AlignCenter)
         self._thumb_label.setStyleSheet(f"border: 1px solid palette(mid); border-radius: {dpix(4)}px;")
 
-        self._caption_label = QtWidgets.QLabel(t("Drop a file here"))
-        self._caption_label.setWordWrap(True)
-        self._caption_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
-        self._caption_label.setMinimumHeight(dpix(40))
+        self._result_label = QtWidgets.QLabel(t("Drop a file here"))
+        self._result_label.setWordWrap(True)
+        self._result_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+        self._result_label.setMinimumHeight(dpix(60))
 
         self._preview_btn = QtWidgets.QPushButton(t("Re Preview"))
         self._preview_btn.clicked.connect(self._on_preview_clicked)
@@ -62,22 +63,34 @@ class BlipSettingsWidget(QtWidgets.QWidget):
         preview_layout = QtWidgets.QVBoxLayout(preview_group)
         preview_layout.setContentsMargins(dpix(6), dpix(6), dpix(6), dpix(6))
         preview_layout.addWidget(self._thumb_label, 1)
-        preview_layout.addWidget(self._caption_label)
+        preview_layout.addWidget(self._result_label)
         preview_layout.addWidget(self._preview_btn)
 
         settings_group = QtWidgets.QGroupBox(t("Settings"))
         form = QtWidgets.QFormLayout(settings_group)
         form.setContentsMargins(dpix(6), dpix(6), dpix(6), dpix(6))
 
-        self._min_spin = QtWidgets.QSpinBox()
-        self._min_spin.setRange(1, 200)
-        self._min_spin.setValue(self._settings.get("min_length", 5))
-        form.addRow(t("Min Length:"), self._min_spin)
+        self._variant_combo = QtWidgets.QComboBox()
+        self._variant_combo.addItems(["base", "large"])
+        self._variant_combo.setCurrentText(self._settings.get("model_variant", "base"))
+        form.addRow(t("Model:"), self._variant_combo)
 
-        self._max_spin = QtWidgets.QSpinBox()
-        self._max_spin.setRange(1, 500)
-        self._max_spin.setValue(self._settings.get("max_length", 50))
-        form.addRow(t("Max Length:"), self._max_spin)
+        self._caption_cb = QtWidgets.QCheckBox(t("CAPTION"))
+        self._caption_cb.setChecked(self._settings.get("enable_caption", True))
+        form.addRow(t("Tasks:"), self._caption_cb)
+
+        self._detailed_cb = QtWidgets.QCheckBox(t("DETAILED_CAPTION"))
+        self._detailed_cb.setChecked(self._settings.get("enable_detailed", True))
+        form.addRow("", self._detailed_cb)
+
+        self._more_detailed_cb = QtWidgets.QCheckBox(t("MORE_DETAILED_CAPTION"))
+        self._more_detailed_cb.setChecked(self._settings.get("enable_more_detailed", True))
+        form.addRow("", self._more_detailed_cb)
+
+        self._tokens_spin = QtWidgets.QSpinBox()
+        self._tokens_spin.setRange(64, 4096)
+        self._tokens_spin.setValue(self._settings.get("max_new_tokens", 1024))
+        form.addRow(t("Max Tokens:"), self._tokens_spin)
 
         self._beams_spin = QtWidgets.QSpinBox()
         self._beams_spin.setRange(1, 10)
@@ -167,8 +180,11 @@ class BlipSettingsWidget(QtWidgets.QWidget):
 
     def _current_settings(self) -> dict:
         return {
-            "min_length": self._min_spin.value(),
-            "max_length": self._max_spin.value(),
+            "model_variant": self._variant_combo.currentText(),
+            "enable_caption": self._caption_cb.isChecked(),
+            "enable_detailed": self._detailed_cb.isChecked(),
+            "enable_more_detailed": self._more_detailed_cb.isChecked(),
+            "max_new_tokens": self._tokens_spin.value(),
             "num_beams": self._beams_spin.value(),
         }
 
@@ -177,7 +193,7 @@ class BlipSettingsWidget(QtWidgets.QWidget):
             return
         self._requesting = True
         self._preview_btn.setEnabled(False)
-        self._caption_label.setText(t("Generating caption..."))
+        self._result_label.setText(t("Generating captions..."))
         path = self._current_path
         settings = self._current_settings()
         self._dispatcher.post(lambda: self._do_preview_request(path, settings))
@@ -191,7 +207,7 @@ class BlipSettingsWidget(QtWidgets.QWidget):
             return
         reply = node.request(
             "service.request",
-            {"action": "blip.preview", "path": path, "settings": settings},
+            {"action": "florence.preview", "path": path, "settings": settings},
             dst=_DST,
             timeout=_REQUEST_TIMEOUT,
         )
@@ -208,10 +224,16 @@ class BlipSettingsWidget(QtWidgets.QWidget):
         self._preview_btn.setEnabled(bool(self._current_path))
         error = result.get("error")
         if error:
-            self._caption_label.setText(f"Error: {error}")
+            self._result_label.setText(f"Error: {error}")
             return
-        caption = result.get("caption", "")
-        self._caption_label.setText(caption if caption else "(empty caption)")
+        tags = result.get("tags", {})
+        if not tags:
+            self._result_label.setText("(no results)")
+            return
+        lines = []
+        for key, text in tags.items():
+            lines.append(f"<b>{key}:</b> {text}")
+        self._result_label.setText("<br><br>".join(lines))
         if not self._device_ok:
             self._request_device_info()
 
@@ -228,7 +250,7 @@ class BlipSettingsWidget(QtWidgets.QWidget):
             return
         reply = node.request(
             "service.request",
-            {"action": "blip.device_info"},
+            {"action": "florence.device_info"},
             dst=_DST,
             timeout=10.0,
         )
@@ -244,20 +266,20 @@ class BlipSettingsWidget(QtWidgets.QWidget):
         device = result.get("device", "unknown")
         name = result.get("device_name", "")
         self._device_ok = device != "unknown"
-        self._device_label.setText(f"Device: {device.upper()}  ({name})\nModel: blip-large (Salesforce)")
+        self._device_label.setText(f"Device: {device.upper()}  ({name})\nModel: Florence-2 (Microsoft)")
 
     def _on_save(self):
         values = self._current_settings()
         if values == self._saved_settings:
             return
 
-        dlg = _BlipSaveConfirmDialog(parent=self)
+        dlg = _FlorenceSaveConfirmDialog(parent=self)
         if dlg.exec() != QtWidgets.QDialog.Accepted:
             return
         do_delete = dlg.delete_data()
         do_recollect = dlg.recollect()
 
-        blip_config.save_and_notify("blip", **values)
+        florence_config.save_and_notify("florence", **values)
         self._settings = values
         self._saved_settings = dict(values)
 
@@ -270,22 +292,30 @@ class BlipSettingsWidget(QtWidgets.QWidget):
                     re_collect=do_recollect,
                 )
 
+        variant = values["model_variant"]
         if do_delete:
             action = "saved + delete & recollect" if do_recollect else "saved + delete"
         else:
             action = "saved"
-        Notifier.info(f"BLIP settings {action} (min={values['min_length']}, max={values['max_length']}, beams={values['num_beams']})")
+        Notifier.info(f"Florence-2 settings {action} (model={variant}, beams={values['num_beams']})")
 
     def _on_reset(self):
-        self._min_spin.setValue(5)
-        self._max_spin.setValue(50)
+        self._variant_combo.setCurrentText("base")
+        self._caption_cb.setChecked(True)
+        self._detailed_cb.setChecked(True)
+        self._more_detailed_cb.setChecked(True)
+        self._tokens_spin.setValue(1024)
         self._beams_spin.setValue(3)
 
     def _on_revert(self):
-        self._min_spin.setValue(self._saved_settings.get("min_length", 5))
-        self._max_spin.setValue(self._saved_settings.get("max_length", 50))
-        self._beams_spin.setValue(self._saved_settings.get("num_beams", 3))
-        Notifier.info(t("BLIP settings reverted"))
+        s = self._saved_settings
+        self._variant_combo.setCurrentText(s.get("model_variant", "base"))
+        self._caption_cb.setChecked(s.get("enable_caption", True))
+        self._detailed_cb.setChecked(s.get("enable_detailed", True))
+        self._more_detailed_cb.setChecked(s.get("enable_more_detailed", True))
+        self._tokens_spin.setValue(s.get("max_new_tokens", 1024))
+        self._beams_spin.setValue(s.get("num_beams", 3))
+        Notifier.info(t("Florence-2 settings reverted"))
 
     @staticmethod
     def _send_delete_and_recollect(db_names: list[str], *, delete: bool, re_collect: bool):
@@ -293,28 +323,28 @@ class BlipSettingsWidget(QtWidgets.QWidget):
 
         node = InstanceRegistry.instance().resolve_node()
         if not node:
-            AppLogger.warning("[BlipSettings] No IPC node available")
+            AppLogger.warning("[FlorenceSettings] No IPC node available")
             return
-        keys = ["blip.caption"] if delete else []
+        keys = list(_DELETE_KEYS) if delete else []
         for db in db_names:
             node.send_reliable(
                 "delete.keys",
-                {"keys": keys, "collector": "blip", "re_collect": re_collect},
+                {"keys": keys, "collector": "florence", "re_collect": re_collect},
                 dst="indexer",
                 db=db,
             )
 
 
-class _BlipSaveConfirmDialog(QtWidgets.QDialog):
+class _FlorenceSaveConfirmDialog(QtWidgets.QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(t("Save BLIP Settings"))
+        self.setWindowTitle(t("Save Florence-2 Settings"))
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setSpacing(dpix(8))
         layout.addWidget(QtWidgets.QLabel(t("Settings have been modified.\nThis will apply to all databases.")))
 
-        self._delete_cb = QtWidgets.QCheckBox(t("Delete existing BLIP data"))
+        self._delete_cb = QtWidgets.QCheckBox(t("Delete existing Florence data"))
         self._delete_cb.setChecked(True)
         self._recollect_cb = QtWidgets.QCheckBox(t("Re-collect after deletion"))
         self._recollect_cb.setChecked(True)

@@ -229,7 +229,7 @@ def copy_sources(dist_dir: Path):
     copy_tree(
         ROOT / "extensions",
         dist_dir / "extensions",
-        exclude_dirs={".packages", ".pip_staging", "lib"},
+        exclude_dirs={".packages", ".pip_staging", ".pending", "lib"},
     )
 
     for item in RESOURCE_ITEMS:

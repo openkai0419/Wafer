@@ -9,6 +9,7 @@ import zipfile
 _LIB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib")
 _EXIFTOOL_EXE = "exiftool.exe"
 _EXIFTOOL_PATH = os.path.join(_LIB_DIR, _EXIFTOOL_EXE)
+_EXIFTOOL_PL = os.path.join(_LIB_DIR, "exiftool_files", "exiftool.pl")
 
 _VERSION_URL = "https://exiftool.org/ver.txt"
 _ARCHIVE_URL_TEMPLATE = "https://sourceforge.net/projects/exiftool/files/exiftool-{version}_64.zip/download"
@@ -69,18 +70,28 @@ def _validate_archive_path(name: str, base_dir: str):
 
 
 def _extract(archive_path: str):
-    os.makedirs(_LIB_DIR, exist_ok=True)
-    with zipfile.ZipFile(archive_path, "r") as zf:
-        for info in zf.infolist():
-            _validate_archive_path(info.filename, _LIB_DIR)
-        zf.extractall(_LIB_DIR)
-    entries = os.listdir(_LIB_DIR)
-    if len(entries) == 1:
-        nested = os.path.join(_LIB_DIR, entries[0])
-        if os.path.isdir(nested):
-            for item in os.listdir(nested):
-                shutil.move(os.path.join(nested, item), os.path.join(_LIB_DIR, item))
-            os.rmdir(nested)
+    tmp = tempfile.mkdtemp()
+    try:
+        with zipfile.ZipFile(archive_path, "r") as zf:
+            for info in zf.infolist():
+                _validate_archive_path(info.filename, tmp)
+            zf.extractall(tmp)
+        src = tmp
+        entries = os.listdir(tmp)
+        if len(entries) == 1:
+            nested = os.path.join(tmp, entries[0])
+            if os.path.isdir(nested):
+                src = nested
+        os.makedirs(_LIB_DIR, exist_ok=True)
+        for item in os.listdir(src):
+            dst = os.path.join(_LIB_DIR, item)
+            if os.path.isdir(dst):
+                shutil.rmtree(dst)
+            elif os.path.exists(dst):
+                os.remove(dst)
+            shutil.move(os.path.join(src, item), dst)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
     for name in os.listdir(_LIB_DIR):
         lower = name.lower()
         if lower.startswith("exiftool") and lower.endswith(".exe") and name != _EXIFTOOL_EXE:
@@ -88,8 +99,12 @@ def _extract(archive_path: str):
             break
 
 
+def _is_bundled_install_valid() -> bool:
+    return os.path.isfile(_EXIFTOOL_PATH) and os.path.isfile(_EXIFTOOL_PL)
+
+
 def get_exiftool_path() -> str | None:
-    if os.path.isfile(_EXIFTOOL_PATH):
+    if _is_bundled_install_valid():
         return _EXIFTOOL_PATH
     system = shutil.which("exiftool")
     if system:
@@ -113,8 +128,14 @@ def _fetch_latest_version() -> str:
 
 
 def ensure_exiftool():
-    if os.path.isfile(_EXIFTOOL_PATH):
+    if _is_bundled_install_valid():
         return True
+    if os.path.isfile(_EXIFTOOL_PATH):
+        _log("[exiftool] exiftool.exe found but exiftool.pl missing — removing broken install", level="warning")
+        try:
+            os.remove(_EXIFTOOL_PATH)
+        except OSError:
+            pass
     if platform.system() != "Windows":
         if shutil.which("exiftool"):
             return True

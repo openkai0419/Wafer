@@ -76,8 +76,9 @@ EXPECTED_PLUGINS = {
     "ai_tagger": {
         ("collector", "WD14TaggerCollector"),
     },
-    "blip_captioner": {
-        ("collector", "BlipCaptionerCollector"),
+    "florence": {
+        ("collector", "FlorenceCollector"),
+        ("panel", "FlorenceSettingsPanelPlugin"),
     },
     "exiftool": {
         ("collector", "ExifToolCollectorPlugin"),

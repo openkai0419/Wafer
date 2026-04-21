@@ -82,6 +82,14 @@ if exist "%ROOT%\extensions\.packages" (
     set /a REPO_COUNT+=1
     echo   [repo] extensions\.packages
 )
+if exist "%ROOT%\extensions\.pending" (
+    set /a REPO_COUNT+=1
+    echo   [repo] extensions\.pending
+)
+if exist "%ROOT%\extensions\.pip_staging" (
+    set /a REPO_COUNT+=1
+    echo   [repo] extensions\.pip_staging
+)
 
 for %%D in (build dist .temp .pytest_cache .ruff_cache) do (
     if exist "%ROOT%\%%D" (
@@ -191,6 +199,14 @@ for /d %%D in ("%ROOT%\extensions\*") do (
 if exist "%ROOT%\extensions\.packages" (
     call :rm "%ROOT%\extensions\.packages"
     echo     removed extensions\.packages
+)
+if exist "%ROOT%\extensions\.pending" (
+    call :rm "%ROOT%\extensions\.pending"
+    echo     removed extensions\.pending
+)
+if exist "%ROOT%\extensions\.pip_staging" (
+    call :rm "%ROOT%\extensions\.pip_staging"
+    echo     removed extensions\.pip_staging
 )
 
 for %%D in (build dist .temp .pytest_cache .ruff_cache) do (

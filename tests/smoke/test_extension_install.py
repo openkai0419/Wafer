@@ -1,7 +1,23 @@
+"""End-to-end smoke test for the 2-phase extension install flow.
+
+Mirrors what `wafer.plugin.startup_install.run_pending_installs` does in production:
+  Phase A: pip-install requirements for ALL extensions (no extension code import).
+  Phase B: discover_extension + post_install hooks for ALL extensions (pip never runs).
+
+This guards against the regression where one extension's discover_extension imports
+native libs (cv2/numpy/...) and locks DLLs / package files for the next extension's pip.
+
+Tests run sequentially in a single process inside a tmp extensions_dir.
+"""
+
+from __future__ import annotations
+
 import os
-import sys
 import shutil
-from dataclasses import dataclass, field
+import subprocess
+import sys
+import time
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -10,188 +26,176 @@ pytestmark = pytest.mark.setup
 
 EXTENSIONS_ROOT = Path(__file__).resolve().parent.parent.parent / "extensions"
 
-EXTENSIONS_WITH_REQUIREMENTS = [
-    "image",
-    "animated",
-    "video",
-    "ffmpeg",
-    "ai_tagger",
-    "blip_captioner",
-]
+LIGHT_EXTENSIONS = ["image", "animated", "video", "ffmpeg", "exiftool"]
+HEAVY_EXTENSIONS = ["ai_tagger", "florence"]
 
-POST_INSTALL_MAP = {
-    "ai_tagger": ("extensions.ai_tagger.collector", "WD14TaggerCollector"),
-    "blip_captioner": ("extensions.blip_captioner.collector", "BlipCaptionerCollector"),
-    "ffmpeg": ("extensions.ffmpeg.collector", "FfmpegCollectorPlugin"),
-    "exiftool": ("extensions.exiftool.collector", "ExifToolCollectorPlugin"),
-    "video": ("extensions.video.grid", "VideoGridPlugin"),
+VERIFY_IMPORTS: dict[str, list[str]] = {
+    "image": ["cv2", "numpy", "PIL"],
+    "animated": ["PIL"],
+    "video": [],
+    "ffmpeg": [],
+    "exiftool": [],
+    "ai_tagger": ["onnxruntime", "huggingface_hub"],
+    "florence": ["torch", "transformers", "safetensors", "timm", "einops", "huggingface_hub"],
 }
 
 
 @dataclass
-class InstallEnv:
-    base_dir: Path
-    extensions_dir: Path
-    packages_dir: Path
-    stamps_dir: Path
-    install_results: dict[str, bool] = field(default_factory=dict)
-    post_install_results: dict[str, bool] = field(default_factory=dict)
+class _Entry:
+    name: str
+    plugin_dir: str
 
 
-@pytest.fixture(scope="module")
-def install_env(tmp_path_factory) -> InstallEnv:
-    base = tmp_path_factory.mktemp("ext_install")
-    ext_dir = base / "extensions"
+def _copy_extension(src_root: Path, dst_root: Path, name: str) -> Path:
+    src = src_root / name
+    dst = dst_root / name
+    shutil.copytree(str(src), str(dst))
+    return dst
+
+
+def _setup_extensions_dir(tmp_path: Path, names: list[str]) -> Path:
+    ext_dir = tmp_path / "extensions"
     ext_dir.mkdir()
-    pkg_dir = ext_dir / ".packages"
-    pkg_dir.mkdir()
-    stamps_dir = pkg_dir / ".stamps"
-    stamps_dir.mkdir()
-    return InstallEnv(
-        base_dir=base,
-        extensions_dir=ext_dir,
-        packages_dir=pkg_dir,
-        stamps_dir=stamps_dir,
+    for name in names:
+        _copy_extension(EXTENSIONS_ROOT, ext_dir, name)
+    return ext_dir
+
+
+def _verify_imports_in_subprocess(packages_dir: Path, extension_name: str) -> tuple[bool, str]:
+    modules = VERIFY_IMPORTS.get(extension_name, [])
+    if not modules:
+        return True, ""
+    code = f"import sys\nsys.path.insert(0, r'{packages_dir}')\nimport importlib\nfor m in {modules!r}:\n    importlib.import_module(m)\nprint('OK')\n"
+    proc = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        timeout=120,
     )
+    if proc.returncode != 0:
+        tail = (proc.stderr or proc.stdout or "")[-2000:]
+        return False, tail
+    return True, ""
 
 
-def _patch_extensions_dir(monkeypatch, install_env: InstallEnv):
-    import wafer.plugin.installer as installer
+def _run_two_phase_install(ext_dir: Path, names: list[str], log_dir: Path) -> dict:
+    from wafer.plugin import startup_install
 
-    monkeypatch.setattr(installer, "_extensions_dir_from_plugin", lambda plugin_dir: str(install_env.extensions_dir))
+    entries = [_Entry(name=n, plugin_dir=str(ext_dir / n)) for n in names]
+    log_dir.mkdir(parents=True, exist_ok=True)
 
+    captured: dict[str, list[str]] = {n: [] for n in names}
 
-def _copy_requirements(install_env: InstallEnv, ext_name: str):
-    real_plugin_dir = EXTENSIONS_ROOT / ext_name
-    fake_plugin_dir = install_env.extensions_dir / ext_name
-    fake_plugin_dir.mkdir(exist_ok=True)
-    req_src = real_plugin_dir / "requirements.txt"
-    if req_src.is_file():
-        shutil.copy2(str(req_src), str(fake_plugin_dir / "requirements.txt"))
+    real_a = startup_install._install_one_phase_a
+    real_b = startup_install._install_one_phase_b
 
+    def wrap_a(extensions_dir, entry, on_log=None):
+        def collect(line):
+            captured[entry.name].append(line)
 
-def _ensure_requirements_installed(install_env: InstallEnv, monkeypatch, ext_name: str):
-    if install_env.install_results.get(ext_name):
-        return
-    req_file = EXTENSIONS_ROOT / ext_name / "requirements.txt"
-    if not req_file.is_file() or req_file.stat().st_size == 0:
-        return
-    _patch_extensions_dir(monkeypatch, install_env)
-    _copy_requirements(install_env, ext_name)
-    from wafer.plugin.installer import install_requirements
+        t0 = time.monotonic()
+        ok = real_a(extensions_dir, entry, on_log=collect)
+        dt = time.monotonic() - t0
+        captured[entry.name].append(f"[phase=A elapsed={dt:.1f}s ok={ok}]")
+        return ok
 
-    fake_plugin_dir = str(install_env.extensions_dir / ext_name)
-    success, _ = install_requirements(fake_plugin_dir, str(install_env.extensions_dir))
-    assert success, f"Prerequisites install failed for {ext_name}"
-    install_env.install_results[ext_name] = True
+    def wrap_b(extensions_dir, entry, on_log=None):
+        def collect(line):
+            captured[entry.name].append(line)
 
+        t0 = time.monotonic()
+        ok = real_b(extensions_dir, entry, on_log=collect)
+        dt = time.monotonic() - t0
+        captured[entry.name].append(f"[phase=B elapsed={dt:.1f}s ok={ok}]")
+        return ok
 
-def _patch_downloader_paths(monkeypatch, install_env: InstallEnv, ext_name: str):
-    lib_base = str(install_env.base_dir / "lib" / ext_name)
-    models_base = str(install_env.base_dir / "models" / ext_name)
-
-    if ext_name == "ai_tagger":
-        import extensions.ai_tagger._downloader as dl
-
-        monkeypatch.setattr(dl, "_LIB_DIR", lib_base)
-        monkeypatch.setattr(dl, "_MODELS_DIR", models_base)
-
-    elif ext_name == "blip_captioner":
-        import extensions.blip_captioner._downloader as dl
-
-        monkeypatch.setattr(dl, "_LIB_DIR", lib_base)
-        monkeypatch.setattr(dl, "_MODELS_DIR", models_base)
-
-    elif ext_name == "ffmpeg":
-        import extensions.ffmpeg._downloader as dl
-
-        monkeypatch.setattr(dl, "_LIB_DIR", lib_base)
-        monkeypatch.setattr(dl, "_FFPROBE_PATH", os.path.join(lib_base, "ffprobe.exe"))
-        monkeypatch.setattr(dl, "_FFMPEG_PATH", os.path.join(lib_base, "ffmpeg.exe"))
-        monkeypatch.setattr(dl, "_7ZR_PATH", os.path.join(lib_base, "7zr.exe"))
-
-    elif ext_name == "exiftool":
-        import extensions.exiftool._downloader as dl
-
-        monkeypatch.setattr(dl, "_LIB_DIR", lib_base)
-        monkeypatch.setattr(dl, "_EXIFTOOL_PATH", os.path.join(lib_base, "exiftool.exe"))
-
-    elif ext_name == "video":
-        import extensions.video._downloader as dl
-
-        monkeypatch.setattr(dl, "_LIB_DIR", lib_base)
-        monkeypatch.setattr(dl, "_DLL_PATH", os.path.join(lib_base, "libmpv-2.dll"))
-        monkeypatch.setattr(dl, "_7ZR_PATH", os.path.join(lib_base, "7zr.exe"))
-
-
-def _run_post_install(install_env: InstallEnv, monkeypatch, ext_name: str):
-    _ensure_requirements_installed(install_env, monkeypatch, ext_name)
-    _patch_extensions_dir(monkeypatch, install_env)
-    _patch_downloader_paths(monkeypatch, install_env, ext_name)
-
-    pkg_dir = str(install_env.packages_dir)
-    path_added = pkg_dir not in sys.path
-    if path_added:
-        sys.path.insert(0, pkg_dir)
-
+    startup_install._install_one_phase_a = wrap_a
+    startup_install._install_one_phase_b = wrap_b
     try:
-        module_path, class_name = POST_INSTALL_MAP[ext_name]
-        import importlib
-
-        mod = importlib.import_module(module_path)
-        cls = getattr(mod, class_name)
-        fake_plugin_dir = str(install_env.extensions_dir / ext_name)
-        cls.post_install(fake_plugin_dir)
-        install_env.post_install_results[ext_name] = True
+        processed, failed = startup_install._run_installs_blocking(str(ext_dir), entries)
     finally:
-        if path_added and pkg_dir in sys.path:
-            sys.path.remove(pkg_dir)
+        startup_install._install_one_phase_a = real_a
+        startup_install._install_one_phase_b = real_b
+
+    for name, lines in captured.items():
+        (log_dir / f"install_{name}.log").write_text("\n".join(lines), encoding="utf-8")
+
+    return {"processed": processed, "failed": failed, "captured": captured}
 
 
-class TestSmokeRequirementsInstall:
-    @pytest.mark.parametrize("ext_name", EXTENSIONS_WITH_REQUIREMENTS)
-    @pytest.mark.timeout(300)
-    def test_install_requirements(self, ext_name, install_env, monkeypatch):
-        req_file = EXTENSIONS_ROOT / ext_name / "requirements.txt"
-        if not req_file.is_file() or req_file.stat().st_size == 0:
-            pytest.skip(f"{ext_name} has no/empty requirements.txt")
-
-        _patch_extensions_dir(monkeypatch, install_env)
-        _copy_requirements(install_env, ext_name)
-
-        from wafer.plugin.installer import install_requirements
-
-        fake_plugin_dir = str(install_env.extensions_dir / ext_name)
-        success, deferred = install_requirements(fake_plugin_dir, str(install_env.extensions_dir))
-
-        assert success, f"install_requirements failed for {ext_name}"
-
-        stamp = install_env.stamps_dir / f"{ext_name}.installed"
-        assert stamp.exists(), f"Install stamp not created for {ext_name}"
-
-        pkg_entries = [e for e in install_env.packages_dir.iterdir() if e.name != ".stamps"]
-        assert len(pkg_entries) > 0, f"No packages installed for {ext_name}"
-
-        install_env.install_results[ext_name] = True
+def _has_post_install(name: str) -> bool:
+    plugin_dir = EXTENSIONS_ROOT / name
+    if not plugin_dir.is_dir():
+        return False
+    for path in plugin_dir.glob("*.py"):
+        if path.name.startswith("_"):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        if "def post_install" in text:
+            return True
+    return False
 
 
-class TestSmokePostInstall:
-    @pytest.mark.timeout(600)
-    def test_post_install_ai_tagger(self, install_env, monkeypatch):
-        _run_post_install(install_env, monkeypatch, "ai_tagger")
+def _assert_install_success(ext_dir: Path, names: list[str], result: dict):
+    failed = result["failed"]
+    if failed:
+        details = []
+        for name in failed:
+            tail = "\n".join(result["captured"].get(name, []))[-3000:]
+            details.append(f"\n--- {name} ---\n{tail}")
+        pytest.fail(f"Phase A/B failed for: {failed}{''.join(details)}")
 
-    @pytest.mark.timeout(7200)
-    def test_post_install_blip_captioner(self, install_env, monkeypatch):
-        _run_post_install(install_env, monkeypatch, "blip_captioner")
+    stamps_dir = ext_dir / ".packages" / ".stamps"
+    for name in names:
+        installed = stamps_dir / f"{name}.installed"
+        post = stamps_dir / f"{name}.post_installed"
+        req_file = ext_dir / name / "requirements.txt"
+        if req_file.is_file() and req_file.stat().st_size > 0:
+            assert installed.exists(), f"{name}.installed stamp missing"
+        if _has_post_install(name):
+            assert post.exists(), f"{name}.post_installed stamp missing"
 
-    @pytest.mark.timeout(300)
-    def test_post_install_ffmpeg(self, install_env, monkeypatch):
-        _run_post_install(install_env, monkeypatch, "ffmpeg")
 
-    @pytest.mark.timeout(300)
-    def test_post_install_exiftool(self, install_env, monkeypatch):
-        _run_post_install(install_env, monkeypatch, "exiftool")
+@pytest.mark.timeout(900)
+def test_install_lightweight_extensions(tmp_path):
+    log_dir = tmp_path / "logs"
+    ext_dir = _setup_extensions_dir(tmp_path, LIGHT_EXTENSIONS)
 
-    @pytest.mark.timeout(300)
-    def test_post_install_video(self, install_env, monkeypatch):
-        _run_post_install(install_env, monkeypatch, "video")
+    result = _run_two_phase_install(ext_dir, LIGHT_EXTENSIONS, log_dir)
+    _assert_install_success(ext_dir, LIGHT_EXTENSIONS, result)
+
+    packages_dir = ext_dir / ".packages"
+    failures = []
+    for name in LIGHT_EXTENSIONS:
+        ok, tail = _verify_imports_in_subprocess(packages_dir, name)
+        if not ok:
+            failures.append(f"\n--- {name} ---\n{tail}")
+    if failures:
+        pytest.fail("Subprocess import verification failed:" + "".join(failures))
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(
+    not os.environ.get("WAFER_RUN_HEAVY_INSTALL"),
+    reason="Heavy install (downloads torch+transformers, several GB). Set WAFER_RUN_HEAVY_INSTALL=1 to enable.",
+)
+@pytest.mark.timeout(7200)
+def test_install_all_extensions_including_ml(tmp_path):
+    log_dir = tmp_path / "logs"
+    all_names = LIGHT_EXTENSIONS + HEAVY_EXTENSIONS
+    ext_dir = _setup_extensions_dir(tmp_path, all_names)
+
+    result = _run_two_phase_install(ext_dir, all_names, log_dir)
+    _assert_install_success(ext_dir, all_names, result)
+
+    packages_dir = ext_dir / ".packages"
+    failures = []
+    for name in all_names:
+        ok, tail = _verify_imports_in_subprocess(packages_dir, name)
+        if not ok:
+            failures.append(f"\n--- {name} ---\n{tail}")
+    if failures:
+        pytest.fail("Subprocess import verification failed:" + "".join(failures))

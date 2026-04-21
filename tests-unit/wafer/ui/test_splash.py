@@ -46,6 +46,36 @@ def test_show_triggers_process_events(app):
 
 
 def test_fixed_size(app):
-    splash = InstallSplash("Test")
+    splash = InstallSplash("Test", show_log=False)
     assert splash.width() == dpix(360)
     assert splash.height() == dpix(80)
+
+
+def test_log_area_present_by_default(app):
+    splash = InstallSplash("Test")
+    assert splash.findChild(QtWidgets.QPlainTextEdit) is not None
+    assert splash.height() > dpix(80)
+
+
+def test_append_log_writes_text(app):
+    splash = InstallSplash("Test")
+    splash.append_log("Collecting numpy")
+    splash.append_log("Installing collected packages")
+    log = splash.findChild(QtWidgets.QPlainTextEdit)
+    assert "Collecting numpy" in log.toPlainText()
+    assert "Installing collected packages" in log.toPlainText()
+
+
+def test_append_log_noop_when_disabled(app):
+    splash = InstallSplash("Test", show_log=False)
+    splash.append_log("ignored")
+    assert splash.findChild(QtWidgets.QPlainTextEdit) is None
+
+
+def test_window_icon_set(app):
+    from PySide6 import QtGui
+    pix = QtGui.QPixmap(16, 16)
+    pix.fill(QtGui.QColor("red"))
+    icon = QtGui.QIcon(pix)
+    splash = InstallSplash("Test", icon=icon)
+    assert not splash.windowIcon().isNull()

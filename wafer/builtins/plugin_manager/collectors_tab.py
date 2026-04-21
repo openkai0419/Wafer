@@ -3,6 +3,7 @@ from ...utils.formatting import dpix
 from ...utils.paths import list_setting_db_names, setting_db_path
 from ...core.db.setting_db import SettingDB
 from ...core.lang.manager import t
+from ...core.qt.icon_engine import themed_icon
 
 
 class _ClickableLabel(QtWidgets.QLabel):
@@ -21,7 +22,7 @@ class _ClickableLabel(QtWidgets.QLabel):
 class CollectorsTab(QtWidgets.QWidget):
     delete_requested = QtCore.Signal(list, bool)
 
-    def __init__(self, collector_names: list[str] | None = None, parser_names: list[str] | None = None, parent=None):
+    def __init__(self, collector_names: list[str] | None = None, parser_names: list[str] | None = None, heavy_collectors: set[str] | None = None, parent=None):
         super().__init__(parent)
         if collector_names is None:
             from ...plugin.collector.handler import collector_resolver
@@ -33,6 +34,7 @@ class CollectorsTab(QtWidgets.QWidget):
             parser_names = list(parser_resolver.names())
         self._collector_names: list[str] = list(collector_names)
         self._parser_names: list[str] = list(parser_names)
+        self._heavy_collectors: set[str] = heavy_collectors or set()
         self._db_names: list[str] = list_setting_db_names()
         self._default_checks: dict[str, QtWidgets.QCheckBox] = {}
         self._matrix: dict[tuple[str, str], QtWidgets.QCheckBox] = {}
@@ -137,11 +139,27 @@ class CollectorsTab(QtWidgets.QWidget):
             lbl = _ClickableLabel(name)
             lbl.setToolTip(t("Click to toggle all databases"))
             lbl.clicked.connect(lambda n=name: self._toggle_all(n))
-            grid.addWidget(lbl, row_idx + 1, 0)
+
+            row_layout = QtWidgets.QHBoxLayout()
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(dpix(4))
+            if name in self._heavy_collectors:
+                icon_lbl = QtWidgets.QLabel()
+                icon_size = dpix(14)
+                icon_lbl.setPixmap(themed_icon("warning_triangle").pixmap(icon_size, icon_size))
+                icon_lbl.setToolTip(t("Resource-intensive extension (GPU / long install time)"))
+                icon_lbl.setFixedSize(icon_size, icon_size)
+                row_layout.addWidget(icon_lbl)
+            row_layout.addWidget(lbl)
+            row_widget = QtWidgets.QWidget()
+            row_widget.setLayout(row_layout)
+            grid.addWidget(row_widget, row_idx + 1, 0)
 
             for col_idx, db in enumerate(self._db_names):
                 cb = QtWidgets.QCheckBox()
                 cb.setChecked(name in self._initial_state.get(db, set()))
+                if name in self._heavy_collectors:
+                    cb.stateChanged.connect(lambda state, n=name: self._on_heavy_toggled(state, n))
                 self._matrix[(name, db)] = cb
                 grid.addWidget(cb, row_idx + 1, col_idx + 2, QtCore.Qt.AlignCenter)
 
@@ -154,6 +172,23 @@ class CollectorsTab(QtWidgets.QWidget):
             if cb:
                 cb.setChecked(any_unchecked)
 
+    def _on_heavy_toggled(self, state: int, name: str):
+        if state != QtCore.Qt.Checked.value:
+            return
+        other_heavy_enabled = any(self._matrix.get((h, db), None) is not None and self._matrix[(h, db)].isChecked() for h in self._heavy_collectors - {name} for db in self._db_names)
+        if other_heavy_enabled:
+            QtWidgets.QMessageBox.warning(
+                self,
+                t("Heavy Extension"),
+                t("Multiple resource-intensive collectors are now enabled.\nThis may cause instability or high GPU usage."),
+            )
+        else:
+            QtWidgets.QMessageBox.information(
+                self,
+                t("Heavy Extension"),
+                t("This collector is resource-intensive.\nProcessing may take a long time."),
+            )
+
     def _clear_ui(self):
         self._default_checks.clear()
         self._matrix.clear()
@@ -163,7 +198,7 @@ class CollectorsTab(QtWidgets.QWidget):
             if w:
                 w.deleteLater()
 
-    def refresh(self, collector_names: list[str], parser_names: list[str]):
+    def refresh(self, collector_names: list[str], parser_names: list[str], heavy_collectors: set[str] | None = None):
         if self._matrix:
             saved = self.get_per_db_collectors()
             known = set(self._all_names)
@@ -182,9 +217,14 @@ class CollectorsTab(QtWidgets.QWidget):
 
         self._collector_names = list(collector_names)
         self._parser_names = list(parser_names)
+        if heavy_collectors is not None:
+            self._heavy_collectors = heavy_collectors
         self._initial_defaults &= set(self._all_names)
 
         self._db_names = list_setting_db_names()
+        live = set(self._db_names)
+        for gone in set(self._initial_state) - live:
+            del self._initial_state[gone]
         for db in self._db_names:
             if db not in self._initial_state:
                 sdb = SettingDB(setting_db_path(db))

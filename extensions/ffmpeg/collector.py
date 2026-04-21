@@ -30,7 +30,7 @@ class FfmpegCollectorPlugin(BaseCollectorPlugin):
     BATCH_SIZE = 600
 
     @classmethod
-    def post_install(cls, plugin_dir, on_progress=None, is_cancelled=None):
+    def post_install(cls, plugin_dir, on_progress=None, is_cancelled=None, on_log=None):
         from ._downloader import ensure_ffmpeg
 
         ensure_ffmpeg()

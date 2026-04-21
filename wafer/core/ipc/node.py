@@ -55,12 +55,17 @@ class Node:
         self._broker_lost_timeout = broker_lost_timeout
         self._unregistered_since: float | None = None
         self._broker_lost_callback: Callable[[], None] | None = None
+        self._register_warned = False
         self._outbox: OutboxStore | None = None
         self._outbox_event = threading.Event()
         self._outbox_thread: threading.Thread | None = None
         if consumer:
             self._handlers["outbox.notify"] = lambda _msg: self._notify_outbox() or True
             self._outbox_thread = threading.Thread(target=self._outbox_worker, daemon=True)
+
+    @property
+    def is_registered(self) -> bool:
+        return self._registered.is_set()
 
     @property
     def viewer_id(self) -> int | None:
@@ -234,12 +239,14 @@ class Node:
                 AppLogger.info(f"forcing reconnect on same port {new_port}")
                 self._connect(new_port)
 
-    def _send_to_broker(self, topic: str, payload: Any = None):
+    def _send_to_broker(self, topic: str, payload: Any = None) -> bool:
         msg = Message.build(topic, payload, src=self.node_id, dst="broker")
         try:
             self._dealer.send_multipart(list(msg.to_frames()), copy=False)
+            return True
         except Exception as e:
             AppLogger.debug(f"send_to_broker failed ({topic}): {e}")
+            return False
 
     def re_register(self, session_id: str):
         self.session_id = session_id
@@ -258,7 +265,7 @@ class Node:
         if self._registered.is_set():
             self._send_to_broker("mgmt.heartbeat")
         else:
-            self._send_to_broker(
+            ok = self._send_to_broker(
                 "mgmt.register",
                 {
                     "role": self.role,
@@ -266,6 +273,9 @@ class Node:
                     "session_id": self.session_id,
                 },
             )
+            if not ok and not self._register_warned:
+                AppLogger.warning(f"broker unreachable, retrying registration (node={self.node_id})")
+                self._register_warned = True
 
     def _handle_received(self, msg: Message):
         if msg.request_id:
@@ -281,6 +291,7 @@ class Node:
                 self._viewer_id = msg.payload.get("viewer_id")
             self._registered.set()
             self._unregistered_since = None
+            self._register_warned = False
             AppLogger.info(f"registered as {self.node_id}, viewer_id={self._viewer_id}")
             return
 

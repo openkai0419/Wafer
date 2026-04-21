@@ -138,7 +138,12 @@ class AppProcess:
     @staticmethod
     def base_command():
         main_path = os.path.abspath(sys.argv[0])
-        return [sys.executable, main_path]
+        exe = sys.executable
+        if sys.platform == "win32":
+            pythonw = os.path.join(os.path.dirname(exe), "pythonw.exe")
+            if os.path.exists(pythonw):
+                exe = pythonw
+        return [exe, main_path]
 
     @staticmethod
     def new_main(*args, **popen_kwargs):
@@ -147,4 +152,10 @@ class AppProcess:
         popen_kwargs.setdefault("stdin", subprocess.DEVNULL)
         popen_kwargs.setdefault("stdout", subprocess.DEVNULL)
         popen_kwargs.setdefault("stderr", subprocess.DEVNULL)
+        if sys.platform == "win32":
+            flags = popen_kwargs.pop("creationflags", 0)
+            flags |= getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
+            flags |= getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
+            popen_kwargs["creationflags"] = flags
+            popen_kwargs.setdefault("close_fds", True)
         return subprocess.Popen(cmd, env=env, **popen_kwargs)

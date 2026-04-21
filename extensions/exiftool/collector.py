@@ -40,7 +40,7 @@ class ExifToolCollectorPlugin(BaseCollectorPlugin):
     DEFAULT_ENABLED = True
 
     @classmethod
-    def post_install(cls, plugin_dir, on_progress=None, is_cancelled=None):
+    def post_install(cls, plugin_dir, on_progress=None, is_cancelled=None, on_log=None):
         from ._downloader import ensure_exiftool
 
         ensure_exiftool()
@@ -104,8 +104,11 @@ class ExifToolCollectorPlugin(BaseCollectorPlugin):
                 self._exe_path = get_exiftool_path()
             if self._exe_path is None:
                 return None
+            old = self._process
             self._process = ExifToolProcess(self._exe_path)
             self._process.start()
+            if old is not None:
+                old.stop()
             return self._process
 
     def process(self, path: str, file_info: tuple) -> CollectorResult:

@@ -76,29 +76,6 @@ class TestPluginSettingsPriorityOrder:
         assert ps.priority_order("viewer") == ["new_a", "new_b"]
 
 
-class TestRestartPending:
-    def test_false_when_no_file(self):
-        ps = PluginSettings()
-        assert ps.is_restart_pending() is False
-
-    def test_set_and_read(self):
-        ps = PluginSettings()
-        ps.set_restart_pending(True)
-        assert ps.is_restart_pending() is True
-
-    def test_clear(self):
-        ps = PluginSettings()
-        ps.set_restart_pending(True)
-        ps.clear_restart_pending()
-        assert ps.is_restart_pending() is False
-
-    def test_set_false_explicitly(self):
-        ps = PluginSettings()
-        ps.set_restart_pending(True)
-        ps.set_restart_pending(False)
-        assert ps.is_restart_pending() is False
-
-
 class TestRestartScope:
     def test_none_when_no_file(self):
         ps = PluginSettings()
@@ -145,7 +122,7 @@ class TestRestartScope:
 
     def test_needs_restart_with_pending_packages(self, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            "wafer.plugin.settings.has_pending_packages", lambda d: True
+            "wafer.plugin.installer_queue.has_pending_queue", lambda d: True
         )
         ps = PluginSettings()
         scope = ps.needs_restart(str(tmp_path))
@@ -154,14 +131,14 @@ class TestRestartScope:
 
     def test_needs_restart_no_pending_no_scope(self, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            "wafer.plugin.settings.has_pending_packages", lambda d: False
+            "wafer.plugin.installer_queue.has_pending_queue", lambda d: False
         )
         ps = PluginSettings()
         assert ps.needs_restart(str(tmp_path)) == RestartScope.NONE
 
     def test_needs_restart_viewer_scope_only(self, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            "wafer.plugin.settings.has_pending_packages", lambda d: False
+            "wafer.plugin.installer_queue.has_pending_queue", lambda d: False
         )
         ps = PluginSettings()
         ps.set_restart_scope(RestartScope.VIEWER)

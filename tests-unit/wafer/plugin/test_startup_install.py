@@ -1,5 +1,5 @@
 import os
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
@@ -96,61 +96,48 @@ def test_missing_plugin_dir_marked_failed(ext_dir):
     assert installer_queue.read_queue(ext_dir) == []
 
 
-def test_lock_held_by_alive_process_skips(ext_dir):
+def test_status_writer_receives_progress(ext_dir):
     plugin_dir = _make_plugin(ext_dir, "ext_a")
     installer_queue.enqueue(ext_dir, "ext_a", plugin_dir)
 
-    fake_lock = MagicMock()
-    fake_lock.acquire.return_value = False
-
     pa, pb = _patch_phases(True, True)
-    with patch("wafer.plugin.startup_install.SafeProcessLock", return_value=fake_lock), \
-         patch.object(startup_install, "_acquire_with_wait", return_value=False), \
-         pa as ma, pb as mb:
+    with pa, pb, patch("wafer.plugin.startup_install.InstallStatusWriter") as cls:
+        writer = cls.return_value
+        startup_install.run_pending_installs(ext_dir)
+
+    cls.assert_called_once_with(total=1)
+    assert writer.begin_item.call_count == 2
+    writer.finish.assert_called_once()
+
+
+def test_cancel_during_phase_a_keeps_remaining_in_queue(ext_dir):
+    plugin_dir = _make_plugin(ext_dir, "ext_a")
+    installer_queue.enqueue(ext_dir, "ext_a", plugin_dir)
+
+    cancelled_result = InstallResult(success=False, cancelled=True)
+    with patch.object(startup_install, "install_requirements_only", return_value=cancelled_result), \
+         patch.object(startup_install, "run_post_install") as mb, \
+         patch("wafer.plugin.startup_install.Notifier"):
         result = startup_install.run_pending_installs(ext_dir)
 
-    assert result is False
+    assert result is True
+    mb.assert_not_called()
+    remaining = installer_queue.read_queue(ext_dir)
+    assert len(remaining) == 1
+    assert remaining[0].name == "ext_a"
+
+
+def test_cancel_request_before_loop_skips_all(ext_dir):
+    plugin_dir = _make_plugin(ext_dir, "ext_a")
+    installer_queue.enqueue(ext_dir, "ext_a", plugin_dir)
+
+    pa, pb = _patch_phases(True, True)
+    with pa as ma, pb as mb, \
+         patch.object(startup_install, "is_cancel_requested", return_value=True), \
+         patch("wafer.plugin.startup_install.Notifier"):
+        result = startup_install.run_pending_installs(ext_dir)
+
+    assert result is True
     ma.assert_not_called()
     mb.assert_not_called()
     assert len(installer_queue.read_queue(ext_dir)) == 1
-
-
-def test_lock_holder_drains_other_processes_skip(ext_dir):
-    plugin_dir = _make_plugin(ext_dir, "ext_a")
-    installer_queue.enqueue(ext_dir, "ext_a", plugin_dir)
-
-    pa, pb = _patch_phases(True, True)
-    with pa, pb:
-        startup_install.run_pending_installs(ext_dir)
-
-    pa, pb = _patch_phases(True, True)
-    with pa as ma, pb as mb:
-        result = startup_install.run_pending_installs(ext_dir)
-
-    assert result is False
-    ma.assert_not_called()
-    mb.assert_not_called()
-
-
-def test_acquire_with_wait_succeeds_immediately(ext_dir):
-    lock = MagicMock()
-    lock.acquire.side_effect = [True]
-    assert startup_install._acquire_with_wait(lock, 1.0) is True
-
-
-def test_acquire_with_wait_times_out(ext_dir):
-    lock = MagicMock()
-    lock.acquire.return_value = False
-    assert startup_install._acquire_with_wait(lock, 0.05) is False
-
-
-def test_blocking_path_used_without_qapp(ext_dir):
-    plugin_dir = _make_plugin(ext_dir, "ext_a")
-    installer_queue.enqueue(ext_dir, "ext_a", plugin_dir)
-
-    pa, pb = _patch_phases(True, True)
-    with pa, pb, patch("PySide6.QtWidgets.QApplication") as qapp_cls:
-        qapp_cls.instance.return_value = None
-        startup_install.run_pending_installs(ext_dir)
-
-    assert installer_queue.read_queue(ext_dir) == []

@@ -815,7 +815,7 @@ class TestWindowRestartCommands:
                 "",
                 (),
                 {
-                    "terminate_cmd": staticmethod(lambda *a: calls.append(("terminate", a))),
+                    "terminate_cmd": staticmethod(lambda *a, **kw: calls.append(("terminate", a))),
                     "new_main": staticmethod(lambda *a: calls.append(("new_main", a))),
                 },
             )(),

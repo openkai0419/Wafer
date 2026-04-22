@@ -13,7 +13,7 @@ from ...plugin.installer import (
     RestartScope,
     resolve_install_state,
 )
-from ...plugin import installer_queue
+from ...plugin import failed_installs, installer_queue
 from ...plugin.badges import ExtensionBadge, resolve_badge, badge_sort_key
 from ...core.qt.icon_engine import themed_icon
 from ...core.qt.dispatcher import Dispatcher
@@ -452,6 +452,7 @@ class ExtensionsTab(QtWidgets.QWidget):
                 InstallState.INSTALLED: CardStatus.INSTALLED,
             }
             queued = installer_queue.queued_names(plugin_dir)
+            failed = failed_installs.failed_names(plugin_dir)
             results.sort(key=lambda r: (badge_sort_key(r[0]), r[0]))
             separator_inserted = False
             for name, folder, md_files, state in results:
@@ -470,6 +471,12 @@ class ExtensionsTab(QtWidgets.QWidget):
                 self._cards_layout.insertWidget(self._cards_layout.count() - 1, card)
                 if name in queued:
                     card.set_status(CardStatus.RESTART_REQUIRED, RestartScope.ALL)
+                elif name in failed:
+                    info = failed_installs.failure_info(plugin_dir, name) or {}
+                    card.set_status(CardStatus.FAILED)
+                    reason = info.get("reason", "")
+                    if reason:
+                        card._status_btn.setToolTip(reason)
                 else:
                     card.set_status(state_to_card[state])
                 if state not in (InstallState.NOT_INSTALLED,):
@@ -510,11 +517,13 @@ class ExtensionsTab(QtWidgets.QWidget):
             if reply != QtWidgets.QMessageBox.Ok:
                 return
         installer_queue.enqueue(get_plugin_dir(), card.folder_name, card.folder_path)
+        failed_installs.clear(get_plugin_dir(), [card.folder_name])
         card.set_status(CardStatus.RESTART_REQUIRED, RestartScope.ALL)
         self.enabled_changed.emit()
 
     def _cancel_extension(self, card: _ExtensionCard):
         if installer_queue.dequeue(get_plugin_dir(), card.folder_name):
+            failed_installs.clear(get_plugin_dir(), [card.folder_name])
             state = resolve_install_state(card.folder_path)
             state_to_card = {
                 InstallState.NO_DEPS: CardStatus.NO_DEPS,

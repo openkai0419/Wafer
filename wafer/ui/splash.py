@@ -5,7 +5,7 @@ from ..core.color.theme import ThemeManager
 
 
 class InstallSplash(QtWidgets.QWidget):
-    def __init__(self, title: str, icon: QtGui.QIcon = None, message: str = "Installing plugin dependencies.\nThis may take few minutes...", show_log: bool = True):
+    def __init__(self, title: str, icon: QtGui.QIcon = None, message: str = "Installing plugin dependencies.\nThis may take few minutes...", show_log: bool = True, cancel_label: str | None = None):
         super().__init__()
         self.setWindowTitle(title)
         if icon and not icon.isNull():
@@ -16,10 +16,11 @@ class InstallSplash(QtWidgets.QWidget):
 
         header_h = dpix(80)
         log_h = dpix(220) if show_log else 0
+        button_h = dpix(40) if cancel_label else 0
         margin = dpix(16)
         icon_size = dpix(48)
         w = dpix(560) if show_log else dpix(360)
-        h = header_h + log_h
+        h = header_h + log_h + button_h
         self.setFixedSize(w, h)
 
         icon_label = QtWidgets.QLabel(self)
@@ -49,6 +50,13 @@ class InstallSplash(QtWidgets.QWidget):
             self._log.setGeometry(margin, header_h, w - margin * 2, log_h - margin)
             self._log.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
             self._log.setMaximumBlockCount(2000)
+
+        self.cancel_button = None
+        if cancel_label:
+            btn = QtWidgets.QPushButton(cancel_label, self)
+            btn_w = dpix(140)
+            btn.setGeometry(w - margin - btn_w, header_h + log_h - margin // 2, btn_w, button_h - margin // 2)
+            self.cancel_button = btn
 
         self._drag_pos = None
         self._base_message = message.rstrip(".")
@@ -81,6 +89,16 @@ class InstallSplash(QtWidgets.QWidget):
         if self._log is None or not line:
             return
         self._log.appendPlainText(line)
+        bar = self._log.verticalScrollBar()
+        bar.setValue(bar.maximum())
+
+    def replace_log(self, lines):
+        if self._log is None:
+            return
+        text = "\n".join(lines) if lines else ""
+        if text == self._log.toPlainText():
+            return
+        self._log.setPlainText(text)
         bar = self._log.verticalScrollBar()
         bar.setValue(bar.maximum())
 

@@ -2,6 +2,10 @@ from ...core.commands.bridge import ActionKit
 from ...core.commands.binding.instance_registry import InstanceRegistry
 from ...core.platform.process import AppProcess
 from ...core.profile import ProfileStore
+from ...plugin import installer_queue
+from ...plugin.loader import get_plugin_dir
+from ...utils.logs import AppLogger
+from ...utils.notifier import Notifier
 from .profile import (
     show_profile_popup,
     create_profile,
@@ -38,7 +42,12 @@ def _is_always_on_top():
 
 
 def restart_tray(ctx):
-    AppProcess.terminate_cmd("--tray")
+    if installer_queue.has_pending_queue(get_plugin_dir()):
+        AppLogger.info("restart_tray: pending install detected, promoting to restart_all")
+        Notifier.info("Pending install detected, restarting all windows")
+        restart_all(ctx)
+        return
+    AppProcess.terminate_cmd("--tray", wait=True)
     AppProcess.new_main("--tray")
 
 
@@ -61,7 +70,7 @@ def restart_all(ctx):
     else:
         store = ProfileStore.instance()
         store.set_restore_profile_ids(store.get_active_profile_ids())
-        AppProcess.terminate_cmd("--tray")
+        AppProcess.terminate_cmd("--tray", wait=True)
         AppProcess.new_main("--tray")
 
 

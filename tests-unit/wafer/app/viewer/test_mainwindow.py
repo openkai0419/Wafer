@@ -495,11 +495,11 @@ class TestOnClosePending:
         calls = []
         monkeypatch.setattr(
             "wafer.core.platform.process.AppProcess.terminate_cmd",
-            staticmethod(lambda *a: calls.append(("terminate", a))),
+            staticmethod(lambda *a, **kw: calls.append(("terminate", a))),
         )
         monkeypatch.setattr(
             "wafer.core.platform.process.AppProcess.new_main",
-            staticmethod(lambda *a: calls.append(("new_main", a))),
+            staticmethod(lambda *a, **kw: calls.append(("new_main", a))),
         )
         cleared = []
         from wafer.plugin.installer import RestartScope
@@ -524,11 +524,11 @@ class TestOnClosePending:
         calls = []
         monkeypatch.setattr(
             "wafer.core.platform.process.AppProcess.terminate_cmd",
-            staticmethod(lambda *a: calls.append(("terminate", a))),
+            staticmethod(lambda *a, **kw: calls.append(("terminate", a))),
         )
         monkeypatch.setattr(
             "wafer.core.platform.process.AppProcess.new_main",
-            staticmethod(lambda *a: calls.append(("new_main", a))),
+            staticmethod(lambda *a, **kw: calls.append(("new_main", a))),
         )
         from wafer.plugin.installer import RestartScope
         monkeypatch.setattr("wafer.plugin.settings.PluginSettings.needs_restart", lambda self, d: RestartScope.NONE)
@@ -542,11 +542,11 @@ class TestOnClosePending:
         calls = []
         monkeypatch.setattr(
             "wafer.core.platform.process.AppProcess.terminate_cmd",
-            staticmethod(lambda *a: calls.append(("terminate", a))),
+            staticmethod(lambda *a, **kw: calls.append(("terminate", a))),
         )
         monkeypatch.setattr(
             "wafer.core.platform.process.AppProcess.new_main",
-            staticmethod(lambda *a: calls.append(("new_main", a))),
+            staticmethod(lambda *a, **kw: calls.append(("new_main", a))),
         )
         cleared = []
         from wafer.plugin.installer import RestartScope

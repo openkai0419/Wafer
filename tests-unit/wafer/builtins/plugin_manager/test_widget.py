@@ -2,8 +2,10 @@ import os
 import sys
 import pytest
 from unittest.mock import MagicMock, patch
+from PySide6 import QtWidgets
 
 from wafer.plugin.registry import BasePlugin, PluginBase
+from wafer.plugin.badges import ExtensionBadge
 from wafer.plugin.panel.base import BasePanelPlugin
 from wafer.plugin.installer import InstallState
 
@@ -291,6 +293,45 @@ class TestExtensionsTab:
         tab._install_extension(tab._cards["ext1"])
         assert "ext1" in installer_queue.queued_names(str(ext_dir))
         assert tab._cards["ext1"]._status_btn.text() == "Restart Required"
+
+    def test_heavy_install_uses_no_icon_confirmation(self, qtbot, tmp_path, monkeypatch):
+        ext_dir = tmp_path / "extensions"
+        (ext_dir / "ai_tagger").mkdir(parents=True)
+        (ext_dir / "ai_tagger" / "__init__.py").write_text("")
+        (ext_dir / "ai_tagger" / "requirements.txt").write_text("some-pkg\n")
+        monkeypatch.setattr(
+            "wafer.builtins.plugin_manager.extensions_tab.get_plugin_dir",
+            lambda: str(ext_dir),
+        )
+        monkeypatch.setattr(
+            "wafer.builtins.plugin_manager.extensions_tab.resolve_install_state",
+            lambda folder: InstallState.NOT_INSTALLED,
+        )
+        from wafer.core.qt.dispatcher import Dispatcher
+        from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
+
+        tab = ExtensionsTab(set(), Dispatcher())
+        qtbot.waitUntil(lambda: "ai_tagger" in tab._cards, timeout=3000)
+        card = tab._cards["ai_tagger"]
+        card.badge = ExtensionBadge.HEAVY
+
+        captured = {}
+
+        def fake_exec(message_box):
+            captured["title"] = message_box.windowTitle()
+            captured["text"] = message_box.text()
+            captured["icon"] = message_box.icon()
+            return QtWidgets.QMessageBox.Cancel
+
+        monkeypatch.setattr(QtWidgets.QMessageBox, "exec", fake_exec)
+
+        tab._install_extension(card)
+
+        assert captured["title"] == "Install Heavy Extension"
+        assert captured["icon"] == QtWidgets.QMessageBox.NoIcon
+        assert "This extension is marked as heavy. This may:" in captured["text"]
+        assert "- use a large amount of GPU" in captured["text"]
+        assert "- take a long time to install" in captured["text"]
 
     def test_cancel_dequeues(self, qtbot, tmp_path, monkeypatch):
         ext_dir = tmp_path / "extensions"

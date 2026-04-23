@@ -1,7 +1,12 @@
+import re
+
 from PySide6 import QtWidgets, QtCore, QtGui
 
 from ..utils.formatting import dpix
 from ..core.color.theme import ThemeManager
+
+_ERROR_PAT = re.compile(r"^\s*error", re.IGNORECASE)
+_WARN_PAT = re.compile(r"^\s*warning", re.IGNORECASE)
 
 
 class InstallSplash(QtWidgets.QWidget):
@@ -39,17 +44,21 @@ class InstallSplash(QtWidgets.QWidget):
 
         self._log = None
         if show_log:
-            self._log = QtWidgets.QPlainTextEdit(self)
+            self._log = QtWidgets.QTextEdit(self)
             self._log.setReadOnly(True)
             self._log.setFrameShape(QtWidgets.QFrame.NoFrame)
             font = QtGui.QFont("Consolas")
             font.setStyleHint(QtGui.QFont.Monospace)
             font.setPixelSize(dpix(11))
             self._log.setFont(font)
-            self._log.setStyleSheet(f"QPlainTextEdit{{background:{p.bg_primary};color:{p.text_secondary};padding:{dpix(6)}px;}}")
+            self._log.setStyleSheet(f"QTextEdit{{background:{p.bg_primary};color:{p.text_secondary};padding:{dpix(6)}px;}}")
             self._log.setGeometry(margin, header_h, w - margin * 2, log_h - margin)
             self._log.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
-            self._log.setMaximumBlockCount(2000)
+            self._log.document().setMaximumBlockCount(2000)
+            self._log_text_color = p.text_secondary
+            self._log_error_color = p.error
+            self._log_warn_color = p.warning
+            self._last_log_lines: list | None = None
 
         self.cancel_button = None
         if cancel_label:
@@ -88,19 +97,43 @@ class InstallSplash(QtWidgets.QWidget):
     def append_log(self, line: str):
         if self._log is None or not line:
             return
-        self._log.appendPlainText(line)
+        fmt = self._fmt_for_line(line)
+        cursor = self._log.textCursor()
+        cursor.movePosition(QtGui.QTextCursor.End)
+        if cursor.position() > 0:
+            cursor.insertBlock()
+        cursor.insertText(line, fmt)
         bar = self._log.verticalScrollBar()
         bar.setValue(bar.maximum())
 
     def replace_log(self, lines):
         if self._log is None:
             return
-        text = "\n".join(lines) if lines else ""
-        if text == self._log.toPlainText():
+        if lines == self._last_log_lines:
             return
-        self._log.setPlainText(text)
+        self._last_log_lines = list(lines)
+        self._log.clear()
+        if not lines:
+            return
+        cursor = QtGui.QTextCursor(self._log.document())
+        cursor.beginEditBlock()
+        for i, line in enumerate(lines):
+            if i > 0:
+                cursor.insertBlock()
+            cursor.insertText(line, self._fmt_for_line(line))
+        cursor.endEditBlock()
         bar = self._log.verticalScrollBar()
         bar.setValue(bar.maximum())
+
+    def _fmt_for_line(self, line: str) -> QtGui.QTextCharFormat:
+        fmt = QtGui.QTextCharFormat()
+        if _ERROR_PAT.match(line):
+            fmt.setForeground(QtGui.QColor(self._log_error_color))
+        elif _WARN_PAT.match(line):
+            fmt.setForeground(QtGui.QColor(self._log_warn_color))
+        else:
+            fmt.setForeground(QtGui.QColor(self._log_text_color))
+        return fmt
 
     def show(self):
         super().show()

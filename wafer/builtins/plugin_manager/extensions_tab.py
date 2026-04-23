@@ -1,12 +1,13 @@
 import os
 from enum import Enum
 from pathlib import Path
-from PySide6 import QtWidgets, QtCore
+from PySide6 import QtWidgets, QtCore, QtGui
 from ...utils.formatting import dpix
 from ...utils.logs import AppLogger
 from ...utils.markdown_browser import MarkdownBrowser, render_to_html
 from ...core.color.theme import ThemeManager
 from ...core.lang.manager import t
+from ...core.qt.color_utils import mix_colors
 from ...plugin.loader import get_plugin_dir, PluginLoader, qualify_plugin_name
 from ...plugin.installer import (
     InstallState,
@@ -94,6 +95,14 @@ class _ElidingLabel(QtWidgets.QLabel):
         return hint
 
 
+class _InstantTooltipLabel(QtWidgets.QLabel):
+    def enterEvent(self, event):
+        text = self.toolTip()
+        if text:
+            QtWidgets.QToolTip.showText(QtGui.QCursor.pos(), text, self, self.rect())
+        super().enterEvent(event)
+
+
 class _PluginRow(QtWidgets.QWidget):
     def __init__(self, registry_key: str, plugin_cls: type, checked: bool, parent=None):
         super().__init__(parent)
@@ -148,10 +157,16 @@ class _PluginRow(QtWidgets.QWidget):
         Command.run(f"panel.toggle_{slug}")
 
 
-_BADGE_CONFIG: dict[ExtensionBadge, tuple[str, str]] = {
-    ExtensionBadge.PREFERRED: ("star", "Recommended extension for common file types"),
-    ExtensionBadge.HEAVY: ("warning_triangle", "Resource-intensive extension (GPU / long install time)"),
-    ExtensionBadge.EXTERNAL: ("external_link", "Community / third-party extension"),
+_BADGE_CONFIG: dict[ExtensionBadge, tuple[str, str, str | None]] = {
+    ExtensionBadge.PREFERRED: ("star", "Recommended to install", "success"),
+    ExtensionBadge.HEAVY: ("warning_triangle", "This extension is marked as heavy. This may:\n- use a large amount of GPU\n- take a long time to install", None),
+    ExtensionBadge.EXTERNAL: ("external_link", "Community / third-party extension", None),
+}
+
+_BADGE_ICON_SIZE: dict[ExtensionBadge, int] = {
+    ExtensionBadge.PREFERRED: 14,
+    ExtensionBadge.HEAVY: 13,
+    ExtensionBadge.EXTERNAL: 13,
 }
 
 
@@ -210,16 +225,22 @@ class _ExtensionCard(QtWidgets.QFrame):
         self._log_expanded = False
 
         header = QtWidgets.QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(dpix(3))
         badge_cfg = _BADGE_CONFIG.get(self.badge)
         if badge_cfg:
-            icon_key, tooltip_text = badge_cfg
-            badge_label = QtWidgets.QLabel()
-            icon_size = dpix(16)
-            badge_label.setPixmap(themed_icon(icon_key).pixmap(icon_size, icon_size))
+            icon_key, tooltip_text, tint = badge_cfg
+            badge_label = _InstantTooltipLabel()
+            icon_px = _BADGE_ICON_SIZE.get(self.badge, 13)
+            icon_size = dpix(icon_px)
+            badge_color = self._badge_color(tint)
+            badge_label.setPixmap(themed_icon(icon_key, color=badge_color).pixmap(icon_size, icon_size))
             badge_label.setToolTip(t(tooltip_text))
             badge_label.setFixedSize(icon_size, icon_size)
-            header.addWidget(badge_label)
-        header.addWidget(self._name_label)
+            badge_label.setAlignment(QtCore.Qt.AlignCenter)
+            header.addWidget(badge_label, 0, QtCore.Qt.AlignVCenter)
+            self._name_label.setStyleSheet(f"font-weight: bold; font-size: {dpix(13)}px; color: {badge_color.name()};")
+        header.addWidget(self._name_label, 0, QtCore.Qt.AlignVCenter)
         header.addStretch()
         header.addWidget(self._install_cancel_btn)
         header.addWidget(self._status_btn)
@@ -254,6 +275,16 @@ class _ExtensionCard(QtWidgets.QFrame):
         self._install_callback = None
         self._cancel_callback = None
         self._checkbox_changed_callback = None
+
+    @staticmethod
+    def _badge_color(tint: str | None) -> QtGui.QColor:
+        palette = ThemeManager.instance().palette
+        base = QtGui.QColor(palette.text_primary)
+        if tint is None:
+            return mix_colors(base, palette.warning, 0.4)
+        if tint == "success":
+            return mix_colors(base, palette.success, 0.35)
+        return mix_colors(base, tint, 0.22)
 
     def set_install_callback(self, cb):
         self._install_callback = cb
@@ -507,14 +538,13 @@ class ExtensionsTab(QtWidgets.QWidget):
 
     def _install_extension(self, card: _ExtensionCard):
         if card.badge == ExtensionBadge.HEAVY:
-            reply = QtWidgets.QMessageBox.warning(
-                self,
-                t("Heavy Extension"),
-                t("This extension is resource-intensive (GPU / large download).\nInstallation may take a long time.\nDo you want to continue?"),
-                QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel,
-                QtWidgets.QMessageBox.Cancel,
-            )
-            if reply != QtWidgets.QMessageBox.Ok:
+            message = QtWidgets.QMessageBox(self)
+            message.setWindowTitle(t("Install Heavy Extension"))
+            message.setIcon(QtWidgets.QMessageBox.NoIcon)
+            message.setText(t("This extension is marked as heavy. This may:\n- use a large amount of GPU\n- take a long time to install\nContinue?"))
+            message.setStandardButtons(QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel)
+            message.setDefaultButton(QtWidgets.QMessageBox.Cancel)
+            if message.exec() != QtWidgets.QMessageBox.Ok:
                 return
         installer_queue.enqueue(get_plugin_dir(), card.folder_name, card.folder_path)
         failed_installs.clear(get_plugin_dir(), [card.folder_name])
@@ -549,14 +579,14 @@ class ExtensionsTab(QtWidgets.QWidget):
             result.extend(card.get_enabled_plugins(registry_key))
         return result
 
-    def heavy_collector_names(self) -> set[str]:
-        result = set()
+    def heavy_collector_map(self) -> dict[str, str]:
+        result = {}
         for card in self._cards.values():
             if card.badge != ExtensionBadge.HEAVY:
                 continue
             for key, cls in card._plugins:
                 if key in ("collector", "parser"):
-                    result.add(cls.NAME)
+                    result[cls.NAME] = card.folder_name
         return result
 
     def cancel_pending(self):

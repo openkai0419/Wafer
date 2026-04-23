@@ -3,6 +3,8 @@ import tempfile
 import pytest
 from unittest.mock import patch
 
+from PySide6 import QtWidgets
+
 from wafer.core.db.setting_db import SettingDB
 
 
@@ -97,6 +99,31 @@ class TestCollectorsTab:
 
         assert tab._matrix[("exif", "db1")].isChecked()
         assert tab._matrix[("wd14", "db1")].isChecked()
+
+    def test_same_heavy_extension_does_not_warn_twice(self, qtbot, _patch_paths, monkeypatch):
+        setup, _ = _patch_paths
+        setup({"db1": []})
+
+        from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
+
+        tab = CollectorsTab(
+            collector_names=["tag_a", "tag_b", "tag_c"],
+            parser_names=[],
+            heavy_collectors={"tag_a": "ai_tagger", "tag_b": "ai_tagger", "tag_c": "florence"},
+        )
+        qtbot.addWidget(tab)
+
+        warnings = []
+        monkeypatch.setattr(QtWidgets.QMessageBox, "warning", lambda *args, **kwargs: warnings.append(args[2]))
+
+        tab._matrix[("tag_a", "db1")].setChecked(True)
+        tab._matrix[("tag_b", "db1")].setChecked(True)
+        assert warnings == []
+
+        tab._matrix[("tag_c", "db1")].setChecked(True)
+        assert len(warnings) == 1
+        assert "ai_tagger" in warnings[0]
+        assert "florence" in warnings[0]
 
     def test_fresh_db_no_enabled(self, qtbot, _patch_paths):
         setup, paths = _patch_paths

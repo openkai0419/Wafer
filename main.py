@@ -78,9 +78,12 @@ def _wait_install_then_load_plugins(app):
 
 def _create_app():
     from PySide6 import QtWidgets
+    from wafer.core.qt.tooltip import install_instant_tooltips
+
     app = QtWidgets.QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(__version__)
+    install_instant_tooltips(app)
     return app
 
 def _entry_viewer(app=None, profile_id=None):
@@ -99,6 +102,7 @@ def _entry_tray():
         profiler.set_enabled(False)
         from PySide6 import QtWidgets
         from wafer.app.tray.main_tray import TrayApp
+        from wafer.core.qt.tooltip import install_instant_tooltips
 
         with SafeProcessLock(f'{APP_DATA_DIR_NAME}_tray'):
             procs = AppProcess.get_by_args_subset('--indexer')
@@ -108,6 +112,7 @@ def _entry_tray():
             app = QtWidgets.QApplication(sys.argv)
             app.setQuitOnLastWindowClosed(False)
             app.setApplicationName(APP_NAME)
+            install_instant_tooltips(app)
             app.aboutToQuit.connect(AppProcess.shutdown_children)
             tray_icon = TrayApp(get_icon())
             tray_icon.show()

@@ -195,7 +195,7 @@ class PluginManagerWidget(QtWidgets.QWidget):
         from .collectors_tab import CollectorsTab
 
         collector_names, parser_names = self._collect_worker_names()
-        heavy = self._ext_tab.heavy_collector_names()
+        heavy = self._ext_tab.heavy_collector_map()
         self._collectors_tab = CollectorsTab(collector_names, parser_names, heavy_collectors=heavy)
         self._collectors_tab.delete_requested.connect(self._send_delete)
         self._collectors_scroll = self._scrollable(self._collectors_tab)
@@ -354,7 +354,7 @@ class PluginManagerWidget(QtWidgets.QWidget):
             ),
         )
         c_names, d_names = self._collect_worker_names()
-        heavy = self._ext_tab.heavy_collector_names()
+        heavy = self._ext_tab.heavy_collector_map()
         self._refresh_with_scroll(self._collectors_scroll, lambda: self._collectors_tab.refresh(c_names, d_names, heavy_collectors=heavy))
 
     def _collect_worker_names(self) -> tuple[list[str], list[str]]:
@@ -390,7 +390,7 @@ class PluginManagerWidget(QtWidgets.QWidget):
         if self._collectors_dirty:
             self._collectors_dirty = False
             c_names, d_names = self._collect_worker_names()
-            heavy = self._ext_tab.heavy_collector_names()
+            heavy = self._ext_tab.heavy_collector_map()
             self._refresh_with_scroll(self._collectors_scroll, lambda: self._collectors_tab.refresh(c_names, d_names, heavy_collectors=heavy))
 
     def _connect_bridge(self):

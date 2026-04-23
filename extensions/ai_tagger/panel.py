@@ -639,7 +639,6 @@ class WD14SettingsWidget(QtWidgets.QWidget):
         self._rebuild_chips()
         self._update_raw_display()
         self._update_filtered_display()
-        Notifier.info(t("WD14 settings reverted"))
 
     @staticmethod
     def _send_delete_and_recollect(db_names: list[str], *, delete: bool, re_collect: bool):

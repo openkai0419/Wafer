@@ -315,7 +315,6 @@ class FlorenceSettingsWidget(QtWidgets.QWidget):
         self._more_detailed_cb.setChecked(s.get("enable_more_detailed", True))
         self._tokens_spin.setValue(s.get("max_new_tokens", 1024))
         self._beams_spin.setValue(s.get("num_beams", 3))
-        Notifier.info(t("Florence-2 settings reverted"))
 
     @staticmethod
     def _send_delete_and_recollect(db_names: list[str], *, delete: bool, re_collect: bool):

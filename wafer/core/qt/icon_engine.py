@@ -30,11 +30,12 @@ def _register(key: str, padding: float = 0.15):
 
 
 class _ThemedIconEngine(QIconEngine):
-    def __init__(self, draw_fn: IconDrawFn, padding: float = 0.0, margin: float = 0.0):
+    def __init__(self, draw_fn: IconDrawFn, padding: float = 0.0, margin: float = 0.0, color: QColor | str | None = None):
         super().__init__()
         self._draw_fn = draw_fn
         self._padding = max(0.0, min(0.5, padding))
         self._margin = max(0.0, min(0.5, margin))
+        self._color = QColor(color) if color is not None else None
 
     def _padded_rect(self, rect: QRectF) -> QRectF:
         r = rect
@@ -50,7 +51,7 @@ class _ThemedIconEngine(QIconEngine):
 
     def paint(self, painter, rect, mode, state):
         palette = ThemeManager.instance().palette
-        color = QColor(palette.text_primary)
+        color = QColor(self._color) if self._color is not None else QColor(palette.text_primary)
         if mode == QIcon.Mode.Disabled:
             color.setAlpha(80)
         painter.save()
@@ -67,15 +68,15 @@ class _ThemedIconEngine(QIconEngine):
         return pm
 
     def clone(self):
-        return _ThemedIconEngine(self._draw_fn, self._padding, self._margin)
+        return _ThemedIconEngine(self._draw_fn, self._padding, self._margin, self._color)
 
 
-def themed_icon(key: str, margin: float = 0.0) -> QIcon:
+def themed_icon(key: str, margin: float = 0.0, color: QColor | str | None = None) -> QIcon:
     entry = _REGISTRY.get(key)
     if entry is None:
         return QIcon()
     fn, padding = entry
-    return QIcon(_ThemedIconEngine(fn, padding, margin))
+    return QIcon(_ThemedIconEngine(fn, padding, margin, color))
 
 
 def icon_draw(key: str, painter: QPainter, rect: QRectF, color: QColor):

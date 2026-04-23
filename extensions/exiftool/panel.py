@@ -184,8 +184,6 @@ class ExifSettingsWidget(QtWidgets.QWidget):
         self._key_browser.set_filter(self._filter_mode, self._filter_keys)
         self._sample_preview.set_filter(self._filter_mode, self._filter_keys)
 
-        Notifier.info("ExifTool filter settings reverted")
-
     def _compute_delete_keys(self) -> list[str]:
         if self._filter_mode == MODE_BLACKLIST:
             return [f"exiftool.{k}" for k in self._filter_keys]

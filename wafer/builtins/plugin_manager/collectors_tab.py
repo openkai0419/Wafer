@@ -3,6 +3,8 @@ from ...utils.formatting import dpix
 from ...utils.paths import list_setting_db_names, setting_db_path
 from ...core.db.setting_db import SettingDB
 from ...core.lang.manager import t
+from ...core.color.theme import ThemeManager
+from ...core.qt.color_utils import mix_colors
 from ...core.qt.icon_engine import themed_icon
 
 
@@ -22,7 +24,7 @@ class _ClickableLabel(QtWidgets.QLabel):
 class CollectorsTab(QtWidgets.QWidget):
     delete_requested = QtCore.Signal(list, bool)
 
-    def __init__(self, collector_names: list[str] | None = None, parser_names: list[str] | None = None, heavy_collectors: set[str] | None = None, parent=None):
+    def __init__(self, collector_names: list[str] | None = None, parser_names: list[str] | None = None, heavy_collectors: dict[str, str] | None = None, parent=None):
         super().__init__(parent)
         if collector_names is None:
             from ...plugin.collector.handler import collector_resolver
@@ -34,7 +36,7 @@ class CollectorsTab(QtWidgets.QWidget):
             parser_names = list(parser_resolver.names())
         self._collector_names: list[str] = list(collector_names)
         self._parser_names: list[str] = list(parser_names)
-        self._heavy_collectors: set[str] = heavy_collectors or set()
+        self._heavy_collectors: dict[str, str] = heavy_collectors or {}
         self._db_names: list[str] = list_setting_db_names()
         self._default_checks: dict[str, QtWidgets.QCheckBox] = {}
         self._matrix: dict[tuple[str, str], QtWidgets.QCheckBox] = {}
@@ -142,13 +144,14 @@ class CollectorsTab(QtWidgets.QWidget):
 
             row_layout = QtWidgets.QHBoxLayout()
             row_layout.setContentsMargins(0, 0, 0, 0)
-            row_layout.setSpacing(dpix(4))
+            row_layout.setSpacing(dpix(2))
             if name in self._heavy_collectors:
                 icon_lbl = QtWidgets.QLabel()
-                icon_size = dpix(14)
-                icon_lbl.setPixmap(themed_icon("warning_triangle").pixmap(icon_size, icon_size))
-                icon_lbl.setToolTip(t("Resource-intensive extension (GPU / long install time)"))
+                icon_size = dpix(13)
+                icon_lbl.setPixmap(themed_icon("warning_triangle", color=self._heavy_badge_color()).pixmap(icon_size, icon_size))
+                icon_lbl.setToolTip(t("This extension is marked as heavy. This may:\n- use a large amount of GPU\n- take a long time to install"))
                 icon_lbl.setFixedSize(icon_size, icon_size)
+                icon_lbl.setAlignment(QtCore.Qt.AlignCenter)
                 row_layout.addWidget(icon_lbl)
             row_layout.addWidget(lbl)
             row_widget = QtWidgets.QWidget()
@@ -175,19 +178,28 @@ class CollectorsTab(QtWidgets.QWidget):
     def _on_heavy_toggled(self, state: int, name: str):
         if state != QtCore.Qt.Checked.value:
             return
-        other_heavy_enabled = any(self._matrix.get((h, db), None) is not None and self._matrix[(h, db)].isChecked() for h in self._heavy_collectors - {name} for db in self._db_names)
-        if other_heavy_enabled:
+        current_folder = self._heavy_collectors.get(name)
+        other_folders = sorted(
+            {
+                self._heavy_collectors[collector]
+                for collector in self._heavy_collectors
+                if collector != name
+                for db in self._db_names
+                if (collector, db) in self._matrix and self._matrix[(collector, db)].isChecked()
+            }
+        )
+        other_folders = [folder for folder in other_folders if folder != current_folder]
+        if other_folders:
             QtWidgets.QMessageBox.warning(
                 self,
                 t("Heavy Extension"),
-                t("Multiple resource-intensive collectors are now enabled.\nThis may cause instability or high GPU usage."),
+                t("Multiple heavy extensions are enabled:\n" + "\n".join(f"- {folder}" for folder in [current_folder, *other_folders] if folder) + "\nThis may cause high GPU usage or instability."),
             )
-        else:
-            QtWidgets.QMessageBox.information(
-                self,
-                t("Heavy Extension"),
-                t("This collector is resource-intensive.\nProcessing may take a long time."),
-            )
+
+    @staticmethod
+    def _heavy_badge_color() -> QtGui.QColor:
+        palette = ThemeManager.instance().palette
+        return mix_colors(palette.text_primary, palette.warning, 0.4)
 
     def _clear_ui(self):
         self._default_checks.clear()
@@ -198,7 +210,7 @@ class CollectorsTab(QtWidgets.QWidget):
             if w:
                 w.deleteLater()
 
-    def refresh(self, collector_names: list[str], parser_names: list[str], heavy_collectors: set[str] | None = None):
+    def refresh(self, collector_names: list[str], parser_names: list[str], heavy_collectors: dict[str, str] | None = None):
         if self._matrix:
             saved = self.get_per_db_collectors()
             known = set(self._all_names)

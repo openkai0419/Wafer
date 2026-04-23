@@ -30,11 +30,12 @@ def _register(key: str, padding: float = 0.15):
 
 
 class _ThemedIconEngine(QIconEngine):
-    def __init__(self, draw_fn: IconDrawFn, padding: float = 0.0, margin: float = 0.0):
+    def __init__(self, draw_fn: IconDrawFn, padding: float = 0.0, margin: float = 0.0, color: QColor | str | None = None):
         super().__init__()
         self._draw_fn = draw_fn
         self._padding = max(0.0, min(0.5, padding))
         self._margin = max(0.0, min(0.5, margin))
+        self._color = QColor(color) if color is not None else None
 
     def _padded_rect(self, rect: QRectF) -> QRectF:
         r = rect
@@ -50,7 +51,7 @@ class _ThemedIconEngine(QIconEngine):
 
     def paint(self, painter, rect, mode, state):
         palette = ThemeManager.instance().palette
-        color = QColor(palette.text_primary)
+        color = QColor(self._color) if self._color is not None else QColor(palette.text_primary)
         if mode == QIcon.Mode.Disabled:
             color.setAlpha(80)
         painter.save()
@@ -67,15 +68,15 @@ class _ThemedIconEngine(QIconEngine):
         return pm
 
     def clone(self):
-        return _ThemedIconEngine(self._draw_fn, self._padding, self._margin)
+        return _ThemedIconEngine(self._draw_fn, self._padding, self._margin, self._color)
 
 
-def themed_icon(key: str, margin: float = 0.0) -> QIcon:
+def themed_icon(key: str, margin: float = 0.0, color: QColor | str | None = None) -> QIcon:
     entry = _REGISTRY.get(key)
     if entry is None:
         return QIcon()
     fn, padding = entry
-    return QIcon(_ThemedIconEngine(fn, padding, margin))
+    return QIcon(_ThemedIconEngine(fn, padding, margin, color))
 
 
 def icon_draw(key: str, painter: QPainter, rect: QRectF, color: QColor):
@@ -467,3 +468,72 @@ def _draw_refresh(p: QPainter, r: QRectF, color: QColor):
     arrow.lineTo(tip.x() - al * 0.7, tip.y() + al * 0.3)
     arrow.closeSubpath()
     p.drawPath(arrow)
+
+
+@_register("star", padding=0.10)
+def _draw_star(p: QPainter, r: QRectF, color: QColor):
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(color)
+    cx, cy = r.center().x(), r.center().y()
+    s = min(r.width(), r.height()) * 0.48
+    path = QPainterPath()
+    for i in range(10):
+        angle = math.pi / 2 + 2 * math.pi * i / 10
+        rad = s if i % 2 == 0 else s * 0.42
+        pt = QPointF(cx + rad * math.cos(angle), cy - rad * math.sin(angle))
+        if i == 0:
+            path.moveTo(pt)
+        else:
+            path.lineTo(pt)
+    path.closeSubpath()
+    p.drawPath(path)
+
+
+@_register("warning_triangle", padding=0.08)
+def _draw_warning_triangle(p: QPainter, r: QRectF, color: QColor):
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(color)
+    cx = r.center().x()
+    path = QPainterPath()
+    path.moveTo(QPointF(cx, r.top()))
+    path.lineTo(QPointF(r.right(), r.bottom()))
+    path.lineTo(QPointF(r.left(), r.bottom()))
+    path.closeSubpath()
+    s = min(r.width(), r.height())
+    bar_w = s * 0.09
+    dot_r = s * 0.07
+    excl_top = r.top() + s * 0.38
+    excl_bot = r.bottom() - s * 0.30
+    dot_cy = r.bottom() - s * 0.18
+    excl = QPainterPath()
+    excl.addRect(QRectF(cx - bar_w, excl_top, bar_w * 2, excl_bot - excl_top))
+    excl.addEllipse(QPointF(cx, dot_cy), dot_r, dot_r)
+    p.drawPath(path.subtracted(excl))
+
+
+@_register("external_link", padding=0.12)
+def _draw_external_link(p: QPainter, r: QRectF, color: QColor):
+    lw = max(1.5, min(r.width(), r.height()) * 0.11)
+    pen = QPen(color, lw)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    p.setPen(pen)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    m = lw / 2
+    ir = r.adjusted(m, m, -m, -m)
+    w, h = ir.width(), ir.height()
+    gap = w * 0.35
+    box = QRectF(ir.left(), ir.top() + gap * 0.5, w - gap * 0.5, h - gap * 0.5)
+    path = QPainterPath()
+    path.moveTo(box.left() + gap * 0.6, box.top())
+    path.lineTo(box.left(), box.top())
+    path.lineTo(box.left(), box.bottom())
+    path.lineTo(box.right(), box.bottom())
+    path.lineTo(box.right(), box.bottom() - gap * 0.6)
+    p.drawPath(path)
+    ax = ir.right()
+    ay = ir.top()
+    p.drawLine(QPointF(ir.center().x(), ir.center().y()), QPointF(ax, ay))
+    arm = w * 0.25
+    p.drawLine(QPointF(ax - arm, ay), QPointF(ax, ay))
+    p.drawLine(QPointF(ax, ay), QPointF(ax, ay + arm))

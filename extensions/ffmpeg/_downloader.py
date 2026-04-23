@@ -92,6 +92,7 @@ def _run_7z(exe: str, archive_path: str):
             [exe, "e", archive_path, f"-o{_LIB_DIR}", name, "-r", "-y"],
             capture_output=True,
             text=True,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         if result.returncode != 0:
             raise RuntimeError(f"7z extraction failed for {name} (rc={result.returncode}): {result.stderr.strip()}")

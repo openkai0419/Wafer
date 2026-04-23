@@ -139,3 +139,19 @@ class OrderTab(QtWidgets.QWidget):
 
     def get_orders(self) -> dict[str, list[str]]:
         return {key: lst.get_order() for key, lst in self._lists.items()}
+
+    def revert(self, registry_data: dict[str, list[type]], builtin_command_names: set[str] | None = None):
+        if builtin_command_names is not None:
+            self._builtin_command_names = builtin_command_names
+        for key in REGISTRY_KEYS:
+            plugins = self._prepare_plugins(key, registry_data.get(key, []))
+            reorder_list = self._lists[key]
+            if not plugins:
+                reorder_list.clear()
+                reorder_list.hide()
+                self._labels[key].hide()
+                continue
+            reorder_list.show()
+            self._labels[key].show()
+            sorted_plugins = self._sorted_by_order(plugins, self._saved_orders.get(key, []))
+            reorder_list.set_plugins(sorted_plugins)

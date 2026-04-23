@@ -43,7 +43,8 @@ from wafer.utils.profiling import profiler
 from wafer import __version__
 from wafer.constants import APP_DATA_DIR_NAME, APP_ID, APP_NAME, DEFAULT_DB_NAME
 from wafer.app.indexer.main_indexer import IndexerProcess
-from wafer.plugin.loader import load_plugins
+from wafer.plugin.loader import load_plugins, get_plugin_dir
+from wafer.plugin.startup_install import run_pending_installs
 from wafer.core.platform.process import AppProcess
 from wafer.core.platform.process_checker import ParentProcessChecker
 import wafer.constants as constants
@@ -63,11 +64,26 @@ def set_app_user_model_id(app_id):
 set_app_user_model_id(APP_ID)
 
 
+def _bootstrap_plugins_for_tray():
+    run_pending_installs(get_plugin_dir())
+    load_plugins()
+
+
+def _wait_install_then_load_plugins(app):
+    from wafer.ui.install_waiter import wait_for_install_complete
+
+    wait_for_install_complete(icon=get_icon(), app=app)
+    load_plugins()
+
+
 def _create_app():
     from PySide6 import QtWidgets
+    from wafer.core.qt.tooltip import install_instant_tooltips
+
     app = QtWidgets.QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(__version__)
+    install_instant_tooltips(app)
     return app
 
 def _entry_viewer(app=None, profile_id=None):
@@ -86,23 +102,26 @@ def _entry_tray():
         profiler.set_enabled(False)
         from PySide6 import QtWidgets
         from wafer.app.tray.main_tray import TrayApp
+        from wafer.core.qt.tooltip import install_instant_tooltips
 
         with SafeProcessLock(f'{APP_DATA_DIR_NAME}_tray'):
             procs = AppProcess.get_by_args_subset('--indexer')
             AppProcess.terminate_and_wait(procs)
             AppLogger.info('TRAY RUNNING')
 
+            app = QtWidgets.QApplication(sys.argv)
+            app.setQuitOnLastWindowClosed(False)
+            app.setApplicationName(APP_NAME)
+            install_instant_tooltips(app)
+            app.aboutToQuit.connect(AppProcess.shutdown_children)
+            tray_icon = TrayApp(get_icon())
+            tray_icon.show()
+
             names = list_setting_db_names() or [DEFAULT_DB_NAME]
             my_pid = str(os.getpid())
             for name in names:
                 AppProcess.new_main('--indexer', f'{name}', '--parent-pid', my_pid)
 
-            app = QtWidgets.QApplication(sys.argv)
-            app.setQuitOnLastWindowClosed(False)
-            app.setApplicationName(APP_NAME)
-            app.aboutToQuit.connect(AppProcess.shutdown_children)
-            tray_icon = TrayApp(get_icon())
-            tray_icon.show()
             sys.exit(app.exec())
     except FileExistsError:
         return
@@ -177,8 +196,8 @@ def main():
     args = parser.parse_args()
     if not any([args.tray, args.viewer, args.indexer, args.collector, args.parser]):
         app = _create_app()
-        load_plugins()
         AppProcess.new_main('--tray')
+        _wait_install_then_load_plugins(app)
         from wafer.core.profile import ProfileStore
         restore_ids = ProfileStore().get_restore_profile_ids()
         for pid in restore_ids[1:]:
@@ -186,31 +205,31 @@ def main():
         _entry_viewer(app, profile_id=restore_ids[0] if restore_ids else None)
         return
     if args.tray:
-        load_plugins()
+        _bootstrap_plugins_for_tray()
         from wafer.plugin.loader import get_command_registry
         get_command_registry().activate('tray')
         _entry_tray()
     elif args.indexer:
-        load_plugins()
         if isinstance(args.indexer, str):
+            load_plugins()
             _entry_indexer(args.indexer, parent_pid=args.parent_pid)
         else:
             AppProcess.new_main('--tray')
     elif args.collector:
-        load_plugins()
         if isinstance(args.collector, str):
+            load_plugins()
             _entry_collector(args.collector, args.plugin, parent_pid=args.parent_pid)
         else:
             AppLogger.warning('--collector requires a db name')
     elif args.parser:
-        load_plugins()
         if isinstance(args.parser, str):
+            load_plugins()
             _entry_parser(args.parser, args.plugin, parent_pid=args.parent_pid)
         else:
             AppLogger.warning('--parser requires a db name')
     elif args.viewer:
         app = _create_app()
-        load_plugins()
+        _wait_install_then_load_plugins(app)
         _entry_viewer(app, profile_id=args.profile)
 if __name__ == '__main__':
     atexit.register(lambda: AppLogger.info(f'process exit (pid={os.getpid()})'))

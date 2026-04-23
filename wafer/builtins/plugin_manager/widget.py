@@ -3,7 +3,8 @@ from ...utils.formatting import dpix
 from ...utils.logs import AppLogger
 from ...utils.notifier import Notifier
 from ...plugin.settings import PluginSettings
-from ...plugin.installer import RestartScope, has_pending_packages, restart_scope_from_plugins
+from ...plugin.installer import RestartScope, restart_scope_from_plugins
+from ...plugin import installer_queue
 from ...plugin.loader import get_plugin_dir, qualify_plugin_name
 from ...plugin.panel.base import BasePanelPlugin
 from ...core.color.theme import ThemeManager
@@ -194,7 +195,8 @@ class PluginManagerWidget(QtWidgets.QWidget):
         from .collectors_tab import CollectorsTab
 
         collector_names, parser_names = self._collect_worker_names()
-        self._collectors_tab = CollectorsTab(collector_names, parser_names)
+        heavy = self._ext_tab.heavy_collector_map()
+        self._collectors_tab = CollectorsTab(collector_names, parser_names, heavy_collectors=heavy)
         self._collectors_tab.delete_requested.connect(self._send_delete)
         self._collectors_scroll = self._scrollable(self._collectors_tab)
         self._tabs.addTab(self._collectors_scroll, "Collectors")
@@ -235,14 +237,8 @@ class PluginManagerWidget(QtWidgets.QWidget):
         self._restart_label.setObjectName("restart_label")
         self._restart_label.hide()
 
-        self._install_warning = QtWidgets.QLabel("\u203b " + t("Don't close while installing"))
-        self._install_warning.setObjectName("install_warning")
-        self._install_warning.hide()
-        self._ext_tab.installing_changed.connect(self._install_warning.setVisible)
-
         btn_layout = QtWidgets.QHBoxLayout()
         btn_layout.addWidget(self._restart_label)
-        btn_layout.addWidget(self._install_warning)
         btn_layout.addStretch()
         btn_layout.addWidget(save_btn)
         btn_layout.addWidget(revert_btn)
@@ -282,7 +278,7 @@ class PluginManagerWidget(QtWidgets.QWidget):
         orders = self._order_tab.get_orders()
         has_changes = self._has_plugin_changes(enabled, orders) or self._collectors_tab.has_changes()
         extensions_dir = get_plugin_dir()
-        pending = has_pending_packages(extensions_dir)
+        pending = installer_queue.has_pending_queue(extensions_dir)
         if not has_changes and not pending:
             Notifier.info(t("No changes to save"))
             return
@@ -335,9 +331,20 @@ class PluginManagerWidget(QtWidgets.QWidget):
             Command.run("win.restart_all")
 
     def _on_revert(self):
+        from .viewers_tab import REGISTRY_KEYS
+
+        enabled = self._ext_tab.collect_enabled()
+        orders = self._order_tab.get_orders()
+        if not self._has_plugin_changes(enabled, orders) and not self._collectors_tab.has_changes():
+            return
         self._ext_tab.revert(self._initial_enabled)
-        self._sync_tabs()
-        Notifier.info("Changes reverted")
+        registry_data = {key: self._ext_tab.collect_enabled_plugins(key) for key in REGISTRY_KEYS}
+        self._order_tab.revert(registry_data, self._compute_builtin_command_names(registry_data))
+        self._collectors_tab.revert()
+        c_names, d_names = self._collect_worker_names()
+        heavy = self._ext_tab.heavy_collector_map()
+        self._refresh_with_scroll(self._collectors_scroll, lambda: self._collectors_tab.refresh(c_names, d_names, heavy_collectors=heavy))
+        self._update_restart_label()
 
     @staticmethod
     def _compute_builtin_command_names(registry_data: dict) -> set[str]:
@@ -358,7 +365,8 @@ class PluginManagerWidget(QtWidgets.QWidget):
             ),
         )
         c_names, d_names = self._collect_worker_names()
-        self._refresh_with_scroll(self._collectors_scroll, lambda: self._collectors_tab.refresh(c_names, d_names))
+        heavy = self._ext_tab.heavy_collector_map()
+        self._refresh_with_scroll(self._collectors_scroll, lambda: self._collectors_tab.refresh(c_names, d_names, heavy_collectors=heavy))
 
     def _collect_worker_names(self) -> tuple[list[str], list[str]]:
         collectors = [cls.NAME for cls in self._ext_tab.collect_enabled_plugins("collector")]
@@ -393,7 +401,8 @@ class PluginManagerWidget(QtWidgets.QWidget):
         if self._collectors_dirty:
             self._collectors_dirty = False
             c_names, d_names = self._collect_worker_names()
-            self._refresh_with_scroll(self._collectors_scroll, lambda: self._collectors_tab.refresh(c_names, d_names))
+            heavy = self._ext_tab.heavy_collector_map()
+            self._refresh_with_scroll(self._collectors_scroll, lambda: self._collectors_tab.refresh(c_names, d_names, heavy_collectors=heavy))
 
     def _connect_bridge(self):
         from ...app.viewer.ipc_bridge import ViewerIpcBridge

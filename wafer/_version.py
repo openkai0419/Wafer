@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import re
 import subprocess
+import sys
 
-FALLBACK_VERSION = "0.1.0"
+FALLBACK_VERSION = "0.6.3.dev1+gdb641fe"
+
+_NO_WINDOW = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
 
 
 def get_version() -> str:
@@ -12,6 +15,7 @@ def get_version() -> str:
             ["git", "describe", "--tags", "--always"],
             stderr=subprocess.DEVNULL,
             text=True,
+            **_NO_WINDOW,
         ).strip()
     except (FileNotFoundError, subprocess.CalledProcessError, OSError):
         return FALLBACK_VERSION

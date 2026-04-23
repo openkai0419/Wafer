@@ -27,6 +27,7 @@ if _vendored_in_path:
         if m is not None and getattr(m, "__file__", None) and
         os.path.normpath(os.path.abspath(m.__file__)).startswith(_vendored_abs + os.sep)
     ]
+    _mod_backup = {k: sys.modules[k] for k in _vendored_mods}
     for _p in _vendored_in_path:
         sys.path.remove(_p)
     for _k in _vendored_mods:
@@ -35,7 +36,9 @@ if _vendored_in_path:
         try:
             __import__(_pkg)
         except ImportError:
-            pass
+            for _k, _m in _mod_backup.items():
+                if _k == _pkg or _k.startswith(_pkg + "."):
+                    sys.modules[_k] = _m
     for _p in _vendored_in_path:
         sys.path.insert(0, _p)
 

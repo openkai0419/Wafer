@@ -71,15 +71,19 @@ class TestSmokeImportVerify:
                 sys.path.remove(added)
 
     @pytest.mark.timeout(60)
-    def test_import_blip_deps(self):
-        _skip_unless_post_installed("blip_captioner")
+    def test_import_florence_deps(self):
+        _skip_unless_post_installed("florence")
         added = _add_packages_to_path()
         try:
             import torch
             import transformers
+            import einops
+            import timm
 
             assert torch.__version__
             assert transformers.__version__
+            assert einops.__version__
+            assert timm.__version__
         finally:
             if added and added in sys.path:
                 sys.path.remove(added)
@@ -138,10 +142,10 @@ class TestSmokeGPUVerify:
                 sys.path.remove(added)
 
     @pytest.mark.timeout(60)
-    def test_blip_gpu_device(self, request):
+    def test_florence_gpu_device(self, request):
         if request.config.getoption("--allow-cpu-fallback"):
             pytest.skip("--allow-cpu-fallback: skipping GPU assertion")
-        _skip_unless_post_installed("blip_captioner")
+        _skip_unless_post_installed("florence")
         added = _add_packages_to_path()
         try:
             import torch
@@ -179,20 +183,20 @@ class TestSmokeInferenceVerify:
             if added and added in sys.path:
                 sys.path.remove(added)
 
-    @pytest.mark.timeout(180)
-    def test_blip_inference(self):
-        _skip_unless_post_installed("blip_captioner")
+    @pytest.mark.timeout(300)
+    def test_florence_inference(self):
+        _skip_unless_post_installed("florence")
         added = _add_packages_to_path()
         try:
             from PIL import Image
-            from extensions.blip_captioner._downloader import ensure_model
-            from extensions.blip_captioner._inference import BlipInference
+            from extensions.florence._downloader import ensure_model
+            from extensions.florence._inference import FlorenceInference
 
             model_dir = ensure_model()
-            engine = BlipInference(model_dir)
+            engine = FlorenceInference(model_dir)
 
             test_image = Image.new("RGB", (256, 256), color="red")
-            caption = engine.predict(test_image)
+            caption = engine.predict(test_image, "<CAPTION>")
 
             assert isinstance(caption, str), f"Expected str, got {type(caption)}"
             assert len(caption) > 0, "Caption is empty"

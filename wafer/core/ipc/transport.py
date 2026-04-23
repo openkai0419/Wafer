@@ -68,9 +68,9 @@ def try_put(q: Queue, item: Any, label: str = "") -> None:
             q.put_nowait(item)
         except Full:
             return
-        from ...utils.logs import AppLogger
+        import logging
 
-        AppLogger.debug(f"zmq queue eviction: {label} (size={q.maxsize})")
+        logging.getLogger("AppLog").debug(f"zmq queue eviction: {label} (size={q.maxsize})")
 
 
 def drain_queue(q: Queue, sentinel: object) -> tuple[list[Any], bool]:

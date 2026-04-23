@@ -140,6 +140,21 @@ class TestAppLogger:
         assert AppLogger._node is node
         assert AppLogger._role == "original"
 
+    def test_forward_skips_when_node_not_registered(self):
+        node = MagicMock()
+        node.is_registered = False
+        AppLogger.set_node(node, role="test")
+        AppLogger.info("should not forward")
+        node.send.assert_not_called()
+
+    def test_forward_sends_when_node_registered(self):
+        node = MagicMock()
+        node.is_registered = True
+        AppLogger.set_node(node, role="test")
+        AppLogger.info("should forward")
+        node.send.assert_called_once()
+        assert node.send.call_args[0][0] == "dev.log"
+
 
 class TestLoggerFactory:
     @pytest.fixture(autouse=True)

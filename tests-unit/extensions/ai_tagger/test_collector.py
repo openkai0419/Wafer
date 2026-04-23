@@ -267,38 +267,14 @@ class TestTwoLevelCache:
 
 class TestPostInstall:
     def test_post_install_calls_ensure_model(self):
-        with patch("wafer.plugin.installer.install_packages", return_value=(True, False)), patch("extensions.ai_tagger.collector.ensure_model") as mock_model:
+        with patch("extensions.ai_tagger.collector.ensure_model") as mock_model:
             WD14TaggerCollector.post_install("/fake/dir")
             mock_model.assert_called_once()
 
-    def test_post_install_tries_gpu_first(self):
-        with patch("extensions.ai_tagger.collector.ensure_model"), patch("wafer.plugin.installer.install_packages", return_value=(True, False)) as mock_install:
-            WD14TaggerCollector.post_install("/fake/dir")
-            first_call = mock_install.call_args_list[0]
-            assert any("onnxruntime-gpu" in p for p in first_call[0][1])
-
-    def test_post_install_falls_back_to_cpu_on_pip_failure(self):
-        call_count = [0]
-
-        def side_effect(plugin_dir, packages, on_progress=None, **kwargs):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                return (False, False)
-            return (True, False)
-
-        with patch("extensions.ai_tagger.collector.ensure_model"), patch("wafer.plugin.installer.install_packages", side_effect=side_effect) as mock_install:
-            WD14TaggerCollector.post_install("/fake/dir")
-            cpu_call = mock_install.call_args_list[1]
-            assert any("onnxruntime" in p and "gpu" not in p for p in cpu_call[0][1])
-
-    def test_post_install_gpu_success_installs_cudnn(self):
-        with patch("extensions.ai_tagger.collector.ensure_model"), patch("wafer.plugin.installer.install_packages", return_value=(True, False)) as mock_install:
-            WD14TaggerCollector.post_install("/fake/dir")
-            cudnn_calls = [
-                c for c in mock_install.call_args_list
-                if any("nvidia-cudnn" in p for p in c[0][1])
-            ]
-            assert len(cudnn_calls) == 1
+    def test_post_install_propagates_model_error(self):
+        with patch("extensions.ai_tagger.collector.ensure_model", side_effect=RuntimeError("dl failed")):
+            with pytest.raises(RuntimeError, match="dl failed"):
+                WD14TaggerCollector.post_install("/fake/dir")
 
 
 class TestCollectorClassAttributes:

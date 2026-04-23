@@ -17,7 +17,7 @@ from ._downloader import ensure_model
 from .settings import parse_blacklist, wd14_config
 
 _CACHE_MAX = 5000
-_ENGINE_IDLE_TIMEOUT = 120.0
+_ENGINE_IDLE_TIMEOUT = 30.0
 
 
 class WD14TaggerCollector(BaseSingletonCollector):
@@ -27,37 +27,10 @@ class WD14TaggerCollector(BaseSingletonCollector):
     BATCH_SIZE = 150
 
     @classmethod
-    def post_install(cls, plugin_dir, on_progress=None, is_cancelled=None):
-        from wafer.plugin.installer import install_packages
-
-        model_error: list[Exception] = []
-        model_thread = threading.Thread(target=cls._download_model, args=(model_error,), daemon=True)
-        model_thread.start()
-
-        success, _ = install_packages(plugin_dir, ["onnxruntime-gpu==1.23.2"], on_progress, is_cancelled=is_cancelled)
-        if not success:
-            AppLogger.warning("onnxruntime-gpu install failed, falling back to CPU-only onnxruntime")
-            install_packages(plugin_dir, ["onnxruntime==1.23.2"], on_progress, is_cancelled=is_cancelled)
-        else:
-            install_packages(
-                plugin_dir,
-                ["nvidia-cudnn-cu12==9.5.1.17"],
-                on_progress,
-                no_deps=True,
-                is_cancelled=is_cancelled,
-            )
-
-        model_thread.join()
-        if model_error:
-            raise model_error[0]
-
-    @staticmethod
-    def _download_model(errors: list[Exception]):
-        try:
-            ensure_model()
-        except Exception as e:
-            AppLogger.warning(f"WD14 model download failed: {e}", exc=e)
-            errors.append(e)
+    def post_install(cls, plugin_dir, on_progress=None, is_cancelled=None, on_log=None):
+        if on_progress:
+            on_progress(phase="Downloading WD14 model…")
+        ensure_model()
 
     def __init__(self):
         self._engine: WD14Inference | None = None

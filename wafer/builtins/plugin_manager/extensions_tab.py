@@ -1,22 +1,24 @@
 import os
 from enum import Enum
 from pathlib import Path
-from PySide6 import QtWidgets, QtCore
+from PySide6 import QtWidgets, QtCore, QtGui
 from ...utils.formatting import dpix
 from ...utils.logs import AppLogger
 from ...utils.markdown_browser import MarkdownBrowser, render_to_html
 from ...core.color.theme import ThemeManager
 from ...core.lang.manager import t
+from ...core.qt.color_utils import mix_colors
 from ...plugin.loader import get_plugin_dir, PluginLoader, qualify_plugin_name
 from ...plugin.installer import (
-    InstallResult,
     InstallState,
     RestartScope,
-    install_extension,
     resolve_install_state,
-    restart_scope_from_plugins,
 )
-from ...core.qt.dispatcher import Dispatcher, CancelSlot
+from ...plugin import failed_installs, installer_queue
+from ...plugin.badges import ExtensionBadge, resolve_badge, badge_sort_key
+from ...core.qt.icon_engine import themed_icon
+from ...core.qt.dispatcher import Dispatcher
+from .readme_summary import extract_readme_summary
 
 _MAX_MD_FILES = 10
 
@@ -94,6 +96,14 @@ class _ElidingLabel(QtWidgets.QLabel):
         return hint
 
 
+class _InstantTooltipLabel(QtWidgets.QLabel):
+    def enterEvent(self, event):
+        text = self.toolTip()
+        if text:
+            QtWidgets.QToolTip.showText(QtGui.QCursor.pos(), text, self, self.rect())
+        super().enterEvent(event)
+
+
 class _PluginRow(QtWidgets.QWidget):
     def __init__(self, registry_key: str, plugin_cls: type, checked: bool, parent=None):
         super().__init__(parent)
@@ -148,11 +158,25 @@ class _PluginRow(QtWidgets.QWidget):
         Command.run(f"panel.toggle_{slug}")
 
 
+_BADGE_CONFIG: dict[ExtensionBadge, tuple[str, str, str | None]] = {
+    ExtensionBadge.PREFERRED: ("star", "Recommended to install", "success"),
+    ExtensionBadge.HEAVY: ("warning_triangle", "This extension is marked as heavy. This may:\n- use a large amount of GPU\n- take a long time to install", None),
+    ExtensionBadge.EXTERNAL: ("external_link", "Community / third-party extension", None),
+}
+
+_BADGE_ICON_SIZE: dict[ExtensionBadge, int] = {
+    ExtensionBadge.PREFERRED: 14,
+    ExtensionBadge.HEAVY: 13,
+    ExtensionBadge.EXTERNAL: 13,
+}
+
+
 class _ExtensionCard(QtWidgets.QFrame):
-    def __init__(self, folder_name: str, folder_path: str, dispatcher: Dispatcher, md_files: list[str], parent=None):
+    def __init__(self, folder_name: str, folder_path: str, dispatcher: Dispatcher, md_files: list[str], summary: str = "", parent=None):
         super().__init__(parent)
         self.folder_name = folder_name
         self.folder_path = folder_path
+        self.badge = resolve_badge(folder_name)
         self._dispatcher = dispatcher
         self.setObjectName("extension_card")
         self._rows: list[tuple[_PluginRow, str]] = []
@@ -162,6 +186,14 @@ class _ExtensionCard(QtWidgets.QFrame):
 
         self._name_label = QtWidgets.QLabel(folder_name)
         self._name_label.setStyleSheet(f"font-weight: bold; font-size: {dpix(13)}px;")
+
+        self._summary_label = QtWidgets.QLabel(summary)
+        self._summary_label.setStyleSheet(f"color: #888; font-size: {dpix(11)}px;")
+        self._summary_label.setWordWrap(True)
+        self._summary_label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
+        self._summary_label.setContentsMargins(0, 0, 0, 0)
+        if not summary:
+            self._summary_label.hide()
 
         self._status_btn = QtWidgets.QPushButton()
         self._status_btn.setObjectName("status_btn")
@@ -183,8 +215,41 @@ class _ExtensionCard(QtWidgets.QFrame):
         self._progress.setTextVisible(False)
         self._progress.hide()
 
+        self._detail_label = QtWidgets.QLabel()
+        self._detail_label.setStyleSheet(f"color: #999; font-size: {dpix(11)}px;")
+        self._detail_label.hide()
+
+        self._log_toggle = QtWidgets.QLabel(f"\u25b6 {t('Show Log')}")
+        self._log_toggle.setCursor(QtCore.Qt.PointingHandCursor)
+        accent = ThemeManager.instance().palette.accent
+        self._log_toggle.setStyleSheet(f"color: {accent}; font-size: {dpix(11)}px; padding: {dpix(1)}px 0;")
+        self._log_toggle.mousePressEvent = lambda _: self._toggle_log()
+        self._log_toggle.hide()
+
+        self._log_view = QtWidgets.QPlainTextEdit()
+        self._log_view.setReadOnly(True)
+        self._log_view.setMaximumHeight(dpix(200))
+        self._log_view.setStyleSheet(f"font-family: Consolas, monospace; font-size: {dpix(11)}px;")
+        self._log_view.hide()
+        self._log_expanded = False
+
         header = QtWidgets.QHBoxLayout()
-        header.addWidget(self._name_label)
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(dpix(3))
+        badge_cfg = _BADGE_CONFIG.get(self.badge)
+        if badge_cfg:
+            icon_key, tooltip_text, tint = badge_cfg
+            badge_label = _InstantTooltipLabel()
+            icon_px = _BADGE_ICON_SIZE.get(self.badge, 13)
+            icon_size = dpix(icon_px)
+            badge_color = self._badge_color(tint)
+            badge_label.setPixmap(themed_icon(icon_key, color=badge_color).pixmap(icon_size, icon_size))
+            badge_label.setToolTip(t(tooltip_text))
+            badge_label.setFixedSize(icon_size, icon_size)
+            badge_label.setAlignment(QtCore.Qt.AlignCenter)
+            header.addWidget(badge_label, 0, QtCore.Qt.AlignVCenter)
+            self._name_label.setStyleSheet(f"font-weight: bold; font-size: {dpix(13)}px; color: {badge_color.name()};")
+        header.addWidget(self._name_label, 0, QtCore.Qt.AlignVCenter)
         header.addStretch()
         header.addWidget(self._install_cancel_btn)
         header.addWidget(self._status_btn)
@@ -192,8 +257,16 @@ class _ExtensionCard(QtWidgets.QFrame):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(dpix(10), dpix(8), dpix(10), dpix(8))
         layout.setSpacing(dpix(4))
-        layout.addLayout(header)
+        title_block = QtWidgets.QVBoxLayout()
+        title_block.setContentsMargins(0, 0, 0, 0)
+        title_block.setSpacing(dpix(1))
+        title_block.addLayout(header)
+        title_block.addWidget(self._summary_label)
+        layout.addLayout(title_block)
         layout.addWidget(self._progress)
+        layout.addWidget(self._detail_label)
+        layout.addWidget(self._log_toggle)
+        layout.addWidget(self._log_view)
         layout.addLayout(self._plugin_area)
 
         self._md_entries: list[tuple[QtWidgets.QLabel, MarkdownBrowser, str, bool]] = []
@@ -216,6 +289,16 @@ class _ExtensionCard(QtWidgets.QFrame):
         self._install_callback = None
         self._cancel_callback = None
         self._checkbox_changed_callback = None
+
+    @staticmethod
+    def _badge_color(tint: str | None) -> QtGui.QColor:
+        palette = ThemeManager.instance().palette
+        base = QtGui.QColor(palette.text_primary)
+        if tint is None:
+            return mix_colors(base, palette.warning, 0.4)
+        if tint == "success":
+            return mix_colors(base, palette.success, 0.35)
+        return mix_colors(base, tint, 0.22)
 
     def set_install_callback(self, cb):
         self._install_callback = cb
@@ -247,8 +330,16 @@ class _ExtensionCard(QtWidgets.QFrame):
         cancelling = status == CardStatus.CANCELLING
         if installing or cancelling:
             self._progress.show()
+            self._detail_label.show()
+            self._log_toggle.show()
         else:
             self._progress.hide()
+            self._detail_label.hide()
+            if not self._log_view.document().isEmpty():
+                self._log_toggle.show()
+            else:
+                self._log_toggle.hide()
+                self._log_view.hide()
         if installing:
             self._install_cancel_btn.setEnabled(True)
             self._install_cancel_btn.setText(t("Cancel"))
@@ -261,6 +352,27 @@ class _ExtensionCard(QtWidgets.QFrame):
             self._install_cancel_btn.hide()
         if status == CardStatus.NOT_INSTALLED:
             self._clear_plugin_area()
+
+    def set_phase(self, text: str):
+        self._detail_label.setText(text)
+
+    def append_log(self, line: str):
+        self._log_view.appendPlainText(line)
+        if self._log_expanded:
+            sb = self._log_view.verticalScrollBar()
+            sb.setValue(sb.maximum())
+
+    def _toggle_log(self):
+        if self._log_view.isVisible():
+            self._log_view.hide()
+            self._log_expanded = False
+            self._log_toggle.setText(f"\u25b6 {t('Show Log')}")
+        else:
+            self._log_view.show()
+            self._log_expanded = True
+            self._log_toggle.setText(f"\u25bc {t('Hide Log')}")
+            sb = self._log_view.verticalScrollBar()
+            sb.setValue(sb.maximum())
 
     def set_plugins(self, plugins: list[tuple[str, type]], enabled: set[str] | None):
         self._clear_plugin_area()
@@ -334,15 +446,12 @@ class _ExtensionCard(QtWidgets.QFrame):
 
 class ExtensionsTab(QtWidgets.QWidget):
     enabled_changed = QtCore.Signal()
-    installing_changed = QtCore.Signal(bool)
 
     def __init__(self, enabled_names: set[str] | None, dispatcher: Dispatcher, parent=None):
         super().__init__(parent)
         self._enabled = enabled_names
         self._dispatcher = dispatcher
-        self._install_cancels: dict[str, CancelSlot] = {}
         self._cards: dict[str, _ExtensionCard] = {}
-        self._installing_count = 0
 
         self._scroll = QtWidgets.QScrollArea()
         self._scroll.setWidgetResizable(True)
@@ -376,8 +485,9 @@ class ExtensionsTab(QtWidgets.QWidget):
                 if not os.path.isdir(folder) or name.startswith(".") or name == "__pycache__":
                     continue
                 md_files = sorted(f for f in os.listdir(folder) if f.lower().endswith(".md") and not f.startswith((".", "_")) and os.path.isfile(os.path.join(folder, f)))[:_MAX_MD_FILES]
+                summary = extract_readme_summary(folder)
                 state = resolve_install_state(folder)
-                results.append((name, folder, md_files, state))
+                results.append((name, folder, md_files, summary, state))
             return results
 
         def on_scan_complete(results):
@@ -387,14 +497,34 @@ class ExtensionsTab(QtWidgets.QWidget):
                 InstallState.NEEDS_POST_INSTALL: CardStatus.NEEDS_SETUP,
                 InstallState.INSTALLED: CardStatus.INSTALLED,
             }
-            for name, folder, md_files, state in results:
-                card = _ExtensionCard(name, folder, self._dispatcher, md_files)
+            queued = installer_queue.queued_names(plugin_dir)
+            failed = failed_installs.failed_names(plugin_dir)
+            results.sort(key=lambda r: (badge_sort_key(r[0]), r[0]))
+            separator_inserted = False
+            for name, folder, md_files, summary, state in results:
+                badge = resolve_badge(name)
+                if badge == ExtensionBadge.EXTERNAL and not separator_inserted:
+                    separator_inserted = True
+                    sep = QtWidgets.QFrame()
+                    sep.setFrameShape(QtWidgets.QFrame.HLine)
+                    sep.setFrameShadow(QtWidgets.QFrame.Sunken)
+                    self._cards_layout.insertWidget(self._cards_layout.count() - 1, sep)
+                card = _ExtensionCard(name, folder, self._dispatcher, md_files, summary)
                 card.set_install_callback(self._install_extension)
                 card.set_cancel_callback(self._cancel_extension)
                 card.set_checkbox_changed_callback(self._on_plugin_toggled)
                 self._cards[name] = card
                 self._cards_layout.insertWidget(self._cards_layout.count() - 1, card)
-                card.set_status(state_to_card[state])
+                if name in queued:
+                    card.set_status(CardStatus.RESTART_REQUIRED, RestartScope.ALL)
+                elif name in failed:
+                    info = failed_installs.failure_info(plugin_dir, name) or {}
+                    card.set_status(CardStatus.FAILED)
+                    reason = info.get("reason", "")
+                    if reason:
+                        card._status_btn.setToolTip(reason)
+                else:
+                    card.set_status(state_to_card[state])
                 if state not in (InstallState.NOT_INSTALLED,):
                     self._discover_async(card)
 
@@ -422,48 +552,23 @@ class ExtensionsTab(QtWidgets.QWidget):
         self.enabled_changed.emit()
 
     def _install_extension(self, card: _ExtensionCard):
-        card.set_status(CardStatus.INSTALLING)
-        self._installing_count += 1
-        if self._installing_count == 1:
-            self.installing_changed.emit(True)
-        slot = self._install_cancels.get(card.folder_name)
-        if slot is None:
-            slot = CancelSlot()
-            self._install_cancels[card.folder_name] = slot
-        cancel = slot.renew()
-
-        def task():
-            def _on_phase(phase: str):
-                if phase == "post_installing":
-                    self._dispatcher.invoke(lambda: card.set_status(CardStatus.POST_INSTALLING))
-
-            try:
-                extensions_dir = get_plugin_dir()
-                result = install_extension(
-                    card.folder_path,
-                    extensions_dir,
-                    is_cancelled=cancel.is_cancelled,
-                    on_phase=_on_phase,
-                )
-                self._dispatcher.invoke(lambda: self._on_install_complete(card, result))
-            except Exception as e:
-                AppLogger.warning(f"[PluginManager] install failed: {card.folder_name}", exc=e)
-                result = InstallResult(cancelled=cancel.is_cancelled())
-                self._dispatcher.invoke(lambda: self._on_install_complete(card, result))
-
-        self._dispatcher.post(task, priority=3, cancel=cancel)
+        if card.badge == ExtensionBadge.HEAVY:
+            message = QtWidgets.QMessageBox(self)
+            message.setWindowTitle(t("Install Heavy Extension"))
+            message.setIcon(QtWidgets.QMessageBox.NoIcon)
+            message.setText(t("This extension is marked as heavy. This may:\n- use a large amount of GPU\n- take a long time to install\nContinue?"))
+            message.setStandardButtons(QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel)
+            message.setDefaultButton(QtWidgets.QMessageBox.Cancel)
+            if message.exec() != QtWidgets.QMessageBox.Ok:
+                return
+        installer_queue.enqueue(get_plugin_dir(), card.folder_name, card.folder_path)
+        failed_installs.clear(get_plugin_dir(), [card.folder_name])
+        card.set_status(CardStatus.RESTART_REQUIRED, RestartScope.ALL)
+        self.enabled_changed.emit()
 
     def _cancel_extension(self, card: _ExtensionCard):
-        slot = self._install_cancels.get(card.folder_name)
-        if slot is not None:
-            card.set_status(CardStatus.CANCELLING)
-            slot.cancel()
-
-    def _on_install_complete(self, card: _ExtensionCard, result: InstallResult):
-        self._installing_count = max(0, self._installing_count - 1)
-        if self._installing_count == 0:
-            self.installing_changed.emit(False)
-        if result.cancelled:
+        if installer_queue.dequeue(get_plugin_dir(), card.folder_name):
+            failed_installs.clear(get_plugin_dir(), [card.folder_name])
             state = resolve_install_state(card.folder_path)
             state_to_card = {
                 InstallState.NO_DEPS: CardStatus.NO_DEPS,
@@ -472,17 +577,7 @@ class ExtensionsTab(QtWidgets.QWidget):
                 InstallState.INSTALLED: CardStatus.INSTALLED,
             }
             card.set_status(state_to_card.get(state, CardStatus.NOT_INSTALLED))
-            return
-        if result.success:
-            if result.post_install_ok:
-                scope = restart_scope_from_plugins(cls for _, cls in result.plugins)
-                card.set_status(CardStatus.RESTART_REQUIRED, scope)
-            else:
-                card.set_status(CardStatus.FAILED)
-            card.set_plugins(result.plugins, self._enabled)
             self.enabled_changed.emit()
-        else:
-            card.set_status(CardStatus.FAILED)
 
     def _on_plugin_toggled(self):
         self.enabled_changed.emit()
@@ -499,10 +594,18 @@ class ExtensionsTab(QtWidgets.QWidget):
             result.extend(card.get_enabled_plugins(registry_key))
         return result
 
+    def heavy_collector_map(self) -> dict[str, str]:
+        result = {}
+        for card in self._cards.values():
+            if card.badge != ExtensionBadge.HEAVY:
+                continue
+            for key, cls in card._plugins:
+                if key in ("collector", "parser"):
+                    result[cls.NAME] = card.folder_name
+        return result
+
     def cancel_pending(self):
-        for slot in self._install_cancels.values():
-            slot.renew()
-        self._install_cancels.clear()
+        pass
 
     def revert(self, enabled_names: set[str]):
         self._enabled = set(enabled_names)

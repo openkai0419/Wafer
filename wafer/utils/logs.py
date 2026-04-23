@@ -184,7 +184,7 @@ class AppLogger:
     @staticmethod
     def _forward(level: str, text: str):
         node = AppLogger._node
-        if node is None:
+        if node is None or not node.is_registered:
             return
         try:
             node.send(

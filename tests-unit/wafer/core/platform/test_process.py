@@ -45,7 +45,8 @@ def test_find_by_args_exact_with_impossible_args():
 def test_app_process_base_command():
     cmd = AppProcess.base_command()
     assert len(cmd) >= 1
-    assert sys.executable in cmd[0] or os.path.samefile(cmd[0], sys.executable)
+    exe_dir = os.path.dirname(sys.executable)
+    assert os.path.dirname(cmd[0]) == exe_dir
 
 
 def test_app_process_children():

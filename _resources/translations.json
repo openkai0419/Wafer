@@ -1,4 +1,76 @@
 {
+  "This extension is marked as heavy. This may:\n- use a large amount of GPU\n- take a long time to install": {
+    "en": "This extension is marked as heavy. This may:\n- use a large amount of GPU\n- take a long time to install",
+    "ja": ""
+  },
+  "Multiple heavy extensions are enabled:\n- ai_tagger\n- florence\nThis may cause high GPU usage or instability.": {
+    "en": "Multiple heavy extensions are enabled:\n- ai_tagger\n- florence\nThis may cause high GPU usage or instability.",
+    "ja": ""
+  },
+  "Recommended to install": {
+    "en": "Recommended to install",
+    "ja": ""
+  },
+  "This extension is heavy. It may:\n- use a large amount of GPU\n- take a long time to install": {
+    "en": "This extension is heavy. It may:\n- use a large amount of GPU\n- take a long time to install",
+    "ja": ""
+  },
+  "Florence-2 settings reverted": {
+    "en": "Florence-2 settings reverted",
+    "ja": ""
+  },
+  "CAPTION": {
+    "en": "CAPTION",
+    "ja": ""
+  },
+  "DETAILED_CAPTION": {
+    "en": "DETAILED_CAPTION",
+    "ja": ""
+  },
+  "Generating captions...": {
+    "en": "Generating captions...",
+    "ja": ""
+  },
+  "MORE_DETAILED_CAPTION": {
+    "en": "MORE_DETAILED_CAPTION",
+    "ja": ""
+  },
+  "Max Tokens:": {
+    "en": "Max Tokens:",
+    "ja": ""
+  },
+  "Model:": {
+    "en": "Model:",
+    "ja": ""
+  },
+  "Tasks:": {
+    "en": "Tasks:",
+    "ja": ""
+  },
+  "Recommended extension for common file types": {
+    "en": "Recommended extension for common file types",
+    "ja": "一般的なファイル形式向けの推奨拡張機能"
+  },
+  "Resource-intensive extension (GPU / long install time)": {
+    "en": "Resource-intensive extension (GPU / long install time)",
+    "ja": "リソースを多く消費する拡張機能（GPU / インストールに時間がかかる場合あり）"
+  },
+  "Florence-2 Settings": {
+    "en": "Florence-2 Settings",
+    "ja": ""
+  },
+  "Moving files...": {
+    "en": "Moving files...",
+    "ja": ""
+  },
+  "Hide Log": {
+    "en": "Hide Log",
+    "ja": ""
+  },
+  "Show Log": {
+    "en": "Show Log",
+    "ja": ""
+  },
   "Workspace": {
     "en": "Workspace",
     "ja": ""
@@ -1522,5 +1594,25 @@
   },
   "Text Filter Options": {
     "en": "Text Filter Options"
+  },
+  "Community / third-party extension": {
+    "en": "Community / third-party extension",
+    "ja": "コミュニティ / サードパーティ拡張機能"
+  },
+  "Heavy Extension": {
+    "en": "Heavy Extension",
+    "ja": "高負荷拡張機能"
+  },
+  "This extension is resource-intensive (GPU / large download).\nInstallation may take a long time.\nDo you want to continue?": {
+    "en": "This extension is resource-intensive (GPU / large download).\nInstallation may take a long time.\nDo you want to continue?",
+    "ja": "この拡張機能はリソースを多く消費します（GPU / 大容量ダウンロード）。\nインストールに時間がかかる場合があります。\n続行しますか？"
+  },
+  "Multiple resource-intensive collectors are now enabled.\nThis may cause instability or high GPU usage.": {
+    "en": "Multiple resource-intensive collectors are now enabled.\nThis may cause instability or high GPU usage.",
+    "ja": "複数の高負荷コレクターが有効になっています。\n不安定になったりGPU使用率が高くなる可能性があります。"
+  },
+  "This collector is resource-intensive.\nProcessing may take a long time.": {
+    "en": "This collector is resource-intensive.\nProcessing may take a long time.",
+    "ja": "このコレクターはリソースを多く消費します。\n処理に時間がかかる場合があります。"
   }
 }

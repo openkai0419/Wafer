@@ -5,6 +5,14 @@ import psutil
 from ...utils.logs import AppLogger
 
 
+def _windows_no_window_flags(extra=0):
+    if sys.platform != "win32":
+        return 0
+    flags = extra
+    flags |= getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+    return flags
+
+
 class ProcessMatcher:
     def __init__(self, cmd_list):
         if not cmd_list:
@@ -23,6 +31,9 @@ class ProcessMatcher:
         existing = self.find_by_args_exact()
         if existing:
             return (False, existing)
+        if sys.platform == "win32":
+            flags = popen_kwargs.pop("creationflags", 0)
+            popen_kwargs["creationflags"] = _windows_no_window_flags(flags)
         new_popen = subprocess.Popen(self._raw_cmd, **popen_kwargs)
         try:
             proc = psutil.Process(new_popen.pid)
@@ -90,11 +101,14 @@ class AppProcess:
         return ProcessMatcher(cls.base_command() + list(args)).start_if_not_running(**popen_kwargs)
 
     @classmethod
-    def terminate_cmd(cls, *args, compare="subset"):
+    def terminate_cmd(cls, *args, compare="subset", wait=False, timeout=5, kill_timeout=3):
         matcher = ProcessMatcher(cls.base_command() + list(args))
         procs = matcher.find_by_args_subset() if compare == "subset" else matcher.find_by_args_exact()
-        AppLogger.info(f"terminate_cmd: {len(procs)} processes found")
-        cls.terminate(procs)
+        AppLogger.info(f"terminate_cmd: {len(procs)} processes found (wait={wait})")
+        if wait:
+            cls.terminate_and_wait(procs, timeout=timeout, kill_timeout=kill_timeout)
+        else:
+            cls.terminate(procs)
         return len(procs)
 
     @staticmethod
@@ -138,7 +152,25 @@ class AppProcess:
     @staticmethod
     def base_command():
         main_path = os.path.abspath(sys.argv[0])
-        return [sys.executable, main_path]
+        exe = sys.executable
+        if sys.platform == "win32":
+            exe_dir = os.path.dirname(exe)
+            exe_base = os.path.basename(exe)
+            stem, ext = os.path.splitext(exe_base)
+            candidates = [
+                f"{stem}w{ext}",
+                f"{stem}-w{ext}",
+                stem.replace("python", "pythonw") + ext,
+                "pythonw.exe",
+            ]
+            for name in candidates:
+                if not name or name == exe_base:
+                    continue
+                candidate = os.path.join(exe_dir, name)
+                if os.path.isfile(candidate):
+                    exe = candidate
+                    break
+        return [exe, main_path]
 
     @staticmethod
     def new_main(*args, **popen_kwargs):
@@ -147,4 +179,11 @@ class AppProcess:
         popen_kwargs.setdefault("stdin", subprocess.DEVNULL)
         popen_kwargs.setdefault("stdout", subprocess.DEVNULL)
         popen_kwargs.setdefault("stderr", subprocess.DEVNULL)
+        if sys.platform == "win32":
+            flags = popen_kwargs.pop("creationflags", 0)
+            flags |= getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
+            flags |= getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
+            flags = _windows_no_window_flags(flags)
+            popen_kwargs["creationflags"] = flags
+            popen_kwargs.setdefault("close_fds", True)
         return subprocess.Popen(cmd, env=env, **popen_kwargs)

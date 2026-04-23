@@ -634,7 +634,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 if pid != own_pid:
                     node.send("profile.restart", pid, dst="viewer")
 
-        AppProcess.terminate_cmd("--tray")
+        AppProcess.terminate_cmd("--tray", wait=True)
         AppProcess.new_main("--tray")
 
     def _restart_other_viewers(self):

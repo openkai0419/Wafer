@@ -12,7 +12,7 @@ venv/
 
 # Extension native libraries (user-provided)
 extensions/*/lib/
-
+extensions/.installer_queue/
 # Internal development notes
 .github/*
 !.github/workflows/

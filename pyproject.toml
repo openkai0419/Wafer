@@ -62,6 +62,7 @@ ignore = [
 "tests-unit/**" = ["F401", "F811", "F841", "E402", "E712", "B", "SIM", "UP", "RUF015", "RUF043", "RUF059"]
 "scripts/**" = ["F841"]
 "extensions/**" = ["F401"]
+"extensions/**/lib/**" = ["F", "E", "W", "UP", "B", "SIM", "RUF"]
 ".prototypes/**" = ["F", "E", "W", "UP", "B", "SIM", "RUF"]
 "wafer/__init__.py" = ["F401"]
 "wafer/plugin/__init__.py" = ["F401"]

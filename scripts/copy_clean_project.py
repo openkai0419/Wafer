@@ -37,6 +37,8 @@ EXCLUDE_DIRS = {
     ".pytest_cache",
     ".prototypes",
     ".packages",
+    ".pip_staging",
+    ".pending",
     ".venv",
     "venv",
     "env",

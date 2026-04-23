@@ -3,6 +3,9 @@ from ...utils.formatting import dpix
 from ...utils.paths import list_setting_db_names, setting_db_path
 from ...core.db.setting_db import SettingDB
 from ...core.lang.manager import t
+from ...core.color.theme import ThemeManager
+from ...core.qt.color_utils import mix_colors
+from ...core.qt.icon_engine import themed_icon
 
 
 class _ClickableLabel(QtWidgets.QLabel):
@@ -21,7 +24,7 @@ class _ClickableLabel(QtWidgets.QLabel):
 class CollectorsTab(QtWidgets.QWidget):
     delete_requested = QtCore.Signal(list, bool)
 
-    def __init__(self, collector_names: list[str] | None = None, parser_names: list[str] | None = None, parent=None):
+    def __init__(self, collector_names: list[str] | None = None, parser_names: list[str] | None = None, heavy_collectors: dict[str, str] | None = None, parent=None):
         super().__init__(parent)
         if collector_names is None:
             from ...plugin.collector.handler import collector_resolver
@@ -33,6 +36,7 @@ class CollectorsTab(QtWidgets.QWidget):
             parser_names = list(parser_resolver.names())
         self._collector_names: list[str] = list(collector_names)
         self._parser_names: list[str] = list(parser_names)
+        self._heavy_collectors: dict[str, str] = heavy_collectors or {}
         self._db_names: list[str] = list_setting_db_names()
         self._default_checks: dict[str, QtWidgets.QCheckBox] = {}
         self._matrix: dict[tuple[str, str], QtWidgets.QCheckBox] = {}
@@ -137,11 +141,28 @@ class CollectorsTab(QtWidgets.QWidget):
             lbl = _ClickableLabel(name)
             lbl.setToolTip(t("Click to toggle all databases"))
             lbl.clicked.connect(lambda n=name: self._toggle_all(n))
-            grid.addWidget(lbl, row_idx + 1, 0)
+
+            row_layout = QtWidgets.QHBoxLayout()
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(dpix(2))
+            if name in self._heavy_collectors:
+                icon_lbl = QtWidgets.QLabel()
+                icon_size = dpix(13)
+                icon_lbl.setPixmap(themed_icon("warning_triangle", color=self._heavy_badge_color()).pixmap(icon_size, icon_size))
+                icon_lbl.setToolTip(t("This extension is marked as heavy. This may:\n- use a large amount of GPU\n- take a long time to install"))
+                icon_lbl.setFixedSize(icon_size, icon_size)
+                icon_lbl.setAlignment(QtCore.Qt.AlignCenter)
+                row_layout.addWidget(icon_lbl)
+            row_layout.addWidget(lbl)
+            row_widget = QtWidgets.QWidget()
+            row_widget.setLayout(row_layout)
+            grid.addWidget(row_widget, row_idx + 1, 0)
 
             for col_idx, db in enumerate(self._db_names):
                 cb = QtWidgets.QCheckBox()
                 cb.setChecked(name in self._initial_state.get(db, set()))
+                if name in self._heavy_collectors:
+                    cb.stateChanged.connect(lambda state, n=name: self._on_heavy_toggled(state, n))
                 self._matrix[(name, db)] = cb
                 grid.addWidget(cb, row_idx + 1, col_idx + 2, QtCore.Qt.AlignCenter)
 
@@ -154,6 +175,32 @@ class CollectorsTab(QtWidgets.QWidget):
             if cb:
                 cb.setChecked(any_unchecked)
 
+    def _on_heavy_toggled(self, state: int, name: str):
+        if state != QtCore.Qt.Checked.value:
+            return
+        current_folder = self._heavy_collectors.get(name)
+        other_folders = sorted(
+            {
+                self._heavy_collectors[collector]
+                for collector in self._heavy_collectors
+                if collector != name
+                for db in self._db_names
+                if (collector, db) in self._matrix and self._matrix[(collector, db)].isChecked()
+            }
+        )
+        other_folders = [folder for folder in other_folders if folder != current_folder]
+        if other_folders:
+            QtWidgets.QMessageBox.warning(
+                self,
+                t("Heavy Extension"),
+                t("Multiple heavy extensions are enabled:\n" + "\n".join(f"- {folder}" for folder in [current_folder, *other_folders] if folder) + "\nThis may cause high GPU usage or instability."),
+            )
+
+    @staticmethod
+    def _heavy_badge_color() -> QtGui.QColor:
+        palette = ThemeManager.instance().palette
+        return mix_colors(palette.text_primary, palette.warning, 0.4)
+
     def _clear_ui(self):
         self._default_checks.clear()
         self._matrix.clear()
@@ -163,7 +210,7 @@ class CollectorsTab(QtWidgets.QWidget):
             if w:
                 w.deleteLater()
 
-    def refresh(self, collector_names: list[str], parser_names: list[str]):
+    def refresh(self, collector_names: list[str], parser_names: list[str], heavy_collectors: dict[str, str] | None = None):
         if self._matrix:
             saved = self.get_per_db_collectors()
             known = set(self._all_names)
@@ -182,9 +229,14 @@ class CollectorsTab(QtWidgets.QWidget):
 
         self._collector_names = list(collector_names)
         self._parser_names = list(parser_names)
+        if heavy_collectors is not None:
+            self._heavy_collectors = heavy_collectors
         self._initial_defaults &= set(self._all_names)
 
         self._db_names = list_setting_db_names()
+        live = set(self._db_names)
+        for gone in set(self._initial_state) - live:
+            del self._initial_state[gone]
         for db in self._db_names:
             if db not in self._initial_state:
                 sdb = SettingDB(setting_db_path(db))
@@ -225,6 +277,16 @@ class CollectorsTab(QtWidgets.QWidget):
         if any(set(per_db.get(db, [])) != self._initial_state.get(db, set()) for db in self._db_names):
             return True
         return set(self.get_default_collectors()) != self._initial_defaults
+
+    def revert(self):
+        for name, cb in self._default_checks.items():
+            cb.blockSignals(True)
+            cb.setChecked(name in self._initial_defaults)
+            cb.blockSignals(False)
+        for (name, db), cb in self._matrix.items():
+            cb.blockSignals(True)
+            cb.setChecked(name in self._initial_state.get(db, set()))
+            cb.blockSignals(False)
 
     def get_newly_disabled(self) -> list[tuple[str, str]]:
         disabled = []

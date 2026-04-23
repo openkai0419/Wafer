@@ -278,6 +278,16 @@ class CollectorsTab(QtWidgets.QWidget):
             return True
         return set(self.get_default_collectors()) != self._initial_defaults
 
+    def revert(self):
+        for name, cb in self._default_checks.items():
+            cb.blockSignals(True)
+            cb.setChecked(name in self._initial_defaults)
+            cb.blockSignals(False)
+        for (name, db), cb in self._matrix.items():
+            cb.blockSignals(True)
+            cb.setChecked(name in self._initial_state.get(db, set()))
+            cb.blockSignals(False)
+
     def get_newly_disabled(self) -> list[tuple[str, str]]:
         disabled = []
         per_db = self.get_per_db_collectors()

@@ -4,6 +4,8 @@ from PySide6 import QtWidgets, QtCore, QtGui
 
 from wafer.plugin import BasePanelPlugin
 from wafer.plugin.collector.base import BaseCollector
+from wafer.core.qt.image import numpy_to_qimage
+from wafer.plugin.imageloader.handler import image_loader_resolver
 from wafer.utils.formatting import dpix
 from wafer.utils.logs import AppLogger
 from wafer.utils.notifier import Notifier
@@ -154,9 +156,9 @@ class FlorenceSettingsWidget(QtWidgets.QWidget):
     def _set_preview_path(self, path: str):
         self._current_path = path
         self._preview_btn.setEnabled(True)
-        pixmap = QtGui.QPixmap(path)
-        if not pixmap.isNull():
-            self._original_pixmap = pixmap
+        arr = image_loader_resolver.load(path, 512)
+        if arr is not None:
+            self._original_pixmap = QtGui.QPixmap.fromImage(numpy_to_qimage(arr))
             self._update_thumb()
         else:
             self._original_pixmap = None

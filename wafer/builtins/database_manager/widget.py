@@ -355,11 +355,12 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
         Notifier.info(f"Database settings saved ({len(changed)} changed)")
 
     def _on_revert(self):
+        if not self.has_changes():
+            return
         self._detail_widget.reset(self._initial_paths)
         current = self._db_list.currentItem()
         if current:
             self._detail_widget.load(current.text())
-        Notifier.info(t("Changes reverted"))
 
     def _send_delete(self, pairs: list[tuple[str, str]], re_collect: bool):
         from ...core.commands.binding.instance_registry import InstanceRegistry

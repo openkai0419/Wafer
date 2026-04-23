@@ -331,9 +331,20 @@ class PluginManagerWidget(QtWidgets.QWidget):
             Command.run("win.restart_all")
 
     def _on_revert(self):
+        from .viewers_tab import REGISTRY_KEYS
+
+        enabled = self._ext_tab.collect_enabled()
+        orders = self._order_tab.get_orders()
+        if not self._has_plugin_changes(enabled, orders) and not self._collectors_tab.has_changes():
+            return
         self._ext_tab.revert(self._initial_enabled)
-        self._sync_tabs()
-        Notifier.info("Changes reverted")
+        registry_data = {key: self._ext_tab.collect_enabled_plugins(key) for key in REGISTRY_KEYS}
+        self._order_tab.revert(registry_data, self._compute_builtin_command_names(registry_data))
+        self._collectors_tab.revert()
+        c_names, d_names = self._collect_worker_names()
+        heavy = self._ext_tab.heavy_collector_map()
+        self._refresh_with_scroll(self._collectors_scroll, lambda: self._collectors_tab.refresh(c_names, d_names, heavy_collectors=heavy))
+        self._update_restart_label()
 
     @staticmethod
     def _compute_builtin_command_names(registry_data: dict) -> set[str]:

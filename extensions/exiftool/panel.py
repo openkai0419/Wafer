@@ -16,6 +16,8 @@ from wafer.core.lang.manager import t
 from wafer.utils.paths import list_setting_db_names, data_db_path
 from wafer.core.db.db_utils import apply_read_pragmas
 from wafer.core.qt.dispatcher import Dispatcher, CancelSlot
+from wafer.core.qt.image import numpy_to_qimage
+from wafer.plugin.imageloader.handler import image_loader_resolver
 from wafer.app.viewer.widgets.loading_overlay import OverlayLoadingIndicator
 from .settings import MODE_BLACKLIST, MODE_WHITELIST, SORT_NAME, SORT_COUNT
 from .settings import read_sort_config, write_sort_config
@@ -694,21 +696,21 @@ class _SamplePreviewTab(QtWidgets.QWidget):
                 return
             if cancel.is_cancelled():
                 return
-            qimage = QtGui.QImage(path)
-            pixmap = QtGui.QPixmap.fromImage(qimage) if qimage is not None and not qimage.isNull() else None
+            arr = image_loader_resolver.load(path, 512)
+            qimage = numpy_to_qimage(arr) if arr is not None else None
             if cancel.is_cancelled():
                 return
-            self._dispatcher.invoke(lambda: self._apply_preview(path, meta, pixmap, cancel))
+            self._dispatcher.invoke(lambda: self._apply_preview(path, meta, qimage, cancel))
 
         self._dispatcher.post(task)
 
-    def _apply_preview(self, path: str, meta: dict, pixmap: QtGui.QPixmap | None, cancel):
+    def _apply_preview(self, path: str, meta: dict, qimage: QtGui.QImage | None, cancel):
         if cancel.is_cancelled():
             return
         self._current_path = path
         self._meta = meta
-        if pixmap is not None:
-            self._thumb.set_source(pixmap)
+        if qimage is not None:
+            self._thumb.set_source(QtGui.QPixmap.fromImage(qimage))
         else:
             self._thumb.clear()
         self._rebuild_table()

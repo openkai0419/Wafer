@@ -18,6 +18,7 @@ from ...plugin import failed_installs, installer_queue
 from ...plugin.badges import ExtensionBadge, resolve_badge, badge_sort_key
 from ...core.qt.icon_engine import themed_icon
 from ...core.qt.dispatcher import Dispatcher
+from .readme_summary import extract_readme_summary
 
 _MAX_MD_FILES = 10
 
@@ -171,7 +172,7 @@ _BADGE_ICON_SIZE: dict[ExtensionBadge, int] = {
 
 
 class _ExtensionCard(QtWidgets.QFrame):
-    def __init__(self, folder_name: str, folder_path: str, dispatcher: Dispatcher, md_files: list[str], parent=None):
+    def __init__(self, folder_name: str, folder_path: str, dispatcher: Dispatcher, md_files: list[str], summary: str = "", parent=None):
         super().__init__(parent)
         self.folder_name = folder_name
         self.folder_path = folder_path
@@ -185,6 +186,14 @@ class _ExtensionCard(QtWidgets.QFrame):
 
         self._name_label = QtWidgets.QLabel(folder_name)
         self._name_label.setStyleSheet(f"font-weight: bold; font-size: {dpix(13)}px;")
+
+        self._summary_label = QtWidgets.QLabel(summary)
+        self._summary_label.setStyleSheet(f"color: #888; font-size: {dpix(11)}px;")
+        self._summary_label.setWordWrap(True)
+        self._summary_label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
+        self._summary_label.setContentsMargins(0, 0, 0, 0)
+        if not summary:
+            self._summary_label.hide()
 
         self._status_btn = QtWidgets.QPushButton()
         self._status_btn.setObjectName("status_btn")
@@ -248,7 +257,12 @@ class _ExtensionCard(QtWidgets.QFrame):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(dpix(10), dpix(8), dpix(10), dpix(8))
         layout.setSpacing(dpix(4))
-        layout.addLayout(header)
+        title_block = QtWidgets.QVBoxLayout()
+        title_block.setContentsMargins(0, 0, 0, 0)
+        title_block.setSpacing(dpix(1))
+        title_block.addLayout(header)
+        title_block.addWidget(self._summary_label)
+        layout.addLayout(title_block)
         layout.addWidget(self._progress)
         layout.addWidget(self._detail_label)
         layout.addWidget(self._log_toggle)
@@ -471,8 +485,9 @@ class ExtensionsTab(QtWidgets.QWidget):
                 if not os.path.isdir(folder) or name.startswith(".") or name == "__pycache__":
                     continue
                 md_files = sorted(f for f in os.listdir(folder) if f.lower().endswith(".md") and not f.startswith((".", "_")) and os.path.isfile(os.path.join(folder, f)))[:_MAX_MD_FILES]
+                summary = extract_readme_summary(folder)
                 state = resolve_install_state(folder)
-                results.append((name, folder, md_files, state))
+                results.append((name, folder, md_files, summary, state))
             return results
 
         def on_scan_complete(results):
@@ -486,7 +501,7 @@ class ExtensionsTab(QtWidgets.QWidget):
             failed = failed_installs.failed_names(plugin_dir)
             results.sort(key=lambda r: (badge_sort_key(r[0]), r[0]))
             separator_inserted = False
-            for name, folder, md_files, state in results:
+            for name, folder, md_files, summary, state in results:
                 badge = resolve_badge(name)
                 if badge == ExtensionBadge.EXTERNAL and not separator_inserted:
                     separator_inserted = True
@@ -494,7 +509,7 @@ class ExtensionsTab(QtWidgets.QWidget):
                     sep.setFrameShape(QtWidgets.QFrame.HLine)
                     sep.setFrameShadow(QtWidgets.QFrame.Sunken)
                     self._cards_layout.insertWidget(self._cards_layout.count() - 1, sep)
-                card = _ExtensionCard(name, folder, self._dispatcher, md_files)
+                card = _ExtensionCard(name, folder, self._dispatcher, md_files, summary)
                 card.set_install_callback(self._install_extension)
                 card.set_cancel_callback(self._cancel_extension)
                 card.set_checkbox_changed_callback(self._on_plugin_toggled)

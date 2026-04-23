@@ -92,6 +92,7 @@ Extensions are placed as folders under `extensions/`. `PluginLoader` auto-discov
 | **exiftool** | jpg, png, webp, tiff, heic, avif, jxl, raw, psd, etc. | Universal EXIF/IPTC/XMP metadata extraction via ExifTool |
 | **ffmpeg** | mp4, mkv, webm, mp3, flac, wav, etc. | Video/audio metadata extraction via ffprobe |
 | **ai_tagger** | *(images)* | WD14 model-based automatic tagging (ONNX, GPU accelerated) |
+| **florence** | *(images)* | Florence-2 vision-language captioning / tagging (GPU accelerated) |
 | **text_generation** | *(images with EXIF)* | NovelAI generation parameter extraction |
 
 #### UI
@@ -119,8 +120,8 @@ class MyCollector(BaseCollectorPlugin):
     NAME = "my_ext"
     EXTENSIONS = (".custom",)
 
-    def collect(self, path: str) -> CollectorResult:
-        return CollectorResult(meta_info={"key": "value"})
+    def process(self, path: str, file_info: tuple[float, int]) -> CollectorResult:
+        return CollectorResult(source=path, status=True, meta_info={"key": "value"})
 ```
 
 ## Data Files
@@ -137,10 +138,14 @@ Wafer's foundation (`wafer/`) is designed to be a shared core that benefits ever
 
 Extensions (`extensions/`) are yours to create, modify, and license however you wish. Each extension may include its own `LICENSE` file to specify different terms. If an extension does not include one, the root Apache-2.0 license applies.
 
-| Component | License | Reason |
+The Python source of every extension is Apache-2.0. Some extensions invoke runtime-downloaded third-party binaries or models whose own licenses differ; these are **not** redistributed in this repository (`extensions/*/lib/` is gitignored). See each extension's `NOTICE.md` for details.
+
+| Component | Python code | Runtime-downloaded binary / model |
 |---|---|---|
 | `wafer/` (core) | Apache-2.0 | — |
-| `extensions/video/` | GPL-2.0+ | libmpv / python-mpv (GPL-2.0+ default build) |
-| `extensions/exiftool/` | GPL-3.0 | ExifTool binary (GPL-3.0) |
-| `extensions/ffmpeg/` | GPL-3.0+ | FFmpeg/FFprobe binary (`--enable-gpl --enable-version3`) |
-| All other extensions | Apache-2.0 | Unless specified by their own `LICENSE` |
+| `extensions/video/` | Apache-2.0 | `libmpv-2.dll` — GPL-2.0+ (or LGPL-2.1+) |
+| `extensions/exiftool/` | Apache-2.0 | `exiftool.exe` — Artistic License / GPL ("same as Perl") |
+| `extensions/ffmpeg/` | Apache-2.0 | `ffmpeg.exe`, `ffprobe.exe` — GPL-3.0 (gyan.dev essentials build) |
+| `extensions/ai_tagger/` | Apache-2.0 | WD SwinV2 Tagger v3 — Apache-2.0 |
+| `extensions/florence/` | Apache-2.0 | Florence-2 model (Microsoft) — MIT |
+| All other extensions | Apache-2.0 | — |

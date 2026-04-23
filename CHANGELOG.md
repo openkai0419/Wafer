@@ -4,6 +4,57 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.6.4]
+### Added
+- **Florence-2 captioner extension** (`extensions/florence/`): singleton collector using Microsoft Florence-2 vision-language model with multi-task captioning (`<CAPTION>`, `<DETAILED_CAPTION>`, `<MORE_DETAILED_CAPTION>`), `base`/`large` variant selection, configurable `max_new_tokens`/`num_beams`, GPU/CPU fallback, idle engine unloading, and settings panel with drag-and-drop live preview — replaces BLIP captioner
+- **Deferred install pipeline**: Plugin Manager no longer runs pip in-process; installs are enqueued to `extensions/.installer_queue/` and processed by the tray on next startup
+- **`wafer/plugin/installer_queue.py`**: persistent JSON-backed install queue (`enqueue`/`dequeue`/`has_pending_queue`/`queued_names`)
+- **`wafer/plugin/install_status.py`**: cross-process install progress reporting (`InstallStatusWriter`, `read_status`) and user cancel flag (`request_cancel`, `is_cancel_requested`)
+- **`wafer/plugin/failed_installs.py`**: persistent record of failed install attempts (`mark_failed`, `failed_names`, `failure_info`)
+- **`wafer/plugin/startup_install.py`** (`run_pending_installs()`): tray-side processor that drains the install queue, terminates processes holding `.packages/` files, and writes phase status
+- **`wafer/plugin/badges.py`**: `ExtensionBadge` (`PREFERRED`/`HEAVY`/`EXTERNAL`) classification with `KNOWN_EXTENSIONS` registry and `badge_sort_key()` for ordering
+- **`wafer/ui/install_waiter.py`** (`wait_for_install_complete`): viewer-side splash that spawns/attaches to the tray installer, polls status, and shows live log with Cancel button
+- **`wafer/core/qt/tooltip.py`** (`InstantTooltipEventFilter`, `install_instant_tooltips()`): app-wide instant-tooltip event filter (opt-out via `wafer_disable_instant_tooltip` widget property)
+- **`wafer/core/qt/color_utils.py`** (`mix_colors()`): linear color blending utility for badge coloring
+- New themed icons `star`, `warning_triangle`, `external_link` in `wafer/core/qt/icon_engine.py`; `themed_icon()` accepts optional `color` override
+- **Two-lane TaskScheduler** (`wafer/app/indexer/scheduler.py`): immediate/background queues split at `TaskPriority.SCAN` threshold on separate threads so high-priority dispatch tasks aren't blocked by long scans
+- **`InstallSplash` log view + cancel button**: `show_log` / `cancel_label` constructor params; `set_message()`, `append_log()`, `replace_log()` with error/warning line colorization
+- **Heavy-extension UI guards**: install confirmation dialog for `HEAVY` badge cards, warning icon next to heavy collectors in `CollectorsTab`, multi-heavy enable warning
+- **`installer.install_requirements_only()` / `run_post_install()`**: install pipeline split into two callable phases; `cleanup_legacy_dirs()` removes obsolete `.pending/`/`.pip_staging/`
+- **`Node.is_registered`** property; `_send_to_broker()` returns `bool` and warns once on initial registration failure
+- **`AppProcess.terminate_cmd(wait=True)`**: terminate-and-wait variant used by tray/viewer restart paths
+- `OrderTab.revert()` / `CollectorsTab.revert()` for in-place revert in Plugin Manager
+- `_ExtensionCard` now shows a phase label, badge icon, and `Show/Hide Log` toggle with live `QPlainTextEdit` log view; visual separator between first-party and external extensions
+
+### Changed
+- **Installer simplified** (~830 → ~370 lines): removed staging-and-merge / deferred-pending / cross-extension version-negotiation machinery; `EmbeddedPython.pip_install()` installs directly into `extensions/.packages/` via `pip install --target ... --upgrade --upgrade-strategy only-if-needed` and streams stdout/stderr through `on_log`
+- **Install UX inverted**: Install button enqueues and immediately marks `RESTART_REQUIRED`; Cancel dequeues. Pip and `post_install` only run in the tray at startup
+- `install_extension()` / `install_requirements()` / `post_install()` accept `on_log` callback; `install_requirements()` returns plain `bool` (was tuple); `InstallResult.deferred` removed
+- `_run_subprocess()` drains both stdout and stderr, forwards each pip line via `AppLogger.debug` and `on_log`; failure messages include last 2000 bytes of stderr
+- **WD14 `post_install` simplified**: sequential model download; `onnxruntime-gpu` and `nvidia-cudnn-cu12` moved into `requirements.txt`. Idle engine timeout reduced from 120s to 30s
+- Numpy requirement loosened to `numpy>=2,<3` in `extensions/ai_tagger` and `extensions/image`
+- **Startup process model** (`main.py`): default and `--viewer` entry spawn tray, then `wait_for_install_complete()` before `load_plugins()`; `--tray` runs `run_pending_installs()` + `load_plugins()` and constructs the `QApplication`/tray icon before spawning indexer children
+- Tray/viewer restart paths (`restart_tray`, `restart_all`, `MainWindow._perform_system_restart()`) use `terminate_cmd(wait=True)`; `restart_tray` auto-promotes to `restart_all` when an install is queued
+- `AppProcess.base_command()` on Windows prefers `pythonw.exe`; `new_main()` and `ProcessMatcher.start_if_not_running()` apply `CREATE_NO_WINDOW`/`DETACHED_PROCESS`/`CREATE_NEW_PROCESS_GROUP` and `close_fds=True`
+- `AppLogger._forward()` skips forwarding until the IPC node is registered; `try_put()` uses raw `logging.getLogger("AppLog")` to avoid recursion
+- `PluginSettings.needs_restart()` consults `installer_queue.has_pending_queue()` (was `has_pending_packages()`)
+- `ExtensionsTab` sorts cards by badge (preferred → neutral → heavy → external) with separator before external extensions; restores `RESTART_REQUIRED`/`FAILED` state from queue and failed-installs records
+- ExifTool collector `_ensure_process()` stops the previous `ExifToolProcess` after starting a new one; `_extract()` extracts to a temp dir then moves into place; `ensure_exiftool()` validates both `exiftool.exe` and `exiftool_files/exiftool.pl` and repairs broken installs
+- WD14 and ExifTool preview widgets load images via `image_loader_resolver.load()` + `numpy_to_qimage()` (was `QPixmap`/`QImage` directly)
+- FFmpeg / Video `_run_7z()` and `wafer/_version.py` `git describe` add `CREATE_NO_WINDOW` flag on Windows (no console flash)
+- `_on_revert()` in Database Manager, WD14 settings, ExifTool settings, and Plugin Manager: silent no-op when nothing changed (removed "Changes reverted" toast)
+- `cleanup.bat`, `scripts/build.py`, `scripts/copy_clean_project.py` exclude/clean `.pending/` and `.pip_staging/` legacy directories
+- `conftest.py` vendored-module reload now restores original modules on `ImportError`
+- `pyproject.toml`: lint rules disabled for `extensions/**/lib/**` (vendored binaries)
+- `main.bat` no longer pauses on non-zero exit code
+
+### Removed
+- **BLIP captioner extension** (`extensions/blip_captioner/`) — replaced by `extensions/florence/`
+- Installer staging/pending machinery: `apply_pending_packages()`, `has_pending_packages()`, `_merge_or_defer()`, `_merge_dir()`, `_is_locked()`, `_remove_stale_packages()`, `_merge_requirements()`, `_collect_installed_extensions()`, `install_packages()`, `_PIP_STAGING`/`_PENDING_DIR` constants
+- `InstallResult.deferred` field
+- `PluginSettings.is_restart_pending()` / `set_restart_pending()` / `clear_restart_pending()` (use scope-based API)
+- `ExtensionsTab.installing_changed` signal and "Don't close while installing" warning label
+
 ## [v0.6.3]
 ### Added
 - **`SearchableMetaWidget`** (`wafer/ui/panel/searchable_meta_widget.py`): reusable metadata display widget with live search, keyword highlighting, long-value snippet extraction, and DPI-aware layout — replaces per-extension inline meta widgets

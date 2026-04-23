@@ -90,6 +90,7 @@ extension は `extensions/` フォルダに配置するだけで `PluginLoader` 
 | **exiftool** | jpg, png, webp, tiff, heic, avif, jxl, raw, psd 等 | ExifTool による汎用メタデータ抽出 |
 | **ffmpeg** | mp4, mkv, webm, mp3, flac, wav 等 | ffprobe による動画/音声メタデータ抽出 |
 | **ai_tagger** | *（画像）* | WD14 モデルによる自動タグ付け（ONNX, GPU 対応） |
+| **florence** | *（画像）* | Florence-2 による画像キャプション／タグ生成（GPU 対応） |
 | **text_generation** | *（EXIF 付き画像）* | NovelAI 生成パラメータの抽出（デフォルト無効） |
 
 #### UI
@@ -117,8 +118,8 @@ class MyCollector(BaseCollectorPlugin):
     NAME = "my_ext"
     EXTENSIONS = (".custom",)
 
-    def collect(self, path: str) -> CollectorResult:
-        return CollectorResult(meta_info={"key": "value"})
+    def process(self, path: str, file_info: tuple[float, int]) -> CollectorResult:
+        return CollectorResult(source=path, status=True, meta_info={"key": "value"})
 ```
 
 ## データファイル
@@ -135,10 +136,14 @@ Wafer の基盤（`wafer/`）は、すべての extension とユーザーに恩�
 
 extension（`extensions/`）は自由に作成・改変・ライセンス設定が可能です。各 extension は独自の `LICENSE` ファイルで異なる条件を指定できます。指定がない場合はルートの Apache-2.0 が適用されます。
 
-| コンポーネント | ライセンス | 理由 |
+各 extension の Python コードはすべて Apache-2.0 です。一部の extension は実行時にダウンロードされる外部バイナリやモデルを利用し、それらは独自のライセンスに従います。これらのバイナリ／モデルは本リポジトリには含まれません（`extensions/*/lib/` は `.gitignore` 対象）。詳細は各 extension の `NOTICE.md` を参照してください。
+
+| コンポーネント | Python コード | 実行時ダウンロードされるバイナリ／モデル |
 |---|---|---|
 | `wafer/`（コア） | Apache-2.0 | — |
-| `extensions/video/` | GPL-2.0+ | libmpv / python-mpv（GPL-2.0+ デフォルトビルド） |
-| `extensions/exiftool/` | GPL-3.0 | ExifTool バイナリ（GPL-3.0） |
-| `extensions/ffmpeg/` | GPL-3.0+ | FFmpeg/FFprobe バイナリ（`--enable-gpl --enable-version3`） |
-| その他の extension | Apache-2.0 | 独自 LICENSE がない場合 |
+| `extensions/video/` | Apache-2.0 | `libmpv-2.dll` — GPL-2.0+（または LGPL-2.1+） |
+| `extensions/exiftool/` | Apache-2.0 | `exiftool.exe` — Artistic License / GPL（"Perl と同条件"） |
+| `extensions/ffmpeg/` | Apache-2.0 | `ffmpeg.exe`, `ffprobe.exe` — GPL-3.0（gyan.dev essentials ビルド） |
+| `extensions/ai_tagger/` | Apache-2.0 | WD SwinV2 Tagger v3 — Apache-2.0 |
+| `extensions/florence/` | Apache-2.0 | Florence-2 モデル（Microsoft）— MIT |
+| その他の extension | Apache-2.0 | — |

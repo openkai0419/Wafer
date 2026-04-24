@@ -19,6 +19,7 @@ class ViewerIpcBridge(QtCore.QObject):
     db_created = QtCore.Signal(str)
     db_deleted = QtCore.Signal(str)
     remote_log_received = QtCore.Signal(str, str, str, str)
+    tags_updated = QtCore.Signal(dict)
 
     def __init__(self, node: Node, parent: QtCore.QObject | None = None):
         super().__init__(parent)
@@ -55,6 +56,7 @@ class ViewerIpcBridge(QtCore.QObject):
         n.subscribe("db.created", self._on_db_created)
         n.subscribe("db.deleted", self._on_db_deleted)
         n.subscribe("dev.log", self._on_dev_log)
+        n.subscribe("tags.updated", self._on_tags_updated)
 
     def _invoke(self, slot: str, *args):
         try:
@@ -109,6 +111,11 @@ class ViewerIpcBridge(QtCore.QObject):
 
     def _on_db_deleted(self, msg):
         return self._invoke("_emit_db_deleted", QtCore.Q_ARG(str, str(msg.payload)))
+
+    def _on_tags_updated(self, msg):
+        p = msg.payload if isinstance(msg.payload, dict) else {}
+        self.tags_updated.emit(p)
+        return True
 
     def _on_dev_log(self, msg):
         p = msg.payload

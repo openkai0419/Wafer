@@ -4,6 +4,7 @@ from PySide6 import QtCore
 from natsort import natsorted
 
 from ....utils.formatting import format_aspect, format_size_detail, format_timestamp
+from ....utils.paths import db_name_from_path
 from ....core.db.query import FileSearchEngine
 from ....plugin.viewer.handler import viewer_resolver
 from ....plugin.viewer.base import WidgetViewerPlugin as _WidgetViewerPlugin
@@ -16,10 +17,13 @@ from .content_viewer import ContentViewerWidget, _DEFAULT_WIDGET_NAME
 from .meta_panel import MetaViewerWidget
 from ..grid.cachemanager import MemoryLimitedImageCache, fullsize_key
 from ....core.app_settings import app_settings
+from ....core.color.theme import ThemeManager
 
 
-def _format_meta(engine, path):
-    file_rec, tags, meta_infos = engine.get_all_metadata(path)
+def _format_meta(engine, path, dbpath):
+    file_rec, file_hash, tags_with_lock, meta_infos = engine.get_all_metadata(path)
+    tags = {k: v for k, (v, _) in tags_with_lock.items()}
+    tag_locks = {k: lk for k, (_, lk) in tags_with_lock.items()}
     file_rec.pop("path", None)
     if file_rec.get("aspect_ratio"):
         file_rec["aspect_ratio"] = format_aspect(file_rec["aspect_ratio"])
@@ -47,12 +51,22 @@ def _format_meta(engine, path):
         prefix_groups[prefix] = {k: d[k] for k in natsorted(d)}
     collector_status = engine.get_collection_status(path)
     if collector_status:
+        palette = ThemeManager.instance().palette
         parts = []
         for name, status in sorted(collector_status):
-            color = "#4caf50" if status == "ok" else "#f44336"
+            color = palette.success if status == "ok" else palette.error
             parts.append(f'<span style="color:{color}">\u25cf</span> {name}')
         file_rec["collected by"] = "&nbsp;&nbsp;".join(parts)
-    return {"source": file_rec, "file": standard, "tag": tags, "prefixed": prefix_groups}
+    return {
+        "source": file_rec,
+        "file": standard,
+        "tag": tags,
+        "prefixed": prefix_groups,
+        "_path": path,
+        "_file_hash": file_hash,
+        "_tag_locks": tag_locks,
+        "_db_name": db_name_from_path(dbpath),
+    }
 
 
 class FileViewerController(QtCore.QObject):
@@ -219,7 +233,7 @@ class FileViewerController(QtCore.QObject):
 
         def task():
             engine = FileSearchEngine(dbpath)
-            result = _format_meta(engine, path)
+            result = _format_meta(engine, path, dbpath)
             if cancel.is_cancelled():
                 return
             self._dispatcher.invoke(lambda: self._on_meta_ready(cancel, path, result))

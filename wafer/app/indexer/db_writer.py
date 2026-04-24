@@ -84,6 +84,15 @@ class DatabaseWriter:
         return result
 
     @profiler.profile
+    def apply_user_tags(self, path: str, upserts, deletes, *, lock_only: bool = False, file_hash: str = "", renames=None):
+        result = self._db.apply_user_tags(
+            path, upserts, deletes,
+            lock_only=lock_only, file_hash=file_hash, renames=renames,
+        )
+        self._db.try_checkpoint("PASSIVE")
+        return result
+
+    @profiler.profile
     def upsert_parser_results(self, meta_info_entries, tag_entries, collector_status_entries, delete_entries=()):
         self._db.upsert_collection_results(
             [],

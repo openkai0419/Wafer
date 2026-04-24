@@ -54,6 +54,12 @@ def setting_db_path(name):
     return resolve_data_path(f"dirs/{name}.db")
 
 
+def db_name_from_path(dbpath):
+    if not dbpath:
+        return ""
+    return stem(dbpath)
+
+
 def list_data_db_names():
     return [stem(a) for a in list_files(resolve_data_path("data/"), ".db")]
 

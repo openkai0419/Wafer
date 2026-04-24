@@ -99,7 +99,11 @@ def test_builtin_section_is_collapsible_card(qtbot):
     for key in ("source", "file", "tag", "unknown_prefix"):
         card = w._sections[key]
         assert isinstance(card, CollapsibleCard)
-        assert isinstance(card.content_widget(), MetaRowWidget)
+        if key == "tag":
+            from wafer.app.viewer.preview.editable_tag_card import EditableTagCard
+            assert isinstance(card, EditableTagCard)
+        else:
+            assert isinstance(card.content_widget(), MetaRowWidget)
 
 
 def test_section_titles_are_lowercase(qtbot):

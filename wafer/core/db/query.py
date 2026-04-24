@@ -358,9 +358,9 @@ class FileSearchEngine:
         return {r["key"]: r["value"] for r in rows}
 
     @profiler.profile
-    def get_tags_by_path(self, path):
+    def get_tags_with_lock_by_path(self, path):
         if not self._connect_if_needed():
-            return {}
+            return None, {}
         cur = self.conn.cursor()
         norm_path = self._normalize_path(path)
         row = cur.execute(
@@ -373,10 +373,12 @@ class FileSearchEngine:
             (norm_path,),
         ).fetchone()
         if not row:
-            return {}
+            return None, {}
         fid = row["file_hash"]
-        rows = cur.execute("SELECT key, value FROM tags WHERE file_hash = ?", (fid,)).fetchall()
-        return {r["key"]: r["value"] for r in rows}
+        rows = cur.execute(
+            "SELECT key, value, locked FROM tags WHERE file_hash = ?", (fid,)
+        ).fetchall()
+        return fid, {r["key"]: (r["value"], bool(r["locked"])) for r in rows}
 
     @profiler.profile
     def get_file_record(self, path):
@@ -405,7 +407,29 @@ class FileSearchEngine:
         return dict(row) if row else {}
 
     def get_all_metadata(self, path):
-        return [self.get_file_record(path), self.get_tags_by_path(path), self.get_meta_info_by_path(path)]
+        if not self._connect_if_needed():
+            return {}, None, {}, {}
+        cur = self.conn.cursor()
+        norm_path = self._normalize_path(path)
+        file_row = cur.execute("SELECT * FROM files WHERE path = ?", (norm_path,)).fetchone()
+        if not file_row:
+            return {}, None, {}, {}
+        file_record = dict(file_row)
+        meta_rows = cur.execute(
+            "SELECT key, value FROM meta_info WHERE path = ?", (norm_path,)
+        ).fetchall()
+        meta_info = {r["key"]: r["value"] for r in meta_rows}
+        src_row = cur.execute(
+            "SELECT file_hash FROM sources WHERE source = ?", (file_record.get("source"),)
+        ).fetchone()
+        if not src_row or not src_row["file_hash"]:
+            return file_record, None, {}, meta_info
+        file_hash = src_row["file_hash"]
+        tag_rows = cur.execute(
+            "SELECT key, value, locked FROM tags WHERE file_hash = ?", (file_hash,)
+        ).fetchall()
+        tags_with_lock = {r["key"]: (r["value"], bool(r["locked"])) for r in tag_rows}
+        return file_record, file_hash, tags_with_lock, meta_info
 
     @profiler.profile
     def get_collection_status(self, path):

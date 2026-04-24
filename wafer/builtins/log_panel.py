@@ -8,23 +8,30 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from ..plugin.panel.base import BasePanelPlugin
 from ..utils.formatting import dpix
 from ..core.lang.manager import t
+from ..core.color.theme import ThemeManager
 
 MAX_LOG_LINES = 2000
-
-LEVEL_COLORS = {
-    "critical": QtGui.QColor(255, 60, 60),
-    "error": QtGui.QColor(255, 80, 80),
-    "warning": QtGui.QColor(255, 200, 60),
-    "info": QtGui.QColor(210, 210, 210),
-    "debug": QtGui.QColor(140, 140, 140),
-}
 
 LEVELS = ["debug", "info", "warning", "error", "critical"]
 
 _LOG_FONT = QtGui.QFont("Consolas", 9)
 _LOG_FONT.setStyleHint(QtGui.QFont.Monospace)
 
-_LOG_STYLE = "QPlainTextEdit { background-color: #1e1e1e; color: #cccccc; }"
+
+def _level_colors() -> dict[str, QtGui.QColor]:
+    p = ThemeManager.instance().palette
+    return {
+        "critical": QtGui.QColor(p.error),
+        "error": QtGui.QColor(p.error),
+        "warning": QtGui.QColor(p.warning),
+        "info": QtGui.QColor(p.text_primary),
+        "debug": QtGui.QColor(p.text_tertiary),
+    }
+
+
+def _log_style() -> str:
+    p = ThemeManager.instance().palette
+    return f"QPlainTextEdit {{ background-color: {p.bg_primary}; color: {p.text_primary}; }}"
 
 
 def _parse_src(src: str) -> tuple[str, str]:
@@ -48,10 +55,14 @@ class _LogTab(QtWidgets.QPlainTextEdit):
         self.setMaximumBlockCount(MAX_LOG_LINES)
         self.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
         self.setFont(_LOG_FONT)
-        self.setStyleSheet(_LOG_STYLE)
+        self.setStyleSheet(_log_style())
+
+    def apply_theme(self) -> None:
+        self.setStyleSheet(_log_style())
 
     def append_entry(self, entry: dict, auto_scroll: bool):
-        color = LEVEL_COLORS.get(entry["level"], LEVEL_COLORS["info"])
+        colors = _level_colors()
+        color = colors.get(entry["level"], colors["info"])
         level_tag = entry["level"].upper().ljust(8)
         src_tag = f"[{entry['src']}]"
         line = f"{entry['time']} {level_tag} {src_tag} {entry['text']}"
@@ -79,6 +90,13 @@ class LogPanel(QtWidgets.QWidget):
         self._src_tabs: dict[str, _LogTab] = {}
         self._known_dbs: set[str] = set()
         self._build_ui()
+        ThemeManager.instance().on_theme_changed.connect(self._on_theme_changed)
+
+    def _on_theme_changed(self, _palette=None) -> None:
+        self._all_tab.apply_theme()
+        for tab in self._src_tabs.values():
+            tab.apply_theme()
+        self._rebuild_all_tabs()
 
     def _build_ui(self):
         layout = QtWidgets.QVBoxLayout(self)

@@ -53,6 +53,7 @@ _TABLES = (
         key TEXT NOT NULL,
         value TEXT,
         value_num REAL,
+        locked INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY(file_hash, key),
         FOREIGN KEY(file_hash) REFERENCES hash_index(file_hash) ON UPDATE CASCADE ON DELETE CASCADE
     )""",
@@ -124,7 +125,15 @@ _SQL_UPSERT_TAGS = """INSERT INTO tags (file_hash, key, value, value_num)
     VALUES (?, ?, ?, ?)
     ON CONFLICT(file_hash, key) DO UPDATE SET
         value     = excluded.value,
-        value_num = excluded.value_num"""
+        value_num = excluded.value_num
+    WHERE tags.locked = 0"""
+
+_SQL_UPSERT_USER_TAGS = """INSERT INTO tags (file_hash, key, value, value_num, locked)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(file_hash, key) DO UPDATE SET
+        value     = excluded.value,
+        value_num = excluded.value_num,
+        locked    = excluded.locked"""
 
 _SQL_UPSERT_COLLECTION_STATUS = """INSERT INTO collection_status (source, collector, status, collected_at)
     VALUES (?, ?, ?, ?)
@@ -365,12 +374,47 @@ class FileDB:
                 [(h,) for h in file_hashes],
             )
 
+    @staticmethod
+    def _migrate_tags_on_hash_change(cur, source_entries):
+        if not source_entries:
+            return
+        new_hash_by_path = {e[0]: e[1] for e in source_entries if e[0] and e[1]}
+        if not new_hash_by_path:
+            return
+        paths = list(new_hash_by_path.keys())
+        old_hash_by_path: dict[str, str] = {}
+        for i in range(0, len(paths), 900):
+            chunk = paths[i : i + 900]
+            ph = ",".join(["?"] * len(chunk))
+            rows = cur.execute(
+                f"SELECT source, file_hash FROM sources WHERE source IN ({ph})", chunk
+            ).fetchall()
+            for src, fh in rows:
+                if fh:
+                    old_hash_by_path[src] = fh
+        migrations = [
+            (new_hash_by_path[p], old)
+            for p, old in old_hash_by_path.items()
+            if new_hash_by_path[p] != old
+        ]
+        if not migrations:
+            return
+        for new_hash, old_hash in migrations:
+            cur.execute(
+                """INSERT INTO tags (file_hash, key, value, value_num, locked)
+                SELECT ?, key, value, value_num, locked FROM tags WHERE file_hash = ?
+                ON CONFLICT(file_hash, key) DO NOTHING""",
+                (new_hash, old_hash),
+            )
+        AppLogger.info(f"[DB] Migrated tags for {len(migrations)} sources with content change")
+
     @profiler.profile
     def upsert_batches(self, source_entries, image_entries, meta_info_entries, tag_entries):
         with self._write_lock, self.conn:
             cur = self.conn.cursor()
             try:
                 self._ensure_hash_indexes(cur, source_entries, tag_entries)
+                self._migrate_tags_on_hash_change(cur, source_entries)
                 cur.executemany(_SQL_UPSERT_SOURCES, source_entries)
                 if image_entries:
                     cur.executemany(_SQL_UPSERT_FILES, image_entries)
@@ -387,6 +431,7 @@ class FileDB:
             cur = self.conn.cursor()
             try:
                 self._ensure_hash_indexes(cur, source_entries)
+                self._migrate_tags_on_hash_change(cur, source_entries)
                 cur.executemany(_SQL_UPSERT_SOURCES, source_entries)
                 if image_entries:
                     cur.executemany(_SQL_UPSERT_FILES_COALESCE, image_entries)
@@ -585,7 +630,7 @@ class FileDB:
             try:
                 cur.execute("DELETE FROM meta_info WHERE key LIKE ? ESCAPE '\\'", (pattern,))
                 meta_deleted = cur.execute("SELECT changes()").fetchone()[0]
-                cur.execute("DELETE FROM tags WHERE key LIKE ? ESCAPE '\\'", (pattern,))
+                cur.execute("DELETE FROM tags WHERE key LIKE ? ESCAPE '\\' AND locked = 0", (pattern,))
                 tags_deleted = cur.execute("SELECT changes()").fetchone()[0]
                 if re_collect:
                     cur.execute(
@@ -613,7 +658,7 @@ class FileDB:
                     placeholders = ",".join(["?"] * len(chunk))
                     cur.execute(f"DELETE FROM meta_info WHERE key IN ({placeholders})", chunk)
                     meta_deleted += cur.execute("SELECT changes()").fetchone()[0]
-                    cur.execute(f"DELETE FROM tags WHERE key IN ({placeholders})", chunk)
+                    cur.execute(f"DELETE FROM tags WHERE key IN ({placeholders}) AND locked = 0", chunk)
                     tags_deleted += cur.execute("SELECT changes()").fetchone()[0]
             finally:
                 cur.close()
@@ -684,11 +729,98 @@ class FileDB:
                     )
                     if file_hash:
                         cur.execute(
-                            f"DELETE FROM tags WHERE file_hash = ? AND key IN ({placeholders})",
+                            f"DELETE FROM tags WHERE file_hash = ? AND key IN ({placeholders}) AND locked = 0",
                             [file_hash] + keys,
                         )
             finally:
                 cur.close()
+
+    def apply_user_tags(
+        self,
+        path: str,
+        upserts: list[tuple[str, str, float | None, int]],
+        deletes: list[str],
+        *,
+        lock_only: bool = False,
+        file_hash: str = "",
+        renames: list[tuple[str, str, str, float | None, int]] | None = None,
+    ) -> tuple[str | None, list[str], list[str]]:
+        applied: list[str] = []
+        deleted: list[str] = []
+        renames = list(renames or [])
+        resolved_hash: str | None = None
+        with self._write_lock, self.conn:
+            cur = self.conn.cursor()
+            try:
+                if file_hash:
+                    row = cur.execute(
+                        "SELECT 1 FROM hash_index WHERE file_hash = ?", (file_hash,)
+                    ).fetchone()
+                    if row:
+                        resolved_hash = file_hash
+                if resolved_hash is None:
+                    row = cur.execute(
+                        "SELECT file_hash FROM sources WHERE source = ?", (path,)
+                    ).fetchone()
+                    if row and row[0]:
+                        resolved_hash = row[0]
+                if resolved_hash is None:
+                    AppLogger.warning(
+                        f"[DB] apply_user_tags: not found path={path} hash={file_hash}"
+                    )
+                    return None, [], []
+                for (old_key, new_key, value, value_num, locked) in renames:
+                    if not old_key or not new_key or old_key == new_key:
+                        continue
+                    exists = cur.execute(
+                        "SELECT 1 FROM tags WHERE file_hash = ? AND key = ?",
+                        (resolved_hash, new_key),
+                    ).fetchone()
+                    if exists:
+                        AppLogger.warning(
+                            f"[DB] apply_user_tags: rename collision skipped {old_key}->{new_key}"
+                        )
+                        continue
+                    cur.execute(
+                        "UPDATE tags SET key = ?, value = ?, value_num = ?, locked = ? "
+                        "WHERE file_hash = ? AND key = ?",
+                        (new_key, value, value_num, locked, resolved_hash, old_key),
+                    )
+                    if cur.execute("SELECT changes()").fetchone()[0] > 0:
+                        applied.append(new_key)
+                        deleted.append(old_key)
+                if upserts:
+                    if lock_only:
+                        for (k, _v, _vn, lk) in upserts:
+                            cur.execute(
+                                "UPDATE tags SET locked = ? WHERE file_hash = ? AND key = ?",
+                                (lk, resolved_hash, k),
+                            )
+                            if cur.execute("SELECT changes()").fetchone()[0] > 0:
+                                applied.append(k)
+                    else:
+                        entries = [(resolved_hash, k, v, vn, lk) for (k, v, vn, lk) in upserts]
+                        cur.executemany(_SQL_UPSERT_USER_TAGS, entries)
+                        applied.extend(k for (k, _, _, _) in upserts)
+                if deletes:
+                    placeholders = ",".join(["?"] * len(deletes))
+                    cur.execute(
+                        f"DELETE FROM tags WHERE file_hash = ? AND key IN ({placeholders}) AND locked = 0",
+                        [resolved_hash] + list(deletes),
+                    )
+                    if cur.execute("SELECT changes()").fetchone()[0] > 0:
+                        rows = cur.execute(
+                            f"SELECT key FROM tags WHERE file_hash = ? AND key IN ({placeholders})",
+                            [resolved_hash] + list(deletes),
+                        ).fetchall()
+                        remaining = {r[0] for r in rows}
+                        deleted.extend(k for k in deletes if k not in remaining)
+            finally:
+                cur.close()
+        AppLogger.info(
+            f"[DB] apply_user_tags path={path} hash={resolved_hash} renames={len(renames)} upserts={len(applied)} deletes={len(deleted)}"
+        )
+        return resolved_hash, applied, deleted
 
     def find_sources_with_trigger_keys(self, trigger_keys: tuple[str, ...], parser_status_name: str) -> list[str]:
         if not trigger_keys:

@@ -27,22 +27,24 @@ class InstantTooltipEventFilter(QtCore.QObject):
         self._current_target = None
 
     def eventFilter(self, obj, event):
-        if bool(getattr(obj, "property", lambda *_: False)(_DISABLED_PROPERTY)):
-            return super().eventFilter(obj, event)
+        if not isinstance(event, QtCore.QEvent):
+            return False
         if not isinstance(obj, (QtWidgets.QWidget, QtWidgets.QGraphicsObject, QtWidgets.QGraphicsWidget)):
-            return super().eventFilter(obj, event)
+            return False
+        if bool(getattr(obj, "property", lambda *_: False)(_DISABLED_PROPERTY)):
+            return False
 
         text = _tooltip_text(obj)
         if not text:
             if self._current_target is obj:
                 QtWidgets.QToolTip.hideText()
                 self._current_target = None
-            return super().eventFilter(obj, event)
+            return False
 
         event_type = event.type()
         if event_type in (QtCore.QEvent.Enter, QtCore.QEvent.HoverEnter, QtCore.QEvent.MouseMove, QtCore.QEvent.HoverMove):
             self._show_tooltip(obj, text, _global_pos(event))
-            return super().eventFilter(obj, event)
+            return False
         if event_type == QtCore.QEvent.ToolTip:
             self._show_tooltip(obj, text, _global_pos(event))
             return True
@@ -50,7 +52,7 @@ class InstantTooltipEventFilter(QtCore.QObject):
             if self._current_target is obj:
                 QtWidgets.QToolTip.hideText()
                 self._current_target = None
-        return super().eventFilter(obj, event)
+        return False
 
     def _show_tooltip(self, obj, text: str, global_pos: QtCore.QPoint):
         if isinstance(obj, QtWidgets.QWidget):

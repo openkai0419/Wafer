@@ -11,16 +11,28 @@ def _rgba(color, alpha: float) -> str:
     return f"rgba({color.red()},{color.green()},{color.blue()},{alpha})"
 
 
+def _mix(c1, c2, ratio: float = 0.5):
+    from PySide6 import QtGui
+
+    return QtGui.QColor(
+        int(c1.red() * (1 - ratio) + c2.red() * ratio),
+        int(c1.green() * (1 - ratio) + c2.green() * ratio),
+        int(c1.blue() * (1 - ratio) + c2.blue() * ratio),
+    )
+
+
 @dataclass(frozen=True)
 class ThemePalette:
     bg_primary: str
     bg_secondary: str
+    bg_tertiary: str
     bg_elevated: str
     bg_hover: str
     bg_pressed: str
 
     text_primary: str
     text_secondary: str
+    text_tertiary: str
     text_muted: str
     text_accent: str
 
@@ -65,11 +77,13 @@ class ThemePalette:
         return ThemePalette(
             bg_primary=_hex(window),
             bg_secondary=_hex(base),
+            bg_tertiary=_hex(_mix(window, base, 0.5)),
             bg_elevated=_hex(base),
             bg_hover=_rgba(overlay, 0.08 if dark else 0.06),
             bg_pressed=_rgba(overlay, 0.15 if dark else 0.12),
             text_primary=_hex(window_text),
             text_secondary=_hex(mid if not dark else midlight),
+            text_tertiary=_hex(_mix(window_text, mid if not dark else midlight, 0.5)),
             text_muted=_hex(muted),
             text_accent=_hex(accent),
             accent="#3B80FF",
@@ -86,11 +100,13 @@ class ThemePalette:
 DARK = ThemePalette(
     bg_primary="#1e1e1e",
     bg_secondary="#2b2b2b",
+    bg_tertiary="#252525",
     bg_elevated="#2b2b2b",
     bg_hover="rgba(255,255,255,0.08)",
     bg_pressed="rgba(255,255,255,0.15)",
     text_primary="#ccc",
     text_secondary="#aaa",
+    text_tertiary="#999",
     text_muted="#888",
     text_accent="#7cb3ff",
     accent="#3B80FF",
@@ -106,11 +122,14 @@ DARK = ThemePalette(
 LIGHT = ThemePalette(
     bg_primary="#ffffff",
     bg_secondary="#f5f5f5",
+    bg_tertiary="#fafafa",
     bg_elevated="#ffffff",
     bg_hover="rgba(0,0,0,0.06)",
     bg_pressed="rgba(0,0,0,0.12)",
     text_primary="#1e1e1e",
     text_secondary="#555",
+    text_tertiary="#777",
+
     text_muted="#888",
     text_accent="#1a73e8",
     accent="#1a73e8",

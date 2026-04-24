@@ -10,6 +10,7 @@ from ....core.qt.dispatcher import Dispatcher, CancelToken
 from ....core.qt.thread import utility_pool
 from ....plugin.query.composer import SearchComposer
 from ....builtins.filters import DirectoryFilter
+from ....builtins.sorts import NaturalPathSort
 from .file_model import FileViewModel
 from ..grid.items import GridItemModel
 
@@ -31,7 +32,6 @@ class FileListProvider(QtCore.QObject):
         self._file_model = file_model
         self._grid_items = grid_items
         self._mode = ListMode.SYNC
-        self._search_service = None
         self._composer = SearchComposer()
         self._dispatcher = Dispatcher(utility_pool)
         self._dir_cancel: CancelToken | None = None
@@ -43,9 +43,6 @@ class FileListProvider(QtCore.QObject):
     def set_mode(self, mode: ListMode):
         self._cancel_pending()
         self._mode = mode
-
-    def set_search_service(self, service):
-        self._search_service = service
 
     def on_search_results(self, paths: list[str], sources: list[str]):
         if self._mode == ListMode.SYNC:
@@ -68,8 +65,8 @@ class FileListProvider(QtCore.QObject):
     def _query_directory(self, path: str):
         self._cancel_pending()
         directory = str(Path(path).parent)
-        sort_plugin = self._search_service.resolve_sort()
-        ascending = self._search_service.get("ascending", True)
+        sort_plugin = NaturalPathSort
+        ascending = True
         dbpath = self._file_model.dbpath
         if not dbpath:
             return

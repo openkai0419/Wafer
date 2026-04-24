@@ -94,10 +94,6 @@ class TestDirMode:
 
     def test_on_file_set_sets_path_immediately(self, provider, file_model):
         provider.set_mode(ListMode.DIR)
-        mock_search = MagicMock()
-        mock_search.resolve_sort.return_value = None
-        mock_search.get.return_value = True
-        provider.set_search_service(mock_search)
         file_model._dbpath_getter = lambda: ":memory:"
         provider.on_file_set("/dir/test.jpg")
         assert file_model.path() == "/dir/test.jpg"
@@ -140,3 +136,21 @@ class TestDirMode:
         result = (["/dir/a.jpg", "/dir/b.jpg"], ["s1", "s2"], [1.0, 1.0])
         provider._on_dir_ready(result, cancel)
         assert file_model.paths == ["old"]
+
+    def test_query_directory_uses_path_sort_ascending(self, provider, file_model):
+        from wafer.builtins.sorts import NaturalPathSort
+
+        provider.set_mode(ListMode.DIR)
+        file_model._dbpath_getter = lambda: ":memory:"
+        captured = {}
+
+        def fake_post(task, *args, **kwargs):
+            captured["task"] = task
+
+        with patch.object(provider._composer, "execute") as mock_exec, patch.object(provider._dispatcher, "post", side_effect=fake_post):
+            mock_exec.return_value = ([], [], [])
+            provider._query_directory("/dir/test.jpg")
+            captured["task"]()
+            args, _ = mock_exec.call_args
+            assert args[2] is NaturalPathSort
+            assert args[3] is True

@@ -537,3 +537,32 @@ def _draw_external_link(p: QPainter, r: QRectF, color: QColor):
     arm = w * 0.25
     p.drawLine(QPointF(ax - arm, ay), QPointF(ax, ay))
     p.drawLine(QPointF(ax, ay), QPointF(ax, ay + arm))
+
+
+def _draw_lock_body(p: QPainter, r: QRectF, color: QColor, shackle_x_offset: float):
+    lw = max(1.2, min(r.width(), r.height()) * 0.10)
+    pen = QPen(color, lw)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    p.setPen(pen)
+    p.setBrush(color)
+    w, h = r.width(), r.height()
+    body = QRectF(r.left() + w * 0.15, r.top() + h * 0.45, w * 0.70, h * 0.50)
+    p.drawRoundedRect(body, w * 0.08, w * 0.08)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    shackle_w = w * 0.50
+    shackle = QRectF(r.left() + (w - shackle_w) / 2 + shackle_x_offset, r.top() + h * 0.10, shackle_w, h * 0.45)
+    path = QPainterPath()
+    path.arcMoveTo(shackle, 0)
+    path.arcTo(shackle, 0, 180)
+    p.drawPath(path)
+
+
+@_register("lock", padding=0.10)
+def _draw_lock(p: QPainter, r: QRectF, color: QColor):
+    _draw_lock_body(p, r, color, 0.0)
+
+
+@_register("lock_open", padding=0.10)
+def _draw_lock_open(p: QPainter, r: QRectF, color: QColor):
+    _draw_lock_body(p, r, color, r.width() * 0.30)

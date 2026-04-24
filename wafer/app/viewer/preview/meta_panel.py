@@ -11,6 +11,7 @@ from ....core.state import StateStore
 from ....core.color.theme import ThemeManager
 from ....core.lang.manager import t
 from ....ui.panel.meta_viewer import MetaRowWidget, CollapsibleCard
+from .editable_tag_card import EditableTagCard
 
 _FIXED_SECTION_KEYS = ("source", "file", "tag")
 
@@ -110,7 +111,10 @@ class MetaViewerWidget(QtWidgets.QWidget):
         for key in section_order:
             data = self._data_for_key(meta, prefixed, key)
 
-            if key in plugins:
+            if key == "tag":
+                card = EditableTagCard(parent=self._inner)
+                self._update_tag_card(card, meta)
+            elif key in plugins:
                 card = plugins[key].create_card(self._inner)
                 plugins[key].update_data(data)
             else:
@@ -140,6 +144,9 @@ class MetaViewerWidget(QtWidgets.QWidget):
         for key, card in self._sections.items():
             data = self._data_for_key(meta, prefixed, key)
 
+            if key == "tag" and isinstance(card, EditableTagCard):
+                self._update_tag_card(card, meta)
+                continue
             if key in plugins:
                 plugins[key].update_data(data)
             elif isinstance(card, CollapsibleCard):
@@ -161,6 +168,14 @@ class MetaViewerWidget(QtWidgets.QWidget):
         if key in _FIXED_SECTION_KEYS:
             return meta.get(key, {})
         return prefixed.get(key, {})
+
+    def _update_tag_card(self, card: EditableTagCard, meta: dict):
+        tags = meta.get("tag", {}) or {}
+        locks = meta.get("_tag_locks", {}) or {}
+        path = meta.get("_path", "") or ""
+        file_hash = meta.get("_file_hash", "") or ""
+        db = meta.get("_db_name", "") or ""
+        card.update_data(tags, locks, None, path, file_hash, db)
 
     def _on_section_toggled(self, key: str, expanded: bool):
         self._collapse_state[key] = expanded

@@ -1,4 +1,112 @@
 {
+  "Add new tag": {
+    "en": "Add new tag",
+    "ja": ""
+  },
+  "Value:": {
+    "en": "Value:",
+    "ja": ""
+  },
+  "Double-click to edit": {
+    "en": "Double-click to edit",
+    "ja": ""
+  },
+  "Mark for deletion": {
+    "en": "Mark for deletion",
+    "ja": ""
+  },
+  "Save tags": {
+    "en": "Save tags",
+    "ja": ""
+  },
+  "Duplicate keys remain after edits. Please fix and try again.": {
+    "en": "Duplicate keys remain after edits. Please fix and try again.",
+    "ja": ""
+  },
+  "Key already exists; will be auto-renamed on add.": {
+    "en": "Key already exists; will be auto-renamed on add.",
+    "ja": ""
+  },
+  "Tag edit failed: file hash unknown": {
+    "en": "Tag edit failed: file hash unknown",
+    "ja": ""
+  },
+  "Tag edit failed: IPC node unavailable": {
+    "en": "Tag edit failed: IPC node unavailable",
+    "ja": ""
+  },
+  "Tag edit send failed": {
+    "en": "Tag edit send failed",
+    "ja": ""
+  },
+  "Tag edit timed out": {
+    "en": "Tag edit timed out",
+    "ja": ""
+  },
+  "All keys": {
+    "en": "All keys",
+    "ja": ""
+  },
+  "Between": {
+    "en": "Between",
+    "ja": ""
+  },
+  "Date keys": {
+    "en": "Date keys",
+    "ja": ""
+  },
+  "Last": {
+    "en": "Last",
+    "ja": ""
+  },
+  "Today": {
+    "en": "Today",
+    "ja": ""
+  },
+  "days": {
+    "en": "days",
+    "ja": ""
+  },
+  "from": {
+    "en": "from",
+    "ja": ""
+  },
+  "hours": {
+    "en": "hours",
+    "ja": ""
+  },
+  "key": {
+    "en": "key",
+    "ja": ""
+  },
+  "months": {
+    "en": "months",
+    "ja": ""
+  },
+  "tag": {
+    "en": "tag",
+    "ja": ""
+  },
+  "to": {
+    "en": "to",
+    "ja": ""
+  },
+  "value": {
+    "en": "value",
+    "ja": ""
+  },
+  "weeks": {
+    "en": "weeks",
+    "ja": ""
+  },
+  "years": {
+    "en": "years",
+    "ja": ""
+  },
+  "Lock tag from collector overwrite": {
+    "en": "Lock tag from collector overwrite",
+    "ja": ""
+  },
   "This extension is marked as heavy. This may:\n- use a large amount of GPU\n- take a long time to install": {
     "en": "This extension is marked as heavy. This may:\n- use a large amount of GPU\n- take a long time to install",
     "ja": ""

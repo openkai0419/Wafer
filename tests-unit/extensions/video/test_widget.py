@@ -29,11 +29,11 @@ def _reset_shared(monkeypatch):
 
 class TestMpvGLOverlay:
     def test_create_player(self, qtbot):
-        from extensions.video.widget import MpvGLOverlay
+        from extensions.video.widget import DEFAULT_VOLUME, MpvGLOverlay
 
         player = MpvGLOverlay._create_player()
         assert player is not None
-        assert player.volume == 40
+        assert player.volume == DEFAULT_VOLUME
 
     def test_init_with_prewarmed_player(self, qtbot):
         from extensions.video.widget import MpvGLOverlay

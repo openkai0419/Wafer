@@ -3,6 +3,7 @@ from __future__ import annotations
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from ...core.lang.manager import t
+from ...ui.widgets.color_picker import ColorPickerDialog
 from ...utils.logs import AppLogger
 from ...utils.notifier import Notifier
 from ...utils.paths import list_data_db_names
@@ -14,8 +15,8 @@ def prompt_new_mark(parent: QtWidgets.QWidget | None = None) -> str | None:
     name = name.strip()
     if not ok or not name:
         return None
-    color = QtWidgets.QColorDialog.getColor(QtGui.QColor("#888888"), parent, t("Choose mark color"))
-    if not color.isValid():
+    color = ColorPickerDialog.get_color("#888888", parent, t("Choose mark color"), with_alpha=False, scope="mark")
+    if color is None:
         return None
     reg = MarkRegistry.instance()
     new_id = reg.add(name, color.name())
@@ -45,8 +46,8 @@ def prompt_pick_color(parent: QtWidgets.QWidget | None, mark_id: str) -> bool:
     mark = reg.get(mark_id)
     if mark is None:
         return False
-    color = QtWidgets.QColorDialog.getColor(QtGui.QColor(mark.color), parent, t("Choose mark color"))
-    if not color.isValid():
+    color = ColorPickerDialog.get_color(mark.color, parent, t("Choose mark color"), with_alpha=False, scope="mark")
+    if color is None:
         return False
     reg.set_color(mark_id, color.name())
     return True

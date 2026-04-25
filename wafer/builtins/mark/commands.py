@@ -126,40 +126,40 @@ def _mark_name_choices() -> list[str]:
 
 
 class MarkCommands(ActionKit.MenuBase):
-    NAME = "Mark"
+    NAME = "File"
     PRIORITY = 35
 
     @classmethod
     def commands(cls):
         return [
-            ":Mark",
+            "Mark/:Mark",
             ActionKit.Command(
-                path="mark.toggle",
+                path="Mark/mark.toggle",
                 display=t("Toggle Mark"),
                 params=[ActionKit.Param(name="name", value=_mark_name_choices, description=t("Mark name"), required=True)],
                 func=toggle_mark,
             ),
             ActionKit.Command(
-                path="mark.add",
+                path="Mark/mark.add",
                 display=t("Add Mark"),
                 params=[ActionKit.Param(name="name", value=_mark_name_choices, description=t("Mark name"), required=True)],
                 func=add_mark,
             ),
             ActionKit.Command(
-                path="mark.remove",
+                path="Mark/mark.remove",
                 display=t("Remove Mark"),
                 params=[ActionKit.Param(name="name", value=_mark_name_choices, description=t("Mark name"), required=True)],
                 func=remove_mark,
             ),
-            ActionKit.Command(path="mark.clear", display=t("Clear All Marks"), func=clear_marks),
-            "-",
+            ActionKit.Command(path="Mark/mark.clear", display=t("Clear All Marks"), func=clear_marks),
+            "Mark/-",
             ActionKit.Command(
-                path="mark.define",
+                path="Mark/mark.define",
                 display=t("Define New Mark..."),
                 func=define_mark,
             ),
             ActionKit.Command(
-                path="mark.rename",
+                path="Mark/mark.rename",
                 display=t("Rename Mark..."),
                 params=[
                     ActionKit.Param(name="name", value=_mark_name_choices, description=t("Mark name"), required=True),
@@ -167,7 +167,7 @@ class MarkCommands(ActionKit.MenuBase):
                 func=rename_mark,
             ),
             ActionKit.Command(
-                path="mark.set_color",
+                path="Mark/mark.set_color",
                 display=t("Set Mark Color..."),
                 params=[
                     ActionKit.Param(name="name", value=_mark_name_choices, description=t("Mark name"), required=True),
@@ -175,7 +175,7 @@ class MarkCommands(ActionKit.MenuBase):
                 func=set_color,
             ),
             ActionKit.Command(
-                path="mark.remove_def",
+                path="Mark/mark.remove_def",
                 display=t("Remove Mark Definition"),
                 params=[ActionKit.Param(name="name", value=_mark_name_choices, description=t("Mark name"), required=True)],
                 func=remove_mark_def,

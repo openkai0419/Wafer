@@ -1,4 +1,80 @@
 {
+  "Alt +": {
+    "en": "Alt +",
+    "ja": ""
+  },
+  "Ctrl +": {
+    "en": "Ctrl +",
+    "ja": ""
+  },
+  "First Key": {
+    "en": "First Key",
+    "ja": ""
+  },
+  "Key Input": {
+    "en": "Key Input",
+    "ja": ""
+  },
+  "Mouse Actions:": {
+    "en": "Mouse Actions:",
+    "ja": ""
+  },
+  "Mouse Bindings": {
+    "en": "Mouse Bindings",
+    "ja": ""
+  },
+  "None (Unset)": {
+    "en": "None (Unset)",
+    "ja": ""
+  },
+  "Press up to 2 keys": {
+    "en": "Press up to 2 keys",
+    "ja": ""
+  },
+  "Rename mark": {
+    "en": "Rename mark",
+    "ja": ""
+  },
+  "Second Key": {
+    "en": "Second Key",
+    "ja": ""
+  },
+  "Shift +": {
+    "en": "Shift +",
+    "ja": ""
+  },
+  "{button} +": {
+    "en": "{button} +",
+    "ja": ""
+  },
+  "★ No Modifier": {
+    "en": "★ No Modifier",
+    "ja": ""
+  },
+  "Color picker": {
+    "en": "Color picker",
+    "ja": "カラーピッカー"
+  },
+  "Hex": {
+    "en": "Hex",
+    "ja": "Hex"
+  },
+  "Recent colors": {
+    "en": "Recent colors",
+    "ja": "最近使った色"
+  },
+  "No recent colors": {
+    "en": "No recent colors",
+    "ja": "履歴なし"
+  },
+  "More...": {
+    "en": "More...",
+    "ja": "その他..."
+  },
+  "Choose color": {
+    "en": "Choose color",
+    "ja": "色を選択"
+  },
   "Mark {name} removed from {count} file(s)": {
     "en": "Mark {name} removed from {count} file(s)",
     "ja": ""

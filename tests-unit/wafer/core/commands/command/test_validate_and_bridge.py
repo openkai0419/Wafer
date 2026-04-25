@@ -410,3 +410,144 @@ class TestInvokeRequiredParams:
         meta = _make_meta(params=[CommandParam(name="x", value=lambda: ["a", "b"])])
         meta.id = "t.dyn"
         validate_command_args(meta, {"x": "z"})
+
+
+class TestIsValueSatisfied:
+    def test_static_choices_truthy(self):
+        p = CommandParam(name="x", value=("a", "b"))
+        assert p.is_value_satisfied("a") is True
+        assert p.is_value_satisfied("anything") is True
+
+    def test_empty_or_none(self):
+        p = CommandParam(name="x", value=lambda: ["a", "b"])
+        assert p.is_value_satisfied("") is False
+        assert p.is_value_satisfied(None) is False
+
+    def test_dynamic_value_in_current_list(self):
+        p = CommandParam(name="x", value=lambda: ["a", "b"])
+        assert p.is_value_satisfied("a") is True
+
+    def test_dynamic_value_not_in_current_list(self):
+        p = CommandParam(name="x", value=lambda: ["a", "b"])
+        assert p.is_value_satisfied("c") is False
+
+    def test_dynamic_choices_fn_error_returns_true(self):
+        def boom():
+            raise RuntimeError("boom")
+
+        p = CommandParam(name="x", value=boom)
+        assert p.is_value_satisfied("anything") is True
+
+
+class TestInvokeStaleStoredValue:
+    def _import_bridge(self):
+        from wafer.core.commands.bridge import Command, Context
+
+        return Command, Context
+
+    def test_stale_stored_value_triggers_dialog_and_clears(self, monkeypatch):
+        called = {}
+        meta = CommandMeta(
+            path="t.stale",
+            display="ST",
+            func=lambda ctx, name="": called.update(ran=name),
+            params=[CommandParam(name="name", value=lambda: ["A", "B"], required=True)],
+        )
+        _register(meta)
+        Command, _ = self._import_bridge()
+        Command.set_args("t.stale", {"name": "GHOST"})
+        assert Command.get_args("t.stale") == {"name": "GHOST"}
+
+        shown = {}
+
+        def fake_show(cid, cls, extras, *, ctx=None, parent=None):
+            shown["cid"] = cid
+
+        monkeypatch.setattr(Command, "_show_options_for_required", fake_show)
+        result = Command.invoke("t.stale")
+        assert result is None
+        assert shown["cid"] == "t.stale"
+        assert "ran" not in called
+
+    def test_fresh_stored_value_executes_without_dialog(self):
+        captured = {}
+
+        def fn(ctx, name=""):
+            captured["name"] = name
+
+        meta = CommandMeta(
+            path="t.fresh",
+            display="FR",
+            func=fn,
+            params=[CommandParam(name="name", value=lambda: ["A", "B"], required=True)],
+        )
+        _register(meta)
+        Command, _ = self._import_bridge()
+        Command.set_args("t.fresh", {"name": "A"})
+        Command.invoke("t.fresh")
+        assert captured["name"] == "A"
+
+
+class TestShowOptionsForRequiredAutoPersist:
+    def _import_bridge(self):
+        from wafer.core.commands.bridge import Command, Context
+
+        return Command, Context
+
+    def test_clears_stale_before_dialog(self, monkeypatch):
+        meta = CommandMeta(
+            path="t.clear",
+            display="CL",
+            func=lambda ctx, name="": None,
+            params=[CommandParam(name="name", value=lambda: ["A"], required=True)],
+        )
+        _register(meta)
+        Command, _ = self._import_bridge()
+        Command.set_args("t.clear", {"name": "GHOST"})
+
+        opened = {}
+
+        class FakeDialog:
+            def __init__(self, cls, parent, execute_callback=None, auto_required=False, **kw):
+                opened["auto_required"] = auto_required
+
+            def exec(self):
+                return 0
+
+        from wafer.core.commands.command import option_dialog as od
+        monkeypatch.setattr(od, "CommandOptionsDialog", FakeDialog)
+        cmd_class = CommandRegistry.instance().get_command("t.clear")
+        Command._show_options_for_required("t.clear", cmd_class, None)
+        assert opened["auto_required"] is True
+        assert Command.get_args("t.clear") == {"name": ""}
+
+    def test_exec_callback_persists_and_runs(self, monkeypatch):
+        captured = {}
+
+        def fn(ctx, name=""):
+            captured["name"] = name
+
+        meta = CommandMeta(
+            path="t.persist",
+            display="P",
+            func=fn,
+            params=[CommandParam(name="name", value=lambda: ["A", "B"], required=True)],
+        )
+        _register(meta)
+        Command, _ = self._import_bridge()
+
+        class FakeDialog:
+            def __init__(self, cls, parent, execute_callback=None, auto_required=False, **kw):
+                self._cb = execute_callback
+
+            def exec(self):
+                self._cb({"name": "B"})
+                return 1
+
+        from wafer.core.commands.command import option_dialog as od
+        monkeypatch.setattr(od, "CommandOptionsDialog", FakeDialog)
+
+        cmd_class = CommandRegistry.instance().get_command("t.persist")
+        Command._show_options_for_required("t.persist", cmd_class, None)
+        assert captured["name"] == "B"
+        assert Command.get_args("t.persist") == {"name": "B"}

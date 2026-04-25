@@ -97,7 +97,7 @@ class HueRingSVSquare(QtWidgets.QWidget):
 
         if self._sv_cache is None or self._cached_hue != self._h:
             self._cached_hue = self._h
-            sq_size = max(2, int(round(sv_side)))
+            sq_size = max(2, round(sv_side))
             img = QtGui.QImage(sq_size, sq_size, QtGui.QImage.Format_ARGB32_Premultiplied)
             painter = QtGui.QPainter(img)
             base = QtGui.QColor.fromHsvF(self._h, 1.0, 1.0)
@@ -165,7 +165,7 @@ class HueRingSVSquare(QtWidgets.QWidget):
         self._dragging = None
 
     def _update_from_pos(self, pos: QtCore.QPointF):
-        cx, cy, outer, inner, sv_side = self._geometry()
+        cx, cy, _outer, _inner, sv_side = self._geometry()
         if self._dragging == "ring":
             angle = math.atan2(-(pos.y() - cy), pos.x() - cx)
             h = (1.0 - angle / (2.0 * math.pi)) % 1.0
@@ -357,8 +357,7 @@ class _SwatchButton(QtWidgets.QPushButton):
         self.setToolTip(color.name(QtGui.QColor.HexArgb).upper())
         p = ThemeManager.instance().palette
         self.setStyleSheet(
-            f"QPushButton {{ background: {color.name()}; border: 1px solid {p.border_default}; border-radius: {dpix(3)}px; }}"
-            f"QPushButton:hover {{ border: {dpix(2)}px solid {p.text_primary}; }}"
+            f"QPushButton {{ background: {color.name()}; border: 1px solid {p.border_default}; border-radius: {dpix(3)}px; }}QPushButton:hover {{ border: {dpix(2)}px solid {p.text_primary}; }}"
         )
 
 
@@ -499,9 +498,9 @@ class ColorPickerWidget(QtWidgets.QWidget):
             if h < 0:
                 h = 0.0
             self._wheel.set_hsv(h, s, v)
-            self._slider_h.set_value(int(round(h * 359)))
-            self._slider_s.set_value(int(round(s * 255)))
-            self._slider_v.set_value(int(round(v * 255)))
+            self._slider_h.set_value(round(h * 359))
+            self._slider_s.set_value(round(s * 255))
+            self._slider_v.set_value(round(v * 255))
             self._slider_r.set_value(self._color.red())
             self._slider_g.set_value(self._color.green())
             self._slider_b.set_value(self._color.blue())

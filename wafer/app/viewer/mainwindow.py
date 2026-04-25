@@ -371,6 +371,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.content_viewer = ContentViewerWidget()
         self.meta_viewer_widget = MetaViewerWidget()
         self.file_viewer = FileViewerController(self.file_model, self.content_viewer, self.meta_viewer_widget, self)
+        self.meta_viewer_widget.reload_requested.connect(self.file_viewer.reload_meta)
         self.file_list_provider = FileListProvider(self.file_model, self.grid_items, self)
         UI.register_instance("FileViewerController", self.file_viewer)
         UI.register_instance("FileListProvider", self.file_list_provider)

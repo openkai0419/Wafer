@@ -415,7 +415,7 @@ class _TagRow(QtWidgets.QFrame):
         eff.setOpacity(opacity)
 
 
-class _AddTagDialog(QtWidgets.QDialog):
+class AddTagDialog(QtWidgets.QDialog):
     def __init__(self, parent: QtWidgets.QWidget, existing_keys: set[str]):
         super().__init__(parent)
         self.setWindowTitle(t("Add new tag"))
@@ -486,7 +486,7 @@ class EditableTagCard(CollapsibleCard):
         tbl.setSpacing(dpix(6))
 
         self._add_btn = QtWidgets.QToolButton(toolbar)
-        self._add_btn.setIcon(themed_icon("plus"))
+        self._add_btn.setIcon(themed_icon("plus", margin=0.1))
         self._add_btn.setToolTip(t("Add new tag"))
         self._add_btn.setCursor(QtCore.Qt.PointingHandCursor)
         self._add_btn.setToolButtonStyle(QtCore.Qt.ToolButtonIconOnly)
@@ -532,6 +532,10 @@ class EditableTagCard(CollapsibleCard):
             self.local_edits.clear()
         self._refresh_overlay_cache()
         self._render()
+
+    def iter_full_keys(self):
+        for short_key in self._tags:
+            yield self._to_full(short_key)
 
     # ---- Render --------------------------------------------------------
 
@@ -736,7 +740,7 @@ class EditableTagCard(CollapsibleCard):
         if not self._validate_context(allow_no_hash=True):
             return
         existing = self._current_displayed_keys()
-        dlg = _AddTagDialog(self, existing)
+        dlg = AddTagDialog(self, existing)
         if dlg.exec() != QtWidgets.QDialog.Accepted:
             return
         key, value = dlg.values()

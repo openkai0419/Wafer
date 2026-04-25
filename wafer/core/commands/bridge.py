@@ -248,11 +248,12 @@ class Command:
             AppLogger.warning(f"Command not found: {command_id}")
             Notifier.warning(f"Command not found: {command_id}")
             return None
-        stored = CommandOptionStore.instance().get(str(command_id))
+        store = CommandOptionStore.instance()
+        stored = store.get(str(command_id))
         saved = stored.args if isinstance(stored.args, dict) else {}
         args = {p.name: saved.get(p.name, p.default) for p in (cmd_class.meta.params or [])}
         args.update(kwargs)
-        missing_required = [p for p in (cmd_class.meta.params or []) if p.required and not args.get(p.name)]
+        missing_required = [p for p in (cmd_class.meta.params or []) if p.required and not p.is_value_satisfied(args.get(p.name))]
         if missing_required:
             Command._show_options_for_required(str(command_id), cmd_class, extras, ctx=ctx, parent=parent)
             return None
@@ -268,12 +269,20 @@ class Command:
         if parent is None:
             parent = QtWidgets.QApplication.activeWindow()
         reg = Command._registry()
+        store = CommandOptionStore.instance()
+        saved = (store.get(str(command_id)).args or {}) if cmd_class.meta.params else {}
+        stale = [p.name for p in (cmd_class.meta.params or []) if p.required and p.name in saved and not p.is_value_satisfied(saved.get(p.name))]
+        if stale:
+            AppLogger.info(f"[{command_id}] stale stored values cleared: {stale}")
+            store.set(str(command_id), {k: v for k, v in saved.items() if k not in stale})
+            store.commit()
 
         def _exec(opts):
+            Command.set_args(command_id, opts)
             exec_ctx = ctx if ctx is not None else Context.create_context(None, "*", source="invoke", extras=extras)
             reg.execute(command_id, ctx=exec_ctx, **opts)
 
-        dialog = CommandOptionsDialog(cmd_class, parent, execute_callback=_exec)
+        dialog = CommandOptionsDialog(cmd_class, parent, execute_callback=_exec, auto_required=True)
         dialog.exec()
 
     @staticmethod

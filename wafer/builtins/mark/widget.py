@@ -199,7 +199,7 @@ class MarkFilterWidget(QtWidgets.QWidget):
         prefix = MarkRegistry.tag_prefix() + "."
         for key, count in data or []:
             if isinstance(key, str) and key.startswith(prefix):
-                counts[key[len(prefix):]] = int(count)
+                counts[key[len(prefix) :]] = int(count)
         for mid, btn in self._buttons.items():
             btn.set_count(counts.get(mid, 0))
 
@@ -207,9 +207,7 @@ class MarkFilterWidget(QtWidgets.QWidget):
         btn = _MarkButton(mark_id, self._buttons_container)
         btn.setChecked(checked)
         btn.toggled.connect(lambda _c: self.changed.emit())
-        btn.customContextMenuRequested.connect(
-            lambda pos, m=mark_id, b=btn: dialogs.show_mark_context_menu(b, m, b.mapToGlobal(pos))
-        )
+        btn.customContextMenuRequested.connect(lambda pos, m=mark_id, b=btn: dialogs.show_mark_context_menu(b, m, b.mapToGlobal(pos)))
         self._buttons[mark_id] = btn
         self._buttons_layout.insertWidget(self._buttons_layout.count() - 1, btn)
 

@@ -54,7 +54,7 @@ def _fetch_marks_sync(db_path: str | None, paths: list[str]) -> dict[str, list[s
 
 
 class _MarkFetchTask(QtCore.QRunnable):
-    def __init__(self, db_path: str | None, paths: list[str], generation: int, replace_all: bool, sink: "MarkOverlayService"):
+    def __init__(self, db_path: str | None, paths: list[str], generation: int, replace_all: bool, sink: MarkOverlayService):
         super().__init__()
         self._db_path = db_path
         self._paths = paths

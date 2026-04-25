@@ -158,7 +158,7 @@ def test_add_collision_auto_dedupes(card, qtbot):
         def values(self):
             return ("k", "v2")
 
-    with patch("wafer.app.viewer.preview.editable_tag_card._AddTagDialog", _DlgStub):
+    with patch("wafer.app.viewer.preview.editable_tag_card.AddTagDialog", _DlgStub):
         c._on_add_clicked()
 
     new_rows = [e for e in c.local_edits.values() if e.is_new]

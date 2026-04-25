@@ -9,7 +9,7 @@ from .state import CommandOptionStore
 
 
 class CommandOptionsDialog(QtWidgets.QDialog):
-    def __init__(self, command_class: type, parent=None, execute_callback: Callable[[dict[str, Any]], None] | None = None, binding_mode: bool = False):
+    def __init__(self, command_class: type, parent=None, execute_callback: Callable[[dict[str, Any]], None] | None = None, binding_mode: bool = False, auto_required: bool = False):
         super().__init__(parent)
         self.command_class = command_class
         self.widgets: dict[str, QtWidgets.QWidget] = {}
@@ -19,6 +19,7 @@ class CommandOptionsDialog(QtWidgets.QDialog):
         self._execute_callback = execute_callback
         self._did_save = False
         self._binding_mode = bool(binding_mode)
+        self._auto_required = bool(auto_required)
         self._setup_ui()
 
     def _setup_ui(self):
@@ -42,6 +43,14 @@ class CommandOptionsDialog(QtWidgets.QDialog):
             btn_save.clicked.connect(self._on_save)
             btn_cancel.clicked.connect(self.reject)
             row.addWidget(btn_save)
+            row.addWidget(btn_cancel)
+        elif self._auto_required:
+            btn_ok = QtWidgets.QPushButton(t("OK"), self)
+            btn_cancel = QtWidgets.QPushButton(t("Cancel"), self)
+            btn_ok.setDefault(True)
+            btn_ok.clicked.connect(self._on_ok_save_and_execute)
+            btn_cancel.clicked.connect(self.reject)
+            row.addWidget(btn_ok)
             row.addWidget(btn_cancel)
         else:
             btn_execute = QtWidgets.QPushButton(t("Execute"), self)
@@ -211,5 +220,16 @@ class CommandOptionsDialog(QtWidgets.QDialog):
                 widget.setText(str(v) if v is not None else "")
 
     def _on_save(self):
+        self._did_save = True
+        self.accept()
+
+    def _on_ok_save_and_execute(self):
+        values = self.get_values()
+        try:
+            if callable(self._execute_callback):
+                self._execute_callback(values)
+        except Exception as e:
+            AppLogger.warning(f"Failed to execute command from dialog: {e}")
+            return
         self._did_save = True
         self.accept()

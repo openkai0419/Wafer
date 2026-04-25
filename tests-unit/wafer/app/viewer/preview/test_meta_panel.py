@@ -34,6 +34,33 @@ def test_set_data_creates_sections(qtbot):
     assert len(w._sections) == 5
 
 
+def test_tag_section_hidden_when_empty(qtbot):
+    w = MetaViewerWidget()
+    qtbot.addWidget(w)
+    meta = _sample_meta()
+    meta["tag"] = {}
+    w.set_data(meta)
+    assert "tag" not in w._sections
+
+
+def test_header_visible_only_after_set_data(qtbot):
+    w = MetaViewerWidget()
+    qtbot.addWidget(w)
+    assert w._header.isHidden()
+    w.set_data(_sample_meta())
+    assert not w._header.isHidden()
+    w.clear()
+    assert w._header.isHidden()
+
+
+def test_reload_button_emits_signal(qtbot):
+    w = MetaViewerWidget()
+    qtbot.addWidget(w)
+    w.set_data(_sample_meta())
+    with qtbot.waitSignal(w.reload_requested, timeout=500):
+        w._reload_btn.click()
+
+
 def test_sections_default_expanded(qtbot):
     w = MetaViewerWidget()
     qtbot.addWidget(w)
@@ -94,7 +121,7 @@ def test_empty_prefixed(qtbot):
     qtbot.addWidget(w)
     meta = {"source": {"name": "a"}, "file": {}, "tag": {}, "tag_prefixed": {}, "tag_prefixed_locks": {}, "prefixed": {}}
     w.set_data(meta)
-    assert len(w._sections) == 3
+    assert len(w._sections) == 2
 
 
 def test_builtin_section_is_collapsible_card(qtbot):
@@ -103,7 +130,7 @@ def test_builtin_section_is_collapsible_card(qtbot):
     meta = {
         "source": {"name": "a"},
         "file": {},
-        "tag": {},
+        "tag": {"k": "v"},
         "tag_prefixed": {},
         "tag_prefixed_locks": {},
         "prefixed": {"unknown_prefix": {"k": "v"}},

@@ -82,6 +82,48 @@ class TestFilterRow:
         row.set_removable(True)
         assert row.remove_button.isVisibleTo(row)
 
+    def test_default_enabled(self, qapp):
+        row = FilterRow(TextFilter)
+        assert row.is_enabled() is True
+        assert row.toggle_button.isChecked() is False
+
+    def test_set_enabled_false_skips_entry(self, qapp):
+        row = FilterRow(TextFilter, show_op=False)
+        row.set_enabled(False)
+        assert row.is_enabled() is False
+        assert row.read_entry() is None
+
+    def test_set_enabled_true_restores_entry(self, qapp):
+        row = FilterRow(TextFilter, show_op=False)
+        row.set_enabled(False)
+        row.set_enabled(True)
+        assert row.read_entry() is not None
+
+    def test_set_enabled_does_not_emit_changed(self, qapp):
+        row = FilterRow(TextFilter)
+        signals = []
+        row.changed.connect(lambda: signals.append(True))
+        row.set_enabled(False)
+        assert signals == []
+
+    def test_toggle_button_click_emits_changed(self, qapp):
+        row = FilterRow(TextFilter)
+        signals = []
+        row.changed.connect(lambda: signals.append(True))
+        row.toggle_button.click()
+        assert row.is_enabled() is False
+        assert row.toggle_button.isChecked() is True
+        assert len(signals) == 1
+
+    def test_disabled_grays_out_param_widget(self, qapp):
+        row = FilterRow(TextFilter)
+        w = row.get_param_widget()
+        assert w.isEnabled() is True
+        row.set_enabled(False)
+        assert w.isEnabled() is False
+        row.set_enabled(True)
+        assert w.isEnabled() is True
+
 
 class TestSearchContainer:
     def test_default_has_one_row(self, qapp):
@@ -298,6 +340,63 @@ class TestSearchContainerState:
         container2 = SearchContainer()
         container2.restore_state(state)
         assert len(container2._rows) == len(container1._rows)
+
+    def test_save_includes_enabled_field(self, qapp):
+        container = SearchContainer()
+        state = container.save_state()
+        assert state["rows"][0]["enabled"] is True
+
+    def test_save_preserves_disabled_rows(self, qapp):
+        container = SearchContainer()
+        container._add_row(TextFilter)
+        container._rows[1].set_enabled(False)
+        state = container.save_state()
+        assert len(state["rows"]) == 2
+        assert state["rows"][0]["enabled"] is True
+        assert state["rows"][1]["enabled"] is False
+
+    def test_disabled_row_excluded_from_filter_entries(self, qapp):
+        container = SearchContainer()
+        container._add_row(TextFilter)
+        container._rows[1].set_enabled(False)
+        entries = container.build_filter_entries()
+        assert len(entries) == 1
+
+    def test_restore_enabled_state(self, qapp):
+        container = SearchContainer()
+        state = {
+            "rows": [
+                {"filter": "text", "params": {"keywords": "a"}, "op": None, "enabled": True},
+                {"filter": "text", "params": {"keywords": "b"}, "op": "OR", "enabled": False},
+            ],
+            "sort_by": "path",
+            "ascending": False,
+        }
+        container.restore_state(state)
+        assert container._rows[0].is_enabled() is True
+        assert container._rows[1].is_enabled() is False
+
+    def test_restore_legacy_state_defaults_enabled(self, qapp):
+        container = SearchContainer()
+        state = {
+            "rows": [
+                {"filter": "text", "params": {"keywords": "legacy"}, "op": None},
+            ],
+            "sort_by": "path",
+            "ascending": False,
+        }
+        container.restore_state(state)
+        assert container._rows[0].is_enabled() is True
+
+    def test_roundtrip_disabled_row(self, qapp):
+        container1 = SearchContainer()
+        container1._add_row(TextFilter)
+        container1._rows[1].set_enabled(False)
+        state = container1.save_state()
+        container2 = SearchContainer()
+        container2.restore_state(state)
+        assert len(container2._rows) == 2
+        assert container2._rows[1].is_enabled() is False
 
 
 class TestSearchContainerFolderWorker:

@@ -244,7 +244,20 @@ class FileViewerController(QtCore.QObject):
             return
         self.model.set_path(path)
 
+    def reload_meta(self):
+        path = self.model.path()
+        if path:
+            self._fetch_meta(path, self._on_meta_reloaded)
+
+    def _on_meta_reloaded(self, cancel, path, result):
+        if cancel.is_cancelled() or path != self.model.path():
+            return
+        self.meta_viewer.set_data(result)
+
     def _update_meta(self, path):
+        self._fetch_meta(path, self._on_meta_ready)
+
+    def _fetch_meta(self, path, callback):
         dbpath = self.model.dbpath
         if not dbpath:
             return
@@ -255,7 +268,7 @@ class FileViewerController(QtCore.QObject):
             result = _format_meta(engine, path, dbpath)
             if cancel.is_cancelled():
                 return
-            self._dispatcher.invoke(lambda: self._on_meta_ready(cancel, path, result))
+            self._dispatcher.invoke(lambda: callback(cancel, path, result))
 
         self._dispatcher.post(task, cancel=cancel)
 

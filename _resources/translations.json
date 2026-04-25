@@ -1,4 +1,24 @@
 {
+  "Empty for root tag, or pick/type a prefix": {
+    "en": "Empty for root tag, or pick/type a prefix",
+    "ja": ""
+  },
+  "Prefix:": {
+    "en": "Prefix:",
+    "ja": ""
+  },
+  "Reload metadata": {
+    "en": "Reload metadata",
+    "ja": ""
+  },
+  "OK": {
+    "en": "OK",
+    "ja": ""
+  },
+  "name": {
+    "en": "name",
+    "ja": ""
+  },
   "Alt +": {
     "en": "Alt +",
     "ja": ""
@@ -2190,6 +2210,10 @@
   },
   "Descending": {
     "en": "Descending"
+  },
+  "Enable / Disable filter": {
+    "en": "Enable / Disable filter",
+    "ja": "フィルタを一時的に有効/無効にする"
   },
   "Enter search terms...": {
     "en": "Enter search terms..."

@@ -85,6 +85,11 @@ def icon_draw(key: str, painter: QPainter, rect: QRectF, color: QColor):
         entry[0](painter, rect, color)
 
 
+@_register("empty")
+def _draw_empty(p: QPainter, r: QRectF, color: QColor):
+    pass
+
+
 @_register("gear", padding=0.06)
 def _draw_gear(p: QPainter, r: QRectF, color: QColor):
     p.setPen(Qt.PenStyle.NoPen)
@@ -139,7 +144,7 @@ def _draw_gear_small(p: QPainter, r: QRectF, color: QColor):
     p.drawPath(path.subtracted(hole))
 
 
-@_register("folder_plus", padding=0.17)
+@_register("folder_plus", padding=0.11)
 def _draw_folder_plus(p: QPainter, r: QRectF, color: QColor):
     p.setPen(Qt.PenStyle.NoPen)
     p.setBrush(color)
@@ -156,7 +161,7 @@ def _draw_folder_plus(p: QPainter, r: QRectF, color: QColor):
     body.lineTo(r.left(), r.bottom())
     body.closeSubpath()
     s = min(r.width(), r.height())
-    bw = s * 0.08
+    bw = s * 0.09
     bh = s * 0.25
     cy = (top + r.bottom()) / 2
     cx = r.center().x()
@@ -236,6 +241,10 @@ def _draw_window(p: QPainter, r: QRectF, color: QColor):
     title_h = ir.height() * 0.28
     p.drawRect(ir)
     p.drawLine(QPointF(ir.left(), ir.top() + title_h), QPointF(ir.right(), ir.top() + title_h))
+    btn_w = ir.width() * 0.22
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(color)
+    p.drawRect(QRectF(ir.right() - btn_w, ir.top(), btn_w, title_h))
 
 
 @_register("plus", padding=0.14)
@@ -363,6 +372,43 @@ def _draw_check(p: QPainter, r: QRectF, color: QColor):
     path.moveTo(QPointF(x0 + w * 0.15, y0 + h * 0.50))
     path.lineTo(QPointF(x0 + w * 0.40, y0 + h * 0.78))
     path.lineTo(QPointF(x0 + w * 0.85, y0 + h * 0.22))
+    p.drawPath(path)
+
+
+@_register("checkbox_unchecked", padding=0.13)
+def _draw_checkbox_unchecked(p: QPainter, r: QRectF, color: QColor):
+    lw = max(1.2, min(r.width(), r.height()) * 0.13)
+    pen = QPen(color, lw)
+    pen.setJoinStyle(Qt.PenJoinStyle.MiterJoin)
+    p.setPen(pen)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    inset = lw / 2
+    box = r.adjusted(inset, inset, -inset, -inset)
+    radius = min(box.width(), box.height()) * 0.15
+    p.drawRoundedRect(box, radius, radius)
+
+
+@_register("checkbox_checked", padding=0.13)
+def _draw_checkbox_checked(p: QPainter, r: QRectF, color: QColor):
+    lw = max(1.2, min(r.width(), r.height()) * 0.13)
+    pen = QPen(color, lw)
+    pen.setJoinStyle(Qt.PenJoinStyle.MiterJoin)
+    p.setPen(pen)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    inset = lw / 2
+    box = r.adjusted(inset, inset, -inset, -inset)
+    radius = min(box.width(), box.height()) * 0.15
+    p.drawRoundedRect(box, radius, radius)
+    check_pen = QPen(color, lw * 1.05)
+    check_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    check_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    p.setPen(check_pen)
+    x0, y0 = r.left(), r.top()
+    w, h = r.width(), r.height()
+    path = QPainterPath()
+    path.moveTo(QPointF(x0 + w * 0.22, y0 + h * 0.52))
+    path.lineTo(QPointF(x0 + w * 0.43, y0 + h * 0.74))
+    path.lineTo(QPointF(x0 + w * 0.80, y0 + h * 0.28))
     p.drawPath(path)
 
 

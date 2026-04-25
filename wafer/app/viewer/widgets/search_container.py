@@ -10,6 +10,7 @@ from ....core.lang.manager import t
 from ....core.qt.dispatcher import Dispatcher, CancelSlot
 from ....core.qt.icon_engine import themed_icon
 from ....core.qt.thread import utility_pool
+from ....core.color.theme import ThemeManager
 from ....plugin.query.handler import filter_registry, sort_registry
 from ....plugin.query.base import KeyStore
 from ....builtins.filters import TextFilter, DirectoryFilter
@@ -25,13 +26,24 @@ class FilterRow(QtWidgets.QWidget):
         self._param_widget = None
         self._key_store = key_store
         self._has_op = show_op
+        self._enabled = True
         self._build_ui(show_op)
         self._set_filter_type(filter_cls)
 
     def _build_ui(self, show_op: bool):
         layout = QtWidgets.QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(dpix(4))
+        layout.setSpacing(dpix(2))
+
+        self.toggle_button = QtWidgets.QToolButton()
+        self.toggle_button.setIcon(themed_icon("check"))
+        self.toggle_button.setFixedSize(dpix(24), dpix(24))
+        self.toggle_button.setCheckable(True)
+        self.toggle_button.setChecked(False)
+        self.toggle_button.setToolTip(t("Enable / Disable filter"))
+        self.toggle_button.toggled.connect(self._on_toggled)
+        self._apply_toggle_style()
+        layout.addWidget(self.toggle_button)
 
         self.op_combo = QtWidgets.QComboBox()
         self.op_combo.addItem("AND", "AND")
@@ -71,6 +83,7 @@ class FilterRow(QtWidgets.QWidget):
             self.layout().replaceWidget(self._widget_placeholder, placeholder)
             self._widget_placeholder.setParent(None)
             self._widget_placeholder = placeholder
+        self._apply_enabled_visual()
 
     @property
     def filter_cls(self):
@@ -81,10 +94,46 @@ class FilterRow(QtWidgets.QWidget):
         return self.op_combo.currentData() or "AND"
 
     def read_entry(self) -> tuple | None:
-        if not self._filter_cls:
+        if not self._filter_cls or not self._enabled:
             return None
         params = self._filter_cls.read_params(self._param_widget) if self._param_widget else {}
         return (self._filter_cls, params, self.op_combo.currentData() if self._has_op else None)
+
+    def read_params(self) -> dict:
+        if not self._filter_cls or not self._param_widget:
+            return {}
+        return self._filter_cls.read_params(self._param_widget)
+
+    def read_op(self) -> str | None:
+        return self.op_combo.currentData() if self._has_op else None
+
+    def is_enabled(self) -> bool:
+        return self._enabled
+
+    def set_enabled(self, enabled: bool):
+        enabled = bool(enabled)
+        if self._enabled == enabled and self.toggle_button.isChecked() == (not enabled):
+            return
+        self._enabled = enabled
+        with QtCore.QSignalBlocker(self.toggle_button):
+            self.toggle_button.setChecked(not enabled)
+        self._apply_enabled_visual()
+
+    def _on_toggled(self, checked: bool):
+        self._enabled = not bool(checked)
+        self._apply_enabled_visual()
+        self.changed.emit()
+
+    def _apply_enabled_visual(self):
+        if self._param_widget:
+            self._param_widget.setEnabled(self._enabled)
+        self.op_combo.setEnabled(self._enabled)
+        icon_name = "check" if self._enabled else "empty"
+        self.toggle_button.setIcon(themed_icon(icon_name))
+
+    def _apply_toggle_style(self):
+        pressed = ThemeManager.instance().palette.bg_tertiary
+        self.toggle_button.setStyleSheet(f"QToolButton:checked {{ background: {pressed}; }}")
 
     def write_entry(self, filter_name: str, params: dict, op: str | None = None):
         cls = filter_registry.get(filter_name)
@@ -141,7 +190,7 @@ class SearchContainer(QtWidgets.QWidget):
         self._empty_row = QtWidgets.QWidget(self)
         el = QtWidgets.QHBoxLayout(self._empty_row)
         el.setContentsMargins(0, 0, 0, 0)
-        el.setSpacing(dpix(4))
+        el.setSpacing(dpix(2))
         self._empty_row.hide()
         root.addWidget(self._empty_row)
 
@@ -355,15 +404,15 @@ class SearchContainer(QtWidgets.QWidget):
     def save_state(self) -> dict:
         rows_data = []
         for row in self._rows:
-            entry = row.read_entry()
-            if entry is None:
+            cls = row.filter_cls
+            if not cls:
                 continue
-            cls, params, op = entry
             rows_data.append(
                 {
                     "filter": cls.NAME,
-                    "params": params,
-                    "op": op,
+                    "params": row.read_params(),
+                    "op": row.read_op(),
+                    "enabled": row.is_enabled(),
                 }
             )
         return {
@@ -406,6 +455,7 @@ class SearchContainer(QtWidgets.QWidget):
                 idx = row.op_combo.findData(rd["op"])
                 if idx >= 0:
                     row.op_combo.setCurrentIndex(idx)
+            row.set_enabled(rd.get("enabled", True))
             self._rows.append(row)
             self._filter_stack.addWidget(row)
 

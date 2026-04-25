@@ -387,30 +387,31 @@ class FileSearchEngine:
         return fid, {r["key"]: (r["value"], bool(r["locked"])) for r in rows}
 
     @profiler.profile
-    def get_tag_keys_for_paths(self, paths: list[str], key_prefix: str) -> dict[str, list[str]]:
+    def get_tag_keys_by_prefix(self, key_prefix: str, paths: list[str] | None = None) -> dict[str, list[str]]:
         result: dict[str, list[str]] = {}
-        if not paths or not key_prefix or not self._connect_if_needed():
+        if not key_prefix or not self._connect_if_needed():
             return result
         cur = self.conn.cursor()
-        norm_paths = [self._normalize_path(p) for p in paths]
         like_pattern = f"{key_prefix}%"
-        chunk_size = 900
-        for start in range(0, len(norm_paths), chunk_size):
-            chunk = norm_paths[start : start + chunk_size]
-            placeholders = ",".join("?" * len(chunk))
-            rows = cur.execute(
-                f"SELECT i.path, t.key FROM tags AS t JOIN sources AS s ON s.file_hash = t.file_hash JOIN files AS i ON i.source = s.source WHERE i.path IN ({placeholders}) AND t.key LIKE ?",
-                [*chunk, like_pattern],
-            ).fetchall()
+        base_sql = "SELECT i.path, t.key FROM tags AS t JOIN sources AS s ON s.file_hash = t.file_hash JOIN files AS i ON i.source = s.source WHERE t.key LIKE ?"
+
+        def _consume(rows):
             for row in rows:
-                path = row["path"]
                 key = row["key"]
-                if not key:
-                    continue
-                suffix = key[len(key_prefix) :]
+                suffix = key[len(key_prefix):] if key else ""
                 if not suffix:
                     continue
-                result.setdefault(path, []).append(suffix)
+                result.setdefault(row["path"], []).append(suffix)
+
+        if paths is None:
+            _consume(cur.execute(base_sql, (like_pattern,)).fetchall())
+        else:
+            norm_paths = [self._normalize_path(p) for p in paths]
+            chunk_size = 900
+            for start in range(0, len(norm_paths), chunk_size):
+                chunk = norm_paths[start:start + chunk_size]
+                placeholders = ",".join("?" * len(chunk))
+                _consume(cur.execute(f"{base_sql} AND i.path IN ({placeholders})", (like_pattern, *chunk)).fetchall())
         return result
 
     @profiler.profile

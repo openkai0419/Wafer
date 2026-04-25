@@ -11,6 +11,7 @@ from ...core.lang.manager import t
 from ...core.color.theme import ThemeManager
 from ...core.qt.dispatcher import Dispatcher, CancelSlot
 from ...core.qt.thread import utility_pool
+from .value_viewer_dialog import open_value_viewer
 
 SHORT_VALUE_LIMIT = 1000
 SNIPPET_BUDGET = SHORT_VALUE_LIMIT * 2
@@ -235,6 +236,9 @@ class SearchableMetaWidget(QtWidgets.QWidget):
             QtWidgets.QSizePolicy.Policy.Preferred,
             QtWidgets.QSizePolicy.Policy.Preferred,
         )
+        self._list_view.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self._list_view.customContextMenuRequested.connect(self._on_context_menu)
+        self._list_view.doubleClicked.connect(self._on_double_clicked)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -321,3 +325,46 @@ class SearchableMetaWidget(QtWidgets.QWidget):
 
         self._delegate.invalidate_cache()
         self._model.reset_rows(rows)
+
+    def _key_for_row(self, row: int) -> str | None:
+        if 0 <= row < len(self._filtered_keys):
+            return self._filtered_keys[row]
+        return None
+
+    def _full_value(self, key: str) -> str:
+        return str(self._data.get(key, ""))
+
+    def _on_double_clicked(self, index: QtCore.QModelIndex):
+        if not index.isValid():
+            return
+        key = self._key_for_row(index.row())
+        if key is None:
+            return
+        open_value_viewer(self, self._display_key(key), self._full_value(key))
+
+    def _on_context_menu(self, pos: QtCore.QPoint):
+        index = self._list_view.indexAt(pos)
+        if not index.isValid():
+            return
+        key = self._key_for_row(index.row())
+        if key is None:
+            return
+        display_key = self._display_key(key)
+        value = self._full_value(key)
+
+        menu = QtWidgets.QMenu(self._list_view)
+        act_copy_key = menu.addAction(t("Copy key"))
+        act_copy_value = menu.addAction(t("Copy value"))
+        act_copy_row = menu.addAction(t("Copy row"))
+        menu.addSeparator()
+        act_view = menu.addAction(t("Open value viewer…"))
+        chosen = menu.exec(self._list_view.viewport().mapToGlobal(pos))
+        clipboard = QtWidgets.QApplication.clipboard()
+        if chosen is act_copy_key:
+            clipboard.setText(display_key)
+        elif chosen is act_copy_value:
+            clipboard.setText(value)
+        elif chosen is act_copy_row:
+            clipboard.setText(f"{display_key}: {value}")
+        elif chosen is act_view:
+            open_value_viewer(self, display_key, value)

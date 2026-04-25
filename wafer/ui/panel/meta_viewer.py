@@ -11,6 +11,7 @@ from ...utils.logs import AppLogger
 from ...core.lang.manager import t
 from ...core.qt.icon_engine import icon_draw
 from ...core.color.theme import ThemeManager
+from .value_viewer_dialog import open_value_viewer
 
 MAX_INLINE_CHARS = 4000
 MAX_INLINE_SEQ_ITEMS = 50
@@ -245,20 +246,7 @@ class MetaRowWidget(QtWidgets.QFrame):
         key, ok = QtWidgets.QInputDialog.getItem(self, t("Open value viewer"), t("Key:"), self._keys, 0, False)
         if not ok or not key:
             return
-        text = self._stringify_full(self._data.get(key))
-
-        dlg = QtWidgets.QDialog(self)
-        dlg.setWindowTitle(t("Value viewer - {key}", key=key))
-        dlg.resize(dpix(900), dpix(600))
-        lay = QtWidgets.QVBoxLayout(dlg)
-        edit = QtWidgets.QPlainTextEdit(dlg)
-        edit.setReadOnly(True)
-        edit.setPlainText(text)
-        lay.addWidget(edit)
-        btns = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Close, parent=dlg)
-        btns.rejected.connect(dlg.reject)
-        lay.addWidget(btns)
-        dlg.exec()
+        open_value_viewer(self, key, self._stringify_full(self._data.get(key)))
 
     def _to_plain_text(self, preview: bool) -> str:
         parts = []

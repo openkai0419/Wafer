@@ -1,4 +1,8 @@
 {
+  "Value viewer - {key}": {
+    "en": "Value viewer - {key}",
+    "ja": ""
+  },
   "Empty for root tag, or pick/type a prefix": {
     "en": "Empty for root tag, or pick/type a prefix",
     "ja": ""
@@ -1164,6 +1168,18 @@
   },
   "Copy single value…": {
     "en": "Copy single value…",
+    "ja": ""
+  },
+  "Copy key": {
+    "en": "Copy key",
+    "ja": ""
+  },
+  "Copy value": {
+    "en": "Copy value",
+    "ja": ""
+  },
+  "Copy row": {
+    "en": "Copy row",
     "ja": ""
   },
   "Copying files...": {

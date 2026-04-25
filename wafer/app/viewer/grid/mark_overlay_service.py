@@ -20,15 +20,15 @@ _COMMIT_DEBOUNCE_MS = 300
 _MARK_KEY_PREFIX = "mark."
 
 
-def _fetch_marks_sync(db_path: str | None, paths: list[str]) -> dict[str, list[str]]:
+def _fetch_marks_sync(db_path: str | None, paths: list[str] | None) -> dict[str, list[str]]:
     result: dict[str, list[str]] = {}
-    if not db_path or not paths:
+    if not db_path:
         return result
     if not Path(str(db_path)).is_file():
         return result
     engine = FileSearchEngine(str(db_path))
     try:
-        result = engine.get_tag_keys_for_paths(list(paths), _MARK_KEY_PREFIX)
+        result = engine.get_tag_keys_by_prefix(_MARK_KEY_PREFIX, paths=paths)
     except Exception as e:
         AppLogger.warning("[MarkOverlay] fetch failed", exc=e)
     finally:
@@ -39,18 +39,17 @@ def _fetch_marks_sync(db_path: str | None, paths: list[str]) -> dict[str, list[s
 
 
 class _MarkFetchTask(QtCore.QRunnable):
-    def __init__(self, db_path: str | None, paths: list[str], generation: int, replace_all: bool, sink: MarkOverlayService):
+    def __init__(self, db_path: str | None, paths: list[str] | None, reload_seq: int, sink: MarkOverlayService):
         super().__init__()
         self._db_path = db_path
         self._paths = paths
-        self._generation = generation
-        self._replace_all = replace_all
+        self._reload_seq = reload_seq
         self._sink = sink
 
     def run(self):
         result = _fetch_marks_sync(self._db_path, self._paths)
         try:
-            self._sink._result_ready.emit(self._generation, list(self._paths), result, self._replace_all)
+            self._sink._result_ready.emit(self._reload_seq, self._paths or [], result, self._paths is None)
         except RuntimeError:
             pass
 
@@ -63,9 +62,7 @@ class MarkOverlayService(QtCore.QObject):
         super().__init__(parent)
         self._dbpath_getter = dbpath_getter
         self._marks: dict[str, list[str]] = {}
-        self._known_paths: list[str] = []
-        self._generation = 0
-        self._latest_replace_gen = 0
+        self._reload_seq = 0
         self._visible = bool(app_settings.get(_VISIBLE_KEY, 1, int))
         self._radius = max(MIN_RADIUS, min(MAX_RADIUS, int(app_settings.get(_RADIUS_KEY, DEFAULT_RADIUS, int))))
         self._pool = QtCore.QThreadPool.globalInstance()
@@ -102,43 +99,31 @@ class MarkOverlayService(QtCore.QObject):
     def marks_for(self, path: str) -> list[str]:
         return self._marks.get(path, [])
 
-    def set_paths(self, paths: list[str]):
-        self._known_paths = list(paths or [])
-        self._marks = {}
-        self._submit(self._known_paths, replace_all=True)
+    def reload(self):
+        self._reload_seq += 1
+        self._submit(None, self._reload_seq)
 
     def refresh_paths(self, paths: list[str]):
         if not paths:
             return
-        self._submit(list(paths), replace_all=False)
+        self._submit(list(paths), self._reload_seq)
 
-    def refresh_all(self):
-        if self._known_paths:
-            self._submit(list(self._known_paths), replace_all=True)
-
-    def _submit(self, paths: list[str], *, replace_all: bool):
-        self._generation += 1
-        gen = self._generation
-        if replace_all:
-            self._latest_replace_gen = gen
+    def _submit(self, paths: list[str] | None, reload_seq: int):
         db_path = self._dbpath_getter() if self._dbpath_getter else None
-        task = _MarkFetchTask(db_path, list(paths), gen, replace_all, self)
-        self._pool.start(task)
+        self._pool.start(_MarkFetchTask(db_path, paths, reload_seq, self))
 
     @QtCore.Slot(int, list, dict, bool)
-    def _on_result_ready(self, generation: int, paths: list, result: dict, replace_all: bool):
-        if generation < self._latest_replace_gen:
+    def _on_result_ready(self, reload_seq: int, paths: list, result: dict, is_full_reload: bool):
+        if reload_seq != self._reload_seq:
             return
-        if replace_all:
-            self._marks = {p: result.get(p, []) for p in paths if result.get(p)}
+        if is_full_reload:
+            self._marks = {p: ids for p, ids in result.items() if ids}
         else:
-            known = set(self._known_paths) if self._known_paths else None
             for p in paths:
-                if known is not None and p not in known:
-                    continue
                 ids = result.get(p)
                 if ids:
                     self._marks[p] = ids
                 else:
                     self._marks.pop(p, None)
         self.changed.emit()
+

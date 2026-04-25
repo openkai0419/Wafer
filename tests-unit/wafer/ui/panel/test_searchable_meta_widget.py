@@ -1,5 +1,5 @@
 import pytest
-from PySide6 import QtWidgets
+from PySide6 import QtGui, QtWidgets
 from wafer.ui.panel.searchable_meta_widget import (
     SearchableMetaWidget,
     build_value_html,
@@ -206,3 +206,81 @@ def test_debounce_attribute_exists(qtbot):
     w = SearchableMetaWidget()
     qtbot.addWidget(w)
     assert w.DEBOUNCE_MS == 50
+
+
+def test_full_value_returns_untruncated(qtbot):
+    w = SearchableMetaWidget()
+    qtbot.addWidget(w)
+    huge = "x" * (SHORT_VALUE_LIMIT + 5000)
+    w.set_data({"big": huge})
+    assert w._full_value("big") == huge
+    assert len(w._full_value("big")) == SHORT_VALUE_LIMIT + 5000
+
+
+def test_key_for_row_returns_filtered_key(qtbot):
+    w = SearchableMetaWidget()
+    qtbot.addWidget(w)
+    w.set_data({"a": "1", "b": "2", "c": "3"})
+    w._apply_filter("b")
+    assert w._key_for_row(0) == "b"
+    assert w._key_for_row(1) is None
+    assert w._key_for_row(-1) is None
+
+
+def test_double_click_opens_value_viewer(qtbot, monkeypatch):
+    w = SearchableMetaWidget()
+    qtbot.addWidget(w)
+    huge = "y" * (SHORT_VALUE_LIMIT + 1000)
+    w.set_data({"big": huge})
+    captured = {}
+
+    def fake_open(parent, key, text):
+        captured["key"] = key
+        captured["text"] = text
+
+    import wafer.ui.panel.searchable_meta_widget as mod
+
+    monkeypatch.setattr(mod, "open_value_viewer", fake_open)
+    index = w._model.index(0, 0)
+    w._on_double_clicked(index)
+    assert captured["text"] == huge
+    assert captured["key"] == "big"
+
+
+def test_context_menu_copy_value_uses_full_text(qtbot, monkeypatch):
+    w = SearchableMetaWidget()
+    qtbot.addWidget(w)
+    huge = "z" * (SHORT_VALUE_LIMIT + 500)
+    w.set_data({"big": huge})
+
+    captured_actions: list[str] = []
+
+    class FakeMenu:
+        def __init__(self, *_a, **_k):
+            self._actions: list[QtGui.QAction] = []
+            self._copy_value_action: QtGui.QAction | None = None
+
+        def addAction(self, label):
+            act = QtGui.QAction(label)
+            self._actions.append(act)
+            captured_actions.append(label)
+            if "value" in label.lower() and "viewer" not in label.lower():
+                self._copy_value_action = act
+            return act
+
+        def addSeparator(self):
+            return None
+
+        def exec(self, *_a, **_k):
+            return self._copy_value_action
+
+    monkeypatch.setattr(QtWidgets, "QMenu", FakeMenu)
+    QtWidgets.QApplication.clipboard().clear()
+    pos = w._list_view.visualRect(w._model.index(0, 0)).center()
+    w._on_context_menu(pos)
+    assert any("key" in a.lower() for a in captured_actions)
+    assert any("row" in a.lower() for a in captured_actions)
+    assert any("viewer" in a.lower() for a in captured_actions)
+    assert QtWidgets.QApplication.clipboard().text() == huge
+
+

@@ -29,7 +29,7 @@ class TagEditService(QtCore.QObject):
     overlay_changed = QtCore.Signal(str)
     commit_confirmed = QtCore.Signal(str, dict, list)
 
-    _instance: "TagEditService | None" = None
+    _instance: TagEditService | None = None
 
     def __init__(self, parent: QtCore.QObject | None = None):
         super().__init__(parent)
@@ -48,27 +48,25 @@ class TagEditService(QtCore.QObject):
         self._timeout_timer.start()
 
     @classmethod
-    def instance(cls) -> "TagEditService":
+    def instance(cls) -> TagEditService:
         if cls._instance is None:
             cls._instance = TagEditService()
         return cls._instance
 
     def submit(
         self,
-        path: str,
-        file_hash: str | None,
+        paths: list[str],
         upserts: list[tuple[str, str, bool]],
         deletes: list[str],
         db: str,
         *,
         lock_only: bool = False,
         renames: list[tuple[str, str, str, bool]] | None = None,
+        file_hash: str | None = None,
     ) -> str | None:
         renames = list(renames or [])
-        if not path or (not upserts and not deletes and not renames):
-            return None
-        if not file_hash:
-            Notifier.warning(t("Tag edit failed: file hash unknown"))
+        paths = list(paths or [])
+        if not paths or (not upserts and not deletes and not renames):
             return None
         node = self._resolve_node()
         if node is None:
@@ -76,33 +74,22 @@ class TagEditService(QtCore.QObject):
             return None
         request_id = uuid.uuid4().hex
         keys: list[tuple[str, str]] = []
-        for key, value, locked in upserts:
-            self._pending[(file_hash, key)] = PendingEdit(
-                op="upsert", value=value, locked=locked, request_id=request_id
-            )
-            keys.append((file_hash, key))
-        for key in deletes:
-            self._pending[(file_hash, key)] = PendingEdit(
-                op="delete", request_id=request_id
-            )
-            keys.append((file_hash, key))
-        for old_key, new_key, value, locked in renames:
-            self._pending[(file_hash, old_key)] = PendingEdit(
-                op="rename", value=value, locked=locked, new_key=new_key, request_id=request_id
-            )
-            keys.append((file_hash, old_key))
-        self._request_index[request_id] = keys
+        if file_hash:
+            for key, value, locked in upserts:
+                self._pending[(file_hash, key)] = PendingEdit(op="upsert", value=value, locked=locked, request_id=request_id)
+                keys.append((file_hash, key))
+            for key in deletes:
+                self._pending[(file_hash, key)] = PendingEdit(op="delete", request_id=request_id)
+                keys.append((file_hash, key))
+            for old_key, new_key, value, locked in renames:
+                self._pending[(file_hash, old_key)] = PendingEdit(op="rename", value=value, locked=locked, new_key=new_key, request_id=request_id)
+                keys.append((file_hash, old_key))
+            self._request_index[request_id] = keys
         payload = {
-            "path": path,
-            "file_hash": file_hash,
+            "paths": list(paths),
             "request_id": request_id,
-            "upserts": [
-                {"key": k, "value": v, "locked": bool(lk)} for (k, v, lk) in upserts
-            ],
-            "renames": [
-                {"old": ok, "new": nk, "value": v, "locked": bool(lk)}
-                for (ok, nk, v, lk) in renames
-            ],
+            "upserts": [{"key": k, "value": v, "locked": bool(lk)} for (k, v, lk) in upserts],
+            "renames": [{"old": ok, "new": nk, "value": v, "locked": bool(lk)} for (ok, nk, v, lk) in renames],
             "deletes": list(deletes),
             "lock_only": bool(lock_only),
         }
@@ -113,22 +100,25 @@ class TagEditService(QtCore.QObject):
             self._mark_failed(request_id)
             Notifier.warning(t("Tag edit send failed"))
             return None
-        self._ensure_timeout_timer()
-        AppLogger.info(
-            f"[TagEdit] submitted path={path} hash={file_hash} upserts={len(upserts)} renames={len(renames)} deletes={len(deletes)} rid={request_id}"
-        )
-        self.overlay_changed.emit(file_hash)
+        if file_hash:
+            self._ensure_timeout_timer()
+        AppLogger.info(f"[TagEdit] submitted paths={len(paths)} hash={file_hash or '-'} upserts={len(upserts)} renames={len(renames)} deletes={len(deletes)} rid={request_id}")
+        if file_hash:
+            self.overlay_changed.emit(file_hash)
         return request_id
 
     def handle_ack(self, payload: dict):
         if not isinstance(payload, dict):
             return
         request_id = payload.get("request_id", "")
-        file_hash = payload.get("file_hash")
-        applied_keys = list(payload.get("applied") or [])
-        deleted_keys = list(payload.get("deleted") or [])
         if not request_id:
             return
+        applied_by_path = payload.get("applied") or {}
+        deleted_by_path = payload.get("deleted") or {}
+        hashes_by_path = payload.get("file_hashes") or {}
+        applied_keys = {k for keys in applied_by_path.values() for k in (keys or [])}
+        deleted_keys_set = {k for keys in deleted_by_path.values() for k in (keys or [])}
+        deleted_keys: list[str] = list(deleted_keys_set)
         keys = self._request_index.pop(request_id, [])
         affected_hashes: set[str] = set()
         committed: dict[str, tuple[str, bool]] = {}
@@ -143,24 +133,21 @@ class TagEditService(QtCore.QObject):
                 committed[key] = (current.value, current.locked)
             elif current.op == "rename" and current.new_key in applied_keys:
                 committed[current.new_key] = (current.value, current.locked)
-                if key not in deleted_keys:
+                if key not in deleted_keys_set:
                     synthetic_deletes.append(key)
             self._pending.pop((fh, key), None)
             affected_hashes.add(fh)
         if synthetic_deletes:
             deleted_keys = list(deleted_keys) + synthetic_deletes
-        if file_hash:
-            affected_hashes.add(file_hash)
+        for fh in hashes_by_path.values():
+            if fh:
+                affected_hashes.add(fh)
         for fh in affected_hashes:
             self.commit_confirmed.emit(fh, committed, deleted_keys)
             self.overlay_changed.emit(fh)
-        AppLogger.info(
-            f"[TagEdit] ack rid={request_id} applied={len(committed)} deleted={len(deleted_keys)}"
-        )
+        AppLogger.info(f"[TagEdit] ack rid={request_id} applied={len(committed)} deleted={len(deleted_keys)}")
 
-    def apply_overlay(
-        self, file_hash: str | None, tags: dict[str, str], locks: dict[str, bool]
-    ) -> tuple[dict[str, str], dict[str, bool], dict[str, str]]:
+    def apply_overlay(self, file_hash: str | None, tags: dict[str, str], locks: dict[str, bool]) -> tuple[dict[str, str], dict[str, bool], dict[str, str]]:
         if not file_hash:
             return tags, locks, {}
         merged_tags = dict(tags)

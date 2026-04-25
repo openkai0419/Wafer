@@ -16,27 +16,56 @@ def service(qtbot, monkeypatch):
     TagEditService._instance = None
 
 
+def _submit(svc, upserts=None, deletes=None, *, file_hash="h1", lock_only=False, renames=None):
+    return svc.submit(
+        ["p"],
+        list(upserts or []),
+        list(deletes or []),
+        "db",
+        lock_only=lock_only,
+        renames=renames,
+        file_hash=file_hash,
+    )
+
+
+def _ack(rid, applied_keys=None, deleted_keys=None, file_hash="h1"):
+    return {
+        "request_id": rid,
+        "paths": ["p"],
+        "applied": {"p": list(applied_keys or [])},
+        "deleted": {"p": list(deleted_keys or [])},
+        "file_hashes": {"p": file_hash} if file_hash else {},
+    }
+
+
 def test_submit_caches_pending_and_emits_overlay(service, qtbot):
     svc, node = service
     received = []
     svc.overlay_changed.connect(received.append)
-    rid = svc.submit("p", "h1", [("k", "v", False)], [], "db")
+    rid = _submit(svc, upserts=[("k", "v", False)])
     assert rid is not None
     node.send_reliable.assert_called_once()
     assert ("h1", "k") in svc._pending
     assert received == ["h1"]
 
 
+def test_submit_without_file_hash_skips_pending(service):
+    svc, node = service
+    rid = svc.submit(["p1", "p2"], [("k", "v", False)], [], "db")
+    assert rid is not None
+    node.send_reliable.assert_called_once()
+    assert svc._pending == {}
+
+
 def test_handle_ack_clears_only_matching_request_id(service):
     svc, node = service
-    rid_a = svc.submit("p", "h1", [("k", "vA", False)], [], "db")
-    pending_a = svc._pending[("h1", "k")]
-    rid_b = svc.submit("p", "h1", [("k", "vB", False)], [], "db")
+    rid_a = _submit(svc, upserts=[("k", "vA", False)])
+    rid_b = _submit(svc, upserts=[("k", "vB", False)])
     assert svc._pending[("h1", "k")].request_id == rid_b
-    svc.handle_ack({"request_id": rid_a, "applied": ["k"], "deleted": []})
+    svc.handle_ack(_ack(rid_a, applied_keys=["k"]))
     assert ("h1", "k") in svc._pending
     assert svc._pending[("h1", "k")].request_id == rid_b
-    svc.handle_ack({"request_id": rid_b, "applied": ["k"], "deleted": []})
+    svc.handle_ack(_ack(rid_b, applied_keys=["k"]))
     assert ("h1", "k") not in svc._pending
 
 
@@ -44,15 +73,15 @@ def test_handle_ack_emits_commit_confirmed_with_committed(service):
     svc, _ = service
     received = []
     svc.commit_confirmed.connect(lambda fh, applied, deleted: received.append((fh, dict(applied), list(deleted))))
-    rid = svc.submit("p", "h1", [("k", "v", True)], ["d"], "db")
-    svc.handle_ack({"request_id": rid, "file_hash": "h1", "applied": ["k"], "deleted": ["d"]})
+    rid = _submit(svc, upserts=[("k", "v", True)], deletes=["d"])
+    svc.handle_ack(_ack(rid, applied_keys=["k"], deleted_keys=["d"]))
     assert received == [("h1", {"k": ("v", True)}, ["d"])]
 
 
 def test_apply_overlay_returns_pending_edits(service):
     svc, _ = service
-    svc.submit("p", "h1", [("new", "x", False)], [], "db")
-    svc.submit("p", "h1", [], ["old"], "db")
+    _submit(svc, upserts=[("new", "x", False)])
+    _submit(svc, deletes=["old"])
     tags, locks, states = svc.apply_overlay("h1", {"old": "y", "stable": "s"}, {"old": False, "stable": False})
     assert tags == {"new": "x", "stable": "s"}
     assert states["new"] == "saving"
@@ -61,7 +90,7 @@ def test_apply_overlay_returns_pending_edits(service):
 
 def test_check_timeouts_safe_during_iteration(service, monkeypatch):
     svc, _ = service
-    rid = svc.submit("p", "h1", [("k", "v", False)], [], "db")
+    _submit(svc, upserts=[("k", "v", False)])
     pending = svc._pending[("h1", "k")]
     pending.sent_at = 0.0
     received = []
@@ -72,21 +101,22 @@ def test_check_timeouts_safe_during_iteration(service, monkeypatch):
 
 def test_lock_only_flag_passed_in_payload(service):
     svc, node = service
-    svc.submit("p", "h1", [("k", "v", True)], [], "db", lock_only=True)
+    _submit(svc, upserts=[("k", "v", True)], lock_only=True)
     args, kwargs = node.send_reliable.call_args
     assert kwargs["dst"] == "indexer"
     payload = args[1]
     assert payload["lock_only"] is True
+    assert payload["paths"] == ["p"]
 
 
 def test_handle_ack_ignores_unknown_request_id(service):
     svc, _ = service
-    svc.submit("p", "h1", [("k", "v", False)], [], "db")
-    svc.handle_ack({"request_id": "ghost", "applied": [], "deleted": []})
+    _submit(svc, upserts=[("k", "v", False)])
+    svc.handle_ack(_ack("ghost", applied_keys=[], deleted_keys=[]))
     assert ("h1", "k") in svc._pending
 
 
 def test_submit_short_circuits_when_no_payload(service):
     svc, node = service
-    assert svc.submit("p", "h1", [], [], "db") is None
+    assert _submit(svc) is None
     node.send_reliable.assert_not_called()

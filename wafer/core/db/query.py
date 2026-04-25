@@ -375,9 +375,7 @@ class FileSearchEngine:
         if not row:
             return None, {}
         fid = row["file_hash"]
-        rows = cur.execute(
-            "SELECT key, value, locked FROM tags WHERE file_hash = ?", (fid,)
-        ).fetchall()
+        rows = cur.execute("SELECT key, value, locked FROM tags WHERE file_hash = ?", (fid,)).fetchall()
         return fid, {r["key"]: (r["value"], bool(r["locked"])) for r in rows}
 
     @profiler.profile
@@ -415,19 +413,13 @@ class FileSearchEngine:
         if not file_row:
             return {}, None, {}, {}
         file_record = dict(file_row)
-        meta_rows = cur.execute(
-            "SELECT key, value FROM meta_info WHERE path = ?", (norm_path,)
-        ).fetchall()
+        meta_rows = cur.execute("SELECT key, value FROM meta_info WHERE path = ?", (norm_path,)).fetchall()
         meta_info = {r["key"]: r["value"] for r in meta_rows}
-        src_row = cur.execute(
-            "SELECT file_hash FROM sources WHERE source = ?", (file_record.get("source"),)
-        ).fetchone()
+        src_row = cur.execute("SELECT file_hash FROM sources WHERE source = ?", (file_record.get("source"),)).fetchone()
         if not src_row or not src_row["file_hash"]:
             return file_record, None, {}, meta_info
         file_hash = src_row["file_hash"]
-        tag_rows = cur.execute(
-            "SELECT key, value, locked FROM tags WHERE file_hash = ?", (file_hash,)
-        ).fetchall()
+        tag_rows = cur.execute("SELECT key, value, locked FROM tags WHERE file_hash = ?", (file_hash,)).fetchall()
         tags_with_lock = {r["key"]: (r["value"], bool(r["locked"])) for r in tag_rows}
         return file_record, file_hash, tags_with_lock, meta_info
 

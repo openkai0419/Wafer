@@ -84,10 +84,13 @@ class DatabaseWriter:
         return result
 
     @profiler.profile
-    def apply_user_tags(self, path: str, upserts, deletes, *, lock_only: bool = False, file_hash: str = "", renames=None):
+    def apply_user_tags(self, paths, upserts, deletes, *, lock_only: bool = False, renames=None):
         result = self._db.apply_user_tags(
-            path, upserts, deletes,
-            lock_only=lock_only, file_hash=file_hash, renames=renames,
+            paths,
+            upserts,
+            deletes,
+            lock_only=lock_only,
+            renames=renames,
         )
         self._db.try_checkpoint("PASSIVE")
         return result

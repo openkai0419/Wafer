@@ -1,4 +1,148 @@
 {
+  "Add Mark": {
+    "en": "Add Mark",
+    "ja": ""
+  },
+  "Add Mark 1": {
+    "en": "Add Mark 1",
+    "ja": ""
+  },
+  "Add Mark 2": {
+    "en": "Add Mark 2",
+    "ja": ""
+  },
+  "Add Mark 3": {
+    "en": "Add Mark 3",
+    "ja": ""
+  },
+  "Add Mark 4": {
+    "en": "Add Mark 4",
+    "ja": ""
+  },
+  "Add Mark 5": {
+    "en": "Add Mark 5",
+    "ja": ""
+  },
+  "Add Mark 6": {
+    "en": "Add Mark 6",
+    "ja": ""
+  },
+  "Add Mark 7": {
+    "en": "Add Mark 7",
+    "ja": ""
+  },
+  "Add Mark 8": {
+    "en": "Add Mark 8",
+    "ja": ""
+  },
+  "Add Mark 9": {
+    "en": "Add Mark 9",
+    "ja": ""
+  },
+  "Clear All Marks": {
+    "en": "Clear All Marks",
+    "ja": ""
+  },
+  "Mark": {
+    "en": "Mark",
+    "ja": ""
+  },
+  "Mark {mark_id} added to {count} file(s)": {
+    "en": "Mark {mark_id} added to {count} file(s)",
+    "ja": ""
+  },
+  "Mark {mark_id} removed from {count} file(s)": {
+    "en": "Mark {mark_id} removed from {count} file(s)",
+    "ja": ""
+  },
+  "Remove Mark": {
+    "en": "Remove Mark",
+    "ja": ""
+  },
+  "Remove Mark 1": {
+    "en": "Remove Mark 1",
+    "ja": ""
+  },
+  "Remove Mark 2": {
+    "en": "Remove Mark 2",
+    "ja": ""
+  },
+  "Remove Mark 3": {
+    "en": "Remove Mark 3",
+    "ja": ""
+  },
+  "Remove Mark 4": {
+    "en": "Remove Mark 4",
+    "ja": ""
+  },
+  "Remove Mark 5": {
+    "en": "Remove Mark 5",
+    "ja": ""
+  },
+  "Remove Mark 6": {
+    "en": "Remove Mark 6",
+    "ja": ""
+  },
+  "Remove Mark 7": {
+    "en": "Remove Mark 7",
+    "ja": ""
+  },
+  "Remove Mark 8": {
+    "en": "Remove Mark 8",
+    "ja": ""
+  },
+  "Remove Mark 9": {
+    "en": "Remove Mark 9",
+    "ja": ""
+  },
+  "Set Mark Color": {
+    "en": "Set Mark Color",
+    "ja": ""
+  },
+  "Toggle": {
+    "en": "Toggle",
+    "ja": ""
+  },
+  "Toggle Mark": {
+    "en": "Toggle Mark",
+    "ja": ""
+  },
+  "Toggle Mark 1": {
+    "en": "Toggle Mark 1",
+    "ja": ""
+  },
+  "Toggle Mark 2": {
+    "en": "Toggle Mark 2",
+    "ja": ""
+  },
+  "Toggle Mark 3": {
+    "en": "Toggle Mark 3",
+    "ja": ""
+  },
+  "Toggle Mark 4": {
+    "en": "Toggle Mark 4",
+    "ja": ""
+  },
+  "Toggle Mark 5": {
+    "en": "Toggle Mark 5",
+    "ja": ""
+  },
+  "Toggle Mark 6": {
+    "en": "Toggle Mark 6",
+    "ja": ""
+  },
+  "Toggle Mark 7": {
+    "en": "Toggle Mark 7",
+    "ja": ""
+  },
+  "Toggle Mark 8": {
+    "en": "Toggle Mark 8",
+    "ja": ""
+  },
+  "Toggle Mark 9": {
+    "en": "Toggle Mark 9",
+    "ja": ""
+  },
   "Add new tag": {
     "en": "Add new tag",
     "ja": ""

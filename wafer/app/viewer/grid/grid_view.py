@@ -81,7 +81,63 @@ class _SelectionOverlay(QtWidgets.QWidget):
                 text = fm.elidedText(str(g._drop_preview_text or ""), QtCore.Qt.ElideMiddle, max(1, int(inner.width() - g._half_pos)))
                 painter.drawText(inner.toRect(), QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter, f"{title}\n{text}".strip())
                 painter.restore()
+        self._draw_mark_badges(painter, g)
         painter.end()
+
+    def _draw_mark_badges(self, painter, g):
+        from .mark_overlay_service import MarkOverlayService
+        from ....builtins.mark import MarkRegistry
+
+        svc = MarkOverlayService.instance()
+        if svc is None or not g.visible_indices or not g.rects:
+            return
+        view_rect = g._scene_view_rect()
+        radius = dpix(16)
+        diameter = radius * 2
+        margin = dpix(4)
+        registry = MarkRegistry.instance()
+        painter.save()
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        for i in g.visible_indices:
+            if i < 0 or i >= len(g.rects):
+                continue
+            r = g.rects[i]
+            if not r.intersects(view_rect):
+                continue
+            path = g.items.paths[i] if i < len(g.items.paths) else None
+            if not path:
+                continue
+            ids = svc.marks_for(path)
+            if not ids:
+                continue
+            cell = self._map_rect(QtCore.QRectF(r))
+            cx = cell.left() + margin + radius
+            cy = cell.top() + margin + radius
+            badge_rect = QtCore.QRectF(cx - radius, cy - radius, diameter, diameter)
+            count = len(ids)
+            if count == 1:
+                painter.setPen(QtGui.QPen(QtGui.QColor(0, 0, 0, 180), max(1, dpix(1))))
+                painter.setBrush(registry.qcolor_for(ids[0]))
+                painter.drawEllipse(badge_rect)
+            else:
+                painter.setPen(QtCore.Qt.NoPen)
+                span = int(360 * 16 / count)
+                start = 90 * 16
+                for mid in ids:
+                    painter.setBrush(registry.qcolor_for(mid))
+                    painter.drawPie(badge_rect, start, -span)
+                    start -= span
+                painter.setPen(QtGui.QPen(QtGui.QColor(0, 0, 0, 200), max(1, dpix(1))))
+                painter.setBrush(QtCore.Qt.NoBrush)
+                painter.drawEllipse(badge_rect)
+            painter.setPen(QtGui.QColor(255, 255, 255))
+            font = painter.font()
+            font.setBold(True)
+            font.setPointSizeF(max(6.0, radius * 0.85))
+            painter.setFont(font)
+            text = "9+" if count >= 9 else str(count) if count > 1 else str(ids[0])
+            painter.drawText(badge_rect, QtCore.Qt.AlignCenter, text)
+        painter.restore()
 
 
 class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):

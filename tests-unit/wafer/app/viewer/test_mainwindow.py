@@ -118,6 +118,7 @@ class TestSearchResultDiffCheck:
             win.folder_view = MagicMock()
             win.folder_view.get_selected_paths.return_value = []
             win.file_list_provider = MagicMock()
+            win._mark_overlay_service = MagicMock()
 
             win._on_search_finished(new_paths, sources, aspects)
             win.grid_view.set_paths.assert_called_once()
@@ -146,6 +147,7 @@ class TestSearchResultDiffCheck:
             win.folder_view = MagicMock()
             win.folder_view.get_selected_paths.return_value = []
             win.file_list_provider = MagicMock()
+            win._mark_overlay_service = MagicMock()
 
             win._on_search_finished(paths, sources, aspects)
             win.grid_view.set_paths.assert_called_once()

@@ -27,7 +27,7 @@ class CollectorResolver:
 
     def chunk_timeout(self, name: str) -> float:
         cls = self.registry.get(name)
-        return getattr(cls, "CHUNK_TIMEOUT", 120.0) if cls else 120.0
+        return getattr(cls, "CHUNK_TIMEOUT", 300.0) if cls else 300.0
 
 
 collector_resolver = CollectorResolver()

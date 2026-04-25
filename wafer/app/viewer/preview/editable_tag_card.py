@@ -26,25 +26,12 @@ def _color_with_alpha(hex_color: str, alpha: int) -> str:
 
 def _label_bg_css() -> str:
     bg = ThemeManager.instance().palette.bg_secondary
-    return (
-        "QLabel {"
-        f" background-color: {bg};"
-        " border-radius: 3px;"
-        " padding: 2px 4px;"
-        "}"
-    )
+    return f"QLabel {{ background-color: {bg}; border-radius: 3px; padding: 2px 4px;}}"
 
 
 def _edit_bg_css() -> str:
     palette = ThemeManager.instance().palette
-    return (
-        "QLineEdit, QPlainTextEdit {"
-        f" background-color: {palette.bg_tertiary};"
-        f" border: 1px solid {palette.border_default};"
-        " border-radius: 3px;"
-        " padding: 1px 3px;"
-        "}"
-    )
+    return f"QLineEdit, QPlainTextEdit {{ background-color: {palette.bg_tertiary}; border: 1px solid {palette.border_default}; border-radius: 3px; padding: 1px 3px;}}"
 
 
 @dataclass
@@ -449,9 +436,7 @@ class _AddTagDialog(QtWidgets.QDialog):
         self._hint.setStyleSheet(f"QLabel {{ color: {ThemeManager.instance().palette.warning}; }}")
         lay.addWidget(self._hint)
 
-        btns = QtWidgets.QDialogButtonBox(
-            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel, parent=self
-        )
+        btns = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel, parent=self)
         btns.accepted.connect(self.accept)
         btns.rejected.connect(self.reject)
         lay.addWidget(btns)
@@ -470,8 +455,11 @@ class _AddTagDialog(QtWidgets.QDialog):
 
 
 class EditableTagCard(CollapsibleCard):
-    def __init__(self, parent=None):
-        super().__init__(t("tag"), "tag", parent=parent)
+    def __init__(self, prefix: str = "", parent=None):
+        title = t(prefix) if prefix else t("tag")
+        section_id = f"tag:{prefix}" if prefix else "tag"
+        super().__init__(title, section_id, parent=parent)
+        self._prefix = prefix
         self._tags: dict[str, str] = {}
         self._locks: dict[str, bool] = {}
         self._path: str = ""
@@ -547,10 +535,34 @@ class EditableTagCard(CollapsibleCard):
 
     # ---- Render --------------------------------------------------------
 
+    def _to_full(self, short_key: str) -> str:
+        return f"{self._prefix}.{short_key}" if self._prefix else short_key
+
+    def _to_short(self, full_key: str) -> str | None:
+        if not self._prefix:
+            return None if "." in full_key else full_key
+        head = self._prefix + "."
+        if full_key.startswith(head):
+            return full_key[len(head) :]
+        return None
+
     def _refresh_overlay_cache(self) -> None:
-        self._overlay_cache = TagEditService.instance().apply_overlay(
-            self._file_hash, self._tags, self._locks
-        )
+        full_tags = {self._to_full(k): v for k, v in self._tags.items()}
+        full_locks = {self._to_full(k): v for k, v in self._locks.items()}
+        merged_tags, merged_locks, states = TagEditService.instance().apply_overlay(self._file_hash, full_tags, full_locks)
+        short_tags: dict[str, str] = {}
+        short_locks: dict[str, bool] = {}
+        short_states: dict[str, str] = {}
+        for full_key, value in merged_tags.items():
+            short = self._to_short(full_key)
+            if short is None:
+                continue
+            short_tags[short] = value
+            if full_key in merged_locks:
+                short_locks[short] = merged_locks[full_key]
+            if full_key in states:
+                short_states[short] = states[full_key]
+        self._overlay_cache = (short_tags, short_locks, short_states)
 
     def _render(self):
         base_tags, base_locks, in_flight = self._overlay_cache
@@ -558,45 +570,51 @@ class EditableTagCard(CollapsibleCard):
         for base_key, base_value in base_tags.items():
             edit = self.local_edits.get(base_key)
             if edit is None:
-                rendered.append(RowDisplay(
-                    row_id=base_key,
-                    key=base_key,
-                    value=base_value,
-                    locked=base_locks.get(base_key, False),
-                    deleted=False,
-                    added=False,
-                    edited=False,
-                    in_flight=in_flight.get(base_key, ""),
-                ))
+                rendered.append(
+                    RowDisplay(
+                        row_id=base_key,
+                        key=base_key,
+                        value=base_value,
+                        locked=base_locks.get(base_key, False),
+                        deleted=False,
+                        added=False,
+                        edited=False,
+                        in_flight=in_flight.get(base_key, ""),
+                    )
+                )
                 continue
             display_key = edit.new_key if edit.new_key is not None else base_key
             display_value = edit.new_value if edit.new_value is not None else base_value
             display_lock = edit.new_locked if edit.new_locked is not None else base_locks.get(base_key, False)
-            edited = (edit.new_key is not None or edit.new_value is not None or edit.new_locked is not None)
-            rendered.append(RowDisplay(
-                row_id=base_key,
-                key=display_key,
-                value=display_value,
-                locked=bool(display_lock),
-                deleted=edit.deleted,
-                added=False,
-                edited=edited and not edit.deleted,
-                in_flight=in_flight.get(base_key, ""),
-            ))
+            edited = edit.new_key is not None or edit.new_value is not None or edit.new_locked is not None
+            rendered.append(
+                RowDisplay(
+                    row_id=base_key,
+                    key=display_key,
+                    value=display_value,
+                    locked=bool(display_lock),
+                    deleted=edit.deleted,
+                    added=False,
+                    edited=edited and not edit.deleted,
+                    in_flight=in_flight.get(base_key, ""),
+                )
+            )
 
         for row_id, edit in self.local_edits.items():
             if not edit.is_new:
                 continue
-            rendered.append(RowDisplay(
-                row_id=row_id,
-                key=edit.new_key if edit.new_key is not None else "",
-                value=edit.new_value if edit.new_value is not None else edit.initial_value,
-                locked=bool(edit.new_locked if edit.new_locked is not None else edit.initial_locked),
-                deleted=edit.deleted,
-                added=True,
-                edited=False,
-                in_flight="",
-            ))
+            rendered.append(
+                RowDisplay(
+                    row_id=row_id,
+                    key=edit.new_key if edit.new_key is not None else "",
+                    value=edit.new_value if edit.new_value is not None else edit.initial_value,
+                    locked=bool(edit.new_locked if edit.new_locked is not None else edit.initial_locked),
+                    deleted=edit.deleted,
+                    added=True,
+                    edited=False,
+                    in_flight="",
+                )
+            )
 
         self._sync_rows(rendered)
         self._refresh_action_buttons()
@@ -744,7 +762,7 @@ class EditableTagCard(CollapsibleCard):
             if edit and edit.deleted:
                 continue
             keys.add(edit.new_key if edit and edit.new_key is not None else base_key)
-        for rid, edit in self.local_edits.items():
+        for edit in self.local_edits.values():
             if not edit.is_new or edit.deleted:
                 continue
             if edit.new_key:
@@ -786,17 +804,17 @@ class EditableTagCard(CollapsibleCard):
                 t("Save tags"),
                 t("Duplicate keys remain after edits. Please fix and try again."),
             )
-            AppLogger.warning(
-                f"[EditableTagCard] save aborted: duplicate keys in {all_target_keys}"
-            )
+            AppLogger.warning(f"[EditableTagCard] save aborted: duplicate keys in {all_target_keys}")
             return
 
         if not upserts and not deletes and not renames:
             return
 
-        rid = TagEditService.instance().submit(
-            self._path, self._file_hash, upserts, deletes, self._db, renames=renames
-        )
+        upserts = [(self._to_full(k), v, lk) for (k, v, lk) in upserts]
+        deletes = [self._to_full(k) for k in deletes]
+        renames = [(self._to_full(old), self._to_full(new), v, lk) for (old, new, v, lk) in renames]
+
+        rid = TagEditService.instance().submit([self._path], upserts, deletes, self._db, renames=renames, file_hash=self._file_hash)
         if rid is None:
             return
         self.local_edits.clear()
@@ -825,18 +843,22 @@ class EditableTagCard(CollapsibleCard):
     def _on_commit_confirmed(self, file_hash: str, applied: dict, deleted: list):
         if not file_hash or file_hash != self._file_hash:
             return
-        for key, (value, locked) in applied.items():
-            self._tags[key] = value
-            self._locks[key] = bool(locked)
-        for key in deleted:
-            self._tags.pop(key, None)
-            self._locks.pop(key, None)
+        for full_key, (value, locked) in applied.items():
+            short = self._to_short(full_key)
+            if short is None:
+                continue
+            self._tags[short] = value
+            self._locks[short] = bool(locked)
+        for full_key in deleted:
+            short = self._to_short(full_key)
+            if short is None:
+                continue
+            self._tags.pop(short, None)
+            self._locks.pop(short, None)
         self._refresh_overlay_cache()
 
     def _validate_context(self, *, allow_no_hash: bool = False) -> bool:
         if not self._path or not self._db or (not allow_no_hash and not self._file_hash):
-            AppLogger.warning(
-                f"[EditableTagCard] missing context path={bool(self._path)} hash={bool(self._file_hash)} db={bool(self._db)}"
-            )
+            AppLogger.warning(f"[EditableTagCard] missing context path={bool(self._path)} hash={bool(self._file_hash)} db={bool(self._db)}")
             return False
         return True

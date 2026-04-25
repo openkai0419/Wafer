@@ -129,7 +129,6 @@ LIGHT = ThemePalette(
     text_primary="#1e1e1e",
     text_secondary="#555",
     text_tertiary="#777",
-
     text_muted="#888",
     text_accent="#1a73e8",
     accent="#1a73e8",

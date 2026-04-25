@@ -306,14 +306,13 @@ class IndexerProcess:
         if not isinstance(payload, dict):
             AppLogger.warning(f"tags.update: invalid payload: {type(payload)}")
             return True
-        path = payload.get("path", "")
-        client_hash = payload.get("file_hash", "") or ""
-        upserts_raw = payload.get("upserts", [])
-        renames_raw = payload.get("renames", [])
-        deletes = payload.get("deletes", [])
+        paths = payload.get("paths", []) or []
+        upserts_raw = payload.get("upserts", []) or []
+        renames_raw = payload.get("renames", []) or []
+        deletes = payload.get("deletes", []) or []
         request_id = payload.get("request_id", "")
         lock_only = bool(payload.get("lock_only", False))
-        if not self.writer or (not path and not client_hash):
+        if not self.writer or not paths:
             return True
 
         def _coerce_value(value):
@@ -347,19 +346,25 @@ class IndexerProcess:
                 locked = 1 if item.get("locked") else 0
                 renames.append((old_key, new_key, value_str, value_num, locked))
             result["data"] = self.writer.apply_user_tags(
-                path, upserts, list(deletes),
-                lock_only=lock_only, file_hash=client_hash, renames=renames,
+                list(paths),
+                upserts,
+                list(deletes),
+                lock_only=lock_only,
+                renames=renames,
             )
 
         def _on_done():
-            file_hash, applied, deleted = result.get("data") or (None, [], [])
+            data: dict = result.get("data") or {}
+            applied_by_path = {p: list(applied) for p, (_fh, applied, _del) in data.items()}
+            deleted_by_path = {p: list(deleted) for p, (_fh, _ap, deleted) in data.items()}
+            hashes_by_path = {p: fh for p, (fh, _ap, _del) in data.items()}
             self.zmq.send(
                 "tags.updated",
                 {
-                    "path": path,
-                    "file_hash": file_hash,
-                    "applied": applied,
-                    "deleted": deleted,
+                    "paths": list(paths),
+                    "applied": applied_by_path,
+                    "deleted": deleted_by_path,
+                    "file_hashes": hashes_by_path,
                     "request_id": request_id,
                     "db": self.db_name,
                 },

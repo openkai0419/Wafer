@@ -28,14 +28,28 @@ def _format_meta(engine, path, dbpath):
     if file_rec.get("aspect_ratio"):
         file_rec["aspect_ratio"] = format_aspect(file_rec["aspect_ratio"])
     standard = {}
-    prefix_groups: dict[str, dict] = {}
+    meta_prefixed: dict[str, dict] = {}
+    tag_prefixed: dict[str, dict] = {}
+    tag_prefixed_locks: dict[str, dict] = {}
+    tag_root: dict[str, str] = {}
+    tag_root_locks: dict[str, bool] = {}
     for k, v in meta_infos.items():
         dot = k.find(".")
         if dot > 0:
             prefix = k[:dot]
-            prefix_groups.setdefault(prefix, {})[k[dot + 1 :]] = v
+            meta_prefixed.setdefault(prefix, {})[k[dot + 1 :]] = v
         else:
             standard[k] = v
+    for k, v in tags.items():
+        dot = k.find(".")
+        if dot > 0:
+            prefix = k[:dot]
+            short = k[dot + 1 :]
+            tag_prefixed.setdefault(prefix, {})[short] = v
+            tag_prefixed_locks.setdefault(prefix, {})[short] = tag_locks.get(k, False)
+        else:
+            tag_root[k] = v
+            tag_root_locks[k] = tag_locks.get(k, False)
     for k in ("created", "collected", "modified", "size"):
         raw = standard.get(k)
         if raw is not None:
@@ -45,10 +59,13 @@ def _format_meta(engine, path, dbpath):
                 pass
     _standard_order = ["name", "path", "file_hash", "size", "created", "modified", "collected"]
     standard = {k: standard[k] for k in _standard_order if k in standard}
-    tags = {k: tags[k] for k in natsorted(tags)}
-    for prefix in prefix_groups:
-        d = prefix_groups[prefix]
-        prefix_groups[prefix] = {k: d[k] for k in natsorted(d)}
+    tag_root = {k: tag_root[k] for k in natsorted(tag_root)}
+    for prefix in meta_prefixed:
+        d = meta_prefixed[prefix]
+        meta_prefixed[prefix] = {k: d[k] for k in natsorted(d)}
+    for prefix in tag_prefixed:
+        d = tag_prefixed[prefix]
+        tag_prefixed[prefix] = {k: d[k] for k in natsorted(d)}
     collector_status = engine.get_collection_status(path)
     if collector_status:
         palette = ThemeManager.instance().palette
@@ -60,11 +77,13 @@ def _format_meta(engine, path, dbpath):
     return {
         "source": file_rec,
         "file": standard,
-        "tag": tags,
-        "prefixed": prefix_groups,
+        "tag": tag_root,
+        "tag_prefixed": tag_prefixed,
+        "tag_prefixed_locks": tag_prefixed_locks,
+        "prefixed": meta_prefixed,
         "_path": path,
         "_file_hash": file_hash,
-        "_tag_locks": tag_locks,
+        "_tag_locks": tag_root_locks,
         "_db_name": db_name_from_path(dbpath),
     }
 

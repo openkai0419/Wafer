@@ -42,7 +42,7 @@ class TestCollectorClassAttributes:
         assert FlorenceCollector.DEFAULT_ENABLED is False
 
     def test_batch_size(self):
-        assert FlorenceCollector.BATCH_SIZE == 150
+        assert FlorenceCollector.BATCH_SIZE == 50
 
 
 class TestTwoLevelCache:

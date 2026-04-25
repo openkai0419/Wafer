@@ -169,15 +169,15 @@ def test_add_collision_auto_dedupes(card, qtbot):
 def test_pending_overlay_state_propagates(card):
     c, svc, _ = card
     c.update_data({"k": "v"}, {}, None, "p", "h1", "db")
-    svc.submit("p", "h1", [("k", "new", False)], [], "db")
+    svc.submit(["p"], [("k", "new", False)], [], "db", file_hash="h1")
     assert "k" in c.widgets
 
 
 def test_commit_confirmed_updates_base_state(card):
     c, svc, _ = card
     c.update_data({"k": "old"}, {"k": False}, None, "p", "h1", "db")
-    rid = svc.submit("p", "h1", [("k", "new", True)], [], "db")
-    svc.handle_ack({"request_id": rid, "file_hash": "h1", "applied": ["k"], "deleted": []})
+    rid = svc.submit(["p"], [("k", "new", True)], [], "db", file_hash="h1")
+    svc.handle_ack({"request_id": rid, "file_hashes": {"p": "h1"}, "applied": {"p": ["k"]}, "deleted": {}})
     assert c._tags["k"] == "new"
     assert c._locks["k"] is True
 
@@ -185,8 +185,8 @@ def test_commit_confirmed_updates_base_state(card):
 def test_commit_confirmed_removes_deleted_keys(card):
     c, svc, _ = card
     c.update_data({"k": "v"}, {"k": False}, None, "p", "h1", "db")
-    rid = svc.submit("p", "h1", [], ["k"], "db")
-    svc.handle_ack({"request_id": rid, "file_hash": "h1", "applied": [], "deleted": ["k"]})
+    rid = svc.submit(["p"], [], ["k"], "db", file_hash="h1")
+    svc.handle_ack({"request_id": rid, "file_hashes": {"p": "h1"}, "applied": {}, "deleted": {"p": ["k"]}})
     assert "k" not in c._tags
     assert "k" not in c.widgets
 
@@ -194,12 +194,12 @@ def test_commit_confirmed_removes_deleted_keys(card):
 def test_commit_confirmed_rename_swaps_base_keys(card):
     c, svc, _ = card
     c.update_data({"old": "v"}, {"old": True}, None, "p", "h1", "db")
-    rid = svc.submit("p", "h1", [], [], "db", renames=[("old", "new", "v", True)])
+    rid = svc.submit(["p"], [], [], "db", renames=[("old", "new", "v", True)], file_hash="h1")
     svc.handle_ack({
         "request_id": rid,
-        "file_hash": "h1",
-        "applied": ["new"],
-        "deleted": ["old"],
+        "file_hashes": {"p": "h1"},
+        "applied": {"p": ["new"]},
+        "deleted": {"p": ["old"]},
     })
     assert "old" not in c._tags
     assert c._tags["new"] == "v"
@@ -209,15 +209,35 @@ def test_commit_confirmed_rename_swaps_base_keys(card):
 def test_commit_confirmed_rename_synthesizes_old_delete(card):
     c, svc, _ = card
     c.update_data({"old": "v"}, {"old": True}, None, "p", "h1", "db")
-    rid = svc.submit("p", "h1", [], [], "db", renames=[("old", "new", "v", True)])
+    rid = svc.submit(["p"], [], [], "db", renames=[("old", "new", "v", True)], file_hash="h1")
     svc.handle_ack({
         "request_id": rid,
-        "file_hash": "h1",
-        "applied": ["new"],
-        "deleted": [],
+        "file_hashes": {"p": "h1"},
+        "applied": {"p": ["new"]},
+        "deleted": {},
     })
     assert "old" not in c._tags
     assert c._tags["new"] == "v"
+
+
+def test_root_card_ignores_dotted_ack_keys(card):
+    c, svc, _ = card
+    c.update_data({"k": "v"}, {"k": False}, None, "p", "h1", "db")
+    svc.commit_confirmed.emit("h1", {"mark.1": ("1", False), "k": ("v2", False)}, ["other.x"])
+    assert "mark.1" not in c._tags
+    assert "other.x" not in c._tags
+    assert c._tags["k"] == "v2"
+
+
+def test_prefixed_card_ignores_root_ack_keys(qtbot):
+    svc = TagEditService.instance()
+    pc = EditableTagCard(prefix="mark")
+    qtbot.addWidget(pc)
+    pc.update_data({"1": "1"}, {"1": False}, None, "p", "h1", "db")
+    svc.commit_confirmed.emit("h1", {"mark.2": ("1", False), "k": ("v", False)}, [])
+    assert "k" not in pc._tags
+    assert "mark.2" not in pc._tags
+    assert pc._tags["2"] == "1"
 
 
 def test_switching_file_clears_local_edits(card):
@@ -408,7 +428,7 @@ def test_other_rows_keep_height_when_one_row_enters_edit(qtbot, monkeypatch):
     container.resize(400, 600)
     lay = QtWidgets.QVBoxLayout(container)
     lay.setContentsMargins(0, 0, 0, 0)
-    c = EditableTagCard(container)
+    c = EditableTagCard(parent=container)
     lay.addWidget(c)
     lay.addStretch(1)
     c.update_data({"a": "x", "b": "y", "c": "z"}, {}, None, "p", "h1", "db")

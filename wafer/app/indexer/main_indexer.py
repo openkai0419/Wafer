@@ -309,7 +309,7 @@ class IndexerProcess:
         paths = payload.get("paths", []) or []
         upserts_raw = payload.get("upserts", []) or []
         renames_raw = payload.get("renames", []) or []
-        deletes = payload.get("deletes", []) or []
+        deletes_raw = payload.get("deletes", []) or []
         request_id = payload.get("request_id", "")
         lock_only = bool(payload.get("lock_only", False))
         if not self.writer or not paths:
@@ -323,28 +323,32 @@ class IndexerProcess:
                 value_num = None
             return value_str, value_num
 
+        upserts: list[tuple[str, str, float | None, int]] = []
+        for item in upserts_raw:
+            if not isinstance(item, dict):
+                continue
+            key = str(item.get("key") or "").strip()
+            if not key:
+                continue
+            value_str, value_num = _coerce_value(item.get("value"))
+            locked = 1 if item.get("locked") else 0
+            upserts.append((key, value_str, value_num, locked))
+        renames: list[tuple[str, str, str, float | None, int]] = []
+        for item in renames_raw:
+            if not isinstance(item, dict):
+                continue
+            old_key = str(item.get("old") or "").strip()
+            new_key = str(item.get("new") or "").strip()
+            if not old_key or not new_key:
+                continue
+            value_str, value_num = _coerce_value(item.get("value"))
+            locked = 1 if item.get("locked") else 0
+            renames.append((old_key, new_key, value_str, value_num, locked))
+        deletes = [k for k in (str(d).strip() for d in deletes_raw) if k]
+
+        result: dict = {}
+
         def _run():
-            upserts = []
-            for item in upserts_raw:
-                if not isinstance(item, dict):
-                    continue
-                key = item.get("key")
-                if not key:
-                    continue
-                value_str, value_num = _coerce_value(item.get("value"))
-                locked = 1 if item.get("locked") else 0
-                upserts.append((key, value_str, value_num, locked))
-            renames = []
-            for item in renames_raw:
-                if not isinstance(item, dict):
-                    continue
-                old_key = item.get("old")
-                new_key = item.get("new")
-                if not old_key or not new_key:
-                    continue
-                value_str, value_num = _coerce_value(item.get("value"))
-                locked = 1 if item.get("locked") else 0
-                renames.append((old_key, new_key, value_str, value_num, locked))
             result["data"] = self.writer.apply_user_tags(
                 list(paths),
                 upserts,
@@ -372,7 +376,6 @@ class IndexerProcess:
             )
             self._progress.send_event("update")
 
-        result: dict = {}
         self.scheduler.submit(
             Task.create(
                 "apply_user_tags",

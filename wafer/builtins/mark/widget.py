@@ -66,11 +66,12 @@ class _MarkSettingsPopup(QtWidgets.QDialog):
         radius_row.setSpacing(dpix(4))
         radius_row.addWidget(QtWidgets.QLabel(t("Overlay size:")))
         self.radius_spin = QtWidgets.QSpinBox()
-        from ...app.viewer.grid.mark_overlay_service import MIN_RADIUS, MAX_RADIUS, MarkOverlayService
+        from ...app.viewer.grid.mark_overlay_service import MIN_RADIUS, MAX_RADIUS
+        from ...core.commands.binding.instance_registry import InstanceRegistry
 
         self.radius_spin.setRange(MIN_RADIUS, MAX_RADIUS)
         self.radius_spin.setSuffix(" px")
-        svc = MarkOverlayService.instance()
+        svc = InstanceRegistry.instance().get_one("MarkOverlayService")
         self.radius_spin.setValue(svc.radius() if svc is not None else 8)
         self.radius_spin.valueChanged.connect(self._on_radius_changed)
         radius_row.addWidget(self.radius_spin)
@@ -116,16 +117,16 @@ class _MarkSettingsPopup(QtWidgets.QDialog):
         self.overlay_check.blockSignals(False)
 
     def _on_overlay_toggled(self, checked: bool):
-        from ...app.viewer.grid.mark_overlay_service import MarkOverlayService
+        from ...core.commands.binding.instance_registry import InstanceRegistry
 
-        svc = MarkOverlayService.instance()
+        svc = InstanceRegistry.instance().get_one("MarkOverlayService")
         if svc is not None:
             svc.set_visible(bool(checked))
 
     def _on_radius_changed(self, value: int):
-        from ...app.viewer.grid.mark_overlay_service import MarkOverlayService
+        from ...core.commands.binding.instance_registry import InstanceRegistry
 
-        svc = MarkOverlayService.instance()
+        svc = InstanceRegistry.instance().get_one("MarkOverlayService")
         if svc is not None:
             svc.set_radius(int(value))
 
@@ -235,9 +236,9 @@ class MarkFilterWidget(QtWidgets.QWidget):
             self.changed.emit()
 
     def _restore_state(self):
-        from ...app.viewer.grid.mark_overlay_service import MarkOverlayService
+        from ...core.commands.binding.instance_registry import InstanceRegistry
 
-        svc = MarkOverlayService.instance()
+        svc = InstanceRegistry.instance().get_one("MarkOverlayService")
         self._popup.set_overlay_visible(svc.is_visible() if svc is not None else True)
 
     def read_params(self) -> dict:

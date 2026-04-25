@@ -19,7 +19,7 @@ def _normalize_name(text: str) -> str:
     return str(text or "").strip().lower()
 
 
-@dataclass
+@dataclass(frozen=True)
 class Mark:
     id: str
     name: str
@@ -171,7 +171,8 @@ class MarkRegistry(QtCore.QObject):
         new_name = self._unique_name(new_name, exclude_id=mark_id)
         if m.name == new_name:
             return new_name
-        m.name = new_name
+        idx = self._marks.index(m)
+        self._marks[idx] = Mark(id=m.id, name=new_name, color=m.color)
         self._save()
         self.changed.emit()
         return new_name
@@ -181,7 +182,8 @@ class MarkRegistry(QtCore.QObject):
         hex_color = str(hex_color)
         if m is None or m.color == hex_color:
             return
-        m.color = hex_color
+        idx = self._marks.index(m)
+        self._marks[idx] = Mark(id=m.id, name=m.name, color=hex_color)
         self._save()
         self.changed.emit()
 

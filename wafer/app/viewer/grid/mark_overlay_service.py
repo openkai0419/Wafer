@@ -1,23 +1,23 @@
 from __future__ import annotations
 
-import sqlite3
 from pathlib import Path
 from collections.abc import Callable
 
 from PySide6 import QtCore
 
 from ....core.app_settings import app_settings
+from ....core.db.query import FileSearchEngine
 from ....core.qt.rate_limit import qt_debounce
 from ....utils.logs import AppLogger
 
 
-_SQL_CHUNK = 900
 _RADIUS_KEY = "marks/overlay_radius"
 _VISIBLE_KEY = "marks/overlay_visible"
 DEFAULT_RADIUS = 8
 MIN_RADIUS = 4
 MAX_RADIUS = 40
 _COMMIT_DEBOUNCE_MS = 300
+_MARK_KEY_PREFIX = "mark."
 
 
 def _fetch_marks_sync(db_path: str | None, paths: list[str]) -> dict[str, list[str]]:
@@ -26,28 +26,13 @@ def _fetch_marks_sync(db_path: str | None, paths: list[str]) -> dict[str, list[s
         return result
     if not Path(str(db_path)).is_file():
         return result
+    engine = FileSearchEngine(str(db_path))
     try:
-        uri = Path(db_path).resolve().as_uri()
-        conn = sqlite3.connect(f"{uri}?mode=ro", uri=True, timeout=1.0)
-        try:
-            for start in range(0, len(paths), _SQL_CHUNK):
-                chunk = paths[start : start + _SQL_CHUNK]
-                placeholders = ",".join("?" * len(chunk))
-                rows = conn.execute(
-                    f"SELECT i.path, t.key FROM tags t JOIN sources s ON s.file_hash = t.file_hash JOIN files i ON i.source = s.source WHERE i.path IN ({placeholders}) AND t.key LIKE 'mark.%'",
-                    chunk,
-                ).fetchall()
-                for path, key in rows:
-                    if not key:
-                        continue
-                    mid = key.split(".", 1)[1] if "." in key else ""
-                    if not mid:
-                        continue
-                    result.setdefault(path, []).append(mid)
-        finally:
-            conn.close()
+        result = engine.get_tag_keys_for_paths(list(paths), _MARK_KEY_PREFIX)
     except Exception as e:
         AppLogger.warning("[MarkOverlay] fetch failed", exc=e)
+    finally:
+        engine.close()
     for p, ids in result.items():
         result[p] = sorted(set(ids), key=lambda x: (len(x), x))
     return result
@@ -74,8 +59,6 @@ class MarkOverlayService(QtCore.QObject):
     changed = QtCore.Signal()
     _result_ready = QtCore.Signal(int, list, dict, bool)
 
-    _instance: MarkOverlayService | None = None
-
     def __init__(self, dbpath_getter: Callable[[], str | None], parent: QtCore.QObject | None = None):
         super().__init__(parent)
         self._dbpath_getter = dbpath_getter
@@ -87,11 +70,6 @@ class MarkOverlayService(QtCore.QObject):
         self._radius = max(MIN_RADIUS, min(MAX_RADIUS, int(app_settings.get(_RADIUS_KEY, DEFAULT_RADIUS, int))))
         self._pool = QtCore.QThreadPool.globalInstance()
         self._result_ready.connect(self._on_result_ready, QtCore.Qt.QueuedConnection)
-        MarkOverlayService._instance = self
-
-    @classmethod
-    def instance(cls) -> MarkOverlayService | None:
-        return cls._instance
 
     def is_visible(self) -> bool:
         return self._visible

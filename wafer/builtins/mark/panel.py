@@ -124,7 +124,7 @@ class MarkTagPanelPlugin(BaseTagPanelPlugin):
     def update_data(
         self,
         tags: dict[str, str],
-        meta_info: dict[str, str],
+        locks: dict[str, bool],
         path: str,
         file_hash: str,
         db: str,

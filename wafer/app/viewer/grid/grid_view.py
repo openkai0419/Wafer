@@ -85,10 +85,10 @@ class _SelectionOverlay(QtWidgets.QWidget):
         painter.end()
 
     def _draw_mark_badges(self, painter, g):
-        from .mark_overlay_service import MarkOverlayService
+        from ....core.commands.binding.instance_registry import InstanceRegistry
         from ....builtins.mark import MarkRegistry
 
-        svc = MarkOverlayService.instance()
+        svc = InstanceRegistry.instance().get_one("MarkOverlayService")
         if svc is None or not svc.is_visible() or not g.visible_indices or not g.rects:
             return
         view_rect = g._scene_view_rect()

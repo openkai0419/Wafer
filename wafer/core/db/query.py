@@ -206,6 +206,14 @@ class FileSearchEngine:
             AppLogger.warning(f"DB connection failed: {e}", exc=e)
             return False
 
+    def close(self):
+        if self.conn is not None:
+            try:
+                self.conn.close()
+            except sqlite3.Error as e:
+                AppLogger.warning(f"FileSearchEngine close failed: {e}", exc=e)
+            self.conn = None
+
     def _normalize_path(self, path):
         return normalize_path(path)
 
@@ -377,6 +385,33 @@ class FileSearchEngine:
         fid = row["file_hash"]
         rows = cur.execute("SELECT key, value, locked FROM tags WHERE file_hash = ?", (fid,)).fetchall()
         return fid, {r["key"]: (r["value"], bool(r["locked"])) for r in rows}
+
+    @profiler.profile
+    def get_tag_keys_for_paths(self, paths: list[str], key_prefix: str) -> dict[str, list[str]]:
+        result: dict[str, list[str]] = {}
+        if not paths or not key_prefix or not self._connect_if_needed():
+            return result
+        cur = self.conn.cursor()
+        norm_paths = [self._normalize_path(p) for p in paths]
+        like_pattern = f"{key_prefix}%"
+        chunk_size = 900
+        for start in range(0, len(norm_paths), chunk_size):
+            chunk = norm_paths[start : start + chunk_size]
+            placeholders = ",".join("?" * len(chunk))
+            rows = cur.execute(
+                f"SELECT i.path, t.key FROM tags AS t JOIN sources AS s ON s.file_hash = t.file_hash JOIN files AS i ON i.source = s.source WHERE i.path IN ({placeholders}) AND t.key LIKE ?",
+                [*chunk, like_pattern],
+            ).fetchall()
+            for row in rows:
+                path = row["path"]
+                key = row["key"]
+                if not key:
+                    continue
+                suffix = key[len(key_prefix) :]
+                if not suffix:
+                    continue
+                result.setdefault(path, []).append(suffix)
+        return result
 
     @profiler.profile
     def get_file_record(self, path):

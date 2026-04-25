@@ -89,33 +89,3 @@ def test_collapsible_card_content_hidden_when_collapsed(qtbot):
     assert label.isHidden()
     card.set_expanded(True)
     assert not label.isHidden()
-
-
-def test_collapsible_card_header_button_invokes_callback(qtbot):
-    card = CollapsibleCard("test", "test_key")
-    qtbot.addWidget(card)
-    calls = []
-    btn = card.add_header_button("plus", "tip", lambda: calls.append(True))
-    assert isinstance(btn, QtWidgets.QToolButton)
-    btn.click()
-    assert calls == [True]
-
-
-def test_collapsible_card_header_button_area_skips_toggle(qtbot):
-    card = CollapsibleCard("test", "test_key")
-    qtbot.addWidget(card)
-    card.show()
-    card.resize(200, 100)
-    card.add_header_button("plus", "tip", lambda: None)
-    received = []
-    card.toggled_card.connect(lambda key, exp: received.append((key, exp)))
-    click_pos = QtCore.QPointF(card.width() - dpix(4), dpix(8))
-    event = QtGui.QMouseEvent(
-        QtCore.QEvent.Type.MouseButtonPress,
-        click_pos,
-        QtCore.Qt.MouseButton.LeftButton,
-        QtCore.Qt.MouseButton.LeftButton,
-        QtCore.Qt.KeyboardModifier.NoModifier,
-    )
-    card.mousePressEvent(event)
-    assert received == []

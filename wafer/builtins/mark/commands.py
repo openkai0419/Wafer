@@ -71,9 +71,9 @@ def toggle_mark(ctx, name: str = ""):
         if name and mark_id is None:
             Notifier.warning(t("Unknown mark: {name}", name=name))
         return
-    from ...app.viewer.grid.mark_overlay_service import MarkOverlayService
+    from ...core.commands.binding.instance_registry import InstanceRegistry
 
-    svc = MarkOverlayService.instance()
+    svc = InstanceRegistry.instance().get_one("MarkOverlayService")
     key = MarkRegistry.tag_key(mark_id)
     has_any_unmarked = svc is None or any(mark_id not in svc.marks_for(p) for p in paths)
     if has_any_unmarked:

@@ -25,7 +25,7 @@ def _color_with_alpha(hex_color: str, alpha: int) -> str:
 
 
 def _label_bg_css() -> str:
-    bg = ThemeManager.instance().palette.bg_tertiary
+    bg = ThemeManager.instance().palette.bg_secondary
     return (
         "QLabel {"
         f" background-color: {bg};"
@@ -92,6 +92,8 @@ class LineEditor(QtWidgets.QLineEdit):
 
     def focusOutEvent(self, e: QtGui.QFocusEvent) -> None:
         super().focusOutEvent(e)
+        if e.reason() == QtCore.Qt.PopupFocusReason:
+            return
         self._commit()
 
     def _commit(self) -> None:
@@ -175,6 +177,8 @@ class PlainEditor(QtWidgets.QPlainTextEdit):
 
     def focusOutEvent(self, e: QtGui.QFocusEvent) -> None:
         super().focusOutEvent(e)
+        if e.reason() == QtCore.Qt.PopupFocusReason:
+            return
         self._commit()
 
     def _commit(self) -> None:
@@ -215,10 +219,7 @@ class _EditableCell(QtWidgets.QWidget):
         self._raw = text
         if not self._editing:
             self._label.setText(truncate_text(text))
-            if len(text) > 200 or "\n" in text:
-                self._label.setToolTip(text)
-            else:
-                self._label.setToolTip(t("Double-click to edit"))
+            self._label.setToolTip(t("Double-click to edit"))
 
     def text(self) -> str:
         return self._raw

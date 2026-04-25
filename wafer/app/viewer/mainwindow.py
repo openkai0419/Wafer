@@ -152,6 +152,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._db_reload_cancel = None
         self.setting_db = sdb
         self.folder_view.set_folders(roots, excluded)
+        self._mark_overlay_service.reload()
         if on_complete:
             on_complete()
         else:
@@ -770,7 +771,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self._last_paths = paths
         self.grid_view.set_paths(paths, sources, aspects, keep_scroll=keep_scroll)
         self.file_list_provider.on_search_results(paths, sources)
-        self._mark_overlay_service.set_paths(paths)
 
     def capture_query_state(self) -> QueryState:
         params = self.search_service.params

@@ -20,7 +20,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - **`tags.update` / `tags.updated` IPC topics**: indexer handles user tag writes via `_on_tags_update()`; runs `apply_user_tags()` as a `USER_REQUEST` priority task; replies to viewer with per-path applied/deleted/file_hash results
 - **`FileDB.apply_user_tags()`**: writes user-managed tags (upsert/delete/rename) with lock support across multiple paths, returning per-path results
 - **`FileDB._migrate_tags_on_hash_change()`**: preserves existing tags (including locked user tags) when a file's content hash changes during indexing
-- **`FileSearchEngine.get_tag_keys_for_paths()`**: batch fetches tag key suffixes (by prefix) for a list of paths; used by `MarkOverlayService` to load mark data
+- **`FileSearchEngine.get_tag_keys_by_prefix()`**: fetches tag key suffixes by prefix; with `paths=None` returns all matching rows in the DB (used by `MarkOverlayService` for whole-DB mark cache), with `paths=[...]` restricts to the given paths
 - **`FileSearchEngine.close()`**: explicit connection close for use outside long-lived query flows
 - **`DatabaseWriter.apply_user_tags()`**: wraps `FileDB.apply_user_tags()` with WAL checkpoint
 - New themed icons: `empty`, `checkbox_unchecked`, `checkbox_checked`, `lock`, `lock_open`

@@ -835,6 +835,49 @@ class TestEngineLookupMethods:
         assert paths1 == paths2
 
 
+class TestGetTagKeysByPrefix:
+    @pytest.fixture
+    def mark_db(self, tmp_path):
+        db_path = str(tmp_path / "marks.db")
+        db = FileDB(db_path)
+        db.start()
+        db.initialize_database()
+        sources, images, metas, tags = [], [], [], []
+        for i in range(5):
+            path = f"C:/m/img_{i}.jpg"
+            fhash = f"h{i}"
+            sources.append((path, fhash, 100, 1.0))
+            images.append((path, path, 1.0))
+            metas.append((path, "name", f"img_{i}.jpg", None))
+        tags.append(("h0", "mark.red", "1", None))
+        tags.append(("h0", "mark.blue", "1", None))
+        tags.append(("h2", "mark.green", "1", None))
+        tags.append(("h3", "rating", "5", 5.0))
+        db.upsert_batches(sources, images, metas, tags)
+        db.close()
+        return db_path
+
+    def test_all_marks_when_paths_none(self, mark_db):
+        engine = FileSearchEngine(mark_db)
+        result = engine.get_tag_keys_by_prefix("mark.")
+        assert set(result.keys()) == {np("C:/m/img_0.jpg"), np("C:/m/img_2.jpg")}
+        assert sorted(result[np("C:/m/img_0.jpg")]) == ["blue", "red"]
+        assert result[np("C:/m/img_2.jpg")] == ["green"]
+
+    def test_filtered_paths(self, mark_db):
+        engine = FileSearchEngine(mark_db)
+        result = engine.get_tag_keys_by_prefix("mark.", paths=["C:/m/img_2.jpg", "C:/m/img_3.jpg"])
+        assert set(result.keys()) == {np("C:/m/img_2.jpg")}
+
+    def test_no_matches(self, mark_db):
+        engine = FileSearchEngine(mark_db)
+        assert engine.get_tag_keys_by_prefix("nonexistent.") == {}
+
+    def test_empty_prefix(self, mark_db):
+        engine = FileSearchEngine(mark_db)
+        assert engine.get_tag_keys_by_prefix("") == {}
+
+
 class TestExplainQueryPlan:
     def _plan_text(self, conn, sql, params=()):
         rows = conn.execute(f"EXPLAIN QUERY PLAN {sql}", params).fetchall()

@@ -1,5 +1,5 @@
-from .registry import MarkRegistry
+from .registry import Mark, MarkRegistry
 from .panel import MarkTagPanelPlugin
 from .widget import MarkFilterWidget
 
-__all__ = ["MarkFilterWidget", "MarkRegistry", "MarkTagPanelPlugin"]
+__all__ = ["Mark", "MarkFilterWidget", "MarkRegistry", "MarkTagPanelPlugin"]

@@ -1,4 +1,284 @@
 {
+  "Mark {name} removed from {count} file(s)": {
+    "en": "Mark {name} removed from {count} file(s)",
+    "ja": ""
+  },
+  "Added as '{name}' to avoid duplicate": {
+    "en": "Added as '{name}' to avoid duplicate",
+    "ja": ""
+  },
+  "Overlay size:": {
+    "en": "Overlay size:",
+    "ja": ""
+  },
+  "Define New Mark...": {
+    "en": "Define New Mark...",
+    "ja": ""
+  },
+  "Delete all '{key}' tags from databases": {
+    "en": "Delete all '{key}' tags from databases",
+    "ja": ""
+  },
+  "Rename Mark...": {
+    "en": "Rename Mark...",
+    "ja": ""
+  },
+  "Set Mark Color...": {
+    "en": "Set Mark Color...",
+    "ja": ""
+  },
+  "Add new mark...": {
+    "en": "Add new mark...",
+    "ja": ""
+  },
+  "Mark Filter Options": {
+    "en": "Mark Filter Options",
+    "ja": ""
+  },
+  "Mark filter options": {
+    "en": "Mark filter options",
+    "ja": ""
+  },
+  "Match:": {
+    "en": "Match:",
+    "ja": ""
+  },
+  "Show mark overlay on grid": {
+    "en": "Show mark overlay on grid",
+    "ja": ""
+  },
+  "Mark name": {
+    "en": "Mark name",
+    "ja": ""
+  },
+  "Choose mark color": {
+    "en": "Choose mark color",
+    "ja": ""
+  },
+  "Toggle mark": {
+    "en": "Toggle mark",
+    "ja": ""
+  },
+  "Add a new mark": {
+    "en": "Add a new mark",
+    "ja": ""
+  },
+  "Add mark": {
+    "en": "Add mark",
+    "ja": ""
+  },
+  "Add {name}": {
+    "en": "Add {name}",
+    "ja": ""
+  },
+  "Change color...": {
+    "en": "Change color...",
+    "ja": ""
+  },
+  "Display name": {
+    "en": "Display name",
+    "ja": ""
+  },
+  "Hex color": {
+    "en": "Hex color",
+    "ja": ""
+  },
+  "Mark slug": {
+    "en": "Mark slug",
+    "ja": ""
+  },
+  "Mark {name} added to {count} file(s)": {
+    "en": "Mark {name} added to {count} file(s)",
+    "ja": ""
+  },
+  "Name:": {
+    "en": "Name:",
+    "ja": ""
+  },
+  "New display name": {
+    "en": "New display name",
+    "ja": ""
+  },
+  "Remove mark": {
+    "en": "Remove mark",
+    "ja": ""
+  },
+  "Remove mark '{name}'?": {
+    "en": "Remove mark '{name}'?",
+    "ja": ""
+  },
+  "Remove {name}": {
+    "en": "Remove {name}",
+    "ja": ""
+  },
+  "Remove...": {
+    "en": "Remove...",
+    "ja": ""
+  },
+  "Rename...": {
+    "en": "Rename...",
+    "ja": ""
+  },
+  "Toggle mark overlay on grid": {
+    "en": "Toggle mark overlay on grid",
+    "ja": ""
+  },
+  "Toggle {name}": {
+    "en": "Toggle {name}",
+    "ja": ""
+  },
+  "Total mark tags in current database": {
+    "en": "Total mark tags in current database",
+    "ja": ""
+  },
+  "Yes: also delete all '{key}' tags from every database.\nNo: keep tags in databases (mark definition is removed only).\nCancel: do nothing.": {
+    "en": "Yes: also delete all '{key}' tags from every database.\nNo: keep tags in databases (mark definition is removed only).\nCancel: do nothing.",
+    "ja": ""
+  },
+  "Add test": {
+    "en": "Add test",
+    "ja": ""
+  },
+  "Remove test": {
+    "en": "Remove test",
+    "ja": ""
+  },
+  "Toggle test": {
+    "en": "Toggle test",
+    "ja": ""
+  },
+  "florence": {
+    "en": "florence",
+    "ja": ""
+  },
+  "Add 1": {
+    "en": "Add 1",
+    "ja": ""
+  },
+  "Add 2": {
+    "en": "Add 2",
+    "ja": ""
+  },
+  "Add 3": {
+    "en": "Add 3",
+    "ja": ""
+  },
+  "Add 4": {
+    "en": "Add 4",
+    "ja": ""
+  },
+  "Add 5": {
+    "en": "Add 5",
+    "ja": ""
+  },
+  "Add 6": {
+    "en": "Add 6",
+    "ja": ""
+  },
+  "Add 7": {
+    "en": "Add 7",
+    "ja": ""
+  },
+  "Add 8": {
+    "en": "Add 8",
+    "ja": ""
+  },
+  "Add 9": {
+    "en": "Add 9",
+    "ja": ""
+  },
+  "Define New Mark": {
+    "en": "Define New Mark",
+    "ja": ""
+  },
+  "Remove 1": {
+    "en": "Remove 1",
+    "ja": ""
+  },
+  "Remove 2": {
+    "en": "Remove 2",
+    "ja": ""
+  },
+  "Remove 3": {
+    "en": "Remove 3",
+    "ja": ""
+  },
+  "Remove 4": {
+    "en": "Remove 4",
+    "ja": ""
+  },
+  "Remove 5": {
+    "en": "Remove 5",
+    "ja": ""
+  },
+  "Remove 6": {
+    "en": "Remove 6",
+    "ja": ""
+  },
+  "Remove 7": {
+    "en": "Remove 7",
+    "ja": ""
+  },
+  "Remove 8": {
+    "en": "Remove 8",
+    "ja": ""
+  },
+  "Remove 9": {
+    "en": "Remove 9",
+    "ja": ""
+  },
+  "Remove Mark Definition": {
+    "en": "Remove Mark Definition",
+    "ja": ""
+  },
+  "Rename Mark": {
+    "en": "Rename Mark",
+    "ja": ""
+  },
+  "Toggle 1": {
+    "en": "Toggle 1",
+    "ja": ""
+  },
+  "Toggle 2": {
+    "en": "Toggle 2",
+    "ja": ""
+  },
+  "Toggle 3": {
+    "en": "Toggle 3",
+    "ja": ""
+  },
+  "Toggle 4": {
+    "en": "Toggle 4",
+    "ja": ""
+  },
+  "Toggle 5": {
+    "en": "Toggle 5",
+    "ja": ""
+  },
+  "Toggle 6": {
+    "en": "Toggle 6",
+    "ja": ""
+  },
+  "Toggle 7": {
+    "en": "Toggle 7",
+    "ja": ""
+  },
+  "Toggle 8": {
+    "en": "Toggle 8",
+    "ja": ""
+  },
+  "Toggle 9": {
+    "en": "Toggle 9",
+    "ja": ""
+  },
+  "Hex color (e.g. #FF0000)": {
+    "en": "Hex color (e.g. #FF0000)",
+    "ja": ""
+  },
+  "Mark ID": {
+    "en": "Mark ID",
+    "ja": ""
+  },
   "Add Mark": {
     "en": "Add Mark",
     "ja": ""

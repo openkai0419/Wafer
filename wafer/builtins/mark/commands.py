@@ -5,6 +5,7 @@ from ...core.commands.command.require import require
 from ...core.lang.manager import t
 from ...utils.logs import AppLogger
 from ...utils.notifier import Notifier
+from . import dialogs
 from .registry import MarkRegistry
 
 
@@ -14,6 +15,22 @@ def _ctx_paths(ctx) -> list[str]:
         return [str(p) for p in paths if p]
     p = ctx.get("path")
     return [str(p)] if p else []
+
+
+def _resolve_id(name: str) -> str | None:
+    if not name:
+        return None
+    reg = MarkRegistry.instance()
+    if reg.get(name) is not None:
+        return name
+    for m in reg.marks():
+        if m.name == name:
+            return m.id
+    lowered = name.lower()
+    for m in reg.marks():
+        if m.name.lower() == lowered or m.id.lower() == lowered:
+            return m.id
+    return None
 
 
 @require(w="MainWindow")
@@ -27,40 +44,38 @@ def _send_batch(ctx, paths, upserts, deletes, *, w):
     TagEditService.instance().submit(paths, upserts, deletes, db=db)
 
 
-def add_mark(ctx, mark_id: str):
+def add_mark(ctx, name: str = ""):
     paths = _ctx_paths(ctx)
-    if not paths or not mark_id:
+    mark_id = _resolve_id(name)
+    if not paths or mark_id is None:
+        if name and mark_id is None:
+            Notifier.warning(t("Unknown mark: {name}", name=name))
         return
-    key = MarkRegistry.tag_key(mark_id)
-    _send_batch(ctx, paths, [(key, "1", False)], [])
-    Notifier.info(t("Mark {mark_id} added to {count} file(s)", mark_id=mark_id, count=len(paths)))
+    _send_batch(ctx, paths, [(MarkRegistry.tag_key(mark_id), "1", False)], [])
 
 
-def remove_mark(ctx, mark_id: str):
+def remove_mark(ctx, name: str = ""):
     paths = _ctx_paths(ctx)
-    if not paths or not mark_id:
+    mark_id = _resolve_id(name)
+    if not paths or mark_id is None:
+        if name and mark_id is None:
+            Notifier.warning(t("Unknown mark: {name}", name=name))
         return
-    key = MarkRegistry.tag_key(mark_id)
-    _send_batch(ctx, paths, [], [key])
-    Notifier.info(t("Mark {mark_id} removed from {count} file(s)", mark_id=mark_id, count=len(paths)))
+    _send_batch(ctx, paths, [], [MarkRegistry.tag_key(mark_id)])
 
 
-def toggle_mark(ctx, mark_id: str):
+def toggle_mark(ctx, name: str = ""):
     paths = _ctx_paths(ctx)
-    if not paths or not mark_id:
+    mark_id = _resolve_id(name)
+    if not paths or mark_id is None:
+        if name and mark_id is None:
+            Notifier.warning(t("Unknown mark: {name}", name=name))
         return
     from ...app.viewer.grid.mark_overlay_service import MarkOverlayService
 
     svc = MarkOverlayService.instance()
     key = MarkRegistry.tag_key(mark_id)
-    has_any_unmarked = False
-    if svc is not None:
-        for p in paths:
-            if mark_id not in svc.marks_for(p):
-                has_any_unmarked = True
-                break
-    else:
-        has_any_unmarked = True
+    has_any_unmarked = svc is None or any(mark_id not in svc.marks_for(p) for p in paths)
     if has_any_unmarked:
         _send_batch(ctx, paths, [(key, "1", False)], [])
     else:
@@ -77,10 +92,37 @@ def clear_marks(ctx):
     _send_batch(ctx, paths, [], keys)
 
 
-def set_color(ctx, mark_id: str = "", color: str = ""):
-    if not mark_id or not color:
+@require(w="MainWindow")
+def set_color(ctx, name: str = "", *, w):
+    mark_id = _resolve_id(name)
+    if mark_id is None:
+        Notifier.warning(t("Unknown mark: {name}", name=name))
         return
-    MarkRegistry.instance().set_color(mark_id, color)
+    dialogs.prompt_pick_color(w, mark_id)
+
+
+@require(w="MainWindow")
+def define_mark(ctx, *, w):
+    dialogs.prompt_new_mark(w)
+
+
+def remove_mark_def(ctx, name: str = ""):
+    mark_id = _resolve_id(name)
+    if mark_id is None:
+        return
+    MarkRegistry.instance().remove(mark_id)
+
+
+@require(w="MainWindow")
+def rename_mark(ctx, name: str = "", *, w):
+    mark_id = _resolve_id(name)
+    if mark_id is None:
+        return
+    dialogs.prompt_rename_mark(w, mark_id)
+
+
+def _mark_name_choices() -> list[str]:
+    return [m.name for m in MarkRegistry.instance().marks()]
 
 
 class MarkCommands(ActionKit.MenuBase):
@@ -89,45 +131,53 @@ class MarkCommands(ActionKit.MenuBase):
 
     @classmethod
     def commands(cls):
-        items: list = [":Mark"]
-        items += [
-            "Toggle/:Toggle Mark",
-            *[
-                ActionKit.Command(
-                    path=f"Toggle/mark.toggle_{mid}",
-                    display=f"Toggle Mark {mid}",
-                    func=lambda ctx, m=mid: toggle_mark(ctx, m),
-                )
-                for mid in MarkRegistry.instance().ids()
-            ],
-            "Add/:Add Mark",
-            *[
-                ActionKit.Command(
-                    path=f"Add/mark.add_{mid}",
-                    display=f"Add Mark {mid}",
-                    func=lambda ctx, m=mid: add_mark(ctx, m),
-                )
-                for mid in MarkRegistry.instance().ids()
-            ],
-            "Remove/:Remove Mark",
-            *[
-                ActionKit.Command(
-                    path=f"Remove/mark.remove_{mid}",
-                    display=f"Remove Mark {mid}",
-                    func=lambda ctx, m=mid: remove_mark(ctx, m),
-                )
-                for mid in MarkRegistry.instance().ids()
-            ],
+        return [
+            ":Mark",
+            ActionKit.Command(
+                path="mark.toggle",
+                display=t("Toggle Mark"),
+                params=[ActionKit.Param(name="name", value=_mark_name_choices, description=t("Mark name"), required=True)],
+                func=toggle_mark,
+            ),
+            ActionKit.Command(
+                path="mark.add",
+                display=t("Add Mark"),
+                params=[ActionKit.Param(name="name", value=_mark_name_choices, description=t("Mark name"), required=True)],
+                func=add_mark,
+            ),
+            ActionKit.Command(
+                path="mark.remove",
+                display=t("Remove Mark"),
+                params=[ActionKit.Param(name="name", value=_mark_name_choices, description=t("Mark name"), required=True)],
+                func=remove_mark,
+            ),
+            ActionKit.Command(path="mark.clear", display=t("Clear All Marks"), func=clear_marks),
             "-",
-            ActionKit.Command(path="mark.clear", display="Clear All Marks", func=clear_marks),
+            ActionKit.Command(
+                path="mark.define",
+                display=t("Define New Mark..."),
+                func=define_mark,
+            ),
+            ActionKit.Command(
+                path="mark.rename",
+                display=t("Rename Mark..."),
+                params=[
+                    ActionKit.Param(name="name", value=_mark_name_choices, description=t("Mark name"), required=True),
+                ],
+                func=rename_mark,
+            ),
             ActionKit.Command(
                 path="mark.set_color",
-                display="Set Mark Color",
+                display=t("Set Mark Color..."),
                 params=[
-                    ActionKit.Param(name="mark_id", value="", description="Mark ID"),
-                    ActionKit.Param(name="color", value="", description="Hex color (e.g. #FF0000)"),
+                    ActionKit.Param(name="name", value=_mark_name_choices, description=t("Mark name"), required=True),
                 ],
                 func=set_color,
             ),
+            ActionKit.Command(
+                path="mark.remove_def",
+                display=t("Remove Mark Definition"),
+                params=[ActionKit.Param(name="name", value=_mark_name_choices, description=t("Mark name"), required=True)],
+                func=remove_mark_def,
+            ),
         ]
-        return items

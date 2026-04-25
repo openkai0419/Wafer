@@ -61,16 +61,6 @@ class TextFilter(BaseFilterPlugin):
         return {k: params[k] for k in ("keys", "query_mode", "keyword_mode", "keyword_separator") if k in params}
 
     @classmethod
-    def bind_key_store(cls, widget, key_store):
-        prev = getattr(widget, "_bound_key_store", None)
-        if prev is not None:
-            prev.updated.disconnect(widget.keys_combo.remake)
-        widget._bound_key_store = key_store
-        key_store.updated.connect(widget.keys_combo.remake)
-        if key_store.data:
-            widget.keys_combo.remake(key_store.data)
-
-    @classmethod
     @profiler.profile
     def build_path_query(cls, params, normalize_path):
         keys, include_kw, exclude_kw = _normalize_text_inputs(params)

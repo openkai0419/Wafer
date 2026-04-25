@@ -89,10 +89,10 @@ class _SelectionOverlay(QtWidgets.QWidget):
         from ....builtins.mark import MarkRegistry
 
         svc = MarkOverlayService.instance()
-        if svc is None or not g.visible_indices or not g.rects:
+        if svc is None or not svc.is_visible() or not g.visible_indices or not g.rects:
             return
         view_rect = g._scene_view_rect()
-        radius = dpix(16)
+        radius = dpix(svc.radius())
         diameter = radius * 2
         margin = dpix(4)
         registry = MarkRegistry.instance()
@@ -115,28 +115,33 @@ class _SelectionOverlay(QtWidgets.QWidget):
             cy = cell.top() + margin + radius
             badge_rect = QtCore.QRectF(cx - radius, cy - radius, diameter, diameter)
             count = len(ids)
-            if count == 1:
+            if count >= 5:
+                painter.setPen(QtCore.Qt.NoPen)
+                steps = 24
+                span = int(360 * 16 / steps)
+                start = 90 * 16
+                for k in range(steps):
+                    painter.setBrush(QtGui.QColor.fromHsvF(k / steps, 0.85, 1.0))
+                    painter.drawPie(badge_rect, start, -span)
+                    start -= span
+                painter.setPen(QtGui.QPen(QtGui.QColor(0, 0, 0, 200), max(1, dpix(1))))
+                painter.setBrush(QtCore.Qt.NoBrush)
+                painter.drawEllipse(badge_rect)
+            elif count == 1:
                 painter.setPen(QtGui.QPen(QtGui.QColor(0, 0, 0, 180), max(1, dpix(1))))
-                painter.setBrush(registry.qcolor_for(ids[0]))
+                painter.setBrush(registry.qcolor_of(ids[0]))
                 painter.drawEllipse(badge_rect)
             else:
                 painter.setPen(QtCore.Qt.NoPen)
                 span = int(360 * 16 / count)
                 start = 90 * 16
                 for mid in ids:
-                    painter.setBrush(registry.qcolor_for(mid))
+                    painter.setBrush(registry.qcolor_of(mid))
                     painter.drawPie(badge_rect, start, -span)
                     start -= span
                 painter.setPen(QtGui.QPen(QtGui.QColor(0, 0, 0, 200), max(1, dpix(1))))
                 painter.setBrush(QtCore.Qt.NoBrush)
                 painter.drawEllipse(badge_rect)
-            painter.setPen(QtGui.QColor(255, 255, 255))
-            font = painter.font()
-            font.setBold(True)
-            font.setPointSizeF(max(6.0, radius * 0.85))
-            painter.setFont(font)
-            text = "9+" if count >= 9 else str(count) if count > 1 else str(ids[0])
-            painter.drawText(badge_rect, QtCore.Qt.AlignCenter, text)
         painter.restore()
 
 

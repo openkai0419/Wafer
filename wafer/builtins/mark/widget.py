@@ -1,40 +1,142 @@
 from __future__ import annotations
 
-from PySide6 import QtCore, QtGui, QtWidgets
+from PySide6 import QtCore, QtWidgets
 
+from ...core.lang.manager import t
+from ...core.qt.icon_engine import themed_icon
 from ...utils.formatting import dpix
+from . import dialogs
 from .registry import MarkRegistry
 
 
-_BUTTON_SIZE = 20
+_BUTTON_HEIGHT = 22
 
 
-class _ColorMarkButton(QtWidgets.QToolButton):
+class _MarkButton(QtWidgets.QToolButton):
     def __init__(self, mark_id: str, parent=None):
         super().__init__(parent)
         self.mark_id = mark_id
+        self._count: int = 0
         self.setCheckable(True)
         self.setAutoRaise(True)
-        sz = dpix(_BUTTON_SIZE)
-        self.setFixedSize(sz, sz)
-        self.setToolTip(f"Mark {mark_id}")
-        self._refresh_icon()
+        self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
+        self.setFixedHeight(dpix(_BUTTON_HEIGHT))
+        self.refresh()
 
-    def _refresh_icon(self):
-        sz = dpix(_BUTTON_SIZE)
-        pm = QtGui.QPixmap(sz, sz)
-        pm.fill(QtCore.Qt.transparent)
-        painter = QtGui.QPainter(pm)
-        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
-        color = MarkRegistry.instance().qcolor_for(self.mark_id)
-        pen = QtGui.QPen(QtGui.QColor(0, 0, 0, 160), max(1, dpix(1)))
-        painter.setPen(pen)
-        painter.setBrush(color)
-        margin = max(2, dpix(3))
-        painter.drawEllipse(QtCore.QRect(margin, margin, sz - margin * 2, sz - margin * 2))
-        painter.end()
-        self.setIcon(QtGui.QIcon(pm))
-        self.setIconSize(QtCore.QSize(sz, sz))
+    def set_count(self, count: int):
+        self._count = max(0, int(count))
+        self._update_label()
+
+    def refresh(self):
+        m = MarkRegistry.instance().get(self.mark_id)
+        if m is None:
+            return
+        size = dpix(_BUTTON_HEIGHT) - dpix(4)
+        self.setIcon(MarkRegistry.instance().swatch_icon(self.mark_id, size))
+        self.setIconSize(QtCore.QSize(size, size))
+        self.setToolTip(m.name)
+        self._update_label()
+
+    def _update_label(self):
+        m = MarkRegistry.instance().get(self.mark_id)
+        if m is None:
+            return
+        self.setText(f"{m.name} ({self._count})")
+
+
+class _MarkSettingsPopup(QtWidgets.QDialog):
+    changed = QtCore.Signal()
+
+    def __init__(self, anchor: QtWidgets.QWidget, parent: QtWidgets.QWidget | None = None):
+        super().__init__(parent)
+        self._anchor = anchor
+        self.setWindowTitle(t("Mark Filter Options"))
+        self.setWindowFlags(self.windowFlags() | QtCore.Qt.Tool)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(dpix(8), dpix(8), dpix(8), dpix(8))
+        layout.setSpacing(dpix(6))
+
+        self.overlay_check = QtWidgets.QCheckBox(t("Show mark overlay on grid"))
+        self.overlay_check.toggled.connect(self._on_overlay_toggled)
+        layout.addWidget(self.overlay_check)
+
+        radius_row = QtWidgets.QHBoxLayout()
+        radius_row.setSpacing(dpix(4))
+        radius_row.addWidget(QtWidgets.QLabel(t("Overlay size:")))
+        self.radius_spin = QtWidgets.QSpinBox()
+        from ...app.viewer.grid.mark_overlay_service import MIN_RADIUS, MAX_RADIUS, MarkOverlayService
+
+        self.radius_spin.setRange(MIN_RADIUS, MAX_RADIUS)
+        self.radius_spin.setSuffix(" px")
+        svc = MarkOverlayService.instance()
+        self.radius_spin.setValue(svc.radius() if svc is not None else 8)
+        self.radius_spin.valueChanged.connect(self._on_radius_changed)
+        radius_row.addWidget(self.radius_spin)
+        radius_row.addStretch()
+        layout.addLayout(radius_row)
+
+        mode_row = QtWidgets.QHBoxLayout()
+        mode_row.setSpacing(dpix(4))
+        mode_row.addWidget(QtWidgets.QLabel(t("Match:")))
+        self.mode_group = QtWidgets.QButtonGroup(self)
+        self.or_radio = QtWidgets.QRadioButton("OR")
+        self.and_radio = QtWidgets.QRadioButton("AND")
+        self.or_radio.setChecked(True)
+        self.mode_group.addButton(self.or_radio)
+        self.mode_group.addButton(self.and_radio)
+        self.or_radio.toggled.connect(lambda _c: self.changed.emit())
+        self.and_radio.toggled.connect(lambda _c: self.changed.emit())
+        mode_row.addWidget(self.or_radio)
+        mode_row.addWidget(self.and_radio)
+        mode_row.addStretch()
+        layout.addLayout(mode_row)
+
+        add_btn = QtWidgets.QPushButton(t("Add new mark..."))
+        add_btn.setIcon(themed_icon("plus"))
+        add_btn.clicked.connect(lambda: dialogs.prompt_new_mark(self))
+        layout.addWidget(add_btn)
+
+    def mode(self) -> str:
+        return "AND" if self.and_radio.isChecked() else "OR"
+
+    def set_mode(self, mode: str):
+        radio = self.and_radio if str(mode).upper() == "AND" else self.or_radio
+        radio.blockSignals(True)
+        radio.setChecked(True)
+        radio.blockSignals(False)
+
+    def overlay_visible(self) -> bool:
+        return self.overlay_check.isChecked()
+
+    def set_overlay_visible(self, visible: bool):
+        self.overlay_check.blockSignals(True)
+        self.overlay_check.setChecked(bool(visible))
+        self.overlay_check.blockSignals(False)
+
+    def _on_overlay_toggled(self, checked: bool):
+        from ...app.viewer.grid.mark_overlay_service import MarkOverlayService
+
+        svc = MarkOverlayService.instance()
+        if svc is not None:
+            svc.set_visible(bool(checked))
+
+    def _on_radius_changed(self, value: int):
+        from ...app.viewer.grid.mark_overlay_service import MarkOverlayService
+
+        svc = MarkOverlayService.instance()
+        if svc is not None:
+            svc.set_radius(int(value))
+
+    def show_at_anchor(self):
+        self.adjustSize()
+        pos = self._anchor.mapToGlobal(QtCore.QPoint(0, self._anchor.height()))
+        x = pos.x() + self._anchor.width() - self.width()
+        self.move(x, pos.y())
+        self.show()
+        self.raise_()
+        self.activateWindow()
 
 
 class MarkFilterWidget(QtWidgets.QWidget):
@@ -42,57 +144,107 @@ class MarkFilterWidget(QtWidgets.QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._buttons: dict[str, _ColorMarkButton] = {}
+        self._buttons: dict[str, _MarkButton] = {}
+        self._key_store = None
         self._build_ui()
-        MarkRegistry.instance().changed.connect(self._rebuild)
+        MarkRegistry.instance().changed.connect(self._sync_buttons)
+        self._restore_state()
 
     def _build_ui(self):
-        self._layout = QtWidgets.QHBoxLayout(self)
-        self._layout.setContentsMargins(0, 0, 0, 0)
-        self._layout.setSpacing(dpix(2))
-        self._mode = QtWidgets.QComboBox()
-        self._mode.addItems(["OR", "AND"])
-        self._mode.currentTextChanged.connect(lambda _t: self.changed.emit())
-        self._layout.addWidget(self._mode)
+        root = QtWidgets.QHBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(dpix(2))
+
+        self._option_btn = QtWidgets.QToolButton()
+        self._option_btn.setIcon(themed_icon("gear_small"))
+        self._option_btn.setToolTip(t("Mark filter options"))
+        self._option_btn.setFixedSize(dpix(28), dpix(_BUTTON_HEIGHT))
+        self._option_btn.clicked.connect(self._toggle_popup)
+        root.addWidget(self._option_btn)
+
         self._buttons_container = QtWidgets.QWidget()
         self._buttons_layout = QtWidgets.QHBoxLayout(self._buttons_container)
         self._buttons_layout.setContentsMargins(0, 0, 0, 0)
-        self._buttons_layout.setSpacing(dpix(1))
-        self._layout.addWidget(self._buttons_container, 1)
-        self._populate_buttons()
-
-    def _populate_buttons(self):
-        for mid in MarkRegistry.instance().ids():
-            btn = _ColorMarkButton(mid, self._buttons_container)
-            btn.toggled.connect(lambda _c: self.changed.emit())
-            self._buttons[mid] = btn
-            self._buttons_layout.addWidget(btn)
+        self._buttons_layout.setSpacing(dpix(2))
         self._buttons_layout.addStretch(1)
+        root.addWidget(self._buttons_container, 1)
 
-    def _rebuild(self):
-        checked = {mid for mid, b in self._buttons.items() if b.isChecked()}
-        for b in self._buttons.values():
-            self._buttons_layout.removeWidget(b)
-            b.setParent(None)
-            b.deleteLater()
-        self._buttons.clear()
-        while self._buttons_layout.count():
-            item = self._buttons_layout.takeAt(0)
-            w = item.widget()
-            if w is not None:
-                w.deleteLater()
-        for mid in MarkRegistry.instance().ids():
-            btn = _ColorMarkButton(mid, self._buttons_container)
-            btn.setChecked(mid in checked)
-            btn.toggled.connect(lambda _c: self.changed.emit())
-            self._buttons[mid] = btn
-            self._buttons_layout.addWidget(btn)
-        self._buttons_layout.addStretch(1)
-        self.changed.emit()
+        self._popup = _MarkSettingsPopup(self._option_btn, self)
+        self._popup.changed.connect(self.changed)
+
+        self._sync_buttons()
+
+    def _toggle_popup(self):
+        if self._popup.isVisible():
+            self._popup.hide()
+        else:
+            self._popup.show_at_anchor()
+
+    def bind_key_store(self, key_store):
+        prev = self._key_store
+        if prev is not None:
+            try:
+                prev.updated.disconnect(self._on_key_store_updated)
+            except (TypeError, RuntimeError):
+                pass
+        self._key_store = key_store
+        if key_store is None:
+            return
+        key_store.updated.connect(self._on_key_store_updated)
+        if key_store.data:
+            self._on_key_store_updated(key_store.data)
+
+    def _on_key_store_updated(self, data: list[tuple[str, int]]):
+        counts: dict[str, int] = {}
+        prefix = MarkRegistry.tag_prefix() + "."
+        for key, count in data or []:
+            if isinstance(key, str) and key.startswith(prefix):
+                counts[key[len(prefix):]] = int(count)
+        for mid, btn in self._buttons.items():
+            btn.set_count(counts.get(mid, 0))
+
+    def _add_button(self, mark_id: str, checked: bool = False):
+        btn = _MarkButton(mark_id, self._buttons_container)
+        btn.setChecked(checked)
+        btn.toggled.connect(lambda _c: self.changed.emit())
+        btn.customContextMenuRequested.connect(
+            lambda pos, m=mark_id, b=btn: dialogs.show_mark_context_menu(b, m, b.mapToGlobal(pos))
+        )
+        self._buttons[mark_id] = btn
+        self._buttons_layout.insertWidget(self._buttons_layout.count() - 1, btn)
+
+    def _sync_buttons(self):
+        current_ids = MarkRegistry.instance().ids()
+        current_set = set(current_ids)
+        existing_set = set(self._buttons.keys())
+        for mid in existing_set - current_set:
+            btn = self._buttons.pop(mid, None)
+            if btn is not None:
+                self._buttons_layout.removeWidget(btn)
+                btn.setParent(None)
+                btn.deleteLater()
+        for mid in current_ids:
+            if mid not in self._buttons:
+                self._add_button(mid)
+        for i, mid in enumerate(current_ids):
+            btn = self._buttons.get(mid)
+            if btn is None:
+                continue
+            self._buttons_layout.removeWidget(btn)
+            self._buttons_layout.insertWidget(i, btn)
+            btn.refresh()
+        if current_set != existing_set:
+            self.changed.emit()
+
+    def _restore_state(self):
+        from ...app.viewer.grid.mark_overlay_service import MarkOverlayService
+
+        svc = MarkOverlayService.instance()
+        self._popup.set_overlay_visible(svc.is_visible() if svc is not None else True)
 
     def read_params(self) -> dict:
         ids = [mid for mid, b in self._buttons.items() if b.isChecked()]
-        return {"mark_ids": ids, "mode": self._mode.currentText()}
+        return {"mark_ids": ids, "mode": self._popup.mode()}
 
     def write_params(self, params: dict):
         ids = set(str(x) for x in (params.get("mark_ids") or []))
@@ -101,8 +253,4 @@ class MarkFilterWidget(QtWidgets.QWidget):
             b.setChecked(mid in ids)
             b.blockSignals(False)
         mode = params.get("mode") or "OR"
-        i = self._mode.findText(mode)
-        if i >= 0:
-            self._mode.blockSignals(True)
-            self._mode.setCurrentIndex(i)
-            self._mode.blockSignals(False)
+        self._popup.set_mode(mode)

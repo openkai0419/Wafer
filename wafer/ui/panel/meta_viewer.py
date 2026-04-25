@@ -9,7 +9,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from ...utils.formatting import dpix, display_prefixed_key
 from ...utils.logs import AppLogger
 from ...core.lang.manager import t
-from ...core.qt.icon_engine import icon_draw
+from ...core.qt.icon_engine import icon_draw, themed_icon
 from ...core.color.theme import ThemeManager
 
 MAX_INLINE_CHARS = 4000
@@ -70,6 +70,7 @@ class CollapsibleCard(QtWidgets.QFrame):
         self._content_layout.setContentsMargins(pad, th + pad, pad, pad)
         self._content_layout.setSpacing(0)
         self._content_widget: QtWidgets.QWidget | None = None
+        self._header_buttons: list[QtWidgets.QToolButton] = []
 
     @property
     def key(self) -> str:
@@ -105,9 +106,48 @@ class CollapsibleCard(QtWidgets.QFrame):
     def title(self) -> str:
         return self._title_display
 
+    def add_header_button(self, icon_name: str, tooltip: str, callback) -> QtWidgets.QToolButton:
+        btn = QtWidgets.QToolButton(self)
+        btn.setIcon(themed_icon(icon_name))
+        btn.setToolTip(tooltip)
+        btn.setAutoRaise(True)
+        btn.setCursor(QtCore.Qt.ArrowCursor)
+        btn.setFocusPolicy(QtCore.Qt.NoFocus)
+        size = dpix(_TITLE_HEIGHT) - dpix(2)
+        btn.setFixedSize(size, size)
+        btn.setIconSize(QtCore.QSize(size - dpix(4), size - dpix(4)))
+        btn.clicked.connect(callback)
+        self._header_buttons.append(btn)
+        self._layout_header_buttons()
+        btn.show()
+        return btn
+
+    def _layout_header_buttons(self):
+        pad = dpix(_CARD_PADDING)
+        size = dpix(_TITLE_HEIGHT) - dpix(2)
+        gap = dpix(2)
+        x = self.width() - pad - size
+        y = (dpix(_TITLE_HEIGHT) - size) // 2
+        for btn in self._header_buttons:
+            btn.move(x, y)
+            x -= size + gap
+
+    def _header_buttons_left_edge(self) -> int:
+        if not self._header_buttons:
+            return self.width()
+        pad = dpix(_CARD_PADDING)
+        size = dpix(_TITLE_HEIGHT) - dpix(2)
+        gap = dpix(2)
+        return self.width() - pad - len(self._header_buttons) * (size + gap) + gap
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._layout_header_buttons()
+
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
         th = dpix(_TITLE_HEIGHT)
-        if event.position().y() <= th:
+        pos = event.position()
+        if pos.y() <= th and pos.x() < self._header_buttons_left_edge():
             self._expanded = not self._expanded
             self._sync_content_visibility()
             self.toggled_card.emit(self._key, self._expanded)
@@ -137,7 +177,8 @@ class CollapsibleCard(QtWidgets.QFrame):
         painter.setFont(font)
         painter.setPen(color)
         text_x = pad + isz + dpix(4)
-        text_rect = QtCore.QRectF(text_x, 0, self.width() - text_x - pad, th)
+        right_edge = self._header_buttons_left_edge() if self._header_buttons else (self.width() - pad)
+        text_rect = QtCore.QRectF(text_x, 0, max(0, right_edge - text_x), th)
         painter.drawText(text_rect, QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft, self._title_display)
 
         if self._expanded:

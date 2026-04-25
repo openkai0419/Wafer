@@ -6,10 +6,18 @@ from collections.abc import Callable
 
 from PySide6 import QtCore
 
+from ....core.app_settings import app_settings
+from ....core.qt.rate_limit import qt_debounce
 from ....utils.logs import AppLogger
 
 
 _SQL_CHUNK = 900
+_RADIUS_KEY = "marks/overlay_radius"
+_VISIBLE_KEY = "marks/overlay_visible"
+DEFAULT_RADIUS = 8
+MIN_RADIUS = 4
+MAX_RADIUS = 40
+_COMMIT_DEBOUNCE_MS = 300
 
 
 def _fetch_marks_sync(db_path: str | None, paths: list[str]) -> dict[str, list[str]]:
@@ -75,6 +83,8 @@ class MarkOverlayService(QtCore.QObject):
         self._known_paths: list[str] = []
         self._generation = 0
         self._latest_replace_gen = 0
+        self._visible = bool(app_settings.get(_VISIBLE_KEY, 1, int))
+        self._radius = max(MIN_RADIUS, min(MAX_RADIUS, int(app_settings.get(_RADIUS_KEY, DEFAULT_RADIUS, int))))
         self._pool = QtCore.QThreadPool.globalInstance()
         self._result_ready.connect(self._on_result_ready, QtCore.Qt.QueuedConnection)
         MarkOverlayService._instance = self
@@ -82,6 +92,34 @@ class MarkOverlayService(QtCore.QObject):
     @classmethod
     def instance(cls) -> MarkOverlayService | None:
         return cls._instance
+
+    def is_visible(self) -> bool:
+        return self._visible
+
+    def set_visible(self, visible: bool):
+        visible = bool(visible)
+        if self._visible == visible:
+            return
+        self._visible = visible
+        app_settings.set(_VISIBLE_KEY, 1 if visible else 0)
+        self._commit_settings()
+        self.changed.emit()
+
+    def radius(self) -> int:
+        return self._radius
+
+    def set_radius(self, value: int):
+        value = max(MIN_RADIUS, min(MAX_RADIUS, int(value)))
+        if value == self._radius:
+            return
+        self._radius = value
+        app_settings.set(_RADIUS_KEY, value)
+        self._commit_settings()
+        self.changed.emit()
+
+    @qt_debounce(_COMMIT_DEBOUNCE_MS)
+    def _commit_settings(self):
+        app_settings.commit()
 
     def marks_for(self, path: str) -> list[str]:
         return self._marks.get(path, [])

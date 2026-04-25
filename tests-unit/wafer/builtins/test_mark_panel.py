@@ -14,4 +14,5 @@ def test_mark_create_card_and_update(qtbot):
     qtbot.addWidget(card)
     plugin.update_data({"1": "1", "2": "1"}, {}, "/p", "h", "db")
     assert plugin._row is not None
-    assert plugin._row._active_ids == ["1", "2"]
+    assert plugin._row._active == {"1", "2"}
+    assert plugin._row._current_path == "/p"

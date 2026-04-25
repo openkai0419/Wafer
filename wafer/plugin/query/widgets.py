@@ -463,6 +463,21 @@ class TextFilterWidget(QtWidgets.QWidget):
 
         self._option_popup = _TextFilterPopup(self.option_button, self)
         self._option_popup.changed.connect(self.changed)
+        self._bound_key_store = None
+
+    def bind_key_store(self, key_store):
+        prev = self._bound_key_store
+        if prev is not None:
+            try:
+                prev.updated.disconnect(self.keys_combo.remake)
+            except (TypeError, RuntimeError):
+                pass
+        self._bound_key_store = key_store
+        if key_store is None:
+            return
+        key_store.updated.connect(self.keys_combo.remake)
+        if key_store.data:
+            self.keys_combo.remake(key_store.data)
 
     def _toggle_option_popup(self):
         popup = self._option_popup

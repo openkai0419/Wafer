@@ -6,6 +6,20 @@ from ...app.viewer.preview.file_list_provider import ListMode
 
 GROUP_LIST_MODE = "fv_list_mode"
 
+_CMD_TO_LIST_MODE = {
+    "fv.list_sync": ListMode.SYNC,
+    "fv.list_fix": ListMode.FIX,
+    "fv.list_dir": ListMode.DIR,
+}
+
+
+def apply_list_mode(provider, cmd_id: str):
+    mode = _CMD_TO_LIST_MODE.get(cmd_id)
+    if mode is None:
+        return
+    provider.set_mode(mode)
+    Command.set_action_group_current(GROUP_LIST_MODE, cmd_id, save=False)
+
 
 def _ensure_current_initialized(model) -> bool:
     if model.count() <= 0:
@@ -54,20 +68,17 @@ def stop_slideshow(ctx, fv):
 
 @require(provider="FileListProvider")
 def set_list_sync(ctx, provider):
-    provider.set_mode(ListMode.SYNC)
-    Command.set_action_group_current(GROUP_LIST_MODE, "fv.list_sync", save=False)
+    apply_list_mode(provider, "fv.list_sync")
 
 
 @require(provider="FileListProvider")
 def set_list_fix(ctx, provider):
-    provider.set_mode(ListMode.FIX)
-    Command.set_action_group_current(GROUP_LIST_MODE, "fv.list_fix", save=False)
+    apply_list_mode(provider, "fv.list_fix")
 
 
 @require(provider="FileListProvider")
 def set_list_dir(ctx, provider):
-    provider.set_mode(ListMode.DIR)
-    Command.set_action_group_current(GROUP_LIST_MODE, "fv.list_dir", save=False)
+    apply_list_mode(provider, "fv.list_dir")
 
 
 class FileViewerCommands(ActionKit.MenuBase):

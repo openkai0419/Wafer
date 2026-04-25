@@ -17,7 +17,7 @@ MAX_INLINE_SEQ_ITEMS = 50
 MAX_INLINE_MAP_PAIRS = 50
 
 
-def _truncate_text(s: str, limit: int = MAX_INLINE_CHARS) -> str:
+def truncate_text(s: str, limit: int = MAX_INLINE_CHARS) -> str:
     if len(s) <= limit:
         return s
     return s[:limit] + f"\n… ({len(s):,} chars total)"
@@ -279,7 +279,7 @@ class MetaRowWidget(QtWidgets.QFrame):
         if key in self._value_formatters:
             try:
                 s = str(self._value_formatters[key](value))
-                return _truncate_text(s)
+                return truncate_text(s)
             except Exception as e:
                 if key not in self._formatter_failed_keys:
                     self._formatter_failed_keys.add(key)
@@ -288,14 +288,14 @@ class MetaRowWidget(QtWidgets.QFrame):
         if value is None:
             return "—"
         if isinstance(value, str):
-            return _truncate_text(value)
+            return truncate_text(value)
         if isinstance(value, (list, tuple, set)):
             return _preview_sequence(value)
         if isinstance(value, Mapping):
             return _preview_mapping(value)
         if isinstance(value, (QtCore.QDate, QtCore.QDateTime, QtCore.QTime)):
             return str(value.toString(QtCore.Qt.ISODate))
-        return _truncate_text(str(value))
+        return truncate_text(str(value))
 
     def _stringify_full(self, value: Any) -> str:
         if value is None:

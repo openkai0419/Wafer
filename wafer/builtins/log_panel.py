@@ -8,23 +8,30 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from ..plugin.panel.base import BasePanelPlugin
 from ..utils.formatting import dpix
 from ..core.lang.manager import t
+from ..core.color.theme import ThemeManager
 
 MAX_LOG_LINES = 2000
-
-LEVEL_COLORS = {
-    "critical": QtGui.QColor(255, 60, 60),
-    "error": QtGui.QColor(255, 80, 80),
-    "warning": QtGui.QColor(255, 200, 60),
-    "info": QtGui.QColor(210, 210, 210),
-    "debug": QtGui.QColor(140, 140, 140),
-}
 
 LEVELS = ["debug", "info", "warning", "error", "critical"]
 
 _LOG_FONT = QtGui.QFont("Consolas", 9)
 _LOG_FONT.setStyleHint(QtGui.QFont.Monospace)
 
-_LOG_STYLE = "QPlainTextEdit { background-color: #1e1e1e; color: #cccccc; }"
+
+def _level_colors() -> dict[str, QtGui.QColor]:
+    p = ThemeManager.instance().palette
+    return {
+        "critical": QtGui.QColor(p.error),
+        "error": QtGui.QColor(p.error),
+        "warning": QtGui.QColor(p.warning),
+        "info": QtGui.QColor(p.text_primary),
+        "debug": QtGui.QColor(p.text_tertiary),
+    }
+
+
+def _log_style() -> str:
+    p = ThemeManager.instance().palette
+    return f"QPlainTextEdit {{ background-color: {p.bg_primary}; color: {p.text_primary}; }}"
 
 
 def _parse_src(src: str) -> tuple[str, str]:
@@ -42,29 +49,66 @@ def _level_index(level: str) -> int:
 
 
 class _LogTab(QtWidgets.QPlainTextEdit):
+    SCROLL_BOTTOM_TOLERANCE = 4
+
+    user_scrolled_away = QtCore.Signal()
+    user_scrolled_to_bottom = QtCore.Signal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setReadOnly(True)
         self.setMaximumBlockCount(MAX_LOG_LINES)
         self.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
         self.setFont(_LOG_FONT)
-        self.setStyleSheet(_LOG_STYLE)
+        self.setStyleSheet(_log_style())
+        self._was_at_bottom = True
+        self.verticalScrollBar().valueChanged.connect(self._on_scroll_value_changed)
+
+    def apply_theme(self) -> None:
+        self.setStyleSheet(_log_style())
+
+    def is_at_bottom(self) -> bool:
+        bar = self.verticalScrollBar()
+        return bar.value() >= bar.maximum() - self.SCROLL_BOTTOM_TOLERANCE
+
+    def scroll_to_bottom(self) -> None:
+        bar = self.verticalScrollBar()
+        bar.setValue(bar.maximum())
+
+    def _on_scroll_value_changed(self, _value: int) -> None:
+        at_bottom = self.is_at_bottom()
+        if at_bottom == self._was_at_bottom:
+            return
+        self._was_at_bottom = at_bottom
+        if at_bottom:
+            self.user_scrolled_to_bottom.emit()
+        else:
+            self.user_scrolled_away.emit()
 
     def append_entry(self, entry: dict, auto_scroll: bool):
-        color = LEVEL_COLORS.get(entry["level"], LEVEL_COLORS["info"])
+        colors = _level_colors()
+        color = colors.get(entry["level"], colors["info"])
         level_tag = entry["level"].upper().ljust(8)
         src_tag = f"[{entry['src']}]"
         line = f"{entry['time']} {level_tag} {src_tag} {entry['text']}"
 
-        cursor = self.textCursor()
-        cursor.movePosition(QtGui.QTextCursor.End)
-        fmt = QtGui.QTextCharFormat()
-        fmt.setForeground(color)
-        cursor.insertText(line + "\n", fmt)
+        bar = self.verticalScrollBar()
+        bar.blockSignals(True)
+        try:
+            cursor = self.textCursor()
+            cursor.movePosition(QtGui.QTextCursor.End)
+            fmt = QtGui.QTextCharFormat()
+            fmt.setForeground(color)
+            cursor.insertText(line + "\n", fmt)
 
-        if auto_scroll:
-            self.setTextCursor(cursor)
-            self.ensureCursorVisible()
+            if auto_scroll:
+                self.setTextCursor(cursor)
+                self.ensureCursorVisible()
+                self._was_at_bottom = True
+            else:
+                self._was_at_bottom = self.is_at_bottom()
+        finally:
+            bar.blockSignals(False)
 
 
 class LogPanel(QtWidgets.QWidget):
@@ -79,6 +123,13 @@ class LogPanel(QtWidgets.QWidget):
         self._src_tabs: dict[str, _LogTab] = {}
         self._known_dbs: set[str] = set()
         self._build_ui()
+        ThemeManager.instance().on_theme_changed.connect(self._on_theme_changed)
+
+    def _on_theme_changed(self, _palette=None) -> None:
+        self._all_tab.apply_theme()
+        for tab in self._src_tabs.values():
+            tab.apply_theme()
+        self._rebuild_all_tabs()
 
     def _build_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
@@ -105,6 +156,7 @@ class LogPanel(QtWidgets.QWidget):
 
         self._auto_scroll = QtWidgets.QCheckBox(t("Auto Scroll"))
         self._auto_scroll.setChecked(True)
+        self._auto_scroll.toggled.connect(self._on_auto_scroll_toggled)
         toolbar.addWidget(self._auto_scroll)
 
         clear_btn = QtWidgets.QPushButton(t("Clear"))
@@ -116,8 +168,28 @@ class LogPanel(QtWidgets.QWidget):
         self._tab_widget = QtWidgets.QTabWidget()
         self._tab_widget.setTabsClosable(False)
         self._all_tab = _LogTab()
+        self._connect_tab_scroll_signals(self._all_tab)
         self._tab_widget.addTab(self._all_tab, t("All"))
         layout.addWidget(self._tab_widget)
+
+    def _connect_tab_scroll_signals(self, tab: _LogTab) -> None:
+        tab.user_scrolled_away.connect(self._on_user_scrolled_away)
+        tab.user_scrolled_to_bottom.connect(self._on_user_scrolled_to_bottom)
+
+    def _on_user_scrolled_away(self) -> None:
+        if self._auto_scroll.isChecked():
+            self._auto_scroll.setChecked(False)
+
+    def _on_user_scrolled_to_bottom(self) -> None:
+        if not self._auto_scroll.isChecked():
+            self._auto_scroll.setChecked(True)
+
+    def _on_auto_scroll_toggled(self, checked: bool) -> None:
+        if not checked:
+            return
+        current = self._tab_widget.currentWidget()
+        if isinstance(current, _LogTab):
+            current.scroll_to_bottom()
 
     def append_log(self, level: str, text: str, src: str = "", db: str = ""):
         src = src or f"viewer-{os.getpid()}"
@@ -138,6 +210,7 @@ class LogPanel(QtWidgets.QWidget):
 
         if src not in self._src_tabs:
             tab = _LogTab()
+            self._connect_tab_scroll_signals(tab)
             self._src_tabs[src] = tab
             role, pid = _parse_src(src)
             label = f"{role}:{pid}" if pid else src

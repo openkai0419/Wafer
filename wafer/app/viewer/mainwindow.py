@@ -70,6 +70,10 @@ class MainWindow(QtWidgets.QMainWindow):
         UI.register_instance("SearchService", self.search_service)
         t.set_locale(app_settings.get("window/language", "en"))
         UI.register_instance("MainWindow", self)
+        from .grid.mark_overlay_service import MarkOverlayService
+
+        self._mark_overlay_service = MarkOverlayService(lambda: self.database_path, parent=self)
+        UI.register_instance("MarkOverlayService", self._mark_overlay_service)
         self._closed = False
         self.setup_ui()
         self._show_loading()
@@ -301,6 +305,11 @@ class MainWindow(QtWidgets.QMainWindow):
         b.db_deleted.connect(self._on_db_deleted)
         b.remote_log_received.connect(self._on_dev_log)
 
+        from .preview.tag_edit_service import TagEditService
+
+        b.tags_updated.connect(TagEditService.instance().handle_ack)
+        b.tags_updated.connect(self._on_tags_updated_for_marks)
+
         b.start()
         UI.register_instance("ViewerIpcBridge", b)
 
@@ -353,13 +362,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self.grid_view.verticalScrollBar().setSingleStep(25)
         self.grid_view.horizontalScrollBar().setSingleStep(25)
         self.grid_view.base_height_changed.connect(self._on_zoom_changed)
+        self._mark_overlay_service.changed.connect(lambda: self.grid_view.viewport().update())
+        from ...builtins.mark import MarkRegistry
+
+        MarkRegistry.instance().changed.connect(lambda: self.grid_view.viewport().update())
 
         self.file_model = FileViewModel(dbpath_getter=lambda: self.database_path, parent=self)
         self.content_viewer = ContentViewerWidget()
         self.meta_viewer_widget = MetaViewerWidget()
         self.file_viewer = FileViewerController(self.file_model, self.content_viewer, self.meta_viewer_widget, self)
+        self.meta_viewer_widget.reload_requested.connect(self.file_viewer.reload_meta)
         self.file_list_provider = FileListProvider(self.file_model, self.grid_items, self)
-        self.file_list_provider.set_search_service(self.search_service)
         UI.register_instance("FileViewerController", self.file_viewer)
         UI.register_instance("FileListProvider", self.file_list_provider)
         UI.register_instance("ContentViewerWidget", self.content_viewer)
@@ -444,9 +457,11 @@ class MainWindow(QtWidgets.QMainWindow):
         store = StateStore.instance()
         store.register("layout", self._save_layout, self._restore_layout)
         store.register("grid", self._save_grid, self._restore_grid)
+        store.register("file_viewer", self._save_file_viewer, self._restore_file_viewer)
         self._register_grid_plugin_states(store)
         self._register_panel_plugin_states(store)
         self._register_meta_panel_plugin_states(store)
+        self._register_tag_panel_plugin_states(store)
 
     def _register_grid_plugin_states(self, store):
         from ...plugin.grid.base import WidgetGridPlugin as _WGP
@@ -502,6 +517,20 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _clear_zoom_restore_guard(self):
         self.grid_view._zoom_restore_guard = False
+
+    def _save_file_viewer(self):
+        from ...builtins.commands.content_viewer import GROUP_LIST_MODE
+
+        return {
+            "list_mode": Command.get_action_group_current(GROUP_LIST_MODE),
+        }
+
+    def _restore_file_viewer(self, state):
+        from ...builtins.commands.content_viewer import apply_list_mode
+
+        cmd_id = state.get("list_mode")
+        if cmd_id:
+            apply_list_mode(self.file_list_provider, cmd_id)
 
     def _sync_service_from_ui(self):
         dirs = self.folder_view.get_selected_paths()
@@ -676,6 +705,23 @@ class MainWindow(QtWidgets.QMainWindow):
         self.search_row_widget.invalidate_key_cache()
         self.search(force=True)
 
+    @QtCore.Slot(dict)
+    def _on_tags_updated_for_marks(self, payload: dict):
+        if not isinstance(payload, dict):
+            return
+        applied = payload.get("applied") or {}
+        deleted = payload.get("deleted") or {}
+        affected = set()
+        for path, keys in applied.items():
+            if any(str(k).startswith("mark.") for k in (keys or [])):
+                affected.add(str(path))
+        for path, keys in deleted.items():
+            if any(str(k).startswith("mark.") for k in (keys or [])):
+                affected.add(str(path))
+        if affected:
+            self._mark_overlay_service.refresh_paths(list(affected))
+            self.grid_view.viewport().update()
+
     @QtCore.Slot(str)
     def _on_folder_changed_ipc(self, db: str):
         if not self._is_my_db(db):
@@ -724,6 +770,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._last_paths = paths
         self.grid_view.set_paths(paths, sources, aspects, keep_scroll=keep_scroll)
         self.file_list_provider.on_search_results(paths, sources)
+        self._mark_overlay_service.set_paths(paths)
 
     def capture_query_state(self) -> QueryState:
         params = self.search_service.params
@@ -901,6 +948,20 @@ class MainWindow(QtWidgets.QMainWindow):
                 p = inst
                 store.register(
                     f"meta_panel_plugin.{cls.NAME}",
+                    lambda p=p: p.save_state(),
+                    lambda s, p=p: p.restore_state(s),
+                )
+
+    def _register_tag_panel_plugin_states(self, store):
+        from ...plugin.tag_panel.base import BaseTagPanelPlugin
+        from ...plugin.tag_panel.handler import tag_panel_registry
+
+        for cls in tag_panel_registry.list_all():
+            inst = tag_panel_registry.instance(cls.NAME)
+            if inst is not None and isinstance(inst, BaseTagPanelPlugin):
+                p = inst
+                store.register(
+                    f"tag_panel_plugin.{cls.NAME}",
                     lambda p=p: p.save_state(),
                     lambda s, p=p: p.restore_state(s),
                 )

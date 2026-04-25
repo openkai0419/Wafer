@@ -56,6 +56,17 @@ class CommandParam:
             return list(self.choices_fn())
         return self.choices
 
+    def is_value_satisfied(self, value: Any) -> bool:
+        if value is None or value == "":
+            return False
+        if self.choices_fn is not None:
+            try:
+                return value in self.resolve_choices()
+            except Exception as e:
+                AppLogger.warning(f"choices_fn failed for param '{self.name}': {e}")
+                return True
+        return True
+
 
 @dataclass
 class CommandMeta:

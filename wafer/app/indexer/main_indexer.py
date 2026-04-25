@@ -44,6 +44,7 @@ class IndexerProcess:
         self.zmq.subscribe("db.delete", lambda msg: self._on_delete_requested() or True)
         self.zmq.subscribe("delete.collector", self._on_delete_collector)
         self.zmq.subscribe("delete.keys", self._on_delete_keys)
+        self.zmq.subscribe("tags.update", self._on_tags_update)
         self.zmq.start()
         AppLogger.set_node(self.zmq, role="indexer")
 
@@ -296,6 +297,91 @@ class IndexerProcess:
                     {"collector": collector, "keys": keys, "db": self.db_name},
                     dst="viewer",
                 ),
+            )
+        )
+        return True
+
+    def _on_tags_update(self, msg):
+        payload = msg.payload
+        if not isinstance(payload, dict):
+            AppLogger.warning(f"tags.update: invalid payload: {type(payload)}")
+            return True
+        paths = payload.get("paths", []) or []
+        upserts_raw = payload.get("upserts", []) or []
+        renames_raw = payload.get("renames", []) or []
+        deletes_raw = payload.get("deletes", []) or []
+        request_id = payload.get("request_id", "")
+        lock_only = bool(payload.get("lock_only", False))
+        if not self.writer or not paths:
+            return True
+
+        def _coerce_value(value):
+            value_str = "" if value is None else str(value)
+            try:
+                value_num = float(value_str)
+            except (TypeError, ValueError):
+                value_num = None
+            return value_str, value_num
+
+        upserts: list[tuple[str, str, float | None, int]] = []
+        for item in upserts_raw:
+            if not isinstance(item, dict):
+                continue
+            key = str(item.get("key") or "").strip()
+            if not key:
+                continue
+            value_str, value_num = _coerce_value(item.get("value"))
+            locked = 1 if item.get("locked") else 0
+            upserts.append((key, value_str, value_num, locked))
+        renames: list[tuple[str, str, str, float | None, int]] = []
+        for item in renames_raw:
+            if not isinstance(item, dict):
+                continue
+            old_key = str(item.get("old") or "").strip()
+            new_key = str(item.get("new") or "").strip()
+            if not old_key or not new_key:
+                continue
+            value_str, value_num = _coerce_value(item.get("value"))
+            locked = 1 if item.get("locked") else 0
+            renames.append((old_key, new_key, value_str, value_num, locked))
+        deletes = [k for k in (str(d).strip() for d in deletes_raw) if k]
+
+        result: dict = {}
+
+        def _run():
+            result["data"] = self.writer.apply_user_tags(
+                list(paths),
+                upserts,
+                list(deletes),
+                lock_only=lock_only,
+                renames=renames,
+            )
+
+        def _on_done():
+            data: dict = result.get("data") or {}
+            applied_by_path = {p: list(applied) for p, (_fh, applied, _del) in data.items()}
+            deleted_by_path = {p: list(deleted) for p, (_fh, _ap, deleted) in data.items()}
+            hashes_by_path = {p: fh for p, (fh, _ap, _del) in data.items()}
+            self.zmq.send(
+                "tags.updated",
+                {
+                    "paths": list(paths),
+                    "applied": applied_by_path,
+                    "deleted": deleted_by_path,
+                    "file_hashes": hashes_by_path,
+                    "request_id": request_id,
+                    "db": self.db_name,
+                },
+                dst="viewer",
+            )
+            self._progress.send_event("update")
+
+        self.scheduler.submit(
+            Task.create(
+                "apply_user_tags",
+                priority=TaskPriority.USER_REQUEST,
+                run=_run,
+                on_complete=_on_done,
             )
         )
         return True

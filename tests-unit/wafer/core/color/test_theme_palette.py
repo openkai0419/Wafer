@@ -24,11 +24,13 @@ class TestThemePalette:
         p = ThemePalette(
             bg_primary="#111",
             bg_secondary="#222",
+            bg_tertiary="#2a2a2a",
             bg_elevated="#333",
             bg_hover="rgba(0,0,0,0.1)",
             bg_pressed="rgba(0,0,0,0.2)",
             text_primary="#eee",
             text_secondary="#ddd",
+            text_tertiary="#ccc",
             text_muted="#bbb",
             text_accent="#00f",
             accent="#3B80FF",
@@ -41,6 +43,7 @@ class TestThemePalette:
             info="#00f",
         )
         assert p.bg_primary == "#111"
+        assert p.bg_tertiary == "#2a2a2a"
         assert p.accent == "#3B80FF"
         assert p.accent_text == "#ffffff"
 

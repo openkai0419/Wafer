@@ -14,7 +14,7 @@ def extract_readme_summary(folder_path: str) -> str:
     if not path:
         return ""
     try:
-        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+        with open(path, encoding="utf-8", errors="ignore") as f:
             text = f.read(_MAX_BYTES)
     except OSError as exc:
         AppLogger.warning(f"readme_summary: failed to read {path}: {exc}")

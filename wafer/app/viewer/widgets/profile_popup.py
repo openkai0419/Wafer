@@ -3,6 +3,7 @@ from ....utils.formatting import dpix
 from ....core.color.theme import ThemeManager
 from ....core.lang.manager import t
 from ....core.profile import PROFILE_COLORS
+from ....ui.widgets.color_picker import ColorPickerDialog
 
 
 class ColorPalette(QtWidgets.QWidget):
@@ -10,6 +11,7 @@ class ColorPalette(QtWidgets.QWidget):
 
     def __init__(self, current: str = "", parent=None):
         super().__init__(parent)
+        self._current = current
         layout = QtWidgets.QHBoxLayout(self)
         layout.setContentsMargins(dpix(4), dpix(4), dpix(4), dpix(4))
         layout.setSpacing(dpix(4))
@@ -33,6 +35,24 @@ class ColorPalette(QtWidgets.QWidget):
         btn_none.setCursor(QtCore.Qt.PointingHandCursor)
         btn_none.clicked.connect(lambda: self.color_selected.emit(""))
         layout.addWidget(btn_none)
+
+        btn_more = QtWidgets.QPushButton("\u2026")
+        btn_more.setFixedSize(dpix(20), dpix(20))
+        btn_more.setToolTip(t("More..."))
+        btn_more.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {p.text_secondary}; border: {dpix(1)}px solid {p.border_default};"
+            f"  border-radius: {dpix(10)}px; font-size: {dpix(11)}px; }}"
+            f"QPushButton:hover {{ color: {p.text_primary}; border-color: {p.text_primary}; }}"
+        )
+        btn_more.setCursor(QtCore.Qt.PointingHandCursor)
+        btn_more.clicked.connect(self._open_custom_picker)
+        layout.addWidget(btn_more)
+
+    def _open_custom_picker(self):
+        initial = self._current or "#888888"
+        color = ColorPickerDialog.get_color(initial, self, t("Choose color"), with_alpha=False, scope="profile")
+        if color is not None:
+            self.color_selected.emit(color.name())
 
 
 class ClickableColorDot(QtWidgets.QWidget):
@@ -62,9 +82,17 @@ class ClickableColorDot(QtWidgets.QWidget):
             painter.setPen(QtGui.QPen(QtGui.QColor(p.text_muted), 1.5))
         painter.drawEllipse(1, 1, self._size - 2, self._size - 2)
 
+    def mousePressEvent(self, event):
+        if event.button() == QtCore.Qt.LeftButton:
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
     def mouseReleaseEvent(self, event):
         if event.button() == QtCore.Qt.LeftButton:
             self.clicked.emit()
+            event.accept()
+            return
         super().mouseReleaseEvent(event)
 
 

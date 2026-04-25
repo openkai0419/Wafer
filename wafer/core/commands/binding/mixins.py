@@ -116,7 +116,7 @@ class CommandBindingMixin:
         cls = self._registry.get_command(str(cmd.id))
         if cls and cls.meta.params:
             full = {p.name: args.get(p.name, p.default) for p in cls.meta.params}
-            if any(p.required and not full.get(p.name) for p in cls.meta.params):
+            if any(p.required and not p.is_value_satisfied(full.get(p.name)) for p in cls.meta.params):
                 from ..bridge import Command
 
                 Command._show_options_for_required(str(cmd.id), cls, None, ctx=ctx)

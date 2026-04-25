@@ -420,6 +420,7 @@ class FileNavigationCommands(ActionKit.MenuBase):
             ActionKit.Command(path="file.scroll_to_file", display="Scroll to GridView", func=scroll_to_file),
             ActionKit.Command(path="file.show_file", display="Show at ContentViewer", func=show_file),
             "-",
+            "Batch Renamer/:Batch Renamer",
             ActionKit.Command(path="Batch Renamer/file.batch_rename_add", display="Add", func=batch_rename_add),
             ActionKit.Command(path="Batch Renamer/file.batch_rename", display="Set", func=batch_rename),
             ActionKit.Command(path="Batch Renamer/file.batch_rename_remove", display="Remove", func=batch_rename_remove),

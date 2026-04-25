@@ -10,7 +10,7 @@ from wafer.core.qt.rate_limit import qt_debounce_manager
 from wafer.utils.logs import AppLogger
 from wafer.utils.profiling import profiler
 
-DEFAULT_VOLUME = 40
+DEFAULT_VOLUME = 20
 GL_COLOR_BUFFER_BIT = 0x00004000
 _MPV_EVENT_PLAYBACK_RESTART = 21
 

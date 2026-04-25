@@ -61,7 +61,9 @@ class BaseFilterPlugin(PluginBase, ABC):
 
     @classmethod
     def bind_key_store(cls, widget: QtWidgets.QWidget, key_store: KeyStore) -> None:
-        pass
+        bind = getattr(widget, "bind_key_store", None)
+        if callable(bind):
+            bind(key_store)
 
 
 class BaseSortPlugin(PluginBase, ABC):

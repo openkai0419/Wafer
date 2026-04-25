@@ -4,6 +4,7 @@ from PySide6 import QtCore
 from natsort import natsorted
 
 from ....utils.formatting import format_aspect, format_size_detail, format_timestamp
+from ....utils.paths import db_name_from_path
 from ....core.db.query import FileSearchEngine
 from ....plugin.viewer.handler import viewer_resolver
 from ....plugin.viewer.base import WidgetViewerPlugin as _WidgetViewerPlugin
@@ -16,22 +17,39 @@ from .content_viewer import ContentViewerWidget, _DEFAULT_WIDGET_NAME
 from .meta_panel import MetaViewerWidget
 from ..grid.cachemanager import MemoryLimitedImageCache, fullsize_key
 from ....core.app_settings import app_settings
+from ....core.color.theme import ThemeManager
 
 
-def _format_meta(engine, path):
-    file_rec, tags, meta_infos = engine.get_all_metadata(path)
+def _format_meta(engine, path, dbpath):
+    file_rec, file_hash, tags_with_lock, meta_infos = engine.get_all_metadata(path)
+    tags = {k: v for k, (v, _) in tags_with_lock.items()}
+    tag_locks = {k: lk for k, (_, lk) in tags_with_lock.items()}
     file_rec.pop("path", None)
     if file_rec.get("aspect_ratio"):
         file_rec["aspect_ratio"] = format_aspect(file_rec["aspect_ratio"])
     standard = {}
-    prefix_groups: dict[str, dict] = {}
+    meta_prefixed: dict[str, dict] = {}
+    tag_prefixed: dict[str, dict] = {}
+    tag_prefixed_locks: dict[str, dict] = {}
+    tag_root: dict[str, str] = {}
+    tag_root_locks: dict[str, bool] = {}
     for k, v in meta_infos.items():
         dot = k.find(".")
         if dot > 0:
             prefix = k[:dot]
-            prefix_groups.setdefault(prefix, {})[k[dot + 1 :]] = v
+            meta_prefixed.setdefault(prefix, {})[k[dot + 1 :]] = v
         else:
             standard[k] = v
+    for k, v in tags.items():
+        dot = k.find(".")
+        if dot > 0:
+            prefix = k[:dot]
+            short = k[dot + 1 :]
+            tag_prefixed.setdefault(prefix, {})[short] = v
+            tag_prefixed_locks.setdefault(prefix, {})[short] = tag_locks.get(k, False)
+        else:
+            tag_root[k] = v
+            tag_root_locks[k] = tag_locks.get(k, False)
     for k in ("created", "collected", "modified", "size"):
         raw = standard.get(k)
         if raw is not None:
@@ -41,18 +59,33 @@ def _format_meta(engine, path):
                 pass
     _standard_order = ["name", "path", "file_hash", "size", "created", "modified", "collected"]
     standard = {k: standard[k] for k in _standard_order if k in standard}
-    tags = {k: tags[k] for k in natsorted(tags)}
-    for prefix in prefix_groups:
-        d = prefix_groups[prefix]
-        prefix_groups[prefix] = {k: d[k] for k in natsorted(d)}
+    tag_root = {k: tag_root[k] for k in natsorted(tag_root)}
+    for prefix in meta_prefixed:
+        d = meta_prefixed[prefix]
+        meta_prefixed[prefix] = {k: d[k] for k in natsorted(d)}
+    for prefix in tag_prefixed:
+        d = tag_prefixed[prefix]
+        tag_prefixed[prefix] = {k: d[k] for k in natsorted(d)}
     collector_status = engine.get_collection_status(path)
     if collector_status:
+        palette = ThemeManager.instance().palette
         parts = []
         for name, status in sorted(collector_status):
-            color = "#4caf50" if status == "ok" else "#f44336"
+            color = palette.success if status == "ok" else palette.error
             parts.append(f'<span style="color:{color}">\u25cf</span> {name}')
         file_rec["collected by"] = "&nbsp;&nbsp;".join(parts)
-    return {"source": file_rec, "file": standard, "tag": tags, "prefixed": prefix_groups}
+    return {
+        "source": file_rec,
+        "file": standard,
+        "tag": tag_root,
+        "tag_prefixed": tag_prefixed,
+        "tag_prefixed_locks": tag_prefixed_locks,
+        "prefixed": meta_prefixed,
+        "_path": path,
+        "_file_hash": file_hash,
+        "_tag_locks": tag_root_locks,
+        "_db_name": db_name_from_path(dbpath),
+    }
 
 
 class FileViewerController(QtCore.QObject):
@@ -211,7 +244,20 @@ class FileViewerController(QtCore.QObject):
             return
         self.model.set_path(path)
 
+    def reload_meta(self):
+        path = self.model.path()
+        if path:
+            self._fetch_meta(path, self._on_meta_reloaded)
+
+    def _on_meta_reloaded(self, cancel, path, result):
+        if cancel.is_cancelled() or path != self.model.path():
+            return
+        self.meta_viewer.set_data(result)
+
     def _update_meta(self, path):
+        self._fetch_meta(path, self._on_meta_ready)
+
+    def _fetch_meta(self, path, callback):
         dbpath = self.model.dbpath
         if not dbpath:
             return
@@ -219,10 +265,10 @@ class FileViewerController(QtCore.QObject):
 
         def task():
             engine = FileSearchEngine(dbpath)
-            result = _format_meta(engine, path)
+            result = _format_meta(engine, path, dbpath)
             if cancel.is_cancelled():
                 return
-            self._dispatcher.invoke(lambda: self._on_meta_ready(cancel, path, result))
+            self._dispatcher.invoke(lambda: callback(cancel, path, result))
 
         self._dispatcher.post(task, cancel=cancel)
 

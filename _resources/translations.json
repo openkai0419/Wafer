@@ -1,4 +1,632 @@
 {
+  "Empty for root tag, or pick/type a prefix": {
+    "en": "Empty for root tag, or pick/type a prefix",
+    "ja": ""
+  },
+  "Prefix:": {
+    "en": "Prefix:",
+    "ja": ""
+  },
+  "Reload metadata": {
+    "en": "Reload metadata",
+    "ja": ""
+  },
+  "OK": {
+    "en": "OK",
+    "ja": ""
+  },
+  "name": {
+    "en": "name",
+    "ja": ""
+  },
+  "Alt +": {
+    "en": "Alt +",
+    "ja": ""
+  },
+  "Ctrl +": {
+    "en": "Ctrl +",
+    "ja": ""
+  },
+  "First Key": {
+    "en": "First Key",
+    "ja": ""
+  },
+  "Key Input": {
+    "en": "Key Input",
+    "ja": ""
+  },
+  "Mouse Actions:": {
+    "en": "Mouse Actions:",
+    "ja": ""
+  },
+  "Mouse Bindings": {
+    "en": "Mouse Bindings",
+    "ja": ""
+  },
+  "None (Unset)": {
+    "en": "None (Unset)",
+    "ja": ""
+  },
+  "Press up to 2 keys": {
+    "en": "Press up to 2 keys",
+    "ja": ""
+  },
+  "Rename mark": {
+    "en": "Rename mark",
+    "ja": ""
+  },
+  "Second Key": {
+    "en": "Second Key",
+    "ja": ""
+  },
+  "Shift +": {
+    "en": "Shift +",
+    "ja": ""
+  },
+  "{button} +": {
+    "en": "{button} +",
+    "ja": ""
+  },
+  "★ No Modifier": {
+    "en": "★ No Modifier",
+    "ja": ""
+  },
+  "Color picker": {
+    "en": "Color picker",
+    "ja": "カラーピッカー"
+  },
+  "Hex": {
+    "en": "Hex",
+    "ja": "Hex"
+  },
+  "Recent colors": {
+    "en": "Recent colors",
+    "ja": "最近使った色"
+  },
+  "No recent colors": {
+    "en": "No recent colors",
+    "ja": "履歴なし"
+  },
+  "More...": {
+    "en": "More...",
+    "ja": "その他..."
+  },
+  "Choose color": {
+    "en": "Choose color",
+    "ja": "色を選択"
+  },
+  "Mark {name} removed from {count} file(s)": {
+    "en": "Mark {name} removed from {count} file(s)",
+    "ja": ""
+  },
+  "Added as '{name}' to avoid duplicate": {
+    "en": "Added as '{name}' to avoid duplicate",
+    "ja": ""
+  },
+  "Overlay size:": {
+    "en": "Overlay size:",
+    "ja": ""
+  },
+  "Define New Mark...": {
+    "en": "Define New Mark...",
+    "ja": ""
+  },
+  "Delete all '{key}' tags from databases": {
+    "en": "Delete all '{key}' tags from databases",
+    "ja": ""
+  },
+  "Rename Mark...": {
+    "en": "Rename Mark...",
+    "ja": ""
+  },
+  "Set Mark Color...": {
+    "en": "Set Mark Color...",
+    "ja": ""
+  },
+  "Add new mark...": {
+    "en": "Add new mark...",
+    "ja": ""
+  },
+  "Mark Filter Options": {
+    "en": "Mark Filter Options",
+    "ja": ""
+  },
+  "Mark filter options": {
+    "en": "Mark filter options",
+    "ja": ""
+  },
+  "Match:": {
+    "en": "Match:",
+    "ja": ""
+  },
+  "Show mark overlay on grid": {
+    "en": "Show mark overlay on grid",
+    "ja": ""
+  },
+  "Mark name": {
+    "en": "Mark name",
+    "ja": ""
+  },
+  "Choose mark color": {
+    "en": "Choose mark color",
+    "ja": ""
+  },
+  "Toggle mark": {
+    "en": "Toggle mark",
+    "ja": ""
+  },
+  "Add a new mark": {
+    "en": "Add a new mark",
+    "ja": ""
+  },
+  "Add mark": {
+    "en": "Add mark",
+    "ja": ""
+  },
+  "Add {name}": {
+    "en": "Add {name}",
+    "ja": ""
+  },
+  "Change color...": {
+    "en": "Change color...",
+    "ja": ""
+  },
+  "Display name": {
+    "en": "Display name",
+    "ja": ""
+  },
+  "Hex color": {
+    "en": "Hex color",
+    "ja": ""
+  },
+  "Mark slug": {
+    "en": "Mark slug",
+    "ja": ""
+  },
+  "Mark {name} added to {count} file(s)": {
+    "en": "Mark {name} added to {count} file(s)",
+    "ja": ""
+  },
+  "Name:": {
+    "en": "Name:",
+    "ja": ""
+  },
+  "New display name": {
+    "en": "New display name",
+    "ja": ""
+  },
+  "Remove mark": {
+    "en": "Remove mark",
+    "ja": ""
+  },
+  "Remove mark '{name}'?": {
+    "en": "Remove mark '{name}'?",
+    "ja": ""
+  },
+  "Remove {name}": {
+    "en": "Remove {name}",
+    "ja": ""
+  },
+  "Remove...": {
+    "en": "Remove...",
+    "ja": ""
+  },
+  "Rename...": {
+    "en": "Rename...",
+    "ja": ""
+  },
+  "Toggle mark overlay on grid": {
+    "en": "Toggle mark overlay on grid",
+    "ja": ""
+  },
+  "Toggle {name}": {
+    "en": "Toggle {name}",
+    "ja": ""
+  },
+  "Total mark tags in current database": {
+    "en": "Total mark tags in current database",
+    "ja": ""
+  },
+  "Yes: also delete all '{key}' tags from every database.\nNo: keep tags in databases (mark definition is removed only).\nCancel: do nothing.": {
+    "en": "Yes: also delete all '{key}' tags from every database.\nNo: keep tags in databases (mark definition is removed only).\nCancel: do nothing.",
+    "ja": ""
+  },
+  "Add test": {
+    "en": "Add test",
+    "ja": ""
+  },
+  "Remove test": {
+    "en": "Remove test",
+    "ja": ""
+  },
+  "Toggle test": {
+    "en": "Toggle test",
+    "ja": ""
+  },
+  "florence": {
+    "en": "florence",
+    "ja": ""
+  },
+  "Add 1": {
+    "en": "Add 1",
+    "ja": ""
+  },
+  "Add 2": {
+    "en": "Add 2",
+    "ja": ""
+  },
+  "Add 3": {
+    "en": "Add 3",
+    "ja": ""
+  },
+  "Add 4": {
+    "en": "Add 4",
+    "ja": ""
+  },
+  "Add 5": {
+    "en": "Add 5",
+    "ja": ""
+  },
+  "Add 6": {
+    "en": "Add 6",
+    "ja": ""
+  },
+  "Add 7": {
+    "en": "Add 7",
+    "ja": ""
+  },
+  "Add 8": {
+    "en": "Add 8",
+    "ja": ""
+  },
+  "Add 9": {
+    "en": "Add 9",
+    "ja": ""
+  },
+  "Define New Mark": {
+    "en": "Define New Mark",
+    "ja": ""
+  },
+  "Remove 1": {
+    "en": "Remove 1",
+    "ja": ""
+  },
+  "Remove 2": {
+    "en": "Remove 2",
+    "ja": ""
+  },
+  "Remove 3": {
+    "en": "Remove 3",
+    "ja": ""
+  },
+  "Remove 4": {
+    "en": "Remove 4",
+    "ja": ""
+  },
+  "Remove 5": {
+    "en": "Remove 5",
+    "ja": ""
+  },
+  "Remove 6": {
+    "en": "Remove 6",
+    "ja": ""
+  },
+  "Remove 7": {
+    "en": "Remove 7",
+    "ja": ""
+  },
+  "Remove 8": {
+    "en": "Remove 8",
+    "ja": ""
+  },
+  "Remove 9": {
+    "en": "Remove 9",
+    "ja": ""
+  },
+  "Remove Mark Definition": {
+    "en": "Remove Mark Definition",
+    "ja": ""
+  },
+  "Rename Mark": {
+    "en": "Rename Mark",
+    "ja": ""
+  },
+  "Toggle 1": {
+    "en": "Toggle 1",
+    "ja": ""
+  },
+  "Toggle 2": {
+    "en": "Toggle 2",
+    "ja": ""
+  },
+  "Toggle 3": {
+    "en": "Toggle 3",
+    "ja": ""
+  },
+  "Toggle 4": {
+    "en": "Toggle 4",
+    "ja": ""
+  },
+  "Toggle 5": {
+    "en": "Toggle 5",
+    "ja": ""
+  },
+  "Toggle 6": {
+    "en": "Toggle 6",
+    "ja": ""
+  },
+  "Toggle 7": {
+    "en": "Toggle 7",
+    "ja": ""
+  },
+  "Toggle 8": {
+    "en": "Toggle 8",
+    "ja": ""
+  },
+  "Toggle 9": {
+    "en": "Toggle 9",
+    "ja": ""
+  },
+  "Hex color (e.g. #FF0000)": {
+    "en": "Hex color (e.g. #FF0000)",
+    "ja": ""
+  },
+  "Mark ID": {
+    "en": "Mark ID",
+    "ja": ""
+  },
+  "Add Mark": {
+    "en": "Add Mark",
+    "ja": ""
+  },
+  "Add Mark 1": {
+    "en": "Add Mark 1",
+    "ja": ""
+  },
+  "Add Mark 2": {
+    "en": "Add Mark 2",
+    "ja": ""
+  },
+  "Add Mark 3": {
+    "en": "Add Mark 3",
+    "ja": ""
+  },
+  "Add Mark 4": {
+    "en": "Add Mark 4",
+    "ja": ""
+  },
+  "Add Mark 5": {
+    "en": "Add Mark 5",
+    "ja": ""
+  },
+  "Add Mark 6": {
+    "en": "Add Mark 6",
+    "ja": ""
+  },
+  "Add Mark 7": {
+    "en": "Add Mark 7",
+    "ja": ""
+  },
+  "Add Mark 8": {
+    "en": "Add Mark 8",
+    "ja": ""
+  },
+  "Add Mark 9": {
+    "en": "Add Mark 9",
+    "ja": ""
+  },
+  "Clear All Marks": {
+    "en": "Clear All Marks",
+    "ja": ""
+  },
+  "Mark": {
+    "en": "Mark",
+    "ja": ""
+  },
+  "Mark {mark_id} added to {count} file(s)": {
+    "en": "Mark {mark_id} added to {count} file(s)",
+    "ja": ""
+  },
+  "Mark {mark_id} removed from {count} file(s)": {
+    "en": "Mark {mark_id} removed from {count} file(s)",
+    "ja": ""
+  },
+  "Remove Mark": {
+    "en": "Remove Mark",
+    "ja": ""
+  },
+  "Remove Mark 1": {
+    "en": "Remove Mark 1",
+    "ja": ""
+  },
+  "Remove Mark 2": {
+    "en": "Remove Mark 2",
+    "ja": ""
+  },
+  "Remove Mark 3": {
+    "en": "Remove Mark 3",
+    "ja": ""
+  },
+  "Remove Mark 4": {
+    "en": "Remove Mark 4",
+    "ja": ""
+  },
+  "Remove Mark 5": {
+    "en": "Remove Mark 5",
+    "ja": ""
+  },
+  "Remove Mark 6": {
+    "en": "Remove Mark 6",
+    "ja": ""
+  },
+  "Remove Mark 7": {
+    "en": "Remove Mark 7",
+    "ja": ""
+  },
+  "Remove Mark 8": {
+    "en": "Remove Mark 8",
+    "ja": ""
+  },
+  "Remove Mark 9": {
+    "en": "Remove Mark 9",
+    "ja": ""
+  },
+  "Set Mark Color": {
+    "en": "Set Mark Color",
+    "ja": ""
+  },
+  "Toggle": {
+    "en": "Toggle",
+    "ja": ""
+  },
+  "Toggle Mark": {
+    "en": "Toggle Mark",
+    "ja": ""
+  },
+  "Toggle Mark 1": {
+    "en": "Toggle Mark 1",
+    "ja": ""
+  },
+  "Toggle Mark 2": {
+    "en": "Toggle Mark 2",
+    "ja": ""
+  },
+  "Toggle Mark 3": {
+    "en": "Toggle Mark 3",
+    "ja": ""
+  },
+  "Toggle Mark 4": {
+    "en": "Toggle Mark 4",
+    "ja": ""
+  },
+  "Toggle Mark 5": {
+    "en": "Toggle Mark 5",
+    "ja": ""
+  },
+  "Toggle Mark 6": {
+    "en": "Toggle Mark 6",
+    "ja": ""
+  },
+  "Toggle Mark 7": {
+    "en": "Toggle Mark 7",
+    "ja": ""
+  },
+  "Toggle Mark 8": {
+    "en": "Toggle Mark 8",
+    "ja": ""
+  },
+  "Toggle Mark 9": {
+    "en": "Toggle Mark 9",
+    "ja": ""
+  },
+  "Add new tag": {
+    "en": "Add new tag",
+    "ja": ""
+  },
+  "Value:": {
+    "en": "Value:",
+    "ja": ""
+  },
+  "Double-click to edit": {
+    "en": "Double-click to edit",
+    "ja": ""
+  },
+  "Mark for deletion": {
+    "en": "Mark for deletion",
+    "ja": ""
+  },
+  "Save tags": {
+    "en": "Save tags",
+    "ja": ""
+  },
+  "Duplicate keys remain after edits. Please fix and try again.": {
+    "en": "Duplicate keys remain after edits. Please fix and try again.",
+    "ja": ""
+  },
+  "Key already exists; will be auto-renamed on add.": {
+    "en": "Key already exists; will be auto-renamed on add.",
+    "ja": ""
+  },
+  "Tag edit failed: file hash unknown": {
+    "en": "Tag edit failed: file hash unknown",
+    "ja": ""
+  },
+  "Tag edit failed: IPC node unavailable": {
+    "en": "Tag edit failed: IPC node unavailable",
+    "ja": ""
+  },
+  "Tag edit send failed": {
+    "en": "Tag edit send failed",
+    "ja": ""
+  },
+  "Tag edit timed out": {
+    "en": "Tag edit timed out",
+    "ja": ""
+  },
+  "All keys": {
+    "en": "All keys",
+    "ja": ""
+  },
+  "Between": {
+    "en": "Between",
+    "ja": ""
+  },
+  "Date keys": {
+    "en": "Date keys",
+    "ja": ""
+  },
+  "Last": {
+    "en": "Last",
+    "ja": ""
+  },
+  "Today": {
+    "en": "Today",
+    "ja": ""
+  },
+  "days": {
+    "en": "days",
+    "ja": ""
+  },
+  "from": {
+    "en": "from",
+    "ja": ""
+  },
+  "hours": {
+    "en": "hours",
+    "ja": ""
+  },
+  "key": {
+    "en": "key",
+    "ja": ""
+  },
+  "months": {
+    "en": "months",
+    "ja": ""
+  },
+  "tag": {
+    "en": "tag",
+    "ja": ""
+  },
+  "to": {
+    "en": "to",
+    "ja": ""
+  },
+  "value": {
+    "en": "value",
+    "ja": ""
+  },
+  "weeks": {
+    "en": "weeks",
+    "ja": ""
+  },
+  "years": {
+    "en": "years",
+    "ja": ""
+  },
+  "Lock tag from collector overwrite": {
+    "en": "Lock tag from collector overwrite",
+    "ja": ""
+  },
   "This extension is marked as heavy. This may:\n- use a large amount of GPU\n- take a long time to install": {
     "en": "This extension is marked as heavy. This may:\n- use a large amount of GPU\n- take a long time to install",
     "ja": ""
@@ -1582,6 +2210,10 @@
   },
   "Descending": {
     "en": "Descending"
+  },
+  "Enable / Disable filter": {
+    "en": "Enable / Disable filter",
+    "ja": "フィルタを一時的に有効/無効にする"
   },
   "Enter search terms...": {
     "en": "Enter search terms..."

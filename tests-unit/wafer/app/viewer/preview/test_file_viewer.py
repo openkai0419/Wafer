@@ -7,16 +7,25 @@ from wafer.plugin.viewer.base import WidgetViewerPlugin, ImageViewerPlugin
 
 def _mock_engine(**overrides):
     engine = MagicMock()
+    if "get_all_metadata" in overrides:
+        file_rec, tags, meta = overrides.pop("get_all_metadata")
+        overrides.setdefault("file_record", file_rec)
+        overrides.setdefault("meta_info", meta)
+        overrides.setdefault("tags_with_lock", {k: (v, False) for k, v in tags.items()})
     defaults = {
-        "get_all_metadata": (
-            {"path": "/a.png", "source": "/a.png", "name": "a.png", "aspect_ratio": None},
-            {},
-            {},
-        ),
+        "file_record": {"path": "/a.png", "source": "/a.png", "name": "a.png", "aspect_ratio": None},
+        "meta_info": {},
+        "tags_with_lock": {},
+        "file_hash": "h1",
         "get_collection_status": [],
     }
     defaults.update(overrides)
-    engine.get_all_metadata.return_value = defaults["get_all_metadata"]
+    engine.get_all_metadata.return_value = (
+        defaults["file_record"],
+        defaults["file_hash"],
+        defaults["tags_with_lock"],
+        defaults["meta_info"],
+    )
     engine.get_collection_status.return_value = defaults["get_collection_status"]
     return engine
 
@@ -27,7 +36,7 @@ def test_compile():
 
 def test_format_meta_source_same_as_path():
     engine = _mock_engine()
-    result = _format_meta(engine, "/a.png")
+    result = _format_meta(engine, "/a.png", "")
     file_rec = result["source"]
     assert "path" not in file_rec
     assert file_rec["source"] == "/a.png"
@@ -41,7 +50,7 @@ def test_format_meta_source_differs_from_path():
             {},
         )
     )
-    result = _format_meta(engine, "/a.png")
+    result = _format_meta(engine, "/a.png", "")
     file_rec = result["source"]
     assert "path" not in file_rec
     assert file_rec["source"] == "/other/a.png"
@@ -55,7 +64,7 @@ def test_format_meta_formats_size_and_timestamps():
             {"created": "1700000000", "collected": "1700000000", "modified": "1700000000", "size": "2048"},
         )
     )
-    result = _format_meta(engine, "/a.png")
+    result = _format_meta(engine, "/a.png", "")
     standard = result["file"]
     assert isinstance(standard["created"], str)
     assert isinstance(standard["collected"], str)
@@ -71,7 +80,7 @@ def test_format_meta_sorts_tags_and_meta():
             {"name": "a.png", "size": "1024", "exif.width": "100"},
         )
     )
-    result = _format_meta(engine, "/a.png")
+    result = _format_meta(engine, "/a.png", "")
     tags = result["tag"]
     standard = result["file"]
     assert list(tags.keys()) == ["a_tag", "z_tag"]
@@ -87,7 +96,7 @@ def test_format_meta_aspect_ratio():
             {},
         )
     )
-    result = _format_meta(engine, "/a.png")
+    result = _format_meta(engine, "/a.png", "")
     file_rec = result["source"]
     assert isinstance(file_rec["aspect_ratio"], str)
 
@@ -100,7 +109,7 @@ def test_format_meta_splits_prefixed_meta():
             {"name": "a.png", "size": "1024", "exif.width": "100", "exif.height": "200"},
         )
     )
-    result = _format_meta(engine, "/a.png")
+    result = _format_meta(engine, "/a.png", "")
     standard = result["file"]
     prefixed = result["prefixed"]
     assert "name" in standard
@@ -112,7 +121,7 @@ def test_format_meta_splits_prefixed_meta():
 
 def test_format_meta_embeds_collector_html():
     engine = _mock_engine(get_collection_status=[("exif", "ok"), ("animated", "fail")])
-    result = _format_meta(engine, "/a.png")
+    result = _format_meta(engine, "/a.png", "")
     file_rec = result["source"]
     assert "collected by" in file_rec
     assert "\u25cf" in file_rec["collected by"]
@@ -234,7 +243,7 @@ class TestAutoplayState:
 
 def test_format_meta_no_collectors_omits_key():
     engine = _mock_engine(get_collection_status=[])
-    result = _format_meta(engine, "/a.png")
+    result = _format_meta(engine, "/a.png", "")
     file_rec = result["source"]
     assert "collected by" not in file_rec
 

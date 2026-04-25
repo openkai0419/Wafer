@@ -7,6 +7,7 @@ from .layout.base import BaseLayoutPlugin
 from .panel.base import BasePanelPlugin
 from .config import PluginConfig
 from .meta_panel.base import BaseMetaPanelPlugin
+from .tag_panel.base import BaseTagPanelPlugin
 from .rename.base import BaseRenameSourcePlugin, SegmentInfo
 from .imageloader.base import BaseImageLoader
 from ..core.commands.bridge import ActionKit

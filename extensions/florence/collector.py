@@ -24,8 +24,8 @@ class FlorenceCollector(BaseSingletonCollector):
     NAME = "florence"
     EXTENSIONS = ()
     PRIORITY = 50
-    BATCH_SIZE = 150
-    CHUNK_TIMEOUT = 360.0
+    BATCH_SIZE = 50
+    CHUNK_TIMEOUT = 1200.0
     DEFAULT_ENABLED = False
 
     @classmethod

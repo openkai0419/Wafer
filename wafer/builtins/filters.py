@@ -61,16 +61,6 @@ class TextFilter(BaseFilterPlugin):
         return {k: params[k] for k in ("keys", "query_mode", "keyword_mode", "keyword_separator") if k in params}
 
     @classmethod
-    def bind_key_store(cls, widget, key_store):
-        prev = getattr(widget, "_bound_key_store", None)
-        if prev is not None:
-            prev.updated.disconnect(widget.keys_combo.remake)
-        widget._bound_key_store = key_store
-        key_store.updated.connect(widget.keys_combo.remake)
-        if key_store.data:
-            widget.keys_combo.remake(key_store.data)
-
-    @classmethod
     @profiler.profile
     def build_path_query(cls, params, normalize_path):
         keys, include_kw, exclude_kw = _normalize_text_inputs(params)
@@ -178,3 +168,51 @@ class DirectoryFilter(BaseFilterPlugin):
             return None, []
         where = " OR ".join(clauses)
         return f"SELECT DISTINCT path FROM files WHERE {where}", bind
+
+
+class MarkFilter(BaseFilterPlugin):
+    NAME = "mark"
+    DISPLAY_NAME = "Mark"
+    PRIORITY = 80
+
+    @classmethod
+    def create_widget(cls, parent=None):
+        from .mark.widget import MarkFilterWidget
+
+        return MarkFilterWidget(parent)
+
+    @classmethod
+    def read_params(cls, widget):
+        return widget.read_params()
+
+    @classmethod
+    def write_params(cls, widget, params):
+        widget.write_params(params)
+
+    @classmethod
+    def inheritable_params(cls, params):
+        return {k: params[k] for k in ("mode",) if k in params}
+
+    @classmethod
+    @profiler.profile
+    def build_path_query(cls, params, normalize_path):
+        from .mark.registry import MarkRegistry
+
+        ids = params.get("mark_ids") or []
+        if not ids:
+            return None, []
+        mode = (params.get("mode") or "OR").upper()
+        keys = [MarkRegistry.tag_key(str(mid)) for mid in ids]
+        placeholders = ",".join(["?"] * len(keys))
+        base = f"SELECT i.path FROM tags t JOIN sources s ON s.file_hash = t.file_hash JOIN files i ON i.source = s.source WHERE t.key IN ({placeholders})"
+        if mode == "AND" and len(keys) > 1:
+            sql = (
+                "SELECT path FROM ("
+                "SELECT i.path AS path, t.key AS k FROM tags t "
+                "JOIN sources s ON s.file_hash = t.file_hash "
+                "JOIN files i ON i.source = s.source "
+                f"WHERE t.key IN ({placeholders})"
+                ") GROUP BY path HAVING COUNT(DISTINCT k) >= ?"
+            )
+            return sql, list(keys) + [len(keys)]
+        return f"SELECT DISTINCT path FROM ({base})", list(keys)

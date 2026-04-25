@@ -723,12 +723,12 @@ class TestEngineLookupMethods:
 
     def test_get_tags_by_path(self, populated_db):
         engine = FileSearchEngine(populated_db)
-        tags = engine.get_tags_by_path("C:/photos/vacation/img_0000.jpg")
+        _, _, tags, _ = engine.get_all_metadata("C:/photos/vacation/img_0000.jpg")
         assert "rating" in tags
 
     def test_get_tags_nonexistent(self, populated_db):
         engine = FileSearchEngine(populated_db)
-        tags = engine.get_tags_by_path("C:/nonexistent/file.jpg")
+        _, _, tags, _ = engine.get_all_metadata("C:/nonexistent/file.jpg")
         assert tags == {}
 
     def test_get_file_record(self, populated_db):
@@ -754,11 +754,11 @@ class TestEngineLookupMethods:
 
     def test_get_all_metadata(self, populated_db):
         engine = FileSearchEngine(populated_db)
-        result = engine.get_all_metadata("C:/photos/vacation/img_0000.jpg")
-        assert len(result) == 3
-        file_rec, tags, meta = result
+        file_rec, file_hash, tags_with_lock, meta = engine.get_all_metadata("C:/photos/vacation/img_0000.jpg")
         assert file_rec.get("path") is not None
-        assert "rating" in tags
+        assert file_hash is not None
+        assert "rating" in tags_with_lock
+        assert isinstance(tags_with_lock["rating"], tuple) and len(tags_with_lock["rating"]) == 2
         assert "dpi" in meta
 
     def test_get_collection_status_ok(self, populated_db):
@@ -975,7 +975,8 @@ class TestEmptyDB:
 
     def test_get_tags_empty(self, empty_db):
         engine = FileSearchEngine(empty_db)
-        assert engine.get_tags_by_path("C:/any/file.jpg") == {}
+        _, _, tags, _ = engine.get_all_metadata("C:/any/file.jpg")
+        assert tags == {}
 
     def test_get_file_record_empty(self, empty_db):
         engine = FileSearchEngine(empty_db)
@@ -987,8 +988,11 @@ class TestEmptyDB:
 
     def test_get_all_metadata_empty(self, empty_db):
         engine = FileSearchEngine(empty_db)
-        result = engine.get_all_metadata("C:/any/file.jpg")
-        assert result == [{}, {}, {}]
+        file_rec, file_hash, tags_with_lock, meta = engine.get_all_metadata("C:/any/file.jpg")
+        assert file_rec == {}
+        assert file_hash is None
+        assert tags_with_lock == {}
+        assert meta == {}
 
 
 class TestAspectRatioFallback:

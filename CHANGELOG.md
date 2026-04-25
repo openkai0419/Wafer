@@ -4,6 +4,39 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.6.5]
+### Added
+- **Mark system** (`wafer/builtins/mark/`): user-defined named, colored marks stored in `app_settings`; `MarkRegistry` singleton with `Mark` dataclass, color swatch icon generation, and duplicate-name resolution on load
+- **Mark commands** (`wafer/builtins/mark/commands.py`): `mark.add`, `mark.remove`, `mark.toggle`, `mark.clear`, `mark.define`, `mark.rename`, `mark.set_color`, `mark.remove_def` registered under `File/Mark` menu group via `MarkCommands`
+- **`MarkOverlayService`** (`wafer/app/viewer/grid/mark_overlay_service.py`): background-loaded mark data per grid item; draws colored dot badges (single color, pie segments, or rainbow for 5+ marks) on grid overlay; configurable radius and visibility saved to `app_settings`
+- **`MarkTagPanelPlugin`** (`wafer/builtins/mark/panel.py`): `BaseTagPanelPlugin` implementation displaying mark-badge row in the metadata side panel with per-mark toggle and "Add new mark" button
+- **`MarkFilter`** (`wafer/builtins/filters.py`): new `BaseFilterPlugin` for filtering by selected marks; `MarkFilterWidget` shows per-mark toggle buttons with match count and OR/AND mode popup; mark overlay settings (visibility, radius) accessible from filter widget
+- **`EditableTagCard`** (`wafer/app/viewer/preview/editable_tag_card.py`): inline tag editor in the metadata panel — add, delete, rename, and lock/unlock individual tags; `LineEditor` and `PlainEditor` inline widgets with commit-on-Enter/blur and Escape-to-cancel; `AddTagDialog` for adding new tags
+- **`TagEditService`** (`wafer/app/viewer/preview/tag_edit_service.py`): singleton handling in-flight tag edit tracking, IPC submission via `tags.update`, timeout/fail detection, and `commit_confirmed` signal for panel reload on write confirmation
+- **`BaseTagPanelPlugin`** (`wafer/plugin/tag_panel/`): new plugin type for tag section cards rendered in the metadata panel; auto-discovered via `tag_panel_registry`
+- **`ColorPickerDialog`** (`wafer/ui/widgets/color_picker.py`): custom HSV color picker with hue ring + saturation/value square (`HueRingSVSquare`), hex/RGB input fields, optional alpha channel, and persistent recent color swatches; used for mark color assignment
+- **`FlowLayout`** (`wafer/ui/widgets/flow_layout.py`): reusable wrapping flow layout widget for badge/button rows
+- **`wafer/utils/recent_colors.py`**: persistent recent colors list (load/save) used by `ColorPickerDialog`
+- **`tags.update` / `tags.updated` IPC topics**: indexer handles user tag writes via `_on_tags_update()`; runs `apply_user_tags()` as a `USER_REQUEST` priority task; replies to viewer with per-path applied/deleted/file_hash results
+- **`FileDB.apply_user_tags()`**: writes user-managed tags (upsert/delete/rename) with lock support across multiple paths, returning per-path results
+- **`FileDB._migrate_tags_on_hash_change()`**: preserves existing tags (including locked user tags) when a file's content hash changes during indexing
+- **`FileSearchEngine.get_tag_keys_for_paths()`**: batch fetches tag key suffixes (by prefix) for a list of paths; used by `MarkOverlayService` to load mark data
+- **`FileSearchEngine.close()`**: explicit connection close for use outside long-lived query flows
+- **`DatabaseWriter.apply_user_tags()`**: wraps `FileDB.apply_user_tags()` with WAL checkpoint
+- New themed icons: `empty`, `checkbox_unchecked`, `checkbox_checked`, `lock`, `lock_open`
+
+### Changed
+- **`tags` table schema**: `locked INTEGER NOT NULL DEFAULT 0` column added; collector upserts (`_SQL_UPSERT_TAGS`) have `WHERE tags.locked = 0` guard preserving user-locked tags; `delete_collector`, `delete_keys`, and per-file delete operations also filter `locked = 0`
+- **`FileSearchEngine.get_tags_by_path()`** renamed to `get_tags_with_lock_by_path()`, now returns `(file_hash, dict[key, (value, locked)])` instead of bare `dict`
+- **`FileSearchEngine.get_all_metadata()`** refactored to single-query flow; returns `(file_record, file_hash, tags_with_lock, meta_info)` 4-tuple (was 3-element list without file_hash or lock info)
+- **`MetaViewerWidget`** (`wafer/app/viewer/preview/meta_panel.py`): header bar with "Add tag" (`+`) and "Reload" buttons; `tag:` prefixed sections (tag panel plugins) separated from `meta:` prefixed sections; `reload_requested` signal; `set_data()` and `clear()` now track current path/hash/db
+- **`FilterRow`** (`wafer/app/viewer/widgets/search_container.py`): per-row enable/disable toggle button; disabled rows are excluded from query execution; visual dimming on disable
+- **`LogPanel`** (`wafer/builtins/log_panel.py`): log colors and background now driven by `ThemeManager` palette (theme-aware); `_LogTab` emits `user_scrolled_away`/`user_scrolled_to_bottom` signals; "Auto Scroll" checkbox auto-unchecks on manual scroll-away and re-checks on scroll-to-bottom
+- **Profile color palette** (`wafer/app/viewer/widgets/profile_popup.py`): "More..." button opens `ColorPickerDialog` for arbitrary custom profile colors beyond the preset swatches
+- `window` icon improved with filled title-bar button; `folder_plus` padding tightened
+- `TextFilter.bind_key_store()` class method removed (key store binding moved into `SearchContainer` directly)
+- `FileListProvider.set_search_service()` removed; `_query_directory()` now uses `NaturalPathSort` directly
+
 ## [v0.6.4]
 ### Added
 - **Florence-2 captioner extension** (`extensions/florence/`): singleton collector using Microsoft Florence-2 vision-language model with multi-task captioning (`<CAPTION>`, `<DETAILED_CAPTION>`, `<MORE_DETAILED_CAPTION>`), `base`/`large` variant selection, configurable `max_new_tokens`/`num_beams`, GPU/CPU fallback, idle engine unloading, and settings panel with drag-and-drop live preview — replaces BLIP captioner

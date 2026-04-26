@@ -40,9 +40,14 @@ class FileListProvider(QtCore.QObject):
     def mode(self) -> ListMode:
         return self._mode
 
+    def _sync_from_grid(self):
+        self._file_model.set_items(self._grid_items.paths, self._grid_items.sources)
+
     def set_mode(self, mode: ListMode):
         self._cancel_pending()
         self._mode = mode
+        if mode == ListMode.SYNC:
+            self._sync_from_grid()
 
     def on_search_results(self, paths: list[str], sources: list[str]):
         if self._mode == ListMode.SYNC:

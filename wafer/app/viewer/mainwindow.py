@@ -682,16 +682,11 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         applied = payload.get("applied") or {}
         deleted = payload.get("deleted") or {}
-        affected = set()
-        for path, keys in applied.items():
+        for keys in (*applied.values(), *deleted.values()):
             if any(str(k).startswith("mark.") for k in (keys or [])):
-                affected.add(str(path))
-        for path, keys in deleted.items():
-            if any(str(k).startswith("mark.") for k in (keys or [])):
-                affected.add(str(path))
-        if affected:
-            self._mark_overlay_service.refresh_paths(list(affected))
-            self.grid_view.viewport().update()
+                self._mark_overlay_service.reload()
+                self.grid_view.viewport().update()
+                return
 
     @QtCore.Slot(str)
     def _on_folder_changed_ipc(self, db: str):

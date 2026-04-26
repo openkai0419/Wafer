@@ -20,7 +20,7 @@ _COMMIT_DEBOUNCE_MS = 300
 _MARK_KEY_PREFIX = "mark."
 
 
-def _fetch_marks_sync(db_path: str | None, paths: list[str] | None) -> dict[str, list[str]]:
+def _fetch_marks_sync(db_path: str | None) -> dict[str, list[str]]:
     result: dict[str, list[str]] = {}
     if not db_path:
         return result
@@ -28,7 +28,7 @@ def _fetch_marks_sync(db_path: str | None, paths: list[str] | None) -> dict[str,
         return result
     engine = FileSearchEngine(str(db_path))
     try:
-        result = engine.get_tag_keys_by_prefix(_MARK_KEY_PREFIX, paths=paths)
+        result = engine.get_tag_keys_by_prefix(_MARK_KEY_PREFIX)
     except Exception as e:
         AppLogger.warning("[MarkOverlay] fetch failed", exc=e)
     finally:
@@ -39,24 +39,23 @@ def _fetch_marks_sync(db_path: str | None, paths: list[str] | None) -> dict[str,
 
 
 class _MarkFetchTask(QtCore.QRunnable):
-    def __init__(self, db_path: str | None, paths: list[str] | None, reload_seq: int, sink: MarkOverlayService):
+    def __init__(self, db_path: str | None, reload_seq: int, sink: MarkOverlayService):
         super().__init__()
         self._db_path = db_path
-        self._paths = paths
         self._reload_seq = reload_seq
         self._sink = sink
 
     def run(self):
-        result = _fetch_marks_sync(self._db_path, self._paths)
+        result = _fetch_marks_sync(self._db_path)
         try:
-            self._sink._result_ready.emit(self._reload_seq, self._paths or [], result, self._paths is None)
+            self._sink._result_ready.emit(self._reload_seq, result)
         except RuntimeError:
             pass
 
 
 class MarkOverlayService(QtCore.QObject):
     changed = QtCore.Signal()
-    _result_ready = QtCore.Signal(int, list, dict, bool)
+    _result_ready = QtCore.Signal(int, dict)
 
     def __init__(self, dbpath_getter: Callable[[], str | None], parent: QtCore.QObject | None = None):
         super().__init__(parent)
@@ -101,28 +100,12 @@ class MarkOverlayService(QtCore.QObject):
 
     def reload(self):
         self._reload_seq += 1
-        self._submit(None, self._reload_seq)
-
-    def refresh_paths(self, paths: list[str]):
-        if not paths:
-            return
-        self._submit(list(paths), self._reload_seq)
-
-    def _submit(self, paths: list[str] | None, reload_seq: int):
         db_path = self._dbpath_getter() if self._dbpath_getter else None
-        self._pool.start(_MarkFetchTask(db_path, paths, reload_seq, self))
+        self._pool.start(_MarkFetchTask(db_path, self._reload_seq, self))
 
-    @QtCore.Slot(int, list, dict, bool)
-    def _on_result_ready(self, reload_seq: int, paths: list, result: dict, is_full_reload: bool):
+    @QtCore.Slot(int, dict)
+    def _on_result_ready(self, reload_seq: int, result: dict):
         if reload_seq != self._reload_seq:
             return
-        if is_full_reload:
-            self._marks = {p: ids for p, ids in result.items() if ids}
-        else:
-            for p in paths:
-                ids = result.get(p)
-                if ids:
-                    self._marks[p] = ids
-                else:
-                    self._marks.pop(p, None)
+        self._marks = {p: ids for p, ids in result.items() if ids}
         self.changed.emit()

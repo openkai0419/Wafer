@@ -1205,7 +1205,7 @@ class BatchRenamerPlugin(BasePanelPlugin):
     PRIORITY = 0
     SOURCE = "Builtin"
 
-    def save_state(self):
+    def save_ui_state(self):
         inst = BatchRenameWidget._instance_ref
         if inst is not None:
             try:
@@ -1214,7 +1214,7 @@ class BatchRenamerPlugin(BasePanelPlugin):
                 AppLogger.warning("[BatchRenamer] save_state failed", exc=e)
         return dict(BatchRenameWidget._saved_state)
 
-    def restore_state(self, state):
+    def restore_ui_state(self, state):
         BatchRenameWidget._saved_state = state
 
     def create_widget(self):

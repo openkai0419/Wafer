@@ -106,8 +106,8 @@ class MainWindow(QtWidgets.QMainWindow):
         names = list_setting_db_names()
         if not names:
             return DEFAULT_DB_NAME
-        prevname = app_settings.get("window/tablename", DEFAULT_DB_NAME)
-        if prevname in names:
+        prevname = self._workspace_store.get_last_used_database_name()
+        if prevname and prevname in names:
             return prevname
         return names[0]
 
@@ -293,7 +293,10 @@ class MainWindow(QtWidgets.QMainWindow):
         from .preview.tag_edit_service import TagEditService
 
         b.tags_updated.connect(TagEditService.instance().handle_ack)
-        b.tags_updated.connect(self._on_tags_updated_for_marks)
+        b.tags_updated.connect(self._on_tags_updated_research)
+
+        b.settings_received.connect(app_settings.apply_remote)
+        app_settings.committed.connect(b.broadcast_settings)
 
         b.start()
         UI.register_instance("ViewerIpcBridge", b)
@@ -392,7 +395,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.grid_view.layout_ready.connect(self._hide_loading)
         self._register_component_states()
         self.sync_service_from_ui()
-        self._sync_default_checked_states()
 
     def _create_toolbar_panel(self):
         panel = QtWidgets.QWidget()
@@ -425,17 +427,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 return json.load(f)
         return {"mode": "locked", "tree": {"root": None, "floating": {}}}
 
-    def _sync_default_checked_states(self):
-        from ...builtins.commands.grid import sync_grid_groups_from_settings, _SCROLL_ANCHOR_CMDS
-
-        sync_grid_groups_from_settings(
-            {
-                "orientation": self.grid_view.orientation,
-                "layout_mode": self.grid_view.layout_mode,
-            }
-        )
-        Command.set_action_group_current("grid_scroll_anchor", _SCROLL_ANCHOR_CMDS[1], save=False)
-
     def _on_layout_mode_changed(self, mode):
         from ...ui.layout.manager import MODE_EDIT
 
@@ -464,8 +455,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 p = inst
                 store.register(
                     f"grid_plugin.{name}",
-                    lambda p=p: p.save_state(),
-                    lambda s, p=p: p.restore_state(s),
+                    lambda p=p: p.save_ui_state(),
+                    lambda s, p=p: p.restore_ui_state(s),
                 )
 
     def _save_layout(self):
@@ -475,14 +466,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self._layout_manager.restore_state(state)
 
     def _save_grid(self):
-        from ...builtins.commands.grid import _SCROLL_ANCHOR_CMDS
-
         return {
             "zoom": self.grid_view.base_height,
             "orientation": self.grid_view.orientation,
             "layout_mode": self.grid_view.layout_mode,
             "scroll_index": self.grid_view.get_center_image_index(),
-            "scroll_anchor": Command.get_action_group_current("grid_scroll_anchor") or _SCROLL_ANCHOR_CMDS[1],
+            "scroll_anchor": self.grid_view.scroll_anchor,
         }
 
     def _restore_grid(self, state):
@@ -493,16 +482,16 @@ class MainWindow(QtWidgets.QMainWindow):
             self.grid_view.set_orientation(state["orientation"])
         if "layout_mode" in state:
             self.grid_view.set_layout_mode(state["layout_mode"])
-        from ...builtins.commands.grid import sync_grid_groups_from_settings
-
-        sync_grid_groups_from_settings(state)
         if state.get("scroll_index") is not None:
             self.grid_view.set_pending_scroll_index(state["scroll_index"])
-        if "scroll_anchor" in state:
-            from ...builtins.commands.grid import _SCROLL_ANCHOR_CMDS
-
-            if state["scroll_anchor"] in _SCROLL_ANCHOR_CMDS:
-                Command.set_action_group_current("grid_scroll_anchor", state["scroll_anchor"], save=False)
+        anchor = state.get("scroll_anchor")
+        if isinstance(anchor, str):
+            if anchor in ("top", "center"):
+                self.grid_view.set_scroll_anchor(anchor)
+            elif anchor == "grid.scroll_anchor_top":
+                self.grid_view.set_scroll_anchor("top")
+            elif anchor == "grid.scroll_anchor_center":
+                self.grid_view.set_scroll_anchor("center")
         if "zoom" in state:
             self.grid_view.layout_ready.connect(self._clear_zoom_restore_guard, QtCore.Qt.SingleShotConnection)
 
@@ -510,11 +499,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self.grid_view._zoom_restore_guard = False
 
     def _save_file_viewer(self):
-        from ...builtins.commands.content_viewer import GROUP_LIST_MODE
-
-        return {
-            "list_mode": Command.get_action_group_current(GROUP_LIST_MODE),
-        }
+        mode = getattr(self.file_list_provider, "mode", None)
+        if mode is None:
+            return {}
+        for cmd_id, m in (
+            ("fv.list_sync", "sync"),
+            ("fv.list_fix", "fix"),
+            ("fv.list_dir", "dir"),
+        ):
+            if getattr(mode, "value", "") == m:
+                return {"list_mode": cmd_id}
+        return {}
 
     def _restore_file_viewer(self, state):
         from ...builtins.commands.content_viewer import apply_list_mode
@@ -548,9 +543,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 "keyword_separator": values.get("keyword_separator", ","),
             }
         )
-        from ...builtins.commands.query import sync_groups_from_args
-
-        sync_groups_from_args(self.search_service.params)
 
     def _on_search_setting_changed(self):
         self.sync_service_from_ui()
@@ -677,16 +669,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.search(force=True)
 
     @QtCore.Slot(dict)
-    def _on_tags_updated_for_marks(self, payload: dict):
+    def _on_tags_updated_research(self, payload: dict):
         if not isinstance(payload, dict):
             return
-        applied = payload.get("applied") or {}
-        deleted = payload.get("deleted") or {}
-        for keys in (*applied.values(), *deleted.values()):
-            if any(str(k).startswith("mark.") for k in (keys or [])):
-                self._mark_overlay_service.reload()
-                self.grid_view.viewport().update()
-                return
+        if not self._is_my_db(str(payload.get("db") or "")):
+            return
+        self.search(force=True)
 
     @QtCore.Slot(str)
     def _on_folder_changed_ipc(self, db: str):
@@ -730,6 +718,7 @@ class MainWindow(QtWidgets.QMainWindow):
         keep_scroll = not self._folder_changed
         self._folder_changed = False
         self.search_row_widget.run_folder_worker(self.database_path, self.folder_view.get_selected_paths())
+        self._mark_overlay_service.reload()
         if paths == self._last_paths:
             self._hide_loading()
             return
@@ -767,8 +756,6 @@ class MainWindow(QtWidgets.QMainWindow):
             self._folder_callout = None
         try:
             self._save_slot()
-            if self.database_name:
-                app_settings.save_immediate("window/tablename", self.database_name)
             app_settings.commit()
             t.dump_missing_keys()
         except Exception as e:
@@ -805,8 +792,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 p = inst
                 store.register(
                     f"panel_plugin.{cls.NAME}",
-                    lambda p=p: p.save_state(),
-                    lambda s, p=p: p.restore_state(s),
+                    lambda p=p: p.save_ui_state(),
+                    lambda s, p=p: p.restore_ui_state(s),
                 )
 
     def _register_meta_panel_plugin_states(self, store):
@@ -819,8 +806,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 p = inst
                 store.register(
                     f"meta_panel_plugin.{cls.NAME}",
-                    lambda p=p: p.save_state(),
-                    lambda s, p=p: p.restore_state(s),
+                    lambda p=p: p.save_ui_state(),
+                    lambda s, p=p: p.restore_ui_state(s),
                 )
 
     def _register_tag_panel_plugin_states(self, store):
@@ -833,8 +820,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 p = inst
                 store.register(
                     f"tag_panel_plugin.{cls.NAME}",
-                    lambda p=p: p.save_state(),
-                    lambda s, p=p: p.restore_state(s),
+                    lambda p=p: p.save_ui_state(),
+                    lambda s, p=p: p.restore_ui_state(s),
                 )
 
     def _register_panel_plugins(self):

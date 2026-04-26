@@ -85,9 +85,7 @@ class _ColorDot(QtWidgets.QToolButton):
 
     def _refresh(self):
         c = self.color or "transparent"
-        self.setStyleSheet(
-            f"QToolButton {{ background: {c}; border: 1px solid {ThemeManager.instance().palette.border_default}; border-radius: {dpix(7)}px; }}"
-        )
+        self.setStyleSheet(f"QToolButton {{ background: {c}; border: 1px solid {ThemeManager.instance().palette.border_default}; border-radius: {dpix(7)}px; }}")
 
     def set_color(self, color: str):
         self.color = color
@@ -196,9 +194,7 @@ class WorkspacePopup(QtWidgets.QFrame):
         outer.setContentsMargins(0, 0, 0, 0)
         container = QtWidgets.QWidget()
         container.setObjectName("workspace_popup_container")
-        container.setStyleSheet(
-            f"#workspace_popup_container {{ background: {p.bg_elevated}; border: 1px solid {p.border_default}; border-radius: {dpix(6)}px; }}"
-        )
+        container.setStyleSheet(f"#workspace_popup_container {{ background: {p.bg_elevated}; border: 1px solid {p.border_default}; border-radius: {dpix(6)}px; }}")
         outer.addWidget(container)
 
         cols = QtWidgets.QHBoxLayout(container)

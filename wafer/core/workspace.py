@@ -184,8 +184,6 @@ _EMPTY_RAW = {
 
 
 class WorkspaceStore:
-    """Single backing store for UI/Path/Query presets and window slots."""
-
     _instance: WorkspaceStore | None = None
 
     @classmethod
@@ -332,6 +330,16 @@ class WorkspaceStore:
     def get_slot(self, slot_id: str) -> WindowSlot | None:
         v = self._load_raw().get("slots", {}).get(slot_id)
         return WindowSlot.from_dict(v) if v else None
+
+    def get_last_used_database_name(self) -> str:
+        slots = self._load_raw().get("slots", {})
+        if not slots:
+            return ""
+        latest = max(slots.values(), key=lambda v: v.get("updated_at", ""), default=None)
+        if not latest:
+            return ""
+        path = latest.get("path") or {}
+        return str(path.get("database_name") or "")
 
     def save_slot(self, slot: WindowSlot) -> None:
         slot.updated_at = _now_iso()

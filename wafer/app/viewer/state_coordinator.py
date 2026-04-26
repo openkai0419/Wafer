@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
+from collections.abc import Callable
 
 from PySide6 import QtCore
 
@@ -14,7 +15,7 @@ if TYPE_CHECKING:
 class UIStateCoordinator:
     """Capture / restore the MainWindow's UI layout (window geometry + StateStore)."""
 
-    def __init__(self, window: "MainWindow"):
+    def __init__(self, window: MainWindow):
         self._w = window
 
     def capture(self) -> dict:
@@ -40,7 +41,7 @@ class UIStateCoordinator:
 class PathStateCoordinator:
     """Capture / restore the active database and folder tree selection."""
 
-    def __init__(self, window: "MainWindow"):
+    def __init__(self, window: MainWindow):
         self._w = window
 
     def capture(self) -> dict:
@@ -78,7 +79,7 @@ class PathStateCoordinator:
 class QueryStateCoordinator:
     """Capture / restore filter bars, sort order, and subfolder inclusion."""
 
-    def __init__(self, window: "MainWindow"):
+    def __init__(self, window: MainWindow):
         self._w = window
 
     def capture(self) -> dict:

@@ -26,10 +26,10 @@ class AnimatedViewerPlugin(WidgetViewerPlugin):
     def deactivate(self):
         self.widget.deactivate()
 
-    def save_state(self):
+    def save_ui_state(self):
         return {
             "fit_mode": self.widget.cover_mode,
         }
 
-    def restore_state(self, state):
+    def restore_ui_state(self, state):
         self.widget.set_cover_mode(state.get("fit_mode", False))

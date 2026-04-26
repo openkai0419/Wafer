@@ -36,7 +36,7 @@ class TestSubscription:
             "update", "folderchanged", "progress", "maximum",
             "show_toggle", "slot.close",
             "slot.restart", "db.created", "db.deleted", "dev.log",
-            "tags.updated",
+            "tags.updated", "settings.changed",
         }
         assert topics == expected
 

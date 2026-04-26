@@ -8,7 +8,6 @@ from functools import partial
 from PySide6 import QtWidgets, QtCore, QtGui
 
 from wafer.plugin import BasePanelPlugin
-from wafer.plugin.collector.base import BaseCollector
 from wafer.utils.formatting import dpix
 from wafer.utils.logs import AppLogger
 from wafer.utils.notifier import Notifier
@@ -19,7 +18,7 @@ from wafer.core.qt.dispatcher import Dispatcher, CancelSlot
 from wafer.core.qt.image import numpy_to_qimage
 from wafer.plugin.imageloader.handler import image_loader_resolver
 from wafer.app.viewer.widgets.loading_overlay import OverlayLoadingIndicator
-from .settings import MODE_BLACKLIST, MODE_WHITELIST, SORT_NAME, SORT_COUNT
+from .settings import MODE_BLACKLIST, MODE_WHITELIST, SORT_NAME, SORT_COUNT, exiftool_config
 from .settings import read_sort_config, write_sort_config
 
 _CHECK_COL = 0
@@ -33,6 +32,7 @@ class ExifSettingsPanelPlugin(BasePanelPlugin):
     DEFAULT_ENABLED = True
     CLOSABLE = True
     PRIORITY = 50
+    plugin_config = exiftool_config
 
     def create_widget(self) -> QtWidgets.QWidget:
         return ExifSettingsWidget()
@@ -152,7 +152,6 @@ class ExifSettingsWidget(QtWidgets.QWidget):
         from .settings import write_filter_config
 
         write_filter_config(self._filter_mode, self._filter_keys)
-        BaseCollector.notify_to("exiftool")
         self._sample_preview.set_filter_keys(self._filter_keys)
 
         self._saved_mode = self._filter_mode

@@ -1,5 +1,4 @@
 from ...core.commands.bridge import ActionKit
-from ...core.commands.command.state import ActionGroupStateManager
 from ...core.commands.binding.instance_registry import InstanceRegistry
 from ...plugin.query.handler import sort_registry
 
@@ -40,11 +39,10 @@ _GROUP_CONFIG = {
 }
 
 
-def _set_and_update(ctx, group, cmd_id, search_key, value):
+def _set_and_update(ctx, group, search_key, value):
     svc = _service(ctx)
     if svc:
         svc.set_param(search_key, value)
-    ActionGroupStateManager.instance().set_current(group, cmd_id, save=False)
     row = _search_row(ctx)
     if row:
         getattr(row, _GROUP_CONFIG[group]["ui_method"])(value)
@@ -53,53 +51,49 @@ def _set_and_update(ctx, group, cmd_id, search_key, value):
 
 
 def _make_sort_func(key):
-    cmd_id = f"qry.sort_{key}"
-
     def func(ctx):
-        _set_and_update(ctx, GROUP_SORT, cmd_id, "sort_by", key)
+        _set_and_update(ctx, GROUP_SORT, "sort_by", key)
 
     return func
 
 
-def _make_mode_func(cmd_id, mode):
+def _make_mode_func(_cmd_id, mode):
     def func(ctx):
-        _set_and_update(ctx, GROUP_MODE, cmd_id, "query_mode", mode)
+        _set_and_update(ctx, GROUP_MODE, "query_mode", mode)
 
     return func
 
 
-def _make_keyword_func(cmd_id, mode):
+def _make_keyword_func(_cmd_id, mode):
     def func(ctx):
-        _set_and_update(ctx, GROUP_KEYWORD, cmd_id, "keyword_mode", mode)
+        _set_and_update(ctx, GROUP_KEYWORD, "keyword_mode", mode)
 
     return func
 
 
-def _make_order_func(cmd_id, ascending):
+def _make_order_func(_cmd_id, ascending):
     def func(ctx):
-        _set_and_update(ctx, GROUP_ORDER, cmd_id, "ascending", ascending)
+        _set_and_update(ctx, GROUP_ORDER, "ascending", ascending)
 
     return func
 
 
 def _cycle_group(ctx, group):
-    sm = ActionGroupStateManager.instance()
-    new_cmd = sm.cycle(group, save=False)
-    if not new_cmd:
-        return
     cfg = _GROUP_CONFIG[group]
     m = cfg["map"]() if callable(cfg["map"]) else cfg["map"]
-    value = m.get(new_cmd)
-    if value is None:
+    members = list(m.keys())
+    if not members:
         return
     svc = _service(ctx)
-    if svc:
-        svc.set_param(cfg["search_key"], value)
-    row = _search_row(ctx)
-    if row:
-        getattr(row, cfg["ui_method"])(value)
-    if svc:
-        svc.execute_if_auto()
+    current_value = svc.get(cfg["search_key"]) if svc else None
+    current_cmd = next((cid for cid, val in m.items() if val == current_value), None)
+    try:
+        idx = members.index(current_cmd) if current_cmd else -1
+    except ValueError:
+        idx = -1
+    next_cmd = members[(idx + 1) % len(members)]
+    next_value = m[next_cmd]
+    _set_and_update(ctx, group, cfg["search_key"], next_value)
 
 
 def cycle_sort(ctx, reverse=False, **kwargs):
@@ -107,25 +101,15 @@ def cycle_sort(ctx, reverse=False, **kwargs):
     enabled = [k for k in choices if kwargs.get(k, True)]
     if not enabled:
         return
-    sm = ActionGroupStateManager.instance()
-    current = sm.get_current(GROUP_SORT)
-    current_key = _sort_map().get(current)
+    svc = _service(ctx)
+    current_key = svc.get("sort_by") if svc else None
     step = -1 if reverse else 1
     try:
         idx = enabled.index(current_key)
         next_key = enabled[(idx + step) % len(enabled)]
     except (ValueError, IndexError):
         next_key = enabled[-1 if reverse else 0]
-    cmd_id = f"qry.sort_{next_key}"
-    sm.set_current(GROUP_SORT, cmd_id, save=False)
-    svc = _service(ctx)
-    if svc:
-        svc.set_param("sort_by", next_key)
-    row = _search_row(ctx)
-    if row:
-        row.set_sort_by(next_key)
-    if svc:
-        svc.execute_if_auto()
+    _set_and_update(ctx, GROUP_SORT, "sort_by", next_key)
 
 
 def cycle_order(ctx):
@@ -180,27 +164,20 @@ def _svc():
     return InstanceRegistry.instance().get_one("SearchService")
 
 
-def sync_groups_from_args(args):
-    sm = ActionGroupStateManager.instance()
-    sort_by = args.get("sort_by", "path")
-    sort_cmd = f"qry.sort_{sort_by}"
-    if sort_cmd in _sort_map():
-        sm.set_current(GROUP_SORT, sort_cmd, save=False)
-    query_mode = args.get("query_mode", "GLOB")
-    for cmd_id, mode in _MODE_MAP.items():
-        if mode == query_mode:
-            sm.set_current(GROUP_MODE, cmd_id, save=False)
-            break
-    keyword_mode = args.get("keyword_mode", "AND")
-    for cmd_id, mode in _KEYWORD_MAP.items():
-        if mode == keyword_mode:
-            sm.set_current(GROUP_KEYWORD, cmd_id, save=False)
-            break
-    ascending = args.get("ascending", True)
-    for cmd_id, asc in _ORDER_MAP.items():
-        if asc == ascending:
-            sm.set_current(GROUP_ORDER, cmd_id, save=False)
-            break
+def _sort_resolver(key):
+    return lambda: (_svc().get("sort_by") if _svc() else "path") == key
+
+
+def _mode_resolver(mode):
+    return lambda: (_svc().get("query_mode") if _svc() else "GLOB") == mode
+
+
+def _keyword_resolver(mode):
+    return lambda: (_svc().get("keyword_mode") if _svc() else "AND") == mode
+
+
+def _order_resolver(ascending):
+    return lambda: (_svc().get("ascending") if _svc() else False) == ascending
 
 
 _SORT_DISPLAY = {
@@ -263,12 +240,23 @@ class QueryCommands(ActionKit.MenuBase):
                     checkable=True,
                     default_checked=(k == "path"),
                     action_group=GROUP_SORT,
+                    checked_resolver=_sort_resolver(k),
                 )
                 for k in _sort_choices()
             ],
             "Sort Order/:Sort Order",
-            ActionKit.Command(path="Sort Order/qry.order_asc", display="Ascending", func=_make_order_func("qry.order_asc", True), checkable=True, action_group=GROUP_ORDER),
-            ActionKit.Command(path="Sort Order/qry.order_desc", display="Descending", func=_make_order_func("qry.order_desc", False), checkable=True, default_checked=True, action_group=GROUP_ORDER),
+            ActionKit.Command(
+                path="Sort Order/qry.order_asc", display="Ascending", func=_make_order_func("qry.order_asc", True), checkable=True, action_group=GROUP_ORDER, checked_resolver=_order_resolver(True)
+            ),
+            ActionKit.Command(
+                path="Sort Order/qry.order_desc",
+                display="Descending",
+                func=_make_order_func("qry.order_desc", False),
+                checkable=True,
+                default_checked=True,
+                action_group=GROUP_ORDER,
+                checked_resolver=_order_resolver(False),
+            ),
             ActionKit.Command(
                 path="qry.cycle_sort",
                 display="Cycle Sort By",
@@ -279,11 +267,31 @@ class QueryCommands(ActionKit.MenuBase):
             "-",
             ":Text",
             "Text Mode/:Text Mode",
-            ActionKit.Command(path="Text Mode/qry.mode_glob", display="GLOB", func=_make_mode_func("qry.mode_glob", "GLOB"), checkable=True, default_checked=True, action_group=GROUP_MODE),
-            ActionKit.Command(path="Text Mode/qry.mode_like", display="LIKE", func=_make_mode_func("qry.mode_like", "LIKE"), checkable=True, action_group=GROUP_MODE),
+            ActionKit.Command(
+                path="Text Mode/qry.mode_glob",
+                display="GLOB",
+                func=_make_mode_func("qry.mode_glob", "GLOB"),
+                checkable=True,
+                default_checked=True,
+                action_group=GROUP_MODE,
+                checked_resolver=_mode_resolver("GLOB"),
+            ),
+            ActionKit.Command(
+                path="Text Mode/qry.mode_like", display="LIKE", func=_make_mode_func("qry.mode_like", "LIKE"), checkable=True, action_group=GROUP_MODE, checked_resolver=_mode_resolver("LIKE")
+            ),
             "Join Mode/:Join Mode",
-            ActionKit.Command(path="Join Mode/qry.keyword_and", display="AND", func=_make_keyword_func("qry.keyword_and", "AND"), checkable=True, default_checked=True, action_group=GROUP_KEYWORD),
-            ActionKit.Command(path="Join Mode/qry.keyword_or", display="OR", func=_make_keyword_func("qry.keyword_or", "OR"), checkable=True, action_group=GROUP_KEYWORD),
+            ActionKit.Command(
+                path="Join Mode/qry.keyword_and",
+                display="AND",
+                func=_make_keyword_func("qry.keyword_and", "AND"),
+                checkable=True,
+                default_checked=True,
+                action_group=GROUP_KEYWORD,
+                checked_resolver=_keyword_resolver("AND"),
+            ),
+            ActionKit.Command(
+                path="Join Mode/qry.keyword_or", display="OR", func=_make_keyword_func("qry.keyword_or", "OR"), checkable=True, action_group=GROUP_KEYWORD, checked_resolver=_keyword_resolver("OR")
+            ),
             ActionKit.Command(path="qry.cycle_mode", display="Toggle Query Mode", func=cycle_mode),
             ActionKit.Command(path="qry.cycle_keyword", display="Toggle Join Mode", func=cycle_keyword),
             ActionKit.Command(

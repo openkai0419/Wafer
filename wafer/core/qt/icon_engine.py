@@ -628,8 +628,8 @@ def _draw_pencil(p: QPainter, r: QRectF, color: QColor):
     tip = QPointF(cx - half, cy + half)
     tail = QPointF(cx + half, cy - half)
     body_w = s * 0.18
-    dx = (tail.x() - tip.x())
-    dy = (tail.y() - tip.y())
+    dx = tail.x() - tip.x()
+    dy = tail.y() - tip.y()
     length = math.hypot(dx, dy) or 1.0
     nx, ny = -dy / length, dx / length
     head_len = s * 0.20

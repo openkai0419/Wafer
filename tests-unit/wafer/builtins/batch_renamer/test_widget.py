@@ -340,19 +340,19 @@ class TestPluginStateIntegration:
         widget.set_files(tmp_files)
         widget.show()
         widget.hide()
-        state = plugin.save_state()
+        state = plugin.save_ui_state()
         assert "source_defaults" in state
         widget.close()
 
     def test_plugin_restore_state_sets_widget_saved_state(self):
         plugin = BatchRenamerPlugin()
-        plugin.restore_state({"source_defaults": {"seq": {"type": "seq", "start": 7}}})
+        plugin.restore_ui_state({"source_defaults": {"seq": {"type": "seq", "start": 7}}})
         assert BatchRenameWidget._saved_state == {"source_defaults": {"seq": {"type": "seq", "start": 7}}}
 
     @patch.object(BatchRenameWidget, "_start_async_init")
     def test_plugin_restore_then_create_widget(self, mock_init, qtbot, tmp_files):
         plugin = BatchRenamerPlugin()
-        plugin.restore_state(
+        plugin.restore_ui_state(
             {
                 "source_defaults": {
                     "seq": {"type": "seq", "start": 7, "step": 1, "padding": 4},
@@ -370,8 +370,8 @@ class TestPluginStateIntegration:
 
     def test_plugin_save_state_returns_cached_when_no_widget(self):
         plugin = BatchRenamerPlugin()
-        plugin.restore_state({"row_opacity": 50})
-        assert plugin.save_state() == {"row_opacity": 50}
+        plugin.restore_ui_state({"row_opacity": 50})
+        assert plugin.save_ui_state() == {"row_opacity": 50}
 
 
 from wafer.core.platform.file_operations import OperationResult

@@ -116,6 +116,11 @@ class _MarkSettingsPopup(QtWidgets.QDialog):
         self.overlay_check.setChecked(bool(visible))
         self.overlay_check.blockSignals(False)
 
+    def set_overlay_radius(self, radius: int):
+        self.radius_spin.blockSignals(True)
+        self.radius_spin.setValue(int(radius))
+        self.radius_spin.blockSignals(False)
+
     def _on_overlay_toggled(self, checked: bool):
         from ...core.commands.binding.instance_registry import InstanceRegistry
 
@@ -172,6 +177,10 @@ class MarkFilterWidget(QtWidgets.QWidget):
 
         self._popup = _MarkSettingsPopup(self._option_btn, self)
         self._popup.changed.connect(self.changed)
+
+        svc = self._overlay_service()
+        if svc is not None:
+            svc.changed.connect(self._sync_overlay_controls)
 
         self._sync_buttons()
 
@@ -235,11 +244,18 @@ class MarkFilterWidget(QtWidgets.QWidget):
         if current_set != existing_set:
             self.changed.emit()
 
-    def _restore_state(self):
+    def _overlay_service(self):
         from ...core.commands.binding.instance_registry import InstanceRegistry
 
-        svc = InstanceRegistry.instance().get_one("MarkOverlayService")
+        return InstanceRegistry.instance().get_one("MarkOverlayService")
+
+    def _restore_state(self):
+        self._sync_overlay_controls()
+
+    def _sync_overlay_controls(self):
+        svc = self._overlay_service()
         self._popup.set_overlay_visible(svc.is_visible() if svc is not None else True)
+        self._popup.set_overlay_radius(svc.radius() if svc is not None else 8)
 
     def read_params(self) -> dict:
         ids = [mid for mid, b in self._buttons.items() if b.isChecked()]

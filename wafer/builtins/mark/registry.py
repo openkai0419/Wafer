@@ -39,6 +39,14 @@ class MarkRegistry(QtCore.QObject):
     def __init__(self, parent: QtCore.QObject | None = None):
         super().__init__(parent)
         self._marks: list[Mark] = self._load()
+        app_settings.key_changed.connect(self._on_setting_changed)
+
+    @QtCore.Slot(str)
+    def _on_setting_changed(self, key: str):
+        if key != _SETTINGS_KEY:
+            return
+        self._marks = self._load()
+        self.changed.emit()
 
     @classmethod
     def instance(cls) -> MarkRegistry:

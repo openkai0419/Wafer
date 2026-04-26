@@ -5,18 +5,15 @@ from collections.abc import Callable
 
 from PySide6 import QtCore
 
-from ....core.app_settings import app_settings
 from ....core.db.query import FileSearchEngine
-from ....core.qt.rate_limit import qt_debounce
+from ....core.state import StateStore
 from ....utils.logs import AppLogger
 
 
-_RADIUS_KEY = "marks/overlay_radius"
-_VISIBLE_KEY = "marks/overlay_visible"
+_STATE_NAMESPACE = "marks/overlay"
 DEFAULT_RADIUS = 8
 MIN_RADIUS = 4
 MAX_RADIUS = 40
-_COMMIT_DEBOUNCE_MS = 300
 _MARK_KEY_PREFIX = "mark."
 
 
@@ -62,10 +59,23 @@ class MarkOverlayService(QtCore.QObject):
         self._dbpath_getter = dbpath_getter
         self._marks: dict[str, list[str]] = {}
         self._reload_seq = 0
-        self._visible = bool(app_settings.get(_VISIBLE_KEY, 1, int))
-        self._radius = max(MIN_RADIUS, min(MAX_RADIUS, int(app_settings.get(_RADIUS_KEY, DEFAULT_RADIUS, int))))
+        self._visible = True
+        self._radius = DEFAULT_RADIUS
         self._pool = QtCore.QThreadPool.globalInstance()
         self._result_ready.connect(self._on_result_ready, QtCore.Qt.QueuedConnection)
+        StateStore.instance().register(_STATE_NAMESPACE, self._save_state, self._restore_state)
+
+    def _save_state(self) -> dict:
+        return {"visible": bool(self._visible), "radius": int(self._radius)}
+
+    def _restore_state(self, state: dict):
+        if not isinstance(state, dict):
+            return
+        if "visible" in state:
+            self._visible = bool(state["visible"])
+        if "radius" in state:
+            self._radius = max(MIN_RADIUS, min(MAX_RADIUS, int(state["radius"])))
+        self.changed.emit()
 
     def is_visible(self) -> bool:
         return self._visible
@@ -75,8 +85,6 @@ class MarkOverlayService(QtCore.QObject):
         if self._visible == visible:
             return
         self._visible = visible
-        app_settings.set(_VISIBLE_KEY, 1 if visible else 0)
-        self._commit_settings()
         self.changed.emit()
 
     def radius(self) -> int:
@@ -87,13 +95,7 @@ class MarkOverlayService(QtCore.QObject):
         if value == self._radius:
             return
         self._radius = value
-        app_settings.set(_RADIUS_KEY, value)
-        self._commit_settings()
         self.changed.emit()
-
-    @qt_debounce(_COMMIT_DEBOUNCE_MS)
-    def _commit_settings(self):
-        app_settings.commit()
 
     def marks_for(self, path: str) -> list[str]:
         return self._marks.get(path, [])

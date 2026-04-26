@@ -1125,14 +1125,14 @@ class TestDatabaseManagerPluginState:
         from wafer.builtins.database_manager.widget import DatabaseManagerPlugin
 
         plugin = DatabaseManagerPlugin()
-        assert plugin.save_state() == {}
+        assert plugin.save_ui_state() == {}
 
     def test_plugin_restore_then_save_returns_cached(self):
         from wafer.builtins.database_manager.widget import DatabaseManagerPlugin
 
         plugin = DatabaseManagerPlugin()
-        plugin.restore_state({"paths_splitter": [200, 400]})
-        assert plugin.save_state() == {"paths_splitter": [200, 400]}
+        plugin.restore_ui_state({"paths_splitter": [200, 400]})
+        assert plugin.save_ui_state() == {"paths_splitter": [200, 400]}
 
     def test_plugin_creates_widget_and_applies_state(self, qtbot, tmp_path, monkeypatch):
         monkeypatch.setattr(
@@ -1146,7 +1146,7 @@ class TestDatabaseManagerPluginState:
         from wafer.builtins.database_manager.widget import DatabaseManagerPlugin
 
         plugin = DatabaseManagerPlugin()
-        plugin.restore_state({"paths_splitter": [200, 400]})
+        plugin.restore_ui_state({"paths_splitter": [200, 400]})
         widget = plugin.create_widget()
         qtbot.addWidget(widget)
         assert plugin._widget_ref is widget

@@ -37,7 +37,7 @@ class VideoViewerPlugin(WidgetViewerPlugin):
         self.widget.set_autoplay_advance(advance)
         return advance is not None
 
-    def save_state(self):
+    def save_ui_state(self):
         return {
             "volume": self.widget._volume,
             "muted": self.widget.muted,
@@ -47,7 +47,7 @@ class VideoViewerPlugin(WidgetViewerPlugin):
             "pause_in_background": self.widget.pause_in_background,
         }
 
-    def restore_state(self, state):
+    def restore_ui_state(self, state):
         self.widget.set_volume(state.get("volume", DEFAULT_VOLUME))
         self.widget.set_muted(state.get("muted", False))
         self.widget.set_speed(state.get("speed", 1.0))

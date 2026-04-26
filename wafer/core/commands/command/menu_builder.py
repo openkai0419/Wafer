@@ -73,28 +73,11 @@ class CommandMenuBuilder:
         self.registry = CommandRegistry.instance()
         self.state_manager = ActionGroupStateManager.instance()
         self._active_seed_ctx: CommandContext | None = None
-        if not CommandMenuBuilder._observer_registered:
-            self.state_manager.add_observer(CommandMenuBuilder._on_state_changed_observer)
-            CommandMenuBuilder._observer_registered = True
         CommandMenuBuilder._initialized = True
 
     _check_states: dict[str, bool] = {}
     _action_groups: dict[str, QtGui.QActionGroup] = {}
-    _observer_registered: bool = False
     _menu_cache: dict[tuple, QtWidgets.QMenu] = {}
-
-    @staticmethod
-    def _on_state_changed_observer(group_name: str, command_id: str):
-        state_manager = ActionGroupStateManager.instance()
-        members = state_manager.get_members(group_name)
-        for member in members:
-            CommandMenuBuilder._check_states[member] = state_manager.get_check_state(member)
-        group = CommandMenuBuilder._action_groups.get(group_name)
-        if group:
-            for action in group.actions():
-                if str(action.data()) == command_id:
-                    if not action.isChecked():
-                        action.setChecked(True)
 
     def _build_ctx(self, parent: QtWidgets.QWidget | None, cmd_id: str, args: dict[str, Any]) -> CommandContext | None:
         if parent is None:
@@ -204,7 +187,7 @@ class CommandMenuBuilder:
                 checkable_tracker=checkable_tracker,
             )
         for gname, (default_id, _) in group_defaults.items():
-            self.state_manager.initialize_default(gname, default_id)
+            self.state_manager.register_default(gname, default_id)
         menu.setProperty("__checkable_tracker__", checkable_tracker)
         return menu
 
@@ -363,7 +346,9 @@ class CommandMenuBuilder:
 
     @profiler.profile
     def _get_checked_for_group(self, name: str, group_name: str, meta: CommandMeta, group_defaults: dict[str, tuple[str, CommandMeta]] | None = None) -> bool:
-        current = self.state_manager.get_current(group_name)
+        if meta.checked_resolver is not None:
+            return bool(meta.checked_resolver())
+        current = self.state_manager.find_current(group_name, self.registry)
         if current:
             return current == name
         if group_defaults and group_name in group_defaults:
@@ -392,49 +377,49 @@ class CommandMenuBuilder:
     def _on_radio_toggled(self, name: str, container: QtWidgets.QWidget, state: bool, group_name: str):
         self._on_toggled(name, container, state)
         if state:
-            self.state_manager.set_current(group_name, name)
+            self._refresh_group_checkmarks(group_name, name)
+
+    def _refresh_group_checkmarks(self, group_name: str, current: str) -> None:
+        group = self._action_groups.get(group_name)
+        if not group:
+            return
+        for action in group.actions():
+            cmd_id = str(action.data() or "")
+            checked = cmd_id == current
+            if action.isChecked() != checked:
+                action.blockSignals(True)
+                action.setChecked(checked)
+                action.blockSignals(False)
+            container = action.defaultWidget() if isinstance(action, QtWidgets.QWidgetAction) else None
+            if container is not None:
+                self._update_checkmark(container, checked)
 
     def cycle_action_group(self, group_name: str) -> str | None:
-        result = self.state_manager.cycle(group_name)
-        if not result:
+        members = self.state_manager.get_members(group_name)
+        if not members:
             return None
+        current = self.state_manager.find_current(group_name, self.registry)
+        try:
+            idx = members.index(current) if current else -1
+        except ValueError:
+            idx = -1
+        result = members[(idx + 1) % len(members)]
         group = self._action_groups.get(group_name)
         if group:
             result_action = next((a for a in group.actions() if str(a.data()) == result), None)
             if result_action:
                 result_action.trigger()
-        else:
-            try:
-                ctx = CommandContext.create(None, "*", source="cycle", event=None)
-                ctx.put("checked", True)
-                self.registry.execute(result, ctx=ctx)
-            except Exception as e:
-                AppLogger.warning(f"Failed to execute command: {e}")
+                return result
+        try:
+            ctx = CommandContext.create(None, "*", source="cycle", event=None)
+            ctx.put("checked", True)
+            self.registry.execute(result, ctx=ctx)
+        except Exception as e:
+            AppLogger.warning(f"Failed to execute command: {e}")
         return result
 
     def get_action_group_current(self, group_name: str) -> str | None:
-        result = self.state_manager.get_current(group_name)
-        if result:
-            return result
-        group = self._action_groups.get(group_name)
-        if group:
-            result_action = next((a for a in group.actions() if a.isChecked()), None)
-            if result_action:
-                result = str(result_action.data() or "")
-                self.state_manager.set_current(group_name, result, save=False)
-                return result
-        return self.state_manager.find_default(group_name, self.registry)
-
-    def set_action_group_current(self, group_name: str, command_id: str, *, save: bool = True) -> None:
-        self.state_manager.set_current(group_name, command_id, save=save)
-        group = self._action_groups.get(group_name)
-        if group:
-            for action in group.actions():
-                if str(action.data()) == command_id:
-                    action.blockSignals(True)
-                    action.setChecked(True)
-                    action.blockSignals(False)
-                    break
+        return self.state_manager.find_current(group_name, self.registry)
 
     def _update_checkmark(self, container: QtWidgets.QWidget, state: bool):
         lbl = getattr(container, "_chk", None)

@@ -192,6 +192,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self._hz = self.orientation <= 1
         self._reversed = self.orientation == 3
         self.layout_mode = "justified"
+        self.scroll_anchor = "center"
         self.image_cache = MemoryLimitedImageCache(app_settings.get("window/cache_size", 500))
         self.pixmap_item_pool = GraphicsItemPool(self._scene)
         self.additional_pool = AdditionalWidgetPool(grid_resolver)
@@ -311,6 +312,11 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             return
         self.layout_mode = mode
         self._recalc_layout()
+
+    def set_scroll_anchor(self, anchor):
+        if anchor not in ("top", "center"):
+            return
+        self.scroll_anchor = anchor
 
     def set_speed_callback(self, callback):
         self._speed_callback = callback
@@ -524,9 +530,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         return bar.value()
 
     def _is_center_anchor(self):
-        from ....core.commands.bridge import Command
-
-        return Command.get_action_group_current("grid_scroll_anchor") == "grid.scroll_anchor_center"
+        return self.scroll_anchor == "center"
 
     def _find_center_index(self):
         rects = self.rects

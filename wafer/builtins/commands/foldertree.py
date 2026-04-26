@@ -158,9 +158,9 @@ def show_context_menu(ctx):
             ]
         )
     if hasattr(tree, "roots") and path in tree.roots:
-        items.append(ActionKit.Command(path="inline.folder.remove_from_view", display="Remove from view", func=remove_from_view))
+        items.append(ActionKit.Action(path="inline.folder.remove_from_view", display="Remove from view", func=remove_from_view))
     else:
-        items.append(ActionKit.Command(path="inline.folder.ignore", display="Ignore this folder", func=ignore_folder))
+        items.append(ActionKit.Action(path="inline.folder.ignore", display="Ignore this folder", func=ignore_folder))
     s = Menu.from_context(ctx)
     if s is None:
         return

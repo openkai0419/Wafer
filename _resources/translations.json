@@ -1,4 +1,64 @@
 {
+  "Datetime": {
+    "en": "Datetime",
+    "ja": ""
+  },
+  "Regex": {
+    "en": "Regex",
+    "ja": ""
+  },
+  "Filter Menu": {
+    "en": "Filter Menu",
+    "ja": ""
+  },
+  "Add filter after this": {
+    "en": "Add filter after this",
+    "ja": ""
+  },
+  "Delete filter": {
+    "en": "Delete filter",
+    "ja": ""
+  },
+  "Disable filter": {
+    "en": "Disable filter",
+    "ja": ""
+  },
+  "Disabled": {
+    "en": "Disabled",
+    "ja": ""
+  },
+  "Enable filter": {
+    "en": "Enable filter",
+    "ja": ""
+  },
+  "Enabled": {
+    "en": "Enabled",
+    "ja": ""
+  },
+  "Move down": {
+    "en": "Move down",
+    "ja": ""
+  },
+  "Move to bottom": {
+    "en": "Move to bottom",
+    "ja": ""
+  },
+  "Move to top": {
+    "en": "Move to top",
+    "ja": ""
+  },
+  "Move up": {
+    "en": "Move up",
+    "ja": ""
+  },
+  "Remove filter": {
+    "en": "Remove filter",
+    "ja": ""
+  },
+  "Right-click for row options": {
+    "en": "Right-click for row options",
+    "ja": ""
+  },
   "(empty)": {
     "en": "(empty)",
     "ja": ""

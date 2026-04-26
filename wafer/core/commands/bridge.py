@@ -16,6 +16,7 @@ from ...utils.logs import AppLogger
 class ActionKit:
     from .binding.mixins import CommandBindingMixin as UIMixin
     from .command.core import COMMAND_MENU_MARKER as MENU_MARKER, CommandMeta as Command, CommandParam as Param
+    from .command.core import MenuAction as Action
     from .command.menu import MenuGroup as MenuBase
     from .command.menu import DragMenuGroup as DragMenuBase
     from .command.payload import ScopedPayloads

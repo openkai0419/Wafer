@@ -1,5 +1,5 @@
 import pytest
-from PySide6 import QtGui, QtWidgets
+from PySide6 import QtWidgets
 from wafer.ui.panel.searchable_meta_widget import (
     SearchableMetaWidget,
     build_value_html,
@@ -8,6 +8,39 @@ from wafer.ui.panel.searchable_meta_widget import (
     SNIPPET_BUDGET,
     SAFETY_CHAR_LIMIT,
 )
+
+
+def _menu_action_label(action):
+    widget = action.defaultWidget() if isinstance(action, QtWidgets.QWidgetAction) else None
+    if widget is not None:
+        labels = [label.text() for label in widget.findChildren(QtWidgets.QLabel) if label.objectName() != "checkMark" and label.text()]
+        if labels:
+            return labels[0]
+    return action.text()
+
+
+def _menu_labels(menu):
+    labels = []
+    for action in menu.actions():
+        if action.isSeparator():
+            continue
+        text = _menu_action_label(action)
+        if text:
+            labels.append(text)
+        if action.menu():
+            labels.extend(_menu_labels(action.menu()))
+    return labels
+
+
+def _find_menu_action(menu, text):
+    for action in menu.actions():
+        if _menu_action_label(action) == text:
+            return action
+        if action.menu():
+            found = _find_menu_action(action.menu(), text)
+            if found is not None:
+                return found
+    return None
 
 
 def test_set_data_populates_grid(qtbot):
@@ -247,40 +280,21 @@ def test_double_click_opens_value_viewer(qtbot, monkeypatch):
     assert captured["key"] == "big"
 
 
-def test_context_menu_copy_value_uses_full_text(qtbot, monkeypatch):
+def test_context_menu_copy_value_uses_full_text(qtbot):
     w = SearchableMetaWidget()
     qtbot.addWidget(w)
     huge = "z" * (SHORT_VALUE_LIMIT + 500)
     w.set_data({"big": huge})
 
-    captured_actions: list[str] = []
-
-    class FakeMenu:
-        def __init__(self, *_a, **_k):
-            self._actions: list[QtGui.QAction] = []
-            self._copy_value_action: QtGui.QAction | None = None
-
-        def addAction(self, label):
-            act = QtGui.QAction(label)
-            self._actions.append(act)
-            captured_actions.append(label)
-            if "value" in label.lower() and "viewer" not in label.lower():
-                self._copy_value_action = act
-            return act
-
-        def addSeparator(self):
-            return None
-
-        def exec(self, *_a, **_k):
-            return self._copy_value_action
-
-    monkeypatch.setattr(QtWidgets, "QMenu", FakeMenu)
     QtWidgets.QApplication.clipboard().clear()
-    pos = w._list_view.visualRect(w._model.index(0, 0)).center()
-    w._on_context_menu(pos)
-    assert any("key" in a.lower() for a in captured_actions)
-    assert any("row" in a.lower() for a in captured_actions)
-    assert any("viewer" in a.lower() for a in captured_actions)
+    menu = w._build_context_menu(0, "big", huge)
+    labels = _menu_labels(menu)
+    assert any("key" in a.lower() for a in labels)
+    assert any("row" in a.lower() for a in labels)
+    assert any("viewer" in a.lower() for a in labels)
+    copy_value = _find_menu_action(menu, "Copy value")
+    assert copy_value is not None
+    copy_value.trigger()
     assert QtWidgets.QApplication.clipboard().text() == huge
 
 

@@ -5,6 +5,7 @@ from wafer.core.commands.command.core import (
     CommandBase,
     CommandMeta,
     CommandRegistry,
+    MenuAction,
     register_command_defs,
 )
 from wafer.core.commands.command.menu_builder import CommandMenuBuilder, MenuBuilder
@@ -92,6 +93,50 @@ def _register_normal(cmd_id, display):
     )
     register_command_defs([meta])
     return meta
+
+
+class TestTransientMenuAction:
+    def test_action_executes_without_global_registration_or_menu_cache(self, qtbot):
+        reg = CommandRegistry.instance()
+        before = set(reg._commands)
+        calls = []
+        w = QtWidgets.QWidget()
+        qtbot.addWidget(w)
+
+        for i in range(3):
+            maker = MenuMaker()
+            action = MenuAction(
+                path=_make_id(f"action_{i}"),
+                display=f"Action {i}",
+                func=lambda ctx, n=i: calls.append(n),
+            )
+            menu = MenuBuilder(maker, w).build(maker.menu([action]))
+            menu.actions()[0].trigger()
+
+        assert calls == [0, 1, 2]
+        assert set(reg._commands) == before
+        assert CommandMenuBuilder._menu_cache == {}
+
+    def test_checkable_action_passes_menu_checked_state(self, qtbot):
+        values = []
+        w = QtWidgets.QWidget()
+        qtbot.addWidget(w)
+        maker = MenuMaker()
+        action = MenuAction(
+            path=_make_id("checked_action"),
+            display="Checked Action",
+            checkable=True,
+            default_checked=False,
+            func=lambda ctx: values.append(ctx.get("checked")),
+        )
+
+        menu = MenuBuilder(maker, w).build(maker.menu([action]))
+        act = menu.actions()[0]
+        assert act.isCheckable()
+        assert not act.isChecked()
+        act.trigger()
+
+        assert values == [True]
 
 
 class TestRefreshCheckStatesIndividual:

@@ -1,9 +1,10 @@
 import os
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QFileDialog, QListWidget, QMenu, QMessageBox, QPushButton, QStackedLayout, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFileDialog, QListWidget, QMessageBox, QPushButton, QStackedLayout, QVBoxLayout, QWidget
 from wafer.utils.formatting import dpix
 from wafer.utils.paths import safe_exists
 from wafer.core.lang.manager import t
+from wafer.core.commands.bridge import ActionKit, Menu
 
 
 class FolderListWidget(QWidget):
@@ -38,11 +39,15 @@ class FolderListWidget(QWidget):
     def show_context_menu(self, position):
         item = self.folder_list.itemAt(position)
         if item:
-            menu = QMenu(self)
-            delete_action = menu.addAction(t("Delete"))
-            action = menu.exec(self.folder_list.mapToGlobal(position))
-            if action == delete_action:
-                self.confirm_and_remove_item(item)
+            uid = f"{id(self):x}.{self.folder_list.row(item)}"
+            spec = Menu.session(self).menu(
+                [
+                    ":Folder",
+                    ActionKit.Action(path=f"inline.folder_list.{uid}.delete", display="Delete", func=lambda ctx, i=item: self.confirm_and_remove_item(i)),
+                ]
+            )
+            if spec is not None:
+                spec.exec(self.folder_list.mapToGlobal(position))
 
     def confirm_and_remove_item(self, item):
         reply = QMessageBox.question(self, t("Confirm"), t("Remove selected folder?\n\n{path}", path=item.text()), QMessageBox.Yes | QMessageBox.No)

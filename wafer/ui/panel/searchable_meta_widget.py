@@ -9,6 +9,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from ...utils.formatting import dpix, display_prefixed_key
 from ...core.lang.manager import t
 from ...core.color.theme import ThemeManager
+from ...core.commands.bridge import ActionKit, Menu
 from ...core.qt.dispatcher import Dispatcher, CancelSlot
 from ...core.qt.thread import utility_pool
 from .value_viewer_dialog import open_value_viewer
@@ -351,20 +352,20 @@ class SearchableMetaWidget(QtWidgets.QWidget):
             return
         display_key = self._display_key(key)
         value = self._full_value(key)
+        self._build_context_menu(index.row(), display_key, value).exec(self._list_view.viewport().mapToGlobal(pos))
 
-        menu = QtWidgets.QMenu(self._list_view)
-        act_copy_key = menu.addAction(t("Copy key"))
-        act_copy_value = menu.addAction(t("Copy value"))
-        act_copy_row = menu.addAction(t("Copy row"))
-        menu.addSeparator()
-        act_view = menu.addAction(t("Open value viewer…"))
-        chosen = menu.exec(self._list_view.viewport().mapToGlobal(pos))
+    def _build_context_menu(self, row: int, display_key: str, value: str) -> QtWidgets.QMenu:
         clipboard = QtWidgets.QApplication.clipboard()
-        if chosen is act_copy_key:
-            clipboard.setText(display_key)
-        elif chosen is act_copy_value:
-            clipboard.setText(value)
-        elif chosen is act_copy_row:
-            clipboard.setText(f"{display_key}: {value}")
-        elif chosen is act_view:
-            open_value_viewer(self, display_key, value)
+        uid = f"{id(self):x}.{row}"
+        spec = Menu.session(self).menu(
+            [
+                ":Meta",
+                ActionKit.Action(path=f"inline.meta_list.{uid}.copy_key", display="Copy key", func=lambda ctx: clipboard.setText(display_key)),
+                ActionKit.Action(path=f"inline.meta_list.{uid}.copy_value", display="Copy value", func=lambda ctx: clipboard.setText(value)),
+                ActionKit.Action(path=f"inline.meta_list.{uid}.copy_row", display="Copy row", func=lambda ctx: clipboard.setText(f"{display_key}: {value}")),
+                "-",
+                ActionKit.Action(path=f"inline.meta_list.{uid}.open_value", display="Open value viewer…", func=lambda ctx: open_value_viewer(self, display_key, value)),
+            ]
+        )
+        menu = spec.build() if spec is not None else None
+        return menu if menu is not None else QtWidgets.QMenu(self)

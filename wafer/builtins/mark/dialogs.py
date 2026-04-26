@@ -3,6 +3,7 @@ from __future__ import annotations
 from PySide6 import QtCore, QtWidgets
 
 from ...core.lang.manager import t
+from ...core.commands.bridge import ActionKit, Menu
 from ...ui.widgets.color_picker import ColorPickerDialog
 from ...utils.logs import AppLogger
 from ...utils.notifier import Notifier
@@ -87,18 +88,18 @@ def confirm_remove_mark(parent: QtWidgets.QWidget | None, mark_id: str) -> bool:
 def show_mark_context_menu(parent: QtWidgets.QWidget, mark_id: str, global_pos: QtCore.QPoint) -> None:
     if MarkRegistry.instance().get(mark_id) is None:
         return
-    menu = QtWidgets.QMenu(parent)
-    rename_act = menu.addAction(t("Rename..."))
-    color_act = menu.addAction(t("Change color..."))
-    menu.addSeparator()
-    remove_act = menu.addAction(t("Remove..."))
-    chosen = menu.exec_(global_pos)
-    if chosen is rename_act:
-        prompt_rename_mark(parent, mark_id)
-    elif chosen is color_act:
-        prompt_pick_color(parent, mark_id)
-    elif chosen is remove_act:
-        confirm_remove_mark(parent, mark_id)
+    uid = f"{id(parent):x}.{mark_id}"
+    spec = Menu.session(parent).menu(
+        [
+            ":Mark",
+            ActionKit.Action(path=f"inline.mark.{uid}.rename", display="Rename...", func=lambda ctx: prompt_rename_mark(parent, mark_id)),
+            ActionKit.Action(path=f"inline.mark.{uid}.color", display="Change color...", func=lambda ctx: prompt_pick_color(parent, mark_id)),
+            "-",
+            ActionKit.Action(path=f"inline.mark.{uid}.remove", display="Remove...", func=lambda ctx: confirm_remove_mark(parent, mark_id)),
+        ]
+    )
+    if spec is not None:
+        spec.exec(global_pos)
 
 
 def _purge_mark_from_all_dbs(mark_id: str) -> None:

@@ -8,6 +8,7 @@ from PySide6 import QtCore, QtWidgets
 from PySide6.QtCore import Qt, Signal
 
 from ..registry import PluginBase
+from ...core.commands.bridge import ActionKit, Menu
 from ...utils.formatting import dpix
 
 
@@ -89,11 +90,15 @@ class DropdownButton(QtWidgets.QPushButton):
         self.clicked.connect(self._show_menu)
 
     def _show_menu(self):
-        menu = QtWidgets.QMenu(self)
-        for c in self._choices:
-            act = menu.addAction(c)
-            act.triggered.connect(lambda _, v=c: self._pick(v))
-        menu.exec(self.mapToGlobal(QtCore.QPoint(0, self.height())))
+        uid = f"{id(self):x}"
+        spec = Menu.session(self).menu(
+            [
+                ActionKit.Action(path=f"inline.dropdown.{uid}.{i}", display=str(choice), func=lambda ctx, v=choice: self._pick(v))
+                for i, choice in enumerate(self._choices)
+            ]
+        )
+        if spec is not None:
+            spec.exec(self.mapToGlobal(QtCore.QPoint(0, self.height())))
 
     def _pick(self, v):
         self._value = v

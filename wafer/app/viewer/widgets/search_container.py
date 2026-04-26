@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6 import QtCore, QtGui, QtWidgets
+from PySide6 import QtCore, QtWidgets
 
 from ....utils.formatting import dpix
 from ....utils.profiling import profiler
@@ -10,7 +10,7 @@ from ....core.lang.manager import t
 from ....core.qt.dispatcher import Dispatcher, CancelSlot
 from ....core.qt.icon_engine import themed_icon
 from ....core.qt.thread import utility_pool
-from ....core.color.theme import ThemeManager
+from ....core.commands.bridge import ActionKit, Menu
 from ....plugin.query.handler import filter_registry, sort_registry
 from ....plugin.query.base import KeyStore
 from ....builtins.filters import TextFilter, DirectoryFilter
@@ -19,6 +19,7 @@ from ....builtins.filters import TextFilter, DirectoryFilter
 class FilterRow(QtWidgets.QWidget):
     changed = QtCore.Signal()
     remove_requested = QtCore.Signal(object)
+    context_requested = QtCore.Signal(object, QtCore.QPoint)
 
     def __init__(self, filter_cls, show_op=True, key_store=None, parent=None):
         super().__init__(parent)
@@ -35,16 +36,6 @@ class FilterRow(QtWidgets.QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(dpix(2))
 
-        self.toggle_button = QtWidgets.QToolButton()
-        self.toggle_button.setIcon(themed_icon("check"))
-        self.toggle_button.setFixedSize(dpix(24), dpix(24))
-        self.toggle_button.setCheckable(True)
-        self.toggle_button.setChecked(False)
-        self.toggle_button.setToolTip(t("Enable / Disable filter"))
-        self.toggle_button.toggled.connect(self._on_toggled)
-        self._apply_toggle_style()
-        layout.addWidget(self.toggle_button)
-
         self.op_combo = QtWidgets.QComboBox()
         self.op_combo.addItem("AND", "AND")
         self.op_combo.addItem("OR", "OR")
@@ -59,7 +50,9 @@ class FilterRow(QtWidgets.QWidget):
         self.remove_button = QtWidgets.QToolButton()
         self.remove_button.setIcon(themed_icon("cross"))
         self.remove_button.setFixedSize(dpix(24), dpix(24))
+        self.remove_button.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.remove_button.clicked.connect(lambda: self.remove_requested.emit(self))
+        self.remove_button.customContextMenuRequested.connect(self._on_context_requested)
         layout.addWidget(self.remove_button)
 
     def _set_filter_type(self, cls):
@@ -112,28 +105,20 @@ class FilterRow(QtWidgets.QWidget):
 
     def set_enabled(self, enabled: bool):
         enabled = bool(enabled)
-        if self._enabled == enabled and self.toggle_button.isChecked() == (not enabled):
+        if self._enabled == enabled:
             return
         self._enabled = enabled
-        with QtCore.QSignalBlocker(self.toggle_button):
-            self.toggle_button.setChecked(not enabled)
         self._apply_enabled_visual()
-
-    def _on_toggled(self, checked: bool):
-        self._enabled = not bool(checked)
-        self._apply_enabled_visual()
-        self.changed.emit()
 
     def _apply_enabled_visual(self):
         if self._param_widget:
             self._param_widget.setEnabled(self._enabled)
         self.op_combo.setEnabled(self._enabled)
-        icon_name = "check" if self._enabled else "empty"
-        self.toggle_button.setIcon(themed_icon(icon_name))
+        state = t("Enabled") if self._enabled else t("Disabled")
+        self.remove_button.setToolTip(t("Remove filter") + "\n" + t("Right-click for row options") + f"\n{state}")
 
-    def _apply_toggle_style(self):
-        pressed = ThemeManager.instance().palette.bg_tertiary
-        self.toggle_button.setStyleSheet(f"QToolButton:checked {{ background: {pressed}; }}")
+    def _on_context_requested(self, pos: QtCore.QPoint):
+        self.context_requested.emit(self, self.remove_button.mapToGlobal(pos))
 
     def write_entry(self, filter_name: str, params: dict, op: str | None = None):
         cls = filter_registry.get(filter_name)
@@ -196,40 +181,9 @@ class SearchContainer(QtWidgets.QWidget):
 
     def _build_sort_button(self) -> QtWidgets.QToolButton:
         btn = QtWidgets.QToolButton(self)
-        btn.setPopupMode(QtWidgets.QToolButton.InstantPopup)
         btn.setIcon(themed_icon("sort"))
         btn.setFixedSize(dpix(28), dpix(24))
-
-        menu = QtWidgets.QMenu(btn)
-
-        self._sort_group = QtGui.QActionGroup(menu)
-        self._sort_group.setExclusive(True)
-        for cls in sort_registry.list_all():
-            action = menu.addAction(cls.NAME.capitalize())
-            action.setData(cls.NAME)
-            action.setCheckable(True)
-            if self._sort_name == cls.NAME:
-                action.setChecked(True)
-            self._sort_group.addAction(action)
-
-        menu.addSeparator()
-
-        self._order_group = QtGui.QActionGroup(menu)
-        self._order_group.setExclusive(True)
-        asc_action = menu.addAction(t("Ascending"))
-        asc_action.setData(True)
-        asc_action.setCheckable(True)
-        self._order_group.addAction(asc_action)
-        desc_action = menu.addAction(t("Descending"))
-        desc_action.setData(False)
-        desc_action.setCheckable(True)
-        desc_action.setChecked(True)
-        self._order_group.addAction(desc_action)
-
-        self._sort_group.triggered.connect(self._on_sort_action)
-        self._order_group.triggered.connect(self._on_order_action)
-
-        btn.setMenu(menu)
+        btn.clicked.connect(self._show_sort_menu)
         return btn
 
     def _build_add_button(self) -> QtWidgets.QToolButton:
@@ -240,44 +194,108 @@ class SearchContainer(QtWidgets.QWidget):
         btn.clicked.connect(self._on_add_clicked)
         return btn
 
-    def _on_sort_action(self, action):
-        self._sort_name = action.data()
+    def _show_sort_menu(self):
+        self._build_sort_menu().exec(self._sort_button.mapToGlobal(QtCore.QPoint(0, self._sort_button.height())))
+
+    def _build_sort_menu(self) -> QtWidgets.QMenu:
+        spec = Menu.session(self).menu(self._sort_menu_items())
+        menu = spec.build() if spec is not None else None
+        return menu if menu is not None else QtWidgets.QMenu(self)
+
+    def _sort_menu_items(self) -> list:
+        uid = f"{id(self):x}"
+        items = [":Sort"]
+        items.extend(
+            ActionKit.Action(
+                path=f"inline.search.{uid}.sort.{cls.NAME}",
+                display=cls.NAME.capitalize(),
+                checkable=True,
+                default_checked=cls.NAME == self._sort_name,
+                checked_resolver=lambda name=cls.NAME: self._sort_name == name,
+                func=lambda ctx, name=cls.NAME: self._set_sort_name(name),
+            )
+            for cls in sort_registry.list_all()
+        )
+        items.extend(
+            [
+                "-",
+                ":Order",
+                ActionKit.Action(
+                    path=f"inline.search.{uid}.order.ascending",
+                    display="Ascending",
+                    checkable=True,
+                    default_checked=self._ascending,
+                    checked_resolver=lambda: self._ascending,
+                    func=lambda ctx: self._set_sort_order(True),
+                ),
+                ActionKit.Action(
+                    path=f"inline.search.{uid}.order.descending",
+                    display="Descending",
+                    checkable=True,
+                    default_checked=not self._ascending,
+                    checked_resolver=lambda: not self._ascending,
+                    func=lambda ctx: self._set_sort_order(False),
+                ),
+            ]
+        )
+        return items
+
+    def _set_sort_name(self, sort_name: str):
+        self._sort_name = sort_name
         self.filter_changed.emit()
 
-    def _on_order_action(self, action):
-        self._ascending = action.data()
+    def _set_sort_order(self, ascending: bool):
+        self._ascending = ascending
         self.filter_changed.emit()
 
     def _on_add_clicked(self):
-        available = [c for c in filter_registry.list_all() if c is not DirectoryFilter]
+        available = self._available_filter_classes()
         if len(available) <= 1:
             self._add_row(available[0] if available else TextFilter)
             return
-        menu = QtWidgets.QMenu(self._add_button)
-        for cls in available:
-            label = cls.DISPLAY_NAME or cls.NAME
-            action = menu.addAction(label)
-            action.triggered.connect(lambda checked=False, c=cls: self._add_row(c))
-        menu.exec(self._add_button.mapToGlobal(QtCore.QPoint(0, self._add_button.height())))
+        uid = f"{id(self):x}"
+        items = [
+            ":Add Filter",
+            *[
+                ActionKit.Action(
+                    path=f"inline.search.{uid}.add.{cls.NAME}",
+                    display=cls.DISPLAY_NAME or cls.NAME,
+                    func=lambda ctx, c=cls: self._add_row(c),
+                )
+                for cls in available
+            ],
+        ]
+        spec = Menu.session(self).menu(items)
+        if spec is not None:
+            spec.exec(self._add_button.mapToGlobal(QtCore.QPoint(0, self._add_button.height())))
 
-    def _collect_inherited_params(self) -> dict:
+    def _available_filter_classes(self) -> list[type]:
+        return [c for c in filter_registry.list_all() if c is not DirectoryFilter]
+
+    def _collect_inherited_params(self, end_index: int | None = None) -> dict:
         merged = {}
-        for row in self._rows:
+        rows = self._rows if end_index is None else self._rows[: max(0, end_index)]
+        for row in rows:
             if row.filter_cls and row.get_param_widget():
                 params = row.filter_cls.read_params(row.get_param_widget())
                 merged.update(row.filter_cls.inheritable_params(params))
         return merged
 
     def _add_row(self, filter_cls, emit=True):
-        inherited = self._collect_inherited_params()
-        is_first = len(self._rows) == 0
-        row = FilterRow(filter_cls, show_op=not is_first, key_store=self._key_store, parent=self)
+        self._insert_row(len(self._rows), filter_cls, emit=emit)
+
+    def _insert_row(self, index: int, filter_cls, emit=True):
+        index = max(0, min(index, len(self._rows)))
+        inherited = self._collect_inherited_params(index)
+        row = FilterRow(filter_cls, show_op=index > 0, key_store=self._key_store, parent=self)
         row.changed.connect(self._on_row_changed)
         row.remove_requested.connect(self._on_remove_row)
+        row.context_requested.connect(self._show_row_menu)
         if inherited and row.get_param_widget():
             filter_cls.write_params(row.get_param_widget(), inherited)
-        self._rows.append(row)
-        self._filter_stack.addWidget(row)
+        self._rows.insert(index, row)
+        self._filter_stack.insertWidget(index, row)
+        self._update_op_visibility()
         self._update_tool_placement()
         if emit:
             self.filter_changed.emit()
@@ -297,6 +315,94 @@ class SearchContainer(QtWidgets.QWidget):
 
     def _on_row_changed(self):
         self.filter_changed.emit()
+
+    def _show_row_menu(self, row: FilterRow, global_pos: QtCore.QPoint):
+        self._build_row_menu(row).exec(global_pos)
+
+    def _build_row_menu(self, row: FilterRow) -> QtWidgets.QMenu:
+        index = self._rows.index(row) if row in self._rows else -1
+        uid = f"{id(self):x}.{id(row):x}"
+        items = [
+            ":Filter Menu",
+            ActionKit.Action(
+                path=f"inline.filter.{uid}.enabled",
+                display="Enabled",
+                checkable=True,
+                default_checked=row.is_enabled(),
+                checked_resolver=lambda r=row: r.is_enabled(),
+                func=lambda ctx, r=row: self._set_row_enabled(r, bool(ctx.get("checked"))),
+            ),
+            "-",
+        ]
+        items.extend(
+            ActionKit.Action(
+                path=f"Add filter after this/inline.filter.{uid}.add.{cls.NAME}",
+                display=cls.DISPLAY_NAME or cls.NAME,
+                func=lambda ctx, r=row, c=cls: self._add_row_after(r, c),
+            )
+            for cls in self._available_filter_classes()
+        )
+        items.append("-")
+        if index > 0:
+            items.extend(
+                [
+                    ActionKit.Action(path=f"inline.filter.{uid}.move_up", display="Move up", func=lambda ctx, r=row: self._move_row_by(r, -1)),
+                    ActionKit.Action(path=f"inline.filter.{uid}.move_top", display="Move to top", func=lambda ctx, r=row: self._move_row(r, 0)),
+                ]
+            )
+        if 0 <= index < len(self._rows) - 1:
+            items.extend(
+                [
+                    ActionKit.Action(path=f"inline.filter.{uid}.move_down", display="Move down", func=lambda ctx, r=row: self._move_row_by(r, 1)),
+                    ActionKit.Action(path=f"inline.filter.{uid}.move_bottom", display="Move to bottom", func=lambda ctx, r=row: self._move_row(r, len(self._rows) - 1)),
+                ]
+            )
+        items.extend(
+            [
+                "-",
+                ActionKit.Action(path=f"inline.filter.{uid}.delete", display="Delete filter", func=lambda ctx, r=row: self._on_remove_row(r)),
+            ]
+        )
+        spec = Menu.session(self).menu(items)
+        menu = spec.build() if spec is not None else None
+        return menu if menu is not None else QtWidgets.QMenu(self)
+
+    def _set_row_enabled(self, row: FilterRow, enabled: bool):
+        if row not in self._rows:
+            return
+        row.set_enabled(enabled)
+        self.filter_changed.emit()
+
+    def _toggle_row_enabled(self, row: FilterRow):
+        self._set_row_enabled(row, not row.is_enabled())
+
+    def _add_row_after(self, row: FilterRow, filter_cls):
+        if row not in self._rows:
+            return
+        self._insert_row(self._rows.index(row) + 1, filter_cls)
+
+    def _move_row(self, row: FilterRow, new_index: int, emit=True):
+        if row not in self._rows:
+            return
+        old_index = self._rows.index(row)
+        new_index = max(0, min(new_index, len(self._rows) - 1))
+        if old_index == new_index:
+            return
+        if self._tools_host is row:
+            self._detach_tools()
+        self._filter_stack.removeWidget(row)
+        self._rows.pop(old_index)
+        self._rows.insert(new_index, row)
+        self._filter_stack.insertWidget(new_index, row)
+        self._update_op_visibility()
+        self._update_tool_placement()
+        if emit:
+            self.filter_changed.emit()
+
+    def _move_row_by(self, row: FilterRow, offset: int):
+        if row not in self._rows:
+            return
+        self._move_row(row, self._rows.index(row) + offset)
 
     def _update_op_visibility(self):
         for i, row in enumerate(self._rows):
@@ -361,10 +467,7 @@ class SearchContainer(QtWidgets.QWidget):
         self._sync_sort_menu()
 
     def _sync_sort_menu(self):
-        for action in self._sort_group.actions():
-            action.setChecked(action.data() == self._sort_name)
-        for action in self._order_group.actions():
-            action.setChecked(action.data() == self._ascending)
+        return
 
     def invalidate_key_cache(self):
         self._last_paths = object()
@@ -449,6 +552,7 @@ class SearchContainer(QtWidgets.QWidget):
             )
             row.changed.connect(self._on_row_changed)
             row.remove_requested.connect(self._on_remove_row)
+            row.context_requested.connect(self._show_row_menu)
             if rd.get("params") and row.get_param_widget():
                 row.filter_cls.write_params(row.get_param_widget(), rd["params"])
             if not is_first and rd.get("op"):

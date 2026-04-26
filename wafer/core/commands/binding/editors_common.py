@@ -10,6 +10,7 @@ from ....utils.formatting import dpix
 from ..command.payload import CommandPayload, format_payload_display
 from ..command.maker import MenuMaker
 from ..command.menu_builder import MenuBuilder
+from ..bridge import ActionKit, Menu
 from .common import WidgetRef
 from .store_base import BindingStoreBase, resolve_for_widget
 from ...lang.manager import t
@@ -156,10 +157,7 @@ class ScopedPayloadSectionBase(QtWidgets.QGroupBox):
         header.addWidget(self.btn_global, 0)
         self.btn_overrides = QtWidgets.QToolButton(self)
         self.btn_overrides.setText(t("Override"))
-        self.btn_overrides.setPopupMode(QtWidgets.QToolButton.InstantPopup)
-        self.ov_menu = QtWidgets.QMenu(self.btn_overrides)
-        self.ov_menu.aboutToShow.connect(self._refresh_overrides_menu)
-        self.btn_overrides.setMenu(self.ov_menu)
+        self.btn_overrides.clicked.connect(self._show_overrides_menu)
         header.addWidget(self.btn_overrides, 0)
         header.addStretch(1)
         l.addLayout(header)
@@ -236,17 +234,27 @@ class ScopedPayloadSectionBase(QtWidgets.QGroupBox):
         self._refresh_overrides_menu()
 
     def _refresh_overrides_menu(self) -> None:
-        self.ov_menu.clear()
+        remaining = [w.name for w in self.widgets if w.name not in self.override_edits]
+        self.btn_overrides.setEnabled(bool(remaining))
+
+    def _show_overrides_menu(self) -> None:
+        menu = self._build_overrides_menu()
+        if menu is not None:
+            menu.exec(self.btn_overrides.mapToGlobal(QtCore.QPoint(0, self.btn_overrides.height())))
+
+    def _build_overrides_menu(self) -> QtWidgets.QMenu | None:
         remaining = [w.name for w in self.widgets if w.name not in self.override_edits]
         if not remaining:
-            act = self.ov_menu.addAction(t("No more widgets"))
-            act.setEnabled(False)
             self.btn_overrides.setEnabled(False)
-            return
-        self.btn_overrides.setEnabled(True)
-        for scope in remaining:
-            act = self.ov_menu.addAction(scope)
-            act.triggered.connect(lambda _, sc=scope: self._add_override(sc))
+            return None
+        uid = f"{id(self):x}"
+        items = [":Override"]
+        items.extend(
+            ActionKit.Action(path=f"inline.binding_override.{uid}.{i}", display=scope, func=lambda ctx, sc=scope: self._add_override(sc))
+            for i, scope in enumerate(remaining)
+        )
+        spec = Menu.session(self).menu(items)
+        return spec.build() if spec is not None else None
 
     def _rebuild(self, found: dict[str, str]) -> None:
         clear_layout(self.overrides_layout, self, "ScopedPayloadSectionBase rebuild")

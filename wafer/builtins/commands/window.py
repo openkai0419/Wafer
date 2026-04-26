@@ -1,21 +1,12 @@
 from ...core.commands.bridge import ActionKit
 from ...core.commands.binding.instance_registry import InstanceRegistry
 from ...core.platform.process import AppProcess
-from ...core.profile import ProfileStore
+from ...core.workspace import WorkspaceStore
 from ...plugin import installer_queue
 from ...plugin.loader import get_plugin_dir
 from ...utils.logs import AppLogger
 from ...utils.notifier import Notifier
-from .profile import (
-    show_profile_popup,
-    create_profile,
-    new_window,
-    open_profile,
-    open_profile_in_new_window,
-    rename_profile,
-    delete_profile,
-    _pf_store,
-)
+from .workspace import new_window
 
 
 def _win(ctx):
@@ -68,51 +59,10 @@ def restart_all(ctx):
         w._perform_system_restart(include_self=True)
         w.close_by_restart()
     else:
-        store = ProfileStore.instance()
-        store.set_restore_profile_ids(store.get_active_profile_ids())
+        store = WorkspaceStore.instance()
+        store.set_restore_slot_ids(store.get_active_slot_ids())
         AppProcess.terminate_cmd("--tray", wait=True)
         AppProcess.new_main("--tray")
-
-
-def _profile_names():
-    return _pf_store().list_profile_names()
-
-
-class ProfileCommands(ActionKit.MenuBase):
-    NAME = "Workspace"
-    PRIORITY = 70
-
-    @classmethod
-    def commands(cls):
-        return [
-            ":Profile",
-            ActionKit.Command(path="win.new_profile", display="New Profile", func=create_profile),
-            ActionKit.Command(path="win.profile_list", display="Profile List", func=show_profile_popup),
-            ActionKit.Command(
-                path="win.open_profile",
-                display="Open Profile",
-                func=open_profile,
-                params=[ActionKit.Param(name="profile", value=_profile_names, required=True)],
-            ),
-            ActionKit.Command(
-                path="win.open_profile_in_new_window",
-                display="Open Profile in New Window",
-                func=open_profile_in_new_window,
-                params=[ActionKit.Param(name="profile", value=_profile_names, required=True)],
-            ),
-            ActionKit.Command(
-                path="win.rename_profile",
-                display="Rename Profile",
-                func=rename_profile,
-                params=[ActionKit.Param(name="profile", value=_profile_names, required=True)],
-            ),
-            ActionKit.Command(
-                path="win.delete_profile",
-                display="Delete Profile",
-                func=delete_profile,
-                params=[ActionKit.Param(name="profile", value=_profile_names, required=True)],
-            ),
-        ]
 
 
 class WindowPanelCommands(ActionKit.MenuBase):

@@ -7,7 +7,7 @@ from ...utils.logs import AppLogger
 from ...constants import DEV_MODE
 from ...core.platform.process import AppProcess
 from ...core.ipc.message import Message
-from ...core.profile import ProfileStore
+from ...core.workspace import WorkspaceStore
 
 
 def _tray_send(ctx, topic: str, payload=None):
@@ -35,19 +35,14 @@ def show_window(ctx=None):
     tray = ctx.get_instance("Tray")
     c = get_viewer_count(ctx)
     if c < 1:
-        store = ProfileStore.instance()
-        restore_ids = store.get_restore_profile_ids()
+        store = WorkspaceStore.instance()
+        restore_ids = store.get_restore_slot_ids()
         if restore_ids:
             AppLogger.info(f"restoring {len(restore_ids)} viewer(s): {restore_ids}")
-            for pid in restore_ids:
-                AppProcess.new_main("--viewer", "--profile", pid)
+            for sid in restore_ids:
+                AppProcess.new_main("--viewer", "--slot", sid)
         else:
-            inactive = store.find_inactive_profile_id()
-            if inactive:
-                AppProcess.new_main("--viewer", "--profile", inactive)
-            else:
-                pid = store.create_profile_with_unique_name(store.next_default_name())
-                AppProcess.new_main("--viewer", "--profile", pid)
+            AppProcess.new_main("--viewer")
         return
     tray.show_state = not bool(getattr(tray, "show_state", False))
     send_show_toggle(ctx, tray.show_state)

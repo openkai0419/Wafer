@@ -1,6 +1,7 @@
 import py_compile
 import threading
 import time
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from wafer.core.ipc.transport import NODE_TIMEOUT, Priority
@@ -405,16 +406,16 @@ class TestReconnection:
 
 
 class TestProfileTracking:
-    def _make_broker(self, tmp_path, profile_ids=()):
-        from wafer.core.profile import ProfileStore, ProfileEntry
+    def _make_broker(self, tmp_path, slot_ids=()):
+        from wafer.core.workspace import WorkspaceStore, WindowSlot
 
-        store_path = str(tmp_path / "profiles.json")
-        store = ProfileStore(path=store_path)
-        for sid in profile_ids:
-            store.save_profile(ProfileEntry(profile_id=sid))
+        store_path = str(tmp_path / "workspace.json")
+        store = WorkspaceStore(path=store_path)
+        for sid in slot_ids:
+            store.save_slot(WindowSlot(slot_id=sid))
         broker = Broker()
         broker._restore_debounce_sec = 0.2
-        broker.set_profile_store_factory(lambda: ProfileStore(path=store_path))
+        broker.set_workspace_store_factory(lambda: WorkspaceStore(path=store_path))
         return broker, store
 
     def test_profile_id_in_peer_info(self, tmp_path):
@@ -426,13 +427,13 @@ class TestProfileTracking:
             node.start(broker.port)
             assert node.wait_registered(timeout=3.0)
             time.sleep(0.3)
-            assert broker.active_viewer_profile_ids() == ["anon-1"]
+            assert broker.active_viewer_slot_ids() == ["anon-1"]
         finally:
             node.stop()
             broker.stop()
 
     def test_viewer_connect_updates_restore_and_active(self, tmp_path):
-        broker, store = self._make_broker(tmp_path, profile_ids=["anon-1"])
+        broker, store = self._make_broker(tmp_path, slot_ids=["anon-1"])
         broker.start()
         try:
             node = Node("viewer")
@@ -440,14 +441,14 @@ class TestProfileTracking:
             node.start(broker.port)
             assert node.wait_registered(timeout=3.0)
             time.sleep(0.3)
-            assert "anon-1" in store.get_restore_profile_ids()
-            assert "anon-1" in store.get_active_profile_ids()
+            assert "anon-1" in store.get_restore_slot_ids()
+            assert "anon-1" in store.get_active_slot_ids()
         finally:
             node.stop()
             broker.stop()
 
     def test_debounce_single_close_updates_restore(self, tmp_path):
-        broker, store = self._make_broker(tmp_path, profile_ids=["anon-1", "anon-2"])
+        broker, store = self._make_broker(tmp_path, slot_ids=["anon-1", "anon-2"])
         broker.start()
         try:
             n1 = Node("viewer")
@@ -465,14 +466,14 @@ class TestProfileTracking:
             n1.stop()
             time.sleep(0.5)
 
-            assert "anon-2" in store.get_restore_profile_ids()
-            assert "anon-1" not in store.get_restore_profile_ids()
+            assert "anon-2" in store.get_restore_slot_ids()
+            assert "anon-1" not in store.get_restore_slot_ids()
         finally:
             n2.stop()
             broker.stop()
 
     def test_debounce_all_close_preserves_restore(self, tmp_path):
-        broker, store = self._make_broker(tmp_path, profile_ids=["anon-1", "anon-2"])
+        broker, store = self._make_broker(tmp_path, slot_ids=["anon-1", "anon-2"])
         broker.start()
         try:
             n1 = Node("viewer")
@@ -491,7 +492,7 @@ class TestProfileTracking:
             n2.stop()
             time.sleep(broker._restore_debounce_sec + 0.5)
 
-            restore = store.get_restore_profile_ids()
+            restore = store.get_restore_slot_ids()
             assert "anon-1" in restore
             assert "anon-2" in restore
         finally:
@@ -506,7 +507,7 @@ class TestProfileTracking:
             node.start(broker.port)
             assert node.wait_registered(timeout=3.0)
             time.sleep(0.3)
-            sids = broker.active_viewer_profile_ids()
+            sids = broker.active_viewer_slot_ids()
             assert "Work" in sids
         finally:
             node.stop()
@@ -527,6 +528,26 @@ class TestProfileTracking:
             assert broker.peer_counts().get("viewer", 0) == 0
         finally:
             broker.stop()
+
+    def test_stop_cancels_pending_restore_debounce(self):
+        calls = []
+        broker = Broker()
+        broker._restore_debounce_sec = 0.2
+        broker.set_workspace_store_factory(
+            lambda: SimpleNamespace(
+                set_active_slot_ids=lambda ids: calls.append(("active", list(ids))),
+                set_restore_slot_ids=lambda ids: calls.append(("restore", list(ids))),
+            )
+        )
+        broker.start()
+        try:
+            broker._on_viewer_disconnected()
+            broker.stop()
+            time.sleep(broker._restore_debounce_sec + 0.2)
+            assert calls == []
+        finally:
+            if not broker._stop.is_set():
+                broker.stop()
 
 
 class TestBrokerLostTimeout:
@@ -585,20 +606,20 @@ class TestBrokerLostTimeout:
 
 
 class TestProfileReRegister:
-    def _make_broker(self, tmp_path, profile_ids=()):
-        from wafer.core.profile import ProfileStore, ProfileEntry
+    def _make_broker(self, tmp_path, slot_ids=()):
+        from wafer.core.workspace import WorkspaceStore, WindowSlot
 
-        store_path = str(tmp_path / "profiles.json")
-        store = ProfileStore(path=store_path)
-        for sid in profile_ids:
-            store.save_profile(ProfileEntry(profile_id=sid))
+        store_path = str(tmp_path / "workspace.json")
+        store = WorkspaceStore(path=store_path)
+        for sid in slot_ids:
+            store.save_slot(WindowSlot(slot_id=sid))
         broker = Broker()
         broker._restore_debounce_sec = 0.2
-        broker.set_profile_store_factory(lambda: ProfileStore(path=store_path))
+        broker.set_workspace_store_factory(lambda: WorkspaceStore(path=store_path))
         return broker, store
 
     def test_re_register_updates_profile_id(self, tmp_path):
-        broker, store = self._make_broker(tmp_path, profile_ids=["p1", "p2"])
+        broker, store = self._make_broker(tmp_path, slot_ids=["p1", "p2"])
         broker.start()
         try:
             node = Node("viewer")
@@ -606,12 +627,12 @@ class TestProfileReRegister:
             node.start(broker.port)
             assert node.wait_registered(timeout=5.0)
             time.sleep(0.5)
-            assert "p1" in broker.active_viewer_profile_ids()
+            assert "p1" in broker.active_viewer_slot_ids()
 
             node.re_register("p2")
             assert node.wait_registered(timeout=5.0)
             time.sleep(0.5)
-            active = broker.active_viewer_profile_ids()
+            active = broker.active_viewer_slot_ids()
             assert "p2" in active
             assert "p1" not in active
         finally:
@@ -619,7 +640,7 @@ class TestProfileReRegister:
             broker.stop()
 
     def test_re_register_syncs_active_and_restore(self, tmp_path):
-        broker, store = self._make_broker(tmp_path, profile_ids=["p1", "p2"])
+        broker, store = self._make_broker(tmp_path, slot_ids=["p1", "p2"])
         broker.start()
         try:
             node = Node("viewer")
@@ -627,13 +648,13 @@ class TestProfileReRegister:
             node.start(broker.port)
             assert node.wait_registered(timeout=5.0)
             time.sleep(0.5)
-            assert "p1" in store.get_active_profile_ids()
+            assert "p1" in store.get_active_slot_ids()
 
             node.re_register("p2")
             assert node.wait_registered(timeout=5.0)
             time.sleep(0.5)
-            assert "p2" in store.get_active_profile_ids()
-            assert "p2" in store.get_restore_profile_ids()
+            assert "p2" in store.get_active_slot_ids()
+            assert "p2" in store.get_restore_slot_ids()
         finally:
             node.stop()
             broker.stop()

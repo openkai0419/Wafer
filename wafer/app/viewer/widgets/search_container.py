@@ -401,13 +401,14 @@ class SearchContainer(QtWidgets.QWidget):
     def get_primary_row(self) -> FilterRow | None:
         return self._rows[0] if self._rows else None
 
-    def save_state(self) -> dict:
-        rows_data = []
+    def get_bars(self) -> list[dict]:
+        """Return current bars as plain dicts (filter, params, op, enabled)."""
+        bars = []
         for row in self._rows:
             cls = row.filter_cls
             if not cls:
                 continue
-            rows_data.append(
+            bars.append(
                 {
                     "filter": cls.NAME,
                     "params": row.read_params(),
@@ -415,32 +416,31 @@ class SearchContainer(QtWidgets.QWidget):
                     "enabled": row.is_enabled(),
                 }
             )
+        return bars
+
+    def save_state(self) -> dict:
         return {
-            "rows": rows_data,
+            "bars": self.get_bars(),
             "sort_by": self._sort_name,
             "ascending": self._ascending,
         }
 
-    def restore_state(self, state: dict):
-        sort_by = state.get("sort_by", "path")
-        ascending = state.get("ascending", True)
-        self.set_sort(sort_by, ascending)
-
-        rows_data = state.get("rows", [])
-        if not rows_data:
-            return
-        self._detach_tools()
-        for row in list(self._rows):
-            self._filter_stack.removeWidget(row)
-            row.setParent(None)
-            row.deleteLater()
-        self._rows.clear()
-
-        for i, rd in enumerate(rows_data):
-            is_first = i == 0
+    def apply_bars(self, bars: list[dict], mode: str = "replace"):
+        """Apply a bar preset. mode='replace' clears existing bars first; mode='append' adds them."""
+        if mode not in ("replace", "append"):
+            raise ValueError(f"invalid mode: {mode!r}")
+        if mode == "replace":
+            self._detach_tools()
+            for row in list(self._rows):
+                self._filter_stack.removeWidget(row)
+                row.setParent(None)
+                row.deleteLater()
+            self._rows.clear()
+        for rd in bars or []:
             filter_cls = filter_registry.get(rd.get("filter", "text"))
             if not filter_cls:
                 continue
+            is_first = len(self._rows) == 0
             row = FilterRow(
                 filter_cls=filter_cls,
                 show_op=not is_first,
@@ -458,8 +458,17 @@ class SearchContainer(QtWidgets.QWidget):
             row.set_enabled(rd.get("enabled", True))
             self._rows.append(row)
             self._filter_stack.addWidget(row)
-
+        self._update_op_visibility()
         self._update_tool_placement()
+        self.filter_changed.emit()
+
+    def restore_state(self, state: dict):
+        sort_by = state.get("sort_by", "path")
+        ascending = state.get("ascending", False)
+        self.set_sort(sort_by, ascending)
+        bars = state.get("bars")
+        if bars:
+            self.apply_bars(bars, mode="replace")
 
     def on_move_event(self):
         for row in self._rows:

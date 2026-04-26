@@ -34,8 +34,8 @@ class TestSubscription:
         topics = {call.args[0] for call in mock_node.subscribe.call_args_list}
         expected = {
             "update", "folderchanged", "progress", "maximum",
-            "show_toggle", "profile.close",
-            "profile.restart", "db.created", "db.deleted", "dev.log",
+            "show_toggle", "slot.close",
+            "slot.restart", "db.created", "db.deleted", "dev.log",
             "tags.updated",
         }
         assert topics == expected
@@ -89,14 +89,14 @@ class TestSignalEmission:
 
     def test_session_closed(self, qtbot, bridge):
         received = []
-        bridge.profile_closed.connect(received.append)
-        bridge._emit_profile_closed("sess1")
+        bridge.slot_closed.connect(received.append)
+        bridge._emit_slot_closed("sess1")
         assert received == ["sess1"]
 
     def test_session_restarted(self, qtbot, bridge):
         received = []
-        bridge.profile_restarted.connect(received.append)
-        bridge._emit_profile_restarted("sess1")
+        bridge.slot_restarted.connect(received.append)
+        bridge._emit_slot_restarted("sess1")
         assert received == ["sess1"]
 
     def test_db_created(self, qtbot, bridge):

@@ -1,4 +1,92 @@
 {
+  "(empty)": {
+    "en": "(empty)",
+    "ja": ""
+  },
+  "Append": {
+    "en": "Append",
+    "ja": ""
+  },
+  "Apply Path Preset": {
+    "en": "Apply Path Preset",
+    "ja": ""
+  },
+  "Apply Query Preset": {
+    "en": "Apply Query Preset",
+    "ja": ""
+  },
+  "Apply UI Preset": {
+    "en": "Apply UI Preset",
+    "ja": ""
+  },
+  "Apply:": {
+    "en": "Apply:",
+    "ja": ""
+  },
+  "Delete Path Preset": {
+    "en": "Delete Path Preset",
+    "ja": ""
+  },
+  "Delete Query Preset": {
+    "en": "Delete Query Preset",
+    "ja": ""
+  },
+  "Delete UI Preset": {
+    "en": "Delete UI Preset",
+    "ja": ""
+  },
+  "Rename Path Preset": {
+    "en": "Rename Path Preset",
+    "ja": ""
+  },
+  "Rename Query Preset": {
+    "en": "Rename Query Preset",
+    "ja": ""
+  },
+  "Rename UI Preset": {
+    "en": "Rename UI Preset",
+    "ja": ""
+  },
+  "Replace": {
+    "en": "Replace",
+    "ja": ""
+  },
+  "Save Path Preset": {
+    "en": "Save Path Preset",
+    "ja": ""
+  },
+  "Save Query Preset": {
+    "en": "Save Query Preset",
+    "ja": ""
+  },
+  "Save UI Preset": {
+    "en": "Save UI Preset",
+    "ja": ""
+  },
+  "Save current": {
+    "en": "Save current",
+    "ja": ""
+  },
+  "Save sort with preset": {
+    "en": "Save sort with preset",
+    "ja": ""
+  },
+  "Set UI Preset Color": {
+    "en": "Set UI Preset Color",
+    "ja": ""
+  },
+  "UI": {
+    "en": "UI",
+    "ja": ""
+  },
+  "Workspace...": {
+    "en": "Workspace...",
+    "ja": ""
+  },
+  "Open value viewer": {
+    "en": "Open value viewer",
+    "ja": ""
+  },
   "Value viewer - {key}": {
     "en": "Value viewer - {key}",
     "ja": ""

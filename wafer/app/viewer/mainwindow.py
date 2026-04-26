@@ -5,7 +5,7 @@ from ...core.color.theme import ThemeManager
 from ...utils.profiling import profiler
 from ...utils.logs import AppLogger
 from ...utils.notifier import Notifier
-from ...constants import APP_NAME, DEFAULT_DB_NAME, DEFAULT_PROFILE_NAME
+from ...constants import APP_NAME, DEFAULT_DB_NAME
 from ...core.db.setting_db import SettingDB
 from wafer.core.lang.manager import t
 
@@ -31,7 +31,7 @@ from .widgets.callout_overlay import CalloutOverlay
 
 from ...builtins.commands.menu import AppMenuRegistrar
 from .search import SearchService
-from ...core.profile import QueryState, UIState, ProfileEntry, ProfileStore
+from ...core.workspace import WorkspaceStore, WindowSlot
 from ...core.commands.bridge import UI, Command, Menu
 from ...ui.layout.manager import LayoutManager
 from ...core.state import StateStore
@@ -43,13 +43,13 @@ AppMenuRegistrar.setup_menu()
 
 
 class MainWindow(QtWidgets.QMainWindow):
-    def __init__(self, icon=None, parent=None, profile_id=None):
+    def __init__(self, icon=None, parent=None, slot_id=None):
         super().__init__(parent=parent)
-        self._profile_store = ProfileStore.instance()
-        self.profile_id = None
-        self._profile_entry = None
-        self._profile_deleted = False
-        self._profile_ready = False
+        self._workspace_store = WorkspaceStore.instance()
+        self.slot_id = None
+        self._slot_entry: WindowSlot | None = None
+        self._slot_deleted = False
+        self._slot_ready = False
         self._folder_callout: CalloutOverlay | None = None
         if icon:
             self.setWindowIcon(icon)
@@ -77,26 +77,26 @@ class MainWindow(QtWidgets.QMainWindow):
         self._closed = False
         self.setup_ui()
         self._show_loading()
-        self._acquire_profile_async(profile_id)
+        self._acquire_slot_async(slot_id)
 
-    def _acquire_profile_async(self, requested_id):
-        store = self._profile_store
+    def _acquire_slot_async(self, requested_id):
+        store = self._workspace_store
 
         def task():
-            pid, entry = store.acquire_or_create(requested_id)
-            self._dispatcher.invoke(lambda: self._on_profile_acquired(pid, entry))
+            sid, entry, existed = store.acquire_slot(requested_id)
+            self._dispatcher.invoke(lambda: self._on_slot_acquired(sid, entry, existed))
 
         self._dispatcher.post(task, priority=9)
 
-    def _on_profile_acquired(self, pid, entry):
-        self.profile_id = pid
-        self._profile_entry = entry
-        self._profile_ready = True
-        AppLogger.info(f"New Window Running : {APP_NAME} (profile={self.profile_id})")
+    def _on_slot_acquired(self, sid, entry, existed):
+        self.slot_id = sid
+        self._slot_entry = entry
+        self._slot_ready = True
+        AppLogger.info(f"New Window Running : {APP_NAME} (slot={self.slot_id})")
         self.start_ipc_listener()
         self._update_title()
-        if entry:
-            self._restore_from_profile(entry)
+        if existed and entry:
+            self._restore_from_slot(entry)
         else:
             self.reload_database(self.get_last_used_db_name())
         self._check_first_run_plugin_panel()
@@ -204,54 +204,38 @@ class MainWindow(QtWidgets.QMainWindow):
         self._folder_callout = None
 
     def _update_title(self):
-        if self._profile_entry and self._profile_entry.name:
-            label = self._profile_entry.name
+        dirs = self.folder_view.get_selected_paths()
+        if dirs:
+            label = ", ".join(d.rsplit("/", 1)[-1] or d for d in dirs)
         else:
-            dirs = self.folder_view.get_selected_paths()
-            if dirs:
-                label = ", ".join(d.rsplit("/", 1)[-1] or d for d in dirs)
-            else:
-                label = self.database_name or ""
+            label = self.database_name or ""
         self.setWindowTitle(f"{label}" if label else APP_NAME)
-        if hasattr(self, "_profile_button"):
-            self._sync_profile_button()
+        if hasattr(self, "_workspace_button"):
+            self._sync_workspace_button()
 
-    def _create_profile_button(self):
+    def _create_workspace_button(self):
         btn = QtWidgets.QPushButton()
         btn.setCursor(QtCore.Qt.PointingHandCursor)
         btn.setFixedHeight(dpix(24))
-        btn.clicked.connect(lambda: Command.invoke("win.profile_list"))
-        self._sync_profile_button(btn)
+        btn.clicked.connect(lambda: Command.invoke("ws.open_popup"))
+        self._sync_workspace_button(btn)
         return btn
 
-    def _sync_profile_button(self, btn=None):
-        btn = btn or self._profile_button
-        entry = self._profile_entry
-        label = f"\u25bc {entry.name}" if entry and entry.name else "\u25bc Window"
-        btn.setText(label)
-        color = entry.color if entry and entry.color else ""
+    def _sync_workspace_button(self, btn=None):
+        btn = btn or self._workspace_button
+        btn.setText(f"\u25bc {t('Workspace')}")
         p = ThemeManager.instance().palette
         fs = dpix(12)
         pad_v = dpix(3)
         pad_h = dpix(8)
         bw = dpix(2)
-        bw_l = dpix(5)
         br = dpix(6)
-        if color:
-            btn.setStyleSheet(
-                f"QPushButton {{ background: transparent; color: {p.text_primary};"
-                f"  border: {bw}px solid {color}; border-left: {bw_l}px solid {color};"
-                f"  border-radius: {br}px; padding: {pad_v}px {pad_h}px; font-size: {fs}px; text-align: left; }}"
-                f"QPushButton:hover {{ background: {p.bg_hover}; color: {p.text_accent}; }}"
-                f"QPushButton:pressed {{ background: {p.bg_pressed}; color: {p.text_accent}; }}"
-            )
-        else:
-            btn.setStyleSheet(
-                f"QPushButton {{ background: transparent; color: {p.text_primary}; border: {bw}px solid {p.border_default};"
-                f"  border-radius: {br}px; padding: {pad_v}px {pad_h}px; font-size: {fs}px; text-align: left; }}"
-                f"QPushButton:hover {{ background: {p.bg_hover}; color: {p.text_accent}; }}"
-                f"QPushButton:pressed {{ background: {p.bg_pressed}; color: {p.text_accent}; }}"
-            )
+        btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {p.text_primary}; border: {bw}px solid {p.border_default};"
+            f"  border-radius: {br}px; padding: {pad_v}px {pad_h}px; font-size: {fs}px; text-align: left; }}"
+            f"QPushButton:hover {{ background: {p.bg_hover}; color: {p.text_accent}; }}"
+            f"QPushButton:pressed {{ background: {p.bg_pressed}; color: {p.text_accent}; }}"
+        )
 
     @qt_debounce(200)
     def refresh_db_selector(self):
@@ -290,7 +274,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def start_ipc_listener(self):
         node = Node("viewer")
-        node.session_id = self.profile_id
+        node.session_id = self.slot_id
         self._bridge = ViewerIpcBridge(node, parent=self)
         self._node = node
 
@@ -300,8 +284,8 @@ class MainWindow(QtWidgets.QMainWindow):
         b.progress_updated.connect(self.update_progress_value)
         b.progress_maximum.connect(self.update_progress_maximum)
         b.show_toggled.connect(self.toggle_show)
-        b.profile_closed.connect(self._on_profile_closed)
-        b.profile_restarted.connect(self._on_profile_restarted)
+        b.slot_closed.connect(self._on_slot_closed)
+        b.slot_restarted.connect(self._on_slot_restarted)
         b.db_created.connect(self._on_db_created)
         b.db_deleted.connect(self._on_db_deleted)
         b.remote_log_received.connect(self._on_dev_log)
@@ -353,10 +337,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self.database_combo.removeClicked.connect(lambda: Command.invoke("db.remove_database"))
 
         self.progress_bar = ThinProgressBar()
-        self._profile_button = self._create_profile_button()
+        self._workspace_button = self._create_workspace_button()
 
         self.search_row_widget = SearchContainer()
         self.search_row_widget.filter_changed.connect(self._on_search_setting_changed)
+
+        from .state_coordinator import PathStateCoordinator, QueryStateCoordinator, UIStateCoordinator
+
+        self.ui_coord = UIStateCoordinator(self)
+        self.path_coord = PathStateCoordinator(self)
+        self.query_coord = QueryStateCoordinator(self)
 
         self.grid_items = GridItemModel(self)
         self.grid_view = GridView(self, self.grid_items)
@@ -401,7 +391,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.grid_view.layout_started.connect(self._on_layout_started)
         self.grid_view.layout_ready.connect(self._hide_loading)
         self._register_component_states()
-        self._sync_service_from_ui()
+        self.sync_service_from_ui()
         self._sync_default_checked_states()
 
     def _create_toolbar_panel(self):
@@ -409,7 +399,7 @@ class MainWindow(QtWidgets.QMainWindow):
         layout = QtWidgets.QVBoxLayout(panel)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        layout.addWidget(self._profile_button)
+        layout.addWidget(self._workspace_button)
         layout.addWidget(self.progress_bar)
         layout.addWidget(self.iconbar)
         panel.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Maximum)
@@ -533,7 +523,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if cmd_id:
             apply_list_mode(self.file_list_provider, cmd_id)
 
-    def _sync_service_from_ui(self):
+    def sync_service_from_ui(self):
         dirs = self.folder_view.get_selected_paths()
         self.search_service.set_entries_builder(
             lambda: self.search_row_widget.build_filter_entries(
@@ -563,7 +553,7 @@ class MainWindow(QtWidgets.QMainWindow):
         sync_groups_from_args(self.search_service.params)
 
     def _on_search_setting_changed(self):
-        self._sync_service_from_ui()
+        self.sync_service_from_ui()
         self.search_service.execute_if_auto()
 
     @QtCore.Slot()
@@ -626,25 +616,9 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self.window_state.minimize()
 
-    def switch_profile(self, new_profile_id: str):
-        if new_profile_id == self.profile_id:
-            return
-        self._save_profile()
-        store = self._profile_store
-        entry = store.get_profile(new_profile_id)
-        if not entry:
-            return
-        self.profile_id = new_profile_id
-        self._profile_entry = entry
-        node = getattr(self, "_node", None)
-        if node:
-            node.re_register(new_profile_id)
-        self._update_title()
-        self._restore_from_profile(entry, skip_window_state=True)
-
     @QtCore.Slot()
-    def close_by_profile_delete(self):
-        self._profile_deleted = True
+    def close_by_slot_delete(self):
+        self._slot_deleted = True
         self.close()
 
     def _perform_system_restart(self, include_self=False):
@@ -652,17 +626,15 @@ class MainWindow(QtWidgets.QMainWindow):
 
         node = getattr(self, "_node", None)
         if node:
-            from ...core.profile import ProfileStore
-
-            store = ProfileStore.instance()
-            active_ids = store.get_active_profile_ids()
-            own_pid = self.profile_id
-            restore_ids = active_ids if include_self else [pid for pid in active_ids if pid != own_pid]
+            store = self._workspace_store
+            active_ids = store.get_active_slot_ids()
+            own_sid = self.slot_id
+            restore_ids = active_ids if include_self else [sid for sid in active_ids if sid != own_sid]
             if restore_ids:
-                store.set_restore_profile_ids(restore_ids)
-            for pid in active_ids:
-                if pid != own_pid:
-                    node.send("profile.restart", pid, dst="viewer")
+                store.set_restore_slot_ids(restore_ids)
+            for sid in active_ids:
+                if sid != own_sid:
+                    node.send("slot.restart", sid, dst="viewer")
 
         AppProcess.terminate_cmd("--tray", wait=True)
         AppProcess.new_main("--tray")
@@ -671,22 +643,20 @@ class MainWindow(QtWidgets.QMainWindow):
         node = getattr(self, "_node", None)
         if not node:
             return
-        from ...core.profile import ProfileStore
-
-        store = ProfileStore.instance()
-        active_ids = store.get_active_profile_ids()
-        for pid in active_ids:
-            if pid != self.profile_id:
-                node.send("profile.restart", pid, dst="viewer")
+        store = self._workspace_store
+        active_ids = store.get_active_slot_ids()
+        for sid in active_ids:
+            if sid != self.slot_id:
+                node.send("slot.restart", sid, dst="viewer")
 
     @QtCore.Slot()
     def close_by_restart(self):
-        self._save_profile()
+        self._save_slot()
         from ...core.platform.process import AppProcess
 
         args = ["--viewer"]
-        if self.profile_id:
-            args += ["--profile", self.profile_id]
+        if self.slot_id:
+            args += ["--slot", self.slot_id]
         AppProcess.new_main(*args)
         self.close()
 
@@ -696,7 +666,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     @QtCore.Slot(bool)
     def search(self, force=False):
-        self._sync_service_from_ui()
+        self.sync_service_from_ui()
         self.search_service.execute(force=force)
 
     @QtCore.Slot(str)
@@ -730,13 +700,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.reload_folderlist()
 
     @QtCore.Slot(str)
-    def _on_profile_closed(self, profile_id: str):
-        if profile_id == self.profile_id:
-            self.close_by_profile_delete()
+    def _on_slot_closed(self, slot_id: str):
+        if slot_id == self.slot_id:
+            self.close_by_slot_delete()
 
     @QtCore.Slot(str)
-    def _on_profile_restarted(self, profile_id: str):
-        if profile_id == self.profile_id:
+    def _on_slot_restarted(self, slot_id: str):
+        if slot_id == self.slot_id:
             self.close_by_restart()
 
     def _on_search_params_changed(self, changed):
@@ -772,116 +742,22 @@ class MainWindow(QtWidgets.QMainWindow):
         self.grid_view.set_paths(paths, sources, aspects, keep_scroll=keep_scroll)
         self.file_list_provider.on_search_results(paths, sources)
 
-    def capture_query_state(self) -> QueryState:
-        params = self.search_service.params
-        container_state = self.search_row_widget.save_state()
-        params["filter_rows"] = container_state.get("rows", [])
-        return QueryState(
-            database_name=self.database_name or "",
-            search_params=params,
-            folder_state=dict(
-                zip(
-                    ("expanded", "selected"),
-                    self.folder_view.get_state(),
-                )
-            ),
-        )
+    def _restore_from_slot(self, entry: WindowSlot, skip_window_state=False):
+        def after_path():
+            self.query_coord.restore(entry.query)
+            self.ui_coord.restore(entry.ui, skip_window_state=skip_window_state)
 
-    def capture_ui_state(self) -> UIState:
-        return UIState(
-            window_state=self.window_state.save_full_state(),
-            component_states=StateStore.instance().save_all(),
-        )
+        self.path_coord.restore(entry.path, on_complete=after_path)
 
-    def restore_query_state(self, query: QueryState) -> None:
-        if query.database_name and query.database_name != self.database_name:
-            self.reload_database(query.database_name, on_complete=lambda: self.restore_query_state(QueryState(search_params=query.search_params, folder_state=query.folder_state)))
+    def _save_slot(self):
+        if self._slot_deleted or not self._slot_ready or not self.slot_id:
             return
-        if query.search_params:
-            self.search_service.set_params(query.search_params)
-            from ...builtins.commands.query import sync_groups_from_args
-
-            sync_groups_from_args(query.search_params)
-            filter_rows = query.search_params.get("filter_rows")
-            if filter_rows:
-                self.search_row_widget.restore_state(
-                    {
-                        "rows": filter_rows,
-                        "sort_by": query.search_params.get("sort_by", "path"),
-                        "ascending": query.search_params.get("ascending", True),
-                    }
-                )
-            else:
-                self._apply_params_to_ui(query.search_params)
-
-        def _search_after_keys():
-            self.search_row_widget.run_folder_worker(
-                self.database_path,
-                self.folder_view.get_selected_paths(),
-                on_complete=lambda: self.search(force=True),
-            )
-
-        if query.folder_state:
-            expanded = query.folder_state.get("expanded", [])
-            selected = query.folder_state.get("selected", [])
-            self.folder_view.set_state_async(
-                (expanded, selected),
-                on_complete=lambda: QtCore.QTimer.singleShot(0, _search_after_keys),
-            )
-        else:
-            QtCore.QTimer.singleShot(0, _search_after_keys)
-
-    def _apply_params_to_ui(self, params):
-        row = self.search_row_widget
-        if "sort_by" in params:
-            row.set_sort_by(params["sort_by"])
-        if "query_mode" in params:
-            row.set_query_mode(params["query_mode"])
-        if "keyword_mode" in params:
-            row.set_keyword_mode(params["keyword_mode"])
-        if "ascending" in params:
-            row.set_ascending(params["ascending"])
-        if "keyword_separator" in params:
-            row.set_keyword_delimiter(params["keyword_separator"])
-        if "keywords" in params:
-            row.set_search_text(params["keywords"])
-
-    def restore_ui_state(self, ui: UIState) -> None:
-        if ui.window_state:
-            try:
-                self.window_state.restore_full_state(ui.window_state)
-            except Exception as e:
-                AppLogger.warning(f"restore_ui_state window_state failed: {e}", exc=e)
-        if ui.component_states:
-            StateStore.instance().restore_all(ui.component_states)
-
-    def _restore_from_profile(self, entry: ProfileEntry, skip_window_state=False):
-        if entry.query_snapshot:
-            db_name = entry.query_snapshot.database_name or self.get_last_used_db_name()
-        else:
-            db_name = self.get_last_used_db_name()
-
-        def on_db_ready():
-            if entry.query_snapshot:
-                self.restore_query_state(entry.query_snapshot)
-            else:
-                QtCore.QTimer.singleShot(0, lambda: self.search(force=True))
-            if entry.ui:
-                if skip_window_state:
-                    self.restore_ui_state(UIState(component_states=entry.ui.component_states))
-                else:
-                    self.restore_ui_state(entry.ui)
-
-        self.reload_database(db_name, on_complete=on_db_ready)
-
-    def _save_profile(self):
-        if self._profile_deleted or not self._profile_ready:
-            return
-        entry = self._profile_entry or ProfileEntry(profile_id=self.profile_id, name=DEFAULT_PROFILE_NAME)
-        entry.ui = self.capture_ui_state()
-        entry.query_snapshot = self.capture_query_state()
-        self._profile_store.save_profile(entry)
-        self._profile_entry = entry
+        entry = self._slot_entry or WindowSlot(slot_id=self.slot_id)
+        entry.ui = self.ui_coord.capture()
+        entry.path = self.path_coord.capture()
+        entry.query = self.query_coord.capture()
+        self._workspace_store.save_slot(entry)
+        self._slot_entry = entry
 
     def closeEvent(self, event):
         self.on_close()
@@ -895,7 +771,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._folder_callout.close()
             self._folder_callout = None
         try:
-            self._save_profile()
+            self._save_slot()
             if self.database_name:
                 app_settings.save_immediate("window/tablename", self.database_name)
             app_settings.commit()

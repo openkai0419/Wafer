@@ -86,13 +86,13 @@ def _create_app():
     install_instant_tooltips(app)
     return app
 
-def _entry_viewer(app=None, profile_id=None):
+def _entry_viewer(app=None, slot_id=None):
     setproctitle.setproctitle(f'{APP_NAME}')
     from wafer.app.viewer.mainwindow import MainWindow
     profiler.start()
     if app is None:
         app = _create_app()
-    window = MainWindow(get_icon(), profile_id=profile_id)
+    window = MainWindow(get_icon(), slot_id=slot_id)
     window.show()
     sys.exit(app.exec())
 
@@ -192,17 +192,17 @@ def main():
     group.add_argument('--parser', nargs='?', const=True, help='run parser process')
     parser.add_argument('--plugin', type=str, default='image', help='collector/parser plugin name')
     parser.add_argument('--parent-pid', type=int, default=None)
-    parser.add_argument('--profile', type=str, default=None, help='profile ID for viewer')
+    parser.add_argument('--slot', type=str, default=None, help='window slot ID for viewer')
     args = parser.parse_args()
     if not any([args.tray, args.viewer, args.indexer, args.collector, args.parser]):
         app = _create_app()
         AppProcess.new_main('--tray')
         _wait_install_then_load_plugins(app)
-        from wafer.core.profile import ProfileStore
-        restore_ids = ProfileStore().get_restore_profile_ids()
-        for pid in restore_ids[1:]:
-            AppProcess.new_main('--viewer', '--profile', pid)
-        _entry_viewer(app, profile_id=restore_ids[0] if restore_ids else None)
+        from wafer.core.workspace import WorkspaceStore
+        restore_ids = WorkspaceStore.instance().get_restore_slot_ids()
+        for sid in restore_ids[1:]:
+            AppProcess.new_main('--viewer', '--slot', sid)
+        _entry_viewer(app, slot_id=restore_ids[0] if restore_ids else None)
         return
     if args.tray:
         _bootstrap_plugins_for_tray()
@@ -230,7 +230,7 @@ def main():
     elif args.viewer:
         app = _create_app()
         _wait_install_then_load_plugins(app)
-        _entry_viewer(app, profile_id=args.profile)
+        _entry_viewer(app, slot_id=args.slot)
 if __name__ == '__main__':
     atexit.register(lambda: AppLogger.info(f'process exit (pid={os.getpid()})'))
     try:

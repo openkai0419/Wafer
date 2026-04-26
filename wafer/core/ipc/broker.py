@@ -100,8 +100,9 @@ class Broker:
         self._lock = threading.RLock()
         self._viewer_ids: dict[bytes, int] = {}
         self._restore_debounce: threading.Timer | None = None
+        self._restore_debounce_lock = threading.Lock()
         self._restore_debounce_sec: float = 1.0
-        self._profile_store_factory: Any = None
+        self._workspace_store_factory: Any = None
 
         self._io_thread = threading.Thread(target=self._io_loop, daemon=True)
         self._prune_thread = threading.Thread(target=self._reaper_loop, daemon=True)
@@ -114,8 +115,8 @@ class Broker:
 
     def stop(self):
         AppLogger.info("Broker stopping")
-        self._cancel_restore_debounce()
         self._stop.set()
+        self._cancel_restore_debounce(wait=True)
         try_put(self._direct_q, self._sentinel, "broker.stop")
         self._io_thread.join(timeout=2.0)
         self._prune_thread.join(timeout=2.0)
@@ -157,7 +158,7 @@ class Broker:
                     self._viewer_ids[ident] = vid
                     viewer_id = vid
                 if old_session_id and old_session_id != session_id:
-                    self._sync_active_profiles()
+                    self._sync_active_slots()
                 else:
                     self._on_viewer_connected(session_id)
             AppLogger.info(f"peer added: {node_id} role={role} db={db_set} session={session_id}")
@@ -346,17 +347,17 @@ class Broker:
                 self._unregister_peer(ident)
             self._stop.wait(1)
 
-    def set_profile_store_factory(self, factory):
-        self._profile_store_factory = factory
+    def set_workspace_store_factory(self, factory):
+        self._workspace_store_factory = factory
 
-    def _get_profile_store(self):
-        if self._profile_store_factory:
-            return self._profile_store_factory()
-        from ..profile import ProfileStore
+    def _get_workspace_store(self):
+        if self._workspace_store_factory:
+            return self._workspace_store_factory()
+        from ..workspace import WorkspaceStore
 
-        return ProfileStore.instance()
+        return WorkspaceStore.instance()
 
-    def active_viewer_profile_ids(self) -> list[str]:
+    def active_viewer_slot_ids(self) -> list[str]:
         with self._lock:
             viewer_idents = self._by_role.get("viewer", set())
             return [self._peers[i].session_id for i in viewer_idents if i in self._peers and self._peers[i].session_id]
@@ -365,44 +366,66 @@ class Broker:
         if not session_id:
             return
         try:
-            store = self._get_profile_store()
-            restore = store.get_restore_profile_ids()
+            store = self._get_workspace_store()
+            restore = store.get_restore_slot_ids()
             if session_id not in restore:
                 restore.append(session_id)
-                store.set_restore_profile_ids(restore)
-            active = store.get_active_profile_ids()
+                store.set_restore_slot_ids(restore)
+            active = store.get_active_slot_ids()
             if session_id not in active:
                 active.append(session_id)
-                store.set_active_profile_ids(active)
+                store.set_active_slot_ids(active)
         except Exception as e:
             AppLogger.warning(f"_on_viewer_connected failed: {e}", exc=e)
 
     def _on_viewer_disconnected(self):
+        if self._stop.is_set():
+            return
         self._cancel_restore_debounce()
-        self._restore_debounce = threading.Timer(self._restore_debounce_sec, self._debounce_fire)
-        self._restore_debounce.daemon = True
-        self._restore_debounce.start()
+        with self._restore_debounce_lock:
+            if self._stop.is_set():
+                return
+            timer = threading.Timer(self._restore_debounce_sec, self._debounce_fire)
+            timer.daemon = True
+            self._restore_debounce = timer
+            timer.start()
 
-    def _cancel_restore_debounce(self):
-        if self._restore_debounce is not None:
-            self._restore_debounce.cancel()
+    def _cancel_restore_debounce(self, wait: bool = False):
+        with self._restore_debounce_lock:
+            timer = self._restore_debounce
             self._restore_debounce = None
+        if timer is None:
+            return
+        timer.cancel()
+        if wait and timer.is_alive() and timer is not threading.current_thread():
+            timer.join(timeout=self._restore_debounce_sec + 1.0)
 
     def _debounce_fire(self):
+        with self._restore_debounce_lock:
+            if self._restore_debounce is threading.current_thread():
+                self._restore_debounce = None
+        if self._stop.is_set():
+            return
         try:
-            active = self.active_viewer_profile_ids()
-            store = self._get_profile_store()
-            store.set_active_profile_ids(active)
+            active = self.active_viewer_slot_ids()
+            if self._stop.is_set():
+                return
+            store = self._get_workspace_store()
+            if self._stop.is_set():
+                return
+            store.set_active_slot_ids(active)
+            if self._stop.is_set():
+                return
             if active:
-                store.set_restore_profile_ids(list(active))
+                store.set_restore_slot_ids(list(active))
         except Exception as e:
             AppLogger.warning(f"_debounce_fire failed: {e}", exc=e)
 
-    def _sync_active_profiles(self):
+    def _sync_active_slots(self):
         try:
-            active = self.active_viewer_profile_ids()
-            store = self._get_profile_store()
-            store.set_active_profile_ids(active)
-            store.set_restore_profile_ids(list(active))
+            active = self.active_viewer_slot_ids()
+            store = self._get_workspace_store()
+            store.set_active_slot_ids(active)
+            store.set_restore_slot_ids(list(active))
         except Exception as e:
-            AppLogger.warning(f"_sync_active_profiles failed: {e}", exc=e)
+            AppLogger.warning(f"_sync_active_slots failed: {e}", exc=e)

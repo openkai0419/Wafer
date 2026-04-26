@@ -612,3 +612,67 @@ def _draw_lock(p: QPainter, r: QRectF, color: QColor):
 @_register("lock_open", padding=0.10)
 def _draw_lock_open(p: QPainter, r: QRectF, color: QColor):
     _draw_lock_body(p, r, color, r.width() * 0.30)
+
+
+@_register("pencil", padding=0.10)
+def _draw_pencil(p: QPainter, r: QRectF, color: QColor):
+    lw = max(1.2, min(r.width(), r.height()) * 0.09)
+    pen = QPen(color, lw)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    p.setPen(pen)
+    p.setBrush(color)
+    s = min(r.width(), r.height())
+    cx, cy = r.center().x(), r.center().y()
+    half = s * 0.45
+    tip = QPointF(cx - half, cy + half)
+    tail = QPointF(cx + half, cy - half)
+    body_w = s * 0.18
+    dx = (tail.x() - tip.x())
+    dy = (tail.y() - tip.y())
+    length = math.hypot(dx, dy) or 1.0
+    nx, ny = -dy / length, dx / length
+    head_len = s * 0.20
+    tip_in = QPointF(tip.x() + dx / length * head_len, tip.y() + dy / length * head_len)
+    body = QPainterPath()
+    body.moveTo(QPointF(tip_in.x() + nx * body_w, tip_in.y() + ny * body_w))
+    body.lineTo(QPointF(tail.x() + nx * body_w, tail.y() + ny * body_w))
+    body.lineTo(QPointF(tail.x() - nx * body_w, tail.y() - ny * body_w))
+    body.lineTo(QPointF(tip_in.x() - nx * body_w, tip_in.y() - ny * body_w))
+    body.closeSubpath()
+    p.drawPath(body)
+    head = QPainterPath()
+    head.moveTo(tip)
+    head.lineTo(QPointF(tip_in.x() + nx * body_w, tip_in.y() + ny * body_w))
+    head.lineTo(QPointF(tip_in.x() - nx * body_w, tip_in.y() - ny * body_w))
+    head.closeSubpath()
+    p.drawPath(head)
+
+
+@_register("trash", padding=0.10)
+def _draw_trash(p: QPainter, r: QRectF, color: QColor):
+    lw = max(1.2, min(r.width(), r.height()) * 0.09)
+    pen = QPen(color, lw)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    p.setPen(pen)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    w, h = r.width(), r.height()
+    cx = r.center().x()
+    lid_y = r.top() + h * 0.22
+    p.drawLine(QPointF(r.left() + w * 0.10, lid_y), QPointF(r.right() - w * 0.10, lid_y))
+    handle_w = w * 0.22
+    handle_y = r.top() + h * 0.10
+    p.drawLine(QPointF(cx - handle_w, handle_y), QPointF(cx + handle_w, handle_y))
+    p.drawLine(QPointF(cx - handle_w, handle_y), QPointF(cx - handle_w, lid_y))
+    p.drawLine(QPointF(cx + handle_w, handle_y), QPointF(cx + handle_w, lid_y))
+    body_left = r.left() + w * 0.20
+    body_right = r.right() - w * 0.20
+    body_bottom = r.bottom() - h * 0.05
+    p.drawLine(QPointF(body_left, lid_y), QPointF(body_left + w * 0.05, body_bottom))
+    p.drawLine(QPointF(body_right, lid_y), QPointF(body_right - w * 0.05, body_bottom))
+    p.drawLine(QPointF(body_left + w * 0.05, body_bottom), QPointF(body_right - w * 0.05, body_bottom))
+    bar_y_top = lid_y + h * 0.15
+    bar_y_bot = body_bottom - h * 0.10
+    p.drawLine(QPointF(cx - w * 0.10, bar_y_top), QPointF(cx - w * 0.10, bar_y_bot))
+    p.drawLine(QPointF(cx + w * 0.10, bar_y_top), QPointF(cx + w * 0.10, bar_y_bot))

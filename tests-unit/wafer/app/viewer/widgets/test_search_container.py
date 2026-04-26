@@ -274,16 +274,16 @@ class TestSearchContainerState:
         container = SearchContainer()
         container.set_search_text("test")
         state = container.save_state()
-        assert "rows" in state
+        assert "bars" in state
         assert "sort_by" in state
         assert "ascending" in state
-        assert len(state["rows"]) == 1
-        assert state["rows"][0]["filter"] == "text"
+        assert len(state["bars"]) == 1
+        assert state["bars"][0]["filter"] == "text"
 
     def test_restore_state(self, qapp):
         container = SearchContainer()
         state = {
-            "rows": [
+            "bars": [
                 {"filter": "text", "params": {"keywords": "restored", "query_mode": "LIKE"}, "op": None},
             ],
             "sort_by": "modified",
@@ -298,7 +298,7 @@ class TestSearchContainerState:
     def test_restore_multiple_rows(self, qapp):
         container = SearchContainer()
         state = {
-            "rows": [
+            "bars": [
                 {"filter": "text", "params": {"keywords": "first"}, "op": None},
                 {"filter": "text", "params": {"keywords": "second"}, "op": "OR"},
             ],
@@ -313,7 +313,7 @@ class TestSearchContainerState:
     def test_restore_empty_rows_keeps_existing(self, qapp):
         container = SearchContainer()
         container.set_search_text("keep")
-        state = {"rows": [], "sort_by": "size", "ascending": True}
+        state = {"bars": [], "sort_by": "size", "ascending": True}
         container.restore_state(state)
         assert len(container._rows) == 1
         sort_name, ascending = container.get_sort()
@@ -323,7 +323,7 @@ class TestSearchContainerState:
     def test_restore_updates_tool_placement(self, qapp):
         container = SearchContainer()
         state = {
-            "rows": [
+            "bars": [
                 {"filter": "text", "params": {"keywords": "a"}, "op": None},
                 {"filter": "text", "params": {"keywords": "b"}, "op": "OR"},
             ],
@@ -344,16 +344,16 @@ class TestSearchContainerState:
     def test_save_includes_enabled_field(self, qapp):
         container = SearchContainer()
         state = container.save_state()
-        assert state["rows"][0]["enabled"] is True
+        assert state["bars"][0]["enabled"] is True
 
     def test_save_preserves_disabled_rows(self, qapp):
         container = SearchContainer()
         container._add_row(TextFilter)
         container._rows[1].set_enabled(False)
         state = container.save_state()
-        assert len(state["rows"]) == 2
-        assert state["rows"][0]["enabled"] is True
-        assert state["rows"][1]["enabled"] is False
+        assert len(state["bars"]) == 2
+        assert state["bars"][0]["enabled"] is True
+        assert state["bars"][1]["enabled"] is False
 
     def test_disabled_row_excluded_from_filter_entries(self, qapp):
         container = SearchContainer()
@@ -365,7 +365,7 @@ class TestSearchContainerState:
     def test_restore_enabled_state(self, qapp):
         container = SearchContainer()
         state = {
-            "rows": [
+            "bars": [
                 {"filter": "text", "params": {"keywords": "a"}, "op": None, "enabled": True},
                 {"filter": "text", "params": {"keywords": "b"}, "op": "OR", "enabled": False},
             ],
@@ -379,7 +379,7 @@ class TestSearchContainerState:
     def test_restore_legacy_state_defaults_enabled(self, qapp):
         container = SearchContainer()
         state = {
-            "rows": [
+            "bars": [
                 {"filter": "text", "params": {"keywords": "legacy"}, "op": None},
             ],
             "sort_by": "path",
@@ -470,7 +470,7 @@ class TestUpdateKeyCombos:
         container = SearchContainer()
         container._key_store.set_data([("path", 15), ("prompt", 7)])
         state = {
-            "rows": [
+            "bars": [
                 {"filter": "text", "params": {"keywords": "a"}, "op": None},
                 {"filter": "text", "params": {"keywords": "b"}, "op": "OR"},
             ],

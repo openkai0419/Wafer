@@ -115,7 +115,7 @@ def smoke_env(tmp_path):
 
 class _StubNode:
     def __init__(self):
-        self.profile_id = ""
+        self.session_id = ""
 
     def subscribe(self, *a, **kw):
         return self
@@ -137,11 +137,11 @@ class TestSmokeViewer:
     def test_mainwindow_boots_and_searches(self, smoke_env, qtbot, tmp_path):
         db_path, setting_db_path, img_dir = smoke_env
 
-        from wafer.core.profile import ProfileStore
+        from wafer.core.workspace import WorkspaceStore
 
-        prev_instance = ProfileStore._instance
-        store = ProfileStore(path=str(tmp_path / "profiles.json"))
-        ProfileStore._instance = store
+        prev_instance = WorkspaceStore._instance
+        store = WorkspaceStore(path=str(tmp_path / "workspace.json"))
+        WorkspaceStore._instance = store
 
         stub_node = _StubNode()
 
@@ -150,7 +150,7 @@ class TestSmokeViewer:
                 with patch("wafer.utils.logs.AppLogger.set_node"):
                     from wafer.app.viewer.mainwindow import MainWindow
 
-                    win = MainWindow(icon=None, profile_id=None)
+                    win = MainWindow(icon=None, slot_id=None)
                     qtbot.addWidget(win)
                     win.show()
 
@@ -192,7 +192,7 @@ class TestSmokeViewer:
                     win.close()
                     QtWidgets.QApplication.instance().processEvents()
         finally:
-            ProfileStore._instance = prev_instance
+            WorkspaceStore._instance = prev_instance
 
     def test_mainwindow_handles_empty_db(self, qtbot, tmp_path):
         from wafer.core.db.indexer import FileIndexer
@@ -203,11 +203,11 @@ class TestSmokeViewer:
         with FileIndexer(db_path, collectors=collectors) as idx:
             idx.initialize()
 
-        from wafer.core.profile import ProfileStore
+        from wafer.core.workspace import WorkspaceStore
 
-        prev_instance = ProfileStore._instance
-        store = ProfileStore(path=str(tmp_path / "profiles.json"))
-        ProfileStore._instance = store
+        prev_instance = WorkspaceStore._instance
+        store = WorkspaceStore(path=str(tmp_path / "workspace.json"))
+        WorkspaceStore._instance = store
 
         stub_node = _StubNode()
 
@@ -216,7 +216,7 @@ class TestSmokeViewer:
                 with patch("wafer.utils.logs.AppLogger.set_node"):
                     from wafer.app.viewer.mainwindow import MainWindow
 
-                    win = MainWindow(icon=None, profile_id=None)
+                    win = MainWindow(icon=None, slot_id=None)
                     qtbot.addWidget(win)
 
                     win.database_path = db_path
@@ -238,4 +238,4 @@ class TestSmokeViewer:
                     win.close()
                     QtWidgets.QApplication.instance().processEvents()
         finally:
-            ProfileStore._instance = prev_instance
+            WorkspaceStore._instance = prev_instance

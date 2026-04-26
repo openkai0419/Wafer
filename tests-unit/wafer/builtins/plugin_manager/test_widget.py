@@ -878,14 +878,14 @@ class TestWindowRestartCommands:
 
     def test_restart_all_calls_both(self, monkeypatch):
         mock_store = MagicMock()
-        mock_store.get_active_profile_ids.return_value = ["sess1", "sess2"]
-        monkeypatch.setattr("wafer.builtins.commands.window.ProfileStore", type("", (), {"instance": staticmethod(lambda: mock_store)}))
+        mock_store.get_active_slot_ids.return_value = ["sess1", "sess2"]
+        monkeypatch.setattr("wafer.builtins.commands.window.WorkspaceStore", type("", (), {"instance": staticmethod(lambda: mock_store)}))
         mock_ps = MagicMock()
         monkeypatch.setattr("wafer.plugin.settings.PluginSettings.clear_restart_scope", mock_ps.clear_restart_scope)
         from wafer.builtins.commands.window import restart_all
 
         mock_w = MagicMock()
-        mock_w.profile_id = "sess1"
+        mock_w.slot_id = "sess1"
         ctx = MagicMock()
         ctx.get_instance.return_value = mock_w
         restart_all(ctx)

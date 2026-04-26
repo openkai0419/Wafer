@@ -126,4 +126,3 @@ class MarkOverlayService(QtCore.QObject):
                 else:
                     self._marks.pop(p, None)
         self.changed.emit()
-

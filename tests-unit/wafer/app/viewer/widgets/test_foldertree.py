@@ -1,8 +1,9 @@
 import os
 import shutil
 import tempfile
+import threading
 import time
-from PySide6 import QtWidgets
+from wafer.app.viewer.widgets import foldertree as foldertree_module
 from wafer.app.viewer.widgets.foldertree import (
     LazyFolderTreeView,
     _scan_children,
@@ -20,7 +21,6 @@ def create_fs_tree(base):
 
 
 def test_rename_and_move(qtbot):
-    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     tmpdir = tempfile.mkdtemp()
     try:
         create_fs_tree(tmpdir)
@@ -49,7 +49,6 @@ def test_rename_and_move(qtbot):
 
 
 def test_set_state_preserves_multi_selection(qtbot):
-    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     tmpdir = tempfile.mkdtemp()
     try:
         os.makedirs(os.path.join(tmpdir, "X"), exist_ok=True)
@@ -154,7 +153,6 @@ def test_has_subfolders_nonexistent():
 
 
 def test_model_dispatcher_initialized(qtbot):
-    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     tmpdir = tempfile.mkdtemp()
     try:
         tree = LazyFolderTreeView(roots=[tmpdir], excluded=[])
@@ -189,8 +187,7 @@ def test_collect_segments_deduplicates():
     assert segments.count(normalize_path("/r/A")) == 1
 
 
-def test_set_state_async_expands_and_selects(qtbot):
-    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+def test_set_state_async_expands_and_selects(qtbot, qapp):
     tmpdir = tempfile.mkdtemp()
     try:
         os.makedirs(os.path.join(tmpdir, "X"), exist_ok=True)
@@ -211,7 +208,7 @@ def test_set_state_async_expands_and_selects(qtbot):
 
         deadline = time.monotonic() + 5.0
         while not done and time.monotonic() < deadline:
-            app.processEvents()
+            qapp.processEvents()
             time.sleep(0.01)
 
         assert done, "set_state_async did not complete"
@@ -222,7 +219,6 @@ def test_set_state_async_expands_and_selects(qtbot):
 
 
 def test_set_state_async_empty_states(qtbot):
-    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     tmpdir = tempfile.mkdtemp()
     try:
         tree = LazyFolderTreeView(roots=[tmpdir], excluded=[])
@@ -237,7 +233,6 @@ def test_set_state_async_empty_states(qtbot):
 
 
 def test_programmatic_expand_suppresses_request_expand(qtbot):
-    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     tmpdir = tempfile.mkdtemp()
     try:
         os.makedirs(os.path.join(tmpdir, "A", "A1"), exist_ok=True)
@@ -252,7 +247,6 @@ def test_programmatic_expand_suppresses_request_expand(qtbot):
 
 
 def test_reload_tree_preserves_expansion(qtbot):
-    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     tmpdir = tempfile.mkdtemp()
     try:
         os.makedirs(os.path.join(tmpdir, "A", "A1", "deep"), exist_ok=True)
@@ -276,7 +270,6 @@ def test_reload_tree_preserves_expansion(qtbot):
 
 
 def test_cancel_pending_expands(qtbot):
-    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     tmpdir = tempfile.mkdtemp()
     try:
         tree = LazyFolderTreeView(roots=[tmpdir], excluded=[])
@@ -292,8 +285,7 @@ def test_cancel_pending_expands(qtbot):
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-def test_user_expand_triggers_request_expand(qtbot):
-    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+def test_user_expand_triggers_request_expand(qtbot, qapp):
     tmpdir = tempfile.mkdtemp()
     try:
         os.makedirs(os.path.join(tmpdir, "A", "child"), exist_ok=True)
@@ -318,7 +310,7 @@ def test_user_expand_triggers_request_expand(qtbot):
 
         deadline = time.monotonic() + 3.0
         while tree.model_._pending_expands and time.monotonic() < deadline:
-            app.processEvents()
+            qapp.processEvents()
             time.sleep(0.01)
 
         a_child_path = normalize_path(os.path.join(tmpdir, "A", "child"))
@@ -326,3 +318,202 @@ def test_user_expand_triggers_request_expand(qtbot):
         assert child_item is not None
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_expand_and_select_paths_multi(qtbot):
+    tmpdir = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(tmpdir, "A"), exist_ok=True)
+        os.makedirs(os.path.join(tmpdir, "B"), exist_ok=True)
+        os.makedirs(os.path.join(tmpdir, "C"), exist_ok=True)
+        tree = LazyFolderTreeView(roots=[tmpdir], excluded=[])
+        qtbot.addWidget(tree)
+        tree.model_._build_roots([tmpdir])
+
+        path_a = os.path.join(tmpdir, "A")
+        path_b = os.path.join(tmpdir, "B")
+        path_c = os.path.join(tmpdir, "C")
+
+        done = []
+        tree.expand_and_select_paths([path_a, path_b, path_c], on_complete=lambda: done.append(True))
+        qtbot.waitUntil(lambda: bool(done), timeout=3000)
+        selected = sorted(tree.get_selected_paths())
+        expected = sorted(normalize_path(p) for p in [path_a, path_b, path_c])
+        assert selected == expected
+
+        cur = tree.currentIndex()
+        assert cur.isValid()
+        assert cur.data() is not None
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_expand_and_select_paths_dedupes(qtbot):
+    tmpdir = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(tmpdir, "A"), exist_ok=True)
+        tree = LazyFolderTreeView(roots=[tmpdir], excluded=[])
+        qtbot.addWidget(tree)
+        tree.model_._build_roots([tmpdir])
+
+        path_a = os.path.join(tmpdir, "A")
+        done = []
+        tree.expand_and_select_paths([path_a, path_a, path_a], on_complete=lambda: done.append(True))
+        qtbot.waitUntil(lambda: bool(done), timeout=3000)
+        selected = tree.get_selected_paths()
+        assert selected == [normalize_path(path_a)]
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_navigate_next_visible_emits_after_selection(qtbot):
+    tmpdir = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(tmpdir, "A"), exist_ok=True)
+        os.makedirs(os.path.join(tmpdir, "B"), exist_ok=True)
+        tree = LazyFolderTreeView(roots=[tmpdir], excluded=[])
+        qtbot.addWidget(tree)
+        tree.model_._build_roots([tmpdir])
+
+        root_index = tree.expand_path(tmpdir)
+        tree.setCurrentIndex(root_index)
+        emitted = []
+        tree.folder_selected.connect(lambda: emitted.append(list(tree.get_selected_paths())))
+
+        path_a = normalize_path(os.path.join(tmpdir, "A"))
+        assert tree.navigate_next_visible() == path_a
+        qtbot.waitUntil(lambda: bool(emitted), timeout=3000)
+
+        assert emitted == [[path_a]]
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_navigate_next_visible_can_skip_search_emit(qtbot):
+    tmpdir = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(tmpdir, "A"), exist_ok=True)
+        tree = LazyFolderTreeView(roots=[tmpdir], excluded=[])
+        qtbot.addWidget(tree)
+        tree.model_._build_roots([tmpdir])
+
+        root_index = tree.expand_path(tmpdir)
+        tree.setCurrentIndex(root_index)
+        emitted = []
+        done = []
+        tree.folder_selected.connect(lambda: emitted.append(True))
+        tree.current_path_changed.connect(lambda _path: done.append(True))
+
+        path_a = normalize_path(os.path.join(tmpdir, "A"))
+        assert tree.navigate_next_visible(trigger_search=False) == path_a
+        qtbot.waitUntil(lambda: bool(done), timeout=3000)
+
+        assert emitted == []
+        assert tree.get_selected_paths() == [path_a]
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_expand_recursive_drains_entries_by_timer(qtbot, monkeypatch, tmp_path):
+    root = normalize_path(str(tmp_path))
+    path_a = normalize_path(os.path.join(root, "A"))
+    path_b = normalize_path(os.path.join(root, "B"))
+    path_a1 = normalize_path(os.path.join(path_a, "A1"))
+    path_b1 = normalize_path(os.path.join(path_b, "B1"))
+    children_by_path = {
+        root: [(path_a, True), (path_b, True)],
+        path_a: [(path_a1, False)],
+        path_b: [(path_b1, False)],
+        path_a1: [],
+        path_b1: [],
+    }
+
+    def scan_children(path, _excluded):
+        return children_by_path.get(normalize_path(path), [])
+
+    tree = LazyFolderTreeView(roots=[root], excluded=[])
+    qtbot.addWidget(tree)
+    tree.model_._build_roots([root])
+    monkeypatch.setattr(foldertree_module, "_scan_children", scan_children)
+    monkeypatch.setattr(foldertree_module, "EXPAND_RECURSIVE_BATCH_SIZE", 2)
+    monkeypatch.setattr(foldertree_module, "EXPAND_RECURSIVE_DRAIN_MS", 0.0)
+    drains = []
+    applied = []
+    original_drain = LazyFolderTreeView._drain_recursive_expand
+    original_apply = LazyFolderTreeView._apply_recursive_expand_entry
+
+    def drain(self, root_path):
+        drains.append(root_path)
+        original_drain(self, root_path)
+
+    def apply_entry(self, path, children):
+        applied.append(path)
+        original_apply(self, path, children)
+
+    monkeypatch.setattr(LazyFolderTreeView, "_drain_recursive_expand", drain)
+    monkeypatch.setattr(LazyFolderTreeView, "_apply_recursive_expand_entry", apply_entry)
+
+    root_index = tree.model_.indexFromItem(tree.model_.find_item_by_path(root))
+    tree.expand_recursive(root_index)
+    qtbot.waitUntil(lambda: root not in tree.model_._pending_expands, timeout=3000)
+
+    assert len(drains) >= 2
+    assert applied[:3] == [root, path_a, path_b]
+    assert tree.model_.find_item_by_path(path_a1) is not None
+    assert tree.model_.find_item_by_path(path_b1) is not None
+
+
+def test_expand_recursive_cancel_clears_job(qtbot, monkeypatch, tmp_path):
+    root = normalize_path(str(tmp_path))
+    path_a = normalize_path(os.path.join(root, "A"))
+
+    def scan_children(path, _excluded):
+        return [(path_a, True)] if normalize_path(path) == root else []
+
+    tree = LazyFolderTreeView(roots=[root], excluded=[])
+    qtbot.addWidget(tree)
+    tree.model_._build_roots([root])
+    monkeypatch.setattr(foldertree_module, "_scan_children", scan_children)
+    monkeypatch.setattr(foldertree_module, "EXPAND_RECURSIVE_DRAIN_MS", 0.0)
+
+    root_index = tree.model_.indexFromItem(tree.model_.find_item_by_path(root))
+    tree.expand_recursive(root_index)
+    qtbot.waitUntil(lambda: root in tree._recursive_expand_jobs, timeout=3000)
+    tree._cancel_recursive_expand_jobs()
+
+    assert root not in tree._recursive_expand_jobs
+    assert root not in tree.model_._pending_expands
+
+
+def test_cancel_expand_recursive_cancels_active_job(qtbot, monkeypatch, tmp_path):
+    root = normalize_path(str(tmp_path))
+    path_a = normalize_path(os.path.join(root, "A"))
+    os.makedirs(path_a, exist_ok=True)
+    started = threading.Event()
+    released = threading.Event()
+
+    def scan_children(path, _excluded):
+        if normalize_path(path) == root:
+            started.set()
+            released.wait(2.0)
+            return [(path_a, False)]
+        return []
+
+    tree = LazyFolderTreeView(roots=[root], excluded=[])
+    qtbot.addWidget(tree)
+    tree.model_._build_roots([root])
+    monkeypatch.setattr(foldertree_module, "_scan_children", scan_children)
+
+    root_index = tree.model_.indexFromItem(tree.model_.find_item_by_path(root))
+    tree.expand(root_index)
+    tree.expand_recursive(root_index)
+    qtbot.waitUntil(lambda: started.is_set() and root in tree.model_._pending_expands, timeout=3000)
+    token = tree.model_._pending_expands[root]
+
+    tree._cancel_expand_recursive(root_index)
+    released.set()
+
+    assert token.is_cancelled()
+    assert root not in tree._recursive_expand_jobs
+    assert root not in tree.model_._pending_expands
+    assert not tree.isExpanded(root_index)

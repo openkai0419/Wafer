@@ -226,6 +226,7 @@ class WorkspaceCommands(ActionKit.MenuBase):
             ":Workspace",
             ActionKit.Command(path="ws.open_popup", display="Workspace...", func=open_popup),
             "-",
+            ":UI",
             ActionKit.Command(
                 path="ui_preset.save_current",
                 display="Save UI Preset",
@@ -257,6 +258,7 @@ class WorkspaceCommands(ActionKit.MenuBase):
                 params=[ActionKit.Param(name="preset_id", value=""), ActionKit.Param(name="color", value="")],
             ),
             "-",
+            ":Path",
             ActionKit.Command(
                 path="path_preset.save_current",
                 display="Save Path Preset",
@@ -282,6 +284,7 @@ class WorkspaceCommands(ActionKit.MenuBase):
                 params=[ActionKit.Param(name="preset_id", value="")],
             ),
             "-",
+            ":Query",
             ActionKit.Command(
                 path="query_preset.save_current",
                 display="Save Query Preset",

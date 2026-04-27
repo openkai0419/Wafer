@@ -91,12 +91,7 @@ class DropdownButton(QtWidgets.QPushButton):
 
     def _show_menu(self):
         uid = f"{id(self):x}"
-        spec = Menu.session(self).menu(
-            [
-                ActionKit.Action(path=f"inline.dropdown.{uid}.{i}", display=str(choice), func=lambda ctx, v=choice: self._pick(v))
-                for i, choice in enumerate(self._choices)
-            ]
-        )
+        spec = Menu.session(self).menu([ActionKit.Action(path=f"inline.dropdown.{uid}.{i}", display=str(choice), func=lambda ctx, v=choice: self._pick(v)) for i, choice in enumerate(self._choices)])
         if spec is not None:
             spec.exec(self.mapToGlobal(QtCore.QPoint(0, self.height())))
 

@@ -2,6 +2,7 @@ import threading
 import time
 
 import pytest
+import shiboken6
 from PySide6 import QtCore, QtWidgets
 from wafer.core.qt.dispatcher import Dispatcher, CancelToken, CancelSlot
 
@@ -187,6 +188,20 @@ class TestDispatcherInvoke:
         dispatcher.invoke(lambda: done.update({"ok": True}))
         _process_events_until(lambda: done["ok"])
         assert done["ok"]
+
+    def test_invoke_skips_when_parent_deleted(self, qapp):
+        parent = QtCore.QObject()
+        dispatcher = Dispatcher(parent=parent)
+        result = {"called": False}
+
+        parent.deleteLater()
+        QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
+        qapp.processEvents(QtCore.QEventLoop.AllEvents, 50)
+        assert not shiboken6.isValid(parent)
+
+        dispatcher.invoke(lambda: result.update({"called": True}))
+        qapp.processEvents(QtCore.QEventLoop.AllEvents, 50)
+        assert not result["called"]
 
 
 class TestDispatcherIntegration:

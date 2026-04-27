@@ -192,10 +192,7 @@ def _navigate(ctx, method_name, trigger_search=True):
     method = getattr(tree, method_name, None)
     if not callable(method):
         return
-    path = method()
-    if path and bool(trigger_search) and hasattr(tree, "folder_selected"):
-        tree.folder_selected.emit()
-    return path
+    return method(trigger_search=bool(trigger_search))
 
 
 def next_folder_dfs(ctx, trigger_search: bool = True):

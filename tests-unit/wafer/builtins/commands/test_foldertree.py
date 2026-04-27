@@ -10,6 +10,7 @@ from wafer.builtins.commands.foldertree import (
     _ctx_normalized_path,
     _ctx_normalized_paths,
     _ctx_dir_path,
+    next_folder_visible,
     remove_from_view,
     ignore_folder,
     show_context_menu,
@@ -200,3 +201,33 @@ def test_ctx_normalized_paths_fallback_to_single(tmp_path):
     result = _ctx_normalized_paths(ctx)
     assert len(result) == 1
     assert normalize_path(os.path.abspath(p)) == result[0]
+
+
+def test_navigation_command_delegates_search_emit_to_tree(qtbot):
+    class FakeSignal:
+        def __init__(self):
+            self.count = 0
+
+        def emit(self):
+            self.count += 1
+
+    class FakeTree(QtWidgets.QWidget):
+        def __init__(self):
+            super().__init__()
+            self.folder_selected = FakeSignal()
+            self.trigger_search = None
+
+        def get_selected_paths(self):
+            return []
+
+        def navigate_next_visible(self, trigger_search=True):
+            self.trigger_search = trigger_search
+            return "selected"
+
+    tree = FakeTree()
+    qtbot.addWidget(tree)
+    ctx = _FakeCtx(widget=tree)
+
+    assert next_folder_visible(ctx, trigger_search=True) == "selected"
+    assert tree.trigger_search is True
+    assert tree.folder_selected.count == 0

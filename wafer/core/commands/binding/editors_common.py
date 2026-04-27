@@ -249,10 +249,7 @@ class ScopedPayloadSectionBase(QtWidgets.QGroupBox):
             return None
         uid = f"{id(self):x}"
         items = [":Override"]
-        items.extend(
-            ActionKit.Action(path=f"inline.binding_override.{uid}.{i}", display=scope, func=lambda ctx, sc=scope: self._add_override(sc))
-            for i, scope in enumerate(remaining)
-        )
+        items.extend(ActionKit.Action(path=f"inline.binding_override.{uid}.{i}", display=scope, func=lambda ctx, sc=scope: self._add_override(sc)) for i, scope in enumerate(remaining))
         spec = Menu.session(self).menu(items)
         return spec.build() if spec is not None else None
 

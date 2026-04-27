@@ -210,7 +210,7 @@ class SearchContainer(QtWidgets.QWidget):
                 path=f"inline.search.{uid}.sort.{cls.NAME}",
                 display=cls.NAME.capitalize(),
                 checkable=True,
-                default_checked=cls.NAME == self._sort_name,
+                default_checked=self._sort_name == cls.NAME,
                 checked_resolver=lambda name=cls.NAME: self._sort_name == name,
                 func=lambda ctx, name=cls.NAME: self._set_sort_name(name),
             )
@@ -604,17 +604,4 @@ class SearchContainer(QtWidgets.QWidget):
         self._ascending = ascending
         self._sync_sort_menu()
 
-    def set_query_mode(self, mode: str):
-        primary = self.get_primary_row()
-        if primary and primary.get_param_widget():
-            primary.filter_cls.write_params(primary.get_param_widget(), {"query_mode": mode})
 
-    def set_keyword_mode(self, mode: str):
-        primary = self.get_primary_row()
-        if primary and primary.get_param_widget():
-            primary.filter_cls.write_params(primary.get_param_widget(), {"keyword_mode": mode})
-
-    def set_keyword_delimiter(self, text: str):
-        primary = self.get_primary_row()
-        if primary and primary.get_param_widget():
-            primary.filter_cls.write_params(primary.get_param_widget(), {"keyword_separator": text})

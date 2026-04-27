@@ -111,17 +111,8 @@ class SearchOptionPopup(QtWidgets.QDialog):
     def set_sort_by(self, key: str):
         self._set_combo_silent(self.sort_by_combo, key)
 
-    def set_query_mode(self, mode: str):
-        self._set_combo_silent(self.query_type_combo, mode)
-
-    def set_keyword_mode(self, mode: str):
-        self._set_radio_silent(self.and_radio if mode == "AND" else self.or_radio)
-
     def set_ascending(self, ascending: bool):
         self._set_radio_silent(self.asc_radio if ascending else self.desc_radio)
-
-    def set_keyword_delimiter(self, text: str):
-        self.delimiter_input.setText(text)
 
 
 class SearchOptionsBar(QtWidgets.QWidget):
@@ -190,17 +181,8 @@ class SearchOptionsBar(QtWidgets.QWidget):
     def set_search_text(self, text: str):
         self.search_bar.setText(text)
 
-    def set_keyword_delimiter(self, text: str):
-        self.option_popup.set_keyword_delimiter(text)
-
     def set_sort_by(self, key: str):
         self.option_popup.set_sort_by(key)
-
-    def set_query_mode(self, mode: str):
-        self.option_popup.set_query_mode(mode)
-
-    def set_keyword_mode(self, mode: str):
-        self.option_popup.set_keyword_mode(mode)
 
     def set_ascending(self, ascending: bool):
         self.option_popup.set_ascending(ascending)

@@ -4,8 +4,6 @@ from ...plugin.query.handler import sort_registry
 
 
 GROUP_SORT = "qry_sort"
-GROUP_MODE = "qry_mode"
-GROUP_KEYWORD = "qry_keyword"
 GROUP_ORDER = "qry_order"
 
 
@@ -17,8 +15,6 @@ def _sort_map():
     return {f"qry.sort_{k}": k for k in _sort_choices()}
 
 
-_MODE_MAP = {"qry.mode_glob": "GLOB", "qry.mode_like": "LIKE"}
-_KEYWORD_MAP = {"qry.keyword_and": "AND", "qry.keyword_or": "OR"}
 _ORDER_MAP = {"qry.order_asc": True, "qry.order_desc": False}
 
 
@@ -33,8 +29,6 @@ def _service(ctx):
 
 _GROUP_CONFIG = {
     GROUP_SORT: {"search_key": "sort_by", "map": _sort_map, "ui_method": "set_sort_by"},
-    GROUP_MODE: {"search_key": "query_mode", "map": _MODE_MAP, "ui_method": "set_query_mode"},
-    GROUP_KEYWORD: {"search_key": "keyword_mode", "map": _KEYWORD_MAP, "ui_method": "set_keyword_mode"},
     GROUP_ORDER: {"search_key": "ascending", "map": _ORDER_MAP, "ui_method": "set_ascending"},
 }
 
@@ -57,21 +51,7 @@ def _make_sort_func(key):
     return func
 
 
-def _make_mode_func(_cmd_id, mode):
-    def func(ctx):
-        _set_and_update(ctx, GROUP_MODE, "query_mode", mode)
-
-    return func
-
-
-def _make_keyword_func(_cmd_id, mode):
-    def func(ctx):
-        _set_and_update(ctx, GROUP_KEYWORD, "keyword_mode", mode)
-
-    return func
-
-
-def _make_order_func(_cmd_id, ascending):
+def _make_order_func(ascending):
     def func(ctx):
         _set_and_update(ctx, GROUP_ORDER, "ascending", ascending)
 
@@ -116,14 +96,6 @@ def cycle_order(ctx):
     _cycle_group(ctx, GROUP_ORDER)
 
 
-def cycle_mode(ctx):
-    _cycle_group(ctx, GROUP_MODE)
-
-
-def cycle_keyword(ctx):
-    _cycle_group(ctx, GROUP_KEYWORD)
-
-
 def search(ctx, force=False):
     svc = _service(ctx)
     if svc:
@@ -134,13 +106,6 @@ def set_search_text(ctx, text: str = ""):
     row = _search_row(ctx)
     if row:
         row.set_search_text(text)
-
-
-def set_keyword_delimiter(ctx, text: str = ","):
-    row = _search_row(ctx)
-    if not row:
-        return
-    row.set_keyword_delimiter(text)
 
 
 def toggle_include_subfolders(ctx):
@@ -166,14 +131,6 @@ def _svc():
 
 def _sort_resolver(key):
     return lambda: (_svc().get("sort_by") if _svc() else "path") == key
-
-
-def _mode_resolver(mode):
-    return lambda: (_svc().get("query_mode") if _svc() else "GLOB") == mode
-
-
-def _keyword_resolver(mode):
-    return lambda: (_svc().get("keyword_mode") if _svc() else "AND") == mode
 
 
 def _order_resolver(ascending):
@@ -245,13 +202,11 @@ class QueryCommands(ActionKit.MenuBase):
                 for k in _sort_choices()
             ],
             "Sort Order/:Sort Order",
-            ActionKit.Command(
-                path="Sort Order/qry.order_asc", display="Ascending", func=_make_order_func("qry.order_asc", True), checkable=True, action_group=GROUP_ORDER, checked_resolver=_order_resolver(True)
-            ),
+            ActionKit.Command(path="Sort Order/qry.order_asc", display="Ascending", func=_make_order_func(True), checkable=True, action_group=GROUP_ORDER, checked_resolver=_order_resolver(True)),
             ActionKit.Command(
                 path="Sort Order/qry.order_desc",
                 display="Descending",
-                func=_make_order_func("qry.order_desc", False),
+                func=_make_order_func(False),
                 checkable=True,
                 default_checked=True,
                 action_group=GROUP_ORDER,
@@ -264,40 +219,4 @@ class QueryCommands(ActionKit.MenuBase):
                 params=[ActionKit.Param(name=k, value=True) for k in _sort_choices()] + [ActionKit.Param(name="reverse", value=False)],
             ),
             ActionKit.Command(path="qry.cycle_order", display="Toggle Sort Order", func=cycle_order),
-            "-",
-            ":Text",
-            "Text Mode/:Text Mode",
-            ActionKit.Command(
-                path="Text Mode/qry.mode_glob",
-                display="GLOB",
-                func=_make_mode_func("qry.mode_glob", "GLOB"),
-                checkable=True,
-                default_checked=True,
-                action_group=GROUP_MODE,
-                checked_resolver=_mode_resolver("GLOB"),
-            ),
-            ActionKit.Command(
-                path="Text Mode/qry.mode_like", display="LIKE", func=_make_mode_func("qry.mode_like", "LIKE"), checkable=True, action_group=GROUP_MODE, checked_resolver=_mode_resolver("LIKE")
-            ),
-            "Join Mode/:Join Mode",
-            ActionKit.Command(
-                path="Join Mode/qry.keyword_and",
-                display="AND",
-                func=_make_keyword_func("qry.keyword_and", "AND"),
-                checkable=True,
-                default_checked=True,
-                action_group=GROUP_KEYWORD,
-                checked_resolver=_keyword_resolver("AND"),
-            ),
-            ActionKit.Command(
-                path="Join Mode/qry.keyword_or", display="OR", func=_make_keyword_func("qry.keyword_or", "OR"), checkable=True, action_group=GROUP_KEYWORD, checked_resolver=_keyword_resolver("OR")
-            ),
-            ActionKit.Command(path="qry.cycle_mode", display="Toggle Query Mode", func=cycle_mode),
-            ActionKit.Command(path="qry.cycle_keyword", display="Toggle Join Mode", func=cycle_keyword),
-            ActionKit.Command(
-                path="qry.set_keyword_delimiter",
-                display="Set Keyword Delimiter to",
-                func=set_keyword_delimiter,
-                params=[ActionKit.Param(name="text", value=",")],
-            ),
         ]

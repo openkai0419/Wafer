@@ -178,9 +178,6 @@ class SearchOptionsBar(QtWidgets.QWidget):
 
         self._dispatcher.post(task, priority=6, cancel=cancel)
 
-    def set_search_text(self, text: str):
-        self.search_bar.setText(text)
-
     def set_sort_by(self, key: str):
         self.option_popup.set_sort_by(key)
 

@@ -589,13 +589,6 @@ class SearchContainer(QtWidgets.QWidget):
         params["ascending"] = self._ascending
         return params
 
-    def set_search_text(self, text: str):
-        primary = self.get_primary_row()
-        if primary and primary.get_param_widget():
-            w = primary.get_param_widget()
-            if hasattr(w, "search_bar"):
-                w.search_bar.setText(text)
-
     def set_sort_by(self, key: str):
         self._sort_name = key
         self._sync_sort_menu()

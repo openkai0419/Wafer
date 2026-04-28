@@ -299,12 +299,6 @@ class TestSearchContainer:
         container._on_remove_row(container._rows[0])
         assert container.get_values() == {}
 
-    def test_set_search_text(self, qapp):
-        container = SearchContainer()
-        container.set_search_text("hello world")
-        values = container.get_values()
-        assert values.get("keywords") == "hello world"
-
     def test_filter_changed_signal(self, qapp):
         container = SearchContainer()
         signals = []
@@ -452,7 +446,6 @@ class TestSearchContainer:
 class TestSearchContainerState:
     def test_save_state(self, qapp):
         container = SearchContainer()
-        container.set_search_text("test")
         state = container.save_state()
         assert "bars" in state
         assert "sort_by" in state
@@ -492,7 +485,6 @@ class TestSearchContainerState:
 
     def test_restore_empty_rows_keeps_existing(self, qapp):
         container = SearchContainer()
-        container.set_search_text("keep")
         state = {"bars": [], "sort_by": "size", "ascending": True}
         container.restore_state(state)
         assert len(container._rows) == 1

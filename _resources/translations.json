@@ -171,10 +171,6 @@
     "en": "Save sort with preset",
     "ja": ""
   },
-  "Set UI Preset Color": {
-    "en": "Set UI Preset Color",
-    "ja": ""
-  },
   "UI": {
     "en": "UI",
     "ja": ""
@@ -2351,9 +2347,6 @@
   },
   "Set Scale": {
     "en": "Set Scale"
-  },
-  "Set Search Text to": {
-    "en": "Set Search Text to"
   },
   "Setting": {
     "en": "Setting"

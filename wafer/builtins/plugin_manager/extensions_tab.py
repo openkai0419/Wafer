@@ -9,6 +9,7 @@ from ...core.color.theme import ThemeManager
 from ...core.lang.manager import t
 from ...core.qt.color_utils import mix_colors
 from ...plugin.loader import get_plugin_dir, PluginLoader, qualify_plugin_name
+from ...ui.widgets.eliding import ElidingLabel
 from ...plugin.installer import (
     InstallState,
     RestartScope,
@@ -78,24 +79,6 @@ def _hex_to_rgba(hex_color: str, alpha: float) -> str:
     return f"rgba({r},{g},{b},{alpha})"
 
 
-class _ElidingLabel(QtWidgets.QLabel):
-    def __init__(self, text: str, parent=None):
-        super().__init__(parent)
-        self._full_text = text
-        self.setToolTip(text)
-        self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        elided = self.fontMetrics().elidedText(self._full_text, QtCore.Qt.ElideRight, self.width())
-        super().setText(elided)
-
-    def minimumSizeHint(self):
-        hint = super().minimumSizeHint()
-        hint.setWidth(dpix(40))
-        return hint
-
-
 class _InstantTooltipLabel(QtWidgets.QLabel):
     def enterEvent(self, event):
         text = self.toolTip()
@@ -122,7 +105,7 @@ class _PluginRow(QtWidgets.QWidget):
 
         extensions = getattr(plugin_cls, "EXTENSIONS", ())
         ext_text = ", ".join(extensions) if extensions else ""
-        ext_label = _ElidingLabel(ext_text)
+        ext_label = ElidingLabel(ext_text, minimum_hint_width=dpix(40), horizontal_policy=QtWidgets.QSizePolicy.Expanding)
         ext_label.setStyleSheet(f"color: #888; font-size: {dpix(11)}px;")
 
         row_layout = QtWidgets.QHBoxLayout(self)

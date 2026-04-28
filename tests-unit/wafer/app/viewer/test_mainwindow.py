@@ -106,20 +106,24 @@ class TestOnDbContentUpdated:
         win.search_row_widget.invalidate_key_cache.assert_not_called()
 
 
-class TestSyncWorkspaceButton:
-    def _make_win(self):
+class TestToolbarPanel:
+    def test_toolbar_panel_contains_workspace_progress_iconbar(self, qtbot):
+        from PySide6 import QtCore, QtWidgets
+
         with patch("wafer.app.viewer.mainwindow.MainWindow.__init__", lambda self, *a, **kw: None):
             from wafer.app.viewer.mainwindow import MainWindow
 
             win = MainWindow.__new__(MainWindow)
-            win._workspace_button = MagicMock()
-            return win
-
-    def test_sync_sets_workspace_text(self):
-        win = self._make_win()
-        win._sync_workspace_button()
-        text = win._workspace_button.setText.call_args[0][0]
-        assert "Workspace" in text
+            win.workspace_toolbar_widget = QtWidgets.QWidget()
+            win.progress_bar = QtWidgets.QProgressBar()
+            win.iconbar = QtWidgets.QWidget()
+            panel = win._create_toolbar_panel()
+        qtbot.addWidget(panel)
+        assert panel.layout().count() == 3
+        assert panel.layout().itemAt(0).widget() is win.workspace_toolbar_widget
+        assert not (panel.layout().itemAt(0).alignment() & QtCore.Qt.AlignLeft)
+        assert panel.layout().itemAt(1).widget() is win.progress_bar
+        assert panel.layout().itemAt(2).widget() is win.iconbar
 
 
 class TestToggleShow:

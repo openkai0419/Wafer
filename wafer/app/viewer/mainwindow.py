@@ -1,7 +1,6 @@
 from PySide6 import QtCore, QtWidgets
 from ...utils.paths import data_db_path, setting_db_path, list_setting_db_names
 from ...utils.formatting import dpix
-from ...core.color.theme import ThemeManager
 from ...utils.profiling import profiler
 from ...utils.logs import AppLogger
 from ...utils.notifier import Notifier
@@ -28,6 +27,7 @@ from .widgets.progress_bar import ThinProgressBar
 from .widgets.search_container import SearchContainer
 from .widgets.combo_with_buttons import ComboBoxWithButtons
 from .widgets.callout_overlay import CalloutOverlay
+from .widgets.workspace_toolbar import WorkspaceToolbarWidget
 
 from ...builtins.commands.menu import AppMenuRegistrar
 from .search import SearchService
@@ -95,6 +95,7 @@ class MainWindow(QtWidgets.QMainWindow):
         AppLogger.info(f"New Window Running : {APP_NAME} (slot={self.slot_id})")
         self.start_ipc_listener()
         self._update_title()
+        self.workspace_toolbar_widget.refresh()
         if existed and entry:
             self._restore_from_slot(entry)
         else:
@@ -210,32 +211,6 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             label = self.database_name or ""
         self.setWindowTitle(f"{label}" if label else APP_NAME)
-        if hasattr(self, "_workspace_button"):
-            self._sync_workspace_button()
-
-    def _create_workspace_button(self):
-        btn = QtWidgets.QPushButton()
-        btn.setCursor(QtCore.Qt.PointingHandCursor)
-        btn.setFixedHeight(dpix(24))
-        btn.clicked.connect(lambda: Command.invoke("ws.open_popup"))
-        self._sync_workspace_button(btn)
-        return btn
-
-    def _sync_workspace_button(self, btn=None):
-        btn = btn or self._workspace_button
-        btn.setText(f"\u25bc {t('Workspace')}")
-        p = ThemeManager.instance().palette
-        fs = dpix(12)
-        pad_v = dpix(3)
-        pad_h = dpix(8)
-        bw = dpix(2)
-        br = dpix(6)
-        btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {p.text_primary}; border: {bw}px solid {p.border_default};"
-            f"  border-radius: {br}px; padding: {pad_v}px {pad_h}px; font-size: {fs}px; text-align: left; }}"
-            f"QPushButton:hover {{ background: {p.bg_hover}; color: {p.text_accent}; }}"
-            f"QPushButton:pressed {{ background: {p.bg_pressed}; color: {p.text_accent}; }}"
-        )
 
     @qt_debounce(200)
     def refresh_db_selector(self):
@@ -309,6 +284,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.folder_view = LazyFolderTreeView()
         self.folder_view.folder_selected.connect(self.on_folder_selected)
 
+        self.progress_bar = ThinProgressBar()
+        self.workspace_toolbar_widget = WorkspaceToolbarWidget()
+        UI.register_instance("WorkspaceToolbarWidget", self.workspace_toolbar_widget)
         self.iconbar = IconButtonBar(
             left_buttons=[
                 IconButtonConfig("menu", "All Menu", lambda: Menu.session(self).all_roots().exec()),
@@ -338,9 +316,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.database_combo.textChanged.connect(self.reload_database)
         self.database_combo.addClicked.connect(lambda: Command.invoke("db.add_database"))
         self.database_combo.removeClicked.connect(lambda: Command.invoke("db.remove_database"))
-
-        self.progress_bar = ThinProgressBar()
-        self._workspace_button = self._create_workspace_button()
 
         self.search_row_widget = SearchContainer()
         self.search_row_widget.filter_changed.connect(self._on_search_setting_changed)
@@ -401,7 +376,7 @@ class MainWindow(QtWidgets.QMainWindow):
         layout = QtWidgets.QVBoxLayout(panel)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        layout.addWidget(self._workspace_button)
+        layout.addWidget(self.workspace_toolbar_widget)
         layout.addWidget(self.progress_bar)
         layout.addWidget(self.iconbar)
         panel.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Maximum)

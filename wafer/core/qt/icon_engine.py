@@ -516,6 +516,65 @@ def _draw_refresh(p: QPainter, r: QRectF, color: QColor):
     p.drawPath(arrow)
 
 
+@_register("history", padding=0.10)
+def _draw_history(p: QPainter, r: QRectF, color: QColor):
+    s = min(r.width(), r.height())
+    lw = max(1.4, s * 0.10)
+    pen = QPen(color, lw)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    p.setPen(pen)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    cx, cy = r.center().x(), r.center().y()
+    rad = s * 0.38
+    arc_rect = QRectF(cx - rad, cy - rad, rad * 2, rad * 2)
+    p.drawArc(arc_rect, 35 * 16, 285 * 16)
+
+    arrow_angle = 215 * math.pi / 180
+    tip = QPointF(cx + rad * math.cos(arrow_angle), cy + rad * math.sin(arrow_angle))
+    al = s * 0.18
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(color)
+    arrow = QPainterPath()
+    arrow.moveTo(tip)
+    arrow.lineTo(QPointF(tip.x() + al * 0.95, tip.y() - al * 0.10))
+    arrow.lineTo(QPointF(tip.x() + al * 0.20, tip.y() - al * 0.90))
+    arrow.closeSubpath()
+    p.drawPath(arrow)
+
+    pen.setWidthF(max(1.2, s * 0.08))
+    p.setPen(pen)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawLine(QPointF(cx, cy), QPointF(cx, cy - s * 0.20))
+    p.drawLine(QPointF(cx, cy), QPointF(cx + s * 0.17, cy + s * 0.10))
+
+
+@_register("save", padding=0.12)
+def _draw_save(p: QPainter, r: QRectF, color: QColor):
+    s = min(r.width(), r.height())
+    lw = max(1.3, s * 0.09)
+    pen = QPen(color, lw)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    p.setPen(pen)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    body = r.adjusted(lw / 2, lw / 2, -lw / 2, -lw / 2)
+    notch = s * 0.18
+    path = QPainterPath()
+    path.moveTo(body.left(), body.top())
+    path.lineTo(body.right() - notch, body.top())
+    path.lineTo(body.right(), body.top() + notch)
+    path.lineTo(body.right(), body.bottom())
+    path.lineTo(body.left(), body.bottom())
+    path.closeSubpath()
+    p.drawPath(path)
+
+    top = QRectF(body.left() + s * 0.15, body.top(), body.width() * 0.50, body.height() * 0.33)
+    p.drawRect(top)
+    label = QRectF(body.left() + s * 0.18, body.top() + body.height() * 0.58, body.width() * 0.64, body.height() * 0.26)
+    p.drawRoundedRect(label, s * 0.03, s * 0.03)
+
+
 @_register("star", padding=0.10)
 def _draw_star(p: QPainter, r: QRectF, color: QColor):
     p.setPen(Qt.PenStyle.NoPen)
@@ -614,7 +673,7 @@ def _draw_lock_open(p: QPainter, r: QRectF, color: QColor):
     _draw_lock_body(p, r, color, r.width() * 0.30)
 
 
-@_register("pencil", padding=0.10)
+@_register("pencil", padding=0.17)
 def _draw_pencil(p: QPainter, r: QRectF, color: QColor):
     lw = max(1.2, min(r.width(), r.height()) * 0.09)
     pen = QPen(color, lw)

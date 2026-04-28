@@ -1,7 +1,5 @@
 import py_compile
 
-from PySide6 import QtWidgets
-
 
 def test_compile():
     py_compile.compile("wafer/app/viewer/widgets/button_bar.py")
@@ -35,3 +33,15 @@ class TestIconButtonBar:
         bar = IconButtonBar(left_buttons=[IconButtonConfig("gear", "S")])
         bar._on_theme_changed(DARK)
         assert not bar.left_buttons[0].icon().isNull()
+
+    def test_buttons_are_in_single_row_layout(self, qtbot):
+        from PySide6 import QtWidgets
+
+        from wafer.app.viewer.widgets.button_bar import IconButtonBar, IconButtonConfig
+
+        bar = IconButtonBar(
+            left_buttons=[IconButtonConfig("gear", "S")],
+            right_buttons=[IconButtonConfig("folder_plus", "A")],
+        )
+        qtbot.addWidget(bar)
+        assert isinstance(bar.layout, QtWidgets.QHBoxLayout)

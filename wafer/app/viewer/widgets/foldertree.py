@@ -82,7 +82,7 @@ EXPAND_RECURSIVE_DRAIN_MS = 6.0
 
 
 class RecursiveExpandJob:
-    __slots__ = ("root_path", "token", "pending", "condition", "scanned", "scheduled")
+    __slots__ = ("condition", "pending", "root_path", "scanned", "scheduled", "token")
 
     def __init__(self, root_path, token):
         self.root_path = root_path

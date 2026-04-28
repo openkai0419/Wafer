@@ -31,6 +31,9 @@ class _PluginPanel2(BasePanelPlugin):
 
 
 class TestPanelCommandsCategories:
+    def test_workspace_is_not_a_core_panel(self):
+        assert "Workspace" not in PanelCommands._CORE_PANELS
+
     def test_commands_separates_core_builtin_plugin(self):
         from wafer.plugin.registry import PluginRegistry
         mock_registry = PluginRegistry()

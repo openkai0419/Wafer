@@ -70,6 +70,8 @@ ALL_KEYS = [
     "menu",
     "layout_edit",
     "refresh",
+    "history",
+    "save",
 ]
 
 

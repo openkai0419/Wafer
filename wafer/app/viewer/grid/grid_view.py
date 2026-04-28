@@ -156,8 +156,6 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self._scene = QtWidgets.QGraphicsScene(self)
         self.setScene(self._scene)
         self.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
-        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
-        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         self.setViewportUpdateMode(QtWidgets.QGraphicsView.MinimalViewportUpdate)
         self.setOptimizationFlags(QtWidgets.QGraphicsView.DontAdjustForAntialiasing)
         self.setRenderHints(QtGui.QPainter.Antialiasing | QtGui.QPainter.SmoothPixmapTransform)
@@ -191,6 +189,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self.orientation = 0
         self._hz = self.orientation <= 1
         self._reversed = self.orientation == 3
+        self._apply_scrollbar_policy()
         self.layout_mode = "justified"
         self.scroll_anchor = "center"
         self.image_cache = MemoryLimitedImageCache(app_settings.get("window/cache_size", 500))
@@ -264,6 +263,14 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
     def _is_horizontal(self):
         return self._hz
 
+    def _apply_scrollbar_policy(self):
+        if self._is_horizontal():
+            self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+            self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOn)
+        else:
+            self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOn)
+            self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+
     def _is_primary_reversed(self):
         return self._reversed
 
@@ -299,9 +306,11 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
 
     def set_orientation(self, orientation):
         if self.orientation == orientation:
+            self._apply_scrollbar_policy()
             return
         self.orientation = orientation
         self._hz = orientation <= 1
+        self._apply_scrollbar_policy()
         self._reversed = orientation == 3
         self._width_ref = self._secondary_viewport_size()
         self._setup_primary_scroll()

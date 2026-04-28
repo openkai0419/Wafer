@@ -1,4 +1,44 @@
 {
+  "Delete Workspace Slot": {
+    "en": "Delete Workspace Slot",
+    "ja": ""
+  },
+  "Remove this recent workspace?": {
+    "en": "Remove this recent workspace?",
+    "ja": ""
+  },
+  "Rename Workspace Slot": {
+    "en": "Rename Workspace Slot",
+    "ja": ""
+  },
+  "Workspace slot renamed": {
+    "en": "Workspace slot renamed",
+    "ja": ""
+  },
+  "Workspace slot is already current": {
+    "en": "Workspace slot is already current",
+    "ja": ""
+  },
+  "Current workspace": {
+    "en": "Current workspace",
+    "ja": ""
+  },
+  "Restore Sort": {
+    "en": "Restore Sort",
+    "ja": ""
+  },
+  "Restore Window pos": {
+    "en": "Restore Window pos",
+    "ja": ""
+  },
+  "Recent": {
+    "en": "Recent",
+    "ja": ""
+  },
+  "Add Filter": {
+    "en": "Add Filter",
+    "ja": ""
+  },
   "Datetime": {
     "en": "Datetime",
     "ja": ""
@@ -141,6 +181,54 @@
   },
   "Workspace...": {
     "en": "Workspace...",
+    "ja": ""
+  },
+  "Overwrite": {
+    "en": "Overwrite",
+    "ja": ""
+  },
+  "Last updated": {
+    "en": "Last updated",
+    "ja": ""
+  },
+  "Restore": {
+    "en": "Restore",
+    "ja": ""
+  },
+  "Restore sort on apply": {
+    "en": "Restore sort on apply",
+    "ja": ""
+  },
+  "Restore window position": {
+    "en": "Restore window position",
+    "ja": ""
+  },
+  "No database": {
+    "en": "No database",
+    "ja": ""
+  },
+  "Restore Workspace Slot": {
+    "en": "Restore Workspace Slot",
+    "ja": ""
+  },
+  "Workspace slot not found": {
+    "en": "Workspace slot not found",
+    "ja": ""
+  },
+  "Workspace slot removed from Recent": {
+    "en": "Workspace slot removed from Recent",
+    "ja": ""
+  },
+  "Overwrite UI Preset": {
+    "en": "Overwrite UI Preset",
+    "ja": ""
+  },
+  "Overwrite Path Preset": {
+    "en": "Overwrite Path Preset",
+    "ja": ""
+  },
+  "Overwrite Query Preset": {
+    "en": "Overwrite Query Preset",
     "ja": ""
   },
   "Open value viewer": {

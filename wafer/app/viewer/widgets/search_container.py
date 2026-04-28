@@ -603,5 +603,3 @@ class SearchContainer(QtWidgets.QWidget):
     def set_ascending(self, ascending: bool):
         self._ascending = ascending
         self._sync_sort_menu()
-
-

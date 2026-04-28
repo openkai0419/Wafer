@@ -1,4 +1,7 @@
 import os
+import threading
+import time
+from collections import deque
 from pathlib import Path
 from natsort import natsorted
 from PySide6 import QtCore, QtGui, QtWidgets
@@ -73,6 +76,21 @@ def _has_subfolders_bg(path, excluded):
 
 FOLDER_ICON = QtGui.QIcon.fromTheme("folder")
 USER_ROLE_PATH = QtCore.Qt.UserRole
+EXPAND_RECURSIVE_BATCH_SIZE = 64
+EXPAND_RECURSIVE_QUEUE_LIMIT = 512
+EXPAND_RECURSIVE_DRAIN_MS = 6.0
+
+
+class RecursiveExpandJob:
+    __slots__ = ("condition", "pending", "root_path", "scanned", "scheduled", "token")
+
+    def __init__(self, root_path, token):
+        self.root_path = root_path
+        self.token = token
+        self.pending = deque()
+        self.condition = threading.Condition()
+        self.scanned = False
+        self.scheduled = False
 
 
 @profiler.profile
@@ -98,7 +116,7 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
         self.path_item_map = {}
         self.path_item_trie = {}
         self._mime_type = "application/x-foldertree-paths"
-        self._dispatcher = Dispatcher(utility_pool)
+        self._dispatcher = Dispatcher(utility_pool, parent=self)
         self._pending_expands: dict[str, CancelToken] = {}
 
     def cancel_pending_expands(self):
@@ -461,8 +479,9 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
 
         self._dispatcher.post(task)
 
-    def _apply_children(self, item, path, children):
-        self._pending_expands.pop(path, None)
+    def _apply_children(self, item, path, children, clear_pending=True):
+        if clear_pending:
+            self._pending_expands.pop(path, None)
         if not self._is_valid_item(item):
             AppLogger.debug(f"[FolderTree._apply_children] SKIPPED (invalid item): {path}")
             return
@@ -546,12 +565,14 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         self.model_.setParent(self)
         self.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         self.setModel(self.model_)
+        self.setUniformRowHeights(True)
         self.setEditTriggers(QtWidgets.QAbstractItemView.EditKeyPressed | QtWidgets.QAbstractItemView.SelectedClicked | QtWidgets.QAbstractItemView.DoubleClicked)
         self.setDragEnabled(True)
         self.setAcceptDrops(True)
         self.setDropIndicatorShown(True)
         self.setDefaultDropAction(QtCore.Qt.MoveAction)
         self._programmatic_expand = 0
+        self._recursive_expand_jobs = {}
         self.expanded.connect(self.on_expanded)
         self.clicked.connect(self._on_item_clicked)
         UI.register_instance("FolderTree", self)
@@ -586,6 +607,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
     def set_folders(self, roots, excluded=None):
         roots = [normalize_path(r) for r in roots]
         excluded = set(normalize_path(e) for e in excluded or [])
+        self._cancel_recursive_expand_jobs()
         self.model_.clear()
         self.model_.roots = roots
         self.model_.excluded = excluded
@@ -742,15 +764,67 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
             on_complete()
 
     @profiler.profile
-    def expand_and_select_path(self, path):
-        index = self.expand_path(path)
-        if index and index.isValid():
-            sel_model = self.selectionModel()
-            sel_model.clearSelection()
-            sel_model.select(index, QtCore.QItemSelectionModel.Select | QtCore.QItemSelectionModel.Rows)
-            self.setCurrentIndex(index)
-            QtCore.QTimer.singleShot(0, lambda: self.scrollTo(index, QtWidgets.QAbstractItemView.PositionAtCenter))
-            self.folder_selected.emit()
+    def expand_and_select_path(self, path, on_complete=None, emit_selected=True):
+        self.expand_and_select_paths([path], on_complete=on_complete, emit_selected=emit_selected)
+
+    @profiler.profile
+    def expand_and_select_paths(self, paths, on_complete=None, emit_selected=True):
+        normalized = list(dict.fromkeys(normalize_path(p) for p in paths if p))
+        if not normalized:
+            if on_complete:
+                on_complete()
+            return
+        roots = [normalize_path(r) for r in self.model_.roots]
+        segments = _collect_segments_for_paths(normalized, roots)
+        excluded = set(self.model_.excluded)
+        dispatcher = self.model_._dispatcher
+
+        def task():
+            children_map = {seg: _scan_children(seg, excluded) for seg in segments}
+            dispatcher.invoke(lambda: self._apply_expand_and_select(normalized, children_map, on_complete, emit_selected))
+
+        dispatcher.post(task, priority=8)
+
+    def _apply_expand_and_select(self, paths, children_map, on_complete, emit_selected):
+        model = self.model_
+        for seg_path, children in children_map.items():
+            item = model.path_item_map.get(seg_path)
+            if not model._is_valid_item(item):
+                continue
+            if item.hasChildren() and item.child(0).data(USER_ROLE_PATH):
+                continue
+            model._apply_children(item, seg_path, children)
+        to_select = []
+        self._programmatic_expand += 1
+        try:
+            for path in paths:
+                item = model.path_item_map.get(path)
+                if not model._is_valid_item(item):
+                    AppLogger.debug(f"[FolderTree.expand_and_select_paths] not found: {path}")
+                    continue
+                index = model.indexFromItem(item)
+                if not index.isValid():
+                    continue
+                parent = index.parent()
+                while parent.isValid():
+                    self.expand(parent)
+                    parent = parent.parent()
+                self.expand(index)
+                to_select.append(index)
+        finally:
+            self._programmatic_expand -= 1
+        sel_model = self.selectionModel()
+        sel_model.clearSelection()
+        for idx in to_select:
+            sel_model.select(idx, QtCore.QItemSelectionModel.Select | QtCore.QItemSelectionModel.Rows)
+        if to_select:
+            last = to_select[-1]
+            sel_model.setCurrentIndex(last, QtCore.QItemSelectionModel.NoUpdate)
+            QtCore.QTimer.singleShot(0, lambda: self.scrollTo(last, QtWidgets.QAbstractItemView.PositionAtCenter))
+            if emit_selected:
+                self.folder_selected.emit()
+        if on_complete:
+            on_complete()
 
     @profiler.profile
     def add_root(self, path):
@@ -805,6 +879,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
 
     @profiler.profile
     def reload_tree(self):
+        self._cancel_recursive_expand_jobs()
         state = self.get_state()
         roots = [item.data(USER_ROLE_PATH) for item in iter_root_items(self.model_)]
         self.model_.clear()
@@ -852,6 +927,18 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
             if hasattr(event, "pos") and callable(event.pos):
                 self.show_context_menu(event.pos())
                 return True
+        if source == self.viewport() and event.type() == QtCore.QEvent.MouseButtonPress:
+            if event.button() == QtCore.Qt.LeftButton and (event.modifiers() & QtCore.Qt.ShiftModifier):
+                index = self.indexAt(event.pos())
+                if index.isValid() and self.model().hasChildren(index) and self._is_on_branch_indicator(index, event.pos()):
+                    path = index.data(USER_ROLE_PATH)
+                    if path and normalize_path(path) in self.model_._pending_expands:
+                        self._cancel_expand_recursive(index)
+                    elif self.isExpanded(index):
+                        self.collapse_recursive(index)
+                    else:
+                        self.expand_recursive(index)
+                    return True
         if source == self.viewport() and event.type() in {QtCore.QEvent.MouseButtonPress, QtCore.QEvent.MouseButtonDblClick}:
             if event.button() == QtCore.Qt.LeftButton:
                 index = self.indexAt(event.pos())
@@ -860,35 +947,217 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
                     self.folder_selected.emit()
         return super().eventFilter(source, event)
 
+    def _is_on_branch_indicator(self, index, pos):
+        rect = self.visualRect(index)
+        indent = self.indentation()
+        x = pos.x()
+        return rect.x() - indent <= x < rect.x() and rect.y() <= pos.y() < rect.y() + rect.height()
+
+    def _cancel_expand_recursive(self, index):
+        path = index.data(USER_ROLE_PATH) if index.isValid() else None
+        if not path:
+            return
+        root_path = normalize_path(path)
+        token = self.model_._pending_expands.get(root_path)
+        if token is not None:
+            token.cancel()
+        self._finish_expand_recursive_job(root_path)
+        self.collapse_recursive(index)
+
+    @profiler.profile
+    def collapse_recursive(self, index):
+        if not index.isValid():
+            return
+        model = self.model()
+        order = []
+        stack = [index]
+        while stack:
+            idx = stack.pop()
+            if not idx.isValid():
+                continue
+            order.append(idx)
+            for i in range(model.rowCount(idx)):
+                stack.append(model.index(i, 0, idx))
+        for idx in reversed(order):
+            if self.isExpanded(idx):
+                self.collapse(idx)
+
+    @profiler.profile
+    def expand_recursive(self, index):
+        if not index.isValid():
+            return
+        item = self.model_.itemFromIndex(index)
+        if item is None:
+            return
+        root_path = item.data(USER_ROLE_PATH)
+        if not root_path:
+            return
+        root_path = normalize_path(root_path)
+        if root_path in self.model_._pending_expands:
+            return
+        cancel = CancelToken()
+        self.model_._pending_expands[root_path] = cancel
+        job = RecursiveExpandJob(root_path, cancel)
+        self._recursive_expand_jobs[root_path] = job
+        excluded = set(self.model_.excluded)
+        dispatcher = self.model_._dispatcher
+
+        def task():
+            batch = []
+
+            stack = [root_path]
+            while stack:
+                if cancel.is_cancelled():
+                    dispatcher.invoke(lambda: self._finish_expand_recursive_job(root_path))
+                    return
+                path = stack.pop()
+                children = _scan_children(path, excluded)
+                batch.append((path, children))
+                for child_path, has_sub in reversed(children):
+                    if has_sub:
+                        stack.append(child_path)
+                if len(batch) >= EXPAND_RECURSIVE_BATCH_SIZE and not self._push_recursive_expand_batch(job, batch):
+                    dispatcher.invoke(lambda: self._finish_expand_recursive_job(root_path))
+                    return
+            if batch and not self._push_recursive_expand_batch(job, batch):
+                dispatcher.invoke(lambda: self._finish_expand_recursive_job(root_path))
+                return
+            dispatcher.invoke(lambda: self._complete_recursive_expand_scan(root_path))
+
+        dispatcher.post(task, priority=8)
+
+    def _push_recursive_expand_batch(self, job, batch):
+        with job.condition:
+            while len(job.pending) >= EXPAND_RECURSIVE_QUEUE_LIMIT and not job.token.is_cancelled():
+                job.condition.wait(0.05)
+            if job.token.is_cancelled():
+                return False
+            job.pending.extend(batch)
+            batch.clear()
+            if job.scheduled:
+                return True
+            job.scheduled = True
+        self.model_._dispatcher.invoke(lambda: self._drain_recursive_expand(job.root_path))
+        return True
+
+    def _complete_recursive_expand_scan(self, root_path):
+        job = self._recursive_expand_jobs.get(root_path)
+        if job is None:
+            return
+        should_drain = False
+        with job.condition:
+            job.scanned = True
+            if not job.scheduled:
+                job.scheduled = True
+                should_drain = True
+            job.condition.notify_all()
+        if should_drain:
+            QtCore.QTimer.singleShot(0, lambda: self._drain_recursive_expand(root_path))
+
+    def _drain_recursive_expand(self, root_path):
+        job = self._recursive_expand_jobs.get(root_path)
+        if job is None:
+            return
+        if root_path not in self.model_._pending_expands or job.token.is_cancelled():
+            self._finish_expand_recursive_job(root_path)
+            return
+        deadline = time.perf_counter() + EXPAND_RECURSIVE_DRAIN_MS / 1000.0
+        processed = False
+        updates_enabled = self.updatesEnabled()
+        if updates_enabled:
+            self.setUpdatesEnabled(False)
+        self._programmatic_expand += 1
+        try:
+            while True:
+                with job.condition:
+                    if not job.pending:
+                        break
+                    seg_path, children = job.pending.popleft()
+                    job.condition.notify_all()
+                self._apply_recursive_expand_entry(seg_path, children)
+                processed = True
+                if time.perf_counter() >= deadline:
+                    break
+        finally:
+            self._programmatic_expand -= 1
+            if updates_enabled:
+                self.setUpdatesEnabled(True)
+        finish = False
+        reschedule = False
+        with job.condition:
+            if job.token.is_cancelled():
+                finish = True
+            elif job.pending:
+                reschedule = True
+            elif job.scanned:
+                finish = True
+            else:
+                job.scheduled = False
+            if finish:
+                job.scheduled = False
+            job.condition.notify_all()
+        if finish:
+            self._finish_expand_recursive_job(root_path)
+        elif reschedule:
+            QtCore.QTimer.singleShot(0 if processed else 1, lambda: self._drain_recursive_expand(root_path))
+
+    def _apply_recursive_expand_entry(self, seg_path, children):
+        model = self.model_
+        item = model.path_item_map.get(normalize_path(seg_path))
+        if not model._is_valid_item(item):
+            return
+        if not (item.hasChildren() and item.child(0).data(USER_ROLE_PATH)):
+            model._apply_children(item, seg_path, children, clear_pending=False)
+        item = model.path_item_map.get(normalize_path(seg_path))
+        if not model._is_valid_item(item):
+            return
+        idx = model.indexFromItem(item)
+        if idx.isValid():
+            self.expand(idx)
+
+    def _finish_expand_recursive_job(self, root_path):
+        job = self._recursive_expand_jobs.pop(root_path, None)
+        if job is not None:
+            with job.condition:
+                job.pending.clear()
+                job.scanned = True
+                job.scheduled = False
+                job.condition.notify_all()
+        self.model_._pending_expands.pop(root_path, None)
+
+    def _cancel_recursive_expand_jobs(self):
+        for root_path, job in list(self._recursive_expand_jobs.items()):
+            job.token.cancel()
+            self._finish_expand_recursive_job(root_path)
+
     def current_path(self) -> str | None:
         idx = self.currentIndex()
         return idx.data(USER_ROLE_PATH) if idx.isValid() else None
 
-    def _select_and_emit(self, path):
+    def _select_and_emit(self, path, trigger_search=True):
         if not path:
             return None
-        self.expand_and_select_path(path)
-        self.current_path_changed.emit(path)
+        self.expand_and_select_paths([path], on_complete=lambda: self.current_path_changed.emit(path), emit_selected=trigger_search)
         return path
 
     @profiler.profile
-    def navigate_next_visible(self) -> str | None:
+    def navigate_next_visible(self, trigger_search=True) -> str | None:
         idx = self.currentIndex()
         if not idx.isValid():
             first = self.model().index(0, 0)
             if first.isValid():
-                return self._select_and_emit(first.data(USER_ROLE_PATH))
+                return self._select_and_emit(first.data(USER_ROLE_PATH), trigger_search=trigger_search)
             return None
         below = self.indexBelow(idx)
         while below.isValid():
             path = below.data(USER_ROLE_PATH)
             if path:
-                return self._select_and_emit(path)
+                return self._select_and_emit(path, trigger_search=trigger_search)
             below = self.indexBelow(below)
         return None
 
     @profiler.profile
-    def navigate_prev_visible(self) -> str | None:
+    def navigate_prev_visible(self, trigger_search=True) -> str | None:
         idx = self.currentIndex()
         if not idx.isValid():
             return None
@@ -896,12 +1165,12 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         while above.isValid():
             path = above.data(USER_ROLE_PATH)
             if path:
-                return self._select_and_emit(path)
+                return self._select_and_emit(path, trigger_search=trigger_search)
             above = self.indexAbove(above)
         return None
 
     @profiler.profile
-    def navigate_parent(self) -> str | None:
+    def navigate_parent(self, trigger_search=True) -> str | None:
         idx = self.currentIndex()
         if not idx.isValid():
             return None
@@ -909,11 +1178,11 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         if parent.isValid():
             path = parent.data(USER_ROLE_PATH)
             if path:
-                return self._select_and_emit(path)
+                return self._select_and_emit(path, trigger_search=trigger_search)
         return None
 
     @profiler.profile
-    def navigate_child(self) -> str | None:
+    def navigate_child(self, trigger_search=True) -> str | None:
         idx = self.currentIndex()
         if not idx.isValid():
             return None
@@ -931,7 +1200,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
             if child:
                 path = child.data(USER_ROLE_PATH)
                 if path:
-                    return self._select_and_emit(path)
+                    return self._select_and_emit(path, trigger_search=trigger_search)
         return None
 
     @staticmethod
@@ -956,11 +1225,11 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
             path = children[-1]
 
     @profiler.profile
-    def navigate_next_dfs(self) -> str | None:
+    def navigate_next_dfs(self, trigger_search=True) -> str | None:
         current = self.current_path()
         if not current:
             sorted_roots = natsorted(self.model_.roots, key=lambda p: os.path.basename(p).lower())
-            return self._select_and_emit(sorted_roots[0]) if sorted_roots else None
+            return self._select_and_emit(sorted_roots[0], trigger_search=trigger_search) if sorted_roots else None
 
         current = normalize_path(current)
         excluded = self.model_.excluded
@@ -969,7 +1238,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
 
         children = self._list_subdirs(current, excluded)
         if children:
-            return self._select_and_emit(children[0])
+            return self._select_and_emit(children[0], trigger_search=trigger_search)
 
         path = current
         while True:
@@ -977,7 +1246,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
                 try:
                     idx = sorted_roots.index(path)
                     if idx + 1 < len(sorted_roots):
-                        return self._select_and_emit(sorted_roots[idx + 1])
+                        return self._select_and_emit(sorted_roots[idx + 1], trigger_search=trigger_search)
                 except ValueError:
                     pass
                 return None
@@ -986,13 +1255,13 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
             try:
                 idx = siblings.index(path)
                 if idx + 1 < len(siblings):
-                    return self._select_and_emit(siblings[idx + 1])
+                    return self._select_and_emit(siblings[idx + 1], trigger_search=trigger_search)
             except ValueError:
                 pass
             path = parent
 
     @profiler.profile
-    def navigate_prev_dfs(self) -> str | None:
+    def navigate_prev_dfs(self, trigger_search=True) -> str | None:
         current = self.current_path()
         if not current:
             return None
@@ -1006,7 +1275,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
             try:
                 idx = sorted_roots.index(current)
                 if idx > 0:
-                    return self._select_and_emit(self._deepest_last(sorted_roots[idx - 1], excluded))
+                    return self._select_and_emit(self._deepest_last(sorted_roots[idx - 1], excluded), trigger_search=trigger_search)
             except ValueError:
                 pass
             return None
@@ -1016,7 +1285,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         try:
             idx = siblings.index(current)
             if idx > 0:
-                return self._select_and_emit(self._deepest_last(siblings[idx - 1], excluded))
+                return self._select_and_emit(self._deepest_last(siblings[idx - 1], excluded), trigger_search=trigger_search)
         except ValueError:
             pass
-        return self._select_and_emit(parent)
+        return self._select_and_emit(parent, trigger_search=trigger_search)

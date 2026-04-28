@@ -25,6 +25,7 @@ class FlorenceSettingsPanelPlugin(BasePanelPlugin):
     DEFAULT_ENABLED = True
     CLOSABLE = True
     PRIORITY = 50
+    plugin_config = florence_config
 
     def create_widget(self) -> QtWidgets.QWidget:
         return FlorenceSettingsWidget()

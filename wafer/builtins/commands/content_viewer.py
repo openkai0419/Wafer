@@ -1,4 +1,4 @@
-from ...core.commands.bridge import ActionKit, Command
+from ...core.commands.bridge import ActionKit
 from ...core.commands.command.require import require
 from ...core.commands.binding.instance_registry import InstanceRegistry
 from ...app.viewer.preview.file_list_provider import ListMode
@@ -13,12 +13,19 @@ _CMD_TO_LIST_MODE = {
 }
 
 
+def _list_mode_checked(cmd_id: str) -> bool:
+    provider = InstanceRegistry.instance().get_one("FileListProvider")
+    target = _CMD_TO_LIST_MODE.get(cmd_id)
+    if provider is None or target is None:
+        return False
+    return getattr(provider, "mode", None) == target
+
+
 def apply_list_mode(provider, cmd_id: str):
     mode = _CMD_TO_LIST_MODE.get(cmd_id)
     if mode is None:
         return
     provider.set_mode(mode)
-    Command.set_action_group_current(GROUP_LIST_MODE, cmd_id, save=False)
 
 
 def _ensure_current_initialized(model) -> bool:
@@ -138,6 +145,7 @@ class FileViewerCommands(ActionKit.MenuBase):
                 checkable=True,
                 default_checked=True,
                 action_group=GROUP_LIST_MODE,
+                checked_resolver=lambda: _list_mode_checked("fv.list_sync"),
             ),
             ActionKit.Command(
                 path="List Mode/fv.list_fix",
@@ -145,6 +153,7 @@ class FileViewerCommands(ActionKit.MenuBase):
                 func=set_list_fix,
                 checkable=True,
                 action_group=GROUP_LIST_MODE,
+                checked_resolver=lambda: _list_mode_checked("fv.list_fix"),
             ),
             ActionKit.Command(
                 path="List Mode/fv.list_dir",
@@ -152,6 +161,7 @@ class FileViewerCommands(ActionKit.MenuBase):
                 func=set_list_dir,
                 checkable=True,
                 action_group=GROUP_LIST_MODE,
+                checked_resolver=lambda: _list_mode_checked("fv.list_dir"),
             ),
             "-",
         ]

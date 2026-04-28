@@ -136,7 +136,7 @@ class FileViewerController(QtCore.QObject):
             if not isinstance(plugin, _WidgetViewerPlugin):
                 continue
             p = plugin
-            store.register(f"viewer_plugin.{name}", lambda p=p: p.save_state(), lambda s, p=p: p.restore_state(s))
+            store.register(f"viewer_plugin.{name}", lambda p=p: p.save_ui_state(), lambda s, p=p: p.restore_ui_state(s))
 
     def _save_state(self):
         return {

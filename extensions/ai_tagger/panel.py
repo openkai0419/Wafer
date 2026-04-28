@@ -37,12 +37,13 @@ class WD14SettingsPanelPlugin(BasePanelPlugin):
     DEFAULT_ENABLED = True
     CLOSABLE = True
     PRIORITY = 50
+    plugin_config = wd14_config
 
     def __init__(self):
         self._widget_ref: WD14SettingsWidget | None = None
         self._cached_state: dict = {}
 
-    def save_state(self):
+    def save_ui_state(self):
         w = self._widget_ref
         if w is not None:
             try:
@@ -51,7 +52,7 @@ class WD14SettingsPanelPlugin(BasePanelPlugin):
                 AppLogger.warning("[WD14Settings] save_state failed", exc=e)
         return dict(self._cached_state)
 
-    def restore_state(self, state):
+    def restore_ui_state(self, state):
         self._cached_state = state
         w = self._widget_ref
         if w is not None:

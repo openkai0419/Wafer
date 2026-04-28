@@ -125,6 +125,13 @@ class TestGridViewScrollRange:
 
         self.GridView = GridView
 
+    def test_initial_orientation_applies_scrollbar_policy(self, qtbot):
+        with patch("wafer.app.viewer.grid.grid_view.grid_resolver"):
+            gv = self.GridView(MagicMock())
+            qtbot.addWidget(gv)
+            assert gv.horizontalScrollBarPolicy() == QtCore.Qt.ScrollBarAsNeeded
+            assert gv.verticalScrollBarPolicy() == QtCore.Qt.ScrollBarAlwaysOn
+
     def test_justified_reverse_vertical_has_horizontal_scroll_range(self, qtbot):
         from wafer.builtins.layouts import JustifiedLayoutCalculator
 

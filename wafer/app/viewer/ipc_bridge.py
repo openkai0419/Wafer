@@ -14,12 +14,13 @@ class ViewerIpcBridge(QtCore.QObject):
     progress_updated = QtCore.Signal(str, int)
     progress_maximum = QtCore.Signal(str, int)
     show_toggled = QtCore.Signal(str, bool)
-    profile_closed = QtCore.Signal(str)
-    profile_restarted = QtCore.Signal(str)
+    slot_closed = QtCore.Signal(str)
+    slot_restarted = QtCore.Signal(str)
     db_created = QtCore.Signal(str)
     db_deleted = QtCore.Signal(str)
     remote_log_received = QtCore.Signal(str, str, str, str)
     tags_updated = QtCore.Signal(dict)
+    settings_received = QtCore.Signal(dict)
 
     def __init__(self, node: Node, parent: QtCore.QObject | None = None):
         super().__init__(parent)
@@ -51,12 +52,13 @@ class ViewerIpcBridge(QtCore.QObject):
         n.subscribe("progress", self._on_progress)
         n.subscribe("maximum", self._on_maximum)
         n.subscribe("show_toggle", self._on_show_toggle)
-        n.subscribe("profile.close", self._on_profile_close)
-        n.subscribe("profile.restart", self._on_profile_restart)
+        n.subscribe("slot.close", self._on_slot_close)
+        n.subscribe("slot.restart", self._on_slot_restart)
         n.subscribe("db.created", self._on_db_created)
         n.subscribe("db.deleted", self._on_db_deleted)
         n.subscribe("dev.log", self._on_dev_log)
         n.subscribe("tags.updated", self._on_tags_updated)
+        n.subscribe("settings.changed", self._on_settings_changed)
 
     def _invoke(self, slot: str, *args):
         try:
@@ -100,11 +102,11 @@ class ViewerIpcBridge(QtCore.QObject):
             QtCore.Q_ARG(bool, bool(msg.payload)),
         )
 
-    def _on_profile_close(self, msg):
-        return self._invoke("_emit_profile_closed", QtCore.Q_ARG(str, str(msg.payload)))
+    def _on_slot_close(self, msg):
+        return self._invoke("_emit_slot_closed", QtCore.Q_ARG(str, str(msg.payload)))
 
-    def _on_profile_restart(self, msg):
-        return self._invoke("_emit_profile_restarted", QtCore.Q_ARG(str, str(msg.payload)))
+    def _on_slot_restart(self, msg):
+        return self._invoke("_emit_slot_restarted", QtCore.Q_ARG(str, str(msg.payload)))
 
     def _on_db_created(self, msg):
         return self._invoke("_emit_db_created", QtCore.Q_ARG(str, str(msg.payload)))
@@ -116,6 +118,17 @@ class ViewerIpcBridge(QtCore.QObject):
         p = msg.payload if isinstance(msg.payload, dict) else {}
         self.tags_updated.emit(p)
         return True
+
+    def _on_settings_changed(self, msg):
+        p = msg.payload if isinstance(msg.payload, dict) else {}
+        if p:
+            self.settings_received.emit(p)
+        return True
+
+    def broadcast_settings(self, updates: dict):
+        if not isinstance(updates, dict) or not updates:
+            return
+        self._node.send("settings.changed", dict(updates), dst="viewer")
 
     def _on_dev_log(self, msg):
         p = msg.payload
@@ -150,12 +163,12 @@ class ViewerIpcBridge(QtCore.QObject):
         self.show_toggled.emit(db, show)
 
     @QtCore.Slot(str)
-    def _emit_profile_closed(self, profile_id: str):
-        self.profile_closed.emit(profile_id)
+    def _emit_slot_closed(self, slot_id: str):
+        self.slot_closed.emit(slot_id)
 
     @QtCore.Slot(str)
-    def _emit_profile_restarted(self, profile_id: str):
-        self.profile_restarted.emit(profile_id)
+    def _emit_slot_restarted(self, slot_id: str):
+        self.slot_restarted.emit(slot_id)
 
     @QtCore.Slot(str)
     def _emit_db_created(self, name: str):

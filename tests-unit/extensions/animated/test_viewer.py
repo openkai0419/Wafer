@@ -85,27 +85,27 @@ class TestAnimatedViewerPluginDelegation:
 
 
 class TestAnimatedViewerPluginState:
-    def test_save_state(self):
+    def test_save_ui_state(self):
         from unittest.mock import MagicMock
 
         plugin = AnimatedViewerPlugin()
         plugin.widget = MagicMock()
         plugin.widget.cover_mode = True
-        state = plugin.save_state()
+        state = plugin.save_ui_state()
         assert state == {"fit_mode": True}
 
-    def test_restore_state(self):
+    def test_restore_ui_state(self):
         from unittest.mock import MagicMock
 
         plugin = AnimatedViewerPlugin()
         plugin.widget = MagicMock()
-        plugin.restore_state({"fit_mode": True})
+        plugin.restore_ui_state({"fit_mode": True})
         plugin.widget.set_cover_mode.assert_called_once_with(True)
 
-    def test_restore_state_default(self):
+    def test_restore_ui_state_default(self):
         from unittest.mock import MagicMock
 
         plugin = AnimatedViewerPlugin()
         plugin.widget = MagicMock()
-        plugin.restore_state({})
+        plugin.restore_ui_state({})
         plugin.widget.set_cover_mode.assert_called_once_with(False)

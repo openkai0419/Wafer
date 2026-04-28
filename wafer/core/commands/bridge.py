@@ -16,6 +16,7 @@ from ...utils.logs import AppLogger
 class ActionKit:
     from .binding.mixins import CommandBindingMixin as UIMixin
     from .command.core import COMMAND_MENU_MARKER as MENU_MARKER, CommandMeta as Command, CommandParam as Param
+    from .command.core import MenuAction as Action
     from .command.menu import MenuGroup as MenuBase
     from .command.menu import DragMenuGroup as DragMenuBase
     from .command.payload import ScopedPayloads
@@ -128,10 +129,7 @@ class Settings:
         return mouse_ok, key_ok
 
     def _commit(self) -> None:
-        from .command.state import ActionGroupStateManager
-
         BindingManager.instance().save()
-        ActionGroupStateManager.instance().commit()
         CommandOptionStore.instance().commit()
 
 
@@ -196,14 +194,6 @@ class Command:
     @staticmethod
     def cycle_action_group(group_name: str):
         return ActionKit.CommandMenuBuilder.instance().cycle_action_group(str(group_name))
-
-    @staticmethod
-    def get_action_group_current(group_name: str):
-        return ActionKit.CommandMenuBuilder.instance().get_action_group_current(str(group_name))
-
-    @staticmethod
-    def set_action_group_current(group_name: str, command_id: str, *, save: bool = True):
-        ActionKit.CommandMenuBuilder.instance().set_action_group_current(str(group_name), str(command_id), save=save)
 
     @staticmethod
     def get_checked(command_id: str) -> bool:

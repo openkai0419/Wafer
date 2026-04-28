@@ -32,6 +32,19 @@ def _cleanup_registry():
         del reg._commands[k]
 
 
+def _menu_action_label(action):
+    widget = action.defaultWidget() if isinstance(action, QtWidgets.QWidgetAction) else None
+    if widget is not None:
+        labels = [label.text() for label in widget.findChildren(QtWidgets.QLabel) if label.objectName() != "checkMark" and label.text()]
+        if labels:
+            return labels[0]
+    return action.text()
+
+
+def _menu_labels(menu):
+    return [_menu_action_label(action) for action in menu.actions() if not action.isSeparator() and _menu_action_label(action)]
+
+
 @pytest.fixture(autouse=True)
 def _reset_singletons(tmp_path):
     prev_instance = CommandOptionStore._instance
@@ -259,7 +272,7 @@ class TestScopedPayloadSectionPickCmd:
         section._add_override("GridView")
         section._refresh_overrides_menu()
 
-        menu_texts = [a.text() for a in section.ov_menu.actions()]
+        menu_texts = _menu_labels(section._build_overrides_menu())
         assert "GridView" not in menu_texts
         assert "ImageView" in menu_texts
 
@@ -270,8 +283,8 @@ class TestScopedPayloadSectionPickCmd:
         section._add_override("GridView")
         section._refresh_overrides_menu()
 
-        enabled_actions = [a for a in section.ov_menu.actions() if a.isEnabled()]
-        assert len(enabled_actions) == 0
+        assert section._build_overrides_menu() is None
+        assert not section.btn_overrides.isEnabled()
 
 
 class TestMultipleScopedSectionsIndependence:

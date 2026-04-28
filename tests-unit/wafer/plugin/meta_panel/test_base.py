@@ -43,12 +43,12 @@ def test_meta_panel_registry_register_and_lookup():
 
 def test_meta_panel_default_save_state_returns_empty_dict():
     plugin = _StubMetaPanel()
-    assert plugin.save_state() == {}
+    assert plugin.save_ui_state() == {}
 
 
 def test_meta_panel_default_restore_state_is_noop():
     plugin = _StubMetaPanel()
-    plugin.restore_state({"key": "value"})
+    plugin.restore_ui_state({"key": "value"})
 
 
 def test_meta_panel_overridden_save_restore_roundtrip():
@@ -61,16 +61,16 @@ def test_meta_panel_overridden_save_restore_roundtrip():
             return QtWidgets.QWidget(parent)
         def update_data(self, data):
             pass
-        def save_state(self):
+        def save_ui_state(self):
             return {"expanded": self._expanded}
-        def restore_state(self, state):
+        def restore_ui_state(self, state):
             self._expanded = state.get("expanded", True)
 
     plugin = StatefulMetaPanel()
     plugin._expanded = False
-    saved = plugin.save_state()
+    saved = plugin.save_ui_state()
     assert saved == {"expanded": False}
 
     plugin2 = StatefulMetaPanel()
-    plugin2.restore_state(saved)
+    plugin2.restore_ui_state(saved)
     assert plugin2._expanded is False

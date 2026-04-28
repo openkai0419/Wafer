@@ -58,7 +58,7 @@ class TestVideoViewerPluginRender:
 
 
 class TestVideoViewerPluginState:
-    def test_save_state(self):
+    def test_save_ui_state(self):
         from unittest.mock import MagicMock
 
         plugin = VideoViewerPlugin()
@@ -69,7 +69,7 @@ class TestVideoViewerPluginState:
         plugin.widget.cover_mode = True
         plugin.widget.looping = False
         plugin.widget.pause_in_background = False
-        state = plugin.save_state()
+        state = plugin.save_ui_state()
         assert state == {
             "volume": 75,
             "muted": True,
@@ -79,7 +79,7 @@ class TestVideoViewerPluginState:
             "pause_in_background": False,
         }
 
-    def test_restore_state_calls_setters(self):
+    def test_restore_ui_state_calls_setters(self):
         from unittest.mock import MagicMock
 
         plugin = VideoViewerPlugin()
@@ -92,7 +92,7 @@ class TestVideoViewerPluginState:
             "loop": True,
             "pause_in_background": False,
         }
-        plugin.restore_state(state)
+        plugin.restore_ui_state(state)
         plugin.widget.set_volume.assert_called_once_with(60)
         plugin.widget.set_muted.assert_called_once_with(True)
         plugin.widget.set_speed.assert_called_once_with(2.0)
@@ -100,13 +100,13 @@ class TestVideoViewerPluginState:
         plugin.widget.set_looping.assert_called_once_with(True)
         plugin.widget.set_pause_in_background.assert_called_once_with(False)
 
-    def test_restore_state_defaults(self):
+    def test_restore_ui_state_defaults(self):
         from unittest.mock import MagicMock
         from extensions.video.viewer_widget import DEFAULT_VOLUME
 
         plugin = VideoViewerPlugin()
         plugin.widget = MagicMock()
-        plugin.restore_state({})
+        plugin.restore_ui_state({})
         plugin.widget.set_volume.assert_called_once_with(DEFAULT_VOLUME)
         plugin.widget.set_muted.assert_called_once_with(False)
         plugin.widget.set_speed.assert_called_once_with(1.0)
@@ -114,14 +114,14 @@ class TestVideoViewerPluginState:
         plugin.widget.set_looping.assert_called_once_with(True)
         plugin.widget.set_pause_in_background.assert_called_once_with(False)
 
-    def test_restore_state_idempotent(self):
+    def test_restore_ui_state_idempotent(self):
         from unittest.mock import MagicMock
 
         plugin = VideoViewerPlugin()
         plugin.widget = MagicMock()
         state = {"volume": 50, "muted": False, "speed": 1.0, "fit_mode": False, "loop": False, "pause_in_background": False}
-        plugin.restore_state(state)
-        plugin.restore_state(state)
+        plugin.restore_ui_state(state)
+        plugin.restore_ui_state(state)
         assert plugin.widget.set_muted.call_count == 2
         assert plugin.widget.set_cover_mode.call_count == 2
         assert plugin.widget.set_looping.call_count == 2

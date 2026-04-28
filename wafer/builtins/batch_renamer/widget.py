@@ -949,16 +949,19 @@ class BatchRenameWidget(QtWidgets.QWidget):
             popup.close()
 
     def _show_add_menu(self, section):
-        menu = QtWidgets.QMenu(self)
-        for src_cls in rename_source_registry.list_all():
-            if src_cls.NAME == "ext":
-                continue
-            act = menu.addAction(src_cls.DISPLAY)
-            act.triggered.connect(lambda _, c=src_cls: self._add_column(c))
         header = self._seg_table.horizontalHeader()
         sec_x = header.sectionPosition(section) - header.offset()
         gp = header.mapToGlobal(QtCore.QPoint(sec_x, header.height()))
-        menu.exec(gp)
+        uid = f"{id(self):x}"
+        items = [":Add Column"]
+        items.extend(
+            ActionKit.Action(path=f"inline.renamer.{uid}.add_column.{src_cls.NAME}", display=src_cls.DISPLAY, func=lambda ctx, c=src_cls: self._add_column(c))
+            for src_cls in rename_source_registry.list_all()
+            if src_cls.NAME != "ext"
+        )
+        spec = Menu.session(self).menu(items)
+        if spec is not None:
+            spec.exec(gp)
 
     def _add_column(self, src_cls):
         source = src_cls()
@@ -1046,7 +1049,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
         frozen_rows = list(rows)
         items = [
             ":BatchRenamer",
-            ActionKit.Command(
+            ActionKit.Action(
                 path="inline.renamer.remove",
                 display=remove_display,
                 func=lambda ctx: self._exclude_rows(frozen_rows),
@@ -1205,7 +1208,7 @@ class BatchRenamerPlugin(BasePanelPlugin):
     PRIORITY = 0
     SOURCE = "Builtin"
 
-    def save_state(self):
+    def save_ui_state(self):
         inst = BatchRenameWidget._instance_ref
         if inst is not None:
             try:
@@ -1214,7 +1217,7 @@ class BatchRenamerPlugin(BasePanelPlugin):
                 AppLogger.warning("[BatchRenamer] save_state failed", exc=e)
         return dict(BatchRenameWidget._saved_state)
 
-    def restore_state(self, state):
+    def restore_ui_state(self, state):
         BatchRenameWidget._saved_state = state
 
     def create_widget(self):

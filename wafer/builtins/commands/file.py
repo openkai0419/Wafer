@@ -168,11 +168,11 @@ def _get_directory_from_path(path):
 
 @require(ftree="FolderTree")
 def select_path(ctx, ftree):
-    path = _ctx_path(ctx)
-    if not path:
+    paths = _ctx_paths(ctx)
+    if not paths:
         return
-    folder = _get_directory_from_path(str(path))
-    ftree.expand_and_select_path(folder)
+    folders = list(dict.fromkeys(_get_directory_from_path(str(p)) for p in paths))
+    ftree.expand_and_select_paths(folders)
 
 
 @require(items="GridItemModel", view="GridView")

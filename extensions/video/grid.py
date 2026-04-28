@@ -65,7 +65,7 @@ class VideoGridPlugin(WidgetGridPlugin):
     def deselect(self, widget):
         widget.on_deselected()
 
-    def save_state(self):
+    def save_ui_state(self):
         sm = MpvCellWidget._slot_manager
         if sm is None:
             return MpvCellWidget._pending_grid_state or {}
@@ -78,7 +78,7 @@ class VideoGridPlugin(WidgetGridPlugin):
             "pause_in_background": sm.pause_in_background,
         }
 
-    def restore_state(self, state):
+    def restore_ui_state(self, state):
         sm = MpvCellWidget._slot_manager
         if sm is None:
             MpvCellWidget._pending_grid_state = state

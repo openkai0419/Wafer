@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 from collections.abc import Iterable
 
-from .core import CommandMeta, CommandRegistry, register_command_defs
+from .core import CommandMeta, CommandRegistry, MenuAction, register_command_defs
 from .menu import MenuHub, MENU_SEPARATOR, MENU_SECTION_PREFIX, is_section_token, is_sep_token, split_menu_path, normalize_command_meta
 from ....utils.logs import AppLogger
 
@@ -15,6 +15,7 @@ class _ResolvedItem:
     kind: str
     command_id: str
     canonical_path: str
+    action: MenuAction | None = None
 
 
 class MenuPlan:
@@ -32,6 +33,9 @@ class MenuPlan:
                 out.append(x.token)
         return out
 
+    def resolve_items(self) -> list[_ResolvedItem]:
+        return list(self._items)
+
     def hide(self, targets: Iterable[str]) -> MenuPlan:
         ts = [str(t).strip().strip("/") for t in list(targets or []) if str(t).strip()]
         if not ts:
@@ -40,10 +44,10 @@ class MenuPlan:
         for t in ts:
             before = len(items)
             if "/" in t:
-                items = [x for x in items if not (x.kind == "cmd" and (x.token.strip("/") == t or x.canonical_path.strip("/") == t))]
+                items = [x for x in items if not (x.kind in ("cmd", "action") and (x.token.strip("/") == t or x.canonical_path.strip("/") == t))]
             else:
                 prefix = t + "/"
-                items = [x for x in items if not (x.command_id == t or x.token.startswith(prefix) or x.canonical_path.startswith(prefix))]
+                items = [x for x in items if not (x.kind in ("cmd", "action") and (x.command_id == t or x.token.startswith(prefix) or x.canonical_path.startswith(prefix)))]
             if len(items) == before:
                 AppLogger.warning(f"[MenuPlan.hide] target not found, skipped: {t}")
         return MenuPlan(self._hub, items, has_inline=self.has_inline)
@@ -70,16 +74,16 @@ class MenuPlan:
 
     def _find_target_indexes(self, t: str) -> list[int]:
         if "/" in t:
-            token_matches = [i for i, x in enumerate(self._items) if x.kind == "cmd" and x.token.strip("/") == t]
+            token_matches = [i for i, x in enumerate(self._items) if x.kind in ("cmd", "action") and x.token.strip("/") == t]
             if token_matches:
                 if len(token_matches) > 1:
                     raise ValueError(f"insert target is ambiguous: {t}")
                 return token_matches
-            canon_matches = [i for i, x in enumerate(self._items) if x.kind == "cmd" and x.canonical_path.strip("/") == t]
+            canon_matches = [i for i, x in enumerate(self._items) if x.kind in ("cmd", "action") and x.canonical_path.strip("/") == t]
             if canon_matches and len(canon_matches) > 1:
                 raise ValueError(f"insert target is ambiguous: {t}")
             return canon_matches
-        return [i for i, x in enumerate(self._items) if x.kind == "cmd" and x.command_id == t]
+        return [i for i, x in enumerate(self._items) if x.kind in ("cmd", "action") and x.command_id == t]
 
     def _resolve_items(self, raw_items: Any) -> tuple[list[_ResolvedItem], bool]:
         out: list[_ResolvedItem] = []
@@ -87,6 +91,10 @@ class MenuPlan:
         for entry in MenuMaker._normalize_menu_items(raw_items):
             if isinstance(entry, CommandMeta):
                 out.append(MenuMaker._meta_to_resolved(entry))
+                has_inline = True
+                continue
+            if isinstance(entry, MenuAction):
+                out.append(MenuMaker._action_to_resolved(entry))
                 has_inline = True
                 continue
             for it in MenuMaker._resolve_one(self._hub, str(entry)):
@@ -113,6 +121,9 @@ class MenuMaker:
                 if isinstance(x, CommandMeta):
                     out.append(x)
                     continue
+                if isinstance(x, MenuAction):
+                    out.append(x)
+                    continue
                 s = str(x).strip()
                 if s:
                     out.append(s)
@@ -124,6 +135,16 @@ class MenuMaker:
         m = normalize_command_meta([], meta)
         register_command_defs([m])
         return _ResolvedItem(token=str(m.path), kind="cmd", command_id=str(m.id), canonical_path=str(m.path))
+
+    @staticmethod
+    def _action_to_resolved(action: MenuAction) -> _ResolvedItem:
+        if not action.path:
+            raise ValueError("MenuAction.path is required")
+        parts = split_menu_path(str(action.path))
+        if not parts or parts[-1] == MENU_SEPARATOR or str(parts[-1]).startswith(MENU_SECTION_PREFIX):
+            raise ValueError(f"Invalid menu action path: {action.path}")
+        command_id = parts[-1]
+        return _ResolvedItem(token=str(action.path), kind="action", command_id=command_id, canonical_path=str(action.path), action=action)
 
     @staticmethod
     def _item_to_resolved(hub: MenuHub, token: str) -> _ResolvedItem:
@@ -209,6 +230,10 @@ class MenuMaker:
         for it in self._normalize_menu_items(items):
             if isinstance(it, CommandMeta):
                 resolved.append(self._meta_to_resolved(it))
+                has_inline = True
+                continue
+            if isinstance(it, MenuAction):
+                resolved.append(self._action_to_resolved(it))
                 has_inline = True
                 continue
             resolved.extend(self._resolve_one(self._hub, str(it)))

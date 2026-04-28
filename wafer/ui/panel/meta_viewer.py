@@ -9,6 +9,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from ...utils.formatting import dpix, display_prefixed_key
 from ...utils.logs import AppLogger
 from ...core.lang.manager import t
+from ...core.commands.bridge import ActionKit, Menu
 from ...core.qt.icon_engine import icon_draw
 from ...core.color.theme import ThemeManager
 from .value_viewer_dialog import open_value_viewer
@@ -221,20 +222,19 @@ class MetaRowWidget(QtWidgets.QFrame):
         self.rowActivated.emit(self._index, self._data)
 
     def _show_menu(self, pos: QtCore.QPoint) -> None:
-        menu = QtWidgets.QMenu(self)
-        act_copy_json = menu.addAction(t("Copy row as JSON (full)"))
-        act_copy_text_preview = menu.addAction(t("Copy preview text"))
-        act_copy_value = menu.addAction(t("Copy single value\u2026"))
-        act_view_value = menu.addAction(t("Open value viewer\u2026"))
-        chosen = menu.exec(self.mapToGlobal(pos))
-        if chosen is act_copy_json:
-            QtWidgets.QApplication.clipboard().setText(json.dumps(self._data, ensure_ascii=False, indent=2))
-        elif chosen is act_copy_text_preview:
-            QtWidgets.QApplication.clipboard().setText(self._to_plain_text(preview=True))
-        elif chosen is act_copy_value:
-            self._copy_single_value_dialog()
-        elif chosen is act_view_value:
-            self._open_value_viewer_dialog()
+        clipboard = QtWidgets.QApplication.clipboard()
+        uid = f"{id(self):x}.{self._index}"
+        spec = Menu.session(self).menu(
+            [
+                ":Meta Row",
+                ActionKit.Action(path=f"inline.meta_row.{uid}.copy_json", display="Copy row as JSON (full)", func=lambda ctx: clipboard.setText(json.dumps(self._data, ensure_ascii=False, indent=2))),
+                ActionKit.Action(path=f"inline.meta_row.{uid}.copy_preview", display="Copy preview text", func=lambda ctx: clipboard.setText(self._to_plain_text(preview=True))),
+                ActionKit.Action(path=f"inline.meta_row.{uid}.copy_value", display="Copy single value…", func=lambda ctx: self._copy_single_value_dialog()),
+                ActionKit.Action(path=f"inline.meta_row.{uid}.open_value", display="Open value viewer…", func=lambda ctx: self._open_value_viewer_dialog()),
+            ]
+        )
+        if spec is not None:
+            spec.exec(self.mapToGlobal(pos))
 
     def _copy_single_value_dialog(self) -> None:
         key, ok = QtWidgets.QInputDialog.getItem(self, t("Copy single value"), t("Key:"), self._keys, 0, False)

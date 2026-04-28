@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import patch, MagicMock
 
-from PySide6 import QtWidgets
+from PySide6 import QtCore, QtWidgets
 
 from wafer.builtins.filters import TextFilter, DirectoryFilter
 from wafer.plugin.query.base import KeyStore
@@ -20,11 +20,41 @@ def qapp():
 @pytest.fixture(autouse=True)
 def _reset_popup():
     _KeySelectorPopup._instance = None
-    from wafer.core.app_settings import app_settings
-    app_settings.settings.remove("filters/active_keys")
     yield
     _KeySelectorPopup._instance = None
-    app_settings.settings.remove("filters/active_keys")
+
+
+def _menu_action_label(action):
+    widget = action.defaultWidget() if isinstance(action, QtWidgets.QWidgetAction) else None
+    if widget is not None:
+        labels = [label.text() for label in widget.findChildren(QtWidgets.QLabel) if label.objectName() != "checkMark" and label.text()]
+        if labels:
+            return labels[0]
+    return action.text()
+
+
+def _menu_labels(menu):
+    labels = []
+    for action in menu.actions():
+        if action.isSeparator():
+            continue
+        text = _menu_action_label(action)
+        if text:
+            labels.append(text)
+        if action.menu():
+            labels.extend(_menu_labels(action.menu()))
+    return labels
+
+
+def _find_menu_action(menu, text):
+    for action in menu.actions():
+        if _menu_action_label(action) == text:
+            return action
+        if action.menu():
+            found = _find_menu_action(action.menu(), text)
+            if found is not None:
+                return found
+    return None
 
 
 class TestFilterRow:
@@ -85,7 +115,10 @@ class TestFilterRow:
     def test_default_enabled(self, qapp):
         row = FilterRow(TextFilter)
         assert row.is_enabled() is True
-        assert row.toggle_button.isChecked() is False
+
+    def test_no_dedicated_toggle_button(self, qapp):
+        row = FilterRow(TextFilter)
+        assert not hasattr(row, "toggle_button")
 
     def test_set_enabled_false_skips_entry(self, qapp):
         row = FilterRow(TextFilter, show_op=False)
@@ -106,15 +139,6 @@ class TestFilterRow:
         row.set_enabled(False)
         assert signals == []
 
-    def test_toggle_button_click_emits_changed(self, qapp):
-        row = FilterRow(TextFilter)
-        signals = []
-        row.changed.connect(lambda: signals.append(True))
-        row.toggle_button.click()
-        assert row.is_enabled() is False
-        assert row.toggle_button.isChecked() is True
-        assert len(signals) == 1
-
     def test_disabled_grays_out_param_widget(self, qapp):
         row = FilterRow(TextFilter)
         w = row.get_param_widget()
@@ -123,6 +147,22 @@ class TestFilterRow:
         assert w.isEnabled() is False
         row.set_enabled(True)
         assert w.isEnabled() is True
+
+    def test_disabled_grays_out_op_combo(self, qapp):
+        row = FilterRow(TextFilter, show_op=True)
+        assert row.op_combo.isEnabled() is True
+        row.set_enabled(False)
+        assert row.op_combo.isEnabled() is False
+        row.set_enabled(True)
+        assert row.op_combo.isEnabled() is True
+
+    def test_remove_button_context_request_uses_global_position(self, qapp):
+        row = FilterRow(TextFilter)
+        received = []
+        row.context_requested.connect(lambda r, pos: received.append((r, pos)))
+        row.remove_button.customContextMenuRequested.emit(QtCore.QPoint(1, 2))
+        assert received[0][0] is row
+        assert isinstance(received[0][1], QtCore.QPoint)
 
 
 class TestSearchContainer:
@@ -236,12 +276,16 @@ class TestSearchContainer:
     def test_sort_menu_syncs(self, qapp):
         container = SearchContainer()
         container.set_sort("size", True)
-        checked_sort = [a for a in container._sort_group.actions() if a.isChecked()]
-        assert len(checked_sort) == 1
-        assert checked_sort[0].data() == "size"
-        checked_order = [a for a in container._order_group.actions() if a.isChecked()]
-        assert len(checked_order) == 1
-        assert checked_order[0].data() is True
+        menu = container._build_sort_menu()
+        size_action = _find_menu_action(menu, "Size")
+        ascending_action = _find_menu_action(menu, "Ascending")
+        descending_action = _find_menu_action(menu, "Descending")
+        assert size_action is not None
+        assert size_action.isChecked()
+        assert ascending_action is not None
+        assert ascending_action.isChecked()
+        assert descending_action is not None
+        assert not descending_action.isChecked()
 
     def test_get_values_returns_dict(self, qapp):
         container = SearchContainer()
@@ -268,22 +312,158 @@ class TestSearchContainer:
         container._add_row(TextFilter)
         assert len(signals) >= 1
 
+    def test_row_menu_contains_row_actions(self, qapp):
+        container = SearchContainer()
+        container._add_row(TextFilter)
+        container._add_row(TextFilter)
+        menu = container._build_row_menu(container._rows[1])
+        labels = _menu_labels(menu)
+        assert "Enabled" in labels
+        assert "Move up" in labels
+        assert "Move down" in labels
+        assert "Move to top" in labels
+        assert "Move to bottom" in labels
+        assert "Delete filter" in labels
+        assert any(a.menu() and a.text() == "Add filter after this" for a in menu.actions())
+
+    def test_row_menu_has_header(self, qapp):
+        container = SearchContainer()
+        menu = container._build_row_menu(container._rows[0])
+        header = menu.actions()[0]
+        assert isinstance(header, QtWidgets.QWidgetAction)
+        widget = header.defaultWidget()
+        assert widget is not None
+        assert widget.findChild(QtWidgets.QLabel).text() == "Filter Menu"
+
+    def test_row_menu_enabled_action_is_checkable(self, qapp):
+        container = SearchContainer()
+        menu = container._build_row_menu(container._rows[0])
+        enabled_action = _find_menu_action(menu, "Enabled")
+        assert enabled_action is not None
+        assert enabled_action.isCheckable()
+        assert enabled_action.isChecked()
+
+    def test_row_menu_enabled_action_sets_state(self, qapp):
+        container = SearchContainer()
+        menu = container._build_row_menu(container._rows[0])
+        enabled_action = _find_menu_action(menu, "Enabled")
+        assert enabled_action is not None
+        enabled_action.trigger()
+        assert container._rows[0].is_enabled() is False
+
+    def test_toggle_row_enabled_from_menu_action(self, qapp):
+        container = SearchContainer()
+        signals = []
+        container.filter_changed.connect(lambda: signals.append(True))
+        container._toggle_row_enabled(container._rows[0])
+        assert container._rows[0].is_enabled() is False
+        assert len(signals) == 1
+
+    def test_add_row_after_inserts_after_target(self, qapp):
+        container = SearchContainer()
+        first = container._rows[0]
+        container._add_row(TextFilter)
+        second = container._rows[1]
+        container._add_row_after(first, TextFilter)
+        assert len(container._rows) == 3
+        assert container._rows[0] is first
+        assert container._rows[2] is second
+        assert container._rows[1].filter_cls is TextFilter
+
+    def test_insert_row_updates_op_visibility(self, qapp):
+        container = SearchContainer()
+        container._insert_row(0, TextFilter)
+        assert len(container._rows) == 2
+        assert not container._rows[0]._has_op
+        assert container._rows[1]._has_op
+
+    def test_insert_row_updates_tool_placement(self, qapp):
+        container = SearchContainer()
+        container._insert_row(0, TextFilter)
+        assert container._tools_host is container._rows[-1]
+
+    def test_insert_row_inherits_from_previous_rows_only(self, qapp):
+        container = SearchContainer()
+        first = container._rows[0].get_param_widget()
+        first.write_params({"query_mode": "LIKE"})
+        container._add_row(TextFilter)
+        second = container._rows[1].get_param_widget()
+        second.write_params({"query_mode": "GLOB"})
+        container._add_row_after(container._rows[0], TextFilter)
+        inserted = container._rows[1].get_param_widget()
+        assert inserted.read_params()["query_mode"] == "LIKE"
+
+    def test_move_row_up(self, qapp):
+        container = SearchContainer()
+        container._add_row(TextFilter)
+        first, second = container._rows
+        container._move_row(second, 0)
+        assert container._rows == [second, first]
+
+    def test_move_row_down(self, qapp):
+        container = SearchContainer()
+        container._add_row(TextFilter)
+        first, second = container._rows
+        container._move_row(first, 1)
+        assert container._rows == [second, first]
+
+    def test_move_row_updates_layout_order(self, qapp):
+        container = SearchContainer()
+        container._add_row(TextFilter)
+        first, second = container._rows
+        container._move_row(first, 1)
+        assert container._filter_stack.itemAt(0).widget() is second
+        assert container._filter_stack.itemAt(1).widget() is first
+
+    def test_move_row_updates_op_visibility(self, qapp):
+        container = SearchContainer()
+        container._add_row(TextFilter)
+        container._move_row(container._rows[1], 0)
+        assert not container._rows[0]._has_op
+        assert container._rows[1]._has_op
+
+    def test_move_row_preserves_enabled_state(self, qapp):
+        container = SearchContainer()
+        container._add_row(TextFilter)
+        first, second = container._rows
+        second.set_enabled(False)
+        container._move_row(second, 0)
+        assert container._rows[0] is second
+        assert container._rows[0].is_enabled() is False
+        assert container._rows[1] is first
+        assert container._rows[1].is_enabled() is True
+
+    def test_move_row_updates_tool_placement(self, qapp):
+        container = SearchContainer()
+        container._add_row(TextFilter)
+        last = container._rows[-1]
+        container._move_row(last, 0)
+        assert container._tools_host is container._rows[-1]
+
+    def test_move_row_emits_once(self, qapp):
+        container = SearchContainer()
+        container._add_row(TextFilter)
+        signals = []
+        container.filter_changed.connect(lambda: signals.append(True))
+        container._move_row(container._rows[1], 0)
+        assert len(signals) == 1
+
 
 class TestSearchContainerState:
     def test_save_state(self, qapp):
         container = SearchContainer()
         container.set_search_text("test")
         state = container.save_state()
-        assert "rows" in state
+        assert "bars" in state
         assert "sort_by" in state
         assert "ascending" in state
-        assert len(state["rows"]) == 1
-        assert state["rows"][0]["filter"] == "text"
+        assert len(state["bars"]) == 1
+        assert state["bars"][0]["filter"] == "text"
 
     def test_restore_state(self, qapp):
         container = SearchContainer()
         state = {
-            "rows": [
+            "bars": [
                 {"filter": "text", "params": {"keywords": "restored", "query_mode": "LIKE"}, "op": None},
             ],
             "sort_by": "modified",
@@ -298,7 +478,7 @@ class TestSearchContainerState:
     def test_restore_multiple_rows(self, qapp):
         container = SearchContainer()
         state = {
-            "rows": [
+            "bars": [
                 {"filter": "text", "params": {"keywords": "first"}, "op": None},
                 {"filter": "text", "params": {"keywords": "second"}, "op": "OR"},
             ],
@@ -313,7 +493,7 @@ class TestSearchContainerState:
     def test_restore_empty_rows_keeps_existing(self, qapp):
         container = SearchContainer()
         container.set_search_text("keep")
-        state = {"rows": [], "sort_by": "size", "ascending": True}
+        state = {"bars": [], "sort_by": "size", "ascending": True}
         container.restore_state(state)
         assert len(container._rows) == 1
         sort_name, ascending = container.get_sort()
@@ -323,7 +503,7 @@ class TestSearchContainerState:
     def test_restore_updates_tool_placement(self, qapp):
         container = SearchContainer()
         state = {
-            "rows": [
+            "bars": [
                 {"filter": "text", "params": {"keywords": "a"}, "op": None},
                 {"filter": "text", "params": {"keywords": "b"}, "op": "OR"},
             ],
@@ -344,16 +524,16 @@ class TestSearchContainerState:
     def test_save_includes_enabled_field(self, qapp):
         container = SearchContainer()
         state = container.save_state()
-        assert state["rows"][0]["enabled"] is True
+        assert state["bars"][0]["enabled"] is True
 
     def test_save_preserves_disabled_rows(self, qapp):
         container = SearchContainer()
         container._add_row(TextFilter)
         container._rows[1].set_enabled(False)
         state = container.save_state()
-        assert len(state["rows"]) == 2
-        assert state["rows"][0]["enabled"] is True
-        assert state["rows"][1]["enabled"] is False
+        assert len(state["bars"]) == 2
+        assert state["bars"][0]["enabled"] is True
+        assert state["bars"][1]["enabled"] is False
 
     def test_disabled_row_excluded_from_filter_entries(self, qapp):
         container = SearchContainer()
@@ -365,7 +545,7 @@ class TestSearchContainerState:
     def test_restore_enabled_state(self, qapp):
         container = SearchContainer()
         state = {
-            "rows": [
+            "bars": [
                 {"filter": "text", "params": {"keywords": "a"}, "op": None, "enabled": True},
                 {"filter": "text", "params": {"keywords": "b"}, "op": "OR", "enabled": False},
             ],
@@ -379,7 +559,7 @@ class TestSearchContainerState:
     def test_restore_legacy_state_defaults_enabled(self, qapp):
         container = SearchContainer()
         state = {
-            "rows": [
+            "bars": [
                 {"filter": "text", "params": {"keywords": "legacy"}, "op": None},
             ],
             "sort_by": "path",
@@ -470,7 +650,7 @@ class TestUpdateKeyCombos:
         container = SearchContainer()
         container._key_store.set_data([("path", 15), ("prompt", 7)])
         state = {
-            "rows": [
+            "bars": [
                 {"filter": "text", "params": {"keywords": "a"}, "op": None},
                 {"filter": "text", "params": {"keywords": "b"}, "op": "OR"},
             ],

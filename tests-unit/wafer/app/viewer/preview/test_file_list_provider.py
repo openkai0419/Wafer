@@ -48,6 +48,42 @@ class TestSyncMode:
         assert file_model.path() == "b"
         assert file_model.current_index() == 1
 
+    def test_set_mode_sync_recovers_from_stale_directory_list(self, provider, file_model, grid_items):
+        grid_items.set_items(["g0", "g1", "g2"], ["s0", "s1", "s2"], [1.0, 1.0, 1.0])
+        provider.set_mode(ListMode.DIR)
+        file_model.set_items(["d0", "d1", "g1", "d2"], ["sd0", "sd1", "sg1", "sd2"])
+        file_model.set_path("g1")
+
+        provider.set_mode(ListMode.SYNC)
+
+        assert file_model.paths == ["g0", "g1", "g2"]
+        assert file_model.sources == ["s0", "s1", "s2"]
+        assert file_model.path() == "g1"
+        assert file_model.current_index() == 1
+
+    def test_set_mode_sync_refreshes_current_grid_even_when_already_sync(self, provider, file_model, grid_items):
+        provider.set_mode(ListMode.SYNC)
+        grid_items.set_items(["g0", "g1"], ["s0", "s1"], [1.0, 1.0])
+        file_model.set_items(["old0", "g1", "old1"], ["so0", "stale", "so1"])
+        file_model.set_path("g1")
+
+        provider.set_mode(ListMode.SYNC)
+
+        assert file_model.paths == ["g0", "g1"]
+        assert file_model.sources == ["s0", "s1"]
+        assert file_model.path() == "g1"
+        assert file_model.current_index() == 1
+
+    def test_on_file_set_sync_keeps_standalone_path_when_not_in_grid(self, provider, file_model, grid_items):
+        file_model.set_items(["a", "b", "c"], ["s1", "s2", "s3"])
+        grid_items.set_items(["x", "y"], ["sx", "sy"], [1.0, 1.0])
+
+        provider.on_file_set("b")
+
+        assert file_model.paths == ["a", "b", "c"]
+        assert file_model.path() == "b"
+        assert file_model.current_index() == 1
+
 
 class TestFixMode:
     def test_on_search_results_ignored(self, provider, file_model, grid_items):

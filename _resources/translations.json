@@ -1,4 +1,240 @@
 {
+  "Delete Workspace Slot": {
+    "en": "Delete Workspace Slot",
+    "ja": ""
+  },
+  "Remove this recent workspace?": {
+    "en": "Remove this recent workspace?",
+    "ja": ""
+  },
+  "Rename Workspace Slot": {
+    "en": "Rename Workspace Slot",
+    "ja": ""
+  },
+  "Workspace slot renamed": {
+    "en": "Workspace slot renamed",
+    "ja": ""
+  },
+  "Workspace slot is already current": {
+    "en": "Workspace slot is already current",
+    "ja": ""
+  },
+  "Current workspace": {
+    "en": "Current workspace",
+    "ja": ""
+  },
+  "Restore Sort": {
+    "en": "Restore Sort",
+    "ja": ""
+  },
+  "Restore Window pos": {
+    "en": "Restore Window pos",
+    "ja": ""
+  },
+  "Recent": {
+    "en": "Recent",
+    "ja": ""
+  },
+  "Add Filter": {
+    "en": "Add Filter",
+    "ja": ""
+  },
+  "Datetime": {
+    "en": "Datetime",
+    "ja": ""
+  },
+  "Regex": {
+    "en": "Regex",
+    "ja": ""
+  },
+  "Filter Menu": {
+    "en": "Filter Menu",
+    "ja": ""
+  },
+  "Add filter after this": {
+    "en": "Add filter after this",
+    "ja": ""
+  },
+  "Delete filter": {
+    "en": "Delete filter",
+    "ja": ""
+  },
+  "Disable filter": {
+    "en": "Disable filter",
+    "ja": ""
+  },
+  "Disabled": {
+    "en": "Disabled",
+    "ja": ""
+  },
+  "Enable filter": {
+    "en": "Enable filter",
+    "ja": ""
+  },
+  "Enabled": {
+    "en": "Enabled",
+    "ja": ""
+  },
+  "Move down": {
+    "en": "Move down",
+    "ja": ""
+  },
+  "Move to bottom": {
+    "en": "Move to bottom",
+    "ja": ""
+  },
+  "Move to top": {
+    "en": "Move to top",
+    "ja": ""
+  },
+  "Move up": {
+    "en": "Move up",
+    "ja": ""
+  },
+  "Remove filter": {
+    "en": "Remove filter",
+    "ja": ""
+  },
+  "Right-click for row options": {
+    "en": "Right-click for row options",
+    "ja": ""
+  },
+  "(empty)": {
+    "en": "(empty)",
+    "ja": ""
+  },
+  "Append": {
+    "en": "Append",
+    "ja": ""
+  },
+  "Apply Path Preset": {
+    "en": "Apply Path Preset",
+    "ja": ""
+  },
+  "Apply Query Preset": {
+    "en": "Apply Query Preset",
+    "ja": ""
+  },
+  "Apply UI Preset": {
+    "en": "Apply UI Preset",
+    "ja": ""
+  },
+  "Apply:": {
+    "en": "Apply:",
+    "ja": ""
+  },
+  "Delete Path Preset": {
+    "en": "Delete Path Preset",
+    "ja": ""
+  },
+  "Delete Query Preset": {
+    "en": "Delete Query Preset",
+    "ja": ""
+  },
+  "Delete UI Preset": {
+    "en": "Delete UI Preset",
+    "ja": ""
+  },
+  "Rename Path Preset": {
+    "en": "Rename Path Preset",
+    "ja": ""
+  },
+  "Rename Query Preset": {
+    "en": "Rename Query Preset",
+    "ja": ""
+  },
+  "Rename UI Preset": {
+    "en": "Rename UI Preset",
+    "ja": ""
+  },
+  "Replace": {
+    "en": "Replace",
+    "ja": ""
+  },
+  "Save Path Preset": {
+    "en": "Save Path Preset",
+    "ja": ""
+  },
+  "Save Query Preset": {
+    "en": "Save Query Preset",
+    "ja": ""
+  },
+  "Save UI Preset": {
+    "en": "Save UI Preset",
+    "ja": ""
+  },
+  "Save current": {
+    "en": "Save current",
+    "ja": ""
+  },
+  "Save sort with preset": {
+    "en": "Save sort with preset",
+    "ja": ""
+  },
+  "Set UI Preset Color": {
+    "en": "Set UI Preset Color",
+    "ja": ""
+  },
+  "UI": {
+    "en": "UI",
+    "ja": ""
+  },
+  "Workspace...": {
+    "en": "Workspace...",
+    "ja": ""
+  },
+  "Overwrite": {
+    "en": "Overwrite",
+    "ja": ""
+  },
+  "Last updated": {
+    "en": "Last updated",
+    "ja": ""
+  },
+  "Restore": {
+    "en": "Restore",
+    "ja": ""
+  },
+  "Restore sort on apply": {
+    "en": "Restore sort on apply",
+    "ja": ""
+  },
+  "Restore window position": {
+    "en": "Restore window position",
+    "ja": ""
+  },
+  "No database": {
+    "en": "No database",
+    "ja": ""
+  },
+  "Restore Workspace Slot": {
+    "en": "Restore Workspace Slot",
+    "ja": ""
+  },
+  "Workspace slot not found": {
+    "en": "Workspace slot not found",
+    "ja": ""
+  },
+  "Workspace slot removed from Recent": {
+    "en": "Workspace slot removed from Recent",
+    "ja": ""
+  },
+  "Overwrite UI Preset": {
+    "en": "Overwrite UI Preset",
+    "ja": ""
+  },
+  "Overwrite Path Preset": {
+    "en": "Overwrite Path Preset",
+    "ja": ""
+  },
+  "Overwrite Query Preset": {
+    "en": "Overwrite Query Preset",
+    "ja": ""
+  },
+  "Open value viewer": {
+    "en": "Open value viewer",
+    "ja": ""
+  },
   "Value viewer - {key}": {
     "en": "Value viewer - {key}",
     "ja": ""

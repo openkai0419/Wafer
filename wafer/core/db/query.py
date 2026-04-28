@@ -398,7 +398,7 @@ class FileSearchEngine:
         def _consume(rows):
             for row in rows:
                 key = row["key"]
-                suffix = key[len(key_prefix):] if key else ""
+                suffix = key[len(key_prefix) :] if key else ""
                 if not suffix:
                     continue
                 result.setdefault(row["path"], []).append(suffix)
@@ -409,7 +409,7 @@ class FileSearchEngine:
             norm_paths = [self._normalize_path(p) for p in paths]
             chunk_size = 900
             for start in range(0, len(norm_paths), chunk_size):
-                chunk = norm_paths[start:start + chunk_size]
+                chunk = norm_paths[start : start + chunk_size]
                 placeholders = ",".join("?" * len(chunk))
                 _consume(cur.execute(f"{base_sql} AND i.path IN ({placeholders})", (like_pattern, *chunk)).fetchall())
         return result

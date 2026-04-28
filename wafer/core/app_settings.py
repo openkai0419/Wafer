@@ -46,6 +46,9 @@ class SettingManager(QtCore.QObject):
     send_buffer = QtCore.Signal(dict)
     request_flush = QtCore.Signal()
 
+    committed = QtCore.Signal(dict)
+    key_changed = QtCore.Signal(str)
+
     def __init__(self, ini_filename="viewer_settings.ini"):
         super().__init__()
         self.ini_path = resolve_data_path(ini_filename)
@@ -86,18 +89,36 @@ class SettingManager(QtCore.QObject):
         return value
 
     def save_immediate(self, key, value):
-        if isinstance(value, (dict, list, tuple, set)):
-            value = json.dumps(value)
-        self.settings.setValue(key, value)
+        encoded = json.dumps(value) if isinstance(value, (dict, list, tuple, set)) else value
+        self.settings.setValue(key, encoded)
         self.settings.sync()
+        self.committed.emit({key: value})
 
     def set(self, key, value):
         self._buffer[key] = value
 
     def commit(self):
-        self.send_buffer.emit(self._buffer.copy())
-        self.request_flush.emit()
+        if not self._buffer:
+            return
+        snapshot = self._buffer.copy()
         self._buffer.clear()
+        self.send_buffer.emit(snapshot)
+        self.request_flush.emit()
+        self.committed.emit(snapshot)
+
+    def apply_remote(self, updates: dict):
+        if not isinstance(updates, dict) or not updates:
+            return
+        for key, value in updates.items():
+            if not isinstance(key, str):
+                continue
+            self._buffer.pop(key, None)
+            encoded = json.dumps(value) if isinstance(value, (dict, list, tuple, set)) else value
+            self.settings.setValue(key, encoded)
+        self.settings.sync()
+        for key in updates:
+            if isinstance(key, str):
+                self.key_changed.emit(key)
 
     def close(self):
         if self._buffer:

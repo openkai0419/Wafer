@@ -1,7 +1,6 @@
 from __future__ import annotations
 import os
 from typing import Any
-from collections.abc import Callable
 from pathlib import Path
 from ....utils.profiling import profiler
 from ....utils.json_io import read_json_file, write_json_file
@@ -123,31 +122,11 @@ class ActionGroupStateManager:
     def instance(cls) -> ActionGroupStateManager:
         if cls._instance is None:
             inst = object.__new__(cls)
-            inst._group_states = {}
             inst._group_members = {}
             inst._command_to_group = {}
-            inst._check_states = {}
-            inst._observers = []
+            inst._group_defaults = {}
             cls._instance = inst
         return cls._instance
-
-    def add_observer(self, observer: Callable[[str, str], None]):
-        if observer not in self._observers:
-            self._observers.append(observer)
-
-    def remove_observer(self, observer: Callable[[str, str], None]):
-        if observer in self._observers:
-            self._observers.remove(observer)
-
-    def _notify_observers(self, group_name: str, command_id: str):
-        for observer in self._observers:
-            if not callable(observer):
-                AppLogger.warning(f"Observer is not callable: {observer}")
-                continue
-            try:
-                observer(group_name, command_id)
-            except Exception as e:
-                AppLogger.warning(f"Observer notification failed: {group_name} {command_id}: {e}")
 
     def register_member(self, group_name: str, command_id: str):
         if group_name not in self._group_members:
@@ -162,100 +141,24 @@ class ActionGroupStateManager:
     def get_group_for_command(self, command_id: str) -> str | None:
         return self._command_to_group.get(command_id)
 
-    @profiler.profile
-    def get_current(self, group_name: str) -> str | None:
-        if group_name in self._group_states:
-            return self._group_states[group_name]
-        result = self._load_state(group_name)
-        if result:
-            self._group_states[group_name] = result
-        return result
+    def register_default(self, group_name: str, command_id: str) -> None:
+        self._group_defaults.setdefault(group_name, command_id)
 
     @profiler.profile
-    def set_current(self, group_name: str, command_id: str, *, save: bool = True):
-        self._group_states[group_name] = command_id
-        members = self._group_members.get(group_name, [])
-        for member in members:
-            self._check_states[member] = member == command_id
-        self._notify_observers(group_name, command_id)
-        if save:
-            self.commit()
-
-    @profiler.profile
-    def cycle(self, group_name: str, *, save: bool = True) -> str | None:
-        members = self._group_members.get(group_name)
-        if not members:
-            return None
-        current = self.get_current(group_name)
-        current_idx = members.index(current) if current in members else -1
-        result = members[(current_idx + 1) % len(members)]
-        self.set_current(group_name, result, save=save)
-        return result
-
-    def get_check_state(self, command_id: str) -> bool:
-        return self._check_states.get(command_id, False)
-
-    def set_check_state(self, command_id: str, checked: bool):
-        self._check_states[command_id] = checked
-
-    def initialize_default(self, group_name: str, command_id: str):
-        if group_name in self._group_states:
-            return
-        self._group_states[group_name] = command_id
-        for member in self._group_members.get(group_name, []):
-            self._check_states[member] = member == command_id
-
-    def commit(self):
-        store = CommandOptionStore.instance()
-        for group_name, command_id in self._group_states.items():
-            store.set(f"__group__{group_name}", {"selected": command_id})
-            members = self._group_members.get(group_name, [])
-            for member in members:
-                cur = store.get(member)
-                opts = getattr(cur, "args", None) if cur is not None else None
-                if not isinstance(opts, dict):
-                    opts = {}
-                opts["checked"] = member == command_id
-                store.set(member, opts)
-        ok = False
-        try:
-            ok = bool(store.commit())
-        except Exception as e:
-            AppLogger.warning(f"Failed to commit action group state: {e}")
-            return
-        if not ok:
-            AppLogger.warning("Action group state commit returned False")
-
-    def _load_state(self, group_name: str) -> str | None:
-        members = self._group_members.get(group_name)
-        stored = CommandOptionStore.instance().get(f"__group__{group_name}")
-        args = getattr(stored, "args", None)
-        if isinstance(args, dict) and "selected" in args:
-            v = args.get("selected")
-            if v is not None:
-                v = str(v)
-                if not members or v in members:
-                    return v
-                AppLogger.warning(f"Stored group state '{v}' is not a member of '{group_name}', ignoring")
-
-        if not members:
-            return None
-
-        store = CommandOptionStore.instance()
-        for member in members:
-            stored = store.get(member)
-            args = getattr(stored, "args", None)
-            if isinstance(args, dict) and args.get("checked"):
-                return member
-
-        return None
-
-    def find_default(self, group_name: str, registry) -> str | None:
+    def find_current(self, group_name: str, registry) -> str | None:
         members = self._group_members.get(group_name)
         if not members:
             return None
         for member in members:
-            command_class = registry.get_command(member)
-            if command_class and command_class.meta.default_checked:
-                return member
-        return None
+            cmd = registry.get_command(member)
+            if cmd is None:
+                continue
+            resolver = cmd.meta.checked_resolver
+            if resolver is None:
+                continue
+            try:
+                if bool(resolver()):
+                    return member
+            except Exception as e:
+                AppLogger.warning(f"checked_resolver failed for '{member}' in group '{group_name}': {e}")
+        return self._group_defaults.get(group_name)

@@ -24,11 +24,8 @@ def qapp():
 @pytest.fixture(autouse=True)
 def _reset_popup():
     _KeySelectorPopup._instance = None
-    from wafer.core.app_settings import app_settings
-    app_settings.settings.remove("filters/active_keys")
     yield
     _KeySelectorPopup._instance = None
-    app_settings.settings.remove("filters/active_keys")
 
 
 class TestTextFilterDisplayName:

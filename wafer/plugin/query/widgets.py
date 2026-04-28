@@ -6,9 +6,9 @@ from ...utils.formatting import dpix, display_prefixed_key
 from ...core.lang.manager import t
 from ...core.qt.icon_engine import themed_icon
 from ...core.color.theme import ThemeManager
-from ...core.app_settings import app_settings
+from ...core.state import StateStore
 
-_SETTINGS_KEY = "filters/active_keys"
+_STATE_NAMESPACE = "filters/active_keys"
 
 
 def _split_prefix(key: str) -> tuple[str, str]:
@@ -106,10 +106,26 @@ class _KeySelectorPopup(QtWidgets.QFrame):
         super().__init__(parent, QtCore.Qt.Popup | QtCore.Qt.FramelessWindowHint)
         self._catalog_data: list[tuple[str, int]] = []
         self._active_items: dict[str, _ActiveKeyItem] = {}
+        self._pending_active_keys: list[str] = []
         self._suppress_signals = False
         self._current_combo = None
         self._build_ui()
         self._apply_theme()
+        StateStore.instance().register(_STATE_NAMESPACE, self._save_state, self._restore_state)
+
+    def _save_state(self) -> dict:
+        return {"keys": list(self._active_items.keys())}
+
+    def _restore_state(self, state: dict):
+        if not isinstance(state, dict):
+            return
+        keys = [k for k in (state.get("keys") or []) if isinstance(k, str)]
+        self._pending_active_keys = keys
+        if keys:
+            self.ensure_active_keys(keys)
+
+    def pending_active_keys(self) -> list[str]:
+        return list(self._pending_active_keys)
 
     def _build_ui(self):
         root = QtWidgets.QVBoxLayout(self)
@@ -304,14 +320,9 @@ class _KeySelectorPopup(QtWidgets.QFrame):
             self.check_toggled.emit()
 
     def _notify_active_keys_changed(self, removed_keys: set[str]):
-        self._persist_active_keys()
+        self._pending_active_keys = list(self._active_items.keys())
         if not self._suppress_signals:
             self.active_keys_changed.emit(removed_keys)
-
-    def _persist_active_keys(self):
-        keys = list(self._active_items.keys())
-        app_settings.set(_SETTINGS_KEY, keys)
-        app_settings.commit()
 
     def _apply_filter(self, text: str):
         text = text.strip().lower()
@@ -391,7 +402,7 @@ class CheckableCombo(QtWidgets.QToolButton):
     @QtCore.Slot(list)
     def remake(self, datas):
         self._popup.set_catalog(datas)
-        saved = app_settings.get(_SETTINGS_KEY, None, list)
+        saved = self._popup.pending_active_keys()
         if saved:
             saved = [k for k in saved if isinstance(k, str) and len(k) > 1]
         needed = list(dict.fromkeys((saved or []) + self._checked_keys + [self.default_key]))

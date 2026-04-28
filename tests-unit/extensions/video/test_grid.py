@@ -149,7 +149,7 @@ def test_save_state_returns_empty_when_no_slot_manager():
     MpvCellWidget._pending_grid_state = None
     try:
         plugin = VideoGridPlugin()
-        assert plugin.save_state() == {}
+        assert plugin.save_ui_state() == {}
     finally:
         MpvCellWidget._slot_manager = old
         MpvCellWidget._pending_grid_state = old_pending
@@ -165,7 +165,7 @@ def test_save_state_returns_pending_when_no_slot_manager():
     MpvCellWidget._pending_grid_state = {"volume": 75, "hover_autoplay": False}
     try:
         plugin = VideoGridPlugin()
-        assert plugin.save_state() == {"volume": 75, "hover_autoplay": False}
+        assert plugin.save_ui_state() == {"volume": 75, "hover_autoplay": False}
     finally:
         MpvCellWidget._slot_manager = old
         MpvCellWidget._pending_grid_state = old_pending
@@ -186,7 +186,7 @@ def test_save_state_returns_slot_manager_values():
     MpvCellWidget._slot_manager = sm
     try:
         plugin = VideoGridPlugin()
-        state = plugin.save_state()
+        state = plugin.save_ui_state()
         assert state == {
             "volume": 75,
             "hover_autoplay": False,
@@ -199,7 +199,7 @@ def test_save_state_returns_slot_manager_values():
         MpvCellWidget._slot_manager = old
 
 
-def test_restore_state_applies_values():
+def test_restore_ui_state_applies_values():
     from extensions.video.grid import VideoGridPlugin
     from extensions.video.widget import MpvCellWidget
 
@@ -209,7 +209,7 @@ def test_restore_state_applies_values():
     try:
         plugin = VideoGridPlugin()
         with patch("wafer.core.commands.bridge.Command") as mock_cmd:
-            plugin.restore_state(
+            plugin.restore_ui_state(
                 {
                     "volume": 60,
                     "hover_autoplay": False,
@@ -229,7 +229,7 @@ def test_restore_state_applies_values():
         MpvCellWidget._slot_manager = old
 
 
-def test_restore_state_noop_when_no_slot_manager():
+def test_restore_ui_state_noop_when_no_slot_manager():
     from extensions.video.grid import VideoGridPlugin
     from extensions.video.widget import MpvCellWidget
 
@@ -239,7 +239,7 @@ def test_restore_state_noop_when_no_slot_manager():
     MpvCellWidget._pending_grid_state = None
     try:
         plugin = VideoGridPlugin()
-        plugin.restore_state({"volume": 80})
+        plugin.restore_ui_state({"volume": 80})
         assert MpvCellWidget._pending_grid_state == {"volume": 80}
     finally:
         MpvCellWidget._slot_manager = old
@@ -258,7 +258,7 @@ def test_deferred_restore_applied_on_init_shared(qtbot):
     MpvCellWidget._pending_grid_state = None
     try:
         plugin = VideoGridPlugin()
-        plugin.restore_state(
+        plugin.restore_ui_state(
             {
                 "volume": 55,
                 "hover_autoplay": False,

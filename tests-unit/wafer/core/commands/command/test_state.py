@@ -1,5 +1,5 @@
 import pytest
-from pathlib import Path
+from types import SimpleNamespace
 
 from wafer.core.commands.command.state import (
     CommandOptionStore,
@@ -122,6 +122,18 @@ class TestCommandOptionStore:
         assert s1 is s2
 
 
+class _FakeRegistry:
+    def __init__(self, members: dict[str, dict]):
+        self._members = members
+
+    def get_command(self, cmd_id):
+        spec = self._members.get(cmd_id)
+        if spec is None:
+            return None
+        meta = SimpleNamespace(checked_resolver=spec.get("resolver"))
+        return SimpleNamespace(meta=meta)
+
+
 class TestActionGroupStateManager:
     def test_register_and_get_members(self):
         mgr = ActionGroupStateManager.instance()
@@ -144,124 +156,76 @@ class TestActionGroupStateManager:
         mgr = ActionGroupStateManager.instance()
         assert mgr.get_group_for_command("nonexistent") is None
 
-    def test_set_current_and_get_current(self):
-        mgr = ActionGroupStateManager.instance()
-        mgr.register_member("grp", "cmd.a")
-        mgr.register_member("grp", "cmd.b")
-        mgr.set_current("grp", "cmd.b", save=False)
-        assert mgr.get_current("grp") == "cmd.b"
-
-    def test_set_current_updates_check_states(self):
-        mgr = ActionGroupStateManager.instance()
-        mgr.register_member("grp", "cmd.a")
-        mgr.register_member("grp", "cmd.b")
-        mgr.set_current("grp", "cmd.a", save=False)
-        assert mgr.get_check_state("cmd.a") is True
-        assert mgr.get_check_state("cmd.b") is False
-
-    def test_cycle_single_member(self):
-        mgr = ActionGroupStateManager.instance()
-        mgr.register_member("grp_single", "cmd.only")
-        mgr.set_current("grp_single", "cmd.only", save=False)
-        result = mgr.cycle("grp_single", save=False)
-        assert result == "cmd.only"
-
-    def test_cycle_two_members(self):
-        mgr = ActionGroupStateManager.instance()
-        mgr.register_member("grp2", "cmd.a")
-        mgr.register_member("grp2", "cmd.b")
-        mgr.set_current("grp2", "cmd.a", save=False)
-        result = mgr.cycle("grp2", save=False)
-        assert result == "cmd.b"
-
-    def test_cycle_wraps_around(self):
-        mgr = ActionGroupStateManager.instance()
-        mgr.register_member("grp3", "cmd.a")
-        mgr.register_member("grp3", "cmd.b")
-        mgr.register_member("grp3", "cmd.c")
-        mgr.set_current("grp3", "cmd.c", save=False)
-        result = mgr.cycle("grp3", save=False)
-        assert result == "cmd.a"
-
-    def test_cycle_empty_group(self):
-        mgr = ActionGroupStateManager.instance()
-        result = mgr.cycle("empty_grp", save=False)
-        assert result is None
-
-    def test_cycle_no_current_starts_from_first(self):
-        mgr = ActionGroupStateManager.instance()
-        mgr.register_member("grp_nocur", "cmd.a")
-        mgr.register_member("grp_nocur", "cmd.b")
-        result = mgr.cycle("grp_nocur", save=False)
-        assert result == "cmd.a"
-
-    def test_initialize_default(self):
-        mgr = ActionGroupStateManager.instance()
-        mgr.register_member("grp_def", "cmd.a")
-        mgr.register_member("grp_def", "cmd.b")
-        mgr.initialize_default("grp_def", "cmd.b")
-        assert mgr.get_current("grp_def") == "cmd.b"
-        assert mgr.get_check_state("cmd.a") is False
-        assert mgr.get_check_state("cmd.b") is True
-
-    def test_initialize_default_does_not_overwrite(self):
-        mgr = ActionGroupStateManager.instance()
-        mgr.register_member("grp_d2", "cmd.a")
-        mgr.register_member("grp_d2", "cmd.b")
-        mgr.set_current("grp_d2", "cmd.a", save=False)
-        mgr.initialize_default("grp_d2", "cmd.b")
-        assert mgr.get_current("grp_d2") == "cmd.a"
-
-    def test_set_check_state_independent(self):
-        mgr = ActionGroupStateManager.instance()
-        mgr.set_check_state("cmd.standalone", True)
-        assert mgr.get_check_state("cmd.standalone") is True
-        mgr.set_check_state("cmd.standalone", False)
-        assert mgr.get_check_state("cmd.standalone") is False
-
-    def test_get_check_state_default_false(self):
-        mgr = ActionGroupStateManager.instance()
-        assert mgr.get_check_state("unregistered") is False
-
-    def test_observer_notified(self):
-        mgr = ActionGroupStateManager.instance()
-        mgr.register_member("grp_obs", "cmd.a")
-        notifications = []
-        mgr.add_observer(lambda g, c: notifications.append((g, c)))
-        mgr.set_current("grp_obs", "cmd.a", save=False)
-        assert len(notifications) == 1
-        assert notifications[0] == ("grp_obs", "cmd.a")
-
-    def test_remove_observer(self):
-        mgr = ActionGroupStateManager.instance()
-        mgr.register_member("grp_rem", "cmd.a")
-        notifications = []
-        obs = lambda g, c: notifications.append((g, c))
-        mgr.add_observer(obs)
-        mgr.remove_observer(obs)
-        mgr.set_current("grp_rem", "cmd.a", save=False)
-        assert len(notifications) == 0
-
-    def test_observer_exception_does_not_crash(self):
-        mgr = ActionGroupStateManager.instance()
-        mgr.register_member("grp_exc", "cmd.a")
-
-        def broken_observer(g, c):
-            raise RuntimeError("observer broke")
-
-        mgr.add_observer(broken_observer)
-        mgr.set_current("grp_exc", "cmd.a", save=False)
-
-    def test_commit_roundtrip(self):
-        mgr = ActionGroupStateManager.instance()
-        mgr.register_member("grp_commit", "cmd.x")
-        mgr.register_member("grp_commit", "cmd.y")
-        mgr.set_current("grp_commit", "cmd.y", save=False)
-        mgr.commit()
-        store = CommandOptionStore.instance()
-        p = store.get("__group__grp_commit")
-        assert p.args.get("selected") == "cmd.y"
-
     def test_get_members_empty_group(self):
         mgr = ActionGroupStateManager.instance()
         assert mgr.get_members("nonexistent") == []
+
+    def test_find_current_returns_resolver_match(self):
+        mgr = ActionGroupStateManager.instance()
+        mgr.register_member("grp", "cmd.a")
+        mgr.register_member("grp", "cmd.b")
+        registry = _FakeRegistry({
+            "cmd.a": {"resolver": lambda: False},
+            "cmd.b": {"resolver": lambda: True},
+        })
+        assert mgr.find_current("grp", registry) == "cmd.b"
+
+    def test_find_current_returns_first_truthy(self):
+        mgr = ActionGroupStateManager.instance()
+        mgr.register_member("grp", "cmd.a")
+        mgr.register_member("grp", "cmd.b")
+        mgr.register_member("grp", "cmd.c")
+        registry = _FakeRegistry({
+            "cmd.a": {"resolver": lambda: False},
+            "cmd.b": {"resolver": lambda: True},
+            "cmd.c": {"resolver": lambda: True},
+        })
+        assert mgr.find_current("grp", registry) == "cmd.b"
+
+    def test_find_current_falls_back_to_default(self):
+        mgr = ActionGroupStateManager.instance()
+        mgr.register_member("grp", "cmd.a")
+        mgr.register_member("grp", "cmd.b")
+        mgr.register_default("grp", "cmd.b")
+        registry = _FakeRegistry({
+            "cmd.a": {"resolver": lambda: False},
+            "cmd.b": {"resolver": lambda: False},
+        })
+        assert mgr.find_current("grp", registry) == "cmd.b"
+
+    def test_find_current_no_default_no_resolver_match(self):
+        mgr = ActionGroupStateManager.instance()
+        mgr.register_member("grp", "cmd.a")
+        registry = _FakeRegistry({"cmd.a": {"resolver": lambda: False}})
+        assert mgr.find_current("grp", registry) is None
+
+    def test_find_current_handles_resolver_exception(self):
+        mgr = ActionGroupStateManager.instance()
+        mgr.register_member("grp", "cmd.a")
+        mgr.register_member("grp", "cmd.b")
+
+        def broken():
+            raise RuntimeError("resolver failed")
+
+        registry = _FakeRegistry({
+            "cmd.a": {"resolver": broken},
+            "cmd.b": {"resolver": lambda: True},
+        })
+        assert mgr.find_current("grp", registry) == "cmd.b"
+
+    def test_find_current_empty_group(self):
+        mgr = ActionGroupStateManager.instance()
+        registry = _FakeRegistry({})
+        assert mgr.find_current("nonexistent", registry) is None
+
+    def test_register_default_only_first_wins(self):
+        mgr = ActionGroupStateManager.instance()
+        mgr.register_member("grp", "cmd.a")
+        mgr.register_member("grp", "cmd.b")
+        mgr.register_default("grp", "cmd.a")
+        mgr.register_default("grp", "cmd.b")
+        registry = _FakeRegistry({
+            "cmd.a": {"resolver": lambda: False},
+            "cmd.b": {"resolver": lambda: False},
+        })
+        assert mgr.find_current("grp", registry) == "cmd.a"

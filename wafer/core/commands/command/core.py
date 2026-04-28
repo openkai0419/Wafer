@@ -95,6 +95,17 @@ class CommandMeta:
         self.has_options = bool(self.has_options or self.params)
 
 
+@dataclass
+class MenuAction:
+    path: str = ""
+    display: str = ""
+    icon: str = ""
+    checkable: bool = False
+    default_checked: bool = False
+    checked_resolver: Callable[[], bool] | None = None
+    func: Callable[..., Any] | None = None
+
+
 class CommandBase:
     meta: CommandMeta = None
 

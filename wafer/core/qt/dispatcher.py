@@ -68,6 +68,7 @@ class _PostRunnable(QtCore.QRunnable):
 
 class Dispatcher:
     def __init__(self, pool=None, parent: QtCore.QObject | None = None):
+        self._parent = parent
         self._signals = _DispatchSignals(parent)
         self._signals._to_main.connect(self._signals._execute, QtCore.Qt.QueuedConnection)
         if pool is None:
@@ -82,5 +83,7 @@ class Dispatcher:
     def invoke(self, fn: Callable):
         import shiboken6
 
+        if self._parent is not None and not shiboken6.isValid(self._parent):
+            return
         if shiboken6.isValid(self._signals):
             self._signals._to_main.emit(fn)

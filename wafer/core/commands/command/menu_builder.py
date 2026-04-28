@@ -1,10 +1,11 @@
 from __future__ import annotations
 from typing import Any
 from collections.abc import Callable
+from types import SimpleNamespace
 from PySide6 import QtCore, QtGui, QtWidgets
 from ...lang.manager import t
 from ....utils.profiling import profiler
-from .core import CommandMeta, CommandRegistry, COMMAND_MENU_MARKER
+from .core import COMMAND_MENU_MARKER, CommandMeta, CommandRegistry, MenuAction, call_with_matching_args
 from .context import CommandContext
 from ....utils.logs import AppLogger
 from .payload import CommandPayload
@@ -73,28 +74,11 @@ class CommandMenuBuilder:
         self.registry = CommandRegistry.instance()
         self.state_manager = ActionGroupStateManager.instance()
         self._active_seed_ctx: CommandContext | None = None
-        if not CommandMenuBuilder._observer_registered:
-            self.state_manager.add_observer(CommandMenuBuilder._on_state_changed_observer)
-            CommandMenuBuilder._observer_registered = True
         CommandMenuBuilder._initialized = True
 
     _check_states: dict[str, bool] = {}
     _action_groups: dict[str, QtGui.QActionGroup] = {}
-    _observer_registered: bool = False
     _menu_cache: dict[tuple, QtWidgets.QMenu] = {}
-
-    @staticmethod
-    def _on_state_changed_observer(group_name: str, command_id: str):
-        state_manager = ActionGroupStateManager.instance()
-        members = state_manager.get_members(group_name)
-        for member in members:
-            CommandMenuBuilder._check_states[member] = state_manager.get_check_state(member)
-        group = CommandMenuBuilder._action_groups.get(group_name)
-        if group:
-            for action in group.actions():
-                if str(action.data()) == command_id:
-                    if not action.isChecked():
-                        action.setChecked(True)
 
     def _build_ctx(self, parent: QtWidgets.QWidget | None, cmd_id: str, args: dict[str, Any]) -> CommandContext | None:
         if parent is None:
@@ -148,37 +132,80 @@ class CommandMenuBuilder:
         *,
         seed_ctx: CommandContext | None = None,
     ) -> QtWidgets.QMenu:
+        items = []
+        for name in command_names:
+            token = str(name)
+            if token.startswith("__unfound__:"):
+                items.append(SimpleNamespace(token=token, kind="unfound", command_id=token[len("__unfound__:") :], canonical_path="", action=None))
+                continue
+            if is_sep_token(token):
+                items.append(SimpleNamespace(token=token, kind="sep", command_id="", canonical_path="", action=None))
+                continue
+            if is_section_token(token):
+                items.append(SimpleNamespace(token=token, kind="section", command_id="", canonical_path="", action=None))
+                continue
+            parts = split_menu_path(token)
+            command_id = parts[-1] if parts else token
+            items.append(SimpleNamespace(token=token, kind="cmd", command_id=command_id, canonical_path=token, action=None))
+        return self.build_resolved(
+            menu,
+            parent,
+            items,
+            display_map=display_map,
+            selection_callback=selection_callback,
+            allow_options_with_selection=allow_options_with_selection,
+            seed_ctx=seed_ctx,
+        )
+
+    def build_resolved(
+        self,
+        menu: QtWidgets.QMenu,
+        parent: QtWidgets.QWidget,
+        items: list,
+        display_map: dict[str, str] | None = None,
+        selection_callback: Callable[[Any], None] | None = None,
+        allow_options_with_selection: bool = False,
+        *,
+        seed_ctx: CommandContext | None = None,
+    ) -> QtWidgets.QMenu:
         menus_cache: dict[str, QtWidgets.QMenu] = {}
         action_groups: dict[str, QtGui.QActionGroup] = {}
         group_defaults: dict[str, tuple[str, CommandMeta]] = {}
         hotkey_map = self._resolve_hotkeys_batch(parent)
         self._active_seed_ctx = seed_ctx
         checkable_tracker: list[tuple] = []
-        for name in command_names:
-            if name.startswith("__unfound__:"):
-                unfound_id = name[len("__unfound__:") :]
-                act = menu.addAction(f"- Unenabled {unfound_id}")
+        for item in items:
+            kind = getattr(item, "kind", "")
+            token = str(getattr(item, "token", ""))
+            if kind == "unfound":
+                act = menu.addAction(f"- Unenabled {getattr(item, 'command_id', '')}")
                 act.setEnabled(False)
                 continue
-            if is_sep_token(name):
-                parts = sep_path(str(name))
+            if is_sep_token(token):
+                parts = sep_path(token)
                 if not parts:
                     menu.addSeparator()
                     continue
                 target_menu = self._get_or_create_submenu_chain(menu, menus_cache, parts, parent)
                 target_menu.addSeparator()
                 continue
-            if is_section_token(name):
-                parts = section_parts(str(name))
+            if is_section_token(token):
+                parts = section_parts(token)
                 if not parts:
                     continue
                 text = parts[-1]
                 target_menu = menu if len(parts) == 1 else self._get_or_create_submenu_chain(menu, menus_cache, parts[:-1], parent)
                 target_menu.addAction(self._create_section_action(parent, t(text) or text))
                 continue
-            path_parts = split_menu_path(name)
-            command_id = path_parts[-1] if len(path_parts) > 1 else name
+            path_parts = split_menu_path(token)
             target_menu = menu if len(path_parts) <= 1 else self._get_or_create_submenu_chain(menu, menus_cache, path_parts[:-1], parent)
+            if kind == "action":
+                action = getattr(item, "action", None)
+                if action is None:
+                    continue
+                self._add_action_entry(target_menu, parent, action, selection_callback, checkable_tracker=checkable_tracker)
+                continue
+            command_id = str(getattr(item, "command_id", "")) or (path_parts[-1] if path_parts else token)
             command_class = self.registry.get_command(command_id)
             if not command_class:
                 AppLogger.warning(f"Skipping unknown command id in menu: {command_id}")
@@ -204,7 +231,7 @@ class CommandMenuBuilder:
                 checkable_tracker=checkable_tracker,
             )
         for gname, (default_id, _) in group_defaults.items():
-            self.state_manager.initialize_default(gname, default_id)
+            self.state_manager.register_default(gname, default_id)
         menu.setProperty("__checkable_tracker__", checkable_tracker)
         return menu
 
@@ -349,6 +376,11 @@ class CommandMenuBuilder:
         except Exception as e:
             AppLogger.warning(f"Failed to execute selection callback for '{name}': {e}")
 
+    def _get_action_checked(self, action: MenuAction) -> bool:
+        if action.checked_resolver is not None:
+            return bool(action.checked_resolver())
+        return bool(action.default_checked)
+
     @profiler.profile
     def _get_checked(self, name: str, meta: CommandMeta) -> bool:
         if meta.checked_resolver is not None:
@@ -363,7 +395,9 @@ class CommandMenuBuilder:
 
     @profiler.profile
     def _get_checked_for_group(self, name: str, group_name: str, meta: CommandMeta, group_defaults: dict[str, tuple[str, CommandMeta]] | None = None) -> bool:
-        current = self.state_manager.get_current(group_name)
+        if meta.checked_resolver is not None:
+            return bool(meta.checked_resolver())
+        current = self.state_manager.find_current(group_name, self.registry)
         if current:
             return current == name
         if group_defaults and group_name in group_defaults:
@@ -373,6 +407,9 @@ class CommandMenuBuilder:
     def _on_toggled(self, name: str, container: QtWidgets.QWidget, state: bool):
         self._update_checkmark(container, state)
         self.set_checked(name, state)
+
+    def _on_action_toggled(self, container: QtWidgets.QWidget, state: bool):
+        self._update_checkmark(container, state)
 
     def set_checked(self, name: str, state: bool):
         cmd = self.registry.get_command(name)
@@ -392,49 +429,49 @@ class CommandMenuBuilder:
     def _on_radio_toggled(self, name: str, container: QtWidgets.QWidget, state: bool, group_name: str):
         self._on_toggled(name, container, state)
         if state:
-            self.state_manager.set_current(group_name, name)
+            self._refresh_group_checkmarks(group_name, name)
+
+    def _refresh_group_checkmarks(self, group_name: str, current: str) -> None:
+        group = self._action_groups.get(group_name)
+        if not group:
+            return
+        for action in group.actions():
+            cmd_id = str(action.data() or "")
+            checked = cmd_id == current
+            if action.isChecked() != checked:
+                action.blockSignals(True)
+                action.setChecked(checked)
+                action.blockSignals(False)
+            container = action.defaultWidget() if isinstance(action, QtWidgets.QWidgetAction) else None
+            if container is not None:
+                self._update_checkmark(container, checked)
 
     def cycle_action_group(self, group_name: str) -> str | None:
-        result = self.state_manager.cycle(group_name)
-        if not result:
+        members = self.state_manager.get_members(group_name)
+        if not members:
             return None
+        current = self.state_manager.find_current(group_name, self.registry)
+        try:
+            idx = members.index(current) if current else -1
+        except ValueError:
+            idx = -1
+        result = members[(idx + 1) % len(members)]
         group = self._action_groups.get(group_name)
         if group:
             result_action = next((a for a in group.actions() if str(a.data()) == result), None)
             if result_action:
                 result_action.trigger()
-        else:
-            try:
-                ctx = CommandContext.create(None, "*", source="cycle", event=None)
-                ctx.put("checked", True)
-                self.registry.execute(result, ctx=ctx)
-            except Exception as e:
-                AppLogger.warning(f"Failed to execute command: {e}")
+                return result
+        try:
+            ctx = CommandContext.create(None, "*", source="cycle", event=None)
+            ctx.put("checked", True)
+            self.registry.execute(result, ctx=ctx)
+        except Exception as e:
+            AppLogger.warning(f"Failed to execute command: {e}")
         return result
 
     def get_action_group_current(self, group_name: str) -> str | None:
-        result = self.state_manager.get_current(group_name)
-        if result:
-            return result
-        group = self._action_groups.get(group_name)
-        if group:
-            result_action = next((a for a in group.actions() if a.isChecked()), None)
-            if result_action:
-                result = str(result_action.data() or "")
-                self.state_manager.set_current(group_name, result, save=False)
-                return result
-        return self.state_manager.find_default(group_name, self.registry)
-
-    def set_action_group_current(self, group_name: str, command_id: str, *, save: bool = True) -> None:
-        self.state_manager.set_current(group_name, command_id, save=save)
-        group = self._action_groups.get(group_name)
-        if group:
-            for action in group.actions():
-                if str(action.data()) == command_id:
-                    action.blockSignals(True)
-                    action.setChecked(True)
-                    action.blockSignals(False)
-                    break
+        return self.state_manager.find_current(group_name, self.registry)
 
     def _update_checkmark(self, container: QtWidgets.QWidget, state: bool):
         lbl = getattr(container, "_chk", None)
@@ -473,6 +510,42 @@ class CommandMenuBuilder:
                 btn.clicked.connect(w._on_options_callback)
         return w
 
+    def _add_action_entry(
+        self,
+        menu: QtWidgets.QMenu,
+        parent: QtWidgets.QWidget,
+        action: MenuAction,
+        selection_callback: Callable[[Any], None] | None = None,
+        *,
+        checkable_tracker: list[tuple] | None = None,
+    ):
+        text = t(action.display or action.path)
+        widget_action = QtWidgets.QWidgetAction(parent)
+        widget_action.setData(action.path)
+        container = self._create_row_widget(parent, text, "", action.icon or None, False, None, None, menu)
+        widget_action.setDefaultWidget(container)
+        if action.checkable and selection_callback is None:
+            checked = self._get_action_checked(action)
+            widget_action.setCheckable(True)
+            widget_action.setChecked(checked)
+            self._update_checkmark(container, checked)
+            widget_action.toggled.connect(lambda state, c=container: self._on_action_toggled(c, state))
+            if checkable_tracker is not None:
+                checkable_tracker.append((widget_action, container, action.path, action, False))
+        if selection_callback is None:
+            widget_action.triggered.connect(lambda checked=False, a=action, p=parent: self._execute_action_and_close_menu(a, p, menu, checked if a.checkable else None))
+        else:
+            widget_action.triggered.connect(lambda checked=False, a=action: self._select_and_close_menu(a.path, menu, selection_callback))
+        main_area = container._main
+        if main_area is not None:
+
+            def _row_click_any(event):
+                if event.button() == QtCore.Qt.LeftButton:
+                    widget_action.trigger()
+
+            main_area.mouseReleaseEvent = _row_click_any
+        menu.addAction(widget_action)
+
     def _on_row_options(self, menu: QtWidgets.QMenu, on_options: Callable[[], None]):
         menu.close()
         on_options()
@@ -480,6 +553,25 @@ class CommandMenuBuilder:
     def _execute_and_close_menu(self, name: str, parent: QtWidgets.QWidget | None, menu: QtWidgets.QMenu, checked: bool | None = None):
         menu.close()
         self._execute(name, parent, checked, seed_ctx=self._active_seed_ctx)
+
+    def _execute_action_and_close_menu(self, action: MenuAction, parent: QtWidgets.QWidget | None, menu: QtWidgets.QMenu, checked: bool | None = None):
+        menu.close()
+        if not callable(action.func):
+            return
+        if parent is not None:
+            ctx = self._build_ctx(parent, action.path, {})
+            if ctx is None:
+                ctx = CommandContext.create(parent, "*", source="menu", event=None, seed=self._active_seed_ctx)
+            else:
+                CommandContext.merge_seed(ctx, self._active_seed_ctx)
+        else:
+            ctx = CommandContext.create(None, "*", source="menu", event=None, seed=self._active_seed_ctx)
+        if checked is not None:
+            ctx.put("checked", bool(checked))
+        try:
+            call_with_matching_args(action.func, {"ctx": ctx, "checked": checked})
+        except Exception as e:
+            AppLogger.warning(f"Failed to execute menu action '{action.path}': {e}", exc=e)
 
     def _show_options_and_close_menu(self, command_name: str, parent: QtWidgets.QWidget, menu: QtWidgets.QMenu, selection_callback: Callable[[Any], None] | None = None):
         menu.close()
@@ -561,7 +653,9 @@ class CommandMenuBuilder:
         if not tracker:
             return
         for widget_action, container, name, meta, is_group in tracker:
-            if is_group:
+            if isinstance(meta, MenuAction):
+                checked = self._get_action_checked(meta)
+            elif is_group:
                 checked = self._get_checked_for_group(name, meta.action_group, meta)
             else:
                 checked = self._get_checked(name, meta)
@@ -628,16 +722,16 @@ class MenuBuilder:
             return self._menu
         tokens = plan.resolve_tokens()
         parent = self._resolve_parent()
+        if plan.has_inline:
+            self._menu = StickyMenu(self._ctx_parent)
+            self._menu.setProperty(COMMAND_MENU_MARKER, True)
+            self._builder._install_hotkey_alignment(self._menu)
+            return self._build_resolved(plan.resolve_items(), selection_callback, allow_options_with_selection)
         if selection_callback is not None:
             self._menu = StickyMenu(self._ctx_parent)
             self._menu.setProperty(COMMAND_MENU_MARKER, True)
             self._builder._install_hotkey_alignment(self._menu)
             return self._build_into(tokens, selection_callback, allow_options_with_selection)
-        if plan.has_inline:
-            self._menu = StickyMenu(self._ctx_parent)
-            self._menu.setProperty(COMMAND_MENU_MARKER, True)
-            self._builder._install_hotkey_alignment(self._menu)
-            return self._build_into(tokens, None, allow_options_with_selection)
         cache_key = (id(parent), tuple(tokens), False, allow_options_with_selection)
         cached = CommandMenuBuilder._menu_cache.get(cache_key)
         if cached is not None:
@@ -664,6 +758,19 @@ class MenuBuilder:
     def build_names(self, names: list[str], selection_callback: Callable[[Any], None] | None = None, allow_options_with_selection: bool = False) -> QtWidgets.QMenu:
         self._menu.clear()
         return self._build_into(list(names or []), selection_callback, allow_options_with_selection)
+
+    def _build_resolved(self, items: list, selection_callback: Callable[[Any], None] | None, allow_options_with_selection: bool) -> QtWidgets.QMenu:
+        if items:
+            parent = self._resolve_parent()
+            self._builder.build_resolved(
+                self._menu,
+                parent,
+                items,
+                selection_callback=selection_callback,
+                allow_options_with_selection=allow_options_with_selection,
+                seed_ctx=self._seed_ctx,
+            )
+        return self._menu
 
     def _popup(self, anchor: QtWidgets.QWidget, build_fn: Callable[[], QtWidgets.QMenu], context_provider: Callable[[], Any] | None, prepare: Callable[[QtWidgets.QMenu], None] | None) -> None:
         prev_seed = self._seed_ctx

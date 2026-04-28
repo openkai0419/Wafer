@@ -48,8 +48,8 @@ class WidgetGridPlugin(BaseGridPlugin):
     def deselect(self, widget):
         pass
 
-    def save_state(self) -> dict[str, Any]:
+    def save_ui_state(self) -> dict[str, Any]:
         return {}
 
-    def restore_state(self, state: dict[str, Any]) -> None:
+    def restore_ui_state(self, state: dict[str, Any]) -> None:
         pass

@@ -193,11 +193,11 @@ class TestPluginLoaderIntegration:
 class TestPanelPluginState:
     def test_default_save_state_returns_empty_dict(self):
         plugin = DummyPanel()
-        assert plugin.save_state() == {}
+        assert plugin.save_ui_state() == {}
 
     def test_default_restore_state_is_noop(self):
         plugin = DummyPanel()
-        plugin.restore_state({"key": "value"})
+        plugin.restore_ui_state({"key": "value"})
 
     def test_overridden_save_restore_roundtrip(self):
         class StatefulPanel(BasePanelPlugin):
@@ -206,16 +206,16 @@ class TestPanelPluginState:
                 self._value = 0
             def create_widget(self):
                 return QtWidgets.QWidget()
-            def save_state(self):
+            def save_ui_state(self):
                 return {"value": self._value}
-            def restore_state(self, state):
+            def restore_ui_state(self, state):
                 self._value = state.get("value", 0)
 
         plugin = StatefulPanel()
         plugin._value = 42
-        saved = plugin.save_state()
+        saved = plugin.save_ui_state()
         assert saved == {"value": 42}
 
         plugin2 = StatefulPanel()
-        plugin2.restore_state(saved)
+        plugin2.restore_ui_state(saved)
         assert plugin2._value == 42

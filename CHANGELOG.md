@@ -4,6 +4,49 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.6.7]
+### Added
+- **Workspace persistence system** (`wafer/core/workspace.py`): JSON-backed `WorkspaceStore`, `WindowSlot`, and UI/path/query preset dataclasses with active/restore slot tracking
+- **Workspace toolbar** (`wafer/app/viewer/widgets/workspace_toolbar.py`): compact Recent/UI/Path/Filter popups for saving, applying, overwriting, renaming, and deleting presets and recent workspace slots
+- **Workspace commands** (`wafer/builtins/commands/workspace.py`): `ws.*`, `ui_preset.*`, `path_preset.*`, and `query_preset.*` commands replacing profile/bookmark commands with slot and preset operations
+- **State coordinators** (`wafer/app/viewer/state_coordinator.py`): separate UI, path, and query capture/restore flows used by window slots and presets
+- **Inline menu actions** (`MenuAction` / `ActionKit.Action`): command-menu builder can now host lightweight non-registered actions for context menus and inline popups
+- **FolderTree recursive expand/collapse** (`wafer/app/viewer/widgets/foldertree.py`): Shift-clicking a branch indicator expands or collapses a subtree using batched background scanning with cancellation
+- **`ElidingLabel` / `ElidingToolButton`** (`wafer/ui/widgets/eliding.py`): reusable eliding text widgets used by workspace and plugin-manager UI
+- App-settings synchronization across viewers via `settings.changed` IPC and `SettingManager.committed` / `key_changed` signals
+- New themed icons: `history`, `save`, `pencil`, and `trash`
+
+### Changed
+- **Profile system replaced by workspace slots**: viewer CLI now uses `--slot` instead of `--profile`; IPC topics changed from `profile.close` / `profile.restart` to `slot.close` / `slot.restart`; tray/viewer restore logic now uses `WorkspaceStore`
+- **`MainWindow` state persistence**: window geometry/UI state, selected database/folders, and query bars are saved into `WindowSlot` snapshots instead of `ProfileStore` and `app_settings`
+- **Search filter bars** (`wafer/app/viewer/widgets/search_container.py`): rows now support context-menu enable/disable, insert-after, move up/down/top/bottom, and delete actions; saved state uses `bars` and can be applied in replace or append mode
+- Query sort/order command check states now resolve from live `SearchService` values instead of persisted action-group state
+- Grid orientation, layout mode, and scroll anchor check states now resolve from live `GridView` state; `GridView` stores `scroll_anchor` directly and applies scrollbar policies based on orientation
+- **Plugin UI state API**: plugin bases and built-in/extension implementations renamed `save_state()` / `restore_state()` to `save_ui_state()` / `restore_ui_state()`; `BasePanelPlugin.plugin_config` can declare the panel-owned `PluginConfig`
+- **ExifTool settings** (`extensions/exiftool/settings.py`): filter and sort settings now use `PluginConfig`, with filter changes saved through `save_and_notify()`
+- Active metadata key selection and mark overlay visibility/radius moved from global `app_settings` to window-scoped `StateStore`
+- `SearchContainer`, mark, rename dropdown, folder-list, binding-override, and sort popups now use the shared command-menu framework instead of direct ad-hoc `QMenu` actions
+
+### Fixed
+- Tag update acknowledgements now force a current-DB search refresh, keeping tag edits, mark filters, and grid overlays in sync after writes
+- `FileListProvider.set_mode()` now immediately syncs from current grid results when switching back to sync mode
+- `MarkRegistry` refreshes mark definitions when remote settings changes arrive, keeping multi-window mark color/name state synchronized
+- `Dispatcher.invoke()` now checks parent QObject validity before emitting, avoiding queued callbacks to deleted parents
+- Broker active/restore slot updates now use a locked debounce timer that is cancelled safely during shutdown
+
+### Removed
+- `wafer/core/profile.py` and `wafer/builtins/commands/profile.py` profile/bookmark storage and commands, replaced by workspace slots plus UI/path/query presets
+
+## [v0.6.6]
+### Added
+- **`value_viewer_dialog.py`** (`wafer/ui/panel/value_viewer_dialog.py`): shared full-value dialog with selectable key label and read-only text area
+- `SearchableMetaWidget` double-click and context menu support for opening full metadata values and copying key, value, or row text
+
+### Changed
+- **`FileSearchEngine.get_tag_keys_for_paths()` renamed to `get_tag_keys_by_prefix()`**: supports full-DB prefix fetch with `paths=None` and path-restricted fetch with `paths=[...]`
+- **`MarkOverlayService`** now reloads a whole-DB mark cache on database/search reload and rejects stale async reload results by sequence number instead of tracking only the current result paths
+- `MetaRowWidget` now uses the shared value viewer dialog for full metadata display
+
 ## [v0.6.5]
 ### Added
 - **Mark system** (`wafer/builtins/mark/`): user-defined named, colored marks stored in `app_settings`; `MarkRegistry` singleton with `Mark` dataclass, color swatch icon generation, and duplicate-name resolution on load
@@ -20,7 +63,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - **`tags.update` / `tags.updated` IPC topics**: indexer handles user tag writes via `_on_tags_update()`; runs `apply_user_tags()` as a `USER_REQUEST` priority task; replies to viewer with per-path applied/deleted/file_hash results
 - **`FileDB.apply_user_tags()`**: writes user-managed tags (upsert/delete/rename) with lock support across multiple paths, returning per-path results
 - **`FileDB._migrate_tags_on_hash_change()`**: preserves existing tags (including locked user tags) when a file's content hash changes during indexing
-- **`FileSearchEngine.get_tag_keys_by_prefix()`**: fetches tag key suffixes by prefix; with `paths=None` returns all matching rows in the DB (used by `MarkOverlayService` for whole-DB mark cache), with `paths=[...]` restricts to the given paths
+- **`FileSearchEngine.get_tag_keys_for_paths()`**: batch fetches tag key suffixes by prefix for a list of paths; used by `MarkOverlayService` to load mark data
 - **`FileSearchEngine.close()`**: explicit connection close for use outside long-lived query flows
 - **`DatabaseWriter.apply_user_tags()`**: wraps `FileDB.apply_user_tags()` with WAL checkpoint
 - New themed icons: `empty`, `checkbox_unchecked`, `checkbox_checked`, `lock`, `lock_open`

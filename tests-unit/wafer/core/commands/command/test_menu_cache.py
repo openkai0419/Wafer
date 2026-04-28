@@ -5,6 +5,7 @@ from wafer.core.commands.command.core import (
     CommandBase,
     CommandMeta,
     CommandRegistry,
+    MenuAction,
     register_command_defs,
 )
 from wafer.core.commands.command.menu_builder import CommandMenuBuilder, MenuBuilder
@@ -37,14 +38,12 @@ def _reset_singletons(tmp_path):
     CommandMenuBuilder._check_states.clear()
     CommandMenuBuilder._action_groups.clear()
     state_mgr = ActionGroupStateManager.instance()
-    for k in [k for k in state_mgr._group_states if k.startswith(PREFIX)]:
-        del state_mgr._group_states[k]
-    for k in [k for k in state_mgr._check_states if k.startswith(PREFIX)]:
-        del state_mgr._check_states[k]
     for k in [k for k in state_mgr._group_members if k.startswith(PREFIX)]:
         del state_mgr._group_members[k]
     for k in [k for k in state_mgr._command_to_group if k.startswith(PREFIX)]:
         del state_mgr._command_to_group[k]
+    for k in [k for k in state_mgr._group_defaults if k.startswith(PREFIX)]:
+        del state_mgr._group_defaults[k]
     store = CommandOptionStore.instance()
     store._ensure_loaded()
     for k in [k for k in store._map if k.startswith(PREFIX) or k.startswith(f"__group__{PREFIX}")]:
@@ -56,14 +55,12 @@ def _reset_singletons(tmp_path):
     CommandMenuBuilder._menu_cache.clear()
     CommandMenuBuilder._check_states.clear()
     CommandMenuBuilder._action_groups.clear()
-    for k in [k for k in state_mgr._group_states if k.startswith(PREFIX)]:
-        del state_mgr._group_states[k]
-    for k in [k for k in state_mgr._check_states if k.startswith(PREFIX)]:
-        del state_mgr._check_states[k]
     for k in [k for k in state_mgr._group_members if k.startswith(PREFIX)]:
         del state_mgr._group_members[k]
     for k in [k for k in state_mgr._command_to_group if k.startswith(PREFIX)]:
         del state_mgr._command_to_group[k]
+    for k in [k for k in state_mgr._group_defaults if k.startswith(PREFIX)]:
+        del state_mgr._group_defaults[k]
     store._ensure_loaded()
     for k in [k for k in store._map if k.startswith(PREFIX) or k.startswith(f"__group__{PREFIX}")]:
         del store._map[k]
@@ -74,13 +71,14 @@ def _reset_singletons(tmp_path):
     CommandOptionStore._default_path = prev_default
 
 
-def _register_checkable(cmd_id, display, default_checked=False, action_group=""):
+def _register_checkable(cmd_id, display, default_checked=False, action_group="", checked_resolver=None):
     meta = CommandMeta(
         id=cmd_id,
         display=display,
         checkable=True,
         default_checked=default_checked,
         action_group=action_group,
+        checked_resolver=checked_resolver,
         func=lambda ctx: None,
     )
     register_command_defs([meta])
@@ -95,6 +93,50 @@ def _register_normal(cmd_id, display):
     )
     register_command_defs([meta])
     return meta
+
+
+class TestTransientMenuAction:
+    def test_action_executes_without_global_registration_or_menu_cache(self, qtbot):
+        reg = CommandRegistry.instance()
+        before = set(reg._commands)
+        calls = []
+        w = QtWidgets.QWidget()
+        qtbot.addWidget(w)
+
+        for i in range(3):
+            maker = MenuMaker()
+            action = MenuAction(
+                path=_make_id(f"action_{i}"),
+                display=f"Action {i}",
+                func=lambda ctx, n=i: calls.append(n),
+            )
+            menu = MenuBuilder(maker, w).build(maker.menu([action]))
+            menu.actions()[0].trigger()
+
+        assert calls == [0, 1, 2]
+        assert set(reg._commands) == before
+        assert CommandMenuBuilder._menu_cache == {}
+
+    def test_checkable_action_passes_menu_checked_state(self, qtbot):
+        values = []
+        w = QtWidgets.QWidget()
+        qtbot.addWidget(w)
+        maker = MenuMaker()
+        action = MenuAction(
+            path=_make_id("checked_action"),
+            display="Checked Action",
+            checkable=True,
+            default_checked=False,
+            func=lambda ctx: values.append(ctx.get("checked")),
+        )
+
+        menu = MenuBuilder(maker, w).build(maker.menu([action]))
+        act = menu.actions()[0]
+        assert act.isCheckable()
+        assert not act.isChecked()
+        act.trigger()
+
+        assert values == [True]
 
 
 class TestRefreshCheckStatesIndividual:
@@ -200,8 +242,9 @@ class TestRefreshCheckStatesGroup:
         gid = _make_id("grp2")
         a_id = _make_id("g2a")
         b_id = _make_id("g2b")
-        _register_checkable(a_id, "A", default_checked=True, action_group=gid)
-        _register_checkable(b_id, "B", default_checked=False, action_group=gid)
+        sel = {"id": a_id}
+        _register_checkable(a_id, "A", default_checked=True, action_group=gid, checked_resolver=lambda: sel["id"] == a_id)
+        _register_checkable(b_id, "B", default_checked=False, action_group=gid, checked_resolver=lambda: sel["id"] == b_id)
         w = QtWidgets.QWidget()
         qtbot.addWidget(w)
         builder = CommandMenuBuilder.instance()
@@ -212,10 +255,7 @@ class TestRefreshCheckStatesGroup:
         assert wa_a.isChecked() is True
         assert wa_b.isChecked() is False
 
-        state_mgr = ActionGroupStateManager.instance()
-        state_mgr._group_states[gid] = b_id
-        state_mgr._check_states[a_id] = False
-        state_mgr._check_states[b_id] = True
+        sel["id"] = b_id
 
         builder.refresh_check_states(menu)
         assert wa_a.isChecked() is False
@@ -307,12 +347,13 @@ class TestToggleThenRefresh:
         assert wa.isChecked() is True
         assert container._chk.text() == "✓"
 
-    def test_group_toggle_via_state_manager(self, qtbot):
+    def test_group_toggle_via_resolver(self, qtbot):
         gid = _make_id("grp_tog")
         a_id = _make_id("gta")
         b_id = _make_id("gtb")
-        _register_checkable(a_id, "GA", default_checked=True, action_group=gid)
-        _register_checkable(b_id, "GB", default_checked=False, action_group=gid)
+        sel = {"id": a_id}
+        _register_checkable(a_id, "GA", default_checked=True, action_group=gid, checked_resolver=lambda: sel["id"] == a_id)
+        _register_checkable(b_id, "GB", default_checked=False, action_group=gid, checked_resolver=lambda: sel["id"] == b_id)
         w = QtWidgets.QWidget()
         qtbot.addWidget(w)
         builder = CommandMenuBuilder.instance()
@@ -323,8 +364,7 @@ class TestToggleThenRefresh:
         assert wa_a.isChecked() is True
         assert wa_b.isChecked() is False
 
-        state_mgr = ActionGroupStateManager.instance()
-        state_mgr.set_current(gid, b_id)
+        sel["id"] = b_id
 
         builder.refresh_check_states(menu)
         assert wa_a.isChecked() is False
@@ -358,8 +398,9 @@ class TestExternalStateChangeBugs:
         gid = _make_id("cyc_grp")
         a_id = _make_id("cyca")
         b_id = _make_id("cycb")
-        _register_checkable(a_id, "CycA", default_checked=True, action_group=gid)
-        _register_checkable(b_id, "CycB", default_checked=False, action_group=gid)
+        sel = {"id": a_id}
+        _register_checkable(a_id, "CycA", default_checked=True, action_group=gid, checked_resolver=lambda: sel["id"] == a_id)
+        _register_checkable(b_id, "CycB", default_checked=False, action_group=gid, checked_resolver=lambda: sel["id"] == b_id)
         w = QtWidgets.QWidget()
         qtbot.addWidget(w)
         builder = CommandMenuBuilder.instance()
@@ -370,32 +411,12 @@ class TestExternalStateChangeBugs:
         assert wa_a.isChecked() is True
         assert wa_b.isChecked() is False
 
+        sel["id"] = b_id
         builder.cycle_action_group(gid)
 
         builder.refresh_check_states(menu)
         assert wa_a.isChecked() is False, "After cycle, old item should be unchecked"
         assert wa_b.isChecked() is True, "After cycle, new item should be checked"
-
-    def test_set_action_group_current_reflects(self, qtbot):
-        gid = _make_id("set_grp")
-        a_id = _make_id("seta")
-        b_id = _make_id("setb")
-        _register_checkable(a_id, "SetA", default_checked=True, action_group=gid)
-        _register_checkable(b_id, "SetB", default_checked=False, action_group=gid)
-        w = QtWidgets.QWidget()
-        qtbot.addWidget(w)
-        builder = CommandMenuBuilder.instance()
-        menu = builder.build(w, [a_id, b_id])
-        tracker = menu.property("__checkable_tracker__")
-        wa_a = tracker[0][0]
-        wa_b = tracker[1][0]
-        assert wa_a.isChecked() is True
-
-        builder.set_action_group_current(gid, b_id)
-
-        builder.refresh_check_states(menu)
-        assert wa_a.isChecked() is False
-        assert wa_b.isChecked() is True
 
     def test_individual_external_store_without_prior_toggle(self, qtbot):
         cmd_id = _make_id("ext_no_toggle")

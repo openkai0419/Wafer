@@ -516,6 +516,65 @@ def _draw_refresh(p: QPainter, r: QRectF, color: QColor):
     p.drawPath(arrow)
 
 
+@_register("history", padding=0.10)
+def _draw_history(p: QPainter, r: QRectF, color: QColor):
+    s = min(r.width(), r.height())
+    lw = max(1.4, s * 0.10)
+    pen = QPen(color, lw)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    p.setPen(pen)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    cx, cy = r.center().x(), r.center().y()
+    rad = s * 0.38
+    arc_rect = QRectF(cx - rad, cy - rad, rad * 2, rad * 2)
+    p.drawArc(arc_rect, 35 * 16, 285 * 16)
+
+    arrow_angle = 215 * math.pi / 180
+    tip = QPointF(cx + rad * math.cos(arrow_angle), cy + rad * math.sin(arrow_angle))
+    al = s * 0.18
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(color)
+    arrow = QPainterPath()
+    arrow.moveTo(tip)
+    arrow.lineTo(QPointF(tip.x() + al * 0.95, tip.y() - al * 0.10))
+    arrow.lineTo(QPointF(tip.x() + al * 0.20, tip.y() - al * 0.90))
+    arrow.closeSubpath()
+    p.drawPath(arrow)
+
+    pen.setWidthF(max(1.2, s * 0.08))
+    p.setPen(pen)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawLine(QPointF(cx, cy), QPointF(cx, cy - s * 0.20))
+    p.drawLine(QPointF(cx, cy), QPointF(cx + s * 0.17, cy + s * 0.10))
+
+
+@_register("save", padding=0.12)
+def _draw_save(p: QPainter, r: QRectF, color: QColor):
+    s = min(r.width(), r.height())
+    lw = max(1.3, s * 0.09)
+    pen = QPen(color, lw)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    p.setPen(pen)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    body = r.adjusted(lw / 2, lw / 2, -lw / 2, -lw / 2)
+    notch = s * 0.18
+    path = QPainterPath()
+    path.moveTo(body.left(), body.top())
+    path.lineTo(body.right() - notch, body.top())
+    path.lineTo(body.right(), body.top() + notch)
+    path.lineTo(body.right(), body.bottom())
+    path.lineTo(body.left(), body.bottom())
+    path.closeSubpath()
+    p.drawPath(path)
+
+    top = QRectF(body.left() + s * 0.15, body.top(), body.width() * 0.50, body.height() * 0.33)
+    p.drawRect(top)
+    label = QRectF(body.left() + s * 0.18, body.top() + body.height() * 0.58, body.width() * 0.64, body.height() * 0.26)
+    p.drawRoundedRect(label, s * 0.03, s * 0.03)
+
+
 @_register("star", padding=0.10)
 def _draw_star(p: QPainter, r: QRectF, color: QColor):
     p.setPen(Qt.PenStyle.NoPen)
@@ -612,3 +671,67 @@ def _draw_lock(p: QPainter, r: QRectF, color: QColor):
 @_register("lock_open", padding=0.10)
 def _draw_lock_open(p: QPainter, r: QRectF, color: QColor):
     _draw_lock_body(p, r, color, r.width() * 0.30)
+
+
+@_register("pencil", padding=0.17)
+def _draw_pencil(p: QPainter, r: QRectF, color: QColor):
+    lw = max(1.2, min(r.width(), r.height()) * 0.09)
+    pen = QPen(color, lw)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    p.setPen(pen)
+    p.setBrush(color)
+    s = min(r.width(), r.height())
+    cx, cy = r.center().x(), r.center().y()
+    half = s * 0.45
+    tip = QPointF(cx - half, cy + half)
+    tail = QPointF(cx + half, cy - half)
+    body_w = s * 0.18
+    dx = tail.x() - tip.x()
+    dy = tail.y() - tip.y()
+    length = math.hypot(dx, dy) or 1.0
+    nx, ny = -dy / length, dx / length
+    head_len = s * 0.20
+    tip_in = QPointF(tip.x() + dx / length * head_len, tip.y() + dy / length * head_len)
+    body = QPainterPath()
+    body.moveTo(QPointF(tip_in.x() + nx * body_w, tip_in.y() + ny * body_w))
+    body.lineTo(QPointF(tail.x() + nx * body_w, tail.y() + ny * body_w))
+    body.lineTo(QPointF(tail.x() - nx * body_w, tail.y() - ny * body_w))
+    body.lineTo(QPointF(tip_in.x() - nx * body_w, tip_in.y() - ny * body_w))
+    body.closeSubpath()
+    p.drawPath(body)
+    head = QPainterPath()
+    head.moveTo(tip)
+    head.lineTo(QPointF(tip_in.x() + nx * body_w, tip_in.y() + ny * body_w))
+    head.lineTo(QPointF(tip_in.x() - nx * body_w, tip_in.y() - ny * body_w))
+    head.closeSubpath()
+    p.drawPath(head)
+
+
+@_register("trash", padding=0.10)
+def _draw_trash(p: QPainter, r: QRectF, color: QColor):
+    lw = max(1.2, min(r.width(), r.height()) * 0.09)
+    pen = QPen(color, lw)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    p.setPen(pen)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    w, h = r.width(), r.height()
+    cx = r.center().x()
+    lid_y = r.top() + h * 0.22
+    p.drawLine(QPointF(r.left() + w * 0.10, lid_y), QPointF(r.right() - w * 0.10, lid_y))
+    handle_w = w * 0.22
+    handle_y = r.top() + h * 0.10
+    p.drawLine(QPointF(cx - handle_w, handle_y), QPointF(cx + handle_w, handle_y))
+    p.drawLine(QPointF(cx - handle_w, handle_y), QPointF(cx - handle_w, lid_y))
+    p.drawLine(QPointF(cx + handle_w, handle_y), QPointF(cx + handle_w, lid_y))
+    body_left = r.left() + w * 0.20
+    body_right = r.right() - w * 0.20
+    body_bottom = r.bottom() - h * 0.05
+    p.drawLine(QPointF(body_left, lid_y), QPointF(body_left + w * 0.05, body_bottom))
+    p.drawLine(QPointF(body_right, lid_y), QPointF(body_right - w * 0.05, body_bottom))
+    p.drawLine(QPointF(body_left + w * 0.05, body_bottom), QPointF(body_right - w * 0.05, body_bottom))
+    bar_y_top = lid_y + h * 0.15
+    bar_y_bot = body_bottom - h * 0.10
+    p.drawLine(QPointF(cx - w * 0.10, bar_y_top), QPointF(cx - w * 0.10, bar_y_bot))
+    p.drawLine(QPointF(cx + w * 0.10, bar_y_top), QPointF(cx + w * 0.10, bar_y_bot))

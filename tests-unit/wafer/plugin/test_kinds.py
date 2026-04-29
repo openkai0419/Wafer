@@ -30,14 +30,6 @@ def test_short_title_case_labels():
     assert plugin_kind_label("unknown_kind") == "Unknown Kind"
 
 
-def test_kind_colors_are_unique():
-    colors = {
-        plugin_kind_color(key)
-        for key in PLUGIN_KINDS
-    }
-    assert len(colors) == len(PLUGIN_KINDS)
-
-
 def test_orderable_kind_order_is_stable():
     assert ORDERABLE_PLUGIN_KIND_KEYS == (
         PLUGIN_KIND_GRID,

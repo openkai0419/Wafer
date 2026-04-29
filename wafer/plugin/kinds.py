@@ -42,7 +42,6 @@ PLUGIN_KINDS: dict[str, PluginKind] = {
     PLUGIN_KIND_SORT: PluginKind(PLUGIN_KIND_SORT, "Sort", "#E0B3B3"),
     PLUGIN_KIND_LAYOUT: PluginKind(PLUGIN_KIND_LAYOUT, "Layout", "#DB8080"),
     PLUGIN_KIND_RENAME_SOURCE: PluginKind(PLUGIN_KIND_RENAME_SOURCE, "Rename", "#BDBDBD"),
-
 }
 
 

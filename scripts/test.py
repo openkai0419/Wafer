@@ -30,7 +30,8 @@ LAYERS: dict[str, dict] = {
         "paths": ["tests/benchmark/"],
         "label": "Layer 3: Benchmark",
         "maxfail": 5,
-        "extra_args": ["-m", "benchmark"],
+        "extra_args": ["-m", "benchmark", "--timeout=0"],
+        "timeout": 3600,
     },
     "setup": {
         "paths": ["tests/smoke/test_extension_install.py", "tests/smoke/test_extension_verify.py"],
@@ -398,7 +399,16 @@ def main():
     )
     parser.add_argument("-x", "--stop-on-layer-fail", action="store_true", help="Stop after first layer with failures")
     parser.add_argument("--maxfail", type=int, default=None, help="Override maxfail per layer")
-    args, extra = parser.parse_known_args()
+    raw_args = sys.argv[1:]
+    if "--" in raw_args:
+        split_at = raw_args.index("--")
+        runner_args = raw_args[:split_at]
+        passthrough_args = raw_args[split_at + 1 :]
+    else:
+        runner_args = raw_args
+        passthrough_args = []
+    args, extra = parser.parse_known_args(runner_args)
+    extra.extend(passthrough_args)
 
     layer_names = args.layers or DEFAULT_LAYERS
     if "all" in layer_names:

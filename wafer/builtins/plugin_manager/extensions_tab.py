@@ -19,6 +19,7 @@ from ...plugin import failed_installs, installer_queue
 from ...plugin.badges import ExtensionBadge, resolve_badge, badge_sort_key
 from ...core.qt.icon_engine import themed_icon
 from ...core.qt.dispatcher import Dispatcher
+from .badge_texts import badge_tooltip_text, heavy_install_confirm_text, heavy_install_title
 from .readme_summary import extract_readme_summary
 
 _MAX_MD_FILES = 10
@@ -141,10 +142,10 @@ class _PluginRow(QtWidgets.QWidget):
         Command.run(f"panel.toggle_{slug}")
 
 
-_BADGE_CONFIG: dict[ExtensionBadge, tuple[str, str, str | None]] = {
-    ExtensionBadge.PREFERRED: ("star", "Recommended to install", "success"),
-    ExtensionBadge.HEAVY: ("warning_triangle", "This extension is marked as heavy. This may:\n- use a large amount of GPU\n- take a long time to install", None),
-    ExtensionBadge.EXTERNAL: ("external_link", "Community / third-party extension", None),
+_BADGE_CONFIG: dict[ExtensionBadge, tuple[str, str | None]] = {
+    ExtensionBadge.PREFERRED: ("star", "success"),
+    ExtensionBadge.HEAVY: ("warning_triangle", None),
+    ExtensionBadge.EXTERNAL: ("external_link", None),
 }
 
 _BADGE_ICON_SIZE: dict[ExtensionBadge, int] = {
@@ -219,15 +220,15 @@ class _ExtensionCard(QtWidgets.QFrame):
         header = QtWidgets.QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
         header.setSpacing(dpix(3))
-        badge_cfg = _BADGE_CONFIG.get(self.badge)
+        badge_cfg = _BADGE_CONFIG.get(self.badge) if self.badge is not None else None
         if badge_cfg:
-            icon_key, tooltip_text, tint = badge_cfg
+            icon_key, tint = badge_cfg
             badge_label = _InstantTooltipLabel()
             icon_px = _BADGE_ICON_SIZE.get(self.badge, 13)
             icon_size = dpix(icon_px)
             badge_color = self._badge_color(tint)
             badge_label.setPixmap(themed_icon(icon_key, color=badge_color).pixmap(icon_size, icon_size))
-            badge_label.setToolTip(t(tooltip_text))
+            badge_label.setToolTip(badge_tooltip_text(self.badge))
             badge_label.setFixedSize(icon_size, icon_size)
             badge_label.setAlignment(QtCore.Qt.AlignCenter)
             header.addWidget(badge_label, 0, QtCore.Qt.AlignVCenter)
@@ -537,9 +538,9 @@ class ExtensionsTab(QtWidgets.QWidget):
     def _install_extension(self, card: _ExtensionCard):
         if card.badge == ExtensionBadge.HEAVY:
             message = QtWidgets.QMessageBox(self)
-            message.setWindowTitle(t("Install Heavy Extension"))
+            message.setWindowTitle(heavy_install_title())
             message.setIcon(QtWidgets.QMessageBox.NoIcon)
-            message.setText(t("This extension is marked as heavy. This may:\n- use a large amount of GPU\n- take a long time to install\nContinue?"))
+            message.setText(heavy_install_confirm_text())
             message.setStandardButtons(QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel)
             message.setDefaultButton(QtWidgets.QMessageBox.Cancel)
             if message.exec() != QtWidgets.QMessageBox.Ok:

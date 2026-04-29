@@ -138,6 +138,7 @@ class _MarkSettingsPopup(PopupBase):
         if svc is not None:
             svc.set_radius(int(value))
 
+
 class MarkFilterWidget(QtWidgets.QWidget):
     changed = QtCore.Signal()
 

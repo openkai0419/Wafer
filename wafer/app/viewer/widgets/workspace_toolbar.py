@@ -160,7 +160,6 @@ class _SectionPopup(PopupBase):
     def content_widget(self) -> QtWidgets.QWidget | None:
         return self._content_widget
 
-
     def popup_size_hint(self) -> QtCore.QSize:
         content = self._content_widget
         if content is not None and hasattr(content, "content_height_hint"):

@@ -201,7 +201,9 @@ class MetaViewerWidget(QtWidgets.QWidget):
 
         return self._resolve_plugins("_tag_panel_plugins", _load)
 
-    def _rebuild(self, meta: dict, meta_root: dict, meta_root_locks: dict, meta_prefixed: dict[str, dict], meta_prefixed_locks: dict[str, dict], tag_prefixed: dict[str, dict], section_order: list[str]):
+    def _rebuild(
+        self, meta: dict, meta_root: dict, meta_root_locks: dict, meta_prefixed: dict[str, dict], meta_prefixed_locks: dict[str, dict], tag_prefixed: dict[str, dict], section_order: list[str]
+    ):
         for sec in self._sections.values():
             self._layout.removeWidget(sec)
             sec.setParent(None)

@@ -206,11 +206,6 @@ class MarkFilter(BaseFilterPlugin):
         placeholders = ",".join(["?"] * len(keys))
         base = f"SELECT path FROM meta_info WHERE key IN ({placeholders})"
         if mode == "AND" and len(keys) > 1:
-            sql = (
-                "SELECT path FROM ("
-                "SELECT path, key AS k FROM meta_info "
-                f"WHERE key IN ({placeholders})"
-                ") GROUP BY path HAVING COUNT(DISTINCT k) >= ?"
-            )
+            sql = f"SELECT path FROM (SELECT path, key AS k FROM meta_info WHERE key IN ({placeholders})) GROUP BY path HAVING COUNT(DISTINCT k) >= ?"
             return sql, list(keys) + [len(keys)]
         return f"SELECT DISTINCT path FROM ({base})", list(keys)

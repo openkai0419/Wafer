@@ -1,4 +1,12 @@
 {
+  "Install Recommended for general use": {
+    "en": "Install Recommended for general use",
+    "ja": ""
+  },
+  "This extension is marked as HEAVY. This may:\n- use a large amount of GPU\n- take a long time to install": {
+    "en": "This extension is marked as HEAVY. This may:\n- use a large amount of GPU\n- take a long time to install",
+    "ja": ""
+  },
   "Add tag or metadata": {
     "en": "Add tag or metadata",
     "ja": ""

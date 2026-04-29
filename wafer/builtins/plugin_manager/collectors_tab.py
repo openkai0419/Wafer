@@ -6,6 +6,8 @@ from ...core.lang.manager import t
 from ...core.color.theme import ThemeManager
 from ...core.qt.color_utils import mix_colors
 from ...core.qt.icon_engine import themed_icon
+from ...plugin.badges import ExtensionBadge
+from .badge_texts import badge_tooltip_text, heavy_multi_warning_text, heavy_warning_title
 
 
 class _ClickableLabel(QtWidgets.QLabel):
@@ -149,7 +151,7 @@ class CollectorsTab(QtWidgets.QWidget):
                 icon_lbl = QtWidgets.QLabel()
                 icon_size = dpix(13)
                 icon_lbl.setPixmap(themed_icon("warning_triangle", color=self._heavy_badge_color()).pixmap(icon_size, icon_size))
-                icon_lbl.setToolTip(t("This extension is marked as heavy. This may:\n- use a large amount of GPU\n- take a long time to install"))
+                icon_lbl.setToolTip(badge_tooltip_text(ExtensionBadge.HEAVY))
                 icon_lbl.setFixedSize(icon_size, icon_size)
                 icon_lbl.setAlignment(QtCore.Qt.AlignCenter)
                 row_layout.addWidget(icon_lbl)
@@ -192,8 +194,8 @@ class CollectorsTab(QtWidgets.QWidget):
         if other_folders:
             QtWidgets.QMessageBox.warning(
                 self,
-                t("Heavy Extension"),
-                t("Multiple heavy extensions are enabled:\n" + "\n".join(f"- {folder}" for folder in [current_folder, *other_folders] if folder) + "\nThis may cause high GPU usage or instability."),
+                heavy_warning_title(),
+                heavy_multi_warning_text([current_folder, *other_folders]),
             )
 
     @staticmethod

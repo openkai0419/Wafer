@@ -8,6 +8,7 @@ from wafer.plugin.registry import BasePlugin, PluginBase
 from wafer.plugin.badges import ExtensionBadge
 from wafer.plugin.panel.base import BasePanelPlugin
 from wafer.plugin.installer import InstallState
+from wafer.builtins.plugin_manager.badge_texts import HEAVY_BADGE_TOOLTIP, HEAVY_INSTALL_TITLE
 
 
 class TestExtensionsTab:
@@ -327,11 +328,9 @@ class TestExtensionsTab:
 
         tab._install_extension(card)
 
-        assert captured["title"] == "Install Heavy Extension"
+        assert captured["title"] == HEAVY_INSTALL_TITLE
         assert captured["icon"] == QtWidgets.QMessageBox.NoIcon
-        assert "This extension is marked as heavy. This may:" in captured["text"]
-        assert "- use a large amount of GPU" in captured["text"]
-        assert "- take a long time to install" in captured["text"]
+        assert HEAVY_BADGE_TOOLTIP in captured["text"]
 
     def test_cancel_dequeues(self, qtbot, tmp_path, monkeypatch):
         ext_dir = tmp_path / "extensions"

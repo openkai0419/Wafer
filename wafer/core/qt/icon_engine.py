@@ -621,7 +621,6 @@ def _draw_section_tag(p: QPainter, r: QRectF, color: QColor):
     p.setPen(Qt.PenStyle.NoPen)
     p.setBrush(color)
     w = r.width()
-    h = r.height()
     inset = w * 0.18
     path = QPainterPath()
     path.moveTo(QPointF(r.left() + inset, r.top()))

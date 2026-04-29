@@ -1,8 +1,10 @@
 import pytest
-from PySide6 import QtWidgets
+from PySide6 import QtGui, QtWidgets
 
 from wafer.builtins.filters import TextFilter
-from wafer.plugin.query.widgets import CheckableCombo, _KeySelectorPopup
+from wafer.core.color.theme import ThemeManager
+from wafer.core.state import StateStore
+from wafer.plugin.query.widgets import CheckableCombo, _CATALOG_KEY_ROLE, _KeySelectorPopup
 
 
 def _active_key_set():
@@ -11,6 +13,28 @@ def _active_key_set():
 
 def _catalog_keys():
     return [k for k, _ in _KeySelectorPopup.instance().catalog_data()]
+
+
+def _tree_item_for_key(popup, key):
+    root = popup._catalog_tree.invisibleRootItem()
+    for i in range(root.childCount()):
+        top_item = root.child(i)
+        if top_item.data(0, _CATALOG_KEY_ROLE) == key:
+            return top_item
+        for j in range(top_item.childCount()):
+            child = top_item.child(j)
+            if child.data(0, _CATALOG_KEY_ROLE) == key:
+                return child
+    return None
+
+
+def _group_item(popup, prefix):
+    root = popup._catalog_tree.invisibleRootItem()
+    for i in range(root.childCount()):
+        item = root.child(i)
+        if item.text(0).split("  (")[0] == prefix:
+            return item
+    return None
 
 
 @pytest.fixture()
@@ -23,9 +47,12 @@ def qapp():
 
 @pytest.fixture(autouse=True)
 def _reset_popup():
+    previous_state = StateStore._instance
+    StateStore._instance = None
     _KeySelectorPopup._instance = None
     yield
     _KeySelectorPopup._instance = None
+    StateStore._instance = previous_state
 
 
 class TestTextFilterDisplayName:
@@ -253,3 +280,81 @@ class TestKeySelectorPopupGroups:
         combo.set_checked([])
         assert combo.active_keys
         assert combo.checked_items() == []
+
+    def test_save_state_includes_expanded_groups_and_splitter_sizes(self, qapp):
+        combo = CheckableCombo()
+        combo.remake([
+            ("path", 100),
+            ("exif.width", 50),
+            ("exif.height", 50),
+        ])
+        popup = _KeySelectorPopup.instance()
+        popup.resize(320, 420)
+        popup.show()
+        qapp.processEvents()
+        popup._splitter.setSizes([90, 270])
+        group = _group_item(popup, "exif")
+        group.setExpanded(True)
+
+        state = popup._save_state()
+
+        assert state["keys"] == ["path"]
+        assert state["expanded"] == ["exif"]
+        assert len(state["splitter_sizes"]) == 2
+        assert any(state["splitter_sizes"])
+
+    def test_restore_state_applies_expanded_groups_after_catalog_rebuild(self, qapp):
+        popup = _KeySelectorPopup.instance()
+        popup._restore_state({"keys": ["path"], "expanded": ["exif"]})
+        popup.set_catalog([
+            ("path", 100),
+            ("exif.width", 50),
+            ("exif.height", 50),
+        ])
+
+        group = _group_item(popup, "exif")
+
+        assert group.isExpanded()
+
+    def test_restore_state_applies_splitter_sizes(self, qapp):
+        popup = _KeySelectorPopup.instance()
+        popup.resize(320, 420)
+        popup.show()
+        qapp.processEvents()
+
+        popup._restore_state({"splitter_sizes": [80, 240]})
+        qapp.processEvents()
+
+        sizes = popup._splitter.sizes()
+        assert sizes[0] < sizes[1]
+
+    def test_catalog_colors_are_muted_until_active(self, qapp):
+        combo = CheckableCombo()
+        combo.remake([("path", 100), ("prompt", 5)])
+        popup = _KeySelectorPopup.instance()
+        palette = ThemeManager.instance().palette
+
+        path_item = _tree_item_for_key(popup, "path")
+        prompt_item = _tree_item_for_key(popup, "prompt")
+
+        assert path_item.foreground(0).color() == QtGui.QColor(palette.text_primary)
+        assert prompt_item.foreground(0).color() == QtGui.QColor(palette.text_muted)
+
+    def test_catalog_added_key_is_checked_only_for_current_combo(self, qapp):
+        combo_a = CheckableCombo()
+        combo_b = CheckableCombo()
+        combo_a.remake([("path", 10), ("prompt", 5)])
+        popup = _KeySelectorPopup.instance()
+        popup.open_for(combo_a)
+        qapp.processEvents()
+
+        prompt_item = _tree_item_for_key(popup, "prompt")
+        popup._on_catalog_clicked(prompt_item, 0)
+
+        assert "prompt" in combo_a.checked_items()
+        assert "prompt" in combo_b.active_keys
+        assert "prompt" not in combo_b.checked_items()
+
+        popup.open_for(combo_b)
+        qapp.processEvents()
+        assert not popup._active_items["prompt"].checked

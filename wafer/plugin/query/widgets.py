@@ -22,10 +22,10 @@ class _ActiveKeyItem(QtWidgets.QWidget):
     toggled = QtCore.Signal()
     remove_clicked = QtCore.Signal(str)
 
-    def __init__(self, key: str, count: int | None = None, parent=None):
+    def __init__(self, key: str, count: int | None = None, checked: bool = False, parent=None):
         super().__init__(parent)
         self.key = key
-        self._checked = False
+        self._checked = checked
         self.setCursor(QtCore.Qt.PointingHandCursor)
         layout = QtWidgets.QHBoxLayout(self)
         layout.setContentsMargins(dpix(6), dpix(2), dpix(2), dpix(2))
@@ -107,6 +107,8 @@ class _KeySelectorPopup(QtWidgets.QFrame):
         self._catalog_data: list[tuple[str, int]] = []
         self._active_items: dict[str, _ActiveKeyItem] = {}
         self._pending_active_keys: list[str] = []
+        self._pending_expanded_keys: set[str] | None = None
+        self._pending_splitter_sizes: list[int] | None = None
         self._suppress_signals = False
         self._current_combo = None
         self._build_ui()
@@ -114,12 +116,24 @@ class _KeySelectorPopup(QtWidgets.QFrame):
         StateStore.instance().register(_STATE_NAMESPACE, self._save_state, self._restore_state)
 
     def _save_state(self) -> dict:
-        return {"keys": list(self._active_items.keys())}
+        state = {
+            "keys": list(self._active_items.keys()),
+            "expanded": sorted(self._save_expansion_state()),
+        }
+        sizes = self._splitter.sizes()
+        if any(sizes):
+            state["splitter_sizes"] = sizes
+        return state
 
     def _restore_state(self, state: dict):
         if not isinstance(state, dict):
             return
         keys = [k for k in (state.get("keys") or []) if isinstance(k, str)]
+        expanded = state.get("expanded") or []
+        if isinstance(expanded, (list, tuple, set)):
+            self._pending_expanded_keys = {k for k in expanded if isinstance(k, str)}
+        self._pending_splitter_sizes = self._valid_splitter_sizes(state.get("splitter_sizes"))
+        self._apply_pending_splitter_sizes()
         self._pending_active_keys = keys
         if keys:
             self.ensure_active_keys(keys)
@@ -132,8 +146,8 @@ class _KeySelectorPopup(QtWidgets.QFrame):
         root.setContentsMargins(dpix(6), dpix(6), dpix(6), dpix(6))
         root.setSpacing(dpix(4))
 
-        splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
-        splitter.setChildrenCollapsible(False)
+        self._splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
+        self._splitter.setChildrenCollapsible(False)
 
         self._active_group = QtWidgets.QGroupBox(t("Filter"))
         active_layout = QtWidgets.QVBoxLayout(self._active_group)
@@ -173,11 +187,11 @@ class _KeySelectorPopup(QtWidgets.QFrame):
         self._catalog_tree.itemClicked.connect(self._on_catalog_clicked)
         catalog_layout.addWidget(self._catalog_tree, 1)
 
-        splitter.addWidget(self._active_group)
-        splitter.addWidget(catalog_container)
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 3)
-        root.addWidget(splitter, 1)
+        self._splitter.addWidget(self._active_group)
+        self._splitter.addWidget(catalog_container)
+        self._splitter.setStretchFactor(0, 1)
+        self._splitter.setStretchFactor(1, 3)
+        root.addWidget(self._splitter, 1)
 
     def _apply_theme(self):
         p = ThemeManager.instance().palette
@@ -213,6 +227,9 @@ class _KeySelectorPopup(QtWidgets.QFrame):
 
     def _rebuild_catalog_tree(self):
         expanded = self._save_expansion_state()
+        consume_pending = self._pending_expanded_keys is not None and bool(self._catalog_data)
+        if self._pending_expanded_keys is not None:
+            expanded = set(self._pending_expanded_keys)
         self._catalog_tree.clear()
         groups: dict[str, list[tuple[str, str, int]]] = {}
         for key, count in self._catalog_data:
@@ -235,6 +252,8 @@ class _KeySelectorPopup(QtWidgets.QFrame):
             self._add_group_items(group_node, items, active_keys)
             group_node.setExpanded(prefix in expanded)
 
+        if consume_pending:
+            self._pending_expanded_keys = None
         self._apply_filter(self._search_input.text())
 
     def _save_expansion_state(self) -> set[str]:
@@ -259,8 +278,8 @@ class _KeySelectorPopup(QtWidgets.QFrame):
             item.setData(0, _CATALOG_KEY_ROLE, key)
             item.setData(0, _CATALOG_COUNT_ROLE, count)
             item.setFlags(QtCore.Qt.ItemIsEnabled)
-            if key in active_keys:
-                item.setForeground(0, QtGui.QColor(p.text_muted))
+            color = p.text_primary if key in active_keys else p.text_muted
+            item.setForeground(0, QtGui.QColor(color))
 
     def _on_catalog_clicked(self, item: QtWidgets.QTreeWidgetItem, column: int):
         key = item.data(0, _CATALOG_KEY_ROLE)
@@ -272,9 +291,10 @@ class _KeySelectorPopup(QtWidgets.QFrame):
             self._notify_active_keys_changed({key})
         else:
             count = item.data(0, _CATALOG_COUNT_ROLE)
-            self._add_active_key(key, count)
+            self._add_active_key(key, count, checked=True)
             self._rebuild_catalog_tree()
             self._notify_active_keys_changed(set())
+            self._on_check_toggled()
 
     def add_key_if_missing(self, key: str, count: int | None = None):
         if key in self._active_items:
@@ -293,15 +313,32 @@ class _KeySelectorPopup(QtWidgets.QFrame):
         if added:
             self._rebuild_catalog_tree()
 
-    def _add_active_key(self, key: str, count: int | None = None):
+    def _add_active_key(self, key: str, count: int | None = None, checked: bool = False):
         if key in self._active_items:
             return
-        widget = _ActiveKeyItem(key, count)
+        widget = _ActiveKeyItem(key, count, checked=checked)
         widget.toggled.connect(self._on_check_toggled)
         widget.remove_clicked.connect(self._on_remove_key)
         insert_idx = self._active_list_layout.count() - 1
         self._active_list_layout.insertWidget(insert_idx, widget)
         self._active_items[key] = widget
+
+    def _valid_splitter_sizes(self, value) -> list[int] | None:
+        if not isinstance(value, (list, tuple)) or len(value) != 2:
+            return None
+        try:
+            sizes = [int(v) for v in value]
+        except (TypeError, ValueError):
+            return None
+        if any(v < 0 for v in sizes):
+            return None
+        return sizes
+
+    def _apply_pending_splitter_sizes(self):
+        if self._pending_splitter_sizes is None:
+            return
+        self._splitter.setSizes(self._pending_splitter_sizes)
+        self._pending_splitter_sizes = None
 
     def _on_remove_key(self, key: str):
         self._remove_active_key(key)
@@ -370,6 +407,7 @@ class _KeySelectorPopup(QtWidgets.QFrame):
 
     def showEvent(self, event):
         super().showEvent(event)
+        self._apply_pending_splitter_sizes()
         self._search_input.setFocus()
         self._search_input.clear()
 

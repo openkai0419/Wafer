@@ -6,6 +6,7 @@ from ...plugin.settings import PluginSettings
 from ...plugin.installer import RestartScope, restart_scope_from_plugins
 from ...plugin import installer_queue
 from ...plugin.loader import get_plugin_dir, qualify_plugin_name
+from ...plugin.kinds import PLUGIN_KIND_COLLECTOR, PLUGIN_KIND_COMMAND, PLUGIN_KIND_PARSER
 from ...plugin.panel.base import BasePanelPlugin
 from ...core.color.theme import ThemeManager
 from ...core.qt.dispatcher import Dispatcher
@@ -350,7 +351,7 @@ class PluginManagerWidget(QtWidgets.QWidget):
     def _compute_builtin_command_names(registry_data: dict) -> set[str]:
         from ...plugin.loader import get_command_registry
 
-        ext_cmd_classes = set(registry_data.get("command", []))
+        ext_cmd_classes = set(registry_data.get(PLUGIN_KIND_COMMAND, []))
         return {cls.NAME for cls in get_command_registry().list_all() if cls not in ext_cmd_classes and cls.NAME}
 
     def _sync_tabs(self):
@@ -369,8 +370,8 @@ class PluginManagerWidget(QtWidgets.QWidget):
         self._refresh_with_scroll(self._collectors_scroll, lambda: self._collectors_tab.refresh(c_names, d_names, heavy_collectors=heavy))
 
     def _collect_worker_names(self) -> tuple[list[str], list[str]]:
-        collectors = [cls.NAME for cls in self._ext_tab.collect_enabled_plugins("collector")]
-        parsers = [cls.NAME for cls in self._ext_tab.collect_enabled_plugins("parser")]
+        collectors = [cls.NAME for cls in self._ext_tab.collect_enabled_plugins(PLUGIN_KIND_COLLECTOR)]
+        parsers = [cls.NAME for cls in self._ext_tab.collect_enabled_plugins(PLUGIN_KIND_PARSER)]
         return collectors, parsers
 
     def _send_delete(self, pairs: list[tuple[str, str]], re_collect: bool):

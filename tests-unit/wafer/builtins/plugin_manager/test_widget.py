@@ -382,6 +382,34 @@ class TestPluginRowPanelButton:
         qtbot.addWidget(row)
         assert row.panel_btn is None
 
+    def test_kind_badges_use_short_labels_and_fixed_width(self, qtbot):
+        from wafer.builtins.plugin_manager.extensions_tab import _PLUGIN_KIND_BADGE_WIDTH, _PluginRow
+        from wafer.plugin.kinds import PLUGIN_KIND_IMAGE_LOADER, PLUGIN_KIND_META_PANEL, PLUGIN_KIND_PARSER, PLUGIN_KIND_TAG_PANEL
+        from wafer.utils.formatting import dpix
+
+        class FakePlugin(BasePlugin):
+            NAME = "test_plugin"
+            EXTENSIONS = ()
+            PRIORITY = 1
+
+        expected = {
+            PLUGIN_KIND_IMAGE_LOADER: "Loader",
+            PLUGIN_KIND_META_PANEL: "Meta",
+            PLUGIN_KIND_TAG_PANEL: "Tag",
+            PLUGIN_KIND_PARSER: "Parser",
+        }
+        widths = set()
+        for registry_key, label in expected.items():
+            row = _PluginRow(registry_key, FakePlugin, True)
+            qtbot.addWidget(row)
+            badge = row.findChild(QtWidgets.QLabel, "plugin_kind_badge")
+            assert badge.text() == label
+            assert badge.text() != registry_key
+            assert badge.minimumWidth() == dpix(_PLUGIN_KIND_BADGE_WIDTH)
+            assert badge.maximumWidth() == dpix(_PLUGIN_KIND_BADGE_WIDTH)
+            widths.add(badge.minimumWidth())
+        assert len(widths) == 1
+
     def test_panel_row_uses_name_when_no_display_name(self, qtbot):
         from wafer.builtins.plugin_manager.extensions_tab import _PluginRow
 

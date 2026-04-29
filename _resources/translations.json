@@ -1,4 +1,8 @@
 {
+  "This extension is marked as HEAVY. This may:\n- use large amount of GPU\n- take long time to install": {
+    "en": "This extension is marked as HEAVY. This may:\n- use large amount of GPU\n- take long time to install",
+    "ja": ""
+  },
   "Install Recommended for general use": {
     "en": "Install Recommended for general use",
     "ja": ""

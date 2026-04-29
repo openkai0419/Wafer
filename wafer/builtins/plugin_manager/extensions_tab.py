@@ -10,6 +10,7 @@ from ...core.lang.manager import t
 from ...core.qt.color_utils import mix_colors
 from ...plugin.loader import get_plugin_dir, PluginLoader, qualify_plugin_name
 from ...ui.widgets.eliding import ElidingLabel
+from ...plugin.kinds import PLUGIN_KIND_COLLECTOR, PLUGIN_KIND_PANEL, PLUGIN_KIND_PARSER, plugin_kind_color, plugin_kind_label
 from ...plugin.installer import (
     InstallState,
     RestartScope,
@@ -23,6 +24,7 @@ from .badge_texts import badge_tooltip_text, heavy_install_confirm_text, heavy_i
 from .readme_summary import extract_readme_summary
 
 _MAX_MD_FILES = 10
+_PLUGIN_KIND_BADGE_WIDTH = 76
 
 
 class CardStatus(Enum):
@@ -48,31 +50,6 @@ _CARD_STATUS_CONFIG: dict[CardStatus, tuple[str, str, bool]] = {
     CardStatus.FAILED: ("Retry", "failed", True),
     CardStatus.RESTART_REQUIRED: ("Restart Required", "deferred", False),
 }
-_REGISTRY_LABELS = {
-    "viewer": "Viewer",
-    "grid": "Grid",
-    "collector": "Collector",
-    "filter": "Filter",
-    "sort": "Sort",
-    "layout": "Layout",
-    "rename_source": "Rename",
-    "command": "Command",
-    "panel": "Panel",
-}
-
-_TAG_COLORS = {
-    "viewer": "#81c784",
-    "grid": "#ce93d8",
-    "collector": "#f48fb1",
-    "command": "#ffb74d",
-    "layout": "#80cbc4",
-    "filter": "#4fc3f7",
-    "sort": "#90a4ae",
-    "rename_source": "#bcaaa4",
-    "panel": "#fff176",
-}
-
-
 def _hex_to_rgba(hex_color: str, alpha: float) -> str:
     r = int(hex_color[1:3], 16)
     g = int(hex_color[3:5], 16)
@@ -95,11 +72,12 @@ class _PluginRow(QtWidgets.QWidget):
         self.checkbox.setChecked(checked)
         self.panel_btn = None
 
-        tag_color = _TAG_COLORS.get(registry_key, "#90a4ae")
-        tag_text = _REGISTRY_LABELS.get(registry_key, registry_key)
+        tag_color = plugin_kind_color(registry_key)
+        tag_text = plugin_kind_label(registry_key)
         tag = QtWidgets.QLabel(tag_text)
+        tag.setObjectName("plugin_kind_badge")
         tag.setStyleSheet(f"color: {tag_color}; background: {_hex_to_rgba(tag_color, 0.15)}; font-size: {dpix(11)}px; font-weight: bold; padding: {dpix(2)}px {dpix(6)}px; border-radius: {dpix(3)}px;")
-        tag.setMinimumWidth(dpix(68))
+        tag.setFixedWidth(dpix(_PLUGIN_KIND_BADGE_WIDTH))
         tag.setAlignment(QtCore.Qt.AlignCenter)
 
         name_label = QtWidgets.QLabel(plugin_cls.NAME)
@@ -117,7 +95,7 @@ class _PluginRow(QtWidgets.QWidget):
         row_layout.addWidget(name_label)
         row_layout.addWidget(ext_label)
 
-        if registry_key == "panel":
+        if registry_key == PLUGIN_KIND_PANEL:
             display = getattr(plugin_cls, "DISPLAY_NAME", "") or plugin_cls.NAME
             btn = QtWidgets.QPushButton(t("Open"))
             btn.setObjectName("open_panel_btn")
@@ -279,9 +257,9 @@ class _ExtensionCard(QtWidgets.QFrame):
         palette = ThemeManager.instance().palette
         base = QtGui.QColor(palette.text_primary)
         if tint is None:
-            return mix_colors(base, palette.warning, 0.4)
+            return mix_colors(base, palette.warning, 0.6)
         if tint == "success":
-            return mix_colors(base, palette.success, 0.35)
+            return mix_colors(base, palette.success, 0.6)
         return mix_colors(base, tint, 0.22)
 
     def set_install_callback(self, cb):
@@ -584,7 +562,7 @@ class ExtensionsTab(QtWidgets.QWidget):
             if card.badge != ExtensionBadge.HEAVY:
                 continue
             for key, cls in card._plugins:
-                if key in ("collector", "parser"):
+                if key in (PLUGIN_KIND_COLLECTOR, PLUGIN_KIND_PARSER):
                     result[cls.NAME] = card.folder_name
         return result
 

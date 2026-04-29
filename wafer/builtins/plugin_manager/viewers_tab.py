@@ -1,6 +1,7 @@
 from PySide6 import QtWidgets, QtCore
 from ...utils.formatting import dpix
 from ...core.lang.manager import t
+from ...plugin.kinds import ORDERABLE_PLUGIN_KIND_KEYS, PLUGIN_KIND_COMMAND, PRIORITY_PLUGIN_KIND_KEYS, plugin_kind_label
 
 
 class _ReorderList(QtWidgets.QListWidget):
@@ -43,19 +44,9 @@ class _ReorderList(QtWidgets.QListWidget):
         return [self.item(i).data(QtCore.Qt.UserRole) for i in range(self.count())]
 
 
-REGISTRY_KEYS = ["grid", "viewer", "filter", "sort", "layout", "rename_source", "command"]
+REGISTRY_KEYS = list(ORDERABLE_PLUGIN_KIND_KEYS)
 
-_PRIORITY_KEYS = frozenset({"grid", "viewer"})
-
-REGISTRY_LABELS = {
-    "viewer": "Viewer",
-    "grid": "Grid",
-    "filter": "Filter",
-    "sort": "Sort",
-    "layout": "Layout",
-    "rename_source": "Rename Source",
-    "command": "Command",
-}
+_PRIORITY_KEYS = PRIORITY_PLUGIN_KIND_KEYS
 
 
 class OrderTab(QtWidgets.QWidget):
@@ -69,7 +60,7 @@ class OrderTab(QtWidgets.QWidget):
         return list(seen.values())
 
     def _prepare_plugins(self, key: str, plugins: list[type]) -> list[type]:
-        if key == "command":
+        if key == PLUGIN_KIND_COMMAND:
             deduped = self._dedup_by_name(plugins)
             return [c for c in deduped if c.NAME not in self._builtin_command_names]
         return plugins
@@ -101,7 +92,7 @@ class OrderTab(QtWidgets.QWidget):
 
     def _add_section(self, key: str):
         suffix = "Priority" if key in _PRIORITY_KEYS else "Order"
-        label = QtWidgets.QLabel(f"{REGISTRY_LABELS.get(key, key)} {suffix}")
+        label = QtWidgets.QLabel(f"{plugin_kind_label(key)} {suffix}")
         label.setObjectName("section_header")
         self._labels[key] = label
         self._main_layout.addWidget(label)

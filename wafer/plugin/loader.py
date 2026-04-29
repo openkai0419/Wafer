@@ -18,25 +18,40 @@ from .meta_panel.base import BaseMetaPanelPlugin
 from .tag_panel.base import BaseTagPanelPlugin
 from .rename.base import BaseRenameSourcePlugin
 from .imageloader.base import BaseImageLoader
+from .kinds import (
+    PLUGIN_KIND_COLLECTOR,
+    PLUGIN_KIND_COMMAND,
+    PLUGIN_KIND_FILTER,
+    PLUGIN_KIND_GRID,
+    PLUGIN_KIND_IMAGE_LOADER,
+    PLUGIN_KIND_LAYOUT,
+    PLUGIN_KIND_META_PANEL,
+    PLUGIN_KIND_PANEL,
+    PLUGIN_KIND_PARSER,
+    PLUGIN_KIND_RENAME_SOURCE,
+    PLUGIN_KIND_SORT,
+    PLUGIN_KIND_TAG_PANEL,
+    PLUGIN_KIND_VIEWER,
+)
 
 
 def _build_registry_map():
     from ..core.commands.command.menu import MenuGroup
 
     return {
-        BaseViewerPlugin: "viewer",
-        BaseGridPlugin: "grid",
-        BaseCollector: "collector",
-        BaseParser: "parser",
-        BaseFilterPlugin: "filter",
-        BaseSortPlugin: "sort",
-        BaseLayoutPlugin: "layout",
-        BasePanelPlugin: "panel",
-        BaseMetaPanelPlugin: "meta_panel",
-        BaseTagPanelPlugin: "tag_panel",
-        BaseRenameSourcePlugin: "rename_source",
-        BaseImageLoader: "imageloader",
-        MenuGroup: "command",
+        BaseViewerPlugin: PLUGIN_KIND_VIEWER,
+        BaseGridPlugin: PLUGIN_KIND_GRID,
+        BaseCollector: PLUGIN_KIND_COLLECTOR,
+        BaseParser: PLUGIN_KIND_PARSER,
+        BaseFilterPlugin: PLUGIN_KIND_FILTER,
+        BaseSortPlugin: PLUGIN_KIND_SORT,
+        BaseLayoutPlugin: PLUGIN_KIND_LAYOUT,
+        BasePanelPlugin: PLUGIN_KIND_PANEL,
+        BaseMetaPanelPlugin: PLUGIN_KIND_META_PANEL,
+        BaseTagPanelPlugin: PLUGIN_KIND_TAG_PANEL,
+        BaseRenameSourcePlugin: PLUGIN_KIND_RENAME_SOURCE,
+        BaseImageLoader: PLUGIN_KIND_IMAGE_LOADER,
+        MenuGroup: PLUGIN_KIND_COMMAND,
     }
 
 
@@ -230,19 +245,19 @@ def load_plugins(*, on_progress=None) -> list[str]:
 
     command_registry = CommandGroupRegistry()
     registries = {
-        "viewer": viewer_resolver.registry,
-        "grid": grid_resolver.registry,
-        "collector": collector_resolver.registry,
-        "parser": parser_resolver.registry,
-        "filter": filter_registry,
-        "sort": sort_registry,
-        "layout": layout_registry,
-        "panel": panel_registry,
-        "meta_panel": meta_panel_registry,
-        "tag_panel": tag_panel_registry,
-        "rename_source": rename_source_registry,
-        "imageloader": image_loader_resolver.registry,
-        "command": command_registry,
+        PLUGIN_KIND_VIEWER: viewer_resolver.registry,
+        PLUGIN_KIND_GRID: grid_resolver.registry,
+        PLUGIN_KIND_COLLECTOR: collector_resolver.registry,
+        PLUGIN_KIND_PARSER: parser_resolver.registry,
+        PLUGIN_KIND_FILTER: filter_registry,
+        PLUGIN_KIND_SORT: sort_registry,
+        PLUGIN_KIND_LAYOUT: layout_registry,
+        PLUGIN_KIND_PANEL: panel_registry,
+        PLUGIN_KIND_META_PANEL: meta_panel_registry,
+        PLUGIN_KIND_TAG_PANEL: tag_panel_registry,
+        PLUGIN_KIND_RENAME_SOURCE: rename_source_registry,
+        PLUGIN_KIND_IMAGE_LOADER: image_loader_resolver.registry,
+        PLUGIN_KIND_COMMAND: command_registry,
     }
     from ..builtins.registration import register_all
 

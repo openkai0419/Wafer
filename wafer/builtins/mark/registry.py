@@ -207,7 +207,7 @@ class MarkRegistry(QtCore.QObject):
                 return
 
     @staticmethod
-    def tag_key(mark_id: str) -> str:
+    def key(mark_id: str) -> str:
         return f"{_TAG_PREFIX}.{mark_id}"
 
     @staticmethod

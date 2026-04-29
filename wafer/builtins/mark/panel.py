@@ -5,7 +5,7 @@ from PySide6 import QtCore, QtWidgets
 from ...core.commands.bridge import Command
 from ...core.lang.manager import t
 from ...core.qt.icon_engine import themed_icon
-from ...plugin import BaseTagPanelPlugin
+from ...plugin import BaseMetaPanelPlugin
 from ...ui.panel.meta_viewer import CollapsibleCard
 from ...ui.widgets import FlowLayout
 from ...utils.formatting import dpix
@@ -105,7 +105,7 @@ class _MarkBadgeRow(QtWidgets.QWidget):
         Command.invoke(command, extras={"path": self._current_path}, name=mark.name)
 
 
-class MarkTagPanelPlugin(BaseTagPanelPlugin):
+class MarkTagPanelPlugin(BaseMetaPanelPlugin):
     NAME = "mark_panel"
     PREFIX = "mark"
     DEFAULT_ENABLED = True
@@ -116,20 +116,19 @@ class MarkTagPanelPlugin(BaseTagPanelPlugin):
         self._row: _MarkBadgeRow | None = None
 
     def create_card(self, parent: QtWidgets.QWidget | None = None) -> QtWidgets.QWidget:
-        self._card = CollapsibleCard(self.PREFIX, f"tag:{self.PREFIX}", parent)
+        self._card = CollapsibleCard(self.PREFIX, f"meta:{self.PREFIX}", parent)
         self._row = _MarkBadgeRow(self._card)
         self._card.set_content_widget(self._row)
         return self._card
 
     def update_data(
         self,
-        tags: dict[str, str],
-        locks: dict[str, bool],
-        path: str,
-        file_hash: str,
-        db: str,
+        data: dict[str, str],
+        locks: dict[str, bool] | None = None,
+        path: str = "",
+        db: str = "",
     ) -> None:
-        ids = sorted((str(k) for k in (tags or {})), key=lambda x: (len(x), x))
+        ids = sorted((str(k) for k in (data or {})), key=lambda x: (len(x), x))
         if self._row is not None:
             self._row.update_state(path, ids)
         if self._card is not None:

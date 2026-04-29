@@ -1,4 +1,28 @@
 {
+  "Add tag or metadata": {
+    "en": "Add tag or metadata",
+    "ja": ""
+  },
+  "Metadata": {
+    "en": "Metadata",
+    "ja": ""
+  },
+  "Tag": {
+    "en": "Tag",
+    "ja": ""
+  },
+  "Type:": {
+    "en": "Type:",
+    "ja": ""
+  },
+  "meta": {
+    "en": "meta",
+    "ja": ""
+  },
+  "Add new metadata": {
+    "en": "Add new metadata",
+    "ja": ""
+  },
   "Filter Keys": {
     "en": "Filter Keys",
     "ja": ""
@@ -1823,9 +1847,6 @@
   },
   "Preview Volume Up": {
     "en": "Preview Volume Up"
-  },
-  "Remove \"111.mp4\"": {
-    "en": "Remove \"111.mp4\""
   },
   "Set Speed": {
     "en": "Set Speed"

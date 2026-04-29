@@ -616,6 +616,43 @@ def _draw_warning_triangle(p: QPainter, r: QRectF, color: QColor):
     p.drawPath(path.subtracted(excl))
 
 
+@_register("section_tag", padding=0.12)
+def _draw_section_tag(p: QPainter, r: QRectF, color: QColor):
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(color)
+    w = r.width()
+    h = r.height()
+    inset = w * 0.18
+    path = QPainterPath()
+    path.moveTo(QPointF(r.left() + inset, r.top()))
+    path.lineTo(QPointF(r.right() - inset * 0.45, r.top()))
+    path.lineTo(QPointF(r.right(), r.bottom()))
+    path.lineTo(QPointF(r.left(), r.bottom()))
+    path.closeSubpath()
+    p.drawPath(path)
+
+
+@_register("section_meta", padding=0.10)
+def _draw_section_meta(p: QPainter, r: QRectF, color: QColor):
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(color)
+    c = r.center()
+    path = QPainterPath()
+    path.moveTo(QPointF(c.x(), r.top()))
+    path.lineTo(QPointF(r.right(), c.y()))
+    path.lineTo(QPointF(c.x(), r.bottom()))
+    path.lineTo(QPointF(r.left(), c.y()))
+    path.closeSubpath()
+    p.drawPath(path)
+
+
+@_register("section_root", padding=0.16)
+def _draw_section_root(p: QPainter, r: QRectF, color: QColor):
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(color)
+    p.drawRect(r)
+
+
 @_register("external_link", padding=0.12)
 def _draw_external_link(p: QPainter, r: QRectF, color: QColor):
     lw = max(1.5, min(r.width(), r.height()) * 0.11)

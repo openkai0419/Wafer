@@ -723,12 +723,12 @@ class TestEngineLookupMethods:
 
     def test_get_tags_by_path(self, populated_db):
         engine = FileSearchEngine(populated_db)
-        _, _, tags, _ = engine.get_all_metadata("C:/photos/vacation/img_0000.jpg")
+        _, _, tags, _ = engine.get_all_metadata_with_locks("C:/photos/vacation/img_0000.jpg")
         assert "rating" in tags
 
     def test_get_tags_nonexistent(self, populated_db):
         engine = FileSearchEngine(populated_db)
-        _, _, tags, _ = engine.get_all_metadata("C:/nonexistent/file.jpg")
+        _, _, tags, _ = engine.get_all_metadata_with_locks("C:/nonexistent/file.jpg")
         assert tags == {}
 
     def test_get_file_record(self, populated_db):
@@ -754,7 +754,7 @@ class TestEngineLookupMethods:
 
     def test_get_all_metadata(self, populated_db):
         engine = FileSearchEngine(populated_db)
-        file_rec, file_hash, tags_with_lock, meta = engine.get_all_metadata("C:/photos/vacation/img_0000.jpg")
+        file_rec, file_hash, tags_with_lock, meta = engine.get_all_metadata_with_locks("C:/photos/vacation/img_0000.jpg")
         assert file_rec.get("path") is not None
         assert file_hash is not None
         assert "rating" in tags_with_lock
@@ -853,6 +853,8 @@ class TestGetTagKeysByPrefix:
         tags.append(("h0", "mark.blue", "1", None))
         tags.append(("h2", "mark.green", "1", None))
         tags.append(("h3", "rating", "5", 5.0))
+        metas.append(("C:/m/img_1.jpg", "mark.red", "1", None))
+        metas.append(("C:/m/img_4.jpg", "mark.blue", "1", None))
         db.upsert_batches(sources, images, metas, tags)
         db.close()
         return db_path
@@ -876,6 +878,12 @@ class TestGetTagKeysByPrefix:
     def test_empty_prefix(self, mark_db):
         engine = FileSearchEngine(mark_db)
         assert engine.get_tag_keys_by_prefix("") == {}
+
+    def test_meta_scope_marks(self, mark_db):
+        engine = FileSearchEngine(mark_db)
+        result = engine.get_meta_keys_by_prefix("mark.")
+        assert set(result.keys()) == {np("C:/m/img_1.jpg"), np("C:/m/img_4.jpg")}
+        assert result[np("C:/m/img_1.jpg")] == ["red"]
 
 
 class TestExplainQueryPlan:
@@ -1018,7 +1026,7 @@ class TestEmptyDB:
 
     def test_get_tags_empty(self, empty_db):
         engine = FileSearchEngine(empty_db)
-        _, _, tags, _ = engine.get_all_metadata("C:/any/file.jpg")
+        _, _, tags, _ = engine.get_all_metadata_with_locks("C:/any/file.jpg")
         assert tags == {}
 
     def test_get_file_record_empty(self, empty_db):
@@ -1031,7 +1039,7 @@ class TestEmptyDB:
 
     def test_get_all_metadata_empty(self, empty_db):
         engine = FileSearchEngine(empty_db)
-        file_rec, file_hash, tags_with_lock, meta = engine.get_all_metadata("C:/any/file.jpg")
+        file_rec, file_hash, tags_with_lock, meta = engine.get_all_metadata_with_locks("C:/any/file.jpg")
         assert file_rec == {}
         assert file_hash is None
         assert tags_with_lock == {}

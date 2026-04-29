@@ -15,7 +15,13 @@ class BaseMetaPanelPlugin(PluginBase, ABC):
     def create_card(self, parent: QtWidgets.QWidget | None = None) -> QtWidgets.QWidget: ...
 
     @abstractmethod
-    def update_data(self, data: dict) -> None: ...
+    def update_data(
+        self,
+        data: dict,
+        locks: dict[str, bool] | None = None,
+        path: str = "",
+        db: str = "",
+    ) -> None: ...
 
     def save_ui_state(self) -> dict[str, Any]:
         return {}

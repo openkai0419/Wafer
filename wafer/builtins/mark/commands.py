@@ -41,7 +41,7 @@ def _send_batch(ctx, paths, upserts, deletes, *, w):
     if not db:
         AppLogger.warning("[Mark] no active database")
         return
-    TagEditService.instance().submit(paths, upserts, deletes, db=db)
+    TagEditService.instance().submit(paths, upserts, deletes, db=db, scope="meta_info")
 
 
 def add_mark(ctx, name: str = ""):
@@ -51,7 +51,7 @@ def add_mark(ctx, name: str = ""):
         if name and mark_id is None:
             Notifier.warning(t("Unknown mark: {name}", name=name))
         return
-    _send_batch(ctx, paths, [(MarkRegistry.tag_key(mark_id), "1", False)], [])
+    _send_batch(ctx, paths, [(MarkRegistry.key(mark_id), "1", False)], [])
 
 
 def remove_mark(ctx, name: str = ""):
@@ -61,7 +61,7 @@ def remove_mark(ctx, name: str = ""):
         if name and mark_id is None:
             Notifier.warning(t("Unknown mark: {name}", name=name))
         return
-    _send_batch(ctx, paths, [], [MarkRegistry.tag_key(mark_id)])
+    _send_batch(ctx, paths, [], [MarkRegistry.key(mark_id)])
 
 
 def toggle_mark(ctx, name: str = ""):
@@ -74,7 +74,7 @@ def toggle_mark(ctx, name: str = ""):
     from ...core.commands.binding.instance_registry import InstanceRegistry
 
     svc = InstanceRegistry.instance().get_one("MarkOverlayService")
-    key = MarkRegistry.tag_key(mark_id)
+    key = MarkRegistry.key(mark_id)
     has_any_unmarked = svc is None or any(mark_id not in svc.marks_for(p) for p in paths)
     if has_any_unmarked:
         _send_batch(ctx, paths, [(key, "1", False)], [])
@@ -86,7 +86,7 @@ def clear_marks(ctx):
     paths = _ctx_paths(ctx)
     if not paths:
         return
-    keys = [MarkRegistry.tag_key(mid) for mid in MarkRegistry.instance().ids()]
+    keys = [MarkRegistry.key(mid) for mid in MarkRegistry.instance().ids()]
     if not keys:
         return
     _send_batch(ctx, paths, [], keys)

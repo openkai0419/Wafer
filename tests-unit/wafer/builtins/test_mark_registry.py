@@ -16,8 +16,8 @@ def test_mark_registry_default_has_at_least_one_mark():
 
 
 def test_mark_tag_key_and_parse():
-    assert MarkRegistry.tag_key("3") == "mark.3"
-    assert MarkRegistry.tag_key("fav") == "mark.fav"
+    assert MarkRegistry.key("3") == "mark.3"
+    assert MarkRegistry.key("fav") == "mark.fav"
     assert MarkRegistry.parse_key("mark.3") == "3"
     assert MarkRegistry.parse_key("mark.fav") == "fav"
     assert MarkRegistry.parse_key("notmark.1") is None

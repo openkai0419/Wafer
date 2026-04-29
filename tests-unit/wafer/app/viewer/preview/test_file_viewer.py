@@ -10,21 +10,21 @@ def _mock_engine(**overrides):
     if "get_all_metadata" in overrides:
         file_rec, tags, meta = overrides.pop("get_all_metadata")
         overrides.setdefault("file_record", file_rec)
-        overrides.setdefault("meta_info", meta)
+        overrides.setdefault("meta_info_with_lock", {k: (v, False) for k, v in meta.items()})
         overrides.setdefault("tags_with_lock", {k: (v, False) for k, v in tags.items()})
     defaults = {
         "file_record": {"path": "/a.png", "source": "/a.png", "name": "a.png", "aspect_ratio": None},
-        "meta_info": {},
+        "meta_info_with_lock": {},
         "tags_with_lock": {},
         "file_hash": "h1",
         "get_collection_status": [],
     }
     defaults.update(overrides)
-    engine.get_all_metadata.return_value = (
+    engine.get_all_metadata_with_locks.return_value = (
         defaults["file_record"],
         defaults["file_hash"],
         defaults["tags_with_lock"],
-        defaults["meta_info"],
+        defaults["meta_info_with_lock"],
     )
     engine.get_collection_status.return_value = defaults["get_collection_status"]
     return engine
@@ -106,14 +106,17 @@ def test_format_meta_splits_prefixed_meta():
         get_all_metadata=(
             {"path": "/a.png", "source": "/a.png", "name": "a.png", "aspect_ratio": None},
             {},
-            {"name": "a.png", "size": "1024", "exif.width": "100", "exif.height": "200"},
+            {"name": "a.png", "size": "1024", "rating": "5", "exif.width": "100", "exif.height": "200"},
         )
     )
     result = _format_meta(engine, "/a.png", "")
     standard = result["file"]
+    root_meta = result["meta"]
     prefixed = result["prefixed"]
     assert "name" in standard
     assert "size" in standard
+    assert "rating" not in standard
+    assert root_meta == {"rating": "5"}
     assert "exif" in prefixed
     assert "width" in prefixed["exif"]
     assert "height" in prefixed["exif"]

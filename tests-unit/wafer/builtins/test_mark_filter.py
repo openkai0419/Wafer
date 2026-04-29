@@ -14,7 +14,8 @@ def test_mark_filter_empty_returns_none():
 def test_mark_filter_or_single_id():
     sql, params = MarkFilter.build_path_query({"mark_ids": ["1"], "mode": "OR"}, _norm)
     assert sql is not None
-    assert "tags" in sql.lower()
+    assert "meta_info" in sql.lower()
+    assert "tags" not in sql.lower()
     assert "mark.1" in params
 
 

@@ -84,11 +84,12 @@ class DatabaseWriter:
         return result
 
     @profiler.profile
-    def apply_user_tags(self, paths, upserts, deletes, *, lock_only: bool = False, renames=None):
-        result = self._db.apply_user_tags(
+    def apply_user_kv(self, paths, upserts, deletes, *, scope: str = "tag", lock_only: bool = False, renames=None):
+        result = self._db.apply_user_kv(
             paths,
             upserts,
             deletes,
+            scope=scope,
             lock_only=lock_only,
             renames=renames,
         )

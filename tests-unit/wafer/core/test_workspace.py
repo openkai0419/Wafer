@@ -11,11 +11,10 @@ from wafer.core.workspace import (
 class TestPresetRoundtrip:
     def test_ui_preset_roundtrip(self, tmp_path):
         store = WorkspaceStore(path=str(tmp_path / "ws.json"))
-        p = UIPreset(name="Default", color="#4A90D9", window_state={"geo": "x"}, component_states={"grid": {"h": 200}})
+        p = UIPreset(name="Default", window_state={"geo": "x"}, component_states={"grid": {"h": 200}})
         store.save_ui_preset(p)
         got = store.get_ui_preset(p.preset_id)
         assert got.name == "Default"
-        assert got.color == "#4A90D9"
         assert got.window_state == {"geo": "x"}
         assert got.component_states == {"grid": {"h": 200}}
         assert store.list_ui_presets()[0].preset_id == p.preset_id
@@ -169,32 +168,16 @@ class TestSlotLifecycle:
         assert store.forget_slot_snapshot("missing") is False
 
 
-class TestUIPresetColor:
-    def test_set_color_updates_only_color(self, tmp_path):
-        store = WorkspaceStore(path=str(tmp_path / "ws.json"))
-        p = UIPreset(name="X", color="#000000", window_state={"k": "v"})
-        store.save_ui_preset(p)
-        assert store.set_ui_preset_color(p.preset_id, "#FF0000") is True
-        got = store.get_ui_preset(p.preset_id)
-        assert got.color == "#FF0000"
-        assert got.window_state == {"k": "v"}
-
-    def test_set_color_missing_returns_false(self, tmp_path):
-        store = WorkspaceStore(path=str(tmp_path / "ws.json"))
-        assert store.set_ui_preset_color("missing", "#FFFFFF") is False
-
-
 class TestPresetOverwrite:
     def test_update_ui_preset_replaces_state_and_keeps_metadata(self, tmp_path):
         store = WorkspaceStore(path=str(tmp_path / "ws.json"))
-        preset = UIPreset(name="U", color="#111111", window_state={"old": 1}, component_states={"grid": {"h": 1}})
+        preset = UIPreset(name="U", window_state={"old": 1}, component_states={"grid": {"h": 1}})
         store.save_ui_preset(preset)
         before = store.get_ui_preset(preset.preset_id)
 
         assert store.update_ui_preset(preset.preset_id, {"new": 2}, {"grid": {"h": 2}}) is True
         got = store.get_ui_preset(preset.preset_id)
         assert got.name == "U"
-        assert got.color == "#111111"
         assert got.created_at == before.created_at
         assert got.window_state == {"new": 2}
         assert got.component_states == {"grid": {"h": 2}}

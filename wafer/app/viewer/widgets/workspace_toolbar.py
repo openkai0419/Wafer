@@ -14,6 +14,7 @@ from ....core.qt.thread import utility_pool
 from ....core.workspace import WindowSlot, WorkspaceStore
 from ....ui.dialogs import ConfirmDialog
 from ....ui.widgets.eliding import ElidingLabel
+from ....ui.popups import PopupBase
 from ....utils.formatting import dpix
 from ....utils.logs import AppLogger
 
@@ -127,14 +128,12 @@ class _SectionButton(QtWidgets.QToolButton):
         )
 
 
-class _SectionPopup(QtWidgets.QFrame):
+class _SectionPopup(PopupBase):
     closed = QtCore.Signal(str)
 
     def __init__(self, key: str, parent=None):
         super().__init__(parent)
         self.key = key
-        self.setWindowFlags(QtCore.Qt.Popup | QtCore.Qt.FramelessWindowHint)
-        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
         self.setMinimumWidth(dpix(_SECTION_POPUP_WIDTH))
         self.resize(dpix(_SECTION_POPUP_WIDTH), dpix(40))
 
@@ -161,24 +160,7 @@ class _SectionPopup(QtWidgets.QFrame):
     def content_widget(self) -> QtWidgets.QWidget | None:
         return self._content_widget
 
-    def show_below(self, widget: QtWidgets.QWidget):
-        self.adjustSize()
-        pos = widget.mapToGlobal(QtCore.QPoint(0, widget.height()))
-        size = self._popup_size_hint()
-        width = max(size.width(), dpix(_SECTION_POPUP_WIDTH))
-        height = min(size.height(), dpix(_SECTION_POPUP_MAX_HEIGHT))
-        screen = QtWidgets.QApplication.screenAt(pos) or widget.screen()
-        if screen is not None:
-            geo = screen.availableGeometry()
-            width = min(width, geo.width())
-            height = min(height, geo.height())
-            pos.setX(min(max(pos.x(), geo.left()), max(geo.left(), geo.right() - width)))
-            pos.setY(min(max(pos.y(), geo.top()), max(geo.top(), geo.bottom() - height)))
-        self.resize(width, height)
-        self.move(pos)
-        self.show()
-
-    def _popup_size_hint(self) -> QtCore.QSize:
+    def popup_size_hint(self) -> QtCore.QSize:
         content = self._content_widget
         if content is not None and hasattr(content, "content_height_hint"):
             content_size = content.content_height_hint()
@@ -191,9 +173,11 @@ class _SectionPopup(QtWidgets.QFrame):
             max(content_size.height() + margins.top() + margins.bottom(), dpix(40)),
         )
 
-    def hideEvent(self, event):
+    def show_below(self, widget: QtWidgets.QWidget):
+        super().show_below(widget, max_height=dpix(_SECTION_POPUP_MAX_HEIGHT))
+
+    def _emit_closed(self):
         self.closed.emit(self.key)
-        super().hideEvent(event)
 
 
 class _PresetTextArea(QtWidgets.QFrame):

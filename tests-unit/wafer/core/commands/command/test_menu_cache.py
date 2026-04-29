@@ -11,6 +11,7 @@ from wafer.core.commands.command.core import (
 from wafer.core.commands.command.menu_builder import CommandMenuBuilder, MenuBuilder
 from wafer.core.commands.command.maker import MenuMaker
 from wafer.core.commands.command.state import ActionGroupStateManager, CommandOptionStore
+from wafer.core.lang.manager import translator
 
 
 PREFIX = "_test_cache_"
@@ -96,6 +97,25 @@ def _register_normal(cmd_id, display):
 
 
 class TestTransientMenuAction:
+    def test_action_can_skip_display_translation(self, qtbot):
+        w = QtWidgets.QWidget()
+        qtbot.addWidget(w)
+        maker = MenuMaker()
+        dynamic_display = 'Remove "sample.png"'
+        action = MenuAction(
+            path=_make_id("raw_display_action"),
+            display=dynamic_display,
+            translate=False,
+            func=lambda ctx: None,
+        )
+
+        before = set(translator.missing_keys)
+        menu = MenuBuilder(maker, w).build(maker.menu([action]))
+        row = menu.actions()[0].defaultWidget()
+
+        assert row._tl.text() == dynamic_display
+        assert translator.missing_keys == before
+
     def test_action_executes_without_global_registration_or_menu_cache(self, qtbot):
         reg = CommandRegistry.instance()
         before = set(reg._commands)

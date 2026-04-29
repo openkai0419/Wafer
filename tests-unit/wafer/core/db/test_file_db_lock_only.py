@@ -27,7 +27,7 @@ def _get(db, fh, key):
 
 
 def _apply(db, path, upserts, deletes, **kw):
-    res = db.apply_user_tags([path], upserts, deletes, **kw)
+    res = db.apply_user_kv([path], upserts, deletes, scope="tag", **kw)
     if path not in res:
         return None, [], []
     return res[path]

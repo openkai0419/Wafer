@@ -88,10 +88,6 @@ def ui_preset_delete(ctx, preset_id: str = ""):
         Notifier.info("UI preset deleted")
 
 
-def ui_preset_set_color(ctx, preset_id: str = "", color: str = ""):
-    _store().set_ui_preset_color(preset_id, color)
-
-
 @require(w="MainWindow")
 def ui_preset_overwrite(ctx, w, preset_id: str = ""):
     preset = _store().get_ui_preset(preset_id)
@@ -393,12 +389,6 @@ class WorkspaceCommands(ActionKit.MenuBase):
                 display="Overwrite UI Preset",
                 func=ui_preset_overwrite,
                 params=[ActionKit.Param(name="preset_id", value="")],
-            ),
-            ActionKit.Command(
-                path="ui_preset.set_color",
-                display="Set UI Preset Color",
-                func=ui_preset_set_color,
-                params=[ActionKit.Param(name="preset_id", value=""), ActionKit.Param(name="color", value="")],
             ),
             "-",
             ":Path",

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from PySide6 import QtCore, QtWidgets
-from PySide6.QtCore import Qt, Signal
+from PySide6 import QtWidgets
+from PySide6.QtCore import Signal
 
 from ...plugin.rename.base import (
     DropdownButton,
@@ -15,6 +15,7 @@ from ...plugin.rename.base import (
 from ...utils.formatting import dpix
 from ...core.color.theme import ThemeManager
 from ...core.lang.manager import t
+from ...ui.popups import PopupBase
 from .engine import RenameColumn
 
 
@@ -24,25 +25,7 @@ def _section_label(text, p):
     return lbl
 
 
-class ClickOutsideFilter(QtCore.QObject):
-    closed = Signal()
-
-    def __init__(self, target: QtWidgets.QWidget):
-        super().__init__(target)
-        self._target = target
-
-    def eventFilter(self, obj, event):
-        if event.type() == QtCore.QEvent.MouseButtonPress:
-            gp = event.globalPosition().toPoint()
-            if not self._target.geometry().contains(gp):
-                if QtWidgets.QApplication.activePopupWidget():
-                    return False
-                self.closed.emit()
-                return True
-        return False
-
-
-class ColumnSettingsPopup(QtWidgets.QFrame):
+class ColumnSettingsPopup(PopupBase):
     changed = Signal()
     sort_requested = Signal(bool)
     move_requested = Signal(int)
@@ -57,13 +40,8 @@ class ColumnSettingsPopup(QtWidgets.QFrame):
         meta_keys=None,
         parent=None,
     ):
-        super().__init__(parent, Qt.Tool | Qt.FramelessWindowHint)
-        self._click_filter = ClickOutsideFilter(self)
-        QtWidgets.QApplication.instance().installEventFilter(self._click_filter)
-        self._click_filter.closed.connect(self.close)
+        super().__init__(parent)
         self._column = column
-        self._anchor_window: QtWidgets.QWidget | None = None
-        self._anchor_offset = QtCore.QPoint()
         p = ThemeManager.instance().palette
         self.setStyleSheet(f"ColumnSettingsPopup {{ background: {p.bg_elevated}; border: 1px solid {p.border_default}; border-radius: {dpix(6)}px; }}")
         lay = QtWidgets.QVBoxLayout(self)
@@ -266,45 +244,5 @@ class ColumnSettingsPopup(QtWidgets.QFrame):
         pe.textChanged.connect(lambda t: (setattr(post, "prefix", t), self.changed.emit()))
         se.textChanged.connect(lambda t: (setattr(post, "suffix", t), self.changed.emit()))
 
-    def showEvent(self, event):
-        super().showEvent(event)
-        pw = self.parentWidget()
-        if pw:
-            win = pw.window()
-            self._anchor_window = win
-            self._anchor_offset = self.pos() - win.pos()
-            win.installEventFilter(self)
-
-    def eventFilter(self, obj, event):
-        if obj is self._anchor_window and event.type() == QtCore.QEvent.Move:
-            self.move(self._anchor_window.pos() + self._anchor_offset)
-        return False
-
     def _resize_and_clamp(self):
-        screen = QtWidgets.QApplication.screenAt(self.pos())
-        if not screen:
-            screen = QtWidgets.QApplication.primaryScreen()
-        if not screen:
-            return
-        self.adjustSize()
-        geo = screen.availableGeometry()
-        pos = self.pos()
-        size = self.size()
-        x = min(pos.x(), geo.right() - size.width())
-        y = min(pos.y(), geo.bottom() - size.height())
-        x = max(x, geo.left())
-        y = max(y, geo.top())
-        if x != pos.x() or y != pos.y():
-            self.move(x, y)
-        if self._anchor_window:
-            self._anchor_offset = self.pos() - self._anchor_window.pos()
-
-    def closeEvent(self, event):
-        if self._anchor_window:
-            self._anchor_window.removeEventFilter(self)
-            self._anchor_window = None
-        app = QtWidgets.QApplication.instance()
-        if app and self._click_filter:
-            app.removeEventFilter(self._click_filter)
-            self._click_filter = None
-        super().closeEvent(event)
+        self.position_at(self.pos())

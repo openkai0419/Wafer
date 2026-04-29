@@ -519,7 +519,8 @@ class CommandMenuBuilder:
         *,
         checkable_tracker: list[tuple] | None = None,
     ):
-        text = t(action.display or action.path)
+        raw_text = action.display or action.path
+        text = t(raw_text) if action.translate else raw_text
         widget_action = QtWidgets.QWidgetAction(parent)
         widget_action.setData(action.path)
         container = self._create_row_widget(parent, text, "", action.icon or None, False, None, None, menu)

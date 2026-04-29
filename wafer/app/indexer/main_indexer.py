@@ -275,7 +275,7 @@ class IndexerProcess:
         keys = payload.get("keys", [])
         re_collect = payload.get("re_collect", False)
         collector = payload.get("collector", "")
-        if not self.writer:
+        if not self.writer or not self.scheduler:
             return True
         if not keys and not (re_collect and collector):
             return True
@@ -312,7 +312,11 @@ class IndexerProcess:
         deletes_raw = payload.get("deletes", []) or []
         request_id = payload.get("request_id", "")
         lock_only = bool(payload.get("lock_only", False))
-        if not self.writer or not paths:
+        scope = str(payload.get("scope") or "tag")
+        if scope not in ("tag", "meta_info"):
+            AppLogger.warning(f"tags.update: unsupported scope: {scope}")
+            return True
+        if not self.writer or not self.scheduler or not paths:
             return True
 
         def _coerce_value(value):
@@ -349,10 +353,11 @@ class IndexerProcess:
         result: dict = {}
 
         def _run():
-            result["data"] = self.writer.apply_user_tags(
+            result["data"] = self.writer.apply_user_kv(
                 list(paths),
                 upserts,
                 list(deletes),
+                scope=scope,
                 lock_only=lock_only,
                 renames=renames,
             )
@@ -361,14 +366,17 @@ class IndexerProcess:
             data: dict = result.get("data") or {}
             applied_by_path = {p: list(applied) for p, (_fh, applied, _del) in data.items()}
             deleted_by_path = {p: list(deleted) for p, (_fh, _ap, deleted) in data.items()}
-            hashes_by_path = {p: fh for p, (fh, _ap, _del) in data.items()}
+            targets_by_path = {p: target for p, (target, _ap, _del) in data.items()}
+            hashes_by_path = targets_by_path if scope == "tag" else {}
             self.zmq.send(
                 "tags.updated",
                 {
                     "paths": list(paths),
+                    "scope": scope,
                     "applied": applied_by_path,
                     "deleted": deleted_by_path,
                     "file_hashes": hashes_by_path,
+                    "targets": targets_by_path,
                     "request_id": request_id,
                     "db": self.db_name,
                 },
@@ -378,7 +386,7 @@ class IndexerProcess:
 
         self.scheduler.submit(
             Task.create(
-                "apply_user_tags",
+                "apply_user_kv",
                 priority=TaskPriority.USER_REQUEST,
                 run=_run,
                 on_complete=_on_done,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import itertools
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from PySide6 import QtCore, QtGui, QtWidgets
@@ -416,14 +417,31 @@ class _TagRow(QtWidgets.QFrame):
 
 
 class AddTagDialog(QtWidgets.QDialog):
-    def __init__(self, parent: QtWidgets.QWidget, existing_keys: set[str]):
+    def __init__(
+        self,
+        parent: QtWidgets.QWidget,
+        existing_keys: set[str] | Mapping[str, set[str]],
+        *,
+        scopes: tuple[str, ...] = ("tag",),
+        initial_scope: str | None = None,
+    ):
         super().__init__(parent)
-        self.setWindowTitle(t("Add new tag"))
+        self._scopes = tuple(s for s in scopes if s in ("tag", "meta_info")) or ("tag",)
+        self._existing_by_scope = self._normalize_existing(existing_keys)
+        self._scope_combo: QtWidgets.QComboBox | None = None
+        initial = initial_scope if initial_scope in self._scopes else self._scopes[0]
+        self.setWindowTitle(t("Add tag or metadata") if len(self._scopes) > 1 else t("Add new metadata") if initial == "meta_info" else t("Add new tag"))
         self.resize(dpix(540), dpix(320))
-        self._existing = existing_keys
 
         lay = QtWidgets.QVBoxLayout(self)
         form = QtWidgets.QFormLayout()
+        if len(self._scopes) > 1:
+            self._scope_combo = QtWidgets.QComboBox(self)
+            for scope in self._scopes:
+                self._scope_combo.addItem(t("Metadata") if scope == "meta_info" else t("Tag"), scope)
+            index = self._scopes.index(initial)
+            self._scope_combo.setCurrentIndex(index)
+            form.addRow(t("Type:"), self._scope_combo)
         self._key_edit = QtWidgets.QLineEdit(self)
         self._key_edit.setPlaceholderText(t("key"))
         self._value_edit = QtWidgets.QPlainTextEdit(self)
@@ -442,10 +460,23 @@ class AddTagDialog(QtWidgets.QDialog):
         lay.addWidget(btns)
 
         self._key_edit.textChanged.connect(self._update_hint)
+        if self._scope_combo is not None:
+            self._scope_combo.currentIndexChanged.connect(lambda _idx: self._update_hint(self._key_edit.text()))
+
+    def _normalize_existing(self, existing_keys: set[str] | Mapping[str, set[str]]) -> dict[str, set[str]]:
+        if isinstance(existing_keys, Mapping):
+            return {"tag": set(existing_keys.get("tag", set())), "meta_info": set(existing_keys.get("meta_info", set()))}
+        existing = set(existing_keys)
+        return {"tag": existing, "meta_info": existing}
+
+    def scope(self) -> str:
+        if self._scope_combo is None:
+            return self._scopes[0]
+        return str(self._scope_combo.currentData() or self._scopes[0])
 
     def _update_hint(self, text: str) -> None:
         text = text.strip()
-        if text and text in self._existing:
+        if text and text in self._existing_by_scope.get(self.scope(), set()):
             self._hint.setText(t("Key already exists; will be auto-renamed on add."))
         else:
             self._hint.setText("")
@@ -455,9 +486,14 @@ class AddTagDialog(QtWidgets.QDialog):
 
 
 class EditableTagCard(CollapsibleCard):
-    def __init__(self, prefix: str = "", parent=None):
-        title = t(prefix) if prefix else t("tag")
-        section_id = f"tag:{prefix}" if prefix else "tag"
+    def __init__(self, prefix: str = "", parent=None, *, scope: str = "tag"):
+        self._scope = scope or "tag"
+        root_title = "tag" if self._scope == "tag" else "meta"
+        title = t(prefix) if prefix else t(root_title)
+        if self._scope == "tag":
+            section_id = f"tag:{prefix}" if prefix else "tag"
+        else:
+            section_id = f"meta:{prefix}" if prefix else "meta"
         super().__init__(title, section_id, parent=parent)
         self._prefix = prefix
         self._tags: dict[str, str] = {}
@@ -487,9 +523,10 @@ class EditableTagCard(CollapsibleCard):
 
         self._add_btn = QtWidgets.QToolButton(toolbar)
         self._add_btn.setIcon(themed_icon("plus", margin=0.1))
-        self._add_btn.setToolTip(t("Add new tag"))
+        self._add_btn.setToolTip(t("Add new tag") if self._scope == "tag" else t("Add new metadata"))
         self._add_btn.setCursor(QtCore.Qt.PointingHandCursor)
         self._add_btn.setToolButtonStyle(QtCore.Qt.ToolButtonIconOnly)
+        self._add_btn.setVisible(True)
         self._add_btn.clicked.connect(self._on_add_clicked)
 
         self._save_btn = QtWidgets.QPushButton(t("Save"), toolbar)
@@ -505,8 +542,8 @@ class EditableTagCard(CollapsibleCard):
 
         self.set_content_widget(inner)
 
-        TagEditService.instance().overlay_changed.connect(self._on_overlay_changed)
-        TagEditService.instance().commit_confirmed.connect(self._on_commit_confirmed)
+        TagEditService.instance().kv_overlay_changed.connect(self._on_kv_overlay_changed)
+        TagEditService.instance().kv_commit_confirmed.connect(self._on_kv_commit_confirmed)
 
         self._overlay_cache: tuple[dict[str, str], dict[str, bool], dict[str, str]] = ({}, {}, {})
         self._refresh_action_buttons()
@@ -522,13 +559,13 @@ class EditableTagCard(CollapsibleCard):
         file_hash: str,
         db: str,
     ):
-        prev_hash = self._file_hash
+        prev_target = self._target_id()
         self._tags = dict(tags)
         self._locks = dict(locks or {})
         self._path = path
         self._file_hash = file_hash or ""
         self._db = db or ""
-        if prev_hash != self._file_hash:
+        if prev_target != self._target_id():
             self.local_edits.clear()
         self._refresh_overlay_cache()
         self._render()
@@ -550,10 +587,13 @@ class EditableTagCard(CollapsibleCard):
             return full_key[len(head) :]
         return None
 
+    def _target_id(self) -> str:
+        return self._file_hash if self._scope == "tag" else self._path
+
     def _refresh_overlay_cache(self) -> None:
         full_tags = {self._to_full(k): v for k, v in self._tags.items()}
         full_locks = {self._to_full(k): v for k, v in self._locks.items()}
-        merged_tags, merged_locks, states = TagEditService.instance().apply_overlay(self._file_hash, full_tags, full_locks)
+        merged_tags, merged_locks, states = TagEditService.instance().apply_overlay(self._target_id(), full_tags, full_locks, scope=self._scope)
         short_tags: dict[str, str] = {}
         short_locks: dict[str, bool] = {}
         short_states: dict[str, str] = {}
@@ -740,7 +780,7 @@ class EditableTagCard(CollapsibleCard):
         if not self._validate_context(allow_no_hash=True):
             return
         existing = self._current_displayed_keys()
-        dlg = AddTagDialog(self, existing)
+        dlg = AddTagDialog(self, existing, scopes=(self._scope,), initial_scope=self._scope)
         if dlg.exec() != QtWidgets.QDialog.Accepted:
             return
         key, value = dlg.values()
@@ -818,7 +858,16 @@ class EditableTagCard(CollapsibleCard):
         deletes = [self._to_full(k) for k in deletes]
         renames = [(self._to_full(old), self._to_full(new), v, lk) for (old, new, v, lk) in renames]
 
-        rid = TagEditService.instance().submit([self._path], upserts, deletes, self._db, renames=renames, file_hash=self._file_hash)
+        rid = TagEditService.instance().submit(
+            [self._path],
+            upserts,
+            deletes,
+            self._db,
+            scope=self._scope,
+            renames=renames,
+            file_hash=self._file_hash if self._scope == "tag" else None,
+            target_id=self._target_id(),
+        )
         if rid is None:
             return
         self.local_edits.clear()
@@ -834,18 +883,18 @@ class EditableTagCard(CollapsibleCard):
         has_changes = bool(self.local_edits)
         self._save_btn.setEnabled(has_changes)
         self._revert_btn.setEnabled(has_changes)
-        self._add_btn.setEnabled(bool(self._file_hash))
+        self._add_btn.setEnabled(bool(self._path and self._db and (self._scope != "tag" or self._file_hash)))
 
     # ---- Service callbacks ---------------------------------------------
 
-    def _on_overlay_changed(self, file_hash: str):
-        if not file_hash or file_hash != self._file_hash:
+    def _on_kv_overlay_changed(self, scope: str, target_id: str):
+        if scope != self._scope or not target_id or target_id != self._target_id():
             return
         self._refresh_overlay_cache()
         self._render()
 
-    def _on_commit_confirmed(self, file_hash: str, applied: dict, deleted: list):
-        if not file_hash or file_hash != self._file_hash:
+    def _on_kv_commit_confirmed(self, scope: str, target_id: str, applied: dict, deleted: list):
+        if scope != self._scope or not target_id or target_id != self._target_id():
             return
         for full_key, (value, locked) in applied.items():
             short = self._to_short(full_key)
@@ -862,7 +911,8 @@ class EditableTagCard(CollapsibleCard):
         self._refresh_overlay_cache()
 
     def _validate_context(self, *, allow_no_hash: bool = False) -> bool:
-        if not self._path or not self._db or (not allow_no_hash and not self._file_hash):
+        needs_hash = self._scope == "tag" and not allow_no_hash
+        if not self._path or not self._db or (needs_hash and not self._file_hash):
             AppLogger.warning(f"[EditableTagCard] missing context path={bool(self._path)} hash={bool(self._file_hash)} db={bool(self._db)}")
             return False
         return True

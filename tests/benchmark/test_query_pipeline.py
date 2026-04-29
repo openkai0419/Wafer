@@ -1,5 +1,7 @@
+import json
 import os
 import random
+import re
 import sqlite3
 import time
 from pathlib import Path
@@ -11,12 +13,16 @@ from wafer.core.db.db_utils import apply_read_pragmas
 
 pytestmark = pytest.mark.benchmark
 
+ROOT = Path(__file__).resolve().parents[2]
 GENERATED_SIZES = [10_000, 50_000]
 WARMUP = 2
 ITERATIONS = 5
 
 REAL_DB_DIR = Path(os.environ.get("WAFER_DATA_DIR", "C:/Users/openk/AppData/Local/Wafer/data"))
 REAL_DBS = ["default", "nai"]
+EXPLAIN_DIR = Path(os.environ.get("WAFER_BENCHMARK_EXPLAIN_DIR", ".temp/benchmark_query_plans"))
+if not EXPLAIN_DIR.is_absolute():
+    EXPLAIN_DIR = ROOT / EXPLAIN_DIR
 
 
 def _create_schema(conn):
@@ -115,6 +121,22 @@ def _measure_sql(conn, sql, params=(), warmup=WARMUP, iterations=ITERATIONS):
 def _fmt(avg, mn, mx, rows=None, label=""):
     row_str = f"  rows={rows}" if rows is not None else ""
     return f"{label}avg={avg * 1000:.2f}ms  min={mn * 1000:.2f}  max={mx * 1000:.2f}{row_str}"
+
+
+def _safe_snapshot_name(text: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9_.-]+", "_", text).strip("_") or "query_plan"
+
+
+def _explain_snapshot(conn, label: str, n: int, queries: dict[str, tuple[str, tuple]]) -> dict[str, list[dict]]:
+    plans = {}
+    for name, (sql, params) in queries.items():
+        plans[name] = [dict(row) for row in conn.execute(f"EXPLAIN QUERY PLAN {sql}", params)]
+    EXPLAIN_DIR.mkdir(parents=True, exist_ok=True)
+    path = EXPLAIN_DIR / f"{_safe_snapshot_name(label)}_n{n}.json"
+    payload = {"label": label, "rows": n, "plans": plans}
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"  saved: {path}")
+    return plans
 
 
 def _open_readonly(path):
@@ -478,7 +500,6 @@ class TestGeneratedDB:
         if n != GENERATED_SIZES[0]:
             pytest.skip("explain only on smallest")
         kw = "%folder01%"
-        cur = conn.cursor()
 
         queries = {
             "text_filter": (SQL_TEXT_FILTER_SINGLE, (kw, kw)),
@@ -488,10 +509,11 @@ class TestGeneratedDB:
             "list_keys": (SQL_LIST_ALL_KEYS.format(path_query=SQL_ALL_PATHS), ()),
         }
         print(f"\n[gen n={n:,}] === EXPLAIN QUERY PLAN ===")
-        for name, (sql, params) in queries.items():
+        plans = _explain_snapshot(conn, "gen", n, queries)
+        for name, rows in plans.items():
             print(f"\n  --- {name} ---")
-            for row in cur.execute(f"EXPLAIN QUERY PLAN {sql}", params):
-                print(f"    {dict(row)}")
+            for row in rows:
+                print(f"    {row}")
 
 
 class TestRealDB:
@@ -598,7 +620,6 @@ class TestRealDB:
     def test_09_explain_query_plan(self, real_db):
         conn, n, name = real_db
         kw = "%.png%"
-        cur = conn.cursor()
         sample = conn.execute("SELECT path FROM files LIMIT 1").fetchone()
         d = "/".join(sample[0].replace("\\", "/").split("/")[:3]) + "/%" if sample else "X/%"
 
@@ -610,10 +631,11 @@ class TestRealDB:
             "list_keys": (SQL_LIST_ALL_KEYS.format(path_query=SQL_ALL_PATHS), ()),
         }
         print(f"\n[{name} n={n:,}] === EXPLAIN QUERY PLAN ===")
-        for qname, (sql, params) in queries.items():
+        plans = _explain_snapshot(conn, f"real_{name}", n, queries)
+        for qname, rows in plans.items():
             print(f"\n  --- {qname} ---")
-            for row in cur.execute(f"EXPLAIN QUERY PLAN {sql}", params):
-                print(f"    {dict(row)}")
+            for row in rows:
+                print(f"    {row}")
 
     def test_10_full_fetch_sort_size(self, real_db):
         conn, n, name = real_db

@@ -23,7 +23,7 @@ class FFmpegMetaPanelPlugin(BaseMetaPanelPlugin):
         self._card.set_content_widget(self._widget)
         return self._card
 
-    def update_data(self, data: dict) -> None:
+    def update_data(self, data: dict, locks: dict[str, bool] | None = None, path: str = "", db: str = "") -> None:
         if self._widget is not None:
             self._widget.set_data(data)
         if self._card is not None:

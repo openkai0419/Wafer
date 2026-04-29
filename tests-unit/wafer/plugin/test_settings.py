@@ -3,6 +3,7 @@ import json
 import pytest
 from wafer.plugin.settings import PluginSettings, _ini_path, _write_ini_value, _read_ini_value
 from wafer.plugin.installer import RestartScope
+from wafer.plugin.kinds import PLUGIN_KINDS
 import wafer.plugin.settings as settings_mod
 
 
@@ -60,7 +61,7 @@ class TestPluginSettingsPriorityOrder:
 
     def test_all_registry_keys(self):
         ps = PluginSettings()
-        for key in ["viewer", "grid", "collector", "filter", "sort", "layout", "rename_source"]:
+        for key in PLUGIN_KINDS:
             ps.set_priority_order(key, [f"{key}_a", f"{key}_b"])
             assert ps.priority_order(key) == [f"{key}_a", f"{key}_b"]
 

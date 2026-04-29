@@ -19,16 +19,23 @@ from ..grid.cachemanager import MemoryLimitedImageCache, fullsize_key
 from ....core.app_settings import app_settings
 from ....core.color.theme import ThemeManager
 
+_STANDARD_META_KEYS = ("name", "path", "file_hash", "size", "created", "modified", "collected")
+
 
 def _format_meta(engine, path, dbpath):
-    file_rec, file_hash, tags_with_lock, meta_infos = engine.get_all_metadata(path)
+    file_rec, file_hash, tags_with_lock, meta_infos_with_lock = engine.get_all_metadata_with_locks(path)
     tags = {k: v for k, (v, _) in tags_with_lock.items()}
     tag_locks = {k: lk for k, (_, lk) in tags_with_lock.items()}
+    meta_infos = {k: v for k, (v, _) in meta_infos_with_lock.items()}
+    meta_locks = {k: lk for k, (_, lk) in meta_infos_with_lock.items()}
     file_rec.pop("path", None)
     if file_rec.get("aspect_ratio"):
         file_rec["aspect_ratio"] = format_aspect(file_rec["aspect_ratio"])
     standard = {}
     meta_prefixed: dict[str, dict] = {}
+    meta_prefixed_locks: dict[str, dict] = {}
+    meta_root: dict[str, str] = {}
+    meta_root_locks: dict[str, bool] = {}
     tag_prefixed: dict[str, dict] = {}
     tag_prefixed_locks: dict[str, dict] = {}
     tag_root: dict[str, str] = {}
@@ -37,9 +44,14 @@ def _format_meta(engine, path, dbpath):
         dot = k.find(".")
         if dot > 0:
             prefix = k[:dot]
-            meta_prefixed.setdefault(prefix, {})[k[dot + 1 :]] = v
-        else:
+            short = k[dot + 1 :]
+            meta_prefixed.setdefault(prefix, {})[short] = v
+            meta_prefixed_locks.setdefault(prefix, {})[short] = meta_locks.get(k, False)
+        elif k in _STANDARD_META_KEYS:
             standard[k] = v
+        else:
+            meta_root[k] = v
+            meta_root_locks[k] = meta_locks.get(k, False)
     for k, v in tags.items():
         dot = k.find(".")
         if dot > 0:
@@ -57,9 +69,9 @@ def _format_meta(engine, path, dbpath):
                 standard[k] = format_timestamp(float(raw)) if k != "size" else format_size_detail(float(raw))
             except (ValueError, TypeError):
                 pass
-    _standard_order = ["name", "path", "file_hash", "size", "created", "modified", "collected"]
-    standard = {k: standard[k] for k in _standard_order if k in standard}
+    standard = {k: standard[k] for k in _STANDARD_META_KEYS if k in standard}
     tag_root = {k: tag_root[k] for k in natsorted(tag_root)}
+    meta_root = {k: meta_root[k] for k in natsorted(meta_root)}
     for prefix in meta_prefixed:
         d = meta_prefixed[prefix]
         meta_prefixed[prefix] = {k: d[k] for k in natsorted(d)}
@@ -78,9 +90,12 @@ def _format_meta(engine, path, dbpath):
         "source": file_rec,
         "file": standard,
         "tag": tag_root,
+        "meta": meta_root,
+        "meta_locks": meta_root_locks,
         "tag_prefixed": tag_prefixed,
         "tag_prefixed_locks": tag_prefixed_locks,
         "prefixed": meta_prefixed,
+        "prefixed_locks": meta_prefixed_locks,
         "_path": path,
         "_file_hash": file_hash,
         "_tag_locks": tag_root_locks,

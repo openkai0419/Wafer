@@ -104,6 +104,7 @@ class MenuAction:
     default_checked: bool = False
     checked_resolver: Callable[[], bool] | None = None
     func: Callable[..., Any] | None = None
+    translate: bool = True
 
 
 class CommandBase:

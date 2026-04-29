@@ -41,6 +41,7 @@ _TABLES = (
         key TEXT NOT NULL,
         value TEXT,
         value_num REAL,
+        locked INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY(path, key),
         FOREIGN KEY(path) REFERENCES files(path) ON UPDATE CASCADE ON DELETE CASCADE
     )""",
@@ -119,7 +120,8 @@ _SQL_UPSERT_META = """INSERT INTO meta_info (path, key, value, value_num)
     VALUES (?, ?, ?, ?)
     ON CONFLICT(path, key) DO UPDATE SET
         value     = excluded.value,
-        value_num = excluded.value_num"""
+        value_num = excluded.value_num
+    WHERE meta_info.locked = 0"""
 
 _SQL_UPSERT_TAGS = """INSERT INTO tags (file_hash, key, value, value_num)
     VALUES (?, ?, ?, ?)
@@ -131,6 +133,13 @@ _SQL_UPSERT_TAGS = """INSERT INTO tags (file_hash, key, value, value_num)
 _SQL_UPSERT_USER_TAGS = """INSERT INTO tags (file_hash, key, value, value_num, locked)
     VALUES (?, ?, ?, ?, ?)
     ON CONFLICT(file_hash, key) DO UPDATE SET
+        value     = excluded.value,
+        value_num = excluded.value_num,
+        locked    = excluded.locked"""
+
+_SQL_UPSERT_USER_META = """INSERT INTO meta_info (path, key, value, value_num, locked)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(path, key) DO UPDATE SET
         value     = excluded.value,
         value_num = excluded.value_num,
         locked    = excluded.locked"""
@@ -274,6 +283,7 @@ class FileDB:
 
     @profiler.profile
     def _ensure_schema(self):
+        self._ensure_compatible_schema_migrations()
         changed = self._detect_changed_tables()
         if changed:
             AppLogger.info(f"[Schema] Recreating tables: {changed}")
@@ -288,6 +298,21 @@ class FileDB:
             self.conn.execute(sql)
         self.conn.commit()
         self.conn.executescript(_INDEXES_SQL)
+
+    def _ensure_compatible_schema_migrations(self):
+        self._add_missing_column("meta_info", "locked", "locked INTEGER NOT NULL DEFAULT 0")
+        self._add_missing_column("tags", "locked", "locked INTEGER NOT NULL DEFAULT 0")
+
+    def _add_missing_column(self, table: str, column: str, column_sql: str):
+        row = self.conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone()
+        if not row:
+            return
+        columns = {r[1] for r in self.conn.execute(f"PRAGMA table_info('{table}')").fetchall()}
+        if column in columns:
+            return
+        self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column_sql}")
+        self.conn.commit()
+        AppLogger.info(f"[Schema] Added {table}.{column}")
 
     def _detect_changed_tables(self):
         changed = set()
@@ -622,7 +647,7 @@ class FileDB:
         with self._write_lock, self.conn:
             cur = self.conn.cursor()
             try:
-                cur.execute("DELETE FROM meta_info WHERE key LIKE ? ESCAPE '\\'", (pattern,))
+                cur.execute("DELETE FROM meta_info WHERE key LIKE ? ESCAPE '\\' AND locked = 0", (pattern,))
                 meta_deleted = cur.execute("SELECT changes()").fetchone()[0]
                 cur.execute("DELETE FROM tags WHERE key LIKE ? ESCAPE '\\' AND locked = 0", (pattern,))
                 tags_deleted = cur.execute("SELECT changes()").fetchone()[0]
@@ -650,7 +675,7 @@ class FileDB:
                 for i in range(0, len(keys), 900):
                     chunk = keys[i : i + 900]
                     placeholders = ",".join(["?"] * len(chunk))
-                    cur.execute(f"DELETE FROM meta_info WHERE key IN ({placeholders})", chunk)
+                    cur.execute(f"DELETE FROM meta_info WHERE key IN ({placeholders}) AND locked = 0", chunk)
                     meta_deleted += cur.execute("SELECT changes()").fetchone()[0]
                     cur.execute(f"DELETE FROM tags WHERE key IN ({placeholders}) AND locked = 0", chunk)
                     tags_deleted += cur.execute("SELECT changes()").fetchone()[0]
@@ -718,7 +743,7 @@ class FileDB:
                         continue
                     placeholders = ",".join(["?"] * len(keys))
                     cur.execute(
-                        f"DELETE FROM meta_info WHERE path = ? AND key IN ({placeholders})",
+                        f"DELETE FROM meta_info WHERE path = ? AND key IN ({placeholders}) AND locked = 0",
                         [path] + keys,
                     )
                     if file_hash:
@@ -729,51 +754,51 @@ class FileDB:
             finally:
                 cur.close()
 
-    def apply_user_tags(
+    def apply_user_kv(
         self,
         paths: Sequence[str],
         upserts: list[tuple[str, str, float | None, int]],
         deletes: list[str],
         *,
+        scope: str = "tag",
         lock_only: bool = False,
         renames: list[tuple[str, str, str, float | None, int]] | None = None,
     ) -> dict[str, tuple[str, list[str], list[str]]]:
         renames = list(renames or [])
         if not paths or (not upserts and not deletes and not renames):
             return {}
+        if scope not in ("tag", "meta_info"):
+            raise ValueError(f"Unsupported key-value scope: {scope}")
+        table = "tags" if scope == "tag" else "meta_info"
+        target_col = "file_hash" if scope == "tag" else "path"
+        upsert_sql = _SQL_UPSERT_USER_TAGS if scope == "tag" else _SQL_UPSERT_USER_META
         results: dict[str, tuple[str, list[str], list[str]]] = {}
         with self._write_lock, self.conn:
             cur = self.conn.cursor()
             try:
-                hash_by_path: dict[str, str] = {}
+                target_by_path = self._resolve_user_kv_targets(cur, scope, paths)
                 paths_list = list(paths)
-                for i in range(0, len(paths_list), 900):
-                    chunk = paths_list[i : i + 900]
-                    ph = ",".join(["?"] * len(chunk))
-                    rows = cur.execute(f"SELECT source, file_hash FROM sources WHERE source IN ({ph})", chunk).fetchall()
-                    for src, fh in rows:
-                        if fh:
-                            hash_by_path[src] = fh
-                missing = [p for p in paths_list if p not in hash_by_path]
+                missing = [p for p in paths_list if p not in target_by_path]
                 if missing:
-                    AppLogger.warning(f"[DB] apply_user_tags: {len(missing)} paths have no file_hash (skipped)")
+                    reason = "file_hash" if scope == "tag" else "file row"
+                    AppLogger.warning(f"[DB] apply_user_kv: {len(missing)} paths have no {reason} (skipped)")
                 upsert_keys = [k for (k, _v, _vn, _lk) in upserts]
-                for path, file_hash in hash_by_path.items():
+                for path, target_id in target_by_path.items():
                     applied: list[str] = []
                     deleted: list[str] = []
                     for old_key, new_key, value, value_num, locked in renames:
                         if not old_key or not new_key or old_key == new_key:
                             continue
                         exists = cur.execute(
-                            "SELECT 1 FROM tags WHERE file_hash = ? AND key = ?",
-                            (file_hash, new_key),
+                            f"SELECT 1 FROM {table} WHERE {target_col} = ? AND key = ?",
+                            (target_id, new_key),
                         ).fetchone()
                         if exists:
-                            AppLogger.warning(f"[DB] apply_user_tags: rename collision skipped {old_key}->{new_key}")
+                            AppLogger.warning(f"[DB] apply_user_kv: rename collision skipped {old_key}->{new_key}")
                             continue
                         cur.execute(
-                            "UPDATE tags SET key = ?, value = ?, value_num = ?, locked = ? WHERE file_hash = ? AND key = ?",
-                            (new_key, value, value_num, locked, file_hash, old_key),
+                            f"UPDATE {table} SET key = ?, value = ?, value_num = ?, locked = ? WHERE {target_col} = ? AND key = ?",
+                            (new_key, value, value_num, locked, target_id, old_key),
                         )
                         if cur.execute("SELECT changes()").fetchone()[0] > 0:
                             applied.append(new_key)
@@ -782,33 +807,69 @@ class FileDB:
                         if lock_only:
                             for k, _v, _vn, lk in upserts:
                                 cur.execute(
-                                    "UPDATE tags SET locked = ? WHERE file_hash = ? AND key = ?",
-                                    (lk, file_hash, k),
+                                    f"UPDATE {table} SET locked = ? WHERE {target_col} = ? AND key = ?",
+                                    (lk, target_id, k),
                                 )
                                 if cur.execute("SELECT changes()").fetchone()[0] > 0:
                                     applied.append(k)
                         else:
-                            entries = [(file_hash, k, v, vn, lk) for (k, v, vn, lk) in upserts]
-                            cur.executemany(_SQL_UPSERT_USER_TAGS, entries)
+                            entries = [(target_id, k, v, vn, lk) for (k, v, vn, lk) in upserts]
+                            cur.executemany(upsert_sql, entries)
                             applied.extend(upsert_keys)
                     if deletes:
                         placeholders = ",".join(["?"] * len(deletes))
                         cur.execute(
-                            f"DELETE FROM tags WHERE file_hash = ? AND key IN ({placeholders}) AND locked = 0",
-                            [file_hash] + list(deletes),
+                            f"DELETE FROM {table} WHERE {target_col} = ? AND key IN ({placeholders}) AND locked = 0",
+                            [target_id] + list(deletes),
                         )
                         if cur.execute("SELECT changes()").fetchone()[0] > 0:
                             rows = cur.execute(
-                                f"SELECT key FROM tags WHERE file_hash = ? AND key IN ({placeholders})",
-                                [file_hash] + list(deletes),
+                                f"SELECT key FROM {table} WHERE {target_col} = ? AND key IN ({placeholders})",
+                                [target_id] + list(deletes),
                             ).fetchall()
                             remaining = {r[0] for r in rows}
                             deleted.extend(k for k in deletes if k not in remaining)
-                    results[path] = (file_hash, applied, deleted)
+                    results[path] = (target_id, applied, deleted)
             finally:
                 cur.close()
-        AppLogger.info(f"[DB] apply_user_tags paths={len(paths_list)} resolved={len(results)} renames={len(renames)} upserts={len(upserts)} deletes={len(deletes)}")
+        AppLogger.info(f"[DB] apply_user_kv scope={scope} paths={len(paths_list)} resolved={len(results)} renames={len(renames)} upserts={len(upserts)} deletes={len(deletes)}")
         return results
+
+    def apply_user_meta_info(
+        self,
+        paths: Sequence[str],
+        upserts: list[tuple[str, str, float | None, int]],
+        deletes: list[str],
+        *,
+        lock_only: bool = False,
+        renames: list[tuple[str, str, str, float | None, int]] | None = None,
+    ) -> dict[str, tuple[str, list[str], list[str]]]:
+        return self.apply_user_kv(
+            paths,
+            upserts,
+            deletes,
+            scope="meta_info",
+            lock_only=lock_only,
+            renames=renames,
+        )
+
+    @staticmethod
+    def _resolve_user_kv_targets(cur, scope: str, paths: Sequence[str]) -> dict[str, str]:
+        result: dict[str, str] = {}
+        paths_list = list(paths)
+        for i in range(0, len(paths_list), 900):
+            chunk = paths_list[i : i + 900]
+            ph = ",".join(["?"] * len(chunk))
+            if scope == "tag":
+                rows = cur.execute(f"SELECT source, file_hash FROM sources WHERE source IN ({ph})", chunk).fetchall()
+                for src, file_hash in rows:
+                    if file_hash:
+                        result[src] = file_hash
+            else:
+                rows = cur.execute(f"SELECT path FROM files WHERE path IN ({ph})", chunk).fetchall()
+                for (path,) in rows:
+                    result[path] = path
+        return result
 
     def find_sources_with_trigger_keys(self, trigger_keys: tuple[str, ...], parser_status_name: str) -> list[str]:
         if not trigger_keys:

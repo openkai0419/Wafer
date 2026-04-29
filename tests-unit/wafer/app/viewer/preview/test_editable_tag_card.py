@@ -223,7 +223,7 @@ def test_commit_confirmed_rename_synthesizes_old_delete(card):
 def test_root_card_ignores_dotted_ack_keys(card):
     c, svc, _ = card
     c.update_data({"k": "v"}, {"k": False}, None, "p", "h1", "db")
-    svc.commit_confirmed.emit("h1", {"mark.1": ("1", False), "k": ("v2", False)}, ["other.x"])
+    svc.kv_commit_confirmed.emit("tag", "h1", {"mark.1": ("1", False), "k": ("v2", False)}, ["other.x"])
     assert "mark.1" not in c._tags
     assert "other.x" not in c._tags
     assert c._tags["k"] == "v2"
@@ -234,7 +234,7 @@ def test_prefixed_card_ignores_root_ack_keys(qtbot):
     pc = EditableTagCard(prefix="mark")
     qtbot.addWidget(pc)
     pc.update_data({"1": "1"}, {"1": False}, None, "p", "h1", "db")
-    svc.commit_confirmed.emit("h1", {"mark.2": ("1", False), "k": ("v", False)}, [])
+    svc.kv_commit_confirmed.emit("tag", "h1", {"mark.2": ("1", False), "k": ("v", False)}, [])
     assert "k" not in pc._tags
     assert "mark.2" not in pc._tags
     assert pc._tags["2"] == "1"

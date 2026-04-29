@@ -17,7 +17,6 @@ def test_commands_exclude_removed_query_option_commands():
     assert "qry.search" in paths
     assert "qry.toggle_auto_execute" in paths
     assert "qry.toggle_include_subfolders" in paths
-    assert "qry.set_search_text" in paths
     assert "qry.cycle_sort" in paths
     assert "qry.cycle_order" in paths
     assert "Sort Order/qry.order_asc" in paths

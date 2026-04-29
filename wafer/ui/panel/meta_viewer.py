@@ -48,6 +48,14 @@ def _preview_mapping(mp: Mapping[str, Any]) -> str:
 _TITLE_HEIGHT = 16
 _ICON_SIZE = 8
 _CARD_PADDING = 6
+_MARKER_EXTENT = 12
+_MARKER_SIZE = 10
+_ROOT_MARKER_SIZE = 5
+
+SECTION_MARKER_TAG_ROOT = "tag_root"
+SECTION_MARKER_TAG_PREFIX = "tag_prefix"
+SECTION_MARKER_META_ROOT = "meta_root"
+SECTION_MARKER_META_PREFIX = "meta_prefix"
 
 
 class CollapsibleCard(QtWidgets.QFrame):
@@ -59,6 +67,7 @@ class CollapsibleCard(QtWidgets.QFrame):
         self._expanded = True
         self._title_base = title
         self._title_display = title
+        self._marker_kind = ""
 
         self.setObjectName("collapsibleCard")
         self.setFrameShape(QtWidgets.QFrame.NoFrame)
@@ -104,6 +113,13 @@ class CollapsibleCard(QtWidgets.QFrame):
         self._title_display = f"{self._title_base}{suffix}"
         self.update()
 
+    def set_marker_kind(self, kind: str | None):
+        self._marker_kind = kind or ""
+        self.update()
+
+    def marker_kind(self) -> str:
+        return self._marker_kind
+
     def title(self) -> str:
         return self._title_display
 
@@ -134,11 +150,16 @@ class CollapsibleCard(QtWidgets.QFrame):
         icon_key = "chevron_down" if self._expanded else "chevron_right"
         icon_draw(icon_key, painter, icon_rect, color)
 
+        text_x = pad + isz + dpix(4)
+        if self._marker_kind:
+            marker_rect = QtCore.QRectF(text_x, 0, dpix(_MARKER_EXTENT), th)
+            self._draw_marker(painter, marker_rect, palette)
+            text_x += dpix(_MARKER_EXTENT + 4)
+
         font = painter.font()
         font.setPixelSize(dpix(11))
         painter.setFont(font)
         painter.setPen(color)
-        text_x = pad + isz + dpix(4)
         text_rect = QtCore.QRectF(text_x, 0, self.width() - text_x - pad, th)
         painter.drawText(text_rect, QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft, self._title_display)
 
@@ -149,6 +170,31 @@ class CollapsibleCard(QtWidgets.QFrame):
             painter.drawLine(QtCore.QPointF(pad, th), QtCore.QPointF(self.width() - pad, th))
 
         painter.end()
+
+    def _draw_marker(self, painter: QtGui.QPainter, rect: QtCore.QRectF, palette) -> None:
+        kind = self._marker_kind
+        base_size = dpix(_MARKER_SIZE)
+        base_rect = QtCore.QRectF(
+            rect.left() + (rect.width() - base_size) / 2,
+            rect.top() + (rect.height() - base_size) / 2,
+            base_size,
+            base_size,
+        )
+
+        if kind in (SECTION_MARKER_TAG_ROOT, SECTION_MARKER_TAG_PREFIX):
+            icon_draw("section_tag", painter, base_rect, QtGui.QColor(palette.success))
+        elif kind in (SECTION_MARKER_META_ROOT, SECTION_MARKER_META_PREFIX):
+            icon_draw("section_meta", painter, base_rect, QtGui.QColor(palette.accent))
+
+        if kind in (SECTION_MARKER_TAG_ROOT, SECTION_MARKER_META_ROOT):
+            root_size = dpix(_ROOT_MARKER_SIZE)
+            root_rect = QtCore.QRectF(
+                base_rect.right() - root_size + dpix(1),
+                base_rect.top() - dpix(1),
+                root_size,
+                root_size,
+            )
+            icon_draw("section_root", painter, root_rect, QtGui.QColor(palette.warning))
 
     def _sync_content_visibility(self):
         th = dpix(_TITLE_HEIGHT)

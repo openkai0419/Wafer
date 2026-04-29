@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.6.8]
+### Added
+- **`wafer/plugin/kinds.py`**: centralized plugin-kind labels, colors, and ordering shared by the loader and Plugin Manager UI
+- **`wafer/ui/popups.py`** (`PopupBase`): reusable anchored popup frame with screen clamping and Escape-to-close behavior, adopted by workspace, text-filter, and batch-renamer popups
+- **Editable `meta_info` support**: `MetaViewerWidget`, `EditableTagCard`, `TagEditService`, `DatabaseWriter.apply_user_kv()`, and `FileDB.apply_user_meta_info()` now allow adding, renaming, deleting, and locking user metadata keys alongside tags
+
+### Changed
+- **Plugin Manager UI**: extension cards, badge tooltips, and order views now use centralized plugin-kind metadata so collector/parser/panel/loader/command badges render with consistent labels and colors
+- **Metadata panel** (`wafer/app/viewer/preview/meta_panel.py`): root metadata is split from standard file fields, tag/meta sections get visual markers, and the add dialog can target either tags or metadata depending on current file context
+- **Meta panel plugin API**: `BaseMetaPanelPlugin.update_data()` now receives `locks`, `path`, and `db`, and the built-in ffmpeg/exiftool panels were updated to the new signature
+
+### Fixed
+- **Locked metadata preservation**: `meta_info` now migrates a `locked` column when missing, collector upserts skip locked rows, and delete/cleanup paths avoid removing locked user metadata
+- Scope-aware `tags.updated` acknowledgements now return target IDs for both tags and metadata, keeping overlay state and metadata reloads synchronized after edits
+
 ## [v0.6.7]
 ### Added
 - **Workspace persistence system** (`wafer/core/workspace.py`): JSON-backed `WorkspaceStore`, `WindowSlot`, and UI/path/query preset dataclasses with active/restore slot tracking

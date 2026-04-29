@@ -366,6 +366,18 @@ class FileSearchEngine:
         return {r["key"]: r["value"] for r in rows}
 
     @profiler.profile
+    def get_meta_info_with_lock_by_path(self, path):
+        if not self._connect_if_needed():
+            return {}
+        cur = self.conn.cursor()
+        norm_path = self._normalize_path(path)
+        row = cur.execute("SELECT path FROM files WHERE path = ?", (norm_path,)).fetchone()
+        if not row:
+            return {}
+        rows = cur.execute("SELECT key, value, locked FROM meta_info WHERE path = ?", (row["path"],)).fetchall()
+        return {r["key"]: (r["value"], bool(r["locked"])) for r in rows}
+
+    @profiler.profile
     def get_tags_with_lock_by_path(self, path):
         if not self._connect_if_needed():
             return None, {}
@@ -387,13 +399,20 @@ class FileSearchEngine:
         return fid, {r["key"]: (r["value"], bool(r["locked"])) for r in rows}
 
     @profiler.profile
-    def get_tag_keys_by_prefix(self, key_prefix: str, paths: list[str] | None = None) -> dict[str, list[str]]:
+    def get_kv_keys_by_prefix(self, scope: str, key_prefix: str, paths: list[str] | None = None) -> dict[str, list[str]]:
         result: dict[str, list[str]] = {}
         if not key_prefix or not self._connect_if_needed():
             return result
+        if scope not in ("tag", "meta_info"):
+            return result
         cur = self.conn.cursor()
         like_pattern = f"{key_prefix}%"
-        base_sql = "SELECT i.path, t.key FROM tags AS t JOIN sources AS s ON s.file_hash = t.file_hash JOIN files AS i ON i.source = s.source WHERE t.key LIKE ?"
+        if scope == "tag":
+            base_sql = "SELECT i.path, t.key FROM tags AS t JOIN sources AS s ON s.file_hash = t.file_hash JOIN files AS i ON i.source = s.source WHERE t.key LIKE ?"
+            path_expr = "i.path"
+        else:
+            base_sql = "SELECT mi.path, mi.key FROM meta_info AS mi WHERE mi.key LIKE ?"
+            path_expr = "mi.path"
 
         def _consume(rows):
             for row in rows:
@@ -411,8 +430,16 @@ class FileSearchEngine:
             for start in range(0, len(norm_paths), chunk_size):
                 chunk = norm_paths[start : start + chunk_size]
                 placeholders = ",".join("?" * len(chunk))
-                _consume(cur.execute(f"{base_sql} AND i.path IN ({placeholders})", (like_pattern, *chunk)).fetchall())
+                _consume(cur.execute(f"{base_sql} AND {path_expr} IN ({placeholders})", (like_pattern, *chunk)).fetchall())
         return result
+
+    @profiler.profile
+    def get_tag_keys_by_prefix(self, key_prefix: str, paths: list[str] | None = None) -> dict[str, list[str]]:
+        return self.get_kv_keys_by_prefix("tag", key_prefix, paths)
+
+    @profiler.profile
+    def get_meta_keys_by_prefix(self, key_prefix: str, paths: list[str] | None = None) -> dict[str, list[str]]:
+        return self.get_kv_keys_by_prefix("meta_info", key_prefix, paths)
 
     @profiler.profile
     def get_file_record(self, path):
@@ -440,7 +467,7 @@ class FileSearchEngine:
         ).fetchone()
         return dict(row) if row else {}
 
-    def get_all_metadata(self, path):
+    def get_all_metadata_with_locks(self, path):
         if not self._connect_if_needed():
             return {}, None, {}, {}
         cur = self.conn.cursor()
@@ -449,8 +476,8 @@ class FileSearchEngine:
         if not file_row:
             return {}, None, {}, {}
         file_record = dict(file_row)
-        meta_rows = cur.execute("SELECT key, value FROM meta_info WHERE path = ?", (norm_path,)).fetchall()
-        meta_info = {r["key"]: r["value"] for r in meta_rows}
+        meta_rows = cur.execute("SELECT key, value, locked FROM meta_info WHERE path = ?", (norm_path,)).fetchall()
+        meta_info = {r["key"]: (r["value"], bool(r["locked"])) for r in meta_rows}
         src_row = cur.execute("SELECT file_hash FROM sources WHERE source = ?", (file_record.get("source"),)).fetchone()
         if not src_row or not src_row["file_hash"]:
             return file_record, None, {}, meta_info

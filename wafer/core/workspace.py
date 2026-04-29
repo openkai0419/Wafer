@@ -13,17 +13,6 @@ from ..utils.process_lock import file_lock
 
 _STORE_FILENAME = "workspace.json"
 
-UI_PRESET_COLORS = [
-    "#4A90D9",
-    "#D94A4A",
-    "#4AD97A",
-    "#D9A04A",
-    "#9B59B6",
-    "#1ABC9C",
-    "#E67E22",
-    "#E91E63",
-]
-
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
@@ -59,7 +48,6 @@ class BarSpec:
 class UIPreset:
     preset_id: str = field(default_factory=_new_id)
     name: str = ""
-    color: str = ""
     window_state: dict[str, Any] = field(default_factory=dict)
     component_states: dict[str, Any] = field(default_factory=dict)
     created_at: str = field(default_factory=_now_iso)
@@ -75,7 +63,6 @@ class UIPreset:
         return cls(
             preset_id=data.get("preset_id", _new_id()),
             name=data.get("name", ""),
-            color=data.get("color", ""),
             window_state=dict(data.get("window_state") or {}),
             component_states=dict(data.get("component_states") or {}),
             created_at=data.get("created_at", _now_iso()),
@@ -290,19 +277,6 @@ class WorkspaceStore:
 
     def rename_ui_preset(self, preset_id: str, new_name: str) -> bool:
         return self._rename_preset("ui_presets", preset_id, new_name, UIPreset)
-
-    def set_ui_preset_color(self, preset_id: str, color: str) -> bool:
-        def _u(raw):
-            d = raw.get("ui_presets", {}).get(preset_id)
-            if d is None:
-                return False
-            entry = UIPreset.from_dict(d)
-            entry.color = color
-            entry.updated_at = _now_iso()
-            raw["ui_presets"][preset_id] = entry.to_dict()
-            return True
-
-        return self._locked_update(_u)
 
     def update_ui_preset(self, preset_id: str, window_state: dict[str, Any], component_states: dict[str, Any]) -> bool:
         def apply(p: UIPreset) -> None:

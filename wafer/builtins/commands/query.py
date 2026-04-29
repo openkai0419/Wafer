@@ -102,12 +102,6 @@ def search(ctx, force=False):
         svc.execute(force=force)
 
 
-def set_search_text(ctx, text: str = ""):
-    row = _search_row(ctx)
-    if row:
-        row.set_search_text(text)
-
-
 def toggle_include_subfolders(ctx):
     svc = _service(ctx)
     if not svc:
@@ -179,12 +173,6 @@ class QueryCommands(ActionKit.MenuBase):
                 checkable=True,
                 default_checked=True,
                 checked_resolver=lambda: _svc().get("include_subfolders", True) if _svc() else True,
-            ),
-            ActionKit.Command(
-                path="qry.set_search_text",
-                display="Set Search Text to",
-                func=set_search_text,
-                params=[ActionKit.Param(name="text", value="")],
             ),
             "-",
             ":Sort",

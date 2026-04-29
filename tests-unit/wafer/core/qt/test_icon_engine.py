@@ -72,6 +72,9 @@ ALL_KEYS = [
     "refresh",
     "history",
     "save",
+    "section_tag",
+    "section_meta",
+    "section_root",
 ]
 
 

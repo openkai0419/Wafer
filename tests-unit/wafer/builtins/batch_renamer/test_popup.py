@@ -1,12 +1,8 @@
-import pytest
-from pathlib import Path
-from unittest.mock import MagicMock
-
-from PySide6 import QtCore, QtGui, QtWidgets
+from PySide6 import QtWidgets
 from PySide6.QtCore import Qt
 
 from wafer.plugin.rename.base import DropdownButton, ToggleButton, RenameConfigWidget
-from wafer.builtins.batch_renamer.popup import ColumnSettingsPopup, ClickOutsideFilter
+from wafer.builtins.batch_renamer.popup import ColumnSettingsPopup
 from wafer.builtins.batch_renamer.engine import RenameColumn, PostProcess
 from wafer.builtins.rename_sources import (
     NameSource,
@@ -14,8 +10,6 @@ from wafer.builtins.rename_sources import (
     MetaSource,
     ExtSource,
     SequentialSource,
-    DateSource,
-    RandomSource,
 )
 
 
@@ -86,26 +80,12 @@ class TestDropdownButton:
 
 
 class TestColumnSettingsPopup:
-    def test_window_flags_tool(self, qtbot):
+    def test_window_flags_popup(self, qtbot):
         col = RenameColumn(NameSource())
         popup = ColumnSettingsPopup(col)
         qtbot.addWidget(popup)
-        assert popup.windowFlags() & Qt.Tool
+        assert popup.windowFlags() & Qt.Popup
         assert popup.windowFlags() & Qt.FramelessWindowHint
-
-    def test_click_filter_installed(self, qtbot):
-        col = RenameColumn(NameSource())
-        popup = ColumnSettingsPopup(col)
-        qtbot.addWidget(popup)
-        assert isinstance(popup._click_filter, ClickOutsideFilter)
-
-    def test_close_removes_event_filter(self, qtbot):
-        col = RenameColumn(NameSource())
-        popup = ColumnSettingsPopup(col)
-        qtbot.addWidget(popup)
-        popup.show()
-        popup.close()
-        assert popup._click_filter is None
 
     def test_changed_signal_on_post_toggle(self, qtbot):
         post = PostProcess(prefix="pre_")
@@ -155,7 +135,7 @@ class TestColumnSettingsPopup:
         col = RenameColumn(ExtSource())
         popup = ColumnSettingsPopup(col, is_ext=True)
         qtbot.addWidget(popup)
-        assert popup.windowFlags() & Qt.Tool
+        assert popup.windowFlags() & Qt.Popup
 
     def test_ext_column_has_enabled_checkbox(self, qtbot):
         col = RenameColumn(ExtSource())
@@ -194,52 +174,3 @@ class TestColumnSettingsPopup:
         source_text = inspect.getsource(popup)
         assert "isinstance" not in source_text
         assert "hasattr" not in source_text
-
-    def test_follows_parent_window_on_move(self, qtbot):
-        parent = QtWidgets.QWidget()
-        parent.move(100, 100)
-        parent.show()
-        qtbot.addWidget(parent)
-        col = RenameColumn(NameSource())
-        popup = ColumnSettingsPopup(col, parent=parent)
-        qtbot.addWidget(popup)
-        popup.move(150, 200)
-        popup.show()
-        qtbot.waitExposed(popup)
-        offset = popup.pos() - parent.window().pos()
-        parent.move(300, 300)
-        QtWidgets.QApplication.processEvents()
-        assert popup.pos() == parent.window().pos() + offset
-
-    def test_anchor_cleanup_on_close(self, qtbot):
-        parent = QtWidgets.QWidget()
-        parent.show()
-        qtbot.addWidget(parent)
-        col = RenameColumn(NameSource())
-        popup = ColumnSettingsPopup(col, parent=parent)
-        qtbot.addWidget(popup)
-        popup.show()
-        qtbot.waitExposed(popup)
-        assert popup._anchor_window is not None
-        popup.close()
-        assert popup._anchor_window is None
-
-    def test_click_filter_ignores_active_popup(self, qtbot):
-        col = RenameColumn(NameSource())
-        popup = ColumnSettingsPopup(col)
-        qtbot.addWidget(popup)
-        popup.show()
-        menu = QtWidgets.QMenu(popup)
-        menu.addAction("dummy")
-        menu.popup(popup.mapToGlobal(QtCore.QPoint(0, 0)))
-        filt = popup._click_filter
-        event = QtGui.QMouseEvent(
-            QtCore.QEvent.MouseButtonPress,
-            QtCore.QPointF(-9999, -9999),
-            QtCore.QPointF(-9999, -9999),
-            Qt.LeftButton,
-            Qt.LeftButton,
-            Qt.NoModifier,
-        )
-        assert filt.eventFilter(None, event) is False
-        menu.close()

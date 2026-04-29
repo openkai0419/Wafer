@@ -66,7 +66,7 @@ def confirm_remove_mark(parent: QtWidgets.QWidget | None, mark_id: str) -> bool:
     dlg.setWindowTitle(t("Remove mark"))
     layout = QtWidgets.QVBoxLayout(dlg)
     layout.addWidget(QtWidgets.QLabel(t("Remove mark '{name}'?", name=mark.name)))
-    purge_cb = QtWidgets.QCheckBox(t("Delete all '{key}' tags from databases", key=MarkRegistry.tag_key(mark_id)))
+    purge_cb = QtWidgets.QCheckBox(t("Delete all '{key}' entries from databases", key=MarkRegistry.key(mark_id)))
     layout.addWidget(purge_cb)
     btn_row = QtWidgets.QHBoxLayout()
     btn_row.addStretch()
@@ -112,7 +112,7 @@ def _purge_mark_from_all_dbs(mark_id: str) -> None:
     names = list_data_db_names()
     if not names:
         return
-    key = MarkRegistry.tag_key(mark_id)
+    key = MarkRegistry.key(mark_id)
     for name in names:
         node.send_reliable("delete.keys", {"keys": [key]}, dst="indexer", db=name)
     AppLogger.info(f"[Mark] Requested purge of '{key}' across {len(names)} db(s)")

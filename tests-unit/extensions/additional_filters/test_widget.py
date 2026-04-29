@@ -140,7 +140,7 @@ class TestCalendarPopup:
         qtbot.addWidget(popup)
         flags = popup.windowFlags()
         assert flags & QtCore.Qt.FramelessWindowHint
-        assert flags & QtCore.Qt.Tool
+        assert flags & QtCore.Qt.Popup
 
     def test_close_on_escape(self, qtbot):
         popup = _CalendarPopup()
@@ -160,13 +160,13 @@ class TestCalendarPopup:
         popup.close()
         assert closed
 
-    def test_close_on_leave(self, qtbot):
+    def test_stays_open_on_leave(self, qtbot):
         popup = _CalendarPopup()
         qtbot.addWidget(popup)
         popup.show()
         assert popup.isVisible()
         popup.leaveEvent(QtCore.QEvent(QtCore.QEvent.Leave))
-        assert not popup.isVisible()
+        assert popup.isVisible()
 
 
 class TestDateRangeWidget:

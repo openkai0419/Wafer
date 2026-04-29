@@ -4,6 +4,7 @@ from PySide6 import QtCore, QtWidgets
 
 from ...core.lang.manager import t
 from ...core.qt.icon_engine import themed_icon
+from ...ui.popups import PopupBase
 from ...utils.formatting import dpix
 from . import dialogs
 from .registry import MarkRegistry
@@ -45,18 +46,20 @@ class _MarkButton(QtWidgets.QToolButton):
         self.setText(f"{m.name} ({self._count})")
 
 
-class _MarkSettingsPopup(QtWidgets.QDialog):
+class _MarkSettingsPopup(PopupBase):
     changed = QtCore.Signal()
 
-    def __init__(self, anchor: QtWidgets.QWidget, parent: QtWidgets.QWidget | None = None):
+    def __init__(self, parent: QtWidgets.QWidget | None = None):
         super().__init__(parent)
-        self._anchor = anchor
         self.setWindowTitle(t("Mark Filter Options"))
-        self.setWindowFlags(self.windowFlags() | QtCore.Qt.Tool)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(dpix(8), dpix(8), dpix(8), dpix(8))
         layout.setSpacing(dpix(6))
+
+        title = QtWidgets.QLabel(t("Mark Filter Options"))
+        title.setStyleSheet(f"font-weight: bold; padding-bottom: {dpix(2)}px;")
+        layout.addWidget(title)
 
         self.overlay_check = QtWidgets.QCheckBox(t("Show mark overlay on grid"))
         self.overlay_check.toggled.connect(self._on_overlay_toggled)
@@ -135,15 +138,6 @@ class _MarkSettingsPopup(QtWidgets.QDialog):
         if svc is not None:
             svc.set_radius(int(value))
 
-    def show_at_anchor(self):
-        self.adjustSize()
-        pos = self._anchor.mapToGlobal(QtCore.QPoint(0, self._anchor.height()))
-        x = pos.x() + self._anchor.width() - self.width()
-        self.move(x, pos.y())
-        self.show()
-        self.raise_()
-        self.activateWindow()
-
 
 class MarkFilterWidget(QtWidgets.QWidget):
     changed = QtCore.Signal()
@@ -175,7 +169,7 @@ class MarkFilterWidget(QtWidgets.QWidget):
         self._buttons_layout.addStretch(1)
         root.addWidget(self._buttons_container, 1)
 
-        self._popup = _MarkSettingsPopup(self._option_btn, self)
+        self._popup = _MarkSettingsPopup(self)
         self._popup.changed.connect(self.changed)
 
         svc = self._overlay_service()
@@ -188,7 +182,7 @@ class MarkFilterWidget(QtWidgets.QWidget):
         if self._popup.isVisible():
             self._popup.hide()
         else:
-            self._popup.show_at_anchor()
+            self._popup.show_below(self._option_btn, align=QtCore.Qt.AlignRight)
 
     def bind_key_store(self, key_store):
         prev = self._key_store

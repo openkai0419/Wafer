@@ -1,4 +1,32 @@
 {
+  "Filter Keys": {
+    "en": "Filter Keys",
+    "ja": ""
+  },
+  "Find": {
+    "en": "Find",
+    "ja": ""
+  },
+  "Remove \"{filename}\"": {
+    "en": "Remove \"{filename}\"",
+    "ja": ""
+  },
+  "Remove {count} file(s)": {
+    "en": "Remove {count} file(s)",
+    "ja": ""
+  },
+  "Remove column": {
+    "en": "Remove column",
+    "ja": ""
+  },
+  "prefix": {
+    "en": "prefix",
+    "ja": ""
+  },
+  "suffix": {
+    "en": "suffix",
+    "ja": ""
+  },
   "Delete Workspace Slot": {
     "en": "Delete Workspace Slot",
     "ja": ""

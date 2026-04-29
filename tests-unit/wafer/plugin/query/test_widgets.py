@@ -78,6 +78,11 @@ class TestTextFilterCreateWidget:
         w = TextFilter.create_widget()
         assert hasattr(w, "keys_combo")
 
+    def test_option_popup_has_title_label(self, qapp):
+        w = TextFilter.create_widget()
+        labels = [label.text() for label in w._option_popup.findChildren(QtWidgets.QLabel)]
+        assert "Text Filter Options" in labels
+
 
 class TestTextFilterReadParams:
     def test_default_params(self, qapp):

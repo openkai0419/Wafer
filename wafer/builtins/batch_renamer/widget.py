@@ -932,11 +932,8 @@ class BatchRenameWidget(QtWidgets.QWidget):
         header = self._seg_table.horizontalHeader()
         sec_x = header.sectionPosition(section) - header.offset()
         gp = header.mapToGlobal(QtCore.QPoint(sec_x, header.height()))
-        popup.adjustSize()
-        popup.move(gp)
-        popup._resize_and_clamp()
         self._popup = popup
-        popup.show()
+        popup.show_at(gp)
 
     def _deferred_refresh(self):
         self._update_source_defaults()
@@ -1043,15 +1040,16 @@ class BatchRenameWidget(QtWidgets.QWidget):
             },
         )
         if len(rows) == 1:
-            remove_display = f'Remove "{self._paths[rows[0]].name}"'
+            remove_display = t('Remove "{filename}"', filename=self._paths[rows[0]].name)
         else:
-            remove_display = f"Remove {len(rows)} file(s)"
+            remove_display = t("Remove {count} file(s)", count=len(rows))
         frozen_rows = list(rows)
         items = [
             ":BatchRenamer",
             ActionKit.Action(
                 path="inline.renamer.remove",
                 display=remove_display,
+                translate=False,
                 func=lambda ctx: self._exclude_rows(frozen_rows),
             ),
             "-",

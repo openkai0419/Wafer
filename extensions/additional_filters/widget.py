@@ -6,6 +6,7 @@ from wafer.utils.formatting import dpix, display_prefixed_key
 from wafer.core.lang.manager import t
 from wafer.core.qt.icon_engine import themed_icon
 from wafer.core.color.theme import ThemeManager
+from wafer.ui.popups import PopupBase
 
 from .filter import is_date_key
 
@@ -13,7 +14,7 @@ _TODAY = "today"
 _DATE_FORMAT = "yyyy/MM/dd"
 
 
-class _CalendarPopup(QtWidgets.QFrame):
+class _CalendarPopup(PopupBase):
     date_selected = QtCore.Signal(QtCore.QDate)
     today_selected = QtCore.Signal()
     cleared = QtCore.Signal()
@@ -21,7 +22,6 @@ class _CalendarPopup(QtWidgets.QFrame):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowFlags(QtCore.Qt.FramelessWindowHint | QtCore.Qt.Tool)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -56,20 +56,6 @@ class _CalendarPopup(QtWidgets.QFrame):
         self.cleared.emit()
         self.close()
 
-    def closeEvent(self, event):
-        super().closeEvent(event)
-        self.popup_closed.emit()
-
-    def keyPressEvent(self, event):
-        if event.key() == QtCore.Qt.Key_Escape:
-            self.close()
-        else:
-            super().keyPressEvent(event)
-
-    def leaveEvent(self, event):
-        super().leaveEvent(event)
-        self.close()
-
     def eventFilter(self, obj, event):
         if event.type() == QtCore.QEvent.WindowDeactivate:
             self.close()
@@ -93,9 +79,12 @@ class _CalendarPopup(QtWidgets.QFrame):
         target = current_date if current_date and current_date.isValid() else today
         self._calendar.setSelectedDate(target)
 
-        self.move(global_pos)
-        self.show()
+        super().show_at(global_pos)
         self.activateWindow()
+
+    def _emit_closed(self):
+        super()._emit_closed()
+        self.popup_closed.emit()
 
 
 class _DateInput(QtWidgets.QWidget):

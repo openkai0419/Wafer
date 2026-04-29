@@ -7,6 +7,7 @@ from ...core.lang.manager import t
 from ...core.qt.icon_engine import themed_icon
 from ...core.color.theme import ThemeManager
 from ...core.state import StateStore
+from ...ui.popups import PopupBase
 
 _STATE_NAMESPACE = "filters/active_keys"
 
@@ -91,7 +92,7 @@ _CATALOG_KEY_ROLE = QtCore.Qt.UserRole + 1
 _CATALOG_COUNT_ROLE = QtCore.Qt.UserRole + 2
 
 
-class _KeySelectorPopup(QtWidgets.QFrame):
+class _KeySelectorPopup(PopupBase):
     _instance = None
     active_keys_changed = QtCore.Signal(set)
     check_toggled = QtCore.Signal()
@@ -103,7 +104,7 @@ class _KeySelectorPopup(QtWidgets.QFrame):
         return cls._instance
 
     def __init__(self, parent=None):
-        super().__init__(parent, QtCore.Qt.Popup | QtCore.Qt.FramelessWindowHint)
+        super().__init__(parent)
         self._catalog_data: list[tuple[str, int]] = []
         self._active_items: dict[str, _ActiveKeyItem] = {}
         self._pending_active_keys: list[str] = []
@@ -390,9 +391,7 @@ class _KeySelectorPopup(QtWidgets.QFrame):
         for key, item in self._active_items.items():
             item.set_checked(key in checked)
         self._suppress_signals = False
-        pos = combo.mapToGlobal(QtCore.QPoint(0, combo.height()))
-        self.move(pos)
-        self.show()
+        self.show_below(combo)
 
     def sync_checks_for(self, combo):
         if self._current_combo is combo and self.isVisible():
@@ -510,7 +509,7 @@ class TextFilterWidget(QtWidgets.QWidget):
         layout.addWidget(self.option_button)
         layout.addWidget(self.search_bar, 1)
 
-        self._option_popup = _TextFilterPopup(self.option_button, self)
+        self._option_popup = _TextFilterPopup(self)
         self._option_popup.changed.connect(self.changed)
         self._bound_key_store = None
 
@@ -533,14 +532,10 @@ class TextFilterWidget(QtWidgets.QWidget):
         if popup.isVisible():
             popup.hide()
         else:
-            self._position_popup()
-            popup.show()
+            popup.show_below(self.option_button, align=QtCore.Qt.AlignRight)
 
     def _position_popup(self):
-        btn = self.option_button
-        pos = btn.mapToGlobal(QtCore.QPoint(0, btn.height()))
-        x = pos.x() + btn.width() - self._option_popup.width()
-        self._option_popup.move(x, pos.y())
+        self._option_popup.position_below(self.option_button, align=QtCore.Qt.AlignRight)
 
     def read_params(self) -> dict:
         settings = self._option_popup.get_settings()
@@ -572,19 +567,21 @@ class TextFilterWidget(QtWidgets.QWidget):
             self._position_popup()
 
 
-class _TextFilterPopup(QtWidgets.QDialog):
+class _TextFilterPopup(PopupBase):
     changed = QtCore.Signal()
 
-    def __init__(self, pos_parent, parent=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self.pos_parent = pos_parent
         self.setWindowTitle(t("Text Filter Options"))
-        self.setWindowFlags(self.windowFlags() | QtCore.Qt.Tool)
         self._build_ui()
         self._set_defaults()
 
     def _build_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
+
+        title = QtWidgets.QLabel(t("Text Filter Options"))
+        title.setStyleSheet(f"font-weight: bold; padding-bottom: {dpix(4)}px;")
+        layout.addWidget(title)
 
         self.query_type_combo = QtWidgets.QComboBox()
         self.query_type_combo.addItem("GLOB", "GLOB")

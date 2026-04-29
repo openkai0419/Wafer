@@ -1,4 +1,5 @@
 import pytest
+from PySide6 import QtWidgets
 
 from wafer.core.commands.binding.instance_registry import InstanceRegistry
 from wafer.core.state import StateStore
@@ -24,6 +25,9 @@ def test_mark_filter_widget_syncs_overlay_controls(qtbot):
 
     widget = MarkFilterWidget()
     qtbot.addWidget(widget)
+
+    labels = [label.text() for label in widget._popup.findChildren(QtWidgets.QLabel)]
+    assert "Mark Filter Options" in labels
 
     svc.set_visible(False)
     svc.set_radius(22)

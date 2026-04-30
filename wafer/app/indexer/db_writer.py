@@ -40,13 +40,19 @@ class DatabaseWriter:
         self._db.try_checkpoint("PASSIVE")
 
     @profiler.profile
-    def upsert_results(self, image_entries, meta_info_entries, tag_entries, collector_status_entries):
+    def upsert_results(self, image_entries, meta_info_entries, tag_entries, collector_status_entries, *, cleanup: bool = True):
         self._db.upsert_collection_results(
             image_entries,
             meta_info_entries,
             tag_entries,
             collector_status_entries,
+            cleanup=cleanup,
         )
+        self._db.try_checkpoint("PASSIVE")
+
+    @profiler.profile
+    def cleanup_source_collectors(self, image_entries, collector_status_entries):
+        self._db.cleanup_source_collector_children(image_entries, collector_status_entries)
         self._db.try_checkpoint("PASSIVE")
 
     @profiler.profile
@@ -103,6 +109,7 @@ class DatabaseWriter:
             meta_info_entries,
             tag_entries,
             collector_status_entries,
+            cleanup=False,
         )
         if delete_entries:
             self._db.delete_meta_and_tags_by_keys(delete_entries)

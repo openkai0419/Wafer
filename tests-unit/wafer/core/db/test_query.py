@@ -7,6 +7,7 @@ from wafer.core.db.query import SearchQuery, FileSearchEngine, _kv_sort_join
 from wafer.utils.formatting import natural_key
 from wafer.core.db.file_db import FileDB
 from wafer.utils.paths import normalize_path
+from wafer.utils.virtual_paths import build_virtual_path
 
 
 @pytest.fixture
@@ -303,6 +304,7 @@ class TestFileSearchEngineListKeys:
         key_names = [k[0] for k in keys]
         assert "rating" in key_names
         assert "dpi" in key_names
+        assert "file_hash" in key_names
 
     def test_list_all_keys_dedup(self, db_path):
         db = FileDB(db_path)
@@ -356,6 +358,20 @@ class TestFileSearchEngineSampleValues:
         engine = FileSearchEngine(db_path)
         values = engine.sample_values("test.key")
         assert values == ["same_value"]
+
+    def test_sample_values_file_hash_uses_sources(self, db_path):
+        db = FileDB(db_path)
+        db.start()
+        db.initialize_database()
+        db.upsert_batches(
+            [("src1", "h1", 100, 1.0), ("src2", "h2", 200, 2.0)],
+            [("src1", "src1", 1.0), ("src2", "src2", 1.0)],
+            [],
+            [],
+        )
+        db.close()
+        engine = FileSearchEngine(db_path)
+        assert engine.sample_values("file_hash", limit=10) == ["h1", "h2"]
 
 
 class TestFileSearchEngineCombined:
@@ -760,6 +776,43 @@ class TestEngineLookupMethods:
         assert "rating" in tags_with_lock
         assert isinstance(tags_with_lock["rating"], tuple) and len(tags_with_lock["rating"]) == 2
         assert "dpi" in meta
+
+    def test_child_metadata_resolves_source_hash_and_tags(self, db_path):
+        db = FileDB(db_path)
+        db.start()
+        db.initialize_database()
+        source = "C:/data/archive.zip"
+        child = build_virtual_path(source, "folder/image.png")
+        db.upsert_batches(
+            [(source, "hash_zip", 100, 1.0)],
+            [(source, source, 1.0), (child, source, 1.5)],
+            [(child, "name", "image.png", None)],
+            [("hash_zip", "rating", "5", 5.0)],
+        )
+        db.close()
+        engine = FileSearchEngine(db_path)
+        file_rec, file_hash, tags_with_lock, meta = engine.get_all_metadata_with_locks(child)
+        assert file_rec["source"] == source
+        assert file_hash == "hash_zip"
+        assert tags_with_lock["rating"] == ("5", False)
+        assert meta["name"] == ("image.png", False)
+
+    def test_search_file_hash_returns_source_and_children(self, db_path):
+        db = FileDB(db_path)
+        db.start()
+        db.initialize_database()
+        source = "C:/data/archive.zip"
+        child = build_virtual_path(source, "folder/image.png")
+        db.upsert_batches(
+            [(source, "hash_zip", 100, 1.0)],
+            [(source, source, 1.0), (child, source, 1.5)],
+            [],
+            [],
+        )
+        db.close()
+        engine = FileSearchEngine(db_path)
+        paths, _, _ = engine.search(SearchQuery(keys=["file_hash"], keywords="hash_zip"))
+        assert set(paths) == {source, child}
 
     def test_get_collection_status_ok(self, populated_db):
         db = FileDB(populated_db)

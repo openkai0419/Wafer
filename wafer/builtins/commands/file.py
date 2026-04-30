@@ -38,22 +38,41 @@ def _ctx_path(ctx) -> str | None:
     return ps[0] if ps else None
 
 
+def _ctx_sources(ctx) -> list[str]:
+    sources = ctx.get("sources")
+    if isinstance(sources, list) and sources:
+        return list(dict.fromkeys(str(p) for p in sources if p))
+    source = ctx.get("source")
+    if source:
+        return [str(source)]
+    AppLogger.warning("[file_cmd] context did not provide 'source'/'sources'; file operation skipped. UI must populate source via extend_context().")
+    return []
+
+
+def _ctx_source(ctx) -> str | None:
+    source = ctx.get("source")
+    if source:
+        return str(source)
+    AppLogger.warning("[file_cmd] context did not provide 'source'; file operation skipped. UI must populate source via extend_context().")
+    return None
+
+
 def open_file(ctx):
-    path = _ctx_path(ctx)
+    path = _ctx_source(ctx)
     if not path:
         return
     platform_open_file(path)
 
 
 def show_in_explorer(ctx, show_first_if_folder: bool = False):
-    path = _ctx_path(ctx)
+    path = _ctx_source(ctx)
     if not path:
         return
     reveal_in_explorer(str(path), show_first_if_folder=bool(show_first_if_folder))
 
 
 def copy_path(ctx):
-    paths = _ctx_paths(ctx)
+    paths = _ctx_sources(ctx)
     if not paths:
         return
     if len(paths) == 1:
@@ -63,7 +82,7 @@ def copy_path(ctx):
 
 
 def copy_filename(ctx):
-    paths = _ctx_paths(ctx)
+    paths = _ctx_sources(ctx)
     if not paths:
         return
     if len(paths) == 1:
@@ -74,14 +93,14 @@ def copy_filename(ctx):
 
 
 def copy_files(ctx):
-    paths = _ctx_paths(ctx)
+    paths = _ctx_sources(ctx)
     if not paths:
         return
     ClipboardFileTransfer().set_files(paths, cut=False)
 
 
 def cut_files(ctx):
-    paths = _ctx_paths(ctx)
+    paths = _ctx_sources(ctx)
     if not paths:
         return
     ClipboardFileTransfer().set_files(paths, cut=True)
@@ -139,7 +158,7 @@ def _confirm_delete(ctx, paths) -> bool:
 
 
 def delete_files(ctx):
-    paths = _ctx_paths(ctx)
+    paths = _ctx_sources(ctx)
     if not paths:
         return
     if not _confirm_delete(ctx, paths):
@@ -152,7 +171,7 @@ def delete_files(ctx):
 
 
 def paste_here(ctx, overwrite_mode: str = "skip"):
-    path = _ctx_path(ctx)
+    path = _ctx_source(ctx)
     if not path:
         return
     a = os.path.abspath(path)
@@ -199,7 +218,7 @@ def show_file(ctx, provider):
 
 
 def make_new_folder_here(ctx, folder_name: str | None = None) -> str | None:
-    path = _ctx_path(ctx)
+    path = _ctx_source(ctx)
     if not path:
         return None
     parent_dir = _get_directory_from_path(path)
@@ -210,7 +229,7 @@ def make_new_folder_here(ctx, folder_name: str | None = None) -> str | None:
 
 
 def rename_file(ctx):
-    path = _ctx_path(ctx)
+    path = _ctx_source(ctx)
     if not path or not os.path.isfile(path):
         return
     from ...ui.dialogs import InputDialog
@@ -272,42 +291,42 @@ def _batch_rename_widget(w):
 
 @require(w="MainWindow")
 def batch_rename(ctx, w):
-    paths_str = _ctx_paths(ctx)
-    if not paths_str:
+    source_paths = _ctx_sources(ctx)
+    if not source_paths:
         Notifier.info("No files selected")
         return
-    file_paths = [Path(p) for p in paths_str]
+    file_paths = [Path(p) for p in source_paths]
     widget = _batch_rename_widget(w)
     if widget is None:
         return
-    widget.set_files(file_paths, keys=paths_str, db_path=w.database_path)
+    widget.set_files(file_paths, keys=source_paths, db_path=w.database_path)
     w._layout_manager.ensure_panel_visible("Batch Renamer")
 
 
 @require(w="MainWindow")
 def batch_rename_add(ctx, w):
-    paths_str = _ctx_paths(ctx)
-    if not paths_str:
+    source_paths = _ctx_sources(ctx)
+    if not source_paths:
         Notifier.info("No files selected")
         return
-    file_paths = [Path(p) for p in paths_str]
+    file_paths = [Path(p) for p in source_paths]
     widget = _batch_rename_widget(w)
     if widget is None:
         return
     if widget._db_path != w.database_path:
-        widget.set_files(file_paths, keys=paths_str, db_path=w.database_path)
+        widget.set_files(file_paths, keys=source_paths, db_path=w.database_path)
     else:
-        widget.add_files(file_paths, keys=paths_str)
+        widget.add_files(file_paths, keys=source_paths)
     w._layout_manager.ensure_panel_visible("Batch Renamer")
 
 
 @require(w="MainWindow")
 def batch_rename_remove(ctx, w):
-    paths_str = _ctx_paths(ctx)
-    if not paths_str:
+    source_paths = _ctx_sources(ctx)
+    if not source_paths:
         Notifier.info("No files selected")
         return
-    file_paths = [Path(p) for p in paths_str]
+    file_paths = [Path(p) for p in source_paths]
     widget = _batch_rename_widget(w)
     if widget is None:
         return
@@ -317,7 +336,7 @@ def batch_rename_remove(ctx, w):
 def shell_context_menu(ctx):
     if not sys.platform.startswith("win"):
         return
-    paths = _ctx_paths(ctx)
+    paths = _ctx_sources(ctx)
     if not paths:
         return
     from ...core.platform.shell_menu import show_shell_context_menu

@@ -368,7 +368,8 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
     def extend_context(self, ctx, cmd, event=None, key=None, source=None):
         paths = self.items.selected_paths()
         path = self.items.last_selected_path()
-        return {"path": path, "paths": paths}
+        sources = self.items.selected_sources()
+        return {"path": path, "paths": paths, "source": self.items.last_selected_source(), "sources": sources}
 
     @profiler.profile
     def _on_selection_changed(self, current_selection):

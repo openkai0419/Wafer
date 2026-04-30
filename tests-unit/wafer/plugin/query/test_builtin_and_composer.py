@@ -171,6 +171,11 @@ class TestTextFilterExecution:
         paths, sources, aspects = composer.execute(engine, entries, NaturalNameSort, True)
         assert len(paths) == 40
 
+    def test_search_file_hash_uses_sources(self, engine, composer):
+        entries = [(TextFilter, {"keys": ["file_hash"], "keywords": "hash_0001"}, None)]
+        paths, sources, aspects = composer.execute(engine, entries, NaturalNameSort, True)
+        assert paths == ["C:/photos/vacation/img_0001.jpg"]
+
     def test_search_with_exclude(self, engine, composer):
         entries = [(TextFilter, {"keys": ["path"], "keywords": "img,-work", "keyword_separator": ","}, None)]
         paths, _, _ = composer.execute(engine, entries, NaturalNameSort, True)
@@ -503,6 +508,11 @@ class TestComposerListAllKeys:
         keys = composer.list_all_keys(engine, [], sort_by_freq=True)
         fp_count = next(f for k, f in keys if k == "path")
         assert fp_count == 200
+
+    def test_file_hash_count_equals_file_count(self, engine, composer):
+        keys = composer.list_all_keys(engine, [], sort_by_freq=True)
+        file_hash_count = next(f for k, f in keys if k == "file_hash")
+        assert file_hash_count == 200
 
     def test_filepath_count_filtered_by_directory(self, engine, composer):
         entries = [

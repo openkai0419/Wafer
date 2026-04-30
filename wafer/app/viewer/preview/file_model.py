@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from PySide6 import QtCore
 
+from ....utils.virtual_paths import source_path
 from ....utils.profiling import profiler
 
 
@@ -49,6 +50,9 @@ class FileViewModel(QtCore.QObject):
     def path(self) -> str | None:
         return self._display_path
 
+    def source(self) -> str | None:
+        return self.source_at(self._current_index) or (source_path(self._display_path) if self._display_path else None)
+
     def index_of_path(self, path: str) -> int | None:
         return self._path_to_index.get(path)
 
@@ -58,6 +62,14 @@ class FileViewModel(QtCore.QObject):
         if 0 <= index < len(self.paths):
             return self.paths[index]
         return None
+
+    def source_at(self, index: int | None) -> str | None:
+        if index is None:
+            return None
+        if 0 <= index < len(self.sources) and self.sources[index]:
+            return self.sources[index]
+        path = self.path_at(index)
+        return source_path(path) if path else None
 
     def _clamp_index(self, index: int | None) -> int | None:
         if index is None:
@@ -95,7 +107,7 @@ class FileViewModel(QtCore.QObject):
         else:
             insert_pos = (self._current_index + 1) if self._current_index is not None else len(self.paths)
             self.paths.insert(insert_pos, path)
-            self.sources.insert(insert_pos, "")
+            self.sources.insert(insert_pos, source_path(path))
             self._rebuild_index()
             self._current_index = insert_pos
         self.currentIndexChanged.emit(self._current_index)

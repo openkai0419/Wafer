@@ -103,7 +103,7 @@ class GridItemModel(QtCore.QObject):
         return [self.paths[i] for i in self.selected_indices() if 0 <= i < len(self.paths)]
 
     def selected_sources(self) -> list[str]:
-        return [self.sources[i] for i in self.selected_indices() if 0 <= i < len(self.sources)]
+        return list(dict.fromkeys(self.sources[i] for i in self.selected_indices() if 0 <= i < len(self.sources)))
 
     def last_selected_path(self) -> str | None:
         return self.path_at(self.last_selected_index())

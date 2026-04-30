@@ -6,6 +6,7 @@ from natsort import natsorted
 from ....utils.formatting import format_aspect, format_size_detail, format_timestamp
 from ....utils.paths import db_name_from_path
 from ....core.db.query import FileSearchEngine
+from ....core.files.render_target import RenderTarget, TARGET_WIDGET
 from ....plugin.viewer.handler import viewer_resolver
 from ....plugin.viewer.base import WidgetViewerPlugin as _WidgetViewerPlugin
 from ....core.qt.dispatcher import Dispatcher, CancelSlot
@@ -19,7 +20,7 @@ from ..grid.cachemanager import MemoryLimitedImageCache, fullsize_key
 from ....core.app_settings import app_settings
 from ....core.color.theme import ThemeManager
 
-_STANDARD_META_KEYS = ("name", "path", "file_hash", "size", "created", "modified", "collected")
+_STANDARD_META_KEYS = ("name", "path", "size", "created", "modified", "collected", "file_hash")
 
 
 def _format_meta(engine, path, dbpath):
@@ -52,6 +53,8 @@ def _format_meta(engine, path, dbpath):
         else:
             meta_root[k] = v
             meta_root_locks[k] = meta_locks.get(k, False)
+    if file_hash and "file_hash" not in standard:
+        standard["file_hash"] = file_hash
     for k, v in tags.items():
         dot = k.find(".")
         if dot > 0:
@@ -119,6 +122,7 @@ class FileViewerController(QtCore.QObject):
         self._pending_content = None
         self._loading_path = None
         self._target_plugin: str | None = None
+        self._target_render_path: str | None = None
         self._autoplay_active = False
         self._autoplay_interval = self._DEFAULT_AUTOPLAY_INTERVAL
         self._autoplay_loop = True
@@ -137,6 +141,10 @@ class FileViewerController(QtCore.QObject):
     @property
     def path(self) -> str | None:
         return self.model.path()
+
+    @property
+    def source(self) -> str | None:
+        return self.model.source()
 
     def _switch_to(self, plugin_name: str):
         old_name = self.content_viewer._current_plugin_name
@@ -175,6 +183,7 @@ class FileViewerController(QtCore.QObject):
             self._loading_path = None
             self._pending_meta = None
             self._pending_content = None
+            self._target_render_path = None
             self.content_viewer.clear()
             self.meta_viewer.clear()
             return
@@ -187,51 +196,58 @@ class FileViewerController(QtCore.QObject):
     def _load_content(self, path):
         cancel = self._content_cancel.renew()
         self._target_plugin = _DEFAULT_WIDGET_NAME
+        self._target_render_path = path
 
         def resolve_task():
             if cancel.is_cancelled():
                 return
-            plugin_cls = viewer_resolver.resolve(path)
+            target = viewer_resolver.resolve_target(path)
             if cancel.is_cancelled():
                 return
-            if plugin_cls is not None and issubclass(plugin_cls, _WidgetViewerPlugin):
-                self._dispatcher.invoke(lambda: self._on_resolve_widget(cancel, path, plugin_cls))
+            if target.kind == TARGET_WIDGET and target.plugin_name:
+                self._dispatcher.invoke(lambda: self._on_resolve_widget(cancel, target))
                 return
             key = fullsize_key(path)
             image = self.image_cache.get(key)
             if image is not None and not image.isNull():
-                self._dispatcher.invoke(lambda: self._on_resolve_cached(cancel, path, image))
+                self._dispatcher.invoke(lambda: self._on_resolve_cached(cancel, target, image))
                 return
-            image = viewer_resolver.load_content(path)
+            image = viewer_resolver.load_content(target.render_path)
             if cancel.is_cancelled():
                 return
             if image is not None and not image.isNull():
                 self.image_cache[fullsize_key(path)] = image
             else:
                 image = None
-            self._dispatcher.invoke(lambda: self._on_content_ready(cancel, path, image))
+            self._dispatcher.invoke(lambda: self._on_content_ready(cancel, target, image))
 
         self._dispatcher.post(resolve_task, cancel=cancel)
 
-    def _on_resolve_widget(self, cancel, path, plugin_cls):
+    def _on_resolve_widget(self, cancel, target: RenderTarget):
+        path = target.logical_path
         if cancel.is_cancelled() or path != self._loading_path:
             return
-        self._target_plugin = plugin_cls.NAME
+        self._target_plugin = target.plugin_name
+        self._target_render_path = target.render_path
         self._pending_content = (path, None)
         self._flush()
 
-    def _on_resolve_cached(self, cancel, path, image):
+    def _on_resolve_cached(self, cancel, target: RenderTarget, image):
+        path = target.logical_path
         if cancel.is_cancelled() or path != self._loading_path:
             return
         self._target_plugin = _DEFAULT_WIDGET_NAME
+        self._target_render_path = target.render_path
         self._pending_content = (path, image)
         self._flush()
 
-    def _on_content_ready(self, cancel, path, image):
+    def _on_content_ready(self, cancel, target: RenderTarget, image):
         if cancel.is_cancelled():
             return
+        path = target.logical_path
         if path != self._loading_path:
             return
+        self._target_render_path = target.render_path
         self._pending_content = (path, image)
         self._flush()
 
@@ -248,7 +264,7 @@ class FileViewerController(QtCore.QObject):
         if image is not None:
             self.image_viewer.set_image(image, path)
         elif target != _DEFAULT_WIDGET_NAME:
-            viewer_resolver.render(path)
+            viewer_resolver.render(self._target_render_path or path)
         else:
             self.image_viewer.set_image(PixmapFactory.create_viewer_error_placeholder(), path)
         self.meta_viewer.set_data(meta)

@@ -5,6 +5,7 @@ import os
 import sys
 
 from ..utils.logs import AppLogger
+from ..utils.virtual_paths import register_owner_extension
 from .installer import _PACKAGES_DIR, needs_setup
 from .registry import RegistryBase, CommandGroupRegistry
 from .viewer.base import BaseViewerPlugin
@@ -171,6 +172,9 @@ class PluginLoader:
             registry = self._registries.get(registry_key)
             if registry is not None:
                 registry.register(cls)
+                if getattr(cls, "IS_OWNER", False):
+                    for ext in getattr(cls, "EXTENSIONS", ()) or ():
+                        register_owner_extension(ext)
             total += 1
         return total
 

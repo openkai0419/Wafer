@@ -2,6 +2,7 @@ import py_compile
 from unittest.mock import MagicMock, patch, PropertyMock
 from wafer.app.viewer.preview.file_viewer import _format_meta, FileViewerController, _DEFAULT_WIDGET_NAME
 from wafer.app.viewer.preview.content_viewer import ContentViewerWidget
+from wafer.core.files.render_target import RenderTarget, TARGET_WIDGET
 from wafer.plugin.viewer.base import WidgetViewerPlugin, ImageViewerPlugin
 
 
@@ -54,6 +55,12 @@ def test_format_meta_source_differs_from_path():
     file_rec = result["source"]
     assert "path" not in file_rec
     assert file_rec["source"] == "/other/a.png"
+
+
+def test_format_meta_injects_resolved_file_hash():
+    engine = _mock_engine(file_hash="resolved_hash", meta_info_with_lock={"name": ("a.png", False)})
+    result = _format_meta(engine, "/a.png", "")
+    assert result["file"]["file_hash"] == "resolved_hash"
 
 
 def test_format_meta_formats_size_and_timestamps():
@@ -306,9 +313,12 @@ def _make_viewer_stub():
     viewer._pending_content = None
     viewer._loading_path = None
     viewer._target_plugin = None
+    viewer._target_render_path = None
     viewer.content_viewer = content_viewer
     viewer.meta_viewer = meta_viewer
     viewer.image_viewer = default_widget
+    viewer.image_cache = MagicMock()
+    viewer.image_cache.get.return_value = None
 
     viewer._flush = lambda: FileViewerController._flush(viewer)
     viewer._switch_to = lambda name: FileViewerController._switch_to(viewer, name)
@@ -431,11 +441,17 @@ def test_on_path_changed_widget_sets_target():
     viewer._content_cancel.renew.return_value = cancel_token
     viewer.model = MagicMock()
     viewer.model.dbpath = None
-    viewer._on_resolve_widget = lambda cancel, path, plugin_cls: FileViewerController._on_resolve_widget(viewer, cancel, path, plugin_cls)
+    viewer._on_resolve_widget = lambda cancel, target: FileViewerController._on_resolve_widget(viewer, cancel, target)
 
     initial_plugin = viewer.content_viewer._current_plugin_name
     with patch("wafer.app.viewer.preview.file_viewer.viewer_resolver") as mock_resolver:
-        mock_resolver.resolve.return_value = _StubWidgetPlugin
+        mock_resolver.resolve_target.return_value = RenderTarget(
+            logical_path="/test.mp4",
+            render_path="/test.mp4",
+            kind=TARGET_WIDGET,
+            plugin_name="stub_widget",
+            source_path="/test.mp4",
+        )
         viewer._on_path_changed("/test.mp4")
 
     assert viewer.content_viewer._current_plugin_name == initial_plugin

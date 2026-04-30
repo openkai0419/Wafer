@@ -1,8 +1,10 @@
 from PySide6 import QtCore, QtGui
 
+from ...core.files.render_target import RenderTarget, ResolveContext, TARGET_IMAGE, TARGET_WIDGET
 from ...core.qt.image import numpy_to_qimage
+from ...utils.virtual_paths import is_virtual_path, source_path
 from ...utils.profiling import profiler
-from ..registry import FilePluginRegistry
+from ..registry import DISPATCH_OWNER, FilePluginRegistry
 from .base import BaseGridPlugin, WidgetGridPlugin
 
 VIEWER_THUMBNAIL_DEFAULT_SIZE = 512
@@ -23,14 +25,51 @@ class GridResolver:
     def resolve_merged_chain(self, path: str) -> list[tuple[type, str]]:
         from ..imageloader.handler import image_loader_resolver
 
-        widget_chain = self.registry.resolve_chain(path)
+        widget_chain = [cls for cls in self.registry.resolve_chain(path) if issubclass(cls, WidgetGridPlugin)]
         loader_chain = image_loader_resolver.registry.resolve_chain(path)
         merged = [(cls, WIDGET) for cls in widget_chain] + [(cls, IMAGE) for cls in loader_chain]
         merged.sort(key=lambda x: (x[0].PRIORITY, x[1] == WIDGET), reverse=True)
         return merged
 
+    def resolve_target(self, path: str, context: ResolveContext | None = None) -> RenderTarget:
+        context = context or ResolveContext(path)
+        if is_virtual_path(path):
+            owner_cls = self.registry.resolve(path, DISPATCH_OWNER)
+            owner = self.registry.instance(owner_cls.NAME) if owner_cls is not None else None
+            resolver = getattr(owner, "resolve_target", None)
+            if resolver is not None:
+                target = resolver(path, self, context)
+                if isinstance(target, RenderTarget):
+                    return target
+
+        for plugin_cls, kind in self.resolve_merged_chain(path):
+            if not plugin_cls.can_handle(path):
+                continue
+            if kind == WIDGET:
+                return RenderTarget(
+                    logical_path=context.logical_path,
+                    render_path=path,
+                    kind=TARGET_WIDGET,
+                    plugin_name=plugin_cls.NAME,
+                    source_path=source_path(context.logical_path),
+                )
+            return RenderTarget(
+                logical_path=context.logical_path,
+                render_path=path,
+                kind=TARGET_IMAGE,
+                plugin_name=plugin_cls.NAME,
+                source_path=source_path(context.logical_path),
+            )
+        return RenderTarget(
+            logical_path=context.logical_path,
+            render_path=path,
+            kind=TARGET_IMAGE,
+            source_path=source_path(context.logical_path),
+        )
+
     def is_widget_plugin(self, path: str) -> bool:
-        return isinstance(self.registry.resolve_instance(path), WidgetGridPlugin)
+        target = self.resolve_target(path)
+        return target.kind == TARGET_WIDGET and isinstance(self.registry.instance(target.plugin_name), WidgetGridPlugin)
 
     @profiler.profile
     def load(self, path: str, size: QtCore.QSize | None = None) -> QtGui.QImage | None:

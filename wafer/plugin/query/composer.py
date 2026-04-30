@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from ...utils.profiling import profiler
-from ...core.db.query import _kv_sort_join
+from ...core.db.query import _kv_sort_join, SYSTEM_FILE_HASH_KEY
 from .base import BaseFilterPlugin
 
 
@@ -74,16 +74,22 @@ class SearchComposer:
             f'  SELECT DISTINCT mp.path, kv."key"'
             f"  FROM matched_paths AS mp"
             f"  JOIN meta_info AS kv ON kv.path = mp.path"
+            f'  WHERE kv."key" <> ?'
             f"  UNION ALL"
             f'  SELECT DISTINCT mp.path, t."key"'
             f"  FROM matched_paths AS mp"
             f"  JOIN files AS f ON f.path = mp.path"
             f"  JOIN sources AS s ON s.source = f.source"
             f"  JOIN tags AS t ON t.file_hash = s.file_hash"
+            f"  UNION ALL"
+            f'  SELECT DISTINCT mp.path, ? AS "key"'
+            f"  FROM matched_paths AS mp"
+            f"  JOIN files AS f ON f.path = mp.path"
+            f"  JOIN sources AS s ON s.source = f.source"
             f") AS items "
             f'GROUP BY "key" {order}'
         )
-        rows = engine.fetch(sql, combined_params)
+        rows = engine.fetch(sql, [*combined_params, SYSTEM_FILE_HASH_KEY, SYSTEM_FILE_HASH_KEY])
         return [(row["key"], row["freq"]) for row in rows]
 
     @staticmethod

@@ -16,6 +16,7 @@ from wafer.core.db.file_db import (
     _SQL_UPSERT_TAGS,
     _SQL_UPSERT_COLLECTION_STATUS,
 )
+from wafer.utils.virtual_paths import build_virtual_path
 
 
 def test_compile():
@@ -165,6 +166,15 @@ def test_collection_status_table_exists(tmp_path):
     db.close()
 
 
+def test_files_table_has_source_collector(tmp_path):
+    db = FileDB(tmp_path / "test.db")
+    db.start()
+    db.initialize_database()
+    cols = [r[1] for r in db.conn.execute("PRAGMA table_info('files')").fetchall()]
+    assert "source_collector" in cols
+    db.close()
+
+
 def test_upsert_basic_sources(tmp_path):
     db = FileDB(tmp_path / "test.db")
     db.start()
@@ -291,6 +301,46 @@ def test_rename_paths_single_file(tmp_path):
     cs_row = db.read_conn.execute("SELECT source FROM collection_status WHERE source='c:/new/img.jpg'").fetchone()
     assert cs_row is not None
     assert db.read_conn.execute("SELECT COUNT(*) FROM collection_status WHERE source='c:/old/img.jpg'").fetchone()[0] == 0
+    db.close()
+
+
+def test_rename_paths_updates_virtual_children_by_source_prefix(tmp_path):
+    db = FileDB(tmp_path / "test.db")
+    db.start()
+    db.initialize_database()
+    source = "c:/data/archive.zip"
+    new_source = "c:/new/renamed.zip"
+    child = build_virtual_path(source, "folder/a%b::c.png")
+    new_child = build_virtual_path(new_source, "folder/a%b::c.png")
+    other_source = "c:/data/archive.zip2"
+    other_child = build_virtual_path(other_source, "folder/a.png")
+    db.upsert_batches(
+        [(source, "hash_zip", 100, 1.0), (other_source, "hash_other", 200, 2.0)],
+        [
+            (source, source, 1.0),
+            (child, source, 1.5, "zip"),
+            (other_source, other_source, 1.0),
+            (other_child, other_source, 1.0, "zip"),
+        ],
+        [
+            (source, "path", source, None),
+            (source, "name", "archive.zip", None),
+            (child, "path", child, None),
+            (child, "name", "a%b::c.png", None),
+        ],
+        [],
+    )
+    db.insert_pending_collection([source, other_source], ["zip"])
+    db.rename_paths([(source, new_source)])
+
+    assert db.read_conn.execute("SELECT COUNT(*) FROM files WHERE path = ?", (child,)).fetchone()[0] == 0
+    row = db.read_conn.execute("SELECT source, source_collector FROM files WHERE path = ?", (new_child,)).fetchone()
+    assert row == (new_source, "zip")
+    assert db.read_conn.execute("SELECT source FROM collection_status WHERE collector='zip' AND source = ?", (new_source,)).fetchone() is not None
+    assert db.read_conn.execute("SELECT path FROM files WHERE path = ?", (other_child,)).fetchone()[0] == other_child
+    assert db.read_conn.execute("SELECT value FROM meta_info WHERE path = ? AND key = 'path'", (new_child,)).fetchone()[0] == new_child
+    assert db.read_conn.execute("SELECT value FROM meta_info WHERE path = ? AND key = 'name'", (new_child,)).fetchone()[0] == "a%b::c.png"
+    assert db.read_conn.execute("SELECT value FROM meta_info WHERE path = ? AND key = 'name'", (new_source,)).fetchone()[0] == "renamed.zip"
     db.close()
 
 
@@ -559,6 +609,56 @@ def test_delete_collector_data_re_collect(tmp_path):
     for status, collected_at in rows:
         assert status == "pending"
         assert collected_at is None
+    db.close()
+
+
+def test_delete_collector_data_deletes_source_collector_children(tmp_path):
+    db = FileDB(tmp_path / "test.db")
+    db.start()
+    db.initialize_database()
+    source = "archive.zip"
+    child = build_virtual_path(source, "folder/image.png")
+    db.upsert_batches(
+        [(source, "hash_zip", 100, 1.0)],
+        [(source, source, 1.0)],
+        [],
+        [],
+    )
+    db.upsert_collection_results(
+        [(child, source, 1.0, "zip")],
+        [(child, "path", child, None)],
+        [],
+        [(source, "zip", "ok", 2.0)],
+    )
+    db.delete_collector_data("zip")
+    paths = [row[0] for row in db.read_conn.execute("SELECT path FROM files ORDER BY path").fetchall()]
+    assert paths == [source]
+    assert db.read_conn.execute("SELECT COUNT(*) FROM meta_info WHERE path = ?", (child,)).fetchone()[0] == 0
+    db.close()
+
+
+def test_delete_collector_data_re_collect_deletes_source_collector_children(tmp_path):
+    db = FileDB(tmp_path / "test.db")
+    db.start()
+    db.initialize_database()
+    source = "archive.zip"
+    child = build_virtual_path(source, "folder/image.png")
+    db.upsert_batches(
+        [(source, "hash_zip", 100, 1.0)],
+        [(source, source, 1.0)],
+        [],
+        [],
+    )
+    db.upsert_collection_results(
+        [(child, source, 1.0, "zip")],
+        [],
+        [],
+        [(source, "zip", "ok", 2.0)],
+    )
+    db.delete_collector_data("zip", re_collect=True)
+    assert db.read_conn.execute("SELECT COUNT(*) FROM files WHERE path = ?", (child,)).fetchone()[0] == 0
+    status = db.read_conn.execute("SELECT status FROM collection_status WHERE source = ? AND collector = 'zip'", (source,)).fetchone()[0]
+    assert status == "pending"
     db.close()
 
 

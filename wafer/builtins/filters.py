@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..core.db.db_utils import build_like_condition, escape_like
+from ..core.db.query import SYSTEM_FILE_HASH_KEY
 from ..plugin.query.base import BaseFilterPlugin
 from ..utils.profiling import profiler
 
@@ -24,17 +25,30 @@ def _normalize_text_inputs(params):
     return keys, include, exclude
 
 
-def _kv_part(from_clause, key_col, val_col, path_expr, other_keys, include_kw, keyword_mode, query_mode):
+def _kv_part(from_clause, key_col, val_col, path_expr, other_keys, include_kw, keyword_mode, query_mode, exclude_keys=()):
     conds, params = [], []
     if other_keys:
         conds.append(f"{key_col} IN ({','.join('?' for _ in other_keys)})")
         params.extend(other_keys)
+    if exclude_keys:
+        conds.append(f"{key_col} NOT IN ({','.join('?' for _ in exclude_keys)})")
+        params.extend(exclude_keys)
     if include_kw:
         c, v = build_like_condition(val_col, include_kw, keyword_mode, query_mode)
         conds.append(f"({c})")
         params.extend(v)
     w = f"WHERE {' AND '.join(conds)}" if conds else ""
     return f"SELECT {path_expr} FROM {from_clause} {w}", params
+
+
+def _file_hash_part(include_kw, keyword_mode, query_mode):
+    conds, params = [], []
+    if include_kw:
+        c, v = build_like_condition("s.file_hash", include_kw, keyword_mode, query_mode)
+        conds.append(f"({c})")
+        params.extend(v)
+    w = f"WHERE {' AND '.join(conds)}" if conds else ""
+    return f"SELECT i.path FROM sources AS s JOIN files AS i ON i.source = s.source {w}", params
 
 
 class TextFilter(BaseFilterPlugin):
@@ -72,33 +86,41 @@ class TextFilter(BaseFilterPlugin):
             return "SELECT path FROM files WHERE 0", []
 
         query_all = not keys
+        kv_keys = [k for k in keys if k != SYSTEM_FILE_HASH_KEY]
         parts, all_params = [], []
 
-        sql, p = _kv_part(
-            "meta_info AS mi",
-            'mi."key"',
-            'mi."value"',
-            "mi.path",
-            keys if not query_all else [],
-            include_kw,
-            keyword_mode,
-            query_mode,
-        )
-        parts.append(sql)
-        all_params.extend(p)
+        if query_all or kv_keys:
+            sql, p = _kv_part(
+                "meta_info AS mi",
+                'mi."key"',
+                'mi."value"',
+                "mi.path",
+                kv_keys if not query_all else [],
+                include_kw,
+                keyword_mode,
+                query_mode,
+                (SYSTEM_FILE_HASH_KEY,) if query_all else (),
+            )
+            parts.append(sql)
+            all_params.extend(p)
 
-        sql, p = _kv_part(
-            "tags AS t JOIN sources AS s ON s.file_hash = t.file_hash JOIN files AS i ON i.source = s.source",
-            't."key"',
-            't."value"',
-            "i.path",
-            keys if not query_all else [],
-            include_kw,
-            keyword_mode,
-            query_mode,
-        )
-        parts.append(sql)
-        all_params.extend(p)
+            sql, p = _kv_part(
+                "tags AS t JOIN sources AS s ON s.file_hash = t.file_hash JOIN files AS i ON i.source = s.source",
+                't."key"',
+                't."value"',
+                "i.path",
+                kv_keys if not query_all else [],
+                include_kw,
+                keyword_mode,
+                query_mode,
+            )
+            parts.append(sql)
+            all_params.extend(p)
+
+        if query_all or SYSTEM_FILE_HASH_KEY in keys:
+            sql, p = _file_hash_part(include_kw, keyword_mode, query_mode)
+            parts.append(sql)
+            all_params.extend(p)
 
         if not parts:
             return None, []
@@ -116,24 +138,35 @@ class TextFilter(BaseFilterPlugin):
     @classmethod
     def _build_exclude(cls, keys, query_all, exclude_kw, query_mode):
         parts, params = [], []
-        conds, p = [], []
-        if keys:
-            conds.append(f'em."key" IN ({",".join("?" for _ in keys)})')
-            p.extend(keys)
-        c, v = build_like_condition('em."value"', exclude_kw, "OR", query_mode)
-        conds.append(f"({c})")
-        p.extend(v)
-        parts.append(f"SELECT em.path FROM meta_info AS em WHERE {' AND '.join(conds)}")
-        params.extend(p)
-        conds2, p2 = [], []
-        if keys:
-            conds2.append(f'et."key" IN ({",".join("?" for _ in keys)})')
-            p2.extend(keys)
-        c2, v2 = build_like_condition('et."value"', exclude_kw, "OR", query_mode)
-        conds2.append(f"({c2})")
-        p2.extend(v2)
-        parts.append(f"SELECT ei.path FROM tags AS et JOIN sources AS es ON es.file_hash = et.file_hash JOIN files AS ei ON ei.source = es.source WHERE {' AND '.join(conds2)}")
-        params.extend(p2)
+        kv_keys = [k for k in keys if k != SYSTEM_FILE_HASH_KEY]
+        if query_all or kv_keys:
+            conds, p = [], []
+            if kv_keys:
+                conds.append(f'em."key" IN ({",".join("?" for _ in kv_keys)})')
+                p.extend(kv_keys)
+            elif query_all:
+                conds.append('em."key" <> ?')
+                p.append(SYSTEM_FILE_HASH_KEY)
+            c, v = build_like_condition('em."value"', exclude_kw, "OR", query_mode)
+            conds.append(f"({c})")
+            p.extend(v)
+            parts.append(f"SELECT em.path FROM meta_info AS em WHERE {' AND '.join(conds)}")
+            params.extend(p)
+
+            conds2, p2 = [], []
+            if kv_keys:
+                conds2.append(f'et."key" IN ({",".join("?" for _ in kv_keys)})')
+                p2.extend(kv_keys)
+            c2, v2 = build_like_condition('et."value"', exclude_kw, "OR", query_mode)
+            conds2.append(f"({c2})")
+            p2.extend(v2)
+            parts.append(f"SELECT ei.path FROM tags AS et JOIN sources AS es ON es.file_hash = et.file_hash JOIN files AS ei ON ei.source = es.source WHERE {' AND '.join(conds2)}")
+            params.extend(p2)
+
+        if query_all or SYSTEM_FILE_HASH_KEY in keys:
+            c3, p3 = build_like_condition("es.file_hash", exclude_kw, "OR", query_mode)
+            parts.append(f"SELECT ei.path FROM sources AS es JOIN files AS ei ON ei.source = es.source WHERE ({c3})")
+            params.extend(p3)
         if not parts:
             return "", []
         return " UNION ".join(parts), params

@@ -331,10 +331,18 @@ class FileExecutor:
 
 def build_drop_plans(parsed_items: list[ParsedItem], dst_dir: str, op: str) -> list[DropPlanItem]:
     plans = []
+    seen_local_sources: set[str] = set()
     for item in parsed_items:
         name = str(getattr(item, "name", "") or "")
         if not name:
             continue
+        if getattr(item, "is_local_file", lambda: False)():
+            src_key = os.path.abspath(str(getattr(item, "source", "") or ""))
+            if src_key and src_key in seen_local_sources:
+                AppLogger.warning(f"[drop] duplicate source dropped: {src_key}")
+                continue
+            if src_key:
+                seen_local_sources.add(src_key)
         dst_default = os.path.join(dst_dir, name)
         conflict = safe_exists(dst_default)
         if getattr(item, "is_local_file", lambda: False)():
@@ -384,7 +392,10 @@ class FileSaver:
 
 
 def delete_to_trash(paths: list[str | Path]) -> list[OperationResult]:
-    norm = [os.path.normpath(os.path.abspath(str(p))) for p in paths if p]
+    raw = [os.path.normpath(os.path.abspath(str(p))) for p in paths if p]
+    norm = list(dict.fromkeys(raw))
+    if len(norm) != len(raw):
+        AppLogger.warning(f"[delete] duplicate sources dropped: {len(raw)} -> {len(norm)}")
     if not norm:
         return []
     AppLogger.info(f"Deleting {len(norm)} files")

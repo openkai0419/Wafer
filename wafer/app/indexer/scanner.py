@@ -234,7 +234,6 @@ class DirectoryScanner:
                 source_entries.append((p, file_hash, fsize, mtime))
                 name = Path(p).name
                 file_entries.append((p, p, aspect_map.get(p, 1.0)))
-                meta_info_entries.append((p, "file_hash", file_hash, None))
                 meta_info_entries.append((p, "path", p, None))
                 meta_info_entries.append((p, "name", name, None))
                 meta_info_entries.append((p, "size", str(fsize), float(fsize)))

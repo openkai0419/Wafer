@@ -141,8 +141,18 @@ class ClipboardFilePaster:
             return []
 
         action, paths = extracted
+        unique_paths: list[Path] = []
+        seen: set[str] = set()
+        for src in paths:
+            key = str(src)
+            if key in seen:
+                continue
+            seen.add(key)
+            unique_paths.append(src)
+        if len(unique_paths) != len(paths):
+            AppLogger.warning(f"[paste] duplicate sources dropped: {len(paths)} -> {len(unique_paths)}")
         plan: list[PastePlanItem] = []
-        for i, src in enumerate(paths):
+        for i, src in enumerate(unique_paths):
             dst_default = dest_dir / src.name
             conflict = safe_exists(dst_default)
             suggested = Path(unique_path(dest_dir, src.name)) if conflict else None

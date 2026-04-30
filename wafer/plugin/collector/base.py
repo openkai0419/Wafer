@@ -13,6 +13,9 @@ class CollectorResult:
     status: bool
     path: str | None = None
     name: str | None = None
+    size: int | None = None
+    modified: float | None = None
+    created: float | None = None
     aspect: float | None = None
     file_hash: str | None = None
     meta_info: dict | None = None

@@ -6,7 +6,8 @@ import threading
 from pathlib import Path
 from collections.abc import Sequence
 
-from .db_utils import apply_read_pragmas, apply_write_pragmas, connect_with_retry
+from .db_utils import apply_read_pragmas, apply_write_pragmas, connect_with_retry, escape_like
+from ...constants import VIRTUAL_PATH_SEPARATOR
 from ...utils.profiling import profiler
 from ...utils.logs import AppLogger
 
@@ -30,6 +31,7 @@ _TABLES = (
         path TEXT PRIMARY KEY,
         source TEXT NOT NULL,
         aspect_ratio REAL,
+        source_collector TEXT,
         FOREIGN KEY(source) REFERENCES sources(source) ON UPDATE CASCADE ON DELETE CASCADE
     )""",
     ),
@@ -86,6 +88,7 @@ _VIEWS = (
 _INDEXES_SQL = """
     CREATE INDEX IF NOT EXISTS idx_sources_file_hash ON sources(file_hash);
     CREATE INDEX IF NOT EXISTS idx_files_source ON files(source);
+    CREATE INDEX IF NOT EXISTS idx_files_source_collector ON files(source_collector, source);
     CREATE INDEX IF NOT EXISTS idx_meta_info_key_fid ON meta_info(key, path);
     CREATE INDEX IF NOT EXISTS idx_meta_info_key_value ON meta_info(key, value);
     CREATE INDEX IF NOT EXISTS idx_meta_info_key_num ON meta_info(key, value_num);
@@ -104,17 +107,19 @@ _SQL_UPSERT_SOURCES = """INSERT INTO sources (source, file_hash, size, modified)
         size      = excluded.size,
         modified  = excluded.modified"""
 
-_SQL_UPSERT_FILES = """INSERT INTO files (path, source, aspect_ratio)
-    VALUES (?, ?, ?)
+_SQL_UPSERT_FILES = """INSERT INTO files (path, source, aspect_ratio, source_collector)
+    VALUES (?, ?, ?, ?)
     ON CONFLICT(path) DO UPDATE SET
         source       = excluded.source,
-        aspect_ratio = excluded.aspect_ratio"""
+        aspect_ratio = excluded.aspect_ratio,
+        source_collector = excluded.source_collector"""
 
-_SQL_UPSERT_FILES_COALESCE = """INSERT INTO files (path, source, aspect_ratio)
-    VALUES (?, ?, ?)
+_SQL_UPSERT_FILES_COALESCE = """INSERT INTO files (path, source, aspect_ratio, source_collector)
+    VALUES (?, ?, ?, ?)
     ON CONFLICT(path) DO UPDATE SET
         source       = excluded.source,
-        aspect_ratio = COALESCE(excluded.aspect_ratio, files.aspect_ratio)"""
+        aspect_ratio = COALESCE(excluded.aspect_ratio, files.aspect_ratio),
+        source_collector = excluded.source_collector"""
 
 _SQL_UPSERT_META = """INSERT INTO meta_info (path, key, value, value_num)
     VALUES (?, ?, ?, ?)
@@ -300,8 +305,10 @@ class FileDB:
         self.conn.executescript(_INDEXES_SQL)
 
     def _ensure_compatible_schema_migrations(self):
+        self._add_missing_column("files", "source_collector", "source_collector TEXT")
         self._add_missing_column("meta_info", "locked", "locked INTEGER NOT NULL DEFAULT 0")
         self._add_missing_column("tags", "locked", "locked INTEGER NOT NULL DEFAULT 0")
+        self._delete_duplicated_file_hash_meta()
 
     def _add_missing_column(self, table: str, column: str, column_sql: str):
         row = self.conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone()
@@ -313,6 +320,16 @@ class FileDB:
         self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column_sql}")
         self.conn.commit()
         AppLogger.info(f"[Schema] Added {table}.{column}")
+
+    def _delete_duplicated_file_hash_meta(self):
+        row = self.conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='meta_info'").fetchone()
+        if not row:
+            return
+        self.conn.execute("DELETE FROM meta_info WHERE key = 'file_hash'")
+        deleted = self.conn.execute("SELECT changes()").fetchone()[0]
+        if deleted:
+            self.conn.commit()
+            AppLogger.info(f"[Schema] Deleted duplicated meta_info.file_hash rows: {deleted}")
 
     def _detect_changed_tables(self):
         changed = set()
@@ -370,12 +387,15 @@ class FileDB:
             try:
                 cur.execute("PRAGMA foreign_keys=ON")
                 for old, new in pairs:
+                    path_map = self._renamed_file_paths(cur, old, new)
                     cur.execute("UPDATE sources SET source = ? WHERE source = ?", (new, old))
-                    cur.execute("UPDATE files SET path = ? WHERE source = ?", (new, new))
+                    for old_path, new_path in path_map.items():
+                        if old_path != new_path:
+                            cur.execute("UPDATE files SET path = ? WHERE path = ?", (new_path, old_path))
                     name = os.path.basename(new)
-                    cur.execute(
+                    cur.executemany(
                         "UPDATE meta_info SET value = ? WHERE path = ? AND key = 'path'",
-                        (new, new),
+                        [(new_path, new_path) for new_path in path_map.values()],
                     )
                     cur.execute(
                         "UPDATE meta_info SET value = ? WHERE path = ? AND key = 'name'",
@@ -383,6 +403,21 @@ class FileDB:
                     )
             finally:
                 cur.close()
+
+    @staticmethod
+    def _renamed_file_paths(cur, old: str, new: str) -> dict[str, str]:
+        prefix = old + VIRTUAL_PATH_SEPARATOR
+        rows = cur.execute(
+            "SELECT path FROM files WHERE source = ? AND (path = ? OR path LIKE ? ESCAPE '\\')",
+            (old, old, f"{escape_like(prefix)}%"),
+        ).fetchall()
+        paths: dict[str, str] = {}
+        for (path,) in rows:
+            if path == old:
+                paths[path] = new
+            elif path.startswith(prefix):
+                paths[path] = new + VIRTUAL_PATH_SEPARATOR + path[len(prefix) :]
+        return paths
 
     @staticmethod
     def _ensure_hash_indexes(cur, source_entries, tag_entries=()):
@@ -427,6 +462,18 @@ class FileDB:
             )
         AppLogger.info(f"[DB] Migrated tags for {len(migrations)} sources with content change")
 
+    @staticmethod
+    def _normalize_file_entries(image_entries):
+        entries = []
+        for entry in image_entries or []:
+            if len(entry) >= 4:
+                path, source, aspect, source_collector = entry[:4]
+            else:
+                path, source, aspect = entry[:3]
+                source_collector = None
+            entries.append((path, source, aspect, source_collector or None))
+        return entries
+
     @profiler.profile
     def upsert_batches(self, source_entries, image_entries, meta_info_entries, tag_entries):
         with self._write_lock, self.conn:
@@ -435,6 +482,7 @@ class FileDB:
                 self._ensure_hash_indexes(cur, source_entries, tag_entries)
                 self._migrate_tags_on_hash_change(cur, source_entries)
                 cur.executemany(_SQL_UPSERT_SOURCES, source_entries)
+                image_entries = self._normalize_file_entries(image_entries)
                 if image_entries:
                     cur.executemany(_SQL_UPSERT_FILES, image_entries)
                 if meta_info_entries:
@@ -452,6 +500,7 @@ class FileDB:
                 self._ensure_hash_indexes(cur, source_entries)
                 self._migrate_tags_on_hash_change(cur, source_entries)
                 cur.executemany(_SQL_UPSERT_SOURCES, source_entries)
+                image_entries = self._normalize_file_entries(image_entries)
                 if image_entries:
                     cur.executemany(_SQL_UPSERT_FILES_COALESCE, image_entries)
                 if meta_info_entries:
@@ -460,10 +509,11 @@ class FileDB:
                 cur.close()
 
     @profiler.profile
-    def upsert_collection_results(self, image_entries, meta_info_entries, tag_entries, collector_status_entries):
+    def upsert_collection_results(self, image_entries, meta_info_entries, tag_entries, collector_status_entries, *, cleanup: bool = True):
         with self._write_lock, self.conn:
             cur = self.conn.cursor()
             try:
+                image_entries = self._normalize_file_entries(image_entries)
                 if image_entries:
                     try:
                         cur.executemany(_SQL_UPSERT_FILES_COALESCE, image_entries)
@@ -486,8 +536,44 @@ class FileDB:
                         collector_status_entries = [e for e in collector_status_entries if e[0] in existing]
                         if collector_status_entries:
                             cur.executemany(_SQL_UPSERT_COLLECTION_STATUS, collector_status_entries)
+                if cleanup:
+                    self._delete_missing_source_collector_children(cur, image_entries, collector_status_entries)
             finally:
                 cur.close()
+
+    @profiler.profile
+    def cleanup_source_collector_children(self, image_entries, collector_status_entries):
+        with self._write_lock, self.conn:
+            cur = self.conn.cursor()
+            try:
+                entries = self._normalize_file_entries(image_entries)
+                self._delete_missing_source_collector_children(cur, entries, collector_status_entries)
+            finally:
+                cur.close()
+
+    def _delete_missing_source_collector_children(self, cur, image_entries, collector_status_entries):
+        ok_pairs = {(src, collector) for src, collector, status, *_ in (collector_status_entries or []) if src and collector and status == "ok"}
+        if not ok_pairs:
+            return
+        keep_by_pair: dict[tuple[str, str], set[str]] = {pair: set() for pair in ok_pairs}
+        for path, source, _aspect, source_collector in image_entries or []:
+            if not source_collector or path == source:
+                continue
+            pair = (source, source_collector)
+            if pair in keep_by_pair:
+                keep_by_pair[pair].add(path)
+        deleted = 0
+        for (source, collector), keep in keep_by_pair.items():
+            rows = cur.execute(
+                "SELECT path FROM files WHERE source = ? AND source_collector = ?",
+                (source, collector),
+            ).fetchall()
+            stale = [(row[0],) for row in rows if row[0] not in keep]
+            if stale:
+                cur.executemany("DELETE FROM files WHERE path = ?", stale)
+                deleted += len(stale)
+        if deleted:
+            AppLogger.info(f"[DB] Deleted stale source collector child rows: {deleted}")
 
     def _existing_sources(self, cur):
         cur.execute("SELECT source FROM sources")
@@ -642,11 +728,14 @@ class FileDB:
         meta_deleted = 0
         tags_deleted = 0
         cs_affected = 0
+        child_deleted = 0
         escaped = collector.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         pattern = f"{escaped}.%"
         with self._write_lock, self.conn:
             cur = self.conn.cursor()
             try:
+                cur.execute("DELETE FROM files WHERE source_collector = ?", (collector,))
+                child_deleted = cur.execute("SELECT changes()").fetchone()[0]
                 cur.execute("DELETE FROM meta_info WHERE key LIKE ? ESCAPE '\\' AND locked = 0", (pattern,))
                 meta_deleted = cur.execute("SELECT changes()").fetchone()[0]
                 cur.execute("DELETE FROM tags WHERE key LIKE ? ESCAPE '\\' AND locked = 0", (pattern,))
@@ -661,7 +750,7 @@ class FileDB:
                 cs_affected = cur.execute("SELECT changes()").fetchone()[0]
             finally:
                 cur.close()
-        AppLogger.info(f"[DB] Deleted collector={collector}: meta={meta_deleted}, tags={tags_deleted}, cs={cs_affected}")
+        AppLogger.info(f"[DB] Deleted collector={collector}: children={child_deleted}, meta={meta_deleted}, tags={tags_deleted}, cs={cs_affected}")
         return meta_deleted, tags_deleted, cs_affected
 
     def delete_keys(self, keys: list[str]) -> tuple[int, int]:
@@ -861,10 +950,16 @@ class FileDB:
             chunk = paths_list[i : i + 900]
             ph = ",".join(["?"] * len(chunk))
             if scope == "tag":
-                rows = cur.execute(f"SELECT source, file_hash FROM sources WHERE source IN ({ph})", chunk).fetchall()
-                for src, file_hash in rows:
+                rows = cur.execute(
+                    f"""SELECT i.path, s.file_hash
+                    FROM files AS i
+                    JOIN sources AS s ON s.source = i.source
+                    WHERE i.path IN ({ph})""",
+                    chunk,
+                ).fetchall()
+                for path, file_hash in rows:
                     if file_hash:
-                        result[src] = file_hash
+                        result[path] = file_hash
             else:
                 rows = cur.execute(f"SELECT path FROM files WHERE path IN ({ph})", chunk).fetchall()
                 for (path,) in rows:

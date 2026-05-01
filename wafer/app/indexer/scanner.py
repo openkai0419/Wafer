@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import bisect
 import os
 import threading
 import time
@@ -13,6 +12,7 @@ from ...utils.logs import AppLogger
 from ...utils.paths import normalize_path
 from ...utils.profiling import profiler
 from .db_writer import DatabaseWriter
+from .path_scope import contains_path_prefix, normalize_prefixes
 from .progress_notifier import ProgressAggregator
 from .scheduler import TaskScheduler
 from .task import CancelToken, Task, TaskPriority
@@ -77,9 +77,8 @@ class DirectoryScanner:
         self._request_event.set()
 
     def set_exclude_paths(self, paths: list[str]):
-        sorted_paths = sorted(normalize_path(p) for p in paths)
-        self._exclude_paths = sorted_paths
-        AppLogger.info(f"[Scanner] Exclude paths set: {len(sorted_paths)}")
+        self._exclude_paths = normalize_prefixes(paths)
+        AppLogger.info(f"[Scanner] Exclude paths set: {len(self._exclude_paths)}")
         self._submit_remove_excluded()
 
     def set_parsers(self, parsers: list[tuple[str, tuple[str, ...]]]):
@@ -118,14 +117,7 @@ class DirectoryScanner:
                     AppLogger.error(f"[Scanner] request failed ({kind}): {e}", exc=e)
 
     def _is_excluded(self, path: str) -> bool:
-        if not self._exclude_paths:
-            return False
-        idx = bisect.bisect_right(self._exclude_paths, path)
-        if idx > 0:
-            candidate = self._exclude_paths[idx - 1]
-            if path == candidate or path.startswith(candidate + "/"):
-                return True
-        return False
+        return contains_path_prefix(self._exclude_paths, path)
 
     @profiler.profile
     def _do_full_scan(self, root_paths: Sequence[str]):

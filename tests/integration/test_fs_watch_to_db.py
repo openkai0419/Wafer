@@ -1,4 +1,5 @@
 import os
+import shutil
 import time
 from pathlib import Path
 
@@ -41,6 +42,11 @@ def _wait_for_condition(predicate, timeout=15.0, interval=0.2):
 
 def _source_count(db):
     return db.read_conn.execute("SELECT count(*) FROM sources").fetchone()[0]
+
+
+def _sources(db):
+    rows = db.read_conn.execute("SELECT source FROM sources ORDER BY source").fetchall()
+    return [row[0] for row in rows]
 
 
 def _build_watcher_stack(tmp_path):
@@ -143,6 +149,85 @@ class TestFsWatchToDb:
             )
             assert len(paths) >= 1
             assert any("new_name" in p for p in paths)
+        finally:
+            watcher.stop()
+            scanner.stop()
+            scheduler.stop()
+            writer.close()
+
+    def test_directory_rename_inside_watched_root_tracked(self, tmp_path):
+        img_dir = tmp_path / "watched"
+        img_dir.mkdir()
+        src_dir = img_dir / "old_dir"
+        dst_dir = img_dir / "new_dir"
+        (src_dir / "nested").mkdir(parents=True)
+        _create_test_image(src_dir / "one.jpg", 100, 80)
+        _create_test_image(src_dir / "nested" / "two.jpg", 100, 80)
+
+        db_path, writer, scheduler, scanner, watcher = _build_watcher_stack(tmp_path)
+        scheduler.start()
+        scanner.start()
+        try:
+            watcher.start([str(img_dir)])
+            assert _wait_for_condition(lambda: _source_count(writer.db) >= 2)
+
+            shutil.move(str(src_dir), str(dst_dir))
+            expected = {
+                normalize_path(str(dst_dir / "one.jpg")),
+                normalize_path(str(dst_dir / "nested" / "two.jpg")),
+            }
+            assert _wait_for_condition(lambda: set(_sources(writer.db)) == expected, timeout=20.0)
+        finally:
+            watcher.stop()
+            scanner.stop()
+            scheduler.stop()
+            writer.close()
+
+    def test_directory_moved_outside_watched_root_removed(self, tmp_path):
+        img_dir = tmp_path / "watched"
+        outside = tmp_path / "outside"
+        img_dir.mkdir()
+        outside.mkdir()
+        src_dir = img_dir / "dir"
+        (src_dir / "nested").mkdir(parents=True)
+        _create_test_image(src_dir / "one.jpg", 100, 80)
+        _create_test_image(src_dir / "nested" / "two.jpg", 100, 80)
+
+        db_path, writer, scheduler, scanner, watcher = _build_watcher_stack(tmp_path)
+        scheduler.start()
+        scanner.start()
+        try:
+            watcher.start([str(img_dir)])
+            assert _wait_for_condition(lambda: _source_count(writer.db) >= 2)
+
+            shutil.move(str(src_dir), str(outside / "dir"))
+            assert _wait_for_condition(lambda: _source_count(writer.db) == 0, timeout=20.0)
+        finally:
+            watcher.stop()
+            scanner.stop()
+            scheduler.stop()
+            writer.close()
+
+    def test_directory_moved_into_ignored_folder_removed(self, tmp_path):
+        img_dir = tmp_path / "watched"
+        ignored = img_dir / "ignored"
+        img_dir.mkdir()
+        ignored.mkdir()
+        src_dir = img_dir / "dir"
+        (src_dir / "nested").mkdir(parents=True)
+        _create_test_image(src_dir / "one.jpg", 100, 80)
+        _create_test_image(src_dir / "nested" / "two.jpg", 100, 80)
+
+        db_path, writer, scheduler, scanner, watcher = _build_watcher_stack(tmp_path)
+        scheduler.start()
+        scanner.start()
+        try:
+            watcher.set_ignore_paths([str(ignored)])
+            watcher.start([str(img_dir)])
+            assert _wait_for_condition(lambda: _source_count(writer.db) >= 2)
+
+            shutil.move(str(src_dir), str(ignored / "dir"))
+            assert _wait_for_condition(lambda: _source_count(writer.db) == 0, timeout=20.0)
         finally:
             watcher.stop()
             scanner.stop()

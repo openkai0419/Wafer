@@ -38,8 +38,10 @@ def test_set_exclude_paths(tmp_path):
 
 
 def test_is_excluded(tmp_path):
+    from wafer.app.indexer.path_scope import normalize_prefixes
+
     scanner, *_ = _make_scanner(tmp_path)
-    scanner._exclude_paths = ["/a/b", "/c/d"]
+    scanner._exclude_paths = normalize_prefixes(["/a/b", "/c/d"])
     assert scanner._is_excluded("/a/b")
     assert scanner._is_excluded("/a/b/sub/file.png")
     assert not scanner._is_excluded("/a/c")

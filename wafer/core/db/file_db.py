@@ -410,6 +410,30 @@ class FileDB:
                 cur.close()
 
     @profiler.profile
+    def delete_sources_by_path_prefixes(self, paths: Sequence[str]):
+        prefixes = tuple(dict.fromkeys(p for p in paths if p))
+        if not prefixes:
+            return
+        with self._write_lock, self.conn:
+            cur = self.conn.cursor()
+            try:
+                existing = set()
+                for i in range(0, len(prefixes), 900):
+                    chunk = prefixes[i : i + 900]
+                    placeholders = ",".join(["?"] * len(chunk))
+                    rows = cur.execute(f"SELECT source FROM sources WHERE source IN ({placeholders})", chunk).fetchall()
+                    existing.update(row[0] for row in rows)
+                    cur.executemany("DELETE FROM sources WHERE source = ?", [(path,) for path in chunk])
+                for prefix in (path for path in prefixes if path not in existing):
+                    child_pattern = f"{escape_like(prefix if prefix.endswith('/') else prefix + '/')}%"
+                    cur.execute(
+                        "DELETE FROM sources WHERE source = ? OR source LIKE ? ESCAPE '\\'",
+                        (prefix, child_pattern),
+                    )
+            finally:
+                cur.close()
+
+    @profiler.profile
     def rename_paths(self, pairs: Sequence[tuple[str, str]]):
         if not pairs:
             return

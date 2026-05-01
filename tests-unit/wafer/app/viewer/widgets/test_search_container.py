@@ -3,7 +3,7 @@ from unittest.mock import patch, MagicMock
 
 from PySide6 import QtCore, QtWidgets
 
-from wafer.builtins.filters import TextFilter, DirectoryFilter
+from wafer.builtins.filters import TextFilter, DirectoryFilter, ContainedFilesFilter
 from wafer.plugin.query.base import KeyStore
 from wafer.plugin.query.widgets import _KeySelectorPopup
 from wafer.app.viewer.widgets.search_container import SearchContainer, FilterRow
@@ -235,6 +235,18 @@ class TestSearchContainer:
         assert entries[0][2] is None
         assert entries[1][0] is DirectoryFilter
         assert entries[1][1]["directories"] == ["/photos"]
+
+    def test_build_filter_entries_excludes_contained_files_when_disabled(self, qapp):
+        container = SearchContainer()
+        entries = container.build_filter_entries(include_contained_files=False)
+        assert len(entries) == 2
+        assert entries[0][0] is TextFilter
+        assert entries[1][0] is ContainedFilesFilter
+        assert entries[1][1] == {"include": False}
+
+    def test_internal_filters_are_hidden_from_add_menu(self, qapp):
+        container = SearchContainer()
+        assert ContainedFilesFilter not in container._available_filter_classes()
 
     def test_build_entries_multiple_rows(self, qapp):
         container = SearchContainer()

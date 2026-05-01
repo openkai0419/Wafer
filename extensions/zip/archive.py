@@ -5,6 +5,7 @@ import zipfile
 from dataclasses import dataclass
 
 from . import settings
+from wafer.utils.logs import AppLogger
 
 
 @dataclass(frozen=True)
@@ -25,13 +26,41 @@ def list_entries(zip_path: str) -> list[ZipEntry]:
 
 
 def open_zip(zip_path: str) -> zipfile.ZipFile:
-    metadata_encoding = settings.METADATA_ENCODING
-    if not metadata_encoding:
-        return zipfile.ZipFile(zip_path)
-    try:
-        return zipfile.ZipFile(zip_path, metadata_encoding=metadata_encoding)
-    except TypeError:
-        return zipfile.ZipFile(zip_path)
+    preferred = settings.METADATA_ENCODING
+    candidates = _metadata_encoding_candidates(preferred)
+    last_decode_error: UnicodeDecodeError | LookupError | None = None
+    for metadata_encoding in candidates:
+        try:
+            if metadata_encoding is None:
+                return zipfile.ZipFile(zip_path)
+            return zipfile.ZipFile(zip_path, metadata_encoding=metadata_encoding)
+        except TypeError as e:
+            AppLogger.warning(
+                f"[zip] metadata_encoding is not supported by this Python build: {metadata_encoding}",
+                exc=e,
+            )
+            return zipfile.ZipFile(zip_path)
+        except (UnicodeDecodeError, LookupError) as e:
+            last_decode_error = e
+            AppLogger.warning(
+                f"[zip] Failed metadata decoding with encoding={metadata_encoding}: {zip_path}",
+                exc=e,
+            )
+            continue
+    if last_decode_error is not None:
+        raise last_decode_error
+    return zipfile.ZipFile(zip_path)
+
+
+def _metadata_encoding_candidates(preferred: str | None) -> list[str | None]:
+    normalized = (preferred or "").strip()
+    if not normalized:
+        return [None]
+    candidates: list[str | None] = [normalized]
+    if normalized.lower() != "utf-8":
+        candidates.append("utf-8")
+    candidates.append(None)
+    return candidates
 
 
 def _is_file(info: zipfile.ZipInfo) -> bool:

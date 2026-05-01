@@ -24,7 +24,7 @@ class ZipCollectorPlugin(BaseCollectorPlugin):
     def process(self, path: str, file_info: tuple) -> list[CollectorResult]:
         try:
             entries = list_entries(path)
-        except (OSError, zipfile.BadZipFile) as e:
+        except (OSError, UnicodeDecodeError, zipfile.BadZipFile) as e:
             AppLogger.warning(f"[zip] Failed to enumerate archive: {path}", exc=e)
             return [CollectorResult(source=path, status=False)]
 

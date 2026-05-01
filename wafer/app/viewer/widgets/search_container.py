@@ -13,7 +13,7 @@ from ....core.qt.thread import utility_pool
 from ....core.commands.bridge import ActionKit, Menu
 from ....plugin.query.handler import filter_registry, sort_registry
 from ....plugin.query.base import KeyStore
-from ....builtins.filters import TextFilter, DirectoryFilter
+from ....builtins.filters import TextFilter, DirectoryFilter, ContainedFilesFilter
 
 
 class FilterRow(QtWidgets.QWidget):
@@ -270,7 +270,7 @@ class SearchContainer(QtWidgets.QWidget):
             spec.exec(self._add_button.mapToGlobal(QtCore.QPoint(0, self._add_button.height())))
 
     def _available_filter_classes(self) -> list[type]:
-        return [c for c in filter_registry.list_all() if c is not DirectoryFilter]
+        return [c for c in filter_registry.list_all() if c is not DirectoryFilter and not getattr(c, "INTERNAL_FILTER", False)]
 
     def _collect_inherited_params(self, end_index: int | None = None) -> dict:
         merged = {}
@@ -443,7 +443,7 @@ class SearchContainer(QtWidgets.QWidget):
             self._empty_row.show()
             self._tools_host = None
 
-    def build_filter_entries(self, directories=None, include_subfolders=True) -> list:
+    def build_filter_entries(self, directories=None, include_subfolders=True, include_contained_files=True) -> list:
         entries = []
         for row in self._rows:
             entry = row.read_entry()
@@ -456,6 +456,8 @@ class SearchContainer(QtWidgets.QWidget):
                 "include_subfolders": include_subfolders,
             }
             entries.append((DirectoryFilter, dir_params, None))
+        if not include_contained_files:
+            entries.append((ContainedFilesFilter, {"include": False}, None))
         return entries
 
     def get_sort(self) -> tuple[str, bool]:

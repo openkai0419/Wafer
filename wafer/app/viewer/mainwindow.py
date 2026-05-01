@@ -66,7 +66,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.search_service = SearchService(lambda: self.database_path, parent=self)
         self.search_service.search_started.connect(self._on_search_started)
         self.search_service.search_finished.connect(self._on_search_finished)
-        self.search_service.params_changed.connect(self._on_search_params_changed)
         UI.register_instance("SearchService", self.search_service)
         t.set_locale(app_settings.get("window/language", "en"))
         UI.register_instance("MainWindow", self)
@@ -182,7 +181,9 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         if self._folder_callout is not None:
             return
-        add_btn = self.iconbar.right_buttons[0]
+        add_btn = getattr(self, "_add_folder_btn", None)
+        if add_btn is None:
+            return
         callout = CalloutOverlay(add_btn, t("add folders from here"))
         callout.dismissed.connect(self._on_folder_callout_dismissed)
         add_btn.pressed.connect(self._dismiss_folder_callout)
@@ -299,17 +300,11 @@ class MainWindow(QtWidgets.QMainWindow):
                 IconButtonConfig("window", "Window", lambda: Menu.session(self).from_folder("Window").exec()),
             ],
             right_buttons=[
+                IconButtonConfig("query", "Query", self._show_query_menu),
                 IconButtonConfig("folder_plus", "Add Folder", lambda: Command.invoke("ft.add_folder")),
-                IconButtonConfig(
-                    "subfolder",
-                    "Include Subfolders",
-                    lambda checked: Command.invoke("qry.toggle_include_subfolders"),
-                    checkable=True,
-                    checked=self.search_service.get("include_subfolders", True),
-                ),
             ],
         )
-        self._subfolder_btn = self.iconbar.right_buttons[1]
+        self._add_folder_btn = self.iconbar.find_button("folder_plus", side="right")
         self._layout_edit_btn = self.iconbar.left_buttons[2]
         self._layout_manager.mode_changed.connect(self._on_layout_mode_changed)
         self.database_combo = ComboBoxWithButtons()
@@ -475,16 +470,20 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _save_file_viewer(self):
         mode = getattr(self.file_list_provider, "mode", None)
+        state = {
+            "open_contained_files_as_list": bool(getattr(self.file_list_provider, "open_contained_files_as_list", False)),
+        }
         if mode is None:
-            return {}
+            return state
         for cmd_id, m in (
             ("fv.list_sync", "sync"),
             ("fv.list_fix", "fix"),
             ("fv.list_dir", "dir"),
         ):
             if getattr(mode, "value", "") == m:
-                return {"list_mode": cmd_id}
-        return {}
+                state["list_mode"] = cmd_id
+                return state
+        return state
 
     def _restore_file_viewer(self, state):
         from ...builtins.commands.content_viewer import apply_list_mode
@@ -492,6 +491,8 @@ class MainWindow(QtWidgets.QMainWindow):
         cmd_id = state.get("list_mode")
         if cmd_id:
             apply_list_mode(self.file_list_provider, cmd_id)
+        if "open_contained_files_as_list" in state:
+            self.file_list_provider.set_open_contained_files_as_list(bool(state["open_contained_files_as_list"]))
 
     def sync_service_from_ui(self):
         dirs = self.folder_view.get_selected_paths()
@@ -499,6 +500,7 @@ class MainWindow(QtWidgets.QMainWindow):
             lambda: self.search_row_widget.build_filter_entries(
                 self.folder_view.get_selected_paths(),
                 self.search_service.get("include_subfolders", True),
+                self.search_service.get("include_contained_files", True),
             )
         )
         self.search_service.set_directories(dirs)
@@ -667,11 +669,8 @@ class MainWindow(QtWidgets.QMainWindow):
         if slot_id == self.slot_id:
             self.close_by_restart()
 
-    def _on_search_params_changed(self, changed):
-        if "include_subfolders" in changed:
-            self._subfolder_btn.blockSignals(True)
-            self._subfolder_btn.setChecked(changed["include_subfolders"])
-            self._subfolder_btn.blockSignals(False)
+    def _show_query_menu(self):
+        Menu.session(self).from_folder("Query").exec()
 
     def _show_loading(self):
         self.loading_indicator.start()

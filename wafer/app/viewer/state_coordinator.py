@@ -90,6 +90,7 @@ class QueryStateCoordinator:
             "sort_by": sort_by,
             "ascending": ascending,
             "include_subfolders": bool(self._w.search_service.get("include_subfolders", True)),
+            "include_contained_files": bool(self._w.search_service.get("include_contained_files", True)),
             "auto_execute": bool(self._w.search_service.get("auto_execute", True)),
         }
 
@@ -105,6 +106,8 @@ class QueryStateCoordinator:
         param_updates = {}
         if "include_subfolders" in query:
             param_updates["include_subfolders"] = bool(query["include_subfolders"])
+        if "include_contained_files" in query:
+            param_updates["include_contained_files"] = bool(query["include_contained_files"])
         if "auto_execute" in query:
             param_updates["auto_execute"] = bool(query["auto_execute"])
         if param_updates:

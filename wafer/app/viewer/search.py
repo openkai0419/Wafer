@@ -10,7 +10,7 @@ from ...core.qt.rate_limit import qt_debounce
 from ...core.qt.dispatcher import Dispatcher, CancelToken
 from ...core.qt.thread import utility_pool
 from ...plugin.query.handler import sort_registry
-from ...builtins.filters import TextFilter, DirectoryFilter
+from ...builtins.filters import TextFilter, DirectoryFilter, ContainedFilesFilter
 from ...builtins.sorts import NaturalPathSort
 
 
@@ -22,6 +22,7 @@ _DEFAULTS = {
     "ascending": True,
     "keyword_separator": ",",
     "include_subfolders": True,
+    "include_contained_files": True,
     "auto_execute": True,
 }
 
@@ -123,6 +124,8 @@ class SearchService(QtCore.QObject):
                 "include_subfolders": self._params.get("include_subfolders", True),
             }
             entries.append((DirectoryFilter, dir_params, None))
+        if not self._params.get("include_contained_files", True):
+            entries.append((ContainedFilesFilter, {"include": False}, None))
         return entries
 
     @profiler.profile

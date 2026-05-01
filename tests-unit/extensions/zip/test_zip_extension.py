@@ -4,6 +4,7 @@ import zipfile
 
 from PIL import Image
 
+from extensions.zip import archive
 from extensions.zip.cache import ZipCache
 from extensions.zip.collector import ZipCollectorPlugin
 from wafer.utils.virtual_paths import build_virtual_path, child_path
@@ -89,3 +90,35 @@ def test_zip_cache_sweep_lru_evicts_when_over_size_cap(tmp_path):
     assert lru >= 1
     assert not os.path.exists(a_real)
     assert os.path.exists(c_real)
+
+
+def test_open_zip_fallbacks_from_cp932_to_utf8(monkeypatch):
+    calls = []
+    expected = object()
+
+    def fake_zip_file(_path, metadata_encoding=None):
+        calls.append(metadata_encoding)
+        if metadata_encoding == "cp932":
+            raise UnicodeDecodeError("cp932", b"\xec", 0, 1, "illegal multibyte sequence")
+        return expected
+
+    monkeypatch.setattr("extensions.zip.archive.settings.METADATA_ENCODING", "cp932")
+    monkeypatch.setattr("extensions.zip.archive.zipfile.ZipFile", fake_zip_file)
+
+    actual = archive.open_zip("dummy.zip")
+
+    assert actual is expected
+    assert calls == ["cp932", "utf-8"]
+
+
+def test_zip_collector_returns_failure_on_unicode_decode_error(monkeypatch):
+    def raise_unicode(_path):
+        raise UnicodeDecodeError("cp932", b"\xec", 0, 1, "illegal multibyte sequence")
+
+    monkeypatch.setattr("extensions.zip.collector.list_entries", raise_unicode)
+
+    results = ZipCollectorPlugin().process("broken.zip", (0.0, 0))
+
+    assert len(results) == 1
+    assert results[0].source == "broken.zip"
+    assert results[0].status is False

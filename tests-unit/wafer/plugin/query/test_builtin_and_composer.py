@@ -6,7 +6,7 @@ from wafer.core.db.file_db import FileDB
 from wafer.core.db.query import FileSearchEngine
 from wafer.plugin.query.composer import SearchComposer
 from wafer.plugin.query.base import BaseFilterPlugin
-from wafer.builtins.filters import TextFilter, DirectoryFilter
+from wafer.builtins.filters import TextFilter, DirectoryFilter, ContainedFilesFilter, SourceChildrenFilter
 from wafer.builtins.sorts import (
     NaturalPathSort,
     NaturalNameSort,
@@ -17,6 +17,7 @@ from wafer.builtins.sorts import (
     RandomSort,
 )
 from wafer.utils.paths import normalize_path
+from wafer.utils.virtual_paths import build_virtual_path, register_owner_extension
 
 
 def np(p):
@@ -78,6 +79,37 @@ def special_db(tmp_path):
     db.conn.commit()
     db.close()
     return db_path
+
+
+@pytest.fixture
+def contained_db(tmp_path):
+    register_owner_extension(".zip")
+    db_path = str(tmp_path / "contained.db")
+    db = FileDB(db_path)
+    db.start()
+    db.initialize_database()
+    archive = "C:/archives/temp.zip"
+    child_a = build_virtual_path(archive, "a.png")
+    child_b = build_virtual_path(archive, "nested/b.png")
+    plain = "C:/photos/plain.png"
+    db.upsert_batches(
+        [
+            (archive, "hash_zip", 1000, 1.0),
+            (plain, "hash_plain", 2000, 2.0),
+        ],
+        [
+            (archive, archive, "temp.zip", 1.0, None),
+            (child_a, archive, "a.png", 1.0, "zip"),
+            (child_b, archive, "b.png", 1.0, "zip"),
+            (plain, plain, "plain.png", 1.0, None),
+        ],
+        [],
+        [],
+    )
+    db.conn.execute("ANALYZE")
+    db.conn.commit()
+    db.close()
+    return db_path, archive, child_a, child_b, plain
 
 
 @pytest.fixture
@@ -213,6 +245,31 @@ class TestDirectoryFilterBuildPathQuery:
         assert len(bind) == 2
 
 
+class TestContainedFilesFilterBuildPathQuery:
+    def test_include_true_noops(self):
+        sql, bind = ContainedFilesFilter.build_path_query({"include": True}, np)
+        assert sql is None
+        assert bind == []
+
+    def test_include_false_uses_source_extension_index(self):
+        sql, bind = ContainedFilesFilter.build_path_query({"include": False}, np)
+        assert sql == "SELECT path FROM files WHERE source_extension IS NULL"
+        assert bind == []
+
+
+class TestSourceChildrenFilterBuildPathQuery:
+    def test_source_children_query_uses_source_and_prefix(self):
+        sql, bind = SourceChildrenFilter.build_path_query({"source": "C:/archives/temp.zip"}, np)
+        assert "source = ?" in sql
+        assert "path LIKE ?" in sql
+        assert bind == ["C:/archives/temp.zip", "C:/archives/temp.zip::%"]
+
+    def test_source_children_empty_source_noops(self):
+        sql, bind = SourceChildrenFilter.build_path_query({"source": ""}, np)
+        assert sql is None
+        assert bind == []
+
+
 class TestDirectoryFilterExecution:
     def test_filter_vacation(self, engine, composer):
         entries = [
@@ -255,6 +312,24 @@ class TestDirectoryFilterExecution:
         ]
         paths, _, _ = composer.execute(engine, entries, NaturalNameSort, True)
         assert len(paths) == 100
+
+
+class TestContainedFilesFilterExecution:
+    def test_contained_files_can_be_excluded(self, contained_db, composer):
+        db_path, archive, child_a, child_b, plain = contained_db
+        engine = FileSearchEngine(db_path)
+        paths, _, _ = composer.execute(engine, [(ContainedFilesFilter, {"include": False}, None)], NaturalPathSort, True)
+        assert set(paths) == {archive, plain}
+        assert child_a not in paths
+        assert child_b not in paths
+
+    def test_source_children_lists_archive_members_only(self, contained_db, composer):
+        db_path, archive, child_a, child_b, plain = contained_db
+        engine = FileSearchEngine(db_path)
+        paths, sources, _ = composer.execute(engine, [(SourceChildrenFilter, {"source": archive}, None)], NaturalPathSort, True)
+        assert paths == [child_a, child_b]
+        assert sources == [archive, archive]
+        assert plain not in paths
 
 
 class TestComposerCombineLogic:

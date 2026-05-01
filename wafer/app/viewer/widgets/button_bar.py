@@ -22,6 +22,7 @@ class IconButtonBar(QWidget):
         self.icon_size = icon_size or QSize(dpix(15), dpix(15))
         self.left_buttons = []
         self.right_buttons = []
+        self._buttons_by_side_key = {"left": {}, "right": {}}
         self._icon_keys: list[tuple[QtWidgets.QPushButton, str, float]] = []
         self.layout = QHBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
@@ -41,6 +42,7 @@ class IconButtonBar(QWidget):
             btn.setIcon(themed_icon(cfg.icon_key, margin=cfg.margin))
             btn.setIconSize(self.icon_size)
             self._icon_keys.append((btn, cfg.icon_key, cfg.margin))
+            self._buttons_by_side_key.setdefault(side, {})[cfg.icon_key] = btn
             btn.setToolTip(cfg.tooltip)
             btn.setCheckable(cfg.checkable)
             if btn.isCheckable():
@@ -70,3 +72,11 @@ class IconButtonBar(QWidget):
             if checked is None:
                 checked = not target[index].isChecked()
             target[index].setChecked(checked)
+
+    def find_button(self, icon_key: str, side: str | None = None):
+        if side:
+            return self._buttons_by_side_key.get(side, {}).get(icon_key)
+        left = self._buttons_by_side_key.get("left", {})
+        if icon_key in left:
+            return left[icon_key]
+        return self._buttons_by_side_key.get("right", {}).get(icon_key)

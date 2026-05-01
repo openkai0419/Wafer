@@ -30,6 +30,7 @@ class KeyStore(QtCore.QObject):
 class BaseFilterPlugin(PluginBase, ABC):
     DISPLAY_NAME: str = ""
     QUERY_SCOPE: str = "row"
+    INTERNAL_FILTER: bool = False
 
     @classmethod
     @abstractmethod

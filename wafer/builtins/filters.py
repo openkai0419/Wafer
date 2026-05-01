@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ..constants import VIRTUAL_PATH_SEPARATOR
 from ..core.db.db_utils import build_like_condition, escape_like
 from ..core.db.query import SYSTEM_FILE_HASH_KEY, STANDARD_KEYS, standard_key_columns
 from ..plugin.query.base import BaseFilterPlugin
@@ -232,6 +233,37 @@ class DirectoryFilter(BaseFilterPlugin):
             return None, []
         where = " OR ".join(clauses)
         return f"SELECT DISTINCT path FROM files WHERE {where}", bind
+
+
+class ContainedFilesFilter(BaseFilterPlugin):
+    NAME = "contained_files"
+    DISPLAY_NAME = "Contained Files"
+    PRIORITY = 89
+    QUERY_SCOPE = "global"
+    INTERNAL_FILTER = True
+
+    @classmethod
+    @profiler.profile
+    def build_path_query(cls, params, normalize_path):
+        if params.get("include", True):
+            return None, []
+        return "SELECT path FROM files WHERE source_extension IS NULL", []
+
+
+class SourceChildrenFilter(BaseFilterPlugin):
+    NAME = "source_children"
+    PRIORITY = 88
+    INTERNAL_FILTER = True
+
+    @classmethod
+    @profiler.profile
+    def build_path_query(cls, params, normalize_path):
+        source = params.get("source")
+        if not isinstance(source, str) or not source:
+            return None, []
+        normalized = normalize_path(source)
+        prefix = f"{normalized}{VIRTUAL_PATH_SEPARATOR}"
+        return "SELECT path FROM files WHERE source = ? AND path LIKE ? ESCAPE '\\'", [normalized, f"{escape_like(prefix)}%"]
 
 
 class MarkFilter(BaseFilterPlugin):

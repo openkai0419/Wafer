@@ -2,7 +2,7 @@ from unittest.mock import patch
 from wafer.app.viewer.search import SearchService, _DEFAULTS
 from wafer.plugin.query.handler import sort_registry
 from wafer.core.qt.dispatcher import CancelToken
-from wafer.builtins.filters import TextFilter, DirectoryFilter
+from wafer.builtins.filters import TextFilter, DirectoryFilter, ContainedFilesFilter
 
 
 def _make_service():
@@ -99,6 +99,14 @@ def test_build_filter_entries_with_directories():
     assert entries[1][2] is None
 
 
+def test_build_filter_entries_excludes_contained_files_when_disabled():
+    svc = _make_service()
+    svc.set_param("include_contained_files", False)
+    entries = svc.build_filter_entries()
+    assert entries[-1][0] is ContainedFilesFilter
+    assert entries[-1][1] == {"include": False}
+
+
 def test_resolve_sort():
     svc = _make_service()
     svc.set_param("sort_by", "modified")
@@ -176,6 +184,14 @@ def test_query_snapshot_changes_with_directories():
     svc = _make_service()
     snap1 = svc._query_snapshot()
     svc.set_directories(["/dir"])
+    snap2 = svc._query_snapshot()
+    assert snap1 != snap2
+
+
+def test_query_snapshot_changes_with_contained_files_setting():
+    svc = _make_service()
+    snap1 = svc._query_snapshot()
+    svc.set_param("include_contained_files", False)
     snap2 = svc._query_snapshot()
     assert snap1 != snap2
 

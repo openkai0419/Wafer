@@ -111,6 +111,15 @@ def toggle_include_subfolders(ctx):
     svc.execute_if_auto()
 
 
+def toggle_include_contained_files(ctx):
+    svc = _service(ctx)
+    if not svc:
+        return
+    current = svc.get("include_contained_files", True)
+    svc.set_param("include_contained_files", not current)
+    svc.execute_if_auto()
+
+
 def toggle_auto_execute(ctx):
     svc = _service(ctx)
     if not svc:
@@ -173,6 +182,14 @@ class QueryCommands(ActionKit.MenuBase):
                 checkable=True,
                 default_checked=True,
                 checked_resolver=lambda: _svc().get("include_subfolders", True) if _svc() else True,
+            ),
+            ActionKit.Command(
+                path="qry.toggle_include_contained_files",
+                display="Include Contained Files",
+                func=toggle_include_contained_files,
+                checkable=True,
+                default_checked=True,
+                checked_resolver=lambda: _svc().get("include_contained_files", True) if _svc() else True,
             ),
             "-",
             ":Sort",

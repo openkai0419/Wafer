@@ -187,6 +187,14 @@ def _expected_table_signature(name, create_sql):
     return _EXPECTED_SIGNATURES[name]
 
 
+def _table_columns(conn, name):
+    return [row[1] for row in conn.execute(f"PRAGMA table_info('{name}')").fetchall()]
+
+
+def _quote_identifier(name: str) -> str:
+    return f'"{name.replace(chr(34), chr(34) * 2)}"'
+
+
 class FileDB:
     def __init__(self, db_path: str | Path):
         self.db_path = Path(db_path)
@@ -301,15 +309,15 @@ class FileDB:
     def _ensure_schema(self):
         self._ensure_compatible_schema_migrations()
         changed = self._detect_changed_tables()
+        for name, _ in reversed(_VIEWS):
+            self.conn.execute(f"DROP VIEW IF EXISTS {name}")
         if changed:
             AppLogger.info(f"[Schema] Recreating tables: {changed}")
-            self._drop_tables(changed)
+            self._recreate_tables(changed)
         self.conn.execute("PRAGMA foreign_keys=ON")
         for _, _, sql in _TABLES:
             self.conn.execute(sql)
         self.conn.commit()
-        for name, _ in reversed(_VIEWS):
-            self.conn.execute(f"DROP VIEW IF EXISTS {name}")
         for _, sql in _VIEWS:
             self.conn.execute(sql)
         self.conn.commit()
@@ -346,12 +354,35 @@ class FileDB:
                 changed.add(name)
         return changed
 
-    def _drop_tables(self, tables):
+    def _recreate_tables(self, tables):
+        ordered_tables = [name for name, _, _ in _TABLES if name in tables and _table_signature(self.conn, name) is not None]
+        if not ordered_tables:
+            return
+
+        backup_names = {name: f"__old__{name}" for name in ordered_tables}
         self.conn.execute("PRAGMA foreign_keys=OFF")
-        for name, _, _ in reversed(_TABLES):
-            if name in tables:
-                self.conn.execute(f"DROP TABLE IF EXISTS {name}")
-        self.conn.commit()
+        try:
+            for name in reversed(ordered_tables):
+                backup_name = backup_names[name]
+                self.conn.execute(f"DROP TABLE IF EXISTS {_quote_identifier(backup_name)}")
+                self.conn.execute(f"ALTER TABLE {_quote_identifier(name)} RENAME TO {_quote_identifier(backup_name)}")
+
+            for _, _, sql in _TABLES:
+                self.conn.execute(sql)
+
+            for name in ordered_tables:
+                backup_name = backup_names[name]
+                columns = [column for column in _table_columns(self.conn, backup_name) if column in set(_table_columns(self.conn, name))]
+                if columns:
+                    columns_sql = ", ".join(_quote_identifier(column) for column in columns)
+                    self.conn.execute(f"INSERT INTO {_quote_identifier(name)} ({columns_sql}) SELECT {columns_sql} FROM {_quote_identifier(backup_name)}")
+
+            for name in reversed(ordered_tables):
+                self.conn.execute(f"DROP TABLE IF EXISTS {_quote_identifier(backup_names[name])}")
+
+            self.conn.commit()
+        finally:
+            self.conn.execute("PRAGMA foreign_keys=ON")
 
     @profiler.profile
     def load_existing_sources(self) -> dict[str, tuple[float, int]]:
@@ -471,9 +502,7 @@ class FileDB:
                 name = None
                 source_extension = None
             else:
-                raise ValueError(
-                    f"file entry must be (path, source, aspect) or (path, source, name, aspect, source_extension): got {entry!r}"
-                )
+                raise ValueError(f"file entry must be (path, source, aspect) or (path, source, name, aspect, source_extension): got {entry!r}")
             if not name:
                 name = display_name(path) if path else None
             entries.append((path, source, name, aspect, source_extension or None))
@@ -490,9 +519,7 @@ class FileDB:
                 src, fh, size, mtime = entry
                 entries.append((src, fh, size, mtime, None, None))
             else:
-                raise ValueError(
-                    f"source entry must be (source, file_hash, size, modified) or include (created, collected): got {entry!r}"
-                )
+                raise ValueError(f"source entry must be (source, file_hash, size, modified) or include (created, collected): got {entry!r}")
         return entries
 
     @profiler.profile

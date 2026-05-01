@@ -12,10 +12,6 @@ class ZipGridPlugin(BaseGridPlugin):
     PRIORITY = 80
     DEFAULT_ENABLED = True
 
-    @classmethod
-    def configure(cls):
-        zip_cache.start_idle_sweep()
-
     def resolve_target(self, path: str, grid_resolver, context: ResolveContext) -> RenderTarget:
         real_path = zip_cache.materialize(path, purpose="grid")
         return context.resolve_child(real_path, grid_resolver.resolve_target)

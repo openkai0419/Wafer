@@ -392,7 +392,13 @@ class FileSaver:
 
 
 def delete_to_trash(paths: list[str | Path]) -> list[OperationResult]:
-    raw = [os.path.normpath(os.path.abspath(str(p))) for p in paths if p]
+    from ...utils.virtual_paths import is_virtual_path
+
+    physical = [p for p in paths if p and not is_virtual_path(str(p))]
+    rejected = len(paths) - len(physical)
+    if rejected:
+        AppLogger.warning(f"[delete] virtual paths rejected: {rejected} entries (file ops must target source files)")
+    raw = [os.path.normpath(os.path.abspath(str(p))) for p in physical]
     norm = list(dict.fromkeys(raw))
     if len(norm) != len(raw):
         AppLogger.warning(f"[delete] duplicate sources dropped: {len(raw)} -> {len(norm)}")

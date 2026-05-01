@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .db_utils import apply_read_pragmas, build_like_condition, escape_like
 from ...utils.paths import normalize_path
-from ...utils.virtual_paths import build_virtual_path, split_virtual_path
+from ...utils.virtual_paths import build_virtual_path, is_virtual_path, split_virtual_path
 from ...utils.profiling import profiler
 from ...utils.logs import AppLogger
 
@@ -315,9 +315,10 @@ class FileSearchEngine:
             self.conn = None
 
     def _normalize_path(self, path):
-        parts = split_virtual_path(path)
-        if parts:
-            return build_virtual_path(normalize_path(parts[0]), parts[1])
+        if is_virtual_path(path):
+            parts = split_virtual_path(path)
+            if parts:
+                return build_virtual_path(normalize_path(parts[0]), parts[1])
         return normalize_path(path)
 
     @profiler.profile

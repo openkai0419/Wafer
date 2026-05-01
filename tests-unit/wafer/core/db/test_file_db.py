@@ -88,7 +88,7 @@ def test_schema_no_change_preserves_data(tmp_path):
     db2.close()
 
 
-def test_schema_change_drops_and_recreates(tmp_path):
+def test_schema_change_recreates_and_preserves_rows(tmp_path):
     db = FileDB(tmp_path / "test.db")
     db.start()
     db.initialize_database()
@@ -105,13 +105,13 @@ def test_schema_change_drops_and_recreates(tmp_path):
     db2.start()
     db2.initialize_database()
     prev = db2.load_existing_sources()
-    assert len(prev) == 0
+    assert prev == {"src1": (1.0, 100)}
     cols = [r[1] for r in db2.conn.execute("PRAGMA table_info('sources')").fetchall()]
     assert "extra_col" not in cols
     db2.close()
 
 
-def test_schema_change_cascades_to_children(tmp_path):
+def test_schema_change_cascades_to_children_without_data_loss(tmp_path):
     db = FileDB(tmp_path / "test.db")
     db.start()
     db.initialize_database()
@@ -129,8 +129,10 @@ def test_schema_change_cascades_to_children(tmp_path):
     db2.initialize_database()
     imgs = db2.conn.execute("SELECT COUNT(*) FROM files").fetchone()[0]
     metas = db2.conn.execute("SELECT COUNT(*) FROM meta_info").fetchone()[0]
-    assert imgs == 0
-    assert metas == 0
+    assert imgs == 1
+    assert metas == 1
+    row = db2.conn.execute("SELECT value FROM meta_info WHERE path = ? AND key = ?", ("c:/a.jpg", "k")).fetchone()
+    assert row == ("v",)
     db2.close()
 
 

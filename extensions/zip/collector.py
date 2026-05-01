@@ -21,10 +21,6 @@ class ZipCollectorPlugin(BaseCollectorPlugin):
     DEFAULT_ENABLED = True
     BATCH_SIZE = 1
 
-    @classmethod
-    def configure(cls):
-        zip_cache.start_idle_sweep()
-
     def process(self, path: str, file_info: tuple) -> list[CollectorResult]:
         try:
             entries = list_entries(path)

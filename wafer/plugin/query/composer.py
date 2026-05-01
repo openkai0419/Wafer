@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from ...utils.profiling import profiler
-from ...core.db.query import _kv_sort_join, SYSTEM_FILE_HASH_KEY, STANDARD_KEYS, STANDARD_KEYS_FILES, STANDARD_KEYS_SOURCES
+from ...core.db.query import _kv_sort_join, SYSTEM_FILE_HASH_KEY, STANDARD_KEYS_FILES, STANDARD_KEYS_SOURCES
 from .base import BaseFilterPlugin
 
 

@@ -33,6 +33,7 @@ class ZipCache:
         self._sweep_lock = threading.Lock()
 
     def materialize(self, logical_path: str, purpose: str = "render") -> str:
+        self.start_idle_sweep()
         source = source_path(logical_path)
         member = child_path(logical_path)
         if not member:

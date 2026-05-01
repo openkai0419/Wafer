@@ -25,7 +25,11 @@ class AnimatedViewerWidget(QtWidgets.QWidget, ActionKit.UIMixin):
         UI.register_instance("AnimatedViewerWidget", self)
 
     def extend_context(self, ctx, cmd, event=None, key=None, source=None):
-        return {"path": self._path, "paths": [self._path] if self._path else []}
+        from wafer.utils.virtual_paths import physical_path
+
+        p = self._path
+        s = physical_path(p) if p else None
+        return {"path": p, "paths": [p] if p else [], "source": s, "sources": [s] if s else []}
 
     def load(self, path: str):
         self._cancel.cancel()

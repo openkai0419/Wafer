@@ -10,6 +10,15 @@ from wafer.core.ipc.message import Message
 from wafer.core.ipc.node import Node
 
 
+def _wait_until(predicate, timeout=5.0, interval=0.05):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(interval)
+    return predicate()
+
+
 def test_compile():
     py_compile.compile("wafer/core/ipc/message.py")
     py_compile.compile("wafer/core/ipc/broker.py")
@@ -464,10 +473,10 @@ class TestProfileTracking:
             time.sleep(0.3)
 
             n1.stop()
-            time.sleep(0.5)
-
-            assert "anon-2" in store.get_restore_slot_ids()
-            assert "anon-1" not in store.get_restore_slot_ids()
+            assert _wait_until(
+                lambda: "anon-2" in store.get_restore_slot_ids() and "anon-1" not in store.get_restore_slot_ids(),
+                timeout=3.0,
+            )
         finally:
             n2.stop()
             broker.stop()
@@ -557,8 +566,9 @@ class TestBrokerLostTimeout:
         node.on_broker_lost(fired.set)
         node.start(port=59999)
         try:
-            assert not fired.wait(1.5)
-            assert fired.wait(6.0)
+            start = time.monotonic()
+            assert fired.wait(node._broker_lost_timeout + 6.0)
+            assert time.monotonic() - start >= node._broker_lost_timeout
             assert node._stop.is_set()
         finally:
             node.stop()

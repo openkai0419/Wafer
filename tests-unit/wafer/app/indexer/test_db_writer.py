@@ -5,6 +5,7 @@ import tempfile
 import pytest
 
 from wafer.app.indexer.db_writer import DatabaseWriter
+from wafer.utils.virtual_paths import build_virtual_path
 
 
 def test_compile():
@@ -129,6 +130,69 @@ def test_upsert_collection_results(writer):
     cur.execute("SELECT value FROM tags WHERE file_hash='hash1' AND key='rating'")
     assert cur.fetchone()[0] == "5"
     cur.close()
+
+
+def test_zip_collection_deletes_stale_child_rows(writer):
+    source = "/a.zip"
+    old_child = build_virtual_path(source, "old.png")
+    keep_child = build_virtual_path(source, "keep.png")
+    writer.upsert_sources([(source, "hash_zip", 100, 1.0)], [(source, source, 1.0)])
+    writer.upsert_results(
+        [(old_child, source, "old.png", 1.0, "zip"), (keep_child, source, "keep.png", 1.0, "zip")],
+        [],
+        [],
+        [(source, "zip", "ok", 2.0)],
+    )
+    writer.upsert_results(
+        [(keep_child, source, "keep.png", 2.0, "zip")],
+        [],
+        [],
+        [(source, "zip", "ok", 3.0)],
+    )
+
+    cur = writer.db.get_reader_cursor()
+    cur.execute("SELECT path FROM files WHERE source = ? ORDER BY path", (source,))
+    paths = [row[0] for row in cur.fetchall()]
+    cur.close()
+    assert paths == [source, keep_child]
+
+
+def test_zip_collection_empty_result_deletes_child_rows(writer):
+    source = "/a.zip"
+    child = build_virtual_path(source, "old.png")
+    writer.upsert_sources([(source, "hash_zip", 100, 1.0)], [(source, source, 1.0)])
+    writer.upsert_results(
+        [(child, source, "old.png", 1.0, "zip")],
+        [],
+        [],
+        [(source, "zip", "ok", 2.0)],
+    )
+    writer.upsert_results([], [], [], [(source, "zip", "ok", 3.0)])
+
+    cur = writer.db.get_reader_cursor()
+    cur.execute("SELECT path FROM files WHERE source = ? ORDER BY path", (source,))
+    paths = [row[0] for row in cur.fetchall()]
+    cur.close()
+    assert paths == [source]
+
+
+def test_zip_collection_fail_does_not_delete_child_rows(writer):
+    source = "/a.zip"
+    child = build_virtual_path(source, "old.png")
+    writer.upsert_sources([(source, "hash_zip", 100, 1.0)], [(source, source, 1.0)])
+    writer.upsert_results(
+        [(child, source, "old.png", 1.0, "zip")],
+        [],
+        [],
+        [(source, "zip", "ok", 2.0)],
+    )
+    writer.upsert_results([], [], [], [(source, "zip", "fail", 3.0)])
+
+    cur = writer.db.get_reader_cursor()
+    cur.execute("SELECT path FROM files WHERE source = ? ORDER BY path", (source,))
+    paths = [row[0] for row in cur.fetchall()]
+    cur.close()
+    assert paths == [source, child]
 
 
 def test_delete_orphans(writer):

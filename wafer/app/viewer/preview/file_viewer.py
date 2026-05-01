@@ -6,6 +6,7 @@ from natsort import natsorted
 from ....utils.formatting import format_aspect, format_size_detail, format_timestamp
 from ....utils.paths import db_name_from_path
 from ....core.db.query import FileSearchEngine
+from ....core.files.render_target import RenderTarget, TARGET_WIDGET
 from ....plugin.viewer.handler import viewer_resolver
 from ....plugin.viewer.base import WidgetViewerPlugin as _WidgetViewerPlugin
 from ....core.qt.dispatcher import Dispatcher, CancelSlot
@@ -19,19 +20,37 @@ from ..grid.cachemanager import MemoryLimitedImageCache, fullsize_key
 from ....core.app_settings import app_settings
 from ....core.color.theme import ThemeManager
 
-_STANDARD_META_KEYS = ("name", "path", "file_hash", "size", "created", "modified", "collected")
+_STANDARD_SOURCE_KEYS = ("source", "size", "created", "modified", "collected", "file_hash")
+_STANDARD_FILE_KEYS = ("path", "name", "aspect_ratio", "source_extension")
 
 
 def _format_meta(engine, path, dbpath):
-    file_rec, file_hash, tags_with_lock, meta_infos_with_lock = engine.get_all_metadata_with_locks(path)
+    source_rec, file_rec, file_hash, tags_with_lock, meta_infos_with_lock = engine.get_all_metadata_with_locks(path)
     tags = {k: v for k, (v, _) in tags_with_lock.items()}
     tag_locks = {k: lk for k, (_, lk) in tags_with_lock.items()}
     meta_infos = {k: v for k, (v, _) in meta_infos_with_lock.items()}
     meta_locks = {k: lk for k, (_, lk) in meta_infos_with_lock.items()}
-    file_rec.pop("path", None)
     if file_rec.get("aspect_ratio"):
         file_rec["aspect_ratio"] = format_aspect(file_rec["aspect_ratio"])
-    standard = {}
+    if not file_rec.get("source_extension"):
+        file_rec.pop("source_extension", None)
+    file_section = {k: file_rec[k] for k in _STANDARD_FILE_KEYS if k in file_rec and file_rec[k] is not None}
+    source_section: dict = {}
+    for k in _STANDARD_SOURCE_KEYS:
+        v = source_rec.get(k)
+        if v is None:
+            continue
+        if k == "size":
+            try:
+                v = format_size_detail(float(v))
+            except (ValueError, TypeError):
+                pass
+        elif k in ("created", "modified", "collected"):
+            try:
+                v = format_timestamp(float(v))
+            except (ValueError, TypeError):
+                pass
+        source_section[k] = v
     meta_prefixed: dict[str, dict] = {}
     meta_prefixed_locks: dict[str, dict] = {}
     meta_root: dict[str, str] = {}
@@ -47,8 +66,6 @@ def _format_meta(engine, path, dbpath):
             short = k[dot + 1 :]
             meta_prefixed.setdefault(prefix, {})[short] = v
             meta_prefixed_locks.setdefault(prefix, {})[short] = meta_locks.get(k, False)
-        elif k in _STANDARD_META_KEYS:
-            standard[k] = v
         else:
             meta_root[k] = v
             meta_root_locks[k] = meta_locks.get(k, False)
@@ -62,14 +79,6 @@ def _format_meta(engine, path, dbpath):
         else:
             tag_root[k] = v
             tag_root_locks[k] = tag_locks.get(k, False)
-    for k in ("created", "collected", "modified", "size"):
-        raw = standard.get(k)
-        if raw is not None:
-            try:
-                standard[k] = format_timestamp(float(raw)) if k != "size" else format_size_detail(float(raw))
-            except (ValueError, TypeError):
-                pass
-    standard = {k: standard[k] for k in _STANDARD_META_KEYS if k in standard}
     tag_root = {k: tag_root[k] for k in natsorted(tag_root)}
     meta_root = {k: meta_root[k] for k in natsorted(meta_root)}
     for prefix in meta_prefixed:
@@ -85,10 +94,10 @@ def _format_meta(engine, path, dbpath):
         for name, status in sorted(collector_status):
             color = palette.success if status == "ok" else palette.error
             parts.append(f'<span style="color:{color}">\u25cf</span> {name}')
-        file_rec["collected by"] = "&nbsp;&nbsp;".join(parts)
+        source_section["collected by"] = "&nbsp;&nbsp;".join(parts)
     return {
-        "source": file_rec,
-        "file": standard,
+        "source": source_section,
+        "file": file_section,
         "tag": tag_root,
         "meta": meta_root,
         "meta_locks": meta_root_locks,
@@ -119,6 +128,7 @@ class FileViewerController(QtCore.QObject):
         self._pending_content = None
         self._loading_path = None
         self._target_plugin: str | None = None
+        self._target_render_path: str | None = None
         self._autoplay_active = False
         self._autoplay_interval = self._DEFAULT_AUTOPLAY_INTERVAL
         self._autoplay_loop = True
@@ -137,6 +147,10 @@ class FileViewerController(QtCore.QObject):
     @property
     def path(self) -> str | None:
         return self.model.path()
+
+    @property
+    def source(self) -> str | None:
+        return self.model.source()
 
     def _switch_to(self, plugin_name: str):
         old_name = self.content_viewer._current_plugin_name
@@ -175,6 +189,7 @@ class FileViewerController(QtCore.QObject):
             self._loading_path = None
             self._pending_meta = None
             self._pending_content = None
+            self._target_render_path = None
             self.content_viewer.clear()
             self.meta_viewer.clear()
             return
@@ -187,51 +202,58 @@ class FileViewerController(QtCore.QObject):
     def _load_content(self, path):
         cancel = self._content_cancel.renew()
         self._target_plugin = _DEFAULT_WIDGET_NAME
+        self._target_render_path = path
 
         def resolve_task():
             if cancel.is_cancelled():
                 return
-            plugin_cls = viewer_resolver.resolve(path)
+            target = viewer_resolver.resolve_target(path)
             if cancel.is_cancelled():
                 return
-            if plugin_cls is not None and issubclass(plugin_cls, _WidgetViewerPlugin):
-                self._dispatcher.invoke(lambda: self._on_resolve_widget(cancel, path, plugin_cls))
+            if target.kind == TARGET_WIDGET and target.plugin_name:
+                self._dispatcher.invoke(lambda: self._on_resolve_widget(cancel, target))
                 return
             key = fullsize_key(path)
             image = self.image_cache.get(key)
             if image is not None and not image.isNull():
-                self._dispatcher.invoke(lambda: self._on_resolve_cached(cancel, path, image))
+                self._dispatcher.invoke(lambda: self._on_resolve_cached(cancel, target, image))
                 return
-            image = viewer_resolver.load_content(path)
+            image = viewer_resolver.load_content(target.render_path)
             if cancel.is_cancelled():
                 return
             if image is not None and not image.isNull():
                 self.image_cache[fullsize_key(path)] = image
             else:
                 image = None
-            self._dispatcher.invoke(lambda: self._on_content_ready(cancel, path, image))
+            self._dispatcher.invoke(lambda: self._on_content_ready(cancel, target, image))
 
         self._dispatcher.post(resolve_task, cancel=cancel)
 
-    def _on_resolve_widget(self, cancel, path, plugin_cls):
+    def _on_resolve_widget(self, cancel, target: RenderTarget):
+        path = target.logical_path
         if cancel.is_cancelled() or path != self._loading_path:
             return
-        self._target_plugin = plugin_cls.NAME
+        self._target_plugin = target.plugin_name
+        self._target_render_path = target.render_path
         self._pending_content = (path, None)
         self._flush()
 
-    def _on_resolve_cached(self, cancel, path, image):
+    def _on_resolve_cached(self, cancel, target: RenderTarget, image):
+        path = target.logical_path
         if cancel.is_cancelled() or path != self._loading_path:
             return
         self._target_plugin = _DEFAULT_WIDGET_NAME
+        self._target_render_path = target.render_path
         self._pending_content = (path, image)
         self._flush()
 
-    def _on_content_ready(self, cancel, path, image):
+    def _on_content_ready(self, cancel, target: RenderTarget, image):
         if cancel.is_cancelled():
             return
+        path = target.logical_path
         if path != self._loading_path:
             return
+        self._target_render_path = target.render_path
         self._pending_content = (path, image)
         self._flush()
 
@@ -248,7 +270,7 @@ class FileViewerController(QtCore.QObject):
         if image is not None:
             self.image_viewer.set_image(image, path)
         elif target != _DEFAULT_WIDGET_NAME:
-            viewer_resolver.render(path)
+            viewer_resolver.render(self._target_render_path or path)
         else:
             self.image_viewer.set_image(PixmapFactory.create_viewer_error_placeholder(), path)
         self.meta_viewer.set_data(meta)

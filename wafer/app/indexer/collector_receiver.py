@@ -27,7 +27,9 @@ def _write_batched(writer: DatabaseWriter, data: dict[str, Any]):
             meta[i : i + BATCH_SIZE],
             tags[i : i + BATCH_SIZE],
             cs[i : i + BATCH_SIZE],
+            cleanup=False,
         )
+    writer.cleanup_source_extensions(img, cs)
 
 
 def _merge_parsed(entries: list[dict[str, Any]]) -> dict[str, Any]:
@@ -121,7 +123,7 @@ def _parse_batch(results: list[dict[str, Any]]) -> dict[str, Any]:
     for r in results:
         source = r.get("source")
         path = r.get("path", source)
-        r.get("name") or None
+        name = r.get("name") or None
         aspect = r.get("aspect")
         file_hash = r.get("file_hash")
         meta_info = r.get("meta_info", {})
@@ -138,8 +140,14 @@ def _parse_batch(results: list[dict[str, Any]]) -> dict[str, Any]:
 
         if ok:
             prefix = f"{collector}." if collector else ""
-            if aspect or (path != source):
-                image_entries.append((path, source, aspect))
+            if aspect or (path != source) or name:
+                source_extension = collector if path != source else None
+                image_entries.append((path, source, name, aspect, source_extension))
+            if path != source:
+                for key in ("size", "modified", "created"):
+                    value = r.get(key)
+                    if value is not None:
+                        meta_info_entries.append((path, f"{prefix}{key}", str(value), try_float(value)))
             for k, v in meta_info.items():
                 if v is not None:
                     meta_info_entries.append((path, f"{prefix}{k}", str(v), try_float(v)))

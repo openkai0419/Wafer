@@ -57,10 +57,7 @@ def test_indexer_scan_state_materialization(n):
     diff_s = time.perf_counter() - t1
     _current, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
-    print(
-        f"\n[scaling] indexer_state n={n:,} build={build_s:.3f}s diff={diff_s:.3f}s "
-        f"peak={peak / MB:.1f}MB added={len(added)} removed={len(removed)}"
-    )
+    print(f"\n[scaling] indexer_state n={n:,} build={build_s:.3f}s diff={diff_s:.3f}s peak={peak / MB:.1f}MB added={len(added)} removed={len(removed)}")
     assert not added and not removed
 
 
@@ -94,8 +91,5 @@ def test_masonry_layout_materialization(n):
     _current, peak = tracemalloc.get_traced_memory()
     visible = layout.calculate_visible_indices(0, 1000, 0, 1200)
     tracemalloc.stop()
-    print(
-        f"\n[scaling] masonry_layout n={n:,} run={elapsed:.3f}s per_item={elapsed / n * 1e6:.1f}us "
-        f"peak={peak / MB:.1f}MB visible={len(visible)} total_extent={layout.total_extent}"
-    )
+    print(f"\n[scaling] masonry_layout n={n:,} run={elapsed:.3f}s per_item={elapsed / n * 1e6:.1f}us peak={peak / MB:.1f}MB visible={len(visible)} total_extent={layout.total_extent}")
     assert len(layout) == n

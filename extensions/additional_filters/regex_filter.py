@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 
 from wafer.core.db.db_utils import escape_like
+from wafer.core.db.query import STANDARD_KEYS, standard_key_columns
 from wafer.plugin import BaseFilterPlugin
 from wafer.utils.profiling import profiler
 
@@ -203,30 +204,39 @@ class RegexFilter(BaseFilterPlugin):
 
         query_all = not keys
         hints = _extract_literal_hints(pattern)
+        non_std_keys = [k for k in keys if k not in STANDARD_KEYS]
+        std_keys = [k for k in keys if k in STANDARD_KEYS] if not query_all else list(STANDARD_KEYS)
 
         parts, all_params = [], []
 
-        sql, p = cls._kv_part(
-            "meta_info AS mi",
-            'mi."key"',
-            'mi."value"',
-            "mi.path",
-            keys if not query_all else [],
-            hints,
-        )
-        parts.append(sql)
-        all_params.extend(p)
+        if query_all or non_std_keys:
+            sql, p = cls._kv_part(
+                "meta_info AS mi",
+                'mi."key"',
+                'mi."value"',
+                "mi.path",
+                non_std_keys if not query_all else [],
+                hints,
+            )
+            parts.append(sql)
+            all_params.extend(p)
 
-        sql, p = cls._kv_part(
-            "tags AS t JOIN sources AS s ON s.file_hash = t.file_hash JOIN files AS i ON i.source = s.source",
-            't."key"',
-            't."value"',
-            "i.path",
-            keys if not query_all else [],
-            hints,
-        )
-        parts.append(sql)
-        all_params.extend(p)
+            sql, p = cls._kv_part(
+                "tags AS t JOIN sources AS s ON s.file_hash = t.file_hash JOIN files AS i ON i.source = s.source",
+                't."key"',
+                't."value"',
+                "i.path",
+                non_std_keys if not query_all else [],
+                hints,
+            )
+            parts.append(sql)
+            all_params.extend(p)
+
+        for key in std_keys:
+            sql, p = cls._standard_part(key, hints)
+            if sql is not None:
+                parts.append(sql)
+                all_params.extend(p)
 
         if not parts:
             return None, []
@@ -255,6 +265,16 @@ class RegexFilter(BaseFilterPlugin):
         params.extend(val_bind)
         w = f"WHERE {' AND '.join(conds)}" if conds else ""
         return f"SELECT {path_expr} FROM {from_clause} {w}", params
+
+    @classmethod
+    def _standard_part(cls, key, hints):
+        cols = standard_key_columns(key)
+        if cols is None:
+            return None, []
+        from_clause, path_col, val_col = cols
+        conds, params = _build_like_conditions(val_col, hints)
+        w = f"WHERE {' AND '.join(conds)}" if conds else ""
+        return f"SELECT {path_col} AS path FROM {from_clause} {w}", params
 
     @classmethod
     def post_filter(cls, params, rows):

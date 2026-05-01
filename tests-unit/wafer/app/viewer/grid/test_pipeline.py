@@ -5,6 +5,7 @@ import pytest
 from PySide6 import QtCore, QtWidgets
 from wafer.core.qt.dispatcher import Dispatcher, CancelToken
 from wafer.app.viewer.grid.pipeline import GridPipeline
+from wafer.core.files.render_target import RenderTarget
 from wafer.plugin.layout.calc import LayoutData
 
 _noop_appear = lambda i: None
@@ -258,7 +259,7 @@ class TestDispatchThumbnail:
             plugin = FakePlugin()
             cancel = CancelToken()
             pipeline._active[0] = cancel
-            pipeline._dispatch_thumbnail(0, "video.mp4", QtCore.QSize(200, 200), plugin, cancel)
+            pipeline._dispatch_thumbnail(0, RenderTarget(logical_path="video.mp4", render_path="video.mp4", source_path="video.mp4"), QtCore.QSize(200, 200), plugin, cancel)
             _process_events_until(lambda: "image" in delivered, timeout_ms=5000)
             assert "called" in loaded
             assert delivered["image"].width() == 200
@@ -311,7 +312,7 @@ class TestDispatchThumbnail:
             plugin = FakePlugin()
             cancel = CancelToken()
             pipeline._active[0] = cancel
-            pipeline._dispatch_thumbnail(0, "video.mp4", QtCore.QSize(200, 200), plugin, cancel)
+            pipeline._dispatch_thumbnail(0, RenderTarget(logical_path="video.mp4", render_path="video.mp4", source_path="video.mp4"), QtCore.QSize(200, 200), plugin, cancel)
             _process_events_until(lambda: "image" in delivered, timeout_ms=5000)
             assert "called" not in loaded
             assert delivered["image"] is big_image

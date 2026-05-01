@@ -6,6 +6,7 @@ from wafer.app.indexer.collector_receiver import (
     CollectorReceiver,
     _parse_batch,
     _merge_parsed,
+    _write_batched,
 )
 from wafer.app.indexer._parse_utils import (
     BATCH_SIZE,
@@ -13,6 +14,7 @@ from wafer.app.indexer._parse_utils import (
     ResultBuffer,
     try_float,
 )
+from wafer.utils.virtual_paths import build_virtual_path
 
 
 class _StubMsg:
@@ -171,6 +173,22 @@ def test_merge_parsed_ok_overrides_fail():
     assert merged["collector_status"][0][2] == "ok"
 
 
+def test_write_batched_runs_source_extension_cleanup_after_chunks():
+    writer = MagicMock()
+    image_entries = [(f"p{i}", "src", 1.0, "zip") for i in range(BATCH_SIZE + 1)]
+    collector_status = [("src", "zip", "ok", 1.0)]
+    data = {
+        "image_entries": image_entries,
+        "meta_info_entries": [],
+        "tag_entries": [],
+        "collector_status": collector_status,
+    }
+    _write_batched(writer, data)
+    assert writer.upsert_results.call_count == 2
+    assert all(call.kwargs == {"cleanup": False} for call in writer.upsert_results.call_args_list)
+    writer.cleanup_source_extensions.assert_called_once_with(image_entries, collector_status)
+
+
 def test_flush_delay_constant():
     assert FLUSH_DELAY > 0
 
@@ -191,7 +209,9 @@ def test_parse_batch_ok_status():
     ]
     data = _parse_batch(results)
     assert len(data["image_entries"]) == 1
-    assert data["image_entries"][0][2] == 1.5
+    assert data["image_entries"][0][2] == "test.png"
+    assert data["image_entries"][0][3] == 1.5
+    assert data["image_entries"][0][4] is None
     meta_keys = [e[1] for e in data["meta_info_entries"]]
     assert "exif.width" in meta_keys
     assert len(data["tag_entries"]) == 1
@@ -228,12 +248,19 @@ def test_parse_batch_skips_none_meta():
 
 
 def test_parse_batch_multi_path():
+    child_a = build_virtual_path("zip.zip", "a.png")
+    child_b = build_virtual_path("zip.zip", "b.png")
     results = [
-        {"source": "zip.zip", "path": "zip.zip::a.png", "name": "a.png", "aspect": 0.75, "status": True, "collector": "zip"},
-        {"source": "zip.zip", "path": "zip.zip::b.png", "name": "b.png", "aspect": 1.5, "status": True, "collector": "zip"},
+        {"source": "zip.zip", "path": child_a, "name": "a.png", "aspect": 0.75, "size": 10, "modified": 1.5, "status": True, "collector": "zip"},
+        {"source": "zip.zip", "path": child_b, "name": "b.png", "aspect": 1.5, "size": 20, "modified": 2.5, "status": True, "collector": "zip"},
     ]
     data = _parse_batch(results)
     assert len(data["image_entries"]) == 2
+    assert all(entry[4] == "zip" for entry in data["image_entries"])
+    meta = {(path, key): value for path, key, value, _ in data["meta_info_entries"]}
+    assert meta[(child_a, "zip.size")] == "10"
+    assert meta[(child_a, "zip.modified")] == "1.5"
+    assert meta[(child_b, "zip.size")] == "20"
 
 
 def test_parse_batch_ok_overrides_fail():

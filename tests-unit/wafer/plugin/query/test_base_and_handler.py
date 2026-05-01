@@ -402,19 +402,19 @@ class TestSortPluginAttributes:
 
     def test_natural_name_sort(self):
         assert NaturalNameSort.NAME == "name"
-        assert NaturalNameSort.META_KEY == "name"
+        assert NaturalNameSort.SORT_COLUMN == "name"
 
     def test_modified_sort(self):
-        assert ModifiedSort.META_KEY == "modified"
+        assert ModifiedSort.SORT_COLUMN == "modified"
 
     def test_created_sort(self):
-        assert CreatedSort.META_KEY == "created"
+        assert CreatedSort.SORT_COLUMN == "created"
 
     def test_size_sort(self):
-        assert SizeSort.META_KEY == "size"
+        assert SizeSort.SORT_COLUMN == "size"
 
     def test_collected_sort(self):
-        assert CollectedSort.META_KEY == "collected"
+        assert CollectedSort.SORT_COLUMN == "collected"
 
     def test_random_sort(self):
         assert RandomSort.META_KEY is None

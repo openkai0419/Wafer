@@ -165,7 +165,7 @@ class TestExtendContext:
         qtbot.addWidget(w)
         w._path = "/test.gif"
         ctx = w.extend_context(None, None)
-        assert ctx == {"path": "/test.gif", "paths": ["/test.gif"]}
+        assert ctx == {"path": "/test.gif", "paths": ["/test.gif"], "source": "/test.gif", "sources": ["/test.gif"]}
 
     def test_returns_empty_paths_when_no_path(self, qtbot):
         from extensions.animated.viewer_widget import AnimatedViewerWidget
@@ -173,7 +173,7 @@ class TestExtendContext:
         w = AnimatedViewerWidget()
         qtbot.addWidget(w)
         ctx = w.extend_context(None, None)
-        assert ctx == {"path": "", "paths": []}
+        assert ctx == {"path": "", "paths": [], "source": None, "sources": []}
 
 
 class TestViewerCache:

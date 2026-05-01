@@ -7,6 +7,7 @@ from wafer.core.db.query import SearchQuery, FileSearchEngine, _kv_sort_join
 from wafer.utils.formatting import natural_key
 from wafer.core.db.file_db import FileDB
 from wafer.utils.paths import normalize_path
+from wafer.utils.virtual_paths import build_virtual_path
 
 
 @pytest.fixture
@@ -29,14 +30,8 @@ def populated_db(db_path):
         fsize = 1000 + i
         sources.append((source, fhash, fsize, mtime))
         images.append((path, source, 1.5))
-        metas.append((path, "path", path, None))
-        metas.append((path, "name", f"img_{i:04d}.jpg", None))
         metas.append((path, "dpi", f"{72 + (i % 4) * 24}", None))
         metas.append((path, "Comment", f"photo number {i}", None))
-        metas.append((path, "size", str(fsize), float(fsize)))
-        metas.append((path, "modified", str(mtime), mtime))
-        metas.append((path, "created", str(mtime), mtime))
-        metas.append((path, "collected", str(mtime), mtime))
         if i % 3 == 0:
             metas.append((path, "Artist", f"photographer_{i % 5}", None))
         tags.append((fhash, "rating", f"{(i % 5) + 1}", float((i % 5) + 1)))
@@ -69,8 +64,6 @@ def special_char_db(tmp_path):
     for path, name, fhash, comment in special_names:
         sources.append((path, fhash, 100, 1.0))
         images.append((path, path, 1.5))
-        metas.append((path, "path", path, None))
-        metas.append((path, "name", name, None))
         metas.append((path, "Comment", comment, None))
         tags.append((fhash, "rating", "3", 3.0))
     db.upsert_batches(sources, images, metas, tags)
@@ -95,7 +88,7 @@ class TestSearchQuerySubquery:
         q = SearchQuery(keys=["path"])
         sql, params = q._make_subquery(np)
         assert sql is not None
-        assert "meta_info" in sql
+        assert "files" in sql
 
     def test_no_keys_require_keys_true(self):
         q = SearchQuery(keys=None, require_keys=True)
@@ -303,6 +296,7 @@ class TestFileSearchEngineListKeys:
         key_names = [k[0] for k in keys]
         assert "rating" in key_names
         assert "dpi" in key_names
+        assert "file_hash" in key_names
 
     def test_list_all_keys_dedup(self, db_path):
         db = FileDB(db_path)
@@ -356,6 +350,20 @@ class TestFileSearchEngineSampleValues:
         engine = FileSearchEngine(db_path)
         values = engine.sample_values("test.key")
         assert values == ["same_value"]
+
+    def test_sample_values_file_hash_uses_sources(self, db_path):
+        db = FileDB(db_path)
+        db.start()
+        db.initialize_database()
+        db.upsert_batches(
+            [("src1", "h1", 100, 1.0), ("src2", "h2", 200, 2.0)],
+            [("src1", "src1", 1.0), ("src2", "src2", 1.0)],
+            [],
+            [],
+        )
+        db.close()
+        engine = FileSearchEngine(db_path)
+        assert engine.sample_values("file_hash", limit=10) == ["h1", "h2"]
 
 
 class TestFileSearchEngineCombined:
@@ -723,12 +731,12 @@ class TestEngineLookupMethods:
 
     def test_get_tags_by_path(self, populated_db):
         engine = FileSearchEngine(populated_db)
-        _, _, tags, _ = engine.get_all_metadata_with_locks("C:/photos/vacation/img_0000.jpg")
+        _, _, _, tags, _ = engine.get_all_metadata_with_locks("C:/photos/vacation/img_0000.jpg")
         assert "rating" in tags
 
     def test_get_tags_nonexistent(self, populated_db):
         engine = FileSearchEngine(populated_db)
-        _, _, tags, _ = engine.get_all_metadata_with_locks("C:/nonexistent/file.jpg")
+        _, _, _, tags, _ = engine.get_all_metadata_with_locks("C:/nonexistent/file.jpg")
         assert tags == {}
 
     def test_get_file_record(self, populated_db):
@@ -754,12 +762,51 @@ class TestEngineLookupMethods:
 
     def test_get_all_metadata(self, populated_db):
         engine = FileSearchEngine(populated_db)
-        file_rec, file_hash, tags_with_lock, meta = engine.get_all_metadata_with_locks("C:/photos/vacation/img_0000.jpg")
+        source_rec, file_rec, file_hash, tags_with_lock, meta = engine.get_all_metadata_with_locks("C:/photos/vacation/img_0000.jpg")
         assert file_rec.get("path") is not None
+        assert source_rec.get("file_hash") == file_hash
         assert file_hash is not None
         assert "rating" in tags_with_lock
         assert isinstance(tags_with_lock["rating"], tuple) and len(tags_with_lock["rating"]) == 2
         assert "dpi" in meta
+
+    def test_child_metadata_resolves_source_hash_and_tags(self, db_path):
+        db = FileDB(db_path)
+        db.start()
+        db.initialize_database()
+        source = "C:/data/archive.zip"
+        child = build_virtual_path(source, "folder/image.png")
+        db.upsert_batches(
+            [(source, "hash_zip", 100, 1.0)],
+            [(source, source, 1.0), (child, source, 1.5)],
+            [(child, "name", "image.png", None)],
+            [("hash_zip", "rating", "5", 5.0)],
+        )
+        db.close()
+        engine = FileSearchEngine(db_path)
+        source_rec, file_rec, file_hash, tags_with_lock, meta = engine.get_all_metadata_with_locks(child)
+        assert file_rec["source"] == source
+        assert file_hash == "hash_zip"
+        assert source_rec["file_hash"] == "hash_zip"
+        assert tags_with_lock["rating"] == ("5", False)
+        assert meta["name"] == ("image.png", False)
+
+    def test_search_file_hash_returns_source_and_children(self, db_path):
+        db = FileDB(db_path)
+        db.start()
+        db.initialize_database()
+        source = "C:/data/archive.zip"
+        child = build_virtual_path(source, "folder/image.png")
+        db.upsert_batches(
+            [(source, "hash_zip", 100, 1.0)],
+            [(source, source, 1.0), (child, source, 1.5)],
+            [],
+            [],
+        )
+        db.close()
+        engine = FileSearchEngine(db_path)
+        paths, _, _ = engine.search(SearchQuery(keys=["file_hash"], keywords="hash_zip"))
+        assert set(paths) == {source, child}
 
     def test_get_collection_status_ok(self, populated_db):
         db = FileDB(populated_db)
@@ -1026,7 +1073,7 @@ class TestEmptyDB:
 
     def test_get_tags_empty(self, empty_db):
         engine = FileSearchEngine(empty_db)
-        _, _, tags, _ = engine.get_all_metadata_with_locks("C:/any/file.jpg")
+        _, _, _, tags, _ = engine.get_all_metadata_with_locks("C:/any/file.jpg")
         assert tags == {}
 
     def test_get_file_record_empty(self, empty_db):
@@ -1039,7 +1086,8 @@ class TestEmptyDB:
 
     def test_get_all_metadata_empty(self, empty_db):
         engine = FileSearchEngine(empty_db)
-        file_rec, file_hash, tags_with_lock, meta = engine.get_all_metadata_with_locks("C:/any/file.jpg")
+        source_rec, file_rec, file_hash, tags_with_lock, meta = engine.get_all_metadata_with_locks("C:/any/file.jpg")
+        assert source_rec == {}
         assert file_rec == {}
         assert file_hash is None
         assert tags_with_lock == {}

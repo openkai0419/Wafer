@@ -15,17 +15,17 @@ from extensions.additional_filters.regex_filter import (
 )
 
 
-def _setup_db(tmp_path, files=None, meta=None, tags=None):
+def _setup_db(tmp_path, files=None, meta=None, tags=None, source_num=None):
     db_path = tmp_path / "test.db"
     conn = sqlite3.connect(str(db_path))
     apply_write_pragmas(conn)
     conn.execute("CREATE TABLE hash_index (file_hash TEXT PRIMARY KEY)")
     conn.execute("""CREATE TABLE sources (
         source TEXT PRIMARY KEY, file_hash TEXT NOT NULL,
-        size INTEGER, modified REAL,
+        size INTEGER, modified REAL, created REAL, collected REAL,
         FOREIGN KEY(file_hash) REFERENCES hash_index(file_hash))""")
     conn.execute("""CREATE TABLE files (
-        path TEXT PRIMARY KEY, source TEXT NOT NULL, aspect_ratio REAL,
+        path TEXT PRIMARY KEY, source TEXT NOT NULL, name TEXT, aspect_ratio REAL,
         FOREIGN KEY(source) REFERENCES sources(source))""")
     conn.execute("""CREATE TABLE meta_info (
         path TEXT NOT NULL, key TEXT NOT NULL, value TEXT, value_num REAL,
@@ -36,23 +36,23 @@ def _setup_db(tmp_path, files=None, meta=None, tags=None):
         PRIMARY KEY(file_hash, key),
         FOREIGN KEY(file_hash) REFERENCES hash_index(file_hash))""")
     conn.execute("""CREATE VIEW files_full AS
-        SELECT i.path, i.source, i.aspect_ratio,
-               s.file_hash, s.size, s.modified
+         SELECT i.path, i.name, i.source, i.aspect_ratio,
+             s.file_hash, s.size, s.modified, s.created, s.collected
         FROM files i JOIN sources s ON s.source = i.source""")
     conn.executescript("""
         CREATE INDEX idx_meta_key ON meta_info(key, path);
         CREATE INDEX idx_tags_key ON tags(key, file_hash);
     """)
 
+    source_overrides = {p: (size, modified, created, collected) for p, size, modified, created, collected in (source_num or [])}
     for path in files or []:
         fhash = hashlib.md5(path.encode()).hexdigest()
         source = path
         name = os.path.basename(path)
+        size, modified, created, collected = source_overrides.get(path, (100, 1.0, None, None))
         conn.execute("INSERT OR IGNORE INTO hash_index VALUES (?)", (fhash,))
-        conn.execute("INSERT INTO sources VALUES (?,?,?,?)", (source, fhash, 100, 1.0))
-        conn.execute("INSERT INTO files VALUES (?,?,?)", (path, source, 1.0))
-        conn.execute("INSERT OR REPLACE INTO meta_info VALUES (?,?,?,?)", (path, "path", path, None))
-        conn.execute("INSERT OR REPLACE INTO meta_info VALUES (?,?,?,?)", (path, "name", name, None))
+        conn.execute("INSERT INTO sources VALUES (?,?,?,?,?,?)", (source, fhash, size, modified, created, collected))
+        conn.execute("INSERT INTO files VALUES (?,?,?,?)", (path, source, name, 1.0))
 
     for path, key, value in meta or []:
         conn.execute("INSERT OR REPLACE INTO meta_info VALUES (?,?,?,?)", (path, key, value, None))
@@ -413,6 +413,56 @@ class TestPathFiltering:
 
 
 class TestMetaFiltering:
+    def test_standard_name_match(self, tmp_path):
+        db = _setup_db(
+            tmp_path,
+            files=["c:/photos/sunset_001.jpg", "c:/photos/mountain.jpg"],
+        )
+        result = _query(
+            db,
+            {
+                "pattern": r"sunset_\d+",
+                "keys": ["name"],
+            },
+        )
+        assert result == {"c:/photos/sunset_001.jpg"}
+
+    def test_standard_size_match(self, tmp_path):
+        db = _setup_db(
+            tmp_path,
+            files=["c:/a.jpg", "c:/b.jpg"],
+            source_num=[
+                ("c:/a.jpg", 12345, 10.0, None, None),
+                ("c:/b.jpg", 999, 20.0, None, None),
+            ],
+        )
+        result = _query(
+            db,
+            {
+                "pattern": r"12345",
+                "keys": ["size"],
+            },
+        )
+        assert result == {"c:/a.jpg"}
+
+    def test_standard_modified_match(self, tmp_path):
+        db = _setup_db(
+            tmp_path,
+            files=["c:/a.jpg", "c:/b.jpg"],
+            source_num=[
+                ("c:/a.jpg", 100, 1700000000.0, None, None),
+                ("c:/b.jpg", 100, 1800000000.0, None, None),
+            ],
+        )
+        result = _query(
+            db,
+            {
+                "pattern": r"1700000000",
+                "keys": ["modified"],
+            },
+        )
+        assert result == {"c:/a.jpg"}
+
     def test_meta_value_like_match(self, tmp_path):
         db = _setup_db(
             tmp_path,

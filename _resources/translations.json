@@ -1,4 +1,24 @@
 {
+  "Metadata (Links to Path)": {
+    "en": "Metadata (Links to Path)",
+    "ja": ""
+  },
+  "Tag (Links to File-Hash)": {
+    "en": "Tag (Links to File-Hash)",
+    "ja": ""
+  },
+  "AnimatedView": {
+    "en": "AnimatedView",
+    "ja": ""
+  },
+  "VideoView": {
+    "en": "VideoView",
+    "ja": ""
+  },
+  "zip": {
+    "en": "zip",
+    "ja": ""
+  },
   "This extension is marked as HEAVY. This may:\n- use large amount of GPU\n- take long time to install": {
     "en": "This extension is marked as HEAVY. This may:\n- use large amount of GPU\n- take long time to install",
     "ja": ""

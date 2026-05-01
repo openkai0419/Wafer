@@ -7,6 +7,7 @@ from wafer.core.commands.bridge import Menu
 from wafer.builtins.commands import file as file_mod
 from wafer.builtins.commands.file import FileCommands
 from wafer.core.platform.path_utils import get_os_new_folder_name
+from wafer.utils.virtual_paths import build_virtual_path
 
 
 def test_file_commands_register_paths(qtbot):
@@ -19,15 +20,28 @@ def test_file_commands_register_paths(qtbot):
 
 
 class _Ctx:
-    def __init__(self, path=None, paths=None):
+    def __init__(self, path=None, paths=None, source=None, sources=None):
         self._path = path
         self._paths = list(paths) if paths else None
+        self._source = source if source is not None else path
+        if sources is not None:
+            self._sources = list(sources)
+        elif paths is not None:
+            self._sources = list(paths)
+        elif path is not None:
+            self._sources = [path]
+        else:
+            self._sources = None
 
     def get(self, key, default=None):
         if key == "path":
             return self._path
         if key == "paths":
             return self._paths
+        if key == "source":
+            return self._source
+        if key == "sources":
+            return self._sources
         return default
 
     def get_instance(self, name):
@@ -43,6 +57,27 @@ def test_delete_files_cancel_does_not_delete(tmp_path, monkeypatch):
     )
     file_mod.delete_files(_Ctx(path=str(p)))
     assert p.exists()
+
+
+def test_file_commands_strict_source_required():
+    logical = build_virtual_path("C:/data/archive.zip", "folder/image.png")
+
+    class _PathOnlyCtx:
+        def get(self, key, default=None):
+            if key == "path":
+                return logical
+            return default
+
+        def get_instance(self, name):
+            return None
+
+    assert file_mod._ctx_sources(_PathOnlyCtx()) == []
+    assert file_mod._ctx_source(_PathOnlyCtx()) is None
+
+
+def test_file_commands_uses_explicit_source():
+    assert file_mod._ctx_source(_Ctx(source="C:/data/archive.zip")) == "C:/data/archive.zip"
+    assert file_mod._ctx_sources(_Ctx(source="C:/data/archive.zip")) == ["C:/data/archive.zip"]
 
 
 def test_delete_files_send2trash_failure_falls_back(tmp_path, monkeypatch):

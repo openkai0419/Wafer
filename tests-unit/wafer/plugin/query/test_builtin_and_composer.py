@@ -37,14 +37,8 @@ def populated_db(tmp_path):
         fhash = f"hash_{i:04d}"
         sources.append((source, fhash, 1000 + i, float(1700000000 + i)))
         images.append((path, source, 1.5))
-        metas.append((path, "path", path, None))
-        metas.append((path, "name", f"img_{i:04d}.jpg", None))
         metas.append((path, "dpi", f"{72 + (i % 4) * 24}", None))
         metas.append((path, "Comment", f"photo number {i}", None))
-        metas.append((path, "size", str(1000 + i), float(1000 + i)))
-        metas.append((path, "modified", str(float(1700000000 + i)), float(1700000000 + i)))
-        metas.append((path, "created", str(float(1700000000 + i)), float(1700000000 + i)))
-        metas.append((path, "collected", str(float(1700000000 + i)), float(1700000000 + i)))
         if i % 3 == 0:
             metas.append((path, "Artist", f"photographer_{i % 5}", None))
         tags.append((fhash, "rating", f"{(i % 5) + 1}", float((i % 5) + 1)))
@@ -77,8 +71,6 @@ def special_db(tmp_path):
     for path, name, fhash, comment in special_names:
         sources.append((path, fhash, 100, 1.0))
         images.append((path, path, 1.5))
-        metas.append((path, "path", path, None))
-        metas.append((path, "name", name, None))
         metas.append((path, "Comment", comment, None))
         tags.append((fhash, "rating", "3", 3.0))
     db.upsert_batches(sources, images, metas, tags)
@@ -170,6 +162,11 @@ class TestTextFilterExecution:
         entries = [(TextFilter, {"keys": ["rating"], "keywords": "1"}, None)]
         paths, sources, aspects = composer.execute(engine, entries, NaturalNameSort, True)
         assert len(paths) == 40
+
+    def test_search_file_hash_uses_sources(self, engine, composer):
+        entries = [(TextFilter, {"keys": ["file_hash"], "keywords": "hash_0001"}, None)]
+        paths, sources, aspects = composer.execute(engine, entries, NaturalNameSort, True)
+        assert paths == ["C:/photos/vacation/img_0001.jpg"]
 
     def test_search_with_exclude(self, engine, composer):
         entries = [(TextFilter, {"keys": ["path"], "keywords": "img,-work", "keyword_separator": ","}, None)]
@@ -503,6 +500,11 @@ class TestComposerListAllKeys:
         keys = composer.list_all_keys(engine, [], sort_by_freq=True)
         fp_count = next(f for k, f in keys if k == "path")
         assert fp_count == 200
+
+    def test_file_hash_count_equals_file_count(self, engine, composer):
+        keys = composer.list_all_keys(engine, [], sort_by_freq=True)
+        file_hash_count = next(f for k, f in keys if k == "file_hash")
+        assert file_hash_count == 200
 
     def test_filepath_count_filtered_by_directory(self, engine, composer):
         entries = [

@@ -18,6 +18,15 @@ _UNIT_SECONDS = {
 }
 
 
+def _date_select_for_key(key: str) -> tuple[str, str] | None:
+    if key in _KNOWN_DATE_KEYS:
+        return (
+            f"SELECT i.path FROM sources AS s JOIN files AS i ON i.source = s.source WHERE s.{key}",
+            f"s.{key}",
+        )
+    return None
+
+
 def is_date_key(key: str) -> bool:
     if key in _KNOWN_DATE_KEYS:
         return True
@@ -119,38 +128,49 @@ class DateRangeFilter(BaseFilterPlugin):
     def build_path_query(cls, params, normalize_path):
         target_key = params.get("target_key", "modified")
         mode = params.get("mode", "preset")
+        bounds = cls._compute_bounds(params, mode)
+        if bounds is None:
+            return None, []
+        lo, hi = bounds
 
+        std = _date_select_for_key(target_key)
+        if std is not None:
+            base_sql, _col = std
+            return cls._build_range_sql(base_sql, lo, hi, [])
+        base_sql = 'SELECT path FROM meta_info WHERE "key" = ? AND value_num'
+        return cls._build_range_sql(base_sql, lo, hi, [target_key])
+
+    @staticmethod
+    def _compute_bounds(params, mode):
         if mode == "preset":
             value = params.get("preset_value", 7)
-            unit = params.get("preset_unit", "days")
             try:
                 value = float(value)
             except (ValueError, TypeError):
-                return None, []
+                return None
             if value <= 0:
-                return None, []
+                return None
+            unit = params.get("preset_unit", "days")
             ref = _resolve_preset_ref(params.get("preset_ref", _TODAY))
-            threshold = _preset_to_epoch(value, unit, ref_time=ref)
-            sql = 'SELECT path FROM meta_info WHERE "key" = ? AND value_num BETWEEN ? AND ?'
-            return sql, [target_key, threshold, ref]
-
+            return _preset_to_epoch(value, unit, ref_time=ref), ref
         if mode == "range":
-            range_from = params.get("range_from", "")
-            range_to = params.get("range_to", "")
-            epoch_from = _resolve_date_value(range_from, end_of_day=True)
-            epoch_to = _resolve_date_value(range_to, end_of_day=False)
-
+            epoch_from = _resolve_date_value(params.get("range_from", ""), end_of_day=True)
+            epoch_to = _resolve_date_value(params.get("range_to", ""), end_of_day=False)
             if epoch_from is not None and epoch_to is not None:
-                lo, hi = min(epoch_from, epoch_to), max(epoch_from, epoch_to)
-                sql = 'SELECT path FROM meta_info WHERE "key" = ? AND value_num BETWEEN ? AND ?'
-                return sql, [target_key, lo, hi]
+                return min(epoch_from, epoch_to), max(epoch_from, epoch_to)
             if epoch_from is not None:
-                sql = 'SELECT path FROM meta_info WHERE "key" = ? AND value_num <= ?'
-                return sql, [target_key, epoch_from]
+                return None, epoch_from
             if epoch_to is not None:
-                sql = 'SELECT path FROM meta_info WHERE "key" = ? AND value_num >= ?'
-                return sql, [target_key, epoch_to]
+                return epoch_to, None
+            return None
+        return None
 
-            return None, []
-
+    @staticmethod
+    def _build_range_sql(base_sql, lo, hi, leading_params):
+        if lo is not None and hi is not None:
+            return f"{base_sql} BETWEEN ? AND ?", [*leading_params, lo, hi]
+        if hi is not None:
+            return f"{base_sql} <= ?", [*leading_params, hi]
+        if lo is not None:
+            return f"{base_sql} >= ?", [*leading_params, lo]
         return None, []

@@ -1,6 +1,12 @@
 import os
 from abc import ABC, abstractmethod
 from ..utils.profiling import profiler
+from ..utils.virtual_paths import leaf_extension, owner_extension
+
+
+DISPATCH_NORMAL = "normal"
+DISPATCH_OWNER = "owner"
+DISPATCH_LEAF = "leaf"
 
 
 class PluginBase:
@@ -20,6 +26,7 @@ class PluginBase:
 
 class BasePlugin(PluginBase, ABC):
     EXTENSIONS: tuple[str, ...] = ()
+    IS_OWNER: bool = False
 
     @classmethod
     def match(cls, path: str) -> bool:
@@ -112,9 +119,16 @@ class FilePluginRegistry(PluginRegistry):
         super().set_order(order)
         self._invalidate_caches()
 
+    def _extension(self, path: str, mode: str = DISPATCH_NORMAL) -> str:
+        if mode == DISPATCH_OWNER:
+            return owner_extension(path)
+        if mode == DISPATCH_LEAF:
+            return leaf_extension(path)
+        return os.path.splitext(path)[1].lower()
+
     @profiler.profile
-    def resolve(self, path: str) -> type[BasePlugin] | None:
-        ext = os.path.splitext(path)[1].lower()
+    def resolve(self, path: str, mode: str = DISPATCH_NORMAL) -> type[BasePlugin] | None:
+        ext = self._extension(path, mode)
         if ext:
             for p in self._ext_cache.get(ext, []):
                 if p.can_handle(path):
@@ -125,20 +139,21 @@ class FilePluginRegistry(PluginRegistry):
         return None
 
     @profiler.profile
-    def resolve_chain(self, path: str) -> list[type[BasePlugin]]:
-        ext = os.path.splitext(path)[1].lower()
-        cached = self._chain_cache.get(ext)
+    def resolve_chain(self, path: str, mode: str = DISPATCH_NORMAL) -> list[type[BasePlugin]]:
+        ext = self._extension(path, mode)
+        cache_key = f"{mode}:{ext}"
+        cached = self._chain_cache.get(cache_key)
         if cached is not None:
             return cached
         candidates = list(self._ext_cache.get(ext, [])) if ext else []
         for p in self.list_all():
             if not p.EXTENSIONS and p.match(path) and p not in candidates:
                 candidates.append(p)
-        self._chain_cache[ext] = candidates
+        self._chain_cache[cache_key] = candidates
         return candidates
 
-    def resolve_instance(self, path: str) -> BasePlugin | None:
-        cls = self.resolve(path)
+    def resolve_instance(self, path: str, mode: str = DISPATCH_NORMAL) -> BasePlugin | None:
+        cls = self.resolve(path, mode)
         return self.instance(cls.NAME) if cls else None
 
     def resolve_all(self, path: str) -> list[type[BasePlugin]]:

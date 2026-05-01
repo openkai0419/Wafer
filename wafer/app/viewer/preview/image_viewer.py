@@ -34,7 +34,8 @@ class ZoomPanImageView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
     def extend_context(self, ctx, cmd, event=None, key=None, source=None):
         vw = ctx.get_instance("FileViewerController")
         p = getattr(vw, "path", None) if vw is not None else None
-        return {"path": p, "paths": [p] if p else []}
+        s = getattr(vw, "source", None) if vw is not None else None
+        return {"path": p, "paths": [p] if p else [], "source": s, "sources": [s] if s else []}
 
     def set_image(self, pixmap: QtGui.QPixmap):
         if self._pix_item is None:

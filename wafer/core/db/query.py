@@ -8,8 +8,38 @@ from pathlib import Path
 
 from .db_utils import apply_read_pragmas, build_like_condition, escape_like
 from ...utils.paths import normalize_path
+from ...utils.virtual_paths import build_virtual_path, is_virtual_path, split_virtual_path
 from ...utils.profiling import profiler
 from ...utils.logs import AppLogger
+
+
+SYSTEM_FILE_HASH_KEY = "file_hash"
+
+STANDARD_KEYS_FILES = ("name", "path")
+STANDARD_KEYS_SOURCES = ("size", "modified", "created", "collected")
+STANDARD_KEYS = STANDARD_KEYS_FILES + STANDARD_KEYS_SOURCES
+
+
+def standard_key_columns(key: str) -> tuple[str, str, str] | None:
+    if key in STANDARD_KEYS_FILES:
+        return ("files", "path", key)
+    if key in STANDARD_KEYS_SOURCES:
+        return (
+            "sources AS s JOIN files AS i ON i.source = s.source",
+            "i.path",
+            f"CAST(s.{key} AS TEXT)",
+        )
+    return None
+
+
+def standard_key_columns_with_num(key: str) -> tuple[str, str, str, str] | None:
+    cols = standard_key_columns(key)
+    if cols is None:
+        return None
+    from_clause, path_col, val_col = cols
+    if key in STANDARD_KEYS_SOURCES:
+        return from_clause, path_col, val_col, f"s.{key}"
+    return from_clause, path_col, val_col, "NULL"
 
 
 @dataclass(frozen=True)
@@ -67,11 +97,14 @@ class SearchQuery:
             return "", []
         return "(" + " OR ".join(clauses) + ")", params
 
-    def _kv_part(self, from_clause, key_col, val_col, path_col, select_expr, other_keys, include_kw, normalize_fn):
+    def _kv_part(self, from_clause, key_col, val_col, path_col, select_expr, other_keys, include_kw, normalize_fn, exclude_keys=()):
         conds, params = [], []
         if other_keys:
             conds.append(f"{key_col} IN ({','.join('?' for _ in other_keys)})")
             params.extend(other_keys)
+        if exclude_keys:
+            conds.append(f"{key_col} NOT IN ({','.join('?' for _ in exclude_keys)})")
+            params.extend(exclude_keys)
         if include_kw:
             c, v = self._match_clause(val_col, include_kw, self.keyword_mode)
             conds.append(f"({c})")
@@ -83,26 +116,61 @@ class SearchQuery:
         w = f"WHERE {' AND '.join(conds)}" if conds else ""
         return f"SELECT {select_expr} FROM {from_clause} {w}", params
 
+    def _file_hash_part(self, include_kw, normalize_fn):
+        conds, params = [], []
+        if include_kw:
+            c, v = self._match_clause("s.file_hash", include_kw, self.keyword_mode)
+            conds.append(f"({c})")
+            params.extend(v)
+        dc, dp = self._dir_clause("i.path", normalize_fn)
+        if dc:
+            conds.append(dc)
+            params.extend(dp)
+        w = f"WHERE {' AND '.join(conds)}" if conds else ""
+        return f'SELECT i.path, \'{SYSTEM_FILE_HASH_KEY}\' AS "key", s.file_hash AS "value" FROM sources AS s JOIN files AS i ON i.source = s.source {w}', params
+
     def _build_exclude(self, keys, query_all, exclude_kw):
         parts, params = [], []
-        conds, p = [], []
-        if keys:
-            conds.append(f'em."key" IN ({",".join("?" for _ in keys)})')
-            p.extend(keys)
-        c, v = self._match_clause('em."value"', exclude_kw, "OR")
-        conds.append(f"({c})")
-        p.extend(v)
-        parts.append(f"SELECT em.path FROM meta_info AS em WHERE {' AND '.join(conds)}")
-        params.extend(p)
-        conds2, p2 = [], []
-        if keys:
-            conds2.append(f'et."key" IN ({",".join("?" for _ in keys)})')
-            p2.extend(keys)
-        c2, v2 = self._match_clause('et."value"', exclude_kw, "OR")
-        conds2.append(f"({c2})")
-        p2.extend(v2)
-        parts.append(f"SELECT ei.path FROM tags AS et JOIN sources AS es ON es.file_hash = et.file_hash JOIN files AS ei ON ei.source = es.source WHERE {' AND '.join(conds2)}")
-        params.extend(p2)
+        kv_keys = [k for k in keys if k != SYSTEM_FILE_HASH_KEY]
+        std_keys = [k for k in kv_keys if k in STANDARD_KEYS] if not query_all else list(STANDARD_KEYS)
+        non_std_keys = [k for k in kv_keys if k not in STANDARD_KEYS]
+        if query_all or non_std_keys:
+            conds, p = [], []
+            if non_std_keys:
+                conds.append(f'em."key" IN ({",".join("?" for _ in non_std_keys)})')
+                p.extend(non_std_keys)
+            elif query_all:
+                conds.append('em."key" <> ?')
+                p.append(SYSTEM_FILE_HASH_KEY)
+            c, v = self._match_clause('em."value"', exclude_kw, "OR")
+            conds.append(f"({c})")
+            p.extend(v)
+            parts.append(f"SELECT em.path FROM meta_info AS em WHERE {' AND '.join(conds)}")
+            params.extend(p)
+
+            conds2, p2 = [], []
+            if non_std_keys:
+                conds2.append(f'et."key" IN ({",".join("?" for _ in non_std_keys)})')
+                p2.extend(non_std_keys)
+            c2, v2 = self._match_clause('et."value"', exclude_kw, "OR")
+            conds2.append(f"({c2})")
+            p2.extend(v2)
+            parts.append(f"SELECT ei.path FROM tags AS et JOIN sources AS es ON es.file_hash = et.file_hash JOIN files AS ei ON ei.source = es.source WHERE {' AND '.join(conds2)}")
+            params.extend(p2)
+
+        for k in std_keys:
+            cols = standard_key_columns(k)
+            if cols is None:
+                continue
+            from_clause, path_col, val_col = cols
+            c, v = self._match_clause(val_col, exclude_kw, "OR")
+            parts.append(f"SELECT {path_col} AS path FROM {from_clause} WHERE ({c})")
+            params.extend(v)
+
+        if query_all or SYSTEM_FILE_HASH_KEY in keys:
+            c3, p3 = self._match_clause("es.file_hash", exclude_kw, "OR")
+            parts.append(f"SELECT ei.path FROM sources AS es JOIN files AS ei ON ei.source = es.source WHERE ({c3})")
+            params.extend(p3)
         if not parts:
             return "", []
         return " UNION ".join(parts), params
@@ -114,33 +182,48 @@ class SearchQuery:
         if rk and not keys:
             return (None, [])
         query_all = not keys
+        kv_keys = [k for k in keys if k != SYSTEM_FILE_HASH_KEY]
+        non_std_keys = [k for k in kv_keys if k not in STANDARD_KEYS]
+        std_keys = [k for k in kv_keys if k in STANDARD_KEYS] if not query_all else list(STANDARD_KEYS)
         parts, all_params = [], []
 
-        sql, p = self._kv_part(
-            "meta_info AS mi",
-            'mi."key"',
-            'mi."value"',
-            "mi.path",
-            'mi.path, mi."key", mi."value"',
-            keys if not query_all else [],
-            include_kw,
-            normalize_path_func,
-        )
-        parts.append(sql)
-        all_params.extend(p)
+        if query_all or non_std_keys:
+            sql, p = self._kv_part(
+                "meta_info AS mi",
+                'mi."key"',
+                'mi."value"',
+                "mi.path",
+                'mi.path, mi."key", mi."value"',
+                non_std_keys if not query_all else [],
+                include_kw,
+                normalize_path_func,
+                (SYSTEM_FILE_HASH_KEY,) if query_all else (),
+            )
+            parts.append(sql)
+            all_params.extend(p)
 
-        sql, p = self._kv_part(
-            "tags AS t JOIN sources AS s ON s.file_hash = t.file_hash JOIN files AS i ON i.source = s.source",
-            't."key"',
-            't."value"',
-            "i.path",
-            'i.path, t."key", t."value"',
-            keys if not query_all else [],
-            include_kw,
-            normalize_path_func,
-        )
-        parts.append(sql)
-        all_params.extend(p)
+            sql, p = self._kv_part(
+                "tags AS t JOIN sources AS s ON s.file_hash = t.file_hash JOIN files AS i ON i.source = s.source",
+                't."key"',
+                't."value"',
+                "i.path",
+                'i.path, t."key", t."value"',
+                non_std_keys if not query_all else [],
+                include_kw,
+                normalize_path_func,
+            )
+            parts.append(sql)
+            all_params.extend(p)
+
+        for k in std_keys:
+            sql, p = self._standard_kv_part(k, include_kw, normalize_path_func)
+            parts.append(sql)
+            all_params.extend(p)
+
+        if query_all or SYSTEM_FILE_HASH_KEY in keys:
+            sql, p = self._file_hash_part(include_kw, normalize_path_func)
+            parts.append(sql)
+            all_params.extend(p)
 
         if not parts:
             return (None, [])
@@ -151,6 +234,23 @@ class SearchQuery:
                 subquery = f'SELECT sq.path, sq."key", sq."value" FROM ({subquery}) AS sq WHERE sq.path NOT IN ({exc_sql})'
                 all_params.extend(exc_params)
         return (subquery, all_params)
+
+    def _standard_kv_part(self, key: str, include_kw, normalize_fn):
+        cols = standard_key_columns(key)
+        if cols is None:
+            return 'SELECT NULL AS path, NULL AS "key", NULL AS "value" WHERE 0', []
+        from_clause, path_col, val_col = cols
+        conds, params = [], []
+        if include_kw:
+            c, v = self._match_clause(val_col, include_kw, self.keyword_mode)
+            conds.append(f"({c})")
+            params.extend(v)
+        dc, dp = self._dir_clause(path_col, normalize_fn)
+        if dc:
+            conds.append(dc)
+            params.extend(dp)
+        w = f"WHERE {' AND '.join(conds)}" if conds else ""
+        return f'SELECT {path_col} AS path, \'{key}\' AS "key", {val_col} AS "value" FROM {from_clause} {w}', params
 
 
 _IDENTIFIER_RE = re.compile(r"^[a-zA-Z_]\w*$")
@@ -215,6 +315,10 @@ class FileSearchEngine:
             self.conn = None
 
     def _normalize_path(self, path):
+        if is_virtual_path(path):
+            parts = split_virtual_path(path)
+            if parts:
+                return build_virtual_path(normalize_path(parts[0]), parts[1])
         return normalize_path(path)
 
     @profiler.profile
@@ -242,10 +346,22 @@ class FileSearchEngine:
         from ...plugin.query.handler import sort_registry
 
         cur = self.conn.cursor()
-        col_str = ", ".join(f"m.{c}" for c in columns)
         plugin = sort_registry.get(sort_by)
+        sort_column = getattr(plugin, "SORT_COLUMN", None) if plugin else None
         meta_key = getattr(plugin, "META_KEY", None) if plugin else None
         has_custom_sort = plugin and "sort_rows" in vars(plugin)
+        cols = list(columns)
+        if sort_column and sort_column not in cols:
+            cols.append(sort_column)
+        col_str = ", ".join(f"m.{c}" for c in cols)
+        if sort_column:
+            if has_custom_sort:
+                sql = f"SELECT {col_str} FROM files_full AS m JOIN ({path_query}) AS s USING(path)"
+                rows = list(cur.execute(sql, params).fetchall())
+                return plugin.sort_rows(rows, ascending)
+            order = "ASC" if ascending else "DESC"
+            sql = f"SELECT {col_str} FROM files_full AS m JOIN ({path_query}) AS s USING(path) ORDER BY m.{sort_column} {order}"
+            return cur.execute(sql, params).fetchall()
         if has_custom_sort:
             if meta_key:
                 kv_join, kv_select, _, kv_params = _kv_sort_join(meta_key, self.conn)
@@ -333,6 +449,24 @@ class FileSearchEngine:
         if not self._connect_if_needed():
             return []
         cur = self.conn.cursor()
+        if key == SYSTEM_FILE_HASH_KEY:
+            rows = cur.execute(
+                "SELECT DISTINCT file_hash AS value FROM sources ORDER BY file_hash LIMIT ?",
+                (limit,),
+            ).fetchall()
+            return [row["value"] for row in rows]
+        if key in STANDARD_KEYS_FILES:
+            rows = cur.execute(
+                f"SELECT DISTINCT {key} AS value FROM files WHERE {key} IS NOT NULL LIMIT ?",
+                (limit,),
+            ).fetchall()
+            return [row["value"] for row in rows]
+        if key in STANDARD_KEYS_SOURCES:
+            rows = cur.execute(
+                f"SELECT DISTINCT CAST({key} AS TEXT) AS value FROM sources WHERE {key} IS NOT NULL LIMIT ?",
+                (limit,),
+            ).fetchall()
+            return [row["value"] for row in rows]
         rows = cur.execute(
             "SELECT DISTINCT value FROM meta_info WHERE key = ? LIMIT ?",
             (key, limit),
@@ -469,22 +603,44 @@ class FileSearchEngine:
 
     def get_all_metadata_with_locks(self, path):
         if not self._connect_if_needed():
-            return {}, None, {}, {}
+            return {}, {}, None, {}, {}
         cur = self.conn.cursor()
         norm_path = self._normalize_path(path)
-        file_row = cur.execute("SELECT * FROM files WHERE path = ?", (norm_path,)).fetchone()
+        file_row = cur.execute(
+            """
+            SELECT i.path, i.name, i.source, i.aspect_ratio, i.source_extension,
+                   s.file_hash, s.size, s.modified, s.created, s.collected
+            FROM files AS i
+            JOIN sources AS s ON s.source = i.source
+            WHERE i.path = ?
+            """,
+            (norm_path,),
+        ).fetchone()
         if not file_row:
-            return {}, None, {}, {}
-        file_record = dict(file_row)
+            return {}, {}, None, {}, {}
+        file_record = {
+            "path": file_row["path"],
+            "name": file_row["name"],
+            "source": file_row["source"],
+            "aspect_ratio": file_row["aspect_ratio"],
+            "source_extension": file_row["source_extension"],
+        }
+        source_record = {
+            "source": file_row["source"],
+            "file_hash": file_row["file_hash"],
+            "size": file_row["size"],
+            "modified": file_row["modified"],
+            "created": file_row["created"],
+            "collected": file_row["collected"],
+        }
         meta_rows = cur.execute("SELECT key, value, locked FROM meta_info WHERE path = ?", (norm_path,)).fetchall()
         meta_info = {r["key"]: (r["value"], bool(r["locked"])) for r in meta_rows}
-        src_row = cur.execute("SELECT file_hash FROM sources WHERE source = ?", (file_record.get("source"),)).fetchone()
-        if not src_row or not src_row["file_hash"]:
-            return file_record, None, {}, meta_info
-        file_hash = src_row["file_hash"]
+        file_hash = file_row["file_hash"]
+        if not file_hash:
+            return source_record, file_record, None, {}, meta_info
         tag_rows = cur.execute("SELECT key, value, locked FROM tags WHERE file_hash = ?", (file_hash,)).fetchall()
         tags_with_lock = {r["key"]: (r["value"], bool(r["locked"])) for r in tag_rows}
-        return file_record, file_hash, tags_with_lock, meta_info
+        return source_record, file_record, file_hash, tags_with_lock, meta_info
 
     @profiler.profile
     def get_collection_status(self, path):

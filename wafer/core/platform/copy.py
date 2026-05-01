@@ -4,6 +4,9 @@ import sys
 from PySide6.QtCore import QMimeData, QUrl
 from PySide6.QtGui import QGuiApplication
 
+from ...utils.logs import AppLogger
+from ...utils.virtual_paths import is_virtual_path
+
 
 class ClipboardFileTransfer:
     def __init__(self):
@@ -12,8 +15,17 @@ class ClipboardFileTransfer:
     def set_files(self, file_paths, cut=False):
         if not file_paths:
             return
+        physical = [str(p) for p in file_paths if p and not is_virtual_path(str(p))]
+        skipped = len(file_paths) - len(physical)
+        if skipped:
+            AppLogger.warning(f"[clipboard] virtual paths rejected: {skipped} entries (file ops must target source files)")
+        unique_paths = list(dict.fromkeys(physical))
+        if not unique_paths:
+            return
+        if len(unique_paths) != len(physical):
+            AppLogger.warning(f"[clipboard] duplicate sources dropped: {len(physical)} -> {len(unique_paths)}")
         mime_data = QMimeData()
-        urls = [QUrl.fromLocalFile(path) for path in file_paths]
+        urls = [QUrl.fromLocalFile(p) for p in unique_paths]
         mime_data.setUrls(urls)
         platform = sys.platform
         if platform.startswith("win"):

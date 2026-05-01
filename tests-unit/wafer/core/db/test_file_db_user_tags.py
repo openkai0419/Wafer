@@ -1,6 +1,7 @@
 import sqlite3
 
 from wafer.core.db.file_db import FileDB
+from wafer.utils.virtual_paths import build_virtual_path
 
 
 def _make_db(tmp_path):
@@ -175,6 +176,23 @@ def test_apply_user_tags_multiple_paths(tmp_path):
     delres = db.apply_user_kv(['p1', 'p2'], [], ['mark.1'], scope="tag")
     assert 'mark.1' in delres['p1'][2]
     assert _get_tag(db, 'h1', 'mark.1') is None
+    db.close()
+
+
+def test_apply_user_tags_child_path_uses_source_hash(tmp_path):
+    db = _make_db(tmp_path)
+    source = "archive.zip"
+    child = build_virtual_path(source, "folder/image.png")
+    db.upsert_batches(
+        [(source, "hash_zip", 100, 1.0)],
+        [(source, source, 1.0), (child, source, 1.5)],
+        [],
+        [],
+    )
+    result = db.apply_user_kv([child], [("rating", "5", 5.0, 0)], [], scope="tag")
+    assert result[child][0] == "hash_zip"
+    assert "rating" in result[child][1]
+    assert _get_tag(db, "hash_zip", "rating") == ("5", 0)
     db.close()
 
 

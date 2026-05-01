@@ -102,6 +102,11 @@ EXPECTED_PLUGINS = {
         ("layout", "OptimizedJustifiedLayout"),
         ("layout", "OrganicPartitionLayout"),
     },
+    "zip": {
+        ("collector", "ZipCollectorPlugin"),
+        ("grid", "ZipGridPlugin"),
+        ("viewer", "ZipViewerPlugin"),
+    },
 }
 
 

@@ -598,7 +598,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         clicked = idx.data(USER_ROLE_PATH) if idx.isValid() else None
         selected = self.get_selected_paths()
         path = clicked or (selected[0] if selected else None)
-        return {"path": path, "paths": selected}
+        return {"path": path, "paths": selected, "source": path, "sources": selected}
 
     @profiler.profile
     def get_selected_paths(self):

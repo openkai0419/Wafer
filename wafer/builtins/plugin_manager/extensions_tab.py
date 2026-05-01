@@ -50,6 +50,8 @@ _CARD_STATUS_CONFIG: dict[CardStatus, tuple[str, str, bool]] = {
     CardStatus.FAILED: ("Retry", "failed", True),
     CardStatus.RESTART_REQUIRED: ("Restart Required", "deferred", False),
 }
+
+
 def _hex_to_rgba(hex_color: str, alpha: float) -> str:
     r = int(hex_color[1:3], 16)
     g = int(hex_color[3:5], 16)

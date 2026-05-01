@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from ...utils.profiling import profiler
-from ...core.db.query import _kv_sort_join, SYSTEM_FILE_HASH_KEY
+from ...core.db.query import _kv_sort_join, SYSTEM_FILE_HASH_KEY, STANDARD_KEYS, STANDARD_KEYS_FILES, STANDARD_KEYS_SOURCES
 from .base import BaseFilterPlugin
 
 
@@ -68,6 +68,18 @@ class SearchComposer:
             return []
 
         order = "ORDER BY freq DESC" if sort_by_freq else 'ORDER BY "key"'
+        std_branch_sqls = []
+        std_branch_params = []
+        for k in STANDARD_KEYS_FILES:
+            if k == "path":
+                std_branch_sqls.append('  SELECT mp.path, ? AS "key" FROM matched_paths AS mp')
+            else:
+                std_branch_sqls.append(f'  SELECT mp.path, ? AS "key" FROM matched_paths AS mp JOIN files AS f ON f.path = mp.path WHERE f."{k}" IS NOT NULL')
+            std_branch_params.append(k)
+        for k in STANDARD_KEYS_SOURCES:
+            std_branch_sqls.append(f'  SELECT mp.path, ? AS "key" FROM matched_paths AS mp JOIN files AS f ON f.path = mp.path JOIN sources AS s ON s.source = f.source WHERE s."{k}" IS NOT NULL')
+            std_branch_params.append(k)
+        std_branches = " UNION ALL ".join(std_branch_sqls)
         sql = (
             f"WITH matched_paths AS ({combined_sql}) "
             f'SELECT "key", COUNT(*) AS freq FROM ('
@@ -86,10 +98,12 @@ class SearchComposer:
             f"  FROM matched_paths AS mp"
             f"  JOIN files AS f ON f.path = mp.path"
             f"  JOIN sources AS s ON s.source = f.source"
+            f"  UNION ALL "
+            f"{std_branches}"
             f") AS items "
             f'GROUP BY "key" {order}'
         )
-        rows = engine.fetch(sql, [*combined_params, SYSTEM_FILE_HASH_KEY, SYSTEM_FILE_HASH_KEY])
+        rows = engine.fetch(sql, [*combined_params, SYSTEM_FILE_HASH_KEY, SYSTEM_FILE_HASH_KEY, *std_branch_params])
         return [(row["key"], row["freq"]) for row in rows]
 
     @staticmethod
@@ -139,9 +153,21 @@ class SearchComposer:
 
     @profiler.profile
     def _fetch(self, engine, columns, path_sql, params, sort_plugin, ascending):
-        col_str = ", ".join(f"m.{c}" for c in columns)
-        meta_key = sort_plugin.META_KEY
+        sort_column = getattr(sort_plugin, "SORT_COLUMN", None)
+        meta_key = getattr(sort_plugin, "META_KEY", None)
         has_custom_sort = "sort_rows" in vars(sort_plugin)
+        cols = list(columns)
+        if sort_column and sort_column not in cols:
+            cols.append(sort_column)
+        col_str = ", ".join(f"m.{c}" for c in cols)
+        if sort_column:
+            if has_custom_sort:
+                sql = f"SELECT {col_str} FROM files_full AS m JOIN ({path_sql}) AS s USING(path)"
+                rows = list(engine.fetch(sql, params))
+                return sort_plugin.sort_rows(rows, ascending)
+            order = "ASC" if ascending else "DESC"
+            sql = f"SELECT {col_str} FROM files_full AS m JOIN ({path_sql}) AS s USING(path) ORDER BY m.{sort_column} {order}"
+            return engine.fetch(sql, params)
         if has_custom_sort:
             if meta_key:
                 kv_join, kv_select, _, kv_params = _kv_sort_join(meta_key, engine.conn)
@@ -151,11 +177,10 @@ class SearchComposer:
                 sql = f"SELECT {col_str} FROM files_full AS m JOIN ({path_sql}) AS s USING(path)"
                 rows = list(engine.fetch(sql, params))
             return sort_plugin.sort_rows(rows, ascending)
-        elif meta_key:
+        if meta_key:
             order = "ASC" if ascending else "DESC"
             kv_join, _, kv_order, kv_params = _kv_sort_join(meta_key, engine.conn)
             sql = f"SELECT {col_str} FROM files_full AS m JOIN ({path_sql}) AS s USING(path){kv_join} ORDER BY {kv_order} {order}"
             return engine.fetch(sql, [*params, *kv_params])
-        else:
-            sql = f"SELECT {col_str} FROM files_full AS m JOIN ({path_sql}) AS s USING(path)"
-            return engine.fetch(sql, params)
+        sql = f"SELECT {col_str} FROM files_full AS m JOIN ({path_sql}) AS s USING(path)"
+        return engine.fetch(sql, params)

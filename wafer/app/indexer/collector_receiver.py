@@ -29,7 +29,7 @@ def _write_batched(writer: DatabaseWriter, data: dict[str, Any]):
             cs[i : i + BATCH_SIZE],
             cleanup=False,
         )
-    writer.cleanup_source_collectors(img, cs)
+    writer.cleanup_source_extensions(img, cs)
 
 
 def _merge_parsed(entries: list[dict[str, Any]]) -> dict[str, Any]:
@@ -140,11 +140,14 @@ def _parse_batch(results: list[dict[str, Any]]) -> dict[str, Any]:
 
         if ok:
             prefix = f"{collector}." if collector else ""
-            if aspect or (path != source):
-                source_collector = collector if path != source else None
-                image_entries.append((path, source, aspect, source_collector))
+            if aspect or (path != source) or name:
+                source_extension = collector if path != source else None
+                image_entries.append((path, source, name, aspect, source_extension))
             if path != source:
-                meta_info_entries.extend(_standard_meta_entries(r, path, name))
+                for key in ("size", "modified", "created"):
+                    value = r.get(key)
+                    if value is not None:
+                        meta_info_entries.append((path, f"{prefix}{key}", str(value), try_float(value)))
             for k, v in meta_info.items():
                 if v is not None:
                     meta_info_entries.append((path, f"{prefix}{k}", str(v), try_float(v)))
@@ -157,14 +160,3 @@ def _parse_batch(results: list[dict[str, Any]]) -> dict[str, Any]:
         "tag_entries": tag_entries,
         "collector_status": list(collector_status_map.values()),
     }
-
-
-def _standard_meta_entries(result: dict[str, Any], path: str, name: str | None) -> list[tuple[str, str, str, float | None]]:
-    values: dict[str, Any] = {"path": path}
-    if name:
-        values["name"] = name
-    for key in ("size", "modified", "created"):
-        value = result.get(key)
-        if value is not None:
-            values[key] = value
-    return [(path, key, str(value), try_float(value)) for key, value in values.items()]

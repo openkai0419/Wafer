@@ -9,6 +9,7 @@ from ..utils.formatting import natural_key
 class NaturalPathSort(BaseSortPlugin):
     NAME = "path"
     PRIORITY = 100
+    SORT_COLUMN = "path"
 
     @classmethod
     def sort_rows(cls, rows, ascending):
@@ -19,7 +20,7 @@ class NaturalPathSort(BaseSortPlugin):
 class NaturalNameSort(BaseSortPlugin):
     NAME = "name"
     PRIORITY = 90
-    META_KEY = "name"
+    SORT_COLUMN = "name"
 
     @classmethod
     def sort_rows(cls, rows, ascending):
@@ -30,25 +31,25 @@ class NaturalNameSort(BaseSortPlugin):
 class ModifiedSort(BaseSortPlugin):
     NAME = "modified"
     PRIORITY = 80
-    META_KEY = "modified"
+    SORT_COLUMN = "modified"
 
 
 class CreatedSort(BaseSortPlugin):
     NAME = "created"
     PRIORITY = 70
-    META_KEY = "created"
+    SORT_COLUMN = "created"
 
 
 class SizeSort(BaseSortPlugin):
     NAME = "size"
     PRIORITY = 60
-    META_KEY = "size"
+    SORT_COLUMN = "size"
 
 
 class CollectedSort(BaseSortPlugin):
     NAME = "collected"
     PRIORITY = 50
-    META_KEY = "collected"
+    SORT_COLUMN = "collected"
 
 
 class RandomSort(BaseSortPlugin):

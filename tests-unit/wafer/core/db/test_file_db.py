@@ -166,12 +166,12 @@ def test_collection_status_table_exists(tmp_path):
     db.close()
 
 
-def test_files_table_has_source_collector(tmp_path):
+def test_files_table_has_source_extension(tmp_path):
     db = FileDB(tmp_path / "test.db")
     db.start()
     db.initialize_database()
     cols = [r[1] for r in db.conn.execute("PRAGMA table_info('files')").fetchall()]
-    assert "source_collector" in cols
+    assert "source_extension" in cols
     db.close()
 
 
@@ -317,16 +317,14 @@ def test_rename_paths_updates_virtual_children_by_source_prefix(tmp_path):
     db.upsert_batches(
         [(source, "hash_zip", 100, 1.0), (other_source, "hash_other", 200, 2.0)],
         [
-            (source, source, 1.0),
-            (child, source, 1.5, "zip"),
-            (other_source, other_source, 1.0),
-            (other_child, other_source, 1.0, "zip"),
+            (source, source, "archive.zip", 1.0, None),
+            (child, source, "a%b::c.png", 1.5, "zip"),
+            (other_source, other_source, "archive.zip2", 1.0, None),
+            (other_child, other_source, "a.png", 1.0, "zip"),
         ],
         [
             (source, "path", source, None),
-            (source, "name", "archive.zip", None),
             (child, "path", child, None),
-            (child, "name", "a%b::c.png", None),
         ],
         [],
     )
@@ -334,13 +332,12 @@ def test_rename_paths_updates_virtual_children_by_source_prefix(tmp_path):
     db.rename_paths([(source, new_source)])
 
     assert db.read_conn.execute("SELECT COUNT(*) FROM files WHERE path = ?", (child,)).fetchone()[0] == 0
-    row = db.read_conn.execute("SELECT source, source_collector FROM files WHERE path = ?", (new_child,)).fetchone()
+    row = db.read_conn.execute("SELECT source, source_extension FROM files WHERE path = ?", (new_child,)).fetchone()
     assert row == (new_source, "zip")
     assert db.read_conn.execute("SELECT source FROM collection_status WHERE collector='zip' AND source = ?", (new_source,)).fetchone() is not None
     assert db.read_conn.execute("SELECT path FROM files WHERE path = ?", (other_child,)).fetchone()[0] == other_child
-    assert db.read_conn.execute("SELECT value FROM meta_info WHERE path = ? AND key = 'path'", (new_child,)).fetchone()[0] == new_child
-    assert db.read_conn.execute("SELECT value FROM meta_info WHERE path = ? AND key = 'name'", (new_child,)).fetchone()[0] == "a%b::c.png"
-    assert db.read_conn.execute("SELECT value FROM meta_info WHERE path = ? AND key = 'name'", (new_source,)).fetchone()[0] == "renamed.zip"
+    assert db.read_conn.execute("SELECT name FROM files WHERE path = ?", (new_child,)).fetchone()[0] == "a%b::c.png"
+    assert db.read_conn.execute("SELECT name FROM files WHERE path = ?", (new_source,)).fetchone()[0] == "renamed.zip"
     db.close()
 
 
@@ -382,12 +379,12 @@ def test_rename_paths_updates_filename(tmp_path):
     db.initialize_database()
     db.upsert_batches(
         [("c:/dir/old_name.jpg", "hash1", 100, 1.0)],
-        [("c:/dir/old_name.jpg", "c:/dir/old_name.jpg", 1.0)],
-        [("c:/dir/old_name.jpg", "name", "old_name.jpg", None), ("c:/dir/old_name.jpg", "path", "c:/dir/old_name.jpg", None)],
+        [("c:/dir/old_name.jpg", "c:/dir/old_name.jpg", "old_name.jpg", 1.0, None)],
+        [("c:/dir/old_name.jpg", "path", "c:/dir/old_name.jpg", None)],
         [],
     )
     db.rename_paths([("c:/dir/old_name.jpg", "c:/dir/new_name.jpg")])
-    row = db.read_conn.execute("SELECT value FROM meta_info WHERE path='c:/dir/new_name.jpg' AND key='name'").fetchone()
+    row = db.read_conn.execute("SELECT name FROM files WHERE path='c:/dir/new_name.jpg'").fetchone()
     assert row[0] == "new_name.jpg"
     db.close()
 
@@ -612,7 +609,7 @@ def test_delete_collector_data_re_collect(tmp_path):
     db.close()
 
 
-def test_delete_collector_data_deletes_source_collector_children(tmp_path):
+def test_delete_collector_data_deletes_source_extension_children(tmp_path):
     db = FileDB(tmp_path / "test.db")
     db.start()
     db.initialize_database()
@@ -625,7 +622,7 @@ def test_delete_collector_data_deletes_source_collector_children(tmp_path):
         [],
     )
     db.upsert_collection_results(
-        [(child, source, 1.0, "zip")],
+        [(child, source, "image.png", 1.0, "zip")],
         [(child, "path", child, None)],
         [],
         [(source, "zip", "ok", 2.0)],
@@ -637,7 +634,7 @@ def test_delete_collector_data_deletes_source_collector_children(tmp_path):
     db.close()
 
 
-def test_delete_collector_data_re_collect_deletes_source_collector_children(tmp_path):
+def test_delete_collector_data_re_collect_deletes_source_extension_children(tmp_path):
     db = FileDB(tmp_path / "test.db")
     db.start()
     db.initialize_database()
@@ -650,7 +647,7 @@ def test_delete_collector_data_re_collect_deletes_source_collector_children(tmp_
         [],
     )
     db.upsert_collection_results(
-        [(child, source, 1.0, "zip")],
+        [(child, source, "image.png", 1.0, "zip")],
         [],
         [],
         [(source, "zip", "ok", 2.0)],

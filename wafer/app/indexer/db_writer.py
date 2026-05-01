@@ -51,8 +51,8 @@ class DatabaseWriter:
         self._db.try_checkpoint("PASSIVE")
 
     @profiler.profile
-    def cleanup_source_collectors(self, image_entries, collector_status_entries):
-        self._db.cleanup_source_collector_children(image_entries, collector_status_entries)
+    def cleanup_source_extensions(self, image_entries, collector_status_entries):
+        self._db.cleanup_source_extension_children(image_entries, collector_status_entries)
         self._db.try_checkpoint("PASSIVE")
 
     @profiler.profile

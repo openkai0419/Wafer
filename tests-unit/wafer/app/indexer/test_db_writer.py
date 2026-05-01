@@ -138,13 +138,13 @@ def test_zip_collection_deletes_stale_child_rows(writer):
     keep_child = build_virtual_path(source, "keep.png")
     writer.upsert_sources([(source, "hash_zip", 100, 1.0)], [(source, source, 1.0)])
     writer.upsert_results(
-        [(old_child, source, 1.0, "zip"), (keep_child, source, 1.0, "zip")],
+        [(old_child, source, "old.png", 1.0, "zip"), (keep_child, source, "keep.png", 1.0, "zip")],
         [],
         [],
         [(source, "zip", "ok", 2.0)],
     )
     writer.upsert_results(
-        [(keep_child, source, 2.0, "zip")],
+        [(keep_child, source, "keep.png", 2.0, "zip")],
         [],
         [],
         [(source, "zip", "ok", 3.0)],
@@ -162,7 +162,7 @@ def test_zip_collection_empty_result_deletes_child_rows(writer):
     child = build_virtual_path(source, "old.png")
     writer.upsert_sources([(source, "hash_zip", 100, 1.0)], [(source, source, 1.0)])
     writer.upsert_results(
-        [(child, source, 1.0, "zip")],
+        [(child, source, "old.png", 1.0, "zip")],
         [],
         [],
         [(source, "zip", "ok", 2.0)],
@@ -181,7 +181,7 @@ def test_zip_collection_fail_does_not_delete_child_rows(writer):
     child = build_virtual_path(source, "old.png")
     writer.upsert_sources([(source, "hash_zip", 100, 1.0)], [(source, source, 1.0)])
     writer.upsert_results(
-        [(child, source, 1.0, "zip")],
+        [(child, source, "old.png", 1.0, "zip")],
         [],
         [],
         [(source, "zip", "ok", 2.0)],

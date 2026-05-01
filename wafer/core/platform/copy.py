@@ -15,6 +15,7 @@ class ClipboardFileTransfer:
         unique_paths = list(dict.fromkeys(str(p) for p in file_paths if p))
         if len(unique_paths) != len(file_paths):
             from ...utils.logs import AppLogger
+
             AppLogger.warning(f"[clipboard] duplicate sources dropped: {len(file_paths)} -> {len(unique_paths)}")
         mime_data = QMimeData()
         urls = [QUrl.fromLocalFile(p) for p in unique_paths]

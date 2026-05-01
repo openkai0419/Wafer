@@ -14,14 +14,21 @@ def _mock_engine(**overrides):
         overrides.setdefault("meta_info_with_lock", {k: (v, False) for k, v in meta.items()})
         overrides.setdefault("tags_with_lock", {k: (v, False) for k, v in tags.items()})
     defaults = {
-        "file_record": {"path": "/a.png", "source": "/a.png", "name": "a.png", "aspect_ratio": None},
+        "source_record": {"source": "/a.png", "size": None, "modified": None, "created": None, "collected": None},
+        "file_record": {"path": "/a.png", "source": "/a.png", "name": "a.png", "aspect_ratio": None, "source_extension": None},
         "meta_info_with_lock": {},
         "tags_with_lock": {},
         "file_hash": "h1",
         "get_collection_status": [],
     }
     defaults.update(overrides)
+    if "size" in defaults["file_record"] or "modified" in defaults["file_record"] or "created" in defaults["file_record"] or "collected" in defaults["file_record"]:
+        for k in ("size", "modified", "created", "collected"):
+            if k in defaults["file_record"]:
+                defaults["source_record"][k] = defaults["file_record"].pop(k)
+    defaults["source_record"].setdefault("file_hash", defaults["file_hash"])
     engine.get_all_metadata_with_locks.return_value = (
+        defaults["source_record"],
         defaults["file_record"],
         defaults["file_hash"],
         defaults["tags_with_lock"],
@@ -38,92 +45,83 @@ def test_compile():
 def test_format_meta_source_same_as_path():
     engine = _mock_engine()
     result = _format_meta(engine, "/a.png", "")
-    file_rec = result["source"]
-    assert "path" not in file_rec
-    assert file_rec["source"] == "/a.png"
+    source_section = result["source"]
+    file_section = result["file"]
+    assert source_section["source"] == "/a.png"
+    assert file_section["path"] == "/a.png"
 
 
 def test_format_meta_source_differs_from_path():
     engine = _mock_engine(
-        get_all_metadata=(
-            {"path": "/a.png", "source": "/other/a.png", "name": "a.png", "aspect_ratio": None},
-            {},
-            {},
-        )
+        source_record={"source": "/other/a.png", "file_hash": "h1", "size": None, "modified": None, "created": None, "collected": None},
+        file_record={"path": "/a.png", "source": "/other/a.png", "name": "a.png", "aspect_ratio": None, "source_extension": None},
     )
     result = _format_meta(engine, "/a.png", "")
-    file_rec = result["source"]
-    assert "path" not in file_rec
-    assert file_rec["source"] == "/other/a.png"
+    assert result["source"]["source"] == "/other/a.png"
+    assert result["file"]["path"] == "/a.png"
 
 
-def test_format_meta_injects_resolved_file_hash():
-    engine = _mock_engine(file_hash="resolved_hash", meta_info_with_lock={"name": ("a.png", False)})
+def test_format_meta_includes_resolved_file_hash_in_source():
+    engine = _mock_engine(file_hash="resolved_hash")
     result = _format_meta(engine, "/a.png", "")
-    assert result["file"]["file_hash"] == "resolved_hash"
+    assert result["source"]["file_hash"] == "resolved_hash"
 
 
 def test_format_meta_formats_size_and_timestamps():
     engine = _mock_engine(
-        get_all_metadata=(
-            {"path": "/a.png", "source": "/a.png", "name": "a.png", "aspect_ratio": None},
-            {},
-            {"created": "1700000000", "collected": "1700000000", "modified": "1700000000", "size": "2048"},
-        )
+        source_record={"source": "/a.png", "file_hash": "h1", "size": "2048", "modified": "1700000000", "created": "1700000000", "collected": "1700000000"},
     )
     result = _format_meta(engine, "/a.png", "")
-    standard = result["file"]
-    assert isinstance(standard["created"], str)
-    assert isinstance(standard["collected"], str)
-    assert isinstance(standard["modified"], str)
-    assert isinstance(standard["size"], str)
+    source_section = result["source"]
+    assert isinstance(source_section["created"], str)
+    assert isinstance(source_section["collected"], str)
+    assert isinstance(source_section["modified"], str)
+    assert isinstance(source_section["size"], str)
+    assert source_section["size"] != "2048"
 
 
 def test_format_meta_sorts_tags_and_meta():
     engine = _mock_engine(
-        get_all_metadata=(
-            {"path": "/a.png", "source": "/a.png", "name": "a.png", "aspect_ratio": None},
-            {"z_tag": "1", "a_tag": "2"},
-            {"name": "a.png", "size": "1024", "exif.width": "100"},
-        )
+        tags_with_lock={"z_tag": ("1", False), "a_tag": ("2", False)},
+        meta_info_with_lock={"exif.width": ("100", False)},
     )
     result = _format_meta(engine, "/a.png", "")
     tags = result["tag"]
-    standard = result["file"]
+    file_section = result["file"]
     assert list(tags.keys()) == ["a_tag", "z_tag"]
-    assert "name" in standard
-    assert "size" in standard
+    assert "name" in file_section
+    assert "exif" in result["prefixed"]
 
 
 def test_format_meta_aspect_ratio():
     engine = _mock_engine(
-        get_all_metadata=(
-            {"path": "/a.png", "source": "/a.png", "name": "a.png", "aspect_ratio": 1.5},
-            {},
-            {},
-        )
+        file_record={"path": "/a.png", "source": "/a.png", "name": "a.png", "aspect_ratio": 1.5, "source_extension": None},
     )
     result = _format_meta(engine, "/a.png", "")
-    file_rec = result["source"]
-    assert isinstance(file_rec["aspect_ratio"], str)
+    assert isinstance(result["file"]["aspect_ratio"], str)
+
+
+def test_format_meta_source_extension_only_when_set():
+    engine_without = _mock_engine()
+    assert "source_extension" not in _format_meta(engine_without, "/a.png", "")["file"]
+    engine_with = _mock_engine(
+        file_record={"path": "/a.png", "source": "/a.png", "name": "a.png", "aspect_ratio": None, "source_extension": "zip"},
+    )
+    assert _format_meta(engine_with, "/a.png", "")["file"]["source_extension"] == "zip"
 
 
 def test_format_meta_splits_prefixed_meta():
     engine = _mock_engine(
-        get_all_metadata=(
-            {"path": "/a.png", "source": "/a.png", "name": "a.png", "aspect_ratio": None},
-            {},
-            {"name": "a.png", "size": "1024", "rating": "5", "exif.width": "100", "exif.height": "200"},
-        )
+        tags_with_lock={"rating": ("5", False)},
+        meta_info_with_lock={"exif.width": ("100", False), "exif.height": ("200", False)},
     )
     result = _format_meta(engine, "/a.png", "")
-    standard = result["file"]
+    file_section = result["file"]
     root_meta = result["meta"]
     prefixed = result["prefixed"]
-    assert "name" in standard
-    assert "size" in standard
-    assert "rating" not in standard
-    assert root_meta == {"rating": "5"}
+    assert "name" in file_section
+    assert root_meta == {}
+    assert result["tag"] == {"rating": "5"}
     assert "exif" in prefixed
     assert "width" in prefixed["exif"]
     assert "height" in prefixed["exif"]
@@ -132,11 +130,11 @@ def test_format_meta_splits_prefixed_meta():
 def test_format_meta_embeds_collector_html():
     engine = _mock_engine(get_collection_status=[("exif", "ok"), ("animated", "fail")])
     result = _format_meta(engine, "/a.png", "")
-    file_rec = result["source"]
-    assert "collected by" in file_rec
-    assert "\u25cf" in file_rec["collected by"]
-    assert "animated" in file_rec["collected by"]
-    assert "exif" in file_rec["collected by"]
+    source_section = result["source"]
+    assert "collected by" in source_section
+    assert "\u25cf" in source_section["collected by"]
+    assert "animated" in source_section["collected by"]
+    assert "exif" in source_section["collected by"]
 
 
 class TestAutoplayState:

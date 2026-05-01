@@ -30,14 +30,8 @@ def populated_db(db_path):
         fsize = 1000 + i
         sources.append((source, fhash, fsize, mtime))
         images.append((path, source, 1.5))
-        metas.append((path, "path", path, None))
-        metas.append((path, "name", f"img_{i:04d}.jpg", None))
         metas.append((path, "dpi", f"{72 + (i % 4) * 24}", None))
         metas.append((path, "Comment", f"photo number {i}", None))
-        metas.append((path, "size", str(fsize), float(fsize)))
-        metas.append((path, "modified", str(mtime), mtime))
-        metas.append((path, "created", str(mtime), mtime))
-        metas.append((path, "collected", str(mtime), mtime))
         if i % 3 == 0:
             metas.append((path, "Artist", f"photographer_{i % 5}", None))
         tags.append((fhash, "rating", f"{(i % 5) + 1}", float((i % 5) + 1)))
@@ -70,8 +64,6 @@ def special_char_db(tmp_path):
     for path, name, fhash, comment in special_names:
         sources.append((path, fhash, 100, 1.0))
         images.append((path, path, 1.5))
-        metas.append((path, "path", path, None))
-        metas.append((path, "name", name, None))
         metas.append((path, "Comment", comment, None))
         tags.append((fhash, "rating", "3", 3.0))
     db.upsert_batches(sources, images, metas, tags)
@@ -96,7 +88,7 @@ class TestSearchQuerySubquery:
         q = SearchQuery(keys=["path"])
         sql, params = q._make_subquery(np)
         assert sql is not None
-        assert "meta_info" in sql
+        assert "files" in sql
 
     def test_no_keys_require_keys_true(self):
         q = SearchQuery(keys=None, require_keys=True)
@@ -739,12 +731,12 @@ class TestEngineLookupMethods:
 
     def test_get_tags_by_path(self, populated_db):
         engine = FileSearchEngine(populated_db)
-        _, _, tags, _ = engine.get_all_metadata_with_locks("C:/photos/vacation/img_0000.jpg")
+        _, _, _, tags, _ = engine.get_all_metadata_with_locks("C:/photos/vacation/img_0000.jpg")
         assert "rating" in tags
 
     def test_get_tags_nonexistent(self, populated_db):
         engine = FileSearchEngine(populated_db)
-        _, _, tags, _ = engine.get_all_metadata_with_locks("C:/nonexistent/file.jpg")
+        _, _, _, tags, _ = engine.get_all_metadata_with_locks("C:/nonexistent/file.jpg")
         assert tags == {}
 
     def test_get_file_record(self, populated_db):
@@ -770,8 +762,9 @@ class TestEngineLookupMethods:
 
     def test_get_all_metadata(self, populated_db):
         engine = FileSearchEngine(populated_db)
-        file_rec, file_hash, tags_with_lock, meta = engine.get_all_metadata_with_locks("C:/photos/vacation/img_0000.jpg")
+        source_rec, file_rec, file_hash, tags_with_lock, meta = engine.get_all_metadata_with_locks("C:/photos/vacation/img_0000.jpg")
         assert file_rec.get("path") is not None
+        assert source_rec.get("file_hash") == file_hash
         assert file_hash is not None
         assert "rating" in tags_with_lock
         assert isinstance(tags_with_lock["rating"], tuple) and len(tags_with_lock["rating"]) == 2
@@ -791,9 +784,10 @@ class TestEngineLookupMethods:
         )
         db.close()
         engine = FileSearchEngine(db_path)
-        file_rec, file_hash, tags_with_lock, meta = engine.get_all_metadata_with_locks(child)
+        source_rec, file_rec, file_hash, tags_with_lock, meta = engine.get_all_metadata_with_locks(child)
         assert file_rec["source"] == source
         assert file_hash == "hash_zip"
+        assert source_rec["file_hash"] == "hash_zip"
         assert tags_with_lock["rating"] == ("5", False)
         assert meta["name"] == ("image.png", False)
 
@@ -1079,7 +1073,7 @@ class TestEmptyDB:
 
     def test_get_tags_empty(self, empty_db):
         engine = FileSearchEngine(empty_db)
-        _, _, tags, _ = engine.get_all_metadata_with_locks("C:/any/file.jpg")
+        _, _, _, tags, _ = engine.get_all_metadata_with_locks("C:/any/file.jpg")
         assert tags == {}
 
     def test_get_file_record_empty(self, empty_db):
@@ -1092,7 +1086,8 @@ class TestEmptyDB:
 
     def test_get_all_metadata_empty(self, empty_db):
         engine = FileSearchEngine(empty_db)
-        file_rec, file_hash, tags_with_lock, meta = engine.get_all_metadata_with_locks("C:/any/file.jpg")
+        source_rec, file_rec, file_hash, tags_with_lock, meta = engine.get_all_metadata_with_locks("C:/any/file.jpg")
+        assert source_rec == {}
         assert file_rec == {}
         assert file_hash is None
         assert tags_with_lock == {}

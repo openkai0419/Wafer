@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import hashlib
 import os
 import re
@@ -17,6 +18,10 @@ from wafer.utils.virtual_paths import child_path, display_name, source_path
 from . import settings as cache_settings
 
 _INVALID_FILENAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
+
+
+def _is_sharing_violation(e: OSError) -> bool:
+    return e.errno == errno.EACCES or getattr(e, "winerror", None) in (5, 32)
 
 
 class ZipCache:
@@ -111,7 +116,7 @@ class ZipCache:
         with self._lock:
             entries: list[tuple[float, int, Path]] = []
             dirs: list[Path] = []
-            for dirpath, dirnames, filenames in os.walk(self.root, onerror=lambda _e: None):
+            for dirpath, _dirnames, filenames in os.walk(self.root, onerror=lambda _e: None):
                 base = Path(dirpath)
                 if base != self.root:
                     dirs.append(base)
@@ -128,7 +133,8 @@ class ZipCache:
                         except FileNotFoundError:
                             pass
                         except OSError as e:
-                            AppLogger.debug(f"[zip_cache] unlink failed: {path} ({e})")
+                            if not _is_sharing_violation(e):
+                                AppLogger.debug(f"[zip_cache] unlink failed: {path} ({e})")
                     else:
                         entries.append((st.st_mtime, st.st_size, path))
             total_size = sum(size for _, size, _ in entries)
@@ -144,7 +150,8 @@ class ZipCache:
                     except FileNotFoundError:
                         total_size -= size
                     except OSError as e:
-                        AppLogger.debug(f"[zip_cache] LRU unlink failed: {path} ({e})")
+                        if not _is_sharing_violation(e):
+                            AppLogger.debug(f"[zip_cache] LRU unlink failed: {path} ({e})")
             for path in sorted(dirs, reverse=True):
                 try:
                     path.rmdir()

@@ -173,7 +173,7 @@ def test_merge_parsed_ok_overrides_fail():
     assert merged["collector_status"][0][2] == "ok"
 
 
-def test_write_batched_runs_source_collector_cleanup_after_chunks():
+def test_write_batched_runs_source_extension_cleanup_after_chunks():
     writer = MagicMock()
     image_entries = [(f"p{i}", "src", 1.0, "zip") for i in range(BATCH_SIZE + 1)]
     collector_status = [("src", "zip", "ok", 1.0)]
@@ -186,7 +186,7 @@ def test_write_batched_runs_source_collector_cleanup_after_chunks():
     _write_batched(writer, data)
     assert writer.upsert_results.call_count == 2
     assert all(call.kwargs == {"cleanup": False} for call in writer.upsert_results.call_args_list)
-    writer.cleanup_source_collectors.assert_called_once_with(image_entries, collector_status)
+    writer.cleanup_source_extensions.assert_called_once_with(image_entries, collector_status)
 
 
 def test_flush_delay_constant():
@@ -209,8 +209,9 @@ def test_parse_batch_ok_status():
     ]
     data = _parse_batch(results)
     assert len(data["image_entries"]) == 1
-    assert data["image_entries"][0][2] == 1.5
-    assert data["image_entries"][0][3] is None
+    assert data["image_entries"][0][2] == "test.png"
+    assert data["image_entries"][0][3] == 1.5
+    assert data["image_entries"][0][4] is None
     meta_keys = [e[1] for e in data["meta_info_entries"]]
     assert "exif.width" in meta_keys
     assert len(data["tag_entries"]) == 1
@@ -255,14 +256,11 @@ def test_parse_batch_multi_path():
     ]
     data = _parse_batch(results)
     assert len(data["image_entries"]) == 2
-    assert all(entry[3] == "zip" for entry in data["image_entries"])
+    assert all(entry[4] == "zip" for entry in data["image_entries"])
     meta = {(path, key): value for path, key, value, _ in data["meta_info_entries"]}
-    assert meta[(child_a, "path")] == child_a
-    assert meta[(child_a, "name")] == "a.png"
-    assert meta[(child_a, "size")] == "10"
-    assert meta[(child_a, "modified")] == "1.5"
-    assert meta[(child_b, "path")] == child_b
-    assert meta[(child_b, "size")] == "20"
+    assert meta[(child_a, "zip.size")] == "10"
+    assert meta[(child_a, "zip.modified")] == "1.5"
+    assert meta[(child_b, "zip.size")] == "20"
 
 
 def test_parse_batch_ok_overrides_fail():

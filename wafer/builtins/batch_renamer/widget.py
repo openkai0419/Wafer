@@ -62,6 +62,25 @@ def _fetch_metadata_sync(db_path, paths_str):
                 ).fetchall()
                 for path, key, value in rows:
                     result.setdefault(path, {})[key] = value or ""
+                rows = conn.execute(
+                    f"""SELECT i.path, i.name, s.size, s.modified, s.created, s.collected
+                    FROM files AS i JOIN sources AS s ON s.source = i.source
+                    WHERE i.path IN ({placeholders})""",
+                    chunk,
+                ).fetchall()
+                for path, name, size, modified, created, collected in rows:
+                    entry = result.setdefault(path, {})
+                    entry["path"] = path or ""
+                    if name is not None:
+                        entry["name"] = str(name)
+                    for key, value in (
+                        ("size", size),
+                        ("modified", modified),
+                        ("created", created),
+                        ("collected", collected),
+                    ):
+                        if value is not None:
+                            entry[key] = str(value)
         finally:
             conn.close()
     except Exception as e:

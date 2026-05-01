@@ -68,6 +68,7 @@ class BaseFilterPlugin(PluginBase, ABC):
 
 class BaseSortPlugin(PluginBase, ABC):
     META_KEY: str | None = None
+    SORT_COLUMN: str | None = None
 
     @classmethod
     def sort_rows(cls, rows: list, ascending: bool) -> list:

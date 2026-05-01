@@ -8,7 +8,7 @@ from pathlib import Path
 from collections.abc import Sequence
 
 from ...core.db.db_utils import apply_read_pragmas, connect_with_retry
-from ...utils.hashes import fast_signature_hash
+from ...core.db.indexer import build_basic_entries
 from ...utils.logs import AppLogger
 from ...utils.paths import normalize_path
 from ...utils.profiling import profiler
@@ -225,26 +225,12 @@ class DirectoryScanner:
                 return
             chunk = paths[i : i + _CHUNK]
             aspect_map = FileThumbnailer.get_aspect_ratios(chunk)
-            source_entries = []
-            file_entries = []
-            meta_info_entries = []
-            for p in chunk:
-                mtime, fsize, ctime = file_info.get(p, (0.0, 0, 0.0))
-                file_hash = fast_signature_hash(p, fsize, 256)
-                source_entries.append((p, file_hash, fsize, mtime))
-                name = Path(p).name
-                file_entries.append((p, p, aspect_map.get(p, 1.0)))
-                meta_info_entries.append((p, "path", p, None))
-                meta_info_entries.append((p, "name", name, None))
-                meta_info_entries.append((p, "size", str(fsize), float(fsize)))
-                meta_info_entries.append((p, "modified", str(mtime), mtime))
-                meta_info_entries.append((p, "created", str(ctime), ctime))
-                meta_info_entries.append((p, "collected", str(now), now))
+            source_entries, file_entries = build_basic_entries(chunk, file_info, aspect_map, now)
             self._scheduler.submit(
                 Task.create(
                     "upsert_sources",
                     priority=TaskPriority.SCAN,
-                    run=lambda se=source_entries, ie=file_entries, me=meta_info_entries: self._writer.upsert_sources(se, ie, me),
+                    run=lambda se=source_entries, ie=file_entries: self._writer.upsert_sources(se, ie, ()),
                     cancel_token=token,
                     on_complete=lambda n=len(chunk): (
                         self._progress.increment(n, 0),

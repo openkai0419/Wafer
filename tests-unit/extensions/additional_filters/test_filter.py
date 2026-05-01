@@ -19,17 +19,17 @@ from extensions.additional_filters.filter import (
 )
 
 
-def _setup_db(tmp_path, files=None, meta_num=None):
+def _setup_db(tmp_path, files=None, meta_num=None, source_num=None):
     db_path = tmp_path / "test.db"
     conn = sqlite3.connect(str(db_path))
     apply_write_pragmas(conn)
     conn.execute("CREATE TABLE hash_index (file_hash TEXT PRIMARY KEY)")
     conn.execute("""CREATE TABLE sources (
         source TEXT PRIMARY KEY, file_hash TEXT NOT NULL,
-        size INTEGER, modified REAL,
+        size INTEGER, modified REAL, created REAL, collected REAL,
         FOREIGN KEY(file_hash) REFERENCES hash_index(file_hash))""")
     conn.execute("""CREATE TABLE files (
-        path TEXT PRIMARY KEY, source TEXT NOT NULL, aspect_ratio REAL,
+        path TEXT PRIMARY KEY, source TEXT NOT NULL, name TEXT, aspect_ratio REAL,
         FOREIGN KEY(source) REFERENCES sources(source))""")
     conn.execute("""CREATE TABLE meta_info (
         path TEXT NOT NULL, key TEXT NOT NULL, value TEXT, value_num REAL,
@@ -40,19 +40,22 @@ def _setup_db(tmp_path, files=None, meta_num=None):
         PRIMARY KEY(file_hash, key),
         FOREIGN KEY(file_hash) REFERENCES hash_index(file_hash))""")
     conn.execute("""CREATE VIEW files_full AS
-        SELECT i.path, i.source, i.aspect_ratio,
-               s.file_hash, s.size, s.modified
+        SELECT i.path, i.name, i.source, i.aspect_ratio,
+               s.file_hash, s.size, s.modified, s.created, s.collected
         FROM files i JOIN sources s ON s.source = i.source""")
     conn.executescript("""
         CREATE INDEX idx_meta_key_num ON meta_info(key, value_num);
+        CREATE INDEX idx_sources_modified ON sources(modified);
     """)
 
+    source_overrides = {p: (mt, ct, col) for p, mt, ct, col in (source_num or [])}
     for path in files or []:
         fhash = hashlib.md5(path.encode()).hexdigest()
         source = path
+        mt, ct, col = source_overrides.get(path, (1.0, None, None))
         conn.execute("INSERT OR IGNORE INTO hash_index VALUES (?)", (fhash,))
-        conn.execute("INSERT INTO sources VALUES (?,?,?,?)", (source, fhash, 100, 1.0))
-        conn.execute("INSERT INTO files VALUES (?,?,?)", (path, source, 1.0))
+        conn.execute("INSERT INTO sources VALUES (?,?,?,?,?,?)", (source, fhash, 100, mt, ct, col))
+        conn.execute("INSERT INTO files VALUES (?,?,?,?)", (path, source, os.path.basename(path), 1.0))
 
     for path, key, value_str, value_num in meta_num or []:
         conn.execute("INSERT OR REPLACE INTO meta_info VALUES (?,?,?,?)", (path, key, value_str, value_num))
@@ -217,9 +220,8 @@ class TestBuildPathQuery:
         sql, bind = DateRangeFilter.build_path_query(params, lambda p: p)
         assert sql is not None
         assert "BETWEEN" in sql
-        assert len(bind) == 3
-        assert bind[0] == "modified"
-        assert bind[1] < bind[2]
+        assert len(bind) == 2
+        assert bind[0] < bind[1]
 
     def test_preset_with_date_ref(self):
         params = {
@@ -233,28 +235,28 @@ class TestBuildPathQuery:
         assert sql is not None
         assert "BETWEEN" in sql
         ref_epoch = _date_str_to_epoch("2024/06/15", end_of_day=True)
-        assert abs(bind[2] - ref_epoch) < 1.0
+        assert abs(bind[1] - ref_epoch) < 1.0
 
     def test_range_both(self):
         params = {"target_key": "modified", "mode": "range", "range_from": "2024/01/01", "range_to": "2024/12/31"}
         sql, bind = DateRangeFilter.build_path_query(params, lambda p: p)
         assert sql is not None
         assert "BETWEEN" in sql
-        assert len(bind) == 3
+        assert len(bind) == 2
 
     def test_range_from_only(self):
         params = {"target_key": "modified", "mode": "range", "range_from": "2024/01/01", "range_to": ""}
         sql, bind = DateRangeFilter.build_path_query(params, lambda p: p)
         assert sql is not None
         assert "<=" in sql
-        assert len(bind) == 2
+        assert len(bind) == 1
 
     def test_range_to_only(self):
         params = {"target_key": "modified", "mode": "range", "range_from": "", "range_to": "2024/12/31"}
         sql, bind = DateRangeFilter.build_path_query(params, lambda p: p)
         assert sql is not None
         assert ">=" in sql
-        assert len(bind) == 2
+        assert len(bind) == 1
 
     def test_range_both_empty(self):
         params = {"target_key": "modified", "mode": "range", "range_from": "", "range_to": ""}
@@ -286,19 +288,19 @@ class TestBuildPathQuery:
         }
         sql, bind = DateRangeFilter.build_path_query(params, lambda p: p)
         assert "BETWEEN" in sql
-        assert bind[1] < bind[2]
+        assert bind[0] < bind[1]
 
 
 class TestQueryExecution:
     def test_preset_filters_recent(self, tmp_path):
         now = time.time()
         files = ["a.png", "b.png", "c.png"]
-        meta = [
-            ("a.png", "modified", str(now), now),
-            ("b.png", "modified", str(now - 3600), now - 3600),
-            ("c.png", "modified", str(now - 86400 * 30), now - 86400 * 30),
+        source_num = [
+            ("a.png", now, None, None),
+            ("b.png", now - 3600, None, None),
+            ("c.png", now - 86400 * 30, None, None),
         ]
-        db = _setup_db(tmp_path, files=files, meta_num=meta)
+        db = _setup_db(tmp_path, files=files, source_num=source_num)
         result = _query(db, {"target_key": "modified", "mode": "preset", "preset_value": 7, "preset_unit": "days"})
         assert "a.png" in result
         assert "b.png" in result
@@ -311,12 +313,12 @@ class TestQueryExecution:
         t2 = datetime(2024, 6, 15, tzinfo=timezone.utc).timestamp()
         t3 = datetime(2024, 12, 1, tzinfo=timezone.utc).timestamp()
         files = ["a.png", "b.png", "c.png"]
-        meta = [
-            ("a.png", "modified", str(t1), t1),
-            ("b.png", "modified", str(t2), t2),
-            ("c.png", "modified", str(t3), t3),
+        source_num = [
+            ("a.png", t1, None, None),
+            ("b.png", t2, None, None),
+            ("c.png", t3, None, None),
         ]
-        db = _setup_db(tmp_path, files=files, meta_num=meta)
+        db = _setup_db(tmp_path, files=files, source_num=source_num)
         result = _query(
             db,
             {

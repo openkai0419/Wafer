@@ -14,6 +14,17 @@ from ...utils.logs import AppLogger
 _CHUNK = 400
 
 
+def build_basic_entries(paths: Sequence[str], file_info: dict, aspect_map: dict, now: float):
+    source_entries = []
+    file_entries = []
+    for p in paths:
+        mtime, fsize, ctime = file_info.get(p, (0.0, 0, 0.0))
+        file_hash = fast_signature_hash(p, fsize, 256)
+        source_entries.append((p, file_hash, fsize, mtime, ctime, now))
+        file_entries.append((p, p, Path(p).name, aspect_map.get(p, 1.0), None))
+    return source_entries, file_entries
+
+
 class FileIndexer:
     def __init__(self, db_path, collectors=None):
         self.db = FileDB(db_path)
@@ -266,25 +277,14 @@ class FileIndexer:
     @profiler.profile
     def _register_basic_info(self, paths, file_info):
         from ..platform.thumbnails import FileThumbnailer
+        import time
 
+        now = time.time()
         for i in range(0, len(paths), _CHUNK):
             chunk = paths[i : i + _CHUNK]
             aspect_map = FileThumbnailer.get_aspect_ratios(chunk)
-            source_entries = []
-            file_entries = []
-            meta_entries = []
-            for p in chunk:
-                mtime, fsize, ctime = file_info.get(p, (0.0, 0, 0.0))
-                file_hash = fast_signature_hash(p, fsize, 256)
-                name = Path(p).name
-                source_entries.append((p, file_hash, fsize, mtime))
-                file_entries.append((p, p, aspect_map.get(p, 1.0)))
-                meta_entries.append((p, "path", p, None))
-                meta_entries.append((p, "name", name, None))
-                meta_entries.append((p, "size", str(fsize), float(fsize)))
-                meta_entries.append((p, "modified", str(mtime), mtime))
-                meta_entries.append((p, "created", str(ctime), ctime))
-            self.db.upsert_basic_sources(source_entries, file_entries, meta_entries)
+            source_entries, file_entries = build_basic_entries(chunk, file_info, aspect_map, now)
+            self.db.upsert_basic_sources(source_entries, file_entries, ())
             self.db.try_checkpoint("PASSIVE")
             self._add_progress(len(chunk), 0)
             self.emit_update()

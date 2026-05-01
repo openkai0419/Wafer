@@ -25,6 +25,7 @@ from wafer.builtins.rename_sources import (
 )
 from wafer.builtins.batch_renamer.widget import BatchRenamerPlugin
 from wafer.core.qt.dispatcher import CancelToken
+from wafer.core.db.file_db import FileDB
 
 
 @pytest.fixture(autouse=True)
@@ -128,6 +129,52 @@ class TestFetchMetadataSync:
 
     def test_missing_db(self):
         assert _fetch_metadata_sync("/nonexistent/db.sqlite", ["a.jpg"]) == {}
+
+    def test_fetches_standard_and_custom_metadata(self, tmp_path):
+        db_path = tmp_path / "rename.db"
+        db = FileDB(db_path)
+        db.start()
+        db.initialize_database()
+        db.upsert_batches(
+            [("c:/a.jpg", "hash-a", 2048, 1700000000.0, 1600000000.0, 1800000000.0)],
+            [("c:/a.jpg", "c:/a.jpg", "actual.jpg", 1.0, None)],
+            [("c:/a.jpg", "name", "stale-meta-name", None), ("c:/a.jpg", "exif.width", "100", 100.0)],
+            [("hash-a", "rating", "5", 5.0)],
+        )
+        db.close()
+
+        meta = _fetch_metadata_sync(db_path, ["c:/a.jpg"])["c:/a.jpg"]
+
+        assert meta["path"] == "c:/a.jpg"
+        assert meta["name"] == "actual.jpg"
+        assert meta["size"] == "2048"
+        assert meta["modified"] == "1700000000.0"
+        assert meta["created"] == "1600000000.0"
+        assert meta["collected"] == "1800000000.0"
+        assert meta["exif.width"] == "100"
+        assert meta["rating"] == "5"
+
+    def test_fetch_skips_null_standard_source_values(self, tmp_path):
+        db_path = tmp_path / "rename.db"
+        db = FileDB(db_path)
+        db.start()
+        db.initialize_database()
+        db.upsert_batches(
+            [("c:/b.jpg", "hash-b", None, None, None, None)],
+            [("c:/b.jpg", "c:/b.jpg", "b.jpg", 1.0, None)],
+            [],
+            [],
+        )
+        db.close()
+
+        meta = _fetch_metadata_sync(db_path, ["c:/b.jpg"])["c:/b.jpg"]
+
+        assert meta["path"] == "c:/b.jpg"
+        assert meta["name"] == "b.jpg"
+        assert "size" not in meta
+        assert "modified" not in meta
+        assert "created" not in meta
+        assert "collected" not in meta
 
 
 class TestFillFsTimestamps:

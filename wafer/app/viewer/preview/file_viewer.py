@@ -20,19 +20,37 @@ from ..grid.cachemanager import MemoryLimitedImageCache, fullsize_key
 from ....core.app_settings import app_settings
 from ....core.color.theme import ThemeManager
 
-_STANDARD_META_KEYS = ("name", "path", "size", "created", "modified", "collected", "file_hash")
+_STANDARD_SOURCE_KEYS = ("source", "size", "created", "modified", "collected", "file_hash")
+_STANDARD_FILE_KEYS = ("path", "name", "aspect_ratio", "source_extension")
 
 
 def _format_meta(engine, path, dbpath):
-    file_rec, file_hash, tags_with_lock, meta_infos_with_lock = engine.get_all_metadata_with_locks(path)
+    source_rec, file_rec, file_hash, tags_with_lock, meta_infos_with_lock = engine.get_all_metadata_with_locks(path)
     tags = {k: v for k, (v, _) in tags_with_lock.items()}
     tag_locks = {k: lk for k, (_, lk) in tags_with_lock.items()}
     meta_infos = {k: v for k, (v, _) in meta_infos_with_lock.items()}
     meta_locks = {k: lk for k, (_, lk) in meta_infos_with_lock.items()}
-    file_rec.pop("path", None)
     if file_rec.get("aspect_ratio"):
         file_rec["aspect_ratio"] = format_aspect(file_rec["aspect_ratio"])
-    standard = {}
+    if not file_rec.get("source_extension"):
+        file_rec.pop("source_extension", None)
+    file_section = {k: file_rec[k] for k in _STANDARD_FILE_KEYS if k in file_rec and file_rec[k] is not None}
+    source_section: dict = {}
+    for k in _STANDARD_SOURCE_KEYS:
+        v = source_rec.get(k)
+        if v is None:
+            continue
+        if k == "size":
+            try:
+                v = format_size_detail(float(v))
+            except (ValueError, TypeError):
+                pass
+        elif k in ("created", "modified", "collected"):
+            try:
+                v = format_timestamp(float(v))
+            except (ValueError, TypeError):
+                pass
+        source_section[k] = v
     meta_prefixed: dict[str, dict] = {}
     meta_prefixed_locks: dict[str, dict] = {}
     meta_root: dict[str, str] = {}
@@ -48,13 +66,9 @@ def _format_meta(engine, path, dbpath):
             short = k[dot + 1 :]
             meta_prefixed.setdefault(prefix, {})[short] = v
             meta_prefixed_locks.setdefault(prefix, {})[short] = meta_locks.get(k, False)
-        elif k in _STANDARD_META_KEYS:
-            standard[k] = v
         else:
             meta_root[k] = v
             meta_root_locks[k] = meta_locks.get(k, False)
-    if file_hash and "file_hash" not in standard:
-        standard["file_hash"] = file_hash
     for k, v in tags.items():
         dot = k.find(".")
         if dot > 0:
@@ -65,14 +79,6 @@ def _format_meta(engine, path, dbpath):
         else:
             tag_root[k] = v
             tag_root_locks[k] = tag_locks.get(k, False)
-    for k in ("created", "collected", "modified", "size"):
-        raw = standard.get(k)
-        if raw is not None:
-            try:
-                standard[k] = format_timestamp(float(raw)) if k != "size" else format_size_detail(float(raw))
-            except (ValueError, TypeError):
-                pass
-    standard = {k: standard[k] for k in _STANDARD_META_KEYS if k in standard}
     tag_root = {k: tag_root[k] for k in natsorted(tag_root)}
     meta_root = {k: meta_root[k] for k in natsorted(meta_root)}
     for prefix in meta_prefixed:
@@ -88,10 +94,10 @@ def _format_meta(engine, path, dbpath):
         for name, status in sorted(collector_status):
             color = palette.success if status == "ok" else palette.error
             parts.append(f'<span style="color:{color}">\u25cf</span> {name}')
-        file_rec["collected by"] = "&nbsp;&nbsp;".join(parts)
+        source_section["collected by"] = "&nbsp;&nbsp;".join(parts)
     return {
-        "source": file_rec,
-        "file": standard,
+        "source": source_section,
+        "file": file_section,
         "tag": tag_root,
         "meta": meta_root,
         "meta_locks": meta_root_locks,

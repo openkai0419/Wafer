@@ -144,7 +144,7 @@ class TestImagePipeline:
             prev = idx.db.load_existing_sources()
             assert norm in prev
 
-            name_row = idx.db.read_conn.execute("SELECT value FROM meta_info WHERE path=? AND key='name'", (norm,)).fetchone()
+            name_row = idx.db.read_conn.execute("SELECT name FROM files WHERE path=?", (norm,)).fetchone()
             assert name_row[0] == "readme.txt"
 
             pending = idx.db.get_pending_sources("exiftool")

@@ -37,14 +37,8 @@ def populated_db(tmp_path):
         fhash = f"hash_{i:04d}"
         sources.append((source, fhash, 1000 + i, float(1700000000 + i)))
         images.append((path, source, 1.5))
-        metas.append((path, "path", path, None))
-        metas.append((path, "name", f"img_{i:04d}.jpg", None))
         metas.append((path, "dpi", f"{72 + (i % 4) * 24}", None))
         metas.append((path, "Comment", f"photo number {i}", None))
-        metas.append((path, "size", str(1000 + i), float(1000 + i)))
-        metas.append((path, "modified", str(float(1700000000 + i)), float(1700000000 + i)))
-        metas.append((path, "created", str(float(1700000000 + i)), float(1700000000 + i)))
-        metas.append((path, "collected", str(float(1700000000 + i)), float(1700000000 + i)))
         if i % 3 == 0:
             metas.append((path, "Artist", f"photographer_{i % 5}", None))
         tags.append((fhash, "rating", f"{(i % 5) + 1}", float((i % 5) + 1)))
@@ -77,8 +71,6 @@ def special_db(tmp_path):
     for path, name, fhash, comment in special_names:
         sources.append((path, fhash, 100, 1.0))
         images.append((path, path, 1.5))
-        metas.append((path, "path", path, None))
-        metas.append((path, "name", name, None))
         metas.append((path, "Comment", comment, None))
         tags.append((fhash, "rating", "3", 3.0))
     db.upsert_batches(sources, images, metas, tags)

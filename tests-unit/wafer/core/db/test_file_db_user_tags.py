@@ -196,20 +196,6 @@ def test_apply_user_tags_child_path_uses_source_hash(tmp_path):
     db.close()
 
 
-def test_initialize_deletes_duplicated_file_hash_meta(tmp_path):
-    db = _make_db(tmp_path)
-    db.upsert_batches(
-        [("src1", "h1", 100, 1.0)],
-        [("src1", "src1", 1.0)],
-        [("src1", "file_hash", "h1", None)],
-        [],
-    )
-    assert _get_meta(db, "src1", "file_hash") == ("h1", 0)
-    db.initialize_database()
-    assert _get_meta(db, "src1", "file_hash") is None
-    db.close()
-
-
 def test_apply_user_meta_info_path_scoped(tmp_path):
     db = _make_db(tmp_path)
     _seed(db)

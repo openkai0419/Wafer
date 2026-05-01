@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..core.db.db_utils import build_like_condition, escape_like
-from ..core.db.query import SYSTEM_FILE_HASH_KEY
+from ..core.db.query import SYSTEM_FILE_HASH_KEY, STANDARD_KEYS, standard_key_columns
 from ..plugin.query.base import BaseFilterPlugin
 from ..utils.profiling import profiler
 
@@ -51,6 +51,20 @@ def _file_hash_part(include_kw, keyword_mode, query_mode):
     return f"SELECT i.path FROM sources AS s JOIN files AS i ON i.source = s.source {w}", params
 
 
+def _standard_part(key, include_kw, keyword_mode, query_mode):
+    cols = standard_key_columns(key)
+    if cols is None:
+        return None, []
+    from_clause, path_col, val_col = cols
+    conds, params = [], []
+    if include_kw:
+        c, v = build_like_condition(val_col, include_kw, keyword_mode, query_mode)
+        conds.append(f"({c})")
+        params.extend(v)
+    w = f"WHERE {' AND '.join(conds)}" if conds else ""
+    return f"SELECT {path_col} AS path FROM {from_clause} {w}", params
+
+
 class TextFilter(BaseFilterPlugin):
     NAME = "text"
     DISPLAY_NAME = "Text"
@@ -86,16 +100,17 @@ class TextFilter(BaseFilterPlugin):
             return "SELECT path FROM files WHERE 0", []
 
         query_all = not keys
-        kv_keys = [k for k in keys if k != SYSTEM_FILE_HASH_KEY]
+        non_std_keys = [k for k in keys if k != SYSTEM_FILE_HASH_KEY and k not in STANDARD_KEYS]
+        std_keys = [k for k in keys if k in STANDARD_KEYS] if not query_all else list(STANDARD_KEYS)
         parts, all_params = [], []
 
-        if query_all or kv_keys:
+        if query_all or non_std_keys:
             sql, p = _kv_part(
                 "meta_info AS mi",
                 'mi."key"',
                 'mi."value"',
                 "mi.path",
-                kv_keys if not query_all else [],
+                non_std_keys if not query_all else [],
                 include_kw,
                 keyword_mode,
                 query_mode,
@@ -109,13 +124,19 @@ class TextFilter(BaseFilterPlugin):
                 't."key"',
                 't."value"',
                 "i.path",
-                kv_keys if not query_all else [],
+                non_std_keys if not query_all else [],
                 include_kw,
                 keyword_mode,
                 query_mode,
             )
             parts.append(sql)
             all_params.extend(p)
+
+        for k in std_keys:
+            sql, p = _standard_part(k, include_kw, keyword_mode, query_mode)
+            if sql is not None:
+                parts.append(sql)
+                all_params.extend(p)
 
         if query_all or SYSTEM_FILE_HASH_KEY in keys:
             sql, p = _file_hash_part(include_kw, keyword_mode, query_mode)
@@ -138,12 +159,13 @@ class TextFilter(BaseFilterPlugin):
     @classmethod
     def _build_exclude(cls, keys, query_all, exclude_kw, query_mode):
         parts, params = [], []
-        kv_keys = [k for k in keys if k != SYSTEM_FILE_HASH_KEY]
-        if query_all or kv_keys:
+        non_std_keys = [k for k in keys if k != SYSTEM_FILE_HASH_KEY and k not in STANDARD_KEYS]
+        std_keys = [k for k in keys if k in STANDARD_KEYS] if not query_all else list(STANDARD_KEYS)
+        if query_all or non_std_keys:
             conds, p = [], []
-            if kv_keys:
-                conds.append(f'em."key" IN ({",".join("?" for _ in kv_keys)})')
-                p.extend(kv_keys)
+            if non_std_keys:
+                conds.append(f'em."key" IN ({",".join("?" for _ in non_std_keys)})')
+                p.extend(non_std_keys)
             elif query_all:
                 conds.append('em."key" <> ?')
                 p.append(SYSTEM_FILE_HASH_KEY)
@@ -154,14 +176,23 @@ class TextFilter(BaseFilterPlugin):
             params.extend(p)
 
             conds2, p2 = [], []
-            if kv_keys:
-                conds2.append(f'et."key" IN ({",".join("?" for _ in kv_keys)})')
-                p2.extend(kv_keys)
+            if non_std_keys:
+                conds2.append(f'et."key" IN ({",".join("?" for _ in non_std_keys)})')
+                p2.extend(non_std_keys)
             c2, v2 = build_like_condition('et."value"', exclude_kw, "OR", query_mode)
             conds2.append(f"({c2})")
             p2.extend(v2)
             parts.append(f"SELECT ei.path FROM tags AS et JOIN sources AS es ON es.file_hash = et.file_hash JOIN files AS ei ON ei.source = es.source WHERE {' AND '.join(conds2)}")
             params.extend(p2)
+
+        for k in std_keys:
+            cols = standard_key_columns(k)
+            if cols is None:
+                continue
+            from_clause, path_col, val_col = cols
+            c, v = build_like_condition(val_col, exclude_kw, "OR", query_mode)
+            parts.append(f"SELECT {path_col} AS path FROM {from_clause} WHERE ({c})")
+            params.extend(v)
 
         if query_all or SYSTEM_FILE_HASH_KEY in keys:
             c3, p3 = build_like_condition("es.file_hash", exclude_kw, "OR", query_mode)

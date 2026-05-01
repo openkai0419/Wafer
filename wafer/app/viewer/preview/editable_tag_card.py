@@ -438,7 +438,7 @@ class AddTagDialog(QtWidgets.QDialog):
         if len(self._scopes) > 1:
             self._scope_combo = QtWidgets.QComboBox(self)
             for scope in self._scopes:
-                self._scope_combo.addItem(t("Metadata") if scope == "meta_info" else t("Tag"), scope)
+                self._scope_combo.addItem(t("Metadata (links to path)") if scope == "meta_info" else t("Tag (links to filehash)"), scope)
             index = self._scopes.index(initial)
             self._scope_combo.setCurrentIndex(index)
             form.addRow(t("Type:"), self._scope_combo)

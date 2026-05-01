@@ -325,8 +325,6 @@ class FileDB:
 
     def _ensure_compatible_schema_migrations(self):
         self._add_missing_column("files", "source_extension", "source_extension TEXT")
-        self._add_missing_column("sources", "created", "created REAL")
-        self._add_missing_column("sources", "collected", "collected REAL")
         self._add_missing_column("meta_info", "locked", "locked INTEGER NOT NULL DEFAULT 0")
         self._add_missing_column("tags", "locked", "locked INTEGER NOT NULL DEFAULT 0")
 

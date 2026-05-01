@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.6.9]
+### Added
+- **ZIP archive extension** (`extensions/zip/`): `ZipCollectorPlugin` indexes entries inside `.zip` files as virtual paths with aspect-ratio probing; `ZipGridPlugin` and `ZipViewerPlugin` materialize entries via `ZipCache` (LRU + idle-sweep eviction) for grid and file viewer
+- **Virtual path system** (`wafer/utils/virtual_paths.py`): `build_virtual_path()` / `split_virtual_path()` / `is_virtual_path()` and related helpers encode archive member paths as `source::member`; `register_owner_extension()` / `IS_OWNER` plugin flag declare which collectors own virtual children
+- **`RenderTarget` / `ResolveContext`** (`wafer/core/files/render_target.py`): immutable render-dispatch value type with depth-limited recursive resolution; adopted by `GridResolver.resolve_target()` and `ViewerResolver.resolve_target()`, routing virtual paths to owner-plugin `resolve_target()` before the normal chain
+- **`DISPATCH_OWNER` / `DISPATCH_LEAF` registry modes**: `FilePluginRegistry.resolve()` / `resolve_chain()` accept a mode for owner- or leaf-extension-based dispatch
+- **Standard key constants** (`wafer/core/db/query.py`): `SYSTEM_FILE_HASH_KEY`, `STANDARD_KEYS`, `standard_key_columns()` — standard fields resolve directly from dedicated DB columns, eliminating `meta_info` round-trips for path/name/size/modified/created/collected/file_hash queries
+
+### Changed
+- **DB schema**: `sources` gains `created` and `collected` columns; `files` gains `name` and `source_extension` columns; `files_full` view and indexes updated; `path`/`name`/`size`/`modified`/`created`/`collected` entries are no longer written to `meta_info` during basic indexing
+- **Schema migration** (`FileDB._recreate_tables()`): changed tables are backed up, recreated, and data-migrated column-by-column instead of being dropped
+- **`TextFilter` / `SearchQuery` / `SearchComposer`**: standard keys and `file_hash` route to DB columns; `available_keys()` includes standard keys; sort plugins use `SORT_COLUMN` instead of `META_KEY`, eliminating `meta_info` JOIN for common sort fields
+- **`GridPipeline` / `FileViewerController`**: refactored to use `RenderTarget` throughout; virtual-path entries are resolved and rendered via the correct materialized path
+- **`CollectorResult`** gains `size`, `modified`, `created` fields; `FileDB.upsert_collection_results()` cleans up stale virtual child rows after successful collection; `delete_collector()` also removes child rows keyed by `source_extension`
+- File rename propagation extended to virtual child paths; batch renamer and file commands updated to use physical source paths correctly
+- Plugin kind badge colors updated (`wafer/plugin/kinds.py`)
+
 ## [v0.6.8]
 ### Added
 - **`wafer/plugin/kinds.py`**: centralized plugin-kind labels, colors, and ordering shared by the loader and Plugin Manager UI

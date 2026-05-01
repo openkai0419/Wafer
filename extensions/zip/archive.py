@@ -4,6 +4,8 @@ import datetime as _dt
 import zipfile
 from dataclasses import dataclass
 
+from . import settings
+
 
 @dataclass(frozen=True)
 class ZipEntry:
@@ -18,8 +20,18 @@ class ZipEntry:
 
 
 def list_entries(zip_path: str) -> list[ZipEntry]:
-    with zipfile.ZipFile(zip_path) as zf:
+    with open_zip(zip_path) as zf:
         return [_entry(info) for info in zf.infolist() if _is_file(info)]
+
+
+def open_zip(zip_path: str) -> zipfile.ZipFile:
+    metadata_encoding = settings.METADATA_ENCODING
+    if not metadata_encoding:
+        return zipfile.ZipFile(zip_path)
+    try:
+        return zipfile.ZipFile(zip_path, metadata_encoding=metadata_encoding)
+    except TypeError:
+        return zipfile.ZipFile(zip_path)
 
 
 def _is_file(info: zipfile.ZipInfo) -> bool:

@@ -16,6 +16,7 @@ from wafer.utils.paths import normalize_path, resolve_data_path
 from wafer.utils.virtual_paths import child_path, display_name, source_path
 
 from . import settings as cache_settings
+from .archive import open_zip
 
 _INVALID_FILENAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
 
@@ -51,7 +52,7 @@ class ZipCache:
             target.parent.mkdir(parents=True, exist_ok=True)
             tmp_name = None
             try:
-                with zipfile.ZipFile(source) as zf, self._open_member(zf, member) as src, tempfile.NamedTemporaryFile("wb", delete=False, dir=target.parent, suffix=".tmp") as tmp:
+                with open_zip(source) as zf, self._open_member(zf, member) as src, tempfile.NamedTemporaryFile("wb", delete=False, dir=target.parent, suffix=".tmp") as tmp:
                     tmp_name = tmp.name
                     shutil.copyfileobj(src, tmp, length=1024 * 1024)
                 os.replace(tmp_name, target)

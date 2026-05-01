@@ -22,7 +22,7 @@ from ....ui.panel.meta_viewer import (
 from .editable_tag_card import EditableTagCard, AddTagDialog
 from .tag_edit_service import TagEditService
 
-_FIXED_SECTION_KEYS = ("source", "file")
+_FIXED_SECTION_KEYS = ("file", "source")
 _TAG_PREFIX = "tag:"
 _META_PREFIX = "meta:"
 _TAG_ROOT_KEY = "tag"

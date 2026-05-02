@@ -128,6 +128,14 @@ def toggle_auto_execute(ctx):
     svc.set_param("auto_execute", not current)
 
 
+def toggle_auto_execute_on_update(ctx):
+    svc = _service(ctx)
+    if not svc:
+        return
+    current = svc.get("auto_execute_on_update", True)
+    svc.set_param("auto_execute_on_update", not current)
+
+
 def _svc():
     return InstanceRegistry.instance().get_one("SearchService")
 
@@ -167,11 +175,19 @@ class QueryCommands(ActionKit.MenuBase):
             ),
             ActionKit.Command(
                 path="qry.toggle_auto_execute",
-                display="Auto Execute on Change",
+                display="Auto Execute on Parameter Change",
                 func=toggle_auto_execute,
                 checkable=True,
                 default_checked=True,
                 checked_resolver=lambda: _svc().get("auto_execute", True) if _svc() else True,
+            ),
+            ActionKit.Command(
+                path="qry.toggle_auto_execute_on_update",
+                display="Auto Execute on Database Update",
+                func=toggle_auto_execute_on_update,
+                checkable=True,
+                default_checked=True,
+                checked_resolver=lambda: _svc().get("auto_execute_on_update", True) if _svc() else True,
             ),
             "-",
             ":Search Options",

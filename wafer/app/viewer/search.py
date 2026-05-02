@@ -24,6 +24,7 @@ _DEFAULTS = {
     "include_subfolders": True,
     "include_contained_files": True,
     "auto_execute": True,
+    "auto_execute_on_update": True,
 }
 
 

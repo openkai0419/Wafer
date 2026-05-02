@@ -92,6 +92,7 @@ class QueryStateCoordinator:
             "include_subfolders": bool(self._w.search_service.get("include_subfolders", True)),
             "include_contained_files": bool(self._w.search_service.get("include_contained_files", True)),
             "auto_execute": bool(self._w.search_service.get("auto_execute", True)),
+            "auto_execute_on_update": bool(self._w.search_service.get("auto_execute_on_update", True)),
         }
 
     def restore(self, query: dict) -> None:
@@ -110,6 +111,8 @@ class QueryStateCoordinator:
             param_updates["include_contained_files"] = bool(query["include_contained_files"])
         if "auto_execute" in query:
             param_updates["auto_execute"] = bool(query["auto_execute"])
+        if "auto_execute_on_update" in query:
+            param_updates["auto_execute_on_update"] = bool(query["auto_execute_on_update"])
         if param_updates:
             self._w.search_service.set_params(param_updates)
         self._w.sync_service_from_ui()

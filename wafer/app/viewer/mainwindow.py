@@ -649,6 +649,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if not self._is_my_db(payload.get("db", "")):
             return
         from .preview.tag_edit_service import TagEditService
+
         TagEditService.instance().handle_ack(payload)
         self._mark_overlay_service.reload()
 

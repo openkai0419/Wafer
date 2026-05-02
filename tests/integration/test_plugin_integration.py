@@ -15,7 +15,7 @@ from wafer.plugin.collector.handler import collector_resolver
 from wafer.plugin.viewer.handler import ViewerResolver
 from wafer.plugin.imageloader.handler import image_loader_resolver
 from wafer.plugin.imageloader.base import BaseImageLoader
-from wafer.core.db.indexer import FileIndexer
+from test_support.scan_harness import ScanHarness
 
 
 def _create_test_image(path, width=100, height=80, fmt="JPEG"):
@@ -297,17 +297,17 @@ class TestIndexingWithVariousFileTypes:
         collectors = collector_resolver.summary()
         db_path = tmp_path / "test.db"
 
-        with FileIndexer(db_path, collectors=collectors) as idx:
-            idx.initialize()
-            idx.update_index(str(mixed_dir))
+        with ScanHarness(db_path, collectors=collectors) as h:
+            h.scan_and_wait(mixed_dir, expected=10)
+            assert h.wait_for(lambda: len(h.db.get_pending_sources("exiftool")) >= 5)
 
-            all_files = idx.db.read_conn.execute("SELECT path FROM files").fetchall()
+            all_files = h.db.read_conn.execute("SELECT path FROM files").fetchall()
             assert len(all_files) == 10
 
-            all_sources = idx.db.read_conn.execute("SELECT source FROM sources").fetchall()
+            all_sources = h.db.read_conn.execute("SELECT source FROM sources").fetchall()
             assert len(all_sources) == 10
 
-            pending = idx.db.get_pending_sources("exiftool")
+            pending = h.db.get_pending_sources("exiftool")
             pending_paths = {row[0] for row in pending}
             for img_name in ["photo.jpg", "icon.png", "bitmap.bmp", "web.webp", "anim.gif"]:
                 norm = normalize_path(str(mixed_dir / img_name))

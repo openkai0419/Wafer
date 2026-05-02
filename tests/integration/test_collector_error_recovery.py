@@ -4,11 +4,11 @@ from PIL import Image
 
 from wafer.utils.paths import normalize_path
 from wafer.core.db.file_db import FileDB
-from wafer.core.db.indexer import FileIndexer
 from wafer.plugin.collector.handler import collector_resolver
 from wafer.plugin.collector.base import CollectorResult, BaseCollectorPlugin
 from wafer.app.indexer.collector_receiver import _parse_batch
 from wafer.app.indexer.db_writer import DatabaseWriter
+from test_support.scan_harness import ScanHarness
 
 
 def _create_test_image(path, width=200, height=100, fmt="JPEG"):
@@ -146,14 +146,13 @@ class TestFailedCollectorWrittenToDB:
         img_dir = tmp_path / "photos"
         img_dir.mkdir()
         _create_test_image(img_dir / "fail.jpg")
+        norm = normalize_path(str(img_dir / "fail.jpg"))
 
         collectors = collector_resolver.summary()
         db_path = tmp_path / "test.db"
 
-        with FileIndexer(db_path, collectors=collectors) as idx:
-            idx.initialize()
-            idx.update_index(str(img_dir))
-            norm = normalize_path(str(img_dir / "fail.jpg"))
+        with ScanHarness(db_path, collectors=collectors) as h:
+            h.scan_and_wait(img_dir, expected=1)
 
             results = [
                 {
@@ -163,9 +162,9 @@ class TestFailedCollectorWrittenToDB:
                     "collector": "exiftool",
                 }
             ]
-            _write_results(idx.db, results)
+            _write_results(h.db, results)
 
-            row = idx.db.read_conn.execute(
+            row = h.db.read_conn.execute(
                 "SELECT status FROM collection_status WHERE source=? AND collector='exiftool'",
                 (norm,),
             ).fetchone()
@@ -176,19 +175,18 @@ class TestFailedCollectorWrittenToDB:
         img_dir = tmp_path / "photos"
         img_dir.mkdir()
         _create_test_image(img_dir / "recover.jpg", 400, 200)
+        norm = normalize_path(str(img_dir / "recover.jpg"))
 
         collectors = collector_resolver.summary()
         db_path = tmp_path / "test.db"
 
-        with FileIndexer(db_path, collectors=collectors) as idx:
-            idx.initialize()
-            idx.update_index(str(img_dir))
-            norm = normalize_path(str(img_dir / "recover.jpg"))
+        with ScanHarness(db_path, collectors=collectors) as h:
+            h.scan_and_wait(img_dir, expected=1)
 
             fail_results = [{"source": norm, "path": norm, "status": False, "collector": "exiftool"}]
-            _write_results(idx.db, fail_results)
+            _write_results(h.db, fail_results)
 
-            row = idx.db.read_conn.execute("SELECT status FROM collection_status WHERE source=? AND collector='exiftool'", (norm,)).fetchone()
+            row = h.db.read_conn.execute("SELECT status FROM collection_status WHERE source=? AND collector='exiftool'", (norm,)).fetchone()
             assert row[0] == "fail"
 
             ok_results = [
@@ -201,7 +199,7 @@ class TestFailedCollectorWrittenToDB:
                     "meta_info": {"width": "400"},
                 }
             ]
-            _write_results(idx.db, ok_results)
+            _write_results(h.db, ok_results)
 
-            row2 = idx.db.read_conn.execute("SELECT status FROM collection_status WHERE source=? AND collector='exiftool'", (norm,)).fetchone()
+            row2 = h.db.read_conn.execute("SELECT status FROM collection_status WHERE source=? AND collector='exiftool'", (norm,)).fetchone()
             assert row2[0] == "ok"

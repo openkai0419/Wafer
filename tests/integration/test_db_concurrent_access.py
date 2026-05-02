@@ -5,10 +5,10 @@ from PIL import Image
 
 from wafer.utils.paths import normalize_path
 from wafer.core.db.file_db import FileDB
-from wafer.core.db.indexer import FileIndexer
 from wafer.core.db.query import FileSearchEngine, SearchQuery
 from wafer.plugin.collector.handler import collector_resolver
 from wafer.app.indexer.collector_receiver import _parse_batch
+from test_support.scan_harness import ScanHarness
 
 
 def _create_test_image(path, width=100, height=80, fmt="JPEG"):
@@ -52,9 +52,8 @@ class TestSearchDuringIndexing:
         collectors = collector_resolver.summary()
         db_path = tmp_path / "test.db"
 
-        with FileIndexer(db_path, collectors=collectors) as idx:
-            idx.initialize()
-            idx.update_index(str(img_dir))
+        with ScanHarness(db_path, collectors=collectors) as h:
+            h.scan_and_wait(img_dir, expected=20)
 
         search_results = []
         search_errors = []
@@ -85,11 +84,10 @@ class TestSearchDuringIndexing:
         collectors = collector_resolver.summary()
         db_path = tmp_path / "test.db"
 
-        with FileIndexer(db_path, collectors=collectors) as idx:
-            idx.initialize()
-            idx.update_index(str(img_dir))
-
-            results = _run_collector(idx.db, "exiftool")
+        with ScanHarness(db_path, collectors=collectors) as h:
+            h.scan_and_wait(img_dir, expected=10)
+            assert h.wait_for(lambda: len(h.db.get_pending_sources("exiftool")) >= 10)
+            results = _run_collector(h.db, "exiftool")
 
         write_done = threading.Event()
         search_results = []
@@ -142,11 +140,11 @@ class TestMultipleReadersNoCrash:
         collectors = collector_resolver.summary()
         db_path = tmp_path / "test.db"
 
-        with FileIndexer(db_path, collectors=collectors) as idx:
-            idx.initialize()
-            idx.update_index(str(img_dir))
-            results = _run_collector(idx.db, "exiftool")
-            _write_results(idx.db, results)
+        with ScanHarness(db_path, collectors=collectors) as h:
+            h.scan_and_wait(img_dir, expected=15)
+            assert h.wait_for(lambda: len(h.db.get_pending_sources("exiftool")) >= 15)
+            results = _run_collector(h.db, "exiftool")
+            _write_results(h.db, results)
 
         errors = []
         counts = []
@@ -185,13 +183,13 @@ class TestDBConsistencyAfterConcurrentWrites:
         collectors = collector_resolver.summary()
         db_path = tmp_path / "test.db"
 
-        with FileIndexer(db_path, collectors=collectors) as idx:
-            idx.initialize()
-            idx.update_index([str(img_dir_a), str(img_dir_b)])
+        with ScanHarness(db_path, collectors=collectors) as h:
+            h.scan_and_wait([str(img_dir_a), str(img_dir_b)], expected=10)
+            assert h.wait_for(lambda: len(h.db.get_pending_sources("exiftool")) >= 10)
 
-            results = _run_collector(idx.db, "exiftool")
+            results = _run_collector(h.db, "exiftool")
             assert len(results) == 10
-            _write_results(idx.db, results)
+            _write_results(h.db, results)
 
         engine = FileSearchEngine(str(db_path))
         paths, _, _ = engine.search(SearchQuery(require_keys=False))

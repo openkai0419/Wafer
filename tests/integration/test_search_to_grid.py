@@ -9,12 +9,12 @@ from unittest.mock import MagicMock
 
 from wafer.utils.paths import normalize_path
 from wafer.core.db.file_db import FileDB
-from wafer.core.db.indexer import FileIndexer
 from wafer.core.db.query import FileSearchEngine, SearchQuery
 from wafer.plugin.collector.handler import collector_resolver
 from wafer.app.indexer.collector_receiver import _parse_batch
 from wafer.app.viewer.grid.items import GridItemModel
 from wafer.app.viewer.search import SearchService
+from test_support.scan_harness import ScanHarness
 
 
 def _create_test_image(path, width=100, height=80, fmt="JPEG"):
@@ -49,23 +49,22 @@ def _build_populated_db(tmp_path, images):
     collectors = collector_resolver.summary()
     db_path = tmp_path / "test.db"
 
-    with FileIndexer(db_path, collectors=collectors) as idx:
-        idx.initialize()
-        idx.update_index(str(img_dir))
-
+    with ScanHarness(db_path, collectors=collectors) as harness:
+        harness.scan_and_wait(img_dir, expected=len(images))
+        assert harness.wait_for(lambda: len(harness.db.get_pending_sources("exiftool")) >= len(images))
         plugin = collector_resolver.registry.get("exiftool")()
-        pending = idx.db.get_pending_sources("exiftool")
+        pending = harness.db.get_pending_sources("exiftool")
         if pending:
             paths = [row[0] for row in pending]
             file_info_map = {row[0]: (row[1], row[2]) for row in pending}
-            idx.db.mark_dispatched(paths, "exiftool")
+            harness.db.mark_dispatched(paths, "exiftool")
             results = []
             for p in paths:
                 info = file_info_map.get(p, (0.0, 0))
                 r = plugin.process(p, info).to_dict()
                 r["collector"] = "exiftool"
                 results.append(r)
-            _write_results_to_db(idx.db, results)
+            _write_results_to_db(harness.db, results)
 
     return db_path, img_dir
 

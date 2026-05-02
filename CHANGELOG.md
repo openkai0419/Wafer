@@ -6,8 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [v0.6.11]
 ### Changed
-- **Project license** (`LICENSE`, `COPYING`, `COPYING.LESSER`, `README.md`, `README.jp.md`, `pyproject.toml`): changed from Apache-2.0 to LGPL-2.1-or-later and updated related metadata/documentation
-- **License notice file** (`NOTICE`): merged project-level notice content into `LICENSE` and removed the separate `NOTICE` file
+- **Project licensing** (`LICENSE`, `COPYING`, `COPYING.LESSER`, `README.md`, `README.jp.md`, `extensions/ai_tagger/README.md`, `extensions/exiftool/README.md`, `extensions/ffmpeg/README.md`, `extensions/florence/README.md`, `extensions/video/README.md`, `pyproject.toml`): changed the repository source license from Apache-2.0 to LGPL-2.1-or-later and updated badges, license guidance, and package metadata to match
+- **Bundled license files** (`NOTICE`, `scripts/build.py`, `scripts/copy_clean_project.py`): removed the separate `NOTICE` file and switched packaged project metadata to ship `COPYING` and `COPYING.LESSER` with release and clean-copy outputs
 
 ## [v0.6.10]
 ### Added

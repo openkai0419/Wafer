@@ -22,6 +22,22 @@ class _WCapture(QtWidgets.QWidget, CommandBindingMixin):
         self.captured_shortcuts = dict(bindings or {})
 
 
+class _WKeyRoute(QtWidgets.QWidget):
+    def __init__(self):
+        super().__init__()
+        self.logical_bindings = None
+        self.physical_bindings = None
+
+    def binding_scope(self):
+        return "viewer"
+
+    def set_shortcut_bindings(self, bindings):
+        self.logical_bindings = dict(bindings or {})
+
+    def set_physical_shortcut_bindings(self, bindings):
+        self.physical_bindings = dict(bindings or {})
+
+
 def test_ctx_can_resolve_widget_by_name(qtbot):
     BindingManager._instance = None
     InstanceRegistry._instance = None
@@ -144,3 +160,44 @@ def test_register_applies_current_key_bindings(qtbot):
         assert seq in w.captured_shortcuts
     finally:
         store.set_all({})
+
+
+def test_digit_key_bindings_are_logical_keys(qtbot):
+    store = KeyBindingStore.instance()
+    old = store.get_all()
+    one = Key("1")
+    two = Key("2")
+    payload_one = CommandPayload("mark.toggle", {"name": "temp"})
+    payload_two = CommandPayload("mark.toggle", {"name": "temp 2"})
+    try:
+        store.set_all({one: {"*": payload_one}, two: {"*": payload_two}})
+        w = _WKeyRoute()
+        qtbot.addWidget(w)
+
+        BindingManager().apply_key_bindings([w])
+
+        assert set(w.logical_bindings or {}) == {one, two}
+        assert w.logical_bindings[one].to_dict() == payload_one.to_dict()
+        assert w.logical_bindings[two].to_dict() == payload_two.to_dict()
+        assert w.physical_bindings is None
+    finally:
+        store.set_all(old)
+
+
+def test_sc_key_bindings_are_physical_keys(qtbot):
+    store = KeyBindingStore.instance()
+    old = store.get_all()
+    sc2 = Key("SC2")
+    payload = CommandPayload("mark.toggle", {"name": "temp 2"})
+    try:
+        store.set_all({sc2: {"*": payload}})
+        w = _WKeyRoute()
+        qtbot.addWidget(w)
+
+        BindingManager().apply_key_bindings([w])
+
+        assert w.logical_bindings is None
+        assert set(w.physical_bindings or {}) == {("SC2",)}
+        assert w.physical_bindings[("SC2",)].to_dict() == payload.to_dict()
+    finally:
+        store.set_all(old)

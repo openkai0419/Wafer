@@ -30,6 +30,11 @@ class DatabaseWriter:
         self._db.try_checkpoint("PASSIVE")
 
     @profiler.profile
+    def delete_source_trees(self, paths: Sequence[str]):
+        self._db.delete_sources_by_path_prefixes(paths)
+        self._db.try_checkpoint("PASSIVE")
+
+    @profiler.profile
     def rename_paths(self, pairs: Sequence[tuple[str, str]]):
         self._db.rename_paths(pairs)
         self._db.try_checkpoint("PASSIVE")

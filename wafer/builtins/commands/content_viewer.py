@@ -21,6 +21,11 @@ def _list_mode_checked(cmd_id: str) -> bool:
     return getattr(provider, "mode", None) == target
 
 
+def _open_contained_files_as_list_checked() -> bool:
+    provider = InstanceRegistry.instance().get_one("FileListProvider")
+    return bool(getattr(provider, "open_contained_files_as_list", False)) if provider is not None else False
+
+
 def apply_list_mode(provider, cmd_id: str):
     mode = _CMD_TO_LIST_MODE.get(cmd_id)
     if mode is None:
@@ -88,6 +93,11 @@ def set_list_dir(ctx, provider):
     apply_list_mode(provider, "fv.list_dir")
 
 
+@require(provider="FileListProvider")
+def toggle_open_contained_files_as_list(ctx, provider):
+    provider.set_open_contained_files_as_list(not provider.open_contained_files_as_list)
+
+
 class FileViewerCommands(ActionKit.MenuBase):
     NAME = "FileViewer"
     PRIORITY = 50
@@ -95,7 +105,43 @@ class FileViewerCommands(ActionKit.MenuBase):
     @classmethod
     def commands(cls):
         return [
-            ":FileViewer",
+            ":List Mode",
+            ActionKit.Command(
+                path="List Mode/fv.list_sync",
+                display="Sync",
+                func=set_list_sync,
+                checkable=True,
+                default_checked=True,
+                action_group=GROUP_LIST_MODE,
+                checked_resolver=lambda: _list_mode_checked("fv.list_sync"),
+            ),
+            ActionKit.Command(
+                path="List Mode/fv.list_fix",
+                display="Fixed",
+                func=set_list_fix,
+                checkable=True,
+                action_group=GROUP_LIST_MODE,
+                checked_resolver=lambda: _list_mode_checked("fv.list_fix"),
+            ),
+            ActionKit.Command(
+                path="List Mode/fv.list_dir",
+                display="Directory",
+                func=set_list_dir,
+                checkable=True,
+                action_group=GROUP_LIST_MODE,
+                checked_resolver=lambda: _list_mode_checked("fv.list_dir"),
+            ),
+            "-",
+            ActionKit.Command(
+                path="fv.open_contained_files_as_list",
+                display="Open Contained Files as List",
+                func=toggle_open_contained_files_as_list,
+                checkable=True,
+                default_checked=False,
+                checked_resolver=_open_contained_files_as_list_checked,
+            ),
+            "-",
+            ":File List",
             ActionKit.Command(
                 path="fv.prev_file",
                 display="Prev File",
@@ -135,33 +181,6 @@ class FileViewerCommands(ActionKit.MenuBase):
                 display="Stop Slideshow",
                 func=stop_slideshow,
                 hidden=True,
-            ),
-            "-",
-            ":List Mode",
-            ActionKit.Command(
-                path="List Mode/fv.list_sync",
-                display="Sync",
-                func=set_list_sync,
-                checkable=True,
-                default_checked=True,
-                action_group=GROUP_LIST_MODE,
-                checked_resolver=lambda: _list_mode_checked("fv.list_sync"),
-            ),
-            ActionKit.Command(
-                path="List Mode/fv.list_fix",
-                display="Fixed",
-                func=set_list_fix,
-                checkable=True,
-                action_group=GROUP_LIST_MODE,
-                checked_resolver=lambda: _list_mode_checked("fv.list_fix"),
-            ),
-            ActionKit.Command(
-                path="List Mode/fv.list_dir",
-                display="Directory",
-                func=set_list_dir,
-                checkable=True,
-                action_group=GROUP_LIST_MODE,
-                checked_resolver=lambda: _list_mode_checked("fv.list_dir"),
             ),
             "-",
         ]

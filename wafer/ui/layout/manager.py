@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from PySide6 import QtCore, QtWidgets
 
+from ...utils.logs import AppLogger
 from .dock import (
     FloatingWindow,
     PanelDockWidget,
@@ -44,6 +45,12 @@ class PanelEntry:
         return self.floating_window is not None or self.dock_widget is not None
 
 
+@dataclass
+class PanelSoloState:
+    target: str
+    collapsed: set[str]
+
+
 class LayoutManager(QtCore.QObject):
     mode_changed = QtCore.Signal(str)
 
@@ -59,6 +66,7 @@ class LayoutManager(QtCore.QObject):
         self._central_placeholder.setMaximumSize(0, 0)
         self._pending_state: dict | None = None
         self._pending_tree: LayoutTree | None = None
+        self._solo_state: PanelSoloState | None = None
         self._margin = 0
         self._window.setDockOptions(QtWidgets.QMainWindow.AnimatedDocks | QtWidgets.QMainWindow.AllowNestedDocks)
 
@@ -88,12 +96,14 @@ class LayoutManager(QtCore.QObject):
     def _ensure_widget(self, entry: PanelEntry) -> QtWidgets.QWidget:
         if entry.widget is None:
             entry.widget = entry.factory()
+        entry.widget.setProperty("layout_panel_name", entry.name)
         return entry.widget
 
     def unregister(self, name: str):
         entry = self._panels.pop(name, None)
         if entry is None:
             return
+        self._solo_state = None
         self._unregister_toggle_command(name)
         self._cleanup_entry(entry)
         self._tree.root = remove_panel(self._tree.root, name)
@@ -118,6 +128,7 @@ class LayoutManager(QtCore.QObject):
         entry = self._panels.get(name)
         if entry is None:
             return
+        self._solo_state = None
 
         if name not in self._tree.all_names():
             fs = entry.last_floating or self._next_floating_position()
@@ -146,6 +157,84 @@ class LayoutManager(QtCore.QObject):
             self._sync_tree_from_current()
             self._tree.collapsed.add(name)
             self._apply_collapse_state()
+
+    def solo_panel(self, name: str) -> bool:
+        entry = self._panels.get(name)
+        if entry is None:
+            AppLogger.warning(f"Panel solo failed: unknown panel '{name}'")
+            return False
+        if name not in self._tree.all_names():
+            AppLogger.warning(f"Panel solo failed: panel is not open '{name}'")
+            return False
+        if name in self._tree.floating:
+            return self._maximize_floating_panel(entry, name)
+        if self._solo_state and self._solo_state.target == name:
+            return self._restore_solo()
+        if self._mode != MODE_LOCKED:
+            self.set_mode(MODE_LOCKED)
+        return self._enter_solo(name)
+
+    def _enter_solo(self, name: str) -> bool:
+        docked = set(self._tree.docked_names())
+        if name not in docked:
+            AppLogger.warning(f"Panel solo failed: panel is not docked '{name}'")
+            return False
+        if self._solo_state is None:
+            self._sync_tree_from_current()
+            self._solo_state = PanelSoloState(name, set(self._tree.collapsed))
+            docked = set(self._tree.docked_names())
+        else:
+            self._solo_state.target = name
+        self._tree.collapsed = docked - {name}
+        normalize_sizes(self._tree.root, self._tree.collapsed)
+        self._apply_tree_sizes()
+        self._apply_collapse_state()
+        return True
+
+    def _restore_solo(self) -> bool:
+        state = self._solo_state
+        if state is None:
+            return False
+        self._solo_state = None
+        self._tree.collapsed = set(state.collapsed) & set(self._tree.docked_names())
+        normalize_sizes(self._tree.root, self._tree.collapsed)
+        self._apply_tree_sizes()
+        self._apply_collapse_state()
+        return True
+
+    def _maximize_floating_panel(self, entry: PanelEntry, name: str) -> bool:
+        target = entry.floating_window
+        if target is None and entry.dock_widget and entry.dock_widget.isFloating():
+            target = entry.dock_widget
+        if target is None:
+            AppLogger.warning(f"Panel solo failed: floating panel has no window '{name}'")
+            return False
+        try:
+            target.showMaximized()
+            target.raise_()
+            target.activateWindow()
+            return True
+        except RuntimeError as e:
+            AppLogger.warning(f"Panel solo failed: floating panel is not available '{name}'", exc=e)
+            return False
+
+    @property
+    def solo_target(self) -> str | None:
+        return self._solo_state.target if self._solo_state else None
+
+    def panel_at_widget(self, widget: QtWidgets.QWidget | None) -> str | None:
+        current = widget
+        while current is not None:
+            name = getattr(current, "panel_name", None)
+            if not name:
+                name = current.property("layout_panel_name") or current.property("panel_name")
+            if isinstance(name, str) and name in self._panels:
+                return name
+            try:
+                current = current.parentWidget()
+            except RuntimeError:
+                return None
+        return None
 
     def is_panel_visible(self, name: str) -> bool:
         return name in self._tree.all_names() and name not in self._tree.collapsed
@@ -189,6 +278,7 @@ class LayoutManager(QtCore.QObject):
     def restore_state(self, state: dict):
         self._pending_state = state
         self._pending_tree = None
+        self._solo_state = None
         old_mode = self._mode
 
         tree_data = state.get("tree")
@@ -629,27 +719,46 @@ class LayoutManager(QtCore.QObject):
     def _apply_collapse_state(self):
         if not self._root_splitter or not self._tree.collapsed:
             return
-        collapsed_widgets = {entry.widget for name in self._tree.collapsed if (entry := self._panels.get(name)) and name in self._tree.docked_names()}
-        if collapsed_widgets:
-            self._collapse_in_splitter(self._root_splitter, collapsed_widgets)
+        root = self._tree.root
+        if root is None:
+            return
+        if isinstance(root, LeafNode):
+            if root.panel_name in self._tree.collapsed and self._root_splitter.count():
+                sizes = self._root_splitter.sizes()
+                sizes[0] = 0
+                self._root_splitter.setCollapsible(0, True)
+                self._root_splitter.setSizes(sizes)
+            return
+        self._collapse_tree_in_splitter(root, self._root_splitter)
 
-    def _collapse_in_splitter(
+    def _collapse_tree_in_splitter(
         self,
+        node: SplitNode,
         splitter: QtWidgets.QSplitter,
-        collapsed_widgets: set[QtWidgets.QWidget],
-    ):
+    ) -> bool:
         sizes = splitter.sizes()
         changed = False
-        for i in range(splitter.count()):
+        all_collapsed = True
+        for i, child_node in enumerate(node.children):
+            if i >= splitter.count():
+                all_collapsed = False
+                continue
             child = splitter.widget(i)
-            if child in collapsed_widgets:
+            child_collapsed = False
+            if isinstance(child_node, LeafNode):
+                child_collapsed = child_node.panel_name in self._tree.collapsed
+            elif isinstance(child, QtWidgets.QSplitter):
+                child_collapsed = self._collapse_tree_in_splitter(child_node, child)
+
+            if child_collapsed:
                 sizes[i] = 0
                 splitter.setCollapsible(i, True)
                 changed = True
-            elif isinstance(child, QtWidgets.QSplitter):
-                self._collapse_in_splitter(child, collapsed_widgets)
+            else:
+                all_collapsed = False
         if changed:
             splitter.setSizes(sizes)
+        return bool(node.children) and all_collapsed
 
     def _apply_tree_sizes(self):
         if not self._root_splitter or not self._tree.root:
@@ -714,6 +823,7 @@ class LayoutManager(QtCore.QObject):
             self._window.setCentralWidget(widget)
 
     def _on_dock_closed(self, name: str):
+        self._solo_state = None
         entry = self._panels.get(name)
         if entry and not entry.closable:
             if entry.dock_widget:
@@ -728,6 +838,7 @@ class LayoutManager(QtCore.QObject):
         self._tree.collapsed.discard(name)
 
     def _on_dock_float_changed(self, name: str, floating: bool):
+        self._solo_state = None
         if floating:
             entry = self._panels.get(name)
             if entry and entry.dock_widget:
@@ -736,6 +847,7 @@ class LayoutManager(QtCore.QObject):
             self._tree.floating.pop(name, None)
 
     def _on_floating_closed(self, name: str):
+        self._solo_state = None
         entry = self._panels.get(name)
         if not entry or not entry.floating_window:
             return

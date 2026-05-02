@@ -1,6 +1,10 @@
 from ...core.commands.bridge import ActionKit
 from ...core.commands.binding.instance_registry import InstanceRegistry
+from ...core.commands.command.require import require
+from ...core.lang.manager import t
 from ...ui.layout.manager import LayoutManager, MODE_EDIT
+from ...utils.logs import AppLogger
+from ...utils.notifier import Notifier
 
 
 def _is_layout_edit():
@@ -13,6 +17,64 @@ def toggle_layout_mode(ctx):
     if not w:
         return
     w._layout_manager.toggle_mode()
+
+
+def _panel_name_choices() -> list[str]:
+    w = InstanceRegistry.instance().get_one("MainWindow")
+    mgr = getattr(w, "_layout_manager", None) if w else None
+    return mgr.panel_names() if mgr else []
+
+
+def _resolve_panel_name(name: str, mgr: LayoutManager) -> str | None:
+    if not name:
+        return None
+    names = mgr.panel_names()
+    if name in names:
+        return name
+    lowered = name.lower()
+    for candidate in names:
+        if candidate.lower() == lowered:
+            return candidate
+    return None
+
+
+def _notify_solo_failed(name: str = ""):
+    if name:
+        Notifier.warning(t("Panel solo failed: {name}", name=name))
+    else:
+        Notifier.warning(t("Panel solo failed"))
+
+
+@require(w="MainWindow")
+def solo_panel(ctx, name: str = "", *, w):
+    mgr = getattr(w, "_layout_manager", None)
+    if mgr is None:
+        AppLogger.warning("Panel solo failed: LayoutManager is not available")
+        _notify_solo_failed()
+        return
+    target = _resolve_panel_name(name, mgr)
+    if target is None:
+        AppLogger.warning(f"Panel solo failed: unknown panel '{name}'")
+        _notify_solo_failed(name)
+        return
+    if not mgr.solo_panel(target):
+        _notify_solo_failed(target)
+
+
+@require(w="MainWindow")
+def solo_current_panel(ctx, *, w):
+    mgr = getattr(w, "_layout_manager", None)
+    if mgr is None:
+        AppLogger.warning("Panel solo failed: LayoutManager is not available")
+        _notify_solo_failed()
+        return
+    target = mgr.panel_at_widget(getattr(ctx, "_widget", None))
+    if target is None:
+        AppLogger.warning("Panel solo failed: command context is not inside a panel")
+        _notify_solo_failed()
+        return
+    if not mgr.solo_panel(target):
+        _notify_solo_failed(target)
 
 
 class PanelCommands(ActionKit.MenuBase):
@@ -33,6 +95,19 @@ class PanelCommands(ActionKit.MenuBase):
                 func=toggle_layout_mode,
                 checkable=True,
                 checked_resolver=_is_layout_edit,
+            ),
+            "-",
+            ":Solo",
+            ActionKit.Command(
+                path="panel.solo_current",
+                display=t("Solo This Panel"),
+                func=solo_current_panel,
+            ),
+            ActionKit.Command(
+                path="panel.solo",
+                display=t("Solo Panel..."),
+                params=[ActionKit.Param(name="name", value=_panel_name_choices, description=t("Panel name"), required=True)],
+                func=solo_panel,
             ),
             "-",
         ]

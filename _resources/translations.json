@@ -1,4 +1,44 @@
 {
+  "Include Contained/Virtual Files": {
+    "en": "Include Contained/Virtual Files",
+    "ja": ""
+  },
+  "Solo Toggle": {
+    "en": "Solo Toggle",
+    "ja": ""
+  },
+  "Panel name": {
+    "en": "Panel name",
+    "ja": ""
+  },
+  "Solo": {
+    "en": "Solo",
+    "ja": ""
+  },
+  "Solo Panel...": {
+    "en": "Solo Panel...",
+    "ja": ""
+  },
+  "Solo This Panel": {
+    "en": "Solo This Panel",
+    "ja": ""
+  },
+  "File List": {
+    "en": "File List",
+    "ja": ""
+  },
+  "Contained Files": {
+    "en": "Contained Files",
+    "ja": ""
+  },
+  "Include Contained Files": {
+    "en": "Include Contained Files",
+    "ja": ""
+  },
+  "Open Contained Files as List": {
+    "en": "Open Contained Files as List",
+    "ja": ""
+  },
   "Metadata (Links to Path)": {
     "en": "Metadata (Links to Path)",
     "ja": ""

@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.6.10]
+### Added
+- **Panel solo commands** (`wafer/builtins/commands/panel.py`, `wafer/ui/layout/manager.py`): added `panel.solo` / `panel.solo_current` to isolate a docked panel in locked layout mode or maximize a floating panel in place
+- **Contained-file query controls** (`wafer/builtins/commands/query.py`, `wafer/builtins/filters.py`, `wafer/app/viewer/preview/file_list_provider.py`): added `include_contained_files` search state, internal contained-file filters, and a file-viewer option to open archive members as their own list
+
+### Changed
+- **Viewer toolbar and restored state** (`wafer/app/viewer/mainwindow.py`, `wafer/app/viewer/state_coordinator.py`): the right-side toolbar now opens the Query menu instead of exposing only the subfolder toggle button, and workspace restore now preserves contained-file search and file-list options
+- **Watch-folder path scoping** (`wafer/app/indexer/path_scope.py`, `wafer/app/indexer/watch_folder.py`, `wafer/app/indexer/db_writer.py`): watcher cleanup now uses normalized path prefixes so whole source trees can be renamed or removed consistently
+
+### Fixed
+- **ZIP archive handling** (`extensions/zip/archive.py`, `extensions/zip/cache.py`, `extensions/zip/collector.py`): improved member resolution across legacy metadata encodings, Unicode path extra fields, duplicate display paths, normalized backslash members, and malformed deflated entries with zero declared size
+- Watch-folder updates now correctly rename nested sources when a directory moves inside the watched root and remove nested rows when a directory moves outside the watched or into ignored paths
+
 ## [0.6.9]
 ### Added
 - **ZIP archive extension** (`extensions/zip/`): `ZipCollectorPlugin` indexes entries inside `.zip` files as virtual paths with aspect-ratio probing; `ZipGridPlugin` and `ZipViewerPlugin` materialize entries via `ZipCache` (LRU + idle-sweep eviction) for grid and file viewer

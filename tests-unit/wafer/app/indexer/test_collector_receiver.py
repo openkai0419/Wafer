@@ -258,9 +258,9 @@ def test_parse_batch_multi_path():
     assert len(data["image_entries"]) == 2
     assert all(entry[4] == "zip" for entry in data["image_entries"])
     meta = {(path, key): value for path, key, value, _ in data["meta_info_entries"]}
-    assert meta[(child_a, "zip.size")] == "10"
-    assert meta[(child_a, "zip.modified")] == "1.5"
-    assert meta[(child_b, "zip.size")] == "20"
+    assert (child_a, "zip.size") not in meta
+    assert (child_a, "zip.modified") not in meta
+    assert (child_b, "zip.size") not in meta
 
 
 def test_parse_batch_ok_overrides_fail():

@@ -102,10 +102,14 @@ class CollectorWorker:
                     items = result if isinstance(result, list) else [result]
                     dicts = [r.to_dict() if isinstance(r, CollectorResult) else r for r in items]
                     fh = info[2] if len(info) > 2 else None
-                    if fh:
-                        for d in dicts:
-                            if d.get("tags") and not d.get("file_hash"):
+                    for d in dicts:
+                        if d.get("tags"):
+                            if fh:
                                 d["file_hash"] = fh
+                            else:
+                                d.pop("file_hash", None)
+                        else:
+                            d.pop("file_hash", None)
                     return dicts
                 except Exception as e:
                     AppLogger.warning(f"[Collector] process failed: {p}: {e}", exc=e)

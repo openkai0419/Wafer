@@ -129,7 +129,8 @@ def test_sections_order(qtbot):
     meta["tag_prefixed"] = {"custom": {"key": "value"}}
     w.set_data(meta)
     keys = list(w._sections.keys())
-    assert keys[:4] == ["source", "file", "tag", "meta"]
+    assert keys[:2] == list(_FIXED_SECTION_KEYS)
+    assert keys[2:4] == ["tag", "meta"]
     assert keys[4] == "tag:custom"
     assert set(keys[5:]) == {"meta:exiftool", "meta:image"}
 

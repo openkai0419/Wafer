@@ -163,3 +163,45 @@ class TestRaiseWindow:
             win.window_state = MagicMock()
             win.raise_window()
             win.window_state.restore_or_activate.assert_called_once()
+
+
+class TestQueryMenu:
+    def test_show_query_menu_opens_query_folder(self):
+        with patch("wafer.app.viewer.mainwindow.MainWindow.__init__", lambda self, *a, **kw: None):
+            from wafer.app.viewer.mainwindow import MainWindow
+
+            win = MainWindow.__new__(MainWindow)
+            menu_spec = MagicMock()
+            session = MagicMock()
+            session.from_folder.return_value = menu_spec
+
+            with patch("wafer.app.viewer.mainwindow.Menu.session", return_value=session):
+                win._show_query_menu()
+
+            session.from_folder.assert_called_once_with("Query")
+            menu_spec.exec.assert_called_once_with()
+
+
+class TestFolderCallout:
+    def test_check_folder_callout_uses_add_folder_button_attr(self):
+        with patch("wafer.app.viewer.mainwindow.MainWindow.__init__", lambda self, *a, **kw: None):
+            from wafer.app.viewer.mainwindow import MainWindow
+
+            win = MainWindow.__new__(MainWindow)
+            add_btn = MagicMock()
+            add_btn.pressed = MagicMock()
+            win._add_folder_btn = add_btn
+            win._folder_callout = None
+            win._on_folder_callout_dismissed = MagicMock()
+            win._show_folder_callout = MagicMock()
+            win._dismiss_folder_callout = MagicMock()
+
+            callout = MagicMock()
+            callout.dismissed = MagicMock()
+            callout.dismissed.connect = MagicMock()
+
+            with patch("wafer.app.viewer.mainwindow.CalloutOverlay", return_value=callout), patch("wafer.app.viewer.mainwindow.QtCore.QTimer.singleShot") as single_shot:
+                win._check_folder_callout([])
+
+            add_btn.pressed.connect.assert_called_once_with(win._dismiss_folder_callout)
+            single_shot.assert_called_once()

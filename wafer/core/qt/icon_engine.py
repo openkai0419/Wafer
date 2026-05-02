@@ -460,6 +460,27 @@ def _draw_sort(p: QPainter, r: QRectF, color: QColor):
     p.drawLine(QPointF(rx, bot), QPointF(rx + head, bot - head))
 
 
+@_register("query", padding=0.04)
+def _draw_query(p: QPainter, r: QRectF, color: QColor):
+    s = min(r.width(), r.height())
+    lw = max(1.6, s * 0.12)
+    pen = QPen(color, lw)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    p.setPen(pen)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    lens_center = QPointF(r.left() + r.width() * 0.4, r.top() + r.height() * 0.4)
+    lens_radius = s * 0.27
+    p.drawEllipse(lens_center, lens_radius, lens_radius)
+
+    handle_start = QPointF(
+        lens_center.x() + lens_radius * 0.62,
+        lens_center.y() + lens_radius * 0.62,
+    )
+    handle_end = QPointF(r.right() - s * 0.12, r.bottom() - s * 0.12)
+    p.drawLine(handle_start, handle_end)
+
+
 @_register("menu", padding=0.15)
 def _draw_menu(p: QPainter, r: QRectF, color: QColor):
     lw = max(1.5, min(r.width(), r.height()) * 0.11)

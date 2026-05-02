@@ -69,6 +69,44 @@ def test_filedb_delete_sources(tmp_path):
     db.close()
 
 
+def test_filedb_delete_sources_by_path_prefixes(tmp_path):
+    db = FileDB(tmp_path / "test.db")
+    db.start()
+    db.initialize_database()
+    sources = [
+        ("/root/dir/a.jpg", "hash1", 100, 1.0),
+        ("/root/dir/nested/b.jpg", "hash2", 100, 1.0),
+        ("/root/dir2/c.jpg", "hash3", 100, 1.0),
+    ]
+    images = [(source, source, 1.0) for source, *_ in sources]
+    db.upsert_batches(sources, images, [], [])
+
+    db.delete_sources_by_path_prefixes(["/root/dir"])
+
+    prev = db.load_existing_sources()
+    assert set(prev) == {"/root/dir2/c.jpg"}
+    rows = db.conn.execute("SELECT path FROM files ORDER BY path").fetchall()
+    assert rows == [("/root/dir2/c.jpg",)]
+    db.close()
+
+
+def test_filedb_delete_sources_by_path_prefixes_escapes_like(tmp_path):
+    db = FileDB(tmp_path / "test.db")
+    db.start()
+    db.initialize_database()
+    sources = [
+        ("/root/a_%/file.jpg", "hash1", 100, 1.0),
+        ("/root/aX%/file.jpg", "hash2", 100, 1.0),
+    ]
+    db.upsert_batches(sources, [(source, source, 1.0) for source, *_ in sources], [], [])
+
+    db.delete_sources_by_path_prefixes(["/root/a_%"])
+
+    prev = db.load_existing_sources()
+    assert set(prev) == {"/root/aX%/file.jpg"}
+    db.close()
+
+
 def test_schema_no_change_preserves_data(tmp_path):
     db = FileDB(tmp_path / "test.db")
     db.start()

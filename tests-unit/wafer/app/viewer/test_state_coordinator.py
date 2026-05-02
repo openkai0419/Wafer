@@ -44,7 +44,7 @@ def _make_window(**overrides):
         apply_bars=MagicMock(),
         run_folder_worker=MagicMock(),
     )
-    w.search_service = _SearchService({"include_subfolders": True, "auto_execute": True})
+    w.search_service = _SearchService({"include_subfolders": True, "include_contained_files": True, "auto_execute": True})
     w.sync_service_from_ui = MagicMock()
     w.search = MagicMock()
     for k, v in overrides.items():
@@ -101,11 +101,12 @@ class TestPathStateCoordinator:
 
 
 class TestQueryStateCoordinator:
-    def test_capture_persists_auto_execute_and_subfolders(self):
+    def test_capture_persists_query_options(self):
         w = _make_window()
-        w.search_service = _SearchService({"include_subfolders": False, "auto_execute": False})
+        w.search_service = _SearchService({"include_subfolders": False, "include_contained_files": False, "auto_execute": False})
         out = QueryStateCoordinator(w).capture()
         assert out["include_subfolders"] is False
+        assert out["include_contained_files"] is False
         assert out["auto_execute"] is False
         assert out["bars"] == [{"filter": "text"}]
         assert out["sort_by"] == "path"
@@ -122,11 +123,13 @@ class TestQueryStateCoordinator:
             "sort_by": "name",
             "ascending": True,
             "include_subfolders": False,
+            "include_contained_files": False,
             "auto_execute": False,
         })
-        spy.assert_called_once_with({"include_subfolders": False, "auto_execute": False})
+        spy.assert_called_once_with({"include_subfolders": False, "include_contained_files": False, "auto_execute": False})
         assert w.search_service.get("auto_execute") is False
         assert w.search_service.get("include_subfolders") is False
+        assert w.search_service.get("include_contained_files") is False
         w.search_row_widget.set_sort.assert_called_once_with("name", True)
         w.search_row_widget.apply_bars.assert_called_once_with([], mode="replace")
         w.sync_service_from_ui.assert_called_once()

@@ -67,6 +67,7 @@ ALL_KEYS = [
     "chevron_down",
     "chevron_right",
     "sort",
+    "query",
     "menu",
     "layout_edit",
     "refresh",

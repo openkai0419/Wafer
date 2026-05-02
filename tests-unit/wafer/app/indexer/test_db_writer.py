@@ -62,6 +62,24 @@ def test_upsert_and_delete_sources(writer):
     assert len(rows) == 0
 
 
+def test_delete_source_trees(writer):
+    source_entries = [
+        ("/root/dir/a.png", "hash1", 100, 1.0),
+        ("/root/dir/sub/b.png", "hash2", 100, 1.0),
+        ("/root/dir2/c.png", "hash3", 100, 1.0),
+    ]
+    image_entries = [(source, source, 1.0) for source, *_ in source_entries]
+    writer.upsert_sources(source_entries, image_entries)
+
+    writer.delete_source_trees(["/root/dir"])
+
+    cur = writer.db.get_reader_cursor()
+    cur.execute("SELECT source FROM sources ORDER BY source")
+    rows = [row[0] for row in cur.fetchall()]
+    cur.close()
+    assert rows == ["/root/dir2/c.png"]
+
+
 def test_rename_paths(writer):
     source_entries = [("/old.png", "hash1", 100, 1.0)]
     image_entries = [("/old.png", "/old.png", 1.0)]

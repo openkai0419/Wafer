@@ -17,6 +17,7 @@ class _Recorder:
 
 def _make_watcher():
     from wafer.app.indexer.watch_folder import FolderWatcher
+    from wafer.app.indexer.path_scope import normalize_prefixes
 
     scheduler = MagicMock()
     writer = MagicMock()
@@ -24,7 +25,15 @@ def _make_watcher():
     progress = MagicMock()
     wf = FolderWatcher(scheduler, writer, scanner, progress)
     wf.stop()
+    wf._folders = normalize_prefixes(["."])
     return wf, scheduler, writer, scanner, progress
+
+
+def _set_scope(wf, roots, ignores=()):
+    from wafer.app.indexer.path_scope import normalize_prefixes
+
+    wf._folders = normalize_prefixes([str(p) for p in roots])
+    wf._ignore_paths = normalize_prefixes([str(p) for p in ignores])
 
 
 def _collect_exec_calls(scheduler, scanner):
@@ -79,6 +88,62 @@ def test_flush_only_deleted():
     assert scheduler.submit.called
     task = scheduler.submit.call_args[0][0]
     assert task.name == "delete_sources"
+    task.run()
+    writer.delete_source_trees.assert_called_once()
+
+
+def test_flush_move_outside_scope_deletes_source(tmp_path):
+    root = tmp_path / "watched"
+    outside = tmp_path / "outside"
+    wf, scheduler, writer, scanner, _ = _make_watcher()
+    _set_scope(wf, [root])
+
+    wf._flush(set(), set(), {str(root / "a.jpg"): str(outside / "a.jpg")})
+
+    assert scheduler.submit.called
+    task = scheduler.submit.call_args[0][0]
+    assert task.name == "delete_sources"
+    task.run()
+    writer.delete_source_trees.assert_called_once()
+    assert not scanner.request_update.called
+
+
+def test_flush_move_into_ignored_deletes_source(tmp_path):
+    root = tmp_path / "watched"
+    ignored = root / "ignored"
+    wf, scheduler, writer, scanner, _ = _make_watcher()
+    _set_scope(wf, [root], [ignored])
+
+    wf._flush(set(), set(), {str(root / "a.jpg"): str(ignored / "a.jpg")})
+
+    task = scheduler.submit.call_args[0][0]
+    assert task.name == "delete_sources"
+    task.run()
+    writer.delete_source_trees.assert_called_once()
+
+
+def test_flush_folder_move_into_ignored_deletes_tree(tmp_path):
+    root = tmp_path / "watched"
+    ignored = root / "ignored"
+    wf, scheduler, writer, scanner, _ = _make_watcher()
+    _set_scope(wf, [root], [ignored])
+
+    wf._flush(set(), set(), {}, {str(root / "dir"): str(ignored / "dir")})
+
+    task = scheduler.submit.call_args[0][0]
+    assert task.name == "delete_sources"
+    task.run()
+    writer.delete_source_trees.assert_called_once()
+
+
+def test_flush_folder_rename_inside_scope_skips_prefix_delete(tmp_path):
+    root = tmp_path / "watched"
+    wf, scheduler, writer, scanner, _ = _make_watcher()
+    _set_scope(wf, [root])
+
+    wf._flush(set(), set(), {}, {str(root / "old"): str(root / "new")})
+
+    assert not scheduler.submit.called
 
 
 def test_flush_empty():
@@ -302,7 +367,7 @@ class TestEventAccumulator:
         acc.on_changed("a.png", now)
         acc.drain()
         acc.on_changed("a.png", now)
-        changed, _, _ = acc.drain_all()
+        changed, *_ = acc.drain_all()
         assert "a.png" in changed
 
     def test_created_then_moved_triggers_update(self):

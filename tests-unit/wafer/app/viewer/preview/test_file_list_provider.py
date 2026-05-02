@@ -3,6 +3,8 @@ from unittest.mock import MagicMock, patch
 from wafer.app.viewer.preview.file_list_provider import FileListProvider, ListMode
 from wafer.app.viewer.preview.file_model import FileViewModel
 from wafer.app.viewer.grid.items import GridItemModel
+from wafer.builtins.filters import SourceChildrenFilter
+from wafer.utils.virtual_paths import build_virtual_path, register_owner_extension
 
 
 @pytest.fixture
@@ -31,6 +33,109 @@ class TestListMode:
         assert provider.mode == ListMode.DIR
         provider.set_mode(ListMode.SYNC)
         assert provider.mode == ListMode.SYNC
+
+
+class TestContainedFilesListOption:
+    def test_default_is_disabled(self, provider):
+        assert provider.open_contained_files_as_list is False
+
+    def test_set_open_contained_files_as_list(self, provider):
+        provider.set_open_contained_files_as_list(True)
+        assert provider.open_contained_files_as_list is True
+        provider.set_open_contained_files_as_list(False)
+        assert provider.open_contained_files_as_list is False
+
+    @patch.object(FileListProvider, "_query_contained_files")
+    def test_container_path_triggers_contained_query_when_enabled(self, mock_query, provider, file_model):
+        register_owner_extension(".zip")
+        file_model._dbpath_getter = lambda: ":memory:"
+        provider.set_open_contained_files_as_list(True)
+
+        provider.on_file_set("C:/data/temp.zip")
+
+        mock_query.assert_called_once_with("C:/data/temp.zip", "C:/data/temp.zip")
+
+    @patch.object(FileListProvider, "_query_contained_files")
+    def test_virtual_child_triggers_sibling_query_when_enabled(self, mock_query, provider, file_model):
+        register_owner_extension(".zip")
+        file_model._dbpath_getter = lambda: ":memory:"
+        child = build_virtual_path("C:/data/temp.zip", "a.png")
+        provider.set_open_contained_files_as_list(True)
+
+        provider.on_file_set(child)
+
+        mock_query.assert_called_once_with("C:/data/temp.zip", child)
+
+    @patch.object(FileListProvider, "_query_contained_files")
+    def test_option_off_uses_current_list_mode(self, mock_query, provider, file_model):
+        register_owner_extension(".zip")
+        file_model._dbpath_getter = lambda: ":memory:"
+
+        provider.on_file_set("C:/data/temp.zip")
+
+        mock_query.assert_not_called()
+        assert file_model.path() == "C:/data/temp.zip"
+
+    def test_non_owner_extension_skips_contained_query(self, provider, file_model):
+        file_model._dbpath_getter = lambda: ":memory:"
+        provider.set_open_contained_files_as_list(True)
+
+        provider.on_file_set("C:/data/plain.png")
+
+        assert file_model.path() == "C:/data/plain.png"
+
+    def test_on_contained_ready_sets_first_child_for_container(self, provider, file_model):
+        register_owner_extension(".zip")
+        archive = "C:/data/temp.zip"
+        child_a = build_virtual_path(archive, "a.png")
+        child_b = build_virtual_path(archive, "b.png")
+        from wafer.core.qt.dispatcher import CancelToken
+
+        cancel = CancelToken()
+        provider._dir_cancel = cancel
+        provider._on_contained_ready(([child_a, child_b], [archive, archive], [1.0, 1.0]), cancel, archive)
+
+        assert file_model.paths == [child_a, child_b]
+        assert file_model.path() == child_a
+        assert file_model.current_index() == 0
+
+    def test_on_contained_ready_keeps_requested_child(self, provider, file_model):
+        register_owner_extension(".zip")
+        archive = "C:/data/temp.zip"
+        child_a = build_virtual_path(archive, "a.png")
+        child_b = build_virtual_path(archive, "b.png")
+        from wafer.core.qt.dispatcher import CancelToken
+
+        cancel = CancelToken()
+        provider._dir_cancel = cancel
+        provider._on_contained_ready(([child_a, child_b], [archive, archive], [1.0, 1.0]), cancel, child_b)
+
+        assert file_model.path() == child_b
+        assert file_model.current_index() == 1
+
+    def test_empty_contained_result_falls_back_to_mode(self, provider, file_model):
+        from wafer.core.qt.dispatcher import CancelToken
+
+        cancel = CancelToken()
+        provider._dir_cancel = cancel
+        provider._on_contained_ready(([], [], []), cancel, "C:/data/temp.zip")
+
+        assert file_model.path() == "C:/data/temp.zip"
+
+    def test_query_contained_files_uses_source_children_filter(self, provider, file_model):
+        file_model._dbpath_getter = lambda: ":memory:"
+        captured = {}
+
+        def fake_post(task, *args, **kwargs):
+            captured["task"] = task
+
+        with patch.object(provider._composer, "execute") as mock_exec, patch.object(provider._dispatcher, "post", side_effect=fake_post):
+            mock_exec.return_value = ([], [], [])
+            provider._query_contained_files("C:/data/temp.zip", "C:/data/temp.zip")
+            captured["task"]()
+            args, _ = mock_exec.call_args
+            assert args[1][0][0] is SourceChildrenFilter
+            assert args[1][0][1] == {"source": "C:/data/temp.zip"}
 
 
 class TestSyncMode:

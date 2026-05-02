@@ -75,7 +75,6 @@ def test_exif_plugin_process_success(tmp_path):
     assert isinstance(result, CollectorResult)
     assert result.status is True
     assert result.name is None
-    assert result.file_hash is None
     assert result.aspect is not None
     if result.meta_info:
         for key in result.meta_info:
@@ -99,6 +98,11 @@ def test_collector_result_to_dict_omits_none():
     r = CollectorResult(source="test.png", status=True, name="test.png", aspect=1.5)
     d = r.to_dict()
     assert d == {"source": "test.png", "status": True, "name": "test.png", "aspect": 1.5}
+
+
+def test_collector_result_does_not_accept_file_hash():
+    with pytest.raises(TypeError):
+        CollectorResult(source="test.png", status=True, file_hash="hash")
 
 
 def test_base_collector_is_abstract():

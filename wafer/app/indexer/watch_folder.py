@@ -8,6 +8,7 @@ from ...utils.logs import AppLogger
 from ...utils.paths import normalize_path
 from ...utils.profiling import profiler
 from .db_writer import DatabaseWriter
+from .path_scope import contains_path_prefix, normalize_prefixes
 from .progress_notifier import ProgressAggregator
 from .scanner import DirectoryScanner
 from .scheduler import TaskScheduler
@@ -74,12 +75,11 @@ class _FileEventHandler(FileSystemEventHandler):
     def on_deleted(self, event):
         if event.is_directory:
             self._inbox.put(("folder", event.src_path))
-        else:
-            self._inbox.put(("deleted", event.src_path))
+        self._inbox.put(("deleted", event.src_path))
 
     def on_moved(self, event):
         if event.is_directory:
-            self._inbox.put(("folder", event.src_path))
+            self._inbox.put(("folder_moved", (event.src_path, event.dest_path)))
             return
         self._inbox.put(("moved", (event.src_path, event.dest_path)))
 
@@ -92,6 +92,7 @@ class _EventAccumulator:
         self._new = set()
         self._deleted = set()
         self._moved = {}
+        self._folder_moved = {}
         self._folder_dirty = False
 
     def on_created(self, path):
@@ -127,6 +128,10 @@ class _EventAccumulator:
         else:
             self._moved[src] = dst
 
+    def on_folder_moved(self, src, dst):
+        self._folder_dirty = True
+        self._folder_moved[src] = dst
+
     def on_folder(self):
         self._folder_dirty = True
 
@@ -143,11 +148,13 @@ class _EventAccumulator:
         self._new.clear()
         deleted = set(self._deleted)
         moved = dict(self._moved)
+        folder_moved = dict(self._folder_moved)
         self._deleted.clear()
         self._moved.clear()
-        if stable or deleted or moved:
-            AppLogger.debug(f"[acc] drain: stable={len(stable)}, deleted={len(deleted)}, moved={len(moved)}, still_pending={len(self._pending)}")
-        return stable, deleted, moved
+        self._folder_moved.clear()
+        if stable or deleted or moved or folder_moved:
+            AppLogger.debug(f"[acc] drain: stable={len(stable)}, deleted={len(deleted)}, moved={len(moved)}, folder_moved={len(folder_moved)}, still_pending={len(self._pending)}")
+        return stable, deleted, moved, folder_moved
 
     def drain_all(self):
         AppLogger.debug(f"[acc] drain_all: ready={len(self._ready)}, pending={len(self._pending)}")
@@ -173,6 +180,7 @@ class FolderWatcher:
         self._emitter = _FileEventHandler(self._q)
         self._observer = None
         self._folders = []
+        self._ignore_paths = []
         self._stop = threading.Event()
         self._worker = threading.Thread(target=self._loop, daemon=True)
         self._worker.start()
@@ -180,20 +188,21 @@ class FolderWatcher:
     def start(self, folders):
         self._stop_observer()
         self._observer = Observer()
-        for path in folders:
+        folder_list = list(folders)
+        for path in folder_list:
             if os.path.exists(path):
                 self._observer.schedule(self._emitter, path, recursive=True)
         self._observer.start()
-        self._folders = folders
-        AppLogger.info(f"watch start: {len(folders)} folders")
+        self._folders = normalize_prefixes(folder_list)
+        AppLogger.info(f"watch start: {len(folder_list)} folders")
         self.rescan_all()
 
     def rescan_all(self):
-        if self._folders:
-            AppLogger.info(f"rescan: {len(self._folders)} folders")
-            self._q.put(("rescan", self._folders))
+        AppLogger.info(f"rescan: {len(self._folders)} folders")
+        self._q.put(("rescan", self._folders))
 
     def set_ignore_paths(self, paths):
+        self._ignore_paths = normalize_prefixes(paths)
         self._scanner.set_exclude_paths(paths)
 
     def request_cleanup(self):
@@ -234,6 +243,8 @@ class FolderWatcher:
                     acc.on_moved(*data)
                 elif kind == "folder":
                     acc.on_folder()
+                elif kind == "folder_moved":
+                    acc.on_folder_moved(*data)
                 elif kind in ("rescan", "cleanup"):
                     self._flush(*acc.drain_all())
                     self._exec(kind, data)
@@ -242,19 +253,35 @@ class FolderWatcher:
             if acc.consume_folder_dirty():
                 self._progress.send_event("folderchanged")
 
-    def _flush(self, changed, deleted, moved):
-        if not changed and not deleted and not moved:
+    def _flush(self, changed, deleted, moved, folder_moved=None):
+        folder_moved = folder_moved or {}
+        if not changed and not deleted and not moved and not folder_moved:
             return
-        AppLogger.debug(f"[flush] changed={len(changed)}, deleted={len(deleted)}, moved={len(moved)}")
+        AppLogger.debug(f"[flush] changed={len(changed)}, deleted={len(deleted)}, moved={len(moved)}, folder_moved={len(folder_moved)}")
+        for src, dst in folder_moved.items():
+            if self._is_in_scope(src) and not self._is_in_scope(dst):
+                deleted.add(src)
         if moved:
-            new_at_dst = {dst for src, dst in moved.items() if src in changed}
+            new_at_dst = set()
+            rename_pairs = []
+            for src, dst in moved.items():
+                if self._is_in_scope(dst):
+                    rename_pairs.append((src, dst))
+                    if src in changed:
+                        new_at_dst.add(dst)
+                else:
+                    deleted.add(src)
             changed -= set(moved.keys())
-            self._exec("rename", list(moved.items()))
+            if rename_pairs:
+                self._exec("rename", rename_pairs)
             changed.update(new_at_dst)
         if deleted:
             self._exec("remove", list(deleted))
         if changed:
             self._exec("update", list(changed))
+
+    def _is_in_scope(self, path: str) -> bool:
+        return contains_path_prefix(self._folders, path) and not contains_path_prefix(self._ignore_paths, path)
 
     @profiler.profile
     def _exec(self, cmd, data=None):
@@ -286,7 +313,7 @@ class FolderWatcher:
                     Task.create(
                         "delete_sources",
                         priority=TaskPriority.REALTIME,
-                        run=lambda p=paths: self._writer.delete_sources(p),
+                        run=lambda p=paths: self._writer.delete_source_trees(p),
                         on_complete=lambda n=len(paths): (
                             self._progress.increment(n, 0),
                             self._progress.send_event("update"),

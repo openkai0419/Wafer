@@ -8,7 +8,6 @@ import shutil
 import tempfile
 import threading
 import time
-import zipfile
 from pathlib import Path, PurePosixPath
 
 from wafer.utils.logs import AppLogger
@@ -16,7 +15,7 @@ from wafer.utils.paths import normalize_path, resolve_data_path
 from wafer.utils.virtual_paths import child_path, display_name, source_path
 
 from . import settings as cache_settings
-from .archive import open_zip
+from .archive import ZipMemberRecord, display_member_path, get_archive_index, open_zip_member_record
 
 _INVALID_FILENAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
 
@@ -39,11 +38,18 @@ class ZipCache:
         member = child_path(logical_path)
         if not member:
             raise ValueError(f"not a zip virtual path: {logical_path}")
+        record = get_archive_index(source).resolve(member)
+        if record is None:
+            raise KeyError(f"ZIP member not found: source={source} member={display_member_path(member)}")
+        return self.materialize_member(source, record, purpose=purpose, name=display_name(logical_path))
+
+    def materialize_member(self, source: str, member: ZipMemberRecord, purpose: str = "render", name: str | None = None) -> str:
+        self.start_idle_sweep()
         st = os.stat(source)
         signature = f"{st.st_mtime_ns}:{st.st_size}"
-        digest = self._digest(source, member, signature, purpose)
-        suffix = PurePosixPath(member.replace("\\", "/")).suffix
-        filename = f"{digest}_{self._safe_stem(display_name(logical_path), suffix)}{suffix}"
+        digest = self._digest(source, member.member, signature, purpose)
+        suffix = PurePosixPath(display_member_path(member.member)).suffix
+        filename = f"{digest}_{self._safe_stem(name or member.name, suffix)}{suffix}"
         target = self.root / digest[:2] / filename
         with self._lock:
             if target.is_file():
@@ -52,7 +58,7 @@ class ZipCache:
             target.parent.mkdir(parents=True, exist_ok=True)
             tmp_name = None
             try:
-                with open_zip(source) as zf, self._open_member(zf, member) as src, tempfile.NamedTemporaryFile("wb", delete=False, dir=target.parent, suffix=".tmp") as tmp:
+                with open_zip_member_record(source, member) as src, tempfile.NamedTemporaryFile("wb", delete=False, dir=target.parent, suffix=".tmp") as tmp:
                     tmp_name = tmp.name
                     shutil.copyfileobj(src, tmp, length=1024 * 1024)
                 os.replace(tmp_name, target)
@@ -162,13 +168,6 @@ class ZipCache:
         if idle_removed or lru_removed:
             AppLogger.info(f"[zip_cache] sweep removed idle={idle_removed} lru={lru_removed}")
         return idle_removed, lru_removed
-
-    @staticmethod
-    def _open_member(zf: zipfile.ZipFile, member: str):
-        try:
-            return zf.open(member, "r")
-        except KeyError:
-            return zf.open(member.replace("/", "\\"), "r")
 
     @staticmethod
     def _digest(source: str, member: str, signature: str, purpose: str) -> str:

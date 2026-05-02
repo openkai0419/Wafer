@@ -64,7 +64,8 @@ RESOURCE_ITEMS = [
 
 META_FILES = [
     "LICENSE",
-    "NOTICE",
+    "COPYING",
+    "COPYING.LESSER",
     "README.md",
     "CHANGELOG.md",
 ]

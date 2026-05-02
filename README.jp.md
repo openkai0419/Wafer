@@ -4,7 +4,7 @@
 
 ![Wafer Screenshot](_docs/wafer_screenshot.png)
 
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-LGPL_2.1_or_later-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB.svg)](https://www.python.org/)
 ![Platform](https://img.shields.io/badge/Platform-Windows-0078D6.svg)
 [![Release](https://img.shields.io/github/v/release/openkai0419/Wafer?style=flat-square)](https://github.com/openkai0419/Wafer/releases/latest)
@@ -129,21 +129,20 @@ class MyCollector(BaseCollectorPlugin):
 
 ## ライセンス
 
-このプロジェクトは [Apache License 2.0](LICENSE) の下で公開されています。
+このプロジェクトは [GNU Lesser General Public License v2.1 or later](LICENSE) の下で公開されています。
 
-**意図:**
-Wafer の基盤（`wafer/`）は、すべての extension とユーザーに恩恵をもたらす共有コアです。Apache-2.0 ライセンスは自由な利用・改変・再配布を許可していますが、基盤への改善はアップストリームへ貢献いただけると嬉しいです。
+このプロジェクトを改変して配布する場合は、改変部分の対応ソースコードを LGPL-2.1-or-later の条件で提供し、変更内容を明示してください。
 
-extension（`extensions/`）は自由に作成・改変・ライセンス設定が可能です。各 extension は独自の `LICENSE` ファイルで異なる条件を指定できます。指定がない場合はルートの Apache-2.0 が適用されます。
+このリポジトリ内の Python ソースコード（`wafer/` と `extensions/`）は LGPL-2.1-or-later です。
 
-各 extension の Python コードはすべて Apache-2.0 です。一部の extension は実行時にダウンロードされる外部バイナリやモデルを利用し、それらは独自のライセンスに従います。これらのバイナリ／モデルは本リポジトリには含まれません（`extensions/*/lib/` は `.gitignore` 対象）。詳細は各 extension の `NOTICE.md` を参照してください。
+一部の extension は実行時にダウンロードされる外部バイナリやモデルを利用し、それらは独自のライセンスに従います。これらのバイナリ／モデルは本リポジトリには含まれません（`extensions/*/lib/` は `.gitignore` 対象）。詳細は各 extension の `README.md` および `THIRD_PARTY_LICENSE`（存在する場合）を参照してください。
 
 | コンポーネント | Python コード | 実行時ダウンロードされるバイナリ／モデル |
 |---|---|---|
-| `wafer/`（コア） | Apache-2.0 | — |
-| `extensions/video/` | Apache-2.0 | `libmpv-2.dll` — GPL-2.0+（または LGPL-2.1+） |
-| `extensions/exiftool/` | Apache-2.0 | `exiftool.exe` — Artistic License / GPL（"Perl と同条件"） |
-| `extensions/ffmpeg/` | Apache-2.0 | `ffmpeg.exe`, `ffprobe.exe` — GPL-3.0（gyan.dev essentials ビルド） |
-| `extensions/ai_tagger/` | Apache-2.0 | WD SwinV2 Tagger v3 — Apache-2.0 |
-| `extensions/florence/` | Apache-2.0 | Florence-2 モデル（Microsoft）— MIT |
-| その他の extension | Apache-2.0 | — |
+| `wafer/`（コア） | LGPL-2.1-or-later | — |
+| `extensions/video/` | LGPL-2.1-or-later | `libmpv-2.dll` — GPL-2.0+（または LGPL-2.1+） |
+| `extensions/exiftool/` | LGPL-2.1-or-later | `exiftool.exe` — Artistic License / GPL（"Perl と同条件"） |
+| `extensions/ffmpeg/` | LGPL-2.1-or-later | `ffmpeg.exe`, `ffprobe.exe` — GPL-3.0（gyan.dev essentials ビルド） |
+| `extensions/ai_tagger/` | LGPL-2.1-or-later | WD SwinV2 Tagger v3 — Apache-2.0 |
+| `extensions/florence/` | LGPL-2.1-or-later | Florence-2 モデル（Microsoft）— MIT |
+| その他の extension | LGPL-2.1-or-later | — |

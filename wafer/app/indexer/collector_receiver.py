@@ -143,11 +143,6 @@ def _parse_batch(results: list[dict[str, Any]]) -> dict[str, Any]:
             if aspect or (path != source) or name:
                 source_extension = collector if path != source else None
                 image_entries.append((path, source, name, aspect, source_extension))
-            if path != source:
-                for key in ("size", "modified", "created"):
-                    value = r.get(key)
-                    if value is not None:
-                        meta_info_entries.append((path, f"{prefix}{key}", str(value), try_float(value)))
             for k, v in meta_info.items():
                 if v is not None:
                     meta_info_entries.append((path, f"{prefix}{k}", str(v), try_float(v)))

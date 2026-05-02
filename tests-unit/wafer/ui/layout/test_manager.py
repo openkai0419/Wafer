@@ -314,6 +314,184 @@ class TestToggleCollapse:
         assert mgr.is_panel_visible("grid")
 
 
+class TestPanelSolo:
+    def test_solo_collapses_other_docked_panels(self, layout_env):
+        mgr, win, panels = layout_env
+        _process(10)
+
+        assert mgr.solo_panel("grid")
+        _process()
+
+        assert mgr.solo_target == "grid"
+        assert mgr.is_panel_visible("grid")
+        assert mgr.is_panel_collapsed("folder")
+        assert mgr.is_panel_collapsed("viewer")
+
+    def test_solo_same_panel_restores_previous_collapsed_state(self, layout_env):
+        mgr, win, panels = layout_env
+        _process(10)
+        mgr.toggle_panel("folder")
+        _process()
+        before = set(mgr._tree.collapsed)
+
+        assert mgr.solo_panel("grid")
+        _process()
+        assert mgr.solo_panel("grid")
+        _process()
+
+        assert mgr.solo_target is None
+        assert mgr._tree.collapsed == before
+
+    def test_solo_shows_target_that_was_collapsed_then_restores(self, layout_env):
+        mgr, win, panels = layout_env
+        _process(10)
+        mgr.toggle_panel("grid")
+        _process()
+        before = set(mgr._tree.collapsed)
+
+        assert mgr.solo_panel("grid")
+        _process()
+
+        assert mgr.is_panel_visible("grid")
+        assert mgr.is_panel_collapsed("folder")
+        assert mgr.is_panel_collapsed("viewer")
+
+        assert mgr.solo_panel("grid")
+        _process()
+        assert mgr._tree.collapsed == before
+
+    def test_solo_switches_target_without_losing_original_state(self, layout_env):
+        mgr, win, panels = layout_env
+        _process(10)
+        mgr.toggle_panel("folder")
+        _process()
+        before = set(mgr._tree.collapsed)
+
+        assert mgr.solo_panel("grid")
+        _process()
+        assert mgr.solo_panel("viewer")
+        _process()
+
+        assert mgr.solo_target == "viewer"
+        assert mgr.is_panel_visible("viewer")
+        assert mgr.is_panel_collapsed("folder")
+        assert mgr.is_panel_collapsed("grid")
+
+        assert mgr.solo_panel("viewer")
+        _process()
+        assert mgr._tree.collapsed == before
+
+    def test_solo_collapses_nested_sibling_branch(self, qtbot):
+        win = QtWidgets.QMainWindow()
+        win.resize(1200, 700)
+        qtbot.addWidget(win)
+        win.show()
+        qtbot.waitExposed(win)
+
+        mgr = LayoutManager(win)
+        for name in ["a", "b", "c", "d"]:
+            w = _make_panel(name)
+            mgr.register(name, lambda w=w: w)
+
+        mgr.restore_state(
+            {
+                "mode": MODE_LOCKED,
+                "tree": {
+                    "root": {
+                        "type": "split",
+                        "orientation": "horizontal",
+                        "children": [
+                            {
+                                "type": "split",
+                                "orientation": "vertical",
+                                "children": [
+                                    {"type": "leaf", "panel": "a"},
+                                    {"type": "leaf", "panel": "b"},
+                                ],
+                                "sizes": [300, 300],
+                            },
+                            {
+                                "type": "split",
+                                "orientation": "vertical",
+                                "children": [
+                                    {"type": "leaf", "panel": "c"},
+                                    {"type": "leaf", "panel": "d"},
+                                ],
+                                "sizes": [300, 300],
+                            },
+                        ],
+                        "sizes": [500, 500],
+                    },
+                    "floating": {},
+                },
+            }
+        )
+        _process(10)
+
+        assert mgr.solo_panel("c")
+        _process(10)
+
+        root_sizes = mgr._root_splitter.sizes()
+        right_sizes = mgr._root_splitter.widget(1).sizes()
+        assert root_sizes[0] == 0
+        assert root_sizes[1] > 0
+        assert right_sizes[0] > 0
+        assert right_sizes[1] == 0
+
+    def test_solo_dormant_panel_is_noop(self, layout_env):
+        mgr, win, panels = layout_env
+        w = _make_panel("dyn")
+        mgr.register("dyn", lambda: w)
+        before = set(mgr._tree.collapsed)
+
+        assert not mgr.solo_panel("dyn")
+        _process()
+
+        assert mgr.solo_target is None
+        assert mgr._tree.collapsed == before
+        assert "dyn" in mgr.dormant_panels()
+
+    def test_solo_floating_panel_maximizes_without_collapsing_docked_panels(self, layout_env):
+        mgr, win, panels = layout_env
+        w = _make_panel("dyn")
+        _register_floating(mgr, "dyn", w)
+        _process()
+        before = set(mgr._tree.collapsed)
+
+        assert mgr.solo_panel("dyn")
+        _process()
+
+        entry = mgr._panels["dyn"]
+        assert entry.floating_window is not None
+        assert entry.floating_window.windowState() & QtCore.Qt.WindowMaximized
+        assert mgr._tree.collapsed == before
+
+    def test_panel_at_widget_resolves_locked_panel_descendant(self, layout_env):
+        mgr, win, panels = layout_env
+        child = QtWidgets.QWidget(panels["viewer"])
+
+        assert mgr.panel_at_widget(child) == "viewer"
+        assert mgr.panel_at_widget(win) is None
+
+    def test_panel_at_widget_resolves_floating_panel_descendant(self, layout_env):
+        mgr, win, panels = layout_env
+        w = _make_panel("dyn")
+        _register_floating(mgr, "dyn", w)
+        child = QtWidgets.QWidget(w)
+
+        assert mgr.panel_at_widget(child) == "dyn"
+
+    def test_manual_toggle_clears_solo_state(self, layout_env):
+        mgr, win, panels = layout_env
+        _process(10)
+        assert mgr.solo_panel("grid")
+
+        mgr.toggle_panel("folder")
+        _process()
+
+        assert mgr.solo_target is None
+
+
 class TestToggleEditMode:
     def test_toggle_in_edit_switches_to_locked(self, layout_env):
         mgr, win, panels = layout_env

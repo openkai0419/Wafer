@@ -3,7 +3,7 @@
 Zip support is implemented as normal Wafer plugins: Collector, Grid, and Viewer.
 
 - The collector expands one `.zip` source into many logical child rows.
-- Child logical paths use `archive.zip::member/path.ext` (separator: `VIRTUAL_PATH_SEPARATOR`).
+- Child logical paths use `archive.zip::member/path.ext` (separator: `VIRTUAL_PATH_SEPARATOR`). The member part stays human-readable so path sorting, tree grouping, and filtering keep normal path semantics.
 - Rendering materializes the child into the Zip extension cache and delegates the real path back to normal Wafer plugin resolution.
 - The Zip extension does not classify child formats. Images, videos, animated files, and system thumbnail fallback are selected by existing plugins after materialization.
 

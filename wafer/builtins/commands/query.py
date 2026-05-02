@@ -185,7 +185,7 @@ class QueryCommands(ActionKit.MenuBase):
             ),
             ActionKit.Command(
                 path="qry.toggle_include_contained_files",
-                display="Include Contained Files",
+                display="Include Contained/Virtual Files",
                 func=toggle_include_contained_files,
                 checkable=True,
                 default_checked=True,

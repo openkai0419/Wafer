@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.6.11]
+### Changed
+- **Project license** (`LICENSE`, `COPYING`, `COPYING.LESSER`, `README.md`, `README.jp.md`, `pyproject.toml`): changed from Apache-2.0 to LGPL-2.1-or-later and updated related metadata/documentation
+- **License notice file** (`NOTICE`): merged project-level notice content into `LICENSE` and removed the separate `NOTICE` file
+
 ## [v0.6.10]
 ### Added
 - **Panel solo commands** (`wafer/builtins/commands/panel.py`, `wafer/ui/layout/manager.py`): added `panel.solo` / `panel.solo_current` to isolate a docked panel in locked layout mode or maximize a floating panel in place

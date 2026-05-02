@@ -15,7 +15,7 @@ Requires mpv. The library is downloaded automatically on first launch.
 
 ### License
 
-The Python source in this directory is licensed under **Apache-2.0** (see the project root `LICENSE`).
+The Python source in this directory is licensed under **LGPL-2.1-or-later** (see the project root `LICENSE`).
 
 This extension downloads `libmpv-2.dll` at first launch and links to it via `ctypes` through the `python-mpv` binding. The DLL is **not** redistributed in this repository (`lib/` is gitignored).
 

@@ -1,23 +1,5 @@
-  Wafer Project License Notice
-
-  Project: Wafer
-  Copyright (C) 2026 Wafer Contributors
-
-  This project is licensed under the GNU Lesser General Public License,
-  version 2.1 or later (LGPL-2.1-or-later).
-
-  License text files included in this repository:
-  - LGPL-2.1 text: COPYING.LESSER
-  - GPL fallback terms referenced by LGPL-2.1: COPYING
-
-  Some extensions invoke runtime-downloaded third-party binaries or models
-  under their own licenses. These artifacts are not redistributed in this
-  repository. See each extension's README.md and THIRD_PARTY_LICENSE
-  (if present) for details.
-
-
-        GNU LESSER GENERAL PUBLIC LICENSE
-              Version 2.1, February 1999
+                  GNU LESSER GENERAL PUBLIC LICENSE
+                       Version 2.1, February 1999
 
  Copyright (C) 1991, 1999 Free Software Foundation, Inc.
  <https://fsf.org/>

@@ -9,7 +9,8 @@ ROOT = Path(__file__).resolve().parent.parent
 COPY_FILES = [
     ".gitignore",
     "LICENSE",
-    "NOTICE",
+    "COPYING",
+    "COPYING.LESSER",
     "main.py",
     "pyproject.toml",
     "conftest.py",

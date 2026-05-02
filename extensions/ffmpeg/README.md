@@ -14,7 +14,7 @@ The ffmpeg binary is downloaded automatically on first launch.
 
 ### License
 
-The Python source in this directory is licensed under **Apache-2.0** (see the project root `LICENSE`).
+The Python source in this directory is licensed under **LGPL-2.1-or-later** (see the project root `LICENSE`).
 
 This extension downloads and invokes **FFmpeg / ffprobe** binaries at first launch. The binaries are **not** redistributed in this repository (`lib/` is gitignored).
 

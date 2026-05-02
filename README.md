@@ -4,7 +4,7 @@
 
 ![Wafer Screenshot](_docs/wafer_screenshot.png)
 
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-LGPL_2.1_or_later-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB.svg)](https://www.python.org/)
 ![Platform](https://img.shields.io/badge/Platform-Windows-0078D6.svg)
 [![Release](https://img.shields.io/github/v/release/openkai0419/Wafer?style=flat-square)](https://github.com/openkai0419/Wafer/releases/latest)
@@ -131,21 +131,20 @@ Application data is stored via `platformdirs` (`AppData/Local` on Windows).
 
 ## License
 
-This project is licensed under the [Apache License 2.0](LICENSE).
+This project is licensed under the [GNU Lesser General Public License v2.1 or later](LICENSE).
 
-**Our intent:**
-Wafer's foundation (`wafer/`) is designed to be a shared core that benefits every extension and every user. While the Apache-2.0 license grants full freedom to use, modify, and redistribute, we kindly ask that improvements to the core be contributed back upstream so the entire ecosystem can grow together.
+If you distribute modified versions of this project, you must provide the corresponding source code for your modifications under LGPL-2.1-or-later and keep clear change notices.
 
-Extensions (`extensions/`) are yours to create, modify, and license however you wish. Each extension may include its own `LICENSE` file to specify different terms. If an extension does not include one, the root Apache-2.0 license applies.
+All Python source code in this repository (`wafer/` and `extensions/`) is licensed under LGPL-2.1-or-later.
 
-The Python source of every extension is Apache-2.0. Some extensions invoke runtime-downloaded third-party binaries or models whose own licenses differ; these are **not** redistributed in this repository (`extensions/*/lib/` is gitignored). See each extension's `NOTICE.md` for details.
+Some extensions invoke runtime-downloaded third-party binaries or models whose own licenses differ; these are **not** redistributed in this repository (`extensions/*/lib/` is gitignored). See each extension's `README.md` and `THIRD_PARTY_LICENSE` (if present) for details.
 
 | Component | Python code | Runtime-downloaded binary / model |
 |---|---|---|
-| `wafer/` (core) | Apache-2.0 | — |
-| `extensions/video/` | Apache-2.0 | `libmpv-2.dll` — GPL-2.0+ (or LGPL-2.1+) |
-| `extensions/exiftool/` | Apache-2.0 | `exiftool.exe` — Artistic License / GPL ("same as Perl") |
-| `extensions/ffmpeg/` | Apache-2.0 | `ffmpeg.exe`, `ffprobe.exe` — GPL-3.0 (gyan.dev essentials build) |
-| `extensions/ai_tagger/` | Apache-2.0 | WD SwinV2 Tagger v3 — Apache-2.0 |
-| `extensions/florence/` | Apache-2.0 | Florence-2 model (Microsoft) — MIT |
-| All other extensions | Apache-2.0 | — |
+| `wafer/` (core) | LGPL-2.1-or-later | — |
+| `extensions/video/` | LGPL-2.1-or-later | `libmpv-2.dll` — GPL-2.0+ (or LGPL-2.1+) |
+| `extensions/exiftool/` | LGPL-2.1-or-later | `exiftool.exe` — Artistic License / GPL ("same as Perl") |
+| `extensions/ffmpeg/` | LGPL-2.1-or-later | `ffmpeg.exe`, `ffprobe.exe` — GPL-3.0 (gyan.dev essentials build) |
+| `extensions/ai_tagger/` | LGPL-2.1-or-later | WD SwinV2 Tagger v3 — Apache-2.0 |
+| `extensions/florence/` | LGPL-2.1-or-later | Florence-2 model (Microsoft) — MIT |
+| All other extensions | LGPL-2.1-or-later | — |

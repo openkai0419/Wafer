@@ -15,7 +15,7 @@ The model is downloaded from Hugging Face on first run. GPU inference requires a
 
 ### License
 
-The Python source in this directory is licensed under **Apache-2.0** (see the project root `LICENSE`).
+The Python source in this directory is licensed under **LGPL-2.1-or-later** (see the project root `LICENSE`).
 
 | Component | Source | License |
 |---|---|---|

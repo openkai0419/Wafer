@@ -289,16 +289,12 @@ class MainWindow(QtWidgets.QMainWindow):
             left_buttons=[
                 IconButtonConfig("menu", "All Menu", lambda: Menu.session(self).all_roots().exec()),
                 IconButtonConfig("gear", "Settings", lambda: Menu.session(self).from_folder("Setting").exec()),
-                IconButtonConfig(
-                    "layout_edit",
-                    "Edit Layout",
-                    lambda: Menu.session(self).from_folder("Panels").exec(),
-                ),
                 IconButtonConfig("window", "Window", lambda: Menu.session(self).from_folder("Window").exec()),
+                IconButtonConfig("layout_edit","Edit Layout", lambda: Menu.session(self).from_folder("Panels").exec(),),
             ],
             right_buttons=[
-                IconButtonConfig("query", "Query", self._show_query_menu),
                 IconButtonConfig("folder_plus", "Add Folder", lambda: Command.invoke("ft.add_folder")),
+                IconButtonConfig("query", "Query", self._show_query_menu),
             ],
         )
         self._add_folder_btn = self.iconbar.find_button("folder_plus", side="right")

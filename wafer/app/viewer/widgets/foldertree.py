@@ -359,9 +359,7 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
         target_path = parent_item.data(USER_ROLE_PATH)
         if not target_path or target_path in self.excluded:
             return False
-        if not os.path.isdir(normalize_path(target_path)):
-            return False
-        return True
+        return os.path.isdir(normalize_path(target_path))
 
     @profiler.profile
     def dropMimeData(self, data, action, row, column, parent):

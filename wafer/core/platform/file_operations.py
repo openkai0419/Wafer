@@ -419,7 +419,9 @@ class FileExecutor:
                 self._advance()
                 continue
             if dec.mode == "rename":
-                _copy_or_move(entry, Path(unique_path(d.parent, d.name)), action=action, follow_symlinks=self._follow_symlinks, progress_callback=self._progress_callback, cancel_check=self._cancel_check)
+                _copy_or_move(
+                    entry, Path(unique_path(d.parent, d.name)), action=action, follow_symlinks=self._follow_symlinks, progress_callback=self._progress_callback, cancel_check=self._cancel_check
+                )
             else:
                 _safe_remove(d)
                 _copy_or_move(entry, d, action=action, follow_symlinks=self._follow_symlinks, progress_callback=self._progress_callback, cancel_check=self._cancel_check)

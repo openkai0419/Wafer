@@ -4,6 +4,9 @@ from ....core.lang.manager import t
 from ....core.qt.icon_engine import themed_icon
 from ....core.color.theme import ThemeManager
 
+class NoWheelComboBox(QComboBox):
+    def wheelEvent(self, event):
+        event.ignore()
 
 class ComboBoxWithButtons(QWidget):
     addClicked = Signal()
@@ -12,7 +15,7 @@ class ComboBoxWithButtons(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.combo = QComboBox()
+        self.combo = NoWheelComboBox()
         self.button_add = QPushButton()
         self.button_add.setIcon(themed_icon("plus"))
         self.button_remove = QPushButton()
@@ -35,7 +38,7 @@ class ComboBoxWithButtons(QWidget):
     def _on_theme_changed(self, palette):
         self.button_add.setIcon(themed_icon("plus"))
         self.button_remove.setIcon(themed_icon("minus"))
-
+    
     def resizeEvent(self, event):
         h = self.combo.height()
         self.button_add.setFixedSize(h, h)

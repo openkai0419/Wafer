@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import zipfile
 
-from wafer.plugin import BaseCollectorPlugin, CollectorResult
+from wafer.plugin import BaseSingletonCollector, CollectorResult
 from wafer.plugin.imageloader.handler import image_loader_resolver
 from wafer.utils.logs import AppLogger
 from wafer.utils.virtual_paths import build_virtual_path
@@ -13,7 +13,7 @@ from .cache import zip_cache
 _ASPECT_PROBE_SIZE = 512
 
 
-class ZipCollectorPlugin(BaseCollectorPlugin):
+class ZipCollectorPlugin(BaseSingletonCollector):
     NAME = "zip"
     EXTENSIONS = (".zip",)
     IS_OWNER = True

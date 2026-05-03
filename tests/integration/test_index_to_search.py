@@ -6,10 +6,10 @@ from PIL import Image
 
 from wafer.utils.paths import normalize_path
 from wafer.core.db.file_db import FileDB
-from wafer.core.db.indexer import FileIndexer
 from wafer.core.db.query import FileSearchEngine, SearchQuery
 from wafer.plugin.collector.handler import collector_resolver
 from wafer.app.indexer.collector_receiver import _parse_batch
+from test_support.scan_harness import ScanHarness
 
 
 def _create_test_image(path, width=100, height=80, fmt="JPEG"):
@@ -63,13 +63,16 @@ def _build_populated_db(tmp_path, images):
     collectors = collector_resolver.summary()
     db_path = tmp_path / "test.db"
 
-    with FileIndexer(db_path, collectors=collectors) as idx:
-        idx.initialize()
-        idx.update_index(str(img_dir))
-
+    with ScanHarness(db_path, collectors=collectors) as harness:
+        harness.scan_and_wait(img_dir, expected=len(images))
+        assert harness.wait_for(lambda: len(harness.db.get_pending_sources("exiftool")) >= len(images))
         plugin = _get_exif_plugin()()
-        results = _run_collector_for_pending(idx.db, plugin, "exiftool")
-        _write_results_to_db(idx.db, results)
+        results = _run_collector_for_pending(harness.db, plugin, "exiftool")
+
+    db = FileDB(db_path)
+    db.start()
+    _write_results_to_db(db, results)
+    db.close()
 
     return db_path, img_dir, created_paths
 
@@ -122,13 +125,12 @@ class TestIndexToSearch:
         collectors = collector_resolver.summary()
         db_path = tmp_path / "test.db"
 
-        with FileIndexer(db_path, collectors=collectors) as idx:
-            idx.initialize()
-            idx.update_index(str(img_dir))
-
+        with ScanHarness(db_path, collectors=collectors) as harness:
+            harness.scan_and_wait(img_dir, expected=1)
+            assert harness.wait_for(lambda: len(harness.db.get_pending_sources("exiftool")) >= 1)
             plugin = _get_exif_plugin()()
-            results = _run_collector_for_pending(idx.db, plugin, "exiftool")
-            _write_results_to_db(idx.db, results)
+            results = _run_collector_for_pending(harness.db, plugin, "exiftool")
+            _write_results_to_db(harness.db, results)
 
         engine = FileSearchEngine(str(db_path))
         db = FileDB(db_path)
@@ -158,9 +160,8 @@ class TestIndexToSearch:
         collectors = collector_resolver.summary()
         db_path = tmp_path / "test.db"
 
-        with FileIndexer(db_path, collectors=collectors) as idx:
-            idx.initialize()
-            idx.update_index([str(dir_a), str(dir_b)])
+        with ScanHarness(db_path, collectors=collectors) as harness:
+            harness.scan_and_wait([dir_a, dir_b], expected=2)
 
         engine = FileSearchEngine(str(db_path))
         norm_a = normalize_path(str(dir_a))
@@ -186,9 +187,8 @@ class TestIndexToSearch:
         collectors = collector_resolver.summary()
         db_path = tmp_path / "test.db"
 
-        with FileIndexer(db_path, collectors=collectors) as idx:
-            idx.initialize()
-            idx.update_index(str(img_dir))
+        with ScanHarness(db_path, collectors=collectors) as harness:
+            harness.scan_and_wait(img_dir, expected=3)
 
         engine = FileSearchEngine(str(db_path))
 
@@ -223,15 +223,13 @@ class TestIndexToSearch:
         collectors = collector_resolver.summary()
         db_path = tmp_path / "test.db"
 
-        with FileIndexer(db_path, collectors=collectors) as idx:
-            idx.initialize()
-            idx.update_index(str(img_dir))
+        with ScanHarness(db_path, collectors=collectors) as harness:
+            harness.scan_and_wait(img_dir, expected=2)
 
         remove.unlink()
 
-        with FileIndexer(db_path, collectors=collectors) as idx:
-            idx.initialize()
-            idx.update_index(str(img_dir))
+        with ScanHarness(db_path, collectors=collectors) as harness:
+            harness.scan_and_wait(img_dir, expected=1)
 
         engine = FileSearchEngine(str(db_path))
         result_paths, _, _ = engine.search(SearchQuery(require_keys=False))
@@ -247,12 +245,12 @@ class TestIndexToSearch:
         collectors = collector_resolver.summary()
         db_path = tmp_path / "test.db"
 
-        with FileIndexer(db_path, collectors=collectors) as idx:
-            idx.initialize()
-            idx.update_index(str(img_dir))
+        with ScanHarness(db_path, collectors=collectors) as harness:
+            harness.scan_and_wait(img_dir, expected=1)
+            assert harness.wait_for(lambda: len(harness.db.get_pending_sources("exiftool")) >= 1)
             plugin = _get_exif_plugin()()
-            results = _run_collector_for_pending(idx.db, plugin, "exiftool")
-            _write_results_to_db(idx.db, results)
+            results = _run_collector_for_pending(harness.db, plugin, "exiftool")
+            _write_results_to_db(harness.db, results)
 
         engine = FileSearchEngine(str(db_path))
         pre_paths, _, pre_aspects = engine.search(SearchQuery(require_keys=False))
@@ -262,13 +260,12 @@ class TestIndexToSearch:
         time.sleep(1.1)
         _create_test_image(img_path, 400, 100)
 
-        with FileIndexer(db_path, collectors=collectors) as idx:
-            idx.initialize()
-            idx.update_index(str(img_dir))
-
+        with ScanHarness(db_path, collectors=collectors) as harness:
+            harness.scan(img_dir)
+            assert harness.wait_for(lambda: len(harness.db.get_pending_sources("exiftool")) >= 1)
             plugin = _get_exif_plugin()()
-            results = _run_collector_for_pending(idx.db, plugin, "exiftool")
-            _write_results_to_db(idx.db, results)
+            results = _run_collector_for_pending(harness.db, plugin, "exiftool")
+            _write_results_to_db(harness.db, results)
 
         engine2 = FileSearchEngine(str(db_path))
         post_paths, _, post_aspects = engine2.search(SearchQuery(require_keys=False))
@@ -285,9 +282,8 @@ class TestIndexToSearch:
         collectors = collector_resolver.summary()
         db_path = tmp_path / "test.db"
 
-        with FileIndexer(db_path, collectors=collectors) as idx:
-            idx.initialize()
-            idx.update_index(str(img_dir))
+        with ScanHarness(db_path, collectors=collectors) as harness:
+            harness.scan_and_wait(img_dir, expected=3)
 
         engine = FileSearchEngine(str(db_path))
         all_paths, _, _ = engine.search(SearchQuery(require_keys=False))

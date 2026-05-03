@@ -223,6 +223,33 @@ def test_multiple_submits(scheduler):
     assert count["n"] == 10
 
 
+def test_is_idle_false_while_task_is_running(scheduler):
+    started = threading.Event()
+    release = threading.Event()
+    finished = threading.Event()
+
+    scheduler.submit(
+        Task.create(
+            "blocker",
+            priority=TaskPriority.SCAN,
+            run=lambda: (started.set(), release.wait(5.0)),
+            on_complete=finished.set,
+        )
+    )
+
+    assert started.wait(timeout=5.0)
+    assert not scheduler.is_idle()
+
+    release.set()
+    assert finished.wait(timeout=5.0)
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline:
+        if scheduler.is_idle():
+            break
+        time.sleep(0.01)
+    assert scheduler.is_idle()
+
+
 def test_cancel_all_cancels_tracked_tokens(scheduler):
     from wafer.app.indexer.task import CancelToken
 

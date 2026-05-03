@@ -20,6 +20,19 @@ def test_key_store_save_load_roundtrip(tmp_path):
     assert got[next(iter(data.keys()))]["*"].to_dict() == {"id": "viewer.close", "args": {}}
 
 
+def test_key_store_preserves_space_in_arg_value(tmp_path):
+    store = KeyBindingStore.instance()
+    key = Key("2")
+    store.set_all({key: {"*": CommandPayload("mark.toggle", {"name": "temp 2"})}})
+    p = tmp_path / "keys.json"
+    store.save_to_file(str(p))
+    store.set_all({})
+
+    assert store.load_from_file(str(p))
+    got = store.get_all()
+    assert got[key]["*"].args == {"name": "temp 2"}
+
+
 def test_key_store_diff_saves_deletions(tmp_path, monkeypatch):
     seed_dir = tmp_path / "key_bindings"
     seed_dir.mkdir()

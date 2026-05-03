@@ -1,7 +1,27 @@
 import py_compile
 
+import pytest
+
 from wafer.app.collector.worker import CollectorWorker, _MAX_WORKERS, _CHUNK_SIZE, _SHUTDOWN_WAIT
 from wafer.plugin.collector.handler import collector_resolver
+
+
+@pytest.fixture
+def make_worker():
+    workers = []
+
+    def factory(db_name="test_db", plugin_name=None):
+        name = plugin_name or next(iter(collector_resolver.names()))
+        worker = CollectorWorker(db_name, name)
+        workers.append(worker)
+        return worker
+
+    yield factory
+
+    for worker in reversed(workers):
+        worker._stop.set()
+        worker._batch_queue.put(None)
+        worker._executor.shutdown(wait=True, cancel_futures=True)
 
 
 def test_compile():
@@ -20,18 +40,17 @@ def test_unknown_plugin_raises():
         CollectorWorker("test_db", "nonexistent_plugin")
 
 
-def test_all_registered_plugins_constructable():
+def test_all_registered_plugins_constructable(make_worker):
     for name in collector_resolver.names():
-        worker = CollectorWorker("test_db", name)
+        worker = make_worker(plugin_name=name)
         assert worker.plugin_name == name
         assert worker.db_name == "test_db"
 
 
-def test_process_one_error_excludes_from_results():
+def test_process_one_error_excludes_from_results(make_worker):
     from unittest.mock import MagicMock
 
-    name = next(iter(collector_resolver.names()))
-    worker = CollectorWorker("test_db", name)
+    worker = make_worker()
     worker._node = MagicMock()
 
     def always_fail(path, info):
@@ -45,12 +64,11 @@ def test_process_one_error_excludes_from_results():
     assert len(results) == 0
 
 
-def test_process_batch_partial_failure():
+def test_process_batch_partial_failure(make_worker):
     from unittest.mock import MagicMock
     from wafer.plugin.collector.base import CollectorResult
 
-    name = next(iter(collector_resolver.names()))
-    worker = CollectorWorker("test_db", name)
+    worker = make_worker()
     worker._node = MagicMock()
 
     original_process = worker._plugin.process
@@ -75,12 +93,11 @@ def test_process_batch_partial_failure():
     assert all(r["status"] is True for r in results)
 
 
-def test_process_batch_uses_db_from_argument():
+def test_process_batch_uses_db_from_argument(make_worker):
     from unittest.mock import MagicMock
     from wafer.plugin.collector.base import CollectorResult
 
-    name = next(iter(collector_resolver.names()))
-    worker = CollectorWorker("test_db", name)
+    worker = make_worker()
     worker._node = MagicMock()
 
     worker._plugin.process = lambda path, info: CollectorResult(source=path, status=True)
@@ -90,19 +107,18 @@ def test_process_batch_uses_db_from_argument():
     assert call_kwargs["db"] == "other_db"
 
 
-def test_non_singleton_node_uses_db_name():
+def test_non_singleton_node_uses_db_name(make_worker):
     name = next(iter(collector_resolver.per_indexer_names()))
-    worker = CollectorWorker("mydb", name)
+    worker = make_worker(db_name="mydb", plugin_name=name)
     assert worker._singleton is False
     assert worker._node.db == "mydb"
 
 
-def test_file_hash_auto_injected_when_tags_present():
+def test_file_hash_auto_injected_when_tags_present(make_worker):
     from unittest.mock import MagicMock
     from wafer.plugin.collector.base import CollectorResult
 
-    name = next(iter(collector_resolver.names()))
-    worker = CollectorWorker("test_db", name)
+    worker = make_worker()
     worker._node = MagicMock()
 
     worker._plugin.process = lambda path, info: CollectorResult(
@@ -120,12 +136,11 @@ def test_file_hash_auto_injected_when_tags_present():
     assert result["tags"] == {"wd14.tags": "1girl, blue_hair"}
 
 
-def test_file_hash_not_injected_without_tags():
+def test_file_hash_not_injected_without_tags(make_worker):
     from unittest.mock import MagicMock
     from wafer.plugin.collector.base import CollectorResult
 
-    name = next(iter(collector_resolver.names()))
-    worker = CollectorWorker("test_db", name)
+    worker = make_worker()
     worker._node = MagicMock()
 
     worker._plugin.process = lambda path, info: CollectorResult(
@@ -142,11 +157,10 @@ def test_file_hash_not_injected_without_tags():
     assert "file_hash" not in result
 
 
-def test_explicit_file_hash_is_replaced_by_source_hash():
+def test_explicit_file_hash_is_replaced_by_source_hash(make_worker):
     from unittest.mock import MagicMock
 
-    name = next(iter(collector_resolver.names()))
-    worker = CollectorWorker("test_db", name)
+    worker = make_worker()
     worker._node = MagicMock()
 
     worker._plugin.process = lambda path, info: {
@@ -164,12 +178,11 @@ def test_explicit_file_hash_is_replaced_by_source_hash():
     assert result["file_hash"] == "from_file_info"
 
 
-def test_file_hash_compat_with_old_file_info():
+def test_file_hash_compat_with_old_file_info(make_worker):
     from unittest.mock import MagicMock
     from wafer.plugin.collector.base import CollectorResult
 
-    name = next(iter(collector_resolver.names()))
-    worker = CollectorWorker("test_db", name)
+    worker = make_worker()
     worker._node = MagicMock()
 
     worker._plugin.process = lambda path, info: CollectorResult(
@@ -186,11 +199,10 @@ def test_file_hash_compat_with_old_file_info():
     assert "file_hash" not in result
 
 
-def test_on_notify_calls_plugin():
+def test_on_notify_calls_plugin(make_worker):
     from unittest.mock import MagicMock
 
-    name = next(iter(collector_resolver.names()))
-    worker = CollectorWorker("test_db", name)
+    worker = make_worker()
     worker._node = MagicMock()
     worker._plugin.on_notify = MagicMock()
 
@@ -201,9 +213,8 @@ def test_on_notify_calls_plugin():
     assert result is True
 
 
-def test_notify_subscribed():
-    name = next(iter(collector_resolver.names()))
-    worker = CollectorWorker("test_db", name)
+def test_notify_subscribed(make_worker):
+    worker = make_worker()
     assert "plugin.notify" in worker._node._handlers
 
 
@@ -212,12 +223,11 @@ def test_constants():
     assert _SHUTDOWN_WAIT > 0
 
 
-def test_handle_batch_rejects_when_stopped():
+def test_handle_batch_rejects_when_stopped(make_worker):
     from unittest.mock import MagicMock
     from wafer.core.ipc.message import Message
 
-    name = next(iter(collector_resolver.names()))
-    worker = CollectorWorker("test_db", name)
+    worker = make_worker()
     worker._node = MagicMock()
     worker._stop.set()
     msg = Message.build(
@@ -231,11 +241,10 @@ def test_handle_batch_rejects_when_stopped():
     assert result is True
 
 
-def test_shutdown_cancel_futures():
+def test_shutdown_cancel_futures(make_worker):
     from unittest.mock import MagicMock
 
-    name = next(iter(collector_resolver.names()))
-    worker = CollectorWorker("test_db", name)
+    worker = make_worker()
     worker._node = MagicMock()
     worker._node.stop = MagicMock()
     worker.stop()

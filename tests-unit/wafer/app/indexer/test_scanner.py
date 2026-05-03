@@ -2,6 +2,7 @@ import py_compile
 from unittest.mock import MagicMock
 
 from wafer.app.indexer.scanner import DirectoryScanner, _CHUNK, _get_stat
+from wafer.utils.paths import normalize_path
 
 
 def test_compile():
@@ -132,6 +133,73 @@ def test_full_scan_empty_dir(tmp_path):
     scanner._do_full_scan([str(scan_dir)])
     ops = [c[0][0].name for c in scheduler.submit.call_args_list]
     assert "upsert_sources" not in ops
+    scanner.stop()
+
+
+def test_update_files_skips_directory(tmp_path):
+    scanner, scheduler, _, _ = _make_scanner(tmp_path)
+    scanner.start()
+    scan_dir = tmp_path / "folder_only"
+    scan_dir.mkdir()
+
+    scanner._do_update_files([str(scan_dir)])
+
+    ops = [c[0][0].name for c in scheduler.submit.call_args_list]
+    assert "upsert_sources" not in ops
+    scanner.stop()
+
+
+def test_update_files_skips_oserror_and_processes_remaining(tmp_path, monkeypatch):
+    scanner, scheduler, _, _ = _make_scanner(tmp_path)
+    scanner.start()
+    blocked = tmp_path / "blocked.txt"
+    ok_file = tmp_path / "ok.txt"
+    blocked.write_text("blocked")
+    ok_file.write_text("ok")
+    blocked_norm = normalize_path(str(blocked))
+    warning_calls = []
+    real_stat = __import__("os").stat
+
+    def fake_stat(path, follow_symlinks=False):
+        if path == blocked_norm:
+            raise PermissionError("denied")
+        return real_stat(path, follow_symlinks=follow_symlinks)
+
+    monkeypatch.setattr("wafer.app.indexer.scanner.os.stat", fake_stat)
+    monkeypatch.setattr(
+        "wafer.app.indexer.scanner.AppLogger.warning",
+        lambda message, exc=None: warning_calls.append((message, exc)),
+    )
+
+    scanner._do_update_files([str(blocked), str(ok_file)])
+
+    ops = [c[0][0].name for c in scheduler.submit.call_args_list]
+    assert "upsert_sources" in ops
+    assert len(warning_calls) == 1
+    assert blocked_norm in warning_calls[0][0]
+    scanner.stop()
+
+
+def test_update_files_oserror_only_logs_and_returns(tmp_path, monkeypatch):
+    scanner, scheduler, _, _ = _make_scanner(tmp_path)
+    scanner.start()
+    missing_access = tmp_path / "denied.txt"
+    missing_access.write_text("x")
+    warning_calls = []
+
+    def failing_stat(path, follow_symlinks=False):
+        raise OSError("busy")
+
+    monkeypatch.setattr("wafer.app.indexer.scanner.os.stat", failing_stat)
+    monkeypatch.setattr(
+        "wafer.app.indexer.scanner.AppLogger.warning",
+        lambda message, exc=None: warning_calls.append((message, exc)),
+    )
+
+    scanner._do_update_files([str(missing_access)])
+
+    assert not scheduler.submit.called
+    assert len(warning_calls) == 1
     scanner.stop()
 
 

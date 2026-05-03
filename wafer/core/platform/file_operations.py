@@ -5,6 +5,7 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
+from collections.abc import Callable
 
 import requests
 
@@ -14,6 +15,20 @@ from .path_utils import check_copy_conflict, is_http_url, unique_path
 
 if TYPE_CHECKING:
     from .dragparser import ParsedItem
+
+
+ProgressCallback = Callable[[int], None]
+CancelCheck = Callable[[], bool]
+
+
+def _check_cancel(cancel_check: CancelCheck | None) -> None:
+    if cancel_check and cancel_check():
+        raise PasteCancelledError()
+
+
+def _advance(progress_callback: ProgressCallback | None, units: int = 1) -> None:
+    if progress_callback and units > 0:
+        progress_callback(units)
 
 
 def _rmtree_onerror(func, path, exc_info):
@@ -37,30 +52,99 @@ def _safe_remove(path: str | Path) -> None:
         shutil.rmtree(p, onerror=_rmtree_onerror)
 
 
-def _copy_file(src: Path, dst: Path, follow_symlinks: bool = True) -> Path:
+def _copy_file(src: Path, dst: Path, follow_symlinks: bool = True, progress_callback: ProgressCallback | None = None, cancel_check: CancelCheck | None = None) -> Path:
+    _check_cancel(cancel_check)
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dst, follow_symlinks=follow_symlinks)
+    _advance(progress_callback)
     return dst
 
 
-def _copy_dir(src: Path, dst: Path, follow_symlinks: bool = True) -> Path:
+def _copy_dir(src: Path, dst: Path, follow_symlinks: bool = True, progress_callback: ProgressCallback | None = None, cancel_check: CancelCheck | None = None) -> Path:
+    _check_cancel(cancel_check)
     if dst.exists():
         raise FileExistsError(f"Destination exists: {dst}")
-    shutil.copytree(src, dst, symlinks=not follow_symlinks, dirs_exist_ok=False)
+    copied_files = 0
+
+    def copy_function(src_name, dst_name):
+        nonlocal copied_files
+        copied_files += 1
+        return _copy_file(Path(src_name), Path(dst_name), follow_symlinks=follow_symlinks, progress_callback=progress_callback, cancel_check=cancel_check)
+
+    shutil.copytree(src, dst, symlinks=not follow_symlinks, dirs_exist_ok=False, copy_function=copy_function)
+    if copied_files == 0:
+        _advance(progress_callback)
     return dst
 
 
-def _move_any(src: Path, dst: Path) -> Path:
+def _existing_anchor(path: Path) -> Path:
+    p = path if path.exists() else path.parent
+    while not p.exists() and p.parent != p:
+        p = p.parent
+    return p
+
+
+def _same_device(src: Path, dst: Path) -> bool:
+    try:
+        return os.stat(src).st_dev == os.stat(_existing_anchor(dst)).st_dev
+    except OSError:
+        return os.path.splitdrive(str(src))[0].lower() == os.path.splitdrive(str(dst))[0].lower()
+
+
+def _move_any(
+    src: Path,
+    dst: Path,
+    *,
+    follow_symlinks: bool = True,
+    progress_callback: ProgressCallback | None = None,
+    cancel_check: CancelCheck | None = None,
+) -> Path:
+    _check_cancel(cancel_check)
     dst.parent.mkdir(parents=True, exist_ok=True)
-    return Path(shutil.move(str(src), str(dst)))
+    if src.is_dir() and not _same_device(src, dst):
+        _copy_dir(src, dst, follow_symlinks=follow_symlinks, progress_callback=progress_callback, cancel_check=cancel_check)
+        shutil.rmtree(src, onerror=_rmtree_onerror)
+        return dst
+    if src.is_file() and not _same_device(src, dst):
+        done = _copy_file(src, dst, follow_symlinks=follow_symlinks, progress_callback=progress_callback, cancel_check=cancel_check)
+        src.unlink()
+        return done
+    done = Path(shutil.move(str(src), str(dst)))
+    _advance(progress_callback)
+    return done
 
 
-def _copy_or_move(src: Path, dst: Path, *, action: Literal["copy", "cut"], follow_symlinks: bool = True) -> Path:
+def _copy_or_move(
+    src: Path,
+    dst: Path,
+    *,
+    action: Literal["copy", "cut"],
+    follow_symlinks: bool = True,
+    progress_callback: ProgressCallback | None = None,
+    cancel_check: CancelCheck | None = None,
+) -> Path:
     if action == "cut":
-        return _move_any(src, dst)
+        return _move_any(src, dst, follow_symlinks=follow_symlinks, progress_callback=progress_callback, cancel_check=cancel_check)
     if src.is_dir():
-        return _copy_dir(src, dst, follow_symlinks)
-    return _copy_file(src, dst, follow_symlinks)
+        return _copy_dir(src, dst, follow_symlinks, progress_callback=progress_callback, cancel_check=cancel_check)
+    return _copy_file(src, dst, follow_symlinks, progress_callback=progress_callback, cancel_check=cancel_check)
+
+
+def count_operation_units(src: Path, dst: Path, action: Literal["copy", "cut"], cancel_check: CancelCheck | None = None) -> int:
+    if not src.is_dir():
+        return 1
+    if action == "cut" and _same_device(src, dst):
+        return 1
+    total = 0
+    try:
+        _check_cancel(cancel_check)
+        for _, _, files in os.walk(src):
+            _check_cancel(cancel_check)
+            total += len(files)
+    except OSError as e:
+        AppLogger.warning(f"count_operation_units failed: {src}", exc=e)
+        return 1
+    return max(1, total)
 
 
 def _save_remote_item(item: ParsedItem, target_path: str, *, move: bool = False) -> OperationResult:
@@ -184,8 +268,16 @@ def scan_merge_conflicts(src_dir: Path, dst_dir: Path) -> list[MergeConflictItem
 
 
 class FileExecutor:
-    def __init__(self, *, follow_symlinks: bool = True):
+    def __init__(self, *, follow_symlinks: bool = True, progress_callback: ProgressCallback | None = None, cancel_check: CancelCheck | None = None):
         self._follow_symlinks = follow_symlinks
+        self._progress_callback = progress_callback
+        self._cancel_check = cancel_check
+
+    def _advance(self, units: int = 1) -> None:
+        _advance(self._progress_callback, units)
+
+    def _advance_item(self, src: Path, dst: Path, action: Literal["copy", "cut"]) -> None:
+        self._advance(count_operation_units(src, dst, action))
 
     def execute_plans(
         self,
@@ -237,6 +329,7 @@ class FileExecutor:
     ) -> OperationResult:
         is_dir = src.is_dir()
         if decision.mode == "skip":
+            self._advance_item(src, dst, action)
             return OperationResult(action="skip", src=str(src), dst="", status="skipped")
 
         final_dst = self._resolve_dst(dst, decision)
@@ -247,17 +340,23 @@ class FileExecutor:
         if conflict == "same_path":
             if action == "cut" and str(src) != str(final_dst):
                 try:
+                    _check_cancel(self._cancel_check)
                     src.rename(final_dst)
+                    self._advance()
                     return OperationResult(action="move", src=str(src), dst=str(final_dst), status="ok")
                 except Exception as e:
+                    self._advance()
                     return OperationResult(action="move", src=str(src), dst=str(final_dst), status="error", error=repr(e))
             if decision.mode in ("overwrite", "merge"):
+                self._advance_item(src, final_dst, action)
                 return OperationResult(action="skip", src=str(src), dst=str(final_dst), status="skipped")
             final_dst = Path(unique_path(final_dst.parent, final_dst.name))
 
         if action == "cut" and is_dir and conflict in ("same_path", "subpath"):
+            self._advance_item(src, final_dst, action)
             return OperationResult(action="move", src=str(src), dst=str(final_dst), status="skipped", error="cannot move into itself")
         if is_dir and conflict == "subpath":
+            self._advance_item(src, final_dst, action)
             return OperationResult(action="skip", src=str(src), dst=str(final_dst), status="skipped", error="cannot copy into itself")
 
         try:
@@ -266,8 +365,10 @@ class FileExecutor:
             if is_dir and decision.mode == "merge" and final_dst.exists():
                 self._merge_dir(src, final_dst, action=action, merge_decisions=decision.merge_decisions or {}, root_src=src)
                 return OperationResult(action="move" if action == "cut" else "copy", src=str(src), dst=str(final_dst), status="ok")
-            done = _copy_or_move(src, final_dst, action=action, follow_symlinks=self._follow_symlinks)
+            done = _copy_or_move(src, final_dst, action=action, follow_symlinks=self._follow_symlinks, progress_callback=self._progress_callback, cancel_check=self._cancel_check)
             return OperationResult(action="move" if action == "cut" else "copy", src=str(src), dst=str(done), status="ok")
+        except PasteCancelledError:
+            return OperationResult(action="move" if action == "cut" else "copy", src=str(src), dst=str(final_dst), status="skipped", error="cancelled")
         except Exception as e:
             AppLogger.warning(f"copy/move failed: {src} -> {final_dst}", exc=e)
             return OperationResult(action="move" if action == "cut" else "copy", src=str(src), dst=str(final_dst), status="error", error=repr(e))
@@ -304,7 +405,7 @@ class FileExecutor:
             is_dir = entry.is_dir()
 
             if not d.exists() and not d.is_symlink():
-                _copy_or_move(entry, d, action=action, follow_symlinks=self._follow_symlinks)
+                _copy_or_move(entry, d, action=action, follow_symlinks=self._follow_symlinks, progress_callback=self._progress_callback, cancel_check=self._cancel_check)
                 continue
 
             if is_dir and d.is_dir():
@@ -315,12 +416,15 @@ class FileExecutor:
             dec = merge_decisions.get(rel, PasteDecision(mode="overwrite"))
 
             if dec.mode == "skip":
+                self._advance()
                 continue
             if dec.mode == "rename":
-                _copy_or_move(entry, Path(unique_path(d.parent, d.name)), action=action, follow_symlinks=self._follow_symlinks)
+                _copy_or_move(
+                    entry, Path(unique_path(d.parent, d.name)), action=action, follow_symlinks=self._follow_symlinks, progress_callback=self._progress_callback, cancel_check=self._cancel_check
+                )
             else:
                 _safe_remove(d)
-                _copy_or_move(entry, d, action=action, follow_symlinks=self._follow_symlinks)
+                _copy_or_move(entry, d, action=action, follow_symlinks=self._follow_symlinks, progress_callback=self._progress_callback, cancel_check=self._cancel_check)
 
         if action == "cut":
             try:

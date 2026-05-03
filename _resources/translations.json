@@ -1,4 +1,24 @@
 {
+  "Move": {
+    "en": "Move",
+    "ja": ""
+  },
+  "Auto Execute on Database Update": {
+    "en": "Auto Execute on Database Update",
+    "ja": ""
+  },
+  "Auto Execute on Parameter Change": {
+    "en": "Auto Execute on Parameter Change",
+    "ja": ""
+  },
+  "interval": {
+    "en": "interval",
+    "ja": ""
+  },
+  "loop": {
+    "en": "loop",
+    "ja": ""
+  },
   "Include Contained/Virtual Files": {
     "en": "Include Contained/Virtual Files",
     "ja": ""

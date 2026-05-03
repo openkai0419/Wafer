@@ -4,7 +4,11 @@ import os
 import sqlite3
 import stat
 import time
+from pathlib import Path
+from collections.abc import Sequence
+
 from ...utils.paths import data_db_path, list_data_db_names, list_setting_db_names
+from ...utils.hashes import fast_signature_hash
 from ...utils.profiling import profiler
 from ...utils.logs import AppLogger
 
@@ -98,6 +102,17 @@ def build_like_condition(field: str, keywords: list[str] | tuple[str, ...], op: 
         clauses = [f"{field} LIKE ? ESCAPE '\\'" for _ in keywords]
         values = [f"%{escape_like(kw)}%" for kw in keywords]
     return f" {op} ".join(clauses), values
+
+
+def build_basic_entries(paths: Sequence[str], file_info: dict, aspect_map: dict, now: float):
+    source_entries = []
+    file_entries = []
+    for p in paths:
+        mtime, fsize, ctime = file_info.get(p, (0.0, 0, 0.0))
+        file_hash = fast_signature_hash(p, fsize, 256)
+        source_entries.append((p, file_hash, fsize, mtime, ctime, now))
+        file_entries.append((p, p, Path(p).name, aspect_map.get(p, 1.0), None))
+    return source_entries, file_entries
 
 
 def remove_orphan_databases():

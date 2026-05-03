@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import os
+import stat
 import threading
 import time
 from pathlib import Path
 from collections.abc import Sequence
 
-from ...core.db.db_utils import apply_read_pragmas, connect_with_retry
-from ...core.db.indexer import build_basic_entries
+from ...core.db.db_utils import apply_read_pragmas, build_basic_entries, connect_with_retry
 from ...utils.logs import AppLogger
 from ...utils.paths import normalize_path
 from ...utils.profiling import profiler
@@ -173,16 +173,19 @@ class DirectoryScanner:
 
     @profiler.profile
     def _do_update_files(self, file_paths: list[str]):
-        file_paths = [p for p in file_paths if os.path.exists(p)]
         normalized = [normalize_path(p) for p in file_paths]
         normalized = [p for p in normalized if not self._is_excluded(p)]
         stat_info: dict[str, tuple] = {}
         for path in normalized:
             try:
-                st = os.stat(path)
+                st = os.stat(path, follow_symlinks=False)
+                if not stat.S_ISREG(st.st_mode):
+                    continue
                 stat_info[path] = _get_stat(st)
             except FileNotFoundError:
                 pass
+            except OSError as exc:
+                AppLogger.warning(f"[Scanner] Skipping update target: {path} ({exc})", exc=exc)
         if not stat_info:
             AppLogger.info("[Scanner] No valid files to update.")
             return

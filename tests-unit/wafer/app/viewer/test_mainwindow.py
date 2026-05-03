@@ -79,7 +79,7 @@ class TestSearchResultDiffCheck:
 
 
 class TestOnDbContentUpdated:
-    def _make_win(self):
+    def _make_win(self, auto_execute_on_update=True):
         with patch("wafer.app.viewer.mainwindow.MainWindow.__init__", lambda self, *a, **kw: None):
             from wafer.app.viewer.mainwindow import MainWindow
 
@@ -89,6 +89,8 @@ class TestOnDbContentUpdated:
             win.search_row_widget.get_values.return_value = {}
             win.search_row_widget.build_filter_entries.return_value = []
             win.search_service = MagicMock()
+            win.search_service.get.side_effect = lambda key, default=None: auto_execute_on_update if key == "auto_execute_on_update" else default
+            win.search = MagicMock()
             win.folder_view = MagicMock()
             win.folder_view.get_selected_paths.return_value = []
             win.database_path = "test.db"
@@ -99,11 +101,24 @@ class TestOnDbContentUpdated:
         win = self._make_win()
         win._on_db_content_updated("testdb")
         win.search_row_widget.invalidate_key_cache.assert_called_once()
+        win.search.assert_called_once_with(force=True)
+
+    def test_auto_execute_on_update_disabled_skips_search(self):
+        win = self._make_win(auto_execute_on_update=False)
+        win._on_db_content_updated("testdb")
+        win.search_row_widget.invalidate_key_cache.assert_not_called()
+        win.search.assert_not_called()
 
     def test_ignores_other_db(self):
         win = self._make_win()
         win._on_db_content_updated("other_db")
         win.search_row_widget.invalidate_key_cache.assert_not_called()
+        win.search.assert_not_called()
+
+    def test_tags_updated_no_longer_has_grid_search_handler(self):
+        from wafer.app.viewer.mainwindow import MainWindow
+
+        assert not hasattr(MainWindow, "_on_tags_updated_research")
 
 
 class TestToolbarPanel:

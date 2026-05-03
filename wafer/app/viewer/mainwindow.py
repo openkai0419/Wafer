@@ -266,10 +266,7 @@ class MainWindow(QtWidgets.QMainWindow):
         b.db_deleted.connect(self._on_db_deleted)
         b.remote_log_received.connect(self._on_dev_log)
 
-        from .preview.tag_edit_service import TagEditService
-
-        b.tags_updated.connect(TagEditService.instance().handle_ack)
-        b.tags_updated.connect(self._on_tags_updated_research)
+        b.tags_updated.connect(self._on_tags_updated_overlay)
 
         b.settings_received.connect(app_settings.apply_remote)
         app_settings.committed.connect(b.broadcast_settings)
@@ -642,16 +639,19 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_db_content_updated(self, db: str):
         if not self._is_my_db(db):
             return
+        if not self.search_service.get("auto_execute_on_update", True):
+            return
         self.search_row_widget.invalidate_key_cache()
         self.search(force=True)
 
     @QtCore.Slot(dict)
-    def _on_tags_updated_research(self, payload: dict):
-        if not isinstance(payload, dict):
+    def _on_tags_updated_overlay(self, payload: dict):
+        if not self._is_my_db(payload.get("db", "")):
             return
-        if not self._is_my_db(str(payload.get("db") or "")):
-            return
-        self.search(force=True)
+        from .preview.tag_edit_service import TagEditService
+
+        TagEditService.instance().handle_ack(payload)
+        self._mark_overlay_service.reload()
 
     @QtCore.Slot(str)
     def _on_folder_changed_ipc(self, db: str):

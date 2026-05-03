@@ -6,7 +6,7 @@ from ...core.commands.bridge import ActionKit
 from ...core.commands.binding.instance_registry import InstanceRegistry
 from ...utils.formatting import dpix
 from ...core.platform.dragparser import MimeDataParser
-from ...core.platform.paste import drop_files_with_ui
+from ...core.platform.paste import drop_files_with_ui, get_saved_drop_operation
 from ...core.qt.pixmap import PixmapFactory
 
 INTERNAL_MIME_TYPE = b"application/x-gridview-internal" + f"{os.getpid()}".encode()
@@ -626,6 +626,8 @@ class GridViewDropCommands(ActionKit.DragMenuBase):
         set_action = getattr(event, "setDropAction", None)
         if not callable(set_action):
             return
+        if op == "ask":
+            op = get_saved_drop_operation()
         if op == "move":
             set_action(QtCore.Qt.DropAction.MoveAction)
         elif op == "copy":
@@ -711,6 +713,8 @@ class GridViewDropCommands(ActionKit.DragMenuBase):
             GridViewDropCommands._preview_clear(view)
             return
         r = view.rects[idx]
+        if op == "ask":
+            op = get_saved_drop_operation()
         view._drop_preview_rect = r
         view._drop_preview_title = "Move to:" if op == "move" else "Copy to:"
         view._drop_preview_text = dst_dir
@@ -718,10 +722,12 @@ class GridViewDropCommands(ActionKit.DragMenuBase):
 
     @staticmethod
     def _enter(ctx, *, op: str, on_conflict: str = "rename"):
+        GridViewDropCommands._apply_drop_action(ctx, op)
         GridViewDropCommands._preview_update(ctx, GridViewCommands.get_view(ctx), GridViewCommands.get_items(ctx), op)
 
     @staticmethod
     def _move(ctx, *, op: str, on_conflict: str = "rename"):
+        GridViewDropCommands._apply_drop_action(ctx, op)
         GridViewDropCommands._preview_update(ctx, GridViewCommands.get_view(ctx), GridViewCommands.get_items(ctx), op)
 
     @staticmethod
@@ -733,22 +739,27 @@ class GridViewDropCommands(ActionKit.DragMenuBase):
         event = ctx.get_event()
         if event is None:
             return
-        view = GridViewCommands.get_view(ctx)
-        items = GridViewCommands.get_items(ctx)
-        dst_dir = GridViewDropCommands._drop_target_dir_from_hover(ctx, view, items)
-        if not dst_dir:
-            return
-        src_items = GridViewDropCommands._extract_items(event)
-        if not src_items:
-            return
+        view = None
+        try:
+            view = GridViewCommands.get_view(ctx)
+            items = GridViewCommands.get_items(ctx)
+            dst_dir = GridViewDropCommands._drop_target_dir_from_hover(ctx, view, items)
+            if not dst_dir:
+                return
+            src_items = GridViewDropCommands._extract_items(event)
+            if not src_items:
+                return
 
-        if op not in ("copy", "move"):
-            raise ValueError(f"Invalid op: {op}")
-        if on_conflict not in ("overwrite", "rename", "skip", "ask"):
-            raise ValueError(f"Invalid on_conflict: {on_conflict}")
+            if op not in ("copy", "move", "ask"):
+                raise ValueError(f"Invalid op: {op}")
+            if on_conflict not in ("overwrite", "rename", "skip", "ask"):
+                raise ValueError(f"Invalid on_conflict: {on_conflict}")
 
-        drop_files_with_ui(src_items, dst_dir, op, overwrite_mode=on_conflict, parent=view)
-        GridViewDropCommands._preview_clear(view)
+            drop_files_with_ui(src_items, dst_dir, op, overwrite_mode=on_conflict, parent=view)
+        finally:
+            GridViewDropCommands._apply_drop_action(ctx, "ignore")
+            if view is not None:
+                GridViewDropCommands._preview_clear(view)
 
     @classmethod
     def commands(cls):
@@ -778,6 +789,20 @@ class GridViewDropCommands(ActionKit.DragMenuBase):
                     "move": lambda ctx, on_conflict="rename": GridViewDropCommands._move(ctx, op="move", on_conflict=on_conflict),
                     "leave": lambda ctx, on_conflict="rename": GridViewDropCommands._leave(ctx, op="move", on_conflict=on_conflict),
                     "drop": lambda ctx, on_conflict="rename": GridViewDropCommands._save(ctx, op="move", on_conflict=on_conflict),
+                },
+                target_widgets=["GridView"],
+            ),
+            ActionKit.Command(
+                path="grid.drop_files_ask",
+                display="Drop Files (Ask)",
+                category="drop",
+                params=[ActionKit.Param(name="on_conflict", value=("ask", "overwrite", "rename", "skip"))],
+                drop_acceptor=cls.accept_external_drop,
+                drop_callbacks={
+                    "enter": lambda ctx, on_conflict="rename": GridViewDropCommands._enter(ctx, op="ask", on_conflict=on_conflict),
+                    "move": lambda ctx, on_conflict="rename": GridViewDropCommands._move(ctx, op="ask", on_conflict=on_conflict),
+                    "leave": lambda ctx, on_conflict="rename": GridViewDropCommands._leave(ctx, op="ask", on_conflict=on_conflict),
+                    "drop": lambda ctx, on_conflict="rename": GridViewDropCommands._save(ctx, op="ask", on_conflict=on_conflict),
                 },
                 target_widgets=["GridView"],
             ),

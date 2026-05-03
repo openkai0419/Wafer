@@ -127,13 +127,8 @@ class BindingManager:
 
     def _is_physical_seq(self, seq: KeySequence) -> bool:
         parts = seq.to_tuple()
-        for p in parts:
-            u = str(p).upper()
-            if u.startswith("SC"):
-                if not u[2:].isdigit():
-                    return False
-                continue
-            else:
-                if not u.isdigit():
-                    return False
-        return True
+        for part in parts:
+            name = str(part).upper()
+            if not name.startswith("SC") or not name[2:].isdigit():
+                return False
+        return bool(parts)

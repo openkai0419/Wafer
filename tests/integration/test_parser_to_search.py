@@ -6,12 +6,12 @@ from PIL import Image
 
 from wafer.utils.paths import normalize_path
 from wafer.core.db.file_db import FileDB
-from wafer.core.db.indexer import FileIndexer
 from wafer.core.db.query import FileSearchEngine, SearchQuery
 from wafer.plugin.collector.handler import collector_resolver
 from wafer.plugin.parser.handler import parser_resolver
 from wafer.app.indexer.collector_receiver import _parse_batch as _parse_collector_batch
 from wafer.app.indexer.parser_receiver import _parse_batch as _parse_parser_batch
+from test_support.scan_harness import ScanHarness
 
 
 def _create_nai_image(path, prompt="a cat", model="nai-v3", seed=42):
@@ -106,22 +106,22 @@ class TestParserToDBPipeline:
 
         collectors = collector_resolver.summary()
         db_path = tmp_path / "test.db"
+        norm = normalize_path(str(img_dir / "nai_test.png"))
 
-        with FileIndexer(db_path, collectors=collectors) as idx:
-            idx.initialize()
-            idx.update_index(str(img_dir))
+        with ScanHarness(db_path, collectors=collectors) as h:
+            h.scan_and_wait(img_dir, expected=1)
+            assert h.wait_for(lambda: len(h.db.get_pending_sources("exiftool")) >= 1)
 
-            collector_results = _run_exif_collector(idx.db)
-            _write_collector_results(idx.db, collector_results)
+            collector_results = _run_exif_collector(h.db)
+            _write_collector_results(h.db, collector_results)
 
-            norm = normalize_path(str(img_dir / "nai_test.png"))
-            comment_rows = idx.db.read_conn.execute("SELECT value FROM meta_info WHERE path=? AND key='exif.Comment'", (norm,)).fetchall()
+            comment_rows = h.db.read_conn.execute("SELECT value FROM meta_info WHERE path=? AND key='exif.Comment'", (norm,)).fetchall()
 
             if not comment_rows:
                 return
 
             comment_json = comment_rows[0][0]
-            file_hash = idx.db.read_conn.execute("SELECT file_hash FROM sources WHERE source=?", (norm,)).fetchone()
+            file_hash = h.db.read_conn.execute("SELECT file_hash FROM sources WHERE source=?", (norm,)).fetchone()
 
             parser_results = [
                 {
@@ -134,14 +134,14 @@ class TestParserToDBPipeline:
                 }
             ]
             parsed = _parse_parser_batch(parser_results)
-            idx.db.upsert_collection_results(
+            h.db.upsert_collection_results(
                 [],
                 parsed["meta_info_entries"],
                 parsed.get("tag_entries", []),
                 parsed["collector_status"],
             )
 
-            meta = idx.db.read_conn.execute("SELECT key, value FROM meta_info WHERE path=? AND key LIKE 'novelai.%'", (norm,)).fetchall()
+            meta = h.db.read_conn.execute("SELECT key, value FROM meta_info WHERE path=? AND key LIKE 'novelai.%'", (norm,)).fetchall()
             meta_dict = {k: v for k, v in meta}
             assert "novelai.prompt" in meta_dict
             assert meta_dict["novelai.prompt"] == "sunset over ocean"
@@ -154,15 +154,14 @@ class TestParserToDBPipeline:
 
         collectors = collector_resolver.summary()
         db_path = tmp_path / "test.db"
+        norm = normalize_path(str(img_dir / "art.png"))
 
-        with FileIndexer(db_path, collectors=collectors) as idx:
-            idx.initialize()
-            idx.update_index(str(img_dir))
+        with ScanHarness(db_path, collectors=collectors) as h:
+            h.scan_and_wait(img_dir, expected=1)
+            assert h.wait_for(lambda: len(h.db.get_pending_sources("exiftool")) >= 1)
 
-            collector_results = _run_exif_collector(idx.db)
-            _write_collector_results(idx.db, collector_results)
-
-            norm = normalize_path(str(img_dir / "art.png"))
+            collector_results = _run_exif_collector(h.db)
+            _write_collector_results(h.db, collector_results)
 
             parser_results = [
                 {
@@ -174,7 +173,7 @@ class TestParserToDBPipeline:
                 }
             ]
             parsed = _parse_parser_batch(parser_results)
-            idx.db.upsert_collection_results(
+            h.db.upsert_collection_results(
                 [],
                 parsed["meta_info_entries"],
                 parsed.get("tag_entries", []),

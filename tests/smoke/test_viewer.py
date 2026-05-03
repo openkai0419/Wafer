@@ -9,10 +9,10 @@ pytestmark = pytest.mark.unstable
 
 from wafer.utils.paths import normalize_path
 from wafer.core.db.file_db import FileDB
-from wafer.core.db.indexer import FileIndexer
 from wafer.core.db.setting_db import SettingDB
 from wafer.plugin.collector.handler import collector_resolver
 from wafer.app.indexer.collector_receiver import _parse_batch
+from test_support.scan_harness import ScanHarness
 
 
 def _create_test_image(path, width=200, height=150, fmt="JPEG"):
@@ -39,23 +39,22 @@ def _build_populated_db(tmp_path, images):
     db_path = tmp_path / "data" / "smoketest.db"
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with FileIndexer(str(db_path), collectors=collectors) as idx:
-        idx.initialize()
-        idx.update_index(str(img_dir))
-
+    with ScanHarness(str(db_path), collectors=collectors) as harness:
+        harness.scan_and_wait(img_dir, expected=len(images))
+        assert harness.wait_for(lambda: len(harness.db.get_pending_sources("exiftool")) >= len(images))
         plugin = collector_resolver.registry.get("exiftool")()
-        pending = idx.db.get_pending_sources("exiftool")
+        pending = harness.db.get_pending_sources("exiftool")
         if pending:
             paths = [row[0] for row in pending]
             file_info_map = {row[0]: (row[1], row[2]) for row in pending}
-            idx.db.mark_dispatched(paths, "exiftool")
+            harness.db.mark_dispatched(paths, "exiftool")
             results = []
             for p in paths:
                 info = file_info_map.get(p, (0.0, 0))
                 r = plugin.process(p, info).to_dict()
                 r["collector"] = "exiftool"
                 results.append(r)
-            _write_results_to_db(idx.db, results)
+            _write_results_to_db(harness.db, results)
 
     return str(db_path), str(img_dir)
 
@@ -195,13 +194,14 @@ class TestSmokeViewer:
             WorkspaceStore._instance = prev_instance
 
     def test_mainwindow_handles_empty_db(self, qtbot, tmp_path):
-        from wafer.core.db.indexer import FileIndexer
+        from wafer.app.indexer.db_writer import DatabaseWriter
 
         db_path = str(tmp_path / "data" / "empty.db")
         (tmp_path / "data").mkdir(parents=True, exist_ok=True)
-        collectors = collector_resolver.summary()
-        with FileIndexer(db_path, collectors=collectors) as idx:
-            idx.initialize()
+        writer = DatabaseWriter(db_path)
+        writer.start()
+        writer.initialize()
+        writer.close()
 
         from wafer.core.workspace import WorkspaceStore
 

@@ -6,11 +6,11 @@ from PIL import Image
 from wafer.utils.paths import normalize_path
 from wafer.utils.hashes import fast_signature_hash
 from wafer.core.db.file_db import FileDB
-from wafer.core.db.indexer import FileIndexer
 from wafer.core.db.query import FileSearchEngine, SearchQuery
 from wafer.plugin.collector.handler import collector_resolver
 from wafer.app.indexer.collector_receiver import _parse_batch
 from wafer.app.indexer.db_writer import DatabaseWriter
+from test_support.scan_harness import ScanHarness
 
 
 def _create_test_image(path, width=200, height=100, fmt="JPEG"):
@@ -64,12 +64,12 @@ class TestCollectorPrefixAutoApply:
         collectors = collector_resolver.summary()
         db_path = tmp_path / "test.db"
 
-        with FileIndexer(db_path, collectors=collectors) as idx:
-            idx.initialize()
-            idx.update_index(str(img_dir))
+        with ScanHarness(db_path, collectors=collectors) as h:
+            h.scan_and_wait(img_dir, expected=1)
+            assert h.wait_for(lambda: len(h.db.get_pending_sources("exiftool")) >= 1)
 
             plugin_cls = _get_exif_plugin()
-            results = _run_collector(idx.db, plugin_cls, "exiftool")
+            results = _run_collector(h.db, plugin_cls, "exiftool")
             assert len(results) == 1
 
             parsed = _parse_batch(results)
@@ -83,17 +83,17 @@ class TestCollectorPrefixAutoApply:
 
         collectors = collector_resolver.summary()
         db_path = tmp_path / "test.db"
+        norm = normalize_path(str(img_dir / "alpha.jpg"))
 
-        with FileIndexer(db_path, collectors=collectors) as idx:
-            idx.initialize()
-            idx.update_index(str(img_dir))
+        with ScanHarness(db_path, collectors=collectors) as h:
+            h.scan_and_wait(img_dir, expected=1)
+            assert h.wait_for(lambda: len(h.db.get_pending_sources("exiftool")) >= 1)
 
-            norm = normalize_path(str(img_dir / "alpha.jpg"))
             plugin_cls = _get_exif_plugin()
-            results = _run_collector(idx.db, plugin_cls, "exiftool")
-            _write_results(idx.db, results)
+            results = _run_collector(h.db, plugin_cls, "exiftool")
+            _write_results(h.db, results)
 
-            row = idx.db.read_conn.execute(
+            row = h.db.read_conn.execute(
                 "SELECT status FROM collection_status WHERE source=? AND collector='exiftool'",
                 (norm,),
             ).fetchone()
@@ -110,13 +110,13 @@ class TestCollectorToSearch:
         collectors = collector_resolver.summary()
         db_path = tmp_path / "test.db"
 
-        with FileIndexer(db_path, collectors=collectors) as idx:
-            idx.initialize()
-            idx.update_index(str(img_dir))
+        with ScanHarness(db_path, collectors=collectors) as h:
+            h.scan_and_wait(img_dir, expected=1)
+            assert h.wait_for(lambda: len(h.db.get_pending_sources("exiftool")) >= 1)
 
             plugin_cls = _get_exif_plugin()
-            results = _run_collector(idx.db, plugin_cls, "exiftool")
-            _write_results(idx.db, results)
+            results = _run_collector(h.db, plugin_cls, "exiftool")
+            _write_results(h.db, results)
 
         engine = FileSearchEngine(str(db_path))
         paths, _, aspects = engine.search(SearchQuery(require_keys=False))
@@ -134,19 +134,19 @@ class TestCollectorToSearch:
         collectors = collector_resolver.summary()
         db_path = tmp_path / "test.db"
 
-        with FileIndexer(db_path, collectors=collectors) as idx:
-            idx.initialize()
-            idx.update_index(str(img_dir))
+        with ScanHarness(db_path, collectors=collectors) as h:
+            h.scan_and_wait(img_dir, expected=3)
+            assert h.wait_for(lambda: len(h.db.get_pending_sources("exiftool")) >= 3)
 
             plugin_cls = _get_exif_plugin()
-            results = _run_collector(idx.db, plugin_cls, "exiftool")
+            results = _run_collector(h.db, plugin_cls, "exiftool")
             assert len(results) == 3
-            _write_results(idx.db, results)
+            _write_results(h.db, results)
 
             for r in results:
                 assert r["status"] is True
 
-            rows = idx.db.read_conn.execute("SELECT COUNT(*) FROM collection_status WHERE collector='exiftool' AND status='ok'").fetchone()
+            rows = h.db.read_conn.execute("SELECT COUNT(*) FROM collection_status WHERE collector='exiftool' AND status='ok'").fetchone()
             assert rows[0] == 3
 
         engine = FileSearchEngine(str(db_path))

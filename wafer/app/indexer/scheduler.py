@@ -66,6 +66,8 @@ class TaskScheduler:
         self._periodic_tasks: list[PeriodicTask] = []
         self._tokens: set[CancelToken] = set()
         self._tokens_lock = threading.Lock()
+        self._active_tasks = 0
+        self._active_lock = threading.Lock()
 
     def submit(self, task: Task):
         if task.cancel_token:
@@ -86,6 +88,11 @@ class TaskScheduler:
 
     def add_periodic_task(self, periodic: PeriodicTask):
         self._periodic_tasks.append(periodic)
+
+    def is_idle(self) -> bool:
+        with self._active_lock:
+            active_tasks = self._active_tasks
+        return active_tasks == 0 and self._immediate_queue.empty() and self._background_queue.empty()
 
     def start(self):
         self._immediate_thread = threading.Thread(
@@ -122,7 +129,11 @@ class TaskScheduler:
                 break
             if task.cancel_token and task.cancel_token.is_cancelled:
                 continue
-            _run_task(task, "immediate")
+            self._task_started()
+            try:
+                _run_task(task, "immediate")
+            finally:
+                self._task_finished()
             self._last_active_time = time.monotonic()
             self._reset_once_per_idle_flags()
 
@@ -137,10 +148,22 @@ class TaskScheduler:
                 break
             if task.cancel_token and task.cancel_token.is_cancelled:
                 continue
-            _run_task(task, "background")
+            self._task_started()
+            try:
+                _run_task(task, "background")
+            finally:
+                self._task_finished()
             if task.priority <= TaskPriority.DISPATCH:
                 self._last_active_time = time.monotonic()
                 self._reset_once_per_idle_flags()
+
+    def _task_started(self) -> None:
+        with self._active_lock:
+            self._active_tasks += 1
+
+    def _task_finished(self) -> None:
+        with self._active_lock:
+            self._active_tasks -= 1
 
     def _reset_once_per_idle_flags(self):
         for periodic in self._periodic_tasks:

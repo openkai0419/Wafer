@@ -9,6 +9,7 @@ from PySide6 import QtCore, QtWidgets
 
 from wafer.core.platform.file_operations import (
     OperationResult,
+    PasteCancelledError,
     PasteDecision,
     PastePlanItem,
 )
@@ -97,6 +98,48 @@ class TestRunWithProgress:
         assert results[1].status == "error"
         assert results[0].status == "ok"
         assert results[2].status == "ok"
+
+    def test_progress_starts_indeterminate_then_switches_to_determinate(self, qapp):
+        from wafer.core.platform.paste import _run_with_progress
+
+        release_provider = threading.Event()
+        observed = {}
+        ranges = []
+
+        original_set_range = QtWidgets.QProgressDialog.setRange
+
+        def recording_set_range(self, minimum, maximum):
+            ranges.append((minimum, maximum))
+            return original_set_range(self, minimum, maximum)
+
+        QtWidgets.QProgressDialog.setRange = recording_set_range
+
+        def progress_total_provider(is_cancelled):
+            while not release_provider.wait(0.01):
+                if is_cancelled():
+                    raise PasteCancelledError()
+            return 5
+
+        def execute_fn(idx: int) -> OperationResult:
+            time.sleep(0.05)
+            return OperationResult(action="copy", src=f"s{idx}", dst=f"d{idx}", status="ok")
+
+        def inspect_busy_state():
+            for widget in qapp.topLevelWidgets():
+                if isinstance(widget, QtWidgets.QProgressDialog):
+                    observed["busy_range"] = (widget.minimum(), widget.maximum())
+                    release_provider.set()
+                    return
+
+        try:
+            QtCore.QTimer.singleShot(20, inspect_busy_state)
+            results = _run_with_progress(None, "Copying...", 2, execute_fn, progress_total_provider=progress_total_provider)
+        finally:
+            QtWidgets.QProgressDialog.setRange = original_set_range
+
+        assert len(results) == 2
+        assert observed["busy_range"] == (0, 0)
+        assert (0, 5) in ranges
 
 
 class TestExecutePasteItems:
@@ -208,3 +251,84 @@ class TestExecutePasteItems:
         assert all(r.status == "ok" for r in results)
         for i in range(5):
             assert (dst_dir / f"file_{i}.txt").read_text(encoding="utf-8") == f"content_{i}"
+
+
+class TestDirectoryProgress:
+    def test_count_operation_units_honors_cancellation(self, tmp_path):
+        from wafer.core.platform.file_operations import count_operation_units
+
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "a.txt").write_text("a", encoding="utf-8")
+
+        with pytest.raises(PasteCancelledError):
+            count_operation_units(src, tmp_path / "dst", "copy", cancel_check=lambda: True)
+
+    def test_directory_copy_advances_per_file(self, tmp_path):
+        from wafer.core.platform.file_operations import FileExecutor
+
+        src = tmp_path / "src"
+        (src / "nested").mkdir(parents=True)
+        (src / "a.txt").write_text("a", encoding="utf-8")
+        (src / "nested" / "b.txt").write_text("b", encoding="utf-8")
+        dst = tmp_path / "dst"
+        advances = []
+
+        result = FileExecutor(progress_callback=lambda n: advances.append(n))._execute_item(src, dst, "copy", PasteDecision(mode="overwrite"))
+
+        assert result.status == "ok"
+        assert sum(advances) == 2
+        assert (dst / "a.txt").exists()
+        assert (dst / "nested" / "b.txt").exists()
+
+    def test_skipped_directory_copy_advances_per_file(self, tmp_path):
+        from wafer.core.platform.file_operations import FileExecutor
+
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "a.txt").write_text("a", encoding="utf-8")
+        (src / "b.txt").write_text("b", encoding="utf-8")
+        dst = tmp_path / "dst"
+        advances = []
+
+        result = FileExecutor(progress_callback=lambda n: advances.append(n))._execute_item(src, dst, "copy", PasteDecision(mode="skip"))
+
+        assert result.status == "skipped"
+        assert sum(advances) == 2
+
+    def test_same_device_directory_move_is_atomic_progress(self, tmp_path, monkeypatch):
+        from wafer.core.platform import file_operations
+        from wafer.core.platform.file_operations import FileExecutor
+
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "a.txt").write_text("a", encoding="utf-8")
+        dst = tmp_path / "dst"
+        advances = []
+        monkeypatch.setattr(file_operations, "_same_device", lambda src_path, dst_path: True)
+
+        result = FileExecutor(progress_callback=lambda n: advances.append(n))._execute_item(src, dst, "cut", PasteDecision(mode="overwrite"))
+
+        assert result.status == "ok"
+        assert sum(advances) == 1
+        assert dst.exists()
+        assert not src.exists()
+
+    def test_cross_device_directory_move_advances_per_file(self, tmp_path, monkeypatch):
+        from wafer.core.platform import file_operations
+        from wafer.core.platform.file_operations import FileExecutor
+
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "a.txt").write_text("a", encoding="utf-8")
+        (src / "b.txt").write_text("b", encoding="utf-8")
+        dst = tmp_path / "dst"
+        advances = []
+        monkeypatch.setattr(file_operations, "_same_device", lambda src_path, dst_path: False)
+
+        result = FileExecutor(progress_callback=lambda n: advances.append(n))._execute_item(src, dst, "cut", PasteDecision(mode="overwrite"))
+
+        assert result.status == "ok"
+        assert sum(advances) == 2
+        assert dst.exists()
+        assert not src.exists()

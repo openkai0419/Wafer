@@ -14,7 +14,7 @@ from ....core.commands.bridge import UI, Context
 from ....core.platform.dragparser import MimeDataParser
 from ....core.platform.file_operations import PastePlanItem
 from ....core.platform.path_utils import unique_path
-from ....core.platform.paste import execute_paste_plans_with_ui, drop_files_with_ui
+from ....core.platform.paste import execute_paste_plans_with_ui, drop_files_with_ui, resolve_drop_operation_with_ui
 
 
 def _scan_children(path, excluded):
@@ -359,11 +359,7 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
         target_path = parent_item.data(USER_ROLE_PATH)
         if not target_path or target_path in self.excluded:
             return False
-        if not os.path.isdir(normalize_path(target_path)):
-            return False
-        if data.hasFormat(self._mime_type):
-            return action == QtCore.Qt.MoveAction
-        return True
+        return os.path.isdir(normalize_path(target_path))
 
     @profiler.profile
     def dropMimeData(self, data, action, row, column, parent):
@@ -385,8 +381,6 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
         dest_name = os.path.basename(dest_dir) or dest_dir
 
         if data.hasFormat(self._mime_type):
-            if action != QtCore.Qt.MoveAction:
-                return False
             try:
                 src_paths = data.data(self._mime_type).data().decode("utf-8").split("\n")
             except (UnicodeDecodeError, AttributeError):
@@ -394,6 +388,12 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
             src_paths = [p for p in src_paths if p]
             if not src_paths:
                 return False
+
+            confirm = f'Drop {len(src_paths)} folder(s) to "{dest_name}"?\nChoose your operation.'
+            op = resolve_drop_operation_with_ui("ask", parent=parent_w, message=confirm)
+            if op is None:
+                return False
+            plan_action = "cut" if op == "move" else "copy"
 
             plans = []
             for i, src in enumerate(src_paths):
@@ -406,15 +406,14 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
                         index=i,
                         src=Path(src),
                         is_dir=True,
-                        action="cut",
+                        action=plan_action,
                         dst_default=dst_default,
                         conflict=conflict,
                         suggested_dst=suggested,
                     )
                 )
 
-            confirm = f'Move {len(src_paths)} folder(s) to "{dest_name}"?'
-            execute_paste_plans_with_ui(plans=plans, overwrite_mode="ask", parent=parent_w, confirm_message=confirm)
+            execute_paste_plans_with_ui(plans=plans, overwrite_mode="ask", parent=parent_w)
             self._request_reload_tree()
             return True
 
@@ -426,10 +425,8 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
         if not src_items:
             return False
 
-        op = "move" if action == QtCore.Qt.MoveAction else "copy"
-        label = "Move" if op == "move" else "Copy"
-        confirm = f'{label} {len(src_items)} item(s) to "{dest_name}"?'
-        drop_files_with_ui(src_items, dest_dir, op, overwrite_mode="ask", parent=parent_w, confirm_message=confirm)
+        confirm = f'Drop {len(src_items)} item(s) to "{dest_name}"?\nChoose your operation.'
+        drop_files_with_ui(src_items, dest_dir, "ask", overwrite_mode="ask", parent=parent_w, confirm_message=confirm)
         self._request_reload_tree()
         return True
 

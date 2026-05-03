@@ -12,6 +12,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from ...utils.logs import AppLogger
 from ...utils.notifier import Notifier
 from ...core.lang.manager import t
+from ...core.app_settings import app_settings
 from ...utils.paths import safe_exists, safe_is_dir
 from .path_utils import unique_path
 from .file_operations import (
@@ -25,7 +26,43 @@ from .file_operations import (
     _safe_remove,
     _save_remote_item,
     build_drop_plans,
+    count_operation_units,
 )
+
+
+DROP_OPERATION_SETTING_KEY = "file/drop_operation"
+DropOperation = Literal["copy", "move", "ask"]
+
+
+def normalize_drop_operation(value: object, default: Literal["copy", "move"] = "copy") -> Literal["copy", "move"]:
+    v = str(value or "").lower()
+    if v in ("copy", "move"):
+        return v  # type: ignore[return-value]
+    return default if default in ("copy", "move") else "copy"
+
+
+def get_saved_drop_operation(default: Literal["copy", "move"] = "copy") -> Literal["copy", "move"]:
+    return normalize_drop_operation(app_settings.get(DROP_OPERATION_SETTING_KEY, default), default)
+
+
+def save_drop_operation(op: str) -> Literal["copy", "move"]:
+    resolved = normalize_drop_operation(op)
+    app_settings.save_immediate(DROP_OPERATION_SETTING_KEY, resolved)
+    return resolved
+
+
+def resolve_drop_operation_with_ui(op: DropOperation, *, parent: object | None = None, message: str | None = None) -> Literal["copy", "move"] | None:
+    if op in ("copy", "move"):
+        return op
+    if op != "ask":
+        raise ValueError(f"Invalid op: {op}")
+    from ...ui.dialogs import DropOperationDialog
+
+    default = get_saved_drop_operation()
+    selected = DropOperationDialog.ask(message or t("Choose drop operation."), default=default, parent=parent)
+    if selected is None:
+        return None
+    return save_drop_operation(selected)
 
 
 class ClipboardFilePaster:
@@ -210,7 +247,10 @@ def _run_with_progress(
     parent: QtWidgets.QWidget | None,
     label: str,
     total: int,
-    execute_fn: Callable[[int], OperationResult],
+    execute_fn: Callable[..., OperationResult],
+    *,
+    progress_total_provider: Callable[[Callable[[], bool]], int] | None = None,
+    manual_progress: bool = False,
 ) -> list[OperationResult]:
     if total == 0:
         return []
@@ -220,8 +260,10 @@ def _run_with_progress(
 
     token = CancelToken()
     results: list[OperationResult] = []
+    progress_value = 0
+    progress_limit: int | None = None
 
-    dialog = QtWidgets.QProgressDialog(label, t("Cancel"), 0, total, parent)
+    dialog = QtWidgets.QProgressDialog(label, t("Cancel"), 0, 0, parent)
     dialog.setWindowModality(QtCore.Qt.WindowModal)
     dialog.setMinimumDuration(0)
     dialog.setAutoReset(False)
@@ -238,13 +280,45 @@ def _run_with_progress(
             pass
         dialog.close()
 
+    def _set_progress_limit(limit: int):
+        nonlocal progress_limit, progress_value
+        progress_limit = max(1, int(limit))
+        progress_value = min(progress_value, progress_limit)
+        dialog.setRange(0, progress_limit)
+        dialog.setValue(progress_value)
+
+    def advance(units: int = 1):
+        nonlocal progress_value
+        if units <= 0:
+            return
+        progress_value += units
+        if progress_limit is not None:
+            progress_value = min(progress_value, progress_limit)
+        dispatcher.invoke(lambda v=progress_value: dialog.setValue(v))
+
     def bg_task():
+        if progress_total_provider is not None:
+            try:
+                progress_total = progress_total_provider(token.is_cancelled)
+            except PasteCancelledError:
+                dispatcher.invoke(_close_dialog)
+                return
+            except Exception as e:
+                AppLogger.warning("progress total calculation failed", exc=e)
+                progress_total = total
+            if token.is_cancelled():
+                dispatcher.invoke(_close_dialog)
+                return
+            dispatcher.invoke(lambda value=progress_total: _set_progress_limit(value))
         for i in range(total):
             if token.is_cancelled():
                 break
-            result = execute_fn(i)
+            if manual_progress:
+                result = execute_fn(i, advance, token.is_cancelled)
+            else:
+                result = execute_fn(i)
+                advance()
             results.append(result)
-            dispatcher.invoke(lambda v=i + 1: dialog.setValue(v))
         dispatcher.invoke(_close_dialog)
 
     dispatcher.post(bg_task)
@@ -264,15 +338,18 @@ def _execute_paste_items(
     parent: QtWidgets.QWidget | None,
     op: str,
 ) -> list[OperationResult]:
-    executor = FileExecutor()
     label = t("Moving files...") if op == "move" else t("Copying files...")
 
-    def step(i: int) -> OperationResult:
+    def step(i: int, advance: Callable[[int], None], is_cancelled: Callable[[], bool]) -> OperationResult:
         item = plans[i]
         dec = decisions.get(item.index, PasteDecision(mode="skip"))
+        executor = FileExecutor(progress_callback=advance, cancel_check=is_cancelled)
         return executor._execute_item(item.src, item.dst_default, item.action, dec)
 
-    return _run_with_progress(parent, label, len(plans), step)
+    def progress_total_provider(is_cancelled: Callable[[], bool]) -> int:
+        return sum(count_operation_units(item.src, item.dst_default, item.action, cancel_check=is_cancelled) for item in plans)
+
+    return _run_with_progress(parent, label, len(plans), step, progress_total_provider=progress_total_provider, manual_progress=True)
 
 
 def _execute_drop_items(
@@ -281,25 +358,31 @@ def _execute_drop_items(
     parent: QtWidgets.QWidget | None,
     op: str,
 ) -> list[OperationResult]:
-    executor = FileExecutor()
     action: Literal["copy", "cut"] = "cut" if op == "move" else "copy"
     label = t("Moving files...") if op == "move" else t("Copying files...")
 
-    def step(i: int) -> OperationResult:
+    def step(i: int, advance: Callable[[int], None], is_cancelled: Callable[[], bool]) -> OperationResult:
         plan = plans[i]
         dec = decisions.get(plan.index)
         if dec is None or dec.mode == "skip":
+            advance()
             return OperationResult(action="skip", src=str(plan.src or ""), dst="", status="skipped")
         if plan.src is not None:
+            executor = FileExecutor(progress_callback=advance, cancel_check=is_cancelled)
             return executor._execute_item(plan.src, plan.dst_default, action, dec)
         dst_path = str(plan.dst_default)
         if dec.mode == "rename" and plan.suggested_dst:
             dst_path = str(plan.suggested_dst)
         elif dec.mode == "overwrite" and plan.conflict:
             _safe_remove(dst_path)
-        return _save_remote_item(plan.parsed_item, dst_path, move=(op == "move"))
+        result = _save_remote_item(plan.parsed_item, dst_path, move=(op == "move"))
+        advance()
+        return result
 
-    return _run_with_progress(parent, label, len(plans), step)
+    def progress_total_provider(is_cancelled: Callable[[], bool]) -> int:
+        return sum(count_operation_units(plan.src, plan.dst_default, action, cancel_check=is_cancelled) if plan.src is not None else 1 for plan in plans)
+
+    return _run_with_progress(parent, label, len(plans), step, progress_total_provider=progress_total_provider, manual_progress=True)
 
 
 def paste_clipboard_files(
@@ -343,24 +426,27 @@ def execute_paste_plans_with_ui(
 def drop_files_with_ui(
     parsed_items: list,
     destination_dir: str,
-    op: str,
+    op: DropOperation,
     *,
     overwrite_mode: str = "ask",
     parent: object | None = None,
     folder_message: str = "Folder with the same name already exists. Proceed?",
     confirm_message: str | None = None,
 ) -> list[OperationResult]:
-    if op not in ("copy", "move"):
+    if op not in ("copy", "move", "ask"):
         raise ValueError(f"Invalid op: {op}")
     if overwrite_mode not in ("overwrite", "rename", "skip", "ask"):
         raise ValueError(f"Invalid overwrite_mode: {overwrite_mode}")
-    plans = build_drop_plans(parsed_items, destination_dir, op)
+    resolved_op = resolve_drop_operation_with_ui(op, parent=parent, message=confirm_message)
+    if resolved_op is None:
+        return []
+    plans = build_drop_plans(parsed_items, destination_dir, resolved_op)
     if not plans:
         return []
-    if confirm_message and not _confirm_action(confirm_message, parent):
+    if op != "ask" and confirm_message and not _confirm_action(confirm_message, parent):
         return []
     try:
-        decisions = _resolve_conflicts_with_ui(plans=plans, op=op, overwrite_mode=overwrite_mode, parent=parent, folder_message=folder_message)
+        decisions = _resolve_conflicts_with_ui(plans=plans, op=resolved_op, overwrite_mode=overwrite_mode, parent=parent, folder_message=folder_message)
     except PasteCancelledError:
         return []
-    return _execute_drop_items(plans, decisions, parent, op)
+    return _execute_drop_items(plans, decisions, parent, resolved_op)

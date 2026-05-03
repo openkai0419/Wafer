@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.6.12]
+### Added
+- **Drop operation chooser and preference** (`wafer/core/platform/paste.py`, `wafer/ui/dialogs.py`, `wafer/builtins/commands/grid.py`, `wafer/app/viewer/widgets/foldertree.py`): added a copy/move chooser for GridView and folder-tree drops, persisted the selected default drop operation, and exposed ask-mode drop handling that previews using the saved mode
+- **Database-update auto execute toggle** (`wafer/app/viewer/search.py`, `wafer/app/viewer/state_coordinator.py`, `wafer/builtins/commands/query.py`, `_resources/translations.json`): added `auto_execute_on_update` search state and menu commands so database refreshes can be decoupled from parameter-change auto execution
+
+### Changed
+- **Paste execution progress** (`wafer/core/platform/file_operations.py`, `wafer/core/platform/paste.py`): copy and move progress now starts indeterminate while sizing recursive work, advances by actual file-operation units, supports cancellation during recursive operations, and falls back to copy-then-delete for cross-device moves
+- **Tag-update refresh flow** (`wafer/app/viewer/mainwindow.py`, `wafer/app/viewer/state_coordinator.py`): tag edit acknowledgements now refresh `TagEditService` and mark overlays without forcing a full search rerun, and workspace query state now restores the new database-update auto execute option
+
+### Fixed
+- **Grid and folder-tree drop finalization** (`wafer/builtins/commands/grid.py`, `wafer/app/viewer/widgets/foldertree.py`): internal copy drops are now accepted, and app-managed drops always finish with `IgnoreAction` after handling so Qt does not keep stale move/copy drop state
+- **Scanner update filtering** (`wafer/app/indexer/scanner.py`): update batches now skip non-regular paths and log invalid targets instead of trying to index unsupported files
+
 ## [v0.6.11]
 ### Changed
 - **Project licensing** (`LICENSE`, `COPYING`, `COPYING.LESSER`, `README.md`, `README.jp.md`, `extensions/ai_tagger/README.md`, `extensions/exiftool/README.md`, `extensions/ffmpeg/README.md`, `extensions/florence/README.md`, `extensions/video/README.md`, `pyproject.toml`): changed the repository source license from Apache-2.0 to LGPL-2.1-or-later and updated badges, license guidance, and package metadata to match

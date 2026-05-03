@@ -8,6 +8,12 @@ def _ensure_qapp(qtbot):
     pass
 
 
+def _assert_logical_size(pm: QPixmap, expected: int):
+    logical = pm.deviceIndependentSize().toSize()
+    assert logical.width() == expected
+    assert logical.height() == expected
+
+
 class TestThemedIcon:
     def test_returns_qicon(self):
         from wafer.core.qt.icon_engine import themed_icon
@@ -27,8 +33,7 @@ class TestThemedIcon:
 
         icon = themed_icon("play")
         pm = icon.pixmap(QSize(32, 32))
-        assert pm.width() == 32
-        assert pm.height() == 32
+        _assert_logical_size(pm, 32)
 
 
 class TestIconDraw:
@@ -113,8 +118,7 @@ class TestAllRegisteredIcons:
         icon = themed_icon(key)
         for sz in [16, 24, 48]:
             pm = icon.pixmap(QSize(sz, sz))
-            assert pm.width() == sz
-            assert pm.height() == sz
+            _assert_logical_size(pm, sz)
 
 
 class TestPadding:
@@ -124,7 +128,7 @@ class TestPadding:
         icon = themed_icon("gear")
         assert not icon.isNull()
         pm = icon.pixmap(QSize(32, 32))
-        assert pm.width() == 32
+        _assert_logical_size(pm, 32)
 
     def test_zero_margin(self):
         from wafer.core.qt.icon_engine import themed_icon
@@ -137,7 +141,7 @@ class TestPadding:
 
         icon = themed_icon("gear", margin=0.35)
         pm = icon.pixmap(QSize(32, 32))
-        assert pm.width() == 32
+        _assert_logical_size(pm, 32)
 
     def test_padding_clamped(self):
         from wafer.core.qt.icon_engine import themed_icon, _ThemedIconEngine
@@ -155,4 +159,4 @@ class TestPadding:
 
         icon = themed_icon("folder_plus", margin=margin)
         pm = icon.pixmap(QSize(32, 32))
-        assert pm.width() == 32
+        _assert_logical_size(pm, 32)

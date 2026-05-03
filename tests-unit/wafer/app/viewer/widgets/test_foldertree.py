@@ -3,6 +3,7 @@ import shutil
 import tempfile
 import threading
 import time
+from PySide6 import QtCore
 from wafer.app.viewer.widgets import foldertree as foldertree_module
 from wafer.app.viewer.widgets.foldertree import (
     LazyFolderTreeView,
@@ -161,6 +162,62 @@ def test_model_dispatcher_initialized(qtbot):
         assert tree.model_._pending_expands == {}
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_foldertree_model_accepts_internal_copy_drop(qtbot, tmp_path):
+    root = tmp_path / "root"
+    src = root / "src"
+    dst = root / "dst"
+    src.mkdir(parents=True)
+    dst.mkdir()
+    tree = LazyFolderTreeView(roots=[str(root)], excluded=[])
+    qtbot.addWidget(tree)
+    tree.model_._build_roots([str(root)])
+    tree.expand_path(str(dst))
+    dst_index = tree.model_.find_index_by_path(str(dst))
+    mime = QtCore.QMimeData()
+    mime.setData(tree.model_._mime_type, str(src).encode("utf-8"))
+
+    assert tree.model_.canDropMimeData(mime, QtCore.Qt.DropAction.CopyAction, -1, 0, dst_index)
+
+
+def test_foldertree_internal_drop_uses_selected_copy_operation(qtbot, tmp_path, monkeypatch):
+    root = tmp_path / "root"
+    src = root / "src"
+    dst = root / "dst"
+    src.mkdir(parents=True)
+    dst.mkdir()
+    tree = LazyFolderTreeView(roots=[str(root)], excluded=[])
+    qtbot.addWidget(tree)
+    tree.model_._build_roots([str(root)])
+    tree.expand_path(str(dst))
+    dst_index = tree.model_.find_index_by_path(str(dst))
+    mime = QtCore.QMimeData()
+    mime.setData(tree.model_._mime_type, str(src).encode("utf-8"))
+    captured = {}
+    monkeypatch.setattr(foldertree_module, "resolve_drop_operation_with_ui", lambda op, parent=None, message=None: "copy")
+    monkeypatch.setattr(foldertree_module, "execute_paste_plans_with_ui", lambda plans, **kwargs: captured.setdefault("plans", plans) or [])
+
+    assert tree.model_.dropMimeData(mime, QtCore.Qt.DropAction.CopyAction, -1, 0, dst_index)
+    assert captured["plans"][0].action == "copy"
+
+
+def test_foldertree_external_drop_uses_ask_operation(qtbot, tmp_path, monkeypatch):
+    root = tmp_path / "root"
+    root.mkdir()
+    src = tmp_path / "source.txt"
+    src.write_text("data", encoding="utf-8")
+    tree = LazyFolderTreeView(roots=[str(root)], excluded=[])
+    qtbot.addWidget(tree)
+    tree.model_._build_roots([str(root)])
+    root_index = tree.model_.find_index_by_path(str(root))
+    mime = QtCore.QMimeData()
+    mime.setUrls([QtCore.QUrl.fromLocalFile(str(src))])
+    captured = {}
+    monkeypatch.setattr(foldertree_module, "drop_files_with_ui", lambda items, dst, op, **kwargs: captured.update({"op": op, "dst": dst}) or [])
+
+    assert tree.model_.dropMimeData(mime, QtCore.Qt.DropAction.CopyAction, -1, 0, root_index)
+    assert captured == {"op": "ask", "dst": foldertree_module.normalize_path(str(root))}
 
 
 def test_compile():

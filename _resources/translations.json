@@ -1,4 +1,8 @@
 {
+  "Move": {
+    "en": "Move",
+    "ja": ""
+  },
   "Auto Execute on Database Update": {
     "en": "Auto Execute on Database Update",
     "ja": ""

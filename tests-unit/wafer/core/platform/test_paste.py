@@ -48,6 +48,27 @@ def test_drop_files_with_ui_empty_items(tmp_path):
     assert res == []
 
 
+def test_resolve_drop_operation_with_ui_fixed_operation():
+    from wafer.core.platform.paste import resolve_drop_operation_with_ui
+
+    assert resolve_drop_operation_with_ui("copy") == "copy"
+    assert resolve_drop_operation_with_ui("move") == "move"
+
+
+def test_resolve_drop_operation_with_ui_ask_saves_selection(monkeypatch):
+    from wafer.core.platform import paste
+    from wafer.ui.dialogs import DropOperationDialog
+
+
+    saved = {}
+    monkeypatch.setattr(paste.app_settings, "get", lambda key, default=None, value_type=None: "copy")
+    monkeypatch.setattr(paste.app_settings, "save_immediate", lambda key, value: saved.__setitem__(key, value))
+    monkeypatch.setattr(DropOperationDialog, "ask", staticmethod(lambda message, default="copy", title="Drop Files", parent=None: "move"))
+
+    assert paste.resolve_drop_operation_with_ui("ask", message="Drop?") == "move"
+    assert saved[paste.DROP_OPERATION_SETTING_KEY] == "move"
+
+
 def test_clipboard_file_paster_importable():
     from wafer.core.platform.paste import ClipboardFilePaster
 

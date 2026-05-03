@@ -1,5 +1,5 @@
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QCheckBox, QDialog, QFileIconProvider, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy, QStyle, QVBoxLayout
+from PySide6.QtWidgets import QButtonGroup, QCheckBox, QDialog, QFileIconProvider, QHBoxLayout, QLabel, QLineEdit, QPushButton, QRadioButton, QSizePolicy, QStyle, QVBoxLayout
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtCore import QFileInfo
 from ..utils.formatting import dpix
@@ -73,14 +73,15 @@ class BaseDialog(QDialog):
         self.setWindowTitle(title)
         self.setWindowModality(Qt.ApplicationModal)
         self.result_text = None
-        icon = self.style().standardIcon(icon_type)
-        icon_label = QLabel()
-        icon_label.setPixmap(icon.pixmap(dpix(32), dpix(32)))
         self.message_label = QLabel(message)
         self.message_label.setWordWrap(True)
         self.message_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         message_layout = QHBoxLayout()
-        message_layout.addWidget(icon_label)
+        if icon_type is not None:
+            icon = self.style().standardIcon(icon_type)
+            icon_label = QLabel()
+            icon_label.setPixmap(icon.pixmap(dpix(32), dpix(32)))
+            message_layout.addWidget(icon_label)
         message_layout.addWidget(self.message_label)
         self.btn_layout = QHBoxLayout()
         self.btn_layout.addStretch()
@@ -100,7 +101,7 @@ class BaseDialog(QDialog):
         self.adjust_to_message()
 
     def adjust_to_message(self):
-        min_width = dpix(300)
+        min_width = dpix(100)
         max_width = dpix(800)
         message = self.message
         metrics = self.message_label.fontMetrics()
@@ -197,6 +198,47 @@ class InputDialog(BaseDialog):
             return dialog.input_edit.text()
         else:
             return None
+
+
+class DropOperationDialog(BaseDialog):
+    COPY = "copy"
+    MOVE = "move"
+
+    def __init__(self, message, *, default="copy", title="Drop Files", parent=None):
+        super().__init__(message, title, buttons=("OK", "Cancel"), parent=parent)
+        self._group = QButtonGroup(self)
+        self.copy_radio = QRadioButton(t("Copy"))
+        self.move_radio = QRadioButton(t("Move"))
+        self._group.addButton(self.copy_radio)
+        self._group.addButton(self.move_radio)
+        selected = self.normalize_operation(default)
+        self.copy_radio.setChecked(selected == self.COPY)
+        self.move_radio.setChecked(selected == self.MOVE)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        row.addWidget(self.copy_radio)
+        row.addWidget(self.move_radio)
+        row.addStretch(1)
+        self.content_layout.addLayout(row)
+
+    def selected_operation(self) -> str:
+        return self.MOVE if self.move_radio.isChecked() else self.COPY
+
+    @classmethod
+    def normalize_operation(cls, value, default="copy") -> str:
+        v = str(value or "").lower()
+        if v in (cls.COPY, cls.MOVE):
+            return v
+        d = str(default or cls.COPY).lower()
+        return d if d in (cls.COPY, cls.MOVE) else cls.COPY
+
+    @staticmethod
+    def ask(message, *, default="copy", title="Drop Files", parent=None) -> str | None:
+        dialog = DropOperationDialog(message, default=default, title=title, parent=parent)
+        dialog.exec()
+        if dialog.result_text == "OK":
+            return dialog.selected_operation()
+        return None
 
 
 class FileConflictDialog(BaseDialog):

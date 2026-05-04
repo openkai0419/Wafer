@@ -67,7 +67,9 @@ META_FILES = [
     "COPYING",
     "COPYING.LESSER",
     "README.md",
+    "README.jp.md",
     "CHANGELOG.md",
+    "cleanup.bat",
 ]
 
 

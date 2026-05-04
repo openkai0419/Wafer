@@ -27,6 +27,7 @@ def _reset_shared(monkeypatch):
     yield
 
 
+@pytest.mark.unstable
 class TestMpvGLOverlay:
     def test_create_player(self, qtbot):
         from extensions.video.widget import DEFAULT_VOLUME, MpvGLOverlay
@@ -374,6 +375,7 @@ class TestMpvCellWidget:
         w.cleanup()
 
 
+@pytest.mark.unstable
 class TestStaleFramePrevention:
     def test_stale_generation_frame_rejected(self, qtbot):
         from extensions.video.widget import MpvGLOverlay

@@ -167,6 +167,70 @@ class TestSlotLifecycle:
         store = WorkspaceStore(path=str(tmp_path / "ws.json"))
         assert store.forget_slot_snapshot("missing") is False
 
+    def test_reserve_next_window_slot_reuses_latest_inactive_slot(self, tmp_path):
+        store = WorkspaceStore(path=str(tmp_path / "ws.json"))
+        old = WindowSlot(slot_id="old", updated_at="2026-04-27T09:00:00+00:00")
+        latest = WindowSlot(slot_id="latest", updated_at="2026-04-27T10:00:00+00:00")
+        store.save_slot(old)
+        store.save_slot(latest)
+
+        sid, slot, existed = store.reserve_next_window_slot()
+
+        assert existed is True
+        assert sid == "latest"
+        assert slot.slot_id == "latest"
+        assert store.get_active_slot_ids() == ["latest"]
+
+    def test_reserve_next_window_slot_excludes_active_slots(self, tmp_path):
+        store = WorkspaceStore(path=str(tmp_path / "ws.json"))
+        active = WindowSlot(slot_id="active", updated_at="2026-04-27T11:00:00+00:00")
+        inactive = WindowSlot(slot_id="inactive", updated_at="2026-04-27T10:00:00+00:00")
+        store.save_slot(active)
+        store.save_slot(inactive)
+        store.set_active_slot_ids(["active"])
+
+        sid, _, existed = store.reserve_next_window_slot()
+
+        assert existed is True
+        assert sid == "inactive"
+        assert store.get_active_slot_ids() == ["active", "inactive"]
+
+    def test_reserve_next_window_slot_excludes_restore_slots(self, tmp_path):
+        store = WorkspaceStore(path=str(tmp_path / "ws.json"))
+        restoring = WindowSlot(slot_id="restore", updated_at="2026-04-27T11:00:00+00:00")
+        inactive = WindowSlot(slot_id="inactive", updated_at="2026-04-27T10:00:00+00:00")
+        store.save_slot(restoring)
+        store.save_slot(inactive)
+        store.set_restore_slot_ids(["restore"])
+
+        sid, _, existed = store.reserve_next_window_slot()
+
+        assert existed is True
+        assert sid == "inactive"
+        assert store.get_active_slot_ids() == ["inactive"]
+
+    def test_reserve_next_window_slot_creates_new_slot_when_none_available(self, tmp_path):
+        store = WorkspaceStore(path=str(tmp_path / "ws.json"))
+        sid, slot, existed = store.reserve_next_window_slot(seed={"path": {"database_name": "main"}})
+
+        assert existed is False
+        assert sid == slot.slot_id
+        assert store.get_slot(sid).path == {"database_name": "main"}
+        assert store.get_active_slot_ids() == [sid]
+
+    def test_reserve_next_window_slot_serializes_repeated_reservations(self, tmp_path):
+        store = WorkspaceStore(path=str(tmp_path / "ws.json"))
+        first = WindowSlot(slot_id="first", updated_at="2026-04-27T11:00:00+00:00")
+        second = WindowSlot(slot_id="second", updated_at="2026-04-27T10:00:00+00:00")
+        store._locked_update(lambda raw: raw.update({"slots": {"first": first.to_dict(), "second": second.to_dict()}}))
+
+        sid1, _, existed1 = store.reserve_next_window_slot()
+        sid2, _, existed2 = store.reserve_next_window_slot()
+
+        assert (sid1, existed1) == ("first", True)
+        assert (sid2, existed2) == ("second", True)
+        assert store.get_active_slot_ids() == ["first", "second"]
+
 
 class TestPresetOverwrite:
     def test_update_ui_preset_replaces_state_and_keeps_metadata(self, tmp_path):

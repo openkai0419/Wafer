@@ -1,5 +1,7 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from wafer.builtins.commands import workspace as workspace_commands
 from wafer.core.workspace import BarSpec, QueryPreset, UIPreset, WindowSlot
 
@@ -181,6 +183,38 @@ class TestWorkspaceCommands:
             workspace_commands.delete_slot(_Ctx(MagicMock()), slot_id="missing")
 
         store.forget_slot_snapshot.assert_not_called()
+
+    def test_new_window_reserves_slot_before_spawning_viewer(self):
+        store = MagicMock()
+        store.reserve_next_window_slot.return_value = ("slot1", WindowSlot(slot_id="slot1"), True)
+
+        with patch.object(workspace_commands.WorkspaceStore, "instance", return_value=store), \
+                patch.object(workspace_commands.AppProcess, "new_main") as new_main:
+            workspace_commands.new_window(_Ctx())
+
+        store.reserve_next_window_slot.assert_called_once_with()
+        new_main.assert_called_once_with("--viewer", "--slot", "slot1")
+
+    def test_new_window_falls_back_when_slot_reservation_fails(self):
+        store = MagicMock()
+        store.reserve_next_window_slot.side_effect = TimeoutError("locked")
+
+        with patch.object(workspace_commands.WorkspaceStore, "instance", return_value=store), \
+                patch.object(workspace_commands.AppProcess, "new_main") as new_main:
+            workspace_commands.new_window(_Ctx())
+
+        new_main.assert_called_once_with("--viewer")
+
+    def test_new_window_releases_reserved_slot_when_spawn_fails(self):
+        store = MagicMock()
+        store.reserve_next_window_slot.return_value = ("slot1", WindowSlot(slot_id="slot1"), True)
+
+        with patch.object(workspace_commands.WorkspaceStore, "instance", return_value=store), \
+                patch.object(workspace_commands.AppProcess, "new_main", side_effect=RuntimeError("spawn failed")):
+            with pytest.raises(RuntimeError, match="spawn failed"):
+                workspace_commands.new_window(_Ctx())
+
+        store.release_slot.assert_called_once_with("slot1")
 
     def test_popup_commands_call_toolbar_widget(self):
         tb = MagicMock()

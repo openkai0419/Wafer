@@ -2,6 +2,7 @@ from ...core.commands.bridge import ActionKit
 from ...core.commands.command.require import require
 from ...core.commands.binding.instance_registry import InstanceRegistry
 from ...app.viewer.preview.file_list_provider import ListMode
+from ...utils.notifier import Notifier
 
 
 GROUP_LIST_MODE = "fv_list_mode"
@@ -43,6 +44,21 @@ def _ensure_current_initialized(model) -> bool:
     return True
 
 
+def _nav_direction(local_pos, center, axis: str = "left/right", invert: bool = False) -> str:
+    mode = str(axis or "left/right").strip().lower()
+    dx = local_pos.x() - center.x()
+    dy = local_pos.y() - center.y()
+    if mode in ("horizontal", "left/right"):
+        is_next = dx >= 0
+    elif mode in ("vertical", "up/down"):
+        is_next = dy >= 0
+    else:
+        is_next = dx >= 0 if abs(dx) >= abs(dy) else dy >= 0
+    if bool(invert):
+        is_next = not is_next
+    return "next" if is_next else "prev"
+
+
 @require(model="FileViewModel")
 def next_file(ctx, model, step: int = 1, loop: bool = False):
     if not _ensure_current_initialized(model):
@@ -55,6 +71,23 @@ def prev_file(ctx, model, step: int = 1, loop: bool = False):
     if not _ensure_current_initialized(model):
         return
     model.move_current_prev(step=int(step), loop=bool(loop))
+
+
+@require(model="FileViewModel")
+def navigate_file_by_mouse_position(ctx, model, axis: str = "left/right", invert: bool = False, loop: bool = False):
+    widget = getattr(ctx, "_widget", None)
+    global_pos = getattr(ctx, "global_pos", None)
+    if widget is None or global_pos is None or not hasattr(widget, "rect") or not hasattr(widget, "mapFromGlobal"):
+        Notifier.warning("Positional navigation requires a bound widget")
+        return
+    if not _ensure_current_initialized(model):
+        return
+    local_pos = widget.mapFromGlobal(global_pos)
+    direction = _nav_direction(local_pos, widget.rect().center(), axis=axis, invert=bool(invert))
+    if direction == "next":
+        model.move_current_next(step=1, loop=bool(loop))
+        return
+    model.move_current_prev(step=1, loop=bool(loop))
 
 
 @require(fv="FileViewerController")
@@ -153,6 +186,16 @@ class FileViewerCommands(ActionKit.MenuBase):
                 display="Next File",
                 func=next_file,
                 params=[ActionKit.Param(name="step", value=1), ActionKit.Param(name="loop", value=False)],
+            ),
+            ActionKit.Command(
+                path="fv.navigate_file_by_mouse_position",
+                display="Navigate by Mouse Position",
+                func=navigate_file_by_mouse_position,
+                params=[
+                    ActionKit.Param(name="axis", value=("left/right", "up/down"), default="left/right"),
+                    ActionKit.Param(name="invert", value=False),
+                    ActionKit.Param(name="loop", value=False),
+                ],
             ),
             "-",
             ActionKit.Command(

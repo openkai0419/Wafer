@@ -305,8 +305,20 @@ def show_recent_popup(ctx, tb):
 
 
 def new_window(ctx):
-    AppProcess.new_main("--viewer")
-    AppLogger.info("new_window: spawned new viewer")
+    try:
+        slot_id, _, existed = _store().reserve_next_window_slot()
+    except Exception as e:
+        AppLogger.warning(f"new_window: slot reservation failed, spawning viewer without slot: {e}", exc=e)
+        AppProcess.new_main("--viewer")
+        return
+    try:
+        AppProcess.new_main("--viewer", "--slot", slot_id)
+    except Exception as e:
+        _store().release_slot(slot_id)
+        AppLogger.warning(f"new_window: failed to spawn reserved slot ({slot_id}): {e}", exc=e)
+        raise
+    state = "reused" if existed else "new"
+    AppLogger.info(f"new_window: spawned viewer with {state} slot ({slot_id})")
 
 
 class WorkspaceCommands(ActionKit.MenuBase):

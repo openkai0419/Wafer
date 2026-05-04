@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.6.14]
+### Added
+- **Positional file navigation command** (`wafer/builtins/commands/content_viewer.py`, `_resources/mouse_bindings/standard.json`, `_resources/translations.json`): added `fv.navigate_file_by_mouse_position` with configurable axis and invert options so image, animated, and video viewers can move to the previous or next file based on the clicked side of the widget
+
+### Changed
+- **Workspace slot reservation for new windows** (`wafer/core/workspace.py`, `wafer/builtins/commands/workspace.py`): opening a new viewer now reserves the newest inactive workspace slot, skips active and restoring slots, and releases the reservation if process launch fails
+- **Default binding presets** (`_resources/key_bindings/standard.json`, `_resources/mouse_bindings/standard.json`): refreshed the shipped key and mouse presets with shortcuts for mark toggling, clipboard file actions, binding settings, panel solo mode, and mouse-position file navigation while moving video pause to middle click
+- **Portable build metadata** (`scripts/build.py`, `wafer/_version.py`): portable builds now ship `README.jp.md` and `cleanup.bat`, and the fallback version string was updated from a stale development identifier to `0.6.13`
+
 ## [v0.6.13]
 ### Changed
 - **Worker shutdown lifecycle** (`wafer/plugin/registry.py`, `wafer/app/collector/worker.py`, `wafer/app/parser/worker.py`, `wafer/app/indexer/dispatcher.py`, `wafer/app/indexer/parser_dispatcher.py`, `wafer/app/indexer/worker_shutdown.py`, `wafer/core/platform/process.py`): added plugin `shutdown()` hooks, `worker.shutdown` requests, and process-tree termination so collector/parser workers can stop cleanly before forced shutdown

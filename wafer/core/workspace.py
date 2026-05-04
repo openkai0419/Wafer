@@ -456,6 +456,36 @@ class WorkspaceStore:
 
         self._locked_update(_u)
 
+    def reserve_next_window_slot(self, seed: dict[str, Any] | None = None) -> tuple[str, WindowSlot, bool]:
+        def _u(raw):
+            slots = raw.setdefault("slots", {})
+            active = raw.setdefault("active_slot_ids", [])
+            active_set = set(active)
+            reserved = active_set | set(raw.get("restore_slot_ids", []))
+            reusable = []
+            for sid, data in slots.items():
+                if sid in reserved:
+                    continue
+                reusable.append(WindowSlot.from_dict(data))
+            reusable.sort(key=lambda s: s.updated_at, reverse=True)
+            if reusable:
+                entry = reusable[0]
+                existed = True
+            else:
+                base = seed or {}
+                entry = WindowSlot(
+                    ui=dict(base.get("ui") or {}),
+                    path=dict(base.get("path") or {}),
+                    query=dict(base.get("query") or {}),
+                )
+                slots[entry.slot_id] = entry.to_dict()
+                existed = False
+            if entry.slot_id not in active_set:
+                active.append(entry.slot_id)
+            return entry.slot_id, entry, existed
+
+        return self._locked_update(_u)
+
     def acquire_slot(self, slot_id: str | None = None, seed: dict[str, Any] | None = None) -> tuple[str, WindowSlot, bool]:
         """Acquire an existing slot or create a new one.
 

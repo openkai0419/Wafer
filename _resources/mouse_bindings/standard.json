@@ -8,7 +8,9 @@
       "key": {"button": "LEFT", "click": "SINGLE", "held": [], "modifiers": []},
       "scopes": {
         "GridView": {"id": "grid.click_select_at_pos", "args": {}},
-        "VideoView": {"id": "vview.toggle_pause", "args": {}}
+        "VideoView": {"id": "fv.navigate_file_by_mouse_position", "args": {}},
+        "AnimatedView": {"id": "fv.navigate_file_by_mouse_position", "args": {}},
+        "ImageView": {"id": "fv.navigate_file_by_mouse_position", "args": {}}
       }
     },
     {
@@ -34,19 +36,13 @@
     {
       "key": {"button": "X1", "click": "SINGLE", "held": [], "modifiers": []},
       "scopes": {
-        "ImageView": {"id": "fv.prev_file", "args": {}},
-        "GridView": {"id": "grid.move_to_prev_row", "args": {}},
-        "VideoView": {"id": "fv.prev_file", "args": {}},
-        "AnimatedView": {"id": "fv.prev_file", "args": {}}
+        "GridView": {"id": "grid.move_to_prev_row", "args": {}}
       }
     },
     {
       "key": {"button": "X2", "click": "SINGLE", "held": [], "modifiers": []},
       "scopes": {
-        "ImageView": {"id": "fv.next_file", "args": {}},
-        "GridView": {"id": "grid.move_to_next_row", "args": {}},
-        "VideoView": {"id": "fv.next_file", "args": {}},
-        "AnimatedView": {"id": "fv.next_file", "args": {}}
+        "GridView": {"id": "grid.move_to_next_row", "args": {}}
       }
     },
     {
@@ -83,7 +79,10 @@
     },
     {
       "key": {"button": "MIDDLE", "click": "SINGLE", "held": [], "modifiers": []},
-      "scopes": {"GridView": {"id": "grid.toggle_autoscroll", "args": {}}}
+      "scopes": {
+        "GridView": {"id": "grid.toggle_autoscroll", "args": {}},
+        "VideoView": {"id": "vview.toggle_pause", "args": {}}
+      }
     },
     {
       "key": {"button": "MIDDLE", "click": "SINGLE", "held": ["RIGHT"], "modifiers": []},
@@ -91,11 +90,7 @@
     },
     {
       "key": {"button": "LEFT", "click": "DOUBLE", "held": [], "modifiers": []},
-      "scopes": {
-        "GridView": {"id": "grid.show_at_pos", "args": {}},
-        "ImageView": {"id": "file.open", "args": {}},
-        "AnimatedView": {"id": "file.open", "args": {}}
-      }
+      "scopes": {"GridView": {"id": "grid.show_at_pos", "args": {}}}
     },
     {
       "key": {"button": "LEFT", "click": "DRAG_START", "held": [], "modifiers": []},

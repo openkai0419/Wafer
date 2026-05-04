@@ -4,7 +4,7 @@ import re
 import subprocess
 import sys
 
-FALLBACK_VERSION = "0.6.3.dev1+gdb641fe"
+FALLBACK_VERSION = "0.6.13"
 
 _NO_WINDOW = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
 

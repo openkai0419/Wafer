@@ -121,6 +121,21 @@ class TestExifToolCollector:
         mock_timer.cancel.assert_called_once()
         assert plugin._idle_timer is None
 
+    def test_shutdown_stops_process_and_timer_once(self):
+        plugin = ExifToolCollectorPlugin()
+        mock_proc = MagicMock()
+        mock_timer = MagicMock()
+        plugin._process = mock_proc
+        plugin._idle_timer = mock_timer
+
+        plugin.shutdown()
+        plugin.shutdown()
+
+        mock_proc.stop.assert_called_once()
+        mock_timer.cancel.assert_called_once()
+        assert plugin._process is None
+        assert plugin._idle_timer is None
+
     def test_blacklist_filter_excludes_keys(self):
         plugin = ExifToolCollectorPlugin()
         mock_proc = MagicMock()

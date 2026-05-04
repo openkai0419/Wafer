@@ -28,9 +28,11 @@ class CollectorWorker:
         self._node.subscribe("collect.batch", self._handle_batch)
         self._node.subscribe("plugin.notify", self._on_notify)
         self._node.subscribe("service.request", self._on_service_request)
+        self._node.subscribe("worker.shutdown", self._on_shutdown)
         self._chunk_timeout = collector_resolver.chunk_timeout(plugin_name)
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=_MAX_WORKERS)
         self._stop = threading.Event()
+        self._plugin_shutdown = threading.Event()
         self._batch_queue: queue.Queue = queue.Queue()
         self._batch_thread = threading.Thread(target=self._batch_loop, daemon=True)
 
@@ -44,6 +46,9 @@ class CollectorWorker:
         self._stop.set()
         self._batch_queue.put(None)
         self._executor.shutdown(wait=True, cancel_futures=True)
+        if self._batch_thread.is_alive():
+            self._batch_thread.join(timeout=_SHUTDOWN_WAIT)
+        self._shutdown_plugin()
         self._node.stop()
         AppLogger.info(f"CollectorWorker stopped: plugin={self.plugin_name}")
 
@@ -65,6 +70,21 @@ class CollectorWorker:
             result = {"error": str(e)}
         self._node.enqueue(msg.reply(result))
         return True
+
+    def _on_shutdown(self, msg) -> bool:
+        self._stop.set()
+        self._batch_queue.put(None)
+        AppLogger.info(f"[Collector] Shutdown requested: {self.plugin_name}")
+        return True
+
+    def _shutdown_plugin(self):
+        if self._plugin_shutdown.is_set():
+            return
+        self._plugin_shutdown.set()
+        try:
+            self._plugin.shutdown()
+        except Exception as e:
+            AppLogger.warning(f"[Collector] plugin shutdown failed: {self.plugin_name}", exc=e)
 
     def _handle_batch(self, msg) -> bool:
         if self._stop.is_set():

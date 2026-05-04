@@ -2,6 +2,52 @@ import pytest
 from extensions.exiftool.parser import flatten, _parse_json_output
 
 
+class _Pipe:
+    def __init__(self, fail_write=False):
+        self.fail_write = fail_write
+        self.closed = False
+
+    def write(self, _value):
+        if self.fail_write:
+            raise OSError("pipe closed")
+
+    def flush(self):
+        pass
+
+    def close(self):
+        self.closed = True
+
+
+class _Proc:
+    pid = 12345
+
+    def __init__(self):
+        self.stdin = _Pipe(fail_write=True)
+        self.stdout = _Pipe()
+
+    def wait(self, timeout=None):
+        return 0
+
+
+def test_exiftool_process_stop_fallback_terminates_tree(monkeypatch):
+    from extensions.exiftool.parser import ExifToolProcess
+    from extensions.exiftool import parser as parser_module
+
+    calls = []
+    proc = _Proc()
+    tool = ExifToolProcess("exiftool.exe")
+    tool._proc = proc
+
+    monkeypatch.setattr(parser_module.psutil, "Process", lambda pid: f"ps-{pid}")
+    monkeypatch.setattr(parser_module.AppProcess, "terminate_tree", lambda processes, timeout=1, kill_timeout=2: calls.append((processes, timeout, kill_timeout)))
+
+    tool.stop()
+
+    assert calls == [(["ps-12345"], 1, 2)]
+    assert proc.stdin.closed is True
+    assert proc.stdout.closed is True
+
+
 class TestParseJsonOutput:
     def test_valid_json(self):
         raw = '[{"SourceFile": "test.jpg", "IFD0:Make": "Canon"}]'

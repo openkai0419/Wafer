@@ -13,6 +13,7 @@ from .db_writer import DatabaseWriter
 from .progress_notifier import ProgressAggregator
 from .scheduler import TaskScheduler
 from .task import Task, TaskPriority
+from .worker_shutdown import WORKER_SHUTDOWN_TIMEOUT, wait_worker_stopped
 
 _DISPATCH_INTERVAL = 2.0
 
@@ -124,8 +125,24 @@ class ParserDispatcher:
 
     def _terminate_parsers(self):
         for plugin in self._per_indexer:
-            AppProcess.terminate_cmd("--parser", self._db_name, "--plugin", plugin)
+            self._request_parser_shutdown(plugin)
+        for plugin in self._per_indexer:
+            if not self._wait_parser_stopped(plugin, WORKER_SHUTDOWN_TIMEOUT):
+                AppProcess.terminate_cmd("--parser", self._db_name, "--plugin", plugin, recursive=True)
         AppLogger.info(f"[ParserDispatcher] Terminated per-indexer parsers for db={self._db_name}")
+
+    def _request_parser_shutdown(self, plugin: str):
+        if self._node is None:
+            return
+        self._node.send(
+            "worker.shutdown",
+            {"plugin": plugin},
+            dst=f"parser-{plugin}",
+            db=self._db_name,
+        )
+
+    def _wait_parser_stopped(self, plugin: str, timeout: float) -> bool:
+        return wait_worker_stopped("parser", self._db_name, plugin, timeout)
 
     def _dispatch_loop(self):
         while not self._stop.is_set():

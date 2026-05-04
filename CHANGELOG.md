@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.6.13]
+### Changed
+- **Worker shutdown lifecycle** (`wafer/plugin/registry.py`, `wafer/app/collector/worker.py`, `wafer/app/parser/worker.py`, `wafer/app/indexer/dispatcher.py`, `wafer/app/indexer/parser_dispatcher.py`, `wafer/app/indexer/worker_shutdown.py`, `wafer/core/platform/process.py`): added plugin `shutdown()` hooks, `worker.shutdown` requests, and process-tree termination so collector/parser workers can stop cleanly before forced shutdown
+- **Viewer toolbar and combo-box interaction** (`wafer/app/viewer/mainwindow.py`, `wafer/app/viewer/widgets/combo_with_buttons.py`): reordered the main toolbar buttons and made `ComboBoxWithButtons` ignore mouse-wheel input to prevent accidental selection changes while scrolling
+
+### Fixed
+- **Lingering extension worker resources** (`extensions/exiftool/collector.py`, `extensions/exiftool/parser.py`, `extensions/ai_tagger/collector.py`, `extensions/florence/collector.py`, `extensions/zip/collector.py`): ExifTool, ZIP, and ML collectors now stop idle timers, caches, cache sweep tasks, and subprocess trees during worker shutdown instead of leaving background resources alive
+
 ## [v0.6.12]
 ### Added
 - **Drop operation chooser and preference** (`wafer/core/platform/paste.py`, `wafer/ui/dialogs.py`, `wafer/builtins/commands/grid.py`, `wafer/app/viewer/widgets/foldertree.py`): added a copy/move chooser for GridView and folder-tree drops, persisted the selected default drop operation, and exposed ask-mode drop handling that previews using the saved mode

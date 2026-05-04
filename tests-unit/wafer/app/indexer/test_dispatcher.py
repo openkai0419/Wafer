@@ -1,5 +1,5 @@
 import py_compile
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from wafer.app.indexer.dispatcher import CollectorDispatcher, _DISPATCH_INTERVAL
 from wafer.plugin.collector.handler import collector_resolver
@@ -159,3 +159,42 @@ def test_singleton_started_tracking(tmp_path):
     db_path = tmp_path / "test.db"
     dispatcher = CollectorDispatcher("testdb", db_path, scheduler, writer, progress, collectors=["exif"])
     assert "exif" in dispatcher._per_indexer
+
+
+def test_terminate_collectors_requests_shutdown_before_fallback(tmp_path):
+    scheduler = MagicMock()
+    writer = MagicMock()
+    progress = MagicMock()
+    db_path = tmp_path / "test.db"
+    dispatcher = CollectorDispatcher("testdb", db_path, scheduler, writer, progress, collectors=["exif"])
+    dispatcher._node = MagicMock()
+
+    with patch.object(dispatcher, "_wait_collector_stopped", return_value=False), patch(
+        "wafer.app.indexer.dispatcher.AppProcess.terminate_cmd"
+    ) as terminate_cmd:
+        dispatcher._terminate_collectors()
+
+    dispatcher._node.send.assert_called_once_with(
+        "worker.shutdown",
+        {"plugin": "exif"},
+        dst="collector-exif",
+        db="testdb",
+    )
+    terminate_cmd.assert_called_once_with("--collector", "testdb", "--plugin", "exif", recursive=True)
+
+
+def test_terminate_collectors_skips_fallback_when_graceful_stop_succeeds(tmp_path):
+    scheduler = MagicMock()
+    writer = MagicMock()
+    progress = MagicMock()
+    db_path = tmp_path / "test.db"
+    dispatcher = CollectorDispatcher("testdb", db_path, scheduler, writer, progress, collectors=["exif"])
+    dispatcher._node = MagicMock()
+
+    with patch.object(dispatcher, "_wait_collector_stopped", return_value=True), patch(
+        "wafer.app.indexer.dispatcher.AppProcess.terminate_cmd"
+    ) as terminate_cmd:
+        dispatcher._terminate_collectors()
+
+    dispatcher._node.send.assert_called_once()
+    terminate_cmd.assert_not_called()

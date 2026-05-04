@@ -4,7 +4,9 @@ import json
 import os
 import subprocess
 import threading
+import psutil
 
+from wafer.core.platform.process import AppProcess
 from wafer.utils.logs import AppLogger
 
 _QUERY_TIMEOUT = 30
@@ -58,14 +60,14 @@ class ExifToolProcess:
                 return
             self._proc = None
         try:
-            proc.stdin.write("-stay_open\nFalse\n")
-            proc.stdin.flush()
+            if proc.stdin:
+                proc.stdin.write("-stay_open\nFalse\n")
+                proc.stdin.flush()
             proc.wait(timeout=5)
         except (BrokenPipeError, OSError, subprocess.TimeoutExpired):
-            try:
-                proc.kill()
-            except OSError:
-                pass
+            self._terminate_proc_tree(proc)
+        finally:
+            self._close_pipes(proc)
 
     def query(self, path: str) -> dict | None:
         with self._lock:
@@ -114,8 +116,24 @@ class ExifToolProcess:
         proc = self._proc
         self._proc = None
         if proc:
+            self._terminate_proc_tree(proc)
+            self._close_pipes(proc)
+
+    @staticmethod
+    def _terminate_proc_tree(proc: subprocess.Popen):
+        try:
+            ps_proc = psutil.Process(proc.pid)
+        except psutil.NoSuchProcess:
+            return
+        AppProcess.terminate_tree([ps_proc], timeout=1, kill_timeout=2)
+
+    @staticmethod
+    def _close_pipes(proc: subprocess.Popen):
+        for pipe in (proc.stdin, proc.stdout):
+            if pipe is None:
+                continue
             try:
-                proc.kill()
+                pipe.close()
             except OSError:
                 pass
 

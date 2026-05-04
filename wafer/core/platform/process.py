@@ -101,11 +101,13 @@ class AppProcess:
         return ProcessMatcher(cls.base_command() + list(args)).start_if_not_running(**popen_kwargs)
 
     @classmethod
-    def terminate_cmd(cls, *args, compare="subset", wait=False, timeout=5, kill_timeout=3):
+    def terminate_cmd(cls, *args, compare="subset", wait=False, timeout=5, kill_timeout=3, recursive=False):
         matcher = ProcessMatcher(cls.base_command() + list(args))
         procs = matcher.find_by_args_subset() if compare == "subset" else matcher.find_by_args_exact()
         AppLogger.info(f"terminate_cmd: {len(procs)} processes found (wait={wait})")
-        if wait:
+        if recursive:
+            cls.terminate_tree(procs, timeout=timeout, kill_timeout=kill_timeout)
+        elif wait:
             cls.terminate_and_wait(procs, timeout=timeout, kill_timeout=kill_timeout)
         else:
             cls.terminate(procs)
@@ -140,6 +142,25 @@ class AppProcess:
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
         psutil.wait_procs(alive, timeout=kill_timeout)
+
+    @staticmethod
+    def collect_process_tree(processes):
+        by_pid = {}
+        for process in processes:
+            try:
+                by_pid[process.pid] = process
+                for child in process.children(recursive=True):
+                    by_pid[child.pid] = child
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        return list(by_pid.values())
+
+    @classmethod
+    def terminate_tree(cls, processes, timeout=5, kill_timeout=3):
+        tree = cls.collect_process_tree(processes)
+        if not tree:
+            return
+        cls.terminate_and_wait(tree, timeout=timeout, kill_timeout=kill_timeout)
 
     @staticmethod
     def shutdown_children(timeout=5, kill_timeout=3):

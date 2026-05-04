@@ -126,6 +126,16 @@ class FlorenceCollector(BaseSingletonCollector):
             AppLogger.info(f"Florence-2 engine unloaded for variant switch: {old_variant} -> {new_variant}")
         AppLogger.info(f"Florence-2 settings reloaded (caches cleared): {self._settings}")
 
+    def shutdown(self):
+        if self._idle_timer is not None:
+            self._idle_timer.cancel()
+            self._idle_timer = None
+        with self._engine_lock:
+            self._engine = None
+            self._loaded_variant = None
+        self._hash_cache.clear()
+        self._pixel_cache.clear()
+
     def on_request(self, action, payload, msg):
         if action == "florence.preview":
             return self._handle_preview(payload)

@@ -23,6 +23,9 @@ class PluginBase:
     def configure(cls):
         pass
 
+    def shutdown(self):
+        pass
+
 
 class BasePlugin(PluginBase, ABC):
     EXTENSIONS: tuple[str, ...] = ()

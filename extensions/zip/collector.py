@@ -21,6 +21,9 @@ class ZipCollectorPlugin(BaseSingletonCollector):
     DEFAULT_ENABLED = True
     BATCH_SIZE = 1
 
+    def shutdown(self):
+        zip_cache.stop_idle_sweep()
+
     def process(self, path: str, file_info: tuple) -> list[CollectorResult]:
         try:
             entries = list_entries(path)

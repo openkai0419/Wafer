@@ -1,4 +1,16 @@
 {
+  "HEAVY Extension": {
+    "en": "HEAVY Extension",
+    "ja": ""
+  },
+  "Multiple HEAVY extensions are enabled:": {
+    "en": "Multiple HEAVY extensions are enabled:",
+    "ja": ""
+  },
+  "This may cause high GPU usage or instability.": {
+    "en": "This may cause high GPU usage or instability.",
+    "ja": ""
+  },
   "Panel solo failed": {
     "en": "Panel solo failed",
     "ja": ""

@@ -33,6 +33,7 @@ def test_notify_subscribed():
     name = next(iter(names))
     worker = ParserWorker("test_db", name)
     assert "plugin.notify" in worker._node._handlers
+    assert "worker.shutdown" in worker._node._handlers
 
 
 def test_on_notify_calls_plugin():
@@ -44,6 +45,14 @@ def test_on_notify_calls_plugin():
 
     worker._plugin.on_notify.assert_called_once()
     assert result is True
+
+
+def test_worker_shutdown_message_sets_stop():
+    worker = _make_worker()
+    mock_msg = MagicMock()
+    result = worker._on_shutdown(mock_msg)
+    assert result is True
+    assert worker._stop.is_set()
 
 
 def test_handle_batch_rejects_when_stopped():
@@ -67,6 +76,22 @@ def test_shutdown_cancel_futures():
     worker._node.stop = MagicMock()
     worker.stop()
     assert worker._stop.is_set()
+
+
+def test_stop_calls_plugin_shutdown_once():
+    worker = _make_worker()
+    worker._plugin.shutdown = MagicMock()
+    worker.stop()
+    worker.stop()
+    worker._plugin.shutdown.assert_called_once()
+
+
+def test_stop_continues_when_plugin_shutdown_fails():
+    worker = _make_worker()
+    worker._plugin.shutdown = MagicMock(side_effect=RuntimeError("boom"))
+    worker.stop()
+    assert worker._stop.is_set()
+    worker._node.stop.assert_called()
 
 
 def test_constants():

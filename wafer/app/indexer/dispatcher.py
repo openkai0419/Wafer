@@ -13,6 +13,7 @@ from .db_writer import DatabaseWriter
 from .progress_notifier import ProgressAggregator
 from .scheduler import TaskScheduler
 from .task import Task, TaskPriority
+from .worker_shutdown import WORKER_SHUTDOWN_TIMEOUT, wait_worker_stopped
 
 _DISPATCH_INTERVAL = 2.0
 
@@ -122,8 +123,24 @@ class CollectorDispatcher:
 
     def _terminate_collectors(self):
         for plugin in self._per_indexer:
-            AppProcess.terminate_cmd("--collector", self._db_name, "--plugin", plugin)
+            self._request_collector_shutdown(plugin)
+        for plugin in self._per_indexer:
+            if not self._wait_collector_stopped(plugin, WORKER_SHUTDOWN_TIMEOUT):
+                AppProcess.terminate_cmd("--collector", self._db_name, "--plugin", plugin, recursive=True)
         AppLogger.info(f"[Dispatcher] Terminated per-indexer collectors for db={self._db_name}")
+
+    def _request_collector_shutdown(self, plugin: str):
+        if self._node is None:
+            return
+        self._node.send(
+            "worker.shutdown",
+            {"plugin": plugin},
+            dst=f"collector-{plugin}",
+            db=self._db_name,
+        )
+
+    def _wait_collector_stopped(self, plugin: str, timeout: float) -> bool:
+        return wait_worker_stopped("collector", self._db_name, plugin, timeout)
 
     def _dispatch_loop(self):
         while not self._stop.is_set():

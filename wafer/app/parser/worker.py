@@ -27,8 +27,10 @@ class ParserWorker:
         self._node = Node(f"parser-{plugin_name}", db=node_db, broker_lost_timeout=BROKER_LOST_TIMEOUT)
         self._node.subscribe("parse.batch", self._handle_batch)
         self._node.subscribe("plugin.notify", self._on_notify)
+        self._node.subscribe("worker.shutdown", self._on_shutdown)
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=_MAX_WORKERS)
         self._stop = threading.Event()
+        self._plugin_shutdown = threading.Event()
 
     def start(self):
         self._node.start()
@@ -38,6 +40,7 @@ class ParserWorker:
     def stop(self):
         self._stop.set()
         self._executor.shutdown(wait=True, cancel_futures=True)
+        self._shutdown_plugin()
         self._node.stop()
         AppLogger.info(f"ParserWorker stopped: plugin={self.plugin_name}")
 
@@ -48,6 +51,20 @@ class ParserWorker:
         self._plugin.on_notify(msg.payload if isinstance(msg.payload, dict) else None)
         AppLogger.info(f"[Parser] Notified: {self.plugin_name}")
         return True
+
+    def _on_shutdown(self, msg) -> bool:
+        self._stop.set()
+        AppLogger.info(f"[Parser] Shutdown requested: {self.plugin_name}")
+        return True
+
+    def _shutdown_plugin(self):
+        if self._plugin_shutdown.is_set():
+            return
+        self._plugin_shutdown.set()
+        try:
+            self._plugin.shutdown()
+        except Exception as e:
+            AppLogger.warning(f"[Parser] plugin shutdown failed: {self.plugin_name}", exc=e)
 
     def _handle_batch(self, msg) -> bool:
         if self._stop.is_set():

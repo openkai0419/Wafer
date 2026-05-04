@@ -57,16 +57,13 @@ class ExifToolCollectorPlugin(BaseCollectorPlugin):
         self._load_filter()
 
     def on_notify(self, payload=None) -> None:
-        if self._idle_timer is not None:
-            self._idle_timer.cancel()
-            self._idle_timer = None
-        with self._process_lock:
-            if self._process:
-                self._process.stop()
-                self._process = None
+        self._close_process()
         self._exe_path = None
         self._load_filter()
         AppLogger.info(f"[ExifToolCollector] Reloaded: mode={self._filter_mode}, {len(self._filter_keys)} keys")
+
+    def shutdown(self):
+        self._close_process()
 
     def _touch(self):
         self._last_used = time.monotonic()
@@ -89,6 +86,20 @@ class ExifToolCollectorPlugin(BaseCollectorPlugin):
             self._process.stop()
             self._process = None
             AppLogger.info("[ExifToolCollector] Process stopped (idle timeout)")
+
+    def _close_process(self):
+        if self._idle_timer is not None:
+            self._idle_timer.cancel()
+            self._idle_timer = None
+        with self._process_lock:
+            process = self._process
+            self._process = None
+        if process is None:
+            return
+        try:
+            process.stop()
+        except Exception as e:
+            AppLogger.warning("[ExifToolCollector] Process shutdown failed", exc=e)
 
     def _ensure_process(self):
         from .parser import ExifToolProcess
@@ -151,7 +162,7 @@ class ExifToolCollectorPlugin(BaseCollectorPlugin):
             self._filter_keys = set()
 
     def __del__(self):
-        if self._idle_timer is not None:
-            self._idle_timer.cancel()
-        if self._process:
-            self._process.stop()
+        try:
+            self.shutdown()
+        except Exception:
+            pass

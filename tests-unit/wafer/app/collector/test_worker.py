@@ -216,6 +216,63 @@ def test_on_notify_calls_plugin(make_worker):
 def test_notify_subscribed(make_worker):
     worker = make_worker()
     assert "plugin.notify" in worker._node._handlers
+    assert "worker.shutdown" in worker._node._handlers
+
+
+def test_worker_shutdown_message_sets_stop(make_worker):
+    from unittest.mock import MagicMock
+
+    worker = make_worker()
+    msg = MagicMock()
+    result = worker._on_shutdown(msg)
+    assert result is True
+    assert worker._stop.is_set()
+
+
+def test_stop_calls_plugin_shutdown_once(make_worker):
+    from unittest.mock import MagicMock
+
+    worker = make_worker()
+    worker._node = MagicMock()
+    worker._plugin.shutdown = MagicMock()
+
+    worker.stop()
+    worker.stop()
+
+    worker._plugin.shutdown.assert_called_once()
+
+
+def test_stop_shuts_down_executor_before_join(make_worker):
+    from unittest.mock import MagicMock
+
+    worker = make_worker()
+    worker._node = MagicMock()
+    worker._plugin.shutdown = MagicMock()
+    events = []
+
+    worker._executor.shutdown = lambda **kwargs: events.append(("executor.shutdown", kwargs))
+    worker._batch_thread.is_alive = lambda: True
+    worker._batch_thread.join = lambda timeout=None: events.append(("batch.join", timeout))
+
+    worker.stop()
+
+    assert events[:2] == [
+        ("executor.shutdown", {"wait": True, "cancel_futures": True}),
+        ("batch.join", _SHUTDOWN_WAIT),
+    ]
+
+
+def test_stop_continues_when_plugin_shutdown_fails(make_worker):
+    from unittest.mock import MagicMock
+
+    worker = make_worker()
+    worker._node = MagicMock()
+    worker._plugin.shutdown = MagicMock(side_effect=RuntimeError("boom"))
+
+    worker.stop()
+
+    assert worker._stop.is_set()
+    worker._node.stop.assert_called()
 
 
 def test_constants():

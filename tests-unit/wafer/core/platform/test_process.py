@@ -79,5 +79,37 @@ def test_app_process_terminate_and_wait_kills_process():
             pass
 
 
+def test_app_process_terminate_tree_kills_descendants():
+    import subprocess
+    import time
+
+    code = (
+        "import subprocess, sys, time; "
+        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)']); "
+        "print(child.pid, flush=True); "
+        "time.sleep(60)"
+    )
+    proc = subprocess.Popen(
+        [sys.executable, "-c", code],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+    child_pid = int(proc.stdout.readline().strip())
+    try:
+        ps = psutil.Process(proc.pid)
+        assert psutil.pid_exists(child_pid)
+        AppProcess.terminate_tree([ps], timeout=3, kill_timeout=2)
+        time.sleep(0.3)
+        assert not psutil.pid_exists(child_pid)
+    finally:
+        for pid in (child_pid, proc.pid):
+            if psutil.pid_exists(pid):
+                try:
+                    psutil.Process(pid).kill()
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+
+
 def test_app_process_shutdown_children():
     AppProcess.shutdown_children()

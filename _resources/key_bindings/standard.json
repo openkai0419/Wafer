@@ -1,14 +1,6 @@
 {
   "items": [
     {
-      "key": {"key": "H"},
-      "scopes": {"*": {"id": "mousebind", "args": {}}}
-    },
-    {
-      "key": {"key": "A"},
-      "scopes": {"GridView": {"id": "grid.select_all", "args": {}}}
-    },
-    {
       "key": {"key": "Down"},
       "scopes": {"*": {"id": "fv.next_file", "args": {}}}
     },
@@ -23,6 +15,38 @@
     {
       "key": {"key": "Up"},
       "scopes": {"*": {"id": "fv.prev_file", "args": {}}}
+    },
+    {
+      "key": {"key": "1"},
+      "scopes": {"*": {"id": "mark.toggle", "args": {}}}
+    },
+    {
+      "key": {"modifier": "Control", "key": "X"},
+      "scopes": {"*": {"id": "file.cut", "args": {}}}
+    },
+    {
+      "key": {"modifier": "Control", "key": "V"},
+      "scopes": {"*": {"id": "file.paste", "args": {}}}
+    },
+    {
+      "key": {"modifier": "Control", "key": "C"},
+      "scopes": {"*": {"id": "file.copy", "args": {}}}
+    },
+    {
+      "key": {"key": "K"},
+      "scopes": {"*": {"id": "setting.keybind", "args": {}}}
+    },
+    {
+      "key": {"modifier": "Control", "key": "N"},
+      "scopes": {"*": {"id": "file.new_folder", "args": {}}}
+    },
+    {
+      "key": {"key": "M"},
+      "scopes": {"*": {"id": "setting.mousebind", "args": {}}}
+    },
+    {
+      "key": {"key": "Space"},
+      "scopes": {"*": {"id": "panel.solo_current", "args": {}}}
     }
   ]
 }

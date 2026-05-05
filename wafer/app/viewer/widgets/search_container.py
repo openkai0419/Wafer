@@ -20,7 +20,6 @@ class FilterRow(QtWidgets.QWidget):
     changed = QtCore.Signal()
     remove_requested = QtCore.Signal(object)
     context_requested = QtCore.Signal(object, QtCore.QPoint)
-    param_selection_requested = QtCore.Signal(object, object)
 
     def __init__(self, filter_cls, show_op=True, key_store=None, parent=None):
         super().__init__(parent)
@@ -67,8 +66,6 @@ class FilterRow(QtWidgets.QWidget):
             self._param_widget = widget
             if hasattr(widget, "changed"):
                 widget.changed.connect(self.changed)
-            if hasattr(widget, "selection_requested"):
-                widget.selection_requested.connect(lambda _source=None, w=widget: self.param_selection_requested.emit(self, w))
             if self._key_store:
                 cls.bind_key_store(widget, self._key_store)
             self.layout().replaceWidget(self._widget_placeholder, widget)
@@ -294,7 +291,6 @@ class SearchContainer(QtWidgets.QWidget):
         row.changed.connect(self._on_row_changed)
         row.remove_requested.connect(self._on_remove_row)
         row.context_requested.connect(self._show_row_menu)
-        row.param_selection_requested.connect(self._on_param_selection_requested)
         if inherited and row.get_param_widget():
             filter_cls.write_params(row.get_param_widget(), inherited)
         self._rows.insert(index, row)
@@ -320,21 +316,23 @@ class SearchContainer(QtWidgets.QWidget):
     def _on_row_changed(self):
         self.filter_changed.emit()
 
-    def _on_param_selection_requested(self, active_row: FilterRow, active_widget: QtWidgets.QWidget):
-        for row in self._rows:
-            widget = row.get_param_widget()
-            if row is active_row or widget is active_widget or not hasattr(widget, "clear_selection"):
-                continue
-            widget.clear_selection()
-
-    def selected_param_widget(self, filter_name: str | None = None) -> QtWidgets.QWidget | None:
+    def filter_rows(self, filter_name: str | None = None, *, enabled_only: bool = False) -> list[FilterRow]:
+        rows: list[FilterRow] = []
         for row in self._rows:
             if filter_name is not None and getattr(row.filter_cls, "NAME", None) != filter_name:
                 continue
+            if enabled_only and not row.is_enabled():
+                continue
+            rows.append(row)
+        return rows
+
+    def param_widgets(self, filter_name: str | None = None, *, enabled_only: bool = False) -> list[QtWidgets.QWidget]:
+        widgets: list[QtWidgets.QWidget] = []
+        for row in self.filter_rows(filter_name, enabled_only=enabled_only):
             widget = row.get_param_widget()
-            if widget is not None and hasattr(widget, "has_selection") and widget.has_selection():
-                return widget
-        return None
+            if widget is not None:
+                widgets.append(widget)
+        return widgets
 
     def _show_row_menu(self, row: FilterRow, global_pos: QtCore.QPoint):
         self._build_row_menu(row).exec(global_pos)
@@ -575,7 +573,6 @@ class SearchContainer(QtWidgets.QWidget):
             row.changed.connect(self._on_row_changed)
             row.remove_requested.connect(self._on_remove_row)
             row.context_requested.connect(self._show_row_menu)
-            row.param_selection_requested.connect(self._on_param_selection_requested)
             if rd.get("params") and row.get_param_widget():
                 row.filter_cls.write_params(row.get_param_widget(), rd["params"])
             if not is_first and rd.get("op"):

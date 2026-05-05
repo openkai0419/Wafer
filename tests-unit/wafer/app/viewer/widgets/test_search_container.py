@@ -48,7 +48,6 @@ def _menu_labels(menu):
 
 class _SelectableParamWidget(QtWidgets.QWidget):
     changed = QtCore.Signal()
-    selection_requested = QtCore.Signal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -56,7 +55,6 @@ class _SelectableParamWidget(QtWidgets.QWidget):
 
     def select(self):
         self.selected = True
-        self.selection_requested.emit(self)
 
     def clear_selection(self):
         self.selected = False
@@ -795,17 +793,36 @@ class TestFilterInheritance:
 
 
 class TestSelectableParamWidgets:
-    def test_selection_is_exclusive_across_rows(self, qapp):
+    def test_filter_rows_returns_matching_rows(self, qapp):
+        container = SearchContainer()
+        container._on_remove_row(container._rows[0])
+        container._add_row(_SelectableFilter)
+        container._add_row(TextFilter)
+
+        rows = container.filter_rows("selectable")
+
+        assert len(rows) == 1
+        assert rows[0].filter_cls is _SelectableFilter
+
+    def test_param_widgets_returns_matching_widgets(self, qapp):
         container = SearchContainer()
         container._on_remove_row(container._rows[0])
         container._add_row(_SelectableFilter)
         container._add_row(_SelectableFilter)
-        first = container._rows[0].get_param_widget()
-        second = container._rows[1].get_param_widget()
 
-        first.select()
-        assert container.selected_param_widget("selectable") is first
+        widgets = container.param_widgets("selectable")
 
-        second.select()
-        assert first.has_selection() is False
-        assert container.selected_param_widget("selectable") is second
+        assert len(widgets) == 2
+        assert all(isinstance(widget, _SelectableParamWidget) for widget in widgets)
+
+    def test_param_widgets_can_filter_enabled_rows(self, qapp):
+        container = SearchContainer()
+        container._on_remove_row(container._rows[0])
+        container._add_row(_SelectableFilter)
+        container._add_row(_SelectableFilter)
+        container._rows[1].set_enabled(False)
+
+        widgets = container.param_widgets("selectable", enabled_only=True)
+
+        assert len(widgets) == 1
+        assert widgets[0] is container._rows[0].get_param_widget()

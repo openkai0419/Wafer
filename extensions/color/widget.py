@@ -3,6 +3,7 @@ from __future__ import annotations
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from wafer.core.color.theme import ThemeManager
+from wafer.core.commands.binding.instance_registry import InstanceRegistry
 from wafer.core.lang.manager import t
 from wafer.core.qt.icon_engine import themed_icon
 from wafer.ui.popups import PopupBase
@@ -22,7 +23,6 @@ _ROW_HEIGHT = 28
 
 class ColorFilterWidget(QtWidgets.QWidget):
     changed = QtCore.Signal()
-    selection_requested = QtCore.Signal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -108,19 +108,27 @@ class ColorFilterWidget(QtWidgets.QWidget):
             self._last_tolerance = row.tolerance()
         self.changed.emit()
 
+    def _clear_peer_selections(self):
+        search_container = InstanceRegistry.instance().get_one("SearchContainer")
+        if search_container is None or not hasattr(search_container, "param_widgets"):
+            return
+        for widget in search_container.param_widgets("color") or []:
+            if widget is self or not hasattr(widget, "clear_selection"):
+                continue
+            widget.clear_selection()
+
     def _select_row(self, row: object):
         if not isinstance(row, _ColorRow) or row not in self._rows:
             return
         if self._selected_row is row:
             row.set_selected(False)
             self._selected_row = None
-            self.selection_requested.emit(self)
             return
         if self._selected_row is not None and self._selected_row is not row:
             self._selected_row.set_selected(False)
         self._selected_row = row
         row.set_selected(True)
-        self.selection_requested.emit(self)
+        self._clear_peer_selections()
 
     def clear_selection(self):
         if self._selected_row is None:

@@ -16,6 +16,7 @@ from extensions.color.filter import ColorFilter
 from extensions.color.panel import _ColorButton
 from extensions.color.settings import APP_SETTINGS_KEY, ColorSettings, palette_keys
 from extensions.color.widget import ColorFilterWidget, _DEFAULT_TOLERANCE
+from wafer.core.commands.binding.instance_registry import InstanceRegistry
 
 
 @pytest.fixture()
@@ -285,6 +286,26 @@ def test_color_widget_selection_toggles_and_keeps_latest_only(color_widget):
     assert color_widget._selected_row is second
 
 
+def test_color_widget_clears_selection_on_peer_widgets(qapp):
+    first = ColorFilterWidget()
+    second = ColorFilterWidget()
+    container = SimpleNamespace(param_widgets=MagicMock(return_value=[first, second]))
+    registry = InstanceRegistry.instance()
+    original_get_one = registry.get_one
+    registry.get_one = lambda name: container if name == "SearchContainer" else original_get_one(name)
+
+    try:
+        first._select_row(first._rows[0])
+        assert first.has_selection() is True
+
+        second._select_row(second._rows[0])
+
+        assert first.has_selection() is False
+        assert second.has_selection() is True
+    finally:
+        registry.get_one = original_get_one
+
+
 def test_color_widget_swatch_click_selects_row_and_changes_color(color_widget):
     with pytest.MonkeyPatch.context() as monkeypatch:
         monkeypatch.setattr("extensions.color.widget.ColorPickerDialog.get_color", lambda *args, **kwargs: QtGui.QColor("#224466"))
@@ -379,34 +400,42 @@ def test_color_settings_popup_syncs_shared_palette_slots(qapp, monkeypatch):
 
 
 def test_apply_color_filter_appends_ratio_tolerance():
-    search = SimpleNamespace(apply_bars=MagicMock())
-    window = SimpleNamespace(search_row_widget=search, sync_service_from_ui=MagicMock(), search_service=SimpleNamespace(execute_if_auto=MagicMock()))
-    apply_color_filter.__wrapped__(None, w=window, hex_color="#ff0000", tolerance=1.0, mode="append_and", join="AND")
+    search = SimpleNamespace(param_widgets=MagicMock(return_value=[]), apply_bars=MagicMock())
+    apply_color_filter(search, hex_color="#ff0000", tolerance=1.0, mode="append_and", join="AND")
     bars = search.apply_bars.call_args.args[0]
     assert search.apply_bars.call_args.kwargs["mode"] == "append"
-    assert bars[0]["op"] == "AND"
-    assert bars[0]["params"]["mode"] == "AND"
+    assert "op" not in bars[0]
+    assert bars[0]["params"]["mode"] == "OR"
     assert bars[0]["params"]["colors"][0]["tolerance"] == pytest.approx(1.0)
 
 
 def test_apply_selected_color_noops_without_selection():
-    search = SimpleNamespace(selected_param_widget=MagicMock(return_value=None))
-    window = SimpleNamespace(search_row_widget=search, sync_service_from_ui=MagicMock(), search_service=SimpleNamespace(execute_if_auto=MagicMock()))
-    apply_selected_color.__wrapped__(None, w=window, hex_color="#ff0000")
-    window.sync_service_from_ui.assert_not_called()
+    search = SimpleNamespace(param_widgets=MagicMock(return_value=[]))
+    apply_selected_color(search, hex_color="#ff0000")
 
 
 def test_apply_selected_color_updates_selected_widget():
-    widget = SimpleNamespace(replace_selected_color=MagicMock(return_value=True))
-    search = SimpleNamespace(selected_param_widget=MagicMock(return_value=widget))
-    window = SimpleNamespace(search_row_widget=search, sync_service_from_ui=MagicMock(), search_service=SimpleNamespace(execute_if_auto=MagicMock()))
-    apply_selected_color.__wrapped__(None, w=window, hex_color="#ff0000")
+    widget = SimpleNamespace(has_selection=MagicMock(return_value=True), replace_selected_color=MagicMock(return_value=True))
+    search = SimpleNamespace(param_widgets=MagicMock(return_value=[widget]))
+    apply_selected_color(search, hex_color="#ff0000")
     widget.replace_selected_color.assert_called_once_with("#FF0000")
-    window.sync_service_from_ui.assert_called_once()
+
+
+def test_apply_color_filter_appends_to_last_color_widget(qapp):
+    first = ColorFilterWidget()
+    last = ColorFilterWidget()
+    search = SimpleNamespace(param_widgets=MagicMock(return_value=[first, last]), apply_bars=MagicMock())
+
+    apply_color_filter(search, hex_color="#112233", tolerance=0.25)
+
+    colors = last.read_params()["colors"]
+    assert colors[-1]["hex"] == "#112233".upper()
+    assert colors[-1]["tolerance"] == pytest.approx(0.25)
+    search.apply_bars.assert_not_called()
 
 
 def test_color_panel_context_menu_includes_apply_selected(qapp):
     button = _ColorButton("#224466")
     items = button._menu_items()
     actions = [item for item in items if hasattr(item, "display")]
-    assert [action.display for action in actions] == ["Apply to selected color", "Add as row AND", "Add as row OR"]
+    assert [action.display for action in actions] == ["Override selected color", "Add to color filter"]

@@ -104,7 +104,6 @@ EXPECTED_PLUGINS = {
     },
     "color": {
         ("collector", "ColorCollector"),
-        ("command", "ColorSearchCommands"),
         ("filter", "ColorFilter"),
         ("tag_panel", "ColorTagPanelPlugin"),
     },

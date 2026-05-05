@@ -1,64 +1,53 @@
 from __future__ import annotations
 
-from wafer.plugin import ActionKit, MenuGroup, require
+from wafer.core.commands.binding.instance_registry import InstanceRegistry
 
 from ._color import normalize_hex, normalize_tolerance
 
 
-@require(w="MainWindow")
-def apply_color_filter(ctx, w, hex_color: str = "", tolerance: float = 0.1, mode: str = "append_or", join: str = "OR"):
+def _color_widgets(search_row_widget) -> list:
+    if search_row_widget is None or not hasattr(search_row_widget, "param_widgets"):
+        return []
+    return [widget for widget in search_row_widget.param_widgets("color") if widget is not None]
+
+
+def _search_container(search_row_widget=None):
+    if search_row_widget is not None:
+        return search_row_widget
+    return InstanceRegistry.instance().get_one("SearchContainer")
+
+
+def apply_color_filter(search_row_widget=None, hex_color: str = "", tolerance: float = 0.1, mode: str = "append_or", join: str = "OR"):
+    search_row_widget = _search_container(search_row_widget)
+    if search_row_widget is None:
+        return
     hex_color = normalize_hex(hex_color)
     if not hex_color:
+        return
+    tolerance = normalize_tolerance(tolerance)
+    for widget in reversed(_color_widgets(search_row_widget)):
+        if not hasattr(widget, "add_color"):
+            continue
+        widget.add_color(hex_color, tolerance)
         return
     bar = {
         "filter": "color",
-        "params": {"colors": [{"hex": hex_color, "tolerance": normalize_tolerance(tolerance), "enabled": True}], "mode": str(join or "OR").upper()},
-        "op": "AND" if str(mode).lower() == "append_and" else "OR",
+        "params": {"colors": [{"hex": hex_color, "tolerance": tolerance, "enabled": True}], "mode": "OR"},
         "enabled": True,
     }
-    w.search_row_widget.apply_bars([bar], mode="append")
-    w.sync_service_from_ui()
-    w.search_service.execute_if_auto()
+    search_row_widget.apply_bars([bar], mode="append")
 
 
-@require(w="MainWindow")
-def apply_selected_color(ctx, w, hex_color: str = ""):
+def apply_selected_color(search_row_widget=None, hex_color: str = ""):
+    search_row_widget = _search_container(search_row_widget)
+    if search_row_widget is None:
+        return
     hex_color = normalize_hex(hex_color)
     if not hex_color:
         return
-    widget = w.search_row_widget.selected_param_widget("color")
-    if widget is None or not widget.replace_selected_color(hex_color):
+    for widget in reversed(_color_widgets(search_row_widget)):
+        if not hasattr(widget, "has_selection") or not widget.has_selection():
+            continue
+        if not hasattr(widget, "replace_selected_color") or not widget.replace_selected_color(hex_color):
+            return
         return
-    w.sync_service_from_ui()
-    w.search_service.execute_if_auto()
-
-
-class ColorSearchCommands(MenuGroup):
-    NAME = "Color"
-    PRIORITY = 1000
-    SCOPE = "viewer"
-    DEFAULT_ENABLED = True
-
-    @classmethod
-    def commands(cls):
-        return [
-            ActionKit.Command(
-                path="color.apply_filter",
-                display="Apply Color Filter",
-                hidden=True,
-                params=[
-                    ActionKit.Param(name="hex_color", value=""),
-                    ActionKit.Param(name="tolerance", value=0.1, min_value=0.0, max_value=1.0),
-                    ActionKit.Param(name="mode", value=["append_or", "append_and"]),
-                    ActionKit.Param(name="join", value=["OR", "AND"]),
-                ],
-                func=apply_color_filter,
-            ),
-            ActionKit.Command(
-                path="color.apply_selected_color",
-                display="Apply Selected Color",
-                hidden=True,
-                params=[ActionKit.Param(name="hex_color", value="")],
-                func=apply_selected_color,
-            ),
-        ]

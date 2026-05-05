@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PySide6 import QtCore, QtWidgets
 
-from wafer.core.commands.bridge import ActionKit, Command, Menu
+from wafer.core.commands.bridge import ActionKit, Menu
 from wafer.core.color.theme import ThemeManager
 from wafer.plugin import BaseTagPanelPlugin
 from wafer.ui.panel.meta_viewer import CollapsibleCard
@@ -10,6 +10,7 @@ from wafer.ui.widgets import FlowLayout
 from wafer.utils.formatting import dpix
 
 from ._color import packed_to_hex
+from .commands import apply_color_filter, apply_selected_color
 from .settings import ColorSettings, palette_keys
 
 
@@ -71,7 +72,7 @@ class _ColorButton(QtWidgets.QToolButton):
         self.setFixedSize(dpix(30), dpix(20))
         self.setCursor(QtCore.Qt.PointingHandCursor)
         self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
-        self.clicked.connect(lambda: Command.invoke("color.apply_selected_color", hex_color=self._hex))
+        self.clicked.connect(self._apply_selected)
         self.customContextMenuRequested.connect(self._show_menu)
         self._sync_style()
 
@@ -91,14 +92,13 @@ class _ColorButton(QtWidgets.QToolButton):
         uid = f"{id(self):x}"
         return [
             ":Color Search",
-            ActionKit.Action(path=f"inline.color.{uid}.apply_selected", display="Apply to selected color", func=lambda ctx: self._apply_selected()),
+            ActionKit.Action(path=f"inline.color.{uid}.apply_selected", display="Override selected color", func=lambda ctx: self._apply_selected()),
             "-",
-            ActionKit.Action(path=f"inline.color.{uid}.append_and", display="Add as row AND", func=lambda ctx: self._append("append_and")),
-            ActionKit.Action(path=f"inline.color.{uid}.append_or", display="Add as row OR", func=lambda ctx: self._append("append_or")),
+            ActionKit.Action(path=f"inline.color.{uid}.append", display="Add to color filter", func=lambda ctx: self._add_to_filter()),
         ]
 
     def _apply_selected(self):
-        Command.invoke("color.apply_selected_color", hex_color=self._hex)
+        apply_selected_color(hex_color=self._hex)
 
-    def _append(self, mode: str):
-        Command.invoke("color.apply_filter", hex_color=self._hex, tolerance=0.2, mode=mode, join="OR")
+    def _add_to_filter(self):
+        apply_color_filter(hex_color=self._hex, tolerance=0.2)

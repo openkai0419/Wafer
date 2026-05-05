@@ -89,6 +89,7 @@ extension は `extensions/` フォルダに配置するだけで `PluginLoader` 
 |---|---|---|
 | **exiftool** | jpg, png, webp, tiff, heic, avif, jxl, raw, psd 等 | ExifTool による汎用メタデータ抽出 |
 | **ffmpeg** | mp4, mkv, webm, mp3, flac, wav 等 | ffprobe による動画/音声メタデータ抽出 |
+| **zip** | zip | `.zip` を仮想子パスとして展開し、内包ファイルの表示を既存プラグインへ委譲 |
 | **color** | *（画像）* | 代表色の抽出、パレット表示、RGB距離による絞り込み |
 | **wd14** | *（画像）* | WD14 モデルによる自動タグ付け（ONNX, GPU 対応） |
 | **florence** | *（画像）* | Florence-2 による画像キャプション／タグ生成（GPU 対応） |

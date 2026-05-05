@@ -72,7 +72,7 @@ class _ColorButton(QtWidgets.QToolButton):
         self.setFixedSize(dpix(30), dpix(20))
         self.setCursor(QtCore.Qt.PointingHandCursor)
         self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
-        self.clicked.connect(self._apply_selected)
+        self.clicked.connect(self._add_to_filter)
         self.customContextMenuRequested.connect(self._show_menu)
         self._sync_style()
 

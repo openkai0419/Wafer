@@ -11,6 +11,20 @@ def _color_widgets(search_row_widget) -> list:
     return [widget for widget in search_row_widget.param_widgets("color") if widget is not None]
 
 
+def _has_color(widget, hex_color: str) -> bool:
+    if not hasattr(widget, "read_params"):
+        return False
+    params = widget.read_params()
+    if not isinstance(params, dict):
+        return False
+    for color in params.get("colors") or []:
+        if not isinstance(color, dict):
+            continue
+        if normalize_hex(str(color.get("hex") or "")) == hex_color:
+            return True
+    return False
+
+
 def _search_container(search_row_widget=None):
     if search_row_widget is not None:
         return search_row_widget
@@ -24,6 +38,9 @@ def apply_color_filter(search_row_widget=None, hex_color: str = "", tolerance: f
     hex_color = normalize_hex(hex_color)
     if not hex_color:
         return
+    for widget in _color_widgets(search_row_widget):
+        if _has_color(widget, hex_color):
+            return
     tolerance = normalize_tolerance(tolerance)
     for widget in reversed(_color_widgets(search_row_widget)):
         if not hasattr(widget, "add_color"):

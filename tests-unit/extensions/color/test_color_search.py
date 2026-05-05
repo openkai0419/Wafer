@@ -434,6 +434,19 @@ def test_apply_color_filter_appends_to_last_color_widget(qapp):
     search.apply_bars.assert_not_called()
 
 
+def test_apply_color_filter_ignores_existing_duplicate_color(qapp):
+    color_widget = ColorFilterWidget()
+    color_widget.add_color("#112233", 0.25)
+    before = color_widget.read_params()["colors"]
+    search = SimpleNamespace(param_widgets=MagicMock(return_value=[color_widget]), apply_bars=MagicMock())
+
+    apply_color_filter(search, hex_color="#112233", tolerance=0.5)
+
+    after = color_widget.read_params()["colors"]
+    assert after == before
+    search.apply_bars.assert_not_called()
+
+
 def test_color_panel_context_menu_includes_apply_selected(qapp):
     button = _ColorButton("#224466")
     items = button._menu_items()

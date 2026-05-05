@@ -207,7 +207,7 @@ class TestImagePipeline:
                 assert txt_src is not None
 
                 txt_cs = db.read_conn.execute(
-                    "SELECT count(*) FROM collection_status WHERE source=?",
+                    "SELECT count(*) FROM collection_status WHERE source=? AND collector='exiftool'",
                     (txt_norm,),
                 ).fetchone()
                 assert txt_cs[0] == 0
@@ -243,8 +243,8 @@ class TestImagePipeline:
             files = h.db.read_conn.execute("SELECT path FROM files").fetchall()
             assert len(files) == 1
 
-            cs = h.db.read_conn.execute("SELECT count(*) FROM collection_status").fetchone()
-            assert cs[0] == 1
+            cs_sources = h.db.read_conn.execute("SELECT DISTINCT source FROM collection_status").fetchall()
+            assert cs_sources == [(normalize_path(str(f1)),)]
 
     def test_modified_file_re_registered(self, tmp_path):
         file_dir = tmp_path / "mutable"

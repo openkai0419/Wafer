@@ -46,6 +46,50 @@ def _menu_labels(menu):
     return labels
 
 
+class _SelectableParamWidget(QtWidgets.QWidget):
+    changed = QtCore.Signal()
+    selection_requested = QtCore.Signal(object)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.selected = False
+
+    def select(self):
+        self.selected = True
+        self.selection_requested.emit(self)
+
+    def clear_selection(self):
+        self.selected = False
+
+    def has_selection(self):
+        return self.selected
+
+
+class _SelectableFilter:
+    NAME = "selectable"
+    DISPLAY_NAME = "Selectable"
+
+    @classmethod
+    def create_widget(cls, parent=None):
+        return _SelectableParamWidget(parent)
+
+    @classmethod
+    def read_params(cls, widget):
+        return {}
+
+    @classmethod
+    def write_params(cls, widget, params):
+        pass
+
+    @classmethod
+    def inheritable_params(cls, params):
+        return {}
+
+    @classmethod
+    def bind_key_store(cls, widget, key_store):
+        pass
+
+
 def _find_menu_action(menu, text):
     for action in menu.actions():
         if _menu_action_label(action) == text:
@@ -748,3 +792,20 @@ class TestFilterInheritance:
         params = container._rows[0].get_param_widget().read_params()
         assert params["query_mode"] == "GLOB"
         assert params["keyword_mode"] == "AND"
+
+
+class TestSelectableParamWidgets:
+    def test_selection_is_exclusive_across_rows(self, qapp):
+        container = SearchContainer()
+        container._on_remove_row(container._rows[0])
+        container._add_row(_SelectableFilter)
+        container._add_row(_SelectableFilter)
+        first = container._rows[0].get_param_widget()
+        second = container._rows[1].get_param_widget()
+
+        first.select()
+        assert container.selected_param_widget("selectable") is first
+
+        second.select()
+        assert first.has_selection() is False
+        assert container.selected_param_widget("selectable") is second

@@ -102,6 +102,12 @@ EXPECTED_PLUGINS = {
         ("layout", "OptimizedJustifiedLayout"),
         ("layout", "OrganicPartitionLayout"),
     },
+    "color_search": {
+        ("collector", "ColorCollector"),
+        ("command", "ColorSearchCommands"),
+        ("filter", "ColorFilter"),
+        ("tag_panel", "ColorTagPanelPlugin"),
+    },
     "zip": {
         ("collector", "ZipCollectorPlugin"),
         ("grid", "ZipGridPlugin"),

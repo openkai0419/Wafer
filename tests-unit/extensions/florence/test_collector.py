@@ -50,6 +50,9 @@ class TestTwoLevelCache:
         self.collector = FlorenceCollector()
         self.tags = {"caption": "a girl standing in a field", "detailed": "a detailed description"}
 
+    def teardown_method(self):
+        self.collector.shutdown()
+
     def test_l1_hash_cache_hit(self):
         self.collector._hash_cache["abc123"] = self.tags
         result = self.collector.process("/test/file.jpg", (1000.0, 500, "abc123"))
@@ -163,10 +166,13 @@ class TestSettings:
         collector._engine = engine
         collector._loaded_variant = "base"
 
-        with patch("extensions.florence.collector.image_loader_resolver") as mock_resolver:
-            mock_resolver.load_pil.return_value = thumb
-            result = collector.process("/test/file.jpg", (1000.0, 500, "err_hash"))
-        assert result.status is False
+        try:
+            with patch("extensions.florence.collector.image_loader_resolver") as mock_resolver:
+                mock_resolver.load_pil.return_value = thumb
+                result = collector.process("/test/file.jpg", (1000.0, 500, "err_hash"))
+            assert result.status is False
+        finally:
+            collector.shutdown()
 
     def test_no_file_hash_still_works(self):
         collector = FlorenceCollector()
@@ -177,20 +183,26 @@ class TestSettings:
         collector._engine = engine
         collector._loaded_variant = "base"
 
-        with patch("extensions.florence.collector.image_loader_resolver") as mock_resolver:
-            mock_resolver.load_pil.return_value = thumb
-            result = collector.process("/test/file.jpg", (1000.0, 500))
-        assert result.status is True
-        assert result.tags is not None
-        assert len(collector._hash_cache) == 0
+        try:
+            with patch("extensions.florence.collector.image_loader_resolver") as mock_resolver:
+                mock_resolver.load_pil.return_value = thumb
+                result = collector.process("/test/file.jpg", (1000.0, 500))
+            assert result.status is True
+            assert result.tags is not None
+            assert len(collector._hash_cache) == 0
+        finally:
+            collector.shutdown()
 
     def test_tags_keys_match_enabled_tasks(self):
         collector = FlorenceCollector()
         collector._hash_cache["h1"] = {"caption": "a cat", "detailed": "a detailed cat"}
-        result = collector.process("/test/file.jpg", (1000.0, 500, "h1"))
-        assert "caption" in result.tags
-        assert "detailed" in result.tags
-        assert result.meta_info is None
+        try:
+            result = collector.process("/test/file.jpg", (1000.0, 500, "h1"))
+            assert "caption" in result.tags
+            assert "detailed" in result.tags
+            assert result.meta_info is None
+        finally:
+            collector.shutdown()
 
 
 class TestCacheEviction:
@@ -224,6 +236,9 @@ class TestIdleTimeout:
     def setup_method(self):
         self.collector = FlorenceCollector()
 
+    def teardown_method(self):
+        self.collector.shutdown()
+
     def test_touch_sets_last_used(self):
         assert self.collector._last_used == 0.0
         self.collector._touch()
@@ -234,7 +249,6 @@ class TestIdleTimeout:
         self.collector._touch()
         assert self.collector._idle_timer is not None
         assert self.collector._idle_timer.daemon is True
-        self.collector._idle_timer.cancel()
 
     def test_touch_replaces_previous_timer(self):
         self.collector._touch()
@@ -242,8 +256,6 @@ class TestIdleTimeout:
         self.collector._touch()
         second_timer = self.collector._idle_timer
         assert first_timer is not second_timer
-        first_timer.cancel()
-        second_timer.cancel()
 
     def test_check_idle_unloads_engine(self):
         engine = MagicMock()
@@ -276,7 +288,6 @@ class TestIdleTimeout:
             self.collector.process("/test/file.jpg", (1000.0, 500, "new_hash"))
         assert self.collector._last_used > before
         assert self.collector._idle_timer is not None
-        self.collector._idle_timer.cancel()
 
     def test_engine_reloads_after_unload(self):
         engine = MagicMock()

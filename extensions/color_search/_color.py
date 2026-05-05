@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import math
 
-PALETTE_SLOTS = 6
-PALETTE_KEYS = tuple(f"palette.{i}" for i in range(1, PALETTE_SLOTS + 1))
+from .settings import DEFAULT_PALETTE_SLOTS, palette_keys, palette_slots
+
+PALETTE_SLOTS = DEFAULT_PALETTE_SLOTS
+PALETTE_KEYS = palette_keys(PALETTE_SLOTS)
 
 
 def rgb_to_packed(r: int, g: int, b: int) -> int:
@@ -67,10 +69,11 @@ def tolerance_to_radius(tolerance: int | float) -> int:
     return round(math.sqrt(3 * 255 * 255) * normalize_tolerance(tolerance))
 
 
-def palette_tags(packed_values: list[int]) -> dict[str, str]:
-    values = list(packed_values[:PALETTE_SLOTS])
+def palette_tags(packed_values: list[int], slots: int | None = None) -> dict[str, str]:
+    keys = palette_keys(slots) if slots is not None else palette_keys(palette_slots())
+    values = list(packed_values[: len(keys)])
     tags: dict[str, str] = {}
-    for i, key in enumerate(PALETTE_KEYS):
+    for i, key in enumerate(keys):
         tags[key] = str(int(values[i])) if i < len(values) else ""
     return tags
 

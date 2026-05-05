@@ -249,7 +249,7 @@ class IndexerProcess:
             return True
         collector = payload.get("collector", "")
         re_collect = payload.get("re_collect", False)
-        if not collector or not self.writer:
+        if not collector or not self.writer or not self.scheduler:
             return True
         AppLogger.info(f"[Indexer] Delete collector={collector}, re_collect={re_collect}")
 

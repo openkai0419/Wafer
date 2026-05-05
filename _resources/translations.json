@@ -1,4 +1,36 @@
 {
+  "Palette count:": {
+    "en": "Palette count:",
+    "ja": ""
+  },
+  "Delete existing Color data": {
+    "en": "Delete existing Color data",
+    "ja": ""
+  },
+  "Number of palette colors to collect and search": {
+    "en": "Number of palette colors to collect and search",
+    "ja": ""
+  },
+  "Save Color Settings": {
+    "en": "Save Color Settings",
+    "ja": ""
+  },
+  "Color settings saved (palette slots={slots})": {
+    "en": "Color settings saved (palette slots={slots})",
+    "ja": ""
+  },
+  "Color settings saved, existing data deletion requested (palette slots={slots})": {
+    "en": "Color settings saved, existing data deletion requested (palette slots={slots})",
+    "ja": ""
+  },
+  "Color settings saved, deletion and re-collection requested (palette slots={slots})": {
+    "en": "Color settings saved, deletion and re-collection requested (palette slots={slots})",
+    "ja": ""
+  },
+  "Apply to selected color": {
+    "en": "Apply to selected color",
+    "ja": ""
+  },
   "Tolerance: ": {
     "en": "Tolerance: ",
     "ja": ""

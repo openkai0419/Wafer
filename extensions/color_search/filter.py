@@ -3,7 +3,8 @@ from __future__ import annotations
 from wafer.plugin import BaseFilterPlugin
 from wafer.utils.profiling import profiler
 
-from ._color import PALETTE_KEYS, color_param
+from ._color import color_param
+from .settings import palette_keys
 
 
 class ColorFilter(BaseFilterPlugin):
@@ -49,7 +50,8 @@ class ColorFilter(BaseFilterPlugin):
 
 def _single_color_query(color: dict) -> tuple[str, list]:
     r, g, b = color["rgb"]
-    slot_sql = ",".join("?" for _ in PALETTE_KEYS)
+    keys = palette_keys()
+    slot_sql = ",".join("?" for _ in keys)
     packed = "CAST(t.value_num AS INTEGER)"
     red = f"(({packed} / 65536) % 256)"
     green = f"(({packed} / 256) % 256)"
@@ -61,4 +63,4 @@ def _single_color_query(color: dict) -> tuple[str, list]:
         "JOIN files AS i ON i.source = s.source "
         f"WHERE t.key IN ({slot_sql}) AND t.value_num IS NOT NULL AND {distance} <= ?"
     )
-    return sql, [*tuple(f"color.{key}" for key in PALETTE_KEYS), r, r, g, g, b, b, color["radius_sq"]]
+    return sql, [*tuple(f"color.{key}" for key in keys), r, r, g, g, b, b, color["radius_sq"]]

@@ -286,3 +286,38 @@ class TestOnDeleteKeys:
         msg = MagicMock()
         msg.payload = "not_a_dict"
         assert proc._on_delete_keys(msg) is True
+
+
+class TestOnDeleteCollector:
+    @patch("wafer.app.indexer.main_indexer.Node")
+    def test_returns_true_without_scheduler(self, mock_node_cls):
+        mock_node_cls.return_value = MagicMock()
+        proc = IndexerProcess("test")
+        proc.writer = MagicMock()
+        proc.scheduler = None
+        msg = MagicMock()
+        msg.payload = {"collector": "color", "re_collect": True}
+        assert proc._on_delete_collector(msg) is True
+
+    @patch("wafer.app.indexer.main_indexer.Node")
+    def test_submits_delete_collector_task(self, mock_node_cls):
+        node = MagicMock()
+        mock_node_cls.return_value = node
+        proc = IndexerProcess("test")
+        proc.writer = MagicMock()
+        proc.scheduler = MagicMock()
+        msg = MagicMock()
+        msg.payload = {"collector": "color", "re_collect": True}
+        assert proc._on_delete_collector(msg) is True
+        proc.scheduler.submit.assert_called_once()
+        task = proc.scheduler.submit.call_args[0][0]
+        assert task.name == "delete_collector_data"
+        assert task.priority == TaskPriority.USER_REQUEST
+        task.run()
+        proc.writer.delete_collector.assert_called_once_with("color", re_collect=True)
+        task.on_complete()
+        node.send.assert_called_with(
+            "delete.complete",
+            {"collector": "color", "db": "test"},
+            dst="viewer",
+        )

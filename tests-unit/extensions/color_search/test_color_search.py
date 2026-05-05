@@ -5,14 +5,16 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from PIL import Image
-from PySide6 import QtCore, QtGui
+from PySide6 import QtCore, QtGui, QtWidgets
 import pytest
 
-from extensions.color_search._color import PALETTE_KEYS, hex_to_packed, normalize_tolerance, packed_to_hex, palette_tags, rgb_to_packed
+from extensions.color_search import widget as color_widget_module
+from extensions.color_search._color import hex_to_packed, normalize_tolerance, packed_to_hex, palette_tags, rgb_to_packed
 from extensions.color_search.commands import apply_color_filter, apply_selected_color
-from extensions.color_search.collector import extract_palette
+from extensions.color_search.collector import ColorCollector, extract_palette
 from extensions.color_search.filter import ColorFilter
 from extensions.color_search.panel import _ColorButton
+from extensions.color_search.settings import APP_SETTINGS_KEY, ColorSettings, palette_keys
 from extensions.color_search.widget import ColorFilterWidget, _DEFAULT_TOLERANCE
 
 
@@ -21,13 +23,55 @@ def color_widget(qapp):
     return ColorFilterWidget()
 
 
+class _FakeAppSettings(QtCore.QObject):
+    key_changed = QtCore.Signal(str)
+
+    def __init__(self, initial=None):
+        super().__init__()
+        self.values = dict(initial or {})
+        self.commits = 0
+
+    def get(self, key, default=None, value_type=None):
+        return self.values.get(key, default)
+
+    def set(self, key, value):
+        self.values[key] = value
+
+    def commit(self):
+        self.commits += 1
+
+
+class _FakeAppSettingsHolder(QtCore.QObject):
+    changed = QtCore.Signal()
+
+    def __init__(self, slots: int):
+        super().__init__()
+        self._palette_slots = slots
+        self.save_palette_slots = MagicMock(side_effect=self.set_palette_slots)
+
+    def palette_slots(self) -> int:
+        return self._palette_slots
+
+    def set_palette_slots(self, value: int) -> int:
+        self._palette_slots = int(value)
+        self.changed.emit()
+        return self._palette_slots
+
+
 def test_palette_tags_always_writes_all_palette_slots():
-    tags = palette_tags([rgb_to_packed(255, 0, 0), rgb_to_packed(0, 255, 0)])
-    assert tuple(tags.keys()) == PALETTE_KEYS
+    keys = palette_keys(6)
+    tags = palette_tags([rgb_to_packed(255, 0, 0), rgb_to_packed(0, 255, 0)], slots=6)
+    assert tuple(tags.keys()) == keys
     assert tags["palette.1"] == "16711680"
     assert tags["palette.2"] == "65280"
-    for key in PALETTE_KEYS[2:]:
+    for key in keys[2:]:
         assert tags[key] == ""
+
+
+def test_palette_tags_uses_requested_slot_count():
+    tags = palette_tags([rgb_to_packed(255, 0, 0), rgb_to_packed(0, 255, 0), rgb_to_packed(0, 0, 255)], slots=2)
+    assert tuple(tags.keys()) == ("palette.1", "palette.2")
+    assert tags == {"palette.1": "16711680", "palette.2": "65280"}
 
 
 def test_packed_hex_roundtrip():
@@ -100,6 +144,69 @@ def test_color_filter_and_mode_requires_both_colors():
         assert result == {"both.jpg"}
     finally:
         conn.close()
+
+
+def test_color_filter_uses_dynamic_palette_keys(monkeypatch):
+    monkeypatch.setattr("extensions.color_search.filter.palette_keys", lambda: ("palette.1", "palette.2", "palette.3"))
+    sql, params = ColorFilter.build_path_query({"colors": [{"hex": "#ff0000", "tolerance": 0.1}], "mode": "OR"}, lambda p: p)
+    assert "?,?,?" in sql
+    assert params[:3] == ["color.palette.1", "color.palette.2", "color.palette.3"]
+
+
+def test_color_settings_save_updates_app_settings_and_notifies_collector(qapp, monkeypatch):
+    fake_app = _FakeAppSettings({APP_SETTINGS_KEY: 6})
+    save_and_notify = MagicMock()
+    monkeypatch.setattr(ColorSettings, "_instance", None)
+    monkeypatch.setattr(ColorSettings, "_app_settings", staticmethod(lambda: fake_app))
+    monkeypatch.setattr("extensions.color_search.settings.color_config.save_and_notify", save_and_notify)
+
+    settings = ColorSettings.instance()
+    changed = MagicMock()
+    settings.changed.connect(changed)
+
+    assert settings.save_palette_slots(8) == 8
+    assert settings.palette_slots() == 8
+    assert fake_app.values[APP_SETTINGS_KEY] == 8
+    assert fake_app.commits == 1
+    save_and_notify.assert_called_once_with("color", palette_slots=8)
+    changed.assert_called_once()
+
+
+def test_color_settings_reloads_on_remote_app_settings_change(qapp, monkeypatch):
+    fake_app = _FakeAppSettings({APP_SETTINGS_KEY: 6})
+    monkeypatch.setattr(ColorSettings, "_instance", None)
+    monkeypatch.setattr(ColorSettings, "_app_settings", staticmethod(lambda: fake_app))
+
+    settings = ColorSettings.instance()
+    changed = MagicMock()
+    settings.changed.connect(changed)
+    fake_app.values[APP_SETTINGS_KEY] = 9
+    fake_app.key_changed.emit(APP_SETTINGS_KEY)
+
+    assert settings.palette_slots() == 9
+    changed.assert_called_once()
+
+
+def test_color_collector_reloads_settings_and_uses_palette_slots(monkeypatch):
+    image = Image.new("RGB", (4, 4), "red")
+    collector = ColorCollector()
+    collector._settings = {"palette_slots": 3}
+    calls = {}
+
+    monkeypatch.setattr("extensions.color_search.collector.image_loader_resolver.load_pil", lambda path, size: image)
+
+    def fake_extract_palette(img, max_colors, sample_size=256):
+        calls["max_colors"] = max_colors
+        return [rgb_to_packed(255, 0, 0)] * max_colors
+
+    monkeypatch.setattr("extensions.color_search.collector.extract_palette", fake_extract_palette)
+    result = collector.process("sample.jpg", ())
+    assert calls["max_colors"] == 3
+    assert tuple(result.tags.keys()) == ("palette.1", "palette.2", "palette.3")
+
+    monkeypatch.setattr("extensions.color_search.collector.color_config.load", lambda: {"palette_slots": 4})
+    collector.on_notify({"palette_slots": 4})
+    assert collector._settings == {"palette_slots": 4}
 
 
 def test_color_widget_defaults_to_ratio_tolerance(color_widget):
@@ -193,6 +300,82 @@ def test_color_widget_write_params_migrates_legacy_percent(color_widget):
     params = color_widget.read_params()
     assert params["mode"] == "AND"
     assert params["colors"] == [{"hex": "#FF0000", "tolerance": pytest.approx(0.1), "enabled": True}]
+
+
+def test_color_settings_popup_save_notifies_and_deletes_recollects(qapp, monkeypatch):
+    class AcceptedDialog:
+        def __init__(self, parent=None):
+            pass
+
+        def exec(self):
+            return QtWidgets.QDialog.Accepted
+
+        def delete_data(self):
+            return True
+
+        def recollect(self):
+            return True
+
+    fake_settings = _FakeAppSettingsHolder(6)
+    monkeypatch.setattr(color_widget_module.ColorSettings, "instance", staticmethod(lambda: fake_settings))
+
+    popup = color_widget_module._ColorSettingsPopup()
+    popup._slots_spin.setValue(8)
+    send_delete = MagicMock()
+    monkeypatch.setattr(color_widget_module, "_ColorSaveConfirmDialog", AcceptedDialog)
+    monkeypatch.setattr(color_widget_module, "list_setting_db_names", lambda: ["db1", "db2"])
+    monkeypatch.setattr(color_widget_module._ColorSettingsPopup, "_send_delete_and_recollect", send_delete)
+    monkeypatch.setattr(color_widget_module.Notifier, "info", MagicMock())
+
+    popup._on_save()
+
+    fake_settings.save_palette_slots.assert_called_once_with(8)
+    send_delete.assert_called_once_with(["db1", "db2"], re_collect=True)
+
+
+def test_color_settings_popup_save_without_delete_only_notifies(qapp, monkeypatch):
+    class AcceptedDialog:
+        def __init__(self, parent=None):
+            pass
+
+        def exec(self):
+            return QtWidgets.QDialog.Accepted
+
+        def delete_data(self):
+            return False
+
+        def recollect(self):
+            return False
+
+    fake_settings = _FakeAppSettingsHolder(6)
+    monkeypatch.setattr(color_widget_module.ColorSettings, "instance", staticmethod(lambda: fake_settings))
+
+    popup = color_widget_module._ColorSettingsPopup()
+    popup._slots_spin.setValue(7)
+    send_delete = MagicMock()
+    monkeypatch.setattr(color_widget_module, "_ColorSaveConfirmDialog", AcceptedDialog)
+    monkeypatch.setattr(color_widget_module._ColorSettingsPopup, "_send_delete_and_recollect", send_delete)
+    monkeypatch.setattr(color_widget_module.Notifier, "info", MagicMock())
+
+    popup._on_save()
+
+    fake_settings.save_palette_slots.assert_called_once_with(7)
+    send_delete.assert_not_called()
+
+
+def test_color_settings_popup_syncs_shared_palette_slots(qapp, monkeypatch):
+    fake_settings = _FakeAppSettingsHolder(6)
+    monkeypatch.setattr(color_widget_module.ColorSettings, "instance", staticmethod(lambda: fake_settings))
+
+    first = color_widget_module._ColorSettingsPopup()
+    second = color_widget_module._ColorSettingsPopup()
+    first._slots_spin.setValue(10)
+    first._on_revert()
+    assert first._slots_spin.value() == 6
+
+    fake_settings.set_palette_slots(11)
+    assert first._slots_spin.value() == 11
+    assert second._slots_spin.value() == 11
 
 
 def test_apply_color_filter_appends_ratio_tolerance():

@@ -9,7 +9,8 @@ from wafer.ui.panel.meta_viewer import CollapsibleCard
 from wafer.ui.widgets import FlowLayout
 from wafer.utils.formatting import dpix
 
-from ._color import PALETTE_KEYS, packed_to_hex
+from ._color import packed_to_hex
+from .settings import ColorSettings, palette_keys
 
 
 class ColorTagPanelPlugin(BaseTagPanelPlugin):
@@ -21,6 +22,8 @@ class ColorTagPanelPlugin(BaseTagPanelPlugin):
     def __init__(self):
         self._card: CollapsibleCard | None = None
         self._row: _PaletteRow | None = None
+        self._tags: dict[str, str] = {}
+        ColorSettings.instance().changed.connect(self._refresh_colors)
 
     def create_card(self, parent: QtWidgets.QWidget | None = None) -> QtWidgets.QWidget:
         self._card = CollapsibleCard(self.PREFIX, f"tag:{self.PREFIX}", parent)
@@ -29,7 +32,11 @@ class ColorTagPanelPlugin(BaseTagPanelPlugin):
         return self._card
 
     def update_data(self, tags: dict[str, str], locks: dict[str, bool], path: str, file_hash: str, db: str) -> None:
-        colors = [packed_to_hex(tags.get(key)) for key in PALETTE_KEYS]
+        self._tags = dict(tags or {})
+        self._refresh_colors()
+
+    def _refresh_colors(self) -> None:
+        colors = [packed_to_hex(self._tags.get(key)) for key in palette_keys()]
         colors = [c for c in colors if c]
         if self._row is not None:
             self._row.set_colors(colors)

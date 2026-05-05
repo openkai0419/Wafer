@@ -21,7 +21,7 @@ from ....core.app_settings import app_settings
 from ....core.color.theme import ThemeManager
 
 _STANDARD_SOURCE_KEYS = ("source", "size", "created", "modified", "collected", "file_hash")
-_STANDARD_FILE_KEYS = ("path", "name", "aspect_ratio", "source_extension")
+_STANDARD_FILE_KEYS = ("name", "path", "aspect_ratio", "source_extension")
 
 
 def _format_meta(engine, path, dbpath):

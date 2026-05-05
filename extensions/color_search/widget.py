@@ -8,8 +8,12 @@ from wafer.core.qt.icon_engine import themed_icon
 from wafer.ui.popups import PopupBase
 from wafer.ui.widgets.color_picker import ColorPickerDialog
 from wafer.utils.formatting import dpix
+from wafer.utils.logs import AppLogger
+from wafer.utils.notifier import Notifier
+from wafer.utils.paths import list_setting_db_names
 
 from ._color import normalize_hex, normalize_tolerance
+from .settings import MAX_PALETTE_SLOTS, MIN_PALETTE_SLOTS, ColorSettings
 
 _DEFAULT_COLOR = "#808080"
 _DEFAULT_TOLERANCE = 0.20
@@ -190,10 +194,11 @@ class _ColorSettingsPopup(PopupBase):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._settings = ColorSettings.instance()
         self.setWindowTitle(t("Color Filter Options"))
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(dpix(12), dpix(8), dpix(12), dpix(8))
-        layout.setSpacing(dpix(4))
+        layout.setSpacing(dpix(6))
 
         title = QtWidgets.QLabel(t("Color Filter Options"), self)
         title.setStyleSheet(f"font-weight: bold; padding-bottom: {dpix(3)}px;")
@@ -215,10 +220,36 @@ class _ColorSettingsPopup(PopupBase):
         mode_row.addStretch()
         layout.addLayout(mode_row)
 
+        slots_row = QtWidgets.QHBoxLayout()
+        slots_row.setSpacing(dpix(4))
+        slots_row.addWidget(QtWidgets.QLabel(t("Palette count:"), self))
+        self._slots_spin = QtWidgets.QSpinBox(self)
+        self._slots_spin.setRange(MIN_PALETTE_SLOTS, MAX_PALETTE_SLOTS)
+        self._slots_spin.setValue(self._settings.palette_slots())
+        self._slots_spin.setToolTip(t("Number of palette colors to collect and search"))
+        slots_row.addWidget(self._slots_spin)
+        slots_row.addStretch()
+        layout.addLayout(slots_row)
+
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.setSpacing(dpix(4))
+        btn_row.addStretch()
+        revert_btn = QtWidgets.QPushButton(t("Revert"), self)
+        revert_btn.setIcon(themed_icon("refresh"))
+        revert_btn.clicked.connect(self._on_revert)
+        save_btn = QtWidgets.QPushButton(t("Save"), self)
+        save_btn.setIcon(themed_icon("save"))
+        save_btn.clicked.connect(self._on_save)
+        btn_row.addWidget(revert_btn)
+        btn_row.addWidget(save_btn)
+        layout.addLayout(btn_row)
+
         add_btn = QtWidgets.QPushButton(t("Add color..."), self)
         add_btn.setIcon(themed_icon("plus"))
         add_btn.clicked.connect(self.add_requested.emit)
         layout.addWidget(add_btn)
+
+        self._settings.changed.connect(self._sync_palette_slots)
 
     def mode(self) -> str:
         return "AND" if self._and_radio.isChecked() else "OR"
@@ -228,6 +259,92 @@ class _ColorSettingsPopup(PopupBase):
         radio.blockSignals(True)
         radio.setChecked(True)
         radio.blockSignals(False)
+
+    def _on_save(self):
+        value = self._slots_spin.value()
+        if value == self._settings.palette_slots():
+            Notifier.info(t("No changes to save"))
+            return
+
+        dlg = _ColorSaveConfirmDialog(parent=self)
+        if dlg.exec() != QtWidgets.QDialog.Accepted:
+            return
+        do_delete = dlg.delete_data()
+        do_recollect = dlg.recollect()
+
+        value = self._settings.save_palette_slots(value)
+
+        if do_delete or do_recollect:
+            db_names = list_setting_db_names()
+            if db_names:
+                self._send_delete_and_recollect(db_names, re_collect=do_recollect)
+
+        if do_recollect:
+            message = t("Color settings saved, deletion and re-collection requested (palette slots={slots})", slots=value)
+        elif do_delete:
+            message = t("Color settings saved, existing data deletion requested (palette slots={slots})", slots=value)
+        else:
+            message = t("Color settings saved (palette slots={slots})", slots=value)
+        Notifier.info(message)
+
+    def _on_revert(self):
+        self._sync_palette_slots()
+
+    @QtCore.Slot()
+    def _sync_palette_slots(self):
+        self._slots_spin.blockSignals(True)
+        self._slots_spin.setValue(self._settings.palette_slots())
+        self._slots_spin.blockSignals(False)
+
+    @staticmethod
+    def _send_delete_and_recollect(db_names: list[str], *, re_collect: bool):
+        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+
+        node = InstanceRegistry.instance().resolve_node()
+        if not node:
+            AppLogger.warning("[ColorSettings] No IPC node available")
+            return
+        for db in db_names:
+            node.send_reliable(
+                "delete.collector",
+                {"collector": "color", "re_collect": re_collect},
+                dst="indexer",
+                db=db,
+            )
+
+
+class _ColorSaveConfirmDialog(QtWidgets.QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(t("Save Color Settings"))
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setSpacing(dpix(8))
+        layout.addWidget(QtWidgets.QLabel(t("Settings have been modified.\nThis will apply to all databases.")))
+
+        self._delete_cb = QtWidgets.QCheckBox(t("Delete existing Color data"))
+        self._delete_cb.setChecked(True)
+        self._recollect_cb = QtWidgets.QCheckBox(t("Re-collect after deletion"))
+        self._recollect_cb.setChecked(True)
+        self._delete_cb.toggled.connect(self._recollect_cb.setEnabled)
+        layout.addWidget(self._delete_cb)
+        layout.addWidget(self._recollect_cb)
+
+        btn_layout = QtWidgets.QHBoxLayout()
+        btn_layout.addStretch()
+        save_btn = QtWidgets.QPushButton(t("Save"))
+        cancel_btn = QtWidgets.QPushButton(t("Cancel"))
+        save_btn.clicked.connect(self.accept)
+        cancel_btn.clicked.connect(self.reject)
+        btn_layout.addWidget(save_btn)
+        btn_layout.addWidget(cancel_btn)
+        layout.addLayout(btn_layout)
+
+    def delete_data(self) -> bool:
+        return self._delete_cb.isChecked()
+
+    def recollect(self) -> bool:
+        return self._delete_cb.isChecked() and self._recollect_cb.isChecked()
 
 
 class _ColorRow(QtWidgets.QFrame):

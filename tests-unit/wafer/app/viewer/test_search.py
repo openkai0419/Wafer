@@ -117,7 +117,14 @@ def test_resolve_sort():
 def test_resolve_sort_default():
     svc = _make_service()
     sort_cls = svc.resolve_sort()
-    assert sort_cls.NAME == "path"
+    assert sort_cls.NAME == "none"
+
+
+def test_resolve_sort_none():
+    svc = _make_service()
+    svc.set_param("sort_by", "none")
+    sort_cls = svc.resolve_sort()
+    assert sort_cls.NAME == "none"
 
 
 def test_build_filter_entries_keyword_separator():

@@ -152,7 +152,7 @@ class SearchContainer(QtWidgets.QWidget):
         self._key_store = KeyStore(self)
         self._last_paths = object()
         self._rows: list[FilterRow] = []
-        self._sort_name = "path"
+        self._sort_name = "none"
         self._ascending = False
         self._tools_host = None
         self._build_ui()
@@ -569,7 +569,7 @@ class SearchContainer(QtWidgets.QWidget):
         self.filter_changed.emit()
 
     def restore_state(self, state: dict):
-        sort_by = state.get("sort_by", "path")
+        sort_by = state.get("sort_by", "none")
         ascending = state.get("ascending", False)
         self.set_sort(sort_by, ascending)
         bars = state.get("bars")

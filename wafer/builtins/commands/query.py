@@ -141,7 +141,7 @@ def _svc():
 
 
 def _sort_resolver(key):
-    return lambda: (_svc().get("sort_by") if _svc() else "path") == key
+    return lambda: (_svc().get("sort_by") if _svc() else "none") == key
 
 
 def _order_resolver(ascending):
@@ -149,6 +149,7 @@ def _order_resolver(ascending):
 
 
 _SORT_DISPLAY = {
+    "none": "None",
     "path": "Path",
     "name": "Name",
     "created": "Created",
@@ -216,7 +217,7 @@ class QueryCommands(ActionKit.MenuBase):
                     display=_SORT_DISPLAY[k],
                     func=_make_sort_func(k),
                     checkable=True,
-                    default_checked=(k == "path"),
+                    default_checked=(k == "none"),
                     action_group=GROUP_SORT,
                     checked_resolver=_sort_resolver(k),
                 )

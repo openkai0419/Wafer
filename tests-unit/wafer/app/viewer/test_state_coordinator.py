@@ -39,7 +39,7 @@ def _make_window(**overrides):
     w.reload_database = MagicMock()
     w.search_row_widget = SimpleNamespace(
         get_bars=MagicMock(return_value=[{"filter": "text"}]),
-        get_sort=MagicMock(return_value=("path", False)),
+        get_sort=MagicMock(return_value=("none", False)),
         set_sort=MagicMock(),
         apply_bars=MagicMock(),
         run_folder_worker=MagicMock(),
@@ -110,7 +110,7 @@ class TestQueryStateCoordinator:
         assert out["auto_execute"] is False
         assert out["auto_execute_on_update"] is False
         assert out["bars"] == [{"filter": "text"}]
-        assert out["sort_by"] == "path"
+        assert out["sort_by"] == "none"
         assert out["ascending"] is False
 
     def test_restore_applies_params_in_single_batch(self, monkeypatch):
@@ -143,7 +143,7 @@ class TestQueryStateCoordinator:
         w = _make_window()
         spy = MagicMock()
         w.search_service.set_params = spy
-        QueryStateCoordinator(w).restore({"bars": [], "sort_by": "path", "ascending": False})
+        QueryStateCoordinator(w).restore({"bars": [], "sort_by": "none", "ascending": False})
         spy.assert_not_called()
 
     def test_restore_invalid_input_noop(self):

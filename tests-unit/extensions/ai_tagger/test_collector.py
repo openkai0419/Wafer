@@ -35,6 +35,9 @@ class TestBuildTags:
             "character": {"hatsune_miku": 0.90},
         }
 
+    def teardown_method(self):
+        self.collector.shutdown()
+
     # --- rating_mode="top" (default) ---
 
     def test_top_mode_rating_key(self):
@@ -163,6 +166,9 @@ class TestTwoLevelCache:
             "character": "",
             "general": "1girl, smile",
         }
+
+    def teardown_method(self):
+        self.collector.shutdown()
 
     def test_l1_hash_cache_hit(self):
         self.collector._hash_cache["abc123"] = self.tags
@@ -328,6 +334,9 @@ class TestIdleTimeout:
     def setup_method(self):
         self.collector = WD14TaggerCollector()
 
+    def teardown_method(self):
+        self.collector.shutdown()
+
     def test_touch_sets_last_used(self):
         assert self.collector._last_used == 0.0
         self.collector._touch()
@@ -338,7 +347,6 @@ class TestIdleTimeout:
         self.collector._touch()
         assert self.collector._idle_timer is not None
         assert self.collector._idle_timer.daemon is True
-        self.collector._idle_timer.cancel()
 
     def test_touch_replaces_previous_timer(self):
         self.collector._touch()
@@ -346,8 +354,6 @@ class TestIdleTimeout:
         self.collector._touch()
         second_timer = self.collector._idle_timer
         assert first_timer is not second_timer
-        first_timer.cancel()
-        second_timer.cancel()
 
     def test_check_idle_unloads_engine(self):
         engine = MagicMock()
@@ -385,7 +391,6 @@ class TestIdleTimeout:
             self.collector.process("/test/file.jpg", (1000.0, 500, "new_hash"))
         assert self.collector._last_used > before
         assert self.collector._idle_timer is not None
-        self.collector._idle_timer.cancel()
 
     def test_engine_reloads_after_unload(self):
         engine = MagicMock()
@@ -412,6 +417,9 @@ class TestOnNotify:
     def setup_method(self):
         self.collector = WD14TaggerCollector()
 
+    def teardown_method(self):
+        self.collector.shutdown()
+
     def test_on_notify_reloads_settings(self):
         original = dict(self.collector._settings)
         with patch.object(wd14_config, "load", return_value={**original, "general_threshold": 0.1}):
@@ -426,6 +434,9 @@ class TestOnNotify:
 class TestOnRequest:
     def setup_method(self):
         self.collector = WD14TaggerCollector()
+
+    def teardown_method(self):
+        self.collector.shutdown()
 
     def test_unknown_action_returns_none(self):
         assert self.collector.on_request("unknown.action", {}, None) is None
@@ -476,9 +487,12 @@ class TestOnRequest:
 class TestSettingsIntegration:
     def test_default_settings_loaded(self):
         collector = WD14TaggerCollector()
-        assert "general_threshold" in collector._settings
-        assert "character_threshold" in collector._settings
-        assert "rating_mode" in collector._settings
+        try:
+            assert "general_threshold" in collector._settings
+            assert "character_threshold" in collector._settings
+            assert "rating_mode" in collector._settings
+        finally:
+            collector.shutdown()
 
     def test_process_uses_settings_thresholds(self):
         collector = WD14TaggerCollector()
@@ -495,7 +509,10 @@ class TestSettingsIntegration:
         collector._engine.input_height = 448
         collector._engine.predict.return_value = mock_result
 
-        with patch("extensions.ai_tagger.collector.image_loader_resolver") as mock_resolver:
-            mock_resolver.load_pil.return_value = thumb
-            collector.process("/test/file.jpg", (1000.0, 500, "hash_x"))
-        collector._engine.predict.assert_called_once_with(thumb, general_threshold=0.1, character_threshold=0.9)
+        try:
+            with patch("extensions.ai_tagger.collector.image_loader_resolver") as mock_resolver:
+                mock_resolver.load_pil.return_value = thumb
+                collector.process("/test/file.jpg", (1000.0, 500, "hash_x"))
+            collector._engine.predict.assert_called_once_with(thumb, general_threshold=0.1, character_threshold=0.9)
+        finally:
+            collector.shutdown()

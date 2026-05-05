@@ -6,6 +6,11 @@ from ..plugin.query.base import BaseSortPlugin
 from ..utils.formatting import natural_key
 
 
+class NoSort(BaseSortPlugin):
+    NAME = "none"
+    PRIORITY = 110
+
+
 class NaturalPathSort(BaseSortPlugin):
     NAME = "path"
     PRIORITY = 100

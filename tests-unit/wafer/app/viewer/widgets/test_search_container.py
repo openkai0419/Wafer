@@ -263,7 +263,7 @@ class TestSearchContainer:
     def test_get_sort_defaults(self, qapp):
         container = SearchContainer()
         sort_name, ascending = container.get_sort()
-        assert sort_name == "path"
+        assert sort_name == "none"
         assert ascending is False
 
     def test_set_sort(self, qapp):

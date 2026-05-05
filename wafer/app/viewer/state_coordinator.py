@@ -99,7 +99,7 @@ class QueryStateCoordinator:
         if not isinstance(query, dict):
             return
         bars = query.get("bars")
-        sort_by = query.get("sort_by", "path")
+        sort_by = query.get("sort_by", "none")
         ascending = query.get("ascending", False)
         self._w.search_row_widget.set_sort(sort_by, ascending)
         if bars is not None:

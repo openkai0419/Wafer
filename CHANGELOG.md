@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.6.15]
+### Added
+- **Color search extension** (`extensions/color/collector.py`, `extensions/color/filter.py`, `extensions/color/panel.py`, `extensions/color/widget.py`, `extensions/color/settings.py`): added a `color` collector that stores representative image palette tags, a multi-color RGB-distance search filter, and metadata swatches that can be applied directly to color queries; palette-slot changes can optionally delete and re-collect existing database data
+
+### Changed
+- **WD14 extension naming** (`extensions/wd14/`, `wafer/plugin/badges.py`, `README.md`, `README.jp.md`): renamed the former `ai_tagger` extension to `wd14` across the shipped extension folder, plugin badges, and user documentation so the public name matches the model it provides
+- **Query sort defaults** (`wafer/builtins/sorts.py`, `wafer/app/viewer/search.py`, `wafer/app/viewer/widgets/search_container.py`, `wafer/core/workspace.py`, `wafer/builtins/commands/query.py`): added an explicit `None` sort mode and made unsorted queries the default for new searches and saved query presets instead of defaulting to path sorting
+
+### Fixed
+- **ExifTool key browser bulk toggles** (`extensions/exiftool/panel.py`): `Check All` and `Uncheck All` now apply only to the keys currently shown by the search filter, avoiding accidental changes to hidden keys
+
 ## [v0.6.14]
 ### Added
 - **Positional file navigation command** (`wafer/builtins/commands/content_viewer.py`, `_resources/mouse_bindings/standard.json`, `_resources/translations.json`): added `fv.navigate_file_by_mouse_position` with configurable axis and invert options so image, animated, and video viewers can move to the previous or next file based on the clicked side of the widget

@@ -91,6 +91,7 @@ Extensions are placed as folders under `extensions/`. `PluginLoader` auto-discov
 |---|---|---|
 | **exiftool** | jpg, png, webp, tiff, heic, avif, jxl, raw, psd, etc. | Universal EXIF/IPTC/XMP metadata extraction via ExifTool |
 | **ffmpeg** | mp4, mkv, webm, mp3, flac, wav, etc. | Video/audio metadata extraction via ffprobe |
+| **color** | *(images)* | Representative color extraction, palette display, and RGB-distance filtering |
 | **wd14** | *(images)* | WD14 model-based automatic tagging (ONNX, GPU accelerated) |
 | **florence** | *(images)* | Florence-2 vision-language captioning / tagging (GPU accelerated) |
 | **text_generation** | *(images with EXIF)* | NovelAI generation parameter extraction |

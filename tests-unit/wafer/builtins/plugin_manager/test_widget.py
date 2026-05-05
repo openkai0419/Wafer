@@ -297,9 +297,9 @@ class TestExtensionsTab:
 
     def test_heavy_install_uses_no_icon_confirmation(self, qtbot, tmp_path, monkeypatch):
         ext_dir = tmp_path / "extensions"
-        (ext_dir / "ai_tagger").mkdir(parents=True)
-        (ext_dir / "ai_tagger" / "__init__.py").write_text("")
-        (ext_dir / "ai_tagger" / "requirements.txt").write_text("some-pkg\n")
+        (ext_dir / "wd14").mkdir(parents=True)
+        (ext_dir / "wd14" / "__init__.py").write_text("")
+        (ext_dir / "wd14" / "requirements.txt").write_text("some-pkg\n")
         monkeypatch.setattr(
             "wafer.builtins.plugin_manager.extensions_tab.get_plugin_dir",
             lambda: str(ext_dir),
@@ -312,8 +312,8 @@ class TestExtensionsTab:
         from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
 
         tab = ExtensionsTab(set(), Dispatcher())
-        qtbot.waitUntil(lambda: "ai_tagger" in tab._cards, timeout=3000)
-        card = tab._cards["ai_tagger"]
+        qtbot.waitUntil(lambda: "wd14" in tab._cards, timeout=3000)
+        card = tab._cards["wd14"]
         card.badge = ExtensionBadge.HEAVY
 
         captured = {}

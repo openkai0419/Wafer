@@ -50,7 +50,7 @@ wafer の永続化クラスは「**スコープ**」と「**用途**」の 2 軸
 ## よくある間違い
 
 - **「最後に開いた DB」を `app_settings` に書かない。** WindowSlot ごとに違うため、`WorkspaceStore.get_last_used_database_name()` から取る。
-- **プラグイン設定を `app_settings` に書かない。** プラグインごとに `PluginConfig` を用意する（ai_tagger / florence / exiftool が参考実装）。
+- **プラグイン設定を `app_settings` に書かない。** プラグインごとに `PluginConfig` を用意する（wd14 / florence / exiftool が参考実装）。
 - **`StateStore` は永続化しない。** 自分で JSON を書こうとしないこと。`WindowSlot` に渡すだけのインメモリレジストリ。
 - **`ActionGroupStateManager` で「現在チェックされている項目」を保持しない。** 状態は UI/データ側が真実で、コマンドの `checked_resolver` 経由で都度問い合わせる。
 - **パネルの「設定値」と「UI 状態」を混ぜない。**
@@ -60,6 +60,6 @@ wafer の永続化クラスは「**スコープ**」と「**用途**」の 2 軸
 
 ## 参考実装
 
-- パネル設定: [extensions/ai_tagger/panel.py](../extensions/ai_tagger/panel.py), [extensions/florence/panel.py](../extensions/florence/panel.py), [extensions/exiftool/panel.py](../extensions/exiftool/panel.py)
+- パネル設定: [extensions/wd14/panel.py](../extensions/wd14/panel.py), [extensions/florence/panel.py](../extensions/florence/panel.py), [extensions/exiftool/panel.py](../extensions/exiftool/panel.py)
 - グリッド/ビューワの UI 状態: [extensions/video/grid.py](../extensions/video/grid.py), [extensions/video/viewer.py](../extensions/video/viewer.py)
 - コンポーネントの window-scoped 状態登録: [wafer/app/viewer/mainwindow.py](app/viewer/mainwindow.py) の `_register_*_states`

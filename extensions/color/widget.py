@@ -62,7 +62,7 @@ class ColorFilterWidget(QtWidgets.QWidget):
             self._popup.show_below(self._option_btn, align=QtCore.Qt.AlignRight)
 
     def _pick_new_color(self):
-        color = ColorPickerDialog.get_color(_DEFAULT_COLOR, self, title=t("Pick search color"), scope="color_search")
+        color = ColorPickerDialog.get_color(_DEFAULT_COLOR, self, title=t("Pick search color"), scope="color")
         if color is None:
             return
         self.add_color(color.name(QtGui.QColor.HexRgb), self._last_tolerance)
@@ -437,7 +437,7 @@ class _ColorRow(QtWidgets.QFrame):
         return normalize_tolerance(self._tolerance.value() / 100.0)
 
     def _pick_color(self):
-        color = ColorPickerDialog.get_color(self._hex, self, title=t("Pick search color"), scope="color_search")
+        color = ColorPickerDialog.get_color(self._hex, self, title=t("Pick search color"), scope="color")
         if color is None:
             return
         if self.set_hex(color.name(QtGui.QColor.HexRgb)):

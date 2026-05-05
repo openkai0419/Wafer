@@ -71,7 +71,7 @@ class _ColorButton(QtWidgets.QToolButton):
         self.setFixedSize(dpix(30), dpix(20))
         self.setCursor(QtCore.Qt.PointingHandCursor)
         self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
-        self.clicked.connect(lambda: Command.invoke("color_search.apply_selected_color", hex_color=self._hex))
+        self.clicked.connect(lambda: Command.invoke("color.apply_selected_color", hex_color=self._hex))
         self.customContextMenuRequested.connect(self._show_menu)
         self._sync_style()
 
@@ -98,7 +98,7 @@ class _ColorButton(QtWidgets.QToolButton):
         ]
 
     def _apply_selected(self):
-        Command.invoke("color_search.apply_selected_color", hex_color=self._hex)
+        Command.invoke("color.apply_selected_color", hex_color=self._hex)
 
     def _append(self, mode: str):
-        Command.invoke("color_search.apply_filter", hex_color=self._hex, tolerance=0.2, mode=mode, join="OR")
+        Command.invoke("color.apply_filter", hex_color=self._hex, tolerance=0.2, mode=mode, join="OR")

@@ -59,8 +59,8 @@ class TestSmokeImportVerify:
                 sys.path.remove(added)
 
     @pytest.mark.timeout(30)
-    def test_import_ai_tagger_deps(self):
-        _skip_unless_post_installed("ai_tagger")
+    def test_import_wd14_deps(self):
+        _skip_unless_post_installed("wd14")
         added = _add_packages_to_path()
         try:
             import onnxruntime as ort
@@ -113,21 +113,21 @@ class TestSmokeImportVerify:
 
 class TestSmokeGPUVerify:
     @pytest.mark.timeout(60)
-    def test_ai_tagger_gpu_provider(self, request):
+    def test_wd14_gpu_provider(self, request):
         if request.config.getoption("--allow-cpu-fallback"):
             pytest.skip("--allow-cpu-fallback: skipping GPU assertion")
-        _skip_unless_post_installed("ai_tagger")
+        _skip_unless_post_installed("wd14")
         added = _add_packages_to_path()
         try:
             import onnxruntime as ort
-            from extensions.ai_tagger._inference import _preload_cuda_libs
+            from extensions.wd14._inference import _preload_cuda_libs
 
             _preload_cuda_libs()
             available = ort.get_available_providers()
             gpu_providers = ("CUDAExecutionProvider", "ROCmExecutionProvider", "CoreMLExecutionProvider")
             assert any(p in available for p in gpu_providers), f"No GPU provider found in onnxruntime. Available: {available}. Ensure CUDA and cuDNN are properly installed."
 
-            from extensions.ai_tagger._downloader import ensure_model
+            from extensions.wd14._downloader import ensure_model
 
             model_dir = ensure_model()
             providers = [p for p in available if p != "TensorrtExecutionProvider"]
@@ -160,13 +160,13 @@ class TestSmokeGPUVerify:
 
 class TestSmokeInferenceVerify:
     @pytest.mark.timeout(120)
-    def test_ai_tagger_inference(self):
-        _skip_unless_post_installed("ai_tagger")
+    def test_wd14_inference(self):
+        _skip_unless_post_installed("wd14")
         added = _add_packages_to_path()
         try:
             from PIL import Image
-            from extensions.ai_tagger._downloader import ensure_model
-            from extensions.ai_tagger._inference import WD14Inference
+            from extensions.wd14._downloader import ensure_model
+            from extensions.wd14._inference import WD14Inference
 
             model_dir = ensure_model()
             engine = WD14Inference(model_dir)

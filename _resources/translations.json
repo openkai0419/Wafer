@@ -1,4 +1,16 @@
 {
+  "Continue?": {
+    "en": "Continue?",
+    "ja": ""
+  },
+  "Install HEAVY Extension": {
+    "en": "Install HEAVY Extension",
+    "ja": ""
+  },
+  "color": {
+    "en": "color",
+    "ja": ""
+  },
   "Palette count:": {
     "en": "Palette count:",
     "ja": ""
@@ -1987,8 +1999,8 @@
     "en": "This extension is marked as heavy. This may:\n- use a large amount of GPU\n- take a long time to install",
     "ja": ""
   },
-  "Multiple heavy extensions are enabled:\n- ai_tagger\n- florence\nThis may cause high GPU usage or instability.": {
-    "en": "Multiple heavy extensions are enabled:\n- ai_tagger\n- florence\nThis may cause high GPU usage or instability.",
+  "Multiple heavy extensions are enabled:\n- wd14\n- florence\nThis may cause high GPU usage or instability.": {
+    "en": "Multiple heavy extensions are enabled:\n- wd14\n- florence\nThis may cause high GPU usage or instability.",
     "ja": ""
   },
   "Recommended to install": {

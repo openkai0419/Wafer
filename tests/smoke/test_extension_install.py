@@ -27,7 +27,7 @@ pytestmark = pytest.mark.setup
 EXTENSIONS_ROOT = Path(__file__).resolve().parent.parent.parent / "extensions"
 
 LIGHT_EXTENSIONS = ["image", "animated", "video", "ffmpeg", "exiftool"]
-HEAVY_EXTENSIONS = ["ai_tagger", "florence"]
+HEAVY_EXTENSIONS = ["wd14", "florence"]
 
 VERIFY_IMPORTS: dict[str, list[str]] = {
     "image": ["cv2", "numpy", "PIL"],
@@ -35,7 +35,7 @@ VERIFY_IMPORTS: dict[str, list[str]] = {
     "video": [],
     "ffmpeg": [],
     "exiftool": [],
-    "ai_tagger": ["onnxruntime", "huggingface_hub"],
+    "wd14": ["onnxruntime", "huggingface_hub"],
     "florence": ["torch", "transformers", "safetensors", "timm", "einops", "huggingface_hub"],
 }
 

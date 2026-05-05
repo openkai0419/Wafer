@@ -89,7 +89,7 @@ extension は `extensions/` フォルダに配置するだけで `PluginLoader` 
 |---|---|---|
 | **exiftool** | jpg, png, webp, tiff, heic, avif, jxl, raw, psd 等 | ExifTool による汎用メタデータ抽出 |
 | **ffmpeg** | mp4, mkv, webm, mp3, flac, wav 等 | ffprobe による動画/音声メタデータ抽出 |
-| **ai_tagger** | *（画像）* | WD14 モデルによる自動タグ付け（ONNX, GPU 対応） |
+| **wd14** | *（画像）* | WD14 モデルによる自動タグ付け（ONNX, GPU 対応） |
 | **florence** | *（画像）* | Florence-2 による画像キャプション／タグ生成（GPU 対応） |
 | **text_generation** | *（EXIF 付き画像）* | NovelAI 生成パラメータの抽出（デフォルト無効） |
 
@@ -143,6 +143,6 @@ class MyCollector(BaseCollectorPlugin):
 | `extensions/video/` | LGPL-2.1-or-later | `libmpv-2.dll` — GPL-2.0+（または LGPL-2.1+） |
 | `extensions/exiftool/` | LGPL-2.1-or-later | `exiftool.exe` — Artistic License / GPL（"Perl と同条件"） |
 | `extensions/ffmpeg/` | LGPL-2.1-or-later | `ffmpeg.exe`, `ffprobe.exe` — GPL-3.0（gyan.dev essentials ビルド） |
-| `extensions/ai_tagger/` | LGPL-2.1-or-later | WD SwinV2 Tagger v3 — Apache-2.0 |
+| `extensions/wd14/` | LGPL-2.1-or-later | WD SwinV2 Tagger v3 — Apache-2.0 |
 | `extensions/florence/` | LGPL-2.1-or-later | Florence-2 モデル（Microsoft）— MIT |
 | その他の extension | LGPL-2.1-or-later | — |

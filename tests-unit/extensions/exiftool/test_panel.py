@@ -113,6 +113,22 @@ class TestCheckAllToggle:
         tab._on_check_all()
         assert tab._filter_keys == {"a", "b"}
 
+    def test_check_all_respects_visible_filtered_keys(self, qapp):
+        key_data = [("alpha", 1), ("beta", 2)]
+        tab = _make_key_browser(qapp, MODE_BLACKLIST, set(), key_data=key_data)
+        tab._build_tree()
+        tab._search.setText("alp")
+        tab._on_check_all()
+        assert tab._filter_keys == {"alpha"}
+
+    def test_uncheck_all_respects_visible_filtered_keys(self, qapp):
+        key_data = [("alpha", 1), ("beta", 2)]
+        tab = _make_key_browser(qapp, MODE_BLACKLIST, {"alpha", "beta"}, key_data=key_data)
+        tab._build_tree()
+        tab._search.setText("alp")
+        tab._on_check_all()
+        assert tab._filter_keys == {"beta"}
+
 
 class TestUpdateCheckAllLabel:
     def test_label_uncheck_all_when_all_checked(self, qapp):
@@ -134,6 +150,14 @@ class TestUpdateCheckAllLabel:
         assert tab._check_all_btn.text() == "Uncheck All"
         tab._on_check_all()
         assert tab._check_all_btn.text() == "Check All"
+
+    def test_label_uses_visible_filtered_keys(self, qapp):
+        key_data = [("alpha", 1), ("beta", 2)]
+        tab = _make_key_browser(qapp, MODE_BLACKLIST, {"alpha"}, key_data=key_data)
+        tab._build_tree()
+        tab._search.setText("alp")
+        tab._update_check_all_label()
+        assert tab._check_all_btn.text() == "Uncheck All"
 
 
 class TestKeyBrowserFilterKeysChangedSignal:

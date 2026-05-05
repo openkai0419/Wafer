@@ -318,19 +318,28 @@ class _KeyBrowserTab(QtWidgets.QWidget):
     def _check_header(self) -> str:
         return t("Block") if self._filter_mode == MODE_BLACKLIST else t("Use")
 
-    def _on_check_all(self):
+    def _check_all_target_keys(self) -> set[str]:
+        text = self._search.text().strip().lower()
         all_keys = self.all_known_keys()
-        if all_keys and self._filter_keys >= all_keys:
-            self._filter_keys.clear()
+        if not text:
+            return all_keys
+        return {key for key in all_keys if text in key.lower()}
+
+    def _on_check_all(self):
+        target_keys = self._check_all_target_keys()
+        if not target_keys:
+            return
+        if target_keys <= self._filter_keys:
+            self._filter_keys.difference_update(target_keys)
         else:
-            self._filter_keys = set(all_keys)
+            self._filter_keys.update(target_keys)
         self._update_check_all_label()
         self._build_tree()
         self.filter_keys_changed.emit(set(self._filter_keys))
 
     def _update_check_all_label(self):
-        all_keys = self.all_known_keys()
-        all_checked = all_keys and self._filter_keys >= all_keys
+        target_keys = self._check_all_target_keys()
+        all_checked = target_keys and target_keys <= self._filter_keys
         self._check_all_btn.setText(t("Uncheck All") if all_checked else t("Check All"))
 
     def _on_header_sort(self, section: int):

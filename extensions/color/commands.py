@@ -43,7 +43,7 @@ class ColorSearchCommands(MenuGroup):
     def commands(cls):
         return [
             ActionKit.Command(
-                path="color_search.apply_filter",
+                path="color.apply_filter",
                 display="Apply Color Filter",
                 hidden=True,
                 params=[
@@ -55,7 +55,7 @@ class ColorSearchCommands(MenuGroup):
                 func=apply_color_filter,
             ),
             ActionKit.Command(
-                path="color_search.apply_selected_color",
+                path="color.apply_selected_color",
                 display="Apply Selected Color",
                 hidden=True,
                 params=[ActionKit.Param(name="hex_color", value="")],

@@ -8,14 +8,14 @@ from PIL import Image
 from PySide6 import QtCore, QtGui, QtWidgets
 import pytest
 
-from extensions.color_search import widget as color_widget_module
-from extensions.color_search._color import hex_to_packed, normalize_tolerance, packed_to_hex, palette_tags, rgb_to_packed
-from extensions.color_search.commands import apply_color_filter, apply_selected_color
-from extensions.color_search.collector import ColorCollector, extract_palette
-from extensions.color_search.filter import ColorFilter
-from extensions.color_search.panel import _ColorButton
-from extensions.color_search.settings import APP_SETTINGS_KEY, ColorSettings, palette_keys
-from extensions.color_search.widget import ColorFilterWidget, _DEFAULT_TOLERANCE
+from extensions.color import widget as color_widget_module
+from extensions.color._color import hex_to_packed, normalize_tolerance, packed_to_hex, palette_tags, rgb_to_packed
+from extensions.color.commands import apply_color_filter, apply_selected_color
+from extensions.color.collector import ColorCollector, extract_palette
+from extensions.color.filter import ColorFilter
+from extensions.color.panel import _ColorButton
+from extensions.color.settings import APP_SETTINGS_KEY, ColorSettings, palette_keys
+from extensions.color.widget import ColorFilterWidget, _DEFAULT_TOLERANCE
 
 
 @pytest.fixture()
@@ -147,7 +147,7 @@ def test_color_filter_and_mode_requires_both_colors():
 
 
 def test_color_filter_uses_dynamic_palette_keys(monkeypatch):
-    monkeypatch.setattr("extensions.color_search.filter.palette_keys", lambda: ("palette.1", "palette.2", "palette.3"))
+    monkeypatch.setattr("extensions.color.filter.palette_keys", lambda: ("palette.1", "palette.2", "palette.3"))
     sql, params = ColorFilter.build_path_query({"colors": [{"hex": "#ff0000", "tolerance": 0.1}], "mode": "OR"}, lambda p: p)
     assert "?,?,?" in sql
     assert params[:3] == ["color.palette.1", "color.palette.2", "color.palette.3"]
@@ -158,7 +158,7 @@ def test_color_settings_save_updates_app_settings_and_notifies_collector(qapp, m
     save_and_notify = MagicMock()
     monkeypatch.setattr(ColorSettings, "_instance", None)
     monkeypatch.setattr(ColorSettings, "_app_settings", staticmethod(lambda: fake_app))
-    monkeypatch.setattr("extensions.color_search.settings.color_config.save_and_notify", save_and_notify)
+    monkeypatch.setattr("extensions.color.settings.color_config.save_and_notify", save_and_notify)
 
     settings = ColorSettings.instance()
     changed = MagicMock()
@@ -193,18 +193,18 @@ def test_color_collector_reloads_settings_and_uses_palette_slots(monkeypatch):
     collector._settings = {"palette_slots": 3}
     calls = {}
 
-    monkeypatch.setattr("extensions.color_search.collector.image_loader_resolver.load_pil", lambda path, size: image)
+    monkeypatch.setattr("extensions.color.collector.image_loader_resolver.load_pil", lambda path, size: image)
 
     def fake_extract_palette(img, max_colors, sample_size=256):
         calls["max_colors"] = max_colors
         return [rgb_to_packed(255, 0, 0)] * max_colors
 
-    monkeypatch.setattr("extensions.color_search.collector.extract_palette", fake_extract_palette)
+    monkeypatch.setattr("extensions.color.collector.extract_palette", fake_extract_palette)
     result = collector.process("sample.jpg", ())
     assert calls["max_colors"] == 3
     assert tuple(result.tags.keys()) == ("palette.1", "palette.2", "palette.3")
 
-    monkeypatch.setattr("extensions.color_search.collector.color_config.load", lambda: {"palette_slots": 4})
+    monkeypatch.setattr("extensions.color.collector.color_config.load", lambda: {"palette_slots": 4})
     collector.on_notify({"palette_slots": 4})
     assert collector._settings == {"palette_slots": 4}
 
@@ -287,7 +287,7 @@ def test_color_widget_selection_toggles_and_keeps_latest_only(color_widget):
 
 def test_color_widget_swatch_click_selects_row_and_changes_color(color_widget):
     with pytest.MonkeyPatch.context() as monkeypatch:
-        monkeypatch.setattr("extensions.color_search.widget.ColorPickerDialog.get_color", lambda *args, **kwargs: QtGui.QColor("#224466"))
+        monkeypatch.setattr("extensions.color.widget.ColorPickerDialog.get_color", lambda *args, **kwargs: QtGui.QColor("#224466"))
         color_widget._rows[0]._on_swatch_clicked()
     params = color_widget.read_params()
     assert color_widget.has_selection() is True

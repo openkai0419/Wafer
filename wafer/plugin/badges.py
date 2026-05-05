@@ -11,13 +11,14 @@ KNOWN_EXTENSIONS: dict[str, ExtensionBadge | None] = {
     "image": ExtensionBadge.PREFERRED,
     "video": ExtensionBadge.PREFERRED,
     "animated": ExtensionBadge.PREFERRED,
+    "color": None,
     "exiftool": None,
     "ffmpeg": None,
     "zip": None,
     "text_generation": None,
     "additional_filters": None,
     "additional_layout": None,
-    "ai_tagger": ExtensionBadge.HEAVY,
+    "wd14": ExtensionBadge.HEAVY,
     "florence": ExtensionBadge.HEAVY,
 }
 

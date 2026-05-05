@@ -24,10 +24,10 @@ class TestBadgeTexts:
         assert heavy_install_confirm_text() == f"{HEAVY_BADGE_TOOLTIP}\nContinue?"
 
     def test_heavy_multi_warning_text_uses_shared_parts(self):
-        text = heavy_multi_warning_text(["ai_tagger", None, "florence"])
+        text = heavy_multi_warning_text(["wd14", None, "florence"])
 
         assert text.startswith(HEAVY_MULTI_WARNING_HEADER)
-        assert "- ai_tagger" in text
+        assert "- wd14" in text
         assert "- florence" in text
         assert text.endswith(HEAVY_MULTI_WARNING_FOOTER)
         assert heavy_warning_title() == HEAVY_WARNING_TITLE

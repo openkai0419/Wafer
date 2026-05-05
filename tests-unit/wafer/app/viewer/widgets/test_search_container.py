@@ -46,6 +46,48 @@ def _menu_labels(menu):
     return labels
 
 
+class _SelectableParamWidget(QtWidgets.QWidget):
+    changed = QtCore.Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.selected = False
+
+    def select(self):
+        self.selected = True
+
+    def clear_selection(self):
+        self.selected = False
+
+    def has_selection(self):
+        return self.selected
+
+
+class _SelectableFilter:
+    NAME = "selectable"
+    DISPLAY_NAME = "Selectable"
+
+    @classmethod
+    def create_widget(cls, parent=None):
+        return _SelectableParamWidget(parent)
+
+    @classmethod
+    def read_params(cls, widget):
+        return {}
+
+    @classmethod
+    def write_params(cls, widget, params):
+        pass
+
+    @classmethod
+    def inheritable_params(cls, params):
+        return {}
+
+    @classmethod
+    def bind_key_store(cls, widget, key_store):
+        pass
+
+
 def _find_menu_action(menu, text):
     for action in menu.actions():
         if _menu_action_label(action) == text:
@@ -263,7 +305,7 @@ class TestSearchContainer:
     def test_get_sort_defaults(self, qapp):
         container = SearchContainer()
         sort_name, ascending = container.get_sort()
-        assert sort_name == "path"
+        assert sort_name == "none"
         assert ascending is False
 
     def test_set_sort(self, qapp):
@@ -748,3 +790,39 @@ class TestFilterInheritance:
         params = container._rows[0].get_param_widget().read_params()
         assert params["query_mode"] == "GLOB"
         assert params["keyword_mode"] == "AND"
+
+
+class TestSelectableParamWidgets:
+    def test_filter_rows_returns_matching_rows(self, qapp):
+        container = SearchContainer()
+        container._on_remove_row(container._rows[0])
+        container._add_row(_SelectableFilter)
+        container._add_row(TextFilter)
+
+        rows = container.filter_rows("selectable")
+
+        assert len(rows) == 1
+        assert rows[0].filter_cls is _SelectableFilter
+
+    def test_param_widgets_returns_matching_widgets(self, qapp):
+        container = SearchContainer()
+        container._on_remove_row(container._rows[0])
+        container._add_row(_SelectableFilter)
+        container._add_row(_SelectableFilter)
+
+        widgets = container.param_widgets("selectable")
+
+        assert len(widgets) == 2
+        assert all(isinstance(widget, _SelectableParamWidget) for widget in widgets)
+
+    def test_param_widgets_can_filter_enabled_rows(self, qapp):
+        container = SearchContainer()
+        container._on_remove_row(container._rows[0])
+        container._add_row(_SelectableFilter)
+        container._add_row(_SelectableFilter)
+        container._rows[1].set_enabled(False)
+
+        widgets = container.param_widgets("selectable", enabled_only=True)
+
+        assert len(widgets) == 1
+        assert widgets[0] is container._rows[0].get_param_widget()

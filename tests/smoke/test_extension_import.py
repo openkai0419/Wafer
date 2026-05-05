@@ -73,7 +73,7 @@ EXPECTED_PLUGINS = {
         ("viewer", "AnimatedViewerPlugin"),
         ("command", "AnimatedViewerCommands"),
     },
-    "ai_tagger": {
+    "wd14": {
         ("collector", "WD14TaggerCollector"),
     },
     "florence": {
@@ -101,6 +101,11 @@ EXPECTED_PLUGINS = {
         ("layout", "MultiSpanTilingLayout"),
         ("layout", "OptimizedJustifiedLayout"),
         ("layout", "OrganicPartitionLayout"),
+    },
+    "color": {
+        ("collector", "ColorCollector"),
+        ("filter", "ColorFilter"),
+        ("tag_panel", "ColorTagPanelPlugin"),
     },
     "zip": {
         ("collector", "ZipCollectorPlugin"),
@@ -171,11 +176,11 @@ class TestExtensionAttributes:
             for registry_key, cls in found:
                 assert cls.DEFAULT_ENABLED is True, f"{cls.__name__} in {ext_name} should be DEFAULT_ENABLED=True"
 
-    def test_ai_tagger_default_disabled(self):
+    def test_wd14_default_disabled(self):
         from wafer.plugin import BasePanelPlugin
 
-        folder = os.path.join(EXTENSIONS_DIR, "ai_tagger")
-        found = _import_extension("ai_tagger", folder)
+        folder = os.path.join(EXTENSIONS_DIR, "wd14")
+        found = _import_extension("wd14", folder)
         for _, cls in found:
             if issubclass(cls, BasePanelPlugin):
                 continue

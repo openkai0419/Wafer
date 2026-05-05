@@ -152,7 +152,7 @@ class SearchContainer(QtWidgets.QWidget):
         self._key_store = KeyStore(self)
         self._last_paths = object()
         self._rows: list[FilterRow] = []
-        self._sort_name = "path"
+        self._sort_name = "none"
         self._ascending = False
         self._tools_host = None
         self._build_ui()
@@ -315,6 +315,24 @@ class SearchContainer(QtWidgets.QWidget):
 
     def _on_row_changed(self):
         self.filter_changed.emit()
+
+    def filter_rows(self, filter_name: str | None = None, *, enabled_only: bool = False) -> list[FilterRow]:
+        rows: list[FilterRow] = []
+        for row in self._rows:
+            if filter_name is not None and getattr(row.filter_cls, "NAME", None) != filter_name:
+                continue
+            if enabled_only and not row.is_enabled():
+                continue
+            rows.append(row)
+        return rows
+
+    def param_widgets(self, filter_name: str | None = None, *, enabled_only: bool = False) -> list[QtWidgets.QWidget]:
+        widgets: list[QtWidgets.QWidget] = []
+        for row in self.filter_rows(filter_name, enabled_only=enabled_only):
+            widget = row.get_param_widget()
+            if widget is not None:
+                widgets.append(widget)
+        return widgets
 
     def _show_row_menu(self, row: FilterRow, global_pos: QtCore.QPoint):
         self._build_row_menu(row).exec(global_pos)
@@ -569,7 +587,7 @@ class SearchContainer(QtWidgets.QWidget):
         self.filter_changed.emit()
 
     def restore_state(self, state: dict):
-        sort_by = state.get("sort_by", "path")
+        sort_by = state.get("sort_by", "none")
         ascending = state.get("ascending", False)
         self.set_sort(sort_by, ascending)
         bars = state.get("bars")

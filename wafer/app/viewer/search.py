@@ -18,7 +18,7 @@ _DEFAULTS = {
     "keywords": "",
     "query_mode": "GLOB",
     "keyword_mode": "AND",
-    "sort_by": "path",
+    "sort_by": "none",
     "ascending": True,
     "keyword_separator": ",",
     "include_subfolders": True,
@@ -99,7 +99,7 @@ class SearchService(QtCore.QObject):
             entries = self.build_filter_entries()
         entries_key = tuple((cls.NAME, repr(sorted(params.items())), op) for cls, params, op in entries)
         return (
-            self._params.get("sort_by", "path"),
+            self._params.get("sort_by", "none"),
             self._params.get("ascending", True),
             entries_key,
         )
@@ -131,7 +131,7 @@ class SearchService(QtCore.QObject):
 
     @profiler.profile
     def resolve_sort(self):
-        sort_name = self._params.get("sort_by", "path")
+        sort_name = self._params.get("sort_by", "none")
         plugin = sort_registry.get(sort_name)
         return plugin or NaturalPathSort
 

@@ -7,6 +7,7 @@ from wafer.builtins.imageloader import SystemImageLoader
 from wafer.builtins.viewer import DefaultViewerPlugin
 from wafer.builtins.filters import TextFilter, DirectoryFilter
 from wafer.builtins.sorts import (
+    NoSort,
     NaturalPathSort,
     NaturalNameSort,
     ModifiedSort,
@@ -111,12 +112,16 @@ class TestBuiltinFilters:
 class TestBuiltinSorts:
     def test_all_sorts_registered(self):
         names = {s.NAME for s in sort_registry.list_all()}
-        expected = {"path", "name", "modified", "created", "size", "collected", "random"}
+        expected = {"none", "path", "name", "modified", "created", "size", "collected", "random"}
         assert expected.issubset(names)
 
     def test_all_sorts_are_base_sort_plugin(self):
-        for cls in [NaturalPathSort, NaturalNameSort, ModifiedSort, CreatedSort, SizeSort, CollectedSort, RandomSort]:
+        for cls in [NoSort, NaturalPathSort, NaturalNameSort, ModifiedSort, CreatedSort, SizeSort, CollectedSort, RandomSort]:
             assert issubclass(cls, BaseSortPlugin)
+
+    def test_no_sort_has_no_sorting_columns(self):
+        assert NoSort.SORT_COLUMN is None
+        assert NoSort.META_KEY is None
 
     def test_natural_path_sort(self):
         rows = [{"path": "img10.png"}, {"path": "img2.png"}, {"path": "img1.png"}]

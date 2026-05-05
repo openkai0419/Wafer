@@ -1,4 +1,4 @@
-from extensions.ai_tagger.settings import wd14_config
+from extensions.wd14.settings import wd14_config
 
 
 class TestWD14Config:

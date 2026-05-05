@@ -310,6 +310,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.database_combo.removeClicked.connect(lambda: Command.invoke("db.remove_database"))
 
         self.search_row_widget = SearchContainer()
+        UI.register_instance("SearchContainer", self.search_row_widget)
         self.search_row_widget.filter_changed.connect(self._on_search_setting_changed)
 
         from .state_coordinator import PathStateCoordinator, QueryStateCoordinator, UIStateCoordinator

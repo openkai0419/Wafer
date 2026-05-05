@@ -103,7 +103,7 @@ class QueryPreset:
     preset_id: str = field(default_factory=_new_id)
     name: str = ""
     bars: list[BarSpec] = field(default_factory=list)
-    sort_by: str = "path"
+    sort_by: str = "none"
     ascending: bool = False
     created_at: str = field(default_factory=_now_iso)
     updated_at: str = field(default_factory=_now_iso)
@@ -127,7 +127,7 @@ class QueryPreset:
             preset_id=data.get("preset_id", _new_id()),
             name=data.get("name", ""),
             bars=[BarSpec.from_dict(b) for b in (data.get("bars") or [])],
-            sort_by=data.get("sort_by", "path"),
+            sort_by=data.get("sort_by", "none"),
             ascending=bool(data.get("ascending", False)),
             created_at=data.get("created_at", _now_iso()),
             updated_at=data.get("updated_at", _now_iso()),
@@ -338,7 +338,7 @@ class WorkspaceStore:
     def update_query_preset(self, preset_id: str, bars: list[BarSpec | dict[str, Any]], sort_by: str, ascending: bool) -> bool:
         def apply(p: QueryPreset) -> None:
             p.bars = [b if isinstance(b, BarSpec) else BarSpec.from_dict(b) for b in (bars or [])]
-            p.sort_by = sort_by or "path"
+            p.sort_by = sort_by or "none"
             p.ascending = bool(ascending)
 
         return self._update_preset(

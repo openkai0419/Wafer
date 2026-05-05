@@ -6,10 +6,10 @@ from unittest.mock import MagicMock, patch, PropertyMock
 import pytest
 from PIL import Image
 
-from extensions.ai_tagger._downloader import KNOWN_MODELS, DEFAULT_MODEL
-from extensions.ai_tagger.collector import WD14TaggerCollector, _CACHE_MAX, _ENGINE_IDLE_TIMEOUT
-from extensions.ai_tagger.settings import parse_blacklist
-from extensions.ai_tagger.settings import wd14_config
+from extensions.wd14._downloader import KNOWN_MODELS, DEFAULT_MODEL
+from extensions.wd14.collector import WD14TaggerCollector, _CACHE_MAX, _ENGINE_IDLE_TIMEOUT
+from extensions.wd14.settings import parse_blacklist
+from extensions.wd14.settings import wd14_config
 
 
 class TestKnownModels:
@@ -34,6 +34,9 @@ class TestBuildTags:
             "general": {"1girl": 0.95, "blue_hair": 0.80, "smile": 0.70},
             "character": {"hatsune_miku": 0.90},
         }
+
+    def teardown_method(self):
+        self.collector.shutdown()
 
     # --- rating_mode="top" (default) ---
 
@@ -164,6 +167,9 @@ class TestTwoLevelCache:
             "general": "1girl, smile",
         }
 
+    def teardown_method(self):
+        self.collector.shutdown()
+
     def test_l1_hash_cache_hit(self):
         self.collector._hash_cache["abc123"] = self.tags
         result = self.collector.process("/test/file.jpg", (1000.0, 500, "abc123"))
@@ -172,7 +178,7 @@ class TestTwoLevelCache:
 
     def test_l1_cache_skips_thumbnail(self):
         self.collector._hash_cache["abc123"] = self.tags
-        with patch("extensions.ai_tagger.collector.image_loader_resolver") as mock_resolver:
+        with patch("extensions.wd14.collector.image_loader_resolver") as mock_resolver:
             self.collector.process("/test/file.jpg", (1000.0, 500, "abc123"))
             mock_resolver.load_pil.assert_not_called()
 
@@ -184,7 +190,7 @@ class TestTwoLevelCache:
         self.collector._engine = MagicMock()
         self.collector._engine.input_height = 448
 
-        with patch("extensions.ai_tagger.collector.image_loader_resolver") as mock_resolver:
+        with patch("extensions.wd14.collector.image_loader_resolver") as mock_resolver:
             mock_resolver.load_pil.return_value = thumb
             result = self.collector.process("/test/file.jpg", (1000.0, 500, "xyz789"))
         assert result.status is True
@@ -199,7 +205,7 @@ class TestTwoLevelCache:
         self.collector._engine = MagicMock()
         self.collector._engine.input_height = 448
 
-        with patch("extensions.ai_tagger.collector.image_loader_resolver") as mock_resolver:
+        with patch("extensions.wd14.collector.image_loader_resolver") as mock_resolver:
             mock_resolver.load_pil.return_value = thumb
             self.collector.process("/test/file.jpg", (1000.0, 500, "xyz789"))
         self.collector._engine.predict.assert_not_called()
@@ -216,7 +222,7 @@ class TestTwoLevelCache:
         self.collector._engine.input_height = 448
         self.collector._engine.predict.return_value = mock_result
 
-        with patch("extensions.ai_tagger.collector.image_loader_resolver") as mock_resolver:
+        with patch("extensions.wd14.collector.image_loader_resolver") as mock_resolver:
             mock_resolver.load_pil.return_value = thumb
             result = self.collector.process("/test/file.jpg", (1000.0, 500, "new_hash"))
         assert result.status is True
@@ -237,7 +243,7 @@ class TestTwoLevelCache:
         self.collector._engine.input_height = 448
         self.collector._engine.predict.return_value = mock_result
 
-        with patch("extensions.ai_tagger.collector.image_loader_resolver") as mock_resolver:
+        with patch("extensions.wd14.collector.image_loader_resolver") as mock_resolver:
             mock_resolver.load_pil.return_value = thumb
             self.collector.process("/test/file.jpg", (1000.0, 500, "hash_a"))
         assert "hash_a" in self.collector._hash_cache
@@ -247,7 +253,7 @@ class TestTwoLevelCache:
         self.collector._engine = MagicMock()
         self.collector._engine.input_height = 448
 
-        with patch("extensions.ai_tagger.collector.image_loader_resolver") as mock_resolver:
+        with patch("extensions.wd14.collector.image_loader_resolver") as mock_resolver:
             mock_resolver.load_pil.return_value = None
             result = self.collector.process("/test/file.jpg", (1000.0, 500, "some_hash"))
         assert result.status is False
@@ -259,7 +265,7 @@ class TestTwoLevelCache:
         self.collector._engine.input_height = 448
         self.collector._engine.predict.side_effect = RuntimeError("ONNX error")
 
-        with patch("extensions.ai_tagger.collector.image_loader_resolver") as mock_resolver:
+        with patch("extensions.wd14.collector.image_loader_resolver") as mock_resolver:
             mock_resolver.load_pil.return_value = thumb
             result = self.collector.process("/test/file.jpg", (1000.0, 500, "err_hash"))
         assert result.status is False
@@ -267,12 +273,12 @@ class TestTwoLevelCache:
 
 class TestPostInstall:
     def test_post_install_calls_ensure_model(self):
-        with patch("extensions.ai_tagger.collector.ensure_model") as mock_model:
+        with patch("extensions.wd14.collector.ensure_model") as mock_model:
             WD14TaggerCollector.post_install("/fake/dir")
             mock_model.assert_called_once()
 
     def test_post_install_propagates_model_error(self):
-        with patch("extensions.ai_tagger.collector.ensure_model", side_effect=RuntimeError("dl failed")):
+        with patch("extensions.wd14.collector.ensure_model", side_effect=RuntimeError("dl failed")):
             with pytest.raises(RuntimeError, match="dl failed"):
                 WD14TaggerCollector.post_install("/fake/dir")
 
@@ -328,6 +334,9 @@ class TestIdleTimeout:
     def setup_method(self):
         self.collector = WD14TaggerCollector()
 
+    def teardown_method(self):
+        self.collector.shutdown()
+
     def test_touch_sets_last_used(self):
         assert self.collector._last_used == 0.0
         self.collector._touch()
@@ -338,7 +347,6 @@ class TestIdleTimeout:
         self.collector._touch()
         assert self.collector._idle_timer is not None
         assert self.collector._idle_timer.daemon is True
-        self.collector._idle_timer.cancel()
 
     def test_touch_replaces_previous_timer(self):
         self.collector._touch()
@@ -346,8 +354,6 @@ class TestIdleTimeout:
         self.collector._touch()
         second_timer = self.collector._idle_timer
         assert first_timer is not second_timer
-        first_timer.cancel()
-        second_timer.cancel()
 
     def test_check_idle_unloads_engine(self):
         engine = MagicMock()
@@ -380,12 +386,11 @@ class TestIdleTimeout:
         self.collector._engine.predict.return_value = mock_result
 
         before = self.collector._last_used
-        with patch("extensions.ai_tagger.collector.image_loader_resolver") as mock_resolver:
+        with patch("extensions.wd14.collector.image_loader_resolver") as mock_resolver:
             mock_resolver.load_pil.return_value = thumb
             self.collector.process("/test/file.jpg", (1000.0, 500, "new_hash"))
         assert self.collector._last_used > before
         assert self.collector._idle_timer is not None
-        self.collector._idle_timer.cancel()
 
     def test_engine_reloads_after_unload(self):
         engine = MagicMock()
@@ -401,7 +406,7 @@ class TestIdleTimeout:
         mock_instance.session = mock_session
         mock_inference_mod.WD14Inference.return_value = mock_instance
 
-        with patch("extensions.ai_tagger.collector.ensure_model") as mock_ensure, patch.dict("sys.modules", {"extensions.ai_tagger._inference": mock_inference_mod}):
+        with patch("extensions.wd14.collector.ensure_model") as mock_ensure, patch.dict("sys.modules", {"extensions.wd14._inference": mock_inference_mod}):
             mock_ensure.return_value = "/fake/model"
 
             self.collector._ensure_engine()
@@ -411,6 +416,9 @@ class TestIdleTimeout:
 class TestOnNotify:
     def setup_method(self):
         self.collector = WD14TaggerCollector()
+
+    def teardown_method(self):
+        self.collector.shutdown()
 
     def test_on_notify_reloads_settings(self):
         original = dict(self.collector._settings)
@@ -426,6 +434,9 @@ class TestOnNotify:
 class TestOnRequest:
     def setup_method(self):
         self.collector = WD14TaggerCollector()
+
+    def teardown_method(self):
+        self.collector.shutdown()
 
     def test_unknown_action_returns_none(self):
         assert self.collector.on_request("unknown.action", {}, None) is None
@@ -443,7 +454,7 @@ class TestOnRequest:
         self.collector._engine = MagicMock()
         self.collector._engine.input_height = 448
 
-        with patch("extensions.ai_tagger.collector.image_loader_resolver") as mock_resolver:
+        with patch("extensions.wd14.collector.image_loader_resolver") as mock_resolver:
             mock_resolver.load_pil.return_value = None
             result = self.collector.on_request("wd14.preview", {"path": "/test.jpg", "settings": {}}, None)
         assert result["error"] == "thumbnail_failed"
@@ -459,7 +470,7 @@ class TestOnRequest:
         self.collector._engine.input_height = 448
         self.collector._engine.predict.return_value = mock_result
 
-        with patch("extensions.ai_tagger.collector.image_loader_resolver") as mock_resolver:
+        with patch("extensions.wd14.collector.image_loader_resolver") as mock_resolver:
             mock_resolver.load_pil.return_value = thumb
             result = self.collector.on_request(
                 "wd14.preview",
@@ -476,9 +487,12 @@ class TestOnRequest:
 class TestSettingsIntegration:
     def test_default_settings_loaded(self):
         collector = WD14TaggerCollector()
-        assert "general_threshold" in collector._settings
-        assert "character_threshold" in collector._settings
-        assert "rating_mode" in collector._settings
+        try:
+            assert "general_threshold" in collector._settings
+            assert "character_threshold" in collector._settings
+            assert "rating_mode" in collector._settings
+        finally:
+            collector.shutdown()
 
     def test_process_uses_settings_thresholds(self):
         collector = WD14TaggerCollector()
@@ -495,7 +509,10 @@ class TestSettingsIntegration:
         collector._engine.input_height = 448
         collector._engine.predict.return_value = mock_result
 
-        with patch("extensions.ai_tagger.collector.image_loader_resolver") as mock_resolver:
-            mock_resolver.load_pil.return_value = thumb
-            collector.process("/test/file.jpg", (1000.0, 500, "hash_x"))
-        collector._engine.predict.assert_called_once_with(thumb, general_threshold=0.1, character_threshold=0.9)
+        try:
+            with patch("extensions.wd14.collector.image_loader_resolver") as mock_resolver:
+                mock_resolver.load_pil.return_value = thumb
+                collector.process("/test/file.jpg", (1000.0, 500, "hash_x"))
+            collector._engine.predict.assert_called_once_with(thumb, general_threshold=0.1, character_threshold=0.9)
+        finally:
+            collector.shutdown()

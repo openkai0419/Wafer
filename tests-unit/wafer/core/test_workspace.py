@@ -32,12 +32,12 @@ class TestPresetRoundtrip:
         store = WorkspaceStore(path=str(tmp_path / "ws.json"))
         bars = [BarSpec(filter="text", params={"keywords": "cat"}, op=None, enabled=True),
                 BarSpec(filter="text", params={"keywords": "dog"}, op="OR", enabled=True)]
-        p = QueryPreset(name="cats+dogs", bars=bars, sort_by="path", ascending=False)
+        p = QueryPreset(name="cats+dogs", bars=bars, sort_by="none", ascending=False)
         store.save_query_preset(p)
         got = store.get_query_preset(p.preset_id)
         assert len(got.bars) == 2
         assert got.bars[1].op == "OR"
-        assert got.sort_by == "path"
+        assert got.sort_by == "none"
 
     def test_rename_collision_rejected(self, tmp_path):
         store = WorkspaceStore(path=str(tmp_path / "ws.json"))

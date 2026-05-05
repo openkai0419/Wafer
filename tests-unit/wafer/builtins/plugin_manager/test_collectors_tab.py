@@ -109,7 +109,7 @@ class TestCollectorsTab:
         tab = CollectorsTab(
             collector_names=["tag_a", "tag_b", "tag_c"],
             parser_names=[],
-            heavy_collectors={"tag_a": "ai_tagger", "tag_b": "ai_tagger", "tag_c": "florence"},
+            heavy_collectors={"tag_a": "wd14", "tag_b": "wd14", "tag_c": "florence"},
         )
         qtbot.addWidget(tab)
 
@@ -122,7 +122,7 @@ class TestCollectorsTab:
 
         tab._matrix[("tag_c", "db1")].setChecked(True)
         assert len(warnings) == 1
-        assert "ai_tagger" in warnings[0]
+        assert "wd14" in warnings[0]
         assert "florence" in warnings[0]
 
     def test_fresh_db_no_enabled(self, qtbot, _patch_paths):

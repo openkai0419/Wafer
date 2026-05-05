@@ -184,7 +184,7 @@ def query_preset_save_current(ctx, w, name: str = "") -> str:
     preset = QueryPreset(
         name=name,
         bars=[BarSpec.from_dict(b) for b in (state.get("bars") or [])],
-        sort_by=state.get("sort_by", "path"),
+        sort_by=state.get("sort_by", "none"),
         ascending=bool(state.get("ascending", False)),
     )
     _store().save_query_preset(preset)
@@ -236,7 +236,7 @@ def query_preset_overwrite(ctx, w, preset_id: str = ""):
     ok = _store().update_query_preset(
         preset_id,
         [BarSpec.from_dict(b) for b in (state.get("bars") or [])],
-        state.get("sort_by", "path"),
+        state.get("sort_by", "none"),
         bool(state.get("ascending", False)),
     )
     if ok:

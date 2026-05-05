@@ -85,7 +85,7 @@ class TestCollectorRegistryState:
     def test_exif_collector_registered(self):
         assert "exiftool" in collector_resolver.names()
 
-    def test_ai_tagger_not_registered_by_default(self):
+    def test_wd14_not_registered_by_default(self):
         assert "wd14" not in collector_resolver.names()
 
 

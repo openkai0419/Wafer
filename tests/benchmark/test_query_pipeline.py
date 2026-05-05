@@ -10,6 +10,7 @@ import pytest
 
 from wafer.core.db.file_db import _TABLES, _VIEWS, _INDEXES_SQL
 from wafer.core.db.db_utils import apply_read_pragmas
+from wafer.utils.paths import resolve_data_path
 
 pytestmark = pytest.mark.benchmark
 
@@ -18,7 +19,13 @@ GENERATED_SIZES = [10_000, 50_000]
 WARMUP = 2
 ITERATIONS = 5
 
-REAL_DB_DIR = Path(os.environ.get("WAFER_DATA_DIR", "C:/Users/openk/AppData/Local/Wafer/data"))
+
+def _resolve_real_db_dir() -> Path:
+    configured = os.environ.get("WAFER_DATA_DIR", "").strip()
+    return Path(configured) if configured else Path(resolve_data_path("data/"))
+
+
+REAL_DB_DIR = _resolve_real_db_dir()
 REAL_DBS = ["default", "nai"]
 EXPLAIN_DIR = Path(os.environ.get("WAFER_BENCHMARK_EXPLAIN_DIR", ".temp/benchmark_query_plans"))
 if not EXPLAIN_DIR.is_absolute():

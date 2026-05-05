@@ -13,6 +13,7 @@ from wafer.builtins.filters import (
     _normalize_text_inputs,
 )
 from wafer.builtins.sorts import (
+    NoSort,
     NaturalPathSort,
     NaturalNameSort,
     ModifiedSort,
@@ -272,6 +273,7 @@ class TestGlobalRegistries:
         assert filter_registry.get("directory") is DirectoryFilter
 
     def test_builtins_registered_in_sort_registry(self):
+        assert sort_registry.get("none") is NoSort
         assert sort_registry.get("path") is NaturalPathSort
         assert sort_registry.get("name") is NaturalNameSort
         assert sort_registry.get("modified") is ModifiedSort
@@ -396,6 +398,10 @@ class TestNaturalKey:
 
 
 class TestSortPluginAttributes:
+    def test_no_sort(self):
+        assert NoSort.NAME == "none"
+        assert NoSort.SORT_COLUMN is None
+
     def test_natural_path_sort(self):
         assert NaturalPathSort.NAME == "path"
         assert NaturalPathSort.META_KEY is None

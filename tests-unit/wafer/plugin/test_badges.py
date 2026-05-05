@@ -8,7 +8,7 @@ class TestResolveBadge:
         assert resolve_badge("animated") == ExtensionBadge.PREFERRED
 
     def test_heavy(self):
-        assert resolve_badge("ai_tagger") == ExtensionBadge.HEAVY
+        assert resolve_badge("wd14") == ExtensionBadge.HEAVY
         assert resolve_badge("florence") == ExtensionBadge.HEAVY
 
     def test_normal(self):
@@ -27,8 +27,8 @@ class TestResolveBadge:
 class TestBadgeSortKey:
     def test_ordering(self):
         assert badge_sort_key("image") < badge_sort_key("exiftool")
-        assert badge_sort_key("exiftool") < badge_sort_key("ai_tagger")
-        assert badge_sort_key("ai_tagger") < badge_sort_key("unknown_ext")
+        assert badge_sort_key("exiftool") < badge_sort_key("wd14")
+        assert badge_sort_key("wd14") < badge_sort_key("unknown_ext")
 
     def test_preferred_is_first(self):
         assert badge_sort_key("image") == 0
@@ -43,14 +43,14 @@ class TestBadgeSortKey:
         assert badge_sort_key("random_plugin") == 3
 
     def test_sort_stability(self):
-        folders = ["florence", "image", "exiftool", "unknown", "ai_tagger", "video", "ffmpeg", "zip"]
+        folders = ["florence", "image", "exiftool", "unknown", "wd14", "video", "ffmpeg", "zip"]
         sorted_folders = sorted(folders, key=lambda f: (badge_sort_key(f), f))
-        expected = ["image", "video", "exiftool", "ffmpeg", "zip", "ai_tagger", "florence", "unknown"]
+        expected = ["image", "video", "exiftool", "ffmpeg", "zip", "florence", "wd14", "unknown"]
         assert sorted_folders == expected
 
 
 class TestKnownExtensions:
     def test_all_known_entries_present(self):
-        expected = {"image", "video", "animated", "exiftool", "ffmpeg", "text_generation",
-                    "additional_filters", "additional_layout", "ai_tagger", "florence", "zip"}
+        expected = {"image", "video", "animated", "color", "exiftool", "ffmpeg", "text_generation",
+                    "additional_filters", "additional_layout", "wd14", "florence", "zip"}
         assert set(KNOWN_EXTENSIONS.keys()) == expected

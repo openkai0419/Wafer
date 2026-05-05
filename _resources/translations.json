@@ -1,6 +1,1210 @@
 {
+  "Override selected color": {
+    "en": "Override selected color",
+    "ja": ""
+  },
+  "Add to color filter": {
+    "en": "Add to color filter",
+    "ja": ""
+  },
+  "Continue?": {
+    "en": "Continue?",
+    "ja": ""
+  },
+  "Install HEAVY Extension": {
+    "en": "Install HEAVY Extension",
+    "ja": ""
+  },
+  "color": {
+    "en": "color",
+    "ja": ""
+  },
+  "Palette count:": {
+    "en": "Palette count:",
+    "ja": ""
+  },
+  "Delete existing Color data": {
+    "en": "Delete existing Color data",
+    "ja": ""
+  },
+  "Number of palette colors to collect and search": {
+    "en": "Number of palette colors to collect and search",
+    "ja": ""
+  },
+  "Save Color Settings": {
+    "en": "Save Color Settings",
+    "ja": ""
+  },
+  "Color settings saved (palette slots={slots})": {
+    "en": "Color settings saved (palette slots={slots})",
+    "ja": ""
+  },
+  "Color settings saved, existing data deletion requested (palette slots={slots})": {
+    "en": "Color settings saved, existing data deletion requested (palette slots={slots})",
+    "ja": ""
+  },
+  "Color settings saved, deletion and re-collection requested (palette slots={slots})": {
+    "en": "Color settings saved, deletion and re-collection requested (palette slots={slots})",
+    "ja": ""
+  },
+  "Apply to selected color": {
+    "en": "Apply to selected color",
+    "ja": ""
+  },
+  "Tolerance: ": {
+    "en": "Tolerance: ",
+    "ja": ""
+  },
+  "Add as row AND": {
+    "en": "Add as row AND",
+    "ja": ""
+  },
+  "Add as row OR": {
+    "en": "Add as row OR",
+    "ja": ""
+  },
+  " Filter ": {
+    "en": " Filter ",
+    "ja": ""
+  },
+  "Add": {
+    "en": "Add",
+    "ja": ""
+  },
+  "Add Database": {
+    "en": "Add Database",
+    "ja": ""
+  },
+  "Add Folder": {
+    "en": "Add Folder",
+    "ja": ""
+  },
+  "Add Mark": {
+    "en": "Add Mark",
+    "ja": ""
+  },
+  "Add color...": {
+    "en": "Add color...",
+    "ja": ""
+  },
+  "Add item": {
+    "en": "Add item",
+    "ja": ""
+  },
+  "Add new mark...": {
+    "en": "Add new mark...",
+    "ja": ""
+  },
+  "Add new tag": {
+    "en": "Add new tag",
+    "ja": ""
+  },
+  "Add tag or metadata": {
+    "en": "Add tag or metadata",
+    "ja": ""
+  },
+  "All": {
+    "en": "All",
+    "ja": ""
+  },
+  "Always on Top": {
+    "en": "Always on Top",
+    "ja": ""
+  },
+  "Animated Viewer": {
+    "en": "Animated Viewer",
+    "ja": ""
+  },
+  "Append": {
+    "en": "Append",
+    "ja": ""
+  },
+  "Apply Path Preset": {
+    "en": "Apply Path Preset",
+    "ja": ""
+  },
+  "Apply Query Preset": {
+    "en": "Apply Query Preset",
+    "ja": ""
+  },
+  "Apply UI Preset": {
+    "en": "Apply UI Preset",
+    "ja": ""
+  },
+  "Ascending": {
+    "en": "Ascending",
+    "ja": ""
+  },
+  "Auto Execute on Database Update": {
+    "en": "Auto Execute on Database Update",
+    "ja": ""
+  },
+  "Auto Execute on Parameter Change": {
+    "en": "Auto Execute on Parameter Change",
+    "ja": ""
+  },
+  "Auto Scroll": {
+    "en": "Auto Scroll",
+    "ja": ""
+  },
+  "AutoScroll": {
+    "en": "AutoScroll",
+    "ja": ""
+  },
+  "AutoScroll Speed Down": {
+    "en": "AutoScroll Speed Down",
+    "ja": ""
+  },
+  "AutoScroll Speed Up": {
+    "en": "AutoScroll Speed Up",
+    "ja": ""
+  },
+  "Autoplay": {
+    "en": "Autoplay",
+    "ja": ""
+  },
+  "Autoplay on Appear": {
+    "en": "Autoplay on Appear",
+    "ja": ""
+  },
+  "Autoplay on Hover": {
+    "en": "Autoplay on Hover",
+    "ja": ""
+  },
+  "Autoplay on Select": {
+    "en": "Autoplay on Select",
+    "ja": ""
+  },
+  "Batch Renamer": {
+    "en": "Batch Renamer",
+    "ja": ""
+  },
+  "Binding": {
+    "en": "Binding",
+    "ja": ""
+  },
+  "Builtin": {
+    "en": "Builtin",
+    "ja": ""
+  },
+  "Cancel": {
+    "en": "Cancel",
+    "ja": ""
+  },
+  "Center": {
+    "en": "Center",
+    "ja": ""
+  },
+  "Child Folder": {
+    "en": "Child Folder",
+    "ja": ""
+  },
+  "Clear": {
+    "en": "Clear",
+    "ja": ""
+  },
+  "Clear All Marks": {
+    "en": "Clear All Marks",
+    "ja": ""
+  },
+  "Clear Selection": {
+    "en": "Clear Selection",
+    "ja": ""
+  },
+  "Click Select": {
+    "en": "Click Select",
+    "ja": ""
+  },
+  "Click to toggle all databases": {
+    "en": "Click to toggle all databases",
+    "ja": ""
+  },
+  "Collected": {
+    "en": "Collected",
+    "ja": ""
+  },
+  "Color Filter Options": {
+    "en": "Color Filter Options",
+    "ja": ""
+  },
+  "Color filter options": {
+    "en": "Color filter options",
+    "ja": ""
+  },
+  "Color tolerance": {
+    "en": "Color tolerance",
+    "ja": ""
+  },
+  "Community / third-party extension": {
+    "en": "Community / third-party extension",
+    "ja": "コミュニティ / サードパーティ拡張機能"
+  },
+  "Contain/Cover": {
+    "en": "Contain/Cover",
+    "ja": ""
+  },
+  "Content Viewer": {
+    "en": "Content Viewer",
+    "ja": ""
+  },
+  "Copy": {
+    "en": "Copy",
+    "ja": ""
+  },
+  "Copy FileName(s)": {
+    "en": "Copy FileName(s)",
+    "ja": ""
+  },
+  "Copy Paths(s)": {
+    "en": "Copy Paths(s)",
+    "ja": ""
+  },
+  "Core": {
+    "en": "Core",
+    "ja": ""
+  },
+  "Created": {
+    "en": "Created",
+    "ja": ""
+  },
+  "Cut": {
+    "en": "Cut",
+    "ja": ""
+  },
+  "Cycle Orientation": {
+    "en": "Cycle Orientation",
+    "ja": ""
+  },
+  "Cycle Sort By": {
+    "en": "Cycle Sort By",
+    "ja": ""
+  },
+  "DB:": {
+    "en": "DB:",
+    "ja": ""
+  },
+  "Database": {
+    "en": "Database",
+    "ja": ""
+  },
+  "Database Manager": {
+    "en": "Database Manager",
+    "ja": ""
+  },
+  "Default for New Databases": {
+    "en": "Default for New Databases",
+    "ja": ""
+  },
+  "Define New Mark...": {
+    "en": "Define New Mark...",
+    "ja": ""
+  },
+  "Delete": {
+    "en": "Delete",
+    "ja": ""
+  },
+  "Delete Path Preset": {
+    "en": "Delete Path Preset",
+    "ja": ""
+  },
+  "Delete Query Preset": {
+    "en": "Delete Query Preset",
+    "ja": ""
+  },
+  "Delete UI Preset": {
+    "en": "Delete UI Preset",
+    "ja": ""
+  },
+  "Descending": {
+    "en": "Descending",
+    "ja": ""
+  },
+  "Directory": {
+    "en": "Directory",
+    "ja": ""
+  },
+  "Double-click to edit": {
+    "en": "Double-click to edit",
+    "ja": ""
+  },
+  "Drag to reorder · higher = preferred": {
+    "en": "Drag to reorder · higher = preferred",
+    "ja": ""
+  },
+  "Edit": {
+    "en": "Edit",
+    "ja": ""
+  },
+  "Edit Mode (might have visual issues)": {
+    "en": "Edit Mode (might have visual issues)",
+    "ja": ""
+  },
+  "Enabled": {
+    "en": "Enabled",
+    "ja": ""
+  },
+  "Enter search terms...": {
+    "en": "Enter search terms...",
+    "ja": ""
+  },
+  "ExifTool Settings": {
+    "en": "ExifTool Settings",
+    "ja": ""
+  },
+  "File": {
+    "en": "File",
+    "ja": ""
+  },
+  "File List": {
+    "en": "File List",
+    "ja": ""
+  },
+  "File View Menu": {
+    "en": "File View Menu",
+    "ja": ""
+  },
+  "FileViewer": {
+    "en": "FileViewer",
+    "ja": ""
+  },
+  "Filter": {
+    "en": "Filter",
+    "ja": ""
+  },
+  "Fit In View": {
+    "en": "Fit In View",
+    "ja": ""
+  },
+  "Fixed": {
+    "en": "Fixed",
+    "ja": ""
+  },
+  "Florence-2 Settings": {
+    "en": "Florence-2 Settings",
+    "ja": ""
+  },
+  "Folder Tree": {
+    "en": "Folder Tree",
+    "ja": ""
+  },
+  "Folder Tree Menu": {
+    "en": "Folder Tree Menu",
+    "ja": ""
+  },
+  "FolderTree": {
+    "en": "FolderTree",
+    "ja": ""
+  },
+  "Full Screen": {
+    "en": "Full Screen",
+    "ja": ""
+  },
+  "Grid View": {
+    "en": "Grid View",
+    "ja": ""
+  },
+  "GridView": {
+    "en": "GridView",
+    "ja": ""
+  },
+  "Help": {
+    "en": "Help",
+    "ja": ""
+  },
+  "Image View Menu": {
+    "en": "Image View Menu",
+    "ja": ""
+  },
+  "ImageView": {
+    "en": "ImageView",
+    "ja": ""
+  },
+  "Include Contained/Virtual Files": {
+    "en": "Include Contained/Virtual Files",
+    "ja": ""
+  },
+  "Include Subfolders": {
+    "en": "Include Subfolders",
+    "ja": ""
+  },
+  "Install Recommended for general use": {
+    "en": "Install Recommended for general use",
+    "ja": ""
+  },
+  "Installed": {
+    "en": "Installed",
+    "ja": ""
+  },
+  "Justified": {
+    "en": "Justified",
+    "ja": ""
+  },
+  "Justified (Optimized)": {
+    "en": "Justified (Optimized)",
+    "ja": ""
+  },
+  "Key Binding Window": {
+    "en": "Key Binding Window",
+    "ja": ""
+  },
+  "Last updated": {
+    "en": "Last updated",
+    "ja": ""
+  },
+  "Layout": {
+    "en": "Layout",
+    "ja": ""
+  },
+  "Level:": {
+    "en": "Level:",
+    "ja": ""
+  },
+  "List Mode": {
+    "en": "List Mode",
+    "ja": ""
+  },
+  "Lock tag from collector overwrite": {
+    "en": "Lock tag from collector overwrite",
+    "ja": ""
+  },
+  "Log": {
+    "en": "Log",
+    "ja": ""
+  },
+  "Loop": {
+    "en": "Loop",
+    "ja": ""
+  },
+  "Manager": {
+    "en": "Manager",
+    "ja": ""
+  },
+  "Mark": {
+    "en": "Mark",
+    "ja": ""
+  },
+  "Mark Filter Options": {
+    "en": "Mark Filter Options",
+    "ja": ""
+  },
+  "Mark filter options": {
+    "en": "Mark filter options",
+    "ja": ""
+  },
+  "Mark for deletion": {
+    "en": "Mark for deletion",
+    "ja": ""
+  },
+  "Mark name": {
+    "en": "Mark name",
+    "ja": ""
+  },
+  "Masonry": {
+    "en": "Masonry",
+    "ja": ""
+  },
+  "Match:": {
+    "en": "Match:",
+    "ja": ""
+  },
+  "Max Playback Slots": {
+    "en": "Max Playback Slots",
+    "ja": ""
+  },
+  "Menus": {
+    "en": "Menus",
+    "ja": ""
+  },
+  "Meta Viewer": {
+    "en": "Meta Viewer",
+    "ja": ""
+  },
+  "MetaInfo": {
+    "en": "MetaInfo",
+    "ja": ""
+  },
+  "Modified": {
+    "en": "Modified",
+    "ja": ""
+  },
+  "Mouse Binding Window": {
+    "en": "Mouse Binding Window",
+    "ja": ""
+  },
+  "MultiSpan Grid": {
+    "en": "MultiSpan Grid",
+    "ja": ""
+  },
+  "MultiSpan Tiling": {
+    "en": "MultiSpan Tiling",
+    "ja": ""
+  },
+  "Mute": {
+    "en": "Mute",
+    "ja": ""
+  },
+  "N (↙)": {
+    "en": "N (↙)",
+    "ja": ""
+  },
+  "Name": {
+    "en": "Name",
+    "ja": ""
+  },
+  "Navigate (Filesystem DFS)": {
+    "en": "Navigate (Filesystem DFS)",
+    "ja": ""
+  },
+  "Navigate (Hierarchy)": {
+    "en": "Navigate (Hierarchy)",
+    "ja": ""
+  },
+  "Navigate (Visible Tree)": {
+    "en": "Navigate (Visible Tree)",
+    "ja": ""
+  },
   "Navigate by Mouse Position": {
     "en": "Navigate by Mouse Position",
+    "ja": ""
+  },
+  "New Folder here": {
+    "en": "New Folder here",
+    "ja": ""
+  },
+  "New Window": {
+    "en": "New Window",
+    "ja": ""
+  },
+  "Next Database": {
+    "en": "Next Database",
+    "ja": ""
+  },
+  "Next File": {
+    "en": "Next File",
+    "ja": ""
+  },
+  "Next Folder (DFS)": {
+    "en": "Next Folder (DFS)",
+    "ja": ""
+  },
+  "Next Folder (Visible)": {
+    "en": "Next Folder (Visible)",
+    "ja": ""
+  },
+  "Next Frame": {
+    "en": "Next Frame",
+    "ja": ""
+  },
+  "Next Row": {
+    "en": "Next Row",
+    "ja": ""
+  },
+  "No Dependencies": {
+    "en": "No Dependencies",
+    "ja": ""
+  },
+  "No collector or parser plugins loaded.": {
+    "en": "No collector or parser plugins loaded.",
+    "ja": ""
+  },
+  "No file selected": {
+    "en": "No file selected",
+    "ja": ""
+  },
+  "No metadata": {
+    "en": "No metadata",
+    "ja": ""
+  },
+  "None": {
+    "en": "None",
+    "ja": ""
+  },
+  "Open": {
+    "en": "Open",
+    "ja": ""
+  },
+  "Open Binding Files in Explorer": {
+    "en": "Open Binding Files in Explorer",
+    "ja": ""
+  },
+  "Open Contained Files as List": {
+    "en": "Open Contained Files as List",
+    "ja": ""
+  },
+  "Open File": {
+    "en": "Open File",
+    "ja": ""
+  },
+  "Order": {
+    "en": "Order",
+    "ja": ""
+  },
+  "Overlay size:": {
+    "en": "Overlay size:",
+    "ja": ""
+  },
+  "Overwrite": {
+    "en": "Overwrite",
+    "ja": ""
+  },
+  "Overwrite Path Preset": {
+    "en": "Overwrite Path Preset",
+    "ja": ""
+  },
+  "Overwrite Query Preset": {
+    "en": "Overwrite Query Preset",
+    "ja": ""
+  },
+  "Overwrite UI Preset": {
+    "en": "Overwrite UI Preset",
+    "ja": ""
+  },
+  "Panel name": {
+    "en": "Panel name",
+    "ja": ""
+  },
+  "Panels": {
+    "en": "Panels",
+    "ja": ""
+  },
+  "Parent Folder": {
+    "en": "Parent Folder",
+    "ja": ""
+  },
+  "Partition (Aspect)": {
+    "en": "Partition (Aspect)",
+    "ja": ""
+  },
+  "Paste here": {
+    "en": "Paste here",
+    "ja": ""
+  },
+  "Path": {
+    "en": "Path",
+    "ja": ""
+  },
+  "Pause in Background": {
+    "en": "Pause in Background",
+    "ja": ""
+  },
+  "Per-Database Assignment": {
+    "en": "Per-Database Assignment",
+    "ja": ""
+  },
+  "Play/Pause": {
+    "en": "Play/Pause",
+    "ja": ""
+  },
+  "Plugin": {
+    "en": "Plugin",
+    "ja": ""
+  },
+  "Plugin Manager": {
+    "en": "Plugin Manager",
+    "ja": ""
+  },
+  "Prefix": {
+    "en": "Prefix",
+    "ja": ""
+  },
+  "Prev Database": {
+    "en": "Prev Database",
+    "ja": ""
+  },
+  "Prev File": {
+    "en": "Prev File",
+    "ja": ""
+  },
+  "Prev Folder (DFS)": {
+    "en": "Prev Folder (DFS)",
+    "ja": ""
+  },
+  "Prev Folder (Visible)": {
+    "en": "Prev Folder (Visible)",
+    "ja": ""
+  },
+  "Prev Row": {
+    "en": "Prev Row",
+    "ja": ""
+  },
+  "Preview Volume Down": {
+    "en": "Preview Volume Down",
+    "ja": ""
+  },
+  "Preview Volume Up": {
+    "en": "Preview Volume Up",
+    "ja": ""
+  },
+  "Previous Frame": {
+    "en": "Previous Frame",
+    "ja": ""
+  },
+  "Process": {
+    "en": "Process",
+    "ja": ""
+  },
+  "Query": {
+    "en": "Query",
+    "ja": ""
+  },
+  "README.md": {
+    "en": "README.md",
+    "ja": ""
+  },
+  "Random": {
+    "en": "Random",
+    "ja": ""
+  },
+  "Range Select": {
+    "en": "Range Select",
+    "ja": ""
+  },
+  "Recent": {
+    "en": "Recent",
+    "ja": ""
+  },
+  "Reload Tree": {
+    "en": "Reload Tree",
+    "ja": ""
+  },
+  "Reload metadata": {
+    "en": "Reload metadata",
+    "ja": ""
+  },
+  "Remove": {
+    "en": "Remove",
+    "ja": ""
+  },
+  "Remove Database": {
+    "en": "Remove Database",
+    "ja": ""
+  },
+  "Remove Mark": {
+    "en": "Remove Mark",
+    "ja": ""
+  },
+  "Remove Mark Definition": {
+    "en": "Remove Mark Definition",
+    "ja": ""
+  },
+  "Remove color": {
+    "en": "Remove color",
+    "ja": ""
+  },
+  "Remove current item": {
+    "en": "Remove current item",
+    "ja": ""
+  },
+  "Remove filter": {
+    "en": "Remove filter",
+    "ja": ""
+  },
+  "Rename": {
+    "en": "Rename",
+    "ja": ""
+  },
+  "Rename Mark...": {
+    "en": "Rename Mark...",
+    "ja": ""
+  },
+  "Rename Path Preset": {
+    "en": "Rename Path Preset",
+    "ja": ""
+  },
+  "Rename Query Preset": {
+    "en": "Rename Query Preset",
+    "ja": ""
+  },
+  "Rename UI Preset": {
+    "en": "Rename UI Preset",
+    "ja": ""
+  },
+  "Replace": {
+    "en": "Replace",
+    "ja": ""
+  },
+  "Reset Scale": {
+    "en": "Reset Scale",
+    "ja": ""
+  },
+  "Restart": {
+    "en": "Restart",
+    "ja": ""
+  },
+  "Restart All": {
+    "en": "Restart All",
+    "ja": ""
+  },
+  "Restart Tray": {
+    "en": "Restart Tray",
+    "ja": ""
+  },
+  "Restart Viewer": {
+    "en": "Restart Viewer",
+    "ja": ""
+  },
+  "Restore": {
+    "en": "Restore",
+    "ja": ""
+  },
+  "Restore Sort": {
+    "en": "Restore Sort",
+    "ja": ""
+  },
+  "Restore Window pos": {
+    "en": "Restore Window pos",
+    "ja": ""
+  },
+  "Reveal in Explorer": {
+    "en": "Reveal in Explorer",
+    "ja": ""
+  },
+  "Revert": {
+    "en": "Revert",
+    "ja": ""
+  },
+  "Right-click for row options": {
+    "en": "Right-click for row options",
+    "ja": ""
+  },
+  "S (↙)": {
+    "en": "S (↙)",
+    "ja": ""
+  },
+  "Save": {
+    "en": "Save",
+    "ja": ""
+  },
+  "Save Path Preset": {
+    "en": "Save Path Preset",
+    "ja": ""
+  },
+  "Save Query Preset": {
+    "en": "Save Query Preset",
+    "ja": ""
+  },
+  "Save UI Preset": {
+    "en": "Save UI Preset",
+    "ja": ""
+  },
+  "Save current": {
+    "en": "Save current",
+    "ja": ""
+  },
+  "Scale": {
+    "en": "Scale",
+    "ja": ""
+  },
+  "Scale Down": {
+    "en": "Scale Down",
+    "ja": ""
+  },
+  "Scale Up": {
+    "en": "Scale Up",
+    "ja": ""
+  },
+  "Scroll": {
+    "en": "Scroll",
+    "ja": ""
+  },
+  "Scroll Anchor": {
+    "en": "Scroll Anchor",
+    "ja": ""
+  },
+  "Scroll Down": {
+    "en": "Scroll Down",
+    "ja": ""
+  },
+  "Scroll Up": {
+    "en": "Scroll Up",
+    "ja": ""
+  },
+  "Scroll to GridView": {
+    "en": "Scroll to GridView",
+    "ja": ""
+  },
+  "Search": {
+    "en": "Search",
+    "ja": ""
+  },
+  "Search Options": {
+    "en": "Search Options",
+    "ja": ""
+  },
+  "Search key or value…": {
+    "en": "Search key or value…",
+    "ja": ""
+  },
+  "Search keys...": {
+    "en": "Search keys...",
+    "ja": ""
+  },
+  "Seek Backward": {
+    "en": "Seek Backward",
+    "ja": ""
+  },
+  "Seek Forward": {
+    "en": "Seek Forward",
+    "ja": ""
+  },
+  "Select All": {
+    "en": "Select All",
+    "ja": ""
+  },
+  "Select FolderTree": {
+    "en": "Select FolderTree",
+    "ja": ""
+  },
+  "Selection": {
+    "en": "Selection",
+    "ja": ""
+  },
+  "Set": {
+    "en": "Set",
+    "ja": ""
+  },
+  "Set Database": {
+    "en": "Set Database",
+    "ja": ""
+  },
+  "Set Mark Color...": {
+    "en": "Set Mark Color...",
+    "ja": ""
+  },
+  "Set Scale": {
+    "en": "Set Scale",
+    "ja": ""
+  },
+  "Set Speed": {
+    "en": "Set Speed",
+    "ja": ""
+  },
+  "Setting": {
+    "en": "Setting",
+    "ja": ""
+  },
+  "Settings": {
+    "en": "Settings",
+    "ja": ""
+  },
+  "Shell Context Menu": {
+    "en": "Shell Context Menu",
+    "ja": ""
+  },
+  "Show Log": {
+    "en": "Show Log",
+    "ja": ""
+  },
+  "Show at ContentViewer": {
+    "en": "Show at ContentViewer",
+    "ja": ""
+  },
+  "Show at Pos": {
+    "en": "Show at Pos",
+    "ja": ""
+  },
+  "Show mark overlay on grid": {
+    "en": "Show mark overlay on grid",
+    "ja": ""
+  },
+  "Size": {
+    "en": "Size",
+    "ja": ""
+  },
+  "Slideshow": {
+    "en": "Slideshow",
+    "ja": ""
+  },
+  "Solo": {
+    "en": "Solo",
+    "ja": ""
+  },
+  "Solo Panel...": {
+    "en": "Solo Panel...",
+    "ja": ""
+  },
+  "Solo This Panel": {
+    "en": "Solo This Panel",
+    "ja": ""
+  },
+  "Sort": {
+    "en": "Sort",
+    "ja": ""
+  },
+  "Sort By": {
+    "en": "Sort By",
+    "ja": ""
+  },
+  "Sort Order": {
+    "en": "Sort Order",
+    "ja": ""
+  },
+  "Speed Down": {
+    "en": "Speed Down",
+    "ja": ""
+  },
+  "Speed Up": {
+    "en": "Speed Up",
+    "ja": ""
+  },
+  "Split by:": {
+    "en": "Split by:",
+    "ja": ""
+  },
+  "Status": {
+    "en": "Status",
+    "ja": ""
+  },
+  "Sync": {
+    "en": "Sync",
+    "ja": ""
+  },
+  "Tags": {
+    "en": "Tags",
+    "ja": ""
+  },
+  "Text Filter Options": {
+    "en": "Text Filter Options",
+    "ja": ""
+  },
+  "This extension is marked as HEAVY. This may:\n- use large amount of GPU\n- take long time to install": {
+    "en": "This extension is marked as HEAVY. This may:\n- use large amount of GPU\n- take long time to install",
+    "ja": ""
+  },
+  "Toggle Fit Mode": {
+    "en": "Toggle Fit Mode",
+    "ja": ""
+  },
+  "Toggle Language": {
+    "en": "Toggle Language",
+    "ja": ""
+  },
+  "Toggle Mark": {
+    "en": "Toggle Mark",
+    "ja": ""
+  },
+  "Toggle Select": {
+    "en": "Toggle Select",
+    "ja": ""
+  },
+  "Toggle Sort Order": {
+    "en": "Toggle Sort Order",
+    "ja": ""
+  },
+  "Toolbar": {
+    "en": "Toolbar",
+    "ja": ""
+  },
+  "Tools": {
+    "en": "Tools",
+    "ja": ""
+  },
+  "Top": {
+    "en": "Top",
+    "ja": ""
+  },
+  "UI": {
+    "en": "UI",
+    "ja": ""
+  },
+  "Version Info": {
+    "en": "Version Info",
+    "ja": ""
+  },
+  "Video": {
+    "en": "Video",
+    "ja": ""
+  },
+  "Video Grid": {
+    "en": "Video Grid",
+    "ja": ""
+  },
+  "Video Viewer": {
+    "en": "Video Viewer",
+    "ja": ""
+  },
+  "Viewer": {
+    "en": "Viewer",
+    "ja": ""
+  },
+  "Viewer Thumbnail Default Size": {
+    "en": "Viewer Thumbnail Default Size",
+    "ja": ""
+  },
+  "Volume Down": {
+    "en": "Volume Down",
+    "ja": ""
+  },
+  "Volume Up": {
+    "en": "Volume Up",
+    "ja": ""
+  },
+  "WD14 Tagger Settings": {
+    "en": "WD14 Tagger Settings",
+    "ja": ""
+  },
+  "Wafer": {
+    "en": "Wafer",
+    "ja": ""
+  },
+  "Window": {
+    "en": "Window",
+    "ja": ""
+  },
+  "Workspace": {
+    "en": "Workspace",
+    "ja": ""
+  },
+  "Z (↘)": {
+    "en": "Z (↘)",
+    "ja": ""
+  },
+  "Zoom In": {
+    "en": "Zoom In",
+    "ja": ""
+  },
+  "Zoom Out": {
+    "en": "Zoom Out",
+    "ja": ""
+  },
+  "menus": {
+    "en": "menus",
+    "ja": ""
+  },
+  "wd14": {
+    "en": "wd14",
+    "ja": ""
+  },
+  "И (↘)": {
+    "en": "И (↘)",
+    "ja": ""
+  },
+  "Add color": {
+    "en": "Add color",
+    "ja": ""
+  },
+  "Append as AND": {
+    "en": "Append as AND",
+    "ja": ""
+  },
+  "Append as OR": {
+    "en": "Append as OR",
+    "ja": ""
+  },
+  "Color Search": {
+    "en": "Color Search",
+    "ja": ""
+  },
+  "Pick search color": {
+    "en": "Pick search color",
+    "ja": ""
+  },
+  "Replace search": {
+    "en": "Replace search",
+    "ja": ""
+  },
+  "Pending updates will be applied on restart.": {
+    "en": "Pending updates will be applied on restart.",
     "ja": ""
   },
   "Navigate by Widget Position": {
@@ -13,10 +1217,6 @@
   },
   "invert": {
     "en": "invert",
-    "ja": ""
-  },
-  "wd14": {
-    "en": "wd14",
     "ja": ""
   },
   "HEAVY Extension": {
@@ -43,14 +1243,6 @@
     "en": "Move",
     "ja": ""
   },
-  "Auto Execute on Database Update": {
-    "en": "Auto Execute on Database Update",
-    "ja": ""
-  },
-  "Auto Execute on Parameter Change": {
-    "en": "Auto Execute on Parameter Change",
-    "ja": ""
-  },
   "interval": {
     "en": "interval",
     "ja": ""
@@ -59,32 +1251,8 @@
     "en": "loop",
     "ja": ""
   },
-  "Include Contained/Virtual Files": {
-    "en": "Include Contained/Virtual Files",
-    "ja": ""
-  },
   "Solo Toggle": {
     "en": "Solo Toggle",
-    "ja": ""
-  },
-  "Panel name": {
-    "en": "Panel name",
-    "ja": ""
-  },
-  "Solo": {
-    "en": "Solo",
-    "ja": ""
-  },
-  "Solo Panel...": {
-    "en": "Solo Panel...",
-    "ja": ""
-  },
-  "Solo This Panel": {
-    "en": "Solo This Panel",
-    "ja": ""
-  },
-  "File List": {
-    "en": "File List",
     "ja": ""
   },
   "Contained Files": {
@@ -93,10 +1261,6 @@
   },
   "Include Contained Files": {
     "en": "Include Contained Files",
-    "ja": ""
-  },
-  "Open Contained Files as List": {
-    "en": "Open Contained Files as List",
     "ja": ""
   },
   "Metadata (Links to Path)": {
@@ -119,20 +1283,8 @@
     "en": "zip",
     "ja": ""
   },
-  "This extension is marked as HEAVY. This may:\n- use large amount of GPU\n- take long time to install": {
-    "en": "This extension is marked as HEAVY. This may:\n- use large amount of GPU\n- take long time to install",
-    "ja": ""
-  },
-  "Install Recommended for general use": {
-    "en": "Install Recommended for general use",
-    "ja": ""
-  },
   "This extension is marked as HEAVY. This may:\n- use a large amount of GPU\n- take a long time to install": {
     "en": "This extension is marked as HEAVY. This may:\n- use a large amount of GPU\n- take a long time to install",
-    "ja": ""
-  },
-  "Add tag or metadata": {
-    "en": "Add tag or metadata",
     "ja": ""
   },
   "Metadata": {
@@ -207,18 +1359,6 @@
     "en": "Current workspace",
     "ja": ""
   },
-  "Restore Sort": {
-    "en": "Restore Sort",
-    "ja": ""
-  },
-  "Restore Window pos": {
-    "en": "Restore Window pos",
-    "ja": ""
-  },
-  "Recent": {
-    "en": "Recent",
-    "ja": ""
-  },
   "Add Filter": {
     "en": "Add Filter",
     "ja": ""
@@ -255,10 +1395,6 @@
     "en": "Enable filter",
     "ja": ""
   },
-  "Enabled": {
-    "en": "Enabled",
-    "ja": ""
-  },
   "Move down": {
     "en": "Move down",
     "ja": ""
@@ -275,104 +1411,20 @@
     "en": "Move up",
     "ja": ""
   },
-  "Remove filter": {
-    "en": "Remove filter",
-    "ja": ""
-  },
-  "Right-click for row options": {
-    "en": "Right-click for row options",
-    "ja": ""
-  },
   "(empty)": {
     "en": "(empty)",
-    "ja": ""
-  },
-  "Append": {
-    "en": "Append",
-    "ja": ""
-  },
-  "Apply Path Preset": {
-    "en": "Apply Path Preset",
-    "ja": ""
-  },
-  "Apply Query Preset": {
-    "en": "Apply Query Preset",
-    "ja": ""
-  },
-  "Apply UI Preset": {
-    "en": "Apply UI Preset",
     "ja": ""
   },
   "Apply:": {
     "en": "Apply:",
     "ja": ""
   },
-  "Delete Path Preset": {
-    "en": "Delete Path Preset",
-    "ja": ""
-  },
-  "Delete Query Preset": {
-    "en": "Delete Query Preset",
-    "ja": ""
-  },
-  "Delete UI Preset": {
-    "en": "Delete UI Preset",
-    "ja": ""
-  },
-  "Rename Path Preset": {
-    "en": "Rename Path Preset",
-    "ja": ""
-  },
-  "Rename Query Preset": {
-    "en": "Rename Query Preset",
-    "ja": ""
-  },
-  "Rename UI Preset": {
-    "en": "Rename UI Preset",
-    "ja": ""
-  },
-  "Replace": {
-    "en": "Replace",
-    "ja": ""
-  },
-  "Save Path Preset": {
-    "en": "Save Path Preset",
-    "ja": ""
-  },
-  "Save Query Preset": {
-    "en": "Save Query Preset",
-    "ja": ""
-  },
-  "Save UI Preset": {
-    "en": "Save UI Preset",
-    "ja": ""
-  },
-  "Save current": {
-    "en": "Save current",
-    "ja": ""
-  },
   "Save sort with preset": {
     "en": "Save sort with preset",
     "ja": ""
   },
-  "UI": {
-    "en": "UI",
-    "ja": ""
-  },
   "Workspace...": {
     "en": "Workspace...",
-    "ja": ""
-  },
-  "Overwrite": {
-    "en": "Overwrite",
-    "ja": ""
-  },
-  "Last updated": {
-    "en": "Last updated",
-    "ja": ""
-  },
-  "Restore": {
-    "en": "Restore",
     "ja": ""
   },
   "Restore sort on apply": {
@@ -399,18 +1451,6 @@
     "en": "Workspace slot removed from Recent",
     "ja": ""
   },
-  "Overwrite UI Preset": {
-    "en": "Overwrite UI Preset",
-    "ja": ""
-  },
-  "Overwrite Path Preset": {
-    "en": "Overwrite Path Preset",
-    "ja": ""
-  },
-  "Overwrite Query Preset": {
-    "en": "Overwrite Query Preset",
-    "ja": ""
-  },
   "Open value viewer": {
     "en": "Open value viewer",
     "ja": ""
@@ -425,10 +1465,6 @@
   },
   "Prefix:": {
     "en": "Prefix:",
-    "ja": ""
-  },
-  "Reload metadata": {
-    "en": "Reload metadata",
     "ja": ""
   },
   "OK": {
@@ -523,48 +1559,8 @@
     "en": "Added as '{name}' to avoid duplicate",
     "ja": ""
   },
-  "Overlay size:": {
-    "en": "Overlay size:",
-    "ja": ""
-  },
-  "Define New Mark...": {
-    "en": "Define New Mark...",
-    "ja": ""
-  },
   "Delete all '{key}' tags from databases": {
     "en": "Delete all '{key}' tags from databases",
-    "ja": ""
-  },
-  "Rename Mark...": {
-    "en": "Rename Mark...",
-    "ja": ""
-  },
-  "Set Mark Color...": {
-    "en": "Set Mark Color...",
-    "ja": ""
-  },
-  "Add new mark...": {
-    "en": "Add new mark...",
-    "ja": ""
-  },
-  "Mark Filter Options": {
-    "en": "Mark Filter Options",
-    "ja": ""
-  },
-  "Mark filter options": {
-    "en": "Mark filter options",
-    "ja": ""
-  },
-  "Match:": {
-    "en": "Match:",
-    "ja": ""
-  },
-  "Show mark overlay on grid": {
-    "en": "Show mark overlay on grid",
-    "ja": ""
-  },
-  "Mark name": {
-    "en": "Mark name",
     "ja": ""
   },
   "Choose mark color": {
@@ -743,10 +1739,6 @@
     "en": "Remove 9",
     "ja": ""
   },
-  "Remove Mark Definition": {
-    "en": "Remove Mark Definition",
-    "ja": ""
-  },
   "Rename Mark": {
     "en": "Rename Mark",
     "ja": ""
@@ -795,10 +1787,6 @@
     "en": "Mark ID",
     "ja": ""
   },
-  "Add Mark": {
-    "en": "Add Mark",
-    "ja": ""
-  },
   "Add Mark 1": {
     "en": "Add Mark 1",
     "ja": ""
@@ -835,24 +1823,12 @@
     "en": "Add Mark 9",
     "ja": ""
   },
-  "Clear All Marks": {
-    "en": "Clear All Marks",
-    "ja": ""
-  },
-  "Mark": {
-    "en": "Mark",
-    "ja": ""
-  },
   "Mark {mark_id} added to {count} file(s)": {
     "en": "Mark {mark_id} added to {count} file(s)",
     "ja": ""
   },
   "Mark {mark_id} removed from {count} file(s)": {
     "en": "Mark {mark_id} removed from {count} file(s)",
-    "ja": ""
-  },
-  "Remove Mark": {
-    "en": "Remove Mark",
     "ja": ""
   },
   "Remove Mark 1": {
@@ -899,10 +1875,6 @@
     "en": "Toggle",
     "ja": ""
   },
-  "Toggle Mark": {
-    "en": "Toggle Mark",
-    "ja": ""
-  },
   "Toggle Mark 1": {
     "en": "Toggle Mark 1",
     "ja": ""
@@ -939,20 +1911,8 @@
     "en": "Toggle Mark 9",
     "ja": ""
   },
-  "Add new tag": {
-    "en": "Add new tag",
-    "ja": ""
-  },
   "Value:": {
     "en": "Value:",
-    "ja": ""
-  },
-  "Double-click to edit": {
-    "en": "Double-click to edit",
-    "ja": ""
-  },
-  "Mark for deletion": {
-    "en": "Mark for deletion",
     "ja": ""
   },
   "Save tags": {
@@ -1043,16 +2003,12 @@
     "en": "years",
     "ja": ""
   },
-  "Lock tag from collector overwrite": {
-    "en": "Lock tag from collector overwrite",
-    "ja": ""
-  },
   "This extension is marked as heavy. This may:\n- use a large amount of GPU\n- take a long time to install": {
     "en": "This extension is marked as heavy. This may:\n- use a large amount of GPU\n- take a long time to install",
     "ja": ""
   },
-  "Multiple heavy extensions are enabled:\n- ai_tagger\n- florence\nThis may cause high GPU usage or instability.": {
-    "en": "Multiple heavy extensions are enabled:\n- ai_tagger\n- florence\nThis may cause high GPU usage or instability.",
+  "Multiple heavy extensions are enabled:\n- wd14\n- florence\nThis may cause high GPU usage or instability.": {
+    "en": "Multiple heavy extensions are enabled:\n- wd14\n- florence\nThis may cause high GPU usage or instability.",
     "ja": ""
   },
   "Recommended to install": {
@@ -1103,10 +2059,6 @@
     "en": "Resource-intensive extension (GPU / long install time)",
     "ja": "リソースを多く消費する拡張機能（GPU / インストールに時間がかかる場合あり）"
   },
-  "Florence-2 Settings": {
-    "en": "Florence-2 Settings",
-    "ja": ""
-  },
   "Moving files...": {
     "en": "Moving files...",
     "ja": ""
@@ -1115,28 +2067,8 @@
     "en": "Hide Log",
     "ja": ""
   },
-  "Show Log": {
-    "en": "Show Log",
-    "ja": ""
-  },
-  "Workspace": {
-    "en": "Workspace",
-    "ja": ""
-  },
   "Bookmarks": {
     "en": "Bookmarks",
-    "ja": ""
-  },
-  "Restart Tray": {
-    "en": "Restart Tray",
-    "ja": ""
-  },
-  "Process": {
-    "en": "Process",
-    "ja": ""
-  },
-  "Manager": {
-    "en": "Manager",
     "ja": ""
   },
   "Delete existing WD14 data": {
@@ -1273,10 +2205,6 @@
   },
   "Thresholds": {
     "en": "Thresholds",
-    "ja": ""
-  },
-  "WD14 Tagger Settings": {
-    "en": "WD14 Tagger Settings",
     "ja": ""
   },
   "Save settings and re-collect all databases?": {
@@ -1455,14 +2383,6 @@
     "en": "Setting up…",
     "ja": ""
   },
-  "Installed": {
-    "en": "Installed",
-    "ja": ""
-  },
-  "No Dependencies": {
-    "en": "No Dependencies",
-    "ja": ""
-  },
   "Setup": {
     "en": "Setup",
     "ja": ""
@@ -1474,9 +2394,6 @@
   "Drop a file here or click Preview": {
     "en": "Drop a file here or click Preview",
     "ja": ""
-  },
-  "Settings": {
-    "en": "Settings"
   },
   "Min Length:": {
     "en": "Min Length:",
@@ -1500,10 +2417,6 @@
   },
   "Reset Defaults": {
     "en": "Reset Defaults",
-    "ja": ""
-  },
-  "Revert": {
-    "en": "Revert",
     "ja": ""
   },
   "Save BLIP Settings": {
@@ -1630,10 +2543,6 @@
     "en": "Add Source Folder",
     "ja": ""
   },
-  "Click to toggle all databases": {
-    "en": "Click to toggle all databases",
-    "ja": ""
-  },
   "Collected Data": {
     "en": "Collected Data",
     "ja": ""
@@ -1648,10 +2557,6 @@
   },
   "Databases": {
     "en": "Databases",
-    "ja": ""
-  },
-  "Default for New Databases": {
-    "en": "Default for New Databases",
     "ja": ""
   },
   "Delete Database": {
@@ -1694,10 +2599,6 @@
     "en": "Remove Selected",
     "ja": ""
   },
-  "Restart": {
-    "en": "Restart",
-    "ja": ""
-  },
   "Restart Required": {
     "en": "Restart Required",
     "ja": ""
@@ -1734,92 +2635,16 @@
     "en": "Delete table? : {dbname}",
     "ja": ""
   },
-  "No file selected": {
-    "en": "No file selected",
-    "ja": ""
-  },
-  "No metadata": {
-    "en": "No metadata",
-    "ja": ""
-  },
   "add folders from here": {
     "en": "add folders from here",
-    "ja": ""
-  },
-  "Auto Scroll": {
-    "en": "Auto Scroll",
-    "ja": ""
-  },
-  "Clear": {
-    "en": "Clear",
     "ja": ""
   },
   "Color": {
     "en": "Color",
     "ja": ""
   },
-  "DB:": {
-    "en": "DB:",
-    "ja": ""
-  },
-  "Level:": {
-    "en": "Level:",
-    "ja": ""
-  },
   "Open in new window": {
     "en": "Open in new window",
-    "ja": ""
-  },
-  "Search key or value…": {
-    "en": "Search key or value…",
-    "ja": ""
-  },
-  "All": {
-    "en": "All",
-    "ja": ""
-  },
-  "Drag to reorder · higher = preferred": {
-    "en": "Drag to reorder · higher = preferred",
-    "ja": ""
-  },
-  "Filter": {
-    "en": "Filter",
-    "ja": ""
-  },
-  "MetaInfo": {
-    "en": "MetaInfo",
-    "ja": ""
-  },
-  "No collector or parser plugins loaded.": {
-    "en": "No collector or parser plugins loaded.",
-    "ja": ""
-  },
-  "Open": {
-    "en": "Open",
-    "ja": ""
-  },
-  "Order": {
-    "en": "Order",
-    "ja": ""
-  },
-  "Per-Database Assignment": {
-    "en": "Per-Database Assignment",
-    "ja": ""
-  },
-  "Prefix": {
-    "en": "Prefix",
-    "ja": ""
-  },
-  "Search keys...": {
-    "en": "Search keys...",
-    "ja": ""
-  },
-  "Status": {
-    "en": "Status",
-    "ja": ""
-  },
-  "Tags": {
-    "en": "Tags",
     "ja": ""
   },
   "max_slots": {
@@ -1838,16 +2663,8 @@
     "en": "Reset",
     "ja": ""
   },
-  "Save": {
-    "en": "Save",
-    "ja": ""
-  },
   "step": {
     "en": "step",
-    "ja": ""
-  },
-  "ExifTool Settings": {
-    "en": "ExifTool Settings",
     "ja": ""
   },
   "Delete Profile": {
@@ -1878,65 +2695,11 @@
     "en": "New Profile",
     "ja": ""
   },
-  "Builtin": {
-    "en": "Builtin",
-    "ja": ""
-  },
-  "Core": {
-    "en": "Core",
-    "ja": ""
-  },
-  "Plugin": {
-    "en": "Plugin",
-    "ja": ""
-  },
   "EXIF Settings": {
     "en": "EXIF Settings"
   },
-  "Justified (Optimized)": {
-    "en": "Justified (Optimized)"
-  },
-  "Scroll to GridView": {
-    "en": "Scroll to GridView"
-  },
-  "Select FolderTree": {
-    "en": "Select FolderTree"
-  },
-  "Show at ContentViewer": {
-    "en": "Show at ContentViewer"
-  },
-  "README.md": {
-    "en": "README.md"
-  },
-  "Version Info": {
-    "en": "Version Info"
-  },
-  "Content Viewer": {
-    "en": "Content Viewer"
-  },
-  "Log": {
-    "en": "Log"
-  },
-  "Edit Mode (might have visual issues)": {
-    "en": "Edit Mode (might have visual issues)"
-  },
-  "Folder Tree": {
-    "en": "Folder Tree"
-  },
-  "Grid View": {
-    "en": "Grid View"
-  },
-  "Meta Viewer": {
-    "en": "Meta Viewer"
-  },
-  "Toolbar": {
-    "en": "Toolbar"
-  },
   "README": {
     "en": "README"
-  },
-  "Edit": {
-    "en": "Edit"
   },
   "Edit Mode ★": {
     "en": "Edit Mode ★"
@@ -1953,50 +2716,8 @@
   "Please enter text...": {
     "en": "Please enter text..."
   },
-  "Help": {
-    "en": "Help"
-  },
   "About Wafer": {
     "en": "About Wafer"
-  },
-  "AutoScroll Speed Down": {
-    "en": "AutoScroll Speed Down"
-  },
-  "AutoScroll Speed Up": {
-    "en": "AutoScroll Speed Up"
-  },
-  "Directory": {
-    "en": "Directory"
-  },
-  "Fixed": {
-    "en": "Fixed"
-  },
-  "List Mode": {
-    "en": "List Mode"
-  },
-  "Preview Volume Down": {
-    "en": "Preview Volume Down"
-  },
-  "Preview Volume Up": {
-    "en": "Preview Volume Up"
-  },
-  "Set Speed": {
-    "en": "Set Speed"
-  },
-  "Speed Down": {
-    "en": "Speed Down"
-  },
-  "Speed Up": {
-    "en": "Speed Up"
-  },
-  "Sync": {
-    "en": "Sync"
-  },
-  "Volume Down": {
-    "en": "Volume Down"
-  },
-  "Volume Up": {
-    "en": "Volume Up"
   },
   "Toggle Content Viewer": {
     "en": "Toggle Content Viewer"
@@ -2004,23 +2725,8 @@
   "Toggle Meta Viewer": {
     "en": "Toggle Meta Viewer"
   },
-  "Tools": {
-    "en": "Tools"
-  },
-  "Add": {
-    "en": "Add"
-  },
   "BatchRenamer": {
     "en": "BatchRenamer"
-  },
-  "Copy FileName(s)": {
-    "en": "Copy FileName(s)"
-  },
-  "Copy Paths(s)": {
-    "en": "Copy Paths(s)"
-  },
-  "Remove": {
-    "en": "Remove"
   },
   "Remove 5 file(s)": {
     "en": "Remove 5 file(s)"
@@ -2031,20 +2737,11 @@
   "Select at FolderTree": {
     "en": "Select at FolderTree"
   },
-  "Set": {
-    "en": "Set"
-  },
   "Show at FileViewer": {
     "en": "Show at FileViewer"
   },
-  "Wafer": {
-    "en": "Wafer"
-  },
   "Batch Renamer (Replace)": {
     "en": "Batch Renamer (Replace)"
-  },
-  "Batch Renamer": {
-    "en": "Batch Renamer"
   },
   "Batch Renamer (Add)": {
     "en": "Batch Renamer (Add)"
@@ -2088,17 +2785,11 @@
   "ЁE(ↁE": {
     "en": "ЁE(ↁE"
   },
-  "MultiSpan Tiling": {
-    "en": "MultiSpan Tiling"
-  },
   "Toggle Log": {
     "en": "Toggle Log"
   },
   "Apply": {
     "en": "Apply"
-  },
-  "Cancel": {
-    "en": "Cancel"
   },
   "Folder Settings": {
     "en": "Folder Settings"
@@ -2108,9 +2799,6 @@
   },
   "Edit Layout": {
     "en": "Edit Layout"
-  },
-  "Panels": {
-    "en": "Panels"
   },
   "Toggle File Viewer": {
     "en": "Toggle File Viewer"
@@ -2139,71 +2827,17 @@
   "Enter regex pattern...": {
     "en": "Enter regex pattern..."
   },
-  "Partition (Aspect)": {
-    "en": "Partition (Aspect)"
-  },
   "AND": {
     "en": "AND"
-  },
-  "Add Database": {
-    "en": "Add Database"
-  },
-  "Add Folder": {
-    "en": "Add Folder"
-  },
-  "Always on Top": {
-    "en": "Always on Top"
-  },
-  "Animated Viewer": {
-    "en": "Animated Viewer"
   },
   "Auto Execute on Change": {
     "en": "Auto Execute on Change"
   },
-  "AutoScroll": {
-    "en": "AutoScroll"
-  },
-  "Autoplay": {
-    "en": "Autoplay"
-  },
-  "Autoplay on Appear": {
-    "en": "Autoplay on Appear"
-  },
-  "Autoplay on Hover": {
-    "en": "Autoplay on Hover"
-  },
-  "Autoplay on Select": {
-    "en": "Autoplay on Select"
-  },
   "Batch Rename": {
     "en": "Batch Rename"
   },
-  "Binding": {
-    "en": "Binding"
-  },
   "Bookmark": {
     "en": "Bookmark"
-  },
-  "Center": {
-    "en": "Center"
-  },
-  "Child Folder": {
-    "en": "Child Folder"
-  },
-  "Clear Selection": {
-    "en": "Clear Selection"
-  },
-  "Click Select": {
-    "en": "Click Select"
-  },
-  "Collected": {
-    "en": "Collected"
-  },
-  "Contain/Cover": {
-    "en": "Contain/Cover"
-  },
-  "Copy": {
-    "en": "Copy"
   },
   "Copy FileName": {
     "en": "Copy FileName"
@@ -2214,29 +2848,8 @@
   "Copy Paths": {
     "en": "Copy Paths"
   },
-  "Created": {
-    "en": "Created"
-  },
-  "Cut": {
-    "en": "Cut"
-  },
-  "Cycle Orientation": {
-    "en": "Cycle Orientation"
-  },
-  "Cycle Sort By": {
-    "en": "Cycle Sort By"
-  },
-  "Database": {
-    "en": "Database"
-  },
-  "Database Manager": {
-    "en": "Database Manager"
-  },
   "Debug": {
     "en": "Debug"
-  },
-  "Delete": {
-    "en": "Delete"
   },
   "Delete Bookmark": {
     "en": "Delete Bookmark"
@@ -2244,272 +2857,53 @@
   "Delete Session": {
     "en": "Delete Session"
   },
-  "File": {
-    "en": "File"
-  },
-  "File View Menu": {
-    "en": "File View Menu"
-  },
-  "FileViewer": {
-    "en": "FileViewer"
-  },
-  "Fit In View": {
-    "en": "Fit In View"
-  },
-  "Folder Tree Menu": {
-    "en": "Folder Tree Menu"
-  },
-  "FolderTree": {
-    "en": "FolderTree"
-  },
-  "Full Screen": {
-    "en": "Full Screen"
-  },
   "GLOB": {
     "en": "GLOB"
-  },
-  "GridView": {
-    "en": "GridView"
-  },
-  "Image View Menu": {
-    "en": "Image View Menu"
-  },
-  "ImageView": {
-    "en": "ImageView"
-  },
-  "Include Subfolders": {
-    "en": "Include Subfolders"
   },
   "Join Mode": {
     "en": "Join Mode"
   },
-  "Justified": {
-    "en": "Justified"
-  },
-  "Key Binding Window": {
-    "en": "Key Binding Window"
-  },
   "LIKE": {
     "en": "LIKE"
-  },
-  "Layout": {
-    "en": "Layout"
   },
   "List Bookmarks": {
     "en": "List Bookmarks"
   },
-  "Loop": {
-    "en": "Loop"
-  },
-  "Masonry": {
-    "en": "Masonry"
-  },
-  "Max Playback Slots": {
-    "en": "Max Playback Slots"
-  },
-  "Menus": {
-    "en": "Menus"
-  },
-  "Modified": {
-    "en": "Modified"
-  },
-  "Mouse Binding Window": {
-    "en": "Mouse Binding Window"
-  },
-  "MultiSpan Grid": {
-    "en": "MultiSpan Grid"
-  },
-  "Mute": {
-    "en": "Mute"
-  },
-  "N (↙)": {
-    "en": "N (↙)"
-  },
-  "Name": {
-    "en": "Name"
-  },
-  "Navigate (Filesystem DFS)": {
-    "en": "Navigate (Filesystem DFS)"
-  },
-  "Navigate (Hierarchy)": {
-    "en": "Navigate (Hierarchy)"
-  },
-  "Navigate (Visible Tree)": {
-    "en": "Navigate (Visible Tree)"
-  },
-  "New Folder here": {
-    "en": "New Folder here"
-  },
-  "New Window": {
-    "en": "New Window"
-  },
-  "Next Database": {
-    "en": "Next Database"
-  },
-  "Next File": {
-    "en": "Next File"
-  },
-  "Next Folder (DFS)": {
-    "en": "Next Folder (DFS)"
-  },
-  "Next Folder (Visible)": {
-    "en": "Next Folder (Visible)"
-  },
-  "Next Frame": {
-    "en": "Next Frame"
-  },
-  "Next Row": {
-    "en": "Next Row"
-  },
   "OR": {
     "en": "OR"
-  },
-  "Open Binding Files in Explorer": {
-    "en": "Open Binding Files in Explorer"
-  },
-  "Open File": {
-    "en": "Open File"
   },
   "Open Session": {
     "en": "Open Session"
   },
-  "Parent Folder": {
-    "en": "Parent Folder"
-  },
-  "Paste here": {
-    "en": "Paste here"
-  },
-  "Path": {
-    "en": "Path"
-  },
-  "Pause in Background": {
-    "en": "Pause in Background"
-  },
-  "Play/Pause": {
-    "en": "Play/Pause"
-  },
   "Playback Speed": {
     "en": "Playback Speed"
-  },
-  "Plugin Manager": {
-    "en": "Plugin Manager"
   },
   "Plugins": {
     "en": "Plugins"
   },
-  "Prev Database": {
-    "en": "Prev Database"
-  },
-  "Prev File": {
-    "en": "Prev File"
-  },
-  "Prev Folder (DFS)": {
-    "en": "Prev Folder (DFS)"
-  },
-  "Prev Folder (Visible)": {
-    "en": "Prev Folder (Visible)"
-  },
-  "Prev Row": {
-    "en": "Prev Row"
-  },
   "Preview Volume": {
     "en": "Preview Volume"
-  },
-  "Previous Frame": {
-    "en": "Previous Frame"
   },
   "Print Ctx": {
     "en": "Print Ctx"
   },
-  "Query": {
-    "en": "Query"
-  },
-  "Random": {
-    "en": "Random"
-  },
-  "Range Select": {
-    "en": "Range Select"
-  },
-  "Reload Tree": {
-    "en": "Reload Tree"
-  },
-  "Remove Database": {
-    "en": "Remove Database"
-  },
-  "Rename": {
-    "en": "Rename"
-  },
   "Rename Session": {
     "en": "Rename Session"
-  },
-  "Reset Scale": {
-    "en": "Reset Scale"
-  },
-  "Restart All": {
-    "en": "Restart All"
   },
   "Restart Background Services": {
     "en": "Restart Background Services"
   },
-  "Restart Viewer": {
-    "en": "Restart Viewer"
-  },
   "Restore Bookmark": {
     "en": "Restore Bookmark"
-  },
-  "Reveal in Explorer": {
-    "en": "Reveal in Explorer"
-  },
-  "S (↙)": {
-    "en": "S (↙)"
   },
   "Save Bookmark": {
     "en": "Save Bookmark"
   },
-  "Scale": {
-    "en": "Scale"
-  },
-  "Scale Down": {
-    "en": "Scale Down"
-  },
-  "Scale Up": {
-    "en": "Scale Up"
-  },
-  "Scroll": {
-    "en": "Scroll"
-  },
-  "Scroll Anchor": {
-    "en": "Scroll Anchor"
-  },
-  "Scroll Down": {
-    "en": "Scroll Down"
-  },
   "Scroll To File": {
     "en": "Scroll To File"
   },
-  "Scroll Up": {
-    "en": "Scroll Up"
-  },
-  "Search": {
-    "en": "Search"
-  },
-  "Search Options": {
-    "en": "Search Options"
-  },
-  "Seek Backward": {
-    "en": "Seek Backward"
-  },
-  "Seek Forward": {
-    "en": "Seek Forward"
-  },
-  "Select All": {
-    "en": "Select All"
-  },
   "Select Folder": {
     "en": "Select Folder"
-  },
-  "Selection": {
-    "en": "Selection"
   },
   "Session": {
     "en": "Session"
@@ -2520,41 +2914,11 @@
   "Session List": {
     "en": "Session List"
   },
-  "Set Database": {
-    "en": "Set Database"
-  },
   "Set Keyword Delimiter to": {
     "en": "Set Keyword Delimiter to"
   },
-  "Set Scale": {
-    "en": "Set Scale"
-  },
-  "Setting": {
-    "en": "Setting"
-  },
-  "Shell Context Menu": {
-    "en": "Shell Context Menu"
-  },
   "Show Selected": {
     "en": "Show Selected"
-  },
-  "Show at Pos": {
-    "en": "Show at Pos"
-  },
-  "Size": {
-    "en": "Size"
-  },
-  "Slideshow": {
-    "en": "Slideshow"
-  },
-  "Sort": {
-    "en": "Sort"
-  },
-  "Sort By": {
-    "en": "Sort By"
-  },
-  "Sort Order": {
-    "en": "Sort Order"
   },
   "Text": {
     "en": "Text"
@@ -2562,14 +2926,8 @@
   "Text Mode": {
     "en": "Text Mode"
   },
-  "Toggle Fit Mode": {
-    "en": "Toggle Fit Mode"
-  },
   "Toggle Join Mode": {
     "en": "Toggle Join Mode"
-  },
-  "Toggle Language": {
-    "en": "Toggle Language"
   },
   "Toggle Log Panel": {
     "en": "Toggle Log Panel"
@@ -2577,85 +2935,15 @@
   "Toggle Query Mode": {
     "en": "Toggle Query Mode"
   },
-  "Toggle Select": {
-    "en": "Toggle Select"
-  },
-  "Toggle Sort Order": {
-    "en": "Toggle Sort Order"
-  },
-  "Top": {
-    "en": "Top"
-  },
-  "Video": {
-    "en": "Video"
-  },
-  "Video Grid": {
-    "en": "Video Grid"
-  },
-  "Video Viewer": {
-    "en": "Video Viewer"
-  },
-  "Viewer": {
-    "en": "Viewer"
-  },
-  "Viewer Thumbnail Default Size": {
-    "en": "Viewer Thumbnail Default Size"
-  },
   "Volume": {
     "en": "Volume"
-  },
-  "Window": {
-    "en": "Window"
-  },
-  "Z (↘)": {
-    "en": "Z (↘)"
-  },
-  "Zoom In": {
-    "en": "Zoom In"
-  },
-  "Zoom Out": {
-    "en": "Zoom Out"
   },
   "debug": {
     "en": "debug"
   },
-  "menus": {
-    "en": "menus"
-  },
-  "И (↘)": {
-    "en": "И (↘)"
-  },
-  " Filter ": {
-    "en": " Filter "
-  },
-  "Add item": {
-    "en": "Add item"
-  },
-  "Ascending": {
-    "en": "Ascending"
-  },
-  "Descending": {
-    "en": "Descending"
-  },
   "Enable / Disable filter": {
     "en": "Enable / Disable filter",
     "ja": "フィルタを一時的に有効/無効にする"
-  },
-  "Enter search terms...": {
-    "en": "Enter search terms..."
-  },
-  "Remove current item": {
-    "en": "Remove current item"
-  },
-  "Split by:": {
-    "en": "Split by:"
-  },
-  "Text Filter Options": {
-    "en": "Text Filter Options"
-  },
-  "Community / third-party extension": {
-    "en": "Community / third-party extension",
-    "ja": "コミュニティ / サードパーティ拡張機能"
   },
   "Heavy Extension": {
     "en": "Heavy Extension",

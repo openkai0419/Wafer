@@ -91,7 +91,9 @@ Extensions are placed as folders under `extensions/`. `PluginLoader` auto-discov
 |---|---|---|
 | **exiftool** | jpg, png, webp, tiff, heic, avif, jxl, raw, psd, etc. | Universal EXIF/IPTC/XMP metadata extraction via ExifTool |
 | **ffmpeg** | mp4, mkv, webm, mp3, flac, wav, etc. | Video/audio metadata extraction via ffprobe |
-| **ai_tagger** | *(images)* | WD14 model-based automatic tagging (ONNX, GPU accelerated) |
+| **zip** | zip | Expands `.zip` archives into virtual child paths and renders contained files through existing plugins |
+| **color** | *(images)* | Representative color extraction, palette display, and RGB-distance filtering |
+| **wd14** | *(images)* | WD14 model-based automatic tagging (ONNX, GPU accelerated) |
 | **florence** | *(images)* | Florence-2 vision-language captioning / tagging (GPU accelerated) |
 | **text_generation** | *(images with EXIF)* | NovelAI generation parameter extraction |
 
@@ -145,6 +147,6 @@ Some extensions invoke runtime-downloaded third-party binaries or models whose o
 | `extensions/video/` | LGPL-2.1-or-later | `libmpv-2.dll` — GPL-2.0+ (or LGPL-2.1+) |
 | `extensions/exiftool/` | LGPL-2.1-or-later | `exiftool.exe` — Artistic License / GPL ("same as Perl") |
 | `extensions/ffmpeg/` | LGPL-2.1-or-later | `ffmpeg.exe`, `ffprobe.exe` — GPL-3.0 (gyan.dev essentials build) |
-| `extensions/ai_tagger/` | LGPL-2.1-or-later | WD SwinV2 Tagger v3 — Apache-2.0 |
+| `extensions/wd14/` | LGPL-2.1-or-later | WD SwinV2 Tagger v3 — Apache-2.0 |
 | `extensions/florence/` | LGPL-2.1-or-later | Florence-2 model (Microsoft) — MIT |
 | All other extensions | LGPL-2.1-or-later | — |

@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.6.15]
+### Added
+- **Color search extension** (`extensions/color/collector.py`, `extensions/color/filter.py`, `extensions/color/panel.py`, `extensions/color/widget.py`, `extensions/color/settings.py`): added a `color` collector that stores representative image palette tags, a multi-color RGB-distance search filter, and metadata swatches that can be applied directly to color queries; palette-slot changes can optionally delete and re-collect existing database data
+
+### Changed
+- **WD14 extension naming** (`extensions/wd14/`, `wafer/plugin/badges.py`, `README.md`, `README.jp.md`): renamed the former `ai_tagger` extension to `wd14` across the shipped extension folder, plugin badges, and user documentation so the public name matches the model it provides
+- **Query sort defaults** (`wafer/builtins/sorts.py`, `wafer/app/viewer/search.py`, `wafer/app/viewer/widgets/search_container.py`, `wafer/core/workspace.py`, `wafer/builtins/commands/query.py`): added an explicit `None` sort mode and made unsorted queries the default for new searches and saved query presets instead of defaulting to path sorting
+
+### Fixed
+- **ExifTool key browser bulk toggles** (`extensions/exiftool/panel.py`): `Check All` and `Uncheck All` now apply only to the keys currently shown by the search filter, avoiding accidental changes to hidden keys
+
 ## [v0.6.14]
 ### Added
 - **Positional file navigation command** (`wafer/builtins/commands/content_viewer.py`, `_resources/mouse_bindings/standard.json`, `_resources/translations.json`): added `fv.navigate_file_by_mouse_position` with configurable axis and invert options so image, animated, and video viewers can move to the previous or next file based on the clicked side of the widget
@@ -19,7 +30,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - **Viewer toolbar and combo-box interaction** (`wafer/app/viewer/mainwindow.py`, `wafer/app/viewer/widgets/combo_with_buttons.py`): reordered the main toolbar buttons and made `ComboBoxWithButtons` ignore mouse-wheel input to prevent accidental selection changes while scrolling
 
 ### Fixed
-- **Lingering extension worker resources** (`extensions/exiftool/collector.py`, `extensions/exiftool/parser.py`, `extensions/ai_tagger/collector.py`, `extensions/florence/collector.py`, `extensions/zip/collector.py`): ExifTool, ZIP, and ML collectors now stop idle timers, caches, cache sweep tasks, and subprocess trees during worker shutdown instead of leaving background resources alive
+- **Lingering extension worker resources** (`extensions/exiftool/collector.py`, `extensions/exiftool/parser.py`, `extensions/wd14/collector.py`, `extensions/florence/collector.py`, `extensions/zip/collector.py`): ExifTool, ZIP, and ML collectors now stop idle timers, caches, cache sweep tasks, and subprocess trees during worker shutdown instead of leaving background resources alive
 
 ## [v0.6.12]
 ### Added
@@ -36,7 +47,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [v0.6.11]
 ### Changed
-- **Project licensing** (`LICENSE`, `COPYING`, `COPYING.LESSER`, `README.md`, `README.jp.md`, `extensions/ai_tagger/README.md`, `extensions/exiftool/README.md`, `extensions/ffmpeg/README.md`, `extensions/florence/README.md`, `extensions/video/README.md`, `pyproject.toml`): changed the repository source license from Apache-2.0 to LGPL-2.1-or-later and updated badges, license guidance, and package metadata to match
+- **Project licensing** (`LICENSE`, `COPYING`, `COPYING.LESSER`, `README.md`, `README.jp.md`, `extensions/wd14/README.md`, `extensions/exiftool/README.md`, `extensions/ffmpeg/README.md`, `extensions/florence/README.md`, `extensions/video/README.md`, `pyproject.toml`): changed the repository source license from Apache-2.0 to LGPL-2.1-or-later and updated badges, license guidance, and package metadata to match
 - **Bundled license files** (`NOTICE`, `scripts/build.py`, `scripts/copy_clean_project.py`): removed the separate `NOTICE` file and switched packaged project metadata to ship `COPYING` and `COPYING.LESSER` with release and clean-copy outputs
 
 ## [v0.6.10]
@@ -188,7 +199,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - `install_extension()` / `install_requirements()` / `post_install()` accept `on_log` callback; `install_requirements()` returns plain `bool` (was tuple); `InstallResult.deferred` removed
 - `_run_subprocess()` drains both stdout and stderr, forwards each pip line via `AppLogger.debug` and `on_log`; failure messages include last 2000 bytes of stderr
 - **WD14 `post_install` simplified**: sequential model download; `onnxruntime-gpu` and `nvidia-cudnn-cu12` moved into `requirements.txt`. Idle engine timeout reduced from 120s to 30s
-- Numpy requirement loosened to `numpy>=2,<3` in `extensions/ai_tagger` and `extensions/image`
+- Numpy requirement loosened to `numpy>=2,<3` in `extensions/wd14` and `extensions/image`
 - **Startup process model** (`main.py`): default and `--viewer` entry spawn tray, then `wait_for_install_complete()` before `load_plugins()`; `--tray` runs `run_pending_installs()` + `load_plugins()` and constructs the `QApplication`/tray icon before spawning indexer children
 - Tray/viewer restart paths (`restart_tray`, `restart_all`, `MainWindow._perform_system_restart()`) use `terminate_cmd(wait=True)`; `restart_tray` auto-promotes to `restart_all` when an install is queued
 - `AppProcess.base_command()` on Windows prefers `pythonw.exe`; `new_main()` and `ProcessMatcher.start_if_not_running()` apply `CREATE_NO_WINDOW`/`DETACHED_PROCESS`/`CREATE_NEW_PROCESS_GROUP` and `close_fds=True`
@@ -242,8 +253,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - **ImageLoader plugin type** (`wafer/plugin/imageloader/`): new `BaseImageLoader` base class, `ImageLoaderResolver` with `load()` / `load_pil()` resolution chain, and `image_loader_resolver` singleton — decouples raw image loading from grid rendering so collectors and other subsystems can load images without depending on Qt
 - **`ImageFileLoader`** (`extensions/image/loader.py`): `BaseImageLoader` implementation using OpenCV with PIL fallback, replaces the former `ImageGridPlugin` for image loading; returns `np.ndarray` / `PIL.Image` instead of `QImage`
 - **`SystemImageLoader`** (`wafer/builtins/imageloader.py`): fallback `BaseImageLoader` using `FileThumbnailer`, replaces `SystemThumbnailPlugin` (former `ImageGridPlugin` in `wafer/builtins/grid.py`)
-- **WD14 Tagger Settings panel** (`extensions/ai_tagger/panel.py`): `WD14SettingsPanelPlugin` with drag-and-drop live preview, configurable thresholds (`general_threshold`, `character_threshold`), rating mode selection (top/name/all), character and tag output toggles, tag blacklist, device info display, and save with optional delete & re-collect confirmation dialog
-- **`wd14_config`** (`extensions/ai_tagger/settings.py`): WD14-specific `PluginConfig` instance with default inference parameters and `parse_blacklist()` helper
+- **WD14 Tagger Settings panel** (`extensions/wd14/panel.py`): `WD14SettingsPanelPlugin` with drag-and-drop live preview, configurable thresholds (`general_threshold`, `character_threshold`), rating mode selection (top/name/all), character and tag output toggles, tag blacklist, device info display, and save with optional delete & re-collect confirmation dialog
+- **`wd14_config`** (`extensions/wd14/settings.py`): WD14-specific `PluginConfig` instance with default inference parameters and `parse_blacklist()` helper
 - **`numpy_to_qimage()` and `pil_to_qimage()`** (`wafer/core/qt/image.py`): centralized numpy/PIL-to-QImage conversion utilities supporting Grayscale8, RGB888, RGBA8888 formats with buffer pinning
 - **`CHUNK_TIMEOUT` class variable** on `BaseCollectorPlugin` and `BaseSingletonCollector` (`wafer/plugin/collector/base.py`): per-collector configurable chunk processing timeout (default 120s); `CollectorResolver.chunk_timeout()` accessor added
 - **`_DeleteConfirmDialog`** (`wafer/builtins/database_manager/data_tab.py`): dedicated confirmation dialog for data deletion with re-collect checkbox, replacing inline `QMessageBox`
@@ -281,7 +292,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - `extensions/image/grid.py` (`ImageGridPlugin` — image loading moved to `ImageFileLoader` in `extensions/image/loader.py`)
 - `ImageGridPlugin` abstract base class from `wafer/plugin/grid/base.py`
 - `GridResolver.resolve_chain()`, `resolve_instance()`, `resolve_image_instance()` methods (replaced by `resolve_merged_chain()`)
-- Hardcoded `GENERAL_THRESHOLD` / `CHARACTER_THRESHOLD` constants from `extensions/ai_tagger/collector.py` (replaced by `wd14_config` settings)
+- Hardcoded `GENERAL_THRESHOLD` / `CHARACTER_THRESHOLD` constants from `extensions/wd14/collector.py` (replaced by `wd14_config` settings)
 - `_CHUNK_TIMEOUT` constant from `wafer/app/collector/worker.py` (replaced by per-collector `CHUNK_TIMEOUT` class variable)
 
 ## [v0.6.1]
@@ -303,7 +314,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 - `BaseCollector.on_notify()` and `BaseParser.on_notify()` now accept optional `payload: dict | None` parameter; `notify_to()` forwards optional payload via IPC
-- `PluginBase.post_install()` signature extended with `is_cancelled` parameter across all base classes and all extensions (`ai_tagger`, `blip_captioner`, `exiftool`, `ffmpeg`, `video`)
+- `PluginBase.post_install()` signature extended with `is_cancelled` parameter across all base classes and all extensions (`wd14`, `blip_captioner`, `exiftool`, `ffmpeg`, `video`)
 - `install_requirements()` and `install_packages()` return `tuple[bool, bool]` (success, deferred) instead of `bool`; `install_extension()` returns `InstallResult` dataclass instead of `tuple[bool, bool, list]`
 - `_run_subprocess()` default timeout changed from 300s to 0 (no limit); supports `is_cancelled` callback for cooperative cancellation
 - **`BaseFilterPlugin.SCOPE` renamed to `QUERY_SCOPE`** to avoid collision with the new `PluginBase.SCOPE` attribute (`"viewer"` default; `BaseCollector`/`BaseParser` override to `"tray"`)
@@ -435,7 +446,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - **Markdown browser** (`wafer/utils/markdown_browser.py`): WebEngine-based Markdown viewer with GitHub dark/light CSS themes
 - **Key selector popup** (`wafer/plugin/query/widgets.py`): tree-based metadata key browser with active key filtering and catalog display
 - `wafer/ui/` layer: new top-level UI package (dialogs, splash, window, layout, settings, file conflict resolver — all moved from `core/`)
-- README files added for all extensions (image, animated, video, ai_tagger, additional_filters, additional_layout, text_generation)
+- README files added for all extensions (image, animated, video, wd14, additional_filters, additional_layout, text_generation)
 - LICENSE and NOTICE added to repository root
 - `cleanup.bat`, `scripts/lint.py`, `scripts/test.py` build/dev tooling
 - GitHub Actions `build.yml` CI workflow
@@ -472,6 +483,6 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - IPC system: ZMQ-based multi-process communication (Node, Outbox, Transport)
 - Command system: key/mouse binding, command registry, options dialog
 - UI: MainWindow, FolderTree, search container, progress bar, profile popup, loading overlay
-- Extensions: image, animated (GIF/APNG), video (mpv-based), ai_tagger (WD14), additional_filters (regex), additional_layout (justified/organic/multispan), text_generation (prompt parser)
+- Extensions: image, animated (GIF/APNG), video (mpv-based), wd14 (WD14), additional_filters (regex), additional_layout (justified/organic/multispan), text_generation (prompt parser)
 - Batch renamer with preview and conflict resolution
 - App settings, theme system, translation (i18n) support

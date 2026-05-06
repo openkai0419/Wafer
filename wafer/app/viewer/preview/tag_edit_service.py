@@ -67,8 +67,11 @@ class TagEditService(QtCore.QObject):
         target_id: str | None = None,
     ) -> str | None:
         scope = scope or "tag"
-        if scope not in ("tag", "meta_info"):
+        if scope not in ("tag", "meta_info", "*"):
             AppLogger.warning(f"[TagEdit] unsupported scope={scope}")
+            return None
+        if scope == "*" and (upserts or renames or lock_only):
+            AppLogger.warning("[TagEdit] scope=* only supports deletes")
             return None
         renames = list(renames or [])
         paths = list(paths or [])
@@ -79,7 +82,7 @@ class TagEditService(QtCore.QObject):
             Notifier.warning(t("Tag edit failed: IPC node unavailable"))
             return None
         request_id = uuid.uuid4().hex
-        pending_target = file_hash if scope == "tag" else (target_id or (paths[0] if len(paths) == 1 else None))
+        pending_target = file_hash if scope == "tag" else (target_id or (paths[0] if len(paths) == 1 else None)) if scope == "meta_info" else None
         keys: list[tuple[str, str, str]] = []
         if pending_target:
             for key, value, locked in upserts:
@@ -128,6 +131,10 @@ class TagEditService(QtCore.QObject):
         applied_keys = {k for keys in applied_by_path.values() for k in (keys or [])}
         deleted_keys_set = {k for keys in deleted_by_path.values() for k in (keys or [])}
         deleted_keys: list[str] = list(deleted_keys_set)
+        if scope == "*":
+            self._emit_wildcard_commit(payload, deleted_keys)
+            AppLogger.info(f"[TagEdit] ack scope=* rid={request_id} deleted={len(deleted_keys)}")
+            return
         keys = self._request_index.pop(request_id, [])
         affected_targets: set[str] = set()
         committed: dict[str, tuple[str, bool]] = {}
@@ -156,6 +163,21 @@ class TagEditService(QtCore.QObject):
             self.kv_commit_confirmed.emit(scope, target, committed, deleted_keys)
             self.kv_overlay_changed.emit(scope, target)
         AppLogger.info(f"[TagEdit] ack scope={scope} rid={request_id} applied={len(committed)} deleted={len(deleted_keys)}")
+
+    def _emit_wildcard_commit(self, payload: dict, deleted_keys: list[str]):
+        paths = [str(path) for path in (payload.get("paths") or []) if path]
+        targets_by_path = payload.get("targets") or payload.get("file_hashes") or {}
+        for path in paths:
+            self.kv_commit_confirmed.emit("meta_info", path, {}, deleted_keys)
+            self.kv_overlay_changed.emit("meta_info", path)
+        emitted_targets: set[str] = set()
+        for target in targets_by_path.values():
+            target_id = str(target) if target else ""
+            if not target_id or target_id in emitted_targets:
+                continue
+            emitted_targets.add(target_id)
+            self.kv_commit_confirmed.emit("tag", target_id, {}, deleted_keys)
+            self.kv_overlay_changed.emit("tag", target_id)
 
     def apply_overlay(self, target_id: str | None, tags: dict[str, str], locks: dict[str, bool], *, scope: str = "tag") -> tuple[dict[str, str], dict[str, bool], dict[str, str]]:
         if not target_id:

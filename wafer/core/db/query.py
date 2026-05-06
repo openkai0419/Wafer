@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .db_utils import apply_read_pragmas, build_like_condition, escape_like
+from .key_value import SCOPE_ALL, SCOPE_META_INFO, SCOPE_TAG, iter_data_scopes, key_prefix_lookup_sql
 from ...utils.paths import normalize_path
 from ...utils.virtual_paths import build_virtual_path, is_virtual_path, split_virtual_path
 from ...utils.profiling import profiler
@@ -537,16 +538,10 @@ class FileSearchEngine:
         result: dict[str, list[str]] = {}
         if not key_prefix or not self._connect_if_needed():
             return result
-        if scope not in ("tag", "meta_info"):
+        if scope not in (SCOPE_TAG, SCOPE_META_INFO, SCOPE_ALL):
             return result
         cur = self.conn.cursor()
         like_pattern = f"{key_prefix}%"
-        if scope == "tag":
-            base_sql = "SELECT i.path, t.key FROM tags AS t JOIN sources AS s ON s.file_hash = t.file_hash JOIN files AS i ON i.source = s.source WHERE t.key LIKE ?"
-            path_expr = "i.path"
-        else:
-            base_sql = "SELECT mi.path, mi.key FROM meta_info AS mi WHERE mi.key LIKE ?"
-            path_expr = "mi.path"
 
         def _consume(rows):
             for row in rows:
@@ -554,17 +549,22 @@ class FileSearchEngine:
                 suffix = key[len(key_prefix) :] if key else ""
                 if not suffix:
                     continue
-                result.setdefault(row["path"], []).append(suffix)
+                values = result.setdefault(row["path"], [])
+                if suffix not in values:
+                    values.append(suffix)
 
-        if paths is None:
-            _consume(cur.execute(base_sql, (like_pattern,)).fetchall())
-        else:
-            norm_paths = [self._normalize_path(p) for p in paths]
-            chunk_size = 900
-            for start in range(0, len(norm_paths), chunk_size):
-                chunk = norm_paths[start : start + chunk_size]
+        norm_paths = [self._normalize_path(p) for p in paths] if paths is not None else None
+        for data_scope in iter_data_scopes(scope):
+            base_sql, path_expr = key_prefix_lookup_sql(data_scope)
+            if norm_paths is None:
+                _consume(cur.execute(base_sql, (like_pattern,)).fetchall())
+                continue
+            for start in range(0, len(norm_paths), 900):
+                chunk = norm_paths[start : start + 900]
                 placeholders = ",".join("?" * len(chunk))
                 _consume(cur.execute(f"{base_sql} AND {path_expr} IN ({placeholders})", (like_pattern, *chunk)).fetchall())
+        for path, suffixes in result.items():
+            result[path] = sorted(suffixes, key=lambda x: (len(x), x))
         return result
 
     @profiler.profile

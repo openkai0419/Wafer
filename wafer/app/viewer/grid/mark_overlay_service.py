@@ -25,7 +25,7 @@ def _fetch_marks_sync(db_path: str | None) -> dict[str, list[str]]:
         return result
     engine = FileSearchEngine(str(db_path))
     try:
-        result = engine.get_meta_keys_by_prefix(_MARK_KEY_PREFIX)
+        result = engine.get_kv_keys_by_prefix("*", _MARK_KEY_PREFIX)
     except Exception as e:
         AppLogger.warning("[MarkOverlay] fetch failed", exc=e)
     finally:

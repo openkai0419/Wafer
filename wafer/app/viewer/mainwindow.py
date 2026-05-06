@@ -410,8 +410,6 @@ class MainWindow(QtWidgets.QMainWindow):
         store.register("file_viewer", self._save_file_viewer, self._restore_file_viewer)
         self._register_grid_plugin_states(store)
         self._register_panel_plugin_states(store)
-        self._register_meta_panel_plugin_states(store)
-        self._register_tag_panel_plugin_states(store)
 
     def _register_grid_plugin_states(self, store):
         from ...plugin.grid.base import WidgetGridPlugin as _WGP
@@ -767,34 +765,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 p = inst
                 store.register(
                     f"panel_plugin.{cls.NAME}",
-                    lambda p=p: p.save_ui_state(),
-                    lambda s, p=p: p.restore_ui_state(s),
-                )
-
-    def _register_meta_panel_plugin_states(self, store):
-        from ...plugin.meta_panel.base import BaseMetaPanelPlugin
-        from ...plugin.meta_panel.handler import meta_panel_registry
-
-        for cls in meta_panel_registry.list_all():
-            inst = meta_panel_registry.instance(cls.NAME)
-            if inst is not None and isinstance(inst, BaseMetaPanelPlugin):
-                p = inst
-                store.register(
-                    f"meta_panel_plugin.{cls.NAME}",
-                    lambda p=p: p.save_ui_state(),
-                    lambda s, p=p: p.restore_ui_state(s),
-                )
-
-    def _register_tag_panel_plugin_states(self, store):
-        from ...plugin.tag_panel.base import BaseTagPanelPlugin
-        from ...plugin.tag_panel.handler import tag_panel_registry
-
-        for cls in tag_panel_registry.list_all():
-            inst = tag_panel_registry.instance(cls.NAME)
-            if inst is not None and isinstance(inst, BaseTagPanelPlugin):
-                p = inst
-                store.register(
-                    f"tag_panel_plugin.{cls.NAME}",
                     lambda p=p: p.save_ui_state(),
                     lambda s, p=p: p.restore_ui_state(s),
                 )

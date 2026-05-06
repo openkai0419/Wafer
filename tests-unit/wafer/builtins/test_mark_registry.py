@@ -104,6 +104,19 @@ def test_mark_registry_remove():
     assert reg.get(mid) is None
 
 
+def test_mark_registry_scope_defaults_and_updates():
+    reg = MarkRegistry.instance()
+    mid = reg.add("Scoped Mark", "#ffffff")
+    try:
+        assert reg.scope_of(mid) == "meta_info"
+        assert reg.set_scope(mid, "tag") is True
+        assert reg.scope_of(mid) == "tag"
+        assert mid in reg.ids_by_scope("tag")
+        assert reg.set_scope(mid, "tag") is False
+    finally:
+        reg.remove(mid)
+
+
 def test_normalize_id_basic():
     assert _normalize_id("Hello World") == "hello_world"
     assert _normalize_id("  Leading/Trailing  ") == "leading_trailing"
@@ -116,3 +129,4 @@ def test_mark_dataclass():
     assert m.id == "x"
     assert m.name == "X"
     assert m.color == "#000000"
+    assert m.storage_scope == "meta_info"

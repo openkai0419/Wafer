@@ -1,3 +1,4 @@
+import importlib
 from unittest.mock import MagicMock
 
 from PySide6 import QtWidgets
@@ -249,6 +250,158 @@ def test_tag_and_meta_same_prefix_create_two_cards(qtbot):
     assert "meta:shared" in w._sections
     keys = list(w._sections.keys())
     assert keys.index("tag:shared") < keys.index("meta:shared")
+
+
+def test_mark_plugin_creates_scope_local_cards(qtbot):
+    from wafer.builtins.mark.panel import _MarkBadgeRow
+    from wafer.builtins.mark.registry import Mark, MarkRegistry
+
+    reg = MarkRegistry.instance()
+    original_marks = list(reg._marks)
+    reg._marks = [
+        Mark(id="tag_mark", name="Tag Mark", color="#112233", storage_scope="tag"),
+        Mark(id="meta_mark", name="Meta Mark", color="#445566", storage_scope="meta_info"),
+    ]
+    reg.changed.emit()
+
+    try:
+        w = MetaViewerWidget()
+        qtbot.addWidget(w)
+        meta = {
+            "source": {"name": "a"},
+            "file": {},
+            "tag": {},
+            "tag_prefixed": {"mark": {"tag_mark": "1"}},
+            "tag_prefixed_locks": {"mark": {"tag_mark": False}},
+            "meta": {},
+            "meta_locks": {},
+            "prefixed": {"mark": {"meta_mark": "1"}},
+            "prefixed_locks": {"mark": {"meta_mark": False}},
+            "_path": "/a.png",
+            "_file_hash": "h",
+            "_tag_locks": {},
+            "_db_name": "db",
+        }
+        w.set_data(meta)
+        assert "tag:mark" in w._sections
+        assert "meta:mark" in w._sections
+        assert w._sections["tag:mark"] is not w._sections["meta:mark"]
+        tag_plugin = w._section_plugins["tag:mark"]
+        meta_plugin = w._section_plugins["meta:mark"]
+        assert tag_plugin is not meta_plugin
+        tag_row = w._sections["tag:mark"].content_widget()
+        meta_row = w._sections["meta:mark"].content_widget()
+        assert isinstance(tag_row, _MarkBadgeRow)
+        assert isinstance(meta_row, _MarkBadgeRow)
+        assert tag_row._scope == "tag"
+        assert meta_row._scope == "meta_info"
+        assert set(tag_row._badges) == {"tag_mark"}
+        assert set(meta_row._badges) == {"meta_mark"}
+        hidden_meta = dict(meta)
+        hidden_meta["tag_prefixed"] = {}
+        hidden_meta["prefixed"] = {}
+        w.set_data(hidden_meta)
+        w.set_data(meta)
+        assert w._section_plugins["tag:mark"] is tag_plugin
+        assert w._section_plugins["meta:mark"] is meta_plugin
+    finally:
+        reg._marks = original_marks
+        reg.changed.emit()
+
+
+def test_key_value_plugin_card_pool_survives_rebuild_and_settings_change(qtbot):
+    w = MetaViewerWidget()
+    qtbot.addWidget(w)
+    meta = _sample_meta()
+    meta["_file_hash"] = "h"
+    meta["tag_prefixed"] = {"color": {"palette.1": "16711680"}}
+    meta["tag_prefixed_locks"] = {"color": {"palette.1": False}}
+    w.set_data(meta)
+    card = w._sections["tag:color"]
+    plugin = w._section_plugins["tag:color"]
+
+    hidden_meta = _sample_meta()
+    hidden_meta["tag"] = {}
+    hidden_meta["tag_prefixed"] = {}
+    hidden_meta["tag_prefixed_locks"] = {}
+    w.set_data(hidden_meta)
+    assert "tag:color" not in w._sections
+    assert card.isHidden()
+
+    settings_mod = importlib.import_module(plugin.__class__.__module__.rsplit(".", 1)[0] + ".settings")
+    settings_mod.ColorSettings.instance().changed.emit()
+
+    w.set_data(meta)
+    assert w._sections["tag:color"] is card
+    assert w._section_plugins["tag:color"] is plugin
+
+
+def test_key_value_panel_state_targets_scoped_instances(qtbot):
+    from wafer.core.state import StateStore
+    from wafer.plugin.key_value_panel.base import BaseKeyValuePanelPlugin
+    from wafer.plugin.key_value_panel.handler import key_value_panel_registry
+
+    class StatefulPanel(BaseKeyValuePanelPlugin):
+        NAME = "stateful_review_panel"
+        PREFIX = "stateful_review"
+        DATA_SCOPE = "*"
+        DEFAULT_ENABLED = True
+        PRIORITY = 9999
+
+        def __init__(self):
+            self.state = {}
+
+        def create_card(self, parent=None, *, scope="meta_info"):
+            return QtWidgets.QFrame(parent)
+
+        def update_data(self, data, locks=None, path="", file_hash="", db="", *, scope="meta_info"):
+            pass
+
+        def save_ui_state(self):
+            return dict(self.state)
+
+        def restore_ui_state(self, state):
+            self.state = dict(state)
+
+    original_plugins = dict(key_value_panel_registry._plugins)
+    original_instances = dict(key_value_panel_registry._instances)
+    try:
+        key_value_panel_registry.register(StatefulPanel)
+        w = MetaViewerWidget()
+        qtbot.addWidget(w)
+        w._restore_key_value_panel_state(
+            StatefulPanel.NAME,
+            {"scopes": {"tag": {"value": "tag"}, "meta_info": {"value": "meta"}}},
+        )
+        meta = {
+            "source": {"name": "a"},
+            "file": {},
+            "tag": {},
+            "tag_prefixed": {StatefulPanel.PREFIX: {"k": "v"}},
+            "tag_prefixed_locks": {StatefulPanel.PREFIX: {"k": False}},
+            "meta": {},
+            "meta_locks": {},
+            "prefixed": {StatefulPanel.PREFIX: {"m": "v"}},
+            "prefixed_locks": {StatefulPanel.PREFIX: {"m": False}},
+            "_path": "/a.png",
+            "_file_hash": "h",
+            "_tag_locks": {},
+            "_db_name": "db",
+        }
+        w.set_data(meta)
+        tag_plugin = w._section_plugins[f"tag:{StatefulPanel.PREFIX}"]
+        meta_plugin = w._section_plugins[f"meta:{StatefulPanel.PREFIX}"]
+        assert tag_plugin is not meta_plugin
+        assert tag_plugin.state == {"value": "tag"}
+        assert meta_plugin.state == {"value": "meta"}
+        tag_plugin.state = {"value": "tag2"}
+        assert w._save_key_value_panel_state(StatefulPanel.NAME) == {
+            "scopes": {"tag": {"value": "tag2"}, "meta_info": {"value": "meta"}}
+        }
+    finally:
+        key_value_panel_registry._plugins = original_plugins
+        key_value_panel_registry._instances = original_instances
+        StateStore.instance().unregister(f"key_value_panel_plugin.{StatefulPanel.NAME}")
 
 
 def test_section_marker_kinds(qtbot):

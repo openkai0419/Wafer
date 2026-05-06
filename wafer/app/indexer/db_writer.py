@@ -108,6 +108,12 @@ class DatabaseWriter:
         return result
 
     @profiler.profile
+    def convert_key_scope(self, key: str, to_scope: str):
+        result = self._db.convert_key_scope(key, to_scope)
+        self._db.try_checkpoint("PASSIVE")
+        return result
+
+    @profiler.profile
     def upsert_parser_results(self, meta_info_entries, tag_entries, collector_status_entries, delete_entries=()):
         self._db.upsert_collection_results(
             [],

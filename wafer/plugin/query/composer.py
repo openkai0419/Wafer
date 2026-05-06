@@ -82,7 +82,7 @@ class SearchComposer:
         std_branches = " UNION ALL ".join(std_branch_sqls)
         sql = (
             f"WITH matched_paths AS ({combined_sql}) "
-            f'SELECT "key", COUNT(*) AS freq FROM ('
+            f'SELECT "key", COUNT(DISTINCT path) AS freq FROM ('
             f'  SELECT DISTINCT mp.path, kv."key"'
             f"  FROM matched_paths AS mp"
             f"  JOIN meta_info AS kv ON kv.path = mp.path"

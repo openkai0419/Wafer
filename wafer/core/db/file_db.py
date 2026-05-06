@@ -7,6 +7,7 @@ from pathlib import Path
 from collections.abc import Sequence
 
 from .db_utils import apply_read_pragmas, apply_write_pragmas, connect_with_retry, escape_like
+from .key_value import SCOPE_ALL, SCOPE_META_INFO, SCOPE_TAG, conversion_spec, normalize_data_scope, other_data_scope, scope_spec
 from ...constants import VIRTUAL_PATH_SEPARATOR
 from ...utils.virtual_paths import display_name
 from ...utils.profiling import profiler
@@ -928,11 +929,15 @@ class FileDB:
         renames = list(renames or [])
         if not paths or (not upserts and not deletes and not renames):
             return {}
-        if scope not in ("tag", "meta_info"):
-            raise ValueError(f"Unsupported key-value scope: {scope}")
-        table = "tags" if scope == "tag" else "meta_info"
-        target_col = "file_hash" if scope == "tag" else "path"
-        upsert_sql = _SQL_UPSERT_USER_TAGS if scope == "tag" else _SQL_UPSERT_USER_META
+        scope = normalize_data_scope(scope, allow_all=True)
+        if scope == SCOPE_ALL:
+            if upserts or renames or lock_only:
+                raise ValueError("scope='*' only supports key deletion")
+            return self._delete_user_kv_all_scopes(paths, deletes)
+        spec = scope_spec(scope)
+        table = spec.table
+        target_col = spec.target_column
+        upsert_sql = _SQL_UPSERT_USER_TAGS if scope == SCOPE_TAG else _SQL_UPSERT_USER_META
         results: dict[str, tuple[str, list[str], list[str]]] = {}
         with self._write_lock, self.conn:
             cur = self.conn.cursor()
@@ -941,7 +946,7 @@ class FileDB:
                 paths_list = list(paths)
                 missing = [p for p in paths_list if p not in target_by_path]
                 if missing:
-                    reason = "file_hash" if scope == "tag" else "file row"
+                    reason = "file_hash" if target_col == "file_hash" else "path"
                     AppLogger.warning(f"[DB] apply_user_kv: {len(missing)} paths have no {reason} (skipped)")
                 upsert_keys = [k for (k, _v, _vn, _lk) in upserts]
                 for path, target_id in target_by_path.items():
@@ -996,6 +1001,92 @@ class FileDB:
         AppLogger.info(f"[DB] apply_user_kv scope={scope} paths={len(paths_list)} resolved={len(results)} renames={len(renames)} upserts={len(upserts)} deletes={len(deletes)}")
         return results
 
+    def _delete_user_kv_all_scopes(self, paths: Sequence[str], deletes: list[str]) -> dict[str, tuple[str, list[str], list[str]]]:
+        deletes = [str(key).strip() for key in deletes if str(key).strip()]
+        if not paths or not deletes:
+            return {}
+        paths_list = list(paths)
+        results: dict[str, tuple[str, list[str], list[str]]] = {}
+        with self._write_lock, self.conn:
+            cur = self.conn.cursor()
+            try:
+                tag_targets = self._resolve_user_kv_targets(cur, SCOPE_TAG, paths_list)
+                meta_targets = self._resolve_user_kv_targets(cur, SCOPE_META_INFO, paths_list)
+                placeholders = ",".join(["?"] * len(deletes))
+                for path in paths_list:
+                    remaining_any: set[str] = set()
+                    tag_target = tag_targets.get(path)
+                    if tag_target:
+                        cur.execute(
+                            f"DELETE FROM tags WHERE file_hash = ? AND key IN ({placeholders}) AND locked = 0",
+                            [tag_target] + deletes,
+                        )
+                        rows = cur.execute(
+                            f"SELECT key FROM tags WHERE file_hash = ? AND key IN ({placeholders})",
+                            [tag_target] + deletes,
+                        ).fetchall()
+                        remaining_any.update(row[0] for row in rows)
+                    meta_target = meta_targets.get(path)
+                    if meta_target:
+                        cur.execute(
+                            f"DELETE FROM meta_info WHERE path = ? AND key IN ({placeholders}) AND locked = 0",
+                            [meta_target] + deletes,
+                        )
+                        rows = cur.execute(
+                            f"SELECT key FROM meta_info WHERE path = ? AND key IN ({placeholders})",
+                            [meta_target] + deletes,
+                        ).fetchall()
+                        remaining_any.update(row[0] for row in rows)
+                    if tag_target or meta_target:
+                        deleted = [key for key in deletes if key not in remaining_any]
+                        results[path] = (tag_target or meta_target or path, [], sorted(deleted))
+            finally:
+                cur.close()
+        AppLogger.info(f"[DB] apply_user_kv scope=* paths={len(paths_list)} resolved={len(results)} deletes={len(deletes)}")
+        return results
+
+    def convert_key_scope(self, key: str, to_scope: str) -> dict[str, int | str | list[str] | dict[str, str]]:
+        key = str(key or "").strip()
+        if not key:
+            raise ValueError("key must not be empty")
+        to_scope = normalize_data_scope(to_scope)
+        conversion = conversion_spec(to_scope)
+        from_scope = conversion.from_scope
+        affected_rows: list[tuple[str, str | None]] = []
+        with self._write_lock, self.conn:
+            cur = self.conn.cursor()
+            try:
+                affected_rows = [
+                    (str(path), str(target_id) if target_id else None)
+                    for path, target_id in cur.execute(conversion.affected_rows_sql, (key,)).fetchall()
+                ]
+                cur.execute(conversion.insert_sql, (key,))
+                upserted = cur.execute("SELECT changes()").fetchone()[0]
+                cur.execute(conversion.delete_sql, (key,))
+                source_deleted = cur.execute("SELECT changes()").fetchone()[0]
+            finally:
+                cur.close()
+        affected_paths: list[str] = []
+        targets: dict[str, str] = {}
+        seen_paths: set[str] = set()
+        for path, file_hash in affected_rows:
+            if not path or path in seen_paths:
+                continue
+            seen_paths.add(path)
+            affected_paths.append(path)
+            if file_hash:
+                targets[path] = file_hash
+        AppLogger.info(f"[DB] convert_key_scope key={key} {from_scope}->{to_scope} upserted={upserted} source_deleted={source_deleted}")
+        return {
+            "key": key,
+            "from_scope": from_scope,
+            "to_scope": to_scope,
+            "upserted": int(upserted),
+            "source_deleted": int(source_deleted),
+            "paths": affected_paths,
+            "targets": targets,
+        }
+
     def apply_user_meta_info(
         self,
         paths: Sequence[str],
@@ -1021,7 +1112,7 @@ class FileDB:
         for i in range(0, len(paths_list), 900):
             chunk = paths_list[i : i + 900]
             ph = ",".join(["?"] * len(chunk))
-            if scope == "tag":
+            if scope == SCOPE_TAG:
                 rows = cur.execute(
                     f"""SELECT i.path, s.file_hash
                     FROM files AS i

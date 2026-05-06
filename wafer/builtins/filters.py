@@ -300,8 +300,16 @@ class MarkFilter(BaseFilterPlugin):
         mode = (params.get("mode") or "OR").upper()
         keys = [MarkRegistry.key(str(mid)) for mid in ids]
         placeholders = ",".join(["?"] * len(keys))
-        base = f"SELECT path FROM meta_info WHERE key IN ({placeholders})"
+        base = (
+            f"SELECT mi.path, mi.key AS k FROM meta_info AS mi WHERE mi.key IN ({placeholders}) "
+            f"UNION ALL "
+            f"SELECT i.path, t.key AS k FROM tags AS t "
+            f"JOIN sources AS s ON s.file_hash = t.file_hash "
+            f"JOIN files AS i ON i.source = s.source "
+            f"WHERE t.key IN ({placeholders})"
+        )
+        base_params = list(keys) + list(keys)
         if mode == "AND" and len(keys) > 1:
-            sql = f"SELECT path FROM (SELECT path, key AS k FROM meta_info WHERE key IN ({placeholders})) GROUP BY path HAVING COUNT(DISTINCT k) >= ?"
-            return sql, list(keys) + [len(keys)]
-        return f"SELECT DISTINCT path FROM ({base})", list(keys)
+            sql = f"SELECT path FROM ({base}) GROUP BY path HAVING COUNT(DISTINCT k) >= ?"
+            return sql, base_params + [len(keys)]
+        return f"SELECT DISTINCT path FROM ({base})", base_params

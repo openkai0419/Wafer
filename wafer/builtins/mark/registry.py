@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from PySide6 import QtCore, QtGui
 
 from ...core.app_settings import app_settings
+from ...core.db.key_value import SCOPE_META_INFO, SCOPE_TAG, normalize_data_scope
 from ...utils.logs import AppLogger
 
 
@@ -24,11 +25,22 @@ class Mark:
     id: str
     name: str
     color: str
+    storage_scope: str = SCOPE_META_INFO
 
 
 def _normalize_id(text: str) -> str:
     base = _ID_PATTERN.sub("_", str(text or "").strip().lower()).strip("_")
     return base or "mark"
+
+
+def _normalize_storage_scope(scope: str) -> str:
+    try:
+        normalized = normalize_data_scope(scope)
+    except ValueError:
+        return SCOPE_META_INFO
+    if normalized in (SCOPE_META_INFO, SCOPE_TAG):
+        return normalized
+    return SCOPE_META_INFO
 
 
 class MarkRegistry(QtCore.QObject):
@@ -69,6 +81,7 @@ class MarkRegistry(QtCore.QObject):
                     continue
                 name = str(item.get("name") or mark_id)
                 color = str(item.get("color") or "#888888")
+                storage_scope = _normalize_storage_scope(item.get("storage_scope") or item.get("scope") or SCOPE_META_INFO)
                 norm = _normalize_name(name)
                 if norm in seen_names:
                     base = name
@@ -80,15 +93,15 @@ class MarkRegistry(QtCore.QObject):
                     duplicates_renamed += 1
                 seen_ids.add(mark_id)
                 seen_names.add(norm)
-                out.append(Mark(id=mark_id, name=name, color=color))
+                out.append(Mark(id=mark_id, name=name, color=color, storage_scope=storage_scope))
             if duplicates_renamed:
                 AppLogger.warning(f"[Mark] Renamed {duplicates_renamed} duplicate mark name(s) on load")
             if out:
                 return out
-        return [Mark(id="1", name="mark", color="#888888")]
+        return [Mark(id="1", name="mark", color="#888888", storage_scope=SCOPE_META_INFO)]
 
     def _save(self):
-        payload = [{"id": m.id, "name": m.name, "color": m.color} for m in self._marks]
+        payload = [{"id": m.id, "name": m.name, "color": m.color, "storage_scope": m.storage_scope} for m in self._marks]
         app_settings.set(_SETTINGS_KEY, payload)
         app_settings.commit()
 
@@ -115,6 +128,25 @@ class MarkRegistry(QtCore.QObject):
 
     def qcolor_of(self, mark_id: str) -> QtGui.QColor:
         return QtGui.QColor(self.color_of(mark_id))
+
+    def scope_of(self, mark_id: str) -> str:
+        m = self.get(mark_id)
+        return m.storage_scope if m is not None else SCOPE_META_INFO
+
+    def set_scope(self, mark_id: str, scope: str) -> bool:
+        m = self.get(mark_id)
+        scope = _normalize_storage_scope(scope)
+        if m is None or m.storage_scope == scope:
+            return False
+        idx = self._marks.index(m)
+        self._marks[idx] = Mark(id=m.id, name=m.name, color=m.color, storage_scope=scope)
+        self._save()
+        self.changed.emit()
+        return True
+
+    def ids_by_scope(self, scope: str) -> list[str]:
+        scope = _normalize_storage_scope(scope)
+        return [m.id for m in self._marks if m.storage_scope == scope]
 
     def swatch_icon(self, mark_id: str, size: int) -> QtGui.QIcon:
         size = max(1, int(size))
@@ -150,13 +182,13 @@ class MarkRegistry(QtCore.QObject):
             i += 1
         return f"{base} {i}"
 
-    def add(self, name: str, color: str = "#888888", mark_id: str | None = None) -> str:
+    def add(self, name: str, color: str = "#888888", mark_id: str | None = None, *, storage_scope: str = SCOPE_META_INFO) -> str:
         display = str(name).strip()
         if not display:
             raise ValueError("Mark name must not be empty")
         display = self._unique_name(display)
         new_id = self._unique_id(mark_id or _normalize_id(display))
-        self._marks.append(Mark(id=new_id, name=display, color=str(color)))
+        self._marks.append(Mark(id=new_id, name=display, color=str(color), storage_scope=_normalize_storage_scope(storage_scope)))
         self._save()
         self.changed.emit()
         return new_id
@@ -180,7 +212,7 @@ class MarkRegistry(QtCore.QObject):
         if m.name == new_name:
             return new_name
         idx = self._marks.index(m)
-        self._marks[idx] = Mark(id=m.id, name=new_name, color=m.color)
+        self._marks[idx] = Mark(id=m.id, name=new_name, color=m.color, storage_scope=m.storage_scope)
         self._save()
         self.changed.emit()
         return new_name
@@ -191,7 +223,7 @@ class MarkRegistry(QtCore.QObject):
         if m is None or m.color == hex_color:
             return
         idx = self._marks.index(m)
-        self._marks[idx] = Mark(id=m.id, name=m.name, color=hex_color)
+        self._marks[idx] = Mark(id=m.id, name=m.name, color=hex_color, storage_scope=m.storage_scope)
         self._save()
         self.changed.emit()
 

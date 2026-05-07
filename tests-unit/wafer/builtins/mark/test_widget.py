@@ -17,11 +17,45 @@ def _reset_registries():
 
 
 def test_mark_filter_widget_syncs_overlay_controls(qtbot):
-    from wafer.app.viewer.grid.mark_overlay_service import MarkOverlayService
     from wafer.builtins.mark.widget import MarkFilterWidget
 
-    svc = MarkOverlayService(lambda: None)
-    InstanceRegistry.instance().register("MarkOverlayService", svc)
+    class _Host:
+        def __init__(self):
+            self._badge_visible = True
+            self._badge_radius = 8
+            from PySide6 import QtCore
+
+            class _Sig(QtCore.QObject):
+                changed = QtCore.Signal()
+
+            self._sig = _Sig()
+            self.changed = self._sig.changed
+
+        def plugin(self, name):
+            return None
+
+        def request_update(self):
+            self.changed.emit()
+
+        def database_path(self):
+            return None
+
+        def badge_visible(self):
+            return self._badge_visible
+
+        def set_badge_visible(self, v):
+            self._badge_visible = bool(v)
+            self.request_update()
+
+        def badge_radius(self):
+            return self._badge_radius
+
+        def set_badge_radius(self, v):
+            self._badge_radius = int(v)
+            self.request_update()
+
+    host = _Host()
+    InstanceRegistry.instance().register("GridOverlayHost", host)
 
     widget = MarkFilterWidget()
     qtbot.addWidget(widget)
@@ -29,8 +63,8 @@ def test_mark_filter_widget_syncs_overlay_controls(qtbot):
     labels = [label.text() for label in widget._popup.findChildren(QtWidgets.QLabel)]
     assert "Mark Filter Options" in labels
 
-    svc.set_visible(False)
-    svc.set_radius(22)
+    host.set_badge_visible(False)
+    host.set_badge_radius(22)
 
     assert widget._popup.overlay_check.isChecked() is False
     assert widget._popup.radius_spin.value() == 22

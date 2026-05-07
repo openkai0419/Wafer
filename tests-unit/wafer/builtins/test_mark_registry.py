@@ -1,5 +1,6 @@
 from wafer.builtins.mark import Mark, MarkRegistry
 from wafer.builtins.mark.registry import _normalize_id
+from wafer.builtins.mark.shapes import DEFAULT_MARK_KEY
 
 import pytest
 
@@ -41,6 +42,7 @@ def test_mark_registry_add_creates_unique_id():
         assert a != b
         assert reg.color_of(a) == "#112233"
         assert reg.name_of(a) == "Favorite Test"
+        assert reg.mark_key_of(a) == DEFAULT_MARK_KEY
     finally:
         reg.remove(a)
         reg.remove(b)
@@ -96,6 +98,20 @@ def test_mark_registry_rename_and_set_color_emit_changed():
         reg.remove(mid)
 
 
+def test_mark_registry_set_mark_key_emit_changed():
+    reg = MarkRegistry.instance()
+    mid = reg.add("Shape Mark", "#000000", mark_key="star")
+    try:
+        emitted = []
+        reg.changed.connect(lambda: emitted.append(True))
+        assert reg.mark_key_of(mid) == "star"
+        reg.set_mark_key(mid, "heart")
+        assert reg.mark_key_of(mid) == "heart"
+        assert emitted
+    finally:
+        reg.remove(mid)
+
+
 def test_mark_registry_remove():
     reg = MarkRegistry.instance()
     mid = reg.add("Remove Me", "#ffffff")
@@ -130,3 +146,4 @@ def test_mark_dataclass():
     assert m.name == "X"
     assert m.color == "#000000"
     assert m.storage_scope == "meta_info"
+    assert m.mark_key == DEFAULT_MARK_KEY

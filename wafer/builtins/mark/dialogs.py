@@ -2,18 +2,20 @@ from __future__ import annotations
 
 import uuid
 
-from PySide6 import QtCore, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 
 from ...core.commands.bridge import ActionKit, Menu
 from ...core.db.dispatch import send_to_db_scope
 from ...core.db.key_value import SCOPE_META_INFO, SCOPE_TAG, normalize_data_scope, other_data_scope
 from ...core.lang.manager import t
 from ...core.qt.icon_engine import themed_icon
+from ...core.qt.mark_engine import mark_keys, mark_pixmap, normalize_mark_key
 from ...ui.widgets.color_picker import ColorPickerDialog
 from ...utils.formatting import dpix
 from ...utils.logs import AppLogger
 from ...utils.notifier import Notifier
 from .registry import MarkRegistry
+from .shapes import DEFAULT_MARK_KEY
 
 
 def _normalize_mark_scope(scope: str) -> str:
@@ -26,7 +28,7 @@ def _normalize_mark_scope(scope: str) -> str:
     return selected_scope
 
 
-def _prompt_new_mark_values(parent: QtWidgets.QWidget | None = None, *, scope: str = SCOPE_META_INFO) -> tuple[str | None, str]:
+def _prompt_new_mark_values(parent: QtWidgets.QWidget | None = None, *, scope: str = SCOPE_META_INFO) -> tuple[str | None, str, str]:
     selected_scope = _normalize_mark_scope(scope)
     dlg = QtWidgets.QDialog(parent)
     dlg.setWindowTitle(t("Add mark"))
@@ -68,23 +70,23 @@ def _prompt_new_mark_values(parent: QtWidgets.QWidget | None = None, *, scope: s
 
     name_edit.setFocus()
     if dlg.exec() != QtWidgets.QDialog.Accepted:
-        return None, selected_scope
+        return None, selected_scope, DEFAULT_MARK_KEY
 
     name = name_edit.text().strip()
     if not name:
-        return None, selected_scope
-    return name, _normalize_mark_scope(scope_combo.currentData())
+        return None, selected_scope, DEFAULT_MARK_KEY
+    return name, _normalize_mark_scope(scope_combo.currentData()), DEFAULT_MARK_KEY
 
 
 def prompt_new_mark(parent: QtWidgets.QWidget | None = None, *, scope: str = SCOPE_META_INFO) -> str | None:
-    name, selected_scope = _prompt_new_mark_values(parent, scope=scope)
+    name, selected_scope, mark_key = _prompt_new_mark_values(parent, scope=scope)
     if not name:
         return None
     color = ColorPickerDialog.get_color("#888888", parent, t("Choose mark color"), with_alpha=False, scope="mark")
     if color is None:
         return None
     reg = MarkRegistry.instance()
-    new_id = reg.add(name, color.name(), storage_scope=selected_scope)
+    new_id = reg.add(name, color.name(), storage_scope=selected_scope, mark_key=mark_key)
     final_name = reg.name_of(new_id)
     if final_name != name:
         Notifier.info(t("Added as '{name}' to avoid duplicate", name=final_name))
@@ -116,6 +118,45 @@ def prompt_pick_color(parent: QtWidgets.QWidget | None, mark_id: str) -> bool:
         return False
     reg.set_color(mark_id, color.name())
     return True
+
+
+def prompt_pick_shape(parent: QtWidgets.QWidget | None, mark_id: str) -> bool:
+    reg = MarkRegistry.instance()
+    mark = reg.get(mark_id)
+    if mark is None:
+        return False
+    dlg = QtWidgets.QDialog(parent)
+    dlg.setWindowTitle(t("Choose mark shape"))
+    layout = QtWidgets.QVBoxLayout(dlg)
+    layout.setContentsMargins(dpix(12), dpix(12), dpix(12), dpix(12))
+    combo = QtWidgets.QComboBox(dlg)
+    _populate_mark_keys(combo, mark.mark_key, color=mark.color)
+    layout.addWidget(combo)
+    buttons = QtWidgets.QDialogButtonBox(
+        QtWidgets.QDialogButtonBox.StandardButton.Ok | QtWidgets.QDialogButtonBox.StandardButton.Cancel,
+        parent=dlg,
+    )
+    buttons.accepted.connect(dlg.accept)
+    buttons.rejected.connect(dlg.reject)
+    layout.addWidget(buttons)
+    if dlg.exec() != QtWidgets.QDialog.Accepted:
+        return False
+    new_key = normalize_mark_key(combo.currentData() or combo.currentText())
+    if new_key == mark.mark_key:
+        return False
+    reg.set_mark_key(mark_id, new_key)
+    return True
+
+
+def _populate_mark_keys(combo: QtWidgets.QComboBox, current: str, *, color: str = "#888888") -> None:
+    icon_size = dpix(16)
+    qcolor = QtGui.QColor(color or "#888888")
+    combo.clear()
+    for key in mark_keys():
+        combo.addItem(QtGui.QIcon(mark_pixmap(key, icon_size, qcolor)), key, userData=key)
+    idx = combo.findData(normalize_mark_key(current))
+    if idx >= 0:
+        combo.setCurrentIndex(idx)
 
 
 def confirm_remove_mark(parent: QtWidgets.QWidget | None, mark_id: str) -> bool:
@@ -158,6 +199,7 @@ def show_mark_context_menu(parent: QtWidgets.QWidget, mark_id: str, global_pos: 
             ":Mark",
             ActionKit.Action(path=f"inline.mark.{uid}.rename", display="Rename...", func=lambda ctx: prompt_rename_mark(parent, mark_id)),
             ActionKit.Action(path=f"inline.mark.{uid}.color", display="Change color...", func=lambda ctx: prompt_pick_color(parent, mark_id)),
+            ActionKit.Action(path=f"inline.mark.{uid}.shape", display="Change shape...", func=lambda ctx: prompt_pick_shape(parent, mark_id)),
             "-",
             ActionKit.Action(path=f"inline.mark.{uid}.scope", display="Scope / Convert...", func=lambda ctx: show_mark_management_dialog(parent, mark_id)),
             "-",

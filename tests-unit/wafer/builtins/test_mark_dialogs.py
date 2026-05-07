@@ -24,7 +24,7 @@ def test_mark_context_menu_keeps_direct_actions(qtbot, monkeypatch):
     dialogs.show_mark_context_menu(parent, mark_id, pos)
 
     displays = [getattr(item, "display", None) for item in captured["items"] if hasattr(item, "display")]
-    assert displays == ["Rename...", "Change color...", "Scope / Convert...", "Remove..."]
+    assert displays == ["Rename...", "Change color...", "Change shape...", "Scope / Convert...", "Remove..."]
     assert "Manage..." not in displays
     assert captured["items"].count("-") == 2
     assert captured["pos"] == pos
@@ -90,3 +90,22 @@ def test_prompt_new_mark_uses_selected_scope(monkeypatch):
     finally:
         if mark_id:
             reg.remove(mark_id)
+
+
+def test_prompt_pick_shape_updates_mark_key(qtbot, monkeypatch):
+    parent = QtWidgets.QWidget()
+    qtbot.addWidget(parent)
+    reg = MarkRegistry.instance()
+    mark_id = reg.add("Shape Dialog Mark", "#123456", mark_key="circle")
+
+    def fake_exec(self):
+        combo = self.findChildren(QtWidgets.QComboBox)[0]
+        combo.setCurrentIndex(combo.findData("heart"))
+        return QtWidgets.QDialog.Accepted
+
+    monkeypatch.setattr(QtWidgets.QDialog, "exec", fake_exec)
+    try:
+        assert dialogs.prompt_pick_shape(parent, mark_id) is True
+        assert reg.mark_key_of(mark_id) == "heart"
+    finally:
+        reg.remove(mark_id)

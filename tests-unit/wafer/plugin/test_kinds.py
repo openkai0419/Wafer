@@ -3,6 +3,7 @@ from wafer.plugin.kinds import (
     PLUGIN_KIND_COMMAND,
     PLUGIN_KIND_FILTER,
     PLUGIN_KIND_GRID,
+    PLUGIN_KIND_GRID_OVERLAY,
     PLUGIN_KIND_IMAGE_LOADER,
     PLUGIN_KIND_KEY_VALUE_PANEL,
     PLUGIN_KIND_LAYOUT,
@@ -31,6 +32,7 @@ def test_short_title_case_labels():
 def test_orderable_kind_order_is_stable():
     assert ORDERABLE_PLUGIN_KIND_KEYS == (
         PLUGIN_KIND_GRID,
+        PLUGIN_KIND_GRID_OVERLAY,
         PLUGIN_KIND_VIEWER,
         PLUGIN_KIND_FILTER,
         PLUGIN_KIND_SORT,

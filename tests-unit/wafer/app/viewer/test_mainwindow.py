@@ -53,7 +53,7 @@ class TestSearchResultDiffCheck:
             win.folder_view = MagicMock()
             win.folder_view.get_selected_paths.return_value = []
             win.file_list_provider = MagicMock()
-            win._mark_overlay_service = MagicMock()
+            win.grid_overlay_host = MagicMock()
             return win
 
     def test_skip_when_paths_unchanged(self):

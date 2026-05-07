@@ -77,11 +77,11 @@ def toggle_mark(ctx, name: str = ""):
         if name and mark_id is None:
             Notifier.warning(t("Unknown mark: {name}", name=name))
         return
-    from ...core.commands.binding.instance_registry import InstanceRegistry
+    from .overlay import MarkBadgeOverlayPlugin
 
-    svc = InstanceRegistry.instance().get_one("MarkOverlayService")
+    host = InstanceRegistry.instance().get_one("GridOverlayHost")
     key = MarkRegistry.key(mark_id)
-    has_any_unmarked = svc is None or any(mark_id not in svc.marks_for(p) for p in paths)
+    has_any_unmarked = host is None or any(mark_id not in host.values_for(MarkBadgeOverlayPlugin.NAME, p) for p in paths)
     if has_any_unmarked:
         scope = MarkRegistry.instance().scope_of(mark_id)
         _send_batch(ctx, paths, [(key, "1", False)], [], scope=scope)
@@ -106,6 +106,15 @@ def set_color(ctx, name: str = "", *, w):
         Notifier.warning(t("Unknown mark: {name}", name=name))
         return
     dialogs.prompt_pick_color(w, mark_id)
+
+
+@require(w="MainWindow")
+def set_shape(ctx, name: str = "", *, w):
+    mark_id = _resolve_id(name)
+    if mark_id is None:
+        Notifier.warning(t("Unknown mark: {name}", name=name))
+        return
+    dialogs.prompt_pick_shape(w, mark_id)
 
 
 @require(w="MainWindow")
@@ -202,6 +211,14 @@ class MarkCommands(ActionKit.MenuBase):
                     ActionKit.Param(name="name", value=_mark_name_choices, description=t("Mark name"), required=True),
                 ],
                 func=set_color,
+            ),
+            ActionKit.Command(
+                path="Mark/mark.set_shape",
+                display=t("Set Mark Shape..."),
+                params=[
+                    ActionKit.Param(name="name", value=_mark_name_choices, description=t("Mark name"), required=True),
+                ],
+                func=set_shape,
             ),
             ActionKit.Command(
                 path="Mark/mark.remove_def",

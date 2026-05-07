@@ -1,4 +1,32 @@
 {
+  "Overlay badge size": {
+    "en": "Overlay badge size",
+    "ja": ""
+  },
+  "Show overlay badges": {
+    "en": "Show overlay badges",
+    "ja": ""
+  },
+  "Toggle cell overlay": {
+    "en": "Toggle cell overlay",
+    "ja": ""
+  },
+  "Change shape...": {
+    "en": "Change shape...",
+    "ja": ""
+  },
+  "Choose mark shape": {
+    "en": "Choose mark shape",
+    "ja": ""
+  },
+  "Set Mark Shape...": {
+    "en": "Set Mark Shape...",
+    "ja": ""
+  },
+  "Shape:": {
+    "en": "Shape:",
+    "ja": ""
+  },
   "Create as:": {
     "en": "Create as:",
     "ja": ""

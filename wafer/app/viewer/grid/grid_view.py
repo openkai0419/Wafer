@@ -81,68 +81,8 @@ class _SelectionOverlay(QtWidgets.QWidget):
                 text = fm.elidedText(str(g._drop_preview_text or ""), QtCore.Qt.ElideMiddle, max(1, int(inner.width() - g._half_pos)))
                 painter.drawText(inner.toRect(), QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter, f"{title}\n{text}".strip())
                 painter.restore()
-        self._draw_mark_badges(painter, g)
+        g._paint_grid_overlays(painter, self._map_rect)
         painter.end()
-
-    def _draw_mark_badges(self, painter, g):
-        from ....core.commands.binding.instance_registry import InstanceRegistry
-        from ....builtins.mark import MarkRegistry
-
-        svc = InstanceRegistry.instance().get_one("MarkOverlayService")
-        if svc is None or not svc.is_visible() or not g.visible_indices or not g.rects:
-            return
-        view_rect = g._scene_view_rect()
-        radius = dpix(svc.radius())
-        diameter = radius * 2
-        margin = dpix(4)
-        registry = MarkRegistry.instance()
-        painter.save()
-        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
-        for i in g.visible_indices:
-            if i < 0 or i >= len(g.rects):
-                continue
-            r = g.rects[i]
-            if not r.intersects(view_rect):
-                continue
-            path = g.items.paths[i] if i < len(g.items.paths) else None
-            if not path:
-                continue
-            ids = svc.marks_for(path)
-            if not ids:
-                continue
-            cell = self._map_rect(QtCore.QRectF(r))
-            cx = cell.left() + margin + radius
-            cy = cell.top() + margin + radius
-            badge_rect = QtCore.QRectF(cx - radius, cy - radius, diameter, diameter)
-            count = len(ids)
-            if count >= 5:
-                painter.setPen(QtCore.Qt.NoPen)
-                steps = 24
-                span = int(360 * 16 / steps)
-                start = 90 * 16
-                for k in range(steps):
-                    painter.setBrush(QtGui.QColor.fromHsvF(k / steps, 0.85, 1.0))
-                    painter.drawPie(badge_rect, start, -span)
-                    start -= span
-                painter.setPen(QtGui.QPen(QtGui.QColor(0, 0, 0, 200), max(1, dpix(1))))
-                painter.setBrush(QtCore.Qt.NoBrush)
-                painter.drawEllipse(badge_rect)
-            elif count == 1:
-                painter.setPen(QtGui.QPen(QtGui.QColor(0, 0, 0, 180), max(1, dpix(1))))
-                painter.setBrush(registry.qcolor_of(ids[0]))
-                painter.drawEllipse(badge_rect)
-            else:
-                painter.setPen(QtCore.Qt.NoPen)
-                span = int(360 * 16 / count)
-                start = 90 * 16
-                for mid in ids:
-                    painter.setBrush(registry.qcolor_of(mid))
-                    painter.drawPie(badge_rect, start, -span)
-                    start -= span
-                painter.setPen(QtGui.QPen(QtGui.QColor(0, 0, 0, 200), max(1, dpix(1))))
-                painter.setBrush(QtCore.Qt.NoBrush)
-                painter.drawEllipse(badge_rect)
-        painter.restore()
 
 
 class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
@@ -177,6 +117,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self._drop_preview_rect = None
         self._drop_preview_title = None
         self._drop_preview_text = None
+        self._overlay_host = getattr(root, "grid_overlay_host", None)
 
         self.screen_width = QtGui.QGuiApplication.primaryScreen().availableGeometry().width()
         self.base_height = int(self.screen_width / 10)
@@ -466,6 +407,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self._notifier.clear()
         self._pipeline.cancel_all()
         self.visible_indices.clear()
+        self._sync_overlay_visible_paths()
         self.rects = LayoutData.empty()
         self._scene.setSceneRect(0, 0, 0, 0)
 
@@ -764,6 +706,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
                 if i < len(self.rects):
                     self._setup_cell(i)
         self.visible_indices = new_visible
+        self._sync_overlay_visible_paths()
         self._sync_additional_widgets()
         if self.rects:
             margin = self._half_pos
@@ -775,6 +718,18 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
                 self._scene.setSceneRect(new_rect)
         self._overlay.raise_()
         self.viewport().update()
+
+    def _sync_overlay_visible_paths(self):
+        host = self._overlay_host or getattr(self.root, "grid_overlay_host", None)
+        if host is None:
+            return
+        paths = tuple(self.items.paths[i] for i in sorted(self.visible_indices) if 0 <= i < len(self.items.paths) and self.items.paths[i])
+        host.set_visible_paths(paths)
+
+    def _paint_grid_overlays(self, painter, map_rect):
+        host = self._overlay_host or getattr(self.root, "grid_overlay_host", None)
+        if host is not None:
+            host.paint(painter, self, map_rect)
 
     @profiler.profile
     def _calculate_visible_indices(self, view_rect):

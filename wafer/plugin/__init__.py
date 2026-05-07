@@ -1,5 +1,14 @@
 from .viewer.base import BaseViewerPlugin, ImageViewerPlugin, WidgetViewerPlugin
 from .grid.base import BaseGridPlugin, WidgetGridPlugin
+from .grid_overlay.base import (
+    BaseBadgeOverlayPlugin,
+    BaseCellOverlayPlugin,
+    BaseOverlayPlugin,
+    GridOverlayCell,
+    GridOverlayContext,
+    OverlayBadge,
+)
+from .grid_overlay.helper import OverlayHelper
 from .collector.base import BaseCollectorPlugin, BaseSingletonCollector, CollectorResult
 from .parser.base import BaseParserPlugin, BaseSingletonParser, ParserResult
 from .query.base import BaseFilterPlugin, BaseSortPlugin

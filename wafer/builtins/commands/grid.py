@@ -24,6 +24,20 @@ def _grid():
     return InstanceRegistry.instance().get_one("GridView")
 
 
+def _overlay_host():
+    return InstanceRegistry.instance().get_one("GridOverlayHost")
+
+
+def _overlay_badge_visible():
+    host = _overlay_host()
+    return host is not None and host.badge_visible()
+
+
+def _cell_overlay_visible(name: str):
+    host = _overlay_host()
+    return host is not None and host.cell_overlay_visible(name)
+
+
 def _get_layout_modes():
     from ...plugin.layout.handler import layout_registry
 
@@ -286,6 +300,27 @@ class GridViewCommands(ActionKit.MenuBase):
         scroll.start_auto_scroll(adjusted, new_base)
 
     @staticmethod
+    def toggle_overlay(ctx):
+        host = _overlay_host()
+        if host is None:
+            return
+        host.set_badge_visible(not host.badge_visible())
+
+    @staticmethod
+    def set_overlay_size(ctx, size: int = 8):
+        host = _overlay_host()
+        if host is None:
+            return
+        host.set_badge_radius(int(size))
+
+    @staticmethod
+    def toggle_cell_overlay(ctx, name: str = ""):
+        host = _overlay_host()
+        if host is None or not name:
+            return
+        host.set_cell_overlay_visible(name, not host.cell_overlay_visible(name))
+
+    @staticmethod
     def move_to_next_row(ctx):
         view = GridViewCommands.get_view(ctx)
         view.scroll_to_next_row(animated=True)
@@ -393,6 +428,26 @@ class GridViewCommands(ActionKit.MenuBase):
             ActionKit.Command(path="grid.move_to_prev_row", display="Prev Row", func=cls.move_to_prev_row),
             "-",
             ":Settings",
+            ActionKit.Command(
+                path="grid.toggle_overlay",
+                display="Show overlay badges",
+                func=cls.toggle_overlay,
+                checkable=True,
+                default_checked=True,
+                checked_resolver=_overlay_badge_visible,
+            ),
+            ActionKit.Command(
+                path="grid.set_overlay_size",
+                display="Overlay badge size",
+                func=cls.set_overlay_size,
+                params=[ActionKit.Param(name="size", value=8, min_value=4, max_value=40)],
+            ),
+            ActionKit.Command(
+                path="grid.toggle_cell_overlay",
+                display="Toggle cell overlay",
+                func=cls.toggle_cell_overlay,
+                params=[ActionKit.Param(name="name", value="", required=True)],
+            ),
             "Scroll Anchor/:Scroll Anchor",
             ActionKit.Command(
                 path="Scroll Anchor/grid.scroll_anchor_top",

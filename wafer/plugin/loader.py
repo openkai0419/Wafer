@@ -10,6 +10,7 @@ from .installer import _PACKAGES_DIR, needs_setup
 from .registry import RegistryBase, CommandGroupRegistry
 from .viewer.base import BaseViewerPlugin
 from .grid.base import BaseGridPlugin
+from .grid_overlay.base import BaseOverlayPlugin
 from .collector.base import BaseCollector
 from .query.base import BaseFilterPlugin, BaseSortPlugin
 from .parser.base import BaseParser
@@ -23,6 +24,7 @@ from .kinds import (
     PLUGIN_KIND_COMMAND,
     PLUGIN_KIND_FILTER,
     PLUGIN_KIND_GRID,
+    PLUGIN_KIND_GRID_OVERLAY,
     PLUGIN_KIND_IMAGE_LOADER,
     PLUGIN_KIND_LAYOUT,
     PLUGIN_KIND_KEY_VALUE_PANEL,
@@ -40,6 +42,7 @@ def _build_registry_map():
     return {
         BaseViewerPlugin: PLUGIN_KIND_VIEWER,
         BaseGridPlugin: PLUGIN_KIND_GRID,
+        BaseOverlayPlugin: PLUGIN_KIND_GRID_OVERLAY,
         BaseCollector: PLUGIN_KIND_COLLECTOR,
         BaseParser: PLUGIN_KIND_PARSER,
         BaseFilterPlugin: PLUGIN_KIND_FILTER,
@@ -234,6 +237,7 @@ def load_plugins(*, on_progress=None) -> list[str]:
     global _command_registry_ref
     from .viewer.handler import viewer_resolver
     from .grid.handler import grid_resolver
+    from .grid_overlay.handler import grid_overlay_registry
     from .collector.handler import collector_resolver
     from .parser.handler import parser_resolver
     from .query.handler import filter_registry, sort_registry
@@ -247,6 +251,7 @@ def load_plugins(*, on_progress=None) -> list[str]:
     registries = {
         PLUGIN_KIND_VIEWER: viewer_resolver.registry,
         PLUGIN_KIND_GRID: grid_resolver.registry,
+        PLUGIN_KIND_GRID_OVERLAY: grid_overlay_registry,
         PLUGIN_KIND_COLLECTOR: collector_resolver.registry,
         PLUGIN_KIND_PARSER: parser_resolver.registry,
         PLUGIN_KIND_FILTER: filter_registry,

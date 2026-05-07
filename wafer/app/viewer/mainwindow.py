@@ -69,10 +69,10 @@ class MainWindow(QtWidgets.QMainWindow):
         UI.register_instance("SearchService", self.search_service)
         t.set_locale(app_settings.get("window/language", "en"))
         UI.register_instance("MainWindow", self)
-        from .grid.mark_overlay_service import MarkOverlayService
+        from .grid.overlay_host import GridOverlayHost
 
-        self._mark_overlay_service = MarkOverlayService(lambda: self.database_path, parent=self)
-        UI.register_instance("MarkOverlayService", self._mark_overlay_service)
+        self.grid_overlay_host = GridOverlayHost(lambda: self.database_path, lambda: self.database_name, parent=self)
+        UI.register_instance("GridOverlayHost", self.grid_overlay_host)
         self._closed = False
         self.setup_ui()
         self._show_loading()
@@ -152,7 +152,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._db_reload_cancel = None
         self.setting_db = sdb
         self.folder_view.set_folders(roots, excluded)
-        self._mark_overlay_service.reload()
+        self.grid_overlay_host.reload()
         if on_complete:
             on_complete()
         else:
@@ -324,10 +324,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.grid_view.verticalScrollBar().setSingleStep(25)
         self.grid_view.horizontalScrollBar().setSingleStep(25)
         self.grid_view.base_height_changed.connect(self._on_zoom_changed)
-        self._mark_overlay_service.changed.connect(lambda: self.grid_view.viewport().update())
-        from ...builtins.mark import MarkRegistry
-
-        MarkRegistry.instance().changed.connect(lambda: self.grid_view.viewport().update())
+        self.grid_overlay_host.changed.connect(lambda: self.grid_view.viewport().update())
 
         self.file_model = FileViewModel(dbpath_getter=lambda: self.database_path, parent=self)
         self.content_viewer = ContentViewerWidget()
@@ -650,7 +647,7 @@ class MainWindow(QtWidgets.QMainWindow):
         from .preview.tag_edit_service import TagEditService
 
         TagEditService.instance().handle_ack(payload)
-        self._mark_overlay_service.reload()
+        self.grid_overlay_host.reload()
 
     @QtCore.Slot(str)
     def _on_folder_changed_ipc(self, db: str):
@@ -691,7 +688,7 @@ class MainWindow(QtWidgets.QMainWindow):
         keep_scroll = not self._folder_changed
         self._folder_changed = False
         self.search_row_widget.run_folder_worker(self.database_path, self.folder_view.get_selected_paths())
-        self._mark_overlay_service.reload()
+        self.grid_overlay_host.reload()
         if paths == self._last_paths:
             self._hide_loading()
             return

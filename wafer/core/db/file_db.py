@@ -455,6 +455,26 @@ class FileDB:
             finally:
                 cur.close()
 
+    def load_source_signatures(self, paths: Sequence[str]) -> dict[str, tuple[str, int | None]]:
+        if not paths:
+            return {}
+        result: dict[str, tuple[str, int | None]] = {}
+        cur = self.get_reader_cursor()
+        try:
+            unique_paths = list(dict.fromkeys(str(path) for path in paths if path))
+            for start in range(0, len(unique_paths), 900):
+                chunk = unique_paths[start : start + 900]
+                placeholders = ",".join(["?"] * len(chunk))
+                rows = cur.execute(
+                    f"SELECT source, file_hash, size FROM sources WHERE source IN ({placeholders})",
+                    chunk,
+                ).fetchall()
+                for source, file_hash, size in rows:
+                    result[source] = (file_hash, size)
+        finally:
+            cur.close()
+        return result
+
     @staticmethod
     def _renamed_file_paths(cur, old: str, new: str) -> dict[str, str]:
         prefix = old + VIRTUAL_PATH_SEPARATOR

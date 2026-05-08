@@ -5,6 +5,8 @@ import tempfile
 import pytest
 
 from wafer.app.indexer.db_writer import DatabaseWriter
+from wafer.core.db.db_utils import build_basic_entries
+from wafer.utils.paths import normalize_path
 from wafer.utils.virtual_paths import build_virtual_path
 
 
@@ -92,6 +94,45 @@ def test_rename_paths(writer):
     rows = cur.fetchall()
     cur.close()
     assert rows[0][0] == "/new.png"
+
+
+def test_infer_moved_sources_matches_delete_create_by_signature(writer, tmp_path):
+    old_path = tmp_path / "old.jpg"
+    new_dir = tmp_path / "sub"
+    new_dir.mkdir()
+    new_path = new_dir / "old.jpg"
+    old_path.write_bytes(b"same-content" * 128)
+    old_norm = normalize_path(str(old_path))
+    info = {old_norm: (old_path.stat().st_mtime, old_path.stat().st_size, old_path.stat().st_ctime)}
+    source_entries, file_entries = build_basic_entries([old_norm], info, {old_norm: 1.0}, 1.0)
+    writer.upsert_sources(source_entries, file_entries)
+    old_path.rename(new_path)
+
+    pairs = writer.infer_moved_sources([str(old_path)], [str(new_path)])
+
+    assert pairs == [(old_norm, normalize_path(str(new_path)))]
+
+
+def test_infer_moved_sources_skips_ambiguous_duplicates(writer, tmp_path):
+    old_a = tmp_path / "a.jpg"
+    old_b = tmp_path / "b.jpg"
+    new_a = tmp_path / "new_a.jpg"
+    new_b = tmp_path / "new_b.jpg"
+    for path in (old_a, old_b):
+        path.write_bytes(b"same-content" * 128)
+    old_norms = [normalize_path(str(old_a)), normalize_path(str(old_b))]
+    info = {
+        normalize_path(str(path)): (path.stat().st_mtime, path.stat().st_size, path.stat().st_ctime)
+        for path in (old_a, old_b)
+    }
+    source_entries, file_entries = build_basic_entries(old_norms, info, {path: 1.0 for path in old_norms}, 1.0)
+    writer.upsert_sources(source_entries, file_entries)
+    old_a.rename(new_a)
+    old_b.rename(new_b)
+
+    pairs = writer.infer_moved_sources([str(old_a), str(old_b)], [str(new_a), str(new_b)])
+
+    assert pairs == []
 
 
 def test_insert_pending_and_mark_dispatched(writer):

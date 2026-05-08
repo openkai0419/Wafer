@@ -7,6 +7,7 @@ from PIL import Image
 
 from wafer.utils.paths import normalize_path
 from wafer.core.db.query import FileSearchEngine, SearchQuery
+from wafer.builtins.filters import MarkFilter
 from wafer.plugin.collector.handler import collector_resolver
 from wafer.app.indexer.db_writer import DatabaseWriter
 from wafer.app.indexer.scanner import DirectoryScanner
@@ -149,6 +150,49 @@ class TestFsWatchToDb:
             )
             assert len(paths) >= 1
             assert any("new_name" in p for p in paths)
+        finally:
+            watcher.stop()
+            scanner.stop()
+            scheduler.stop()
+            writer.close()
+
+    def test_file_move_to_subfolder_preserves_meta_mark(self, tmp_path):
+        img_dir = tmp_path / "watched"
+        sub_dir = img_dir / "sub"
+        img_dir.mkdir()
+        sub_dir.mkdir()
+        old_path = img_dir / "marked.jpg"
+        new_path = sub_dir / "marked.jpg"
+        _create_test_image(old_path, 100, 80)
+
+        db_path, writer, scheduler, scanner, watcher = _build_watcher_stack(tmp_path)
+        scheduler.start()
+        scanner.start()
+        try:
+            watcher.start([str(img_dir)])
+            old_norm = normalize_path(str(old_path))
+            new_norm = normalize_path(str(new_path))
+            assert _wait_for_condition(lambda: writer.db.read_conn.execute("SELECT source FROM sources WHERE source=?", (old_norm,)).fetchone() is not None)
+            writer.db.apply_user_meta_info([old_norm], [("mark.1", "1", None, 1)], [])
+
+            shutil.move(str(old_path), str(new_path))
+            assert _wait_for_condition(lambda: writer.db.read_conn.execute("SELECT source FROM sources WHERE source=?", (new_norm,)).fetchone() is not None, timeout=20.0)
+
+            assert writer.db.read_conn.execute("SELECT COUNT(*) FROM meta_info WHERE path=?", (old_norm,)).fetchone()[0] == 0
+            row = writer.db.read_conn.execute("SELECT value, locked FROM meta_info WHERE path=? AND key='mark.1'", (new_norm,)).fetchone()
+            assert row == ("1", 1)
+
+            engine = FileSearchEngine(str(db_path))
+            try:
+                overlay = engine.get_kv_keys_by_prefix("*", "mark.")
+                assert overlay == {new_norm: ["1"]}
+                sql, params = MarkFilter.build_path_query({"mark_ids": ["1"], "mode": "OR"}, lambda p: p)
+                assert sql is not None
+                engine._connect_if_needed()
+                paths = [row[0] for row in engine.conn.execute(sql, params).fetchall()]
+                assert paths == [new_norm]
+            finally:
+                engine.close()
         finally:
             watcher.stop()
             scanner.stop()

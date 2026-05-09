@@ -159,6 +159,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.search_row_widget.run_folder_worker(
                 self.database_path,
                 self.folder_view.get_selected_paths(),
+                self.search_service.get("include_subfolders", True),
+                self.search_service.get("include_contained_files", True),
             )
             QtCore.QTimer.singleShot(0, lambda: self.search(force=True))
         self._check_folder_callout(roots)
@@ -687,7 +689,12 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_search_finished(self, paths, sources, aspects):
         keep_scroll = not self._folder_changed
         self._folder_changed = False
-        self.search_row_widget.run_folder_worker(self.database_path, self.folder_view.get_selected_paths())
+        self.search_row_widget.run_folder_worker(
+            self.database_path,
+            self.folder_view.get_selected_paths(),
+            self.search_service.get("include_subfolders", True),
+            self.search_service.get("include_contained_files", True),
+        )
         self.grid_overlay_host.reload()
         if paths == self._last_paths:
             self._hide_loading()

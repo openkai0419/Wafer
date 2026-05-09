@@ -121,6 +121,8 @@ class QueryStateCoordinator:
             self._w.search_row_widget.run_folder_worker(
                 self._w.database_path,
                 self._w.folder_view.get_selected_paths(),
+                self._w.search_service.get("include_subfolders", True),
+                self._w.search_service.get("include_contained_files", True),
                 on_complete=lambda: self._w.search(force=True),
             )
 

@@ -493,8 +493,12 @@ class SearchContainer(QtWidgets.QWidget):
         self._last_paths = object()
 
     @profiler.profile
-    def run_folder_worker(self, dbname, paths, on_complete=None):
-        key = tuple(paths) if paths else None
+    def run_folder_worker(self, dbname, paths, include_subfolders=True, include_contained_files=True, on_complete=None):
+        key = (
+            tuple(paths) if paths else None,
+            bool(include_subfolders),
+            bool(include_contained_files),
+        )
         if self._last_paths == key:
             if on_complete:
                 on_complete()
@@ -507,7 +511,9 @@ class SearchContainer(QtWidgets.QWidget):
             composer = SearchComposer()
             entries = []
             if paths:
-                entries.append((DirectoryFilter, {"directories": paths}, None))
+                entries.append((DirectoryFilter, {"directories": paths, "include_subfolders": include_subfolders}, None))
+            if not include_contained_files:
+                entries.append((ContainedFilesFilter, {"include": False}, None))
             results = composer.list_all_keys(engine, entries, sort_by_freq=True)
             if cancel.is_cancelled():
                 return

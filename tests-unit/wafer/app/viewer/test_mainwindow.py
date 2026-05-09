@@ -52,6 +52,8 @@ class TestSearchResultDiffCheck:
             win.database_path = "test.db"
             win.folder_view = MagicMock()
             win.folder_view.get_selected_paths.return_value = []
+            win.search_service = MagicMock()
+            win.search_service.get.side_effect = lambda key, default=None: default
             win.file_list_provider = MagicMock()
             win.grid_overlay_host = MagicMock()
             return win

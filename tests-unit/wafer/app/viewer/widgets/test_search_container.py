@@ -646,6 +646,38 @@ class TestSearchContainerFolderWorker:
             container.run_folder_worker("dummy.db", ["/b"])
             assert mock_disp.post.call_count == 2
 
+    @pytest.mark.parametrize(
+        ("kwargs_a", "kwargs_b"),
+        [
+            ({"include_subfolders": True}, {"include_subfolders": False}),
+            ({"include_contained_files": True}, {"include_contained_files": False}),
+        ],
+    )
+    def test_different_scope_options_not_skipped(self, qapp, kwargs_a, kwargs_b):
+        container = SearchContainer()
+        with patch.object(container, "_dispatcher") as mock_disp:
+            container.run_folder_worker("dummy.db", ["/a"], **kwargs_a)
+            container.run_folder_worker("dummy.db", ["/a"], **kwargs_b)
+            assert mock_disp.post.call_count == 2
+
+    def test_scope_options_propagate_to_list_all_keys(self, qapp):
+        container = SearchContainer()
+        with patch.object(container, "_dispatcher") as mock_disp:
+            mock_disp.post.side_effect = lambda task, priority=6, cancel=None: task()
+            mock_disp.invoke.side_effect = lambda fn: fn()
+            with patch("wafer.app.viewer.widgets.search_container.SearchComposer.list_all_keys", return_value=[]) as mock_list:
+                container.run_folder_worker(
+                    "dummy.db",
+                    ["/a"],
+                    include_subfolders=False,
+                    include_contained_files=False,
+                )
+
+        mock_list.assert_called_once()
+        entries = mock_list.call_args.args[1]
+        assert (DirectoryFilter, {"directories": ["/a"], "include_subfolders": False}, None) in entries
+        assert (ContainedFilesFilter, {"include": False}, None) in entries
+
 
 class TestUpdateKeyCombos:
     def test_filepath_present_when_in_results(self, qapp):

@@ -7,6 +7,7 @@ def test_plugin_attributes():
     plugin = FFmpegMetaPanelPlugin()
     assert plugin.PREFIX == "ffmpeg"
     assert plugin.NAME == "ffmpeg_meta_panel"
+    assert plugin.DATA_SCOPE == "meta_info"
     assert plugin.DEFAULT_ENABLED is True
 
 

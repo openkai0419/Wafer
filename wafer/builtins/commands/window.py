@@ -67,7 +67,7 @@ def restart_all(ctx):
 
 class WindowPanelCommands(ActionKit.MenuBase):
     NAME = "Window"
-    PRIORITY = 80
+    PRIORITY = 83
 
     @classmethod
     def commands(cls):

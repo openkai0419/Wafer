@@ -125,3 +125,57 @@ def test_submit_short_circuits_when_no_payload(service):
     svc, node = service
     assert _submit(svc) is None
     node.send_reliable.assert_not_called()
+
+
+def test_wildcard_delete_ack_fans_out_to_tag_and_meta(service):
+    svc, _ = service
+    received = []
+    svc.kv_commit_confirmed.connect(lambda scope, target, applied, deleted: received.append((scope, target, dict(applied), list(deleted))))
+    rid = svc.submit(["p"], [], ["mark.1"], "db", scope="*")
+    assert rid is not None
+    svc.handle_ack(
+        {
+            "request_id": rid,
+            "scope": "*",
+            "paths": ["p"],
+            "deleted": {"p": ["mark.1"]},
+            "targets": {"p": "h1"},
+        }
+    )
+    assert ("meta_info", "p", {}, ["mark.1"]) in received
+    assert ("tag", "h1", {}, ["mark.1"]) in received
+
+
+def test_wildcard_ack_without_pending_still_fans_out(service):
+    svc, _ = service
+    received = []
+    svc.kv_commit_confirmed.connect(lambda scope, target, applied, deleted: received.append((scope, target, dict(applied), list(deleted))))
+    svc.handle_ack(
+        {
+            "request_id": "convert-rid",
+            "scope": "*",
+            "paths": ["p"],
+            "deleted": {},
+            "targets": {"p": "h1"},
+        }
+    )
+    assert ("meta_info", "p", {}, []) in received
+    assert ("tag", "h1", {}, []) in received
+
+
+def test_wildcard_ack_dedupes_shared_tag_targets(service):
+    svc, _ = service
+    received = []
+    svc.kv_commit_confirmed.connect(lambda scope, target, applied, deleted: received.append((scope, target, dict(applied), list(deleted))))
+    svc.handle_ack(
+        {
+            "request_id": "convert-rid",
+            "scope": "*",
+            "paths": ["p1", "p2"],
+            "deleted": {},
+            "targets": {"p1": "h1", "p2": "h1"},
+        }
+    )
+    assert ("meta_info", "p1", {}, []) in received
+    assert ("meta_info", "p2", {}, []) in received
+    assert received.count(("tag", "h1", {}, [])) == 1

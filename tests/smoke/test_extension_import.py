@@ -41,7 +41,7 @@ class TestExtensionDiscovery:
 
     @pytest.mark.parametrize("ext_name", EXTENSION_FOLDERS)
     def test_discovered_plugins_have_valid_registry_key(self, ext_name):
-        valid_keys = {"viewer", "grid", "collector", "parser", "filter", "sort", "layout", "panel", "meta_panel", "tag_panel", "rename_source", "imageloader", "command"}
+        valid_keys = {"viewer", "grid", "collector", "parser", "filter", "sort", "layout", "panel", "key_value_panel", "rename_source", "imageloader", "command"}
         folder = os.path.join(EXTENSIONS_DIR, ext_name)
         found = _import_extension(ext_name, folder)
         for registry_key, cls in found:
@@ -82,7 +82,7 @@ EXPECTED_PLUGINS = {
     },
     "exiftool": {
         ("collector", "ExifToolCollectorPlugin"),
-        ("meta_panel", "ExifToolMetaPanelPlugin"),
+        ("key_value_panel", "ExifToolMetaPanelPlugin"),
         ("panel", "ExifSettingsPanelPlugin"),
     },
     "ffmpeg": {
@@ -105,7 +105,7 @@ EXPECTED_PLUGINS = {
     "color": {
         ("collector", "ColorCollector"),
         ("filter", "ColorFilter"),
-        ("tag_panel", "ColorTagPanelPlugin"),
+        ("key_value_panel", "ColorTagPanelPlugin"),
     },
     "zip": {
         ("collector", "ZipCollectorPlugin"),

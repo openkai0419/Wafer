@@ -51,6 +51,17 @@ def _collect_exec_calls(scheduler, scanner):
     return rename_names, update_paths, delete_names
 
 
+def _expire_pending_deletes(wf):
+    from wafer.app.indexer.watch_folder import _MOVE_INFER_WINDOW
+
+    if not wf._pending_deletes:
+        return
+    expired = time.monotonic() - _MOVE_INFER_WINDOW - 0.1
+    for norm, (path, _) in list(wf._pending_deletes.items()):
+        wf._pending_deletes[norm] = (path, expired)
+    wf._flush(set(), set(), {}, created=set())
+
+
 def test_flush_basic_rename():
     wf, scheduler, writer, scanner, _ = _make_watcher()
     wf._flush(set(), set(), {"A": "B"})
@@ -90,6 +101,71 @@ def test_flush_only_deleted():
     assert task.name == "delete_sources"
     task.run()
     writer.delete_source_trees.assert_called_once()
+
+
+def test_flush_infers_move_from_delete_create(tmp_path):
+    from wafer.app.indexer.watch_folder import _MOVE_INFER_WINDOW
+    from wafer.utils.paths import normalize_path
+
+    root = tmp_path / "watched"
+    root.mkdir()
+    old_path = root / "a.jpg"
+    new_path = root / "sub" / "a.jpg"
+    new_path.parent.mkdir()
+    new_path.write_bytes(b"same")
+    wf, scheduler, writer, scanner, _ = _make_watcher()
+    _set_scope(wf, [root])
+    writer.infer_moved_sources.return_value = [(normalize_path(str(old_path)), normalize_path(str(new_path)))]
+
+    wf._flush({str(new_path)}, {str(old_path)}, {}, created={str(new_path)})
+
+    task = scheduler.submit.call_args[0][0]
+    assert task.name == "rename_paths"
+    task.run()
+    writer.rename_paths.assert_called_once_with([(normalize_path(str(old_path)), normalize_path(str(new_path)))])
+    assert not scanner.request_update.called
+    assert normalize_path(str(old_path)) not in wf._pending_deletes
+    assert _MOVE_INFER_WINDOW > 0
+
+
+def test_flush_buffers_delete_until_move_window_expires(tmp_path):
+    from wafer.app.indexer.watch_folder import _MOVE_INFER_WINDOW
+    from wafer.utils.paths import normalize_path
+
+    root = tmp_path / "watched"
+    root.mkdir()
+    old_path = root / "a.jpg"
+    wf, scheduler, writer, scanner, _ = _make_watcher()
+    _set_scope(wf, [root])
+
+    wf._flush(set(), {str(old_path)}, {}, created=set())
+
+    assert not scheduler.submit.called
+    assert normalize_path(str(old_path)) in wf._pending_deletes
+
+    wf._pending_deletes[normalize_path(str(old_path))] = (str(old_path), time.monotonic() - _MOVE_INFER_WINDOW - 0.1)
+    wf._flush(set(), set(), {}, created=set())
+
+    task = scheduler.submit.call_args[0][0]
+    assert task.name == "delete_sources"
+    task.run()
+    writer.delete_source_trees.assert_called_once()
+
+
+def test_flush_updates_unmatched_create_while_delete_is_buffered(tmp_path):
+    root = tmp_path / "watched"
+    root.mkdir()
+    old_path = root / "a.jpg"
+    new_path = root / "b.jpg"
+    new_path.write_bytes(b"new")
+    wf, scheduler, writer, scanner, _ = _make_watcher()
+    _set_scope(wf, [root])
+    writer.infer_moved_sources.return_value = []
+
+    wf._flush({str(new_path)}, {str(old_path)}, {}, created={str(new_path)})
+
+    assert not scheduler.submit.called
+    scanner.request_update.assert_called_once_with([str(new_path)])
 
 
 def test_flush_move_outside_scope_deletes_source(tmp_path):
@@ -276,6 +352,7 @@ class TestEventAccumulator:
             elif kind == "moved":
                 acc.on_moved(*data)
         wf._flush(*acc.drain())
+        _expire_pending_deletes(wf)
         return scheduler, scanner
 
     def test_changed_then_deleted(self):
@@ -406,6 +483,7 @@ class TestZipWatchScenarios:
             elif kind == "folder":
                 acc.on_folder()
         wf._flush(*acc.drain())
+        _expire_pending_deletes(wf)
         return scheduler, scanner
 
     def test_zip_created_triggers_update(self):

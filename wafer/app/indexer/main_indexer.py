@@ -45,6 +45,7 @@ class IndexerProcess:
         self.zmq.subscribe("delete.collector", self._on_delete_collector)
         self.zmq.subscribe("delete.keys", self._on_delete_keys)
         self.zmq.subscribe("tags.update", self._on_tags_update)
+        self.zmq.subscribe("kv.convert_scope", self._on_kv_convert_scope)
         self.zmq.start()
         AppLogger.set_node(self.zmq, role="indexer")
 
@@ -313,8 +314,11 @@ class IndexerProcess:
         request_id = payload.get("request_id", "")
         lock_only = bool(payload.get("lock_only", False))
         scope = str(payload.get("scope") or "tag")
-        if scope not in ("tag", "meta_info"):
+        if scope not in ("tag", "meta_info", "*"):
             AppLogger.warning(f"tags.update: unsupported scope: {scope}")
+            return True
+        if scope == "*" and (upserts_raw or renames_raw or lock_only):
+            AppLogger.warning("tags.update: scope=* only supports deletes")
             return True
         if not self.writer or not self.scheduler or not paths:
             return True
@@ -367,7 +371,7 @@ class IndexerProcess:
             applied_by_path = {p: list(applied) for p, (_fh, applied, _del) in data.items()}
             deleted_by_path = {p: list(deleted) for p, (_fh, _ap, deleted) in data.items()}
             targets_by_path = {p: target for p, (target, _ap, _del) in data.items()}
-            hashes_by_path = targets_by_path if scope == "tag" else {}
+            hashes_by_path = targets_by_path if scope in ("tag", "*") else {}
             self.zmq.send(
                 "tags.updated",
                 {
@@ -387,6 +391,58 @@ class IndexerProcess:
         self.scheduler.submit(
             Task.create(
                 "apply_user_kv",
+                priority=TaskPriority.USER_REQUEST,
+                run=_run,
+                on_complete=_on_done,
+            )
+        )
+        return True
+
+    def _on_kv_convert_scope(self, msg):
+        payload = msg.payload
+        if not isinstance(payload, dict):
+            AppLogger.warning(f"kv.convert_scope: invalid payload: {type(payload)}")
+            return True
+        key = str(payload.get("key") or "").strip()
+        to_scope = str(payload.get("to_scope") or "").strip()
+        request_id = str(payload.get("request_id") or "")
+        if not key or to_scope not in ("tag", "meta_info"):
+            AppLogger.warning(f"kv.convert_scope: invalid key/scope key={key!r} to_scope={to_scope!r}")
+            return True
+        if not self.writer or not self.scheduler:
+            return True
+
+        result: dict = {}
+
+        def _run():
+            result["data"] = self.writer.convert_key_scope(key, to_scope)
+
+        def _on_done():
+            data = dict(result.get("data") or {})
+            self.zmq.send(
+                "tags.updated",
+                {
+                    "paths": list(data.get("paths") or []),
+                    "scope": "*",
+                    "applied": {},
+                    "deleted": {},
+                    "targets": dict(data.get("targets") or {}),
+                    "request_id": request_id,
+                    "db": self.db_name,
+                    "key": data.get("key", key),
+                    "from_scope": data.get("from_scope"),
+                    "to_scope": data.get("to_scope", to_scope),
+                    "upserted": int(data.get("upserted") or 0),
+                    "source_deleted": int(data.get("source_deleted") or 0),
+                },
+                dst="viewer",
+            )
+            if self._progress is not None:
+                self._progress.send_event("update")
+
+        self.scheduler.submit(
+            Task.create(
+                "convert_key_scope",
                 priority=TaskPriority.USER_REQUEST,
                 run=_run,
                 on_complete=_on_done,

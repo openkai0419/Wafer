@@ -13,6 +13,7 @@ def test_plugin_attributes():
     plugin = ExifToolMetaPanelPlugin()
     assert plugin.PREFIX == "exiftool"
     assert plugin.NAME == "exiftool_meta_panel"
+    assert plugin.DATA_SCOPE == "meta_info"
     assert plugin.DEFAULT_ENABLED is True
 
 

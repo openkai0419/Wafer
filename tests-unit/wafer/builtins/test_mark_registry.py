@@ -1,5 +1,6 @@
 from wafer.builtins.mark import Mark, MarkRegistry
 from wafer.builtins.mark.registry import _normalize_id
+from wafer.builtins.mark.shapes import DEFAULT_SHAPE_KEY
 
 import pytest
 
@@ -41,6 +42,7 @@ def test_mark_registry_add_creates_unique_id():
         assert a != b
         assert reg.color_of(a) == "#112233"
         assert reg.name_of(a) == "Favorite Test"
+        assert reg.shape_key_of(a) == DEFAULT_SHAPE_KEY
     finally:
         reg.remove(a)
         reg.remove(b)
@@ -96,12 +98,39 @@ def test_mark_registry_rename_and_set_color_emit_changed():
         reg.remove(mid)
 
 
+def test_mark_registry_set_shape_key_emit_changed():
+    reg = MarkRegistry.instance()
+    mid = reg.add("Shape Mark", "#000000", shape_key="star")
+    try:
+        emitted = []
+        reg.changed.connect(lambda: emitted.append(True))
+        assert reg.shape_key_of(mid) == "star"
+        reg.set_shape_key(mid, "heart")
+        assert reg.shape_key_of(mid) == "heart"
+        assert emitted
+    finally:
+        reg.remove(mid)
+
+
 def test_mark_registry_remove():
     reg = MarkRegistry.instance()
     mid = reg.add("Remove Me", "#ffffff")
     assert reg.get(mid) is not None
     reg.remove(mid)
     assert reg.get(mid) is None
+
+
+def test_mark_registry_scope_defaults_and_updates():
+    reg = MarkRegistry.instance()
+    mid = reg.add("Scoped Mark", "#ffffff")
+    try:
+        assert reg.scope_of(mid) == "meta_info"
+        assert reg.set_scope(mid, "tag") is True
+        assert reg.scope_of(mid) == "tag"
+        assert mid in reg.ids_by_scope("tag")
+        assert reg.set_scope(mid, "tag") is False
+    finally:
+        reg.remove(mid)
 
 
 def test_normalize_id_basic():
@@ -116,3 +145,5 @@ def test_mark_dataclass():
     assert m.id == "x"
     assert m.name == "X"
     assert m.color == "#000000"
+    assert m.storage_scope == "meta_info"
+    assert m.shape_key == DEFAULT_SHAPE_KEY

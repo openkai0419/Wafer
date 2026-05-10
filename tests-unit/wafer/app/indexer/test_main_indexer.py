@@ -42,6 +42,14 @@ class TestIndexerProcessInit:
         topics = [call.args[0] for call in node.subscribe.call_args_list]
         assert "delete.keys" in topics
 
+    @patch("wafer.app.indexer.main_indexer.Node")
+    def test_subscribes_to_kv_convert_scope(self, mock_node_cls):
+        node = MagicMock()
+        mock_node_cls.return_value = node
+        IndexerProcess("test")
+        topics = [call.args[0] for call in node.subscribe.call_args_list]
+        assert "kv.convert_scope" in topics
+
 
 class TestOnDeleteRequested:
     @patch("wafer.app.indexer.main_indexer.Node")
@@ -319,5 +327,59 @@ class TestOnDeleteCollector:
         node.send.assert_called_with(
             "delete.complete",
             {"collector": "color", "db": "test"},
+            dst="viewer",
+        )
+
+
+class TestOnKvConvertScope:
+    @patch("wafer.app.indexer.main_indexer.Node")
+    def test_invalid_payload_returns_true(self, mock_node_cls):
+        mock_node_cls.return_value = MagicMock()
+        proc = IndexerProcess("test")
+        msg = MagicMock()
+        msg.payload = "bad"
+        assert proc._on_kv_convert_scope(msg) is True
+
+    @patch("wafer.app.indexer.main_indexer.Node")
+    def test_submits_convert_task(self, mock_node_cls):
+        node = MagicMock()
+        mock_node_cls.return_value = node
+        proc = IndexerProcess("test")
+        proc.writer = MagicMock()
+        proc.writer.convert_key_scope.return_value = {
+            "key": "mark.1",
+            "from_scope": "meta_info",
+            "to_scope": "tag",
+            "upserted": 2,
+            "source_deleted": 1,
+            "paths": ["/a.png"],
+            "targets": {"/a.png": "h1"},
+        }
+        proc.scheduler = MagicMock()
+        msg = MagicMock()
+        msg.payload = {"key": "mark.1", "to_scope": "tag", "request_id": "rid"}
+        assert proc._on_kv_convert_scope(msg) is True
+        task = proc.scheduler.submit.call_args[0][0]
+        assert task.name == "convert_key_scope"
+        assert task.priority == TaskPriority.USER_REQUEST
+        task.run()
+        proc.writer.convert_key_scope.assert_called_once_with("mark.1", "tag")
+        task.on_complete()
+        node.send.assert_called_with(
+            "tags.updated",
+            {
+                "paths": ["/a.png"],
+                "scope": "*",
+                "applied": {},
+                "deleted": {},
+                "targets": {"/a.png": "h1"},
+                "request_id": "rid",
+                "db": "test",
+                "key": "mark.1",
+                "from_scope": "meta_info",
+                "to_scope": "tag",
+                "upserted": 2,
+                "source_deleted": 1,
+            },
             dst="viewer",
         )

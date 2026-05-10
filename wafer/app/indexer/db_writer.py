@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
+from collections import defaultdict
 from collections.abc import Sequence
 
 from ...core.db.file_db import FileDB
+from ...utils.hashes import fast_signature_hash
+from ...utils.logs import AppLogger
+from ...utils.paths import normalize_path
 from ...utils.profiling import profiler
 
 
@@ -38,6 +43,69 @@ class DatabaseWriter:
     def rename_paths(self, pairs: Sequence[tuple[str, str]]):
         self._db.rename_paths(pairs)
         self._db.try_checkpoint("PASSIVE")
+
+    @profiler.profile
+    def infer_moved_sources(self, deleted_paths: Sequence[str], candidate_paths: Sequence[str]) -> list[tuple[str, str]]:
+        old_paths = [normalize_path(path) for path in deleted_paths if path]
+        new_paths = [normalize_path(path) for path in candidate_paths if path]
+        if not old_paths or not new_paths:
+            return []
+        old_signatures = self._db.load_source_signatures(old_paths)
+        if not old_signatures:
+            return []
+
+        old_by_signature: dict[tuple[str, int | None], list[str]] = defaultdict(list)
+        for path, (file_hash, size) in old_signatures.items():
+            if file_hash and file_hash != "f":
+                old_by_signature[(file_hash, size)].append(path)
+
+        new_by_signature: dict[tuple[str, int | None], list[str]] = defaultdict(list)
+        for path in new_paths:
+            try:
+                stat_result = os.stat(path)
+            except OSError:
+                continue
+            if not os.path.isfile(path):
+                continue
+            file_hash = fast_signature_hash(path, stat_result.st_size, 256)
+            if file_hash and file_hash != "f":
+                new_by_signature[(file_hash, stat_result.st_size)].append(path)
+
+        pairs = self._pair_sources_by_signature(old_by_signature, new_by_signature)
+        if pairs:
+            AppLogger.info(f"watcher inferred move: {len(pairs)} files")
+        return pairs
+
+    @staticmethod
+    def _pair_sources_by_signature(old_by_signature: dict[tuple[str, int | None], list[str]], new_by_signature: dict[tuple[str, int | None], list[str]]) -> list[tuple[str, str]]:
+        pairs: list[tuple[str, str]] = []
+        for signature, old_group in old_by_signature.items():
+            new_group = new_by_signature.get(signature, [])
+            if not new_group:
+                continue
+            pairs.extend(DatabaseWriter._pair_unique_by_name(old_group, new_group))
+            used_old = {old for old, _ in pairs}
+            used_new = {new for _, new in pairs}
+            remaining_old = [path for path in old_group if path not in used_old]
+            remaining_new = [path for path in new_group if path not in used_new]
+            if len(remaining_old) == 1 and len(remaining_new) == 1:
+                pairs.append((remaining_old[0], remaining_new[0]))
+        return pairs
+
+    @staticmethod
+    def _pair_unique_by_name(old_group: list[str], new_group: list[str]) -> list[tuple[str, str]]:
+        old_by_name: dict[str, list[str]] = defaultdict(list)
+        new_by_name: dict[str, list[str]] = defaultdict(list)
+        for path in old_group:
+            old_by_name[Path(path).name].append(path)
+        for path in new_group:
+            new_by_name[Path(path).name].append(path)
+        pairs: list[tuple[str, str]] = []
+        for name, old_paths in old_by_name.items():
+            new_paths = new_by_name.get(name, [])
+            if len(old_paths) == 1 and len(new_paths) == 1:
+                pairs.append((old_paths[0], new_paths[0]))
+        return pairs
 
     @profiler.profile
     def upsert_sources(self, source_entries, image_entries, meta_info_entries=()):
@@ -104,6 +172,12 @@ class DatabaseWriter:
             lock_only=lock_only,
             renames=renames,
         )
+        self._db.try_checkpoint("PASSIVE")
+        return result
+
+    @profiler.profile
+    def convert_key_scope(self, key: str, to_scope: str):
+        result = self._db.convert_key_scope(key, to_scope)
         self._db.try_checkpoint("PASSIVE")
         return result
 

@@ -39,6 +39,7 @@ def _make_registries():
     return {
         "viewer": FilePluginRegistry(),
         "grid": FilePluginRegistry(),
+        "grid_overlay": PluginRegistry(),
         "collector": FilePluginRegistry(),
     }
 
@@ -80,6 +81,32 @@ class TestConfigureHook:
 
         for key in list(sys.modules):
             if key.startswith("_plugins_broken_plugin"):
+                del sys.modules[key]
+
+
+class TestGridOverlayPluginLoading:
+    def test_overlay_plugin_discovered_and_registered(self, tmp_path):
+        plugin_dir = tmp_path / "plugins"
+        overlay_dir = plugin_dir / "overlay_plugin"
+        overlay_dir.mkdir(parents=True)
+        (overlay_dir / "__init__.py").write_text("")
+        (overlay_dir / "overlay.py").write_text(
+            "from wafer.plugin import BaseBadgeOverlayPlugin\n"
+            "class StubOverlayPlugin(BaseBadgeOverlayPlugin):\n"
+            '    NAME = "stub_overlay"\n'
+            "    PRIORITY = 10\n"
+            "    DEFAULT_ENABLED = True\n"
+        )
+
+        registries = _make_registries()
+        loader = PluginLoader(str(plugin_dir), registries)
+        loaded = loader.load_all()
+
+        assert "overlay_plugin" in loaded
+        assert registries["grid_overlay"].get("stub_overlay") is not None
+
+        for key in list(sys.modules):
+            if key.startswith("_plugins_overlay_plugin"):
                 del sys.modules[key]
 
 

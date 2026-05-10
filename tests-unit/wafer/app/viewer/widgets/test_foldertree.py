@@ -74,6 +74,54 @@ def test_set_state_preserves_multi_selection(qtbot):
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+def test_reload_tree_preserves_scroll_value(qtbot):
+    tmpdir = tempfile.mkdtemp()
+    try:
+        for i in range(80):
+            os.makedirs(os.path.join(tmpdir, f"Folder_{i:03d}"), exist_ok=True)
+        tree = LazyFolderTreeView(roots=[tmpdir], excluded=[])
+        qtbot.addWidget(tree)
+        tree.resize(320, 180)
+        tree.show()
+        tree.model_._build_roots([tmpdir])
+
+        tree.expand_path(normalize_path(tmpdir))
+        bar = tree.verticalScrollBar()
+        qtbot.waitUntil(lambda: bar.maximum() > 0, timeout=3000)
+
+        target = max(1, bar.maximum() // 2)
+        bar.setValue(target)
+        qtbot.waitUntil(lambda: bar.value() == target, timeout=3000)
+
+        tree.reload_tree()
+
+        qtbot.waitUntil(lambda: abs(tree.verticalScrollBar().value() - target) <= 1, timeout=3000)
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_restore_scroll_state_clamps_to_maximum(qtbot):
+    tmpdir = tempfile.mkdtemp()
+    try:
+        for i in range(40):
+            os.makedirs(os.path.join(tmpdir, f"Folder_{i:03d}"), exist_ok=True)
+        tree = LazyFolderTreeView(roots=[tmpdir], excluded=[])
+        qtbot.addWidget(tree)
+        tree.resize(320, 180)
+        tree.show()
+        tree.model_._build_roots([tmpdir])
+
+        tree.expand_path(normalize_path(tmpdir))
+        bar = tree.verticalScrollBar()
+        qtbot.waitUntil(lambda: bar.maximum() > 0, timeout=3000)
+
+        tree.restore_scroll_state({"value": bar.maximum() + 1000, "maximum": bar.maximum() + 1000})
+
+        qtbot.waitUntil(lambda: bar.value() == bar.maximum(), timeout=3000)
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 import py_compile
 
 

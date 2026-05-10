@@ -1,4 +1,120 @@
 {
+  "Overlay badge size": {
+    "en": "Overlay badge size",
+    "ja": ""
+  },
+  "Show overlay badges": {
+    "en": "Show overlay badges",
+    "ja": ""
+  },
+  "Toggle cell overlay": {
+    "en": "Toggle cell overlay",
+    "ja": ""
+  },
+  "Change shape...": {
+    "en": "Change shape...",
+    "ja": ""
+  },
+  "Choose mark shape": {
+    "en": "Choose mark shape",
+    "ja": ""
+  },
+  "Set Mark Shape...": {
+    "en": "Set Mark Shape...",
+    "ja": ""
+  },
+  "Shape:": {
+    "en": "Shape:",
+    "ja": ""
+  },
+  "Create as:": {
+    "en": "Create as:",
+    "ja": ""
+  },
+  "Mark (metadata / path scoped)": {
+    "en": "Mark (metadata / path scoped)",
+    "ja": ""
+  },
+  "Mark scope": {
+    "en": "Mark scope",
+    "ja": ""
+  },
+  "Scope / Convert...": {
+    "en": "Scope / Convert...",
+    "ja": ""
+  },
+  "All databases": {
+    "en": "All databases",
+    "ja": ""
+  },
+  "Conversion requested for {count} database(s)": {
+    "en": "Conversion requested for {count} database(s)",
+    "ja": ""
+  },
+  "Convert target:": {
+    "en": "Convert target:",
+    "ja": ""
+  },
+  "Current database ({name})": {
+    "en": "Current database ({name})",
+    "ja": ""
+  },
+  "Database scope": {
+    "en": "Database scope",
+    "ja": ""
+  },
+  "Manage mark": {
+    "en": "Manage mark",
+    "ja": ""
+  },
+  "Manage...": {
+    "en": "Manage...",
+    "ja": ""
+  },
+  "Mark: {name}": {
+    "en": "Mark: {name}",
+    "ja": ""
+  },
+  "Metadata (path scoped)": {
+    "en": "Metadata (path scoped)",
+    "ja": ""
+  },
+  "Preferred write scope:": {
+    "en": "Preferred write scope:",
+    "ja": ""
+  },
+  "Save / Convert": {
+    "en": "Save / Convert",
+    "ja": ""
+  },
+  "Save / Convert mark": {
+    "en": "Save / Convert mark",
+    "ja": ""
+  },
+  "Save / Convert saves this mark's preferred write scope and sends a conversion request from {from_scope} to {to_scope}. Tag data is shared by file hash; metadata is stored per path. The request is asynchronous and can be run again after errors or shutdowns.": {
+    "en": "Save / Convert saves this mark's preferred write scope and sends a conversion request from {from_scope} to {to_scope}. Tag data is shared by file hash; metadata is stored per path. The request is asynchronous and can be run again after errors or shutdowns.",
+    "ja": ""
+  },
+  "Save Mark Scope and Convert": {
+    "en": "Save Mark Scope and Convert",
+    "ja": ""
+  },
+  "Save the preferred scope and send conversion for '{key}' from {from_scope} to {to_scope}?\n\nThis does not wait for every database response. You can run it again at any time.": {
+    "en": "Save the preferred scope and send conversion for '{key}' from {from_scope} to {to_scope}?\n\nThis does not wait for every database response. You can run it again at any time.",
+    "ja": ""
+  },
+  "Storage scope": {
+    "en": "Storage scope",
+    "ja": ""
+  },
+  "Tag (hash scoped)": {
+    "en": "Tag (hash scoped)",
+    "ja": ""
+  },
+  "exiftool": {
+    "en": "exiftool",
+    "ja": ""
+  },
   "Override selected color": {
     "en": "Override selected color",
     "ja": ""

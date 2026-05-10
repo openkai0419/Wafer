@@ -1,13 +1,21 @@
 from .viewer.base import BaseViewerPlugin, ImageViewerPlugin, WidgetViewerPlugin
 from .grid.base import BaseGridPlugin, WidgetGridPlugin
+from .grid_overlay.base import (
+    BaseBadgeOverlayPlugin,
+    BaseCellOverlayPlugin,
+    BaseOverlayPlugin,
+    GridOverlayCell,
+    GridOverlayContext,
+    OverlayBadge,
+)
+from .grid_overlay.helper import OverlayHelper
 from .collector.base import BaseCollectorPlugin, BaseSingletonCollector, CollectorResult
 from .parser.base import BaseParserPlugin, BaseSingletonParser, ParserResult
 from .query.base import BaseFilterPlugin, BaseSortPlugin
 from .layout.base import BaseLayoutPlugin
 from .panel.base import BasePanelPlugin
 from .config import PluginConfig
-from .meta_panel.base import BaseMetaPanelPlugin
-from .tag_panel.base import BaseTagPanelPlugin
+from .key_value_panel.base import BaseKeyValuePanelPlugin
 from .rename.base import BaseRenameSourcePlugin, SegmentInfo
 from .imageloader.base import BaseImageLoader
 from ..core.commands.bridge import ActionKit

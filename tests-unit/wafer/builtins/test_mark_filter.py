@@ -1,4 +1,4 @@
-from wafer.builtins.filters import MarkFilter
+from wafer.builtins.mark.filter import MarkFilter
 
 
 def _norm(p):
@@ -15,15 +15,16 @@ def test_mark_filter_or_single_id():
     sql, params = MarkFilter.build_path_query({"mark_ids": ["1"], "mode": "OR"}, _norm)
     assert sql is not None
     assert "meta_info" in sql.lower()
-    assert "tags" not in sql.lower()
-    assert "mark.1" in params
+    assert "tags" in sql.lower()
+    assert "UNION ALL" in sql
+    assert params.count("mark.1") == 2
 
 
 def test_mark_filter_or_multi():
     sql, params = MarkFilter.build_path_query({"mark_ids": ["1", "2"], "mode": "OR"}, _norm)
     assert sql is not None
     assert "mark.1" in params and "mark.2" in params
-    assert params.count("mark.1") == 1
+    assert params.count("mark.1") == 2
 
 
 def test_mark_filter_and_multi():
@@ -31,7 +32,9 @@ def test_mark_filter_and_multi():
     assert sql is not None
     assert "GROUP BY" in sql
     assert "HAVING" in sql
+    assert "UNION ALL" in sql
     assert params[-1] == 3
+    assert params.count("mark.1") == 2
 
 
 def test_mark_filter_and_single_falls_back():

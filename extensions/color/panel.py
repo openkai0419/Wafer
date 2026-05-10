@@ -4,7 +4,7 @@ from PySide6 import QtCore, QtWidgets
 
 from wafer.core.commands.bridge import ActionKit, Menu
 from wafer.core.color.theme import ThemeManager
-from wafer.plugin import BaseTagPanelPlugin
+from wafer.plugin import BaseKeyValuePanelPlugin
 from wafer.ui.panel.meta_viewer import CollapsibleCard
 from wafer.ui.widgets import FlowLayout
 from wafer.utils.formatting import dpix
@@ -14,9 +14,10 @@ from .commands import apply_color_filter, apply_selected_color
 from .settings import ColorSettings, palette_keys
 
 
-class ColorTagPanelPlugin(BaseTagPanelPlugin):
+class ColorTagPanelPlugin(BaseKeyValuePanelPlugin):
     NAME = "color_panel"
     PREFIX = "color"
+    DATA_SCOPE = "tag"
     DEFAULT_ENABLED = True
     PRIORITY = 45
 
@@ -24,16 +25,32 @@ class ColorTagPanelPlugin(BaseTagPanelPlugin):
         self._card: CollapsibleCard | None = None
         self._row: _PaletteRow | None = None
         self._tags: dict[str, str] = {}
-        ColorSettings.instance().changed.connect(self._refresh_colors)
+        self._settings_connected = False
+        self._connect_settings()
 
-    def create_card(self, parent: QtWidgets.QWidget | None = None) -> QtWidgets.QWidget:
+    def _connect_settings(self):
+        if self._settings_connected:
+            return
+        ColorSettings.instance().changed.connect(self._refresh_colors)
+        self._settings_connected = True
+
+    def shutdown(self):
+        if not self._settings_connected:
+            return
+        try:
+            ColorSettings.instance().changed.disconnect(self._refresh_colors)
+        except (TypeError, RuntimeError):
+            pass
+        self._settings_connected = False
+
+    def create_card(self, parent: QtWidgets.QWidget | None = None, *, scope: str = "tag") -> QtWidgets.QWidget:
         self._card = CollapsibleCard(self.PREFIX, f"tag:{self.PREFIX}", parent)
         self._row = _PaletteRow(self._card)
         self._card.set_content_widget(self._row)
         return self._card
 
-    def update_data(self, tags: dict[str, str], locks: dict[str, bool], path: str, file_hash: str, db: str) -> None:
-        self._tags = dict(tags or {})
+    def update_data(self, data: dict, locks: dict[str, bool] | None = None, path: str = "", file_hash: str = "", db: str = "", *, scope: str = "tag") -> None:
+        self._tags = dict(data or {})
         self._refresh_colors()
 
     def _refresh_colors(self) -> None:

@@ -10,13 +10,13 @@ from .installer import _PACKAGES_DIR, needs_setup
 from .registry import RegistryBase, CommandGroupRegistry
 from .viewer.base import BaseViewerPlugin
 from .grid.base import BaseGridPlugin
+from .grid_overlay.base import BaseOverlayPlugin
 from .collector.base import BaseCollector
 from .query.base import BaseFilterPlugin, BaseSortPlugin
 from .parser.base import BaseParser
 from .layout.base import BaseLayoutPlugin
 from .panel.base import BasePanelPlugin
-from .meta_panel.base import BaseMetaPanelPlugin
-from .tag_panel.base import BaseTagPanelPlugin
+from .key_value_panel.base import BaseKeyValuePanelPlugin
 from .rename.base import BaseRenameSourcePlugin
 from .imageloader.base import BaseImageLoader
 from .kinds import (
@@ -24,14 +24,14 @@ from .kinds import (
     PLUGIN_KIND_COMMAND,
     PLUGIN_KIND_FILTER,
     PLUGIN_KIND_GRID,
+    PLUGIN_KIND_GRID_OVERLAY,
     PLUGIN_KIND_IMAGE_LOADER,
     PLUGIN_KIND_LAYOUT,
-    PLUGIN_KIND_META_PANEL,
+    PLUGIN_KIND_KEY_VALUE_PANEL,
     PLUGIN_KIND_PANEL,
     PLUGIN_KIND_PARSER,
     PLUGIN_KIND_RENAME_SOURCE,
     PLUGIN_KIND_SORT,
-    PLUGIN_KIND_TAG_PANEL,
     PLUGIN_KIND_VIEWER,
 )
 
@@ -42,14 +42,14 @@ def _build_registry_map():
     return {
         BaseViewerPlugin: PLUGIN_KIND_VIEWER,
         BaseGridPlugin: PLUGIN_KIND_GRID,
+        BaseOverlayPlugin: PLUGIN_KIND_GRID_OVERLAY,
         BaseCollector: PLUGIN_KIND_COLLECTOR,
         BaseParser: PLUGIN_KIND_PARSER,
         BaseFilterPlugin: PLUGIN_KIND_FILTER,
         BaseSortPlugin: PLUGIN_KIND_SORT,
         BaseLayoutPlugin: PLUGIN_KIND_LAYOUT,
         BasePanelPlugin: PLUGIN_KIND_PANEL,
-        BaseMetaPanelPlugin: PLUGIN_KIND_META_PANEL,
-        BaseTagPanelPlugin: PLUGIN_KIND_TAG_PANEL,
+        BaseKeyValuePanelPlugin: PLUGIN_KIND_KEY_VALUE_PANEL,
         BaseRenameSourcePlugin: PLUGIN_KIND_RENAME_SOURCE,
         BaseImageLoader: PLUGIN_KIND_IMAGE_LOADER,
         MenuGroup: PLUGIN_KIND_COMMAND,
@@ -237,13 +237,13 @@ def load_plugins(*, on_progress=None) -> list[str]:
     global _command_registry_ref
     from .viewer.handler import viewer_resolver
     from .grid.handler import grid_resolver
+    from .grid_overlay.handler import grid_overlay_registry
     from .collector.handler import collector_resolver
     from .parser.handler import parser_resolver
     from .query.handler import filter_registry, sort_registry
     from .layout.handler import layout_registry
     from .panel.handler import panel_registry
-    from .meta_panel.handler import meta_panel_registry
-    from .tag_panel.handler import tag_panel_registry
+    from .key_value_panel.handler import key_value_panel_registry
     from .rename.handler import rename_source_registry
     from .imageloader.handler import image_loader_resolver
 
@@ -251,14 +251,14 @@ def load_plugins(*, on_progress=None) -> list[str]:
     registries = {
         PLUGIN_KIND_VIEWER: viewer_resolver.registry,
         PLUGIN_KIND_GRID: grid_resolver.registry,
+        PLUGIN_KIND_GRID_OVERLAY: grid_overlay_registry,
         PLUGIN_KIND_COLLECTOR: collector_resolver.registry,
         PLUGIN_KIND_PARSER: parser_resolver.registry,
         PLUGIN_KIND_FILTER: filter_registry,
         PLUGIN_KIND_SORT: sort_registry,
         PLUGIN_KIND_LAYOUT: layout_registry,
         PLUGIN_KIND_PANEL: panel_registry,
-        PLUGIN_KIND_META_PANEL: meta_panel_registry,
-        PLUGIN_KIND_TAG_PANEL: tag_panel_registry,
+        PLUGIN_KIND_KEY_VALUE_PANEL: key_value_panel_registry,
         PLUGIN_KIND_RENAME_SOURCE: rename_source_registry,
         PLUGIN_KIND_IMAGE_LOADER: image_loader_resolver.registry,
         PLUGIN_KIND_COMMAND: command_registry,

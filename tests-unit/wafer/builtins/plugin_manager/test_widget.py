@@ -384,7 +384,7 @@ class TestPluginRowPanelButton:
 
     def test_kind_badges_use_short_labels_and_fixed_width(self, qtbot):
         from wafer.builtins.plugin_manager.extensions_tab import _PLUGIN_KIND_BADGE_WIDTH, _PluginRow
-        from wafer.plugin.kinds import PLUGIN_KIND_IMAGE_LOADER, PLUGIN_KIND_META_PANEL, PLUGIN_KIND_PARSER, PLUGIN_KIND_TAG_PANEL
+        from wafer.plugin.kinds import PLUGIN_KIND_IMAGE_LOADER, PLUGIN_KIND_KEY_VALUE_PANEL, PLUGIN_KIND_PARSER
         from wafer.utils.formatting import dpix
 
         class FakePlugin(BasePlugin):
@@ -394,8 +394,7 @@ class TestPluginRowPanelButton:
 
         expected = {
             PLUGIN_KIND_IMAGE_LOADER: "Loader",
-            PLUGIN_KIND_META_PANEL: "Meta",
-            PLUGIN_KIND_TAG_PANEL: "Tag",
+            PLUGIN_KIND_KEY_VALUE_PANEL: "Data",
             PLUGIN_KIND_PARSER: "Parser",
         }
         widths = set()

@@ -1,7 +1,8 @@
 import os
 import pytest
+import shiboken6
 from unittest.mock import MagicMock
-from PySide6 import QtCore
+from PySide6 import QtCore, QtWidgets
 from wafer.builtins.plugin_manager.extensions_tab import _ExtensionCard
 from wafer.core.qt.dispatcher import Dispatcher
 from wafer.core.qt.thread import SimpleThreadPool
@@ -103,3 +104,26 @@ class TestExtensionCardMdFiles:
         QThread.msleep(200)
         QtCore.QCoreApplication.processEvents()
         assert browser.rendered_html() == first_html
+
+    def test_async_md_load_skips_deleted_browser(self, qtbot, tmp_path, dispatcher, monkeypatch):
+        folder = tmp_path / "ext_deleted_browser"
+        folder.mkdir()
+        (folder / "README.md").write_text("# Deleted", encoding="utf-8")
+        card = _ExtensionCard("ext_deleted_browser", str(folder), dispatcher, md_files=["README.md"])
+        qtbot.addWidget(card)
+
+        _, browser, md_path, _ = card._md_entries[0]
+        apply_loaded = MagicMock()
+        monkeypatch.setattr(browser, "apply_loaded", apply_loaded)
+
+        browser.deleteLater()
+        QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
+        QtWidgets.QApplication.instance().processEvents(QtCore.QEventLoop.AllEvents, 50)
+
+        assert not shiboken6.isValid(browser)
+
+        card._load_md_async(md_path, browser)
+        qtbot.wait(300)
+        QtCore.QCoreApplication.processEvents()
+
+        apply_loaded.assert_not_called()

@@ -69,10 +69,10 @@ class MainWindow(QtWidgets.QMainWindow):
         UI.register_instance("SearchService", self.search_service)
         t.set_locale(app_settings.get("window/language", "en"))
         UI.register_instance("MainWindow", self)
-        from .grid.mark_overlay_service import MarkOverlayService
+        from .grid.overlay_host import GridOverlayHost
 
-        self._mark_overlay_service = MarkOverlayService(lambda: self.database_path, parent=self)
-        UI.register_instance("MarkOverlayService", self._mark_overlay_service)
+        self.grid_overlay_host = GridOverlayHost(lambda: self.database_path, lambda: self.database_name, parent=self)
+        UI.register_instance("GridOverlayHost", self.grid_overlay_host)
         self._closed = False
         self.setup_ui()
         self._show_loading()
@@ -152,13 +152,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self._db_reload_cancel = None
         self.setting_db = sdb
         self.folder_view.set_folders(roots, excluded)
-        self._mark_overlay_service.reload()
+        self.grid_overlay_host.reload()
         if on_complete:
             on_complete()
         else:
             self.search_row_widget.run_folder_worker(
                 self.database_path,
                 self.folder_view.get_selected_paths(),
+                self.search_service.get("include_subfolders", True),
+                self.search_service.get("include_contained_files", True),
             )
             QtCore.QTimer.singleShot(0, lambda: self.search(force=True))
         self._check_folder_callout(roots)
@@ -324,10 +326,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.grid_view.verticalScrollBar().setSingleStep(25)
         self.grid_view.horizontalScrollBar().setSingleStep(25)
         self.grid_view.base_height_changed.connect(self._on_zoom_changed)
-        self._mark_overlay_service.changed.connect(lambda: self.grid_view.viewport().update())
-        from ...builtins.mark import MarkRegistry
-
-        MarkRegistry.instance().changed.connect(lambda: self.grid_view.viewport().update())
+        self.grid_overlay_host.changed.connect(lambda: self.grid_view.viewport().update())
 
         self.file_model = FileViewModel(dbpath_getter=lambda: self.database_path, parent=self)
         self.content_viewer = ContentViewerWidget()
@@ -410,8 +409,6 @@ class MainWindow(QtWidgets.QMainWindow):
         store.register("file_viewer", self._save_file_viewer, self._restore_file_viewer)
         self._register_grid_plugin_states(store)
         self._register_panel_plugin_states(store)
-        self._register_meta_panel_plugin_states(store)
-        self._register_tag_panel_plugin_states(store)
 
     def _register_grid_plugin_states(self, store):
         from ...plugin.grid.base import WidgetGridPlugin as _WGP
@@ -528,11 +525,13 @@ class MainWindow(QtWidgets.QMainWindow):
     def reload_folderlist(self):
         AppLogger.debug("[RUNNING] reload_folderlist")
         if self.setting_db:
+            scroll_state = self.folder_view.capture_scroll_state()
             state = self.folder_view.get_state()
             roots = self.setting_db.get_all_parent_folders()
             excluded = self.setting_db.get_all_ignore_folders()
             self.folder_view.set_folders(roots, excluded)
-            self.folder_view.set_state(state)
+            self.folder_view.set_state(state, scroll_to_selection=False)
+            self.folder_view.restore_scroll_state(scroll_state)
             if roots:
                 self._dismiss_folder_callout()
         else:
@@ -652,7 +651,7 @@ class MainWindow(QtWidgets.QMainWindow):
         from .preview.tag_edit_service import TagEditService
 
         TagEditService.instance().handle_ack(payload)
-        self._mark_overlay_service.reload()
+        self.grid_overlay_host.reload()
 
     @QtCore.Slot(str)
     def _on_folder_changed_ipc(self, db: str):
@@ -692,8 +691,13 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_search_finished(self, paths, sources, aspects):
         keep_scroll = not self._folder_changed
         self._folder_changed = False
-        self.search_row_widget.run_folder_worker(self.database_path, self.folder_view.get_selected_paths())
-        self._mark_overlay_service.reload()
+        self.search_row_widget.run_folder_worker(
+            self.database_path,
+            self.folder_view.get_selected_paths(),
+            self.search_service.get("include_subfolders", True),
+            self.search_service.get("include_contained_files", True),
+        )
+        self.grid_overlay_host.reload()
         if paths == self._last_paths:
             self._hide_loading()
             return
@@ -767,34 +771,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 p = inst
                 store.register(
                     f"panel_plugin.{cls.NAME}",
-                    lambda p=p: p.save_ui_state(),
-                    lambda s, p=p: p.restore_ui_state(s),
-                )
-
-    def _register_meta_panel_plugin_states(self, store):
-        from ...plugin.meta_panel.base import BaseMetaPanelPlugin
-        from ...plugin.meta_panel.handler import meta_panel_registry
-
-        for cls in meta_panel_registry.list_all():
-            inst = meta_panel_registry.instance(cls.NAME)
-            if inst is not None and isinstance(inst, BaseMetaPanelPlugin):
-                p = inst
-                store.register(
-                    f"meta_panel_plugin.{cls.NAME}",
-                    lambda p=p: p.save_ui_state(),
-                    lambda s, p=p: p.restore_ui_state(s),
-                )
-
-    def _register_tag_panel_plugin_states(self, store):
-        from ...plugin.tag_panel.base import BaseTagPanelPlugin
-        from ...plugin.tag_panel.handler import tag_panel_registry
-
-        for cls in tag_panel_registry.list_all():
-            inst = tag_panel_registry.instance(cls.NAME)
-            if inst is not None and isinstance(inst, BaseTagPanelPlugin):
-                p = inst
-                store.register(
-                    f"tag_panel_plugin.{cls.NAME}",
                     lambda p=p: p.save_ui_state(),
                     lambda s, p=p: p.restore_ui_state(s),
                 )

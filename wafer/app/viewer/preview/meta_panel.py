@@ -8,6 +8,7 @@ from PySide6 import QtCore, QtWidgets
 from ....utils.formatting import dpix
 from ....utils.logs import AppLogger
 from ....core.state import StateStore
+from ....core.db.key_value import DATA_SCOPES, SCOPE_ALL, normalize_data_scope
 from ....core.color.theme import ThemeManager
 from ....core.qt.icon_engine import themed_icon
 from ....core.lang.manager import t
@@ -36,8 +37,14 @@ class MetaViewerWidget(QtWidgets.QWidget):
         super().__init__(parent)
         self._sections: dict[str, CollapsibleCard | QtWidgets.QWidget] = {}
         self._collapse_state: dict[str, bool] = {}
-        self._meta_panel_plugins: dict[str, Any] | None = None
-        self._tag_panel_plugins: dict[str, Any] | None = None
+        self._key_value_panel_plugins: list[type] | None = None
+        self._key_value_panel_classes: dict[str, type] = {}
+        self._key_value_panel_instances: dict[tuple[str, str], Any] = {}
+        self._key_value_panel_cards: dict[tuple[str, str], QtWidgets.QWidget] = {}
+        self._pending_key_value_panel_states: dict[str, dict[str, dict[str, Any]]] = {}
+        self._key_value_panel_state_names: set[str] = set()
+        self._key_value_panel_shutdown = False
+        self._section_plugins: dict[str, Any] = {}
         self._current_path: str = ""
         self._current_file_hash: str = ""
         self._current_db: str = ""
@@ -75,9 +82,11 @@ class MetaViewerWidget(QtWidgets.QWidget):
 
         store = StateStore.instance()
         store.register("meta_viewer_collapse", self._save_collapse_state, self._restore_collapse_state)
+        self._register_key_value_panel_states(store)
 
         ThemeManager.instance().on_theme_changed.connect(lambda _: self._update_placeholder_style())
         TagEditService.instance().kv_commit_confirmed.connect(self._on_kv_commit_confirmed)
+        self.destroyed.connect(lambda _obj=None: self._shutdown_key_value_panel_plugins())
 
     def _on_kv_commit_confirmed(self, scope: str, target_id: str, _applied: dict, _deleted: list):
         current_target = self._current_file_hash if scope == "tag" else self._current_path
@@ -151,9 +160,9 @@ class MetaViewerWidget(QtWidgets.QWidget):
             section_order.append(_TAG_ROOT_KEY)
         if meta_root:
             section_order.append(_META_ROOT_KEY)
-        tag_prefixes = self._ordered_prefixes(tag_prefixed, self._resolve_tag_panel_plugins())
+        tag_prefixes = self._ordered_prefixes(tag_prefixed, "tag")
         section_order += [_TAG_PREFIX + p for p in tag_prefixes]
-        section_order += [_META_PREFIX + p for p in self._ordered_prefixes(meta_prefixed, self._resolve_meta_panel_plugins())]
+        section_order += [_META_PREFIX + p for p in self._ordered_prefixes(meta_prefixed, "meta_info")]
 
         existing_keys = list(self._sections.keys())
         if existing_keys == section_order:
@@ -162,56 +171,149 @@ class MetaViewerWidget(QtWidgets.QWidget):
 
         self._rebuild(meta, meta_root, meta_root_locks, meta_prefixed, meta_prefixed_locks, tag_prefixed, section_order)
 
-    def _ordered_prefixes(self, data: dict[str, dict], plugins: dict[str, Any]) -> list[str]:
+    def _ordered_prefixes(self, data: dict[str, dict], scope: str) -> list[str]:
         prefixes = set(data.keys())
-        ordered = [p for p in plugins if p in prefixes]
+        ordered = []
+        for plugin_cls in self._resolve_key_value_panel_plugins():
+            if getattr(plugin_cls, "DATA_SCOPE", "*") not in (scope, "*"):
+                continue
+            prefix = getattr(plugin_cls, "PREFIX", "")
+            if prefix in prefixes and prefix not in ordered:
+                ordered.append(prefix)
         ordered += sorted(prefixes - set(ordered))
         return ordered
 
-    def _resolve_plugins(self, attr: str, registry_loader) -> dict[str, Any]:
-        cached = getattr(self, attr)
+    def _resolve_key_value_panel_plugins(self) -> list[type]:
+        cached = self._key_value_panel_plugins
         if cached is not None:
             return cached
         try:
-            registry = registry_loader()
-            plugins: dict[str, Any] = {}
-            for plugin_cls in registry.list_all():
-                inst = registry.instance(plugin_cls.NAME)
-                if inst is not None:
-                    plugins[inst.PREFIX] = inst
-            setattr(self, attr, plugins)
+            from ....plugin.key_value_panel.handler import key_value_panel_registry
+
+            self._key_value_panel_plugins = list(key_value_panel_registry.list_all())
+            self._key_value_panel_classes = {cls.NAME: cls for cls in self._key_value_panel_plugins}
         except Exception as e:
-            AppLogger.warning(f"Plugin load failed for {attr}: {e}", exc=e)
-            setattr(self, attr, {})
-        return getattr(self, attr)
+            AppLogger.warning(f"Plugin load failed for key/value panels: {e}", exc=e)
+            self._key_value_panel_plugins = []
+            self._key_value_panel_classes = {}
+        return self._key_value_panel_plugins
 
-    def _resolve_meta_panel_plugins(self) -> dict[str, Any]:
-        def _load():
-            from ....plugin.meta_panel.handler import meta_panel_registry
+    def _register_key_value_panel_states(self, store: StateStore):
+        for plugin_cls in self._resolve_key_value_panel_plugins():
+            name = plugin_cls.NAME
+            if not name or name in self._key_value_panel_state_names:
+                continue
+            self._key_value_panel_state_names.add(name)
+            store.register(
+                f"key_value_panel_plugin.{name}",
+                lambda name=name: self._save_key_value_panel_state(name),
+                lambda state, name=name: self._restore_key_value_panel_state(name, state),
+            )
 
-            return meta_panel_registry
+    def _save_key_value_panel_state(self, plugin_name: str) -> dict[str, Any]:
+        scopes = dict(self._pending_key_value_panel_states.get(plugin_name, {}))
+        for (name, scope), plugin in self._key_value_panel_instances.items():
+            if name != plugin_name:
+                continue
+            state = plugin.save_ui_state()
+            if state:
+                scopes[scope] = state
+            else:
+                scopes.pop(scope, None)
+        return {"scopes": scopes} if scopes else {}
 
-        return self._resolve_plugins("_meta_panel_plugins", _load)
+    def _restore_key_value_panel_state(self, plugin_name: str, state: dict[str, Any]):
+        if not isinstance(state, dict):
+            return
+        scopes = state.get("scopes")
+        if isinstance(scopes, dict):
+            for scope, scope_state in scopes.items():
+                self._restore_key_value_panel_scope_state(plugin_name, scope, scope_state)
+            return
+        plugin_cls = self._key_value_panel_classes.get(plugin_name)
+        if plugin_cls is None:
+            return
+        for scope in self._scopes_for_key_value_panel(plugin_cls):
+            self._restore_key_value_panel_scope_state(plugin_name, scope, state)
 
-    def _resolve_tag_panel_plugins(self) -> dict[str, Any]:
-        def _load():
-            from ....plugin.tag_panel.handler import tag_panel_registry
+    def _restore_key_value_panel_scope_state(self, plugin_name: str, scope: str, state: Any):
+        if not isinstance(state, dict):
+            return
+        try:
+            scope = normalize_data_scope(scope)
+        except ValueError:
+            return
+        key = (plugin_name, scope)
+        plugin = self._key_value_panel_instances.get(key)
+        if plugin is not None:
+            plugin.restore_ui_state(state)
+            return
+        self._pending_key_value_panel_states.setdefault(plugin_name, {})[scope] = dict(state)
 
-            return tag_panel_registry
+    def _scopes_for_key_value_panel(self, plugin_cls: type) -> tuple[str, ...]:
+        data_scope = getattr(plugin_cls, "DATA_SCOPE", SCOPE_ALL)
+        if data_scope == SCOPE_ALL:
+            return DATA_SCOPES
+        try:
+            return (normalize_data_scope(data_scope),)
+        except ValueError:
+            return ()
 
-        return self._resolve_plugins("_tag_panel_plugins", _load)
+    def _plugin_class_for(self, prefix: str, scope: str):
+        for plugin_cls in self._resolve_key_value_panel_plugins():
+            if getattr(plugin_cls, "PREFIX", "") != prefix:
+                continue
+            if getattr(plugin_cls, "DATA_SCOPE", "*") in (scope, "*"):
+                return plugin_cls
+        return None
+
+    def _get_or_create_scope_plugin(self, plugin_cls: type, scope: str):
+        scope = normalize_data_scope(scope)
+        key = (plugin_cls.NAME, scope)
+        plugin = self._key_value_panel_instances.get(key)
+        if plugin is not None:
+            return plugin
+        plugin = plugin_cls()
+        self._key_value_panel_instances[key] = plugin
+        pending = self._pending_key_value_panel_states.get(plugin_cls.NAME, {}).pop(scope, None)
+        if pending is not None:
+            try:
+                plugin.restore_ui_state(pending)
+            except Exception as e:
+                AppLogger.warning(f"Key/value panel state restore failed: {plugin_cls.NAME}/{scope}: {e}", exc=e)
+        return plugin
+
+    def _get_or_create_scope_card(self, plugin_cls: type, plugin, scope: str, marker_kind: str) -> QtWidgets.QWidget:
+        scope = normalize_data_scope(scope)
+        key = (plugin_cls.NAME, scope)
+        card = self._key_value_panel_cards.get(key)
+        if card is not None:
+            self._set_section_marker(card, marker_kind)
+            return card
+        card = plugin.create_card(self._inner, scope=scope)
+        self._key_value_panel_cards[key] = card
+        self._set_section_marker(card, marker_kind)
+        if isinstance(card, CollapsibleCard):
+            card.toggled_card.connect(self._on_section_toggled)
+        return card
+
+    def _detach_sections_for_rebuild(self):
+        plugin_sections = set(self._section_plugins)
+        for key, sec in self._sections.items():
+            self._layout.removeWidget(sec)
+            if key in plugin_sections:
+                sec.hide()
+            else:
+                sec.setParent(None)
+                sec.deleteLater()
+        self._sections.clear()
+        self._section_plugins.clear()
 
     def _rebuild(
         self, meta: dict, meta_root: dict, meta_root_locks: dict, meta_prefixed: dict[str, dict], meta_prefixed_locks: dict[str, dict], tag_prefixed: dict[str, dict], section_order: list[str]
     ):
-        for sec in self._sections.values():
-            self._layout.removeWidget(sec)
-            sec.setParent(None)
-            sec.deleteLater()
-        self._sections.clear()
+        self._detach_sections_for_rebuild()
 
-        meta_plugins = self._resolve_meta_panel_plugins()
-        tag_plugins = self._resolve_tag_panel_plugins()
         rich_text_keys = {"collected by"}
 
         for key in section_order:
@@ -221,10 +323,11 @@ class MetaViewerWidget(QtWidgets.QWidget):
                 self._update_tag_card(card, meta, prefix="")
             elif key.startswith(_TAG_PREFIX):
                 prefix = key[len(_TAG_PREFIX) :]
-                plugin = tag_plugins.get(prefix)
-                if plugin is not None:
-                    card = plugin.create_card(self._inner)
-                    self._set_section_marker(card, SECTION_MARKER_TAG_PREFIX)
+                plugin_cls = self._plugin_class_for(prefix, "tag")
+                if plugin_cls is not None:
+                    plugin = self._get_or_create_scope_plugin(plugin_cls, "tag")
+                    self._section_plugins[key] = plugin
+                    card = self._get_or_create_scope_card(plugin_cls, plugin, "tag", SECTION_MARKER_TAG_PREFIX)
                     self._update_tag_plugin(plugin, meta, tag_prefixed, prefix)
                 else:
                     card = EditableTagCard(prefix=prefix, parent=self._inner)
@@ -236,10 +339,11 @@ class MetaViewerWidget(QtWidgets.QWidget):
                 self._update_meta_card(card, meta, prefix="", data=meta_root, locks=meta_root_locks)
             elif key.startswith(_META_PREFIX):
                 prefix = key[len(_META_PREFIX) :]
-                plugin = meta_plugins.get(prefix)
-                if plugin is not None:
-                    card = plugin.create_card(self._inner)
-                    self._set_section_marker(card, SECTION_MARKER_META_PREFIX)
+                plugin_cls = self._plugin_class_for(prefix, "meta_info")
+                if plugin_cls is not None:
+                    plugin = self._get_or_create_scope_plugin(plugin_cls, "meta_info")
+                    self._section_plugins[key] = plugin
+                    card = self._get_or_create_scope_card(plugin_cls, plugin, "meta_info", SECTION_MARKER_META_PREFIX)
                     self._update_meta_plugin(plugin, meta, meta_prefixed, meta_prefixed_locks, prefix)
                 else:
                     card = EditableTagCard(prefix=prefix, parent=self._inner, scope="meta_info")
@@ -252,10 +356,10 @@ class MetaViewerWidget(QtWidgets.QWidget):
             expanded = self._collapse_state.get(key, True)
             if isinstance(card, CollapsibleCard):
                 card.set_expanded(expanded)
-                card.toggled_card.connect(self._on_section_toggled)
 
             self._sections[key] = card
             self._layout.insertWidget(self._layout.count() - 1, card)
+            card.show()
 
     @staticmethod
     def _set_section_marker(card, marker_kind: str):
@@ -277,8 +381,6 @@ class MetaViewerWidget(QtWidgets.QWidget):
 
     def _update_existing(self, meta: dict, meta_root: dict, meta_root_locks: dict, meta_prefixed: dict[str, dict], meta_prefixed_locks: dict[str, dict], tag_prefixed: dict[str, dict]):
         rich_text_keys = {"collected by"}
-        meta_plugins = self._resolve_meta_panel_plugins()
-        tag_plugins = self._resolve_tag_panel_plugins()
 
         for key, card in self._sections.items():
             if key == "tag" and isinstance(card, EditableTagCard):
@@ -286,7 +388,7 @@ class MetaViewerWidget(QtWidgets.QWidget):
                 continue
             if key.startswith(_TAG_PREFIX):
                 prefix = key[len(_TAG_PREFIX) :]
-                plugin = tag_plugins.get(prefix)
+                plugin = self._section_plugins.get(key)
                 if plugin is not None:
                     self._update_tag_plugin(plugin, meta, tag_prefixed, prefix)
                 elif isinstance(card, EditableTagCard):
@@ -297,7 +399,7 @@ class MetaViewerWidget(QtWidgets.QWidget):
                 continue
             if key.startswith(_META_PREFIX):
                 prefix = key[len(_META_PREFIX) :]
-                plugin = meta_plugins.get(prefix)
+                plugin = self._section_plugins.get(key)
                 if plugin is not None:
                     self._update_meta_plugin(plugin, meta, meta_prefixed, meta_prefixed_locks, prefix)
                 elif isinstance(card, EditableTagCard):
@@ -343,7 +445,7 @@ class MetaViewerWidget(QtWidgets.QWidget):
         path = meta.get("_path", "") or ""
         file_hash = meta.get("_file_hash", "") or ""
         db = meta.get("_db_name", "") or ""
-        plugin.update_data(tags, locks, path, file_hash, db)
+        plugin.update_data(tags, locks, path, file_hash, db, scope="tag")
 
     def _update_meta_card(
         self,
@@ -366,8 +468,9 @@ class MetaViewerWidget(QtWidgets.QWidget):
         data = meta_prefixed.get(prefix, {}) or {}
         locks = meta_prefixed_locks.get(prefix, {}) or {}
         path = meta.get("_path", "") or ""
+        file_hash = meta.get("_file_hash", "") or ""
         db = meta.get("_db_name", "") or ""
-        plugin.update_data(data, locks=locks, path=path, db=db)
+        plugin.update_data(data, locks=locks, path=path, file_hash=file_hash, db=db, scope="meta_info")
 
     def _on_add_clicked(self):
         if not self._current_path or not self._current_db:
@@ -423,3 +526,13 @@ class MetaViewerWidget(QtWidgets.QWidget):
             if isinstance(card, CollapsibleCard):
                 expanded = self._collapse_state.get(key, True)
                 card.set_expanded(expanded)
+
+    def _shutdown_key_value_panel_plugins(self):
+        if self._key_value_panel_shutdown:
+            return
+        self._key_value_panel_shutdown = True
+        for plugin in list(self._key_value_panel_instances.values()):
+            try:
+                plugin.shutdown()
+            except Exception as e:
+                AppLogger.warning(f"Key/value panel shutdown failed: {getattr(plugin, 'NAME', type(plugin).__name__)}: {e}", exc=e)

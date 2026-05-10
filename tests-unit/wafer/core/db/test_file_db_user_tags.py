@@ -229,6 +229,55 @@ def test_apply_user_meta_info_delete_respects_lock(tmp_path):
     db.close()
 
 
+def test_apply_user_kv_star_deletes_tag_and_meta(tmp_path):
+    db = _make_db(tmp_path)
+    _seed(db)
+    db.apply_user_kv(["src1"], [("mark.1", "1", None, 0)], [], scope="tag")
+    db.apply_user_meta_info(["src1"], [("mark.1", "1", None, 0)], [])
+    result = db.apply_user_kv(["src1"], [], ["mark.1"], scope="*")
+    assert result["src1"][2] == ["mark.1"]
+    assert _get_tag(db, "h1", "mark.1") is None
+    assert _get_meta(db, "src1", "mark.1") is None
+    db.close()
+
+
+def test_convert_key_scope_meta_to_tag_is_rerunnable(tmp_path):
+    db = _make_db(tmp_path)
+    _seed(db)
+    db.apply_user_meta_info(["src1"], [("mark.1", "1", None, 0)], [])
+    first = db.convert_key_scope("mark.1", "tag")
+    second = db.convert_key_scope("mark.1", "tag")
+    assert first["from_scope"] == "meta_info"
+    assert first["to_scope"] == "tag"
+    assert first["paths"] == ["src1"]
+    assert first["targets"] == {"src1": "h1"}
+    assert _get_tag(db, "h1", "mark.1") == ("1", 0)
+    assert _get_meta(db, "src1", "mark.1") is None
+    assert second["to_scope"] == "tag"
+    assert second["paths"] == []
+    assert second["targets"] == {}
+    assert _get_tag(db, "h1", "mark.1") == ("1", 0)
+    db.close()
+
+
+def test_convert_key_scope_tag_to_meta_expands_to_paths(tmp_path):
+    db = _make_db(tmp_path)
+    db.upsert_batches(
+        [("src1", "h1", 100, 1.0)],
+        [("src1", "src1", 1.0), ("child", "src1", 1.0)],
+        [],
+        [("h1", "mark.1", "1", None)],
+    )
+    result = db.convert_key_scope("mark.1", "meta_info")
+    assert result["from_scope"] == "tag"
+    assert set(result["paths"]) == {"src1", "child"}
+    assert result["targets"] == {"src1": "h1", "child": "h1"}
+    assert _get_meta(db, "src1", "mark.1") == ("1", 0)
+    assert _get_meta(db, "child", "mark.1") == ("1", 0)
+    assert _get_tag(db, "h1", "mark.1") is None
+    db.close()
+
+
 def test_meta_info_locked_migration_preserves_rows(tmp_path):
     db_path = tmp_path / "old.db"
     conn = sqlite3.connect(db_path)

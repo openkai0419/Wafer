@@ -389,7 +389,15 @@ class _ExtensionCard(QtWidgets.QFrame):
                     text = f.read()
                 body_html = render_to_html(text)
                 base_url = QtCore.QUrl.fromLocalFile(str(p.parent) + "/")
-                self._dispatcher.invoke(lambda: browser.apply_loaded(text, body_html, base_url, p.parent))
+
+                def apply_loaded():
+                    import shiboken6
+
+                    if not shiboken6.isValid(browser):
+                        return
+                    browser.apply_loaded(text, body_html, base_url, p.parent)
+
+                self._dispatcher.invoke(apply_loaded)
             except Exception as e:
                 AppLogger.warning(f"Failed to load markdown async: {md_path}", exc=e)
 

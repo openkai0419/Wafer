@@ -8,8 +8,12 @@ from pathlib import Path
 
 import pytest
 
+from wafer.builtins.filters import TextFilter
+from wafer.builtins.sorts import NaturalNameSort, NoSort
 from wafer.core.db.file_db import _TABLES, _VIEWS, _INDEXES_SQL
 from wafer.core.db.db_utils import apply_read_pragmas
+from wafer.core.db.query import FileSearchEngine
+from wafer.plugin.query.composer import SearchComposer
 from wafer.utils.paths import resolve_data_path
 
 pytestmark = pytest.mark.benchmark
@@ -123,6 +127,59 @@ def _measure_sql(conn, sql, params=(), warmup=WARMUP, iterations=ITERATIONS):
     cur.close()
     avg = sum(times) / len(times)
     return avg, min(times), max(times), len(rows)
+
+
+def _measure_composer(engine, entries, sort_cls=NoSort, ascending=True):
+    composer = SearchComposer()
+    return _measure(lambda: composer.execute(engine, entries, sort_cls, ascending))
+
+
+def _text_entry(keyword: str, op: str | None = None):
+    return (
+        TextFilter,
+        {
+            "keys": ["path"],
+            "keywords": keyword,
+            "query_mode": "LIKE",
+            "keyword_mode": "OR",
+            "require_keys": True,
+        },
+        op,
+    )
+
+
+def _composer_not_entries():
+    return [
+        _text_entry("folder0"),
+        _text_entry(".gif", "NOT"),
+        _text_entry("sub00", "OR"),
+        _text_entry("sub01", "OR"),
+        _text_entry("folder049", "OR"),
+    ]
+
+
+def _composer_or_entries():
+    return [
+        _text_entry(".gif"),
+        _text_entry("sub00", "OR"),
+        _text_entry("sub01", "OR"),
+        _text_entry("folder049", "OR"),
+    ]
+
+
+def _compose_path_query(engine, entries):
+    row_queries = []
+    global_queries = []
+    for filter_cls, params, op in entries:
+        sql, bind = filter_cls.build_path_query(params, engine._normalize_path)
+        if sql is None:
+            continue
+        if filter_cls.QUERY_SCOPE == "global":
+            global_queries.append((sql, bind))
+        else:
+            row_queries.append((sql, bind, op))
+    combined_sql, combined_params = SearchComposer._combine(row_queries)
+    return SearchComposer._apply_global(combined_sql, combined_params, global_queries)
 
 
 def _fmt(avg, mn, mx, rows=None, label=""):
@@ -521,6 +578,62 @@ class TestGeneratedDB:
             print(f"\n  --- {name} ---")
             for row in rows:
                 print(f"    {row}")
+
+    def test_21_composer_not_right_associative(self, gen_db):
+        _conn, n, db_path = gen_db
+        engine = FileSearchEngine(db_path)
+        assert engine._connect_if_needed()
+        try:
+            entries = _composer_not_entries()
+            avg, mn, mx, result = _measure_composer(engine, entries, NoSort)
+            paths, _, _ = result
+            print(f"\n[gen n={n:,}] Composer NOT right-assoc: {_fmt(avg, mn, mx, len(paths))}")
+            assert paths
+            assert all(".gif" not in path and "/sub00/" not in path and "/sub01/" not in path and "folder049" not in path for path in paths)
+
+            avg, mn, mx, result = _measure_composer(engine, entries, NaturalNameSort)
+            print(f"[gen n={n:,}] Composer NOT + name sort: {_fmt(avg, mn, mx, len(result[0]))}")
+
+            avg, mn, mx, keys = _measure(lambda: SearchComposer().list_all_keys(engine, entries, sort_by_freq=True))
+            print(f"[gen n={n:,}] Composer NOT list_keys:  {_fmt(avg, mn, mx, len(keys))}")
+            assert any(key == "path" for key, _freq in keys)
+        finally:
+            engine.close()
+
+    def test_22_composer_not_vs_or_width(self, gen_db):
+        _conn, n, db_path = gen_db
+        engine = FileSearchEngine(db_path)
+        assert engine._connect_if_needed()
+        try:
+            not_avg, not_min, not_max, not_result = _measure_composer(engine, _composer_not_entries(), NoSort)
+            or_avg, or_min, or_max, or_result = _measure_composer(engine, _composer_or_entries(), NoSort)
+            ratio = not_avg / or_avg if or_avg else 0.0
+            print(f"\n[gen n={n:,}] Composer OR width:        {_fmt(or_avg, or_min, or_max, len(or_result[0]))}")
+            print(f"[gen n={n:,}] Composer NOT width:       {_fmt(not_avg, not_min, not_max, len(not_result[0]))} ratio_vs_or={ratio:.2f}x")
+            assert len(not_result[0]) + len(or_result[0]) >= n * 0.6
+        finally:
+            engine.close()
+
+    def test_23_composer_not_explain_query_plan(self, gen_db):
+        conn, n, db_path = gen_db
+        if n != GENERATED_SIZES[0]:
+            pytest.skip("explain only on smallest")
+        engine = FileSearchEngine(db_path)
+        assert engine._connect_if_needed()
+        try:
+            path_sql, params = _compose_path_query(engine, _composer_not_entries())
+            queries = {
+                "composer_not_path_count": (SQL_COUNT_ONLY.format(path_query=path_sql), tuple(params)),
+                "composer_not_fetch": (SQL_FETCH_BASIC.format(path_query=path_sql), tuple(params)),
+            }
+            print(f"\n[gen n={n:,}] === Composer NOT EXPLAIN QUERY PLAN ===")
+            plans = _explain_snapshot(conn, "gen_composer_not", n, queries)
+            for name, rows in plans.items():
+                print(f"\n  --- {name} ---")
+                for row in rows:
+                    print(f"    {row}")
+        finally:
+            engine.close()
 
 
 class TestRealDB:

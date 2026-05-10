@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from PySide6 import QtCore, QtWidgets
 
+from ...app.viewer.grid.overlay_host import MAX_BADGE_RADIUS, MIN_BADGE_RADIUS
+from ...core.commands.binding.instance_registry import InstanceRegistry
+from ...core.commands.bridge import Command
 from ...core.lang.manager import t
 from ...core.qt.icon_engine import themed_icon
 from ...ui.popups import PopupBase
@@ -11,6 +14,10 @@ from .registry import MarkRegistry
 
 
 _BUTTON_HEIGHT = 22
+
+
+def _overlay_host():
+    return InstanceRegistry.instance().get_one("GridOverlayHost")
 
 
 class _MarkButton(QtWidgets.QToolButton):
@@ -69,13 +76,10 @@ class _MarkSettingsPopup(PopupBase):
         radius_row.setSpacing(dpix(4))
         radius_row.addWidget(QtWidgets.QLabel(t("Overlay size:")))
         self.radius_spin = QtWidgets.QSpinBox()
-        from ...app.viewer.grid.mark_overlay_service import MIN_RADIUS, MAX_RADIUS
-        from ...core.commands.binding.instance_registry import InstanceRegistry
-
-        self.radius_spin.setRange(MIN_RADIUS, MAX_RADIUS)
+        self.radius_spin.setRange(MIN_BADGE_RADIUS, MAX_BADGE_RADIUS)
         self.radius_spin.setSuffix(" px")
-        svc = InstanceRegistry.instance().get_one("MarkOverlayService")
-        self.radius_spin.setValue(svc.radius() if svc is not None else 8)
+        host = _overlay_host()
+        self.radius_spin.setValue(host.badge_radius() if host is not None else 8)
         self.radius_spin.valueChanged.connect(self._on_radius_changed)
         radius_row.addWidget(self.radius_spin)
         radius_row.addStretch()
@@ -125,18 +129,12 @@ class _MarkSettingsPopup(PopupBase):
         self.radius_spin.blockSignals(False)
 
     def _on_overlay_toggled(self, checked: bool):
-        from ...core.commands.binding.instance_registry import InstanceRegistry
-
-        svc = InstanceRegistry.instance().get_one("MarkOverlayService")
-        if svc is not None:
-            svc.set_visible(bool(checked))
+        host = _overlay_host()
+        if host is not None and host.badge_visible() != bool(checked):
+            Command.invoke("grid.toggle_overlay")
 
     def _on_radius_changed(self, value: int):
-        from ...core.commands.binding.instance_registry import InstanceRegistry
-
-        svc = InstanceRegistry.instance().get_one("MarkOverlayService")
-        if svc is not None:
-            svc.set_radius(int(value))
+        Command.invoke("grid.set_overlay_size", size=int(value))
 
 
 class MarkFilterWidget(QtWidgets.QWidget):
@@ -172,9 +170,9 @@ class MarkFilterWidget(QtWidgets.QWidget):
         self._popup = _MarkSettingsPopup(self)
         self._popup.changed.connect(self.changed)
 
-        svc = self._overlay_service()
-        if svc is not None:
-            svc.changed.connect(self._sync_overlay_controls)
+        host = _overlay_host()
+        if host is not None:
+            host.changed.connect(self._sync_overlay_controls)
 
         self._sync_buttons()
 
@@ -238,18 +236,13 @@ class MarkFilterWidget(QtWidgets.QWidget):
         if current_set != existing_set:
             self.changed.emit()
 
-    def _overlay_service(self):
-        from ...core.commands.binding.instance_registry import InstanceRegistry
-
-        return InstanceRegistry.instance().get_one("MarkOverlayService")
-
     def _restore_state(self):
         self._sync_overlay_controls()
 
     def _sync_overlay_controls(self):
-        svc = self._overlay_service()
-        self._popup.set_overlay_visible(svc.is_visible() if svc is not None else True)
-        self._popup.set_overlay_radius(svc.radius() if svc is not None else 8)
+        host = _overlay_host()
+        self._popup.set_overlay_visible(host.badge_visible() if host is not None else True)
+        self._popup.set_overlay_radius(host.badge_radius() if host is not None else 8)
 
     def read_params(self) -> dict:
         ids = [mid for mid, b in self._buttons.items() if b.isChecked()]

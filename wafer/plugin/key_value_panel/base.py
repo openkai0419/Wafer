@@ -8,11 +8,12 @@ from PySide6 import QtWidgets
 from ..registry import PluginBase
 
 
-class BaseMetaPanelPlugin(PluginBase, ABC):
+class BaseKeyValuePanelPlugin(PluginBase, ABC):
     PREFIX: str = ""
+    DATA_SCOPE: str = "*"
 
     @abstractmethod
-    def create_card(self, parent: QtWidgets.QWidget | None = None) -> QtWidgets.QWidget: ...
+    def create_card(self, parent: QtWidgets.QWidget | None = None, *, scope: str = "meta_info") -> QtWidgets.QWidget: ...
 
     @abstractmethod
     def update_data(
@@ -20,7 +21,10 @@ class BaseMetaPanelPlugin(PluginBase, ABC):
         data: dict,
         locks: dict[str, bool] | None = None,
         path: str = "",
+        file_hash: str = "",
         db: str = "",
+        *,
+        scope: str = "meta_info",
     ) -> None: ...
 
     def save_ui_state(self) -> dict[str, Any]:
@@ -28,3 +32,6 @@ class BaseMetaPanelPlugin(PluginBase, ABC):
 
     def restore_ui_state(self, state: dict[str, Any]) -> None:
         pass
+
+    def shutdown(self) -> None:
+        return None

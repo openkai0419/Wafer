@@ -570,6 +570,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         self.setDefaultDropAction(QtCore.Qt.MoveAction)
         self._programmatic_expand = 0
         self._recursive_expand_jobs = {}
+        self._scroll_restore_serial = 0
         self.expanded.connect(self.on_expanded)
         self.clicked.connect(self._on_item_clicked)
         UI.register_instance("FolderTree", self)
@@ -600,6 +601,35 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
     @profiler.profile
     def get_selected_paths(self):
         return [i.data(USER_ROLE_PATH) for i in self.selectionModel().selectedRows() if i.data(USER_ROLE_PATH)]
+
+    def capture_scroll_state(self):
+        bar = self.verticalScrollBar()
+        return {
+            "value": int(bar.value()),
+            "maximum": int(bar.maximum()),
+        }
+
+    def restore_scroll_state(self, scroll_state):
+        if not isinstance(scroll_state, dict):
+            return
+        try:
+            saved_value = int(scroll_state.get("value", 0))
+        except (TypeError, ValueError):
+            saved_value = 0
+        self._scroll_restore_serial += 1
+        serial = self._scroll_restore_serial
+
+        def apply_scroll():
+            try:
+                if serial != self._scroll_restore_serial:
+                    return
+                bar = self.verticalScrollBar()
+                value = max(0, min(saved_value, int(bar.maximum())))
+                bar.setValue(value)
+            except Exception as e:
+                AppLogger.debug(f"Failed to restore scroll state: {e}")
+
+        QtCore.QTimer.singleShot(0, apply_scroll)
 
     def set_folders(self, roots, excluded=None):
         roots = [normalize_path(r) for r in roots]
@@ -672,7 +702,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         return (expanded, selected)
 
     @profiler.profile
-    def set_state(self, states):
+    def set_state(self, states, scroll_to_selection=True):
         try:
             expanded, selected = states
         except (ValueError, TypeError):
@@ -695,7 +725,8 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
             selmodel.select(idx, QtCore.QItemSelectionModel.Select | QtCore.QItemSelectionModel.Rows)
         if to_select:
             selmodel.setCurrentIndex(to_select[0], QtCore.QItemSelectionModel.NoUpdate)
-            self.scrollTo(to_select[0], QtWidgets.QAbstractItemView.PositionAtCenter)
+            if scroll_to_selection:
+                self.scrollTo(to_select[0], QtWidgets.QAbstractItemView.PositionAtCenter)
 
     def set_state_async(self, states, on_complete=None):
         try:
@@ -877,13 +908,15 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
     @profiler.profile
     def reload_tree(self):
         self._cancel_recursive_expand_jobs()
+        scroll_state = self.capture_scroll_state()
         state = self.get_state()
         roots = [item.data(USER_ROLE_PATH) for item in iter_root_items(self.model_)]
         self.model_.clear()
         self.model_.clear_cache()
         self.model_.setHorizontalHeaderLabels(["Folders"])
         self.model_._build_roots(roots)
-        self.set_state(state)
+        self.set_state(state, scroll_to_selection=False)
+        self.restore_scroll_state(scroll_state)
 
     @profiler.profile
     def move_paths(self, src_paths, dest_dir):

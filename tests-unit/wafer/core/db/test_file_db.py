@@ -344,6 +344,23 @@ def test_rename_paths_single_file(tmp_path):
     db.close()
 
 
+def test_load_source_signatures(tmp_path):
+    db = FileDB(tmp_path / "test.db")
+    db.start()
+    db.initialize_database()
+    db.upsert_batches(
+        [("c:/a.jpg", "hash_a", 100, 1.0), ("c:/b.jpg", "hash_b", 200, 2.0)],
+        [("c:/a.jpg", "c:/a.jpg", 1.0), ("c:/b.jpg", "c:/b.jpg", 1.0)],
+        [],
+        [],
+    )
+
+    signatures = db.load_source_signatures(["c:/a.jpg", "c:/missing.jpg", "c:/b.jpg", "c:/a.jpg"])
+
+    assert signatures == {"c:/a.jpg": ("hash_a", 100), "c:/b.jpg": ("hash_b", 200)}
+    db.close()
+
+
 def test_rename_paths_updates_virtual_children_by_source_prefix(tmp_path):
     db = FileDB(tmp_path / "test.db")
     db.start()

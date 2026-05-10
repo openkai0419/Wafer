@@ -932,6 +932,18 @@ class TestGetTagKeysByPrefix:
         assert set(result.keys()) == {np("C:/m/img_1.jpg"), np("C:/m/img_4.jpg")}
         assert result[np("C:/m/img_1.jpg")] == ["red"]
 
+    def test_all_scope_marks_dedupes_path_suffix(self, mark_db):
+        engine = FileSearchEngine(mark_db)
+        result = engine.get_kv_keys_by_prefix("*", "mark.")
+        assert set(result.keys()) == {
+            np("C:/m/img_0.jpg"),
+            np("C:/m/img_1.jpg"),
+            np("C:/m/img_2.jpg"),
+            np("C:/m/img_4.jpg"),
+        }
+        assert sorted(result[np("C:/m/img_0.jpg")]) == ["blue", "red"]
+        assert result[np("C:/m/img_1.jpg")] == ["red"]
+
 
 class TestExplainQueryPlan:
     def _plan_text(self, conn, sql, params=()):

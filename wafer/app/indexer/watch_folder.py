@@ -17,6 +17,7 @@ from .task import Task, TaskPriority
 DISABLE_MODIFY_EVENT = False
 _BATCH_TIMEOUT = 0.5
 _STABLE_THRESHOLD = 2.0
+_MOVE_INFER_WINDOW = 1.0
 
 
 def _stat_signature(path):
@@ -114,6 +115,7 @@ class _EventAccumulator:
         self._pending.pop(path, None)
         self._notified.discard(path)
         self._ready.discard(path)
+        self._new.discard(path)
         self._deleted.add(path)
 
     def on_moved(self, src, dst):
@@ -144,6 +146,7 @@ class _EventAccumulator:
     def drain(self):
         stable = _extract_stable(self._pending)
         stable.update(self._ready)
+        created = set(self._new)
         self._ready.clear()
         self._new.clear()
         deleted = set(self._deleted)
@@ -153,8 +156,10 @@ class _EventAccumulator:
         self._moved.clear()
         self._folder_moved.clear()
         if stable or deleted or moved or folder_moved:
-            AppLogger.debug(f"[acc] drain: stable={len(stable)}, deleted={len(deleted)}, moved={len(moved)}, folder_moved={len(folder_moved)}, still_pending={len(self._pending)}")
-        return stable, deleted, moved, folder_moved
+            AppLogger.debug(
+                f"[acc] drain: stable={len(stable)}, created={len(created)}, deleted={len(deleted)}, moved={len(moved)}, folder_moved={len(folder_moved)}, still_pending={len(self._pending)}"
+            )
+        return stable, deleted, moved, folder_moved, created
 
     def drain_all(self):
         AppLogger.debug(f"[acc] drain_all: ready={len(self._ready)}, pending={len(self._pending)}")
@@ -181,6 +186,7 @@ class FolderWatcher:
         self._observer = None
         self._folders = []
         self._ignore_paths = []
+        self._pending_deletes: dict[str, tuple[str, float]] = {}
         self._stop = threading.Event()
         self._worker = threading.Thread(target=self._loop, daemon=True)
         self._worker.start()
@@ -253,8 +259,12 @@ class FolderWatcher:
             if acc.consume_folder_dirty():
                 self._progress.send_event("folderchanged")
 
-    def _flush(self, changed, deleted, moved, folder_moved=None):
+    def _flush(self, changed, deleted, moved, folder_moved=None, created=None):
         folder_moved = folder_moved or {}
+        infer_moves = created is not None
+        created = set(created or ())
+        if infer_moves:
+            self._infer_moves_from_delete_create(changed, deleted, moved, created)
         if not changed and not deleted and not moved and not folder_moved:
             return
         AppLogger.debug(f"[flush] changed={len(changed)}, deleted={len(deleted)}, moved={len(moved)}, folder_moved={len(folder_moved)}")
@@ -265,6 +275,7 @@ class FolderWatcher:
             new_at_dst = set()
             rename_pairs = []
             for src, dst in moved.items():
+                self._pending_deletes.pop(normalize_path(src), None)
                 if self._is_in_scope(dst):
                     rename_pairs.append((src, dst))
                     if src in changed:
@@ -279,6 +290,34 @@ class FolderWatcher:
             self._exec("remove", list(deleted))
         if changed:
             self._exec("update", list(changed))
+
+    def _infer_moves_from_delete_create(self, changed: set[str], deleted: set[str], moved: dict[str, str], created: set[str]) -> None:
+        now = time.monotonic()
+        buffered = set()
+        for path in deleted:
+            if self._is_in_scope(path):
+                self._pending_deletes[normalize_path(path)] = (path, now)
+                buffered.add(path)
+        deleted.difference_update(buffered)
+
+        candidate_by_norm = {normalize_path(path): path for path in created if self._is_in_scope(path)}
+        active_deleted = {norm: original for norm, (original, timestamp) in self._pending_deletes.items() if now - timestamp <= _MOVE_INFER_WINDOW}
+        if active_deleted and candidate_by_norm:
+            inferred = self._writer.infer_moved_sources(active_deleted.keys(), candidate_by_norm.keys())
+            for old_norm, new_norm in inferred:
+                old_path = active_deleted.get(old_norm)
+                new_path = candidate_by_norm.get(new_norm)
+                if old_path is None or new_path is None:
+                    continue
+                self._pending_deletes.pop(old_norm, None)
+                changed.discard(new_path)
+                created.discard(new_path)
+                moved[old_path] = new_path
+
+        for norm, (path, timestamp) in list(self._pending_deletes.items()):
+            if now - timestamp > _MOVE_INFER_WINDOW:
+                deleted.add(path)
+                self._pending_deletes.pop(norm, None)
 
     def _is_in_scope(self, path: str) -> bool:
         return contains_path_prefix(self._folders, path) and not contains_path_prefix(self._ignore_paths, path)

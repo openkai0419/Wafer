@@ -1,4 +1,5 @@
 import py_compile
+import queue
 import time
 from unittest.mock import MagicMock, call
 
@@ -13,6 +14,25 @@ class _Recorder:
 
     def __call__(self, *args, **kwargs):
         self.calls.append((args, kwargs))
+
+
+class _FakeFsEvent:
+    def __init__(self, src_path, is_directory):
+        self.src_path = src_path
+        self.is_directory = is_directory
+
+
+def test_deleted_event_marks_folder_dirty_even_when_not_directory():
+    from wafer.app.indexer.watch_folder import _FileEventHandler
+
+    inbox = queue.Queue()
+    handler = _FileEventHandler(inbox)
+
+    handler.on_deleted(_FakeFsEvent("C:/watched/child", False))
+
+    assert inbox.get_nowait() == ("folder", "C:/watched/child")
+    assert inbox.get_nowait() == ("deleted", "C:/watched/child")
+    assert inbox.empty()
 
 
 def _make_watcher():

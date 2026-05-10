@@ -36,13 +36,13 @@ class OverlayBadge:
     tooltip: str = ""
 
     @classmethod
-    def from_mark(cls, mark_key: str, color: QtGui.QColor | str, *, priority: int = 0, tooltip: str = "") -> OverlayBadge:
-        from ...core.qt.mark_engine import mark_draw
+    def from_shape(cls, shape_key: str, color: QtGui.QColor | str, *, priority: int = 0, tooltip: str = "") -> OverlayBadge:
+        from ...core.qt.badge_engine import draw_badge_shape
 
         qcolor = QtGui.QColor(color)
 
         def _paint(painter: QtGui.QPainter, rect: QtCore.QRectF) -> None:
-            mark_draw(mark_key, painter, rect, qcolor)
+            draw_badge_shape(shape_key, painter, rect, qcolor)
 
         return cls(paint=_paint, priority=priority, tooltip=str(tooltip or ""))
 

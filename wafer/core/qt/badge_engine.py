@@ -6,44 +6,44 @@ from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QColor, QPainter, QPen, QPixmap
 
 
-MarkDrawFn = Callable[[QPainter, QRectF, QColor], None]
+BadgeShapeDrawFn = Callable[[QPainter, QRectF, QColor], None]
 
-_REGISTRY: dict[str, MarkDrawFn] = {}
+_REGISTRY: dict[str, BadgeShapeDrawFn] = {}
 _DEFAULT_KEY: str | None = None
 
 
-def register_mark(key: str, draw: MarkDrawFn, *, default: bool = False) -> str:
+def register_badge_shape(key: str, draw: BadgeShapeDrawFn, *, default: bool = False) -> str:
     global _DEFAULT_KEY
     key = str(key or "").strip()
     if not key:
-        raise ValueError("mark key must not be empty")
+        raise ValueError("badge shape key must not be empty")
     if not callable(draw):
-        raise TypeError("mark draw function must be callable")
+        raise TypeError("badge shape draw function must be callable")
     _REGISTRY[key] = draw
     if default or _DEFAULT_KEY is None:
         _DEFAULT_KEY = key
     return key
 
 
-def default_mark_key() -> str:
+def default_badge_shape_key() -> str:
     return _DEFAULT_KEY or ""
 
 
-def mark_keys() -> list[str]:
+def badge_shape_keys() -> list[str]:
     return list(_REGISTRY.keys())
 
 
-def has_mark(key: str) -> bool:
+def has_badge_shape(key: str) -> bool:
     return str(key) in _REGISTRY
 
 
-def normalize_mark_key(key: str | None) -> str:
+def normalize_badge_shape_key(key: str | None) -> str:
     text = str(key or "").strip()
-    return text if text in _REGISTRY else default_mark_key()
+    return text if text in _REGISTRY else default_badge_shape_key()
 
 
-def mark_draw(key: str, painter: QPainter, rect: QRectF, color: QColor) -> None:
-    fn = _REGISTRY.get(normalize_mark_key(key))
+def draw_badge_shape(key: str, painter: QPainter, rect: QRectF, color: QColor) -> None:
+    fn = _REGISTRY.get(normalize_badge_shape_key(key))
     if fn is None:
         return
     painter.save()
@@ -52,12 +52,12 @@ def mark_draw(key: str, painter: QPainter, rect: QRectF, color: QColor) -> None:
     painter.restore()
 
 
-def mark_pixmap(key: str, size: int, color: QColor | str) -> QPixmap:
+def badge_shape_pixmap(key: str, size: int, color: QColor | str) -> QPixmap:
     size = max(1, int(size))
     pm = QPixmap(size, size)
     pm.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pm)
-    mark_draw(key, painter, QRectF(0, 0, size, size), QColor(color))
+    draw_badge_shape(key, painter, QRectF(0, 0, size, size), QColor(color))
     painter.end()
     return pm
 

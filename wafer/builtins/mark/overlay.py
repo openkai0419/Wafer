@@ -23,8 +23,8 @@ class MarkBadgeOverlayPlugin(BaseBadgeOverlayPlugin):
         mark = registry.get(value)
         if mark is None:
             return None
-        return OverlayBadge.from_mark(
-            mark.mark_key,
+        return OverlayBadge.from_shape(
+            mark.shape_key,
             mark.color,
             priority=self.PRIORITY,
             tooltip=mark.name,

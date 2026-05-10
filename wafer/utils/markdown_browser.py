@@ -4,6 +4,7 @@ import markdown as _md
 from PySide6 import QtWidgets, QtGui, QtCore
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
+import shiboken6
 from ..core.color.theme import ThemeManager
 from .paths import get_resource_path
 from .logs import AppLogger
@@ -100,8 +101,7 @@ class MarkdownBrowser(QtWidgets.QWidget):
             AppLogger.warning(f"Failed to load markdown: {path}", exc=e)
             self._source_md = ""
             self._rendered_html = "(Failed to load file)"
-            dark = ThemeManager.instance().is_dark
-            self._view.setHtml(_build_full_html("<p>(Failed to load file)</p>", dark))
+            self._set_html("<p>(Failed to load file)</p>")
             return False
 
     def set_markdown(self, text: str):
@@ -109,8 +109,7 @@ class MarkdownBrowser(QtWidgets.QWidget):
         preprocessed = _preprocess_html_blocks(text)
         body = _md.markdown(preprocessed, extensions=_MD_EXTENSIONS, tab_length=_MD_TAB_LENGTH)
         self._rendered_html = body
-        dark = ThemeManager.instance().is_dark
-        self._view.setHtml(_build_full_html(body, dark), self._base_url)
+        self._set_html(body)
 
     def apply_loaded(self, text: str, body_html: str, base_url: QtCore.QUrl, allowed_dir: Path):
         self._source_md = text
@@ -118,8 +117,7 @@ class MarkdownBrowser(QtWidgets.QWidget):
         self._base_url = base_url
         if self._allowed_dir is None:
             self._allowed_dir = allowed_dir
-        dark = ThemeManager.instance().is_dark
-        self._view.setHtml(_build_full_html(body_html, dark), self._base_url)
+        self._set_html(body_html)
 
     def source_markdown(self) -> str:
         return self._source_md
@@ -138,6 +136,17 @@ class MarkdownBrowser(QtWidgets.QWidget):
                 tm.on_theme_changed._callbacks.remove(self._on_theme_changed)
             except ValueError:
                 pass
+
+    def _can_update_html(self) -> bool:
+        view = getattr(self, "_view", None)
+        page = getattr(self, "_page", None)
+        return shiboken6.isValid(self) and view is not None and shiboken6.isValid(view) and page is not None and shiboken6.isValid(page)
+
+    def _set_html(self, body_html: str):
+        if not self._can_update_html():
+            return
+        dark = ThemeManager.instance().is_dark
+        self._view.setHtml(_build_full_html(body_html, dark), self._base_url)
 
     def cleanup(self):
         self._disconnect_theme()

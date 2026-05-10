@@ -7,7 +7,7 @@ from pathlib import Path
 from collections.abc import Sequence
 
 from .db_utils import apply_read_pragmas, apply_write_pragmas, connect_with_retry, escape_like
-from .key_value import SCOPE_ALL, SCOPE_META_INFO, SCOPE_TAG, conversion_spec, normalize_data_scope, other_data_scope, scope_spec
+from .key_value import SCOPE_ALL, SCOPE_META_INFO, SCOPE_TAG, conversion_spec, normalize_data_scope, scope_spec
 from ...constants import VIRTUAL_PATH_SEPARATOR
 from ...utils.virtual_paths import display_name
 from ...utils.profiling import profiler
@@ -1076,10 +1076,7 @@ class FileDB:
         with self._write_lock, self.conn:
             cur = self.conn.cursor()
             try:
-                affected_rows = [
-                    (str(path), str(target_id) if target_id else None)
-                    for path, target_id in cur.execute(conversion.affected_rows_sql, (key,)).fetchall()
-                ]
+                affected_rows = [(str(path), str(target_id) if target_id else None) for path, target_id in cur.execute(conversion.affected_rows_sql, (key,)).fetchall()]
                 cur.execute(conversion.insert_sql, (key,))
                 upserted = cur.execute("SELECT changes()").fetchone()[0]
                 cur.execute(conversion.delete_sql, (key,))

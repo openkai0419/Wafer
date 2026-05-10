@@ -92,11 +92,11 @@ def test_prompt_new_mark_uses_selected_scope(monkeypatch):
             reg.remove(mark_id)
 
 
-def test_prompt_pick_shape_updates_mark_key(qtbot, monkeypatch):
+def test_prompt_pick_shape_updates_shape_key(qtbot, monkeypatch):
     parent = QtWidgets.QWidget()
     qtbot.addWidget(parent)
     reg = MarkRegistry.instance()
-    mark_id = reg.add("Shape Dialog Mark", "#123456", mark_key="circle")
+    mark_id = reg.add("Shape Dialog Mark", "#123456", shape_key="circle")
 
     def fake_exec(self):
         combo = self.findChildren(QtWidgets.QComboBox)[0]
@@ -106,6 +106,6 @@ def test_prompt_pick_shape_updates_mark_key(qtbot, monkeypatch):
     monkeypatch.setattr(QtWidgets.QDialog, "exec", fake_exec)
     try:
         assert dialogs.prompt_pick_shape(parent, mark_id) is True
-        assert reg.mark_key_of(mark_id) == "heart"
+        assert reg.shape_key_of(mark_id) == "heart"
     finally:
         reg.remove(mark_id)

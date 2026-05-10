@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from functools import lru_cache
+from functools import cache
 import math
 
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QTransform
 
-from ...core.qt.mark_engine import register_mark
+from ...core.qt.badge_engine import register_badge_shape
 
 
-DEFAULT_MARK_KEY = "circle"
+DEFAULT_SHAPE_KEY = "circle"
 _DEFAULT_MARK_SCALE = 0.96
 
 
@@ -47,7 +47,7 @@ def _fit_path(path: QPainterPath, rect: QRectF, *, scale: float = _DEFAULT_MARK_
     return transform.map(path)
 
 
-@lru_cache(maxsize=None)
+@cache
 def _heart_path() -> QPainterPath:
     path = QPainterPath()
     samples = 180
@@ -64,7 +64,7 @@ def _heart_path() -> QPainterPath:
     return path
 
 
-@lru_cache(maxsize=None)
+@cache
 def _star_path() -> QPainterPath:
     path = QPainterPath()
     for index in range(10):
@@ -79,7 +79,7 @@ def _star_path() -> QPainterPath:
     return path
 
 
-@lru_cache(maxsize=None)
+@cache
 def _regular_polygon_path(sides: int, rotation: float = -math.pi / 2) -> QPainterPath:
     path = QPainterPath()
     for index in range(sides):
@@ -93,7 +93,7 @@ def _regular_polygon_path(sides: int, rotation: float = -math.pi / 2) -> QPainte
     return path
 
 
-@lru_cache(maxsize=None)
+@cache
 def _plus_path() -> QPainterPath:
     path = QPainterPath()
     bar = 0.22
@@ -104,9 +104,8 @@ def _plus_path() -> QPainterPath:
     return path.united(vertical)
 
 
-@lru_cache(maxsize=None)
+@cache
 def _cross_path() -> QPainterPath:
-    path = QPainterPath()
     arm = 1.0
     bar = 0.24
     diag1 = QPainterPath()
@@ -181,18 +180,18 @@ def _draw_cross_filled(p: QPainter, r: QRectF, color: QColor):
     p.drawPath(_fit_path(_cross_path(), r))
 
 
-def register_standard_marks() -> None:
-    register_mark("circle", _draw_circle, default=True)
-    register_mark("square", _draw_square)
-    register_mark("heart", _draw_heart)
-    register_mark("star", _draw_star)
-    register_mark("triangle_up", _draw_triangle_up)
-    register_mark("triangle_down", _draw_triangle_down)
-    register_mark("diamond", _draw_diamond)
-    register_mark("hexagon", _draw_hexagon)
-    register_mark("pentagon", _draw_pentagon)
-    register_mark("plus_filled", _draw_plus_filled)
-    register_mark("cross_filled", _draw_cross_filled)
+def register_standard_shapes() -> None:
+    register_badge_shape("circle", _draw_circle, default=True)
+    register_badge_shape("square", _draw_square)
+    register_badge_shape("heart", _draw_heart)
+    register_badge_shape("star", _draw_star)
+    register_badge_shape("triangle_up", _draw_triangle_up)
+    register_badge_shape("triangle_down", _draw_triangle_down)
+    register_badge_shape("diamond", _draw_diamond)
+    register_badge_shape("hexagon", _draw_hexagon)
+    register_badge_shape("pentagon", _draw_pentagon)
+    register_badge_shape("plus_filled", _draw_plus_filled)
+    register_badge_shape("cross_filled", _draw_cross_filled)
 
 
-register_standard_marks()
+register_standard_shapes()

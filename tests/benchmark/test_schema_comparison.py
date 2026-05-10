@@ -670,7 +670,8 @@ class TestPluginResolution:
             assert cls.NAME
 
     def test_builtin_filters_attributes(self):
-        from wafer.builtins.filters import TextFilter, DirectoryFilter, MarkFilter
+        from wafer.builtins.filters import TextFilter, DirectoryFilter
+        from wafer.builtins.mark.filter import MarkFilter
 
         filters = [TextFilter, DirectoryFilter, MarkFilter]
         print("\n=== Builtin Filter Plugins ===")
@@ -689,7 +690,8 @@ class TestPluginResolution:
 
     def test_filter_plugins_call_build_path_query(self):
         """Smoke: each filter plugin's build_path_query returns (sql, params) without raising."""
-        from wafer.builtins.filters import TextFilter, DirectoryFilter, MarkFilter
+        from wafer.builtins.filters import TextFilter, DirectoryFilter
+        from wafer.builtins.mark.filter import MarkFilter
 
         cases = [
             (TextFilter, {"keywords": "img", "keys": ["name"]}),

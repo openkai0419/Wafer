@@ -7,7 +7,7 @@ from PIL import Image
 
 from wafer.utils.paths import normalize_path
 from wafer.core.db.query import FileSearchEngine, SearchQuery
-from wafer.builtins.filters import MarkFilter
+from wafer.builtins.mark.filter import MarkFilter
 from wafer.plugin.collector.handler import collector_resolver
 from wafer.app.indexer.db_writer import DatabaseWriter
 from wafer.app.indexer.scanner import DirectoryScanner

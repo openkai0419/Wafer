@@ -1,6 +1,7 @@
 import pytest
+import shiboken6
 from pathlib import Path
-from PySide6 import QtCore
+from PySide6 import QtCore, QtWidgets
 from PySide6.QtWebEngineCore import QWebEngineSettings
 from wafer.utils.markdown_browser import (
     MarkdownBrowser,
@@ -197,3 +198,20 @@ class TestApplyLoaded:
         base_url = QtCore.QUrl.fromLocalFile(str(tmp_path) + "/")
         browser.apply_loaded("# Test", body, base_url, tmp_path)
         assert browser._allowed_dir == first_dir
+
+    def test_apply_loaded_skips_deleted_view(self, qtbot, tmp_path):
+        browser = MarkdownBrowser()
+        qtbot.addWidget(browser)
+        body = render_to_html("# Safe")
+        base_url = QtCore.QUrl.fromLocalFile(str(tmp_path) + "/")
+
+        browser._view.deleteLater()
+        QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
+        QtWidgets.QApplication.instance().processEvents(QtCore.QEventLoop.AllEvents, 50)
+
+        assert not shiboken6.isValid(browser._view)
+
+        browser.apply_loaded("# Safe", body, base_url, tmp_path)
+
+        assert browser.source_markdown() == "# Safe"
+        assert browser.rendered_html() == body

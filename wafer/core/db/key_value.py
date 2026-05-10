@@ -60,13 +60,7 @@ _CONVERSION_SPECS = {
     SCOPE_TAG: KeyValueConversionSpec(
         from_scope=SCOPE_META_INFO,
         to_scope=SCOPE_TAG,
-        affected_rows_sql=(
-            "SELECT mi.path AS path, s.file_hash AS target_id "
-            "FROM meta_info AS mi "
-            "JOIN files AS i ON i.path = mi.path "
-            "LEFT JOIN sources AS s ON s.source = i.source "
-            "WHERE mi.key = ?"
-        ),
+        affected_rows_sql=("SELECT mi.path AS path, s.file_hash AS target_id FROM meta_info AS mi JOIN files AS i ON i.path = mi.path LEFT JOIN sources AS s ON s.source = i.source WHERE mi.key = ?"),
         insert_sql=(
             "INSERT INTO tags (file_hash, key, value, value_num, locked) "
             "SELECT s.file_hash, mi.key, mi.value, mi.value_num, mi.locked "
@@ -82,13 +76,7 @@ _CONVERSION_SPECS = {
     SCOPE_META_INFO: KeyValueConversionSpec(
         from_scope=SCOPE_TAG,
         to_scope=SCOPE_META_INFO,
-        affected_rows_sql=(
-            "SELECT i.path AS path, s.file_hash AS target_id "
-            "FROM tags AS t "
-            "JOIN sources AS s ON s.file_hash = t.file_hash "
-            "JOIN files AS i ON i.source = s.source "
-            "WHERE t.key = ?"
-        ),
+        affected_rows_sql=("SELECT i.path AS path, s.file_hash AS target_id FROM tags AS t JOIN sources AS s ON s.file_hash = t.file_hash JOIN files AS i ON i.source = s.source WHERE t.key = ?"),
         insert_sql=(
             "INSERT INTO meta_info (path, key, value, value_num, locked) "
             "SELECT i.path, t.key, t.value, t.value_num, t.locked "

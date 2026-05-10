@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import uuid
 
-from ...core.commands.bridge import ActionKit
-from ...core.commands.command.require import require
 from ...core.commands.binding.instance_registry import InstanceRegistry
 from ...core.db.dispatch import send_to_db_scope
 from ...core.db.key_value import normalize_data_scope
 from ...core.lang.manager import t
+from ...plugin import CommandMeta, CommandParam, MenuGroup, require
 from ...utils.logs import AppLogger
 from ...utils.notifier import Notifier
 from . import dialogs
@@ -163,76 +162,77 @@ def _mark_name_choices() -> list[str]:
     return [m.name for m in MarkRegistry.instance().marks()]
 
 
-class MarkCommands(ActionKit.MenuBase):
+class MarkCommands(MenuGroup):
     NAME = "File"
+    DEFAULT_ENABLED = True
     PRIORITY = 35
 
     @classmethod
     def commands(cls):
         return [
             "Mark/:Mark",
-            ActionKit.Command(
+            CommandMeta(
                 path="Mark/mark.toggle",
                 display=t("Toggle Mark"),
-                params=[ActionKit.Param(name="name", value=_mark_name_choices, description=t("Mark name"), required=True)],
+                params=[CommandParam(name="name", value=_mark_name_choices, description=t("Mark name"), required=True)],
                 func=toggle_mark,
             ),
-            ActionKit.Command(
+            CommandMeta(
                 path="Mark/mark.add",
                 display=t("Add Mark"),
-                params=[ActionKit.Param(name="name", value=_mark_name_choices, description=t("Mark name"), required=True)],
+                params=[CommandParam(name="name", value=_mark_name_choices, description=t("Mark name"), required=True)],
                 func=add_mark,
             ),
-            ActionKit.Command(
+            CommandMeta(
                 path="Mark/mark.remove",
                 display=t("Remove Mark"),
-                params=[ActionKit.Param(name="name", value=_mark_name_choices, description=t("Mark name"), required=True)],
+                params=[CommandParam(name="name", value=_mark_name_choices, description=t("Mark name"), required=True)],
                 func=remove_mark,
             ),
-            ActionKit.Command(path="Mark/mark.clear", display=t("Clear All Marks"), func=clear_marks),
+            CommandMeta(path="Mark/mark.clear", display=t("Clear All Marks"), func=clear_marks),
             "Mark/-",
-            ActionKit.Command(
+            CommandMeta(
                 path="Mark/mark.define",
                 display=t("Define New Mark..."),
                 func=define_mark,
             ),
-            ActionKit.Command(
+            CommandMeta(
                 path="Mark/mark.rename",
                 display=t("Rename Mark..."),
                 params=[
-                    ActionKit.Param(name="name", value=_mark_name_choices, description=t("Mark name"), required=True),
+                    CommandParam(name="name", value=_mark_name_choices, description=t("Mark name"), required=True),
                 ],
                 func=rename_mark,
             ),
-            ActionKit.Command(
+            CommandMeta(
                 path="Mark/mark.set_color",
                 display=t("Set Mark Color..."),
                 params=[
-                    ActionKit.Param(name="name", value=_mark_name_choices, description=t("Mark name"), required=True),
+                    CommandParam(name="name", value=_mark_name_choices, description=t("Mark name"), required=True),
                 ],
                 func=set_color,
             ),
-            ActionKit.Command(
+            CommandMeta(
                 path="Mark/mark.set_shape",
                 display=t("Set Mark Shape..."),
                 params=[
-                    ActionKit.Param(name="name", value=_mark_name_choices, description=t("Mark name"), required=True),
+                    CommandParam(name="name", value=_mark_name_choices, description=t("Mark name"), required=True),
                 ],
                 func=set_shape,
             ),
-            ActionKit.Command(
+            CommandMeta(
                 path="Mark/mark.remove_def",
                 display=t("Remove Mark Definition"),
-                params=[ActionKit.Param(name="name", value=_mark_name_choices, description=t("Mark name"), required=True)],
+                params=[CommandParam(name="name", value=_mark_name_choices, description=t("Mark name"), required=True)],
                 func=remove_mark_def,
             ),
-            ActionKit.Command(
+            CommandMeta(
                 path="Mark/mark.convert_scope",
                 display=t("Save Mark Scope and Convert"),
                 params=[
-                    ActionKit.Param(name="name", value=_mark_name_choices, description=t("Mark name"), required=True),
-                    ActionKit.Param(name="scope", value=["meta_info", "tag"], description=t("Storage scope"), required=True),
-                    ActionKit.Param(name="db_scope", value="*", description=t("Database scope")),
+                    CommandParam(name="name", value=_mark_name_choices, description=t("Mark name"), required=True),
+                    CommandParam(name="scope", value=["meta_info", "tag"], description=t("Storage scope"), required=True),
+                    CommandParam(name="db_scope", value="*", description=t("Database scope")),
                 ],
                 func=convert_mark_scope,
             ),

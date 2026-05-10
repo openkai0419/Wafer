@@ -1,7 +1,7 @@
 from PySide6 import QtCore, QtGui
 
 from wafer.builtins.mark import shapes
-from wafer.core.qt.mark_engine import default_mark_key, has_mark, mark_keys, mark_pixmap
+from wafer.core.qt.badge_engine import badge_shape_keys, badge_shape_pixmap, default_badge_shape_key, has_badge_shape
 
 
 def _alpha_bounds(image: QtGui.QImage) -> QtCore.QRect:
@@ -23,16 +23,16 @@ def _alpha_bounds(image: QtGui.QImage) -> QtCore.QRect:
 
 
 def test_builtin_mark_shapes_register_standard_keys(qtbot):
-    shapes.register_standard_marks()
-    keys = mark_keys()
+    shapes.register_standard_shapes()
+    keys = badge_shape_keys()
     for expected in ("circle", "square", "heart", "star", "triangle_up", "triangle_down", "diamond", "hexagon", "pentagon", "plus_filled", "cross_filled"):
         assert expected in keys
-        assert has_mark(expected)
-    assert default_mark_key() == shapes.DEFAULT_MARK_KEY
+        assert has_badge_shape(expected)
+    assert default_badge_shape_key() == shapes.DEFAULT_SHAPE_KEY
 
 
 def test_builtin_mark_shape_pixmap_renders(qtbot):
-    pm = mark_pixmap("heart", 32, "#ff0000")
+    pm = badge_shape_pixmap("heart", 32, "#ff0000")
     assert isinstance(pm, QtGui.QPixmap)
     assert pm.size() == QtCore.QSize(32, 32)
     image = pm.toImage()
@@ -40,7 +40,7 @@ def test_builtin_mark_shape_pixmap_renders(qtbot):
 
 
 def test_builtin_heart_shape_is_centered_in_bounds(qtbot):
-    pm = mark_pixmap("heart", 64, "#ff0000")
+    pm = badge_shape_pixmap("heart", 64, "#ff0000")
     image = pm.toImage()
     bounds = _alpha_bounds(image)
     assert not bounds.isNull()

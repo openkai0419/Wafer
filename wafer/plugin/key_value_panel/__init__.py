@@ -1,1 +1,1 @@
-from .base import BaseKeyValuePanelPlugin
+from .base import BaseKeyValuePanelPlugin as BaseKeyValuePanelPlugin

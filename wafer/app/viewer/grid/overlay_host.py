@@ -4,7 +4,7 @@ from collections.abc import Callable
 
 from PySide6 import QtCore, QtGui
 
-from ....core.qt.mark_engine import draw_overflow_badge
+from ....core.qt.badge_engine import draw_overflow_badge
 from ....core.state import StateStore
 from ....plugin.grid_overlay.base import (
     BaseBadgeOverlayPlugin,

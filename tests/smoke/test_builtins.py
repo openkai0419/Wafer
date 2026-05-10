@@ -57,7 +57,7 @@ class TestBuiltinNAMEUniqueness:
                 bucket[cls.NAME] = cls.__name__
 
     def test_valid_registry_keys(self):
-        valid_keys = {"viewer", "grid", "collector", "parser", "filter", "sort", "layout", "panel", "key_value_panel", "rename_source", "command", "imageloader"}
+        valid_keys = {"viewer", "grid", "grid_overlay", "collector", "parser", "filter", "sort", "layout", "panel", "key_value_panel", "rename_source", "command", "imageloader"}
         registry_map = _get_registry_map()
         modules = _import_builtin_modules()
         for mod in modules:
@@ -67,6 +67,7 @@ class TestBuiltinNAMEUniqueness:
 
 class TestBuiltinExpectedPlugins:
     EXPECTED_GRID: set[str] = set()
+    EXPECTED_GRID_OVERLAY = {"mark_overlay"}
     EXPECTED_IMAGELOADER = {"system_thumbnail"}
     EXPECTED_VIEWER = {"default_viewer"}
     EXPECTED_FILTER = {"text", "directory"}
@@ -87,6 +88,10 @@ class TestBuiltinExpectedPlugins:
     def test_expected_imageloader_builtins(self):
         by_key = self._collect_names_by_key()
         assert self.EXPECTED_IMAGELOADER.issubset(by_key.get("imageloader", set()))
+
+    def test_expected_grid_overlay_builtins(self):
+        by_key = self._collect_names_by_key()
+        assert self.EXPECTED_GRID_OVERLAY.issubset(by_key.get("grid_overlay", set()))
 
     def test_expected_viewer_builtins(self):
         by_key = self._collect_names_by_key()

@@ -156,7 +156,9 @@ class _EventAccumulator:
         self._moved.clear()
         self._folder_moved.clear()
         if stable or deleted or moved or folder_moved:
-            AppLogger.debug(f"[acc] drain: stable={len(stable)}, created={len(created)}, deleted={len(deleted)}, moved={len(moved)}, folder_moved={len(folder_moved)}, still_pending={len(self._pending)}")
+            AppLogger.debug(
+                f"[acc] drain: stable={len(stable)}, created={len(created)}, deleted={len(deleted)}, moved={len(moved)}, folder_moved={len(folder_moved)}, still_pending={len(self._pending)}"
+            )
         return stable, deleted, moved, folder_moved, created
 
     def drain_all(self):
@@ -299,11 +301,7 @@ class FolderWatcher:
         deleted.difference_update(buffered)
 
         candidate_by_norm = {normalize_path(path): path for path in created if self._is_in_scope(path)}
-        active_deleted = {
-            norm: original
-            for norm, (original, timestamp) in self._pending_deletes.items()
-            if now - timestamp <= _MOVE_INFER_WINDOW
-        }
+        active_deleted = {norm: original for norm, (original, timestamp) in self._pending_deletes.items() if now - timestamp <= _MOVE_INFER_WINDOW}
         if active_deleted and candidate_by_norm:
             inferred = self._writer.infer_moved_sources(active_deleted.keys(), candidate_by_norm.keys())
             for old_norm, new_norm in inferred:

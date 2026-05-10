@@ -19,10 +19,10 @@ def test_mark_overlay_requests_update_when_mark_shape_changes():
     plugin.bind_host(host)
 
     reg = MarkRegistry.instance()
-    mark_id = reg.add("Overlay Shape Mark", "#123456", mark_key="circle")
+    mark_id = reg.add("Overlay Shape Mark", "#123456", shape_key="circle")
     try:
         before = host.update_count
-        reg.set_mark_key(mark_id, "heart")
+        reg.set_shape_key(mark_id, "heart")
         assert host.update_count == before + 1
     finally:
         reg.remove(mark_id)

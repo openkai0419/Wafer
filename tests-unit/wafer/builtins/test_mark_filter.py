@@ -1,4 +1,4 @@
-from wafer.builtins.filters import MarkFilter
+from wafer.builtins.mark.filter import MarkFilter
 
 
 def _norm(p):

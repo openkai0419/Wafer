@@ -8,14 +8,14 @@ from ...core.commands.bridge import ActionKit, Menu
 from ...core.db.dispatch import send_to_db_scope
 from ...core.db.key_value import SCOPE_META_INFO, SCOPE_TAG, normalize_data_scope, other_data_scope
 from ...core.lang.manager import t
+from ...core.qt.badge_engine import badge_shape_keys, badge_shape_pixmap, normalize_badge_shape_key
 from ...core.qt.icon_engine import themed_icon
-from ...core.qt.mark_engine import mark_keys, mark_pixmap, normalize_mark_key
 from ...ui.widgets.color_picker import ColorPickerDialog
 from ...utils.formatting import dpix
 from ...utils.logs import AppLogger
 from ...utils.notifier import Notifier
 from .registry import MarkRegistry
-from .shapes import DEFAULT_MARK_KEY
+from .shapes import DEFAULT_SHAPE_KEY
 
 
 def _normalize_mark_scope(scope: str) -> str:
@@ -70,23 +70,23 @@ def _prompt_new_mark_values(parent: QtWidgets.QWidget | None = None, *, scope: s
 
     name_edit.setFocus()
     if dlg.exec() != QtWidgets.QDialog.Accepted:
-        return None, selected_scope, DEFAULT_MARK_KEY
+        return None, selected_scope, DEFAULT_SHAPE_KEY
 
     name = name_edit.text().strip()
     if not name:
-        return None, selected_scope, DEFAULT_MARK_KEY
-    return name, _normalize_mark_scope(scope_combo.currentData()), DEFAULT_MARK_KEY
+        return None, selected_scope, DEFAULT_SHAPE_KEY
+    return name, _normalize_mark_scope(scope_combo.currentData()), DEFAULT_SHAPE_KEY
 
 
 def prompt_new_mark(parent: QtWidgets.QWidget | None = None, *, scope: str = SCOPE_META_INFO) -> str | None:
-    name, selected_scope, mark_key = _prompt_new_mark_values(parent, scope=scope)
+    name, selected_scope, shape_key = _prompt_new_mark_values(parent, scope=scope)
     if not name:
         return None
     color = ColorPickerDialog.get_color("#888888", parent, t("Choose mark color"), with_alpha=False, scope="mark")
     if color is None:
         return None
     reg = MarkRegistry.instance()
-    new_id = reg.add(name, color.name(), storage_scope=selected_scope, mark_key=mark_key)
+    new_id = reg.add(name, color.name(), storage_scope=selected_scope, shape_key=shape_key)
     final_name = reg.name_of(new_id)
     if final_name != name:
         Notifier.info(t("Added as '{name}' to avoid duplicate", name=final_name))
@@ -130,7 +130,7 @@ def prompt_pick_shape(parent: QtWidgets.QWidget | None, mark_id: str) -> bool:
     layout = QtWidgets.QVBoxLayout(dlg)
     layout.setContentsMargins(dpix(12), dpix(12), dpix(12), dpix(12))
     combo = QtWidgets.QComboBox(dlg)
-    _populate_mark_keys(combo, mark.mark_key, color=mark.color)
+    _populate_shape_keys(combo, mark.shape_key, color=mark.color)
     layout.addWidget(combo)
     buttons = QtWidgets.QDialogButtonBox(
         QtWidgets.QDialogButtonBox.StandardButton.Ok | QtWidgets.QDialogButtonBox.StandardButton.Cancel,
@@ -141,20 +141,20 @@ def prompt_pick_shape(parent: QtWidgets.QWidget | None, mark_id: str) -> bool:
     layout.addWidget(buttons)
     if dlg.exec() != QtWidgets.QDialog.Accepted:
         return False
-    new_key = normalize_mark_key(combo.currentData() or combo.currentText())
-    if new_key == mark.mark_key:
+    new_key = normalize_badge_shape_key(combo.currentData() or combo.currentText())
+    if new_key == mark.shape_key:
         return False
-    reg.set_mark_key(mark_id, new_key)
+    reg.set_shape_key(mark_id, new_key)
     return True
 
 
-def _populate_mark_keys(combo: QtWidgets.QComboBox, current: str, *, color: str = "#888888") -> None:
+def _populate_shape_keys(combo: QtWidgets.QComboBox, current: str, *, color: str = "#888888") -> None:
     icon_size = dpix(16)
     qcolor = QtGui.QColor(color or "#888888")
     combo.clear()
-    for key in mark_keys():
-        combo.addItem(QtGui.QIcon(mark_pixmap(key, icon_size, qcolor)), key, userData=key)
-    idx = combo.findData(normalize_mark_key(current))
+    for key in badge_shape_keys():
+        combo.addItem(QtGui.QIcon(badge_shape_pixmap(key, icon_size, qcolor)), key, userData=key)
+    idx = combo.findData(normalize_badge_shape_key(current))
     if idx >= 0:
         combo.setCurrentIndex(idx)
 

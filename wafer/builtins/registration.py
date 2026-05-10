@@ -27,7 +27,7 @@ def _discover_builtins(module, registry_map) -> list[tuple[str, type]]:
 
 def _import_builtin_modules():
     from . import log_panel, filters, imageloader, layouts, rename_sources, sorts, viewer
-    from .mark import shapes as _mark_shapes, registry as _mark_registry, panel as _mark_panel, widget as _mark_widget, overlay as _mark_overlay, commands as _mark_commands
+    from .mark import shapes as _mark_shapes, registry as _mark_registry, panel as _mark_panel, widget as _mark_widget, overlay as _mark_overlay, filter as _mark_filter, commands as _mark_commands
     from .batch_renamer import (
         engine as _br_engine,
         overlay as _br_overlay,
@@ -73,6 +73,7 @@ def _import_builtin_modules():
         _mark_panel,
         _mark_widget,
         _mark_overlay,
+        _mark_filter,
         _br_engine,
         _br_overlay,
         _br_popup,

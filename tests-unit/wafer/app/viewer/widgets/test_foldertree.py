@@ -3,7 +3,7 @@ import shutil
 import tempfile
 import threading
 import time
-from PySide6 import QtCore
+from PySide6 import QtCore, QtWidgets
 from wafer.app.viewer.widgets import foldertree as foldertree_module
 from wafer.app.viewer.widgets.foldertree import (
     LazyFolderTreeView,
@@ -370,6 +370,197 @@ def test_reload_tree_preserves_expansion(qtbot):
 
         expanded_after, _ = tree.get_state()
         assert sorted(expanded_before) == sorted(expanded_after)
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_structure_current_true_when_realized_tree_matches(qtbot):
+    tmpdir = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(tmpdir, "A"), exist_ok=True)
+        os.makedirs(os.path.join(tmpdir, "B"), exist_ok=True)
+        tree = LazyFolderTreeView(roots=[tmpdir], excluded=[])
+        qtbot.addWidget(tree)
+        tree.model_._build_roots([tmpdir])
+        tree.expand_path(normalize_path(tmpdir))
+
+        assert tree.is_structure_current([tmpdir], []) is True
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_structure_current_detects_loaded_child_rename_and_order_change(qtbot):
+    tmpdir = tempfile.mkdtemp()
+    try:
+        original_a = os.path.join(tmpdir, "A")
+        original_b = os.path.join(tmpdir, "B10")
+        os.makedirs(original_a, exist_ok=True)
+        os.makedirs(original_b, exist_ok=True)
+        tree = LazyFolderTreeView(roots=[tmpdir], excluded=[])
+        qtbot.addWidget(tree)
+        tree.model_._build_roots([tmpdir])
+        tree.expand_path(normalize_path(tmpdir))
+
+        renamed_b = os.path.join(tmpdir, "B01")
+        os.rename(original_b, renamed_b)
+
+        assert tree.is_structure_current([tmpdir], []) is False
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_structure_current_skips_placeholder_only_descendants(qtbot):
+    tmpdir = tempfile.mkdtemp()
+    try:
+        parent = os.path.join(tmpdir, "A")
+        os.makedirs(os.path.join(parent, "child1"), exist_ok=True)
+        tree = LazyFolderTreeView(roots=[tmpdir], excluded=[])
+        qtbot.addWidget(tree)
+        tree.model_._build_roots([tmpdir])
+        tree.expand_path(normalize_path(tmpdir))
+
+        os.makedirs(os.path.join(parent, "child2"), exist_ok=True)
+
+        assert tree.is_structure_current([tmpdir], []) is True
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_structure_current_detects_excluded_change(qtbot):
+    tmpdir = tempfile.mkdtemp()
+    try:
+        excluded = normalize_path(os.path.join(tmpdir, "A"))
+        os.makedirs(excluded, exist_ok=True)
+        tree = LazyFolderTreeView(roots=[tmpdir], excluded=[])
+        qtbot.addWidget(tree)
+        tree.model_._build_roots([tmpdir])
+
+        assert tree.is_structure_current([tmpdir], [excluded]) is False
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_structure_current_uses_lightweight_scan(qtbot, monkeypatch):
+    tmpdir = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(tmpdir, "A", "child1"), exist_ok=True)
+        os.makedirs(os.path.join(tmpdir, "B"), exist_ok=True)
+        tree = LazyFolderTreeView(roots=[tmpdir], excluded=[])
+        qtbot.addWidget(tree)
+        tree.model_._build_roots([tmpdir])
+        tree.expand_path(normalize_path(tmpdir))
+
+        monkeypatch.setattr(foldertree_module, "_has_subfolders_bg", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("_has_subfolders_bg should not be used by is_structure_current")))
+
+        assert tree.is_structure_current([tmpdir], []) is True
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_deferred_reload_runs_after_editing_ends(qtbot, monkeypatch):
+    tmpdir = tempfile.mkdtemp()
+    try:
+        tree = LazyFolderTreeView(roots=[tmpdir], excluded=[])
+        qtbot.addWidget(tree)
+        editing = {"value": True}
+        calls = []
+        monkeypatch.setattr(tree, "is_editing", lambda: editing["value"])
+
+        assert tree.defer_reload_if_editing(lambda: calls.append("reload")) is True
+        assert tree.has_pending_reload() is True
+
+        editing["value"] = False
+        tree._schedule_pending_reload()
+
+        qtbot.waitUntil(lambda: calls == ["reload"], timeout=3000)
+        assert tree.has_pending_reload() is False
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_deferred_reload_prefers_strong_request(qtbot, monkeypatch):
+    tmpdir = tempfile.mkdtemp()
+    try:
+        tree = LazyFolderTreeView(roots=[tmpdir], excluded=[])
+        qtbot.addWidget(tree)
+        editing = {"value": True}
+        calls = []
+        monkeypatch.setattr(tree, "is_editing", lambda: editing["value"])
+
+        assert tree.defer_reload_if_editing(lambda: calls.append("weak")) is True
+        assert tree.defer_reload_if_editing(lambda: calls.append("strong"), strong=True) is True
+        assert tree.has_pending_reload() is True
+
+        editing["value"] = False
+        tree._schedule_pending_reload()
+
+        qtbot.waitUntil(lambda: calls == ["strong"], timeout=3000)
+        assert tree.has_pending_reload() is False
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_deferred_reload_coalesces_multiple_weak_requests(qtbot, monkeypatch):
+    tmpdir = tempfile.mkdtemp()
+    try:
+        tree = LazyFolderTreeView(roots=[tmpdir], excluded=[])
+        qtbot.addWidget(tree)
+        editing = {"value": True}
+        calls = []
+        monkeypatch.setattr(tree, "is_editing", lambda: editing["value"])
+
+        assert tree.defer_reload_if_editing(lambda: calls.append("first")) is True
+        assert tree.defer_reload_if_editing(lambda: calls.append("second")) is True
+        assert tree.has_pending_reload() is True
+
+        editing["value"] = False
+        tree._schedule_pending_reload()
+
+        qtbot.waitUntil(lambda: calls == ["second"], timeout=3000)
+        assert tree.has_pending_reload() is False
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_is_editing_detects_live_inline_editor_when_view_state_is_not_editing(qtbot, monkeypatch):
+    tmpdir = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(tmpdir, "A"), exist_ok=True)
+        tree = LazyFolderTreeView(roots=[tmpdir], excluded=[])
+        qtbot.addWidget(tree)
+        tree.show()
+        tree.model_._build_roots([tmpdir])
+        tree.expand_path(normalize_path(tmpdir))
+        index = tree.model_.find_index_by_path(normalize_path(os.path.join(tmpdir, "A")))
+
+        tree.openPersistentEditor(index)
+        qtbot.waitUntil(lambda: tree.findChild(QtWidgets.QLineEdit) is not None, timeout=3000)
+        editor = tree.findChild(QtWidgets.QLineEdit)
+        editor.setFocus()
+        qtbot.waitUntil(lambda: editor.hasFocus(), timeout=3000)
+
+        monkeypatch.setattr(tree, "state", lambda: QtWidgets.QAbstractItemView.NoState)
+
+        assert tree.is_editing() is True
+        assert tree.defer_reload_if_editing(lambda: None) is True
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_reload_tree_defers_while_editing(qtbot, monkeypatch):
+    tmpdir = tempfile.mkdtemp()
+    try:
+        tree = LazyFolderTreeView(roots=[tmpdir], excluded=[])
+        qtbot.addWidget(tree)
+        editing = {"value": True}
+        monkeypatch.setattr(tree, "is_editing", lambda: editing["value"])
+
+        tree.reload_tree()
+
+        assert tree.has_pending_reload() is True
+        editing["value"] = False
+        tree._schedule_pending_reload()
+        qtbot.waitUntil(lambda: tree.has_pending_reload() is False, timeout=3000)
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 

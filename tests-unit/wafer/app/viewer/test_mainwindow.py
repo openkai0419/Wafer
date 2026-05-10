@@ -1,5 +1,5 @@
 import py_compile
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import ANY, MagicMock, call, patch
 
 
 def test_compile():
@@ -133,6 +133,8 @@ class TestReloadFolderList:
             win.setting_db.get_all_parent_folders.return_value = ["/root"]
             win.setting_db.get_all_ignore_folders.return_value = ["/ignored"]
             win.folder_view = MagicMock()
+            win.folder_view.is_structure_current.return_value = False
+            win.folder_view.defer_reload_if_editing.return_value = False
             win.folder_view.capture_scroll_state.return_value = {"value": 37, "maximum": 120}
             win.folder_view.get_state.return_value = (["/root"], ["/root/A"])
             win._dismiss_folder_callout = MagicMock()
@@ -141,9 +143,11 @@ class TestReloadFolderList:
     def test_restore_scroll_after_rebuild_without_selection_scroll(self):
         win, MainWindow = self._make_win()
 
-        MainWindow.reload_folderlist.__wrapped__(win)
+        MainWindow._reload_folderlist_now(win)
 
         assert win.folder_view.method_calls == [
+            call.is_structure_current(["/root"], ["/ignored"]),
+            call.defer_reload_if_editing(ANY, strong=True),
             call.capture_scroll_state(),
             call.get_state(),
             call.set_folders(["/root"], ["/ignored"]),
@@ -151,6 +155,29 @@ class TestReloadFolderList:
             call.restore_scroll_state({"value": 37, "maximum": 120}),
         ]
         win._dismiss_folder_callout.assert_called_once()
+
+    def test_skip_rebuild_when_structure_is_current(self):
+        win, MainWindow = self._make_win()
+        win.folder_view.is_structure_current.return_value = True
+
+        MainWindow._reload_folderlist_now(win)
+
+        win.folder_view.is_structure_current.assert_called_once_with(["/root"], ["/ignored"])
+        win.folder_view.capture_scroll_state.assert_not_called()
+        win.folder_view.set_folders.assert_not_called()
+        win._dismiss_folder_callout.assert_called_once()
+
+    def test_defer_rebuild_while_editing(self):
+        win, MainWindow = self._make_win()
+        win.folder_view.defer_reload_if_editing.return_value = True
+
+        MainWindow._reload_folderlist_now(win)
+
+        win.folder_view.is_structure_current.assert_called_once_with(["/root"], ["/ignored"])
+        win.folder_view.defer_reload_if_editing.assert_called_once_with(ANY, strong=True)
+        win.folder_view.capture_scroll_state.assert_not_called()
+        win.folder_view.set_folders.assert_not_called()
+        win._dismiss_folder_callout.assert_not_called()
 
 
 class TestToolbarPanel:

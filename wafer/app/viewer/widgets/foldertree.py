@@ -18,6 +18,11 @@ from ....core.platform.paste import execute_paste_plans_with_ui, drop_files_with
 
 
 def _scan_children(path, excluded):
+    child_paths = _scan_child_paths(path, excluded)
+    return [(child_path, _has_subfolders_bg(child_path, excluded)) for child_path in child_paths]
+
+
+def _scan_child_paths(path, excluded):
     children = []
     try:
         for entry in natsorted(os.scandir(path), key=lambda e: e.name.lower()):
@@ -26,11 +31,10 @@ def _scan_children(path, excluded):
             full = normalize_path(entry.path)
             if full in excluded:
                 continue
-            has_sub = _has_subfolders_bg(full, excluded)
-            children.append((full, has_sub))
+            children.append(full)
     except OSError as e:
         AppLogger.debug(f"_scan_children failed for {path}: {e}")
-    return children
+    return tuple(children)
 
 
 def _collect_segments_for_paths(paths, roots):
@@ -74,11 +78,23 @@ def _has_subfolders_bg(path, excluded):
         return False
 
 
+def _folder_sort_key(path):
+    label = os.path.basename(path) or path
+    return (label.casefold(), path.casefold())
+
+
 FOLDER_ICON = QtGui.QIcon.fromTheme("folder")
 USER_ROLE_PATH = QtCore.Qt.UserRole
 EXPAND_RECURSIVE_BATCH_SIZE = 64
 EXPAND_RECURSIVE_QUEUE_LIMIT = 512
 EXPAND_RECURSIVE_DRAIN_MS = 6.0
+INLINE_EDITOR_TYPES = (
+    QtWidgets.QLineEdit,
+    QtWidgets.QPlainTextEdit,
+    QtWidgets.QTextEdit,
+    QtWidgets.QComboBox,
+    QtWidgets.QAbstractSpinBox,
+)
 
 
 class RecursiveExpandJob:
@@ -571,6 +587,9 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         self._programmatic_expand = 0
         self._recursive_expand_jobs = {}
         self._scroll_restore_serial = 0
+        self._pending_reload_local_callback = None
+        self._pending_reload_strong_callback = None
+        self._pending_reload_scheduled = False
         self.expanded.connect(self.on_expanded)
         self.clicked.connect(self._on_item_clicked)
         UI.register_instance("FolderTree", self)
@@ -636,10 +655,131 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         excluded = set(normalize_path(e) for e in excluded or [])
         self._cancel_recursive_expand_jobs()
         self.model_.clear()
+        self.model_.clear_cache()
         self.model_.roots = roots
         self.model_.excluded = excluded
         self.model_.setHorizontalHeaderLabels(["Folders"])
         self.model_._build_roots(roots)
+
+    def _iter_inline_editors(self):
+        seen = set()
+        for editor_type in INLINE_EDITOR_TYPES:
+            for editor in self.findChildren(editor_type):
+                editor_id = id(editor)
+                if editor_id in seen:
+                    continue
+                seen.add(editor_id)
+                yield editor
+
+    def _has_live_inline_editor(self):
+        app = QtWidgets.QApplication.instance()
+        focus = app.focusWidget() if app is not None else None
+        if isinstance(focus, INLINE_EDITOR_TYPES) and self.isAncestorOf(focus):
+            return True
+        for editor in self._iter_inline_editors():
+            try:
+                if editor.isVisible() and self.isAncestorOf(editor):
+                    return True
+            except RuntimeError:
+                continue
+        return False
+
+    def is_editing(self):
+        try:
+            return self.state() == QtWidgets.QAbstractItemView.EditingState or self._has_live_inline_editor()
+        except RuntimeError:
+            return False
+
+    def defer_reload_if_editing(self, callback, *, strong=False):
+        if not callable(callback) or not self.is_editing():
+            return False
+        if strong:
+            self._pending_reload_strong_callback = callback
+        else:
+            self._pending_reload_local_callback = callback
+        return True
+
+    def has_pending_reload(self):
+        return self._pending_reload_local_callback is not None or self._pending_reload_strong_callback is not None
+
+    def _schedule_pending_reload(self):
+        if not self.has_pending_reload() or self._pending_reload_scheduled:
+            return
+        self._pending_reload_scheduled = True
+        QtCore.QTimer.singleShot(0, self._flush_pending_reload)
+
+    def _flush_pending_reload(self):
+        self._pending_reload_scheduled = False
+        if not self.has_pending_reload():
+            return
+        if self.is_editing():
+            self._schedule_pending_reload()
+            return
+        callback = self._pending_reload_strong_callback or self._pending_reload_local_callback
+        self._pending_reload_local_callback = None
+        self._pending_reload_strong_callback = None
+        if callback is not None:
+            callback()
+
+    def _sorted_root_paths(self, roots, excluded):
+        visible = []
+        for root in roots:
+            root = normalize_path(root)
+            if root in excluded:
+                continue
+            visible.append(root)
+        return tuple(sorted(visible, key=_folder_sort_key))
+
+    def _child_paths_state(self, item):
+        if item.rowCount() == 1:
+            placeholder = item.child(0)
+            if placeholder is not None and not placeholder.data(USER_ROLE_PATH):
+                return None
+        child_paths = []
+        for i in range(item.rowCount()):
+            child = item.child(i)
+            child_path = child.data(USER_ROLE_PATH) if child is not None else None
+            if child_path:
+                child_paths.append(normalize_path(child_path))
+        return tuple(child_paths)
+
+    def _iter_structure_items(self):
+        roots = [item for item in iter_root_items(self.model_) if self.model_._is_valid_item(item)]
+        stack = list(reversed(roots))
+        while stack:
+            item = stack.pop()
+            path = item.data(USER_ROLE_PATH)
+            if not path:
+                continue
+            yield item
+            child_state = self._child_paths_state(item)
+            if child_state is None:
+                continue
+            children = []
+            for i in range(item.rowCount()):
+                child = item.child(i)
+                if child is not None and child.data(USER_ROLE_PATH):
+                    children.append(child)
+            stack.extend(reversed(children))
+
+    def is_structure_current(self, roots, excluded=None):
+        normalized_roots = [normalize_path(root) for root in roots]
+        normalized_excluded = set(normalize_path(path) for path in excluded or [])
+        current_roots = tuple(normalize_path(item.data(USER_ROLE_PATH)) for item in iter_root_items(self.model_) if item.data(USER_ROLE_PATH))
+        if current_roots != self._sorted_root_paths(normalized_roots, normalized_excluded):
+            return False
+        current_excluded = tuple(sorted(normalize_path(path) for path in self.model_.excluded))
+        if current_excluded != tuple(sorted(normalized_excluded)):
+            return False
+        for item in self._iter_structure_items():
+            path = normalize_path(item.data(USER_ROLE_PATH))
+            child_state = self._child_paths_state(item)
+            if child_state is None:
+                continue
+            fresh_child_paths = _scan_child_paths(path, normalized_excluded)
+            if child_state != fresh_child_paths:
+                return False
+        return True
 
     @property
     def roots(self):
@@ -907,6 +1047,8 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
 
     @profiler.profile
     def reload_tree(self):
+        if self.defer_reload_if_editing(self.reload_tree):
+            return
         self._cancel_recursive_expand_jobs()
         scroll_state = self.capture_scroll_state()
         state = self.get_state()
@@ -949,6 +1091,14 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
     def dropEvent(self, event):
         super().dropEvent(event)
         event.setDropAction(QtCore.Qt.DropAction.IgnoreAction)
+
+    def commitData(self, editor):
+        super().commitData(editor)
+        self._schedule_pending_reload()
+
+    def closeEditor(self, editor, hint):
+        super().closeEditor(editor, hint)
+        self._schedule_pending_reload()
 
     def eventFilter(self, source, event):
         if not isinstance(event, QtCore.QEvent):

@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.6.16]
+### Added
+- **Scope-aware mark storage and conversion** (`wafer/builtins/mark/dialogs.py`, `wafer/builtins/mark/registry.py`, `wafer/core/db/file_db.py`, `wafer/core/db/key_value.py`): added metadata-scoped and tag-scoped mark definitions, per-mark scope conversion requests across databases, and shared key-value scope helpers so marks can be stored per path or per file hash
+- **Grid overlay plugin API** (`wafer/plugin/grid_overlay/`, `wafer/app/viewer/grid/overlay_host.py`, `wafer/core/qt/badge_engine.py`, `wafer/builtins/mark/overlay.py`, `wafer/builtins/mark/shapes.py`, `wafer/builtins/commands/grid.py`): added generic badge and cell overlay hosting for `GridView`, shape-based mark badges, and grid commands for overlay visibility and badge size
+- **Right-side `NOT` query operator** (`wafer/plugin/query/composer.py`, `wafer/app/viewer/widgets/search_container.py`): added `NOT` as a search-row set operator so later filters can subtract their result set from the composed query
+
+### Changed
+- **Metadata panel plugin API** (`wafer/plugin/key_value_panel/base.py`, `wafer/app/viewer/preview/meta_panel.py`, `extensions/exiftool/meta_panel.py`, `extensions/ffmpeg/meta_panel.py`, `extensions/color/panel.py`, `wafer/plugin/__init__.py`): replaced the separate meta/tag panel plugin bases with `BaseKeyValuePanelPlugin`, added scope-aware cards and per-scope UI state, and updated built-in panels to target `tag` or `meta_info` data explicitly
+
+### Fixed
+- **Watch-folder move inference** (`wafer/app/indexer/watch_folder.py`, `wafer/app/indexer/db_writer.py`, `wafer/core/db/file_db.py`): the watcher now correlates delete/create bursts by file signature and treats them as moves when possible, preserving rename handling for file moves that arrive without native move events
+- **Folder-scoped key suggestions** (`wafer/app/viewer/widgets/search_container.py`, `wafer/app/viewer/mainwindow.py`, `wafer/app/viewer/state_coordinator.py`): `list_all_keys()` now respects `include_subfolders` and `include_contained_files` when refreshing key choices for the selected folders
+- **Folder tree scroll retention** (`wafer/app/viewer/widgets/foldertree.py`, `wafer/app/viewer/mainwindow.py`): reloading folder roots now preserves the current vertical scroll position instead of jumping back to the selected item
+- **Async markdown preview safety** (`wafer/utils/markdown_browser.py`, `wafer/builtins/plugin_manager/extensions_tab.py`): markdown preview widgets now guard async HTML updates against deleted Qt objects, avoiding stale Plugin Manager README updates
+
 ## [v0.6.15]
 ### Added
 - **Color search extension** (`extensions/color/collector.py`, `extensions/color/filter.py`, `extensions/color/panel.py`, `extensions/color/widget.py`, `extensions/color/settings.py`): added a `color` collector that stores representative image palette tags, a multi-color RGB-distance search filter, and metadata swatches that can be applied directly to color queries; palette-slot changes can optionally delete and re-collect existing database data

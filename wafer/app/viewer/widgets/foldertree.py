@@ -628,6 +628,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
                 bar.setValue(value)
             except Exception as e:
                 AppLogger.debug(f"Failed to restore scroll state: {e}")
+
         QtCore.QTimer.singleShot(0, apply_scroll)
 
     def set_folders(self, roots, excluded=None):

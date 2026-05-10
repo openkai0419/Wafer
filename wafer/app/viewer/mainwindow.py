@@ -525,11 +525,13 @@ class MainWindow(QtWidgets.QMainWindow):
     def reload_folderlist(self):
         AppLogger.debug("[RUNNING] reload_folderlist")
         if self.setting_db:
+            scroll_state = self.folder_view.capture_scroll_state()
             state = self.folder_view.get_state()
             roots = self.setting_db.get_all_parent_folders()
             excluded = self.setting_db.get_all_ignore_folders()
             self.folder_view.set_folders(roots, excluded)
-            self.folder_view.set_state(state)
+            self.folder_view.set_state(state, scroll_to_selection=False)
+            self.folder_view.restore_scroll_state(scroll_state)
             if roots:
                 self._dismiss_folder_callout()
         else:

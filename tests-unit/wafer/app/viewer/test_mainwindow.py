@@ -1,5 +1,5 @@
 import py_compile
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 
 def test_compile():
@@ -121,6 +121,36 @@ class TestOnDbContentUpdated:
         from wafer.app.viewer.mainwindow import MainWindow
 
         assert not hasattr(MainWindow, "_on_tags_updated_research")
+
+
+class TestReloadFolderList:
+    def _make_win(self):
+        with patch("wafer.app.viewer.mainwindow.MainWindow.__init__", lambda self, *a, **kw: None):
+            from wafer.app.viewer.mainwindow import MainWindow
+
+            win = MainWindow.__new__(MainWindow)
+            win.setting_db = MagicMock()
+            win.setting_db.get_all_parent_folders.return_value = ["/root"]
+            win.setting_db.get_all_ignore_folders.return_value = ["/ignored"]
+            win.folder_view = MagicMock()
+            win.folder_view.capture_scroll_state.return_value = {"value": 37, "maximum": 120}
+            win.folder_view.get_state.return_value = (["/root"], ["/root/A"])
+            win._dismiss_folder_callout = MagicMock()
+            return win, MainWindow
+
+    def test_restore_scroll_after_rebuild_without_selection_scroll(self):
+        win, MainWindow = self._make_win()
+
+        MainWindow.reload_folderlist.__wrapped__(win)
+
+        assert win.folder_view.method_calls == [
+            call.capture_scroll_state(),
+            call.get_state(),
+            call.set_folders(["/root"], ["/ignored"]),
+            call.set_state((["/root"], ["/root/A"]), scroll_to_selection=False),
+            call.restore_scroll_state({"value": 37, "maximum": 120}),
+        ]
+        win._dismiss_folder_callout.assert_called_once()
 
 
 class TestToolbarPanel:

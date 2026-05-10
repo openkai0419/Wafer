@@ -110,35 +110,54 @@ class SearchComposer:
     def _combine(valid_queries):
         if not valid_queries:
             return "SELECT path FROM files", []
+        if len(valid_queries) == 1:
+            sql, bind, _op = valid_queries[0]
+            return sql, list(bind)
 
-        groups = []
-        current_sqls = []
-        current_params = []
+        operands = [(sql, list(bind)) for sql, bind, _op in valid_queries]
+        operators = [SearchComposer._normalize_operator(op) for _sql, _bind, op in valid_queries[1:]]
 
-        for sql, bind, op in valid_queries:
-            if op == "AND" and current_sqls:
-                current_sqls.append(sql)
-                current_params.extend(bind)
-            else:
-                if current_sqls:
-                    group_sql = " INTERSECT ".join(current_sqls) if len(current_sqls) > 1 else current_sqls[0]
-                    groups.append((group_sql, list(current_params)))
-                current_sqls = [sql]
-                current_params = list(bind)
+        def has_operator(index, value):
+            operator_index = index - 1
+            return operator_index < len(operators) and operators[operator_index] == value
 
-        if current_sqls:
-            group_sql = " INTERSECT ".join(current_sqls) if len(current_sqls) > 1 else current_sqls[0]
-            groups.append((group_sql, list(current_params)))
+        def parse_operand(index):
+            return operands[index], index + 1
 
-        if len(groups) == 1:
-            return groups[0]
+        def parse_and(index):
+            left, index = parse_operand(index)
+            while has_operator(index, "AND"):
+                right, index = parse_operand(index)
+                left = SearchComposer._join_path_sets(left, "INTERSECT", right)
+            return left, index
 
-        all_sqls = []
-        all_params = []
-        for sql, params in groups:
-            all_sqls.append(sql)
-            all_params.extend(params)
-        return " UNION ".join(all_sqls), all_params
+        def parse_or(index):
+            left, index = parse_and(index)
+            while has_operator(index, "OR"):
+                right, index = parse_and(index)
+                left = SearchComposer._join_path_sets(left, "UNION", right)
+            return left, index
+
+        def parse_not(index):
+            left, index = parse_or(index)
+            if has_operator(index, "NOT"):
+                right, index = parse_not(index)
+                left = SearchComposer._join_path_sets(left, "EXCEPT", right)
+            return left, index
+
+        return parse_not(0)[0]
+
+    @staticmethod
+    def _normalize_operator(op):
+        operator = str(op or "OR").upper()
+        return operator if operator in {"AND", "OR", "NOT"} else "OR"
+
+    @staticmethod
+    def _join_path_sets(left, operator, right):
+        left_sql, left_params = left
+        right_sql, right_params = right
+        sql = f"SELECT path FROM ({left_sql}) AS _left {operator} SELECT path FROM ({right_sql}) AS _right"
+        return sql, [*left_params, *right_params]
 
     @staticmethod
     def _apply_global(combined_sql, combined_params, global_queries):

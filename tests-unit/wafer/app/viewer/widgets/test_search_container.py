@@ -108,6 +108,11 @@ class TestFilterRow:
         row = FilterRow(TextFilter)
         assert row.operator == "AND"
 
+    def test_op_combo_has_not(self, qapp):
+        row = FilterRow(TextFilter)
+        values = [row.op_combo.itemData(i) for i in range(row.op_combo.count())]
+        assert "NOT" in values
+
     def test_op_hidden_when_show_op_false(self, qapp):
         row = FilterRow(TextFilter, show_op=False)
         assert not row._has_op
@@ -135,6 +140,12 @@ class TestFilterRow:
         assert params["keywords"] == "hello"
         assert params["query_mode"] == "LIKE"
         assert op == "OR"
+
+    def test_write_entry_not_operator(self, qapp):
+        row = FilterRow(TextFilter, show_op=True)
+        row.write_entry("text", {"keywords": "hello"}, "NOT")
+        entry = row.read_entry()
+        assert entry[2] == "NOT"
 
     def test_write_entry_wrong_type_ignored(self, qapp):
         row = FilterRow(TextFilter, show_op=True)
@@ -295,6 +306,14 @@ class TestSearchContainer:
         container._add_row(TextFilter)
         entries = container.build_filter_entries()
         assert len(entries) == 2
+
+    def test_build_entries_preserves_not_operator(self, qapp):
+        container = SearchContainer()
+        container._add_row(TextFilter)
+        idx = container._rows[1].op_combo.findData("NOT")
+        container._rows[1].op_combo.setCurrentIndex(idx)
+        entries = container.build_filter_entries()
+        assert entries[1][2] == "NOT"
 
     def test_build_entries_empty(self, qapp):
         container = SearchContainer()
@@ -536,6 +555,19 @@ class TestSearchContainerState:
         assert len(container._rows) == 2
         assert not container._rows[0]._has_op
         assert container._rows[1]._has_op
+
+    def test_restore_not_operator(self, qapp):
+        container = SearchContainer()
+        state = {
+            "bars": [
+                {"filter": "text", "params": {"keywords": "first"}, "op": None},
+                {"filter": "text", "params": {"keywords": "second"}, "op": "NOT"},
+            ],
+            "sort_by": "path",
+            "ascending": False,
+        }
+        container.restore_state(state)
+        assert container._rows[1].read_op() == "NOT"
 
     def test_restore_empty_rows_keeps_existing(self, qapp):
         container = SearchContainer()

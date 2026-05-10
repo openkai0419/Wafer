@@ -366,6 +366,37 @@ class TestComposerCombineLogic:
         work_specific = [p for p in paths if "img_0101" in p]
         assert len(vacation_rating1) > 0 or len(work_specific) > 0
 
+    def test_not_subtracts_filter(self, engine, composer):
+        entries = [
+            (TextFilter, {"keys": ["path"], "keywords": "img_000"}, None),
+            (TextFilter, {"keys": ["path"], "keywords": "img_0001"}, "NOT"),
+        ]
+        paths, _, _ = composer.execute(engine, entries, NaturalNameSort, True)
+        assert len(paths) == 9
+        assert all("img_000" in p for p in paths)
+        assert all("img_0001" not in p for p in paths)
+
+    def test_not_binds_weaker_than_or(self, engine, composer):
+        entries = [
+            (TextFilter, {"keys": ["path"], "keywords": "img_000"}, None),
+            (TextFilter, {"keys": ["path"], "keywords": "img_0001"}, "NOT"),
+            (TextFilter, {"keys": ["path"], "keywords": "img_0100"}, "OR"),
+        ]
+        paths, _, _ = composer.execute(engine, entries, NaturalNameSort, True)
+        assert len(paths) == 9
+        assert all("img_0100" not in p for p in paths)
+
+    def test_not_is_right_associative(self, engine, composer):
+        entries = [
+            (TextFilter, {"keys": ["path"], "keywords": "vacation"}, None),
+            (TextFilter, {"keys": ["path"], "keywords": "img_000"}, "NOT"),
+            (TextFilter, {"keys": ["path"], "keywords": "img_0001"}, "NOT"),
+        ]
+        paths, _, _ = composer.execute(engine, entries, NaturalNameSort, True)
+        assert len(paths) == 91
+        assert any("img_0001" in p for p in paths)
+        assert all("img_0000" not in p for p in paths)
+
     def test_no_filters(self, engine, composer):
         entries = []
         paths, _, _ = composer.execute(engine, entries, NaturalNameSort, True)
@@ -556,6 +587,28 @@ class TestComposerCombineStatic:
         assert sql.count("INTERSECT") == 2
         assert "UNION" not in sql
 
+    def test_not_uses_except(self):
+        sql, params = SearchComposer._combine(
+            [
+                ("SELECT path FROM a WHERE x = ?", ["p1"], None),
+                ("SELECT path FROM b WHERE y = ?", ["p2"], "NOT"),
+            ]
+        )
+        assert "EXCEPT" in sql
+        assert params == ["p1", "p2"]
+
+    def test_not_or_group_is_right_operand(self):
+        sql, params = SearchComposer._combine(
+            [
+                ("SELECT path FROM a WHERE x = ?", ["p1"], None),
+                ("SELECT path FROM b WHERE y = ?", ["p2"], "NOT"),
+                ("SELECT path FROM c WHERE z = ?", ["p3"], "OR"),
+            ]
+        )
+        assert "EXCEPT" in sql
+        assert "UNION" in sql
+        assert params == ["p1", "p2", "p3"]
+
 
 class TestComposerListAllKeys:
     def test_all_keys_returned(self, engine, composer):
@@ -620,6 +673,15 @@ class TestComposerListAllKeys:
         all_comment = next(f for k, f in all_keys if k == "Comment")
         vac_comment = next(f for k, f in vac_keys if k == "Comment")
         assert vac_comment < all_comment
+
+    def test_not_filter_restricts_key_counts(self, engine, composer):
+        entries = [
+            (TextFilter, {"keys": ["path"], "keywords": "vacation"}, None),
+            (TextFilter, {"keys": ["path"], "keywords": "img_000"}, "NOT"),
+        ]
+        keys = composer.list_all_keys(engine, entries, sort_by_freq=True)
+        fp_count = next(f for k, f in keys if k == "path")
+        assert fp_count == 90
 
     def test_db_not_found(self, composer):
         engine = FileSearchEngine("/nonexistent/path.db")

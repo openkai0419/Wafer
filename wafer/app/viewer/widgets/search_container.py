@@ -39,6 +39,7 @@ class FilterRow(QtWidgets.QWidget):
         self.op_combo = QtWidgets.QComboBox()
         self.op_combo.addItem("AND", "AND")
         self.op_combo.addItem("OR", "OR")
+        self.op_combo.addItem("NOT", "NOT")
         self.op_combo.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents)
         self.op_combo.currentIndexChanged.connect(lambda: self.changed.emit())
         self.op_combo.setVisible(show_op)

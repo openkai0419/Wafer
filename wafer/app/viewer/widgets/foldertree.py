@@ -85,6 +85,7 @@ def _folder_sort_key(path):
 
 FOLDER_ICON = QtGui.QIcon.fromTheme("folder")
 USER_ROLE_PATH = QtCore.Qt.UserRole
+SUPPORTED_DROP_ACTIONS = (QtCore.Qt.MoveAction, QtCore.Qt.CopyAction)
 EXPAND_RECURSIVE_BATCH_SIZE = 64
 EXPAND_RECURSIVE_QUEUE_LIMIT = 512
 EXPAND_RECURSIVE_DRAIN_MS = 6.0
@@ -363,7 +364,7 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
         return mime
 
     def canDropMimeData(self, data, action, row, column, parent):
-        if action not in (QtCore.Qt.MoveAction, QtCore.Qt.CopyAction):
+        if action not in SUPPORTED_DROP_ACTIONS:
             return False
         if not data or (not data.hasFormat(self._mime_type) and not data.hasUrls()):
             return False
@@ -375,11 +376,11 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
         target_path = parent_item.data(USER_ROLE_PATH)
         if not target_path or target_path in self.excluded:
             return False
-        return os.path.isdir(normalize_path(target_path))
+        return True
 
     @profiler.profile
     def dropMimeData(self, data, action, row, column, parent):
-        if action not in (QtCore.Qt.MoveAction, QtCore.Qt.CopyAction):
+        if action not in SUPPORTED_DROP_ACTIONS:
             return False
         if not data or (not data.hasFormat(self._mime_type) and not data.hasUrls()):
             return False
@@ -393,6 +394,8 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
             return False
 
         dest_dir = normalize_path(target_path)
+        if not os.path.isdir(dest_dir):
+            return False
         parent_w = self.parent() or QtWidgets.QApplication.activeWindow()
         dest_name = os.path.basename(dest_dir) or dest_dir
 
@@ -572,6 +575,9 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
 
         _p = ThemeManager.instance().palette
         self.setStyleSheet(f"QTreeView::item:selected {{ background-color: {_p.accent}; color: {_p.accent_text}; }}")
+        self._drop_target_fill = QtGui.QColor(_p.accent)
+        self._drop_target_fill.setAlpha(72)
+        self._drop_target_pen = QtGui.QPen(QtGui.QColor(_p.accent))
         self.setHeaderHidden(True)
         self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.model_ = LazyFolderTreeModel(roots, excluded)
@@ -590,6 +596,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         self._pending_reload_local_callback = None
         self._pending_reload_strong_callback = None
         self._pending_reload_scheduled = False
+        self._drop_target_index = QtCore.QModelIndex()
         self.expanded.connect(self.on_expanded)
         self.clicked.connect(self._on_item_clicked)
         UI.register_instance("FolderTree", self)
@@ -600,6 +607,171 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
 
     def binding_scope(self) -> str:
         return "FolderTree"
+
+    def drawRow(self, painter, option, index):
+        super().drawRow(painter, option, index)
+        if not self._is_drop_target_index(index):
+            return
+        rect = QtCore.QRect(0, option.rect.top(), self.viewport().width(), option.rect.height())
+        painter.save()
+        painter.fillRect(rect, self._drop_target_fill)
+        painter.setPen(self._drop_target_pen)
+        painter.drawRect(rect.adjusted(0, 0, -1, -1))
+        painter.restore()
+
+    def _is_drop_target_index(self, index):
+        return index.isValid() and self._drop_target_index.isValid() and index == self._drop_target_index
+
+    def _drop_mime_supported(self, mime):
+        return bool(mime and (mime.hasUrls() or mime.hasFormat(self.model_._mime_type)))
+
+    def _drop_action_supported(self, action):
+        return action in SUPPORTED_DROP_ACTIONS
+
+    def _drop_action_for_event(self, event):
+        proposed = getattr(event, "proposedAction", None)
+        if callable(proposed):
+            action = proposed()
+            if self._drop_action_supported(action):
+                return action
+        current = getattr(event, "dropAction", None)
+        if callable(current):
+            action = current()
+            if self._drop_action_supported(action):
+                return action
+        return QtCore.Qt.DropAction.IgnoreAction
+
+    def _drop_event_pos(self, event):
+        position = getattr(event, "position", None)
+        if callable(position):
+            pos = position()
+            return pos.toPoint() if hasattr(pos, "toPoint") else QtCore.QPoint(int(pos.x()), int(pos.y()))
+        pos = getattr(event, "pos", None)
+        if callable(pos):
+            return pos()
+        return QtCore.QPoint()
+
+    def _can_drop_on_index(self, mime, action, index):
+        if not self._drop_mime_supported(mime) or not self._drop_action_supported(action) or not index.isValid():
+            return False
+        target_path = index.data(USER_ROLE_PATH)
+        if not target_path:
+            return False
+        return normalize_path(target_path) not in self.model_.excluded
+
+    def _resolve_drop_target_index(self, pos, mime, action):
+        if not self._drop_mime_supported(mime) or not self._drop_action_supported(action):
+            return QtCore.QModelIndex()
+        index = self.indexAt(pos)
+        if self._can_drop_on_index(mime, action, index):
+            return index
+        return self._nearest_drop_target_index(pos, mime, action)
+
+    def _nearest_drop_target_index(self, pos, mime, action):
+        viewport_rect = self.viewport().rect()
+        best_index = QtCore.QModelIndex()
+        best_key = None
+        for index in self._iter_visible_indexes():
+            if not self._can_drop_on_index(mime, action, index):
+                continue
+            visual = self.visualRect(index)
+            if not visual.isValid():
+                continue
+            row_rect = QtCore.QRect(viewport_rect.left(), visual.top(), viewport_rect.width(), visual.height())
+            key = self._drop_distance_key(pos, row_rect, index)
+            if best_key is None or key < best_key:
+                best_index = index
+                best_key = key
+        return best_index
+
+    def _drop_distance_key(self, pos, rect, index):
+        px = pos.x()
+        py = pos.y()
+        dx = rect.left() - px if px < rect.left() else px - rect.right() if px > rect.right() else 0
+        dy = rect.top() - py if py < rect.top() else py - rect.bottom() if py > rect.bottom() else 0
+        center = rect.center()
+        center_dx = center.x() - px
+        center_dy = center.y() - py
+        return (dx * dx + dy * dy, center_dx * center_dx + center_dy * center_dy, rect.top(), index.row())
+
+    def _iter_visible_indexes(self):
+        index = self._first_visible_index()
+        if not index.isValid():
+            return
+        viewport_rect = self.viewport().rect()
+        while True:
+            prev_index = self.indexAbove(index)
+            if not prev_index.isValid():
+                break
+            prev_rect = self.visualRect(prev_index)
+            if not prev_rect.isValid() or prev_rect.bottom() < viewport_rect.top():
+                break
+            index = prev_index
+        while index.isValid():
+            rect = self.visualRect(index)
+            if rect.isValid() and rect.top() > viewport_rect.bottom():
+                break
+            if rect.isValid() and rect.bottom() >= viewport_rect.top():
+                yield index
+            next_index = self.indexBelow(index)
+            if not next_index.isValid() or next_index == index:
+                break
+            index = next_index
+
+    def _first_visible_index(self):
+        viewport_rect = self.viewport().rect()
+        if not viewport_rect.isValid():
+            return QtCore.QModelIndex()
+        step = max(1, self.fontMetrics().height() // 2)
+        left = viewport_rect.left()
+        right = max(left, viewport_rect.right())
+        x_candidates = []
+        for x in (left, left + self.indentation(), viewport_rect.center().x(), right):
+            x = min(right, max(left, x))
+            if x not in x_candidates:
+                x_candidates.append(x)
+        for y in range(viewport_rect.top(), viewport_rect.bottom() + 1, step):
+            for x in x_candidates:
+                index = self.indexAt(QtCore.QPoint(x, y))
+                if index.isValid():
+                    return index
+        return QtCore.QModelIndex()
+
+    def _set_drop_target_index(self, index):
+        if index == self._drop_target_index:
+            return
+        old_index = self._drop_target_index
+        self._drop_target_index = index if index.isValid() else QtCore.QModelIndex()
+        self._update_drop_target_row(old_index)
+        self._update_drop_target_row(self._drop_target_index)
+
+    def _clear_drop_target_index(self):
+        self._set_drop_target_index(QtCore.QModelIndex())
+
+    def _update_drop_target_row(self, index):
+        if not index.isValid():
+            return
+        rect = self.visualRect(index)
+        if not rect.isValid():
+            self.viewport().update()
+            return
+        self.viewport().update(QtCore.QRect(0, rect.top(), self.viewport().width(), rect.height()))
+
+    def _update_drop_target_from_event(self, event):
+        mime = event.mimeData()
+        action = self._drop_action_for_event(event)
+        index = self._resolve_drop_target_index(self._drop_event_pos(event), mime, action)
+        self._set_drop_target_index(index)
+        return index, action
+
+    def _drop_on_target(self, pos, mime, action):
+        index = self._resolve_drop_target_index(pos, mime, action)
+        return self._drop_on_resolved_target(index, mime, action)
+
+    def _drop_on_resolved_target(self, index, mime, action):
+        if not index.isValid() or not self._drop_action_supported(action):
+            return False
+        return self.model_.dropMimeData(mime, action, -1, 0, index)
 
     def show_context_menu(self, position):
         from wafer.builtins.commands import foldertree
@@ -1087,14 +1259,44 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
 
     def dragEnterEvent(self, event):
         md = event.mimeData()
-        if md and (md.hasUrls() or md.hasFormat(self.model_._mime_type)):
-            event.acceptProposedAction()
+        action = self._drop_action_for_event(event)
+        if self._drop_mime_supported(md) and self._drop_action_supported(action):
+            event.setDropAction(action)
+            event.accept()
         else:
+            self._clear_drop_target_index()
             super().dragEnterEvent(event)
 
+    def dragMoveEvent(self, event):
+        super().dragMoveEvent(event)
+        index, action = self._update_drop_target_from_event(event)
+        if index.isValid() and self._drop_action_supported(action):
+            event.setDropAction(action)
+            event.accept()
+            return
+        self._clear_drop_target_index()
+        ignore = getattr(event, "ignore", None)
+        if callable(ignore):
+            ignore()
+
+    def dragLeaveEvent(self, event):
+        self._clear_drop_target_index()
+        super().dragLeaveEvent(event)
+
     def dropEvent(self, event):
-        super().dropEvent(event)
-        event.setDropAction(QtCore.Qt.DropAction.IgnoreAction)
+        try:
+            mime = event.mimeData()
+            if self._drop_mime_supported(mime):
+                action = self._drop_action_for_event(event)
+                if self._drop_action_supported(action):
+                    index = self._resolve_drop_target_index(self._drop_event_pos(event), mime, action)
+                    self._clear_drop_target_index()
+                    self._drop_on_resolved_target(index, mime, action)
+            else:
+                super().dropEvent(event)
+        finally:
+            self._clear_drop_target_index()
+            event.setDropAction(QtCore.Qt.DropAction.IgnoreAction)
 
     def commitData(self, editor):
         super().commitData(editor)

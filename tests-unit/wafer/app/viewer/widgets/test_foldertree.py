@@ -268,6 +268,220 @@ def test_foldertree_external_drop_uses_ask_operation(qtbot, tmp_path, monkeypatc
     assert captured == {"op": "ask", "dst": foldertree_module.normalize_path(str(root))}
 
 
+def make_drop_tree(qtbot, tmp_path):
+    root = tmp_path / "root"
+    a_dir = root / "A"
+    b_dir = root / "B"
+    a_dir.mkdir(parents=True)
+    b_dir.mkdir()
+    source = tmp_path / "source.txt"
+    source.write_text("data", encoding="utf-8")
+    tree = LazyFolderTreeView(roots=[str(root)], excluded=[])
+    qtbot.addWidget(tree)
+    tree.resize(360, 240)
+    tree.show()
+    tree.model_._build_roots([str(root)])
+    tree.expand_path(str(root))
+    QtWidgets.QApplication.processEvents()
+    mime = QtCore.QMimeData()
+    mime.setUrls([QtCore.QUrl.fromLocalFile(str(source))])
+    return tree, root, mime
+
+
+def test_foldertree_drop_target_resolver_uses_direct_hit(qtbot, tmp_path):
+    tree, root, mime = make_drop_tree(qtbot, tmp_path)
+    target_index = tree.model_.find_index_by_path(str(root / "A"))
+    rect = tree.visualRect(target_index)
+
+    resolved = tree._resolve_drop_target_index(rect.center(), mime, QtCore.Qt.DropAction.CopyAction)
+
+    assert resolved == target_index
+
+
+def test_foldertree_drop_target_resolver_uses_nearest_visible_folder(qtbot, tmp_path):
+    tree, root, mime = make_drop_tree(qtbot, tmp_path)
+    target_index = tree.model_.find_index_by_path(str(root / "B"))
+    rect = tree.visualRect(target_index)
+    gap_pos = QtCore.QPoint(tree.viewport().rect().center().x(), min(tree.viewport().rect().bottom(), rect.bottom() + rect.height()))
+
+    resolved = tree._resolve_drop_target_index(gap_pos, mime, QtCore.Qt.DropAction.CopyAction)
+
+    assert resolved == target_index
+
+
+def test_foldertree_drop_target_resolver_ignores_model_drop_validation_during_preview(qtbot, tmp_path, monkeypatch):
+    tree, root, mime = make_drop_tree(qtbot, tmp_path)
+    a_index = tree.model_.find_index_by_path(str(root / "A"))
+    original = tree.model_.canDropMimeData
+
+    def can_drop_only_on_b(data, action, row, column, parent):
+        return parent.data(foldertree_module.USER_ROLE_PATH) == normalize_path(str(root / "B")) and original(data, action, row, column, parent)
+
+    monkeypatch.setattr(tree.model_, "canDropMimeData", can_drop_only_on_b)
+
+    resolved = tree._resolve_drop_target_index(tree.visualRect(a_index).center(), mime, QtCore.Qt.DropAction.CopyAction)
+
+    assert resolved == a_index
+
+
+def test_foldertree_drop_target_resolver_does_not_call_isdir_during_preview(qtbot, tmp_path, monkeypatch):
+    tree, root, mime = make_drop_tree(qtbot, tmp_path)
+    target_index = tree.model_.find_index_by_path(str(root / "A"))
+    rect = tree.visualRect(target_index)
+
+    def fail_isdir(_path):
+        raise AssertionError("preview should not call isdir")
+
+    monkeypatch.setattr(foldertree_module.os.path, "isdir", fail_isdir)
+
+    resolved = tree._resolve_drop_target_index(rect.center(), mime, QtCore.Qt.DropAction.CopyAction)
+
+    assert resolved == target_index
+
+
+def test_foldertree_drop_action_for_event_rejects_unsupported_action(qtbot, tmp_path):
+    tree, _root, _mime = make_drop_tree(qtbot, tmp_path)
+
+    class Event:
+        def proposedAction(self):
+            return QtCore.Qt.DropAction.LinkAction
+
+        def dropAction(self):
+            return QtCore.Qt.DropAction.LinkAction
+
+    assert tree._drop_action_for_event(Event()) == QtCore.Qt.DropAction.IgnoreAction
+
+
+def test_foldertree_drop_on_gap_calls_model_drop_on_nearest_target(qtbot, tmp_path, monkeypatch):
+    tree, root, mime = make_drop_tree(qtbot, tmp_path)
+    target_index = tree.model_.find_index_by_path(str(root / "B"))
+    rect = tree.visualRect(target_index)
+    gap_pos = QtCore.QPoint(tree.viewport().rect().center().x(), min(tree.viewport().rect().bottom(), rect.bottom() + rect.height()))
+    captured = {}
+
+    def drop_mime_data(data, action, row, column, parent):
+        captured.update({"data": data, "action": action, "row": row, "column": column, "parent": parent})
+        return True
+
+    monkeypatch.setattr(tree.model_, "dropMimeData", drop_mime_data)
+
+    assert tree._drop_on_target(gap_pos, mime, QtCore.Qt.DropAction.CopyAction)
+    assert captured == {
+        "data": mime,
+        "action": QtCore.Qt.DropAction.CopyAction,
+        "row": -1,
+        "column": 0,
+        "parent": target_index,
+    }
+
+
+def test_foldertree_drop_event_clears_preview_before_model_drop(qtbot, tmp_path, monkeypatch):
+    tree, root, mime = make_drop_tree(qtbot, tmp_path)
+    target_index = tree.model_.find_index_by_path(str(root / "B"))
+    rect = tree.visualRect(target_index)
+    gap_pos = QtCore.QPoint(tree.viewport().rect().center().x(), min(tree.viewport().rect().bottom(), rect.bottom() + rect.height()))
+    calls = []
+
+    class DropEvent:
+        def mimeData(self):
+            return mime
+
+        def pos(self):
+            return gap_pos
+
+        def proposedAction(self):
+            return QtCore.Qt.DropAction.CopyAction
+
+        def setDropAction(self, action):
+            calls.append(("setDropAction", action))
+
+        def accept(self):
+            raise AssertionError("dropEvent must not call accept")
+
+        def ignore(self):
+            raise AssertionError("dropEvent must not call ignore")
+
+    def clear_drop_target_index():
+        calls.append(("clear", None))
+        tree._drop_target_index = QtCore.QModelIndex()
+
+    def drop_mime_data(data, action, row, column, parent):
+        calls.append(("drop", parent))
+        return True
+
+    tree._set_drop_target_index(target_index)
+    monkeypatch.setattr(tree, "_clear_drop_target_index", clear_drop_target_index)
+    monkeypatch.setattr(tree.model_, "dropMimeData", drop_mime_data)
+
+    tree.dropEvent(DropEvent())
+
+    assert calls[0] == ("clear", None)
+    assert calls[1] == ("drop", target_index)
+    assert calls[-1] == ("setDropAction", QtCore.Qt.DropAction.IgnoreAction)
+
+
+def test_foldertree_drop_event_ignores_unsupported_action(qtbot, tmp_path, monkeypatch):
+    tree, root, mime = make_drop_tree(qtbot, tmp_path)
+    target_index = tree.model_.find_index_by_path(str(root / "B"))
+    rect = tree.visualRect(target_index)
+    gap_pos = QtCore.QPoint(tree.viewport().rect().center().x(), min(tree.viewport().rect().bottom(), rect.bottom() + rect.height()))
+    called = []
+
+    class DropEvent:
+        def mimeData(self):
+            return mime
+
+        def pos(self):
+            return gap_pos
+
+        def proposedAction(self):
+            return QtCore.Qt.DropAction.LinkAction
+
+        def dropAction(self):
+            return QtCore.Qt.DropAction.LinkAction
+
+        def setDropAction(self, action):
+            called.append(("setDropAction", action))
+
+    monkeypatch.setattr(tree.model_, "dropMimeData", lambda *args, **kwargs: called.append(("drop", args)) or True)
+
+    tree.dropEvent(DropEvent())
+
+    assert called == [("setDropAction", QtCore.Qt.DropAction.IgnoreAction)]
+
+
+def test_foldertree_model_rejects_drop_when_target_path_is_not_directory(qtbot, tmp_path, monkeypatch):
+    root = tmp_path / "root"
+    dst = root / "dst"
+    root.mkdir()
+    dst.mkdir()
+    src = tmp_path / "source.txt"
+    src.write_text("data", encoding="utf-8")
+    tree = LazyFolderTreeView(roots=[str(root)], excluded=[])
+    qtbot.addWidget(tree)
+    tree.model_._build_roots([str(root)])
+    dst_index = tree.model_.find_index_by_path(str(dst))
+    mime = QtCore.QMimeData()
+    mime.setUrls([QtCore.QUrl.fromLocalFile(str(src))])
+    dst.rmdir()
+    dst.write_text("file", encoding="utf-8")
+
+    monkeypatch.setattr(foldertree_module, "drop_files_with_ui", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("drop_files_with_ui should not be called")))
+
+    assert not tree.model_.dropMimeData(mime, QtCore.Qt.DropAction.CopyAction, -1, 0, dst_index)
+
+
+def test_foldertree_drop_target_state_clears(qtbot, tmp_path):
+    tree, root, _mime = make_drop_tree(qtbot, tmp_path)
+    target_index = tree.model_.find_index_by_path(str(root / "A"))
+
+    tree._set_drop_target_index(target_index)
+    assert tree._drop_target_index == target_index
+
+    tree._clear_drop_target_index()
+    assert not tree._drop_target_index.isValid()
+
+
 def test_compile():
     py_compile.compile("wafer/app/viewer/widgets/foldertree.py")
 

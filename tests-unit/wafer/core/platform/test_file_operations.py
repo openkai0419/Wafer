@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from wafer.utils.virtual_paths import build_virtual_path, register_owner_extension
+
 
 def test_file_executor_overwrite_same_path_is_noop(tmp_path):
     from wafer.core.platform.file_operations import FileExecutor, PasteDecision, PastePlanItem
@@ -20,6 +22,24 @@ def test_file_executor_overwrite_same_path_is_noop(tmp_path):
     )
 
     res = FileExecutor().execute_plans([item], {0: PasteDecision(mode="overwrite")})
+
+
+    def test_build_drop_plans_rejects_virtual_destination(tmp_path):
+        from wafer.core.platform.dragparser import ParsedItem
+        from wafer.core.platform.file_operations import build_drop_plans
+
+        register_owner_extension(".zip")
+        src = tmp_path / "source.txt"
+        src.write_text("x", encoding="utf-8")
+        virtual_dst = build_virtual_path(str(tmp_path / "archive.zip"), "folder/image.png")
+
+        plans = build_drop_plans(
+            [ParsedItem(source=str(src), name=src.name, is_binary=False, size=src.stat().st_size)],
+            virtual_dst,
+            "copy",
+        )
+
+        assert plans == []
     assert src.exists()
     assert src.read_text(encoding="utf-8") == "x"
     assert res and res[0].status == "skipped"

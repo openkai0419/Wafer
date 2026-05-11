@@ -98,3 +98,49 @@ def test_drop_save_finalizes_ignore_action_without_target(qtbot, monkeypatch):
 
     GridViewDropCommands._save(ctx, op="ask", on_conflict="ask")
     assert ev.dropAction() == QtCore.Qt.DropAction.IgnoreAction
+
+
+def test_drop_target_dir_from_hover_uses_source_only(monkeypatch, tmp_path):
+    archive = tmp_path / "archive.zip"
+
+    class _Items:
+        def source_at(self, index):
+            assert index == 0
+            return str(archive)
+
+        def path_at(self, index):
+            raise AssertionError("path_at must not be used for file operations")
+
+    monkeypatch.setattr(GridViewDropCommands, "_hover_index", staticmethod(lambda ctx, view: 0))
+
+    dst = GridViewDropCommands._drop_target_dir_from_hover(object(), object(), _Items())
+    assert dst == str(tmp_path)
+
+
+def test_drop_target_dir_from_hover_returns_none_without_source(monkeypatch):
+    class _Items:
+        def source_at(self, index):
+            assert index == 0
+            return None
+
+        def path_at(self, index):
+            raise AssertionError("path_at must not be used for file operations")
+
+    monkeypatch.setattr(GridViewDropCommands, "_hover_index", staticmethod(lambda ctx, view: 0))
+
+    assert GridViewDropCommands._drop_target_dir_from_hover(object(), object(), _Items()) is None
+
+
+def test_drop_target_dir_requires_source_and_does_not_use_view_root():
+    class _Ctx:
+        def get(self, key, default=None):
+            return default
+
+    class _Root:
+        def __str__(self):
+            raise AssertionError("view.root must not be used for file operations")
+
+    class _View:
+        root = _Root()
+
+    assert GridViewDropCommands._drop_target_dir(_Ctx(), _View()) is None

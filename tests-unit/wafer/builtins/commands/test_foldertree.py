@@ -11,6 +11,7 @@ from wafer.builtins.commands.foldertree import (
     _ctx_normalized_paths,
     _ctx_dir_path,
     next_folder,
+    parent_folder,
     remove_from_view,
     ignore_folder,
     show_context_menu,
@@ -233,3 +234,27 @@ def test_navigation_command_delegates_search_emit_to_tree(qtbot):
     assert next_folder(ctx, trigger_search=True) == "selected"
     assert tree.trigger_search is True
     assert tree.folder_selected.count == 0
+
+
+def test_parent_folder_command_passes_collapse_flag(qtbot):
+    class FakeTree(QtWidgets.QWidget):
+        def __init__(self):
+            super().__init__()
+            self.trigger_search = None
+            self.collapse = None
+
+        def get_selected_paths(self):
+            return []
+
+        def navigate_parent(self, trigger_search=True, collapse=False):
+            self.trigger_search = trigger_search
+            self.collapse = collapse
+            return "parent"
+
+    tree = FakeTree()
+    qtbot.addWidget(tree)
+    ctx = _FakeCtx(widget=tree)
+
+    assert parent_folder(ctx, trigger_search=True, collapse=True) == "parent"
+    assert tree.trigger_search is True
+    assert tree.collapse is True

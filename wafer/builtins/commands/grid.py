@@ -4,6 +4,7 @@ from PySide6 import QtCore, QtGui
 
 from ...core.commands.bridge import ActionKit
 from ...core.commands.binding.instance_registry import InstanceRegistry
+from ...utils.logs import AppLogger
 from ...utils.formatting import dpix
 from ...core.platform.dragparser import MimeDataParser
 from ...core.platform.paste import drop_files_with_ui, get_saved_drop_operation
@@ -674,6 +675,13 @@ class GridViewDropCommands(ActionKit.DragMenuBase):
     NAME = "GridView"
 
     @staticmethod
+    def _directory_from_source(source: str | None) -> str | None:
+        if not source:
+            return None
+        abs_source = os.path.abspath(str(source))
+        return abs_source if os.path.isdir(abs_source) else os.path.dirname(abs_source)
+
+    @staticmethod
     def _apply_drop_action(ctx, op: str) -> None:
         event = ctx.get_event() if hasattr(ctx, "get_event") else None
         if event is None:
@@ -715,15 +723,8 @@ class GridViewDropCommands(ActionKit.DragMenuBase):
 
     @staticmethod
     def _drop_target_dir(ctx, view) -> str | None:
-        p = ctx.get("path")
-        if p:
-            a = os.path.abspath(str(p))
-            return a if os.path.isdir(a) else os.path.dirname(a)
-        r = getattr(view, "root", None)
-        if r:
-            rr = os.path.abspath(str(r))
-            return rr if os.path.isdir(rr) else None
-        return None
+        source = ctx.get("source")
+        return GridViewDropCommands._directory_from_source(str(source)) if source else None
 
     @staticmethod
     def _hover_index(ctx, view) -> int | None:
@@ -734,9 +735,11 @@ class GridViewDropCommands(ActionKit.DragMenuBase):
     def _drop_target_dir_from_hover(ctx, view, items) -> str | None:
         idx = GridViewDropCommands._hover_index(ctx, view)
         if idx is not None:
-            p = items.path_at(idx)
-            if p:
-                return os.path.dirname(os.path.abspath(str(p)))
+            source = items.source_at(idx)
+            if not source:
+                AppLogger.warning(f"[grid.drop] missing source for hover index: {idx}")
+                return None
+            return GridViewDropCommands._directory_from_source(str(source))
         return GridViewDropCommands._drop_target_dir(ctx, view)
 
     @staticmethod

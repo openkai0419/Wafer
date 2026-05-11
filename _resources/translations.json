@@ -1,4 +1,12 @@
 {
+  "collapse": {
+    "en": "collapse",
+    "ja": ""
+  },
+  "trigger_search": {
+    "en": "trigger_search",
+    "ja": ""
+  },
   "lower": {
     "en": "lower",
     "ja": ""

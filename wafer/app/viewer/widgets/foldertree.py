@@ -1368,13 +1368,16 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         return self._select_index_for_navigation(self._sibling_index(idx, -1), trigger_search=trigger_search)
 
     @profiler.profile
-    def navigate_parent(self, trigger_search=True) -> str | None:
+    def navigate_parent(self, trigger_search=True, collapse=False) -> str | None:
         idx = self.currentIndex()
         if not idx.isValid():
             return None
         parent = idx.parent()
         if parent.isValid():
-            return self._select_index_for_navigation(parent, trigger_search=trigger_search)
+            path = self._select_index_for_navigation(parent, trigger_search=trigger_search)
+            if collapse and path:
+                self.collapse(parent)
+            return path
         return None
 
     @profiler.profile

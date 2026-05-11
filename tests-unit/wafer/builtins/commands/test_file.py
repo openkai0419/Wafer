@@ -48,6 +48,22 @@ class _Ctx:
         return None
 
 
+class _PathOnlyCtx:
+    def __init__(self, path=None, paths=None):
+        self._path = path
+        self._paths = list(paths) if paths else None
+
+    def get(self, key, default=None):
+        if key == "path":
+            return self._path
+        if key == "paths":
+            return self._paths
+        return default
+
+    def get_instance(self, name):
+        return None
+
+
 def test_delete_files_cancel_does_not_delete(tmp_path, monkeypatch):
     p = tmp_path / "a.txt"
     p.write_text("x", encoding="utf-8")
@@ -62,17 +78,8 @@ def test_delete_files_cancel_does_not_delete(tmp_path, monkeypatch):
 def test_file_commands_strict_source_required():
     logical = build_virtual_path("C:/data/archive.zip", "folder/image.png")
 
-    class _PathOnlyCtx:
-        def get(self, key, default=None):
-            if key == "path":
-                return logical
-            return default
-
-        def get_instance(self, name):
-            return None
-
     assert file_mod._ctx_sources(_PathOnlyCtx()) == []
-    assert file_mod._ctx_source(_PathOnlyCtx()) is None
+    assert file_mod._ctx_source(_PathOnlyCtx(path=logical)) is None
 
 
 def test_file_commands_uses_explicit_source():
@@ -229,3 +236,18 @@ def test_make_new_folder_here_custom_name(tmp_path):
 def test_make_new_folder_here_returns_none_without_path():
     result = file_mod.make_new_folder_here(_Ctx(path=None))
     assert result is None
+
+
+def test_make_new_folder_here_requires_source(tmp_path):
+    result = file_mod.make_new_folder_here(_PathOnlyCtx(path=str(tmp_path)))
+    assert result is None
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_paste_here_requires_source(tmp_path, monkeypatch):
+    called = []
+    monkeypatch.setattr(file_mod, "paste_clipboard_files", lambda *a, **k: called.append((a, k)))
+
+    file_mod.paste_here(_PathOnlyCtx(path=str(tmp_path)))
+
+    assert called == []

@@ -768,6 +768,34 @@ def test_navigate_parent_selects_parent_without_expanding(qtbot):
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+def test_navigate_parent_can_collapse_selected_parent(qtbot):
+    tmpdir = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(tmpdir, "A", "A1", "deep"), exist_ok=True)
+        tree = LazyFolderTreeView(roots=[tmpdir], excluded=[])
+        qtbot.addWidget(tree)
+        tree.model_._build_roots([tmpdir])
+
+        path_a = normalize_path(os.path.join(tmpdir, "A"))
+        path_a1 = normalize_path(os.path.join(tmpdir, "A", "A1"))
+        tree.expand_path(path_a1)
+        a_index = tree.model_.find_index_by_path(path_a)
+        a1_index = tree.model_.find_index_by_path(path_a1)
+        tree._programmatic_expand += 1
+        try:
+            tree.expand(a_index)
+        finally:
+            tree._programmatic_expand -= 1
+        assert tree.isExpanded(a_index)
+
+        tree.setCurrentIndex(a1_index)
+        assert tree.navigate_parent(collapse=True) == path_a
+        assert tree.get_selected_paths() == [path_a]
+        assert not tree.isExpanded(a_index)
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 def test_navigate_child_expands_current_only(qtbot):
     tmpdir = tempfile.mkdtemp()
     try:

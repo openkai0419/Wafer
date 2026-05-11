@@ -74,7 +74,7 @@ class _FileEventHandler(FileSystemEventHandler):
         self._inbox.put(("changed", event.src_path))
 
     def on_deleted(self, event):
-        if not "." in event.src_path:
+        if "." not in event.src_path:
             self._inbox.put(("folder", event.src_path))
         self._inbox.put(("deleted", event.src_path))
 

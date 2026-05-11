@@ -932,11 +932,11 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
             on_complete()
 
     @profiler.profile
-    def expand_and_select_path(self, path, on_complete=None, emit_selected=True):
-        self.expand_and_select_paths([path], on_complete=on_complete, emit_selected=emit_selected)
+    def expand_and_select_path(self, path, on_complete=None, emit_selected=True, expand_target=True):
+        self.expand_and_select_paths([path], on_complete=on_complete, emit_selected=emit_selected, expand_target=expand_target)
 
     @profiler.profile
-    def expand_and_select_paths(self, paths, on_complete=None, emit_selected=True):
+    def expand_and_select_paths(self, paths, on_complete=None, emit_selected=True, expand_target=True):
         normalized = list(dict.fromkeys(normalize_path(p) for p in paths if p))
         if not normalized:
             if on_complete:
@@ -949,11 +949,11 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
 
         def task():
             children_map = {seg: _scan_children(seg, excluded) for seg in segments}
-            dispatcher.invoke(lambda: self._apply_expand_and_select(normalized, children_map, on_complete, emit_selected))
+            dispatcher.invoke(lambda: self._apply_expand_and_select(normalized, children_map, on_complete, emit_selected, expand_target))
 
         dispatcher.post(task, priority=8)
 
-    def _apply_expand_and_select(self, paths, children_map, on_complete, emit_selected):
+    def _apply_expand_and_select(self, paths, children_map, on_complete, emit_selected, expand_target):
         model = self.model_
         for seg_path, children in children_map.items():
             item = model.path_item_map.get(seg_path)
@@ -973,11 +973,15 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
                 index = model.indexFromItem(item)
                 if not index.isValid():
                     continue
+                parents = []
                 parent = index.parent()
                 while parent.isValid():
-                    self.expand(parent)
+                    parents.append(parent)
                     parent = parent.parent()
-                self.expand(index)
+                for parent in reversed(parents):
+                    self.expand(parent)
+                if expand_target:
+                    self.expand(index)
                 to_select.append(index)
         finally:
             self._programmatic_expand -= 1
@@ -1314,40 +1318,54 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         idx = self.currentIndex()
         return idx.data(USER_ROLE_PATH) if idx.isValid() else None
 
-    def _select_and_emit(self, path, trigger_search=True):
+    def _select_path_for_navigation(self, path, trigger_search=True):
         if not path:
             return None
-        self.expand_and_select_paths([path], on_complete=lambda: self.current_path_changed.emit(path), emit_selected=trigger_search)
+        path = normalize_path(path)
+        self.expand_and_select_paths([path], on_complete=lambda: self.current_path_changed.emit(path), emit_selected=trigger_search, expand_target=False)
         return path
 
+    def _select_index_for_navigation(self, index, trigger_search=True):
+        if not index.isValid():
+            return None
+        path = index.data(USER_ROLE_PATH)
+        if not path:
+            return None
+        sel_model = self.selectionModel()
+        sel_model.clearSelection()
+        sel_model.select(index, QtCore.QItemSelectionModel.Select | QtCore.QItemSelectionModel.Rows)
+        sel_model.setCurrentIndex(index, QtCore.QItemSelectionModel.NoUpdate)
+        self.scrollTo(index, QtWidgets.QAbstractItemView.PositionAtCenter)
+        if trigger_search:
+            self.folder_selected.emit()
+        self.current_path_changed.emit(path)
+        return path
+
+    def _sibling_index(self, index, offset):
+        if not index.isValid():
+            return QtCore.QModelIndex()
+        parent = index.parent()
+        row = index.row() + offset
+        if row < 0 or row >= self.model().rowCount(parent):
+            return QtCore.QModelIndex()
+        return self.model().index(row, 0, parent)
+
     @profiler.profile
-    def navigate_next_visible(self, trigger_search=True) -> str | None:
+    def navigate_next_folder(self, trigger_search=True) -> str | None:
         idx = self.currentIndex()
         if not idx.isValid():
             first = self.model().index(0, 0)
             if first.isValid():
-                return self._select_and_emit(first.data(USER_ROLE_PATH), trigger_search=trigger_search)
+                return self._select_index_for_navigation(first, trigger_search=trigger_search)
             return None
-        below = self.indexBelow(idx)
-        while below.isValid():
-            path = below.data(USER_ROLE_PATH)
-            if path:
-                return self._select_and_emit(path, trigger_search=trigger_search)
-            below = self.indexBelow(below)
-        return None
+        return self._select_index_for_navigation(self._sibling_index(idx, 1), trigger_search=trigger_search)
 
     @profiler.profile
-    def navigate_prev_visible(self, trigger_search=True) -> str | None:
+    def navigate_prev_folder(self, trigger_search=True) -> str | None:
         idx = self.currentIndex()
         if not idx.isValid():
             return None
-        above = self.indexAbove(idx)
-        while above.isValid():
-            path = above.data(USER_ROLE_PATH)
-            if path:
-                return self._select_and_emit(path, trigger_search=trigger_search)
-            above = self.indexAbove(above)
-        return None
+        return self._select_index_for_navigation(self._sibling_index(idx, -1), trigger_search=trigger_search)
 
     @profiler.profile
     def navigate_parent(self, trigger_search=True) -> str | None:
@@ -1356,9 +1374,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
             return None
         parent = idx.parent()
         if parent.isValid():
-            path = parent.data(USER_ROLE_PATH)
-            if path:
-                return self._select_and_emit(path, trigger_search=trigger_search)
+            return self._select_index_for_navigation(parent, trigger_search=trigger_search)
         return None
 
     @profiler.profile
@@ -1378,9 +1394,8 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         if item.rowCount() > 0:
             child = item.child(0)
             if child:
-                path = child.data(USER_ROLE_PATH)
-                if path:
-                    return self._select_and_emit(path, trigger_search=trigger_search)
+                child_index = self.model_.indexFromItem(child)
+                return self._select_index_for_navigation(child_index, trigger_search=trigger_search)
         return None
 
     @staticmethod
@@ -1409,7 +1424,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         current = self.current_path()
         if not current:
             sorted_roots = natsorted(self.model_.roots, key=lambda p: os.path.basename(p).lower())
-            return self._select_and_emit(sorted_roots[0], trigger_search=trigger_search) if sorted_roots else None
+            return self._select_path_for_navigation(sorted_roots[0], trigger_search=trigger_search) if sorted_roots else None
 
         current = normalize_path(current)
         excluded = self.model_.excluded
@@ -1418,7 +1433,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
 
         children = self._list_subdirs(current, excluded)
         if children:
-            return self._select_and_emit(children[0], trigger_search=trigger_search)
+            return self._select_path_for_navigation(children[0], trigger_search=trigger_search)
 
         path = current
         while True:
@@ -1426,7 +1441,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
                 try:
                     idx = sorted_roots.index(path)
                     if idx + 1 < len(sorted_roots):
-                        return self._select_and_emit(sorted_roots[idx + 1], trigger_search=trigger_search)
+                        return self._select_path_for_navigation(sorted_roots[idx + 1], trigger_search=trigger_search)
                 except ValueError:
                     pass
                 return None
@@ -1435,7 +1450,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
             try:
                 idx = siblings.index(path)
                 if idx + 1 < len(siblings):
-                    return self._select_and_emit(siblings[idx + 1], trigger_search=trigger_search)
+                    return self._select_path_for_navigation(siblings[idx + 1], trigger_search=trigger_search)
             except ValueError:
                 pass
             path = parent
@@ -1455,7 +1470,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
             try:
                 idx = sorted_roots.index(current)
                 if idx > 0:
-                    return self._select_and_emit(self._deepest_last(sorted_roots[idx - 1], excluded), trigger_search=trigger_search)
+                    return self._select_path_for_navigation(self._deepest_last(sorted_roots[idx - 1], excluded), trigger_search=trigger_search)
             except ValueError:
                 pass
             return None
@@ -1465,7 +1480,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         try:
             idx = siblings.index(current)
             if idx > 0:
-                return self._select_and_emit(self._deepest_last(siblings[idx - 1], excluded), trigger_search=trigger_search)
+                return self._select_path_for_navigation(self._deepest_last(siblings[idx - 1], excluded), trigger_search=trigger_search)
         except ValueError:
             pass
-        return self._select_and_emit(parent, trigger_search=trigger_search)
+        return self._select_path_for_navigation(parent, trigger_search=trigger_search)

@@ -683,16 +683,16 @@
     "en": "Name",
     "ja": ""
   },
+  "Navigate": {
+    "en": "Navigate",
+    "ja": ""
+  },
   "Navigate (Filesystem DFS)": {
     "en": "Navigate (Filesystem DFS)",
     "ja": ""
   },
   "Navigate (Hierarchy)": {
     "en": "Navigate (Hierarchy)",
-    "ja": ""
-  },
-  "Navigate (Visible Tree)": {
-    "en": "Navigate (Visible Tree)",
     "ja": ""
   },
   "Navigate by Mouse Position": {
@@ -715,12 +715,12 @@
     "en": "Next File",
     "ja": ""
   },
-  "Next Folder (DFS)": {
-    "en": "Next Folder (DFS)",
+  "Next Folder": {
+    "en": "Next Folder",
     "ja": ""
   },
-  "Next Folder (Visible)": {
-    "en": "Next Folder (Visible)",
+  "Next Folder (DFS)": {
+    "en": "Next Folder (DFS)",
     "ja": ""
   },
   "Next Frame": {
@@ -847,12 +847,12 @@
     "en": "Prev File",
     "ja": ""
   },
-  "Prev Folder (DFS)": {
-    "en": "Prev Folder (DFS)",
+  "Previous Folder": {
+    "en": "Previous Folder",
     "ja": ""
   },
-  "Prev Folder (Visible)": {
-    "en": "Prev Folder (Visible)",
+  "Previous Folder (DFS)": {
+    "en": "Previous Folder (DFS)",
     "ja": ""
   },
   "Prev Row": {

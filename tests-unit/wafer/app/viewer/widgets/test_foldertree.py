@@ -662,7 +662,7 @@ def test_expand_and_select_paths_dedupes(qtbot):
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-def test_navigate_next_visible_emits_after_selection(qtbot):
+def test_navigate_next_folder_emits_after_selection(qtbot):
     tmpdir = tempfile.mkdtemp()
     try:
         os.makedirs(os.path.join(tmpdir, "A"), exist_ok=True)
@@ -671,41 +671,151 @@ def test_navigate_next_visible_emits_after_selection(qtbot):
         qtbot.addWidget(tree)
         tree.model_._build_roots([tmpdir])
 
-        root_index = tree.expand_path(tmpdir)
-        tree.setCurrentIndex(root_index)
+        tree.expand_path(tmpdir)
+        path_a = normalize_path(os.path.join(tmpdir, "A"))
+        path_b = normalize_path(os.path.join(tmpdir, "B"))
+        tree.setCurrentIndex(tree.model_.find_index_by_path(path_a))
         emitted = []
         tree.folder_selected.connect(lambda: emitted.append(list(tree.get_selected_paths())))
 
-        path_a = normalize_path(os.path.join(tmpdir, "A"))
-        assert tree.navigate_next_visible() == path_a
+        assert tree.navigate_next_folder() == path_b
         qtbot.waitUntil(lambda: bool(emitted), timeout=3000)
 
-        assert emitted == [[path_a]]
+        assert emitted == [[path_b]]
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-def test_navigate_next_visible_can_skip_search_emit(qtbot):
+def test_navigate_next_folder_can_skip_search_emit(qtbot):
     tmpdir = tempfile.mkdtemp()
     try:
         os.makedirs(os.path.join(tmpdir, "A"), exist_ok=True)
+        os.makedirs(os.path.join(tmpdir, "B"), exist_ok=True)
+        tree = LazyFolderTreeView(roots=[tmpdir], excluded=[])
+        qtbot.addWidget(tree)
+        tree.model_._build_roots([tmpdir])
+
+        tree.expand_path(tmpdir)
+        path_a = normalize_path(os.path.join(tmpdir, "A"))
+        path_b = normalize_path(os.path.join(tmpdir, "B"))
+        tree.setCurrentIndex(tree.model_.find_index_by_path(path_a))
+        emitted = []
+        done = []
+        tree.folder_selected.connect(lambda: emitted.append(True))
+        tree.current_path_changed.connect(lambda _path: done.append(True))
+
+        assert tree.navigate_next_folder(trigger_search=False) == path_b
+        qtbot.waitUntil(lambda: bool(done), timeout=3000)
+
+        assert emitted == []
+        assert tree.get_selected_paths() == [path_b]
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_navigate_next_prev_folder_stay_with_siblings(qtbot):
+    tmpdir = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(tmpdir, "A", "A1"), exist_ok=True)
+        os.makedirs(os.path.join(tmpdir, "B"), exist_ok=True)
+        tree = LazyFolderTreeView(roots=[tmpdir], excluded=[])
+        qtbot.addWidget(tree)
+        tree.model_._build_roots([tmpdir])
+
+        tree.expand_path(tmpdir)
+        path_a = normalize_path(os.path.join(tmpdir, "A"))
+        path_a1 = normalize_path(os.path.join(tmpdir, "A", "A1"))
+        path_b = normalize_path(os.path.join(tmpdir, "B"))
+        a_index = tree.model_.find_index_by_path(path_a)
+        a1_index = tree.model_.find_index_by_path(path_a1)
+        b_index = tree.model_.find_index_by_path(path_b)
+
+        tree.collapse(a_index)
+        tree.setCurrentIndex(a_index)
+        assert tree.navigate_next_folder() == path_b
+        assert not tree.isExpanded(a_index)
+
+        tree.setCurrentIndex(b_index)
+        assert tree.navigate_prev_folder() == path_a
+        assert not tree.isExpanded(a_index)
+
+        tree.setCurrentIndex(a1_index)
+        assert tree.navigate_next_folder() is None
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_navigate_parent_selects_parent_without_expanding(qtbot):
+    tmpdir = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(tmpdir, "A", "A1"), exist_ok=True)
+        tree = LazyFolderTreeView(roots=[tmpdir], excluded=[])
+        qtbot.addWidget(tree)
+        tree.model_._build_roots([tmpdir])
+
+        path_a = normalize_path(os.path.join(tmpdir, "A"))
+        path_a1 = normalize_path(os.path.join(tmpdir, "A", "A1"))
+        tree.expand_path(path_a1)
+        a_index = tree.model_.find_index_by_path(path_a)
+        a1_index = tree.model_.find_index_by_path(path_a1)
+        tree.collapse(a_index)
+        tree.setCurrentIndex(a1_index)
+
+        assert tree.navigate_parent() == path_a
+        assert tree.get_selected_paths() == [path_a]
+        assert not tree.isExpanded(a_index)
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_navigate_child_expands_current_only(qtbot):
+    tmpdir = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(tmpdir, "A", "A1", "deep"), exist_ok=True)
+        tree = LazyFolderTreeView(roots=[tmpdir], excluded=[])
+        qtbot.addWidget(tree)
+        tree.model_._build_roots([tmpdir])
+
+        tree.expand_path(tmpdir)
+        path_a = normalize_path(os.path.join(tmpdir, "A"))
+        path_a1 = normalize_path(os.path.join(tmpdir, "A", "A1"))
+        a_index = tree.model_.find_index_by_path(path_a)
+        tree.collapse(a_index)
+        tree.setCurrentIndex(a_index)
+
+        assert tree.navigate_child() == path_a1
+        a1_index = tree.model_.find_index_by_path(path_a1)
+        assert tree.get_selected_paths() == [path_a1]
+        assert tree.isExpanded(a_index)
+        assert not tree.isExpanded(a1_index)
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_navigate_next_dfs_does_not_expand_target(qtbot):
+    tmpdir = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(tmpdir, "A", "A1", "deep"), exist_ok=True)
+        os.makedirs(os.path.join(tmpdir, "B"), exist_ok=True)
         tree = LazyFolderTreeView(roots=[tmpdir], excluded=[])
         qtbot.addWidget(tree)
         tree.model_._build_roots([tmpdir])
 
         root_index = tree.expand_path(tmpdir)
         tree.setCurrentIndex(root_index)
-        emitted = []
-        done = []
-        tree.folder_selected.connect(lambda: emitted.append(True))
-        tree.current_path_changed.connect(lambda _path: done.append(True))
-
         path_a = normalize_path(os.path.join(tmpdir, "A"))
-        assert tree.navigate_next_visible(trigger_search=False) == path_a
-        qtbot.waitUntil(lambda: bool(done), timeout=3000)
+        path_a1 = normalize_path(os.path.join(tmpdir, "A", "A1"))
 
-        assert emitted == []
-        assert tree.get_selected_paths() == [path_a]
+        assert tree.navigate_next_dfs() == path_a
+        qtbot.waitUntil(lambda: tree.get_selected_paths() == [path_a], timeout=3000)
+        a_index = tree.model_.find_index_by_path(path_a)
+        assert not tree.isExpanded(a_index)
+
+        assert tree.navigate_next_dfs() == path_a1
+        qtbot.waitUntil(lambda: tree.get_selected_paths() == [path_a1], timeout=3000)
+        a1_index = tree.model_.find_index_by_path(path_a1)
+        assert tree.isExpanded(a_index)
+        assert not tree.isExpanded(a1_index)
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 

@@ -203,12 +203,12 @@ def prev_folder_dfs(ctx, trigger_search: bool = True):
     return _navigate(ctx, "navigate_prev_dfs", trigger_search=trigger_search)
 
 
-def next_folder_visible(ctx, trigger_search: bool = True):
-    return _navigate(ctx, "navigate_next_visible", trigger_search=trigger_search)
+def next_folder(ctx, trigger_search: bool = True):
+    return _navigate(ctx, "navigate_next_folder", trigger_search=trigger_search)
 
 
-def prev_folder_visible(ctx, trigger_search: bool = True):
-    return _navigate(ctx, "navigate_prev_visible", trigger_search=trigger_search)
+def prev_folder(ctx, trigger_search: bool = True):
+    return _navigate(ctx, "navigate_prev_folder", trigger_search=trigger_search)
 
 
 def parent_folder(ctx, trigger_search: bool = True):
@@ -228,35 +228,19 @@ class FolderTreeCommands(ActionKit.MenuBase):
         return [
             ":FolderTree",
             "-",
-            ":Navigate (Filesystem DFS)",
+            ":Navigate",
             ActionKit.Command(
-                path="ft.next_folder_dfs",
-                display="Next Folder (DFS)",
-                func=next_folder_dfs,
+                path="ft.next_folder",
+                display="Next Folder",
+                func=next_folder,
                 params=[ActionKit.Param(name="trigger_search", value=True)],
             ),
             ActionKit.Command(
-                path="ft.prev_folder_dfs",
-                display="Prev Folder (DFS)",
-                func=prev_folder_dfs,
+                path="ft.prev_folder",
+                display="Previous Folder",
+                func=prev_folder,
                 params=[ActionKit.Param(name="trigger_search", value=True)],
             ),
-            "-",
-            ":Navigate (Visible Tree)",
-            ActionKit.Command(
-                path="ft.next_folder_visible",
-                display="Next Folder (Visible)",
-                func=next_folder_visible,
-                params=[ActionKit.Param(name="trigger_search", value=True)],
-            ),
-            ActionKit.Command(
-                path="ft.prev_folder_visible",
-                display="Prev Folder (Visible)",
-                func=prev_folder_visible,
-                params=[ActionKit.Param(name="trigger_search", value=True)],
-            ),
-            "-",
-            ":Navigate (Hierarchy)",
             ActionKit.Command(
                 path="ft.parent_folder",
                 display="Parent Folder",
@@ -267,6 +251,20 @@ class FolderTreeCommands(ActionKit.MenuBase):
                 path="ft.child_folder",
                 display="Child Folder",
                 func=child_folder,
+                params=[ActionKit.Param(name="trigger_search", value=True)],
+            ),
+            "-",
+            ":Navigate (Filesystem DFS)",
+            ActionKit.Command(
+                path="ft.next_folder_dfs",
+                display="Next Folder (DFS)",
+                func=next_folder_dfs,
+                params=[ActionKit.Param(name="trigger_search", value=True)],
+            ),
+            ActionKit.Command(
+                path="ft.prev_folder_dfs",
+                display="Previous Folder (DFS)",
+                func=prev_folder_dfs,
                 params=[ActionKit.Param(name="trigger_search", value=True)],
             ),
             "-",

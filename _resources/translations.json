@@ -2611,6 +2611,42 @@
     "en": "Confirm",
     "ja": ""
   },
+  "Copy to:": {
+    "en": "Copy to:",
+    "ja": ""
+  },
+  "Move to:": {
+    "en": "Move to:",
+    "ja": ""
+  },
+  "Drop Target Required": {
+    "en": "Drop Target Required",
+    "ja": ""
+  },
+  "Choose Drop Target": {
+    "en": "Choose Drop Target",
+    "ja": ""
+  },
+  "Choose the destination for this drop.": {
+    "en": "Choose the destination for this drop.",
+    "ja": ""
+  },
+  "Choose the FolderTree destination for this drop.": {
+    "en": "Choose the FolderTree destination for this drop.",
+    "ja": ""
+  },
+  "Select a folder in FolderTree before dropping without a grid target.": {
+    "en": "Select a folder in FolderTree before dropping without a grid target.",
+    "ja": ""
+  },
+  "Drop to the selected FolderTree folder?\n  {path}": {
+    "en": "Drop to the selected FolderTree folder?\n  {path}",
+    "ja": ""
+  },
+  "Drop to:\n  {path}": {
+    "en": "Drop to:\n  {path}",
+    "ja": ""
+  },
   "Confirm Disable": {
     "en": "Confirm Disable",
     "ja": ""

@@ -20,5 +20,36 @@ def test_drop_operation_dialog_normalizes_operation():
     assert DropOperationDialog.normalize_operation(None, default="move") == "move"
 
 
+def test_drop_target_dialog_normalizes_candidates():
+    from wafer.ui.dialogs import DropTargetDialog
+
+    assert DropTargetDialog.normalize_candidates(["a", "", None, "a", "b"]) == ["a", "b"]
+
+
+def test_drop_target_dialog_uses_default(qtbot):
+    from wafer.ui.dialogs import DropTargetDialog
+
+    from PySide6 import QtWidgets
+
+    parent = QtWidgets.QWidget()
+    qtbot.addWidget(parent)
+    dialog = DropTargetDialog(["a", "b"], default="b", parent=parent)
+    qtbot.addWidget(dialog)
+    assert dialog.combo.currentData() == "b"
+
+
+def test_drop_target_dialog_ok_sets_selected_path(qtbot):
+    from wafer.ui.dialogs import DropTargetDialog
+
+    from PySide6 import QtWidgets
+
+    parent = QtWidgets.QWidget()
+    qtbot.addWidget(parent)
+    dialog = DropTargetDialog(["a", "b"], default="b", parent=parent)
+    qtbot.addWidget(dialog)
+    dialog._on_button(dialog.ok_text)
+    assert dialog.selected_path == "b"
+
+
 def test_compile():
     py_compile.compile("wafer/ui/dialogs.py")

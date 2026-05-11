@@ -348,6 +348,18 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         scene_pos = self.mapToScene(pos)
         return self.rects.index_at_point(scene_pos.toPoint())
 
+    @profiler.profile
+    def nearest_index_at_pos(self, pos, *, visible_only=True):
+        if not self.rects:
+            return None
+        scene_pos = self.to_scene_pos(pos)
+        candidates = None
+        if visible_only:
+            visible = self._calculate_visible_indices(self._scene_view_rect())
+            if visible:
+                candidates = visible
+        return self.rects.nearest_index_to_point(scene_pos, candidates)
+
     def to_scene_pos(self, pos):
         return self.mapToScene(pos).toPoint()
 

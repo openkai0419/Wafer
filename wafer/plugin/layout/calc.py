@@ -93,6 +93,41 @@ class LayoutData:
         return None
 
     @profiler.profile
+    def nearest_index_to_point(self, point, indices=None):
+        if not self._count:
+            return None
+        candidates = range(self._count) if indices is None else indices
+        px, py = point.x(), point.y()
+        best = None
+        best_key = None
+        hz = self._is_horizontal
+        for raw_index in candidates:
+            i = int(raw_index)
+            if i < 0 or i >= self._count:
+                continue
+            r = self._rects[i]
+            left = r.x()
+            top = r.y()
+            right = left + r.width()
+            bottom = top + r.height()
+            dx = left - px if px < left else px - right if px > right else 0
+            dy = top - py if py < top else py - bottom if py > bottom else 0
+            center = r.center()
+            center_dx = center.x() - px
+            center_dy = center.y() - py
+            key = (
+                dx * dx + dy * dy,
+                center_dx * center_dx + center_dy * center_dy,
+                r.y() if hz else r.x(),
+                r.x() if hz else r.y(),
+                i,
+            )
+            if best_key is None or key < best_key:
+                best = i
+                best_key = key
+        return best
+
+    @profiler.profile
     def intersecting_indices(self, rect):
         p_start = rect.top() if self._is_horizontal else rect.left()
         p_end = rect.bottom() if self._is_horizontal else rect.right()

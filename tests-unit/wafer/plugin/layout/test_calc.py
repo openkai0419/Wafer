@@ -128,6 +128,30 @@ def test_index_at_point_empty_space():
     assert result is None
 
 
+def test_nearest_index_to_point_uses_rect_edges():
+    rects = [
+        QtCore.QRect(0, 0, 100, 100),
+        QtCore.QRect(120, 0, 200, 100),
+    ]
+    d = _make_layout(rects)
+    assert d.nearest_index_to_point(QtCore.QPoint(110, 50)) == 0
+    assert d.nearest_index_to_point(QtCore.QPoint(116, 50)) == 1
+
+
+def test_nearest_index_to_point_respects_candidates():
+    rects = [
+        QtCore.QRect(0, 0, 100, 100),
+        QtCore.QRect(120, 0, 100, 100),
+        QtCore.QRect(240, 0, 100, 100),
+    ]
+    d = _make_layout(rects)
+    assert d.nearest_index_to_point(QtCore.QPoint(250, 50), indices=[0, 1]) == 1
+
+
+def test_nearest_index_to_point_empty_layout():
+    assert LayoutData.empty().nearest_index_to_point(QtCore.QPoint(0, 0)) is None
+
+
 def test_intersecting_indices():
     rects = [
         QtCore.QRect(0, 0, 100, 100),

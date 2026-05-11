@@ -1291,6 +1291,81 @@ class TestThumbCacheLRU:
 
 
 class TestContextMenu:
+    class _TopLevelShowTrace(QtCore.QObject):
+        def __init__(self):
+            super().__init__()
+            self.shows = []
+
+        def eventFilter(self, obj, event):
+            if event.type() == QtCore.QEvent.Show and isinstance(obj, QtWidgets.QWidget) and obj.isWindow():
+                self.shows.append((type(obj).__name__, obj.size()))
+            return False
+
+    def _assert_popup_anchored_to_header(self, popup, header, section):
+        section_x = header.sectionPosition(section) - header.offset()
+        header_top = header.mapToGlobal(QtCore.QPoint(section_x, 0))
+        header_bottom = header.mapToGlobal(QtCore.QPoint(section_x, header.height()))
+        popup_rect = QtCore.QRect(popup.pos(), popup.size())
+        vertical_gap = min(
+            abs(popup_rect.top() - header_bottom.y()),
+            abs(popup_rect.bottom() - header_top.y()),
+        )
+        assert vertical_gap <= 4
+        assert abs(popup_rect.left() - header_top.x()) <= max(header.sectionSize(section), popup_rect.width())
+
+    @pytest.mark.parametrize("insert_attr", ["prefix", "suffix"])
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_segment_header_popup_stays_open_when_insert_is_enabled(self, mock_init, qtbot, tmp_files, insert_attr):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        setattr(dlg._columns[0].post, insert_attr, "insert_")
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
+        dlg.resize(640, 480)
+        dlg.show()
+        qtbot.waitExposed(dlg)
+        qtbot.waitUntil(dlg.isVisible, timeout=5000)
+
+        header = dlg._seg_table.horizontalHeader()
+        qtbot.waitUntil(lambda: header.viewport().isVisible() and header.sectionSize(0) > 0, timeout=5000)
+        pos = header.sectionViewportPosition(0) + header.sectionSize(0) // 2
+        click_pos = QtCore.QPoint(pos, header.height() // 2)
+        trace = self._TopLevelShowTrace()
+        QtWidgets.QApplication.instance().installEventFilter(trace)
+
+        try:
+            qtbot.mouseClick(header.viewport(), Qt.LeftButton, pos=click_pos)
+            qtbot.waitUntil(lambda: dlg._popup is not None and dlg._popup.isVisible(), timeout=5000)
+            first_popup = dlg._popup
+            for _ in range(10):
+                QtWidgets.QApplication.processEvents()
+            assert dlg._popup is not None
+            assert dlg._popup.isVisible()
+            self._assert_popup_anchored_to_header(dlg._popup, header, 0)
+
+            qtbot.mouseClick(header.viewport(), Qt.LeftButton, pos=click_pos)
+            qtbot.waitUntil(lambda: dlg._popup is not None and dlg._popup.isVisible(), timeout=5000)
+            for _ in range(10):
+                QtWidgets.QApplication.processEvents()
+
+            assert dlg._popup is not None
+            assert dlg._popup.isVisible()
+            assert dlg._popup is not first_popup
+            self._assert_popup_anchored_to_header(dlg._popup, header, 0)
+
+            insert_btn = next(btn for btn in dlg._popup.findChildren(QtWidgets.QPushButton) if "Insert" in btn.text())
+            qtbot.mouseClick(insert_btn, Qt.LeftButton)
+            qtbot.waitUntil(lambda: dlg._popup is not None and dlg._popup.isVisible(), timeout=5000)
+            for _ in range(10):
+                QtWidgets.QApplication.processEvents()
+            assert dlg._popup is not None
+            assert dlg._popup.isVisible()
+            assert [name for name, _size in trace.shows] == ["ColumnSettingsPopup", "ColumnSettingsPopup"]
+        finally:
+            QtWidgets.QApplication.instance().removeEventFilter(trace)
+            dlg.close()
+
     @patch.object(BatchRenameWidget, "_start_async_init")
     def test_show_row_menu_builds_command_menu(self, mock_init, qtbot, tmp_files):
         from wafer.core.commands.bridge import Menu

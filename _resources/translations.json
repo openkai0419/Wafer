@@ -1,4 +1,24 @@
 {
+  "Drop Files (Ask)": {
+    "en": "Drop Files (Ask)",
+    "ja": ""
+  },
+  "Drop Files (Copy)": {
+    "en": "Drop Files (Copy)",
+    "ja": ""
+  },
+  "Drop Files (Move)": {
+    "en": "Drop Files (Move)",
+    "ja": ""
+  },
+  "Move Target": {
+    "en": "Move Target",
+    "ja": ""
+  },
+  "on_conflict": {
+    "en": "on_conflict",
+    "ja": ""
+  },
   "collapse": {
     "en": "collapse",
     "ja": ""

@@ -1,4 +1,20 @@
 {
+  "lower": {
+    "en": "lower",
+    "ja": ""
+  },
+  "none": {
+    "en": "none",
+    "ja": ""
+  },
+  "title": {
+    "en": "title",
+    "ja": ""
+  },
+  "upper": {
+    "en": "upper",
+    "ja": ""
+  },
   "Overlay badge size": {
     "en": "Overlay badge size",
     "ja": ""

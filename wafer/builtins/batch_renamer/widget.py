@@ -570,7 +570,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
             token = CancelToken()
             self._thumb_tokens[r] = token
             rows_tokens.append((r, self._paths[r], token))
-        thumb_size = QtCore.QSize(dpix(256), dpix(256))
+        thumb_size = QtCore.QSize(dpix(512), dpix(512))
 
         def task():
             from ...plugin.grid.handler import load_thumbnail

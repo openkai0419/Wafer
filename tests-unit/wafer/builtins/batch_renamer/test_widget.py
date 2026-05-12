@@ -874,7 +874,8 @@ class TestSegTableSelectionSync:
         qtbot.addWidget(dlg)
         dlg._rebuild()
         qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
-        dlg._seg_table.selectRow(1)
+        index = dlg._seg_model.index(1, 0)
+        dlg._seg_table.selectionModel().select(index, QtCore.QItemSelectionModel.ClearAndSelect)
         assert dlg._selected_row == 1
         dlg.close()
 
@@ -886,9 +887,10 @@ class TestSegTableSelectionSync:
         qtbot.addWidget(dlg)
         dlg._rebuild()
         qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
-        dlg._seg_table.selectRow(2)
-        preview_rows = dlg._preview.selectionModel().selectedRows()
-        assert preview_rows and preview_rows[0].row() == 2
+        index = dlg._seg_model.index(2, 0)
+        dlg._seg_table.selectionModel().select(index, QtCore.QItemSelectionModel.ClearAndSelect)
+        preview_rows = {item.row() for item in dlg._preview.selectionModel().selectedIndexes()}
+        assert preview_rows == {2}
         dlg.close()
 
     @patch.object(BatchRenameWidget, "_start_async_init")
@@ -899,9 +901,10 @@ class TestSegTableSelectionSync:
         qtbot.addWidget(dlg)
         dlg._rebuild()
         qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
-        dlg._preview.selectRow(0)
-        seg_rows = dlg._seg_table.selectionModel().selectedRows()
-        assert seg_rows and seg_rows[0].row() == 0
+        index = dlg._preview_model.index(0, 1)
+        dlg._preview.selectionModel().select(index, QtCore.QItemSelectionModel.ClearAndSelect)
+        seg_rows = {item.row() for item in dlg._seg_table.selectionModel().selectedIndexes()}
+        assert seg_rows == {0}
         dlg.close()
 
 
@@ -1106,6 +1109,365 @@ class TestAllColumnsEditable:
             assert dlg._ext_column.overrides[path_key] == ".png"
         dlg.close()
 
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_restore_name_column_clears_override_and_recomputes_result(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        qtbot.addWidget(dlg)
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
+
+        idx = dlg._seg_model.index(0, 0)
+        path_key = str(dlg._paths[0])
+        original = dlg._results[0].segments[0]
+
+        dlg._seg_model.setData(idx, "custom_name", Qt.EditRole)
+        qtbot.waitUntil(
+            lambda: dlg._results[0].segments[0] == "custom_name" and dlg._columns[0].overrides.get(path_key) == "custom_name",
+            timeout=5000,
+        )
+
+        dlg._restore_cell_override(path_key, 0)
+
+        qtbot.waitUntil(
+            lambda: path_key not in dlg._columns[0].overrides and dlg._results[0].segments[0] == original,
+            timeout=5000,
+        )
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_restore_ext_column_clears_override_and_refreshes(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        qtbot.addWidget(dlg)
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
+
+        ext_sec = dlg._ext_section
+        idx = dlg._seg_model.index(0, ext_sec)
+        path_key = str(dlg._paths[0])
+
+        with patch.object(dlg, "_refresh") as refresh:
+            dlg._seg_model.setData(idx, ".png", Qt.EditRole)
+            assert dlg._ext_column.overrides[path_key] == ".png"
+            refresh.reset_mock()
+
+            dlg._restore_cell_override(path_key, ext_sec)
+
+            assert path_key not in dlg._ext_column.overrides
+            refresh.assert_called_once_with(auto_size=False)
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_restore_selected_overrides_clears_only_selected_cells(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        qtbot.addWidget(dlg)
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
+
+        ext_sec = dlg._ext_section
+        name_idx_0 = dlg._seg_model.index(0, 0)
+        ext_idx_0 = dlg._seg_model.index(0, ext_sec)
+        name_idx_1 = dlg._seg_model.index(1, 0)
+        path_key_0 = str(dlg._paths[0])
+        path_key_1 = str(dlg._paths[1])
+
+        with patch.object(dlg, "_refresh") as refresh:
+            dlg._seg_model.setData(name_idx_0, "custom_name", Qt.EditRole)
+            dlg._seg_model.setData(ext_idx_0, ".png", Qt.EditRole)
+            dlg._seg_model.setData(name_idx_1, "other_name", Qt.EditRole)
+            refresh.reset_mock()
+
+            sel = dlg._seg_table.selectionModel()
+            sel.select(name_idx_0, QtCore.QItemSelectionModel.ClearAndSelect)
+            sel.select(name_idx_1, QtCore.QItemSelectionModel.Select)
+
+            dlg._restore_cell_overrides(dlg._selected_override_cells())
+
+            assert path_key_0 not in dlg._columns[0].overrides
+            assert path_key_1 not in dlg._columns[0].overrides
+            assert dlg._ext_column.overrides[path_key_0] == ".png"
+            refresh.assert_called_once_with(auto_size=False)
+        dlg.close()
+
+
+class TestSegmentEditingNavigation:
+    def _prepare_dialog(self, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.resize(640, 480)
+        dlg.set_files(tmp_files)
+        dlg._columns.append(RenameColumn(FixedSource("fixed")))
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
+        dlg.show()
+        qtbot.waitExposed(dlg)
+        return dlg
+
+    def _open_editor(self, dlg, qtbot, row, column):
+        index = dlg._seg_model.index(row, column)
+        dlg._seg_table.setCurrentIndex(index)
+        dlg._seg_table.setFocus()
+        dlg._seg_table.edit(index)
+        qtbot.waitUntil(dlg._seg_table.is_editing, timeout=3000)
+        editor = dlg._seg_table.findChild(QtWidgets.QLineEdit)
+        assert editor is not None
+        return editor
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_tab_moves_to_next_row_same_column(self, mock_init, qtbot, tmp_files):
+        dlg = self._prepare_dialog(qtbot, tmp_files)
+        try:
+            fixed_col = 1
+            editor = self._open_editor(dlg, qtbot, 0, fixed_col)
+            editor.setFocus()
+            qtbot.keyClick(editor, Qt.Key_Tab)
+
+            qtbot.waitUntil(
+                lambda: dlg._seg_table.currentIndex().row() == 1
+                and dlg._seg_table.currentIndex().column() == fixed_col
+                and dlg._seg_table.is_editing(),
+                timeout=3000,
+            )
+        finally:
+            dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_shift_tab_moves_to_previous_row_same_column(self, mock_init, qtbot, tmp_files):
+        dlg = self._prepare_dialog(qtbot, tmp_files)
+        try:
+            fixed_col = 1
+            editor = self._open_editor(dlg, qtbot, 1, fixed_col)
+            dlg._seg_table.closeEditor(editor, QtWidgets.QAbstractItemDelegate.EditPreviousItem)
+
+            qtbot.waitUntil(
+                lambda: dlg._seg_table.currentIndex().row() == 0
+                and dlg._seg_table.currentIndex().column() == fixed_col
+                and dlg._seg_table.is_editing(),
+                timeout=3000,
+            )
+        finally:
+            dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_tab_at_last_row_does_not_wrap(self, mock_init, qtbot, tmp_files):
+        dlg = self._prepare_dialog(qtbot, tmp_files)
+        try:
+            fixed_col = 1
+            editor = self._open_editor(dlg, qtbot, 2, fixed_col)
+            dlg._seg_table.closeEditor(editor, QtWidgets.QAbstractItemDelegate.EditNextItem)
+
+            qtbot.waitUntil(lambda: not dlg._seg_table.is_editing(), timeout=3000)
+            assert dlg._seg_table.currentIndex().row() == 2
+            assert dlg._seg_table.currentIndex().column() == fixed_col
+        finally:
+            dlg.close()
+
+
+class TestSegmentEditingDeferredUpdate:
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_cancel_all_pending_clears_deferred_updates(self, mock_init, qtbot, tmp_files, monkeypatch):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        monkeypatch.setattr(dlg._seg_table, "is_editing", lambda: True)
+
+        assert dlg._defer_update_if_editing(lambda: None, kind="rebuild") is True
+        assert dlg._defer_update_if_editing(lambda: None, kind="refresh") is True
+        assert dlg._defer_update_if_editing(lambda: None, kind="apply") is True
+        dlg._schedule_pending_update()
+
+        dlg._cancel_all_pending()
+
+        assert dlg._pending_rebuild_callback is None
+        assert dlg._pending_refresh_callback is None
+        assert dlg._pending_apply_callback is None
+        assert dlg._pending_update_scheduled is False
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_refresh_defers_while_segment_editor_is_active(self, mock_init, qtbot, tmp_files, monkeypatch):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        editing = {"value": True}
+        monkeypatch.setattr(dlg._seg_table, "is_editing", lambda: editing["value"])
+
+        with patch.object(dlg._dispatcher, "post") as post:
+            dlg._refresh(auto_size=False)
+            post.assert_not_called()
+
+            editing["value"] = False
+            dlg._schedule_pending_update()
+            qtbot.waitUntil(lambda: post.called, timeout=3000)
+
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_deferred_refresh_disables_rename_and_blocks_execute(self, mock_init, qtbot, tmp_files, monkeypatch):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: len(dlg._results) == 3 and dlg._rename_btn.isEnabled(), timeout=5000)
+        monkeypatch.setattr(dlg._seg_table, "is_editing", lambda: True)
+
+        dlg._seg_model.setData(dlg._seg_model.index(0, 0), "custom_name", Qt.EditRole)
+
+        assert not dlg._rename_btn.isEnabled()
+        assert dlg._pending_refresh_callback is not None
+        with (
+            patch.object(dlg, "_confirm_rename", return_value=True) as confirm,
+            patch.object(dlg, "_do_rename") as do_rename,
+        ):
+            dlg._execute()
+        confirm.assert_not_called()
+        do_rename.assert_not_called()
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_execute_while_editing_without_pending_queues_refresh(self, mock_init, qtbot, tmp_files, monkeypatch):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: len(dlg._results) == 3 and dlg._rename_btn.isEnabled(), timeout=5000)
+        editing = {"value": True}
+        monkeypatch.setattr(dlg._seg_table, "is_editing", lambda: editing["value"])
+
+        with patch.object(dlg._dispatcher, "post") as post:
+            dlg._execute()
+            assert not dlg._rename_btn.isEnabled()
+            assert dlg._pending_refresh_callback is not None
+            post.assert_not_called()
+
+            editing["value"] = False
+            dlg._schedule_pending_update()
+            qtbot.waitUntil(lambda: post.called, timeout=3000)
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_pending_update_waits_for_editing_finished_without_reschedule_loop(self, mock_init, qtbot, tmp_files, monkeypatch):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        editing = {"value": True}
+        calls = []
+        monkeypatch.setattr(dlg._seg_table, "is_editing", lambda: editing["value"])
+
+        assert dlg._defer_update_if_editing(lambda: calls.append("refresh"), kind="refresh") is True
+        dlg._schedule_pending_update()
+        qtbot.waitUntil(lambda: not dlg._pending_update_scheduled, timeout=3000)
+
+        assert calls == []
+        assert dlg._pending_refresh_callback is not None
+
+        editing["value"] = False
+        dlg._schedule_pending_update()
+        qtbot.waitUntil(lambda: calls == ["refresh"], timeout=3000)
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_refresh_done_defers_model_reset_while_segment_editor_is_active(self, mock_init, qtbot, tmp_files, monkeypatch):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        results = [RenameResult(original=p.name, segments=[p.stem, p.suffix], new_name=p.name) for p in tmp_files]
+        editing = {"value": True}
+        monkeypatch.setattr(dlg._seg_table, "is_editing", lambda: editing["value"])
+
+        with patch.object(dlg._seg_model, "refresh", wraps=dlg._seg_model.refresh) as refresh:
+            dlg._on_refresh_done(results, list(tmp_files), list(dlg._keys), (0, 0, 0), auto_size=False)
+            refresh.assert_not_called()
+
+            editing["value"] = False
+            dlg._schedule_pending_update()
+            qtbot.waitUntil(lambda: refresh.called, timeout=3000)
+
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_deferred_refresh_takes_priority_over_stale_apply(self, mock_init, qtbot, tmp_files, monkeypatch):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        editing = {"value": True}
+        calls = []
+        monkeypatch.setattr(dlg._seg_table, "is_editing", lambda: editing["value"])
+
+        assert dlg._defer_update_if_editing(lambda: calls.append("apply"), kind="apply") is True
+        assert dlg._defer_update_if_editing(lambda: calls.append("refresh"), kind="refresh") is True
+
+        editing["value"] = False
+        dlg._schedule_pending_update()
+        qtbot.waitUntil(lambda: calls == ["refresh"], timeout=3000)
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_reset_discards_queued_deferred_apply(self, mock_init, qtbot, tmp_files, monkeypatch):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files([tmp_files[0]])
+        editing = {"value": True}
+        monkeypatch.setattr(dlg._seg_table, "is_editing", lambda: editing["value"])
+        results = [RenameResult(original=tmp_files[0].name, segments=[tmp_files[0].stem, tmp_files[0].suffix], new_name=tmp_files[0].name)]
+
+        dlg._on_refresh_done(
+            results,
+            [tmp_files[0]],
+            [str(tmp_files[0]).replace("\\", "/")],
+            (0, 0, 0, []),
+            auto_size=False,
+        )
+        dlg._schedule_pending_update()
+
+        calls = []
+        with patch.object(dlg, "_apply_refresh_done", side_effect=lambda *args, **kwargs: calls.append((args, kwargs))):
+            dlg.reset()
+            editing["value"] = False
+            QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents)
+
+        assert calls == []
+        assert dlg._paths == []
+        assert dlg._results == []
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_set_files_discards_queued_deferred_apply(self, mock_init, qtbot, tmp_files, monkeypatch):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files([tmp_files[0]])
+        editing = {"value": True}
+        monkeypatch.setattr(dlg._seg_table, "is_editing", lambda: editing["value"])
+        results = [RenameResult(original=tmp_files[0].name, segments=[tmp_files[0].stem, tmp_files[0].suffix], new_name=tmp_files[0].name)]
+
+        dlg._on_refresh_done(
+            results,
+            [tmp_files[0]],
+            [str(tmp_files[0]).replace("\\", "/")],
+            (0, 0, 0, []),
+            auto_size=False,
+        )
+        dlg._schedule_pending_update()
+
+        calls = []
+        with (
+            patch.object(dlg, "_apply_refresh_done", side_effect=lambda *args, **kwargs: calls.append((args, kwargs))),
+            patch.object(dlg, "_refresh") as refresh,
+        ):
+            dlg.set_files([tmp_files[1]])
+            editing["value"] = False
+            QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents)
+
+        refresh.assert_called_once_with()
+        assert calls == []
+        assert dlg._paths == [tmp_files[1]]
+        dlg.close()
+
 
 class TestRenameColumnOverrides:
     def test_override_bypasses_source(self):
@@ -1225,13 +1587,78 @@ class TestSortIndicator:
         dlg.close()
 
     @patch.object(BatchRenameWidget, "_start_async_init")
-    def test_refresh_without_prepare_clears_sort(self, mock_init, qtbot, tmp_files):
+    def test_refresh_without_prepare_preserves_sort(self, mock_init, qtbot, tmp_files):
         dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)
         dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         dlg._sort_indicator = ("preview", 0, True)
         dlg._refresh()
+        assert dlg._sort_indicator == ("preview", 0, True)
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_segment_sort_reapplies_after_cell_edit_ascending(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        qtbot.addWidget(dlg)
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
+        for path, value in zip(tmp_files, ["m_new", "z_new", "x_new"]):
+            dlg._columns[0].overrides[str(path)] = value
+        dlg._refresh(auto_size=False)
+        qtbot.waitUntil(lambda: [r.segments[0] for r in dlg._results] == ["m_new", "z_new", "x_new"], timeout=5000)
+        dlg._sort_by_segment(0, True)
+        qtbot.waitUntil(lambda: [r.segments[0] for r in dlg._results] == ["m_new", "x_new", "z_new"], timeout=5000)
+        dlg._seg_model.setData(dlg._seg_model.index(2, 0), "a_new", Qt.EditRole)
+        qtbot.waitUntil(lambda: [r.segments[0] for r in dlg._results] == ["a_new", "m_new", "x_new"], timeout=5000)
+        assert dlg._paths[0] == tmp_files[1]
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_segment_sort_reapplies_after_cell_edit_descending(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        qtbot.addWidget(dlg)
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
+        for path, value in zip(tmp_files, ["m_new", "a_new", "x_new"]):
+            dlg._columns[0].overrides[str(path)] = value
+        dlg._refresh(auto_size=False)
+        qtbot.waitUntil(lambda: [r.segments[0] for r in dlg._results] == ["m_new", "a_new", "x_new"], timeout=5000)
+        dlg._sort_by_segment(0, False)
+        qtbot.waitUntil(lambda: [r.segments[0] for r in dlg._results] == ["x_new", "m_new", "a_new"], timeout=5000)
+        dlg._seg_model.setData(dlg._seg_model.index(2, 0), "z_new", Qt.EditRole)
+        qtbot.waitUntil(lambda: [r.segments[0] for r in dlg._results] == ["z_new", "x_new", "m_new"], timeout=5000)
+        assert dlg._paths[0] == tmp_files[1]
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_segment_sort_section_follows_column_move(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        dlg._columns.append(RenameColumn(FixedSource("fixed")))
+        dlg._sort_indicator = ("segment", 1, False)
+        with patch.object(dlg, "_rebuild"):
+            dlg._move_column(1, -1)
+        assert dlg._sort_indicator == ("segment", 0, False)
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_segment_sort_section_updates_on_column_remove(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        dlg._columns.extend([RenameColumn(FixedSource("fixed")), RenameColumn(SequentialSource())])
+        dlg._sort_indicator = ("segment", 2, True)
+        with patch.object(dlg, "_rebuild"):
+            dlg._remove_column(1)
+        assert dlg._sort_indicator == ("segment", 1, True)
+        with patch.object(dlg, "_rebuild"):
+            dlg._remove_column(1)
         assert dlg._sort_indicator is None
         dlg.close()
 
@@ -1376,7 +1803,10 @@ class TestContextMenu:
         qtbot.addWidget(dlg)
         dlg._rebuild()
         qtbot.waitUntil(lambda: dlg._preview_model.rowCount() == 3, timeout=5000)
-        dlg._seg_table.selectRow(0)
+        dlg._seg_table.selectionModel().select(
+            dlg._seg_model.index(0, 0),
+            QtCore.QItemSelectionModel.ClearAndSelect,
+        )
 
         built_menu = None
 
@@ -1417,7 +1847,52 @@ class TestContextMenu:
         qtbot.addWidget(dlg)
         dlg._rebuild()
         qtbot.waitUntil(lambda: dlg._preview_model.rowCount() == 3, timeout=5000)
-        dlg._seg_table.selectRow(1)
+        dlg._seg_table.selectionModel().select(
+            dlg._seg_model.index(1, 0),
+            QtCore.QItemSelectionModel.ClearAndSelect,
+        )
+
+        captured_seed = None
+
+        class FakeSpec:
+            def exec(self, *a, **kw):
+                pass
+
+        class FakeSession:
+            def __init__(self, *a, **kw):
+                nonlocal captured_seed
+                captured_seed = kw.get("seed_ctx")
+
+            def menu(self, items):
+                return FakeSpec()
+
+        with patch.object(Menu, "session", staticmethod(lambda *a, **kw: FakeSession(*a, **kw))):
+            gpos = dlg._seg_table.viewport().mapToGlobal(QtCore.QPoint(10, 10))
+            dlg._show_row_menu(dlg._seg_table, gpos)
+
+        logical_path = str(tmp_files[1]).replace("\\", "/")
+        assert captured_seed is not None
+        assert captured_seed.extras["path"] == logical_path
+        assert captured_seed.extras["paths"] == [logical_path]
+        assert captured_seed.extras["source"] == str(tmp_files[1])
+        assert captured_seed.extras["sources"] == [str(tmp_files[1])]
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_context_menu_splits_logical_paths_and_sources(self, mock_init, qtbot, tmp_files):
+        from wafer.core.commands.bridge import Menu
+
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        logical_paths = [f"virtual://item/{i}" for i in range(len(tmp_files))]
+        dlg.set_files(tmp_files, keys=logical_paths)
+        qtbot.addWidget(dlg)
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: dlg._preview_model.rowCount() == 3, timeout=5000)
+        dlg._seg_table.selectionModel().select(
+            dlg._seg_model.index(2, 0),
+            QtCore.QItemSelectionModel.ClearAndSelect,
+        )
 
         captured_seed = None
 
@@ -1438,8 +1913,10 @@ class TestContextMenu:
             dlg._show_row_menu(dlg._seg_table, gpos)
 
         assert captured_seed is not None
-        assert captured_seed.extras["path"] == str(tmp_files[1])
-        assert captured_seed.extras["paths"] == [str(tmp_files[1])]
+        assert captured_seed.extras["path"] == logical_paths[2]
+        assert captured_seed.extras["paths"] == [logical_paths[2]]
+        assert captured_seed.extras["source"] == str(tmp_files[2])
+        assert captured_seed.extras["sources"] == [str(tmp_files[2])]
         dlg.close()
 
     @patch.object(BatchRenameWidget, "_start_async_init")
@@ -1452,14 +1929,19 @@ class TestContextMenu:
         qtbot.addWidget(dlg)
         dlg._rebuild()
         qtbot.waitUntil(lambda: dlg._preview_model.rowCount() == 3, timeout=5000)
+        ext_sec = dlg._ext_section
         sel = dlg._seg_table.selectionModel()
         sel.select(
             dlg._seg_model.index(0, 0),
-            QtCore.QItemSelectionModel.Select | QtCore.QItemSelectionModel.Rows,
+            QtCore.QItemSelectionModel.ClearAndSelect,
+        )
+        sel.select(
+            dlg._seg_model.index(0, ext_sec),
+            QtCore.QItemSelectionModel.Select,
         )
         sel.select(
             dlg._seg_model.index(2, 0),
-            QtCore.QItemSelectionModel.Select | QtCore.QItemSelectionModel.Rows,
+            QtCore.QItemSelectionModel.Select,
         )
 
         captured_seed = None
@@ -1480,10 +1962,15 @@ class TestContextMenu:
             gpos = dlg._seg_table.viewport().mapToGlobal(QtCore.QPoint(10, 10))
             dlg._show_row_menu(dlg._seg_table, gpos)
 
+        logical_0 = str(tmp_files[0]).replace("\\", "/")
+        logical_2 = str(tmp_files[2]).replace("\\", "/")
         assert captured_seed is not None
         assert len(captured_seed.extras["paths"]) == 2
-        assert str(tmp_files[0]) in captured_seed.extras["paths"]
-        assert str(tmp_files[2]) in captured_seed.extras["paths"]
+        assert logical_0 in captured_seed.extras["paths"]
+        assert logical_2 in captured_seed.extras["paths"]
+        assert len(captured_seed.extras["sources"]) == 2
+        assert str(tmp_files[0]) in captured_seed.extras["sources"]
+        assert str(tmp_files[2]) in captured_seed.extras["sources"]
         dlg.close()
 
     @patch.object(BatchRenameWidget, "_start_async_init")
@@ -1496,7 +1983,10 @@ class TestContextMenu:
         qtbot.addWidget(dlg)
         dlg._rebuild()
         qtbot.waitUntil(lambda: dlg._preview_model.rowCount() == 3, timeout=5000)
-        dlg._seg_table.selectRow(0)
+        dlg._seg_table.selectionModel().select(
+            dlg._seg_model.index(0, 0),
+            QtCore.QItemSelectionModel.ClearAndSelect,
+        )
 
         built_menu = None
 
@@ -1526,6 +2016,137 @@ class TestContextMenu:
         dlg.close()
 
     @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_context_menu_has_restore_action_for_edited_cell(self, mock_init, qtbot, tmp_files):
+        from wafer.core.commands.bridge import Menu
+
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        qtbot.addWidget(dlg)
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: dlg._preview_model.rowCount() == 3, timeout=5000)
+
+        idx = dlg._seg_model.index(0, 0)
+        with patch.object(dlg, "_refresh"):
+            dlg._seg_model.setData(idx, "custom_name", Qt.EditRole)
+        dlg._seg_table.selectionModel().select(idx, QtCore.QItemSelectionModel.ClearAndSelect)
+
+        built_menu = None
+
+        class FakeSpec:
+            def __init__(self, items):
+                self._items = items
+
+            def exec(self, *a, **kw):
+                nonlocal built_menu
+                built_menu = self._items
+
+        class FakeSession:
+            def __init__(self, *a, **kw):
+                pass
+
+            def menu(self, items):
+                return FakeSpec(items)
+
+        with patch.object(Menu, "session", staticmethod(lambda *a, **kw: FakeSession(*a, **kw))):
+            gpos = dlg._seg_table.viewport().mapToGlobal(QtCore.QPoint(10, 10))
+            dlg._show_row_menu(dlg._seg_table, gpos, clicked_index=idx)
+
+        assert built_menu is not None
+        restore_cmds = [i for i in built_menu if hasattr(i, "path") and i.path == "inline.renamer.restore_cell"]
+        assert len(restore_cmds) == 1
+        assert restore_cmds[0].display == "Restore selected override(s)"
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_context_menu_has_restore_selected_action_for_multiple_edited_cells(self, mock_init, qtbot, tmp_files):
+        from wafer.core.commands.bridge import Menu
+
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        qtbot.addWidget(dlg)
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: dlg._preview_model.rowCount() == 3, timeout=5000)
+
+        idx_0 = dlg._seg_model.index(0, 0)
+        idx_1 = dlg._seg_model.index(1, 0)
+        with patch.object(dlg, "_refresh"):
+            dlg._seg_model.setData(idx_0, "custom_name", Qt.EditRole)
+            dlg._seg_model.setData(idx_1, "other_name", Qt.EditRole)
+
+        sel = dlg._seg_table.selectionModel()
+        sel.select(idx_0, QtCore.QItemSelectionModel.ClearAndSelect)
+        sel.select(idx_1, QtCore.QItemSelectionModel.Select)
+
+        built_menu = None
+
+        class FakeSpec:
+            def __init__(self, items):
+                self._items = items
+
+            def exec(self, *a, **kw):
+                nonlocal built_menu
+                built_menu = self._items
+
+        class FakeSession:
+            def __init__(self, *a, **kw):
+                pass
+
+            def menu(self, items):
+                return FakeSpec(items)
+
+        with patch.object(Menu, "session", staticmethod(lambda *a, **kw: FakeSession(*a, **kw))):
+            gpos = dlg._seg_table.viewport().mapToGlobal(QtCore.QPoint(10, 10))
+            dlg._show_row_menu(dlg._seg_table, gpos, clicked_index=idx_1)
+
+        assert built_menu is not None
+        restore_cmds = [i for i in built_menu if hasattr(i, "path") and i.path == "inline.renamer.restore_cell"]
+        assert len(restore_cmds) == 1
+        assert restore_cmds[0].display == "Restore selected override(s)"
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_context_menu_has_restore_action_for_unedited_cell(self, mock_init, qtbot, tmp_files):
+        from wafer.core.commands.bridge import Menu
+
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        qtbot.addWidget(dlg)
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: dlg._preview_model.rowCount() == 3, timeout=5000)
+        idx = dlg._seg_model.index(0, 0)
+        dlg._seg_table.selectionModel().select(idx, QtCore.QItemSelectionModel.ClearAndSelect)
+
+        built_menu = None
+
+        class FakeSpec:
+            def __init__(self, items):
+                self._items = items
+
+            def exec(self, *a, **kw):
+                nonlocal built_menu
+                built_menu = self._items
+
+        class FakeSession:
+            def __init__(self, *a, **kw):
+                pass
+
+            def menu(self, items):
+                return FakeSpec(items)
+
+        with patch.object(Menu, "session", staticmethod(lambda *a, **kw: FakeSession(*a, **kw))):
+            gpos = dlg._seg_table.viewport().mapToGlobal(QtCore.QPoint(10, 10))
+            dlg._show_row_menu(dlg._seg_table, gpos, clicked_index=idx)
+
+        assert built_menu is not None
+        restore_cmds = [i for i in built_menu if hasattr(i, "path") and i.path == "inline.renamer.restore_cell"]
+        assert len(restore_cmds) == 1
+        assert restore_cmds[0].display == "Restore selected override(s)"
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
     def test_right_click_preserves_multi_selection(self, mock_init, qtbot, tmp_files):
         dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)
@@ -1536,9 +2157,9 @@ class TestContextMenu:
         for r in range(3):
             sel.select(
                 dlg._seg_model.index(r, 0),
-                QtCore.QItemSelectionModel.Select | QtCore.QItemSelectionModel.Rows,
+                QtCore.QItemSelectionModel.Select,
             )
-        assert len(sel.selectedRows()) == 3
+        assert len(sel.selectedIndexes()) == 3
 
         pos = dlg._seg_table.visualRect(dlg._seg_model.index(1, 0)).center()
         event = QtGui.QMouseEvent(
@@ -1551,7 +2172,7 @@ class TestContextMenu:
         )
         dlg._seg_table.mousePressEvent(event)
 
-        assert len(sel.selectedRows()) == 3
+        assert len(sel.selectedIndexes()) == 3
 
     @patch.object(BatchRenameWidget, "_start_async_init")
     def test_set_files_resets_selection_count_in_menu(self, mock_init, qtbot, tmp_path):
@@ -1573,9 +2194,9 @@ class TestContextMenu:
         for r in range(4):
             sel.select(
                 dlg._seg_model.index(r, 0),
-                QtCore.QItemSelectionModel.Select | QtCore.QItemSelectionModel.Rows,
+                QtCore.QItemSelectionModel.Select,
             )
-        assert len(sel.selectedRows()) == 4
+        assert len(sel.selectedIndexes()) == 4
 
         files_1 = [tmp_path / "only.jpg"]
         files_1[0].write_bytes(b"\x00" * 16)
@@ -1583,7 +2204,10 @@ class TestContextMenu:
         dlg._rebuild()
         qtbot.waitUntil(lambda: dlg._seg_model.rowCount() == 1, timeout=5000)
 
-        dlg._seg_table.selectRow(0)
+        dlg._seg_table.selectionModel().select(
+            dlg._seg_model.index(0, 0),
+            QtCore.QItemSelectionModel.ClearAndSelect,
+        )
 
         captured_seed = None
 
@@ -1605,7 +2229,7 @@ class TestContextMenu:
 
         assert captured_seed is not None
         assert len(captured_seed.extras["paths"]) == 1
-        assert captured_seed.extras["path"] == str(files_1[0])
+        assert captured_seed.extras["path"] == str(files_1[0]).replace("\\", "/")
 
 
 def _make_mime(urls):

@@ -11,6 +11,15 @@ if TYPE_CHECKING:
     from .engine import RenameResult, RenameColumn
 
 
+INLINE_EDITOR_TYPES = (
+    QtWidgets.QLineEdit,
+    QtWidgets.QPlainTextEdit,
+    QtWidgets.QTextEdit,
+    QtWidgets.QComboBox,
+    QtWidgets.QAbstractSpinBox,
+)
+
+
 class PreviewModel(QtCore.QAbstractTableModel):
     HEADERS = ["Original", "Result"]
 
@@ -281,17 +290,105 @@ class PreviewDelegate(QtWidgets.QStyledItemDelegate):
 
 
 class SyncedView(QtWidgets.QTableView):
-    def __init__(self, forward_target=None, parent=None):
+    editing_finished = QtCore.Signal()
+
+    def __init__(self, forward_target=None, parent=None, vertical_tab_navigation=False):
         super().__init__(parent)
         self._fwd = forward_target
+        self._vertical_tab_navigation = vertical_tab_navigation
 
     def set_forward_target(self, target):
         self._fwd = target
 
+    def set_vertical_tab_navigation(self, enabled):
+        self._vertical_tab_navigation = enabled
+
+    def _iter_inline_editors(self):
+        seen = set()
+        for editor_type in INLINE_EDITOR_TYPES:
+            for editor in self.findChildren(editor_type):
+                editor_id = id(editor)
+                if editor_id in seen:
+                    continue
+                seen.add(editor_id)
+                yield editor
+
+    def _has_live_inline_editor(self):
+        app = QtWidgets.QApplication.instance()
+        focus = app.focusWidget() if app is not None else None
+        if isinstance(focus, INLINE_EDITOR_TYPES) and self.isAncestorOf(focus):
+            return True
+        for editor in self._iter_inline_editors():
+            try:
+                if editor.isVisible() and self.isAncestorOf(editor):
+                    return True
+            except RuntimeError:
+                continue
+        return False
+
+    def is_editing(self):
+        try:
+            return self.state() == QtWidgets.QAbstractItemView.EditingState or self._has_live_inline_editor()
+        except RuntimeError:
+            return False
+
+    def _editor_index(self, editor):
+        index = self.currentIndex()
+        try:
+            pos = editor.mapTo(self.viewport(), editor.rect().center())
+            editor_index = self.indexAt(pos)
+        except RuntimeError:
+            editor_index = QtCore.QModelIndex()
+        return editor_index if editor_index.isValid() else index
+
+    def _vertical_tab_target(self, index, hint):
+        if not index.isValid():
+            return QtCore.QModelIndex()
+        model = self.model()
+        if model is None:
+            return QtCore.QModelIndex()
+        delta = 1 if hint == QtWidgets.QAbstractItemDelegate.EditNextItem else -1
+        row = index.row() + delta
+        if row < 0 or row >= model.rowCount(index.parent()):
+            return QtCore.QModelIndex()
+        target = model.index(row, index.column(), index.parent())
+        if not target.isValid() or not (model.flags(target) & Qt.ItemIsEditable):
+            return QtCore.QModelIndex()
+        return target
+
+    def _edit_after_close(self, row, column):
+        model = self.model()
+        if model is None:
+            return
+        target = model.index(row, column)
+        if not target.isValid():
+            return
+        self.setCurrentIndex(target)
+        self.scrollTo(target, QtWidgets.QAbstractItemView.EnsureVisible)
+        self.edit(target)
+
+    def commitData(self, editor):
+        super().commitData(editor)
+
+    def closeEditor(self, editor, hint):
+        if self._vertical_tab_navigation and hint in (
+            QtWidgets.QAbstractItemDelegate.EditNextItem,
+            QtWidgets.QAbstractItemDelegate.EditPreviousItem,
+        ):
+            target = self._vertical_tab_target(self._editor_index(editor), hint)
+            super().closeEditor(editor, QtWidgets.QAbstractItemDelegate.NoHint)
+            if target.isValid():
+                QtCore.QTimer.singleShot(0, lambda r=target.row(), c=target.column(): self._edit_after_close(r, c))
+            self.editing_finished.emit()
+            return
+        super().closeEditor(editor, hint)
+        self.editing_finished.emit()
+
     def mousePressEvent(self, event):
         if event.button() == QtCore.Qt.RightButton:
             idx = self.indexAt(event.position().toPoint())
-            if idx.isValid() and self.selectionModel().isRowSelected(idx.row()):
+            selection_model = self.selectionModel()
+            if idx.isValid() and selection_model is not None and selection_model.isSelected(idx):
                 return
         super().mousePressEvent(event)
 

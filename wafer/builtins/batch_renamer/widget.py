@@ -139,6 +139,10 @@ class BatchRenameWidget(QtWidgets.QWidget):
         self._syncing_selection = False
         self._refreshing = False
         self._refresh_cancel: CancelToken | None = None
+        self._pending_rebuild_callback = None
+        self._pending_refresh_callback = None
+        self._pending_apply_callback = None
+        self._pending_update_scheduled = False
         self._selected_row = -1
         self._thumb_cache: collections.OrderedDict[str, QtGui.QPixmap] = collections.OrderedDict()
         self._sort_indicator: tuple[str, int, bool] | None = None
@@ -278,6 +282,12 @@ class BatchRenameWidget(QtWidgets.QWidget):
         self._close_popup()
         self._stack.setCurrentWidget(self._empty_page)
 
+    def _clear_deferred_updates(self):
+        self._pending_rebuild_callback = None
+        self._pending_refresh_callback = None
+        self._pending_apply_callback = None
+        self._pending_update_scheduled = False
+
     def _cancel_all_pending(self):
         if self._init_cancel:
             self._init_cancel.cancel()
@@ -288,6 +298,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
         for token in self._thumb_tokens.values():
             token.cancel()
         self._thumb_tokens.clear()
+        self._clear_deferred_updates()
 
     def _frame_stylesheet(self):
         p = self._p
@@ -317,7 +328,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
         pf_lay.setContentsMargins(0, 0, 0, 0)
         pf_lay.setSpacing(0)
 
-        self._seg_table = SyncedView(parent=self)
+        self._seg_table = SyncedView(parent=self, vertical_tab_navigation=True)
         self._preview = SyncedView(forward_target=self._seg_table, parent=self)
 
         self._preview_model = PreviewModel(self)
@@ -332,7 +343,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
         self._preview.setShowGrid(False)
         self._preview.verticalHeader().setVisible(False)
         self._preview.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
-        self._preview.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self._preview.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectItems)
         self._preview.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self._preview.setFocusPolicy(Qt.StrongFocus)
         self._preview.verticalHeader().setDefaultSectionSize(row_h)
@@ -370,7 +381,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
         self._seg_table.setShowGrid(True)
         self._seg_table.verticalHeader().setVisible(False)
         self._seg_table.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
-        self._seg_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self._seg_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectItems)
         self._seg_table.setEditTriggers(QtWidgets.QAbstractItemView.DoubleClicked)
         self._seg_table.setFocusPolicy(Qt.ClickFocus)
         self._seg_table.verticalHeader().setDefaultSectionSize(row_h)
@@ -407,6 +418,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
         self._seg_model.dataChanged.connect(self._on_seg_data_changed)
         self._seg_table.doubleClicked.connect(self._on_seg_dblclick)
         self._seg_table.selectionModel().selectionChanged.connect(self._on_seg_selection)
+        self._seg_table.editing_finished.connect(self._schedule_pending_update)
         self._seg_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self._seg_table.customContextMenuRequested.connect(self._on_row_context)
         self._preview.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -609,6 +621,96 @@ class BatchRenameWidget(QtWidgets.QWidget):
     def selected_row(self) -> int:
         return self._selected_row
 
+    def _selected_rows(self, table):
+        selection_model = table.selectionModel()
+        if selection_model is None:
+            return []
+        return sorted({index.row() for index in selection_model.selectedIndexes() if index.isValid() and 0 <= index.row() < len(self._paths)})
+
+    def _selected_segment_cells(self):
+        selection_model = self._seg_table.selectionModel()
+        if selection_model is None:
+            return []
+        cells = []
+        seen = set()
+        for index in selection_model.selectedIndexes():
+            if not index.isValid():
+                continue
+            row = index.row()
+            section = index.column()
+            if row < 0 or row >= len(self._paths) or section == self._add_section:
+                continue
+            key = (row, section)
+            if key in seen:
+                continue
+            seen.add(key)
+            cells.append(key)
+        cells.sort()
+        return cells
+
+    def _selection_anchor_row(self, table, selected=None):
+        if selected is not None:
+            indexes = [index for index in selected.indexes() if index.isValid()]
+            if indexes:
+                return indexes[-1].row()
+        current = table.currentIndex()
+        if current.isValid() and 0 <= current.row() < len(self._paths):
+            return current.row()
+        rows = self._selected_rows(table)
+        return rows[-1] if rows else -1
+
+    @staticmethod
+    def _build_row_selection(model, rows, start_column, end_column=None):
+        selection = QtCore.QItemSelection()
+        if model is None:
+            return selection
+        if end_column is None:
+            end_column = start_column
+        for row in rows:
+            start = model.index(row, start_column)
+            end = model.index(row, end_column)
+            if start.isValid() and end.isValid():
+                selection.select(start, end)
+        return selection
+
+    def _select_preview_rows(self, rows):
+        selection_model = self._preview.selectionModel()
+        if selection_model is None:
+            return
+        if not rows:
+            selection_model.clearSelection()
+            return
+        selection = self._build_row_selection(
+            self._preview_model,
+            rows,
+            0,
+            max(0, self._preview_model.columnCount() - 1),
+        )
+        selection_model.select(selection, QtCore.QItemSelectionModel.ClearAndSelect)
+
+    def _select_segment_rows(self, rows):
+        selection_model = self._seg_table.selectionModel()
+        if selection_model is None:
+            return
+        if not rows:
+            selection_model.clearSelection()
+            return
+        selection = self._build_row_selection(self._seg_model, rows, 0, 0)
+        selection_model.select(selection, QtCore.QItemSelectionModel.ClearAndSelect)
+
+    @staticmethod
+    def _ensure_index_selected(table, index):
+        if not index.isValid():
+            return
+        selection_model = table.selectionModel()
+        if selection_model is None:
+            return
+        if selection_model.isSelected(index):
+            selection_model.setCurrentIndex(index, QtCore.QItemSelectionModel.NoUpdate)
+            return
+        selection_model.select(index, QtCore.QItemSelectionModel.ClearAndSelect)
+        selection_model.setCurrentIndex(index, QtCore.QItemSelectionModel.NoUpdate)
+
     def thumb_for_row(self, row):
         if 0 <= row < len(self._paths):
             key = str(self._paths[row])
@@ -622,23 +724,13 @@ class BatchRenameWidget(QtWidgets.QWidget):
         if self._syncing_selection:
             return
         self._syncing_selection = True
-        rows = self._preview.selectionModel().selectedRows()
-        if selected and selected.indexes():
-            self._selected_row = selected.indexes()[-1].row()
-        elif rows:
-            self._selected_row = rows[-1].row()
-        else:
-            self._selected_row = -1
-        selection = QtCore.QItemSelection()
-        for idx in rows:
-            mi = self._seg_model.index(idx.row(), 0)
-            selection.select(mi, mi)
-        self._seg_table.selectionModel().select(
-            selection,
-            QtCore.QItemSelectionModel.ClearAndSelect | QtCore.QItemSelectionModel.Rows,
-        )
-        self._syncing_selection = False
-        self._overlay.update()
+        try:
+            rows = self._selected_rows(self._preview)
+            self._selected_row = self._selection_anchor_row(self._preview, selected) if rows else -1
+            self._select_segment_rows(rows)
+        finally:
+            self._syncing_selection = False
+            self._overlay.update()
 
     def eventFilter(self, obj, event):
         if obj is self._preview.viewport():
@@ -673,27 +765,13 @@ class BatchRenameWidget(QtWidgets.QWidget):
         if self._syncing_selection:
             return
         self._syncing_selection = True
-        rows = self._seg_table.selectionModel().selectedRows()
-        if not rows:
-            self._selected_row = -1
-            self._preview.selectionModel().clearSelection()
+        try:
+            rows = self._selected_rows(self._seg_table)
+            self._selected_row = self._selection_anchor_row(self._seg_table, selected) if rows else -1
+            self._select_preview_rows(rows)
+        finally:
             self._syncing_selection = False
             self._overlay.update()
-            return
-        if selected and selected.indexes():
-            self._selected_row = selected.indexes()[-1].row()
-        else:
-            self._selected_row = rows[-1].row()
-        selection = QtCore.QItemSelection()
-        for idx in rows:
-            mi = self._preview_model.index(idx.row(), 0)
-            selection.select(mi, mi)
-        self._preview.selectionModel().select(
-            selection,
-            QtCore.QItemSelectionModel.ClearAndSelect | QtCore.QItemSelectionModel.Rows,
-        )
-        self._syncing_selection = False
-        self._overlay.update()
 
     def _scroll_to_next_issue(self):
         if not self._results:
@@ -703,8 +781,22 @@ class BatchRenameWidget(QtWidgets.QWidget):
             return
         current = self._selected_row
         target = next((r for r in issue_rows if r > current), issue_rows[0])
-        self._preview.selectRow(target)
-        self._seg_table.selectRow(target)
+        self._syncing_selection = True
+        try:
+            self._selected_row = target
+            self._select_preview_rows([target])
+            self._select_segment_rows([target])
+            preview_index = self._preview_model.index(target, 0)
+            if preview_index.isValid():
+                self._preview.setCurrentIndex(preview_index)
+                self._preview.scrollTo(preview_index, QtWidgets.QAbstractItemView.EnsureVisible)
+            seg_index = self._seg_model.index(target, 0)
+            if seg_index.isValid():
+                self._seg_table.setCurrentIndex(seg_index)
+                self._seg_table.scrollTo(seg_index, QtWidgets.QAbstractItemView.EnsureVisible)
+        finally:
+            self._syncing_selection = False
+            self._overlay.update()
 
     def _on_row_opacity_changed(self, value):
         self._overlay.set_row_opacity(value / 100.0)
@@ -744,7 +836,56 @@ class BatchRenameWidget(QtWidgets.QWidget):
     def _ext_section(self):
         return len(self._columns) + 1
 
+    def _is_segment_editing(self):
+        try:
+            return self._seg_table.is_editing()
+        except RuntimeError:
+            return False
+
+    def _defer_update_if_editing(self, callback, kind="refresh"):
+        if not callable(callback) or not self._is_segment_editing():
+            return False
+        self._rename_btn.setEnabled(False)
+        if kind == "rebuild":
+            self._pending_rebuild_callback = callback
+        elif kind == "apply":
+            self._pending_apply_callback = callback
+        else:
+            self._pending_refresh_callback = callback
+        return True
+
+    def _has_pending_update(self):
+        return any(
+            callback is not None
+            for callback in (
+                self._pending_rebuild_callback,
+                self._pending_refresh_callback,
+                self._pending_apply_callback,
+            )
+        )
+
+    def _schedule_pending_update(self):
+        if not self._has_pending_update() or self._pending_update_scheduled:
+            return
+        self._pending_update_scheduled = True
+        QtCore.QTimer.singleShot(0, self._flush_pending_update)
+
+    def _flush_pending_update(self):
+        self._pending_update_scheduled = False
+        if not self._has_pending_update():
+            return
+        if self._is_segment_editing():
+            return
+        callback = self._pending_rebuild_callback or self._pending_refresh_callback or self._pending_apply_callback
+        self._pending_rebuild_callback = None
+        self._pending_refresh_callback = None
+        self._pending_apply_callback = None
+        if callback is not None:
+            callback()
+
     def _rebuild(self):
+        if self._defer_update_if_editing(self._rebuild, kind="rebuild"):
+            return
         self._close_popup()
         self._seg_model.configure(
             self._columns,
@@ -755,11 +896,11 @@ class BatchRenameWidget(QtWidgets.QWidget):
         self._refresh()
 
     def _refresh(self, prepare=None, auto_size=True):
+        if self._defer_update_if_editing(lambda: self._refresh(prepare=prepare, auto_size=auto_size), kind="refresh"):
+            return
         if self._refresh_cancel:
             self._refresh_cancel.cancel()
         self._rename_btn.setEnabled(False)
-        if not prepare:
-            self._sort_indicator = None
         cancel = CancelToken()
         self._refresh_cancel = cancel
         paths = list(self._paths)
@@ -769,6 +910,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
         keys = list(self._keys)
         initial_keys = list(self._initial_keys)
         results_snapshot = list(self._results)
+        sort_indicator = self._sort_indicator
 
         def task():
             nonlocal paths, keys
@@ -787,6 +929,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
                     keys=keys,
                     initial_keys=initial_keys,
                 )
+                paths, keys, results = self._sort_preview_rows(paths, keys, results, sort_indicator)
                 if cancel.is_cancelled():
                     return
                 conflicts = sum(1 for r in results if r.conflict)
@@ -810,19 +953,51 @@ class BatchRenameWidget(QtWidgets.QWidget):
 
         self._dispatcher.post(task, cancel=cancel)
 
+    @staticmethod
+    def _sort_preview_rows(paths, keys, results, sort_indicator):
+        if not sort_indicator or not results:
+            return paths, keys, results
+        kind, section, ascending = sort_indicator
+        pairs = list(zip(paths, keys, results))
+        if not pairs:
+            return paths, keys, results
+        if kind == "preview":
+            if section == 0:
+                key_fn = lambda item: natural_key(item[2].original)
+            elif section == 1:
+                key_fn = lambda item: natural_key(item[2].new_name)
+            else:
+                return paths, keys, results
+        elif kind == "segment" and section >= 0:
+            key_fn = lambda item: natural_key(item[2].segments[section] if section < len(item[2].segments) else "")
+        else:
+            return paths, keys, results
+        pairs.sort(key=key_fn, reverse=not ascending)
+        return [p for p, _, _ in pairs], [k for _, k, _ in pairs], [r for _, _, r in pairs]
+
     def _on_refresh_done(self, results, paths, keys, stats, auto_size=True):
+        if self._defer_update_if_editing(
+            lambda: self._apply_refresh_done(results, paths, keys, stats, auto_size),
+            kind="apply",
+        ):
+            return
+        self._apply_refresh_done(results, paths, keys, stats, auto_size)
+
+    def _apply_refresh_done(self, results, paths, keys, stats, auto_size=True):
         self._refreshing = True
-        self._paths = paths
-        self._keys = keys
-        self._results = results
-        self._preview_model.refresh(self._results)
-        self._seg_model.refresh(self._results, self._paths)
-        if auto_size:
-            self._auto_size_segments()
-        self._apply_status(*stats)
-        self._apply_sort_indicator()
-        self._update_visible_thumbnails()
-        self._refreshing = False
+        try:
+            self._paths = paths
+            self._keys = keys
+            self._results = results
+            self._preview_model.refresh(self._results)
+            self._seg_model.refresh(self._results, self._paths)
+            if auto_size:
+                self._auto_size_segments()
+            self._apply_status(*stats)
+            self._apply_sort_indicator()
+            self._update_visible_thumbnails()
+        finally:
+            self._refreshing = False
 
     def _apply_sort_indicator(self):
         si = self._sort_indicator
@@ -881,34 +1056,14 @@ class BatchRenameWidget(QtWidgets.QWidget):
     def _on_preview_sort(self, section):
         if not self._results:
             return
-        col = section
         self._sort_indicator = ("preview", section, True)
-
-        def prepare(paths, keys, results):
-            pairs = list(zip(paths, keys, results))
-            if col == 0:
-                pairs.sort(key=lambda x: natural_key(x[0].name))
-            else:
-                pairs.sort(key=lambda x: natural_key(x[2].new_name))
-            return [p for p, _, _ in pairs], [k for _, k, _ in pairs]
-
-        self._refresh(prepare=prepare, auto_size=False)
+        self._refresh(auto_size=False)
 
     def _sort_by_segment(self, section, ascending):
         if not self._results:
             return
-        sec, asc = section, ascending
         self._sort_indicator = ("segment", section, ascending)
-
-        def prepare(paths, keys, results):
-            pairs = list(zip(paths, keys, results))
-            pairs.sort(
-                key=lambda x: natural_key(x[2].segments[sec] if sec < len(x[2].segments) else ""),
-                reverse=not asc,
-            )
-            return [p for p, _, _ in pairs], [k for _, k, _ in pairs]
-
-        self._refresh(prepare=prepare, auto_size=False)
+        self._refresh(auto_size=False)
 
     def _on_seg_header_click(self, section):
         if section == self._add_section:
@@ -1022,17 +1177,39 @@ class BatchRenameWidget(QtWidgets.QWidget):
     def _remove_column(self, idx):
         if len(self._columns) <= 1 or not (0 <= idx < len(self._columns)):
             return
+        self._on_column_removed(idx)
         self._columns.pop(idx)
         self._rebuild()
 
     def _move_column(self, idx, direction):
         new_idx = idx + direction
         if 0 <= new_idx < len(self._columns):
+            self._on_columns_swapped(idx, new_idx)
             self._columns[idx], self._columns[new_idx] = (
                 self._columns[new_idx],
                 self._columns[idx],
             )
             self._rebuild()
+
+    def _on_column_removed(self, idx):
+        si = self._sort_indicator
+        if not si or si[0] != "segment":
+            return
+        kind, section, ascending = si
+        if section == idx:
+            self._sort_indicator = None
+        elif section > idx:
+            self._sort_indicator = (kind, section - 1, ascending)
+
+    def _on_columns_swapped(self, idx, new_idx):
+        si = self._sort_indicator
+        if not si or si[0] != "segment":
+            return
+        kind, section, ascending = si
+        if section == idx:
+            self._sort_indicator = (kind, new_idx, ascending)
+        elif section == new_idx:
+            self._sort_indicator = (kind, idx, ascending)
 
     def _resequence(self):
         self._initial_paths = list(self._paths)
@@ -1057,30 +1234,64 @@ class BatchRenameWidget(QtWidgets.QWidget):
             return
         self._exclude_rows(indices)
 
+    def _override_map_for_section(self, section):
+        if 0 <= section < len(self._columns):
+            return self._columns[section].overrides
+        if section == self._ext_section:
+            return self._ext_column.overrides
+        return None
+
+    def _has_cell_override(self, path_key: str, section: int) -> bool:
+        overrides = self._override_map_for_section(section)
+        return overrides is not None and path_key in overrides
+
+    def _restore_cell_overrides(self, cells):
+        restored = 0
+        for path_key, section in cells:
+            overrides = self._override_map_for_section(section)
+            if overrides is None or path_key not in overrides:
+                continue
+            del overrides[path_key]
+            restored += 1
+        if restored:
+            self._refresh(auto_size=False)
+        return restored
+
+    def _selected_override_cells(self):
+        cells = []
+        for row, section in self._selected_segment_cells():
+            path_key = str(self._paths[row])
+            if self._has_cell_override(path_key, section):
+                cells.append((path_key, section))
+        return cells
+
+    def _restore_cell_override(self, path_key: str, section: int):
+        self._restore_cell_overrides([(path_key, section)])
+
     def _on_row_context(self, pos):
-        row = self._seg_table.indexAt(pos).row()
-        if row < 0:
+        index = self._seg_table.indexAt(pos)
+        if not index.isValid():
             return
-        selected = {idx.row() for idx in self._seg_table.selectionModel().selectedRows()}
-        if row not in selected:
-            self._seg_table.selectRow(row)
-        self._show_row_menu(self._seg_table, self._seg_table.viewport().mapToGlobal(pos))
+        self._ensure_index_selected(self._seg_table, index)
+        self._show_row_menu(
+            self._seg_table,
+            self._seg_table.viewport().mapToGlobal(pos),
+            clicked_index=index,
+        )
 
     def _on_row_context_preview(self, pos):
-        row = self._preview.indexAt(pos).row()
-        if row < 0:
+        index = self._preview.indexAt(pos)
+        if not index.isValid():
             return
-        selected = {idx.row() for idx in self._preview.selectionModel().selectedRows()}
-        if row not in selected:
-            self._preview.selectRow(row)
-        self._show_row_menu(self._preview, self._preview.viewport().mapToGlobal(pos))
+        self._ensure_index_selected(self._preview, index)
+        self._show_row_menu(self._preview, self._preview.viewport().mapToGlobal(pos), clicked_index=index)
 
-    def _show_row_menu(self, table, gpos):
-        rows = sorted(idx.row() for idx in table.selectionModel().selectedRows())
-        rows = [r for r in rows if 0 <= r < len(self._paths)]
+    def _show_row_menu(self, table, gpos, clicked_index=None):
+        rows = self._selected_rows(table)
         if not rows:
             return
-        paths = [str(self._paths[r]) for r in rows]
+        paths = [self._keys[r] if r < len(self._keys) else str(self._paths[r]).replace("\\", "/") for r in rows]
+        sources = [str(self._paths[r]) for r in rows]
         seed = Context.create_context(
             self,
             "*",
@@ -1088,6 +1299,8 @@ class BatchRenameWidget(QtWidgets.QWidget):
             extras={
                 "path": paths[0],
                 "paths": paths,
+                "source": sources[0],
+                "sources": sources,
             },
         )
         if len(rows) == 1:
@@ -1103,19 +1316,40 @@ class BatchRenameWidget(QtWidgets.QWidget):
                 translate=False,
                 func=lambda ctx: self._exclude_rows(frozen_rows),
             ),
-            "-",
-            ":Path",
-            "file.open",
-            "file.show_explorer",
-            "file.shell_context_menu",
-            "-",
-            "file.show_file",
-            "file.select_path",
-            "file.scroll_to_file",
         ]
+        if table is self._seg_table and clicked_index is not None and clicked_index.isValid():
+            items.append(
+                ActionKit.Action(
+                    path="inline.renamer.restore_cell",
+                    display=t("Restore selected override(s)"),
+                    translate=False,
+                    func=lambda ctx: self._restore_cell_overrides(self._selected_override_cells()),
+                )
+            )
+        items.extend(
+            [
+                "-",
+                ":Path",
+                "file.open",
+                "file.show_explorer",
+                "file.shell_context_menu",
+                "-",
+                "file.show_file",
+                "file.select_path",
+                "file.scroll_to_file",
+            ]
+        )
         Menu.session(self, seed_ctx=seed, pos=gpos).menu(items).exec()
 
     def _execute(self):
+        if self._is_segment_editing():
+            self._defer_update_if_editing(lambda: self._refresh(auto_size=False), kind="refresh")
+            self._schedule_pending_update()
+            return
+        if self._has_pending_update():
+            self._rename_btn.setEnabled(False)
+            self._schedule_pending_update()
+            return
         if self._global_errors or any(r.conflict or r.errors for r in self._results):
             return
         missing = [p for p, r in zip(self._paths, self._results) if not p.exists()]

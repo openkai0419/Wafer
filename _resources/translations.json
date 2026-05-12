@@ -1,4 +1,48 @@
 {
+  "Drop Files (Ask)": {
+    "en": "Drop Files (Ask)",
+    "ja": ""
+  },
+  "Drop Files (Copy)": {
+    "en": "Drop Files (Copy)",
+    "ja": ""
+  },
+  "Drop Files (Move)": {
+    "en": "Drop Files (Move)",
+    "ja": ""
+  },
+  "Move Target": {
+    "en": "Move Target",
+    "ja": ""
+  },
+  "on_conflict": {
+    "en": "on_conflict",
+    "ja": ""
+  },
+  "collapse": {
+    "en": "collapse",
+    "ja": ""
+  },
+  "trigger_search": {
+    "en": "trigger_search",
+    "ja": ""
+  },
+  "lower": {
+    "en": "lower",
+    "ja": ""
+  },
+  "none": {
+    "en": "none",
+    "ja": ""
+  },
+  "title": {
+    "en": "title",
+    "ja": ""
+  },
+  "upper": {
+    "en": "upper",
+    "ja": ""
+  },
   "Overlay badge size": {
     "en": "Overlay badge size",
     "ja": ""
@@ -667,16 +711,16 @@
     "en": "Name",
     "ja": ""
   },
+  "Navigate": {
+    "en": "Navigate",
+    "ja": ""
+  },
   "Navigate (Filesystem DFS)": {
     "en": "Navigate (Filesystem DFS)",
     "ja": ""
   },
   "Navigate (Hierarchy)": {
     "en": "Navigate (Hierarchy)",
-    "ja": ""
-  },
-  "Navigate (Visible Tree)": {
-    "en": "Navigate (Visible Tree)",
     "ja": ""
   },
   "Navigate by Mouse Position": {
@@ -699,12 +743,12 @@
     "en": "Next File",
     "ja": ""
   },
-  "Next Folder (DFS)": {
-    "en": "Next Folder (DFS)",
+  "Next Folder": {
+    "en": "Next Folder",
     "ja": ""
   },
-  "Next Folder (Visible)": {
-    "en": "Next Folder (Visible)",
+  "Next Folder (DFS)": {
+    "en": "Next Folder (DFS)",
     "ja": ""
   },
   "Next Frame": {
@@ -831,12 +875,12 @@
     "en": "Prev File",
     "ja": ""
   },
-  "Prev Folder (DFS)": {
-    "en": "Prev Folder (DFS)",
+  "Previous Folder": {
+    "en": "Previous Folder",
     "ja": ""
   },
-  "Prev Folder (Visible)": {
-    "en": "Prev Folder (Visible)",
+  "Previous Folder (DFS)": {
+    "en": "Previous Folder (DFS)",
     "ja": ""
   },
   "Prev Row": {
@@ -2585,6 +2629,42 @@
   },
   "Confirm": {
     "en": "Confirm",
+    "ja": ""
+  },
+  "Copy to:": {
+    "en": "Copy to:",
+    "ja": ""
+  },
+  "Move to:": {
+    "en": "Move to:",
+    "ja": ""
+  },
+  "Drop Target Required": {
+    "en": "Drop Target Required",
+    "ja": ""
+  },
+  "Choose Drop Target": {
+    "en": "Choose Drop Target",
+    "ja": ""
+  },
+  "Choose the destination for this drop.": {
+    "en": "Choose the destination for this drop.",
+    "ja": ""
+  },
+  "Choose the FolderTree destination for this drop.": {
+    "en": "Choose the FolderTree destination for this drop.",
+    "ja": ""
+  },
+  "Select a folder in FolderTree before dropping without a grid target.": {
+    "en": "Select a folder in FolderTree before dropping without a grid target.",
+    "ja": ""
+  },
+  "Drop to the selected FolderTree folder?\n  {path}": {
+    "en": "Drop to the selected FolderTree folder?\n  {path}",
+    "ja": ""
+  },
+  "Drop to:\n  {path}": {
+    "en": "Drop to:\n  {path}",
     "ja": ""
   },
   "Confirm Disable": {

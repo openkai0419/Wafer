@@ -129,7 +129,7 @@ class ColumnSettingsPopup(PopupBase):
         tb.setStyleSheet(st)
         lay.addWidget(tb)
 
-        tw = QtWidgets.QWidget()
+        tw = QtWidgets.QWidget(self)
         tw.setVisible(has_trim)
         tl = QtWidgets.QHBoxLayout(tw)
         tl.setContentsMargins(0, 0, 0, 0)
@@ -167,7 +167,7 @@ class ColumnSettingsPopup(PopupBase):
         rb.setStyleSheet(st)
         lay.addWidget(rb)
 
-        rw = QtWidgets.QWidget()
+        rw = QtWidgets.QWidget(self)
         rw.setVisible(has_repl)
         rl = QtWidgets.QVBoxLayout(rw)
         rl.setContentsMargins(0, 0, 0, 0)
@@ -218,7 +218,7 @@ class ColumnSettingsPopup(PopupBase):
         ib.setStyleSheet(st)
         lay.addWidget(ib)
 
-        iw = QtWidgets.QWidget()
+        iw = QtWidgets.QWidget(self)
         iw.setVisible(has_ins)
         il = QtWidgets.QHBoxLayout(iw)
         il.setContentsMargins(0, 0, 0, 0)
@@ -245,4 +245,6 @@ class ColumnSettingsPopup(PopupBase):
         se.textChanged.connect(lambda t: (setattr(post, "suffix", t), self.changed.emit()))
 
     def _resize_and_clamp(self):
+        if not self.isVisible():
+            return
         self.position_at(self.pos())

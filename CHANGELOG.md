@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.6.17]
+### Added
+- **Drop target chooser for GridView fallback drops** (`wafer/builtins/commands/grid.py`, `wafer/ui/dialogs.py`, `_resources/translations.json`): added a destination chooser and confirmation flow when a GridView drop falls back to FolderTree-selected folders instead of a hovered grid item
+
+### Changed
+- **Default binding presets** (`_resources/key_bindings/standard.json`, `_resources/mouse_bindings/standard.json`): refreshed the shipped key and mouse presets with `W`/`A`/`S`/`D` FolderTree navigation, side-button mark toggles, and updated GridView and viewer mouse actions for drag, drop, open, fit-mode, and row navigation
+- **Nearest-target drop resolution** (`wafer/app/viewer/widgets/foldertree.py`, `wafer/app/viewer/grid/grid_view.py`, `wafer/plugin/layout/calc.py`, `wafer/builtins/commands/grid.py`): GridView and FolderTree drops now resolve to the nearest visible cell or row, and FolderTree highlights the resolved destination row during drag feedback
+- **FolderTree navigation and reload flow** (`wafer/app/viewer/widgets/foldertree.py`, `wafer/builtins/commands/foldertree.py`, `wafer/app/viewer/mainwindow.py`, `_resources/translations.json`): replaced visible-row folder navigation with sibling-folder navigation, added optional collapse-on-parent navigation, and deferred folder-tree reloads while inline edits are active so renames are not interrupted
+- **Batch Renamer preview popups** (`wafer/builtins/batch_renamer/widget.py`, `wafer/builtins/batch_renamer/popup.py`): column setting popups now reopen within the available screen space and preview thumbnails load at `512px` for higher-detail rename previews
+
+### Fixed
+- **Virtual-path drop safety** (`wafer/core/platform/file_operations.py`, `wafer/builtins/commands/grid.py`, `wafer/app/viewer/widgets/foldertree.py`): app-managed drops now reject archive virtual paths as destinations and resolve file operations against physical source directories before executing copy or move plans
+- **Folder delete event classification** (`wafer/app/indexer/watch_folder.py`): folder delete notifications no longer rely solely on backend `is_directory` flags, restoring folder-removal handling when watcher backends mislabel directory deletions
+
 ## [v0.6.16]
 ### Added
 - **Scope-aware mark storage and conversion** (`wafer/builtins/mark/dialogs.py`, `wafer/builtins/mark/registry.py`, `wafer/core/db/file_db.py`, `wafer/core/db/key_value.py`): added metadata-scoped and tag-scoped mark definitions, per-mark scope conversion requests across databases, and shared key-value scope helpers so marks can be stored per path or per file hash

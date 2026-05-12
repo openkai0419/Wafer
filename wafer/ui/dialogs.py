@@ -1,5 +1,5 @@
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QButtonGroup, QCheckBox, QDialog, QFileIconProvider, QHBoxLayout, QLabel, QLineEdit, QPushButton, QRadioButton, QSizePolicy, QStyle, QVBoxLayout
+from PySide6.QtWidgets import QButtonGroup, QCheckBox, QComboBox, QDialog, QFileIconProvider, QHBoxLayout, QLabel, QLineEdit, QPushButton, QRadioButton, QSizePolicy, QStyle, QVBoxLayout
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtCore import QFileInfo
 from ..utils.formatting import dpix
@@ -239,6 +239,51 @@ class DropOperationDialog(BaseDialog):
         if dialog.result_text == "OK":
             return dialog.selected_operation()
         return None
+
+
+class DropTargetDialog(BaseDialog):
+    def __init__(self, candidates, *, default=None, message=None, title="Choose Drop Target", parent=None):
+        self.ok_text = t("OK")
+        self.cancel_text = t("Cancel")
+        super().__init__(message or t("Choose the destination for this drop."), title, buttons=(self.ok_text, self.cancel_text), parent=parent)
+        self.candidates = self.normalize_candidates(candidates)
+        self.selected_path = None
+        self.combo = QComboBox()
+        self.combo.setMinimumWidth(dpix(420))
+        for path in self.candidates:
+            self.combo.addItem(path, path)
+        if default:
+            try:
+                idx = self.candidates.index(str(default))
+                self.combo.setCurrentIndex(idx)
+            except ValueError:
+                pass
+        self.content_layout.addWidget(self.combo)
+
+    @staticmethod
+    def normalize_candidates(candidates) -> list[str]:
+        out = []
+        seen = set()
+        for candidate in candidates or []:
+            text = str(candidate or "")
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            out.append(text)
+        return out
+
+    def _on_button(self, text):
+        if text == self.ok_text and self.combo.count() > 0:
+            self.selected_path = self.combo.currentData() or self.combo.currentText()
+        super()._on_button(text)
+
+    @staticmethod
+    def ask(candidates, *, default=None, message=None, title="Choose Drop Target", parent=None) -> str | None:
+        dialog = DropTargetDialog(candidates, default=default, message=message, title=title, parent=parent)
+        if not dialog.candidates:
+            return None
+        dialog.exec()
+        return dialog.selected_path
 
 
 class FileConflictDialog(BaseDialog):

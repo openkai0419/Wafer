@@ -10,7 +10,8 @@ from wafer.builtins.commands.foldertree import (
     _ctx_normalized_path,
     _ctx_normalized_paths,
     _ctx_dir_path,
-    next_folder_visible,
+    next_folder,
+    parent_folder,
     remove_from_view,
     ignore_folder,
     show_context_menu,
@@ -20,12 +21,14 @@ from wafer.builtins.commands.foldertree import (
 def test_foldertree_commands_register_paths(qtbot):
     FolderTreeCommands.register()
     assert CommandRegistry.instance().has_command("ft.reload_tree")
+    assert CommandRegistry.instance().has_command("ft.next_folder")
+    assert CommandRegistry.instance().has_command("ft.prev_folder")
     assert CommandRegistry.instance().has_command("ft.next_folder_dfs")
     assert CommandRegistry.instance().has_command("ft.prev_folder_dfs")
-    assert CommandRegistry.instance().has_command("ft.next_folder_visible")
-    assert CommandRegistry.instance().has_command("ft.prev_folder_visible")
     assert CommandRegistry.instance().has_command("ft.parent_folder")
     assert CommandRegistry.instance().has_command("ft.child_folder")
+    assert not CommandRegistry.instance().has_command("ft.next_folder_visible")
+    assert not CommandRegistry.instance().has_command("ft.prev_folder_visible")
     parent = QtWidgets.QWidget()
     qtbot.addWidget(parent)
     m = Menu.session(parent).menu(["ft.reload_tree"]).build()
@@ -220,7 +223,7 @@ def test_navigation_command_delegates_search_emit_to_tree(qtbot):
         def get_selected_paths(self):
             return []
 
-        def navigate_next_visible(self, trigger_search=True):
+        def navigate_next_folder(self, trigger_search=True):
             self.trigger_search = trigger_search
             return "selected"
 
@@ -228,6 +231,30 @@ def test_navigation_command_delegates_search_emit_to_tree(qtbot):
     qtbot.addWidget(tree)
     ctx = _FakeCtx(widget=tree)
 
-    assert next_folder_visible(ctx, trigger_search=True) == "selected"
+    assert next_folder(ctx, trigger_search=True) == "selected"
     assert tree.trigger_search is True
     assert tree.folder_selected.count == 0
+
+
+def test_parent_folder_command_passes_collapse_flag(qtbot):
+    class FakeTree(QtWidgets.QWidget):
+        def __init__(self):
+            super().__init__()
+            self.trigger_search = None
+            self.collapse = None
+
+        def get_selected_paths(self):
+            return []
+
+        def navigate_parent(self, trigger_search=True, collapse=False):
+            self.trigger_search = trigger_search
+            self.collapse = collapse
+            return "parent"
+
+    tree = FakeTree()
+    qtbot.addWidget(tree)
+    ctx = _FakeCtx(widget=tree)
+
+    assert parent_folder(ctx, trigger_search=True, collapse=True) == "parent"
+    assert tree.trigger_search is True
+    assert tree.collapse is True

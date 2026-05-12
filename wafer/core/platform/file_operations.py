@@ -11,6 +11,7 @@ import requests
 
 from ...utils.logs import AppLogger
 from ...utils.paths import safe_exists, safe_is_dir
+from ...utils.virtual_paths import is_virtual_path
 from .path_utils import check_copy_conflict, is_http_url, unique_path
 
 if TYPE_CHECKING:
@@ -434,6 +435,11 @@ class FileExecutor:
 
 
 def build_drop_plans(parsed_items: list[ParsedItem], dst_dir: str, op: str) -> list[DropPlanItem]:
+    if not dst_dir:
+        return []
+    if is_virtual_path(str(dst_dir)):
+        AppLogger.warning(f"[drop] virtual destination rejected: {dst_dir} (file ops must target source files)")
+        return []
     plans = []
     seen_local_sources: set[str] = set()
     for item in parsed_items:

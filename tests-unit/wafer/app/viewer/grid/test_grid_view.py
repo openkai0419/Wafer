@@ -709,6 +709,50 @@ class TestFindCenterIndexEffectiveScroll:
         assert targets[1] > targets[0]
 
 
+class TestNearestIndexAtPos:
+    def test_uses_visible_candidates(self):
+        from wafer.app.viewer.grid.grid_view import GridView
+        from wafer.plugin.layout.calc import LayoutData
+
+        layout = LayoutData(
+            [
+                QtCore.QRect(0, 0, 100, 100),
+                QtCore.QRect(120, 0, 100, 100),
+                QtCore.QRect(240, 0, 100, 100),
+            ],
+            340,
+            True,
+        )
+        gv = MagicMock()
+        gv.rects = layout
+        gv.to_scene_pos.return_value = QtCore.QPoint(250, 50)
+        gv._scene_view_rect.return_value = QtCore.QRect(0, 0, 220, 100)
+        gv._calculate_visible_indices.return_value = [0, 1]
+
+        assert GridView.nearest_index_at_pos(gv, QtCore.QPoint(10, 10)) == 1
+
+    def test_falls_back_to_all_rects_without_visible_candidates(self):
+        from wafer.app.viewer.grid.grid_view import GridView
+        from wafer.plugin.layout.calc import LayoutData
+
+        layout = LayoutData(
+            [
+                QtCore.QRect(0, 0, 100, 100),
+                QtCore.QRect(120, 0, 100, 100),
+                QtCore.QRect(240, 0, 100, 100),
+            ],
+            340,
+            True,
+        )
+        gv = MagicMock()
+        gv.rects = layout
+        gv.to_scene_pos.return_value = QtCore.QPoint(250, 50)
+        gv._scene_view_rect.return_value = QtCore.QRect(0, 0, 0, 0)
+        gv._calculate_visible_indices.return_value = []
+
+        assert GridView.nearest_index_at_pos(gv, QtCore.QPoint(10, 10)) == 2
+
+
 class TestOnLayoutReadyWidgetRerender:
     @pytest.fixture(autouse=True)
     def _import(self, qtbot):

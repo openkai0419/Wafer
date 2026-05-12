@@ -103,10 +103,10 @@ class _SectionButton(QtWidgets.QToolButton):
         self.setIconSize(QtCore.QSize(dpix(15 if icon_only else 9), dpix(15 if icon_only else 9)))
         self.setAutoRaise(True)
         if icon_only:
-            self.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
-            self.setFixedSize(dpix(24), dpix(22))
+            self.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Expanding)
+            self.setFixedWidth(dpix(24))
         else:
-            self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+            self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
         self.set_expanded(False)
         self._apply_style()
 

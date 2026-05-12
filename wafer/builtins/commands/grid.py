@@ -1,13 +1,18 @@
 import os
+from dataclasses import dataclass
 
 from PySide6 import QtCore, QtGui
 
 from ...core.commands.bridge import ActionKit
 from ...core.commands.binding.instance_registry import InstanceRegistry
+from ...core.lang.manager import t
+from ...utils.logs import AppLogger
+from ...utils.paths import normalize_path
 from ...utils.formatting import dpix
 from ...core.platform.dragparser import MimeDataParser
 from ...core.platform.paste import drop_files_with_ui, get_saved_drop_operation
 from ...core.qt.pixmap import PixmapFactory
+from ...ui.dialogs import ConfirmDialog, DropTargetDialog
 
 INTERNAL_MIME_TYPE = b"application/x-gridview-internal" + f"{os.getpid()}".encode()
 
@@ -18,6 +23,13 @@ _CHOICE_TO_CMD = dict(zip(ORIENTATION_CHOICES, _CMD_IDS))
 _CHOICE_TO_INDEX = {c: i for i, c in enumerate(ORIENTATION_CHOICES)}
 
 _INDEX_TO_ORI_CMD = {i: cmd for i, cmd in enumerate(_CMD_IDS)}
+
+
+@dataclass(frozen=True, slots=True)
+class GridDropTarget:
+    directory: str
+    kind: str
+    index: int | None = None
 
 
 def _grid():
@@ -674,6 +686,13 @@ class GridViewDropCommands(ActionKit.DragMenuBase):
     NAME = "GridView"
 
     @staticmethod
+    def _directory_from_source(source: str | None) -> str | None:
+        if not source:
+            return None
+        abs_source = os.path.abspath(str(source))
+        return abs_source if os.path.isdir(abs_source) else os.path.dirname(abs_source)
+
+    @staticmethod
     def _apply_drop_action(ctx, op: str) -> None:
         event = ctx.get_event() if hasattr(ctx, "get_event") else None
         if event is None:
@@ -715,15 +734,8 @@ class GridViewDropCommands(ActionKit.DragMenuBase):
 
     @staticmethod
     def _drop_target_dir(ctx, view) -> str | None:
-        p = ctx.get("path")
-        if p:
-            a = os.path.abspath(str(p))
-            return a if os.path.isdir(a) else os.path.dirname(a)
-        r = getattr(view, "root", None)
-        if r:
-            rr = os.path.abspath(str(r))
-            return rr if os.path.isdir(rr) else None
-        return None
+        source = ctx.get("source")
+        return GridViewDropCommands._directory_from_source(str(source)) if source else None
 
     @staticmethod
     def _hover_index(ctx, view) -> int | None:
@@ -731,13 +743,106 @@ class GridViewDropCommands(ActionKit.DragMenuBase):
         return int(idx) if idx is not None else None
 
     @staticmethod
+    def _target_from_index(items, idx: int, kind: str) -> GridDropTarget | None:
+        source = items.source_at(idx)
+        if not source:
+            AppLogger.warning(f"[grid.drop] missing source for {kind} index: {idx}")
+            return None
+        directory = GridViewDropCommands._directory_from_source(str(source))
+        return GridDropTarget(directory, kind, idx) if directory else None
+
+    @staticmethod
     def _drop_target_dir_from_hover(ctx, view, items) -> str | None:
         idx = GridViewDropCommands._hover_index(ctx, view)
         if idx is not None:
-            p = items.path_at(idx)
-            if p:
-                return os.path.dirname(os.path.abspath(str(p)))
+            target = GridViewDropCommands._target_from_index(items, idx, "hover")
+            return target.directory if target else None
         return GridViewDropCommands._drop_target_dir(ctx, view)
+
+    @staticmethod
+    def _nearest_index(ctx, view) -> int | None:
+        idx = view.nearest_index_at_pos(ctx.pos)
+        return int(idx) if idx is not None else None
+
+    @staticmethod
+    def _resolve_grid_drop_target(ctx, view, items) -> GridDropTarget | None:
+        idx = GridViewDropCommands._hover_index(ctx, view)
+        if idx is not None:
+            return GridViewDropCommands._target_from_index(items, idx, "hover")
+        if not view.rects:
+            return None
+        idx = GridViewDropCommands._nearest_index(ctx, view)
+        if idx is None:
+            return None
+        return GridViewDropCommands._target_from_index(items, idx, "nearest")
+
+    @staticmethod
+    def _normalize_existing_dirs(paths) -> list[str]:
+        out = []
+        seen = set()
+        for path in paths or []:
+            if not path:
+                continue
+            normalized = normalize_path(os.path.abspath(str(path)))
+            if normalized in seen or not os.path.isdir(normalized):
+                continue
+            seen.add(normalized)
+            out.append(normalized)
+        return out
+
+    @staticmethod
+    def _folder_tree(ctx):
+        return ctx.get_instance("FolderTree")
+
+    @staticmethod
+    def _folder_tree_selected_dirs(ctx) -> list[str]:
+        tree = GridViewDropCommands._folder_tree(ctx)
+        if tree is None:
+            return []
+        return GridViewDropCommands._normalize_existing_dirs(tree.get_selected_paths())
+
+    @staticmethod
+    def _folder_tree_current_dir(ctx) -> str | None:
+        tree = GridViewDropCommands._folder_tree(ctx)
+        if tree is None:
+            return None
+        dirs = GridViewDropCommands._normalize_existing_dirs([tree.current_path()])
+        return dirs[0] if dirs else None
+
+    @staticmethod
+    def _resolve_folder_tree_drop_target(ctx, view) -> GridDropTarget | None:
+        selected = GridViewDropCommands._folder_tree_selected_dirs(ctx)
+        if not selected:
+            ConfirmDialog.ask(
+                t("Select a folder in FolderTree before dropping without a grid target."),
+                title=t("Drop Target Required"),
+                buttons=(t("OK"),),
+                parent=view,
+            )
+            return None
+        if len(selected) == 1:
+            return GridDropTarget(selected[0], "folder_tree_single")
+        chosen = DropTargetDialog.ask(
+            selected,
+            default=GridViewDropCommands._folder_tree_current_dir(ctx),
+            message=t("Choose the FolderTree destination for this drop."),
+            title=t("Choose Drop Target"),
+            parent=view,
+        )
+        return GridDropTarget(chosen, "folder_tree_choice") if chosen else None
+
+    @staticmethod
+    def _resolve_drop_target(ctx, view, items) -> GridDropTarget | None:
+        target = GridViewDropCommands._resolve_grid_drop_target(ctx, view, items)
+        return target if target is not None else GridViewDropCommands._resolve_folder_tree_drop_target(ctx, view)
+
+    @staticmethod
+    def _confirm_message_for_target(target: GridDropTarget, op: str) -> str | None:
+        if target.kind == "folder_tree_single":
+            return t("Drop to the selected FolderTree folder?\n  {path}", path=target.directory)
+        if target.kind == "folder_tree_choice" and op == "ask":
+            return t("Drop to:\n  {path}", path=target.directory)
+        return None
 
     @staticmethod
     def _preview_clear(view):
@@ -756,23 +861,16 @@ class GridViewDropCommands(ActionKit.DragMenuBase):
         if mime is None or mime.hasFormat(INTERNAL_MIME_TYPE.decode()):
             GridViewDropCommands._preview_clear(view)
             return
-        idx = GridViewDropCommands._hover_index(ctx, view)
-        if idx is None:
+        target = GridViewDropCommands._resolve_grid_drop_target(ctx, view, items)
+        if target is None or target.index is None or not (0 <= target.index < len(view.rects)):
             GridViewDropCommands._preview_clear(view)
             return
-        if not (0 <= idx < len(view.rects)):
-            GridViewDropCommands._preview_clear(view)
-            return
-        dst_dir = GridViewDropCommands._drop_target_dir_from_hover(ctx, view, items)
-        if not dst_dir:
-            GridViewDropCommands._preview_clear(view)
-            return
-        r = view.rects[idx]
+        r = view.rects[target.index]
         if op == "ask":
             op = get_saved_drop_operation()
         view._drop_preview_rect = r
-        view._drop_preview_title = "Move to:" if op == "move" else "Copy to:"
-        view._drop_preview_text = dst_dir
+        view._drop_preview_title = t("Move to:") if op == "move" else t("Copy to:")
+        view._drop_preview_text = target.directory
         view.viewport().update()
 
     @staticmethod
@@ -798,9 +896,6 @@ class GridViewDropCommands(ActionKit.DragMenuBase):
         try:
             view = GridViewCommands.get_view(ctx)
             items = GridViewCommands.get_items(ctx)
-            dst_dir = GridViewDropCommands._drop_target_dir_from_hover(ctx, view, items)
-            if not dst_dir:
-                return
             src_items = GridViewDropCommands._extract_items(event)
             if not src_items:
                 return
@@ -810,7 +905,17 @@ class GridViewDropCommands(ActionKit.DragMenuBase):
             if on_conflict not in ("overwrite", "rename", "skip", "ask"):
                 raise ValueError(f"Invalid on_conflict: {on_conflict}")
 
-            drop_files_with_ui(src_items, dst_dir, op, overwrite_mode=on_conflict, parent=view)
+            target = GridViewDropCommands._resolve_drop_target(ctx, view, items)
+            if target is None:
+                return
+            drop_files_with_ui(
+                src_items,
+                target.directory,
+                op,
+                overwrite_mode=on_conflict,
+                parent=view,
+                confirm_message=GridViewDropCommands._confirm_message_for_target(target, op),
+            )
         finally:
             GridViewDropCommands._apply_drop_action(ctx, "ignore")
             if view is not None:

@@ -134,6 +134,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
         self._results: list[RenameResult] = []
         self._global_errors: list[str] = []
         self._popup: ColumnSettingsPopup | None = None
+        self._popup_request_id = 0
         self._syncing = False
         self._syncing_selection = False
         self._refreshing = False
@@ -569,7 +570,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
             token = CancelToken()
             self._thumb_tokens[r] = token
             rows_tokens.append((r, self._paths[r], token))
-        thumb_size = QtCore.QSize(dpix(256), dpix(256))
+        thumb_size = QtCore.QSize(dpix(512), dpix(512))
 
         def task():
             from ...plugin.grid.handler import load_thumbnail
@@ -911,13 +912,21 @@ class BatchRenameWidget(QtWidgets.QWidget):
 
     def _on_seg_header_click(self, section):
         if section == self._add_section:
+            self._close_popup()
             self._show_add_menu(section)
             return
         self._close_popup()
+        popup = self._create_column_popup(section)
+        if popup is None:
+            return
+        request_id = self._popup_request_id
+        self._popup = popup
+        QtCore.QTimer.singleShot(1, lambda r=request_id, p=popup, s=section: self._show_popup_if_current(r, p, s))
 
+    def _create_column_popup(self, section):
         is_ext = section == self._ext_section
         if section > self._ext_section:
-            return
+            return None
 
         column = self._ext_column if is_ext else self._columns[section]
 
@@ -948,17 +957,40 @@ class BatchRenameWidget(QtWidgets.QWidget):
                 )
             )
 
+        return popup
+
+    def _show_popup_if_current(self, request_id, popup, section):
+        if request_id != self._popup_request_id or self._popup is not popup:
+            return
         header = self._seg_table.horizontalHeader()
-        sec_x = header.sectionPosition(section) - header.offset()
-        gp = header.mapToGlobal(QtCore.QPoint(sec_x, header.height()))
-        self._popup = popup
+        gp = self._column_popup_pos(header, section, popup.popup_size_hint())
         popup.show_at(gp)
+        popup.closed.connect(lambda p=popup: self._on_popup_closed(p))
+
+    def _column_popup_pos(self, header, section, size):
+        sec_x = header.sectionPosition(section) - header.offset()
+        below = header.mapToGlobal(QtCore.QPoint(sec_x, header.height()))
+        screen = QtWidgets.QApplication.screenAt(below) or header.screen() or QtWidgets.QApplication.primaryScreen()
+        if screen is None:
+            return below
+        geo = screen.availableGeometry()
+        below_space = geo.bottom() + 1 - below.y()
+        header_top = header.mapToGlobal(QtCore.QPoint(sec_x, 0))
+        above_space = header_top.y() - geo.top()
+        if below_space < size.height() + dpix(48) and above_space > below_space:
+            return QtCore.QPoint(below.x(), max(geo.top(), header_top.y() - size.height()))
+        return below
+
+    def _on_popup_closed(self, popup):
+        if self._popup is popup:
+            self._popup = None
 
     def _deferred_refresh(self):
         self._update_source_defaults()
         QtCore.QTimer.singleShot(0, self._refresh)
 
     def _close_popup(self):
+        self._popup_request_id += 1
         popup = self._popup
         self._popup = None
         if popup:

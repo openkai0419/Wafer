@@ -1,123 +1,444 @@
 {
   "items": [
     {
-      "key": {"button": "RIGHT", "click": "SINGLE", "held": [], "modifiers": []},
-      "scopes": {"*": {"id": "allmenu", "args": {}}}
-    },
-    {
-      "key": {"button": "LEFT", "click": "SINGLE", "held": [], "modifiers": []},
+      "key": {
+        "button": "RIGHT",
+        "click": "SINGLE",
+        "held": [],
+        "modifiers": []
+      },
       "scopes": {
-        "GridView": {"id": "grid.click_select_at_pos", "args": {}},
-        "VideoView": {"id": "fv.navigate_file_by_mouse_position", "args": {}},
-        "AnimatedView": {"id": "fv.navigate_file_by_mouse_position", "args": {}},
-        "ImageView": {"id": "fv.navigate_file_by_mouse_position", "args": {}}
+        "*": {
+          "id": "allmenu",
+          "args": {}
+        }
       }
     },
     {
-      "key": {"button": "LEFT", "click": "SINGLE", "held": [], "modifiers": ["CTRL"]},
-      "scopes": {"GridView": {"id": "grid.toggle_at_pos", "args": {}}}
-    },
-    {
-      "key": {"button": "LEFT", "click": "SINGLE", "held": [], "modifiers": ["SHIFT"]},
-      "scopes": {"GridView": {"id": "grid.range_select_at_pos", "args": {}}}
-    },
-    {
-      "key": {"button": "LEFT", "click": "DRAG_START", "held": [], "modifiers": ["SHIFT"]},
-      "scopes": {"GridView": {"id": "grid.rect_select_replace", "args": {}}}
-    },
-    {
-      "key": {"button": "LEFT", "click": "DRAG_START", "held": [], "modifiers": ["ALT"]},
-      "scopes": {"GridView": {"id": "grid.rect_select_add", "args": {}}}
-    },
-    {
-      "key": {"button": "LEFT", "click": "DRAG_START", "held": [], "modifiers": ["CTRL"]},
-      "scopes": {"GridView": {"id": "grid.rect_select_remove", "args": {}}}
-    },
-    {
-      "key": {"button": "X1", "click": "SINGLE", "held": [], "modifiers": []},
+      "key": {
+        "button": "LEFT",
+        "click": "SINGLE",
+        "held": [],
+        "modifiers": []
+      },
       "scopes": {
-        "GridView": {"id": "grid.move_to_prev_row", "args": {}}
+        "GridView": {
+          "id": "grid.click_select_at_pos",
+          "args": {}
+        },
+        "VideoView": {
+          "id": "fv.navigate_file_by_mouse_position",
+          "args": {}
+        },
+        "AnimatedView": {
+          "id": "fv.navigate_file_by_mouse_position",
+          "args": {}
+        },
+        "ImageView": {
+          "id": "fv.navigate_file_by_mouse_position",
+          "args": {}
+        }
       }
     },
     {
-      "key": {"button": "X2", "click": "SINGLE", "held": [], "modifiers": []},
+      "key": {
+        "button": "LEFT",
+        "click": "SINGLE",
+        "held": [],
+        "modifiers": [
+          "CTRL"
+        ]
+      },
       "scopes": {
-        "GridView": {"id": "grid.move_to_next_row", "args": {}}
+        "GridView": {
+          "id": "grid.toggle_at_pos",
+          "args": {}
+        }
       }
     },
     {
-      "key": {"button": "NONE", "click": "WHEEL_UP", "held": [], "modifiers": []},
+      "key": {
+        "button": "LEFT",
+        "click": "SINGLE",
+        "held": [],
+        "modifiers": [
+          "SHIFT"
+        ]
+      },
       "scopes": {
-        "ImageView": {"id": "imgv.zoom_in", "args": {}},
-        "GridView": {"id": "grid.scroll_up", "args": {"multiplier": 4}},
-        "VideoView": {"id": "vview.volume_up", "args": {}}
+        "GridView": {
+          "id": "grid.range_select_at_pos",
+          "args": {}
+        }
       }
     },
     {
-      "key": {"button": "NONE", "click": "WHEEL_DOWN", "held": [], "modifiers": []},
+      "key": {
+        "button": "LEFT",
+        "click": "DRAG_START",
+        "held": [],
+        "modifiers": [
+          "SHIFT"
+        ]
+      },
       "scopes": {
-        "ImageView": {"id": "imgv.zoom_out", "args": {}},
-        "GridView": {"id": "grid.scroll_down", "args": {"multiplier": 4}},
-        "VideoView": {"id": "vview.volume_down", "args": {}}
+        "GridView": {
+          "id": "grid.rect_select_replace",
+          "args": {}
+        }
       }
     },
     {
-      "key": {"button": "NONE", "click": "WHEEL_UP", "held": [], "modifiers": ["CTRL"]},
-      "scopes": {"GridView": {"id": "grid.scale_up", "args": {"ratio": 1.1}}}
-    },
-    {
-      "key": {"button": "NONE", "click": "WHEEL_DOWN", "held": [], "modifiers": ["CTRL"]},
-      "scopes": {"GridView": {"id": "grid.scale_down", "args": {"ratio": 1.1}}}
-    },
-    {
-      "key": {"button": "NONE", "click": "WHEEL_UP", "held": ["RIGHT"], "modifiers": []},
-      "scopes": {"GridView": {"id": "grid.scale_up", "args": {"ratio": 1.1}}}
-    },
-    {
-      "key": {"button": "NONE", "click": "WHEEL_DOWN", "held": ["RIGHT"], "modifiers": []},
-      "scopes": {"GridView": {"id": "grid.scale_down", "args": {"ratio": 1.1}}}
-    },
-    {
-      "key": {"button": "MIDDLE", "click": "SINGLE", "held": [], "modifiers": []},
+      "key": {
+        "button": "LEFT",
+        "click": "DRAG_START",
+        "held": [],
+        "modifiers": [
+          "ALT"
+        ]
+      },
       "scopes": {
-        "GridView": {"id": "grid.toggle_autoscroll", "args": {}},
-        "VideoView": {"id": "vview.toggle_pause", "args": {}}
+        "GridView": {
+          "id": "grid.rect_select_add",
+          "args": {}
+        }
       }
     },
     {
-      "key": {"button": "MIDDLE", "click": "SINGLE", "held": ["RIGHT"], "modifiers": []},
-      "scopes": {"GridView": {"id": "grid.cycle_orientation", "args": {}}}
-    },
-    {
-      "key": {"button": "LEFT", "click": "DOUBLE", "held": [], "modifiers": []},
-      "scopes": {"GridView": {"id": "grid.show_at_pos", "args": {}}}
-    },
-    {
-      "key": {"button": "LEFT", "click": "DRAG_START", "held": [], "modifiers": []},
+      "key": {
+        "button": "LEFT",
+        "click": "DRAG_START",
+        "held": [],
+        "modifiers": [
+          "CTRL"
+        ]
+      },
       "scopes": {
-        "GridView": {"id": "grid.drag_files", "args": {}},
-        "ImageView": {"id": "imgv.pan", "args": {}}
+        "GridView": {
+          "id": "grid.rect_select_remove",
+          "args": {}
+        }
       }
     },
     {
-      "key": {"button": "NONE", "click": "DROP", "held": [], "modifiers": []},
-      "scopes": {"GridView": {"id": "grid.drop_files_copy", "args": {"on_conflict": "ask"}}}
-    },
-    {
-      "key": {"button": "NONE", "click": "DROP", "held": [], "modifiers": ["SHIFT"]},
-      "scopes": {"GridView": {"id": "grid.drop_files_move", "args": {"on_conflict": "ask"}}}
-    },
-    {
-      "key": {"button": "LEFT", "click": "SINGLE", "held": ["RIGHT"], "modifiers": []},
+      "key": {
+        "button": "X1",
+        "click": "SINGLE",
+        "held": [],
+        "modifiers": []
+      },
       "scopes": {
-        "AnimatedView": {"id": "aview.toggle_fit_mode", "args": {}},
-        "ImageView": {"id": "imgv.toggle_fit_mode", "args": {}},
-        "VideoView": {"id": "vview.toggle_fit_mode", "args": {}}
+        "*": {
+          "id": "mark.toggle",
+          "args": {}
+        }
       }
     },
     {
-      "key": {"button": "LEFT", "click": "DOUBLE", "held": ["RIGHT"], "modifiers": []},
-      "scopes": {"GridView": {"id": "file.open", "args": {}}}
+      "key": {
+        "button": "X2",
+        "click": "SINGLE",
+        "held": [],
+        "modifiers": []
+      },
+      "scopes": {
+        "*": {
+          "id": "mark.toggle",
+          "args": {}
+        }
+      }
+    },
+    {
+      "key": {
+        "button": "NONE",
+        "click": "WHEEL_UP",
+        "held": [],
+        "modifiers": []
+      },
+      "scopes": {
+        "ImageView": {
+          "id": "imgv.zoom_in",
+          "args": {}
+        },
+        "GridView": {
+          "id": "grid.scroll_up",
+          "args": {}
+        },
+        "VideoView": {
+          "id": "vview.volume_up",
+          "args": {}
+        }
+      }
+    },
+    {
+      "key": {
+        "button": "NONE",
+        "click": "WHEEL_DOWN",
+        "held": [],
+        "modifiers": []
+      },
+      "scopes": {
+        "ImageView": {
+          "id": "imgv.zoom_out",
+          "args": {}
+        },
+        "GridView": {
+          "id": "grid.scroll_down",
+          "args": {}
+        },
+        "VideoView": {
+          "id": "vview.volume_down",
+          "args": {}
+        }
+      }
+    },
+    {
+      "key": {
+        "button": "NONE",
+        "click": "WHEEL_UP",
+        "held": [],
+        "modifiers": [
+          "CTRL"
+        ]
+      },
+      "scopes": {
+        "GridView": {
+          "id": "grid.scale_up",
+          "args": {}
+        }
+      }
+    },
+    {
+      "key": {
+        "button": "NONE",
+        "click": "WHEEL_DOWN",
+        "held": [],
+        "modifiers": [
+          "CTRL"
+        ]
+      },
+      "scopes": {
+        "GridView": {
+          "id": "grid.scale_down",
+          "args": {}
+        }
+      }
+    },
+    {
+      "key": {
+        "button": "NONE",
+        "click": "WHEEL_UP",
+        "held": [
+          "RIGHT"
+        ],
+        "modifiers": []
+      },
+      "scopes": {
+        "GridView": {
+          "id": "grid.scale_up",
+          "args": {}
+        }
+      }
+    },
+    {
+      "key": {
+        "button": "NONE",
+        "click": "WHEEL_DOWN",
+        "held": [
+          "RIGHT"
+        ],
+        "modifiers": []
+      },
+      "scopes": {
+        "GridView": {
+          "id": "grid.scale_down",
+          "args": {}
+        }
+      }
+    },
+    {
+      "key": {
+        "button": "MIDDLE",
+        "click": "SINGLE",
+        "held": [],
+        "modifiers": []
+      },
+      "scopes": {
+        "GridView": {
+          "id": "grid.toggle_autoscroll",
+          "args": {}
+        },
+        "VideoView": {
+          "id": "vview.toggle_pause",
+          "args": {}
+        }
+      }
+    },
+    {
+      "key": {
+        "button": "MIDDLE",
+        "click": "SINGLE",
+        "held": [
+          "RIGHT"
+        ],
+        "modifiers": []
+      },
+      "scopes": {
+        "GridView": {
+          "id": "grid.cycle_orientation",
+          "args": {}
+        }
+      }
+    },
+    {
+      "key": {
+        "button": "LEFT",
+        "click": "DOUBLE",
+        "held": [],
+        "modifiers": []
+      },
+      "scopes": {
+        "GridView": {
+          "id": "file.show_file",
+          "args": {}
+        }
+      }
+    },
+    {
+      "key": {
+        "button": "LEFT",
+        "click": "DRAG_START",
+        "held": [],
+        "modifiers": []
+      },
+      "scopes": {
+        "GridView": {
+          "id": "grid.drag_files",
+          "args": {}
+        },
+        "ImageView": {
+          "id": "imgv.pan",
+          "args": {}
+        }
+      }
+    },
+    {
+      "key": {
+        "button": "NONE",
+        "click": "DROP",
+        "held": [],
+        "modifiers": []
+      },
+      "scopes": {
+        "GridView": {
+          "id": "grid.drop_files_copy",
+          "args": {}
+        }
+      }
+    },
+    {
+      "key": {
+        "button": "NONE",
+        "click": "DROP",
+        "held": [],
+        "modifiers": [
+          "SHIFT"
+        ]
+      },
+      "scopes": {
+        "GridView": {
+          "id": "grid.drop_files_move",
+          "args": {}
+        }
+      }
+    },
+    {
+      "key": {
+        "button": "LEFT",
+        "click": "SINGLE",
+        "held": [
+          "RIGHT"
+        ],
+        "modifiers": []
+      },
+      "scopes": {
+        "AnimatedView": {
+          "id": "aview.toggle_fit_mode",
+          "args": {}
+        },
+        "ImageView": {
+          "id": "imgv.toggle_fit_mode",
+          "args": {}
+        },
+        "VideoView": {
+          "id": "vview.toggle_fit_mode",
+          "args": {}
+        }
+      }
+    },
+    {
+      "key": {
+        "button": "LEFT",
+        "click": "DOUBLE",
+        "held": [
+          "RIGHT"
+        ],
+        "modifiers": []
+      },
+      "scopes": {
+        "GridView": {
+          "id": "file.open",
+          "args": {}
+        }
+      }
+    },
+    {
+      "key": {
+        "button": "RIGHT",
+        "click": "SINGLE",
+        "held": [
+          "LEFT"
+        ],
+        "modifiers": []
+      },
+      "scopes": {
+        "*": {
+          "id": "file.shell_context_menu",
+          "args": {}
+        }
+      }
+    },
+    {
+      "key": {
+        "button": "X2",
+        "click": "SINGLE",
+        "held": [
+          "RIGHT"
+        ],
+        "modifiers": []
+      },
+      "scopes": {
+        "GridView": {
+          "id": "grid.move_to_next_row",
+          "args": {}
+        }
+      }
+    },
+    {
+      "key": {
+        "button": "X1",
+        "click": "SINGLE",
+        "held": [
+          "RIGHT"
+        ],
+        "modifiers": []
+      },
+      "scopes": {
+        "GridView": {
+          "id": "grid.move_to_prev_row",
+          "args": {}
+        }
+      }
     }
   ]
 }

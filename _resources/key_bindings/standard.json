@@ -1,52 +1,185 @@
 {
   "items": [
     {
-      "key": {"key": "Down"},
-      "scopes": {"*": {"id": "fv.next_file", "args": {}}}
+      "key": {
+        "key": "Down"
+      },
+      "scopes": {
+        "*": {
+          "id": "fv.next_file",
+          "args": {}
+        }
+      }
     },
     {
-      "key": {"key": "Del"},
-      "scopes": {"*": {"id": "file.delete", "args": {}}}
+      "key": {
+        "key": "Del"
+      },
+      "scopes": {
+        "*": {
+          "id": "file.delete",
+          "args": {}
+        }
+      }
     },
     {
-      "key": {"modifier": "Control", "key": "A"},
-      "scopes": {"*": {"id": "grid.select_all", "args": {}}}
+      "key": {
+        "modifier": "Control",
+        "key": "A"
+      },
+      "scopes": {
+        "*": {
+          "id": "grid.select_all",
+          "args": {}
+        }
+      }
     },
     {
-      "key": {"key": "Up"},
-      "scopes": {"*": {"id": "fv.prev_file", "args": {}}}
+      "key": {
+        "key": "Up"
+      },
+      "scopes": {
+        "*": {
+          "id": "fv.prev_file",
+          "args": {}
+        }
+      }
     },
     {
-      "key": {"key": "1"},
-      "scopes": {"*": {"id": "mark.toggle", "args": {}}}
+      "key": {
+        "key": "1"
+      },
+      "scopes": {
+        "*": {
+          "id": "mark.toggle",
+          "args": {}
+        }
+      }
     },
     {
-      "key": {"modifier": "Control", "key": "X"},
-      "scopes": {"*": {"id": "file.cut", "args": {}}}
+      "key": {
+        "modifier": "Control",
+        "key": "X"
+      },
+      "scopes": {
+        "*": {
+          "id": "file.cut",
+          "args": {}
+        }
+      }
     },
     {
-      "key": {"modifier": "Control", "key": "V"},
-      "scopes": {"*": {"id": "file.paste", "args": {}}}
+      "key": {
+        "modifier": "Control",
+        "key": "V"
+      },
+      "scopes": {
+        "*": {
+          "id": "file.paste",
+          "args": {}
+        }
+      }
     },
     {
-      "key": {"modifier": "Control", "key": "C"},
-      "scopes": {"*": {"id": "file.copy", "args": {}}}
+      "key": {
+        "modifier": "Control",
+        "key": "C"
+      },
+      "scopes": {
+        "*": {
+          "id": "file.copy",
+          "args": {}
+        }
+      }
     },
     {
-      "key": {"key": "K"},
-      "scopes": {"*": {"id": "setting.keybind", "args": {}}}
+      "key": {
+        "key": "K"
+      },
+      "scopes": {
+        "*": {
+          "id": "setting.keybind",
+          "args": {}
+        }
+      }
     },
     {
-      "key": {"modifier": "Control", "key": "N"},
-      "scopes": {"*": {"id": "file.new_folder", "args": {}}}
+      "key": {
+        "modifier": "Control",
+        "key": "N"
+      },
+      "scopes": {
+        "*": {
+          "id": "file.new_folder",
+          "args": {}
+        }
+      }
     },
     {
-      "key": {"key": "M"},
-      "scopes": {"*": {"id": "setting.mousebind", "args": {}}}
+      "key": {
+        "key": "M"
+      },
+      "scopes": {
+        "*": {
+          "id": "setting.mousebind",
+          "args": {}
+        }
+      }
     },
     {
-      "key": {"key": "Space"},
-      "scopes": {"*": {"id": "panel.solo_current", "args": {}}}
+      "key": {
+        "key": "Space"
+      },
+      "scopes": {
+        "*": {
+          "id": "panel.solo_current",
+          "args": {}
+        }
+      }
+    },
+    {
+      "key": {
+        "key": "D"
+      },
+      "scopes": {
+        "*": {
+          "id": "ft.child_folder",
+          "args": {}
+        }
+      }
+    },
+    {
+      "key": {
+        "key": "A"
+      },
+      "scopes": {
+        "*": {
+          "id": "ft.parent_folder",
+          "args": {}
+        }
+      }
+    },
+    {
+      "key": {
+        "key": "S"
+      },
+      "scopes": {
+        "*": {
+          "id": "ft.next_folder",
+          "args": {}
+        }
+      }
+    },
+    {
+      "key": {
+        "key": "W"
+      },
+      "scopes": {
+        "*": {
+          "id": "ft.prev_folder",
+          "args": {}
+        }
+      }
     }
   ]
 }

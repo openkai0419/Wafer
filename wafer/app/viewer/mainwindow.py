@@ -521,21 +521,33 @@ class MainWindow(QtWidgets.QMainWindow):
         self.search_service.execute_if_auto()
 
     @QtCore.Slot()
-    @qt_debounce(1000)
-    def reload_folderlist(self):
+    def _reload_folderlist_now(self):
         AppLogger.debug("[RUNNING] reload_folderlist")
         if self.setting_db:
-            scroll_state = self.folder_view.capture_scroll_state()
-            state = self.folder_view.get_state()
             roots = self.setting_db.get_all_parent_folders()
             excluded = self.setting_db.get_all_ignore_folders()
+            if self.folder_view.is_structure_current(roots, excluded):
+                if roots:
+                    self._dismiss_folder_callout()
+                return
+            if self.folder_view.defer_reload_if_editing(self._reload_folderlist_now, strong=True):
+                return
+            scroll_state = self.folder_view.capture_scroll_state()
+            state = self.folder_view.get_state()
             self.folder_view.set_folders(roots, excluded)
             self.folder_view.set_state(state, scroll_to_selection=False)
             self.folder_view.restore_scroll_state(scroll_state)
             if roots:
                 self._dismiss_folder_callout()
         else:
+            if self.folder_view.defer_reload_if_editing(self.folder_view.reload_tree):
+                return
             self.folder_view.reload_tree()
+
+    @QtCore.Slot()
+    @qt_debounce(1000)
+    def reload_folderlist(self):
+        self._reload_folderlist_now()
 
     def changeEvent(self, event):
         super().changeEvent(event)

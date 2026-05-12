@@ -18,6 +18,11 @@ from ....core.platform.paste import execute_paste_plans_with_ui, drop_files_with
 
 
 def _scan_children(path, excluded):
+    child_paths = _scan_child_paths(path, excluded)
+    return [(child_path, _has_subfolders_bg(child_path, excluded)) for child_path in child_paths]
+
+
+def _scan_child_paths(path, excluded):
     children = []
     try:
         for entry in natsorted(os.scandir(path), key=lambda e: e.name.lower()):
@@ -26,11 +31,10 @@ def _scan_children(path, excluded):
             full = normalize_path(entry.path)
             if full in excluded:
                 continue
-            has_sub = _has_subfolders_bg(full, excluded)
-            children.append((full, has_sub))
+            children.append(full)
     except OSError as e:
         AppLogger.debug(f"_scan_children failed for {path}: {e}")
-    return children
+    return tuple(children)
 
 
 def _collect_segments_for_paths(paths, roots):
@@ -74,11 +78,24 @@ def _has_subfolders_bg(path, excluded):
         return False
 
 
+def _folder_sort_key(path):
+    label = os.path.basename(path) or path
+    return (label.casefold(), path.casefold())
+
+
 FOLDER_ICON = QtGui.QIcon.fromTheme("folder")
 USER_ROLE_PATH = QtCore.Qt.UserRole
+SUPPORTED_DROP_ACTIONS = (QtCore.Qt.MoveAction, QtCore.Qt.CopyAction)
 EXPAND_RECURSIVE_BATCH_SIZE = 64
 EXPAND_RECURSIVE_QUEUE_LIMIT = 512
 EXPAND_RECURSIVE_DRAIN_MS = 6.0
+INLINE_EDITOR_TYPES = (
+    QtWidgets.QLineEdit,
+    QtWidgets.QPlainTextEdit,
+    QtWidgets.QTextEdit,
+    QtWidgets.QComboBox,
+    QtWidgets.QAbstractSpinBox,
+)
 
 
 class RecursiveExpandJob:
@@ -347,7 +364,7 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
         return mime
 
     def canDropMimeData(self, data, action, row, column, parent):
-        if action not in (QtCore.Qt.MoveAction, QtCore.Qt.CopyAction):
+        if action not in SUPPORTED_DROP_ACTIONS:
             return False
         if not data or (not data.hasFormat(self._mime_type) and not data.hasUrls()):
             return False
@@ -357,13 +374,11 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
         if parent_item is None:
             return False
         target_path = parent_item.data(USER_ROLE_PATH)
-        if not target_path or target_path in self.excluded:
-            return False
-        return os.path.isdir(normalize_path(target_path))
+        return bool(target_path and target_path not in self.excluded)
 
     @profiler.profile
     def dropMimeData(self, data, action, row, column, parent):
-        if action not in (QtCore.Qt.MoveAction, QtCore.Qt.CopyAction):
+        if action not in SUPPORTED_DROP_ACTIONS:
             return False
         if not data or (not data.hasFormat(self._mime_type) and not data.hasUrls()):
             return False
@@ -377,6 +392,8 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
             return False
 
         dest_dir = normalize_path(target_path)
+        if not os.path.isdir(dest_dir):
+            return False
         parent_w = self.parent() or QtWidgets.QApplication.activeWindow()
         dest_name = os.path.basename(dest_dir) or dest_dir
 
@@ -556,6 +573,9 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
 
         _p = ThemeManager.instance().palette
         self.setStyleSheet(f"QTreeView::item:selected {{ background-color: {_p.accent}; color: {_p.accent_text}; }}")
+        self._drop_target_fill = QtGui.QColor(_p.accent)
+        self._drop_target_fill.setAlpha(72)
+        self._drop_target_pen = QtGui.QPen(QtGui.QColor(_p.accent))
         self.setHeaderHidden(True)
         self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.model_ = LazyFolderTreeModel(roots, excluded)
@@ -571,6 +591,10 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         self._programmatic_expand = 0
         self._recursive_expand_jobs = {}
         self._scroll_restore_serial = 0
+        self._pending_reload_local_callback = None
+        self._pending_reload_strong_callback = None
+        self._pending_reload_scheduled = False
+        self._drop_target_index = QtCore.QModelIndex()
         self.expanded.connect(self.on_expanded)
         self.clicked.connect(self._on_item_clicked)
         UI.register_instance("FolderTree", self)
@@ -581,6 +605,171 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
 
     def binding_scope(self) -> str:
         return "FolderTree"
+
+    def drawRow(self, painter, option, index):
+        super().drawRow(painter, option, index)
+        if not self._is_drop_target_index(index):
+            return
+        rect = QtCore.QRect(0, option.rect.top(), self.viewport().width(), option.rect.height())
+        painter.save()
+        painter.fillRect(rect, self._drop_target_fill)
+        painter.setPen(self._drop_target_pen)
+        painter.drawRect(rect.adjusted(0, 0, -1, -1))
+        painter.restore()
+
+    def _is_drop_target_index(self, index):
+        return index.isValid() and self._drop_target_index.isValid() and index == self._drop_target_index
+
+    def _drop_mime_supported(self, mime):
+        return bool(mime and (mime.hasUrls() or mime.hasFormat(self.model_._mime_type)))
+
+    def _drop_action_supported(self, action):
+        return action in SUPPORTED_DROP_ACTIONS
+
+    def _drop_action_for_event(self, event):
+        proposed = getattr(event, "proposedAction", None)
+        if callable(proposed):
+            action = proposed()
+            if self._drop_action_supported(action):
+                return action
+        current = getattr(event, "dropAction", None)
+        if callable(current):
+            action = current()
+            if self._drop_action_supported(action):
+                return action
+        return QtCore.Qt.DropAction.IgnoreAction
+
+    def _drop_event_pos(self, event):
+        position = getattr(event, "position", None)
+        if callable(position):
+            pos = position()
+            return pos.toPoint() if hasattr(pos, "toPoint") else QtCore.QPoint(int(pos.x()), int(pos.y()))
+        pos = getattr(event, "pos", None)
+        if callable(pos):
+            return pos()
+        return QtCore.QPoint()
+
+    def _can_drop_on_index(self, mime, action, index):
+        if not self._drop_mime_supported(mime) or not self._drop_action_supported(action) or not index.isValid():
+            return False
+        target_path = index.data(USER_ROLE_PATH)
+        if not target_path:
+            return False
+        return normalize_path(target_path) not in self.model_.excluded
+
+    def _resolve_drop_target_index(self, pos, mime, action):
+        if not self._drop_mime_supported(mime) or not self._drop_action_supported(action):
+            return QtCore.QModelIndex()
+        index = self.indexAt(pos)
+        if self._can_drop_on_index(mime, action, index):
+            return index
+        return self._nearest_drop_target_index(pos, mime, action)
+
+    def _nearest_drop_target_index(self, pos, mime, action):
+        viewport_rect = self.viewport().rect()
+        best_index = QtCore.QModelIndex()
+        best_key = None
+        for index in self._iter_visible_indexes():
+            if not self._can_drop_on_index(mime, action, index):
+                continue
+            visual = self.visualRect(index)
+            if not visual.isValid():
+                continue
+            row_rect = QtCore.QRect(viewport_rect.left(), visual.top(), viewport_rect.width(), visual.height())
+            key = self._drop_distance_key(pos, row_rect, index)
+            if best_key is None or key < best_key:
+                best_index = index
+                best_key = key
+        return best_index
+
+    def _drop_distance_key(self, pos, rect, index):
+        px = pos.x()
+        py = pos.y()
+        dx = rect.left() - px if px < rect.left() else px - rect.right() if px > rect.right() else 0
+        dy = rect.top() - py if py < rect.top() else py - rect.bottom() if py > rect.bottom() else 0
+        center = rect.center()
+        center_dx = center.x() - px
+        center_dy = center.y() - py
+        return (dx * dx + dy * dy, center_dx * center_dx + center_dy * center_dy, rect.top(), index.row())
+
+    def _iter_visible_indexes(self):
+        index = self._first_visible_index()
+        if not index.isValid():
+            return
+        viewport_rect = self.viewport().rect()
+        while True:
+            prev_index = self.indexAbove(index)
+            if not prev_index.isValid():
+                break
+            prev_rect = self.visualRect(prev_index)
+            if not prev_rect.isValid() or prev_rect.bottom() < viewport_rect.top():
+                break
+            index = prev_index
+        while index.isValid():
+            rect = self.visualRect(index)
+            if rect.isValid() and rect.top() > viewport_rect.bottom():
+                break
+            if rect.isValid() and rect.bottom() >= viewport_rect.top():
+                yield index
+            next_index = self.indexBelow(index)
+            if not next_index.isValid() or next_index == index:
+                break
+            index = next_index
+
+    def _first_visible_index(self):
+        viewport_rect = self.viewport().rect()
+        if not viewport_rect.isValid():
+            return QtCore.QModelIndex()
+        step = max(1, self.fontMetrics().height() // 2)
+        left = viewport_rect.left()
+        right = max(left, viewport_rect.right())
+        x_candidates = []
+        for x in (left, left + self.indentation(), viewport_rect.center().x(), right):
+            x = min(right, max(left, x))
+            if x not in x_candidates:
+                x_candidates.append(x)
+        for y in range(viewport_rect.top(), viewport_rect.bottom() + 1, step):
+            for x in x_candidates:
+                index = self.indexAt(QtCore.QPoint(x, y))
+                if index.isValid():
+                    return index
+        return QtCore.QModelIndex()
+
+    def _set_drop_target_index(self, index):
+        if index == self._drop_target_index:
+            return
+        old_index = self._drop_target_index
+        self._drop_target_index = index if index.isValid() else QtCore.QModelIndex()
+        self._update_drop_target_row(old_index)
+        self._update_drop_target_row(self._drop_target_index)
+
+    def _clear_drop_target_index(self):
+        self._set_drop_target_index(QtCore.QModelIndex())
+
+    def _update_drop_target_row(self, index):
+        if not index.isValid():
+            return
+        rect = self.visualRect(index)
+        if not rect.isValid():
+            self.viewport().update()
+            return
+        self.viewport().update(QtCore.QRect(0, rect.top(), self.viewport().width(), rect.height()))
+
+    def _update_drop_target_from_event(self, event):
+        mime = event.mimeData()
+        action = self._drop_action_for_event(event)
+        index = self._resolve_drop_target_index(self._drop_event_pos(event), mime, action)
+        self._set_drop_target_index(index)
+        return index, action
+
+    def _drop_on_target(self, pos, mime, action):
+        index = self._resolve_drop_target_index(pos, mime, action)
+        return self._drop_on_resolved_target(index, mime, action)
+
+    def _drop_on_resolved_target(self, index, mime, action):
+        if not index.isValid() or not self._drop_action_supported(action):
+            return False
+        return self.model_.dropMimeData(mime, action, -1, 0, index)
 
     def show_context_menu(self, position):
         from wafer.builtins.commands import foldertree
@@ -636,10 +825,131 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         excluded = set(normalize_path(e) for e in excluded or [])
         self._cancel_recursive_expand_jobs()
         self.model_.clear()
+        self.model_.clear_cache()
         self.model_.roots = roots
         self.model_.excluded = excluded
         self.model_.setHorizontalHeaderLabels(["Folders"])
         self.model_._build_roots(roots)
+
+    def _iter_inline_editors(self):
+        seen = set()
+        for editor_type in INLINE_EDITOR_TYPES:
+            for editor in self.findChildren(editor_type):
+                editor_id = id(editor)
+                if editor_id in seen:
+                    continue
+                seen.add(editor_id)
+                yield editor
+
+    def _has_live_inline_editor(self):
+        app = QtWidgets.QApplication.instance()
+        focus = app.focusWidget() if app is not None else None
+        if isinstance(focus, INLINE_EDITOR_TYPES) and self.isAncestorOf(focus):
+            return True
+        for editor in self._iter_inline_editors():
+            try:
+                if editor.isVisible() and self.isAncestorOf(editor):
+                    return True
+            except RuntimeError:
+                continue
+        return False
+
+    def is_editing(self):
+        try:
+            return self.state() == QtWidgets.QAbstractItemView.EditingState or self._has_live_inline_editor()
+        except RuntimeError:
+            return False
+
+    def defer_reload_if_editing(self, callback, *, strong=False):
+        if not callable(callback) or not self.is_editing():
+            return False
+        if strong:
+            self._pending_reload_strong_callback = callback
+        else:
+            self._pending_reload_local_callback = callback
+        return True
+
+    def has_pending_reload(self):
+        return self._pending_reload_local_callback is not None or self._pending_reload_strong_callback is not None
+
+    def _schedule_pending_reload(self):
+        if not self.has_pending_reload() or self._pending_reload_scheduled:
+            return
+        self._pending_reload_scheduled = True
+        QtCore.QTimer.singleShot(0, self._flush_pending_reload)
+
+    def _flush_pending_reload(self):
+        self._pending_reload_scheduled = False
+        if not self.has_pending_reload():
+            return
+        if self.is_editing():
+            self._schedule_pending_reload()
+            return
+        callback = self._pending_reload_strong_callback or self._pending_reload_local_callback
+        self._pending_reload_local_callback = None
+        self._pending_reload_strong_callback = None
+        if callback is not None:
+            callback()
+
+    def _sorted_root_paths(self, roots, excluded):
+        visible = []
+        for root in roots:
+            root = normalize_path(root)
+            if root in excluded:
+                continue
+            visible.append(root)
+        return tuple(sorted(visible, key=_folder_sort_key))
+
+    def _child_paths_state(self, item):
+        if item.rowCount() == 1:
+            placeholder = item.child(0)
+            if placeholder is not None and not placeholder.data(USER_ROLE_PATH):
+                return None
+        child_paths = []
+        for i in range(item.rowCount()):
+            child = item.child(i)
+            child_path = child.data(USER_ROLE_PATH) if child is not None else None
+            if child_path:
+                child_paths.append(normalize_path(child_path))
+        return tuple(child_paths)
+
+    def _iter_structure_items(self):
+        roots = [item for item in iter_root_items(self.model_) if self.model_._is_valid_item(item)]
+        stack = list(reversed(roots))
+        while stack:
+            item = stack.pop()
+            path = item.data(USER_ROLE_PATH)
+            if not path:
+                continue
+            yield item
+            child_state = self._child_paths_state(item)
+            if child_state is None:
+                continue
+            children = []
+            for i in range(item.rowCount()):
+                child = item.child(i)
+                if child is not None and child.data(USER_ROLE_PATH):
+                    children.append(child)
+            stack.extend(reversed(children))
+
+    def is_structure_current(self, roots, excluded=None):
+        normalized_roots = [normalize_path(root) for root in roots]
+        normalized_excluded = set(normalize_path(path) for path in excluded or [])
+        current_roots = tuple(normalize_path(item.data(USER_ROLE_PATH)) for item in iter_root_items(self.model_) if item.data(USER_ROLE_PATH))
+        if current_roots != self._sorted_root_paths(normalized_roots, normalized_excluded):
+            return False
+        current_excluded = tuple(sorted(normalize_path(path) for path in self.model_.excluded))
+        if current_excluded != tuple(sorted(normalized_excluded)):
+            return False
+        for item in self._iter_structure_items():
+            path = normalize_path(item.data(USER_ROLE_PATH))
+            child_state = self._child_paths_state(item)
+            if child_state is None:
+                continue
+            fresh_child_paths = _scan_child_paths(path, normalized_excluded)
+            if child_state != fresh_child_paths:
+                return False
+        return True
 
     @property
     def roots(self):
@@ -792,11 +1102,11 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
             on_complete()
 
     @profiler.profile
-    def expand_and_select_path(self, path, on_complete=None, emit_selected=True):
-        self.expand_and_select_paths([path], on_complete=on_complete, emit_selected=emit_selected)
+    def expand_and_select_path(self, path, on_complete=None, emit_selected=True, expand_target=True):
+        self.expand_and_select_paths([path], on_complete=on_complete, emit_selected=emit_selected, expand_target=expand_target)
 
     @profiler.profile
-    def expand_and_select_paths(self, paths, on_complete=None, emit_selected=True):
+    def expand_and_select_paths(self, paths, on_complete=None, emit_selected=True, expand_target=True):
         normalized = list(dict.fromkeys(normalize_path(p) for p in paths if p))
         if not normalized:
             if on_complete:
@@ -809,11 +1119,11 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
 
         def task():
             children_map = {seg: _scan_children(seg, excluded) for seg in segments}
-            dispatcher.invoke(lambda: self._apply_expand_and_select(normalized, children_map, on_complete, emit_selected))
+            dispatcher.invoke(lambda: self._apply_expand_and_select(normalized, children_map, on_complete, emit_selected, expand_target))
 
         dispatcher.post(task, priority=8)
 
-    def _apply_expand_and_select(self, paths, children_map, on_complete, emit_selected):
+    def _apply_expand_and_select(self, paths, children_map, on_complete, emit_selected, expand_target):
         model = self.model_
         for seg_path, children in children_map.items():
             item = model.path_item_map.get(seg_path)
@@ -833,11 +1143,15 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
                 index = model.indexFromItem(item)
                 if not index.isValid():
                     continue
+                parents = []
                 parent = index.parent()
                 while parent.isValid():
-                    self.expand(parent)
+                    parents.append(parent)
                     parent = parent.parent()
-                self.expand(index)
+                for parent in reversed(parents):
+                    self.expand(parent)
+                if expand_target:
+                    self.expand(index)
                 to_select.append(index)
         finally:
             self._programmatic_expand -= 1
@@ -907,6 +1221,8 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
 
     @profiler.profile
     def reload_tree(self):
+        if self.defer_reload_if_editing(self.reload_tree):
+            return
         self._cancel_recursive_expand_jobs()
         scroll_state = self.capture_scroll_state()
         state = self.get_state()
@@ -941,14 +1257,52 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
 
     def dragEnterEvent(self, event):
         md = event.mimeData()
-        if md and (md.hasUrls() or md.hasFormat(self.model_._mime_type)):
-            event.acceptProposedAction()
+        action = self._drop_action_for_event(event)
+        if self._drop_mime_supported(md) and self._drop_action_supported(action):
+            event.setDropAction(action)
+            event.accept()
         else:
+            self._clear_drop_target_index()
             super().dragEnterEvent(event)
 
+    def dragMoveEvent(self, event):
+        super().dragMoveEvent(event)
+        index, action = self._update_drop_target_from_event(event)
+        if index.isValid() and self._drop_action_supported(action):
+            event.setDropAction(action)
+            event.accept()
+            return
+        self._clear_drop_target_index()
+        ignore = getattr(event, "ignore", None)
+        if callable(ignore):
+            ignore()
+
+    def dragLeaveEvent(self, event):
+        self._clear_drop_target_index()
+        super().dragLeaveEvent(event)
+
     def dropEvent(self, event):
-        super().dropEvent(event)
-        event.setDropAction(QtCore.Qt.DropAction.IgnoreAction)
+        try:
+            mime = event.mimeData()
+            if self._drop_mime_supported(mime):
+                action = self._drop_action_for_event(event)
+                if self._drop_action_supported(action):
+                    index = self._resolve_drop_target_index(self._drop_event_pos(event), mime, action)
+                    self._clear_drop_target_index()
+                    self._drop_on_resolved_target(index, mime, action)
+            else:
+                super().dropEvent(event)
+        finally:
+            self._clear_drop_target_index()
+            event.setDropAction(QtCore.Qt.DropAction.IgnoreAction)
+
+    def commitData(self, editor):
+        super().commitData(editor)
+        self._schedule_pending_reload()
+
+    def closeEditor(self, editor, hint):
+        super().closeEditor(editor, hint)
+        self._schedule_pending_reload()
 
     def eventFilter(self, source, event):
         if not isinstance(event, QtCore.QEvent):
@@ -1164,51 +1518,66 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         idx = self.currentIndex()
         return idx.data(USER_ROLE_PATH) if idx.isValid() else None
 
-    def _select_and_emit(self, path, trigger_search=True):
+    def _select_path_for_navigation(self, path, trigger_search=True):
         if not path:
             return None
-        self.expand_and_select_paths([path], on_complete=lambda: self.current_path_changed.emit(path), emit_selected=trigger_search)
+        path = normalize_path(path)
+        self.expand_and_select_paths([path], on_complete=lambda: self.current_path_changed.emit(path), emit_selected=trigger_search, expand_target=False)
         return path
 
+    def _select_index_for_navigation(self, index, trigger_search=True):
+        if not index.isValid():
+            return None
+        path = index.data(USER_ROLE_PATH)
+        if not path:
+            return None
+        sel_model = self.selectionModel()
+        sel_model.clearSelection()
+        sel_model.select(index, QtCore.QItemSelectionModel.Select | QtCore.QItemSelectionModel.Rows)
+        sel_model.setCurrentIndex(index, QtCore.QItemSelectionModel.NoUpdate)
+        self.scrollTo(index, QtWidgets.QAbstractItemView.PositionAtCenter)
+        if trigger_search:
+            self.folder_selected.emit()
+        self.current_path_changed.emit(path)
+        return path
+
+    def _sibling_index(self, index, offset):
+        if not index.isValid():
+            return QtCore.QModelIndex()
+        parent = index.parent()
+        row = index.row() + offset
+        if row < 0 or row >= self.model().rowCount(parent):
+            return QtCore.QModelIndex()
+        return self.model().index(row, 0, parent)
+
     @profiler.profile
-    def navigate_next_visible(self, trigger_search=True) -> str | None:
+    def navigate_next_folder(self, trigger_search=True) -> str | None:
         idx = self.currentIndex()
         if not idx.isValid():
             first = self.model().index(0, 0)
             if first.isValid():
-                return self._select_and_emit(first.data(USER_ROLE_PATH), trigger_search=trigger_search)
+                return self._select_index_for_navigation(first, trigger_search=trigger_search)
             return None
-        below = self.indexBelow(idx)
-        while below.isValid():
-            path = below.data(USER_ROLE_PATH)
-            if path:
-                return self._select_and_emit(path, trigger_search=trigger_search)
-            below = self.indexBelow(below)
-        return None
+        return self._select_index_for_navigation(self._sibling_index(idx, 1), trigger_search=trigger_search)
 
     @profiler.profile
-    def navigate_prev_visible(self, trigger_search=True) -> str | None:
+    def navigate_prev_folder(self, trigger_search=True) -> str | None:
         idx = self.currentIndex()
         if not idx.isValid():
             return None
-        above = self.indexAbove(idx)
-        while above.isValid():
-            path = above.data(USER_ROLE_PATH)
-            if path:
-                return self._select_and_emit(path, trigger_search=trigger_search)
-            above = self.indexAbove(above)
-        return None
+        return self._select_index_for_navigation(self._sibling_index(idx, -1), trigger_search=trigger_search)
 
     @profiler.profile
-    def navigate_parent(self, trigger_search=True) -> str | None:
+    def navigate_parent(self, trigger_search=True, collapse=False) -> str | None:
         idx = self.currentIndex()
         if not idx.isValid():
             return None
         parent = idx.parent()
         if parent.isValid():
-            path = parent.data(USER_ROLE_PATH)
-            if path:
-                return self._select_and_emit(path, trigger_search=trigger_search)
+            path = self._select_index_for_navigation(parent, trigger_search=trigger_search)
+            if collapse and path:
+                self.collapse(parent)
+            return path
         return None
 
     @profiler.profile
@@ -1228,9 +1597,8 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         if item.rowCount() > 0:
             child = item.child(0)
             if child:
-                path = child.data(USER_ROLE_PATH)
-                if path:
-                    return self._select_and_emit(path, trigger_search=trigger_search)
+                child_index = self.model_.indexFromItem(child)
+                return self._select_index_for_navigation(child_index, trigger_search=trigger_search)
         return None
 
     @staticmethod
@@ -1259,7 +1627,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         current = self.current_path()
         if not current:
             sorted_roots = natsorted(self.model_.roots, key=lambda p: os.path.basename(p).lower())
-            return self._select_and_emit(sorted_roots[0], trigger_search=trigger_search) if sorted_roots else None
+            return self._select_path_for_navigation(sorted_roots[0], trigger_search=trigger_search) if sorted_roots else None
 
         current = normalize_path(current)
         excluded = self.model_.excluded
@@ -1268,7 +1636,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
 
         children = self._list_subdirs(current, excluded)
         if children:
-            return self._select_and_emit(children[0], trigger_search=trigger_search)
+            return self._select_path_for_navigation(children[0], trigger_search=trigger_search)
 
         path = current
         while True:
@@ -1276,7 +1644,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
                 try:
                     idx = sorted_roots.index(path)
                     if idx + 1 < len(sorted_roots):
-                        return self._select_and_emit(sorted_roots[idx + 1], trigger_search=trigger_search)
+                        return self._select_path_for_navigation(sorted_roots[idx + 1], trigger_search=trigger_search)
                 except ValueError:
                     pass
                 return None
@@ -1285,7 +1653,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
             try:
                 idx = siblings.index(path)
                 if idx + 1 < len(siblings):
-                    return self._select_and_emit(siblings[idx + 1], trigger_search=trigger_search)
+                    return self._select_path_for_navigation(siblings[idx + 1], trigger_search=trigger_search)
             except ValueError:
                 pass
             path = parent
@@ -1305,7 +1673,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
             try:
                 idx = sorted_roots.index(current)
                 if idx > 0:
-                    return self._select_and_emit(self._deepest_last(sorted_roots[idx - 1], excluded), trigger_search=trigger_search)
+                    return self._select_path_for_navigation(self._deepest_last(sorted_roots[idx - 1], excluded), trigger_search=trigger_search)
             except ValueError:
                 pass
             return None
@@ -1315,7 +1683,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         try:
             idx = siblings.index(current)
             if idx > 0:
-                return self._select_and_emit(self._deepest_last(siblings[idx - 1], excluded), trigger_search=trigger_search)
+                return self._select_path_for_navigation(self._deepest_last(siblings[idx - 1], excluded), trigger_search=trigger_search)
         except ValueError:
             pass
-        return self._select_and_emit(parent, trigger_search=trigger_search)
+        return self._select_path_for_navigation(parent, trigger_search=trigger_search)

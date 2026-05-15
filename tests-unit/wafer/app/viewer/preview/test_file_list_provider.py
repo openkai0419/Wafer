@@ -45,6 +45,17 @@ class TestContainedFilesListOption:
         provider.set_open_contained_files_as_list(False)
         assert provider.open_contained_files_as_list is False
 
+    def test_save_restore_ui_state(self, provider):
+        provider.set_mode(ListMode.DIR)
+        provider.set_open_contained_files_as_list(True)
+
+        state = provider.save_ui_state()
+        provider.restore_ui_state({"list_mode": "fv.list_fix", "open_contained_files_as_list": False})
+
+        assert state == {"list_mode": "dir", "open_contained_files_as_list": True}
+        assert provider.mode == ListMode.FIX
+        assert provider.open_contained_files_as_list is False
+
     @patch.object(FileListProvider, "_query_contained_files")
     def test_container_path_triggers_contained_query_when_enabled(self, mock_query, provider, file_model):
         register_owner_extension(".zip")

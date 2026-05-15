@@ -41,7 +41,7 @@ class TestExtensionDiscovery:
 
     @pytest.mark.parametrize("ext_name", EXTENSION_FOLDERS)
     def test_discovered_plugins_have_valid_registry_key(self, ext_name):
-        valid_keys = {"viewer", "grid", "collector", "parser", "filter", "sort", "layout", "panel", "key_value_panel", "rename_source", "imageloader", "command"}
+        valid_keys = {"viewer", "grid", "collector", "parser", "filter", "sort", "layout", "panel", "key_value_panel", "rename_source", "imageloader", "resolver", "command"}
         folder = os.path.join(EXTENSIONS_DIR, ext_name)
         found = _import_extension(ext_name, folder)
         for registry_key, cls in found:
@@ -60,7 +60,6 @@ class TestExtensionDiscovery:
 EXPECTED_PLUGINS = {
     "image": {
         ("imageloader", "ImageFileLoader"),
-        ("viewer", "ImageViewerPlugin"),
     },
     "video": {
         ("grid", "VideoGridPlugin"),
@@ -109,8 +108,7 @@ EXPECTED_PLUGINS = {
     },
     "zip": {
         ("collector", "ZipCollectorPlugin"),
-        ("grid", "ZipGridPlugin"),
-        ("viewer", "ZipViewerPlugin"),
+        ("resolver", "ZipResolverPlugin"),
     },
 }
 
@@ -142,7 +140,6 @@ class TestExtensionAttributes:
         image_found = {cls.__name__: cls for _, cls in _import_extension("image", image_folder)}
         animated_found = {cls.__name__: cls for _, cls in _import_extension("animated", animated_folder)}
         assert animated_found["AnimatedGridPlugin"].PRIORITY > image_found["ImageFileLoader"].PRIORITY
-        assert animated_found["AnimatedViewerPlugin"].PRIORITY > image_found["ImageViewerPlugin"].PRIORITY
 
     def test_image_extensions_tuple(self):
         folder = os.path.join(EXTENSIONS_DIR, "image")

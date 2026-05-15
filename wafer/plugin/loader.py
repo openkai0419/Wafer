@@ -8,7 +8,7 @@ from ..utils.logs import AppLogger
 from ..utils.virtual_paths import register_owner_extension
 from .installer import _PACKAGES_DIR, needs_setup
 from .registry import RegistryBase, CommandGroupRegistry
-from .viewer.base import BaseViewerPlugin
+from .viewer.base import WidgetViewerPlugin
 from .grid.base import BaseGridPlugin
 from .grid_overlay.base import BaseOverlayPlugin
 from .collector.base import BaseCollector
@@ -19,6 +19,7 @@ from .panel.base import BasePanelPlugin
 from .key_value_panel.base import BaseKeyValuePanelPlugin
 from .rename.base import BaseRenameSourcePlugin
 from .imageloader.base import BaseImageLoader
+from .resolver.base import BaseResolverPlugin
 from .kinds import (
     PLUGIN_KIND_COLLECTOR,
     PLUGIN_KIND_COMMAND,
@@ -31,6 +32,7 @@ from .kinds import (
     PLUGIN_KIND_PANEL,
     PLUGIN_KIND_PARSER,
     PLUGIN_KIND_RENAME_SOURCE,
+    PLUGIN_KIND_RESOLVER,
     PLUGIN_KIND_SORT,
     PLUGIN_KIND_VIEWER,
 )
@@ -40,7 +42,7 @@ def _build_registry_map():
     from ..core.commands.command.menu import MenuGroup
 
     return {
-        BaseViewerPlugin: PLUGIN_KIND_VIEWER,
+        WidgetViewerPlugin: PLUGIN_KIND_VIEWER,
         BaseGridPlugin: PLUGIN_KIND_GRID,
         BaseOverlayPlugin: PLUGIN_KIND_GRID_OVERLAY,
         BaseCollector: PLUGIN_KIND_COLLECTOR,
@@ -52,6 +54,7 @@ def _build_registry_map():
         BaseKeyValuePanelPlugin: PLUGIN_KIND_KEY_VALUE_PANEL,
         BaseRenameSourcePlugin: PLUGIN_KIND_RENAME_SOURCE,
         BaseImageLoader: PLUGIN_KIND_IMAGE_LOADER,
+        BaseResolverPlugin: PLUGIN_KIND_RESOLVER,
         MenuGroup: PLUGIN_KIND_COMMAND,
     }
 
@@ -172,7 +175,7 @@ class PluginLoader:
             registry = self._registries.get(registry_key)
             if registry is not None:
                 registry.register(cls)
-                if getattr(cls, "IS_OWNER", False):
+                if getattr(cls, "OWNS_VIRTUAL_CHILDREN", False):
                     for ext in getattr(cls, "EXTENSIONS", ()) or ():
                         register_owner_extension(ext)
             total += 1
@@ -246,6 +249,7 @@ def load_plugins(*, on_progress=None) -> list[str]:
     from .key_value_panel.handler import key_value_panel_registry
     from .rename.handler import rename_source_registry
     from .imageloader.handler import image_loader_resolver
+    from .resolver.handler import resolver_registry
 
     command_registry = CommandGroupRegistry()
     registries = {
@@ -261,6 +265,7 @@ def load_plugins(*, on_progress=None) -> list[str]:
         PLUGIN_KIND_KEY_VALUE_PANEL: key_value_panel_registry,
         PLUGIN_KIND_RENAME_SOURCE: rename_source_registry,
         PLUGIN_KIND_IMAGE_LOADER: image_loader_resolver.registry,
+        PLUGIN_KIND_RESOLVER: resolver_registry.registry,
         PLUGIN_KIND_COMMAND: command_registry,
     }
     from ..builtins.registration import register_all

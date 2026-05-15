@@ -2,9 +2,9 @@ from PySide6 import QtCore, QtGui
 
 from ...core.files.render_target import RenderTarget, ResolveContext, TARGET_IMAGE, TARGET_WIDGET
 from ...core.qt.image import numpy_to_qimage
-from ...utils.virtual_paths import is_virtual_path, source_path
+from ...utils.virtual_paths import source_path
 from ...utils.profiling import profiler
-from ..registry import DISPATCH_OWNER, FilePluginRegistry
+from ..registry import FilePluginRegistry
 from .base import BaseGridPlugin, WidgetGridPlugin
 
 VIEWER_THUMBNAIL_DEFAULT_SIZE = 512
@@ -33,14 +33,16 @@ class GridResolver:
 
     def resolve_target(self, path: str, context: ResolveContext | None = None) -> RenderTarget:
         context = context or ResolveContext(path)
-        if is_virtual_path(path):
-            owner_cls = self.registry.resolve(path, DISPATCH_OWNER)
-            owner = self.registry.instance(owner_cls.NAME) if owner_cls is not None else None
-            resolver = getattr(owner, "resolve_target", None)
-            if resolver is not None:
-                target = resolver(path, self, context)
-                if isinstance(target, RenderTarget):
-                    return target
+        from ..resolver.handler import resolver_registry
+
+        resolved = resolver_registry.resolve_target(
+            path,
+            purpose="grid",
+            context=context,
+            resolve_child=self.resolve_target,
+        )
+        if resolved is not None:
+            return resolved
 
         for plugin_cls, kind in self.resolve_merged_chain(path):
             if not plugin_cls.can_handle(path):
@@ -75,8 +77,9 @@ class GridResolver:
     def load(self, path: str, size: QtCore.QSize | None = None) -> QtGui.QImage | None:
         from ..imageloader.handler import image_loader_resolver
 
+        target = self.resolve_target(path)
         int_size = max(size.width(), size.height()) if size is not None else self.thumbnail_size
-        arr = image_loader_resolver.load(path, int_size)
+        arr = image_loader_resolver.load(target.render_path, int_size)
         if arr is None:
             return None
         qimage = numpy_to_qimage(arr)

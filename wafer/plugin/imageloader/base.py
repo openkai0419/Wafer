@@ -8,6 +8,7 @@ from ..registry import BasePlugin
 
 if TYPE_CHECKING:
     import numpy as np
+    from PySide6 import QtGui
 
 
 class BaseImageLoader(BasePlugin):
@@ -17,4 +18,7 @@ class BaseImageLoader(BasePlugin):
         return None
 
     def load_pil(self, path: str, size: int | None = None) -> Image.Image | None:
+        return None
+
+    def load_qimage(self, path: str, size: int | None = None) -> QtGui.QImage | None:
         return None

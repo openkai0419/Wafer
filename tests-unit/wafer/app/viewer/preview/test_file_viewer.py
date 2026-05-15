@@ -1,9 +1,27 @@
 import py_compile
 from unittest.mock import MagicMock, patch, PropertyMock
-from wafer.app.viewer.preview.file_viewer import _format_meta, FileViewerController, _DEFAULT_WIDGET_NAME
+from PySide6 import QtGui
+from wafer.app.viewer.preview.file_viewer import _format_meta, FileViewerController, ViewerBatch
 from wafer.app.viewer.preview.content_viewer import ContentViewerWidget
 from wafer.core.files.render_target import RenderTarget, TARGET_WIDGET
-from wafer.plugin.viewer.base import WidgetViewerPlugin, ImageViewerPlugin
+from wafer.plugin.viewer.base import MultiWidgetViewerPlugin, ViewerContext, WidgetViewerPlugin
+from wafer.builtins.image_viewer.viewer import ImageViewer
+
+_IMAGE_VIEWER_NAME = ImageViewer.NAME
+
+
+def _save_image(path, width: int, height: int):
+    image = QtGui.QImage(width, height, QtGui.QImage.Format_RGB32)
+    image.fill(QtGui.QColor("white"))
+    assert image.save(str(path))
+
+
+def _context(path: str, *, source: str | None = None, render_path: str | None = None) -> ViewerContext:
+    return ViewerContext(path=path, source=source or path, render_path=render_path or path)
+
+
+def _image_viewer(controller):
+    return controller.viewer_plugin(_IMAGE_VIEWER_NAME)
 
 
 def _mock_engine(**overrides):
@@ -148,6 +166,8 @@ class TestAutoplayState:
         qtbot.addWidget(cv)
         qtbot.addWidget(mv)
         w = FileViewerController(model, cv, mv)
+        if _image_viewer(w) is not None:
+            _image_viewer(w).set_image_spread(pages=1)
         return w, model
 
     def test_save_state_includes_autoplay(self, qtbot):
@@ -171,6 +191,32 @@ class TestAutoplayState:
         assert w._autoplay_loop is True
         assert w._autoplay_active is False
 
+    def test_state_includes_file_list_provider(self, qtbot):
+        from wafer.app.viewer.preview.file_list_provider import FileListProvider, ListMode
+        from wafer.app.viewer.preview.file_model import FileViewModel
+        from wafer.app.viewer.grid.items import GridItemModel
+        from wafer.app.viewer.preview.meta_panel import MetaViewerWidget
+
+        model = FileViewModel()
+        grid_items = GridItemModel()
+        provider = FileListProvider(model, grid_items)
+        cv = ContentViewerWidget()
+        mv = MetaViewerWidget()
+        qtbot.addWidget(cv)
+        qtbot.addWidget(mv)
+        w = FileViewerController(model, cv, mv, provider)
+
+        provider.set_mode(ListMode.DIR)
+        provider.set_open_contained_files_as_list(True)
+        state = w._save_state()
+        provider.restore_ui_state({"list_mode": "sync", "open_contained_files_as_list": False})
+        w._restore_state({**state, "list_mode": "fv.list_fix"})
+
+        assert state["list_mode"] == "dir"
+        assert state["open_contained_files_as_list"] is True
+        assert provider.mode == ListMode.FIX
+        assert provider.open_contained_files_as_list is True
+
     def test_start_stop_autoplay(self, qtbot):
         w, _ = self._make_controller(qtbot)
         w.start_autoplay(interval_ms=2000, loop=False)
@@ -191,7 +237,7 @@ class TestAutoplayState:
         w, _ = self._make_controller(qtbot)
         w._autoplay_active = True
         w._autoplay_interval = 1000
-        w.content_viewer._current_plugin_name = _DEFAULT_WIDGET_NAME
+        w.content_viewer._current_plugin_name = _IMAGE_VIEWER_NAME
         w._arm_autoplay()
         assert w._autoplay_timer.isActive()
         assert not w._autoplay_held
@@ -249,6 +295,188 @@ class TestAutoplayState:
         w.stop_autoplay()
 
 
+class TestViewerBatchNavigation:
+    def _make_controller(self, qtbot):
+        from wafer.app.viewer.preview.file_model import FileViewModel
+        from wafer.app.viewer.preview.meta_panel import MetaViewerWidget
+
+        model = FileViewModel()
+        cv = ContentViewerWidget()
+        mv = MetaViewerWidget()
+        qtbot.addWidget(cv)
+        qtbot.addWidget(mv)
+        w = FileViewerController(model, cv, mv)
+        return w, model
+
+    def test_navigate_next_prev_defaults_to_single_item(self, qtbot):
+        w, model = self._make_controller(qtbot)
+        model.set_items(["a", "b", "c"], None)
+
+        assert w.navigate_next() == "b"
+        assert model.current_index() == 1
+        assert w.navigate_prev() == "a"
+        assert model.current_index() == 0
+
+    def test_navigate_next_uses_actual_batch_count(self, qtbot):
+        w, model = self._make_controller(qtbot)
+        model.set_items(["a", "b", "c", "d", "e"], None)
+        _image_viewer(w).set_image_spread(pages=2)
+
+        assert w.navigate_next() == "c"
+        assert model.current_index() == 2
+        assert w.navigate_next() == "e"
+        assert model.current_index() == 4
+        assert w.navigate_next() == "e"
+        assert model.current_index() == 4
+
+    def test_navigate_prev_uses_cached_forward_spans(self, qtbot):
+        w, model = self._make_controller(qtbot)
+        model.set_items(["a", "b", "c", "d", "e", "f"], None)
+        _image_viewer(w).set_image_spread(pages=2)
+        model.set_current_index(4)
+
+        assert w.navigate_prev() == "c"
+        assert model.current_index() == 2
+        assert w.navigate_prev() == "a"
+        assert model.current_index() == 0
+
+    def test_navigate_loop_uses_span_boundaries(self, qtbot):
+        w, model = self._make_controller(qtbot)
+        model.set_items(["a", "b", "c", "d", "e"], None)
+        _image_viewer(w).set_image_spread(pages=2)
+        model.set_current_index(0)
+
+        assert w.navigate_prev(loop=True) == "e"
+        assert model.current_index() == 4
+        assert w.navigate_next(loop=True) == "a"
+        assert model.current_index() == 0
+
+    def test_autoplay_advance_uses_actual_batch_count(self, qtbot):
+        w, model = self._make_controller(qtbot)
+        model.set_items(["a", "b", "c", "d"], None)
+        model.set_current_index(0)
+        _image_viewer(w).set_image_spread(pages=2)
+        w._autoplay_active = True
+
+        w._do_advance()
+
+        assert model.current_index() == 2
+
+    def test_navigate_step_counts_batches(self, qtbot):
+        w, model = self._make_controller(qtbot)
+        model.set_items(["a", "b", "c", "d", "e"], None)
+        _image_viewer(w).set_image_spread(pages=2)
+
+        assert w.navigate_next(step=2) == "e"
+        assert model.current_index() == 4
+
+    def test_navigate_prev_uses_resolved_uncached_spread_boundaries(self, qtbot, tmp_path):
+        paths = [tmp_path / f"{i}.png" for i in range(4)]
+        for path in paths:
+            _save_image(path, 100, 200)
+        w, model = self._make_controller(qtbot)
+        model.set_items([str(path) for path in paths], None)
+        _image_viewer(w).set_image_spread(pages=2)
+        model.set_current_index(2)
+        batch = w._resolve_viewer_batch(2)
+        w._remember_navigation_batch(batch)
+
+        assert batch.start_index == 2
+        assert batch.count == 2
+        assert w.navigate_prev() == str(paths[0])
+        assert model.current_index() == 0
+
+    def test_prev_navigation_does_not_scan_from_start_for_mixed_viewers(self, qtbot):
+        class FakeImage(MultiWidgetViewerPlugin):
+            NAME = "image"
+            EXTENSIONS = ()
+            WIDGET_CLASS = None
+
+            def display_count(self, current_index, paths):
+                return 2
+
+            def navigation_cache_key(self):
+                return 2
+
+        class FakeRegistry:
+            def __init__(self):
+                self.image = FakeImage()
+
+            def instance(self, name):
+                return self.image if name == "image" else None
+
+        class FakeResolver:
+            def __init__(self):
+                self.registry = FakeRegistry()
+                self.calls = 0
+
+            def resolve_target(self, path):
+                self.calls += 1
+                plugin_name = "video" if path.endswith(".mp4") else "image"
+                return RenderTarget(
+                    logical_path=path,
+                    render_path=path,
+                    kind=TARGET_WIDGET,
+                    plugin_name=plugin_name,
+                    source_path=path,
+                )
+
+        count = 5000
+        paths = [f"{i}.png" if i % 2 == 0 else f"{i}.mp4" for i in range(count)]
+        w, model = self._make_controller(qtbot)
+        model.set_items(paths, None)
+        model._current_index = count - 1
+        model._display_path = paths[-1]
+        resolver = FakeResolver()
+
+        with patch("wafer.app.viewer.preview.file_viewer.viewer_resolver", resolver):
+            assert w._prev_navigation_index(count - 1, loop=False) == count - 2
+
+        assert resolver.calls <= 6
+
+    def test_image_display_count_uses_declared_max_without_orientation_probe(self, qtbot, tmp_path):
+        first = tmp_path / "first.png"
+        spread = tmp_path / "spread.png"
+        last = tmp_path / "last.png"
+        _save_image(first, 100, 200)
+        _save_image(spread, 300, 150)
+        _save_image(last, 100, 200)
+        w, model = self._make_controller(qtbot)
+        model.set_items([str(first), str(spread), str(last)], None)
+        _image_viewer(w).set_image_spread(pages=3)
+
+        assert _image_viewer(w).display_count(0, model.paths) == 3
+        assert w._active_batch_count(0) == 3
+
+    def test_image_display_count_can_group_multiple_images(self, qtbot, tmp_path):
+        paths = [tmp_path / f"{i}.png" for i in range(4)]
+        for path in paths:
+            _save_image(path, 100, 200)
+        w, model = self._make_controller(qtbot)
+        model.set_items([str(path) for path in paths], None)
+        _image_viewer(w).set_image_spread(pages=3)
+
+        assert _image_viewer(w).display_count(0, model.paths) == 3
+        assert w._active_batch_count(0) == 3
+
+    def test_single_widget_viewer_does_not_expand_display_count(self, qtbot):
+        class GreedySingleViewer(WidgetViewerPlugin):
+            NAME = "_test_single_display_count_ignored"
+            EXTENSIONS = (".singleview",)
+            PRIORITY = 1
+
+            def display_count(self, current_index, paths):
+                return 3
+
+        from wafer.plugin.viewer.handler import viewer_resolver
+
+        viewer_resolver.registry.register(GreedySingleViewer)
+        w, model = self._make_controller(qtbot)
+        model.set_items(["a.singleview", "b.singleview", "c.singleview"], None)
+
+        assert w._display_count(GreedySingleViewer.NAME, 0) == 1
+
+
 def test_format_meta_no_collectors_omits_key():
     engine = _mock_engine(get_collection_status=[])
     result = _format_meta(engine, "/a.png", "")
@@ -290,12 +518,13 @@ class _StubWidgetPlugin(WidgetViewerPlugin):
 
 def _make_viewer_stub():
     content_viewer = MagicMock(spec=ContentViewerWidget)
-    default_widget = MagicMock()
-    content_viewer.image_viewer = default_widget
-    content_viewer._current_plugin_name = _DEFAULT_WIDGET_NAME
+    image_widget = MagicMock()
+    placeholder = MagicMock()
+    content_viewer._placeholder = placeholder
+    content_viewer._current_plugin_name = _IMAGE_VIEWER_NAME
     content_viewer._stack = MagicMock()
     content_viewer._widget_map = {
-        _DEFAULT_WIDGET_NAME: default_widget,
+        _IMAGE_VIEWER_NAME: image_widget,
         "stub_widget": MagicMock(),
     }
 
@@ -311,10 +540,15 @@ def _make_viewer_stub():
     viewer._pending_content = None
     viewer._loading_path = None
     viewer._target_plugin = None
+    viewer._target_contexts = ()
+    viewer._target_paths = ()
     viewer._target_render_path = None
+    viewer._target_render_paths = ()
+    viewer._navigation_cache_key = None
+    viewer._navigation_cache_starts = []
+    viewer._navigation_cache_batches = {}
     viewer.content_viewer = content_viewer
     viewer.meta_viewer = meta_viewer
-    viewer.image_viewer = default_widget
     viewer.image_cache = MagicMock()
     viewer.image_cache.get.return_value = None
 
@@ -322,13 +556,16 @@ def _make_viewer_stub():
     viewer._switch_to = lambda name: FileViewerController._switch_to(viewer, name)
     viewer._on_path_changed = lambda path: FileViewerController._on_path_changed(viewer, path)
     viewer._load_content = lambda path: FileViewerController._load_content(viewer, path)
+    viewer._set_target_contexts = lambda contexts: FileViewerController._set_target_contexts(viewer, contexts)
+    viewer.current_viewer_contexts = lambda: FileViewerController.current_viewer_contexts(viewer)
+    viewer.current_paths = lambda: FileViewerController.current_paths(viewer)
     viewer._update_meta = MagicMock()
     return viewer
 
 
 def test_flush_does_not_switch_when_content_missing():
     viewer = _make_viewer_stub()
-    viewer._target_plugin = _DEFAULT_WIDGET_NAME
+    viewer._target_plugin = _IMAGE_VIEWER_NAME
     viewer._pending_meta = [{"size": "0"}, {}, {}, {}]
     viewer._pending_content = None
     viewer._flush()
@@ -337,8 +574,8 @@ def test_flush_does_not_switch_when_content_missing():
 
 def test_flush_does_not_switch_when_meta_missing():
     viewer = _make_viewer_stub()
-    viewer._target_plugin = _DEFAULT_WIDGET_NAME
-    viewer._pending_content = ("/a.png", MagicMock())
+    viewer._target_plugin = _IMAGE_VIEWER_NAME
+    viewer._pending_content = (ViewerBatch(0, _IMAGE_VIEWER_NAME, "/a.png", (_context("/a.png"),)), MagicMock())
     viewer._pending_meta = None
     viewer._flush()
     assert viewer._pending_content is not None
@@ -346,16 +583,16 @@ def test_flush_does_not_switch_when_meta_missing():
 
 def test_flush_shows_image_for_default():
     viewer = _make_viewer_stub()
-    viewer._target_plugin = _DEFAULT_WIDGET_NAME
-    img = MagicMock()
-    viewer._pending_content = ("/a.png", img)
+    viewer._target_plugin = _IMAGE_VIEWER_NAME
+    batch = ViewerBatch(0, _IMAGE_VIEWER_NAME, "/a.png", (_context("/a.png"),))
+    viewer._pending_content = (batch, None)
     viewer._pending_meta = [{"size": "0"}, {}, {}, {}]
 
-    viewer._flush()
+    with patch("wafer.app.viewer.preview.file_viewer.viewer_resolver") as mock_resolver:
+        viewer._flush()
 
-    assert viewer.content_viewer._current_plugin_name == _DEFAULT_WIDGET_NAME
-    viewer.image_viewer.set_image.assert_called_once_with(img, "/a.png")
-    viewer.image_viewer.clear.assert_not_called()
+    assert viewer.content_viewer._current_plugin_name == _IMAGE_VIEWER_NAME
+    mock_resolver.render.assert_called_once_with(batch.contexts, plugin_name=_IMAGE_VIEWER_NAME)
     viewer.meta_viewer.set_data.assert_called_once()
     assert viewer._pending_content is None
     assert viewer._pending_meta is None
@@ -363,30 +600,34 @@ def test_flush_shows_image_for_default():
 
 def test_flush_shows_error_image_when_content_none_for_default():
     viewer = _make_viewer_stub()
-    viewer._target_plugin = _DEFAULT_WIDGET_NAME
-    viewer._pending_content = ("/a.zip", None)
+    viewer._target_plugin = _IMAGE_VIEWER_NAME
+    viewer._pending_content = (ViewerBatch(0, _IMAGE_VIEWER_NAME, "/a.zip", (_context("/a.zip"),)), None)
     viewer._pending_meta = [{"size": "0"}, {}, {}, {}]
 
-    with patch("wafer.app.viewer.preview.file_viewer.PixmapFactory") as mock_factory:
-        mock_error_img = MagicMock()
-        mock_factory.create_viewer_error_placeholder.return_value = mock_error_img
-        viewer._flush = lambda: FileViewerController._flush(viewer)
+    batch = viewer._pending_content[0]
+    with patch("wafer.app.viewer.preview.file_viewer.viewer_resolver") as mock_resolver:
         viewer._flush()
 
-    viewer.image_viewer.set_image.assert_called_once_with(mock_error_img, "/a.zip")
-    viewer.image_viewer.clear.assert_not_called()
+    mock_resolver.render.assert_called_once_with(batch.contexts, plugin_name=_IMAGE_VIEWER_NAME)
     viewer.meta_viewer.set_data.assert_called_once()
 
 
 def test_flush_renders_widget_plugin():
     viewer = _make_viewer_stub()
     viewer._target_plugin = "stub_widget"
-    viewer._pending_content = ("/a.mp4", None)
+    context = ViewerContext(path="/archive.zip::a.mp4", source="/archive.zip", render_path="/cache/a.mp4")
+    viewer._pending_content = (ViewerBatch(0, "stub_widget", "/archive.zip::a.mp4", (context,)), None)
     viewer._pending_meta = [{"size": "0"}, {}, {}, {}]
 
     call_order = []
+    rendered = {}
     with patch("wafer.app.viewer.preview.file_viewer.viewer_resolver") as mock_resolver:
-        mock_resolver.render = lambda p: call_order.append("render")
+        def render(contexts, plugin_name=None):
+            rendered["contexts"] = contexts
+            rendered["plugin_name"] = plugin_name
+            call_order.append("render")
+
+        mock_resolver.render = render
         mock_resolver.deactivate = MagicMock()
         mock_resolver.activate = MagicMock()
 
@@ -401,6 +642,8 @@ def test_flush_renders_widget_plugin():
         viewer._flush()
 
     assert call_order == ["switch", "render"]
+    assert rendered["contexts"] == (context,)
+    assert rendered["plugin_name"] == "stub_widget"
     assert viewer.content_viewer._current_plugin_name == "stub_widget"
 
 
@@ -413,13 +656,17 @@ def test_on_path_changed_dispatches_both_pipelines():
     viewer.image_cache.get.return_value = None
     viewer.model = MagicMock()
     viewer.model.dbpath = None
+    viewer.model.current_index.return_value = 0
+    viewer.model.path_at.return_value = "/test.mp4"
+    viewer.model.paths = ["/test.mp4"]
+    viewer.model.count.return_value = 1
 
     with patch("wafer.app.viewer.preview.file_viewer.viewer_resolver") as mock_resolver:
         mock_resolver.resolve.return_value = None
         viewer._on_path_changed("/test.png")
 
     viewer._update_meta.assert_called_once_with("/test.png")
-    assert viewer._target_plugin == _DEFAULT_WIDGET_NAME
+    assert viewer._target_plugin is None
 
 
 def test_on_path_changed_widget_sets_target():
@@ -439,7 +686,12 @@ def test_on_path_changed_widget_sets_target():
     viewer._content_cancel.renew.return_value = cancel_token
     viewer.model = MagicMock()
     viewer.model.dbpath = None
-    viewer._on_resolve_widget = lambda cancel, target: FileViewerController._on_resolve_widget(viewer, cancel, target)
+    viewer.model.current_index.return_value = 0
+    viewer.model.path_at.return_value = "/test.mp4"
+    viewer.model.paths = ["/test.mp4"]
+    viewer.model.count.return_value = 1
+    viewer._resolve_viewer_batch = lambda index, cancel=None: ViewerBatch(0, "stub_widget", "/test.mp4", (_context("/test.mp4"),))
+    viewer._on_content_ready = lambda cancel, batch: FileViewerController._on_content_ready(viewer, cancel, batch)
 
     initial_plugin = viewer.content_viewer._current_plugin_name
     with patch("wafer.app.viewer.preview.file_viewer.viewer_resolver") as mock_resolver:
@@ -465,16 +717,16 @@ def test_switch_to_deactivates_previous_widget_plugin():
 
         viewer.content_viewer.switch_to = lambda name: ContentViewerWidget.switch_to(viewer.content_viewer, name)
         viewer._switch_to = lambda name: FileViewerController._switch_to(viewer, name)
-        viewer._switch_to(_DEFAULT_WIDGET_NAME)
+        viewer._switch_to(_IMAGE_VIEWER_NAME)
 
         mock_resolver.deactivate.assert_called_once_with("stub_widget")
 
-    assert viewer.content_viewer._current_plugin_name == _DEFAULT_WIDGET_NAME
+    assert viewer.content_viewer._current_plugin_name == _IMAGE_VIEWER_NAME
 
 
 def test_switch_to_activates_new_widget_plugin():
     viewer = _make_viewer_stub()
-    viewer.content_viewer._current_plugin_name = _DEFAULT_WIDGET_NAME
+    viewer.content_viewer._current_plugin_name = _IMAGE_VIEWER_NAME
 
     with patch("wafer.app.viewer.preview.content_viewer.viewer_resolver") as mock_resolver:
         from wafer.app.viewer.preview.content_viewer import ContentViewerWidget
@@ -484,7 +736,6 @@ def test_switch_to_activates_new_widget_plugin():
         viewer._switch_to("stub_widget")
 
         mock_resolver.activate.assert_called_once_with("stub_widget")
-    viewer.image_viewer.clear.assert_called_once()
     assert viewer.content_viewer._current_plugin_name == "stub_widget"
 
 
@@ -504,7 +755,7 @@ def test_switch_to_deactivates_and_activates_between_plugins():
         mock_resolver.activate.assert_called_once_with("other_plugin")
 
 
-def test_switch_to_default_does_not_activate():
+def test_switch_to_image_plugin_activates_image():
     viewer = _make_viewer_stub()
     viewer.content_viewer._current_plugin_name = "stub_widget"
 
@@ -513,6 +764,60 @@ def test_switch_to_default_does_not_activate():
 
         viewer.content_viewer.switch_to = lambda name: ContentViewerWidget.switch_to(viewer.content_viewer, name)
         viewer._switch_to = lambda name: FileViewerController._switch_to(viewer, name)
-        viewer._switch_to(_DEFAULT_WIDGET_NAME)
+        viewer._switch_to(_IMAGE_VIEWER_NAME)
 
+        mock_resolver.deactivate.assert_called_once_with("stub_widget")
+        mock_resolver.activate.assert_called_once_with(_IMAGE_VIEWER_NAME)
+
+
+def test_switch_to_unknown_plugin_uses_placeholder():
+    viewer = _make_viewer_stub()
+    viewer.content_viewer._current_plugin_name = "stub_widget"
+
+    with patch("wafer.app.viewer.preview.content_viewer.viewer_resolver") as mock_resolver:
+        from wafer.app.viewer.preview.content_viewer import ContentViewerWidget
+
+        viewer.content_viewer.switch_to = lambda name: ContentViewerWidget.switch_to(viewer.content_viewer, name)
+        viewer._switch_to = lambda name: FileViewerController._switch_to(viewer, name)
+        viewer._switch_to("missing_plugin")
+
+        viewer.content_viewer._stack.setCurrentWidget.assert_called_once_with(viewer.content_viewer._placeholder)
         mock_resolver.activate.assert_not_called()
+
+
+def test_image_viewer_settings_change_reloads_from_current_batch_anchor():
+    viewer = _make_viewer_stub()
+    viewer.model = MagicMock()
+    viewer.model.path.return_value = "/archive.zip::second.png"
+    viewer._set_target_contexts(
+        (
+            _context("/archive.zip::first.png", source="/archive.zip", render_path="/cache/first.png"),
+            _context("/archive.zip::second.png", source="/archive.zip", render_path="/cache/second.png"),
+        )
+    )
+    viewer.invalidate_navigation_cache = lambda: FileViewerController.invalidate_navigation_cache(viewer)
+    viewer._on_viewer_settings_changed = lambda: FileViewerController._on_viewer_settings_changed(viewer)
+
+    viewer._on_viewer_settings_changed()
+
+    viewer.model.set_path.assert_called_once_with("/archive.zip::first.png")
+
+
+def test_image_viewer_settings_change_forces_reload_when_anchor_matches_current_path():
+    viewer = _make_viewer_stub()
+    viewer.model = MagicMock()
+    viewer.model.path.return_value = "/archive.zip::first.png"
+    viewer._set_target_contexts(
+        (
+            _context("/archive.zip::first.png", source="/archive.zip", render_path="/cache/first.png"),
+            _context("/archive.zip::second.png", source="/archive.zip", render_path="/cache/second.png"),
+        )
+    )
+    viewer.invalidate_navigation_cache = lambda: FileViewerController.invalidate_navigation_cache(viewer)
+    viewer._on_path_changed = MagicMock()
+    viewer._on_viewer_settings_changed = lambda: FileViewerController._on_viewer_settings_changed(viewer)
+
+    viewer._on_viewer_settings_changed()
+
+    viewer.model.set_path.assert_not_called()
+    viewer._on_path_changed.assert_called_once_with("/archive.zip::first.png")

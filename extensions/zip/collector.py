@@ -16,7 +16,7 @@ _ASPECT_PROBE_SIZE = 512
 class ZipCollectorPlugin(BaseSingletonCollector):
     NAME = "zip"
     EXTENSIONS = (".zip",)
-    IS_OWNER = True
+    OWNS_VIRTUAL_CHILDREN = True
     PRIORITY = 80
     DEFAULT_ENABLED = True
     BATCH_SIZE = 1

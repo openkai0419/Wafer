@@ -2,10 +2,13 @@ from PySide6 import QtCore
 
 from ...core.commands.bridge import ActionKit
 from ...core.commands.command.require import require
+from ...plugin.viewer.handler import viewer_resolver
+from ...utils.logs import AppLogger
+from .viewer import ImageViewer
 
 
 def _zoom(gv, *, base: float, steps: int, pos=None):
-    if getattr(gv, "_pix_item", None) is None:
+    if not gv.has_content():
         return
     s = int(steps)
     if s <= 0:
@@ -23,6 +26,14 @@ def fit_in_view(ctx, gv, padding: float = 0.0, mode: str | None = None):
 def toggle_fit_mode(ctx, gv):
     gv.toggle_fit_mode()
     gv.fit_in_view(padding=0.0)
+
+
+def set_image_spread(ctx, pages: int = 2, direction: str = "right-to-left"):
+    image_viewer = viewer_resolver.registry.instance(ImageViewer.NAME)
+    if image_viewer is None or not hasattr(image_viewer, "set_image_spread"):
+        AppLogger.warning("Image viewer plugin is not available; image spread was not changed")
+        return
+    image_viewer.set_image_spread(pages=pages, direction=direction)
 
 
 @require(gv="ImageView")
@@ -90,6 +101,15 @@ class ImageViewCommands(ActionKit.MenuBase):
                 display="Zoom Out",
                 func=zoom_out,
                 params=[ActionKit.Param(name="base", value=1.1)],
+            ),
+            ActionKit.Command(
+                path="imgv.image_spread",
+                display="Image Spread",
+                func=set_image_spread,
+                params=[
+                    ActionKit.Param(name="pages", value=2, min_value=1, max_value=16),
+                    ActionKit.Param(name="direction", value=("right-to-left", "left-to-right", "top-to-bottom", "bottom-to-top")),
+                ],
             ),
         ]
 

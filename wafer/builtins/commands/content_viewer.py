@@ -34,16 +34,6 @@ def apply_list_mode(provider, cmd_id: str):
     provider.set_mode(mode)
 
 
-def _ensure_current_initialized(model) -> bool:
-    if model.count() <= 0:
-        return False
-    cur = model.current_index()
-    if cur is None:
-        model.set_current_index(0)
-        return model.current_index() is not None
-    return True
-
-
 def _nav_direction(local_pos, center, axis: str = "left/right", invert: bool = False) -> str:
     mode = str(axis or "left/right").strip().lower()
     dx = local_pos.x() - center.x()
@@ -59,35 +49,29 @@ def _nav_direction(local_pos, center, axis: str = "left/right", invert: bool = F
     return "next" if is_next else "prev"
 
 
-@require(model="FileViewModel")
-def next_file(ctx, model, step: int = 1, loop: bool = False):
-    if not _ensure_current_initialized(model):
-        return
-    model.move_current_next(step=int(step), loop=bool(loop))
+@require(fv="FileViewerController")
+def next_file(ctx, fv, step: int = 1, loop: bool = False):
+    fv.navigate_next(step=int(step), loop=bool(loop), origin="command")
 
 
-@require(model="FileViewModel")
-def prev_file(ctx, model, step: int = 1, loop: bool = False):
-    if not _ensure_current_initialized(model):
-        return
-    model.move_current_prev(step=int(step), loop=bool(loop))
+@require(fv="FileViewerController")
+def prev_file(ctx, fv, step: int = 1, loop: bool = False):
+    fv.navigate_prev(step=int(step), loop=bool(loop), origin="command")
 
 
-@require(model="FileViewModel")
-def navigate_file_by_mouse_position(ctx, model, axis: str = "left/right", invert: bool = False, loop: bool = False):
+@require(fv="FileViewerController")
+def navigate_file_by_mouse_position(ctx, fv, axis: str = "left/right", invert: bool = False, loop: bool = False):
     widget = getattr(ctx, "_widget", None)
     global_pos = getattr(ctx, "global_pos", None)
     if widget is None or global_pos is None or not hasattr(widget, "rect") or not hasattr(widget, "mapFromGlobal"):
         Notifier.warning("Positional navigation requires a bound widget")
         return
-    if not _ensure_current_initialized(model):
-        return
     local_pos = widget.mapFromGlobal(global_pos)
     direction = _nav_direction(local_pos, widget.rect().center(), axis=axis, invert=bool(invert))
     if direction == "next":
-        model.move_current_next(step=1, loop=bool(loop))
+        fv.navigate_next(step=1, loop=bool(loop), origin="mouse")
         return
-    model.move_current_prev(step=1, loop=bool(loop))
+    fv.navigate_prev(step=1, loop=bool(loop), origin="mouse")
 
 
 @require(fv="FileViewerController")

@@ -1,6 +1,17 @@
 import pytest
 from extensions.animated.viewer import AnimatedViewerPlugin
+from wafer.plugin import ViewerContext
 from wafer.plugin.viewer.base import WidgetViewerPlugin
+
+
+def _make_plugin(widget=None):
+    plugin = AnimatedViewerPlugin.__new__(AnimatedViewerPlugin)
+    plugin.widget = widget
+    return plugin
+
+
+def _context(path: str) -> ViewerContext:
+    return ViewerContext(path=path, source=path, render_path=path)
 
 
 class TestAnimatedViewerPluginAttributes:
@@ -54,32 +65,29 @@ class TestAnimatedViewerPluginDelegation:
     def test_render_calls_load(self):
         from unittest.mock import MagicMock
 
-        plugin = AnimatedViewerPlugin()
-        plugin.widget = MagicMock()
-        plugin.render("/test.gif")
-        plugin.widget.load.assert_called_once_with("/test.gif")
+        plugin = _make_plugin(MagicMock())
+        context = _context("/test.gif")
+        plugin.render(context)
+        plugin.widget.load.assert_called_once_with(context)
 
     def test_clear_calls_clear(self):
         from unittest.mock import MagicMock
 
-        plugin = AnimatedViewerPlugin()
-        plugin.widget = MagicMock()
+        plugin = _make_plugin(MagicMock())
         plugin.clear()
         plugin.widget.clear.assert_called_once()
 
     def test_activate_calls_activate(self):
         from unittest.mock import MagicMock
 
-        plugin = AnimatedViewerPlugin()
-        plugin.widget = MagicMock()
+        plugin = _make_plugin(MagicMock())
         plugin.activate()
         plugin.widget.activate.assert_called_once()
 
     def test_deactivate_calls_deactivate(self):
         from unittest.mock import MagicMock
 
-        plugin = AnimatedViewerPlugin()
-        plugin.widget = MagicMock()
+        plugin = _make_plugin(MagicMock())
         plugin.deactivate()
         plugin.widget.deactivate.assert_called_once()
 
@@ -88,8 +96,7 @@ class TestAnimatedViewerPluginState:
     def test_save_ui_state(self):
         from unittest.mock import MagicMock
 
-        plugin = AnimatedViewerPlugin()
-        plugin.widget = MagicMock()
+        plugin = _make_plugin(MagicMock())
         plugin.widget.cover_mode = True
         state = plugin.save_ui_state()
         assert state == {"fit_mode": True}
@@ -97,15 +104,13 @@ class TestAnimatedViewerPluginState:
     def test_restore_ui_state(self):
         from unittest.mock import MagicMock
 
-        plugin = AnimatedViewerPlugin()
-        plugin.widget = MagicMock()
+        plugin = _make_plugin(MagicMock())
         plugin.restore_ui_state({"fit_mode": True})
         plugin.widget.set_cover_mode.assert_called_once_with(True)
 
     def test_restore_ui_state_default(self):
         from unittest.mock import MagicMock
 
-        plugin = AnimatedViewerPlugin()
-        plugin.widget = MagicMock()
+        plugin = _make_plugin(MagicMock())
         plugin.restore_ui_state({})
         plugin.widget.set_cover_mode.assert_called_once_with(False)

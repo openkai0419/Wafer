@@ -58,16 +58,10 @@ class TestViewerPriorityResolution:
         if "animated" in names and "image" in names:
             assert names.index("animated") < names.index("image")
 
-    def test_default_viewer_last(self):
-        for ext in [".jpg", ".mp4", ".gif", ".xyz"]:
-            chain = viewer_resolver.registry.resolve_chain(f"test{ext}")
-            if chain:
-                assert chain[-1].NAME == "default_viewer"
-
-    def test_image_viewer_for_jpg(self):
+    def test_image_fallback_viewer_for_jpg(self):
         chain = viewer_resolver.registry.resolve_chain("test.jpg")
         names = [p.NAME for p in chain]
-        assert "image" in names
+        assert names == ["image"]
 
     def test_video_viewer_for_mp4(self):
         chain = viewer_resolver.registry.resolve_chain("test.mp4")

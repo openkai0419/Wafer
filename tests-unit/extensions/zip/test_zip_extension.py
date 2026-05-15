@@ -10,6 +10,8 @@ from PIL import Image
 from extensions.zip import archive
 from extensions.zip.cache import ZipCache
 from extensions.zip.collector import ZipCollectorPlugin
+from extensions.zip.resolver import ZipResolverPlugin
+from wafer.core.files.render_target import RenderTarget, ResolveContext, TARGET_IMAGE
 from wafer.utils.formatting import natural_key
 from wafer.utils.virtual_paths import build_virtual_path, child_path
 
@@ -111,6 +113,33 @@ def test_zip_cache_materializes_suffix_preserved(tmp_path):
     assert real_path.endswith(".png")
     assert open(real_path, "rb").read() == b"data"
     assert cache.materialize(logical) == real_path
+
+
+def test_zip_resolver_materializes_and_delegates(tmp_path, monkeypatch):
+    zip_path = tmp_path / "sample.zip"
+    logical = build_virtual_path(str(zip_path), "folder/image.png")
+    calls = []
+
+    def fake_materialize(path, purpose="render"):
+        calls.append((path, purpose))
+        return str(tmp_path / "image.png")
+
+    monkeypatch.setattr("extensions.zip.resolver.zip_cache.materialize", fake_materialize)
+
+    def resolve_child(path: str, context: ResolveContext) -> RenderTarget:
+        return RenderTarget(context.logical_path, path, TARGET_IMAGE)
+
+    target = ZipResolverPlugin().resolve_target(
+        logical,
+        purpose="viewer",
+        context=ResolveContext(logical),
+        resolve_child=resolve_child,
+    )
+
+    assert target is not None
+    assert target.logical_path == logical
+    assert target.render_path.endswith("image.png")
+    assert calls == [(logical, "viewer")]
 
 
 def test_zip_collector_returns_child_rows_and_generic_aspect(tmp_path, monkeypatch):

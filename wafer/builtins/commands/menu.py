@@ -2,7 +2,7 @@ from ...core.commands.bridge import ActionKit, Menu, Settings
 from ...utils.paths import resolve_data_path
 from .file import FileCommands
 from .foldertree import show_context_menu
-from .image_viewer import ImageViewCommands
+from ..image_viewer.commands import ImageViewCommands
 from .setting import _restore_thumbnail_size
 
 

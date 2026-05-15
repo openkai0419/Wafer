@@ -1,6 +1,17 @@
 import pytest
 from extensions.video.viewer import VideoViewerPlugin
+from wafer.plugin import ViewerContext
 from wafer.plugin.viewer.base import WidgetViewerPlugin
+
+
+def _make_plugin(widget=None):
+    plugin = VideoViewerPlugin.__new__(VideoViewerPlugin)
+    plugin.widget = widget
+    return plugin
+
+
+def _context(path: str) -> ViewerContext:
+    return ViewerContext(path=path, source=path, render_path=path)
 
 
 class TestVideoViewerPluginAttributes:
@@ -27,32 +38,29 @@ class TestVideoViewerPluginRender:
     def test_render_calls_load(self):
         from unittest.mock import MagicMock
 
-        plugin = VideoViewerPlugin()
-        plugin.widget = MagicMock()
-        plugin.render("/test.mp4")
-        plugin.widget.load.assert_called_once_with("/test.mp4")
+        plugin = _make_plugin(MagicMock())
+        context = _context("/test.mp4")
+        plugin.render(context)
+        plugin.widget.load.assert_called_once_with(context)
 
     def test_clear_calls_clear(self):
         from unittest.mock import MagicMock
 
-        plugin = VideoViewerPlugin()
-        plugin.widget = MagicMock()
+        plugin = _make_plugin(MagicMock())
         plugin.clear()
         plugin.widget.clear.assert_called_once()
 
     def test_activate_calls_activate(self):
         from unittest.mock import MagicMock
 
-        plugin = VideoViewerPlugin()
-        plugin.widget = MagicMock()
+        plugin = _make_plugin(MagicMock())
         plugin.activate()
         plugin.widget.activate.assert_called_once()
 
     def test_deactivate_calls_deactivate(self):
         from unittest.mock import MagicMock
 
-        plugin = VideoViewerPlugin()
-        plugin.widget = MagicMock()
+        plugin = _make_plugin(MagicMock())
         plugin.deactivate()
         plugin.widget.deactivate.assert_called_once()
 
@@ -61,8 +69,7 @@ class TestVideoViewerPluginState:
     def test_save_ui_state(self):
         from unittest.mock import MagicMock
 
-        plugin = VideoViewerPlugin()
-        plugin.widget = MagicMock()
+        plugin = _make_plugin(MagicMock())
         plugin.widget._volume = 75
         plugin.widget.muted = True
         plugin.widget._speed = 1.5
@@ -82,8 +89,7 @@ class TestVideoViewerPluginState:
     def test_restore_ui_state_calls_setters(self):
         from unittest.mock import MagicMock
 
-        plugin = VideoViewerPlugin()
-        plugin.widget = MagicMock()
+        plugin = _make_plugin(MagicMock())
         state = {
             "volume": 60,
             "muted": True,
@@ -104,8 +110,7 @@ class TestVideoViewerPluginState:
         from unittest.mock import MagicMock
         from extensions.video.viewer_widget import DEFAULT_VOLUME
 
-        plugin = VideoViewerPlugin()
-        plugin.widget = MagicMock()
+        plugin = _make_plugin(MagicMock())
         plugin.restore_ui_state({})
         plugin.widget.set_volume.assert_called_once_with(DEFAULT_VOLUME)
         plugin.widget.set_muted.assert_called_once_with(False)
@@ -117,8 +122,7 @@ class TestVideoViewerPluginState:
     def test_restore_ui_state_idempotent(self):
         from unittest.mock import MagicMock
 
-        plugin = VideoViewerPlugin()
-        plugin.widget = MagicMock()
+        plugin = _make_plugin(MagicMock())
         state = {"volume": 50, "muted": False, "speed": 1.0, "fit_mode": False, "loop": False, "pause_in_background": False}
         plugin.restore_ui_state(state)
         plugin.restore_ui_state(state)
@@ -132,8 +136,7 @@ class TestVideoViewerPluginAutoplay:
     def test_set_autoplay_with_callback_returns_true(self):
         from unittest.mock import MagicMock
 
-        plugin = VideoViewerPlugin()
-        plugin.widget = MagicMock()
+        plugin = _make_plugin(MagicMock())
         result = plugin.set_autoplay(lambda: None)
         assert result is True
         plugin.widget.set_autoplay_advance.assert_called_once()
@@ -141,8 +144,7 @@ class TestVideoViewerPluginAutoplay:
     def test_set_autoplay_none_returns_false(self):
         from unittest.mock import MagicMock
 
-        plugin = VideoViewerPlugin()
-        plugin.widget = MagicMock()
+        plugin = _make_plugin(MagicMock())
         result = plugin.set_autoplay(None)
         assert result is False
         plugin.widget.set_autoplay_advance.assert_called_once_with(None)
@@ -150,8 +152,7 @@ class TestVideoViewerPluginAutoplay:
     def test_set_autoplay_passes_advance_to_widget(self):
         from unittest.mock import MagicMock
 
-        plugin = VideoViewerPlugin()
-        plugin.widget = MagicMock()
+        plugin = _make_plugin(MagicMock())
         cb = lambda: None
         plugin.set_autoplay(cb)
         plugin.widget.set_autoplay_advance.assert_called_once_with(cb)

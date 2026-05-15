@@ -1,13 +1,14 @@
 import py_compile
-import pytest
-from PIL import Image
 
+from wafer.core.files.render_target import TARGET_WIDGET
+from wafer.builtins.image_viewer.viewer import ImageViewer
+from wafer.plugin import ViewerContext
 from wafer.plugin.viewer.handler import viewer_resolver
-from wafer.plugin.viewer.base import BaseViewerPlugin, ImageViewerPlugin, WidgetViewerPlugin
+from wafer.plugin.viewer.base import MultiWidgetViewerPlugin, WidgetViewerPlugin
 
 
-def _get_image_plugin():
-    return viewer_resolver.registry.get("image")
+def _context(path: str) -> ViewerContext:
+    return ViewerContext(path=path, source=path, render_path=path)
 
 
 def test_compile_base():
@@ -18,58 +19,45 @@ def test_compile_handler():
     py_compile.compile("wafer/plugin/viewer/handler.py")
 
 
-def test_image_viewer_plugin_is_abstract():
-    with pytest.raises(TypeError):
-        ImageViewerPlugin()
-
-
-def test_image_plugin_registered():
-    assert "image" in viewer_resolver.registry.names()
-
-
 def test_resolve_jpg():
-    plugin_cls = _get_image_plugin()
-    assert viewer_resolver.resolve("photo.jpg") is plugin_cls
+    assert viewer_resolver.resolve("photo.jpg") is ImageViewer
 
 
 def test_resolve_png():
-    plugin_cls = _get_image_plugin()
-    assert viewer_resolver.resolve("image.png") is plugin_cls
+    assert viewer_resolver.resolve("image.png") is ImageViewer
 
 
 def test_resolve_unknown():
-    from wafer.builtins.viewer import DefaultViewerPlugin
-
-    assert viewer_resolver.resolve("file.xyz") is DefaultViewerPlugin
+    assert viewer_resolver.resolve("file.xyz") is ImageViewer
 
 
-def test_image_plugin_priority():
-    plugin_cls = _get_image_plugin()
-    assert plugin_cls.PRIORITY == 100
+def test_resolve_target_uses_image_fallback_plugin():
+    target = viewer_resolver.resolve_target("photo.jpg")
+    assert target.kind == TARGET_WIDGET
+    assert target.plugin_name == ImageViewer.NAME
 
 
-def test_image_plugin_extensions():
-    plugin_cls = _get_image_plugin()
-    assert ".jpg" in plugin_cls.EXTENSIONS
-    assert ".png" in plugin_cls.EXTENSIONS
-    assert ".gif" in plugin_cls.EXTENSIONS
+def test_resolve_target_widget_plugin():
+    class Stub(WidgetViewerPlugin):
+        NAME = "_stub_widget_viewer"
+        EXTENSIONS = (".stubviewer",)
+        PRIORITY = 1
 
-
-def test_image_plugin_is_image_viewer_plugin():
-    plugin_cls = _get_image_plugin()
-    assert issubclass(plugin_cls, ImageViewerPlugin)
-    assert not issubclass(plugin_cls, WidgetViewerPlugin)
+    viewer_resolver.registry.register(Stub)
+    target = viewer_resolver.resolve_target("sample.stubviewer")
+    assert target.kind == TARGET_WIDGET
+    assert target.plugin_name == Stub.NAME
 
 
 def test_is_widget_plugin_image():
-    assert not viewer_resolver.is_widget_plugin("photo.jpg")
+    assert viewer_resolver.is_widget_plugin("photo.jpg")
 
 
 def test_is_widget_plugin_unknown():
-    assert not viewer_resolver.is_widget_plugin("file.xyz")
+    assert viewer_resolver.is_widget_plugin("file.xyz")
 
 
-def test_viewer_plugins_includes_registered():
+def test_viewer_plugins_includes_registered(qtbot):
     plugins = viewer_resolver.viewer_plugins()
     for name, inst in plugins.items():
         assert isinstance(name, str)
@@ -77,32 +65,45 @@ def test_viewer_plugins_includes_registered():
         assert inst.widget is not None
 
 
-def test_render_does_nothing_without_widget_plugin():
-    viewer_resolver.render("photo.jpg")
+def test_render_uses_image_fallback_plugin(qtbot):
+    viewer_resolver.render((_context("photo.jpg"),))
 
 
-def test_image_plugin_load_content_returns_image(tmp_path):
-    img_path = tmp_path / "test.png"
-    Image.new("RGB", (50, 50)).save(str(img_path))
-    plugin = _get_image_plugin()()
-    result = plugin.load_content(str(img_path))
-    from PySide6 import QtGui
+def test_render_passes_single_context_to_widget_plugin():
+    class Stub(WidgetViewerPlugin):
+        NAME = "_stub_single_render"
+        EXTENSIONS = (".single_render",)
+        PRIORITY = 1
+        received = None
 
-    assert isinstance(result, QtGui.QImage)
+        def render(self, context):
+            type(self).received = context
+
+    first = _context("first.single_render")
+    second = _context("second.single_render")
+    viewer_resolver.registry.register(Stub)
+
+    viewer_resolver.render((first, second), plugin_name=Stub.NAME)
+
+    assert Stub.received == first
 
 
-def test_load_content_function(tmp_path):
-    img_path = tmp_path / "test.jpg"
-    Image.new("RGB", (50, 50)).save(str(img_path))
-    result = viewer_resolver.load_content(str(img_path))
-    assert result is not None
+def test_render_passes_contexts_to_multi_widget_plugin():
+    class Stub(MultiWidgetViewerPlugin):
+        NAME = "_stub_multi_render"
+        EXTENSIONS = (".multi_render",)
+        PRIORITY = 1
+        received = None
 
+        def render_contexts(self, contexts):
+            type(self).received = tuple(contexts)
 
-def test_create_default_widget(qtbot):
-    from wafer.app.viewer.preview.image_viewer import ImageDisplayWidget
+    contexts = (_context("first.multi_render"), _context("second.multi_render"))
+    viewer_resolver.registry.register(Stub)
 
-    widget = viewer_resolver.create_default_widget()
-    qtbot.addWidget(widget)
+    viewer_resolver.render(contexts, plugin_name=Stub.NAME)
+
+    assert Stub.received == contexts
 
 
 def test_widget_viewer_plugin_activate_default():
@@ -134,6 +135,16 @@ def test_set_autoplay_none_returns_false():
 
     plugin = Stub()
     assert plugin.set_autoplay(None) is False
+
+
+def test_multi_display_count_default_returns_single_item():
+    class Stub(MultiWidgetViewerPlugin):
+        NAME = "stub_count"
+        EXTENSIONS = (".stub",)
+        PRIORITY = 1
+
+    plugin = Stub()
+    assert plugin.display_count(0, ["a", "b"]) == 1
 
 
 def test_activate_deactivate_via_resolver():

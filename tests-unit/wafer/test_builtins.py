@@ -1,10 +1,9 @@
 import numpy as np
 import pytest
-from PySide6 import QtCore, QtGui
+from PySide6 import QtCore
 from PIL import Image
 
 from wafer.builtins.imageloader import SystemImageLoader
-from wafer.builtins.viewer import DefaultViewerPlugin
 from wafer.builtins.filters import TextFilter, DirectoryFilter
 from wafer.builtins.sorts import (
     NoSort,
@@ -21,7 +20,6 @@ from wafer.plugin.viewer.handler import viewer_resolver
 from wafer.plugin.query.handler import filter_registry, sort_registry
 from wafer.plugin.imageloader.base import BaseImageLoader
 from wafer.plugin.imageloader.handler import image_loader_resolver
-from wafer.plugin.viewer.base import ImageViewerPlugin
 from wafer.plugin.query.base import BaseFilterPlugin, BaseSortPlugin
 
 
@@ -68,33 +66,6 @@ class TestSystemImageLoader:
         assert chain[-1] is SystemImageLoader
 
 
-class TestDefaultViewerPlugin:
-    def test_is_image_viewer_plugin(self):
-        assert issubclass(DefaultViewerPlugin, ImageViewerPlugin)
-
-    def test_catch_all_extensions(self):
-        assert DefaultViewerPlugin.EXTENSIONS == ()
-
-    def test_negative_priority(self):
-        assert DefaultViewerPlugin.PRIORITY == -100
-
-    def test_registered_in_viewer_registry(self):
-        assert viewer_resolver.registry.instance("default_viewer") is not None
-
-    def test_load_content_real_image(self, tmp_path):
-        img_path = tmp_path / "test.jpg"
-        Image.new("RGB", (50, 50)).save(str(img_path))
-        plugin = DefaultViewerPlugin()
-        result = plugin.load_content(str(img_path))
-        assert result is not None
-        assert isinstance(result, QtGui.QImage)
-
-    def test_load_content_nonexistent(self):
-        plugin = DefaultViewerPlugin()
-        result = plugin.load_content("/nonexistent/file.xyz")
-        assert result is None
-
-
 class TestBuiltinFilters:
     def test_text_filter_registered(self):
         assert filter_registry.get("text") is TextFilter
@@ -137,6 +108,7 @@ class TestBuiltinSorts:
 class TestRegisterAll:
     def test_builtins_loaded_via_load_plugins(self):
         assert image_loader_resolver.registry.instance("system_thumbnail") is not None
-        assert viewer_resolver.registry.instance("default_viewer") is not None
+        assert viewer_resolver.registry.instance("image") is not None
+        assert viewer_resolver.registry.instance("default_viewer") is None
         assert filter_registry.get("text") is not None
         assert sort_registry.get("path") is not None

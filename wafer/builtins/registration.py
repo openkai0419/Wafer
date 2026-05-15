@@ -26,7 +26,8 @@ def _discover_builtins(module, registry_map) -> list[tuple[str, type]]:
 
 
 def _import_builtin_modules():
-    from . import log_panel, filters, imageloader, layouts, rename_sources, sorts, viewer
+    from . import log_panel, filters, imageloader, layouts, rename_sources, sorts
+    from .image_viewer import commands as _image_viewer_commands, viewer as _image_viewer
     from .mark import shapes as _mark_shapes, registry as _mark_registry, panel as _mark_panel, widget as _mark_widget, overlay as _mark_overlay, filter as _mark_filter, commands as _mark_commands
     from .batch_renamer import (
         engine as _br_engine,
@@ -43,7 +44,6 @@ def _import_builtin_modules():
         content_viewer as _cmd_content_viewer,
         foldertree as _cmd_foldertree,
         grid as _cmd_grid,
-        image_viewer as _cmd_image_viewer,
         menu,
         panel as _cmd_panel,
         query as _cmd_query,
@@ -61,13 +61,13 @@ def _import_builtin_modules():
     )
 
     return [
+        _image_viewer,
         log_panel,
         filters,
         imageloader,
         layouts,
         rename_sources,
         sorts,
-        viewer,
         _mark_shapes,
         _mark_registry,
         _mark_panel,
@@ -86,7 +86,7 @@ def _import_builtin_modules():
         _cmd_content_viewer,
         _cmd_foldertree,
         _cmd_grid,
-        _cmd_image_viewer,
+        _image_viewer_commands,
         _mark_commands,
         menu,
         _cmd_panel,

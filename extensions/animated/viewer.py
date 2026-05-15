@@ -14,8 +14,8 @@ class AnimatedViewerPlugin(WidgetViewerPlugin):
     def can_handle(cls, path: str) -> bool:
         return is_animated(path)
 
-    def render(self, path):
-        self.widget.load(path)
+    def render(self, context):
+        self.widget.load(context)
 
     def clear(self):
         self.widget.clear()

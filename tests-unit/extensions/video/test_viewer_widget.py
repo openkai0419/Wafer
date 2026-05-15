@@ -1,6 +1,11 @@
 import pytest
 from unittest.mock import MagicMock, patch, PropertyMock, call
 from PySide6 import QtCore, QtWidgets
+from wafer.plugin import ViewerContext
+
+
+def _context(path: str, *, source: str | None = None, render_path: str | None = None) -> ViewerContext:
+    return ViewerContext(path=path, source=source or path, render_path=render_path or path)
 
 
 @pytest.fixture(autouse=True)
@@ -61,7 +66,7 @@ class TestVideoViewerWidgetLoad:
 
         w = VideoViewerWidget()
         _patch_mpv_viewer.MPV.return_value = MagicMock()
-        w.load("/test.mp4")
+        w.load(_context("/test.mp4"))
         assert w._path == "/test.mp4"
         w.cleanup()
 
@@ -71,7 +76,7 @@ class TestVideoViewerWidgetLoad:
         w = VideoViewerWidget()
         mock_player = MagicMock()
         _patch_mpv_viewer.MPV.return_value = mock_player
-        w.load("/test.mp4")
+        w.load(_context("/test.mp4"))
         assert w._player is mock_player
         mock_player.play.assert_called_once_with("/test.mp4")
         w.cleanup()
@@ -81,8 +86,29 @@ class TestVideoViewerWidgetLoad:
 
         w = VideoViewerWidget()
         _patch_mpv_viewer.MPV.return_value = MagicMock()
-        w.load("/test.mp4")
+        w.load(_context("/test.mp4"))
         assert w._pos_timer.isActive()
+        w.cleanup()
+
+    def test_load_uses_render_path_and_context_uses_logical_path(self, qtbot, _patch_mpv_viewer):
+        from extensions.video.viewer_widget import VideoViewerWidget
+        w = VideoViewerWidget()
+        mock_player = MagicMock()
+        _patch_mpv_viewer.MPV.return_value = mock_player
+        context = _context("/archive.zip::test.mp4", source="/archive.zip", render_path="/cache/test.mp4")
+
+        w.load(context)
+        ctx = w.extend_context(None, None)
+
+        mock_player.play.assert_called_once_with("/cache/test.mp4")
+        assert ctx == {
+            "path": "/archive.zip::test.mp4",
+            "paths": ["/archive.zip::test.mp4"],
+            "source": "/archive.zip",
+            "sources": ["/archive.zip"],
+            "render_path": "/cache/test.mp4",
+            "render_paths": ["/cache/test.mp4"],
+        }
         w.cleanup()
 
 
@@ -93,7 +119,7 @@ class TestVideoViewerWidgetClear:
         w = VideoViewerWidget()
         mock_player = MagicMock()
         _patch_mpv_viewer.MPV.return_value = mock_player
-        w.load("/test.mp4")
+        w.load(_context("/test.mp4"))
         w.clear()
         mock_player.command.assert_called_with("stop")
         assert w._path is None
@@ -104,7 +130,7 @@ class TestVideoViewerWidgetClear:
 
         w = VideoViewerWidget()
         _patch_mpv_viewer.MPV.return_value = MagicMock()
-        w.load("/test.mp4")
+        w.load(_context("/test.mp4"))
         w.clear()
         assert not w._pos_timer.isActive()
         w.cleanup()
@@ -118,7 +144,7 @@ class TestVideoViewerWidgetControls:
         mock_player = MagicMock()
         mock_player.pause = False
         mock_mpv.MPV.return_value = mock_player
-        w.load("/test.mp4")
+        w.load(_context("/test.mp4"))
         return w, mock_player
 
     def test_toggle_pause(self, qtbot, _patch_mpv_viewer):
@@ -518,7 +544,7 @@ class TestAutoplayObserver:
         mock_player.pause = False
         mock_player.duration = 10.0
         mock_mpv.MPV.return_value = mock_player
-        w.load("/test.mp4")
+        w.load(_context("/test.mp4"))
         return w, mock_player
 
     def test_ensure_player_registers_observers(self, qtbot, _patch_mpv_viewer):
@@ -623,7 +649,7 @@ class TestAutoplayObserver:
     def test_load_resets_prev_time_pos(self, qtbot, _patch_mpv_viewer):
         w, player = self._make_widget(qtbot, _patch_mpv_viewer)
         w._prev_time_pos = 5.0
-        w.load("/test2.mp4")
+        w.load(_context("/test2.mp4"))
         assert w._prev_time_pos is None
         w.cleanup()
 

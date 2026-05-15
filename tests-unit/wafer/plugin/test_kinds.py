@@ -9,6 +9,7 @@ from wafer.plugin.kinds import (
     PLUGIN_KIND_LAYOUT,
     PLUGIN_KIND_PARSER,
     PLUGIN_KIND_RENAME_SOURCE,
+    PLUGIN_KIND_RESOLVER,
     PLUGIN_KIND_SORT,
     PLUGIN_KIND_VIEWER,
     PLUGIN_KINDS,
@@ -33,6 +34,7 @@ def test_orderable_kind_order_is_stable():
     assert ORDERABLE_PLUGIN_KIND_KEYS == (
         PLUGIN_KIND_GRID,
         PLUGIN_KIND_GRID_OVERLAY,
+        PLUGIN_KIND_RESOLVER,
         PLUGIN_KIND_VIEWER,
         PLUGIN_KIND_FILTER,
         PLUGIN_KIND_SORT,

@@ -63,6 +63,30 @@ class FileListProvider(QtCore.QObject):
         if not enabled:
             self._cancel_pending()
 
+    def save_ui_state(self) -> dict:
+        return {
+            "list_mode": self._mode.value,
+            "open_contained_files_as_list": self._open_contained_files_as_list,
+        }
+
+    def restore_ui_state(self, state: dict) -> None:
+        mode = self._mode_from_state(state.get("list_mode"))
+        if mode is not None:
+            self.set_mode(mode)
+        if "open_contained_files_as_list" in state:
+            self.set_open_contained_files_as_list(bool(state["open_contained_files_as_list"]))
+
+    def _mode_from_state(self, value) -> ListMode | None:
+        if isinstance(value, ListMode):
+            return value
+        if isinstance(value, str):
+            value = value.removeprefix("fv.list_")
+            try:
+                return ListMode(value)
+            except ValueError:
+                return None
+        return None
+
     def on_search_results(self, paths: list[str], sources: list[str]):
         if self._mode == ListMode.SYNC:
             self._file_model.set_items(paths, sources)

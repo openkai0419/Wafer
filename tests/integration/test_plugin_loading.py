@@ -24,6 +24,7 @@ from wafer.plugin.layout.handler import layout_registry
 from wafer.plugin.panel.handler import panel_registry
 from wafer.plugin.rename.handler import rename_source_registry
 from wafer.plugin.imageloader.handler import image_loader_resolver
+from wafer.plugin.resolver.handler import resolver_registry
 
 
 EXTENSIONS_DIR = get_plugin_dir()
@@ -57,28 +58,22 @@ class TestImageLoaderRegistryState:
 
 
 class TestViewerRegistryState:
-    def test_image_viewer_registered(self):
-        assert "image" in viewer_resolver.registry.names()
-
     def test_animated_viewer_registered(self):
         assert "animated" in viewer_resolver.registry.names()
 
     def test_video_viewer_registered(self):
         assert "video" in viewer_resolver.registry.names()
 
-    def test_default_viewer_fallback_registered(self):
-        assert "default_viewer" in viewer_resolver.registry.names()
+    def test_image_registered_as_builtin_fallback_viewer(self):
+        assert "image" in viewer_resolver.registry.names()
 
-    def test_animated_before_image_in_viewer(self):
-        all_plugins = viewer_resolver.registry.list_all()
-        names_in_order = [p.NAME for p in all_plugins]
-        animated_idx = names_in_order.index("animated")
-        image_idx = names_in_order.index("image")
-        assert animated_idx < image_idx
+    def test_default_viewer_removed(self):
+        assert "default_viewer" not in viewer_resolver.registry.names()
 
-    def test_default_viewer_last_in_priority(self):
-        all_plugins = viewer_resolver.registry.list_all()
-        assert all_plugins[-1].NAME == "default_viewer"
+
+class TestResolverRegistryState:
+    def test_zip_resolver_registered(self):
+        assert "zip" in resolver_registry.registry.names()
 
 
 class TestCollectorRegistryState:
@@ -219,6 +214,7 @@ class TestPluginLoaderFreshLoad:
             "panel": PluginRegistry(),
             "rename_source": PluginRegistry(),
             "imageloader": FilePluginRegistry(),
+            "resolver": FilePluginRegistry(),
             "command": CommandGroupRegistry(),
         }
 
@@ -314,12 +310,8 @@ class TestPluginPriorityOverride:
 class TestBuiltinsBeforeExtensions:
     def test_fallback_plugins_present_with_lowest_priority(self):
         loader_all = image_loader_resolver.registry.list_all()
-        viewer_all = viewer_resolver.registry.list_all()
         assert loader_all[-1].PRIORITY == -100
-        assert viewer_all[-1].PRIORITY == -100
 
     def test_builtins_not_overridden_by_extensions(self):
         assert image_loader_resolver.registry.get("system_thumbnail") is not None
-        assert viewer_resolver.registry.get("default_viewer") is not None
         assert image_loader_resolver.registry.get("system_thumbnail").PRIORITY == -100
-        assert viewer_resolver.registry.get("default_viewer").PRIORITY == -100

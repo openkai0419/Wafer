@@ -21,8 +21,8 @@ class VideoViewerPlugin(WidgetViewerPlugin):
     DEFAULT_ENABLED = True
     WIDGET_CLASS = VideoViewerWidget
 
-    def render(self, path):
-        self.widget.load(path)
+    def render(self, context):
+        self.widget.load(context)
 
     def clear(self):
         self.widget.clear()

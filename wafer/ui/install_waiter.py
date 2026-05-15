@@ -120,7 +120,7 @@ def _refresh_splash(splash: InstallSplash, status: dict | None, cancelling: bool
 
 def _format_message(status: dict | None) -> str:
     if not status:
-        return "Preparing"
+        return "Waiting"
     phase = str(status.get("phase", "pending"))
     current = status.get("current") or {}
     name = current.get("name") or ""

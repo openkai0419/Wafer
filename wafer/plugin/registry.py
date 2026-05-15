@@ -29,7 +29,7 @@ class PluginBase:
 
 class BasePlugin(PluginBase, ABC):
     EXTENSIONS: tuple[str, ...] = ()
-    IS_OWNER: bool = False
+    OWNS_VIRTUAL_CHILDREN: bool = False
 
     @classmethod
     def match(cls, path: str) -> bool:

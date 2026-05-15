@@ -11,12 +11,11 @@ from wafer.builtins.commands.content_viewer import (
     start_slideshow,
     stop_slideshow,
 )
-from wafer.app.viewer.preview.file_model import FileViewModel
 
 
 class DummyCtx:
-    def __init__(self, model, *, widget=None, global_pos=None):
-        self._model = model
+    def __init__(self, viewer, *, widget=None, global_pos=None):
+        self._viewer = viewer
         self._widget = widget
         self.global_pos = global_pos
 
@@ -24,15 +23,16 @@ class DummyCtx:
         return default
 
     def get_instance(self, name, default=None):
-        if name == "FileViewModel":
-            return self._model
+        if name == "FileViewerController":
+            return self._viewer
         return default
 
 
-def _make_ctx(paths):
-    model = FileViewModel()
-    model.set_items(paths, None)
-    return DummyCtx(model), model
+def _make_viewer():
+    viewer = MagicMock()
+    viewer.navigate_next = MagicMock()
+    viewer.navigate_prev = MagicMock()
+    return viewer
 
 
 class _WidgetStub:
@@ -47,59 +47,31 @@ class _WidgetStub:
         return self._local_pos
 
 
-def test_file_viewer_next_prev_switches_path():
-    ctx, model = _make_ctx(["a", "b", "c"])
+def test_next_file_delegates_to_controller():
+    viewer = _make_viewer()
 
-    next_file(ctx)
-    assert model.path() == "b"
-    assert model.current_index() == 1
+    next_file(DummyCtx(viewer))
 
-    next_file(ctx)
-    assert model.path() == "c"
-    assert model.current_index() == 2
-
-    prev_file(ctx)
-    assert model.path() == "b"
-    assert model.current_index() == 1
+    viewer.navigate_next.assert_called_once_with(step=1, loop=False, origin="command")
 
 
-def test_file_viewer_wrap_option():
-    ctx, model = _make_ctx(["a", "b", "c"])
+def test_prev_file_delegates_to_controller():
+    viewer = _make_viewer()
 
-    next_file(ctx)
-    next_file(ctx)
-    next_file(ctx)
-    assert model.path() == "c"
+    prev_file(DummyCtx(viewer))
 
-    next_file(ctx, loop=True)
-    assert model.path() == "a"
-
-    prev_file(ctx, loop=True)
-    assert model.path() == "c"
+    viewer.navigate_prev.assert_called_once_with(step=1, loop=False, origin="command")
 
 
-def test_file_viewer_empty_model_does_nothing():
-    ctx, model = _make_ctx([])
-    next_file(ctx)
-    assert model.path() is None
-    prev_file(ctx)
-    assert model.path() is None
+def test_next_prev_forward_step_and_loop_parameters():
+    viewer = _make_viewer()
+    ctx = DummyCtx(viewer)
 
+    next_file(ctx, step=2, loop=True)
+    prev_file(ctx, step=3, loop=True)
 
-def test_file_viewer_step():
-    ctx, model = _make_ctx(["a", "b", "c", "d", "e"])
-
-    next_file(ctx)
-    assert model.current_index() == 1
-
-    next_file(ctx, step=2)
-    assert model.current_index() == 3
-
-    next_file(ctx, step=2)
-    assert model.current_index() == 4
-
-    prev_file(ctx, step=3)
-    assert model.current_index() == 1
+    viewer.navigate_next.assert_called_once_with(step=2, loop=True, origin="command")
+    viewer.navigate_prev.assert_called_once_with(step=3, loop=True, origin="command")
 
 
 def test_nav_direction_defaults_to_left_right_axis():
@@ -121,53 +93,50 @@ def test_nav_direction_supports_axis_aliases_and_invert():
 
 
 def test_navigate_file_by_mouse_position_moves_next_and_prev():
-    model = FileViewModel()
-    model.set_items(["a", "b", "c"], None)
+    viewer = _make_viewer()
     right_widget = _WidgetStub(QtCore.QRect(0, 0, 100, 100), QtCore.QPoint(90, 40))
     left_widget = _WidgetStub(QtCore.QRect(0, 0, 100, 100), QtCore.QPoint(10, 40))
 
-    navigate_file_by_mouse_position(DummyCtx(model, widget=right_widget, global_pos=QtCore.QPoint(0, 0)))
-    assert model.current_index() == 1
+    navigate_file_by_mouse_position(DummyCtx(viewer, widget=right_widget, global_pos=QtCore.QPoint(0, 0)))
+    viewer.navigate_next.assert_called_once_with(step=1, loop=False, origin="mouse")
 
-    navigate_file_by_mouse_position(DummyCtx(model, widget=left_widget, global_pos=QtCore.QPoint(0, 0)))
-    assert model.current_index() == 0
+    navigate_file_by_mouse_position(DummyCtx(viewer, widget=left_widget, global_pos=QtCore.QPoint(0, 0)))
+    viewer.navigate_prev.assert_called_once_with(step=1, loop=False, origin="mouse")
 
 
 def test_navigate_file_by_mouse_position_honors_invert():
-    model = FileViewModel()
-    model.set_items(["a", "b", "c", "d", "e"], None)
+    viewer = _make_viewer()
     widget = _WidgetStub(QtCore.QRect(0, 0, 100, 100), QtCore.QPoint(90, 40))
 
-    navigate_file_by_mouse_position(DummyCtx(model, widget=widget, global_pos=QtCore.QPoint(0, 0)), invert=True)
-    assert model.current_index() == 0
+    navigate_file_by_mouse_position(DummyCtx(viewer, widget=widget, global_pos=QtCore.QPoint(0, 0)), invert=True)
+    viewer.navigate_prev.assert_called_once_with(step=1, loop=False, origin="mouse")
 
-    navigate_file_by_mouse_position(DummyCtx(model, widget=widget, global_pos=QtCore.QPoint(0, 0)))
-    assert model.current_index() == 1
+    navigate_file_by_mouse_position(DummyCtx(viewer, widget=widget, global_pos=QtCore.QPoint(0, 0)))
+    viewer.navigate_next.assert_called_once_with(step=1, loop=False, origin="mouse")
 
 
 def test_navigate_file_by_mouse_position_honors_axis_selection():
-    model = FileViewModel()
-    model.set_items(["a", "b", "c"], None)
+    viewer = _make_viewer()
     widget = _WidgetStub(QtCore.QRect(0, 0, 100, 100), QtCore.QPoint(10, 90))
 
-    navigate_file_by_mouse_position(DummyCtx(model, widget=widget, global_pos=QtCore.QPoint(0, 0)), axis="left/right")
-    assert model.current_index() == 0
+    navigate_file_by_mouse_position(DummyCtx(viewer, widget=widget, global_pos=QtCore.QPoint(0, 0)), axis="left/right")
+    viewer.navigate_prev.assert_called_once_with(step=1, loop=False, origin="mouse")
 
-    navigate_file_by_mouse_position(DummyCtx(model, widget=widget, global_pos=QtCore.QPoint(0, 0)), axis="up/down")
-    assert model.current_index() == 1
+    navigate_file_by_mouse_position(DummyCtx(viewer, widget=widget, global_pos=QtCore.QPoint(0, 0)), axis="up/down")
+    viewer.navigate_next.assert_called_once_with(step=1, loop=False, origin="mouse")
 
 
 def test_navigate_file_by_mouse_position_warns_without_widget(monkeypatch):
-    model = FileViewModel()
-    model.set_items(["a", "b"], None)
+    viewer = _make_viewer()
     warnings = []
 
     monkeypatch.setattr("wafer.builtins.commands.content_viewer.Notifier.warning", warnings.append)
 
-    navigate_file_by_mouse_position(DummyCtx(model))
+    navigate_file_by_mouse_position(DummyCtx(viewer))
 
     assert warnings == ["Positional navigation requires a bound widget"]
-    assert model.current_index() is None
+    viewer.navigate_next.assert_not_called()
+    viewer.navigate_prev.assert_not_called()
 
 
 class _SlideshowCtx:

@@ -160,12 +160,20 @@ class TestAnimatedViewerWidgetPaint:
 class TestExtendContext:
     def test_returns_path(self, qtbot):
         from extensions.animated.viewer_widget import AnimatedViewerWidget
+        from wafer.plugin import ViewerContext
 
         w = AnimatedViewerWidget()
         qtbot.addWidget(w)
-        w._path = "/test.gif"
+        w._viewer_context = ViewerContext(path="/archive.zip::test.gif", source="/archive.zip", render_path="/cache/test.gif")
         ctx = w.extend_context(None, None)
-        assert ctx == {"path": "/test.gif", "paths": ["/test.gif"], "source": "/test.gif", "sources": ["/test.gif"]}
+        assert ctx == {
+            "path": "/archive.zip::test.gif",
+            "paths": ["/archive.zip::test.gif"],
+            "source": "/archive.zip",
+            "sources": ["/archive.zip"],
+            "render_path": "/cache/test.gif",
+            "render_paths": ["/cache/test.gif"],
+        }
 
     def test_returns_empty_paths_when_no_path(self, qtbot):
         from extensions.animated.viewer_widget import AnimatedViewerWidget
@@ -173,7 +181,7 @@ class TestExtendContext:
         w = AnimatedViewerWidget()
         qtbot.addWidget(w)
         ctx = w.extend_context(None, None)
-        assert ctx == {"path": "", "paths": [], "source": None, "sources": []}
+        assert ctx == {"path": None, "paths": [], "source": None, "sources": [], "render_path": None, "render_paths": []}
 
 
 class TestViewerCache:

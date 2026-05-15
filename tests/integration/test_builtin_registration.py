@@ -23,15 +23,6 @@ class TestBuiltinImageLoaderRegistration:
         assert cls.EXTENSIONS == () or cls.match("test.xyz")
 
 
-class TestBuiltinViewerRegistration:
-    def test_default_viewer_registered(self):
-        assert "default_viewer" in viewer_resolver.registry.names()
-
-    def test_default_viewer_is_fallback(self):
-        all_plugins = viewer_resolver.registry.list_all()
-        assert all_plugins[-1].NAME == "default_viewer"
-
-
 class TestBuiltinFilterRegistration:
     BUILTIN_FILTERS = {"text", "directory", "date_range"}
 
@@ -97,10 +88,9 @@ class TestResolveChainWithBuiltins:
         assert "system_thumbnail" in names
         assert names.index("image") < names.index("system_thumbnail")
 
-    def test_viewer_unknown_ext_falls_to_default(self):
+    def test_viewer_unknown_ext_uses_image_fallback_plugin(self):
         chain = viewer_resolver.registry.resolve_chain("test.xyz_unknown")
-        names = [p.NAME for p in chain]
-        assert "default_viewer" in names
+        assert [plugin.NAME for plugin in chain] == ["image"]
 
 
 class TestBuiltinNameUniqueness:
